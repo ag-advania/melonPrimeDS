@@ -311,6 +311,8 @@ private:
     bool CreateFixedResources();
     bool CreateScaleDependentResources();
     bool BuildStaticSrvDescriptors();
+    bool BuildFrameUavDescriptors();
+    bool BuildCompositorUavDescriptors();
     void ReleaseScaleDependentResources();
     void ReleasePipelines();
 
@@ -337,8 +339,7 @@ private:
     bool BindCompositionUavTable(
         ID3D12GraphicsCommandList* list,
         DX12DescriptorRing& descriptors,
-        ID3D12Resource* structuredInput,
-        ID3D12Resource* composedOutput);
+        D3D12_CPU_DESCRIPTOR_HANDLE canonicalCpu);
     bool BindStaticSrvTable(ID3D12GraphicsCommandList* list);
     bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
     void ResetFrameSrvCache() noexcept;
@@ -361,7 +362,13 @@ private:
     DX12CommandContext Commands;
     DX12UploadRing Uploads;
     DX12DescriptorRing Descriptors;
+    // Descriptor lifetime classification:
+    // A: fixed renderer resources use FrameUavDescriptors and StaticSrvDescriptors.
+    // B: each compositor slot owns one canonical UAV block in CompositorUavDescriptors.
+    // C: texture SRVs remain frame-local because the texture cache is dynamic.
     DX12DescriptorRing StaticSrvDescriptors;
+    DX12DescriptorRing FrameUavDescriptors;
+    DX12DescriptorRing CompositorUavDescriptors;
     DX12TextureHeap TextureHeap;
 
     TexcacheDX12 Texcache;
@@ -467,6 +474,8 @@ private:
     std::array<FrameSrvCacheEntry, FrameSrvCacheCapacity> FrameSrvTables{};
     u32 FrameSrvCacheEpoch = 1;
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
+    D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;

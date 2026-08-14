@@ -79,6 +79,58 @@ constexpr u64 AlignUp(u64 value, u64 alignment) noexcept
     return (value + alignment - 1) & ~(alignment - 1);
 }
 
+struct UavDescriptorEntry
+{
+    ID3D12Resource* Resource = nullptr;
+    u32 Elements = 0;
+    u32 Stride = 0;
+    bool Raw = false;
+};
+
+bool CreateUavDescriptorTable(
+    ID3D12Device* device,
+    u32 increment,
+    D3D12_CPU_DESCRIPTOR_HANDLE destination,
+    const UavDescriptorEntry* entries,
+    u32 count)
+{
+    if (!device || !destination.ptr || !entries)
+        return false;
+
+    for (u32 i = 0; i < count; ++i)
+    {
+        if (!entries[i].Resource)
+            return false;
+
+        D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
+        desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        desc.Buffer.FirstElement = 0;
+        desc.Buffer.CounterOffsetInBytes = 0;
+        if (entries[i].Raw)
+        {
+            // RWByteAddressBuffer: a raw view is indexed in 32-bit words.
+            desc.Format = DXGI_FORMAT_R32_TYPELESS;
+            desc.Buffer.NumElements = entries[i].Elements;
+            desc.Buffer.StructureByteStride = 0;
+            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
+        }
+        else
+        {
+            desc.Format = DXGI_FORMAT_UNKNOWN;
+            desc.Buffer.NumElements = entries[i].Elements;
+            desc.Buffer.StructureByteStride = entries[i].Stride;
+            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
+        }
+
+        const D3D12_CPU_DESCRIPTOR_HANDLE handle{
+            destination.ptr + static_cast<SIZE_T>(i) * increment };
+        device->CreateUnorderedAccessView(entries[i].Resource, nullptr, &desc, handle);
+    }
+
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCreateCount, count);
+    return true;
+}
+
 } // namespace
 
 struct DX12Renderer3D::OutputState
@@ -222,6 +274,11 @@ bool DX12Renderer3D::Init()
         return false;
     if (!StaticSrvDescriptors.Init(device, kStaticSrvCount, false))
         return false;
+    if (!FrameUavDescriptors.Init(device, kUavTableSize, false))
+        return false;
+    if (!CompositorUavDescriptors.Init(
+            device, kUavTableSize * kCompositorFramesInFlight, false))
+        return false;
     if (!CreateRootSignature())
         return false;
     if (!CreateCommandSignature())
@@ -287,6 +344,8 @@ void DX12Renderer3D::Stop()
 
     Descriptors.Shutdown();
     StaticSrvDescriptors.Shutdown();
+    FrameUavDescriptors.Shutdown();
+    CompositorUavDescriptors.Shutdown();
     Uploads.Shutdown();
     Commands.Shutdown();
 
@@ -596,6 +655,10 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     // here is what makes RenderFrame()'s null check catch a partially failed
     // reallocation instead of running against a stale buffer.
     BinResultBuffer.Reset();
+    FrameUavDescriptors.Reset();
+    CompositorUavDescriptors.Reset();
+    FrameUavCpu = {};
+    CompositorUavCpu.fill({});
     ComposedOutputValid = false;
     ComposedGeneration = 0;
     FinalFBHasValidFrame = false;
@@ -770,7 +833,9 @@ bool DX12Renderer3D::CreateScaleDependentResources()
         return false;
     SetupIndicesStagingPtr = static_cast<u8*>(mapped);
 
-    return BuildStaticSrvDescriptors();
+    return BuildStaticSrvDescriptors()
+        && BuildFrameUavDescriptors()
+        && BuildCompositorUavDescriptors();
 }
 
 void DX12Renderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
@@ -1245,81 +1310,21 @@ void DX12Renderer3D::TransitionBuffer(
 bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
 {
     DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
-    struct UavEntry
-    {
-        ID3D12Resource* Resource;
-        u32 Elements;
-        u32 Stride;
-        bool Raw;
-    };
-
-    const u32 pixels = static_cast<u32>(ScreenWidth) * static_cast<u32>(ScreenHeight);
-    const u32 resultWinnerElements = ScaleFactor == 1 ? pixels * 2u : 1u;
-    const u32 tileElements = static_cast<u32>(TileSize) * static_cast<u32>(TileSize)
-        * static_cast<u32>(MaxWorkTiles);
-    const u32 binResultDwords = static_cast<u32>(
-        (sizeof(BinResultHeader)
-            + static_cast<u64>(TilesPerLine) * TileLines * CoarseBinStride * 4ull
-            + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull
-            + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull) / 4ull);
-
-    const UavEntry entries[kUavTableSize] = {
-        { ResultBuffer.Get(),      pixels * 3u * 2u,               4, false },
-        { FinalFBBuffer.Get(),     pixels,                         4, false },
-        { TileBuffers[0].Get(),    tileElements,                   4, false },
-        { TileBuffers[1].Get(),    tileElements,                   4, false },
-        { TileBuffers[2].Get(),    tileElements,                   4, false },
-        { BinResultBuffer.Get(),   binResultDwords,                4, true  },
-        { WorkDescBuffer.Get(),    static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
-        { XSpanSetupBuffer.Get(),  static_cast<u32>(MaxYSpanIndices), sizeof(SpanSetupX), false },
-        { ResolveBuffer.Get(),     256u * 192u,                    4, false },
-        { CaptureSidecarBuffer.Get(),
-            8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
-            4, false },
-        { BlendStateBuffer.Get(), pixels, 4, false },
-        { ResultWinnerBuffer.Get(), resultWinnerElements, 4, false },
-        { IndirectArgsBuffer.Get(), static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
-    };
-
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
     if (!Descriptors.Allocate(kUavTableSize, cpu, gpu))
         return false;
 
-    ID3D12Device* device = Context->GetDevice();
-    const u32 increment = Descriptors.GetIncrement();
-
-    for (u32 i = 0; i < kUavTableSize; i++)
-    {
-        if (!entries[i].Resource)
-            return false;
-
-        D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
-        desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-        desc.Buffer.FirstElement = 0;
-        desc.Buffer.CounterOffsetInBytes = 0;
-
-        if (entries[i].Raw)
-        {
-            // RWByteAddressBuffer: a raw view is indexed in 32-bit words.
-            desc.Format = DXGI_FORMAT_R32_TYPELESS;
-            desc.Buffer.NumElements = entries[i].Elements;
-            desc.Buffer.StructureByteStride = 0;
-            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
-        }
-        else
-        {
-            desc.Format = DXGI_FORMAT_UNKNOWN;
-            desc.Buffer.NumElements = entries[i].Elements;
-            desc.Buffer.StructureByteStride = entries[i].Stride;
-            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-        }
-
-        D3D12_CPU_DESCRIPTOR_HANDLE handle{ cpu.ptr + static_cast<SIZE_T>(i) * increment };
-        device->CreateUnorderedAccessView(entries[i].Resource, nullptr, &desc, handle);
-    }
+    if (!FrameUavCpu.ptr)
+        return false;
+    Context->GetDevice()->CopyDescriptorsSimple(
+        kUavTableSize,
+        cpu,
+        FrameUavCpu,
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     FrameUavTable = gpu;
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCopyCount, kUavTableSize);
     DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kUavTableSize);
     list->SetComputeRootDescriptorTable(kRootParamUavTable, gpu);
     return true;
@@ -1328,82 +1333,25 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
 bool DX12Renderer3D::BindCompositionUavTable(
     ID3D12GraphicsCommandList* list,
     DX12DescriptorRing& descriptors,
-    ID3D12Resource* structuredInput,
-    ID3D12Resource* composedOutput)
+    D3D12_CPU_DESCRIPTOR_HANDLE canonicalCpu)
 {
     DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
-    struct UavEntry
-    {
-        ID3D12Resource* Resource;
-        u32 Elements;
-        u32 Stride;
-        bool Raw;
-    };
-
-    const u32 pixels = static_cast<u32>(ScreenWidth) * static_cast<u32>(ScreenHeight);
-    const u32 resultWinnerElements = ScaleFactor == 1 ? pixels * 2u : 1u;
-    const u32 tileElements = static_cast<u32>(TileSize) * static_cast<u32>(TileSize)
-        * static_cast<u32>(MaxWorkTiles);
-    const u32 binResultDwords = static_cast<u32>(
-        (sizeof(BinResultHeader)
-            + static_cast<u64>(TilesPerLine) * TileLines * CoarseBinStride * 4ull
-            + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull
-            + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull) / 4ull);
-
-    const UavEntry entries[kUavTableSize] = {
-        { structuredInput,               kCompositionInputDwords,             4, false },
-        { FinalFBBuffer.Get(),            pixels,                              4, false },
-        { TileBuffers[0].Get(),           tileElements,                        4, false },
-        { TileBuffers[1].Get(),           tileElements,                        4, false },
-        { TileBuffers[2].Get(),           tileElements,                        4, false },
-        { BinResultBuffer.Get(),          binResultDwords,                     4, true  },
-        { WorkDescBuffer.Get(),           static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
-        { XSpanSetupBuffer.Get(),         static_cast<u32>(MaxYSpanIndices),   sizeof(SpanSetupX), false },
-        { composedOutput,                 pixels * 2u,                         4, false },
-        { CaptureSidecarBuffer.Get(),
-            8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
-            4, false },
-        { BlendStateBuffer.Get(),            pixels,                              4, false },
-        { ResultWinnerBuffer.Get(),           resultWinnerElements,                4, false },
-        { IndirectArgsBuffer.Get(),           static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true  },
-    };
-
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
     if (!descriptors.Allocate(kUavTableSize, cpu, gpu))
         return false;
 
-    ID3D12Device* device = Context->GetDevice();
-    const u32 increment = descriptors.GetIncrement();
-    for (u32 i = 0; i < kUavTableSize; ++i)
-    {
-        if (!entries[i].Resource)
-            return false;
+    if (!canonicalCpu.ptr)
+        return false;
+    Context->GetDevice()->CopyDescriptorsSimple(
+        kUavTableSize,
+        cpu,
+        canonicalCpu,
+        D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-        D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
-        desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-        desc.Buffer.FirstElement = 0;
-        desc.Buffer.CounterOffsetInBytes = 0;
-        if (entries[i].Raw)
-        {
-            desc.Format = DXGI_FORMAT_R32_TYPELESS;
-            desc.Buffer.NumElements = entries[i].Elements;
-            desc.Buffer.StructureByteStride = 0;
-            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_RAW;
-        }
-        else
-        {
-            desc.Format = DXGI_FORMAT_UNKNOWN;
-            desc.Buffer.NumElements = entries[i].Elements;
-            desc.Buffer.StructureByteStride = entries[i].Stride;
-            desc.Buffer.Flags = D3D12_BUFFER_UAV_FLAG_NONE;
-        }
-
-        D3D12_CPU_DESCRIPTOR_HANDLE handle{ cpu.ptr + static_cast<SIZE_T>(i) * increment };
-        device->CreateUnorderedAccessView(entries[i].Resource, nullptr, &desc, handle);
-    }
-
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCopyCount, kUavTableSize);
     DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kUavTableSize);
+    DX12Perf::AddCounter(DX12Perf::Counter::CompositorDescriptorUpdateCount, kUavTableSize);
     list->SetComputeRootDescriptorTable(kRootParamUavTable, gpu);
     return true;
 }
@@ -1425,6 +1373,7 @@ bool DX12Renderer3D::BindStaticSrvTable(ID3D12GraphicsCommandList* list)
         cpu,
         StaticSrvCpu,
         D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCopyCount, kStaticSrvCount);
     DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kStaticSrvCount);
     list->SetComputeRootDescriptorTable(kRootParamStaticSrvTable, gpu);
     return true;
@@ -1499,6 +1448,7 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
     BoundSrvTexture = texture;
     BoundSrvTable = gpu;
     *insertion = { texture, gpu, FrameSrvCacheEpoch };
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCreateCount, kTextureSrvCount);
     DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount, kTextureSrvCount);
     list->SetComputeRootDescriptorTable(kRootParamTextureSrvTable, gpu);
     return true;
@@ -2602,7 +2552,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     list->SetDescriptorHeaps(1, heaps);
     list->SetComputeRootSignature(RootSignature.Get());
     if (!BindCompositionUavTable(
-            list, slot.Descriptors, slot.StructuredInput.Get(), slot.Composed.Get()))
+            list, slot.Descriptors, CompositorUavCpu[slotIndex]))
     {
         TransitionBuffer(
             list,
@@ -2668,6 +2618,103 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     return true;
 }
 
+bool DX12Renderer3D::BuildFrameUavDescriptors()
+{
+    FrameUavDescriptors.Reset();
+    D3D12_GPU_DESCRIPTOR_HANDLE ignored{};
+    if (!FrameUavDescriptors.Allocate(kUavTableSize, FrameUavCpu, ignored))
+        return false;
+
+    const u32 pixels = static_cast<u32>(ScreenWidth) * static_cast<u32>(ScreenHeight);
+    const u32 resultWinnerElements = ScaleFactor == 1 ? pixels * 2u : 1u;
+    const u32 tileElements = static_cast<u32>(TileSize) * static_cast<u32>(TileSize)
+        * static_cast<u32>(MaxWorkTiles);
+    const u32 binResultDwords = static_cast<u32>(
+        (sizeof(BinResultHeader)
+            + static_cast<u64>(TilesPerLine) * TileLines * CoarseBinStride * 4ull
+            + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull
+            + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull) / 4ull);
+
+    const UavDescriptorEntry entries[kUavTableSize] = {
+        { ResultBuffer.Get(),      pixels * 3u * 2u,               4, false },
+        { FinalFBBuffer.Get(),     pixels,                         4, false },
+        { TileBuffers[0].Get(),    tileElements,                   4, false },
+        { TileBuffers[1].Get(),    tileElements,                   4, false },
+        { TileBuffers[2].Get(),    tileElements,                   4, false },
+        { BinResultBuffer.Get(),   binResultDwords,                4, true  },
+        { WorkDescBuffer.Get(),    static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
+        { XSpanSetupBuffer.Get(),  static_cast<u32>(MaxYSpanIndices), sizeof(SpanSetupX), false },
+        { ResolveBuffer.Get(),     256u * 192u,                    4, false },
+        { CaptureSidecarBuffer.Get(),
+            8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
+            4, false },
+        { BlendStateBuffer.Get(), pixels, 4, false },
+        { ResultWinnerBuffer.Get(), resultWinnerElements, 4, false },
+        { IndirectArgsBuffer.Get(), static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
+    };
+    return CreateUavDescriptorTable(
+        Context->GetDevice(), FrameUavDescriptors.GetIncrement(), FrameUavCpu,
+        entries, kUavTableSize);
+}
+
+bool DX12Renderer3D::BuildCompositorUavDescriptors()
+{
+    const std::shared_ptr<OutputState> state = ComposedOutput;
+    if (!state)
+        return false;
+
+    CompositorUavDescriptors.Reset();
+    D3D12_CPU_DESCRIPTOR_HANDLE base{};
+    D3D12_GPU_DESCRIPTOR_HANDLE ignored{};
+    if (!CompositorUavDescriptors.Allocate(
+            kUavTableSize * kCompositorFramesInFlight, base, ignored))
+        return false;
+
+    const u32 pixels = static_cast<u32>(ScreenWidth) * static_cast<u32>(ScreenHeight);
+    const u32 resultWinnerElements = ScaleFactor == 1 ? pixels * 2u : 1u;
+    const u32 tileElements = static_cast<u32>(TileSize) * static_cast<u32>(TileSize)
+        * static_cast<u32>(MaxWorkTiles);
+    const u32 binResultDwords = static_cast<u32>(
+        (sizeof(BinResultHeader)
+            + static_cast<u64>(TilesPerLine) * TileLines * CoarseBinStride * 4ull
+            + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull
+            + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull) / 4ull);
+    const u32 increment = CompositorUavDescriptors.GetIncrement();
+    CompositorUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
+
+    for (u32 slotIndex = 0; slotIndex < kCompositorFramesInFlight; ++slotIndex)
+    {
+        CompositorUavCpu[slotIndex] = {
+            base.ptr + static_cast<SIZE_T>(slotIndex) * kUavTableSize * increment };
+        const OutputState::Slot& slot = state->Slots[slotIndex];
+        const UavDescriptorEntry entries[kUavTableSize] = {
+            { slot.StructuredInput.Get(), kCompositionInputDwords, 4, false },
+            { FinalFBBuffer.Get(),         pixels,                   4, false },
+            { TileBuffers[0].Get(),        tileElements,             4, false },
+            { TileBuffers[1].Get(),        tileElements,             4, false },
+            { TileBuffers[2].Get(),        tileElements,             4, false },
+            { BinResultBuffer.Get(),       binResultDwords,           4, true  },
+            { WorkDescBuffer.Get(),        static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
+            { XSpanSetupBuffer.Get(),      static_cast<u32>(MaxYSpanIndices), sizeof(SpanSetupX), false },
+            { slot.Composed.Get(),         pixels * 2u,               4, false },
+            { CaptureSidecarBuffer.Get(),
+                8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
+                4, false },
+            { BlendStateBuffer.Get(),      pixels,                    4, false },
+            { ResultWinnerBuffer.Get(),    resultWinnerElements,      4, false },
+            { IndirectArgsBuffer.Get(),
+                static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
+        };
+        if (!CreateUavDescriptorTable(
+                Context->GetDevice(), increment, CompositorUavCpu[slotIndex],
+                entries, kUavTableSize))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool DX12Renderer3D::BuildStaticSrvDescriptors()
 {
     StaticSrvDescriptors.Reset();
@@ -2709,6 +2756,7 @@ bool DX12Renderer3D::BuildStaticSrvDescriptors()
     indexDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     indexDesc.Buffer.NumElements = static_cast<UINT>(MaxYSpanIndices);
     device->CreateShaderResourceView(SetupIndicesBuffer.Get(), &indexDesc, handleAt(4));
+    DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCreateCount, kStaticSrvCount);
     return true;
 }
 

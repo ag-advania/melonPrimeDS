@@ -34,6 +34,9 @@ namespace
 
 constexpr VkFormat kLayerFormat = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr u32 kDescriptorSetsPerFrame = 64;
+constexpr std::size_t kPresenterSamplerCount = 2;
+constexpr std::size_t kPersistentDescriptorSetCount =
+    static_cast<std::size_t>(VulkanPresenter::Layer::Count) * kPresenterSamplerCount;
 constexpr VkDeviceSize kMinStagingBytes = 4u * 1024u * 1024u;
 
 const char* PresentModeName(VkPresentModeKHR mode) noexcept
@@ -339,6 +342,41 @@ bool VulkanPresenter::CreateDescriptorObjects()
         if (res != VK_SUCCESS)
             return Fail("vkCreateDescriptorPool", res);
     }
+
+    VkDescriptorPoolSize persistentSize{};
+    persistentSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    persistentSize.descriptorCount = static_cast<u32>(kPersistentDescriptorSetCount);
+
+    VkDescriptorPoolCreateInfo persistentPoolInfo{};
+    persistentPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    persistentPoolInfo.maxSets = static_cast<u32>(kPersistentDescriptorSetCount);
+    persistentPoolInfo.poolSizeCount = 1;
+    persistentPoolInfo.pPoolSizes = &persistentSize;
+    res = fns.CreateDescriptorPool(
+        Device.GetHandle(), &persistentPoolInfo, nullptr, &PersistentDescriptorPool);
+    if (res != VK_SUCCESS)
+        return Fail("vkCreateDescriptorPool(persistent)", res);
+
+    std::array<VkDescriptorSetLayout, kPersistentDescriptorSetCount> setLayouts{};
+    std::array<VkDescriptorSet, kPersistentDescriptorSetCount> sets{};
+    setLayouts.fill(SetLayout);
+    VkDescriptorSetAllocateInfo persistentAllocInfo{};
+    persistentAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    persistentAllocInfo.descriptorPool = PersistentDescriptorPool;
+    persistentAllocInfo.descriptorSetCount = static_cast<u32>(sets.size());
+    persistentAllocInfo.pSetLayouts = setLayouts.data();
+    res = fns.AllocateDescriptorSets(
+        Device.GetHandle(), &persistentAllocInfo, sets.data());
+    if (res != VK_SUCCESS)
+        return Fail("vkAllocateDescriptorSets(persistent)", res);
+    for (std::size_t layer = 0; layer < static_cast<std::size_t>(Layer::Count); ++layer)
+    {
+        for (std::size_t sampler = 0; sampler < kPresenterSamplerCount; ++sampler)
+            LayerDescriptorSets[layer][sampler] = sets[layer * kPresenterSamplerCount + sampler];
+    }
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorCreateCount,
+        static_cast<u64>(kPersistentDescriptorSetCount));
 
     VkPushConstantRange push{};
     push.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -947,11 +985,11 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // Layer textures that follow the surface size are rebuilt here, while the
     // device is still idle from the WaitIdle() above. Doing it anywhere else
     // would mean reallocating an image another in-flight frame might sample.
-    if (!EnsureLayerImage(Layers[static_cast<std::size_t>(Layer::Hud)],
+    if (!EnsureLayerImage(Layer::Hud, Layers[static_cast<std::size_t>(Layer::Hud)],
                           SwapchainExtent.width, SwapchainExtent.height,
                           LayerDebugName(Layer::Hud)))
         return false;
-    if (!EnsureLayerImage(Layers[static_cast<std::size_t>(Layer::Osd)],
+    if (!EnsureLayerImage(Layer::Osd, Layers[static_cast<std::size_t>(Layer::Osd)],
                           SwapchainExtent.width, SwapchainExtent.height,
                           LayerDebugName(Layer::Osd)))
         return false;
@@ -1040,7 +1078,7 @@ void VulkanPresenter::DestroySwapchainObjects(bool immediate)
 // ---------------------------------------------------------------------------
 
 bool VulkanPresenter::EnsureLayerImage(
-    LayerTexture& texture, u32 width, u32 height, const char* debugName)
+    Layer layer, LayerTexture& texture, u32 width, u32 height, const char* debugName)
 {
     width = std::max(1u, width);
     height = std::max(1u, height);
@@ -1073,7 +1111,7 @@ bool VulkanPresenter::EnsureLayerImage(
     texture.Width = width;
     texture.Height = height;
     texture.HasContent = false;
-    return true;
+    return UpdateLayerDescriptorSets(layer);
 }
 
 
@@ -1099,40 +1137,50 @@ bool VulkanPresenter::EnsureStaging(VkDeviceSize bytes)
 }
 
 
-VkDescriptorSet VulkanPresenter::AcquireDescriptorSet(VkImageView view, VkSampler sampler)
+bool VulkanPresenter::UpdateLayerDescriptorSets(Layer layer)
 {
+    VulkanPerf::ScopedCpuTimer descriptorTimer(VulkanPerf::CpuMetric::DescriptorUpdate);
     const Vk::DeviceDispatch& fns = Device.Fns();
-    VkDescriptorPool pool = DescriptorPools[Frames.GetFrameIndex()];
+    const LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    if (!texture.Image.IsValid())
+        return false;
 
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = pool;
-    allocInfo.descriptorSetCount = 1;
-    allocInfo.pSetLayouts = &SetLayout;
-
-    VkDescriptorSet set = VK_NULL_HANDLE;
-    const VkResult res = fns.AllocateDescriptorSets(Device.GetHandle(), &allocInfo, &set);
-    if (res != VK_SUCCESS)
+    std::array<VkDescriptorImageInfo, kPresenterSamplerCount> imageInfos{};
+    std::array<VkWriteDescriptorSet, kPresenterSamplerCount> writes{};
+    for (std::size_t sampler = 0; sampler < kPresenterSamplerCount; ++sampler)
     {
-        Fail("vkAllocateDescriptorSets", res);
-        return VK_NULL_HANDLE;
+        imageInfos[sampler].sampler = sampler == 0 ? SamplerNearest : SamplerLinear;
+        imageInfos[sampler].imageView = texture.Image.GetView();
+        imageInfos[sampler].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        writes[sampler].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[sampler].dstSet = LayerDescriptorSets[static_cast<std::size_t>(layer)][sampler];
+        writes[sampler].dstBinding = 0;
+        writes[sampler].descriptorCount = 1;
+        writes[sampler].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[sampler].pImageInfo = &imageInfos[sampler];
+        if (writes[sampler].dstSet == VK_NULL_HANDLE)
+            return false;
     }
 
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.sampler = sampler;
-    imageInfo.imageView = view;
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    fns.UpdateDescriptorSets(
+        Device.GetHandle(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorUpdateCount,
+        static_cast<u64>(writes.size()));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorUpdateCount,
+        static_cast<u64>(writes.size()));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorWriteCount,
+        static_cast<u64>(writes.size()));
+    return true;
+}
 
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = set;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &imageInfo;
 
-    fns.UpdateDescriptorSets(Device.GetHandle(), 1, &write, 0, nullptr);
-    return set;
+VkDescriptorSet VulkanPresenter::AcquireDescriptorSet(Layer layer, bool linearFilter) const noexcept
+{
+    return LayerDescriptorSets[static_cast<std::size_t>(layer)][linearFilter ? 1 : 0];
 }
 
 
@@ -1272,7 +1320,7 @@ bool VulkanPresenter::UploadLayerRegion(
     // new image here.
     if (layer == Layer::ScreenTop || layer == Layer::ScreenBottom)
     {
-        if (!EnsureLayerImage(texture, width, height, LayerDebugName(layer)))
+        if (!EnsureLayerImage(layer, texture, width, height, LayerDebugName(layer)))
             return false;
     }
     else if (!texture.Image.IsValid())
@@ -1385,7 +1433,7 @@ bool VulkanPresenter::UploadLayerFromBuffer(
     }
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
-    if (!EnsureLayerImage(texture, frame.Width, frame.Height, LayerDebugName(layer)))
+    if (!EnsureLayerImage(layer, texture, frame.Width, frame.Height, LayerDebugName(layer)))
         return false;
 
     VkBufferMemoryBarrier sourceBarrier{};
@@ -1485,8 +1533,7 @@ void VulkanPresenter::DrawLayer(Layer layer, const Quad& quad, Blend blend, bool
     if (!texture.Image.IsValid() || !texture.HasContent)
         return;
 
-    const VkSampler sampler = linearFilter ? SamplerLinear : SamplerNearest;
-    const VkDescriptorSet set = AcquireDescriptorSet(texture.Image.GetView(), sampler);
+    const VkDescriptorSet set = AcquireDescriptorSet(layer, linearFilter);
     if (set == VK_NULL_HANDLE)
         return;
 
@@ -1521,7 +1568,7 @@ void VulkanPresenter::DrawRadar(
     if (!texture.Image.IsValid() || !texture.HasContent)
         return;
 
-    const VkDescriptorSet set = AcquireDescriptorSet(texture.Image.GetView(), SamplerLinear);
+    const VkDescriptorSet set = AcquireDescriptorSet(Layer::ScreenBottom, true);
     if (set == VK_NULL_HANDLE)
         return;
 
@@ -2014,6 +2061,17 @@ void VulkanPresenter::Shutdown() noexcept
             fns.DestroySwapchainKHR(device, Swapchain, nullptr);
             Swapchain = VK_NULL_HANDLE;
         }
+
+        // Persistent layer sets own only descriptor state, not the image views.
+        // Drop the pool before destroying those views so no stale binding can
+        // survive the resource lifetime boundary.
+        if (PersistentDescriptorPool != VK_NULL_HANDLE)
+        {
+            fns.DestroyDescriptorPool(device, PersistentDescriptorPool, nullptr);
+            PersistentDescriptorPool = VK_NULL_HANDLE;
+        }
+        for (auto& layerSets : LayerDescriptorSets)
+            layerSets.fill(VK_NULL_HANDLE);
 
         for (LayerTexture& texture : Layers)
         {

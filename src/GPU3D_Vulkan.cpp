@@ -1845,6 +1845,15 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         return false;
 
     writer.Flush(Device.Fns(), Device.GetHandle());
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorUpdateCount,
+        static_cast<u64>(Vk::RasterizerBinding::Count));
+    if (slot == CompositorSetSlot)
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::CompositorDescriptorUpdateCount,
+            static_cast<u64>(Vk::RasterizerBinding::Count));
+    }
     VulkanPerf::AddCounter(VulkanPerf::Counter::DescriptorWriteCount,
         static_cast<u64>(Vk::RasterizerBinding::Count));
     return true;
@@ -1919,6 +1928,9 @@ VkDescriptorSet VulkanRenderer3D::AcquireTextureSet(
         return VK_NULL_HANDLE;
 
     writer.Flush(Device.Fns(), Device.GetHandle());
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorUpdateCount,
+        static_cast<u64>(Vk::TextureBinding::Count));
     VulkanPerf::AddCounter(VulkanPerf::Counter::DescriptorWriteCount,
         static_cast<u64>(Vk::TextureBinding::Count));
 

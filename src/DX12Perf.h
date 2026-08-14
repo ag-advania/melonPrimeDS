@@ -70,6 +70,12 @@ enum class Counter : u32
     UploadOverflowCount,
     UploadSpillBytes,
     DescriptorWriteCount,
+    DescriptorCreateCount,
+    DescriptorUpdateCount,
+    DescriptorCopyCount,
+    DescriptorCpuTimeNs,
+    PresenterDescriptorUpdateCount,
+    CompositorDescriptorUpdateCount,
     CompositorDropCount,
     CaptureReadCount,
     PresentedScreenCopyBytes,
@@ -209,8 +215,12 @@ inline void AddDuration(CpuMetric metric, Clock::time_point start) noexcept
 {
     if (!IsEnabled())
         return;
-    const double us = std::chrono::duration<double, std::micro>(Clock::now() - start).count();
+    const auto elapsed = Clock::now() - start;
+    const u64 ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
+    const double us = static_cast<double>(ns) / 1000.0;
     GetState().Cpu[static_cast<std::size_t>(metric)].Add(us);
+    if (metric == CpuMetric::DescriptorUpdate)
+        AddCounter(Counter::DescriptorCpuTimeNs, ns);
 }
 
 class ScopedCpuTimer
@@ -288,8 +298,10 @@ inline void MaybeReport()
         "route_copy_B=%llu route_copy_ns=%llu regular_lines=%llu fallback_lines=%llu "
         "route_runs=%llu "
         "texture_upload_B=%llu upload_overflows=%llu spill_B=%llu descriptor_writes=%llu "
-        "compose_drops=%llu capture_reads=%llu screen_copy_B=%llu hud_upload_B=%llu "
-        "hud_recreates=%llu\n",
+        "descriptor_creates=%llu descriptor_updates=%llu descriptor_copies=%llu "
+        "descriptor_cpu_ns=%llu presenter_descriptor_updates=%llu "
+        "compositor_descriptor_updates=%llu compose_drops=%llu capture_reads=%llu "
+        "screen_copy_B=%llu hud_upload_B=%llu hud_recreates=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::IdenticalFrames),
@@ -303,7 +315,10 @@ inline void MaybeReport()
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
         count(Counter::StructuredRouteRuns), count(Counter::TextureUploadBytes),
         count(Counter::UploadOverflowCount), count(Counter::UploadSpillBytes),
-        count(Counter::DescriptorWriteCount), count(Counter::CompositorDropCount),
+        count(Counter::DescriptorWriteCount), count(Counter::DescriptorCreateCount),
+        count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
+        count(Counter::DescriptorCpuTimeNs), count(Counter::PresenterDescriptorUpdateCount),
+        count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
         count(Counter::CaptureReadCount), count(Counter::PresentedScreenCopyBytes),
         count(Counter::HudUploadBytes), count(Counter::HudTextureRecreateCount));
 
@@ -329,7 +344,10 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     SpanUploadBytes, StructuredPackBytes, StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
     StructuredRouteRuns, TextureUploadBytes, UploadOverflowCount,
-    UploadSpillBytes, DescriptorWriteCount, CompositorDropCount, CaptureReadCount,
+    UploadSpillBytes, DescriptorWriteCount,
+    DescriptorCreateCount, DescriptorUpdateCount, DescriptorCopyCount, DescriptorCpuTimeNs,
+    PresenterDescriptorUpdateCount, CompositorDescriptorUpdateCount,
+    CompositorDropCount, CaptureReadCount,
     PresentedScreenCopyBytes, HudUploadBytes, HudTextureRecreateCount, Count };
 inline bool IsEnabled() noexcept { return false; }
 inline void SetScale(u32) noexcept {}

@@ -288,10 +288,11 @@ private:
                            std::string& reason) const;
     bool ChooseSurfaceFormat(VkSurfaceFormatKHR& out, std::string& reason) const;
 
-    bool EnsureLayerImage(LayerTexture& texture, melonDS::u32 width, melonDS::u32 height,
+    bool EnsureLayerImage(Layer layer, LayerTexture& texture, melonDS::u32 width, melonDS::u32 height,
                           const char* debugName);
     bool EnsureStaging(VkDeviceSize bytes);
-    VkDescriptorSet AcquireDescriptorSet(VkImageView view, VkSampler sampler);
+    bool UpdateLayerDescriptorSets(Layer layer);
+    VkDescriptorSet AcquireDescriptorSet(Layer layer, bool linearFilter) const noexcept;
 
     bool Fail(const char* operation, VkResult result);
     bool Fail(std::string reason);
@@ -351,7 +352,18 @@ private:
     VkSampler SamplerNearest = VK_NULL_HANDLE;
     VkSampler SamplerLinear = VK_NULL_HANDLE;
 
-    // Per frame-in-flight descriptor pool, reset at the top of every frame.
+    // Descriptor lifetime classification:
+    // A: SetLayout, samplers, and layer descriptor sets live for the presenter.
+    // B: each layer image and its two sampler views live until resize/recreate.
+    // C: no dynamic texture descriptor path is introduced here.
+    VkDescriptorPool PersistentDescriptorPool = VK_NULL_HANDLE;
+    std::array<std::array<VkDescriptorSet, 2>, static_cast<std::size_t>(Layer::Count)>
+        LayerDescriptorSets{};
+
+    // Per frame-in-flight transient pool, kept separate from persistent layer
+    // sets. It is reset at the top of every frame and remains available for a
+    // future dynamic presenter binding without ever invalidating persistent
+    // descriptors.
     // Freeing individual sets is never needed and vkResetDescriptorPool is the
     // cheapest way to recycle a whole frame's worth.
     std::array<VkDescriptorPool, melonDS::Vk::FramesInFlight> DescriptorPools{};

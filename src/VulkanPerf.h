@@ -68,6 +68,12 @@ enum class Counter : u32
     ScratchUploadCount,
     ScratchUploadBytes,
     DescriptorWriteCount,
+    DescriptorCreateCount,
+    DescriptorUpdateCount,
+    DescriptorCopyCount,
+    DescriptorCpuTimeNs,
+    PresenterDescriptorUpdateCount,
+    CompositorDescriptorUpdateCount,
     CompositorDropCount,
     PresentedScreenCopyBytes,
     Count,
@@ -206,8 +212,12 @@ inline void AddDuration(CpuMetric metric, Clock::time_point start) noexcept
 {
     if (!IsEnabled())
         return;
-    const double us = std::chrono::duration<double, std::micro>(Clock::now() - start).count();
+    const auto elapsed = Clock::now() - start;
+    const u64 ns = static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count());
+    const double us = static_cast<double>(ns) / 1000.0;
     GetState().Cpu[static_cast<std::size_t>(metric)].Add(us);
+    if (metric == CpuMetric::DescriptorUpdate)
+        AddCounter(Counter::DescriptorCpuTimeNs, ns);
 }
 
 inline void BeginStructured2DFrame() noexcept
@@ -304,7 +314,9 @@ inline void MaybeReport()
         "raster_no_wait_count=%llu raster_timeout_count=%llu polygons=%llu variants=%llu y_spans=%llu "
         "setup_indices=%llu structured_pack_B=%llu route_copy_B=%llu route_copy_ns=%llu "
         "regular_lines=%llu fallback_lines=%llu route_runs=%llu hud_upload_B=%llu texture_upload_B=%llu "
-        "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu compose_drops=%llu "
+        "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu descriptor_creates=%llu "
+        "descriptor_updates=%llu descriptor_copies=%llu descriptor_cpu_ns=%llu "
+        "presenter_descriptor_updates=%llu compositor_descriptor_updates=%llu compose_drops=%llu "
         "screen_copy_B=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
@@ -316,7 +328,10 @@ inline void MaybeReport()
         count(Counter::StructuredRouteRuns),
         count(Counter::HudUploadBytes), count(Counter::TextureUploadBytes),
         count(Counter::ScratchUploadCount), count(Counter::ScratchUploadBytes),
-        count(Counter::DescriptorWriteCount), count(Counter::CompositorDropCount),
+        count(Counter::DescriptorWriteCount), count(Counter::DescriptorCreateCount),
+        count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
+        count(Counter::DescriptorCpuTimeNs), count(Counter::PresenterDescriptorUpdateCount),
+        count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
         count(Counter::PresentedScreenCopyBytes));
     for (SampleWindow& window : state.Cpu)
         window.Reset();
@@ -367,6 +382,12 @@ enum class Counter : u32
     ScratchUploadCount,
     ScratchUploadBytes,
     DescriptorWriteCount,
+    DescriptorCreateCount,
+    DescriptorUpdateCount,
+    DescriptorCopyCount,
+    DescriptorCpuTimeNs,
+    PresenterDescriptorUpdateCount,
+    CompositorDescriptorUpdateCount,
     CompositorDropCount,
     PresentedScreenCopyBytes,
     Count,
