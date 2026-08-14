@@ -79,6 +79,9 @@ enum class Counter : u32
     DescriptorUpdateCount,
     DescriptorCopyCount,
     DescriptorCpuTimeNs,
+    PresenterSrvCreateCount,
+    PresenterDescriptorCopyCount,
+    PresenterDescriptorCpuTimeNs,
     PresenterDescriptorUpdateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
@@ -328,7 +331,9 @@ inline void MaybeReport()
         "route_runs=%llu "
         "texture_upload_B=%llu upload_overflows=%llu spill_B=%llu descriptor_writes=%llu "
         "descriptor_creates=%llu descriptor_updates=%llu descriptor_copies=%llu "
-        "descriptor_cpu_ns=%llu presenter_descriptor_updates=%llu "
+        "descriptor_cpu_ns=%llu presenter_srv_creates=%llu "
+        "presenter_descriptor_copies=%llu presenter_descriptor_cpu_ns=%llu "
+        "presenter_descriptor_updates=%llu "
         "compositor_descriptor_updates=%llu compose_drops=%llu capture_reads=%llu "
         "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
@@ -355,7 +360,10 @@ inline void MaybeReport()
         count(Counter::UploadOverflowCount), count(Counter::UploadSpillBytes),
         count(Counter::DescriptorWriteCount), count(Counter::DescriptorCreateCount),
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
-        count(Counter::DescriptorCpuTimeNs), count(Counter::PresenterDescriptorUpdateCount),
+        count(Counter::DescriptorCpuTimeNs), count(Counter::PresenterSrvCreateCount),
+        count(Counter::PresenterDescriptorCopyCount),
+        count(Counter::PresenterDescriptorCpuTimeNs),
+        count(Counter::PresenterDescriptorUpdateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
         count(Counter::CaptureReadCount),
         count(Counter::CaptureValidLineCount), count(Counter::CaptureIndependentLineCount),
@@ -395,6 +403,7 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     StructuredRouteRuns, TextureUploadBytes, UploadOverflowCount,
     UploadSpillBytes, DescriptorWriteCount,
     DescriptorCreateCount, DescriptorUpdateCount, DescriptorCopyCount, DescriptorCpuTimeNs,
+    PresenterSrvCreateCount, PresenterDescriptorCopyCount, PresenterDescriptorCpuTimeNs,
     PresenterDescriptorUpdateCount, CompositorDescriptorUpdateCount,
     CompositorDropCount, CaptureReadCount,
     CaptureValidLineCount, CaptureIndependentLineCount, CaptureLegacyOrderedLineCount,

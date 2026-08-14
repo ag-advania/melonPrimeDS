@@ -1518,6 +1518,7 @@ bool VulkanPresenter::UploadLayerFromImage(
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
     const u32 frameIndex = Frames.GetFrameIndex();
+    const auto descriptorStart = VulkanPerf::Clock::now();
     std::array<VkDescriptorSetLayout, kPresenterSamplerCount> layouts{};
     layouts.fill(SetLayout);
     std::array<VkDescriptorSet, kPresenterSamplerCount> descriptorSets{};
@@ -1559,6 +1560,9 @@ bool VulkanPresenter::UploadLayerFromImage(
         VulkanPerf::Counter::DescriptorCreateCount,
         static_cast<u64>(descriptorSets.size()));
     VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterSrvCreateCount,
+        static_cast<u64>(descriptorSets.size()));
+    VulkanPerf::AddCounter(
         VulkanPerf::Counter::DescriptorUpdateCount,
         static_cast<u64>(writes.size()));
     VulkanPerf::AddCounter(
@@ -1567,6 +1571,14 @@ bool VulkanPresenter::UploadLayerFromImage(
     VulkanPerf::AddCounter(
         VulkanPerf::Counter::DescriptorWriteCount,
         static_cast<u64>(writes.size()));
+    // Vulkan has no descriptor-copy operation in this direct path: the
+    // image-view binding is written directly into the transient set.
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorCopyCount, 0);
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorCpuTimeNs,
+        static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            VulkanPerf::Clock::now() - descriptorStart).count()));
     return true;
 }
 

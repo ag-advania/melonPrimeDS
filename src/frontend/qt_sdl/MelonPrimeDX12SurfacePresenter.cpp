@@ -852,7 +852,17 @@ bool DX12SurfacePresenter::AllocateLayerSrv(
     desc.Texture2DArray.ArraySize = 1;
     desc.Texture2DArray.PlaneSlice = 0;
     desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+    const auto descriptorStart = melonDS::DX12Perf::Clock::now();
     Context->GetDevice()->CreateShaderResourceView(source, &desc, cpu);
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresenterSrvCreateCount);
+    if (melonDS::DX12Perf::IsEnabled())
+    {
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::PresenterDescriptorCpuTimeNs,
+            static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                melonDS::DX12Perf::Clock::now() - descriptorStart).count()));
+    }
     return true;
 }
 
