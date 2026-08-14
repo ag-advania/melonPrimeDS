@@ -1110,7 +1110,15 @@ void MainWindow::localizeMenuText()
 void MainWindow::osdAddMessage(unsigned int color, const char* msg)
 {
     if (!showOSD) return;
-    panel->osdAddMessage(color, msg);
+
+    // EmuThread can report a renderer failure while the GUI thread is
+    // replacing the presentation panel.  destroyScreenPanel() publishes a
+    // null panel under this mutex before deleting the old widget; keep the
+    // cross-thread OSD path under the same lifetime guard so a fallback
+    // message cannot dereference that intentional transition state.
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->osdAddMessage(color, msg);
 }
 
 void MainWindow::saveEnabled(bool enabled)

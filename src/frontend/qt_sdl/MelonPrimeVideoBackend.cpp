@@ -38,7 +38,13 @@ int NormalizeRendererForPlatform(int requested)
 #if defined(MELONPRIME_ENABLE_VULKAN) \
     && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const char* forceVulkan = std::getenv("MELONPRIME_FORCE_VULKAN_RENDERER");
-    if (forceVulkan && forceVulkan[0] == '1')
+    // The developer override may request Vulkan for a probe/renderer test, but
+    // it must still honor VulkanFeatureCheck::ReportRuntimeFailure(). Without
+    // this latch, a failed forced renderer emits the fallback signal, the GUI
+    // rebuilds the panel, and the next settings pass forces Vulkan again in an
+    // endless failure/fallback loop.
+    if (forceVulkan && forceVulkan[0] == '1' &&
+        VulkanFeatureCheck::IsRuntimeAvailable())
         return renderer3D_Vulkan;
 #endif
 
