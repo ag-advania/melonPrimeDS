@@ -1628,7 +1628,7 @@ test: record Google latest-ready runtime
 - [x] `git diff --check`
 - [x] macOS Vulkan build (Developer Features ON / OFF)
 - [ ] Windows Vulkan build
-- [ ] Linux Vulkan build
+- [x] Linux Vulkan build (Ubuntu VM / 2 vCPU)
 - [x] NVIDIA Reflex authority regression (model + static)
 - [x] AMD authority static regression
 - [x] TelemetryOnly default確認
@@ -1877,12 +1877,13 @@ PASS (source + pure model test + contract audit)
 | pure Vulkan present timing tests | PASS | `cmake --build build-mac-vulkan --target melonprime_vulkan_present_timing_check --parallel 4` |
 | macOS Vulkan build / Developer Features ON | PASS | `tools/build/macos/build-macos-vulkan.sh --build-only --with-metal --jobs 4` |
 | macOS Vulkan build / Developer Features OFF | PASS | `tools/build/macos/build-macos-vulkan.sh --build-only --release --with-metal --build-dir build-mac-vulkan-devguard-off --jobs 4` |
+| Linux Vulkan build / Developer Features ON | PASS | `tools/build/linux/build-linux.sh` — Ubuntu VM 2 vCPU, 307/307, linked `build-linux/melonPrimeDS` |
 | low-latency contract audit | PASS | `python3 tools/ci/audits/audit-low-latency-contract.py` |
 | aggregate Vulkan latency tests | PASS | `python3 tools/testing/aggregate-vulkan-latency-tests.py` |
 | Software parity audit | PASS | `python3 tools/ci/audits/audit-raster-software-parity.py` |
 | whitespace check | PASS | `git diff --check` |
 
-両macOS構成ともMoltenVK bundleとad-hoc signingまで完了している。純粋なmodel testはON/OFF双方のビルドで実行され、PASSを確認した。
+両macOS構成ともMoltenVK bundleとad-hoc signingまで完了している。Linux VMもVulkan headersを固定して307/307でリンクまで完了した。純粋なmodel testはmacOS ON/OFFとLinux buildで実行され、PASSを確認した。
 
 ## 32.4 未実行・別hardware gate
 
@@ -1890,8 +1891,8 @@ PASS (source + pure model test + contract audit)
 
 ```text
 NOT RUN — GOOGLE + FIFO_LATEST_READY対応hardwareのruntime実測
-NOT RUN — Windows native Vulkan build/runtime
-NOT RUN — Linux native Vulkan build/runtime
+NOT RUN — Windows native Vulkan build/runtime（macOS環境にMSYS2/MinGWなし）
+PASS    — Linux Vulkan build / NOT RUN — Linux native runtime
 OPEN    — AMD Anti-Lag 2 hardware gate
 OPEN    — native Intel Vulkan / Linux lifecycle gate
 OPEN    — Mac match-end, resize/fullscreen/minimize, reset-after-load, 30-minute AC
@@ -1905,9 +1906,9 @@ BLOCKED — bundled macOS validation-layer observable run
 ```text
 P2-1 implementation DoD: PASS
 P2-2 implementation DoD: PASS
-source/model/contract/macOS build regression: PASS
+source/model/contract/macOS/Linux build regression: PASS
 GOOGLE + FIFO_LATEST_READY physical runtime: NOT RUN
-full cross-platform/lifecycle audit: OPEN
+Windows build and full cross-platform/lifecycle runtime audit: OPEN
 ```
 
 したがって、今回の指示書で指定されたgeneric Vulkan compatibility修正は完遂済みである。一方、実機hardwareとfull lifecycleに依存する残件は、別のruntime evidence gateとして残す。
