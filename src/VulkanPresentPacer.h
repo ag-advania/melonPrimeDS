@@ -20,6 +20,45 @@
 namespace melonDS
 {
 
+// The pacer only needs this small subset of the Vulkan dispatch table.  It is
+// copied once during initialization so the presenting-thread hot path never
+// dereferences VulkanDevice or performs a dispatch-table lookup.  Keeping the
+// table value-owned also gives API-level tests a narrow fake seam without
+// introducing virtual calls or per-frame branches.
+struct VulkanPresentPacerDispatch
+{
+    PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR
+        GetPhysicalDeviceSurfaceCapabilities2KHR = nullptr;
+    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR
+        GetPhysicalDeviceSurfaceCapabilitiesKHR = nullptr;
+    PFN_vkSetSwapchainPresentTimingQueueSizeEXT
+        SetSwapchainPresentTimingQueueSizeEXT = nullptr;
+    PFN_vkWaitForPresent2KHR WaitForPresent2KHR = nullptr;
+    PFN_vkGetSwapchainTimingPropertiesEXT GetSwapchainTimingPropertiesEXT = nullptr;
+    PFN_vkGetSwapchainTimeDomainPropertiesEXT
+        GetSwapchainTimeDomainPropertiesEXT = nullptr;
+    PFN_vkGetPastPresentationTimingEXT GetPastPresentationTimingEXT = nullptr;
+    PFN_vkGetRefreshCycleDurationGOOGLE GetRefreshCycleDurationGOOGLE = nullptr;
+    PFN_vkGetPastPresentationTimingGOOGLE GetPastPresentationTimingGOOGLE = nullptr;
+};
+
+// Cold initialization inputs copied from VulkanDevice.  Extension and feature
+// booleans are intentionally raw: InitializeCommon() applies the entry-point
+// availability gates in exactly one place for both production and tests.
+struct VulkanPresentPacerInitInfo
+{
+    VkDevice Device = VK_NULL_HANDLE;
+    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
+    bool PresentId2ExtensionEnabled = false;
+    bool PresentWait2ExtensionEnabled = false;
+    bool PresentTimingExtensionEnabled = false;
+    bool GoogleDisplayTimingExtensionEnabled = false;
+    bool GoogleDisplayTimingFeatureEnabled = false;
+    bool PresentAtAbsoluteTimeFeatureEnabled = false;
+    bool PresentAtRelativeTimeFeatureEnabled = false;
+    bool LatestReadyExtensionEnabled = false;
+};
+
 // vkWaitForPresent2KHR has a different success/status contract from the
 // timing-query entry points. Keep that contract explicit and pure so a
 // SUBOPTIMAL result cannot fall through to DisableWait(), while timeout stays
@@ -239,6 +278,14 @@ public:
     };
 
     bool Initialize(const VulkanDevice& device, VkSurfaceKHR surface);
+#if defined(MELONPRIME_VULKAN_PRESENT_PACER_TESTING)
+    // Uses the same cold initialization path as production while allowing an
+    // API-level fake dispatch to drive the real pacer state machine.
+    bool InitializeForTesting(
+        const VulkanPresentPacerDispatch& dispatch,
+        const VulkanPresentPacerInitInfo& info,
+        VkSurfaceKHR surface);
+#endif
     void Shutdown() noexcept;
 
     void SetPolicy(int value) noexcept;
@@ -344,6 +391,10 @@ public:
     [[nodiscard]] StateSnapshot CaptureState(const PresentMetadata& metadata) const noexcept;
 
 private:
+    bool InitializeCommon(
+        const VulkanPresentPacerDispatch& dispatch,
+        const VulkanPresentPacerInitInfo& info,
+        VkSurfaceKHR surface);
     // Snapshots every capability the pure resolver needs. Building it is a few
     // bool copies; it is not a driver query.
     [[nodiscard]] VulkanPacingCapabilities BuildCapabilities() const noexcept;
@@ -372,7 +423,9 @@ private:
     void DisableWait(const char* reason);
     void LogTargetSchedulingIfChanged();
 
-    const VulkanDevice* Device = nullptr;
+    VulkanPresentPacerDispatch Dispatch{};
+    VkDevice DeviceHandle = VK_NULL_HANDLE;
+    VkPhysicalDevice PhysicalDeviceHandle = VK_NULL_HANDLE;
     VkSurfaceKHR Surface = VK_NULL_HANDLE;
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;

@@ -251,43 +251,101 @@ const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept
 
 bool VulkanPresentPacer::Initialize(const VulkanDevice& device, VkSurfaceKHR surface)
 {
+    const Vk::InstanceDispatch& instanceFns = device.InstanceFns();
+    const Vk::DeviceDispatch& deviceFns = device.Fns();
+
+    VulkanPresentPacerDispatch dispatch;
+    dispatch.GetPhysicalDeviceSurfaceCapabilities2KHR =
+        instanceFns.GetPhysicalDeviceSurfaceCapabilities2KHR;
+    dispatch.GetPhysicalDeviceSurfaceCapabilitiesKHR =
+        instanceFns.GetPhysicalDeviceSurfaceCapabilitiesKHR;
+    dispatch.SetSwapchainPresentTimingQueueSizeEXT =
+        deviceFns.SetSwapchainPresentTimingQueueSizeEXT;
+    dispatch.WaitForPresent2KHR = deviceFns.WaitForPresent2KHR;
+    dispatch.GetSwapchainTimingPropertiesEXT = deviceFns.GetSwapchainTimingPropertiesEXT;
+    dispatch.GetSwapchainTimeDomainPropertiesEXT =
+        deviceFns.GetSwapchainTimeDomainPropertiesEXT;
+    dispatch.GetPastPresentationTimingEXT = deviceFns.GetPastPresentationTimingEXT;
+    dispatch.GetRefreshCycleDurationGOOGLE = deviceFns.GetRefreshCycleDurationGOOGLE;
+    dispatch.GetPastPresentationTimingGOOGLE = deviceFns.GetPastPresentationTimingGOOGLE;
+
+    VulkanPresentPacerInitInfo info;
+    info.Device = device.GetHandle();
+    info.PhysicalDevice = device.GetPhysicalDevice();
+    info.PresentId2ExtensionEnabled =
+        HasEnabledExtension(device, VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
+    info.PresentWait2ExtensionEnabled =
+        HasEnabledExtension(device, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME);
+    info.PresentTimingExtensionEnabled =
+        HasEnabledExtension(device, VK_EXT_PRESENT_TIMING_EXTENSION_NAME);
+    info.GoogleDisplayTimingExtensionEnabled =
+        HasEnabledExtension(device, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+    info.GoogleDisplayTimingFeatureEnabled =
+        device.GetPresentTimingFeatures().GoogleDisplayTiming;
+    info.PresentAtAbsoluteTimeFeatureEnabled =
+        device.GetPresentTimingFeatures().PresentAtAbsoluteTime;
+    info.PresentAtRelativeTimeFeatureEnabled =
+        device.GetPresentTimingFeatures().PresentAtRelativeTime;
+    info.LatestReadyExtensionEnabled = HasEnabledExtension(
+        device, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+    return InitializeCommon(dispatch, info, surface);
+}
+
+#if defined(MELONPRIME_VULKAN_PRESENT_PACER_TESTING)
+bool VulkanPresentPacer::InitializeForTesting(
+    const VulkanPresentPacerDispatch& dispatch,
+    const VulkanPresentPacerInitInfo& info,
+    VkSurfaceKHR surface)
+{
+    return InitializeCommon(dispatch, info, surface);
+}
+#endif
+
+bool VulkanPresentPacer::InitializeCommon(
+    const VulkanPresentPacerDispatch& dispatch,
+    const VulkanPresentPacerInitInfo& info,
+    VkSurfaceKHR surface)
+{
     Shutdown();
-    Device = &device;
+    Dispatch = dispatch;
+    DeviceHandle = info.Device;
+    PhysicalDeviceHandle = info.PhysicalDevice;
     Surface = surface;
-    Caps2Available = device.InstanceFns().GetPhysicalDeviceSurfaceCapabilities2KHR != nullptr;
-    PresentId2Device = HasEnabledExtension(device, VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
-    PresentWait2Device = HasEnabledExtension(device, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME)
-        && device.Fns().WaitForPresent2KHR;
-    PresentTimingDevice = HasEnabledExtension(device, VK_EXT_PRESENT_TIMING_EXTENSION_NAME)
-        && device.Fns().GetSwapchainTimingPropertiesEXT
-        && device.Fns().GetPastPresentationTimingEXT;
+    Caps2Available = Dispatch.GetPhysicalDeviceSurfaceCapabilities2KHR != nullptr;
+    PresentId2Device = info.PresentId2ExtensionEnabled;
+    PresentWait2Device = info.PresentWait2ExtensionEnabled
+        && Dispatch.WaitForPresent2KHR;
+    PresentTimingDevice = info.PresentTimingExtensionEnabled
+        && Dispatch.GetSwapchainTimingPropertiesEXT
+        && Dispatch.GetPastPresentationTimingEXT;
     GoogleDisplayTimingDevice =
-        HasEnabledExtension(device, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME)
-        && device.GetPresentTimingFeatures().GoogleDisplayTiming
-        && device.Fns().GetPastPresentationTimingGOOGLE
-        && device.Fns().GetRefreshCycleDurationGOOGLE;
+        info.GoogleDisplayTimingExtensionEnabled
+        && info.GoogleDisplayTimingFeatureEnabled
+        && Dispatch.GetPastPresentationTimingGOOGLE
+        && Dispatch.GetRefreshCycleDurationGOOGLE;
     GoogleDisplayTimingRuntimeEnabled = GoogleDisplayTimingDevice;
     // Absolute target scheduling additionally needs the feature bit that
     // vkCreateDevice enabled and the entry point that enumerates the swapchain's
     // time domains; without the latter there is no legal timeDomainId to name.
-    TimeDomainQueryAvailable = device.Fns().GetSwapchainTimeDomainPropertiesEXT != nullptr;
+    TimeDomainQueryAvailable = Dispatch.GetSwapchainTimeDomainPropertiesEXT != nullptr;
     AbsoluteTimingDevice = PresentTimingDevice && TimeDomainQueryAvailable
-        && device.GetPresentTimingFeatures().PresentAtAbsoluteTime;
+        && info.PresentAtAbsoluteTimeFeatureEnabled;
     // A relative target is a duration and needs no clock of its own, but the
     // metadata carrying it still has a mandatory timeDomainId, so the
     // time-domain query is required for this mode too.
     RelativeTimingDevice = PresentTimingDevice && TimeDomainQueryAvailable
-        && device.GetPresentTimingFeatures().PresentAtRelativeTime;
-    LatestReadyDevice = HasEnabledExtension(
-        device, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+        && info.PresentAtRelativeTimeFeatureEnabled;
+    LatestReadyDevice = info.LatestReadyExtensionEnabled;
     WaitRuntimeEnabled = PresentWait2Device;
-    return Device && Surface != VK_NULL_HANDLE;
+    return DeviceHandle != VK_NULL_HANDLE && Surface != VK_NULL_HANDLE;
 }
 
 void VulkanPresentPacer::Shutdown() noexcept
 {
     OnSwapchainDestroyed();
-    Device = nullptr;
+    Dispatch = {};
+    DeviceHandle = VK_NULL_HANDLE;
+    PhysicalDeviceHandle = VK_NULL_HANDLE;
     Surface = VK_NULL_HANDLE;
     Caps2Available = false;
     PresentId2Device = false;
@@ -330,7 +388,7 @@ VulkanPresentPacingPolicy VulkanPresentPacer::GetPolicy() const noexcept
 
 bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capabilities)
 {
-    if (!Device || Surface == VK_NULL_HANDLE)
+    if (DeviceHandle == VK_NULL_HANDLE || Surface == VK_NULL_HANDLE)
         return false;
 
     PresentId2Surface = false;
@@ -343,7 +401,7 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
     PresentStageQueries = 0;
     TargetPresentStage = 0;
 
-    const Vk::InstanceDispatch& fns = Device->InstanceFns();
+    const VulkanPresentPacerDispatch& fns = Dispatch;
     if (Caps2Available)
     {
         VkSurfaceCapabilitiesPresentId2KHR id2{};
@@ -377,7 +435,7 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
         caps2.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
         caps2.pNext = chain;
         const VkResult result = fns.GetPhysicalDeviceSurfaceCapabilities2KHR(
-            Device->GetPhysicalDevice(), &surfaceInfo, &caps2);
+            PhysicalDeviceHandle, &surfaceInfo, &caps2);
         if (result == VK_SUCCESS)
         {
             capabilities = caps2.surfaceCapabilities;
@@ -407,7 +465,7 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
     }
 
     const VkResult legacy = fns.GetPhysicalDeviceSurfaceCapabilitiesKHR(
-        Device->GetPhysicalDevice(), Surface, &capabilities);
+        PhysicalDeviceHandle, Surface, &capabilities);
     return legacy == VK_SUCCESS;
 }
 
@@ -453,7 +511,7 @@ bool VulkanPresentPacer::ShouldUseFifoLatestReady() const noexcept
 
     const VulkanPresentTimingBackend backend = SelectVulkanPresentTargetBackend(caps);
     if (backend == VulkanPresentTimingBackend::GoogleDisplayTiming)
-        return Device != nullptr;
+        return DeviceHandle != VK_NULL_HANDLE;
 
     // EXT still needs the time-domain and results-queue entry points because
     // its target metadata is carried by VK_EXT_present_timing.
@@ -462,8 +520,8 @@ bool VulkanPresentPacer::ShouldUseFifoLatestReady() const noexcept
     return backend == VulkanPresentTimingBackend::ExtPresentTiming
         && (absoluteCapable || relativeCapable)
         && TimeDomainQueryAvailable
-        && Device != nullptr
-        && Device->Fns().SetSwapchainPresentTimingQueueSizeEXT != nullptr;
+        && DeviceHandle != VK_NULL_HANDLE
+        && Dispatch.SetSwapchainPresentTimingQueueSizeEXT != nullptr;
 }
 
 VkPresentStageFlagsEXT VulkanPresentPacer::RequestedStageQueries() const noexcept
@@ -482,14 +540,14 @@ VkPresentStageFlagsEXT VulkanPresentPacer::RequestedStageQueries() const noexcep
 
 bool VulkanPresentPacer::ApplyTimingQueueSize(u32 size)
 {
-    if (!Device || Swapchain == VK_NULL_HANDLE
-        || !Device->Fns().SetSwapchainPresentTimingQueueSizeEXT)
+    if (DeviceHandle == VK_NULL_HANDLE || Swapchain == VK_NULL_HANDLE
+        || !Dispatch.SetSwapchainPresentTimingQueueSizeEXT)
     {
         return false;
     }
 
-    const VkResult result = Device->Fns().SetSwapchainPresentTimingQueueSizeEXT(
-        Device->GetHandle(), Swapchain, size);
+    const VkResult result = Dispatch.SetSwapchainPresentTimingQueueSizeEXT(
+        DeviceHandle, Swapchain, size);
     if (result != VK_SUCCESS)
     {
         Platform::Log(Platform::LogLevel::Warn,
@@ -783,8 +841,8 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
 
     WaitAttemptedThisFrame = true;
     WaitAttemptSwapchainGeneration = SwapchainGeneration;
-    const VkResult result = Device->Fns().WaitForPresent2KHR(
-        Device->GetHandle(), Swapchain, &wait);
+    const VkResult result = Dispatch.WaitForPresent2KHR(
+        DeviceHandle, Swapchain, &wait);
     LastWaitedId = LastPresentedId;
     switch (ClassifyVulkanPresentWait2Result(result))
     {
@@ -1210,7 +1268,7 @@ void VulkanPresentPacer::NotifyPresentResult(
 VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()
 {
     if (!PresentTimingSurface || Swapchain == VK_NULL_HANDLE
-        || !Device->Fns().GetSwapchainTimingPropertiesEXT)
+        || !Dispatch.GetSwapchainTimingPropertiesEXT)
     {
         TimingPropertiesRetryPending = false;
         return VulkanPacerBeginResult::Continue;
@@ -1219,8 +1277,8 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()
     VkSwapchainTimingPropertiesEXT properties{};
     properties.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_TIMING_PROPERTIES_EXT;
     u64 counter = 0;
-    const VkResult result = Device->Fns().GetSwapchainTimingPropertiesEXT(
-        Device->GetHandle(), Swapchain, &properties, &counter);
+    const VkResult result = Dispatch.GetSwapchainTimingPropertiesEXT(
+        DeviceHandle, Swapchain, &properties, &counter);
 
     const VulkanPresentTimingQueryAction queryAction =
         ClassifyVulkanTimingPropertiesResult(result);
@@ -1303,8 +1361,8 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()
         properties.timeDomainCount = 0;
         properties.pTimeDomains = nullptr;
         properties.pTimeDomainIds = nullptr;
-        VkResult result = Device->Fns().GetSwapchainTimeDomainPropertiesEXT(
-            Device->GetHandle(), Swapchain, &properties, &counter);
+        VkResult result = Dispatch.GetSwapchainTimeDomainPropertiesEXT(
+            DeviceHandle, Swapchain, &properties, &counter);
         const VulkanPresentTimingQueryAction countAction =
             ClassifyVulkanTimeDomainResult(result);
         if (countAction == VulkanPresentTimingQueryAction::RetryEnumeration)
@@ -1346,8 +1404,8 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()
         domainIds.assign(properties.timeDomainCount, 0);
         properties.pTimeDomains = domains.data();
         properties.pTimeDomainIds = domainIds.data();
-        result = Device->Fns().GetSwapchainTimeDomainPropertiesEXT(
-            Device->GetHandle(), Swapchain, &properties, &counter);
+        result = Dispatch.GetSwapchainTimeDomainPropertiesEXT(
+            DeviceHandle, Swapchain, &properties, &counter);
         const VulkanPresentTimingQueryAction arrayAction =
             ClassifyVulkanTimeDomainResult(result);
         if (arrayAction == VulkanPresentTimingQueryAction::Continue)
@@ -1460,16 +1518,16 @@ void VulkanPresentPacer::SelectTargetPresentStage() noexcept
 
 VulkanPacerBeginResult VulkanPresentPacer::RefreshGoogleTiming()
 {
-    if (!GoogleDisplayTimingRuntimeEnabled || !Device
-        || Swapchain == VK_NULL_HANDLE || !Device->Fns().GetRefreshCycleDurationGOOGLE)
+    if (!GoogleDisplayTimingRuntimeEnabled || DeviceHandle == VK_NULL_HANDLE
+        || Swapchain == VK_NULL_HANDLE || !Dispatch.GetRefreshCycleDurationGOOGLE)
     {
         GoogleRefreshDurationReady = false;
         return VulkanPacerBeginResult::Continue;
     }
 
     VkRefreshCycleDurationGOOGLE duration{};
-    const VkResult result = Device->Fns().GetRefreshCycleDurationGOOGLE(
-        Device->GetHandle(), Swapchain, &duration);
+    const VkResult result = Dispatch.GetRefreshCycleDurationGOOGLE(
+        DeviceHandle, Swapchain, &duration);
     if (result == VK_SUCCESS && duration.refreshDuration != 0)
     {
         RefreshDurationNs = duration.refreshDuration;
@@ -1500,7 +1558,8 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshGoogleTiming()
 
 VulkanPacerBeginResult VulkanPresentPacer::ReportGooglePastTiming()
 {
-    if (!GoogleDisplayTimingRuntimeEnabled || !Device || Swapchain == VK_NULL_HANDLE)
+    if (!GoogleDisplayTimingRuntimeEnabled || DeviceHandle == VK_NULL_HANDLE
+        || Swapchain == VK_NULL_HANDLE)
         return VulkanPacerBeginResult::Continue;
     if (!GoogleRefreshDurationReady)
     {
@@ -1511,8 +1570,8 @@ VulkanPacerBeginResult VulkanPresentPacer::ReportGooglePastTiming()
 
     std::array<VkPastPresentationTimingGOOGLE, 16> reports{};
     u32 count = static_cast<u32>(reports.size());
-    const VkResult result = Device->Fns().GetPastPresentationTimingGOOGLE(
-        Device->GetHandle(), Swapchain, &count, reports.data());
+    const VkResult result = Dispatch.GetPastPresentationTimingGOOGLE(
+        DeviceHandle, Swapchain, &count, reports.data());
     const VulkanPresentTimingQueryAction queryAction =
         ClassifyVulkanGooglePastTimingResult(result);
     if (queryAction != VulkanPresentTimingQueryAction::Continue)
@@ -1580,8 +1639,8 @@ VulkanPacerBeginResult VulkanPresentPacer::ReportPastTiming()
     properties.sType = VK_STRUCTURE_TYPE_PAST_PRESENTATION_TIMING_PROPERTIES_EXT;
     properties.presentationTimingCount = static_cast<u32>(reports.size());
     properties.pPresentationTimings = reports.data();
-    const VkResult result = Device->Fns().GetPastPresentationTimingEXT(
-        Device->GetHandle(), &info, &properties);
+    const VkResult result = Dispatch.GetPastPresentationTimingEXT(
+        DeviceHandle, &info, &properties);
     if (result != VK_SUCCESS && result != VK_INCOMPLETE)
     {
         const VulkanPresentTimingQueryAction queryAction =

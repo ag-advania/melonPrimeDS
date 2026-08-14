@@ -464,16 +464,18 @@ with no Vulkan objects at all and is executed by
 `melonprime_vulkan_present_timing_tests` on every Vulkan build.
 
 Both lifecycle queries behind it are dynamic. `vkGetSwapchainTimingPropertiesEXT`
-and `vkGetSwapchainTimeDomainPropertiesEXT` may answer `VK_NOT_READY` before the
-first present -- a pending state, not a failure -- and are retried once presents
-are being accepted. `timingPropertiesCounter` and `timeDomainsCounter` from each
-drained results batch are compared against the stored values, so a refresh-rate
-change, fullscreen transition, power-state change or VRR/FRR switch re-queries
-them. A time-domain change or a report answered in an unexpected domain drops
-the baseline rather than projecting a target on a clock the timestamps did not
-come from. The target time domain is `SWAPCHAIN_LOCAL`, falling back to
-`PRESENT_STAGE_LOCAL`, and the stage is the most display-visible one the surface
-reports.
+may answer `VK_NOT_READY` before the first present -- a pending state, not a
+failure -- and is retried once presents are being accepted. Time-domain
+enumeration follows Vulkan's count/array contract: it accepts `VK_SUCCESS`,
+retries a bounded `VK_INCOMPLETE` result, and does not treat `VK_NOT_READY` as a
+valid pending response. `timingPropertiesCounter` and `timeDomainsCounter` from
+each drained results batch are compared against the stored values, so a
+refresh-rate change, fullscreen transition, power-state change or VRR/FRR
+switch re-queries them. A time-domain change or a report answered in an
+unexpected domain drops the baseline rather than projecting a target on a clock
+the timestamps did not come from. The target time domain is
+`SWAPCHAIN_LOCAL`, falling back to `PRESENT_STAGE_LOCAL`, and the stage is the
+most display-visible one the surface reports.
 
 The bounded present wait and target-time scheduling are **independent
 capabilities**, resolved together once per frame by `ResolveVulkanPresentPacing()`

@@ -1,0 +1,98 @@
+# Vulkan present-pacer dispatch re-audit
+
+Date: 2026-08-14 (JST)
+
+Repository: `develop_remakeVulkan_ver3`
+
+Baseline: `4e7579359371` (`add md`)
+Working tree: source changes are uncommitted; pre-existing `.codex/` and `docs/development/codex/` changes are outside this audit.
+
+## Root cause
+
+The previous audit proved only pure Vulkan present-timing classifiers and presenter-action mapping. The production `VulkanPresentPacer` dispatch path was not linked into the test target, so a fake Vulkan result could not be shown to reach the production state machine, generation/capture invalidation, queue-pressure handling, or presenter action.
+
+The first Linux re-build also exposed a portability defect in the new test wiring: `vulkan-present-timing-tests.cpp` includes `VulkanPresentPacer.h`, but the pure timing target did not propagate `MELONPRIME_VULKAN_INCLUDE_DIR`. The target failed with `vulkan/vulkan.h: No such file or directory`. This was corrected in the same Vulkan-active CMake block.
+
+## Implementation plan and result
+
+1. Keep hot-path behavior unchanged and introduce a value-owned `VulkanPresentPacerDispatch` containing only the nine timing/lifecycle PFNs used by the pacer.
+2. Copy production PFNs and handles once during initialization; use the same `InitializeCommon` path for production and the test-only `InitializeForTesting` seam.
+3. Add a separate fake-dispatch executable that compiles the production pacer implementation and drives scripted Vulkan results through it.
+4. Cover every contract-relevant result class, retry/disable behavior, queue allocation pressure, generation/capture fallback, and same-frame swapchain recreation plus lifecycle failure.
+5. Propagate the pinned Vulkan include directory to both Vulkan test targets and re-run macOS, Linux, static, and physical F2 checks.
+
+## Luna workers
+
+- `pacer_dispatch_design` (Luna read-only): mapped production dispatch calls, state transitions, and the minimal SRP/KISS seam.
+- `presenter_route_audit` (Luna read-only): audited `BeginFrame`/`EndFrame` routing and Vulkan result contracts; identified the documentation drift for `VK_NOT_READY` on time-domain queries.
+- `implement_pacer_fake_dispatch` (Luna Max): implemented the dispatch seam, production direct-PFN path, fake API-level tests, CMake target, audit assertions, and documentation correction. A follow-up was delegated for the three gaps found by main review (same-frame lifecycle failure, exhausted time-domain retry, and queue allocation failure); all were fixed and re-audited.
+- `fix_linux_vulkan_test_includes` (Luna Max): added `${MELONPRIME_VULKAN_INCLUDE_DIR}` to the pure timing target, verified Vulkan ON/OFF target conditioning, and passed the macOS target build/tests.
+
+## Actual changed files
+
+- `src/VulkanPresentPacer.h`
+- `src/VulkanPresentPacer.cpp`
+- `tools/testing/vulkan-present-pacer-dispatch-tests.cpp`
+- `src/frontend/qt_sdl/CMakeLists.txt`
+- `tools/ci/audits/audit-low-latency-contract.py`
+- `docs/features/rendering/vulkan-backend.md`
+- `docs/archive/audits/vulkan/2026-08-14-present-pacer-dispatch/f2-runtime.log`
+- this `README.md`
+
+The unrelated pre-existing worktree entries `.codex/config.toml`, `.codex/agents/`, and `docs/development/codex/` were preserved and not included in this audit change set.
+
+## Test and build results
+
+### Production/fake coverage
+
+`melonprime_vulkan_present_pacer_dispatch_tests` passes on macOS and Linux. It exercises fake calls through production code for:
+
+- `WaitForPresent2KHR`: `TIMEOUT`, `SUBOPTIMAL`, `OUT_OF_DATE`, `DEVICE_LOST`, `SURFACE_LOST`, success, and unknown/disabled-wait handling.
+- `GetPastPresentationTimingEXT`: `INCOMPLETE`, lifecycle failures, success, and optional disable.
+- `GetSwapchainTimingPropertiesEXT`: `NOT_READY` retry and `SURFACE_LOST` failure.
+- `GetSwapchainTimeDomainPropertiesEXT`: count/array success, bounded `INCOMPLETE` retry, retry exhaustion after a present, `SURFACE_LOST`, and missing-domain behavior.
+- `GetRefreshCycleDurationGOOGLE` and `GetPastPresentationTimingGOOGLE`: success, incomplete, lifecycle failures, and optional disable.
+- queue-size allocation failure and queue-pressure recovery.
+- same-frame swapchain recreation with eager lifecycle failure, generation invalidation, backend-none capture fallback, and next-frame typed failure/action routing.
+
+`melonprime_vulkan_present_timing_tests` also passes. `python3 tools/ci/audits/audit-low-latency-contract.py` and `python3 tools/ci/audits/audit-raster-software-parity.py` pass. `python3 tools/ci/audits/check-vulkan-shaders.py` passes: 111 modules compiled/validated, 592 scale-specialized modules validated, and arithmetic checked for scales 1..16.
+
+### macOS
+
+- Developer-features ON Vulkan/Metal build: PASS (approved wrapper, `--jobs 4`).
+- Release-features OFF Vulkan/Metal build: PASS (219/219).
+- Pure and fake timing targets: PASS.
+- Deep strict codesign verification for both bundles: PASS.
+- Runtime bundle contains x86_64 MoltenVK and uses the bundled loader.
+
+### Linux
+
+The clean VirtualBox Ubuntu build completed with the pinned Vulkan-Headers revision and two guest CPUs: `313/313`, including production `VulkanPresentPacer.cpp`, pure timing test PASS, fake-dispatch test PASS, and final `melonPrimeDS` link PASS. Wayland pointer lock remained `AUTO`; the build selected the X11/Qt fallback because `wayland-protocols` is absent.
+
+### Windows and validation layer
+
+- Windows: `NOT RUN`. This macOS host has no MinGW/MSYS2 or `cl.exe`; no Windows runner is available.
+- Khronos validation layer: `BLOCKED/NOT RUN` for the packaged runtime. The bundle intentionally loads its direct MoltenVK dylib, so this physical run does not claim validation-layer coverage. No validation VUID or device-loss result was observed in the runtime log.
+
+## F2 runtime evidence
+
+The current developer bundle was run with the verified Japanese ROM and F2 state:
+
+- ROM: `/Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).nds`, SHA-256 `8116cff4964daa430c4c4039170ecd063348fc6f768636b9bc3a19a951306e02` (game code `AMHJ`).
+- State: `/Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).ml2`, SHA-256 `fb8bb5c3c590a5a13a88681653a2fee030513cce5e9a50eeca2d7c37097a5932`.
+- `MELONPRIME_TEST_SAVESTATE_UNPAUSE=1` loaded the state and emitted `loaded=1`; the user then reloaded the longer match state. Runtime resolution stayed at `1x`; no 16x setting was used.
+- Vulkan selected Intel Iris Plus Graphics 655, FIFO/VSync, and Google display timing JIT. The app remained alive for over 30 minutes; the screen was visibly in-match and changed across delayed screenshots. Three resize/minimize/restore cycles completed and returned to the original 256x412 window.
+- During the simultaneous two-CPU Linux LTO link, the title temporarily showed about 35/60. Immediately after the VM link completed it recovered to 58–60/60 (sample `60/60`, average 16.65 ms); later in the longer match it remained live with samples around 49/60 (`20.30 ms` average). This is host/contention and scene-load evidence, not a renderer freeze.
+- `/tmp/melonprime-f2-runtime.log` was archived as `f2-runtime.log`; only the repository copy is part of this audit.
+
+## Final audit
+
+PASS for the requested production fake-dispatch hardening and lifecycle/result routing. The value-owned dispatch has no test branch, virtual call, lock, `std::function`, or per-frame allocation. Production and test initialization share the same capability/state setup. Enum ordering, generation separation, reset fallback, capture invalidation, and presenter action mapping were re-checked after the follow-up fixes.
+
+The confusing Japanese-named temporary copy `lastRavenRom.nds` is no longer present. The remaining `mphLastRaven.nds` and `Last Raven's balanced MPH V1.2.11.nds` files are the same AMHP ROM (not the Japanese AMHJ ROM) and were intentionally left untouched.
+
+## Remaining risks
+
+- Windows compilation/runtime and Khronos validation-layer execution still require their respective environments.
+- No physical Linux Vulkan/F2 run was claimed; the Linux result is a clean compile and test execution inside the VM.
+- The F2 runtime log is an Intel macOS developer run, not a cross-GPU or long-term visual-parity certification. The 1x setting was deliberately retained for the low-spec machine.

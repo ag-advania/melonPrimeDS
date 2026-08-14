@@ -87,6 +87,9 @@ def main() -> int:
     vulkan_latency_capture = read("src/VulkanPresentLatencyCapture.cpp")
     vulkan_pacing_policy = read("src/VulkanPresentPacingPolicy.h")
     vulkan_timing_tests = read("tools/testing/vulkan-present-timing-tests.cpp")
+    vulkan_dispatch_tests = read(
+        "tools/testing/vulkan-present-pacer-dispatch-tests.cpp"
+    )
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
     vulkan_compat = read("src/VulkanModernPresentCompat.h")
     vulkan_device = read("src/VulkanDevice.cpp")
@@ -1017,6 +1020,84 @@ def main() -> int:
         and "melonprime_vulkan_present_timing_tests" in cmake
         and "melonprime_vulkan_present_timing_check" in cmake,
         "the pure presentation timing model must be built and executed by every Vulkan build",
+        failures,
+    )
+    # The pure model target cannot observe Vulkan call results or production
+    # state transitions. Keep a separate API-level fake-dispatch target that
+    # compiles the production pacer directly and drives every optional query.
+    require(
+        all(token in vulkan_pacer_header for token in (
+            "struct VulkanPresentPacerDispatch",
+            "PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR",
+            "PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR",
+            "PFN_vkSetSwapchainPresentTimingQueueSizeEXT",
+            "PFN_vkWaitForPresent2KHR",
+            "PFN_vkGetSwapchainTimingPropertiesEXT",
+            "PFN_vkGetSwapchainTimeDomainPropertiesEXT",
+            "PFN_vkGetPastPresentationTimingEXT",
+            "PFN_vkGetRefreshCycleDurationGOOGLE",
+            "PFN_vkGetPastPresentationTimingGOOGLE",
+            "struct VulkanPresentPacerInitInfo",
+            "InitializeCommon(",
+            "InitializeForTesting(",
+        ))
+        and "InitializeCommon(dispatch, info, surface)" in vulkan_pacer
+        and "Dispatch.GetSwapchainTimingPropertiesEXT" in vulkan_pacer
+        and "Dispatch.GetSwapchainTimeDomainPropertiesEXT" in vulkan_pacer
+        and "Dispatch.GetPastPresentationTimingEXT" in vulkan_pacer
+        and "Dispatch.WaitForPresent2KHR" in vulkan_pacer
+        and "Dispatch.SetSwapchainPresentTimingQueueSizeEXT" in vulkan_pacer
+        and "melonprime_vulkan_present_pacer_dispatch_tests" in cmake
+        and "${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPresentPacer.cpp" in cmake
+        and "MELONPRIME_VULKAN_PRESENT_PACER_TESTING=1" in cmake
+        and "target_link_libraries(melonprime_vulkan_present_pacer_dispatch_tests PRIVATE core)"
+            in cmake
+        and all(token in vulkan_dispatch_tests for token in (
+            "TestWaitResults",
+            "TestExtPastResults",
+            "TestTimingProperties",
+            "TestTimeDomainsSuccessAndRetry",
+            "TestTimeDomainIncompleteExhaustion",
+            "TestGoogleRefresh",
+            "TestGooglePast",
+            "TestQueuePressureAndRetry",
+            "TestTimingQueueAllocationFailure",
+            "TestSameFrameRecreationCapture",
+            "TestSameFrameRecreationWithLifecycleFailure",
+            "VulkanPacerActionFor",
+            "CaptureState",
+            "FrameDecisionInvalidatedBySwapchainRecreation",
+            "VK_SUCCESS",
+            "VK_TIMEOUT",
+            "VK_SUBOPTIMAL_KHR",
+            "VK_ERROR_OUT_OF_DATE_KHR",
+            "VK_ERROR_DEVICE_LOST",
+            "VK_ERROR_SURFACE_LOST_KHR",
+            "VK_ERROR_UNKNOWN",
+            "VK_INCOMPLETE",
+            "VK_NOT_READY",
+            "GetSurfaceCapabilities2",
+            "GetSurfaceCapabilities",
+            "SetQueueSize",
+            "WaitForPresent2",
+            "GetTimingProperties",
+            "GetTimeDomains",
+            "GetExtPastTiming",
+            "GetGoogleRefresh",
+            "GetGooglePast",
+            "WaitTimeouts",
+            "TimeDomainCountCalls",
+            "TimingQueueFullCount",
+            "ReportTimeDomainsCounter = 0",
+            "fake.TimeDomainCountCalls == 3",
+            "fake.TimeDomainCountCalls == 4",
+            "VK_ERROR_OUT_OF_HOST_MEMORY",
+            "fake.QueueSizeCalls == 1",
+            "metadata.TimingBackend == VulkanPresentTimingBackend::None",
+            "result == VulkanPacerBeginResult::SurfaceLost",
+            "action.FailRenderer && !action.RebuildSwapchain",
+        )),
+        "production VulkanPresentPacer must have a direct fake-dispatch state/action/generation test target",
         failures,
     )
     require(

@@ -498,7 +498,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
     add_executable(melonprime_vulkan_present_timing_tests EXCLUDE_FROM_ALL
         ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-present-timing-tests.cpp)
     target_include_directories(melonprime_vulkan_present_timing_tests PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
     target_compile_definitions(melonprime_vulkan_present_timing_tests PRIVATE
         MELONPRIME_DS
         MELONPRIME_ENABLE_VULKAN=1)
@@ -508,6 +509,29 @@ if (MELONPRIME_VULKAN_ACTIVE)
         COMMAND $<TARGET_FILE:melonprime_vulkan_present_timing_tests>
         DEPENDS melonprime_vulkan_present_timing_tests
         COMMENT "Running Vulkan present timing model tests..."
+        VERBATIM)
+
+    # Execute the production pacer against an API-level fake dispatch.  The
+    # test compiles VulkanPresentPacer.cpp directly so every fake call reaches
+    # the same state machine as the emulator; core supplies VulkanDevice and
+    # common Vulkan utility symbols without extracting a second pacer object.
+    add_executable(melonprime_vulkan_present_pacer_dispatch_tests
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-present-pacer-dispatch-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPresentPacer.cpp)
+    target_include_directories(melonprime_vulkan_present_pacer_dispatch_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_present_pacer_dispatch_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        MELONPRIME_VULKAN_PRESENT_PACER_TESTING=1)
+    target_link_libraries(melonprime_vulkan_present_pacer_dispatch_tests PRIVATE core)
+    set_target_properties(melonprime_vulkan_present_pacer_dispatch_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_present_pacer_dispatch_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_present_pacer_dispatch_tests>
+        DEPENDS melonprime_vulkan_present_pacer_dispatch_tests
+        COMMENT "Running Vulkan present pacer fake-dispatch tests..."
         VERBATIM)
 
     # One platform adapter per target OS. Each is additionally guarded by its

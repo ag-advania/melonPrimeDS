@@ -1,2 +1,13 @@
-# ~/.codex/config.toml
+# Project-scoped .codex/config.toml
 project_doc_fallback_filenames = ["CLAUDE.md"]
+
+# Keep the primary task on Sol. The Luna selection belongs to the explicit
+# luna_worker custom agent below, so it cannot replace the main Model picker.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+
+# Keep delegation bounded by a project default. Adjust this value when the
+# active execution environment has different parallel-work requirements.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 4
