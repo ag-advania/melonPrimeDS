@@ -2528,3 +2528,57 @@ docs/features/rendering/vulkan-backend.md
 ```
 
 source/P4の残件はなく、残るのは上記のplatform/runtime validationである。
+
+---
+
+# 48. MacBook側追加実施（2026-08-14）
+
+Windows側の作業範囲には手を付けず、このIntel macOSホストで実行可能な
+validation-layer / F2 runtimeだけを追加確認した。対象ソースHEADは
+`fd8e5c69e`（`Close Vulkan present-pacer audit follow-up`）。
+
+## 実施内容
+
+```text
+build:
+  tools/build/macos/build_macos_metal_n_vulkan.command
+    --jobs 4 --debug --no-bundle
+    --build-dir build-mac-vulkan-validation
+
+runtime:
+  Vulkan loader: Homebrew vulkan-loader (libvulkan.1.dylib)
+  ICD: Homebrew MoltenVK 1.4.2
+  layer: VK_LAYER_KHRONOS_validation
+  ROM: /Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).nds
+  state: /Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).ml2
+  state-unpause: MELONPRIME_TEST_SAVESTATE_UNPAUSE=1
+  renderer: Vulkan
+  internal resolution: 1x
+  duration: 60 seconds (harness timeout; returncode -9 is intentional kill)
+```
+
+F2 stateは `loaded=1`、実rendererは `Vulkan`、GPUは Intel Iris Plus
+Graphics 655、present modeは FIFO、低遅延経路は
+`google_display_timing` の JustInTime であることを確認した。validation
+layerは `instance created ... 1 layers` と
+`[Vulkan] validation layer enabled` で有効化され、VUIDおよびvalidation
+ERRORは0件だった。validation channelにはMoltenVKの既知警告
+`mvk-warn: VK_ERROR_FEATURE_NOT_PRESENT`（primitive restart無効化非対応）が
+2件だけ出力された。
+
+## MacBookで完了できない項目
+
+このGPU/MoltenVK構成は `present-timing=no` を報告するため、
+`VK_EXT_present_timing` の物理lifecycleはMacBook上では引き続き
+`NOT VERIFIED`。対応GPUでのEXT実機検証、物理Linux Vulkan、Windows
+Vulkan runtime、cross-GPU endurance/parityはWindows/Linux側の環境で行う。
+
+判定（MacBook側）:
+
+```text
+PASS  Debug build + Khronos validation-layer F2 runtime (60 s)
+PASS  current-HEAD pure/fake present-pacer tests (Developer/Release)
+PASS  low-latency, raster-parity, shader audits
+NOT VERIFIED  physical VK_EXT_present_timing (device reports no)
+OUT OF SCOPE  Windows/Linux physical runtime and cross-GPU parity
+```

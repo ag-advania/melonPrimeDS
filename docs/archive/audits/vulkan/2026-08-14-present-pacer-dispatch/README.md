@@ -8,6 +8,8 @@ Baseline: `4e7579359371` (`add md`)
 Implementation commit: `5c05d249c27c` (`Add Vulkan present pacer dispatch coverage`)
 Follow-up repository HEAD: `18bad3ade1f0` (`fix`)
 
+Current repository HEAD: `fd8e5c69e` (`Close Vulkan present-pacer audit follow-up`)
+
 The Vulkan implementation and its audit artifacts were committed by
 `5c05d249`. The `.codex/` and `docs/development/codex/` files in that commit
 were outside the Vulkan implementation scope, but they were co-committed and
@@ -84,6 +86,15 @@ legacy-capability assertions.
 - Pure and fake timing targets: PASS.
 - Deep strict codesign verification for both bundles: PASS.
 - Runtime bundle contains x86_64 MoltenVK and uses the bundled loader.
+- Current-HEAD Debug validation build: PASS (`build-mac-vulkan-validation`,
+  Vulkan/Metal, `--jobs 4`, no-bundle test runtime).
+- Mac-only validation runtime: PASS for a 60-second F2 launch on Intel Iris
+  Plus 655. The Khronos loader, MoltenVK ICD, and
+  `VK_LAYER_KHRONOS_validation` were active; the state loaded, Vulkan remained
+  the actual renderer at 1x, and no VUID or validation ERROR message appeared.
+  The only two validation-channel messages were MoltenVK warnings about
+  unsupported primitive-restart disabling (`mvk-warn`,
+  `VK_ERROR_FEATURE_NOT_PRESENT`).
 
 ### Linux
 
@@ -93,7 +104,12 @@ The clean VirtualBox Ubuntu build completed with the pinned Vulkan-Headers revis
 
 - Original macOS audit host: Windows build `NOT RUN` because it had no
   MinGW/MSYS2 or `cl.exe`.
-- Khronos validation layer: `BLOCKED/NOT RUN` for the packaged runtime. The bundle intentionally loads its direct MoltenVK dylib, so this physical run does not claim validation-layer coverage. No validation VUID or device-loss result was observed in the runtime log.
+- Khronos validation layer: the packaged bundle intentionally loads its direct
+  MoltenVK dylib, so a Finder-style bundled run does not load the Khronos
+  layer. The Mac-only no-bundle Debug run above used the Homebrew Khronos
+  loader plus the MoltenVK ICD and completed the validation gate; Windows and
+  Linux validation remain unverified here. No validation VUID or device-loss
+  result was observed in the Mac run.
 
 ### Follow-up validation on the current Windows host
 
@@ -125,6 +141,10 @@ The confusing Japanese-named temporary copy `lastRavenRom.nds` is no longer pres
 
 ## Remaining risks
 
-- Windows compilation/runtime and Khronos validation-layer execution still require their respective environments.
+- Windows compilation/runtime and Windows/Linux validation-layer execution still
+  require their respective environments; the Mac Khronos validation run is
+  recorded above.
 - No physical Linux Vulkan/F2 run was claimed; the Linux result is a clean compile and test execution inside the VM.
-- The F2 runtime log is an Intel macOS developer run, not a cross-GPU or long-term visual-parity certification. The 1x setting was deliberately retained for the low-spec machine.
+- The F2 runtime log is an Intel macOS developer run, not a cross-GPU or
+  long-term visual-parity certification. The 1x setting was retained for
+  deterministic F2 evidence; no 16x runtime was used.

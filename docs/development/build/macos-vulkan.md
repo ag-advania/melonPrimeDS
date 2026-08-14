@@ -186,13 +186,15 @@ selected the real Intel GPU, reached a Vulkan presenter, and displayed a real
 AMHP ROM frame. A separately assembled, signed MoltenVK 1.4.0 bundle reached
 the same no-ROM and AMHP launch/presenter checkpoints.
 
-This follow-up is not a full gameplay PASS: controlled match lifecycle,
-resize/fullscreen/minimize, renderer switching, savestate/reset, and the
-30-minute AC session remain NOT RUN or BLOCKED. The Debug validation-layer gate
-was BLOCKED because the macOS direct runtime loader did not enumerate the
-installed Khronos layer. See the dated audit's
+This follow-up is not a full gameplay PASS: cross-GPU parity and the 30-minute
+AC session remain outside this short validation run. The packaged Finder-style
+bundle intentionally loads direct MoltenVK, so it does not enumerate the
+Khronos layer. A separate no-bundle Debug run using the Homebrew Khronos loader
+and MoltenVK ICD did enable `VK_LAYER_KHRONOS_validation`, loaded the F2 state,
+and ran for 60 seconds with no VUID or validation ERROR message (only two known
+MoltenVK `mvk-warn` messages). See the dated audit's
 [`README.md`](../../archive/audits/vulkan/2026-08-14-intel-macbook/README.md) for
-the exact status and sanitized evidence.
+the broader status and sanitized evidence.
 
 Windows remains the tuned gameplay target; macOS Vulkan is a supported build
 and runtime target, not a validated-parity one. MoltenVK translates SPIR-V to
