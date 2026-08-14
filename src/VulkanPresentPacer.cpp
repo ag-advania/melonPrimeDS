@@ -90,24 +90,12 @@ u64 GoogleMonotonicTimeNs() noexcept
 #endif
 }
 
-VulkanGoogleQueryStatus GoogleQueryStatusFor(VkResult result) noexcept
-{
-    switch (result)
-    {
-    case VK_SUCCESS: return VulkanGoogleQueryStatus::Success;
-    case VK_INCOMPLETE: return VulkanGoogleQueryStatus::Incomplete;
-    case VK_ERROR_OUT_OF_DATE_KHR: return VulkanGoogleQueryStatus::OutOfDate;
-    case VK_ERROR_DEVICE_LOST: return VulkanGoogleQueryStatus::DeviceLost;
-    case VK_ERROR_SURFACE_LOST_KHR: return VulkanGoogleQueryStatus::SurfaceLost;
-    default: return VulkanGoogleQueryStatus::Failure;
-    }
-}
-
 const char* PresentLifecycleRouteName(VulkanPacerBeginResult result) noexcept
 {
     switch (result)
     {
     case VulkanPacerBeginResult::SwapchainOutOfDate: return "SwapchainOutOfDate";
+    case VulkanPacerBeginResult::SwapchainSuboptimal: return "SwapchainSuboptimal";
     case VulkanPacerBeginResult::DeviceLost: return "DeviceLost";
     case VulkanPacerBeginResult::SurfaceLost: return "SurfaceLost";
     case VulkanPacerBeginResult::Continue: return "Continue";
@@ -783,30 +771,43 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     const VkResult result = Device->Fns().WaitForPresent2KHR(
         Device->GetHandle(), Swapchain, &wait);
     LastWaitedId = LastPresentedId;
-    if (result == VK_SUCCESS)
-        return VulkanPacerBeginResult::Continue;
-    if (result == VK_TIMEOUT)
+    switch (ClassifyVulkanPresentWait2Result(result))
     {
+    case VulkanPresentWait2ResultAction::Continue:
+        return VulkanPacerBeginResult::Continue;
+    case VulkanPresentWait2ResultAction::Timeout:
         ++WaitTimeouts;
         return VulkanPacerBeginResult::Continue;
-    }
-    if (result == VK_ERROR_OUT_OF_DATE_KHR)
+    case VulkanPresentWait2ResultAction::SwapchainSuboptimal:
+        LogPresentLifecycleRoute(
+            "WaitForPresent2KHR", result, VulkanPacerBeginResult::SwapchainSuboptimal,
+            Platform::LogLevel::Warn);
+        return VulkanPacerBeginResult::SwapchainSuboptimal;
+    case VulkanPresentWait2ResultAction::SwapchainOutOfDate:
+        LogPresentLifecycleRoute(
+            "WaitForPresent2KHR", result, VulkanPacerBeginResult::SwapchainOutOfDate,
+            Platform::LogLevel::Warn);
         return VulkanPacerBeginResult::SwapchainOutOfDate;
-    if (result == VK_ERROR_DEVICE_LOST)
-    {
+    case VulkanPresentWait2ResultAction::DeviceLost:
         // A lost device is not a stale swapchain, and rebuilding a swapchain on
         // it would just fail again. Report it as its own class so the caller
         // routes it into the existing Vulkan runtime-failure path. The pacer
         // deliberately does NOT call DisableWait() here: downgrading an
         // optional feature would imply the renderer can carry on, which is
         // exactly the wrong conclusion to draw from device loss.
-        Platform::Log(Platform::LogLevel::Error,
-            "[Vulkan] vkWaitForPresent2KHR reported VK_ERROR_DEVICE_LOST\n");
         TargetSchedulingActive.store(false, std::memory_order_release);
+        LogPresentLifecycleRoute(
+            "WaitForPresent2KHR", result, VulkanPacerBeginResult::DeviceLost);
         return VulkanPacerBeginResult::DeviceLost;
+    case VulkanPresentWait2ResultAction::SurfaceLost:
+        TargetSchedulingActive.store(false, std::memory_order_release);
+        LogPresentLifecycleRoute(
+            "WaitForPresent2KHR", result, VulkanPacerBeginResult::SurfaceLost);
+        return VulkanPacerBeginResult::SurfaceLost;
+    case VulkanPresentWait2ResultAction::DisableWait:
+        DisableWait(Vk::FormatResult(result).c_str());
+        return VulkanPacerBeginResult::Continue;
     }
-
-    DisableWait(Vk::FormatResult(result).c_str());
     return VulkanPacerBeginResult::Continue;
 }
 
@@ -1192,7 +1193,9 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()
     const VkResult result = Device->Fns().GetSwapchainTimingPropertiesEXT(
         Device->GetHandle(), Swapchain, &properties, &counter);
 
-    if (result == VK_NOT_READY)
+    const VulkanPresentTimingQueryAction queryAction =
+        ClassifyVulkanTimingPropertiesResult(result);
+    if (queryAction == VulkanPresentTimingQueryAction::RetryAfterPresent)
     {
         // Documented and expected before the first present. Keep the pending
         // flag so BeginFrame retries once a present has been accepted.
@@ -1203,10 +1206,10 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()
     {
         TimingPropertiesRetryPending = false;
         TimingPropertiesReady = false;
-        const VulkanPacerBeginResult lifecycle =
-            ClassifyPresentLifecycleResult(result);
-        if (lifecycle != VulkanPacerBeginResult::Continue)
+        if (queryAction == VulkanPresentTimingQueryAction::SurfaceLost)
         {
+            const VulkanPacerBeginResult lifecycle =
+                ClassifyPresentLifecycleResult(result);
             LogPresentLifecycleRoute(
                 "GetSwapchainTimingPropertiesEXT", result, lifecycle);
             TargetSchedulingLifecycleFailed = true;
@@ -1273,15 +1276,19 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()
         properties.pTimeDomainIds = nullptr;
         VkResult result = Device->Fns().GetSwapchainTimeDomainPropertiesEXT(
             Device->GetHandle(), Swapchain, &properties, &counter);
-        if (result != VK_SUCCESS)
+        const VulkanPresentTimingQueryAction countAction =
+            ClassifyVulkanTimeDomainResult(result);
+        if (countAction == VulkanPresentTimingQueryAction::RetryEnumeration)
+            continue;
+        if (countAction != VulkanPresentTimingQueryAction::Continue)
         {
             TimeDomainsEnumerationRetryPending = false;
             TimeDomainsReady = false;
             TimingModel.ClearTimeDomain();
-            const VulkanPacerBeginResult lifecycle =
-                ClassifyPresentLifecycleResult(result);
-            if (lifecycle != VulkanPacerBeginResult::Continue)
+            if (countAction == VulkanPresentTimingQueryAction::SurfaceLost)
             {
+                const VulkanPacerBeginResult lifecycle =
+                    ClassifyPresentLifecycleResult(result);
                 LogPresentLifecycleRoute(
                     "GetSwapchainTimeDomainPropertiesEXT(count)", result, lifecycle);
                 TargetSchedulingLifecycleFailed = true;
@@ -1312,22 +1319,24 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()
         properties.pTimeDomainIds = domainIds.data();
         result = Device->Fns().GetSwapchainTimeDomainPropertiesEXT(
             Device->GetHandle(), Swapchain, &properties, &counter);
-        if (result == VK_SUCCESS)
+        const VulkanPresentTimingQueryAction arrayAction =
+            ClassifyVulkanTimeDomainResult(result);
+        if (arrayAction == VulkanPresentTimingQueryAction::Continue)
         {
             count = std::min<u32>(properties.timeDomainCount,
                                   static_cast<u32>(domains.size()));
             enumerated = true;
             break;
         }
-        if (result != VK_INCOMPLETE)
+        if (arrayAction != VulkanPresentTimingQueryAction::RetryEnumeration)
         {
             TimeDomainsEnumerationRetryPending = false;
             TimeDomainsReady = false;
             TimingModel.ClearTimeDomain();
-            const VulkanPacerBeginResult lifecycle =
-                ClassifyPresentLifecycleResult(result);
-            if (lifecycle != VulkanPacerBeginResult::Continue)
+            if (arrayAction == VulkanPresentTimingQueryAction::SurfaceLost)
             {
+                const VulkanPacerBeginResult lifecycle =
+                    ClassifyPresentLifecycleResult(result);
                 LogPresentLifecycleRoute(
                     "GetSwapchainTimeDomainPropertiesEXT(array)", result, lifecycle);
                 TargetSchedulingLifecycleFailed = true;
@@ -1439,10 +1448,13 @@ VulkanPacerBeginResult VulkanPresentPacer::RefreshGoogleTiming()
         GoogleRefreshDurationReady = true;
         return VulkanPacerBeginResult::Continue;
     }
-    const VulkanPacerBeginResult lifecycle =
-        ClassifyPresentLifecycleResult(result);
-    if (lifecycle != VulkanPacerBeginResult::Continue)
+    const VulkanPresentTimingQueryAction queryAction =
+        ClassifyVulkanGoogleTimingResult(result);
+    if (queryAction != VulkanPresentTimingQueryAction::Continue
+        && queryAction != VulkanPresentTimingQueryAction::DisableOptional)
     {
+        const VulkanPacerBeginResult lifecycle =
+            ClassifyPresentLifecycleResult(result);
         LogPresentLifecycleRoute(
             "GetRefreshCycleDurationGOOGLE", result, lifecycle);
         return lifecycle;
@@ -1472,14 +1484,14 @@ VulkanPacerBeginResult VulkanPresentPacer::ReportGooglePastTiming()
     u32 count = static_cast<u32>(reports.size());
     const VkResult result = Device->Fns().GetPastPresentationTimingGOOGLE(
         Device->GetHandle(), Swapchain, &count, reports.data());
-    const VulkanGoogleQueryAction action = VulkanGoogleActionFor(
-        GoogleQueryStatusFor(result));
-    if (action != VulkanGoogleQueryAction::Continue)
+    const VulkanPresentTimingQueryAction queryAction =
+        ClassifyVulkanGoogleTimingResult(result);
+    if (queryAction != VulkanPresentTimingQueryAction::Continue)
     {
-        const VulkanPacerBeginResult lifecycle =
-            ClassifyPresentLifecycleResult(result);
-        if (lifecycle != VulkanPacerBeginResult::Continue)
+        if (queryAction != VulkanPresentTimingQueryAction::DisableOptional)
         {
+            const VulkanPacerBeginResult lifecycle =
+                ClassifyPresentLifecycleResult(result);
             LogPresentLifecycleRoute(
                 "GetPastPresentationTimingGOOGLE", result, lifecycle);
             return lifecycle;
@@ -1543,10 +1555,12 @@ VulkanPacerBeginResult VulkanPresentPacer::ReportPastTiming()
         Device->GetHandle(), &info, &properties);
     if (result != VK_SUCCESS && result != VK_INCOMPLETE)
     {
-        const VulkanPacerBeginResult lifecycle =
-            ClassifyPresentLifecycleResult(result);
-        if (lifecycle != VulkanPacerBeginResult::Continue)
+        const VulkanPresentTimingQueryAction queryAction =
+            ClassifyVulkanPastTimingResult(result);
+        if (queryAction != VulkanPresentTimingQueryAction::DisableOptional)
         {
+            const VulkanPacerBeginResult lifecycle =
+                ClassifyPresentLifecycleResult(result);
             TargetSchedulingActive.store(false, std::memory_order_release);
             LogPresentLifecycleRoute(
                 "GetPastPresentationTimingEXT", result, lifecycle);

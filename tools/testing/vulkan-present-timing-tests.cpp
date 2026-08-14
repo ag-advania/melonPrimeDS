@@ -1214,6 +1214,11 @@ void TestBeginResultRouting()
     Require(outOfDate.RebuildSwapchain && !outOfDate.FailRenderer,
         "an out-of-date swapchain must be rebuilt, not treated as a failure");
 
+    const VulkanPacerBeginAction suboptimal =
+        VulkanPacerActionFor(VulkanPacerBeginResult::SwapchainSuboptimal);
+    Require(suboptimal.RebuildSwapchain && !suboptimal.FailRenderer,
+        "a suboptimal swapchain must be rebuilt through the dirty path");
+
     const VulkanPacerBeginAction deviceLost =
         VulkanPacerActionFor(VulkanPacerBeginResult::DeviceLost);
     Require(deviceLost.FailRenderer,
@@ -1267,6 +1272,98 @@ void TestPresentTimingLifecycleResultClassification()
         "the first fatal lifecycle class must not be overwritten");
 }
 
+// These API-specific contracts complement the shared lifecycle classifier:
+// each Vulkan entry point keeps its own success and pending result set while
+// still converging on the same presenter-facing fatal classes.
+void TestPresentTimingQueryContractClassification()
+{
+    Require(ClassifyVulkanPastTimingResult(VK_SUCCESS)
+                == VulkanPresentTimingQueryAction::Continue
+                && ClassifyVulkanPastTimingResult(VK_INCOMPLETE)
+                    == VulkanPresentTimingQueryAction::Continue,
+        "EXT past-timing success and partial results must continue");
+    Require(ClassifyVulkanPastTimingResult(VK_ERROR_OUT_OF_DATE_KHR)
+                == VulkanPresentTimingQueryAction::SwapchainOutOfDate
+                && ClassifyVulkanPastTimingResult(VK_ERROR_DEVICE_LOST)
+                    == VulkanPresentTimingQueryAction::DeviceLost
+                && ClassifyVulkanPastTimingResult(VK_ERROR_SURFACE_LOST_KHR)
+                    == VulkanPresentTimingQueryAction::SurfaceLost,
+        "EXT past-timing lifecycle failures must stay typed");
+    Require(ClassifyVulkanPastTimingResult(VK_ERROR_UNKNOWN)
+                == VulkanPresentTimingQueryAction::DisableOptional,
+        "EXT past-timing unknown failures must only disable optional timing");
+
+    Require(ClassifyVulkanTimingPropertiesResult(VK_SUCCESS)
+                == VulkanPresentTimingQueryAction::Continue
+                && ClassifyVulkanTimingPropertiesResult(VK_NOT_READY)
+                    == VulkanPresentTimingQueryAction::RetryAfterPresent,
+        "timing properties VK_NOT_READY must remain a post-present retry");
+    Require(ClassifyVulkanTimingPropertiesResult(VK_ERROR_SURFACE_LOST_KHR)
+                == VulkanPresentTimingQueryAction::SurfaceLost
+                && ClassifyVulkanTimingPropertiesResult(VK_ERROR_UNKNOWN)
+                    == VulkanPresentTimingQueryAction::DisableTargetLifecycle,
+        "timing properties must separate surface loss from optional failure");
+
+    Require(ClassifyVulkanTimeDomainResult(VK_SUCCESS)
+                == VulkanPresentTimingQueryAction::Continue
+                && ClassifyVulkanTimeDomainResult(VK_INCOMPLETE)
+                    == VulkanPresentTimingQueryAction::RetryEnumeration,
+        "time-domain success and incomplete results must preserve enumeration state");
+    Require(ClassifyVulkanTimeDomainResult(VK_ERROR_SURFACE_LOST_KHR)
+                == VulkanPresentTimingQueryAction::SurfaceLost
+                && ClassifyVulkanTimeDomainResult(VK_NOT_READY)
+                    == VulkanPresentTimingQueryAction::DisableTargetLifecycle,
+        "time-domain VK_NOT_READY must not become spec-expected pending");
+
+    Require(ClassifyVulkanGoogleTimingResult(VK_SUCCESS)
+                == VulkanPresentTimingQueryAction::Continue
+                && ClassifyVulkanGoogleTimingResult(VK_INCOMPLETE)
+                    == VulkanPresentTimingQueryAction::Continue,
+        "GOOGLE feedback success and partial results must continue");
+    Require(ClassifyVulkanGoogleTimingResult(VK_ERROR_OUT_OF_DATE_KHR)
+                == VulkanPresentTimingQueryAction::SwapchainOutOfDate
+                && ClassifyVulkanGoogleTimingResult(VK_ERROR_DEVICE_LOST)
+                    == VulkanPresentTimingQueryAction::DeviceLost
+                && ClassifyVulkanGoogleTimingResult(VK_ERROR_SURFACE_LOST_KHR)
+                    == VulkanPresentTimingQueryAction::SurfaceLost,
+        "GOOGLE feedback lifecycle failures must stay typed");
+    Require(ClassifyVulkanGoogleTimingResult(VK_ERROR_UNKNOWN)
+                == VulkanPresentTimingQueryAction::DisableOptional,
+        "GOOGLE unknown failures must only disable optional timing");
+}
+
+// vkWaitForPresent2KHR has its own success/status contract. Keep this test
+// separate from the generic fatal classifier so VK_SUBOPTIMAL_KHR cannot be
+// accidentally treated as an optional wait failure in a future refactor.
+void TestPresentWait2ResultClassification()
+{
+    Require(ClassifyVulkanPresentWait2Result(VK_SUCCESS)
+                == VulkanPresentWait2ResultAction::Continue,
+        "present wait success must continue");
+    Require(ClassifyVulkanPresentWait2Result(VK_TIMEOUT)
+                == VulkanPresentWait2ResultAction::Timeout,
+        "present wait timeout must remain non-fatal");
+    Require(ClassifyVulkanPresentWait2Result(VK_SUBOPTIMAL_KHR)
+                == VulkanPresentWait2ResultAction::SwapchainSuboptimal,
+        "present wait suboptimal must request swapchain recreation");
+    Require(ClassifyVulkanPresentWait2Result(VK_ERROR_OUT_OF_DATE_KHR)
+                == VulkanPresentWait2ResultAction::SwapchainOutOfDate,
+        "present wait out-of-date must request swapchain recreation");
+    Require(ClassifyVulkanPresentWait2Result(VK_ERROR_DEVICE_LOST)
+                == VulkanPresentWait2ResultAction::DeviceLost,
+        "present wait device loss must fail the renderer");
+    Require(ClassifyVulkanPresentWait2Result(VK_ERROR_SURFACE_LOST_KHR)
+                == VulkanPresentWait2ResultAction::SurfaceLost,
+        "present wait surface loss must fail the renderer");
+    Require(ClassifyVulkanPresentWait2Result(VK_ERROR_UNKNOWN)
+                == VulkanPresentWait2ResultAction::DisableWait,
+        "unknown present wait failure must only disable the optional wait");
+    Require(ClassifyVulkanPresentWait2Result(
+                VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT)
+                == VulkanPresentWait2ResultAction::DisableWait,
+        "fullscreen-exclusive loss remains an optional wait downgrade until that extension is used");
+}
+
 
 // VSync off means IMMEDIATE or MAILBOX, where "present at this time" has no
 // defined meaning -- but telemetry and the bounded wait are still fine.
@@ -1298,6 +1395,8 @@ int main()
     TestHistoryWraparound();
     TestBeginResultRouting();
     TestPresentTimingLifecycleResultClassification();
+    TestPresentTimingQueryContractClassification();
+    TestPresentWait2ResultClassification();
     TestGoogleTimingTransactions();
 
     TestTimingBackendSelection();

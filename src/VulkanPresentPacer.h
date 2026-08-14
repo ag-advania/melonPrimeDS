@@ -20,6 +20,129 @@
 namespace melonDS
 {
 
+// vkWaitForPresent2KHR has a different success/status contract from the
+// timing-query entry points. Keep that contract explicit and pure so a
+// SUBOPTIMAL result cannot fall through to DisableWait(), while timeout stays
+// a non-fatal pacing outcome.
+enum class VulkanPresentWait2ResultAction : int
+{
+    Continue = 0,
+    Timeout,
+    SwapchainSuboptimal,
+    SwapchainOutOfDate,
+    DeviceLost,
+    SurfaceLost,
+    DisableWait,
+};
+
+constexpr VulkanPresentWait2ResultAction ClassifyVulkanPresentWait2Result(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return VulkanPresentWait2ResultAction::Continue;
+    case VK_TIMEOUT:
+        return VulkanPresentWait2ResultAction::Timeout;
+    case VK_SUBOPTIMAL_KHR:
+        return VulkanPresentWait2ResultAction::SwapchainSuboptimal;
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        return VulkanPresentWait2ResultAction::SwapchainOutOfDate;
+    case VK_ERROR_DEVICE_LOST:
+        return VulkanPresentWait2ResultAction::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentWait2ResultAction::SurfaceLost;
+    default:
+        return VulkanPresentWait2ResultAction::DisableWait;
+    }
+}
+
+// Each present-timing entry point has its own success/pending contract. These
+// actions keep pure API-specific result classification separate from the
+// common lifecycle route, so a valid VK_NOT_READY or VK_INCOMPLETE cannot be
+// mistaken for an optional-feature failure.
+enum class VulkanPresentTimingQueryAction : int
+{
+    Continue = 0,
+    RetryAfterPresent,
+    RetryEnumeration,
+    SwapchainOutOfDate,
+    DeviceLost,
+    SurfaceLost,
+    DisableOptional,
+    DisableTargetLifecycle,
+};
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanPastTimingResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+    case VK_INCOMPLETE:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        return VulkanPresentTimingQueryAction::SwapchainOutOfDate;
+    case VK_ERROR_DEVICE_LOST:
+        return VulkanPresentTimingQueryAction::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableOptional;
+    }
+}
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanTimingPropertiesResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_NOT_READY:
+        return VulkanPresentTimingQueryAction::RetryAfterPresent;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableTargetLifecycle;
+    }
+}
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanTimeDomainResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_INCOMPLETE:
+        return VulkanPresentTimingQueryAction::RetryEnumeration;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableTargetLifecycle;
+    }
+}
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanGoogleTimingResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+    case VK_INCOMPLETE:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        return VulkanPresentTimingQueryAction::SwapchainOutOfDate;
+    case VK_ERROR_DEVICE_LOST:
+        return VulkanPresentTimingQueryAction::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableOptional;
+    }
+}
+
 // How the display's refresh cadence behaves, derived from the refreshInterval
 // the swapchain reports. Diagnostics only: the pacer never rewrites the user's
 // VSync setting from this.
@@ -121,9 +244,9 @@ public:
 
     // Called immediately before late input sampling.
     //
-    // The result distinguishes a swapchain that must be rebuilt from a device
-    // that was lost; route it through VulkanPacerActionFor() rather than
-    // treating any non-Continue value as "recreate the swapchain".
+    // The result distinguishes swapchain rebuild states from device/surface
+    // loss; route it through VulkanPacerActionFor() rather than treating any
+    // non-Continue value as "recreate the swapchain".
     //
     // `targetFrameIntervalNs` is the emulator's own frame interval, or 0 when
     // the host is not running at a fixed rate. It is never derived from the

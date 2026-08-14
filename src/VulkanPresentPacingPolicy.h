@@ -115,18 +115,21 @@ enum class VulkanJitFallbackReason : int
 
 // What happened during the pacer's pre-input phase.
 //
-// This is an enum rather than a bool because the two failure classes it has to
-// report are not interchangeable. VK_ERROR_OUT_OF_DATE_KHR means the swapchain
-// or surface changed and a rebuild fixes it; VK_ERROR_DEVICE_LOST means the
-// device is gone, and rebuilding a swapchain on a lost device just repeats the
-// failure. They shared one `true` result before, which quietly routed device
-// loss into swapchain recreation.
+// This is an enum rather than a bool because the lifecycle classes it has to
+// report are not interchangeable. OUT_OF_DATE and SUBOPTIMAL mean the
+// swapchain should be rebuilt; DEVICE_LOST and SURFACE_LOST belong to the
+// renderer failure path. They shared one `true` result before, which quietly
+// routed device loss into swapchain recreation.
 enum class VulkanPacerBeginResult : int
 {
     Continue = 0,
     SwapchainOutOfDate,
     DeviceLost,
     SurfaceLost,
+    // Keep the existing fatal-result numeric values stable for captures. The
+    // swapchain is usable but no longer optimal, so recreate it through the
+    // normal dirty path rather than downgrading the optional wait.
+    SwapchainSuboptimal,
 };
 
 // How the presenter must react to a begin result. Kept next to the enum so the
@@ -142,6 +145,8 @@ constexpr VulkanPacerBeginAction VulkanPacerActionFor(VulkanPacerBeginResult res
     switch (result)
     {
     case VulkanPacerBeginResult::SwapchainOutOfDate:
+        return {true, false};
+    case VulkanPacerBeginResult::SwapchainSuboptimal:
         return {true, false};
     case VulkanPacerBeginResult::DeviceLost:
         // Deliberately not a rebuild: device loss belongs to the existing

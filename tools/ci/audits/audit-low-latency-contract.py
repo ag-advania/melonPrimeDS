@@ -295,6 +295,35 @@ def main() -> int:
         "present-wait device loss must not share the swapchain-out-of-date result",
         failures,
     )
+    require(
+        all(token in vulkan_pacer_header for token in (
+            "SwapchainSuboptimal",
+            "VulkanPresentWait2ResultAction",
+            "ClassifyVulkanPresentWait2Result",
+            "VK_SUBOPTIMAL_KHR",
+            "VK_ERROR_SURFACE_LOST_KHR",
+        ))
+        and ordered(
+            function_body(
+                vulkan_pacer,
+                "VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(",
+                "u64 VulkanPresentPacer::EvaluateAbsoluteTargetTime(u64 sequence)",
+            ),
+            [
+                "ClassifyVulkanPresentWait2Result(result)",
+                "VulkanPresentWait2ResultAction::SwapchainSuboptimal",
+                "VulkanPacerBeginResult::SwapchainSuboptimal",
+                "VulkanPresentWait2ResultAction::SurfaceLost",
+                "VulkanPacerBeginResult::SurfaceLost",
+                "VulkanPresentWait2ResultAction::DisableWait",
+                "DisableWait(Vk::FormatResult(result).c_str());",
+            ],
+        )
+        and "TestPresentWait2ResultClassification" in vulkan_timing_tests
+        and "VulkanPacerBeginResult::SwapchainSuboptimal" in vulkan_timing_tests,
+        "vkWaitForPresent2KHR must preserve SUBOPTIMAL/SURFACE_LOST routing and only downgrade unknown optional failures",
+        failures,
+    )
     # An empty poll does not prove the results queue is drained: presentation
     # timing feedback is asynchronous and only promised to arrive in finite time.
     require(
@@ -708,7 +737,8 @@ def main() -> int:
     )
     require(
         "MaxTimeDomainEnumerateAttempts" in vulkan_pacer
-        and "if (result != VK_INCOMPLETE)" in vulkan_pacer
+        and "ClassifyVulkanTimeDomainResult(result)" in vulkan_pacer
+        and "VulkanPresentTimingQueryAction::RetryEnumeration" in vulkan_pacer
         and "if (!enumerated)" in vulkan_pacer,
         "time-domain enumeration must retry a bounded number of times on VK_INCOMPLETE",
         failures,
@@ -744,11 +774,12 @@ def main() -> int:
         failures,
     )
     require(
-        "if (result == VK_NOT_READY)" in function_body(
+        "ClassifyVulkanTimingPropertiesResult(result)" in function_body(
             vulkan_pacer,
             "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()",
             "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
         )
+        and "VulkanPresentTimingQueryAction::RetryAfterPresent" in vulkan_pacer
         and "TimingPropertiesRetryPending = true;" in vulkan_pacer
         and "TimeDomainsEnumerationRetryPending = true;" in vulkan_pacer
         and "if (result == VK_NOT_READY)" not in function_body(
@@ -756,11 +787,7 @@ def main() -> int:
             "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
             "void VulkanPresentPacer::SelectTargetPresentStage() noexcept",
         )
-        and "VK_NOT_READY" in function_body(
-            vulkan_pacer,
-            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimingProperties()",
-            "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
-        )
+        and "VK_NOT_READY" in vulkan_pacer_header
         and "VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT" in function_body(
             vulkan_pacer,
             "VulkanPacerBeginResult VulkanPresentPacer::RefreshTimeDomains()",
@@ -790,6 +817,24 @@ def main() -> int:
         and "LogPresentLifecycleRoute" in vulkan_pacer
         and "TestPresentTimingLifecycleResultClassification" in vulkan_timing_tests,
         "present timing fatal VkResults must use typed production routing and fault-injection coverage",
+        failures,
+    )
+    require(
+        all(token in vulkan_pacer_header for token in (
+            "VulkanPresentTimingQueryAction",
+            "ClassifyVulkanPastTimingResult",
+            "ClassifyVulkanTimingPropertiesResult",
+            "ClassifyVulkanTimeDomainResult",
+            "ClassifyVulkanGoogleTimingResult",
+        ))
+        and all(token in vulkan_pacer for token in (
+            "ClassifyVulkanPastTimingResult(result)",
+            "ClassifyVulkanTimingPropertiesResult(result)",
+            "ClassifyVulkanTimeDomainResult(result)",
+            "ClassifyVulkanGoogleTimingResult(result)",
+        ))
+        and "TestPresentTimingQueryContractClassification" in vulkan_timing_tests,
+        "EXT and GOOGLE timing query success/pending/fatal contracts must have production classifiers and pure coverage",
         failures,
     )
     require(
@@ -892,7 +937,8 @@ def main() -> int:
         failures,
     )
     require(
-        "VK_ERROR_DEVICE_LOST" in vulkan_pacer
+        ("VK_ERROR_DEVICE_LOST" in vulkan_pacer
+            or "VK_ERROR_DEVICE_LOST" in vulkan_pacer_header)
         and "TimingModel.AbandonPresent();" in vulkan_pacer
         and "TimingModel.CommitPresent();" in vulkan_pacer,
         "device loss must surface and rejected presents must not consume a presentation sequence",
