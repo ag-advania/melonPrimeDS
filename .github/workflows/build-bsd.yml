@@ -221,8 +221,11 @@ jobs:
       run: |
         set -eu
 
+        # NetBSD's find implementation does not accept every GNU/FreeBSD
+        # expression uniformly; the package prefixes are already narrow, so
+        # a basename probe is the portable check for the Vulkan header.
         headers="$(find -L /usr/local/include /usr/pkg/include /usr/X11R6/include \
-          -path '*/vulkan/vulkan.h' -print -quit 2>/dev/null || true)"
+          -type f -name 'vulkan.h' -print -quit 2>/dev/null || true)"
         if [ -z "$headers" ]; then
           echo "Vulkan headers were not found in the BSD package prefixes."
           exit 1

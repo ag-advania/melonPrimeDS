@@ -1580,12 +1580,15 @@ CI成功をphysical GPU成功と偽らない。
 | NetBSD | NOT RUN | NOT RUN | NOT RUN | NOT TESTED |
 | OpenBSD | NOT RUN | NOT RUN | NOT RUN | NOT TESTED |
 
-The strict workflow is prepared but has not been dispatched from this task;
-therefore no BSD build or runtime PASS is claimed. The workflow's explicit
-package names and loader/header probes are prerequisites, not evidence that a
-BSD runner has completed successfully. Native BSD Wayland WSI, vendor
-low-latency extensions, and physical GPU validation remain outside the verified
-scope.
+The strict workflow was dispatched as run
+`31812835788` for commit `15cf59a56c40941189e6be0c39f3290d378789aa`.
+FreeBSD passed dependency/header/shader checks and was still building when the
+first NetBSD probe failure was found; NetBSD installed both Vulkan packages but
+the portable dependency probe used a `find -path` expression that did not find
+the installed header on that VM. The probe was corrected to use a BSD-portable
+basename check and must be re-run before any BSD build PASS is claimed.
+Native BSD Wayland WSI, vendor low-latency extensions, and physical GPU
+validation remain outside the verified scope.
 
 ## Commit / push boundary
 
