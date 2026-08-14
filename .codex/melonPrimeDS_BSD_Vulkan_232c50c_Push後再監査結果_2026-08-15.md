@@ -3,9 +3,10 @@
 - Repository: `ag-advania/melonPrimeDS`
 - Branch: `develop_remakeVulkan_ver3`
 - 前回中間監査基準HEAD: `15cf59a56c40941189e6be0c39f3290d378789aa`
-- 今回最新HEAD: `232c50c726b1645852ccf731ab4695fb2729d4a0`
-- 最新HEAD message: `Record final BSD and platform workflow results`
-- production / workflow最終実行対象HEAD: `24157d40f0723a090a55117448973887c650b8dd`
+- 初回Push後監査対象HEAD: `232c50c726b1645852ccf731ab4695fb2729d4a0`
+- P3/P4 closure implementation/workflow HEAD: `6cd32fc34d4a41d7797c5823ee62ca11a9efc467`
+- P3/P4 closure implementation commits: `911a860120fad655167d3c90a27b220947247335`, `6cd32fc34d4a41d7797c5823ee62ca11a9efc467`
+- 初回監査時のproduction / workflow実行対象HEAD: `24157d40f0723a090a55117448973887c650b8dd`
 - 作成日: 2026-08-15
 - 監査対象: BSD Vulkan X11 WSI、CMake、BSD CI、回帰workflow、前回P3/P4指摘
 
@@ -53,10 +54,10 @@ NetBSD前回CI blocker:
     NONE FOUND
 
 前回P3:
-    2 OPEN
+    0 OPEN / CLOSED (2/2)
 
 P4:
-    3 OPEN
+    0 OPEN / CLOSED (3/3)
 
 physical BSD GPU runtime:
     NOT TESTED
@@ -74,14 +75,12 @@ NO NEW P2 PRODUCTION DEFECT FOUND
 
 BSD 3-OS STRICT BUILD MATRIX CLOSED
 
-BUT
-2 P3 VALIDATION GAPS REMAIN
-3 P4 DOCUMENTATION / CI-OBSERVABILITY GAPS REMAIN
+ALL REQUIRED P3/P4 VALIDATION AND OBSERVABILITY GATES CLOSED
 
 PHYSICAL BSD VULKAN RUNTIME IS NOT VERIFIED
 ```
 
-今回のBSD Vulkan対応は、**「BSD 3種でVulkan-enabled buildが成立する」段階までは実証済み**。
+今回の完遂後再監査では、BSD 3種のVulkan-enabled buildに加えて、Qt 6.5+の明示assert、production `VulkanLoader::Library::Open()`の実ロード、CI observability分離、および監査provenance分離まで実証済み。
 
 一方、
 
@@ -96,30 +95,39 @@ PHYSICAL BSD VULKAN RUNTIME IS NOT VERIFIED
 
 ---
 
-# 2. HEAD確認
+# 2. HEAD確認（初回スナップショットと完遂後実装HEAD）
 
-最新branch HEAD:
+P3/P4 closure implementation/workflow HEAD:
+
+```text
+6cd32fc34d4a41d7797c5823ee62ca11a9efc467
+Load versioned BSD Vulkan runtimes
+```
+
+このHEADを対象に、BSD strict workflowとUbuntu/macOS/Windows regression workflowを実行した。
+
+初回Push後監査対象HEAD:
 
 ```text
 232c50c726b1645852ccf731ab4695fb2729d4a0
 Record final BSD and platform workflow results
 ```
 
-親:
+初回Push後監査の親:
 
 ```text
 24157d40f0723a090a55117448973887c650b8dd
 Keep BSD stub guard outside scatter budget
 ```
 
-`15cf59a...`から最新HEADまで:
+`15cf59a...`から初回Push後監査対象HEADまで:
 
 ```text
 ahead_by = 5
 behind_by = 0
 ```
 
-変更ファイルは最終的に3ファイルのみ:
+初回Push後監査時の変更ファイルは以下の3ファイルのみ:
 
 ```text
 .codex/melonPrimeDS_BSD_Vulkan対応_実装指示書_2026-08-14_最新ブランチ対応改訂版.md
@@ -139,7 +147,17 @@ CMakeLists.txt
 
 には、前回中間監査後のfunctional変更は入っていない。
 
-したがってproduction WSI implementationの静的評価は前回結果を維持できる。
+その後のP3/P4 closureで、以下のproduction/CMake/test/workflow変更を追加した。
+
+```text
+.github/workflows/build-bsd.yml
+src/VulkanLoader.cpp
+src/frontend/qt_sdl/CMakeLists.txt
+src/frontend/qt_sdl/MelonPrimeVulkanSurfaceStub.cpp
+tools/testing/vulkan-loader-open-tests.cpp
+```
+
+したがって、初回Push後監査の静的評価に加えて、P3/P4 closureの実装とCI実証を完遂した。
 
 ---
 
@@ -169,21 +187,23 @@ Keep BSD stub guard outside scatter budget
 
 232c50c
 Record final BSD and platform workflow results
+
+911a860
+Close BSD Vulkan audit validation gates
+
+6cd32fc
+Load versioned BSD Vulkan runtimes
 ```
 
-実装本体の修正ではなく、
+初回監査後の2 commitで、
 
 ```text
-NetBSD CI portability修正
+Qt 6.5+ CI assertとproduction loader actual-load testを追加
 ↓
-CI結果記録
-↓
-scatter audit対応
-↓
-最終回帰結果記録
+BSDのversioned Vulkan loader pathをproduction loader候補へ追加
 ```
 
-という流れ。
+まで実装し、対象HEADでCIを再実行した。
 
 ---
 
@@ -758,7 +778,7 @@ all targeted the current branch HEAD
 
 ---
 
-# 19. 前回P3-1: Qt 6.5+ CI assert
+# 19. 初回監査P3-1: Qt 6.5+ CI assert
 
 前回指摘:
 
@@ -770,7 +790,7 @@ Qt 6.5+ CI assert欠落
 状態:
 
 ```text
-OPEN
+初回監査時 OPEN
 ```
 
 理由:
@@ -830,11 +850,26 @@ Qt >= 6.5
 
 を明示assert。
 
-**P3-1: OPEN**
+完遂後再監査:
+
+```text
+src/frontend/qt_sdl/CMakeLists.txtにMELONPRIME_REQUIRE_QT6_5=ONのconfigure-time gateを追加。
+BSD workflowのON/OFF configureと独立したVerify Qt 6.5+ stepの双方でQt 6.5未満をfail。
+```
+
+対象HEAD `6cd32fc34d4a41d7797c5823ee62ca11a9efc467`のBSD CIログ:
+
+```text
+NetBSD:  Qt 6.11.1 / Verify Qt 6.5+ PASS
+FreeBSD: Qt 6.11.1 / Verify Qt 6.5+ PASS
+OpenBSD: Qt 6.10.2 / Verify Qt 6.5+ PASS
+```
+
+**P3-1: 初回監査時 OPEN / 完遂後再監査 CLOSED**
 
 ---
 
-# 20. 前回P3-2: production Vulkan loader candidate actual-load
+# 20. 初回監査P3-2: production Vulkan loader candidate actual-load
 
 前回指摘:
 
@@ -846,7 +881,7 @@ production loader candidate actual-load検証欠落
 状態:
 
 ```text
-OPEN
+初回監査時 OPEN
 ```
 
 production `VulkanLoader.cpp`がUnixで試す名前:
@@ -910,11 +945,27 @@ dlopen("libvulkan.so")
 
 のどちらかが成功することをCIで確認。
 
-**P3-2: OPEN**
+完遂後再監査:
+
+production `melonDS::Vk::Library::Open()`を直接呼ぶ
+`melonprime_vulkan_loader_open_check` targetを追加し、BSD workflowでbuild/runした。
+また、BSDのpackage prefixにあるversioned `libvulkan.so.*`をproduction loader候補として列挙するようにした。
+
+対象HEAD `6cd32fc34d4a41d7797c5823ee62ca11a9efc467`の実ロード結果:
+
+```text
+NetBSD:  PASS: production Vulkan loader opened /usr/pkg/lib/libvulkan.so.1
+FreeBSD: PASS: production Vulkan loader opened /usr/local/lib/libvulkan.so.1
+OpenBSD: PASS: production Vulkan loader opened /usr/local/lib/libvulkan.so.1
+```
+
+これはloaderファイルの存在確認ではなく、production loader実装の`Open()`、instance proc address取得までを通過した結果である。
+
+**P3-2: 初回監査時 OPEN / 完遂後再監査 CLOSED**
 
 ---
 
-# 21. P4-1: Stub comment stale
+# 21. 初回監査P4-1: Stub comment stale
 
 現在Stub冒頭:
 
@@ -943,11 +994,20 @@ currently unsupported Unix-like platforms
 
 等へ変更。
 
-**P4-1: OPEN**
+完遂後再監査では、Stub commentを以下の意味へ更新した。
+
+```text
+BSDs use the dedicated BSD X11 adapter;
+the fallback remains for other Unix-like platforms without a supported surface path.
+```
+
+BSD 3OSのsource routingと一致するため、P4-1をCLOSEDとする。
+
+**P4-1: 初回監査時 OPEN / 完遂後再監査 CLOSED**
 
 ---
 
-# 22. P4-2: preflight observability
+# 22. 初回監査P4-2: preflight observability
 
 現在:
 
@@ -978,11 +1038,23 @@ Verify Qt version
 Verify shader source sync
 ```
 
-**P4-2: OPEN**
+完遂後再監査では、以下を独立stepへ分離した。
+
+```text
+Verify Qt 6.5+
+Verify Vulkan headers
+Verify Vulkan loader candidate files
+Verify shader source sync
+Build and run production Vulkan loader open check
+```
+
+対象HEADのFreeBSD/NetBSD/OpenBSD jobはいずれも各stepを通過し、失敗時にもQt、headers、loader、shader、production actual-loadを個別に識別できる。
+
+**P4-2: 初回監査時 OPEN / 完遂後再監査 CLOSED**
 
 ---
 
-# 23. P4-3: current-HEAD wording / evidence provenance
+# 23. 初回監査P4-3: current-HEAD wording / evidence provenance
 
 現在の`.codex`報告には:
 
@@ -1025,7 +1097,31 @@ delta_after_tested_source_head:
 documentation only
 ```
 
-**P4-3: OPEN**
+完遂後再監査では、production/source/workflowの実証HEADと、後続の監査書artifactを分離した。
+
+```text
+tested_source/workflow_head:
+6cd32fc34d4a41d7797c5823ee62ca11a9efc467
+
+BSD strict workflow:
+31823333053 / success
+
+Ubuntu regression:
+31824256449 / success
+
+macOS regression:
+31824256438 / success
+
+Windows regression:
+31824255781 / success
+
+report artifact:
+tested source/workflow HEADの後続documentation-only commit
+```
+
+したがって、今回の最終報告は「現在のreport commitが実装検証対象HEADと同一」とは主張せず、実装検証対象を明示した。
+
+**P4-3: 初回監査時 OPEN / 完遂後再監査 CLOSED**
 
 ---
 
@@ -1063,7 +1159,7 @@ physical GPU runtimeも依頼者が環境を持たない前提から必須では
 
 ---
 
-# 25. source severity
+# 25. source severity（完遂後再監査）
 
 今回の差分および前回実装全体を再確認した範囲:
 
@@ -1078,13 +1174,15 @@ P2 production:
     none found
 
 P3:
-    2 open
+    0 open / 2 closed
 
 P4:
-    3 open
+    0 open / 3 closed
 ```
 
-P3はいずれもCI validation coverageの問題。
+初回監査で検出した5件のP3/P4 closure gateは、実装変更・workflow変更・対象HEADのCI実証によりすべてCLOSEDとなった。
+
+P3はいずれも初回時点ではCI validation coverageの問題であり、完遂後はQt version assertとproduction loader actual-loadで解消した。
 
 現時点で確認されたBSD WSI production crash/UB/compile defectではない。
 
@@ -1144,8 +1242,8 @@ P3はいずれもCI validation coverageの問題。
 ## Remaining validation hardening
 
 ```text
-[ ] Qt >= 6.5 explicit CI assert
-[ ] production loader candidate actual-load test
+[x] Qt >= 6.5 explicit CI assert
+[x] production loader candidate actual-load test
 ```
 
 ## Runtime
@@ -1159,47 +1257,31 @@ P3はいずれもCI validation coverageの問題。
 
 ---
 
-# 27. 推奨次修正
+# 27. 推奨次修正（完遂後再監査）
 
-production renderer/sourceに今すぐ大きな変更は不要。
+P3/P4 closureに必要だった5点は完了した。production renderer/sourceに追加の必須修正はない。
 
-次pushでは以下だけでよい。
+残るのは元のDefinition of Doneで任意扱いのruntime検証だけである。
 
-### Required to close P3
-
-```text
-1.
-BSD 3 OSでQt versionをlog + >=6.5 assert
-
-2.
-production Vulkan loader candidate
-libvulkan.so.1 / libvulkan.so
-のactual dlopen test
-```
-
-### Small P4 cleanup
+### Residual optional validation
 
 ```text
-3.
-Stub冒頭commentの"currently the BSDs"を修正
-
-4.
-preflight stepを分割
-
-5.
-tested_source_headとcurrent_repository_headを文書で分離
+[ ] optional software Vulkan presentation smoke
+[ ] physical FreeBSD/NetBSD/OpenBSD GPU runtime
 ```
+
+この任意項目は今回のP3/P4 closureを再オープンしない。
 
 この5点以外に、
 今回の監査で新しいrenderer本体修正要求は見つからなかった。
 
 ---
 
-# 28. 再監査時点のローカル／Git境界
+# 28. 初回Push後監査スナップショット（履歴）
 
 ## HEADとremote
 
-再監査時点のローカルHEADと、対象branchのremote refは一致している。
+初回Push後監査時点では、ローカルHEADと対象branchのremote refは一致していた。
 
 ```text
 local HEAD:
@@ -1225,7 +1307,7 @@ PASS — source fingerprint
 PASS — 111 committed SPIR-V modules match manifest hashes
 ```
 
-これらは現在のローカルcheckoutに対する静的検証であり、GitHub Actionsの成功結果や物理BSD GPUのruntime結果を代替しない。
+これらは初回Push後監査時点のローカルcheckoutに対する静的検証であり、GitHub Actionsの成功結果や物理BSD GPUのruntime結果を代替しない。
 
 ## 作業ツリーの境界
 
@@ -1238,18 +1320,61 @@ PASS — 111 committed SPIR-V modules match manifest hashes
 
 前者の削除は既存の作業ツリー変更として保持し、今回の再監査で復元・変更していない。後者は本再監査書自身であり、source/workflowのpush後状態とは別に扱う。
 
-したがって、本書のCI判定は引き続き`tested_source_head = 24157d40...`、リポジトリの現在refは`current_repository_head = 232c50c...`として記録する。
+この節の`232c50c...`は初回Push後監査の履歴スナップショットである。完遂後のCI判定は、後述の`tested_source/workflow_head = 6cd32fc...`を基準とする。
 
 ---
 
-# 29. 最終判定
+# 29. P3/P4 closure再監査
+
+完遂後の対象source/workflow HEADは以下である。
 
 ```text
-HEAD:
-232c50c726b1645852ccf731ab4695fb2729d4a0
+tested_source/workflow_head:
+6cd32fc34d4a41d7797c5823ee62ca11a9efc467
+```
 
+## BSD strict workflow
+
+[BSD 3OS strict workflow run 31823333053](https://github.com/ag-advania/melonPrimeDS/actions/runs/31823333053)
+
+```text
+status: completed
+conclusion: success
+NetBSD / x86_64: success
+FreeBSD / x86_64: success
+OpenBSD / x86_64: success
+All BSD artifacts: success
+```
+
+このrunの各jobで、Qt 6.5+ assert、Vulkan headers、versioned loader candidate、shader source sync、production loader actual-loadを通過した。
+
+## Regression workflows
+
+```text
+[Ubuntu run 31824256449](https://github.com/ag-advania/melonPrimeDS/actions/runs/31824256449): success
+[macOS run 31824256438](https://github.com/ag-advania/melonPrimeDS/actions/runs/31824256438): success
+[Windows run 31824255781](https://github.com/ag-advania/melonPrimeDS/actions/runs/31824255781): success
+```
+
+4 workflow runすべてが同じ`6cd32fc34d4a41d7797c5823ee62ca11a9efc467`を`headSha`として実行された。
+
+## Closure result
+
+```text
+P3-1 Qt 6.5+ explicit CI assert: CLOSED
+P3-2 production Vulkan loader actual-load: CLOSED
+P4-1 stale BSD stub comment: CLOSED
+P4-2 preflight observability split: CLOSED
+P4-3 tested-head provenance wording: CLOSED
+```
+
+---
+
+# 30. 最終判定
+
+```text
 TESTED SOURCE/WORKFLOW HEAD:
-24157d40f0723a090a55117448973887c650b8dd
+6cd32fc34d4a41d7797c5823ee62ca11a9efc467
 
 BSD STRICT WORKFLOW:
 PASS
@@ -1285,10 +1410,10 @@ NEW P2:
 NONE FOUND
 
 P3:
-2 OPEN
+0 OPEN / CLOSED (2/2)
 
 P4:
-3 OPEN
+0 OPEN / CLOSED (3/3)
 
 PHYSICAL BSD VULKAN:
 NOT TESTED
@@ -1296,15 +1421,14 @@ NOT TESTED
 
 結論:
 
-**BSD Vulkan X11 WSIのbuild/static integrationは成功と判定してよい。**
+**BSD Vulkan X11 WSIのbuild/static integrationと、今回指定されたP3/P4 closureは完遂した。**
 
-ただし最終的な監査品質としては、
+完遂後の必須監査項目は、
 
 ```text
-Qt 6.5+をCIで明示証明する
-production Vulkan loader名を実際にdlopenする
+Qt 6.5+をCIで明示証明: CLOSED
+production Vulkan loaderを実装経由で実際にOpen: CLOSED
+P4 provenance/observability/documentation: CLOSED
 ```
 
-の2点を追加すれば、今回のP3は閉じられる。
-
-physical BSD GPU runtimeは引き続き別枠の未検証項目とする。
+physical BSD GPU runtimeとsoftware Vulkan presentation smokeは、引き続き別枠のNOT TESTED/NOT RUN項目であり、今回のP3/P4 closureを阻害しない。
