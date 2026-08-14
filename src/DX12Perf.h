@@ -317,7 +317,7 @@ enum class CpuMetric : u32 { RasterBeginWait, TexcacheUpdate, BuildPolygons, Spa
     DescriptorUpdate, ComposePack, ComposeRecord, CaptureWait, CaptureMapCopy,
     PresentSlotWait, PresentBeginWait, HudPatchCopy, HudUpload, PresentRecord, QueueSubmit, Count };
 enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
-    RasterBeginNoWaitCount, RasterBeginFenceTimeoutCount, IdenticalFrames, Polygons, Variants,
+    RasterBeginNoWaitCount, RasterBeginFenceTimeoutCount, IdenticalFrames, Polygons, Variants, YSpans, SetupIndices,
     SpanUploadBytes, StructuredPackBytes, StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
     StructuredRouteRuns, TextureUploadBytes, UploadOverflowCount,
