@@ -600,7 +600,24 @@ bool VulkanDevice::Create(
                 presentTimingFeatures.presentAtRelativeTime == VK_TRUE;
         }
 
-        const bool hasLatestReady = hasPresentTiming
+        // GOOGLE display timing is an independent target-time backend. Unlike
+        // EXT it needs neither present_id2 nor the EXT surface capability
+        // chain, so discover it before deciding whether FIFO_LATEST_READY can
+        // be enabled.
+        const bool hasGoogleDisplayTiming = Vk::FeatureProbe::HasExtension(
+            available, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+        if (hasGoogleDisplayTiming)
+        {
+            EnabledExtensions.push_back(VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
+            State->PresentTimingFeatures.GoogleDisplayTiming = true;
+            genericPresentExtensionsEnabled = true;
+        }
+
+        // VK_KHR_present_mode_fifo_latest_ready depends on VK_KHR_swapchain,
+        // not VK_EXT_present_timing. It is valid with either the EXT or GOOGLE
+        // time-based target backend.
+        const bool hasTimeBasedPresentBackend = hasPresentTiming || hasGoogleDisplayTiming;
+        const bool hasLatestReady = hasTimeBasedPresentBackend
             && Vk::FeatureProbe::HasExtension(
                 available, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME)
             && latestReadyFeatures.presentModeFifoLatestReady == VK_TRUE;
@@ -609,18 +626,6 @@ bool VulkanDevice::Create(
             EnabledExtensions.push_back(
                 VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
             chain(latestReadyFeatures);
-        }
-
-        // GOOGLE has no feature struct and no present_id2 dependency. Enable it
-        // alongside EXT when exposed so the pacer can retain EXT priority yet
-        // fail over without recreating the logical device.
-        const bool hasGoogleDisplayTiming = Vk::FeatureProbe::HasExtension(
-            available, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
-        if (hasGoogleDisplayTiming)
-        {
-            EnabledExtensions.push_back(VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME);
-            State->PresentTimingFeatures.GoogleDisplayTiming = true;
-            genericPresentExtensionsEnabled = true;
         }
 
         Platform::Log(

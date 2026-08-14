@@ -357,6 +357,27 @@ def main() -> int:
         failures,
     )
     require(
+        "SelectVulkanPresentTargetBackend" in vulkan_pacing_policy
+        and "VulkanTargetCanUseFifoLatestReady" in vulkan_pacing_policy
+        and "SelectVulkanPresentTargetBackend(mixed)" in vulkan_timing_tests
+        and "target selection must fall back from target-incapable EXT to GOOGLE" in vulkan_timing_tests
+        and "a failed EXT timing lifecycle must still allow GOOGLE target fallback"
+            in vulkan_timing_tests
+        and "GOOGLE target scheduling must make FIFO_LATEST_READY eligible without EXT"
+            in vulkan_timing_tests,
+        "target backend selection must fall back from target-incapable EXT to GOOGLE",
+        failures,
+    )
+    require(
+        "const bool hasTimeBasedPresentBackend = hasPresentTiming || hasGoogleDisplayTiming;"
+            in vulkan_device
+        and "const bool hasLatestReady = hasTimeBasedPresentBackend" in vulkan_device
+        and "caps.LatestReadyDevice = LatestReadyDevice;" in vulkan_pacer
+        and "VulkanTargetCanUseFifoLatestReady(GetPolicy(), caps)" in vulkan_pacer,
+        "FIFO_LATEST_READY device enablement and pacer gating must accept GOOGLE without EXT",
+        failures,
+    )
+    require(
         "VK_PRESENT_TIMING_INFO_PRESENT_AT_RELATIVE_TIME_BIT_EXT" in vulkan_pacer
         and "target.Mode == VulkanTargetSchedulingMode::Relative" in vulkan_pacer
         and "EvaluateRelativeTargetDuration" in vulkan_pacer

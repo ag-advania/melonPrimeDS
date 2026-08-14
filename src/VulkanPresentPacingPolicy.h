@@ -201,6 +201,14 @@ struct VulkanPacingCapabilities
     bool GoogleDisplayTimingAvailable = false;
     bool GoogleDisplayTimingRuntimeEnabled = false;
     bool GoogleRefreshDurationReady = false;
+    // Device-level VK_KHR_present_mode_fifo_latest_ready support. This mode
+    // depends only on VK_KHR_swapchain plus its feature bit; it is not an EXT
+    // present-timing dependency and can therefore pair with GOOGLE.
+    bool LatestReadyDevice = false;
+    // Sticky per-swapchain failure of the EXT timing lifecycle. This is a
+    // structural runtime failure, not the temporary bootstrap state where
+    // timing properties or domains are simply not ready yet.
+    bool TargetSchedulingLifecycleFailed = false;
 };
 
 struct VulkanPacingDecision
@@ -276,6 +284,40 @@ constexpr VulkanPresentTimingBackend SelectVulkanPresentTimingBackend(
     return VulkanPresentTimingBackend::None;
 }
 
+// Target scheduling has a stricter question than telemetry: EXT is preferred
+// only when its target path can actually carry a present. An EXT surface that
+// has metadata but no usable target mode (or no present_id2 correlation) must
+// not hide a fully usable GOOGLE scheduler behind the EXT priority. The
+// telemetry selector above intentionally remains EXT-first so TelemetryOnly
+// keeps its existing backend preference.
+constexpr VulkanPresentTimingBackend SelectVulkanPresentTargetBackend(
+    const VulkanPacingCapabilities& caps) noexcept
+{
+    const bool extTargetCapable = caps.PresentTimingSurface
+        && caps.TimingMetadataEnabled
+        && caps.PresentId2Surface
+        && !caps.TargetSchedulingLifecycleFailed
+        && SelectVulkanTargetSchedulingMode(caps) != VulkanTargetSchedulingMode::None;
+    if (extTargetCapable)
+        return VulkanPresentTimingBackend::ExtPresentTiming;
+    if (caps.GoogleDisplayTimingAvailable && caps.GoogleDisplayTimingRuntimeEnabled)
+        return VulkanPresentTimingBackend::GoogleDisplayTiming;
+    return VulkanPresentTimingBackend::None;
+}
+
+constexpr bool VulkanTargetCanUseFifoLatestReady(
+    VulkanPresentPacingPolicy policy, const VulkanPacingCapabilities& caps) noexcept
+{
+    if (policy != VulkanPresentPacingPolicy::JustInTimeFifoLatestReady
+        || !caps.LatestReadyDevice)
+    {
+        return false;
+    }
+    const VulkanPresentTimingBackend backend = SelectVulkanPresentTargetBackend(caps);
+    return backend == VulkanPresentTimingBackend::ExtPresentTiming
+        || backend == VulkanPresentTimingBackend::GoogleDisplayTiming;
+}
+
 constexpr bool VulkanPolicyRequestsTargetTime(VulkanPresentPacingPolicy policy) noexcept
 {
     return policy == VulkanPresentPacingPolicy::JustInTime
@@ -295,11 +337,33 @@ constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(
     if (!caps.SwapchainValid)
         return VulkanJitFallbackReason::PresentTimingUnsupported;
 
-    const VulkanPresentTimingBackend backend = SelectVulkanPresentTimingBackend(caps);
+    const VulkanPresentTimingBackend backend = VulkanPolicyRequestsTargetTime(policy)
+        ? SelectVulkanPresentTargetBackend(caps)
+        : SelectVulkanPresentTimingBackend(caps);
     if (backend == VulkanPresentTimingBackend::None)
     {
+        const bool googleUsable = caps.GoogleDisplayTimingAvailable
+            && caps.GoogleDisplayTimingRuntimeEnabled;
+        if (caps.PresentTimingSurface && caps.TimingMetadataEnabled && !googleUsable)
+        {
+            if (!caps.PresentId2Surface)
+                return VulkanJitFallbackReason::PresentId2Unsupported;
+            if (SelectVulkanTargetSchedulingMode(caps) == VulkanTargetSchedulingMode::None)
+            {
+                return (!caps.AbsoluteTimingDevice && !caps.RelativeTimingDevice)
+                    ? VulkanJitFallbackReason::NoTargetTimingModeDevice
+                    : VulkanJitFallbackReason::NoTargetTimingModeSurface;
+            }
+        }
         if (caps.TimingQueuePressure)
             return VulkanJitFallbackReason::TimingQueuePressure;
+        if (caps.GoogleDisplayTimingAvailable
+            && !caps.GoogleDisplayTimingRuntimeEnabled)
+        {
+            return VulkanJitFallbackReason::TimingQueryFailed;
+        }
+        if (caps.GoogleDisplayTimingAvailable && !caps.GoogleRefreshDurationReady)
+            return VulkanJitFallbackReason::TimingPropertiesNotReady;
         // A surface that advertised present timing but is no longer reporting
         // failed at runtime; one that never advertised it simply lacks it.
         return caps.PresentTimingSurface
@@ -364,7 +428,9 @@ constexpr VulkanPacingDecision ResolveVulkanPresentPacing(
         return {VulkanPacingAuthority::AmdAntiLag2, false, noMode, false,
                 VulkanJitFallbackReason::VendorLatencyApiOwnsPacing, false, noBackend};
     }
-    const VulkanPresentTimingBackend backend = SelectVulkanPresentTimingBackend(caps);
+    const VulkanPresentTimingBackend backend = VulkanPolicyRequestsTargetTime(policy)
+        ? SelectVulkanPresentTargetBackend(caps)
+        : SelectVulkanPresentTimingBackend(caps);
     if (!normalSpeed)
     {
         // Fast-forward and slow motion are not presentation problems. Neither

@@ -329,6 +329,7 @@ VulkanPacingCapabilities FullCapabilities()
     caps.TimeDomainsReady = true;
     caps.TargetStageValid = true;
     caps.FrameIntervalKnown = true;
+    caps.LatestReadyDevice = true;
     return caps;
 }
 
@@ -366,6 +367,26 @@ void TestTimingBackendSelection()
     both.GoogleRefreshDurationReady = true;
     Require(SelectVulkanPresentTimingBackend(both) == TimingBackend::ExtPresentTiming,
         "VK_EXT_present_timing must win when EXT and GOOGLE are both usable");
+
+    // EXT metadata is still preferred for telemetry, but an EXT surface that
+    // cannot schedule either target mode must not block GOOGLE JIT fallback.
+    VulkanPacingCapabilities mixed = both;
+    mixed.AbsoluteTimingDevice = false;
+    mixed.RelativeTimingDevice = false;
+    Require(SelectVulkanPresentTimingBackend(mixed) == TimingBackend::ExtPresentTiming,
+        "telemetry must retain EXT priority when both metadata backends exist");
+    Require(SelectVulkanPresentTargetBackend(mixed) == TimingBackend::GoogleDisplayTiming,
+        "target selection must fall back from target-incapable EXT to GOOGLE");
+    const VulkanPacingDecision mixedDecision = Resolve(Policy::JustInTime, mixed);
+    Require(mixedDecision.TimingBackend == TimingBackend::GoogleDisplayTiming
+            && mixedDecision.TargetTimeScheduling
+            && mixedDecision.TargetMode == TargetMode::Absolute,
+        "mixed EXT metadata and GOOGLE target capability must schedule through GOOGLE");
+
+    mixed = both;
+    mixed.PresentId2Surface = false;
+    Require(SelectVulkanPresentTargetBackend(mixed) == TimingBackend::GoogleDisplayTiming,
+        "missing EXT present_id2 correlation must not suppress GOOGLE targeting");
 
     const VulkanPacingCapabilities google = GoogleCapabilities();
     const VulkanPacingDecision googleDecision = Resolve(Policy::JustInTime, google);
@@ -406,6 +427,43 @@ void TestTimingBackendSelection()
     nonFifo.FifoPresentMode = false;
     Require(!Resolve(Policy::JustInTime, nonFifo).TargetTimeScheduling,
         "VSync-off present modes must suppress GOOGLE targets");
+}
+
+void TestFifoLatestReadyBackendCompatibility()
+{
+    const VulkanPacingCapabilities google = GoogleCapabilities();
+    Require(VulkanTargetCanUseFifoLatestReady(
+                Policy::JustInTimeFifoLatestReady, google),
+        "GOOGLE target scheduling must make FIFO_LATEST_READY eligible without EXT");
+
+    VulkanPacingCapabilities noLatestReady = google;
+    noLatestReady.LatestReadyDevice = false;
+    Require(!VulkanTargetCanUseFifoLatestReady(
+                 Policy::JustInTimeFifoLatestReady, noLatestReady),
+        "FIFO_LATEST_READY must remain off when its feature is unavailable");
+
+    const VulkanPacingCapabilities ext = FullCapabilities();
+    Require(VulkanTargetCanUseFifoLatestReady(
+                Policy::JustInTimeFifoLatestReady, ext),
+        "EXT target scheduling must retain FIFO_LATEST_READY eligibility");
+
+    VulkanPacingCapabilities mixed = ext;
+    mixed.AbsoluteTimingDevice = false;
+    mixed.RelativeTimingDevice = false;
+    mixed.GoogleDisplayTimingAvailable = true;
+    mixed.GoogleDisplayTimingRuntimeEnabled = true;
+    mixed.GoogleRefreshDurationReady = true;
+    Require(SelectVulkanPresentTargetBackend(mixed) == TimingBackend::GoogleDisplayTiming
+            && VulkanTargetCanUseFifoLatestReady(
+                Policy::JustInTimeFifoLatestReady, mixed),
+        "target-incapable EXT plus GOOGLE must retain FIFO_LATEST_READY eligibility");
+
+    mixed = ext;
+    mixed.TargetSchedulingLifecycleFailed = true;
+    mixed.GoogleDisplayTimingAvailable = true;
+    mixed.GoogleDisplayTimingRuntimeEnabled = true;
+    Require(SelectVulkanPresentTargetBackend(mixed) == TimingBackend::GoogleDisplayTiming,
+        "a failed EXT timing lifecycle must still allow GOOGLE target fallback");
 }
 
 void TestGoogleTimingTransactions()
@@ -1159,6 +1217,7 @@ int main()
     TestGoogleTimingTransactions();
 
     TestTimingBackendSelection();
+    TestFifoLatestReadyBackendCompatibility();
     TestTargetTimeDoesNotRequirePresentWait2();
     TestBoundedWaitWithoutPresentTiming();
     TestVendorLatencyApisWin();

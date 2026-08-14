@@ -416,19 +416,30 @@ bool VulkanPresentPacer::ShouldUseFifoLatestReady() const noexcept
     // every capability, entry point and lifecycle step is in place.
     if (GetPolicy() != VulkanPresentPacingPolicy::JustInTimeFifoLatestReady)
         return false;
-    if (TargetSchedulingLifecycleFailed)
+    // A failed EXT lifecycle must stay sticky for EXT, but it must not block a
+    // usable GOOGLE fallback on the same device.
+    if (TargetSchedulingLifecycleFailed && !GoogleDisplayTimingRuntimeEnabled)
         return false;
     // Deliberately independent of VK_KHR_present_wait2: the bounded wait is a
     // different mechanism and its absence must not cost this present mode.
-    //
-    // Either scheduling mode qualifies. Requiring absolute specifically would
-    // deny this present mode to exactly the surfaces relative scheduling was
-    // added for -- and time-based image selection is the whole point of
-    // FIFO_LATEST_READY, so a relative scheduler benefits from it just as much.
+    // Build the same target-backend capability matrix used by the per-frame
+    // resolver. In particular, GOOGLE does not require present_id2, EXT time
+    // domains, or the EXT results queue -- all of those are EXT-only details.
+    const VulkanPacingCapabilities caps = BuildCapabilities();
+    if (!VulkanTargetCanUseFifoLatestReady(GetPolicy(), caps))
+        return false;
+
+    const VulkanPresentTimingBackend backend = SelectVulkanPresentTargetBackend(caps);
+    if (backend == VulkanPresentTimingBackend::GoogleDisplayTiming)
+        return Device != nullptr;
+
+    // EXT still needs the time-domain and results-queue entry points because
+    // its target metadata is carried by VK_EXT_present_timing.
     const bool absoluteCapable = PresentTimingAbsoluteSurface && AbsoluteTimingDevice;
     const bool relativeCapable = PresentTimingRelativeSurface && RelativeTimingDevice;
-    return PresentTimingSurface && PresentId2Surface && LatestReadyDevice
-        && (absoluteCapable || relativeCapable) && TimeDomainQueryAvailable
+    return backend == VulkanPresentTimingBackend::ExtPresentTiming
+        && (absoluteCapable || relativeCapable)
+        && TimeDomainQueryAvailable
         && Device != nullptr
         && Device->Fns().SetSwapchainPresentTimingQueueSizeEXT != nullptr;
 }
@@ -605,6 +616,8 @@ VulkanPacingCapabilities VulkanPresentPacer::BuildCapabilities() const noexcept
     caps.GoogleDisplayTimingAvailable = GoogleDisplayTimingDevice;
     caps.GoogleDisplayTimingRuntimeEnabled = GoogleDisplayTimingRuntimeEnabled;
     caps.GoogleRefreshDurationReady = GoogleRefreshDurationReady;
+    caps.LatestReadyDevice = LatestReadyDevice;
+    caps.TargetSchedulingLifecycleFailed = TargetSchedulingLifecycleFailed;
     return caps;
 }
 
