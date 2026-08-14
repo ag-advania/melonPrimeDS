@@ -8,6 +8,7 @@
 - 前回監査HEAD: `ed859a1bcc5e58fc7b3b2d55a14f1f0feedb047e`
 - 今回HEAD: `5c05d249c27cc11d667349bfccae763a941d3ece`
 - HEAD commit: `Add Vulkan present pacer dispatch coverage`
+- follow-up検証対象HEAD: `18bad3ade1f0b3c22b1a2d6830e7d53e3f400ebe` (`fix`)
 - 前回HEADから: `2 commits ahead / 0 behind`
 - 前回P3 hardening: `API-level fake Vulkan dispatch integration`
 - 前回P3 hardening判定: **CLOSED**
@@ -1597,7 +1598,7 @@ Linux physical Vulkan runtime:
 
 # 29. Windows validation
 
-現repository evidence:
+初回再監査時のrepository evidence:
 
 ```text
 Windows:
@@ -1606,19 +1607,21 @@ Windows:
 
 今回HEADについてGitHub-hosted workflowも存在しない。
 
-したがってWindowsについて:
+follow-upでは現Windowsホストの既存Vulkan ON / DX12 ON Releaseツリーを
+`build-mingw-existing.bat --jobs 1`でincremental buildし、production fake
+dispatch target・pure timing test・XeLL testがPASSした。
+
+したがって現時点のWindowsについて:
 
 ```text
 compile:
-    NOT VERIFIED
+    PASS (incremental existing-tree build)
 
 runtime:
     NOT VERIFIED
 ```
 
-のまま。
-
-**判定: OPEN**
+**判定: build PARTIALLY CLOSED / runtime OPEN**
 
 ---
 
@@ -2212,17 +2215,15 @@ Validation:
 # 43. 残る検証ギャップ
 
 ```text
-1. Windows Vulkan build
+1. Windows Vulkan runtime
 
-2. Windows Vulkan runtime
+2. Linux physical Vulkan runtime
 
-3. Linux physical Vulkan runtime
+3. validation layer execution
 
-4. validation layer execution
+4. EXT present timing対応GPUでphysical lifecycle test
 
-5. EXT present timing対応GPUでphysical lifecycle test
-
-6. cross-GPU endurance / parity
+5. cross-GPU endurance / parity
 ```
 
 ---
@@ -2515,7 +2516,7 @@ docs/features/rendering/vulkan-backend.md
 次回PushではP4ではなく、以下のplatform/runtime validationを見る。
 
 ```text
-1. Windows Vulkan build/runtime
+1. Windows Vulkan runtime
 
 2. Linux physical Vulkan runtime
 

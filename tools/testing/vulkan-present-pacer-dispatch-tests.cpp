@@ -47,6 +47,13 @@ struct FakeVulkan
 {
     static FakeVulkan* Current;
 
+    struct TimingReportScript
+    {
+        u64 PresentId = 0;
+        VkBool32 Complete = VK_FALSE;
+        u64 StageTimeNs = 0;
+    };
+
     bool SurfaceId2 = true;
     bool SurfaceWait2 = true;
     bool SurfaceTiming = true;
@@ -61,6 +68,9 @@ struct FakeVulkan
     std::deque<VkResult> ExtPastResults;
     std::deque<VkResult> GoogleRefreshResults;
     std::deque<VkResult> GooglePastResults;
+    std::deque<TimingReportScript> PastReports;
+    VkResult SurfaceCapabilities2Result = VK_SUCCESS;
+    VkResult LegacySurfaceCapabilitiesResult = VK_SUCCESS;
     VkResult QueueSizeResult = VK_SUCCESS;
     uint64_t ReportTimingPropertiesCounter = 1;
     uint64_t ReportTimeDomainsCounter = 1;
@@ -102,6 +112,8 @@ struct FakeVulkan
         VkSurfaceCapabilities2KHR* capabilities)
     {
         ++Current->Caps2Calls;
+        if (Current->SurfaceCapabilities2Result != VK_SUCCESS)
+            return Current->SurfaceCapabilities2Result;
         if (!capabilities)
             return VK_ERROR_UNKNOWN;
         capabilities->surfaceCapabilities.minImageCount = 2;
@@ -146,8 +158,11 @@ struct FakeVulkan
         VkPhysicalDevice, VkSurfaceKHR, VkSurfaceCapabilitiesKHR* capabilities)
     {
         ++Current->LegacyCapsCalls;
-        if (capabilities)
-            capabilities->minImageCount = 2;
+        if (Current->LegacySurfaceCapabilitiesResult != VK_SUCCESS)
+            return Current->LegacySurfaceCapabilitiesResult;
+        if (!capabilities)
+            return VK_ERROR_UNKNOWN;
+        capabilities->minImageCount = 2;
         return VK_SUCCESS;
     }
 
@@ -229,7 +244,27 @@ struct FakeVulkan
         {
             properties->timingPropertiesCounter = Current->ReportTimingPropertiesCounter;
             properties->timeDomainsCounter = Current->ReportTimeDomainsCounter;
+            const uint32_t capacity = properties->presentationTimingCount;
             properties->presentationTimingCount = 0;
+            if (capacity != 0 && properties->pPresentationTimings != nullptr
+                && !Current->PastReports.empty())
+            {
+                const TimingReportScript reportScript = Current->PastReports.front();
+                Current->PastReports.pop_front();
+                VkPastPresentationTimingEXT& report = properties->pPresentationTimings[0];
+                report.presentId = reportScript.PresentId;
+                report.reportComplete = reportScript.Complete;
+                report.presentStageCount = reportScript.StageTimeNs != 0 ? 1 : 0;
+                report.timeDomain = VK_TIME_DOMAIN_PRESENT_STAGE_LOCAL_EXT;
+                report.timeDomainId = 8;
+                if (report.presentStageCount != 0 && report.pPresentStages != nullptr)
+                {
+                    report.pPresentStages[0].stage =
+                        VK_PRESENT_STAGE_IMAGE_FIRST_PIXEL_VISIBLE_BIT_EXT;
+                    report.pPresentStages[0].time = reportScript.StageTimeNs;
+                }
+                properties->presentationTimingCount = 1;
+            }
         }
         return result;
     }
@@ -318,6 +353,26 @@ void ConfigureCapabilities(VulkanPresentPacer& pacer, FakeVulkan& fake)
     Require(pacer.QuerySurfaceCapabilities(capabilities),
         "fake surface capabilities query must succeed");
     Require(fake.Caps2Calls == 1, "modern surface capabilities must use the fake call");
+}
+
+void TestSurfaceCapabilitiesFallback()
+{
+    FakeVulkan fake;
+    fake.SurfaceCapabilities2Result = VK_ERROR_EXTENSION_NOT_PRESENT;
+    VulkanPresentPacer pacer;
+    const VulkanPresentPacerInitInfo info = BaseInfo(true, false, false);
+    Require(pacer.InitializeForTesting(fake.Dispatch(), info, Surface),
+        "fallback pacer initialization must succeed");
+
+    VkSurfaceCapabilitiesKHR capabilities{};
+    Require(pacer.QuerySurfaceCapabilities(capabilities),
+        "legacy surface capabilities fallback must succeed");
+    Require(fake.Caps2Calls == 1 && fake.LegacyCapsCalls == 1,
+        "failed modern surface query must invoke the legacy fallback exactly once");
+    Require(capabilities.minImageCount == 2,
+        "legacy surface capabilities must populate the returned capabilities");
+    Require(pacer.GetSwapchainCreateFlags() == 0,
+        "legacy surface capability fallback must disable modern swapchain flags");
 }
 
 void MakePacer(
@@ -716,6 +771,22 @@ void TestQueuePressureAndRetry()
                 "queue pressure must preserve the allocated queue size");
         }
     }
+
+    // A completed report drains one slot after pressure has paused metadata.
+    // The production pacer must then grow the queue and re-enable metadata
+    // before preparing the next present.
+    fake.PastReports.push_back({1, VK_TRUE, FrameIntervalNs});
+    (void)pacer.BeginFrame(false, false, true, FrameIntervalNs);
+    VkPresentInfoKHR recoveredPresent{};
+    VulkanPresentPacer::PresentMetadata recoveredMetadata{};
+    pacer.PreparePresent(recoveredPresent, 18, recoveredMetadata);
+    Require(recoveredMetadata.TimingAttached,
+        "a completed timing report must re-enable metadata after queue pressure");
+    const auto recoverySnapshot = pacer.CaptureState(recoveredMetadata);
+    Require(recoverySnapshot.TimingQueueSize == 32,
+        "queue-pressure recovery must grow the timing queue before resuming metadata");
+    Require(recoverySnapshot.TimingQueueRecoveries == 1,
+        "queue-pressure recovery must increment the recovery counter");
 }
 
 void TestTimingQueueAllocationFailure()
@@ -806,6 +877,7 @@ void TestSameFrameRecreationWithLifecycleFailure()
 
 int main()
 {
+    TestSurfaceCapabilitiesFallback();
     TestWaitResults();
     TestExtPastResults();
     TestTimingProperties();

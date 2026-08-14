@@ -819,13 +819,18 @@ binning, span setup, blending and tile-geometry derivation are a 1:1 port.
   invocations per workgroup, above the guaranteed 128. These are arithmetic
   predictions about the *guaranteed minimums*, not observed driver failures; the
   host probe is what decides whether a given device may offer those scales.
-* AMD Anti-Lag 2 has never been exercised on AMD hardware, and no non-NVIDIA GPU,
-  Linux system or macOS system has run this backend. See the status table in
-  [`docs/plans/rendering/vulkan/clean-room-rewrite-contract.md`](../../plans/rendering/vulkan/clean-room-rewrite-contract.md)
-  for the complete verified/unverified breakdown.
+* AMD Anti-Lag 2 has never been exercised on AMD hardware. An Intel Iris Plus
+  Graphics 655 macOS developer run has exercised this Vulkan backend through
+  the bundled MoltenVK loader, including Google display timing JIT and
+  resize/minimize/restore cycles; this is one-machine evidence, not a
+  cross-GPU parity certification. The archived run is
+  [`docs/archive/audits/vulkan/2026-08-14-present-pacer-dispatch/f2-runtime.log`](../../archive/audits/vulkan/2026-08-14-present-pacer-dispatch/f2-runtime.log).
+  AMD hardware and physical Linux Vulkan runtime remain unverified.
 * The modern vendor-neutral WSI extensions compile against both the minimum
   Vulkan header and Vulkan SDK 1.4.357. Surface capability, device enablement,
   and swapchain creation were runtime-validated on an NVIDIA RTX 5070 Ti driver
-  exposing the complete present-id2/wait2/timing stack. Frame-level timing/wait
-  behaviour and Intel/AMD/Linux/MoltenVK paths remain unverified, so the default
-  remains telemetry-only.
+  exposing the complete present-id2/wait2/timing stack. The Intel/MoltenVK run
+  exercised the GOOGLE display-timing path, while physical `VK_EXT_present_timing`
+  on that device, physical Linux/Windows/AMD runs, and Khronos validation-layer
+  coverage remain unverified. The default policy remains telemetry-only unless
+  an explicitly selected target-scheduling policy is active.

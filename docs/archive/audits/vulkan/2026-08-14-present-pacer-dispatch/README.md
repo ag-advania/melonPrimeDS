@@ -5,7 +5,13 @@ Date: 2026-08-14 (JST)
 Repository: `develop_remakeVulkan_ver3`
 
 Baseline: `4e7579359371` (`add md`)
-Working tree: source changes are uncommitted; pre-existing `.codex/` and `docs/development/codex/` changes are outside this audit.
+Implementation commit: `5c05d249c27c` (`Add Vulkan present pacer dispatch coverage`)
+Follow-up repository HEAD: `18bad3ade1f0` (`fix`)
+
+The Vulkan implementation and its audit artifacts were committed by
+`5c05d249`. The `.codex/` and `docs/development/codex/` files in that commit
+were outside the Vulkan implementation scope, but they were co-committed and
+are included in the commit provenance below.
 
 ## Root cause
 
@@ -28,7 +34,7 @@ The first Linux re-build also exposed a portability defect in the new test wirin
 - `implement_pacer_fake_dispatch` (Luna Max): implemented the dispatch seam, production direct-PFN path, fake API-level tests, CMake target, audit assertions, and documentation correction. A follow-up was delegated for the three gaps found by main review (same-frame lifecycle failure, exhausted time-domain retry, and queue allocation failure); all were fixed and re-audited.
 - `fix_linux_vulkan_test_includes` (Luna Max): added `${MELONPRIME_VULKAN_INCLUDE_DIR}` to the pure timing target, verified Vulkan ON/OFF target conditioning, and passed the macOS target build/tests.
 
-## Actual changed files
+## Vulkan implementation-scope files
 
 - `src/VulkanPresentPacer.h`
 - `src/VulkanPresentPacer.cpp`
@@ -39,7 +45,19 @@ The first Linux re-build also exposed a portability defect in the new test wirin
 - `docs/archive/audits/vulkan/2026-08-14-present-pacer-dispatch/f2-runtime.log`
 - this `README.md`
 
-The unrelated pre-existing worktree entries `.codex/config.toml`, `.codex/agents/`, and `docs/development/codex/` were preserved and not included in this audit change set.
+## Commit provenance
+
+The same `5c05d249` commit also included `.codex/config.toml`,
+`.codex/agents/luna-worker.toml`, and
+`docs/development/codex/luna-orchestrator-prompt.md`. Those files were outside
+the Vulkan implementation scope, but they were co-committed and are not
+described as uncommitted or omitted from the commit scope.
+
+The P4 closure follow-up is a separate current working-tree change and is not
+retroactively attributed to `5c05d249`; it updates this README and
+`docs/features/rendering/vulkan-backend.md`, and extends
+`tools/testing/vulkan-present-pacer-dispatch-tests.cpp` with recovery and
+legacy-capability assertions.
 
 ## Test and build results
 
@@ -52,7 +70,9 @@ The unrelated pre-existing worktree entries `.codex/config.toml`, `.codex/agents
 - `GetSwapchainTimingPropertiesEXT`: `NOT_READY` retry and `SURFACE_LOST` failure.
 - `GetSwapchainTimeDomainPropertiesEXT`: count/array success, bounded `INCOMPLETE` retry, retry exhaustion after a present, `SURFACE_LOST`, and missing-domain behavior.
 - `GetRefreshCycleDurationGOOGLE` and `GetPastPresentationTimingGOOGLE`: success, incomplete, lifecycle failures, and optional disable.
-- queue-size allocation failure and queue-pressure recovery.
+- queue-size allocation failure, queue-pressure detection/retry/pause, and
+  completed-report drain → queue growth → metadata re-enable recovery.
+- modern surface-capability failure → legacy surface-capability fallback.
 - same-frame swapchain recreation with eager lifecycle failure, generation invalidation, backend-none capture fallback, and next-frame typed failure/action routing.
 
 `melonprime_vulkan_present_timing_tests` also passes. `python3 tools/ci/audits/audit-low-latency-contract.py` and `python3 tools/ci/audits/audit-raster-software-parity.py` pass. `python3 tools/ci/audits/check-vulkan-shaders.py` passes: 111 modules compiled/validated, 592 scale-specialized modules validated, and arithmetic checked for scales 1..16.
@@ -71,8 +91,20 @@ The clean VirtualBox Ubuntu build completed with the pinned Vulkan-Headers revis
 
 ### Windows and validation layer
 
-- Windows: `NOT RUN`. This macOS host has no MinGW/MSYS2 or `cl.exe`; no Windows runner is available.
+- Original macOS audit host: Windows build `NOT RUN` because it had no
+  MinGW/MSYS2 or `cl.exe`.
 - Khronos validation layer: `BLOCKED/NOT RUN` for the packaged runtime. The bundle intentionally loads its direct MoltenVK dylib, so this physical run does not claim validation-layer coverage. No validation VUID or device-loss result was observed in the runtime log.
+
+### Follow-up validation on the current Windows host
+
+`tools/build/windows/build-mingw-existing.bat --build-dir
+build/release-mingw-x86_64 --jobs 1` completed successfully with the existing
+Vulkan ON / DX12 ON / developer-features ON Release tree. The incremental build
+recompiled the production pacer fake-dispatch target and ran the pure timing,
+fake-dispatch, and XeLL state-machine tests; all passed. This is an incremental
+build of an already configured tree, not a clean Windows build or a physical
+Vulkan runtime session. Windows runtime and validation-layer coverage remain
+unverified.
 
 ## F2 runtime evidence
 
@@ -87,7 +119,7 @@ The current developer bundle was run with the verified Japanese ROM and F2 state
 
 ## Final audit
 
-PASS for the requested production fake-dispatch hardening and lifecycle/result routing. The value-owned dispatch has no test branch, virtual call, lock, `std::function`, or per-frame allocation. Production and test initialization share the same capability/state setup. Enum ordering, generation separation, reset fallback, capture invalidation, and presenter action mapping were re-checked after the follow-up fixes.
+PASS for the requested production fake-dispatch hardening and lifecycle/result routing. The value-owned dispatch has no test branch, virtual call, lock, `std::function`, or per-frame allocation. Production and test initialization share the same capability/state setup. Enum ordering, generation separation, reset fallback, capture invalidation, presenter action mapping, queue-pressure recovery, and legacy surface-capability fallback were re-checked after the follow-up fixes.
 
 The confusing Japanese-named temporary copy `lastRavenRom.nds` is no longer present. The remaining `mphLastRaven.nds` and `Last Raven's balanced MPH V1.2.11.nds` files are the same AMHP ROM (not the Japanese AMHJ ROM) and were intentionally left untouched.
 
