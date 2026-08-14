@@ -183,7 +183,7 @@ signals:
 
 private:
     void handleMessages();
-#ifdef MELONPRIME_DS
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     void tryLoadDiagnosticSavestate();
 #endif
 

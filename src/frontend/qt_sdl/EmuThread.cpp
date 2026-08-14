@@ -1194,7 +1194,9 @@ void EmuThread::handleMessages()
 
 #ifdef MELONPRIME_DS
             melonPrime->OnEmuStart();
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
             tryLoadDiagnosticSavestate();
+#endif
 #endif // MELONPRIME_DS
             break;
 
@@ -1415,7 +1417,7 @@ void EmuThread::handleMessages()
     }
 }
 
-#ifdef MELONPRIME_DS
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 void EmuThread::tryLoadDiagnosticSavestate()
 {
     // Dormant real-ROM differential hook. msg_EmuRun is handled only after
