@@ -54,7 +54,7 @@ cbuffer DrawConstants : register(b0)
     uint4 Params;
 };
 
-Texture2D<float4> Source : register(t0);
+Texture2DArray<float4> Source : register(t0);
 SamplerState PointSampler : register(s0);
 SamplerState LinearSampler : register(s1);
 
@@ -108,7 +108,7 @@ float4 PSMain(VertexOutput input) : SV_Target
         const float2 sourceUv = float2(
             (128.0 + centered.x * Tint.z) / 256.0,
             (Tint.y + centered.y * Tint.z) / 192.0);
-        const float3 rgb = Source.Sample(LinearSampler, sourceUv).rgb;
+        const float3 rgb = Source.Sample(LinearSampler, float3(sourceUv, 0.0)).rgb;
         if (!IsRadarPaletteColor(rgb))
             discard;
 
@@ -117,8 +117,8 @@ float4 PSMain(VertexOutput input) : SV_Target
     }
 
     const float4 color = Params.x != 0u
-        ? Source.Sample(LinearSampler, input.Uv)
-        : Source.Sample(PointSampler, input.Uv);
+        ? Source.Sample(LinearSampler, float3(input.Uv, 0.0))
+        : Source.Sample(PointSampler, float3(input.Uv, 0.0));
     return color * Tint;
 }
 )hlsl";
@@ -839,22 +839,19 @@ bool DX12SurfacePresenter::AllocateLayerSrv(
     D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
     desc.Format = layer.UsesDirect
         ? DXGI_FORMAT_R8G8B8A8_UNORM : DXGI_FORMAT_B8G8R8A8_UNORM;
-    desc.ViewDimension = layer.UsesDirect
-        ? D3D12_SRV_DIMENSION_TEXTURE2DARRAY : D3D12_SRV_DIMENSION_TEXTURE2D;
+    // All presentation layers are one-slice Texture2D resources, while the
+    // compositor's direct output is a two-slice Texture2DArray. Bind both as
+    // a one-slice array so the pixel shader has one resource type for either
+    // source and selects the direct screen through FirstArraySlice.
+    desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
     desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-    if (layer.UsesDirect)
-    {
-        desc.Texture2DArray.MostDetailedMip = 0;
-        desc.Texture2DArray.MipLevels = 1;
-        desc.Texture2DArray.FirstArraySlice = layer.DirectArraySlice;
-        desc.Texture2DArray.ArraySize = 1;
-        desc.Texture2DArray.PlaneSlice = 0;
-        desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
-    }
-    else
-    {
-        desc.Texture2D.MipLevels = 1;
-    }
+    desc.Texture2DArray.MostDetailedMip = 0;
+    desc.Texture2DArray.MipLevels = 1;
+    desc.Texture2DArray.FirstArraySlice = layer.UsesDirect
+        ? layer.DirectArraySlice : 0u;
+    desc.Texture2DArray.ArraySize = 1;
+    desc.Texture2DArray.PlaneSlice = 0;
+    desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
     Context->GetDevice()->CreateShaderResourceView(source, &desc, cpu);
     return true;
 }
