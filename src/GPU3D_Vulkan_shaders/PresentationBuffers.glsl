@@ -80,6 +80,7 @@ const uint StructuredCaptureSourceBNativeBase = 12u * StructuredPlaneStride;
 const uint StructuredCaptureSourceBReferenceBase = 13u * StructuredPlaneStride;
 const uint StructuredLineMetaBase = 14u * StructuredPlaneStride;
 const uint StructuredCaptureCommandBase = StructuredLineMetaBase + 384u;
+const uint StructuredCaptureCommandIndependent = 1u << 5u;
 
 uint LoadCaptureSidecar(uint reference, uvec2 scaledWithinPixel)
 {

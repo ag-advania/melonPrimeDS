@@ -1908,6 +1908,7 @@ static const uint CapSourceBNativeBase = CapPixelCount * 12u;
 static const uint CapSourceBReferenceBase = CapPixelCount * 13u;
 static const uint CapLineMetaBase = CapPixelCount * 14u;
 static const uint CapCommandBase = CapLineMetaBase + 384u;
+static const uint CapCommandIndependent = 1u << 5u;
 
 uint CapR(uint c) { return c & 0x3Fu; }
 uint CapG(uint c) { return (c >> 8u) & 0x3Fu; }
@@ -2011,9 +2012,10 @@ uint CapNormalizeCapturedPixel(uint color)
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= ScreenWidth || id.y >= ScaleFactor || TexHeight >= 192u)
+    bool batch = (DispatchPad & 2u) != 0u;
+    uint nativeY = batch ? TexHeight + id.z : TexHeight;
+    if (id.x >= ScreenWidth || id.y >= ScaleFactor || nativeY >= 192u)
         return;
-    uint nativeY = TexHeight;
     uint scaledY = nativeY * ScaleFactor + id.y;
     uint nativeX = id.x / ScaleFactor;
     uint nativeIndex = nativeX + nativeY * 256u;
@@ -2021,7 +2023,9 @@ void main(uint3 id : SV_DispatchThreadID)
     uint captureCnt = ResultValue[commandBase];
     uint command = ResultValue[commandBase + 1u];
     uint width = ResultValue[commandBase + 3u];
-    if ((command & 0x80000000u) == 0u || nativeX >= width)
+    if ((command & 0x80000000u) == 0u
+        || (batch && (command & CapCommandIndependent) == 0u)
+        || nativeX >= width)
         return;
     uint sourceScreen = (command >> 3u) & 1u;
     bool source3DValid = (command & 0x10u) != 0u;
@@ -2215,7 +2219,7 @@ void main(uint3 id : SV_DispatchThreadID)
     }
 
     uint bgra8 = ToBgra8(color);
-    if (DispatchPad != 0u)
+    if ((DispatchPad & 1u) != 0u)
     {
         // ToBgra8 is the packed CPU/presenter word (B,G,R,A in memory). The
         // direct texture is RGBA8, so preserve the existing channel order by

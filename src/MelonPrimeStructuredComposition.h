@@ -353,6 +353,174 @@ inline constexpr u32 kCaptureCommandDestinationBankShift = 0;
 inline constexpr u32 kCaptureCommandDestinationVersionShift = 2;
 inline constexpr u32 kCaptureCommandSourceScreenShift = 3;
 inline constexpr u32 kCaptureCommandSource3DValid = 1u << 4;
+// Backend-only marker written into the per-slot structured staging copy after
+// the CPU dependency classifier proves that a line may join an independent
+// CaptureSidecar dispatch. The software producer leaves this reserved bit
+// clear; the legacy shader path ignores it.
+inline constexpr u32 kCaptureCommandIndependent = 1u << 5;
+
+enum class CaptureDependencyClass : u8
+{
+    Independent,
+    LegacyOrdered,
+};
+
+struct CaptureLineAnalysis
+{
+    std::array<u8, kScreenHeight> Valid{};
+    std::array<u8, kScreenHeight> Independent{};
+    std::array<u32, kScreenHeight> IndependentLines{};
+    u32 ValidLineCount = 0;
+    u32 IndependentLineCount = 0;
+    u32 LegacyOrderedLineCount = 0;
+};
+
+struct CaptureWriteSpan
+{
+    u32 Key = 0;
+    u32 Begin = 0;
+    u32 End = 0;
+};
+
+inline bool CaptureWriteSpansOverlap(
+    const CaptureWriteSpan& left,
+    const CaptureWriteSpan& right) noexcept
+{
+    return left.Key == right.Key
+        && left.Begin < right.End
+        && right.Begin < left.End;
+}
+
+// Prove only the narrowest useful independent case. A line is legacy ordered
+// when it reads any sidecar reference, when its output overlaps another valid
+// line's output in the same bank/version, or when the command is malformed.
+// This intentionally leaves many potentially batchable lines on the legacy
+// path: false negatives cost dispatch reduction, while a false positive would
+// change same-bank capture ordering.
+inline CaptureLineAnalysis AnalyzeCaptureDependencies(
+    const std::array<const u32*, kStructuredInputPlaneCount>& planes,
+    const u32* captureCommands) noexcept
+{
+    CaptureLineAnalysis result{};
+    if (!captureCommands)
+        return result;
+
+    std::array<std::array<CaptureWriteSpan, 2>, kScreenHeight> writes{};
+    std::array<u8, kScreenHeight> writeCounts{};
+    std::array<u8, kScreenHeight> legacy{};
+    bool malformedCommand = false;
+
+    for (u32 line = 0; line < kScreenHeight; ++line)
+    {
+        const u32 base = line * kCaptureCommandWords;
+        const u32 command = captureCommands[base + 1u];
+        if ((command & kCaptureCommandValid) == 0u)
+            continue;
+
+        result.Valid[line] = 1;
+        ++result.ValidLineCount;
+
+        const u32 width = captureCommands[base + 3u];
+        if (width > kScreenWidth)
+        {
+            legacy[line] = 1;
+            malformedCommand = true;
+            continue;
+        }
+
+        const u32 key = (command & 3u) | (((command >> 2u) & 1u) << 2u);
+        const u32 address = captureCommands[base + 2u] & kCaptureReferenceAddressMask;
+        if (width != 0u)
+        {
+            const u32 unwrappedEnd = address + width;
+            if (unwrappedEnd <= 0x10000u)
+            {
+                writes[line][writeCounts[line]++] = {key, address, unwrappedEnd};
+            }
+            else
+            {
+                writes[line][writeCounts[line]++] = {key, address, 0x10000u};
+                writes[line][writeCounts[line]++] = {key, 0u, unwrappedEnd - 0x10000u};
+            }
+        }
+
+        const u32 captureCount = captureCommands[base];
+        const u32 sourceScreen = (command >> kCaptureCommandSourceScreenShift) & 1u;
+        const u32 sourceReferencePlane = sourceScreen * 4u + 3u;
+        const u32* sourceAReferences = planes[sourceReferencePlane];
+        const u32* sourceBReferences = planes[13u];
+        if (width != 0u && (!sourceAReferences || !sourceBReferences))
+        {
+            legacy[line] = 1;
+            continue;
+        }
+
+        const bool sourceAIs3D = (captureCount & (1u << 24u)) != 0u;
+        for (u32 x = 0; x < width; ++x)
+        {
+            const u32 nativeIndex = line * kScreenWidth + x;
+            if ((!sourceAIs3D && (sourceAReferences[nativeIndex] & kCaptureReferenceValid) != 0u)
+                || (sourceBReferences[nativeIndex] & kCaptureReferenceValid) != 0u)
+            {
+                legacy[line] = 1;
+                break;
+            }
+        }
+    }
+
+    // Any malformed writer could overlap an otherwise valid range, so do not
+    // batch another line in the same frame around an invalid command shape.
+    if (malformedCommand)
+    {
+        for (u32 line = 0; line < kScreenHeight; ++line)
+        {
+            if (result.Valid[line])
+                legacy[line] = 1;
+        }
+    }
+
+    for (u32 left = 0; left < kScreenHeight; ++left)
+    {
+        if (!result.Valid[left])
+            continue;
+        for (u32 right = left + 1u; right < kScreenHeight; ++right)
+        {
+            if (!result.Valid[right])
+                continue;
+            for (u32 leftSpan = 0; leftSpan < writeCounts[left]; ++leftSpan)
+            {
+                for (u32 rightSpan = 0; rightSpan < writeCounts[right]; ++rightSpan)
+                {
+                    if (CaptureWriteSpansOverlap(
+                            writes[left][leftSpan], writes[right][rightSpan]))
+                    {
+                        legacy[left] = 1;
+                        legacy[right] = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    for (u32 line = 0; line < kScreenHeight; ++line)
+    {
+        if (!result.Valid[line])
+            continue;
+        const CaptureDependencyClass dependency = legacy[line]
+            ? CaptureDependencyClass::LegacyOrdered
+            : CaptureDependencyClass::Independent;
+        if (dependency == CaptureDependencyClass::Independent)
+        {
+            result.Independent[line] = 1;
+            result.IndependentLines[result.IndependentLineCount++] = line;
+        }
+        else
+        {
+            ++result.LegacyOrderedLineCount;
+        }
+    }
+    return result;
+}
 
 } // namespace melonDS::StructuredComposition
 

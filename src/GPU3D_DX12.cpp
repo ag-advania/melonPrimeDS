@@ -2637,6 +2637,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     }
     if (!captureCommands)
         return false;
+    const StructuredComposition::CaptureLineAnalysis captureAnalysis =
+        StructuredComposition::AnalyzeCaptureDependencies(planes, captureCommands);
     u32 slotIndex = 0;
     {
         std::lock_guard<std::mutex> lock(state->Mutex);
@@ -2698,9 +2700,16 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         || contentGeneration.LineMeta[0] != slot.UploadedContentGeneration.LineMeta[0];
     dirty[15u] = fullUpload
         || contentGeneration.LineMeta[1] != slot.UploadedContentGeneration.LineMeta[1];
-    dirty[16u] = fullUpload
+    const bool captureClassificationDirty = fullUpload
         || contentGeneration.CaptureCommands
-            != slot.UploadedContentGeneration.CaptureCommands;
+            != slot.UploadedContentGeneration.CaptureCommands
+        || contentGeneration.Plane[3u]
+            != slot.UploadedContentGeneration.Plane[3u]
+        || contentGeneration.Plane[7u]
+            != slot.UploadedContentGeneration.Plane[7u]
+        || contentGeneration.Plane[13u]
+            != slot.UploadedContentGeneration.Plane[13u];
+    dirty[16u] = captureClassificationDirty;
 
     std::array<UploadRange, logicalUnitCount> ranges{};
     std::size_t rangeCount = 0;
@@ -2775,9 +2784,20 @@ bool DX12Renderer3D::ComposeStructuredOutput(
                 }
                 else
                 {
-                    std::memcpy(
-                        staging + unitOffsets[unit] / sizeof(u32),
-                        captureCommands, captureCommandBytes);
+                    u32* stagedCommands = staging + unitOffsets[unit] / sizeof(u32);
+                    std::memcpy(stagedCommands, captureCommands, captureCommandBytes);
+                    for (u32 line = 0; line < 192u; ++line)
+                    {
+                        const u32 commandBase =
+                            line * StructuredComposition::kCaptureCommandWords;
+                        stagedCommands[commandBase + 1u] &=
+                            ~StructuredComposition::kCaptureCommandIndependent;
+                        if (captureAnalysis.Independent[line] != 0u)
+                        {
+                            stagedCommands[commandBase + 1u] |=
+                                StructuredComposition::kCaptureCommandIndependent;
+                        }
+                    }
                 }
                 packedBytes += unitSizes[unit];
             }
@@ -2847,20 +2867,66 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     constants.TexWidth = GPU3D.AbortFrame ? 0u : 1u;
     constants.Pad = slot.DirectTexture ? 1u : 0u;
     list->SetPipelineState(PipelineCaptureSidecar.Get());
-    for (u32 captureLine = 0; captureLine < 192u; ++captureLine)
+    u32 sidecarDispatchCount = 0;
+    u32 sidecarBarrierCount = 0;
+    for (u32 captureLine = 0; captureLine < 192u;)
     {
         if ((captureCommands[captureLine * StructuredComposition::kCaptureCommandWords + 1u]
                 & StructuredComposition::kCaptureCommandValid) == 0u)
+        {
+            ++captureLine;
             continue;
+        }
+
+        if (captureAnalysis.Independent[captureLine] != 0u)
+        {
+            const u32 runStart = captureLine;
+            do
+            {
+                ++captureLine;
+            }
+            while (captureLine < 192u
+                && captureAnalysis.Independent[captureLine] != 0u);
+            constants.TexHeight = runStart;
+            constants.Pad = (slot.DirectTexture ? 1u : 0u) | 2u;
+            SetDispatchConstants(list, constants);
+            list->Dispatch(
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+                DivRoundUp(static_cast<u32>(ScaleFactor), 8u),
+                captureLine - runStart);
+            ++sidecarDispatchCount;
+            InsertUavBarrier(list, CaptureSidecarBuffer.Get());
+            ++sidecarBarrierCount;
+            continue;
+        }
+
         constants.TexHeight = captureLine;
+        constants.Pad = slot.DirectTexture ? 1u : 0u;
         SetDispatchConstants(list, constants);
         list->Dispatch(
             DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
             DivRoundUp(static_cast<u32>(ScaleFactor), 8u),
             1u);
+        ++sidecarDispatchCount;
         InsertUavBarrier(list, CaptureSidecarBuffer.Get());
+        ++sidecarBarrierCount;
+        ++captureLine;
     }
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::CaptureValidLineCount, captureAnalysis.ValidLineCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::CaptureIndependentLineCount,
+        captureAnalysis.IndependentLineCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::CaptureLegacyOrderedLineCount,
+        captureAnalysis.LegacyOrderedLineCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::CaptureSidecarDispatchCount, sidecarDispatchCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::CaptureSidecarBarrierCount, sidecarBarrierCount);
 
+    constants.TexHeight = 0u;
+    constants.Pad = slot.DirectTexture ? 1u : 0u;
     SetDispatchConstants(list, constants);
     list->SetPipelineState(PipelineCompositor.Get());
     list->Dispatch(

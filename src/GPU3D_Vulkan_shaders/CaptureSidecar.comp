@@ -84,12 +84,11 @@ uint NormalizeCapturedPixel(uint color)
 void main()
 {
     uvec2 id = gl_GlobalInvocationID.xy;
-    if (id.x >= uint(ScreenWidth) || id.y >= uint(ScaleFactor))
+    const bool batch = pc.TexIsCapture != 0u;
+    uint nativeY = batch ? pc.TexHeight + gl_GlobalInvocationID.z : pc.TexHeight;
+    if (id.x >= uint(ScreenWidth) || id.y >= uint(ScaleFactor) || nativeY >= 192u)
         return;
 
-    uint nativeY = pc.TexHeight;
-    if (nativeY >= 192u)
-        return;
     uint scaledY = nativeY * uint(ScaleFactor) + id.y;
     uint nativeX = id.x / uint(ScaleFactor);
     uint nativeIndex = nativeX + nativeY * 256u;
@@ -97,7 +96,9 @@ void main()
     uint captureCnt = StructuredInput[commandBase];
     uint command = StructuredInput[commandBase + 1u];
     uint width = StructuredInput[commandBase + 3u];
-    if ((command & 0x80000000u) == 0u || nativeX >= width)
+    if ((command & 0x80000000u) == 0u
+        || (batch && (command & StructuredCaptureCommandIndependent) == 0u)
+        || nativeX >= width)
         return;
 
     uint sourceScreen = (command >> 3u) & 1u;

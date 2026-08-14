@@ -2784,6 +2784,8 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     }
     if (!captureCommands)
         return false;
+    const StructuredComposition::CaptureLineAnalysis captureAnalysis =
+        StructuredComposition::AnalyzeCaptureDependencies(planes, captureCommands);
 
     const u32 nextSlot = static_cast<u32>(
         (ComposeFrames.GetAbsoluteFrame() - 1u) % CompositorFramesInFlight);
@@ -2858,9 +2860,16 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     dirty[15u] = fullUpload
         || contentGeneration.LineMeta[1]
             != outputSlot.UploadedContentGeneration.LineMeta[1];
-    dirty[16u] = fullUpload
+    const bool captureClassificationDirty = fullUpload
         || contentGeneration.CaptureCommands
-            != outputSlot.UploadedContentGeneration.CaptureCommands;
+            != outputSlot.UploadedContentGeneration.CaptureCommands
+        || contentGeneration.Plane[3u]
+            != outputSlot.UploadedContentGeneration.Plane[3u]
+        || contentGeneration.Plane[7u]
+            != outputSlot.UploadedContentGeneration.Plane[7u]
+        || contentGeneration.Plane[13u]
+            != outputSlot.UploadedContentGeneration.Plane[13u];
+    dirty[16u] = captureClassificationDirty;
 
     std::array<UploadRange, logicalUnitCount> ranges{};
     std::size_t rangeCount = 0;
@@ -2936,9 +2945,20 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
                 }
                 else
                 {
-                    std::memcpy(
-                        staging + unitOffsets[unit] / sizeof(u32),
-                        captureCommands, captureCommandBytes);
+                    u32* stagedCommands = staging + unitOffsets[unit] / sizeof(u32);
+                    std::memcpy(stagedCommands, captureCommands, captureCommandBytes);
+                    for (u32 line = 0; line < 192u; ++line)
+                    {
+                        const u32 commandBase =
+                            line * StructuredComposition::kCaptureCommandWords;
+                        stagedCommands[commandBase + 1u] &=
+                            ~StructuredComposition::kCaptureCommandIndependent;
+                        if (captureAnalysis.Independent[line] != 0u)
+                        {
+                            stagedCommands[commandBase + 1u] |=
+                                StructuredComposition::kCaptureCommandIndependent;
+                        }
+                    }
                 }
                 packedBytes += unitSizes[unit];
             }
@@ -3049,25 +3069,83 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_CaptureSidecar]);
     const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
-    for (u32 captureLine = 0; captureLine < 192u; ++captureLine)
+    u32 sidecarDispatchCount = 0;
+    u32 sidecarBarrierCount = 0;
+    for (u32 captureLine = 0; captureLine < 192u;)
     {
         if ((captureCommands[captureLine * 4u + 1u]
                 & StructuredComposition::kCaptureCommandValid) == 0u)
+        {
+            ++captureLine;
             continue;
+        }
+
+        if (captureAnalysis.Independent[captureLine] != 0u)
+        {
+            const u32 runStart = captureLine;
+            do
+            {
+                ++captureLine;
+            }
+            while (captureLine < 192u
+                && captureAnalysis.Independent[captureLine] != 0u);
+            push.TexHeight = runStart;
+            push.TexIsCapture = 1u;
+            fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+                0, Vk::PushConstantSize, &push);
+            fns.CmdDispatch(cmd,
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+                DivRoundUp(static_cast<u32>(ScaleFactor), 8u),
+                captureLine - runStart);
+            ++sidecarDispatchCount;
+            BufferBarrier(cmd, &captureSidecar, 1,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            ++sidecarBarrierCount;
+            continue;
+        }
+
         push.TexHeight = captureLine;
+        push.TexIsCapture = 0u;
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
             0, Vk::PushConstantSize, &push);
         fns.CmdDispatch(cmd,
             DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
             DivRoundUp(static_cast<u32>(ScaleFactor), 8u),
             1u);
+        ++sidecarDispatchCount;
         BufferBarrier(cmd, &captureSidecar, 1,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        ++sidecarBarrierCount;
+        ++captureLine;
     }
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::CaptureValidLineCount, captureAnalysis.ValidLineCount);
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::CaptureIndependentLineCount,
+        captureAnalysis.IndependentLineCount);
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::CaptureLegacyOrderedLineCount,
+        captureAnalysis.LegacyOrderedLineCount);
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::CaptureSidecarDispatchCount, sidecarDispatchCount);
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::CaptureSidecarBarrierCount, sidecarBarrierCount);
 
+    // Do not carry the sidecar's per-dispatch addressing mode into the
+    // compositor push state. The compositor currently ignores these words,
+    // but keeping the shared block in its neutral mode makes the boundary
+    // explicit and prevents a future compositor shader from observing stale
+    // capture coordinates.
+    push.TexHeight = 0u;
+    push.TexIsCapture = 0u;
+    fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+        0, Vk::PushConstantSize, &push);
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_Compositor]);
     // One dispatch covers both screens in the slot's device-local buffer.

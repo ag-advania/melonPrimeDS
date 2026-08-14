@@ -438,6 +438,19 @@ target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(core PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    add_executable(melonprime_structured_capture_dependency_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/structured-capture-dependency-tests.cpp)
+    target_include_directories(melonprime_structured_capture_dependency_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_structured_capture_dependency_tests PRIVATE
+        MELONPRIME_DS)
+    set_target_properties(melonprime_structured_capture_dependency_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_structured_capture_dependency_check ALL
+        COMMAND $<TARGET_FILE:melonprime_structured_capture_dependency_tests>
+        DEPENDS melonprime_structured_capture_dependency_tests
+        COMMENT "Running CaptureSidecar dependency classifier tests..."
+        VERBATIM)
     # Renderer-switch stress driver. Added to the target only in a developer
     # configure, so a release build cannot contain it even by accident -- the
     # header's own #ifdef is the second line of defence, not the first.

@@ -80,6 +80,14 @@ enum class Counter : u32
     PresenterDescriptorUpdateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
+    CaptureValidLineCount,
+    CaptureIndependentLineCount,
+    CaptureLegacyOrderedLineCount,
+    CaptureSidecarDispatchCount,
+    CaptureSidecarBarrierCount,
+    // Reserved for a future calibrated Vulkan timestamp query. Keep it
+    // explicit rather than deriving GPU time from the CPU recording timer.
+    CaptureSidecarGpuTimeNs,
     PresentedScreenCopyBytes,
     // Reserved for a future calibrated Vulkan timestamp query. Keep it
     // explicit rather than deriving GPU time from the CPU recording timer.
@@ -338,6 +346,8 @@ inline void MaybeReport()
         "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu descriptor_creates=%llu "
         "descriptor_updates=%llu descriptor_copies=%llu descriptor_cpu_ns=%llu "
         "presenter_descriptor_updates=%llu compositor_descriptor_updates=%llu compose_drops=%llu "
+        "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
+        "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
         "screen_copy_B=%llu screen_copy_gpu_ns=%llu direct_image_frames=%llu "
         "fallback_buffer_frames=%llu native_resolves=%llu native_readback_copy_B=%llu "
         "native_readback_demands=%llu native_readback_wait_ns=%llu\n",
@@ -360,6 +370,10 @@ inline void MaybeReport()
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
         count(Counter::DescriptorCpuTimeNs), count(Counter::PresenterDescriptorUpdateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
+        count(Counter::CaptureValidLineCount), count(Counter::CaptureIndependentLineCount),
+        count(Counter::CaptureLegacyOrderedLineCount),
+        count(Counter::CaptureSidecarDispatchCount), count(Counter::CaptureSidecarBarrierCount),
+        count(Counter::CaptureSidecarGpuTimeNs),
         count(Counter::PresentedScreenCopyBytes), count(Counter::PresentedScreenCopyGpuTimeNs),
         count(Counter::DirectCompositorImageFrames), count(Counter::FallbackCompositorBufferFrames),
         count(Counter::NativeResolveCount),
@@ -426,6 +440,12 @@ enum class Counter : u32
     PresenterDescriptorUpdateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
+    CaptureValidLineCount,
+    CaptureIndependentLineCount,
+    CaptureLegacyOrderedLineCount,
+    CaptureSidecarDispatchCount,
+    CaptureSidecarBarrierCount,
+    CaptureSidecarGpuTimeNs,
     PresentedScreenCopyBytes,
     PresentedScreenCopyGpuTimeNs,
     DirectCompositorImageFrames,
