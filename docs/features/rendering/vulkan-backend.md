@@ -825,12 +825,19 @@ binning, span setup, blending and tile-geometry derivation are a 1:1 port.
   resize/minimize/restore cycles; this is one-machine evidence, not a
   cross-GPU parity certification. The archived run is
   [`docs/archive/audits/vulkan/2026-08-14-present-pacer-dispatch/f2-runtime.log`](../../archive/audits/vulkan/2026-08-14-present-pacer-dispatch/f2-runtime.log).
-  AMD hardware and physical Linux Vulkan runtime remain unverified.
+  AMD hardware and physical Linux Vulkan runtime remain unverified. Khronos
+  validation is platform-scoped rather than globally unverified: the archived
+  macOS Intel/MoltenVK no-bundle Debug F2 run loaded
+  `VK_LAYER_KHRONOS_validation` for 60 seconds with VUID count 0 and
+  validation ERROR count 0 (the only two validation-channel messages were
+  MoltenVK warnings); Windows and Linux Khronos validation remain unverified.
 * The modern vendor-neutral WSI extensions compile against both the minimum
   Vulkan header and Vulkan SDK 1.4.357. Surface capability, device enablement,
   and swapchain creation were runtime-validated on an NVIDIA RTX 5070 Ti driver
   exposing the complete present-id2/wait2/timing stack. The Intel/MoltenVK run
   exercised the GOOGLE display-timing path, while physical `VK_EXT_present_timing`
-  on that device, physical Linux/Windows/AMD runs, and Khronos validation-layer
-  coverage remain unverified. The default policy remains telemetry-only unless
-  an explicitly selected target-scheduling policy is active.
+  on that device, physical Linux/Windows/AMD runs remain unverified. Khronos
+  validation is verified only for the archived macOS Intel/MoltenVK no-bundle
+  Debug F2 run; Windows and Linux validation-layer coverage remain unverified.
+  The default policy remains telemetry-only unless an explicitly selected
+  target-scheduling policy is active.

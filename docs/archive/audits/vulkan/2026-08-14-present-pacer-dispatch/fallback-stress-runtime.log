@@ -1,0 +1,18 @@
+Vulkan renderer fallback/panel lifetime stress evidence
+date=2026-08-14 JST
+source_audit_head=0b5b49d10eb512ff87025afe4e02463514654786
+build=build/release-mingw-x86_64
+build_mode=Release; Vulkan=ON; DX12=ON; developer_features=ON
+rom=C:\DSMPH\melonPrimeDS最新版\balancedRom.nds
+rom_sha256=3F07C5832F7ADA7C6BBE38C6C690E1FFA41188B14E402F2AA1F1142A5E34F12C
+command=powershell -NoProfile -ExecutionPolicy Bypass -File tools\testing\vulkan-renderer-fallback-stress.ps1 -Rom C:\DSMPH\melonPrimeDS最新版\balancedRom.nds -BuildDir build\release-mingw-x86_64 -Iterations 20 -IntervalMs 100 -Seconds 20
+environment=MELONPRIME_FORCE_VULKAN_RENDERER=1; MELONPRIME_TEST_FORCE_VULKAN_RUNTIME_FAILURE=1; MELONPRIME_RENDERER_SWITCH_STRESS=1,0
+result=PASS
+forced_vulkan_runtime_failure_injection=1
+vulkan_runtime_failure_report=1
+vulkan_selection=1
+vulkan_to_software_fallback=1
+renderer_switches=40/40
+process_liveness=20s
+fatal_diagnostics=0
+captured_log=C:\Users\Admin\AppData\Local\Temp\melonprime-vulkan-fallback-96a4346102fa4616af5269841113b398\combined.log

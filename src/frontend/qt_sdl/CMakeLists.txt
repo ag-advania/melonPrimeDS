@@ -534,6 +534,40 @@ if (MELONPRIME_VULKAN_ACTIVE)
         COMMENT "Running Vulkan present pacer fake-dispatch tests..."
         VERBATIM)
 
+    if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        # Exercise the production renderer-selection code in both forced
+        # success and sticky-failure states. The feature-check functions are
+        # deterministic test doubles here; the process-level failure seam and
+        # switch stress driver cover the real renderer/panel lifetime path.
+        add_executable(melonprime_vulkan_renderer_fallback_tests
+            ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-renderer-fallback-tests.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVideoBackend.cpp)
+        target_include_directories(melonprime_vulkan_renderer_fallback_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/..
+            ${CMAKE_CURRENT_SOURCE_DIR}/../..
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../net
+            ${SDL2_INCLUDE_DIRS}
+            "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+        target_compile_definitions(melonprime_vulkan_renderer_fallback_tests PRIVATE
+            MELONPRIME_DS
+            MELONPRIME_ENABLE_VULKAN=1
+            MELONPRIME_ENABLE_DEVELOPER_FEATURES=1
+            OGLRENDERER_ENABLED
+            SDL_MAIN_HANDLED
+            VK_NO_PROTOTYPES=1)
+        target_link_libraries(melonprime_vulkan_renderer_fallback_tests PRIVATE
+            ${QT_LINK_LIBS})
+        set_target_properties(melonprime_vulkan_renderer_fallback_tests PROPERTIES
+            WIN32_EXECUTABLE OFF
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+        add_custom_target(melonprime_vulkan_renderer_fallback_check ALL
+            COMMAND $<TARGET_FILE:melonprime_vulkan_renderer_fallback_tests>
+            DEPENDS melonprime_vulkan_renderer_fallback_tests
+            COMMENT "Running Vulkan renderer fallback regression tests..."
+            VERBATIM)
+    endif()
+
     # One platform adapter per target OS. Each is additionally guarded by its
     # own #if, so an accidental double-add cannot produce duplicate symbols.
     if (WIN32)

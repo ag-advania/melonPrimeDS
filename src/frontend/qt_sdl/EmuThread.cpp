@@ -1700,10 +1700,35 @@ void EmuThread::updateRenderer()
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         case renderer3D_Vulkan:
+        {
             Platform::Log(
                 Platform::LogLevel::Info,
                 "Renderer selection requested=Vulkan presentation=Vulkan");
-            nds->SetRenderer(std::make_unique<VulkanRenderer>(*nds));
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            // Developer-only failure seam for the fallback/lifetime stress
+            // test. It deliberately substitutes Software once, so the normal
+            // production dynamic_cast below exercises the same failure path
+            // without requiring a broken Vulkan driver or a second renderer
+            // implementation in the test binary.
+            static bool injectedVulkanFailure = false;
+            const char* forceVulkanFailure =
+                std::getenv("MELONPRIME_TEST_FORCE_VULKAN_RUNTIME_FAILURE");
+            const bool injectVulkanFailure =
+                !injectedVulkanFailure && forceVulkanFailure &&
+                forceVulkanFailure[0] != '\0' && forceVulkanFailure[0] != '0';
+            if (injectVulkanFailure)
+            {
+                injectedVulkanFailure = true;
+                Platform::Log(
+                    Platform::LogLevel::Error,
+                    "[fallback-test] forced Vulkan runtime failure injection count=1\n");
+                nds->SetRenderer(std::make_unique<SoftRenderer>(*nds));
+            }
+            else
+#endif
+            {
+                nds->SetRenderer(std::make_unique<VulkanRenderer>(*nds));
+            }
             if (dynamic_cast<VulkanRenderer*>(&nds->GetRenderer()) == nullptr)
             {
                 MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(
@@ -1718,6 +1743,7 @@ void EmuThread::updateRenderer()
                 emit rendererRuntimeFallback();
             }
             break;
+        }
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         case renderer3D_DX12:

@@ -1111,6 +1111,7 @@ void MainWindow::osdAddMessage(unsigned int color, const char* msg)
 {
     if (!showOSD) return;
 
+#ifdef MELONPRIME_DS
     // EmuThread can report a renderer failure while the GUI thread is
     // replacing the presentation panel.  destroyScreenPanel() publishes a
     // null panel under this mutex before deleting the old widget; keep the
@@ -1119,6 +1120,9 @@ void MainWindow::osdAddMessage(unsigned int color, const char* msg)
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
         panel->osdAddMessage(color, msg);
+#else
+    panel->osdAddMessage(color, msg);
+#endif
 }
 
 void MainWindow::saveEnabled(bool enabled)

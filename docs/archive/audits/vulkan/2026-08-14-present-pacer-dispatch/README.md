@@ -8,7 +8,12 @@ Baseline: `4e7579359371` (`add md`)
 Implementation commit: `5c05d249c27c` (`Add Vulkan present pacer dispatch coverage`)
 Follow-up repository HEAD: `18bad3ade1f0` (`fix`)
 
-Current repository HEAD: `fd8e5c69e` (`Close Vulkan present-pacer audit follow-up`)
+Present-pacer audited source HEAD: `fd8e5c69e` (`Close Vulkan present-pacer audit follow-up`)
+
+Latest repository HEAD at the renderer-fallback re-audit start: `0b5b49d10`
+(`Guard renderer fallback panel lifetime`). The `0b5b49d` renderer-fallback
+follow-up is recorded separately below; it must not be retroactively folded
+into the `fd8e5c69e` present-pacer evidence.
 
 The Vulkan implementation and its audit artifacts were committed by
 `5c05d249`. The `.codex/` and `docs/development/codex/` files in that commit
@@ -113,14 +118,32 @@ The clean VirtualBox Ubuntu build completed with the pinned Vulkan-Headers revis
 
 ### Follow-up validation on the current Windows host
 
-`tools/build/windows/build-mingw-existing.bat --build-dir
-build/release-mingw-x86_64 --jobs 1` completed successfully with the existing
-Vulkan ON / DX12 ON / developer-features ON Release tree. The incremental build
-recompiled the production pacer fake-dispatch target and ran the pure timing,
-fake-dispatch, and XeLL state-machine tests; all passed. This is an incremental
-build of an already configured tree, not a clean Windows build or a physical
-Vulkan runtime session. Windows runtime and validation-layer coverage remain
-unverified.
+`tools/build/windows/build-mingw.bat --jobs 1 --tail 220` completed successfully
+after reconfiguring the Vulkan ON / DX12 ON / developer-features ON Release tree.
+The current source compiled and the pure timing, production fake-dispatch,
+renderer-fallback, and XeLL state-machine tests all passed. This is a local
+Windows build; Windows Khronos validation-layer coverage remains unverified.
+
+### Latest `0b5b49d` renderer-fallback follow-up
+
+The follow-up source changes are deliberately separated from the present-pacer
+evidence above:
+
+- `Window.cpp` now keeps the panel lifetime mutex/null check inside
+  `#ifdef MELONPRIME_DS`; the upstream path retains its original call.
+- Developer builds expose a one-shot
+  `MELONPRIME_TEST_FORCE_VULKAN_RUNTIME_FAILURE` seam. The production fallback
+  path, runtime-failure latch, and `MELONPRIME_FORCE_VULKAN_RENDERER` guard are
+  exercised by `tools/testing/vulkan-renderer-fallback-stress.ps1`.
+- With `C:\DSMPH\melonPrimeDS最新版\balancedRom.nds`, the stress run passed:
+  one forced failure injection, one runtime-failure report, one Vulkan
+  selection, one Vulkan-to-Software fallback, `40/40` renderer switches, no
+  fatal diagnostics, and 20 seconds of process liveness. The concise committed
+  evidence is `fallback-stress-runtime.log` in this directory.
+
+This closes the `0b5b49d` fallback/panel-lifetime follow-up for the tested
+Windows developer configuration. It does not close Windows/Linux Khronos layer
+coverage, AMD/Intel cross-GPU coverage, or physical Linux validation.
 
 ## F2 runtime evidence
 
@@ -135,15 +158,26 @@ The current developer bundle was run with the verified Japanese ROM and F2 state
 
 ## Final audit
 
-PASS for the requested production fake-dispatch hardening and lifecycle/result routing. The value-owned dispatch has no test branch, virtual call, lock, `std::function`, or per-frame allocation. Production and test initialization share the same capability/state setup. Enum ordering, generation separation, reset fallback, capture invalidation, presenter action mapping, queue-pressure recovery, and legacy surface-capability fallback were re-checked after the follow-up fixes.
+PASS for the requested production fake-dispatch hardening and lifecycle/result
+routing at the `fd8e5c69e` audited source head. The value-owned dispatch has no
+test branch, virtual call, lock, `std::function`, or per-frame allocation.
+Production and test initialization share the same capability/state setup. Enum
+ordering, generation separation, reset fallback, capture invalidation,
+presenter action mapping, queue-pressure recovery, and legacy
+surface-capability fallback were re-checked after the follow-up fixes.
+
+The later `0b5b49d` renderer-fallback/panel-lifetime changes were separately
+validated by the Windows build and process stress run above; they are not
+claimed as part of the older macOS/Linux present-pacer runtime evidence.
 
 The confusing Japanese-named temporary copy `lastRavenRom.nds` is no longer present. The remaining `mphLastRaven.nds` and `Last Raven's balanced MPH V1.2.11.nds` files are the same AMHP ROM (not the Japanese AMHJ ROM) and were intentionally left untouched.
 
 ## Remaining risks
 
-- Windows compilation/runtime and Windows/Linux validation-layer execution still
+- Windows Khronos validation-layer and Linux validation-layer execution still
   require their respective environments; the Mac Khronos validation run is
-  recorded above.
+  recorded above. The Windows renderer-fallback stress is a separate local
+  developer-runtime result, not a validation-layer result.
 - No physical Linux Vulkan/F2 run was claimed; the Linux result is a clean compile and test execution inside the VM.
 - The F2 runtime log is an Intel macOS developer run, not a cross-GPU or
   long-term visual-parity certification. The 1x setting was retained for
