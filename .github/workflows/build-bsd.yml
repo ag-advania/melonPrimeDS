@@ -221,19 +221,32 @@ jobs:
       run: |
         set -eu
 
-        # NetBSD's find implementation does not accept every GNU/FreeBSD
-        # expression uniformly; the package prefixes are already narrow, so
-        # a basename probe is the portable check for the Vulkan header.
-        headers="$(find -L /usr/local/include /usr/pkg/include /usr/X11R6/include \
-          -type f -name 'vulkan.h' -print -quit 2>/dev/null || true)"
+        # Probe the package prefixes directly. This avoids BSD-specific find
+        # expression differences while still checking the actual installed
+        # Vulkan header rather than assuming a package name implies a path.
+        headers=""
+        for include_root in /usr/local/include /usr/pkg/include /usr/X11R6/include /usr/X11R7/include; do
+          candidate="$include_root/vulkan/vulkan.h"
+          if [ -f "$candidate" ]; then
+            headers="$candidate"
+            break
+          fi
+        done
         if [ -z "$headers" ]; then
           echo "Vulkan headers were not found in the BSD package prefixes."
           exit 1
         fi
         echo "vulkan_headers=$headers"
 
-        loader="$(find -L /usr/local/lib /usr/pkg/lib /usr/X11R6/lib \
-          -type f -name 'libvulkan.so*' -print -quit 2>/dev/null || true)"
+        loader=""
+        for lib_root in /usr/local/lib /usr/pkg/lib /usr/X11R6/lib /usr/X11R7/lib; do
+          for candidate in "$lib_root"/libvulkan.so "$lib_root"/libvulkan.so.*; do
+            if [ -f "$candidate" ]; then
+              loader="$candidate"
+              break 2
+            fi
+          done
+        done
         if [ -z "$loader" ]; then
           echo "Vulkan loader library was not found after package installation."
           exit 1

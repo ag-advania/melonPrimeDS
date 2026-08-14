@@ -1585,8 +1585,10 @@ The strict workflow was dispatched as run
 FreeBSD passed dependency/header/shader checks and was still building when the
 first NetBSD probe failure was found; NetBSD installed both Vulkan packages but
 the portable dependency probe used a `find -path` expression that did not find
-the installed header on that VM. The probe was corrected to use a BSD-portable
-basename check and must be re-run before any BSD build PASS is claimed.
+the installed header on that VM. The probe was corrected to test the actual
+candidate files in the BSD package prefixes directly, without relying on
+BSD-specific `find` expression behavior, and must be re-run before any BSD
+build PASS is claimed.
 Native BSD Wayland WSI, vendor low-latency extensions, and physical GPU
 validation remain outside the verified scope.
 
