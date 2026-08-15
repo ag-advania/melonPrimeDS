@@ -35,8 +35,14 @@ namespace
 constexpr VkFormat kLayerFormat = VK_FORMAT_B8G8R8A8_UNORM;
 constexpr u32 kDescriptorSetsPerFrame = 64;
 constexpr std::size_t kPresenterSamplerCount = 2;
+// Three renderer compositor slots, each exposing a top and bottom image view.
+constexpr std::size_t kDirectViewCacheCount = 3 * 2;
+constexpr std::size_t kDirectDescriptorSetCount = kDirectViewCacheCount * 2;
 constexpr std::size_t kPersistentDescriptorSetCount =
-    static_cast<std::size_t>(VulkanPresenter::Layer::Count) * kPresenterSamplerCount;
+    static_cast<std::size_t>(VulkanPresenter::Layer::Count) * kPresenterSamplerCount
+    + kDirectDescriptorSetCount;
+static_assert(kDirectViewCacheCount == 6);
+static_assert(kDirectDescriptorSetCount == 12);
 constexpr VkDeviceSize kMinStagingBytes = 4u * 1024u * 1024u;
 
 const char* PresentModeName(VkPresentModeKHR mode) noexcept
@@ -85,6 +91,159 @@ void VulkanPresenter::Quiesce() noexcept
 {
     if (Device.IsValid())
         Frames.WaitIdle();
+}
+
+
+const VulkanPresenter::DirectDescriptorCacheEntry*
+VulkanPresenter::FindDirectDescriptor(
+    VkImage image,
+    VkImageView view,
+    u64 resourceGeneration) const noexcept
+{
+    for (const DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
+    {
+        if (entry.Valid && entry.Image == image && entry.View == view
+            && entry.ResourceGeneration == resourceGeneration)
+        {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+
+bool VulkanPresenter::UpdateDirectDescriptorSets(
+    DirectDescriptorCacheEntry& entry,
+    VkImage image,
+    VkImageView view,
+    u64 resourceGeneration)
+{
+    if (image == VK_NULL_HANDLE || view == VK_NULL_HANDLE
+        || entry.Sets[0] == VK_NULL_HANDLE || entry.Sets[1] == VK_NULL_HANDLE)
+    {
+        return false;
+    }
+
+    VulkanPerf::ScopedCpuTimer descriptorTimer(VulkanPerf::CpuMetric::DescriptorUpdate);
+    const auto descriptorStart = VulkanPerf::Clock::now();
+    std::array<VkDescriptorImageInfo, kPresenterSamplerCount> imageInfos{};
+    std::array<VkWriteDescriptorSet, kPresenterSamplerCount> writes{};
+    for (std::size_t sampler = 0; sampler < kPresenterSamplerCount; ++sampler)
+    {
+        imageInfos[sampler].sampler = sampler == 0 ? SamplerNearest : SamplerLinear;
+        imageInfos[sampler].imageView = view;
+        imageInfos[sampler].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        writes[sampler].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[sampler].dstSet = entry.Sets[sampler];
+        writes[sampler].dstBinding = 0;
+        writes[sampler].descriptorCount = 1;
+        writes[sampler].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[sampler].pImageInfo = &imageInfos[sampler];
+    }
+    Device.Fns().UpdateDescriptorSets(
+        Device.GetHandle(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+
+    entry.Image = image;
+    entry.View = view;
+    entry.ResourceGeneration = resourceGeneration;
+    entry.Valid = true;
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorUpdateCount,
+        static_cast<u64>(writes.size()));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorUpdateCount,
+        static_cast<u64>(writes.size()));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::DescriptorWriteCount,
+        static_cast<u64>(writes.size()));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorCpuTimeNs,
+        static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            VulkanPerf::Clock::now() - descriptorStart).count()));
+    return true;
+}
+
+
+bool VulkanPresenter::EnsureDirectDescriptor(
+    VkImage image,
+    VkImageView view,
+    u64 resourceGeneration)
+{
+    if (FindDirectDescriptor(image, view, resourceGeneration))
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::PresenterDescriptorCacheHitCount);
+        return true;
+    }
+
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorCacheMissCount);
+    DirectDescriptorCacheEntry* freeEntry = nullptr;
+    for (DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
+    {
+        if (!entry.Valid)
+        {
+            freeEntry = &entry;
+            break;
+        }
+    }
+    if (!freeEntry)
+        return false;
+    return UpdateDirectDescriptorSets(*freeEntry, image, view, resourceGeneration);
+}
+
+
+bool VulkanPresenter::PrepareDirectOutputDescriptors(
+    const melonDS::VulkanPresentedFrame& frame)
+{
+    if (!Initialized || Failed || !Device.IsValid())
+        return false;
+    if (!frame.HasDirectSampledOutput() || frame.ResourceGeneration == 0)
+        return true;
+
+    if (CachedDirectResourceGeneration != frame.ResourceGeneration)
+    {
+        bool hadEntries = false;
+        for (const DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
+            hadEntries |= entry.Valid;
+        if (hadEntries)
+            Frames.WaitIdle();
+        for (DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
+        {
+            entry.Image = VK_NULL_HANDLE;
+            entry.View = VK_NULL_HANDLE;
+            entry.ResourceGeneration = 0;
+            entry.Valid = false;
+        }
+        CachedDirectResourceGeneration = frame.ResourceGeneration;
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::PresenterDescriptorCacheInvalidateCount);
+    }
+
+    // The compositor publishes one top and one bottom view per output slot.
+    // If an unexpected seventh view appears, UploadLayerFromImage() uses the
+    // per-frame transient pool instead of failing the frame.
+    EnsureDirectDescriptor(
+        frame.DirectImageTop, frame.DirectImageViewTop, frame.ResourceGeneration);
+    EnsureDirectDescriptor(
+        frame.DirectImageBottom, frame.DirectImageViewBottom, frame.ResourceGeneration);
+    return true;
+}
+
+
+void VulkanPresenter::InvalidateDirectDescriptorCache() noexcept
+{
+    for (DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
+    {
+        entry.Image = VK_NULL_HANDLE;
+        entry.View = VK_NULL_HANDLE;
+        entry.ResourceGeneration = 0;
+        entry.Valid = false;
+    }
+    CachedDirectResourceGeneration = 0;
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorCacheInvalidateCount);
 }
 
 
@@ -374,8 +533,20 @@ bool VulkanPresenter::CreateDescriptorObjects()
         for (std::size_t sampler = 0; sampler < kPresenterSamplerCount; ++sampler)
             LayerDescriptorSets[layer][sampler] = sets[layer * kPresenterSamplerCount + sampler];
     }
+    const std::size_t directSetBase =
+        static_cast<std::size_t>(Layer::Count) * kPresenterSamplerCount;
+    for (std::size_t viewIndex = 0; viewIndex < DirectDescriptorCache.size(); ++viewIndex)
+    {
+        DirectDescriptorCache[viewIndex].Sets[0] =
+            sets[directSetBase + viewIndex * kPresenterSamplerCount];
+        DirectDescriptorCache[viewIndex].Sets[1] =
+            sets[directSetBase + viewIndex * kPresenterSamplerCount + 1];
+    }
     VulkanPerf::AddCounter(
         VulkanPerf::Counter::DescriptorCreateCount,
+        static_cast<u64>(kPersistentDescriptorSetCount));
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::PresenterDescriptorPersistentCreateCount,
         static_cast<u64>(kPersistentDescriptorSetCount));
 
     VkPushConstantRange push{};
@@ -1233,7 +1404,9 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     Device.Fns().ResetDescriptorPool(Device.GetHandle(), DescriptorPools[frameIndex], 0);
     for (LayerTexture& texture : Layers)
     {
+        texture.DirectImage = VK_NULL_HANDLE;
         texture.DirectView = VK_NULL_HANDLE;
+        texture.DirectResourceGeneration = 0;
         texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
         texture.UsesDirect = false;
     }
@@ -1442,9 +1615,11 @@ bool VulkanPresenter::UploadLayerFromBuffer(
     }
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    texture.DirectImage = VK_NULL_HANDLE;
     if (!EnsureLayerImage(layer, texture, frame.Width, frame.Height, LayerDebugName(layer)))
         return false;
     texture.DirectView = VK_NULL_HANDLE;
+    texture.DirectResourceGeneration = 0;
     texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
     texture.UsesDirect = false;
 
@@ -1513,72 +1688,86 @@ bool VulkanPresenter::UploadLayerFromImage(
 
     const VkImageView view = layer == Layer::ScreenTop
         ? frame.DirectImageViewTop : frame.DirectImageViewBottom;
+    const VkImage image = layer == Layer::ScreenTop
+        ? frame.DirectImageTop : frame.DirectImageBottom;
     if (view == VK_NULL_HANDLE)
         return false;
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
-    const u32 frameIndex = Frames.GetFrameIndex();
-    const auto descriptorStart = VulkanPerf::Clock::now();
-    std::array<VkDescriptorSetLayout, kPresenterSamplerCount> layouts{};
-    layouts.fill(SetLayout);
     std::array<VkDescriptorSet, kPresenterSamplerCount> descriptorSets{};
-    VkDescriptorSetAllocateInfo allocateInfo{};
-    allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocateInfo.descriptorPool = DescriptorPools[frameIndex];
-    allocateInfo.descriptorSetCount = static_cast<u32>(descriptorSets.size());
-    allocateInfo.pSetLayouts = layouts.data();
-    const VkResult allocateResult = Device.Fns().AllocateDescriptorSets(
-        Device.GetHandle(), &allocateInfo, descriptorSets.data());
-    if (allocateResult != VK_SUCCESS)
-        return Fail("vkAllocateDescriptorSets(direct presenter layer)", allocateResult);
-
-    std::array<VkDescriptorImageInfo, kPresenterSamplerCount> imageInfos{};
-    std::array<VkWriteDescriptorSet, kPresenterSamplerCount> writes{};
-    for (std::size_t sampler = 0; sampler < kPresenterSamplerCount; ++sampler)
+    const DirectDescriptorCacheEntry* cached = FindDirectDescriptor(
+        image, view, frame.ResourceGeneration);
+    if (cached)
     {
-        imageInfos[sampler].sampler = sampler == 0 ? SamplerNearest : SamplerLinear;
-        imageInfos[sampler].imageView = view;
-        imageInfos[sampler].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-        writes[sampler].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[sampler].dstSet = descriptorSets[sampler];
-        writes[sampler].dstBinding = 0;
-        writes[sampler].descriptorCount = 1;
-        writes[sampler].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writes[sampler].pImageInfo = &imageInfos[sampler];
+        descriptorSets = cached->Sets;
     }
-    Device.Fns().UpdateDescriptorSets(
-        Device.GetHandle(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+    else
+    {
+        // The cache is deliberately non-fatal. This is the old safe path for
+        // missing metadata, cache overflow, and unexpected renderer output.
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::PresenterDescriptorFallbackCount);
+        const u32 frameIndex = Frames.GetFrameIndex();
+        const auto descriptorStart = VulkanPerf::Clock::now();
+        std::array<VkDescriptorSetLayout, kPresenterSamplerCount> layouts{};
+        layouts.fill(SetLayout);
+        VkDescriptorSetAllocateInfo allocateInfo{};
+        allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocateInfo.descriptorPool = DescriptorPools[frameIndex];
+        allocateInfo.descriptorSetCount = static_cast<u32>(descriptorSets.size());
+        allocateInfo.pSetLayouts = layouts.data();
+        const VkResult allocateResult = Device.Fns().AllocateDescriptorSets(
+            Device.GetHandle(), &allocateInfo, descriptorSets.data());
+        if (allocateResult != VK_SUCCESS)
+            return Fail("vkAllocateDescriptorSets(direct presenter layer)", allocateResult);
+
+        std::array<VkDescriptorImageInfo, kPresenterSamplerCount> imageInfos{};
+        std::array<VkWriteDescriptorSet, kPresenterSamplerCount> writes{};
+        for (std::size_t sampler = 0; sampler < kPresenterSamplerCount; ++sampler)
+        {
+            imageInfos[sampler].sampler = sampler == 0 ? SamplerNearest : SamplerLinear;
+            imageInfos[sampler].imageView = view;
+            imageInfos[sampler].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            writes[sampler].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writes[sampler].dstSet = descriptorSets[sampler];
+            writes[sampler].dstBinding = 0;
+            writes[sampler].descriptorCount = 1;
+            writes[sampler].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writes[sampler].pImageInfo = &imageInfos[sampler];
+        }
+        Device.Fns().UpdateDescriptorSets(
+            Device.GetHandle(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::DescriptorCreateCount,
+            static_cast<u64>(descriptorSets.size()));
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::PresenterSrvCreateCount,
+            static_cast<u64>(descriptorSets.size()));
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::DescriptorUpdateCount,
+            static_cast<u64>(writes.size()));
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::PresenterDescriptorUpdateCount,
+            static_cast<u64>(writes.size()));
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::DescriptorWriteCount,
+            static_cast<u64>(writes.size()));
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::PresenterDescriptorCpuTimeNs,
+            static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                VulkanPerf::Clock::now() - descriptorStart).count()));
+    }
 
     texture.Width = frame.Width;
     texture.Height = frame.Height;
+    texture.DirectImage = image;
     texture.DirectView = view;
+    texture.DirectResourceGeneration = frame.ResourceGeneration;
     texture.DirectDescriptorSets = descriptorSets;
     texture.UsesDirect = true;
     texture.HasContent = true;
-    VulkanPerf::AddCounter(
-        VulkanPerf::Counter::DescriptorCreateCount,
-        static_cast<u64>(descriptorSets.size()));
-    VulkanPerf::AddCounter(
-        VulkanPerf::Counter::PresenterSrvCreateCount,
-        static_cast<u64>(descriptorSets.size()));
-    VulkanPerf::AddCounter(
-        VulkanPerf::Counter::DescriptorUpdateCount,
-        static_cast<u64>(writes.size()));
-    VulkanPerf::AddCounter(
-        VulkanPerf::Counter::PresenterDescriptorUpdateCount,
-        static_cast<u64>(writes.size()));
-    VulkanPerf::AddCounter(
-        VulkanPerf::Counter::DescriptorWriteCount,
-        static_cast<u64>(writes.size()));
-    // Vulkan has no descriptor-copy operation in this direct path: the
-    // image-view binding is written directly into the transient set.
-    VulkanPerf::AddCounter(
-        VulkanPerf::Counter::PresenterDescriptorCopyCount, 0);
-    VulkanPerf::AddCounter(
-        VulkanPerf::Counter::PresenterDescriptorCpuTimeNs,
-        static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-            VulkanPerf::Clock::now() - descriptorStart).count()));
     return true;
 }
 
@@ -2165,6 +2354,9 @@ void VulkanPresenter::Shutdown() noexcept
         }
         for (auto& layerSets : LayerDescriptorSets)
             layerSets.fill(VK_NULL_HANDLE);
+        for (DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
+            entry = {};
+        CachedDirectResourceGeneration = 0;
 
         for (LayerTexture& texture : Layers)
         {
@@ -2172,6 +2364,11 @@ void VulkanPresenter::Shutdown() noexcept
             texture.Width = 0;
             texture.Height = 0;
             texture.HasContent = false;
+            texture.DirectImage = VK_NULL_HANDLE;
+            texture.DirectView = VK_NULL_HANDLE;
+            texture.DirectResourceGeneration = 0;
+            texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
+            texture.UsesDirect = false;
         }
 
         for (Vk::StagingRing& ring : Staging)

@@ -790,6 +790,7 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
     vulkan->hookedRenderer = nullptr;
 
     vulkan->presenter.Quiesce();
+    vulkan->presenter.InvalidateDirectDescriptorCache();
     for (RendererOutputLease& lease : vulkan->frameLeases)
         lease.ReleaseNow();
 
@@ -1048,6 +1049,8 @@ void ScreenPanelVulkan::drawScreenFrame()
     const u32 physicalWidth = static_cast<u32>(std::max(1, qRound(logicalWidth * dpr)));
     const u32 physicalHeight = static_cast<u32>(std::max(1, qRound(logicalHeight * dpr)));
 
+    if (gpuFrame && gpuFrame->HasDirectSampledOutput())
+        vulkan->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
     if (!vulkan->presenter.BeginFrame(physicalWidth, physicalHeight))
     {
         if (vulkan->presenter.HasFailed())

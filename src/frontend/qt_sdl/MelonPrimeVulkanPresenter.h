@@ -105,6 +105,14 @@ public:
     void Shutdown() noexcept;
     void Quiesce() noexcept;
 
+    // Must run after acquiring the renderer output lease and before BeginFrame
+    // opens a command buffer. A resource-generation change is the only direct
+    // descriptor path that may quiesce the device.
+    bool PrepareDirectOutputDescriptors(const melonDS::VulkanPresentedFrame& frame);
+    // Renderer transition hook. The preallocated descriptor sets survive; only
+    // their resource/view identity mapping is invalidated.
+    void InvalidateDirectDescriptorCache() noexcept;
+
     [[nodiscard]] bool IsInitialized() const noexcept { return Initialized; }
     [[nodiscard]] const std::string& LastError() const noexcept { return Error; }
 
@@ -279,9 +287,20 @@ private:
         melonDS::u32 Width = 0;
         melonDS::u32 Height = 0;
         bool HasContent = false;
+        VkImage DirectImage = VK_NULL_HANDLE;
         VkImageView DirectView = VK_NULL_HANDLE;
+        melonDS::u64 DirectResourceGeneration = 0;
         std::array<VkDescriptorSet, 2> DirectDescriptorSets{};
         bool UsesDirect = false;
+    };
+
+    struct DirectDescriptorCacheEntry
+    {
+        VkImage Image = VK_NULL_HANDLE;
+        VkImageView View = VK_NULL_HANDLE;
+        melonDS::u64 ResourceGeneration = 0;
+        std::array<VkDescriptorSet, 2> Sets{};
+        bool Valid = false;
     };
 
     bool AcquireContext();
@@ -302,6 +321,19 @@ private:
                           const char* debugName);
     bool EnsureStaging(VkDeviceSize bytes);
     bool UpdateLayerDescriptorSets(Layer layer);
+    bool UpdateDirectDescriptorSets(
+        DirectDescriptorCacheEntry& entry,
+        VkImage image,
+        VkImageView view,
+        melonDS::u64 resourceGeneration);
+    bool EnsureDirectDescriptor(
+        VkImage image,
+        VkImageView view,
+        melonDS::u64 resourceGeneration);
+    const DirectDescriptorCacheEntry* FindDirectDescriptor(
+        VkImage image,
+        VkImageView view,
+        melonDS::u64 resourceGeneration) const noexcept;
     VkDescriptorSet AcquireDescriptorSet(Layer layer, bool linearFilter) const noexcept;
 
     bool Fail(const char* operation, VkResult result);
@@ -363,12 +395,24 @@ private:
     VkSampler SamplerLinear = VK_NULL_HANDLE;
 
     // Descriptor lifetime classification:
-    // A: SetLayout, samplers, and layer descriptor sets live for the presenter.
-    // B: each layer image and its two sampler views live until resize/recreate.
-    // C: no dynamic texture descriptor path is introduced here.
+    // A: SetLayout, samplers, and all preallocated descriptor sets live for the
+    // presenter. B: fallback layer images and direct renderer views live until
+    // their owner recreates them. C: descriptor identity is cached without
+    // retaining renderer-owned images or output states.
     VkDescriptorPool PersistentDescriptorPool = VK_NULL_HANDLE;
     std::array<std::array<VkDescriptorSet, 2>, static_cast<std::size_t>(Layer::Count)>
         LayerDescriptorSets{};
+    static constexpr std::size_t kDirectCompositorSlotCount = 3;
+    static constexpr std::size_t kDirectArraySliceCount = 2;
+    static constexpr std::size_t kDirectViewCacheCount =
+        kDirectCompositorSlotCount * kDirectArraySliceCount;
+    static constexpr std::size_t kDirectDescriptorSetCount =
+        kDirectViewCacheCount * 2;
+    static_assert(kDirectViewCacheCount == 6);
+    static_assert(kDirectDescriptorSetCount == 12);
+    std::array<DirectDescriptorCacheEntry, kDirectViewCacheCount>
+        DirectDescriptorCache{};
+    melonDS::u64 CachedDirectResourceGeneration = 0;
 
     // Per frame-in-flight transient pool, kept separate from persistent layer
     // sets. It is reset at the top of every frame and remains available for a
