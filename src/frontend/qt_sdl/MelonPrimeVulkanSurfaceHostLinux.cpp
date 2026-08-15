@@ -24,11 +24,145 @@
 #include <QWindow>
 #include <qpa/qplatformnativeinterface.h>
 
+#include "Platform.h"
+
 namespace MelonPrime
 {
 
+void VulkanSurfaceLifecycle::publishSnapshot(
+    const VulkanSurface::NativeWindowSnapshot& snapshot,
+    bool valid)
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    Snapshot = snapshot;
+    Snapshot.Valid = valid && snapshot.IsValid();
+
+    // A valid snapshot may arrive synchronously while the old native surface
+    // is still in the retire handshake. Keep the retire barrier authoritative;
+    // markPresenterRetired() will promote this pending snapshot to Ready.
+    if (Snapshot.Valid)
+    {
+        if (StateValue != State::RetireRequested && StateValue != State::Retiring)
+            StateValue = State::Ready;
+    }
+    else if (StateValue != State::RetireRequested
+        && StateValue != State::Retiring
+        && StateValue != State::DestroySafe)
+    {
+        StateValue = State::WaitingForNativeSurface;
+    }
+    RetireCondition.notify_all();
+}
+
+
+void VulkanSurfaceLifecycle::requestRetire()
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    if (StateValue == State::RetireRequested || StateValue == State::Retiring)
+        return;
+
+    Snapshot.Valid = false;
+    if (!PresenterActive && ActiveFrames == 0)
+        StateValue = State::DestroySafe;
+    else
+        StateValue = State::RetireRequested;
+    RetireCondition.notify_all();
+}
+
+
+bool VulkanSurfaceLifecycle::waitForDestroySafe(std::chrono::milliseconds timeout)
+{
+    std::unique_lock<std::mutex> lock(Mutex);
+    return RetireCondition.wait_for(lock, timeout, [this]() {
+        return StateValue == State::DestroySafe && ActiveFrames == 0;
+    });
+}
+
+
+bool VulkanSurfaceLifecycle::beginFrame(VulkanSurface::NativeWindowSnapshot& snapshot)
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    if ((StateValue != State::Ready && StateValue != State::Bound)
+        || !Snapshot.IsValid())
+    {
+        return false;
+    }
+
+    snapshot = Snapshot;
+    ++ActiveFrames;
+    return true;
+}
+
+
+void VulkanSurfaceLifecycle::endFrame()
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    if (ActiveFrames > 0)
+        --ActiveFrames;
+    RetireCondition.notify_all();
+}
+
+
+void VulkanSurfaceLifecycle::markBound(std::uint64_t generation)
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    BoundGeneration = generation;
+    PresenterActive = true;
+    if (StateValue == State::Ready)
+        StateValue = State::Bound;
+    RetireCondition.notify_all();
+}
+
+
+void VulkanSurfaceLifecycle::markSurfaceLost()
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    Snapshot.Valid = false;
+    if (StateValue != State::RetireRequested && StateValue != State::Retiring)
+        StateValue = State::WaitingForNativeSurface;
+    RetireCondition.notify_all();
+}
+
+
+void VulkanSurfaceLifecycle::beginRetiring()
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    if (StateValue == State::RetireRequested)
+        StateValue = State::Retiring;
+    RetireCondition.notify_all();
+}
+
+
+void VulkanSurfaceLifecycle::markPresenterRetired()
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    BoundGeneration = 0;
+    PresenterActive = false;
+    if (StateValue == State::RetireRequested || StateValue == State::Retiring)
+    {
+        StateValue = Snapshot.IsValid() ? State::Ready : State::DestroySafe;
+    }
+    RetireCondition.notify_all();
+}
+
+
+bool VulkanSurfaceLifecycle::retireRequested() const
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    return StateValue == State::RetireRequested || StateValue == State::Retiring;
+}
+
+
+VulkanSurfaceLifecycle::State VulkanSurfaceLifecycle::state() const
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    return StateValue;
+}
+
 namespace
 {
+
+constexpr auto kNativeSurfaceRetireTimeout = std::chrono::milliseconds(250);
 
 void* NativeResourceForWindow(const char* name, QWindow* window)
 {
@@ -76,8 +210,8 @@ bool IsLifecycleEvent(QEvent* event)
 VulkanSurfaceHostLinux::VulkanSurfaceHostLinux(
     QWidget* parent,
     LifecycleCallback callback,
-    std::shared_ptr<std::shared_mutex> lifecycleLock)
-    : QWidget(parent), Callback(std::move(callback)), LifecycleLock(std::move(lifecycleLock))
+    std::shared_ptr<VulkanSurfaceLifecycle> lifecycle)
+    : QWidget(parent), Callback(std::move(callback)), Lifecycle(std::move(lifecycle))
 {
     setAttribute(Qt::WA_NativeWindow, true);
     setAttribute(Qt::WA_NoSystemBackground, true);
@@ -153,26 +287,13 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
     if (!IsLifecycleEvent(event))
         return QWidget::event(event);
 
-    // The emulation thread holds a shared lock while it calls the WSI and
-    // presents. Holding the exclusive side over Qt's native transition keeps
-    // wl_surface/XID destruction from racing a Vulkan call that still carries
-    // the old snapshot.
-    //
-    // QWidget::event(Show) may synchronously re-enter this handler with a
-    // PlatformSurface or WinIdChange event. Do not acquire the same
-    // non-recursive mutex twice; the outer handler already covers the whole
-    // native transition.
     const bool reentrantLifecycleEvent = HandlingLifecycleEvent;
-    std::unique_lock<std::shared_mutex> lifecycleGuard;
-    if (!reentrantLifecycleEvent && LifecycleLock)
-        lifecycleGuard = std::unique_lock<std::shared_mutex>(*LifecycleLock);
-
     const bool wasHandlingLifecycleEvent = HandlingLifecycleEvent;
     HandlingLifecycleEvent = true;
-    const bool result = QWidget::event(event);
 
     LifecycleEvent lifecycleEvent = LifecycleEvent::Show;
     bool validAfterEvent = true;
+    bool surfaceAboutToBeDestroyed = false;
     switch (event->type())
     {
     case QEvent::Show:
@@ -193,6 +314,7 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
         {
             lifecycleEvent = LifecycleEvent::SurfaceAboutToBeDestroyed;
             validAfterEvent = false;
+            surfaceAboutToBeDestroyed = true;
         }
         else
         {
@@ -202,6 +324,65 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
     }
     default:
         break;
+    }
+
+    // Hide/Show/WinIdChange can replace a native object as well as the
+    // explicit PlatformSurface notification. Request retirement before Qt is
+    // allowed to perform that transition. The request is only a short state
+    // publication; the Vulkan work is drained by the emulation-thread frame
+    // lease, and no lifecycle mutex is held across it.
+    const bool nativeTransition = lifecycleEvent == LifecycleEvent::Show
+        || lifecycleEvent == LifecycleEvent::Hide
+        || lifecycleEvent == LifecycleEvent::WinIdChange
+        || surfaceAboutToBeDestroyed;
+    if (nativeTransition && Lifecycle && !reentrantLifecycleEvent)
+    {
+        Lifecycle->requestRetire();
+        if (!surfaceAboutToBeDestroyed && !Lifecycle->waitForDestroySafe(
+                kNativeSurfaceRetireTimeout))
+        {
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "[Vulkan][LinuxWSI] native transition retire timed out generation=%llu event=%d\n",
+                static_cast<unsigned long long>(Generation),
+                static_cast<int>(lifecycleEvent));
+        }
+    }
+
+    // SurfaceAboutToBeDestroyed is the one event whose callback must precede
+    // QWidget::event(): Qt is about to release the wl_surface/X11 native
+    // object. The callback publishes the invalid generation, then the bounded
+    // handshake waits for the emulation thread to stop using the old
+    // VkSurfaceKHR before native destruction is permitted.
+    if (surfaceAboutToBeDestroyed)
+    {
+        ++Generation;
+        VulkanSurface::NativeWindowSnapshot snapshot;
+        snapshot.Generation = Generation;
+        snapshot.Platform = QGuiApplication::platformName().toStdString();
+        const QSize size = this->size();
+        const qreal dpr = devicePixelRatioF();
+        snapshot.Width = static_cast<std::uint32_t>(
+            std::max(1, qRound(size.width() * dpr)));
+        snapshot.Height = static_cast<std::uint32_t>(
+            std::max(1, qRound(size.height() * dpr)));
+        notifyLifecycle(lifecycleEvent, snapshot);
+
+        if (Lifecycle && !Lifecycle->waitForDestroySafe(kNativeSurfaceRetireTimeout))
+        {
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "[Vulkan][LinuxWSI] native surface destruction retire timed out generation=%llu\n",
+                static_cast<unsigned long long>(Generation));
+        }
+    }
+
+    const bool result = QWidget::event(event);
+
+    if (surfaceAboutToBeDestroyed)
+    {
+        HandlingLifecycleEvent = wasHandlingLifecycleEvent;
+        return result;
     }
 
     ++Generation;
