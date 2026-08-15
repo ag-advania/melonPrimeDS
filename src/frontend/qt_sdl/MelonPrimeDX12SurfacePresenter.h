@@ -13,6 +13,7 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <chrono>
@@ -65,6 +66,13 @@ public:
         std::uint32_t width,
         std::uint32_t height,
         bool waitForPresentSlot = true);
+    // Must run after acquiring the renderer output lease and before BeginFrame
+    // opens the presenter command list. Resource-generation changes are the
+    // only cold path allowed to quiesce the shared queue for descriptor reuse.
+    bool PrepareDirectOutputDescriptors(const melonDS::DX12PresentedFrame& frame);
+    // Renderer transition/destruction hook. It clears identity only; the
+    // persistent heap prefix remains allocated for the next output generation.
+    void InvalidateDirectDescriptorCache() noexcept;
     bool UploadLayer(
         Layer layer,
         const void* pixels,
@@ -118,9 +126,22 @@ private:
         std::uint32_t Height = 0;
         ID3D12Resource* DirectTexture = nullptr;
         std::uint32_t DirectArraySlice = 0;
+        std::uint64_t DirectResourceGeneration = 0;
+        std::uint32_t PersistentDescriptorIndex = 0;
+        ID3D12Resource* PersistentSrvResource = nullptr;
         D3D12_RESOURCE_STATES State = D3D12_RESOURCE_STATE_COPY_DEST;
         bool Valid = false;
+        bool PersistentSrvValid = false;
         bool UsesDirect = false;
+    };
+
+    struct DirectSrvCacheEntry
+    {
+        ID3D12Resource* Resource = nullptr;
+        std::uint32_t ArraySlice = 0;
+        std::uint64_t ResourceGeneration = 0;
+        std::uint32_t DescriptorIndex = 0;
+        bool Valid = false;
     };
 
     bool CreateSwapchain(std::uint32_t width, std::uint32_t height);
@@ -131,8 +152,20 @@ private:
     void CloseFrameLatencyWaitable() noexcept;
     bool EnsureLayerTexture(Layer layer, std::uint32_t width, std::uint32_t height);
     bool EnsureLayerUpload(LayerTexture& layer, std::uint32_t width, std::uint32_t height);
+    bool CreateLayerPersistentSrv(Layer layer);
+    bool EnsureDirectSrv(
+        ID3D12Resource* resource,
+        std::uint32_t arraySlice,
+        std::uint64_t resourceGeneration);
+    const DirectSrvCacheEntry* FindDirectSrv(
+        ID3D12Resource* resource,
+        std::uint32_t arraySlice,
+        std::uint64_t resourceGeneration) const noexcept;
+    bool ResolveLayerSrv(Layer layer, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
     bool WaitForPresentSlot();
     bool AllocateLayerSrv(Layer layer, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
+    D3D12_CPU_DESCRIPTOR_HANDLE PersistentCpuAt(std::uint32_t index) const noexcept;
+    D3D12_GPU_DESCRIPTOR_HANDLE PersistentGpuAt(std::uint32_t index) const noexcept;
     void TransitionLayer(LayerTexture& layer, D3D12_RESOURCE_STATES after);
     void TransitionNativeSource(D3D12_RESOURCE_STATES after);
     bool Fail(const char* operation, HRESULT result);
@@ -141,6 +174,24 @@ private:
     HWND Window = nullptr;
     melonDS::DX12CommandContext Commands;
     melonDS::DX12DescriptorRing Descriptors;
+    // The compositor has a three-slot output ring and each direct texture is a
+    // two-slice array, so six direct SRVs cover one output resource generation.
+    // Slots 0..3 are the fixed fallback layers; slots 4..9 are this cache.
+    static constexpr std::uint32_t kDirectCompositorSlotCount = 3;
+    static constexpr std::uint32_t kDirectArraySliceCount = 2;
+    static constexpr std::uint32_t kDirectDescriptorCacheCount =
+        kDirectCompositorSlotCount * kDirectArraySliceCount;
+    static constexpr std::uint32_t kPersistentFallbackDescriptorCount =
+        static_cast<std::uint32_t>(Layer::Count);
+    static constexpr std::uint32_t kPersistentDescriptorCount =
+        kPersistentFallbackDescriptorCount + kDirectDescriptorCacheCount;
+    static constexpr std::uint32_t kDescriptorHeapCount = 64;
+    static_assert(kDirectDescriptorCacheCount == 6);
+    D3D12_CPU_DESCRIPTOR_HANDLE PersistentCpuBase{};
+    D3D12_GPU_DESCRIPTOR_HANDLE PersistentGpuBase{};
+    std::uint32_t PersistentDescriptorCount = kPersistentDescriptorCount;
+    std::array<DirectSrvCacheEntry, kDirectDescriptorCacheCount> DirectSrvCache{};
+    std::uint64_t CurrentDirectResourceGeneration = 0;
     melonDS::DX12::ComPtr<IDXGISwapChain3> Swapchain;
     melonDS::DX12::ComPtr<ID3D12Resource> BackBuffers[2];
     melonDS::DX12::ComPtr<ID3D12DescriptorHeap> RtvHeap;

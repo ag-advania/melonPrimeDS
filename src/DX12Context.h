@@ -127,7 +127,13 @@ public:
     bool Init(ID3D12Device* device, u32 descriptorCount, bool shaderVisible);
     void Shutdown();
 
-    void Reset() noexcept { Head = 0; }
+    // Reset preserves the optional persistent prefix and rewinds only the
+    // transient tail. The zero-argument form retains the original behavior for
+    // renderer-owned rings that have no persistent descriptors.
+    void Reset(u32 reservedPrefix = 0) noexcept
+    {
+        Head = reservedPrefix < Capacity ? reservedPrefix : Capacity;
+    }
 
     // Allocates `count` contiguous descriptors. Returns false when the heap is
     // exhausted (the caller should treat that as a hard error, not a hint to

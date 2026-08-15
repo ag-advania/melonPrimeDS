@@ -1843,6 +1843,7 @@ ScreenPanelDX12::~ScreenPanelDX12()
 {
     if (dx12)
     {
+        dx12->presenter.InvalidateDirectDescriptorCache();
         dx12->presenter.Shutdown();
         dx12->frameLease.ReleaseNow();
     }
@@ -2015,6 +2016,8 @@ void ScreenPanelDX12::drawScreen()
     const u32 physicalWidth = static_cast<u32>(std::max(1, qRound(logicalWidth * dpr)));
     const u32 physicalHeight = static_cast<u32>(std::max(1, qRound(logicalHeight * dpr)));
     const bool waitForPresentSlot = !renderer || !renderer->ShouldBypassPresentWait();
+    if (gpuFrame && gpuFrame->HasDirectSampledOutput())
+        dx12->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
     if (!dx12->presenter.BeginFrame(
             physicalWidth, physicalHeight, waitForPresentSlot))
     {

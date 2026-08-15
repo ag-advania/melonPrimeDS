@@ -83,6 +83,11 @@ enum class Counter : u32
     PresenterDescriptorCopyCount,
     PresenterDescriptorCpuTimeNs,
     PresenterDescriptorUpdateCount,
+    PresenterDescriptorCacheHitCount,
+    PresenterDescriptorCacheMissCount,
+    PresenterDescriptorCacheInvalidateCount,
+    PresenterDescriptorFallbackCount,
+    PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
     CaptureReadCount,
@@ -333,7 +338,9 @@ inline void MaybeReport()
         "descriptor_creates=%llu descriptor_updates=%llu descriptor_copies=%llu "
         "descriptor_cpu_ns=%llu presenter_srv_creates=%llu "
         "presenter_descriptor_copies=%llu presenter_descriptor_cpu_ns=%llu "
-        "presenter_descriptor_updates=%llu "
+        "presenter_descriptor_updates=%llu presenter_descriptor_cache_hits=%llu "
+        "presenter_descriptor_cache_misses=%llu presenter_descriptor_cache_invalidates=%llu "
+        "presenter_descriptor_fallbacks=%llu presenter_descriptor_persistent_creates=%llu "
         "compositor_descriptor_updates=%llu compose_drops=%llu capture_reads=%llu "
         "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
@@ -364,6 +371,11 @@ inline void MaybeReport()
         count(Counter::PresenterDescriptorCopyCount),
         count(Counter::PresenterDescriptorCpuTimeNs),
         count(Counter::PresenterDescriptorUpdateCount),
+        count(Counter::PresenterDescriptorCacheHitCount),
+        count(Counter::PresenterDescriptorCacheMissCount),
+        count(Counter::PresenterDescriptorCacheInvalidateCount),
+        count(Counter::PresenterDescriptorFallbackCount),
+        count(Counter::PresenterDescriptorPersistentCreateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
         count(Counter::CaptureReadCount),
         count(Counter::CaptureValidLineCount), count(Counter::CaptureIndependentLineCount),
@@ -404,7 +416,10 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     UploadSpillBytes, DescriptorWriteCount,
     DescriptorCreateCount, DescriptorUpdateCount, DescriptorCopyCount, DescriptorCpuTimeNs,
     PresenterSrvCreateCount, PresenterDescriptorCopyCount, PresenterDescriptorCpuTimeNs,
-    PresenterDescriptorUpdateCount, CompositorDescriptorUpdateCount,
+    PresenterDescriptorUpdateCount, PresenterDescriptorCacheHitCount,
+    PresenterDescriptorCacheMissCount, PresenterDescriptorCacheInvalidateCount,
+    PresenterDescriptorFallbackCount, PresenterDescriptorPersistentCreateCount,
+    CompositorDescriptorUpdateCount,
     CompositorDropCount, CaptureReadCount,
     CaptureValidLineCount, CaptureIndependentLineCount, CaptureLegacyOrderedLineCount,
     CaptureSidecarDispatchCount, CaptureSidecarBarrierCount, CaptureSidecarGpuTimeNs,

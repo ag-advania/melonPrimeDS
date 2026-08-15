@@ -148,7 +148,9 @@ bool DX12SurfacePresenter::Init(HWND window)
 
     Window = window;
     if (!Commands.Init(Context->GetDevice(), Context->GetQueue())
-        || !Descriptors.Init(Context->GetDevice(), 64, true)
+        || !Descriptors.Init(Context->GetDevice(), kDescriptorHeapCount, true)
+        || !Descriptors.Allocate(
+            kPersistentDescriptorCount, PersistentCpuBase, PersistentGpuBase)
         || !CreateGraphicsObjects())
     {
         if (Error.empty())
@@ -195,6 +197,12 @@ void DX12SurfacePresenter::Shutdown() noexcept
 
     NativeSource = nullptr;
     NativeSourceDirect = false;
+    PersistentCpuBase = {};
+    PersistentGpuBase = {};
+    PersistentDescriptorCount = kPersistentDescriptorCount;
+    CurrentDirectResourceGeneration = 0;
+    for (DirectSrvCacheEntry& entry : DirectSrvCache)
+        entry = {};
     OpenList = nullptr;
     OpaquePipeline.Reset();
     BlendedPipeline.Reset();
@@ -469,6 +477,194 @@ bool DX12SurfacePresenter::Resize(std::uint32_t width, std::uint32_t height)
     return FrameLatencyWaitable && AcquireBackBuffers();
 }
 
+
+D3D12_CPU_DESCRIPTOR_HANDLE DX12SurfacePresenter::PersistentCpuAt(
+    std::uint32_t index) const noexcept
+{
+    D3D12_CPU_DESCRIPTOR_HANDLE handle = PersistentCpuBase;
+    handle.ptr += static_cast<SIZE_T>(index) * Descriptors.GetIncrement();
+    return handle;
+}
+
+
+D3D12_GPU_DESCRIPTOR_HANDLE DX12SurfacePresenter::PersistentGpuAt(
+    std::uint32_t index) const noexcept
+{
+    D3D12_GPU_DESCRIPTOR_HANDLE handle = PersistentGpuBase;
+    handle.ptr += static_cast<UINT64>(index) * Descriptors.GetIncrement();
+    return handle;
+}
+
+
+bool DX12SurfacePresenter::CreateLayerPersistentSrv(Layer layerId)
+{
+    if (!Context || layerId == Layer::Count)
+        return false;
+
+    LayerTexture& layer = Layers[static_cast<std::size_t>(layerId)];
+    ID3D12Resource* source = layer.Texture.Get();
+    if (!source)
+        return false;
+    if (layer.PersistentSrvValid && layer.PersistentSrvResource == source)
+        return true;
+
+    D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+    desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    desc.Texture2DArray.MostDetailedMip = 0;
+    desc.Texture2DArray.MipLevels = 1;
+    desc.Texture2DArray.FirstArraySlice = 0;
+    desc.Texture2DArray.ArraySize = 1;
+    desc.Texture2DArray.PlaneSlice = 0;
+    desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+
+    const auto descriptorStart = melonDS::DX12Perf::Clock::now();
+    Context->GetDevice()->CreateShaderResourceView(
+        source, &desc, PersistentCpuAt(static_cast<std::uint32_t>(layerId)));
+    layer.PersistentDescriptorIndex = static_cast<std::uint32_t>(layerId);
+    layer.PersistentSrvResource = source;
+    layer.PersistentSrvValid = true;
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresenterSrvCreateCount);
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresenterDescriptorPersistentCreateCount);
+    if (melonDS::DX12Perf::IsEnabled())
+    {
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::PresenterDescriptorCpuTimeNs,
+            static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                melonDS::DX12Perf::Clock::now() - descriptorStart).count()));
+    }
+    return true;
+}
+
+
+const DX12SurfacePresenter::DirectSrvCacheEntry* DX12SurfacePresenter::FindDirectSrv(
+    ID3D12Resource* resource,
+    std::uint32_t arraySlice,
+    std::uint64_t resourceGeneration) const noexcept
+{
+    for (const DirectSrvCacheEntry& entry : DirectSrvCache)
+    {
+        if (entry.Valid && entry.Resource == resource
+            && entry.ArraySlice == arraySlice
+            && entry.ResourceGeneration == resourceGeneration)
+        {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+
+bool DX12SurfacePresenter::EnsureDirectSrv(
+    ID3D12Resource* resource,
+    std::uint32_t arraySlice,
+    std::uint64_t resourceGeneration)
+{
+    if (!Context || !resource || resourceGeneration == 0
+        || arraySlice >= kDirectArraySliceCount)
+    {
+        return false;
+    }
+    if (FindDirectSrv(resource, arraySlice, resourceGeneration))
+    {
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::PresenterDescriptorCacheHitCount);
+        return true;
+    }
+
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresenterDescriptorCacheMissCount);
+    DirectSrvCacheEntry* freeEntry = nullptr;
+    for (DirectSrvCacheEntry& entry : DirectSrvCache)
+    {
+        if (!entry.Valid)
+        {
+            freeEntry = &entry;
+            break;
+        }
+    }
+    if (!freeEntry)
+        return false;
+
+    const std::uint32_t entryIndex = static_cast<std::uint32_t>(
+        freeEntry - DirectSrvCache.data());
+    D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+    desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+    desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    desc.Texture2DArray.MostDetailedMip = 0;
+    desc.Texture2DArray.MipLevels = 1;
+    desc.Texture2DArray.FirstArraySlice = arraySlice;
+    desc.Texture2DArray.ArraySize = 1;
+    desc.Texture2DArray.PlaneSlice = 0;
+    desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+
+    const auto descriptorStart = melonDS::DX12Perf::Clock::now();
+    Context->GetDevice()->CreateShaderResourceView(
+        resource, &desc,
+        PersistentCpuAt(kPersistentFallbackDescriptorCount + entryIndex));
+    freeEntry->Resource = resource;
+    freeEntry->ArraySlice = arraySlice;
+    freeEntry->ResourceGeneration = resourceGeneration;
+    freeEntry->DescriptorIndex = kPersistentFallbackDescriptorCount + entryIndex;
+    freeEntry->Valid = true;
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresenterSrvCreateCount);
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresenterDescriptorPersistentCreateCount);
+    if (melonDS::DX12Perf::IsEnabled())
+    {
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::PresenterDescriptorCpuTimeNs,
+            static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                melonDS::DX12Perf::Clock::now() - descriptorStart).count()));
+    }
+    return true;
+}
+
+
+bool DX12SurfacePresenter::PrepareDirectOutputDescriptors(
+    const melonDS::DX12PresentedFrame& frame)
+{
+    if (!Initialized || !Context)
+        return false;
+    if (!frame.HasDirectSampledOutput() || frame.ResourceGeneration == 0)
+        return true;
+
+    if (CurrentDirectResourceGeneration != frame.ResourceGeneration)
+    {
+        bool hadEntries = false;
+        for (const DirectSrvCacheEntry& entry : DirectSrvCache)
+            hadEntries |= entry.Valid;
+        if (hadEntries)
+            Commands.WaitIdle();
+        for (DirectSrvCacheEntry& entry : DirectSrvCache)
+            entry = {};
+        CurrentDirectResourceGeneration = frame.ResourceGeneration;
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::PresenterDescriptorCacheInvalidateCount);
+    }
+
+    // The two array slices are the only direct presenter views. A full cache
+    // is not fatal: DrawLayer() keeps the transient tail as a safe fallback.
+    EnsureDirectSrv(frame.DirectTexture, 0, frame.ResourceGeneration);
+    EnsureDirectSrv(frame.DirectTexture, 1, frame.ResourceGeneration);
+    return true;
+}
+
+
+void DX12SurfacePresenter::InvalidateDirectDescriptorCache() noexcept
+{
+    for (DirectSrvCacheEntry& entry : DirectSrvCache)
+        entry = {};
+    CurrentDirectResourceGeneration = 0;
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresenterDescriptorCacheInvalidateCount);
+}
+
 bool DX12SurfacePresenter::EnsureLayerTexture(
     Layer layerId,
     std::uint32_t width,
@@ -476,7 +672,11 @@ bool DX12SurfacePresenter::EnsureLayerTexture(
 {
     LayerTexture& layer = Layers[static_cast<std::size_t>(layerId)];
     if (layer.Texture && layer.Width == width && layer.Height == height)
-        return true;
+    {
+        return layer.PersistentSrvValid && layer.PersistentSrvResource == layer.Texture.Get()
+            ? true
+            : CreateLayerPersistentSrv(layerId);
+    }
 
     if (layerId == Layer::Hud)
         melonDS::DX12Perf::AddCounter(melonDS::DX12Perf::Counter::HudTextureRecreateCount);
@@ -498,7 +698,9 @@ bool DX12SurfacePresenter::EnsureLayerTexture(
     layer.Height = height;
     layer.State = D3D12_RESOURCE_STATE_COPY_DEST;
     layer.Valid = false;
-    return true;
+    layer.PersistentSrvValid = false;
+    layer.PersistentSrvResource = nullptr;
+    return CreateLayerPersistentSrv(layerId);
 }
 
 bool DX12SurfacePresenter::EnsureLayerUpload(
@@ -600,7 +802,9 @@ bool DX12SurfacePresenter::BeginFrame(
     }
     if (melonDS::DX12Perf::IsEnabled())
         PerfRecordStart = melonDS::DX12Perf::Clock::now();
-    Descriptors.Reset();
+    // Keep the fixed SRV prefix intact; only the transient fallback tail is
+    // recycled at the frame boundary.
+    Descriptors.Reset(PersistentDescriptorCount);
     NativeSource = nullptr;
     NativeSourceState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     NativeSourceDirect = false;
@@ -608,6 +812,7 @@ bool DX12SurfacePresenter::BeginFrame(
     {
         texture.DirectTexture = nullptr;
         texture.DirectArraySlice = 0;
+        texture.DirectResourceGeneration = 0;
         texture.UsesDirect = false;
     }
 
@@ -815,12 +1020,47 @@ bool DX12SurfacePresenter::UploadLayerFromTexture(
     LayerTexture& layer = Layers[static_cast<std::size_t>(layerId)];
     layer.DirectTexture = frame.DirectTexture;
     layer.DirectArraySlice = layerId == Layer::ScreenTop ? 0u : 1u;
+    layer.DirectResourceGeneration = frame.ResourceGeneration;
     layer.Width = frame.Width;
     layer.Height = frame.Height;
     layer.UsesDirect = true;
     layer.Valid = true;
     return true;
 }
+
+bool DX12SurfacePresenter::ResolveLayerSrv(
+    Layer layerId,
+    D3D12_GPU_DESCRIPTOR_HANDLE& gpu)
+{
+    LayerTexture& layer = Layers[static_cast<std::size_t>(layerId)];
+    if (!layer.Valid)
+        return false;
+
+    if (layer.UsesDirect)
+    {
+        const DirectSrvCacheEntry* entry = FindDirectSrv(
+            layer.DirectTexture, layer.DirectArraySlice, layer.DirectResourceGeneration);
+        if (entry)
+        {
+            gpu = PersistentGpuAt(entry->DescriptorIndex);
+            return true;
+        }
+    }
+    else if (layer.Texture && layer.PersistentSrvValid
+        && layer.PersistentSrvResource == layer.Texture.Get())
+    {
+        gpu = PersistentGpuAt(layer.PersistentDescriptorIndex);
+        return true;
+    }
+
+    // Cache invariant failures and direct-cache overflow retain the old
+    // transient path. It starts after the persistent prefix and is reset only
+    // at BeginFrame(), so no persistent/in-flight descriptor is overwritten.
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::PresenterDescriptorFallbackCount);
+    return AllocateLayerSrv(layerId, gpu);
+}
+
 
 bool DX12SurfacePresenter::AllocateLayerSrv(
     Layer layerId,
@@ -875,7 +1115,7 @@ void DX12SurfacePresenter::DrawLayer(
     if (!FrameOpen || !OpenList)
         return;
     D3D12_GPU_DESCRIPTOR_HANDLE srv{};
-    if (!AllocateLayerSrv(layerId, srv))
+    if (!ResolveLayerSrv(layerId, srv))
         return;
 
     DrawConstants constants{};
