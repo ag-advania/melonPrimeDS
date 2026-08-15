@@ -294,6 +294,7 @@ bool VulkanPresenter::Fail(const char* operation, VkResult result)
 {
     Error = std::string(operation) + " failed: " + Vk::FormatResult(result);
     Failed = true;
+    SurfaceRebindRequested = false;
     Platform::Log(Platform::LogLevel::Error, "[Vulkan] presenter: %s\n", Error.c_str());
     return false;
 }
@@ -303,7 +304,25 @@ bool VulkanPresenter::Fail(std::string reason)
 {
     Error = std::move(reason);
     Failed = true;
+    SurfaceRebindRequested = false;
     Platform::Log(Platform::LogLevel::Error, "[Vulkan] presenter: %s\n", Error.c_str());
+    return false;
+}
+
+
+bool VulkanPresenter::RequestSurfaceRebind(const char* operation, VkResult result)
+{
+    Error = std::string(operation) + " returned " + Vk::FormatResult(result);
+    // A compositor-owned surface can disappear while the Vulkan device is
+    // still perfectly usable. Keep the device alive only until the panel's
+    // emulation-thread rebind boundary; never convert this into the sticky
+    // renderer-runtime-failure latch.
+    Failed = false;
+    SurfaceRebindRequested = true;
+    Platform::Log(
+        Platform::LogLevel::Warn,
+        "[Vulkan][LinuxWSI] %s; scheduling surface rebind\n",
+        Error.c_str());
     return false;
 }
 
@@ -329,6 +348,7 @@ bool VulkanPresenter::Init(QWidget* surfaceWidget)
         return true;
 
     Failed = false;
+    SurfaceRebindRequested = false;
     Error.clear();
     SurfaceWidget = surfaceWidget;
 
@@ -340,7 +360,9 @@ bool VulkanPresenter::Init(QWidget* surfaceWidget)
 
     if (!CreateSurface(surfaceWidget))
     {
+        const bool surfaceRebindRequested = SurfaceRebindRequested;
         Shutdown();
+        SurfaceRebindRequested = surfaceRebindRequested;
         return false;
     }
 
@@ -359,9 +381,11 @@ bool VulkanPresenter::Init(QWidget* surfaceWidget)
     {
         // A window that is minimized at creation time is not a failure: the
         // swapchain is built at the first frame that has a non-zero extent.
-        if (Failed)
+        const bool surfaceRebindRequested = SurfaceRebindRequested;
+        if (Failed || surfaceRebindRequested)
         {
             Shutdown();
+            SurfaceRebindRequested = surfaceRebindRequested;
             return false;
         }
     }
@@ -369,6 +393,63 @@ bool VulkanPresenter::Init(QWidget* surfaceWidget)
     Initialized = true;
     return true;
 }
+
+
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter snapshot entry point, not input dispatch
+bool VulkanPresenter::Init(const VulkanSurface::NativeWindowSnapshot& snapshot)
+{
+    if (Initialized)
+        return true;
+
+    Failed = false;
+    SurfaceRebindRequested = false;
+    Error.clear();
+    SurfaceWidget = nullptr;
+    SurfaceGeneration = snapshot.Generation;
+
+    if (!snapshot.IsValid())
+        return Fail("the Linux Vulkan presenter was given no valid native surface snapshot");
+
+    if (!AcquireContext())
+        return false;
+
+    if (!CreateSurface(snapshot))
+    {
+        const bool surfaceRebindRequested = SurfaceRebindRequested;
+        Shutdown();
+        SurfaceRebindRequested = surfaceRebindRequested;
+        return false;
+    }
+
+    if (!CreateDeviceObjects())
+    {
+        Shutdown();
+        return false;
+    }
+
+    if (!RecreateSwapchain(snapshot.Width, snapshot.Height))
+    {
+        // A zero-extent window is not a presenter failure. The next frame will
+        // retry once the compositor reports a usable extent.
+        const bool surfaceRebindRequested = SurfaceRebindRequested;
+        if (Failed || surfaceRebindRequested)
+        {
+            Shutdown();
+            SurfaceRebindRequested = surfaceRebindRequested;
+            return false;
+        }
+    }
+
+    Initialized = true;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan][LinuxWSI] swapchain ready extent=%ux%u generation=%llu\n",
+        SwapchainExtent.width,
+        SwapchainExtent.height,
+        static_cast<unsigned long long>(SurfaceGeneration));
+    return true;
+}
+#endif
 
 
 bool VulkanPresenter::AcquireContext()
@@ -401,12 +482,36 @@ bool VulkanPresenter::CreateSurface(QWidget* widget)
 
     if (!Surface.IsValid())
     {
+        if (Surface.FailureResult == VK_ERROR_SURFACE_LOST_KHR)
+            return RequestSurfaceRebind("vkCreatePlatformSurface", Surface.FailureResult);
         return Fail(Surface.Failure.empty()
             ? std::string("the platform Vulkan surface could not be created")
             : Surface.Failure);
     }
     return true;
 }
+
+
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter WSI creation, not input dispatch
+bool VulkanPresenter::CreateSurface(const VulkanSurface::NativeWindowSnapshot& snapshot)
+{
+    Surface = VulkanSurface::Create(
+        Context->GetInstance(),
+        Context->GetLibrary().Global().GetInstanceProcAddr,
+        snapshot);
+
+    if (!Surface.IsValid())
+    {
+        if (Surface.FailureResult == VK_ERROR_SURFACE_LOST_KHR)
+            return RequestSurfaceRebind(
+                "vkCreateLinuxSurfaceKHR", Surface.FailureResult);
+        return Fail(Surface.Failure.empty()
+            ? std::string("the Linux platform Vulkan surface could not be created")
+            : Surface.Failure);
+    }
+    return true;
+}
+#endif
 
 
 bool VulkanPresenter::CreateDeviceObjects()
@@ -815,8 +920,14 @@ bool VulkanPresenter::CreatePipelines()
 // Swapchain
 // ---------------------------------------------------------------------------
 
-bool VulkanPresenter::ChooseSurfaceFormat(VkSurfaceFormatKHR& out, std::string& reason) const
+bool VulkanPresenter::ChooseSurfaceFormat(
+    VkSurfaceFormatKHR& out,
+    std::string& reason,
+    VkResult* failureResult) const
 {
+    if (failureResult)
+        *failureResult = VK_SUCCESS;
+
     const Vk::InstanceDispatch& fns = Device.InstanceFns();
 
     u32 count = 0;
@@ -824,6 +935,8 @@ bool VulkanPresenter::ChooseSurfaceFormat(VkSurfaceFormatKHR& out, std::string& 
         Device.GetPhysicalDevice(), Surface.Handle, &count, nullptr);
     if (res != VK_SUCCESS || count == 0)
     {
+        if (failureResult)
+            *failureResult = res != VK_SUCCESS ? res : VK_ERROR_INITIALIZATION_FAILED;
         reason = "the surface reports no supported formats";
         return false;
     }
@@ -833,6 +946,8 @@ bool VulkanPresenter::ChooseSurfaceFormat(VkSurfaceFormatKHR& out, std::string& 
         Device.GetPhysicalDevice(), Surface.Handle, &count, formats.data());
     if (res != VK_SUCCESS && res != VK_INCOMPLETE)
     {
+        if (failureResult)
+            *failureResult = res;
         reason = "vkGetPhysicalDeviceSurfaceFormatsKHR failed: " + Vk::FormatResult(res);
         return false;
     }
@@ -950,7 +1065,13 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
 
     VkSurfaceCapabilitiesKHR caps{};
     if (!PresentPacer.QuerySurfaceCapabilities(caps))
+    {
+        const VkResult queryResult = PresentPacer.GetLastSurfaceQueryResult();
+        if (queryResult == VK_ERROR_SURFACE_LOST_KHR)
+            return RequestSurfaceRebind(
+                "vkGetPhysicalDeviceSurfaceCapabilitiesKHR", queryResult);
         return Fail("the Vulkan surface capability query failed");
+    }
     VkResult res = VK_SUCCESS;
 
     VkExtent2D extent = caps.currentExtent;
@@ -977,14 +1098,22 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         res = instanceFns.GetPhysicalDeviceSurfacePresentModesKHR(
             Device.GetPhysicalDevice(), Surface.Handle, &count, nullptr);
         if (res != VK_SUCCESS)
+        {
+            if (res == VK_ERROR_SURFACE_LOST_KHR)
+                return RequestSurfaceRebind("vkGetPhysicalDeviceSurfacePresentModesKHR", res);
             return Fail("vkGetPhysicalDeviceSurfacePresentModesKHR", res);
+        }
         presentModes.resize(count);
         if (count > 0)
         {
             res = instanceFns.GetPhysicalDeviceSurfacePresentModesKHR(
                 Device.GetPhysicalDevice(), Surface.Handle, &count, presentModes.data());
             if (res != VK_SUCCESS && res != VK_INCOMPLETE)
+            {
+                if (res == VK_ERROR_SURFACE_LOST_KHR)
+                    return RequestSurfaceRebind("vkGetPhysicalDeviceSurfacePresentModesKHR", res);
                 return Fail("vkGetPhysicalDeviceSurfacePresentModesKHR", res);
+            }
             presentModes.resize(count);
         }
     }
@@ -1006,8 +1135,14 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     VkSurfaceFormatKHR format{};
     {
         std::string reason;
-        if (!ChooseSurfaceFormat(format, reason))
+        VkResult formatQueryResult = VK_SUCCESS;
+        if (!ChooseSurfaceFormat(format, reason, &formatQueryResult))
+        {
+            if (formatQueryResult == VK_ERROR_SURFACE_LOST_KHR)
+                return RequestSurfaceRebind(
+                    "vkGetPhysicalDeviceSurfaceFormatsKHR", formatQueryResult);
             return Fail(std::move(reason));
+        }
     }
 
     // Default to minImageCount + 1 so the application owns one image while the
@@ -1125,7 +1260,11 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     Swapchain = VK_NULL_HANDLE;
 
     if (res != VK_SUCCESS)
+    {
+        if (res == VK_ERROR_SURFACE_LOST_KHR)
+            return RequestSurfaceRebind("vkCreateSwapchainKHR", res);
         return Fail("vkCreateSwapchainKHR", res);
+    }
 
     Swapchain = newSwapchain;
     SwapchainExtent = extent;
@@ -1605,6 +1744,8 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     {
         Frames.SubmitFrame(Device.GetMainQueue());
         CurrentCommandBuffer = VK_NULL_HANDLE;
+        if (res == VK_ERROR_SURFACE_LOST_KHR)
+            return RequestSurfaceRebind("vkAcquireNextImageKHR", res);
         return Fail("vkAcquireNextImageKHR", res);
     }
 
@@ -2222,17 +2363,31 @@ bool VulkanPresenter::EndFrame()
         return true;
     }
     if (res != VK_SUCCESS)
+    {
+        if (res == VK_ERROR_SURFACE_LOST_KHR)
+            return RequestSurfaceRebind("vkQueuePresentKHR", res);
         return Fail("vkQueuePresentKHR", res);
+    }
 
     if (!FirstPresentLogged)
     {
         FirstPresentLogged = true;
+#if defined(__linux__)  // scatter-budget-exempt: Linux first-present generation diagnostic, not input dispatch
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[Vulkan][LinuxWSI] first frame presented generation=%llu extent=%ux%u presentMode=%s\n",
+            static_cast<unsigned long long>(SurfaceGeneration),
+            SwapchainExtent.width,
+            SwapchainExtent.height,
+            PresentModeName(PresentMode));
+#else
         Platform::Log(
             Platform::LogLevel::Info,
             "[Vulkan] first frame presented extent=%ux%u presentMode=%s\n",
             SwapchainExtent.width,
             SwapchainExtent.height,
             PresentModeName(PresentMode));
+#endif
     }
     VulkanPerf::AddCounter(VulkanPerf::Counter::Frames);
     VulkanPerf::MaybeReport();
@@ -2282,11 +2437,14 @@ void VulkanPresenter::BeginLowLatencyFrame(
     if (pacerAction.FailRenderer)
     {
         // Device and surface loss are not stale-swapchain events. Route each
-        // through the renderer failure path with the original class intact.
+        // through the correct recovery path with the original class intact.
         const VkResult result = pacerResult == melonDS::VulkanPacerBeginResult::DeviceLost
             ? VK_ERROR_DEVICE_LOST
             : VK_ERROR_SURFACE_LOST_KHR;
-        Fail("Vulkan present timing query", result);
+        if (result == VK_ERROR_SURFACE_LOST_KHR)
+            RequestSurfaceRebind("Vulkan present timing query", result);
+        else
+            Fail("Vulkan present timing query", result);
         return;
     }
 
@@ -2687,8 +2845,12 @@ void VulkanPresenter::Shutdown() noexcept
     FrameOpen = false;
     CompositionOpen = false;
     Initialized = false;
+    SurfaceRebindRequested = false;
     FirstPresentLogged = false;
     SkipNextPresentationForLatencyBudget = false;
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter generation teardown, not input dispatch
+    SurfaceGeneration = 0;
+#endif
 }
 
 } // namespace MelonPrime
