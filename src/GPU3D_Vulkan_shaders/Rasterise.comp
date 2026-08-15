@@ -1,0 +1,355 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    1:1 re-expression of ComputeRendererShaders::Rasterise
+    (src/GPU3D_Compute_shaders.h), including the MelonPrimeDS split dispatch.
+
+    Build defines: Rasterise
+                 + exactly one of ZBuffer / WBuffer
+                 + exactly one kind of:
+                       NoTexture
+                       NoTexture Toon
+                       NoTexture Highlight
+                       UseTexture Decal
+                       UseTexture Modulate
+                       UseTexture Toon
+                       UseTexture Highlight
+                       ShadowMask
+    TileSize must be a compile-time literal: it selects local_size_x/y.
+
+    Host dispatch (matching GPU3D_Compute.cpp): indirect, per variant, from
+    BinResultHeader::VariantWorkCount[variant] = (1, ceil(n/chunk), min(n, chunk)).
+
+    Vulkan-forced deviations, all confined to how the four GL default-block
+    uniforms arrive:
+
+      * `uniform uint CurVariant`   -> pc.CurVariant.
+      * `uniform vec2 InvTextureSize` -> recomputed here from the integer
+        pc.TexWidth / pc.TexHeight. The GL host computed 1.f/width and
+        1.f/height on the CPU and uploaded floats. DS texture dimensions are
+        powers of two (8..1024), so both reciprocals are exactly representable
+        in binary32 and the shader-side division reproduces the GL host's
+        float bit pattern exactly.
+      * `uniform int TexIsCapture`  -> pc.TexIsCapture, widened to uint to fit
+        the fixed 32-byte push-constant block. Only tested against 0/1/2.
+      * `uniform float CaptureYOffset` -> recomputed here as
+        float(pc.CaptureYOffset)/float(pc.TexHeight), which is what the GL host
+        uploaded. The numerator is a small integer and the denominator a power
+        of two, so the quotient is again exact.
+
+    Both derived floats are computed inside the UseTexture branch only, so the
+    non-textured variants never divide by the zero texture size the host passes
+    for them.
+
+    Texture wrap modes stay in the sampler, exactly as in the GL renderer,
+    which selected one of nine sampler objects
+    (GL_CLAMP_TO_EDGE / GL_REPEAT / GL_MIRRORED_REPEAT per axis). Those map 1:1
+    onto VkSamplerAddressMode, so pc.TexWrapS / pc.TexWrapT are part of the
+    push-constant contract but deliberately unread here: doing the wrap in the
+    shader would change the filtering path and would not be a faithful port.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "PolygonBuffer.glsl"
+#include "WorkDescBuffer.glsl"
+#include "XSpanSetupBuffer.glsl"
+#include "BinningBuffer.glsl"
+#include "TileBuffers.glsl"
+
+layout (local_size_x = TileSize, local_size_y = TileSize) in;
+
+layout (set = 1, binding = 0) uniform usampler2DArray CurrentTexture;
+layout (set = 1, binding = 1) uniform sampler2DArray Capture128Texture;
+layout (set = 1, binding = 2) uniform sampler2DArray Capture256Texture;
+layout (std430, set = 0, binding = 14) buffer RasterCaptureSidecarBuffer
+{
+    uint RasterCaptureSidecarPixels[];
+};
+
+#ifdef UseTexture
+int WrapCaptureCoord(int coord, int size, uint mode)
+{
+    if (mode == 0U)
+        return clamp(coord, 0, size - 1);
+
+    if (mode == 1U)
+    {
+        int wrapped = coord % size;
+        return wrapped < 0 ? wrapped + size : wrapped;
+    }
+
+    int period = size * 2;
+    int wrapped = coord % period;
+    if (wrapped < 0)
+        wrapped += period;
+    return wrapped >= size ? period - 1 - wrapped : wrapped;
+}
+
+uvec4 SampleCaptureTexture(int u, int v)
+{
+    int captureWidth = pc.TexIsCapture == 1U ? 128 : 256;
+    int scaleFactor = ScreenWidth / 256;
+    int scaledWidth = captureWidth * scaleFactor;
+
+    // OpenGL samples the retained capture array with NEAREST filtering. Work
+    // in the array's actual high-resolution texel grid so the 12.4 DS texture
+    // coordinates retain their subpixel detail rather than first collapsing
+    // to a native texel.
+    int sx = int(floor(float(u) * float(scaleFactor) / 16.0));
+    int sy = int(floor(
+        (float(v) / 16.0 + float(pc.CaptureYOffset))
+        * float(scaledWidth) / float(pc.TexHeight)));
+    sx = WrapCaptureCoord(sx, scaledWidth, pc.TexWrapS);
+    sy = WrapCaptureCoord(sy, scaledWidth, pc.TexWrapT);
+
+    uint scale = uint(scaleFactor);
+    uint address = (pc._pad & 0xFFFFU)
+        + uint(sy / scaleFactor) * uint(captureWidth)
+        + uint(sx / scaleFactor);
+    uint reference = (pc._pad & 0xFFFF0000U) | (address & 0xFFFFU);
+    uint bank = (reference >> 28U) & 3U;
+    uint version = (reference >> 30U) & 1U;
+    uint cell = ((version * 4U + bank) * 65536U) + address;
+    uint sampleIndex = (uint(sy) % scale) * scale + (uint(sx) % scale);
+    uint packed = RasterCaptureSidecarPixels[cell * scale * scale + sampleIndex];
+    return uvec4(
+        packed & 0x3FU,
+        (packed >> 8U) & 0x3FU,
+        (packed >> 16U) & 0x3FU,
+        (packed >> 24U) & 0x1FU);
+}
+#endif
+
+void main()
+{
+    // MelonPrimeDS: the dispatch is split as (1, ceil(count/chunk), min(count, chunk))
+    // to respect the 65535 Y/Z group limit (melonDS issue #2047). Rebuild the
+    // linear work index and drop the overdispatched tail work groups. The early
+    // return is uniform across the work group (it only depends on gl_WorkGroupID)
+    // and the shader has no barriers, so this is safe.
+    uint linearWorkIdx = gl_WorkGroupID.y * RasteriseChunkSize + gl_WorkGroupID.z;
+    if (linearWorkIdx >= VariantWorkRealCount[pc.CurVariant])
+        return;
+
+    uvec2 workDesc = WorkDescs[WorkDescsSortedStart + SortedWorkOffset[pc.CurVariant] + linearWorkIdx];
+
+    Polygon polygon = Polygons[bitfieldExtract(workDesc.y, 0, 11)];
+    ivec2 position = ivec2(bitfieldExtract(workDesc.x, 0, 16), bitfieldExtract(workDesc.x, 16, 16)) + ivec2(gl_LocalInvocationID.xy);
+    int tileOffset = int(bitfieldExtract(workDesc.y, 11, 21)) * TileSize * TileSize + TileSize * int(gl_LocalInvocationID.y) + int(gl_LocalInvocationID.x);
+
+    uint color = 0U;
+    if (position.y >= polygon.YTop && position.y < polygon.YBot)
+    {
+        XSpanSetup xspan = XSpanSetups[polygon.FirstXSpan + (position.y - polygon.YTop)];
+
+        bool insideLeftEdge = position.x < xspan.InsideStart;
+        bool insideRightEdge = position.x >= xspan.InsideEnd;
+        bool insidePolygonInside = !insideLeftEdge && !insideRightEdge;
+
+        if (position.x >= xspan.X0 && position.x < xspan.X1
+            && ((insideLeftEdge && (xspan.Flags & XSpanSetup_FillLeft) != 0U)
+                || (insideRightEdge && (xspan.Flags & XSpanSetup_FillRight) != 0U)
+                || (insidePolygonInside && (xspan.Flags & XSpanSetup_FillInside) != 0U)))
+        {
+            uint attr = 0;
+            if (position.y == polygon.YTop)
+                attr |= 0x4U;
+            else if (position.y == polygon.YBot - 1)
+                attr |= 0x8U;
+
+            if (insideLeftEdge)
+            {
+                attr |= 0x1U;
+
+                int cov = xspan.EdgeCovL;
+                if (cov < 0)
+                {
+                    int coverageStart = max(xspan.X0, 0);
+                    int xcov = xspan.CovLInitial
+                        + (xspan.EdgeCovL & 0x3FF) * (position.x - coverageStart);
+                    cov = min(xcov >> 5, 31);
+                }
+
+                attr |= uint(cov) << 8;
+            }
+            else if (insideRightEdge)
+            {
+                attr |= 0x2U;
+
+                int cov = xspan.EdgeCovR;
+                if (cov < 0)
+                {
+                    int coverageStart = max(max(xspan.InsideStart, xspan.InsideEnd), 0);
+                    int xcov = xspan.CovRInitial
+                        + (xspan.EdgeCovR & 0x3FF) * (position.x - coverageStart);
+                    cov = max(0x1F - (xcov >> 5), 0);
+                }
+
+                attr |= uint(cov) << 8;
+            }
+            else if ((DispCnt & (1U << 4)) != 0U && (attr & 0xFU) != 0U)
+            {
+                attr |= 0x1FU << 8;
+            }
+
+            uint z;
+            int u, v, vr, vg, vb;
+
+            if (xspan.X0 == xspan.X1)
+            {
+                z = xspan.Z0;
+                u = xspan.TexcoordU0;
+                v = xspan.TexcoordV0;
+                vr = xspan.ColorR0;
+                vg = xspan.ColorG0;
+                vb = xspan.ColorB0;
+            }
+            else
+            {
+                int ifactor = CalcYFactorX(xspan, position.x);
+                int idiff = xspan.X1 - xspan.X0;
+                int i = position.x - xspan.X0;
+
+#ifdef ZBuffer
+                z = InterpolateZZBuffer(xspan.Z0, xspan.Z1, i, xspan.XRecip, idiff);
+#endif
+#ifdef WBuffer
+                z = InterpolateZWBuffer(xspan.Z0, xspan.Z1, ifactor);
+#endif
+                if ((xspan.Flags & XSpanSetup_Linear) == 0U)
+                {
+                    u = InterpolateAttrPersp(xspan.TexcoordU0, xspan.TexcoordU1, ifactor);
+                    v = InterpolateAttrPersp(xspan.TexcoordV0, xspan.TexcoordV1, ifactor);
+
+                    vr = InterpolateAttrPersp(xspan.ColorR0, xspan.ColorR1, ifactor);
+                    vg = InterpolateAttrPersp(xspan.ColorG0, xspan.ColorG1, ifactor);
+                    vb = InterpolateAttrPersp(xspan.ColorB0, xspan.ColorB1, ifactor);
+                }
+                else
+                {
+                    u = InterpolateAttrLinear(xspan.TexcoordU0, xspan.TexcoordU1, i, xspan.XRecip, idiff);
+                    v = InterpolateAttrLinear(xspan.TexcoordV0, xspan.TexcoordV1, i, xspan.XRecip, idiff);
+
+                    vr = InterpolateAttrLinear(xspan.ColorR0, xspan.ColorR1, i, xspan.XRecip, idiff);
+                    vg = InterpolateAttrLinear(xspan.ColorG0, xspan.ColorG1, i, xspan.XRecip, idiff);
+                    vb = InterpolateAttrLinear(xspan.ColorB0, xspan.ColorB1, i, xspan.XRecip, idiff);
+                }
+            }
+
+#ifndef ShadowMask
+            vr >>= 3;
+            vg >>= 3;
+            vb >>= 3;
+
+            uint r, g, b, a;
+            uint polyalpha = bitfieldExtract(polygon.Attr, 16, 5);
+
+#ifdef Toon
+            uint tooncolor = ToonTable[vr >> 1].r;
+            vr = int(bitfieldExtract(tooncolor, 0, 8));
+            vg = int(bitfieldExtract(tooncolor, 8, 8));
+            vb = int(bitfieldExtract(tooncolor, 16, 8));
+#endif
+#ifdef Highlight
+            vg = vr;
+            vb = vr;
+#endif
+
+#ifdef NoTexture
+            a = int(polyalpha);
+#endif
+            r = vr;
+            g = vg;
+            b = vb;
+
+#ifdef UseTexture
+            // Software narrows interpolated S/T to signed 16-bit before
+            // converting from 12.4 fixed point.
+            u = (u << 16) >> 16;
+            v = (v << 16) >> 16;
+
+            // See the header comment: these two reproduce the GL host's
+            // `1.f/width`, `1.f/height` and `CaptureYOffset/height` bit for bit,
+            // because every operand is an integer and every divisor is a power
+            // of two.
+            vec2 InvTextureSize = vec2(1.0) / vec2(float(pc.TexWidth), float(pc.TexHeight));
+
+            vec2 uvf = vec2(ivec2(u, v)) * vec2(1.0 / 16.0) * InvTextureSize;
+
+            // TODO: if they use a capture as a texture and make it repeat, or use a nonstandard height,
+            // it may require custom handling of texcoord wraparound
+            uvec4 texcolor;
+            if (pc.TexIsCapture != 0U)
+                texcolor = SampleCaptureTexture(u, v);
+            else
+                texcolor = texture(CurrentTexture, vec3(uvf, polygon.TextureLayer));
+
+#ifdef Decal
+            if (texcolor.a == 31)
+            {
+                r = int(texcolor.r);
+                g = int(texcolor.g);
+                b = int(texcolor.b);
+            }
+            else if (texcolor.a > 0)
+            {
+                r = int((texcolor.r * texcolor.a) + (vr * (31-texcolor.a))) >> 5;
+                g = int((texcolor.g * texcolor.a) + (vg * (31-texcolor.a))) >> 5;
+                b = int((texcolor.b * texcolor.a) + (vb * (31-texcolor.a))) >> 5;
+            }
+            a = int(polyalpha);
+#endif
+#if defined(Modulate) || defined(Toon) || defined(Highlight)
+            r = int((texcolor.r+1) * (vr+1) - 1) >> 6;
+            g = int((texcolor.g+1) * (vg+1) - 1) >> 6;
+            b = int((texcolor.b+1) * (vb+1) - 1) >> 6;
+            a = int((texcolor.a+1) * (polyalpha+1) - 1) >> 5;
+#endif
+#endif
+
+#ifdef Highlight
+            uint tooncolor = ToonTable[vr >> 1].r;
+
+            r = min(r + int(bitfieldExtract(tooncolor, 0, 8)), 63);
+            g = min(g + int(bitfieldExtract(tooncolor, 8, 8)), 63);
+            b = min(b + int(bitfieldExtract(tooncolor, 16, 8)), 63);
+#endif
+
+            if (polyalpha == 0)
+                a = 31;
+
+            if (a > AlphaRef)
+            {
+                color = r | (g << 8) | (b << 16) | (a << 24);
+
+                DepthTiles[tileOffset] = z;
+                AttrTiles[tileOffset] = attr;
+            }
+#else
+            color = 0xFFFFFFFF; // doesn't really matter as long as it's not 0
+            DepthTiles[tileOffset] = z;
+#endif
+        }
+    }
+
+    ColorTiles[tileOffset] = color;
+}

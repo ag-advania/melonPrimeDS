@@ -60,9 +60,34 @@ namespace MelonPrime {
         {
             NoPickingUpSpecificItems_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
         }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        const char* FixWifiStatusLabel(MelonPrimePatchState::FixWifiPatchState::Status status)
+        {
+            using Status = MelonPrimePatchState::FixWifiPatchState::Status;
+            switch (status) {
+            case Status::Applied:     return "Applied";
+            case Status::Rejected:    return "Rejected";
+            case Status::Unsupported: return "Unsupported";
+            case Status::Unchecked:   return nullptr;
+            }
+            return nullptr;
+        }
+#endif
+
         void Apply_FixWifi(const PatchCtx& ctx)
         {
-            FixWifi_ApplyOnce(ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            const auto before = ctx.state.fixWifi.status;
+#endif
+            FixWifi_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            const auto after = ctx.state.fixWifi.status;
+            if (after != before && ctx.emu) {
+                if (const char* label = FixWifiStatusLabel(after))
+                    ctx.emu->osdAddMessage(0, "FixWifi %s", label);
+            }
+#endif
         }
         void Apply_UseFirmwareLanguage(const PatchCtx& ctx)
         {
@@ -105,7 +130,7 @@ namespace MelonPrime {
         }
 
         void Reset_LowHpWarning(MelonPrimePatchState&) { LowHpWarning_ResetPatchState(); }
-        void Reset_FixWifi(MelonPrimePatchState&) { FixWifi_ResetPatchState(); }
+        void Reset_FixWifi(MelonPrimePatchState& state) { FixWifi_ResetPatchState(state); }
         void Reset_UseFirmwareLanguage(MelonPrimePatchState&) { UseFirmwareLanguage_ResetPatchState(); }
 
         // =====================================================================

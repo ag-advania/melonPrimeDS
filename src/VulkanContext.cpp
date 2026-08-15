@@ -1,1038 +1,614 @@
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
 
 #include "VulkanContext.h"
 
-#include <array>
-#include <algorithm>
-#include <atomic>
-#include <cctype>
 #include <cstring>
-#include <string>
-#include <vector>
 
-#include "Platform.h"
-#include "VulkanDispatch.h"
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 namespace melonDS
 {
+
 namespace
 {
-constexpr std::array<const char*, 1> kRequiredDeviceExtensions = {
-    VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-};
 
-constexpr const char* kTimelineSemaphoreExtension = VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME;
-constexpr const char* kDescriptorIndexingExtension = VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME;
-constexpr const char* kOptionalHostQueryResetExtension = VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME;
-constexpr const char* kNvidiaLowLatencyExtension = VK_NV_LOW_LATENCY_2_EXTENSION_NAME;
-constexpr const char* kPresentIdExtension = VK_KHR_PRESENT_ID_EXTENSION_NAME;
-constexpr u32 kNvidiaVendorId = 0x10DEu;
-constexpr const char* kAmdAntiLagExtension = VK_AMD_ANTI_LAG_EXTENSION_NAME;
-constexpr u32 kAmdVendorId = 0x1002u;
-constexpr const char* kOptionalDebugUtilsExtension = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
-constexpr const char* kValidationLayerName = "VK_LAYER_KHRONOS_validation";
-constexpr const char* kSurfaceExtension = "VK_KHR_surface";
-constexpr const char* kWin32SurfaceExtension = "VK_KHR_win32_surface";
-constexpr const char* kWaylandSurfaceExtension = "VK_KHR_wayland_surface";
-constexpr const char* kXcbSurfaceExtension = "VK_KHR_xcb_surface";
-constexpr const char* kXlibSurfaceExtension = "VK_KHR_xlib_surface";
-constexpr const char* kMetalSurfaceExtension = "VK_EXT_metal_surface";
-constexpr const char* kPortabilityEnumerationExtension = "VK_KHR_portability_enumeration";
-constexpr const char* kPortabilitySubsetExtension = "VK_KHR_portability_subset";
-// Some Linux build images use headers that do not declare the portability
-// enumeration flag even though the runtime can advertise the extension. Keep
-// the specification-defined bit locally so those builds compile while
-// retaining MoltenVK device enumeration support.
-constexpr VkInstanceCreateFlags kPortabilityEnumerationInstanceFlag = 0x00000001u;
-std::atomic<bool> gForceDisableTimelineSemaphores{false};
-std::atomic<bool> gForceDisableDynamicTextureIndexing{false};
+constexpr const char* ValidationLayerName = "VK_LAYER_KHRONOS_validation";
 
-bool hasExtension(const char* extensionName, const std::vector<VkExtensionProperties>& extensions)
+// Extension names spelled out rather than taken from the VK_*_EXTENSION_NAME
+// macros, because those macros live in the per-platform headers that only
+// appear when the matching VK_USE_PLATFORM_* macro is defined -- and core
+// deliberately does not define the Linux/macOS ones (see VulkanCommon.h). The
+// names are part of the Vulkan registry and cannot change.
+constexpr const char* SurfaceExtensionName = "VK_KHR_surface";
+constexpr const char* XlibSurfaceExtensionName = "VK_KHR_xlib_surface";
+constexpr const char* XcbSurfaceExtensionName = "VK_KHR_xcb_surface";
+constexpr const char* WaylandSurfaceExtensionName = "VK_KHR_wayland_surface";
+constexpr const char* Win32SurfaceExtensionName = "VK_KHR_win32_surface";
+constexpr const char* MetalSurfaceExtensionName = "VK_EXT_metal_surface";
+constexpr const char* PortabilityEnumerationExtensionName = "VK_KHR_portability_enumeration";
+constexpr const char* DebugUtilsExtensionName = "VK_EXT_debug_utils";
+
+bool ContainsExtension(const std::vector<VkExtensionProperties>& available, const char* name) noexcept
 {
-    for (const VkExtensionProperties& extension : extensions)
+    return Vk::FeatureProbe::HasExtension(available, name);
+}
+
+bool ContainsLayer(const std::vector<VkLayerProperties>& available, const char* name) noexcept
+{
+    for (const VkLayerProperties& layer : available)
     {
-        if (std::strcmp(extensionName, extension.extensionName) == 0)
+        if (std::strncmp(layer.layerName, name, VK_MAX_EXTENSION_NAME_SIZE) == 0)
             return true;
     }
-
     return false;
 }
 
-bool hasLayer(const char* layerName, const std::vector<VkLayerProperties>& layers)
+void AppendUnique(std::vector<const char*>& list, const char* name)
 {
-    for (const VkLayerProperties& layer : layers)
+    if (!name)
+        return;
+    for (const char* entry : list)
     {
-        if (std::strcmp(layerName, layer.layerName) == 0)
-            return true;
+        if (entry && std::strcmp(entry, name) == 0)
+            return;
     }
-
-    return false;
+    list.push_back(name);
 }
 
-bool appendRequiredInstanceExtensions(
-    const std::vector<VkExtensionProperties>& available,
-    std::vector<const char*>& enabled,
-    bool& enablePortabilityEnumeration)
-{
-    if (!hasExtension(kSurfaceExtension, available))
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "VulkanContext: missing instance extension %s",
-            kSurfaceExtension);
-        return false;
-    }
-    enabled.push_back(kSurfaceExtension);
+} // namespace
 
-#if defined(_WIN32)
-    if (!hasExtension(kWin32SurfaceExtension, available))
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "VulkanContext: missing instance extension %s",
-            kWin32SurfaceExtension);
-        return false;
-    }
-    enabled.push_back(kWin32SurfaceExtension);
-#elif defined(__APPLE__)
-    if (!hasExtension(kMetalSurfaceExtension, available))
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "VulkanContext: missing instance extension %s",
-            kMetalSurfaceExtension);
-        return false;
-    }
-    enabled.push_back(kMetalSurfaceExtension);
-    if (hasExtension(kPortabilityEnumerationExtension, available))
-    {
-        enabled.push_back(kPortabilityEnumerationExtension);
-        enablePortabilityEnumeration = true;
-    }
-#else
-    bool hasDesktopSurface = false;
-    for (const char* extension : {
-             kWaylandSurfaceExtension,
-             kXcbSurfaceExtension,
-             kXlibSurfaceExtension })
-    {
-        if (hasExtension(extension, available))
-        {
-            enabled.push_back(extension);
-            hasDesktopSurface = true;
-        }
-    }
-    if (!hasDesktopSurface)
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "VulkanContext: no supported Linux presentation surface extension");
-        return false;
-    }
-#endif
-    return true;
-}
-
-bool isApiAtLeast(u32 apiVersion, u32 major, u32 minor)
-{
-    const u32 versionMajor = VK_API_VERSION_MAJOR(apiVersion);
-    const u32 versionMinor = VK_API_VERSION_MINOR(apiVersion);
-    return (versionMajor > major) || (versionMajor == major && versionMinor >= minor);
-}
-
-std::string toLower(std::string value)
-{
-    std::transform(
-        value.begin(),
-        value.end(),
-        value.begin(),
-        [](unsigned char ch) {
-            return static_cast<char>(std::tolower(ch));
-        });
-    return value;
-}
-
-bool containsInsensitive(const std::string& haystackLower, const char* needle)
-{
-    return haystackLower.find(needle) != std::string::npos;
-}
-
-VulkanDeviceProfile makeDeviceProfile(const VkPhysicalDeviceProperties& deviceProperties)
-{
-    VulkanDeviceProfile profile{};
-    profile.VendorId = deviceProperties.vendorID;
-    profile.DeviceId = deviceProperties.deviceID;
-    profile.DeviceName = deviceProperties.deviceName;
-
-    const std::string deviceNameLower = toLower(profile.DeviceName);
-    profile.IsAdreno = containsInsensitive(deviceNameLower, "adreno");
-    profile.IsQualcomm =
-        deviceProperties.vendorID == 0x5143u
-        || containsInsensitive(deviceNameLower, "qualcomm")
-        || profile.IsAdreno;
-    profile.IsArmMali =
-        deviceProperties.vendorID == 0x13B5u
-        || containsInsensitive(deviceNameLower, "mali")
-        || containsInsensitive(deviceNameLower, "arm");
-    profile.IsPowerVR =
-        containsInsensitive(deviceNameLower, "powervr")
-        || containsInsensitive(deviceNameLower, "power vr")
-        || containsInsensitive(deviceNameLower, "imgtec")
-        || containsInsensitive(deviceNameLower, "imagination");
-    profile.IsMaliG52Class =
-        profile.IsArmMali
-        && (containsInsensitive(deviceNameLower, "g52") || containsInsensitive(deviceNameLower, "mali-g52"));
-    return profile;
-}
-
-VKAPI_ATTR VkBool32 VKAPI_CALL debugUtilsMessengerCallback(
-    VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-    VkDebugUtilsMessageTypeFlagsEXT,
-    const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
-    void*)
-{
-    Platform::LogLevel logLevel = Platform::LogLevel::Warn;
-    if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0)
-        logLevel = Platform::LogLevel::Error;
-
-    const char* message = callbackData != nullptr && callbackData->pMessage != nullptr
-        ? callbackData->pMessage
-        : "unknown validation message";
-    Platform::Log(logLevel, "VulkanValidation: %s", message);
-    return VK_FALSE;
-}
-
-VkDebugUtilsMessengerCreateInfoEXT makeDebugUtilsMessengerCreateInfo()
-{
-    VkDebugUtilsMessengerCreateInfoEXT createInfo{};
-    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
-        | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    createInfo.pfnUserCallback = debugUtilsMessengerCallback;
-    return createInfo;
-}
-}
 
 VulkanContext& VulkanContext::Get()
 {
-    static VulkanContext context;
-    return context;
+#if defined(_WIN32)
+    // The previous Windows backend deliberately kept its Vulkan context warm
+    // for the process lifetime. Do the same here: a live renderer switch must
+    // not unload vulkan-1.dll or destroy the instance while the retained
+    // process-wide VkDevice still exists. Allocating the singleton prevents
+    // C++ static-destruction order from tearing the loader down underneath the
+    // driver; Windows reclaims all three after executable teardown.
+    static auto* instance = new VulkanContext();
+    return *instance;
+#else
+    // Function-local static: constructed on first use, destroyed at exit after
+    // every renderer has already released its reference.
+    static VulkanContext instance;
+    return instance;
+#endif
 }
 
-bool VulkanContext::Acquire()
+VulkanContext::~VulkanContext()
 {
-    std::scoped_lock guard(ContextLock);
-    if (ReferenceCount > 0)
+    // Nothing should still hold a reference at process exit, but tearing down
+    // in the correct order is cheap insurance against a leaked Acquire().
+    DestroyInstance();
+}
+
+
+bool VulkanContext::Acquire(bool needPresentation)
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+
+    if (RefCount > 0)
     {
-        ReferenceCount++;
+        // An existing instance built without surface extensions cannot serve a
+        // caller that now needs to present. Rather than silently handing back
+        // a crippled instance, this is reported: the frontend acquires with
+        // presentation first, so it only happens if that ordering breaks.
+        if (needPresentation && !PresentationRequested)
+        {
+            FailureReason = "the Vulkan instance was already created without surface support";
+            Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", FailureReason.c_str());
+            return false;
+        }
+
+        RefCount++;
         return true;
     }
 
-    // The Windows frontend switches between Vulkan and Software at match
-    // boundaries while keeping the same Vulkan presentation panel alive.
-    // Retain the process-wide device across a zero-client interval: destroying
-    // and immediately recreating it races fullscreen capture/overlay Vulkan
-    // layers on some Windows drivers. Individual clients still wait for idle
-    // and destroy all of their own images, descriptors and command objects.
-#if defined(_WIN32)
-    if (Instance != VK_NULL_HANDLE && Device != VK_NULL_HANDLE && Queue != VK_NULL_HANDLE)
-    {
-        ReferenceCount = 1;
-        return true;
-    }
-#endif
+    FailureReason.clear();
+    InstanceReport.Clear();
 
-    if (!initializeLocked())
+    if (!Loader.Open())
+    {
+        FailureReason = Loader.GetFailureReason();
         return false;
+    }
 
-    ReferenceCount = 1;
+    if (!CreateInstance(needPresentation))
+    {
+        // CreateInstance already filled FailureReason. Close the loader again
+        // so a later retry (e.g. after the user installs a driver) starts from
+        // a clean state instead of reusing a half-initialized one.
+        DestroyInstance();
+        return false;
+    }
+
+    PresentationRequested = needPresentation;
+    RefCount = 1;
     return true;
 }
 
+
 void VulkanContext::Release()
 {
-    std::scoped_lock guard(ContextLock);
-    if (ReferenceCount == 0)
+    std::lock_guard<std::mutex> lock(Mutex);
+
+    if (RefCount <= 0)
         return;
 
-    ReferenceCount--;
-#if defined(_WIN32)
-    // VulkanContext is a process-lifetime service on Windows. shutdownLocked()
-    // remains responsible for cleaning partial initialization failures, but a
-    // normal last-client release deliberately keeps the device warm. The OS
-    // releases the process-owned instance/device after executable teardown,
-    // avoiding driver and injected-layer callbacks during a live renderer
-    // transition.
-#else
-    if (ReferenceCount == 0)
-        shutdownLocked();
-#endif
+    RefCount--;
+    if (RefCount > 0)
+        return;
+
+    DestroyInstance();
 }
 
-bool VulkanContext::IsReady() const
-{
-    std::scoped_lock guard(ContextLock);
-    return Device != VK_NULL_HANDLE && Queue != VK_NULL_HANDLE;
-}
 
-bool VulkanContext::initializeLocked()
+bool VulkanContext::BuildInstanceLayerList()
 {
-    ForceDisableTimelineSemaphores = gForceDisableTimelineSemaphores.load(std::memory_order_relaxed);
-    ForceDisableDynamicTextureIndexing = gForceDisableDynamicTextureIndexing.load(std::memory_order_relaxed);
+    EnabledInstanceLayers.clear();
+    ValidationEnabled = false;
 
-    if (!VulkanDispatch::Initialize())
+#if defined(MELONDS_VULKAN_ENABLE_VALIDATION)
+    u32 count = 0;
+    VkResult res = Loader.Global().EnumerateInstanceLayerProperties(&count, nullptr);
+    if (res != VK_SUCCESS)
     {
-        Platform::Log(Platform::LogLevel::Error, "VulkanContext: failed to initialize Vulkan dispatch");
+        Platform::Log(Platform::LogLevel::Warn,
+            "[Vulkan] vkEnumerateInstanceLayerProperties failed: %s; validation disabled\n",
+            Vk::FormatResult(res).c_str());
+        return true;
+    }
+
+    std::vector<VkLayerProperties> layers(count);
+    if (count > 0)
+    {
+        res = Loader.Global().EnumerateInstanceLayerProperties(&count, layers.data());
+        if (res != VK_SUCCESS)
+        {
+            Platform::Log(Platform::LogLevel::Warn,
+                "[Vulkan] layer enumeration failed: %s; validation disabled\n",
+                Vk::FormatResult(res).c_str());
+            return true;
+        }
+    }
+
+    if (ContainsLayer(layers, ValidationLayerName))
+    {
+        EnabledInstanceLayers.push_back(ValidationLayerName);
+        ValidationEnabled = true;
+        Platform::Log(Platform::LogLevel::Info, "[Vulkan] validation layer enabled\n");
+    }
+    else
+    {
+        // Absence is normal on a machine without the SDK. It is a developer
+        // build feature, never a requirement, so this must not fail startup.
+        Platform::Log(Platform::LogLevel::Info,
+            "[Vulkan] %s is not installed; validation disabled\n", ValidationLayerName);
+    }
+#endif
+
+    return true;
+}
+
+
+bool VulkanContext::BuildInstanceExtensionList(
+    bool needPresentation, const std::vector<VkExtensionProperties>& available)
+{
+    EnabledInstanceExtensions.clear();
+    DebugUtilsEnabled = false;
+    PortabilityEnumeration = false;
+
+    if (needPresentation)
+    {
+        AppendUnique(EnabledInstanceExtensions, SurfaceExtensionName);
+
+        // Optional capability plumbing for present_id2 / present_wait2 /
+        // present_timing. Its absence never disables Vulkan; the presenter
+        // falls back to the legacy surface query and host pacing.
+        if (ContainsExtension(available, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME))
+            AppendUnique(EnabledInstanceExtensions, VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME);
+
+#if defined(_WIN32)
+        AppendUnique(EnabledInstanceExtensions, Win32SurfaceExtensionName);
+#elif defined(__APPLE__)
+        AppendUnique(EnabledInstanceExtensions, MetalSurfaceExtensionName);
+#else
+        // The Qt platform plugin decides at runtime whether the window is
+        // X11/XCB or Wayland, so every WSI extension the runtime offers is
+        // enabled and the surface adapter picks one. At least one must exist;
+        // that requirement is checked by the caller through the required list.
+        bool anyUnixSurface = false;
+        if (ContainsExtension(available, XlibSurfaceExtensionName))
+        {
+            AppendUnique(EnabledInstanceExtensions, XlibSurfaceExtensionName);
+            anyUnixSurface = true;
+        }
+        if (ContainsExtension(available, XcbSurfaceExtensionName))
+        {
+            AppendUnique(EnabledInstanceExtensions, XcbSurfaceExtensionName);
+            anyUnixSurface = true;
+        }
+        if (ContainsExtension(available, WaylandSurfaceExtensionName))
+        {
+            AppendUnique(EnabledInstanceExtensions, WaylandSurfaceExtensionName);
+            anyUnixSurface = true;
+        }
+        if (!anyUnixSurface)
+        {
+            FailureReason =
+                "the Vulkan runtime exposes no window-system surface extension "
+                "(VK_KHR_xlib_surface / VK_KHR_xcb_surface / VK_KHR_wayland_surface)";
+            Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", FailureReason.c_str());
+            return false;
+        }
+#endif
+    }
+
+#if defined(__APPLE__)
+    // MoltenVK is a portability implementation. Since the portability
+    // enumeration extension exists, a conformant loader hides non-conformant
+    // ICDs unless the instance opts in with both the extension and the
+    // VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR flag, so without this
+    // vkEnumeratePhysicalDevices returns zero devices on macOS.
+    if (ContainsExtension(available, PortabilityEnumerationExtensionName))
+    {
+        AppendUnique(EnabledInstanceExtensions, PortabilityEnumerationExtensionName);
+        PortabilityEnumeration = true;
+    }
+#endif
+
+    // Optional everywhere: it powers object naming and the messenger, both of
+    // which degrade to no-ops when absent.
+    if (ContainsExtension(available, DebugUtilsExtensionName))
+    {
+#if defined(MELONDS_VULKAN_ENABLE_VALIDATION)
+        AppendUnique(EnabledInstanceExtensions, DebugUtilsExtensionName);
+        DebugUtilsEnabled = true;
+#endif
+    }
+
+    return true;
+}
+
+
+bool VulkanContext::CreateInstance(bool needPresentation)
+{
+    const Vk::GlobalDispatch& global = Loader.Global();
+
+    // Enumerate once here to drive the extension selection; the probe below
+    // enumerates again to produce its own findings. Two enumerations at
+    // startup cost microseconds and keep the probe the single reporter.
+    std::vector<VkExtensionProperties> available;
+    {
+        u32 count = 0;
+        VkResult res = global.EnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
+        if (res != VK_SUCCESS)
+        {
+            FailureReason = "vkEnumerateInstanceExtensionProperties failed: " + Vk::FormatResult(res);
+            Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", FailureReason.c_str());
+            return false;
+        }
+        available.resize(count);
+        if (count > 0)
+        {
+            res = global.EnumerateInstanceExtensionProperties(nullptr, &count, available.data());
+            if (res != VK_SUCCESS)
+            {
+                FailureReason = "vkEnumerateInstanceExtensionProperties failed: " + Vk::FormatResult(res);
+                Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", FailureReason.c_str());
+                return false;
+            }
+        }
+    }
+
+    if (!BuildInstanceExtensionList(needPresentation, available))
+        return false;
+    if (!BuildInstanceLayerList())
+        return false;
+
+    // The probe is the gate: it reports the loader, the instance version and
+    // every extension in the enabled list, and refuses to continue if any of
+    // them is missing.
+    if (!Vk::FeatureProbe::CheckInstanceRequirements(Loader, EnabledInstanceExtensions, InstanceReport))
+    {
+        InstanceReport.Log("instance", Platform::LogLevel::Info);
+        FailureReason = InstanceReport.FirstFailure();
         return false;
     }
+    InstanceReport.Log("instance", Platform::LogLevel::Debug);
 
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "melonPrimeDS";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.applicationVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
     appInfo.pEngineName = "melonDS";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_1;
+    appInfo.engineVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
 
-    u32 extensionCount = 0;
-    if (vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr) != VK_SUCCESS)
+    // apiVersion is the highest version the application promises to use
+    // correctly. Asking for exactly 1.1 -- not the loader's version -- pins the
+    // backend to the baseline it was written and tested against: a driver that
+    // later reports 1.4 will not change the semantics of anything here.
+    appInfo.apiVersion = Vk::MinimumApiVersion;
+
+    VkInstanceCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    createInfo.pApplicationInfo = &appInfo;
+    createInfo.enabledExtensionCount = static_cast<u32>(EnabledInstanceExtensions.size());
+    createInfo.ppEnabledExtensionNames =
+        EnabledInstanceExtensions.empty() ? nullptr : EnabledInstanceExtensions.data();
+    createInfo.enabledLayerCount = static_cast<u32>(EnabledInstanceLayers.size());
+    createInfo.ppEnabledLayerNames =
+        EnabledInstanceLayers.empty() ? nullptr : EnabledInstanceLayers.data();
+
+    if (PortabilityEnumeration)
+        createInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+
+    // Chaining the messenger create-info into pNext is the only way to see
+    // validation messages produced *by* vkCreateInstance and vkDestroyInstance
+    // themselves, since no messenger object exists at those moments.
+    VkDebugUtilsMessengerCreateInfoEXT messengerInfo{};
+    if (DebugUtilsEnabled)
     {
-        Platform::Log(Platform::LogLevel::Error, "VulkanContext: failed to enumerate instance extensions");
+        messengerInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        messengerInfo.messageSeverity =
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+            | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        messengerInfo.messageType =
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+            | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+            | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        messengerInfo.pfnUserCallback = &VulkanContext::DebugCallback;
+        createInfo.pNext = &messengerInfo;
+    }
+
+    const VkResult res = global.CreateInstance(&createInfo, nullptr, &Instance);
+    if (res != VK_SUCCESS)
+    {
+        Instance = VK_NULL_HANDLE;
+        FailureReason = "vkCreateInstance failed: " + Vk::FormatResult(res);
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", FailureReason.c_str());
         return false;
     }
 
-    std::vector<VkExtensionProperties> instanceExtensions(extensionCount);
-    if (vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, instanceExtensions.data()) != VK_SUCCESS)
+    std::string dispatchFailure;
+    if (!Vk::LoadInstanceDispatch(global, Instance, EnabledInstanceExtensions, InstanceFns, dispatchFailure))
     {
-        Platform::Log(Platform::LogLevel::Error, "VulkanContext: failed to read instance extensions");
+        FailureReason = dispatchFailure;
         return false;
     }
 
-    std::vector<const char*> enabledInstanceExtensions;
-    bool enablePortabilityEnumeration = false;
-    if (!appendRequiredInstanceExtensions(
-            instanceExtensions,
-            enabledInstanceExtensions,
-            enablePortabilityEnumeration))
-        return false;
-    std::vector<const char*> enabledInstanceLayers;
-    VkDebugUtilsMessengerCreateInfoEXT debugMessengerCreateInfo{};
-    bool enableValidationLayers = false;
-
-#if defined(MELONDS_VULKAN_ENABLE_VALIDATION)
-    u32 layerCount = 0;
-    if (vkEnumerateInstanceLayerProperties(&layerCount, nullptr) == VK_SUCCESS && layerCount > 0)
+    if (DebugUtilsEnabled && !CreateDebugMessenger())
     {
-        std::vector<VkLayerProperties> instanceLayers(layerCount);
-        if (vkEnumerateInstanceLayerProperties(&layerCount, instanceLayers.data()) == VK_SUCCESS)
-        {
-            const bool hasValidationLayer = hasLayer(kValidationLayerName, instanceLayers);
-            const bool hasDebugUtils = hasExtension(kOptionalDebugUtilsExtension, instanceExtensions);
-            if (hasValidationLayer && hasDebugUtils)
-            {
-                enabledInstanceExtensions.push_back(kOptionalDebugUtilsExtension);
-                enabledInstanceLayers.push_back(kValidationLayerName);
-                debugMessengerCreateInfo = makeDebugUtilsMessengerCreateInfo();
-                enableValidationLayers = true;
-                Platform::Log(Platform::LogLevel::Warn, "VulkanContext: enabling validation layer for debug build");
-            }
-            else if (!hasValidationLayer)
-            {
-                Platform::Log(Platform::LogLevel::Warn, "VulkanContext: debug build without %s", kValidationLayerName);
-            }
-            else
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: debug build without instance extension %s; validation callback disabled",
-                    kOptionalDebugUtilsExtension
-                );
-            }
-        }
-    }
-#endif
-
-    VkInstanceCreateInfo instanceCreateInfo{};
-    instanceCreateInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    if (enablePortabilityEnumeration)
-        instanceCreateInfo.flags |= kPortabilityEnumerationInstanceFlag;
-    instanceCreateInfo.pApplicationInfo = &appInfo;
-    instanceCreateInfo.enabledExtensionCount = static_cast<u32>(enabledInstanceExtensions.size());
-    instanceCreateInfo.ppEnabledExtensionNames = enabledInstanceExtensions.data();
-    instanceCreateInfo.enabledLayerCount = static_cast<u32>(enabledInstanceLayers.size());
-    instanceCreateInfo.ppEnabledLayerNames = enabledInstanceLayers.data();
-    if (enableValidationLayers)
-        instanceCreateInfo.pNext = &debugMessengerCreateInfo;
-
-    const VkResult createInstanceResult = vkCreateInstance(&instanceCreateInfo, nullptr, &Instance);
-    if (createInstanceResult != VK_SUCCESS)
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "VulkanContext: vkCreateInstance failed VkResult=%d",
-            static_cast<int>(createInstanceResult));
-        shutdownLocked();
-        return false;
-    }
-    VulkanDispatch::LoadInstance(Instance);
-    Platform::Log(
-        Platform::LogLevel::Info,
-        "VulkanContext: instance API=%u.%u validation=%d",
-        VK_API_VERSION_MAJOR(appInfo.apiVersion),
-        VK_API_VERSION_MINOR(appInfo.apiVersion),
-        enableValidationLayers ? 1 : 0
-    );
-
-    if (enableValidationLayers)
-    {
-        const auto createDebugUtilsMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
-            vkGetInstanceProcAddr(Instance, "vkCreateDebugUtilsMessengerEXT")
-        );
-        if (createDebugUtilsMessenger != nullptr)
-        {
-            const VkResult messengerResult = createDebugUtilsMessenger(
-                Instance,
-                &debugMessengerCreateInfo,
-                nullptr,
-                &DebugMessenger
-            );
-            if (messengerResult != VK_SUCCESS)
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: failed to create debug utils messenger (%d)",
-                    static_cast<int>(messengerResult)
-                );
-            }
-        }
+        // Non-fatal: the instance is perfectly usable, only the message stream
+        // is missing. CreateDebugMessenger() already logged the reason.
+        DebugUtilsEnabled = false;
     }
 
-    u32 physicalDeviceCount = 0;
-    if (vkEnumeratePhysicalDevices(Instance, &physicalDeviceCount, nullptr) != VK_SUCCESS || physicalDeviceCount == 0)
-    {
-        Platform::Log(Platform::LogLevel::Error, "VulkanContext: no physical devices found");
-        shutdownLocked();
-        return false;
-    }
+    Platform::Log(Platform::LogLevel::Info,
+        "[Vulkan] instance created (API %s requested, %zu extensions, %zu layers)\n",
+        Vk::FormatApiVersion(appInfo.apiVersion).c_str(),
+        EnabledInstanceExtensions.size(),
+        EnabledInstanceLayers.size());
 
-    std::vector<VkPhysicalDevice> physicalDevices(physicalDeviceCount);
-    vkEnumeratePhysicalDevices(Instance, &physicalDeviceCount, physicalDevices.data());
-
-    for (VkPhysicalDevice candidate : physicalDevices)
-    {
-        u32 deviceExtensionCount = 0;
-        if (vkEnumerateDeviceExtensionProperties(candidate, nullptr, &deviceExtensionCount, nullptr) != VK_SUCCESS)
-            continue;
-
-        std::vector<VkExtensionProperties> deviceExtensions(deviceExtensionCount);
-        if (vkEnumerateDeviceExtensionProperties(candidate, nullptr, &deviceExtensionCount, deviceExtensions.data()) != VK_SUCCESS)
-            continue;
-
-        VkPhysicalDeviceProperties deviceProperties{};
-        vkGetPhysicalDeviceProperties(candidate, &deviceProperties);
-        const VulkanDeviceProfile candidateProfile = makeDeviceProfile(deviceProperties);
-        // Device-level promoted features are only core when both the instance
-        // and physical device API versions include the promotion.  Keep the
-        // extension names enabled for our Vulkan 1.1 instance even when the
-        // selected device itself advertises Vulkan 1.2 or newer.
-        const bool apiAtLeast12 =
-            isApiAtLeast(appInfo.apiVersion, 1, 2)
-            && isApiAtLeast(deviceProperties.apiVersion, 1, 2);
-
-        std::vector<const char*> requiredDeviceExtensions(
-            kRequiredDeviceExtensions.begin(),
-            kRequiredDeviceExtensions.end());
-
-        bool hasRequiredExtensions = true;
-        for (const char* requiredExtension : requiredDeviceExtensions)
-        {
-            if (!hasExtension(requiredExtension, deviceExtensions))
-            {
-                hasRequiredExtensions = false;
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: device '%s' missing extension %s",
-                    deviceProperties.deviceName,
-                    requiredExtension
-                );
-                break;
-            }
-        }
-
-        if (!hasRequiredExtensions)
-            continue;
-
-        std::vector<const char*> enabledDeviceExtensions(requiredDeviceExtensions.begin(), requiredDeviceExtensions.end());
-#if defined(__APPLE__)
-        if (hasExtension(kPortabilitySubsetExtension, deviceExtensions))
-            enabledDeviceExtensions.push_back(kPortabilitySubsetExtension);
-#endif
-        const bool hasHostQueryReset = hasExtension(kOptionalHostQueryResetExtension, deviceExtensions);
-        if (hasHostQueryReset)
-            enabledDeviceExtensions.push_back(kOptionalHostQueryResetExtension);
-
-        u32 queueFamilyCount = 0;
-        vkGetPhysicalDeviceQueueFamilyProperties(candidate, &queueFamilyCount, nullptr);
-        if (queueFamilyCount == 0)
-            continue;
-
-        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-        vkGetPhysicalDeviceQueueFamilyProperties(candidate, &queueFamilyCount, queueFamilies.data());
-
-        int selectedQueueFamily = -1;
-        for (u32 i = 0; i < queueFamilyCount; i++)
-        {
-            if ((queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0)
-            {
-                selectedQueueFamily = static_cast<int>(i);
-                break;
-            }
-        }
-
-        if (selectedQueueFamily < 0)
-        {
-            for (u32 i = 0; i < queueFamilyCount; i++)
-            {
-                if ((queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) != 0)
-                {
-                    selectedQueueFamily = static_cast<int>(i);
-                    break;
-                }
-            }
-        }
-
-        if (selectedQueueFamily < 0)
-            continue;
-
-        const VkQueueFamilyProperties& selectedQueueFamilyProps = queueFamilies[static_cast<u32>(selectedQueueFamily)];
-        const bool queueSupportsTimestamps = selectedQueueFamilyProps.timestampValidBits > 0;
-        VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeaturesAvailable{};
-        timelineFeaturesAvailable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
-
-        VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeaturesAvailable{};
-        descriptorIndexingFeaturesAvailable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-        descriptorIndexingFeaturesAvailable.pNext = &timelineFeaturesAvailable;
-
-        VkPhysicalDeviceHostQueryResetFeatures hostQueryResetFeaturesAvailable{};
-        hostQueryResetFeaturesAvailable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
-        hostQueryResetFeaturesAvailable.pNext = &descriptorIndexingFeaturesAvailable;
-
-        const bool hasNvidiaLowLatency = hasExtension(kNvidiaLowLatencyExtension, deviceExtensions);
-        const bool hasPresentId = hasExtension(kPresentIdExtension, deviceExtensions);
-        const bool hasAmdAntiLag = hasExtension(kAmdAntiLagExtension, deviceExtensions);
-        VkPhysicalDevicePresentIdFeaturesKHR presentIdFeaturesAvailable{};
-        presentIdFeaturesAvailable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
-        void* availableFeatureChain = static_cast<void*>(&hostQueryResetFeaturesAvailable);
-        if (hasPresentId)
-        {
-            presentIdFeaturesAvailable.pNext = availableFeatureChain;
-            availableFeatureChain = static_cast<void*>(&presentIdFeaturesAvailable);
-        }
-
-        VkPhysicalDeviceAntiLagFeaturesAMD antiLagFeaturesAvailable{};
-        antiLagFeaturesAvailable.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD;
-        if (hasAmdAntiLag)
-        {
-            antiLagFeaturesAvailable.pNext = availableFeatureChain;
-            availableFeatureChain = static_cast<void*>(&antiLagFeaturesAvailable);
-        }
-
-        VkPhysicalDeviceFeatures2 deviceFeatures2{};
-        deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        deviceFeatures2.pNext = availableFeatureChain;
-        auto getPhysicalDeviceFeatures2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
-            vkGetInstanceProcAddr(Instance, "vkGetPhysicalDeviceFeatures2"));
-        if (getPhysicalDeviceFeatures2 == nullptr)
-        {
-            getPhysicalDeviceFeatures2 = reinterpret_cast<PFN_vkGetPhysicalDeviceFeatures2>(
-                vkGetInstanceProcAddr(Instance, "vkGetPhysicalDeviceFeatures2KHR"));
-        }
-
-        if (getPhysicalDeviceFeatures2 != nullptr)
-        {
-            getPhysicalDeviceFeatures2(candidate, &deviceFeatures2);
-        }
-        else
-        {
-            // Fallback for loaders exposing only Vulkan 1.0 symbols.
-            vkGetPhysicalDeviceFeatures(candidate, &deviceFeatures2.features);
-        }
-
-        if (deviceFeatures2.features.independentBlend != VK_TRUE)
-        {
-            Platform::Log(
-                Platform::LogLevel::Warn,
-                "VulkanContext: device '%s' missing feature independentBlend",
-                deviceProperties.deviceName
-            );
-            continue;
-        }
-
-        const bool timelineFeatureAvailable = timelineFeaturesAvailable.timelineSemaphore == VK_TRUE;
-        const bool timelineExtensionAvailable = apiAtLeast12 || hasExtension(kTimelineSemaphoreExtension, deviceExtensions);
-        const bool enableTimelineSemaphores =
-            !ForceDisableTimelineSemaphores && timelineFeatureAvailable && timelineExtensionAvailable;
-
-        const bool enableNvidiaReflex =
-            candidateProfile.VendorId == kNvidiaVendorId
-            && hasNvidiaLowLatency
-            && hasPresentId
-            && presentIdFeaturesAvailable.presentId == VK_TRUE
-            && enableTimelineSemaphores;
-        if (enableNvidiaReflex)
-        {
-            enabledDeviceExtensions.push_back(kNvidiaLowLatencyExtension);
-            enabledDeviceExtensions.push_back(kPresentIdExtension);
-        }
-        const bool enableAmdAntiLag2 =
-            candidateProfile.VendorId == kAmdVendorId
-            && hasAmdAntiLag
-            && antiLagFeaturesAvailable.antiLag == VK_TRUE;
-        if (enableAmdAntiLag2)
-            enabledDeviceExtensions.push_back(kAmdAntiLagExtension);
-        if (!enableTimelineSemaphores)
-        {
-            if (ForceDisableTimelineSemaphores)
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: forcing timeline semaphore fallback on '%s'",
-                    deviceProperties.deviceName
-                );
-            }
-            else if (!timelineFeatureAvailable)
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: device '%s' missing feature timelineSemaphore; using fence-based sync fallback",
-                    deviceProperties.deviceName
-                );
-            }
-            else
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: device '%s' missing extension %s for timeline semaphores; using fence-based sync fallback",
-                    deviceProperties.deviceName,
-                    kTimelineSemaphoreExtension
-                );
-            }
-        }
-
-        const bool dynamicTextureIndexingFeatureAvailable =
-            deviceFeatures2.features.shaderSampledImageArrayDynamicIndexing == VK_TRUE;
-        // Mali-G52-class devices compile the compat-dynamic-uniform graphics_hw
-        // shaders unreliably. Force the base single-descriptor path there so
-        // graphics_hw remains available instead of falling over during init.
-        const bool forceDynamicTextureIndexingOffForDevice = candidateProfile.IsMaliG52Class;
-        const bool enableDynamicTextureIndexing =
-            !ForceDisableDynamicTextureIndexing
-            && !forceDynamicTextureIndexingOffForDevice
-            && dynamicTextureIndexingFeatureAvailable;
-        if (!enableDynamicTextureIndexing)
-        {
-            if (ForceDisableDynamicTextureIndexing)
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: forcing dynamic-indexing fallback on '%s'",
-                    deviceProperties.deviceName
-                );
-            }
-            else if (forceDynamicTextureIndexingOffForDevice)
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: forcing dynamic-indexing fallback on '%s' to keep graphics_hw stable on Mali-G52-class devices",
-                    deviceProperties.deviceName
-                );
-            }
-            else
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: device '%s' missing feature shaderSampledImageArrayDynamicIndexing; using single-descriptor texture fallback",
-                    deviceProperties.deviceName
-                );
-            }
-        }
-
-        const bool descriptorFeatureAvailable =
-            descriptorIndexingFeaturesAvailable.shaderSampledImageArrayNonUniformIndexing == VK_TRUE;
-        const bool descriptorIndexingExtensionAvailable =
-            apiAtLeast12 || hasExtension(kDescriptorIndexingExtension, deviceExtensions);
-        const bool enableDescriptorIndexing =
-            enableDynamicTextureIndexing
-            && descriptorFeatureAvailable
-            && descriptorIndexingExtensionAvailable;
-
-        if (!enableDescriptorIndexing)
-        {
-            if (!enableDynamicTextureIndexing)
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: device '%s' using single-descriptor texture fallback (dynamic indexing disabled)",
-                    deviceProperties.deviceName
-                );
-            }
-            else if (!descriptorFeatureAvailable)
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: device '%s' missing feature shaderSampledImageArrayNonUniformIndexing; using compatibility texture path",
-                    deviceProperties.deviceName
-                );
-            }
-            else if (!descriptorIndexingExtensionAvailable)
-            {
-                Platform::Log(
-                    Platform::LogLevel::Warn,
-                    "VulkanContext: device '%s' missing extension %s; using compatibility texture path",
-                    deviceProperties.deviceName,
-                    kDescriptorIndexingExtension
-                );
-            }
-        }
-        else if (!apiAtLeast12)
-        {
-            enabledDeviceExtensions.push_back(kDescriptorIndexingExtension);
-        }
-
-        VkPhysicalDeviceTimelineSemaphoreFeatures timelineFeatures{};
-        timelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES;
-        timelineFeatures.timelineSemaphore = enableTimelineSemaphores ? VK_TRUE : VK_FALSE;
-
-        VkPhysicalDeviceDescriptorIndexingFeatures descriptorIndexingFeatures{};
-        descriptorIndexingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-        descriptorIndexingFeatures.pNext = nullptr;
-        descriptorIndexingFeatures.shaderSampledImageArrayNonUniformIndexing = enableDescriptorIndexing ? VK_TRUE : VK_FALSE;
-
-        VkPhysicalDeviceHostQueryResetFeatures hostQueryResetFeatures{};
-        hostQueryResetFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES;
-        hostQueryResetFeatures.pNext = nullptr;
-        const bool enableHostQueryReset = hasHostQueryReset && hostQueryResetFeaturesAvailable.hostQueryReset == VK_TRUE;
-        hostQueryResetFeatures.hostQueryReset = enableHostQueryReset ? VK_TRUE : VK_FALSE;
-
-        VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures{};
-        presentIdFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
-        presentIdFeatures.presentId = enableNvidiaReflex ? VK_TRUE : VK_FALSE;
-
-        VkPhysicalDeviceAntiLagFeaturesAMD antiLagFeatures{};
-        antiLagFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD;
-        antiLagFeatures.antiLag = enableAmdAntiLag2 ? VK_TRUE : VK_FALSE;
-
-        void* featureChainHead = nullptr;
-        if (enableTimelineSemaphores)
-            featureChainHead = static_cast<void*>(&timelineFeatures);
-        if (enableDescriptorIndexing)
-        {
-            descriptorIndexingFeatures.pNext = featureChainHead;
-            featureChainHead = static_cast<void*>(&descriptorIndexingFeatures);
-        }
-        if (enableHostQueryReset)
-        {
-            hostQueryResetFeatures.pNext = featureChainHead;
-            featureChainHead = static_cast<void*>(&hostQueryResetFeatures);
-        }
-        if (enableNvidiaReflex)
-        {
-            presentIdFeatures.pNext = featureChainHead;
-            featureChainHead = static_cast<void*>(&presentIdFeatures);
-        }
-        if (enableAmdAntiLag2)
-        {
-            antiLagFeatures.pNext = featureChainHead;
-            featureChainHead = static_cast<void*>(&antiLagFeatures);
-        }
-
-        if (enableTimelineSemaphores && !apiAtLeast12)
-            enabledDeviceExtensions.push_back(kTimelineSemaphoreExtension);
-
-        float queuePriority = 1.0f;
-        VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = static_cast<u32>(selectedQueueFamily);
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
-
-        VkDeviceCreateInfo deviceCreateInfo{};
-        deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        deviceCreateInfo.pNext = featureChainHead;
-        VkPhysicalDeviceFeatures enabledDeviceFeatures{};
-        enabledDeviceFeatures.independentBlend = VK_TRUE;
-        deviceCreateInfo.pEnabledFeatures = &enabledDeviceFeatures;
-        deviceCreateInfo.queueCreateInfoCount = 1;
-        deviceCreateInfo.pQueueCreateInfos = &queueCreateInfo;
-        deviceCreateInfo.enabledExtensionCount = static_cast<u32>(enabledDeviceExtensions.size());
-        deviceCreateInfo.ppEnabledExtensionNames = enabledDeviceExtensions.data();
-
-        const VkResult createDeviceResult = vkCreateDevice(candidate, &deviceCreateInfo, nullptr, &Device);
-        if (createDeviceResult != VK_SUCCESS)
-        {
-            Platform::Log(
-                Platform::LogLevel::Warn,
-                "VulkanContext: vkCreateDevice failed for '%s' (%d)",
-                deviceProperties.deviceName,
-                static_cast<int>(createDeviceResult)
-            );
-            continue;
-        }
-
-        PhysicalDevice = candidate;
-        VulkanDispatch::LoadDevice(Device);
-        QueueFamilyIndex = static_cast<u32>(selectedQueueFamily);
-        vkGetDeviceQueue(Device, QueueFamilyIndex, 0, &Queue);
-        TimestampPeriod = deviceProperties.limits.timestampPeriod;
-        TimestampQueriesSupported = queueSupportsTimestamps;
-        TimelineSemaphoresSupported = enableTimelineSemaphores;
-        NvidiaReflexSupported = enableNvidiaReflex;
-        if (NvidiaReflexSupported)
-        {
-            NvidiaReflexUnavailableReason.clear();
-        }
-        else if (candidateProfile.VendorId != kNvidiaVendorId)
-        {
-            NvidiaReflexUnavailableReason = "NVIDIA Reflex requires a supported NVIDIA GPU";
-        }
-        else if (!hasNvidiaLowLatency)
-        {
-            NvidiaReflexUnavailableReason = "Vulkan driver does not support VK_NV_low_latency2";
-        }
-        else if (!hasPresentId || presentIdFeaturesAvailable.presentId != VK_TRUE)
-        {
-            NvidiaReflexUnavailableReason = "NVIDIA Reflex requires VK_KHR_present_id";
-        }
-        else
-        {
-            NvidiaReflexUnavailableReason = "NVIDIA Reflex requires Vulkan timeline semaphores";
-        }
-        AmdAntiLag2Supported = enableAmdAntiLag2;
-        if (AmdAntiLag2Supported)
-        {
-            AmdAntiLag2UnavailableReason.clear();
-        }
-        else if (candidateProfile.VendorId != kAmdVendorId)
-        {
-            AmdAntiLag2UnavailableReason = "AMD Radeon Anti-Lag 2 requires a supported AMD Radeon GPU";
-        }
-        else if (!hasAmdAntiLag)
-        {
-            AmdAntiLag2UnavailableReason = "Vulkan driver does not support VK_AMD_anti_lag";
-        }
-        else
-        {
-            AmdAntiLag2UnavailableReason = "Vulkan driver reports the antiLag feature unavailable";
-        }
-        DynamicTextureIndexingSupported = enableDynamicTextureIndexing;
-        DeviceProfile = candidateProfile;
-        // Keep Qualcomm/Adreno on the compatibility descriptor path unless we
-        // have explicit proof that non-uniform indexing is stable there.
-        const bool forceCompatTexturePath = DeviceProfile.IsQualcomm || DeviceProfile.IsAdreno;
-        NonUniformTextureIndexingSupported = enableDescriptorIndexing && !forceCompatTexturePath;
-        if (enableDescriptorIndexing && forceCompatTexturePath)
-        {
-            Platform::Log(
-                Platform::LogLevel::Warn,
-                "VulkanContext: forcing compatibility texture path on '%s' (vendor=%#x device=%#x)",
-                deviceProperties.deviceName,
-                deviceProperties.vendorID,
-                deviceProperties.deviceID
-            );
-        }
-        if (enableDescriptorIndexing && NonUniformTextureIndexingSupported)
-        {
-            Platform::Log(
-                Platform::LogLevel::Warn,
-                "VulkanContext: enabling non-uniform texture path on '%s' (vendor=%#x device=%#x)",
-                deviceProperties.deviceName,
-                deviceProperties.vendorID,
-                deviceProperties.deviceID
-            );
-        }
-        Platform::Log(
-            Platform::LogLevel::Warn,
-            "VulkanContext: selected '%s' (api=%u.%u driver=%#x vendor=%#x device=%#x queueFamily=%u adreno=%d mali=%d powervr=%d g52=%d timeline=%d reflex=%d antiLag2=%d dynamicIndexing=%d nonUniformTextures=%d forceTimelineOff=%d forceDynamicOff=%d)",
-            deviceProperties.deviceName,
-            VK_API_VERSION_MAJOR(deviceProperties.apiVersion),
-            VK_API_VERSION_MINOR(deviceProperties.apiVersion),
-            deviceProperties.driverVersion,
-            deviceProperties.vendorID,
-            deviceProperties.deviceID,
-            QueueFamilyIndex,
-            DeviceProfile.IsAdreno ? 1 : 0,
-            DeviceProfile.IsArmMali ? 1 : 0,
-            DeviceProfile.IsPowerVR ? 1 : 0,
-            DeviceProfile.IsMaliG52Class ? 1 : 0,
-            TimelineSemaphoresSupported ? 1 : 0,
-            NvidiaReflexSupported ? 1 : 0,
-            AmdAntiLag2Supported ? 1 : 0,
-            DynamicTextureIndexingSupported ? 1 : 0,
-            NonUniformTextureIndexingSupported ? 1 : 0,
-            ForceDisableTimelineSemaphores ? 1 : 0,
-            ForceDisableDynamicTextureIndexing ? 1 : 0
-        );
-        break;
-    }
-
-    if (Device == VK_NULL_HANDLE || Queue == VK_NULL_HANDLE)
-    {
-        Platform::Log(Platform::LogLevel::Error, "VulkanContext: failed to create logical device");
-        shutdownLocked();
-        return false;
-    }
-
-    WaitSemaphores = reinterpret_cast<PFN_vkWaitSemaphoresKHR>(
-        vkGetDeviceProcAddr(Device, "vkWaitSemaphoresKHR")
-    );
-    if (WaitSemaphores == nullptr)
-    {
-        WaitSemaphores = reinterpret_cast<PFN_vkWaitSemaphoresKHR>(
-            vkGetDeviceProcAddr(Device, "vkWaitSemaphores")
-        );
-    }
-
-    GetSemaphoreCounterValueFn = reinterpret_cast<PFN_vkGetSemaphoreCounterValueKHR>(
-        vkGetDeviceProcAddr(Device, "vkGetSemaphoreCounterValueKHR")
-    );
-    if (GetSemaphoreCounterValueFn == nullptr)
-    {
-        GetSemaphoreCounterValueFn = reinterpret_cast<PFN_vkGetSemaphoreCounterValueKHR>(
-            vkGetDeviceProcAddr(Device, "vkGetSemaphoreCounterValue")
-        );
-    }
-
-    ResetQueryPool = reinterpret_cast<PFN_vkResetQueryPoolEXT>(
-        vkGetDeviceProcAddr(Device, "vkResetQueryPoolEXT")
-    );
-    if (ResetQueryPool == nullptr)
-    {
-        ResetQueryPool = reinterpret_cast<PFN_vkResetQueryPoolEXT>(
-            vkGetDeviceProcAddr(Device, "vkResetQueryPool")
-        );
-    }
-    if (ResetQueryPool == nullptr)
-        TimestampQueriesSupported = false;
-
-    if (NvidiaReflexSupported)
-    {
-        SetLatencySleepModeNV = reinterpret_cast<PFN_vkSetLatencySleepModeNV>(
-            vkGetDeviceProcAddr(Device, "vkSetLatencySleepModeNV"));
-        LatencySleepNV = reinterpret_cast<PFN_vkLatencySleepNV>(
-            vkGetDeviceProcAddr(Device, "vkLatencySleepNV"));
-        SetLatencyMarkerNV = reinterpret_cast<PFN_vkSetLatencyMarkerNV>(
-            vkGetDeviceProcAddr(Device, "vkSetLatencyMarkerNV"));
-        if (SetLatencySleepModeNV == nullptr || LatencySleepNV == nullptr || SetLatencyMarkerNV == nullptr)
-        {
-            NvidiaReflexSupported = false;
-            NvidiaReflexUnavailableReason = "Vulkan driver did not expose NVIDIA Reflex entry points";
-            SetLatencySleepModeNV = nullptr;
-            LatencySleepNV = nullptr;
-            SetLatencyMarkerNV = nullptr;
-        }
-    }
-
-    if (AmdAntiLag2Supported)
-    {
-        AntiLagUpdateAMD = reinterpret_cast<PFN_vkAntiLagUpdateAMD>(
-            vkGetDeviceProcAddr(Device, "vkAntiLagUpdateAMD"));
-        if (AntiLagUpdateAMD == nullptr)
-        {
-            AmdAntiLag2Supported = false;
-            AmdAntiLag2UnavailableReason = "Vulkan driver did not expose vkAntiLagUpdateAMD";
-        }
-    }
-
-    Platform::Log(
-        Platform::LogLevel::Info,
-        "VulkanContext: NVIDIA Reflex available=%d reason=\"%s\"",
-        NvidiaReflexSupported ? 1 : 0,
-        NvidiaReflexUnavailableReason.c_str());
-    Platform::Log(
-        Platform::LogLevel::Info,
-        "VulkanContext: AMD Radeon Anti-Lag 2 available=%d reason=\"%s\"",
-        AmdAntiLag2Supported ? 1 : 0,
-        AmdAntiLag2UnavailableReason.c_str());
+    for (const char* name : EnabledInstanceExtensions)
+        Platform::Log(Platform::LogLevel::Debug, "[Vulkan]   instance extension: %s\n", name);
 
     return true;
 }
 
-void VulkanContext::shutdownLocked()
-{
-    if (DebugMessenger != VK_NULL_HANDLE && Instance != VK_NULL_HANDLE)
-    {
-        const auto destroyDebugUtilsMessenger = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
-            vkGetInstanceProcAddr(Instance, "vkDestroyDebugUtilsMessengerEXT")
-        );
-        if (destroyDebugUtilsMessenger != nullptr)
-            destroyDebugUtilsMessenger(Instance, DebugMessenger, nullptr);
-    }
 
-    if (Device != VK_NULL_HANDLE)
-    {
-        vkDeviceWaitIdle(Device);
-        vkDestroyDevice(Device, nullptr);
-    }
+void VulkanContext::DestroyInstance()
+{
+    // Strict reverse-creation order. The messenger is a child of the instance
+    // and must not outlive it; the loader library must not be unloaded while
+    // any instance-owned function pointer is still reachable.
+    DestroyDebugMessenger();
 
     if (Instance != VK_NULL_HANDLE)
-        vkDestroyInstance(Instance, nullptr);
-
-    Instance = VK_NULL_HANDLE;
-    DebugMessenger = VK_NULL_HANDLE;
-    PhysicalDevice = VK_NULL_HANDLE;
-    Device = VK_NULL_HANDLE;
-    Queue = VK_NULL_HANDLE;
-    QueueFamilyIndex = 0;
-    WaitSemaphores = nullptr;
-    GetSemaphoreCounterValueFn = nullptr;
-    ResetQueryPool = nullptr;
-    SetLatencySleepModeNV = nullptr;
-    LatencySleepNV = nullptr;
-    SetLatencyMarkerNV = nullptr;
-    AntiLagUpdateAMD = nullptr;
-    TimestampPeriod = 0.0f;
-    TimestampQueriesSupported = false;
-    TimelineSemaphoresSupported = false;
-    NvidiaReflexSupported = false;
-    NvidiaReflexUnavailableReason.clear();
-    AmdAntiLag2Supported = false;
-    AmdAntiLag2UnavailableReason.clear();
-    DynamicTextureIndexingSupported = false;
-    NonUniformTextureIndexingSupported = false;
-    ForceDisableTimelineSemaphores = false;
-    ForceDisableDynamicTextureIndexing = false;
-    DeviceProfile = VulkanDeviceProfile{};
-}
-
-u32 VulkanContext::FindMemoryType(u32 typeBits, VkMemoryPropertyFlags properties) const
-{
-    std::scoped_lock guard(ContextLock);
-    if (PhysicalDevice == VK_NULL_HANDLE)
-        return UINT32_MAX;
-
-    VkPhysicalDeviceMemoryProperties memoryProperties{};
-    vkGetPhysicalDeviceMemoryProperties(PhysicalDevice, &memoryProperties);
-
-    for (u32 memoryType = 0; memoryType < memoryProperties.memoryTypeCount; memoryType++)
     {
-        const bool typeMatches = (typeBits & (1u << memoryType)) != 0;
-        const bool propertiesMatch = (memoryProperties.memoryTypes[memoryType].propertyFlags & properties) == properties;
-        if (typeMatches && propertiesMatch)
-            return memoryType;
+        if (InstanceFns.DestroyInstance)
+            InstanceFns.DestroyInstance(Instance, nullptr);
+        Instance = VK_NULL_HANDLE;
     }
 
-    return UINT32_MAX;
+    InstanceFns = Vk::InstanceDispatch{};
+    SelectedDevice = Vk::DeviceProbeResult{};
+    CandidateCount = 0;
+    EnabledInstanceExtensions.clear();
+    EnabledInstanceLayers.clear();
+    ValidationEnabled = false;
+    DebugUtilsEnabled = false;
+    PortabilityEnumeration = false;
+    RefCount = 0;
+
+    Loader.Close();
 }
 
-void VulkanContext::SetCompatibilityOverrides(bool disableTimelineSemaphores, bool disableDynamicTextureIndexing)
+
+bool VulkanContext::CreateDebugMessenger()
 {
-    gForceDisableTimelineSemaphores.store(disableTimelineSemaphores, std::memory_order_relaxed);
-    gForceDisableDynamicTextureIndexing.store(disableDynamicTextureIndexing, std::memory_order_relaxed);
+    if (!InstanceFns.CreateDebugUtilsMessengerEXT)
+        return false;
+
+    VkDebugUtilsMessengerCreateInfoEXT info{};
+    info.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    // VERBOSE and INFO are omitted deliberately: the validation layer emits
+    // thousands of INFO messages per frame for a compute workload like this
+    // one, which would make the log useless and cost real frame time.
+    info.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT
+        | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    info.messageType =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT
+        | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT
+        | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    info.pfnUserCallback = &VulkanContext::DebugCallback;
+
+    const VkResult res =
+        InstanceFns.CreateDebugUtilsMessengerEXT(Instance, &info, nullptr, &DebugMessenger);
+    if (res != VK_SUCCESS)
+    {
+        DebugMessenger = VK_NULL_HANDLE;
+        Platform::Log(Platform::LogLevel::Warn,
+            "[Vulkan] vkCreateDebugUtilsMessengerEXT failed: %s\n", Vk::FormatResult(res).c_str());
+        return false;
+    }
+    return true;
 }
 
+
+void VulkanContext::DestroyDebugMessenger()
+{
+    if (DebugMessenger == VK_NULL_HANDLE)
+        return;
+
+    if (InstanceFns.DestroyDebugUtilsMessengerEXT && Instance != VK_NULL_HANDLE)
+        InstanceFns.DestroyDebugUtilsMessengerEXT(Instance, DebugMessenger, nullptr);
+
+    DebugMessenger = VK_NULL_HANDLE;
 }
+
+
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::DebugCallback(
+    VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+    VkDebugUtilsMessageTypeFlagsEXT types,
+    const VkDebugUtilsMessengerCallbackDataEXT* data,
+    void* userData)
+{
+    (void)userData;
+
+    if (!data)
+        return VK_FALSE;
+
+    const char* kind = "general";
+    if (types & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT)
+        kind = "validation";
+    else if (types & VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT)
+        kind = "performance";
+
+    const Platform::LogLevel level =
+        (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
+            ? Platform::LogLevel::Error
+            : Platform::LogLevel::Warn;
+
+    Platform::Log(level, "[Vulkan/%s] %s: %s\n",
+        kind,
+        data->pMessageIdName ? data->pMessageIdName : "<unnamed>",
+        data->pMessage ? data->pMessage : "<no message>");
+
+    // The spec requires applications to return VK_FALSE here. VK_TRUE is
+    // reserved for layer development and aborts the offending call.
+    return VK_FALSE;
+}
+
+
+bool VulkanContext::SelectPhysicalDevice(VkSurfaceKHR surface)
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+
+    SelectedDevice = Vk::DeviceProbeResult{};
+    CandidateCount = 0;
+
+    if (Instance == VK_NULL_HANDLE)
+    {
+        FailureReason = "SelectPhysicalDevice called before the instance was created";
+        return false;
+    }
+
+    u32 count = 0;
+    VkResult res = InstanceFns.EnumeratePhysicalDevices(Instance, &count, nullptr);
+    if (res != VK_SUCCESS)
+    {
+        FailureReason = "vkEnumeratePhysicalDevices failed: " + Vk::FormatResult(res);
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", FailureReason.c_str());
+        return false;
+    }
+
+    if (count == 0)
+    {
+        FailureReason = "the Vulkan runtime reports no physical devices";
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", FailureReason.c_str());
+        return false;
+    }
+
+    std::vector<VkPhysicalDevice> devices(count);
+    res = InstanceFns.EnumeratePhysicalDevices(Instance, &count, devices.data());
+    if (res != VK_SUCCESS)
+    {
+        FailureReason = "vkEnumeratePhysicalDevices failed: " + Vk::FormatResult(res);
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", FailureReason.c_str());
+        return false;
+    }
+
+    CandidateCount = count;
+
+    Vk::DeviceProbeResult best;
+    Vk::DeviceProbeResult firstRejected;
+    bool haveRejected = false;
+
+    for (VkPhysicalDevice device : devices)
+    {
+        Vk::DeviceProbeResult probe = Vk::FeatureProbe::ProbeDevice(InstanceFns, device, surface);
+
+        if (!probe.IsEligible())
+        {
+            // Every rejection is logged in full: the whole point of the probe
+            // is that a user who cannot run Vulkan learns exactly why.
+            probe.Report.Log(probe.DeviceName.c_str(), Platform::LogLevel::Debug);
+            if (!haveRejected)
+            {
+                firstRejected = std::move(probe);
+                haveRejected = true;
+            }
+            continue;
+        }
+
+        probe.Report.Log(probe.DeviceName.c_str(), Platform::LogLevel::Debug);
+
+        if (best.Handle == VK_NULL_HANDLE || probe.Score > best.Score)
+            best = std::move(probe);
+    }
+
+    if (best.Handle == VK_NULL_HANDLE)
+    {
+        FailureReason = haveRejected
+            ? (firstRejected.DeviceName + ": " + firstRejected.Report.FirstFailure())
+            : std::string("no physical device satisfied the Vulkan requirements");
+        Platform::Log(Platform::LogLevel::Error,
+            "[Vulkan] no usable device among %u candidates -- %s\n", count, FailureReason.c_str());
+        return false;
+    }
+
+    SelectedDevice = std::move(best);
+
+    Platform::Log(Platform::LogLevel::Info,
+        "[Vulkan] selected %s (%s) -- score %d, up to %dx internal resolution\n",
+        SelectedDevice.DeviceName.c_str(),
+        SelectedDevice.VendorName.c_str(),
+        SelectedDevice.Score,
+        SelectedDevice.MaxScaleFactor);
+
+    return true;
+}
+
+} // namespace melonDS
 
 #endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN

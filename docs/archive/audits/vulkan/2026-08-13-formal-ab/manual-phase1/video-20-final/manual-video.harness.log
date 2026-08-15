@@ -1,0 +1,28 @@
+action=video
+iterations=20
+window=1378820
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.01 avg:16.74 max:20.71ms jit:7.70] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=1
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.42 avg:16.74 max:18.82ms jit:4.40] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=2
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.43 avg:16.80 max:19.89ms jit:6.47] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=3
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.50 avg:16.75 max:20.06ms jit:5.56] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=4
+video-dialog titles: 映像設定 - melonDS | [60/60 min:8.48 avg:16.66 max:21.03ms jit:12.55] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=5
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.57 avg:16.67 max:18.41ms jit:3.84] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=6
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.05 avg:16.70 max:21.05ms jit:7.99] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=7
+video-dialog titles: 映像設定 - melonDS | [60/60 min:12.69 avg:16.62 max:20.23ms jit:7.54] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=8
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.01 avg:16.66 max:20.21ms jit:7.20] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=9
+video-dialog titles: 映像設定 - melonDS | [60/60 min:12.49 avg:16.64 max:19.90ms jit:7.41] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=10
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.23 avg:16.70 max:20.93ms jit:6.69] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=11
+video-dialog titles: 映像設定 - melonDS | [60/60 min:10.15 avg:16.76 max:21.91ms jit:11.76] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=12
+video-dialog titles: melonPrimeDS | [60/60 min:13.67 avg:16.70 max:19.99ms jit:6.32] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)

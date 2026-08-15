@@ -1,5 +1,23 @@
     // MelonPrime Vulkan renderer availability diagnostics.
     {
+        "Native Vulkan compute renderer. Supports internal-resolution scaling and high-resolution coordinates. Polygons are rasterized directly as spans, so improved polygon splitting is unnecessary.",
+        {
+            {MenuLangId::Japanese, "ネイティブVulkanコンピュートレンダラーです。内部解像度スケーリングと高解像度座標に対応しています。ポリゴンはスパンとして直接ラスタライズされるため、ポリゴン分割の改善は不要です。"},
+        }
+    },
+    {
+        "Improved polygon splitting is not used by Vulkan because its compute rasterizer processes DS polygons directly without splitting them into triangles.",
+        {
+            {MenuLangId::Japanese, "VulkanのコンピュートラスタライザーはDSのポリゴンを三角形へ分割せず直接処理するため、ポリゴン分割の改善は使用されません。"},
+        }
+    },
+    {
+        "Use the DS GPU's high-resolution vertex coordinates in renderers that support this mode, including Vulkan.",
+        {
+            {MenuLangId::Japanese, "Vulkanを含む対応レンダラーで、DS GPUの高解像度頂点座標を使用します。"},
+        }
+    },
+    {
         "Vulkan",
         {
             {MenuLangId::Arabic, "Vulkan"},

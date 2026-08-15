@@ -519,10 +519,14 @@ void EmuInstance::invalidateRendererOutput()
 }
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-void EmuInstance::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+void EmuInstance::beginVulkanLowLatencyFrame(
+    int reflexMode, bool antiLag2Enabled, bool normalSpeed, melonDS::u64 targetFrameIntervalNs)
 {
     if (mainWindow)
-        mainWindow->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled);
+    {
+        mainWindow->beginVulkanLowLatencyFrame(
+            reflexMode, antiLag2Enabled, normalSpeed, targetFrameIntervalNs);
+    }
 }
 
 void EmuInstance::markVulkanReflexInputSample()
@@ -531,16 +535,16 @@ void EmuInstance::markVulkanReflexInputSample()
         mainWindow->markVulkanReflexInputSample();
 }
 
-void EmuInstance::markVulkanReflexRenderSubmitStart()
+void EmuInstance::markVulkanReflexSimulationStart()
 {
     if (mainWindow)
-        mainWindow->markVulkanReflexRenderSubmitStart();
+        mainWindow->markVulkanReflexSimulationStart();
 }
 
-void EmuInstance::markVulkanReflexRenderSubmitEnd()
+void EmuInstance::markVulkanReflexSimulationEnd()
 {
     if (mainWindow)
-        mainWindow->markVulkanReflexRenderSubmitEnd();
+        mainWindow->markVulkanReflexSimulationEnd();
 }
 
 void EmuInstance::finishVulkanLowLatencyFrame()

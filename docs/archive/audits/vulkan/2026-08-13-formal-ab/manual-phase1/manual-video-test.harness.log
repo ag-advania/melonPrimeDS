@@ -1,0 +1,6 @@
+manual action window not found
+At C:\Users\Admin\Documents\git\melonPrimeDS\tools\testing\vulkan-manual-ui-actions.ps1:108 char:39
++ ... window -eq [IntPtr]::Zero) { throw 'manual action window not found' }
++                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (manual action window not found:String) [], RuntimeException
+    + FullyQualifiedErrorId : manual action window not found

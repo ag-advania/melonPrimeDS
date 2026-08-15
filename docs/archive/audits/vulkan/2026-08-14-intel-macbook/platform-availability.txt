@@ -1,0 +1,12 @@
+date=2026-08-14
+physical_gpu=Intel Iris Plus Graphics 655 integrated; Metal 3
+physical_runtime=MoltenVK over Metal; this is not native Intel Vulkan
+physical_display=one internal Retina display, 2560x1600
+amd_anti_lag=UNSUPPORTED; no AMD device is present
+native_intel_vulkan=UNSUPPORTED; macOS path is MoltenVK
+windows_dpi_gate=UNSUPPORTED on this task's Mac host
+linux_gpu_gate=NOT RUN
+validation_layer=BLOCKED; package installed, direct bundled runtime did not enumerate it
+ac_power=BLOCKED at final inventory; machine was battery-powered and discharging
+rom_gameplay=NOT RUN for a controlled match lifecycle
+long_session=NOT RUN because the AC prerequisite was blocked

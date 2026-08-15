@@ -1,0 +1,14 @@
+idle control
+
+log            : C:\Users\Admin\Documents\git\melonPrimeDS\docs\archive\audits\vulkan\2026-08-13-event-matrix\vk-sync-reflexon-short.out.log
+error log      : C:\Users\Admin\Documents\git\melonPrimeDS\docs\archive\audits\vulkan\2026-08-13-event-matrix\vk-sync-reflexon-short.err.log
+config path    : C:\Users\Admin\Documents\git\melonPrimeDS\build\debug-mingw-vulkan-validation2\portable\melonDS.toml
+config restore : PASS
+layer restore  : PASS
+swapchain rebuilds: 2
+device lost       : 0
+config self-check: policy=JustInTime reflex=on/active vsync=on present-mode=FIFO
+config integrity : PASS
+sync validation   : enabled (banner confirmed)
+sync hazards      : 0
+validation        : clean

@@ -7,6 +7,7 @@
 
 #include "DX12AmdAntiLag2.h"
 #include "DX12Context.h"
+#include "DX12IntelXeLL.h"
 #include "DX12NvidiaReflex.h"
 #include "Platform.h"
 
@@ -38,6 +39,8 @@ const Result& Probe()
         gResult.NvidiaReflexReason = gResult.Reason;
         gResult.AmdAntiLag2Available = false;
         gResult.AmdAntiLag2Reason = gResult.Reason;
+        gResult.IntelXeLLAvailable = false;
+        gResult.IntelXeLLReason = gResult.Reason;
         gResult.AdapterName.clear();
 
         melonDS::Platform::Log(
@@ -59,10 +62,14 @@ const Result& Probe()
         context.GetDevice(), profile.VendorId);
     gResult.AmdAntiLag2Available = antiLag2.Available;
     gResult.AmdAntiLag2Reason = antiLag2.Reason;
+    const auto xell = melonDS::DX12IntelXeLL::Probe(
+        context.GetDevice(), profile.VendorId);
+    gResult.IntelXeLLAvailable = xell.Available;
+    gResult.IntelXeLLReason = xell.Reason;
 
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Info,
-        "MelonPrime DX12 probe: available=1 adapter=\"%s\" featureLevel=%X.%X shaderModel=%u.%u reflex=%d reflexReason=\"%s\" antiLag2=%d antiLag2Reason=\"%s\"\n",
+        "MelonPrime DX12 probe: available=1 adapter=\"%s\" featureLevel=%X.%X shaderModel=%u.%u reflex=%d reflexReason=\"%s\" antiLag2=%d antiLag2Reason=\"%s\" xell=%d xellReason=\"%s\"\n",
         profile.AdapterName.c_str(),
         (static_cast<unsigned>(profile.FeatureLevel) >> 12) & 0xF,
         (static_cast<unsigned>(profile.FeatureLevel) >> 8) & 0xF,
@@ -71,7 +78,9 @@ const Result& Probe()
         gResult.NvidiaReflexAvailable,
         gResult.NvidiaReflexReason.c_str(),
         gResult.AmdAntiLag2Available,
-        gResult.AmdAntiLag2Reason.c_str());
+        gResult.AmdAntiLag2Reason.c_str(),
+        gResult.IntelXeLLAvailable,
+        gResult.IntelXeLLReason.c_str());
 
     context.Release();
     return gResult;
@@ -95,9 +104,11 @@ void ReportRuntimeFailure(std::string reason)
     gResult.Available = false;
     gResult.NvidiaReflexAvailable = false;
     gResult.AmdAntiLag2Available = false;
+    gResult.IntelXeLLAvailable = false;
     gResult.Reason = "DirectX 12 initialization failed";
     gResult.NvidiaReflexReason = gResult.Reason;
     gResult.AmdAntiLag2Reason = gResult.Reason;
+    gResult.IntelXeLLReason = gResult.Reason;
     gProbed = true;
 
     melonDS::Platform::Log(

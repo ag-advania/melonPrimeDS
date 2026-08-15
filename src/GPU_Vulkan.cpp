@@ -1,21 +1,49 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include "GPU_Vulkan.h"
 
+#include <array>
+
 #include "GPU3D_Vulkan.h"
 #include "NDS.h"
 #include "Platform.h"
+#include "VulkanPerf.h"
 
-// Desktop lifecycle adapter for the pinned Android Vulkan 3D implementation.
-// Source pin: SapphireRhodonite/melonDS-android-lib
-// d77944275fa61f9b79cfcead2c3e98993429a023.
 namespace melonDS
 {
 
 VulkanRenderer::VulkanRenderer(melonDS::NDS& nds)
     : SoftRenderer(nds)
 {
-    Rend3D = VulkanRenderer3D::New(GPU.GPU3D);
+    if (RasterDifferential::Enabled())
+        DifferentialReference = std::move(Rend3D);
+
+    // Replaces the SoftRenderer3D the base constructor installed. A null result
+    // leaves Rend3D empty, which Init() reports as a failure so the frontend can
+    // fall back to Software with a truthful reason instead of running a dead
+    // renderer.
+    if (auto renderer3D = VulkanRenderer3D::New(GPU.GPU3D))
+        Rend3D = std::move(renderer3D);
+    else
+        Rend3D.reset();
 }
 
 VulkanRenderer::~VulkanRenderer() = default;
@@ -26,85 +54,224 @@ bool VulkanRenderer::Init()
     {
         Platform::Log(
             Platform::LogLevel::Error,
-            "Vulkan renderer init failed stage=3D-context actual=Software");
+            "Vulkan renderer init failed stage=3D-device actual=Software\n");
         return false;
+    }
+    if (DifferentialReference)
+    {
+        DifferentialReference->Reset();
+        DifferentialState.Reset();
     }
 
     Platform::Log(
         Platform::LogLevel::Info,
-        "Vulkan renderer init succeeded requested=Vulkan actual=Vulkan presentation=native-structured-compositor");
+        "Vulkan renderer init succeeded requested=Vulkan actual=Vulkan\n");
     return true;
 }
 
 void VulkanRenderer::Stop()
 {
-    if (auto* vulkan3D = dynamic_cast<VulkanRenderer3D*>(Rend3D.get()))
-        vulkan3D->Stop(GPU);
+    if (auto* vulkan = GetVulkanRenderer3D())
+        vulkan->Stop();
     SoftRenderer::Stop();
 }
 
 void VulkanRenderer::PreSavestate()
 {
-    // The Vulkan renderer owns its synchronization internally. A savestate
-    // does not mutate Vulkan-owned resources, so there is no software render
-    // thread to suspend here.
+    // SoftRenderer::PreSavestate() suspends the software 3D render thread
+    // through an unchecked dynamic_cast to SoftRenderer3D. Rend3D is a
+    // VulkanRenderer3D here, so that cast would return null and the base
+    // implementation would dereference it.
+    //
+    // There is nothing to do instead: the Vulkan renderer owns its own GPU
+    // synchronization and has no software render thread to suspend.
 }
 
 void VulkanRenderer::PostSavestate()
 {
+    // Match GLRenderer's savestate lifecycle. Renderer-private images,
+    // high-resolution capture sidecars and structured 2D provenance are not
+    // serialized, so none of them may survive across a loaded GPU state (or a
+    // save that synchronized native VRAM captures). VulkanRenderer3D::Reset()
+    // retires in-flight texture-cache resources without a device-wide idle.
+    SoftRenderer::Reset();
+    if (DifferentialReference)
+    {
+        DifferentialReference->Reset();
+        DifferentialState.Reset();
+    }
 }
 
 void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
 {
+    // Same reason as PreSavestate(): the base implementation casts Rend3D to
+    // SoftRenderer3D to forward the `Threaded` option, which does not apply.
+    //
+    // The two low-latency fields are only recorded here; the emulation thread
+    // reads them back through GetNvidiaReflexMode() / GetAmdAntiLag2Enabled()
+    // and hands them to the screen panel. The VK_NV_low_latency2 /
+    // VK_AMD_anti_lag implementation behind that is phase 13.
     NvidiaReflexMode = settings.NvidiaReflexMode;
     AmdAntiLag2Enabled = settings.AmdAntiLag2Enabled;
-    auto* vulkan3D = dynamic_cast<VulkanRenderer3D*>(Rend3D.get());
-    if (!vulkan3D)
-        return;
 
-    // RendererSettings::Threaded is 3D.Soft.Threaded, the software renderer's
-    // own "use separate thread" option, and no other hardware backend reads it:
-    // GLRenderer::SetRenderSettings and DX12Renderer::SetRenderSettings both
-    // ignore it entirely. Forwarding it here let that unrelated checkbox (which
-    // defaults to on) switch the Vulkan renderer onto the pinned Android
-    // early-submit path, where VCount144 submits the 3D frame and
-    // SkipRenderAtVCount215 then skips the VCount215 submission. That puts the
-    // 3D render on a different scanline than Software, OpenGL Compute and DX12
-    // use, so the structured 2D metadata no longer pairs with the 3D image the
-    // compositor samples. Desktop always submits at VCount215, like they do.
-    vulkan3D->SetRenderSettings(
-        false,
-        settings.BetterPolygons,
-        settings.ScaleFactor,
-        true,
-        false,
-        0.0f,
-        0.0f,
-        true,
-        false,
-        false,
-        GPU);
+    if (auto* vulkan = GetVulkanRenderer3D())
+    {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (RasterDifferential::Enabled())
+            settings.ScaleFactor = 1;
+#endif
+
+        // BetterPolygons is a triangle-splitting workaround for the classic
+        // OpenGL/native Metal raster paths. Vulkan follows GPU3D_Compute and
+        // rasterizes each DS polygon directly as scanline spans, so only the
+        // scale and coordinate-mode settings apply.
+        vulkan->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
+    }
+}
+
+void VulkanRenderer::Start3DRendering()
+{
+    // Renderer::Start3DRendering() drives Rend3D->RenderFrame(). Overridden
+    // explicitly so the phase-13 Reflex render-submit marker has an owner and
+    // so the call does not depend on which base happens to define it.
+    Renderer::Start3DRendering();
+    if (DifferentialReference)
+    {
+        // Vulkan's texture cache must be the sole destructive dirty-state
+        // consumer. The software oracle then renders from the coherent mirrors.
+        static_cast<SoftRenderer3D*>(DifferentialReference.get())->RenderReferenceFrame();
+    }
 }
 
 void VulkanRenderer::VBlank()
 {
-    if (auto* vulkan3D = dynamic_cast<VulkanRenderer3D*>(Rend3D.get()))
-        vulkan3D->Blit(GPU);
+    // The one point in the DS frame where this frame's structured 2D planes and
+    // this frame's 3D image both exist: the software engines have finished all
+    // 192 scanlines, and RenderFrame() submitted the 3D work at the start of the
+    // frame.
+    //
+    // Composing here rather than at present time is the whole architecture. A
+    // deferred compositor would have to decide, at present time, which 2D engine
+    // drives which LCD -- and Metroid Prime Hunters flips POWCNT1 bit 15 every
+    // frame, so that assignment alternates while the control word does not.
+    // SoftRenderer::DrawScanline() already resolved engine -> LCD for *this*
+    // frame into a per-scanline route table. The packer follows that table, so
+    // there is nothing left to guess and no previous-frame assignment to
+    // disagree with.
+    auto* vulkan = GetVulkanRenderer3D();
+    StructuredVulkanFrameView view{};
+    if (vulkan && GetStructuredVulkanFrame(view) && view.Valid)
+    {
+        const std::array<const u32*, 14> planes = {
+            view.Plane[0][0],
+            view.Plane[0][1],
+            view.Plane[0][2],
+            view.Plane[0][3],
+            view.Plane[1][0],
+            view.Plane[1][1],
+            view.Plane[1][2],
+            view.Plane[1][3],
+            view.CaptureSourcePlane[0],
+            view.CaptureSourcePlane[1],
+            view.CaptureSourcePlane[2],
+            view.CaptureSourcePlane[3],
+            view.CaptureSourceBNative,
+            view.CaptureSourceBReference,
+        };
+        const std::array<const u32*, 2> lineMeta = {
+            view.LineMeta[0],
+            view.LineMeta[1],
+        };
 
-    // See SetVBlankHook: the frontend composes here so that the structured 2D
-    // planes finished at scanline 191 are paired with the 3D image that scanline
-    // 215 is about to overwrite.
-    if (VBlankComposeHook)
-        VBlankComposeHook();
+        // Generation is carried through so a frame the producer has not
+        // refreshed is never recomposed, and a stale one is never composed at
+        // all.
+        const bool composed = vulkan->ComposeStructuredOutput(
+            planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation,
+            view.ContentGeneration);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredScreenRouteCopyBytes,
+            view.ScreenRouteCopyBytes);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredScreenRouteCopyNanoseconds,
+            view.ScreenRouteCopyNanoseconds);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredRegularLines,
+            view.StructuredRegularLines);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::StructuredFallbackLines,
+            view.StructuredFallbackLines);
+        if (composed
+            && DifferentialReference
+            && vulkan->GetScaleFactor() == 1
+            && !GPU.GPU3D.AbortFrame)
+            DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "Vulkan");
+    }
+
+    // MELONPRIME_VULKAN_PRESENT_HOOK_V1
+    //
+    // Notified even when nothing was composed this frame: the panel's snapshot
+    // then simply keeps pointing at the previously published surface, which is
+    // still the newest frame that exists.
+    if (VBlankObserverFn)
+        VBlankObserverFn(VBlankObserverData);
 }
 
 RendererOutput VulkanRenderer::GetOutput()
 {
-    // SoftRenderer exposes its CPU framebuffers by default. Those buffers
-    // deliberately omit Vulkan's 3D target, so advertising them would make
-    // the Qt screen select its software paint path and bypass the structured
-    // Vulkan compositor entirely.
-    return {};
+    auto* vulkan = GetVulkanRenderer3D();
+    if (!vulkan)
+        return {};
+
+    RendererOutput output = vulkan->GetComposedOutput();
+    if (output.Kind == RendererOutputKind::None)
+    {
+        // The Vulkan pipelines compile incrementally after a ROM starts, so the
+        // first few frames have no composed output yet. The software buffers
+        // carry correct 2D and a placeholder for the 3D layer -- wrong, but
+        // initialised and stable, which is what the panel needs to draw
+        // something rather than uninitialised memory. DX12 uses the same
+        // fallback for the same window.
+        return SoftRenderer::GetOutput();
+    }
+
+    return output;
+}
+
+RendererOutputLease VulkanRenderer::AcquireOutputLease()
+{
+    auto* vulkan = GetVulkanRenderer3D();
+    if (!vulkan)
+        return {};
+
+    RendererOutputLease lease = vulkan->AcquireComposedOutputLease();
+    if (lease.Output.Kind != RendererOutputKind::None)
+        return lease;
+    return RendererOutputLease(SoftRenderer::GetOutput(), nullptr, nullptr);
+}
+
+bool VulkanRenderer::NeedsShaderCompile()
+{
+    return Rend3D && Rend3D->NeedsShaderCompile();
+}
+
+void VulkanRenderer::ShaderCompileStep(int& current, int& count)
+{
+    if (Rend3D)
+        Rend3D->ShaderCompileStep(current, count);
+}
+
+bool VulkanRenderer::HasRuntimeFailure() const noexcept
+{
+    const auto* vulkan = GetVulkanRenderer3D();
+    return vulkan && vulkan->HasRuntimeFailure();
+}
+
+const std::string& VulkanRenderer::GetRuntimeFailureReason() const noexcept
+{
+    static const std::string empty;
+    const auto* vulkan = GetVulkanRenderer3D();
+    return vulkan ? vulkan->GetRuntimeFailureReason() : empty;
 }
 
 VulkanRenderer3D* VulkanRenderer::GetVulkanRenderer3D() noexcept

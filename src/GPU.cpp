@@ -359,8 +359,9 @@ RendererOutput GPU::GetRendererOutput()
     return Rend->GetOutput();
 }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-// MELONPRIME_METAL_OUTPUT_LEASE_V1
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
 RendererOutputLease GPU::AcquireRendererOutputLease()
 {
     return Rend->AcquireOutputLease();
@@ -1304,9 +1305,6 @@ void GPU::StartScanline(u32 line) noexcept
         // texture memory anyway and only update it before the start
         // of the next frame.
         // So we can give the rasteriser a bit more headroom
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        Rend->VCount144();
-#endif
         Rend->Finish3DRendering();
 
         DispStat[0] |= (1<<0);
@@ -1407,7 +1405,15 @@ void GPU::SetVCount(u16 val, u16 mask) noexcept
 
     NextVCount = (NextVCount & ~mask) | (val & mask);
 
-    GPU3D.AbortFrame = true; // CHECKME: this probably shouldn't be done if the vcount written is the same as the vcount of the next scanline
+    // The 3D renderer finishes at VCount 192 and does not start the next frame
+    // until VCount 215. A VCOUNT write in that idle interval changes LCD
+    // timing, but there is no in-flight 3D frame to abort. Treating every
+    // write as an abort made games that extend VBlank (Last Raven writes 209
+    // while already at 209) discard the next valid 3D frame periodically.
+    // Keep the conservative abort for writes during the active render window,
+    // including the extended 263..511 VCOUNT range.
+    const bool rendering3D = VCount < 192 || VCount >= 215;
+    GPU3D.AbortFrame |= rendering3D;
     VCountOverride = true;
 }
 
@@ -1604,6 +1610,7 @@ void GPU::CheckCaptureStart()
         // sync it and invalidate it
 
         Rend->SyncVRAMCapture(dstbank, oldstart, oldsize, (oldflags & CBFlag_Complete));
+        Rend->InvalidateVRAMCapture(dstbank, oldstart, oldsize);
         VRAMCBFlagsClear(dstbank, oldstart);
     }
 
@@ -1646,7 +1653,10 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     if (flags & CBFlag_Synced)
     {
         if (write)
+        {
+            Rend->InvalidateVRAMCapture(bank, start, len);
             VRAMCBFlagsClear(bank, start);
+        }
         return;
     }
 
@@ -1656,6 +1666,7 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     {
         // if this block was written to by the CPU, invalidate the entire capture
         // the renderer will need to use the emulated VRAM contents
+        Rend->InvalidateVRAMCapture(bank, start, len);
         VRAMCBFlagsClear(bank, start);
     }
     else
@@ -1680,6 +1691,7 @@ void GPU::SyncAllVRAMCaptures()
         u32 len = (flags >> 6) & 0x3;
 
         Rend->SyncVRAMCapture(bank, start, len, (flags & CBFlag_Complete));
+        Rend->InvalidateVRAMCapture(bank, start, len);
         VRAMCBFlagsClear(bank, start);
     }
 }

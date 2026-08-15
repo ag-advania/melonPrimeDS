@@ -1,0 +1,31 @@
+Formal Phase 3 randomized order
+
+source_revision=ca390a48bbeb5a4c1135417e9070d59e018ac1c1
+capture_binary_sha256=82414AA36E76291CBBEB45460B93C5C9D640CBA446182BA02D5234C3A201346B
+rom_sha256=3F07C5832F7ADA7C6BBE38C6C690E1FFA41188B14E402F2AA1F1142A5E34F12C
+warmup_frames=600
+measured_frames=10000
+randomization_seed=20260813-NV-formal-phase3-r1
+execution_note=A1_R0 was appended as a late catch-up after the initial R0 batch omitted it; no capture was overwritten and the final set still has 3 independent runs per mode.
+
+01 20260813_NV_B2_R0 policy=2 reflex=2 vsync=on
+02 20260813_NV_A2_R0 policy=2 reflex=0 vsync=on
+03 20260813_NV_C0_R0 policy=2 reflex=0 vsync=off
+04 20260813_NV_A0_R0 policy=0 reflex=0 vsync=on
+05 20260813_NV_B1_R0 policy=2 reflex=1 vsync=on
+06 20260813_NV_A3_R0 policy=3 reflex=0 vsync=on
+07 20260813_NV_A2_R1 policy=2 reflex=0 vsync=on
+08 20260813_NV_C0_R1 policy=2 reflex=0 vsync=off
+09 20260813_NV_B1_R1 policy=2 reflex=1 vsync=on
+10 20260813_NV_A0_R1 policy=0 reflex=0 vsync=on
+11 20260813_NV_A3_R1 policy=3 reflex=0 vsync=on
+12 20260813_NV_B2_R1 policy=2 reflex=2 vsync=on
+13 20260813_NV_A1_R1 policy=1 reflex=0 vsync=on
+14 20260813_NV_C0_R2 policy=2 reflex=0 vsync=off
+15 20260813_NV_A3_R2 policy=3 reflex=0 vsync=on
+16 20260813_NV_A0_R2 policy=0 reflex=0 vsync=on
+17 20260813_NV_A2_R2 policy=2 reflex=0 vsync=on
+18 20260813_NV_B2_R2 policy=2 reflex=2 vsync=on
+19 20260813_NV_A1_R2 policy=1 reflex=0 vsync=on
+20 20260813_NV_B1_R2 policy=2 reflex=1 vsync=on
+21 20260813_NV_A1_R0 policy=1 reflex=0 vsync=on (late catch-up)

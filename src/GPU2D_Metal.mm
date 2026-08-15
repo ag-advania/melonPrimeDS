@@ -278,6 +278,8 @@ struct ScanlineConfigCpu
         uint32_t blendCnt = 0;
         uint32_t blendEffect = 0;
         uint32_t blendCoef[4] = {};
+        uint32_t fixedOutputMode = 0;
+        uint32_t pad1[3] = {};
     } scanline[192];
 };
 
@@ -2081,6 +2083,10 @@ bool MetalRenderer2D::RefreshScanlineConfig(int line) noexcept
     scanline.blendCoef[0] = GPU2D.EVA;
     scanline.blendCoef[1] = GPU2D.EVB;
     scanline.blendCoef[2] = GPU2D.EVY;
+    if (!GPU2D.Enabled)
+        scanline.fixedOutputMode = GPU2D.Num == 0 ? 1u : 2u;
+    else if (GPU2D.ForcedBlank)
+        scanline.fixedOutputMode = 2u;
 
     return true;
 }

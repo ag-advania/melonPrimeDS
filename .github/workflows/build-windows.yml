@@ -72,6 +72,22 @@ jobs:
       shell: pwsh
       run: .\tools\ci\audits\audit-melonprime-srp-performance.ps1
 
+    - name: Audit Software raster parity contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-raster-software-parity.py
+
+    - name: Audit Custom HUD radar color-key contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-radar-color-key-contract.py
+
+    - name: Audit low-latency marker and vendor ABI contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-low-latency-contract.py
+
+    - name: Audit renderer telemetry zero-overhead contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-renderer-perf-zero-overhead.py
+
     - name: Verify generated HUD schema
       shell: pwsh
       run: |
@@ -128,9 +144,22 @@ jobs:
         mkdir -p "${{ github.workspace }}/vcpkg_binary_cache"
 
     - name: Set up vcpkg
+      id: setup_vcpkg
+      continue-on-error: true
       uses: lukka/run-vcpkg@v11
-      with:
+      with: &vcpkg_setup_with
         vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+
+    # run-vcpkg's bootstrap downloads a prebuilt vcpkg.exe from GitHub on
+    # every cold checkout (not cached) and has no retry of its own; observed
+    # failing the whole step outright on a transient blip
+    # (WinHttpReceiveResponse 0x2F78, "server returned an invalid or
+    # unrecognized response"). Retry the whole step once more before letting
+    # the job fail.
+    - name: Retry setting up vcpkg
+      if: steps.setup_vcpkg.outcome == 'failure'
+      uses: lukka/run-vcpkg@v11
+      with: *vcpkg_setup_with
 
     - name: Cache vcpkg downloads
       uses: actions/cache@v4
@@ -140,24 +169,37 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-vcpkg-downloads-${{ env.VCPKG_COMMIT }}-
 
-    - name: Cache CMake build directory
+    - name: Cache shipping CMake build directory
       uses: actions/cache@v4
       with:
-        path: ${{ github.workspace }}/build
-        key: ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt', 'src/**', 'include/**', 'cmake/**', 'CMakePresets.json', 'vcpkg.json') }}
+        path: ${{ github.workspace }}/build/release-mingw-shipping-x86_64
+        key: ${{ runner.os }}-cmake-shipping-build-${{ hashFiles('CMakeLists.txt', 'src/**', 'include/**', 'cmake/**', 'CMakePresets.json', 'vcpkg.json') }}
         restore-keys: |
-          ${{ runner.os }}-cmake-build-${{ hashFiles('CMakeLists.txt') }}
-          ${{ runner.os }}-cmake-build-
+          ${{ runner.os }}-cmake-shipping-build-
 
     - name: Configure
       run: |
-        cmake --preset=release-mingw-x86_64 \
+        cmake --preset=release-mingw-shipping-x86_64 \
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DMELONPRIME_ENABLE_VULKAN=ON \
           -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF \
           -DCMAKE_BUILD_PARALLEL_LEVEL=${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
+
+    - name: Verify shipping Release feature gates
+      run: |
+        set -eu
+        cache=build/release-mingw-shipping-x86_64/CMakeCache.txt
+        grep -F 'CMAKE_BUILD_TYPE:STRING=Release' "$cache"
+        grep -F 'ENABLE_LTO_RELEASE:BOOL=OFF' "$cache"
+        grep -F 'MELONPRIME_ENABLE_DEVELOPER_FEATURES:BOOL=OFF' "$cache"
+        grep -F 'MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY:BOOL=OFF' "$cache"
+        grep -F 'MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE:BOOL=OFF' "$cache"
+        grep -F 'MELONPRIME_ENABLE_VULKAN:BOOL=ON' "$cache"
+        grep -F 'MELONPRIME_ENABLE_DX12:BOOL=ON' "$cache"
+        grep -F 'MELONPRIME_FORCE_DISABLE_VULKAN:BOOL=OFF' "$cache"
+        grep -F 'MELONPRIME_FORCE_DISABLE_DX12:BOOL=OFF' "$cache"
 
     - name: Save vcpkg binary cache
       if: steps.restore-vcpkg-binary-cache.outputs.cache-hit != 'true'
@@ -169,27 +211,41 @@ jobs:
 
     - name: Build
       run: |
-        cmake --build --preset=release-mingw-x86_64 --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
+        cmake --build --preset=release-mingw-shipping-x86_64 --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
 
-    - name: Check Vulkan SPIR-V synchronization
-      run: cmake --build --preset=release-mingw-x86_64 --target melonprime_check_vulkan_spirv
+    - name: Run raster edge executable vectors
+      run: |
+        cmake --build --preset=release-mingw-shipping-x86_64 --target melonprime_raster_edge_vectors
+        ./build/release-mingw-shipping-x86_64/melonprime_raster_edge_vectors.exe
+
+    - name: Check Vulkan SPIR-V source synchronization
+      shell: pwsh
+      run: python .\tools\vulkan\compile-shaders.py --check-source-sync
+
+    - name: Check DX12 generated shader source synchronization
+      shell: pwsh
+      run: python .\tools\dx12\compile-shaders.py --check-source-sync
+
+    - name: Compile all DX12 shader geometry variants
+      shell: pwsh
+      run: python .\tools\ci\audits\check-dx12-shaders.py
 
     - name: Build with Vulkan completely disabled
       run: |
-        cmake --preset=release-mingw-x86_64 \
-          -B build/release-mingw-vulkan-off \
+        cmake --preset=release-mingw-shipping-x86_64 \
+          -B build/release-mingw-shipping-vulkan-off \
           -DMELONPRIME_ENABLE_VULKAN=OFF \
           -DMELONPRIME_FORCE_DISABLE_VULKAN=ON
-        cmake --build build/release-mingw-vulkan-off --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
+        cmake --build build/release-mingw-shipping-vulkan-off --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
 
     - name: Verify developer HUD golden harness is absent from release binary
       run: |
-        ! strings ./build/release-mingw-x86_64/melonPrimeDS.exe | grep -E 'melonprime-hud-golden|MelonPrime HUD golden|CustomHud_RunGoldenHarness'
+        ! strings ./build/release-mingw-shipping-x86_64/melonPrimeDS.exe | grep -E 'melonprime-hud-golden|MelonPrime HUD golden|CustomHud_RunGoldenHarness'
 
     - name: Upload artifact
       uses: actions/upload-artifact@v7
       with:
         name: melonPrimeDS-windows-x86_64
-        path: ./build/release-mingw-x86_64/melonPrimeDS.exe
+        path: ./build/release-mingw-shipping-x86_64/melonPrimeDS.exe

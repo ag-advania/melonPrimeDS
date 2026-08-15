@@ -8,8 +8,11 @@
     Software Foundation, either version 3 of the License, or (at your option)
     any later version.
 
-    The minimal driver ABI below is derived from AMD's public Anti-Lag 2 SDK
-    header ffx_antilag2_dx12.h, revision v2.0.0a (390aa4a8c8655d0ae6e90079db2c85e103a96da3).
+    The minimal driver ABI below is pinned to AMD's public Anti-Lag 2 SDK
+    header ffx_antilag2_dx12.h at commit
+    390aa4a8c8655d0ae6e90079db2c85e103a96da3. It was rechecked against AMD's
+    current v2.0.4 SDK publication on 2026-08-11; the public header's v1 state
+    ABI, interface GUID, update contract and repository head remain unchanged.
 
     SPDX-FileCopyrightText: Copyright (c) 2024 Advanced Micro Devices, Inc.
     SPDX-License-Identifier: MIT

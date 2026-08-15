@@ -1,0 +1,308 @@
+[MelonPrime] metal probe: device='Intel(R) Iris(TM) Plus Graphics 655' lowPower=1 removable=0 unifiedMemory=1 recommendedMaxWorkingSetSize=1610612736 textureArraySampling=1
+[MelonPrime][instance=0][core=0x7fb5f0048400] constructed
+[MelonPrime] mac input: GCMouse backend (0 mice)
+[MelonPrime][instance=0][core=0x7fb5f0048400] emu-start
+[MelonPrime][instance=0][state] hook=0x7fb5f004893c patch=0x7fb5f0048a48 hud=0x7fb5f083e040
+MelonPrimeDS (build 2026-08-14 13:41:29 GMT+9) (melonDS 1.1)
+https://melonds.kuribo64.net
+Opened "/Users/admin/git/melonPrimeDS/build-mac-vulkan/portable/melonDS.toml" with FileMode 0x1 (effective mode "rb")
+Opened "/Users/admin/git/melonPrimeDS/build-mac-vulkan/portable/melonDS.toml" with FileMode 0x20 (effective mode "ab")
+MP comm init OK
+Audio output frequency: 48000 Hz
+Audio output buffer size: 512 samples
+[Vulkan] loaded @executable_path/../Frameworks/libMoltenVK.dylib, instance API version 1.4.357
+[Vulkan] instance ok   Vulkan runtime -- @executable_path/../Frameworks/libMoltenVK.dylib
+[Vulkan] instance ok   Vulkan instance version -- 1.4.357
+[Vulkan] instance ok   VK_KHR_surface -- present
+[Vulkan] instance ok   VK_KHR_get_surface_capabilities2 -- present
+[Vulkan] instance ok   VK_EXT_metal_surface -- present
+[Vulkan] instance created (API 1.1.0 requested, 3 extensions, 0 layers)
+[Vulkan]   instance extension: VK_KHR_surface
+[Vulkan]   instance extension: VK_KHR_get_surface_capabilities2
+[Vulkan]   instance extension: VK_EXT_metal_surface
+[Vulkan] probed Intel(R) Iris(TM) Plus Graphics 655 (Intel, integrated GPU) API 1.1.357 driver 0.2.2210: eligible
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Device API version -- 1.1.357
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Device-local memory -- 16384.0 MiB
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Queue families -- family 0 supports graphics+compute (present not checked)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Surface support -- not checked (probe ran without a surface)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R8G8B8A8_UNORM storage image -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R16G16B16A16_UINT uniform texel buffer -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R8G8B8A8_UINT texture array -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R32_UINT clear bitmap -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R8G8B8A8_UNORM capture texture -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxBoundDescriptorSets -- maxBoundDescriptorSets = 8 (need 2)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPushConstantsSize -- maxPushConstantsSize = 4096 (need 32)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorUniformBuffers -- maxPerStageDescriptorUniformBuffers = 31 (need 1)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorStorageBuffers -- maxPerStageDescriptorStorageBuffers = 31 (need 14)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxDescriptorSetStorageBuffers -- maxDescriptorSetStorageBuffers = 155 (need 14)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorStorageImages -- maxPerStageDescriptorStorageImages = 256 (need 1)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorSampledImages -- maxPerStageDescriptorSampledImages = 256 (need 6)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorSamplers -- maxPerStageDescriptorSamplers = 16 (need 5)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageResources -- maxPerStageResources = 287 (need 22)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxUniformBufferRange -- maxUniformBufferRange = 65536 (need 4096)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxImageDimension2D -- maxImageDimension2D = 16384 (need 4096)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxImageArrayLayers -- maxImageArrayLayers = 2048 (need 64)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxComputeWorkGroupInvocations -- maxComputeWorkGroupInvocations = 1024 (need 256)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxComputeWorkGroupSize[0] -- maxComputeWorkGroupSize[0] = 1024 (need 64)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxComputeWorkGroupSize[1] -- maxComputeWorkGroupSize[1] = 1024 (need 16)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxImageDimension2D (texcache) -- maxImageDimension2D (texcache) = 16384 (need 1024)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Internal resolution -- up to 16x supported
+[Vulkan] selected Intel(R) Iris(TM) Plus Graphics 655 (Intel) -- score 676, up to 16x internal resolution
+[Vulkan] feature check: available device=Intel(R) Iris(TM) Plus Graphics 655 api=1.1.357 driver=0.2.2210 maxScale=16x reflex=no antilag2=no
+[Vulkan] loaded @executable_path/../Frameworks/libMoltenVK.dylib, instance API version 1.4.357
+[Vulkan] instance ok   Vulkan runtime -- @executable_path/../Frameworks/libMoltenVK.dylib
+[Vulkan] instance ok   Vulkan instance version -- 1.4.357
+[Vulkan] instance ok   VK_KHR_surface -- present
+[Vulkan] instance ok   VK_KHR_get_surface_capabilities2 -- present
+[Vulkan] instance ok   VK_EXT_metal_surface -- present
+[Vulkan] instance created (API 1.1.0 requested, 3 extensions, 0 layers)
+[Vulkan]   instance extension: VK_KHR_surface
+[Vulkan]   instance extension: VK_KHR_get_surface_capabilities2
+[Vulkan]   instance extension: VK_EXT_metal_surface
+[Vulkan] presentation surface created backend=VK_EXT_metal_surface metalDevice=Intel(R) Iris(TM) Plus Graphics 655
+[Vulkan] probed Intel(R) Iris(TM) Plus Graphics 655 (Intel, integrated GPU) API 1.1.357 driver 0.2.2210: eligible
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Device API version -- 1.1.357
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Device-local memory -- 16384.0 MiB
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Queue families -- family 0 supports graphics+compute+present
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   VK_KHR_swapchain -- present
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Surface support -- 60 surface formats, 2 present modes
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R8G8B8A8_UNORM storage image -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R16G16B16A16_UINT uniform texel buffer -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R8G8B8A8_UINT texture array -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R32_UINT clear bitmap -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   R8G8B8A8_UNORM capture texture -- supported
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxBoundDescriptorSets -- maxBoundDescriptorSets = 8 (need 2)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPushConstantsSize -- maxPushConstantsSize = 4096 (need 32)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorUniformBuffers -- maxPerStageDescriptorUniformBuffers = 31 (need 1)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorStorageBuffers -- maxPerStageDescriptorStorageBuffers = 31 (need 14)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxDescriptorSetStorageBuffers -- maxDescriptorSetStorageBuffers = 155 (need 14)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorStorageImages -- maxPerStageDescriptorStorageImages = 256 (need 1)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorSampledImages -- maxPerStageDescriptorSampledImages = 256 (need 6)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageDescriptorSamplers -- maxPerStageDescriptorSamplers = 16 (need 5)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxPerStageResources -- maxPerStageResources = 287 (need 22)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxUniformBufferRange -- maxUniformBufferRange = 65536 (need 4096)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxImageDimension2D -- maxImageDimension2D = 16384 (need 4096)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxImageArrayLayers -- maxImageArrayLayers = 2048 (need 64)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxComputeWorkGroupInvocations -- maxComputeWorkGroupInvocations = 1024 (need 256)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxComputeWorkGroupSize[0] -- maxComputeWorkGroupSize[0] = 1024 (need 64)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxComputeWorkGroupSize[1] -- maxComputeWorkGroupSize[1] = 1024 (need 16)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   maxImageDimension2D (texcache) -- maxImageDimension2D (texcache) = 16384 (need 1024)
+[Vulkan] Intel(R) Iris(TM) Plus Graphics 655 ok   Internal resolution -- up to 16x supported
+[Vulkan] selected Intel(R) Iris(TM) Plus Graphics 655 (Intel) -- score 676, up to 16x internal resolution
+[Vulkan] generic present device capabilities: caps2=yes present-id2=yes present-wait2=yes calibrated-timestamps=yes present-timing=no present-at-absolute-time=no present-at-relative-time=no fifo-latest-ready=no google-display-timing=yes
+[Vulkan] renderer requested=Vulkan presenter actual=Vulkan
+[Vulkan] instance API 1.4.357, device API 1.1.357
+[Vulkan] GPU Intel(R) Iris(TM) Plus Graphics 655 (Intel, integrated GPU) driver 0.2.2210
+[Vulkan] queues: family 0 handles graphics, compute and present
+[Vulkan] device extension: VK_KHR_swapchain
+[Vulkan] device extension: VK_KHR_portability_subset
+[Vulkan] device extension: VK_KHR_present_id2
+[Vulkan] device extension: VK_KHR_present_wait2
+[Vulkan] device extension: VK_GOOGLE_display_timing
+[Vulkan] device features: none required (core 1.1 functionality only)
+[Vulkan] device-local memory 16384.0 MiB, internal resolution up to 16x
+[Vulkan] portability implementation: VK_KHR_portability_subset enabled
+[Vulkan] NVIDIA Reflex (VK_NV_low_latency2) device creation: extension-requested=yes supported=no device-extension-enabled=no reason=this GPU does not expose VK_NV_low_latency2 (NVIDIA Reflex is NVIDIA-only)
+[Vulkan] AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag) device creation: extension-requested=yes supported=no device-extension-enabled=no reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=512x768 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] presenter ready: NVIDIA Reflex (VK_NV_low_latency2): requested=off supported=no device-extension-enabled=no actual=inactive reason=this GPU does not expose VK_NV_low_latency2 (NVIDIA Reflex is NVIDIA-only)
+[Vulkan] presenter ready: AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag): requested=off supported=no device-extension-enabled=no actual=inactive reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] presenter ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+Opened "/Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).nds" with FileMode 0x1 (effective mode "rb")
+Opened "/Users/admin/git/melonPrimeDS/docs/archive/audits/vulkan/2026-08-14-intel-macbook/rom/saves/Metroid Prime - Hunters (Japan).sav" with FileMode 0x1 (effective mode "rb")
+Opened "/Users/admin/git/melonPrimeDS/docs/archive/audits/vulkan/2026-08-14-intel-macbook/rom/saves/Metroid Prime - Hunters (Japan).sav" with FileMode 0x1 (effective mode "rb")
+Opened "/Users/admin/git/melonPrimeDS/docs/archive/audits/vulkan/2026-08-14-intel-macbook/rom/saves/Metroid Prime - Hunters (Japan).sav" with FileMode 0x20 (effective mode "ab")
+Failed to open "/Users/admin/git/melonPrimeDS/build-mac-vulkan/portable/wfcsettings.bin" with FileMode 0x1 (effective mode "rb")
+MAC: 00:09:BF:11:22:33
+FW: WIFI CRC16 = GOOD
+FW: AP1 CRC16 = GOOD
+FW: AP2 CRC16 = GOOD
+FW: AP3 CRC16 = GOOD
+FW: USER0 CRC16 = GOOD
+FW: USER1 CRC16 = GOOD
+Opened "/Users/admin/git/melonPrimeDS/build-mac-vulkan/portable/rtc.bin" with FileMode 0x1 (effective mode "rb")
+Re-encrypting cart secure area
+NDSCart: Initialized Key1_KeyBuf to zero
+NDSCart: Initialized Key1_KeyBuf to zero
+Re-encrypted cart secure area
+Inserted cart with game code: AMHJ
+Inserted cart with ID: 00003FC2
+ROM entry: 04000000 00000005
+Ejected GBA cart
+Opened "/Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).mch" with FileMode 0x11 (effective mode "r")
+MAC: 00:09:BF:11:22:33
+FW: WIFI CRC16 = GOOD
+FW: AP1 CRC16 = GOOD
+FW: AP2 CRC16 = GOOD
+FW: AP3 CRC16 = GOOD
+FW: USER0 CRC16 = GOOD
+FW: USER1 CRC16 = GOOD
+NDSCart: Initialized Key1_KeyBuf to zero
+NDSCart: Initialized Key1_KeyBuf to zero
+Secure area decryption OK
+PU: region 0 = 04000033 : enabled, start: 04000000 size: 19
+PU: region 0 = 04000033 : enabled, start: 04000000 size: 19
+PU: region 1 = 0200002B : enabled, start: 02000000 size: 15
+PU: region 1 = 0200002B : enabled, start: 02000000 size: 15
+PU: region 2 = 00000000 : disabled, start: 00000000 size: 00
+PU: region 2 = 00000000 : disabled, start: 00000000 size: 00
+PU: region 3 = 08000035 : enabled, start: 08000000 size: 1A
+PU: region 3 = 08000035 : enabled, start: 08000000 size: 1A
+PU: region 4 = 0300001B : enabled, start: 03000000 size: 0D
+PU: region 4 = 0300001B : enabled, start: 03000000 size: 0D
+PU: region 5 = 00000000 : disabled, start: 00000000 size: 00
+PU: region 5 = 00000000 : disabled, start: 00000000 size: 00
+PU: region 6 = FFFF001D : enabled, start: FFFF0000 size: 0E
+PU: region 6 = FFFF001D : enabled, start: FFFF0000 size: 0E
+PU: region 7 = 027FF017 : enabled, start: 027FF000 size: 0B
+PU: region 7 = 027FF017 : enabled, start: 027FF000 size: 0B
+Game is now booting
+[SavestateDiff] customHudForcedOff=0
+Opened "/Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).ml2" with FileMode 0x1 (effective mode "rb")
+PU region 0: 04000000-07FFFFFF, user=00 priv=07, 15111011/05100011
+PU region 1: 02000000-023FFFFF, user=70 priv=77, 15111011/05100011
+PU region 2: 023E0000-023FFFFF, user=00 priv=00, 15111011/05100011
+PU region 3: 08000000-0FFFFFFF, user=00 priv=03, 15111011/05100011
+PU region 4: 027E0000-027E3FFF, user=00 priv=03, 15111011/05100011
+PU region 5: 01000000-01FFFFFF, user=00 priv=07, 15111011/05100011
+PU region 6: FFFF0000-FFFF7FFF, user=50 priv=55, 15111011/05100011
+PU region 7: 027FF000-027FFFFF, user=00 priv=03, 15111011/05100011
+[SavestateDiff] one-frame START pulse sent
+[SavestateDiff] path=/Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).ml2 loaded=1
+Renderer transition begin previous=-1 requested=5
+Renderer selection requested=Vulkan presentation=VulkanOpened "/Users/admin/git/melonPrimeDS/build-mac-vulkan/portable/melonDS.toml" with FileMode 0x1 (effective mode "rb")
+Opened "/Users/admin/git/melonPrimeDS/build-mac-vulkan/portable/melonDS.toml" with FileMode 0x20 (effective mode "ab")
+[Vulkan] renderer requested=Vulkan actual=Vulkan
+[Vulkan] instance API 1.4.357, device API 1.1.357
+[Vulkan] GPU Intel(R) Iris(TM) Plus Graphics 655 (Intel, integrated GPU) driver 0.2.2210
+[Vulkan] queues: family 0 handles graphics, compute and present
+[Vulkan] device extension: VK_KHR_swapchain
+[Vulkan] device extension: VK_KHR_portability_subset
+[Vulkan] device extension: VK_KHR_present_id2
+[Vulkan] device extension: VK_KHR_present_wait2
+[Vulkan] device extension: VK_GOOGLE_display_timing
+[Vulkan] device features: none required (core 1.1 functionality only)
+[Vulkan] device-local memory 16384.0 MiB, internal resolution up to 16x
+[Vulkan] portability implementation: VK_KHR_portability_subset enabled
+[Vulkan] NVIDIA Reflex (VK_NV_low_latency2) device creation: extension-requested=yes supported=no device-extension-enabled=no reason=this GPU does not expose VK_NV_low_latency2 (NVIDIA Reflex is NVIDIA-only)
+[Vulkan] AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag) device creation: extension-requested=yes supported=no device-extension-enabled=no reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] descriptor pool: 6153 sets (6 rasterizer, 6147 texture) across 3 frames in flight
+Opened "/Users/admin/git/melonPrimeDS/build-mac-vulkan/portable/melonPrimeDS_vulkan_pipeline_cache.bin" with FileMode 0x1 (effective mode "rb")
+[Vulkan] 3D renderer initialized on "Intel(R) Iri[MelonPrime] mac input: GCMouse connected
+[MelonPrime] mac input: IOHID fallback not needed (GCMouse active)
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=2 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=2 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=3 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=3 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=4 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=4 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=5 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=5 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=6 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=6 active-owner=0
+2026-08-14 19:30:48.966 melonPrimeDS[56981:2172346] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=7 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=7 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=8 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=8 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=9 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=9 active-owner=0
+s(TM) Plus Graphics 655" (up to 16x internal resolution)
+Vulkan renderer init succeeded requested=Vulkan actual=Vulkan
+Renderer transition complete previous=-1 actual=5
+[Vulkan] internal resolution 1x -> 3D output 256x192, tiles 32x24 (8px), tile-geometry bucket 0, capture resolve 256x192; memory raster=52.6 MiB capture-sidecar=2.0 MiB compositor-device=9.0 MiB compositor-host=7.9 MiB
+[Vulkan] low-latency: NVIDIA Reflex (VK_NV_low_latency2): requested=off supported=no device-extension-enabled=no actual=inactive reason=this GPU does not expose VK_NV_low_latency2 (NVIDIA Reflex is NVIDIA-only)
+[Vulkan] low-latency: AMD Radeon Anti-Lag 2 (VK_AMD_anti_lag): requested=off supported=no device-extension-enabled=no actual=inactive reason=this GPU does not expose VK_AMD_anti_lag (Radeon Anti-Lag 2 is AMD-only)
+[Vulkan] low-latency: generic present pacing: policy=JustInTime authority=GenericPresentTiming caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=google_display_timing target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=512x768 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] first frame presented extent=512x768 presentMode=FIFO
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125965772680277 fallback=none
+SaveManager: Flush requested
+Opened "/Users/admin/git/melonPrimeDS/docs/archive/audits/vulkan/2026-08-14-intel-macbook/rom/saves/Metroid Prime - Hunters (Japan).sav" with FileMode 0x2 (effective mode "wb")
+SaveManager: Wrote 262144 bytes to /Users/admin/git/melonPrimeDS/docs/archive/audits/vulkan/2026-08-14-intel-macbook/rom/saves/Metroid Prime - Hunters (Japan).sav
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125988869424249 fallback=none
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125990627603646 fallback=none
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=512x768 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125990721957146 fallback=none
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125991093537387 fallback=none
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125992781843408 fallback=none
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=512x768 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125992816045761 fallback=none
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125993232304671 fallback=none
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=640x984 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125994906126488 fallback=none
+[Vulkan] swapchain ready: generic present pacing: policy=JustInTime authority=GenericHost caps2=yes present-id2=yes present-wait2=yes present-timing=no absolute-timing=no relative-timing=no google-display-timing=yes timingBackend=none target-stage=none timing-queue=0 fifo-latest-ready=no presentMode=2 reason=available capabilities are optional
+[Vulkan] presentation: requested-vsync=on available-present-modes=FIFO,IMMEDIATE selected-present-mode=FIFO swapchain-images=3 extent=512x768 format=44 window-mode=windowed reason=VSync on: FIFO; VRR actual state is driver/display controlled
+[Vulkan] present JIT: policy=JustInTime authority=GenericPresentTiming state=TargetSchedulingActive targetScheduling=capable timingBackend=google_display_timing targetMode=absolute boundedWait=on optionalWait=available timingReady=no timeDomainsReady=no absoluteSupported=no relativeSupported=no targetStage=none timeDomain=DEVICE domainId=0 frameIntervalNs=16666667 refreshIntervalNs=16666666 dynamics=unknown relativeQuanta=0 baselineId=0 baselineSequence=0 baselineTime=0 targetValue=125994957997540 fallback=none
+unknown arm7 write32 95000284 00000001 @ 027E1EA8
+unknown arm7 write16 95000282 0000 @ 027E1EB4
+WIFI: ON
+wifi: invalid channel values 0004C:0004F
+wifi: invalid channel values 0004C:0004F
+wifi: invalid channel values 0004B:0004F
+wifi: switching to channel 1
+wifi: TRX power ON
+wifi: TRX power OFF
+wifi: invalid channel values 0004C:0006C
+wifi: invalid channel values 0004C:0004F
+wifi: invalid channel values 0004C:0004F
+wifi: switching to channel 7
+wifi: TRX power ON
+wifi: TRX power OFF
+wifi: switching to channel 7
+wifi: invalid channel values 0004C:0004F
+wifi: invalid channel values 0004D:0004F
+wifi: switching to channel 13
+wifi: TRX power ON
+received frame but bad channel 6 (expected 13)
+wifi: TRX power OFF
+wifi: invalid channel values 0004C:00008
+wifi: invalid channel values 0004C:0004F
+wifi: invalid channel values 0004B:0004F
+wifi: switching to channel 1
+wifi: TRX power ON
+SaveManager: Flush requested
+Opened "/Users/admin/git/melonPrimeDS/docs/archive/audits/vulkan/2026-08-14-intel-macbook/rom/saves/Metroid Prime - Hunters (Japan).sav" with FileMode 0x2 (effective mode "wb")
+SaveManager: Wrote 262144 bytes to /Users/admin/git/melonPrimeDS/docs/archive/audits/vulkan/2026-08-14-intel-macbook/rom/saves/Metroid Prime - Hunters (Japan).sav
+Opened "/Users/admin/Downloads/_Documents/Metroid Prime - Hunters (Japan).ml1" with FileMode 0x1 (effective mode "rb")
+PU region 0: 04000000-07FFFFFF, user=00 priv=07, 15111011/05100011
+PU region 1: 02000000-023FFFFF, user=70 priv=77, 15111011/05100011
+PU region 2: 023E0000-023FFFFF, user=00 priv=00, 15111011/05100011
+PU region 3: 08000000-0FFFFFFF, user=00 priv=03, 15111011/05100011
+PU region 4: 027E0000-027E3FFF, user=00 priv=03, 15111011/05100011
+PU region 5: 01000000-01FFFFFF, user=00 priv=07, 15111011/05100011
+PU region 6: FFFF0000-FFFF7FFF, user=50 priv=55, 15111011/05100011
+PU region 7: 027FF000-027FFFFF, user=00 priv=03, 15111011/05100011
+SaveManager: Flush requested
+Opened "/Users/admi[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=10 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=10 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=11 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=11 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=12 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=12 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=13 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=13 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=14 active-owner=1
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=14 active-owner=0
+[MelonPrime][instance=0][input-subscription=0x7fb5f0048890] generation=15 active-owner=1

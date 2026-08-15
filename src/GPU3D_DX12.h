@@ -27,11 +27,16 @@
 #include <vector>
 
 #include "GPU3D.h"
+#include "GPU3D_FixedVariantIndex.h"
+#include "MelonPrimeStructuredComposition.h"
 #include "DX12Context.h"
 #include "GPU3D_TexcacheDX12.h"
 
 namespace melonDS
 {
+
+struct RendererOutput;
+struct RendererOutputLease;
 
 // DirectX 12 3D renderer: a port of the OpenGL compute renderer
 // (GPU3D_Compute.cpp), i.e. the GPU version of the software rasterizer, with
@@ -56,18 +61,27 @@ public:
     // Releases every GPU-visible object while the emulator core is still alive.
     void Stop();
 
-    void SetRenderSettings(int scale, bool betterPolygons, bool hiresCoordinates);
+    void SetRenderSettings(int scale, bool hiresCoordinates);
     [[nodiscard]] int GetScaleFactor() const noexcept { return ScaleFactor; }
+    // Required before changing or destroying XeLL state. This queue-wide
+    // fence also retires native-presenter work submitted through the shared
+    // direct queue.
+    bool WaitForQueueIdle();
 
     void RenderFrame() override;
     u32* GetLine(int line) override;
     [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return true; }
+    [[nodiscard]] bool HasValidCaptureFrame() const noexcept override { return FrameReadbackValid; }
 
     bool ComposeStructuredOutput(
-        const std::array<const u32*, 6>& planes,
+        const std::array<const u32*, 14>& planes,
         const std::array<const u32*, 2>& lineMeta,
-        u64 generation);
-    [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
+        const u32* captureCommands,
+        const StructuredComposition::ScreenRoutingView& screenRouting,
+        u64 generation,
+        const StructuredComposition::GenerationState& contentGeneration);
+    [[nodiscard]] RendererOutput GetComposedOutput() const;
+    [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
     [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
     [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
@@ -82,8 +96,9 @@ public:
 private:
     explicit DX12Renderer3D(melonDS::GPU3D& gpu3D);
 
-    static constexpr int MaxVariants = 256;
-    static constexpr int MaxYSpanSetups = 6144 * 2;
+    static constexpr int MaxRenderPolygons = 2048;
+    static constexpr int MaxVariants = MaxRenderPolygons;
+    static constexpr int MaxYSpanSetups = MaxRenderPolygons * 10;
     static constexpr int BinStride = 2048 / 32;
     static constexpr int CoarseBinStride = BinStride / 32;
     static constexpr int CoarseTileCountX = 8;
@@ -154,11 +169,12 @@ private:
         u32 Attr;
 
         float TextureLayer;
+        u32 FacingView;
     };
 
     static_assert(sizeof(SpanSetupY) == 31 * 4, "SpanSetupY must match the HLSL layout");
     static_assert(sizeof(SpanSetupX) == 24 * 4, "SpanSetupX must match the HLSL layout");
-    static_assert(sizeof(RenderPolygon) == 10 * 4, "RenderPolygon must match the HLSL layout");
+    static_assert(sizeof(RenderPolygon) == 11 * 4, "RenderPolygon must match the HLSL layout");
     static_assert(sizeof(SetupIndices) == 8, "SetupIndices must match the R16G16B16A16_UINT view");
 
     // One rasterise pipeline per texture/blend combination, exactly like the
@@ -181,6 +197,9 @@ private:
         u32 Texture = 0;
         u32 WrapS = 0;
         u32 WrapT = 0;
+        u32 CaptureReference = 0;
+        s32 CaptureYOffset = 0;
+        u8 CaptureType = 0;
         u8 BlendMode = 0;
         u16 Width = 0;
         u16 Height = 0;
@@ -190,9 +209,24 @@ private:
             return Texture == other.Texture
                 && WrapS == other.WrapS
                 && WrapT == other.WrapT
+                && CaptureReference == other.CaptureReference
+                && CaptureYOffset == other.CaptureYOffset
+                && CaptureType == other.CaptureType
                 && BlendMode == other.BlendMode;
         }
     };
+
+    static u32 HashVariant(const Variant& variant) noexcept
+    {
+        u32 hash = 0x811C9DC5u;
+        hash = MixVariantHash(hash, variant.Texture);
+        hash = MixVariantHash(hash, variant.WrapS);
+        hash = MixVariantHash(hash, variant.WrapT);
+        hash = MixVariantHash(hash, variant.CaptureReference);
+        hash = MixVariantHash(hash, static_cast<u32>(variant.CaptureYOffset));
+        hash = MixVariantHash(hash, variant.CaptureType);
+        return MixVariantHash(hash, variant.BlendMode);
+    }
 
     // Mirrors the OpenGL compute renderer's MetaUniform. Field order and
     // padding match the HLSL cbuffer in GPU3D_DX12_shaders.h.
@@ -224,9 +258,36 @@ private:
         u32 TexHeight = 8;
         u32 TexWrapS = 0;
         u32 TexWrapT = 0;
-        u32 Pad[3] = {};
+        u32 InterpSpanBase = 0;
+        u32 InterpSpanCount = 0;
+        u32 Pad = 0;
+
+        // Scale-dependent values are root constants because raster and
+        // compositor command lists are recorded independently. Neither list
+        // may rely on a shared, mutable upload-buffer CBV.
+        u32 ScreenWidth = 0;
+        u32 ScreenHeight = 0;
+        u32 ScaleFactor = 0;
+        u32 TilesPerLine = 0;
+
+        u32 TileLines = 0;
+        u32 FramebufferStride = 0;
+        u32 ResultDepthStart = 0;
+        u32 ResultAttrStart = 0;
+
+        u32 BinningMaskStart = 0;
+        u32 BinningWorkOffsetsStart = 0;
+        u32 WorkDescsSortedStart = 0;
+        u32 MaxWorkTiles = 0;
     };
     static constexpr u32 DispatchUniformDwords = sizeof(DispatchUniform) / 4;
+    static_assert(DispatchUniformDwords <= 64, "DX12 root constants exceed the API limit");
+
+    struct PolygonBatch
+    {
+        u32 FirstPolygon = 0;
+        u32 PolygonCount = 0;
+    };
 
     enum ShaderStep
     {
@@ -240,7 +301,9 @@ private:
         ShaderStep_Rasterise0 = ShaderStep_DepthBlend0 + 2,
         ShaderStep_FinalPass0 = ShaderStep_Rasterise0 + RasteriseKind_Count * 2,
         ShaderStep_Resolve = ShaderStep_FinalPass0 + 8,
+        ShaderStep_CaptureSidecar,
         ShaderStep_Compositor,
+        ShaderStep_CorrectCoverage,
         ShaderStepCount,
     };
 
@@ -248,18 +311,21 @@ private:
     bool CreateCommandSignature();
     bool CreateFixedResources();
     bool CreateScaleDependentResources();
+    bool BuildStaticSrvDescriptors();
+    bool BuildFrameUavDescriptors();
+    bool BuildCompositorUavDescriptors();
     void ReleaseScaleDependentResources();
     void ReleasePipelines();
 
     bool BuildPipeline(
         DX12::ComPtr<ID3D12PipelineState>& pipeline,
-        const std::string& body,
-        const std::vector<std::string>& defines,
+        int shaderVariant,
         const char* debugName);
     void SetRuntimeFailure(std::string reason);
 
     void UpdateClearBitmap();
     bool UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numVariants, u32 numPolygons);
+    [[nodiscard]] DispatchUniform MakeDispatchUniform() const noexcept;
     void SetDispatchConstants(ID3D12GraphicsCommandList* list, const DispatchUniform& constants);
     void InsertUavBarrier(ID3D12GraphicsCommandList* list, ID3D12Resource* resource);
     void TransitionBuffer(
@@ -271,8 +337,13 @@ private:
     // The UAV table never changes within a frame; the SRV table only changes
     // when the bound texture array does.
     bool BindFrameUavTable(ID3D12GraphicsCommandList* list);
-    bool BindCompositionUavTable(ID3D12GraphicsCommandList* list);
+    bool BindCompositionUavTable(
+        ID3D12GraphicsCommandList* list,
+        DX12DescriptorRing& descriptors,
+        D3D12_CPU_DESCRIPTOR_HANDLE canonicalCpu);
+    bool BindStaticSrvTable(ID3D12GraphicsCommandList* list);
     bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
+    void ResetFrameSrvCache() noexcept;
 
     // CPU-side span setup, ported verbatim from the OpenGL compute renderer.
     void SetupAttrs(SpanSetupY* span, Polygon* poly, int from, int to) const;
@@ -281,16 +352,29 @@ private:
 
     // Returns the number of variants collected, filling YSpanSetups /
     // YSpanIndices / RenderPolygons. `numYSpans` / `numSetupIndices` /
-    // `numPolygons` are outputs; `numPolygons` can be lower than
-    // GPU3D.RenderNumPolygons when the span budget ran out.
+    // `numPolygons` are outputs. Degenerate polygons are compacted out; valid
+    // DS input otherwise fits the worst-case span allocations exactly.
     u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
+    u32 BuildPolygonBatches(u32 numPolygons);
 
+    bool RecordNativeResolveAndReadback();
     void EnsureFrameReadback();
 
     DX12Context* Context = nullptr;
     DX12CommandContext Commands;
+    DX12CommandContext CaptureCommands;
     DX12UploadRing Uploads;
     DX12DescriptorRing Descriptors;
+    // Descriptor lifetime classification:
+    // A: fixed renderer resources use FrameUavDescriptors and StaticSrvDescriptors.
+    // B: each compositor slot owns one canonical UAV block in CompositorUavDescriptors.
+    // C: texture SRVs remain frame-local because the texture cache is dynamic.
+    DX12DescriptorRing StaticSrvDescriptors;
+    DX12DescriptorRing FrameUavDescriptors;
+    DX12DescriptorRing CompositorUavDescriptors;
+    // One shader-visible table for the lazy Resolve submission. It is reset
+    // only after CaptureCommands has retired its prior submission.
+    DX12DescriptorRing CaptureDescriptors;
     DX12TextureHeap TextureHeap;
 
     TexcacheDX12 Texcache;
@@ -308,19 +392,21 @@ private:
     std::array<DX12::ComPtr<ID3D12PipelineState>, RasteriseKind_Count * 2> PipelineRasterise;
     std::array<DX12::ComPtr<ID3D12PipelineState>, 8> PipelineFinalPass;
     DX12::ComPtr<ID3D12PipelineState> PipelineResolve;
+    DX12::ComPtr<ID3D12PipelineState> PipelineCaptureSidecar;
     DX12::ComPtr<ID3D12PipelineState> PipelineCompositor;
+    DX12::ComPtr<ID3D12PipelineState> PipelineCorrectCoverage;
 
     // GPU-side buffers.
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each
+    DX12::ComPtr<ID3D12Resource> ResultWinnerBuffer; // winning polygon, 2 layers
     DX12::ComPtr<ID3D12Resource> FinalFBBuffer;     // packed r6g6b6a5 at internal res
+    DX12::ComPtr<ID3D12Resource> CaptureSidecarBuffer;
     DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192
     DX12::ComPtr<ID3D12Resource> ReadbackBuffer;
-    DX12::ComPtr<ID3D12Resource> CompositionInputBuffer;
-    DX12::ComPtr<ID3D12Resource> CompositionOutputBuffer;
-    DX12::ComPtr<ID3D12Resource> CompositionReadbackBuffer;
     DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles
     DX12::ComPtr<ID3D12Resource> BinResultBuffer;
     DX12::ComPtr<ID3D12Resource> WorkDescBuffer;
+    DX12::ComPtr<ID3D12Resource> BlendStateBuffer;
     DX12::ComPtr<ID3D12Resource> XSpanSetupBuffer;
     DX12::ComPtr<ID3D12Resource> YSpanSetupBuffer;
     DX12::ComPtr<ID3D12Resource> SetupIndicesBuffer;
@@ -331,14 +417,17 @@ private:
     DX12::ComPtr<ID3D12Resource> YSpanSetupStaging;
     DX12::ComPtr<ID3D12Resource> SetupIndicesStaging;
     DX12::ComPtr<ID3D12Resource> RenderPolygonStaging;
-    DX12::ComPtr<ID3D12Resource> CompositionInputStaging;
     u8* YSpanSetupStagingPtr = nullptr;
     u8* SetupIndicesStagingPtr = nullptr;
     u8* RenderPolygonStagingPtr = nullptr;
-    u32* CompositionInputStagingPtr = nullptr;
 
     DX12::ComPtr<ID3D12Resource> ClearBitmapTex[2];
+    DX12::ComPtr<ID3D12Resource> ClearBitmapUpload[2];
+    u8* ClearBitmapUploadPtr[2] = { nullptr, nullptr };
+    DX12::ComPtr<ID3D12Resource> MetaUniformUpload;
+    u8* MetaUniformUploadPtr = nullptr;
     DX12::ComPtr<ID3D12Resource> DummyTexture;
+    DX12::ComPtr<ID3D12Resource> DirectOutputDummy;
 
     std::unique_ptr<u32[]> ClearBitmap[2];
     u8 ClearBitmapDirty = 0x3;
@@ -347,6 +436,11 @@ private:
 
     // CPU-side scratch, mirroring the OpenGL compute renderer's members.
     std::array<Variant, MaxVariants> Variants{};
+    static constexpr u32 VariantIndexCapacity = 4096;
+    static_assert(VariantIndexCapacity > MaxVariants,
+        "variant index must retain an empty probe terminator");
+    AdaptiveVariantIndex<64, VariantIndexCapacity, 32> VariantLookup{};
+    std::array<PolygonBatch, MaxRenderPolygons> PolygonBatches{};
     std::vector<SetupIndices> YSpanIndices;
     std::unique_ptr<SpanSetupY[]> YSpanSetups;
     std::unique_ptr<RenderPolygon[]> RenderPolygons;
@@ -365,7 +459,6 @@ private:
     int ScaleFactor = -1;
     int ScreenWidth = 256;
     int ScreenHeight = 192;
-    bool BetterPolygons = false;
     bool HiresCoordinates = false;
 
     int ShaderStepIdx = 0;
@@ -376,15 +469,36 @@ private:
     D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};
     ID3D12Resource* BoundSrvTexture = nullptr;
     D3D12_GPU_DESCRIPTOR_HANDLE BoundSrvTable{};
+    struct FrameSrvCacheEntry
+    {
+        ID3D12Resource* Texture = nullptr;
+        D3D12_GPU_DESCRIPTOR_HANDLE Table{};
+        u32 Epoch = 0;
+    };
+    static constexpr u32 FrameSrvCacheCapacity = 4096;
+    static_assert((FrameSrvCacheCapacity & (FrameSrvCacheCapacity - 1)) == 0,
+        "SRV cache capacity must be a power of two");
+    std::array<FrameSrvCacheEntry, FrameSrvCacheCapacity> FrameSrvTables{};
+    u32 FrameSrvCacheEpoch = 1;
+    D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
+    D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;
+    bool NativeReadbackSubmitted = false;
+    bool FinalFBHasValidFrame = false;
     u64 ComposedGeneration = 0;
     bool ComposedOutputValid = false;
+    // Resource lifetime generation is owned by the renderer and advances only
+    // when a new compositor resource set is created, so presenters can safely
+    // cache descriptors by resource lifetime rather than content generation.
+    u64 NextOutputResourceGeneration = 1;
+
+    struct OutputState;
+    std::shared_ptr<OutputState> ComposedOutput;
 
     alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
-    std::array<std::vector<u32>, 2> ComposedColorBuffer;
-    u32 ComposedFrontBuffer = 0;
     alignas(8) u32 ScrolledLine[256]{};
 };
 

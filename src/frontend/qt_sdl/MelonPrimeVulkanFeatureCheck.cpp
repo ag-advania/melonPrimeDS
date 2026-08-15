@@ -1,113 +1,212 @@
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+*/
 
 #include "MelonPrimeVulkanFeatureCheck.h"
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <mutex>
 #include <utility>
 
 #include "Platform.h"
 #include "VulkanContext.h"
-#include "VulkanDispatch.h"
+#include "VulkanDevice.h"
+#include "VulkanFeatureProbe.h"
+
+// Platform::Log lives in melonDS::Platform; the frontend spells it unqualified
+// everywhere else, so the using-directive keeps this file consistent.
+using namespace melonDS;
 
 namespace MelonPrime::VulkanFeatureCheck
 {
+
 namespace
 {
-std::mutex gProbeMutex;
-Result gResult{};
-bool gProbed = false;
+
+// Guards both the cache and the probe itself. The settings dialog (GUI thread)
+// and EmuThread both call in, and the probe mutates the process-wide
+// VulkanContext, so two concurrent probes would race on the shared instance.
+std::mutex g_mutex;
+Result g_result;
+bool g_probed = false;
+
+// A runtime failure outranks whatever the static probe found: the device passed
+// every limit check and still failed to render or present, so the answer stays
+// "unavailable" until ResetProbeForRetry() clears it.
+bool g_runtimeFailed = false;
+std::string g_runtimeFailureReason;
+
+void RunProbeLocked()
+{
+    g_result = Result{};
+
+    if (g_runtimeFailed)
+    {
+        g_result.Available = false;
+        g_result.Reason = g_runtimeFailureReason.empty()
+            ? std::string("Vulkan was disabled after a runtime failure")
+            : g_runtimeFailureReason;
+        g_result.NvidiaReflexReason = g_result.Reason;
+        g_result.AmdAntiLag2Reason = g_result.Reason;
+        return;
+    }
+
+    auto& context = melonDS::VulkanContext::Get();
+
+    // Presentation is requested even though this probe creates no surface.
+    //
+    // VulkanContext refuses to hand a headless instance to a later caller that
+    // needs to present, and the settings dialog can easily be the first thing
+    // in the process to touch Vulkan. Asking for the surface extensions here
+    // means the instance the presenter later reuses is already the right one;
+    // if the runtime has no WSI extension at all, that is itself a truthful
+    // reason to refuse the renderer, because this build only offers Vulkan as a
+    // presented renderer.
+    if (!context.Acquire(true))
+    {
+        g_result.Available = false;
+        g_result.Reason = context.GetFailureReason();
+        if (g_result.Reason.empty())
+            g_result.Reason = "the Vulkan runtime could not be initialized";
+        g_result.NvidiaReflexReason = g_result.Reason;
+        g_result.AmdAntiLag2Reason = g_result.Reason;
+        return;
+    }
+
+    // VK_NULL_HANDLE: present support cannot be evaluated without a real
+    // surface, and QueueFamilySelection reports that as "not checked" rather
+    // than "supported". The presenter re-runs this with its own surface before
+    // creating a device, which is cheap because no device exists yet.
+    const bool selected = context.SelectPhysicalDevice(VK_NULL_HANDLE);
+    if (selected && context.HasSelectedDevice())
+    {
+        const melonDS::Vk::DeviceProbeResult& device = context.GetSelectedDevice();
+
+        g_result.Available = true;
+        g_result.AdapterName = device.DeviceName;
+
+        g_result.NvidiaReflexAvailable = device.HasNvLowLatency2;
+        if (!g_result.NvidiaReflexAvailable)
+        {
+            g_result.NvidiaReflexReason =
+                device.DeviceName
+                + " does not meet the VK_NV_low_latency2 timeline semaphore and present ID requirements";
+        }
+
+        g_result.AmdAntiLag2Available = device.HasAmdAntiLag;
+        if (!g_result.AmdAntiLag2Available)
+        {
+            g_result.AmdAntiLag2Reason =
+                device.DeviceName
+                + " does not expose VK_AMD_anti_lag with its antiLag feature enabled";
+        }
+
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[Vulkan] feature check: available device=%s api=%s driver=%s maxScale=%dx "
+            "reflex=%s antilag2=%s\n",
+            device.DeviceName.c_str(),
+            device.ApiVersionText.c_str(),
+            device.DriverVersionText.c_str(),
+            device.MaxScaleFactor,
+            g_result.NvidiaReflexAvailable ? "yes" : "no",
+            g_result.AmdAntiLag2Available ? "yes" : "no");
+    }
+    else
+    {
+        g_result.Available = false;
+        g_result.Reason = context.GetFailureReason();
+        if (g_result.Reason.empty())
+        {
+            g_result.Reason = context.GetCandidateCount() == 0
+                ? std::string("no Vulkan physical device was reported by the runtime")
+                : std::string("no Vulkan device met the renderer's requirements");
+        }
+        g_result.NvidiaReflexReason = g_result.Reason;
+        g_result.AmdAntiLag2Reason = g_result.Reason;
+
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] feature check: unavailable candidates=%u reason=%s\n",
+            context.GetCandidateCount(),
+            g_result.Reason.c_str());
+    }
+
+    // Released unconditionally. Holding a reference here would keep the
+    // VkInstance alive for the whole session just because the settings dialog
+    // was opened once, and -- worse -- a reference taken by a future headless
+    // probe would make the presenter's Acquire(true) fail.
+    context.Release();
 }
+
+} // namespace
+
 
 const Result& Probe()
 {
-    std::scoped_lock lock(gProbeMutex);
-    if (gProbed)
-        return gResult;
-
-    gProbed = true;
-    auto& context = melonDS::VulkanContext::Get();
-    if (!context.Acquire())
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (!g_probed)
     {
-        gResult.Available = false;
-        gResult.Reason = melonDS::VulkanDispatch::GetLoaderPath().empty()
-            ? "Vulkan loader was not found"
-            : "Vulkan initialization failed";
-        gResult.NvidiaReflexAvailable = false;
-        gResult.NvidiaReflexReason = gResult.Reason;
-        gResult.AmdAntiLag2Available = false;
-        gResult.AmdAntiLag2Reason = gResult.Reason;
-        melonDS::Platform::Log(
-            melonDS::Platform::LogLevel::Error,
-            "MelonPrime Vulkan probe: available=0 loader=%s reason=%s",
-            melonDS::VulkanDispatch::GetLoaderPath().c_str(),
-            gResult.Reason.c_str());
-        return gResult;
+        RunProbeLocked();
+        g_probed = true;
     }
-
-    gResult.Available = context.IsReady();
-    gResult.Reason = gResult.Available ? std::string{} : "No compatible Vulkan device was found";
-    gResult.NvidiaReflexAvailable = gResult.Available && context.SupportsNvidiaReflex();
-    gResult.NvidiaReflexReason = gResult.NvidiaReflexAvailable
-        ? std::string{}
-        : context.GetNvidiaReflexUnavailableReason();
-    gResult.AmdAntiLag2Available = gResult.Available && context.SupportsAmdAntiLag2();
-    gResult.AmdAntiLag2Reason = gResult.AmdAntiLag2Available
-        ? std::string{}
-        : context.GetAmdAntiLag2UnavailableReason();
-    melonDS::Platform::Log(
-        gResult.Available ? melonDS::Platform::LogLevel::Info : melonDS::Platform::LogLevel::Error,
-        "MelonPrime Vulkan probe: available=%d loader=%s device=%s queueFamily=%u reflex=%d reflexReason=\"%s\" antiLag2=%d antiLag2Reason=\"%s\"",
-        gResult.Available ? 1 : 0,
-        melonDS::VulkanDispatch::GetLoaderPath().c_str(),
-        context.GetDeviceProfile().DeviceName.c_str(),
-        context.GetQueueFamilyIndex(),
-        gResult.NvidiaReflexAvailable ? 1 : 0,
-        gResult.NvidiaReflexReason.c_str(),
-        gResult.AmdAntiLag2Available ? 1 : 0,
-        gResult.AmdAntiLag2Reason.c_str());
-    context.Release();
-    return gResult;
+    return g_result;
 }
+
 
 bool IsRuntimeAvailable()
 {
     return Probe().Available;
 }
 
-const std::string& UnavailableReason()
-{
-    return Probe().Reason;
-}
 
 void ReportRuntimeFailure(std::string reason)
 {
-    std::scoped_lock lock(gProbeMutex);
-    gResult.Available = false;
-    gResult.NvidiaReflexAvailable = false;
-    gResult.AmdAntiLag2Available = false;
-    const std::string diagnostic = reason.empty() ? "unspecified runtime failure" : std::move(reason);
-    gResult.Reason = "Vulkan initialization failed";
-    gResult.NvidiaReflexReason = gResult.Reason;
-    gResult.AmdAntiLag2Reason = gResult.Reason;
-    gProbed = true;
-    melonDS::Platform::Log(
-        melonDS::Platform::LogLevel::Error,
-        "MelonPrime Vulkan runtime disabled requested=Vulkan actual=Software reason=%s",
-        diagnostic.c_str());
+    std::lock_guard<std::mutex> lock(g_mutex);
+
+    // First failure wins: it is the one closest to the root cause. Later
+    // failures are consequences of running without a working renderer.
+    if (!g_runtimeFailed)
+    {
+        g_runtimeFailed = true;
+        g_runtimeFailureReason = std::move(reason);
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "[Vulkan] runtime failure reported: %s\n",
+            g_runtimeFailureReason.empty()
+                ? "unspecified Vulkan failure"
+                : g_runtimeFailureReason.c_str());
+    }
+
+    g_probed = false;
 }
+
 
 void ResetProbeForRetry()
 {
-    std::scoped_lock lock(gProbeMutex);
-    gResult = {};
-    gProbed = false;
-}
+    std::lock_guard<std::mutex> lock(g_mutex);
 
-void ResetProbeForTesting()
-{
-    ResetProbeForRetry();
+    // Opening Video Settings calls this to retry a previously failed probe.
+    // A live shared logical device is already stronger evidence than another
+    // physical-device probe, and probing it again while the emulation thread
+    // is actively submitting Vulkan work races NVIDIA's driver during a
+    // Vulkan -> other-backend transition. Keep the successful cached result;
+    // once the last Vulkan client is gone, a later retry can probe normally.
+    if (VulkanDevice::HasSharedDevice(VulkanContext::Get()))
+        return;
+
+    g_runtimeFailed = false;
+    g_runtimeFailureReason.clear();
+    g_probed = false;
 }
 
 } // namespace MelonPrime::VulkanFeatureCheck
 
-#endif
+#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN

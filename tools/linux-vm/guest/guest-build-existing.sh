@@ -66,6 +66,12 @@ if [[ ! -f "$BUILD_DIR/build.ninja" ]]; then
   echo "[guest-build-existing] Run guest-build-only.sh once to configure the build tree." >&2
   exit 1
 fi
+if grep -q '^MELONPRIME_FORCE_DISABLE_VULKAN:BOOL=ON' "$BUILD_DIR/CMakeCache.txt" \
+  || ! grep -Eq '^MELONPRIME_VULKAN_INCLUDE_DIR:PATH=/' "$BUILD_DIR/CMakeCache.txt"; then
+  echo "[guest-build-existing] Existing build-linux tree is not configured with Vulkan enabled." >&2
+  echo "[guest-build-existing] Run guest-build-only.sh once to regenerate a Vulkan-enabled tree." >&2
+  exit 1
+fi
 
 echo "[guest-build-existing] Repo: ${REPO_ROOT}"
 echo "[guest-build-existing] Build dir: ${BUILD_DIR}"

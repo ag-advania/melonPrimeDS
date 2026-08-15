@@ -19,14 +19,18 @@
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
 #include "DX12Context.h"
+#include "DX12Perf.h"
 
 #include <d3dcompiler.h>
 #include <d3d12sdklayers.h>
 
-#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+#include <algorithm>
 #include <iterator>
+#include <limits>
+#endif
 
 #include "Platform.h"
 
@@ -78,9 +82,11 @@ void ResolveEntryPoints()
         return;
     }
 
-    // The renderer compiles its HLSL at runtime. d3dcompiler_47.dll ships with
-    // every Windows version that has D3D12, but a stripped system could still
-    // be missing it, so this stays a separate, non-fatal-at-load failure.
+    // The compute renderer uses committed DXBC. The native presenter still
+    // compiles its small vertex/pixel shader during initialization.
+    // d3dcompiler_47.dll ships with every Windows version that has D3D12, but a
+    // stripped system could still be missing it, so this stays a separate,
+    // non-fatal-at-load failure.
     static const char* const kCompilerNames[] = { "d3dcompiler_47.dll", "d3dcompiler_46.dll" };
     for (const char* name : kCompilerNames)
     {
@@ -136,6 +142,16 @@ bool Fail(const char* context, HRESULT hr)
 }
 
 } // namespace DX12
+
+namespace
+{
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+constexpr u32 kTimestampQueryCount = 10;
+constexpr auto kTimestampFrequencyRefreshInterval = std::chrono::seconds(1);
+#endif
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // DX12Context
@@ -193,43 +209,37 @@ bool DX12Context::PickAdapter(
 {
     const auto& entry = DX12::LoadEntryPoints();
 
-    // Pass 1: hardware adapters, highest performance first. Pass 2: anything
-    // left (which is where WARP shows up) so a machine with only the software
-    // rasterizer still gets a working, if slow, DX12 renderer.
-    for (int pass = 0; pass < 2; pass++)
+    // Native DX12 is a real-time GPU backend. Never silently accept WARP or
+    // Microsoft Basic Render Driver: they can initialize successfully while
+    // running at single-digit FPS, which is worse than the explicit software
+    // renderer and makes a transient hardware-adapter conflict look healthy.
+    for (UINT i = 0; ; i++)
     {
-        const bool allowSoftware = (pass == 1);
+        DX12::ComPtr<IDXGIAdapter1> adapter;
+        HRESULT hr = factory->EnumAdapterByGpuPreference(
+            i,
+            DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
+            IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf()));
+        if (hr == DXGI_ERROR_NOT_FOUND)
+            break;
+        if (FAILED(hr))
+            break;
 
-        for (UINT i = 0; ; i++)
-        {
-            DX12::ComPtr<IDXGIAdapter1> adapter;
-            HRESULT hr = factory->EnumAdapterByGpuPreference(
-                i,
-                DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE,
-                IID_PPV_ARGS(adapter.ReleaseAndGetAddressOf()));
-            if (hr == DXGI_ERROR_NOT_FOUND)
-                break;
-            if (FAILED(hr))
-                break;
+        DXGI_ADAPTER_DESC1 desc{};
+        if (FAILED(adapter->GetDesc1(&desc)))
+            continue;
+        if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)
+            continue;
 
-            DXGI_ADAPTER_DESC1 desc{};
-            if (FAILED(adapter->GetDesc1(&desc)))
-                continue;
+        // Probe without creating: D3D12CreateDevice with a null out-pointer
+        // only reports whether the adapter supports the feature level.
+        if (FAILED(entry.D3D12CreateDevice(
+                adapter.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr)))
+            continue;
 
-            const bool isSoftware = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
-            if (isSoftware != allowSoftware)
-                continue;
-
-            // Probe without creating: D3D12CreateDevice with a null out-pointer
-            // only reports whether the adapter supports the feature level.
-            if (FAILED(entry.D3D12CreateDevice(
-                    adapter.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr)))
-                continue;
-
-            outAdapter = adapter;
-            outDesc = desc;
-            return true;
-        }
+        outAdapter = adapter;
+        outDesc = desc;
+        return true;
     }
 
     return false;
@@ -370,15 +380,19 @@ bool DX12Context::CreateDevice()
     }
     Profile.VendorId = desc.VendorId;
     Profile.DeviceId = desc.DeviceId;
+    LARGE_INTEGER driverVersion{};
+    if (SUCCEEDED(Adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &driverVersion)))
+        Profile.DriverVersion = static_cast<u64>(driverVersion.QuadPart);
     Profile.DedicatedVideoMemory = desc.DedicatedVideoMemory;
     Profile.IsSoftwareAdapter = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
 
     Platform::Log(
         Platform::LogLevel::Info,
-        "DX12: adapter=\"%s\" vendor=%04X device=%04X vram=%lluMB featureLevel=%X.%X shaderModel=%u.%u software=%d debugLayer=%d\n",
+        "DX12: adapter=\"%s\" vendor=%04X device=%04X driver=%016llX vram=%lluMB featureLevel=%X.%X shaderModel=%u.%u software=%d debugLayer=%d\n",
         Profile.AdapterName.c_str(),
         Profile.VendorId,
         Profile.DeviceId,
+        static_cast<unsigned long long>(Profile.DriverVersion),
         static_cast<unsigned long long>(Profile.DedicatedVideoMemory >> 20),
         (static_cast<unsigned>(Profile.FeatureLevel) >> 12) & 0xF,
         (static_cast<unsigned>(Profile.FeatureLevel) >> 8) & 0xF,
@@ -663,6 +677,65 @@ bool DX12CommandContext::Init(ID3D12Device* device, ID3D12CommandQueue* queue)
 
     FenceValue = 0;
     SubmittedValue = 0;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    TimestampFrequency = 0;
+    LastTimestampFrequencyRefresh = {};
+    TimestampWrittenMask = 0;
+    LastTimestampWrittenMask = 0;
+    TimestampSnapshotValues = {};
+    TimestampSnapshotValid = false;
+    TimestampQueriesEnabled = false;
+
+    if (DX12Perf::IsEnabled())
+    {
+        D3D12_QUERY_HEAP_DESC queryDesc{};
+        queryDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+        queryDesc.Count = kTimestampQueryCount;
+        queryDesc.NodeMask = 0;
+
+        u64 frequency = 0;
+        HRESULT queryResult = device->CreateQueryHeap(
+            &queryDesc, IID_PPV_ARGS(TimestampQueryHeap.ReleaseAndGetAddressOf()));
+        if (SUCCEEDED(queryResult)
+            && SUCCEEDED(queue->GetTimestampFrequency(&frequency))
+            && frequency != 0)
+        {
+            D3D12_HEAP_PROPERTIES readbackHeap{};
+            readbackHeap.Type = D3D12_HEAP_TYPE_READBACK;
+            readbackHeap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+            readbackHeap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+            D3D12_RESOURCE_DESC readbackDesc{};
+            readbackDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+            readbackDesc.Width = static_cast<UINT64>(kTimestampQueryCount) * sizeof(u64);
+            readbackDesc.Height = 1;
+            readbackDesc.DepthOrArraySize = 1;
+            readbackDesc.MipLevels = 1;
+            readbackDesc.Format = DXGI_FORMAT_UNKNOWN;
+            readbackDesc.SampleDesc.Count = 1;
+            readbackDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+            queryResult = device->CreateCommittedResource(
+                &readbackHeap,
+                D3D12_HEAP_FLAG_NONE,
+                &readbackDesc,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                nullptr,
+                IID_PPV_ARGS(TimestampReadback.ReleaseAndGetAddressOf()));
+            if (SUCCEEDED(queryResult))
+            {
+                TimestampFrequency = frequency;
+                LastTimestampFrequencyRefresh = std::chrono::steady_clock::now();
+                TimestampQueriesEnabled = true;
+            }
+        }
+        if (!TimestampQueriesEnabled)
+        {
+            TimestampQueryHeap.Reset();
+            TimestampReadback.Reset();
+        }
+    }
+#endif
     Recording = false;
     return true;
 }
@@ -675,6 +748,10 @@ void DX12CommandContext::Shutdown()
     List.Reset();
     Allocator.Reset();
     Fence.Reset();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    TimestampReadback.Reset();
+    TimestampQueryHeap.Reset();
+#endif
 
     if (FenceEvent)
     {
@@ -686,21 +763,39 @@ void DX12CommandContext::Shutdown()
     Queue = nullptr;
     FenceValue = 0;
     SubmittedValue = 0;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    TimestampFrequency = 0;
+    LastTimestampFrequencyRefresh = {};
+    TimestampWrittenMask = 0;
+    LastTimestampWrittenMask = 0;
+    TimestampSnapshotValues = {};
+    TimestampSnapshotValid = false;
+    TimestampQueriesEnabled = false;
+#endif
     Recording = false;
 }
 
-bool DX12CommandContext::WaitForFence(u64 value)
+bool DX12CommandContext::WaitForFence(u64 value, bool recordRasterBegin)
 {
     if (!Fence || value == 0)
+    {
+        if (recordRasterBegin)
+            DX12Perf::RecordRasterBeginNoWait();
         return true;
+    }
 
     if (Fence->GetCompletedValue() >= value)
+    {
+        if (recordRasterBegin)
+            DX12Perf::RecordRasterBeginNoWait();
         return true;
+    }
 
     const HRESULT hr = Fence->SetEventOnCompletion(value, FenceEvent);
     if (FAILED(hr))
         return DX12::Fail("SetEventOnCompletion", hr);
 
+    DX12Perf::ScopedRasterBeginWait rasterWait(recordRasterBegin);
     WaitForSingleObject(FenceEvent, INFINITE);
     return true;
 }
@@ -732,7 +827,7 @@ bool DX12CommandContext::WaitQueueIdle()
     return WaitForFence(queueIdleValue);
 }
 
-ID3D12GraphicsCommandList* DX12CommandContext::Begin()
+ID3D12GraphicsCommandList* DX12CommandContext::Begin(bool recordRasterBegin)
 {
     if (!List || !Allocator)
         return nullptr;
@@ -742,27 +837,181 @@ ID3D12GraphicsCommandList* DX12CommandContext::Begin()
 
     // The allocator can only be recycled once the GPU is done with everything
     // recorded from it.
-    WaitForFence(SubmittedValue);
+    WaitForFence(SubmittedValue, recordRasterBegin);
 
+    return ResetList();
+}
+
+ID3D12GraphicsCommandList* DX12CommandContext::TryBegin()
+{
+    if (!List || !Allocator)
+        return nullptr;
+    if (Recording)
+        return List.Get();
+    if (SubmittedValue != 0 && Fence->GetCompletedValue() < SubmittedValue)
+        return nullptr;
+
+    return ResetList();
+}
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+
+void DX12CommandContext::RefreshTimestampFrequencyIfDue() noexcept
+{
+    if (!TimestampQueriesEnabled || !Queue)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (LastTimestampFrequencyRefresh != std::chrono::steady_clock::time_point{}
+        && now - LastTimestampFrequencyRefresh < kTimestampFrequencyRefreshInterval)
+    {
+        return;
+    }
+
+    // The query frequency can change with the adapter clock domain. Refresh
+    // it at a report-friendly cadence, not once per metric or once per frame;
+    // the timestamp profiler is already developer-only.
+    LastTimestampFrequencyRefresh = now;
+    u64 frequency = 0;
+    if (SUCCEEDED(Queue->GetTimestampFrequency(&frequency)) && frequency != 0)
+        TimestampFrequency = frequency;
+}
+
+#endif
+
+ID3D12GraphicsCommandList* DX12CommandContext::ResetList()
+{
     if (FAILED(Allocator->Reset()))
         return nullptr;
     if (FAILED(List->Reset(Allocator.Get(), nullptr)))
         return nullptr;
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    TimestampWrittenMask = 0;
+    TimestampSnapshotValid = false;
+    RefreshTimestampFrequencyIfDue();
+#endif
     Recording = true;
     return List.Get();
 }
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+
+void DX12CommandContext::WriteTimestamp(u32 queryIndex) noexcept
+{
+    if (!TimestampQueriesEnabled || !Recording || queryIndex >= kTimestampQueryCount)
+        return;
+    List->EndQuery(
+        TimestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, queryIndex);
+    TimestampWrittenMask = static_cast<u16>(
+        TimestampWrittenMask | (static_cast<u16>(1u) << queryIndex));
+}
+
+bool DX12CommandContext::ReadTimestampSnapshot() const noexcept
+{
+    if (!TimestampQueriesEnabled || TimestampFrequency == 0
+        || LastTimestampWrittenMask == 0 || !TimestampReadback)
+    {
+        return false;
+    }
+    if (TimestampSnapshotValid)
+        return true;
+
+    const D3D12_RANGE readRange{
+        0,
+        static_cast<SIZE_T>(kTimestampQueryCount * sizeof(u64))};
+    void* mapped = nullptr;
+    if (FAILED(TimestampReadback->Map(0, &readRange, &mapped)) || !mapped)
+        return false;
+
+    const auto* values = static_cast<const u64*>(mapped);
+    std::copy_n(values, kTimestampQueryCount, TimestampSnapshotValues.begin());
+    TimestampReadback->Unmap(0, nullptr);
+    TimestampSnapshotValid = true;
+    return true;
+}
+
+u64 DX12CommandContext::ReadTimestampSpanNanoseconds(
+    u32 startQuery, u32 endQuery) const noexcept
+{
+    if (!TimestampQueriesEnabled || TimestampFrequency == 0
+        || startQuery >= kTimestampQueryCount || endQuery >= kTimestampQueryCount
+        || startQuery > endQuery
+        || (LastTimestampWrittenMask & (static_cast<u16>(1u) << startQuery)) == 0
+        || (LastTimestampWrittenMask & (static_cast<u16>(1u) << endQuery)) == 0)
+    {
+        return 0;
+    }
+
+    // The first metric maps the complete retired query snapshot. All other
+    // metrics from this completed submission reuse it, so a report with three
+    // GPU spans pays one Map/Unmap pair instead of one pair per span.
+    if (!ReadTimestampSnapshot())
+        return 0;
+    const u64 start = TimestampSnapshotValues[startQuery];
+    const u64 end = TimestampSnapshotValues[endQuery];
+    if (end < start)
+        return 0;
+
+    const long double nanoseconds =
+        static_cast<long double>(end - start) * 1'000'000'000.0L
+        / static_cast<long double>(TimestampFrequency);
+    if (!(nanoseconds > 0.0L)
+        || nanoseconds >= static_cast<long double>((std::numeric_limits<u64>::max)()))
+    {
+        return 0;
+    }
+    return static_cast<u64>(nanoseconds + 0.5L);
+}
+
+#endif
 
 bool DX12CommandContext::Submit()
 {
     if (!Recording)
         return true;
 
-    Recording = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    if (TimestampQueriesEnabled && TimestampWrittenMask != 0)
+    {
+        u32 firstQuery = kTimestampQueryCount;
+        u32 lastQuery = 0;
+        for (u32 queryIndex = 0; queryIndex < kTimestampQueryCount; ++queryIndex)
+        {
+            if ((TimestampWrittenMask & (static_cast<u16>(1u) << queryIndex)) == 0)
+                continue;
+            firstQuery = std::min(firstQuery, queryIndex);
+            lastQuery = std::max(lastQuery, queryIndex);
+        }
+        // Resolve one contiguous range. Unwritten slots inside the range are
+        // harmless and keeping them in the same copy is cheaper than issuing
+        // one ResolveQueryData command for every metric endpoint.
+        if (firstQuery <= lastQuery)
+        {
+            List->ResolveQueryData(
+                TimestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+                firstQuery, lastQuery - firstQuery + 1u, TimestampReadback.Get(),
+                static_cast<UINT64>(firstQuery) * sizeof(u64));
+        }
+    }
+#endif
 
     HRESULT hr = List->Close();
     if (FAILED(hr))
+    {
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+        LastTimestampWrittenMask = 0;
+        TimestampSnapshotValid = false;
+#endif
+        Recording = false;
         return DX12::Fail("ID3D12GraphicsCommandList::Close", hr);
+    }
+
+    Recording = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    TimestampSnapshotValid = false;
+    LastTimestampWrittenMask = TimestampWrittenMask;
+#endif
 
     ID3D12CommandList* lists[] = { List.Get() };
     Queue->ExecuteCommandLists(1, lists);
@@ -774,14 +1023,6 @@ bool DX12CommandContext::Submit()
 
     SubmittedValue = FenceValue;
     return true;
-}
-
-bool DX12CommandContext::Flush()
-{
-    if (!Submit())
-        return false;
-    WaitIdle();
-    return Begin() != nullptr;
 }
 
 // ---------------------------------------------------------------------------

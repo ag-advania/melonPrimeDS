@@ -66,6 +66,33 @@ jobs:
       shell: pwsh
       run: ./tools/ci/audits/audit-melonprime-srp-performance.ps1
 
+    - name: Audit Software raster parity contract
+      run: python ./tools/ci/audits/audit-raster-software-parity.py
+
+    - name: Audit Custom HUD radar color-key contract
+      run: python ./tools/ci/audits/audit-radar-color-key-contract.py
+
+    - name: Audit low-latency marker and vendor ABI contract
+      run: python ./tools/ci/audits/audit-low-latency-contract.py
+
+    - name: Audit renderer telemetry zero-overhead contract
+      run: python ./tools/ci/audits/audit-renderer-perf-zero-overhead.py
+
+    # The Vulkan backend ships its SPIR-V as committed generated sources, so a
+    # GLSL edit that was never regenerated, or a variant that stopped compiling,
+    # would only show up as a black screen on a machine with a Vulkan GPU. Both
+    # tools skip cleanly when the shader toolchain is missing, so install it.
+    - name: Install Vulkan shader toolchain
+      run: |
+        sudo apt update
+        sudo apt install -y glslang-tools spirv-tools
+
+    - name: Verify committed Vulkan SPIR-V source synchronization
+      run: python ./tools/vulkan/compile-shaders.py --check-source-sync
+
+    - name: Audit Vulkan compute shaders
+      run: python ./tools/ci/audits/check-vulkan-shaders.py
+
     - name: Verify generated HUD schema
       shell: pwsh
       run: |
@@ -110,33 +137,33 @@ jobs:
         grep -F 'VK_NV_LOW_LATENCY_2_EXTENSION_NAME' "${MELONPRIME_VULKAN_HEADERS_DIR}/vulkan/vulkan_core.h"
         grep -F 'VK_AMD_ANTI_LAG_EXTENSION_NAME' "${MELONPRIME_VULKAN_HEADERS_DIR}/vulkan/vulkan_core.h"
 
-    - name: Configure
-      run: cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONDS_EMBED_BUILD_INFO=ON -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_VULKAN_INCLUDE_DIR="${MELONPRIME_VULKAN_HEADERS_DIR}"
+    - name: Configure Release build
+      run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DMELONDS_EMBED_BUILD_INFO=ON -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_VULKAN_INCLUDE_DIR="${MELONPRIME_VULKAN_HEADERS_DIR}"
 
     - name: Build
       run: |
         cmake --build build
         DESTDIR=AppDir cmake --install build
 
+    - name: Run raster edge executable vectors
+      run: |
+        cmake --build build --target melonprime_raster_edge_vectors
+        ./build/melonprime_raster_edge_vectors
+
     - name: Build with Vulkan completely disabled
       run: |
-        cmake -B build-vulkan-off -G Ninja -DCMAKE_INSTALL_PREFIX=/usr -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=OFF -DMELONPRIME_FORCE_DISABLE_VULKAN=ON
+        cmake -B build-vulkan-off -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=OFF -DMELONPRIME_FORCE_DISABLE_VULKAN=ON
         cmake --build build-vulkan-off
 
     - name: Build Vulkan debug validation configuration
       if: matrix.arch.name == 'x86_64'
       run: |
-        cmake -B build-validation -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_VULKAN_INCLUDE_DIR="${MELONPRIME_VULKAN_HEADERS_DIR}"
+        cmake -B build-validation -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF -DMELONPRIME_WAYLAND_POINTER_LOCK=ON -DMELONPRIME_ENABLE_VULKAN=ON -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF -DMELONPRIME_VULKAN_INCLUDE_DIR="${MELONPRIME_VULKAN_HEADERS_DIR}"
         cmake --build build-validation
 
-    # No ROM is loaded here (CI cannot ship one), so this only exercises
-    # startup: loader -> instance -> device selection -> the Vulkan output
-    # subsystem. ScreenPanelVulkan deliberately defers building the native
-    # presenter/swapchain until a game is actually running (see
-    # "fix(vulkan): preserve Qt splash before emulation" -- it keeps the
-    # native window owned by Qt so the splash screen can paint without
-    # competing with a swapchain), so "VulkanPresenter: initialized" is never
-    # reachable without a ROM and must not be asserted here.
+    # No ROM is loaded here (CI cannot ship one), so this exercises Vulkan
+    # startup through validation-layer activation, instance creation, native
+    # surface creation, device selection, and presenter/swapchain readiness.
     #
     # At the 12s mark, timeout sends SIGTERM to xvfb-run, which tears down
     # its Xvfb server; melonPrimeDS then sees its X connection break and
@@ -161,9 +188,12 @@ jobs:
         status=$?
         set -e
         test "$status" -eq 0 -o "$status" -eq 124
-        grep -F 'VulkanContext: instance API=1.1 validation=1' build-validation/vulkan-validation.log
-        grep -F 'MelonPrimeVulkanOutput: initialized' build-validation/vulkan-validation.log
-        ! grep -E 'VUID-|VulkanValidation:.*(ERROR|Error)' build-validation/vulkan-validation.log
+        grep -F '[Vulkan] validation layer enabled' build-validation/vulkan-validation.log
+        grep -E '\[Vulkan\] instance created \(API 1\.1\.0 requested, [0-9]+ extensions, 1 layers\)' build-validation/vulkan-validation.log
+        grep -F '[Vulkan] presentation surface created backend=' build-validation/vulkan-validation.log
+        grep -F '[Vulkan] presentation: requested-vsync=' build-validation/vulkan-validation.log
+        grep -F '[Vulkan] presenter ready:' build-validation/vulkan-validation.log
+        ! grep -E 'VUID-|Vulkan/validation' build-validation/vulkan-validation.log
 
     # The smoke test above redirects the run to a log file it asserts
     # against without ever printing it, so a failure otherwise gives no
@@ -172,12 +202,50 @@ jobs:
       if: always() && matrix.arch.name == 'x86_64'
       run: cat build-validation/vulkan-validation.log || true
 
-    - uses: actions/upload-artifact@v7
+    # This diagnostic artifact is useful evidence, but a transient GitHub
+    # artifact-service timeout must not prevent the release binary from being
+    # uploaded. Retry the upload explicitly: upload-artifact@v7 does not have
+    # a retry-limit input, and retrying with overwrite handles a partial first
+    # attempt that created the artifact before the request timed out.
+    - name: Upload Vulkan validation log (attempt 1)
+      id: upload_vulkan_validation_log_1
       if: always() && matrix.arch.name == 'x86_64'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
       with:
         name: vulkan-validation-log-${{ matrix.arch.name }}
         path: build-validation/vulkan-validation.log
         archive: false
+
+    - name: Wait before retrying Vulkan validation log upload
+      if: always() && matrix.arch.name == 'x86_64' && steps.upload_vulkan_validation_log_1.outcome == 'failure'
+      run: sleep 15
+
+    - name: Upload Vulkan validation log (attempt 2)
+      id: upload_vulkan_validation_log_2
+      if: always() && matrix.arch.name == 'x86_64' && steps.upload_vulkan_validation_log_1.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: vulkan-validation-log-${{ matrix.arch.name }}
+        path: build-validation/vulkan-validation.log
+        archive: false
+        overwrite: true
+
+    - name: Wait before final Vulkan validation log upload retry
+      if: always() && matrix.arch.name == 'x86_64' && steps.upload_vulkan_validation_log_2.outcome == 'failure'
+      run: sleep 15
+
+    - name: Upload Vulkan validation log (attempt 3)
+      id: upload_vulkan_validation_log_3
+      if: always() && matrix.arch.name == 'x86_64' && steps.upload_vulkan_validation_log_2.outcome == 'failure'
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: vulkan-validation-log-${{ matrix.arch.name }}
+        path: build-validation/vulkan-validation.log
+        archive: false
+        overwrite: true
 
     - name: Verify developer HUD golden harness is absent from release binary
       run: |
@@ -199,12 +267,24 @@ jobs:
         wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-${{ matrix.arch.name }}.AppImage
         chmod a+x linuxdeploy-*.AppImage
 
+        # appimagetool (invoked internally by linuxdeploy's "appimage" output
+        # plugin below) downloads this runtime from GitHub on every run and
+        # has no retry of its own; observed failing the whole build outright
+        # on a transient blip ("Failed to download runtime: server returned
+        # status code 0"). Fetch it ourselves with retries and hand it to
+        # the plugin via LDAI_RUNTIME_FILE so a blip here doesn't fail the
+        # AppImage step.
+        wget --tries=5 --waitretry=5 --retry-connrefused \
+          -O runtime-${{ matrix.arch.name }} \
+          https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-${{ matrix.arch.name }}
+
     - name: Build the AppImage
       env:
         EXTRA_PLATFORM_PLUGINS: libqwayland-egl.so;libqwayland-generic.so
         EXTRA_QT_PLUGINS: waylandcompositor
         OUTPUT: melonPrimeDS-${{ matrix.arch.name }}.AppImage
         QMAKE: /usr/lib/qt6/bin/qmake
+        LDAI_RUNTIME_FILE: ${{ github.workspace }}/runtime-${{ matrix.arch.name }}
       run: |
         ./linuxdeploy-${{ matrix.arch.name }}.AppImage --appdir AppDir --plugin qt --output appimage
 

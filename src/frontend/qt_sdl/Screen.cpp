@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include <array>
+#include <vector>
 #include <optional>
 #include <utility>
 #include <cmath>
@@ -51,27 +52,11 @@
 #include "Config.h"
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#include "DX12Perf.h"
 #include "GPU_DX12.h"
 #include "MelonPrimeDX12FeatureCheck.h"
 #include "MelonPrimeDX12SurfacePresenter.h"
 #include <QPointer>
-#endif
-
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-#include "GPU_Vulkan.h"
-#include "GPU3D_Vulkan.h"
-#include "MelonPrimeVulkanFilterMode.h"
-#include "MelonPrimeVulkanFrameQueue.h"
-#include "MelonPrimeVulkanFeatureCheck.h"
-#include "MelonPrimeVulkanOutput.h"
-#include "MelonPrimeVulkanSurfacePresenter.h"
-#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
-#include "MelonPrimeVulkanSurfaceMacOS.h"
-#endif
-#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-#include "MelonPrimeVulkanSurfaceHostLinux.h"
-#include <QPointer>
-#endif
 #endif
 
 #include "main_shaders.h"
@@ -1820,16 +1805,23 @@ protected:
 };
 } // namespace
 
+QMutex g_dx12PanelRegistryLock;
+std::vector<ScreenPanelDX12*> g_dx12PanelRegistry;
+
 struct ScreenPanelDX12::DX12State
 {
     MelonPrime::DX12SurfacePresenter presenter;
     QPointer<DX12SurfaceHost> surface;
     QMutex layoutLock;
-    QTransform screenTransform[kMaxScreenTransforms];
+    float screenMatrix[kMaxScreenTransforms][6]{};
+    int screenKind[kMaxScreenTransforms]{};
+    int numScreens = 0;
+    RendererOutputLease frameLease;
     QMutex fallbackLock;
     QImage fallbackFrame;
-    QImage logicalFrame;
-    QImage physicalFrame;
+    QImage hudFrame;
+    QRect hudRect;
+    QImage osdStrip;
     std::atomic_bool surfaceVisibleRequested{false};
     // Set by the GUI thread while the Custom HUD on-screen editor owns the
     // panel, read by the emulation thread's paused draw pass.
@@ -1849,12 +1841,48 @@ ScreenPanelDX12::ScreenPanelDX12(QWidget* parent)
     dx12->surface = new DX12SurfaceHost(this);
     dx12->surface->setGeometry(rect());
     dx12->surface->hide();
+
+    QMutexLocker lock(&g_dx12PanelRegistryLock);
+    g_dx12PanelRegistry.push_back(this);
 }
 
 ScreenPanelDX12::~ScreenPanelDX12()
 {
+    {
+        QMutexLocker lock(&g_dx12PanelRegistryLock);
+        g_dx12PanelRegistry.erase(
+            std::remove(g_dx12PanelRegistry.begin(), g_dx12PanelRegistry.end(), this),
+            g_dx12PanelRegistry.end());
+    }
+
     if (dx12)
+    {
+        prepareForRendererTransition();
         dx12->presenter.Shutdown();
+    }
+}
+
+void ScreenPanelDX12::prepareForRendererTransition()
+{
+    if (!dx12)
+        return;
+
+    // Keep the same lifetime contract as the Vulkan presenter: old queue work
+    // must be complete before descriptor identity is cleared or the renderer
+    // output lease is dropped.
+    dx12->presenter.Quiesce();
+    dx12->presenter.InvalidateDirectDescriptorCache();
+    dx12->frameLease.ReleaseNow();
+}
+
+void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance)
+{
+    QMutexLocker lock(&g_dx12PanelRegistryLock);
+    for (ScreenPanelDX12* panel : g_dx12PanelRegistry)
+    {
+        if (panel->emuInstance == instance)
+            panel->prepareForRendererTransition();
+    }
 }
 
 bool ScreenPanelDX12::initDX12()
@@ -1880,13 +1908,11 @@ void ScreenPanelDX12::setupScreenLayout()
         return;
 
     QMutexLocker lock(&dx12->layoutLock);
-    for (int index = 0; index < numScreens; ++index)
+    dx12->numScreens = std::min(numScreens, kMaxScreenTransforms);
+    for (int index = 0; index < dx12->numScreens; ++index)
     {
-        const float* matrix = screenMatrix[index];
-        dx12->screenTransform[index].setMatrix(
-            matrix[0], matrix[1], 0.0f,
-            matrix[2], matrix[3], 0.0f,
-            matrix[4], matrix[5], 1.0f);
+        std::memcpy(dx12->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
+        dx12->screenKind[index] = screenKind[index];
     }
 }
 
@@ -1985,115 +2011,353 @@ void ScreenPanelDX12::drawScreen()
     auto* nds = emuInstance->getNDS();
     if (!nds)
         return;
-    const RendererOutput output = nds->GPU.GetRendererOutput();
-    if (output.Kind != RendererOutputKind::CpuBgra || !output.Top || !output.Bottom)
+    auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
+    RendererOutputLease outputLease = nds->GPU.AcquireRendererOutputLease();
+    const RendererOutput& output = outputLease.Output;
+    const DX12PresentedFrame* gpuFrame = nullptr;
+    const u32* cpuTop = nullptr;
+    const u32* cpuBottom = nullptr;
+    u32 sourceWidth = output.Width;
+    u32 sourceHeight = output.Height;
+    if (output.Kind == RendererOutputKind::DX12Buffer && output.Top)
+    {
+        gpuFrame = static_cast<const DX12PresentedFrame*>(output.Top);
+        sourceWidth = gpuFrame->Width;
+        sourceHeight = gpuFrame->Height;
+    }
+    else if (output.Kind == RendererOutputKind::CpuBgra && output.Top && output.Bottom)
+    {
+        cpuTop = static_cast<const u32*>(output.Top);
+        cpuBottom = static_cast<const u32*>(output.Bottom);
+    }
+    if ((!gpuFrame && (!cpuTop || !cpuBottom)) || sourceWidth == 0 || sourceHeight == 0)
         return;
+
+    float matrices[kMaxScreenTransforms][6]{};
+    int kinds[kMaxScreenTransforms]{};
+    int screens = 0;
+    {
+        QMutexLocker lock(&dx12->layoutLock);
+        screens = dx12->numScreens;
+        for (int index = 0; index < screens; ++index)
+        {
+            std::memcpy(matrices[index], dx12->screenMatrix[index], sizeof(float) * 6);
+            kinds[index] = dx12->screenKind[index];
+        }
+    }
 
     const int logicalWidth = std::max(1, width());
     const int logicalHeight = std::max(1, height());
-    if (dx12->logicalFrame.width() != logicalWidth
-        || dx12->logicalFrame.height() != logicalHeight
-        || dx12->logicalFrame.format() != QImage::Format_RGB32)
-    {
-        dx12->logicalFrame = QImage(logicalWidth, logicalHeight, QImage::Format_RGB32);
-    }
-    dx12->logicalFrame.fill(Qt::black);
-
-    const int sourceWidth = static_cast<int>(std::max(1u, output.Width));
-    const int sourceHeight = static_cast<int>(std::max(1u, output.Height));
-    QImage screen[2] = {
-        QImage(
-            static_cast<uchar*>(output.Top),
-            sourceWidth,
-            sourceHeight,
-            sourceWidth * static_cast<int>(sizeof(u32)),
-            QImage::Format_RGB32),
-        QImage(
-            static_cast<uchar*>(output.Bottom),
-            sourceWidth,
-            sourceHeight,
-            sourceWidth * static_cast<int>(sizeof(u32)),
-            QImage::Format_RGB32),
-    };
-
-    QTransform transforms[kMaxScreenTransforms];
-    {
-        QMutexLocker lock(&dx12->layoutLock);
-        for (int index = 0; index < numScreens; ++index)
-            transforms[index] = dx12->screenTransform[index];
-    }
-
-    QPainter painter(&dx12->logicalFrame);
-    painter.setRenderHint(QPainter::SmoothPixmapTransform, filter);
-    const QRect screenRect(0, 0, 256, 192);
-    for (int index = 0; index < numScreens; ++index)
-    {
-        painter.setTransform(transforms[index]);
-        painter.drawImage(screenRect, screen[screenKind[index]]);
-    }
-
-#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&screen[1])
-#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
-#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
-
-    osdUpdate();
-    if (osdEnabled)
-    {
-        QMutexLocker osdLock(&osdMutex);
-        int y = kOSDMargin;
-        painter.resetTransform();
-        for (const OSDItem& item : osdItems)
-        {
-            painter.drawImage(kOSDMargin, y, item.bitmap);
-            y += item.bitmap.height();
-        }
-    }
-    painter.end();
-
     const qreal dpr = devicePixelRatioF();
-    const int physicalWidth = std::max(1, qRound(logicalWidth * dpr));
-    const int physicalHeight = std::max(1, qRound(logicalHeight * dpr));
-    const QImage* presentFrame = &dx12->logicalFrame;
-    if (physicalWidth != logicalWidth || physicalHeight != logicalHeight)
+    const u32 physicalWidth = static_cast<u32>(std::max(1, qRound(logicalWidth * dpr)));
+    const u32 physicalHeight = static_cast<u32>(std::max(1, qRound(logicalHeight * dpr)));
+    const bool waitForPresentSlot = !renderer || !renderer->ShouldBypassPresentWait();
+    if (gpuFrame && gpuFrame->HasDirectSampledOutput())
+        dx12->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
+    if (!dx12->presenter.BeginFrame(
+            physicalWidth, physicalHeight, waitForPresentSlot))
     {
-        dx12->physicalFrame = dx12->logicalFrame.scaled(
-            physicalWidth,
-            physicalHeight,
-            Qt::IgnoreAspectRatio,
-            filter ? Qt::SmoothTransformation : Qt::FastTransformation);
-        presentFrame = &dx12->physicalFrame;
-    }
-
-    const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
-    if (!dx12->presenter.UploadFrame(
-            presentFrame->constBits(),
-            static_cast<std::uint32_t>(presentFrame->width()),
-            static_cast<std::uint32_t>(presentFrame->height()),
-            static_cast<std::size_t>(presentFrame->bytesPerLine()),
-            vsync))
-    {
-        {
-            QMutexLocker fallbackLock(&dx12->fallbackLock);
-            dx12->fallbackFrame = dx12->logicalFrame.copy();
-        }
         requestNativeSurfaceVisible(false);
         reportRuntimeFailure(dx12->presenter.LastError().c_str());
         return;
     }
 
-    auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
+    // BeginFrame retires the preceding presentation command list, so its
+    // compositor slot can be returned before this frame retains another one.
+    dx12->frameLease.ReleaseNow();
+    if (gpuFrame)
+        dx12->frameLease = std::move(outputLease);
+
+    bool screenUploaded[2]{false, false};
+    for (int index = 0; index < screens; ++index)
+    {
+        const int kind = kinds[index] & 1;
+        if (screenUploaded[kind])
+            continue;
+        const auto layer = kind == 0
+            ? MelonPrime::DX12SurfacePresenter::Layer::ScreenTop
+            : MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom;
+        if (gpuFrame)
+        {
+            screenUploaded[kind] = gpuFrame->HasDirectSampledOutput()
+                ? dx12->presenter.UploadLayerFromTexture(layer, *gpuFrame)
+                : dx12->presenter.UploadLayerFromBuffer(
+                    layer, *gpuFrame,
+                    kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
+        }
+        else
+        {
+            screenUploaded[kind] = dx12->presenter.UploadLayer(
+                layer,
+                kind == 0 ? static_cast<const void*>(cpuTop) : static_cast<const void*>(cpuBottom),
+                sourceWidth,
+                sourceHeight,
+                static_cast<std::size_t>(sourceWidth) * sizeof(u32));
+        }
+    }
+
+    const float viewportWidth = static_cast<float>(dx12->presenter.GetWidth());
+    const float viewportHeight = static_cast<float>(dx12->presenter.GetHeight());
+    const float scaleX = viewportWidth / static_cast<float>(logicalWidth);
+    const float scaleY = viewportHeight / static_cast<float>(logicalHeight);
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    QImage bottomScreenImage;
+    if (cpuBottom)
+    {
+        bottomScreenImage = QImage(
+            reinterpret_cast<const uchar*>(cpuBottom),
+            static_cast<int>(sourceWidth),
+            static_cast<int>(sourceHeight),
+            static_cast<int>(sourceWidth * sizeof(u32)),
+            QImage::Format_RGB32);
+    }
+
+    bool hudUploaded = false;
+    bool hudVisible = false;
+    auto* mpForHud = emuThread->GetMelonPrimeCore();
+    const bool hudEditMode = mpForHud
+        && MelonPrime::CustomHud_IsEditMode(mpForHud->HudConfigState());
+    if (MelonPrimeHud_CanRenderForCore(mpForHud, hudEditMode))
+    {
+        if (dx12->hudFrame.width() != logicalWidth
+            || dx12->hudFrame.height() != logicalHeight
+            || dx12->hudFrame.format() != QImage::Format_ARGB32_Premultiplied)
+        {
+            dx12->hudFrame = QImage(
+                logicalWidth, logicalHeight, QImage::Format_ARGB32_Premultiplied);
+            dx12->hudFrame.fill(Qt::transparent);
+        }
+        QPainter painter(&dx12->hudFrame);
+        // hudFrame is retained between frames so only the current HUD dirty
+        // rectangle needs uploading. SourceOver would leave old pixels behind
+        // wherever Overlay[0] became transparent (most visibly a moving
+        // crosshair), because transparent source pixels do not erase the
+        // destination. Source replacement makes the transparent pixels clear
+        // the retained image while preserving the dirty-only upload.
+        painter.setCompositionMode(QPainter::CompositionMode_Source);
+#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (cpuBottom ? &bottomScreenImage : nullptr)
+#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
+        painter.end();
+
+        auto& instcfg = emuInstance->getLocalConfig();
+        hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
+            emuInstance, instcfg, mpForHud, m_hudEnabled, hudEditMode);
+        dx12->hudRect = m_hudPrevDirty.intersected(
+            QRect(0, 0, logicalWidth, logicalHeight));
+        if (hudVisible && !dx12->hudRect.isEmpty())
+        {
+            MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
+                MelonPrimePerf::HudPhase::UploadPrepare);
+            const int patchWidth = dx12->hudRect.width();
+            const int patchHeight = dx12->hudRect.height();
+            hudUploaded = dx12->presenter.UploadLayerRegion(
+                MelonPrime::DX12SurfacePresenter::Layer::Hud,
+                dx12->hudFrame.constBits(),
+                static_cast<u32>(dx12->hudRect.x()),
+                static_cast<u32>(dx12->hudRect.y()),
+                static_cast<u32>(patchWidth),
+                static_cast<u32>(patchHeight),
+                static_cast<std::size_t>(dx12->hudFrame.bytesPerLine()));
+        }
+    }
+
+    bool gpuRadarVisible = false;
+    MelonPrime::DX12SurfacePresenter::Quad gpuRadarQuad;
+    u32 gpuRadarCenterY = 0;
+    // Keep the native colour-key pass under the same visibility contract as
+    // the CPU HUD image. BtmOverlayEnable remains configured when CustomHUD is
+    // toggled off and must not independently paint the top screen.
+    if (gpuFrame && hudVisible && m_radarEnable)
+    {
+        const float* topMatrix = nullptr;
+        for (int index = 0; index < screens; ++index)
+        {
+            if ((kinds[index] & 1) == 0)
+            {
+                topMatrix = matrices[index];
+                break;
+            }
+        }
+        if (mpForHud && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                emuInstance, mpForHud->GetCurrentRom(), mpForHud->GetPlayerPosition()))
+        {
+            if (!screenUploaded[1])
+            {
+                screenUploaded[1] = gpuFrame->HasDirectSampledOutput()
+                    ? dx12->presenter.UploadLayerFromTexture(
+                        MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom, *gpuFrame)
+                    : dx12->presenter.UploadLayerFromBuffer(
+                        MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
+                        *gpuFrame,
+                        gpuFrame->BottomOffset);
+            }
+
+            const float anchorX = topMatrix[0] * m_radarAnchorDsX
+                + topMatrix[1] * m_radarAnchorDsY + topMatrix[4];
+            const float anchorY = topMatrix[2] * m_radarAnchorDsX
+                + topMatrix[3] * m_radarAnchorDsY + topMatrix[5];
+            const int destinationX = static_cast<int>(m_hudOriginX) + static_cast<int>(
+                (anchorX - m_hudOriginX) + m_radarDstX * m_hudScale);
+            const int destinationY = static_cast<int>(m_hudOriginY) + static_cast<int>(
+                (anchorY - m_hudOriginY) + m_radarDstY * m_hudScale);
+            const float destinationSize = static_cast<float>(m_radarDstSize) * m_hudScale;
+            gpuRadarQuad.Axis[0] = destinationSize * scaleX;
+            gpuRadarQuad.Axis[3] = destinationSize * scaleY;
+            gpuRadarQuad.Origin[0] = static_cast<float>(destinationX) * scaleX;
+            gpuRadarQuad.Origin[1] = static_cast<float>(destinationY) * scaleY;
+            gpuRadarQuad.Origin[2] = viewportWidth;
+            gpuRadarQuad.Origin[3] = viewportHeight;
+            const u8 hunter = std::min<u8>(
+                mpForHud->GetHunterID(), MelonPrime::kHunterCount - 1);
+            gpuRadarCenterY = static_cast<u32>(MelonPrime::kBtmOverlaySrcCenterY[hunter]);
+            gpuRadarVisible = screenUploaded[1]
+                && m_radarSrcRadius > 0 && m_radarOpacity > 0.0f;
+        }
+    }
+#endif
+
+    QSize osdSize;
+    bool osdUploaded = false;
+    osdUpdate();
+    if (osdEnabled)
+    {
+        QMutexLocker osdLock(&osdMutex);
+        int stripWidth = 0;
+        int stripHeight = 0;
+        for (const OSDItem& item : osdItems)
+        {
+            if (!item.bitmap.isNull())
+            {
+                stripWidth = std::max(stripWidth, item.bitmap.width());
+                stripHeight += item.bitmap.height();
+            }
+        }
+        if (stripWidth > 0 && stripHeight > 0)
+        {
+            if (dx12->osdStrip.width() != stripWidth
+                || dx12->osdStrip.height() != stripHeight
+                || dx12->osdStrip.format() != QImage::Format_ARGB32_Premultiplied)
+            {
+                dx12->osdStrip = QImage(
+                    stripWidth, stripHeight, QImage::Format_ARGB32_Premultiplied);
+            }
+            dx12->osdStrip.fill(Qt::transparent);
+            int y = 0;
+            for (const OSDItem& item : osdItems)
+            {
+                if (item.bitmap.isNull())
+                    continue;
+                const int rowBytes = item.bitmap.width() * 4;
+                for (int row = 0; row < item.bitmap.height(); ++row)
+                {
+                    std::memcpy(
+                        dx12->osdStrip.scanLine(y + row),
+                        item.bitmap.constScanLine(row),
+                        static_cast<std::size_t>(rowBytes));
+                }
+                y += item.bitmap.height();
+            }
+            osdSize = QSize(stripWidth, stripHeight);
+            osdUploaded = dx12->presenter.UploadLayer(
+                MelonPrime::DX12SurfacePresenter::Layer::Osd,
+                dx12->osdStrip.constBits(),
+                static_cast<u32>(stripWidth),
+                static_cast<u32>(stripHeight),
+                static_cast<std::size_t>(dx12->osdStrip.bytesPerLine()));
+        }
+    }
+
+    dx12->presenter.BeginComposition();
+    for (int index = 0; index < screens; ++index)
+    {
+        const int kind = kinds[index] & 1;
+        if (!screenUploaded[kind])
+            continue;
+        const float* matrix = matrices[index];
+        MelonPrime::DX12SurfacePresenter::Quad quad;
+        quad.Axis[0] = matrix[0] * 256.0f * scaleX;
+        quad.Axis[1] = matrix[1] * 256.0f * scaleY;
+        quad.Axis[2] = matrix[2] * 192.0f * scaleX;
+        quad.Axis[3] = matrix[3] * 192.0f * scaleY;
+        quad.Origin[0] = matrix[4] * scaleX;
+        quad.Origin[1] = matrix[5] * scaleY;
+        quad.Origin[2] = viewportWidth;
+        quad.Origin[3] = viewportHeight;
+        dx12->presenter.DrawLayer(
+            kind == 0 ? MelonPrime::DX12SurfacePresenter::Layer::ScreenTop
+                      : MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
+            quad,
+            MelonPrime::DX12SurfacePresenter::Blend::Opaque,
+            filter);
+    }
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (hudUploaded)
+    {
+        MelonPrime::DX12SurfacePresenter::Quad quad;
+        quad.Axis[0] = static_cast<float>(dx12->hudRect.width()) * scaleX;
+        quad.Axis[3] = static_cast<float>(dx12->hudRect.height()) * scaleY;
+        quad.Origin[0] = static_cast<float>(dx12->hudRect.x()) * scaleX;
+        quad.Origin[1] = static_cast<float>(dx12->hudRect.y()) * scaleY;
+        quad.Origin[2] = viewportWidth;
+        quad.Origin[3] = viewportHeight;
+        dx12->presenter.DrawLayer(
+            MelonPrime::DX12SurfacePresenter::Layer::Hud,
+            quad,
+            MelonPrime::DX12SurfacePresenter::Blend::Premultiplied,
+            filter);
+    }
+
+    // The GPU colour-key pass is intentionally after the SVG/frame HUD layer:
+    // picked radar pixels are the foremost Custom HUD layer.
+    if (gpuRadarVisible)
+    {
+        dx12->presenter.DrawRadar(
+            gpuRadarQuad, m_radarOpacity, gpuRadarCenterY,
+            static_cast<u32>(m_radarSrcRadius));
+    }
+#endif
+
+    if (osdUploaded)
+    {
+        MelonPrime::DX12SurfacePresenter::Quad quad;
+        quad.Axis[0] = static_cast<float>(osdSize.width()) * scaleX;
+        quad.Axis[3] = static_cast<float>(osdSize.height()) * scaleY;
+        quad.Origin[0] = static_cast<float>(kOSDMargin) * scaleX;
+        quad.Origin[1] = static_cast<float>(kOSDMargin) * scaleY;
+        quad.Origin[2] = viewportWidth;
+        quad.Origin[3] = viewportHeight;
+        dx12->presenter.DrawLayer(
+            MelonPrime::DX12SurfacePresenter::Layer::Osd,
+            quad,
+            MelonPrime::DX12SurfacePresenter::Blend::Premultiplied,
+            false);
+    }
+
+    if (!dx12->presenter.EndFrame())
+    {
+        requestNativeSurfaceVisible(false);
+        reportRuntimeFailure(dx12->presenter.LastError().c_str());
+        return;
+    }
+
+    const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
     if (renderer)
+    {
         renderer->BeginReflexPresent();
+        renderer->BeginIntelXeLLPresent();
+    }
     const bool presented = dx12->presenter.Present(vsync);
     if (renderer)
+    {
         renderer->EndReflexPresent();
+        renderer->EndIntelXeLLPresent();
+    }
 
     if (!presented)
     {
-        {
-            QMutexLocker fallbackLock(&dx12->fallbackLock);
-            dx12->fallbackFrame = dx12->logicalFrame.copy();
-        }
         requestNativeSurfaceVisible(false);
         reportRuntimeFailure(dx12->presenter.LastError().c_str());
         return;
@@ -2125,1322 +2389,6 @@ void ScreenPanelDX12::paintEvent(QPaintEvent* event)
 #endif
 
 
-
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-struct ScreenPanelVulkan::VulkanState
-{
-    MelonPrime::MelonPrimeVulkanFrameQueue frameQueue;
-    MelonPrime::MelonPrimeVulkanFrameQueuePolicy framePolicy;
-    MelonPrime::MelonPrimeVulkanOutput output;
-    MelonPrime::MelonPrimeVulkanSurfacePresenter presenter;
-    // Published by the VBlank compose pass, read by the presentation pass.
-    // Both run on the emulation thread; the atomic only documents the handoff.
-    std::atomic<bool> nativeMenuHeld{false};
-    QMutex layoutLock;
-    std::vector<MelonPrime::VulkanPresentRegion> regions;
-    std::uint32_t surfaceWidth = 0;
-    std::uint32_t surfaceHeight = 0;
-    QImage overlayFrame;
-    QLabel* modalPauseOverlay = nullptr;
-    // Guards nativeWindow/nativeWindowGeneration: the GUI thread publishes the
-    // platform presentation handle, the emulation thread builds swapchains from
-    // it. presenterWindowGeneration stays emulation-thread-owned and records
-    // which generation the live presenter was built against.
-    QMutex nativeWindowLock;
-    MelonPrime::VulkanNativeWindowInfo nativeWindow;
-    std::uint64_t nativeWindowGeneration = 0;
-    std::uint64_t presenterWindowGeneration = 0;
-#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-    // Vulkan draws only here; the panel itself keeps Qt's backing store for its
-    // software output. Owned as a Qt child, cleared in releaseNativeSurface().
-    QPointer<MelonPrime::VulkanSurfaceHostLinux> linuxSurfaceHost;
-#endif
-    QMutex softwareBufferLock;
-    QImage softwareScreen[2] = {
-        QImage(256, 192, QImage::Format_RGB32),
-        QImage(256, 192, QImage::Format_RGB32),
-    };
-    QTransform softwareScreenTransform[kMaxScreenTransforms];
-    // Emulation-thread view of whether the Vulkan surface should be on screen,
-    // so a show/hide is only posted to the GUI thread on a real transition.
-    bool surfaceVisibleRequested = false;
-    bool initialized = false;
-    bool presenterInitialized = false;
-    bool softwareMode = true;
-    bool hasSoftwareBuffers = false;
-    bool runtimeFailureReported = false;
-    bool softwarePaintFailureReported = false;
-    unsigned consecutiveFailures = 0;
-    // Set when the panel hands presentation back to Qt, cleared by the paint
-    // pass that acts on it, so transition debugging logs one line per handoff
-    // instead of one per frame.
-    std::atomic_bool logSoftwarePaintHandoff{false};
-#ifdef MELONPRIME_CUSTOM_HUD
-    // Set from the GUI thread when the Custom HUD on-screen editor takes over
-    // the panel, read by the emulation thread's draw pass. The editor runs with
-    // emulation paused, so the panel must keep composing and presenting.
-    std::atomic_bool hudEditLivePresentation{false};
-#endif
-};
-
-namespace
-{
-
-// Opt-in tracing for the Vulkan/software presentation handoff
-// (MELONPRIME_VULKAN_TRANSITION_DEBUG=1). Only state transitions log, never
-// per-frame work, and nothing is emitted unless the variable is set.
-bool VulkanTransitionDebugEnabled()
-{
-    static const bool enabled = []() {
-        const char* const value = std::getenv("MELONPRIME_VULKAN_TRANSITION_DEBUG");
-        return value != nullptr && value[0] != '\0' && value[0] != '0';
-    }();
-    return enabled;
-}
-
-#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-// Resolves the Vulkan WSI handles of one *mapped* native widget. The caller
-// passes the dedicated Vulkan child surface, never the panel or the top-level
-// window: Qt paints into those, and Vulkan must not share a surface with it.
-MelonPrime::VulkanNativeWindowInfo ResolveLinuxVulkanNativeWindow(QWidget* target)
-{
-    MelonPrime::VulkanNativeWindowInfo info{};
-    if (target == nullptr)
-        return info;
-
-    const QString platformName = QGuiApplication::platformName();
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    if (platformName == QStringLiteral("xcb"))
-    {
-        const QX11Application* x11 = qApp->nativeInterface<QX11Application>();
-        info.type = MelonPrime::VulkanNativeWindowType::Xlib;
-        info.display = x11 != nullptr ? x11->display() : nullptr;
-        info.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(target->winId()));
-    }
-#if defined(WAYLAND_ENABLED)
-    else if (platformName == QStringLiteral("wayland"))
-    {
-        const QWaylandApplication* wayland = qApp->nativeInterface<QWaylandApplication>();
-        QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
-        info.type = MelonPrime::VulkanNativeWindowType::Wayland;
-        info.display = wayland != nullptr ? wayland->display() : nullptr;
-        info.window = pni != nullptr && target->windowHandle() != nullptr
-            ? pni->nativeResourceForWindow("surface", target->windowHandle())
-            : nullptr;
-    }
-#endif
-#else
-    QPlatformNativeInterface* pni = QGuiApplication::platformNativeInterface();
-    if (platformName == QStringLiteral("xcb"))
-    {
-        info.type = MelonPrime::VulkanNativeWindowType::Xlib;
-        info.display = pni != nullptr
-            ? pni->nativeResourceForWindow("display", target->windowHandle())
-            : nullptr;
-        info.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(target->winId()));
-    }
-    else if (platformName == QStringLiteral("wayland"))
-    {
-        info.type = MelonPrime::VulkanNativeWindowType::Wayland;
-        info.display = pni != nullptr
-            ? pni->nativeResourceForWindow("display", target->windowHandle())
-            : nullptr;
-        info.window = pni != nullptr
-            ? pni->nativeResourceForWindow("surface", target->windowHandle())
-            : nullptr;
-    }
-#endif
-
-    // A handle pair that is not complete is not usable; report it as absent so
-    // the panel retries instead of building a swapchain on half a surface.
-    if (info.display == nullptr || info.window == nullptr)
-        return MelonPrime::VulkanNativeWindowInfo{};
-    return info;
-}
-#endif
-
-std::mutex& VulkanPanelRegistryMutex()
-{
-    static std::mutex mutex;
-    return mutex;
-}
-
-std::vector<ScreenPanelVulkan*>& VulkanPanelRegistry()
-{
-    static std::vector<ScreenPanelVulkan*> panels;
-    return panels;
-}
-
-}
-
-ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
-    : ScreenPanel(parent), vulkan(std::make_unique<VulkanState>())
-{
-    // Constructed before the registry insert so a throwing allocation cannot
-    // leave a half-built panel published in VulkanPanelRegistry().
-#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>(
-        [this](std::int32_t dx, std::int32_t dy) {
-            addAimMouseDeltaForMelonPrime(dx, dy);
-        });
-#endif
-
-    {
-        std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
-        VulkanPanelRegistry().push_back(this);
-    }
-
-    setAutoFillBackground(false);
-    setAttribute(Qt::WA_NativeWindow, true);
-    setAttribute(Qt::WA_NoSystemBackground, true);
-    setAttribute(Qt::WA_OpaquePaintEvent, true);
-#if defined(_WIN32) // scatter-budget-exempt: platform Vulkan presentation surface, not input dispatch
-    setAttribute(Qt::WA_PaintOnScreen, true);
-#endif
-    // WA_PaintOnScreen is set only where Vulkan presents straight to this
-    // panel's own native window (Windows/HWND). macOS and Linux composite
-    // Vulkan on a separate surface above the panel, and there the attribute is
-    // actively harmful: it takes the panel off Qt's backing store, and this
-    // panel needs QPainter for the splash screen, the software-rendered screens
-    // (still reachable through 3D.ForceSoftwareOutsideMatch and while the
-    // renderer is switching) and the OSD, all of which go through
-    // paintEvent(). Qt's macOS backend has no on-screen paint
-    // support at all, and native Wayland has none either -- keeping it set on
-    // Linux is what left the last presented Vulkan frame stuck on screen when
-    // the post-match recap switched back to the software renderer.
-    setAttribute(Qt::WA_KeyCompression, false);
-    setFocusPolicy(Qt::StrongFocus);
-    setMinimumSize(screenGetMinSize());
-
-    // One composed frame per emulated frame, presented immediately. Stealing a
-    // frame back off the present queue would re-enter one whose compositor
-    // dispatch is still reading the shared structured planes.
-    vulkan->framePolicy.MaxBacklogDepth = 1;
-    vulkan->framePolicy.AllowStealPending = false;
-    vulkan->framePolicy.AllowPreviousFrameReuse = true;
-    vulkan->framePolicy.PreferOldestFrame = false;
-
-#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-    // GUI thread (MainWindow::createScreenPanel). The child is created hidden
-    // and stays unmapped until the first Vulkan frame is about to be presented.
-    auto* surfaceHost = new MelonPrime::VulkanSurfaceHostLinux(this);
-    surfaceHost->setGeometry(rect());
-    surfaceHost->setNativeSurfaceChangedCallback(
-        [this]() { refreshNativeSurfaceGuiThread(); });
-    vulkan->linuxSurfaceHost = surfaceHost;
-#endif
-}
-
-ScreenPanelVulkan::~ScreenPanelVulkan()
-{
-    // Ahead of the `if (!vulkan) return` below: releasing the OS pointer
-    // capture must not depend on whether this panel still owns GPU state.
-    // Idempotent, so a prior Suspend() having already unlocked is fine.
-#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-    if (waylandPointerLock)
-        waylandPointerLock->setLocked(nullptr, nullptr, false);
-#endif
-
-    {
-        std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
-        auto& panels = VulkanPanelRegistry();
-        panels.erase(
-            std::remove(panels.begin(), panels.end(), this),
-            panels.end());
-    }
-
-    if (!vulkan)
-        return;
-
-    prepareForRendererTransition();
-    // Ordered after the complete Vulkan quiesce.
-    releaseNativeSurface();
-}
-
-#if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-bool ScreenPanelVulkan::setWaylandPointerLockForMelonPrime(bool enabled)
-{
-    if (!waylandPointerLock)
-        return false;
-
-    if (!enabled)
-        return waylandPointerLock->setLocked(nullptr, nullptr, false);
-
-    // Vulkan presents onto this panel's own Qt::WA_NativeWindow subsurface,
-    // but pointer constraints must target the top-level window's surface --
-    // locking the child subsurface made KWin fire WindowDeactivate on the main
-    // window, which Suspend() reads as focus loss and tears the lock straight
-    // back down (see issue #526). The presentation surface handles in
-    // VulkanState are for display only and are never reused here.
-    QWindow* const topLevelHandle = window() ? window()->windowHandle() : nullptr;
-    const auto handles = ResolveMelonPrimeWaylandHandles(topLevelHandle);
-    if (!handles.has_value())
-        return false;
-
-    // Hint the panel's own center, expressed in the locked (top-level)
-    // surface's local coordinates, so the compositor recenters the cursor
-    // away from any edge whenever this lock later releases.
-    const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
-    return waylandPointerLock->setLocked(
-        handles->first, handles->second, true, hint.x(), hint.y());
-}
-
-bool ScreenPanelVulkan::isWaylandPointerLockActiveForMelonPrime() const
-{
-    return waylandPointerLock && waylandPointerLock->isLockActive();
-}
-#endif
-
-void ScreenPanelVulkan::prepareForRendererTransition()
-{
-    if (!vulkan)
-        return;
-
-    const bool hadPresenter = vulkan->presenterInitialized;
-    const bool hadOutput = vulkan->output.isInitialized();
-
-    // Consumer-to-producer teardown. Presenter commands can sample compositor
-    // images, while compositor commands can sample renderer-owned VkImageViews.
-    vulkan->presenter.Shutdown();
-    vulkan->presenterInitialized = false;
-
-    // shutdown() performs vkDeviceWaitIdle before destroying compositor command
-    // buffers, descriptor sets, frame resources and cached image-view bindings.
-    // This must finish before NDS::SetRenderer destroys VulkanRenderer3D.
-    vulkan->output.shutdown();
-
-    vulkan->frameQueue.clear();
-    vulkan->consecutiveFailures = 0;
-    vulkan->runtimeFailureReported = false;
-
-    {
-        QMutexLocker bufferLock(&vulkan->softwareBufferLock);
-        vulkan->softwareMode = true;
-        vulkan->hasSoftwareBuffers = false;
-    }
-
-    requestNativeSurfaceVisible(false);
-
-    if (hadPresenter || hadOutput)
-    {
-        Platform::Log(
-            Platform::LogLevel::Info,
-            "Vulkan presentation/output quiesced before renderer transition "
-            "(presenter=%d output=%d)",
-            hadPresenter ? 1 : 0,
-            hadOutput ? 1 : 0);
-    }
-}
-
-void ScreenPanelVulkan::PrepareForInstanceRendererTransition(EmuInstance* instance)
-{
-    if (instance == nullptr)
-        return;
-
-    // Destructor unregisters under this lock before deleting VulkanState.
-    std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
-    for (ScreenPanelVulkan* panel : VulkanPanelRegistry())
-    {
-        if (panel == nullptr || panel->emuInstance != instance)
-            continue;
-        panel->prepareForRendererTransition();
-    }
-}
-
-void ScreenPanelVulkan::beginModalPausePresentation()
-{
-    if (!vulkan || vulkan->modalPauseOverlay)
-        return;
-
-#ifdef MELONPRIME_CUSTOM_HUD
-    // The on-screen HUD editor owns the panel and keeps it presenting live; a
-    // frozen grab on top would hide every edit the user makes.
-    if (vulkan->hudEditLivePresentation.load(std::memory_order_relaxed))
-        return;
-#endif
-
-    QScreen* targetScreen = windowHandle() ? windowHandle()->screen() : nullptr;
-    if (!targetScreen)
-        targetScreen = QGuiApplication::primaryScreen();
-    if (!targetScreen)
-        return;
-
-    const QPixmap frozenFrame = targetScreen->grabWindow(winId());
-    if (frozenFrame.isNull())
-        return;
-
-    auto* overlay = new QLabel(this);
-    overlay->setAttribute(Qt::WA_NativeWindow, true);
-    overlay->setAttribute(Qt::WA_TransparentForMouseEvents, true);
-    overlay->setAutoFillBackground(false);
-    overlay->setScaledContents(true);
-    overlay->setPixmap(frozenFrame);
-    overlay->setGeometry(rect());
-    overlay->show();
-    overlay->raise();
-    vulkan->modalPauseOverlay = overlay;
-}
-
-void ScreenPanelVulkan::endModalPausePresentation()
-{
-    if (!vulkan || !vulkan->modalPauseOverlay)
-        return;
-
-    QLabel* overlay = vulkan->modalPauseOverlay;
-    vulkan->modalPauseOverlay = nullptr;
-    delete overlay;
-}
-
-#ifdef MELONPRIME_CUSTOM_HUD
-void ScreenPanelVulkan::setHudEditModeActive(bool active)
-{
-    ScreenPanel::setHudEditModeActive(active);
-    if (!vulkan)
-        return;
-
-    vulkan->hudEditLivePresentation.store(active, std::memory_order_relaxed);
-    if (!active)
-        return;
-
-    // Drop the modal-pause freeze: from here the panel presents every paused
-    // draw pass itself, which is both what makes the editor overlay visible and
-    // what keeps the native Vulkan child repainted while the dialog is around.
-    endModalPausePresentation();
-}
-#endif
-
-void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
-{
-    ScreenPanel::resizeEvent(event);
-    refreshNativeSurfaceGuiThread();
-    if (vulkan && vulkan->modalPauseOverlay)
-        vulkan->modalPauseOverlay->setGeometry(rect());
-}
-
-bool ScreenPanelVulkan::event(QEvent* event)
-{
-    const bool handled = ScreenPanel::event(event);
-    switch (event->type())
-    {
-    case QEvent::WinIdChange:
-    case QEvent::Show:
-    case QEvent::WindowStateChange:
-    case QEvent::ScreenChangeInternal:
-        // Qt rebuilds the native window across these transitions. The macOS
-        // presentation layer has to be re-hosted on the new native handle;
-        // platforms whose surface is derived from the window handle itself
-        // recreate their swapchain through the existing dirty/resize path.
-        refreshNativeSurfaceGuiThread();
-        break;
-    default:
-        break;
-    }
-    return handled;
-}
-
-void ScreenPanelVulkan::refreshNativeSurfaceGuiThread()
-{
-    if (!vulkan || !vulkan->initialized)
-        return;
-
-#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
-    auto& nativeWindow = vulkan->nativeWindow;
-    if (nativeWindow.type != MelonPrime::VulkanNativeWindowType::Metal)
-        return;
-
-    // winId() is re-read every time: Qt rebuilds the native view across
-    // fullscreen and screen transitions, and CreateOrAttachLayer() re-parents
-    // the same layer rather than making a new one, so the VkSurfaceKHR created
-    // from it stays valid.
-    nativeWindow.window = MelonPrime::VulkanMacOS::CreateOrAttachLayer(
-        nativeWindow.window,
-        reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId())));
-
-    MelonPrime::VulkanMacOS::UpdateLayerGeometry(
-        nativeWindow.window,
-        static_cast<double>(devicePixelRatioF()),
-        width(),
-        height());
-#elif defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-    auto* host = vulkan->linuxSurfaceHost.data();
-    if (host == nullptr)
-        return;
-
-    host->setGeometry(rect());
-
-    // Only a mapped child has a usable native surface: Qt's Wayland backend
-    // destroys the wl_surface of a hidden window. Publishing an empty handle
-    // while hidden is what keeps the emulation thread from building a swapchain
-    // on a surface that is about to be (or already was) torn down.
-    MelonPrime::VulkanNativeWindowInfo info{};
-    std::uint64_t generation = 0;
-    if (host->isVisible())
-    {
-        info = ResolveLinuxVulkanNativeWindow(host);
-        generation = host->nativeGeneration();
-    }
-
-    {
-        QMutexLocker lock(&vulkan->nativeWindowLock);
-        vulkan->nativeWindow = info;
-        vulkan->nativeWindowGeneration = generation;
-    }
-#endif
-}
-
-void ScreenPanelVulkan::setNativeSurfaceVisibleGuiThread(bool visible)
-{
-    if (!vulkan)
-        return;
-
-    if (VulkanTransitionDebugEnabled())
-    {
-        Platform::Log(
-            Platform::LogLevel::Info,
-            "[VulkanTransition] presentation surface %s",
-            visible ? "shown" : "hidden");
-    }
-
-#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
-    if (vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Metal)
-        return;
-    MelonPrime::VulkanMacOS::SetLayerHidden(vulkan->nativeWindow.window, !visible);
-    if (!visible)
-    {
-        // The panel owns the software/splash drawing again.
-        update();
-    }
-#elif defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-    auto* host = vulkan->linuxSurfaceHost.data();
-    if (host == nullptr)
-        return;
-
-    if (visible)
-    {
-        host->setGeometry(rect());
-        host->show();
-        host->raise();
-        // Mapping recreates the native surface on Wayland; republish the
-        // handle the emulation thread is about to build a swapchain from.
-        refreshNativeSurfaceGuiThread();
-    }
-    else
-    {
-        // Unmapping hands the screen area back to the panel's backing store.
-        // The handle is dropped by the same refresh path, so a late Vulkan
-        // frame cannot present into a surface Qt is painting over.
-        host->hide();
-        refreshNativeSurfaceGuiThread();
-        update();
-    }
-#else
-    (void)visible;
-#endif
-}
-
-void ScreenPanelVulkan::requestNativeSurfaceVisible(bool visible)
-{
-    if (!vulkan || vulkan->surfaceVisibleRequested == visible)
-        return;
-
-    vulkan->surfaceVisibleRequested = visible;
-    QMetaObject::invokeMethod(
-        this,
-        [this, visible]() { setNativeSurfaceVisibleGuiThread(visible); },
-        Qt::QueuedConnection);
-}
-
-bool ScreenPanelVulkan::nativeSurfaceReady() const
-{
-    if (!vulkan)
-        return false;
-
-    QMutexLocker lock(&vulkan->nativeWindowLock);
-    return vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Unknown
-        && vulkan->nativeWindow.window != nullptr;
-}
-
-#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-bool ScreenPanelVulkan::prepareLinuxPresentationSurface()
-{
-    // Emulation thread, called once per Vulkan frame before the presenter is
-    // used. Unlike Windows (one HWND) and macOS (a layer that is only hidden,
-    // never destroyed), the Linux child surface is unmapped between matches and
-    // Qt may hand back a different native surface on the next map.
-    requestNativeSurfaceVisible(true);
-
-    std::uint64_t nativeGeneration = 0;
-    bool published = false;
-    {
-        QMutexLocker lock(&vulkan->nativeWindowLock);
-        nativeGeneration = vulkan->nativeWindowGeneration;
-        published = vulkan->nativeWindow.type != MelonPrime::VulkanNativeWindowType::Unknown
-            && vulkan->nativeWindow.window != nullptr;
-    }
-
-    if (vulkan->presenterInitialized
-        && vulkan->presenterWindowGeneration != nativeGeneration)
-    {
-        // The VkSurfaceKHR belongs to a native surface that no longer exists.
-        if (VulkanTransitionDebugEnabled())
-        {
-            Platform::Log(
-                Platform::LogLevel::Info,
-                "[VulkanTransition] native surface generation %llu -> %llu; rebuilding presenter",
-                static_cast<unsigned long long>(vulkan->presenterWindowGeneration),
-                static_cast<unsigned long long>(nativeGeneration));
-        }
-        vulkan->presenter.Shutdown();
-        vulkan->presenterInitialized = false;
-        vulkan->frameQueue.clear();
-        vulkan->output.releaseFrameReferences();
-    }
-
-    if (!published)
-    {
-        // The GUI thread has not mapped the child and republished its handle
-        // yet. This is the normal first frame after a software-to-Vulkan
-        // switch, so retry on the next frame instead of reporting a failure.
-        QMetaObject::invokeMethod(
-            this,
-            [this]() { refreshNativeSurfaceGuiThread(); },
-            Qt::QueuedConnection);
-        return false;
-    }
-    return true;
-}
-#endif
-
-void ScreenPanelVulkan::releaseNativeSurface()
-{
-    if (!vulkan)
-        return;
-
-#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan presentation layer, not input dispatch
-    auto& nativeWindow = vulkan->nativeWindow;
-    if (nativeWindow.type == MelonPrime::VulkanNativeWindowType::Metal)
-        MelonPrime::VulkanMacOS::DestroyLayer(nativeWindow.window);
-    nativeWindow.window = nullptr;
-#elif defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-    // Destructor path only, and deliberately after the presenter/output
-    // quiesce: the native child surface must outlive every VkSurfaceKHR and
-    // swapchain built from it. Deleting it here rather than leaving it to
-    // ~QWidget also guarantees no surface-changed callback can run after
-    // VulkanState is gone.
-    if (auto* host = vulkan->linuxSurfaceHost.data(); host != nullptr)
-    {
-        host->setNativeSurfaceChangedCallback(nullptr);
-        vulkan->linuxSurfaceHost = nullptr;
-        delete host;
-    }
-    {
-        QMutexLocker lock(&vulkan->nativeWindowLock);
-        vulkan->nativeWindow = MelonPrime::VulkanNativeWindowInfo{};
-        vulkan->nativeWindowGeneration = 0;
-    }
-#endif
-}
-
-void ScreenPanelVulkan::paintEvent(QPaintEvent* event)
-{
-    auto* emuThread = emuInstance->getEmuThread();
-    if (emuThread != nullptr && emuThread->emuIsActive())
-    {
-        QMutexLocker bufferLock(&vulkan->softwareBufferLock);
-        if (!vulkan->softwareMode)
-            return;
-
-        QPainter painter(this);
-        if (!painter.isActive())
-        {
-            // The panel is not on Qt's backing-store path, so every software
-            // frame drawn here is silently discarded and whatever the previous
-            // producer left on the surface stays visible. Report it once: this
-            // is the failure mode that stranded the post-match recap on Linux.
-            if (!vulkan->softwarePaintFailureReported)
-            {
-                vulkan->softwarePaintFailureReported = true;
-                Platform::Log(
-                    Platform::LogLevel::Error,
-                    "Vulkan panel cannot paint software frames: QPainter is inactive");
-            }
-            return;
-        }
-        if (vulkan->logSoftwarePaintHandoff.exchange(false, std::memory_order_relaxed))
-        {
-            Platform::Log(
-                Platform::LogLevel::Info,
-                "[VulkanTransition] software paintEvent active=1 buffers=%d",
-                vulkan->hasSoftwareBuffers ? 1 : 0);
-        }
-        painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
-        if (vulkan->hasSoftwareBuffers)
-        {
-            const QRect screenRect(0, 0, 256, 192);
-            for (int index = 0; index < numScreens; ++index)
-            {
-                painter.setTransform(vulkan->softwareScreenTransform[index]);
-                painter.drawImage(
-                    screenRect,
-                    vulkan->softwareScreen[screenKind[index]]);
-            }
-
-#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&vulkan->softwareScreen[1])
-#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
-#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
-        }
-
-        if (osdEnabled)
-        {
-            QMutexLocker osdLock(&osdMutex);
-            int y = kOSDMargin;
-            painter.resetTransform();
-            for (const OSDItem& item : osdItems)
-            {
-                painter.drawImage(kOSDMargin, y, item.bitmap);
-                y += item.bitmap.height();
-            }
-        }
-        return;
-    }
-
-    QPainter painter(this);
-    painter.fillRect(event->rect(), QColor::fromRgb(0, 0, 0));
-    osdUpdate();
-    QMutexLocker osdLock(&osdMutex);
-    painter.drawPixmap(QRect(splashPos[3], QSize(kLogoWidth, kLogoWidth)), splashLogo);
-    for (int index = 0; index < 3; ++index)
-        painter.drawImage(splashPos[index], splashText[index].bitmap);
-}
-
-bool ScreenPanelVulkan::initVulkan()
-{
-    if (!vulkan || !vulkan->output.init())
-        return false;
-
-    auto& nativeWindow = vulkan->nativeWindow;
-#if defined(_WIN32)
-    nativeWindow.type = MelonPrime::VulkanNativeWindowType::Win32;
-    nativeWindow.window = reinterpret_cast<void*>(static_cast<std::uintptr_t>(winId()));
-#elif defined(__APPLE__)
-    // MoltenVK presents only to a CAMetalLayer, so instead of a raw window
-    // handle the panel gets a layer composited over its NSView; the layer
-    // itself is built on the GUI thread by refreshNativeSurfaceGuiThread().
-    // The native Metal renderer builds a separate panel with a separate layer,
-    // so the two backends never contend for this view.
-    nativeWindow.type = MelonPrime::VulkanNativeWindowType::Metal;
-    nativeWindow.window = nullptr;
-#elif defined(__linux__)
-    // Nothing to publish yet. The handle belongs to the dedicated Vulkan child
-    // surface and is only valid while that child is mapped, so
-    // refreshNativeSurfaceGuiThread() publishes it on every map and drops it on
-    // every unmap. Presenting into the panel's own surface -- which Qt paints
-    // the software frames into -- is exactly the sharing this avoids.
-    (void)nativeWindow;
-#endif
-
-    vulkan->initialized = true;
-    // GUI thread here (MainWindow::createScreenPanel): safe to build the
-    // platform presentation surface before the emulation thread first asks the
-    // presenter to initialize.
-    refreshNativeSurfaceGuiThread();
-    return true;
-}
-
-bool ScreenPanelVulkan::initVulkanPresenter()
-{
-    if (!vulkan || !vulkan->initialized)
-        return false;
-    if (vulkan->presenterInitialized)
-        return true;
-
-    setupScreenLayout();
-    std::uint32_t surfaceWidth = 0;
-    std::uint32_t surfaceHeight = 0;
-    {
-        QMutexLocker lock(&vulkan->layoutLock);
-        surfaceWidth = vulkan->surfaceWidth;
-        surfaceHeight = vulkan->surfaceHeight;
-    }
-
-    MelonPrime::VulkanNativeWindowInfo nativeWindow;
-    std::uint64_t nativeGeneration = 0;
-    {
-        QMutexLocker lock(&vulkan->nativeWindowLock);
-        nativeWindow = vulkan->nativeWindow;
-        nativeGeneration = vulkan->nativeWindowGeneration;
-    }
-
-    if (!vulkan->presenter.Init(
-            nativeWindow,
-            surfaceWidth,
-            surfaceHeight,
-            emuInstance->getGlobalConfig().GetBool("Screen.VSync")))
-    {
-        return false;
-    }
-
-    vulkan->presenterInitialized = true;
-    // Records which native surface this swapchain belongs to; a later
-    // generation means the surface was replaced and the presenter is stale.
-    vulkan->presenterWindowGeneration = nativeGeneration;
-    Platform::Log(
-        Platform::LogLevel::Info,
-        "Vulkan presentation initialized requested=Vulkan actual=Vulkan path=Qt-native-swapchain");
-    return true;
-}
-
-void ScreenPanelVulkan::reportVulkanRuntimeFailure(const char* reason)
-{
-    if (!vulkan || vulkan->runtimeFailureReported)
-        return;
-
-    vulkan->runtimeFailureReported = true;
-    MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(
-        reason != nullptr ? reason : "Vulkan presentation failed");
-    if (auto* emuThread = emuInstance->getEmuThread(); emuThread != nullptr)
-    {
-        QMetaObject::invokeMethod(
-            emuThread,
-            [emuThread]() { emit emuThread->rendererRuntimeFallback(); },
-            Qt::QueuedConnection);
-    }
-}
-
-void ScreenPanelVulkan::setupScreenLayout()
-{
-    ScreenPanel::setupScreenLayout();
-    if (!vulkan)
-        return;
-
-    const qreal dpr = devicePixelRatioF();
-    std::vector<MelonPrime::VulkanPresentRegion> regions;
-    regions.reserve(static_cast<std::size_t>(numScreens));
-    for (int index = 0; index < numScreens; ++index)
-    {
-        const float* matrix = screenMatrix[index];
-        vulkan->softwareScreenTransform[index].setMatrix(
-            matrix[0], matrix[1], 0.0f,
-            matrix[2], matrix[3], 0.0f,
-            matrix[4], matrix[5], 1.0f);
-        QTransform transform(
-            matrix[0], matrix[1],
-            matrix[2], matrix[3],
-            matrix[4], matrix[5]);
-        const QRectF bounds = transform.mapRect(QRectF(0.0, 0.0, 256.0, 192.0));
-        MelonPrime::VulkanPresentRegion region;
-        region.enabled = bounds.width() > 0.0 && bounds.height() > 0.0;
-        region.bottomScreen = screenKind[index] != 0;
-        region.x = qRound(bounds.left() * dpr);
-        region.y = qRound(bounds.top() * dpr);
-        region.width = qRound(bounds.width() * dpr);
-        region.height = qRound(bounds.height() * dpr);
-        const std::array<QPointF, 4> corners = {
-            transform.map(QPointF(0.0, 0.0)),
-            transform.map(QPointF(256.0, 0.0)),
-            transform.map(QPointF(0.0, 192.0)),
-            transform.map(QPointF(256.0, 192.0)),
-        };
-        for (std::size_t corner = 0; corner < corners.size(); ++corner)
-        {
-            region.corners[corner * 2u] = static_cast<float>(corners[corner].x() * dpr);
-            region.corners[(corner * 2u) + 1u] = static_cast<float>(corners[corner].y() * dpr);
-        }
-        region.hasTransformedCorners = true;
-        regions.push_back(region);
-    }
-
-    QMutexLocker lock(&vulkan->layoutLock);
-    vulkan->surfaceWidth = static_cast<std::uint32_t>(std::max<qreal>(0.0, width() * dpr));
-    vulkan->surfaceHeight = static_cast<std::uint32_t>(std::max<qreal>(0.0, height() * dpr));
-    vulkan->regions = std::move(regions);
-}
-
-void ScreenPanelVulkan::drawScreen()
-{
-#if defined(__APPLE__) // scatter-budget-exempt: macOS Vulkan frame boundary, not input dispatch
-    MelonPrime::VulkanMacOS::RunInAutoreleasePool([this]() { drawScreenFrame(); });
-#else
-    drawScreenFrame();
-#endif
-}
-
-void ScreenPanelVulkan::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
-{
-    if (vulkan && vulkan->presenterInitialized)
-    {
-        vulkan->presenter.BeginAmdAntiLag2Frame(antiLag2Enabled);
-        vulkan->presenter.BeginNvidiaReflexFrame(reflexMode);
-    }
-}
-
-void ScreenPanelVulkan::markVulkanReflexInputSample()
-{
-    if (vulkan && vulkan->presenterInitialized)
-        vulkan->presenter.MarkNvidiaReflexInputSample();
-}
-
-void ScreenPanelVulkan::markVulkanReflexRenderSubmitStart()
-{
-    if (vulkan && vulkan->presenterInitialized)
-        vulkan->presenter.MarkNvidiaReflexRenderSubmitStart();
-}
-
-void ScreenPanelVulkan::markVulkanReflexRenderSubmitEnd()
-{
-    if (vulkan && vulkan->presenterInitialized)
-        vulkan->presenter.MarkNvidiaReflexRenderSubmitEnd();
-}
-
-void ScreenPanelVulkan::finishVulkanLowLatencyFrame()
-{
-    if (vulkan && vulkan->presenterInitialized)
-    {
-        vulkan->presenter.FinishNvidiaReflexFrame();
-        vulkan->presenter.FinishAmdAntiLag2Frame();
-    }
-}
-
-void ScreenPanelVulkan::ComposeInstanceFrameAtVBlank(EmuInstance* instance)
-{
-    if (instance == nullptr)
-        return;
-
-    // Go through the registry rather than capturing a panel pointer: a window
-    // can be closed while the renderer lives on, and every window of this
-    // instance needs its own composed frame from the same emulated frame.
-    std::lock_guard<std::mutex> lock(VulkanPanelRegistryMutex());
-    for (ScreenPanelVulkan* panel : VulkanPanelRegistry())
-    {
-        if (panel == nullptr || panel->emuInstance != instance)
-            continue;
-        panel->composeFrameAtVBlank();
-    }
-}
-
-void ScreenPanelVulkan::installVulkanComposeHook(melonDS::VulkanRenderer* renderer)
-{
-    if (renderer == nullptr || renderer->HasVBlankHook())
-        return;
-
-    EmuInstance* instance = emuInstance;
-    renderer->SetVBlankHook([instance]() { ComposeInstanceFrameAtVBlank(instance); });
-}
-
-void ScreenPanelVulkan::composeFrameAtVBlank()
-{
-    // Emulation thread, at VCount 192. The structured planes were completed at
-    // scanline 191 and the 3D color target still holds the render that belongs
-    // to them; VCount 215 is about to start the next one into the same image.
-    if (!vulkan || !vulkan->initialized || !vulkan->output.isInitialized())
-        return;
-
-    auto* nds = emuInstance->getNDS();
-    if (!nds)
-        return;
-
-    auto* renderer = dynamic_cast<melonDS::VulkanRenderer*>(&nds->GPU.GetRenderer());
-    melonDS::VulkanRenderer3D* renderer3D = renderer ? renderer->GetVulkanRenderer3D() : nullptr;
-    if (!renderer || !renderer3D)
-        return;
-
-    SoftRenderer::StructuredVulkanFrameView structuredView{};
-    if (!renderer->GetStructuredVulkanFrame(structuredView) || !structuredView.Valid)
-    {
-        if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Error, "Vulkan presentation lost its Vulkan 2D source");
-        return;
-    }
-    vulkan->nativeMenuHeld.store(structuredView.NativeMenuHeld, std::memory_order_relaxed);
-
-    const int configuredScale = std::clamp(
-        emuInstance->getGlobalConfig().GetInt("3D.GL.ScaleFactor"), 1, 16);
-    const u32 rendererScale = renderer3D->GetColorTargetWidth() >= 256
-        ? std::max<u32>(1, renderer3D->GetColorTargetWidth() / 256u)
-        : static_cast<u32>(configuredScale);
-    const u32 outputWidth = 256u * rendererScale;
-    const u32 outputHeight = 386u * rendererScale;
-
-    MelonPrime::VulkanFrame* renderFrame = vulkan->frameQueue.getRenderFrame(vulkan->framePolicy);
-    if (!renderFrame || !vulkan->output.ensureFrameResources(renderFrame, outputWidth, outputHeight))
-    {
-        if (renderFrame)
-            vulkan->frameQueue.discardRenderedFrame(renderFrame);
-        ++vulkan->consecutiveFailures;
-        return;
-    }
-
-    // Everything the compositor sees comes from this one emulated frame. The
-    // producer already resolved which engine owns which LCD, so there is no
-    // screen-swap value to pass and no frame history to maintain.
-    MelonPrime::StructuredCompositionFrame structured{};
-    for (std::size_t screen = 0; screen < 2u; ++screen)
-    {
-        for (std::size_t plane = 0; plane < 3u; ++plane)
-            structured.Plane[screen][plane] = structuredView.Plane[screen][plane];
-        structured.LineMeta[screen] = structuredView.LineMeta[screen];
-    }
-    structured.Has3D = !nds->GPU.GPU3D.AbortFrame;
-    structured.Generation = structuredView.Generation;
-
-    // Composition is always nearest and deterministic. Screen.Filter is a
-    // presentation preference and is applied once, by the presenter, to the
-    // finished image -- the same place the software and OpenGL paths apply it.
-    MelonPrime::VulkanCompositionInputs inputs{};
-    const bool composed = vulkan->output.prepareFrameForPresentation(renderFrame, structured)
-        && vulkan->output.buildCompositionInputs(
-            renderFrame,
-            *renderer3D,
-            static_cast<int>(rendererScale),
-            structured.Has3D,
-            structured.Generation,
-            inputs)
-        && vulkan->output.composeAndSubmitFrame(renderFrame, inputs);
-    if (!composed)
-    {
-        vulkan->frameQueue.discardRenderedFrame(renderFrame);
-        if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Error, "Vulkan compositor submission failed");
-        return;
-    }
-
-    vulkan->frameQueue.pushRenderedFrame(renderFrame, vulkan->framePolicy);
-}
-
-void ScreenPanelVulkan::drawScreenFrame()
-{
-    refreshClipForGameStateChange();
-    if (!vulkan || !vulkan->initialized)
-        return;
-
-    auto* emuThread = emuInstance->getEmuThread();
-    osdUpdate();
-    if (!emuThread->emuIsActive())
-    {
-        if (vulkan->presenterInitialized)
-        {
-            vulkan->presenter.Shutdown();
-            vulkan->presenterInitialized = false;
-            vulkan->frameQueue.clear();
-            vulkan->output.releaseFrameReferences();
-        }
-        {
-            QMutexLocker bufferLock(&vulkan->softwareBufferLock);
-            vulkan->softwareMode = true;
-            vulkan->hasSoftwareBuffers = false;
-        }
-        requestNativeSurfaceVisible(false);
-        QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
-        return;
-    }
-
-    // The native swapchain already owns the last completed image. Rebuilding
-    // from DS staging buffers while paused can surface stale boot/menu pixels;
-    // leave the swapchain untouched until emulation resumes. The presentation
-    // surface is Vulkan's alone (a separate native child on macOS/Linux,
-    // WA_PaintOnScreen on Windows), so Qt cannot erase it while a modal dialog
-    // is exposed.
-    //
-    // The Custom HUD on-screen editor is the one paused state that must keep
-    // drawing: the settings dialog pauses emulation before handing the panel to
-    // the editor, so without this the editor overlay would never reach the
-    // screen at all (OpenGL/software gate on emuIsActive() and keep drawing).
-#ifdef MELONPRIME_CUSTOM_HUD
-    const bool hudEditLivePresentation =
-        vulkan->hudEditLivePresentation.load(std::memory_order_relaxed);
-#else
-    constexpr bool hudEditLivePresentation = false;
-#endif
-    if (!emuThread->emuIsRunning() && !hudEditLivePresentation)
-        return;
-
-    auto* nds = emuInstance->getNDS();
-    if (!nds)
-        return;
-
-    const RendererOutput rendererOutput = nds->GPU.GetRendererOutput();
-    if (rendererOutput.Kind == RendererOutputKind::CpuBgra)
-    {
-        if (vulkan->presenterInitialized)
-        {
-            // Post-match handoff: the 3D renderer went back to software, so
-            // Vulkan stops producing and Qt takes the screen area back.
-            if (VulkanTransitionDebugEnabled())
-            {
-                Platform::Log(
-                    Platform::LogLevel::Info,
-                    "[VulkanTransition] output=CpuBgra; shutting the presenter down");
-                vulkan->logSoftwarePaintHandoff.store(true, std::memory_order_relaxed);
-            }
-            vulkan->presenter.Shutdown();
-            vulkan->presenterInitialized = false;
-            vulkan->frameQueue.clear();
-            vulkan->output.releaseFrameReferences();
-        }
-        {
-            QMutexLocker bufferLock(&vulkan->softwareBufferLock);
-            std::memcpy(
-                vulkan->softwareScreen[0].scanLine(0),
-                rendererOutput.Top,
-                256u * 192u * sizeof(u32));
-            std::memcpy(
-                vulkan->softwareScreen[1].scanLine(0),
-                rendererOutput.Bottom,
-                256u * 192u * sizeof(u32));
-            vulkan->softwareMode = true;
-            vulkan->hasSoftwareBuffers = true;
-        }
-        vulkan->consecutiveFailures = 0;
-        requestNativeSurfaceVisible(false);
-        QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
-        return;
-    }
-
-    auto* renderer = dynamic_cast<VulkanRenderer*>(&nds->GPU.GetRenderer());
-    VulkanRenderer3D* renderer3D = renderer ? renderer->GetVulkanRenderer3D() : nullptr;
-
-    // Fullscreen/native-window changes can schedule one final Vulkan-panel draw
-    // after EmuThread has already replaced the renderer with Software/OpenGL.
-    // RendererOutput may still describe the preceding GPU frame at that point.
-    // Never reacquire VulkanContext from that stale panel pass.
-    if (!renderer || !renderer3D)
-    {
-        if (vulkan->presenterInitialized || vulkan->output.isInitialized())
-            prepareForRendererTransition();
-        else
-            requestNativeSurfaceVisible(false);
-        return;
-    }
-
-    // The transition hook shuts the complete output down before the old Vulkan
-    // renderer dies. Recreate it only after identifying a new Vulkan renderer.
-    if (!vulkan->output.isInitialized() && !vulkan->output.init())
-    {
-        if (vulkan->consecutiveFailures++ == 0)
-        {
-            Platform::Log(
-                Platform::LogLevel::Error,
-                "Vulkan output reinitialization failed after renderer transition");
-        }
-        reportVulkanRuntimeFailure(
-            "Vulkan output reinitialization failed after renderer transition");
-        return;
-    }
-
-    // Composition itself runs from the renderer's VBlank hook; this pass only
-    // presents whatever that produced. Installing the hook here rather than at
-    // renderer creation keeps it tied to a panel that is actually drawing.
-    installVulkanComposeHook(renderer);
-
-#ifdef MELONPRIME_CUSTOM_HUD
-    auto* mp = emuThread->GetMelonPrimeCore();
-    const bool vulkanNativeMenuHeld =
-        vulkan->nativeMenuHeld.load(std::memory_order_relaxed);
-#else
-    const bool vulkanNativeMenuHeld = false;
-#endif
-
-    {
-        QMutexLocker bufferLock(&vulkan->softwareBufferLock);
-        vulkan->softwareMode = false;
-        vulkan->hasSoftwareBuffers = false;
-    }
-#if defined(__linux__) // scatter-budget-exempt: Linux Vulkan presentation surface, not input dispatch
-    if (!prepareLinuxPresentationSurface())
-        return;
-#endif
-    if (!nativeSurfaceReady())
-    {
-        // The GUI thread has not (re)built the platform presentation surface
-        // yet -- on macOS the CAMetalLayer is re-hosted after Qt recreates the
-        // native view. This is recoverable, so ask for a refresh and retry on
-        // the next frame instead of permanently disabling Vulkan.
-        if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Warn, "Vulkan presentation surface is not ready yet");
-        QMetaObject::invokeMethod(
-            this,
-            [this]() { refreshNativeSurfaceGuiThread(); },
-            Qt::QueuedConnection);
-        return;
-    }
-
-    if (!initVulkanPresenter())
-    {
-        // Never leave a mapped-but-empty presentation surface covering the
-        // software output the panel falls back to.
-        requestNativeSurfaceVisible(false);
-        if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Error, "Vulkan native presenter initialization failed");
-        const std::string& reason = vulkan->presenter.LastError();
-        reportVulkanRuntimeFailure(
-            reason.empty()
-                ? "Vulkan native presenter initialization failed"
-                : reason.c_str());
-        return;
-    }
-
-    const int configuredScale = std::clamp(
-        emuInstance->getGlobalConfig().GetInt("3D.GL.ScaleFactor"), 1, 16);
-    const u32 rendererScale = renderer3D->GetColorTargetWidth() >= 256
-        ? std::max<u32>(1, renderer3D->GetColorTargetWidth() / 256u)
-        : static_cast<u32>(configuredScale);
-
-    MelonPrime::VulkanFrame* presentFrame = vulkan->frameQueue.getPresentCandidate(
-        vulkan->framePolicy, std::nullopt);
-    if (!presentFrame)
-        return;
-
-    std::vector<MelonPrime::VulkanPresentRegion> regions;
-    std::uint32_t surfaceWidth = 0;
-    std::uint32_t surfaceHeight = 0;
-    {
-        QMutexLocker lock(&vulkan->layoutLock);
-        regions = vulkan->regions;
-        surfaceWidth = vulkan->surfaceWidth;
-        surfaceHeight = vulkan->surfaceHeight;
-    }
-    vulkan->presenter.Resize(
-        surfaceWidth,
-        surfaceHeight,
-        emuInstance->getGlobalConfig().GetBool("Screen.VSync"));
-
-    bool hasOverlay = false;
-    MelonPrime::VulkanRadarFrame radarFrame{};
-    const qreal dpr = devicePixelRatioF();
-    const int logicalWidth = width();
-    const int logicalHeight = height();
-    if (surfaceWidth > 0 && surfaceHeight > 0 && logicalWidth > 0 && logicalHeight > 0)
-    {
-        if (vulkan->overlayFrame.width() != static_cast<int>(surfaceWidth)
-            || vulkan->overlayFrame.height() != static_cast<int>(surfaceHeight)
-            || vulkan->overlayFrame.format() != QImage::Format_ARGB32_Premultiplied)
-        {
-            vulkan->overlayFrame = QImage(
-                static_cast<int>(surfaceWidth),
-                static_cast<int>(surfaceHeight),
-                QImage::Format_ARGB32_Premultiplied);
-        }
-        vulkan->overlayFrame.fill(Qt::transparent);
-        QPainter overlayPainter(&vulkan->overlayFrame);
-        overlayPainter.scale(dpr, dpr);
-
-#ifdef MELONPRIME_CUSTOM_HUD
-        {
-            const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
-            // The held native MPH menu suppresses the gameplay HUD, but never
-            // the layout editor: it is opened from the settings dialog and has
-            // to stay on screen whatever the paused frame happens to show.
-            if ((!vulkanNativeMenuHeld || editMode)
-                && MelonPrimeHud_CanRenderForCore(mp, editMode))
-            {
-                auto& instcfg = emuInstance->getLocalConfig();
-                MelonPrimeHud_RefreshHudEnabledIfNeeded(
-                    mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
-                MelonPrimeHud_RefreshOverlayFontIfNeeded(
-                    mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
-                MelonPrimeHud_RefreshRadarConfigIfNeeded(
-                    mp->HudConfigState(), instcfg, m_radarCfgEpoch,
-                    m_radarEnable, m_radarAnchor,
-                    m_radarDstX, m_radarDstY, m_radarDstSize,
-                    m_radarOpacity, m_radarSrcRadius,
-                    m_radarAnchorDsX, m_radarAnchorDsY);
-                if (MelonPrimeHud_IsHudVisibleOrRestorePatch(
-                        emuInstance, instcfg, mp, m_hudEnabled, editMode))
-                {
-                    MelonPrimeHud_PrepareTopOverlay(
-                        Overlay[0], logicalWidth, logicalHeight, m_hudPrevDirty);
-                    const QRect currentDirty = MelonPrimeHud_RenderTopOverlay(
-                        emuInstance,
-                        instcfg,
-                        mp,
-                        Overlay[0],
-                        overlayFont,
-                        m_topStretchX,
-                        m_hudScale,
-                        m_hudOriginX,
-                        m_hudOriginY);
-                    overlayPainter.drawImage(QPoint(0, 0), Overlay[0]);
-                    m_hudPrevDirty = currentDirty;
-                    hasOverlay = true;
-
-                    if (m_radarEnable && m_hudTopMatrixValid
-                        && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
-                            emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
-                    {
-                        const float* topMtx = m_hudTopMatrix;
-                        const float anchorX = topMtx[0] * m_radarAnchorDsX
-                            + topMtx[1] * m_radarAnchorDsY + topMtx[4];
-                        const float anchorY = topMtx[2] * m_radarAnchorDsX
-                            + topMtx[3] * m_radarAnchorDsY + topMtx[5];
-                        const int overlayBaseX = static_cast<int>(m_hudOriginX);
-                        const int overlayBaseY = static_cast<int>(m_hudOriginY);
-                        const int destinationX = overlayBaseX + static_cast<int>(
-                            (anchorX - m_hudOriginX) + m_radarDstX * m_hudScale);
-                        const int destinationY = overlayBaseY + static_cast<int>(
-                            (anchorY - m_hudOriginY) + m_radarDstY * m_hudScale);
-                        const uint8_t hunterID = std::min<uint8_t>(
-                            mp->GetHunterID(), MelonPrime::kHunterCount - 1);
-                        radarFrame.enabled = true;
-                        radarFrame.x = static_cast<float>(destinationX * dpr);
-                        radarFrame.y = static_cast<float>(destinationY * dpr);
-                        radarFrame.size = static_cast<float>(m_radarDstSize * m_hudScale * dpr);
-                        radarFrame.opacity = m_radarOpacity;
-                        radarFrame.sourceCenterY = static_cast<std::uint32_t>(
-                            MelonPrime::kBtmOverlaySrcCenterY[hunterID]);
-                        radarFrame.sourceRadius = static_cast<std::uint32_t>(
-                            std::max(m_radarSrcRadius, 0));
-                    }
-                }
-            }
-        }
-#endif
-
-        if (osdEnabled && !osdItems.empty())
-        {
-            QMutexLocker osdLock(&osdMutex);
-            int y = kOSDMargin;
-            for (const OSDItem& item : osdItems)
-            {
-                overlayPainter.drawImage(kOSDMargin, y, item.bitmap);
-                y += item.bitmap.height();
-            }
-            hasOverlay = true;
-        }
-    }
-
-    MelonPrime::VulkanOverlayFrame overlay{};
-    overlay.radar = radarFrame;
-    if (hasOverlay)
-    {
-        overlay.pixels = vulkan->overlayFrame.constBits();
-        overlay.width = static_cast<std::uint32_t>(vulkan->overlayFrame.width());
-        overlay.height = static_cast<std::uint32_t>(vulkan->overlayFrame.height());
-        overlay.rowBytes = static_cast<std::size_t>(vulkan->overlayFrame.bytesPerLine());
-    }
-    const bool hasPresentationOverlay = hasOverlay || radarFrame.IsValid();
-    if (vulkan->presenter.Present(
-            presentFrame,
-            vulkan->output,
-            filter ? MelonPrime::VulkanFilterMode::Linear : MelonPrime::VulkanFilterMode::Nearest,
-            rendererScale,
-            regions,
-            hasPresentationOverlay ? &overlay : nullptr))
-    {
-        vulkan->frameQueue.commitPresentedFrame(presentFrame, vulkan->framePolicy);
-        vulkan->consecutiveFailures = 0;
-        // Only reveal the platform presentation surface once a frame has
-        // actually reached the swapchain, so it never flashes uninitialized
-        // content over the software output it replaces.
-        requestNativeSurfaceVisible(true);
-    }
-    else
-    {
-        vulkan->frameQueue.deferPresentedFrame(presentFrame, vulkan->framePolicy);
-        if (vulkan->consecutiveFailures++ == 0)
-            Platform::Log(Platform::LogLevel::Warn, "Vulkan swapchain presentation failed; retrying after resync");
-    }
-}
-#endif
 
 ScreenPanelGL::ScreenPanelGL(QWidget * parent) : ScreenPanel(parent)
 {

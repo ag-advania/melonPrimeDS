@@ -73,6 +73,7 @@ private:
     void PublishCaptureTexturesTo3D();
     void BeginMetalCaptureFrame();
     void CaptureMetalDisplayCaptureLine(u32 line);
+    void CaptureSoftwareDisplayCaptureLine(u32 line);
     bool EncodeMetalDisplayCapture(
         void* engineA2DTexture,
         void* high3DTexture);

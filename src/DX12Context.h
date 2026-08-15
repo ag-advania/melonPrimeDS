@@ -21,6 +21,10 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+#include <array>
+#include <chrono>
+#endif
 #include <mutex>
 #include <string>
 #include <vector>
@@ -41,6 +45,7 @@ public:
         std::string AdapterName;
         u32 VendorId = 0;
         u32 DeviceId = 0;
+        u64 DriverVersion = 0;
         u64 DedicatedVideoMemory = 0;
         D3D_FEATURE_LEVEL FeatureLevel = D3D_FEATURE_LEVEL_11_0;
         // Highest shader model the device reports, as a packed 0xMm value
@@ -126,7 +131,13 @@ public:
     bool Init(ID3D12Device* device, u32 descriptorCount, bool shaderVisible);
     void Shutdown();
 
-    void Reset() noexcept { Head = 0; }
+    // Reset preserves the optional persistent prefix and rewinds only the
+    // transient tail. The zero-argument form retains the original behavior for
+    // renderer-owned rings that have no persistent descriptors.
+    void Reset(u32 reservedPrefix = 0) noexcept
+    {
+        Head = reservedPrefix < Capacity ? reservedPrefix : Capacity;
+    }
 
     // Allocates `count` contiguous descriptors. Returns false when the heap is
     // exhausted (the caller should treat that as a hard error, not a hint to
@@ -153,12 +164,25 @@ private:
 class DX12CommandContext
 {
 public:
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    static constexpr u32 TimestampQueryCount = 10;
+#endif
+
     bool Init(ID3D12Device* device, ID3D12CommandQueue* queue);
     void Shutdown();
 
     // Blocks until every previously submitted list finished, then opens a fresh
     // command list. Returns nullptr if the context is not initialized.
-    ID3D12GraphicsCommandList* Begin();
+    //
+    // `recordRasterBegin` is reserved for the main 3D renderer entry point.
+    // Presenter/compositor command contexts use the default so their waits do
+    // not contaminate the renderer's RasterBeginWait telemetry.
+    ID3D12GraphicsCommandList* Begin(bool recordRasterBegin = false);
+
+    // Opens the list only when its previous submission has already retired.
+    // Never waits: compositor rings use this to drop a frame instead of
+    // blocking VBlank when the GPU is more than their slot depth behind.
+    ID3D12GraphicsCommandList* TryBegin();
 
     [[nodiscard]] ID3D12GraphicsCommandList* GetList() const noexcept { return List.Get(); }
     [[nodiscard]] bool IsRecording() const noexcept { return Recording; }
@@ -166,10 +190,6 @@ public:
     // Closes and submits the open list, then signals the fence. No-op when
     // nothing is being recorded.
     bool Submit();
-
-    // Submits the open list and immediately waits for it, then reopens a new
-    // list. Used when a transient upload heap runs out mid-frame.
-    bool Flush();
 
     // Blocks until the last submitted list retired.
     void WaitIdle();
@@ -179,17 +199,60 @@ public:
     // most recent Submit(), notably DXGI Present operations.
     bool WaitQueueIdle();
 
+    // Optional developer GPU timestamp seam. Query results belong to this
+    // command context's fence, so a caller may read the previous submission
+    // immediately after Begin()/TryBegin() has retired it and before the new
+    // list is submitted.
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    [[nodiscard]] bool HasTimestampQueries() const noexcept
+    {
+        return TimestampQueriesEnabled && TimestampFrequency != 0;
+    }
+    void WriteTimestamp(u32 queryIndex) noexcept;
+    [[nodiscard]] u64 ReadTimestampSpanNanoseconds(
+        u32 startQuery, u32 endQuery) const noexcept;
+#else
+    [[nodiscard]] inline constexpr bool HasTimestampQueries() const noexcept
+    {
+        return false;
+    }
+    inline constexpr void WriteTimestamp(u32) noexcept {}
+    [[nodiscard]] inline constexpr u64 ReadTimestampSpanNanoseconds(
+        u32, u32) const noexcept
+    {
+        return 0;
+    }
+#endif
+
 private:
-    bool WaitForFence(u64 value);
+    bool WaitForFence(u64 value, bool recordRasterBegin = false);
+    ID3D12GraphicsCommandList* ResetList();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    void RefreshTimestampFrequencyIfDue() noexcept;
+    [[nodiscard]] bool ReadTimestampSnapshot() const noexcept;
+#endif
 
     ID3D12Device* Device = nullptr;
     ID3D12CommandQueue* Queue = nullptr;
     DX12::ComPtr<ID3D12CommandAllocator> Allocator;
     DX12::ComPtr<ID3D12GraphicsCommandList> List;
     DX12::ComPtr<ID3D12Fence> Fence;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    DX12::ComPtr<ID3D12QueryHeap> TimestampQueryHeap;
+    DX12::ComPtr<ID3D12Resource> TimestampReadback;
+#endif
     HANDLE FenceEvent = nullptr;
     u64 FenceValue = 0;
     u64 SubmittedValue = 0;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    u64 TimestampFrequency = 0;
+    std::chrono::steady_clock::time_point LastTimestampFrequencyRefresh{};
+    u16 TimestampWrittenMask = 0;
+    u16 LastTimestampWrittenMask = 0;
+    mutable std::array<u64, TimestampQueryCount> TimestampSnapshotValues{};
+    mutable bool TimestampSnapshotValid = false;
+    bool TimestampQueriesEnabled = false;
+#endif
     bool Recording = false;
 };
 
@@ -205,8 +268,8 @@ public:
     void Reset() noexcept { Head = 0; }
 
     // Returns a mapped CPU pointer plus the matching buffer offset, aligned to
-    // `alignment`. Returns nullptr when the remaining space is insufficient --
-    // callers must then flush the command context and Reset().
+    // `alignment`. Returns nullptr when the remaining space is insufficient;
+    // callers use a retained spill upload rather than waiting mid-frame.
     void* Allocate(u64 size, u64 alignment, u64& outOffset) noexcept;
 
     [[nodiscard]] ID3D12Resource* GetBuffer() const noexcept { return Buffer.Get(); }

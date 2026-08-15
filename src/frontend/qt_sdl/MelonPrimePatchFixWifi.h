@@ -10,8 +10,14 @@ namespace melonDS { class NDS; }
 
 namespace MelonPrime {
 
-    void FixWifi_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex);
-    void FixWifi_ResetPatchState();
+    struct MelonPrimePatchState;
+
+    void FixWifi_ApplyOnce(
+        MelonPrimePatchState& state,
+        melonDS::NDS* nds,
+        Config::Table& cfg,
+        uint8_t romGroupIndex);
+    void FixWifi_ResetPatchState(MelonPrimePatchState& state);
 
 } // namespace MelonPrime
 

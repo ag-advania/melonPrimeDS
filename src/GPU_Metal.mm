@@ -50,6 +50,24 @@ bool MetalComputeFoundationEnabled()
     return enabled;
 }
 
+bool FinalComposedDiffEnabled()
+{
+    static const bool enabled = []() {
+        const char* value = std::getenv("MELONPRIME_FINAL_COMPOSED_DIFFERENTIAL");
+        return value && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
+
+bool CaptureVRAMDiffEnabled()
+{
+    static const bool enabled = []() {
+        const char* value = std::getenv("MELONPRIME_CAPTURE_VRAM_DIFFERENTIAL");
+        return value && value[0] != '\0' && value[0] != '0';
+    }();
+    return enabled;
+}
+
 void* Metal3DColorTarget(Renderer3D* renderer) noexcept
 {
     if (auto* compute = dynamic_cast<MetalComputeRenderer3D*>(renderer))
@@ -341,6 +359,7 @@ struct MetalRenderer::MetalOutputState
     {
         id<MTLTexture> CpuComposite = nil;
         id<MTLTexture> FinalTexture = nil;
+        id<MTLBuffer> FinalReadback = nil;
         bool InFlight = false;
         int PresenterRefs = 0;
         uint64_t Serial = 0;
@@ -454,7 +473,16 @@ void MetalRenderer::PostSavestate()
 
 void MetalRenderer::SetRenderSettings(RendererSettings& settings)
 {
-    const int scale = std::max(1, settings.ScaleFactor);
+    const char* rasterDiff = std::getenv("MELONPRIME_RASTER_DIFFERENTIAL");
+    const char* testScale = std::getenv("MELONPRIME_METAL_COMPUTE_TEST_SCALE");
+    const int requestedTestScale = testScale ? std::atoi(testScale) : 0;
+    const int scale =
+        (rasterDiff && rasterDiff[0] != '\0' && rasterDiff[0] != '0') ||
+            CaptureVRAMDiffEnabled()
+        ? 1
+        : (requestedTestScale > 0
+            ? std::clamp(requestedTestScale, 1, 16)
+            : std::max(1, settings.ScaleFactor));
     ScaleFactor = scale;
 
     ConfigureMetal3DRenderer(
@@ -673,6 +701,13 @@ bool MetalRenderer::ConfigureMetalVisibleOutput(void* preferredDevice)
                 [OutputState->Device newTextureWithDescriptor:cpuDesc];
             OutputState->Slots[i].FinalTexture =
                 [OutputState->Device newTextureWithDescriptor:finalDesc];
+            if (FinalComposedDiffEnabled() && scale == 1)
+            {
+                OutputState->Slots[i].FinalReadback =
+                    [OutputState->Device
+                        newBufferWithLength:2u * 256u * 192u * sizeof(uint32_t)
+                                     options:MTLResourceStorageModeShared];
+            }
             if (!OutputState->Slots[i].CpuComposite || !OutputState->Slots[i].FinalTexture)
             {
                 std::fprintf(stderr,
@@ -960,6 +995,24 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             [encoder endEncoding];
         }
 
+        if (slot.FinalReadback && OutputState->Scale == 1)
+        {
+            id<MTLBlitCommandEncoder> blit = [commandBuffer blitCommandEncoder];
+            for (uint32_t layer = 0; layer < 2; layer++)
+            {
+                [blit copyFromTexture:slot.FinalTexture
+                          sourceSlice:layer
+                          sourceLevel:0
+                         sourceOrigin:MTLOriginMake(0, 0, 0)
+                           sourceSize:MTLSizeMake(256, 192, 1)
+                             toBuffer:slot.FinalReadback
+                    destinationOffset:layer * 256u * 192u * sizeof(uint32_t)
+               destinationBytesPerRow:256u * sizeof(uint32_t)
+             destinationBytesPerImage:256u * 192u * sizeof(uint32_t)];
+            }
+            [blit endEncoding];
+        }
+
 
         const uint64_t generation = OutputState->Generation;
         const uint64_t serial = OutputState->NextSerial++;
@@ -978,6 +1031,39 @@ void MetalRenderer::ComposeMetalVisibleOutput()
             {
                 state->PublishedSlot = slotIndex;
                 state->PublishedSerial = serial;
+                if (completedSlot.FinalReadback && state->Scale == 1)
+                {
+                    const uint32_t* actual = static_cast<const uint32_t*>(
+                        [completedSlot.FinalReadback contents]);
+                    std::vector<uint32_t> expected(2u * 256u * 192u);
+                    const MTLRegion region = MTLRegionMake2D(0, 0, 256, 192);
+                    for (uint32_t layer = 0; layer < 2; layer++)
+                    {
+                        [completedSlot.CpuComposite
+                            getBytes:expected.data() + layer * 256u * 192u
+                            bytesPerRow:256u * sizeof(uint32_t)
+                            bytesPerImage:256u * 192u * sizeof(uint32_t)
+                            fromRegion:region
+                            mipmapLevel:0
+                            slice:layer];
+                    }
+                    uint32_t mismatches[2] = {};
+                    constexpr size_t pixelsPerScreen = 256u * 192u;
+                    for (size_t pixel = 0; pixel < expected.size(); pixel++)
+                        mismatches[pixel / pixelsPerScreen] +=
+                            actual[pixel] != expected[pixel];
+                    const uint32_t mismatchTotal =
+                        mismatches[0] + mismatches[1];
+                    std::fprintf(
+                        mismatchTotal == 0 ? stdout : stderr,
+                        "[FinalComposedDiff] frame=%llu pixels=98304 "
+                        "topMismatches=%u bottomMismatches=%u "
+                        "mismatchedPixels=%u\n",
+                        static_cast<unsigned long long>(serial),
+                        mismatches[0],
+                        mismatches[1],
+                        mismatchTotal);
+                }
             }
             else if (completed.status == MTLCommandBufferStatusError)
             {
@@ -1044,6 +1130,29 @@ void MetalRenderer::VBlank()
                 rendered = EncodeMetalDisplayCapture(
                     Metal2D_A->GetOutputTexture(),
                     high3D);
+                if (rendered && CaptureVRAMDiffEnabled() &&
+                    MetalCaptureFrameHadCapture())
+                {
+                    const auto* lines =
+                        static_cast<const MetalCaptureLineConfigCpu*>(
+                            [CaptureState->LineConfigBuffer contents]);
+                    std::array<bool, 128> comparedDestinations {};
+                    for (u32 line = 0; line < 192u; line++)
+                    {
+                        const auto& config = lines[line];
+                        if (!config.Enabled)
+                            continue;
+                        const u32 bank = (config.CaptureCnt >> 16u) & 3u;
+                        const u32 start = (config.CaptureCnt >> 18u) & 3u;
+                        const u32 size = (config.CaptureCnt >> 20u) & 3u;
+                        const u32 key = (bank << 5u) | (start << 3u) | size;
+                        if (comparedDestinations[key])
+                            continue;
+                        comparedDestinations[key] = true;
+                        CaptureState->DifferentialCaptureCnt = config.CaptureCnt;
+                        SyncVRAMCapture(bank, start, size, true);
+                    }
+                }
             }
         }
 

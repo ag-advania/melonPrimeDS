@@ -183,6 +183,9 @@ signals:
 
 private:
     void handleMessages();
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    void tryLoadDiagnosticSavestate();
+#endif
 
     void updateRenderer();
     void compileShaders();

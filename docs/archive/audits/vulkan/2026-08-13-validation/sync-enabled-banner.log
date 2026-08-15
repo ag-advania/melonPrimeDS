@@ -1,0 +1,12 @@
+Validation Information: [ CURRENT-VALIDATION-ENABLED ] | MessageID = 0xfd7b2292
+vkCreateInstance(): Current Validaiton Enabled:
+  - Core Checks
+  - Synchronization
+  - Stateless Parameter
+  - Object lifetime
+  - Thread Safety
+  - Handle Wrapping
+
+Objects: 1
+    [0] VkInstance 0xd09f310
+

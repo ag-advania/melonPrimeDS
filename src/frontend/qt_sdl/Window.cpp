@@ -88,8 +88,12 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimeVideoBackend.h"
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+#include "MelonPrimeRendererSwitchStress.h"
+#endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFeatureCheck.h"
+#include "VulkanDevice.h"
 #endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeScreenMetal.h"
@@ -894,6 +898,13 @@ MainWindow::MainWindow(int id, EmuInstance* inst, QWidget* parent) :
 
     createScreenPanel();
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    // Dormant unless MELONPRIME_RENDERER_SWITCH_STRESS is set, and absent
+    // entirely from release builds. Armed after the first panel exists,
+    // because it drives panel teardown/recreation.
+    MelonPrime::RendererSwitchStress::ArmFromEnvironment(this);
+#endif
+
     if (hasMenu)
     {
         actEjectCart->setEnabled(false);
@@ -1099,7 +1110,19 @@ void MainWindow::localizeMenuText()
 void MainWindow::osdAddMessage(unsigned int color, const char* msg)
 {
     if (!showOSD) return;
+
+#ifdef MELONPRIME_DS
+    // EmuThread can report a renderer failure while the GUI thread is
+    // replacing the presentation panel.  destroyScreenPanel() publishes a
+    // null panel under this mutex before deleting the old widget; keep the
+    // cross-thread OSD path under the same lifetime guard so a fallback
+    // message cannot dereference that intentional transition state.
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->osdAddMessage(color, msg);
+#else
     panel->osdAddMessage(color, msg);
+#endif
 }
 
 void MainWindow::saveEnabled(bool enabled)
@@ -1135,6 +1158,23 @@ void MainWindow::closeEvent(QCloseEvent* event)
     QByteArray enc = geom.toBase64(QByteArray::Base64Encoding);
     windowCfg.SetString("Geometry", enc.toStdString());
     Config::Save();
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    bool closingVulkanPanel = false;
+    {
+        QMutexLocker panelLock(&screenPanelLock);
+        closingVulkanPanel = dynamic_cast<ScreenPanelVulkan*>(panel) != nullptr;
+    }
+    if (closingVulkanPanel && emuInstance->getNumWindows() == 1)
+    {
+        // Closing the final window can delete EmuInstance/NDS before Qt deletes
+        // child widgets. A Vulkan panel still has a borrowed VBlank hook into
+        // the renderer, so quiesce it while the renderer is still alive.
+        if (emuInstance->getNDS())
+            emuThread->prepareVideoBackendTransition();
+        destroyScreenPanel();
+    }
+#endif
 
     emuInstance->deleteWindow(windowID, false);
 
@@ -1416,11 +1456,15 @@ void MainWindow::invalidateRendererOutput()
 }
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
-void MainWindow::beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+void MainWindow::beginVulkanLowLatencyFrame(
+    int reflexMode, bool antiLag2Enabled, bool normalSpeed, melonDS::u64 targetFrameIntervalNs)
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
-        panel->beginVulkanLowLatencyFrame(reflexMode, antiLag2Enabled);
+    {
+        panel->beginVulkanLowLatencyFrame(
+            reflexMode, antiLag2Enabled, normalSpeed, targetFrameIntervalNs);
+    }
 }
 
 void MainWindow::markVulkanReflexInputSample()
@@ -1430,18 +1474,18 @@ void MainWindow::markVulkanReflexInputSample()
         panel->markVulkanReflexInputSample();
 }
 
-void MainWindow::markVulkanReflexRenderSubmitStart()
+void MainWindow::markVulkanReflexSimulationStart()
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
-        panel->markVulkanReflexRenderSubmitStart();
+        panel->markVulkanReflexSimulationStart();
 }
 
-void MainWindow::markVulkanReflexRenderSubmitEnd()
+void MainWindow::markVulkanReflexSimulationEnd()
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
-        panel->markVulkanReflexRenderSubmitEnd();
+        panel->markVulkanReflexSimulationEnd();
 }
 
 void MainWindow::finishVulkanLowLatencyFrame()
@@ -3087,6 +3131,15 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
             destroyPanels();
             prepareRenderers();
         }
+
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_VULKAN)
+        // Vulkan's Windows safety reference intentionally outlives the last
+        // presenter/renderer destructor. We are now past both synchronous
+        // teardown stacks, so release it before another native API enumerates
+        // adapters. Otherwise D3D12 can see only Microsoft Basic Render Driver
+        // and appear to work at single-digit FPS.
+        VulkanDevice::ReleaseRetainedDeviceForBackendTransition();
+#endif
 #else
         if (hadOGL)
         {

@@ -65,6 +65,8 @@ public:
     int GetTargetHeight() const noexcept;
     int GetScaleFactor() const noexcept;
     Metal3DDiagnostics GetLastDiagnostics() const noexcept;
+    void RenderSoftwareReferenceFrame();
+    Renderer3D& GetSoftwareReference() noexcept;
 
     void SetupRenderThread();
     void EnableRenderThread();

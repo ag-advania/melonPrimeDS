@@ -1,0 +1,76 @@
+Platform and hardware availability audit, 2026-08-13
+
+GPU devices exposed by WMI:
+- NVIDIA GeForce RTX 5070 Ti, driver 32.0.16.1074
+- no AMD GPU exposed
+- no Intel GPU exposed
+
+Physical displays exposed by WMI:
+- 1 monitor: DISPLAY\\GSM5CEC\\5&3b07d34e&0&UID4357_0
+- genuine cross-DPI monitor transition unavailable
+
+Local alternate-runtime checks:
+- wsl.exe --list --verbose: exit 1; WSL help shown, no distribution is installed
+- docker command: unavailable
+- qemu-system-x86_64 command: unavailable
+- virsh command: unavailable
+- workflow definitions are present for Ubuntu/macOS/Windows; no AMD/Intel-
+  specific hardware runner is configured
+
+Current-SHA hosted CI follow-up (4a503debf15abd4120e1bf4e19629f396800bf33):
+- Ubuntu workflow 31707409936: PASS; x86_64/aarch64 builds and x86_64 Xvfb
+  Vulkan validation smoke passed. The smoke selected Mesa llvmpipe (CPU), so
+  this is Linux build/validation-path evidence, not AMD/Intel hardware evidence.
+- macOS workflow 31707412897: PASS; x86_64, arm64, and universal bundles
+  passed pinned MoltenVK v1.4.0 dylib/license, lipo architecture, and bundle
+  signature checks. macOS runtime was not executed in this bundle-only run.
+- Windows workflow 31707415459: PASS; current-SHA Vulkan-enabled Windows
+  release build completed. No replacement for the local NVIDIA formal A/B
+  capture or the missing AMD/Intel hardware runs.
+
+Hosted macOS runtime follow-up (workflow-only commit 56eddfb61ca6d87fd921da8f1937324bd86cd9a2):
+- macOS workflow 31711999894: PASS; arm64 `macos-26-arm64` ran the bundled
+  app through MoltenVK. `Apple Paravirtual device`, Vulkan instance,
+  `VK_EXT_metal_surface`, swapchain, `selected-present-mode=IMMEDIATE`, and
+  presenter readiness were observed. No VUID/SYNC-HAZARD/DEVICE_LOST/runtime
+  failure finding; the smoke log was uploaded as an artifact.
+- This is hosted Apple Paravirtual/Apple Virtual startup/WSI evidence without
+  a ROM gameplay session. It does not represent a physical retail-Mac,
+  full-ROM, or performance result.
+
+Consequences:
+- AMD Anti-Lag runtime cannot be executed on this NVIDIA-only host.
+- Intel Vulkan cannot be executed without an Intel Vulkan device.
+- Linux hardware/vendor runtime and physical retail-Mac/full-ROM coverage
+  cannot be executed locally; hosted CI covers only the build/validation,
+  bundle, or startup/WSI smoke checks stated above.
+- AMD/Intel/DPI/physical-device gaps remain NOT RUN, not PASS, and are not
+  converted into synthetic results; the hosted CI checks above remain
+  explicitly limited to their stated build/smoke/bundle scope.
+
+Re-audit on 2026-08-14:
+- `vulkaninfo --summary` exposed one GPU: NVIDIA GeForce RTX 5070 Ti,
+  vendor `0x10de`, device `0x2c05`, proprietary NVIDIA driver.
+- CPU is Intel Core i7-14700KF; WMI exposed no Intel display adapter and no
+  AMD display adapter. The `F`-suffix CPU has no usable integrated graphics
+  path for this gate.
+- WMI exposed one active physical display (`DISPLAY\\GSM5CEC...`), so no
+  genuine cross-monitor DPI transition is available in this environment.
+- macOS workflow 31716658392 completed successfully at current workflow SHA
+  `94cd1de77`; arm64 MoltenVK startup/WSI smoke passed. Its separate
+  `macos-26-intel` diagnostic used an Apple Paravirtual Metal device and
+  exited `SIGABRT (-6)` before presenter readiness; artifact `9187724074`.
+- Local alternate-runtime recheck on 2026-08-14:
+  `wsl.exe --list --verbose` exposed no installed Linux distribution;
+  `docker`, `qemu-system-x86_64`, and `virsh` were unavailable. No additional
+  Linux AMD/Intel hardware execution path was available from this host.
+- GitHub runner availability recheck on 2026-08-14:
+  repository metadata identifies `ag-advania/melonPrimeDS` as a public fork
+  owned by a user account. The current token could not enumerate repository
+  runners or Actions permissions (HTTP 403), and workflow dispatch required
+  repository admin rights (HTTP 403). No GPU/self-hosted label could therefore
+  be enumerated or selected from this authority. GitHub's standard public
+  runner table has no AMD/Intel/Linux GPU label; GPU-powered larger runners
+  require an organization or enterprise configuration.
+  References: https://docs.github.com/en/actions/reference/runners/github-hosted-runners
+  and https://docs.github.com/en/actions/how-tos/manage-runners/larger-runners/manage-larger-runners

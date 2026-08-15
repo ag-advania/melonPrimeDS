@@ -16,6 +16,9 @@ env:
   MELONDS_GIT_BRANCH: ${{ github.ref }}
   MELONDS_GIT_HASH: ${{ github.sha }}
   MELONDS_BUILD_PROVIDER: GitHub Actions
+  MOLTENVK_VERSION: v1.4.0
+  MOLTENVK_MACOS_URL: https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.0/MoltenVK-macos.tar
+  MOLTENVK_MACOS_SHA256: f4feaf6a4988352de8e6d49874ccc1cd6a45021e3cb476e8531bef7ecc73e93a
 #  MELONDS_VERSION_SUFFIX: " RC"
 
 jobs:
@@ -35,6 +38,9 @@ jobs:
       - name: Check out sources
         uses: actions/checkout@v6
 
+      - name: Audit renderer telemetry zero-overhead contract
+        run: python3 tools/ci/audits/audit-renderer-perf-zero-overhead.py
+
       - name: Install dependencies for package building
         run: |
           brew install autoconf automake autoconf-archive libtool python-setuptools
@@ -46,8 +52,27 @@ jobs:
         run: |
           brew install vulkan-headers
 
+      - name: Fetch pinned MoltenVK runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .deps
+          curl -fL --retry 3 -o .deps/MoltenVK-macos.tar "$MOLTENVK_MACOS_URL"
+          echo "$MOLTENVK_MACOS_SHA256  .deps/MoltenVK-macos.tar" | shasum -a 256 -c -
+          tar -xf .deps/MoltenVK-macos.tar -C .deps
+          test -f .deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib
+          test -f .deps/MoltenVK/LICENSE
+          lipo .deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib -verify_arch "${{ matrix.arch }}"
+
       - name: Set up CMake
         uses: lukka/get-cmake@latest
+
+      - name: Install Metal compiler toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --find metal
 
       - name: Restore vcpkg cache
         id: restore-vcpkg-cache
@@ -67,12 +92,91 @@ jobs:
         with:
           configurePreset: release-mac-${{ matrix.arch }}
           buildPreset: release-mac-${{ matrix.arch }}
-          configurePresetAdditionalArgs: "['-DMELONDS_EMBED_BUILD_INFO=ON', '-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF']"
+          configurePresetAdditionalArgs: "['-DCMAKE_BUILD_TYPE=Release', '-DMELONDS_EMBED_BUILD_INFO=ON', '-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF', '-DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF', '-DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF', '-DMELONPRIME_ENABLE_VULKAN=ON', '-DMELONPRIME_FORCE_DISABLE_VULKAN=OFF', '-DMELONPRIME_MOLTENVK_DYLIB=${{ github.workspace }}/.deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib', '-DMELONPRIME_MOLTENVK_LICENSE=${{ github.workspace }}/.deps/MoltenVK/LICENSE']"
+
+      - name: Verify raster parity contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/ci/audits/audit-raster-software-parity.py
+          python3 tools/ci/audits/audit-radar-color-key-contract.py
+          cmake --build "build/release-mac-${{ matrix.arch }}" --target melonprime_raster_edge_vectors
+          "build/release-mac-${{ matrix.arch }}/melonprime_raster_edge_vectors"
+          python3 tools/ci/audits/compile-metal-compute-msl.py
+
+      - name: Verify bundled MoltenVK
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="build/release-mac-${{ matrix.arch }}/melonPrimeDS.app"
+          test -f "$app/Contents/Frameworks/libMoltenVK.dylib"
+          test -f "$app/Contents/Resources/ThirdPartyNotices/MoltenVK-LICENSE.txt"
+          lipo "$app/Contents/Frameworks/libMoltenVK.dylib" -verify_arch "${{ matrix.arch }}"
+          lipo -info "$app/Contents/Frameworks/libMoltenVK.dylib"
 
       - name: Verify app signature
         shell: bash
         run: |
           codesign --verify --deep --strict build/release-mac-${{ matrix.arch }}/melonPrimeDS.app
+
+      # The bundle checks above prove that MoltenVK is packaged, but they do
+      # not create a Vulkan instance or a CAMetalLayer surface. Run the native
+      # arm64 artifact on the macOS host so the MoltenVK WSI path is exercised
+      # without claiming an external physical-device or latency result.
+      - name: Run MoltenVK runtime smoke
+        if: matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="build/release-mac-${{ matrix.arch }}/melonPrimeDS.app"
+          portable="build/release-mac-${{ matrix.arch }}/portable"
+          log="$RUNNER_TEMP/melonprime-moltenvk-runtime.log"
+          mkdir -p "$portable"
+          printf '3D.Renderer = 5\nScreen.UseGL = false\nScreen.VSync = false\nEmu.DirectBoot = false\n' > "$portable/melonDS.toml"
+          python3 - "$app/Contents/MacOS/melonPrimeDS" "$log" <<'PY'
+          import os
+          import signal
+          import subprocess
+          import sys
+
+          executable, log_path = sys.argv[1:]
+          env = os.environ.copy()
+          env["SDL_AUDIODRIVER"] = "dummy"
+          with open(log_path, "w", encoding="utf-8") as log:
+              process = subprocess.Popen(
+                  [executable],
+                  stdout=log,
+                  stderr=subprocess.STDOUT,
+                  env=env,
+              )
+              try:
+                  process.wait(timeout=15)
+              except subprocess.TimeoutExpired:
+                  process.send_signal(signal.SIGTERM)
+                  try:
+                      process.wait(timeout=15)
+                  except subprocess.TimeoutExpired:
+                      process.kill()
+                      process.wait()
+          if process.returncode != 0:
+              raise SystemExit(f"MoltenVK runtime smoke exited {process.returncode}")
+          print(log_path)
+          PY
+          cat "$log"
+          grep -F '[Vulkan] instance created' "$log"
+          grep -F '[Vulkan] presentation surface created backend=VK_EXT_metal_surface' "$log"
+          grep -F '[Vulkan] presentation: requested-vsync=off' "$log"
+          grep -F '[Vulkan] presenter ready:' "$log"
+          ! grep -E 'VUID-|SYNC-HAZARD|DEVICE_LOST|\[Vulkan\] runtime failure' "$log"
+
+      - name: Upload MoltenVK runtime smoke log
+        if: always() && matrix.arch == 'arm64'
+        uses: actions/upload-artifact@v7
+        with:
+          name: moltenvk-runtime-smoke-${{ matrix.arch }}
+          path: ${{ runner.temp }}/melonprime-moltenvk-runtime.log
+          if-no-files-found: warn
+          archive: false
 
       - name: Compress app bundle
         shell: bash
@@ -95,6 +199,88 @@ jobs:
         with:
           path: ${{ github.workspace }}/vcpkg_cache
           key: ${{ steps.restore-vcpkg-cache.outputs.cache-primary-key }}
+
+  # GitHub also provides an Intel macOS host. Run the x86_64 bundle there to
+  # retain an Intel-host MoltenVK diagnostic separate from the Apple-Silicon
+  # result above. This is informational: it is not native Intel Vulkan, and
+  # the hosted Metal virtual device has exhibited startup failures that must
+  # remain visible in the artifact without gating the shipping build.
+  runtime-macos-intel:
+    name: Intel macOS MoltenVK diagnostic (non-gating)
+    needs: [build-macos]
+    runs-on: macos-26-intel
+
+    steps:
+      - name: Download x86_64 bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: melonPrimeDS-macOS-x86_64.zip
+          path: x86_64
+          skip-decompress: true
+
+      - name: Run MoltenVK runtime diagnostic on Intel host
+        shell: bash
+        run: |
+          set -euo pipefail
+          zip_path=x86_64/melonPrimeDS-macOS-x86_64.zip
+          [ -f "$zip_path" ] || { echo "x86_64 artifact not found at $zip_path"; exit 1; }
+          unzip "$zip_path" -d x86_64
+          app="$PWD/x86_64/melonPrimeDS.app"
+          portable="$PWD/x86_64/portable"
+          log="$RUNNER_TEMP/melonprime-moltenvk-intel-runtime.log"
+          mkdir -p "$portable"
+          printf '3D.Renderer = 5\n3D.GL.ScaleFactor = 1\nScreen.UseGL = false\nScreen.VSync = false\nEmu.DirectBoot = false\n' > "$portable/melonDS.toml"
+          python3 - "$app/Contents/MacOS/melonPrimeDS" "$log" <<'PY'
+          import os
+          import signal
+          import subprocess
+          import sys
+
+          executable, log_path = sys.argv[1:]
+          env = os.environ.copy()
+          env["SDL_AUDIODRIVER"] = "dummy"
+          with open(log_path, "w", encoding="utf-8") as log:
+              process = subprocess.Popen(
+                  [executable],
+                  stdout=log,
+                  stderr=subprocess.STDOUT,
+                  env=env,
+              )
+              try:
+                  process.wait(timeout=15)
+              except subprocess.TimeoutExpired:
+                  process.send_signal(signal.SIGTERM)
+                  try:
+                      process.wait(timeout=15)
+                  except subprocess.TimeoutExpired:
+                      process.kill()
+                      process.wait()
+          print(
+              f"Intel-host MoltenVK runtime diagnostic exited {process.returncode}; "
+              "the result is retained as non-gating evidence.",
+              file=sys.stderr,
+          )
+          print(log_path)
+          PY
+          cat "$log"
+          if grep -F '[Vulkan] renderer requested=Vulkan presenter actual=Vulkan' "$log" \
+            && grep -F '[Vulkan] presentation surface created backend=VK_EXT_metal_surface' "$log" \
+            && grep -F '[Vulkan] presentation: requested-vsync=off' "$log" \
+            && grep -F '[Vulkan] presenter ready:' "$log" \
+            && ! grep -E 'VUID-|SYNC-HAZARD|DEVICE_LOST|\[Vulkan\] runtime failure' "$log"; then
+            echo 'Intel-host MoltenVK diagnostic: PASS'
+          else
+            echo 'Intel-host MoltenVK diagnostic: NOT PASS (see uploaded log; non-gating)'
+          fi
+
+      - name: Upload Intel-host MoltenVK runtime log
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: moltenvk-intel-runtime-diagnostic
+          path: ${{ runner.temp }}/melonprime-moltenvk-intel-runtime.log
+          if-no-files-found: warn
+          archive: false
 
   universal-binary:
     name: Universal binary
@@ -129,6 +315,9 @@ jobs:
           lipo {x86_64,arm64}/melonPrimeDS.app/Contents/MacOS/melonPrimeDS -create -output melonPrimeDS
           cp -a arm64/melonPrimeDS.app melonPrimeDS.app
           cp melonPrimeDS melonPrimeDS.app/Contents/MacOS/melonPrimeDS
+          test -f melonPrimeDS.app/Contents/Frameworks/libMoltenVK.dylib
+          test -f melonPrimeDS.app/Contents/Resources/ThirdPartyNotices/MoltenVK-LICENSE.txt
+          lipo melonPrimeDS.app/Contents/Frameworks/libMoltenVK.dylib -verify_arch x86_64 arm64
           # Arch builds are ad-hoc signed in CMake (MACOS_ADHOC_SIGN_BUNDLE); lipo
           # replaces the main binary so the bundle must be re-signed with --force.
           codesign --force --sign - --deep --timestamp=none melonPrimeDS.app

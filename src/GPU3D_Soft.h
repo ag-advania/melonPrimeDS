@@ -39,6 +39,11 @@ public:
     [[nodiscard]] bool IsThreaded() const noexcept { return Threaded; }
 
     void RenderFrame() override;
+    // Differential diagnostics call this after the accelerated renderer has
+    // made the shared flat VRAM mirrors coherent. DeriveState() is destructive,
+    // so the reference must neither consume it a second time nor reuse an old
+    // frame when only texture/palette VRAM changed.
+    void RenderReferenceFrame();
     void FinishRendering() override;
     void RestartFrame() override;
 

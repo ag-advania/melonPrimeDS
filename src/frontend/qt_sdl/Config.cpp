@@ -68,7 +68,11 @@ namespace Config
         {"3D.Renderer", renderer3D_OpenGL}, // melonPrimeDS defaults
         {"3D.GL.ScaleFactor", 4},           // melonPrimeDS defaults
         {MelonPrime::CfgKey::NvidiaReflexMode, 1}, // NVIDIA recommended default: Reflex On
-        {MelonPrime::CfgKey::AmdAntiLag2Enabled, true},
+        // Developer experiments are opt-in. Compatibility keeps the existing
+        // host limiter and DXGI waitable-object pacing authoritative.
+        {MelonPrime::CfgKey::IntelXeLLPacingPolicy, 0},
+        // 0=telemetry only; behavioural WSI pacing is an explicit A/B opt-in.
+        {MelonPrime::CfgKey::VulkanPresentPacingPolicy, 0},
     #else
         {"3D.Renderer", renderer3D_Software},
         {"3D.GL.ScaleFactor", 1},
@@ -170,6 +174,8 @@ namespace Config
         {"3D.GL.ScaleFactor", {1, 16}},
     #ifdef MELONPRIME_DS
         {MelonPrime::CfgKey::NvidiaReflexMode, {0, 2}},
+        {MelonPrime::CfgKey::IntelXeLLPacingPolicy, {0, 4}},
+        {MelonPrime::CfgKey::VulkanPresentPacingPolicy, {0, 4}},
     #endif
         {"Audio.Interpolation", {0, 4}},
         {"Instance*.Audio.Volume", {0, 256}},
@@ -217,6 +223,8 @@ namespace Config
         // requested. Vulkan enables this behavior at runtime without changing
         // the saved preference.
         {"3D.ForceSoftwareOutsideMatch", false},
+        {MelonPrime::CfgKey::AmdAntiLag2Enabled, true},
+        {MelonPrime::CfgKey::IntelXeLLEnabled, false},
     #endif
     #ifdef MELONPRIME_DS
         {"3D.GL.BetterPolygons", true}, // melonPrimeDS Added
@@ -924,6 +932,18 @@ namespace Config
     bool Table::GetBool(const std::string& path)
     {
         toml::value& tval = ResolvePath(path);
+#ifdef MELONPRIME_DS
+        // Early Anti-Lag 2 builds accidentally registered this bool in the
+        // integer defaults table. Preserve explicit 0/1 values those builds
+        // may have written instead of replacing both with the new bool default.
+        if (GetDefaultKey(PathPrefix + path) == MelonPrime::CfgKey::AmdAntiLag2Enabled
+            && tval.is_integer())
+        {
+            const int64_t legacy = tval.as_integer();
+            if (legacy == 0 || legacy == 1)
+                tval = legacy != 0;
+        }
+#endif
         if (!tval.is_boolean())
             tval = FindDefault(path, false, DefaultBools);
 

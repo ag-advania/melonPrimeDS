@@ -79,6 +79,7 @@ cd "$REPO_ROOT"
 if [[ "$CONFIGURE" -eq 1 ]]; then
     cmake -B build-mac -G Ninja -DCMAKE_BUILD_TYPE=Release \
         -DMELONPRIME_ENABLE_DEVELOPER_FEATURES="$DEV_FEATURES" \
+        -DMELONPRIME_FORCE_DISABLE_VULKAN=ON \
         -DCMAKE_PREFIX_PATH="$PREFIX_PATH" \
         -DUSE_QT6=ON
 else

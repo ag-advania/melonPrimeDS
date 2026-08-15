@@ -73,10 +73,14 @@ public:
 #ifdef MELONPRIME_DS
     void invalidateRendererOutput();
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled);
+    void beginVulkanLowLatencyFrame(
+        int reflexMode,
+        bool antiLag2Enabled,
+        bool normalSpeed,
+        melonDS::u64 targetFrameIntervalNs);
     void markVulkanReflexInputSample();
-    void markVulkanReflexRenderSubmitStart();
-    void markVulkanReflexRenderSubmitEnd();
+    void markVulkanReflexSimulationStart();
+    void markVulkanReflexSimulationEnd();
     void finishVulkanLowLatencyFrame();
 #endif
 #endif

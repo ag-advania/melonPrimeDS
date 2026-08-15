@@ -19,32 +19,52 @@ DX12Renderer (: SoftRenderer)        software 2D engines + structured planes
 
 The software 2D engines record the same per-pixel structured planes used by the
 Vulkan backend. After the DS scanlines are complete, a DX12 compute pass combines
-those planes with the high-resolution 3D target and reads back two BGRA screens
-at `256*scale x 192*scale`. `RendererOutput` carries those dimensions to
-`ScreenPanelDX12`, which performs the established layout/HUD/OSD composition and
-uploads the final window-sized BGRA frame to a native flip-model DXGI swapchain.
+those planes with the high-resolution 3D target into one of three GPU-resident
+BGRA buffer slots at `256*scale x 192*scale`. A leased `DX12PresentedFrame`
+carries that resource to `ScreenPanelDX12`; the native presenter copies each
+screen into a sampled texture and performs layout, filtering, HUD, radar and OSD
+composition directly into a flip-model DXGI swapchain.
 
 The compute composition is submitted from `DX12Renderer::VBlank()` on the
 emulation thread. This binds the structured 2D planes and `FinalFB` to the same
 DS frame even when software flips `ScreenSwap` every frame. `GetOutput()` only
-publishes the already-composed front buffer once one exists; presentation timing
+publishes the already-composed slot once one exists; presentation timing
 cannot combine one frame's screen mapping with another frame's 3D image. During
 incremental pipeline compilation at ROM startup, it temporarily publishes the
 initialized software buffers so Qt never paints an uninitialized cached image.
 
+Each composition slot owns its own command allocator, descriptors and staging
+buffer. `ComposeStructuredOutput()` opens a slot only when both its GPU fence and
+presenter lease are free; otherwise it keeps the preceding completed output and
+returns without blocking VBlank. Renderer and presenter use the same process-wide
+device and queue, so queue ordering plus explicit UAV/copy transitions replace a
+CPU fence wait.
+
 A separate 256x192 resolve remains available for DS display capture and other
-core operations that require the `Renderer3D::GetLine()` contract. The DX12
-panel reuses the same QImage/QPainter layout, Custom HUD, radar and OSD helpers
-as the software panel before handing the completed pixels to D3D12. Qt never
-queues or paints active emulation frames; the native child HWND is owned by the
-DXGI swapchain.
+core operations that require the `Renderer3D::GetLine()` contract. Its deferred
+readback is deliberately independent from presentation. CPU-authored Custom HUD
+and OSD bitmaps use small layer uploads; game screens, screen layout, rotation,
+filtering and DPI scaling stay on the GPU. Qt never queues or paints active
+emulation frames; the native child HWND is owned by the DXGI swapchain.
+
+When `GPU3D.RenderFrameIdentical` is set and the texture/clear state is unchanged,
+DX12 reuses the preceding valid 3D target. Software 2D and the structured
+compositor still run for the current DS frame, so this skips only redundant 3D
+raster work and never replays an earlier two-screen composition.
+
+Texture uploads normally use the 32 MiB linear ring. If it fills, the cache now
+records the copy from a dedicated retained upload resource and releases that
+resource after the submission retires; it no longer submits and synchronously
+waits in the middle of `BuildPolygons()`. The five frame-static SRVs are built
+once per scale-dependent resource generation and copied into each transient
+table; only the decoded texture SRV remains dynamic per texture switch.
 
 Consequences:
 
 * Internal resolution applies to the composed screen output, not only the 3D
   raster target.
-* The presentation path has one high-resolution GPU readback per newly composed
-  frame plus one window-sized D3D12 upload. The native resolve is read back only
+* Normal presentation performs no high-resolution GPU readback, CPU full-frame
+  composition or window-sized re-upload. The native resolve is read back only
   when display capture calls `GetLine()`.
 * DX12 selection owns presentation regardless of `Screen.UseGL`; no OpenGL
   context or Qt frame mailbox is involved.
@@ -97,16 +117,24 @@ The emulation thread calls the backend sleep operation once at the beginning of
 every Reflex-capable frame, immediately before late input polling. DX12 uses
 `NvAPI_D3D_Sleep`; Vulkan uses `vkLatencySleepNV` followed by a host wait on the
 extension's timeline semaphore. Both paths publish Input Sample, Simulation,
-Render Submit and Present latency markers. Sleep and markers remain active in
-Off mode as NVIDIA recommends; the mode flags alone control whether low latency
-and boost are enabled. The minimum interval is always zero, so Reflex does not
-add a frame-rate cap.
+Render Submit and Present latency markers. Both paths keep Sleep, marker and
+frame-correlation calls active in Off mode as NVIDIA requires; the mode flags
+only control low-latency pacing and boost. The minimum interval is always zero,
+so Reflex does not add a frame-rate cap.
+
+The two backends use the same engine boundaries: Sleep completes first,
+Input Sample is emitted immediately before `inputRefreshJoystickState()` (the
+first late input read), and Simulation Start is emitted only after
+`RunFrameHook()` and `SetKeyMask()` have captured that input for the emulated
+frame. The Reflex helpers reject duplicate or out-of-order Input Sample and
+Simulation markers, so a future call-site move cannot silently create an
+invalid marker timeline.
 
 Render Submit markers bracket the D3D12 render/composition work. Present Start
 and Present End are emitted immediately around the real
 `IDXGISwapChain::Present` call on the same D3D12 device and queue used by the
-renderer. CPU layout/HUD/OSD composition and the final upload happen before
-Present Start, so NVIDIA receives an accurate native presentation boundary.
+renderer. GPU layout/HUD/OSD composition is submitted before Present Start, so
+NVIDIA receives an accurate native presentation boundary.
 
 Vulkan presents through `MelonPrimeVulkanSurfacePresenter`, so its Present
 markers and Present ID cover the real native swapchain submission and present.
@@ -114,6 +142,67 @@ Reflex state belongs to each presenter/emulator instance; no process-global
 frame counter or cross-instance pacing state is introduced. The persisted
 configuration path remains `3D.DX12.NvidiaReflexMode` for compatibility, but
 the value is shared by both native backends.
+
+## Intel Xe Low Latency (XeLL)
+
+On a supported Intel Arc GPU, selecting DirectX 12 exposes an independent
+**Intel Xe Low Latency (XeLL)** Off/On option. It is disabled by default and
+must be explicitly enabled by the user. The
+control is disabled with the exact probe failure reason on non-Intel adapters,
+unsupported Intel drivers, or when the XeLL runtime is missing. Cross-vendor
+XeLL is deliberately not offered: Intel requires active XeSS Frame Generation
+for that mode, and MelonPrimeDS does not implement XeSS-FG.
+
+`DX12IntelXeLL` dynamically loads the unmodified `libxell.dll` shipped beside
+the executable and creates one context for the active D3D12 device. The ABI and
+runtime are pinned to Intel XeSS SDK 3.0.2 / XeLL 1.3.2.10 at commit
+`8fe81bdbbaf00b3c1b733fd0d830c333dc84e6f0`. CMake verifies the runtime SHA-256
+and copies the DLL plus Intel's license and third-party notices into the build
+output. No MSVC import library is linked, so the integration works in the
+project's supported MinGW build.
+
+Each emulated frame calls `xellSleep` before late input polling, then publishes
+Simulation Start and Input Sample. Render Submit markers follow the D3D12 render
+and high-resolution composition boundary; Present markers directly bracket the
+flip-model `IDXGISwapChain::Present` call. All calls for a frame share one
+monotonically increasing per-renderer frame ID. Calls remain active in Off mode,
+as Intel recommends, while `xellSetSleepMode` controls latency reduction.
+
+Compatibility mode keeps `minimumIntervalUs` at zero. MelonPrime's existing
+limiter runs before `xellSleep`, matching Intel's required order without adding
+a second limiter. Developer builds additionally expose four hardware-validation
+experiments: bypass only the DXGI frame-latency wait, bypass only the host
+limiter, transfer the host frame cap to XeLL, or Intel-recommended mode (XeLL
+owns the cap and both generic waits are bypassed). These paths take effect only
+after the runtime reports XeLL actually enabled. Compatibility remains value
+zero and the release default; release builds ignore a stored experimental value.
+The pure host-limiter bypass is restricted to normal speed; policies that give
+XeLL the frame cap instead update `minimumIntervalUs` on fast-forward and
+slow-motion transitions without calling `xellSetSleepMode` in steady state.
+Before changing sleep mode or destroying the context, the renderer inserts and
+waits for a queue-wide fence that also retires native-presenter work. The saved
+configuration keys are `3D.Intel.XeLLEnabled` and the developer-only
+`3D.Intel.XeLLPacingPolicy`.
+
+The runtime wrapper exposes an injectable XeLL API table. The Windows DX12
+build runs the production lifecycle against a fake backend on every build,
+covering normal, 3D-work-free, skipped-present, present-failure, symbol/version,
+sleep-mode, marker-failure, cleanup, monotonically increasing frame IDs and
+pacing-policy cases without requiring Intel hardware. The low-latency CI audit
+also verifies the DLL hash, PE exports, ABI assertions, license/notices and
+default-Off configuration.
+
+Logs distinguish requested state, runtime presence, vendor probe support,
+context creation, applied sleep mode, actual enabled state, minimum interval,
+frame ID, runtime version, adapter IDs and driver version. They deliberately
+report `hardwareValidation=pending`: fake-backend and static tests prove the
+integration contract, not Intel Arc runtime behavior or a latency improvement.
+The Arc acceptance procedure is documented in
+[`intel-arc-xell-validation.md`](../../development/testing/intel-arc-xell-validation.md).
+
+Reflex and Anti-Lag 2 remain vendor-gated, so only XeLL can be active on the
+supported Intel path. This also satisfies Intel's requirement not to combine
+XeLL with another latency-reduction implementation.
 
 ## AMD Radeon Anti-Lag 2
 
@@ -129,6 +218,17 @@ the active D3D12 device through `AmdExtD3DCreateInterface`, keeps it scoped to
 the renderer, and performs AMD's per-frame null update immediately before late
 input polling. State updates are sent only when On/Off changes, and `maxFPS` is
 always zero so Anti-Lag 2 never adds a frame-rate cap.
+
+The local ABI is pinned to AMD's public `ffx_antilag2_dx12.h` at commit
+`390aa4a8c8655d0ae6e90079db2c85e103a96da3`. It was rechecked on 2026-08-11
+against AMD's v2.0.4 publication: the interface GUID, 32-byte v1 state
+structure, version/mode values, null per-frame update, initialization and
+shutdown contracts are unchanged. The newer v2 structure concerns frame
+generation signalling, which this emulator does not use.
+
+The minimal DX12 Reflex ABI is likewise pinned to NVIDIA's public NVAPI commit
+`cd6918f60b3c9a0476fdfe7e89bb32330602049d` (`nvapi.h`, 2026-06-01), including
+the structure sizes, version values, marker enumeration and QueryInterface IDs.
 
 The Vulkan path enables the native `VK_AMD_anti_lag` device extension and its
 `antiLag` feature. Every emulated frame receives one monotonically increasing
@@ -149,12 +249,15 @@ Reflex setting.
 | `src/DX12Context.{h,cpp}` | Device, adapter selection, queue, fence, descriptor ring, upload ring, HLSL compile, init logging |
 | `src/DX12NvidiaReflex.{h,cpp}` | Runtime NVAPI loading, support probe, low-latency/boost modes, sleep and latency markers |
 | `src/DX12AmdAntiLag2.{h,cpp}` | Runtime AMD Anti-Lag 2 driver-ABI loading, support probe and per-frame input insertion point |
+| `src/DX12IntelXeLL.{h,cpp}` | Runtime XeLL loading, Intel support probe, sleep-mode state and complete frame-marker lifecycle |
+| `src/DX12LowLatencyPacing.h` | Single DX12 pacing-authority resolver and developer XeLL comparison policies |
 | `src/GPU3D_TexcacheDX12.{h,cpp}` | Texture-array heap behind the shared `Texcache<>` template |
-| `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, readback |
+| `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, GPU presentation ring and capture readback |
+| `src/DX12PresentedFrame.h` | Opaque GPU-resource handoff descriptor shared by renderer and presenter |
 | `src/GPU3D_DX12_shaders.h` | HLSL sources, compiled at runtime |
 | `src/GPU_DX12.{h,cpp}` | `DX12Renderer`, pairing the 3D renderer with software 2D |
 | `src/frontend/qt_sdl/MelonPrimeDX12FeatureCheck.{h,cpp}` | Runtime availability probe for the settings dialog and renderer normalization |
-| `src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.{h,cpp}` | Native child HWND, D3D12 upload, flip-model DXGI swapchain and actual Present boundary |
+| `src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.{h,cpp}` | Native child HWND, GPU layer composition, CPU overlay uploads, flip-model DXGI swapchain and actual Present boundary |
 
 ## Pipeline
 
@@ -172,9 +275,9 @@ Per frame, in one command list:
 10. `Resolve` — preserve a 256x192 `Output3D` source for display capture
 11. after software 2D scanlines complete, `Compositor` combines the structured
     planes with the high-resolution `FinalFB`
-12. copy the two high-resolution BGRA screens to the presentation readback
+12. publish the GPU-resident two-screen buffer through a leased ring slot
 
-35 compute pipelines in total. They are compiled incrementally through
+37 compute pipelines in total. They are compiled incrementally through
 `ShaderCompileStep()`, so the OSD shows progress instead of the emulator
 hitching, and they are rebuilt whenever the internal resolution changes (tile
 geometry is baked in as `#define`s, exactly like the OpenGL renderer).
@@ -207,17 +310,29 @@ derivation — is a 1:1 port.
   exposed by the legacy HLSL compiler, and `firstbithigh` / `firstbitlow`
   disagree between shader targets about which end the index is counted from —
   the fixed-point division is exquisitely sensitive to that.
-* **Tile memory falls back instead of failing.** The OpenGL heuristic
+* **Tile memory is bounded without dropping layers.** The OpenGL heuristic
   (`tiles * 16` work tiles) can ask for more than a GPU will hand out at high
-  internal resolutions, so the allocation is halved until it fits. The binning
-  shader already trims work to `MaxWorkTiles` and drops excess layers
-  gracefully.
+  internal resolutions, so the allocation is halved until it fits. The host
+  partitions the ordered polygon stream into conservative consecutive batches
+  that each fit the resulting `MaxWorkTiles`; result and shadow-continuation
+  buffers carry exact state between batches.
 
 ## Build and validation
 
-The renderer compiles its HLSL at runtime with `d3dcompiler_47.dll`, so the
-MinGW build needs no shader toolchain and no DX12 import libraries — every entry
-point is resolved with `GetProcAddress`, and only `dxguid` is linked.
+The 3D renderer does not compile HLSL at runtime. Its 37 compute pipelines are
+committed as DXBC for the three tile-geometry buckets used by 1x-4x, 5x-8x and
+9x-16x. Screen dimensions, scale and scale-dependent buffer offsets travel in
+`MetaUniform`, so a renderer switch or an internal-resolution change never
+starts an HLSL compiler. Regenerate the table after changing the shader source:
+
+```bash
+python tools/dx12/compile-shaders.py
+```
+
+The small native-presentation vertex/pixel shader is still compiled during
+presenter initialization through `d3dcompiler_47.dll`. The MinGW build needs no
+DX12 import libraries: entry points are resolved with `GetProcAddress`, and only
+`dxguid` is linked.
 
 Because a shader error would only show up as a black screen on a machine with a
 D3D12 GPU, the shader set has an offline audit:
@@ -226,12 +341,11 @@ D3D12 GPU, the shader set has an offline audit:
 python tools/ci/audits/check-dx12-shaders.py
 ```
 
-It assembles exactly the sources `DX12Renderer3D::BuildPipeline()` builds — same
-`#define` prologue, same per-variant defines — and runs `fxc.exe` over all 35
-variants at several internal resolutions. A warning is a failure as well as a
-compile error: warning-free data flow is required because the same source is
-optimized again by the runtime compiler. The audit skips cleanly when the
-Windows SDK is not installed.
+It assembles the same sources used to generate the committed table and runs
+`fxc.exe` over all 111 modules (37 pipelines times three tile-geometry buckets).
+A warning is a failure as well as a compile error. The audit skips cleanly when
+the Windows SDK is not installed. CI separately verifies that the committed
+DXBC source hash is current.
 
 ## Internal resolution
 
@@ -248,16 +362,70 @@ compositor samples those controls at native coordinates while sampling 3D from
 `FinalFB` at full resolution. This preserves pixel-authentic 2D behavior while
 allowing polygon edges and textures to retain the selected internal resolution.
 
-The high-resolution screen images remain CPU-visible so the DX12 panel can use
-the established layout/HUD/OSD implementation without visual divergence. The
-completed window-sized frame is then uploaded once and presented by DXGI. This
-keeps readback bandwidth proportional to the square of the internal scale while
-removing the Qt paint queue from the live presentation path.
+The high-resolution screen images remain device-local. The presenter copies
+them, queue-ordered, from the renderer's leased buffer to sampled textures and
+draws the existing layout as transformed quads. QImage remains only for
+CPU-authored premultiplied HUD and OSD layers. The colour-keyed radar is drawn
+after the HUD backing SVG/outline, preserving its foremost layer order without
+making the bottom screen CPU-visible.
+
+The DX12 HUD upload accepts a source subrectangle of the retained full HUD
+image. It copies those rows directly into the D3D12 upload resource, avoiding
+the former intermediate `hudPatch` QImage allocation/copy while keeping the
+same dirty rectangle, texture dimensions, UVs and draw order.
+
+## Performance telemetry
+
+Set `MELONPRIME_PERF=1` to emit one-second `[DX12Perf]` windows. CPU timers cover
+renderer and presenter fence waits, texture-cache update, polygon/span setup,
+span staging copy, descriptor work, structured compositor packing/recording,
+conditional capture wait/map, HUD upload, command submission and presentation
+recording. Counters include frame/identical-frame counts, geometry sizes,
+structured/span/texture/HUD bytes, descriptor writes, compositor drops,
+capture reads, screen-copy bytes, upload overflows/spills and HUD texture
+recreation. The gate is runtime-only and disabled by default.
+It intentionally is not keyed to the frontend-only developer-feature define:
+the inline probe is included by both core and frontend translation units, so
+giving those units different definitions would violate the C++ ODR. With the
+environment variable unset its hot-path cost is the single disabled branch.
+
+The 32 MiB upload ring is texture-only. The frame uniform and both 256x256
+clear bitmaps use small persistently mapped upload resources whose reuse is
+protected by the existing one-frame-in-flight wait. Texture-ring exhaustion
+therefore falls back to a retained spill upload without starving required
+frame metadata; failure to create or map that spill is propagated as a DX12
+runtime failure instead of silently sampling an incomplete texture.
+
+The 4x Rev 1 F7 audit scene on the RTX 5070 Ti measured zero capture reads,
+zero texture-ring overflows, zero compositor drops and zero steady-state HUD
+texture recreations. That evidence keeps the conditional capture redesign and
+grow-only HUD allocation out of the hot-path change. Directly generating spans
+into mapped upload memory was also tested and rejected: median
+`build_polygons` increased from about 150 us to about 1.09 ms, while the
+existing contiguous staging copy costs about 19 us. The CPU scratch plus bulk
+copy is therefore intentional on this path.
+
+A forced-overflow run temporarily reduced the texture upload ring to 1 MiB and
+loaded the same F7 state. Its first measured window recorded six overflows and
+151,552 spill bytes while continuing to present complete top/bottom screens and
+the Custom HUD. No renderer fallback, device removal, or D3D12 debug-layer
+error was emitted. The production ring remains 32 MiB.
+
+The identical-frame branch is statically covered and instrumented, but no
+natural positive fixture was found in the available MPH samples: Rev 1 F1-F8,
+original-revision F1/F2/F7/F8, and a 30-second boot/title sequence all emitted
+a GX flush every frame and reported `identical=0`. A forced renderer flag was
+not used because it would freeze genuinely changing 3D and could not establish
+the required stale-frame parity. Positive runtime coverage therefore still
+requires a state that naturally leaves `FlushRequest` clear.
 
 ## Verified scope
 
-The Windows Release build and all 175 shader combinations (35 pipelines at
-1x, 4x, 5x, 9x and 16x) pass on the repository build path. Runtime validation
+The GPU-independent edge vectors and the opt-in Software/DX12 native 3D pixel
+comparison are documented in [Raster parity verification](../../development/rendering/raster-parity.md).
+
+The Windows Release build and all 111 generated shader modules (37 pipelines in
+three tile-geometry buckets) pass on the repository build path. Runtime validation
 on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
 
 * Metroid Prime Hunters (USA) boot, title/menu capture sequences and attract
@@ -278,7 +446,21 @@ on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
 * native `DXGI_SWAP_EFFECT_FLIP_DISCARD` swapchain creation and live ROM
   presentation on the RTX 5070 Ti, both while the runtime renderer is Software
   outside a match and while DX12 is forced for the complete boot sequence.
+* the GPU-native handoff at 4x after loading the F7 savestate, including a
+  2560x1344 presentation, warning-free runtime presenter-shader compilation,
+  and a 20-switch DX12/Vulkan/Software stress cycle with every transition and
+  subsequent DX12 `Present` completing without a runtime fallback or D3D12
+  debug-layer error; and
+* one same-savestate, same-window, 4x `MELONPRIME_PERF=1` comparison against the
+  preceding readback/upload binary. The median of the 1 Hz `Draw` section
+  averages fell from 1.727 ms to 0.254 ms. The run was frame-rate limited, and
+  its whole-frame percentiles were noisy, so this is evidence for the removed
+  CPU presentation work rather than a broader FPS claim.
 
 This is Windows/NVIDIA evidence, not a claim about untested AMD or Intel driver
 families. The offline shader audit and runtime feature probe remain the gates
 for those systems.
+
+The platform-scatter audit reports `used / allowed`; for example `21 / 22`
+with `PASS` means one unit of remaining headroom, not one unresolved platform
+branch.

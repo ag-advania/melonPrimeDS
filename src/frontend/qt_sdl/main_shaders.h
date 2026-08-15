@@ -102,6 +102,21 @@ out vec4 oColor;
 const int PALETTE_SIZE = 15;
 uniform vec3 uPalette[PALETTE_SIZE];
 
+vec4 radarColorKey(vec4 pixel)
+{
+    // The software renderer expands the DS 6-bit channels to 8-bit values,
+    // which can populate bits [2:0]. Compare in the same 5-bit color-key
+    // space as the CPU, Vulkan, DX12, and Metal radar paths. Keep this mask
+    // in sync with MelonPrime::kRadarPaletteQuantizationMask.
+    uvec3 color = uvec3(round(clamp(pixel.rgb, vec3(0.0), vec3(1.0)) * 255.0));
+    color &= uvec3(0xF8u);
+    for (int i = 0; i < PALETTE_SIZE; i++) {
+        if (all(equal(color, uvec3(uPalette[i]))))
+            return vec4(pixel.rgb, 1.0);
+    }
+    return vec4(0.0);
+}
+
 void main()
 {
     // Circle clipping: discard pixels outside unit circle
@@ -114,18 +129,35 @@ void main()
 
     // Remap texcoords to sample from circular source region
     vec2 srcUV = uSrcCenter + centered * vec2(uSrcRadius, uSrcRadius * (256.0 / 192.0));
-    vec4 pixel = texture(ScreenTex, vec3(srcUV.x, srcUV.y, 1.0));
 
-    // Color filter: keep only exact radar palette colors, discard others
-    vec3 c = round(pixel.rgb * 255.0);
-    bool match = false;
-    for (int i = 0; i < PALETTE_SIZE; i++) {
-        if (c == uPalette[i]) { match = true; break; }
-    }
+    // Color-key each source texel before filtering, matching the CPU path that
+    // makes non-palette pixels transparent before QPainter scales the crop.
+    // Filtering first shrinks palette pixels at native Software resolution,
+    // because their blended edges no longer pass an exact palette comparison.
+    ivec2 textureExtent = textureSize(ScreenTex, 0).xy;
+    vec2 texelPosition = srcUV * vec2(textureExtent) - vec2(0.5);
+    ivec2 texelBase = ivec2(floor(texelPosition));
+    vec2 texelWeight = fract(texelPosition);
+    ivec2 texelMax = textureExtent - ivec2(1);
+    ivec2 texel00 = clamp(texelBase, ivec2(0), texelMax);
+    ivec2 texel10 = clamp(texelBase + ivec2(1, 0), ivec2(0), texelMax);
+    ivec2 texel01 = clamp(texelBase + ivec2(0, 1), ivec2(0), texelMax);
+    ivec2 texel11 = clamp(texelBase + ivec2(1, 1), ivec2(0), texelMax);
 
-    if (!match) discard;
+    vec4 keyedTop = mix(
+        radarColorKey(texelFetch(ScreenTex, ivec3(texel00, 1), 0)),
+        radarColorKey(texelFetch(ScreenTex, ivec3(texel10, 1), 0)),
+        texelWeight.x);
+    vec4 keyedBottom = mix(
+        radarColorKey(texelFetch(ScreenTex, ivec3(texel01, 1), 0)),
+        radarColorKey(texelFetch(ScreenTex, ivec3(texel11, 1), 0)),
+        texelWeight.x);
+    vec4 keyedPixel = mix(keyedTop, keyedBottom, texelWeight.y);
+    if (keyedPixel.a <= 0.0) discard;
 
-    oColor = vec4(pixel.rgb, alpha);
+    // keyedPixel.rgb is premultiplied by its interpolated key coverage. Convert
+    // back to straight color because this pass uses GL_SRC_ALPHA blending.
+    oColor = vec4(keyedPixel.rgb / keyedPixel.a, alpha * keyedPixel.a);
 }
 )";
 #endif

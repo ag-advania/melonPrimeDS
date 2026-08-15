@@ -1,0 +1,11 @@
+minimize/restore x20
+
+log            : .\docs\archive\audits\vulkan\2026-08-13-event-matrix\vk-min-sync-pressurefix.out.log
+error log      : .\docs\archive\audits\vulkan\2026-08-13-event-matrix\vk-min-sync-pressurefix.err.log
+config path    : C:\Users\Admin\Documents\git\melonPrimeDS\build\release-mingw-x86_64\portable\melonDS.toml
+config restore : PASS
+swapchain rebuilds: 23
+device lost       : 0
+config self-check: policy=JustInTime reflex=off/inactive vsync=on present-mode=FIFO
+config integrity : PASS
+validation        : clean

@@ -1,0 +1,49 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    1:1 re-expression of ComputeRendererShaders::ClearCoarseBinMask
+    (src/GPU3D_Compute_shaders.h). Nothing but the resource bindings changed.
+
+    Build defines: ClearCoarseBinMask, ClearCoarseBinMaskLocalSize
+    ClearCoarseBinMaskLocalSize must be a compile-time literal because it
+    selects local_size_x; a specialization constant cannot be used there
+    without VK_EXT_subgroup_size_control-style workgroup-size ids, and the GL
+    original bakes it as a literal too.
+
+    Host dispatch (matching GPU3D_Compute.cpp):
+        (TilesPerLine*TileLines/ClearCoarseBinMaskLocalSize, 1, 1)
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "BinningBuffer.glsl"
+
+#ifndef ClearCoarseBinMaskLocalSize
+#error "ClearCoarseBinMaskLocalSize must be provided by the shader build"
+#endif
+
+layout (local_size_x = ClearCoarseBinMaskLocalSize) in;
+
+void main()
+{
+    BinningMaskAndOffset[BinningCoarseMaskStart + gl_GlobalInvocationID.x*CoarseBinStride+0] = 0;
+    BinningMaskAndOffset[BinningCoarseMaskStart + gl_GlobalInvocationID.x*CoarseBinStride+1] = 0;
+}

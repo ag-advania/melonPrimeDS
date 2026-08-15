@@ -16,10 +16,11 @@ Scripts live in `tools/linux-vm/`. Run in order:
 
 | Step | Script | Notes |
 |------|--------|-------|
+| **00** | `00-start-vm.command` | Starts the existing VM and prepares `/mnt/mp` when guestcontrol is available; no build |
 | **01** | `01-install-ubuntu.command` | Creates `MelonPrimeDS-Ubuntu2204`, unattended install (~15–40 min) |
 | **02** | `02-guest-finish.command` | Guest Additions; VM may reboot |
 | **03** | `03-fix-shared-folder.command` | **Optional** — if MelonPrimeDS share won't open |
-| **04** | `04-guest-build.command` | cmake + ninja → `build-linux/melonPrimeDS` |
+| **04** | `04-guest-build.command` | cmake + ninja with Vulkan enabled → `build-linux/melonPrimeDS` |
 | **05** | `05-mount-share.command` | **Shared folder only** — no build (after reboot) |
 
 Default guest login: `melon` / `melon` (fixed; scripts do not prompt)
@@ -81,7 +82,18 @@ Build (optional):
 
 ```bash
 bash /mnt/mp/tools/linux-vm/guest/guest-build-only.sh
+# Equivalent repo-root wrapper:
+bash /mnt/mp/tools/build/linux/build-linux.sh
 ```
+
+This configures Vulkan explicitly and fetches the same pinned Khronos
+`Vulkan-Headers` revision used by Ubuntu CI. The first-time setup command also
+installs the Linux Vulkan runtime packages: `libvulkan-dev`,
+`mesa-vulkan-drivers`, and `vulkan-validationlayers`. Native Wayland pointer
+lock stays in CMake's `AUTO` mode so missing `wayland-protocols` does not block
+an Xorg VM Vulkan build. When the `tools/build/linux/` wrappers are run from
+macOS, they set the VirtualBox shared folder source to the current checkout
+before running the VM build.
 
 Full deps + build (first time or after clean):
 
@@ -100,6 +112,7 @@ bash /mnt/mp/tools/linux-vm/guest/guest-run-smoke.sh /mnt/mp
 ```
 tools/linux-vm/
   README.md
+  00-start-vm.{command,sh}           → start existing VM + shared folder prep
   01-install-ubuntu.{command,sh}
   02-guest-finish.{command,sh}      → 02-guest-finish-from-host.sh
   03-fix-shared-folder.{command,sh}
@@ -118,6 +131,9 @@ tools/linux-vm/
     guest-mount-share.sh
     guest-run-smoke.sh
     guest-build.sh                  # wrapper → guest-setup-and-build
+  ../build/linux/
+    build-linux.sh                  # repo-root wrapper → Vulkan-enabled configure + build
+    build-linux-existing.sh         # repo-root wrapper → incremental Vulkan-enabled build
 ```
 
 ## Build flags (guest)
@@ -125,6 +141,9 @@ tools/linux-vm/
 Local VM builds use:
 
 - `-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON`
+- `-DMELONPRIME_ENABLE_VULKAN=ON`
+- `-DMELONPRIME_FORCE_DISABLE_VULKAN=OFF`
+- `-DMELONPRIME_VULKAN_INCLUDE_DIR=/mnt/mp/Vulkan-Headers/include` by default
 - `-DMELONDS_EMBED_BUILD_INFO=ON` with git branch/hash and `MELONDS_BUILD_PROVIDER=LinuxVM`
 - Output: `build-linux/melonPrimeDS` (standalone binary, not AppDir)
 

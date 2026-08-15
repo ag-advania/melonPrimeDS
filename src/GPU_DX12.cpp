@@ -21,6 +21,7 @@
 #include "GPU_DX12.h"
 
 #include "DX12Context.h"
+#include "DX12Perf.h"
 #include "GPU3D_DX12.h"
 #include "NDS.h"
 #include "Platform.h"
@@ -31,6 +32,9 @@ namespace melonDS
 DX12Renderer::DX12Renderer(melonDS::NDS& nds)
     : SoftRenderer(nds)
 {
+    if (RasterDifferential::Enabled())
+        DifferentialReference = std::move(Rend3D);
+
     // Replaces the SoftRenderer3D the base constructor installed. A null result
     // leaves Rend3D empty, which Init() reports as a failure so the frontend can
     // fall back to Software.
@@ -40,7 +44,12 @@ DX12Renderer::DX12Renderer(melonDS::NDS& nds)
         Rend3D.reset();
 }
 
-DX12Renderer::~DX12Renderer() = default;
+DX12Renderer::~DX12Renderer()
+{
+    if (auto* dx12 = GetDX12Renderer3D())
+        dx12->WaitForQueueIdle();
+    IntelXeLL.Shutdown();
+}
 
 bool DX12Renderer::Init()
 {
@@ -51,9 +60,15 @@ bool DX12Renderer::Init()
             "DX12 renderer init failed stage=3D-device actual=Software\n");
         return false;
     }
+    if (DifferentialReference)
+    {
+        DifferentialReference->Reset();
+        DifferentialState.Reset();
+    }
 
     auto& context = DX12Context::Get();
     AmdAntiLag2.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
+    IntelXeLL.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
     NvidiaReflex.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
 
     Platform::Log(
@@ -64,6 +79,10 @@ bool DX12Renderer::Init()
 
 void DX12Renderer::Stop()
 {
+    FinishIntelXeLLFrame();
+    if (auto* dx12 = GetDX12Renderer3D())
+        dx12->WaitForQueueIdle();
+    IntelXeLL.Shutdown();
     AmdAntiLag2.Shutdown();
     NvidiaReflex.Shutdown();
     if (auto* dx12 = GetDX12Renderer3D())
@@ -79,20 +98,61 @@ void DX12Renderer::PreSavestate()
 
 void DX12Renderer::PostSavestate()
 {
+    // OpenGL resets all renderer-private state after savestate I/O. Do the
+    // same here: FinalFB, the high-resolution capture sidecar and structured
+    // 2D capture references are derived caches, not serialized DS state.
+    SoftRenderer::Reset();
+    if (DifferentialReference)
+    {
+        DifferentialReference->Reset();
+        DifferentialState.Reset();
+    }
 }
 
 void DX12Renderer::SetRenderSettings(RendererSettings& settings)
 {
     if (auto* dx12 = GetDX12Renderer3D())
-        dx12->SetRenderSettings(settings.ScaleFactor, settings.BetterPolygons, settings.HiresCoordinates);
+    {
+        // DX12 rasterizes the original DS polygons as scanline spans. Better
+        // Polygons is a triangle-splitting workaround for raster backends and
+        // is intentionally not part of the DX12 renderer contract.
+        dx12->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
+    }
     AmdAntiLag2.SetEnabled(settings.AmdAntiLag2Enabled);
+    IntelXeLLPacingPolicy = DX12IntelXeLLPacingPolicyFromConfig(
+        settings.IntelXeLLPacingPolicy);
+    IntelXeLLRequestedIntervalUs = 0;
+    if (auto* dx12 = GetDX12Renderer3D())
+    {
+        if (!dx12->WaitForQueueIdle())
+        {
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "Intel XeLL state change skipped because the DX12 queue did not become idle\n");
+        }
+        else
+        {
+            IntelXeLL.SetSleepMode(settings.IntelXeLLEnabled, 0);
+        }
+    }
     NvidiaReflex.SetMode(settings.NvidiaReflexMode);
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::DX12ReflexMode,
+        static_cast<u64>(NvidiaReflex.GetMode()));
+    LogLowLatencyPacingStateIfChanged();
 }
 
 void DX12Renderer::Start3DRendering()
 {
+    IntelXeLL.MarkRenderSubmitStart();
     NvidiaReflex.MarkRenderSubmitStart();
     Renderer::Start3DRendering();
+    if (DifferentialReference)
+    {
+        // DX12's texture cache owns the destructive VRAM dirty snapshot. The
+        // software oracle runs only after those flat mirrors are coherent.
+        static_cast<SoftRenderer3D*>(DifferentialReference.get())->RenderReferenceFrame();
+    }
 }
 
 void DX12Renderer::VBlank()
@@ -101,23 +161,63 @@ void DX12Renderer::VBlank()
     StructuredVulkanFrameView view{};
     if (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid)
     {
+        IntelXeLL.MarkRenderSubmitEnd();
         NvidiaReflex.MarkRenderSubmitEnd();
         return;
     }
 
-    const std::array<const u32*, 6> planes = {
+    const std::array<const u32*, 14> planes = {
         view.Plane[0][0],
         view.Plane[0][1],
         view.Plane[0][2],
+        view.Plane[0][3],
         view.Plane[1][0],
         view.Plane[1][1],
         view.Plane[1][2],
+        view.Plane[1][3],
+        view.CaptureSourcePlane[0],
+        view.CaptureSourcePlane[1],
+        view.CaptureSourcePlane[2],
+        view.CaptureSourcePlane[3],
+        view.CaptureSourceBNative,
+        view.CaptureSourceBReference,
     };
     const std::array<const u32*, 2> lineMeta = {
         view.LineMeta[0],
         view.LineMeta[1],
     };
-    dx12->ComposeStructuredOutput(planes, lineMeta, view.Generation);
+    const bool composed = dx12->ComposeStructuredOutput(
+        planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation,
+        view.ContentGeneration);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredScreenRouteCopyBytes,
+        view.ScreenRouteCopyBytes);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredScreenRouteCopyNanoseconds,
+        view.ScreenRouteCopyNanoseconds);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredRegularLines,
+        view.StructuredRegularLines);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::StructuredFallbackLines,
+        view.StructuredFallbackLines);
+    if (composed && DifferentialReference && dx12->GetScaleFactor() == 1)
+    {
+        const bool exact = DifferentialState.CompareFrame(
+            *Rend3D, *DifferentialReference, "DX12");
+        if (!exact)
+        {
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "[RasterDiffState] backend=DX12 dispCnt=%08X polygons=%u "
+                "clear1=%08X clear2=%08X\n",
+                GPU.GPU3D.RenderDispCnt,
+                GPU.GPU3D.RenderNumPolygons,
+                GPU.GPU3D.RenderClearAttr1,
+                GPU.GPU3D.RenderClearAttr2);
+        }
+    }
+    IntelXeLL.MarkRenderSubmitEnd();
     NvidiaReflex.MarkRenderSubmitEnd();
 }
 
@@ -127,9 +227,8 @@ RendererOutput DX12Renderer::GetOutput()
     if (!dx12)
         return {};
 
-    const u32* top = dx12->GetComposedScreen(0);
-    const u32* bottom = dx12->GetComposedScreen(1);
-    if (!top || !bottom)
+    RendererOutput output = dx12->GetComposedOutput();
+    if (output.Kind == RendererOutputKind::None)
     {
         // The DX12 pipelines compile incrementally after a ROM starts. Until
         // the first VBlank can publish a composed frame, keep the native Qt
@@ -139,11 +238,19 @@ RendererOutput DX12Renderer::GetOutput()
         return SoftRenderer::GetOutput();
     }
 
-    return RendererOutput::CpuBgra(
-        const_cast<u32*>(top),
-        const_cast<u32*>(bottom),
-        dx12->GetComposedWidth(),
-        dx12->GetComposedHeight());
+    return output;
+}
+
+RendererOutputLease DX12Renderer::AcquireOutputLease()
+{
+    auto* dx12 = GetDX12Renderer3D();
+    if (!dx12)
+        return {};
+
+    RendererOutputLease lease = dx12->AcquireComposedOutputLease();
+    if (lease.Output.Kind != RendererOutputKind::None)
+        return lease;
+    return RendererOutputLease(SoftRenderer::GetOutput(), nullptr, nullptr);
 }
 
 bool DX12Renderer::NeedsShaderCompile()
@@ -188,6 +295,12 @@ void DX12Renderer::BeginReflexFrame()
 void DX12Renderer::BeginAmdAntiLag2Frame()
 {
     AmdAntiLag2.BeginFrame();
+    LogLowLatencyPacingStateIfChanged();
+}
+
+void DX12Renderer::BeginIntelXeLLFrame()
+{
+    IntelXeLL.BeginFrame();
 }
 
 void DX12Renderer::MarkReflexInputSample()
@@ -195,9 +308,24 @@ void DX12Renderer::MarkReflexInputSample()
     NvidiaReflex.MarkInputSample();
 }
 
+void DX12Renderer::MarkIntelXeLLInputSample()
+{
+    IntelXeLL.MarkInputSample();
+}
+
+void DX12Renderer::MarkReflexSimulationStart()
+{
+    NvidiaReflex.MarkSimulationStart();
+}
+
 void DX12Renderer::EndReflexRenderPhase()
 {
     NvidiaReflex.EndRenderPhase();
+}
+
+void DX12Renderer::EndIntelXeLLRenderPhase()
+{
+    IntelXeLL.EndRenderPhase();
 }
 
 void DX12Renderer::BeginReflexPresent()
@@ -210,9 +338,103 @@ void DX12Renderer::EndReflexPresent()
     NvidiaReflex.MarkPresentEnd();
 }
 
+void DX12Renderer::BeginIntelXeLLPresent()
+{
+    IntelXeLL.MarkPresentStart();
+}
+
+void DX12Renderer::EndIntelXeLLPresent()
+{
+    IntelXeLL.MarkPresentEnd();
+}
+
 void DX12Renderer::FinishReflexFrame()
 {
     NvidiaReflex.FinishFrame();
+}
+
+void DX12Renderer::FinishIntelXeLLFrame()
+{
+    IntelXeLL.FinishFrame();
+}
+
+void DX12Renderer::UpdateIntelXeLLFrameCap(std::uint32_t minimumIntervalUs)
+{
+    const DX12LowLatencyPacingDecision decision = GetLowLatencyPacingDecision();
+    const std::uint32_t requestedInterval = decision.XeLLOwnsFrameCap
+        ? minimumIntervalUs
+        : 0;
+    if (IntelXeLLRequestedIntervalUs == requestedInterval)
+        return;
+
+    const DX12IntelXeLLStatus status = IntelXeLL.GetStatus();
+    if (!status.ContextCreated || !status.SleepModeApplied)
+        return;
+
+    auto* dx12 = GetDX12Renderer3D();
+    if (!dx12 || !dx12->WaitForQueueIdle())
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "Intel XeLL frame-cap transition skipped because the DX12 queue did not become idle\n");
+        return;
+    }
+
+    if (IntelXeLL.SetSleepMode(status.Requested, requestedInterval))
+    {
+        IntelXeLLRequestedIntervalUs = requestedInterval;
+        LogLowLatencyPacingStateIfChanged();
+    }
+}
+
+DX12LowLatencyPacingDecision DX12Renderer::GetLowLatencyPacingDecision() const noexcept
+{
+    return ResolveDX12LowLatencyPacing(
+        NvidiaReflex.IsActive(),
+        AmdAntiLag2.IsActive(),
+        IntelXeLL.IsActive(),
+        IntelXeLLPacingPolicy);
+}
+
+void DX12Renderer::LogLowLatencyPacingStateIfChanged()
+{
+    const DX12LowLatencyPacingDecision decision = GetLowLatencyPacingDecision();
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::DX12VendorPacingAuthority,
+        static_cast<u64>(decision.Authority));
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::DX12ReflexMode,
+        static_cast<u64>(NvidiaReflex.GetMode()));
+    if (PacingDecisionLogged
+        && decision.Authority == LastLoggedPacingDecision.Authority
+        && decision.BypassHostLimiter == LastLoggedPacingDecision.BypassHostLimiter
+        && decision.BypassPresentWait == LastLoggedPacingDecision.BypassPresentWait
+        && decision.XeLLOwnsFrameCap == LastLoggedPacingDecision.XeLLOwnsFrameCap)
+    {
+        return;
+    }
+
+    LastLoggedPacingDecision = decision;
+    PacingDecisionLogged = true;
+    const DX12IntelXeLLStatus xell = IntelXeLL.GetStatus();
+    const auto& profile = DX12Context::Get().GetDeviceProfile();
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "DX12 low-latency pacing adapter=\"%s\" vendor=%04X device=%04X driver=%016llX "
+        "authority=%s xellPolicy=%s xellRequested=%d xellActual=%d "
+        "minimumIntervalUs=%u hostLimiterBypass=%d frameLatencyWaitBypass=%d "
+        "hardwareValidation=pending\n",
+        profile.AdapterName.c_str(),
+        profile.VendorId,
+        profile.DeviceId,
+        static_cast<unsigned long long>(profile.DriverVersion),
+        DX12LowLatencyPacingAuthorityName(decision.Authority),
+        DX12IntelXeLLPacingPolicyName(IntelXeLLPacingPolicy),
+        xell.Requested ? 1 : 0,
+        xell.ActualEnabled ? 1 : 0,
+        xell.MinimumIntervalUs,
+        decision.BypassHostLimiter ? 1 : 0,
+        decision.BypassPresentWait ? 1 : 0);
 }
 
 } // namespace melonDS

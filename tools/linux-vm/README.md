@@ -7,11 +7,12 @@ VirtualBox needs the macOS GUI session.
 
 | Step | Mac (double-click or Terminal) | Purpose |
 |------|----------------------------------|---------|
+| **00** | `00-start-vm.command` | Start the existing VM and prepare `/mnt/mp` when possible |
 | **01** | `01-install-ubuntu.command` | Create VM, unattended Ubuntu 22.04 install |
 | **02** | `02-guest-finish.command` | Guest Additions + shared-folder prep |
 | **03** | `03-fix-shared-folder.command` | Optional — if shared folder won't open |
-| **04** | `04-guest-build.command` | Full cmake configure + build |
-| **04b** | `04-guest-build-existing.command` | **Incremental only** — skip configure (fast) |
+| **04** | `04-guest-build.command` | Full cmake configure + Vulkan-enabled build |
+| **04b** | `04-guest-build-existing.command` | **Incremental only** — skip configure, requires a Vulkan-enabled tree |
 | **05** | `05-mount-share.command` | **Shared folder only** — no build (use after reboot) |
 
 Default VM: `MelonPrimeDS-Ubuntu2204`  
@@ -38,6 +39,16 @@ Build (optional):
 bash /mnt/mp/tools/linux-vm/guest/guest-build-only.sh
 /mnt/mp/build-linux/melonPrimeDS
 ```
+
+The full and build-only commands configure Vulkan explicitly
+(`MELONPRIME_ENABLE_VULKAN=ON`) and fetch the same pinned Khronos
+`Vulkan-Headers` revision used by Ubuntu CI. Runtime packages
+(`libvulkan-dev`, `mesa-vulkan-drivers`, `vulkan-validationlayers`) are
+installed by the full setup command. Native Wayland pointer lock is left in
+CMake's `AUTO` mode so missing `wayland-protocols` does not block an Xorg VM
+Vulkan build. The `tools/build/linux/` wrappers set `HOST_REPO` to the current
+checkout before calling these VM scripts, so the VirtualBox shared folder points
+at the repo you launched from.
 
 **Incremental rebuild** (skip cmake configure — like `build-mingw-existing.bat`):
 

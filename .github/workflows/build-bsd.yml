@@ -19,23 +19,22 @@ env:
 
 jobs:
   build:
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
-        os: [freebsd, netbsd, openbsd]
+        flavor: [freebsd, netbsd, openbsd]
         # The emulated aarch64 VMs are quite slow, so disable aarch64
         # runs for now.
         arch: [x86_64] #, aarch64]
         include:
-          - os: freebsd
+          - flavor: freebsd
             os_name: FreeBSD
             install_deps: >
               pkg install -y cmake kf6-extra-cmake-modules pkgconf ninja
               qt6-base qt6-multimedia qt6-svg sdl2 libarchive zstd enet
-              faad2 zip
+              faad2 zip vulkan-headers vulkan-loader python3
 
-          - os: netbsd
+          - flavor: netbsd
             os_name: NetBSD
             # The NetBSD VM image does not come with X sets by default,
             # so download and unpack the sets we need manually.
@@ -117,12 +116,13 @@ jobs:
               success=0; i=1; while [ $i -le 3 ]; do
               if pkgin -y update && pkgin -y install cmake
               extra-cmake-modules pkgconf ninja-build qt6-qtbase
-              qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip;
+              qt6-qtmultimedia qt6-qtsvg SDL2 libarchive zstd enet faad2 zip
+              vulkan-headers vulkan-loader python313;
               then success=1; break; fi;
               echo "pkgin attempt $i failed, retrying in $((i * 10))s..." >&2;
               sleep $((i * 10)); i=$((i + 1)); done; [ "$success" -eq 1 ]
 
-          - os: openbsd
+          - flavor: openbsd
             os_name: OpenBSD
             # pkg_add pulls individual package files straight from the
             # OpenBSD CDN mirror as it walks the dependency tree, rather
@@ -139,7 +139,7 @@ jobs:
               success=0; i=1; while [ $i -le 3 ]; do
               if pkg_add -v cmake kf6-extra-cmake-modules pkgconf ninja
               qt6-qtbase qt6-qtmultimedia qt6-qtsvg sdl2 libarchive zstd
-              enet faad zip;
+              enet faad zip vulkan-headers vulkan-loader python%3;
               then success=1; break; fi;
               echo "pkg_add attempt $i failed, retrying in $((i * 10))s..." >&2;
               sleep $((i * 10)); i=$((i + 1)); done; [ "$success" -eq 1 ]
@@ -148,16 +148,18 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        shell: ${{ matrix.os }} {0}
+        shell: ${{ matrix.flavor }} {0}
 
     steps:
     - uses: actions/checkout@v6
       name: Check out sources
 
     - name: Start ${{ matrix.os_name }} VM
+      id: start_vm
+      continue-on-error: true
       uses: jenseng/dynamic-uses@v1
-      with:
-        uses: vmactions/${{ matrix.os }}-vm@v1
+      with: &vm_start_with
+        uses: vmactions/${{ matrix.flavor }}-vm@v1
         # As we are using multiple steps, we need to use NFS to sync the
         # workspace between host and VM, as with the default, rsync, the
         # workspace is only synced before and after the setup VM step.
@@ -178,24 +180,211 @@ jobs:
             "prepare": ${{ toJSON(matrix.prepare_vm) }},
             "sync": "nfs",
             "usesh": "true",
-            ${{ matrix.os == 'netbsd' && '"release": "11.0",' || '' }}
+            ${{ matrix.flavor == 'netbsd' && '"release": "11.0",' || '' }}
           }
+
+    # vmactions/*-vm downloads its anyvm.py bootstrapper from GitHub on
+    # every run (not cached) and its own internal retry -- 4 attempts with
+    # exponential backoff, confirmed in CI logs -- has still been observed
+    # to lose to a transient "socket hang up" and fail the step outright,
+    # on a run where every other job succeeded. Retry the whole step once
+    # more before letting the job fail.
+    - name: Retry ${{ matrix.os_name }} VM start
+      if: steps.start_vm.outcome == 'failure'
+      uses: jenseng/dynamic-uses@v1
+      with: *vm_start_with
 
     - name: Install dependencies
       run: ${{ matrix.install_deps }}
+
+    - name: Audit renderer telemetry zero-overhead contract
+      run: |
+        set -eu
+
+        # NetBSD's python313 package provides a versioned executable such as
+        # /usr/pkg/bin/python3.13 and does not necessarily install python3.
+        python_cmd=""
+        for candidate in \
+          python3.14 python3.13 python3.12 python3 python \
+          /usr/pkg/bin/python3.14 /usr/pkg/bin/python3.13 \
+          /usr/pkg/bin/python3.12 /usr/pkg/bin/python3
+        do
+          if [ -x "$candidate" ] || command -v "$candidate" >/dev/null 2>&1; then
+            python_cmd="$candidate"
+            break
+          fi
+        done
+        if [ -z "$python_cmd" ]; then
+          echo "Python 3 is required for the renderer telemetry audit."
+          exit 1
+        fi
+        echo "Using Python executable: $python_cmd"
+        "$python_cmd" tools/ci/audits/audit-renderer-perf-zero-overhead.py
 
     # pkgin's failure summary ("pkg_install warnings: N, errors: N") names
     # neither the packages nor the reason; the detail only goes to this file
     # inside the VM. Surface it so a failure here is diagnosable from the CI
     # log instead of needing a follow-up run just to see what broke.
     - name: Show NetBSD pkg_install error log
-      if: always() && matrix.os == 'netbsd'
+      if: always() && matrix.flavor == 'netbsd'
       run: cat /var/db/pkgin/pkg_install-err.log || true
 
     - name: Configure
-      run: >
-        cmake -S $GITHUB_WORKSPACE -B /tmp/build -G Ninja
-        -DMELONDS_EMBED_BUILD_INFO=ON
+      run: |
+        set -eu
+        configure_log=/tmp/melonprime-bsd-vulkan-configure.log
+        cmake -S "$GITHUB_WORKSPACE" -B /tmp/build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMELONDS_EMBED_BUILD_INFO=ON \
+          -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF \
+          -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF \
+          -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF \
+          -DMELONPRIME_ENABLE_VULKAN=ON \
+          -DMELONPRIME_REQUIRE_QT6_5=ON \
+          -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF \
+          >"$configure_log" 2>&1
+        cat "$configure_log"
+        grep -F "MelonPrime Vulkan backend: enabled" "$configure_log"
+
+    - name: Verify Qt 6.5+
+      run: |
+        set -eu
+
+        qt_version=""
+        qt_source=""
+        for package in Qt6Core Qt6Core6; do
+          candidate="$(pkg-config --modversion "$package" 2>/dev/null || true)"
+          if [ -n "$candidate" ]; then
+            qt_version="$candidate"
+            qt_source="pkg-config:$package"
+            break
+          fi
+        done
+        if [ -z "$qt_version" ]; then
+          for tool in qtpaths6 qtpaths; do
+            if command -v "$tool" >/dev/null 2>&1; then
+              candidate="$("$tool" --qt-version 2>/dev/null || true)"
+              if [ -n "$candidate" ]; then
+                qt_version="$candidate"
+                qt_source="$tool"
+                break
+              fi
+            fi
+          done
+        fi
+        if [ -z "$qt_version" ]; then
+          echo "Qt 6 version could not be queried."
+          exit 1
+        fi
+        qt_major="${qt_version%%.*}"
+        qt_minor="${qt_version#*.}"
+        qt_minor="${qt_minor%%.*}"
+        case "$qt_major" in ''|*[!0-9]*) echo "Invalid Qt major version: $qt_version"; exit 1;; esac
+        case "$qt_minor" in ''|*[!0-9]*) echo "Invalid Qt minor version: $qt_version"; exit 1;; esac
+        if [ "$qt_major" -lt 6 ] || { [ "$qt_major" -eq 6 ] && [ "$qt_minor" -lt 5 ]; }; then
+          echo "Qt $qt_version is too old; Qt 6.5+ is required."
+          exit 1
+        fi
+        echo "qt_version=$qt_version source=$qt_source"
+
+    - name: Verify Vulkan headers
+      run: |
+        set -eu
+
+        # Probe the package prefixes directly. This avoids BSD-specific find
+        # expression differences while still checking the actual installed
+        # Vulkan header rather than assuming a package name implies a path.
+        headers=""
+        for include_root in /usr/local/include /usr/pkg/include /usr/X11R6/include /usr/X11R7/include; do
+          candidate="$include_root/vulkan/vulkan.h"
+          if [ -f "$candidate" ]; then
+            headers="$candidate"
+            break
+          fi
+        done
+        if [ -z "$headers" ]; then
+          echo "Vulkan headers were not found in the BSD package prefixes."
+          exit 1
+        fi
+        echo "vulkan_headers=$headers"
+
+    - name: Verify Vulkan loader candidate files
+      run: |
+        set -eu
+
+        loader=""
+        for lib_root in /usr/local/lib /usr/pkg/lib /usr/X11R6/lib /usr/X11R7/lib; do
+          for candidate in "$lib_root"/libvulkan.so "$lib_root"/libvulkan.so.*; do
+            if [ -f "$candidate" ]; then
+              loader="$candidate"
+              break 2
+            fi
+          done
+        done
+        if [ -z "$loader" ]; then
+          echo "Vulkan loader library was not found after package installation."
+          exit 1
+        fi
+        case "$loader" in
+          *.so|*.so.*) ;;
+          *) echo "Unexpected Vulkan loader name: $loader"; exit 1 ;;
+        esac
+        echo "vulkan_loader=$loader"
+
+    - name: Verify shader source sync
+      run: |
+        set -eu
+
+        python_cmd=""
+        for candidate in \
+          python3.14 python3.13 python3.12 python3 python \
+          /usr/pkg/bin/python3.14 /usr/pkg/bin/python3.13 \
+          /usr/pkg/bin/python3.12 /usr/pkg/bin/python3
+        do
+          if [ -x "$candidate" ] || command -v "$candidate" >/dev/null 2>&1; then
+            python_cmd="$candidate"
+            break
+          fi
+        done
+        if [ -z "$python_cmd" ]; then
+          echo "Python 3 is required for the compiler-independent Vulkan shader sync audit."
+          exit 1
+        fi
+        echo "Using Python executable: $python_cmd"
+        "$python_cmd" tools/vulkan/compile-shaders.py --check-source-sync
+
+    - name: Build and run production Vulkan loader open check
+      run: |
+        set -eu
+        cmake --build /tmp/build \
+          --target melonprime_vulkan_loader_open_check --parallel 1
+
+    - name: Build and run BSD Vulkan validation targets
+      run: |
+        set -eu
+        cmake --build /tmp/build \
+          --target melonprime_vulkan_present_timing_check --parallel 1
+        cmake --build /tmp/build \
+          --target melonprime_vulkan_present_pacer_dispatch_check --parallel 1
+        cmake --build /tmp/build --parallel 1
+
+    - name: Build Vulkan-disabled BSD variant
+      run: |
+        set -eu
+        configure_log=/tmp/melonprime-bsd-vulkan-off-configure.log
+        cmake -S "$GITHUB_WORKSPACE" -B /tmp/build-vulkan-off -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMELONDS_EMBED_BUILD_INFO=ON \
+          -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF \
+          -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF \
+          -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF \
+          -DMELONPRIME_ENABLE_VULKAN=OFF \
+          -DMELONPRIME_REQUIRE_QT6_5=ON \
+          -DMELONPRIME_FORCE_DISABLE_VULKAN=ON \
+          >"$configure_log" 2>&1
+        cat "$configure_log"
+        grep -F "MelonPrime Vulkan backend: disabled" "$configure_log"
+        cmake --build /tmp/build-vulkan-off --parallel 1
 
     - name: Build and package binary
       # MELONPRIME_BSD_LOCAL_PACKAGE_V3
@@ -203,8 +392,6 @@ jobs:
       # Copy only the completed ZIP to the NFS-backed GitHub workspace.
       run: |
         set -eu
-        cmake --build /tmp/build
-
         binary=""
 
         for candidate in \
@@ -234,9 +421,9 @@ jobs:
           exit 1
         fi
 
-        package_dir="/tmp/melonPrimeDS-bsd-package-${{ matrix.os }}-${{ matrix.arch }}"
-        local_zip="/tmp/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
-        workspace_zip="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip"
+        package_dir="/tmp/melonPrimeDS-bsd-package-${{ matrix.flavor }}-${{ matrix.arch }}"
+        local_zip="/tmp/melonPrimeDS-bsd-${{ matrix.flavor }}-${{ matrix.arch }}.zip"
+        workspace_zip="$GITHUB_WORKSPACE/melonPrimeDS-bsd-${{ matrix.flavor }}-${{ matrix.arch }}.zip"
 
         rm -rf "$package_dir"
         rm -f "$local_zip" "$workspace_zip"
@@ -264,8 +451,8 @@ jobs:
     - name: Upload binary
       uses: actions/upload-artifact@v7
       with:
-        name: melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip
-        path: melonPrimeDS-bsd-${{ matrix.os }}-${{ matrix.arch }}.zip
+        name: melonPrimeDS-bsd-${{ matrix.flavor }}-${{ matrix.arch }}.zip
+        path: melonPrimeDS-bsd-${{ matrix.flavor }}-${{ matrix.arch }}.zip
         archive: false
 
   all-artifacts:

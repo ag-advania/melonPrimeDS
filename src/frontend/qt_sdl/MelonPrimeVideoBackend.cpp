@@ -11,7 +11,9 @@
 #include "MelonPrimeDX12FeatureCheck.h"
 #endif
 
-#if defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_ENABLE_METAL) \
+    || (defined(MELONPRIME_ENABLE_VULKAN) \
+        && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES))
 #include <cstdlib>
 #endif
 
@@ -33,7 +35,24 @@ bool ShouldForceMetalRendererFromEnv()
 
 int NormalizeRendererForPlatform(int requested)
 {
+#if defined(MELONPRIME_ENABLE_VULKAN) \
+    && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const char* forceVulkan = std::getenv("MELONPRIME_FORCE_VULKAN_RENDERER");
+    // The developer override may request Vulkan for a probe/renderer test, but
+    // it must still honor VulkanFeatureCheck::ReportRuntimeFailure(). Without
+    // this latch, a failed forced renderer emits the fallback signal, the GUI
+    // rebuilds the panel, and the next settings pass forces Vulkan again in an
+    // endless failure/fallback loop.
+    if (forceVulkan && forceVulkan[0] == '1' &&
+        VulkanFeatureCheck::IsRuntimeAvailable())
+        return renderer3D_Vulkan;
+#endif
+
 #if defined(MELONPRIME_ENABLE_METAL)
+    const char* forceMetalCompute =
+        std::getenv("MELONPRIME_FORCE_METAL_COMPUTE_RENDERER");
+    if (forceMetalCompute && forceMetalCompute[0] == '1')
+        return renderer3D_MetalCompute;
     if (ShouldForceMetalRendererFromEnv())
         return renderer3D_Metal;
 
