@@ -155,12 +155,20 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
 
     // The emulation thread holds a shared lock while it calls the WSI and
     // presents. Holding the exclusive side over Qt's native transition keeps
-    // wl_surface/HWND/XID destruction from racing a Vulkan call that still
-    // carries the old snapshot.
+    // wl_surface/XID destruction from racing a Vulkan call that still carries
+    // the old snapshot.
+    //
+    // QWidget::event(Show) may synchronously re-enter this handler with a
+    // PlatformSurface or WinIdChange event. Do not acquire the same
+    // non-recursive mutex twice; the outer handler already covers the whole
+    // native transition.
+    const bool reentrantLifecycleEvent = HandlingLifecycleEvent;
     std::unique_lock<std::shared_mutex> lifecycleGuard;
-    if (LifecycleLock)
+    if (!reentrantLifecycleEvent && LifecycleLock)
         lifecycleGuard = std::unique_lock<std::shared_mutex>(*LifecycleLock);
 
+    const bool wasHandlingLifecycleEvent = HandlingLifecycleEvent;
+    HandlingLifecycleEvent = true;
     const bool result = QWidget::event(event);
 
     LifecycleEvent lifecycleEvent = LifecycleEvent::Show;
@@ -202,6 +210,7 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
         snapshot = captureSnapshot();
     snapshot.Generation = Generation;
     notifyLifecycle(lifecycleEvent, snapshot);
+    HandlingLifecycleEvent = wasHandlingLifecycleEvent;
     return result;
 }
 

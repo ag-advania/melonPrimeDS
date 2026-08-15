@@ -71,6 +71,11 @@ private:
     LifecycleCallback Callback;
     std::shared_ptr<std::shared_mutex> LifecycleLock;
     std::uint64_t Generation = 0;
+    // QWidget::event(Show) can synchronously deliver PlatformSurface and
+    // WinIdChange back to this widget while the outer event is still being
+    // processed. The GUI thread already owns LifecycleLock in that case;
+    // re-entering the non-recursive shared mutex would throw EDEADLK.
+    bool HandlingLifecycleEvent = false;
 };
 
 } // namespace MelonPrime
