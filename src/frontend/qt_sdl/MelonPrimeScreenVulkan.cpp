@@ -40,8 +40,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <mutex>
-#include <shared_mutex>
+#include <utility>
 #include <vector>
 
 #include <QApplication>
@@ -110,6 +109,30 @@ constexpr int kSplashLogoWidth = 192;
 // short enough to appear in a log captured while wondering why the window
 // stopped updating.
 constexpr u32 kPresentationStallFrames = 300;
+
+template <typename Function>
+class ScopeExit final
+{
+public:
+    explicit ScopeExit(Function function)
+        : FunctionValue(std::move(function))
+    {
+    }
+
+    ScopeExit(const ScopeExit&) = delete;
+    ScopeExit& operator=(const ScopeExit&) = delete;
+
+    ~ScopeExit() { FunctionValue(); }
+
+private:
+    Function FunctionValue;
+};
+
+template <typename Function>
+ScopeExit<Function> MakeScopeExit(Function function)
+{
+    return ScopeExit<Function>(std::move(function));
+}
 
 // Live ScreenPanelVulkan instances.
 //
@@ -231,10 +254,12 @@ struct ScreenPanelVulkan::VulkanState
     std::atomic_bool linuxSurfaceDirty{true};
     std::atomic_bool linuxSurfaceLost{false};
     std::atomic_uint64_t linuxSurfaceGeneration{0};
-    std::shared_ptr<std::shared_mutex> linuxSurfaceLifecycleLock =
-        std::make_shared<std::shared_mutex>();
-    std::mutex linuxSurfaceSnapshotLock;
-    MelonPrime::VulkanSurface::NativeWindowSnapshot linuxSurfaceSnapshot;
+    std::shared_ptr<MelonPrime::VulkanSurfaceLifecycle> linuxSurfaceLifecycle =
+        std::make_shared<MelonPrime::VulkanSurfaceLifecycle>();
+    // Only the emulation thread writes this frame-local copy after the
+    // lifecycle lease has published it. GUI code publishes through
+    // VulkanSurfaceLifecycle and never touches this member.
+    MelonPrime::VulkanSurface::NativeWindowSnapshot linuxFrameSnapshot;
     std::uint64_t presenterSurfaceGeneration = 0;
 #endif
 
@@ -298,17 +323,16 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
                 == MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::Hide
                 || event
                 == MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::SurfaceAboutToBeDestroyed;
+            MelonPrime::VulkanSurface::NativeWindowSnapshot publishedSnapshot = snapshot;
+            if (!publishedSnapshot.IsValid())
             {
-                std::lock_guard<std::mutex> lock(vulkan->linuxSurfaceSnapshotLock);
-                vulkan->linuxSurfaceSnapshot = snapshot;
-                if (!snapshot.IsValid())
-                {
-                    vulkan->linuxSurfaceSnapshot.Width = static_cast<std::uint32_t>(
-                        std::max(1, qRound(width() * devicePixelRatioF())));
-                    vulkan->linuxSurfaceSnapshot.Height = static_cast<std::uint32_t>(
-                        std::max(1, qRound(height() * devicePixelRatioF())));
-                }
+                publishedSnapshot.Width = static_cast<std::uint32_t>(
+                    std::max(1, qRound(width() * devicePixelRatioF())));
+                publishedSnapshot.Height = static_cast<std::uint32_t>(
+                    std::max(1, qRound(height() * devicePixelRatioF())));
             }
+            vulkan->linuxSurfaceLifecycle->publishSnapshot(
+                publishedSnapshot, !invalidated && publishedSnapshot.IsValid());
             vulkan->linuxSurfaceGeneration.store(
                 snapshot.Generation, std::memory_order_release);
             vulkan->linuxSurfaceReady.store(
@@ -354,7 +378,7 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
                     static_cast<unsigned long long>(snapshot.Generation));
             }
         },
-        vulkan->linuxSurfaceLifecycleLock);
+        vulkan->linuxSurfaceLifecycle);
 #else
     vulkan->surface = new VulkanSurfaceHost(this);
 #endif
@@ -462,11 +486,8 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     {
         return false;
     }
-    MelonPrime::VulkanSurface::NativeWindowSnapshot snapshot;
-    {
-        std::lock_guard<std::mutex> lock(vulkan->linuxSurfaceSnapshotLock);
-        snapshot = vulkan->linuxSurfaceSnapshot;
-    }
+    const MelonPrime::VulkanSurface::NativeWindowSnapshot snapshot =
+        vulkan->linuxFrameSnapshot;
     if (!snapshot.IsValid())
         return false;
 #else
@@ -506,6 +527,9 @@ bool ScreenPanelVulkan::initVulkanPresenter()
         if (vulkan->presenter.NeedsSurfaceRebind())
         {
             vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+            vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
+            vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
+            vulkan->linuxSurfaceLifecycle->markSurfaceLost();
             return false;
         }
 #endif
@@ -527,6 +551,11 @@ bool ScreenPanelVulkan::initVulkanPresenter()
 #if defined(__linux__)  // scatter-budget-exempt: Linux presenter generation publication, not input dispatch
     vulkan->presenterSurfaceGeneration = snapshot.Generation;
     vulkan->linuxSurfaceDirty.store(false, std::memory_order_release);
+    vulkan->linuxSurfaceLifecycle->markBound(snapshot.Generation);
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan][LinuxWSI] presenter bind generation=%llu\n",
+        static_cast<unsigned long long>(snapshot.Generation));
 #else
     vulkan->surfaceHandleDirty.store(false, std::memory_order_release);
 #endif
@@ -572,6 +601,73 @@ void ScreenPanelVulkan::reportVulkanRuntimeFailure(const char* reason)
 // ---------------------------------------------------------------------------
 // Native surface plumbing
 // ---------------------------------------------------------------------------
+
+#if defined(__linux__)  // scatter-budget-exempt: Linux presentation lease handshake, not input dispatch
+bool ScreenPanelVulkan::beginLinuxPresentationFrame()
+{
+    if (!vulkan || !vulkan->linuxSurfaceLifecycle)
+        return false;
+
+    MelonPrime::VulkanSurface::NativeWindowSnapshot snapshot;
+    if (!vulkan->linuxSurfaceLifecycle->beginFrame(snapshot))
+        return false;
+
+    const bool current = snapshot.IsValid()
+        && vulkan->linuxSurfaceReady.load(std::memory_order_acquire)
+        && !vulkan->linuxSurfaceLost.load(std::memory_order_acquire)
+        && vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire)
+            == snapshot.Generation;
+    if (!current)
+    {
+        vulkan->linuxSurfaceLifecycle->endFrame();
+        return false;
+    }
+
+    vulkan->linuxFrameSnapshot = snapshot;
+    return true;
+}
+
+
+void ScreenPanelVulkan::finishLinuxPresentationFrame()
+{
+    if (!vulkan || !vulkan->linuxSurfaceLifecycle)
+        return;
+
+    // If the GUI requested a native transition while this frame was in
+    // progress, retire the presenter before releasing the active-frame lease.
+    // The GUI-side wait can then observe DestroySafe without covering any
+    // Vulkan call with a lifecycle mutex.
+    if (vulkan->linuxSurfaceLifecycle->retireRequested())
+        serviceLinuxSurfaceRetire();
+    vulkan->linuxSurfaceLifecycle->endFrame();
+}
+
+
+void ScreenPanelVulkan::serviceLinuxSurfaceRetire()
+{
+    if (!vulkan || !vulkan->linuxSurfaceLifecycle
+        || !vulkan->linuxSurfaceLifecycle->retireRequested())
+    {
+        return;
+    }
+
+    vulkan->linuxSurfaceLifecycle->beginRetiring();
+    if (vulkan->presenter.IsInitialized())
+    {
+        retireLinuxPresentationSurface("native lifecycle transition");
+    }
+    else
+    {
+        for (RendererOutputLease& lease : vulkan->frameLeases)
+            lease.ReleaseNow();
+        // The presenter may already have been torn down by a recoverable
+        // surface-loss path. Complete the lifecycle handshake even in that
+        // case; otherwise Retiring remains latched and the GUI-side bounded
+        // wait can only finish by timing out.
+        vulkan->linuxSurfaceLifecycle->markPresenterRetired();
+    }
+}
+#endif
 
 bool ScreenPanelVulkan::nativeSurfaceReady() const
 {
@@ -692,18 +788,25 @@ bool ScreenPanelVulkan::prepareLinuxPresentationSurface()
         return false;
     }
 
-    const std::uint64_t generation =
-        vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire);
-    MelonPrime::VulkanSurface::NativeWindowSnapshot snapshot;
-    {
-        std::lock_guard<std::mutex> lock(vulkan->linuxSurfaceSnapshotLock);
-        snapshot = vulkan->linuxSurfaceSnapshot;
-    }
-    if (!snapshot.IsValid() || snapshot.Generation != generation)
+    const MelonPrime::VulkanSurface::NativeWindowSnapshot& snapshot =
+        vulkan->linuxFrameSnapshot;
+    const std::uint64_t generation = snapshot.Generation;
+    if (!snapshot.IsValid()
+        || generation != vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire))
         return false;
 
     if (vulkan->presenter.NeedsSurfaceRebind())
+    {
         retireLinuxPresentationSurface("VK_ERROR_SURFACE_LOST_KHR");
+        vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
+        vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
+        vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+        vulkan->linuxSurfaceLifecycle->markSurfaceLost();
+        // A lost VkSurfaceKHR is not rebound against the same native snapshot.
+        // The next SurfaceCreated/Show generation must publish a new native
+        // identity first, which prevents a same-generation rebind storm.
+        return false;
+    }
 
     if (vulkan->presenter.IsInitialized()
         && vulkan->presenterSurfaceGeneration != generation)
@@ -746,6 +849,8 @@ void ScreenPanelVulkan::retireLinuxPresentationSurface(const char* reason)
     vulkan->presenter.Shutdown();
     vulkan->presenterSurfaceGeneration = 0;
     vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+    if (vulkan->linuxSurfaceLifecycle)
+        vulkan->linuxSurfaceLifecycle->markPresenterRetired();
 }
 #endif
 
@@ -1030,10 +1135,18 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
     }
     vulkan->hookedRenderer = nullptr;
 
+#if defined(__linux__)  // scatter-budget-exempt: retire the Linux native presentation lease before renderer teardown
+    if (vulkan->linuxSurfaceLifecycle)
+        vulkan->linuxSurfaceLifecycle->requestRetire();
+#endif
     vulkan->presenter.Quiesce();
     vulkan->presenter.InvalidateDirectDescriptorCache();
     for (RendererOutputLease& lease : vulkan->frameLeases)
         lease.ReleaseNow();
+#if defined(__linux__)  // scatter-budget-exempt: publish Linux presenter quiescence after renderer teardown
+    if (vulkan->linuxSurfaceLifecycle)
+        vulkan->linuxSurfaceLifecycle->markPresenterRetired();
+#endif
 
     QMutexLocker lock(&vulkan->frameLock);
     vulkan->frameTop = nullptr;
@@ -1186,6 +1299,13 @@ void ScreenPanelVulkan::drawScreenFrame()
     if (!vulkan)
         return;
 
+#if defined(__linux__)  // scatter-budget-exempt: service native-surface retire before frame admission
+    // Lifecycle retirement must also be serviced while the emulator is
+    // paused or has no active ROM; otherwise a GUI native-destruction event
+    // would have to wait for a future presentation frame to become safe.
+    serviceLinuxSurfaceRetire();
+#endif
+
     auto* emuThread = emuInstance->getEmuThread();
     if (!emuThread)
     {
@@ -1227,10 +1347,19 @@ void ScreenPanelVulkan::drawScreenFrame()
     // never posted after EndFrame(), which avoids the expose/show circular
     // dependency that leaves Wayland with no usable wl_surface at startup.
     requestNativeSurfaceVisible(true);
-    std::shared_lock<std::shared_mutex> linuxSurfaceLifecycleGuard(
-        *vulkan->linuxSurfaceLifecycleLock);
-    const std::uint64_t currentGeneration =
-        vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire);
+    if (!beginLinuxPresentationFrame())
+    {
+        serviceLinuxSurfaceRetire();
+        if (vulkan->presenter.HasFailed())
+            reportVulkanRuntimeFailure(vulkan->presenter.LastError().c_str());
+        else
+            noteFrameStalled(
+                "the presentation surface is not ready for the current native generation");
+        return;
+    }
+    const auto linuxFrameLease = MakeScopeExit(
+        [this]() { finishLinuxPresentationFrame(); });
+    const std::uint64_t currentGeneration = vulkan->linuxFrameSnapshot.Generation;
     if (vulkan->linuxSurfaceDirty.load(std::memory_order_acquire)
         || !vulkan->presenter.IsInitialized()
         || vulkan->presenterSurfaceGeneration != currentGeneration
@@ -1319,6 +1448,10 @@ void ScreenPanelVulkan::drawScreenFrame()
         {
 #if defined(__linux__)  // scatter-budget-exempt: Linux acquire surface-loss recovery, not input dispatch
             retireLinuxPresentationSurface("acquire returned VK_ERROR_SURFACE_LOST_KHR");
+            vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
+            vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
+            vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+            vulkan->linuxSurfaceLifecycle->markSurfaceLost();
 #endif
             noteFrameStalled("the Vulkan presentation surface was lost and is being rebound");
         }
@@ -1620,6 +1753,10 @@ void ScreenPanelVulkan::drawScreenFrame()
         {
 #if defined(__linux__)  // scatter-budget-exempt: Linux present surface-loss recovery, not input dispatch
             retireLinuxPresentationSurface("present returned VK_ERROR_SURFACE_LOST_KHR");
+            vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
+            vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
+            vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+            vulkan->linuxSurfaceLifecycle->markSurfaceLost();
 #endif
             noteFrameStalled("the Vulkan presentation surface was lost and is being rebound");
         }
