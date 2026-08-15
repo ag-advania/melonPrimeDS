@@ -8,7 +8,19 @@
       "binaryDir": "${sourceDir}/build/${presetName}",
       "hidden": true,
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "MELONPRIME_ENABLE_DEVELOPER_FEATURES": {
+          "type": "BOOL",
+          "value": "OFF"
+        },
+        "MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY": {
+          "type": "BOOL",
+          "value": "OFF"
+        },
+        "MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE": {
+          "type": "BOOL",
+          "value": "OFF"
+        }
       }
     },
     {
