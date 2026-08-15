@@ -264,6 +264,46 @@ def main() -> int:
         "strict Vulkan presenter pacing telemetry and DX12 renderer-transition invalidation are missing",
         failures,
     )
+    presenter_budget_body = function_body(
+        vulkan_presenter,
+        "void VulkanPresenter::BeginLowLatencyFrame(",
+        "void VulkanPresenter::MarkLowLatencySimulationStart()",
+    )
+    require(
+        ordered(
+            presenter_budget_body,
+            [
+                "if (waitResult == melonDS::Vk::FrameWaitResult::Timeout)",
+                "VulkanPresenterBudgetMissCount",
+                "VulkanPresenterLatestSubmissionWaitTimeoutCount",
+                "VulkanPresentSkippedForLatencyBudgetCount",
+                "SkipNextPresentationForLatencyBudget = true;",
+                "Platform::LogLevel::Warn",
+                "return;",
+                "if (waitResult == melonDS::Vk::FrameWaitResult::Error)",
+                "Failed = true;",
+            ],
+        ),
+        "latest-submission fence timeout must skip one presentation without failing Vulkan, while API error remains fatal",
+        failures,
+    )
+    require(
+        all(
+            token in dx12_context
+            for token in (
+                "TimestampSnapshotValid",
+                "ReadTimestampSnapshot()",
+                "kTimestampFrequencyRefreshInterval",
+                "LastTimestampFrequencyRefresh",
+                "firstQuery",
+                "lastQuery",
+            )
+        )
+        and dx12_context.count("TimestampReadback->Map(") == 1
+        and dx12_context.count("List->ResolveQueryData(") == 1,
+        "DX12 timestamp telemetry must batch query resolves, cache one readback snapshot, and refresh frequency periodically",
+        failures,
+    )
     # VK_EXT_present_timing depends on VK_KHR_swapchain, VK_KHR_present_id2,
     # VK_KHR_get_surface_capabilities2 and VK_KHR_calibrated_timestamps -- not on
     # VK_KHR_present_wait2. The two were once resolved by a single condition, so a

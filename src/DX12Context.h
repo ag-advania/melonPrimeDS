@@ -21,6 +21,8 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#include <array>
+#include <chrono>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -160,6 +162,8 @@ private:
 class DX12CommandContext
 {
 public:
+    static constexpr u32 TimestampQueryCount = 10;
+
     bool Init(ID3D12Device* device, ID3D12CommandQueue* queue);
     void Shutdown();
 
@@ -206,6 +210,8 @@ public:
 private:
     bool WaitForFence(u64 value, bool recordRasterBegin = false);
     ID3D12GraphicsCommandList* ResetList();
+    void RefreshTimestampFrequencyIfDue() noexcept;
+    [[nodiscard]] bool ReadTimestampSnapshot() const noexcept;
 
     ID3D12Device* Device = nullptr;
     ID3D12CommandQueue* Queue = nullptr;
@@ -218,8 +224,11 @@ private:
     u64 FenceValue = 0;
     u64 SubmittedValue = 0;
     u64 TimestampFrequency = 0;
+    std::chrono::steady_clock::time_point LastTimestampFrequencyRefresh{};
     u16 TimestampWrittenMask = 0;
     u16 LastTimestampWrittenMask = 0;
+    mutable std::array<u64, TimestampQueryCount> TimestampSnapshotValues{};
+    mutable bool TimestampSnapshotValid = false;
     bool TimestampQueriesEnabled = false;
     bool Recording = false;
 };

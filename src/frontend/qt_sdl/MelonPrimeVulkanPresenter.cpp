@@ -1441,6 +1441,12 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     if (Swapchain == VK_NULL_HANDLE)
         return false;
 
+    if (SkipNextPresentationForLatencyBudget)
+    {
+        SkipNextPresentationForLatencyBudget = false;
+        return false;
+    }
+
     // These are presenter gauges, not per-report counters. Refresh them on
     // every frame as well as at creation so the one-Hz perf line remains
     // meaningful after VulkanPerf resets its windowed counters.
@@ -2291,23 +2297,6 @@ void VulkanPresenter::BeginLowLatencyFrame(
             targetFrameIntervalNs);
         const melonDS::Vk::FrameWaitResult waitResult =
             Frames.WaitForLatestSubmittedFrame(frameBudgetNs);
-        if (waitResult != melonDS::Vk::FrameWaitResult::Ready)
-        {
-            if (waitResult == melonDS::Vk::FrameWaitResult::Timeout)
-            {
-                VulkanPerf::AddCounter(
-                    VulkanPerf::Counter::VulkanPresenterBudgetMissCount);
-                VulkanPerf::AddCounter(
-                    VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitTimeoutCount);
-            }
-            Failed = true;
-            Error = waitResult == melonDS::Vk::FrameWaitResult::Timeout
-                ? "Vulkan presenter frame budget wait timed out"
-                : "Vulkan presenter latest-submission fence wait failed";
-            Platform::Log(Platform::LogLevel::Error, "[Vulkan] presenter: %s\n",
-                Error.c_str());
-            return;
-        }
         if (perfEnabled)
         {
             const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
@@ -2321,6 +2310,28 @@ void VulkanPresenter::BeginLowLatencyFrame(
                 VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitCount);
             VulkanPerf::AddCounter(
                 VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitNs, waitNs);
+        }
+        if (waitResult == melonDS::Vk::FrameWaitResult::Timeout)
+        {
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresenterBudgetMissCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitTimeoutCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
+            SkipNextPresentationForLatencyBudget = true;
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "[Vulkan] presenter: frame budget miss; skipping one presentation and retrying next frame\n");
+            return;
+        }
+        if (waitResult == melonDS::Vk::FrameWaitResult::Error)
+        {
+            Failed = true;
+            Error = "Vulkan presenter latest-submission fence wait failed";
+            Platform::Log(Platform::LogLevel::Error, "[Vulkan] presenter: %s\n",
+                Error.c_str());
+            return;
         }
     }
 
@@ -2657,6 +2668,7 @@ void VulkanPresenter::Shutdown() noexcept
     CompositionOpen = false;
     Initialized = false;
     FirstPresentLogged = false;
+    SkipNextPresentationForLatencyBudget = false;
 }
 
 } // namespace MelonPrime

@@ -22,6 +22,9 @@ inline void RecordDX12GpuMetric(
 {
     if (!DX12Perf::IsEnabled() || !commands.HasTimestampQueries())
         return;
+    // DX12CommandContext caches the complete readback snapshot for this
+    // retired submission, so recording several metrics does not Map/Unmap the
+    // readback resource once per metric.
     const u64 nanoseconds = commands.ReadTimestampSpanNanoseconds(
         GpuMetricQueryIndex(metric, false), GpuMetricQueryIndex(metric, true));
     if (nanoseconds != 0)

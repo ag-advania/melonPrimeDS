@@ -145,6 +145,7 @@ namespace
 {
 
 constexpr u32 kTimestampQueryCount = 10;
+constexpr auto kTimestampFrequencyRefreshInterval = std::chrono::seconds(1);
 
 } // namespace
 
@@ -673,8 +674,11 @@ bool DX12CommandContext::Init(ID3D12Device* device, ID3D12CommandQueue* queue)
     FenceValue = 0;
     SubmittedValue = 0;
     TimestampFrequency = 0;
+    LastTimestampFrequencyRefresh = {};
     TimestampWrittenMask = 0;
     LastTimestampWrittenMask = 0;
+    TimestampSnapshotValues = {};
+    TimestampSnapshotValid = false;
     TimestampQueriesEnabled = false;
     Recording = false;
 
@@ -717,6 +721,7 @@ bool DX12CommandContext::Init(ID3D12Device* device, ID3D12CommandQueue* queue)
             if (SUCCEEDED(queryResult))
             {
                 TimestampFrequency = frequency;
+                LastTimestampFrequencyRefresh = std::chrono::steady_clock::now();
                 TimestampQueriesEnabled = true;
             }
         }
@@ -751,8 +756,11 @@ void DX12CommandContext::Shutdown()
     FenceValue = 0;
     SubmittedValue = 0;
     TimestampFrequency = 0;
+    LastTimestampFrequencyRefresh = {};
     TimestampWrittenMask = 0;
     LastTimestampWrittenMask = 0;
+    TimestampSnapshotValues = {};
+    TimestampSnapshotValid = false;
     TimestampQueriesEnabled = false;
     Recording = false;
 }
@@ -836,6 +844,27 @@ ID3D12GraphicsCommandList* DX12CommandContext::TryBegin()
     return ResetList();
 }
 
+void DX12CommandContext::RefreshTimestampFrequencyIfDue() noexcept
+{
+    if (!TimestampQueriesEnabled || !Queue)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (LastTimestampFrequencyRefresh != std::chrono::steady_clock::time_point{}
+        && now - LastTimestampFrequencyRefresh < kTimestampFrequencyRefreshInterval)
+    {
+        return;
+    }
+
+    // The query frequency can change with the adapter clock domain. Refresh
+    // it at a report-friendly cadence, not once per metric or once per frame;
+    // the timestamp profiler is already developer-only.
+    LastTimestampFrequencyRefresh = now;
+    u64 frequency = 0;
+    if (SUCCEEDED(Queue->GetTimestampFrequency(&frequency)) && frequency != 0)
+        TimestampFrequency = frequency;
+}
+
 ID3D12GraphicsCommandList* DX12CommandContext::ResetList()
 {
     if (FAILED(Allocator->Reset()))
@@ -844,6 +873,8 @@ ID3D12GraphicsCommandList* DX12CommandContext::ResetList()
         return nullptr;
 
     TimestampWrittenMask = 0;
+    TimestampSnapshotValid = false;
+    RefreshTimestampFrequencyIfDue();
     Recording = true;
     return List.Get();
 }
@@ -858,6 +889,30 @@ void DX12CommandContext::WriteTimestamp(u32 queryIndex) noexcept
         TimestampWrittenMask | (static_cast<u16>(1u) << queryIndex));
 }
 
+bool DX12CommandContext::ReadTimestampSnapshot() const noexcept
+{
+    if (!TimestampQueriesEnabled || TimestampFrequency == 0
+        || LastTimestampWrittenMask == 0 || !TimestampReadback)
+    {
+        return false;
+    }
+    if (TimestampSnapshotValid)
+        return true;
+
+    const D3D12_RANGE readRange{
+        0,
+        static_cast<SIZE_T>(kTimestampQueryCount * sizeof(u64))};
+    void* mapped = nullptr;
+    if (FAILED(TimestampReadback->Map(0, &readRange, &mapped)) || !mapped)
+        return false;
+
+    const auto* values = static_cast<const u64*>(mapped);
+    std::copy_n(values, kTimestampQueryCount, TimestampSnapshotValues.begin());
+    TimestampReadback->Unmap(0, nullptr);
+    TimestampSnapshotValid = true;
+    return true;
+}
+
 u64 DX12CommandContext::ReadTimestampSpanNanoseconds(
     u32 startQuery, u32 endQuery) const noexcept
 {
@@ -870,17 +925,13 @@ u64 DX12CommandContext::ReadTimestampSpanNanoseconds(
         return 0;
     }
 
-    const D3D12_RANGE readRange{
-        static_cast<SIZE_T>(startQuery * sizeof(u64)),
-        static_cast<SIZE_T>((endQuery + 1u) * sizeof(u64))};
-    const D3D12_RANGE* range = &readRange;
-    void* mapped = nullptr;
-    if (FAILED(TimestampReadback->Map(0, range, &mapped)) || !mapped)
+    // The first metric maps the complete retired query snapshot. All other
+    // metrics from this completed submission reuse it, so a report with three
+    // GPU spans pays one Map/Unmap pair instead of one pair per span.
+    if (!ReadTimestampSnapshot())
         return 0;
-    const auto* values = static_cast<const u64*>(mapped);
-    const u64 start = values[startQuery];
-    const u64 end = values[endQuery];
-    TimestampReadback->Unmap(0, nullptr);
+    const u64 start = TimestampSnapshotValues[startQuery];
+    const u64 end = TimestampSnapshotValues[endQuery];
     if (end < start)
         return 0;
 
@@ -902,14 +953,24 @@ bool DX12CommandContext::Submit()
 
     if (TimestampQueriesEnabled && TimestampWrittenMask != 0)
     {
+        u32 firstQuery = kTimestampQueryCount;
+        u32 lastQuery = 0;
         for (u32 queryIndex = 0; queryIndex < kTimestampQueryCount; ++queryIndex)
         {
             if ((TimestampWrittenMask & (static_cast<u16>(1u) << queryIndex)) == 0)
                 continue;
+            firstQuery = std::min(firstQuery, queryIndex);
+            lastQuery = std::max(lastQuery, queryIndex);
+        }
+        // Resolve one contiguous range. Unwritten slots inside the range are
+        // harmless and keeping them in the same copy is cheaper than issuing
+        // one ResolveQueryData command for every metric endpoint.
+        if (firstQuery <= lastQuery)
+        {
             List->ResolveQueryData(
                 TimestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
-                queryIndex, 1, TimestampReadback.Get(),
-                static_cast<UINT64>(queryIndex) * sizeof(u64));
+                firstQuery, lastQuery - firstQuery + 1u, TimestampReadback.Get(),
+                static_cast<UINT64>(firstQuery) * sizeof(u64));
         }
     }
 
@@ -917,11 +978,13 @@ bool DX12CommandContext::Submit()
     if (FAILED(hr))
     {
         LastTimestampWrittenMask = 0;
+        TimestampSnapshotValid = false;
         Recording = false;
         return DX12::Fail("ID3D12GraphicsCommandList::Close", hr);
     }
 
     Recording = false;
+    TimestampSnapshotValid = false;
     LastTimestampWrittenMask = TimestampWrittenMask;
 
     ID3D12CommandList* lists[] = { List.Get() };

@@ -153,8 +153,9 @@ public:
     //
     // BeginFrame() returning false means "no frame this time" and the caller
     // must NOT call EndFrame(); that covers a minimized window (surface extent
-    // 0), a swapchain that could not be rebuilt yet, and a lost device. It is
-    // not necessarily an error -- check LastError()/HasFailed().
+    // 0), a swapchain that could not be rebuilt yet, a latency-budget skip, and
+    // a lost device. It is not necessarily an error -- check
+    // LastError()/HasFailed().
 
     // `requestedWidth/Height` are the widget's physical pixel size, used only
     // when the surface reports currentExtent == 0xFFFFFFFF (Wayland).
@@ -365,6 +366,10 @@ private:
     bool LoggedReflexActive = false;
     bool LoggedAntiLagActive = false;
     bool LowLatencyStateLogged = false;
+    // A strict latest-submission fence timeout is a pacing budget miss, not a
+    // renderer failure. Consume this at the next frame boundary so the
+    // presenter stays alive and retries on the following frame.
+    bool SkipNextPresentationForLatencyBudget = false;
 
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
     VkSurfaceFormatKHR SurfaceFormat{};
