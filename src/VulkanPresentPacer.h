@@ -303,6 +303,13 @@ public:
     // Queries the real surface and refreshes all surface-scoped support bits.
     // Falls back to the legacy query if modern capability discovery fails.
     bool QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capabilities);
+    // QuerySurfaceCapabilities deliberately keeps the raw WSI result so a
+    // presenter can distinguish a compositor-owned surface loss from a
+    // permanent capability failure without parsing a diagnostic string.
+    [[nodiscard]] VkResult GetLastSurfaceQueryResult() const noexcept
+    {
+        return LastSurfaceQueryResult;
+    }
     [[nodiscard]] VkSwapchainCreateFlagsKHR GetSwapchainCreateFlags() const noexcept;
     [[nodiscard]] bool ShouldUseFifoLatestReady() const noexcept;
 
@@ -438,6 +445,7 @@ private:
     VkPhysicalDevice PhysicalDeviceHandle = VK_NULL_HANDLE;
     VkSurfaceKHR Surface = VK_NULL_HANDLE;
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
+    VkResult LastSurfaceQueryResult = VK_SUCCESS;
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     // This is deliberately not part of ResetTimingLifecycle(): it identifies
     // the lifecycle that was reset and remains observable in the next capture

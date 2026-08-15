@@ -540,10 +540,11 @@ private:
     void refreshNativeSurfaceGuiThread();
     void setNativeSurfaceVisibleGuiThread(bool visible);
 #if defined(__linux__)
-    // Emulation thread. Maps the dedicated Vulkan child surface and rebuilds
-    // the presenter when the compositor handed out a new native handle.
-    // Returns false while the GUI thread has not published a usable handle.
+    // Emulation thread. Binds the presenter only to the GUI-published native
+    // snapshot whose generation is still current. Wayland WId reuse is not an
+    // identity check.
     bool prepareLinuxPresentationSurface();
+    void retireLinuxPresentationSurface(const char* reason);
 #endif
     // Callable from the emulation thread; posts to the GUI thread only when the
     // requested state actually changes.

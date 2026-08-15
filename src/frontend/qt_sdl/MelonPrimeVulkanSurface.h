@@ -13,6 +13,7 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#include <cstdint>
 #include <string>
 
 #include "VulkanCommon.h"
@@ -21,6 +22,30 @@ class QWidget;
 
 namespace MelonPrime::VulkanSurface
 {
+
+#if defined(__linux__)  // scatter-budget-exempt: Linux native-surface snapshot type, not input dispatch
+// Captured on the GUI thread after a Qt native-surface lifecycle event. The
+// emulation thread consumes this immutable value and never calls QWidget/QPA
+// accessors while creating or rebinding a VkSurfaceKHR.
+struct NativeWindowSnapshot
+{
+    std::uint64_t Generation = 0;
+    std::string Platform;
+    unsigned long long WindowId = 0;
+    void* XcbConnection = nullptr;
+    void* XlibDisplay = nullptr;
+    void* WaylandDisplay = nullptr;
+    void* WaylandSurface = nullptr;
+    std::uint32_t Width = 0;
+    std::uint32_t Height = 0;
+    bool Valid = false;
+
+    [[nodiscard]] bool IsValid() const noexcept
+    {
+        return Valid && Generation != 0 && Width != 0 && Height != 0;
+    }
+};
+#endif
 
 // ---------------------------------------------------------------------------
 // VkSurfaceKHR creation from a Qt native window.
@@ -53,6 +78,10 @@ struct Surface
     // Non-empty when Handle is VK_NULL_HANDLE. Always names the concrete
     // failure (missing entry point, unusable native handle, VkResult).
     std::string Failure;
+    // The raw WSI result when creation reached vkCreate*SurfaceKHR. This lets
+    // the presenter distinguish a recoverable surface loss from a permanent
+    // unsupported-platform/device failure.
+    VkResult FailureResult = VK_SUCCESS;
 
     [[nodiscard]] bool IsValid() const noexcept { return Handle != VK_NULL_HANDLE; }
 };
@@ -63,6 +92,15 @@ Surface Create(
     VkInstance instance,
     PFN_vkGetInstanceProcAddr getInstanceProcAddr,
     QWidget* widget);
+
+#if defined(__linux__)  // scatter-budget-exempt: Linux snapshot-based WSI API, not input dispatch
+// Linux presenter-thread entry point. The snapshot must have been captured by
+// the GUI-thread native host after its latest lifecycle boundary.
+Surface Create(
+    VkInstance instance,
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr,
+    const NativeWindowSnapshot& snapshot);
+#endif
 
 // Destroys the VkSurfaceKHR and any platform layer, and clears `surface`.
 // Callers must have made sure no swapchain still references it.

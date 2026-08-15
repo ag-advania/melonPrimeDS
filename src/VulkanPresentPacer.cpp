@@ -361,6 +361,7 @@ void VulkanPresentPacer::Shutdown() noexcept
     DeviceHandle = VK_NULL_HANDLE;
     PhysicalDeviceHandle = VK_NULL_HANDLE;
     Surface = VK_NULL_HANDLE;
+    LastSurfaceQueryResult = VK_SUCCESS;
     Caps2Available = false;
     PresentIdDevice = false;
     PresentWaitLegacyDevice = false;
@@ -407,6 +408,7 @@ VulkanPresentPacingPolicy VulkanPresentPacer::GetPolicy() const noexcept
 
 bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capabilities)
 {
+    LastSurfaceQueryResult = VK_ERROR_INITIALIZATION_FAILED;
     if (DeviceHandle == VK_NULL_HANDLE || Surface == VK_NULL_HANDLE)
         return false;
 
@@ -458,6 +460,7 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
             PhysicalDeviceHandle, &surfaceInfo, &caps2);
         if (result == VK_SUCCESS)
         {
+            LastSurfaceQueryResult = VK_SUCCESS;
             capabilities = caps2.surfaceCapabilities;
             PresentId2Surface = PresentId2Device && id2.presentId2Supported == VK_TRUE;
             // VK_KHR_present_wait has no surface capability structure. A
@@ -490,10 +493,22 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
             "[Vulkan] vkGetPhysicalDeviceSurfaceCapabilities2KHR failed (%s); "
             "modern present pacing disabled for this surface\n",
             Vk::FormatResult(result).c_str());
+        LastSurfaceQueryResult = result;
     }
 
     const VkResult legacy = fns.GetPhysicalDeviceSurfaceCapabilitiesKHR(
         PhysicalDeviceHandle, Surface, &capabilities);
+    // A failed modern query is commonly followed by the legacy fallback. Do
+    // not hide a compositor-owned surface loss if the fallback reports a
+    // second, less specific failure; a surface rebind is still the correct
+    // presenter action for this lifetime.
+    LastSurfaceQueryResult =
+        legacy == VK_SUCCESS || legacy == VK_ERROR_SURFACE_LOST_KHR
+        ? legacy
+        : (Caps2Available &&
+                  LastSurfaceQueryResult == VK_ERROR_SURFACE_LOST_KHR
+              ? VK_ERROR_SURFACE_LOST_KHR
+              : legacy);
     if (legacy == VK_SUCCESS)
     {
         PresentWaitLegacySurface = PresentWaitLegacyDevice;
