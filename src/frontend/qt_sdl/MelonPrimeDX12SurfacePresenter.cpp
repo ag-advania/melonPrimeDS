@@ -11,6 +11,7 @@
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
 #include "MelonPrimeDX12SurfacePresenter.h"
+#include "DX12GpuTimestamp.h"
 #include "DX12Perf.h"
 
 #include <algorithm>
@@ -453,6 +454,10 @@ bool DX12SurfacePresenter::CreateSwapchain(std::uint32_t width, std::uint32_t he
 
     Width = width;
     Height = height;
+    melonDS::DX12Perf::SetCounter(
+        melonDS::DX12Perf::Counter::DX12BackBufferCount, kBufferCount);
+    melonDS::DX12Perf::SetCounter(
+        melonDS::DX12Perf::Counter::DX12PresenterLogicalDepth, 1u);
     return AcquireBackBuffers();
 }
 
@@ -824,6 +829,14 @@ bool DX12SurfacePresenter::BeginFrame(
         Error = "DX12 presentation command list could not begin";
         return false;
     }
+    RecordDX12GpuMetric(
+        Commands, melonDS::GpuMetric::PresenterRenderPass,
+        melonDS::DX12Perf::Counter::PresenterRenderPassGpuTimeNs);
+    RecordDX12GpuMetric(
+        Commands, melonDS::GpuMetric::TotalQueueSpan,
+        melonDS::DX12Perf::Counter::TotalQueueGpuSpanNs);
+    Commands.WriteTimestamp(
+        melonDS::GpuMetricQueryIndex(melonDS::GpuMetric::TotalQueueSpan, false));
     if (melonDS::DX12Perf::IsEnabled())
         PerfRecordStart = melonDS::DX12Perf::Clock::now();
     // Keep the fixed SRV prefix intact; only the transient fallback tail is
@@ -850,6 +863,8 @@ bool DX12SurfacePresenter::BeginFrame(
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
     OpenList->ResourceBarrier(1, &barrier);
 
+    Commands.WriteTimestamp(
+        melonDS::GpuMetricQueryIndex(melonDS::GpuMetric::PresenterRenderPass, false));
     const float clear[4]{0.0f, 0.0f, 0.0f, 1.0f};
     OpenList->OMSetRenderTargets(1, &BackBufferRtvs[index], FALSE, nullptr);
     OpenList->ClearRenderTargetView(BackBufferRtvs[index], clear, 0, nullptr);
@@ -1185,6 +1200,10 @@ bool DX12SurfacePresenter::EndFrame()
     barrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
     barrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
     OpenList->ResourceBarrier(1, &barrier);
+    Commands.WriteTimestamp(
+        melonDS::GpuMetricQueryIndex(melonDS::GpuMetric::PresenterRenderPass, true));
+    Commands.WriteTimestamp(
+        melonDS::GpuMetricQueryIndex(melonDS::GpuMetric::TotalQueueSpan, true));
 
     OpenList = nullptr;
     FrameOpen = false;
@@ -1216,6 +1235,15 @@ bool DX12SurfacePresenter::Present(bool vsync)
 
     const UINT syncInterval = vsync ? 1u : 0u;
     const UINT flags = !vsync && TearingSupported ? DXGI_PRESENT_ALLOW_TEARING : 0u;
+    melonDS::DX12Perf::SetCounter(
+        melonDS::DX12Perf::Counter::DX12VsyncEnabled, vsync ? 1u : 0u);
+    melonDS::DX12Perf::SetCounter(
+        melonDS::DX12Perf::Counter::DX12PresentMode,
+        vsync ? 1u : (flags != 0 ? 2u : 0u));
+    melonDS::DX12Perf::SetCounter(
+        melonDS::DX12Perf::Counter::DX12BackBufferCount, kBufferCount);
+    melonDS::DX12Perf::SetCounter(
+        melonDS::DX12Perf::Counter::DX12PresenterLogicalDepth, 1u);
     if (!PresentModeLogged || LastPresentVsync != vsync)
     {
         PresentModeLogged = true;

@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstring>
 #include <iterator>
+#include <limits>
 
 #include "Platform.h"
 
@@ -139,6 +140,13 @@ bool Fail(const char* context, HRESULT hr)
 }
 
 } // namespace DX12
+
+namespace
+{
+
+constexpr u32 kTimestampQueryCount = 10;
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // DX12Context
@@ -664,7 +672,60 @@ bool DX12CommandContext::Init(ID3D12Device* device, ID3D12CommandQueue* queue)
 
     FenceValue = 0;
     SubmittedValue = 0;
+    TimestampFrequency = 0;
+    TimestampWrittenMask = 0;
+    LastTimestampWrittenMask = 0;
+    TimestampQueriesEnabled = false;
     Recording = false;
+
+    if (DX12Perf::IsEnabled())
+    {
+        D3D12_QUERY_HEAP_DESC queryDesc{};
+        queryDesc.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+        queryDesc.Count = kTimestampQueryCount;
+        queryDesc.NodeMask = 0;
+
+        u64 frequency = 0;
+        HRESULT queryResult = device->CreateQueryHeap(
+            &queryDesc, IID_PPV_ARGS(TimestampQueryHeap.ReleaseAndGetAddressOf()));
+        if (SUCCEEDED(queryResult)
+            && SUCCEEDED(queue->GetTimestampFrequency(&frequency))
+            && frequency != 0)
+        {
+            D3D12_HEAP_PROPERTIES readbackHeap{};
+            readbackHeap.Type = D3D12_HEAP_TYPE_READBACK;
+            readbackHeap.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+            readbackHeap.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+
+            D3D12_RESOURCE_DESC readbackDesc{};
+            readbackDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+            readbackDesc.Width = static_cast<UINT64>(kTimestampQueryCount) * sizeof(u64);
+            readbackDesc.Height = 1;
+            readbackDesc.DepthOrArraySize = 1;
+            readbackDesc.MipLevels = 1;
+            readbackDesc.Format = DXGI_FORMAT_UNKNOWN;
+            readbackDesc.SampleDesc.Count = 1;
+            readbackDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+
+            queryResult = device->CreateCommittedResource(
+                &readbackHeap,
+                D3D12_HEAP_FLAG_NONE,
+                &readbackDesc,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                nullptr,
+                IID_PPV_ARGS(TimestampReadback.ReleaseAndGetAddressOf()));
+            if (SUCCEEDED(queryResult))
+            {
+                TimestampFrequency = frequency;
+                TimestampQueriesEnabled = true;
+            }
+        }
+        if (!TimestampQueriesEnabled)
+        {
+            TimestampQueryHeap.Reset();
+            TimestampReadback.Reset();
+        }
+    }
     return true;
 }
 
@@ -676,6 +737,8 @@ void DX12CommandContext::Shutdown()
     List.Reset();
     Allocator.Reset();
     Fence.Reset();
+    TimestampReadback.Reset();
+    TimestampQueryHeap.Reset();
 
     if (FenceEvent)
     {
@@ -687,6 +750,10 @@ void DX12CommandContext::Shutdown()
     Queue = nullptr;
     FenceValue = 0;
     SubmittedValue = 0;
+    TimestampFrequency = 0;
+    TimestampWrittenMask = 0;
+    LastTimestampWrittenMask = 0;
+    TimestampQueriesEnabled = false;
     Recording = false;
 }
 
@@ -776,8 +843,56 @@ ID3D12GraphicsCommandList* DX12CommandContext::ResetList()
     if (FAILED(List->Reset(Allocator.Get(), nullptr)))
         return nullptr;
 
+    TimestampWrittenMask = 0;
     Recording = true;
     return List.Get();
+}
+
+void DX12CommandContext::WriteTimestamp(u32 queryIndex) noexcept
+{
+    if (!TimestampQueriesEnabled || !Recording || queryIndex >= kTimestampQueryCount)
+        return;
+    List->EndQuery(
+        TimestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, queryIndex);
+    TimestampWrittenMask = static_cast<u16>(
+        TimestampWrittenMask | (static_cast<u16>(1u) << queryIndex));
+}
+
+u64 DX12CommandContext::ReadTimestampSpanNanoseconds(
+    u32 startQuery, u32 endQuery) const noexcept
+{
+    if (!TimestampQueriesEnabled || TimestampFrequency == 0
+        || startQuery >= kTimestampQueryCount || endQuery >= kTimestampQueryCount
+        || startQuery > endQuery
+        || (LastTimestampWrittenMask & (static_cast<u16>(1u) << startQuery)) == 0
+        || (LastTimestampWrittenMask & (static_cast<u16>(1u) << endQuery)) == 0)
+    {
+        return 0;
+    }
+
+    const D3D12_RANGE readRange{
+        static_cast<SIZE_T>(startQuery * sizeof(u64)),
+        static_cast<SIZE_T>((endQuery + 1u) * sizeof(u64))};
+    const D3D12_RANGE* range = &readRange;
+    void* mapped = nullptr;
+    if (FAILED(TimestampReadback->Map(0, range, &mapped)) || !mapped)
+        return 0;
+    const auto* values = static_cast<const u64*>(mapped);
+    const u64 start = values[startQuery];
+    const u64 end = values[endQuery];
+    TimestampReadback->Unmap(0, nullptr);
+    if (end < start)
+        return 0;
+
+    const long double nanoseconds =
+        static_cast<long double>(end - start) * 1'000'000'000.0L
+        / static_cast<long double>(TimestampFrequency);
+    if (!(nanoseconds > 0.0L)
+        || nanoseconds >= static_cast<long double>((std::numeric_limits<u64>::max)()))
+    {
+        return 0;
+    }
+    return static_cast<u64>(nanoseconds + 0.5L);
 }
 
 bool DX12CommandContext::Submit()
@@ -785,11 +900,29 @@ bool DX12CommandContext::Submit()
     if (!Recording)
         return true;
 
-    Recording = false;
+    if (TimestampQueriesEnabled && TimestampWrittenMask != 0)
+    {
+        for (u32 queryIndex = 0; queryIndex < kTimestampQueryCount; ++queryIndex)
+        {
+            if ((TimestampWrittenMask & (static_cast<u16>(1u) << queryIndex)) == 0)
+                continue;
+            List->ResolveQueryData(
+                TimestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP,
+                queryIndex, 1, TimestampReadback.Get(),
+                static_cast<UINT64>(queryIndex) * sizeof(u64));
+        }
+    }
 
     HRESULT hr = List->Close();
     if (FAILED(hr))
+    {
+        LastTimestampWrittenMask = 0;
+        Recording = false;
         return DX12::Fail("ID3D12GraphicsCommandList::Close", hr);
+    }
+
+    Recording = false;
+    LastTimestampWrittenMask = TimestampWrittenMask;
 
     ID3D12CommandList* lists[] = { List.Get() };
     Queue->ExecuteCommandLists(1, lists);

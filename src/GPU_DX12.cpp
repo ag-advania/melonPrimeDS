@@ -136,6 +136,9 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
         }
     }
     NvidiaReflex.SetMode(settings.NvidiaReflexMode);
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::DX12ReflexMode,
+        static_cast<u64>(NvidiaReflex.GetMode()));
     LogLowLatencyPacingStateIfChanged();
 }
 
@@ -396,6 +399,12 @@ DX12LowLatencyPacingDecision DX12Renderer::GetLowLatencyPacingDecision() const n
 void DX12Renderer::LogLowLatencyPacingStateIfChanged()
 {
     const DX12LowLatencyPacingDecision decision = GetLowLatencyPacingDecision();
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::DX12VendorPacingAuthority,
+        static_cast<u64>(decision.Authority));
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::DX12ReflexMode,
+        static_cast<u64>(NvidiaReflex.GetMode()));
     if (PacingDecisionLogged
         && decision.Authority == LastLoggedPacingDecision.Authority
         && decision.BypassHostLimiter == LastLoggedPacingDecision.BypassHostLimiter

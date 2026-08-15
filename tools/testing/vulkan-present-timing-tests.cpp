@@ -18,6 +18,7 @@
 
 #include "VulkanPresentPacingPolicy.h"
 #include "VulkanPresentPacer.h"
+#include "VulkanPresenterFrameBudget.h"
 #include "VulkanGoogleDisplayTimingModel.h"
 #include "VulkanPresentTimingModel.h"
 
@@ -1448,6 +1449,45 @@ void TestPresentWait2ResultClassification()
         "fullscreen-exclusive loss remains an optional wait downgrade until that extension is used");
 }
 
+void TestPresenterFrameBudgetContract()
+{
+    // F1 is submitted to slot 0 and F2 to slot 1. The next reusable slot is
+    // slot 0, but the strict fallback must target the latest submitted F2
+    // slot 1. This is the regression that the old NextFrameSlot logic missed.
+    u64 absoluteFrame = 1;
+    const u32 firstSlot = VulkanFrameRingIndexForAbsoluteFrame(absoluteFrame++, 2);
+    const u32 secondSlot = VulkanFrameRingIndexForAbsoluteFrame(absoluteFrame++, 2);
+    const u32 nextReusableSlot = VulkanFrameRingIndexForAbsoluteFrame(absoluteFrame, 2);
+    Require(firstSlot == 0 && secondSlot == 1 && nextReusableSlot == 0,
+        "two-slot frame-ring index model must distinguish F2 from the next reusable F1 slot");
+    Require(secondSlot != nextReusableSlot,
+        "latest submitted presenter wait target must not be the next reusable slot");
+
+    Require(VulkanPresenterOneFrameBudgetTimeoutNs(16'666'667) <= 16'666'667,
+        "strict presenter timeout must fit within one 60 Hz frame budget");
+    Require(VulkanPresenterOneFrameBudgetTimeoutNs(1'000) == 250'000,
+        "strict presenter timeout must retain the minimum driver-safe bound");
+    Require(VulkanPresenterOneFrameBudgetTimeoutNs(0) == 16'000'000,
+        "unknown frame interval must use the bounded strict timeout cap");
+    Require(VulkanPresenterOneFrameBudgetTimeoutNs(100'000'000) == 16'000'000,
+        "strict presenter timeout must clamp long intervals instead of retaining one second");
+
+    VulkanPacingCapabilities legacy = FullCapabilities();
+    legacy.PresentId2Surface = false;
+    legacy.PresentWait2Surface = false;
+    legacy.PresentWaitRuntimeEnabled = false;
+    legacy.PresentWaitLegacySurface = true;
+    legacy.PresentWaitLegacyRuntimeEnabled = true;
+    const VulkanPacingDecision legacyDecision = Resolve(
+        Policy::PresenterOneFrameBudget, legacy);
+    Require(legacyDecision.BoundedPresentWait
+                && legacyDecision.Authority == Authority::GenericPresentTiming,
+        "legacy present-wait must own strict presenter pacing when wait2 is absent");
+    legacy.PresentWaitLegacyRuntimeEnabled = false;
+    Require(!Resolve(Policy::PresenterOneFrameBudget, legacy).BoundedPresentWait,
+        "retired legacy present-wait must fall back to the host/fence ladder");
+}
+
 
 // VSync off means IMMEDIATE or MAILBOX, where "present at this time" has no
 // defined meaning -- but telemetry and the bounded wait are still fine.
@@ -1483,6 +1523,7 @@ int main()
     TestPresentTimingLifecycleResultClassification();
     TestPresentTimingQueryContractClassification();
     TestPresentWait2ResultClassification();
+    TestPresenterFrameBudgetContract();
     TestGoogleTimingTransactions();
 
     TestTimingBackendSelection();

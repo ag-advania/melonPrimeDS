@@ -93,12 +93,12 @@ enum class Counter : u32
     CaptureLegacyOrderedLineCount,
     CaptureSidecarDispatchCount,
     CaptureSidecarBarrierCount,
-    // Reserved for a future calibrated Vulkan timestamp query. Keep it
-    // explicit rather than deriving GPU time from the CPU recording timer.
     CaptureSidecarGpuTimeNs,
+    RasterGpuTimeNs,
+    StructuredCompositorGpuTimeNs,
+    PresenterRenderPassGpuTimeNs,
+    TotalQueueGpuSpanNs,
     PresentedScreenCopyBytes,
-    // Reserved for a future calibrated Vulkan timestamp query. Keep it
-    // explicit rather than deriving GPU time from the CPU recording timer.
     PresentedScreenCopyGpuTimeNs,
     DirectCompositorImageFrames,
     FallbackCompositorBufferFrames,
@@ -108,15 +108,25 @@ enum class Counter : u32
     NativeReadbackWaitNs,
     VulkanPresenterFrameFenceWaitCount,
     VulkanPresenterFrameFenceWaitNs,
+    VulkanPresenterLatestSubmissionWaitCount,
+    VulkanPresenterLatestSubmissionWaitNs,
+    VulkanPresenterLatestSubmissionWaitTimeoutCount,
+    VulkanPresenterBudgetMissCount,
     VulkanAcquireWaitCount,
     VulkanAcquireWaitNs,
+    VulkanAcquireNotReadyCount,
+    VulkanPresentSkippedForLatencyBudgetCount,
+    VulkanTransientDescriptorPoolResetCount,
     VulkanPreviousPresentWaitCount,
     VulkanPreviousPresentWaitNs,
     VulkanPreviousPresentWaitTimeoutCount,
     VulkanSwapchainImageCount,
     VulkanPresenterFramesInFlight,
+    VulkanPresenterLogicalDepth,
     VulkanPacingAuthority,
     VulkanPresentMode,
+    VulkanVsyncEnabled,
+    VulkanReflexMode,
     Count,
 };
 
@@ -382,14 +392,20 @@ inline void MaybeReport()
         "compositor_descriptor_updates=%llu compose_drops=%llu "
         "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
-        "screen_copy_B=%llu screen_copy_gpu_ns=%llu direct_image_frames=%llu "
+        "raster_gpu_ns=%llu structured_compositor_gpu_ns=%llu presenter_render_pass_gpu_ns=%llu "
+        "total_queue_gpu_span_ns=%llu screen_copy_B=%llu screen_copy_gpu_ns=%llu direct_image_frames=%llu "
         "fallback_buffer_frames=%llu native_resolves=%llu native_readback_copy_B=%llu "
         "native_readback_demands=%llu native_readback_wait_ns=%llu "
         "presenter_frame_fence_wait_count=%llu presenter_frame_fence_wait_ns=%llu "
-        "acquire_wait_count=%llu acquire_wait_ns=%llu "
+        "latest_submission_wait_count=%llu latest_submission_wait_ns=%llu "
+        "latest_submission_wait_timeout_count=%llu presenter_budget_miss_count=%llu "
+        "acquire_wait_count=%llu acquire_wait_ns=%llu acquire_not_ready_count=%llu "
+        "present_skipped_for_latency_budget_count=%llu transient_descriptor_pool_resets=%llu "
         "previous_present_wait_count=%llu previous_present_wait_ns=%llu "
         "previous_present_wait_timeout_count=%llu swapchain_image_count=%llu "
-        "presenter_frames_in_flight=%llu pacing_authority=%llu present_mode=%llu\n",
+        "presenter_frames_in_flight=%llu presenter_logical_depth=%llu "
+        "pacing_authority=%llu present_mode=%llu vsync_enabled=%llu "
+        "reflex_mode=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::Polygons), count(Counter::Variants),
@@ -421,6 +437,8 @@ inline void MaybeReport()
         count(Counter::CaptureLegacyOrderedLineCount),
         count(Counter::CaptureSidecarDispatchCount), count(Counter::CaptureSidecarBarrierCount),
         count(Counter::CaptureSidecarGpuTimeNs),
+        count(Counter::RasterGpuTimeNs), count(Counter::StructuredCompositorGpuTimeNs),
+        count(Counter::PresenterRenderPassGpuTimeNs), count(Counter::TotalQueueGpuSpanNs),
         count(Counter::PresentedScreenCopyBytes), count(Counter::PresentedScreenCopyGpuTimeNs),
         count(Counter::DirectCompositorImageFrames), count(Counter::FallbackCompositorBufferFrames),
         count(Counter::NativeResolveCount),
@@ -428,23 +446,42 @@ inline void MaybeReport()
         count(Counter::NativeReadbackWaitNs),
         count(Counter::VulkanPresenterFrameFenceWaitCount),
         count(Counter::VulkanPresenterFrameFenceWaitNs),
+        count(Counter::VulkanPresenterLatestSubmissionWaitCount),
+        count(Counter::VulkanPresenterLatestSubmissionWaitNs),
+        count(Counter::VulkanPresenterLatestSubmissionWaitTimeoutCount),
+        count(Counter::VulkanPresenterBudgetMissCount),
         count(Counter::VulkanAcquireWaitCount),
         count(Counter::VulkanAcquireWaitNs),
+        count(Counter::VulkanAcquireNotReadyCount),
+        count(Counter::VulkanPresentSkippedForLatencyBudgetCount),
+        count(Counter::VulkanTransientDescriptorPoolResetCount),
         count(Counter::VulkanPreviousPresentWaitCount),
         count(Counter::VulkanPreviousPresentWaitNs),
         count(Counter::VulkanPreviousPresentWaitTimeoutCount),
         count(Counter::VulkanSwapchainImageCount),
         count(Counter::VulkanPresenterFramesInFlight),
+        count(Counter::VulkanPresenterLogicalDepth),
         count(Counter::VulkanPacingAuthority),
-        count(Counter::VulkanPresentMode));
+        count(Counter::VulkanPresentMode), count(Counter::VulkanVsyncEnabled),
+        count(Counter::VulkanReflexMode));
 
     const unsigned long long swapchainImageCount =
         count(Counter::VulkanSwapchainImageCount);
     const unsigned long long presenterFramesInFlight =
         count(Counter::VulkanPresenterFramesInFlight);
+    const unsigned long long presenterLogicalDepth =
+        count(Counter::VulkanPresenterLogicalDepth);
     const unsigned long long pacingAuthority =
         count(Counter::VulkanPacingAuthority);
     const unsigned long long presentMode = count(Counter::VulkanPresentMode);
+    const unsigned long long vsyncEnabled = count(Counter::VulkanVsyncEnabled);
+    const unsigned long long reflexMode = count(Counter::VulkanReflexMode);
+    std::fprintf(stderr,
+        "[VulkanPerf] summary renderer=Vulkan vsync=%llu present_mode=%llu "
+        "vendor_pacing_authority=%llu reflex_mode=%llu "
+        "swapchain_backbuffer_count=%llu presenter_logical_depth=%llu\n",
+        vsyncEnabled, presentMode, pacingAuthority, reflexMode,
+        swapchainImageCount, presenterLogicalDepth);
     for (SampleWindow& window : state.Cpu)
         window.Reset();
     state.Counters.fill(0);
@@ -452,9 +489,13 @@ inline void MaybeReport()
         swapchainImageCount;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterFramesInFlight)] =
         presenterFramesInFlight;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterLogicalDepth)] =
+        presenterLogicalDepth;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPacingAuthority)] =
         pacingAuthority;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPresentMode)] = presentMode;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanVsyncEnabled)] = vsyncEnabled;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanReflexMode)] = reflexMode;
     state.LastReport = now;
 }
 
@@ -527,6 +568,10 @@ enum class Counter : u32
     CaptureSidecarDispatchCount,
     CaptureSidecarBarrierCount,
     CaptureSidecarGpuTimeNs,
+    RasterGpuTimeNs,
+    StructuredCompositorGpuTimeNs,
+    PresenterRenderPassGpuTimeNs,
+    TotalQueueGpuSpanNs,
     PresentedScreenCopyBytes,
     PresentedScreenCopyGpuTimeNs,
     DirectCompositorImageFrames,
@@ -537,15 +582,25 @@ enum class Counter : u32
     NativeReadbackWaitNs,
     VulkanPresenterFrameFenceWaitCount,
     VulkanPresenterFrameFenceWaitNs,
+    VulkanPresenterLatestSubmissionWaitCount,
+    VulkanPresenterLatestSubmissionWaitNs,
+    VulkanPresenterLatestSubmissionWaitTimeoutCount,
+    VulkanPresenterBudgetMissCount,
     VulkanAcquireWaitCount,
     VulkanAcquireWaitNs,
+    VulkanAcquireNotReadyCount,
+    VulkanPresentSkippedForLatencyBudgetCount,
+    VulkanTransientDescriptorPoolResetCount,
     VulkanPreviousPresentWaitCount,
     VulkanPreviousPresentWaitNs,
     VulkanPreviousPresentWaitTimeoutCount,
     VulkanSwapchainImageCount,
     VulkanPresenterFramesInFlight,
+    VulkanPresenterLogicalDepth,
     VulkanPacingAuthority,
     VulkanPresentMode,
+    VulkanVsyncEnabled,
+    VulkanReflexMode,
     Count,
 };
 inline bool IsEnabled() noexcept { return false; }

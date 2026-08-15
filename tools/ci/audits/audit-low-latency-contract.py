@@ -203,13 +203,21 @@ def main() -> int:
             for token in (
                 "VulkanPresenterFrameFenceWaitCount",
                 "VulkanPresenterFrameFenceWaitNs",
+                "VulkanPresenterLatestSubmissionWaitCount",
+                "VulkanPresenterLatestSubmissionWaitNs",
+                "VulkanPresenterLatestSubmissionWaitTimeoutCount",
+                "VulkanPresenterBudgetMissCount",
                 "VulkanAcquireWaitCount",
                 "VulkanAcquireWaitNs",
+                "VulkanAcquireNotReadyCount",
+                "VulkanPresentSkippedForLatencyBudgetCount",
+                "VulkanTransientDescriptorPoolResetCount",
                 "VulkanPreviousPresentWaitCount",
                 "VulkanPreviousPresentWaitNs",
                 "VulkanPreviousPresentWaitTimeoutCount",
                 "VulkanSwapchainImageCount",
                 "VulkanPresenterFramesInFlight",
+                "VulkanPresenterLogicalDepth",
                 "VulkanPacingAuthority",
                 "VulkanPresentMode",
             )
@@ -222,14 +230,18 @@ def main() -> int:
             ),
             [
                 "PresentPacer.BeginFrame(",
-                "if (PresentPacer.UsesPresenterOneFrameBudget()",
+                "const bool strictFenceFallback = PresentPacer.UsesPresenterOneFrameBudget()",
                 "PresentPacer.GetAuthority() == melonDS::VulkanPacingAuthority::GenericHost",
-                "Frames.WaitForNextFrameSlot()",
+                "Frames.LatestSubmittedFrameHasPendingSubmission()",
+                "VulkanPresenterOneFrameBudgetTimeoutNs(",
+                "Frames.WaitForLatestSubmittedFrame(",
                 "Reflex.BeginFrame();",
                 "AntiLag.BeginFrame(",
             ],
         )
-        and "Frames.Create(Device, Device.GetMainQueueFamily(), Vk::FramesInFlight)" in vulkan_presenter
+        and "PresenterFrameDepthFromEnvironment()" in vulkan_presenter
+        and "WaitForPresentKHR" in vulkan_pacer
+        and "MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS" in vulkan_presenter
         and "void Quiesce() noexcept;" in presenter_header
         and ordered(
             presenter,
@@ -381,7 +393,7 @@ def main() -> int:
                 "VulkanPresentWait2ResultAction::SurfaceLost",
                 "VulkanPacerBeginResult::SurfaceLost",
                 "VulkanPresentWait2ResultAction::DisableWait",
-                "DisableWait(Vk::FormatResult(result).c_str());",
+                "DisableWait(Vk::FormatResult(result).c_str(), !useWait2);",
             ],
         )
         and "TestPresentWait2ResultClassification" in vulkan_timing_tests

@@ -258,6 +258,7 @@ struct DeviceDispatch
     PFN_vkQueuePresentKHR               QueuePresentKHR = nullptr;
 
     // --- vendor-neutral present pacing / telemetry (optional) ---
+    PFN_vkWaitForPresentKHR                     WaitForPresentKHR = nullptr;
     PFN_vkWaitForPresent2KHR                    WaitForPresent2KHR = nullptr;
     PFN_vkGetCalibratedTimestampsKHR            GetCalibratedTimestampsKHR = nullptr;
     PFN_vkSetSwapchainPresentTimingQueueSizeEXT SetSwapchainPresentTimingQueueSizeEXT = nullptr;

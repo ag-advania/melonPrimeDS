@@ -26,10 +26,6 @@ namespace
 {
 
 constexpr u64 MaxPresentWaitNs = 2'000'000; // A driver stall must never hang input.
-// The strict presenter budget may wait up to one emulator frame, but never
-// indefinitely. This is intentionally separate from the generic 2 ms
-// stall-protection bound used by PresentWait/JIT.
-constexpr u64 MaxStrictPresentWaitNs = 16'000'000;
 constexpr u64 MinPresentWaitNs = 250'000;
 constexpr u32 TimingLogPeriodFrames = 600;
 
@@ -269,6 +265,7 @@ bool VulkanPresentPacer::Initialize(const VulkanDevice& device, VkSurfaceKHR sur
         instanceFns.GetPhysicalDeviceSurfaceCapabilitiesKHR;
     dispatch.SetSwapchainPresentTimingQueueSizeEXT =
         deviceFns.SetSwapchainPresentTimingQueueSizeEXT;
+    dispatch.WaitForPresentKHR = deviceFns.WaitForPresentKHR;
     dispatch.WaitForPresent2KHR = deviceFns.WaitForPresent2KHR;
     dispatch.GetSwapchainTimingPropertiesEXT = deviceFns.GetSwapchainTimingPropertiesEXT;
     dispatch.GetSwapchainTimeDomainPropertiesEXT =
@@ -280,6 +277,10 @@ bool VulkanPresentPacer::Initialize(const VulkanDevice& device, VkSurfaceKHR sur
     VulkanPresentPacerInitInfo info;
     info.Device = device.GetHandle();
     info.PhysicalDevice = device.GetPhysicalDevice();
+    info.PresentIdExtensionEnabled =
+        HasEnabledExtension(device, VK_KHR_PRESENT_ID_EXTENSION_NAME);
+    info.PresentWaitLegacyExtensionEnabled =
+        HasEnabledExtension(device, VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
     info.PresentId2ExtensionEnabled =
         HasEnabledExtension(device, VK_KHR_PRESENT_ID_2_EXTENSION_NAME);
     info.PresentWait2ExtensionEnabled =
@@ -320,6 +321,9 @@ bool VulkanPresentPacer::InitializeCommon(
     PhysicalDeviceHandle = info.PhysicalDevice;
     Surface = surface;
     Caps2Available = Dispatch.GetPhysicalDeviceSurfaceCapabilities2KHR != nullptr;
+    PresentIdDevice = info.PresentIdExtensionEnabled;
+    PresentWaitLegacyDevice = info.PresentWaitLegacyExtensionEnabled
+        && PresentIdDevice && Dispatch.WaitForPresentKHR != nullptr;
     PresentId2Device = info.PresentId2ExtensionEnabled;
     PresentWait2Device = info.PresentWait2ExtensionEnabled
         && Dispatch.WaitForPresent2KHR;
@@ -344,7 +348,9 @@ bool VulkanPresentPacer::InitializeCommon(
     RelativeTimingDevice = PresentTimingDevice && TimeDomainQueryAvailable
         && info.PresentAtRelativeTimeFeatureEnabled;
     LatestReadyDevice = info.LatestReadyExtensionEnabled;
-    WaitRuntimeEnabled = PresentWait2Device;
+    PresentWait2RuntimeEnabled = PresentWait2Device;
+    PresentWaitLegacyRuntimeEnabled = PresentWaitLegacyDevice;
+    WaitRuntimeEnabled = PresentWait2RuntimeEnabled || PresentWaitLegacyRuntimeEnabled;
     return DeviceHandle != VK_NULL_HANDLE && Surface != VK_NULL_HANDLE;
 }
 
@@ -356,6 +362,8 @@ void VulkanPresentPacer::Shutdown() noexcept
     PhysicalDeviceHandle = VK_NULL_HANDLE;
     Surface = VK_NULL_HANDLE;
     Caps2Available = false;
+    PresentIdDevice = false;
+    PresentWaitLegacyDevice = false;
     PresentId2Device = false;
     PresentWait2Device = false;
     PresentTimingDevice = false;
@@ -367,6 +375,7 @@ void VulkanPresentPacer::Shutdown() noexcept
     LatestReadyDevice = false;
     TimeDomainQueryAvailable = false;
     PresentId2Surface = false;
+    PresentWaitLegacySurface = false;
     PresentWait2Surface = false;
     PresentTimingSurface = false;
     PresentTimingRelativeSurface = false;
@@ -376,6 +385,8 @@ void VulkanPresentPacer::Shutdown() noexcept
     PresentStageQueries = 0;
     TargetPresentStage = 0;
     TargetSchedulingLifecycleFailed = false;
+    PresentWaitLegacyRuntimeEnabled = false;
+    PresentWait2RuntimeEnabled = false;
     WaitRuntimeEnabled = false;
     WaitDisabledReason.clear();
     Authority.store(static_cast<int>(VulkanPacingAuthority::GenericHost),
@@ -400,6 +411,7 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
         return false;
 
     PresentId2Surface = false;
+    PresentWaitLegacySurface = false;
     PresentWait2Surface = false;
     PresentTimingSurface = false;
     PresentTimingRelativeSurface = false;
@@ -448,6 +460,10 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
         {
             capabilities = caps2.surfaceCapabilities;
             PresentId2Surface = PresentId2Device && id2.presentId2Supported == VK_TRUE;
+            // VK_KHR_present_wait has no surface capability structure. A
+            // successful surface query is the lifecycle boundary at which a
+            // device-level legacy wait can be used for this swapchain.
+            PresentWaitLegacySurface = PresentWaitLegacyDevice;
             PresentWait2Surface = PresentWait2Device && PresentId2Surface
                 && wait2.presentWait2Supported == VK_TRUE;
             PresentTimingSurface = PresentTimingDevice && PresentId2Surface
@@ -462,7 +478,11 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
             // The stage the targets are expressed against is a property of the
             // surface, so it is known here -- before any swapchain exists.
             SelectTargetPresentStage();
-            WaitRuntimeEnabled = PresentWait2Surface;
+            PresentWait2RuntimeEnabled = PresentWait2Surface && PresentWait2Device;
+            PresentWaitLegacyRuntimeEnabled = PresentWaitLegacySurface
+                && PresentWaitLegacyDevice;
+            WaitRuntimeEnabled = PresentWait2RuntimeEnabled
+                || PresentWaitLegacyRuntimeEnabled;
             return true;
         }
 
@@ -474,6 +494,14 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
 
     const VkResult legacy = fns.GetPhysicalDeviceSurfaceCapabilitiesKHR(
         PhysicalDeviceHandle, Surface, &capabilities);
+    if (legacy == VK_SUCCESS)
+    {
+        PresentWaitLegacySurface = PresentWaitLegacyDevice;
+        PresentWaitLegacyRuntimeEnabled = PresentWaitLegacySurface
+            && PresentWaitLegacyDevice;
+        PresentWait2RuntimeEnabled = false;
+        WaitRuntimeEnabled = PresentWaitLegacyRuntimeEnabled;
+    }
     return legacy == VK_SUCCESS;
 }
 
@@ -641,7 +669,11 @@ void VulkanPresentPacer::OnSwapchainCreated(
     TimingReportCountdown = 0;
     WaitTimeouts = 0;
     TimingQueueFullCount = 0;
-    WaitRuntimeEnabled = PresentWait2Surface;
+    PresentWait2RuntimeEnabled = PresentWait2Surface && PresentWait2Device;
+    PresentWaitLegacyRuntimeEnabled = PresentWaitLegacySurface
+        && PresentWaitLegacyDevice;
+    WaitRuntimeEnabled = PresentWait2RuntimeEnabled
+        || PresentWaitLegacyRuntimeEnabled;
     TimingMetadataEnabled = false;
     TimingResultsQueryEnabled = false;
     LoggedFallbackReason = VulkanJitFallbackReason::None;
@@ -720,7 +752,9 @@ VulkanPacingCapabilities VulkanPresentPacer::BuildCapabilities() const noexcept
     caps.SwapchainValid = Swapchain != VK_NULL_HANDLE;
     caps.PresentId2Surface = PresentId2Surface;
     caps.PresentWait2Surface = PresentWait2Surface;
-    caps.PresentWaitRuntimeEnabled = WaitRuntimeEnabled;
+    caps.PresentWaitRuntimeEnabled = PresentWait2RuntimeEnabled;
+    caps.PresentWaitLegacySurface = PresentWaitLegacySurface;
+    caps.PresentWaitLegacyRuntimeEnabled = PresentWaitLegacyRuntimeEnabled;
     caps.PresentTimingSurface = PresentTimingSurface;
     caps.TimingMetadataEnabled = TimingMetadataEnabled;
     caps.TimingQueuePressure = TimingQueuePressureActive;
@@ -830,9 +864,10 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     LogTargetSchedulingIfChanged();
 
     // The bounded wait and target-time scheduling are independent mechanisms:
-    // VK_KHR_present_wait2 waits on the *previous* present, VK_EXT_present_timing
-    // schedules *this* one. A driver that exposes only the latter still gets
-    // full target-time presentation; it simply skips the wait below.
+    // VK_KHR_present_wait2 / VK_KHR_present_wait wait on the *previous*
+    // present, while VK_EXT_present_timing schedules *this* one. A driver that
+    // exposes only the latter still gets full target-time presentation; it
+    // simply skips the wait below.
     if (!decision.BoundedPresentWait)
         return VulkanPacerBeginResult::Continue;
 
@@ -841,10 +876,20 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     if (LastPresentedId == 0 || LastPresentedId == LastWaitedId)
         return VulkanPacerBeginResult::Continue;
 
-    VkPresentWait2InfoKHR wait{};
-    wait.sType = VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR;
-    wait.presentId = LastPresentedId;
+    // Prefer the modern wait2 path. If its runtime entry point or surface
+    // capability is unavailable, legacy present_wait remains a valid bounded
+    // fallback as long as the legacy present-id was attached to this
+    // swapchain's presents.
+    const bool useWait2 = PresentWait2Surface && PresentWait2RuntimeEnabled
+        && Dispatch.WaitForPresent2KHR != nullptr;
+    const bool useLegacyWait = !useWait2
+        && PresentWaitLegacySurface && PresentWaitLegacyRuntimeEnabled
+        && Dispatch.WaitForPresentKHR != nullptr;
+    if (!useWait2 && !useLegacyWait)
+        return VulkanPacerBeginResult::Continue;
+
     const VulkanPresentPacingPolicy policy = GetPolicy();
+    u64 waitTimeout = 0;
     if (policy == VulkanPresentPacingPolicy::PresenterOneFrameBudget)
     {
         // The strict prototype is allowed to consume the emulator's own
@@ -853,13 +898,11 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
         const u64 frameBudget = TargetFrameIntervalNs != 0
             ? TargetFrameIntervalNs
             : RefreshDurationNs;
-        wait.timeout = frameBudget != 0
-            ? std::min(MaxStrictPresentWaitNs, std::max(MinPresentWaitNs, frameBudget))
-            : MaxPresentWaitNs;
+        waitTimeout = VulkanPresenterOneFrameBudgetTimeoutNs(frameBudget);
     }
     else
     {
-        wait.timeout = policy == VulkanPresentPacingPolicy::PresentWait
+        waitTimeout = policy == VulkanPresentPacingPolicy::PresentWait
             ? MaxPresentWaitNs
             : (RefreshDurationNs > 0
                 ? std::min(MaxPresentWaitNs,
@@ -873,8 +916,20 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     const VulkanPerf::Clock::time_point waitStart = perfEnabled
         ? VulkanPerf::Clock::now()
         : VulkanPerf::Clock::time_point{};
-    const VkResult result = Dispatch.WaitForPresent2KHR(
-        DeviceHandle, Swapchain, &wait);
+    VkResult result = VK_ERROR_UNKNOWN;
+    if (useWait2)
+    {
+        VkPresentWait2InfoKHR wait{};
+        wait.sType = VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR;
+        wait.presentId = LastPresentedId;
+        wait.timeout = waitTimeout;
+        result = Dispatch.WaitForPresent2KHR(DeviceHandle, Swapchain, &wait);
+    }
+    else
+    {
+        result = Dispatch.WaitForPresentKHR(
+            DeviceHandle, Swapchain, LastPresentedId, waitTimeout);
+    }
     if (perfEnabled)
     {
         const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
@@ -896,12 +951,14 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
         return VulkanPacerBeginResult::Continue;
     case VulkanPresentWait2ResultAction::SwapchainSuboptimal:
         LogPresentLifecycleRoute(
-            "WaitForPresent2KHR", result, VulkanPacerBeginResult::SwapchainSuboptimal,
+            useWait2 ? "WaitForPresent2KHR" : "WaitForPresentKHR",
+            result, VulkanPacerBeginResult::SwapchainSuboptimal,
             Platform::LogLevel::Warn);
         return VulkanPacerBeginResult::SwapchainSuboptimal;
     case VulkanPresentWait2ResultAction::SwapchainOutOfDate:
         LogPresentLifecycleRoute(
-            "WaitForPresent2KHR", result, VulkanPacerBeginResult::SwapchainOutOfDate,
+            useWait2 ? "WaitForPresent2KHR" : "WaitForPresentKHR",
+            result, VulkanPacerBeginResult::SwapchainOutOfDate,
             Platform::LogLevel::Warn);
         return VulkanPacerBeginResult::SwapchainOutOfDate;
     case VulkanPresentWait2ResultAction::DeviceLost:
@@ -913,15 +970,17 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
         // exactly the wrong conclusion to draw from device loss.
         TargetSchedulingActive.store(false, std::memory_order_release);
         LogPresentLifecycleRoute(
-            "WaitForPresent2KHR", result, VulkanPacerBeginResult::DeviceLost);
+            useWait2 ? "WaitForPresent2KHR" : "WaitForPresentKHR",
+            result, VulkanPacerBeginResult::DeviceLost);
         return VulkanPacerBeginResult::DeviceLost;
     case VulkanPresentWait2ResultAction::SurfaceLost:
         TargetSchedulingActive.store(false, std::memory_order_release);
         LogPresentLifecycleRoute(
-            "WaitForPresent2KHR", result, VulkanPacerBeginResult::SurfaceLost);
+            useWait2 ? "WaitForPresent2KHR" : "WaitForPresentKHR",
+            result, VulkanPacerBeginResult::SurfaceLost);
         return VulkanPacerBeginResult::SurfaceLost;
     case VulkanPresentWait2ResultAction::DisableWait:
-        DisableWait(Vk::FormatResult(result).c_str());
+        DisableWait(Vk::FormatResult(result).c_str(), !useWait2);
         return VulkanPacerBeginResult::Continue;
     }
     return VulkanPacerBeginResult::Continue;
@@ -1056,7 +1115,16 @@ u64 VulkanPresentPacer::PreparePresent(
     const VulkanPresentTimingBackend backend = decisionCurrent
         ? LastDecision.TimingBackend
         : VulkanPresentTimingBackend::None;
-    if (!PresentId2Surface && backend != VulkanPresentTimingBackend::GoogleDisplayTiming)
+    // Attach the legacy ID whenever the selected policy owns a bounded wait,
+    // even while wait2 is currently healthy. If wait2 retires at runtime, the
+    // next frame can then wait the immediately previous present through the
+    // legacy ladder without trying to reuse an uncorrelated ID.
+    const bool legacyWaitCurrent = decisionCurrent
+        && LastDecision.BoundedPresentWait
+        && PresentWaitLegacySurface && PresentWaitLegacyRuntimeEnabled
+        && Dispatch.WaitForPresentKHR != nullptr;
+    if (!PresentId2Surface && backend != VulkanPresentTimingBackend::GoogleDisplayTiming
+        && !legacyWaitCurrent)
         return 0;
 
     metadata.LogicalId = preferredId != 0 ? preferredId : LastSubmittedId + 1;
@@ -1195,9 +1263,24 @@ u64 VulkanPresentPacer::PreparePresent(
         TargetSchedulingActive.store(false, std::memory_order_release);
     }
 
+    // Legacy present-wait needs the device-level present ID. It is kept inside
+    // ID2 when both are present, so a queue-full retry can remove only timing
+    // metadata while preserving both correlation paths and any pre-existing
+    // outer chain.
+    if (legacyWaitCurrent)
+    {
+        metadata.LegacyId.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
+        metadata.LegacyId.swapchainCount = 1;
+        metadata.LegacyId.pPresentIds = &metadata.LogicalId;
+        metadata.LegacyId.pNext = present.pNext;
+        present.pNext = &metadata.LegacyId;
+        metadata.LegacyIdAttached = true;
+    }
+
     // Keep ID2 outermost. If timing metadata makes vkQueuePresentKHR reject
     // the operation, retry preparation can splice only that node out while
-    // preserving Reflex's outer VkPresentIdKHR and any pre-existing chain.
+    // preserving the legacy ID, Reflex's outer VkPresentIdKHR and any
+    // pre-existing chain.
     if (PresentId2Surface)
     {
         metadata.Id2.sType = VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR;
@@ -1233,8 +1316,13 @@ bool VulkanPresentPacer::PrepareRetryWithoutTiming(
     present.waitSemaphoreCount = 0;
     present.pWaitSemaphores = nullptr;
 
-    // Remove only VkPresentTimingsInfoEXT from the chain.
-    metadata.Id2.pNext = metadata.Timings.pNext;
+    // Remove only VkPresentTimingsInfoEXT from the chain. Legacy ID may be
+    // between ID2 and timing metadata when both correlation extensions are
+    // active; preserve that ladder rather than dropping the fallback ID.
+    if (metadata.LegacyIdAttached)
+        metadata.LegacyId.pNext = metadata.Timings.pNext;
+    else if (metadata.Id2Attached)
+        metadata.Id2.pNext = metadata.Timings.pNext;
     metadata.TimingAttached = false;
     metadata.TargetValueNs = 0;
     metadata.TargetMode = VulkanTargetSchedulingMode::None;
@@ -1891,7 +1979,17 @@ VulkanPacerBeginResult VulkanPresentPacer::ReportPastTiming()
 
 void VulkanPresentPacer::DisableWait(const char* reason)
 {
-    WaitRuntimeEnabled = false;
+    DisableWait(reason, false);
+}
+
+void VulkanPresentPacer::DisableWait(const char* reason, bool legacyWait)
+{
+    if (legacyWait)
+        PresentWaitLegacyRuntimeEnabled = false;
+    else
+        PresentWait2RuntimeEnabled = false;
+    WaitRuntimeEnabled = PresentWait2RuntimeEnabled
+        || PresentWaitLegacyRuntimeEnabled;
     WaitDisabledReason = reason ? reason : "runtime failure";
 
     // Only the bounded wait is retired here. Target-time scheduling is a
@@ -1906,7 +2004,8 @@ void VulkanPresentPacer::DisableWait(const char* reason)
         TargetSchedulingActive.store(false, std::memory_order_release);
     }
     Platform::Log(Platform::LogLevel::Warn,
-        "[Vulkan] generic present wait disabled: %s; %s\n",
+        "[Vulkan] generic present wait (%s) disabled: %s; %s\n",
+        legacyWait ? "legacy" : "present_wait2",
         WaitDisabledReason.c_str(),
         LastDecision.TargetTimeScheduling
             ? "target-time scheduling continues without it"

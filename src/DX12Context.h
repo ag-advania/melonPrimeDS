@@ -191,6 +191,18 @@ public:
     // most recent Submit(), notably DXGI Present operations.
     bool WaitQueueIdle();
 
+    // Optional developer GPU timestamp seam. Query results belong to this
+    // command context's fence, so a caller may read the previous submission
+    // immediately after Begin()/TryBegin() has retired it and before the new
+    // list is submitted.
+    [[nodiscard]] bool HasTimestampQueries() const noexcept
+    {
+        return TimestampQueriesEnabled && TimestampFrequency != 0;
+    }
+    void WriteTimestamp(u32 queryIndex) noexcept;
+    [[nodiscard]] u64 ReadTimestampSpanNanoseconds(
+        u32 startQuery, u32 endQuery) const noexcept;
+
 private:
     bool WaitForFence(u64 value, bool recordRasterBegin = false);
     ID3D12GraphicsCommandList* ResetList();
@@ -200,9 +212,15 @@ private:
     DX12::ComPtr<ID3D12CommandAllocator> Allocator;
     DX12::ComPtr<ID3D12GraphicsCommandList> List;
     DX12::ComPtr<ID3D12Fence> Fence;
+    DX12::ComPtr<ID3D12QueryHeap> TimestampQueryHeap;
+    DX12::ComPtr<ID3D12Resource> TimestampReadback;
     HANDLE FenceEvent = nullptr;
     u64 FenceValue = 0;
     u64 SubmittedValue = 0;
+    u64 TimestampFrequency = 0;
+    u16 TimestampWrittenMask = 0;
+    u16 LastTimestampWrittenMask = 0;
+    bool TimestampQueriesEnabled = false;
     bool Recording = false;
 };
 

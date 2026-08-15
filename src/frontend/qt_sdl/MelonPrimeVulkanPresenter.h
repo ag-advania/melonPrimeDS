@@ -415,12 +415,13 @@ private:
     melonDS::u64 CachedDirectResourceGeneration = 0;
 
     // Per frame-in-flight transient pool, kept separate from persistent layer
-    // sets. It is reset at the top of every frame and remains available for a
-    // future dynamic presenter binding without ever invalidating persistent
-    // descriptors.
+    // sets. It is reset lazily, only when the previous use of that slot
+    // allocated from it; steady-state direct-descriptor-cache hits therefore
+    // avoid a reset without ever invalidating persistent descriptors.
     // Freeing individual sets is never needed and vkResetDescriptorPool is the
     // cheapest way to recycle a whole frame's worth.
     std::array<VkDescriptorPool, melonDS::Vk::FramesInFlight> DescriptorPools{};
+    std::array<bool, melonDS::Vk::FramesInFlight> TransientDescriptorPoolUsed{};
 
     // Per frame-in-flight upload ring. Reset in BeginFrame() after that slot's
     // fence has signalled, which is what makes overwriting last-use contents

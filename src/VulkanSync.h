@@ -27,6 +27,7 @@
 #include "VulkanCommon.h"
 #include "VulkanDevice.h"
 #include "VulkanLoader.h"
+#include "VulkanPresenterFrameBudget.h"
 
 namespace melonDS::Vk
 {
@@ -168,6 +169,20 @@ struct FrameContext
     u64 SubmittedFrame = 0;
     bool HasPendingSubmission = false;
     bool Recording = false;
+
+    // Optional developer telemetry. The pool is created only when
+    // MELONPRIME_PERF=1 and is reset by the command buffer at the start of the
+    // next use of this slot. Keeping it on the frame context makes the query
+    // lifetime obey the same fence as the command buffer that wrote it.
+    VkQueryPool TimestampQueryPool = VK_NULL_HANDLE;
+    bool TimestampQueriesEnabled = false;
+};
+
+enum class FrameWaitResult : u32
+{
+    Ready = 0,
+    Timeout,
+    Error,
 };
 
 
@@ -206,12 +221,14 @@ public:
     // not record anything in that case.
     FrameContext* BeginFrame(bool recordRasterBegin = false);
 
-    // Strict presenter pacing uses the next presenter slot as a bounded
-    // pre-input back-pressure point. It waits that slot's fence and retires
-    // its deferred resources, but deliberately does not reset the fence or
-    // command pool; BeginFrame() performs those recording-boundary operations
-    // immediately afterward.
-    bool WaitForNextFrameSlot();
+    // Strict presenter pacing waits the most recently submitted presenter
+    // frame as a bounded pre-input back-pressure point. This is deliberately
+    // not the next reusable ring slot: on a two-slot ring that slot is usually
+    // two submissions old and therefore does not enforce a one-frame budget.
+    // The fence and deferred resources are retired, but the fence and command
+    // pool are not reset; BeginFrame() performs those recording-boundary
+    // operations immediately afterward.
+    FrameWaitResult WaitForLatestSubmittedFrame(u64 timeoutNanoseconds);
 
     // Non-blocking counterpart for work that is allowed to drop a frame. If
     // the next slot's fence is not signalled, returns nullptr immediately
@@ -250,13 +267,36 @@ public:
     [[nodiscard]] u32 GetFrameIndex() const noexcept { return CurrentIndex; }
     [[nodiscard]] u32 GetFramesInFlight() const noexcept { return static_cast<u32>(Frames.size()); }
 
-    [[nodiscard]] bool NextFrameSlotHasPendingSubmission() const noexcept
+    [[nodiscard]] u32 GetNextFrameIndex() const noexcept
     {
         if (Frames.empty())
-            return false;
-        const u32 nextIndex = static_cast<u32>((AbsoluteFrame - 1) % Frames.size());
-        return Frames[nextIndex].HasPendingSubmission;
+            return 0;
+        return VulkanFrameRingIndexForAbsoluteFrame(
+            AbsoluteFrame, static_cast<u32>(Frames.size()));
     }
+
+    [[nodiscard]] bool LatestSubmittedFrameHasPendingSubmission() const noexcept
+    {
+        return HasSubmittedFrame && !Frames.empty()
+            && Frames[LastSubmittedIndex].HasPendingSubmission;
+    }
+
+    [[nodiscard]] bool NextFrameHasPendingSubmission() const noexcept
+    {
+        return !Frames.empty() && Frames[GetNextFrameIndex()].HasPendingSubmission;
+    }
+
+    // Developer GPU timestamp seam. Query indices are owned by the caller so
+    // the same FrameRing can measure raster, compositor, capture, or presenter
+    // command spans without putting stage knowledge into synchronization code.
+    [[nodiscard]] bool HasTimestampQueries() const noexcept
+    {
+        return TimestampPeriodNs > 0.0f;
+    }
+    [[nodiscard]] float GetTimestampPeriodNs() const noexcept { return TimestampPeriodNs; }
+    void WriteTimestamp(VkPipelineStageFlagBits stage, u32 queryIndex) noexcept;
+    [[nodiscard]] bool ReadCurrentFrameTimestamps(
+        u32 firstQuery, u32 queryCount, u64* values) const noexcept;
 
     // Monotonic frame counter. Pass this to DeferredDestroyQueue::Enqueue().
     [[nodiscard]] u64 GetAbsoluteFrame() const noexcept { return AbsoluteFrame; }
@@ -283,6 +323,9 @@ private:
     u32 CurrentIndex = 0;
     u64 AbsoluteFrame = 1;      // 1-based so that 0 means "never used"
     u64 CompletedFrame = 0;
+    u32 LastSubmittedIndex = 0;
+    bool HasSubmittedFrame = false;
+    float TimestampPeriodNs = 0.0f;
 };
 
 } // namespace melonDS::Vk

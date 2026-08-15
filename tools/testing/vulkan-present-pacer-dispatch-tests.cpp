@@ -62,6 +62,7 @@ struct FakeVulkan
     bool PresentStageDomain = true;
 
     std::deque<VkResult> WaitResults;
+    std::deque<VkResult> LegacyWaitResults;
     std::deque<VkResult> TimingPropertiesResults;
     std::deque<VkResult> TimeDomainCountResults;
     std::deque<VkResult> TimeDomainArrayResults;
@@ -79,6 +80,7 @@ struct FakeVulkan
     int LegacyCapsCalls = 0;
     int QueueSizeCalls = 0;
     int WaitCalls = 0;
+    int LegacyWaitCalls = 0;
     int TimingPropertiesCalls = 0;
     int TimeDomainCountCalls = 0;
     int TimeDomainArrayCalls = 0;
@@ -178,6 +180,13 @@ struct FakeVulkan
     {
         ++Current->WaitCalls;
         return Pop(Current->WaitResults);
+    }
+
+    static VKAPI_ATTR VkResult VKAPI_CALL WaitForPresent(
+        VkDevice, VkSwapchainKHR, uint64_t, uint64_t)
+    {
+        ++Current->LegacyWaitCalls;
+        return Pop(Current->LegacyWaitResults);
     }
 
     static VKAPI_ATTR VkResult VKAPI_CALL GetTimingProperties(
@@ -295,6 +304,7 @@ struct FakeVulkan
         dispatch.GetPhysicalDeviceSurfaceCapabilities2KHR = &GetSurfaceCapabilities2;
         dispatch.GetPhysicalDeviceSurfaceCapabilitiesKHR = &GetSurfaceCapabilities;
         dispatch.SetSwapchainPresentTimingQueueSizeEXT = &SetQueueSize;
+        dispatch.WaitForPresentKHR = &WaitForPresent;
         dispatch.WaitForPresent2KHR = &WaitForPresent2;
         dispatch.GetSwapchainTimingPropertiesEXT = &GetTimingProperties;
         dispatch.GetSwapchainTimeDomainPropertiesEXT = &GetTimeDomains;
@@ -331,12 +341,15 @@ VkPhysicalDevice FakePhysicalDevice()
     return reinterpret_cast<VkPhysicalDevice>(static_cast<uintptr_t>(0x22));
 }
 
-VulkanPresentPacerInitInfo BaseInfo(bool ext, bool wait, bool google)
+VulkanPresentPacerInitInfo BaseInfo(
+    bool ext, bool wait, bool google, bool legacyWait = false)
 {
     VulkanPresentPacerInitInfo info;
     info.Device = FakeDevice();
     info.PhysicalDevice = FakePhysicalDevice();
     info.PresentId2ExtensionEnabled = true;
+    info.PresentIdExtensionEnabled = legacyWait;
+    info.PresentWaitLegacyExtensionEnabled = legacyWait;
     info.PresentWait2ExtensionEnabled = wait;
     info.PresentTimingExtensionEnabled = ext;
     info.GoogleDisplayTimingExtensionEnabled = google;
@@ -377,9 +390,10 @@ void TestSurfaceCapabilitiesFallback()
 
 void MakePacer(
     VulkanPresentPacer& pacer, FakeVulkan& fake,
-    bool ext = true, bool wait = true, bool google = false)
+    bool ext = true, bool wait = true, bool google = false,
+    bool legacyWait = false)
 {
-    const VulkanPresentPacerInitInfo info = BaseInfo(ext, wait, google);
+    const VulkanPresentPacerInitInfo info = BaseInfo(ext, wait, google, legacyWait);
     Require(pacer.InitializeForTesting(fake.Dispatch(), info, Surface),
         "fake pacer initialization must succeed");
     ConfigureCapabilities(pacer, fake);
@@ -490,6 +504,66 @@ void TestPresenterOneFrameBudgetWait()
     (void)noWaitPacer.BeginFrame(false, false, true, FrameIntervalNs);
     Require(noWaitFake.WaitCalls == 0,
         "strict presenter pacing must not call unavailable present_wait2");
+}
+
+void TestLegacyPresentWaitFallback()
+{
+    FakeVulkan fake;
+    // Model the driver family this fallback is for: the legacy present-id/wait
+    // pair is available while the newer present-id2 path is not.
+    fake.SurfaceId2 = false;
+    VulkanPresentPacer pacer;
+    MakePacer(pacer, fake, false, false, false, true);
+    pacer.SetPolicy(static_cast<int>(VulkanPresentPacingPolicy::PresenterOneFrameBudget));
+    StartSwapchain(pacer);
+
+    VkPresentInfoKHR present{};
+    VulkanPresentPacer::PresentMetadata metadata{};
+    Require(pacer.BeginFrame(false, false, true, FrameIntervalNs)
+                == VulkanPacerBeginResult::Continue,
+        "legacy present-wait must bootstrap without a previous present");
+    Require(pacer.PreparePresent(present, 1, metadata) != 0
+                && metadata.LegacyIdAttached
+                && !metadata.Id2Attached,
+        "legacy present-wait must attach the legacy present-id correlation");
+    pacer.NotifyPresentResult(VK_SUCCESS, metadata);
+    fake.LegacyWaitResults.push_back(VK_SUCCESS);
+    Require(pacer.BeginFrame(false, false, true, FrameIntervalNs)
+                == VulkanPacerBeginResult::Continue,
+        "legacy present-wait success must remain non-fatal");
+    Require(fake.LegacyWaitCalls == 1 && fake.WaitCalls == 0,
+        "legacy-only capability must call vkWaitForPresentKHR, not wait2");
+}
+
+void TestWait2RuntimeDowngradesToLegacy()
+{
+    FakeVulkan fake;
+    VulkanPresentPacer pacer;
+    MakePacer(pacer, fake, false, true, false, true);
+    pacer.SetPolicy(static_cast<int>(VulkanPresentPacingPolicy::PresenterOneFrameBudget));
+    StartSwapchain(pacer);
+
+    VkPresentInfoKHR firstPresent{};
+    VulkanPresentPacer::PresentMetadata firstMetadata{};
+    (void)pacer.BeginFrame(false, false, true, FrameIntervalNs);
+    pacer.PreparePresent(firstPresent, 1, firstMetadata);
+    Require(firstMetadata.Id2Attached && firstMetadata.LegacyIdAttached,
+        "wait2 plus legacy capability must preserve both correlation paths");
+    pacer.NotifyPresentResult(VK_SUCCESS, firstMetadata);
+
+    fake.WaitResults.push_back(VK_ERROR_UNKNOWN);
+    (void)pacer.BeginFrame(false, false, true, FrameIntervalNs);
+    Require(fake.WaitCalls == 1 && fake.LegacyWaitCalls == 0,
+        "wait2 must be preferred while its runtime path is healthy");
+
+    VkPresentInfoKHR secondPresent{};
+    VulkanPresentPacer::PresentMetadata secondMetadata{};
+    pacer.PreparePresent(secondPresent, 2, secondMetadata);
+    pacer.NotifyPresentResult(VK_SUCCESS, secondMetadata);
+    fake.LegacyWaitResults.push_back(VK_SUCCESS);
+    (void)pacer.BeginFrame(false, false, true, FrameIntervalNs);
+    Require(fake.LegacyWaitCalls == 1,
+        "a wait2 runtime failure must downgrade the next wait to legacy");
 }
 
 void TestExtPastResult(VkResult scripted, VulkanPacerBeginResult expected)
@@ -927,6 +1001,8 @@ int main()
     TestSurfaceCapabilitiesFallback();
     TestWaitResults();
     TestPresenterOneFrameBudgetWait();
+    TestLegacyPresentWaitFallback();
+    TestWait2RuntimeDowngradesToLegacy();
     TestExtPastResults();
     TestTimingProperties();
     TestTimeDomainsSuccessAndRetry();

@@ -96,21 +96,27 @@ enum class Counter : u32
     CaptureLegacyOrderedLineCount,
     CaptureSidecarDispatchCount,
     CaptureSidecarBarrierCount,
-    // Reserved for a future calibrated D3D12 timestamp query. Keep it
-    // explicit rather than deriving GPU time from the CPU recording timer.
     CaptureSidecarGpuTimeNs,
+    RasterGpuTimeNs,
+    StructuredCompositorGpuTimeNs,
+    PresenterRenderPassGpuTimeNs,
+    TotalQueueGpuSpanNs,
     NativeResolveCount,
     NativeReadbackCopyBytes,
     NativeReadbackDemandCount,
     NativeReadbackWaitNs,
     PresentedScreenCopyBytes,
-    // Reserved for a future calibrated D3D12 timestamp query. Keep it
-    // explicit rather than deriving GPU time from the CPU recording timer.
     PresentedScreenCopyGpuTimeNs,
     DirectCompositorImageFrames,
     FallbackCompositorBufferFrames,
     HudUploadBytes,
     HudTextureRecreateCount,
+    DX12VsyncEnabled,
+    DX12PresentMode,
+    DX12VendorPacingAuthority,
+    DX12ReflexMode,
+    DX12BackBufferCount,
+    DX12PresenterLogicalDepth,
     Count,
 };
 
@@ -188,6 +194,12 @@ inline void AddCounter(Counter counter, u64 value = 1) noexcept
 {
     if (IsEnabled())
         GetState().Counters[static_cast<std::size_t>(counter)] += value;
+}
+
+inline void SetCounter(Counter counter, u64 value) noexcept
+{
+    if (IsEnabled())
+        GetState().Counters[static_cast<std::size_t>(counter)] = value;
 }
 
 inline void RecordNativeReadbackWait(u64 nanoseconds) noexcept
@@ -344,7 +356,8 @@ inline void MaybeReport()
         "compositor_descriptor_updates=%llu compose_drops=%llu capture_reads=%llu "
         "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
-        "native_resolves=%llu native_readback_copy_B=%llu native_readback_demands=%llu "
+        "raster_gpu_ns=%llu structured_compositor_gpu_ns=%llu presenter_render_pass_gpu_ns=%llu "
+        "total_queue_gpu_span_ns=%llu native_resolves=%llu native_readback_copy_B=%llu native_readback_demands=%llu "
         "native_readback_wait_ns=%llu screen_copy_B=%llu screen_copy_gpu_ns=%llu "
         "direct_image_frames=%llu fallback_buffer_frames=%llu hud_upload_B=%llu hud_recreates=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
@@ -381,16 +394,42 @@ inline void MaybeReport()
         count(Counter::CaptureValidLineCount), count(Counter::CaptureIndependentLineCount),
         count(Counter::CaptureLegacyOrderedLineCount),
         count(Counter::CaptureSidecarDispatchCount), count(Counter::CaptureSidecarBarrierCount),
-        count(Counter::CaptureSidecarGpuTimeNs), count(Counter::NativeResolveCount),
+        count(Counter::CaptureSidecarGpuTimeNs), count(Counter::RasterGpuTimeNs),
+        count(Counter::StructuredCompositorGpuTimeNs),
+        count(Counter::PresenterRenderPassGpuTimeNs),
+        count(Counter::TotalQueueGpuSpanNs), count(Counter::NativeResolveCount),
         count(Counter::NativeReadbackCopyBytes), count(Counter::NativeReadbackDemandCount),
         count(Counter::NativeReadbackWaitNs), count(Counter::PresentedScreenCopyBytes),
         count(Counter::PresentedScreenCopyGpuTimeNs),
         count(Counter::DirectCompositorImageFrames), count(Counter::FallbackCompositorBufferFrames),
         count(Counter::HudUploadBytes), count(Counter::HudTextureRecreateCount));
 
+    const unsigned long long vsyncEnabled = count(Counter::DX12VsyncEnabled);
+    const unsigned long long presentMode = count(Counter::DX12PresentMode);
+    const unsigned long long pacingAuthority =
+        count(Counter::DX12VendorPacingAuthority);
+    const unsigned long long reflexMode = count(Counter::DX12ReflexMode);
+    const unsigned long long backBufferCount = count(Counter::DX12BackBufferCount);
+    const unsigned long long presenterLogicalDepth =
+        count(Counter::DX12PresenterLogicalDepth);
+    std::fprintf(stderr,
+        "[DX12Perf] summary renderer=DX12 vsync=%llu present_mode=%llu "
+        "vendor_pacing_authority=%llu reflex_mode=%llu "
+        "swapchain_backbuffer_count=%llu presenter_logical_depth=%llu\n",
+        vsyncEnabled, presentMode, pacingAuthority, reflexMode,
+        backBufferCount, presenterLogicalDepth);
+
     for (SampleWindow& window : state.Cpu)
         window.Reset();
     state.Counters.fill(0);
+    state.Counters[static_cast<std::size_t>(Counter::DX12VsyncEnabled)] = vsyncEnabled;
+    state.Counters[static_cast<std::size_t>(Counter::DX12PresentMode)] = presentMode;
+    state.Counters[static_cast<std::size_t>(Counter::DX12VendorPacingAuthority)] =
+        pacingAuthority;
+    state.Counters[static_cast<std::size_t>(Counter::DX12ReflexMode)] = reflexMode;
+    state.Counters[static_cast<std::size_t>(Counter::DX12BackBufferCount)] = backBufferCount;
+    state.Counters[static_cast<std::size_t>(Counter::DX12PresenterLogicalDepth)] =
+        presenterLogicalDepth;
     state.LastReport = now;
 }
 
@@ -423,14 +462,19 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     CompositorDropCount, CaptureReadCount,
     CaptureValidLineCount, CaptureIndependentLineCount, CaptureLegacyOrderedLineCount,
     CaptureSidecarDispatchCount, CaptureSidecarBarrierCount, CaptureSidecarGpuTimeNs,
+    RasterGpuTimeNs, StructuredCompositorGpuTimeNs, PresenterRenderPassGpuTimeNs,
+    TotalQueueGpuSpanNs,
     NativeResolveCount,
     NativeReadbackCopyBytes, NativeReadbackDemandCount, NativeReadbackWaitNs,
     PresentedScreenCopyBytes, PresentedScreenCopyGpuTimeNs,
     DirectCompositorImageFrames, FallbackCompositorBufferFrames,
-    HudUploadBytes, HudTextureRecreateCount, Count };
+     HudUploadBytes, HudTextureRecreateCount, DX12VsyncEnabled, DX12PresentMode,
+     DX12VendorPacingAuthority, DX12ReflexMode, DX12BackBufferCount,
+     DX12PresenterLogicalDepth, Count };
 inline bool IsEnabled() noexcept { return false; }
 inline void SetScale(u32) noexcept {}
 inline void AddCounter(Counter, u64 = 1) noexcept {}
+inline void SetCounter(Counter, u64) noexcept {}
 inline void RecordNativeReadbackWait(u64) noexcept {}
 class ScopedRasterBeginWait { public: explicit ScopedRasterBeginWait(bool = true) noexcept {} };
 inline void RecordRasterBeginNoWait() noexcept {}

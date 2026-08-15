@@ -13,7 +13,9 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 
 #include <QWidget>
@@ -22,6 +24,7 @@
 #include "Platform.h"
 #include "VulkanContext.h"
 #include "VulkanFeatureProbe.h"
+#include "VulkanGpuTimestamp.h"
 #include "VulkanPerf.h"
 
 using namespace melonDS;
@@ -44,6 +47,42 @@ constexpr std::size_t kPersistentDescriptorSetCount =
 static_assert(kDirectViewCacheCount == 6);
 static_assert(kDirectDescriptorSetCount == 12);
 constexpr VkDeviceSize kMinStagingBytes = 4u * 1024u * 1024u;
+
+bool EnvironmentEquals(const char* name, const char* expected) noexcept
+{
+    const char* value = std::getenv(name);
+    return value != nullptr && std::strcmp(value, expected) == 0;
+}
+
+u32 PresenterFrameDepthFromEnvironment() noexcept
+{
+    return EnvironmentEquals("MELONPRIME_VULKAN_PRESENTER_FRAMES_IN_FLIGHT", "1")
+        ? 1u : Vk::FramesInFlight;
+}
+
+bool PresenterPreInputWaitExperimentEnabled() noexcept
+{
+    return EnvironmentEquals("MELONPRIME_VULKAN_PRESENTER_PREINPUT_WAIT", "1");
+}
+
+bool PresenterTwoImageSwapchainExperimentEnabled() noexcept
+{
+    return EnvironmentEquals("MELONPRIME_VULKAN_SWAPCHAIN_IMAGE_COUNT", "2");
+}
+
+u64 PresenterAcquireTimeoutNanoseconds() noexcept
+{
+    const char* value = std::getenv("MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS");
+    if (value == nullptr || *value == '\0')
+        return UINT64_MAX;
+
+    errno = 0;
+    char* end = nullptr;
+    const unsigned long long parsed = std::strtoull(value, &end, 10);
+    if (errno == ERANGE || end == value || *end != '\0')
+        return UINT64_MAX;
+    return static_cast<u64>(parsed);
+}
 
 const char* PresentModeName(VkPresentModeKHR mode) noexcept
 {
@@ -415,10 +454,14 @@ bool VulkanPresenter::CreateDeviceObjects()
     if (Device.GetPresentQueue() == VK_NULL_HANDLE)
         return Fail("the Vulkan device exposes no queue that can present to this window");
 
-    if (!Frames.Create(Device, Device.GetMainQueueFamily(), Vk::FramesInFlight))
+    const u32 presenterDepth = PresenterFrameDepthFromEnvironment();
+    if (!Frames.Create(Device, Device.GetMainQueueFamily(), presenterDepth))
         return Fail("the Vulkan presenter's frame ring could not be created");
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresenterFramesInFlight,
+        Frames.GetFramesInFlight());
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterLogicalDepth,
         Frames.GetFramesInFlight());
 
     if (!CreateSamplers())
@@ -963,12 +1006,22 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
             return Fail(std::move(reason));
     }
 
-    // minImageCount + 1 so the application always owns one image while the
-    // presentation engine owns another; without the extra image every acquire
-    // blocks until the previous present has completed.
-    u32 imageCount = caps.minImageCount + 1;
+    // Default to minImageCount + 1 so the application owns one image while the
+    // presentation engine owns another. The developer A/B can request a
+    // two-image swapchain to measure the latency/depth trade-off explicitly;
+    // the surface minimum and maximum remain authoritative.
+    const bool twoImageExperiment = PresenterTwoImageSwapchainExperimentEnabled();
+    u32 imageCount = twoImageExperiment
+        ? std::max(2u, caps.minImageCount)
+        : caps.minImageCount + 1;
     if (caps.maxImageCount > 0)
         imageCount = std::min(imageCount, caps.maxImageCount);
+    if (twoImageExperiment && imageCount < 2)
+    {
+        Platform::Log(Platform::LogLevel::Warn,
+            "[Vulkan] two-image presenter experiment requested but the surface "
+            "only permits %u swapchain image(s)\n", imageCount);
+    }
 
     VkCompositeAlphaFlagBitsKHR compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     for (const VkCompositeAlphaFlagBitsKHR candidate : {
@@ -1398,6 +1451,18 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         VulkanPerf::Counter::VulkanPresenterFramesInFlight,
         Frames.GetFramesInFlight());
     VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterLogicalDepth,
+        Frames.GetFramesInFlight());
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanVsyncEnabled,
+        VSyncApplied ? 1u : 0u);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPacingAuthority,
+        static_cast<u64>(PresentPacer.GetAuthority()));
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanReflexMode,
+        static_cast<u64>(Reflex.GetMode()));
+    VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresentMode,
         static_cast<u64>(PresentMode));
 
@@ -1412,7 +1477,7 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
             return false;
     }
 
-    const bool presenterFencePending = Frames.NextFrameSlotHasPendingSubmission();
+    const bool presenterFencePending = Frames.NextFrameHasPendingSubmission();
     const bool perfEnabled = VulkanPerf::IsEnabled();
     const VulkanPerf::Clock::time_point presenterFenceWaitStart = perfEnabled
         ? VulkanPerf::Clock::now()
@@ -1433,11 +1498,27 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
 
     const u32 frameIndex = Frames.GetFrameIndex();
     CurrentCommandBuffer = frame->CommandBuffer;
+    RecordVulkanGpuMetric(
+        Frames, GpuMetric::PresenterRenderPass,
+        VulkanPerf::Counter::PresenterRenderPassGpuTimeNs);
+    RecordVulkanGpuMetric(
+        Frames, GpuMetric::TotalQueueSpan,
+        VulkanPerf::Counter::TotalQueueGpuSpanNs);
+    Frames.WriteTimestamp(
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::TotalQueueSpan, false));
 
     // Both are safe to recycle now: BeginFrame() waited on this slot's fence,
     // so nothing the previous use of this slot recorded is still executing.
     Staging[frameIndex].Reset();
-    Device.Fns().ResetDescriptorPool(Device.GetHandle(), DescriptorPools[frameIndex], 0);
+    if (TransientDescriptorPoolUsed[frameIndex])
+    {
+        Device.Fns().ResetDescriptorPool(
+            Device.GetHandle(), DescriptorPools[frameIndex], 0);
+        TransientDescriptorPoolUsed[frameIndex] = false;
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanTransientDescriptorPoolResetCount);
+    }
     for (LayerTexture& texture : Layers)
     {
         texture.DirectImage = VK_NULL_HANDLE;
@@ -1457,7 +1538,7 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         res = Device.Fns().AcquireNextImageKHR(
             Device.GetHandle(),
             Swapchain,
-            UINT64_MAX,
+            PresenterAcquireTimeoutNanoseconds(),
             frame->ImageAvailable,
             VK_NULL_HANDLE,
             &CurrentImageIndex);
@@ -1487,6 +1568,20 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         // The image IS acquired and the semaphore IS signalled: this frame is
         // presented normally and the swapchain is rebuilt for the next one.
         SwapchainDirty.store(true, std::memory_order_release);
+    }
+    else if (res == VK_TIMEOUT || res == VK_NOT_READY)
+    {
+        // A bounded developer acquire has no image and therefore does not
+        // signal ImageAvailable. Submit the command buffer without any
+        // semaphore dependency, retire this logical frame, and let the next
+        // frame retry. Reusing the semaphore is safe because it was never
+        // signalled or submitted as a wait in this branch.
+        VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireNotReadyCount);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
+        Frames.SubmitFrame(Device.GetMainQueue());
+        CurrentCommandBuffer = VK_NULL_HANDLE;
+        return false;
     }
     else if (res != VK_SUCCESS)
     {
@@ -1733,7 +1828,6 @@ bool VulkanPresenter::UploadLayerFromImage(
     {
         return false;
     }
-
     const VkImageView view = layer == Layer::ScreenTop
         ? frame.DirectImageViewTop : frame.DirectImageViewBottom;
     const VkImage image = layer == Layer::ScreenTop
@@ -1768,6 +1862,7 @@ bool VulkanPresenter::UploadLayerFromImage(
             Device.GetHandle(), &allocateInfo, descriptorSets.data());
         if (allocateResult != VK_SUCCESS)
             return Fail("vkAllocateDescriptorSets(direct presenter layer)", allocateResult);
+        TransientDescriptorPoolUsed[frameIndex] = true;
 
         std::array<VkDescriptorImageInfo, kPresenterSamplerCount> imageInfos{};
         std::array<VkWriteDescriptorSet, kPresenterSamplerCount> writes{};
@@ -1838,6 +1933,9 @@ void VulkanPresenter::BeginComposition()
     info.clearValueCount = 1;
     info.pClearValues = &clear;
 
+    Frames.WriteTimestamp(
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::PresenterRenderPass, false));
     fns.CmdBeginRenderPass(CurrentCommandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport{};
@@ -1931,8 +2029,14 @@ bool VulkanPresenter::EndFrame()
     if (CompositionOpen)
     {
         fns.CmdEndRenderPass(CurrentCommandBuffer);
+        Frames.WriteTimestamp(
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            GpuMetricQueryIndex(GpuMetric::PresenterRenderPass, true));
         CompositionOpen = false;
     }
+    Frames.WriteTimestamp(
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::TotalQueueSpan, true));
 
     Vk::FrameContext* frame = Frames.GetCurrentFrame();
     const VkSemaphore signalSemaphore =
@@ -2164,24 +2268,42 @@ void VulkanPresenter::BeginLowLatencyFrame(
         return;
     }
 
-    // The strict presenter prototype adds a bounded fence back-pressure point
-    // before the vendor sleep and before late input only when the
-    // present_wait2 path is unavailable. It waits only the next presenter
-    // slot, never the whole queue/device; present_wait2 owns the equivalent
-    // display-aware wait when available, and vendor pacing remains exclusive.
-    if (PresentPacer.UsesPresenterOneFrameBudget()
-        && PresentPacer.GetAuthority() == melonDS::VulkanPacingAuthority::GenericHost
+    // The strict presenter fallback adds a bounded fence back-pressure point
+    // before the vendor sleep and before late input only when the generic
+    // present-wait ladder is unavailable. It waits the latest submitted
+    // presenter frame, not the next reusable slot: on a two-slot ring the
+    // latter is usually two submissions old and does not enforce one-frame
+    // depth. The developer pre-input experiment enables the same latest-fence
+    // wait for Reflex A/B runs without taking authority away from Reflex.
+    const bool strictFenceFallback = PresentPacer.UsesPresenterOneFrameBudget()
+        && PresentPacer.GetAuthority() == melonDS::VulkanPacingAuthority::GenericHost;
+    const bool reflexPreInputExperiment = PresenterPreInputWaitExperimentEnabled()
+        && Reflex.IsActive() && !AntiLag.IsActive();
+    if ((strictFenceFallback || reflexPreInputExperiment)
         && normalSpeed
-        && Frames.NextFrameSlotHasPendingSubmission())
+        && Frames.LatestSubmittedFrameHasPendingSubmission())
     {
         const bool perfEnabled = VulkanPerf::IsEnabled();
         const VulkanPerf::Clock::time_point waitStart = perfEnabled
             ? VulkanPerf::Clock::now()
             : VulkanPerf::Clock::time_point{};
-        if (!Frames.WaitForNextFrameSlot())
+        const u64 frameBudgetNs = melonDS::VulkanPresenterOneFrameBudgetTimeoutNs(
+            targetFrameIntervalNs);
+        const melonDS::Vk::FrameWaitResult waitResult =
+            Frames.WaitForLatestSubmittedFrame(frameBudgetNs);
+        if (waitResult != melonDS::Vk::FrameWaitResult::Ready)
         {
+            if (waitResult == melonDS::Vk::FrameWaitResult::Timeout)
+            {
+                VulkanPerf::AddCounter(
+                    VulkanPerf::Counter::VulkanPresenterBudgetMissCount);
+                VulkanPerf::AddCounter(
+                    VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitTimeoutCount);
+            }
             Failed = true;
-            Error = "Vulkan strict presenter frame budget wait failed";
+            Error = waitResult == melonDS::Vk::FrameWaitResult::Timeout
+                ? "Vulkan presenter frame budget wait timed out"
+                : "Vulkan presenter latest-submission fence wait failed";
             Platform::Log(Platform::LogLevel::Error, "[Vulkan] presenter: %s\n",
                 Error.c_str());
             return;
@@ -2195,6 +2317,10 @@ void VulkanPresenter::BeginLowLatencyFrame(
                 VulkanPerf::Counter::VulkanPresenterFrameFenceWaitCount);
             VulkanPerf::AddCounter(
                 VulkanPerf::Counter::VulkanPresenterFrameFenceWaitNs, waitNs);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitNs, waitNs);
         }
     }
 
@@ -2465,6 +2591,7 @@ void VulkanPresenter::Shutdown() noexcept
                 pool = VK_NULL_HANDLE;
             }
         }
+        TransientDescriptorPoolUsed.fill(false);
 
         if (PipelineBlended != VK_NULL_HANDLE)
         {

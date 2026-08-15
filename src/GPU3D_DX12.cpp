@@ -19,6 +19,7 @@
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
 #include "GPU3D_DX12.h"
+#include "DX12GpuTimestamp.h"
 
 #include <algorithm>
 #include <atomic>
@@ -2169,6 +2170,9 @@ void DX12Renderer3D::RenderFrame()
         SetRuntimeFailure("could not begin a frame command list");
         return;
     }
+    RecordDX12GpuMetric(
+        Commands, GpuMetric::Raster, DX12Perf::Counter::RasterGpuTimeNs);
+    Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, false));
 
     // Begin() waited for the previous submission, so both rings are free to
     // reuse and retired textures can go.
@@ -2489,6 +2493,7 @@ void DX12Renderer3D::RenderFrame()
     bool submitted = false;
     {
         DX12Perf::ScopedCpuTimer submitTimer(DX12Perf::CpuMetric::QueueSubmit);
+        Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, true));
         submitted = Commands.Submit();
     }
     if (submitted)
@@ -2665,6 +2670,14 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
         return false;
     }
+    RecordDX12GpuMetric(
+        slot.Commands, GpuMetric::CaptureSidecar,
+        DX12Perf::Counter::CaptureSidecarGpuTimeNs);
+    RecordDX12GpuMetric(
+        slot.Commands, GpuMetric::StructuredCompositor,
+        DX12Perf::Counter::StructuredCompositorGpuTimeNs);
+    slot.Commands.WriteTimestamp(
+        GpuMetricQueryIndex(GpuMetric::StructuredCompositor, false));
 
     constexpr u32 logicalUnitCount =
         StructuredComposition::kStructuredInputPlaneCount
@@ -2870,6 +2883,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     // metadata, so the compositor no longer needs it as a frame-global value.
     constants.TexWidth = GPU3D.AbortFrame ? 0u : 1u;
     constants.Pad = slot.DirectTexture ? 1u : 0u;
+    slot.Commands.WriteTimestamp(
+        GpuMetricQueryIndex(GpuMetric::CaptureSidecar, false));
     list->SetPipelineState(PipelineCaptureSidecar.Get());
     u32 sidecarDispatchCount = 0;
     u32 sidecarBarrierCount = 0;
@@ -2928,6 +2943,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         DX12Perf::Counter::CaptureSidecarDispatchCount, sidecarDispatchCount);
     DX12Perf::AddCounter(
         DX12Perf::Counter::CaptureSidecarBarrierCount, sidecarBarrierCount);
+    slot.Commands.WriteTimestamp(
+        GpuMetricQueryIndex(GpuMetric::CaptureSidecar, true));
 
     constants.TexHeight = 0u;
     constants.Pad = slot.DirectTexture ? 1u : 0u;
@@ -2937,6 +2954,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1u);
+    slot.Commands.WriteTimestamp(
+        GpuMetricQueryIndex(GpuMetric::StructuredCompositor, true));
     if (slot.DirectTexture)
     {
         InsertUavBarrier(list, slot.DirectTexture.Get());

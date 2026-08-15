@@ -30,9 +30,11 @@ namespace melonDS::Vk
 namespace
 {
 
-// One second. Long enough that no legitimate frame ever reaches it, short
-// enough that a hung GPU produces a log line instead of a frozen process.
-constexpr u64 FenceTimeoutNanoseconds = 1000ull * 1000ull * 1000ull;
+// One second. Long enough that no legitimate normal frame ever reaches it,
+// short enough that a hung GPU produces a log line instead of a frozen process.
+// Strict presenter pacing supplies its own frame-budget timeout instead.
+constexpr u64 DefaultFenceTimeoutNanoseconds = 1000ull * 1000ull * 1000ull;
+constexpr u32 TimestampQueryCount = 10;
 
 } // namespace
 
@@ -210,6 +212,9 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
     CurrentIndex = 0;
     AbsoluteFrame = 1;
     CompletedFrame = 0;
+    LastSubmittedIndex = 0;
+    HasSubmittedFrame = false;
+    TimestampPeriodNs = 0.0f;
 
     DestroyQueue.Init(device.Fns(), device.GetHandle());
 
@@ -217,6 +222,19 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
     VkDevice handle = device.GetHandle();
 
     Frames.resize(framesInFlight);
+
+    const VkPhysicalDeviceLimits& limits = device.GetLimits();
+    const bool timestampSupport = VulkanPerf::IsEnabled()
+        && limits.timestampComputeAndGraphics == VK_TRUE
+        && limits.timestampPeriod > 0.0f
+        && fns.CreateQueryPool != nullptr
+        && fns.DestroyQueryPool != nullptr
+        && fns.CmdResetQueryPool != nullptr
+        && fns.CmdWriteTimestamp != nullptr
+        && fns.GetQueryPoolResults != nullptr;
+    bool timestampPoolsCreated = timestampSupport;
+    if (timestampSupport)
+        TimestampPeriodNs = limits.timestampPeriod;
 
     for (u32 i = 0; i < framesInFlight; i++)
     {
@@ -283,6 +301,33 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
             return false;
         }
 
+        if (timestampSupport)
+        {
+            VkQueryPoolCreateInfo queryInfo{};
+            queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            queryInfo.queryCount = TimestampQueryCount;
+            res = fns.CreateQueryPool(handle, &queryInfo, nullptr, &frame.TimestampQueryPool);
+            if (res != VK_SUCCESS)
+            {
+                timestampPoolsCreated = false;
+                TimestampPeriodNs = 0.0f;
+                for (FrameContext& created : Frames)
+                {
+                    if (created.TimestampQueryPool != VK_NULL_HANDLE)
+                    {
+                        fns.DestroyQueryPool(handle, created.TimestampQueryPool, nullptr);
+                        created.TimestampQueryPool = VK_NULL_HANDLE;
+                    }
+                    created.TimestampQueriesEnabled = false;
+                }
+            }
+            else
+            {
+                frame.TimestampQueriesEnabled = true;
+            }
+        }
+
         char name[64];
         std::snprintf(name, sizeof(name), "frame %u command pool", i);
         device.SetDebugName(VK_OBJECT_TYPE_COMMAND_POOL, frame.CommandPool, name);
@@ -290,7 +335,12 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
         device.SetDebugName(VK_OBJECT_TYPE_COMMAND_BUFFER, frame.CommandBuffer, name);
         std::snprintf(name, sizeof(name), "frame %u in-flight fence", i);
         device.SetDebugName(VK_OBJECT_TYPE_FENCE, frame.InFlightFence, name);
+        if (frame.TimestampQueryPool != VK_NULL_HANDLE)
+            device.SetDebugName(VK_OBJECT_TYPE_QUERY_POOL, frame.TimestampQueryPool, "VulkanPerf.GpuTimestamps");
     }
+
+    if (!timestampPoolsCreated)
+        TimestampPeriodNs = 0.0f;
 
     return true;
 }
@@ -300,6 +350,12 @@ void FrameRing::Destroy()
     if (!Device)
     {
         Frames.clear();
+        CurrentIndex = 0;
+        AbsoluteFrame = 1;
+        CompletedFrame = 0;
+        LastSubmittedIndex = 0;
+        HasSubmittedFrame = false;
+        TimestampPeriodNs = 0.0f;
         return;
     }
 
@@ -315,6 +371,9 @@ void FrameRing::Destroy()
     CurrentIndex = 0;
     AbsoluteFrame = 1;
     CompletedFrame = 0;
+    LastSubmittedIndex = 0;
+    HasSubmittedFrame = false;
+    TimestampPeriodNs = 0.0f;
 }
 
 void FrameRing::DestroyFrames()
@@ -342,6 +401,11 @@ void FrameRing::DestroyFrames()
             fns.DestroyFence(handle, frame.InFlightFence, nullptr);
             frame.InFlightFence = VK_NULL_HANDLE;
         }
+        if (frame.TimestampQueryPool != VK_NULL_HANDLE)
+        {
+            fns.DestroyQueryPool(handle, frame.TimestampQueryPool, nullptr);
+            frame.TimestampQueryPool = VK_NULL_HANDLE;
+        }
         // The command buffer is freed implicitly with its pool.
         if (frame.CommandPool != VK_NULL_HANDLE)
         {
@@ -351,6 +415,7 @@ void FrameRing::DestroyFrames()
         frame.CommandBuffer = VK_NULL_HANDLE;
         frame.HasPendingSubmission = false;
         frame.Recording = false;
+        frame.TimestampQueriesEnabled = false;
     }
 }
 
@@ -368,40 +433,80 @@ VkCommandBuffer FrameRing::GetCommandBuffer() const noexcept
     return Frames[CurrentIndex].CommandBuffer;
 }
 
+void FrameRing::WriteTimestamp(VkPipelineStageFlagBits stage, u32 queryIndex) noexcept
+{
+    if (!Device || Frames.empty() || queryIndex >= TimestampQueryCount)
+        return;
+    FrameContext& frame = Frames[CurrentIndex];
+    if (!frame.Recording || !frame.TimestampQueriesEnabled)
+        return;
+    Device->Fns().CmdWriteTimestamp(
+        frame.CommandBuffer, stage, frame.TimestampQueryPool, queryIndex);
+}
+
+bool FrameRing::ReadCurrentFrameTimestamps(
+    u32 firstQuery, u32 queryCount, u64* values) const noexcept
+{
+    if (!Device || Frames.empty() || !values || queryCount == 0
+        || firstQuery >= TimestampQueryCount
+        || queryCount > TimestampQueryCount - firstQuery)
+    {
+        return false;
+    }
+    const FrameContext& frame = Frames[CurrentIndex];
+    if (!frame.TimestampQueriesEnabled)
+        return false;
+    const VkResult result = Device->Fns().GetQueryPoolResults(
+        Device->GetHandle(), frame.TimestampQueryPool,
+        firstQuery, queryCount, sizeof(u64) * queryCount, values,
+        sizeof(u64), VK_QUERY_RESULT_64_BIT);
+    return result == VK_SUCCESS;
+}
+
 FrameContext* FrameRing::BeginFrame(bool recordRasterBegin)
 {
     return BeginFrameInternal(true, recordRasterBegin);
 }
 
-bool FrameRing::WaitForNextFrameSlot()
+FrameWaitResult FrameRing::WaitForLatestSubmittedFrame(u64 timeoutNanoseconds)
 {
     if (!Device || Frames.empty())
-        return false;
+        return FrameWaitResult::Error;
+
+    if (!HasSubmittedFrame)
+        return FrameWaitResult::Ready;
 
     const DeviceDispatch& fns = Device->Fns();
     const VkDevice handle = Device->GetHandle();
-    CurrentIndex = static_cast<u32>((AbsoluteFrame - 1) % Frames.size());
-    FrameContext& frame = Frames[CurrentIndex];
+    FrameContext& frame = Frames[LastSubmittedIndex];
 
     if (!frame.HasPendingSubmission)
-        return true;
+        return FrameWaitResult::Ready;
 
     const VkResult res = fns.WaitForFences(
-        handle, 1, &frame.InFlightFence, VK_TRUE, FenceTimeoutNanoseconds);
+        handle, 1, &frame.InFlightFence, VK_TRUE, timeoutNanoseconds);
     if (res == VK_TIMEOUT)
     {
         Platform::Log(Platform::LogLevel::Error,
-            "[Vulkan] strict presenter frame slot %u did not complete within 1s\n",
-            CurrentIndex);
-        return false;
+            "[Vulkan] latest submitted presenter frame %llu did not complete within %llu ns\n",
+            static_cast<unsigned long long>(frame.SubmittedFrame),
+            static_cast<unsigned long long>(timeoutNanoseconds));
+        return FrameWaitResult::Timeout;
     }
     if (!MELONPRIME_VK_CHECK("vkWaitForFences(strict presenter)", res))
-        return false;
+        return FrameWaitResult::Error;
 
     CompletedFrame = std::max(CompletedFrame, frame.SubmittedFrame);
-    frame.HasPendingSubmission = false;
+    // Queue submissions are ordered. Waiting the newest submitted fence also
+    // retires every older frame on this ring, so clear their bookkeeping in
+    // one pass instead of making the next ring reuse perform redundant waits.
+    for (FrameContext& submitted : Frames)
+    {
+        if (submitted.HasPendingSubmission && submitted.SubmittedFrame <= CompletedFrame)
+            submitted.HasPendingSubmission = false;
+    }
     DestroyQueue.Collect(CompletedFrame);
-    return true;
+    return FrameWaitResult::Ready;
 }
 
 FrameContext* FrameRing::TryBeginFrame()
@@ -417,7 +522,8 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot, bool recordRasterB
     const DeviceDispatch& fns = Device->Fns();
     VkDevice handle = Device->GetHandle();
 
-    CurrentIndex = static_cast<u32>((AbsoluteFrame - 1) % Frames.size());
+    CurrentIndex = VulkanFrameRingIndexForAbsoluteFrame(
+        AbsoluteFrame, static_cast<u32>(Frames.size()));
     FrameContext& frame = Frames[CurrentIndex];
 
     if (frame.Recording)
@@ -437,7 +543,7 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot, bool recordRasterB
         {
             VulkanPerf::ScopedRasterBeginWait rasterWait(recordRasterBegin);
             res = fns.WaitForFences(
-                handle, 1, &frame.InFlightFence, VK_TRUE, FenceTimeoutNanoseconds);
+                handle, 1, &frame.InFlightFence, VK_TRUE, DefaultFenceTimeoutNanoseconds);
         }
         else
         {
@@ -494,6 +600,12 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot, bool recordRasterB
     res = fns.BeginCommandBuffer(frame.CommandBuffer, &beginInfo);
     if (!MELONPRIME_VK_CHECK("vkBeginCommandBuffer", res))
         return nullptr;
+
+    if (frame.TimestampQueriesEnabled)
+    {
+        fns.CmdResetQueryPool(frame.CommandBuffer, frame.TimestampQueryPool,
+            0, TimestampQueryCount);
+    }
 
     frame.Recording = true;
     frame.SubmittedFrame = AbsoluteFrame;
@@ -564,6 +676,8 @@ bool FrameRing::SubmitFrame(
     }
 
     frame.HasPendingSubmission = true;
+    LastSubmittedIndex = CurrentIndex;
+    HasSubmittedFrame = true;
     AbsoluteFrame++;
     return true;
 }

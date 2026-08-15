@@ -33,6 +33,7 @@ struct VulkanPresentPacerDispatch
         GetPhysicalDeviceSurfaceCapabilitiesKHR = nullptr;
     PFN_vkSetSwapchainPresentTimingQueueSizeEXT
         SetSwapchainPresentTimingQueueSizeEXT = nullptr;
+    PFN_vkWaitForPresentKHR WaitForPresentKHR = nullptr;
     PFN_vkWaitForPresent2KHR WaitForPresent2KHR = nullptr;
     PFN_vkGetSwapchainTimingPropertiesEXT GetSwapchainTimingPropertiesEXT = nullptr;
     PFN_vkGetSwapchainTimeDomainPropertiesEXT
@@ -49,6 +50,8 @@ struct VulkanPresentPacerInitInfo
 {
     VkDevice Device = VK_NULL_HANDLE;
     VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
+    bool PresentIdExtensionEnabled = false;
+    bool PresentWaitLegacyExtensionEnabled = false;
     bool PresentId2ExtensionEnabled = false;
     bool PresentWait2ExtensionEnabled = false;
     bool PresentTimingExtensionEnabled = false;
@@ -241,6 +244,7 @@ public:
 
     struct PresentMetadata
     {
+        VkPresentIdKHR LegacyId{};
         VkPresentId2KHR Id2{};
         VkPresentTimingInfoEXT Timing{};
         VkPresentTimingsInfoEXT Timings{};
@@ -261,6 +265,7 @@ public:
         VulkanRelativeCadence::Request RelativeRequest{};
         bool TimingAttached = false;
         bool GoogleTimingAttached = false;
+        bool LegacyIdAttached = false;
         bool Id2Attached = false;
         VulkanPresentTimingBackend TimingBackend = VulkanPresentTimingBackend::None;
     };
@@ -425,6 +430,7 @@ private:
     [[nodiscard]] u64 EvaluateAbsoluteTargetTime(u64 sequence) noexcept;
     [[nodiscard]] VulkanRelativeCadence::Request EvaluateRelativeTargetDuration() noexcept;
     void DisableWait(const char* reason);
+    void DisableWait(const char* reason, bool legacyWait);
     void LogTargetSchedulingIfChanged();
 
     VulkanPresentPacerDispatch Dispatch{};
@@ -444,6 +450,8 @@ private:
     std::atomic<bool> TargetSchedulingActive{false};
 
     bool Caps2Available = false;
+    bool PresentIdDevice = false;
+    bool PresentWaitLegacyDevice = false;
     bool PresentId2Device = false;
     bool PresentWait2Device = false;
     bool PresentTimingDevice = false;
@@ -455,10 +463,13 @@ private:
     bool LatestReadyDevice = false;
     bool TimeDomainQueryAvailable = false;
     bool PresentId2Surface = false;
+    bool PresentWaitLegacySurface = false;
     bool PresentWait2Surface = false;
     bool PresentTimingSurface = false;
     bool PresentTimingRelativeSurface = false;
     bool PresentTimingAbsoluteSurface = false;
+    bool PresentWaitLegacyRuntimeEnabled = false;
+    bool PresentWait2RuntimeEnabled = false;
     bool WaitRuntimeEnabled = false;
     VkPresentStageFlagsEXT PresentStageQueries = 0;
 

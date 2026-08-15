@@ -40,6 +40,25 @@ typedef struct VkPhysicalDevicePresentId2FeaturesKHR {
 } VkPhysicalDevicePresentId2FeaturesKHR;
 #endif
 
+// VK_KHR_present_wait is older than the modern present_id2/present_wait2
+// ladder, but some drivers expose only this correlation path. Keep the
+// declarations available when the build SDK predates the extension.
+#ifndef VK_KHR_present_wait
+#define VK_KHR_present_wait 1
+#define VK_KHR_PRESENT_WAIT_SPEC_VERSION 1
+#define VK_KHR_PRESENT_WAIT_EXTENSION_NAME "VK_KHR_present_wait"
+#define VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR ((VkStructureType)1000248000)
+
+typedef struct VkPhysicalDevicePresentWaitFeaturesKHR {
+    VkStructureType sType;
+    void* pNext;
+    VkBool32 presentWait;
+} VkPhysicalDevicePresentWaitFeaturesKHR;
+
+typedef VkResult (VKAPI_PTR *PFN_vkWaitForPresentKHR)(
+    VkDevice device, VkSwapchainKHR swapchain, uint64_t presentId, uint64_t timeout);
+#endif
+
 #ifndef VK_KHR_present_wait2
 #define VK_KHR_present_wait2 1
 #define VK_KHR_PRESENT_WAIT_2_SPEC_VERSION 1

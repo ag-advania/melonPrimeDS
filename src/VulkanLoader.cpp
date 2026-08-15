@@ -553,6 +553,12 @@ bool LoadDeviceDispatch(
         MELONPRIME_VK_LOAD_DEVICE(QueuePresentKHR,              vkQueuePresentKHR);
     }
 
+    if (ExtensionEnabled(enabledExtensions, VK_KHR_PRESENT_WAIT_EXTENSION_NAME))
+    {
+        out.WaitForPresentKHR = reinterpret_cast<PFN_vkWaitForPresentKHR>(
+            get("vkWaitForPresentKHR"));
+    }
+
     if (ExtensionEnabled(enabledExtensions, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME))
     {
         out.WaitForPresent2KHR = reinterpret_cast<PFN_vkWaitForPresent2KHR>(

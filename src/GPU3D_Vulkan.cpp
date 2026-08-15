@@ -17,6 +17,7 @@
 */
 
 #include "GPU3D_Vulkan.h"
+#include "VulkanGpuTimestamp.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
@@ -2128,6 +2129,11 @@ void VulkanRenderer3D::RenderFrame()
 
     VkCommandBuffer cmd = frame->CommandBuffer;
     const u32 frameIndex = Frames.GetFrameIndex();
+    RecordVulkanGpuMetric(
+        Frames, GpuMetric::Raster, VulkanPerf::Counter::RasterGpuTimeNs);
+    Frames.WriteTimestamp(
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::Raster, false));
 
     // BeginFrame() waited on this slot's fence, so last frame's staging space
     // and descriptor sets are free again.
@@ -2170,6 +2176,9 @@ void VulkanRenderer3D::RenderFrame()
         bool identicalSubmitted = false;
         {
             VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
+            Frames.WriteTimestamp(
+                VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+                GpuMetricQueryIndex(GpuMetric::Raster, true));
             identicalSubmitted = Frames.SubmitFrame(Device.GetMainQueue());
         }
         if (identicalSubmitted)
@@ -2612,6 +2621,9 @@ void VulkanRenderer3D::RenderFrame()
     bool submitted = false;
     {
         VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
+        Frames.WriteTimestamp(
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            GpuMetricQueryIndex(GpuMetric::Raster, true));
         submitted = Frames.SubmitFrame(Device.GetMainQueue());
     }
     if (submitted)
@@ -2822,6 +2834,15 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         SetRuntimeFailure("the compositor frame ring selected an unexpected slot");
         return false;
     }
+    RecordVulkanGpuMetric(
+        ComposeFrames, GpuMetric::CaptureSidecar,
+        VulkanPerf::Counter::CaptureSidecarGpuTimeNs);
+    RecordVulkanGpuMetric(
+        ComposeFrames, GpuMetric::StructuredCompositor,
+        VulkanPerf::Counter::StructuredCompositorGpuTimeNs);
+    ComposeFrames.WriteTimestamp(
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::StructuredCompositor, false));
 
     constexpr u32 logicalUnitCount =
         StructuredComposition::kStructuredInputPlaneCount
@@ -3070,6 +3091,9 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
         0, Vk::PushConstantSize, &push);
 
+    ComposeFrames.WriteTimestamp(
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::CaptureSidecar, false));
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_CaptureSidecar]);
     const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
@@ -3140,6 +3164,9 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         VulkanPerf::Counter::CaptureSidecarDispatchCount, sidecarDispatchCount);
     VulkanPerf::AddCounter(
         VulkanPerf::Counter::CaptureSidecarBarrierCount, sidecarBarrierCount);
+    ComposeFrames.WriteTimestamp(
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::CaptureSidecar, true));
 
     // Do not carry the sidecar's per-dispatch addressing mode into the
     // compositor push state. The compositor currently ignores these words,
@@ -3157,6 +3184,9 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1);
+    ComposeFrames.WriteTimestamp(
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::StructuredCompositor, true));
 
     if (directImageOutput)
     {

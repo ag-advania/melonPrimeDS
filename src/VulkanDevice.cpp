@@ -433,6 +433,7 @@ bool VulkanDevice::Create(
     // this scope rather than inside the blocks that fill them.
     VkPhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures{};
     VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures{};
+    VkPhysicalDevicePresentWaitFeaturesKHR presentWaitFeatures{};
     VkPhysicalDeviceAntiLagFeaturesAMD antiLagFeatures{};
     VkPhysicalDevicePresentId2FeaturesKHR presentId2Features{};
     VkPhysicalDevicePresentWait2FeaturesKHR presentWait2Features{};
@@ -461,6 +462,8 @@ bool VulkanDevice::Create(
         timelineFeatures.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES_KHR;
         presentIdFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR;
+        presentWaitFeatures.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR;
         antiLagFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD;
         presentId2Features.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR;
@@ -475,6 +478,8 @@ bool VulkanDevice::Create(
             chainProbe(timelineFeatures);
         if (Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_ID_EXTENSION_NAME))
             chainProbe(presentIdFeatures);
+        if (Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_WAIT_EXTENSION_NAME))
+            chainProbe(presentWaitFeatures);
         if (Vk::FeatureProbe::HasExtension(available, VK_AMD_ANTI_LAG_EXTENSION_NAME))
             chainProbe(antiLagFeatures);
         if (Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_ID_2_EXTENSION_NAME))
@@ -497,6 +502,7 @@ bool VulkanDevice::Create(
         // struct whose feature is unsupported must not reach vkCreateDevice.
         timelineFeatures.pNext = nullptr;
         presentIdFeatures.pNext = nullptr;
+        presentWaitFeatures.pNext = nullptr;
         antiLagFeatures.pNext = nullptr;
         presentId2Features.pNext = nullptr;
         presentWait2Features.pNext = nullptr;
@@ -563,6 +569,26 @@ bool VulkanDevice::Create(
         const bool hasPresentId2 = hasCaps2
             && Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_ID_2_EXTENSION_NAME)
             && presentId2Features.presentId2 == VK_TRUE;
+
+        const bool hasLegacyPresentId = needPresent
+            && Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_ID_EXTENSION_NAME)
+            && presentIdFeatures.presentId == VK_TRUE;
+        if (hasLegacyPresentId
+            && !Vk::ExtensionEnabled(EnabledExtensions, VK_KHR_PRESENT_ID_EXTENSION_NAME))
+        {
+            EnabledExtensions.push_back(VK_KHR_PRESENT_ID_EXTENSION_NAME);
+            chain(presentIdFeatures);
+        }
+
+        const bool hasLegacyPresentWait = hasLegacyPresentId
+            && Vk::FeatureProbe::HasExtension(available, VK_KHR_PRESENT_WAIT_EXTENSION_NAME)
+            && presentWaitFeatures.presentWait == VK_TRUE;
+        if (hasLegacyPresentWait)
+        {
+            EnabledExtensions.push_back(VK_KHR_PRESENT_WAIT_EXTENSION_NAME);
+            chain(presentWaitFeatures);
+            genericPresentExtensionsEnabled = true;
+        }
 
         if (hasPresentId2)
         {
@@ -631,12 +657,13 @@ bool VulkanDevice::Create(
         Platform::Log(
             Platform::LogLevel::Info,
             "[Vulkan] generic present device capabilities: caps2=%s present-id2=%s "
-            "present-wait2=%s calibrated-timestamps=%s present-timing=%s "
+            "present-wait2=%s legacy-present-wait=%s calibrated-timestamps=%s present-timing=%s "
             "present-at-absolute-time=%s present-at-relative-time=%s "
             "fifo-latest-ready=%s google-display-timing=%s\n",
             hasCaps2 ? "yes" : "no",
             hasPresentId2 ? "yes" : "no",
             hasPresentWait2 ? "yes" : "no",
+            hasLegacyPresentWait ? "yes" : "no",
             hasCalibratedTimestamps ? "yes" : "no",
             hasPresentTiming ? "yes" : "no",
             State->PresentTimingFeatures.PresentAtAbsoluteTime ? "yes" : "no",
@@ -729,6 +756,7 @@ bool VulkanDevice::Create(
                     return std::strcmp(name, VK_NV_LOW_LATENCY_2_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_KHR_PRESENT_ID_EXTENSION_NAME) == 0
+                        || std::strcmp(name, VK_KHR_PRESENT_WAIT_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_AMD_ANTI_LAG_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_KHR_PRESENT_ID_2_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_KHR_PRESENT_WAIT_2_EXTENSION_NAME) == 0

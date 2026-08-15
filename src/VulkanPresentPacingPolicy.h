@@ -215,6 +215,11 @@ struct VulkanPacingCapabilities
     // Cleared when a runtime failure retired the wait; the rest of the pacer
     // keeps working.
     bool PresentWaitRuntimeEnabled = false;
+    // --- legacy bounded previous-present wait (VK_KHR_present_wait) ---------
+    // This path uses VkPresentIdKHR + vkWaitForPresentKHR and is selected only
+    // when the newer present_wait2 path is unavailable.
+    bool PresentWaitLegacySurface = false;
+    bool PresentWaitLegacyRuntimeEnabled = false;
 
     // --- target-time scheduling (VK_EXT_present_timing) --------------------
     bool PresentTimingSurface = false;
@@ -375,6 +380,27 @@ constexpr bool VulkanPolicyUsesPresenterOneFrameBudget(
     return policy == VulkanPresentPacingPolicy::PresenterOneFrameBudget;
 }
 
+constexpr bool VulkanHasBoundedPresentWait(
+    const VulkanPacingCapabilities& caps) noexcept
+{
+    return (caps.PresentWait2Surface && caps.PresentWaitRuntimeEnabled)
+        || (caps.PresentWaitLegacySurface && caps.PresentWaitLegacyRuntimeEnabled);
+}
+
+// Shared timeout contract for both present_wait2 and fence fallback. The
+// fallback must not silently retain FrameRing's one-second normal-renderer
+// timeout under a one-frame presenter policy.
+constexpr u64 VulkanPresenterOneFrameBudgetTimeoutNs(u64 frameIntervalNs) noexcept
+{
+    constexpr u64 minTimeoutNs = 250'000;
+    constexpr u64 maxTimeoutNs = 16'000'000;
+    if (frameIntervalNs == 0)
+        return maxTimeoutNs;
+    return frameIntervalNs < minTimeoutNs
+        ? minTimeoutNs
+        : (frameIntervalNs > maxTimeoutNs ? maxTimeoutNs : frameIntervalNs);
+}
+
 // One policy-aware backend choice shared by the resolver and the runtime
 // lifecycle. TelemetryOnly/PresentWait retain EXT telemetry priority, while
 // JIT policies use the stricter target-capability selector. Keeping this as a
@@ -531,8 +557,7 @@ constexpr VulkanPacingDecision ResolveVulkanPresentPacing(
         // This policy owns only previous-present back-pressure. It never
         // requests target-time metadata, so present timing remains telemetry
         // only and the existing vendor-authority branches above still win.
-        const bool wait = caps.PresentId2Surface
-            && caps.PresentWait2Surface && caps.PresentWaitRuntimeEnabled;
+        const bool wait = VulkanHasBoundedPresentWait(caps);
         const VulkanPacingAuthority authority = wait
             ? VulkanPacingAuthority::GenericPresentTiming
             : VulkanPacingAuthority::GenericHost;
@@ -541,8 +566,7 @@ constexpr VulkanPacingDecision ResolveVulkanPresentPacing(
                 !wait, backend};
     }
 
-    const bool wait = caps.PresentId2Surface
-        && caps.PresentWait2Surface && caps.PresentWaitRuntimeEnabled;
+    const bool wait = VulkanHasBoundedPresentWait(caps);
     const VulkanJitFallbackReason reason = ClassifyVulkanTargetFallback(policy, caps);
     const bool target = VulkanPolicyRequestsTargetTime(policy)
         && reason == VulkanJitFallbackReason::None;
