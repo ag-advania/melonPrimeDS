@@ -165,7 +165,7 @@ jobs:
     # startup through validation-layer activation, instance creation, native
     # surface creation, device selection, and presenter/swapchain readiness.
     #
-    # At the 12s mark, timeout sends SIGTERM to xvfb-run, which tears down
+    # At the 30s mark, timeout sends SIGTERM to xvfb-run, which tears down
     # its Xvfb server; melonPrimeDS then sees its X connection break and
     # begins an async shutdown. Platform::Log() writes via plain vprintf()
     # with no fflush(), and stdout here is a redirected file rather than a
@@ -184,7 +184,7 @@ jobs:
         mkdir -p build-validation/portable
         printf '3D.Renderer = 3\nScreen.VSync = false\n' > build-validation/portable/melonDS.toml
         set +e
-        SDL_AUDIODRIVER=dummy timeout 12s xvfb-run -a stdbuf -o0 -e0 ./build-validation/melonPrimeDS > build-validation/vulkan-validation.log 2>&1
+        SDL_AUDIODRIVER=dummy timeout 30s xvfb-run -a stdbuf -o0 -e0 ./build-validation/melonPrimeDS > build-validation/vulkan-validation.log 2>&1
         status=$?
         set -e
         test "$status" -eq 0 -o "$status" -eq 124

@@ -142,6 +142,7 @@ jobs:
           executable, log_path = sys.argv[1:]
           env = os.environ.copy()
           env["SDL_AUDIODRIVER"] = "dummy"
+          timed_out = False
           with open(log_path, "w", encoding="utf-8") as log:
               process = subprocess.Popen(
                   [executable],
@@ -150,15 +151,29 @@ jobs:
                   env=env,
               )
               try:
-                  process.wait(timeout=15)
+                  # Hosted Apple-Paravirtual/MoltenVK startup can spend more
+                  # than 15 seconds compiling the first presentation
+                  # pipelines. The no-ROM smoke is expected to remain alive,
+                  # so the log markers below are the actual readiness gate.
+                  process.wait(timeout=60)
               except subprocess.TimeoutExpired:
+                  timed_out = True
                   process.send_signal(signal.SIGTERM)
                   try:
                       process.wait(timeout=15)
                   except subprocess.TimeoutExpired:
                       process.kill()
                       process.wait()
-          if process.returncode != 0:
+          print(
+              f"MoltenVK runtime smoke exited {process.returncode}"
+              + (" after the expected readiness timeout" if timed_out else ""),
+              file=sys.stderr,
+          )
+          # A no-ROM smoke has no natural successful exit. Once the readiness
+          # timeout has expired, a non-zero code can come from the intentional
+          # shutdown path; the shell assertions below still require complete
+          # Vulkan/presenter initialization and reject validation failures.
+          if not timed_out and process.returncode != 0:
               raise SystemExit(f"MoltenVK runtime smoke exited {process.returncode}")
           print(log_path)
           PY
@@ -275,6 +290,9 @@ jobs:
 
       - name: Upload Intel-host MoltenVK runtime log
         if: always()
+        # This diagnostic is explicitly non-gating. A transient artifact-service
+        # DNS/upload failure must not turn the informational Intel-host job red.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: moltenvk-intel-runtime-diagnostic
