@@ -56,6 +56,20 @@ def require_occurrences_guarded(
             )
 
 
+def require_occurrences_unguarded(
+    source: str, token: str, filename: str, failures: list[str]
+) -> None:
+    """Require correctness-critical tokens to stay outside the telemetry gate."""
+
+    guarded = guarded_lines(source, GATE)
+    for number, line in enumerate(source.splitlines(), 1):
+        if token in line and number in guarded:
+            failures.append(
+                f"{filename}:{number}: correctness-critical {token!r} "
+                "must remain outside renderer telemetry gate"
+            )
+
+
 def main() -> int:
     failures: list[str] = []
     cmake = read("src/frontend/qt_sdl/CMakeLists.txt")
@@ -176,6 +190,36 @@ def main() -> int:
     ):
         for token in tokens:
             require_occurrences_guarded(source, token, filename, failures)
+
+    # These operations establish the frame-submission contract and must exist
+    # in shipping builds. The telemetry gate may remove timestamp query work,
+    # but it must never remove the command/fence/semaphore resources that every
+    # Vulkan frame needs.
+    for token in (
+        "CreateCommandPool",
+        "AllocateCommandBuffers",
+        "CreateFence",
+        "CreateSemaphore",
+        "ResetFences",
+        "ResetCommandPool",
+        "BeginCommandBuffer",
+        "EndCommandBuffer",
+        "QueueSubmit",
+    ):
+        require_occurrences_unguarded(
+            vulkan_sync_cpp, token, "src/VulkanSync.cpp", failures
+        )
+
+    require(
+        "bool FrameRing::HasValidCoreFrameResources() const noexcept" in vulkan_sync_cpp,
+        "FrameRing must validate all mandatory per-slot handles after creation",
+        failures,
+    )
+    require(
+        "return CoreResourcesReady;" in vulkan_sync_h,
+        "FrameRing::IsValid must not treat Frames.resize() alone as successful initialization",
+        failures,
+    )
 
     require(
         "inline constexpr void WriteTimestamp(u32) noexcept {}" in dx12_context_h

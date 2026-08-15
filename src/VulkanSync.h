@@ -211,7 +211,12 @@ public:
     // destroys the ring. Safe to call more than once.
     void Destroy();
 
-    [[nodiscard]] bool IsValid() const noexcept { return !Frames.empty(); }
+    // Resource creation is a correctness contract, not just a vector-size
+    // contract. Keep the hot-path validity check to one cached boolean; the
+    // per-slot handle audit runs once at the end of Create().
+    [[nodiscard]] bool IsValid() const noexcept { return CoreResourcesReady; }
+
+    [[nodiscard]] bool HasValidCoreFrameResources() const noexcept;
 
     // Waits for the slot about to be reused, retires everything that frame was
     // holding, resets the command pool and opens the command buffer.
@@ -340,6 +345,7 @@ private:
     std::vector<FrameContext> Frames;
     DeferredDestroyQueue DestroyQueue;
 
+    bool CoreResourcesReady = false;
     u32 CurrentIndex = 0;
     u64 AbsoluteFrame = 1;      // 1-based so that 0 means "never used"
     u64 CompletedFrame = 0;

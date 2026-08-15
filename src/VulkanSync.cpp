@@ -242,6 +242,7 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
     bool timestampPoolsCreated = timestampSupport;
     if (timestampSupport)
         TimestampPeriodNs = limits.timestampPeriod;
+#endif
 
     for (u32 i = 0; i < framesInFlight; i++)
     {
@@ -308,6 +309,7 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
             return false;
         }
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         if (timestampSupport)
         {
             VkQueryPoolCreateInfo queryInfo{};
@@ -334,6 +336,7 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
                 frame.TimestampQueriesEnabled = true;
             }
         }
+#endif
 
         char name[64];
         std::snprintf(name, sizeof(name), "frame %u command pool", i);
@@ -342,13 +345,23 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
         device.SetDebugName(VK_OBJECT_TYPE_COMMAND_BUFFER, frame.CommandBuffer, name);
         std::snprintf(name, sizeof(name), "frame %u in-flight fence", i);
         device.SetDebugName(VK_OBJECT_TYPE_FENCE, frame.InFlightFence, name);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         if (frame.TimestampQueryPool != VK_NULL_HANDLE)
             device.SetDebugName(VK_OBJECT_TYPE_QUERY_POOL, frame.TimestampQueryPool, "VulkanPerf.GpuTimestamps");
+#endif
     }
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (!timestampPoolsCreated)
         TimestampPeriodNs = 0.0f;
 #endif
+
+    if (!HasValidCoreFrameResources())
+    {
+        Destroy();
+        return false;
+    }
+    CoreResourcesReady = true;
 
     return true;
 }
@@ -358,6 +371,7 @@ void FrameRing::Destroy()
     if (!Device)
     {
         Frames.clear();
+        CoreResourcesReady = false;
         CurrentIndex = 0;
         AbsoluteFrame = 1;
         CompletedFrame = 0;
@@ -378,6 +392,7 @@ void FrameRing::Destroy()
 
     Frames.clear();
     Device = nullptr;
+    CoreResourcesReady = false;
     CurrentIndex = 0;
     AbsoluteFrame = 1;
     CompletedFrame = 0;
@@ -386,6 +401,25 @@ void FrameRing::Destroy()
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampPeriodNs = 0.0f;
 #endif
+}
+
+bool FrameRing::HasValidCoreFrameResources() const noexcept
+{
+    if (Frames.empty())
+        return false;
+
+    for (const FrameContext& frame : Frames)
+    {
+        if (frame.CommandPool == VK_NULL_HANDLE
+            || frame.CommandBuffer == VK_NULL_HANDLE
+            || frame.InFlightFence == VK_NULL_HANDLE
+            || frame.ImageAvailable == VK_NULL_HANDLE
+            || frame.RenderFinished == VK_NULL_HANDLE)
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 void FrameRing::DestroyFrames()
