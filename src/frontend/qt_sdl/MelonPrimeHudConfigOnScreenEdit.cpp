@@ -89,6 +89,8 @@ void MelonPrimeHudConfigOnScreenEdit::clearForm()
 
 void MelonPrimeHudConfigOnScreenEdit::clear()
 {
+    if (QWidget* focused = QApplication::focusWidget(); focused && (focused == this || isAncestorOf(focused)))
+        focused->clearFocus();
     clearForm();
     m_currentElem = -1;
     m_title->clear();

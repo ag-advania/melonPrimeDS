@@ -38,7 +38,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstring>
+#include <mutex>
+#include <shared_mutex>
 #include <vector>
 
 #include <QApplication>
@@ -74,6 +77,9 @@
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanPresenter.h"
 #include "MelonPrimeVulkanSurface.h"
+#if defined(__linux__)  // scatter-budget-exempt: Linux Vulkan WSI host ownership, not input dispatch
+#include "MelonPrimeVulkanSurfaceHostLinux.h"
+#endif
 #include "NDS.h"
 #include "Platform.h"
 #include "main.h"
@@ -122,6 +128,9 @@ std::vector<ScreenPanelVulkan*> g_panelRegistry;
 // widget is pure presentation surface -- no Qt paint engine, no system
 // background, and transparent to the mouse so the panel keeps receiving every
 // input event exactly as before.
+#if defined(__linux__)  // scatter-budget-exempt: Linux Vulkan WSI host selection, not input dispatch
+using VulkanSurfaceHost = MelonPrime::VulkanSurfaceHostLinux;
+#else
 class VulkanSurfaceHost final : public QWidget
 {
 public:
@@ -143,6 +152,7 @@ public:
 protected:
     void paintEvent(QPaintEvent*) override {}
 };
+#endif
 
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)  // scatter-budget-exempt: Wayland pointer lock, the same override ScreenPanelGL/ScreenPanelNative already carry in Screen.cpp; not new input dispatch, only the same gate in the panel's own translation unit
 // Local copy of Screen.cpp's helper. It cannot be shared: it lives in that
@@ -214,17 +224,38 @@ struct ScreenPanelVulkan::VulkanState
     std::atomic_bool modalPauseActive{false};
     std::atomic_bool surfaceHandleDirty{true};
 
+#if defined(__linux__)  // scatter-budget-exempt: Linux native-surface lifecycle state, not input dispatch
+    // GUI-thread lifecycle publication and presenter-thread consumption. The
+    // generation, not WId, is the native-surface identity on Wayland.
+    std::atomic_bool linuxSurfaceReady{false};
+    std::atomic_bool linuxSurfaceDirty{true};
+    std::atomic_bool linuxSurfaceLost{false};
+    std::atomic_uint64_t linuxSurfaceGeneration{0};
+    std::shared_ptr<std::shared_mutex> linuxSurfaceLifecycleLock =
+        std::make_shared<std::shared_mutex>();
+    std::mutex linuxSurfaceSnapshotLock;
+    MelonPrime::VulkanSurface::NativeWindowSnapshot linuxSurfaceSnapshot;
+    std::uint64_t presenterSurfaceGeneration = 0;
+#endif
+
+    // Published by GUI resize/lifecycle callbacks so the emulation thread does
+    // not query QWidget geometry or devicePixelRatioF().
+    std::atomic_uint surfaceLogicalWidth{1};
+    std::atomic_uint surfaceLogicalHeight{1};
+    std::atomic_uint surfacePhysicalWidth{1};
+    std::atomic_uint surfacePhysicalHeight{1};
+
     // The values the emulation thread most recently asked for. The presenter
     // is the authority once it exists; these are the panel-side record, read by
     // initVulkanPresenter() so a presenter created mid-session (renderer switch,
     // native handle change) starts at the current setting instead of off.
     std::atomic_int reflexMode{0};
     std::atomic_bool antiLag2Enabled{false};
+    std::atomic_bool windowFullscreen{false};
 
     bool initialized = false;
     bool runtimeFailureReported = false;
     bool vsyncApplied = true;
-    unsigned long long lastNativeHandle = 0;
 
     // Presentation stall watchdog. Emulation thread only, hence plain members.
     //
@@ -254,7 +285,79 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     // to this translation unit.
     setMinimumSize(screenGetMinSize(1));
 
+#if defined(__linux__)  // scatter-budget-exempt: Linux native-surface lifecycle callback, not input dispatch
+    vulkan->surface = new VulkanSurfaceHost(
+        this,
+        [this](
+            MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent event,
+            const MelonPrime::VulkanSurface::NativeWindowSnapshot& snapshot) {
+            if (!vulkan)
+                return;
+
+            const bool invalidated = event
+                == MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::Hide
+                || event
+                == MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::SurfaceAboutToBeDestroyed;
+            {
+                std::lock_guard<std::mutex> lock(vulkan->linuxSurfaceSnapshotLock);
+                vulkan->linuxSurfaceSnapshot = snapshot;
+                if (!snapshot.IsValid())
+                {
+                    vulkan->linuxSurfaceSnapshot.Width = static_cast<std::uint32_t>(
+                        std::max(1, qRound(width() * devicePixelRatioF())));
+                    vulkan->linuxSurfaceSnapshot.Height = static_cast<std::uint32_t>(
+                        std::max(1, qRound(height() * devicePixelRatioF())));
+                }
+            }
+            vulkan->linuxSurfaceGeneration.store(
+                snapshot.Generation, std::memory_order_release);
+            vulkan->linuxSurfaceReady.store(
+                !invalidated && snapshot.IsValid(), std::memory_order_release);
+            vulkan->linuxSurfaceLost.store(invalidated, std::memory_order_release);
+            vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+            vulkan->surfaceHandleDirty.store(true, std::memory_order_release);
+
+            const char* eventName = "lifecycle";
+            switch (event)
+            {
+            case MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::Show:
+                eventName = "Show";
+                break;
+            case MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::Hide:
+                eventName = "Hide";
+                break;
+            case MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::WinIdChange:
+                eventName = "WinIdChange";
+                break;
+            case MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::SurfaceCreated:
+                eventName = "SurfaceCreated";
+                break;
+            case MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::SurfaceAboutToBeDestroyed:
+                eventName = "SurfaceAboutToBeDestroyed";
+                break;
+            }
+            const void* native = snapshot.WaylandSurface
+                ? snapshot.WaylandSurface
+                : (snapshot.XcbConnection ? snapshot.XcbConnection : snapshot.XlibDisplay);
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[Vulkan][LinuxWSI] %s generation=%llu native=%p platform=%s\n",
+                eventName,
+                static_cast<unsigned long long>(snapshot.Generation),
+                native,
+                snapshot.Platform.empty() ? "unknown" : snapshot.Platform.c_str());
+            if (invalidated)
+            {
+                Platform::Log(
+                    Platform::LogLevel::Info,
+                    "[Vulkan][LinuxWSI] surface invalidated new-generation=%llu\n",
+                    static_cast<unsigned long long>(snapshot.Generation));
+            }
+        },
+        vulkan->linuxSurfaceLifecycleLock);
+#else
     vulkan->surface = new VulkanSurfaceHost(this);
+#endif
     vulkan->surface->setGeometry(rect());
     vulkan->surface->hide();
 
@@ -313,9 +416,28 @@ bool ScreenPanelVulkan::initVulkan()
         return false;
     }
 
+    // Keep the native child hidden during startup. Linux/Wayland must expose
+    // it before the presenter attempts to bind a VkSurfaceKHR; the first bind
+    // therefore happens on the emulation thread after the host publishes a
+    // post-Show snapshot.
+    vulkan->surface->setGeometry(rect());
+#if defined(__linux__)  // scatter-budget-exempt: Linux GUI geometry publication, not input dispatch
+    vulkan->surfaceLogicalWidth.store(
+        static_cast<unsigned>(std::max(1, width())), std::memory_order_release);
+    vulkan->surfaceLogicalHeight.store(
+        static_cast<unsigned>(std::max(1, height())), std::memory_order_release);
+    vulkan->surfacePhysicalWidth.store(
+        static_cast<unsigned>(std::max(1, qRound(width() * devicePixelRatioF()))),
+        std::memory_order_release);
+    vulkan->surfacePhysicalHeight.store(
+        static_cast<unsigned>(std::max(1, qRound(height() * devicePixelRatioF()))),
+        std::memory_order_release);
+    vulkan->initialized = true;
+    refreshNativeSurfaceGuiThread();
+    return true;
+#else
     // Realizes the child window so the platform adapter has a native handle to
     // build a VkSurfaceKHR from.
-    vulkan->surface->setGeometry(rect());
     vulkan->surface->winId();
 
     if (!initVulkanPresenter())
@@ -324,6 +446,7 @@ bool ScreenPanelVulkan::initVulkan()
     vulkan->initialized = true;
     refreshNativeSurfaceGuiThread();
     return true;
+#endif
 }
 
 
@@ -333,8 +456,23 @@ bool ScreenPanelVulkan::initVulkanPresenter()
         return false;
     if (vulkan->presenter.IsInitialized())
         return true;
+#if defined(__linux__)  // scatter-budget-exempt: Linux native-surface readiness, not input dispatch
+    if (!vulkan->linuxSurfaceReady.load(std::memory_order_acquire)
+        || vulkan->linuxSurfaceLost.load(std::memory_order_acquire))
+    {
+        return false;
+    }
+    MelonPrime::VulkanSurface::NativeWindowSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lock(vulkan->linuxSurfaceSnapshotLock);
+        snapshot = vulkan->linuxSurfaceSnapshot;
+    }
+    if (!snapshot.IsValid())
+        return false;
+#else
     if (!nativeSurfaceReady())
         return false;
+#endif
 
     // Before Init(), not after: the present mode is baked into the swapchain,
     // so applying the setting afterwards would build one swapchain with the
@@ -343,7 +481,12 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     Config::Table config = emuInstance->getGlobalConfig();
     vulkan->vsyncApplied = config.GetBool("Screen.VSync");
     vulkan->presenter.SetVSync(vulkan->vsyncApplied);
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter fullscreen snapshot, not input dispatch
+    vulkan->presenter.SetWindowFullscreen(
+        vulkan->windowFullscreen.load(std::memory_order_acquire));
+#else
     vulkan->presenter.SetWindowFullscreen(window() && window()->isFullScreen());
+#endif
     vulkan->presenter.SetGenericPresentPacingPolicy(
         config.GetInt(MelonPrime::CfgKey::VulkanPresentPacingPolicy));
 
@@ -352,8 +495,20 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     vulkan->reflexMode.store(reflexMode, std::memory_order_relaxed);
     vulkan->antiLag2Enabled.store(antiLag2Enabled, std::memory_order_relaxed);
 
-    if (!vulkan->presenter.Init(vulkan->surface.data()))
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter snapshot binding, not input dispatch
+    const bool presenterInitialized = vulkan->presenter.Init(snapshot);
+#else
+    const bool presenterInitialized = vulkan->presenter.Init(vulkan->surface.data());
+#endif
+    if (!presenterInitialized)
     {
+#if defined(__linux__)  // scatter-budget-exempt: Linux surface-loss recovery, not input dispatch
+        if (vulkan->presenter.NeedsSurfaceRebind())
+        {
+            vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+            return false;
+        }
+#endif
         const std::string reason = vulkan->presenter.LastError();
         Platform::Log(
             Platform::LogLevel::Error,
@@ -369,8 +524,12 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     // never reports the presenter's default Off state as the user's request.
     vulkan->presenter.SetLowLatencyPreferences(reflexMode, antiLag2Enabled);
 
-    vulkan->lastNativeHandle = static_cast<unsigned long long>(vulkan->surface->winId());
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter generation publication, not input dispatch
+    vulkan->presenterSurfaceGeneration = snapshot.Generation;
+    vulkan->linuxSurfaceDirty.store(false, std::memory_order_release);
+#else
     vulkan->surfaceHandleDirty.store(false, std::memory_order_release);
+#endif
 
     // Requested / Supported / device-extension-enabled / Actual / Reason for both vendor
     // extensions, once, as soon as there is a device to report on. Emitted here
@@ -386,6 +545,13 @@ void ScreenPanelVulkan::reportVulkanRuntimeFailure(const char* reason)
 {
     if (!vulkan || vulkan->runtimeFailureReported)
         return;
+    if (vulkan->presenter.NeedsSurfaceRebind())
+    {
+        // VK_ERROR_SURFACE_LOST_KHR is a compositor lifecycle transition, not
+        // a renderer failure. The Linux frame boundary retires and rebinds the
+        // presenter without touching VulkanFeatureCheck's sticky failure bit.
+        return;
+    }
     vulkan->runtimeFailureReported = true;
 
     MelonPrime::VulkanFeatureCheck::ReportRuntimeFailure(
@@ -409,7 +575,14 @@ void ScreenPanelVulkan::reportVulkanRuntimeFailure(const char* reason)
 
 bool ScreenPanelVulkan::nativeSurfaceReady() const
 {
+#if defined(__linux__)  // scatter-budget-exempt: Linux native-surface readiness query, not input dispatch
+    return vulkan
+        && vulkan->linuxSurfaceReady.load(std::memory_order_acquire)
+        && !vulkan->linuxSurfaceLost.load(std::memory_order_acquire)
+        && vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire) != 0;
+#else
     return vulkan && vulkan->surface && vulkan->surface->windowHandle() != nullptr;
+#endif
 }
 
 
@@ -419,12 +592,27 @@ void ScreenPanelVulkan::refreshNativeSurfaceGuiThread()
         return;
 
     vulkan->surface->setGeometry(rect());
+#if defined(__linux__)  // scatter-budget-exempt: Linux GUI geometry publication, not input dispatch
+    vulkan->surfaceLogicalWidth.store(
+        static_cast<unsigned>(std::max(1, width())), std::memory_order_release);
+    vulkan->surfaceLogicalHeight.store(
+        static_cast<unsigned>(std::max(1, height())), std::memory_order_release);
+    vulkan->surfacePhysicalWidth.store(
+        static_cast<unsigned>(std::max(1, qRound(width() * devicePixelRatioF()))),
+        std::memory_order_release);
+    vulkan->surfacePhysicalHeight.store(
+        static_cast<unsigned>(std::max(1, qRound(height() * devicePixelRatioF()))),
+        std::memory_order_release);
+    vulkan->windowFullscreen.store(
+        window() && window()->isFullScreen(), std::memory_order_release);
+#else
     // macOS is the only platform where the presentation layer has a size of its
     // own; everywhere else this is a no-op and the window system resizes the
     // surface with the native window.
     MelonPrime::VulkanSurface::UpdateGeometry(
         vulkan->presenter.GetPlatformSurface(), vulkan->surface.data());
     vulkan->presenter.SetWindowFullscreen(window() && window()->isFullScreen());
+#endif
     vulkan->presenter.NotifySurfaceChanged();
 }
 
@@ -437,6 +625,12 @@ void ScreenPanelVulkan::setNativeSurfaceVisibleGuiThread(bool visible)
     if (visible)
     {
         vulkan->surface->setGeometry(rect());
+#if defined(__linux__)  // scatter-budget-exempt: Linux host visibility lifecycle, not input dispatch
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[Vulkan][LinuxWSI] host show requested platform=%s\n",
+            QGuiApplication::platformName().toStdString().c_str());
+#endif
         vulkan->surface->show();
         vulkan->surface->raise();
     }
@@ -469,11 +663,13 @@ void ScreenPanelVulkan::releaseNativeSurface()
     if (!vulkan)
         return;
 
-    for (RendererOutputLease& lease : vulkan->frameLeases)
-        lease.ReleaseNow();
-    vulkan->presenter.Shutdown();
     vulkan->initialized = false;
     vulkan->surfaceHandleDirty.store(true, std::memory_order_release);
+#if defined(__linux__)  // scatter-budget-exempt: Linux surface teardown notification, not input dispatch
+    vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
+    vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
+    vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+#endif
 
     if (vulkan->surface)
     {
@@ -490,33 +686,66 @@ bool ScreenPanelVulkan::prepareLinuxPresentationSurface()
     if (!vulkan || !vulkan->surface)
         return false;
     if (!nativeSurfaceReady())
+    {
+        if (vulkan->presenter.IsInitialized())
+            retireLinuxPresentationSurface("native surface invalidated");
+        return false;
+    }
+
+    const std::uint64_t generation =
+        vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire);
+    MelonPrime::VulkanSurface::NativeWindowSnapshot snapshot;
+    {
+        std::lock_guard<std::mutex> lock(vulkan->linuxSurfaceSnapshotLock);
+        snapshot = vulkan->linuxSurfaceSnapshot;
+    }
+    if (!snapshot.IsValid() || snapshot.Generation != generation)
         return false;
 
-    const unsigned long long handle =
-        static_cast<unsigned long long>(vulkan->surface->winId());
-    if (handle == 0)
-        return false;
+    if (vulkan->presenter.NeedsSurfaceRebind())
+        retireLinuxPresentationSurface("VK_ERROR_SURFACE_LOST_KHR");
 
-    // A compositor (or a Qt reparent, which XWayland and Wayland both perform
-    // on a fullscreen transition) can hand out a new native window for the same
-    // QWidget. The old VkSurfaceKHR then refers to a window that no longer
-    // exists, and every acquire returns VK_ERROR_SURFACE_LOST_KHR, so the whole
-    // presenter -- surface included -- is rebuilt rather than the swapchain
-    // alone.
-    if (vulkan->presenter.IsInitialized() && handle != vulkan->lastNativeHandle)
+    if (vulkan->presenter.IsInitialized()
+        && vulkan->presenterSurfaceGeneration != generation)
     {
         Platform::Log(
             Platform::LogLevel::Info,
-            "[Vulkan] native window handle changed (%llu -> %llu); rebuilding the presenter\n",
-            vulkan->lastNativeHandle,
-            handle);
-        for (RendererOutputLease& lease : vulkan->frameLeases)
-            lease.ReleaseNow();
-        vulkan->presenter.Shutdown();
-        vulkan->lastNativeHandle = handle;
+            "[Vulkan][LinuxWSI] presenter rebind old-generation=%llu new-generation=%llu\n",
+            static_cast<unsigned long long>(vulkan->presenterSurfaceGeneration),
+            static_cast<unsigned long long>(generation));
+        retireLinuxPresentationSurface("native surface generation changed");
     }
 
-    return initVulkanPresenter();
+    if (vulkan->presenter.IsInitialized())
+        return true;
+
+    const bool initialized = initVulkanPresenter();
+    if (initialized)
+    {
+        vulkan->linuxSurfaceDirty.store(false, std::memory_order_release);
+        return true;
+    }
+    return false;
+}
+
+
+void ScreenPanelVulkan::retireLinuxPresentationSurface(const char* reason)
+{
+    if (!vulkan || !vulkan->presenter.IsInitialized())
+        return;
+
+    const std::uint64_t oldGeneration = vulkan->presenterSurfaceGeneration;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan][LinuxWSI] presenter retired generation=%llu reason=%s\n",
+        static_cast<unsigned long long>(oldGeneration),
+        reason ? reason : "unspecified");
+    vulkan->presenter.Quiesce();
+    for (RendererOutputLease& lease : vulkan->frameLeases)
+        lease.ReleaseNow();
+    vulkan->presenter.Shutdown();
+    vulkan->presenterSurfaceGeneration = 0;
+    vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
 }
 #endif
 
@@ -552,6 +781,18 @@ void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
 
     if (vulkan)
     {
+#if defined(__linux__)  // scatter-budget-exempt: Linux resize publication, not input dispatch
+        vulkan->surfaceLogicalWidth.store(
+            static_cast<unsigned>(std::max(1, width())), std::memory_order_release);
+        vulkan->surfaceLogicalHeight.store(
+            static_cast<unsigned>(std::max(1, height())), std::memory_order_release);
+        vulkan->surfacePhysicalWidth.store(
+            static_cast<unsigned>(std::max(1, qRound(width() * devicePixelRatioF()))),
+            std::memory_order_release);
+        vulkan->surfacePhysicalHeight.store(
+            static_cast<unsigned>(std::max(1, qRound(height() * devicePixelRatioF()))),
+            std::memory_order_release);
+#endif
         // Coalesced, not immediate. Rebuilding here would mean one swapchain
         // per resize event during a window drag, and the GUI thread must not
         // destroy a swapchain the emulation thread may be presenting from.
@@ -569,16 +810,11 @@ bool ScreenPanelVulkan::event(QEvent* event)
         case QEvent::PlatformSurface:
         {
             const auto* surfaceEvent = static_cast<QPlatformSurfaceEvent*>(event);
-            if (surfaceEvent->surfaceEventType()
-                == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed)
-            {
-                // The VkSurfaceKHR must not outlive the native window it wraps.
-                releaseNativeSurface();
-            }
-            else
-            {
-                vulkan->surfaceHandleDirty.store(true, std::memory_order_release);
-            }
+            // The dedicated Linux child owns this lifecycle event and
+            // publishes its generation after QWidget::event(). The panel must
+            // never destroy a presenter from this GUI callback.
+            (void)surfaceEvent;
+            vulkan->surfaceHandleDirty.store(true, std::memory_order_release);
             break;
         }
 
@@ -588,7 +824,12 @@ bool ScreenPanelVulkan::event(QEvent* event)
             // A move to another monitor, a fullscreen transition or a DPI
             // change all alter the surface's physical pixel size without
             // necessarily producing a resize event first.
+#if defined(__linux__)  // scatter-budget-exempt: Linux fullscreen publication, not input dispatch
+            vulkan->windowFullscreen.store(
+                window() && window()->isFullScreen(), std::memory_order_release);
+#else
             vulkan->presenter.SetWindowFullscreen(window() && window()->isFullScreen());
+#endif
             vulkan->presenter.NotifySurfaceChanged();
             QMetaObject::invokeMethod(
                 this, [this]() { refreshNativeSurfaceGuiThread(); }, Qt::QueuedConnection);
@@ -945,26 +1186,6 @@ void ScreenPanelVulkan::drawScreenFrame()
     if (!vulkan)
         return;
 
-#if defined(__linux__)  // scatter-budget-exempt: presentation-surface rebinding on Linux only; every other platform keeps a stable native handle
-    // Re-binds the presenter when the compositor handed out a new native
-    // window; a no-op once the handle is stable.
-    if (vulkan->surfaceHandleDirty.exchange(false, std::memory_order_acq_rel)
-        || !vulkan->presenter.IsInitialized())
-    {
-        if (!prepareLinuxPresentationSurface())
-        {
-            noteFrameStalled("the presentation surface could not be bound to the native window");
-            return;
-        }
-    }
-#else
-    if (!vulkan->presenter.IsInitialized())
-    {
-        noteFrameStalled("the Vulkan presenter is not initialized");
-        return;
-    }
-#endif
-
     auto* emuThread = emuInstance->getEmuThread();
     if (!emuThread)
     {
@@ -1000,6 +1221,38 @@ void ScreenPanelVulkan::drawScreenFrame()
         noteFrameIdle();
         return;
     }
+
+#if defined(__linux__)  // scatter-budget-exempt: Linux native-surface lifecycle boundary
+    // Showing the child is a prerequisite for binding the presenter. It is
+    // never posted after EndFrame(), which avoids the expose/show circular
+    // dependency that leaves Wayland with no usable wl_surface at startup.
+    requestNativeSurfaceVisible(true);
+    std::shared_lock<std::shared_mutex> linuxSurfaceLifecycleGuard(
+        *vulkan->linuxSurfaceLifecycleLock);
+    const std::uint64_t currentGeneration =
+        vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire);
+    if (vulkan->linuxSurfaceDirty.load(std::memory_order_acquire)
+        || !vulkan->presenter.IsInitialized()
+        || vulkan->presenterSurfaceGeneration != currentGeneration
+        || vulkan->presenter.NeedsSurfaceRebind())
+    {
+        if (!prepareLinuxPresentationSurface())
+        {
+            if (vulkan->presenter.HasFailed())
+                reportVulkanRuntimeFailure(vulkan->presenter.LastError().c_str());
+            else
+                noteFrameStalled(
+                    "the presentation surface is not ready for the current native generation");
+            return;
+        }
+    }
+#else
+    if (!vulkan->presenter.IsInitialized())
+    {
+        noteFrameStalled("the Vulkan presenter is not initialized");
+        return;
+    }
+#endif
 
     auto* nds = emuInstance->getNDS();
     if (!nds)
@@ -1043,17 +1296,33 @@ void ScreenPanelVulkan::drawScreenFrame()
         sourceHeight = rendererOutput.Height;
     }
 
+#if defined(__linux__)  // scatter-budget-exempt: Linux physical extent selection, not input dispatch
+    const int logicalWidth = static_cast<int>(
+        vulkan->surfaceLogicalWidth.load(std::memory_order_acquire));
+    const int logicalHeight = static_cast<int>(
+        vulkan->surfaceLogicalHeight.load(std::memory_order_acquire));
+    const u32 physicalWidth = vulkan->surfacePhysicalWidth.load(std::memory_order_acquire);
+    const u32 physicalHeight = vulkan->surfacePhysicalHeight.load(std::memory_order_acquire);
+#else
     const int logicalWidth = std::max(1, width());
     const int logicalHeight = std::max(1, height());
     const qreal dpr = devicePixelRatioF();
     const u32 physicalWidth = static_cast<u32>(std::max(1, qRound(logicalWidth * dpr)));
     const u32 physicalHeight = static_cast<u32>(std::max(1, qRound(logicalHeight * dpr)));
+#endif
 
     if (gpuFrame && gpuFrame->HasDirectSampledOutput())
         vulkan->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
     if (!vulkan->presenter.BeginFrame(physicalWidth, physicalHeight))
     {
-        if (vulkan->presenter.HasFailed())
+        if (vulkan->presenter.NeedsSurfaceRebind())
+        {
+#if defined(__linux__)  // scatter-budget-exempt: Linux acquire surface-loss recovery, not input dispatch
+            retireLinuxPresentationSurface("acquire returned VK_ERROR_SURFACE_LOST_KHR");
+#endif
+            noteFrameStalled("the Vulkan presentation surface was lost and is being rebound");
+        }
+        else if (vulkan->presenter.HasFailed())
             reportVulkanRuntimeFailure(vulkan->presenter.LastError().c_str());
         else
             noteFrameStalled("the presenter could not begin a frame (swapchain not ready)");
@@ -1347,12 +1616,25 @@ void ScreenPanelVulkan::drawScreenFrame()
 
     if (!vulkan->presenter.EndFrame())
     {
-        reportVulkanRuntimeFailure(vulkan->presenter.LastError().c_str());
+        if (vulkan->presenter.NeedsSurfaceRebind())
+        {
+#if defined(__linux__)  // scatter-budget-exempt: Linux present surface-loss recovery, not input dispatch
+            retireLinuxPresentationSurface("present returned VK_ERROR_SURFACE_LOST_KHR");
+#endif
+            noteFrameStalled("the Vulkan presentation surface was lost and is being rebound");
+        }
+        else if (vulkan->presenter.HasFailed())
+        {
+            reportVulkanRuntimeFailure(vulkan->presenter.LastError().c_str());
+        }
+        else
+        {
+            noteFrameStalled("the presenter could not present the frame");
+        }
         return;
     }
 
     noteFramePresented();
-    requestNativeSurfaceVisible(true);
 }
 
 

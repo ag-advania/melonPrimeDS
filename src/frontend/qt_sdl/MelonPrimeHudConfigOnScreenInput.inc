@@ -3,10 +3,16 @@
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
+static OnScreenEditStyle ResolveOnScreenEditStyle(Config::Table& cfg)
+{
+    return NormalizeOnScreenEditStyle(cfg.GetInt(CfgKey::OnScreenEditStyle));
+}
+
 void CustomHud_EnterEditMode(CustomHudConfigState& hudConfig, EmuInstance* emu, Config::Table& cfg)
 {
     const ScopedHudConfigState active(hudConfig);
     s_editEmu           = emu;
+    s_editStyle         = ResolveOnScreenEditStyle(cfg);
     s_editSelected      = -1;
     s_editHovered       = -1;
     s_dragging          = false;
@@ -52,6 +58,16 @@ void CustomHud_ExitEditMode(CustomHudConfigState& hudConfig, bool save, Config::
 bool CustomHud_IsEditMode(const CustomHudConfigState& hudConfig)
 {
     return hudConfig.editMode;
+}
+
+OnScreenEditStyle CustomHud_GetOnScreenEditStyle(const CustomHudConfigState& hudConfig)
+{
+    return hudConfig.editStyle;
+}
+
+bool CustomHud_IsCrosshairElement(int elementIndex)
+{
+    return elementIndex == 13;
 }
 
 void CustomHud_SetEditSelectionCallback(CustomHudConfigState& hudConfig, std::function<void(int)> cb)
@@ -110,7 +126,7 @@ void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::M
             return;
         }
         // Absorb click inside open properties panel
-        if (kShowDsEditPropsPanel && s_editSelected >= 0) {
+        if (s_editStyle == OnScreenEditStyle::Retro && s_editSelected >= 0) {
             const HudEditElemDesc& d = kEditElems[s_editSelected];
             const int totalRows = CountBuiltinRows(d) + d.propCount;
             if (totalRows > 0) {
@@ -396,7 +412,7 @@ void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::M
     if (s_editSelected >= 0 && s_editSelected < kEditElemCount) {
         const HudEditElemDesc& d = kEditElems[s_editSelected];
 
-        if (kShowDsEditPropsPanel) {
+        if (s_editStyle == OnScreenEditStyle::Retro) {
         // Priority 2: DS-space properties panel
         {
             const int builtinRows = CountBuiltinRows(d);
@@ -755,7 +771,7 @@ void CustomHud_EditMouseWheel(CustomHudConfigState& hudConfig, QPointF pt, int d
         }
     }
 
-    if (!kShowDsEditPropsPanel) return;
+    if (s_editStyle != OnScreenEditStyle::Retro) return;
 
     // Element props panel scroll
     if (s_editSelected < 0) return;

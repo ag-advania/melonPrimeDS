@@ -8,6 +8,7 @@
 #include <memory>
 #include <QMouseEvent>
 #include <QRect>
+#include "MelonPrimeDef.h"
 
 class EmuInstance;
 class QPainter;
@@ -188,6 +189,14 @@ namespace MelonPrime {
 
     // Returns true while the HUD layout editor is active.
     bool CustomHud_IsEditMode(const CustomHudConfigState& hudConfig);
+
+    // Returns the style captured when the current HUD layout edit session opened.
+    // The value is resolved once per edit session, not from the renderer hot path.
+    OnScreenEditStyle CustomHud_GetOnScreenEditStyle(const CustomHudConfigState& hudConfig);
+
+    // Crosshair remains on its dedicated editor path regardless of the generic
+    // Classic/Retro preference.
+    bool CustomHud_IsCrosshairElement(int elementIndex);
 
     // Update the coordinate context used by mouse handlers (call each render).
     void CustomHud_UpdateEditContext(CustomHudConfigState& hudConfig,

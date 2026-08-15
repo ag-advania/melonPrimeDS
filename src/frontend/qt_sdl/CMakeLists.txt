@@ -578,6 +578,16 @@ if (MELONPRIME_VULKAN_ACTIVE)
         COMMENT "Running Vulkan present timing model tests..."
         VERBATIM)
 
+    add_executable(melonprime_vulkan_linux_surface_lifecycle_tests
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-linux-surface-lifecycle-tests.cpp)
+    set_target_properties(melonprime_vulkan_linux_surface_lifecycle_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_linux_surface_lifecycle_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_linux_surface_lifecycle_tests>
+        DEPENDS melonprime_vulkan_linux_surface_lifecycle_tests
+        COMMENT "Running Vulkan Linux surface lifecycle model tests..."
+        VERBATIM)
+
     # Execute the production pacer against an API-level fake dispatch.  The
     # test compiles VulkanPresentPacer.cpp directly so every fake call reaches
     # the same state machine as the emulator; core supplies VulkanDevice and
@@ -676,7 +686,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
             ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceMacOS.mm)
     elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_sources(melonDS PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceLinux.cpp)
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceLinux.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceHostLinux.cpp)
     elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD"
         OR CMAKE_SYSTEM_NAME STREQUAL "NetBSD"
         OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")

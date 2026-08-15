@@ -16,6 +16,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -44,13 +45,10 @@ namespace MelonPrime
 // hold ref-counted views of the same VulkanDevice, and their host queue access
 // is serialized by that device's queue mutex.
 //
-// Thread ownership. Every Vulkan object below is created and destroyed by
-// whichever thread calls Init() / RecreateSwapchain() / Shutdown(), and those
-// never run concurrently with a frame: Init() and Shutdown() happen on the GUI
-// thread while the panel is not published to MainWindow::panel, and swapchain
-// recreation happens inside BeginFrame() on the presenting thread. GUI-thread
-// events (resize, DPI change, fullscreen) only set the atomic flags below; they
-// never touch a Vulkan object.
+// Thread ownership. Every Vulkan object below is created and destroyed by the
+// presenter/emulation thread. GUI-thread events (resize, DPI, fullscreen and
+// Linux native-surface lifecycle) only publish snapshots or set atomic flags;
+// they never create, destroy or rebind a Vulkan object.
 // ---------------------------------------------------------------------------
 
 class VulkanPresenter
@@ -97,8 +95,15 @@ public:
     // Acquires the shared VkInstance, creates the platform surface for
     // `surfaceWidget`, selects a physical device that can present to it,
     // creates the logical device, the render pass, the two pipelines and the
-    // first swapchain. GUI thread.
+    // first swapchain. Presenter/emulation thread for all platforms.
     bool Init(QWidget* surfaceWidget);
+
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter snapshot API, not input dispatch
+    // Linux presenter-thread entry point. No QWidget or QPA accessor is read;
+    // all native handles and the requested physical size come from the GUI
+    // thread's post-lifecycle snapshot.
+    bool Init(const VulkanSurface::NativeWindowSnapshot& snapshot);
+#endif
 
     // Waits for the device to go idle and destroys everything, including the
     // surface and the instance reference. Safe to call more than once.
@@ -221,9 +226,17 @@ public:
     bool EndFrame();
 
     // True once a VkResult the presenter cannot recover from was observed
-    // (device lost, surface lost, out of memory). The panel turns this into a
-    // renderer runtime failure.
+    // (device lost, out of memory, etc.). Surface loss is intentionally not a
+    // permanent failure: it sets NeedsSurfaceRebind() instead.
     [[nodiscard]] bool HasFailed() const noexcept { return Failed; }
+    [[nodiscard]] bool NeedsSurfaceRebind() const noexcept
+    {
+        return SurfaceRebindRequested;
+    }
+    void ClearSurfaceRebindRequest() noexcept
+    {
+        SurfaceRebindRequested = false;
+    }
     [[nodiscard]] melonDS::u32 GetFrameIndex() const noexcept
     {
         return Frames.GetFrameIndex();
@@ -306,6 +319,9 @@ private:
 
     bool AcquireContext();
     bool CreateSurface(QWidget* widget);
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter surface binding, not input dispatch
+    bool CreateSurface(const VulkanSurface::NativeWindowSnapshot& snapshot);
+#endif
     bool CreateDeviceObjects();
     bool CreateRenderPass();
     bool CreatePipelines();
@@ -316,7 +332,10 @@ private:
     void DestroySwapchainObjects(bool immediate);
     bool ChoosePresentMode(const std::vector<VkPresentModeKHR>& available, VkPresentModeKHR& out,
                            std::string& reason) const;
-    bool ChooseSurfaceFormat(VkSurfaceFormatKHR& out, std::string& reason) const;
+    bool ChooseSurfaceFormat(
+        VkSurfaceFormatKHR& out,
+        std::string& reason,
+        VkResult* failureResult = nullptr) const;
 
     bool EnsureLayerImage(Layer layer, LayerTexture& texture, melonDS::u32 width, melonDS::u32 height,
                           const char* debugName);
@@ -339,12 +358,16 @@ private:
 
     bool Fail(const char* operation, VkResult result);
     bool Fail(std::string reason);
+    bool RequestSurfaceRebind(const char* operation, VkResult result);
 
     melonDS::VulkanContext* Context = nullptr;
     bool ContextAcquired = false;
 
     QWidget* SurfaceWidget = nullptr;
     VulkanSurface::Surface Surface;
+#if defined(__linux__)  // scatter-budget-exempt: Linux presenter generation state, not input dispatch
+    std::uint64_t SurfaceGeneration = 0;
+#endif
 
     melonDS::VulkanDevice Device;
     melonDS::Vk::FrameRing Frames;
@@ -451,6 +474,7 @@ private:
     bool CompositionOpen = false;
     bool Initialized = false;
     bool Failed = false;
+    bool SurfaceRebindRequested = false;
     bool FirstPresentLogged = false;
 
     std::string Error;

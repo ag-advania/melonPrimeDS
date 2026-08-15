@@ -1198,6 +1198,7 @@ void MelonPrimeInputConfig::setupPreviewConnections()
     connect(ui->cbMetroidEnableCustomHud, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->cbMetroidInGameAspectRatio, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->comboMetroidInGameAspectRatioMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
+    connect(ui->comboMetroidOnScreenEditStyle, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
 }
 
 
@@ -1516,6 +1517,16 @@ void MelonPrimeInputConfig::invalidateHudAndRefreshPreviews()
 
 void MelonPrimeInputConfig::setupCustomHudWidgets(Config::Table& instcfg)
 {
+    if (ui->comboMetroidOnScreenEditStyle) {
+        ui->comboMetroidOnScreenEditStyle->setItemData(
+            0, static_cast<int>(MelonPrime::OnScreenEditStyle::Classic));
+        ui->comboMetroidOnScreenEditStyle->setItemData(
+            1, static_cast<int>(MelonPrime::OnScreenEditStyle::Retro));
+        SetComboCurrentData(
+            ui->comboMetroidOnScreenEditStyle,
+            static_cast<int>(MelonPrime::NormalizeOnScreenEditStyle(
+                instcfg.GetInt(MelonPrime::CfgKey::OnScreenEditStyle))));
+    }
 #include "MelonPrimeInputConfigCustomHudBuild.inc"
 }
 
@@ -1531,6 +1542,13 @@ void MelonPrimeInputConfig::refreshAfterHudEditSave()
 
     auto& cfg = emuInstance->getLocalConfig();
     m_applyPreviewEnabled = false;
+    if (ui->comboMetroidOnScreenEditStyle) {
+        const QSignalBlocker blocker(ui->comboMetroidOnScreenEditStyle);
+        SetComboCurrentData(
+            ui->comboMetroidOnScreenEditStyle,
+            static_cast<int>(MelonPrime::NormalizeOnScreenEditStyle(
+                cfg.GetInt(MelonPrime::CfgKey::OnScreenEditStyle))));
+    }
     for (auto& [key, widget] : m_hudWidgets) {
         if (!widget)
             continue;

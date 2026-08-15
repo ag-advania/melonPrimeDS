@@ -5,6 +5,18 @@
 
 namespace MelonPrime {
 
+    enum class OnScreenEditStyle : int {
+        Classic = 0,
+        Retro = 1,
+    };
+
+    [[nodiscard]] constexpr OnScreenEditStyle NormalizeOnScreenEditStyle(int value) noexcept
+    {
+        return value == static_cast<int>(OnScreenEditStyle::Retro)
+            ? OnScreenEditStyle::Retro
+            : OnScreenEditStyle::Classic;
+    }
+
     // Global state (set by EmuInstance)
     extern uint32_t globalChecksum;    // header + ARM9 + ARM7 CRC32 (variant label / fallback)
     extern uint32_t globalGameCode;    // NDS header gameCode @0x0C, packed via GameCodeAsU32()
@@ -66,6 +78,7 @@ namespace MelonPrime {
         inline constexpr const char* DataUnlock      = "Metroid.Data.Unlock";
         inline constexpr const char* FixShadowFreeze = "Metroid.BugFix.FixShadowFreeze";
         inline constexpr const char* MenuLanguage                           = "Metroid.UI.MenuLanguage";
+        inline constexpr const char* OnScreenEditStyle                      = "Metroid.UI.OnScreenEditStyle";
         inline constexpr const char* SectionBugFix                          = "Metroid.UI.SectionBugFix";
         inline constexpr const char* SectionCursorClipSettings              = "Metroid.UI.SectionCursorClipSettings";
         inline constexpr const char* SectionDeveloperOnly                   = "Metroid.UI.SectionDeveloperOnly";

@@ -154,6 +154,7 @@ Surface CreateWayland(
     if (result != VK_SUCCESS)
     {
         surface.Handle = VK_NULL_HANDLE;
+        surface.FailureResult = result;
         surface.Failure = "vkCreateWaylandSurfaceKHR failed: " + melonDS::Vk::FormatResult(result);
     }
     return surface;
@@ -226,6 +227,7 @@ Surface CreateX11(
     if (result != VK_SUCCESS)
     {
         surface.Handle = VK_NULL_HANDLE;
+        surface.FailureResult = result;
         surface.Failure = "vkCreateXlibSurfaceKHR failed: " + melonDS::Vk::FormatResult(result);
     }
     return surface;
@@ -278,6 +280,121 @@ Surface Create(
             platform.toStdString().c_str(),
             windowId);
     }
+    return surface;
+}
+
+
+Surface Create(
+    VkInstance instance,
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr,
+    const NativeWindowSnapshot& snapshot)
+{
+    Surface surface;
+
+    if (instance == VK_NULL_HANDLE || !getInstanceProcAddr)
+    {
+        surface.Failure = "internal error: no Vulkan instance or instance procedure resolver";
+        return surface;
+    }
+    if (!snapshot.IsValid())
+    {
+        surface.Failure =
+            "the Linux Vulkan surface snapshot is invalid or has no native handles";
+        return surface;
+    }
+
+    const QString platform = QString::fromStdString(snapshot.Platform);
+    if (platform.startsWith(QStringLiteral("wayland")))
+    {
+        surface.Backend = "VK_KHR_wayland_surface";
+        const auto create = reinterpret_cast<PFN_CreateWaylandSurface>(
+            getInstanceProcAddr(instance, "vkCreateWaylandSurfaceKHR"));
+        if (!create)
+        {
+            surface.Failure =
+                "the Wayland Vulkan runtime does not provide vkCreateWaylandSurfaceKHR";
+            return surface;
+        }
+
+        WaylandSurfaceCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+        info.display = snapshot.WaylandDisplay;
+        info.surface = snapshot.WaylandSurface;
+        const VkResult result = create(instance, &info, nullptr, &surface.Handle);
+        if (result != VK_SUCCESS)
+        {
+            surface.Handle = VK_NULL_HANDLE;
+            surface.FailureResult = result;
+            surface.Failure =
+                "vkCreateWaylandSurfaceKHR failed: " + melonDS::Vk::FormatResult(result);
+            return surface;
+        }
+    }
+    else if (platform == QStringLiteral("xcb"))
+    {
+        if (const auto create = reinterpret_cast<PFN_CreateXcbSurface>(
+                getInstanceProcAddr(instance, "vkCreateXcbSurfaceKHR"));
+            create && snapshot.XcbConnection)
+        {
+            surface.Backend = "VK_KHR_xcb_surface";
+            XcbSurfaceCreateInfo info{};
+            info.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
+            info.connection = snapshot.XcbConnection;
+            info.window = static_cast<std::uint32_t>(snapshot.WindowId);
+            const VkResult result = create(instance, &info, nullptr, &surface.Handle);
+            if (result != VK_SUCCESS)
+            {
+                surface.Handle = VK_NULL_HANDLE;
+                Platform::Log(
+                    Platform::LogLevel::Warn,
+                    "[Vulkan][LinuxWSI] vkCreateXcbSurfaceKHR failed (%s); trying Xlib fallback\n",
+                    melonDS::Vk::FormatResult(result).c_str());
+            }
+        }
+
+        if (!surface.IsValid())
+        {
+            surface.Backend = "VK_KHR_xlib_surface";
+            const auto create = reinterpret_cast<PFN_CreateXlibSurface>(
+                getInstanceProcAddr(instance, "vkCreateXlibSurfaceKHR"));
+            if (!create || !snapshot.XlibDisplay)
+            {
+                surface.Failure =
+                    "the XCB/Xlib Vulkan surface entry point or display handle is unavailable";
+                return surface;
+            }
+
+            XlibSurfaceCreateInfo info{};
+            info.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+            info.dpy = snapshot.XlibDisplay;
+            info.window = static_cast<unsigned long>(snapshot.WindowId);
+            const VkResult result = create(instance, &info, nullptr, &surface.Handle);
+            if (result != VK_SUCCESS)
+            {
+                surface.Handle = VK_NULL_HANDLE;
+                surface.FailureResult = result;
+                surface.Failure =
+                    "vkCreateXlibSurfaceKHR failed: " + melonDS::Vk::FormatResult(result);
+                return surface;
+            }
+        }
+    }
+    else
+    {
+        surface.Failure =
+            "the Linux Qt platform plugin '" + snapshot.Platform
+            + "' exposes no supported Vulkan WSI path";
+        return surface;
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan][LinuxWSI] VkSurfaceKHR created backend=%s generation=%llu native=%p\n",
+        surface.Backend.c_str(),
+        static_cast<unsigned long long>(snapshot.Generation),
+        snapshot.WaylandSurface ? snapshot.WaylandSurface
+                                : (snapshot.XcbConnection ? snapshot.XcbConnection
+                                                           : snapshot.XlibDisplay));
     return surface;
 }
 
