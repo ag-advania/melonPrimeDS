@@ -1,0 +1,8 @@
+Video settings dialog was not observed: 映像設定 - melonDS | [60/60 min:13.38 avg:16.66 max:20.32ms jit:6.93] MelonPrimeDS
+(build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+At C:\Users\Admin\Documents\git\melonPrimeDS\tools\testing\vulkan-manual-ui-actions.ps1:156 char:42
++ ... i)video') { throw "Video settings dialog was not observed: $titles" } ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Video settings ...) (melonDS 1.1):String) [], RuntimeException
+    + FullyQualifiedErrorId : Video settings dialog was not observed: 映像設定 - melonDS | [60/60 min:13.38 avg:16.66 max:
+   20.32ms jit:6.93] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)

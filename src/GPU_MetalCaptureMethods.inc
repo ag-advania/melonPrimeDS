@@ -22,7 +22,8 @@ struct CaptureLineConfig
 struct CaptureDispatchConfig
 {
     uint scale;
-    uint3 pad0;
+    uint useDifferentialSourceA;
+    uint2 pad0;
 };
 
 struct CaptureReadbackConfig
@@ -97,6 +98,7 @@ kernel void mp_metal_display_capture(
     constant CaptureDispatchConfig& dispatchConfig [[buffer(1)]],
     device const uint* auxVram [[buffer(2)]],
     device const uint* auxFifo [[buffer(3)]],
+    device const uint* differentialSourceA [[buffer(4)]],
     texture2d<float, access::read> engineA2D [[texture(0)]],
     texture2d<float, access::read> engineA3D [[texture(1)]],
     texture2d_array<float, access::read> snapshot128 [[texture(2)]],
@@ -126,7 +128,12 @@ kernel void mp_metal_display_capture(
 
     uint srcA = (config.captureCnt >> 24u) & 1u;
     float4 colorA = float4(0.0);
-    if (srcA == 0u)
+    if (dispatchConfig.useDifferentialSourceA != 0u)
+    {
+        colorA = mp_unpack_rgba8(
+            differentialSourceA[nativeLine * 256u + nativeX]);
+    }
+    else if (srcA == 0u)
     {
         uint2 coord = min(gid, uint2(
             max(engineA2D.get_width(), 1u) - 1u,
@@ -255,7 +262,8 @@ static_assert(sizeof(MetalCaptureLineConfigCpu) == 32);
 struct MetalCaptureDispatchConfigCpu
 {
     uint32_t Scale = 1;
-    uint32_t Pad[3] = {};
+    uint32_t UseDifferentialSourceA = 0;
+    uint32_t Pad[2] = {};
 };
 static_assert(sizeof(MetalCaptureDispatchConfigCpu) == 16);
 
@@ -304,6 +312,7 @@ struct MetalRenderer::MetalCaptureState
     id<MTLBuffer> LineConfigBuffer = nil;
     id<MTLBuffer> AuxVramBuffer = nil;
     id<MTLBuffer> AuxFifoBuffer = nil;
+    id<MTLBuffer> DifferentialSourceABuffer = nil;
     id<MTLBuffer> ReadbackBuffer = nil;
     std::array<CaptureMeta, 16> Meta {};
     int Scale = 0;
@@ -313,6 +322,9 @@ struct MetalRenderer::MetalCaptureState
     bool LoggedReady = false;
     bool LoggedFirstCapture = false;
     bool LoggedOnDemandReadback = false;
+    uint64_t DifferentialCaptures = 0;
+    uint64_t DifferentialMismatchWords = 0;
+    uint32_t DifferentialCaptureCnt = 0;
 };
 
 bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
@@ -465,6 +477,10 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
         [device newBufferWithLength:
                     sizeof(uint32_t) * 256u * 192u
                          options:MTLResourceStorageModeShared];
+    next->DifferentialSourceABuffer =
+        [device newBufferWithLength:
+                    sizeof(uint32_t) * 256u * 192u
+                         options:MTLResourceStorageModeShared];
     next->ReadbackBuffer =
         [device newBufferWithLength:
                     sizeof(uint16_t) * 256u * 256u
@@ -473,7 +489,8 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
     if (!next->Capture128 || !next->Capture256 ||
         !next->Snapshot128 || !next->Snapshot256 ||
         !next->LineConfigBuffer || !next->AuxVramBuffer ||
-        !next->AuxFifoBuffer || !next->ReadbackBuffer)
+        !next->AuxFifoBuffer || !next->DifferentialSourceABuffer ||
+        !next->ReadbackBuffer)
     {
         std::fprintf(stderr,
             "[MelonPrime] metal display capture: allocation failed scale=%d\n",
@@ -486,6 +503,8 @@ bool MetalRenderer::ConfigureMetalCaptureState(void* preferredDevice)
     std::memset([next->AuxVramBuffer contents], 0,
         sizeof(uint32_t) * 256u * 192u);
     std::memset([next->AuxFifoBuffer contents], 0,
+        sizeof(uint32_t) * 256u * 192u);
+    std::memset([next->DifferentialSourceABuffer contents], 0,
         sizeof(uint32_t) * 256u * 192u);
 
     next->Ready = true;
@@ -619,6 +638,34 @@ void MetalRenderer::CaptureMetalDisplayCaptureLine(u32 line)
         target[x] = MetalPackRgb5551AsRgba8(source[x]);
 }
 
+void MetalRenderer::CaptureSoftwareDisplayCaptureLine(u32 line)
+{
+    if (!CaptureVRAMDiffEnabled() || !CaptureState ||
+        !CaptureState->DifferentialSourceABuffer || line >= 192u ||
+        !GPU.CaptureEnable)
+    {
+        return;
+    }
+
+    const bool source3D = (GPU.CaptureCnt & (1u << 24u)) != 0u;
+    const u32* source = GetSoftwareCaptureSourceLine(source3D);
+    uint32_t* destination =
+        static_cast<uint32_t*>(
+            [CaptureState->DifferentialSourceABuffer contents]) +
+        line * 256u;
+    for (u32 x = 0; x < 256u; x++)
+    {
+        const u32 color = source[x];
+        const uint16_t packed =
+            static_cast<uint16_t>(
+                ((color >> 1u) & 0x1Fu) |
+                (((color >> 9u) & 0x1Fu) << 5u) |
+                (((color >> 17u) & 0x1Fu) << 10u) |
+                ((color >> 24u) != 0u ? 0x8000u : 0u));
+        destination[x] = MetalPackRgb5551AsRgba8(packed);
+    }
+}
+
 bool MetalRenderer::EncodeMetalDisplayCapture(
     void* engineA2DTexture,
     void* high3DTexture)
@@ -712,6 +759,8 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
     MetalCaptureDispatchConfigCpu dispatchConfig = {};
     dispatchConfig.Scale =
         static_cast<uint32_t>(std::max(1, CaptureState->Scale));
+    dispatchConfig.UseDifferentialSourceA =
+        CaptureVRAMDiffEnabled() ? 1u : 0u;
 
     [encoder setComputePipelineState:CaptureState->CapturePipeline];
     [encoder setBuffer:CaptureState->LineConfigBuffer offset:0 atIndex:0];
@@ -720,6 +769,9 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
               atIndex:1];
     [encoder setBuffer:CaptureState->AuxVramBuffer offset:0 atIndex:2];
     [encoder setBuffer:CaptureState->AuxFifoBuffer offset:0 atIndex:3];
+    [encoder setBuffer:CaptureState->DifferentialSourceABuffer
+                 offset:0
+               atIndex:4];
     [encoder setTexture:engineA2D atIndex:0];
     [encoder setTexture:high3D atIndex:1];
     [encoder setTexture:CaptureState->Snapshot128 atIndex:2];
@@ -944,6 +996,9 @@ void MetalRenderer::SyncVRAMCapture(
         std::max(1, CaptureState->Scale));
     config.Use128 = len == 0 ? 1u : 0u;
     config.Width = len == 0 ? 128u : 256u;
+    // Capture256 stores the destination at its physical 64-line block. Read
+    // all four blocks so non-zero and wrapping destination offsets are
+    // available at their actual addresses below.
     config.Height = len == 0 ? 128u : 256u;
     config.Layer = len == 0 ? metadataLayer : bank;
 
@@ -976,6 +1031,72 @@ void MetalRenderer::SyncVRAMCapture(
     const uint16_t* pixels = static_cast<const uint16_t*>(
         [CaptureState->ReadbackBuffer contents]);
     uint16_t* vram = reinterpret_cast<uint16_t*>(GPU.VRAM[bank]);
+
+    if (CaptureVRAMDiffEnabled())
+    {
+        uint64_t mismatchWords = 0;
+        uint32_t firstAddress = 0;
+        uint16_t firstCandidate = 0;
+        uint16_t firstReference = 0;
+        bool foundFirst = false;
+        auto compareRange = [&](uint32_t destinationAddress,
+                                uint32_t candidateAddress,
+                                uint32_t wordCount) {
+            for (uint32_t word = 0; word < wordCount; word++)
+            {
+                const uint16_t candidate = pixels[candidateAddress + word];
+                const uint16_t reference = vram[destinationAddress + word];
+                if (candidate == reference)
+                    continue;
+                mismatchWords++;
+                if (!foundFirst)
+                {
+                    foundFirst = true;
+                    firstAddress = destinationAddress + word;
+                    firstCandidate = candidate;
+                    firstReference = reference;
+                }
+            }
+        };
+
+        if (len == 0)
+        {
+            compareRange(start * 64u * 256u, 0u, 128u * 128u);
+        }
+        else
+        {
+            u32 block = start;
+            for (u32 compared = 0; compared < len; compared++)
+            {
+                compareRange(
+                    block * 64u * 256u,
+                    block * 64u * 256u,
+                    64u * 256u);
+                block = (block + 1u) & 3u;
+            }
+        }
+
+        CaptureState->DifferentialCaptures++;
+        CaptureState->DifferentialMismatchWords += mismatchWords;
+        std::fprintf(
+            mismatchWords == 0 ? stdout : stderr,
+            "[CaptureVRAMDiff] capture=%llu captureCnt=%08X bank=%u start=%u size=%u "
+            "words=%u mismatchWords=%llu firstAddress=%u candidate=%04X "
+            "reference=%04X totals=(%llu,%llu)\n",
+            static_cast<unsigned long long>(CaptureState->DifferentialCaptures),
+            CaptureState->DifferentialCaptureCnt,
+            bank,
+            start,
+            len,
+            len == 0 ? 128u * 128u : len * 64u * 256u,
+            static_cast<unsigned long long>(mismatchWords),
+            firstAddress,
+            firstCandidate,
+            firstReference,
+            static_cast<unsigned long long>(CaptureState->DifferentialCaptures),
+            static_cast<unsigned long long>(
+                CaptureState->DifferentialMismatchWords));
+    }
     if (len == 0)
     {
         std::memcpy(

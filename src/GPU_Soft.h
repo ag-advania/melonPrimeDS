@@ -23,10 +23,10 @@
 #include "GPU2D_Soft.h"
 #include "GPU3D_Soft.h"
 
-#if defined(MELONPRIME_DS) \
-    && (defined(MELONPRIME_ENABLE_VULKAN) \
-        || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
-#define MELONPRIME_HAS_STRUCTURED_SOFT_2D 1
+#ifdef MELONPRIME_DS
+// Defines MELONPRIME_HAS_STRUCTURED_SOFT_2D, shared with the GPU2D_Soft
+// producer side.
+#include "MelonPrimeStructuredComposition.h"
 #endif
 
 namespace melonDS
@@ -54,17 +54,38 @@ public:
 
     void AllocCapture(u32 bank, u32 start, u32 len) override;
     void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
+    void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) override;
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
+protected:
+    [[nodiscard]] const u32* GetSoftwareCaptureSourceLine(bool source3D) const noexcept
+    {
+        return source3D ? Output3D : Output2D[0];
+    }
+
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+public:
+    [[nodiscard]] u32 GetCaptureTextureReference(
+        u32 bank, u32 address) const noexcept override;
+
     struct StructuredVulkanFrameView
     {
-        const u32* Plane[2][3]{};
+        const u32* Plane[2][StructuredComposition::kPlaneCount]{};
+        const u32* CaptureSourcePlane[StructuredComposition::kPlaneCount]{};
+        const u32* CaptureSourceBNative = nullptr;
+        const u32* CaptureSourceBReference = nullptr;
+        const u32* CaptureCommands = nullptr;
         const u32* LineMeta[2]{};
+        StructuredComposition::ScreenRoutingView ScreenRouting{};
         bool NativeMenuHeld = false;
         bool Valid = false;
+        u64 ScreenRouteCopyBytes = 0;
+        u64 ScreenRouteCopyNanoseconds = 0;
+        u32 StructuredRegularLines = 0;
+        u32 StructuredFallbackLines = 0;
         u64 Generation = 0;
+        StructuredComposition::GenerationState ContentGeneration{};
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
@@ -89,24 +110,104 @@ private:
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;
     static constexpr std::size_t StructuredCapturePixelCount = 256u * 256u;
     static constexpr std::size_t StructuredCaptureLineCount = 256u;
-    std::array<u32, 2u * 3u * StructuredPixelCount> StructuredEnginePlanes{};
-    std::array<u32, 2u * 3u * StructuredPixelCount> StructuredScreenPlanes{};
+    std::array<u32, 2u * StructuredComposition::kPlaneCount * StructuredPixelCount> StructuredEnginePlanes{};
+    std::array<u32, 2u * StructuredComposition::kPlaneCount * StructuredPixelCount> StructuredScreenPlanes{};
+    std::array<u8, 2u * StructuredComposition::kScreenHeight> StructuredScreenSource{};
     std::array<u32, 2u * 192u> StructuredScreenLineMeta{};
     std::array<u32, 4u * 3u * StructuredCapturePixelCount> StructuredCapturePlanes{};
     std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineValid{};
-    std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineUses3D{};
-    std::array<u8, 2u * 192u> StructuredEngineLineUsesCapture3D{};
+    std::array<u8, 4u * StructuredCapturePixelCount> StructuredCapturePixelValid{};
+    std::array<u8, 4u * StructuredCapturePixelCount> StructuredCapturePixelVersion{};
+    std::array<u8, 4u> StructuredCaptureBankVersion{};
+    std::array<u8, 4u> StructuredCaptureBankWrittenThisFrame{};
+    std::array<u8, 192u> StructuredCaptureCommandWrittenThisFrame{};
+    std::array<u16, 192u> StructuredCaptureSourceBWidthThisFrame{};
+    std::array<u32, StructuredPixelCount> StructuredCaptureSourceBNative{};
+    std::array<u32, StructuredPixelCount> StructuredCaptureSourceBReference{};
+    std::array<u32, 192u * StructuredComposition::kCaptureCommandWords> StructuredCaptureCommands{};
     alignas(8) u32 Structured3DPlaceholderLine[256]{};
     alignas(8) u32 StructuredCaptureCompositeLine[256]{};
     bool StructuredFrameValid = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
+    bool StructuredCapture3DValid = false;
     bool StructuredFrameNativeMenuHeld = false;
     bool NativeMenuHeldForFrame = false;
+    u64 StructuredScreenRouteCopyBytes = 0;
+    u64 StructuredScreenRouteCopyNanoseconds = 0;
+    u32 StructuredRegularLines = 0;
+    u32 StructuredFallbackLines = 0;
     u64 StructuredFrameGeneration = 0;
+    StructuredComposition::GenerationState StructuredContentGeneration{};
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
-    void StoreStructuredEnginePixel(
+    inline void MarkStructuredPlaneDirty(u32 plane) noexcept
+    {
+        if (plane < StructuredComposition::kStructuredInputPlaneCount)
+            StructuredContentGeneration.Plane[plane] = StructuredFrameGeneration;
+    }
+    inline void MarkStructuredScreenPlanesDirty() noexcept
+    {
+        for (u32 plane = 0; plane < 8u; ++plane)
+            MarkStructuredPlaneDirty(plane);
+    }
+    inline void MarkStructuredLineMetaDirty(u32 screen) noexcept
+    {
+        if (screen < StructuredComposition::kStructuredInputLineMetaCount)
+        {
+            StructuredContentGeneration.LineMeta[screen] =
+                StructuredFrameGeneration;
+        }
+    }
+    inline void MarkStructuredCaptureCommandsDirty() noexcept
+    {
+        StructuredContentGeneration.CaptureCommands = StructuredFrameGeneration;
+    }
+    inline void StoreStructuredScreenSource(u32 screen, u32 line, u8 value) noexcept
+    {
+        if (screen >= 2u || line >= StructuredComposition::kScreenHeight)
+            return;
+        u8& destination = StructuredScreenSource[
+            static_cast<std::size_t>(screen) * StructuredComposition::kScreenHeight + line];
+        if (destination == value)
+            return;
+        destination = value;
+        MarkStructuredScreenPlanesDirty();
+    }
+    inline void StoreStructuredScreenPlaneWord(
+        u32 screen, u32 plane, std::size_t pixelIndex, u32 value) noexcept
+    {
+        if (screen >= 2u || plane >= StructuredComposition::kPlaneCount
+            || pixelIndex >= StructuredPixelCount)
+        {
+            return;
+        }
+        u32& destination = StructuredScreenPlanes[
+            static_cast<std::size_t>(screen) * StructuredComposition::kPlaneCount
+                * StructuredPixelCount
+            + static_cast<std::size_t>(plane) * StructuredPixelCount
+            + pixelIndex];
+        if (destination == value)
+            return;
+        destination = value;
+        MarkStructuredPlaneDirty(screen * StructuredComposition::kPlaneCount + plane);
+    }
+    inline void StoreStructuredCaptureSourceWord(
+        u32 plane, u32& destination, u32 value) noexcept
+    {
+        if (destination == value)
+            return;
+        destination = value;
+        MarkStructuredPlaneDirty(plane);
+    }
+    inline void StoreStructuredCaptureCommandWord(u32& destination, u32 value) noexcept
+    {
+        if (destination == value)
+            return;
+        destination = value;
+        MarkStructuredCaptureCommandsDirty();
+    }
+    inline void StoreStructuredEnginePixel(
         u32 engine,
         u32 line,
         u32 x,
@@ -115,7 +216,90 @@ private:
         u32 composed,
         u32 compositionMode,
         u32 eva,
-        u32 evb);
+        u32 evb,
+        u32 reference1 = 0,
+        u32 reference2 = 0)
+    {
+        namespace Contract = StructuredComposition;
+        if (engine >= 2u || line >= 192u || x >= 256u)
+            return;
+
+        const std::size_t pixelIndex = static_cast<std::size_t>(line) * 256u + x;
+        const std::size_t engineBase = static_cast<std::size_t>(engine)
+            * Contract::kPlaneCount * StructuredPixelCount;
+        u32 plane0 = composed;
+        u32 plane1 = 0;
+        u32 captureReference = 0;
+        u32 controlAlpha = Contract::kControlPlain2D;
+        // These are the software 2D engine's BG/OBJ flags, not structured
+        // control bits. 0x40 identifies the 3D layer and 0x80 distinguishes a
+        // blend-flagged sprite that only resembles it.
+        const u32 alpha1 = val1 >> 24u;
+        const u32 alpha2 = val2 >> 24u;
+        const bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
+        const bool val2Is3D = (alpha2 & 0x40u) != 0u && (alpha2 & 0x80u) == 0u;
+
+        const bool val1IsCapture = reference1 != 0u;
+        const bool val2IsCapture = reference2 != 0u;
+
+        if (val1Is3D || val1IsCapture)
+        {
+            plane0 = val2;
+            captureReference = reference1;
+            controlAlpha = Contract::kControlHas3DSlot
+                | (compositionMode & Contract::kControlCompositionModeMask);
+            if ((plane0 & 0x00FFFFFFu) == 0 && (plane0 >> 24u) != 0)
+                controlAlpha |= Contract::kControlOpaqueBlackBelow;
+        }
+        else if ((val2Is3D || val2IsCapture) && compositionMode == Contract::kCompositionModeBlend4)
+        {
+            plane0 = 0;
+            plane1 = val1;
+            controlAlpha = Contract::kControlHas3DSlot
+                | Contract::kControlAbovePlane
+                | Contract::kCompositionModeBlend4;
+            if ((plane1 & 0x00FFFFFFu) == 0 && (plane1 >> 24u) != 0)
+                controlAlpha |= Contract::kControlOpaqueBlackBelow;
+            captureReference = reference2;
+        }
+
+        const u32 control =
+            ((controlAlpha & Contract::kControlFlagMask) << Contract::kControlFlagShift)
+            | ((evb & 0xFFu) << Contract::kControlEvbShift)
+            | ((eva & 0xFFu) << Contract::kControlEvaShift);
+        std::array<bool, Contract::kPlaneCount> changedPlane{};
+        const auto store = [&](u32 plane, u32 value) {
+            u32& destination = StructuredEnginePlanes[
+                engineBase + (static_cast<std::size_t>(plane) * StructuredPixelCount)
+                + pixelIndex];
+            if (destination == value)
+                return;
+            destination = value;
+            changedPlane[plane] = true;
+            if (engine == 0u)
+                MarkStructuredPlaneDirty(8u + plane);
+        };
+        store(0u, plane0);
+        store(1u, plane1);
+        store(2u, control);
+        store(3u, captureReference);
+        for (u32 screen = 0; screen < 2u; ++screen)
+        {
+            const u8 source = StructuredScreenSource[
+                static_cast<std::size_t>(screen) * StructuredComposition::kScreenHeight
+                + line];
+            if (source != engine)
+                continue;
+            for (u32 plane = 0; plane < Contract::kPlaneCount; ++plane)
+            {
+                if (changedPlane[plane])
+                {
+                    MarkStructuredPlaneDirty(
+                        screen * Contract::kPlaneCount + plane);
+                }
+            }
+        }
+    }
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
     void StoreStructuredCaptureLine(
         u32 line,
@@ -123,12 +307,30 @@ private:
         u32 destinationBank,
         u32 destinationAddress,
         const u16* captureOutput);
-    [[nodiscard]] bool DrawStructuredCapturePixel(
+    [[nodiscard]] u32 GetStructuredCaptureReference(
         u32 engine,
+        u32 flatByteAddress,
+        u16 nativeColor,
+        bool object = false) const;
+    void RecordStructuredCaptureLine(
         u32 line,
-        u32* destination,
-        u32 flatByteAddress);
-    void BuildStructuredScreenLine(u32 engine, u32 screen, u32 line, const u32* output, bool forcePlain = false);
+        u32 width,
+        u32 destinationBank,
+        u32 destinationAddress,
+        u32 captureCnt,
+        const u16* sourceB,
+        u32 sourceBBank,
+        u32 sourceBAddress);
+    void FinalizeStructuredCaptureFrame();
+    [[nodiscard]] bool SnapshotStructuredVramDisplayLine(
+        u32 screen, u32 outputLine, u32 sourceLine);
+    void BuildStructuredScreenLine(
+        u32 engine,
+        u32 screen,
+        u32 line,
+        const u32* output,
+        bool forcePlain = false,
+        bool preserveVramSnapshot = false);
     void InvalidateStructuredCaptureBlocks(u32 bank, u32 start, u32 len);
 #endif
 

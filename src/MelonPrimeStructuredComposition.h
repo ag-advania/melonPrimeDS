@@ -23,6 +23,21 @@
 
 #include "types.h"
 
+#include <array>
+#include <cstddef>
+#include <cstring>
+
+// Whether the software renderer builds the structured 2D planes at all.
+//
+// This lives here rather than in GPU_Soft.h because both the storage owner
+// (GPU_Soft.h) and the producer call sites (GPU2D_Soft.h / GPU2D_Soft.cpp) have
+// to agree on it, and GPU_Soft.h already includes GPU2D_Soft.h, so the
+// dependency cannot run the other way.
+#if defined(MELONPRIME_ENABLE_VULKAN) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12))
+#define MELONPRIME_HAS_STRUCTURED_SOFT_2D 1
+#endif
+
 // Canonical bit layout of the structured 2D composition contract.
 //
 // The software 2D renderer deliberately does not flatten the 3D layer into its
@@ -35,7 +50,7 @@
 //
 // Producer:  melonDS::SoftRenderer (src/GPU_Soft.cpp).
 // Consumers: DX12Shaders::Compositor  (src/GPU3D_DX12_shaders.h)
-//            MelonPrimeVulkanCompositorShader.comp
+//            src/GPU3D_Vulkan_shaders/Compositor.comp
 //
 // Both consumers must agree with the producer bit-for-bit, so the numeric
 // values live here and tools/ci/audits/audit-structured-composition-contract.py
@@ -54,11 +69,165 @@ namespace melonDS::StructuredComposition
 inline constexpr u32 kPlaneBelow = 0;
 inline constexpr u32 kPlaneAbove = 1;
 inline constexpr u32 kPlaneControl = 2;
-inline constexpr u32 kPlaneCount = 3;
+// Plane 3 identifies a backend-private high-resolution display-capture sample.
+// Zero means that the slot in planes 0/1 is the current frame's 3D image.
+// A non-zero value is packed with PackCaptureReference() below.
+inline constexpr u32 kPlaneCaptureReference = 3;
+inline constexpr u32 kPlaneCount = 4;
 
 inline constexpr u32 kScreenWidth = 256;
 inline constexpr u32 kScreenHeight = 192;
 inline constexpr u32 kScreenPixelCount = kScreenWidth * kScreenHeight;
+
+// A screen line either aliases one of the two engine-owned structured plane
+// sets or uses the screen-owned fallback produced for off/VRAM/FIFO/plain
+// output. The producer records this at scanline time; consumers must not infer
+// it later from POWCNT1 because games may change LCD routing within a frame.
+inline constexpr u8 kScreenSourceEngineA = 0u;
+inline constexpr u8 kScreenSourceEngineB = 1u;
+inline constexpr u8 kScreenSourceFallback = 2u;
+
+struct ScreenRoutingView
+{
+    const u32* EnginePlane[2][kPlaneCount]{};
+    const u32* FallbackPlane[2][kPlaneCount]{};
+    const u8* ScreenSource[2]{};
+};
+
+struct ScreenPackResult
+{
+    bool Valid = false;
+    u32 RouteRuns = 0;
+};
+
+// The device-local structured input keeps the same fourteen-plane,
+// line-metadata, and capture-command layout on every backend.  These
+// generations describe logical producer units within that layout; they are
+// deliberately separate from the frame generation used to identify a
+// composed output.
+inline constexpr u32 kStructuredInputPlaneCount = 14u;
+inline constexpr u32 kStructuredInputLineMetaCount = 2u;
+
+struct GenerationState
+{
+    std::array<u64, kStructuredInputPlaneCount> Plane{};
+    std::array<u64, kStructuredInputLineMetaCount> LineMeta{};
+    u64 CaptureCommands = 0;
+};
+
+// Pack the first eight compositor planes in screen-major/plane-major order.
+// Route runs are found once per screen, then copied across all four planes, so
+// the common two-constant-route frame uses eight large memcpy calls rather
+// than 1,536 scanline-sized calls.
+inline ScreenPackResult PackRoutedScreenPlanes(
+    u32* destination,
+    const ScreenRoutingView& routing) noexcept
+{
+    ScreenPackResult result{};
+    if (!destination)
+        return result;
+
+    for (u32 screen = 0; screen < 2u; ++screen)
+    {
+        if (!routing.ScreenSource[screen])
+            return result;
+
+        u32 firstLine = 0u;
+        while (firstLine < kScreenHeight)
+        {
+            const u8 source = routing.ScreenSource[screen][firstLine];
+            if (source > kScreenSourceFallback)
+                return result;
+
+            u32 endLine = firstLine + 1u;
+            while (endLine < kScreenHeight
+                && routing.ScreenSource[screen][endLine] == source)
+            {
+                ++endLine;
+            }
+
+            const std::size_t firstPixel =
+                static_cast<std::size_t>(firstLine) * kScreenWidth;
+            const std::size_t copyBytes =
+                static_cast<std::size_t>(endLine - firstLine)
+                * kScreenWidth * sizeof(u32);
+            for (u32 plane = 0; plane < kPlaneCount; ++plane)
+            {
+                const u32* sourcePlane = source == kScreenSourceFallback
+                    ? routing.FallbackPlane[screen][plane]
+                    : routing.EnginePlane[source][plane];
+                if (!sourcePlane)
+                    return result;
+
+                u32* destinationPlane = destination
+                    + (static_cast<std::size_t>(screen * kPlaneCount + plane)
+                        * kScreenPixelCount);
+                std::memcpy(
+                    destinationPlane + firstPixel,
+                    sourcePlane + firstPixel,
+                    copyBytes);
+            }
+
+            ++result.RouteRuns;
+            firstLine = endLine;
+        }
+    }
+
+    result.Valid = true;
+    return result;
+}
+
+// Pack one routed screen plane.  The full-frame helper above remains the
+// canonical path for callers that need the complete eight-plane prefix; this
+// variant lets the Vulkan/DX12 upload paths pack only the logical plane units
+// whose producer generations changed.
+inline ScreenPackResult PackRoutedScreenPlane(
+    u32* destination,
+    u32 screen,
+    u32 plane,
+    const ScreenRoutingView& routing) noexcept
+{
+    ScreenPackResult result{};
+    if (!destination || screen >= 2u || plane >= kPlaneCount
+        || !routing.ScreenSource[screen])
+    {
+        return result;
+    }
+
+    u32 firstLine = 0u;
+    while (firstLine < kScreenHeight)
+    {
+        const u8 source = routing.ScreenSource[screen][firstLine];
+        if (source > kScreenSourceFallback)
+            return result;
+
+        u32 endLine = firstLine + 1u;
+        while (endLine < kScreenHeight
+            && routing.ScreenSource[screen][endLine] == source)
+        {
+            ++endLine;
+        }
+
+        const u32* sourcePlane = source == kScreenSourceFallback
+            ? routing.FallbackPlane[screen][plane]
+            : routing.EnginePlane[source][plane];
+        if (!sourcePlane)
+            return result;
+
+        const std::size_t firstPixel =
+            static_cast<std::size_t>(firstLine) * kScreenWidth;
+        const std::size_t copyBytes =
+            static_cast<std::size_t>(endLine - firstLine)
+            * kScreenWidth * sizeof(u32);
+        std::memcpy(destination + firstPixel, sourcePlane + firstPixel, copyBytes);
+
+        ++result.RouteRuns;
+        firstLine = endLine;
+    }
+
+    result.Valid = true;
+    return result;
+}
 
 // ---------------------------------------------------------------------------
 // Control word (plane 2)
@@ -156,6 +325,202 @@ inline constexpr u32 kDisplayModeFifo = 3;
 // logic decides where the 3D layer lands without ever seeing 3D color.
 inline constexpr u32 k3DPlaceholderPixel = 0x20000000u;
 inline constexpr u32 k3DLayerSlotPixel = 0x40000000u;
+
+// ---------------------------------------------------------------------------
+// High-resolution display-capture sidecar references
+// ---------------------------------------------------------------------------
+// The emulated VRAM remains authoritative and stores the native RGBA5551
+// capture. These references only select the backend-private high-resolution
+// copy of the same capture result. Two versions per bank preserve the old
+// contents while a bank is captured again, matching OpenGL's CaptureVRAMTex
+// same-bank read-before-write rule.
+inline constexpr u32 kCaptureReferenceValid = 1u << 31;
+inline constexpr u32 kCaptureReferenceVersionShift = 30;
+inline constexpr u32 kCaptureReferenceBankShift = 28;
+inline constexpr u32 kCaptureReferenceAddressMask = 0xFFFFu;
+
+constexpr u32 PackCaptureReference(u32 bank, u32 version, u32 address) noexcept
+{
+    return kCaptureReferenceValid
+        | ((version & 1u) << kCaptureReferenceVersionShift)
+        | ((bank & 3u) << kCaptureReferenceBankShift)
+        | (address & kCaptureReferenceAddressMask);
+}
+
+inline constexpr u32 kCaptureCommandWords = 4;
+inline constexpr u32 kCaptureCommandValid = 1u << 31;
+inline constexpr u32 kCaptureCommandDestinationBankShift = 0;
+inline constexpr u32 kCaptureCommandDestinationVersionShift = 2;
+inline constexpr u32 kCaptureCommandSourceScreenShift = 3;
+inline constexpr u32 kCaptureCommandSource3DValid = 1u << 4;
+// Backend-only marker written into the per-slot structured staging copy after
+// the CPU dependency classifier proves that a line may join an independent
+// CaptureSidecar dispatch. The software producer leaves this reserved bit
+// clear; the legacy shader path ignores it.
+inline constexpr u32 kCaptureCommandIndependent = 1u << 5;
+
+enum class CaptureDependencyClass : u8
+{
+    Independent,
+    LegacyOrdered,
+};
+
+struct CaptureLineAnalysis
+{
+    std::array<u8, kScreenHeight> Valid{};
+    std::array<u8, kScreenHeight> Independent{};
+    std::array<u32, kScreenHeight> IndependentLines{};
+    u32 ValidLineCount = 0;
+    u32 IndependentLineCount = 0;
+    u32 LegacyOrderedLineCount = 0;
+};
+
+struct CaptureWriteSpan
+{
+    u32 Key = 0;
+    u32 Begin = 0;
+    u32 End = 0;
+};
+
+inline bool CaptureWriteSpansOverlap(
+    const CaptureWriteSpan& left,
+    const CaptureWriteSpan& right) noexcept
+{
+    return left.Key == right.Key
+        && left.Begin < right.End
+        && right.Begin < left.End;
+}
+
+// Prove only the narrowest useful independent case. A line is legacy ordered
+// when it reads any sidecar reference, when its output overlaps another valid
+// line's output in the same bank/version, or when the command is malformed.
+// This intentionally leaves many potentially batchable lines on the legacy
+// path: false negatives cost dispatch reduction, while a false positive would
+// change same-bank capture ordering.
+inline CaptureLineAnalysis AnalyzeCaptureDependencies(
+    const std::array<const u32*, kStructuredInputPlaneCount>& planes,
+    const u32* captureCommands) noexcept
+{
+    CaptureLineAnalysis result{};
+    if (!captureCommands)
+        return result;
+
+    std::array<std::array<CaptureWriteSpan, 2>, kScreenHeight> writes{};
+    std::array<u8, kScreenHeight> writeCounts{};
+    std::array<u8, kScreenHeight> legacy{};
+    bool malformedCommand = false;
+
+    for (u32 line = 0; line < kScreenHeight; ++line)
+    {
+        const u32 base = line * kCaptureCommandWords;
+        const u32 command = captureCommands[base + 1u];
+        if ((command & kCaptureCommandValid) == 0u)
+            continue;
+
+        result.Valid[line] = 1;
+        ++result.ValidLineCount;
+
+        const u32 width = captureCommands[base + 3u];
+        if (width > kScreenWidth)
+        {
+            legacy[line] = 1;
+            malformedCommand = true;
+            continue;
+        }
+
+        const u32 key = (command & 3u) | (((command >> 2u) & 1u) << 2u);
+        const u32 address = captureCommands[base + 2u] & kCaptureReferenceAddressMask;
+        if (width != 0u)
+        {
+            const u32 unwrappedEnd = address + width;
+            if (unwrappedEnd <= 0x10000u)
+            {
+                writes[line][writeCounts[line]++] = {key, address, unwrappedEnd};
+            }
+            else
+            {
+                writes[line][writeCounts[line]++] = {key, address, 0x10000u};
+                writes[line][writeCounts[line]++] = {key, 0u, unwrappedEnd - 0x10000u};
+            }
+        }
+
+        const u32 captureCount = captureCommands[base];
+        const u32 sourceScreen = (command >> kCaptureCommandSourceScreenShift) & 1u;
+        const u32 sourceReferencePlane = sourceScreen * 4u + 3u;
+        const u32* sourceAReferences = planes[sourceReferencePlane];
+        const u32* sourceBReferences = planes[13u];
+        if (width != 0u && (!sourceAReferences || !sourceBReferences))
+        {
+            legacy[line] = 1;
+            continue;
+        }
+
+        const bool sourceAIs3D = (captureCount & (1u << 24u)) != 0u;
+        for (u32 x = 0; x < width; ++x)
+        {
+            const u32 nativeIndex = line * kScreenWidth + x;
+            if ((!sourceAIs3D && (sourceAReferences[nativeIndex] & kCaptureReferenceValid) != 0u)
+                || (sourceBReferences[nativeIndex] & kCaptureReferenceValid) != 0u)
+            {
+                legacy[line] = 1;
+                break;
+            }
+        }
+    }
+
+    // Any malformed writer could overlap an otherwise valid range, so do not
+    // batch another line in the same frame around an invalid command shape.
+    if (malformedCommand)
+    {
+        for (u32 line = 0; line < kScreenHeight; ++line)
+        {
+            if (result.Valid[line])
+                legacy[line] = 1;
+        }
+    }
+
+    for (u32 left = 0; left < kScreenHeight; ++left)
+    {
+        if (!result.Valid[left])
+            continue;
+        for (u32 right = left + 1u; right < kScreenHeight; ++right)
+        {
+            if (!result.Valid[right])
+                continue;
+            for (u32 leftSpan = 0; leftSpan < writeCounts[left]; ++leftSpan)
+            {
+                for (u32 rightSpan = 0; rightSpan < writeCounts[right]; ++rightSpan)
+                {
+                    if (CaptureWriteSpansOverlap(
+                            writes[left][leftSpan], writes[right][rightSpan]))
+                    {
+                        legacy[left] = 1;
+                        legacy[right] = 1;
+                    }
+                }
+            }
+        }
+    }
+
+    for (u32 line = 0; line < kScreenHeight; ++line)
+    {
+        if (!result.Valid[line])
+            continue;
+        const CaptureDependencyClass dependency = legacy[line]
+            ? CaptureDependencyClass::LegacyOrdered
+            : CaptureDependencyClass::Independent;
+        if (dependency == CaptureDependencyClass::Independent)
+        {
+            result.Independent[line] = 1;
+            result.IndependentLines[result.IndependentLineCount++] = line;
+        }
+        else
+        {
+            ++result.LegacyOrderedLineCount;
+        }
+    }
+    return result;
+}
 
 } // namespace melonDS::StructuredComposition
 

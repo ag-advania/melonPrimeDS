@@ -1,0 +1,84 @@
+action=video
+iterations=20
+window=1051182
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.85 avg:16.73 max:20.28ms jit:6.43] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=1
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.67 avg:16.76 max:19.49ms jit:4.82] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=2
+video-dialog titles: 映像設定 - melonDS | [60/60 min:15.42 avg:16.72 max:18.30ms jit:2.88] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=3
+video-dialog titles: 映像設定 - melonDS | [60/60 min:8.17 avg:16.68 max:21.92ms jit:13.75] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=4
+video-dialog titles: 映像設定 - melonDS | [60/60 min:12.13 avg:16.69 max:20.40ms jit:8.28] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=5
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.68 avg:16.72 max:19.02ms jit:4.34] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=6
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.53 avg:16.73 max:20.42ms jit:6.89] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=7
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.93 avg:16.73 max:21.20ms jit:7.27] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=8
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.97 avg:16.64 max:20.66ms jit:6.69] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=9
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.50 avg:16.76 max:20.53ms jit:6.03] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=10
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.44 avg:16.65 max:19.42ms jit:5.98] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=11
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.03 avg:16.67 max:20.37ms jit:7.33] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=12
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.30 avg:16.76 max:21.64ms jit:7.35] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=13
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.23 avg:16.69 max:18.87ms jit:4.64] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=14
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.38 avg:16.67 max:20.43ms jit:6.05] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=15
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.76 avg:16.72 max:20.44ms jit:6.68] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=16
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.39 avg:16.72 max:20.75ms jit:7.36] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=17
+video-dialog titles: 映像設定 - melonDS | [60/60 min:12.70 avg:16.67 max:19.48ms jit:6.78] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=18
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.16 avg:16.68 max:20.41ms jit:7.25] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=19
+video-dialog titles: 映像設定 - melonDS | [60/60 min:11.98 avg:16.64 max:20.42ms jit:8.44] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+cancel=20
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.05 avg:16.70 max:20.14ms jit:7.09] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=1
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.32 avg:16.72 max:20.25ms jit:5.93] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=2
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.72 avg:16.72 max:19.48ms jit:5.76] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=3
+video-dialog titles: 映像設定 - melonDS | [60/60 min:12.00 avg:16.63 max:20.05ms jit:8.05] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=4
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.36 avg:16.76 max:20.47ms jit:6.11] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=5
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.05 avg:16.69 max:20.02ms jit:6.97] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=6
+video-dialog titles: 映像設定 - melonDS | [60/60 min:12.90 avg:16.72 max:19.28ms jit:6.39] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=7
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.15 avg:16.77 max:21.01ms jit:7.86] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=8
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.60 avg:16.68 max:19.37ms jit:5.77] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=9
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.80 avg:16.71 max:19.51ms jit:5.71] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=10
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.56 avg:16.69 max:20.46ms jit:5.90] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=11
+video-dialog titles: 映像設定 - melonDS | [60/60 min:11.47 avg:16.71 max:21.02ms jit:9.55] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=12
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.73 avg:16.71 max:21.28ms jit:7.55] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=13
+video-dialog titles: 映像設定 - melonDS | [59/60 min:12.94 avg:16.81 max:20.20ms jit:7.27] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=14
+video-dialog titles: 映像設定 - melonDS | [60/60 min:12.96 avg:16.69 max:19.84ms jit:6.88] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=15
+video-dialog titles: 映像設定 - melonDS | [60/60 min:11.88 avg:16.66 max:21.23ms jit:9.35] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=16
+video-dialog titles: 映像設定 - melonDS | [60/60 min:14.71 avg:16.71 max:19.15ms jit:4.44] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=17
+video-dialog titles: 映像設定 - melonDS | [60/60 min:10.96 avg:16.73 max:21.24ms jit:10.28] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=18
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.51 avg:16.68 max:19.45ms jit:5.94] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=19
+video-dialog titles: 映像設定 - melonDS | [60/60 min:13.50 avg:16.66 max:20.29ms jit:6.79] MelonPrimeDS (build 2026-08-13 18:04:33 GMT+9) (melonDS 1.1)
+apply-same-value=20
+validation findings: 0

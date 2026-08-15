@@ -1,0 +1,20 @@
+Validation-layer diagnostic — sanitized
+
+Debug build:
+  MELONDS_VULKAN_ENABLE_VALIDATION was present in the Debug build.
+  Homebrew vulkan-validationlayers 1.4.357.0 was installed.
+  VK_LAYER_PATH was set to the installed explicit-layer directory.
+
+Runtime result:
+  [Vulkan] VK_LAYER_KHRONOS_validation is not installed; validation disabled
+  [Vulkan] instance created (..., 0 layers)
+
+The app's macOS Vulkan loader directly opens the bundled
+@executable_path/../Frameworks/libMoltenVK.dylib before the Khronos loader
+candidate. The layer package therefore was not observable through this
+shipping-style bundle, even after the diagnostic loader-path attempt. The
+validation gate is BLOCKED, not PASS.
+
+No VUID-, SYNC-HAZARD, DEVICE_LOST, SIGABRT, SIGSEGV, or Vulkan runtime-failure
+finding was observed in the no-ROM or AMHP smoke logs. This absence does not
+substitute for an enabled Validation Layer result.

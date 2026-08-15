@@ -10,6 +10,18 @@
 namespace MelonPrime {
 
 struct MelonPrimePatchState {
+    struct FixWifiPatchState {
+        enum class Status : uint8_t {
+            Unchecked,
+            Applied,
+            Rejected,
+            Unsupported,
+        };
+
+        Status status = Status::Unchecked;
+        uint8_t romGroupIndex = 0xFFu;
+    } fixWifi;
+
     bool aspectRatioApplied = false;
 
     struct OsdColorState {

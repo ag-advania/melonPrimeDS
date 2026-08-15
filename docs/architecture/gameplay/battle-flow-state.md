@@ -56,8 +56,31 @@ read per frame; the mode/flow context is read only on frames that already tested
 and is not re-read once armed. The bootstrap (`COLD_FUNCTION`) handles attaching mid-match —
 savestate load, where the pre-match black is already in the past.
 
+### Feature gate (`3D.ForceSoftwareOutsideMatch`)
+
+The renderer switch is the window's only consumer, so the state machine runs **only while the
+option is on**. `RunFrameHook` steps it under `m_forceSoftwareOutsideMatch`, and `EmuThread`
+skips the per-frame hardware-period edge check under
+`IsForceSoftwareOutsideMatchEnabled()`. With the option off the window costs zero MainRAM
+reads per frame and `BIT_MATCH_BETWEEN_BLACKOUTS` stays clear.
+
+The cached bool is owned by the emulation thread and pushed from exactly one place: the
+`videoSettingsDirty` block in `EmuThread::run()`, which is where the config value is already
+read and where every path that can change the key ends up (`VideoSettingsDialog` emits
+`updateVideoSettings` on toggle **and** on reject). `SetForceSoftwareOutsideMatchEnabled()`
+(`MelonPrimeLifecycle.cpp`, `COLD_FUNCTION`) owns the whole transition:
+
+- either direction re-arms `needsBootstrap` (the frozen phase describes a moment that has passed);
+- off → clear `BIT_MATCH_BETWEEN_BLACKOUTS` so a later re-enable cannot inherit a stale answer;
+- on → classify the current frame immediately (when a ROM is detected) so the same
+  `videoSettingsDirty` pass already resolves the correct renderer instead of forcing Software
+  for one frame and bouncing the renderer back on the next edge.
+
+The same block then resyncs `rendererWasHardwarePeriod` to the freshly applied state, so the
+per-frame edge check only ever reports a real change.
+
 `m_matchBlackWindow` resets in `OnEmuStart`, `ResetRuntimeStateForBoot`,
-`DetectRomAndSetAddresses` and `OnSavestateLoaded`.
+`DetectRomAndSetAddresses`, `OnSavestateLoaded` and on either edge of the feature gate.
 
 ## Patch restore on match end
 
@@ -114,8 +137,9 @@ and patch registry apply/restore (see `melonprime-patch-system.md`).
 
 ## `RunFrameHook()` sequencing (ROM detected)
 
-1. Read `inGame`; set `BIT_IN_GAME` (keep `wasInGame` for rising-edge join), then step the match
-   black window and set `BIT_MATCH_BETWEEN_BLACKOUTS`.
+1. Read `inGame`; set `BIT_IN_GAME` (keep `wasInGame` for rising-edge join), then — only while
+   `3D.ForceSoftwareOutsideMatch` is on — step the match black window and set
+   `BIT_MATCH_BETWEEN_BLACKOUTS`.
 2. **Join:** `isInGame && !BIT_IN_GAME_INIT` and (`!wasInGame` **or** `!BIT_END_OF_GAME_PATCH_RESTORED`)
    → `HandleGameJoinInit()`. Rising edge always re-inits even if `RESTORED` was stale.
 3. **Match-end poll** (only while `BIT_IN_GAME_INIT && !BIT_END_OF_GAME_PATCH_RESTORED`):

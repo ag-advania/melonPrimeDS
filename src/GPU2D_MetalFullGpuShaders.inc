@@ -69,6 +69,8 @@ struct ScanlineState
     uint blendCnt;
     uint blendEffect;
     uint4 blendCoef;
+    uint fixedOutputMode;
+    uint3 pad1;
 };
 
 struct ScanlineConfig
@@ -525,6 +527,10 @@ fragment float4 mp2d_composite_fs(
     const uint line = uint(nativeCoord.y);
     constant ScanlineState& scan =
         scanlineConfig.scanline[line];
+    if (scan.fixedOutputMode == 1u)
+        return float4(0.0, 0.0, 0.0, 1.0);
+    if (scan.fixedOutputMode == 2u)
+        return float4(1.0, 1.0, 1.0, 1.0);
     const float2 bgSampleCoord = float2(
         nativeTexcoord.x,
         fract(nativeTexcoord.y));

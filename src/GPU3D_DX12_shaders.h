@@ -24,8 +24,9 @@
 #include <string>
 
 // HLSL port of the OpenGL compute renderer's shader set
-// (GPU3D_Compute_shaders.h). Sources are compiled at runtime with
-// d3dcompiler_47.dll, so the MinGW build needs no shader toolchain.
+// (GPU3D_Compute_shaders.h). The compute variants are compiled offline into
+// GPU3D_DX12_ShaderBlobs.inc; only the native presenter's small VS/PS pair
+// still uses d3dcompiler_47.dll at runtime.
 //
 // The tile-binned pipeline, the fixed-point math and the intermediate buffer
 // layouts are a 1:1 port; the differences are all forced by HLSL:
@@ -45,22 +46,19 @@
 namespace melonDS::DX12Shaders
 {
 
-// Prepended to every shader. The renderer appends its own `#define`s for
-// ScreenWidth/ScreenHeight/TileSize/... before this block.
+// Prepended to every shader. The renderer only specializes values required by
+// HLSL numthreads. Screen dimensions and scale-dependent buffer offsets are
+// frame constants, so changing resolution never requires recompiling HLSL.
 inline const std::string Common = R"(
 
 static const int CoarseTileCountX = 8;
 static const int CoarseTileW = (CoarseTileCountX * TileSize);
 static const int CoarseTileH = (CoarseTileCountY * TileSize);
 
-static const uint FramebufferStride = ScreenWidth * ScreenHeight;
-static const int TilesPerLine = ScreenWidth / TileSize;
-static const int TileLines = ScreenHeight / TileSize;
-
 static const int BinStride = 2048 / 32;
 static const int CoarseBinStride = BinStride / 32;
 
-static const int MaxVariants = 256;
+static const int MaxVariants = 2048;
 
 // Must stay <= 65535: matches the OpenGL renderer's split dispatch for the
 // driver group-count limit (melonDS issue #2047). Kept identical so the
@@ -68,24 +66,17 @@ static const int MaxVariants = 256;
 static const uint RasteriseChunkSize = 32768u;
 
 static const uint ResultColorStart = 0u;
-static const uint ResultDepthStart = ResultColorStart + FramebufferStride * 2u;
-static const uint ResultAttrStart  = ResultDepthStart + FramebufferStride * 2u;
-
 // Byte offsets into the bin-result buffer. It mixes a fixed header with a
 // trailing flexible array, so it is bound as a RWByteAddressBuffer rather than
 // a structured buffer. Layout matches BinResultHeader in GPU3D_DX12.h.
-static const uint BinVariantWorkCountBase     = 0u;                  // uint4[256]
-static const uint BinSortedWorkOffsetBase     = 4096u;               // uint[256]
-static const uint BinVariantWorkRealCountBase = 5120u;               // uint[256]
-static const uint BinSortWorkWorkCountBase    = 6144u;               // uint4
-static const uint BinMaskAndOffsetBase        = 6160u;               // uint[]
+static const uint BinVariantWorkCountBase     = 0u;                         // uint4[MaxVariants]
+static const uint BinSortedWorkOffsetBase     = uint(MaxVariants) * 16u;    // uint[MaxVariants]
+static const uint BinVariantWorkRealCountBase = uint(MaxVariants) * 20u;    // uint[MaxVariants]
+static const uint BinSortWorkWorkCountBase    = uint(MaxVariants) * 24u;    // uint4
+static const uint BinMaskAndOffsetBase        = uint(MaxVariants) * 24u + 16u;
 
 static const int BinningCoarseMaskStart = 0;
-static const int BinningMaskStart = BinningCoarseMaskStart + TilesPerLine * TileLines * CoarseBinStride;
-static const int BinningWorkOffsetsStart = BinningMaskStart + TilesPerLine * TileLines * BinStride;
-
 static const uint WorkDescsUnsortedStart = 0u;
-static const uint WorkDescsSortedStart = WorkDescsUnsortedStart + MaxWorkTiles;
 
 static const uint XSpanSetup_Linear = 1u << 0;
 static const uint XSpanSetup_FillInside = 1u << 1;
@@ -110,6 +101,7 @@ cbuffer MetaUniform : register(b1)
     uint FogShift;
     uint FogColor;
     float2 ClearBitmapOffset;
+
 };
 
 // Per-dispatch root constants.
@@ -120,9 +112,24 @@ cbuffer DispatchUniform : register(b0)
     uint TexHeight;
     uint TexWrapS;   // 0 = clamp, 1 = repeat, 2 = mirrored repeat
     uint TexWrapT;
-    uint DispatchPad0;
-    uint DispatchPad1;
-    uint DispatchPad2;
+    uint InterpSpanBase;
+    uint InterpSpanCount;
+    uint DispatchPad;
+
+    uint ScreenWidth;
+    uint ScreenHeight;
+    uint ScaleFactor;
+    uint TilesPerLine;
+
+    uint TileLines;
+    uint FramebufferStride;
+    uint ResultDepthStart;
+    uint ResultAttrStart;
+
+    uint BinningMaskStart;
+    uint BinningWorkOffsetsStart;
+    uint WorkDescsSortedStart;
+    uint MaxWorkTiles;
 };
 
 struct Polygon
@@ -137,6 +144,7 @@ struct Polygon
     uint Attr;
 
     float TextureLayer;
+    uint FacingView;
 };
 
 struct XSpanSetup
@@ -201,6 +209,11 @@ RWByteAddressBuffer BinResult : register(u5);
 RWStructuredBuffer<uint2> WorkDescs : register(u6);
 RWStructuredBuffer<XSpanSetup> XSpanSetups : register(u7);
 RWStructuredBuffer<uint> ResolveOut : register(u8);
+RWStructuredBuffer<uint> CaptureSidecarBuffer : register(u9);
+RWStructuredBuffer<uint> BlendContinuationState : register(u10);
+RWStructuredBuffer<uint> ResultWinner : register(u11);
+RWByteAddressBuffer IndirectArgs : register(u12);
+RWTexture2DArray<float4> DirectOutput : register(u13);
 
 // `firstbithigh`/`firstbitlow` disagree between shader targets about whether
 // the index is counted from the LSB or the MSB, and the fixed-point division
@@ -362,11 +375,8 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
     int result = y0;
     if (y0 != y1)
     {
-#ifndef Rasterise
-        irecip = abs(irecip);
-#endif
-
-        uint mulLo, mulHi;
+        uint numeratorLo, numeratorHi;
+        uint denominator = uint(abs(idiff));
         if (y0 < y1)
         {
 #ifndef Rasterise
@@ -374,11 +384,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
             uint offset = uint(i);
 #endif
-            UMul64(uint(y1 - y0) * offset, uint(irecip), mulHi, mulLo);
-            uint sum = mulLo + (3u << 24);
-            if (sum < mulLo) mulHi += 1u;
-            mulLo = sum;
-            result = y0 + int((mulLo >> 30) | (mulHi << (32 - 30)));
+            UMul64(uint(y1 - y0), offset, numeratorHi, numeratorLo);
+            uint quotient;
+            if (numeratorHi == 0u)
+            {
+                uint remainder;
+                quotient = Div(numeratorLo, denominator, remainder);
+            }
+            else
+            {
+                quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+            }
+            result = y0 + int(quotient);
         }
         else
         {
@@ -387,11 +404,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
             uint offset = uint(idiff - i);
 #endif
-            UMul64(uint(y0 - y1) * offset, uint(irecip), mulHi, mulLo);
-            uint sum = mulLo + (3u << 24);
-            if (sum < mulLo) mulHi += 1u;
-            mulLo = sum;
-            result = y1 + int((mulLo >> 30) | (mulHi << (32 - 30)));
+            UMul64(uint(y0 - y1), offset, numeratorHi, numeratorLo);
+            uint quotient;
+            if (numeratorHi == 0u)
+            {
+                uint remainder;
+                quotient = Div(numeratorLo, denominator, remainder);
+            }
+            else
+            {
+                quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+            }
+            result = y1 + int(quotient);
         }
     }
     return result;
@@ -504,14 +528,29 @@ int CalculateX(int dx, YSpanSetup span)
     return clamp(x, span.XMin, span.XMax);
 }
 
-void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+bool ShouldDecrementRightVertical(YSpanSetup spanL, YSpanSetup spanR, int xl, int xr)
+{
+    return spanR.Increment == 0
+        && (spanL.Increment != 0 || xl != xr)
+        && xr != 0;
+}
+
+bool IsBottomNonFlatEdge(int y, Polygon polygon, YSpanSetup spanL, YSpanSetup spanR)
+{
+    return y == polygon.YBot - 1 && spanL.X1 != spanR.X1;
+}
+
+void EdgeParams_XMajor(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
-    int len;
-    if (side != negative)
-        len = (dx >> 18) - ((dx - span.Increment) >> 18);
-    else
-        len = ((dx + span.Increment) >> 18) - (dx >> 18);
+    int len = 1;
+    if (!swapped || side)
+    {
+        if (side != negative)
+            len = (dx >> 18) - ((dx - span.Increment) >> 18);
+        else
+            len = ((dx + span.Increment) >> 18) - (dx >> 18);
+    }
     edgelen = len;
 
     int xlen = span.XMax + 1 - span.XMin;
@@ -522,32 +561,47 @@ void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out 
     uint r;
     int startcov = int(Div(uint(((startx << 10) + 0x1FF) * (span.Y1 - span.Y0)), uint(xlen), r));
     edgecov = int(1u << 31) | ((startcov & 0x3FF) << 12) | (span.XCovIncr & 0x3FF);
+    if (swapped)
+        edgelen = 1;
 }
 
-void EdgeParams_YMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+void EdgeParams_YMajor(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
     edgelen = 1;
 
     if (span.Increment == 0)
     {
-        edgecov = 31;
+        edgecov = swapped ? 0 : 31;
     }
     else
     {
         int cov = ((dx >> 9) + (span.Increment >> 10)) >> 4;
         if ((cov >> 5) != (dx >> 18)) cov = 31;
         cov &= 0x1F;
-        if (side == negative) cov = 0x1F - cov;
+        if (swapped ? (side != negative) : (side == negative))
+            cov = 0x1F - cov;
 
         edgecov = cov;
     }
 }
 
+void EdgeParams(bool side, bool swapped, int dx, YSpanSetup span, out int edgelen, out int edgecov)
+{
+    if (span.Increment > int(0x40000u))
+        EdgeParams_XMajor(side, swapped, dx, span, edgelen, edgecov);
+    else
+        EdgeParams_YMajor(side, swapped, dx, span, edgelen, edgecov);
+}
+
 [numthreads(32, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
-    uint4 setup = SetupIndices.Load(int(id.x));
+    if (id.x >= InterpSpanCount)
+        return;
+
+    uint setupIndex = InterpSpanBase + id.x;
+    uint4 setup = SetupIndices.Load(int(setupIndex));
 
     YSpanSetup spanL = YSpanSetups[setup.y];
     YSpanSetup spanR = YSpanSetups[setup.z];
@@ -563,11 +617,15 @@ void main(uint3 id : SV_DispatchThreadID)
     int xl = CalculateX(dxl, spanL);
     int xr = CalculateX(dxr, spanR);
 
+    if (ShouldDecrementRightVertical(spanL, spanR, xl, xr))
+        xr--;
+
     Polygon polygon = Polygons[setup.x];
 
     int edgeLenL, edgeLenR;
 
-    if (xl > xr)
+    bool swappedEdges = xl > xr;
+    if (swappedEdges)
     {
         YSpanSetup tmpSpan = spanL;
         spanL = spanR;
@@ -577,19 +635,13 @@ void main(uint3 id : SV_DispatchThreadID)
         xl = xr;
         xr = tmp;
 
-        EdgeParams_YMajor(false, dxr, spanL, edgeLenL, xspan.EdgeCovL);
-        EdgeParams_YMajor(true, dxl, spanR, edgeLenR, xspan.EdgeCovR);
+        EdgeParams(true, true, dxr, spanL, edgeLenL, xspan.EdgeCovL);
+        EdgeParams(false, true, dxl, spanR, edgeLenR, xspan.EdgeCovR);
     }
     else
     {
-        if (spanL.Increment > int(0x40000u))
-            EdgeParams_XMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
-        else
-            EdgeParams_YMajor(false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
-        if (spanR.Increment > int(0x40000u))
-            EdgeParams_XMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
-        else
-            EdgeParams_YMajor(true, dxr, spanR, edgeLenR, xspan.EdgeCovR);
+        EdgeParams(false, false, dxl, spanL, edgeLenL, xspan.EdgeCovL);
+        EdgeParams(true, false, dxr, spanR, edgeLenR, xspan.EdgeCovR);
     }
 
     xspan.CovLInitial = (xspan.EdgeCovL >> 12) & 0x3FF;
@@ -615,13 +667,35 @@ void main(uint3 id : SV_DispatchThreadID)
     if (xspan.InsideEnd > xspan.X1)
         xspan.InsideEnd = xspan.X1;
 
-    bool fillAllEdges = polyalpha < 31u || (DispCnt & (3u << 4)) != 0u;
+    bool fillAllEdges = isWireframe
+        || (polyalpha < 31u && (DispCnt & (1u << 3)) != 0u)
+        || (DispCnt & (3u << 4)) != 0u;
+    bool bottomXMajor = IsBottomNonFlatEdge(y, polygon, spanL, spanR);
+    bool leftNegative = spanL.X1 < spanL.X0;
+    bool rightNegative = spanR.X1 < spanR.X0;
+    bool leftXMajor = spanL.Increment > int(0x40000u);
+    bool rightXMajor = spanR.Increment > int(0x40000u);
 
-    if (fillAllEdges || spanL.X1 < spanL.X0 || spanL.Increment <= int(0x40000u))
+    bool fillLeft;
+    bool fillRight;
+    if (swappedEdges)
+    {
+        fillLeft = leftNegative || !leftXMajor || (bottomXMajor && leftXMajor);
+        fillRight = (!rightNegative && rightXMajor)
+            || (!(rightNegative && rightXMajor) && spanL.Increment == 0)
+            || (bottomXMajor && rightXMajor);
+    }
+    else
+    {
+        fillLeft = leftNegative || !leftXMajor || (bottomXMajor && leftXMajor)
+            || (spanL.Increment == spanR.Increment && xspan.X0 + edgeLenL == xspan.X1);
+        fillRight = (!rightNegative && rightXMajor) || spanR.Increment == 0
+            || (bottomXMajor && rightXMajor);
+    }
+
+    if (fillAllEdges || fillLeft)
         xspan.Flags |= XSpanSetup_FillLeft;
-    if (fillAllEdges
-        || (spanR.X1 >= spanR.X0 && spanR.Increment > int(0x40000u))
-        || spanR.Increment == 0)
+    if (fillAllEdges || fillRight)
         xspan.Flags |= XSpanSetup_FillRight;
 
     if (spanL.I0 == spanL.I1)
@@ -636,7 +710,7 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        int i = (spanL.Increment > int(0x40000u) ? xl : y) - spanL.I0;
+        int i = y - spanL.I0;
         int ifactor = CalcYFactorY(spanL, i);
         int idiff = spanL.I1 - spanL.I0;
 
@@ -682,7 +756,7 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     else
     {
-        int i = (spanR.Increment > int(0x40000u) ? xr : y) - spanR.I0;
+        int i = y - spanR.I0;
         int ifactor = CalcYFactorY(spanR, i);
         int idiff = spanR.I1 - spanR.I0;
 
@@ -734,8 +808,9 @@ void main(uint3 id : SV_DispatchThreadID)
         xspan.XRecip = int(Div(1u << 30, uint(xspan.X1 - xspan.X0), r));
     }
 
-    XSpanSetups[id.x] = xspan;
+    XSpanSetups[setupIndex] = xspan;
 }
+
 )";
 
 // ---------------------------------------------------------------------------
@@ -809,13 +884,14 @@ void main(uint3 groupId : SV_GroupID, uint localIndex : SV_GroupIndex)
         mergedMaskShared = 0u;
     GroupMemoryBarrierWithGroupSync();
 
-    int polygonIdx = groupIdx * 32 + localIdx;
+    int localPolygonIdx = groupIdx * 32 + localIdx;
+    int polygonIdx = int(CurVariant) + localPolygonIdx;
 
     int2 coarseTopLeft = coarseTile * int2(CoarseTileW, CoarseTileH);
     int2 coarseBotRight = coarseTopLeft + int2(CoarseTileW - 1, CoarseTileH - 1);
 
     bool binned = false;
-    if (uint(polygonIdx) < NumPolygons)
+    if (localIdx < 32 && uint(localPolygonIdx) < TexWidth && uint(polygonIdx) < NumPolygons)
         binned = BinPolygon(Polygons[polygonIdx], coarseTopLeft, coarseBotRight);
 
     if (binned)
@@ -837,7 +913,7 @@ void main(uint3 groupId : SV_GroupID, uint localIndex : SV_GroupIndex)
         int bit = int(FindLSB(mergedMask));
         mergedMask &= ~(1u << uint(bit));
 
-        int binPolygonIdx = groupIdx * 32 + bit;
+        int binPolygonIdx = int(CurVariant) + groupIdx * 32 + bit;
 
         if (BinPolygon(Polygons[binPolygonIdx], fineTileTopLeft, fineTileBotRight))
             binnedMask |= 1u << uint(bit);
@@ -846,27 +922,12 @@ void main(uint3 groupId : SV_GroupID, uint localIndex : SV_GroupIndex)
     int linearTile = fineTile.x + fineTile.y * TilesPerLine
         + coarseTile.x * CoarseTileCountX + coarseTile.y * TilesPerLine * CoarseTileCountY;
 
-    // Clamp the work-tile allocation to the MaxWorkTiles budget. The tile
-    // buffers and WorkDescs are sized for MaxWorkTiles entries, but the
-    // tiles*16 heuristic can be exceeded when many screen-filling translucent
-    // polygons stack up. Trimming before the mask/offset stores keeps every
-    // downstream consumer seeing a consistent set; excess polygons in a tile
-    // just drop a layer instead of corrupting the frame.
+    // The host partitions consecutive polygons using a conservative sum of
+    // their tile bounding boxes, so this batch cannot exceed MaxWorkTiles.
+    // Dropping a layer here would differ from Software rendering.
     uint workOffset = 0u;
     if (binnedMask != 0u)
-    {
         BinResult.InterlockedAdd(BinVariantWorkCountBase + 12u, uint(countbits(binnedMask)), workOffset);
-        if (workOffset >= uint(MaxWorkTiles))
-        {
-            binnedMask = 0u;
-        }
-        else
-        {
-            uint keepCount = uint(MaxWorkTiles) - workOffset;
-            while (uint(countbits(binnedMask)) > keepCount)
-                binnedMask &= ~(1u << FindMSB(binnedMask));
-        }
-    }
 
     StoreBinMask(BinningMaskStart + linearTile * BinStride + groupIdx, binnedMask);
     int coarseMaskIdx = linearTile * CoarseBinStride + (groupIdx >> 5);
@@ -891,7 +952,7 @@ void main(uint3 groupId : SV_GroupID, uint localIndex : SV_GroupIndex)
             int bit = int(FindLSB(binnedMask));
             binnedMask &= ~(1u << uint(bit));
 
-            int workPolygonIdx = groupIdx * 32 + bit;
+            int workPolygonIdx = int(CurVariant) + groupIdx * 32 + bit;
             uint variantIdx = Polygons[workPolygonIdx].Variant;
 
             uint inVariantOffset;
@@ -915,10 +976,10 @@ void main(uint3 id : SV_DispatchThreadID)
     {
         if (id.x == 0u)
         {
-            // [0].w can overshoot MaxWorkTiles when the binning shader clamped
-            // the allocation; only the first MaxWorkTiles entries were written.
-            uint total = min(BinResult.Load(BinVariantWorkCountBase + 12u), uint(MaxWorkTiles));
-            BinResult.Store4(BinSortWorkWorkCountBase, uint4((total + 31u) / 32u, 1u, 1u, 0u));
+            uint total = BinResult.Load(BinVariantWorkCountBase + 12u);
+            uint4 sortArgs = uint4((total + 31u) / 32u, 1u, 1u, 0u);
+            BinResult.Store4(BinSortWorkWorkCountBase, sortArgs);
+            IndirectArgs.Store4(BinSortWorkWorkCountBase, sortArgs);
         }
 
         uint realCount = BinResult.Load(BinVariantWorkCountBase + id.x * 16u + 8u);
@@ -935,6 +996,11 @@ void main(uint3 id : SV_DispatchThreadID)
             (realCount + RasteriseChunkSize - 1u) / RasteriseChunkSize);
         BinResult.Store(BinVariantWorkCountBase + id.x * 16u + 8u,
             min(realCount, RasteriseChunkSize));
+        IndirectArgs.Store4(
+            BinVariantWorkCountBase + id.x * 16u,
+            uint4(1u,
+                (realCount + RasteriseChunkSize - 1u) / RasteriseChunkSize,
+                min(realCount, RasteriseChunkSize), 0u));
     }
 }
 )";
@@ -943,9 +1009,7 @@ inline const std::string SortWork = R"(
 [numthreads(32, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
-    // Entries past MaxWorkTiles were dropped by the binning shader and must
-    // not be read.
-    uint total = min(BinResult.Load(BinVariantWorkCountBase + 12u), uint(MaxWorkTiles));
+    uint total = BinResult.Load(BinVariantWorkCountBase + 12u);
     if (id.x < total)
     {
         uint2 workDesc = WorkDescs[WorkDescsUnsortedStart + id.x];
@@ -1006,11 +1070,48 @@ int WrapTexCoord(int c, int size, uint mode)
 
 uint4 SampleTexture(int u, int v, uint layer)
 {
-    // The GL renderer normalizes by the texture size and relies on NEAREST
-    // filtering; floor(u/16) is the same texel and avoids the float round trip.
-    int iu = WrapTexCoord(u >> 4, int(TexWidth), TexWrapS);
-    int iv = WrapTexCoord(v >> 4, int(TexHeight), TexWrapT);
-    return CurrentTexture.Load(int4(iu, iv, int(layer), 0));
+    uint4 result = uint4(0u, 0u, 0u, 0u);
+    // Rasterise reuses the InterpSpans-only constants as
+    // captureType/captureYOffset/captureReference. This keeps the root
+    // constant ABI at eight DWORDs for every compute pipeline.
+    if (InterpSpanBase != 0u)
+    {
+        int captureWidth = InterpSpanBase == 1u ? 128 : 256;
+        int scaledWidth = captureWidth * int(ScaleFactor);
+        int sx = int(floor(float(u) * float(ScaleFactor) / 16.0f));
+        int sy = int(floor(
+            (float(v) / 16.0f + float(int(InterpSpanCount)))
+            * float(scaledWidth) / float(TexHeight)));
+        sx = WrapTexCoord(sx, scaledWidth, TexWrapS);
+        sy = WrapTexCoord(sy, scaledWidth, TexWrapT);
+
+        uint scale = ScaleFactor;
+        uint sxu = uint(sx);
+        uint syu = uint(sy);
+        uint address = (DispatchPad & 0xFFFFu)
+            + (syu / scale) * uint(captureWidth)
+            + (sxu / scale);
+        uint reference = (DispatchPad & 0xFFFF0000u) | (address & 0xFFFFu);
+        uint bank = (reference >> 28u) & 3u;
+        uint version = (reference >> 30u) & 1u;
+        uint cell = ((version * 4u + bank) * 65536u) + address;
+        uint sample = (syu % scale) * scale + (sxu % scale);
+        uint packed = CaptureSidecarBuffer[cell * scale * scale + sample];
+        result = uint4(
+            packed & 0x3Fu,
+            (packed >> 8u) & 0x3Fu,
+            (packed >> 16u) & 0x3Fu,
+            (packed >> 24u) & 0x1Fu);
+    }
+    else
+    {
+        // The GL renderer normalizes by the texture size and relies on NEAREST
+        // filtering; floor(u/16) is the same texel and avoids the float round trip.
+        int iu = WrapTexCoord(u >> 4, int(TexWidth), TexWrapS);
+        int iv = WrapTexCoord(v >> 4, int(TexHeight), TexWrapT);
+        result = CurrentTexture.Load(int4(iu, iv, int(layer), 0));
+    }
+    return result;
 }
 #endif
 
@@ -1060,7 +1161,9 @@ void main(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
                 int cov = xspan.EdgeCovL;
                 if (cov < 0)
                 {
-                    int xcov = xspan.CovLInitial + (xspan.EdgeCovL & 0x3FF) * (position.x - xspan.X0);
+                    int coverageStart = max(xspan.X0, 0);
+                    int xcov = xspan.CovLInitial
+                        + (xspan.EdgeCovL & 0x3FF) * (position.x - coverageStart);
                     cov = min(xcov >> 5, 31);
                 }
 
@@ -1073,11 +1176,18 @@ void main(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
                 int cov = xspan.EdgeCovR;
                 if (cov < 0)
                 {
-                    int xcov = xspan.CovRInitial + (xspan.EdgeCovR & 0x3FF) * (position.x - xspan.InsideEnd);
-                    cov = max(0x1F - (xcov >> 5), 0);
+                    int coverageStart = max(max(xspan.InsideStart, xspan.InsideEnd), 0);
+                    int xcov = xspan.CovRInitial
+                        + (xspan.EdgeCovR & 0x3FF) * (position.x - coverageStart);
+                    // Keep this signed: hexadecimal HLSL literals are unsigned.
+                    cov = max(31 - (xcov >> 5), 0);
                 }
 
                 attr |= uint(cov) << 8;
+            }
+            else if ((DispCnt & (1u << 4)) != 0u && (attr & 0xFu) != 0u)
+            {
+                attr |= 0x1Fu << 8;
             }
 
             uint z;
@@ -1153,6 +1263,11 @@ void main(uint3 groupId : SV_GroupID, uint3 localId : SV_GroupThreadID)
             b = uint(vb);
 
 #ifdef UseTexture
+            // Software narrows interpolated S/T to signed 16-bit before
+            // converting from 12.4 fixed point.
+            u = (u << 16) >> 16;
+            v = (v << 16) >> 16;
+
             uint4 texcolor = SampleTexture(u, v, uint(polygon.TextureLayer));
 
 #ifdef Decal
@@ -1223,9 +1338,16 @@ bool DepthTestEqual(uint dstDepth, uint tileDepth)
 #endif
 }
 
-bool DepthTestPasses(bool equalDepthTest, uint dstDepth, uint tileDepth)
+bool DepthTestPasses(bool equalDepthTest, bool facingView, uint dstDepth, uint tileDepth, uint dstAttr)
 {
-    return equalDepthTest ? DepthTestEqual(dstDepth, tileDepth) : (tileDepth < dstDepth);
+    bool passes = false;
+    if (equalDepthTest)
+        passes = DepthTestEqual(dstDepth, tileDepth);
+    else if (facingView && (dstAttr & 0x00400010u) == 0x00000010u)
+        passes = tileDepth <= dstDepth;
+    else
+        passes = tileDepth < dstDepth;
+    return passes;
 }
 
 void PlotTranslucent(inout uint color, inout uint depth, inout uint attr, bool isShadow,
@@ -1251,7 +1373,7 @@ void PlotTranslucent(inout uint color, inout uint depth, inout uint attr, bool i
         uint dstA = color & 0x1F000000u;
 
         uint alpha = (srcA >> 24) + 1u;
-        if (dstA != 0u)
+        if (dstA != 0u && (DispCnt & (1u << 3)) != 0u)
         {
             srcRB = ((srcRB * alpha) + (dstRB * (32u - alpha))) >> 5;
             srcG = ((srcG * alpha) + (dstG * (32u - alpha))) >> 5;
@@ -1262,7 +1384,8 @@ void PlotTranslucent(inout uint color, inout uint depth, inout uint attr, bool i
 }
 
 void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2 localId,
-    inout uint2 color, inout uint2 depth, inout uint2 attr, inout uint stencil,
+    inout uint2 color, inout uint2 depth, inout uint2 attr, inout uint2 winner,
+    bool trackCoverage, inout uint stencil,
     inout bool prevIsShadowMask)
 {
     uint tileInnerOffset = localId.x + localId.y * uint(TileSize);
@@ -1286,11 +1409,12 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
             uint tileColor = ColorTiles[pixelindex];
             workIdx++;
 
-            uint polygonIdx = fineIdx + (coarseBit + coarseOffset) * 32u;
+            uint polygonIdx = CurVariant + fineIdx + (coarseBit + coarseOffset) * 32u;
 
             if (tileColor != 0u)
             {
                 uint polygonAttr = Polygons[polygonIdx].Attr;
+                bool facingView = Polygons[polygonIdx].FacingView != 0u;
 
                 bool isShadowMask = ((polygonAttr & 0x3F000030u) == 0x00000030u);
                 bool prevIsShadowMaskOld = prevIsShadowMask;
@@ -1320,18 +1444,20 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
                     }
 
                     uint dstDepth = writeSecondLayer ? depth.y : depth.x;
-                    if (!DepthTestPasses(equalDepthTest, dstDepth, tileDepth))
+                    if (!DepthTestPasses(equalDepthTest, facingView, dstDepth, tileDepth, dstattr))
                     {
-                        if ((dstattr & 0x3u) == 0u || writeSecondLayer)
+                        if ((dstattr & 0xFu) == 0u || writeSecondLayer)
                             continue;
 
                         writeSecondLayer = true;
                         dstattr = attr.y;
-                        if (!DepthTestPasses(equalDepthTest, depth.y, tileDepth))
+                        if (!DepthTestPasses(equalDepthTest, facingView, depth.y, tileDepth, dstattr))
                             continue;
                     }
 
                     uint srcAttr = (polygonAttr & 0x3F008000u);
+                    if (!facingView)
+                        srcAttr |= 1u << 4;
 
                     uint srcA = tileColor & 0x1F000000u;
                     if (srcA == 0x1F000000u)
@@ -1340,23 +1466,31 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
 
                         if (!writeSecondLayer)
                         {
-                            if ((srcAttr & 0x3u) != 0u)
+                            if ((srcAttr & 0xFu) != 0u)
                             {
                                 color.y = color.x;
                                 depth.y = depth.x;
                                 attr.y = attr.x;
+                                if (trackCoverage)
+                                    winner.y = winner.x;
                             }
 
                             color.x = tileColor;
                             depth.x = tileDepth;
                             attr.x = srcAttr;
+                            if (trackCoverage)
+                                winner.x = polygonIdx;
                         }
                         else
                         {
                             color.y = tileColor;
                             depth.y = tileDepth;
                             attr.y = srcAttr;
+                            if (trackCoverage)
+                                winner.y = polygonIdx;
                         }
+                        if (trackCoverage)
+                            AttrTiles[pixelindex] = tileAttr | 0x80000000u;
                     }
                     else
                     {
@@ -1364,7 +1498,7 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
 
                         if (!writeSecondLayer)
                             PlotTranslucent(color.x, depth.x, attr.x, isShadow, tileColor, srcA, tileDepth, srcAttr, writeDepth);
-                        if (writeSecondLayer || (dstattr & 0x3u) != 0u)
+                        if (writeSecondLayer || (dstattr & 0xFu) != 0u)
                             PlotTranslucent(color.y, depth.y, attr.y, isShadow, tileColor, srcA, tileDepth, srcAttr, writeDepth);
                     }
                 }
@@ -1373,12 +1507,12 @@ void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset, uint2
                     if (!prevIsShadowMaskOld)
                         stencil = 0u;
 
-                    if (!DepthTestPasses(equalDepthTest, depth.x, tileDepth))
+                    if (!DepthTestPasses(equalDepthTest, facingView, depth.x, tileDepth, attr.x))
                         stencil = 0x1u;
 
-                    if ((dstattr & 0x3u) != 0u)
+                    if ((dstattr & 0xFu) != 0u)
                     {
-                        if (!DepthTestPasses(equalDepthTest, depth.y, tileDepth))
+                        if (!DepthTestPasses(equalDepthTest, facingView, depth.y, tileDepth, attr.y))
                             stencil |= 0x2u;
                     }
                 }
@@ -1395,10 +1529,37 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupId : SV_GroupID, uint3 loca
     uint coarseMaskLo = LoadBinMask(BinningCoarseMaskStart + linearTile * CoarseBinStride + 0);
     uint coarseMaskHi = LoadBinMask(BinningCoarseMaskStart + linearTile * CoarseBinStride + 1);
 
-    uint2 color, depth;
-    uint2 attr = uint2(ClearAttr, 0u);
-    if ((DispCnt & (1u << 14)) != 0u)
+    uint resultOffset = id.x + id.y * ScreenWidth;
+    uint2 color, depth, attr;
+    uint2 winner = uint2(0xFFFFFFFFu, 0xFFFFFFFFu);
+    bool trackCoverage = ScreenWidth == 256u && (DispCnt & (1u << 4)) != 0u;
+    uint stencil = 0u;
+    bool prevIsShadowMask = false;
+
+    if (TexHeight != 0u)
     {
+        color = uint2(
+            ResultValue[ResultColorStart + resultOffset],
+            ResultValue[ResultColorStart + resultOffset + FramebufferStride]);
+        depth = uint2(
+            ResultValue[ResultDepthStart + resultOffset],
+            ResultValue[ResultDepthStart + resultOffset + FramebufferStride]);
+        attr = uint2(
+            ResultValue[ResultAttrStart + resultOffset],
+            ResultValue[ResultAttrStart + resultOffset + FramebufferStride]);
+        if (trackCoverage)
+        {
+            winner = uint2(
+                ResultWinner[resultOffset],
+                ResultWinner[resultOffset + FramebufferStride]);
+        }
+        uint continuation = BlendContinuationState[resultOffset];
+        stencil = continuation & 0x3u;
+        prevIsShadowMask = (continuation & 0x4u) != 0u;
+    }
+    else if ((DispCnt & (1u << 14)) != 0u)
+    {
+        attr = uint2(ClearAttr, 0u);
         // The GL renderer divides both axes by ScreenWidth so the 256x256
         // bitmap keeps square texels over the 256x192 screen. GL_REPEAT plus
         // GL_NEAREST is reproduced with an explicit wrap and a Load().
@@ -1415,21 +1576,137 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupId : SV_GroupID, uint3 loca
     {
         color = uint2(ClearColor, 0u);
         depth = uint2(ClearDepth, 0u);
+        attr = uint2(ClearAttr, 0u);
     }
 
-    uint stencil = 0u;
-    bool prevIsShadowMask = false;
+    if (TexHeight == 0u)
+    {
+        stencil = 0u;
+        prevIsShadowMask = false;
+    }
 
-    ProcessCoarseMask(linearTile, coarseMaskLo, 0u, localId.xy, color, depth, attr, stencil, prevIsShadowMask);
-    ProcessCoarseMask(linearTile, coarseMaskHi, uint(BinStride / 2), localId.xy, color, depth, attr, stencil, prevIsShadowMask);
+    ProcessCoarseMask(linearTile, coarseMaskLo, 0u, localId.xy, color, depth, attr, winner, trackCoverage, stencil, prevIsShadowMask);
+    ProcessCoarseMask(linearTile, coarseMaskHi, uint(BinStride / 2), localId.xy, color, depth, attr, winner, trackCoverage, stencil, prevIsShadowMask);
 
-    uint resultOffset = id.x + id.y * ScreenWidth;
     ResultValue[ResultColorStart + resultOffset] = color.x;
     ResultValue[ResultColorStart + resultOffset + FramebufferStride] = color.y;
     ResultValue[ResultDepthStart + resultOffset] = depth.x;
     ResultValue[ResultDepthStart + resultOffset + FramebufferStride] = depth.y;
     ResultValue[ResultAttrStart + resultOffset] = attr.x;
     ResultValue[ResultAttrStart + resultOffset + FramebufferStride] = attr.y;
+    if (trackCoverage)
+    {
+        ResultWinner[resultOffset] = winner.x;
+        ResultWinner[resultOffset + FramebufferStride] = winner.y;
+    }
+    BlendContinuationState[resultOffset] = stencil | (prevIsShadowMask ? 0x4u : 0u);
+}
+)";
+
+// ---------------------------------------------------------------------------
+// Native-resolution accepted-pixel AA coverage correction
+// ---------------------------------------------------------------------------
+inline const std::string CorrectCoverage = R"(
+
+bool CoverageWasAccepted(uint polygonIndex, uint x, uint y)
+{
+    uint tileX = x / uint(TileSize);
+    uint tileY = y / uint(TileSize);
+    uint linearTile = tileX + tileY * TilesPerLine;
+    uint localPolygon = polygonIndex - CurVariant;
+    uint group = localPolygon >> 5u;
+    uint bit = localPolygon & 31u;
+    int maskIndex = int(linearTile * uint(BinStride) + group);
+    uint mask = LoadBinMask(BinningMaskStart + maskIndex);
+    bool accepted = false;
+    if ((mask & (1u << bit)) != 0u)
+    {
+        uint lowerMask = bit == 0u ? 0u : ((1u << bit) - 1u);
+        uint ordinal = countbits(mask & lowerMask);
+        uint workIndex = LoadBinMask(BinningWorkOffsetsStart + maskIndex) + ordinal;
+        if (workIndex < MaxWorkTiles)
+        {
+            uint tileInner =
+                (y % uint(TileSize)) * uint(TileSize) + (x % uint(TileSize));
+            uint tilePixel = workIndex * uint(TileSize * TileSize) + tileInner;
+            accepted = ColorTiles[tilePixel] != 0u
+                && (AttrTiles[tilePixel] & 0x80000000u) != 0u;
+        }
+    }
+    return accepted;
+}
+
+void WriteWinningCoverage(uint polygonIndex, uint x, uint y, uint coverage)
+{
+    uint pixel = y * ScreenWidth + x;
+    uint target = 0xFFFFFFFFu;
+    if (ResultWinner[pixel] == polygonIndex)
+        target = pixel;
+    else if (ResultWinner[FramebufferStride + pixel] == polygonIndex)
+        target = FramebufferStride + pixel;
+
+    if (target != 0xFFFFFFFFu)
+    {
+        uint attr = ResultValue[ResultAttrStart + target];
+        ResultValue[ResultAttrStart + target] =
+            (attr & ~0x1F00u) | ((coverage & 0x1Fu) << 8u);
+    }
+}
+
+[numthreads(64, 1, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    uint setupIndex = id.x;
+    if (setupIndex >= TexHeight)
+        return;
+
+    uint4 setup = SetupIndices[setupIndex];
+    uint polygonIndex = setup.x;
+    if (polygonIndex < CurVariant || polygonIndex >= CurVariant + TexWidth)
+        return;
+
+    XSpanSetup span = XSpanSetups[setupIndex];
+    uint y = setup.w;
+    if (y >= ScreenHeight)
+        return;
+
+    int leftStart = max(span.X0, 0);
+    int screenEnd = int(ScreenWidth);
+    int leftEnd = min(min(span.InsideStart, span.X1), screenEnd);
+    if (span.EdgeCovL < 0)
+    {
+        int xcov = span.CovLInitial;
+        for (int x = leftStart; x < leftEnd; ++x)
+        {
+            if (CoverageWasAccepted(polygonIndex, uint(x), y))
+            {
+                WriteWinningCoverage(
+                    polygonIndex, uint(x), y, min(uint(xcov >> 5), 31u));
+                xcov += span.EdgeCovL & 0x3FF;
+            }
+        }
+    }
+
+    int bodyEnd = min(min(span.InsideEnd, span.X1), screenEnd);
+    int rightStart = max(max(leftStart, leftEnd), bodyEnd);
+    int rightEnd = min(span.X1, screenEnd);
+    if (span.EdgeCovR < 0)
+    {
+        int xcov = span.CovRInitial;
+        for (int x = rightStart; x < rightEnd; ++x)
+        {
+            if (CoverageWasAccepted(polygonIndex, uint(x), y))
+            {
+                // Hex literals are unsigned in HLSL. Keep the subtraction
+                // signed so coverage below zero clamps to zero instead of
+                // wrapping to 0xFFFFFFFF (whose low five bits are 31).
+                WriteWinningCoverage(
+                    polygonIndex, uint(x), y,
+                    uint(max(31 - (xcov >> 5), 0)));
+                xcov += span.EdgeCovR & 0x3FF;
+            }
+        }
+    }
 }
 )";
 
@@ -1612,48 +1889,182 @@ void main(uint3 id : SV_DispatchThreadID)
 
     uint outOffset = id.x + id.y * 256u;
 
-#if ScaleFactor == 1
-    ResolveOut[outOffset] = FinalFB[outOffset];
-#else
-    uint baseX = id.x * ScaleFactor;
-    uint baseY = id.y * ScaleFactor;
-
-    uint sumR = 0u, sumG = 0u, sumB = 0u, sumA = 0u;
-
-    [loop] for (uint sy = 0u; sy < ScaleFactor; sy++)
-    {
-        [loop] for (uint sx = 0u; sx < ScaleFactor; sx++)
-        {
-            uint texel = FinalFB[(baseX + sx) + (baseY + sy) * ScreenWidth];
-            uint a = (texel >> 24) & 0x1Fu;
-
-            // Weight color by alpha so pixels the 3D layer does not cover
-            // cannot darken the edge of geometry that does.
-            sumR += (texel & 0x3Fu) * a;
-            sumG += ((texel >> 8) & 0x3Fu) * a;
-            sumB += ((texel >> 16) & 0x3Fu) * a;
-            sumA += a;
-        }
-    }
-
-    uint result = 0u;
-    if (sumA != 0u)
-    {
-        // Round to nearest rather than truncating: at high scale factors the
-        // truncation bias is a visible darkening of every supersampled edge.
-        uint half = sumA >> 1;
-        uint samples = ScaleFactor * ScaleFactor;
-        uint r = min((sumR + half) / sumA, 63u);
-        uint g = min((sumG + half) / sumA, 63u);
-        uint b = min((sumB + half) / sumA, 63u);
-        uint a = min((sumA + (samples >> 1)) / samples, 31u);
-        result = r | (g << 8) | (b << 16) | (a << 24);
-    }
-
-    ResolveOut[outOffset] = result;
-#endif
+    // Match OpenGL CaptureDownscaleFS: GL_NEAREST at the native output pixel
+    // centre, before RGB5551 conversion by the software capture path.
+    uint centre = ScaleFactor >> 1u;
+    uint sourceX = id.x * ScaleFactor + centre;
+    uint sourceY = id.y * ScaleFactor + centre;
+    ResolveOut[outOffset] = FinalFB[sourceX + sourceY * ScreenWidth];
 }
 )";
+
+// ---------------------------------------------------------------------------
+// High-resolution Display Capture sidecar
+// ---------------------------------------------------------------------------
+inline const std::string CaptureSidecar = R"(
+static const uint CapPixelCount = 256u * 192u;
+static const uint CapSourceBase = CapPixelCount * 8u;
+static const uint CapSourceBNativeBase = CapPixelCount * 12u;
+static const uint CapSourceBReferenceBase = CapPixelCount * 13u;
+static const uint CapLineMetaBase = CapPixelCount * 14u;
+static const uint CapCommandBase = CapLineMetaBase + 384u;
+static const uint CapCommandIndependent = 1u << 5u;
+
+uint CapR(uint c) { return c & 0x3Fu; }
+uint CapG(uint c) { return (c >> 8u) & 0x3Fu; }
+uint CapB(uint c) { return (c >> 16u) & 0x3Fu; }
+uint CapPack(uint r, uint g, uint b, uint a)
+{
+    return min(r, 63u) | (min(g, 63u) << 8u) | (min(b, 63u) << 16u) | (a << 24u);
+}
+uint CapBlend4(uint a, uint b, uint eva, uint evb)
+{
+    return CapPack(((CapR(a)*eva)+(CapR(b)*evb)+8u)>>4u,
+        ((CapG(a)*eva)+(CapG(b)*evb)+8u)>>4u,
+        ((CapB(a)*eva)+(CapB(b)*evb)+8u)>>4u, 0xFFu);
+}
+uint CapBlend5(uint a, uint b)
+{
+    uint eva = ((a >> 24u) & 0x1Fu) + 1u;
+    uint evb = 32u - eva;
+    return CapPack(((CapR(a)*eva)+(CapR(b)*evb)+16u)>>5u,
+        ((CapG(a)*eva)+(CapG(b)*evb)+16u)>>5u,
+        ((CapB(a)*eva)+(CapB(b)*evb)+16u)>>5u, 0xFFu);
+}
+uint CapBrightnessUp(uint c, uint f)
+{
+    return CapPack(CapR(c)+((((63u-CapR(c))*f)+8u)>>4u),
+        CapG(c)+((((63u-CapG(c))*f)+8u)>>4u),
+        CapB(c)+((((63u-CapB(c))*f)+8u)>>4u), 0xFFu);
+}
+uint CapBrightnessDown(uint c, uint f)
+{
+    return CapPack(CapR(c)-(((CapR(c)*f)+7u)>>4u),
+        CapG(c)-(((CapG(c)*f)+7u)>>4u),
+        CapB(c)-(((CapB(c)*f)+7u)>>4u), 0xFFu);
+}
+uint CapLoad(uint reference, uint2 within)
+{
+    uint address = reference & 0xFFFFu;
+    uint bank = (reference >> 28u) & 3u;
+    uint version = (reference >> 30u) & 1u;
+    uint spp = ScaleFactor * ScaleFactor;
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    return CaptureSidecarBuffer[cell * spp + within.y * ScaleFactor + within.x];
+}
+uint CapLoadSource3D(uint2 position, uint lineMeta)
+{
+    uint xpos = (lineMeta >> 23u) & 0x1FFu;
+    int sx = (xpos & 0x100u) != 0u
+        ? int(position.x) - int((512u - xpos) * ScaleFactor)
+        : int(position.x) + int(xpos * ScaleFactor);
+    return TexWidth != 0u && sx >= 0 && sx < int(ScreenWidth)
+        ? FinalFB[position.y * ScreenWidth + uint(sx)]
+        : 0u;
+}
+uint CapComposeSourceA(
+    uint2 position,
+    uint nativeIndex,
+    uint lineMeta,
+    bool source3DValid)
+{
+    uint below = ResultValue[CapSourceBase + nativeIndex];
+    uint above = ResultValue[CapSourceBase + CapPixelCount + nativeIndex];
+    uint control = ResultValue[CapSourceBase + CapPixelCount * 2u + nativeIndex];
+    uint reference = ResultValue[CapSourceBase + CapPixelCount * 3u + nativeIndex];
+    uint flags = control >> 24u;
+    uint result = below;
+    if ((flags & 0x40u) != 0u)
+    {
+        uint slot = 0u;
+        if ((reference & 0x80000000u) != 0u)
+            slot = CapLoad(reference, position % ScaleFactor);
+        else if (source3DValid)
+            slot = CapLoadSource3D(position, lineMeta);
+        if (((slot >> 24u) & 0x1Fu) != 0u)
+        {
+            uint mode = flags & 0xFu;
+            uint eva = (control >> 8u) & 0x1Fu;
+            uint evb = (control >> 16u) & 0x1Fu;
+            if (mode == 1u && (flags & 0x80u) != 0u)
+                result = CapBlend4(above, slot, eva, evb);
+            else if (mode == 2u)
+                result = CapBrightnessUp(slot, eva);
+            else if (mode == 3u)
+                result = CapBrightnessDown(slot, eva);
+            else if (mode == 4u)
+                result = CapBlend5(slot, below);
+            else
+                result = slot;
+        }
+    }
+    return result;
+}
+uint CapNormalizeCapturedPixel(uint color)
+{
+    uint r = ((color & 0x3Fu) >> 1u) << 1u;
+    uint g = ((((color >> 8u) & 0x3Fu) >> 1u) << 1u);
+    uint b = ((((color >> 16u) & 0x3Fu) >> 1u) << 1u);
+    uint a = (color >> 24u) != 0u ? 31u : 0u;
+    return r | (g << 8u) | (b << 16u) | (a << 24u);
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    bool batch = (DispatchPad & 2u) != 0u;
+    uint nativeY = batch ? TexHeight + id.z : TexHeight;
+    if (id.x >= ScreenWidth || id.y >= ScaleFactor || nativeY >= 192u)
+        return;
+    uint scaledY = nativeY * ScaleFactor + id.y;
+    uint nativeX = id.x / ScaleFactor;
+    uint nativeIndex = nativeX + nativeY * 256u;
+    uint commandBase = CapCommandBase + nativeY * 4u;
+    uint captureCnt = ResultValue[commandBase];
+    uint command = ResultValue[commandBase + 1u];
+    uint width = ResultValue[commandBase + 3u];
+    if ((command & 0x80000000u) == 0u
+        || (batch && (command & CapCommandIndependent) == 0u)
+        || nativeX >= width)
+        return;
+    uint sourceScreen = (command >> 3u) & 1u;
+    bool source3DValid = (command & 0x10u) != 0u;
+    uint lineMeta = ResultValue[CapLineMetaBase + sourceScreen * 192u + nativeY];
+    uint2 position = uint2(id.x, scaledY);
+    uint sourceA = 0u;
+    if ((captureCnt & (1u << 24u)) != 0u)
+        sourceA = source3DValid ? CapLoadSource3D(position, lineMeta) : 0u;
+    else
+        sourceA = CapComposeSourceA(position, nativeIndex, lineMeta, source3DValid);
+    uint refB = ResultValue[CapSourceBReferenceBase + nativeIndex];
+    uint sourceB = (refB & 0x80000000u) != 0u
+        ? CapLoad(refB, uint2(id.x % ScaleFactor, id.y))
+        : ResultValue[CapSourceBNativeBase + nativeIndex];
+    uint mode = (captureCnt >> 29u) & 3u;
+    uint result = sourceA;
+    if (mode == 1u)
+        result = sourceB;
+    else if (mode >= 2u)
+    {
+        uint eva = min(captureCnt & 0x1Fu, 16u);
+        uint evb = min((captureCnt >> 8u) & 0x1Fu, 16u);
+        uint aa = (sourceA >> 24u) != 0u ? 1u : 0u;
+        uint ab = (sourceB >> 24u) != 0u ? 1u : 0u;
+        uint r = min(((((CapR(sourceA)>>1u)*aa*eva)+((CapR(sourceB)>>1u)*ab*evb)+8u)>>4u),31u)<<1u;
+        uint g = min(((((CapG(sourceA)>>1u)*aa*eva)+((CapG(sourceB)>>1u)*ab*evb)+8u)>>4u),31u)<<1u;
+        uint b = min(((((CapB(sourceA)>>1u)*aa*eva)+((CapB(sourceB)>>1u)*ab*evb)+8u)>>4u),31u)<<1u;
+        uint alpha = ((eva != 0u ? aa : 0u) | (evb != 0u ? ab : 0u)) * 0xFFu;
+        result = r | (g << 8u) | (b << 16u) | (alpha << 24u);
+    }
+    uint address = (ResultValue[commandBase + 2u] + nativeX) & 0xFFFFu;
+    uint bank = command & 3u;
+    uint version = (command >> 2u) & 1u;
+    uint spp = ScaleFactor * ScaleFactor;
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    CaptureSidecarBuffer[cell * spp + id.y * ScaleFactor + (id.x % ScaleFactor)] =
+        CapNormalizeCapturedPixel(result);
+}
+ )";
 
 // ---------------------------------------------------------------------------
 // High-resolution software-2D / DX12-3D compositor
@@ -1663,7 +2074,7 @@ void main(uint3 id : SV_DispatchThreadID)
 // high-resolution 3D source produced by FinalPass.
 inline const std::string Compositor = R"(
 static const uint StructuredPixelCount = 256u * 192u;
-static const uint StructuredLineMetaBase = StructuredPixelCount * 6u;
+static const uint StructuredLineMetaBase = StructuredPixelCount * 14u;
 
 uint Color6R(uint color) { return color & 0x3Fu; }
 uint Color6G(uint color) { return (color >> 8u) & 0x3Fu; }
@@ -1723,6 +2134,17 @@ uint ToBgra8(uint color)
     return b8 | (g8 << 8u) | (r8 << 16u) | 0xFF000000u;
 }
 
+uint LoadStructuredCapture(uint reference, uint2 within)
+{
+    uint address = reference & 0xFFFFu;
+    uint bank = (reference >> 28u) & 3u;
+    uint version = (reference >> 30u) & 1u;
+    uint samplesPerPixel = ScaleFactor * ScaleFactor;
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    return CaptureSidecarBuffer[
+        cell * samplesPerPixel + within.y * ScaleFactor + within.x];
+}
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
@@ -1734,17 +2156,26 @@ void main(uint3 id : SV_DispatchThreadID)
     uint nativeX = id.x / ScaleFactor;
     uint nativeY = scaledY / ScaleFactor;
     uint nativeIndex = nativeX + nativeY * 256u;
-    uint planeBase = screen * StructuredPixelCount * 3u;
+    uint planeBase = screen * StructuredPixelCount * 4u;
 
     uint below = ResultValue[planeBase + nativeIndex];
     uint above = ResultValue[planeBase + StructuredPixelCount + nativeIndex];
     uint control = ResultValue[planeBase + StructuredPixelCount * 2u + nativeIndex];
+    uint captureReference = ResultValue[
+        planeBase + StructuredPixelCount * 3u + nativeIndex];
     uint controlAlpha = control >> 24u;
     uint color = below;
 
     uint lineMeta = ResultValue[StructuredLineMetaBase + screen * 192u + nativeY];
+    uint displayMode = (lineMeta >> 16u) & 0x3u;
 
-    if ((controlAlpha & 0x40u) != 0u)
+    // VRAM display presents captured RGB directly. Its RGBA5551 alpha bit is
+    // capture provenance rather than a visibility test, so this path must not
+    // use the ordinary 3D-slot transparent-pixel fallback.
+    if (displayMode == 2u && (captureReference & 0x80000000u) != 0u)
+        color = LoadStructuredCapture(
+            captureReference, uint2(id.x % ScaleFactor, scaledY % ScaleFactor));
+    else if ((controlAlpha & 0x40u) != 0u)
     {
         // The 3D X scroll is published per scanline, because that is where the
         // DS applies it and where SoftRenderer3D::GetLine() reads it.
@@ -1753,7 +2184,10 @@ void main(uint3 id : SV_DispatchThreadID)
             ? int(id.x) - int((512u - xPosition) * ScaleFactor)
             : int(id.x) + int(xPosition * ScaleFactor);
         uint pixel3D = 0u;
-        if (TexWidth != 0u && sourceX >= 0 && sourceX < ScreenWidth)
+        if ((captureReference & 0x80000000u) != 0u)
+            pixel3D = LoadStructuredCapture(
+                captureReference, uint2(id.x % ScaleFactor, scaledY % ScaleFactor));
+        else if (TexWidth != 0u && sourceX >= 0 && sourceX < int(ScreenWidth))
             pixel3D = FinalFB[uint(sourceX) + scaledY * ScreenWidth];
 
         if (((pixel3D >> 24u) & 0x1Fu) != 0u)
@@ -1774,7 +2208,6 @@ void main(uint3 id : SV_DispatchThreadID)
         }
     }
 
-    uint displayMode = (lineMeta >> 16u) & 0x3u;
     if (displayMode != 0u)
     {
         uint brightnessMode = (lineMeta >> 8u) & 0x3u;
@@ -1785,7 +2218,22 @@ void main(uint3 id : SV_DispatchThreadID)
             color = BrightnessDown(color, brightnessFactor, 15u);
     }
 
-    ResolveOut[screen * FramebufferStride + scaledY * ScreenWidth + id.x] = ToBgra8(color);
+    uint bgra8 = ToBgra8(color);
+    if ((DispatchPad & 1u) != 0u)
+    {
+        // ToBgra8 is the packed CPU/presenter word (B,G,R,A in memory). The
+        // direct texture is RGBA8, so preserve the existing channel order by
+        // expanding the packed bytes into normalized texture channels.
+        DirectOutput[uint3(id.x, scaledY, screen)] = float4(
+            float((bgra8 >> 16u) & 0xFFu) / 255.0,
+            float((bgra8 >> 8u) & 0xFFu) / 255.0,
+            float(bgra8 & 0xFFu) / 255.0,
+            float((bgra8 >> 24u) & 0xFFu) / 255.0);
+    }
+    else
+    {
+        ResolveOut[screen * FramebufferStride + scaledY * ScreenWidth + id.x] = bgra8;
+    }
 }
 )";
 

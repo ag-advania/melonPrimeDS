@@ -136,6 +136,12 @@ Linux platform notes:
 - `ScreenPanel::unfocus()` and `unclip()` must run on Linux as well as Windows. Escape should always
   restore the arrow cursor and release any platform cursor confinement state.
 - Linux builds need the XInput2 development library (`libxi-dev` on Ubuntu).
+- Linux repo-root build wrapper: `tools/build/linux/build-linux.sh` configures
+  `build-linux/` with Vulkan enabled and pinned Vulkan headers; use
+  `tools/build/linux/build-linux-existing.sh` only for an already configured
+  Vulkan-enabled tree. On a Mac host these wrappers set the VirtualBox shared
+  folder source to the current repo and run the build inside the Linux VM; inside
+  Linux they run the guest build scripts directly.
 - **Linux VM testing on Mac**: see [linux-vm.md](linux-vm.md) — VirtualBox +
   Ubuntu 22.04 scripts under `tools/linux-vm/` (`01`…`05`; `05` is shared-folder remount only).
 

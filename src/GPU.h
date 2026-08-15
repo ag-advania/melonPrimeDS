@@ -34,6 +34,12 @@ enum class RendererOutputKind
 {
     CpuBgra,
     OpenGLTextureArray,
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    VulkanBuffer,
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    DX12Buffer,
+#endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     MetalTexture,
 #endif
@@ -47,7 +53,9 @@ struct RendererOutput
     void* Bottom = nullptr;
     u32 Width = 0;
     u32 Height = 0;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     u64 FrameSerial = 0;
 #endif
 
@@ -70,6 +78,34 @@ struct RendererOutput
         return output;
     }
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    static RendererOutput VulkanBuffer(
+        void* frame, u32 width, u32 height, u64 frameSerial = 0) noexcept
+    {
+        RendererOutput output;
+        output.Kind = RendererOutputKind::VulkanBuffer;
+        output.Top = frame;
+        output.Width = width;
+        output.Height = height;
+        output.FrameSerial = frameSerial;
+        return output;
+    }
+#endif
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    static RendererOutput DX12Buffer(
+        void* frame, u32 width, u32 height, u64 frameSerial = 0) noexcept
+    {
+        RendererOutput output;
+        output.Kind = RendererOutputKind::DX12Buffer;
+        output.Top = frame;
+        output.Width = width;
+        output.Height = height;
+        output.FrameSerial = frameSerial;
+        return output;
+    }
+#endif
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
     static RendererOutput MetalTexture(void* texture, u64 frameSerial = 0) noexcept
     {
@@ -82,22 +118,25 @@ struct RendererOutput
 #endif
 };
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
-// MELONPRIME_METAL_OUTPUT_LEASE_V1
-// Metal output is consumed by a command queue separate from the renderer
-// queue. Keep its ring slot immutable until that presenter command completes.
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
+// GPU-native output is consumed asynchronously by a presenter command. Keep
+// its ring slot immutable until that command's completion fence retires.
 struct RendererOutputLease
 {
     RendererOutput Output;
     void* Context = nullptr;
     void (*ReleaseFn)(void*) = nullptr;
+    std::shared_ptr<void> Owner;
 
     RendererOutputLease() = default;
     RendererOutputLease(
         RendererOutput output,
         void* context,
-        void (*releaseFn)(void*)) noexcept
-        : Output(output), Context(context), ReleaseFn(releaseFn)
+        void (*releaseFn)(void*),
+        std::shared_ptr<void> owner = {}) noexcept
+        : Output(output), Context(context), ReleaseFn(releaseFn), Owner(std::move(owner))
     {
     }
 
@@ -107,7 +146,8 @@ struct RendererOutputLease
     RendererOutputLease(RendererOutputLease&& other) noexcept
         : Output(other.Output),
           Context(other.Context),
-          ReleaseFn(other.ReleaseFn)
+          ReleaseFn(other.ReleaseFn),
+          Owner(std::move(other.Owner))
     {
         other.Context = nullptr;
         other.ReleaseFn = nullptr;
@@ -121,6 +161,7 @@ struct RendererOutputLease
             Output = other.Output;
             Context = other.Context;
             ReleaseFn = other.ReleaseFn;
+            Owner = std::move(other.Owner);
             other.Context = nullptr;
             other.ReleaseFn = nullptr;
         }
@@ -136,6 +177,10 @@ struct RendererOutputLease
     {
         void* context = Context;
         void (*releaseFn)(void*) = ReleaseFn;
+        // Keep the backing state alive until after ReleaseFn has retired the
+        // slot. Vulkan uses this to avoid a heap allocation per frame lease.
+        std::shared_ptr<void> retainedOwner = std::move(Owner);
+        (void)retainedOwner;
         Context = nullptr;
         ReleaseFn = nullptr;
         if (context && releaseFn)
@@ -188,7 +233,9 @@ public:
     //          - values are renderer-specific (ie. OpenGL texture handle)
     bool GetFramebuffers(void** top, void** bottom);
     RendererOutput GetRendererOutput();
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     RendererOutputLease AcquireRendererOutputLease();
 #endif
 
@@ -954,6 +1001,14 @@ struct RendererSettings
     // AMD Radeon Anti-Lag 2. The backend always passes maxFPS=0 so this does
     // not add a second frame-rate limiter.
     bool AmdAntiLag2Enabled;
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    // Intel Xe Low Latency. The DX12 backend uses minimumIntervalUs=0 because
+    // MelonPrime's existing limiter runs before xellSleep.
+    bool IntelXeLLEnabled;
+    // Developer builds may select an unvalidated XeLL pacing experiment.
+    // Release builds always pass Compatibility regardless of stored config.
+    int IntelXeLLPacingPolicy;
+#endif
 #endif
 };
 
@@ -977,15 +1032,22 @@ public:
     virtual void Start3DRendering() { Rend3D->RenderFrame(); }
     virtual void Finish3DRendering() { Rend3D->FinishRendering(); }
     virtual void Restart3DRendering() { Rend3D->RestartFrame(); }
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    virtual void VCount144() { Rend3D->VCount144(); }
-#endif
 
     virtual void VBlank() = 0;
     virtual void VBlankEnd() = 0;
 
     virtual void AllocCapture(u32 bank, u32 start, u32 len) = 0;
     virtual void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) = 0;
+    virtual void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) {}
+#ifdef MELONPRIME_DS
+    // Backend-neutral lookup for a retained high-resolution display-capture
+    // pixel. The emulated VRAM remains authoritative; a zero result means the
+    // caller must use the ordinary native texture cache.
+    [[nodiscard]] virtual u32 GetCaptureTextureReference(u32 bank, u32 address) const noexcept
+    {
+        return 0;
+    }
+#endif
 
     // a renderer may render to RAM buffers, or to something else (ie. OpenGL)
     // if the renderer uses RAM buffers, they should be 32-bit BGRA, 256x192 for each screen
@@ -1000,7 +1062,9 @@ public:
             return RendererOutput::OpenGLTextureArray(top);
         return {};
     }
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_METAL)
+#if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
+    || defined(MELONPRIME_ENABLE_METAL) \
+    || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     virtual RendererOutputLease AcquireOutputLease()
     {
         return RendererOutputLease(GetOutput(), nullptr, nullptr);

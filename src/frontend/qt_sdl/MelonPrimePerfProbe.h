@@ -1,7 +1,7 @@
 #ifndef MELONPRIME_PERF_PROBE_H
 #define MELONPRIME_PERF_PROBE_H
 
-// V5 Phase 0: frame-time + hot-path counters for measured optimization.
+// Frame-time, hot-path, and Custom HUD phase counters for measured optimization.
 // Compile gate: MELONPRIME_ENABLE_DEVELOPER_FEATURES + MELONPRIME_DS
 // Runtime gate: MELONPRIME_PERF=1
 // Release builds (developer features off): zero symbols, zero hot-path cost.
@@ -34,6 +34,16 @@ enum class Section : uint8_t {
     RunFrame,
     Draw,
     DeferredDrain,
+    Count
+};
+
+enum class HudPhase : uint8_t {
+    State = 0,
+    QPainter,
+    Clear,
+    Hash,
+    UploadPrepare,
+    TotalActive,
     Count
 };
 
@@ -79,6 +89,13 @@ struct State {
     uint64_t cntDr3HashSkip = 0;
     uint64_t sumCustomHudTicks = 0;
     uint64_t cntCustomHudFrames = 0;
+    static constexpr uint32_t kHudPhaseCap = 120;
+    Uint64 hudPhaseTicks[static_cast<uint32_t>(HudPhase::Count)][kHudPhaseCap]{};
+    uint32_t hudPhaseCount[static_cast<uint32_t>(HudPhase::Count)]{};
+    Uint64 currentHudPhaseTicks = 0;
+    bool currentHudDrawn = false;
+    uint64_t cntCustomHudCalls = 0;
+    uint64_t cntCustomHudDrawn = 0;
 
     Uint64 lastReportTick = 0;
     uint32_t histTotal[kHistBuckets]{};
@@ -162,6 +179,10 @@ inline void ResetWindowStats()
     st.cntDr3HashSkip = 0;
     st.sumCustomHudTicks = 0;
     st.cntCustomHudFrames = 0;
+    std::memset(st.hudPhaseTicks, 0, sizeof(st.hudPhaseTicks));
+    std::memset(st.hudPhaseCount, 0, sizeof(st.hudPhaseCount));
+    st.cntCustomHudCalls = 0;
+    st.cntCustomHudDrawn = 0;
 }
 
 inline void MaybeReport1Hz()
@@ -231,6 +252,35 @@ inline void MaybeReport1Hz()
             ? TicksToMs(st.sumCustomHudTicks) * 1000.0 / static_cast<double>(st.cntCustomHudFrames)
             : 0.0);
 
+    const auto hudPercentileUs = [&](HudPhase phase, double percentile) -> double {
+        const uint32_t index = static_cast<uint32_t>(phase);
+        const uint32_t count = st.hudPhaseCount[index];
+        if (!count)
+            return 0.0;
+        double samples[State::kHudPhaseCap];
+        for (uint32_t i = 0; i < count; ++i)
+            samples[i] = TicksToMs(st.hudPhaseTicks[index][i]) * 1000.0;
+        std::sort(samples, samples + count);
+        return PercentileSorted(samples, count, percentile);
+    };
+    fprintf(stderr,
+        "[MelonPrimePerf] hud_phase_us "
+        "state_p50=%.1f state_p99=%.1f qpainter_p50=%.1f qpainter_p99=%.1f "
+        "clear_p50=%.1f clear_p99=%.1f hash_p50=%.1f hash_p99=%.1f "
+        "upload_prepare_p50=%.1f upload_prepare_p99=%.1f "
+        "total_active_p50=%.1f total_active_p99=%.1f calls=%llu drawn=%llu\n",
+        hudPercentileUs(HudPhase::State, 0.50), hudPercentileUs(HudPhase::State, 0.99),
+        hudPercentileUs(HudPhase::QPainter, 0.50),
+        hudPercentileUs(HudPhase::QPainter, 0.99),
+        hudPercentileUs(HudPhase::Clear, 0.50), hudPercentileUs(HudPhase::Clear, 0.99),
+        hudPercentileUs(HudPhase::Hash, 0.50), hudPercentileUs(HudPhase::Hash, 0.99),
+        hudPercentileUs(HudPhase::UploadPrepare, 0.50),
+        hudPercentileUs(HudPhase::UploadPrepare, 0.99),
+        hudPercentileUs(HudPhase::TotalActive, 0.50),
+        hudPercentileUs(HudPhase::TotalActive, 0.99),
+        static_cast<unsigned long long>(st.cntCustomHudCalls),
+        static_cast<unsigned long long>(st.cntCustomHudDrawn));
+
     st.lastReportTick = now;
     ResetWindowStats();
 }
@@ -247,6 +297,8 @@ inline void FrameBegin()
     st.frameOpen = true;
     st.frameStartTick = SDL_GetPerformanceCounter();
     st.sectionOpen = false;
+    st.currentHudPhaseTicks = 0;
+    st.currentHudDrawn = false;
 }
 
 inline void SectionBegin(Section sec)
@@ -283,6 +335,13 @@ inline void FrameEnd()
         return;
 
     const Uint64 endTick = SDL_GetPerformanceCounter();
+    if (st.currentHudDrawn && st.currentHudPhaseTicks)
+    {
+        const uint32_t index = static_cast<uint32_t>(HudPhase::TotalActive);
+        uint32_t& count = st.hudPhaseCount[index];
+        if (count < State::kHudPhaseCap)
+            st.hudPhaseTicks[index][count++] = st.currentHudPhaseTicks;
+    }
     RecordFrameMs(TicksToMs(endTick - st.frameStartTick));
     st.frameOpen = false;
     MaybeReport1Hz();
@@ -358,6 +417,56 @@ inline void AddCustomHudRenderTicks(Uint64 ticks)
     ++S().cntCustomHudFrames;
 }
 
+inline void AddHudPhaseTicks(HudPhase phase, Uint64 ticks)
+{
+    if (!S().frameOpen || ticks == 0)
+        return;
+    State& st = S();
+    const uint32_t index = static_cast<uint32_t>(phase);
+    uint32_t& count = st.hudPhaseCount[index];
+    if (count < State::kHudPhaseCap)
+        st.hudPhaseTicks[index][count++] = ticks;
+    if (phase != HudPhase::TotalActive)
+        st.currentHudPhaseTicks += ticks;
+}
+
+inline void CountCustomHudCall()
+{
+    if (S().frameOpen)
+        ++S().cntCustomHudCalls;
+}
+
+inline void CountCustomHudDrawn()
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntCustomHudDrawn;
+    S().currentHudDrawn = true;
+}
+
+class ScopedHudPhase {
+public:
+    explicit ScopedHudPhase(HudPhase phase)
+        : phase_(phase), start_(ReadTicksIfActive()) {}
+
+    ~ScopedHudPhase() { Stop(); }
+
+    void Stop()
+    {
+        if (!start_)
+            return;
+        AddHudPhaseTicks(phase_, ReadTicksIfActive() - start_);
+        start_ = 0;
+    }
+
+    ScopedHudPhase(const ScopedHudPhase&) = delete;
+    ScopedHudPhase& operator=(const ScopedHudPhase&) = delete;
+
+private:
+    HudPhase phase_;
+    Uint64 start_ = 0;
+};
+
 inline void ShutdownReport()
 {
     if (!IsEnabled())
@@ -424,6 +533,7 @@ enum class Section : uint8_t {
     DeferredDrain,
     Count
 };
+enum class HudPhase : uint8_t { State, QPainter, Clear, Hash, UploadPrepare, TotalActive, Count };
 
 inline bool IsEnabled() { return false; }
 inline bool IsFrameActive() { return false; }
@@ -441,7 +551,16 @@ inline void AddHudDirtyArea(int) {}
 inline void AddGlUploadBytes(uint64_t) {}
 inline void CountDr3HashSkip() {}
 inline void AddCustomHudRenderTicks(unsigned long long) {}
+inline void AddHudPhaseTicks(HudPhase, unsigned long long) {}
+inline void CountCustomHudCall() {}
+inline void CountCustomHudDrawn() {}
 inline void ShutdownReport() {}
+
+class ScopedHudPhase {
+public:
+    explicit ScopedHudPhase(HudPhase) {}
+    void Stop() {}
+};
 
 struct ScopedSection {
     explicit ScopedSection(Section) {}

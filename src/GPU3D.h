@@ -338,11 +338,14 @@ public:
         || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     // Optional structured-2D accelerated-renderer lifecycle hooks. Vulkan and
     // DX12 share these hooks; Software and OpenGL retain the no-op defaults.
-    virtual void VCount144() {}
     virtual void SetupAccelFrame() {}
     virtual void PrepareCaptureFrame() {}
     virtual void BeginCaptureFrame() {}
     [[nodiscard]] virtual bool UsesStructured2DMetadata() const noexcept { return false; }
+    // True only when GetLine() returned pixels from the renderer's current
+    // 3D frame. Structured capture must not replace a transparent fallback
+    // with a FinalFB that became available later in the DS frame.
+    [[nodiscard]] virtual bool HasValidCaptureFrame() const noexcept { return true; }
 #endif
 
     // return one scanline of the framebuffer, with X scroll applied

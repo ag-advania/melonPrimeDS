@@ -50,7 +50,7 @@ bool MetalComputeRenderer3D::RunTextureVariantTileSelfTest()
         1, 1, lineCount,
         tileWidth, lineCount, tileWidth, 1, 1,
         tileWidth, 1, 64, tileWidth,
-        maxWorkTiles, kBinStride, kCoarseBinStride, 1,
+        maxWorkTiles, kBinStride, 1,
         0, 0, maxWorkTiles, 0,
     };
 

@@ -1174,6 +1174,18 @@ void MetalRenderer3D::RenderFrame()
     }
 }
 
+void MetalRenderer3D::RenderSoftwareReferenceFrame()
+{
+    // Metal Compute has already consumed the shared VRAM dirty state and made
+    // the flat mirrors coherent before invoking this diagnostic reference.
+    Delegate.RenderReferenceFrame();
+}
+
+Renderer3D& MetalRenderer3D::GetSoftwareReference() noexcept
+{
+    return Delegate;
+}
+
 void MetalRenderer3D::FinishRendering()
 {
     if (!MetalUseNativeGetLine() || MetalGetLineDiffEnabled())

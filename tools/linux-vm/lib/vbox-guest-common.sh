@@ -7,7 +7,9 @@ SHARE_NAME="${SHARE_NAME:-MelonPrimeDS}"
 REPO_GUEST="/media/${GUEST_USER}/${SHARE_NAME}"
 REPO_GUEST_ALT="/media/sf_${SHARE_NAME}"
 REPO_GUEST_MOUNT="/mnt/mp"
-HOST_REPO="${HOST_REPO:-/Users/admin/git/MelonPrimeDS}"
+_MP_VBOX_COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HOST_REPO="${HOST_REPO:-$(cd "${_MP_VBOX_COMMON_DIR}/../../.." && pwd)}"
+unset _MP_VBOX_COMMON_DIR
 LOGIN_WAIT_SEC="${LOGIN_WAIT_SEC:-600}"
 
 require_vbox() {
@@ -224,15 +226,28 @@ share_attached_on_host() {
     | grep -F "Name: '${SHARE_NAME}'" -q
 }
 
+share_attached_to_host_repo() {
+  local info
+  info="$(VBoxManage showvminfo "$VM_NAME" --machinereadable 2>/dev/null || true)"
+  grep -F "SharedFolderName" <<<"$info" | grep -F "\"${SHARE_NAME}\"" >/dev/null 2>&1 \
+    && grep -F "SharedFolderPath" <<<"$info" | grep -F "\"${HOST_REPO}\"" >/dev/null 2>&1
+}
+
 ensure_host_shared_folder() {
   if [[ ! -d "$HOST_REPO" ]]; then
     echo "Host repo not found: $HOST_REPO" >&2
     return 1
   fi
 
-  if share_attached_on_host; then
-    echo "==> Shared folder '${SHARE_NAME}' already attached (not re-adding)." >&2
+  if share_attached_to_host_repo; then
+    echo "==> Shared folder '${SHARE_NAME}' already attached to ${HOST_REPO}." >&2
     return 0
+  fi
+
+  if share_attached_on_host; then
+    echo "==> Shared folder '${SHARE_NAME}' points elsewhere; re-attaching to ${HOST_REPO}." >&2
+    VBoxManage sharedfolder remove "$VM_NAME" --name "$SHARE_NAME" 2>/dev/null || true
+    VBoxManage sharedfolder remove "$VM_NAME" --name "$SHARE_NAME" --transient 2>/dev/null || true
   fi
 
   local state

@@ -1,0 +1,584 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    Vendor-neutral Vulkan WSI pacing and presentation telemetry.
+*/
+
+#ifndef VULKAN_PRESENT_PACER_H
+#define VULKAN_PRESENT_PACER_H
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+
+#include <atomic>
+#include <string>
+
+#include "VulkanDevice.h"
+#include "VulkanGoogleDisplayTimingModel.h"
+#include "VulkanPresentPacingPolicy.h"
+#include "VulkanPresentTimingModel.h"
+
+namespace melonDS
+{
+
+// The pacer only needs this small subset of the Vulkan dispatch table.  It is
+// copied once during initialization so the presenting-thread hot path never
+// dereferences VulkanDevice or performs a dispatch-table lookup.  Keeping the
+// table value-owned also gives API-level tests a narrow fake seam without
+// introducing virtual calls or per-frame branches.
+struct VulkanPresentPacerDispatch
+{
+    PFN_vkGetPhysicalDeviceSurfaceCapabilities2KHR
+        GetPhysicalDeviceSurfaceCapabilities2KHR = nullptr;
+    PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR
+        GetPhysicalDeviceSurfaceCapabilitiesKHR = nullptr;
+    PFN_vkSetSwapchainPresentTimingQueueSizeEXT
+        SetSwapchainPresentTimingQueueSizeEXT = nullptr;
+    PFN_vkWaitForPresentKHR WaitForPresentKHR = nullptr;
+    PFN_vkWaitForPresent2KHR WaitForPresent2KHR = nullptr;
+    PFN_vkGetSwapchainTimingPropertiesEXT GetSwapchainTimingPropertiesEXT = nullptr;
+    PFN_vkGetSwapchainTimeDomainPropertiesEXT
+        GetSwapchainTimeDomainPropertiesEXT = nullptr;
+    PFN_vkGetPastPresentationTimingEXT GetPastPresentationTimingEXT = nullptr;
+    PFN_vkGetRefreshCycleDurationGOOGLE GetRefreshCycleDurationGOOGLE = nullptr;
+    PFN_vkGetPastPresentationTimingGOOGLE GetPastPresentationTimingGOOGLE = nullptr;
+};
+
+// Cold initialization inputs copied from VulkanDevice.  Extension and feature
+// booleans are intentionally raw: InitializeCommon() applies the entry-point
+// availability gates in exactly one place for both production and tests.
+struct VulkanPresentPacerInitInfo
+{
+    VkDevice Device = VK_NULL_HANDLE;
+    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
+    bool PresentIdExtensionEnabled = false;
+    bool PresentWaitLegacyExtensionEnabled = false;
+    bool PresentId2ExtensionEnabled = false;
+    bool PresentWait2ExtensionEnabled = false;
+    bool PresentTimingExtensionEnabled = false;
+    bool GoogleDisplayTimingExtensionEnabled = false;
+    bool GoogleDisplayTimingFeatureEnabled = false;
+    bool PresentAtAbsoluteTimeFeatureEnabled = false;
+    bool PresentAtRelativeTimeFeatureEnabled = false;
+    bool LatestReadyExtensionEnabled = false;
+};
+
+// vkWaitForPresent2KHR has a different success/status contract from the
+// timing-query entry points. Keep that contract explicit and pure so a
+// SUBOPTIMAL result cannot fall through to DisableWait(), while timeout stays
+// a non-fatal pacing outcome.
+enum class VulkanPresentWait2ResultAction : int
+{
+    Continue = 0,
+    Timeout,
+    SwapchainSuboptimal,
+    SwapchainOutOfDate,
+    DeviceLost,
+    SurfaceLost,
+    DisableWait,
+};
+
+constexpr VulkanPresentWait2ResultAction ClassifyVulkanPresentWait2Result(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return VulkanPresentWait2ResultAction::Continue;
+    case VK_TIMEOUT:
+        return VulkanPresentWait2ResultAction::Timeout;
+    case VK_SUBOPTIMAL_KHR:
+        return VulkanPresentWait2ResultAction::SwapchainSuboptimal;
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        return VulkanPresentWait2ResultAction::SwapchainOutOfDate;
+    case VK_ERROR_DEVICE_LOST:
+        return VulkanPresentWait2ResultAction::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentWait2ResultAction::SurfaceLost;
+    default:
+        return VulkanPresentWait2ResultAction::DisableWait;
+    }
+}
+
+// Each present-timing entry point has its own success/pending contract. These
+// actions keep pure API-specific result classification separate from the
+// common lifecycle route, so a valid VK_NOT_READY or VK_INCOMPLETE cannot be
+// mistaken for an optional-feature failure.
+enum class VulkanPresentTimingQueryAction : int
+{
+    Continue = 0,
+    RetryAfterPresent,
+    RetryEnumeration,
+    SwapchainOutOfDate,
+    DeviceLost,
+    SurfaceLost,
+    DisableOptional,
+    DisableTargetLifecycle,
+};
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanPastTimingResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+    case VK_INCOMPLETE:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        return VulkanPresentTimingQueryAction::SwapchainOutOfDate;
+    case VK_ERROR_DEVICE_LOST:
+        return VulkanPresentTimingQueryAction::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableOptional;
+    }
+}
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanTimingPropertiesResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_NOT_READY:
+        return VulkanPresentTimingQueryAction::RetryAfterPresent;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableTargetLifecycle;
+    }
+}
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanTimeDomainResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_INCOMPLETE:
+        return VulkanPresentTimingQueryAction::RetryEnumeration;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableTargetLifecycle;
+    }
+}
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanGoogleRefreshCycleResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_ERROR_DEVICE_LOST:
+        return VulkanPresentTimingQueryAction::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableOptional;
+    }
+}
+
+constexpr VulkanPresentTimingQueryAction ClassifyVulkanGooglePastTimingResult(
+    VkResult result) noexcept
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+    case VK_INCOMPLETE:
+        return VulkanPresentTimingQueryAction::Continue;
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        return VulkanPresentTimingQueryAction::SwapchainOutOfDate;
+    case VK_ERROR_DEVICE_LOST:
+        return VulkanPresentTimingQueryAction::DeviceLost;
+    case VK_ERROR_SURFACE_LOST_KHR:
+        return VulkanPresentTimingQueryAction::SurfaceLost;
+    default:
+        return VulkanPresentTimingQueryAction::DisableOptional;
+    }
+}
+
+// How the display's refresh cadence behaves, derived from the refreshInterval
+// the swapchain reports. Diagnostics only: the pacer never rewrites the user's
+// VSync setting from this.
+enum class VulkanRefreshDynamics : int
+{
+    Unknown = 0,
+    VariableRefresh,
+    FixedRefresh,
+    DynamicRefresh,
+};
+
+// Vendor-neutral presentation pacing for one swapchain.
+//
+// Ownership: every method is called from the presenting thread (the emulation
+// thread, through VulkanPresenter). VK_EXT_present_timing host queries take the
+// swapchain as an externally synchronized parameter, and this single-owner rule
+// is what provides that synchronization -- no separate lock is introduced.
+class VulkanPresentPacer
+{
+public:
+    // Collapse only lifecycle results that must reach the presenter. Query
+    // callers retain their own success/pending contract; an optional timing
+    // failure outside these classes remains a timing-only downgrade. Keeping
+    // this mapping pure makes the fault-injection contract executable without
+    // a Vulkan device.
+    [[nodiscard]] static constexpr VulkanPacerBeginResult
+    ClassifyPresentLifecycleResult(VkResult result) noexcept
+    {
+        switch (result)
+        {
+        case VK_ERROR_OUT_OF_DATE_KHR:
+            return VulkanPacerBeginResult::SwapchainOutOfDate;
+        case VK_ERROR_DEVICE_LOST:
+            return VulkanPacerBeginResult::DeviceLost;
+        case VK_ERROR_SURFACE_LOST_KHR:
+            return VulkanPacerBeginResult::SurfaceLost;
+        default:
+            return VulkanPacerBeginResult::Continue;
+        }
+    }
+
+    struct PresentMetadata
+    {
+        VkPresentIdKHR LegacyId{};
+        VkPresentId2KHR Id2{};
+        VkPresentTimingInfoEXT Timing{};
+        VkPresentTimingsInfoEXT Timings{};
+        VkPresentTimeGOOGLE GoogleTime{};
+        VkPresentTimesInfoGOOGLE GoogleTimes{};
+        u64 LogicalId = 0;
+        u64 Sequence = 0;
+        // Meaning depends on TargetMode: an absolute presentation timestamp for
+        // Absolute, a minimum previous-image visible duration for Relative.
+        // Named "value" rather than "time" precisely so the two are not read as
+        // the same quantity.
+        u64 TargetValueNs = 0;
+        VulkanTargetSchedulingMode TargetMode = VulkanTargetSchedulingMode::None;
+        // The cadence inputs this present's relative duration came from, so the
+        // capture can re-derive it from the same present rather than from
+        // whatever the pacer happened to compute last. Zero unless this present
+        // actually carried a relative target.
+        VulkanRelativeCadence::Request RelativeRequest{};
+        bool TimingAttached = false;
+        bool GoogleTimingAttached = false;
+        bool LegacyIdAttached = false;
+        bool Id2Attached = false;
+        VulkanPresentTimingBackend TimingBackend = VulkanPresentTimingBackend::None;
+    };
+
+    // One frame's answer to "what target may this present request".
+    struct TargetTimingRequest
+    {
+        VulkanTargetSchedulingMode Mode = VulkanTargetSchedulingMode::None;
+        u64 ValueNs = 0;
+        // Relative durations that land on whole refresh intervals may also ask
+        // for the nearest refresh cycle; unquantized ones must not.
+        bool Quantized = false;
+        // Empty unless Mode is Relative.
+        VulkanRelativeCadence::Request Cadence{};
+    };
+
+    bool Initialize(const VulkanDevice& device, VkSurfaceKHR surface);
+#if defined(MELONPRIME_VULKAN_PRESENT_PACER_TESTING)
+    // Uses the same cold initialization path as production while allowing an
+    // API-level fake dispatch to drive the real pacer state machine.
+    bool InitializeForTesting(
+        const VulkanPresentPacerDispatch& dispatch,
+        const VulkanPresentPacerInitInfo& info,
+        VkSurfaceKHR surface);
+#endif
+    void Shutdown() noexcept;
+
+    void SetPolicy(int value) noexcept;
+    [[nodiscard]] VulkanPresentPacingPolicy GetPolicy() const noexcept;
+    [[nodiscard]] bool UsesPresenterOneFrameBudget() const noexcept
+    {
+        return VulkanPolicyUsesPresenterOneFrameBudget(GetPolicy());
+    }
+
+    // Queries the real surface and refreshes all surface-scoped support bits.
+    // Falls back to the legacy query if modern capability discovery fails.
+    bool QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capabilities);
+    [[nodiscard]] VkSwapchainCreateFlagsKHR GetSwapchainCreateFlags() const noexcept;
+    [[nodiscard]] bool ShouldUseFifoLatestReady() const noexcept;
+
+    // `imageCount` sizes the optional timing-results queue: a report only frees
+    // its slot once the presentation engine has completed it, which can take
+    // several refreshes, so a swapchain with more images in flight needs more
+    // slots before it starts rejecting presents.
+    void OnSwapchainCreated(
+        VkSwapchainKHR swapchain, VkPresentModeKHR presentMode, u32 imageCount);
+    void OnSwapchainDestroyed() noexcept;
+
+    // Called immediately before late input sampling.
+    //
+    // The result distinguishes swapchain rebuild states from device/surface
+    // loss; route it through VulkanPacerActionFor() rather than treating any
+    // non-Continue value as "recreate the swapchain".
+    //
+    // `targetFrameIntervalNs` is the emulator's own frame interval, or 0 when
+    // the host is not running at a fixed rate. It is never derived from the
+    // display refresh rate: the DS frame rate is a property of the emulated
+    // machine and its configured TargetFPS, not of the monitor.
+    [[nodiscard]] VulkanPacerBeginResult BeginFrame(
+        bool reflexActive, bool antiLagActive, bool normalSpeed, u64 targetFrameIntervalNs);
+
+    // Adds present_id2 and timing metadata to VkPresentInfoKHR. `preferredId`
+    // is the Reflex correlation id when available, otherwise zero.
+    u64 PreparePresent(VkPresentInfoKHR& present, u64 preferredId, PresentMetadata& metadata);
+    // A full optional timing-results queue rejects the present itself. Drop
+    // only timing metadata so the caller can retry the same image, the same
+    // logical ID and the same presentation sequence. The wait semaphores are
+    // dropped too: see the definition for why the retry must not re-wait them.
+    bool PrepareRetryWithoutTiming(
+        VkResult result, VkPresentInfoKHR& present, PresentMetadata& metadata);
+    void NotifyPresentResult(VkResult result, const PresentMetadata& metadata) noexcept;
+
+    void LogState(const char* context) const;
+    [[nodiscard]] VulkanPacingAuthority GetAuthority() const noexcept;
+    [[nodiscard]] bool IsTargetSchedulingActive() const noexcept;
+
+    // Everything the A/B latency capture records about pacing state for one
+    // frame. Reading it must not change any of it, which is why this is a
+    // by-value snapshot rather than a set of accessors: an A/B build and a
+    // normal build must present identically.
+    struct StateSnapshot
+    {
+        int Policy = 0;
+        int Authority = 0;
+        int PresentMode = 0;
+        // Monotonic for the lifetime of this pacer. The timing counters below
+        // are reset for every swapchain, so the capture must be able to reject
+        // a measured window that crosses a recreation rather than treating a
+        // reset counter as a run total.
+        u64 SwapchainGeneration = 0;
+        bool TargetTimeScheduling = false;
+        // Allowed by the policy and capabilities this frame.
+        bool BoundedPresentWait = false;
+        // Actually called vkWaitForPresent2KHR. The two differ whenever there
+        // is nothing to wait on -- no accepted present yet, or the previous one
+        // was already waited for -- so an A/B cannot read "the wait ran" from
+        // the permission alone.
+        bool BoundedWaitAttempted = false;
+        int FallbackReason = 0;
+        // Without the mode, a capture cannot tell an A2 run that actually
+        // scheduled from one that silently fell through to no target.
+        int TargetMode = 0;
+        int TimingBackend = 0;
+        u64 TargetValueNs = 0;
+        // The relative-cadence inputs the target was generated from, so a
+        // capture can verify TargetValueNs == RelativeQuanta x
+        // TargetGenerationRefreshIntervalNs per present. The pacer's periodic
+        // log cannot show that: its refresh interval is the current one, which
+        // may already have moved on from the one the target was built against.
+        u64 TargetGenerationRefreshIntervalNs = 0;
+        u64 TargetGenerationRefreshDurationNs = 0;
+        u64 RelativeQuanta = 0;
+        u64 RelativeAccumulatorBeforeNs = 0;
+        u64 RelativeAccumulatorAfterNs = 0;
+        u64 FeedbackPresentId = 0;
+        u64 FeedbackStageTimeNs = 0;
+        u64 FeedbackDesiredPresentTimeNs = 0;
+        u64 FeedbackActualPresentTimeNs = 0;
+        u64 FeedbackEarliestPresentTimeNs = 0;
+        u64 FeedbackPresentMarginNs = 0;
+        u64 BaselineSequence = 0;
+        u64 PresentSequence = 0;
+        u64 FrameIntervalNs = 0;
+        u32 WaitTimeouts = 0;
+        u32 TimingQueueSize = 0;
+        u32 TimingQueueFullCount = 0;
+        u32 TimingQueueRecoveries = 0;
+    };
+    // Takes the present it describes: the target columns must report what that
+    // accepted present actually carried, not what the resolver permitted or
+    // what some earlier present happened to request.
+    [[nodiscard]] StateSnapshot CaptureState(const PresentMetadata& metadata) const noexcept;
+
+private:
+    bool InitializeCommon(
+        const VulkanPresentPacerDispatch& dispatch,
+        const VulkanPresentPacerInitInfo& info,
+        VkSurfaceKHR surface);
+    // Snapshots every capability the pure resolver needs. Building it is a few
+    // bool copies; it is not a driver query.
+    [[nodiscard]] VulkanPacingCapabilities BuildCapabilities() const noexcept;
+    [[nodiscard]] VulkanPacingDecision ResolveDecision(
+        bool reflexActive, bool antiLagActive, bool normalSpeed) const noexcept;
+    [[nodiscard]] VulkanPacerBeginResult RefreshTimingProperties();
+    [[nodiscard]] VulkanPacerBeginResult RefreshTimeDomains();
+    void SelectTargetPresentStage() noexcept;
+    // Returns false when the driver refused the requested queue size. The
+    // caller must distinguish the initial allocation (no queue exists, so no
+    // present may carry timing metadata) from a growth attempt (the previous
+    // queue is still valid and keeps being used).
+    [[nodiscard]] bool ApplyTimingQueueSize(u32 size);
+    [[nodiscard]] VkPresentStageFlagsEXT RequestedStageQueries() const noexcept;
+    void ResetTimingLifecycle() noexcept;
+    void LatchPendingBeginResult(VulkanPacerBeginResult result) noexcept;
+    [[nodiscard]] VulkanPacerBeginResult ReportPastTiming();
+    [[nodiscard]] VulkanPacerBeginResult ReportGooglePastTiming();
+    [[nodiscard]] VulkanPacerBeginResult RefreshGoogleTiming();
+    // Absolute and relative are deliberately separate functions: one returns a
+    // point on a clock, the other a duration, and merging them behind one
+    // return value is how the distinction gets lost.
+    [[nodiscard]] TargetTimingRequest EvaluateTargetTiming(u64 sequence) noexcept;
+    [[nodiscard]] u64 EvaluateAbsoluteTargetTime(u64 sequence) noexcept;
+    [[nodiscard]] VulkanRelativeCadence::Request EvaluateRelativeTargetDuration() noexcept;
+    void DisableWait(const char* reason);
+    void DisableWait(const char* reason, bool legacyWait);
+    void LogTargetSchedulingIfChanged();
+
+    VulkanPresentPacerDispatch Dispatch{};
+    VkDevice DeviceHandle = VK_NULL_HANDLE;
+    VkPhysicalDevice PhysicalDeviceHandle = VK_NULL_HANDLE;
+    VkSurfaceKHR Surface = VK_NULL_HANDLE;
+    VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
+    VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
+    // This is deliberately not part of ResetTimingLifecycle(): it identifies
+    // the lifecycle that was reset and remains observable in the next capture
+    // row. Initialize/Shutdown may reuse the pacer, so lifetime monotonicity is
+    // more useful than a swapchain-local 0/1 flag.
+    u64 SwapchainGeneration = 0;
+
+    std::atomic<int> Policy{static_cast<int>(VulkanPresentPacingPolicy::TelemetryOnly)};
+    std::atomic<int> Authority{static_cast<int>(VulkanPacingAuthority::GenericHost)};
+    std::atomic<bool> TargetSchedulingActive{false};
+
+    bool Caps2Available = false;
+    bool PresentIdDevice = false;
+    bool PresentWaitLegacyDevice = false;
+    bool PresentId2Device = false;
+    bool PresentWait2Device = false;
+    bool PresentTimingDevice = false;
+    bool GoogleDisplayTimingDevice = false;
+    bool GoogleDisplayTimingRuntimeEnabled = false;
+    bool GoogleRefreshDurationReady = false;
+    bool AbsoluteTimingDevice = false;
+    bool RelativeTimingDevice = false;
+    bool LatestReadyDevice = false;
+    bool TimeDomainQueryAvailable = false;
+    bool PresentId2Surface = false;
+    bool PresentWaitLegacySurface = false;
+    bool PresentWait2Surface = false;
+    bool PresentTimingSurface = false;
+    bool PresentTimingRelativeSurface = false;
+    bool PresentTimingAbsoluteSurface = false;
+    bool PresentWaitLegacyRuntimeEnabled = false;
+    bool PresentWait2RuntimeEnabled = false;
+    bool WaitRuntimeEnabled = false;
+    VkPresentStageFlagsEXT PresentStageQueries = 0;
+
+    // Attaching timing metadata to presents and draining the results queue are
+    // separate switches. A full results queue retires the former while the
+    // latter must keep running -- draining is exactly what makes room again.
+    bool TimingMetadataEnabled = false;
+    bool TimingResultsQueryEnabled = false;
+
+    // Sticky for the pacer/surface lifetime, including swapchain recreation:
+    // once a surface has proved that the EXT timing lifecycle cannot complete,
+    // re-selecting its EXT path would just rebuild the swapchain into the same
+    // dead end. Initialize/Shutdown clears this state for a new lifetime, and
+    // a usable GOOGLE backend may still take over within the current lifetime.
+    bool TargetSchedulingLifecycleFailed = false;
+
+    // --- Phase 1: timing properties -----------------------------------------
+    u64 TimingPropertiesCounter = 0;
+    bool TimingPropertiesReady = false;
+    bool TimingPropertiesRetryPending = false;
+    VulkanRefreshDynamics RefreshDynamics = VulkanRefreshDynamics::Unknown;
+
+    // --- Phase 2: time domains ----------------------------------------------
+    u64 TimeDomainsCounter = 0;
+    bool TimeDomainsReady = false;
+    // Set only when bounded VK_INCOMPLETE enumeration retries were exhausted;
+    // VK_NOT_READY is not a valid pending result for the time-domain query.
+    bool TimeDomainsEnumerationRetryPending = false;
+    VkTimeDomainKHR TargetTimeDomain = VK_TIME_DOMAIN_DEVICE_KHR;
+    u64 TargetTimeDomainId = 0;
+    VkPresentStageFlagsEXT TargetPresentStage = 0;
+
+    // --- Phase 3/4: feedback and target scheduling ---------------------------
+    VulkanPresentTimingModel TimingModel;
+    VulkanGoogleDisplayTimingModel GoogleTimingModel;
+    VulkanRelativeCadence RelativeCadence;
+    // Resolved once per frame in BeginFrame() and reused by PreparePresent(),
+    // so the wait decision and the scheduling decision can never disagree.
+    VulkanPacingDecision LastDecision{};
+    // A decision is valid only for the swapchain generation that produced it.
+    // Recreating a swapchain between BeginFrame() and PreparePresent() must
+    // invalidate all behavioral permission from the retired generation.
+    u64 DecisionSwapchainGeneration = 0;
+    // Switching between absolute and relative restarts the cadence: a fraction
+    // accumulated while absolute was driving describes nothing relative needs.
+    VulkanTargetSchedulingMode LastTargetMode = VulkanTargetSchedulingMode::None;
+    u64 TargetFrameIntervalNs = 0;
+    u64 LastTargetValueNs = 0;
+    VulkanTargetSchedulingMode LastAppliedTargetMode = VulkanTargetSchedulingMode::None;
+    VulkanRelativeCadence::Request LastRelativeRequest{};
+    bool FifoFamilyPresentMode = true;
+    VulkanJitFallbackReason FallbackReason = VulkanJitFallbackReason::TelemetryOnlyPolicy;
+    VulkanJitFallbackReason LoggedFallbackReason = VulkanJitFallbackReason::None;
+    bool LoggedTargetSchedulingActive = false;
+
+    u64 RefreshDurationNs = 0;
+    u64 RefreshIntervalNs = 0;
+    u64 LastSubmittedId = 0;
+    u64 LastPresentedId = 0;
+    u64 LastWaitedId = 0;
+    u64 LastFeedbackId = 0;
+    u64 LastFeedbackStageTimeNs = 0;
+    // Whether this frame actually issued the bounded wait, as opposed to being
+    // allowed to. Reset at the top of every BeginFrame.
+    bool WaitAttemptedThisFrame = false;
+    // Capture attribution must not carry an old generation's wait into a new
+    // swapchain row after same-frame recreation.
+    u64 WaitAttemptSwapchainGeneration = 0;
+    // OnSwapchainCreated() is intentionally void because the presenter owns
+    // swapchain construction. A fatal eager timing query is latched here and
+    // consumed by the next BeginFrame(), so it cannot disappear in a log line.
+    VulkanPacerBeginResult PendingBeginResult = VulkanPacerBeginResult::Continue;
+    u32 TimingReportCountdown = 0;
+    u32 WaitTimeouts = 0;
+
+    // --- optional timing-results queue --------------------------------------
+    // Recovery is bounded. A queue that fills once is worth one attempt at a
+    // larger queue; a queue that keeps filling means this driver reports too
+    // slowly for the emulator's present rate, and retrying forever would just
+    // pay the rejected-present cost every frame.
+    static constexpr u32 MaxTimingQueueRecoveries = 3;
+    // A present that requests timing needs a results-queue slot. Without a
+    // queue there is nothing to attach metadata to, so this gates both.
+    bool TimingQueueAllocated = false;
+    u32 TimingQueueSize = 0;
+    // Presents accepted with timing metadata whose report has not come back.
+    //
+    // Presentation timing feedback is asynchronous and the extension promises
+    // only that a result becomes available in finite time -- never when. One
+    // empty poll therefore does not prove the queue is drained, so the decision
+    // to stop polling is made from this counter instead.
+    u64 OutstandingTimedPresents = 0;
+    u32 TimingQueueFullCount = 0;
+    u32 TimingQueueRecoveries = 0;
+    // Sticky while metadata is paused because the finite timing-results queue
+    // is under pressure. Cleared only after a larger queue is installed.
+    bool TimingQueuePressureActive = false;
+    bool TimingQueueRecoveryPending = false;
+    std::string WaitDisabledReason;
+};
+
+const char* VulkanPresentPacingPolicyName(VulkanPresentPacingPolicy policy) noexcept;
+const char* VulkanPacingAuthorityName(VulkanPacingAuthority authority) noexcept;
+const char* VulkanTargetSchedulingModeName(VulkanTargetSchedulingMode mode) noexcept;
+const char* VulkanPresentTimingBackendName(VulkanPresentTimingBackend backend) noexcept;
+const char* VulkanRefreshDynamicsName(VulkanRefreshDynamics dynamics) noexcept;
+const char* VulkanJitFallbackReasonName(VulkanJitFallbackReason reason) noexcept;
+
+} // namespace melonDS
+
+#endif
+#endif

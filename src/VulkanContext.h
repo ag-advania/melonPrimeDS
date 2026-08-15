@@ -1,33 +1,49 @@
-#pragma once
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+#ifndef VULKAN_CONTEXT_H
+#define VULKAN_CONTEXT_H
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
-#include <cstdint>
 #include <mutex>
 #include <string>
-#include <vulkan/vulkan.h>
+#include <vector>
 
-#include "types.h"
-
-// Ported from SapphireRhodonite/melonDS-android-lib.
-// Source pin: d77944275fa61f9b79cfcead2c3e98993429a023.
-// Mobile external-buffer support is intentionally excluded on desktop.
+#include "VulkanCommon.h"
+#include "VulkanFeatureProbe.h"
+#include "VulkanLoader.h"
 
 namespace melonDS
 {
 
-struct VulkanDeviceProfile
-{
-    u32 VendorId = 0;
-    u32 DeviceId = 0;
-    std::string DeviceName;
-    bool IsQualcomm = false;
-    bool IsAdreno = false;
-    bool IsArmMali = false;
-    bool IsPowerVR = false;
-    bool IsMaliG52Class = false;
-};
-
+// Process-wide owner of the Vulkan loader, the VkInstance and the chosen
+// VkPhysicalDevice, shaped like DX12Context: the settings-dialog feature check
+// and the renderer both Acquire()/Release() the same instance instead of each
+// creating their own.
+//
+// One instance per process is not just an optimization. Creating a second
+// VkInstance while the first is alive re-initializes every installed layer and,
+// on several drivers, resets global state the live instance depends on; and the
+// renderer-switch path (Vulkan -> OpenGL -> Vulkan) would otherwise tear down
+// and rebuild the instance on every toggle.
+//
+// Not thread-safe by construction: every mutating entry point takes Mutex.
 class VulkanContext
 {
 public:
@@ -36,80 +52,98 @@ public:
     VulkanContext(const VulkanContext&) = delete;
     VulkanContext& operator=(const VulkanContext&) = delete;
 
-    bool Acquire();
+    // Reference-counted. The first Acquire() opens the loader and creates the
+    // instance; the last Release() destroys both. Returns false when Vulkan is
+    // unavailable, in which case no reference is taken and
+    // GetFailureReason() explains why.
+    //
+    // `needPresentation` false runs the headless path used by the settings
+    // dialog: no surface extensions are requested and present support is
+    // reported as "not checked" rather than assumed.
+    bool Acquire(bool needPresentation = true);
     void Release();
-    bool IsReady() const;
 
-    VkInstance GetInstance() const { return Instance; }
-    VkPhysicalDevice GetPhysicalDevice() const { return PhysicalDevice; }
-    VkDevice GetDevice() const { return Device; }
-    VkQueue GetQueue() const { return Queue; }
-    u32 GetQueueFamilyIndex() const { return QueueFamilyIndex; }
-    std::mutex& GetQueueLock() { return QueueLock; }
-    bool SupportsTimestamps() const { return TimestampQueriesSupported && ResetQueryPool != nullptr; }
-    float GetTimestampPeriod() const { return TimestampPeriod; }
-    const VulkanDeviceProfile& GetDeviceProfile() const { return DeviceProfile; }
+    [[nodiscard]] bool IsReady() const noexcept { return Instance != VK_NULL_HANDLE; }
+    [[nodiscard]] VkInstance GetInstance() const noexcept { return Instance; }
+    [[nodiscard]] const Vk::InstanceDispatch& Fns() const noexcept { return InstanceFns; }
+    [[nodiscard]] const Vk::Library& GetLibrary() const noexcept { return Loader; }
+    [[nodiscard]] u32 GetInstanceVersion() const noexcept { return Loader.GetInstanceVersion(); }
 
-    PFN_vkWaitSemaphoresKHR GetWaitSemaphores() const { return WaitSemaphores; }
-    PFN_vkGetSemaphoreCounterValueKHR GetSemaphoreCounterValue() const { return GetSemaphoreCounterValueFn; }
-    PFN_vkResetQueryPoolEXT GetResetQueryPool() const { return ResetQueryPool; }
-    bool SupportsTimelineSemaphores() const { return TimelineSemaphoresSupported; }
-    bool SupportsNvidiaReflex() const { return NvidiaReflexSupported; }
-    const std::string& GetNvidiaReflexUnavailableReason() const { return NvidiaReflexUnavailableReason; }
-    PFN_vkSetLatencySleepModeNV GetSetLatencySleepModeNV() const { return SetLatencySleepModeNV; }
-    PFN_vkLatencySleepNV GetLatencySleepNV() const { return LatencySleepNV; }
-    PFN_vkSetLatencyMarkerNV GetSetLatencyMarkerNV() const { return SetLatencyMarkerNV; }
-    bool SupportsAmdAntiLag2() const { return AmdAntiLag2Supported; }
-    const std::string& GetAmdAntiLag2UnavailableReason() const { return AmdAntiLag2UnavailableReason; }
-    PFN_vkAntiLagUpdateAMD GetAntiLagUpdateAMD() const { return AntiLagUpdateAMD; }
-    bool SupportsDynamicTextureIndexing() const { return DynamicTextureIndexingSupported; }
-    bool SupportsNonUniformTextureIndexing() const { return NonUniformTextureIndexingSupported; }
-    bool IsTimelineSemaphoreForcedOff() const { return ForceDisableTimelineSemaphores; }
-    bool IsDynamicTextureIndexingForcedOff() const { return ForceDisableDynamicTextureIndexing; }
+    [[nodiscard]] const std::vector<const char*>& GetEnabledInstanceExtensions() const noexcept
+    {
+        return EnabledInstanceExtensions;
+    }
+    [[nodiscard]] const std::vector<const char*>& GetEnabledInstanceLayers() const noexcept
+    {
+        return EnabledInstanceLayers;
+    }
+    [[nodiscard]] bool IsValidationEnabled() const noexcept { return ValidationEnabled; }
+    [[nodiscard]] bool IsDebugUtilsEnabled() const noexcept { return DebugUtilsEnabled; }
 
-    u32 FindMemoryType(u32 typeBits, VkMemoryPropertyFlags properties) const;
-    static void SetCompatibilityOverrides(bool disableTimelineSemaphores, bool disableDynamicTextureIndexing);
+    // Enumerates and scores physical devices, keeping the highest-scoring
+    // eligible one.
+    //
+    // `surface` may be VK_NULL_HANDLE for the headless probe. Once the
+    // presenter owns a real surface it must call this again with it: present
+    // support and the present queue family cannot be determined without one,
+    // and re-selecting is cheap (no device has been created yet).
+    //
+    // Returns false when no device passes the probe; GetFailureReason() then
+    // holds the first failed requirement of the best candidate.
+    bool SelectPhysicalDevice(VkSurfaceKHR surface);
+
+    [[nodiscard]] bool HasSelectedDevice() const noexcept
+    {
+        return SelectedDevice.Handle != VK_NULL_HANDLE;
+    }
+    [[nodiscard]] const Vk::DeviceProbeResult& GetSelectedDevice() const noexcept { return SelectedDevice; }
+    [[nodiscard]] const Vk::ProbeReport& GetInstanceReport() const noexcept { return InstanceReport; }
+    [[nodiscard]] const std::string& GetFailureReason() const noexcept { return FailureReason; }
+
+    // Number of physical devices the last SelectPhysicalDevice() looked at.
+    [[nodiscard]] u32 GetCandidateCount() const noexcept { return CandidateCount; }
 
 private:
     VulkanContext() = default;
-    ~VulkanContext() = default;
+    ~VulkanContext();
 
-    bool initializeLocked();
-    void shutdownLocked();
+    bool CreateInstance(bool needPresentation);
+    void DestroyInstance();
+    bool BuildInstanceExtensionList(bool needPresentation,
+                                    const std::vector<VkExtensionProperties>& available);
+    bool BuildInstanceLayerList();
+    bool CreateDebugMessenger();
+    void DestroyDebugMessenger();
 
-private:
-    mutable std::mutex ContextLock;
-    u32 ReferenceCount = 0;
+    static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
+        VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+        VkDebugUtilsMessageTypeFlagsEXT types,
+        const VkDebugUtilsMessengerCallbackDataEXT* data,
+        void* userData);
 
+    mutable std::mutex Mutex;
+    int RefCount = 0;
+
+    Vk::Library Loader;
     VkInstance Instance = VK_NULL_HANDLE;
+    Vk::InstanceDispatch InstanceFns{};
     VkDebugUtilsMessengerEXT DebugMessenger = VK_NULL_HANDLE;
-    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
-    VkDevice Device = VK_NULL_HANDLE;
-    VkQueue Queue = VK_NULL_HANDLE;
-    u32 QueueFamilyIndex = 0;
-    std::mutex QueueLock;
 
-    PFN_vkWaitSemaphoresKHR WaitSemaphores = nullptr;
-    PFN_vkGetSemaphoreCounterValueKHR GetSemaphoreCounterValueFn = nullptr;
-    PFN_vkResetQueryPoolEXT ResetQueryPool = nullptr;
-    PFN_vkSetLatencySleepModeNV SetLatencySleepModeNV = nullptr;
-    PFN_vkLatencySleepNV LatencySleepNV = nullptr;
-    PFN_vkSetLatencyMarkerNV SetLatencyMarkerNV = nullptr;
-    PFN_vkAntiLagUpdateAMD AntiLagUpdateAMD = nullptr;
-    float TimestampPeriod = 0.0f;
-    bool TimestampQueriesSupported = false;
-    bool TimelineSemaphoresSupported = false;
-    bool NvidiaReflexSupported = false;
-    std::string NvidiaReflexUnavailableReason;
-    bool AmdAntiLag2Supported = false;
-    std::string AmdAntiLag2UnavailableReason;
-    bool DynamicTextureIndexingSupported = false;
-    bool NonUniformTextureIndexingSupported = false;
-    bool ForceDisableTimelineSemaphores = false;
-    bool ForceDisableDynamicTextureIndexing = false;
-    VulkanDeviceProfile DeviceProfile{};
+    std::vector<const char*> EnabledInstanceExtensions;
+    std::vector<const char*> EnabledInstanceLayers;
+    bool ValidationEnabled = false;
+    bool DebugUtilsEnabled = false;
+    bool PortabilityEnumeration = false;
+    bool PresentationRequested = true;
+
+    Vk::ProbeReport InstanceReport;
+    Vk::DeviceProbeResult SelectedDevice;
+    u32 CandidateCount = 0;
+
+    std::string FailureReason;
 };
 
-}
+} // namespace melonDS
 
 #endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN
+#endif // VULKAN_CONTEXT_H

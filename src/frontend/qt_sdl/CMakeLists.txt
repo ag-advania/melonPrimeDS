@@ -131,7 +131,36 @@ set(SOURCES_QT_SDL
 )
 
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
+option(MELONPRIME_REQUIRE_QT6_5
+    "Fail configure unless the selected Qt is Qt 6.5 or newer"
+    OFF)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
+
+# Renderer performance telemetry is a separate, shared compile-time gate. It
+# is intentionally independent of developer features: a measurement build can
+# enable only the renderer instrumentation, while every normal/release build
+# compiles the observer out of both the core and Qt/SDL targets.
+option(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY
+    "Compile Vulkan/DX12 renderer performance telemetry instrumentation"
+    OFF)
+
+function(melonprime_apply_renderer_perf_telemetry_definition target)
+    if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+        target_compile_definitions(${target} PRIVATE
+            MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=1)
+    endif()
+endfunction()
+
+# Per-frame CSV capture for Vulkan present-pacing A/B measurement.
+#
+# Deliberately separate from MELONPRIME_ENABLE_DEVELOPER_FEATURES. Developer
+# features make the pacer request every present stage the surface supports,
+# which changes driver work and timing-queue pressure -- so a developer build is
+# not a valid thing to measure a shipping build's latency with. This option adds
+# logging only and must never alter presentation behaviour.
+option(MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE
+    "Record per-frame Vulkan present pacing timings to CSV for A/B measurement"
+    OFF)
 
 # --- MelonPrime Vulkan backend build switch ---------------------------------
 # This is a complete build gate. When inactive, no Vulkan source, include path,
@@ -142,6 +171,13 @@ option(MELONPRIME_ENABLE_VULKAN
 option(MELONPRIME_FORCE_DISABLE_VULKAN
     "Completely exclude all MelonPrime Vulkan code"
     OFF)
+option(MELONPRIME_BUNDLE_MOLTENVK
+    "Bundle the MoltenVK runtime into macOS Vulkan app bundles"
+    ON)
+set(MELONPRIME_MOLTENVK_DYLIB "" CACHE FILEPATH
+    "Path to the MoltenVK runtime dylib embedded in macOS Vulkan builds")
+set(MELONPRIME_MOLTENVK_LICENSE "" CACHE FILEPATH
+    "Path to the MoltenVK license file copied into macOS app-bundle notices")
 
 set(MELONPRIME_VULKAN_ACTIVE OFF)
 if (MELONPRIME_FORCE_DISABLE_VULKAN)
@@ -151,15 +187,17 @@ elseif (MELONPRIME_ENABLE_VULKAN)
     # macOS) is opened with dlopen()/LoadLibrary() at runtime by
     # VulkanDispatch, so no import library is linked here.
     #
-    # HINTS cover the LunarG SDK on every platform plus Homebrew's
-    # vulkan-headers on macOS, whose prefixes CMake does not search by default
-    # on Apple Silicon.
+    # HINTS cover the LunarG SDK on every platform, Homebrew's
+    # vulkan-headers on macOS, and the package prefixes used by the BSD CI
+    # images. CMake does not search all of those prefixes by default.
     find_path(MELONPRIME_VULKAN_INCLUDE_DIR
         NAMES vulkan/vulkan.h
         HINTS
             ENV VULKAN_SDK
             /opt/homebrew
             /usr/local
+            /usr/pkg
+            /usr/X11R6
         PATH_SUFFIXES include
         DOC "Directory containing the Vulkan headers")
     if (MELONPRIME_VULKAN_INCLUDE_DIR)
@@ -242,6 +280,21 @@ endif()
 
 if (USE_QT6)
     find_package(Qt6 COMPONENTS Core Gui Widgets Network Multimedia OpenGL OpenGLWidgets Svg REQUIRED)
+    set(_melonprime_qt6_version "${Qt6_VERSION}")
+    if (NOT _melonprime_qt6_version)
+        set(_melonprime_qt6_version "${Qt6Core_VERSION}")
+    endif()
+    message(STATUS "MelonPrime Qt6 version: ${_melonprime_qt6_version}")
+    if (MELONPRIME_REQUIRE_QT6_5)
+        if (NOT _melonprime_qt6_version)
+            message(FATAL_ERROR
+                "MELONPRIME_REQUIRE_QT6_5 is ON, but CMake did not report a Qt6 version")
+        endif()
+        if (_melonprime_qt6_version VERSION_LESS "6.5.0")
+            message(FATAL_ERROR
+                "MELONPRIME_REQUIRE_QT6_5 is ON, but Qt ${_melonprime_qt6_version} was found; Qt 6.5+ is required")
+        endif()
+    endif()
     if (WIN32 AND MINGW AND TARGET WrapRt::WrapRt)
         # Qt's FindWrapRt can pick up MSYS /usr/lib/librt.a during a MinGW
         # configure, but Windows targets do not need librt and cannot link it.
@@ -263,6 +316,10 @@ if (USE_QT6)
         endif()
     endif()
 else()
+    if (MELONPRIME_REQUIRE_QT6_5)
+        message(FATAL_ERROR
+            "MELONPRIME_REQUIRE_QT6_5 is ON, but USE_QT6 is OFF; Qt 6.5+ is required")
+    endif()
     find_package(Qt5 COMPONENTS Core Gui Widgets Network Multimedia Svg REQUIRED)
     set(QT_LINK_LIBS Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Network Qt5::Multimedia)
 endif()
@@ -393,8 +450,50 @@ else()
 endif()
 target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz}")
 
+if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    target_compile_definitions(core PRIVATE
+        MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=1)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=1)
+    message(STATUS
+        "MelonPrime renderer performance telemetry: COMPILED IN. "
+        "Set MELONPRIME_PERF=1 at runtime to enable collection.")
+else()
+    message(STATUS
+        "MelonPrime renderer performance telemetry: COMPILED OUT")
+endif()
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    target_compile_definitions(core PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    add_executable(melonprime_structured_capture_dependency_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/structured-capture-dependency-tests.cpp)
+    target_include_directories(melonprime_structured_capture_dependency_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_structured_capture_dependency_tests PRIVATE
+        MELONPRIME_DS)
+    set_target_properties(melonprime_structured_capture_dependency_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_structured_capture_dependency_check ALL
+        COMMAND $<TARGET_FILE:melonprime_structured_capture_dependency_tests>
+        DEPENDS melonprime_structured_capture_dependency_tests
+        COMMENT "Running CaptureSidecar dependency classifier tests..."
+        VERBATIM)
+    # Renderer-switch stress driver. Added to the target only in a developer
+    # configure, so a release build cannot contain it even by accident -- the
+    # header's own #ifdef is the second line of defence, not the first.
+    target_sources(melonDS PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRendererSwitchStress.cpp)
+endif()
+
+if (MELONPRIME_VULKAN_ACTIVE AND MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE)
+    # Both targets: the capture object lives in core next to the pacer, and the
+    # presenter in melonDS drives its marker points.
+    target_compile_definitions(melonDS PRIVATE MELONPRIME_VULKAN_LATENCY_CAPTURE=1)
+    target_compile_definitions(core PRIVATE MELONPRIME_VULKAN_LATENCY_CAPTURE=1)
+    message(STATUS
+        "MelonPrime: Vulkan latency capture ENABLED. This build writes a per-frame "
+        "CSV and is intended for A/B measurement only.")
 endif()
 
 if (MELONPRIME_VULKAN_ACTIVE)
@@ -409,22 +508,203 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_include_directories(melonDS PRIVATE "${MELONPRIME_VULKAN_INCLUDE_DIR}")
     target_include_directories(core PRIVATE "${MELONPRIME_VULKAN_INCLUDE_DIR}")
 
+    # New Vulkan backend sources are added here as the clean-room rewrite lands.
+    #
+    # These live in src/ and belong to the core target, like the DX12 and Metal
+    # backends: they are compiled into the emulator core, not the Qt frontend.
+    # The Vulkan loader is never linked -- every entry point is resolved at
+    # runtime by VulkanLoader -- so no library is added alongside them.
     target_sources(core PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDispatch.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanCommon.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanLoader.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanFeatureProbe.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanContext.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_AcceleratedFrontend.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDevice.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanMemory.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDescriptors.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanSync.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanNvidiaReflex.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanAmdAntiLag.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPresentPacer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPresentLatencyCapture.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheVulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_Vulkan.cpp)
+
+    # Pregenerated SPIR-V for the compute rasterizer. The .comp/.glsl sources
+    # under GPU3D_Vulkan_shaders/ are inputs to the offline generator
+    # (tools/vulkan/compile-shaders.py) and are deliberately NOT listed here:
+    # the SPIR-V words are committed, so the build has no glslang dependency.
+    # Blobs are split one translation unit per stage because a single header
+    # would be ~8 MB that every consumer would re-parse.
+    set(MELONPRIME_VULKAN_SHADER_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_Vulkan_shaders/generated)
+    # Frontend-side Vulkan sources: the feature check the settings dialog and
+    # the renderer factory consult, the per-platform WSI surface adapters, the
+    # swapchain/present path and the Qt screen panel. These belong to the
+    # melonDS (Qt frontend) target, not to core: they include QtWidgets and the
+    # MelonPrime HUD/OSD surfaces, which core must never see.
+    #
+    # The presenter's SPIR-V lives in MelonPrimeVulkanPresentShaders/ as a
+    # committed generated header (tools/vulkan/compile-present-shaders.py), so
+    # the .vert/.frag sources are deliberately NOT listed as build inputs.
     target_sources(melonDS PRIVATE
-        MelonPrimeVulkanFeatureCheck.cpp
-        MelonPrimeVulkanFrameQueue.cpp
-        MelonPrimeVulkanOutput.cpp
-        MelonPrimeVulkanSurfacePresenter.cpp
-        MelonPrimeVulkanSurfaceWin32.cpp
-        MelonPrimeVulkanSurfaceLinux.cpp
-        MelonPrimeVulkanSurfaceHostLinux.cpp
-        MelonPrimeVulkanSurfaceStub.cpp)
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanFeatureCheck.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceCommon.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenter.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeScreenVulkan.cpp)
+
+    # Execute the target-time presentation arithmetic on every Vulkan build.
+    # VulkanPresentTimingModel holds no Vulkan objects on purpose, so sequence
+    # accounting, baseline rebasing, staleness and overflow are validated with
+    # no driver, no GPU and no window system -- the parts of target-time pacing
+    # that a static audit cannot see and that runtime testing on one machine
+    # would only exercise for that machine's display.
+    add_executable(melonprime_vulkan_present_timing_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-present-timing-tests.cpp)
+    target_include_directories(melonprime_vulkan_present_timing_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_present_timing_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1)
+    melonprime_apply_renderer_perf_telemetry_definition(
+        melonprime_vulkan_present_timing_tests)
+    set_target_properties(melonprime_vulkan_present_timing_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_present_timing_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_present_timing_tests>
+        DEPENDS melonprime_vulkan_present_timing_tests
+        COMMENT "Running Vulkan present timing model tests..."
+        VERBATIM)
+
+    # Execute the production pacer against an API-level fake dispatch.  The
+    # test compiles VulkanPresentPacer.cpp directly so every fake call reaches
+    # the same state machine as the emulator; core supplies VulkanDevice and
+    # common Vulkan utility symbols without extracting a second pacer object.
+    add_executable(melonprime_vulkan_present_pacer_dispatch_tests
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-present-pacer-dispatch-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPresentPacer.cpp)
+    target_include_directories(melonprime_vulkan_present_pacer_dispatch_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_present_pacer_dispatch_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        MELONPRIME_VULKAN_PRESENT_PACER_TESTING=1)
+    melonprime_apply_renderer_perf_telemetry_definition(
+        melonprime_vulkan_present_pacer_dispatch_tests)
+    target_link_libraries(melonprime_vulkan_present_pacer_dispatch_tests PRIVATE core)
+    set_target_properties(melonprime_vulkan_present_pacer_dispatch_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_present_pacer_dispatch_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_present_pacer_dispatch_tests>
+        DEPENDS melonprime_vulkan_present_pacer_dispatch_tests
+        COMMENT "Running Vulkan present pacer fake-dispatch tests..."
+        VERBATIM)
+
+    if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD|NetBSD|OpenBSD")
+        # Exercise the production VulkanLoader::Library::Open() path against
+        # the installed runtime. A successful file-exists probe is not enough:
+        # this target must resolve the loader's global entry points through the
+        # same dlopen() implementation used by melonPrimeDS.
+        add_executable(melonprime_vulkan_loader_open_tests
+            ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-loader-open-tests.cpp)
+        target_include_directories(melonprime_vulkan_loader_open_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../..
+            "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+        target_compile_definitions(melonprime_vulkan_loader_open_tests PRIVATE
+            MELONPRIME_DS
+            MELONPRIME_ENABLE_VULKAN=1)
+        melonprime_apply_renderer_perf_telemetry_definition(
+            melonprime_vulkan_loader_open_tests)
+        target_link_libraries(melonprime_vulkan_loader_open_tests PRIVATE
+            core
+            ${CMAKE_DL_LIBS})
+        set_target_properties(melonprime_vulkan_loader_open_tests PROPERTIES
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+        add_custom_target(melonprime_vulkan_loader_open_check
+            COMMAND $<TARGET_FILE:melonprime_vulkan_loader_open_tests>
+            DEPENDS melonprime_vulkan_loader_open_tests
+            COMMENT "Running production Vulkan loader open check..."
+            VERBATIM)
+    endif()
+
+    if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        # Exercise the production renderer-selection code in both forced
+        # success and sticky-failure states. The feature-check functions are
+        # deterministic test doubles here; the process-level failure seam and
+        # switch stress driver cover the real renderer/panel lifetime path.
+        add_executable(melonprime_vulkan_renderer_fallback_tests
+            ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-renderer-fallback-tests.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVideoBackend.cpp)
+        target_include_directories(melonprime_vulkan_renderer_fallback_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}/..
+            ${CMAKE_CURRENT_SOURCE_DIR}/../..
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../net
+            ${SDL2_INCLUDE_DIRS}
+            "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+        target_compile_definitions(melonprime_vulkan_renderer_fallback_tests PRIVATE
+            MELONPRIME_DS
+            MELONPRIME_ENABLE_VULKAN=1
+            MELONPRIME_ENABLE_DEVELOPER_FEATURES=1
+            OGLRENDERER_ENABLED
+            SDL_MAIN_HANDLED
+            VK_NO_PROTOTYPES=1)
+        melonprime_apply_renderer_perf_telemetry_definition(
+            melonprime_vulkan_renderer_fallback_tests)
+        target_link_libraries(melonprime_vulkan_renderer_fallback_tests PRIVATE
+            ${QT_LINK_LIBS})
+        set_target_properties(melonprime_vulkan_renderer_fallback_tests PROPERTIES
+            WIN32_EXECUTABLE OFF
+            RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+        add_custom_target(melonprime_vulkan_renderer_fallback_check ALL
+            COMMAND $<TARGET_FILE:melonprime_vulkan_renderer_fallback_tests>
+            DEPENDS melonprime_vulkan_renderer_fallback_tests
+            COMMENT "Running Vulkan renderer fallback regression tests..."
+            VERBATIM)
+    endif()
+
+    # One platform adapter per target OS. Each is additionally guarded by its
+    # own #if, so an accidental double-add cannot produce duplicate symbols.
+    if (WIN32)
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceWin32.cpp)
+    elseif (APPLE)
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceMacOS.mm)
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceLinux.cpp)
+    elseif (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD"
+        OR CMAKE_SYSTEM_NAME STREQUAL "NetBSD"
+        OR CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceBSD.cpp)
+    else()
+        # Unknown Unix-like systems: no supported WSI extension in this build.
+        # The stub fails loudly at runtime rather than failing to compile.
+        target_sources(melonDS PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceStub.cpp)
+    endif()
+
+    target_sources(core PRIVATE
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderModules.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_CalculateWorkOffsets.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_CaptureSidecar.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_ClearCoarseBinMask.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_ClearIndirectWorkCount.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_Compositor.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_CorrectCoverage.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_DepthBlend.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_FinalPass.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_InterpSpans.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_Rasterise.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_Resolve.cpp
+        ${MELONPRIME_VULKAN_SHADER_DIR}/GPU3D_Vulkan_ShaderBlobs_SortWork.cpp)
+    target_include_directories(core PRIVATE "${MELONPRIME_VULKAN_SHADER_DIR}")
 
     if (APPLE)
         # Vulkan on macOS is MoltenVK, which can only present to a
@@ -448,42 +728,12 @@ if (MELONPRIME_VULKAN_ACTIVE)
             ${MELONPRIME_VULKAN_QUARTZCORE_LIB}
             ${MELONPRIME_VULKAN_APPKIT_LIB}
             ${MELONPRIME_VULKAN_METAL_LIB})
-        target_sources(melonDS PRIVATE MelonPrimeVulkanSurfaceMacOS.mm)
+        # MelonPrimeVulkanSurfaceMacOS.mm is the CAMetalLayer adapter; it is
+        # added to the target above, next to the other platform adapters. ARC is
+        # required because it holds Objective-C objects.
         set_source_files_properties(
-            MelonPrimeVulkanSurfaceMacOS.mm
-            PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    endif()
-
-    find_package(Python3 COMPONENTS Interpreter QUIET)
-    if (Python3_Interpreter_FOUND)
-        find_program(MELONPRIME_GLSLC_EXECUTABLE
-            NAMES glslc glslc.exe
-            HINTS ENV VULKAN_SDK
-            PATH_SUFFIXES Bin bin)
-        set(_melonprime_spirv_command
-            "${Python3_EXECUTABLE}"
-            "${CMAKE_SOURCE_DIR}/tools/vulkan_spirv.py")
-        if (MELONPRIME_GLSLC_EXECUTABLE)
-            list(APPEND _melonprime_spirv_command
-                --glslc "${MELONPRIME_GLSLC_EXECUTABLE}")
-        endif()
-
-        add_custom_target(melonprime_regenerate_vulkan_spirv
-            COMMAND ${_melonprime_spirv_command} regenerate
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-            COMMENT "Regenerating MelonPrime Vulkan SPIR-V headers"
-            USES_TERMINAL
-            VERBATIM)
-        add_custom_target(melonprime_check_vulkan_spirv
-            COMMAND ${_melonprime_spirv_command} check
-            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-            COMMENT "Checking MelonPrime Vulkan SPIR-V headers"
-            USES_TERMINAL
-            VERBATIM)
-        unset(_melonprime_spirv_command)
-    else()
-        message(WARNING
-            "Python 3 was not found; MelonPrime Vulkan SPIR-V developer targets are unavailable")
+            ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceMacOS.mm
+            PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     endif()
 
     message(STATUS
@@ -506,6 +756,7 @@ if (MELONPRIME_DX12_ACTIVE)
     target_sources(core PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12Context.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12AmdAntiLag2.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12IntelXeLL.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12NvidiaReflex.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheDX12.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_DX12.cpp
@@ -513,6 +764,65 @@ if (MELONPRIME_DX12_ACTIVE)
     target_sources(melonDS PRIVATE
         MelonPrimeDX12FeatureCheck.cpp
         MelonPrimeDX12SurfacePresenter.cpp)
+
+    # Execute the production XeLL state machine against an injected fake API
+    # on every Windows DX12 build. This validates successful and failing driver
+    # paths without requiring Intel Arc hardware or loading Intel's runtime.
+    add_executable(melonprime_xell_state_machine_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/xell-state-machine-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12IntelXeLL.cpp)
+    target_include_directories(melonprime_xell_state_machine_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_xell_state_machine_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_DX12=1
+        MELONPRIME_ENABLE_DEVELOPER_FEATURES=1)
+    set_target_properties(melonprime_xell_state_machine_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_xell_state_machine_check ALL
+        COMMAND $<TARGET_FILE:melonprime_xell_state_machine_tests>
+        DEPENDS melonprime_xell_state_machine_tests
+        COMMENT "Running Intel XeLL fake API state-machine tests..."
+        VERBATIM)
+
+    set(MELONPRIME_XELL_RUNTIME_DIR
+        "${CMAKE_SOURCE_DIR}/res/third_party/intel-xell")
+    set(MELONPRIME_XELL_RUNTIME
+        "${MELONPRIME_XELL_RUNTIME_DIR}/libxell.dll")
+    set(MELONPRIME_XELL_LICENSE
+        "${MELONPRIME_XELL_RUNTIME_DIR}/LICENSE.txt")
+    set(MELONPRIME_XELL_THIRD_PARTY
+        "${MELONPRIME_XELL_RUNTIME_DIR}/third-party-programs.txt")
+    foreach(XELL_FILE
+        "${MELONPRIME_XELL_RUNTIME}"
+        "${MELONPRIME_XELL_LICENSE}"
+        "${MELONPRIME_XELL_THIRD_PARTY}")
+        if (NOT EXISTS "${XELL_FILE}")
+            message(FATAL_ERROR
+                "MelonPrime Intel XeLL runtime file is missing: ${XELL_FILE}")
+        endif()
+    endforeach()
+    file(SHA256 "${MELONPRIME_XELL_RUNTIME}" MELONPRIME_XELL_RUNTIME_SHA256)
+    if (NOT MELONPRIME_XELL_RUNTIME_SHA256 STREQUAL
+        "d2030dcd694fda8f2ec7e044b13e6db8f0b56d4ba9113a5efad334e3f3ded8c7")
+        message(FATAL_ERROR
+            "Intel XeLL runtime hash does not match pinned XeSS SDK 3.0.2")
+    endif()
+
+    add_custom_command(TARGET melonDS POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MELONPRIME_XELL_RUNTIME}"
+            "$<TARGET_FILE_DIR:melonDS>/libxell.dll"
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:melonDS>/ThirdPartyNotices"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MELONPRIME_XELL_LICENSE}"
+            "$<TARGET_FILE_DIR:melonDS>/ThirdPartyNotices/Intel-XeSS-SDK-LICENSE.txt"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MELONPRIME_XELL_THIRD_PARTY}"
+            "$<TARGET_FILE_DIR:melonDS>/ThirdPartyNotices/Intel-XeSS-SDK-third-party-programs.txt"
+        COMMENT "Bundling Intel XeLL runtime and notices..."
+        VERBATIM)
 
     # Only the GUID symbols are linked; every DX12/DXGI/D3DCompile entry point
     # is resolved with GetProcAddress at runtime.
@@ -870,6 +1180,40 @@ if (APPLE)
     option(MACOS_BUILD_DMG "Build DMG image of the macOS application bundle" OFF)
     option(MACOS_ADHOC_SIGN_BUNDLE "Ad-hoc sign the macOS app bundle after build" ON)
 
+    if (MELONPRIME_VULKAN_ACTIVE AND MELONPRIME_BUNDLE_MOLTENVK)
+        if (NOT MELONPRIME_MOLTENVK_DYLIB OR NOT EXISTS "${MELONPRIME_MOLTENVK_DYLIB}")
+            message(FATAL_ERROR
+                "macOS Vulkan builds require MELONPRIME_MOLTENVK_DYLIB to point "
+                "at a pinned libMoltenVK.dylib runtime for app-bundle deployment. "
+                "Set MELONPRIME_FORCE_DISABLE_VULKAN=ON for a Metal-only build.")
+        endif()
+
+        add_custom_command(TARGET melonDS POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_DIR:melonDS>/Contents/Frameworks"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MELONPRIME_MOLTENVK_DYLIB}"
+                "$<TARGET_BUNDLE_DIR:melonDS>/Contents/Frameworks/libMoltenVK.dylib"
+            COMMENT "Bundling MoltenVK runtime into macOS app bundle..."
+            VERBATIM)
+
+        if (MELONPRIME_MOLTENVK_LICENSE)
+            if (NOT EXISTS "${MELONPRIME_MOLTENVK_LICENSE}")
+                message(FATAL_ERROR
+                    "MELONPRIME_MOLTENVK_LICENSE was set but does not exist: "
+                    "${MELONPRIME_MOLTENVK_LICENSE}")
+            endif()
+            add_custom_command(TARGET melonDS POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "$<TARGET_BUNDLE_DIR:melonDS>/Contents/Resources/ThirdPartyNotices"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${MELONPRIME_MOLTENVK_LICENSE}"
+                    "$<TARGET_BUNDLE_DIR:melonDS>/Contents/Resources/ThirdPartyNotices/MoltenVK-LICENSE.txt"
+                COMMENT "Bundling MoltenVK license notice..."
+                VERBATIM)
+        endif()
+    endif()
+
     if (MACOS_BUNDLE_LIBS)
         if (MACOS_BUILD_DMG)
             set(DMGARG "--dmg")
@@ -883,7 +1227,7 @@ if (APPLE)
         find_program(CODESIGN_EXECUTABLE codesign)
         if (CODESIGN_EXECUTABLE)
             add_custom_command(TARGET melonDS POST_BUILD
-                COMMAND ${CODESIGN_EXECUTABLE} --force --sign - --deep "$<TARGET_BUNDLE_DIR:melonDS>"
+                COMMAND ${CODESIGN_EXECUTABLE} --force --sign - --deep --timestamp=none "$<TARGET_BUNDLE_DIR:melonDS>"
                 COMMENT "Ad-hoc signing macOS app bundle...")
         else()
             message(WARNING "codesign not found; macOS app bundle will not be ad-hoc signed")

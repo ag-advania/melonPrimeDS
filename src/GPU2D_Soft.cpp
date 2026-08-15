@@ -42,14 +42,14 @@ void SoftRenderer2D::Reset()
     NumSprites = 0;
 }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2, CompositeMetadata* metadata) const
 #else
 u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
 #endif
 {
     u32 coloreffect = 0;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     u32 eva = 0, evb = 0;
 #else
     u32 eva, evb;
@@ -110,7 +110,7 @@ u32 SoftRenderer2D::ColorComposite(int i, u32 val1, u32 val2) const
         }
     }
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     if (metadata != nullptr)
     {
         metadata->Mode = coloreffect;
@@ -140,7 +140,7 @@ void SoftRenderer2D::DrawScanline(u32 line)
         // if this 2D unit is disabled in POWCNT, the output is a fixed color
         // (black for unit A, white for unit B)
         u32 fillcolor = (GPU2D.Num == 0) ? 0xFF000000 : 0xFF3F3F3F;
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         for (int i = 0; i < 256; i++)
         {
             dst[i] = fillcolor;
@@ -158,7 +158,7 @@ void SoftRenderer2D::DrawScanline(u32 line)
     if (GPU2D.ForcedBlank)
     {
         // forced blank
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         for (int i = 0; i < 256; i++)
         {
             dst[i] = 0xFF3F3F3F;
@@ -358,6 +358,9 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
             *(u64*)&BGOBJLine[i] = backdrop;
         for (int i = 256; i < 512; i+=2)
             *(u64*)&BGOBJLine[i] = 0;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        std::fill(std::begin(BGOBJCaptureReference), std::end(BGOBJCaptureReference), 0u);
+#endif
     }
 
     if (GPU2D.DispCnt & 0xE000)
@@ -388,7 +391,7 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
         u32 val1 = BGOBJLine[i];
         u32 val2 = BGOBJLine[256+i];
 
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         CompositeMetadata metadata{};
         dst[i] = ColorComposite(i, val1, val2, &metadata);
         if (Parent.UseStructuredVulkan2D())
@@ -402,7 +405,9 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
                 dst[i],
                 metadata.Mode,
                 metadata.Eva,
-                metadata.Evb);
+                metadata.Evb,
+                BGOBJCaptureReference[i],
+                BGOBJCaptureReference[256 + i]);
         }
 #else
         dst[i] = ColorComposite(i, val1, val2);
@@ -411,7 +416,7 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
 }
 
 
-void SoftRenderer2D::DrawPixel(u32* dst, u16 color, u32 flag)
+void SoftRenderer2D::DrawPixel(u32* dst, u16 color, u32 flag, u32 captureReference)
 {
     u8 r = (color & 0x001F) << 1;
     u8 g = ((color & 0x03E0) >> 4) | ((color & 0x8000) >> 15);
@@ -419,6 +424,16 @@ void SoftRenderer2D::DrawPixel(u32* dst, u16 color, u32 flag)
 
     *(dst+256) = *dst;
     *dst = r | (g << 8) | (b << 16) | flag;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    const std::ptrdiff_t index = dst - BGOBJLine;
+    if (index >= 0 && index < 256)
+    {
+        BGOBJCaptureReference[256 + index] = BGOBJCaptureReference[index];
+        BGOBJCaptureReference[index] = captureReference;
+    }
+#else
+    (void)captureReference;
+#endif
 }
 
 void SoftRenderer2D::DrawBG_3D()
@@ -432,6 +447,10 @@ void SoftRenderer2D::DrawBG_3D()
 
         BGOBJLine[i+256] = BGOBJLine[i];
         BGOBJLine[i] = c | 0x40000000;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        BGOBJCaptureReference[i+256] = BGOBJCaptureReference[i];
+        BGOBJCaptureReference[i] = 0u;
+#endif
     }
 }
 
@@ -771,20 +790,23 @@ void SoftRenderer2D::DrawBG_Extended(u32 line, u32 bgnum)
 
                     if (!(finalX & ofxmask) && !(finalY & ofymask))
                     {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
                         const u32 pixelByteAddress =
                             (tilemapaddr + (((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) << 1)) & bgvrammask;
-                        if (Parent.DrawStructuredCapturePixel(
-                            GPU2D.Num,
-                            line,
-                            &BGOBJLine[i],
-                            pixelByteAddress))
-                        {
-                            rotX += rotA;
-                            rotY += rotC;
-                            continue;
-                        }
                         color = *(u16*)&bgvram[pixelByteAddress];
+                        const u32 captureReference = Parent.GetStructuredCaptureReference(
+                            GPU2D.Num,
+                            pixelByteAddress,
+                            color);
+                        if (color & 0x8000)
+                            DrawPixel(
+                                &BGOBJLine[i],
+                                color & 0x7FFF,
+                                0x01000000u << bgnum,
+                                captureReference);
+                        rotX += rotA;
+                        rotY += rotC;
+                        continue;
 #else
                         color = *(u16*)&bgvram[(tilemapaddr + (((((finalY & ymask) >> 8) << yshift) + ((finalX & xmask) >> 8)) << 1)) & bgvrammask];
 #endif
@@ -1024,6 +1046,9 @@ void SoftRenderer2D::ApplySpriteMosaicX()
 
     u8 mosx = 0;
     u32 latchcolor;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    u32 latchReference = 0;
+#endif
     for (int i = 0; i < 256; i++)
     {
         u32 curcolor = OBJLine[i];
@@ -1039,9 +1064,17 @@ void SoftRenderer2D::ApplySpriteMosaicX()
             latch = true;
 
         if (latch)
+        {
             latchcolor = curcolor;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+            latchReference = OBJCaptureReference[i];
+#endif
+        }
 
         OBJLine[i] = latchcolor;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        OBJCaptureReference[i] = latchReference;
+#endif
 
         if (mosx == mosw)
             mosx = 0;
@@ -1073,7 +1106,13 @@ void SoftRenderer2D::InterleaveSprites(u32 prio)
         else
             color = extpal[pixel & 0xFFF];
 
-        DrawPixel(&BGOBJLine[i], color, pixel & 0xFF000000);
+        DrawPixel(&BGOBJLine[i], color, pixel & 0xFF000000,
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+            OBJCaptureReference[i]
+#else
+            0u
+#endif
+        );
     }
 }
 
@@ -1110,6 +1149,9 @@ void SoftRenderer2D::DrawSprites(u32 line)
     NumSprites = 0;
     memset(OBJLine, 0, sizeof(OBJLine));
     memset(OBJWindow, 0, sizeof(OBJWindow));
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    std::fill(std::begin(OBJCaptureReference), std::end(OBJCaptureReference), 0u);
+#endif
 
     if (!GPU2D.OBJEnable)
         return;
@@ -1184,7 +1226,8 @@ void SoftRenderer2D::DrawSprites(u32 line)
 }
 
 template<bool window>
-void SoftRenderer2D::DrawSpritePixel(int color, u32 pixelattr, s32 xpos)
+void SoftRenderer2D::DrawSpritePixel(
+    int color, u32 pixelattr, s32 xpos, u32 captureReference)
 {
     if (window)
     {
@@ -1201,6 +1244,9 @@ void SoftRenderer2D::DrawSpritePixel(int color, u32 pixelattr, s32 xpos)
         if (newisopaque && (!oldisopaque || priocheck))
         {
             OBJLine[xpos] = color | pixelattr;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+            OBJCaptureReference[xpos] = captureReference;
+#endif
         }
         else if (!newisopaque && !oldisopaque)
         {
@@ -1304,9 +1350,19 @@ void SoftRenderer2D::DrawSprite_Rotscale(u32 num, u32 boundwidth, u32 boundheigh
         {
             if ((u32)rotX < width && (u32)rotY < height)
             {
-                color = *(u16*)&objvram[(pixelsaddr + ((rotY >> 8) * ytilefactor) + ((rotX >> 8) << 1)) & objvrammask];
-
+                const u32 pixelAddress =
+                    (pixelsaddr + ((rotY >> 8) * ytilefactor) + ((rotX >> 8) << 1)) & objvrammask;
+                color = *(u16*)&objvram[pixelAddress];
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+                const u32 captureReference = (color & 0x8000) != 0u
+                    ? Parent.GetStructuredCaptureReference(
+                        GPU2D.Num, pixelAddress, color, true)
+                    : 0u;
+                DrawSpritePixel<window>(
+                    (color&0x8000) ? color : -1, pixelattr, xpos, captureReference);
+#else
                 DrawSpritePixel<window>((color&0x8000) ? color : -1, pixelattr, xpos);
+#endif
             }
 
             rotX += rotA;
@@ -1490,11 +1546,21 @@ void SoftRenderer2D::DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos,
 
         for (; xoff < xend;)
         {
-            color = *(u16*)&objvram[pixelsaddr & objvrammask];
+            const u32 pixelAddress = pixelsaddr & objvrammask;
+            color = *(u16*)&objvram[pixelAddress];
 
             pixelsaddr += pixelstride;
 
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+            const u32 captureReference = (color & 0x8000) != 0u
+                ? Parent.GetStructuredCaptureReference(
+                    GPU2D.Num, pixelAddress, color, true)
+                : 0u;
+            DrawSpritePixel<window>(
+                (color&0x8000) ? color : -1, pixelattr, xpos, captureReference);
+#else
             DrawSpritePixel<window>((color&0x8000) ? color : -1, pixelattr, xpos);
+#endif
 
             xoff++;
             xpos++;

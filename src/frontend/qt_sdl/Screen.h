@@ -45,6 +45,7 @@
 
 class MainWindow;
 class EmuInstance;
+class EmuThread;
 
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
@@ -101,14 +102,39 @@ public:
     virtual void beginModalPausePresentation() {}
     virtual void endModalPausePresentation() {}
 #if defined(MELONPRIME_ENABLE_VULKAN)
-    virtual void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled)
+    // NVIDIA Reflex / AMD Anti-Lag 2 frame hooks, driven by the emulation
+    // thread once per emulated frame. Only ScreenPanelVulkan implements them;
+    // every other panel inherits these no-ops.
+    //
+    // They cover the part of the frame the emulation thread can see: the
+    // latency sleep, input sampling, and the simulation interval around
+    // NDS::RunFrame(). The RENDERSUBMIT_* and PRESENT_* markers are
+    // deliberately absent, because the emulation thread is not where the real
+    // vkQueueSubmit and vkQueuePresentKHR happen -- VulkanPresenter::EndFrame()
+    // emits those directly around the actual calls, which is the only place
+    // they can be accurate.
+    //
+    // `reflexMode` is the raw config value (0 off, 1 on, 2 on+boost) and is
+    // pushed every frame so a settings change applies on the next one.
+    //
+    // `targetFrameIntervalNs` is the emulator's frame interval for this frame,
+    // or 0 when it is not running at a fixed rate. The Vulkan present pacer
+    // needs the emulator's own cadence -- never the display refresh rate -- to
+    // compute a presentation target time.
+    virtual void beginVulkanLowLatencyFrame(
+        int reflexMode,
+        bool antiLag2Enabled,
+        bool normalSpeed,
+        melonDS::u64 targetFrameIntervalNs)
     {
         (void)reflexMode;
         (void)antiLag2Enabled;
+        (void)normalSpeed;
+        (void)targetFrameIntervalNs;
     }
     virtual void markVulkanReflexInputSample() {}
-    virtual void markVulkanReflexRenderSubmitStart() {}
-    virtual void markVulkanReflexRenderSubmitEnd() {}
+    virtual void markVulkanReflexSimulationStart() {}
+    virtual void markVulkanReflexSimulationEnd() {}
     virtual void finishVulkanLowLatencyFrame() {}
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -116,7 +142,9 @@ public:
     // settings dialog keeps emulation paused. The emulation thread is stopped
     // for the whole session, so anything it would normally reconcile (cursor
     // mode) and anything that stops on pause (Vulkan presentation) has to be
-    // driven from here instead.
+    // driven from here instead. The native-surface backends (Vulkan, DX12)
+    // additionally have to keep presenting while paused, or the editor overlay
+    // never reaches the screen at all.
     virtual void setHudEditModeActive(bool active);
 #endif
 
@@ -408,6 +436,13 @@ public:
 
     bool initDX12();
     void drawScreen() override;
+#ifdef MELONPRIME_CUSTOM_HUD
+    void setHudEditModeActive(bool active) override;
+#endif
+
+    // Quiesce all DX12 panels belonging to one EmuInstance before its
+    // outgoing DX12 renderer is destroyed.
+    static void PrepareForInstanceRendererTransition(EmuInstance* instance);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -415,6 +450,7 @@ protected:
 
 private:
     void setupScreenLayout() override;
+    void prepareForRendererTransition();
     void requestNativeSurfaceVisible(bool visible);
     void reportRuntimeFailure(const char* reason);
 
@@ -439,10 +475,14 @@ public:
     void drawScreen() override;
     void beginModalPausePresentation() override;
     void endModalPausePresentation() override;
-    void beginVulkanLowLatencyFrame(int reflexMode, bool antiLag2Enabled) override;
+    void beginVulkanLowLatencyFrame(
+        int reflexMode,
+        bool antiLag2Enabled,
+        bool normalSpeed,
+        melonDS::u64 targetFrameIntervalNs) override;
     void markVulkanReflexInputSample() override;
-    void markVulkanReflexRenderSubmitStart() override;
-    void markVulkanReflexRenderSubmitEnd() override;
+    void markVulkanReflexSimulationStart() override;
+    void markVulkanReflexSimulationEnd() override;
     void finishVulkanLowLatencyFrame() override;
 #ifdef MELONPRIME_CUSTOM_HUD
     void setHudEditModeActive(bool active) override;
@@ -471,13 +511,24 @@ private:
     // boundary (macOS: an autorelease pool for MoltenVK's temporaries) can wrap
     // it without indenting the whole function.
     void drawScreenFrame();
+
+    // Presentation stall watchdog, called from every exit of drawScreenFrame()
+    // so a presenter that came up and then stopped is distinguishable in a log
+    // from one that is deliberately idle. noteFrameIdle() covers the skips the
+    // panel is supposed to perform (no ROM, paused, modal dialog);
+    // noteFrameStalled() names a reason and logs it once after
+    // kPresentationStallFrames consecutive frames. Emulation thread.
+    void noteFrameIdle();
+    void noteFrameStalled(const char* reason);
+    void noteFramePresented();
+
     // Composes one emulated frame. Driven from VulkanRenderer's VBlank hook,
     // on the emulation thread, because that is the only point where this
     // frame's structured 2D metadata and this frame's 3D image coexist.
     void composeFrameAtVBlank();
     static void ComposeInstanceFrameAtVBlank(EmuInstance* instance);
     void installVulkanComposeHook(melonDS::VulkanRenderer* renderer);
-    void prepareForRendererTransition();
+    void prepareForRendererTransition(bool detachRendererObserver = true);
     bool initVulkanPresenter();
     void reportVulkanRuntimeFailure(const char* reason);
     void setupScreenLayout() override;
@@ -499,6 +550,17 @@ private:
     void requestNativeSurfaceVisible(bool visible);
     void releaseNativeSurface();
     [[nodiscard]] bool nativeSurfaceReady() const;
+
+    // Stacks the OSD message bitmaps into one premultiplied strip so the whole
+    // OSD costs a single upload and a single draw. False when there is nothing
+    // to show. Emulation thread.
+    bool buildOsdStrip(QSize& outSize);
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Renders the Custom HUD into Overlay[0] and reports its dirty rect.
+    // False when the HUD is not visible this frame, in which case the stale
+    // overlay texture must not be drawn. Emulation thread.
+    bool renderHudOverlay(EmuThread* emuThread, QImage* bottomScreen, QRect& outDirty);
+#endif
 
     struct VulkanState;
     std::unique_ptr<VulkanState> vulkan;

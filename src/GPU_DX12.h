@@ -24,7 +24,10 @@
 #include <string>
 
 #include "DX12AmdAntiLag2.h"
+#include "DX12IntelXeLL.h"
+#include "DX12LowLatencyPacing.h"
 #include "DX12NvidiaReflex.h"
+#include "GPU3D_RasterDifferential.h"
 #include "GPU_Soft.h"
 
 namespace melonDS
@@ -53,14 +56,36 @@ public:
     void Start3DRendering() override;
     void VBlank() override;
     RendererOutput GetOutput() override;
+    RendererOutputLease AcquireOutputLease() override;
 
     void BeginReflexFrame();
     void BeginAmdAntiLag2Frame();
+    void BeginIntelXeLLFrame();
     void MarkReflexInputSample();
+    void MarkIntelXeLLInputSample();
+    void MarkReflexSimulationStart();
     void EndReflexRenderPhase();
+    void EndIntelXeLLRenderPhase();
     void BeginReflexPresent();
     void EndReflexPresent();
+    void BeginIntelXeLLPresent();
+    void EndIntelXeLLPresent();
     void FinishReflexFrame();
+    void FinishIntelXeLLFrame();
+    void UpdateIntelXeLLFrameCap(std::uint32_t minimumIntervalUs);
+    [[nodiscard]] bool IsIntelXeLLActive() const noexcept
+    {
+        return IntelXeLL.IsActive();
+    }
+    [[nodiscard]] DX12LowLatencyPacingDecision GetLowLatencyPacingDecision() const noexcept;
+    [[nodiscard]] bool ShouldBypassHostLimiter() const noexcept
+    {
+        return GetLowLatencyPacingDecision().BypassHostLimiter;
+    }
+    [[nodiscard]] bool ShouldBypassPresentWait() const noexcept
+    {
+        return GetLowLatencyPacingDecision().BypassPresentWait;
+    }
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;
@@ -71,8 +96,18 @@ public:
     [[nodiscard]] const DX12Renderer3D* GetDX12Renderer3D() const noexcept;
 
 private:
+    std::unique_ptr<Renderer3D> DifferentialReference;
+    RasterDifferential::State DifferentialState;
     DX12AmdAntiLag2 AmdAntiLag2;
+    DX12IntelXeLL IntelXeLL;
+    DX12IntelXeLLPacingPolicy IntelXeLLPacingPolicy =
+        DX12IntelXeLLPacingPolicy::Compatibility;
+    std::uint32_t IntelXeLLRequestedIntervalUs = 0;
+    DX12LowLatencyPacingDecision LastLoggedPacingDecision{};
+    bool PacingDecisionLogged = false;
     DX12NvidiaReflex NvidiaReflex;
+
+    void LogLowLatencyPacingStateIfChanged();
 };
 
 } // namespace melonDS

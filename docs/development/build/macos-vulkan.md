@@ -37,7 +37,10 @@ Every macOS build script is indexed in
 
 Useful options: `--jobs N`, `--release` (developer features off), `--debug`
 (enables the Vulkan validation layer, which also needs `vulkan-loader`),
-`--with-metal`, `--no-bundle`, `--open`. `--help` lists them all.
+`--with-metal`, `--no-bundle`, `--open`. `--help` lists them all. The default
+path bundles MoltenVK through CMake; `--no-bundle` is only for local runtime
+experiments and can reproduce a greyed-out Vulkan setting on machines without
+another Vulkan runtime.
 
 The script fails instead of silently producing a build without the renderer it
 promised: after configuring it checks that CMake resolved the Vulkan headers,
@@ -63,30 +66,22 @@ on a machine without them.
 
 `VulkanDispatch::Initialize()` tries, in order:
 
-1. `$MELONPRIME_VULKAN_LOADER` (explicit override, any platform)
-2. `$VULKAN_SDK/lib/libvulkan.1.dylib`, then `$VULKAN_SDK/lib/libMoltenVK.dylib`
-3. `@executable_path/../Frameworks/libvulkan.1.dylib` (a loader bundled in the app)
-4. `libvulkan.1.dylib`, `libvulkan.dylib` (default dyld search)
-5. `/opt/homebrew/lib/libvulkan.1.dylib`, `/usr/local/lib/libvulkan.1.dylib`
-6. `@executable_path/../Frameworks/libMoltenVK.dylib` (the bundled driver)
-7. `libMoltenVK.dylib`, then the same two Homebrew prefixes
+1. `@executable_path/../Frameworks/libMoltenVK.dylib` (the bundled driver)
+2. `libvulkan.1.dylib`
+3. `libvulkan.dylib`
+4. `libMoltenVK.dylib`
+5. `@rpath/libvulkan.1.dylib`
 
-The Homebrew prefixes are listed explicitly because `dlopen()` by bare name
-searches `/usr/local/lib` but not `/opt/homebrew/lib`, so Apple Silicon
-installs are otherwise invisible.
-
-The bundled MoltenVK sits *after* every loader candidate on purpose. It makes
-the app self-contained, but an installed Khronos loader still wins, so
-validation layers stay reachable in a `--debug` build.
-
-A candidate is rejected and the search continues when it exposes no
-`VK_EXT_metal_surface`. That is what a Khronos loader with no registered ICD
-looks like, and skipping it lets the MoltenVK candidates further down the list
-still succeed instead of failing much later at surface creation.
+The bundled MoltenVK comes first so the app is self-contained when launched
+from Finder or on a clean Mac without Homebrew, the Vulkan SDK, or dyld
+environment variables. If no candidate loads, the log records the `dlopen()`
+failure for each path that was tried.
 
 By default the build script copies `libMoltenVK.dylib` into
-`melonPrimeDS.app/Contents/Frameworks` (candidate 6) and re-signs the bundle,
-so the app runs Vulkan on Macs without Homebrew. Pass `--no-bundle` to skip it.
+`melonPrimeDS.app/Contents/Frameworks` and CMake re-signs the bundle, so the app
+runs Vulkan on Macs without Homebrew. CI uses the official KhronosGroup
+`MoltenVK-macos.tar` release asset pinned to a fixed tag and SHA-256, and
+verifies that the dylib and license notice are present in the final bundle.
 
 ## How presentation works
 
@@ -181,6 +176,25 @@ Not verified:
 - Apple Silicon (arm64). The code is architecture-neutral, but no arm64 run was
   made.
 - Gameplay inside a match, controller/aim behaviour, and long-session stability.
+
+### Physical Intel follow-up — 2026-08-14
+
+The current source revision `7f56b91b14bb223db1fa2194761f15c050a70de5` was
+also exercised on a physical x86_64 MacBookPro15,2 with Intel Iris Plus 655.
+The release bundle loaded MoltenVK 1.4.2, created a `VK_EXT_metal_surface`,
+selected the real Intel GPU, reached a Vulkan presenter, and displayed a real
+AMHP ROM frame. A separately assembled, signed MoltenVK 1.4.0 bundle reached
+the same no-ROM and AMHP launch/presenter checkpoints.
+
+This follow-up is not a full gameplay PASS: cross-GPU parity and the 30-minute
+AC session remain outside this short validation run. The packaged Finder-style
+bundle intentionally loads direct MoltenVK, so it does not enumerate the
+Khronos layer. A separate no-bundle Debug run using the Homebrew Khronos loader
+and MoltenVK ICD did enable `VK_LAYER_KHRONOS_validation`, loaded the F2 state,
+and ran for 60 seconds with no VUID or validation ERROR message (only two known
+MoltenVK `mvk-warn` messages). See the dated audit's
+[`README.md`](../../archive/audits/vulkan/2026-08-14-intel-macbook/README.md) for
+the broader status and sanitized evidence.
 
 Windows remains the tuned gameplay target; macOS Vulkan is a supported build
 and runtime target, not a validated-parity one. MoltenVK translates SPIR-V to

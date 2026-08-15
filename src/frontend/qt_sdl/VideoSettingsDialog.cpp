@@ -48,6 +48,70 @@
 #endif
 #endif // MELONPRIME_DS
 
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+namespace
+{
+
+QString VulkanRendererDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Native Vulkan compute renderer. Supports internal-resolution scaling and "
+        "high-resolution coordinates. Polygons are rasterized directly as spans, "
+        "so improved polygon splitting is unnecessary.");
+}
+
+QString VulkanBetterPolygonsDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Improved polygon splitting is not used by Vulkan because its compute rasterizer "
+        "processes DS polygons directly without splitting them into triangles.");
+}
+
+QString HiresCoordinatesDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Use the DS GPU's high-resolution vertex coordinates in renderers that support "
+        "this mode, including Vulkan.");
+}
+
+} // namespace
+#endif
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+namespace
+{
+
+QString DX12BetterPolygonsDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Improved polygon splitting is not used by DirectX 12 because its compute rasterizer "
+        "processes DS polygons directly without splitting them into triangles.");
+}
+
+QString DX12HiresCoordinatesDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Use the DS GPU's high-resolution vertex coordinates with DirectX 12.");
+}
+
+} // namespace
+#endif
+
+#if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+namespace
+{
+
+QString MetalComputeBetterPolygonsDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Improved polygon splitting does not affect Metal Compute's normal rendering "
+        "path because it processes DS polygons directly without splitting them into "
+        "triangles.");
+}
+
+} // namespace
+#endif
+
 
 inline bool VideoSettingsDialog::UsesGL()
 {
@@ -97,7 +161,10 @@ void VideoSettingsDialog::setEnabled()
 #else
     const bool dx12Renderer = false;
 #endif
-    ui->cbGLDisplay->setEnabled(softwareRenderer || dx12Renderer);
+    // Native GPU backends own their presentation path. Screen.UseGL only
+    // selects the display path for the software renderer, so exposing it for
+    // DX12 would present a setting that cannot affect the active backend.
+    ui->cbGLDisplay->setEnabled(softwareRenderer);
 #if defined(MELONPRIME_DS) && defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
     // MELONPRIME_METAL_NATIVE_THREAD_SETTING_V1
     // This controls the Software renderer worker thread. Native Metal and
@@ -109,12 +176,17 @@ void VideoSettingsDialog::setEnabled()
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     ui->cbxGLResolution->setEnabled(openGLRenderer || computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
 
-    const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
-    const QString vulkanBaseTooltip = vulkanProbe.Available
-        ? MelonPrime::UiText::Tr(
-            "Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
-        : QString::fromStdString(vulkanProbe.Reason);
-    const QString vulkanRendererDescription = vulkanBaseTooltip;
+    // Do not create a Vulkan device merely to refresh help text while a
+    // foreign native backend is live. The selected backend has already been
+    // probed by renderer normalization; unselected backends are deliberately
+    // deferred until their transition has torn down the old renderer.
+    QString vulkanRendererDescription = VulkanRendererDescription();
+    if (vulkanRenderer)
+    {
+        const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+        if (!vulkanProbe.Available)
+            vulkanRendererDescription = QString::fromStdString(vulkanProbe.Reason);
+    }
     rb3DVulkan->setToolTip(vulkanRendererDescription);
     rb3DVulkan->setWhatsThis(vulkanRendererDescription);
 
@@ -127,21 +199,63 @@ void VideoSettingsDialog::setEnabled()
 #endif
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
-    // BetterPolygons is implemented by classic OpenGL and both visible Metal
-    // raster paths. OpenGL Compute has a separate fixed-point rasterizer.
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer || vulkanRenderer);
-#else
-    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRenderer);
+    // BetterPolygons is a center-fan workaround for renderers that must split
+    // DS polygons into GPU triangles. Metal raster uses it, while Metal
+    // Compute processes the original polygon as scanline spans and has no
+    // triangle-splitting stage to improve.
+    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRasterRenderer);
+
+#ifdef MELONPRIME_DS
+    constexpr const char* originalBetterPolygonsHelp =
+        "MelonPrimeOriginalBetterPolygonsHelp";
+    if (!ui->cbBetterPolygons->property(originalBetterPolygonsHelp).isValid())
+    {
+        ui->cbBetterPolygons->setProperty(
+            originalBetterPolygonsHelp, ui->cbBetterPolygons->whatsThis());
+    }
+    QString betterPolygonsDescription =
+        ui->cbBetterPolygons->property(originalBetterPolygonsHelp).toString();
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    if (metalComputeRenderer)
+        betterPolygonsDescription = MetalComputeBetterPolygonsDescription();
+#endif
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanRenderer)
+        betterPolygonsDescription = VulkanBetterPolygonsDescription();
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (dx12Renderer)
+        betterPolygonsDescription = DX12BetterPolygonsDescription();
+#endif
+    ui->cbBetterPolygons->setToolTip(betterPolygonsDescription);
+    ui->cbBetterPolygons->setWhatsThis(betterPolygonsDescription);
 #endif
 
-    // OpenGL Compute uses this directly. Metal and Metal Compute now forward
-    // it to the visible Metal raster path; Metal Compute also keeps its hidden
-    // compute mirror in the same coordinate mode.
-    // The DX12 renderer follows the OpenGL compute renderer's design, so it
-    // shares that renderer's coordinate-mode setting rather than the
-    // BetterPolygons splitting used by the raster paths.
-    ui->cbxComputeHiResCoords->setEnabled(computeRenderer || metalRenderer || dx12Renderer);
+    // Every compute backend uses this directly. Metal raster also consumes it
+    // when its internal scale is above native resolution.
+    ui->cbxComputeHiResCoords->setEnabled(
+        computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
+#ifdef MELONPRIME_DS
+    constexpr const char* originalHiresCoordinatesHelp =
+        "MelonPrimeOriginalHiresCoordinatesHelp";
+    if (!ui->cbxComputeHiResCoords->property(originalHiresCoordinatesHelp).isValid())
+    {
+        ui->cbxComputeHiResCoords->setProperty(
+            originalHiresCoordinatesHelp, ui->cbxComputeHiResCoords->whatsThis());
+    }
+    QString hiresCoordinatesDescription =
+        ui->cbxComputeHiResCoords->property(originalHiresCoordinatesHelp).toString();
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanRenderer)
+        hiresCoordinatesDescription = HiresCoordinatesDescription();
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (dx12Renderer)
+        hiresCoordinatesDescription = DX12HiresCoordinatesDescription();
+#endif
+    ui->cbxComputeHiResCoords->setToolTip(hiresCoordinatesDescription);
+    ui->cbxComputeHiResCoords->setWhatsThis(hiresCoordinatesDescription);
+#endif
 
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
@@ -149,6 +263,10 @@ void VideoSettingsDialog::setEnabled()
     std::string reflexUnavailableReason;
     bool antiLag2Enabled = false;
     std::string antiLag2UnavailableReason;
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    bool intelXeLLEnabled = false;
+    std::string intelXeLLUnavailableReason;
+#endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (vulkanRenderer)
     {
@@ -167,6 +285,8 @@ void VideoSettingsDialog::setEnabled()
         reflexUnavailableReason = dx12Probe.NvidiaReflexReason;
         antiLag2Enabled = dx12Probe.Available && dx12Probe.AmdAntiLag2Available;
         antiLag2UnavailableReason = dx12Probe.AmdAntiLag2Reason;
+        intelXeLLEnabled = dx12Probe.Available && dx12Probe.IntelXeLLAvailable;
+        intelXeLLUnavailableReason = dx12Probe.IntelXeLLReason;
     }
 #endif
     lblNvidiaReflex->setEnabled(reflexEnabled);
@@ -199,12 +319,44 @@ void VideoSettingsDialog::setEnabled()
                     : antiLag2UnavailableReason)));
     lblAmdAntiLag2->setToolTip(antiLag2Description);
     cbxAmdAntiLag2->setToolTip(antiLag2Description);
+
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    lblIntelXeLL->setEnabled(intelXeLLEnabled);
+    cbxIntelXeLL->setEnabled(intelXeLLEnabled);
+    const QString intelXeLLDescription = intelXeLLEnabled
+        ? MelonPrime::UiText::Tr(
+            "Intel Xe Low Latency (XeLL) reduces render-queue and presentation latency on supported Intel Arc GPUs.")
+        : (!dx12Renderer
+            ? MelonPrime::UiText::Tr(
+                "Available only with DirectX 12 on a supported Intel Arc GPU.")
+            : MelonPrime::UiText::Tr(QString::fromStdString(
+                intelXeLLUnavailableReason.empty()
+                    ? std::string("Intel XeLL is unavailable")
+                    : intelXeLLUnavailableReason)));
+    lblIntelXeLL->setToolTip(intelXeLLDescription);
+    cbxIntelXeLL->setToolTip(intelXeLLDescription);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const bool intelXeLLPacingEnabled = intelXeLLEnabled && cbxIntelXeLL->currentIndex() != 0;
+    lblIntelXeLLPacingPolicy->setEnabled(intelXeLLPacingEnabled);
+    cbxIntelXeLLPacingPolicy->setEnabled(intelXeLLPacingEnabled);
+    const QString intelXeLLPacingDescription = MelonPrime::UiText::Tr(
+        "Developer-only Intel XeLL pacing experiments. Compatibility remains the default until Intel Arc hardware validation is complete.");
+    lblIntelXeLLPacingPolicy->setToolTip(intelXeLLPacingDescription);
+    cbxIntelXeLLPacingPolicy->setToolTip(intelXeLLPacingDescription);
+#endif
+#endif
 #endif
 }
 
 VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(new Ui::VideoSettingsDialog)
 {
     ui->setupUi(this);
+#ifdef MELONPRIME_DS
+    // These controls are shared by OpenGL, Metal, Vulkan, and DirectX 12.
+    // Keep the upstream .ui untouched and localize the backend-neutral label
+    // through MelonPrime's runtime catalog.
+    ui->groupBox_3->setTitle(MelonPrime::UiText::Tr("3D renderer settings"));
+#endif
     // MELONPRIME_METAL_COMPUTE_UI_LAYOUT_V2: rows 4/5 are reserved for native Metal renderers.
     setAttribute(Qt::WA_DeleteOnClose);
 
@@ -226,6 +378,12 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     oldNvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode);
     oldAmdAntiLag2Enabled = cfg.GetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled);
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    oldIntelXeLLEnabled = cfg.GetBool(MelonPrime::CfgKey::IntelXeLLEnabled);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    oldIntelXeLLPacingPolicy = cfg.GetInt(MelonPrime::CfgKey::IntelXeLLPacingPolicy);
+#endif
 #endif
 
     grp3DRenderer = new QButtonGroup(this);
@@ -284,8 +442,7 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     rb3DVulkan = new QRadioButton(ui->groupBox);
     rb3DVulkan->setObjectName(QStringLiteral("rb3DVulkan"));
     rb3DVulkan->setText(MelonPrime::UiText::Tr("Vulkan"));
-    rb3DVulkan->setWhatsThis(MelonPrime::UiText::Tr(
-        "<html><head/><body><p>Native Vulkan renderer. Uses the pinned SapphireRhodonite 0.7.0.rc4 implementation.</p></body></html>"));
+    rb3DVulkan->setWhatsThis(VulkanRendererDescription());
     ui->gridLayout_2->addWidget(rb3DVulkan, vulkanRow, 0, 1, 2);
     grp3DRenderer->addButton(rb3DVulkan, renderer3D_Vulkan);
 
@@ -365,6 +522,44 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         QOverload<int>::of(&QComboBox::currentIndexChanged),
         this,
         &VideoSettingsDialog::onAmdAntiLag2ModeChanged);
+
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    lblIntelXeLL = new QLabel(ui->groupBox_3);
+    lblIntelXeLL->setObjectName(QStringLiteral("lblIntelXeLL"));
+    lblIntelXeLL->setText(MelonPrime::UiText::Tr("Intel Xe Low Latency (XeLL):"));
+    cbxIntelXeLL = new QComboBox(ui->groupBox_3);
+    cbxIntelXeLL->setObjectName(QStringLiteral("cbxIntelXeLL"));
+    cbxIntelXeLL->addItem(MelonPrime::UiText::Tr("Off"));
+    cbxIntelXeLL->addItem(MelonPrime::UiText::Tr("On"));
+    cbxIntelXeLL->setCurrentIndex(oldIntelXeLLEnabled ? 1 : 0);
+    ui->gridLayout_4->addWidget(lblIntelXeLL, 8, 0, 1, 1);
+    ui->gridLayout_4->addWidget(cbxIntelXeLL, 9, 0, 1, 1);
+    connect(
+        cbxIntelXeLL,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &VideoSettingsDialog::onIntelXeLLModeChanged);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    lblIntelXeLLPacingPolicy = new QLabel(ui->groupBox_3);
+    lblIntelXeLLPacingPolicy->setObjectName(QStringLiteral("lblIntelXeLLPacingPolicy"));
+    lblIntelXeLLPacingPolicy->setText(MelonPrime::UiText::Tr("Intel XeLL pacing policy:"));
+    cbxIntelXeLLPacingPolicy = new QComboBox(ui->groupBox_3);
+    cbxIntelXeLLPacingPolicy->setObjectName(QStringLiteral("cbxIntelXeLLPacingPolicy"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("Compatibility"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("Bypass DXGI wait (experimental)"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("Bypass host limiter (experimental)"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("XeLL frame cap (experimental)"));
+    cbxIntelXeLLPacingPolicy->addItem(MelonPrime::UiText::Tr("Intel recommended (experimental)"));
+    cbxIntelXeLLPacingPolicy->setCurrentIndex(qBound(0, oldIntelXeLLPacingPolicy, 4));
+    ui->gridLayout_4->addWidget(lblIntelXeLLPacingPolicy, 10, 0, 1, 1);
+    ui->gridLayout_4->addWidget(cbxIntelXeLLPacingPolicy, 11, 0, 1, 1);
+    connect(
+        cbxIntelXeLLPacingPolicy,
+        QOverload<int>::of(&QComboBox::currentIndexChanged),
+        this,
+        &VideoSettingsDialog::onIntelXeLLPacingPolicyChanged);
+#endif
+#endif
 #endif
 #if QT_VERSION < QT_VERSION_CHECK(5, 15, 0)
     connect(grp3DRenderer, SIGNAL(buttonClicked(int)), this, SLOT(onChange3DRenderer(int)));
@@ -413,29 +608,47 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-    // A runtime failure is cached so renderer normalization can fall back
-    // without changing the persisted selection.  Reopening this dialog is
-    // the explicit retry boundary: probe the loader/device again before
-    // deciding whether the Vulkan choice remains disabled.
-    MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
-    const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
-    rb3DVulkan->setEnabled(vulkanProbe.Available);
-    rb3DVulkan->setToolTip(MelonPrime::UiText::Tr(
-        vulkanProbe.Available
-            ? QStringLiteral("Native Vulkan renderer. Internal-resolution scaling and improved polygons are supported.")
-            : QString::fromStdString(vulkanProbe.Reason)));
+    // Opening Video Settings must not probe a foreign GPU API. Creating a
+    // second native device while the active renderer owns its queues can
+    // destabilize the live driver (observed as VK_ERROR_DEVICE_LOST when a
+    // DX12 probe ran over Vulkan). Retry only the selected backend; choices
+    // that are not active remain selectable and are probed during transition.
+    if (oldRenderer == renderer3D_Vulkan)
+    {
+        MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
+        const auto& vulkanProbe = MelonPrime::VulkanFeatureCheck::Probe();
+        rb3DVulkan->setEnabled(vulkanProbe.Available);
+        rb3DVulkan->setToolTip(MelonPrime::UiText::Tr(
+            vulkanProbe.Available
+                ? VulkanRendererDescription()
+                : QString::fromStdString(vulkanProbe.Reason)));
+    }
+    else
+    {
+        rb3DVulkan->setEnabled(true);
+        rb3DVulkan->setToolTip(VulkanRendererDescription());
+    }
+    rb3DVulkan->setWhatsThis(rb3DVulkan->toolTip());
 #endif
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-    // Reopening this dialog is the explicit retry boundary for a cached DX12
-    // runtime failure, exactly like Vulkan above.
-    MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
-    const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
-    rb3DDX12->setEnabled(dx12Probe.Available);
-    rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
-        dx12Probe.Available
-            ? QStringLiteral("Native DirectX 12 renderer. Internal-resolution scaling is applied to the composed screen output.")
-            : QString::fromStdString(dx12Probe.Reason)));
+    const QString dx12Description = MelonPrime::UiText::Tr(
+        "Native DirectX 12 renderer. Internal-resolution scaling is applied to the composed screen output.");
+    if (oldRenderer == renderer3D_DX12)
+    {
+        MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
+        const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
+        rb3DDX12->setEnabled(dx12Probe.Available);
+        rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
+            dx12Probe.Available
+                ? dx12Description
+                : QString::fromStdString(dx12Probe.Reason)));
+    }
+    else
+    {
+        rb3DDX12->setEnabled(true);
+        rb3DDX12->setToolTip(dx12Description);
+    }
 #endif
 
     ui->cbGLDisplay->setChecked(oldGLDisplay != 0);
@@ -514,6 +727,12 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
     cfg.SetInt(MelonPrime::CfgKey::NvidiaReflexMode, oldNvidiaReflexMode);
     cfg.SetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled, oldAmdAntiLag2Enabled);
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    cfg.SetBool(MelonPrime::CfgKey::IntelXeLLEnabled, oldIntelXeLLEnabled);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    cfg.SetInt(MelonPrime::CfgKey::IntelXeLLPacingPolicy, oldIntelXeLLPacingPolicy);
+#endif
+#endif
 
 #ifdef MELONPRIME_DS
     const auto restoredBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
@@ -528,17 +747,65 @@ void VideoSettingsDialog::on_VideoSettingsDialog_rejected()
 
 void VideoSettingsDialog::setVsyncControlEnable(bool hasOGL)
 {
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) && \
+    (defined(MELONPRIME_ENABLE_VULKAN) || \
+     (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     bool hasVSyncControl = hasOGL;
+#if defined(MELONPRIME_ENABLE_VULKAN)
     const bool vulkanRenderer =
         emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_Vulkan;
     hasVSyncControl = hasVSyncControl || vulkanRenderer;
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    const bool dx12Renderer =
+        emuInstance->getGlobalConfig().GetInt("3D.Renderer") == renderer3D_DX12;
+    hasVSyncControl = hasVSyncControl || dx12Renderer;
+#endif
     ui->cbVSync->setEnabled(hasVSyncControl);
-    // The Qt Vulkan presenter supports FIFO versus MAILBOX/IMMEDIATE, but
-    // Vulkan swapchains do not expose the OpenGL swap-interval setting.
-    ui->sbVSyncInterval->setEnabled(hasOGL && ui->cbVSync->isChecked());
+    // Native presenters control synchronization without exposing the OpenGL
+    // swap-interval setting.
+    const bool intervalEnabled = hasOGL && ui->cbVSync->isChecked();
+    ui->label_2->setEnabled(intervalEnabled);
+    ui->sbVSyncInterval->setEnabled(intervalEnabled);
+
+    // Keep the saved interval untouched for other renderers, but explain why
+    // the disabled control is unused by the selected native presenter.
+    QString intervalDescription;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (vulkanRenderer)
+    {
+        intervalDescription = MelonPrime::UiText::Tr(
+            "VSync Interval is not used by the native Vulkan presenter.");
+    }
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (dx12Renderer)
+    {
+        intervalDescription = MelonPrime::UiText::Tr(
+            "VSync Interval is not used by the native DirectX 12 presenter.");
+    }
+#endif
+    ui->label_2->setToolTip(intervalDescription);
+    ui->sbVSyncInterval->setToolTip(intervalDescription);
+
+    // Keep the same explanation available to keyboard/accessibility users.
+    // Preserve Designer's renderer-neutral What's This text so changing the
+    // radio button back to OpenGL restores its original help instead of
+    // leaving Vulkan guidance attached to another backend.
+    constexpr const char* originalHelpProperty = "MelonPrimeOriginalVSyncIntervalHelp";
+    if (!ui->sbVSyncInterval->property(originalHelpProperty).isValid())
+        ui->sbVSyncInterval->setProperty(originalHelpProperty, ui->sbVSyncInterval->whatsThis());
+    if (!ui->label_2->property(originalHelpProperty).isValid())
+        ui->label_2->setProperty(originalHelpProperty, ui->label_2->whatsThis());
+    ui->sbVSyncInterval->setWhatsThis(!intervalDescription.isEmpty()
+        ? intervalDescription
+        : ui->sbVSyncInterval->property(originalHelpProperty).toString());
+    ui->label_2->setWhatsThis(!intervalDescription.isEmpty()
+        ? intervalDescription
+        : ui->label_2->property(originalHelpProperty).toString());
 #else
     ui->cbVSync->setEnabled(hasOGL);
+    ui->label_2->setEnabled(hasOGL);
     ui->sbVSyncInterval->setEnabled(hasOGL);
 #endif
 }
@@ -547,8 +814,6 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
 {
 #ifdef MELONPRIME_DS
     auto& cfg = emuInstance->getGlobalConfig();
-    const auto oldBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-        cfg.GetBool("Screen.UseGL"), cfg.GetInt("3D.Renderer"));
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (renderer == renderer3D_Vulkan)
         MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
@@ -559,12 +824,15 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
 #endif
     cfg.SetInt("3D.Renderer", renderer);
 
+    // The direct signal performs the synchronous backend transition. Keep all
+    // selected-backend feature probes after it so the old native device has
+    // been destroyed before another graphics API creates or acquires one. A
+    // renderer radio-button change always rebuilds presentation; computing
+    // the new backend here would itself run the selected backend's probe.
+    emit updateVideoSettings(true);
+
     setEnabled();
     setVsyncControlEnable(UsesGL());
-
-    const auto newBackend = MelonPrime::VideoBackend::ResolvePresentationBackend(
-        cfg.GetBool("Screen.UseGL"), renderer);
-    emit updateVideoSettings(oldBackend != newBackend);
 #else
     bool old_gl = UsesGL();
 
@@ -592,13 +860,17 @@ void VideoSettingsDialog::on_cbGLDisplay_stateChanged(int state)
 void VideoSettingsDialog::on_cbVSync_stateChanged(int state)
 {
     bool vsync = (state != 0);
-#if !defined(MELONPRIME_DS) || !defined(MELONPRIME_ENABLE_VULKAN)
+#if !defined(MELONPRIME_DS) || \
+    (!defined(MELONPRIME_ENABLE_VULKAN) && \
+     (!defined(_WIN32) || !defined(MELONPRIME_ENABLE_DX12)))
     ui->sbVSyncInterval->setEnabled(vsync);
 #endif
 
     auto& cfg = emuInstance->getGlobalConfig();
     cfg.SetBool("Screen.VSync", vsync);
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+#if defined(MELONPRIME_DS) && \
+    (defined(MELONPRIME_ENABLE_VULKAN) || \
+     (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     setVsyncControlEnable(UsesGL());
 #endif
 
@@ -685,4 +957,24 @@ void VideoSettingsDialog::onAmdAntiLag2ModeChanged(int mode)
     cfg.SetBool(MelonPrime::CfgKey::AmdAntiLag2Enabled, mode != 0);
     emit updateVideoSettings(false);
 }
+#endif
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+void VideoSettingsDialog::onIntelXeLLModeChanged(int mode)
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetBool(MelonPrime::CfgKey::IntelXeLLEnabled, mode != 0);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    setEnabled();
+#endif
+    emit updateVideoSettings(false);
+}
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+void VideoSettingsDialog::onIntelXeLLPacingPolicyChanged(int policy)
+{
+    auto& cfg = emuInstance->getGlobalConfig();
+    cfg.SetInt(MelonPrime::CfgKey::IntelXeLLPacingPolicy, policy);
+    emit updateVideoSettings(false);
+}
+#endif
 #endif

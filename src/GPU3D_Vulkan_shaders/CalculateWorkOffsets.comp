@@ -1,0 +1,57 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    Software-parity derivative of ComputeRendererShaders::CalcOffsets
+    (src/GPU3D_Compute_shaders.h), including the split rasterise dispatch.
+
+    Build define: CalculateWorkOffsets
+    Host dispatch (matching GPU3D_Compute.cpp): ((numVariants+31)/32, 1, 1).
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "BinningBuffer.glsl"
+
+layout (local_size_x = 32) in;
+
+void main()
+{
+    if (gl_GlobalInvocationID.x < NumVariants)
+    {
+        if (gl_GlobalInvocationID.x == 0)
+        {
+            // a bit of a cheat putting this here, but this shader won't run that often
+
+            SortWorkWorkCount = uvec4((VariantWorkCount[0].w + 31) / 32, 1, 1, 0);
+        }
+        SortedWorkOffset[gl_GlobalInvocationID.x] = atomicAdd(VariantWorkCount[1].w, VariantWorkCount[gl_GlobalInvocationID.x].z);
+
+        // MelonPrimeDS: split the per-variant rasterise dispatch across the Y and Z
+        // axes so neither exceeds the 65535 group limit (melonDS issue #2047). The
+        // raw count is preserved in VariantWorkRealCount for the bounds check in the
+        // rasterise shader. Only .y/.z are rewritten; [0].w (global work counter) and
+        // [1].w (sorted-offset accumulator) stay untouched.
+        uint realCount = VariantWorkCount[gl_GlobalInvocationID.x].z;
+        VariantWorkRealCount[gl_GlobalInvocationID.x] = realCount;
+        VariantWorkCount[gl_GlobalInvocationID.x].y = (realCount + RasteriseChunkSize - 1U) / RasteriseChunkSize;
+        VariantWorkCount[gl_GlobalInvocationID.x].z = min(realCount, RasteriseChunkSize);
+    }
+}

@@ -1,0 +1,9 @@
+FORMAL A/B VERIFICATION PASS
+csv_files=21
+runs_per_mode=3
+minimum_rows=10600
+invalid_rows=0
+measured_generation_changes=0
+a2_a3_target_active_at_least=95%
+queue_full_and_recovery=0
+wait_timeout_rate_lt=1%

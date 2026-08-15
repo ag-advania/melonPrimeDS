@@ -3,6 +3,7 @@
 #include "MelonPrimePatchFixWifi.h"
 #include "Config.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimePatchState.h"
 #include "NDS.h"
 
 namespace MelonPrime {
@@ -85,29 +86,79 @@ static constexpr PatchWord kWords[] = {
     {0x8F0u, 0xE1A00000u, 0x01500001u},
 };
 
+// The ROM group selects the patch layout, but it is not a complete code
+// signature.  Require every target word to be either the known original or
+// the known patched instruction before writing anything.  This prevents a
+// different dump/layout with the same detected group from being corrupted.
+static bool CanApplyPatch(melonDS::NDS* nds, uint32_t base, bool* alreadyApplied)
+{
+    bool isApplied = true;
+    for (const auto& w : kWords)
+    {
+        const uint32_t current = nds->ARM9Read32(base + w.offset);
+        if (current != w.applyVal && current != w.revertVal)
+            return false;
+        if (current != w.applyVal)
+            isApplied = false;
+    }
+
+    if (alreadyApplied)
+        *alreadyApplied = isApplied;
+    return true;
+}
+
 } // namespace
 
-void FixWifi_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
+void FixWifi_ApplyOnce(
+    MelonPrimePatchState& state,
+    melonDS::NDS* nds,
+    Config::Table& cfg,
+    uint8_t romGroupIndex)
 {
     if (!cfg.GetBool(MelonPrime::CfgKey::WifiBitset)) return;
-    if (romGroupIndex >= 7 || kBase[romGroupIndex] == 0xFFFFFFFFu) return;
+
+    auto& patchState = state.fixWifi;
+    if (patchState.romGroupIndex != romGroupIndex)
+    {
+        patchState = {};
+        patchState.romGroupIndex = romGroupIndex;
+    }
+    if (patchState.status != MelonPrimePatchState::FixWifiPatchState::Status::Unchecked)
+        return;
+
+    if (!nds)
+        return;
+
+    if (romGroupIndex >= 7 || kBase[romGroupIndex] == 0xFFFFFFFFu)
+    {
+        patchState.status = MelonPrimePatchState::FixWifiPatchState::Status::Unsupported;
+        return;
+    }
 
     const uint32_t base = kBase[romGroupIndex];
 
-    // Canary check: the first word is the representative for the full 51-word
-    // patch. If it already matches, assume the remaining words still match and
-    // skip the write pass; this keeps the per-frame menu apply path cheap.
-    // Full-word verification would be a behavior/perf change and should be
-    // separated from this lifecycle cleanup.
-    if (nds->ARM9Read32(base + kWords[0].offset) == kWords[0].applyVal) return;
+    bool alreadyApplied = false;
+    if (!CanApplyPatch(nds, base, &alreadyApplied))
+    {
+        patchState.status = MelonPrimePatchState::FixWifiPatchState::Status::Rejected;
+        return;
+    }
+
+    if (alreadyApplied)
+    {
+        patchState.status = MelonPrimePatchState::FixWifiPatchState::Status::Applied;
+        return;
+    }
 
     for (const auto& w : kWords)
         nds->ARM9Write32(base + w.offset, w.applyVal);
+
+    patchState.status = MelonPrimePatchState::FixWifiPatchState::Status::Applied;
 }
 
-void FixWifi_ResetPatchState()
+void FixWifi_ResetPatchState(MelonPrimePatchState& state)
 {
-    // No persistent state — canary check handles re-detection automatically.
+    state.fixWifi = {};
 }
 
 } // namespace MelonPrime

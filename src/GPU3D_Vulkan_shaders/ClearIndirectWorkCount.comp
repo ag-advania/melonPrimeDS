@@ -1,0 +1,40 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    1:1 re-expression of ComputeRendererShaders::ClearIndirectWorkCount
+    (src/GPU3D_Compute_shaders.h). Nothing but the resource bindings changed.
+
+    Build define: ClearIndirectWorkCount
+    Host dispatch (matching GPU3D_Compute.cpp): ((numVariants+31)/32, 1, 1).
+    numVariants never exceeds MaxVariants, so the rounded-up tail stays inside
+    VariantWorkCount[].
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "BinningBuffer.glsl"
+
+layout (local_size_x = 32) in;
+
+void main()
+{
+    VariantWorkCount[gl_GlobalInvocationID.x] = uvec4(1, 1, 0, 0);
+}

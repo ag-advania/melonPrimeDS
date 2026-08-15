@@ -57,6 +57,8 @@
                     // Reallocate GL texture when the buffer size changes (window resize).
                     // OPT-TX1: GL_BGRA matches QImage native byte order — driver fast-path.
                     if (topOutW != overlayTexW || topOutH != overlayTexH) {
+                        MelonPrimePerf::ScopedHudPhase uploadTimer(
+                            MelonPrimePerf::HudPhase::UploadPrepare);
                         // Full upload on size change — texture must be re-allocated.
                         MelonPrimePerf::AddGlUploadBytes(
                             static_cast<uint64_t>(topOutW) * static_cast<uint64_t>(topOutH) * 4u);
@@ -92,6 +94,8 @@
                         }
 
                         if (doUpload) {
+                            MelonPrimePerf::ScopedHudPhase uploadTimer(
+                                MelonPrimePerf::HudPhase::UploadPrepare);
                             const uint64_t uploadBytes =
                                 static_cast<uint64_t>(uploadRect.width())
                                 * static_cast<uint64_t>(uploadRect.height()) * 4u;

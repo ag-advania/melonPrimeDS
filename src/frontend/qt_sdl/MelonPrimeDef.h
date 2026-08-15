@@ -19,6 +19,9 @@ namespace MelonPrime {
         // is shared by the native DX12 and Vulkan Reflex implementations.
         inline constexpr const char* NvidiaReflexMode = "3D.DX12.NvidiaReflexMode";
         inline constexpr const char* AmdAntiLag2Enabled = "3D.AMD.AntiLag2Enabled";
+        inline constexpr const char* IntelXeLLEnabled = "3D.Intel.XeLLEnabled";
+        inline constexpr const char* IntelXeLLPacingPolicy = "3D.Intel.XeLLPacingPolicy";
+        inline constexpr const char* VulkanPresentPacingPolicy = "3D.Vulkan.PresentPacingPolicy";
         inline constexpr const char* Joy2Key        = "Metroid.Apply.joy2KeySupport";
         inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
         inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";

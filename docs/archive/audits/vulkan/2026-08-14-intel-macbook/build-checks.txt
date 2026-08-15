@@ -1,0 +1,41 @@
+Physical Intel macOS build checks — 2026-08-14
+
+Formal F2 matrix build:
+  Clean Release capture build in the formal worktree completed successfully.
+  Developer features OFF; latency capture ON; x86_64 executable.
+  Formal executable SHA-256:
+  3e8060431a4829fa9603e0d12c77d0bb1cf26f30bde0565afbf7ed4ea013516e
+  Formal bundled MoltenVK SHA-256:
+  23504976fd92acf2add38b6b3772f00a068b2c4a786ec4882bc22aa65461f286
+  codesign --verify --deep --strict: PASS.
+
+Release command:
+  ./tools/build/macos/build-macos-vulkan.sh --install-deps --with-metal --release --jobs 2
+
+Release result:
+  211/211 build steps completed.
+  CMake Vulkan and Metal gates enabled; developer features OFF.
+  Vulkan present-timing model tests PASS.
+  Bundle contains libMoltenVK.dylib and was ad-hoc signed.
+  melonPrimeDS executable: x86_64.
+  bundled local libMoltenVK.dylib: x86_64.
+  codesign --verify --deep --strict: PASS.
+
+FixWifi guarded developer result:
+  ./tools/build/macos/build-macos-vulkan.sh --with-metal --jobs 2
+  206/206 build steps completed.
+  Developer features ON; FixWifi status OSD path compiled.
+  Vulkan present-timing model tests PASS.
+  Bundle contains libMoltenVK.dylib and passed deep strict codesign verification.
+
+Pinned runtime result:
+  MoltenVK 1.4.0 archive checksum verified.
+  pinned app executable: x86_64.
+  pinned libMoltenVK.dylib: x86_64 + arm64 universal archive binary.
+  pinned app was ad-hoc signed and deep strict verification passed.
+
+Debug result:
+  295/295 build steps completed.
+  Debug Vulkan present-timing model tests PASS.
+  Validation package installation completed, but runtime layer enablement
+  remained blocked; see validation-excerpts.txt.

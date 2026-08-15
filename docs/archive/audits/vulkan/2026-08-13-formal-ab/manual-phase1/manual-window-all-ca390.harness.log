@@ -1,0 +1,16 @@
+resize x40
+minimize/restore x20
+fullscreen toggle x8
+
+log            : docs\archive\audits\vulkan\2026-08-13-formal-ab\manual-phase1\vk-manual-window-all-ca390.out.log
+error log      : docs\archive\audits\vulkan\2026-08-13-formal-ab\manual-phase1\vk-manual-window-all-ca390.err.log
+config path    : C:\Users\Admin\Documents\git\melonPrimeDS\build\debug-mingw-vulkan-validation2\portable\melonDS.toml
+config restore : PASS
+layer restore  : PASS
+swapchain rebuilds: 70
+device lost       : 0
+config self-check: policy=JustInTime reflex=off/inactive vsync=on present-mode=FIFO
+config integrity : PASS
+sync validation   : enabled (banner confirmed)
+sync hazards      : 0
+validation        : clean

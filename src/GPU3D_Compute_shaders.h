@@ -196,7 +196,18 @@ int CalculateX(int dx, YSpanSetup span)
         x += dx >> 18;
     return clamp(x, span.XMin, span.XMax);
 }
-
+)"
+#ifdef MELONPRIME_DS
+R"(
+bool ShouldDecrementRightVertical(YSpanSetup spanL, YSpanSetup spanR, int xl, int xr)
+{
+    return spanR.Increment == 0
+        && (spanL.Increment != 0 || xl != xr)
+        && xr != 0;
+}
+)"
+#endif
+R"(
 void EdgeParams_XMajor(bool side, int dx, YSpanSetup span, out int edgelen, out int edgecov)
 {
     bool negative = span.X1 < span.X0;
@@ -506,11 +517,8 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
     if (y0 == y1)
         return y0;
 
-#ifndef Rasterise
-    irecip = abs(irecip);
-#endif
-
-    uint mulLo, mulHi, carry;
+    uint numeratorLo, numeratorHi;
+    uint denominator = uint(abs(idiff));
     if (y0 < y1)
     {
 #ifndef Rasterise
@@ -518,11 +526,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
         uint offset = uint(i);
 #endif
-        umulExtended(uint(y1-y0)*offset, uint(irecip), mulHi, mulLo);
-        mulLo = uaddCarry(mulLo, 3U<<24, carry);
-        mulHi += carry;
-        return y0 + int((mulLo >> 30) | (mulHi << (32 - 30)));
-        //return y0 + int(((int64_t(y1-y0) * int64_t(offset) * int64_t(irecip)) + int64_t(3<<24)) >> 30);
+        umulExtended(uint(y1 - y0), offset, numeratorHi, numeratorLo);
+        uint quotient;
+        if (numeratorHi == 0U)
+        {
+            uint remainder;
+            quotient = Div(numeratorLo, denominator, remainder);
+        }
+        else
+        {
+            quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+        }
+        return y0 + int(quotient);
     }
     else
     {
@@ -531,11 +546,18 @@ int InterpolateAttrLinear(int y0, int y1, int i, int irecip, int idiff)
 #else
         uint offset = uint(idiff-i);
 #endif
-        umulExtended(uint(y0-y1)*offset, uint(irecip), mulHi, mulLo);
-        mulLo = uaddCarry(mulLo, 3<<24, carry);
-        mulHi += carry;
-        return y1 + int((mulLo >> 30) | (mulHi << (32 - 30)));
-        //return y1 + int(((int64_t(y0-y1) * int64_t(offset) * int64_t(irecip)) + int64_t(3<<24)) >> 30);
+        umulExtended(uint(y0 - y1), offset, numeratorHi, numeratorLo);
+        uint quotient;
+        if (numeratorHi == 0U)
+        {
+            uint remainder;
+            quotient = Div(numeratorLo, denominator, remainder);
+        }
+        else
+        {
+            quotient = Div64_32_32(numeratorHi, numeratorLo, denominator);
+        }
+        return y1 + int(quotient);
     }
 }
 
@@ -677,12 +699,30 @@ void main()
 
     int xl = CalculateX(dxl, spanL);
     int xr = CalculateX(dxr, spanR);
-
+)"
+#ifdef MELONPRIME_DS
+R"(
+    // Match GPU3D_Soft: calculate both raw edge positions first, then apply
+    // the conditional right-vertical correction before the swapped test.
+    if (ShouldDecrementRightVertical(spanL, spanR, xl, xr))
+        xr--;
+)"
+#endif
+R"(
     Polygon polygon = Polygons[setup.x];
 
     int edgeLenL, edgeLenR;
 
-    if (xl > xr)
+)"
+#ifdef MELONPRIME_DS
+R"(    bool swappedEdges = xl > xr;
+    if (swappedEdges)
+)"
+#else
+R"(    if (xl > xr)
+)"
+#endif
+R"(
     {
         YSpanSetup tmpSpan = spanL;
         spanL = spanR;
@@ -751,8 +791,15 @@ void main()
     }
     else
     {
-        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;
-        int ifactor = CalcYFactorY(spanL, i);
+)"
+#ifdef MELONPRIME_DS
+R"(        int i = y - spanL.I0;
+)"
+#else
+R"(        int i = (spanL.Increment > 0x40000 ? xl : y) - spanL.I0;
+)"
+#endif
+R"(        int ifactor = CalcYFactorY(spanL, i);
         int idiff = spanL.I1 - spanL.I0;
 
 #ifdef ZBuffer
@@ -798,8 +845,15 @@ void main()
     }
     else
     {
-        int i = (spanR.Increment > 0x40000 ? xr : y) - spanR.I0;
-        int ifactor = CalcYFactorY(spanR, i);
+)"
+#ifdef MELONPRIME_DS
+R"(        int i = y - spanR.I0;
+)"
+#else
+R"(        int i = (spanR.Increment > 0x40000 ? xr : y) - spanR.I0;
+)"
+#endif
+R"(        int ifactor = CalcYFactorY(spanR, i);
         int idiff = spanR.I1 - spanR.I0;
 
     #ifdef ZBuffer
@@ -961,7 +1015,7 @@ void main()
     ivec2 coarseBotRight = coarseTopLeft + ivec2(CoarseTileW-1, CoarseTileH-1);
 
     bool binned = false;
-    if (polygonIdx < NumPolygons)
+    if (localIdx < 32 && polygonIdx < NumPolygons)
     {
         binned = BinPolygon(Polygons[polygonIdx], coarseTopLeft, coarseBotRight);
     }

@@ -26,6 +26,9 @@
 #include "OpenGLSupport.h"
 
 #include "GPU3D_Compute_shaders.h"
+#ifdef MELONPRIME_DS
+#include "GPU3D_RasterEdge.h"
+#endif
 
 namespace melonDS
 {
@@ -489,6 +492,10 @@ void ComputeRenderer3D::SetupAttrs(SpanSetupY* span, Polygon* poly, int from, in
 
 void ComputeRenderer3D::SetupYSpanDummy(RenderPolygon* rp, SpanSetupY* span, Polygon* poly, int vertex, int side, s32 positions[10][2])
 {
+#ifdef MELONPRIME_DS
+    const s32 x0 = positions[vertex][0];
+    span->DxInitial = 0;
+#else
     s32 x0 = positions[vertex][0];
     if (side)
     {
@@ -499,15 +506,23 @@ void ComputeRenderer3D::SetupYSpanDummy(RenderPolygon* rp, SpanSetupY* span, Pol
     {
         span->DxInitial = 0;
     }
+#endif
 
     span->X0 = span->X1 = x0;
     span->XMin = x0;
     span->XMax = x0;
     span->Y0 = span->Y1 = positions[vertex][1];
 
+#ifdef MELONPRIME_DS
+    const s32 boundsXMin = RasterEdge::ConservativeRightVerticalMin(x0, side != 0);
+    if (boundsXMin < rp->XMin)
+    {
+        rp->XMin = boundsXMin;
+#else
     if (span->XMin < rp->XMin)
     {
         rp->XMin = span->XMin;
+#endif
         rp->XMinY = span->Y0;
     }
     if (span->XMax > rp->XMax)
@@ -559,7 +574,9 @@ void ComputeRenderer3D::SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon*
     else
     {
         span->XMin = span->X0;
+#ifndef MELONPRIME_DS
         if (side) span->XMin--;
+#endif
         span->XMax = span->XMin;
 
         // doesn't matter for completely vertical slope
@@ -567,9 +584,17 @@ void ComputeRenderer3D::SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon*
         maxXY = span->Y0;
     }
 
+#ifdef MELONPRIME_DS
+    const s32 boundsXMin = RasterEdge::ConservativeRightVerticalMin(
+        span->XMin, side && span->X0 == span->X1);
+    if (boundsXMin < rp->XMin)
+    {
+        rp->XMin = boundsXMin;
+#else
     if (span->XMin < rp->XMin)
     {
         rp->XMin = span->XMin;
+#endif
         rp->XMinY = minXY;
     }
     if (span->XMax > rp->XMax)
@@ -582,7 +607,10 @@ void ComputeRenderer3D::SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon*
 
     s32 xlen = span->XMax+1 - span->XMin;
     s32 ylen = span->Y1 - span->Y0;
-
+#ifdef MELONPRIME_DS
+    span->Increment = RasterEdge::CalculateSlopeIncrement(
+        span->X0, span->X1, span->XMin, span->XMax, span->Y0, span->Y1);
+#else
     // slope increment has a 18-bit fractional part
     // note: for some reason, x/y isn't calculated directly,
     // instead, 1/y is calculated and then multiplied by x
@@ -601,6 +629,7 @@ void ComputeRenderer3D::SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon*
         span->Increment = (span->X1-span->X0) * yrecip;
         if (span->Increment < 0) span->Increment = -span->Increment;
     }
+#endif
 
     bool xMajor = (span->Increment > 0x40000);
 
@@ -613,7 +642,11 @@ void ComputeRenderer3D::SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon*
         else if (span->Increment != 0)
             span->DxInitial = negative ? 0x40000 : 0;
         else
+#ifdef MELONPRIME_DS
+            span->DxInitial = 0;
+#else
             span->DxInitial = -0x40000;
+#endif
     }
     else
     {
@@ -627,6 +660,18 @@ void ComputeRenderer3D::SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon*
             span->DxInitial = 0;
     }
 
+#ifdef MELONPRIME_DS
+    if (xMajor)
+    {
+        // used for calculating AA coverage
+        span->XCovIncr = (ylen << 10) / xlen;
+    }
+
+    const s32 interpolationOffset = RasterEdge::InterpolationOriginOffset(
+        span->Increment, side != 0, negative);
+    span->I0 = span->Y0 - interpolationOffset;
+    span->I1 = span->Y1 - interpolationOffset;
+#else
     if (xMajor)
     {
         if (side)
@@ -648,6 +693,7 @@ void ComputeRenderer3D::SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon*
         span->I0 = span->Y0;
         span->I1 = span->Y1;
     }
+#endif
 
     if (span->I0 != span->I1)
         span->IRecip = (1<<30) / (span->I1 - span->I0);

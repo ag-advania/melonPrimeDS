@@ -226,12 +226,21 @@ static QRectF ComputePropsPanelRect(const QRectF& elemRect, int totalRowCount, f
 // label and enum-value text, preventing cropping in longer languages (e.g.
 // French) or for verbose property names. Recomputed only when the selection
 // or the active menu language changes, so this is cheap to call every frame.
-static float s_dynLabelW = kPropLabelW;
-static float s_dynCtrlW  = kPropCtrlW;
-static int   s_dynWidthsForElem = -2; // -2 = never computed yet
-static UiText::MenuLangId s_dynWidthsForLang = static_cast<UiText::MenuLangId>(-1);
+//
+// The four s_dyn* names are per-instance fields of CustomHudConfigState (see
+// the alias block in MelonPrimeHudRenderConfig.inc), not file statics: two
+// windows can sit in edit mode on different elements at the same time.
+// Before the first RecomputeDynamicPanelWidths() for this instance the stored
+// widths are still zero, so every read goes through these accessors and falls
+// back to the static constants — the same values the previous file statics
+// were initialized with. Input hit-testing can reach a props row without a
+// draw pass having run for that instance, so the fallback is not decorative.
+static constexpr int kDynWidthsNotComputed = -2;
 
-static inline float DynPropsPanelW() { return s_dynLabelW + s_dynCtrlW + 4.0f; }
+static inline bool DynWidthsReady() { return s_dynWidthsForElem != kDynWidthsNotComputed; }
+static inline float DynLabelW() { return DynWidthsReady() ? s_dynLabelW : kPropLabelW; }
+static inline float DynCtrlW()  { return DynWidthsReady() ? s_dynCtrlW  : kPropCtrlW; }
+static inline float DynPropsPanelW() { return DynLabelW() + DynCtrlW() + 4.0f; }
 static inline float DynAnchorGridCellW() { return (DynPropsPanelW() - 4.0f) / 3.0f; }
 
 static void RecomputeDynamicPanelWidths(int elemIdx, const QFont& smallFont)
@@ -483,8 +492,8 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         if (rowIdx >= totalRows) break;
         float rowY = static_cast<float>(panelRect.top()) + 2.0f + vi * kPropRowH;
         float rowX = static_cast<float>(panelRect.left()) + 2.0f;
-        float ctrlX = rowX + s_dynLabelW;
-        float ctrlW = s_dynCtrlW;
+        float ctrlX = rowX + DynLabelW();
+        float ctrlW = DynCtrlW();
 
         int builtinIdx = rowIdx;
         bool isShowRow = false, isColorRow = false, isAnchorRow = false;
@@ -505,7 +514,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         if (isShowRow) {
             p->setFont(smallFont);
             p->setPen(kLabelColor);
-            p->drawText(QRectF(rowX, rowY, s_dynLabelW, kPropRowH),
+            p->drawText(QRectF(rowX, rowY, DynLabelW(), kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Show"));
             const bool visible = cfg.GetBool(d.showKey);
             QRectF btnR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
@@ -518,7 +527,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
         } else if (isColorRow) {
             p->setFont(smallFont);
             p->setPen(kLabelColor);
-            p->drawText(QRectF(rowX, rowY, s_dynLabelW, kPropRowH),
+            p->drawText(QRectF(rowX, rowY, DynLabelW(), kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Color"));
             QColor curColor(cfg.GetInt(d.colorRKey), cfg.GetInt(d.colorGKey), cfg.GetInt(d.colorBKey));
             QRectF swR(ctrlX, rowY + 1.0f, ctrlW, kPropRowH - 2.0f);
@@ -537,7 +546,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
             QRectF btnR(ctrlX + halfW, rowY + 1.0f, halfW, kPropRowH - 2.0f);
             p->setFont(smallFont);
             p->setPen(kLabelColor);
-            p->drawText(QRectF(rowX, rowY, s_dynLabelW, kPropRowH),
+            p->drawText(QRectF(rowX, rowY, DynLabelW(), kPropRowH),
                         Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr("Anchor"));
             p->setBrush(kCtrlBg); p->setPen(Qt::NoPen);
             p->drawRoundedRect(valR, 1.5, 1.5); p->setBrush(Qt::NoBrush);
@@ -556,7 +565,7 @@ static void DrawElemPropsPanel(QPainter* p, Config::Table& cfg,
 
             p->setFont(smallFont);
             p->setPen(kLabelColor);
-            p->drawText(QRectF(rowX, rowY, s_dynLabelW, kPropRowH),
+            p->drawText(QRectF(rowX, rowY, DynLabelW(), kPropRowH),
                          Qt::AlignLeft | Qt::AlignVCenter, UiText::Tr(pr.label));
 
             switch (pr.type) {

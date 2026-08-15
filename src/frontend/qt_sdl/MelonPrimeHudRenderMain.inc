@@ -22,6 +22,8 @@ HOT_FUNCTION QRect CustomHud_Render(
     float topStretchX, float hudScale,
     float hudOriginXds, float hudOriginYds)
 {
+    MelonPrimePerf::CountCustomHudCall();
+    MelonPrimePerf::ScopedHudPhase stateTimer(MelonPrimePerf::HudPhase::State);
     const ScopedHudConfigState active(hudConfig);
     const HudFrameTransform xf = MakeHudFrameTransform(topBuffer, topStretchX, hudScale,
                                                        hudOriginXds, hudOriginYds);
@@ -117,6 +119,9 @@ HOT_FUNCTION QRect CustomHud_Render(
     const float textDrawScale = c.textDrawScale;
     // s_textRenderScale and the hi-DPI font were built event-driven in RefreshCachedConfig;
     // nothing to recompute per frame here.
+
+    stateTimer.Stop();
+    MelonPrimePerf::ScopedHudPhase drawTimer(MelonPrimePerf::HudPhase::QPainter);
 
     // Draw crosshair/scope first so large zoom reticles sit behind HP, ammo,
     // radar, and other Custom HUD elements.

@@ -80,23 +80,24 @@ static inline int mp_interp_attr_persp(int y0, int y1, int ifactor, int shift)
 static inline int mp_interp_attr_linear(
     int y0, int y1, int i, int irecip, int idiff, bool absoluteOffsets)
 {
+    (void)irecip;
     if (y0 == y1)
         return y0;
 
-    const uint recip = absoluteOffsets ? uint(abs(irecip)) : uint(irecip);
+    const uint denominator = uint(abs(idiff));
+    if (denominator == 0u)
+        return y0;
     if (y0 < y1)
     {
         const uint offset = absoluteOffsets ? uint(abs(i)) : uint(i);
-        const ulong product =
-            ulong(uint(y1 - y0) * offset) * ulong(recip) + ulong(3u << 24u);
-        return y0 + int(uint(product >> 30u));
+        const ulong numerator = ulong(uint(y1 - y0)) * ulong(offset);
+        return y0 + int(uint(numerator / ulong(denominator)));
     }
 
     const uint offset =
         absoluteOffsets ? uint(abs(idiff - i)) : uint(idiff - i);
-    const ulong product =
-        ulong(uint(y0 - y1) * offset) * ulong(recip) + ulong(3u << 24u);
-    return y1 + int(uint(product >> 30u));
+    const ulong numerator = ulong(uint(y0 - y1)) * ulong(offset);
+    return y1 + int(uint(numerator / ulong(denominator)));
 }
 
 // interpSpans selects the wider InterpSpans normalisation (variable pre-shift)
@@ -205,17 +206,21 @@ static inline int mp_calc_factor_x(thread const SpanSetupX& span, int x)
 
 static inline void mp_edge_params_xmajor(
     bool side,
+    bool swapped,
     int dx,
     thread const SpanSetupY& span,
     thread int& edgeLen,
     thread int& edgeCov)
 {
     const bool negative = span.X1 < span.X0;
-    int len;
-    if (side != negative)
-        len = (dx >> 18) - ((dx - span.Increment) >> 18);
-    else
-        len = ((dx + span.Increment) >> 18) - (dx >> 18);
+    int len = 1;
+    if (!swapped || side)
+    {
+        if (side != negative)
+            len = (dx >> 18) - ((dx - span.Increment) >> 18);
+        else
+            len = ((dx + span.Increment) >> 18) - (dx >> 18);
+    }
     edgeLen = len;
 
     const int xlen = span.XMax + 1 - span.XMin;
@@ -235,10 +240,13 @@ static inline void mp_edge_params_xmajor(
     edgeCov = int(1u << 31u) |
               ((startCov & 0x3FF) << 12) |
               (span.XCovIncr & 0x3FF);
+    if (swapped)
+        edgeLen = 1;
 }
 
 static inline void mp_edge_params_ymajor(
     bool side,
+    bool swapped,
     int dx,
     thread const SpanSetupY& span,
     thread int& edgeLen,
@@ -249,7 +257,7 @@ static inline void mp_edge_params_ymajor(
 
     if (span.Increment == 0)
     {
-        edgeCov = 31;
+        edgeCov = swapped ? 0 : 31;
         return;
     }
 
@@ -257,9 +265,23 @@ static inline void mp_edge_params_ymajor(
     if ((cov >> 5) != (dx >> 18))
         cov = 31;
     cov &= 0x1F;
-    if (side == negative)
+    if (swapped ? (side != negative) : (side == negative))
         cov = 0x1F - cov;
     edgeCov = cov;
+}
+
+static inline void mp_edge_params(
+    bool side,
+    bool swapped,
+    int dx,
+    thread const SpanSetupY& span,
+    thread int& edgeLen,
+    thread int& edgeCov)
+{
+    if (span.Increment > 0x40000)
+        mp_edge_params_xmajor(side, swapped, dx, span, edgeLen, edgeCov);
+    else
+        mp_edge_params_ymajor(side, swapped, dx, span, edgeLen, edgeCov);
 }
 
 )MSL";

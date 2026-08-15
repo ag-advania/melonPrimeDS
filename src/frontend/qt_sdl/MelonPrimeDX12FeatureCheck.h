@@ -12,9 +12,11 @@ struct Result
     bool Available = false;
     bool NvidiaReflexAvailable = false;
     bool AmdAntiLag2Available = false;
+    bool IntelXeLLAvailable = false;
     std::string Reason;
     std::string NvidiaReflexReason;
     std::string AmdAntiLag2Reason;
+    std::string IntelXeLLReason;
     std::string AdapterName;
 };
 

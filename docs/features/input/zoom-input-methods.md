@@ -55,6 +55,12 @@ ApplyZoomBindingInput()
 
 The same zoom application is also used by the re-entrant frame-advance path.
 
+`ApplyZoomBindingInput()` opens with a host-only gate: with the native zoom toggle off and
+`IB_ZOOM` released, every branch below it is a no-op, so it returns before the alt-form check
+(`IsPlayerAltForm()`, a MainRAM dereference). The native toggle keeps the gate open even on
+released frames because `UpdateNativeZoomToggleInput()` needs them for the release edge and the
+zoom-capability auto-disable. Ordering only — no behavior change.
+
 ## Legacy Method
 
 Legacy mode keeps the old fixed-button behavior.

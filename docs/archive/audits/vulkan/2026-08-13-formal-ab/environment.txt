@@ -1,0 +1,22 @@
+date=2026-08-13
+host_os=Windows 11 Home 10.0.22621 x64
+gpu=NVIDIA GeForce RTX 5070 Ti
+nvidia_driver=nvidia-smi 610.74; WMI 32.0.16.1074 dated 2026-07-02
+vulkan_instance=1.4.357
+vulkan_device_api=1.4.341
+vulkan_extensions=VK_KHR_present_id2,VK_KHR_present_wait2,VK_EXT_present_timing,VK_KHR_present_mode_fifo_latest_ready,VK_NV_low_latency2,VK_EXT_calibrated_timestamps
+validation_layer=1.4.357 installed; not enabled for formal release capture
+implicit_layers=formal runner disabled with VK_LOADER_LAYERS_DISABLE=~implicit~
+physical_monitors_exposed=1
+display_transition=DPI cross-monitor transition unavailable; manual DPI gate NOT RUN
+rom=C:\DSMPH\melonPrimeDS最新版\balancedRom.nds
+rom_sha256=3F07C5832F7ADA7C6BBE38C6C690E1FFA41188B14E402F2AA1F1142A5E34F12C
+source_revision=ca390a48bbeb5a4c1135417e9070d59e018ac1c1
+release_executable_sha256=82414AA36E76291CBBEB45460B93C5C9D640CBA446182BA02D5234C3A201346B
+release_cmake_build_type=Release
+release_developer_features=OFF
+release_latency_capture=ON
+release_validation=OFF
+target_fps=60
+warmup_frames=600
+measured_frames_requested=10000

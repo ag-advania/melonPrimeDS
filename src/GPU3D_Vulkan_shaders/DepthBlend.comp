@@ -1,0 +1,327 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    1:1 re-expression of ComputeRendererShaders::DepthBlend
+    (src/GPU3D_Compute_shaders.h).
+
+    Build defines: DepthBlend + exactly one of ZBuffer / WBuffer.
+    TileSize must be a compile-time literal: it selects local_size_x/y.
+
+    Host dispatch (matching GPU3D_Compute.cpp):
+        (ScreenWidth/TileSize, ScreenHeight/TileSize, 1)
+
+    Vulkan plumbing only: the two clear-bitmap samplers move from GL texture
+    units 0/1 to set 1 bindings 3/4. They stay combined image samplers with
+    GL_REPEAT-equivalent addressing and nearest filtering, matching
+    ClearBitmapTex[] in GPU3D_Compute.cpp::Init().
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "PolygonBuffer.glsl"
+#include "TileBuffers.glsl"
+#include "ResultBuffer.glsl"
+#include "BinningBuffer.glsl"
+
+layout (std430, set = 0, binding = 15) buffer BlendContinuationBuffer
+{
+    uint BlendContinuationState[];
+};
+
+layout (std430, set = 0, binding = 16) buffer ResultWinnerBuffer
+{
+    uint ResultWinner[];
+};
+
+layout (set = 1, binding = 3) uniform usampler2D ClearBitmapColor;
+layout (set = 1, binding = 4) uniform usampler2D ClearBitmapDepth;
+
+layout (local_size_x = TileSize, local_size_y = TileSize) in;
+
+bool DepthTestPasses(bool equalDepthTest, bool facingView, uint dstDepth, uint tileDepth, uint dstAttr)
+{
+    if (equalDepthTest)
+    {
+#ifdef WBuffer
+        return dstDepth - tileDepth + 0xFFU <= 0x1FEU;
+#endif
+#ifdef ZBuffer
+        return dstDepth - tileDepth + 0x200U <= 0x400U;
+#endif
+    }
+
+    // Software renderer rule: a front-facing source may tie an opaque,
+    // back-facing destination. All other ordinary depth tests remain strict.
+    return facingView && (dstAttr & 0x00400010U) == 0x00000010U
+        ? tileDepth <= dstDepth
+        : tileDepth < dstDepth;
+}
+
+void PlotTranslucent(inout uint color, inout uint depth, inout uint attr, bool isShadow, uint tileColor, uint srcA, uint tileDepth, uint srcAttr, bool writeDepth)
+{
+    uint blendAttr = (srcAttr & 0xE0F0U) | ((srcAttr >> 8) & 0xFF0000U) | (1U<<22) | (attr & 0xFF001F0FU);
+
+    if ((!isShadow || (attr & (1U<<22)) != 0U)
+        ? (attr & 0x007F0000U) != (blendAttr & 0x007F0000U)
+        : (attr & 0x3F000000U) != (srcAttr & 0x3F000000U))
+    {
+        // le blend
+        if (writeDepth)
+            depth = tileDepth;
+
+        if ((attr & (1U<<15)) == 0)
+            blendAttr &= ~(1U<<15);
+        attr = blendAttr;
+
+        uint srcRB = tileColor & 0x3F003FU;
+        uint srcG = tileColor & 0x003F00U;
+        uint dstRB = color & 0x3F003FU;
+        uint dstG = color & 0x003F00U;
+        uint dstA = color & 0x1F000000U;
+
+        uint alpha = (srcA >> 24) + 1;
+        if (dstA != 0U && (DispCnt & (1U << 3)) != 0U)
+        {
+            srcRB = ((srcRB * alpha) + (dstRB * (32-alpha))) >> 5;
+            srcG = ((srcG * alpha) + (dstG * (32-alpha))) >> 5;
+        }
+
+        color = (srcRB & 0x3F003FU) | (srcG & 0x003F00U) | max(dstA, srcA);
+    }
+}
+
+void ProcessCoarseMask(int linearTile, uint coarseMask, uint coarseOffset,
+    inout uvec2 color, inout uvec2 depth, inout uvec2 attr, inout uvec2 winner,
+    bool trackCoverage, inout uint stencil,
+    inout bool prevIsShadowMask)
+{
+    int tileInnerOffset = int(gl_LocalInvocationID.x) + int(gl_LocalInvocationID.y) * TileSize;
+
+    while (coarseMask != 0U)
+    {
+        uint coarseBit = findLSB(coarseMask);
+        coarseMask &= ~(1U << coarseBit);
+
+        uint tileOffset = linearTile * BinStride + coarseBit + coarseOffset;
+
+        uint fineMask = BinningMaskAndOffset[BinningMaskStart + tileOffset];
+        uint workIdx = BinningMaskAndOffset[BinningWorkOffsetsStart + tileOffset];
+
+        while (fineMask != 0U)
+        {
+            uint fineIdx = findLSB(fineMask);
+            fineMask &= ~(1U << fineIdx);
+
+            uint pixelindex = tileInnerOffset + workIdx * TileSize * TileSize;
+            uint tileColor = ColorTiles[pixelindex];
+            workIdx++;
+
+            uint polygonIdx = pc.CurVariant + fineIdx + (coarseBit + coarseOffset) * 32;
+
+            if (tileColor != 0U)
+            {
+                uint polygonAttr = Polygons[polygonIdx].Attr;
+                bool facingView = Polygons[polygonIdx].FacingView != 0U;
+
+                bool isShadowMask = ((polygonAttr & 0x3F000030U) == 0x00000030U);
+                bool prevIsShadowMaskOld = prevIsShadowMask;
+                prevIsShadowMask = isShadowMask;
+
+                bool equalDepthTest = (polygonAttr & (1U << 14)) != 0U;
+
+                uint tileDepth = DepthTiles[pixelindex];
+                uint tileAttr = AttrTiles[pixelindex];
+
+                uint dstattr = attr.x;
+
+                if (!isShadowMask)
+                {
+                    bool isShadow = (polygonAttr & 0x30U) == 0x30U;
+
+                    bool writeSecondLayer = false;
+
+                    if (isShadow)
+                    {
+                        if (stencil == 0U)
+                            continue;
+                        if ((stencil & 1U) == 0U)
+                            writeSecondLayer = true;
+                        if ((stencil & 2U) == 0U)
+                            dstattr &= ~0x3U;
+                    }
+
+                    uint dstDepth = writeSecondLayer ? depth.y : depth.x;
+                    if (!DepthTestPasses(equalDepthTest, facingView, dstDepth, tileDepth, dstattr))
+                    {
+                        if ((dstattr & 0xFU) == 0U || writeSecondLayer)
+                            continue;
+
+                        writeSecondLayer = true;
+                        dstattr = attr.y;
+                        if (!DepthTestPasses(equalDepthTest, facingView, depth.y, tileDepth, dstattr))
+                            continue;
+                    }
+
+                    uint srcAttr = (polygonAttr & 0x3F008000U);
+                    if (!facingView)
+                        srcAttr |= 1U << 4;
+
+                    uint srcA = tileColor & 0x1F000000U;
+                    if (srcA == 0x1F000000U)
+                    {
+                        srcAttr |= tileAttr;
+
+                        if (!writeSecondLayer)
+                        {
+                            if ((srcAttr & 0xFU) != 0U)
+                            {
+                                color.y = color.x;
+                                depth.y = depth.x;
+                                attr.y = attr.x;
+                                if (trackCoverage)
+                                    winner.y = winner.x;
+                            }
+
+                            color.x = tileColor;
+                            depth.x = tileDepth;
+                            attr.x = srcAttr;
+                            if (trackCoverage)
+                                winner.x = polygonIdx;
+                        }
+                        else
+                        {
+                            color.y = tileColor;
+                            depth.y = tileDepth;
+                            attr.y = srcAttr;
+                            if (trackCoverage)
+                                winner.y = polygonIdx;
+                        }
+                        if (trackCoverage)
+                            AttrTiles[pixelindex] = tileAttr | 0x80000000U;
+                    }
+                    else
+                    {
+                        bool writeDepth = (polygonAttr & (1U<<11)) != 0;
+
+                        if (!writeSecondLayer)
+                        {
+                            // blend into both layers
+                            PlotTranslucent(color.x, depth.x, attr.x, isShadow, tileColor, srcA, tileDepth, srcAttr, writeDepth);
+                        }
+                        if (writeSecondLayer || (dstattr & 0xFU) != 0U)
+                        {
+                            PlotTranslucent(color.y, depth.y, attr.y, isShadow, tileColor, srcA, tileDepth, srcAttr, writeDepth);
+                        }
+                    }
+                }
+                else
+                {
+                    if (!prevIsShadowMaskOld)
+                        stencil = 0;
+
+                    if (!DepthTestPasses(equalDepthTest, facingView, depth.x, tileDepth, attr.x))
+                        stencil = 0x1U;
+
+                    if ((dstattr & 0xFU) != 0U)
+                    {
+                        if (!DepthTestPasses(equalDepthTest, facingView, depth.y, tileDepth, attr.y))
+                            stencil |= 0x2U;
+                    }
+                }
+            }
+        }
+    }
+}
+
+void main()
+{
+    int linearTile = int(gl_WorkGroupID.x + (gl_WorkGroupID.y * TilesPerLine));
+
+    uint coarseMaskLo = BinningMaskAndOffset[BinningCoarseMaskStart + linearTile*CoarseBinStride + 0];
+    uint coarseMaskHi = BinningMaskAndOffset[BinningCoarseMaskStart + linearTile*CoarseBinStride + 1];
+
+    int resultOffset = int(gl_GlobalInvocationID.x) + int(gl_GlobalInvocationID.y) * ScreenWidth;
+    uvec2 color, depth, attr;
+    uvec2 winner = uvec2(0xFFFFFFFFU);
+    bool trackCoverage = ScreenWidth == 256 && (DispCnt & (1U << 4)) != 0U;
+    uint stencil = 0U;
+    bool prevIsShadowMask = false;
+
+    if (pc.TexHeight != 0U)
+    {
+        color = uvec2(
+            ResultValue[ResultColorStart+resultOffset],
+            ResultValue[ResultColorStart+resultOffset+FramebufferStride]);
+        depth = uvec2(
+            ResultValue[ResultDepthStart+resultOffset],
+            ResultValue[ResultDepthStart+resultOffset+FramebufferStride]);
+        attr = uvec2(
+            ResultValue[ResultAttrStart+resultOffset],
+            ResultValue[ResultAttrStart+resultOffset+FramebufferStride]);
+        if (trackCoverage)
+        {
+            winner = uvec2(
+                ResultWinner[resultOffset],
+                ResultWinner[resultOffset+FramebufferStride]);
+        }
+        uint continuation = BlendContinuationState[resultOffset];
+        stencil = continuation & 0x3U;
+        prevIsShadowMask = (continuation & 0x4U) != 0U;
+    }
+    else if ((DispCnt & (1<<14)) != 0U)
+    {
+        attr = uvec2(ClearAttr, 0U);
+        float scale = 1.0 / ScreenWidth;
+        vec2 pos = (vec2(gl_GlobalInvocationID.xy) * scale) + ClearBitmapOffset;
+        color = uvec2(texture(ClearBitmapColor, pos).r, 0U);
+        depth = uvec2(texture(ClearBitmapDepth, pos).r, 0U);
+        attr.x = (attr.x & ~0x8000U) | ((depth.x >> 9) & 0x8000U);
+        depth.x &= 0xFFFFFFU;
+    }
+    else
+    {
+        color = uvec2(ClearColor, 0U);
+        depth = uvec2(ClearDepth, 0U);
+        attr = uvec2(ClearAttr, 0U);
+    }
+
+    if (pc.TexHeight == 0U)
+    {
+        stencil = 0U;
+        prevIsShadowMask = false;
+    }
+
+    ProcessCoarseMask(linearTile, coarseMaskLo, 0, color, depth, attr, winner, trackCoverage, stencil, prevIsShadowMask);
+    ProcessCoarseMask(linearTile, coarseMaskHi, BinStride/2, color, depth, attr, winner, trackCoverage, stencil, prevIsShadowMask);
+
+    ResultValue[ResultColorStart+resultOffset] = color.x;
+    ResultValue[ResultColorStart+resultOffset+FramebufferStride] = color.y;
+    ResultValue[ResultDepthStart+resultOffset] = depth.x;
+    ResultValue[ResultDepthStart+resultOffset+FramebufferStride] = depth.y;
+    ResultValue[ResultAttrStart+resultOffset] = attr.x;
+    ResultValue[ResultAttrStart+resultOffset+FramebufferStride] = attr.y;
+    if (trackCoverage)
+    {
+        ResultWinner[resultOffset] = winner.x;
+        ResultWinner[resultOffset+FramebufferStride] = winner.y;
+    }
+    BlendContinuationState[resultOffset] = stencil | (prevIsShadowMask ? 0x4U : 0U);
+}

@@ -315,6 +315,16 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::ApplyZoomBindingInput()
     {
+        // Cheap host-side gate before the alt-form MainRAM read. With the
+        // native toggle off and the zoom input released, every branch below is
+        // a no-op, so IsPlayerAltForm() would dereference isAltForm for a
+        // result nothing consumes. The native toggle still needs the released
+        // frames (release edge / auto-disable), so it keeps the gate open.
+        // Ordering only -- no behavior change.
+        const bool zoomDown = IsDown(IB_ZOOM);
+        if (LIKELY(!m_enableNativeZoomToggle && !zoomDown))
+            return;
+
         // In Morph Ball / Alt Form the R input drives Morph Ball Boost, not zoom
         // (zoom does not exist in alt form). The game reads the boost binding
         // (player+0x3B4 = R in the standard presets), so always press the legacy
@@ -326,9 +336,9 @@ namespace MelonPrime {
             // Keep the native-toggle press edge in sync so leaving alt form mid
             // hold does not fire a stale toggle on the next biped frame.
             if (m_enableNativeZoomToggle)
-                m_nativeZoomTogglePrevDown = IsDown(IB_ZOOM);
+                m_nativeZoomTogglePrevDown = zoomDown;
 
-            if (IsDown(IB_ZOOM))
+            if (zoomDown)
                 m_inputMaskFast = static_cast<uint16_t>(m_inputMaskFast & ~(1u << INPUT_R));
             return;
         }
@@ -338,7 +348,10 @@ namespace MelonPrime {
             return;
         }
 
-        if (!IsDown(IB_ZOOM))
+        // Redundant after the gate above (the native-toggle branch already
+        // returned, so zoomDown is true here); kept so the legacy path stays
+        // correct on its own if the gate is ever revisited.
+        if (!zoomDown)
             return;
 
         uint16_t zoomMask = static_cast<uint16_t>(1u << INPUT_R);

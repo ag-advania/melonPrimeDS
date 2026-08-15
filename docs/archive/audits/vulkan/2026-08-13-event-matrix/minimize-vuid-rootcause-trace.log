@@ -1,0 +1,46 @@
+Root-cause trace, minimize/restore phase, temporary [VKDBG] instrumentation.
+Windows around the first two VUID-vkQueuePresentKHR-pWaitSemaphores-03268 pairs.
+The failing present is always the one whose present1 returned -1000208000
+(VK_ERROR_PRESENT_TIMING_QUEUE_FULL_EXT) and was then retried on the same
+wait semaphore. img=0 throughout, so RenderFinished[] is a single semaphore.
+
+--- window ---
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000150000000015
+[VKDBG] present1 res=0 wait=0022290000002229
+[VKDBG] acquire res=0 img=0 imgAvail=0000110000000011
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000110000000011
+[VKDBG] present1 res=0 wait=0022290000002229
+[VKDBG] acquire res=0 img=0 imgAvail=0000150000000015
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000150000000015
+[VKDBG] present1 res=0 wait=0022290000002229
+[VKDBG] acquire res=0 img=0 imgAvail=0000110000000011
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000110000000011
+[VKDBG] present1 res=-1000208000 wait=0022290000002229
+[VKDBG] present RETRY
+[Vulkan/validation] VUID-vkQueuePresentKHR-pWaitSemaphores-03268: vkQueuePresentKHR(): pPresentInfo->pWaitSemaphores[0] queue (VkQueue 0xd8614d0[melonPrimeDS main queue]) is waiting on semaphore (VkSemaphore 0x22290000002229) that has no way to be signaled.
+The Vulkan spec states: All elements of the pWaitSemaphores member of pPresentInfo must reference a semaphore signal operation that has been submitted for execution and any semaphore signal operations on which it depends must have also been submitted for execution (https://docs.vulkan.org/spec/latest/chapters/VK_KHR_surface/wsi.html#VUID-vkQueuePresentKHR-pWaitSemaphores-03268)
+[VKDBG] acquire res=0 img=0 imgAvail=0000150000000015
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000150000000015
+[VKDBG] present1 res=0 wait=0022290000002229
+[VKDBG] acquire res=0 img=0 imgAvail=0000110000000011
+
+--- window ---
+[VKDBG] present1 res=0 wait=0022290000002229
+[VKDBG] acquire res=0 img=0 imgAvail=0000110000000011
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000110000000011
+[VKDBG] present1 res=0 wait=0022290000002229
+[VKDBG] acquire res=0 img=0 imgAvail=0000150000000015
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000150000000015
+[VKDBG] present1 res=0 wait=0022290000002229
+[VKDBG] acquire res=0 img=0 imgAvail=0000110000000011
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000110000000011
+[VKDBG] present1 res=-1000208000 wait=0022290000002229
+[VKDBG] present RETRY
+[Vulkan/validation] VUID-vkQueuePresentKHR-pWaitSemaphores-03268: vkQueuePresentKHR(): pPresentInfo->pWaitSemaphores[0] queue (VkQueue 0xd8614d0[melonPrimeDS main queue]) is waiting on semaphore (VkSemaphore 0x22290000002229) that has no way to be signaled.
+The Vulkan spec states: All elements of the pWaitSemaphores member of pPresentInfo must reference a semaphore signal operation that has been submitted for execution and any semaphore signal operations on which it depends must have also been submitted for execution (https://docs.vulkan.org/spec/latest/chapters/VK_KHR_surface/wsi.html#VUID-vkQueuePresentKHR-pWaitSemaphores-03268)
+[VKDBG] acquire res=0 img=0 imgAvail=0000150000000015
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000150000000015
+[VKDBG] present1 res=0 wait=0022290000002229
+[VKDBG] acquire res=0 img=0 imgAvail=0000110000000011
+[VKDBG] submit img=0 signal=0022290000002229 wait(imgAvail)=0000110000000011
+

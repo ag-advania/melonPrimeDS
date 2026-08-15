@@ -84,7 +84,6 @@ kernel void mp_compute_final_pass(
     device const uint* resultAttr [[buffer(2)]],
     device const uint* tables [[buffer(4)]],
     constant MPFFinalConfig& config [[buffer(5)]],
-    device uint* finalColorRgb6a5 [[buffer(6)]],
     texture2d<float, access::write> finalTexture [[texture(0)]],
     uint gid [[thread_position_in_grid]])
 {
@@ -202,20 +201,29 @@ kernel void mp_compute_final_pass(
                float(b) / 63.0f,
                float(a) / 31.0f),
         uint2(x, y));
-
-    // Keep the DS-native RGB6/A5 encoding for the native resolve, GetLine()
-    // readback and pixel comparisons; the texture write above is display only.
-    finalColorRgb6a5[gid] = r | (g << 8u) | (b << 16u) | (a << 24u);
 }
 
-// Box-resolves the high-resolution compute result down to the DS native
-// 256x192 grid. At scale 1 this is an exact copy, so the native line buffer is
-// bit-identical to the compute output.
+static inline uint mpf_read_rgb6a5(
+    texture2d<float, access::read> finalTexture,
+    uint2 position)
+{
+    const float4 value = finalTexture.read(position);
+    const uint r = min(uint(value.r * 63.0f + 0.5f), 63u);
+    const uint g = min(uint(value.g * 63.0f + 0.5f), 63u);
+    const uint b = min(uint(value.b * 63.0f + 0.5f), 63u);
+    const uint a = min(uint(value.a * 31.0f + 0.5f), 31u);
+    return r | (g << 8u) | (b << 16u) | (a << 24u);
+}
+
+// Box-resolves the high-resolution final texture down to the DS native
+// 256x192 grid. BGRA8Unorm represents all RGB6/A5 values reversibly, so this
+// removes the duplicate full-resolution integer buffer without changing the
+// integer averaging contract.
 kernel void mp_compute_native_resolve(
-    device const uint* finalColorRgb6a5 [[buffer(0)]],
     device uint* nativeColorRgb6a5 [[buffer(1)]],
     constant MPFResolveConfig& config [[buffer(2)]],
-    texture2d<float, access::write> nativeTexture [[texture(0)]],
+    texture2d<float, access::read> finalTexture [[texture(0)]],
+    texture2d<float, access::write> nativeTexture [[texture(1)]],
     uint gid [[thread_position_in_grid]])
 {
     if (gid >= 256u * 192u)
@@ -240,7 +248,7 @@ kernel void mp_compute_native_resolve(
             const uint px = nx * scale + sx;
             if (px >= config.screenWidth)
                 break;
-            const uint value = finalColorRgb6a5[py * config.screenWidth + px];
+            const uint value = mpf_read_rgb6a5(finalTexture, uint2(px, py));
             sumR += value & 0x3Fu;
             sumG += (value >> 8u) & 0x3Fu;
             sumB += (value >> 16u) & 0x3Fu;

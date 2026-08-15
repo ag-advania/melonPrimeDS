@@ -1,5 +1,5 @@
 /*
-    Copyright 2016-2025 melonDS team
+    Copyright 2016-2026 melonDS team
 
     This file is part of melonDS.
 
@@ -16,7 +16,8 @@
     with melonDS. If not, see http://www.gnu.org/licenses/.
 */
 
-#pragma once
+#ifndef GPU3D_VULKAN_H
+#define GPU3D_VULKAN_H
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
@@ -24,876 +25,552 @@
 #include <memory>
 #include <string>
 #include <vector>
-#include <vulkan/vulkan.h>
 
 #include "GPU3D.h"
-#include "GPU3D_AcceleratedFrontend.h"
+#include "GPU3D_FixedVariantIndex.h"
+#include "MelonPrimeStructuredComposition.h"
 #include "GPU3D_TexcacheVulkan.h"
-#include "VulkanPerfStats.h"
+#include "GPU3D_Vulkan_ShaderModules.h"
+#include "VulkanCommon.h"
+#include "VulkanDescriptors.h"
+#include "VulkanDevice.h"
+#include "VulkanMemory.h"
+#include "VulkanSync.h"
 
 namespace melonDS
 {
-class GPU;
 
+class VulkanContext;
+struct RendererOutput;
+struct RendererOutputLease;
+
+// Vulkan 3D renderer: a clean-room port of the OpenGL compute rasterizer
+// (GPU3D_Compute.cpp), i.e. the GPU version of the software rasterizer, with
+// the same tile-binned pipeline and the same fixed-point math. The CPU-side
+// span setup below is a 1:1 transcription of that file; every Vulkan API
+// decision comes from the Khronos specification.
+//
+// It is paired with the software 2D renderer (see GPU_Vulkan.h). A
+// native-resolution copy of the 3D output remains available for display
+// capture through GetLine(), while the structured 2D metadata the software
+// engines record is recomposited with the internal-resolution 3D image for the
+// visible output (phases 8-9).
 class VulkanRenderer3D : public Renderer3D
 {
 public:
-    enum class BackendMode : u8
-    {
-        GraphicsHardware = 1,
-    };
+    // Returns nullptr when Vulkan is unavailable or device setup failed, so the
+    // caller can report a truthful failure instead of constructing a dead
+    // renderer.
+    static std::unique_ptr<VulkanRenderer3D> New(melonDS::GPU3D& gpu3D);
 
-    static std::unique_ptr<VulkanRenderer3D> New(melonDS::GPU3D& gpu3D) noexcept;
-
-    explicit VulkanRenderer3D(melonDS::GPU3D& gpu3D) noexcept;
     ~VulkanRenderer3D() override;
 
     bool Init() override;
     void Reset() override;
-    void RenderFrame() override;
-    void RestartFrame() override;
-    u32* GetLine(int line) override;
 
-    // Target melonDS owns the full Renderer lifecycle. These pinned-source
-    // hooks are invoked by the MelonPrime Vulkan wrapper at matching phases.
-    void VCount144() override;
-    void Blit(const melonDS::GPU& gpu);
-    void Stop(const melonDS::GPU& gpu);
+    // Releases every GPU-visible object while the emulator core is still alive.
+    void Stop();
 
-    void SetupAccelFrame() override;
-    void PrepareCaptureFrame() override;
-    void BeginCaptureFrame() override;
-    [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return ActiveBackendMode == BackendMode::GraphicsHardware; }
-
-    void SetRenderSettings(
-        bool threaded,
-        bool betterPolygons,
-        int scale,
-        bool useSimplePipeline,
-        bool conservativeCoverageEnabled,
-        float conservativeCoveragePx,
-        float conservativeCoverageDepthBias,
-        bool conservativeCoverageApplyRepeat,
-        bool conservativeCoverageApplyClamp,
-        bool debug3dClearMagenta,
-        melonDS::GPU& gpu) noexcept;
-
-    void SetThreaded(bool threaded, melonDS::GPU& gpu) noexcept;
-    [[nodiscard]] bool IsThreaded() const noexcept;
-
+    void SetRenderSettings(int scale, bool hiresCoordinates);
     [[nodiscard]] int GetScaleFactor() const noexcept { return ScaleFactor; }
-    [[nodiscard]] bool UsesBetterPolygons() const noexcept { return BetterPolygons; }
-    [[nodiscard]] bool UsesSimplePipeline() const noexcept { return UseSimplePipeline; }
-    [[nodiscard]] bool IsCoverageFixEnabled() const noexcept { return CoverageFixEnabled; }
-    [[nodiscard]] float GetCoverageFixPx() const noexcept { return CoverageFixPx; }
-    [[nodiscard]] float GetCoverageFixDepthBias() const noexcept { return CoverageFixDepthBias; }
-    [[nodiscard]] bool IsCoverageFixRepeatEnabled() const noexcept { return CoverageFixApplyRepeat; }
-    [[nodiscard]] bool IsCoverageFixClampEnabled() const noexcept { return CoverageFixApplyClamp; }
-    [[nodiscard]] float GetPassiveCoverageFixRepeatPx() const noexcept { return PassiveCoverageFixRepeatPx; }
-    [[nodiscard]] bool IsDebug3dClearMagentaEnabled() const noexcept { return Debug3dClearMagenta; }
-    [[nodiscard]] size_t GetAsyncRenderContextCount() const noexcept { return AsyncRenderContextCount; }
-    [[nodiscard]] bool WaitsForReadbackSourceOnly() const noexcept { return true; }
-    [[nodiscard]] bool GetCurrentRenderScreenSwap() const noexcept { return CurrentRenderScreenSwap; }
-    // Monotonic count of successful 3D render submissions. The compositor
-    // records it alongside the structured generation so the 3D image it sampled
-    // can be tied to a specific render submission instead of "whatever was in
-    // the color target". The 3D renderer and the compositor share one queue, so
-    // submission order already provides the ordering; this only makes the
-    // pairing observable.
-    [[nodiscard]] u64 GetRenderSubmissionSerial() const noexcept { return RenderSubmissionSerial; }
-    // Counts how many times ColorImage has been taken back for a new 3D frame.
-    // Paired with the compositor's own serials this shows, in a log, which 3D
-    // submission a composed frame actually consumed. It is a diagnostic only:
-    // the ordering itself comes from the pipeline barrier, never from a serial
-    // comparison.
-    [[nodiscard]] u64 GetColorImageReuseSerial() const noexcept { return ColorImageReuseSerial; }
-    [[nodiscard]] bool EnsureVulkanReadyForValidation();
-    [[nodiscard]] bool HasColorTarget() const noexcept { return ColorImage != VK_NULL_HANDLE && ColorImageView != VK_NULL_HANDLE; }
-    [[nodiscard]] bool IsColorTargetInitialized() const noexcept { return ColorImageInitialized; }
-    [[nodiscard]] VkImage GetColorTargetImage() const noexcept { return ColorImage; }
-    [[nodiscard]] VkImageView GetColorTargetImageView() const noexcept { return ColorImageView; }
-    [[nodiscard]] u32 GetColorTargetWidth() const noexcept { return ColorImageWidth; }
-    [[nodiscard]] u32 GetColorTargetHeight() const noexcept { return ColorImageHeight; }
-    [[nodiscard]] std::vector<u32> CaptureColorTargetForDebug();
-    [[nodiscard]] std::vector<u32> CaptureTopDepthForDebug();
-    [[nodiscard]] std::vector<u32> CaptureTopAttrForDebug();
-    [[nodiscard]] std::vector<u32> CaptureTopCoverageForDebug();
-    void requestPostFastForwardDrain();
-    void SetBackendMode(BackendMode mode) noexcept;
-    void InvalidatePresentationState(bool discardColorTarget) noexcept;
-    [[nodiscard]] BackendMode GetRequestedBackendMode() const noexcept { return RequestedBackendMode; }
-    [[nodiscard]] BackendMode GetResolvedRequestedBackendMode() const noexcept { return resolveRequestedBackendMode(); }
-    [[nodiscard]] BackendMode GetActiveBackendMode() const noexcept { return ActiveBackendMode; }
-    [[nodiscard]] static const char* backendModeName(BackendMode mode) noexcept;
+
+    void RenderFrame() override;
+    u32* GetLine(int line) override;
+    [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return true; }
+    [[nodiscard]] bool HasValidCaptureFrame() const noexcept override { return FrameReadbackValid; }
+
+    // ---------------------------------------------------------------------
+    // Structured software 2D + internal-resolution 3D.
+    //
+    // Called from VulkanRenderer::VBlank(), which is the one point in the DS
+    // frame where this frame's structured 2D planes and this frame's 3D image
+    // both exist. `planes` is
+    // screen planes, capture-source planes and source-B provenance, each
+    // 256*192 words; `lineMeta` is one 192-word array per screen. `generation`
+    // is SoftRenderer's own frame counter -- composing the same generation
+    // twice is a no-op, and a stale generation is never composed.
+    //
+    // Deliberately *not* deferred: nothing here latches a previous frame's
+    // result. That is what makes the composition immune to MPH flipping
+    // POWCNT1 bit 15 every frame; the producer already resolved engine -> LCD
+    // for this frame into the published per-scanline routing table.
+    bool ComposeStructuredOutput(
+        const std::array<const u32*, 14>& planes,
+        const std::array<const u32*, 2>& lineMeta,
+        const u32* captureCommands,
+        const StructuredComposition::ScreenRoutingView& screenRouting,
+        u64 generation,
+        const StructuredComposition::GenerationState& contentGeneration);
+
+    // Legacy CPU accessor. Vulkan presentation is GPU-native and therefore
+    // returns nullptr here; callers use AcquireComposedOutputLease().
+    [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
+    [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
+    [[nodiscard]] RendererOutput GetComposedOutput() const;
+
+    // Internal resolution, not 256x192. This is the mechanism by which high
+    // resolution survives to present: the display path never sees a
+    // native-resolution intermediate.
+    [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
+    [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
+
+    [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
+    [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept
+    {
+        return RuntimeFailureReason;
+    }
+
+    // The frontend compiles pipelines incrementally so ROM startup does not
+    // stall. Nothing is created before SetRenderSettings() has supplied the
+    // internal resolution the specialization constants are built from.
+    bool NeedsShaderCompile() override
+    {
+        return !RuntimeFailed && ScaleFactor > 0 && ShaderStepIdx < ShaderStepCount;
+    }
+    void ShaderCompileStep(int& current, int& count) override;
 
 private:
-    class IVulkan3DBackend;
-    class SimpleGraphicsBackend;
+    explicit VulkanRenderer3D(melonDS::GPU3D& gpu3D);
 
-    void Reset(melonDS::GPU& gpu);
-    void RenderFrame(melonDS::GPU& gpu);
-    void RestartFrame(melonDS::GPU& gpu);
+    static constexpr int MaxRenderPolygons = 2048;
+    static constexpr int MaxVariants = MaxRenderPolygons;
+    static constexpr int MaxYSpanSetups = MaxRenderPolygons * 10;
+    static constexpr int BinStride = 2048 / 32;
+    static constexpr int CoarseBinStride = BinStride / 32;
+    static constexpr int CoarseTileCountX = 8;
 
-    static constexpr u32 MaxTextureDescriptors = 128;
-    static constexpr u32 MaxActiveTextureDescriptors = MaxTextureDescriptors - 1;
-    static constexpr u32 FallbackTextureDescriptorIndex = MaxTextureDescriptors - 1;
-    static constexpr u32 ToonTableEntryCount = 32;
+    // Pipelines 0..32 are the compute rasterizer and match
+    // ComputeRenderer3D::ShaderCompileStep() index for index; 33 (Resolve) and
+    // 33..35 are the presentation stages, and 36 is the native accepted-AA
+    // correction. The OpenGL compute
+    // renderer does not have because it hands FinalFB to the GL 2D engine.
+    static constexpr int ShaderStepCount =
+        static_cast<int>(VulkanShaders::Pipeline_Count);
 
-    enum class RasterDispatchPath : u8
+    // Frames the CPU may run ahead of the GPU *for this renderer*.
+    //
+    // One, and that is a correctness requirement rather than a tuning choice.
+    // The compute rasterizer works out of a single shared set of intermediate
+    // buffers -- XSpanSetups, the three tile buffers, BinResult, WorkDescs,
+    // ResultBuffer and FinalFB. A second in-flight frame would write those
+    // while the previous frame still read them (a WAR/WAW race), and giving
+    // each frame its own copy is not an option: the tile buffers alone are
+    // three quarters of a gigabyte at 16x.
+    //
+    // This costs nothing in practice. The wait happens at the *start* of frame
+    // N for frame N-1, and a whole DS frame of software 2D work has run on the
+    // emulation thread in between, so CPU and GPU still overlap.
+    static constexpr u32 RendererFramesInFlight = 1;
+    static constexpr u32 CompositorFramesInFlight = 3;
+    static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
+
+    // Two set-0 allocations per frame slot. They differ only in what binding 13
+    // points at -- the native capture buffer for the rasterizer's Resolve stage,
+    // the two-screen composed buffer for the compositor -- but the compositor
+    // records into a separate command buffer, so it cannot share the set the
+    // rasterizer's submission may still be reading.
+    static constexpr u32 RasterizerSetSlot = 0;
+    static constexpr u32 CompositorSetSlot = 1;
+    static constexpr u32 RasterizerSetsPerFrame = 2;
+
+    // -----------------------------------------------------------------------
+    // GPU-visible struct layouts.
+    //
+    // Every one of these is byte-identical to the std430 block the matching
+    // GLSL source declares (src/GPU3D_Vulkan_shaders/*.glsl). std430 gives
+    // scalar members a base alignment equal to their size, so a run of 4-byte
+    // scalars packs tightly and the C++ struct matches with no padding. GLSL
+    // `bool` block members are 32-bit, which is why Linear / IsDummy are u32
+    // here even though the GLSL spells them `bool`.
+    // -----------------------------------------------------------------------
+
+    // YSpanSetupBuffer.glsl :: YSpanSetup
+    struct SpanSetupY
     {
-        DirectTiles = 0,
-        LegacyWorklist = 1,
+        s32 Z0, Z1, W0, W1;
+        s32 ColorR0, ColorG0, ColorB0;
+        s32 ColorR1, ColorG1, ColorB1;
+        s32 TexcoordU0, TexcoordV0;
+        s32 TexcoordU1, TexcoordV1;
+
+        s32 I0, I1;
+        u32 Linear;             // GLSL `bool Linear`
+        s32 IRecip;
+        s32 W0n, W0d, W1d;
+
+        s32 Increment;
+
+        s32 X0, X1, Y0, Y1;
+        s32 XMin, XMax;
+        s32 DxInitial;
+
+        s32 XCovIncr;
+        u32 IsDummy;            // GLSL `bool IsDummy`
     };
 
-    enum class RasterExecutionProfile : u8
+    // XSpanSetupBuffer.glsl :: XSpanSetup. The GLSL names slots 2 and 3
+    // InsideStart / InsideEnd; the CPU side never writes them (InterpSpans
+    // produces the whole record), so they keep the GLSL names here.
+    struct SpanSetupX
     {
-        AdrenoCpuDense = 0,
-        AdrenoCpuSparse = 1,
-        MaliDenseScan = 2,
-        MaliCpuDense = 3,
-        GeneralNonUniform = 4,
-        LegacyFallback = 5,
-        Count = 6,
+        s32 X0, X1;
+        s32 InsideStart, InsideEnd, EdgeCovL, EdgeCovR;
+        s32 XRecip;
+        u32 Flags;
+        s32 Z0, Z1, W0, W1;
+        s32 ColorR0, ColorG0, ColorB0;
+        s32 ColorR1, ColorG1, ColorB1;
+        s32 TexcoordU0, TexcoordV0;
+        s32 TexcoordU1, TexcoordV1;
+        s32 CovLInitial, CovRInitial;
     };
 
-    enum class RasterSceneMode : u8
+    // Consumed as a VK_FORMAT_R16G16B16A16_UINT uniform texel buffer
+    // (Common.glsl set 0 binding 10, fetched with texelFetch in InterpSpans).
+    struct SetupIndices
     {
-        DenseNoBoundary = 0,
-        DenseBoundary = 1,
-        SparseActive = 2,
-        Count = 3,
+        u16 PolyIdx, SpanIdxL, SpanIdxR, Y;
     };
 
-    enum class RasterTileLoopMode : u8
+    // PolygonBuffer.glsl :: Polygon
+    struct RenderPolygon
     {
-        DenseGroupList = 0,
-        SparseActive = 1,
-        LegacyWorklist = 2,
-        Count = 3,
+        u32 FirstXSpan;
+        s32 YTop, YBot;
+
+        s32 XMin, XMax;
+        s32 XMinY, XMaxY;
+
+        u32 Variant;
+        u32 Attr;
+
+        float TextureLayer;
+        u32 FacingView;
     };
 
-    enum class TextureSamplingPath : u8
+    static_assert(sizeof(SpanSetupY) == 31 * 4, "SpanSetupY must match the std430 YSpanSetup layout");
+    static_assert(alignof(SpanSetupY) == 4, "SpanSetupY must not gain alignment padding");
+    static_assert(offsetof(SpanSetupY, Linear) == 16 * 4, "YSpanSetup.Linear is the 17th 4-byte slot");
+    static_assert(offsetof(SpanSetupY, IsDummy) == 30 * 4, "YSpanSetup.IsDummy is the 31st 4-byte slot");
+
+    static_assert(sizeof(SpanSetupX) == 24 * 4, "SpanSetupX must match the std430 XSpanSetup layout");
+    static_assert(alignof(SpanSetupX) == 4, "SpanSetupX must not gain alignment padding");
+    static_assert(offsetof(SpanSetupX, Flags) == 7 * 4, "XSpanSetup.Flags is the 8th 4-byte slot");
+
+    static_assert(sizeof(RenderPolygon) == 11 * 4, "RenderPolygon must match the std430 Polygon layout");
+    static_assert(alignof(RenderPolygon) == 4, "RenderPolygon must not gain alignment padding");
+    static_assert(offsetof(RenderPolygon, TextureLayer) == 9 * 4, "Polygon.TextureLayer is the 10th slot");
+    static_assert(offsetof(RenderPolygon, FacingView) == 10 * 4, "Polygon.FacingView is the 11th slot");
+
+    static_assert(sizeof(SetupIndices) == 8, "SetupIndices must match one R16G16B16A16_UINT texel");
+
+    // BinningBuffer.glsl :: BinResultBuffer header, std430. The trailing
+    // BinningMaskAndOffset[] runtime array starts immediately after this.
+    struct BinResultHeader
     {
-        BaseSingleDescriptor = 0,
-        CompatDynamicUniform = 1,
-        NonUniform = 2,
+        u32 VariantWorkCount[MaxVariants * 4];
+        u32 SortedWorkOffset[MaxVariants];
+        u32 VariantWorkRealCount[MaxVariants];
+        u32 SortWorkWorkCount[4];
+    };
+    static_assert(sizeof(BinResultHeader) == MaxVariants * 24 + 16,
+        "BinResultHeader must match the std430 offsets");
+    static_assert(offsetof(BinResultHeader, SortedWorkOffset) == MaxVariants * 16,
+        "SortedWorkOffset offset");
+    static_assert(offsetof(BinResultHeader, VariantWorkRealCount) == MaxVariants * 20,
+        "VariantWorkRealCount offset");
+    static_assert(offsetof(BinResultHeader, SortWorkWorkCount) == MaxVariants * 24,
+        "SortWorkWorkCount must stay uvec4-aligned");
+
+    // Common.glsl :: MetaUniform, std140.
+    //
+    // std140 pads every array element out to 16 bytes, which is exactly what
+    // the u32 ToonTable[4*34] mirror produces: 34 uvec4 elements. The three
+    // scalar runs after it are 4-byte aligned and the trailing vec2 lands on an
+    // 8-byte boundary (584), so the block is 592 bytes with no hidden padding.
+    struct MetaUniform
+    {
+        u32 NumPolygons;                // 0
+        u32 NumVariants;                // 4
+        u32 AlphaRef;                   // 8
+        u32 DispCnt;                    // 12
+
+        u32 ToonTable[4 * 34];          // 16 .. 560
+
+        u32 ClearColor;                 // 560
+        u32 ClearDepth;                 // 564
+        u32 ClearAttr;                  // 568
+
+        u32 FogOffset;                  // 572
+        u32 FogShift;                   // 576
+        u32 FogColor;                   // 580
+
+        float ClearBitmapOffset[2];     // 584 .. 592
+    };
+    static_assert(sizeof(MetaUniform) == 592, "MetaUniform must match the std140 block layout");
+    static_assert(offsetof(MetaUniform, ToonTable) == 16, "ToonTable must start on a uvec4 boundary");
+    static_assert(offsetof(MetaUniform, ClearColor) == 560, "ClearColor follows ToonTable[34]");
+    static_assert(offsetof(MetaUniform, ClearBitmapOffset) == 584, "ClearBitmapOffset must be 8-byte aligned");
+
+    // One rasterise pipeline per texture/blend combination, exactly like the
+    // OpenGL compute renderer's shader table.
+    enum RasteriseKind
+    {
+        RasteriseKind_NoTexture = 0,
+        RasteriseKind_NoTextureToon,
+        RasteriseKind_NoTextureHighlight,
+        RasteriseKind_UseTextureDecal,
+        RasteriseKind_UseTextureModulate,
+        RasteriseKind_UseTextureToon,
+        RasteriseKind_UseTextureHighlight,
+        RasteriseKind_ShadowMask,
+        RasteriseKind_Count,
+    };
+    static_assert(RasteriseKind_Count * 2 == 16, "16 rasterise pipelines, 8 kinds x 2 depth modes");
+
+    struct Variant
+    {
+        u32 Texture = 0;        // texture heap handle, 0 = untextured
+        u32 WrapS = 0;
+        u32 WrapT = 0;
+        u32 CaptureReference = 0;
+        s32 CaptureYOffset = 0;
+        u8 CaptureType = 0;   // 0 = texcache, 1 = 128-wide capture, 2 = 256-wide
+        u8 BlendMode = 0;
+        u16 Width = 0;
+        u16 Height = 0;
+
+        bool operator==(const Variant& other) const noexcept
+        {
+            return Texture == other.Texture
+                && WrapS == other.WrapS
+                && WrapT == other.WrapT
+                && CaptureReference == other.CaptureReference
+                && CaptureYOffset == other.CaptureYOffset
+                && CaptureType == other.CaptureType
+                && BlendMode == other.BlendMode;
+        }
     };
 
-    enum class CapturePathMode : u8
+    static u32 HashVariant(const Variant& variant) noexcept
     {
-        Disabled = 0,
-        CaptureLineExport = 1,
-        FallbackReadback = 2,
-        Count = 3,
+        u32 hash = 0x811C9DC5u;
+        hash = MixVariantHash(hash, variant.Texture);
+        hash = MixVariantHash(hash, variant.WrapS);
+        hash = MixVariantHash(hash, variant.WrapT);
+        hash = MixVariantHash(hash, variant.CaptureReference);
+        hash = MixVariantHash(hash, static_cast<u32>(variant.CaptureYOffset));
+        hash = MixVariantHash(hash, variant.CaptureType);
+        return MixVariantHash(hash, variant.BlendMode);
+    }
+
+    struct PolygonBatch
+    {
+        u32 FirstPolygon = 0;
+        u32 PolygonCount = 0;
     };
 
-    struct DescriptorSetCache
-    {
-        bool Ready = false;
-        VkImageView ColorImageView = VK_NULL_HANDLE;
-        VkBuffer TriangleBuffer = VK_NULL_HANDLE;
-        VkImageView FallbackTextureView = VK_NULL_HANDLE;
-        VkSampler FallbackTextureSampler = VK_NULL_HANDLE;
-        VkBuffer ResultBuffer = VK_NULL_HANDLE;
-        VkBuffer BinMaskBuffer = VK_NULL_HANDLE;
-        VkBuffer GroupListBuffer = VK_NULL_HANDLE;
-        VkBuffer ToonBuffer = VK_NULL_HANDLE;
-        VkBuffer SpanSetupBuffer = VK_NULL_HANDLE;
-        VkBuffer WorkOffsetBuffer = VK_NULL_HANDLE;
-        VkBuffer CaptureLineBuffer = VK_NULL_HANDLE;
-        std::array<VkDescriptorImageInfo, MaxTextureDescriptors> TextureInfos{};
-    };
+    // --- lifecycle ---------------------------------------------------------
+    bool CreateFixedResources();
+    bool CreateScaleDependentResources();
+    void ReleaseScaleDependentResources();
+    void ReleasePipelines();
+    void SetRuntimeFailure(std::string reason);
 
-    struct GraphicsDescriptorSetCache
-    {
-        bool Ready = false;
-        VkBuffer TriangleBuffer = VK_NULL_HANDLE;
-        VkBuffer ToonBuffer = VK_NULL_HANDLE;
-        VkBuffer ClearBuffer = VK_NULL_HANDLE;
-        VkImageView AttrImageView = VK_NULL_HANDLE;
-        VkImageView DepthImageView = VK_NULL_HANDLE;
-        VkSampler AttachmentSampler = VK_NULL_HANDLE;
-        std::array<VkDescriptorImageInfo, MaxTextureDescriptors> TextureInfos{};
-    };
+    bool CreatePipelineCache();
+    void SavePipelineCache();
+    bool BuildPipeline(u32 pipelineIndex);
 
-    struct RenderContext
-    {
-        VkCommandPool CommandPool = VK_NULL_HANDLE;
-        VkCommandBuffer CommandBuffer = VK_NULL_HANDLE;
-        VkFence FrameFence = VK_NULL_HANDLE;
-        VkDescriptorSet DescriptorSet = VK_NULL_HANDLE;
-        VkDescriptorSet GraphicsDescriptorSet = VK_NULL_HANDLE;
-        std::array<VkDescriptorSet, MaxTextureDescriptors> SingleTextureDescriptorSets{};
-        VkBuffer TriangleBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory TriangleMemory = VK_NULL_HANDLE;
-        VkDeviceSize TriangleBufferSize = 0;
-        void* TriangleMapped = nullptr;
-        VkBuffer GraphicsVertexBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory GraphicsVertexMemory = VK_NULL_HANDLE;
-        VkDeviceSize GraphicsVertexBufferSize = 0;
-        void* GraphicsVertexMapped = nullptr;
-        VkBuffer BinMaskBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory BinMaskMemory = VK_NULL_HANDLE;
-        VkDeviceSize BinMaskBufferSize = 0;
-        void* BinMaskMapped = nullptr;
-        VkBuffer GroupListBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory GroupListMemory = VK_NULL_HANDLE;
-        VkDeviceSize GroupListBufferSize = 0;
-        void* GroupListMapped = nullptr;
-        VkBuffer SpanSetupBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory SpanSetupMemory = VK_NULL_HANDLE;
-        VkDeviceSize SpanSetupBufferSize = 0;
-        void* SpanSetupMapped = nullptr;
-        VkBuffer WorkOffsetBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory WorkOffsetMemory = VK_NULL_HANDLE;
-        VkDeviceSize WorkOffsetBufferSize = 0;
-        void* WorkOffsetMapped = nullptr;
-        VkBuffer ToonBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory ToonMemory = VK_NULL_HANDLE;
-        VkDeviceSize ToonBufferSize = 0;
-        void* ToonMapped = nullptr;
-        VkBuffer ClearBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory ClearMemory = VK_NULL_HANDLE;
-        VkDeviceSize ClearBufferSize = 0;
-        void* ClearMapped = nullptr;
-        VkBuffer CaptureLineBuffer = VK_NULL_HANDLE;
-        VkDeviceMemory CaptureLineMemory = VK_NULL_HANDLE;
-        VkDeviceSize CaptureLineBufferSize = 0;
-        void* CaptureLineMapped = nullptr;
-        VkQueryPool TimestampQueryPool = VK_NULL_HANDLE;
-        bool TimestampPending = false;
-        DescriptorSetCache DescriptorCache{};
-        std::array<DescriptorSetCache, MaxTextureDescriptors> SingleTextureDescriptorCaches{};
-        GraphicsDescriptorSetCache GraphicsDescriptorCache{};
-    };
+    // --- per-frame ---------------------------------------------------------
+    void RecordInitialTransitions(VkCommandBuffer cmd);
+    void UpdateClearBitmap(VkCommandBuffer cmd, Vk::StagingRing& staging);
+    // `slot` selects which set-0 allocation is written: slot 0 is the
+    // rasterizer's (bound for the whole RenderFrame() command buffer, including
+    // the Resolve stage), slot 1 the compositor's. `presentationOutput` is the
+    // buffer bound at binding 13, which is the only thing that differs.
+    bool WriteRasterizerDescriptorSet(
+        u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput,
+        VkImageView directOutputTop = VK_NULL_HANDLE,
+        VkImageView directOutputBottom = VK_NULL_HANDLE);
+    VkDescriptorSet AcquireTextureSet(u32 frameIndex, VkImageView textureView, VkSampler sampler);
+    void FillMetaUniform(MetaUniform& meta, u32 numVariants, u32 numPolygons) const;
 
-    struct RasterPushConstants
-    {
-        u32 width;
-        u32 height;
-        u32 clearColor;
-        u32 clearDepth;
-        u32 triangleCount;
-        u32 dispCnt;
-        u32 alphaRef;
-        u32 fogColor;
-        u32 fogOffset;
-        u32 fogShift;
-        u32 clearAttr;
-        u32 fogDensityPacked[9];
-        u32 edgeColorPacked[8];
-        u32 variantKey;
-        u32 passIndex;
-        u32 triangleBase;
-        u32 depthBlendMode;
-    };
-    static_assert(sizeof(RasterPushConstants) == 128u, "RasterPushConstants must fit maxPushConstantsSize=128");
+    // Records a compute->compute dependency over `buffers`. Kept explicit
+    // rather than folded into a global VkMemoryBarrier so every dependency in
+    // the frame names the resource it is about.
+    void BufferBarrier(
+        VkCommandBuffer cmd,
+        const VkBuffer* buffers, u32 count,
+        VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
+        VkPipelineStageFlags dstStage, VkAccessFlags dstAccess) const;
 
-    struct TriangleGpu
-    {
-        float x0;
-        float y0;
-        float z0;
-        float w0;
-        float x1;
-        float y1;
-        float z1;
-        float w1;
-        float x2;
-        float y2;
-        float z2;
-        float w2;
-        float u0;
-        float v0;
-        float u1;
-        float v1;
-        float u2;
-        float v2;
-        u32 yBounds;
-        u32 texLayer;
-        u32 color0Rgba8;
-        u32 color1Rgba8;
-        u32 color2Rgba8;
-        u32 flags;
-        u32 texArrayIndex;
-        u32 texWidth;
-        u32 texHeight;
-        u32 texParam;
-        u32 polyAttr;
-        u32 variantKey;
-    };
+    // CPU-side span setup, transcribed from the OpenGL compute renderer.
+    void SetupAttrs(SpanSetupY* span, Polygon* poly, int from, int to) const;
+    void SetupYSpan(RenderPolygon* rp, SpanSetupY* span, Polygon* poly, int from, int to, int side, s32 positions[10][2]) const;
+    void SetupYSpanDummy(RenderPolygon* rp, SpanSetupY* span, Polygon* poly, int vertex, int side, s32 positions[10][2]) const;
 
-    struct GraphicsVertexGpu
-    {
-        float x;
-        float y;
-        float z;
-        float reciprocalW;
-        float u;
-        float v;
-        u32 colorRgba8;
-        u32 flags;
-        u32 texLayer;
-        u32 texArrayIndex;
-        u32 texWidth;
-        u32 texHeight;
-        u32 texParam;
-        u32 polyAttr;
-        // Per-triangle S/T bounds, two s16 packed per word (S in the low half, T in the
-        // high half), in the DS 1/16-texel domain. The fragment stage moves its sample
-        // point onto the DS grid, which can push it outside the primitive; software never
-        // extrapolates, because a span only interpolates between its own endpoints.
-        u32 uvBoundsMinPacked;
-        u32 uvBoundsMaxPacked;
-    };
+    // Returns the number of variants collected, filling YSpanSetups /
+    // YSpanIndices / RenderPolygons. Degenerate polygons are compacted out;
+    // valid DS input otherwise fits the worst-case span allocations exactly.
+    u32 BuildPolygons(int& numYSpans, int& numSetupIndices, u32& numPolygons);
+    u32 BuildPolygonBatches(u32 numPolygons);
 
-    struct SpanSetupGpu
-    {
-        float minX;
-        float minY;
-        float maxX;
-        float maxY;
-        u32 yMin;
-        u32 yMax;
-        u32 variantKey;
-        u32 valid;
-        float edgeInv0;
-        float edgeInv1;
-        float edgeInv2;
-    };
+    bool RecordNativeResolveAndReadback();
+    void EnsureFrameReadback();
 
-    struct GraphicsPolygonDraw
-    {
-        u32 firstTriangle = 0;
-        u32 triangleCount = 0;
-        u32 polyAttr = 0;
-        u32 flags = 0;
-        u32 firstVertex = 0;
-        u32 vertexCount = 0;
-        u32 firstEdgeIndex = 0;
-        u32 edgeIndexCount = 0;
-        u32 edgeColorOverrideMask = 0;
-        u32 edgeColorOverridePacked = 0;
-    };
+    // --- device objects ----------------------------------------------------
+    VulkanContext* Context = nullptr;
+    VulkanDevice Device;
+    Vk::FrameRing Frames;
+    // Native capture is demand-driven. A separate one-slot ring lets the
+    // first GetLine() append resolve/copy work after the main render and wait
+    // on only that capture submission's fence.
+    Vk::FrameRing CaptureFrames;
+    // The compositor records into its own command buffers and fences
+    // rather than sharing the rasterizer's. It has to: the structured 2D planes
+    // are only complete after all 192 scanlines have been drawn, which is long
+    // after RenderFrame() closed and submitted its command buffer, and reusing
+    // the rasterizer's slot would reset the fence GetLine()'s capture readback
+    // is still waiting on. One frame in flight, for the same reason the
+    // rasterizer keeps one. Its three output slots additionally carry their own
+    // structured input, so VBlank can submit without waiting for the prior slot.
+    Vk::FrameRing ComposeFrames;
+    Vk::DescriptorLayouts Layouts;
+    Vk::DescriptorPool Descriptors;
+    Vk::StagingRing FrameStaging;
 
-    bool ensureInitialized();
-    void destroyVulkan();
-
-    bool createCommandObjects();
-    bool createCommandObjects(VkCommandPool& commandPool, VkCommandBuffer& commandBuffer);
-    bool createSyncObjects();
-    bool createFence(VkFence& fence);
-    bool createTimestampQueryPool(VkQueryPool& queryPool);
-    bool createDescriptorObjects();
-    bool createGraphicsDescriptorObjects();
-    bool createComputePipeline();
-    bool createGraphicsPipelines();
-    bool createPipelineCache(TextureSamplingPath samplingPath);
-    void savePipelineCache();
-    std::string buildPipelineCacheFileName(TextureSamplingPath samplingPath) const;
-
-    bool ensureRenderTarget(u32 width, u32 height);
-    void destroyRenderTarget();
-    bool ensureTriangleBuffer(RenderContext* context, size_t triangleCount);
-    void destroyTriangleBuffer(RenderContext* context);
-    bool ensureGraphicsVertexBuffer(RenderContext* context, size_t vertexCount);
-    void destroyGraphicsVertexBuffer(RenderContext* context);
-    bool ensureGraphicsSceneVertexBuffer(size_t vertexCount);
-    void destroyGraphicsSceneVertexBuffer();
-    bool ensureGraphicsEdgeIndexBuffer(size_t indexCount);
-    void destroyGraphicsEdgeIndexBuffer();
-    bool ensureCpuSpanSetupBuffer(RenderContext& context, size_t triangleCount);
-    void destroyCpuSpanSetupBuffer(RenderContext& context);
-    bool ensureCpuBinBuffers(RenderContext& context, size_t triangleCount, u32 width, u32 height);
-    void destroyCpuBinBuffers(RenderContext& context);
-    bool ensureCpuWorkOffsetBuffer(RenderContext& context, u32 width, u32 height, size_t triangleCount);
-    void destroyCpuWorkOffsetBuffer(RenderContext& context);
-    bool ensureResultBuffer(u32 width, u32 height);
-    void destroyResultBuffer();
-    bool ensureBinMaskBuffer(size_t triangleCount, u32 width, u32 height);
-    void destroyBinMaskBuffer();
-    bool ensureGroupListBuffer(size_t triangleCount, u32 width, u32 height);
-    void destroyGroupListBuffer();
-    bool ensureSpanSetupBuffer(size_t triangleCount);
-    void destroySpanSetupBuffer();
-    bool ensureWorkOffsetBuffer(u32 width, u32 height, size_t triangleCount);
-    void destroyWorkOffsetBuffer();
-    bool ensureToonBuffer(RenderContext* context);
-    void destroyToonBuffer(RenderContext* context);
-    bool updateToonBuffer(RenderContext* context, const u16* toonTable);
-    bool ensureGraphicsClearBuffer(RenderContext* context);
-    void destroyGraphicsClearBuffer(RenderContext* context);
-    bool updateGraphicsClearBuffer(RenderContext* context, const melonDS::GPU& gpu);
-    bool ensureCaptureLineBuffer(RenderContext* context);
-    void destroyCaptureLineBuffer(RenderContext* context);
-    void destroyAllCaptureLineBuffers();
-    void resetCaptureLineState();
-    void selectActiveCaptureLineBufferSlot(u32 slot);
-    void syncActiveCaptureLineBufferSlot();
-    void storeActiveCaptureLineBufferSlot();
-    void clearRawReadbackState();
-    bool finalizeCaptureLineFrame(bool blocking = true);
-    bool finalizeCaptureReadback(bool blocking = true);
-    bool createFallbackTexture();
-    void destroyFallbackTexture();
-
-    bool createReadbackBuffer(u32 width, u32 height);
-    void destroyReadbackBuffer();
-    bool ensureCaptureReadbackImage();
-    void destroyCaptureReadbackImage();
-    bool createResultReadbackBuffer();
-    void destroyResultReadbackBuffer();
-    bool readbackGraphicsAttrImageToCpu(std::vector<u32>& outAttrPixels);
-    bool readbackGraphicsDepthImageToCpu(std::vector<u32>& outDepthPixels);
-
-    void updateDescriptorSet(RenderContext* context, u32 singleTextureDescriptorIndex = FallbackTextureDescriptorIndex);
-    bool updateCaptureExportDescriptorSet(RenderContext* context);
-    void updateGraphicsDescriptorSet(RenderContext* context);
-    static bool descriptorImageInfoEquals(const VkDescriptorImageInfo& lhs, const VkDescriptorImageInfo& rhs);
-    VkDescriptorSet getDescriptorSet(RenderContext* context, u32 singleTextureDescriptorIndex) const;
-    DescriptorSetCache& getDescriptorSetCache(RenderContext* context, u32 singleTextureDescriptorIndex);
-    GraphicsDescriptorSetCache& getGraphicsDescriptorSetCache(RenderContext* context);
-    void invalidateDescriptorSetCache(RenderContext* context);
-    void invalidateAllDescriptorSetCaches();
-    void invalidateGraphicsDescriptorSetCache(RenderContext* context);
-    void invalidateAllGraphicsDescriptorSetCaches();
-    [[nodiscard]] bool usesSingleDescriptorTexturePath() const noexcept;
-    [[nodiscard]] u32 getTextureBindingDescriptorCount() const noexcept;
-    [[nodiscard]] TextureSamplingPath resolveTextureSamplingPath() const noexcept;
-    [[nodiscard]] static const char* textureSamplingPathName(TextureSamplingPath path) noexcept;
-    [[nodiscard]] BackendMode resolveRequestedBackendMode() const noexcept;
-    void refreshActiveBackendMode() noexcept;
-    [[nodiscard]] static const char* rasterExecutionProfileName(RasterExecutionProfile profile) noexcept;
-    [[nodiscard]] static const char* rasterSceneModeName(RasterSceneMode mode) noexcept;
-    [[nodiscard]] static const char* rasterTileLoopModeName(RasterTileLoopMode mode) noexcept;
-    [[nodiscard]] static const char* capturePathModeName(CapturePathMode mode) noexcept;
-    u32 findMemoryType(u32 typeBits, VkMemoryPropertyFlags properties) const;
-    bool tryAcquireRenderContext(RenderContext& context, bool countMisses = true);
-    bool waitForRenderContext(RenderContext& context);
-    RenderContext* tryAcquireReadyRenderContext() noexcept;
-    bool waitForAllRenderContexts();
-    bool waitForReadbackSource();
-    bool waitForTextureCacheMutationSafePoint();
-    bool waitForDeviceIdle(const char* reason);
-    RenderContext& acquireNextRenderContext() noexcept;
-    void consumeGpuTiming(RenderContext* context);
-    void logPerformanceIfNeeded();
-    bool useCpuTileBinning() const noexcept;
-    bool prepareCpuTileBins(RenderContext& context, const RasterPushConstants& pushConstants);
-
-    void WarmTextureCache(melonDS::GPU& gpu);
-    void buildGraphicsTriangleList(melonDS::GPU& gpu);
-    void buildTriangleList(melonDS::GPU& gpu);
-
-    bool selectGraphicsDepthStencilFormat();
-    bool dispatchRasterAndReadback(
-        RenderContext* context,
-        u32 rgbaColor,
-        u32 clearDepth,
-        u32 dispCnt,
-        u32 alphaRef,
-        u32 fogColor,
-        u32 fogOffset,
-        u32 fogShift,
-        u32 clearAttr,
-        const u8* fogDensityTable,
-        const u16* edgeColorTable,
-        const u16* toonTable,
-        bool readbackToCpu,
-        bool captureReadbackPath = false);
-    bool dispatchGraphicsRasterAndReadback(
-        RenderContext* context,
-        u32 rgbaColor,
-        u32 clearDepth,
-        u32 dispCnt,
-        u32 alphaRef,
-        u32 fogColor,
-        u32 fogOffset,
-        u32 fogShift,
-        u32 clearAttr,
-        const u8* fogDensityTable,
-        const u16* edgeColorTable,
-        const u16* toonTable,
-        bool readbackToCpu,
-        bool captureReadbackPath = false);
-    bool submitGraphicsCaptureExportForCurrentFrame();
-    // Produces this frame's exact capture export on demand, when display
-    // capture turns out to need 3D after the frame was already rendered.
-    bool ensureExactCaptureExportForCurrentFrame();
-    bool readbackColorTargetToCpu(bool capturePath = false);
-    bool readbackResultBufferToCpu();
-    bool copyReadyCaptureLineToLineCache();
-    void convertReadbackToLineCache();
-    u32 buildClearColorRgba8(const melonDS::GPU& gpu) const;
-    void clearLineCache();
-    void ResetActiveBackend(melonDS::GPU& gpu);
-    void VCount144ActiveBackend(melonDS::GPU& gpu);
-    void RenderFrameActiveBackend(melonDS::GPU& gpu);
-    void RestartFrameActiveBackend(melonDS::GPU& gpu);
-    u32* GetLineActiveBackend(int line);
-    void SetupAccelFrameActiveBackend();
-    void PrepareCaptureFrameActiveBackend();
-    void BeginCaptureFrameActiveBackend();
-    void BlitActiveBackend(const melonDS::GPU& gpu);
-    void StopActiveBackend(const melonDS::GPU& gpu);
-    IVulkan3DBackend& activeBackend() noexcept;
-    void activateBackendMode(BackendMode mode) noexcept;
-
-private:
+    VulkanTextureHeap TextureHeap;
+    VulkanSamplerCache Samplers;
     TexcacheVulkan Texcache;
 
-    int ScaleFactor = 1;
-    bool BetterPolygons = true;
-    bool CoverageFixEnabled = false;
-    float CoverageFixPx = 0.0f;
-    float CoverageFixDepthBias = 0.0f;
-    bool CoverageFixApplyRepeat = true;
-    bool CoverageFixApplyClamp = false;
-    // Keep passive repeat-texture coverage expansion disabled by default.
-    // Expanding textured polygon geometry beyond the DS polygon edge can create
-    // fragments outside the intended coverage and expose wrapped edge texels as
-    // ghost pixels. Vulkan already keeps subpixel geometry at 1x to avoid the
-    // cracks this workaround originally targeted.
-    float PassiveCoverageFixRepeatPx = 0.0f;
-    bool Debug3dClearMagenta = false;
-    bool Threaded = false;
+    VkPipelineCache PipelineCache = VK_NULL_HANDLE;
+    std::array<VkPipeline, ShaderStepCount> Pipelines{};
 
+    // Fixed-size resources, independent of the internal resolution.
+    Vk::Buffer MetaUniformBuffer;           // FramesInFlight slices
+    Vk::Buffer PolygonBuffer;
+    Vk::Buffer YSpanSetupBuffer;
+    Vk::Image ClearBitmapImage[2];          // R32_UINT, 256x256, matching GL's GL_R32UI
+    Vk::Image DummyTextureImage;            // usampler2DArray placeholder
+    Vk::Image DummyCaptureImage;            // sampler2DArray placeholder
+    // 256x192 packed r6g6b6a5, produced by the Resolve stage and read by
+    // GetLine(). Native resolution regardless of the internal resolution:
+    // display capture writes back into real VRAM as 15-bit DS words, so its
+    // semantics have to stay DS-native even while presentation does not.
+    Vk::Buffer NativeResolveBuffer;
+    Vk::ReadbackBuffer NativeReadback;
+    VkDeviceSize MetaUniformStride = 0;
+
+    // The structured 2D frame, staged once per VBlank and copied into device
+    // memory for the compositor. Native-resolution and therefore fixed size:
+    // the software 2D engines always work at 256x192, whatever the 3D internal
+    // resolution is.
+    // Resolution-dependent resources.
+    Vk::Buffer XSpanSetupBuffer;
+    Vk::Buffer SetupIndicesBuffer;          // + texel buffer view
+    Vk::Buffer TileBuffers[3];              // color / depth / attr
+    Vk::Buffer ResultBuffer;
+    Vk::Buffer ResultWinnerBuffer;           // winning polygon, two result layers
+    Vk::Buffer BinResultBuffer;             // storage + indirect dispatch args
+    Vk::Buffer WorkDescBuffer;
+    Vk::Buffer BlendStateBuffer;            // stencil + previous-shadow-mask bit per pixel
+    Vk::Image FinalFB;                      // internal-resolution RGBA8 storage image
+    Vk::Buffer CaptureSidecarBuffer;         // 4 banks x 2 versions, internal resolution
+
+    // Compositor output: the two screens stacked, BGRA8, at the *internal*
+    // resolution. Resolution-dependent, so it is created and destroyed with the
+    // rest of the scale-sized set.
+    struct OutputState;
+    std::shared_ptr<OutputState> ComposedOutput;
+
+    // --- CPU-side scratch, mirroring the OpenGL compute renderer -----------
+    std::array<Variant, MaxVariants> Variants{};
+    static constexpr u32 VariantIndexCapacity = 4096;
+    static_assert(VariantIndexCapacity > MaxVariants,
+        "variant index must retain an empty probe terminator");
+    AdaptiveVariantIndex<64, VariantIndexCapacity, 32> VariantLookup{};
+    std::array<PolygonBatch, MaxRenderPolygons> PolygonBatches{};
+    std::array<VkDescriptorSet, MaxVariants> VariantTextureSets{};
+    std::vector<SetupIndices> YSpanIndices;
+    std::unique_ptr<SpanSetupY[]> YSpanSetups;
+    std::unique_ptr<RenderPolygon[]> RenderPolygons;
+    std::unique_ptr<u32[]> ClearBitmap[2];
+    u8 ClearBitmapDirty = 0x3;
+
+    // --- geometry ----------------------------------------------------------
+    int TileSize = 8;
+    int CoarseTileCountY = 4;
+    int CoarseTileArea = 32;
+    int CoarseTileW = 64;
+    int CoarseTileH = 32;
+    int ClearCoarseBinMaskLocalSize = 64;
+    int TilesPerLine = 32;
+    int TileLines = 24;
+    int MaxWorkTiles = 0;
+    int MaxYSpanIndices = 0;
+    u32 TileGeometryBucket = 0;
+
+    int ScaleFactor = -1;
+    int ScreenWidth = 256;
+    int ScreenHeight = 192;
+    bool HiresCoordinates = false;
+
+    // --- state -------------------------------------------------------------
+    int ShaderStepIdx = 0;
+    bool RuntimeFailed = false;
+    std::string RuntimeFailureReason;
     bool Initialized = false;
-    bool InitFailed = false;
-    bool HasCpuFrame = false;
-    bool FrameIdentical = false;
-    bool ContextAcquired = false;
-    u32 LastSubmittedRenderPolygonCount = 0;
+    // FinalFB is recreated on every resolution change and starts UNDEFINED;
+    // the placeholder and clear-bitmap images are created once for the whole
+    // renderer lifetime, so the two initialisations are tracked separately
+    // rather than re-issuing a transition whose source stage would be a lie.
+    bool NeedsFinalFBTransition = true;
+    bool PlaceholdersInitialized = false;
 
-    VkInstance Instance = VK_NULL_HANDLE;
-    VkPhysicalDevice PhysicalDevice = VK_NULL_HANDLE;
-    VkDevice Device = VK_NULL_HANDLE;
-    VkQueue Queue = VK_NULL_HANDLE;
-    u32 QueueFamilyIndex = 0;
+    u32 TextureSetCursor = 0;
+    struct TextureSetCacheEntry
+    {
+        VkImageView View = VK_NULL_HANDLE;
+        VkSampler Sampler = VK_NULL_HANDLE;
+        VkDescriptorSet Set = VK_NULL_HANDLE;
+        u32 Epoch = 0;
+    };
+    static constexpr u32 TextureSetCacheCapacity = 4096;
+    static_assert((TextureSetCacheCapacity & (TextureSetCacheCapacity - 1)) == 0,
+        "texture-set cache capacity must be a power of two");
+    static_assert(TextureSetCacheCapacity > MaxVariants + 1,
+        "texture-set cache must retain an empty probe terminator");
+    std::array<TextureSetCacheEntry, TextureSetCacheCapacity> TextureSetCache{};
+    u32 TextureSetCacheEpoch = 1;
+    VkImageView BoundTextureView = VK_NULL_HANDLE;
+    VkSampler BoundSampler = VK_NULL_HANDLE;
+    VkDescriptorSet BoundTextureSet = VK_NULL_HANDLE;
 
-    VkCommandPool CommandPool = VK_NULL_HANDLE;
-    VkCommandBuffer CommandBuffer = VK_NULL_HANDLE;
-    VkFence FrameFence = VK_NULL_HANDLE;
-    VkQueryPool TimestampQueryPool = VK_NULL_HANDLE;
-    bool TimestampPending = false;
+    bool FrameInFlight = false;
+    bool FrameReadbackValid = false;
+    bool NativeReadbackSubmitted = false;
+    VkFence PendingCaptureFence = VK_NULL_HANDLE;
+    // Whether FinalFB holds a rendered frame at all. Its contents are undefined
+    // until the first RenderFrame() submission completes, and the compositor
+    // must not sample undefined memory and call it 3D.
+    bool FinalFBHasContent = false;
 
-    VkDescriptorSetLayout DescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool DescriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSet DescriptorSet = VK_NULL_HANDLE;
-    std::array<VkDescriptorSet, MaxTextureDescriptors> SingleTextureDescriptorSets{};
-    DescriptorSetCache DescriptorCache{};
-    std::array<DescriptorSetCache, MaxTextureDescriptors> SingleTextureDescriptorCaches{};
-    VkDescriptorSetLayout GraphicsDescriptorSetLayout = VK_NULL_HANDLE;
-    VkDescriptorPool GraphicsDescriptorPool = VK_NULL_HANDLE;
-    VkDescriptorSet GraphicsDescriptorSet = VK_NULL_HANDLE;
-    GraphicsDescriptorSetCache GraphicsDescriptorCache{};
-    TextureSamplingPath ActiveTextureSamplingPath = TextureSamplingPath::CompatDynamicUniform;
-    BackendMode RequestedBackendMode = BackendMode::GraphicsHardware;
-    BackendMode ActiveBackendMode = BackendMode::GraphicsHardware;
-    bool UseSimplePipeline = true;
-    std::unique_ptr<IVulkan3DBackend> SimpleGraphicsBackendInstance;
-    RasterExecutionProfile ActiveRasterExecutionProfile = RasterExecutionProfile::LegacyFallback;
-    RasterTileLoopMode ActiveRasterTileLoopMode = RasterTileLoopMode::DenseGroupList;
-    CapturePathMode ActiveCapturePathMode = CapturePathMode::Disabled;
-    VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
-    VkPipelineLayout GraphicsPipelineLayout = VK_NULL_HANDLE;
-    VkPipelineCache ComputePipelineCache = VK_NULL_HANDLE;
-    std::string ComputePipelineCacheFile;
-    VkPipeline InterpPipeline = VK_NULL_HANDLE;
-    VkPipeline BinPipeline = VK_NULL_HANDLE;
-    VkPipeline WorkOffsetsPipeline = VK_NULL_HANDLE;
-    VkPipeline SortPipeline = VK_NULL_HANDLE;
-    VkPipeline DepthBlendPipeline = VK_NULL_HANDLE;
-    static constexpr u32 RasterSceneModeCount = static_cast<u32>(RasterSceneMode::Count);
-    static constexpr u32 RasterWModeCount = 3;
-    static constexpr u32 RasterShadeModeCount = 6;
-    static constexpr u32 RasterTextureModeCount = 3;
-    static constexpr u32 RasterTranslucencyModeCount = 3;
-    static constexpr u32 RasterPipelineVariantCount =
-        RasterSceneModeCount * RasterWModeCount * RasterShadeModeCount * RasterTextureModeCount * RasterTranslucencyModeCount;
-    std::array<VkPipeline, RasterPipelineVariantCount> RasterPipelines{};
-    static constexpr u32 FinalPipelineVariantCount = 8;
-    std::array<VkPipeline, FinalPipelineVariantCount> FinalPipelines{};
-    VkPipeline CaptureLineExportPipeline = VK_NULL_HANDLE;
-    static constexpr u32 GraphicsWModeCount = 2;
-    static constexpr u32 GraphicsDepthCompareModeCount = 2;
-    static constexpr u32 GraphicsDepthWriteModeCount = 2;
-    static constexpr u32 GraphicsFogWriteModeCount = 2;
-    static constexpr u32 GraphicsAlphaBlendModeCount = 2;
-    static constexpr u32 GraphicsOpaquePipelineCount = GraphicsWModeCount * GraphicsDepthCompareModeCount;
-    static constexpr u32 GraphicsTranslucentPipelineCount =
-        GraphicsWModeCount * GraphicsDepthCompareModeCount * GraphicsDepthWriteModeCount * GraphicsFogWriteModeCount * GraphicsAlphaBlendModeCount;
-    static constexpr u32 GraphicsBgZeroTranslucentPipelineCount =
-        GraphicsWModeCount * GraphicsDepthCompareModeCount * GraphicsDepthWriteModeCount * GraphicsFogWriteModeCount;
-    static constexpr u32 GraphicsShadowMaskPipelineCount = GraphicsWModeCount;
-    static constexpr u32 GraphicsShadowMaskBgZeroPipelineCount = GraphicsWModeCount;
-    static constexpr u32 GraphicsShadowClearPipelineCount = GraphicsWModeCount * GraphicsDepthCompareModeCount;
-    static constexpr u32 GraphicsShadowBlendBgZeroPipelineCount =
-        GraphicsWModeCount * GraphicsDepthCompareModeCount * GraphicsDepthWriteModeCount * GraphicsFogWriteModeCount * GraphicsAlphaBlendModeCount;
-    static constexpr u32 GraphicsShadowBlendPipelineCount =
-        GraphicsWModeCount * GraphicsDepthCompareModeCount * GraphicsDepthWriteModeCount * GraphicsFogWriteModeCount * GraphicsAlphaBlendModeCount;
-    static constexpr u32 GraphicsEdgeMarkPipelineCount = GraphicsWModeCount;
-    std::array<VkPipeline, GraphicsOpaquePipelineCount> GraphicsOpaquePipelines{};
-    std::array<VkPipeline, GraphicsOpaquePipelineCount> GraphicsOpaqueFragmentDepthPipelines{};
-    std::array<VkPipeline, GraphicsOpaquePipelineCount> GraphicsOpaqueFastModulatePipelines{};
-    std::array<VkPipeline, GraphicsOpaquePipelineCount> GraphicsOpaqueFastModulateToonPipelines{};
-    std::array<VkPipeline, GraphicsOpaquePipelineCount> GraphicsOpaqueFastModulatePlainPipelines{};
-    std::array<VkPipeline, GraphicsOpaquePipelineCount> GraphicsOpaqueFastModulateOpaqueAlphaToonPipelines{};
-    std::array<VkPipeline, GraphicsOpaquePipelineCount> GraphicsOpaqueFastModulateOpaqueAlphaPlainPipelines{};
-    std::array<VkPipeline, GraphicsTranslucentPipelineCount> GraphicsTranslucentPipelines{};
-    std::array<VkPipeline, GraphicsBgZeroTranslucentPipelineCount> GraphicsBgZeroTranslucentPipelines{};
-    std::array<VkPipeline, GraphicsShadowMaskPipelineCount> GraphicsShadowMaskPipelines{};
-    std::array<VkPipeline, GraphicsShadowMaskBgZeroPipelineCount> GraphicsShadowMaskBgZeroPipelines{};
-    std::array<VkPipeline, GraphicsShadowClearPipelineCount> GraphicsShadowClearPipelines{};
-    std::array<VkPipeline, GraphicsShadowBlendBgZeroPipelineCount> GraphicsShadowBlendBgZeroPipelines{};
-    std::array<VkPipeline, GraphicsShadowBlendPipelineCount> GraphicsShadowBlendPipelines{};
-    std::array<VkPipeline, GraphicsEdgeMarkPipelineCount> GraphicsEdgeMarkPipelines{};
-    VkPipeline GraphicsClearPipeline = VK_NULL_HANDLE;
-    VkPipeline GraphicsStencilBitClearPipeline = VK_NULL_HANDLE;
-    VkPipeline GraphicsFinalEdgePipeline = VK_NULL_HANDLE;
-    VkPipeline GraphicsFinalEdgeFogPipeline = VK_NULL_HANDLE;
-    VkPipeline GraphicsFinalFogPipeline = VK_NULL_HANDLE;
-    VkRenderPass GraphicsRasterRenderPass = VK_NULL_HANDLE;
-    VkRenderPass GraphicsFinalRenderPass = VK_NULL_HANDLE;
-    VkFramebuffer GraphicsRasterFramebuffer = VK_NULL_HANDLE;
-    VkFramebuffer GraphicsFinalFramebuffer = VK_NULL_HANDLE;
-    VkSampler GraphicsAttachmentSampler = VK_NULL_HANDLE;
-    VkFormat GraphicsDepthStencilFormat = VK_FORMAT_UNDEFINED;
-    bool GraphicsReady = false;
-    static constexpr u32 ResultLayerCount = 8;
-    static constexpr size_t AsyncRenderContextCount = 6;
-    static constexpr u32 TimestampQueryCount = 9;
-    std::array<RenderContext, AsyncRenderContextCount> RenderContexts{};
-    size_t NextRenderContextIndex = 0;
-    RenderContext* LastSubmittedRenderContext = nullptr;
-    RasterDispatchPath ActiveRasterDispatchPath = RasterDispatchPath::DirectTiles;
-    bool CpuTileBinningEnabled = false;
+    // --- composed output ---------------------------------------------------
+    // Published only after the compositor submission has been accepted. GPU
+    // completion is ordered by the shared queue; the presenter lease owns the
+    // slot until its copy command retires.
+    bool ComposedOutputValid = false;
+    u64 ComposedGeneration = 0;
+    // Resource lifetime generation is owned by the renderer and advances only
+    // when a new compositor resource set is created, so presenters can safely
+    // cache descriptors by resource lifetime rather than content generation.
+    u64 NextOutputResourceGeneration = 1;
 
-    VkImage ColorImage = VK_NULL_HANDLE;
-    VkDeviceMemory ColorImageMemory = VK_NULL_HANDLE;
-    VkImageView ColorImageView = VK_NULL_HANDLE;
-    VkImage AttrImage = VK_NULL_HANDLE;
-    VkDeviceMemory AttrImageMemory = VK_NULL_HANDLE;
-    VkImageView AttrImageView = VK_NULL_HANDLE;
-    VkImage DepthImage = VK_NULL_HANDLE;
-    VkDeviceMemory DepthImageMemory = VK_NULL_HANDLE;
-    VkImageView DepthImageView = VK_NULL_HANDLE;
-    VkImage DepthStencilImage = VK_NULL_HANDLE;
-    VkDeviceMemory DepthStencilImageMemory = VK_NULL_HANDLE;
-    VkImageView DepthStencilImageView = VK_NULL_HANDLE;
-    u32 ColorImageWidth = 0;
-    u32 ColorImageHeight = 0;
-    bool ColorImageInitialized = false;
-    // True while ColorImage holds a completed 3D frame that display capture for
-    // the current DS frame is still allowed to read. The DS arms display
-    // capture at VCount 0, after RenderFrame() has already run at VCount 215,
-    // so whether a capture export is needed cannot be known while rendering.
-    // This is what makes a late export safe: it says the image is this frame's,
-    // not a previous one's.
-    bool ColorImageHasCurrentFrame3D = false;
-    u64 RenderSubmissionSerial = 0;
-    u64 ColorImageReuseSerial = 0;
-
-    VkBuffer ReadbackBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory ReadbackMemory = VK_NULL_HANDLE;
-    VkDeviceSize ReadbackSize = 0;
-    void* ReadbackMapped = nullptr;
-    u32 RawReadbackWidth = 0;
-    u32 RawReadbackHeight = 0;
-    VkImage CaptureReadbackImage = VK_NULL_HANDLE;
-    VkDeviceMemory CaptureReadbackMemory = VK_NULL_HANDLE;
-    bool CaptureReadbackImageInitialized = false;
-    VkBuffer ResultReadbackBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory ResultReadbackMemory = VK_NULL_HANDLE;
-    VkDeviceSize ResultReadbackSize = 0;
-    void* ResultReadbackMapped = nullptr;
-
-    VkBuffer TriangleBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory TriangleMemory = VK_NULL_HANDLE;
-    VkDeviceSize TriangleBufferSize = 0;
-    void* TriangleMapped = nullptr;
-    VkBuffer GraphicsVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory GraphicsVertexMemory = VK_NULL_HANDLE;
-    VkDeviceSize GraphicsVertexBufferSize = 0;
-    void* GraphicsVertexMapped = nullptr;
-    VkBuffer GraphicsSceneVertexBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory GraphicsSceneVertexMemory = VK_NULL_HANDLE;
-    VkDeviceSize GraphicsSceneVertexBufferSize = 0;
-    void* GraphicsSceneVertexMapped = nullptr;
-    VkBuffer GraphicsEdgeIndexBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory GraphicsEdgeIndexMemory = VK_NULL_HANDLE;
-    VkDeviceSize GraphicsEdgeIndexBufferSize = 0;
-    void* GraphicsEdgeIndexMapped = nullptr;
-
-    VkBuffer ResultBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory ResultMemory = VK_NULL_HANDLE;
-    VkDeviceSize ResultBufferSize = 0;
-
-    VkBuffer BinMaskBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory BinMaskMemory = VK_NULL_HANDLE;
-    VkDeviceSize BinMaskBufferSize = 0;
-
-    VkBuffer GroupListBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory GroupListMemory = VK_NULL_HANDLE;
-    VkDeviceSize GroupListBufferSize = 0;
-
-    VkBuffer SpanSetupBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory SpanSetupMemory = VK_NULL_HANDLE;
-    VkDeviceSize SpanSetupBufferSize = 0;
-
-    VkBuffer WorkOffsetBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory WorkOffsetMemory = VK_NULL_HANDLE;
-    VkDeviceSize WorkOffsetBufferSize = 0;
-
-    VkBuffer ToonBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory ToonMemory = VK_NULL_HANDLE;
-    VkDeviceSize ToonBufferSize = 0;
-    void* ToonMapped = nullptr;
-    VkBuffer ClearBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory ClearMemory = VK_NULL_HANDLE;
-    VkDeviceSize ClearBufferSize = 0;
-    void* ClearMapped = nullptr;
-    VkBuffer CaptureLineBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory CaptureLineMemory = VK_NULL_HANDLE;
-    VkDeviceSize CaptureLineBufferSize = 0;
-    void* CaptureLineMapped = nullptr;
-    static constexpr u32 CaptureLineBufferSlotCount = 2;
-    std::array<VkBuffer, CaptureLineBufferSlotCount> CaptureLineBuffers{};
-    std::array<VkDeviceMemory, CaptureLineBufferSlotCount> CaptureLineMemories{};
-    std::array<VkDeviceSize, CaptureLineBufferSlotCount> CaptureLineBufferSizes{};
-    std::array<void*, CaptureLineBufferSlotCount> CaptureLineMappedSlots{};
-    u32 ActiveCaptureLineBufferSlot = 0;
-    int PendingCaptureLineBufferSlot = -1;
-    int ReadyCaptureLineBufferSlot = -1;
-    bool PendingCaptureLineScreenSwap = false;
-    bool ReadyCaptureLineScreenSwap = false;
-
-    VkImage FallbackTextureImage = VK_NULL_HANDLE;
-    VkDeviceMemory FallbackTextureMemory = VK_NULL_HANDLE;
-    VkImageView FallbackTextureView = VK_NULL_HANDLE;
-    VkSampler FallbackTextureSampler = VK_NULL_HANDLE;
-    VkBuffer FallbackTextureStagingBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory FallbackTextureStagingMemory = VK_NULL_HANDLE;
-
-    std::array<VkDescriptorImageInfo, MaxTextureDescriptors> ActiveTextureDescriptors{};
-    u32 ActiveTextureDescriptorCount = 0;
-
-    std::vector<TriangleGpu> Triangles;
-    std::vector<GraphicsVertexGpu> GraphicsVertices;
-    std::vector<GraphicsVertexGpu> GraphicsSceneVertices;
-    std::vector<GraphicsPolygonDraw> GraphicsPolygons;
-    AcceleratedScene SharedGraphicsScene{};
-    std::vector<u32> GraphicsOpaqueDrawIndices;
-    std::vector<u32> GraphicsNeedOpaqueDrawIndices;
-    std::vector<u32> GraphicsAlphaDrawIndices;
-    std::vector<u32> GraphicsShadowMaskDrawIndices;
-    std::vector<u32> GraphicsShadowDrawIndices;
-    u32 GraphicsHiddenAlphaZeroFinalEdgePolyIdOverride = 0xFFFFFFFFu;
-    u32 GraphicsHiddenAlphaZeroFinalEdgeColorOverride = 0;
-    std::vector<u32> RawReadbackRgba;
-    std::vector<u32> RawResultReadback;
-    std::array<u32, 256 * 192> LineCache{};
-    bool CurrentRenderScreenSwap = false;
-    PFN_vkResetQueryPoolEXT ResetQueryPool = nullptr;
-    float TimestampPeriodNs = 0.0f;
-    bool TimestampQueriesSupported = false;
-    PerfSampleWindow<120> RenderCpuWindow;
-    PerfSampleWindow<120> FenceWaitCpuWindow;
-    PerfSampleWindow<120> GpuWindow;
-    PerfSampleWindow<120> TriangleCountWindow;
-    PerfSampleWindow<120> PassCountWindow;
-    PerfSampleWindow<120> InterpCpuWindow;
-    PerfSampleWindow<120> BinCpuWindow;
-    PerfSampleWindow<120> WorkOffsetsCpuWindow;
-    PerfSampleWindow<120> SortCpuWindow;
-    PerfSampleWindow<120> RasterCpuWindow;
-    PerfSampleWindow<120> GraphicsSceneBuildCpuWindow;
-    PerfSampleWindow<120> GraphicsMainCpuWindow;
-    PerfSampleWindow<120> GraphicsAlphaCpuWindow;
-    PerfSampleWindow<120> DepthBlendCpuWindow;
-    PerfSampleWindow<120> FinalCpuWindow;
-    PerfSampleWindow<120> CaptureLineExportCpuWindow;
-    PerfSampleWindow<120> CpuActiveTileCountWindow;
-    PerfSampleWindow<120> CpuTileCountWindow;
-    PerfSampleWindow<120> CpuActiveGroupCountWindow;
-    PerfSampleWindow<120> CpuActiveDispatchWindow;
-    PerfSampleWindow<120> InterpGpuWindow;
-    PerfSampleWindow<120> BinGpuWindow;
-    PerfSampleWindow<120> WorkOffsetsGpuWindow;
-    PerfSampleWindow<120> SortGpuWindow;
-    PerfSampleWindow<120> RasterGpuWindow;
-    PerfSampleWindow<120> DepthBlendGpuWindow;
-    PerfSampleWindow<120> FinalGpuWindow;
-    PerfSampleWindow<120> CaptureLineExportGpuWindow;
-    PerfSampleWindow<120> EarlySubmitCpuWindow;
-    PerfSampleWindow<120> EarlySubmitContextWaitCpuWindow;
-    u32 LastGraphicsOpaqueDrawCount = 0;
-    u32 LastGraphicsNeedOpaqueDrawCount = 0;
-    u32 LastGraphicsAlphaDrawCount = 0;
-    u32 LastGraphicsOpaqueWDrawCount = 0;
-    u32 LastGraphicsOpaqueZDrawCount = 0;
-    u32 LastGraphicsOpaqueTexturedDrawCount = 0;
-    u32 LastGraphicsOpaqueUntexturedDrawCount = 0;
-    u32 LastGraphicsOpaqueModulateDrawCount = 0;
-    u32 LastGraphicsOpaqueDecalDrawCount = 0;
-    u32 LastGraphicsOpaqueToonDrawCount = 0;
-    u32 LastGraphicsOpaqueHighlightDrawCount = 0;
-    u32 LastGraphicsOpaqueLinearDrawCount = 0;
-    u32 LastGraphicsOpaqueRepeatDrawCount = 0;
-    u32 LastGraphicsOpaqueMirrorDrawCount = 0;
-    u32 LastGraphicsOpaqueRepeatSDrawCount = 0;
-    u32 LastGraphicsOpaqueRepeatTDrawCount = 0;
-    u32 LastGraphicsOpaqueMirrorSDrawCount = 0;
-    u32 LastGraphicsOpaqueMirrorTDrawCount = 0;
-    u32 LastGraphicsOpaqueClampSDrawCount = 0;
-    u32 LastGraphicsOpaqueClampTDrawCount = 0;
-    u32 LastGraphicsOpaqueFullAlphaDrawCount = 0;
-    u32 LastGraphicsOpaqueHighresRepeatModelDrawCount = 0;
-    u64 ContextMissCount = 0;
-    u64 LateFrameCount = 0;
-    u64 DroppedFrameCount = 0;
-    u64 CpuDirectTilesPathCount = 0;
-    u64 DirectTilesPathCount = 0;
-    u64 LegacyWorklistPathCount = 0;
-    u64 ReadbackColorRequestCount = 0;
-    u64 ReadbackResultRequestCount = 0;
-    u64 CapturePrepareRequestCount = 0;
-    // Exports produced after the frame was rendered, because display capture
-    // was armed between VCount 215 and VCount 0.
-    u64 LateCaptureExportCount = 0;
-    u64 LateCaptureExportFailureCount = 0;
-    std::array<u64, 4> CaptureModeCounts{};
-    std::array<u64, 4> CaptureSizeModeCounts{};
-    std::array<u64, static_cast<size_t>(RasterExecutionProfile::Count)> RasterExecutionProfileCounts{};
-    std::array<u64, static_cast<size_t>(RasterTileLoopMode::Count)> RasterTileLoopModeCounts{};
-    std::array<u64, static_cast<size_t>(CapturePathMode::Count)> CapturePathModeCounts{};
-    u64 CaptureSource3dCount = 0;
-    u64 CaptureEnabledCount = 0;
-    u64 CaptureLineExportCount = 0;
-    u64 RasterSpecializedShadeModeCount = 0;
-    u64 RasterSpecializedTextureModeCount = 0;
-    u64 RasterSpecializedTranslucencyModeCount = 0;
-    u64 RasterSpecializedAllModesCount = 0;
-    u64 EarlySubmitAttemptCount = 0;
-    u64 EarlySubmitHitCount = 0;
-    u64 EarlySubmitMissCount = 0;
-    u64 EarlySubmitSkipVCount215Count = 0;
-    u32 CaptureDebugLogsRemaining = 0;
-    u32 GraphicsDrawDispatchMissingLogCooldown = 0;
-    bool SkipRenderAtVCount215 = false;
-    bool InEarlySubmitAttempt = false;
-    u64 CurrentEarlySubmitContextWaitNs = 0;
-    bool CaptureReadbackPending = false;
-    RenderContext* PendingCaptureReadbackContext = nullptr;
-    bool CaptureLinePending = false;
-    bool CaptureLineReady = false;
-    bool ExactCaptureLineCachePrepared = false;
-    bool ExactCaptureLineCacheFresh = false;
-    bool CaptureLineDataIsRgba8 = false;
-    RenderContext* PendingCaptureLineContext = nullptr;
-    const u32* ReadyCaptureLineData = nullptr;
-    u32 PostFastForwardDrainFrames = 0;
+    alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
+    alignas(8) u32 ScrolledLine[256]{};
 };
-}
+
+} // namespace melonDS
 
 #endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN
+#endif // GPU3D_VULKAN_H

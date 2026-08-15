@@ -1,207 +1,199 @@
-#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(__APPLE__) // scatter-budget-exempt: native Vulkan surface adapter, not input dispatch
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+*/
+
+// macOS WSI: VK_EXT_metal_surface over a CAMetalLayer.
+//
+// Vulkan on macOS is MoltenVK, and MoltenVK can only present to a CAMetalLayer
+// -- there is no NSView path and no "native" macOS WSI extension. So this
+// adapter has to create the layer itself, make the panel's NSView layer-backed
+// by it, and hand the layer to vkCreateMetalSurfaceEXT.
+//
+// Compiled with ARC (see the APPLE block in CMakeLists.txt). Every call below
+// touches AppKit/CoreAnimation and is therefore GUI-thread only, which is
+// exactly the contract MelonPrime::VulkanSurface::Create/UpdateGeometry declare.
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(__APPLE__)
 
 #include "MelonPrimeVulkanSurface.h"
-#include "MelonPrimeVulkanSurfaceMacOS.h"
 
-#import <AppKit/NSView.h>
+#import <AppKit/AppKit.h>
 #import <QuartzCore/CAMetalLayer.h>
-#import <QuartzCore/CATransaction.h>
+#import <Metal/Metal.h>
 
-#include <algorithm>
-#include <cmath>
-#include <functional>
+#include <QWidget>
+#include <QWindow>
 
 #include "Platform.h"
-#include "VulkanDispatch.h"
 
-namespace MelonPrime
+using namespace melonDS;
+
+namespace MelonPrime::VulkanSurface
 {
+
 namespace
 {
-// VK_EXT_metal_surface, declared locally so VK_USE_PLATFORM_METAL_EXT never
-// leaks into the shared core compilation units (same policy as the Win32 and
-// Linux adapters).
-constexpr VkStructureType kMetalSurfaceCreateInfoType =
-    static_cast<VkStructureType>(1000217000); // VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT
 
+// Declared locally rather than via VK_USE_PLATFORM_METAL_EXT, for the same
+// reason as the Linux adapter: that macro adds a member to Vk::InstanceDispatch
+// (VulkanLoader.h), and defining it in this translation unit alone would give
+// the struct two layouts in one binary. The layout is fixed by the Vulkan
+// specification and VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT is already
+// declared by vulkan_core.h.
 struct MetalSurfaceCreateInfo
 {
     VkStructureType sType;
     const void* pNext;
     VkFlags flags;
-    const void* pLayer; // CAMetalLayer*
+    const void* pLayer;     // const CAMetalLayer*
 };
 
-using CreateMetalSurfaceFn = VkResult (VKAPI_PTR *)(
-    VkInstance,
-    const MetalSurfaceCreateInfo*,
-    const VkAllocationCallbacks*,
-    VkSurfaceKHR*);
+using PFN_CreateMetalSurface = VkResult(VKAPI_PTR*)(
+    VkInstance, const MetalSurfaceCreateInfo*, const VkAllocationCallbacks*, VkSurfaceKHR*);
+
+CGFloat BackingScaleFor(NSView* view)
+{
+    NSWindow* window = view.window;
+    if (window)
+        return window.backingScaleFactor;
+    NSScreen* screen = NSScreen.mainScreen;
+    return screen ? screen.backingScaleFactor : 1.0;
+}
+
+void SyncLayerGeometry(CAMetalLayer* layer, NSView* view)
+{
+    if (!layer || !view)
+        return;
+
+    const CGFloat scale = BackingScaleFor(view);
+    const CGSize bounds = view.bounds.size;
+
+    layer.contentsScale = scale;
+    // drawableSize is in physical pixels. Leaving it at the layer's default
+    // would present at logical resolution on a Retina display, i.e. exactly the
+    // "internal resolution silently downscaled at present" failure the whole
+    // high-resolution path exists to avoid.
+    layer.drawableSize = CGSizeMake(
+        MAX(bounds.width * scale, 1.0),
+        MAX(bounds.height * scale, 1.0));
+}
+
 } // namespace
 
-VkSurfaceKHR CreateVulkanSurface(
+
+Surface Create(
     VkInstance instance,
-    const VulkanNativeWindowInfo& nativeWindow,
-    std::string& reason)
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr,
+    QWidget* widget)
 {
-    if (instance == VK_NULL_HANDLE
-        || nativeWindow.type != VulkanNativeWindowType::Metal
-        || nativeWindow.window == nullptr)
+    Surface surface;
+    surface.Backend = "VK_EXT_metal_surface";
+
+    if (instance == VK_NULL_HANDLE || !getInstanceProcAddr || !widget)
     {
-        reason = "macOS Vulkan surface requires a valid instance and CAMetalLayer";
-        return VK_NULL_HANDLE;
+        surface.Failure = "internal error: no Vulkan instance or no target widget";
+        return surface;
     }
 
-    auto createSurface = reinterpret_cast<CreateMetalSurfaceFn>(
-        vkGetInstanceProcAddr(instance, "vkCreateMetalSurfaceEXT"));
-    if (createSurface == nullptr)
+    const auto create = reinterpret_cast<PFN_CreateMetalSurface>(
+        getInstanceProcAddr(instance, "vkCreateMetalSurfaceEXT"));
+    if (!create)
     {
-        reason = "vkCreateMetalSurfaceEXT is unavailable; MoltenVK 1.1 or newer is required";
-        return VK_NULL_HANDLE;
+        surface.Failure =
+            "the Vulkan runtime does not provide vkCreateMetalSurfaceEXT "
+            "(VK_EXT_metal_surface is missing; MoltenVK is required on macOS)";
+        return surface;
     }
 
-    MetalSurfaceCreateInfo createInfo{};
-    createInfo.sType = kMetalSurfaceCreateInfoType;
-    createInfo.pLayer = nativeWindow.window;
+    // On the cocoa platform plugin winId() is the NSView backing the widget.
+    NSView* view = (__bridge NSView*)reinterpret_cast<void*>(widget->winId());
+    if (!view)
+    {
+        surface.Failure = "the Vulkan surface widget has no NSView";
+        return surface;
+    }
 
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    const VkResult result = createSurface(instance, &createInfo, nullptr, &surface);
+    id<MTLDevice> metalDevice = MTLCreateSystemDefaultDevice();
+    if (!metalDevice)
+    {
+        surface.Failure = "no Metal device is available; MoltenVK cannot present";
+        return surface;
+    }
+
+    CAMetalLayer* layer = [CAMetalLayer layer];
+    layer.device = metalDevice;
+    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    layer.framebufferOnly = YES;
+    // The panel repositions and resizes this view constantly (screen layout
+    // changes, window resizes). Implicit CoreAnimation animations on those
+    // property changes would make the presented image lag the widget by a
+    // fraction of a second, so they are switched off rather than fought.
+    layer.needsDisplayOnBoundsChange = YES;
+    layer.presentsWithTransaction = NO;
+    layer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+
+    view.wantsLayer = YES;
+    view.layer = layer;
+    SyncLayerGeometry(layer, view);
+
+    MetalSurfaceCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+    info.pLayer = (__bridge const void*)layer;
+
+    const VkResult result = create(instance, &info, nullptr, &surface.Handle);
     if (result != VK_SUCCESS)
     {
-        reason = "vkCreateMetalSurfaceEXT failed with VkResult "
-            + std::to_string(static_cast<int>(result));
-        return VK_NULL_HANDLE;
+        surface.Handle = VK_NULL_HANDLE;
+        surface.Failure = "vkCreateMetalSurfaceEXT failed: " + melonDS::Vk::FormatResult(result);
+        return surface;
     }
+
+    // Unretained on purpose: the NSView owns the layer from the assignment
+    // above and releases it with itself, so Destroy() has nothing to free. This
+    // pointer exists only so UpdateGeometry() can reach the layer again.
+    surface.PlatformLayer = (__bridge void*)layer;
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan] presentation surface created backend=%s metalDevice=%s\n",
+        surface.Backend.c_str(),
+        metalDevice.name.UTF8String);
     return surface;
 }
 
-namespace VulkanMacOS
+
+void UpdateGeometry(const Surface& surface, QWidget* widget)
 {
-
-void* CreateOrAttachLayer(void* existingLayer, void* nativeViewHandle)
-{
-    NSView* view = (__bridge NSView*)nativeViewHandle;
-    if (view == nil)
-    {
-        melonDS::Platform::Log(
-            melonDS::Platform::LogLevel::Error,
-            "VulkanPresenter: winId() produced no NSView; cannot host a CAMetalLayer");
-        return existingLayer;
-    }
-
-    CAMetalLayer* layer = (__bridge CAMetalLayer*)existingLayer;
-    const bool created = layer == nil;
-    if (created)
-    {
-        layer = [CAMetalLayer layer];
-        // MoltenVK selects the MTLDevice and the drawable pixel format from
-        // the swapchain it creates on this layer, so only the presentation
-        // policy is configured here. framebufferOnly stays YES: the presenter
-        // renders into its own images and blits into the drawable.
-        layer.framebufferOnly = YES;
-        layer.opaque = YES;
-        layer.presentsWithTransaction = NO;
-        // Sublayers are laid out explicitly in UpdateLayerGeometry(); no
-        // autoresizing, and no implicit animation on frame changes (a resize
-        // must take effect on the same frame the swapchain is recreated).
-        layer.anchorPoint = CGPointMake(0.0, 0.0);
-        layer.actions = @{
-            @"bounds": [NSNull null],
-            @"position": [NSNull null],
-            @"contents": [NSNull null],
-            @"hidden": [NSNull null],
-        };
-        // The emulator's own frame limiter and the swapchain present mode own
-        // pacing. Leaving CoreAnimation's display sync enabled would clamp
-        // MAILBOX/IMMEDIATE back to the refresh rate.
-        if ([layer respondsToSelector:@selector(setDisplaySyncEnabled:)])
-            layer.displaySyncEnabled = NO;
-        // Revealed only once a frame has reached the swapchain.
-        layer.hidden = YES;
-    }
-
-    // Qt can rebuild the NSView (fullscreen, screen changes) and can replace
-    // its backing layer, so re-parent unconditionally rather than assuming the
-    // previous attachment survived.
-    view.wantsLayer = YES;
-    CALayer* hostLayer = view.layer;
-    if (hostLayer == nil)
-    {
-        melonDS::Platform::Log(
-            melonDS::Platform::LogLevel::Error,
-            "VulkanPresenter: NSView has no backing layer to host the Vulkan surface");
-        return created ? nullptr : existingLayer;
-    }
-    if (layer.superlayer != hostLayer)
-    {
-        [layer removeFromSuperlayer];
-        [hostLayer addSublayer:layer];
-    }
-
-    if (created)
-    {
-        melonDS::Platform::Log(
-            melonDS::Platform::LogLevel::Info,
-            "VulkanPresenter: attached CAMetalLayer sublayer to NSView viewFlipped=%d",
-            [view isFlipped] ? 1 : 0);
-        return (void*)CFBridgingRetain(layer);
-    }
-    return existingLayer;
-}
-
-void UpdateLayerGeometry(void* layer, double contentsScale, int widthPoints, int heightPoints)
-{
-    CAMetalLayer* metalLayer = (__bridge CAMetalLayer*)layer;
-    if (metalLayer == nil)
+    if (!surface.PlatformLayer || !widget)
         return;
 
-    const CGFloat scale = contentsScale > 0.0 ? static_cast<CGFloat>(contentsScale) : 1.0;
-    const CGFloat width = static_cast<CGFloat>(std::max(1, widthPoints));
-    const CGFloat height = static_cast<CGFloat>(std::max(1, heightPoints));
-
-    // Layer geometry is in points; the drawable is in device pixels. Keeping
-    // them consistent is what makes the MoltenVK surface extent match the
-    // presenter's own idea of the surface size.
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    metalLayer.frame = CGRectMake(0.0, 0.0, width, height);
-    metalLayer.contentsScale = scale;
-    metalLayer.drawableSize = CGSizeMake(
-        std::ceil(width * scale),
-        std::ceil(height * scale));
-    [CATransaction commit];
+    CAMetalLayer* layer = (__bridge CAMetalLayer*)surface.PlatformLayer;
+    NSView* view = (__bridge NSView*)reinterpret_cast<void*>(widget->winId());
+    SyncLayerGeometry(layer, view);
 }
 
-void SetLayerHidden(void* layer, bool hidden)
+
+void RunFrameInPlatformScope(void (*body)(void* context), void* context)
 {
-    CAMetalLayer* metalLayer = (__bridge CAMetalLayer*)layer;
-    if (metalLayer == nil || metalLayer.hidden == (hidden ? YES : NO))
+    if (!body)
         return;
 
-    [CATransaction begin];
-    [CATransaction setDisableActions:YES];
-    metalLayer.hidden = hidden ? YES : NO;
-    [CATransaction commit];
-}
-
-void DestroyLayer(void* layer)
-{
-    if (layer == nullptr)
-        return;
-    CAMetalLayer* metalLayer = (__bridge CAMetalLayer*)layer;
-    [metalLayer removeFromSuperlayer];
-    CFBridgingRelease(layer);
-}
-
-void RunInAutoreleasePool(const std::function<void()>& body)
-{
+    // MoltenVK's acquire/present path autoreleases a CAMetalDrawable and the
+    // Metal command buffers behind it. The emulation thread that drives this
+    // has no run loop, so nothing would ever drain the thread's pool and the
+    // process would leak one drawable per presented frame.
     @autoreleasepool
     {
-        body();
+        body(context);
     }
 }
 
-} // namespace VulkanMacOS
-} // namespace MelonPrime
+} // namespace MelonPrime::VulkanSurface
 
-#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN && __APPLE__; scatter-budget-exempt: native Vulkan surface adapter, not input dispatch
+#endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN && __APPLE__

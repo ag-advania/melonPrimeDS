@@ -19,6 +19,7 @@
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
 #include "GPU3D_TexcacheDX12.h"
+#include "DX12Perf.h"
 
 #include <algorithm>
 #include <cstring>
@@ -44,6 +45,7 @@ void DX12TextureHeap::Init(DX12Context* context, DX12CommandContext* commands, D
     Context = context;
     Commands = commands;
     Uploads = uploads;
+    UploadFailed = false;
 }
 
 void DX12TextureHeap::Shutdown()
@@ -52,9 +54,11 @@ void DX12TextureHeap::Shutdown()
     FreeSlots.clear();
     PendingBarriers.clear();
     Graveyard.clear();
+    SpillUploads.clear();
     Context = nullptr;
     Commands = nullptr;
     Uploads = nullptr;
+    UploadFailed = false;
 }
 
 u32 DX12TextureHeap::Create(u32 width, u32 height, u32 layers)
@@ -113,39 +117,58 @@ void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const
     const u64 srcRowBytes = static_cast<u64>(width) * 4u;
     const u64 dstRowPitch = AlignUp(srcRowBytes, kRowPitchAlignment);
     const u64 totalBytes = dstRowPitch * height;
+    DX12Perf::AddCounter(DX12Perf::Counter::TextureUploadBytes, totalBytes);
 
     u64 offset = 0;
+    ID3D12Resource* uploadBuffer = Uploads->GetBuffer();
+    DX12::ComPtr<ID3D12Resource> spillUpload;
     void* mapped = Uploads->Allocate(totalBytes, kPlacementAlignment, offset);
     if (!mapped)
     {
-        // The ring filled up mid-frame. Submitting and waiting is expensive but
-        // strictly better than dropping the texture and rendering garbage.
-        //
-        // The pending barriers have to be recorded into the list that is about
-        // to be submitted: dropping them would leave already-copied arrays in
-        // COPY_DEST while the rasterizer samples them.
-        FlushUploadBarriers();
-        if (!Commands->Flush())
-            return;
-        Uploads->Reset();
-        mapped = Uploads->Allocate(totalBytes, kPlacementAlignment, offset);
-        if (!mapped)
+        DX12Perf::AddCounter(DX12Perf::Counter::UploadOverflowCount);
+        // Keep recording on the current list. A dedicated upload resource is
+        // retained until the next frame retires this submission, eliminating
+        // the former Submit -> WaitIdle -> Begin pipeline bubble.
+        spillUpload = Context->CreateBuffer(
+            totalBytes,
+            D3D12_HEAP_TYPE_UPLOAD,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            D3D12_RESOURCE_FLAG_NONE,
+            L"MelonPrime DX12 texcache spill upload");
+        if (!spillUpload)
         {
+            UploadFailed = true;
             Platform::Log(
                 Platform::LogLevel::Error,
-                "DX12: texture upload of %llu bytes exceeds the upload ring (%llu bytes)\n",
-                static_cast<unsigned long long>(totalBytes),
-                static_cast<unsigned long long>(Uploads->GetCapacity()));
+                "DX12: could not allocate texture spill upload of %llu bytes\n",
+                static_cast<unsigned long long>(totalBytes));
             return;
         }
-        list = Commands->GetList();
-        if (!list) return;
+        D3D12_RANGE noRead{0, 0};
+        if (FAILED(spillUpload->Map(0, &noRead, &mapped)) || !mapped)
+        {
+            UploadFailed = true;
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "DX12: could not map texture spill upload of %llu bytes\n",
+                static_cast<unsigned long long>(totalBytes));
+            return;
+        }
+        offset = 0;
+        uploadBuffer = spillUpload.Get();
+        DX12Perf::AddCounter(DX12Perf::Counter::UploadSpillBytes, totalBytes);
     }
 
     const u8* src = static_cast<const u8*>(data);
     u8* dst = static_cast<u8*>(mapped);
     for (u32 y = 0; y < height; y++)
         std::memcpy(dst + y * dstRowPitch, src + y * srcRowBytes, static_cast<size_t>(srcRowBytes));
+    if (spillUpload)
+    {
+        D3D12_RANGE written{0, static_cast<SIZE_T>(totalBytes)};
+        spillUpload->Unmap(0, &written);
+        SpillUploads.push_back(std::move(spillUpload));
+    }
 
     if (entry.State != D3D12_RESOURCE_STATE_COPY_DEST)
     {
@@ -166,7 +189,7 @@ void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const
     dstLoc.SubresourceIndex = layer; // one mip level, so subresource == array slice
 
     D3D12_TEXTURE_COPY_LOCATION srcLoc{};
-    srcLoc.pResource = Uploads->GetBuffer();
+    srcLoc.pResource = uploadBuffer;
     srcLoc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
     srcLoc.PlacedFootprint.Offset = offset;
     srcLoc.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UINT;
@@ -251,6 +274,7 @@ void DX12TextureHeap::Destroy(u32 handle)
 void DX12TextureHeap::CollectGarbage()
 {
     Graveyard.clear();
+    SpillUploads.clear();
 }
 
 } // namespace melonDS

@@ -35,6 +35,7 @@ function Get-MatchLines([string]$pattern, [string]$path) {
 }
 
 $screen = Join-Path $qtSdl "Screen.cpp"
+$vulkanScreen = Join-Path $qtSdl "MelonPrimeScreenVulkan.cpp"
 
 $screenForbiddenIncludes = Get-MatchLines '#include\s+"MelonPrime(Patch|Arm9Hook)' $screen
 foreach ($line in $screenForbiddenIncludes) {
@@ -52,6 +53,18 @@ $rawAimRefs = Get-MatchLines 'IsPlatformRawAimActive' $qtSdl
 foreach ($line in $rawAimRefs) {
     if ($line -match 'Screen.cpp' -and $line -notmatch '__linux__|__APPLE__') {
         Write-Host "Raw aim reference in Screen.cpp requires manual platform-guard review: $line"
+    }
+}
+
+# The DX12 and Vulkan native radar colour-key passes bypass the CPU HUD image.
+# They must therefore carry their own Custom HUD visibility gate; otherwise a
+# remembered BtmOverlayEnable paints the bottom-screen radar over the top LCD
+# even while CustomHUD=false.
+foreach ($nativeScreen in @($screen, $vulkanScreen)) {
+    $text = Get-Content -LiteralPath $nativeScreen -Raw
+    if ($text -notmatch 'if\s*\(gpuFrame\s*&&\s*hudVisible\s*&&\s*m_radarEnable\)') {
+        $relative = [System.IO.Path]::GetRelativePath($repoRoot, $nativeScreen) -replace '\\', '/'
+        Add-Error "native radar must remain gated by hudVisible: $relative"
     }
 }
 

@@ -164,6 +164,10 @@ void DeactivateHooksForRomDetect(melonDS::NDS* nds,
                                  MelonPrimeCore* core)
 {
     SetMatchHooksActive(nds, emu, cfg, rom, core, false);
+    // A ROM can be opened/re-detected without a full MelonPrimeCore restart.
+    // Drop all patch bookkeeping so a same-region ROM cannot inherit the
+    // previous ROM's "already applied" cache.
+    Patches_ResetAll(core->PatchState());
 }
 
 } // namespace MelonPrime::PatchLifecycle

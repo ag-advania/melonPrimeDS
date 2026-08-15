@@ -7,7 +7,7 @@
 // XSpanSetup_* flags and the DS fixed-point interpolation helpers.
 static constexpr const char* kMetalComputeTexturedSource = R"MSL(
 
-constant uint MPMaxVariants = 256u;
+constant uint MPMaxVariants = 2048u;
 constant uint MPVariantWorkCountStart = 0u;
 
 struct MPSpanBinConfig
@@ -15,8 +15,9 @@ struct MPSpanBinConfig
     uint numPolygons, numVariants, numSetupIndices;
     uint screenWidth, screenHeight, tileSize, tilesPerLine, tileLines;
     uint coarseTileCountX, coarseTileCountY, coarseTileW, coarseTileH;
-    uint maxWorkTiles, binStride, coarseBinStride, polygonGroups;
+    uint maxWorkTiles, binStride, polygonGroups;
     uint alphaRef, dispCnt, tileWorkCapacity, wBuffer;
+    uint firstPolygon, batchPolygonCount;
 };
 
 struct MPRenderPolygon
@@ -28,6 +29,7 @@ struct MPRenderPolygon
     uint Variant;
     uint Attr;
     float TextureLayer;
+    uint FacingView;
 };
 
 struct MPVariantMeta
@@ -344,8 +346,12 @@ kernel void mp_compute_rasterise_texture_variants(
                 int cov = span.EdgeCovL;
                 if (cov < 0)
                 {
+                    // Software's scanline loop starts at the first visible
+                    // pixel; clipped edge pixels do not consume coverage.
+                    const int coverageStart = max(span.X0, 0);
                     const int xcov =
-                        span.CovLInitial + (span.EdgeCovL & 0x3FF) * (x - span.X0);
+                        span.CovLInitial +
+                        (span.EdgeCovL & 0x3FF) * (x - coverageStart);
                     cov = min(xcov >> 5, 31);
                 }
                 attr |= uint(cov) << 8u;
@@ -356,11 +362,25 @@ kernel void mp_compute_rasterise_texture_variants(
                 int cov = span.EdgeCovR;
                 if (cov < 0)
                 {
+                    // The imperative Software loops carry x through the left
+                    // edge and body. When narrow edges overlap, the right
+                    // coverage therefore starts after both intervals, not at
+                    // InsideEnd. Clipping similarly starts coverage at x=0.
+                    const int coverageStart =
+                        max(max(span.InsideStart, span.InsideEnd), 0);
                     const int xcov =
-                        span.CovRInitial + (span.EdgeCovR & 0x3FF) * (x - span.InsideEnd);
+                        span.CovRInitial +
+                        (span.EdgeCovR & 0x3FF) * (x - coverageStart);
                     cov = max(0x1F - (xcov >> 5), 0);
                 }
                 attr |= uint(cov) << 8u;
+            }
+            else if ((config.dispCnt & (1u << 4u)) != 0u &&
+                     (attr & 0xFu) != 0u)
+            {
+                // Software gives top/bottom-only AA edge pixels full
+                // coverage and preserves the covered layer underneath.
+                attr |= 0x1Fu << 8u;
             }
 
             uint depth;
@@ -445,6 +465,11 @@ kernel void mp_compute_rasterise_texture_variants(
             uint r = uint(vr), g = uint(vg), b = uint(vb), a = polyAlpha;
             if (variant.Textured != 0u)
             {
+                // Software narrows interpolated S/T to signed 16-bit before
+                // converting from 12.4 fixed point. Preserve that wraparound
+                // at texture-coordinate boundaries.
+                u = int(short(u));
+                v = int(short(v));
                 const MPTexel texel = mp_decode_texture(
                     variant, u >> 4, v >> 4,
                     textureMemory, texturePalette, capture128, capture256);

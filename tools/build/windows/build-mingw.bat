@@ -1,6 +1,12 @@
 @echo off
 setlocal EnableExtensions
 
+rem Developer-feature Release build for Windows tuning and local validation.
+rem This is not the shipping/distribution profile: it deliberately enables
+rem MELONPRIME_ENABLE_DEVELOPER_FEATURES. Use build-mingw-release.bat when a
+rem release binary with developer features, renderer telemetry, and Vulkan
+rem latency capture compiled out is required.
+
 set "BASH=C:\msys64\usr\bin\bash.exe"
 if not exist "%BASH%" (
     echo [melonprime-build] Missing MSYS2 bash: %BASH%
@@ -50,10 +56,11 @@ exit /b 2
 :print_usage
 echo Usage: tools\build\windows\build-mingw.bat [--verbose] [--jobs N] [--tail N]
 echo.
-echo Default: configure with MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON, then build
+echo Developer Release profile: configure with MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON, then build
 echo release-mingw-x86_64 with --parallel 1, streaming the build output live and
 echo printing the last 40 log lines as a recap when it finishes. Full output is
 echo also saved to build\release-mingw-x86_64\last-build.log.
+echo For the shipping profile, use tools\build\windows\build-mingw-release.bat.
 exit /b 0
 
 :run_build

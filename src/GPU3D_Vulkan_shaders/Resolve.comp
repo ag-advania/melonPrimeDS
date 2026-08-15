@@ -1,0 +1,57 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+*/
+
+/*
+    Downscale the internal-resolution 3D image to the DS's native 256x192.
+
+    This is the *display capture* path and nothing else. Everything visible on
+    screen goes through Compositor.comp at the internal resolution; capture, by
+    contrast, has to stay at DS-native semantics because the captured pixels are
+    written back into real VRAM as 15-bit words and can be re-displayed,
+    re-captured or read by the game. VulkanRenderer3D::GetLine() reads this
+    result, and SoftRenderer::DoCapture() consumes it exactly like the software
+    3D renderer's own scanline.
+
+    Build define: Resolve.
+    Host dispatch: (256/8, 192/8, 1) = (32, 24, 1).
+
+    OpenGL's CaptureDownscaleFS samples the high-resolution capture texture
+    with GL_NEAREST at the native output pixel centre before RGB5551
+    conversion. Select the corresponding centre texel here; averaging the
+    ScaleFactor square changes native VRAM semantics and visibly softens thin
+    captured geometry.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "Presentation.glsl"
+#include "PresentationBuffers.glsl"
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+void main()
+{
+    uvec2 id = gl_GlobalInvocationID.xy;
+    if (id.x >= uint(NativeWidth) || id.y >= uint(NativeHeight))
+        return;
+
+    uint outOffset = id.x + id.y * uint(NativeWidth);
+
+    uint centre = uint(ScaleFactor) >> 1u;
+    uvec2 source = id * uint(ScaleFactor) + uvec2(centre);
+    PresentationOutput[outOffset] = LoadFinalFB(ivec2(source));
+}

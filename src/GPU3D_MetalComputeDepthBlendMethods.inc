@@ -27,9 +27,13 @@ struct CompleteDepthBlendConfig
     uint32_t ClearBitmapX;
     uint32_t ClearBitmapY;
     uint32_t WBuffer;
+    uint32_t FirstPolygon;
+    uint32_t Continuation;
+    uint32_t BatchPolygonCount;
+    uint32_t NumSetupIndices;
 };
 static_assert(
-    sizeof(CompleteDepthBlendConfig) == 64,
+    sizeof(CompleteDepthBlendConfig) == 80,
     "CompleteDepthBlendConfig must match MSL");
 
 } // namespace
@@ -83,6 +87,7 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
         polygonCount,
         0, 0xFFFFFFu, 0,
         0, 0, 0, 0,
+        0, 0, polygonCount, 0,
     };
 
     id<MTLBuffer> fine =
@@ -128,6 +133,10 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
         [State->Device
             newBufferWithLength:2u * sizeof(uint32_t)
                         options:MTLResourceStorageModeShared];
+    id<MTLBuffer> resultWinner =
+        [State->Device
+            newBufferWithLength:2u * sizeof(uint32_t)
+                        options:MTLResourceStorageModeShared];
 
     const uint16_t zeroTexture = 0;
     id<MTLBuffer> textureMemory =
@@ -135,10 +144,14 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
             newBufferWithBytes:&zeroTexture
                         length:sizeof(zeroTexture)
                        options:MTLResourceStorageModeShared];
+    id<MTLBuffer> continuation =
+        [State->Device
+            newBufferWithLength:sizeof(uint32_t)
+                        options:MTLResourceStorageModeShared];
 
     if (!fine || !offsets || !polygonBuffer ||
         !colors || !depths || !attrs ||
-        !resultColor || !resultDepth || !resultAttr ||
+        !resultColor || !resultDepth || !resultAttr || !resultWinner || !continuation ||
         !textureMemory)
     {
         return false;
@@ -147,6 +160,7 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
     std::memset([resultColor contents], 0, resultColor.length);
     std::memset([resultDepth contents], 0, resultDepth.length);
     std::memset([resultAttr contents], 0, resultAttr.length);
+    std::memset([resultWinner contents], 0xFF, resultWinner.length);
 
     id<MTLCommandBuffer> command =
         [State->Queue commandBuffer];
@@ -171,11 +185,13 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
     [encoder setBuffer:resultColor offset:0 atIndex:6];
     [encoder setBuffer:resultDepth offset:0 atIndex:7];
     [encoder setBuffer:resultAttr offset:0 atIndex:8];
+    [encoder setBuffer:continuation offset:0 atIndex:9];
     [encoder
         setBytes:&config
            length:sizeof(config)
           atIndex:10];
     [encoder setBuffer:textureMemory offset:0 atIndex:11];
+    [encoder setBuffer:resultWinner offset:0 atIndex:12];
     [encoder
         dispatchThreadgroups:MTLSizeMake(1, 1, 1)
         threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
@@ -196,8 +212,7 @@ bool MetalComputeRenderer3D::RunCompleteDepthBlendSelfTest()
         static_cast<const uint32_t*>([resultAttr contents]);
 
     const uint32_t expectedColor =
-        31u |
-        (31u << 24u);
+        31u << 24u;
 
     if (outputColor[0] != expectedColor ||
         outputDepth[0] != 100u ||

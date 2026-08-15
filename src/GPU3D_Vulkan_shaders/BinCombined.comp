@@ -1,0 +1,191 @@
+/*
+    Copyright 2016-2026 melonDS team
+
+    This file is part of melonDS.
+
+    melonDS is free software: you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation, either version 3 of the License, or (at your option)
+    any later version.
+
+    melonDS is distributed in the hope that it will be useful, but WITHOUT ANY
+    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+    FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with melonDS. If not, see http://www.gnu.org/licenses/.
+*/
+
+/*
+    Software-parity derivative of ComputeRendererShaders::BinCombined
+    (src/GPU3D_Compute_shaders.h). The host supplies a bounded consecutive
+    polygon batch so no work-tile overflow clamp is needed.
+
+    Build defines: BinCombined, CoarseTileArea
+    CoarseTileArea must be a compile-time literal because it selects
+    local_size_x, exactly as in the GL original.
+
+    Host dispatch (matching GPU3D_Compute.cpp):
+        ((RenderNumPolygons+31)/32, ScreenWidth/CoarseTileW, ScreenHeight/CoarseTileH)
+
+    The workgroup is sized by the coarse tile area (32 at scale 1-8, 48 at
+    scale 9-16). Only lanes 0..31 build the 32-polygon ballot; every lane still
+    handles one fine tile. Keeping those responsibilities separate avoids
+    undefined shifts at 9x-16x without dropping the extra fine-tile workers.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "PolygonBuffer.glsl"
+#include "BinningBuffer.glsl"
+#include "XSpanSetupBuffer.glsl"
+#include "WorkDescBuffer.glsl"
+
+#ifndef CoarseTileArea
+#error "CoarseTileArea must be provided by the shader build"
+#endif
+
+layout (local_size_x = CoarseTileArea) in;
+
+bool BinPolygon(Polygon polygon, ivec2 topLeft, ivec2 botRight)
+{
+    if (polygon.YTop > botRight.y || polygon.YBot <= topLeft.y)
+        return false;
+
+    int polygonHeight = polygon.YBot - polygon.YTop;
+
+    /*
+        All (good) polygons are convex. So the following holds true:
+
+        Starting from the top most point where both edges originate
+        the X coordinate of the left edge will stay the same or falls until
+        the minimum X-axis coordinate is reached. Then it stays the same or
+        rises until the point it meets with the right edge.
+
+        The same applies to the right edge, except that it first may rise or stay equal and
+        after the maximum point may only fall or stay the same.
+
+        This means that for every tile which doesn't contain the point where the direction changes
+        we can just get the maximum point by sampling the top most and bottom most coordinate
+        within the tile.
+
+        For a tile which is that the height of the direction change
+
+        As a sidenote another consequence of this design decision is
+        that malformed polygons aren't binned properly.
+
+        As a note bottom Y is exclusive!
+    */
+    int polyInnerTopY = clamp(topLeft.y - polygon.YTop, 0, max(polygonHeight-1, 0));
+    int polyInnerBotY = clamp(botRight.y - polygon.YTop, 0, max(polygonHeight-1, 0));
+
+    XSpanSetup xspanTop = XSpanSetups[polygon.FirstXSpan + polyInnerTopY];
+    XSpanSetup xspanBot = XSpanSetups[polygon.FirstXSpan + polyInnerBotY];
+
+    int minXL;
+    if (polygon.XMinY >= topLeft.y && polygon.XMinY <= botRight.y)
+        minXL = polygon.XMin;
+    else
+        minXL = min(xspanTop.X0, xspanBot.X0);
+
+    if (minXL > botRight.x)
+        return false;
+
+    int maxXR;
+    if (polygon.XMaxY >= topLeft.y && polygon.XMaxY <= botRight.y)
+        maxXR = polygon.XMax;
+    else
+        maxXR = max(xspanTop.X1, xspanBot.X1) - 1;
+
+    if (maxXR < topLeft.x)
+        return false;
+
+    return true;
+}
+
+shared uint mergedMaskShared;
+
+void main()
+{
+    int groupIdx = int(gl_WorkGroupID.x);
+    ivec2 coarseTile = ivec2(gl_WorkGroupID.yz);
+
+    int localIdx = int(gl_LocalInvocationIndex);
+
+    if (localIdx == 0)
+        mergedMaskShared = 0U;
+    barrier();
+
+    int localPolygonIdx = groupIdx * 32 + localIdx;
+    int polygonIdx = int(pc.CurVariant) + localPolygonIdx;
+
+    ivec2 coarseTopLeft = coarseTile * ivec2(CoarseTileW, CoarseTileH);
+    ivec2 coarseBotRight = coarseTopLeft + ivec2(CoarseTileW-1, CoarseTileH-1);
+
+    bool binned = false;
+    if (localIdx < 32 && localPolygonIdx < int(pc.TexWidth) && polygonIdx < NumPolygons)
+    {
+        binned = BinPolygon(Polygons[polygonIdx], coarseTopLeft, coarseBotRight);
+    }
+
+    if (binned)
+        atomicOr(mergedMaskShared, 1U << localIdx);
+    barrier();
+    uint mergedMask = mergedMaskShared;
+
+    ivec2 fineTile = ivec2(localIdx & 0x7, localIdx >> 3);
+
+    ivec2 fineTileTopLeft = coarseTopLeft + fineTile * ivec2(TileSize, TileSize);
+    ivec2 fineTileBotRight = fineTileTopLeft + ivec2(TileSize-1, TileSize-1);
+
+    uint binnedMask = 0U;
+    while (mergedMask != 0U)
+    {
+        int bit = findLSB(mergedMask);
+        mergedMask &= ~(1U << bit);
+
+        int polygonIdx = int(pc.CurVariant) + groupIdx * 32 + bit;
+
+        if (BinPolygon(Polygons[polygonIdx], fineTileTopLeft, fineTileBotRight))
+            binnedMask |= 1U << bit;
+    }
+
+    int linearTile = fineTile.x + fineTile.y * TilesPerLine + coarseTile.x * CoarseTileCountX + coarseTile.y * TilesPerLine * CoarseTileCountY;
+
+    // The host partitions consecutive polygons using a conservative sum of
+    // their screen-space tile bounding boxes. Therefore every invocation in
+    // this batch is guaranteed to fit MaxWorkTiles; no polygon layer may be
+    // discarded here merely because the fixed working set is full.
+    uint workOffset = 0U;
+    if (binnedMask != 0U)
+        workOffset = atomicAdd(VariantWorkCount[0].w, uint(bitCount(binnedMask)));
+
+    BinningMaskAndOffset[BinningMaskStart + linearTile * BinStride + groupIdx] = binnedMask;
+    int coarseMaskIdx = linearTile * CoarseBinStride + (groupIdx >> 5);
+    if (binnedMask != 0U)
+        atomicOr(BinningMaskAndOffset[BinningCoarseMaskStart + coarseMaskIdx], 1U << (groupIdx & 0x1F));
+
+    if (binnedMask != 0U)
+    {
+        BinningMaskAndOffset[BinningWorkOffsetsStart + linearTile * BinStride + groupIdx] = workOffset;
+
+        uint tilePositionCombined = bitfieldInsert(fineTileTopLeft.x, fineTileTopLeft.y, 16, 16);
+
+        int idx = 0;
+        while (binnedMask != 0U)
+        {
+            int bit = findLSB(binnedMask);
+            binnedMask &= ~(1U << bit);
+
+            int polygonIdx = int(pc.CurVariant) + groupIdx * 32 + bit;
+            int variantIdx = Polygons[polygonIdx].Variant;
+
+            int inVariantOffset = int(atomicAdd(VariantWorkCount[variantIdx].z, 1));
+            WorkDescs[WorkDescsUnsortedStart + workOffset + idx] = uvec2(tilePositionCombined, bitfieldInsert(polygonIdx, inVariantOffset, 11, 21));
+
+            idx++;
+        }
+    }
+}
