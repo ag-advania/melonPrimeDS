@@ -275,6 +275,9 @@ jobs:
 
       - name: Upload Intel-host MoltenVK runtime log
         if: always()
+        # This diagnostic is explicitly non-gating. A transient artifact-service
+        # DNS/upload failure must not turn the informational Intel-host job red.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: moltenvk-intel-runtime-diagnostic

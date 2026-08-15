@@ -341,8 +341,8 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
         if (!surfaceAboutToBeDestroyed && !Lifecycle->waitForDestroySafe(
                 kNativeSurfaceRetireTimeout))
         {
-            Platform::Log(
-                Platform::LogLevel::Warn,
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
                 "[Vulkan][LinuxWSI] native transition retire timed out generation=%llu event=%d\n",
                 static_cast<unsigned long long>(Generation),
                 static_cast<int>(lifecycleEvent));
@@ -370,8 +370,8 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
 
         if (Lifecycle && !Lifecycle->waitForDestroySafe(kNativeSurfaceRetireTimeout))
         {
-            Platform::Log(
-                Platform::LogLevel::Warn,
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
                 "[Vulkan][LinuxWSI] native surface destruction retire timed out generation=%llu\n",
                 static_cast<unsigned long long>(Generation));
         }
