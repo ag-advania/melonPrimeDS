@@ -613,7 +613,7 @@ renderer creation**:
 
 Configuration keys are `3D.DX12.NvidiaReflexMode` and
 `3D.AMD.AntiLag2Enabled` (shared with DX12 for compatibility), plus the
-developer A/B key `3D.Vulkan.PresentPacingPolicy`. All four keep the host frame
+developer A/B key `3D.Vulkan.PresentPacingPolicy`. All five keep the host frame
 limiter as the exact FPS cap:
 
 | Value | Policy | Bounded `PresentWait2` | `targetTime` | Present mode |
@@ -622,6 +622,12 @@ limiter as the exact FPS cap:
 | `1` | `PresentWait` | when supported | 0 | FIFO |
 | `2` | `JustInTime` | when supported | absolute | FIFO |
 | `3` | `JustInTimeFifoLatestReady` | when supported | absolute | `FIFO_LATEST_READY` |
+| `4` | `PresenterOneFrameBudget` | when supported | 0 | selected present mode |
+
+Policy `4` is an explicit latency A/B prototype. It waits for the previous
+accepted present within a bounded presenter frame budget before late input and
+does not change the global renderer `FramesInFlight` ring or request target-time
+metadata. Active Reflex/Anti-Lag remains the sole vendor pacing authority.
 
 "when supported" is per-capability, not per-policy: the `JustInTime` rows keep
 their absolute `targetTime` on a surface with no `VK_KHR_present_wait2`.

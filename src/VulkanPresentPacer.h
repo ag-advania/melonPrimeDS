@@ -290,6 +290,10 @@ public:
 
     void SetPolicy(int value) noexcept;
     [[nodiscard]] VulkanPresentPacingPolicy GetPolicy() const noexcept;
+    [[nodiscard]] bool UsesPresenterOneFrameBudget() const noexcept
+    {
+        return VulkanPolicyUsesPresenterOneFrameBudget(GetPolicy());
+    }
 
     // Queries the real surface and refreshes all surface-scoped support bits.
     // Falls back to the legacy query if modern capability discovery fails.

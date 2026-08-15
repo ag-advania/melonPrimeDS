@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include <array>
+#include <vector>
 #include <optional>
 #include <utility>
 #include <cmath>
@@ -1804,6 +1805,9 @@ protected:
 };
 } // namespace
 
+QMutex g_dx12PanelRegistryLock;
+std::vector<ScreenPanelDX12*> g_dx12PanelRegistry;
+
 struct ScreenPanelDX12::DX12State
 {
     MelonPrime::DX12SurfacePresenter presenter;
@@ -1837,15 +1841,47 @@ ScreenPanelDX12::ScreenPanelDX12(QWidget* parent)
     dx12->surface = new DX12SurfaceHost(this);
     dx12->surface->setGeometry(rect());
     dx12->surface->hide();
+
+    QMutexLocker lock(&g_dx12PanelRegistryLock);
+    g_dx12PanelRegistry.push_back(this);
 }
 
 ScreenPanelDX12::~ScreenPanelDX12()
 {
+    {
+        QMutexLocker lock(&g_dx12PanelRegistryLock);
+        g_dx12PanelRegistry.erase(
+            std::remove(g_dx12PanelRegistry.begin(), g_dx12PanelRegistry.end(), this),
+            g_dx12PanelRegistry.end());
+    }
+
     if (dx12)
     {
-        dx12->presenter.InvalidateDirectDescriptorCache();
+        prepareForRendererTransition();
         dx12->presenter.Shutdown();
-        dx12->frameLease.ReleaseNow();
+    }
+}
+
+void ScreenPanelDX12::prepareForRendererTransition()
+{
+    if (!dx12)
+        return;
+
+    // Keep the same lifetime contract as the Vulkan presenter: old queue work
+    // must be complete before descriptor identity is cleared or the renderer
+    // output lease is dropped.
+    dx12->presenter.Quiesce();
+    dx12->presenter.InvalidateDirectDescriptorCache();
+    dx12->frameLease.ReleaseNow();
+}
+
+void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance)
+{
+    QMutexLocker lock(&g_dx12PanelRegistryLock);
+    for (ScreenPanelDX12* panel : g_dx12PanelRegistry)
+    {
+        if (panel->emuInstance == instance)
+            panel->prepareForRendererTransition();
     }
 }
 

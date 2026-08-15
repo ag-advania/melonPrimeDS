@@ -178,6 +178,30 @@ bool DX12SurfacePresenter::Init(HWND window)
     return true;
 }
 
+void DX12SurfacePresenter::Quiesce() noexcept
+{
+    if (!Context)
+        return;
+
+    // The presenter and the DX12 renderer share this direct queue. Queue-wide
+    // completion is required here because the direct SRV cache contains raw
+    // resource identity and the renderer output lease is released immediately
+    // after this hook returns. This is a transition-only wait, never a frame
+    // path wait.
+    if (!Commands.WaitQueueIdle())
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "DX12 presentation queue did not become idle at renderer transition\n");
+    }
+    OpenList = nullptr;
+    FrameOpen = false;
+    FrameReady = false;
+    NativeSource = nullptr;
+    NativeSourceDirect = false;
+    PerfRecordStart = {};
+}
+
 void DX12SurfacePresenter::Shutdown() noexcept
 {
     if (Context)

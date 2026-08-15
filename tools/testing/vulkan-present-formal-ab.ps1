@@ -15,7 +15,7 @@ param(
     [string]$BuildDir = 'build\release-mingw-x86_64',
     [Parameter(Mandatory = $true)][string]$RunId,
     [Parameter(Mandatory = $true)][string]$OutputDir,
-    [ValidateSet(0, 1, 2, 3)][int]$Policy = 2,
+    [ValidateSet(0, 1, 2, 3, 4)][int]$Policy = 2,
     [ValidateSet(0, 1, 2)][int]$ReflexMode = 0,
     [switch]$NoVSync,
     [int]$WarmupFrames = 600,
@@ -72,7 +72,13 @@ $proc = $null
 $configRestored = $false
 $layerRestored = -not $hadLayerSettings
 $startedUtc = [DateTime]::UtcNow
-$policyName = @('TelemetryOnly', 'PresentWait', 'JustInTime', 'JustInTimeFifoLatestReady')[$Policy]
+$policyName = @(
+    'TelemetryOnly',
+    'PresentWait',
+    'JustInTime',
+    'JustInTimeFifoLatestReady',
+    'PresenterOneFrameBudget'
+)[$Policy]
 $reflexName = @('Off', 'On', 'On+Boost')[$ReflexMode]
 $vsyncName = if ($NoVSync) { 'off' } else { 'on' }
 $duration = [Math]::Ceiling(($WarmupFrames + $MeasuredFrames) / $TargetFPS) + $GraceSeconds

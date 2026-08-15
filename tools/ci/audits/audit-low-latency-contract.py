@@ -102,6 +102,11 @@ def main() -> int:
     pacing = read("src/DX12LowLatencyPacing.h")
     xell_tests = read("tools/testing/xell-state-machine-tests.cpp")
     presenter = read("src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.cpp")
+    presenter_header = read("src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.h")
+    vulkan_perf = read("src/VulkanPerf.h")
+    renderer_transition = read(
+        "src/frontend/qt_sdl/MelonPrimeEmuThreadUpdateRendererBefore.inc"
+    )
     main_source = read("src/frontend/qt_sdl/main.cpp")
     screen = read("src/frontend/qt_sdl/Screen.cpp")
     video_settings = read("src/frontend/qt_sdl/VideoSettingsDialog.cpp")
@@ -188,6 +193,63 @@ def main() -> int:
         and "JustInTimeFifoLatestReady" in vulkan_pacer
         and "PresentPacer.ShouldUseFifoLatestReady()" in vulkan_presenter,
         "Vulkan behavioural pacing must default to telemetry-only and gate FIFO latest-ready",
+        failures,
+    )
+    require(
+        "PresenterOneFrameBudget = 4" in vulkan_pacing_policy
+        and "VulkanPolicyUsesPresenterOneFrameBudget" in vulkan_pacing_policy
+        and all(
+            token in vulkan_perf
+            for token in (
+                "VulkanPresenterFrameFenceWaitCount",
+                "VulkanPresenterFrameFenceWaitNs",
+                "VulkanAcquireWaitCount",
+                "VulkanAcquireWaitNs",
+                "VulkanPreviousPresentWaitCount",
+                "VulkanPreviousPresentWaitNs",
+                "VulkanPreviousPresentWaitTimeoutCount",
+                "VulkanSwapchainImageCount",
+                "VulkanPresenterFramesInFlight",
+                "VulkanPacingAuthority",
+                "VulkanPresentMode",
+            )
+        )
+        and ordered(
+            function_body(
+                vulkan_presenter,
+                "void VulkanPresenter::BeginLowLatencyFrame(",
+                "void VulkanPresenter::MarkLowLatencySimulationStart()",
+            ),
+            [
+                "PresentPacer.BeginFrame(",
+                "if (PresentPacer.UsesPresenterOneFrameBudget()",
+                "PresentPacer.GetAuthority() == melonDS::VulkanPacingAuthority::GenericHost",
+                "Frames.WaitForNextFrameSlot()",
+                "Reflex.BeginFrame();",
+                "AntiLag.BeginFrame(",
+            ],
+        )
+        and "Frames.Create(Device, Device.GetMainQueueFamily(), Vk::FramesInFlight)" in vulkan_presenter
+        and "void Quiesce() noexcept;" in presenter_header
+        and ordered(
+            presenter,
+            [
+                "void DX12SurfacePresenter::Quiesce() noexcept",
+                "Commands.WaitQueueIdle()",
+                "void DX12SurfacePresenter::Shutdown() noexcept",
+            ],
+        )
+        and ordered(
+            screen,
+            [
+                "void ScreenPanelDX12::prepareForRendererTransition()",
+                "dx12->presenter.Quiesce();",
+                "dx12->presenter.InvalidateDirectDescriptorCache();",
+                "dx12->frameLease.ReleaseNow();",
+            ],
+        )
+        and "ScreenPanelDX12::PrepareForInstanceRendererTransition(emuInstance)" in renderer_transition,
+        "strict Vulkan presenter pacing telemetry and DX12 renderer-transition invalidation are missing",
         failures,
     )
     # VK_EXT_present_timing depends on VK_KHR_swapchain, VK_KHR_present_id2,

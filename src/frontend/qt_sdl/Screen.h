@@ -440,12 +440,17 @@ public:
     void setHudEditModeActive(bool active) override;
 #endif
 
+    // Quiesce all DX12 panels belonging to one EmuInstance before its
+    // outgoing DX12 renderer is destroyed.
+    static void PrepareForInstanceRendererTransition(EmuInstance* instance);
+
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 
 private:
     void setupScreenLayout() override;
+    void prepareForRendererTransition();
     void requestNativeSurfaceVisible(bool visible);
     void reportRuntimeFailure(const char* reason);
 

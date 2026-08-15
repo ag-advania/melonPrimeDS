@@ -106,6 +106,17 @@ enum class Counter : u32
     NativeReadbackCopyBytes,
     NativeReadbackDemandCount,
     NativeReadbackWaitNs,
+    VulkanPresenterFrameFenceWaitCount,
+    VulkanPresenterFrameFenceWaitNs,
+    VulkanAcquireWaitCount,
+    VulkanAcquireWaitNs,
+    VulkanPreviousPresentWaitCount,
+    VulkanPreviousPresentWaitNs,
+    VulkanPreviousPresentWaitTimeoutCount,
+    VulkanSwapchainImageCount,
+    VulkanPresenterFramesInFlight,
+    VulkanPacingAuthority,
+    VulkanPresentMode,
     Count,
 };
 
@@ -185,6 +196,16 @@ inline void AddCounter(Counter counter, u64 value = 1) noexcept
     if (!IsEnabled())
         return;
     GetState().Counters[static_cast<std::size_t>(counter)] += value;
+}
+
+inline void SetCounter(Counter counter, u64 value) noexcept
+{
+    if (!IsEnabled())
+        return;
+    // The presenter identity fields are gauges rather than per-window
+    // counters. MaybeReport() preserves them below so a one-Hz report still
+    // describes the active swapchain after the first report has flushed.
+    GetState().Counters[static_cast<std::size_t>(counter)] = value;
 }
 
 inline void RecordNativeReadbackWait(u64 nanoseconds) noexcept
@@ -363,7 +384,12 @@ inline void MaybeReport()
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
         "screen_copy_B=%llu screen_copy_gpu_ns=%llu direct_image_frames=%llu "
         "fallback_buffer_frames=%llu native_resolves=%llu native_readback_copy_B=%llu "
-        "native_readback_demands=%llu native_readback_wait_ns=%llu\n",
+        "native_readback_demands=%llu native_readback_wait_ns=%llu "
+        "presenter_frame_fence_wait_count=%llu presenter_frame_fence_wait_ns=%llu "
+        "acquire_wait_count=%llu acquire_wait_ns=%llu "
+        "previous_present_wait_count=%llu previous_present_wait_ns=%llu "
+        "previous_present_wait_timeout_count=%llu swapchain_image_count=%llu "
+        "presenter_frames_in_flight=%llu pacing_authority=%llu present_mode=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::Polygons), count(Counter::Variants),
@@ -399,10 +425,36 @@ inline void MaybeReport()
         count(Counter::DirectCompositorImageFrames), count(Counter::FallbackCompositorBufferFrames),
         count(Counter::NativeResolveCount),
         count(Counter::NativeReadbackCopyBytes), count(Counter::NativeReadbackDemandCount),
-        count(Counter::NativeReadbackWaitNs));
+        count(Counter::NativeReadbackWaitNs),
+        count(Counter::VulkanPresenterFrameFenceWaitCount),
+        count(Counter::VulkanPresenterFrameFenceWaitNs),
+        count(Counter::VulkanAcquireWaitCount),
+        count(Counter::VulkanAcquireWaitNs),
+        count(Counter::VulkanPreviousPresentWaitCount),
+        count(Counter::VulkanPreviousPresentWaitNs),
+        count(Counter::VulkanPreviousPresentWaitTimeoutCount),
+        count(Counter::VulkanSwapchainImageCount),
+        count(Counter::VulkanPresenterFramesInFlight),
+        count(Counter::VulkanPacingAuthority),
+        count(Counter::VulkanPresentMode));
+
+    const unsigned long long swapchainImageCount =
+        count(Counter::VulkanSwapchainImageCount);
+    const unsigned long long presenterFramesInFlight =
+        count(Counter::VulkanPresenterFramesInFlight);
+    const unsigned long long pacingAuthority =
+        count(Counter::VulkanPacingAuthority);
+    const unsigned long long presentMode = count(Counter::VulkanPresentMode);
     for (SampleWindow& window : state.Cpu)
         window.Reset();
     state.Counters.fill(0);
+    state.Counters[static_cast<std::size_t>(Counter::VulkanSwapchainImageCount)] =
+        swapchainImageCount;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterFramesInFlight)] =
+        presenterFramesInFlight;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPacingAuthority)] =
+        pacingAuthority;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresentMode)] = presentMode;
     state.LastReport = now;
 }
 
@@ -483,11 +535,23 @@ enum class Counter : u32
     NativeReadbackCopyBytes,
     NativeReadbackDemandCount,
     NativeReadbackWaitNs,
+    VulkanPresenterFrameFenceWaitCount,
+    VulkanPresenterFrameFenceWaitNs,
+    VulkanAcquireWaitCount,
+    VulkanAcquireWaitNs,
+    VulkanPreviousPresentWaitCount,
+    VulkanPreviousPresentWaitNs,
+    VulkanPreviousPresentWaitTimeoutCount,
+    VulkanSwapchainImageCount,
+    VulkanPresenterFramesInFlight,
+    VulkanPacingAuthority,
+    VulkanPresentMode,
     Count,
 };
 inline bool IsEnabled() noexcept { return false; }
 inline void SetScale(u32) noexcept {}
 inline void AddCounter(Counter, u64 = 1) noexcept {}
+inline void SetCounter(Counter, u64) noexcept {}
 inline void RecordNativeReadbackWait(u64) noexcept {}
 class ScopedRasterBeginWait
 {

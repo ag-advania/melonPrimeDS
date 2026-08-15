@@ -161,6 +161,9 @@ Per policy (`3D.Vulkan.PresentPacingPolicy`), warm up ~300 frames then run 3,000
 - [ ] Policy 2 `JustInTime`, VSync on
 - [ ] Policy 3 `JustInTimeFifoLatestReady`, VSync on — **UNSUPPORTED** rather
       than FAIL if the extension, surface capability or present mode is absent
+- [ ] Policy 4 `PresenterOneFrameBudget`, VSync on and VSync off — record
+      `presenter_frame_fence_wait_*`, `acquire_wait_*` and
+      `previous_present_wait_*` counters for the strict one-frame A/B
 - [ ] Policy 2, VSync **off** — expect `targetScheduling=off` with
       `fallback=present mode is not FIFO`
 - [ ] Reflex Off / On / On+Boost — with Reflex active expect both
@@ -391,8 +394,10 @@ Modes, VSync on, same scene, same build:
 | A1 | Off | `PresentWait` |
 | A2 | Off | `JustInTime` |
 | A3 | Off | `JustInTimeFifoLatestReady` (skip if unsupported) |
+| A4 | Off | `PresenterOneFrameBudget` |
 | B1 | On | `JustInTime` — expect authority `NvidiaReflex`, both generic mechanisms off |
 | B2 | On+Boost | `JustInTime` |
+| B3 | On | `PresenterOneFrameBudget` — expect authority `NvidiaReflex`, no extra presenter wait |
 | C0 | Off | `JustInTime`, VSync **off** — contract control, not a winner candidate |
 
 Primary comparison is A0 vs A2 vs B1.

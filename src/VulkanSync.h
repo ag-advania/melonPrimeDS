@@ -206,6 +206,13 @@ public:
     // not record anything in that case.
     FrameContext* BeginFrame(bool recordRasterBegin = false);
 
+    // Strict presenter pacing uses the next presenter slot as a bounded
+    // pre-input back-pressure point. It waits that slot's fence and retires
+    // its deferred resources, but deliberately does not reset the fence or
+    // command pool; BeginFrame() performs those recording-boundary operations
+    // immediately afterward.
+    bool WaitForNextFrameSlot();
+
     // Non-blocking counterpart for work that is allowed to drop a frame. If
     // the next slot's fence is not signalled, returns nullptr immediately
     // without resetting or changing the ring.
@@ -242,6 +249,14 @@ public:
     // per-frame buffers are addressed by.
     [[nodiscard]] u32 GetFrameIndex() const noexcept { return CurrentIndex; }
     [[nodiscard]] u32 GetFramesInFlight() const noexcept { return static_cast<u32>(Frames.size()); }
+
+    [[nodiscard]] bool NextFrameSlotHasPendingSubmission() const noexcept
+    {
+        if (Frames.empty())
+            return false;
+        const u32 nextIndex = static_cast<u32>((AbsoluteFrame - 1) % Frames.size());
+        return Frames[nextIndex].HasPendingSubmission;
+    }
 
     // Monotonic frame counter. Pass this to DeferredDestroyQueue::Enqueue().
     [[nodiscard]] u64 GetAbsoluteFrame() const noexcept { return AbsoluteFrame; }

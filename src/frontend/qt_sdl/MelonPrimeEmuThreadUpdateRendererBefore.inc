@@ -20,4 +20,15 @@ if (lastVideoRenderer == renderer3D_Vulkan
 }
 #endif
 
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+// The DX12 panel keeps its presentation object across renderer changes. Its
+// direct SRV cache therefore needs the same renderer-lifetime boundary as the
+// Vulkan panel before the old output resources are destroyed.
+if (lastVideoRenderer == renderer3D_DX12
+    && videoRenderer != renderer3D_DX12)
+{
+    ScreenPanelDX12::PrepareForInstanceRendererTransition(emuInstance);
+}
+#endif
+
 #endif // MELONPRIME_DS

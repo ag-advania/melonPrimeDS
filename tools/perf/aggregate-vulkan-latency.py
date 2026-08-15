@@ -34,6 +34,7 @@ POLICY_NAMES = {
     1: "PresentWait",
     2: "JustInTime",
     3: "JustInTimeFifoLatestReady",
+    4: "PresenterOneFrameBudget",
 }
 AUTHORITY_NAMES = {
     0: "GenericHost",

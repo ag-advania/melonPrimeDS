@@ -445,6 +445,53 @@ void TestWaitResults()
     TestWaitResult(VK_ERROR_UNKNOWN, VulkanPacerBeginResult::Continue);
 }
 
+void TestPresenterOneFrameBudgetWait()
+{
+    FakeVulkan fake;
+    VulkanPresentPacer pacer;
+    MakePacer(pacer, fake, false, true, false);
+    pacer.SetPolicy(static_cast<int>(VulkanPresentPacingPolicy::PresenterOneFrameBudget));
+    StartSwapchain(pacer);
+
+    VkPresentInfoKHR present{};
+    VulkanPresentPacer::PresentMetadata metadata{};
+    Require(pacer.BeginFrame(false, false, true, FrameIntervalNs)
+                == VulkanPacerBeginResult::Continue,
+        "strict presenter pacing must bootstrap without a previous present");
+    Require(pacer.PreparePresent(present, 1, metadata) != 0,
+        "strict presenter pacing must retain present-id2 correlation");
+    pacer.NotifyPresentResult(VK_SUCCESS, metadata);
+
+    const int callsBefore = fake.WaitCalls;
+    Require(pacer.BeginFrame(false, false, true, FrameIntervalNs)
+                == VulkanPacerBeginResult::Continue,
+        "strict presenter pacing wait must be non-fatal on success");
+    Require(fake.WaitCalls == callsBefore + 1,
+        "strict presenter pacing must wait for the previous accepted present");
+    const auto snapshot = pacer.CaptureState(metadata);
+    Require(snapshot.Policy == static_cast<int>(
+                VulkanPresentPacingPolicy::PresenterOneFrameBudget)
+            && snapshot.BoundedPresentWait && snapshot.BoundedWaitAttempted
+            && snapshot.Authority == static_cast<int>(VulkanPacingAuthority::GenericPresentTiming),
+        "strict presenter pacing capture must expose its bounded-wait authority");
+
+    FakeVulkan noWaitFake;
+    VulkanPresentPacer noWaitPacer;
+    MakePacer(noWaitPacer, noWaitFake, false, false, false);
+    noWaitPacer.SetPolicy(static_cast<int>(
+        VulkanPresentPacingPolicy::PresenterOneFrameBudget));
+    StartSwapchain(noWaitPacer);
+    VulkanPresentPacer::PresentMetadata noWaitMetadata{};
+    VkPresentInfoKHR noWaitPresent{};
+    (void)noWaitPacer.BeginFrame(false, false, true, FrameIntervalNs);
+    Require(noWaitPacer.PreparePresent(noWaitPresent, 1, noWaitMetadata) != 0,
+        "strict presenter no-wait path must still prepare present-id2 metadata");
+    noWaitPacer.NotifyPresentResult(VK_SUCCESS, noWaitMetadata);
+    (void)noWaitPacer.BeginFrame(false, false, true, FrameIntervalNs);
+    Require(noWaitFake.WaitCalls == 0,
+        "strict presenter pacing must not call unavailable present_wait2");
+}
+
 void TestExtPastResult(VkResult scripted, VulkanPacerBeginResult expected)
 {
     FakeVulkan fake;
@@ -879,6 +926,7 @@ int main()
 {
     TestSurfaceCapabilitiesFallback();
     TestWaitResults();
+    TestPresenterOneFrameBudgetWait();
     TestExtPastResults();
     TestTimingProperties();
     TestTimeDomainsSuccessAndRetry();

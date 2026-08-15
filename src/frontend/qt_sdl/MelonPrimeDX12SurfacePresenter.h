@@ -62,6 +62,11 @@ public:
     bool Init(HWND window);
     void Shutdown() noexcept;
 
+    // Renderer-transition boundary. Wait for both presenter submissions and
+    // DXGI work on the shared queue before descriptor identity or renderer
+    // output leases are released.
+    void Quiesce() noexcept;
+
     bool BeginFrame(
         std::uint32_t width,
         std::uint32_t height,

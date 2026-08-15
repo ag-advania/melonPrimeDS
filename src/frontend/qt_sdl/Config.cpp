@@ -175,7 +175,7 @@ namespace Config
     #ifdef MELONPRIME_DS
         {MelonPrime::CfgKey::NvidiaReflexMode, {0, 2}},
         {MelonPrime::CfgKey::IntelXeLLPacingPolicy, {0, 4}},
-        {MelonPrime::CfgKey::VulkanPresentPacingPolicy, {0, 3}},
+        {MelonPrime::CfgKey::VulkanPresentPacingPolicy, {0, 4}},
     #endif
         {"Audio.Interpolation", {0, 4}},
         {"Instance*.Audio.Volume", {0, 256}},

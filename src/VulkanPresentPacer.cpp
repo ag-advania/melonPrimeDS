@@ -5,6 +5,7 @@
 */
 
 #include "VulkanPresentPacer.h"
+#include "VulkanPerf.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
@@ -25,6 +26,11 @@ namespace
 {
 
 constexpr u64 MaxPresentWaitNs = 2'000'000; // A driver stall must never hang input.
+// The strict presenter budget may wait up to one emulator frame, but never
+// indefinitely. This is intentionally separate from the generic 2 ms
+// stall-protection bound used by PresentWait/JIT.
+constexpr u64 MaxStrictPresentWaitNs = 16'000'000;
+constexpr u64 MinPresentWaitNs = 250'000;
 constexpr u32 TimingLogPeriodFrames = 600;
 
 // Optional timing-results queue sizing. A report holds its slot until the
@@ -162,6 +168,8 @@ const char* VulkanPresentPacingPolicyName(VulkanPresentPacingPolicy policy) noex
     case VulkanPresentPacingPolicy::PresentWait: return "PresentWait";
     case VulkanPresentPacingPolicy::JustInTime: return "JustInTime";
     case VulkanPresentPacingPolicy::JustInTimeFifoLatestReady: return "JustInTimeFifoLatestReady";
+    case VulkanPresentPacingPolicy::PresenterOneFrameBudget:
+        return "PresenterOneFrameBudget";
     }
     return "TelemetryOnly";
 }
@@ -377,7 +385,7 @@ void VulkanPresentPacer::Shutdown() noexcept
 void VulkanPresentPacer::SetPolicy(int value) noexcept
 {
     const int first = static_cast<int>(VulkanPresentPacingPolicy::TelemetryOnly);
-    const int last = static_cast<int>(VulkanPresentPacingPolicy::JustInTimeFifoLatestReady);
+    const int last = static_cast<int>(VulkanPresentPacingPolicy::PresenterOneFrameBudget);
     Policy.store(std::clamp(value, first, last), std::memory_order_release);
 }
 
@@ -815,6 +823,9 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     DecisionSwapchainGeneration = SwapchainGeneration;
     Authority.store(static_cast<int>(decision.Authority), std::memory_order_release);
     FallbackReason = decision.Reason;
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPacingAuthority,
+        static_cast<u64>(decision.Authority));
 
     LogTargetSchedulingIfChanged();
 
@@ -833,16 +844,46 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
     VkPresentWait2InfoKHR wait{};
     wait.sType = VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR;
     wait.presentId = LastPresentedId;
-    wait.timeout = GetPolicy() == VulkanPresentPacingPolicy::PresentWait
-        ? MaxPresentWaitNs
-        : (RefreshDurationNs > 0
-            ? std::min(MaxPresentWaitNs, std::max<u64>(250'000, RefreshDurationNs / 4))
-            : MaxPresentWaitNs);
+    const VulkanPresentPacingPolicy policy = GetPolicy();
+    if (policy == VulkanPresentPacingPolicy::PresenterOneFrameBudget)
+    {
+        // The strict prototype is allowed to consume the emulator's own
+        // frame budget, but the hard cap keeps a broken WSI implementation
+        // from freezing the input thread indefinitely.
+        const u64 frameBudget = TargetFrameIntervalNs != 0
+            ? TargetFrameIntervalNs
+            : RefreshDurationNs;
+        wait.timeout = frameBudget != 0
+            ? std::min(MaxStrictPresentWaitNs, std::max(MinPresentWaitNs, frameBudget))
+            : MaxPresentWaitNs;
+    }
+    else
+    {
+        wait.timeout = policy == VulkanPresentPacingPolicy::PresentWait
+            ? MaxPresentWaitNs
+            : (RefreshDurationNs > 0
+                ? std::min(MaxPresentWaitNs,
+                    std::max(MinPresentWaitNs, RefreshDurationNs / 4))
+                : MaxPresentWaitNs);
+    }
 
     WaitAttemptedThisFrame = true;
     WaitAttemptSwapchainGeneration = SwapchainGeneration;
+    const bool perfEnabled = VulkanPerf::IsEnabled();
+    const VulkanPerf::Clock::time_point waitStart = perfEnabled
+        ? VulkanPerf::Clock::now()
+        : VulkanPerf::Clock::time_point{};
     const VkResult result = Dispatch.WaitForPresent2KHR(
         DeviceHandle, Swapchain, &wait);
+    if (perfEnabled)
+    {
+        const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
+            std::chrono::nanoseconds>(VulkanPerf::Clock::now() - waitStart).count());
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanPreviousPresentWaitCount);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanPreviousPresentWaitNs, waitNs);
+    }
     LastWaitedId = LastPresentedId;
     switch (ClassifyVulkanPresentWait2Result(result))
     {
@@ -850,6 +891,8 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
         return VulkanPacerBeginResult::Continue;
     case VulkanPresentWait2ResultAction::Timeout:
         ++WaitTimeouts;
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanPreviousPresentWaitTimeoutCount);
         return VulkanPacerBeginResult::Continue;
     case VulkanPresentWait2ResultAction::SwapchainSuboptimal:
         LogPresentLifecycleRoute(

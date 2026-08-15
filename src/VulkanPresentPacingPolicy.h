@@ -33,6 +33,10 @@ enum class VulkanPresentPacingPolicy : int
     PresentWait = 1,
     JustInTime = 2,
     JustInTimeFifoLatestReady = 3,
+    // A/B prototype: keep a one-frame presenter budget before late input.
+    // This is deliberately separate from target-time scheduling and does not
+    // change the renderer's global frame ring.
+    PresenterOneFrameBudget = 4,
 };
 
 enum class VulkanPacingAuthority : int
@@ -365,6 +369,12 @@ constexpr bool VulkanPolicyRequestsTargetTime(VulkanPresentPacingPolicy policy) 
         || policy == VulkanPresentPacingPolicy::JustInTimeFifoLatestReady;
 }
 
+constexpr bool VulkanPolicyUsesPresenterOneFrameBudget(
+    VulkanPresentPacingPolicy policy) noexcept
+{
+    return policy == VulkanPresentPacingPolicy::PresenterOneFrameBudget;
+}
+
 // One policy-aware backend choice shared by the resolver and the runtime
 // lifecycle. TelemetryOnly/PresentWait retain EXT telemetry priority, while
 // JIT policies use the stricter target-capability selector. Keeping this as a
@@ -400,6 +410,8 @@ constexpr VulkanJitFallbackReason ClassifyVulkanTargetFallback(
     if (policy == VulkanPresentPacingPolicy::TelemetryOnly)
         return VulkanJitFallbackReason::TelemetryOnlyPolicy;
     if (policy == VulkanPresentPacingPolicy::PresentWait)
+        return VulkanJitFallbackReason::PresentWaitPolicyNoTarget;
+    if (policy == VulkanPresentPacingPolicy::PresenterOneFrameBudget)
         return VulkanJitFallbackReason::PresentWaitPolicyNoTarget;
     if (!caps.SwapchainValid)
         return VulkanJitFallbackReason::PresentTimingUnsupported;
@@ -512,6 +524,21 @@ constexpr VulkanPacingDecision ResolveVulkanPresentPacing(
     {
         return {VulkanPacingAuthority::GenericHost, false, noMode, false,
                 VulkanJitFallbackReason::PresentTimingUnsupported, false, noBackend};
+    }
+
+    if (policy == VulkanPresentPacingPolicy::PresenterOneFrameBudget)
+    {
+        // This policy owns only previous-present back-pressure. It never
+        // requests target-time metadata, so present timing remains telemetry
+        // only and the existing vendor-authority branches above still win.
+        const bool wait = caps.PresentId2Surface
+            && caps.PresentWait2Surface && caps.PresentWaitRuntimeEnabled;
+        const VulkanPacingAuthority authority = wait
+            ? VulkanPacingAuthority::GenericPresentTiming
+            : VulkanPacingAuthority::GenericHost;
+        return {authority, wait, noMode, false,
+                VulkanJitFallbackReason::PresentWaitPolicyNoTarget,
+                !wait, backend};
     }
 
     const bool wait = caps.PresentId2Surface

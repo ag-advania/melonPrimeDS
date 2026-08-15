@@ -373,6 +373,37 @@ FrameContext* FrameRing::BeginFrame(bool recordRasterBegin)
     return BeginFrameInternal(true, recordRasterBegin);
 }
 
+bool FrameRing::WaitForNextFrameSlot()
+{
+    if (!Device || Frames.empty())
+        return false;
+
+    const DeviceDispatch& fns = Device->Fns();
+    const VkDevice handle = Device->GetHandle();
+    CurrentIndex = static_cast<u32>((AbsoluteFrame - 1) % Frames.size());
+    FrameContext& frame = Frames[CurrentIndex];
+
+    if (!frame.HasPendingSubmission)
+        return true;
+
+    const VkResult res = fns.WaitForFences(
+        handle, 1, &frame.InFlightFence, VK_TRUE, FenceTimeoutNanoseconds);
+    if (res == VK_TIMEOUT)
+    {
+        Platform::Log(Platform::LogLevel::Error,
+            "[Vulkan] strict presenter frame slot %u did not complete within 1s\n",
+            CurrentIndex);
+        return false;
+    }
+    if (!MELONPRIME_VK_CHECK("vkWaitForFences(strict presenter)", res))
+        return false;
+
+    CompletedFrame = std::max(CompletedFrame, frame.SubmittedFrame);
+    frame.HasPendingSubmission = false;
+    DestroyQueue.Collect(CompletedFrame);
+    return true;
+}
+
 FrameContext* FrameRing::TryBeginFrame()
 {
     return BeginFrameInternal(false, false);

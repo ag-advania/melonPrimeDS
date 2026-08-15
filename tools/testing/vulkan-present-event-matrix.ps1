@@ -243,6 +243,7 @@ $expectedPolicy = switch ($Policy) {
     1 { 'PresentWait' }
     2 { 'JustInTime' }
     3 { 'JustInTimeFifoLatestReady' }
+    4 { 'PresenterOneFrameBudget' }
     default { "policy=$Policy" }
 }
 $expectedReflexRequest = if ($ReflexMode -eq 0) { 'off' } else { 'on' }
@@ -253,7 +254,7 @@ $reflexStates = @()
 $reflexModeStates = @()
 $presentStates = @()
 foreach ($line in $log) {
-    if ($line -match 'policy=(TelemetryOnly|PresentWait|JustInTime|JustInTimeFifoLatestReady)') {
+    if ($line -match 'policy=(TelemetryOnly|PresentWait|JustInTime|JustInTimeFifoLatestReady|PresenterOneFrameBudget)') {
         $policyStates += $Matches[1]
     }
     if ($line -match 'NVIDIA Reflex.*requested=(on|off).*actual=(active|inactive)') {

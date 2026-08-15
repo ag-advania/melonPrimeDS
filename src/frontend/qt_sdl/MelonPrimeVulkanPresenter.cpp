@@ -417,6 +417,9 @@ bool VulkanPresenter::CreateDeviceObjects()
 
     if (!Frames.Create(Device, Device.GetMainQueueFamily(), Vk::FramesInFlight))
         return Fail("the Vulkan presenter's frame ring could not be created");
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterFramesInFlight,
+        Frames.GetFramesInFlight());
 
     if (!CreateSamplers())
         return false;
@@ -1117,6 +1120,11 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     SwapchainFramebuffers.assign(realImageCount, VK_NULL_HANDLE);
     RenderFinished.assign(realImageCount, VK_NULL_HANDLE);
     ImagesInFlight.assign(realImageCount, VK_NULL_HANDLE);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanSwapchainImageCount, realImageCount);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresentMode,
+        static_cast<u64>(PresentMode));
 
     for (u32 i = 0; i < realImageCount; ++i)
     {
@@ -1380,6 +1388,19 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     if (Swapchain == VK_NULL_HANDLE)
         return false;
 
+    // These are presenter gauges, not per-report counters. Refresh them on
+    // every frame as well as at creation so the one-Hz perf line remains
+    // meaningful after VulkanPerf resets its windowed counters.
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanSwapchainImageCount,
+        static_cast<u64>(SwapchainImages.size()));
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterFramesInFlight,
+        Frames.GetFramesInFlight());
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresentMode,
+        static_cast<u64>(PresentMode));
+
     // Upload-ring growth requested by a previous frame. Applied here, before
     // any command buffer is open, because it destroys and reallocates the
     // buffers a recording frame would already reference.
@@ -1391,7 +1412,22 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
             return false;
     }
 
+    const bool presenterFencePending = Frames.NextFrameSlotHasPendingSubmission();
+    const bool perfEnabled = VulkanPerf::IsEnabled();
+    const VulkanPerf::Clock::time_point presenterFenceWaitStart = perfEnabled
+        ? VulkanPerf::Clock::now()
+        : VulkanPerf::Clock::time_point{};
     Vk::FrameContext* frame = Frames.BeginFrame();
+    if (perfEnabled && presenterFencePending)
+    {
+        const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
+            std::chrono::nanoseconds>(
+                VulkanPerf::Clock::now() - presenterFenceWaitStart).count());
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanPresenterFrameFenceWaitCount);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanPresenterFrameFenceWaitNs, waitNs);
+    }
     if (!frame)
         return Fail("the Vulkan presenter's frame ring could not begin a frame");
 
@@ -1412,6 +1448,10 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     }
 
     VkResult res = VK_SUCCESS;
+    const bool acquirePerfEnabled = VulkanPerf::IsEnabled();
+    const VulkanPerf::Clock::time_point acquireWaitStart = acquirePerfEnabled
+        ? VulkanPerf::Clock::now()
+        : VulkanPerf::Clock::time_point{};
     {
         VulkanPerf::ScopedCpuTimer acquireTimer(VulkanPerf::CpuMetric::PresentAcquire);
         res = Device.Fns().AcquireNextImageKHR(
@@ -1421,6 +1461,14 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
             frame->ImageAvailable,
             VK_NULL_HANDLE,
             &CurrentImageIndex);
+    }
+    if (acquirePerfEnabled)
+    {
+        const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
+            std::chrono::nanoseconds>(
+                VulkanPerf::Clock::now() - acquireWaitStart).count());
+        VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireWaitCount);
+        VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireWaitNs, waitNs);
     }
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR)
@@ -2114,6 +2162,40 @@ void VulkanPresenter::BeginLowLatencyFrame(
             : VK_ERROR_SURFACE_LOST_KHR;
         Fail("Vulkan present timing query", result);
         return;
+    }
+
+    // The strict presenter prototype adds a bounded fence back-pressure point
+    // before the vendor sleep and before late input only when the
+    // present_wait2 path is unavailable. It waits only the next presenter
+    // slot, never the whole queue/device; present_wait2 owns the equivalent
+    // display-aware wait when available, and vendor pacing remains exclusive.
+    if (PresentPacer.UsesPresenterOneFrameBudget()
+        && PresentPacer.GetAuthority() == melonDS::VulkanPacingAuthority::GenericHost
+        && normalSpeed
+        && Frames.NextFrameSlotHasPendingSubmission())
+    {
+        const bool perfEnabled = VulkanPerf::IsEnabled();
+        const VulkanPerf::Clock::time_point waitStart = perfEnabled
+            ? VulkanPerf::Clock::now()
+            : VulkanPerf::Clock::time_point{};
+        if (!Frames.WaitForNextFrameSlot())
+        {
+            Failed = true;
+            Error = "Vulkan strict presenter frame budget wait failed";
+            Platform::Log(Platform::LogLevel::Error, "[Vulkan] presenter: %s\n",
+                Error.c_str());
+            return;
+        }
+        if (perfEnabled)
+        {
+            const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
+                std::chrono::nanoseconds>(
+                    VulkanPerf::Clock::now() - waitStart).count());
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresenterFrameFenceWaitCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresenterFrameFenceWaitNs, waitNs);
+        }
     }
 
     // vkLatencySleepNV lives in here, and it must run before any input is read

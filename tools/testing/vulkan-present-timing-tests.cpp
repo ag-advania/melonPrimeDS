@@ -638,6 +638,26 @@ void TestBoundedWaitWithoutPresentTiming()
         "the PresentWait policy must wait and never request a target time");
     Require(waitPolicy.Reason == Reason::PresentWaitPolicyNoTarget,
         "PresentWait must report its own reason rather than the telemetry-only one");
+
+    const VulkanPacingDecision strict =
+        Resolve(Policy::PresenterOneFrameBudget, FullCapabilities());
+    Require(VulkanPolicyUsesPresenterOneFrameBudget(Policy::PresenterOneFrameBudget)
+            && strict.BoundedPresentWait && !strict.TargetTimeScheduling
+            && strict.Authority == Authority::GenericPresentTiming,
+        "the strict presenter policy must own only the bounded previous-present wait");
+    Require(strict.Reason == Reason::PresentWaitPolicyNoTarget
+            && !strict.OptionalWaitUnavailable,
+        "the strict presenter policy must report no target-time scheduling and a usable wait");
+
+    VulkanPacingCapabilities noWait = FullCapabilities();
+    noWait.PresentWait2Surface = false;
+    noWait.PresentWaitRuntimeEnabled = false;
+    const VulkanPacingDecision strictNoWait =
+        Resolve(Policy::PresenterOneFrameBudget, noWait);
+    Require(!strictNoWait.BoundedPresentWait
+            && strictNoWait.Authority == Authority::GenericHost
+            && strictNoWait.OptionalWaitUnavailable,
+        "strict presenter pacing must degrade to host ownership when present_wait2 is absent");
 }
 
 
@@ -665,6 +685,13 @@ void TestVendorLatencyApisWin()
     Require(ResolveVulkanPresentPacing(Policy::JustInTime, true, true, true, caps).Authority
             == Authority::NvidiaReflex,
         "Reflex must win the authority resolver over Anti-Lag 2");
+
+    const VulkanPacingDecision strictReflex = ResolveVulkanPresentPacing(
+        Policy::PresenterOneFrameBudget, true, false, true, caps);
+    Require(strictReflex.Authority == Authority::NvidiaReflex
+            && !strictReflex.BoundedPresentWait
+            && !strictReflex.TargetTimeScheduling,
+        "strict presenter pacing must not add a generic wait to active Reflex");
 }
 
 
@@ -680,6 +707,13 @@ void TestSpeedAndPolicyGates()
             && !fastForward.BoundedPresentWait && !fastForward.TargetTimeScheduling,
         "abnormal speed must disable both generic mechanisms");
     Require(fastForward.Reason == Reason::NotNormalSpeed, "the speed must be named");
+
+    const VulkanPacingDecision strictFastForward = ResolveVulkanPresentPacing(
+        Policy::PresenterOneFrameBudget, false, false, false, caps);
+    Require(strictFastForward.Authority == Authority::GenericHost
+            && !strictFastForward.BoundedPresentWait
+            && !strictFastForward.TargetTimeScheduling,
+        "strict presenter pacing must not hold fast-forward or slow motion");
 
     const VulkanPacingDecision telemetry = Resolve(Policy::TelemetryOnly, caps);
     Require(telemetry.Authority == Authority::GenericHost
