@@ -198,7 +198,28 @@ jobs:
       run: ${{ matrix.install_deps }}
 
     - name: Audit renderer telemetry zero-overhead contract
-      run: python3 tools/ci/audits/audit-renderer-perf-zero-overhead.py
+      run: |
+        set -eu
+
+        # NetBSD's python313 package provides a versioned executable such as
+        # /usr/pkg/bin/python3.13 and does not necessarily install python3.
+        python_cmd=""
+        for candidate in \
+          python3.14 python3.13 python3.12 python3 python \
+          /usr/pkg/bin/python3.14 /usr/pkg/bin/python3.13 \
+          /usr/pkg/bin/python3.12 /usr/pkg/bin/python3
+        do
+          if [ -x "$candidate" ] || command -v "$candidate" >/dev/null 2>&1; then
+            python_cmd="$candidate"
+            break
+          fi
+        done
+        if [ -z "$python_cmd" ]; then
+          echo "Python 3 is required for the renderer telemetry audit."
+          exit 1
+        fi
+        echo "Using Python executable: $python_cmd"
+        "$python_cmd" tools/ci/audits/audit-renderer-perf-zero-overhead.py
 
     # pkgin's failure summary ("pkg_install warnings: N, errors: N") names
     # neither the packages nor the reason; the detail only goes to this file
@@ -311,8 +332,12 @@ jobs:
         set -eu
 
         python_cmd=""
-        for candidate in python3.14 python3.13 python3.12 python3 python; do
-          if command -v "$candidate" >/dev/null 2>&1; then
+        for candidate in \
+          python3.14 python3.13 python3.12 python3 python \
+          /usr/pkg/bin/python3.14 /usr/pkg/bin/python3.13 \
+          /usr/pkg/bin/python3.12 /usr/pkg/bin/python3
+        do
+          if [ -x "$candidate" ] || command -v "$candidate" >/dev/null 2>&1; then
             python_cmd="$candidate"
             break
           fi
@@ -321,6 +346,7 @@ jobs:
           echo "Python 3 is required for the compiler-independent Vulkan shader sync audit."
           exit 1
         fi
+        echo "Using Python executable: $python_cmd"
         "$python_cmd" tools/vulkan/compile-shaders.py --check-source-sync
 
     - name: Build and run production Vulkan loader open check
