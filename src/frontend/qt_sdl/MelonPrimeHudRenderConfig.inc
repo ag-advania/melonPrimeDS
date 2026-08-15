@@ -319,6 +319,7 @@ struct CustomHudConfigState {
     std::map<std::string, double> editSnapshotDoubles;
     std::map<std::string, std::string> editSnapshotStrings;
     std::function<void(int)> editSelectionCb;
+    OnScreenEditStyle editStyle = OnScreenEditStyle::Classic;
     float editOriginX = 0.0f;
     float editOriginY = 0.0f;
     int editPropScroll = 0;
@@ -472,6 +473,7 @@ std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
 #define s_editSnapshotDoubles (ActiveHudConfigState().editSnapshotDoubles)
 #define s_editSnapshotStrings (ActiveHudConfigState().editSnapshotStrings)
 #define s_editSelectionCb (ActiveHudConfigState().editSelectionCb)
+#define s_editStyle (ActiveHudConfigState().editStyle)
 #define s_editOriginX (ActiveHudConfigState().editOriginX)
 #define s_editOriginY (ActiveHudConfigState().editOriginY)
 #define s_editPropScroll (ActiveHudConfigState().editPropScroll)

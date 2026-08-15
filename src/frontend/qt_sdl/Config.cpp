@@ -105,6 +105,7 @@ namespace Config
         {"Instance*.Metroid.Volume.Music", 9},
         {"Instance*.Metroid.Screen.SyncMode", 0},
         {"Instance*.Metroid.UI.MenuLanguage", -1}, // -1=OS default, otherwise MenuLangId
+        {"Instance*.Metroid.UI.OnScreenEditStyle", static_cast<int>(MelonPrime::OnScreenEditStyle::Classic)},
         {"Instance*.Metroid.Aim.NativeHookMode", 0},
         {"Instance*.Metroid.Aim.LowLatencyMode", 0},
         {"Instance*.Metroid.Aim.MoonLikeAimNormalStepQ12", 0x0165},

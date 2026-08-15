@@ -172,6 +172,10 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Custom HUD
     instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
+    instcfg.SetInt(
+        MelonPrime::CfgKey::OnScreenEditStyle,
+        static_cast<int>(MelonPrime::NormalizeOnScreenEditStyle(
+            ui->comboMetroidOnScreenEditStyle->currentData().toInt())));
 
     // Save all programmatic HUD widgets
     for (auto& [key, widget] : m_hudWidgets) {

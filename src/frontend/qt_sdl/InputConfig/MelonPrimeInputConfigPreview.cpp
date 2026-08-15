@@ -10,10 +10,12 @@
 #include <QDoubleSpinBox>
 #include <QLineEdit>
 #include <QPointer>
+#include <QSignalBlocker>
 
 #include "MelonPrimeInputConfig.h"
 #include "ui_MelonPrimeInputConfig.h"
 #include "Config.h"
+#include "../MelonPrimeDef.h"
 #include "../MelonPrimeHudPropSchema.inc"
 #include "../MelonPrime.h"
 #include "../EmuThread.h"
@@ -44,7 +46,8 @@ bool MelonPrimeInputConfig::visualSnapshotTargetsAlive() const
         return false;
     return widgetAlive(QPointer{ui->cbMetroidEnableCustomHud})
         && widgetAlive(QPointer{ui->cbMetroidInGameAspectRatio})
-        && widgetAlive(QPointer{ui->comboMetroidInGameAspectRatioMode});
+        && widgetAlive(QPointer{ui->comboMetroidInGameAspectRatioMode})
+        && widgetAlive(QPointer{ui->comboMetroidOnScreenEditStyle});
 }
 
 void MelonPrimeInputConfig::snapshotVisualConfig()
@@ -67,6 +70,8 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     sB("cCustomHud",       ui->cbMetroidEnableCustomHud);
     sB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
+    if (widgetAlive(ui->comboMetroidOnScreenEditStyle))
+        s["cOnScreenEditStyle"] = ui->comboMetroidOnScreenEditStyle->currentData().toInt();
 
     // Snapshot all programmatic HUD widgets
     for (auto& [key, widget] : m_hudWidgets) {
@@ -120,6 +125,15 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     rB("cCustomHud",       ui->cbMetroidEnableCustomHud);
     rB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
+    if (widgetAlive(ui->comboMetroidOnScreenEditStyle)) {
+        auto it = s.find("cOnScreenEditStyle");
+        if (it != s.end()) {
+            const QSignalBlocker blocker(ui->comboMetroidOnScreenEditStyle);
+            const int normalized = static_cast<int>(MelonPrime::NormalizeOnScreenEditStyle(it->toInt()));
+            const int index = ui->comboMetroidOnScreenEditStyle->findData(normalized);
+            ui->comboMetroidOnScreenEditStyle->setCurrentIndex(index >= 0 ? index : 0);
+        }
+    }
 
     // Restore all programmatic HUD widgets
     for (auto& [key, widget] : m_hudWidgets) {
@@ -173,6 +187,10 @@ void MelonPrimeInputConfig::applyVisualPreview()
     instcfg.SetBool(MP_HUD_PROP_KEY_InGameAspectRatio,      aspectRatio->isChecked());
     instcfg.SetInt (MP_HUD_PROP_KEY_InGameAspectRatioMode,  aspectRatioMode->currentIndex());
     instcfg.SetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame, clipCursor->isChecked());
+    instcfg.SetInt(
+        MelonPrime::CfgKey::OnScreenEditStyle,
+        static_cast<int>(MelonPrime::NormalizeOnScreenEditStyle(
+            ui->comboMetroidOnScreenEditStyle->currentData().toInt())));
 
     // Write all programmatic HUD widget values to config
     for (auto& [key, widget] : m_hudWidgets) {

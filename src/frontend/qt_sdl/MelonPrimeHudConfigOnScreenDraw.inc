@@ -741,7 +741,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 p->setPen(QPen(QColor(255, 200, 80, 200), 0.8));
                 p->drawRect(selR);
             }
-            if (kShowDsEditPropsPanel)
+            if (s_editStyle == OnScreenEditStyle::Retro)
                 DrawElemPropsPanel(p, cfg, smallFont, normalFont);
         }
 
@@ -945,7 +945,7 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
             p->setBrush(Qt::NoBrush);
         }
 
-        if (kShowDsEditPropsPanel)
+        if (s_editStyle == OnScreenEditStyle::Retro)
             DrawElemPropsPanel(p, cfg, smallFont, normalFont);
     }
 
