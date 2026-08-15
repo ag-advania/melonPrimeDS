@@ -32,8 +32,13 @@ struct DX12PresentedFrame
     u64 BottomOffset = 0;
     u32 Width = 0;
     u32 Height = 0;
+    // Serial is the published frame sequence. Generation is the structured /
+    // composition content generation and may change every DS frame. Keep the
+    // resource lifetime generation separate: it changes only when the
+    // renderer recreates the compositor output resources.
     u64 Serial = 0;
     u64 Generation = 0;
+    u64 ResourceGeneration = 0;
 
     [[nodiscard]] bool HasDirectSampledOutput() const noexcept
     {

@@ -185,12 +185,13 @@ struct DX12Renderer3D::OutputState
             Context->Release();
     }
 
-    bool Create(DX12Context& context, u32 width, u32 height)
+    bool Create(DX12Context& context, u32 width, u32 height, u64 resourceGeneration)
     {
         if (!context.Acquire())
             return false;
         Context = &context;
         OwnsContextReference = true;
+        ResourceGeneration = resourceGeneration;
 
         ID3D12Device* device = context.GetDevice();
         const u64 inputBytes = static_cast<u64>(kCompositionInputDwords) * sizeof(u32);
@@ -280,6 +281,7 @@ struct DX12Renderer3D::OutputState
             slot.Frame.BottomOffset = screenBytes;
             slot.Frame.Width = width;
             slot.Frame.Height = height;
+            slot.Frame.ResourceGeneration = ResourceGeneration;
         }
         return true;
     }
@@ -292,6 +294,7 @@ struct DX12Renderer3D::OutputState
     int PublishedSlot = -1;
     u32 NextSlot = 0;
     u64 NextSerial = 1;
+    u64 ResourceGeneration = 0;
 };
 
 std::unique_ptr<DX12Renderer3D> DX12Renderer3D::New(melonDS::GPU3D& gpu3D)
@@ -814,7 +817,8 @@ bool DX12Renderer3D::CreateScaleDependentResources()
 
     ComposedOutput = std::make_shared<OutputState>();
     if (!ComposedOutput->Create(
-            *Context, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight)))
+            *Context, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight),
+            NextOutputResourceGeneration++))
         return false;
 
     // The tile heuristic (tiles * 16) is what the OpenGL renderer uses, but at

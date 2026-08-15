@@ -137,9 +137,10 @@ struct VulkanRenderer3D::OutputState
         std::atomic<u32> PresenterRefs{0};
     };
 
-    bool Create(const VulkanDevice& device, u32 width, u32 height)
+    bool Create(const VulkanDevice& device, u32 width, u32 height, u64 resourceGeneration)
     {
         Device = device;
+        ResourceGeneration = resourceGeneration;
         const VkDeviceSize screenBytes =
             static_cast<VkDeviceSize>(width) * height * sizeof(u32);
 
@@ -225,6 +226,7 @@ struct VulkanRenderer3D::OutputState
             slot.Frame.BottomOffset = screenBytes;
             slot.Frame.Width = width;
             slot.Frame.Height = height;
+            slot.Frame.ResourceGeneration = ResourceGeneration;
         }
         return true;
     }
@@ -235,6 +237,7 @@ struct VulkanRenderer3D::OutputState
     std::mutex Mutex;
     int PublishedSlot = -1;
     u64 NextSerial = 1;
+    u64 ResourceGeneration = 0;
 };
 
 
@@ -681,7 +684,8 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
 
     auto output = std::make_shared<OutputState>();
     if (!output->Create(
-            Device, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight)))
+            Device, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight),
+            NextOutputResourceGeneration++))
         return false;
     ComposedOutput = std::move(output);
     ComposedOutputValid = false;

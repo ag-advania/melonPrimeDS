@@ -561,6 +561,10 @@ private:
     // slot until its copy command retires.
     bool ComposedOutputValid = false;
     u64 ComposedGeneration = 0;
+    // Resource lifetime generation is owned by the renderer and advances only
+    // when a new compositor resource set is created, so presenters can safely
+    // cache descriptors by resource lifetime rather than content generation.
+    u64 NextOutputResourceGeneration = 1;
 
     alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
     alignas(8) u32 ScrolledLine[256]{};

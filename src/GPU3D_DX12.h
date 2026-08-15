@@ -490,6 +490,10 @@ private:
     bool FinalFBHasValidFrame = false;
     u64 ComposedGeneration = 0;
     bool ComposedOutputValid = false;
+    // Resource lifetime generation is owned by the renderer and advances only
+    // when a new compositor resource set is created, so presenters can safely
+    // cache descriptors by resource lifetime rather than content generation.
+    u64 NextOutputResourceGeneration = 1;
 
     struct OutputState;
     std::shared_ptr<OutputState> ComposedOutput;
