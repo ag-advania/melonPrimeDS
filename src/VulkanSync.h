@@ -72,7 +72,9 @@ enum class DeferredObject : u32
     ShaderModule,
     Framebuffer,
     RenderPass,
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     QueryPool,
+#endif
     CommandPool,
     Semaphore,
     Fence,
@@ -170,12 +172,13 @@ struct FrameContext
     bool HasPendingSubmission = false;
     bool Recording = false;
 
-    // Optional developer telemetry. The pool is created only when
-    // MELONPRIME_PERF=1 and is reset by the command buffer at the start of the
-    // next use of this slot. Keeping it on the frame context makes the query
-    // lifetime obey the same fence as the command buffer that wrote it.
+    // Optional renderer telemetry. The query pool and flag are absent from a
+    // shipping FrameContext, so the normal synchronization layout contains no
+    // performance-only state.
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     VkQueryPool TimestampQueryPool = VK_NULL_HANDLE;
     bool TimestampQueriesEnabled = false;
+#endif
 };
 
 enum class FrameWaitResult : u32
@@ -286,7 +289,8 @@ public:
         return !Frames.empty() && Frames[GetNextFrameIndex()].HasPendingSubmission;
     }
 
-    // Developer GPU timestamp seam. Query indices are owned by the caller so
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    // Renderer GPU timestamp seam. Query indices are owned by the caller so
     // the same FrameRing can measure raster, compositor, capture, or presenter
     // command spans without putting stage knowledge into synchronization code.
     [[nodiscard]] bool HasTimestampQueries() const noexcept
@@ -297,6 +301,22 @@ public:
     void WriteTimestamp(VkPipelineStageFlagBits stage, u32 queryIndex) noexcept;
     [[nodiscard]] bool ReadCurrentFrameTimestamps(
         u32 firstQuery, u32 queryCount, u64* values) const noexcept;
+#else
+    [[nodiscard]] inline constexpr bool HasTimestampQueries() const noexcept
+    {
+        return false;
+    }
+    [[nodiscard]] inline constexpr float GetTimestampPeriodNs() const noexcept
+    {
+        return 0.0f;
+    }
+    inline constexpr void WriteTimestamp(VkPipelineStageFlagBits, u32) noexcept {}
+    [[nodiscard]] inline constexpr bool ReadCurrentFrameTimestamps(
+        u32, u32, u64*) const noexcept
+    {
+        return false;
+    }
+#endif
 
     // Monotonic frame counter. Pass this to DeferredDestroyQueue::Enqueue().
     [[nodiscard]] u64 GetAbsoluteFrame() const noexcept { return AbsoluteFrame; }
@@ -325,7 +345,9 @@ private:
     u64 CompletedFrame = 0;
     u32 LastSubmittedIndex = 0;
     bool HasSubmittedFrame = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     float TimestampPeriodNs = 0.0f;
+#endif
 };
 
 } // namespace melonDS::Vk

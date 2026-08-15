@@ -136,6 +136,21 @@ option(MELONPRIME_REQUIRE_QT6_5
     OFF)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
 
+# Renderer performance telemetry is a separate, shared compile-time gate. It
+# is intentionally independent of developer features: a measurement build can
+# enable only the renderer instrumentation, while every normal/release build
+# compiles the observer out of both the core and Qt/SDL targets.
+option(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY
+    "Compile Vulkan/DX12 renderer performance telemetry instrumentation"
+    OFF)
+
+function(melonprime_apply_renderer_perf_telemetry_definition target)
+    if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+        target_compile_definitions(${target} PRIVATE
+            MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=1)
+    endif()
+endfunction()
+
 # Per-frame CSV capture for Vulkan present-pacing A/B measurement.
 #
 # Deliberately separate from MELONPRIME_ENABLE_DEVELOPER_FEATURES. Developer
@@ -435,6 +450,19 @@ else()
 endif()
 target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz}")
 
+if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    target_compile_definitions(core PRIVATE
+        MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=1)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=1)
+    message(STATUS
+        "MelonPrime renderer performance telemetry: COMPILED IN. "
+        "Set MELONPRIME_PERF=1 at runtime to enable collection.")
+else()
+    message(STATUS
+        "MelonPrime renderer performance telemetry: COMPILED OUT")
+endif()
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(core PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -540,6 +568,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_compile_definitions(melonprime_vulkan_present_timing_tests PRIVATE
         MELONPRIME_DS
         MELONPRIME_ENABLE_VULKAN=1)
+    melonprime_apply_renderer_perf_telemetry_definition(
+        melonprime_vulkan_present_timing_tests)
     set_target_properties(melonprime_vulkan_present_timing_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
     add_custom_target(melonprime_vulkan_present_timing_check ALL
@@ -562,6 +592,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MELONPRIME_DS
         MELONPRIME_ENABLE_VULKAN=1
         MELONPRIME_VULKAN_PRESENT_PACER_TESTING=1)
+    melonprime_apply_renderer_perf_telemetry_definition(
+        melonprime_vulkan_present_pacer_dispatch_tests)
     target_link_libraries(melonprime_vulkan_present_pacer_dispatch_tests PRIVATE core)
     set_target_properties(melonprime_vulkan_present_pacer_dispatch_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
@@ -584,6 +616,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         target_compile_definitions(melonprime_vulkan_loader_open_tests PRIVATE
             MELONPRIME_DS
             MELONPRIME_ENABLE_VULKAN=1)
+        melonprime_apply_renderer_perf_telemetry_definition(
+            melonprime_vulkan_loader_open_tests)
         target_link_libraries(melonprime_vulkan_loader_open_tests PRIVATE
             core
             ${CMAKE_DL_LIBS})
@@ -618,6 +652,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
             OGLRENDERER_ENABLED
             SDL_MAIN_HANDLED
             VK_NO_PROTOTYPES=1)
+        melonprime_apply_renderer_perf_telemetry_definition(
+            melonprime_vulkan_renderer_fallback_tests)
         target_link_libraries(melonprime_vulkan_renderer_fallback_tests PRIVATE
             ${QT_LINK_LIBS})
         set_target_properties(melonprime_vulkan_renderer_fallback_tests PROPERTIES

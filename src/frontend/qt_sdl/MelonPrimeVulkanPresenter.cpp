@@ -164,7 +164,9 @@ bool VulkanPresenter::UpdateDirectDescriptorSets(
     }
 
     VulkanPerf::ScopedCpuTimer descriptorTimer(VulkanPerf::CpuMetric::DescriptorUpdate);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const auto descriptorStart = VulkanPerf::Clock::now();
+#endif
     std::array<VkDescriptorImageInfo, kPresenterSamplerCount> imageInfos{};
     std::array<VkWriteDescriptorSet, kPresenterSamplerCount> writes{};
     for (std::size_t sampler = 0; sampler < kPresenterSamplerCount; ++sampler)
@@ -196,10 +198,12 @@ bool VulkanPresenter::UpdateDirectDescriptorSets(
     VulkanPerf::AddCounter(
         VulkanPerf::Counter::DescriptorWriteCount,
         static_cast<u64>(writes.size()));
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     VulkanPerf::AddCounter(
         VulkanPerf::Counter::PresenterDescriptorCpuTimeNs,
         static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
             VulkanPerf::Clock::now() - descriptorStart).count()));
+#endif
     return true;
 }
 
@@ -1484,11 +1488,14 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     }
 
     const bool presenterFencePending = Frames.NextFrameHasPendingSubmission();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const bool perfEnabled = VulkanPerf::IsEnabled();
     const VulkanPerf::Clock::time_point presenterFenceWaitStart = perfEnabled
         ? VulkanPerf::Clock::now()
         : VulkanPerf::Clock::time_point{};
+#endif
     Vk::FrameContext* frame = Frames.BeginFrame();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (perfEnabled && presenterFencePending)
     {
         const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
@@ -1499,6 +1506,7 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::VulkanPresenterFrameFenceWaitNs, waitNs);
     }
+#endif
     if (!frame)
         return Fail("the Vulkan presenter's frame ring could not begin a frame");
 
@@ -1535,10 +1543,12 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     }
 
     VkResult res = VK_SUCCESS;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const bool acquirePerfEnabled = VulkanPerf::IsEnabled();
     const VulkanPerf::Clock::time_point acquireWaitStart = acquirePerfEnabled
         ? VulkanPerf::Clock::now()
         : VulkanPerf::Clock::time_point{};
+#endif
     {
         VulkanPerf::ScopedCpuTimer acquireTimer(VulkanPerf::CpuMetric::PresentAcquire);
         res = Device.Fns().AcquireNextImageKHR(
@@ -1549,6 +1559,7 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
             VK_NULL_HANDLE,
             &CurrentImageIndex);
     }
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (acquirePerfEnabled)
     {
         const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
@@ -1557,6 +1568,7 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireWaitCount);
         VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireWaitNs, waitNs);
     }
+#endif
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR)
     {
@@ -1856,7 +1868,9 @@ bool VulkanPresenter::UploadLayerFromImage(
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::PresenterDescriptorFallbackCount);
         const u32 frameIndex = Frames.GetFrameIndex();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         const auto descriptorStart = VulkanPerf::Clock::now();
+#endif
         std::array<VkDescriptorSetLayout, kPresenterSamplerCount> layouts{};
         layouts.fill(SetLayout);
         VkDescriptorSetAllocateInfo allocateInfo{};
@@ -1903,10 +1917,12 @@ bool VulkanPresenter::UploadLayerFromImage(
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::DescriptorWriteCount,
             static_cast<u64>(writes.size()));
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::PresenterDescriptorCpuTimeNs,
             static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                 VulkanPerf::Clock::now() - descriptorStart).count()));
+#endif
     }
 
     texture.Width = frame.Width;
@@ -2289,14 +2305,17 @@ void VulkanPresenter::BeginLowLatencyFrame(
         && normalSpeed
         && Frames.LatestSubmittedFrameHasPendingSubmission())
     {
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         const bool perfEnabled = VulkanPerf::IsEnabled();
         const VulkanPerf::Clock::time_point waitStart = perfEnabled
             ? VulkanPerf::Clock::now()
             : VulkanPerf::Clock::time_point{};
+#endif
         const u64 frameBudgetNs = melonDS::VulkanPresenterOneFrameBudgetTimeoutNs(
             targetFrameIntervalNs);
         const melonDS::Vk::FrameWaitResult waitResult =
             Frames.WaitForLatestSubmittedFrame(frameBudgetNs);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         if (perfEnabled)
         {
             const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
@@ -2311,6 +2330,7 @@ void VulkanPresenter::BeginLowLatencyFrame(
             VulkanPerf::AddCounter(
                 VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitNs, waitNs);
         }
+#endif
         if (waitResult == melonDS::Vk::FrameWaitResult::Timeout)
         {
             VulkanPerf::AddCounter(

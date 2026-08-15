@@ -11,14 +11,18 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
-#include <limits>
-
 #include "GpuStageMetrics.h"
 #include "VulkanPerf.h"
 #include "VulkanSync.h"
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+#include <limits>
+#endif
+
 namespace melonDS
 {
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 
 inline u64 ReadVulkanGpuMetricNanoseconds(
     const Vk::FrameRing& frames, GpuMetric metric) noexcept
@@ -51,6 +55,15 @@ inline void RecordVulkanGpuMetric(
     if (nanoseconds != 0)
         VulkanPerf::AddCounter(counter, nanoseconds);
 }
+
+#else
+
+inline constexpr void RecordVulkanGpuMetric(
+    const Vk::FrameRing&, GpuMetric, VulkanPerf::Counter) noexcept
+{
+}
+
+#endif
 
 } // namespace melonDS
 

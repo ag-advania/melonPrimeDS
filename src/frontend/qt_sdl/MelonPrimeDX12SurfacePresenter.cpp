@@ -200,7 +200,9 @@ void DX12SurfacePresenter::Quiesce() noexcept
     FrameReady = false;
     NativeSource = nullptr;
     NativeSourceDirect = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     PerfRecordStart = {};
+#endif
 }
 
 void DX12SurfacePresenter::Shutdown() noexcept
@@ -253,7 +255,9 @@ void DX12SurfacePresenter::Shutdown() noexcept
     LastPresentVsync = false;
     PresentResultLogged = false;
     LastPresentResult = S_OK;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     PerfRecordStart = {};
+#endif
     Window = nullptr;
     if (Context)
     {
@@ -548,7 +552,9 @@ bool DX12SurfacePresenter::CreateLayerPersistentSrv(Layer layerId)
     desc.Texture2DArray.PlaneSlice = 0;
     desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const auto descriptorStart = melonDS::DX12Perf::Clock::now();
+#endif
     Context->GetDevice()->CreateShaderResourceView(
         source, &desc, PersistentCpuAt(static_cast<std::uint32_t>(layerId)));
     layer.PersistentDescriptorIndex = static_cast<std::uint32_t>(layerId);
@@ -558,6 +564,7 @@ bool DX12SurfacePresenter::CreateLayerPersistentSrv(Layer layerId)
         melonDS::DX12Perf::Counter::PresenterSrvCreateCount);
     melonDS::DX12Perf::AddCounter(
         melonDS::DX12Perf::Counter::PresenterDescriptorPersistentCreateCount);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (melonDS::DX12Perf::IsEnabled())
     {
         melonDS::DX12Perf::AddCounter(
@@ -565,6 +572,7 @@ bool DX12SurfacePresenter::CreateLayerPersistentSrv(Layer layerId)
             static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                 melonDS::DX12Perf::Clock::now() - descriptorStart).count()));
     }
+#endif
     return true;
 }
 
@@ -631,7 +639,9 @@ bool DX12SurfacePresenter::EnsureDirectSrv(
     desc.Texture2DArray.PlaneSlice = 0;
     desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const auto descriptorStart = melonDS::DX12Perf::Clock::now();
+#endif
     Context->GetDevice()->CreateShaderResourceView(
         resource, &desc,
         PersistentCpuAt(kPersistentFallbackDescriptorCount + entryIndex));
@@ -644,6 +654,7 @@ bool DX12SurfacePresenter::EnsureDirectSrv(
         melonDS::DX12Perf::Counter::PresenterSrvCreateCount);
     melonDS::DX12Perf::AddCounter(
         melonDS::DX12Perf::Counter::PresenterDescriptorPersistentCreateCount);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (melonDS::DX12Perf::IsEnabled())
     {
         melonDS::DX12Perf::AddCounter(
@@ -651,6 +662,7 @@ bool DX12SurfacePresenter::EnsureDirectSrv(
             static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                 melonDS::DX12Perf::Clock::now() - descriptorStart).count()));
     }
+#endif
     return true;
 }
 
@@ -837,8 +849,10 @@ bool DX12SurfacePresenter::BeginFrame(
         melonDS::DX12Perf::Counter::TotalQueueGpuSpanNs);
     Commands.WriteTimestamp(
         melonDS::GpuMetricQueryIndex(melonDS::GpuMetric::TotalQueueSpan, false));
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (melonDS::DX12Perf::IsEnabled())
         PerfRecordStart = melonDS::DX12Perf::Clock::now();
+#endif
     // Keep the fixed SRV prefix intact; only the transient fallback tail is
     // recycled at the frame boundary.
     Descriptors.Reset(PersistentDescriptorCount);
@@ -1131,10 +1145,13 @@ bool DX12SurfacePresenter::AllocateLayerSrv(
     desc.Texture2DArray.ArraySize = 1;
     desc.Texture2DArray.PlaneSlice = 0;
     desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const auto descriptorStart = melonDS::DX12Perf::Clock::now();
+#endif
     Context->GetDevice()->CreateShaderResourceView(source, &desc, cpu);
     melonDS::DX12Perf::AddCounter(
         melonDS::DX12Perf::Counter::PresenterSrvCreateCount);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (melonDS::DX12Perf::IsEnabled())
     {
         melonDS::DX12Perf::AddCounter(
@@ -1142,6 +1159,7 @@ bool DX12SurfacePresenter::AllocateLayerSrv(
             static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                 melonDS::DX12Perf::Clock::now() - descriptorStart).count()));
     }
+#endif
     return true;
 }
 
@@ -1207,12 +1225,14 @@ bool DX12SurfacePresenter::EndFrame()
 
     OpenList = nullptr;
     FrameOpen = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (PerfRecordStart != std::chrono::steady_clock::time_point{})
     {
         melonDS::DX12Perf::AddDuration(
             melonDS::DX12Perf::CpuMetric::PresentRecord, PerfRecordStart);
         PerfRecordStart = {};
     }
+#endif
     bool submitted = false;
     {
         melonDS::DX12Perf::ScopedCpuTimer submitTimer(

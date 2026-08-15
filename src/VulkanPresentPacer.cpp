@@ -912,10 +912,12 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
 
     WaitAttemptedThisFrame = true;
     WaitAttemptSwapchainGeneration = SwapchainGeneration;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const bool perfEnabled = VulkanPerf::IsEnabled();
     const VulkanPerf::Clock::time_point waitStart = perfEnabled
         ? VulkanPerf::Clock::now()
         : VulkanPerf::Clock::time_point{};
+#endif
     VkResult result = VK_ERROR_UNKNOWN;
     if (useWait2)
     {
@@ -930,6 +932,7 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
         result = Dispatch.WaitForPresentKHR(
             DeviceHandle, Swapchain, LastPresentedId, waitTimeout);
     }
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (perfEnabled)
     {
         const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
@@ -939,6 +942,7 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::VulkanPreviousPresentWaitNs, waitNs);
     }
+#endif
     LastWaitedId = LastPresentedId;
     switch (ClassifyVulkanPresentWait2Result(result))
     {

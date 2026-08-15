@@ -15,11 +15,13 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#endif
 
 namespace melonDS::DX12Perf
 {
@@ -119,6 +121,13 @@ enum class Counter : u32
     DX12PresenterLogicalDepth,
     Count,
 };
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+
+inline constexpr bool IsCompiledIn() noexcept
+{
+    return true;
+}
 
 inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Count)> CpuMetricNames = {
     "raster_begin_wait",
@@ -433,6 +442,44 @@ inline void MaybeReport()
     state.LastReport = now;
 }
 
+#else
+
+inline constexpr bool IsCompiledIn() noexcept
+{
+    return false;
+}
+
+inline constexpr bool IsEnabled() noexcept
+{
+    return false;
+}
+
+inline constexpr void SetScale(u32) noexcept {}
+inline constexpr void AddCounter(Counter, u64 = 1) noexcept {}
+inline constexpr void SetCounter(Counter, u64) noexcept {}
+inline constexpr void RecordNativeReadbackWait(u64) noexcept {}
+inline constexpr void RecordRasterBeginNoWait() noexcept {}
+inline constexpr void RecordRasterBeginFenceTimeout() noexcept {}
+inline constexpr void RecordGeometry(u32, u32, u32, u32) noexcept {}
+inline constexpr void MaybeReport() noexcept {}
+
+template <typename TimePoint>
+inline constexpr void AddDuration(CpuMetric, TimePoint) noexcept {}
+
+class ScopedRasterBeginWait
+{
+public:
+    constexpr explicit ScopedRasterBeginWait(bool = true) noexcept {}
+};
+
+class ScopedCpuTimer
+{
+public:
+    constexpr explicit ScopedCpuTimer(CpuMetric, bool = true) noexcept {}
+};
+
+#endif
+
 } // namespace melonDS::DX12Perf
 
 #else
@@ -471,17 +518,18 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
      HudUploadBytes, HudTextureRecreateCount, DX12VsyncEnabled, DX12PresentMode,
      DX12VendorPacingAuthority, DX12ReflexMode, DX12BackBufferCount,
      DX12PresenterLogicalDepth, Count };
-inline bool IsEnabled() noexcept { return false; }
-inline void SetScale(u32) noexcept {}
-inline void AddCounter(Counter, u64 = 1) noexcept {}
-inline void SetCounter(Counter, u64) noexcept {}
-inline void RecordNativeReadbackWait(u64) noexcept {}
-class ScopedRasterBeginWait { public: explicit ScopedRasterBeginWait(bool = true) noexcept {} };
-inline void RecordRasterBeginNoWait() noexcept {}
-inline void RecordRasterBeginFenceTimeout() noexcept {}
-inline void RecordGeometry(u32, u32, u32, u32) noexcept {}
-inline void MaybeReport() {}
-class ScopedCpuTimer { public: explicit ScopedCpuTimer(CpuMetric, bool = true) noexcept {} };
+inline constexpr bool IsCompiledIn() noexcept { return false; }
+inline constexpr bool IsEnabled() noexcept { return false; }
+inline constexpr void SetScale(u32) noexcept {}
+inline constexpr void AddCounter(Counter, u64 = 1) noexcept {}
+inline constexpr void SetCounter(Counter, u64) noexcept {}
+inline constexpr void RecordNativeReadbackWait(u64) noexcept {}
+class ScopedRasterBeginWait { public: constexpr explicit ScopedRasterBeginWait(bool = true) noexcept {} };
+inline constexpr void RecordRasterBeginNoWait() noexcept {}
+inline constexpr void RecordRasterBeginFenceTimeout() noexcept {}
+inline constexpr void RecordGeometry(u32, u32, u32, u32) noexcept {}
+inline constexpr void MaybeReport() noexcept {}
+class ScopedCpuTimer { public: constexpr explicit ScopedCpuTimer(CpuMetric, bool = true) noexcept {} };
 } // namespace melonDS::DX12Perf
 
 #endif

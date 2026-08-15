@@ -34,7 +34,9 @@ namespace
 // short enough that a hung GPU produces a log line instead of a frozen process.
 // Strict presenter pacing supplies its own frame-budget timeout instead.
 constexpr u64 DefaultFenceTimeoutNanoseconds = 1000ull * 1000ull * 1000ull;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 constexpr u32 TimestampQueryCount = 10;
+#endif
 
 } // namespace
 
@@ -121,9 +123,11 @@ void DeferredDestroyQueue::DestroyEntry(const Entry& entry) const noexcept
     case DeferredObject::RenderPass:
         Fns->DestroyRenderPass(Device, FromObjectHandle<VkRenderPass>(entry.Handle), nullptr);
         break;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     case DeferredObject::QueryPool:
         Fns->DestroyQueryPool(Device, FromObjectHandle<VkQueryPool>(entry.Handle), nullptr);
         break;
+#endif
     case DeferredObject::CommandPool:
         Fns->DestroyCommandPool(Device, FromObjectHandle<VkCommandPool>(entry.Handle), nullptr);
         break;
@@ -214,7 +218,9 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
     CompletedFrame = 0;
     LastSubmittedIndex = 0;
     HasSubmittedFrame = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampPeriodNs = 0.0f;
+#endif
 
     DestroyQueue.Init(device.Fns(), device.GetHandle());
 
@@ -223,6 +229,7 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
 
     Frames.resize(framesInFlight);
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const VkPhysicalDeviceLimits& limits = device.GetLimits();
     const bool timestampSupport = VulkanPerf::IsEnabled()
         && limits.timestampComputeAndGraphics == VK_TRUE
@@ -341,6 +348,7 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
 
     if (!timestampPoolsCreated)
         TimestampPeriodNs = 0.0f;
+#endif
 
     return true;
 }
@@ -355,7 +363,9 @@ void FrameRing::Destroy()
         CompletedFrame = 0;
         LastSubmittedIndex = 0;
         HasSubmittedFrame = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         TimestampPeriodNs = 0.0f;
+#endif
         return;
     }
 
@@ -373,7 +383,9 @@ void FrameRing::Destroy()
     CompletedFrame = 0;
     LastSubmittedIndex = 0;
     HasSubmittedFrame = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampPeriodNs = 0.0f;
+#endif
 }
 
 void FrameRing::DestroyFrames()
@@ -401,11 +413,13 @@ void FrameRing::DestroyFrames()
             fns.DestroyFence(handle, frame.InFlightFence, nullptr);
             frame.InFlightFence = VK_NULL_HANDLE;
         }
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         if (frame.TimestampQueryPool != VK_NULL_HANDLE)
         {
             fns.DestroyQueryPool(handle, frame.TimestampQueryPool, nullptr);
             frame.TimestampQueryPool = VK_NULL_HANDLE;
         }
+#endif
         // The command buffer is freed implicitly with its pool.
         if (frame.CommandPool != VK_NULL_HANDLE)
         {
@@ -415,7 +429,9 @@ void FrameRing::DestroyFrames()
         frame.CommandBuffer = VK_NULL_HANDLE;
         frame.HasPendingSubmission = false;
         frame.Recording = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         frame.TimestampQueriesEnabled = false;
+#endif
     }
 }
 
@@ -432,6 +448,8 @@ VkCommandBuffer FrameRing::GetCommandBuffer() const noexcept
         return VK_NULL_HANDLE;
     return Frames[CurrentIndex].CommandBuffer;
 }
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 
 void FrameRing::WriteTimestamp(VkPipelineStageFlagBits stage, u32 queryIndex) noexcept
 {
@@ -462,6 +480,8 @@ bool FrameRing::ReadCurrentFrameTimestamps(
         sizeof(u64), VK_QUERY_RESULT_64_BIT);
     return result == VK_SUCCESS;
 }
+
+#endif
 
 FrameContext* FrameRing::BeginFrame(bool recordRasterBegin)
 {
@@ -601,11 +621,13 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot, bool recordRasterB
     if (!MELONPRIME_VK_CHECK("vkBeginCommandBuffer", res))
         return nullptr;
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (frame.TimestampQueriesEnabled)
     {
         fns.CmdResetQueryPool(frame.CommandBuffer, frame.TimestampQueryPool,
             0, TimestampQueryCount);
     }
+#endif
 
     frame.Recording = true;
     frame.SubmittedFrame = AbsoluteFrame;

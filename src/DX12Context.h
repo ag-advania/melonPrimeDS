@@ -21,8 +21,10 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 #include <array>
 #include <chrono>
+#endif
 #include <mutex>
 #include <string>
 #include <vector>
@@ -162,7 +164,9 @@ private:
 class DX12CommandContext
 {
 public:
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     static constexpr u32 TimestampQueryCount = 10;
+#endif
 
     bool Init(ID3D12Device* device, ID3D12CommandQueue* queue);
     void Shutdown();
@@ -199,6 +203,7 @@ public:
     // command context's fence, so a caller may read the previous submission
     // immediately after Begin()/TryBegin() has retired it and before the new
     // list is submitted.
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     [[nodiscard]] bool HasTimestampQueries() const noexcept
     {
         return TimestampQueriesEnabled && TimestampFrequency != 0;
@@ -206,23 +211,40 @@ public:
     void WriteTimestamp(u32 queryIndex) noexcept;
     [[nodiscard]] u64 ReadTimestampSpanNanoseconds(
         u32 startQuery, u32 endQuery) const noexcept;
+#else
+    [[nodiscard]] inline constexpr bool HasTimestampQueries() const noexcept
+    {
+        return false;
+    }
+    inline constexpr void WriteTimestamp(u32) noexcept {}
+    [[nodiscard]] inline constexpr u64 ReadTimestampSpanNanoseconds(
+        u32, u32) const noexcept
+    {
+        return 0;
+    }
+#endif
 
 private:
     bool WaitForFence(u64 value, bool recordRasterBegin = false);
     ID3D12GraphicsCommandList* ResetList();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     void RefreshTimestampFrequencyIfDue() noexcept;
     [[nodiscard]] bool ReadTimestampSnapshot() const noexcept;
+#endif
 
     ID3D12Device* Device = nullptr;
     ID3D12CommandQueue* Queue = nullptr;
     DX12::ComPtr<ID3D12CommandAllocator> Allocator;
     DX12::ComPtr<ID3D12GraphicsCommandList> List;
     DX12::ComPtr<ID3D12Fence> Fence;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     DX12::ComPtr<ID3D12QueryHeap> TimestampQueryHeap;
     DX12::ComPtr<ID3D12Resource> TimestampReadback;
+#endif
     HANDLE FenceEvent = nullptr;
     u64 FenceValue = 0;
     u64 SubmittedValue = 0;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     u64 TimestampFrequency = 0;
     std::chrono::steady_clock::time_point LastTimestampFrequencyRefresh{};
     u16 TimestampWrittenMask = 0;
@@ -230,6 +252,7 @@ private:
     mutable std::array<u64, TimestampQueryCount> TimestampSnapshotValues{};
     mutable bool TimestampSnapshotValid = false;
     bool TimestampQueriesEnabled = false;
+#endif
     bool Recording = false;
 };
 

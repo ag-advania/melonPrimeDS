@@ -515,9 +515,11 @@ bool LoadDeviceDispatch(
     MELONPRIME_VK_LOAD_DEVICE(CreateSemaphore,                  vkCreateSemaphore);
     MELONPRIME_VK_LOAD_DEVICE(DestroySemaphore,                 vkDestroySemaphore);
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     MELONPRIME_VK_LOAD_DEVICE(CreateQueryPool,                  vkCreateQueryPool);
     MELONPRIME_VK_LOAD_DEVICE(DestroyQueryPool,                 vkDestroyQueryPool);
     MELONPRIME_VK_LOAD_DEVICE(GetQueryPoolResults,              vkGetQueryPoolResults);
+#endif
 
     MELONPRIME_VK_LOAD_DEVICE(CmdBindPipeline,                  vkCmdBindPipeline);
     MELONPRIME_VK_LOAD_DEVICE(CmdBindDescriptorSets,            vkCmdBindDescriptorSets);
@@ -533,8 +535,10 @@ bool LoadDeviceDispatch(
     MELONPRIME_VK_LOAD_DEVICE(CmdFillBuffer,                    vkCmdFillBuffer);
     MELONPRIME_VK_LOAD_DEVICE(CmdUpdateBuffer,                  vkCmdUpdateBuffer);
     MELONPRIME_VK_LOAD_DEVICE(CmdClearColorImage,               vkCmdClearColorImage);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     MELONPRIME_VK_LOAD_DEVICE(CmdResetQueryPool,                vkCmdResetQueryPool);
     MELONPRIME_VK_LOAD_DEVICE(CmdWriteTimestamp,                vkCmdWriteTimestamp);
+#endif
     MELONPRIME_VK_LOAD_DEVICE(CmdBeginRenderPass,               vkCmdBeginRenderPass);
     MELONPRIME_VK_LOAD_DEVICE(CmdEndRenderPass,                 vkCmdEndRenderPass);
     MELONPRIME_VK_LOAD_DEVICE(CmdSetViewport,                   vkCmdSetViewport);

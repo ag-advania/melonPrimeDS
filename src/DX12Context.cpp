@@ -24,11 +24,13 @@
 #include <d3dcompiler.h>
 #include <d3d12sdklayers.h>
 
-#include <algorithm>
 #include <cstdio>
 #include <cstring>
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+#include <algorithm>
 #include <iterator>
 #include <limits>
+#endif
 
 #include "Platform.h"
 
@@ -144,8 +146,10 @@ bool Fail(const char* context, HRESULT hr)
 namespace
 {
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 constexpr u32 kTimestampQueryCount = 10;
 constexpr auto kTimestampFrequencyRefreshInterval = std::chrono::seconds(1);
+#endif
 
 } // namespace
 
@@ -673,6 +677,7 @@ bool DX12CommandContext::Init(ID3D12Device* device, ID3D12CommandQueue* queue)
 
     FenceValue = 0;
     SubmittedValue = 0;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampFrequency = 0;
     LastTimestampFrequencyRefresh = {};
     TimestampWrittenMask = 0;
@@ -680,7 +685,6 @@ bool DX12CommandContext::Init(ID3D12Device* device, ID3D12CommandQueue* queue)
     TimestampSnapshotValues = {};
     TimestampSnapshotValid = false;
     TimestampQueriesEnabled = false;
-    Recording = false;
 
     if (DX12Perf::IsEnabled())
     {
@@ -731,6 +735,8 @@ bool DX12CommandContext::Init(ID3D12Device* device, ID3D12CommandQueue* queue)
             TimestampReadback.Reset();
         }
     }
+#endif
+    Recording = false;
     return true;
 }
 
@@ -742,8 +748,10 @@ void DX12CommandContext::Shutdown()
     List.Reset();
     Allocator.Reset();
     Fence.Reset();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampReadback.Reset();
     TimestampQueryHeap.Reset();
+#endif
 
     if (FenceEvent)
     {
@@ -755,6 +763,7 @@ void DX12CommandContext::Shutdown()
     Queue = nullptr;
     FenceValue = 0;
     SubmittedValue = 0;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampFrequency = 0;
     LastTimestampFrequencyRefresh = {};
     TimestampWrittenMask = 0;
@@ -762,6 +771,7 @@ void DX12CommandContext::Shutdown()
     TimestampSnapshotValues = {};
     TimestampSnapshotValid = false;
     TimestampQueriesEnabled = false;
+#endif
     Recording = false;
 }
 
@@ -844,6 +854,8 @@ ID3D12GraphicsCommandList* DX12CommandContext::TryBegin()
     return ResetList();
 }
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+
 void DX12CommandContext::RefreshTimestampFrequencyIfDue() noexcept
 {
     if (!TimestampQueriesEnabled || !Queue)
@@ -865,6 +877,8 @@ void DX12CommandContext::RefreshTimestampFrequencyIfDue() noexcept
         TimestampFrequency = frequency;
 }
 
+#endif
+
 ID3D12GraphicsCommandList* DX12CommandContext::ResetList()
 {
     if (FAILED(Allocator->Reset()))
@@ -872,12 +886,16 @@ ID3D12GraphicsCommandList* DX12CommandContext::ResetList()
     if (FAILED(List->Reset(Allocator.Get(), nullptr)))
         return nullptr;
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampWrittenMask = 0;
     TimestampSnapshotValid = false;
     RefreshTimestampFrequencyIfDue();
+#endif
     Recording = true;
     return List.Get();
 }
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 
 void DX12CommandContext::WriteTimestamp(u32 queryIndex) noexcept
 {
@@ -946,11 +964,14 @@ u64 DX12CommandContext::ReadTimestampSpanNanoseconds(
     return static_cast<u64>(nanoseconds + 0.5L);
 }
 
+#endif
+
 bool DX12CommandContext::Submit()
 {
     if (!Recording)
         return true;
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (TimestampQueriesEnabled && TimestampWrittenMask != 0)
     {
         u32 firstQuery = kTimestampQueryCount;
@@ -973,19 +994,24 @@ bool DX12CommandContext::Submit()
                 static_cast<UINT64>(firstQuery) * sizeof(u64));
         }
     }
+#endif
 
     HRESULT hr = List->Close();
     if (FAILED(hr))
     {
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         LastTimestampWrittenMask = 0;
         TimestampSnapshotValid = false;
+#endif
         Recording = false;
         return DX12::Fail("ID3D12GraphicsCommandList::Close", hr);
     }
 
     Recording = false;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampSnapshotValid = false;
     LastTimestampWrittenMask = TimestampWrittenMask;
+#endif
 
     ID3D12CommandList* lists[] = { List.Get() };
     Queue->ExecuteCommandLists(1, lists);

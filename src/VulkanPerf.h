@@ -16,16 +16,17 @@
 
 // Vulkan stage telemetry. The runtime gate is MELONPRIME_PERF=1, shared with
 // MelonPrimePerfProbe. Keeping this header in core avoids making the renderer
-// depend on the Qt/SDL frontend. The gate intentionally does not use the
-// frontend-only developer-feature define: core and frontend must see the same
-// inline definitions, and a disabled runtime costs only one predictable branch.
+// depend on the Qt/SDL frontend. The compile-time gate is shared with DX12 so
+// core and frontend see the same inline definitions in every configuration.
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#endif
 
 namespace melonDS::VulkanPerf
 {
@@ -129,6 +130,13 @@ enum class Counter : u32
     VulkanReflexMode,
     Count,
 };
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+
+inline constexpr bool IsCompiledIn() noexcept
+{
+    return true;
+}
 
 inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Count)> CpuMetricNames = {
     "raster_begin_wait",
@@ -499,6 +507,46 @@ inline void MaybeReport()
     state.LastReport = now;
 }
 
+#else
+
+inline constexpr bool IsCompiledIn() noexcept
+{
+    return false;
+}
+
+inline constexpr bool IsEnabled() noexcept
+{
+    return false;
+}
+
+inline constexpr void SetScale(u32) noexcept {}
+inline constexpr void AddCounter(Counter, u64 = 1) noexcept {}
+inline constexpr void SetCounter(Counter, u64) noexcept {}
+inline constexpr void RecordNativeReadbackWait(u64) noexcept {}
+inline constexpr void RecordRasterBeginNoWait() noexcept {}
+inline constexpr void RecordRasterBeginFenceTimeout() noexcept {}
+inline constexpr void RecordGeometry(u32, u32, u32, u32) noexcept {}
+inline constexpr void BeginStructured2DFrame() noexcept {}
+inline constexpr void EndStructured2DFrame() noexcept {}
+inline constexpr void MaybeReport() noexcept {}
+
+template <typename TimePoint>
+inline constexpr void AddDuration(CpuMetric, TimePoint) noexcept {}
+
+class ScopedRasterBeginWait
+{
+public:
+    constexpr explicit ScopedRasterBeginWait(bool = true) noexcept {}
+};
+
+class ScopedCpuTimer
+{
+public:
+    constexpr explicit ScopedCpuTimer(CpuMetric, bool = true) noexcept {}
+};
+
+#endif
+
 } // namespace melonDS::VulkanPerf
 
 #else
@@ -603,27 +651,20 @@ enum class Counter : u32
     VulkanReflexMode,
     Count,
 };
-inline bool IsEnabled() noexcept { return false; }
-inline void SetScale(u32) noexcept {}
-inline void AddCounter(Counter, u64 = 1) noexcept {}
-inline void SetCounter(Counter, u64) noexcept {}
-inline void RecordNativeReadbackWait(u64) noexcept {}
-class ScopedRasterBeginWait
-{
-public:
-    explicit ScopedRasterBeginWait(bool = true) noexcept {}
-};
-inline void RecordRasterBeginNoWait() noexcept {}
-inline void RecordRasterBeginFenceTimeout() noexcept {}
-inline void RecordGeometry(u32, u32, u32, u32) noexcept {}
-inline void BeginStructured2DFrame() noexcept {}
-inline void EndStructured2DFrame() noexcept {}
-inline void MaybeReport() {}
-class ScopedCpuTimer
-{
-public:
-    explicit ScopedCpuTimer(CpuMetric) noexcept {}
-};
+inline constexpr bool IsCompiledIn() noexcept { return false; }
+inline constexpr bool IsEnabled() noexcept { return false; }
+inline constexpr void SetScale(u32) noexcept {}
+inline constexpr void AddCounter(Counter, u64 = 1) noexcept {}
+inline constexpr void SetCounter(Counter, u64) noexcept {}
+inline constexpr void RecordNativeReadbackWait(u64) noexcept {}
+class ScopedRasterBeginWait { public: constexpr explicit ScopedRasterBeginWait(bool = true) noexcept {} };
+inline constexpr void RecordRasterBeginNoWait() noexcept {}
+inline constexpr void RecordRasterBeginFenceTimeout() noexcept {}
+inline constexpr void RecordGeometry(u32, u32, u32, u32) noexcept {}
+inline constexpr void BeginStructured2DFrame() noexcept {}
+inline constexpr void EndStructured2DFrame() noexcept {}
+inline constexpr void MaybeReport() noexcept {}
+class ScopedCpuTimer { public: constexpr explicit ScopedCpuTimer(CpuMetric, bool = true) noexcept {} };
 } // namespace melonDS::VulkanPerf
 
 #endif

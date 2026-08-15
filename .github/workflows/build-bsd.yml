@@ -197,6 +197,9 @@ jobs:
     - name: Install dependencies
       run: ${{ matrix.install_deps }}
 
+    - name: Audit renderer telemetry zero-overhead contract
+      run: python3 tools/ci/audits/audit-renderer-perf-zero-overhead.py
+
     # pkgin's failure summary ("pkg_install warnings: N, errors: N") names
     # neither the packages nor the reason; the detail only goes to this file
     # inside the VM. Surface it so a failure here is diagnosable from the CI

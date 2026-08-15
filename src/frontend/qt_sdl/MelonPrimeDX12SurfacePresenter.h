@@ -16,7 +16,9 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 #include <chrono>
+#endif
 #include <string>
 
 #include "DX12Context.h"
@@ -225,7 +227,9 @@ private:
     bool LastPresentVsync = false;
     bool PresentResultLogged = false;
     HRESULT LastPresentResult = S_OK;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     std::chrono::steady_clock::time_point PerfRecordStart{};
+#endif
     std::string Error;
 };
 

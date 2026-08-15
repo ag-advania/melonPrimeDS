@@ -2716,15 +2716,19 @@ void VulkanRenderer3D::EnsureFrameReadback()
         return;
     }
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const auto waitStart = VulkanPerf::Clock::now();
+#endif
     const Vk::DeviceDispatch& fns = Device.Fns();
 
     const VkResult res = fns.WaitForFences(
         Device.GetHandle(), 1, &PendingCaptureFence, VK_TRUE,
         1000000000ull /* 1 s */);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     VulkanPerf::RecordNativeReadbackWait(static_cast<u64>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             VulkanPerf::Clock::now() - waitStart).count()));
+#endif
     PendingCaptureFence = VK_NULL_HANDLE;
     if (res != VK_SUCCESS)
     {

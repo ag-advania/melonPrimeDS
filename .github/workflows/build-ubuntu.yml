@@ -75,6 +75,9 @@ jobs:
     - name: Audit low-latency marker and vendor ABI contract
       run: python ./tools/ci/audits/audit-low-latency-contract.py
 
+    - name: Audit renderer telemetry zero-overhead contract
+      run: python ./tools/ci/audits/audit-renderer-perf-zero-overhead.py
+
     # The Vulkan backend ships its SPIR-V as committed generated sources, so a
     # GLSL edit that was never regenerated, or a variant that stopped compiling,
     # would only show up as a black screen on a machine with a Vulkan GPU. Both

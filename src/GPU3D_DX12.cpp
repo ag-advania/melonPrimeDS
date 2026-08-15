@@ -2585,14 +2585,18 @@ void DX12Renderer3D::EnsureFrameReadback()
         return;
     }
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const auto waitStart = DX12Perf::Clock::now();
+#endif
     {
         DX12Perf::ScopedCpuTimer waitTimer(DX12Perf::CpuMetric::CaptureWait);
         CaptureCommands.WaitIdle();
     }
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     DX12Perf::RecordNativeReadbackWait(static_cast<u64>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(
             DX12Perf::Clock::now() - waitStart).count()));
+#endif
 
     DX12Perf::ScopedCpuTimer mapTimer(DX12Perf::CpuMetric::CaptureMapCopy);
     DX12Perf::AddCounter(DX12Perf::Counter::CaptureReadCount);

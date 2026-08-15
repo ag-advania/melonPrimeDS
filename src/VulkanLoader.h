@@ -219,10 +219,12 @@ struct DeviceDispatch
     PFN_vkCreateSemaphore               CreateSemaphore = nullptr;
     PFN_vkDestroySemaphore              DestroySemaphore = nullptr;
 
-    // --- queries (GPU timing for the perf overlay) ---
+    // --- queries (GPU timing for renderer telemetry) ---
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     PFN_vkCreateQueryPool               CreateQueryPool = nullptr;
     PFN_vkDestroyQueryPool              DestroyQueryPool = nullptr;
     PFN_vkGetQueryPoolResults           GetQueryPoolResults = nullptr;
+#endif
 
     // --- commands ---
     PFN_vkCmdBindPipeline               CmdBindPipeline = nullptr;
@@ -239,8 +241,10 @@ struct DeviceDispatch
     PFN_vkCmdFillBuffer                 CmdFillBuffer = nullptr;
     PFN_vkCmdUpdateBuffer               CmdUpdateBuffer = nullptr;
     PFN_vkCmdClearColorImage            CmdClearColorImage = nullptr;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     PFN_vkCmdResetQueryPool             CmdResetQueryPool = nullptr;
     PFN_vkCmdWriteTimestamp             CmdWriteTimestamp = nullptr;
+#endif
     PFN_vkCmdBeginRenderPass            CmdBeginRenderPass = nullptr;
     PFN_vkCmdEndRenderPass              CmdEndRenderPass = nullptr;
     PFN_vkCmdSetViewport                CmdSetViewport = nullptr;

@@ -84,6 +84,10 @@ jobs:
       shell: pwsh
       run: python .\tools\ci\audits\audit-low-latency-contract.py
 
+    - name: Audit renderer telemetry zero-overhead contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-renderer-perf-zero-overhead.py
+
     - name: Verify generated HUD schema
       shell: pwsh
       run: |

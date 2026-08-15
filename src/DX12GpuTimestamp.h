@@ -16,6 +16,8 @@
 namespace melonDS
 {
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+
 inline void RecordDX12GpuMetric(
     const DX12CommandContext& commands, GpuMetric metric,
     DX12Perf::Counter counter) noexcept
@@ -30,6 +32,15 @@ inline void RecordDX12GpuMetric(
     if (nanoseconds != 0)
         DX12Perf::AddCounter(counter, nanoseconds);
 }
+
+#else
+
+inline constexpr void RecordDX12GpuMetric(
+    const DX12CommandContext&, GpuMetric, DX12Perf::Counter) noexcept
+{
+}
+
+#endif
 
 } // namespace melonDS
 
