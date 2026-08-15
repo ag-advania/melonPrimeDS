@@ -540,6 +540,13 @@ private:
     void refreshNativeSurfaceGuiThread();
     void setNativeSurfaceVisibleGuiThread(bool visible);
 #if defined(__linux__)
+    // A short lifecycle state/lease handshake surrounds only the decision to
+    // enter a presentation frame. The Vulkan frame itself does not hold a
+    // native-lifecycle lock.
+    bool beginLinuxPresentationFrame();
+    void finishLinuxPresentationFrame();
+    void serviceLinuxSurfaceRetire();
+
     // Emulation thread. Binds the presenter only to the GUI-published native
     // snapshot whose generation is still current. Wayland WId reuse is not an
     // identity check.
