@@ -11,6 +11,7 @@ constexpr Translation kTranslations[] = {
 #include "MelonPrimeTranslationsCustomHud02.inc"
 #include "MelonPrimeTranslationsCustomHud03.inc"
 #include "MelonPrimeTranslationsCustomHud04.inc"
+#include "MelonPrimeTranslationsScoreboard.inc"
 #include "MelonPrimeTranslationsHudElements.inc"
 #include "MelonPrimeTranslationsOsd.inc"
 #include "MelonPrimeTranslationsColorsWeapons.inc"

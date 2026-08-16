@@ -134,6 +134,7 @@ static const HudSubSec kSubsRadar[] = {
     SUB("Frame Outline",        MelonPrime::CfgKey::SectionHudRadarFrameOutline,  kSecRadarFrameOutline),
 };
 
+
 // IN-GAME OSD COLOR sub-sections
 #define MP_OSD_COLOR_EMIT_LITERAL_SUBSECTION(id, dialogLabel, sectionKey, propArray) \
     SUB(dialogLabel, sectionKey, propArray),
@@ -164,6 +165,8 @@ static const HudMainSec kHudMainSections[] = {
       nullptr, 0, kSubsHpAmmo, static_cast<int>(sizeof(kSubsHpAmmo)/sizeof(kSubsHpAmmo[0])), /*preview*/ 2 },
     { "MATCH STATUS HUD",  MelonPrime::CfgKey::SectionHudMatchStatusGrp,
       nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
+    { "HUD SCOREBOARD",     MelonPrime::CfgKey::SectionHudScoreboard,
+      _P(kSecScoreboard), nullptr, 0, /*preview*/ 0 },
     { "HUD RADAR",         MelonPrime::CfgKey::SectionHudRadar,
       nullptr, 0, kSubsRadar, static_cast<int>(sizeof(kSubsRadar)/sizeof(kSubsRadar[0])), /*preview*/ 4 },
     { "IN-GAME OSD COLOR", MelonPrime::CfgKey::SectionOsdColor,

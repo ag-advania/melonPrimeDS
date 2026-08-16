@@ -199,6 +199,15 @@ struct RadarOverlayConfig {
     HudOutlineConfig outline;
     HudOutlineConfig frameOutline;
 };
+struct ScoreboardHudConfig {
+    bool show;
+    int x, y;                         // final DS-space position
+    int anchor, ofsX, ofsY;           // raw anchor + offsets
+    int width, rowHeight, rowSpacing;
+    int hunterIconHeight, starsHeight;
+    float opacity, backgroundOpacity;
+    QColor textColor, headerColor, localPlayerColor, teamRowColor, backgroundColor;
+};
 struct CachedHudConfig {
     HpHudConfig hp;
     WeaponHudConfig weapon;
@@ -208,6 +217,7 @@ struct CachedHudConfig {
     BombLeftHudConfig bombLeft;
     RankTimeHudConfig rankTime;
     RadarOverlayConfig radar;
+    ScoreboardHudConfig scoreboard;
     HudOutlineConfig globalOutline; // when enable=true, overrides all per-element outlines
     int textScalePct; // text visual scale in percent (100 = 1x, bitmap always rendered at 6px)
     float textDrawScale; // P-14: pre-computed combined text scale (auto + user offset) / hudScale
@@ -244,6 +254,10 @@ struct CustomHudConfigState {
     QColor bombTintColor;
     int bombIconHeight = 0;
     bool bombTintCacheValid = false;
+    QImage scoreboardHunterIcons[7];
+    QImage scoreboardStars[5];
+    int scoreboardHunterIconHeight = 0;
+    int scoreboardStarsHeight = 0;
     QImage weaponIconsOutline[9];
     QImage bombIconsOutline[4];
     QColor outlineWeaponColor;
@@ -334,7 +348,7 @@ struct CustomHudConfigState {
     int dynWidthsForElem = -2;
     UiText::MenuLangId dynWidthsForLang = static_cast<UiText::MenuLangId>(-1);
     bool editMode = false;
-    QRectF editRects[14];
+    QRectF editRects[15];
     float editHudScale = 1.0f;
     float editTopStretchX = 1.0f;
     bool editPreviewMode = false;
@@ -401,6 +415,10 @@ std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
 #define s_bombTintColor (ActiveHudConfigState().bombTintColor)
 #define s_bombIconHeight (ActiveHudConfigState().bombIconHeight)
 #define s_bombTintCacheValid (ActiveHudConfigState().bombTintCacheValid)
+#define s_scoreboardHunterIcons (ActiveHudConfigState().scoreboardHunterIcons)
+#define s_scoreboardStars (ActiveHudConfigState().scoreboardStars)
+#define s_scoreboardHunterIconHeight (ActiveHudConfigState().scoreboardHunterIconHeight)
+#define s_scoreboardStarsHeight (ActiveHudConfigState().scoreboardStarsHeight)
 #define s_weaponIconsOutline (ActiveHudConfigState().weaponIconsOutline)
 #define s_bombIconsOutline (ActiveHudConfigState().bombIconsOutline)
 #define s_outlineWeaponColor (ActiveHudConfigState().outlineWeaponColor)
@@ -1138,6 +1156,42 @@ static void LoadRadarOverlayConfig(RadarOverlayConfig& radar, Config::Table& cfg
     radar.radarFrameColorUseHunter = cfg.GetBool(MP_HUD_PROP_KEY_BtmOverlayRadarColorUseHunter);
     // radarDstRect and radarClipPath are recomputed in RecomputeAnchorPositions()
 }
+static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table& cfg)
+{
+    scoreboard.show = cfg.GetBool(MP_HUD_PROP_KEY_HudScoreboardShow);
+    scoreboard.anchor = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardAnchor);
+    scoreboard.ofsX = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardX);
+    scoreboard.ofsY = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardY);
+    scoreboard.width = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardWidth), 96, 256);
+    scoreboard.rowHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowHeight), 12, 48);
+    scoreboard.rowSpacing = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowSpacing), 0, 16);
+    scoreboard.hunterIconHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight), 0, 48);
+    scoreboard.starsHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardStarsHeight), 0, 24);
+    scoreboard.opacity = static_cast<float>(std::clamp(
+        cfg.GetDouble(MP_HUD_PROP_KEY_HudScoreboardOpacity), 0.0, 1.0));
+    scoreboard.backgroundOpacity = static_cast<float>(std::clamp(
+        cfg.GetDouble(MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity), 0.0, 1.0));
+    scoreboard.textColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudScoreboardTextColorR,
+        MP_HUD_PROP_KEY_HudScoreboardTextColorG,
+        MP_HUD_PROP_KEY_HudScoreboardTextColorB);
+    scoreboard.headerColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudScoreboardHeaderColorR,
+        MP_HUD_PROP_KEY_HudScoreboardHeaderColorG,
+        MP_HUD_PROP_KEY_HudScoreboardHeaderColorB);
+    scoreboard.localPlayerColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorR,
+        MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorG,
+        MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorB);
+    scoreboard.teamRowColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudScoreboardTeamRowColorR,
+        MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG,
+        MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB);
+    scoreboard.backgroundColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR,
+        MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG,
+        MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB);
+}
 // Recompute all final X/Y positions from stored anchor + offset + topStretchX.
 // Called when config is refreshed or when topStretchX changes (window resize).
 static void RecomputeAnchorPositions(float topStretchX)
@@ -1187,6 +1241,12 @@ static void RecomputeAnchorPositions(float topStretchX)
                                       cropCenterY - frameSizeDS * 0.5f,
                                       frameSizeDS, frameSizeDS);
     }
+
+    // Scoreboard panel. x/y retain the anchor point, and the draw path applies
+    // the panel dimensions so Center/Right and Middle/Bottom anchors align the
+    // whole panel rather than its unmeasured text origin.
+    ApplyAnchor(c.scoreboard.anchor, c.scoreboard.ofsX, c.scoreboard.ofsY,
+                c.scoreboard.x, c.scoreboard.y, sx);
 }
 
 static uint16_t LoadNoHudMaskFromConfig(Config::Table& cfg)
@@ -1222,6 +1282,7 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     LoadBombLeftConfig(c.bombLeft, cfg);
     LoadRankTimeConfig(c.rankTime, cfg);
     LoadRadarOverlayConfig(c.radar, cfg);
+    LoadScoreboardConfig(c.scoreboard, cfg);
     // Per-element outlines
 #define MP_HUD_OUTLINE_KEYS(prefix) \
     MP_HUD_PROP_KEY_##prefix##Outline, \

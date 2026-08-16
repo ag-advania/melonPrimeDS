@@ -23,6 +23,22 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         ? s_cache.textDrawScale
         : std::max(0.3f, cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale) / 100.0f) / hs;
 
+    // Scoreboard preview uses the worst-case eight render rows (four player
+    // rows plus a Team row before each team change), so the selection box
+    // remains valid for both individual and Team modes.
+    if (idx == 14) {
+        const int width = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardWidth), 96, 256);
+        const int rowHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowHeight), 12, 48);
+        const int rowSpacing = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowSpacing), 0, 16);
+        const int height = rowHeight + 8 * (rowHeight + rowSpacing) + 4;
+        float panelX = static_cast<float>(fx);
+        float panelY = static_cast<float>(fy);
+        const int safeAnchor = std::clamp(anchor, 0, 8);
+        HudGeometry::ApplyRectAnchorF(panelX, panelY, width, height,
+                                      safeAnchor % 3, safeAnchor / 3);
+        return QRectF(panelX, panelY, width, height);
+    }
+
     // ── Radar (idx=11) — must come before gauge branch (radar reuses lengthKey for square resize) ──
     if (idx == 11) {
         if (s_cache.valid)
@@ -450,6 +466,11 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
         }
 
     }
+
+    // The editor uses deterministic dummy rows so layout tuning never
+    // depends on live match RAM or a particular ResultSlots ordering.
+    EnsureScoreboardAssetsLoaded(c.scoreboard, c.scaleIcons);
+    DrawScoreboard(p, MakeScoreboardPreviewSnapshot(), c, hudScale, 0);
 }
 
 // ── Guard to prevent re-entrant QColorDialog ────────────────────────────────
@@ -883,6 +904,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                     p->setBrush(Qt::NoBrush);
                 }
             }
+        } else if (i == 14) {
+            EnsureScoreboardAssetsLoaded(s_cache.scoreboard, s_cache.scaleIcons);
+            DrawScoreboard(p, MakeScoreboardPreviewSnapshot(), s_cache,
+                           s_editHudScale, 0);
         } else {
             QColor tc(255, 255, 255);
             if (d.colorRKey)

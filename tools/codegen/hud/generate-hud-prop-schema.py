@@ -28,6 +28,7 @@ QT_SDL = ROOT / "src/frontend/qt_sdl"
 CONFIG_CPP = QT_SDL / "Config.cpp"
 DIALOG_CPP = QT_SDL / "InputConfig/MelonPrimeInputConfig.cpp"
 DIALOG_PROPS_INC = QT_SDL / "InputConfig/MelonPrimeInputConfigHudDialogProps.inc"
+DIALOG_TABLES_INC = Path(__file__).resolve().parent / "MelonPrimeInputConfigHudDialogExtras.inc"
 EDIT_DEFS = QT_SDL / "MelonPrimeHudConfigOnScreenDefs.inc"
 EDIT_PROPS_INC = QT_SDL / "MelonPrimeHudConfigOnScreenEditProps.inc"
 SIDE_PANEL_CPP = QT_SDL / "MelonPrimeHudConfigOnScreenEdit.cpp"
@@ -796,14 +797,22 @@ def parse_dialog_sections(ident_to_key: dict[str, str]) -> list[DialogSection]:
     legacy_sections = parse_dialog_sections_from_legacy(source_text)
     if legacy_sections:
         return legacy_sections
+    sections = []
     if DIALOG_PROPS_INC.exists():
-        sections = [
-            section for section in parse_dialog_sections_from_generated(strip_comments(read(DIALOG_PROPS_INC)), ident_to_key)
+        sections.extend(
+            section for section in parse_dialog_sections_from_generated(
+                strip_comments(read(DIALOG_PROPS_INC)), ident_to_key)
             if section.name not in OSD_DIALOG_SECTION_NAMES
-        ]
-        sections.extend(osd_dialog_sections())
-        return sections
-    return []
+        )
+    if DIALOG_TABLES_INC.exists():
+        known = {section.name for section in sections}
+        for section in parse_dialog_sections_from_generated(
+                strip_comments(read(DIALOG_TABLES_INC)), ident_to_key):
+            if section.name not in known:
+                sections.append(section)
+                known.add(section.name)
+    sections.extend(osd_dialog_sections())
+    return sections
 
 
 def add_dialog_row_meta(
@@ -902,7 +911,7 @@ def parse_edit_descriptor_tables_from_text(
             prop_arrays.append(EditPropArray(array_name, rows))
 
     edit_elems: list[EditElemRow] = []
-    for _, block in array_blocks(text, "HudEditElemDesc", r"kEditElems"):
+    for _, block in array_blocks(text, "HudEditElemDesc"):
         for entry in brace_entries(block):
             args = split_top_level_args(entry)
             if len(args) < 14:
@@ -928,11 +937,26 @@ def parse_edit_descriptor_tables_from_text(
 
 def parse_edit_descriptor_tables(ident_to_key: dict[str, str]) -> tuple[list[EditPropArray], list[EditElemRow]]:
     source_tables = parse_edit_descriptor_tables_from_text(strip_comments(read(EDIT_DEFS)), ident_to_key)
-    if source_tables[0] and source_tables[1]:
-        return source_tables
-    if EDIT_PROPS_INC.exists():
-        return parse_edit_descriptor_tables_from_text(strip_comments(read(EDIT_PROPS_INC)), ident_to_key)
-    return [], []
+    generated_tables = (
+        parse_edit_descriptor_tables_from_text(strip_comments(read(EDIT_PROPS_INC)), ident_to_key)
+        if EDIT_PROPS_INC.exists() else ([], [])
+    )
+    # The generated include is the complete legacy table; small additions live
+    # in the hand-maintained Defs.inc source surface. Merge by descriptor name
+    # so regeneration remains idempotent after the new rows are emitted.
+    prop_arrays = list(generated_tables[0])
+    known_arrays = {array.name for array in prop_arrays}
+    for array in source_tables[0]:
+        if array.name not in known_arrays:
+            prop_arrays.append(array)
+            known_arrays.add(array.name)
+    edit_elems = list(generated_tables[1])
+    known_elems = {elem.name for elem in edit_elems}
+    for elem in source_tables[1]:
+        if elem.name not in known_elems:
+            edit_elems.append(elem)
+            known_elems.add(elem.name)
+    return prop_arrays, edit_elems
 
 
 def add_edit_prop_meta(
@@ -954,7 +978,7 @@ def add_edit_prop_meta(
         add_meta(props, extra_refs, row.cfg_key, "edit", "Bool", row.label, row.prop_type, origin=origin)
         add_color3(props, extra_refs, [row.extra1, row.extra2, row.extra3], "edit", row.label, row.prop_type, origin)
     elif row.prop_type == "Color":
-        add_meta(props, extra_refs, row.cfg_key, "edit", "Int", row.label, row.prop_type, row.min_value, row.max_value, row.step, origin)
+        add_color3(props, extra_refs, [row.cfg_key, row.extra1, row.extra2], "edit", row.label, row.prop_type, origin)
 
 
 def parse_edit_descriptors(
@@ -1512,9 +1536,23 @@ def main() -> int:
     parser.add_argument("--no-write", action="store_true")
     args = parser.parse_args()
 
-    order, props = parse_defaults(args.defaults_source)
-    if not order:
-        order, props = parse_existing_schema(args.schema)
+    # Config.cpp intentionally expands the generated schema for HUD defaults.
+    # During schema bootstrap a new key may briefly be seeded as a literal in
+    # Config.cpp, while older keys remain macro-generated; merge those literals
+    # into the checked-in schema seed and retain its established ordering. Once
+    # generated, the schema macro owns each default so Config.cpp has no second
+    # hand-written copy of the same key.
+    default_order, default_props = parse_defaults(args.defaults_source)
+    schema_order, schema_props = parse_existing_schema(args.schema)
+    if default_order:
+        order = list(schema_order)
+        props = dict(schema_props)
+        for key in default_order:
+            if key not in props:
+                order.append(key)
+            props[key] = default_props[key]
+    else:
+        order, props = schema_order, schema_props
     key_to_ident, ident_to_key = build_identifier_maps(order)
     extra_refs: dict[str, list[Meta]] = {}
     dialog_sections = parse_dialog(props, extra_refs, ident_to_key)

@@ -37,6 +37,7 @@
 #include <QString>
 #include <QFile>
 #include <QTextStream>
+#include <array>
 #include <algorithm>
 #include <string>
 #include <map>

@@ -4,7 +4,7 @@
 // =========================================================================
 //  P-7 forward declarations (full definitions follow CustomHud_Render)
 // =========================================================================
-static constexpr int kEditElemCount   = 14; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair
+static constexpr int kEditElemCount   = 15; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair, 14 = Scoreboard
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX);
 static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer);
 
@@ -68,8 +68,10 @@ HOT_FUNCTION QRect CustomHud_Render(
         return QRect();
     }
 
-    if (!st.isStartPressed && st.currentHP != 0 && !st.isGameOver)
-        ReadHudRuntimeAdventurePauseState(rom, st);
+    // The scoreboard must be able to draw while START/native UI is held, but
+    // it must never appear over Adventure. Read the shared isInAdventure
+    // decision before the early native-UI return.
+    ReadHudRuntimeAdventurePauseState(rom, st);
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
@@ -95,27 +97,34 @@ HOT_FUNCTION QRect CustomHud_Render(
         ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);
     CustomHud_MarkNoHudPatchDesired();
 
+    // Apply the transform/font before the scoreboard so it is rendered on the
+    // same QPainter path and so the START early-return cannot skip it.
+    ApplyHudPainterTransform(topPaint, xf);
+    EnsureHudFont(topPaint);
+    if (c.scoreboard.show && !st.isAdventure && !st.isAdventureCameraScene
+        && !st.isMapOrUserActionPaused) {
+        ScoreboardSnapshot scoreboard{};
+        if (ReadHudRuntimeScoreboardSnapshot(rom, st, scoreboard)) {
+            EnsureScoreboardAssetsLoaded(c.scoreboard, c.scaleIcons);
+            DrawScoreboard(topPaint, scoreboard, c, hudScale, playerPosition);
+        }
+    }
+
     // Adventure camera scenes blank the game's own HUD and crosshair; Custom HUD
     // follows. Deliberately not folded into hideForNativeUi: no native UI is
     // coming up here, so the helmet-layer suppression above must stay applied.
     if (hideForNativeUi || st.isAdventureCameraScene) {
         NotifyCrosshairZoomNotDrawn();
-        return QRect();
+        // START/native UI is an early return for the regular HUD, but the
+        // scoreboard was intentionally drawn above it and must report its
+        // dirty rect so the same QPainter overlay is presented.
+        return CurrentHudDirtyRect(xf);
     }
 
     ReadHudRuntimeVisibleState(rom, addrHot, st);
 
-    // hudScale = scaleY: DS Y-unit maps to hudScale px.
-    // Buffer now covers the full window. Translate has two parts:
-    //   (topStretchX-1)*128 — centres the DS canvas when content is wider/narrower than 4:3
-    //   hudOriginXds        — shifts right by the left black-bar width (DS units), so DS x=0
-    //                          lands at the game-content left edge inside the full-window buffer.
-    ApplyHudPainterTransform(topPaint, xf);
-
-    // Font base size = the resolved HUD font px (6px for MPH; Metroid.Visual.HudFontSize for
-    // system/file fonts). EnsureHudFont adopts the painter's overlayFont size set by Screen.cpp.
-    // Visual text size is controlled by textDrawScale applied at draw time.
-    EnsureHudFont(topPaint);
+    // hudScale = scaleY: DS Y-unit maps to hudScale px. The painter transform
+    // and font were established above so the scoreboard shares this path.
     const float textDrawScale = c.textDrawScale;
     // s_textRenderScale and the hi-DPI font were built event-driven in RefreshCachedConfig;
     // nothing to recompute per frame here.

@@ -18,5 +18,17 @@
 		<file alias="mph-icon-bombs1">assets/bombs/bombs_1.svg</file>
 		<file alias="mph-icon-bombs0">assets/bombs/bombs_0.svg</file>
 		<file alias="mph-icon-radar-frame">assets/radar/Radar.svg</file>
+		<file alias="mph-scoreboard-hunter-0">assets/scoreboard/Hunter_0_Samus.png</file>
+		<file alias="mph-scoreboard-hunter-1">assets/scoreboard/Hunter_1_Kanden.png</file>
+		<file alias="mph-scoreboard-hunter-2">assets/scoreboard/Hunter_2_Trace.png</file>
+		<file alias="mph-scoreboard-hunter-3">assets/scoreboard/Hunter_3_Sylux.png</file>
+		<file alias="mph-scoreboard-hunter-4">assets/scoreboard/Hunter_4_Noxus.png</file>
+		<file alias="mph-scoreboard-hunter-5">assets/scoreboard/Hunter_5_Spire.png</file>
+		<file alias="mph-scoreboard-hunter-6">assets/scoreboard/Hunter_6_Weavel.png</file>
+		<file alias="mph-scoreboard-stars-0">assets/scoreboard/Stars_0_Rank1.png</file>
+		<file alias="mph-scoreboard-stars-1">assets/scoreboard/Stars_1_Rank2.png</file>
+		<file alias="mph-scoreboard-stars-2">assets/scoreboard/Stars_2_Rank3.png</file>
+		<file alias="mph-scoreboard-stars-3">assets/scoreboard/Stars_3_Rank4.png</file>
+		<file alias="mph-scoreboard-stars-4">assets/scoreboard/Stars_4_Rank5.png</file>
 	</qresource>
 </RCC>

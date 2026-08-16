@@ -404,6 +404,39 @@ static const Row kRowsRadar[] = {
     RowOutline("Frame Outline", MP_OUTLINE_KEYS(BtmOverlayFrame)),
 };
 
+static const Row kRowsScoreboard[] = {
+    RowBuiltins(MP_HUD_PROP_KEY_HudScoreboardShow,
+        MP_HUD_PROP_KEY_HudScoreboardTextColorR,
+        MP_HUD_PROP_KEY_HudScoreboardTextColorG,
+        MP_HUD_PROP_KEY_HudScoreboardTextColorB,
+        MP_HUD_PROP_KEY_HudScoreboardAnchor),
+    RowOffset(MP_HUD_PROP_KEY_HudScoreboardX, MP_HUD_PROP_KEY_HudScoreboardY,
+        -256, 256, "Offset X", "Offset Y"),
+    RowSpin("Width", MP_HUD_PROP_KEY_HudScoreboardWidth, 96, 256),
+    RowSpin("Row Height", MP_HUD_PROP_KEY_HudScoreboardRowHeight, 12, 48),
+    RowSpin("Row Spacing", MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16),
+    RowSpin("Hunter Icon Height", MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48),
+    RowSpin("Stars Height", MP_HUD_PROP_KEY_HudScoreboardStarsHeight, 0, 24),
+    RowOpacity("Opacity", MP_HUD_PROP_KEY_HudScoreboardOpacity),
+    RowOpacity("Background Opacity", MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity),
+    RowColor("Header Color",
+        MP_HUD_PROP_KEY_HudScoreboardHeaderColorR,
+        MP_HUD_PROP_KEY_HudScoreboardHeaderColorG,
+        MP_HUD_PROP_KEY_HudScoreboardHeaderColorB),
+    RowColor("Local Player Color",
+        MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorR,
+        MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorG,
+        MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorB),
+    RowColor("Team Row Color",
+        MP_HUD_PROP_KEY_HudScoreboardTeamRowColorR,
+        MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG,
+        MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB),
+    RowColor("Background Color",
+        MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR,
+        MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG,
+        MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB),
+};
+
 // Crosshair's flat row body (no composites). populateForCrosshair() keeps
 // its own surrounding lifecycle (m_currentElem = -2, title, m_populating)
 // and calls populateFromRowTable(kRowsCrosshair, ...) for this body.

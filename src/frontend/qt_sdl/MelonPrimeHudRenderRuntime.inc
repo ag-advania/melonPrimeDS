@@ -289,6 +289,63 @@ struct HudRuntimeState {
     bool isAdventureScanVisor;
 };
 
+static inline bool HudRuntimeFrameCacheMatches(const HudRuntimeState& st);
+
+// Match-scoreboard mode encoding is a separate protocol from BattleMode above.
+// These values are the match runtime's dedicated 3..14 mode field; do not
+// reuse the legacy BattleMode enum, whose values have different meanings.
+enum class ScoreboardGameMode : uint8_t {
+    Battle = 3,
+    BattleTeams = 4,
+    Survival = 5,
+    SurvivalTeams = 6,
+    Capture = 7,
+    Bounty = 8,
+    BountyTeams = 9,
+    Nodes = 10,
+    NodesTeams = 11,
+    Defender = 12,
+    DefenderTeams = 13,
+    PrimeHunter = 14,
+};
+
+struct ScoreboardPlayerSnapshot {
+    uint8_t slot = 0xFF;
+    uint8_t displayIndex = 0xFF;
+    uint8_t teamIndex = 0xFF;
+    uint8_t hunterId = 0xFF;
+    uint8_t stars = 0xFF;
+    uint8_t standing = 0xFF;
+    uint8_t teamStanding = 0xFF;
+    bool active = false;
+    int32_t time = 0;
+    int32_t kills = 0;
+    int32_t deaths = 0;
+    int32_t points = 0;
+    std::array<uint8_t, 0x15> rawName{};
+    QString displayName;
+};
+
+struct ScoreboardTeamSnapshot {
+    int32_t time = 0;
+    int32_t kills = 0;
+    int32_t deaths = 0;
+    int32_t points = 0;
+};
+
+struct ScoreboardSnapshot {
+    uint8_t gameMode = 0;
+    uint8_t activePlayers = 0;
+    uint16_t teamFlags = 0;
+    bool teams = false;
+    bool startHeld = false;
+    uint8_t matchState = 0;
+    bool visible = false;
+    std::array<uint8_t, 4> resultSlots = {0xFF, 0xFF, 0xFF, 0xFF};
+    std::array<ScoreboardPlayerSnapshot, 4> playersBySlot{};
+    std::array<ScoreboardTeamSnapshot, 2> teamsByIndex{};
+};
+
 struct HudRuntimeFrameCache {
     melonDS::NDS* nds = nullptr;
     melonDS::u8* ram = nullptr;
@@ -315,6 +372,8 @@ struct HudRuntimeFrameCache {
     uint8_t rankByte = 0xFFu;
     int timeLeftSeconds = 0;
     int timeLimitMinutes = 0;
+    bool scoreboardValid = false;
+    struct ScoreboardSnapshot scoreboard;
 };
 
 struct HudFrameOwnedState {
@@ -345,6 +404,208 @@ static HudFrameOwnedState& HudFrameState()
 }
 
 #define s_hudRuntimeFrameCache (HudFrameState().frame)
+
+static constexpr uint32_t kScoreboardGameModeOffset = 0x000;
+static constexpr uint32_t kScoreboardActivePlayersOffset = 0x007;
+static constexpr uint32_t kScoreboardTeamFlagsOffset = 0x00E;
+static constexpr uint32_t kScoreboardHuntersOffset = 0x03C;
+static constexpr uint32_t kScoreboardStarsOffset = 0x0A0;
+static constexpr uint32_t kScoreboardPlayerTimeOffset = 0x0B0;
+static constexpr uint32_t kScoreboardTeamTimeOffset = 0x0C0;
+static constexpr uint32_t kScoreboardPlayerKillsOffset = 0x160;
+static constexpr uint32_t kScoreboardTeamKillsOffset = 0x170;
+static constexpr uint32_t kScoreboardPlayerDeathsOffset = 0x180;
+static constexpr uint32_t kScoreboardTeamDeathsOffset = 0x190;
+static constexpr uint32_t kScoreboardPlayerPointsOffset = 0x230;
+static constexpr uint32_t kScoreboardTeamPointsOffset = 0x240;
+static constexpr uint32_t kScoreboardStandingsOffset = 0x250;
+static constexpr uint32_t kScoreboardTeamStandingsOffset = 0x254;
+static constexpr uint32_t kScoreboardResultSlotsOffset = 0x258;
+static constexpr uint32_t kScoreboardPlayerTeamIndexOffset = 0x4AD;
+static constexpr uint32_t kScoreboardPlayerActiveOffset = 0x84C;
+static constexpr uint8_t kScoreboardPlayerActiveBit = 0x20;
+
+static inline uint32_t ScoreboardRuntimeBase(const RomAddresses& rom)
+{
+    // The match runtime block is anchored at the same address as the
+    // adventure flag on all seven supported ROMs; the scoreboard uses +0.
+    return rom.isInAdventure;
+}
+
+static inline uint32_t ScoreboardPlayerNameBase(const RomAddresses& rom)
+{
+    // baseChosenHunter + 4 is the fixed license-name base shared by all
+    // seven supported ROM address tables; keep that fact in one helper.
+    return rom.baseChosenHunter + 4u;
+}
+
+static inline bool IsKnownScoreboardMode(uint8_t mode)
+{
+    return mode >= static_cast<uint8_t>(ScoreboardGameMode::Battle)
+        && mode <= static_cast<uint8_t>(ScoreboardGameMode::PrimeHunter);
+}
+
+struct ScoreboardNameCode {
+    uint16_t code;
+    const char* utf8;
+};
+
+static const ScoreboardNameCode kScoreboardNameCodes[] = {
+#include "MelonPrimeHudNameGlyphs.inc"
+};
+
+static const char* LookupScoreboardNameGlyph(uint16_t code)
+{
+    size_t lo = 0;
+    size_t hi = sizeof(kScoreboardNameCodes) / sizeof(kScoreboardNameCodes[0]);
+    while (lo < hi) {
+        const size_t mid = (lo + hi) / 2;
+        if (kScoreboardNameCodes[mid].code < code)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    if (lo < sizeof(kScoreboardNameCodes) / sizeof(kScoreboardNameCodes[0])
+        && kScoreboardNameCodes[lo].code == code)
+        return kScoreboardNameCodes[lo].utf8;
+    return nullptr;
+}
+
+static QString DecodeScoreboardPlayerName(const melonDS::u8* ram, uint32_t address,
+                                          std::array<uint8_t, 0x15>& raw)
+{
+    std::string utf8;
+    utf8.reserve(20);
+    // The native record is 20 payload bytes followed by a forced terminator;
+    // never let an unterminated record consume the next byte in RAM.
+    raw.fill(0);
+    for (size_t i = 0; i < raw.size() - 1; ++i) {
+        raw[i] = Read8(ram, address + static_cast<uint32_t>(i));
+        if (raw[i] == 0)
+            break;
+    }
+    raw.back() = 0;
+
+    // License names use printable ASCII plus the same sorted C2..C7
+    // two-byte glyph table as mphSaveViewerEditor. Unknown/control bytes are
+    // replaced instead of being passed to UTF-8 decoding as raw game data.
+    size_t i = 0;
+    while (i < raw.size()) {
+        const uint8_t b = raw[i];
+        if (b == 0)
+            break;
+        if (b >= 0x20 && b <= 0x7E) {
+            utf8.push_back(static_cast<char>(b));
+            ++i;
+            continue;
+        }
+        if (b >= 0xC2 && b <= 0xC7 && i + 1 < raw.size()) {
+            const uint16_t code = static_cast<uint16_t>((b << 8) | raw[i + 1]);
+            const char* glyph = LookupScoreboardNameGlyph(code);
+            utf8 += glyph ? glyph : "?";
+            i += 2;
+            continue;
+        }
+        utf8 += "?";
+        ++i;
+    }
+    return QString::fromUtf8(utf8.c_str());
+}
+
+static inline int32_t ReadScoreboardS32(const melonDS::u8* ram, uint32_t address)
+{
+    return static_cast<int32_t>(Read32(ram, address));
+}
+
+static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
+                                             const HudRuntimeState& st,
+                                             ScoreboardSnapshot& out)
+{
+    if (!s_hudRuntimeFrameCache.baseValid || !st.ram
+        || !HudRuntimeFrameCacheMatches(st))
+        return false;
+    if (HudRuntimeFrameCacheMatches(s_hudRuntimeFrameCache.state)
+        && s_hudRuntimeFrameCache.scoreboardValid) {
+        out = s_hudRuntimeFrameCache.scoreboard;
+        return true;
+    }
+
+    const melonDS::u8* ram = st.ram;
+    const uint32_t runtimeBase = ScoreboardRuntimeBase(rom);
+    ScoreboardSnapshot snapshot{};
+    snapshot.gameMode = Read8(ram, runtimeBase + kScoreboardGameModeOffset);
+    if (!IsKnownScoreboardMode(snapshot.gameMode))
+        return false;
+    snapshot.activePlayers = static_cast<uint8_t>(std::min<int>(
+        Read8(ram, runtimeBase + kScoreboardActivePlayersOffset), 4));
+    snapshot.teamFlags = Read16(ram, runtimeBase + kScoreboardTeamFlagsOffset);
+    // The runtime TeamFlags bit is authoritative for whether Team rows and
+    // TeamStandings are meaningful; do not infer this solely from GameMode.
+    snapshot.teams = (snapshot.teamFlags & 0x0002u) != 0;
+    // Reuse the already-captured HudRuntimeState START/adventure decision;
+    // do not create a second START read path in the scoreboard snapshot.
+    snapshot.startHeld = st.isStartPressed;
+    snapshot.matchState = Read8(ram, rom.battleFlowState);
+    snapshot.visible = !st.isAdventure
+                    && (snapshot.startHeld || snapshot.matchState == 2);
+
+    // Team aggregates are authoritative runtime values. Never recalculate or
+    // sort them from player rows; only select the aggregate for TeamIndex.
+    for (int team = 0; team < 2; ++team) {
+        const uint32_t teamOffset = static_cast<uint32_t>(team) * sizeof(uint32_t);
+        snapshot.teamsByIndex[team].time = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardTeamTimeOffset + teamOffset);
+        snapshot.teamsByIndex[team].kills = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardTeamKillsOffset + teamOffset);
+        snapshot.teamsByIndex[team].deaths = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardTeamDeathsOffset + teamOffset);
+        snapshot.teamsByIndex[team].points = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardTeamPointsOffset + teamOffset);
+    }
+
+    const uint32_t nameBase = ScoreboardPlayerNameBase(rom);
+    for (int slot = 0; slot < 4; ++slot) {
+        const uint32_t playerBase = rom.playerStructStart
+                                  + static_cast<uint32_t>(slot) * Consts::PLAYER_STRUCT_SIZE;
+        auto& player = snapshot.playersBySlot[slot];
+        player.slot = static_cast<uint8_t>(slot);
+        player.active = (Read8(ram, playerBase + kScoreboardPlayerActiveOffset)
+                         & kScoreboardPlayerActiveBit) != 0;
+        player.teamIndex = Read8(ram, playerBase + kScoreboardPlayerTeamIndexOffset);
+        player.hunterId = Read8(ram, runtimeBase + kScoreboardHuntersOffset
+                                         + static_cast<uint32_t>(slot));
+        player.stars = Read8(ram, runtimeBase + kScoreboardStarsOffset
+                                     + static_cast<uint32_t>(slot));
+        player.time = ReadScoreboardS32(ram, runtimeBase + kScoreboardPlayerTimeOffset
+                                                   + static_cast<uint32_t>(slot) * sizeof(uint32_t));
+        player.kills = ReadScoreboardS32(ram, runtimeBase + kScoreboardPlayerKillsOffset
+                                                    + static_cast<uint32_t>(slot) * sizeof(uint32_t));
+        player.deaths = ReadScoreboardS32(ram, runtimeBase + kScoreboardPlayerDeathsOffset
+                                                      + static_cast<uint32_t>(slot) * sizeof(uint32_t));
+        player.points = ReadScoreboardS32(ram, runtimeBase + kScoreboardPlayerPointsOffset
+                                                      + static_cast<uint32_t>(slot) * sizeof(uint32_t));
+        player.standing = Read8(ram, runtimeBase + kScoreboardStandingsOffset
+                                        + static_cast<uint32_t>(slot));
+        player.teamStanding = Read8(ram, runtimeBase + kScoreboardTeamStandingsOffset
+                                            + static_cast<uint32_t>(slot));
+        player.displayName = DecodeScoreboardPlayerName(
+            ram, nameBase + static_cast<uint32_t>(slot) * 0x15, player.rawName);
+    }
+
+    for (int displayIndex = 0; displayIndex < 4; ++displayIndex) {
+        const uint8_t slot = Read8(ram, runtimeBase + kScoreboardResultSlotsOffset
+                                           + static_cast<uint32_t>(displayIndex));
+        if (slot < 4) {
+            snapshot.resultSlots[displayIndex] = slot;
+            snapshot.playersBySlot[slot].displayIndex = static_cast<uint8_t>(displayIndex);
+        }
+    }
+
+    out = snapshot;
+    s_hudRuntimeFrameCache.scoreboard = snapshot;
+    s_hudRuntimeFrameCache.scoreboardValid = true;
+    return true;
+}
 
 static inline bool HudRuntimeFrameCacheMatches(melonDS::NDS* nds,
                                                melonDS::u8* ram,
@@ -497,6 +758,8 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     s_hudRuntimeFrameCache.rankByteValid = false;
     s_hudRuntimeFrameCache.timeLeftSecondsValid = false;
     s_hudRuntimeFrameCache.timeLimitMinutesValid = false;
+    s_hudRuntimeFrameCache.scoreboardValid = false;
+    s_hudRuntimeFrameCache.scoreboard = {};
     s_hudRuntimeFrameCache.state = out;
     return true;
 }

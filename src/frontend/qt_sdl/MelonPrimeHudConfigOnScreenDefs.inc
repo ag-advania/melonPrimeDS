@@ -67,6 +67,40 @@ static QString EditEnumLabel(const char* items, int val) {
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeHudConfigOnScreenEditProps.inc"
 
+// Scoreboard edit descriptors are kept on this source surface so the schema
+// generator can merge them with the generated legacy descriptor table.
+#if 0
+static const HudEditPropDesc kPropsScoreboard[] = {
+    {"Width", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardWidth, 96, 256, 1, nullptr, nullptr, nullptr},
+    {"Row Height", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRowHeight, 12, 48, 1, nullptr, nullptr, nullptr},
+    {"Row Spacing", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16, 1, nullptr, nullptr, nullptr},
+    {"Hunter Icon", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48, 1, nullptr, nullptr, nullptr},
+    {"Stars Height", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardStarsHeight, 0, 24, 1, nullptr, nullptr, nullptr},
+    {"Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudScoreboardOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Background Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Header Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardHeaderColorR, 0, 255, 1,
+        MP_HUD_PROP_KEY_HudScoreboardHeaderColorG, MP_HUD_PROP_KEY_HudScoreboardHeaderColorB, nullptr},
+    {"Local Player Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorR, 0, 255, 1,
+        MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorG, MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorB, nullptr},
+    {"Team Row Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorR, 0, 255, 1,
+        MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB, nullptr},
+    {"Background Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR, 0, 255, 1,
+        MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB, nullptr},
+};
+
+static const HudEditElemDesc kEditElemScoreboard[] = {
+    {
+        "Scoreboard",
+        MP_HUD_PROP_KEY_HudScoreboardAnchor, MP_HUD_PROP_KEY_HudScoreboardX, MP_HUD_PROP_KEY_HudScoreboardY,
+        nullptr, nullptr, nullptr, nullptr,
+        MP_HUD_PROP_KEY_HudScoreboardShow,
+        MP_HUD_PROP_KEY_HudScoreboardTextColorR, MP_HUD_PROP_KEY_HudScoreboardTextColorG,
+        MP_HUD_PROP_KEY_HudScoreboardTextColorB,
+        kPropsScoreboard, HUD_EDIT_PROP_COUNT(kPropsScoreboard)
+    },
+};
+#endif
+
 // Crosshair panel state
 
 // Text-scale slider drag state
@@ -112,5 +146,6 @@ static const char* const kEditElemSampleText[kEditElemCount] = {
     nullptr,     // 11: Radar
     nullptr,     // 12: Weapon Inventory
     nullptr,     // 13: Crosshair
+    nullptr,     // 14: Scoreboard (drawn with the deterministic composite preview)
 };
 
