@@ -24,6 +24,7 @@ enum class Phase
 {
     Hidden,
     ShowRequested,
+    WaitingForShow,
     SurfaceCreated,
     PresenterBound,
     PresentAllowed,
@@ -40,22 +41,36 @@ public:
     {
         if (PhaseValue == Phase::Hidden || PhaseValue == Phase::Invalid
             || PhaseValue == Phase::DestroySafe)
+        {
+            HostShown = false;
+            SurfaceValid = false;
             PhaseValue = Phase::ShowRequested;
+        }
     }
 
     void surfaceCreated(std::uint64_t wid)
     {
-        if (PhaseValue != Phase::ShowRequested)
+        if (PhaseValue != Phase::ShowRequested && PhaseValue != Phase::WaitingForShow
+            && !HostShown)
+        {
             throw std::logic_error("SurfaceCreated before ShowRequested");
+        }
         ++GenerationValue;
         WindowId = wid;
-        PhaseValue = Phase::SurfaceCreated;
+        SurfaceValid = true;
+        PhaseValue = HostShown ? Phase::SurfaceCreated : Phase::WaitingForShow;
+    }
+
+    void showCompleted()
+    {
+        HostShown = true;
+        PhaseValue = SurfaceValid ? Phase::SurfaceCreated : Phase::ShowRequested;
     }
 
     void bindPresenter()
     {
-        if (PhaseValue != Phase::SurfaceCreated)
-            throw std::logic_error("presenter bound without a current surface");
+        if (PhaseValue != Phase::SurfaceCreated || !HostShown || !SurfaceValid)
+            throw std::logic_error("presenter bound before the post-Show surface");
         if (PresenterGeneration != 0)
             throw std::logic_error("presenter bound while the old presenter is live");
         if (HadPresenter && PresenterGeneration == GenerationValue)
@@ -138,7 +153,8 @@ public:
 
     [[nodiscard]] bool canBeginFrame() const noexcept
     {
-        return PhaseValue == Phase::PresentAllowed && !LifecycleLockHeld;
+        return PhaseValue == Phase::PresentAllowed && HostShown && SurfaceValid
+            && !LifecycleLockHeld;
     }
 
     void completeRetire()
@@ -155,7 +171,7 @@ public:
 
     void hide()
     {
-        requestRetire();
+        requestNativeTransitionRetire();
         if (FrameActive)
             endFrame();
         if (PhaseValue == Phase::RetireRequested || PhaseValue == Phase::Retiring)
@@ -166,8 +182,15 @@ public:
 
     void surfaceAboutToBeDestroyed()
     {
-        requestRetire();
+        requestNativeTransitionRetire();
         ++GenerationValue;
+    }
+
+    void requestNativeTransitionRetire()
+    {
+        HostShown = false;
+        SurfaceValid = false;
+        requestRetire();
     }
 
     void dispatchNestedLifecycleEvents()
@@ -254,7 +277,7 @@ private:
         }
 
         HandlingLifecycleEvent = true;
-        requestRetire();
+        requestNativeTransitionRetire();
         if (PhaseValue == Phase::RetireRequested || PhaseValue == Phase::Retiring)
             completeRetire();
         ++GenerationValue;
@@ -285,6 +308,8 @@ private:
     bool FrameActive = false;
     bool LifecycleLockHeld = false;
     bool HandlingLifecycleEvent = false;
+    bool HostShown = false;
+    bool SurfaceValid = false;
     Stage FrameStage = Stage::None;
 };
 
@@ -294,7 +319,7 @@ void Require(bool condition, const char* message)
         throw std::runtime_error(message);
 }
 
-void TestStartupOrder()
+void TestPreShowSnapshotIsNotPresentationReady()
 {
     LifecycleModel model;
     Require(model.phase() == Phase::Hidden, "startup must begin hidden");
@@ -302,9 +327,57 @@ void TestStartupOrder()
     Require(model.phase() == Phase::ShowRequested, "show request was not recorded");
     model.surfaceCreated(0xA);
     Require(model.generation() == 1, "first surface must be generation 1");
+    Require(model.phase() == Phase::WaitingForShow,
+        "pre-Show native snapshots must wait for the Show lifecycle");
+    Require(!model.canBeginFrame(),
+        "pre-Show native snapshots must not admit a presentation frame");
+}
+
+void TestShowCompletionEnablesPresentation()
+{
+    LifecycleModel model;
+    model.requestShow();
+    model.surfaceCreated(0xA);
+    model.showCompleted();
+    Require(model.phase() == Phase::SurfaceCreated,
+        "Show completion must promote the pending snapshot");
     model.bindPresenter();
     model.allowPresent();
     Require(model.phase() == Phase::PresentAllowed, "present was not enabled after bind");
+}
+
+void TestInitialShowRetireIsDestroySafeWithoutAFrame()
+{
+    LifecycleModel model;
+    model.requestShow();
+    model.surfaceCreated(0xF);
+    Require(model.phase() == Phase::WaitingForShow,
+        "initial pre-Show snapshot must remain pending");
+
+    model.requestNativeTransitionRetire();
+    Require(model.phase() == Phase::DestroySafe,
+        "initial Show transition must retire immediately without an active frame");
+    Require(model.retireCount() == 0,
+        "initial Show transition must not invent a presenter retire");
+}
+
+void TestPostShowGenerationOwnsThePresenter()
+{
+    LifecycleModel model;
+    model.requestShow();
+    model.surfaceCreated(0xA);
+    const std::uint64_t preShowGeneration = model.generation();
+    Require(model.phase() == Phase::WaitingForShow,
+        "pre-Show generation must not be presentation-ready");
+
+    model.showCompleted();
+    model.surfaceCreated(0xA);
+    const std::uint64_t postShowGeneration = model.generation();
+    Require(postShowGeneration > preShowGeneration,
+        "Show completion must publish a new usable generation");
+    model.bindPresenter();
+    Require(model.presenterGeneration() == postShowGeneration,
+        "presenter must bind only to the post-Show generation");
 }
 
 void TestSteadyStateDoesNotRebind()
@@ -312,6 +385,7 @@ void TestSteadyStateDoesNotRebind()
     LifecycleModel model;
     model.requestShow();
     model.surfaceCreated(0xA);
+    model.showCompleted();
     model.bindPresenter();
     model.allowPresent();
 
@@ -334,6 +408,7 @@ void TestHideShowNeverReusesGeneration()
     LifecycleModel model;
     model.requestShow();
     model.surfaceCreated(0xA);
+    model.showCompleted();
     model.bindPresenter();
     model.allowPresent();
     model.hide();
@@ -341,8 +416,11 @@ void TestHideShowNeverReusesGeneration()
     const std::uint64_t invalidGeneration = model.generation();
     model.requestShow();
     model.surfaceCreated(0xA);
+    model.showCompleted();
     Require(model.windowId() == 0xA, "the test must cover an unchanged WId");
     Require(model.generation() > invalidGeneration, "show must publish a new generation");
+    Require(model.phase() == Phase::SurfaceCreated,
+        "post-hide Show must make the new snapshot presentation-ready");
     model.bindPresenter();
     Require(model.presenterGeneration() == model.generation(),
         "old presenter generation was reused");
@@ -354,6 +432,7 @@ void TestSurfaceAboutToBeDestroyedReachesDestroySafe()
     LifecycleModel model;
     model.requestShow();
     model.surfaceCreated(0xC);
+    model.showCompleted();
     model.bindPresenter();
     model.allowPresent();
 
@@ -379,6 +458,7 @@ void TestNestedLifecycleEventsDoNotReenter()
     LifecycleModel model;
     model.requestShow();
     model.surfaceCreated(0xD);
+    model.showCompleted();
     model.bindPresenter();
     model.allowPresent();
     model.dispatchNestedLifecycleEvents();
@@ -394,6 +474,7 @@ void TestSurfaceLossIsRecoverable()
     LifecycleModel model;
     model.requestShow();
     model.surfaceCreated(0xB);
+    model.showCompleted();
     model.bindPresenter();
     model.allowPresent();
     model.queueResult(Result::SurfaceLost);
@@ -414,6 +495,7 @@ void TestVulkanStagesAreOutsideLifecycleLock()
     LifecycleModel model;
     model.requestShow();
     model.surfaceCreated(0xE);
+    model.showCompleted();
     model.bindPresenter();
     model.allowPresent();
     model.beginFrame();
@@ -432,7 +514,10 @@ int main()
 {
     try
     {
-        TestStartupOrder();
+        TestPreShowSnapshotIsNotPresentationReady();
+        TestShowCompletionEnablesPresentation();
+        TestInitialShowRetireIsDestroySafeWithoutAFrame();
+        TestPostShowGenerationOwnsThePresenter();
         TestSteadyStateDoesNotRebind();
         TestHideShowNeverReusesGeneration();
         TestSurfaceAboutToBeDestroyedReachesDestroySafe();

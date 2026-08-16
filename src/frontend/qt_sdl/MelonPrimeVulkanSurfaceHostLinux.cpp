@@ -37,19 +37,20 @@ void VulkanSurfaceLifecycle::publishSnapshot(
     Snapshot = snapshot;
     Snapshot.Valid = valid && snapshot.IsValid();
 
-    // A valid snapshot may arrive synchronously while the old native surface
-    // is still in the retire handshake. Keep the retire barrier authoritative;
-    // markPresenterRetired() will promote this pending snapshot to Ready.
+    // A valid native handle is not presentation-ready until the child has
+    // completed its Show lifecycle. XCB can deliver WinIdChange and
+    // SurfaceCreated before Show, so keep that snapshot pending instead of
+    // admitting a frame against the pre-Show generation.
     if (Snapshot.Valid)
     {
         if (StateValue != State::RetireRequested && StateValue != State::Retiring)
-            StateValue = State::Ready;
+            StateValue = HostShown ? State::Ready : State::WaitingForShow;
     }
     else if (StateValue != State::RetireRequested
         && StateValue != State::Retiring
         && StateValue != State::DestroySafe)
     {
-        StateValue = State::WaitingForNativeSurface;
+        StateValue = HostShown ? State::WaitingForNativeSurface : State::Hidden;
     }
     RetireCondition.notify_all();
 }
@@ -70,6 +71,40 @@ void VulkanSurfaceLifecycle::requestRetire()
 }
 
 
+void VulkanSurfaceLifecycle::requestNativeTransitionRetire()
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    HostShown = false;
+    Snapshot.Valid = false;
+    if (StateValue == State::RetireRequested || StateValue == State::Retiring)
+    {
+        RetireCondition.notify_all();
+        return;
+    }
+
+    if (!PresenterActive && ActiveFrames == 0)
+        StateValue = State::DestroySafe;
+    else
+        StateValue = State::RetireRequested;
+    RetireCondition.notify_all();
+}
+
+
+void VulkanSurfaceLifecycle::markHostShown(bool shown)
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    HostShown = shown;
+    if (StateValue != State::RetireRequested && StateValue != State::Retiring)
+    {
+        if (Snapshot.IsValid())
+            StateValue = HostShown ? State::Ready : State::WaitingForShow;
+        else if (StateValue != State::DestroySafe)
+            StateValue = HostShown ? State::WaitingForNativeSurface : State::Hidden;
+    }
+    RetireCondition.notify_all();
+}
+
+
 bool VulkanSurfaceLifecycle::waitForDestroySafe(std::chrono::milliseconds timeout)
 {
     std::unique_lock<std::mutex> lock(Mutex);
@@ -83,7 +118,7 @@ bool VulkanSurfaceLifecycle::beginFrame(VulkanSurface::NativeWindowSnapshot& sna
 {
     std::lock_guard<std::mutex> lock(Mutex);
     if ((StateValue != State::Ready && StateValue != State::Bound)
-        || !Snapshot.IsValid())
+        || !HostShown || !Snapshot.IsValid())
     {
         return false;
     }
@@ -139,9 +174,7 @@ void VulkanSurfaceLifecycle::markPresenterRetired()
     BoundGeneration = 0;
     PresenterActive = false;
     if (StateValue == State::RetireRequested || StateValue == State::Retiring)
-    {
-        StateValue = Snapshot.IsValid() ? State::Ready : State::DestroySafe;
-    }
+        StateValue = Snapshot.IsValid() && HostShown ? State::Ready : State::DestroySafe;
     RetireCondition.notify_all();
 }
 
@@ -150,6 +183,14 @@ bool VulkanSurfaceLifecycle::retireRequested() const
 {
     std::lock_guard<std::mutex> lock(Mutex);
     return StateValue == State::RetireRequested || StateValue == State::Retiring;
+}
+
+
+bool VulkanSurfaceLifecycle::presentationReady() const
+{
+    std::lock_guard<std::mutex> lock(Mutex);
+    return HostShown && Snapshot.IsValid()
+        && (StateValue == State::Ready || StateValue == State::Bound);
 }
 
 
@@ -337,7 +378,7 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
         || surfaceAboutToBeDestroyed;
     if (nativeTransition && Lifecycle && !reentrantLifecycleEvent)
     {
-        Lifecycle->requestRetire();
+        Lifecycle->requestNativeTransitionRetire();
         if (!surfaceAboutToBeDestroyed && !Lifecycle->waitForDestroySafe(
                 kNativeSurfaceRetireTimeout))
         {
@@ -387,6 +428,18 @@ bool VulkanSurfaceHostLinux::event(QEvent* event)
 
     ++Generation;
     VulkanSurface::NativeWindowSnapshot snapshot;
+    // The host is presentation-eligible only after QWidget::event() returns.
+    // WinIdChange/SurfaceCreated can occur while the child is still hidden or
+    // re-entrantly inside QWidget::event(Show). Do not let a nested event
+    // promote a pre-Show snapshot; only the completed outer Show (or a later
+    // non-reentrant event on an already-visible child) may set HostShown.
+    if (Lifecycle)
+    {
+        const bool hostShown = validAfterEvent
+            && !reentrantLifecycleEvent
+            && (lifecycleEvent == LifecycleEvent::Show || isVisible());
+        Lifecycle->markHostShown(hostShown);
+    }
     if (validAfterEvent)
         snapshot = captureSnapshot();
     snapshot.Generation = Generation;

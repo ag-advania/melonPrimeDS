@@ -38,6 +38,7 @@ public:
     {
         Hidden,
         WaitingForNativeSurface,
+        WaitingForShow,
         Ready,
         Bound,
         RetireRequested,
@@ -49,6 +50,12 @@ public:
         const VulkanSurface::NativeWindowSnapshot& snapshot,
         bool valid);
     void requestRetire();
+    // Native QWidget transitions invalidate presentation eligibility before Qt
+    // processes the event. A pre-Show snapshot may still be valid as a native
+    // handle, but it must remain in WaitingForShow until the Show event has
+    // completed and the post-event snapshot is published.
+    void requestNativeTransitionRetire();
+    void markHostShown(bool shown);
     [[nodiscard]] bool waitForDestroySafe(std::chrono::milliseconds timeout);
 
     // Returns false when a lifecycle transition has stopped new presentation.
@@ -62,6 +69,7 @@ public:
     void markPresenterRetired();
 
     [[nodiscard]] bool retireRequested() const;
+    [[nodiscard]] bool presentationReady() const;
     [[nodiscard]] State state() const;
 
 private:
@@ -72,6 +80,7 @@ private:
     std::uint64_t BoundGeneration = 0;
     std::uint32_t ActiveFrames = 0;
     bool PresenterActive = false;
+    bool HostShown = false;
 };
 
 // A QWidget lifecycle notification is deliberately emitted after Qt has
