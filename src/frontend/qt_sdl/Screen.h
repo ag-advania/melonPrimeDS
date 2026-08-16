@@ -552,6 +552,10 @@ private:
     // identity check.
     bool prepareLinuxPresentationSurface();
     void retireLinuxPresentationSurface(const char* reason);
+    // Called only after the panel has been unpublished from the emulation
+    // thread. This is the exclusive-owner teardown path for the native
+    // presenter, before the QWidget child is hidden/deleted.
+    void retireLinuxPresenterForPanelDestruction();
 #endif
     // Callable from the emulation thread; posts to the GUI thread only when the
     // requested state actually changes.

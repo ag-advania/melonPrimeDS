@@ -91,6 +91,9 @@ def main() -> int:
         "tools/testing/vulkan-present-pacer-dispatch-tests.cpp"
     )
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
+    vulkan_timeout_policy = read(
+        "src/frontend/qt_sdl/MelonPrimeVulkanPresenterTimeout.cpp"
+    )
     vulkan_compat = read("src/VulkanModernPresentCompat.h")
     vulkan_device = read("src/VulkanDevice.cpp")
     dx12_context = read("src/DX12Context.cpp")
@@ -241,7 +244,10 @@ def main() -> int:
         )
         and "PresenterFrameDepthFromEnvironment()" in vulkan_presenter
         and "WaitForPresentKHR" in vulkan_pacer
-        and "MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS" in vulkan_presenter
+        and (
+            "MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS" in vulkan_presenter
+            or "MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS" in vulkan_timeout_policy
+        )
         and "void Quiesce() noexcept;" in presenter_header
         and ordered(
             presenter,
