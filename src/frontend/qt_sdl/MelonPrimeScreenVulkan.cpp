@@ -418,7 +418,7 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     // renderer itself might already be gone during application teardown, so do
     // not dereference the borrowed renderer hook pointer from this destructor.
     prepareForRendererTransition(false);
-#if defined(__linux__)
+#if defined(__linux__)  // scatter-budget-exempt: Linux Vulkan native presenter teardown, not input/runtime dispatch
     retireLinuxPresenterForPanelDestruction();
 #endif
     releaseNativeSurface();
