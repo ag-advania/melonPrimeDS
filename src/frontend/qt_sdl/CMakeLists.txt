@@ -98,6 +98,7 @@ set(SOURCES_QT_SDL
     MelonPrimeRuntimeConfig.cpp
     MelonPrimeVideoBackend.cpp
     MelonPrimeScreenCursorPolicy.cpp
+    MelonPrimeHudEditorFormLayout.cpp
     MelonPrimeHudEditorFormBuilder.cpp
     MelonPrimePatchLifecycle.cpp
     MelonPrimeLocalization.cpp
@@ -408,6 +409,41 @@ else()
 endif()
 
 add_executable(melonDS ${SOURCES_QT_SDL})
+
+# Geometry-level regression coverage for the production translated-label
+# helper and the same adaptive panel-width arithmetic used by Screen.cpp.
+# This is a Qt Widgets test, so it catches overlap/clipping that a source audit
+# cannot see. The custom target runs it with Qt's headless platform plugin.
+add_executable(melonprime_hud_classic_layout_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/hud-classic-layout-tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeHudEditorFormLayout.cpp)
+target_include_directories(melonprime_hud_classic_layout_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(melonprime_hud_classic_layout_tests PRIVATE
+    MELONPRIME_DS
+    MELONPRIME_CUSTOM_HUD)
+target_link_libraries(melonprime_hud_classic_layout_tests PRIVATE ${QT_LINK_LIBS})
+set_target_properties(melonprime_hud_classic_layout_tests PROPERTIES
+    WIN32_EXECUTABLE OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+if (WIN32)
+    # The static Windows Qt package exposes qwindows but does not ship the
+    # offscreen platform plugin. The test never shows an interactive window,
+    # so the normal Windows platform plugin is sufficient on the CI runner.
+    set(MELONPRIME_HUD_QPA_PLATFORM windows)
+elseif (APPLE)
+    # The macOS Qt package uses the native Cocoa integration on the hosted
+    # runner; selecting it avoids depending on an optional offscreen plugin.
+    set(MELONPRIME_HUD_QPA_PLATFORM cocoa)
+else()
+    set(MELONPRIME_HUD_QPA_PLATFORM offscreen)
+endif()
+add_custom_target(melonprime_hud_classic_layout_check ALL
+    COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=${MELONPRIME_HUD_QPA_PLATFORM}
+        $<TARGET_FILE:melonprime_hud_classic_layout_tests>
+    DEPENDS melonprime_hud_classic_layout_tests
+    COMMENT "Running Classic On-Screen Edit Qt geometry tests..."
+    VERBATIM)
 
 # MelonPrimeDS: keep the CMake target name "melonDS" (so all the target_* calls
 # below stay untouched), but emit the binary as "melonPrimeDS" (melonPrimeDS.exe

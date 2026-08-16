@@ -2,6 +2,7 @@
 
 #include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "MelonPrimeHudEditorFormBuilder.h"
+#include "MelonPrimeHudEditorFormLayout.h"
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeLocalization.h"
@@ -9,11 +10,6 @@
 #include <QApplication>
 #include <QFont>
 #include <QFrame>
-
-namespace
-{
-constexpr int kPanelWidth = 300;
-} // namespace
 
 // ─── Construction ───────────────────────────────────────────────────────────
 
@@ -28,20 +24,17 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(
     setBackgroundRole(QPalette::Window);
     setPalette(QApplication::palette());
 
-    QFont panelFont = font();
-    panelFont.setPixelSize(9);
-    setFont(panelFont);
-
     auto* outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(6, 4, 6, 4);
     outerLayout->setSpacing(2);
 
     m_title = new QLabel(this);
-    QFont titleFont = panelFont;
+    QFont titleFont = m_title->font();
     titleFont.setBold(true);
-    titleFont.setPixelSize(10);
     m_title->setFont(titleFont);
     m_title->setAlignment(Qt::AlignCenter);
+    m_title->setWordWrap(true);
+    m_title->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     outerLayout->addWidget(m_title);
 
     m_scroll = new QScrollArea(this);
@@ -60,14 +53,18 @@ MelonPrimeHudConfigOnScreenEdit::MelonPrimeHudConfigOnScreenEdit(
     m_inner->setPalette(palette());
     m_inner->setBackgroundRole(QPalette::Window);
     m_inner->setAutoFillBackground(true);
+    // The scroll area's viewport owns the horizontal width.  Ignoring the
+    // inner widget's natural width is what lets WrapLongRows reflow instead
+    // of preserving a long-label sizeHint as hidden horizontal overflow.
+    m_inner->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_form = new QFormLayout(m_inner);
     m_form->setContentsMargins(0, 0, 0, 0);
     m_form->setSpacing(3);
     m_form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_form->setRowWrapPolicy(QFormLayout::WrapLongRows);
     m_form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
     m_scroll->setWidget(m_inner);
 
-    setFixedWidth(kPanelWidth);
     hide();
 }
 
@@ -288,6 +285,8 @@ void MelonPrimeHudConfigOnScreenEdit::addGaugePositionRows(const char* posModeKe
 void MelonPrimeHudConfigOnScreenEdit::addSectionHeader(const QString& label)
 {
     auto* hdr = new QLabel(MelonPrime::UiText::Tr(label), this);
+    MelonPrime::HudEditorForm::ConfigureWrappedFormLabel(*hdr);
+    hdr->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     QFont headerFont = hdr->font();
     headerFont.setBold(true);
     hdr->setFont(headerFont);

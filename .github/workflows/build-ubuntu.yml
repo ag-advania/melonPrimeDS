@@ -72,6 +72,9 @@ jobs:
     - name: Audit Custom HUD radar color-key contract
       run: python ./tools/ci/audits/audit-radar-color-key-contract.py
 
+    - name: Audit Classic On-Screen Edit layout contract
+      run: python ./tools/ci/audits/audit-onscreen-edit-classic-layout.py
+
     - name: Audit low-latency marker and vendor ABI contract
       run: python ./tools/ci/audits/audit-low-latency-contract.py
 

@@ -220,6 +220,7 @@ jobs:
         fi
         echo "Using Python executable: $python_cmd"
         "$python_cmd" tools/ci/audits/audit-renderer-perf-zero-overhead.py
+        "$python_cmd" tools/ci/audits/audit-onscreen-edit-classic-layout.py
 
     # pkgin's failure summary ("pkg_install warnings: N, errors: N") names
     # neither the packages nor the reason; the detail only goes to this file

@@ -41,6 +41,9 @@ jobs:
       - name: Audit renderer telemetry zero-overhead contract
         run: python3 tools/ci/audits/audit-renderer-perf-zero-overhead.py
 
+      - name: Audit Classic On-Screen Edit layout contract
+        run: python3 tools/ci/audits/audit-onscreen-edit-classic-layout.py
+
       - name: Install dependencies for package building
         run: |
           brew install autoconf automake autoconf-archive libtool python-setuptools
