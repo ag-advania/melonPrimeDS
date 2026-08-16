@@ -38,6 +38,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <utility>
@@ -133,6 +134,17 @@ ScopeExit<Function> MakeScopeExit(Function function)
 {
     return ScopeExit<Function>(std::move(function));
 }
+
+#if defined(__linux__)  // scatter-budget-exempt: CI-only Vulkan WSI smoke gate, not input dispatch
+bool IsVulkanRuntimeSmokeEnabled()
+{
+    static const bool enabled = [] {
+        const char* const value = std::getenv("MELONPRIME_VULKAN_SMOKE");
+        return value != nullptr && std::strcmp(value, "1") == 0;
+    }();
+    return enabled;
+}
+#endif
 
 // Live ScreenPanelVulkan instances.
 //
@@ -1315,6 +1327,36 @@ void ScreenPanelVulkan::drawScreenFrame()
 
     if (!emuThread->emuIsActive())
     {
+#if defined(__linux__)  // scatter-budget-exempt: CI-only no-ROM Vulkan WSI smoke path
+        if (IsVulkanRuntimeSmokeEnabled())
+        {
+            // Normal no-ROM operation keeps the native child hidden so the
+            // Qt splash remains visible. CI has no ROM to drive a real frame,
+            // so this opt-in path exercises the same show -> snapshot lease ->
+            // presenter bind sequence without submitting a fake frame.
+            requestNativeSurfaceVisible(true);
+            if (!beginLinuxPresentationFrame())
+                return;
+
+            const auto linuxFrameLease = MakeScopeExit(
+                [this]() { finishLinuxPresentationFrame(); });
+            const std::uint64_t currentGeneration =
+                vulkan->linuxFrameSnapshot.Generation;
+            if (vulkan->linuxSurfaceDirty.load(std::memory_order_acquire)
+                || !vulkan->presenter.IsInitialized()
+                || vulkan->presenterSurfaceGeneration != currentGeneration
+                || vulkan->presenter.NeedsSurfaceRebind())
+            {
+                if (!prepareLinuxPresentationSurface())
+                {
+                    if (vulkan->presenter.HasFailed())
+                        reportVulkanRuntimeFailure(vulkan->presenter.LastError().c_str());
+                    return;
+                }
+            }
+            return;
+        }
+#endif
         // No ROM: the splash screen is Qt-drawn (it composites a QPixmap, which
         // is GUI-thread-only), so the native surface steps aside and the
         // panel's own paintEvent takes over.
