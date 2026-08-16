@@ -338,8 +338,6 @@ struct ScoreboardSnapshot {
     uint8_t activePlayers = 0;
     uint16_t teamFlags = 0;
     bool teams = false;
-    bool startHeld = false;
-    uint8_t matchState = 0;
     bool visible = false;
     std::array<uint8_t, 4> resultSlots = {0xFF, 0xFF, 0xFF, 0xFF};
     std::array<ScoreboardPlayerSnapshot, 4> playersBySlot{};
@@ -542,12 +540,11 @@ static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
     // The runtime TeamFlags bit is authoritative for whether Team rows and
     // TeamStandings are meaningful; do not infer this solely from GameMode.
     snapshot.teams = (snapshot.teamFlags & 0x0002u) != 0;
-    // Reuse the already-captured HudRuntimeState START/adventure decision;
-    // do not create a second START read path in the scoreboard snapshot.
-    snapshot.startHeld = st.isStartPressed;
-    snapshot.matchState = Read8(ram, rom.battleFlowState);
-    snapshot.visible = !st.isAdventure
-                    && (snapshot.startHeld || snapshot.matchState == 2);
+    // START/TAB belongs to the native scoreboard UI, not to the Custom HUD
+    // visibility rule. When the Custom HUD scoreboard setting is enabled,
+    // DrawScoreboard is allowed to remain visible throughout the supported
+    // match mode; only Adventure is excluded here.
+    snapshot.visible = !st.isAdventure;
 
     // Team aggregates are authoritative runtime values. Never recalculate or
     // sort them from player rows; only select the aggregate for TeamIndex.

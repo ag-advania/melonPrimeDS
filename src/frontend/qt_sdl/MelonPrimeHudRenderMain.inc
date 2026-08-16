@@ -98,7 +98,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     CustomHud_MarkNoHudPatchDesired();
 
     // Apply the transform/font before the scoreboard so it is rendered on the
-    // same QPainter path and so the START early-return cannot skip it.
+    // same QPainter path and so a native-UI early return cannot skip it.
     ApplyHudPainterTransform(topPaint, xf);
     EnsureHudFont(topPaint);
     if (c.scoreboard.show && !st.isAdventure && !st.isAdventureCameraScene

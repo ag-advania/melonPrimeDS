@@ -189,6 +189,30 @@ static void DrawScoreboardText(QPainter* p, const QRectF& rect, const QString& t
     AccumDirtyDs(p, rect);
 }
 
+static void DrawScoreboardNameAndRank(QPainter* p, const QRectF& rect,
+                                      const QString& name, int rank,
+                                      const QColor& color, const QFont& nameFont,
+                                      const QFontMetrics& nameFm, const QFont& rankFont,
+                                      const QFontMetrics& rankFm)
+{
+    // Keep the rank in the Player column, directly below the name. A smaller
+    // second line preserves the existing compact row height and leaves the
+    // hunter/stars art and metric columns at their original vertical scale.
+    const qreal nameHeight = rect.height() * 0.58;
+    const QRectF nameLine(rect.x(), rect.y(), rect.width(), nameHeight);
+    const QRectF rankLine(rect.x(), rect.y() + nameHeight,
+                          rect.width(), rect.height() - nameHeight);
+    p->save();
+    p->setFont(nameFont);
+    DrawScoreboardText(p, nameLine, name, color, nameFm);
+    p->setFont(rankFont);
+    DrawScoreboardText(p, rankLine,
+                       QStringLiteral("%1 %2").arg(UiText::Tr("Rank"))
+                           .arg(rank),
+                       color, rankFm);
+    p->restore();
+}
+
 static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
                            const CachedHudConfig& c, float hudScale,
                            uint8_t localPlayerSlot)
@@ -244,6 +268,9 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         s_frameFpx * std::max(0.5f, c.textDrawScale))));
     boardFont.setPixelSize(boardFontPx);
     const QFontMetrics boardFm(boardFont);
+    QFont rankFont = boardFont;
+    rankFont.setPixelSize(std::max(1, static_cast<int>(std::lround(boardFontPx * 0.72))));
+    const QFontMetrics rankFm(rankFont);
 
     p->save();
     p->setFont(boardFont);
@@ -256,22 +283,18 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     p->drawRect(panelRect);
     AccumDirtyDs(p, panelRect);
 
-    const int rankW = 20;
     const int portraitW = std::min(
         std::max(20, c.scoreboard.hunterIconHeight + 4),
-        std::max(0, panelW - rankW - 76 - 3));
-    const int nameX = panelX + rankW + portraitW + 3;
-    const int nameStarsW = std::max(0, panelW - rankW - portraitW - 3 - 76);
+        std::max(0, panelW - 76 - 3));
+    const int nameX = panelX + portraitW + 3;
+    const int nameStarsW = std::max(0, panelW - portraitW - 3 - 76);
     const int starsColumnW = std::min(24, nameStarsW);
     const int nameW = std::max(0, nameStarsW - starsColumnW);
     const int starsX = nameX + nameW;
     const int firstX = panelX + panelW - 76;
-    const QRectF rankHeader(panelX + 2, panelY + 1, rankW, rowH - 2);
     const QRectF playerHeader(nameX, panelY + 1, nameW, rowH - 2);
     const QRectF firstHeader(firstX, panelY + 1, 38, rowH - 2);
     const QRectF secondHeader(firstX + 38, panelY + 1, 38, rowH - 2);
-    DrawScoreboardText(p, rankHeader, UiText::Tr("Rank"), c.scoreboard.headerColor,
-                       boardFm, Qt::AlignRight);
     DrawScoreboardText(p, playerHeader, UiText::Tr("Player"), c.scoreboard.headerColor, boardFm);
     DrawScoreboardText(p, firstHeader, UiText::Tr(metric.firstLabel), c.scoreboard.headerColor,
                        boardFm, Qt::AlignRight);
@@ -281,7 +304,6 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
         const RenderRow& row = rows[rowIndex];
         const int y = panelY + rowH + rowIndex * (rowH + spacing);
-        const QRectF rankRect(panelX + 2, y, rankW, rowH);
         const QRectF nameRect(nameX, y, nameW, rowH);
         const QRectF firstRect(firstX, y, 38, rowH);
         const QRectF secondRect(firstX + 38, y, 38, rowH);
@@ -289,13 +311,11 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
             const ScoreboardPlayerSnapshot& representative = snapshot.playersBySlot[row.slot];
             const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[row.teamIndex];
             const QColor& teamColor = ResolveScoreboardTeamColor(c, row.teamIndex);
-            DrawScoreboardText(p, rankRect,
-                QString::number(static_cast<int>(representative.standing) + 1),
-                teamColor, boardFm, Qt::AlignRight);
-            DrawScoreboardText(p, nameRect,
+            DrawScoreboardNameAndRank(p, nameRect,
                 QStringLiteral("%1 %2").arg(UiText::Tr("Team"))
                     .arg(static_cast<int>(row.teamIndex) + 1),
-                teamColor, boardFm);
+                static_cast<int>(representative.standing) + 1,
+                teamColor, boardFont, boardFm, rankFont, rankFm);
             DrawScoreboardText(p, firstRect,
                 FormatScoreboardMetric(metric.firstIsTime ? team.time : team.points,
                                        metric.firstIsTime, snapshot.gameMode),
@@ -312,9 +332,8 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         const QColor& rowColor = (player.slot == localPlayerSlot)
             ? c.scoreboard.localPlayerColor : c.scoreboard.textColor;
         const int rank = static_cast<int>(snapshot.teams ? player.teamStanding : player.standing) + 1;
-        DrawScoreboardText(p, rankRect, QString::number(rank), rowColor, boardFm, Qt::AlignRight);
 
-        const int iconX = panelX + rankW + 1;
+        const int iconX = panelX + 1;
         // Guardian/invalid IDs have no scoreboard portrait asset; leave the
         // portrait empty instead of silently misidentifying the hunter.
         const QImage* hunter = player.hunterId < 7
@@ -326,7 +345,8 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
             p->drawImage(iconRect, *hunter);
             AccumDirtyDs(p, iconRect);
         }
-        DrawScoreboardText(p, nameRect, player.displayName, rowColor, boardFm);
+        DrawScoreboardNameAndRank(p, nameRect, player.displayName, rank,
+                                  rowColor, boardFont, boardFm, rankFont, rankFm);
         // Stars are a bounded native rank index; invalid values must not index
         // the five-entry cache or be presented as a different rank.
         if (player.stars <= 4) {
