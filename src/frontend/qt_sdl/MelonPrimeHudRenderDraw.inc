@@ -189,25 +189,35 @@ static void DrawScoreboardText(QPainter* p, const QRectF& rect, const QString& t
     AccumDirtyDs(p, rect);
 }
 
+static QRectF ScoreboardRankLine(const QRectF& rect)
+{
+    const qreal nameHeight = rect.height() * 0.58;
+    return QRectF(rect.x(), rect.y() + nameHeight,
+                  rect.width(), rect.height() - nameHeight);
+}
+
+static QString FormatScoreboardRankLabel(int rank)
+{
+    return QStringLiteral("%1 %2").arg(UiText::Tr("Rank")).arg(rank);
+}
+
 static void DrawScoreboardNameAndRank(QPainter* p, const QRectF& rect,
                                       const QString& name, int rank,
                                       const QColor& color, const QFont& nameFont,
                                       const QFontMetrics& nameFm, const QFont& rankFont,
                                       const QFontMetrics& rankFm)
 {
-    // Keep the rank value in the Player column, directly below the name. The
-    // compact #N marker avoids reintroducing a label/value mini-column while
-    // the smaller second line preserves the existing row height.
+    // Keep the localized rank label and value in the Player column, directly
+    // below the name. The smaller second line preserves the existing row
+    // height without reintroducing a separate rank column.
     const qreal nameHeight = rect.height() * 0.58;
     const QRectF nameLine(rect.x(), rect.y(), rect.width(), nameHeight);
-    const QRectF rankLine(rect.x(), rect.y() + nameHeight,
-                          rect.width(), rect.height() - nameHeight);
+    const QRectF rankLine = ScoreboardRankLine(rect);
     p->save();
     p->setFont(nameFont);
     DrawScoreboardText(p, nameLine, name, color, nameFm);
     p->setFont(rankFont);
-    DrawScoreboardText(p, rankLine, QStringLiteral("#%1").arg(rank),
-                       color, rankFm);
+    DrawScoreboardText(p, rankLine, FormatScoreboardRankLabel(rank), color, rankFm);
     p->restore();
 }
 
@@ -285,10 +295,7 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         std::max(20, c.scoreboard.hunterIconHeight + 4),
         std::max(0, panelW - 76 - 3));
     const int nameX = panelX + portraitW + 3;
-    const int nameStarsW = std::max(0, panelW - portraitW - 3 - 76);
-    const int starsColumnW = std::min(24, nameStarsW);
-    const int nameW = std::max(0, nameStarsW - starsColumnW);
-    const int starsX = nameX + nameW;
+    const int nameW = std::max(0, panelW - portraitW - 3 - 76);
     const int firstX = panelX + panelW - 76;
     const QRectF playerHeader(nameX, panelY + 1, nameW, rowH - 2);
     const QRectF firstHeader(firstX, panelY + 1, 38, rowH - 2);
@@ -345,18 +352,25 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         }
         DrawScoreboardNameAndRank(p, nameRect, player.displayName, rank,
                                   rowColor, boardFont, boardFm, rankFont, rankFm);
-        // Stars are a bounded native rank index; invalid values must not index
-        // the five-entry cache or be presented as a different rank.
+        // Stars are the Hunter Rank image. Keep it on the second line of the
+        // Player cell, immediately after the localized Standings label/value;
+        // it must not remain in a separate column beside the name.
         if (player.stars <= 4) {
             const QImage& stars = s_scoreboardStars[player.stars];
             if (!stars.isNull()) {
                 const float starsH = static_cast<float>(stars.height()) * invHudScale;
                 const float starsW = static_cast<float>(stars.width()) * invHudScale;
+                const QRectF rankLine = ScoreboardRankLine(nameRect);
+                const QString rankLabel = FormatScoreboardRankLabel(rank);
+                const float starsX = static_cast<float>(nameX)
+                                   + static_cast<float>(rankFm.horizontalAdvance(rankLabel))
+                                   + 3.0f;
                 const float availableStarsW = std::max(
                     0.0f, static_cast<float>(firstX - starsX - 2));
                 const float drawStarsW = std::min(starsW, availableStarsW);
                 if (drawStarsW > 0.0f) {
-                    const QRectF starsRect(starsX + 1, y + (rowH - starsH) * 0.5f,
+                    const QRectF starsRect(starsX,
+                                           rankLine.y() + (rankLine.height() - starsH) * 0.5f,
                                            drawStarsW, starsH);
                     p->drawImage(starsRect, stars);
                     AccumDirtyDs(p, starsRect);
