@@ -72,15 +72,30 @@ bool PresenterTwoImageSwapchainExperimentEnabled() noexcept
 
 u64 PresenterAcquireTimeoutNanoseconds() noexcept
 {
+    // Linux native-surface destruction is a hard barrier. Keep the WSI wait
+    // finite by default so a compositor-side acquire cannot leave the GUI
+    // thread waiting forever. One second matches VulkanSync's existing
+    // DefaultFenceTimeoutNanoseconds watchdog: it is far above a normal
+    // frame interval while still producing a diagnosable failure for a hung
+    // presentation path. The environment override remains available for
+    // runner-specific validation and diagnosis.
     const char* value = std::getenv("MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS");
     if (value == nullptr || *value == '\0')
+#if defined(__linux__)
+        return 1000ull * 1000ull * 1000ull;
+#else
         return UINT64_MAX;
+#endif
 
     errno = 0;
     char* end = nullptr;
     const unsigned long long parsed = std::strtoull(value, &end, 10);
     if (errno == ERANGE || end == value || *end != '\0')
+#if defined(__linux__)
+        return 1000ull * 1000ull * 1000ull;
+#else
         return UINT64_MAX;
+#endif
     return static_cast<u64>(parsed);
 }
 
@@ -1764,7 +1779,8 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
                 VulkanPerf::ScopedCpuTimer imageWaitTimer(
                     VulkanPerf::CpuMetric::PresentImageFence);
                 waitRes = Device.Fns().WaitForFences(
-                    Device.GetHandle(), 1, &imageFence, VK_TRUE, UINT64_MAX);
+                    Device.GetHandle(), 1, &imageFence, VK_TRUE,
+                    PresenterAcquireTimeoutNanoseconds());
             }
             if (waitRes != VK_SUCCESS)
             {

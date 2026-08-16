@@ -333,16 +333,10 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
                 == MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::Hide
                 || event
                 == MelonPrime::VulkanSurfaceHostLinux::LifecycleEvent::SurfaceAboutToBeDestroyed;
-            MelonPrime::VulkanSurface::NativeWindowSnapshot publishedSnapshot = snapshot;
-            if (!publishedSnapshot.IsValid())
-            {
-                publishedSnapshot.Width = static_cast<std::uint32_t>(
-                    std::max(1, qRound(width() * devicePixelRatioF())));
-                publishedSnapshot.Height = static_cast<std::uint32_t>(
-                    std::max(1, qRound(height() * devicePixelRatioF())));
-            }
-            vulkan->linuxSurfaceLifecycle->publishSnapshot(
-                publishedSnapshot, !invalidated && publishedSnapshot.IsValid());
+            // VulkanSurfaceHostLinux owns the atomic post-event publication of
+            // Snapshot, HostShown, and lifecycle State. This callback only
+            // marks dependent work dirty and records the already-published
+            // snapshot; it must not create a second lifecycle authority.
             vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
             vulkan->surfaceHandleDirty.store(true, std::memory_order_release);
 
@@ -663,8 +657,8 @@ void ScreenPanelVulkan::serviceLinuxSurfaceRetire()
             lease.ReleaseNow();
         // The presenter may already have been torn down by a recoverable
         // surface-loss path. Complete the lifecycle handshake even in that
-        // case; otherwise Retiring remains latched and the GUI-side bounded
-        // wait can only finish by timing out.
+        // case; otherwise Retiring remains latched and the GUI-side native
+        // destruction barrier cannot complete.
         vulkan->linuxSurfaceLifecycle->markPresenterRetired();
     }
 }

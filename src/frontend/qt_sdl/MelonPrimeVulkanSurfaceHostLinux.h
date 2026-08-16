@@ -13,75 +13,16 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN) && defined(__linux__)  // scatter-budget-exempt: Linux-only native Vulkan surface host
 
-#include <chrono>
-#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <mutex>
 
 #include <QWidget>
 
-#include "MelonPrimeVulkanSurface.h"
+#include "MelonPrimeVulkanSurfaceLifecycle.h"
 
 namespace MelonPrime
 {
-
-// Coordinates the short GUI-side native-surface publication critical section
-// with the emulation thread's presentation lease. It is deliberately not a
-// frame mutex: beginFrame()/endFrame() only update a counter and copy state,
-// while the Vulkan frame itself runs without holding Mutex.
-class VulkanSurfaceLifecycle final
-{
-public:
-    enum class State : std::uint8_t
-    {
-        Hidden,
-        WaitingForNativeSurface,
-        WaitingForShow,
-        Ready,
-        Bound,
-        RetireRequested,
-        Retiring,
-        DestroySafe,
-    };
-
-    void publishSnapshot(
-        const VulkanSurface::NativeWindowSnapshot& snapshot,
-        bool valid);
-    void requestRetire();
-    // Native QWidget transitions invalidate presentation eligibility before Qt
-    // processes the event. A pre-Show snapshot may still be valid as a native
-    // handle, but it must remain in WaitingForShow until the Show event has
-    // completed and the post-event snapshot is published.
-    void requestNativeTransitionRetire();
-    void markHostShown(bool shown);
-    [[nodiscard]] bool waitForDestroySafe(std::chrono::milliseconds timeout);
-
-    // Returns false when a lifecycle transition has stopped new presentation.
-    // The returned snapshot is immutable for the caller's frame lease.
-    [[nodiscard]] bool beginFrame(VulkanSurface::NativeWindowSnapshot& snapshot);
-    void endFrame();
-
-    void markBound(std::uint64_t generation);
-    void markSurfaceLost();
-    void beginRetiring();
-    void markPresenterRetired();
-
-    [[nodiscard]] bool retireRequested() const;
-    [[nodiscard]] bool presentationReady() const;
-    [[nodiscard]] State state() const;
-
-private:
-    mutable std::mutex Mutex;
-    std::condition_variable RetireCondition;
-    State StateValue = State::Hidden;
-    VulkanSurface::NativeWindowSnapshot Snapshot;
-    std::uint64_t BoundGeneration = 0;
-    std::uint32_t ActiveFrames = 0;
-    bool PresenterActive = false;
-    bool HostShown = false;
-};
 
 // A QWidget lifecycle notification is deliberately emitted after Qt has
 // processed the event. The native handles in the snapshot therefore describe
