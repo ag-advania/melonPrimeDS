@@ -261,11 +261,9 @@ struct ScreenPanelVulkan::VulkanState
 
 #if defined(__linux__)  // scatter-budget-exempt: Linux native-surface lifecycle state, not input dispatch
     // GUI-thread lifecycle publication and presenter-thread consumption. The
-    // generation, not WId, is the native-surface identity on Wayland.
-    std::atomic_bool linuxSurfaceReady{false};
+    // lifecycle object is the sole authority for native-surface eligibility;
+    // the generation, not WId, is the native-surface identity on Wayland.
     std::atomic_bool linuxSurfaceDirty{true};
-    std::atomic_bool linuxSurfaceLost{false};
-    std::atomic_uint64_t linuxSurfaceGeneration{0};
     std::shared_ptr<MelonPrime::VulkanSurfaceLifecycle> linuxSurfaceLifecycle =
         std::make_shared<MelonPrime::VulkanSurfaceLifecycle>();
     // Only the emulation thread writes this frame-local copy after the
@@ -345,11 +343,6 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
             }
             vulkan->linuxSurfaceLifecycle->publishSnapshot(
                 publishedSnapshot, !invalidated && publishedSnapshot.IsValid());
-            vulkan->linuxSurfaceGeneration.store(
-                snapshot.Generation, std::memory_order_release);
-            vulkan->linuxSurfaceReady.store(
-                !invalidated && snapshot.IsValid(), std::memory_order_release);
-            vulkan->linuxSurfaceLost.store(invalidated, std::memory_order_release);
             vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
             vulkan->surfaceHandleDirty.store(true, std::memory_order_release);
 
@@ -493,8 +486,7 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     if (vulkan->presenter.IsInitialized())
         return true;
 #if defined(__linux__)  // scatter-budget-exempt: Linux native-surface readiness, not input dispatch
-    if (!vulkan->linuxSurfaceReady.load(std::memory_order_acquire)
-        || vulkan->linuxSurfaceLost.load(std::memory_order_acquire))
+    if (!vulkan->linuxSurfaceLifecycle->presentationReady())
     {
         return false;
     }
@@ -539,8 +531,6 @@ bool ScreenPanelVulkan::initVulkanPresenter()
         if (vulkan->presenter.NeedsSurfaceRebind())
         {
             vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
-            vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
-            vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
             vulkan->linuxSurfaceLifecycle->markSurfaceLost();
             return false;
         }
@@ -624,12 +614,11 @@ bool ScreenPanelVulkan::beginLinuxPresentationFrame()
     if (!vulkan->linuxSurfaceLifecycle->beginFrame(snapshot))
         return false;
 
-    const bool current = snapshot.IsValid()
-        && vulkan->linuxSurfaceReady.load(std::memory_order_acquire)
-        && !vulkan->linuxSurfaceLost.load(std::memory_order_acquire)
-        && vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire)
-            == snapshot.Generation;
-    if (!current)
+    // beginFrame() copied an immutable, post-Show snapshot while holding the
+    // lifecycle lease. Do not re-check a second readiness/generation mirror:
+    // the lifecycle object is authoritative, and a GUI transition that races
+    // this point is retired through the active-frame lease.
+    if (!snapshot.IsValid())
     {
         vulkan->linuxSurfaceLifecycle->endFrame();
         return false;
@@ -684,10 +673,8 @@ void ScreenPanelVulkan::serviceLinuxSurfaceRetire()
 bool ScreenPanelVulkan::nativeSurfaceReady() const
 {
 #if defined(__linux__)  // scatter-budget-exempt: Linux native-surface readiness query, not input dispatch
-    return vulkan
-        && vulkan->linuxSurfaceReady.load(std::memory_order_acquire)
-        && !vulkan->linuxSurfaceLost.load(std::memory_order_acquire)
-        && vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire) != 0;
+    return vulkan && vulkan->linuxSurfaceLifecycle
+        && vulkan->linuxSurfaceLifecycle->presentationReady();
 #else
     return vulkan && vulkan->surface && vulkan->surface->windowHandle() != nullptr;
 #endif
@@ -774,8 +761,6 @@ void ScreenPanelVulkan::releaseNativeSurface()
     vulkan->initialized = false;
     vulkan->surfaceHandleDirty.store(true, std::memory_order_release);
 #if defined(__linux__)  // scatter-budget-exempt: Linux surface teardown notification, not input dispatch
-    vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
-    vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
     vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
 #endif
 
@@ -803,15 +788,12 @@ bool ScreenPanelVulkan::prepareLinuxPresentationSurface()
     const MelonPrime::VulkanSurface::NativeWindowSnapshot& snapshot =
         vulkan->linuxFrameSnapshot;
     const std::uint64_t generation = snapshot.Generation;
-    if (!snapshot.IsValid()
-        || generation != vulkan->linuxSurfaceGeneration.load(std::memory_order_acquire))
+    if (!snapshot.IsValid())
         return false;
 
     if (vulkan->presenter.NeedsSurfaceRebind())
     {
         retireLinuxPresentationSurface("VK_ERROR_SURFACE_LOST_KHR");
-        vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
-        vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
         vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
         vulkan->linuxSurfaceLifecycle->markSurfaceLost();
         // A lost VkSurfaceKHR is not rebound against the same native snapshot.
@@ -1490,8 +1472,6 @@ void ScreenPanelVulkan::drawScreenFrame()
         {
 #if defined(__linux__)  // scatter-budget-exempt: Linux acquire surface-loss recovery, not input dispatch
             retireLinuxPresentationSurface("acquire returned VK_ERROR_SURFACE_LOST_KHR");
-            vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
-            vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
             vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
             vulkan->linuxSurfaceLifecycle->markSurfaceLost();
 #endif
@@ -1795,8 +1775,6 @@ void ScreenPanelVulkan::drawScreenFrame()
         {
 #if defined(__linux__)  // scatter-budget-exempt: Linux present surface-loss recovery, not input dispatch
             retireLinuxPresentationSurface("present returned VK_ERROR_SURFACE_LOST_KHR");
-            vulkan->linuxSurfaceReady.store(false, std::memory_order_release);
-            vulkan->linuxSurfaceLost.store(true, std::memory_order_release);
             vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
             vulkan->linuxSurfaceLifecycle->markSurfaceLost();
 #endif
