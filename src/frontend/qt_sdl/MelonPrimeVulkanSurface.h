@@ -23,7 +23,6 @@ class QWidget;
 namespace MelonPrime::VulkanSurface
 {
 
-#if defined(__linux__)  // scatter-budget-exempt: Linux native-surface snapshot type, not input dispatch
 // Captured on the GUI thread after a Qt native-surface lifecycle event. The
 // emulation thread consumes this immutable value and never calls QWidget/QPA
 // accessors while creating or rebinding a VkSurfaceKHR.
@@ -45,7 +44,6 @@ struct NativeWindowSnapshot
         return Valid && Generation != 0 && Width != 0 && Height != 0;
     }
 };
-#endif
 
 // ---------------------------------------------------------------------------
 // VkSurfaceKHR creation from a Qt native window.

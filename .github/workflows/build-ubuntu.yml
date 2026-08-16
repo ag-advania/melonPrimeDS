@@ -81,6 +81,9 @@ jobs:
     - name: Audit Vulkan native surface visibility contract
       run: python ./tools/ci/audits/audit-vulkan-native-surface-visibility.py
 
+    - name: Audit Vulkan Linux presenter retire contract
+      run: python ./tools/ci/audits/audit-vulkan-linux-presenter-retire-contract.py
+
     # The Vulkan backend ships its SPIR-V as committed generated sources, so a
     # GLSL edit that was never regenerated, or a variant that stopped compiling,
     # would only show up as a black screen on a machine with a Vulkan GPU. Both

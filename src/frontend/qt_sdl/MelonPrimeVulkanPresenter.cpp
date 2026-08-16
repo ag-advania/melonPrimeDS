@@ -13,7 +13,6 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
-#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -26,6 +25,7 @@
 #include "VulkanFeatureProbe.h"
 #include "VulkanGpuTimestamp.h"
 #include "VulkanPerf.h"
+#include "MelonPrimeVulkanPresenterTimeout.h"
 
 using namespace melonDS;
 
@@ -68,20 +68,6 @@ bool PresenterPreInputWaitExperimentEnabled() noexcept
 bool PresenterTwoImageSwapchainExperimentEnabled() noexcept
 {
     return EnvironmentEquals("MELONPRIME_VULKAN_SWAPCHAIN_IMAGE_COUNT", "2");
-}
-
-u64 PresenterAcquireTimeoutNanoseconds() noexcept
-{
-    const char* value = std::getenv("MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS");
-    if (value == nullptr || *value == '\0')
-        return UINT64_MAX;
-
-    errno = 0;
-    char* end = nullptr;
-    const unsigned long long parsed = std::strtoull(value, &end, 10);
-    if (errno == ERANGE || end == value || *end != '\0')
-        return UINT64_MAX;
-    return static_cast<u64>(parsed);
 }
 
 const char* PresentModeName(VkPresentModeKHR mode) noexcept
@@ -1764,7 +1750,8 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
                 VulkanPerf::ScopedCpuTimer imageWaitTimer(
                     VulkanPerf::CpuMetric::PresentImageFence);
                 waitRes = Device.Fns().WaitForFences(
-                    Device.GetHandle(), 1, &imageFence, VK_TRUE, UINT64_MAX);
+                    Device.GetHandle(), 1, &imageFence, VK_TRUE,
+                    PresenterImageFenceTimeoutNanoseconds());
             }
             if (waitRes != VK_SUCCESS)
             {
