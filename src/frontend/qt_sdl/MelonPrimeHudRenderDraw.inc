@@ -195,9 +195,9 @@ static void DrawScoreboardNameAndRank(QPainter* p, const QRectF& rect,
                                       const QFontMetrics& nameFm, const QFont& rankFont,
                                       const QFontMetrics& rankFm)
 {
-    // Keep the rank in the Player column, directly below the name. A smaller
-    // second line preserves the existing compact row height and leaves the
-    // hunter/stars art and metric columns at their original vertical scale.
+    // Keep the rank value in the Player column, directly below the name. The
+    // compact #N marker avoids reintroducing a label/value mini-column while
+    // the smaller second line preserves the existing row height.
     const qreal nameHeight = rect.height() * 0.58;
     const QRectF nameLine(rect.x(), rect.y(), rect.width(), nameHeight);
     const QRectF rankLine(rect.x(), rect.y() + nameHeight,
@@ -206,9 +206,7 @@ static void DrawScoreboardNameAndRank(QPainter* p, const QRectF& rect,
     p->setFont(nameFont);
     DrawScoreboardText(p, nameLine, name, color, nameFm);
     p->setFont(rankFont);
-    DrawScoreboardText(p, rankLine,
-                       QStringLiteral("%1 %2").arg(UiText::Tr("Rank"))
-                           .arg(rank),
+    DrawScoreboardText(p, rankLine, QStringLiteral("#%1").arg(rank),
                        color, rankFm);
     p->restore();
 }
