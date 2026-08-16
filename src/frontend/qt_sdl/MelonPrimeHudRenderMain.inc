@@ -105,7 +105,8 @@ HOT_FUNCTION QRect CustomHud_Render(
         && !st.isMapOrUserActionPaused) {
         ScoreboardSnapshot scoreboard{};
         if (ReadHudRuntimeScoreboardSnapshot(rom, st, scoreboard)) {
-            EnsureScoreboardAssetsLoaded(c.scoreboard, c.scaleIcons);
+            EnsureScoreboardAssetsLoaded(c.scoreboard,
+                                         std::min(c.scaleIcons, c.scaleScoreboard));
             DrawScoreboard(topPaint, scoreboard, c, hudScale, playerPosition);
         }
     }

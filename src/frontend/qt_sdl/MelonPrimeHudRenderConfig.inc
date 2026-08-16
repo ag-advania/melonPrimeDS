@@ -226,6 +226,7 @@ struct CachedHudConfig {
     float scaleIcons;     // effective icons auto-scale factor (capped)
     float scaleGauges;    // effective gauges auto-scale factor (capped)
     float scaleCrosshair; // effective crosshair auto-scale factor (capped)
+    float scaleScoreboard; // effective scoreboard auto-scale factor (capped)
     float lastStretchX; // topStretchX used for last anchor position computation
     float lastHudScale;  // hudScale (scaleY) at last render — needed for outline thickness conversion
     // Per-element opacity values (cached to avoid per-frame config lookups)
@@ -1334,11 +1335,13 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
         c.scaleIcons     = capScale(MP_HUD_PROP_KEY_HudAutoScaleCapIcons);
         c.scaleGauges    = capScale(MP_HUD_PROP_KEY_HudAutoScaleCapGauges);
         c.scaleCrosshair = capScale(MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair);
+        c.scaleScoreboard = capScale(MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard);
     } else {
         c.scaleText = 1.0f;
         c.scaleIcons = 1.0f;
         c.scaleGauges = 1.0f;
         c.scaleCrosshair = 1.0f;
+        c.scaleScoreboard = 1.0f;
     }
     // Text draw scale: auto-scale + user TextScale as additive offset.
     // e.g. auto=200%, TextScale=150% -> effective=250% (200+150-100).

@@ -270,10 +270,19 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     HudGeometry::ApplyRectAnchor(panelX, panelY, panelW, panelH,
                                  safeAnchor % 3, safeAnchor / 3);
     const float invHudScale = hudScale > 0.0f ? 1.0f / hudScale : 1.0f;
+    // Scoreboard has its own auto-scale cap in addition to the shared text
+    // cap. Manual row geometry remains in DS units, matching the other HUD
+    // category caps while keeping the configured layout stable.
+    const float boardAutoTextScale = std::min(c.scaleText, c.scaleScoreboard);
+    const float boardEffectiveTextPct = boardAutoTextScale * 100.0f
+                                      + (c.textScalePct - 100);
+    const float boardTextDrawScale = hudScale > 0.0f
+        ? (boardEffectiveTextPct / 100.0f) / hudScale
+        : boardEffectiveTextPct / 100.0f;
 
     QFont boardFont = s_frameFont;
     const int boardFontPx = std::max(1, static_cast<int>(std::lround(
-        s_frameFpx * std::max(0.5f, c.textDrawScale))));
+        s_frameFpx * std::max(0.5f, boardTextDrawScale))));
     boardFont.setPixelSize(boardFontPx);
     const QFontMetrics boardFm(boardFont);
     QFont rankFont = boardFont;

@@ -808,7 +808,18 @@ def parse_dialog_sections(ident_to_key: dict[str, str]) -> list[DialogSection]:
         known = {section.name for section in sections}
         for section in parse_dialog_sections_from_generated(
                 strip_comments(read(DIALOG_TABLES_INC)), ident_to_key):
-            if section.name not in known:
+            existing = next((item for item in sections if item.name == section.name), None)
+            if existing is not None:
+                existing_rows = {
+                    (row.label, row.widget_type, row.cfg_key, row.cfg_key_g, row.cfg_key_b)
+                    for row in existing.rows
+                }
+                for row in section.rows:
+                    identity = (row.label, row.widget_type, row.cfg_key, row.cfg_key_g, row.cfg_key_b)
+                    if identity not in existing_rows:
+                        existing.rows.append(row)
+                        existing_rows.add(identity)
+            elif section.name not in known:
                 sections.append(section)
                 known.add(section.name)
     sections.extend(osd_dialog_sections())

@@ -469,7 +469,8 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
 
     // The editor uses deterministic dummy rows so layout tuning never
     // depends on live match RAM or a particular ResultSlots ordering.
-    EnsureScoreboardAssetsLoaded(c.scoreboard, c.scaleIcons);
+    EnsureScoreboardAssetsLoaded(c.scoreboard,
+                                 std::min(c.scaleIcons, c.scaleScoreboard));
     DrawScoreboard(p, MakeScoreboardPreviewSnapshot(), c, hudScale, 0);
 }
 
@@ -905,7 +906,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                 }
             }
         } else if (i == 14) {
-            EnsureScoreboardAssetsLoaded(s_cache.scoreboard, s_cache.scaleIcons);
+            EnsureScoreboardAssetsLoaded(s_cache.scoreboard,
+                                         std::min(s_cache.scaleIcons, s_cache.scaleScoreboard));
             DrawScoreboard(p, MakeScoreboardPreviewSnapshot(), s_cache,
                            s_editHudScale, 0);
         } else {

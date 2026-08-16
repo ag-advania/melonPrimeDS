@@ -35,6 +35,7 @@ static const HudWidgetProp kSecTextScale[] = {
     { "Auto Scale Icon Cap %", HWType::Int, MP_HUD_PROP_KEY_HudAutoScaleCapIcons, 100, 800, 25, nullptr, nullptr },
     { "Auto Scale Gauge Cap %", HWType::Int, MP_HUD_PROP_KEY_HudAutoScaleCapGauges, 100, 800, 25, nullptr, nullptr },
     { "Auto Scale Crosshair Cap %", HWType::Int, MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair, 100, 800, 25, nullptr, nullptr },
+    { "Auto Scale Scoreboard Cap %", HWType::Int, MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard, 100, 800, 25, nullptr, nullptr },
 };
 
 static const HudWidgetProp kSecFont[] = {

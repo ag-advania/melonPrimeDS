@@ -23,3 +23,11 @@ static const HudWidgetProp kSecScoreboard[] = {
     {"Background Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR, 0, 255, 1,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB},
 };
+
+// Extend the generated HUD SCALE section with the scoreboard-specific cap.
+// The generator merges duplicate section names by row identity before it
+// writes MelonPrimeInputConfigHudDialogProps.inc.
+static const HudWidgetProp kSecTextScale[] = {
+    {"Auto Scale Scoreboard Cap %", HWType::Int, MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard,
+        100, 800, 25, nullptr, nullptr},
+};

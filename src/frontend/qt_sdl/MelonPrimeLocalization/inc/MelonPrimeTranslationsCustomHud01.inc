@@ -1782,6 +1782,12 @@
         }
     },
     {
+        "Auto Scale Scoreboard Cap %",
+        {
+            {MenuLangId::Japanese, "自動サイズ調整のスコアボード上限 %"},
+        }
+    },
+    {
         "MPH (Default) is a 6px pixel font tuned for sharpness. For System/file fonts, Font Size sets the base render px (HUD SCALE still applies); weight/italic/effects apply too. The “Aa…” button opens a full font picker.",
         {
             {MenuLangId::Japanese, "MPH（標準）は、くっきり表示に調整された 6px のピクセルフォントです。システムフォントやファイルフォントでは、フォントサイズが基準描画 px を決めます（HUD倍率も適用されます）。太さ・斜体・効果も反映されます。「Aa…」ボタンで詳細なフォント選択を開けます。"},

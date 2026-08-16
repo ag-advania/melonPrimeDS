@@ -619,6 +619,7 @@
 #define MP_HUD_PROP_KEY_HudScoreboardShow "Metroid.Visual.HudScoreboardShow"
 #define MP_HUD_PROP_KEY_HudScoreboardOpacity "Metroid.Visual.HudScoreboardOpacity"
 #define MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity "Metroid.Visual.HudScoreboardBackgroundOpacity"
+#define MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard "Metroid.Visual.HudAutoScaleCapScoreboard"
 
 // X(identifier, key, cfgType, defaultExpr, uiMin, uiMax, uiStep, label, uiKind, surfaceMask, flags)
 #define MP_HUD_PROP_ROW_HudFontMode(X) X(HudFontMode, MP_HUD_PROP_KEY_HudFontMode, Int, 0, 0, 2, 1, "Font Source", "FontMode", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1225,6 +1226,7 @@
 #define MP_HUD_PROP_ROW_HudScoreboardShow(X) X(HudScoreboardShow, MP_HUD_PROP_KEY_HudScoreboardShow, Bool, true, 0, 0, 0, "Show", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardOpacity(X) X(HudScoreboardOpacity, MP_HUD_PROP_KEY_HudScoreboardOpacity, Double, 1.000000, 0, 100, 5, "Opacity", "Float", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X) X(HudScoreboardBackgroundOpacity, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, Double, 0.850000, 0, 100, 5, "Background Opacity", "Float", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudAutoScaleCapScoreboard(X) X(HudAutoScaleCapScoreboard, MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard, Int, 800, 100, 800, 25, "Auto Scale Scoreboard Cap %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 
 // Schema views reference row macros so each key literal has a single owner.
 #define MP_HUD_PROP_SCHEMA(X) \
@@ -1831,7 +1833,8 @@
     MP_HUD_PROP_ROW_HudScoreboardBackgroundColorB(X) \
     MP_HUD_PROP_ROW_HudScoreboardShow(X) \
     MP_HUD_PROP_ROW_HudScoreboardOpacity(X) \
-    MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X)
+    MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X) \
+    MP_HUD_PROP_ROW_HudAutoScaleCapScoreboard(X)
 
 // Type-filtered views preserve the Config.cpp DefaultList<T> ownership.
 #define MP_HUD_PROP_SCHEMA_INT(X) \
@@ -2294,7 +2297,8 @@
     MP_HUD_PROP_ROW_HudScoreboardTeamRowColorB(X) \
     MP_HUD_PROP_ROW_HudScoreboardBackgroundColorR(X) \
     MP_HUD_PROP_ROW_HudScoreboardBackgroundColorG(X) \
-    MP_HUD_PROP_ROW_HudScoreboardBackgroundColorB(X)
+    MP_HUD_PROP_ROW_HudScoreboardBackgroundColorB(X) \
+    MP_HUD_PROP_ROW_HudAutoScaleCapScoreboard(X)
 
 #define MP_HUD_PROP_SCHEMA_BOOL(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeCenterDot(X) \
