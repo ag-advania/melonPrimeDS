@@ -1814,6 +1814,14 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
     noteFramePresented();
+
+    // Linux has already requested visibility before presenter binding because
+    // Wayland requires a mapped/exposed native surface. Other platforms keep
+    // the native child hidden until the first successful present so an
+    // uninitialized presentation surface never obscures the Qt fallback or
+    // splash. requestNativeSurfaceVisible() coalesces duplicate state
+    // requests, so this is a no-op on the steady-state Linux path.
+    requestNativeSurfaceVisible(true);
 }
 
 
