@@ -85,6 +85,9 @@ private:
     VulkanSurface::NativeWindowSnapshot Snapshot;
     std::uint64_t BoundGeneration = 0;
     std::uint32_t ActiveFrames = 0;
+    // This is native presentation-object ownership, not merely GPU work:
+    // true means the presenter still owns the VkSwapchainKHR/VkSurfaceKHR
+    // pair that can reference the published native window.
     bool PresenterActive = false;
     bool HostShown = false;
 };

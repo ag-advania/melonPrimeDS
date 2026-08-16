@@ -13,7 +13,6 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
-#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -26,6 +25,7 @@
 #include "VulkanFeatureProbe.h"
 #include "VulkanGpuTimestamp.h"
 #include "VulkanPerf.h"
+#include "MelonPrimeVulkanPresenterTimeout.h"
 
 using namespace melonDS;
 
@@ -68,35 +68,6 @@ bool PresenterPreInputWaitExperimentEnabled() noexcept
 bool PresenterTwoImageSwapchainExperimentEnabled() noexcept
 {
     return EnvironmentEquals("MELONPRIME_VULKAN_SWAPCHAIN_IMAGE_COUNT", "2");
-}
-
-u64 PresenterAcquireTimeoutNanoseconds() noexcept
-{
-    // Linux native-surface destruction is a hard barrier. Keep the WSI wait
-    // finite by default so a compositor-side acquire cannot leave the GUI
-    // thread waiting forever. One second matches VulkanSync's existing
-    // DefaultFenceTimeoutNanoseconds watchdog: it is far above a normal
-    // frame interval while still producing a diagnosable failure for a hung
-    // presentation path. The environment override remains available for
-    // runner-specific validation and diagnosis.
-    const char* value = std::getenv("MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS");
-    if (value == nullptr || *value == '\0')
-#if defined(__linux__)
-        return 1000ull * 1000ull * 1000ull;
-#else
-        return UINT64_MAX;
-#endif
-
-    errno = 0;
-    char* end = nullptr;
-    const unsigned long long parsed = std::strtoull(value, &end, 10);
-    if (errno == ERANGE || end == value || *end != '\0')
-#if defined(__linux__)
-        return 1000ull * 1000ull * 1000ull;
-#else
-        return UINT64_MAX;
-#endif
-    return static_cast<u64>(parsed);
 }
 
 const char* PresentModeName(VkPresentModeKHR mode) noexcept
@@ -1780,7 +1751,7 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
                     VulkanPerf::CpuMetric::PresentImageFence);
                 waitRes = Device.Fns().WaitForFences(
                     Device.GetHandle(), 1, &imageFence, VK_TRUE,
-                    PresenterAcquireTimeoutNanoseconds());
+                    PresenterImageFenceTimeoutNanoseconds());
             }
             if (waitRes != VK_SUCCESS)
             {

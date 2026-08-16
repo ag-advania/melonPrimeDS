@@ -552,6 +552,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanFeatureCheck.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceCommon.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceLifecycle.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenterTimeout.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeScreenVulkan.cpp)
 
@@ -612,6 +613,27 @@ if (MELONPRIME_VULKAN_ACTIVE)
         COMMAND $<TARGET_FILE:melonprime_vulkan_surface_lifecycle_direct_tests>
         DEPENDS melonprime_vulkan_surface_lifecycle_direct_tests
         COMMENT "Running production Vulkan surface lifecycle tests..."
+        VERBATIM)
+
+    # Keep the acquire experiment environment contract separate from the
+    # production image-fence watchdog. This is pure timeout policy code, so it
+    # can be tested without a Vulkan device or a window system.
+    add_executable(melonprime_vulkan_presenter_timeout_tests
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-presenter-timeout-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenterTimeout.cpp)
+    target_include_directories(melonprime_vulkan_presenter_timeout_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_presenter_timeout_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1)
+    set_target_properties(melonprime_vulkan_presenter_timeout_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_presenter_timeout_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_presenter_timeout_tests>
+        DEPENDS melonprime_vulkan_presenter_timeout_tests
+        COMMENT "Running Vulkan presenter timeout policy tests..."
         VERBATIM)
 
     # Execute the production pacer against an API-level fake dispatch.  The

@@ -38,6 +38,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -417,6 +418,9 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     // renderer itself might already be gone during application teardown, so do
     // not dereference the borrowed renderer hook pointer from this destructor.
     prepareForRendererTransition(false);
+#if defined(__linux__)
+    retireLinuxPresenterForPanelDestruction();
+#endif
     releaseNativeSurface();
 }
 
@@ -837,8 +841,38 @@ void ScreenPanelVulkan::retireLinuxPresentationSurface(const char* reason)
     vulkan->presenter.Shutdown();
     vulkan->presenterSurfaceGeneration = 0;
     vulkan->linuxSurfaceDirty.store(true, std::memory_order_release);
+    assert(!vulkan->presenter.IsInitialized());
     if (vulkan->linuxSurfaceLifecycle)
         vulkan->linuxSurfaceLifecycle->markPresenterRetired();
+}
+
+
+void ScreenPanelVulkan::retireLinuxPresenterForPanelDestruction()
+{
+    if (!vulkan || !vulkan->linuxSurfaceLifecycle)
+        return;
+
+    // The panel was removed from the MainWindow/instance registry before its
+    // destructor reaches here, so the GUI thread is the exclusive owner of
+    // this final native-presenter teardown. Keep the lifecycle retirement
+    // request paired with the actual Shutdown performed by the helper below.
+    vulkan->linuxSurfaceLifecycle->requestNativeTransitionRetire();
+    vulkan->linuxSurfaceLifecycle->beginRetiring();
+
+    if (vulkan->presenter.IsInitialized())
+    {
+        retireLinuxPresentationSurface("panel destruction");
+    }
+    else
+    {
+        assert(!vulkan->presenter.IsInitialized());
+        vulkan->linuxSurfaceLifecycle->markPresenterRetired();
+    }
+
+    // SurfaceAboutToBeDestroyed is a hard native-destruction barrier. The
+    // panel destructor follows the same rule and never hides/deletes the Qt
+    // child while a lifecycle frame lease remains active.
+    vulkan->linuxSurfaceLifecycle->waitForDestroySafe();
 }
 #endif
 
@@ -1123,18 +1157,14 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
     }
     vulkan->hookedRenderer = nullptr;
 
-#if defined(__linux__)  // scatter-budget-exempt: retire the Linux native presentation lease before renderer teardown
-    if (vulkan->linuxSurfaceLifecycle)
-        vulkan->linuxSurfaceLifecycle->requestRetire();
-#endif
+    // Renderer transitions do not change the native presentation identity.
+    // Quiesce GPU work and release renderer-owned output leases, but keep the
+    // VkSurfaceKHR/VkSwapchainKHR presenter lifetime paired with the lifecycle
+    // state until an actual native-surface transition retires it.
     vulkan->presenter.Quiesce();
     vulkan->presenter.InvalidateDirectDescriptorCache();
     for (RendererOutputLease& lease : vulkan->frameLeases)
         lease.ReleaseNow();
-#if defined(__linux__)  // scatter-budget-exempt: publish Linux presenter quiescence after renderer teardown
-    if (vulkan->linuxSurfaceLifecycle)
-        vulkan->linuxSurfaceLifecycle->markPresenterRetired();
-#endif
 
     QMutexLocker lock(&vulkan->frameLock);
     vulkan->frameTop = nullptr;
