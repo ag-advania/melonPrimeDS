@@ -78,6 +78,9 @@ jobs:
     - name: Audit renderer telemetry zero-overhead contract
       run: python ./tools/ci/audits/audit-renderer-perf-zero-overhead.py
 
+    - name: Audit Vulkan native surface visibility contract
+      run: python ./tools/ci/audits/audit-vulkan-native-surface-visibility.py
+
     # The Vulkan backend ships its SPIR-V as committed generated sources, so a
     # GLSL edit that was never regenerated, or a variant that stopped compiling,
     # would only show up as a black screen on a machine with a Vulkan GPU. Both
@@ -189,12 +192,7 @@ jobs:
         status=$?
         set -e
         test "$status" -eq 0 -o "$status" -eq 124
-        grep -F '[Vulkan] validation layer enabled' build-validation/vulkan-validation.log
-        grep -E '\[Vulkan\] instance created \(API 1\.1\.0 requested, [0-9]+ extensions, 1 layers\)' build-validation/vulkan-validation.log
-        grep -F '[Vulkan] presentation surface created backend=' build-validation/vulkan-validation.log
-        grep -F '[Vulkan] presentation: requested-vsync=' build-validation/vulkan-validation.log
-        grep -F '[Vulkan] presenter ready:' build-validation/vulkan-validation.log
-        ! grep -E 'VUID-|Vulkan/validation' build-validation/vulkan-validation.log
+        python ./tools/ci/audits/verify-vulkan-linux-smoke.py build-validation/vulkan-validation.log
 
     # The smoke test above redirects the run to a log file it asserts
     # against without ever printing it, so a failure otherwise gives no
