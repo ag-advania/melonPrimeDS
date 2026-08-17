@@ -150,9 +150,17 @@ static HudBattleOwnedState& HudBattleState()
 #define s_battleState (HudBattleState().battle)
 #define s_hudPatchForceRestorePending (HudBattleState().patchForceRestorePending)
 
+static void BumpCustomHudVisualGeneration()
+{
+    auto& generation = ActiveHudConfigState().visualGeneration;
+    if (++generation == 0)
+        generation = 1;
+}
+
 void CustomHud_OnMatchJoin(CustomHudConfigState& hudConfig, melonDS::u8* ram, const RomAddresses& rom)
 {
     const ScopedHudConfigState active(hudConfig);
+    BumpCustomHudVisualGeneration();
     auto& b = s_battleState;
     ++b.scoreboardMatchSerial;
     b.mode = Read8(ram, rom.battleMode);
@@ -346,6 +354,82 @@ struct ScoreboardSnapshot {
     std::array<ScoreboardTeamSnapshot, 2> teamsByIndex{};
 };
 
+// The scoreboard is presented from the emulation thread, but its painter can
+// be entered more than once for the same emulated frame (for example while a
+// window is being refreshed).  Keep the final display strings and geometry in
+// a bounded plan so the draw pass never repeats localization, elision, or
+// width measurement for unchanged cells.
+struct ScoreboardPlanText {
+    QString display;
+    QRectF rect;
+    QColor color;
+    qreal advance = 0.0;
+    Qt::Alignment alignment = Qt::AlignLeft;
+    bool rankFont = false;
+    bool enabled = false;
+};
+
+struct ScoreboardPlanRow {
+    bool team = false;
+    uint8_t slot = 0xFF;
+    uint8_t teamIndex = 0xFF;
+    QColor color;
+    ScoreboardPlanText name;
+    ScoreboardPlanText rank;
+    ScoreboardPlanText first;
+    ScoreboardPlanText second;
+    QRectF hunterIconRect;
+    QRectF starsRect;
+    uint8_t hunterId = 0xFF;
+    uint8_t stars = 0xFF;
+};
+
+struct ScoreboardRenderPlan {
+    bool valid = false;
+    uint32_t configEpoch = 0;
+    int textCacheGeneration = 0;
+    int frameFontPx = 0;
+    float hudScale = 0.0f;
+    float stretchX = 0.0f;
+    uint8_t localPlayerSlot = 0xFF;
+    ScoreboardSnapshot snapshot{};
+    int panelX = 0;
+    int panelY = 0;
+    int panelW = 1;
+    int panelH = 0;
+    int rowH = 12;
+    int teamRowH = 12;
+    int rowSpacing = 0;
+    int columnSpacing = 0;
+    int rightPadding = 0;
+    int portraitW = 20;
+    int playerW = 1;
+    int firstW = 20;
+    int secondW = 20;
+    int rowCount = 0;
+    std::array<ScoreboardPlanText, 3> headers{};
+    std::array<ScoreboardPlanRow, 8> rows{};
+};
+
+// Bounded fixed slots: 3 headers plus four text cells for each of the eight
+// maximum display rows.  This intentionally avoids an unbounded QString map
+// on the presentation hot path.
+static constexpr int kScoreboardTextCacheSlots = 35;
+struct ScoreboardTextRasterSlot {
+    bool valid = false;
+    QString display;
+    QFont font;
+    QColor color;
+    QColor outlineColor;
+    float outlineOpacity = 0.0f;
+    int outlineThickness = 0;
+    int maxWidth = 0;
+    float hudScale = 0.0f;
+    int textCacheGeneration = 0;
+    qreal advance = 0.0;
+    QPainterPath outlinePath;
+};
+
 struct ScoreboardStaticPlayerSnapshot {
     uint8_t slot = 0xFF;
     uint8_t teamIndex = 0xFF;
@@ -403,6 +487,8 @@ struct HudRuntimeFrameCache {
 struct HudFrameOwnedState {
     HudRuntimeFrameCache frame;
     ScoreboardMatchCache scoreboardMatch;
+    ScoreboardRenderPlan scoreboardPlan;
+    std::array<ScoreboardTextRasterSlot, kScoreboardTextCacheSlots> scoreboardTextRaster{};
     struct ScoreboardFontCache {
         QFont boardFont;
         QFont rankFont;
@@ -1563,6 +1649,7 @@ void CustomHud_EnsurePatchRestored(
 void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
 {
     const ScopedHudConfigState active(hudConfig);
+    BumpCustomHudVisualGeneration();
     NoHudPatch_ResetState(ActiveHudConfigState().noHudPatch);
     s_cache.valid = false;
     s_battleState.valid = false;
@@ -1584,6 +1671,7 @@ void CustomHud_ReconcilePatchAfterSavestateLoad(
     uint8_t playerPosition)
 {
     const ScopedHudConfigState active(hudConfig);
+    BumpCustomHudVisualGeneration();
     auto& patch = ActiveHudConfigState().noHudPatch;
 
     // Do not trust the normal applied-mask tracker here. A loaded state can
@@ -1648,4 +1736,18 @@ void CustomHud_InvalidateConfigCache(CustomHudConfigState& hudConfig)
 uint32_t CustomHud_GetCacheEpoch(const CustomHudConfigState& hudConfig)
 {
     return hudConfig.cacheEpoch;
+}
+
+uint32_t CustomHud_GetVisualGeneration(const CustomHudConfigState& hudConfig)
+{
+    return hudConfig.visualGeneration;
+}
+
+uint32_t CustomHud_GetVisualGameFrame(EmuInstance* emu,
+                                      const void** ndsIdentity)
+{
+    melonDS::NDS* nds = emu ? emu->getNDS() : nullptr;
+    if (ndsIdentity)
+        *ndsIdentity = nds;
+    return nds ? nds->NumFrames : 0;
 }

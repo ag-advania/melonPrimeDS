@@ -486,6 +486,11 @@ bool ScreenPanelVulkan::initVulkanPresenter()
         return false;
     if (vulkan->presenter.IsInitialized())
         return true;
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
 #if defined(__linux__)  // scatter-budget-exempt: Linux native-surface readiness, not input dispatch
     if (!vulkan->linuxSurfaceLifecycle->presentationReady())
     {
@@ -832,6 +837,12 @@ void ScreenPanelVulkan::retireLinuxPresentationSurface(const char* reason)
     if (!vulkan || !vulkan->presenter.IsInitialized())
         return;
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
+
     const std::uint64_t oldGeneration = vulkan->presenterSurfaceGeneration;
     Platform::Log(
         Platform::LogLevel::Info,
@@ -1157,6 +1168,12 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
 {
     if (!vulkan)
         return;
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
 
     // Drop the borrowed composed-frame pointers *before* the renderer that owns
     // them is destroyed, and take the observer back off it. After this the panel
@@ -1680,6 +1697,9 @@ void ScreenPanelVulkan::drawScreenFrame()
             VulkanPerf::ScopedCpuTimer hudUploadTimer(VulkanPerf::CpuMetric::HudUpload);
             MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                 MelonPrimePerf::HudPhase::UploadPrepare);
+            MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
+                MelonPrimePerf::HudPhase::GpuUpload);
+            MelonPrimePerf::CountHudUploadCall();
             hudUploaded = vulkan->presenter.UploadLayerRegion(
                 layer,
                 Overlay[0].constBits(),
@@ -1710,6 +1730,8 @@ void ScreenPanelVulkan::drawScreenFrame()
     // composed screen images by the Vulkan compositor, then the Custom HUD,
     // then the OSD on top of everything.
 
+    MelonPrimePerf::ScopedHudPhase compositeTimer(
+        MelonPrimePerf::HudPhase::Composite);
     vulkan->presenter.BeginComposition();
 
     for (int index = 0; index < screens; ++index)
@@ -1899,11 +1921,15 @@ bool ScreenPanelVulkan::buildOsdStrip(QSize& outSize)
 bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScreen, QRect& outDirty)
 {
     outDirty = QRect();
+    m_hudVisualFrameWasReused = false;
 
     auto* mp = emuThread ? emuThread->GetMelonPrimeCore() : nullptr;
     const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
     if (!mp || !mp->IsRomDetected() || !(mp->IsInGame() || editMode))
+    {
+        m_hudVisualFrameValid = false;
         return false;
+    }
 
     auto& instcfg = emuInstance->getLocalConfig();
 
@@ -1939,6 +1965,7 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
 
     if (!(m_hudEnabled || editMode))
     {
+        m_hudVisualFrameValid = false;
         MelonPrime::CustomHud_EnsurePatchRestored(
             mp->HudConfigState(), emuInstance, instcfg,
             mp->GetCurrentRom(), mp->GetPlayerPosition(), mp->IsInGame());
@@ -1950,6 +1977,24 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     // visible in the black bars.
     const int overlayWidth = std::max(1, width());
     const int overlayHeight = std::max(1, height());
+    const HudVisualFrameKey visualKey = MelonPrimeHud_MakeVisualFrameKey(
+        emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+        overlayWidth, overlayHeight, m_topStretchX, m_hudScale,
+        m_hudOriginX, m_hudOriginY,
+        m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+    const bool reuseVisual = m_hudVisualFrameValid
+        && visualKey == m_hudVisualFrameKey
+        && vulkan->presenter.HasLayerContent(
+            MelonPrime::VulkanPresenter::Layer::Hud);
+    m_hudVisualFrameWasReused = reuseVisual;
+    if (reuseVisual) {
+        // The presenter retains the HUD layer between compositions. Reuse the
+        // existing GPU image and report no dirty region; the caller still
+        // draws the retained layer in the current composition.
+        MelonPrimePerf::CountHudVisualReuse();
+        return true;
+    }
+    MelonPrimePerf::CountHudVisualRender();
     const QRect previousDirty = m_hudPrevDirty;
     bool overlayRecreated = false;
     {
@@ -2012,6 +2057,8 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     }
 
     m_hudPrevDirty = dirty;
+    m_hudVisualFrameKey = visualKey;
+    m_hudVisualFrameValid = true;
     outDirty = overlayRecreated
         ? QRect(0, 0, Overlay[0].width(), Overlay[0].height())
         : dirty.united(previousDirty);

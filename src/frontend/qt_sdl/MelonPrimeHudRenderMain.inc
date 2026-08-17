@@ -113,6 +113,10 @@ HOT_FUNCTION QRect CustomHud_Render(
 
     ReadHudRuntimeVisibleState(rom, addrHot, st);
 
+    // Scoreboard work is profiled separately from state reads and the other
+    // HUD painter work.  This also makes the expensive plan/raster boundary
+    // visible in the aggregate developer report.
+    stateTimer.Stop();
     if (c.scoreboard.show) {
         ScoreboardSnapshot scoreboard{};
         if (ReadHudRuntimeScoreboardSnapshot(rom, st, scoreboard)) {
@@ -129,7 +133,6 @@ HOT_FUNCTION QRect CustomHud_Render(
     // s_textRenderScale and the hi-DPI font were built event-driven in RefreshCachedConfig;
     // nothing to recompute per frame here.
 
-    stateTimer.Stop();
     MelonPrimePerf::ScopedHudPhase drawTimer(MelonPrimePerf::HudPhase::QPainter);
 
     // Draw crosshair/scope first so large zoom reticles sit behind HP, ammo,

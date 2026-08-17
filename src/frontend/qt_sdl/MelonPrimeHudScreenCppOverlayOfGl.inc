@@ -36,29 +36,64 @@
                 const int topOutW = std::max(1, fullLogW);
                 const int topOutH = std::max(1, fullLogH);
 
-                // OPT-DR1: Track dirty rect to limit CPU clear + GL texture upload.
-                // OPT-DR3: Track the last uploaded region + its content hash so a
-                // large but unchanged region (held zoom scope) can skip re-upload.
-                MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, m_hudPrevDirty);
+                const HudVisualFrameKey visualKey = MelonPrimeHud_MakeVisualFrameKey(
+                    emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                    topOutW, topOutH, topStretchX, hudScale,
+                    m_hudOriginX, m_hudOriginY,
+                    m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+                const bool reuseVisual = m_hudVisualFrameValid
+                    && visualKey == m_hudVisualFrameKey
+                    && overlayTextures[0] != 0
+                    && overlayTexW == topOutW
+                    && overlayTexH == topOutH;
+                m_hudVisualFrameWasReused = reuseVisual;
+                const QRect previousDirty = m_hudPrevDirty;
+                QRect curDirty = m_hudPrevDirty;
+                QRect uploadRect;
+                if (reuseVisual) {
+                    // The GL texture is retained and is composited below. No
+                    // CPU clear, QPainter, HUD read, hash, or texture upload
+                    // is needed for an identical visual frame.
+                    MelonPrimePerf::CountHudVisualReuse();
+                } else {
+                    MelonPrimePerf::CountHudVisualRender();
+                    // OPT-DR1: Track dirty rect to limit CPU clear + GL texture upload.
+                    // OPT-DR3: Track the last uploaded region + its content hash so a
+                    // large but unchanged region (held zoom scope) can skip re-upload.
+                    MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, m_hudPrevDirty);
 
-                // Per-frame painter (must end before GL upload reads image bits)
-                const QRect curDirty = MelonPrimeHud_RenderTopOverlay(
-                    emuInstance, instcfg, mp,
-                    Overlay[0], overlayFont,
-                    topStretchX, hudScale,
-                    m_hudOriginX, m_hudOriginY);
-                const QRect uploadRect = m_hudPrevDirty.united(curDirty);
+                    // Per-frame painter (must end before GL upload reads image bits)
+                    curDirty = MelonPrimeHud_RenderTopOverlay(
+                        emuInstance, instcfg, mp,
+                        Overlay[0], overlayFont,
+                        topStretchX, hudScale,
+                        m_hudOriginX, m_hudOriginY);
+                    uploadRect = previousDirty.united(curDirty);
+                    m_hudPrevDirty = curDirty;
+                    m_hudVisualFrameKey = visualKey;
+                    m_hudVisualFrameValid = true;
+                }
                 if (MelonPrimePerf::IsFrameActive() && !uploadRect.isEmpty())
                     MelonPrimePerf::AddHudDirtyArea(uploadRect.width() * uploadRect.height());
                 bool hudGlStateChanged = false;
 
-                if (!uploadRect.isEmpty() && fullLogW > 0 && fullLogH > 0) {
+                const bool hasHudTexture = overlayTextures[0] != 0
+                    && overlayTexW == topOutW && overlayTexH == topOutH
+                    && !m_hudPrevDirty.isEmpty();
+                if ((!uploadRect.isEmpty() || (reuseVisual && hasHudTexture))
+                    && fullLogW > 0 && fullLogH > 0) {
+                    MelonPrimePerf::ScopedHudPhase compositeTimer(
+                        MelonPrimePerf::HudPhase::Composite);
                     glBindTexture(GL_TEXTURE_2D, overlayTextures[0]);
                     // Reallocate GL texture when the buffer size changes (window resize).
                     // OPT-TX1: GL_BGRA matches QImage native byte order — driver fast-path.
-                    if (topOutW != overlayTexW || topOutH != overlayTexH) {
+                    if (!uploadRect.isEmpty()
+                        && (topOutW != overlayTexW || topOutH != overlayTexH)) {
                         MelonPrimePerf::ScopedHudPhase uploadTimer(
                             MelonPrimePerf::HudPhase::UploadPrepare);
+                        MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
+                            MelonPrimePerf::HudPhase::GpuUpload);
+                        MelonPrimePerf::CountHudUploadCall();
                         // Full upload on size change — texture must be re-allocated.
                         MelonPrimePerf::AddGlUploadBytes(
                             static_cast<uint64_t>(topOutW) * static_cast<uint64_t>(topOutH) * 4u);
@@ -67,7 +102,7 @@
                         overlayTexW = topOutW;
                         overlayTexH = topOutH;
                         s_hudUploadedValidGL = false; // texture re-allocated; drop tracking
-                    } else {
+                    } else if (!uploadRect.isEmpty()) {
                         // OPT-DR3: For a large dirty region (held zoom scope is the
                         // motivating case), skip the multi-MB upload when the pixels
                         // are byte-identical to the last upload of the same region.
@@ -96,6 +131,9 @@
                         if (doUpload) {
                             MelonPrimePerf::ScopedHudPhase uploadTimer(
                                 MelonPrimePerf::HudPhase::UploadPrepare);
+                            MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
+                                MelonPrimePerf::HudPhase::GpuUpload);
+                            MelonPrimePerf::CountHudUploadCall();
                             const uint64_t uploadBytes =
                                 static_cast<uint64_t>(uploadRect.width())
                                 * static_cast<uint64_t>(uploadRect.height()) * 4u;
@@ -117,7 +155,9 @@
                         }
                     }
 
-                    // Switch to OSD shader for HUD overlay compositing.
+                    // Switch to OSD shader for HUD overlay compositing. This
+                    // remains active on a visual-frame reuse; only the upload
+                    // work above is skipped.
                     // Overlay is full-window sized so pos=(0,0), size=(fullLogW, fullLogH).
                     hudGlStateChanged = true;
                     glUseProgram(osdShader);
@@ -139,7 +179,7 @@
 
                     glDisable(GL_BLEND);
                 }
-                s_hudPrevDirtyGL = curDirty;
+                s_hudPrevDirtyGL = m_hudPrevDirty;
 
                 // --- Bottom Screen Overlay (GL-native, circle, high-res with opacity) ---
                 if (m_radarEnable &&
@@ -228,6 +268,14 @@
                     glBindTexture(GL_TEXTURE_2D_ARRAY, screenTexture);
                 }
                 } // if (hudVisible)
+                else {
+                    m_hudVisualFrameValid = false;
+                    m_hudVisualFrameWasReused = false;
+                }
+            }
+            else {
+                m_hudVisualFrameValid = false;
+                m_hudVisualFrameWasReused = false;
             }
         }
 #endif

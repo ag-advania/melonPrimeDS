@@ -146,6 +146,8 @@ static uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
         return h;
 
     const int rowBytes = (right - left + 1) * 4; // ARGB32 = 4 bytes/pixel
+    MelonPrimePerf::CountHudRegionHash(
+        static_cast<std::size_t>(rowBytes) * static_cast<std::size_t>(bot - top + 1));
     for (int y = top; y <= bot; ++y) {
         const uchar* row = img.scanLine(y) + left * 4;
         int i = 0;

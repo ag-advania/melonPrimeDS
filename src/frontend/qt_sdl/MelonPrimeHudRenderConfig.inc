@@ -248,6 +248,7 @@ struct CachedHudConfig {
 struct CustomHudConfigState {
     CachedHudConfig cache = { .valid = false };
     uint32_t cacheEpoch = 1;
+    uint32_t visualGeneration = 1;
 
     QImage weaponIcons[9];
     QImage weaponTintedIcons[9];

@@ -159,6 +159,16 @@ namespace MelonPrime {
     // Screen.cpp uses this to skip re-reading config per-frame.
     uint32_t CustomHud_GetCacheEpoch(const CustomHudConfigState& hudConfig);
 
+    // Generation for emulation-state transitions that can reuse the same
+    // NDS::NumFrames value (match join, reset, ROM/savestate replacement).
+    uint32_t CustomHud_GetVisualGeneration(const CustomHudConfigState& hudConfig);
+
+    // Lightweight presentation identity used by renderer front-ends to skip
+    // rebuilding an unchanged overlay.  The returned frame is the emulated
+    // NDS frame, while `ndsIdentity` receives the instance identity pointer.
+    uint32_t CustomHud_GetVisualGameFrame(EmuInstance* emu,
+                                          const void** ndsIdentity);
+
     // Cache battle settings at match join (call from HandleGameJoinInit).
     void CustomHud_OnMatchJoin(CustomHudConfigState& hudConfig, uint8_t* ram, const RomAddresses& rom);
 

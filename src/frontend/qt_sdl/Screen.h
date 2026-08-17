@@ -41,11 +41,89 @@
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudConfigOnScreenEdit.h"
+#include "MelonPrimeHudRender.h"
+#include "MelonPrimeLocalization.h"
+
+// Identity of the fully rendered Custom HUD image.  The emulation frame is
+// part of the key deliberately: presentation callbacks can repeat while the
+// game is paused or the window is refreshed, but NDS::NumFrames alone is not
+// sufficient without the instance/config/geometry generations below.
+struct HudVisualFrameKey {
+    const void* nds = nullptr;
+    uint32_t gameFrame = 0;
+    uint32_t configEpoch = 0;
+    uint32_t fontEpoch = 0;
+    uint32_t stateGeneration = 0;
+    int menuLanguage = 0;
+    int overlayWidth = 0;
+    int overlayHeight = 0;
+    float topStretchX = 0.0f;
+    float hudScale = 0.0f;
+    float originX = 0.0f;
+    float originY = 0.0f;
+    uint64_t rendererGeneration = 0;
+    bool hudEnabled = false;
+    bool editMode = false;
+
+    bool operator==(const HudVisualFrameKey& other) const noexcept
+    {
+        return nds == other.nds
+            && gameFrame == other.gameFrame
+            && configEpoch == other.configEpoch
+            && fontEpoch == other.fontEpoch
+            && stateGeneration == other.stateGeneration
+            && menuLanguage == other.menuLanguage
+            && overlayWidth == other.overlayWidth
+            && overlayHeight == other.overlayHeight
+            && topStretchX == other.topStretchX
+            && hudScale == other.hudScale
+            && originX == other.originX
+            && originY == other.originY
+            && rendererGeneration == other.rendererGeneration
+            && hudEnabled == other.hudEnabled
+            && editMode == other.editMode;
+    }
+};
 #endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
 class EmuInstance;
 class EmuThread;
+
+#ifdef MELONPRIME_CUSTOM_HUD
+static inline HudVisualFrameKey MelonPrimeHud_MakeVisualFrameKey(
+    EmuInstance* emu,
+    const MelonPrime::CustomHudConfigState& hudConfig,
+    uint32_t configEpoch,
+    uint32_t fontEpoch,
+    int overlayWidth,
+    int overlayHeight,
+    float topStretchX,
+    float hudScale,
+    float originX,
+    float originY,
+    uint64_t rendererGeneration,
+    bool hudEnabled,
+    bool editMode)
+{
+    HudVisualFrameKey key;
+    key.gameFrame = MelonPrime::CustomHud_GetVisualGameFrame(emu, &key.nds);
+    key.configEpoch = configEpoch;
+    key.fontEpoch = fontEpoch;
+    key.stateGeneration = MelonPrime::CustomHud_GetVisualGeneration(hudConfig);
+    key.menuLanguage = static_cast<int>(MelonPrime::UiText::ActiveMenuLanguage());
+    key.overlayWidth = overlayWidth;
+    key.overlayHeight = overlayHeight;
+    key.topStretchX = topStretchX;
+    key.hudScale = hudScale;
+    key.originX = originX;
+    key.originY = originY;
+    key.rendererGeneration = rendererGeneration;
+    key.hudEnabled = hudEnabled;
+    key.editMode = editMode;
+    return key;
+}
+#endif
 
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
@@ -303,6 +381,10 @@ protected:
     QRect    m_hudUploadedRect;
     uint64_t m_hudUploadedHash = 0;
     bool     m_hudUploadedValid = false;
+    HudVisualFrameKey m_hudVisualFrameKey;
+    bool     m_hudVisualFrameValid = false;
+    bool     m_hudVisualFrameWasReused = false;
+    uint64_t m_hudVisualRendererGeneration = 1;
 #endif
 
 #ifdef MELONPRIME_DS

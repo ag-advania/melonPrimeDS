@@ -646,6 +646,14 @@ void ScreenPanel::setupScreenLayout()
     int w = width();
     int h = height();
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Layout/DPI/fullscreen changes alter the output transform and invalidate
+    // the retained visual frame before any backend-specific overlay path runs.
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
+
     int layoutType = screenLayout;
     int sizing = screenSizing;
     applyInGameTopScreenOnlyOverride(layoutType, sizing);
@@ -1869,6 +1877,15 @@ void ScreenPanelDX12::prepareForRendererTransition()
     if (!dx12)
         return;
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    // The presenter/layer resources are about to be detached from the active
+    // renderer. Do not let an identical visual key skip the first upload after
+    // the transition.
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
+
     // Keep the same lifetime contract as the Vulkan presenter: old queue work
     // must be complete before descriptor identity is cleared or the renderer
     // output lease is dropped.
@@ -1891,6 +1908,11 @@ bool ScreenPanelDX12::initDX12()
 {
     if (!dx12 || !dx12->surface)
         return false;
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
     const HWND window = reinterpret_cast<HWND>(dx12->surface->winId());
     dx12->initialized = dx12->presenter.Init(window);
     if (!dx12->initialized)
@@ -2126,6 +2148,7 @@ void ScreenPanelDX12::drawScreen()
 
     bool hudUploaded = false;
     bool hudVisible = false;
+    m_hudVisualFrameWasReused = false;
     auto* mpForHud = emuThread->GetMelonPrimeCore();
     const bool hudEditMode = mpForHud
         && MelonPrime::CustomHud_IsEditMode(mpForHud->HudConfigState());
@@ -2157,10 +2180,13 @@ void ScreenPanelDX12::drawScreen()
             emuInstance, instcfg, mpForHud, m_hudEnabled, hudEditMode);
         dx12->hudRect = m_hudPrevDirty.intersected(
             QRect(0, 0, logicalWidth, logicalHeight));
-        if (hudVisible && !dx12->hudRect.isEmpty())
+        if (hudVisible && !m_hudVisualFrameWasReused && !dx12->hudRect.isEmpty())
         {
             MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                 MelonPrimePerf::HudPhase::UploadPrepare);
+            MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
+                MelonPrimePerf::HudPhase::GpuUpload);
+            MelonPrimePerf::CountHudUploadCall();
             const int patchWidth = dx12->hudRect.width();
             const int patchHeight = dx12->hudRect.height();
             hudUploaded = dx12->presenter.UploadLayerRegion(

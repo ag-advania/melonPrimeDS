@@ -277,6 +277,49 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 | OPT-HRT1 | HUD runtime state is cached by `NDS* + MainRAM + NumFrames + player offset + ROM group`; base/adventure/visible reads are cached eagerly, while ammo, owned weapons, bomb count, match status, rank, and time values are cached lazily only when their HUD elements need them | Repeated 120/240Hz draws of the same emulated frame reuse gameplay HUD state instead of re-reading RAM, while disabled elements do not populate unused cache fields | Per game frame |
 | OPT-SCB1 | Scoreboard match metadata (Hunter ID, Hunter Rank/Stars, decoded player name, active roster, TeamIndex, game mode, and team flags) is cached once after match join and keyed by NDS/RAM/ROM group plus match serial; only live metrics and `ResultSlots` are read per emulated frame | Removes repeated static scoreboard RAM reads and name decoding from the per-frame path while preserving live score, standing, and display-order updates | Once per match / dynamic fields per game frame |
 | OPT-SCB2 | Scoreboard/rank `QFont` and `QFontMetrics` values are cached by HUD config epoch, base-font generation/size, and HUD scale | Removes scoreboard font-size and metrics reconstruction from the high-refresh per-frame draw path while keeping settings and scale changes immediate | On relevant change |
+| OPT-SCB3 | `ScoreboardRenderPlan` retains final localized/elided strings, text advances, cell geometry, colors, icon rectangles, and rank/metric roles; structural changes rebuild it, while live rank/metric cells update in place when their current width bucket still fits | Removes repeated localization, elision, width measurement, and full-layout rebuilding from unchanged/dynamic-only scoreboard frames | Structural change / dynamic cells per game frame |
+| OPT-SCB4 | Bounded 35-slot scoreboard text cache keys final display text, font, colors, outline parameters, max width, HUD scale, and text generation; outline `QPainterPath` is generated once per key | Avoids repeated `QPainterPath::addText()` and keeps the draw pass to cached geometry plus fill/composite work | On cell-key change |
+| OPT-VFR1 | Software, OpenGL, Vulkan, DX12, and Metal presentation paths use a visual-frame key containing NDS identity/frame, config/font/state generations, menu language, output size, transform/origin, renderer generation, HUD toggle, and edit mode | Reuses the retained HUD image/texture on repeated presentation of the same emulated frame; skips clear, HUD state read, painter/raster, region hash, and upload while still compositing it | Per presentation callback |
+| OPT-PERF1 | Developer-only HUD phase probe reports `HudStateRead`, scoreboard plan/raster, other painter, clear, hash, upload preparation, GPU upload, composite, and total-active timing with calls/sum/avg/p50/p95/max plus reuse/cache/hash/upload counters | Makes 60/120/144/240 Hz high-refresh regressions measurable without per-frame log spam | Aggregate once per second when `MELONPRIME_PERF=1` |
+
+### Scoreboard render-plan and visual-frame reuse contract
+
+The scoreboard keeps the existing cache boundaries: match-static values (Hunter ID,
+Stars/rank, license name, active roster, `TeamIndex`, mode, and team flags) are read
+after match join, while time/kills/deaths/points/standings and `ResultSlots` remain
+live per emulated frame. `ScoreboardRenderPlan` stores the final display strings and
+device-independent geometry. A live value update replaces only the affected rank or
+metric cell when its unelided width still fits the existing cell; a width/row/order
+change falls back to a full structural plan rebuild.
+
+The 35 fixed text slots are intentionally bounded (three headers plus four text roles
+for each of eight possible rows). The cache stores outline paths, not a new map of
+unbounded text entries. A cache hit does not call `QPainterPath::addText()`; the fill
+pass still calls `drawText()` so opacity, clipping, and the existing pixel/AA behavior
+remain unchanged. Hunter portraits and Stars keep `SmoothPixmapTransform` disabled
+for nearest-neighbor scaling.
+
+Before an overlay is cleared or prepared, each presentation backend compares the
+visual-frame key. It includes more than `NDS::NumFrames`: NDS identity and frame,
+HUD config/font/state generations, active menu language, overlay dimensions,
+top-screen stretch/origin/scale, renderer-resource generation, HUD enabled state,
+and edit mode. Match join, reset, savestate/ROM reconciliation, configuration/font
+changes, language changes, resize/DPI/transform changes, renderer resource
+recreation, and HUD toggle/edit-mode changes therefore invalidate reuse. A reuse
+retains the backend's already uploaded image/texture and only composites it over the
+current game frame.
+
+The developer probe is disabled in release builds and is runtime-enabled with
+`MELONPRIME_PERF=1`. It emits one aggregate report per second; no per-frame log is
+produced. The report includes phase calls, sum, average, p50, p95, and maximum,
+plus visual render/reuse counts, plan builds, text-raster hits/misses, hashed bytes,
+and HUD upload calls/bytes.
+
+Runtime benchmark capture at 60/120/144/240 Hz, cross-backend GPU upload counters,
+and pixel-level visual regression across all hardware/backend combinations remain
+`NOT RUN`/`OPEN` in this environment. The Windows MinGW build and the available
+automated tests are the reproducible evidence recorded for this change; those tests
+do not substitute for physical GPU runtime coverage.
 
 ### HUD Auto-Scale System
 Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.

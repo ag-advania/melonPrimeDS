@@ -429,6 +429,11 @@ qreal ScreenPanelMetal::devicePixelRatioFromScreenLocal() const
 
 bool ScreenPanelMetal::initMetal()
 {
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
     if (!MelonPrime::Metal::SupportsRequiredBaseline())
     {
         fprintf(stderr, "[MelonPrime] metal presenter: SupportsRequiredBaseline() is false, refusing to init\n");
@@ -1014,18 +1019,78 @@ void ScreenPanelMetal::drawScreen()
         const int logicalW = std::max(1, static_cast<int>(std::ceil(static_cast<double>(w) / static_cast<double>(scale))));
         const int logicalH = std::max(1, static_cast<int>(std::ceil(static_cast<double>(h) / static_cast<double>(scale))));
         bool overlayHasContent = false;
+        bool hudVisualReuse = false;
 #ifdef MELONPRIME_CUSTOM_HUD
         bool gpuRadarEnabledForFrame = false;
         UiUniforms gpuRadarUiUniforms{};
         RadarFragmentUniforms gpuRadarFragmentUniforms{};
+        HudVisualFrameKey hudVisualKey{};
+        bool hudVisualKeyValid = false;
+        m_hudVisualFrameWasReused = false;
+        // Metal's UI texture also carries OSD/splash pixels. Reuse is safe
+        // only when this frame has no other CPU overlay that would need the
+        // retained QImage to be cleared or updated.
+        const bool noOtherUiOverlay = emuThread->emuIsActive() && osdItems.empty();
+        auto* preflightMp = emuThread->GetMelonPrimeCore();
+        if (preflightMp && preflightMp->IsRomDetected()
+            && (preflightMp->IsInGame()
+                || MelonPrime::CustomHud_IsEditMode(preflightMp->HudConfigState())))
+        {
+            auto& preflightCfg = emuInstance->getLocalConfig();
+            const bool preflightEditMode =
+                MelonPrime::CustomHud_IsEditMode(preflightMp->HudConfigState());
+            const uint32_t preflightEpoch =
+                MelonPrime::CustomHud_GetCacheEpoch(preflightMp->HudConfigState());
+            if (preflightEpoch != m_hudCfgEpoch) {
+                m_hudCfgEpoch = preflightEpoch;
+                m_hudEnabled = MelonPrime::CustomHud_IsEnabled(preflightCfg);
+            }
+            if (preflightEpoch != m_hudFontEpoch) {
+                m_hudFontEpoch = preflightEpoch;
+                overlayFont = MelonPrime::CustomHud_ResolveBaseFont(preflightCfg);
+                overlayFont.setPixelSize(
+                    MelonPrime::CustomHud_ResolveFontPixelSize(preflightCfg));
+            }
+            const bool preflightVisible = m_hudEnabled || preflightEditMode;
+            if (preflightVisible && noOtherUiOverlay
+                && m->uiTex && m->uiTexW == logicalW && m->uiTexH == logicalH)
+            {
+                hudVisualKey = MelonPrimeHud_MakeVisualFrameKey(
+                    emuInstance, preflightMp->HudConfigState(),
+                    m_hudCfgEpoch, m_hudFontEpoch,
+                    logicalW, logicalH,
+                    m_hudTopMatrixValid ? m_topStretchX : 1.0f,
+                    m_hudScale, m_hudOriginX, m_hudOriginY,
+                    m_hudVisualRendererGeneration, m_hudEnabled,
+                    preflightEditMode);
+                hudVisualKeyValid = true;
+                hudVisualReuse = m_hudVisualFrameValid
+                    && hudVisualKey == m_hudVisualFrameKey;
+            } else if (!preflightVisible) {
+                m_hudVisualFrameValid = false;
+            } else {
+                m_hudVisualFrameValid = false;
+                m_hudVisualFrameWasReused = false;
+            }
+        } else {
+            m_hudVisualFrameValid = false;
+            m_hudVisualFrameWasReused = false;
+        }
+        m_hudVisualFrameWasReused = hudVisualReuse;
+        if (hudVisualReuse)
+            MelonPrimePerf::CountHudVisualReuse();
 #endif
 
-        {
+        if (!hudVisualReuse) {
             MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
             if (m->uiOverlay.width() != logicalW || m->uiOverlay.height() != logicalH)
                 m->uiOverlay = QImage(logicalW, logicalH, QImage::Format_ARGB32_Premultiplied);
             m->uiOverlay.fill(Qt::transparent);
         }
+#ifdef MELONPRIME_CUSTOM_HUD
+        else
+            overlayHasContent = true;
+#endif
 
         QPainter overlayPainter(&m->uiOverlay);
 
@@ -1041,7 +1106,7 @@ void ScreenPanelMetal::drawScreen()
             if (mp && mp->IsRomDetected() && (mp->IsInGame() || editMode))
             {
                 auto& instcfg = emuInstance->getLocalConfig();
-                const bool hudEnabled = MelonPrime::CustomHud_IsEnabled(instcfg);
+                const bool hudEnabled = m_hudEnabled;
                 const bool hudVisible = hudEnabled || editMode;
                 if (!hudVisible)
                 {
@@ -1140,33 +1205,45 @@ void ScreenPanelMetal::drawScreen()
                         gpuRadarEnabledForFrame = destinationSize > 0.0f;
                     }
 
-                    if (overlayFont.family().isEmpty())
-                        overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
-                    overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
-                    overlayPainter.setFont(overlayFont);
+                    if (hudVisualReuse) {
+                        // The retained uiTex already contains the HUD image;
+                        // the GPU radar pass above remains live and is still
+                        // emitted for the current presentation.
+                        overlayHasContent = true;
+                    } else {
+                        if (overlayFont.family().isEmpty())
+                            overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
+                        overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
+                        overlayPainter.setFont(overlayFont);
 
-                    const auto hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
-                    const QRect dirty = MelonPrime::CustomHud_Render(
-                        mp->HudConfigState(),
-                        emuInstance, instcfg,
-                        mp->GetCurrentRom(), mp->GetAddrHot(),
-                        mp->GetPlayerPosition(),
-                        &overlayPainter, nullptr,
-                        &m->uiOverlay, nullptr,
-                        mp->IsInGame(),
-                        m_hudTopMatrixValid ? m_topStretchX : 1.0f,
-                        m_hudScale,
-                        (m_hudScale != 0.0f) ? (m_hudOriginX / m_hudScale) : 0.0f,
-                        (m_hudScale != 0.0f) ? (m_hudOriginY / m_hudScale) : 0.0f);
-                    if (hudRenderStart)
-                        MelonPrimePerf::AddCustomHudRenderTicks(
-                            MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
-                    if (MelonPrimePerf::IsFrameActive() && !dirty.isEmpty())
-                    {
-                        MelonPrimePerf::AddHudDirtyArea(dirty.width() * dirty.height());
-                        MelonPrimePerf::CountCustomHudDrawn();
+                        MelonPrimePerf::CountHudVisualRender();
+                        const auto hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
+                        const QRect dirty = MelonPrime::CustomHud_Render(
+                            mp->HudConfigState(),
+                            emuInstance, instcfg,
+                            mp->GetCurrentRom(), mp->GetAddrHot(),
+                            mp->GetPlayerPosition(),
+                            &overlayPainter, nullptr,
+                            &m->uiOverlay, nullptr,
+                            mp->IsInGame(),
+                            m_hudTopMatrixValid ? m_topStretchX : 1.0f,
+                            m_hudScale,
+                            (m_hudScale != 0.0f) ? (m_hudOriginX / m_hudScale) : 0.0f,
+                            (m_hudScale != 0.0f) ? (m_hudOriginY / m_hudScale) : 0.0f);
+                        if (hudRenderStart)
+                            MelonPrimePerf::AddCustomHudRenderTicks(
+                                MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
+                        if (MelonPrimePerf::IsFrameActive() && !dirty.isEmpty())
+                        {
+                            MelonPrimePerf::AddHudDirtyArea(dirty.width() * dirty.height());
+                            MelonPrimePerf::CountCustomHudDrawn();
+                        }
+                        overlayHasContent = overlayHasContent || !dirty.isEmpty();
+                        if (hudVisualKeyValid) {
+                            m_hudVisualFrameKey = hudVisualKey;
+                            m_hudVisualFrameValid = true;
+                        }
                     }
-                    overlayHasContent = overlayHasContent || !dirty.isEmpty();
                 }
             }
         }
@@ -1228,12 +1305,17 @@ void ScreenPanelMetal::drawScreen()
 
             if (m->uiTex)
             {
-                {
+                MelonPrimePerf::ScopedHudPhase compositeTimer(
+                    MelonPrimePerf::HudPhase::Composite);
+                if (!hudVisualReuse) {
                     MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                         MelonPrimePerf::HudPhase::UploadPrepare);
+                    MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
+                        MelonPrimePerf::HudPhase::GpuUpload);
+                    MelonPrimePerf::CountHudUploadCall();
                     [m->uiTex replaceRegion:MTLRegionMake2D(0, 0, logicalW, logicalH)
                                  mipmapLevel:0
-                                   withBytes:m->uiOverlay.constBits()
+                                          withBytes:m->uiOverlay.constBits()
                                  bytesPerRow:m->uiOverlay.bytesPerLine()];
                 }
 

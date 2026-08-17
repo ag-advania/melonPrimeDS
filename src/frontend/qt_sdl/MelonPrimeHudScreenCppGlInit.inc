@@ -9,6 +9,8 @@
     // first valid Custom HUD upload.
     overlayTexW = 0;
     overlayTexH = 0;
+    m_hudVisualFrameValid = false;
+    ++m_hudVisualRendererGeneration;
     m_hudPrevDirty = QRect();
     m_hudUploadedRect = QRect();
     m_hudUploadedHash = 0;
