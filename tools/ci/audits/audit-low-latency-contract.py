@@ -91,6 +91,12 @@ def main() -> int:
         "tools/testing/vulkan-present-pacer-dispatch-tests.cpp"
     )
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
+    vulkan_presenter_header = read(
+        "src/frontend/qt_sdl/MelonPrimeVulkanPresenter.h"
+    )
+    vulkan_sync = read("src/VulkanSync.cpp")
+    vulkan_sync_header = read("src/VulkanSync.h")
+    vulkan_screen = read("src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp")
     vulkan_timeout_policy = read(
         "src/frontend/qt_sdl/MelonPrimeVulkanPresenterTimeout.cpp"
     )
@@ -162,6 +168,68 @@ def main() -> int:
         "bypassVulkanHostLimiter" not in emu
         and "ShouldBypassHostLimiter" not in vulkan_pacer,
         "Vulkan latency waits must never bypass the exact host FPS limiter",
+        failures,
+    )
+    presenter_begin = function_body(
+        vulkan_presenter,
+        "bool VulkanPresenter::BeginFrame(",
+        "void VulkanPresenter::BeginComposition()",
+    )
+    frame_begin = function_body(
+        vulkan_sync,
+        "FrameContext* FrameRing::BeginFrameInternal(",
+        "bool FrameRing::SubmitFrame(",
+    )
+    require(
+        all(token in vulkan_sync_header for token in (
+            "enum class FrameBeginResult",
+            "FrameContext* TryBeginFrame(FrameBeginResult* result = nullptr)",
+        ))
+        and ordered(
+            frame_begin,
+            [
+                "const u32 nextIndex = VulkanFrameRingIndexForAbsoluteFrame(",
+                "res = fns.GetFenceStatus(handle, frame.InFlightFence);",
+                "if (!waitForSlot && res == VK_NOT_READY)",
+                "res = fns.ResetFences(handle, 1, &frame.InFlightFence);",
+                "CurrentIndex = nextIndex;",
+                "frame.Recording = true;",
+            ],
+        )
+        and "if (frame.Recording)" in vulkan_sync
+        and all(token in vulkan_presenter_header for token in (
+            "bool BeginFrame(",
+            "bool waitForPresentSlot = true",
+            "LastBeginWasLatencySkip()",
+        ))
+        and ordered(
+            presenter_begin,
+            [
+                "Frames.TryBeginFrame(&beginResult)",
+                "VulkanPerf::Counter::VulkanPresenterSlotBusySkipCount",
+                "vkAcquireNextImageKHR",
+            ],
+        )
+        and "LastBeginLatencySkip = true;" in presenter_begin
+        and all(token in vulkan_screen for token in (
+            "sameRendererFrame",
+            "retainedScreenKey",
+            "ReuseScreenLayerFromFrame",
+            "VulkanPerf::Counter::VulkanScreenFrameReuseCount",
+            "invalidateScreenRetention();",
+        ))
+        and all(token in vulkan_presenter for token in (
+            "VulkanPerf::Counter::VulkanScreenLayerUploadSkipCount",
+            "CmdCopyBufferToImage",
+        )),
+        "Vulkan low-latency slot admission and same-renderer screen retention contracts are missing",
+        failures,
+    )
+    require(
+        "if (tagLatency && !genericPresentMetadata.LegacyIdAttached)" in vulkan_presenter
+        and "must not both" in vulkan_presenter
+        and "same correlation value" in vulkan_presenter,
+        "Reflex and Vulkan pacer must not chain duplicate VkPresentIdKHR nodes",
         failures,
     )
     require(

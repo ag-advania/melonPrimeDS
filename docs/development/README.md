@@ -12,6 +12,7 @@
 - [Add a menu language](localization/add-menu-language.md)
 - [Metroid Prime Hunters terminology reference](localization/metroid-prime-hunters-terminology-reference.md)
 - [Performance baseline procedure](performance/baseline-procedure.md)
+- [Vulkan low-latency presentation](performance/vulkan-low-latency.md)
 - [Merge upstream melonDS](git/merge-upstream-melonds.md)
 - [Release notes](release/release-notes.md)
 - [Nightly release](release/nightly-release.md)

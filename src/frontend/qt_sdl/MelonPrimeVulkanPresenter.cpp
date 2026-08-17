@@ -2411,8 +2411,15 @@ bool VulkanPresenter::EndFrame()
         present, tagLatency ? latencyFrameId : 0, genericPresentMetadata);
 
     VkPresentIdKHR presentId{};
-    if (tagLatency)
+    if (tagLatency && !genericPresentMetadata.LegacyIdAttached)
     {
+        // PreparePresent() may already have attached the legacy
+        // VK_KHR_present_id node for its bounded-wait fallback. That node and
+        // Reflex's correlation ID have the same Vulkan sType and must not both
+        // appear in one VkPresentInfoKHR pNext chain. PreparePresent() was
+        // given the Reflex ID above, so its existing node already carries the
+        // same correlation value; only add the node here when the pacer did
+        // not attach one.
         presentId.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
         presentId.swapchainCount = 1;
         presentId.pPresentIds = logicalPresentId != 0
