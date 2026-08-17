@@ -108,8 +108,12 @@ struct State {
     uint64_t cntHudVisualRenders = 0;
     uint64_t cntHudVisualReuses = 0;
     uint64_t cntScoreboardPlanBuilds = 0;
-    uint64_t cntScoreboardTextRasterHits = 0;
-    uint64_t cntScoreboardTextRasterMisses = 0;
+    uint64_t cntScoreboardFullPlanRebuilds = 0;
+    uint64_t cntScoreboardDynamicCellUpdates = 0;
+    uint64_t cntScoreboardTimeVisualChanges = 0;
+    uint64_t cntScoreboardStructureChecks = 0;
+    uint64_t cntScoreboardOutlinePathHits = 0;
+    uint64_t cntScoreboardOutlinePathMisses = 0;
     uint64_t cntHudRegionHashCalls = 0;
     uint64_t sumHudRegionHashBytes = 0;
     uint64_t cntHudUploadCalls = 0;
@@ -206,8 +210,12 @@ inline void ResetWindowStats()
     st.cntHudVisualRenders = 0;
     st.cntHudVisualReuses = 0;
     st.cntScoreboardPlanBuilds = 0;
-    st.cntScoreboardTextRasterHits = 0;
-    st.cntScoreboardTextRasterMisses = 0;
+    st.cntScoreboardFullPlanRebuilds = 0;
+    st.cntScoreboardDynamicCellUpdates = 0;
+    st.cntScoreboardTimeVisualChanges = 0;
+    st.cntScoreboardStructureChecks = 0;
+    st.cntScoreboardOutlinePathHits = 0;
+    st.cntScoreboardOutlinePathMisses = 0;
     st.cntHudRegionHashCalls = 0;
     st.sumHudRegionHashBytes = 0;
     st.cntHudUploadCalls = 0;
@@ -317,8 +325,9 @@ inline void MaybeReport1Hz()
         "composite[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "total_active[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "calls=%llu drawn=%llu "
-        "visual_render=%llu visual_reuse=%llu plan_build=%llu "
-        "raster_hit=%llu raster_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu\n",
+        "visual_render=%llu visual_reuse=%llu plan_build=%llu full_rebuild=%llu "
+        "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
+        "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu\n",
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::State)]),
         hudSumUs(HudPhase::State), hudAverageUs(HudPhase::State),
         hudPercentileUs(HudPhase::State, 0.50), hudPercentileUs(HudPhase::State, 0.95),
@@ -368,8 +377,12 @@ inline void MaybeReport1Hz()
         static_cast<unsigned long long>(st.cntHudVisualRenders),
         static_cast<unsigned long long>(st.cntHudVisualReuses),
         static_cast<unsigned long long>(st.cntScoreboardPlanBuilds),
-        static_cast<unsigned long long>(st.cntScoreboardTextRasterHits),
-        static_cast<unsigned long long>(st.cntScoreboardTextRasterMisses),
+        static_cast<unsigned long long>(st.cntScoreboardFullPlanRebuilds),
+        static_cast<unsigned long long>(st.cntScoreboardStructureChecks),
+        static_cast<unsigned long long>(st.cntScoreboardDynamicCellUpdates),
+        static_cast<unsigned long long>(st.cntScoreboardTimeVisualChanges),
+        static_cast<unsigned long long>(st.cntScoreboardOutlinePathHits),
+        static_cast<unsigned long long>(st.cntScoreboardOutlinePathMisses),
         static_cast<unsigned long long>(st.cntHudRegionHashCalls),
         static_cast<unsigned long long>(st.sumHudRegionHashBytes),
         static_cast<unsigned long long>(st.cntHudUploadCalls));
@@ -567,16 +580,37 @@ inline void CountScoreboardPlanBuild()
         ++S().cntScoreboardPlanBuilds;
 }
 
-inline void CountScoreboardTextRasterHit()
+inline void CountScoreboardFullPlanRebuild()
 {
     if (S().frameOpen)
-        ++S().cntScoreboardTextRasterHits;
+        ++S().cntScoreboardFullPlanRebuilds;
 }
 
-inline void CountScoreboardTextRasterMiss()
+inline void CountScoreboardDynamicCellUpdate(bool timeVisualChange)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntScoreboardDynamicCellUpdates;
+    if (timeVisualChange)
+        ++S().cntScoreboardTimeVisualChanges;
+}
+
+inline void CountScoreboardStructureCheck()
 {
     if (S().frameOpen)
-        ++S().cntScoreboardTextRasterMisses;
+        ++S().cntScoreboardStructureChecks;
+}
+
+inline void CountScoreboardOutlinePathHit()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardOutlinePathHits;
+}
+
+inline void CountScoreboardOutlinePathMiss()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardOutlinePathMisses;
 }
 
 inline void CountHudRegionHash(std::size_t bytes)
@@ -709,8 +743,11 @@ inline void CountCustomHudDrawn() {}
 inline void CountHudVisualRender() {}
 inline void CountHudVisualReuse() {}
 inline void CountScoreboardPlanBuild() {}
-inline void CountScoreboardTextRasterHit() {}
-inline void CountScoreboardTextRasterMiss() {}
+inline void CountScoreboardFullPlanRebuild() {}
+inline void CountScoreboardDynamicCellUpdate(bool) {}
+inline void CountScoreboardStructureCheck() {}
+inline void CountScoreboardOutlinePathHit() {}
+inline void CountScoreboardOutlinePathMiss() {}
 inline void CountHudRegionHash(std::size_t) {}
 inline void CountHudUploadCall() {}
 inline void ShutdownReport() {}

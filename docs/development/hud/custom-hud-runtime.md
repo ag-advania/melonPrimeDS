@@ -277,10 +277,10 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 | OPT-HRT1 | HUD runtime state is cached by `NDS* + MainRAM + NumFrames + player offset + ROM group`; base/adventure/visible reads are cached eagerly, while ammo, owned weapons, bomb count, match status, rank, and time values are cached lazily only when their HUD elements need them | Repeated 120/240Hz draws of the same emulated frame reuse gameplay HUD state instead of re-reading RAM, while disabled elements do not populate unused cache fields | Per game frame |
 | OPT-SCB1 | Scoreboard match metadata (Hunter ID, Hunter Rank/Stars, decoded player name, active roster, TeamIndex, game mode, and team flags) is cached once after match join and keyed by NDS/RAM/ROM group plus match serial; only live metrics and `ResultSlots` are read per emulated frame | Removes repeated static scoreboard RAM reads and name decoding from the per-frame path while preserving live score, standing, and display-order updates | Once per match / dynamic fields per game frame |
 | OPT-SCB2 | Scoreboard/rank `QFont` and `QFontMetrics` values are cached by HUD config epoch, base-font generation/size, and HUD scale | Removes scoreboard font-size and metrics reconstruction from the high-refresh per-frame draw path while keeping settings and scale changes immediate | On relevant change |
-| OPT-SCB3 | `ScoreboardRenderPlan` retains final localized/elided strings, text advances, cell geometry, colors, icon rectangles, and rank/metric roles; structural changes rebuild it, while live rank/metric cells update in place when their current width bucket still fits | Removes repeated localization, elision, width measurement, and full-layout rebuilding from unchanged/dynamic-only scoreboard frames | Structural change / dynamic cells per game frame |
-| OPT-SCB4 | Bounded 35-slot scoreboard text cache keys final display text, font, colors, outline parameters, max width, HUD scale, and text generation; outline `QPainterPath` is generated once per key | Avoids repeated `QPainterPath::addText()` and keeps the draw pass to cached geometry plus fill/composite work | On cell-key change |
-| OPT-VFR1 | Software, OpenGL, Vulkan, DX12, and Metal presentation paths use a visual-frame key containing NDS identity/frame, config/font/state generations, menu language, output size, transform/origin, renderer generation, HUD toggle, and edit mode | Reuses the retained HUD image/texture on repeated presentation of the same emulated frame; skips clear, HUD state read, painter/raster, region hash, and upload while still compositing it | Per presentation callback |
-| OPT-PERF1 | Developer-only HUD phase probe reports `HudStateRead`, scoreboard plan/raster, other painter, clear, hash, upload preparation, GPU upload, composite, and total-active timing with calls/sum/avg/p50/p95/max plus reuse/cache/hash/upload counters | Makes 60/120/144/240 Hz high-refresh regressions measurable without per-frame log spam | Aggregate once per second when `MELONPRIME_PERF=1` |
+| OPT-SCB3 | `ScoreboardRenderPlan` retains final localized/elided strings, text advances, cell geometry, colors, icon rectangles, and rank/metric roles. A compact `ScoreboardStructureKey` compares only match serial, mode/roster/order/team structure, visibility, and active slots; live cells use a semantic value key, so time changes are bucketed to the displayed second | Removes per-frame name/string comparison, repeated localization/elision, and full-layout rebuilding. A changed dynamic cell formats and measures once, then updates in place when it fits; overflow falls back to a structural rebuild | Structural change / changed dynamic cells per game frame |
+| OPT-SCB4 | Scoreboard outline paths are stored on each retained text cell. Outline OFF bypasses path creation and lookup entirely; outline ON lazily builds one path per cell and clears it only when the displayed text/font plan changes | Removes the old 35-slot raster-cache machinery and avoids outline work when the feature is disabled while retaining the existing drawText behavior | Cell text/font change / outline-enabled draw |
+| OPT-VFR1 | Software, OpenGL, Vulkan, DX12, and Metal presentation paths first compare only NDS identity plus emulated game frame. Only a same-frame candidate builds the extended visual-frame key containing config/font/state generations, menu language, output size, transform/origin, renderer generation, HUD toggle, and edit mode | Avoids the full 14-field key construction on every new emulated frame while retaining exact same-frame image/texture reuse and invalidation | Per presentation callback |
+| OPT-PERF1 | Developer-only HUD phase probe reports `HudStateRead`, scoreboard plan/raster, other painter, clear, hash, upload preparation, GPU upload, composite, and total-active timing with calls/sum/avg/p50/p95/max plus visual reuse, plan rebuild, structure-check, dynamic-cell, time-visual-change, outline-path, hash, and upload counters | Makes 60/120/144/240 Hz high-refresh regressions measurable without per-frame log spam | Aggregate once per second when `MELONPRIME_PERF=1` |
 
 ### Scoreboard render-plan and visual-frame reuse contract
 
@@ -288,16 +288,19 @@ The scoreboard keeps the existing cache boundaries: match-static values (Hunter 
 Stars/rank, license name, active roster, `TeamIndex`, mode, and team flags) are read
 after match join, while time/kills/deaths/points/standings and `ResultSlots` remain
 live per emulated frame. `ScoreboardRenderPlan` stores the final display strings and
-device-independent geometry. A live value update replaces only the affected rank or
-metric cell when its unelided width still fits the existing cell; a width/row/order
-change falls back to a full structural plan rebuild.
+device-independent geometry. `ScoreboardStructureKey` deliberately excludes names,
+Hunter ID, Stars, and live metrics; the match serial is the invalidation boundary for
+those match-static values. A live value update first compares a semantic value key
+(time is represented by visible seconds, including the `MAX` sentinel), then replaces
+only the affected rank or metric cell. The changed-cell path calls formatting and
+`horizontalAdvance()` once; a width overflow falls back to a full structural plan
+rebuild.
 
-The 35 fixed text slots are intentionally bounded (three headers plus four text roles
-for each of eight possible rows). The cache stores outline paths, not a new map of
-unbounded text entries. A cache hit does not call `QPainterPath::addText()`; the fill
-pass still calls `drawText()` so opacity, clipping, and the existing pixel/AA behavior
-remain unchanged. Hunter portraits and Stars keep `SmoothPixmapTransform` disabled
-for nearest-neighbor scaling.
+Outline OFF does not touch an outline path. With outline enabled, each retained cell
+builds its own `QPainterPath` lazily and reuses it until that cell's displayed text or
+font plan changes. The fill pass still calls `drawText()` so opacity, clipping, and
+the existing pixel/AA behavior remain unchanged. Hunter portraits and Stars keep
+`SmoothPixmapTransform` disabled for nearest-neighbor scaling.
 
 Before an overlay is cleared or prepared, each presentation backend compares the
 visual-frame key. It includes more than `NDS::NumFrames`: NDS identity and frame,
@@ -312,8 +315,38 @@ current game frame.
 The developer probe is disabled in release builds and is runtime-enabled with
 `MELONPRIME_PERF=1`. It emits one aggregate report per second; no per-frame log is
 produced. The report includes phase calls, sum, average, p50, p95, and maximum,
-plus visual render/reuse counts, plan builds, text-raster hits/misses, hashed bytes,
+plus visual render/reuse counts, scoreboard full-plan rebuilds, structure checks,
+dynamic-cell updates, time visual changes, outline-path hits/misses, hashed bytes,
 and HUD upload calls/bytes.
+
+### 2026-08-17 performance regression audit (`0b5f38e`)
+
+The regression audit compared candidate `0b5f38e12f78d32f0759dbc9ed50fce6ec618e89`
+with its direct parent baseline `1b46381f1bf92cf3f55539da7e7f532292b3803b`.
+The candidate hot paths were simplified with the following code-level evidence:
+
+- raw scoreboard time ticks no longer invalidate text work until the displayed
+  second changes;
+- the per-frame structure check uses one compact key and does not compare
+  `QString` names or a copied full snapshot;
+- dynamic cells update in place without the 24-entry temporary plan arrays;
+- the fit path performs one format and one `horizontalAdvance()` call;
+- outline-disabled cells bypass path generation, while outline-enabled paths live
+  on the retained cells;
+- a new presentation frame takes the NDS/frame identity gate before constructing
+  the extended visual key.
+
+The release build `tools\build\windows\build-mingw-existing.bat --jobs 1` completed
+successfully, including the available automated tests and the 82-language Classic
+On-Screen Edit geometry cases. Static renderer, ownership, thread-boundary, and
+software-parity audits also passed. A developer-feature build was attempted but the
+existing Qt `moc.exe` dependency failed to start with Windows error `0xc0000135`.
+
+Controlled runtime A/B capture at 60/120/144/240 Hz, per-renderer GPU upload counters,
+and pixel-level visual comparison are `NOT RUN`/`OPEN` in this environment because
+there is no reproducible ROM/input/runtime benchmark harness available here. The
+source-level gates and shipping build are evidence for the implementation only; they
+do not substitute for that runtime coverage.
 
 Runtime benchmark capture at 60/120/144/240 Hz, cross-backend GPU upload counters,
 and pixel-level visual regression across all hardware/backend combinations remain

@@ -321,7 +321,6 @@ enum class ScoreboardGameMode : uint8_t {
 
 struct ScoreboardPlayerSnapshot {
     uint8_t slot = 0xFF;
-    uint8_t displayIndex = 0xFF;
     uint8_t teamIndex = 0xFF;
     uint8_t hunterId = 0xFF;
     uint8_t stars = 0xFF;
@@ -332,7 +331,6 @@ struct ScoreboardPlayerSnapshot {
     int32_t kills = 0;
     int32_t deaths = 0;
     int32_t points = 0;
-    std::array<uint8_t, 0x15> rawName{};
     QString displayName;
 };
 
@@ -344,6 +342,7 @@ struct ScoreboardTeamSnapshot {
 };
 
 struct ScoreboardSnapshot {
+    uint32_t matchSerial = 0;
     uint8_t gameMode = 0;
     uint8_t activePlayers = 0;
     uint16_t teamFlags = 0;
@@ -352,6 +351,46 @@ struct ScoreboardSnapshot {
     std::array<uint8_t, 4> resultSlots = {0xFF, 0xFF, 0xFF, 0xFF};
     std::array<ScoreboardPlayerSnapshot, 4> playersBySlot{};
     std::array<ScoreboardTeamSnapshot, 2> teamsByIndex{};
+};
+
+struct ScoreboardVisualValue {
+    int32_t value = 0;
+    bool isTime = false;
+    bool isMax = false;
+    bool valid = false;
+
+    bool operator==(const ScoreboardVisualValue& other) const noexcept
+    {
+        return value == other.value
+            && isTime == other.isTime
+            && isMax == other.isMax
+            && valid == other.valid;
+    }
+};
+
+struct ScoreboardStructureKey {
+    uint32_t matchSerial = 0;
+    uint8_t gameMode = 0;
+    uint8_t activePlayers = 0;
+    uint16_t teamFlags = 0;
+    bool teams = false;
+    bool visible = false;
+    std::array<uint8_t, 4> resultSlots = {0xFF, 0xFF, 0xFF, 0xFF};
+    std::array<uint8_t, 4> teamIndex = {0xFF, 0xFF, 0xFF, 0xFF};
+    std::array<bool, 4> active = {false, false, false, false};
+
+    bool operator==(const ScoreboardStructureKey& other) const noexcept
+    {
+        return matchSerial == other.matchSerial
+            && gameMode == other.gameMode
+            && activePlayers == other.activePlayers
+            && teamFlags == other.teamFlags
+            && teams == other.teams
+            && visible == other.visible
+            && resultSlots == other.resultSlots
+            && teamIndex == other.teamIndex
+            && active == other.active;
+    }
 };
 
 // The scoreboard is presented from the emulation thread, but its painter can
@@ -363,6 +402,8 @@ struct ScoreboardPlanText {
     QString display;
     QRectF rect;
     QColor color;
+    ScoreboardVisualValue visual;
+    QPainterPath outlinePath;
     qreal advance = 0.0;
     Qt::Alignment alignment = Qt::AlignLeft;
     bool rankFont = false;
@@ -380,6 +421,7 @@ struct ScoreboardPlanRow {
     ScoreboardPlanText second;
     QRectF hunterIconRect;
     QRectF starsRect;
+    qreal starsFullW = 0.0;
     uint8_t hunterId = 0xFF;
     uint8_t stars = 0xFF;
 };
@@ -392,7 +434,7 @@ struct ScoreboardRenderPlan {
     float hudScale = 0.0f;
     float stretchX = 0.0f;
     uint8_t localPlayerSlot = 0xFF;
-    ScoreboardSnapshot snapshot{};
+    ScoreboardStructureKey structure{};
     int panelX = 0;
     int panelY = 0;
     int panelW = 1;
@@ -411,32 +453,12 @@ struct ScoreboardRenderPlan {
     std::array<ScoreboardPlanRow, 8> rows{};
 };
 
-// Bounded fixed slots: 3 headers plus four text cells for each of the eight
-// maximum display rows.  This intentionally avoids an unbounded QString map
-// on the presentation hot path.
-static constexpr int kScoreboardTextCacheSlots = 35;
-struct ScoreboardTextRasterSlot {
-    bool valid = false;
-    QString display;
-    QFont font;
-    QColor color;
-    QColor outlineColor;
-    float outlineOpacity = 0.0f;
-    int outlineThickness = 0;
-    int maxWidth = 0;
-    float hudScale = 0.0f;
-    int textCacheGeneration = 0;
-    qreal advance = 0.0;
-    QPainterPath outlinePath;
-};
-
 struct ScoreboardStaticPlayerSnapshot {
     uint8_t slot = 0xFF;
     uint8_t teamIndex = 0xFF;
     uint8_t hunterId = 0xFF;
     uint8_t stars = 0xFF;
     bool active = false;
-    std::array<uint8_t, 0x15> rawName{};
     QString displayName;
 };
 
@@ -488,7 +510,6 @@ struct HudFrameOwnedState {
     HudRuntimeFrameCache frame;
     ScoreboardMatchCache scoreboardMatch;
     ScoreboardRenderPlan scoreboardPlan;
-    std::array<ScoreboardTextRasterSlot, kScoreboardTextCacheSlots> scoreboardTextRaster{};
     struct ScoreboardFontCache {
         QFont boardFont;
         QFont rankFont;
@@ -594,9 +615,9 @@ static const char* LookupScoreboardNameGlyph(uint16_t code)
     return nullptr;
 }
 
-static QString DecodeScoreboardPlayerName(const melonDS::u8* ram, uint32_t address,
-                                          std::array<uint8_t, 0x15>& raw)
+static QString DecodeScoreboardPlayerName(const melonDS::u8* ram, uint32_t address)
 {
+    std::array<uint8_t, 0x15> raw{};
     std::string utf8;
     utf8.reserve(20);
     // The native record is 20 payload bytes followed by a forced terminator;
@@ -693,7 +714,7 @@ static bool EnsureScoreboardMatchCache(const RomAddresses& rom,
         if (player.active)
             ++activeSlotCount;
         player.displayName = DecodeScoreboardPlayerName(
-            ram, nameBase + static_cast<uint32_t>(slot) * 0x15, player.rawName);
+            ram, nameBase + static_cast<uint32_t>(slot) * 0x15);
     }
     // ActivePlayers can become non-zero one frame before the player records
     // are published. Retry rather than freezing an empty match roster.
@@ -730,6 +751,7 @@ static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
     const auto& match = s_scoreboardMatchCache;
     const uint32_t runtimeBase = ScoreboardRuntimeBase(rom);
     ScoreboardSnapshot snapshot{};
+    snapshot.matchSerial = s_battleState.scoreboardMatchSerial;
     snapshot.gameMode = match.gameMode;
     snapshot.activePlayers = match.activePlayers;
     snapshot.teamFlags = match.teamFlags;
@@ -764,7 +786,6 @@ static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
         player.teamIndex = staticPlayer.teamIndex;
         player.hunterId = staticPlayer.hunterId;
         player.stars = staticPlayer.stars;
-        player.rawName = staticPlayer.rawName;
         player.displayName = staticPlayer.displayName;
         if (!player.active)
             continue;
@@ -791,7 +812,6 @@ static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
                                            + static_cast<uint32_t>(displayIndex));
         if (slot < 4) {
             snapshot.resultSlots[displayIndex] = slot;
-            snapshot.playersBySlot[slot].displayIndex = static_cast<uint8_t>(displayIndex);
         }
     }
 

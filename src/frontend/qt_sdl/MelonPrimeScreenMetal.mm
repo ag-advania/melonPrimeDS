@@ -1052,8 +1052,12 @@ void ScreenPanelMetal::drawScreen()
                     MelonPrime::CustomHud_ResolveFontPixelSize(preflightCfg));
             }
             const bool preflightVisible = m_hudEnabled || preflightEditMode;
+            const bool sameGameFrame = m_hudVisualFrameValid
+                && MelonPrimeHud_IsSameVisualGameFrame(
+                    emuInstance, m_hudVisualFrameKey);
             if (preflightVisible && noOtherUiOverlay
-                && m->uiTex && m->uiTexW == logicalW && m->uiTexH == logicalH)
+                && m->uiTex && m->uiTexW == logicalW && m->uiTexH == logicalH
+                && sameGameFrame)
             {
                 hudVisualKey = MelonPrimeHud_MakeVisualFrameKey(
                     emuInstance, preflightMp->HudConfigState(),
@@ -1066,8 +1070,6 @@ void ScreenPanelMetal::drawScreen()
                 hudVisualKeyValid = true;
                 hudVisualReuse = m_hudVisualFrameValid
                     && hudVisualKey == m_hudVisualFrameKey;
-            } else if (!preflightVisible) {
-                m_hudVisualFrameValid = false;
             } else {
                 m_hudVisualFrameValid = false;
                 m_hudVisualFrameWasReused = false;
@@ -1239,10 +1241,18 @@ void ScreenPanelMetal::drawScreen()
                             MelonPrimePerf::CountCustomHudDrawn();
                         }
                         overlayHasContent = overlayHasContent || !dirty.isEmpty();
-                        if (hudVisualKeyValid) {
-                            m_hudVisualFrameKey = hudVisualKey;
-                            m_hudVisualFrameValid = true;
+                        if (!hudVisualKeyValid) {
+                            hudVisualKey = MelonPrimeHud_MakeVisualFrameKey(
+                                emuInstance, mp->HudConfigState(), m_hudCfgEpoch,
+                                m_hudFontEpoch, logicalW, logicalH,
+                                m_hudTopMatrixValid ? m_topStretchX : 1.0f,
+                                m_hudScale, m_hudOriginX, m_hudOriginY,
+                                m_hudVisualRendererGeneration, m_hudEnabled,
+                                editMode);
+                            hudVisualKeyValid = true;
                         }
+                        m_hudVisualFrameKey = hudVisualKey;
+                        m_hudVisualFrameValid = true;
                     }
                 }
             }

@@ -31,12 +31,19 @@
             const int topOutW = std::max(1, fullW);
             const int topOutH = std::max(1, fullH);
 
-            const HudVisualFrameKey visualKey = MelonPrimeHud_MakeVisualFrameKey(
-                emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
-                topOutW, topOutH, topStretchX, hudScale,
-                m_hudOriginX, m_hudOriginY,
-                m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+            const bool sameGameFrame = m_hudVisualFrameValid
+                && MelonPrimeHud_IsSameVisualGameFrame(
+                    emuInstance, m_hudVisualFrameKey);
+            HudVisualFrameKey visualKey{};
+            if (sameGameFrame) {
+                visualKey = MelonPrimeHud_MakeVisualFrameKey(
+                    emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                    topOutW, topOutH, topStretchX, hudScale,
+                    m_hudOriginX, m_hudOriginY,
+                    m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+            }
             const bool reuseVisual = m_hudVisualFrameValid
+                && sameGameFrame
                 && visualKey == m_hudVisualFrameKey;
             m_hudVisualFrameWasReused = reuseVisual;
             QRect curDirty = s_hudPrevDirtyS;
@@ -59,6 +66,13 @@
                     m_radarEnable ? MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE : nullptr,
                     &Overlay[1], m_radarSrcRadius);
                 s_hudPrevDirtyS = curDirty;
+                if (!sameGameFrame) {
+                    visualKey = MelonPrimeHud_MakeVisualFrameKey(
+                        emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                        topOutW, topOutH, topStretchX, hudScale,
+                        m_hudOriginX, m_hudOriginY,
+                        m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+                }
                 m_hudVisualFrameKey = visualKey;
                 m_hudVisualFrameValid = true;
             }

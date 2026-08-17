@@ -91,6 +91,14 @@ class EmuInstance;
 class EmuThread;
 
 #ifdef MELONPRIME_CUSTOM_HUD
+static inline bool MelonPrimeHud_IsSameVisualGameFrame(
+    EmuInstance* emu, const HudVisualFrameKey& previous)
+{
+    const void* nds = nullptr;
+    const uint32_t gameFrame = MelonPrime::CustomHud_GetVisualGameFrame(emu, &nds);
+    return previous.nds == nds && previous.gameFrame == gameFrame;
+}
+
 static inline HudVisualFrameKey MelonPrimeHud_MakeVisualFrameKey(
     EmuInstance* emu,
     const MelonPrime::CustomHudConfigState& hudConfig,

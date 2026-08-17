@@ -36,12 +36,19 @@
                 const int topOutW = std::max(1, fullLogW);
                 const int topOutH = std::max(1, fullLogH);
 
-                const HudVisualFrameKey visualKey = MelonPrimeHud_MakeVisualFrameKey(
-                    emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
-                    topOutW, topOutH, topStretchX, hudScale,
-                    m_hudOriginX, m_hudOriginY,
-                    m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+                const bool sameGameFrame = m_hudVisualFrameValid
+                    && MelonPrimeHud_IsSameVisualGameFrame(
+                        emuInstance, m_hudVisualFrameKey);
+                HudVisualFrameKey visualKey{};
+                if (sameGameFrame) {
+                    visualKey = MelonPrimeHud_MakeVisualFrameKey(
+                        emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                        topOutW, topOutH, topStretchX, hudScale,
+                        m_hudOriginX, m_hudOriginY,
+                        m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+                }
                 const bool reuseVisual = m_hudVisualFrameValid
+                    && sameGameFrame
                     && visualKey == m_hudVisualFrameKey
                     && overlayTextures[0] != 0
                     && overlayTexW == topOutW
@@ -70,6 +77,13 @@
                         m_hudOriginX, m_hudOriginY);
                     uploadRect = previousDirty.united(curDirty);
                     m_hudPrevDirty = curDirty;
+                    if (!sameGameFrame) {
+                        visualKey = MelonPrimeHud_MakeVisualFrameKey(
+                            emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                            topOutW, topOutH, topStretchX, hudScale,
+                            m_hudOriginX, m_hudOriginY,
+                            m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+                    }
                     m_hudVisualFrameKey = visualKey;
                     m_hudVisualFrameValid = true;
                 }
