@@ -178,6 +178,13 @@ struct FrameContext
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     VkQueryPool TimestampQueryPool = VK_NULL_HANDLE;
     bool TimestampQueriesEnabled = false;
+    // Query results belong to the completed use of this slot. Keep them
+    // readable until the first timestamp of the new recording is emitted;
+    // resetting the pool in BeginFrame would make that reset command pending
+    // while the CPU tries to read the previous submission.
+    bool TimestampResultsAvailable = false;
+    bool TimestampQueriesReset = false;
+    bool TimestampQueriesWritten = false;
 #endif
 };
 
@@ -188,6 +195,13 @@ enum class FrameWaitResult : u32
     Error,
 };
 
+enum class FrameBeginResult : u32
+{
+    Ready = 0,
+    Busy,
+    Error,
+};
+
 
 // The frames-in-flight ring: per-frame command buffers, fences and semaphores,
 // plus the deferred destruction queue keyed to the same frame numbering.
@@ -195,7 +209,8 @@ enum class FrameWaitResult : u32
 // The only blocking call in the normal frame path is the vkWaitForFences at the
 // top of BeginFrame(), which throttles the CPU to `framesInFlight` frames ahead
 // of the GPU. vkDeviceWaitIdle / vkQueueWaitIdle appear nowhere in this class
-// except WaitIdle(), which is a teardown-only helper.
+// except WaitIdle(), which is restricted to teardown/resource-recreation
+// boundaries and never used in the steady-state frame path.
 class FrameRing
 {
 public:
@@ -240,8 +255,10 @@ public:
 
     // Non-blocking counterpart for work that is allowed to drop a frame. If
     // the next slot's fence is not signalled, returns nullptr immediately
-    // without resetting or changing the ring.
-    FrameContext* TryBeginFrame();
+    // without resetting or changing the ring. `result` distinguishes a busy
+    // slot from a device/error result so callers do not hide real failures as
+    // intentional latency skips.
+    FrameContext* TryBeginFrame(FrameBeginResult* result = nullptr);
 
     // Ends and submits the open command buffer.
     //
@@ -331,13 +348,17 @@ public:
 
     [[nodiscard]] DeferredDestroyQueue& GetDestroyQueue() noexcept { return DestroyQueue; }
 
-    // Teardown / swapchain-recreation helper. This is one of the three places
-    // the backend may call vkDeviceWaitIdle; it must never appear in the frame
-    // path.
+    // Teardown / resource-recreation helper. This is one of the three places
+    // the backend may call vkDeviceWaitIdle; it is not used in the steady-state
+    // frame path. If called after a frame has been admitted, the open recording
+    // frame remains excluded from CompletedFrame bookkeeping until it submits.
     void WaitIdle();
 
 private:
-    FrameContext* BeginFrameInternal(bool waitForSlot, bool recordRasterBegin);
+    FrameContext* BeginFrameInternal(
+        bool waitForSlot,
+        bool recordRasterBegin,
+        FrameBeginResult* result = nullptr);
     void DestroyFrames();
 
     const VulkanDevice* Device = nullptr;

@@ -110,9 +110,10 @@ public:
     void Shutdown() noexcept;
     void Quiesce() noexcept;
 
-    // Must run after acquiring the renderer output lease and before BeginFrame
-    // opens a command buffer. A resource-generation change is the only direct
-    // descriptor path that may quiesce the device.
+    // Must run after acquiring the renderer output lease and after BeginFrame
+    // admits a writable presenter slot, before UploadLayerFromImage(). A
+    // resource-generation change is the only direct descriptor path that may
+    // quiesce the device.
     bool PrepareDirectOutputDescriptors(const melonDS::VulkanPresentedFrame& frame);
     // Renderer transition hook. The preallocated descriptor sets survive; only
     // their resource/view identity mapping is invalidated.
@@ -164,7 +165,14 @@ public:
 
     // `requestedWidth/Height` are the widget's physical pixel size, used only
     // when the surface reports currentExtent == 0xFFFFFFFF (Wayland).
-    bool BeginFrame(melonDS::u32 requestedWidth, melonDS::u32 requestedHeight);
+    // `waitForPresentSlot=false` performs a side-effect-free readiness probe
+    // before swapchain acquisition. A busy presenter slot is an intentional
+    // latency skip, not a presenter failure; the caller can distinguish it
+    // through LastBeginWasLatencySkip().
+    bool BeginFrame(
+        melonDS::u32 requestedWidth,
+        melonDS::u32 requestedHeight,
+        bool waitForPresentSlot = true);
 
     // Records the staging copy for one layer. Tightly packed or `rowBytes`-
     // strided BGRA8. Must be called before BeginComposition(), because
@@ -229,6 +237,10 @@ public:
     // (device lost, out of memory, etc.). Surface loss is intentionally not a
     // permanent failure: it sets NeedsSurfaceRebind() instead.
     [[nodiscard]] bool HasFailed() const noexcept { return Failed; }
+    [[nodiscard]] bool LastBeginWasLatencySkip() const noexcept
+    {
+        return LastBeginLatencySkip;
+    }
     [[nodiscard]] bool NeedsSurfaceRebind() const noexcept
     {
         return SurfaceRebindRequested;
@@ -393,6 +405,7 @@ private:
     // renderer failure. Consume this at the next frame boundary so the
     // presenter stays alive and retries on the following frame.
     bool SkipNextPresentationForLatencyBudget = false;
+    bool LastBeginLatencySkip = false;
 
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
     VkSurfaceFormatKHR SurfaceFormat{};

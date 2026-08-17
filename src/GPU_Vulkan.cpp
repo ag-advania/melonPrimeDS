@@ -107,10 +107,11 @@ void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
     // Same reason as PreSavestate(): the base implementation casts Rend3D to
     // SoftRenderer3D to forward the `Threaded` option, which does not apply.
     //
-    // The two low-latency fields are only recorded here; the emulation thread
-    // reads them back through GetNvidiaReflexMode() / GetAmdAntiLag2Enabled()
-    // and hands them to the screen panel. The VK_NV_low_latency2 /
-    // VK_AMD_anti_lag implementation behind that is phase 13.
+    // The two low-latency fields are recorded here as the renderer-owned policy
+    // source. The emulation thread reads them back through
+    // GetNvidiaReflexMode() / GetAmdAntiLag2Enabled() and hands them to both
+    // the presenter pacing path and the screen panel's slot-admission policy.
+    // The vendor extensions remain capability-gated by the presenter.
     NvidiaReflexMode = settings.NvidiaReflexMode;
     AmdAntiLag2Enabled = settings.AmdAntiLag2Enabled;
 

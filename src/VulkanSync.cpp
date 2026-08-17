@@ -465,6 +465,9 @@ void FrameRing::DestroyFrames()
         frame.Recording = false;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         frame.TimestampQueriesEnabled = false;
+        frame.TimestampResultsAvailable = false;
+        frame.TimestampQueriesReset = false;
+        frame.TimestampQueriesWritten = false;
 #endif
     }
 }
@@ -492,8 +495,21 @@ void FrameRing::WriteTimestamp(VkPipelineStageFlagBits stage, u32 queryIndex) no
     FrameContext& frame = Frames[CurrentIndex];
     if (!frame.Recording || !frame.TimestampQueriesEnabled)
         return;
+    if (!frame.TimestampQueriesReset)
+    {
+        // The previous submission's results are read before this point. Defer
+        // the reset until the first new timestamp so vkGetQueryPoolResults()
+        // never races a pending vkCmdResetQueryPool() command in the same
+        // command buffer.
+        Device->Fns().CmdResetQueryPool(
+            frame.CommandBuffer, frame.TimestampQueryPool,
+            0, TimestampQueryCount);
+        frame.TimestampQueriesReset = true;
+        frame.TimestampResultsAvailable = false;
+    }
     Device->Fns().CmdWriteTimestamp(
         frame.CommandBuffer, stage, frame.TimestampQueryPool, queryIndex);
+    frame.TimestampQueriesWritten = true;
 }
 
 bool FrameRing::ReadCurrentFrameTimestamps(
@@ -506,7 +522,7 @@ bool FrameRing::ReadCurrentFrameTimestamps(
         return false;
     }
     const FrameContext& frame = Frames[CurrentIndex];
-    if (!frame.TimestampQueriesEnabled)
+    if (!frame.TimestampQueriesEnabled || !frame.TimestampResultsAvailable)
         return false;
     const VkResult result = Device->Fns().GetQueryPoolResults(
         Device->GetHandle(), frame.TimestampQueryPool,
@@ -563,27 +579,35 @@ FrameWaitResult FrameRing::WaitForLatestSubmittedFrame(u64 timeoutNanoseconds)
     return FrameWaitResult::Ready;
 }
 
-FrameContext* FrameRing::TryBeginFrame()
+FrameContext* FrameRing::TryBeginFrame(FrameBeginResult* result)
 {
-    return BeginFrameInternal(false, false);
+    return BeginFrameInternal(false, false, result);
 }
 
-FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot, bool recordRasterBegin)
+FrameContext* FrameRing::BeginFrameInternal(
+    bool waitForSlot,
+    bool recordRasterBegin,
+    FrameBeginResult* result)
 {
+    if (result)
+        *result = FrameBeginResult::Error;
     if (!Device || Frames.empty())
         return nullptr;
 
     const DeviceDispatch& fns = Device->Fns();
     VkDevice handle = Device->GetHandle();
 
-    CurrentIndex = VulkanFrameRingIndexForAbsoluteFrame(
+    // Keep CurrentIndex untouched until the slot has passed the readiness
+    // probe and its recording boundary can actually be opened. In particular,
+    // a low-latency busy skip must be a true no-op for the frame ring.
+    const u32 nextIndex = VulkanFrameRingIndexForAbsoluteFrame(
         AbsoluteFrame, static_cast<u32>(Frames.size()));
-    FrameContext& frame = Frames[CurrentIndex];
+    FrameContext& frame = Frames[nextIndex];
 
     if (frame.Recording)
     {
         Platform::Log(Platform::LogLevel::Error,
-            "[Vulkan] BeginFrame() called while frame slot %u is still recording\n", CurrentIndex);
+            "[Vulkan] BeginFrame() called while frame slot %u is still recording\n", nextIndex);
         return nullptr;
     }
 
@@ -604,14 +628,18 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot, bool recordRasterB
             res = fns.GetFenceStatus(handle, frame.InFlightFence);
         }
         if (!waitForSlot && res == VK_NOT_READY)
+        {
+            if (result)
+                *result = FrameBeginResult::Busy;
             return nullptr;
+        }
         if (res == VK_TIMEOUT)
         {
             if (waitForSlot && recordRasterBegin)
                 VulkanPerf::RecordRasterBeginFenceTimeout();
             Platform::Log(Platform::LogLevel::Error,
                 "[Vulkan] frame slot %u did not complete within 1s; the GPU is not responding\n",
-                CurrentIndex);
+                nextIndex);
             return nullptr;
         }
         if (!MELONPRIME_VK_CHECK(
@@ -655,16 +683,11 @@ FrameContext* FrameRing::BeginFrameInternal(bool waitForSlot, bool recordRasterB
     if (!MELONPRIME_VK_CHECK("vkBeginCommandBuffer", res))
         return nullptr;
 
-#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
-    if (frame.TimestampQueriesEnabled)
-    {
-        fns.CmdResetQueryPool(frame.CommandBuffer, frame.TimestampQueryPool,
-            0, TimestampQueryCount);
-    }
-#endif
-
+    CurrentIndex = nextIndex;
     frame.Recording = true;
     frame.SubmittedFrame = AbsoluteFrame;
+    if (result)
+        *result = FrameBeginResult::Ready;
     return &frame;
 }
 
@@ -732,6 +755,17 @@ bool FrameRing::SubmitFrame(
     }
 
     frame.HasPendingSubmission = true;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    if (frame.TimestampQueriesEnabled)
+    {
+        // A slot with no timestamp writes must not expose stale values from an
+        // older use. A written query pool becomes readable after this fence
+        // signals and before the next recording emits its deferred reset.
+        frame.TimestampResultsAvailable = frame.TimestampQueriesWritten;
+        frame.TimestampQueriesReset = false;
+        frame.TimestampQueriesWritten = false;
+    }
+#endif
     LastSubmittedIndex = CurrentIndex;
     HasSubmittedFrame = true;
     AbsoluteFrame++;
@@ -755,10 +789,15 @@ void FrameRing::WaitIdle()
             "[Vulkan] vkDeviceWaitIdle: %s\n", FormatResult(res).c_str());
     }
 
-    // Every submission has retired, so every frame this ring ever issued is
-    // complete.
+    // Every submitted frame has retired. The current recording frame is not a
+    // submission yet: resource-growth paths can call WaitIdle() after
+    // admission but before they finish recording it. Do not advance
+    // CompletedFrame to that unsubmitted frame, or a later Collect() could
+    // destroy resources keyed to it before its eventual submission retires.
     for (FrameContext& frame : Frames)
     {
+        if (frame.Recording)
+            continue;
         CompletedFrame = std::max(CompletedFrame, frame.SubmittedFrame);
         frame.HasPendingSubmission = false;
     }

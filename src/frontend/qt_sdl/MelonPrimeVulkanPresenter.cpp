@@ -1552,9 +1552,13 @@ VkDescriptorSet VulkanPresenter::AcquireDescriptorSet(Layer layer, bool linearFi
 // Frame path
 // ---------------------------------------------------------------------------
 
-bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
+bool VulkanPresenter::BeginFrame(
+    u32 requestedWidth,
+    u32 requestedHeight,
+    bool waitForPresentSlot)
 {
     VulkanPerf::ScopedCpuTimer beginTimer(VulkanPerf::CpuMetric::PresentBeginTotal);
+    LastBeginLatencySkip = false;
     if (!Initialized || Failed || !Device.IsValid())
         return false;
     if (FrameOpen)
@@ -1573,6 +1577,11 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     if (SkipNextPresentationForLatencyBudget)
     {
         SkipNextPresentationForLatencyBudget = false;
+        // The previous strict presenter-budget wait already classified this
+        // callback as an intentional latency skip. Preserve that result for
+        // the screen caller so it does not report a normal presentation stall
+        // or trigger surface/failure recovery.
+        LastBeginLatencySkip = true;
         return false;
     }
 
@@ -1601,17 +1610,6 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         VulkanPerf::Counter::VulkanPresentMode,
         static_cast<u64>(PresentMode));
 
-    // Upload-ring growth requested by a previous frame. Applied here, before
-    // any command buffer is open, because it destroys and reallocates the
-    // buffers a recording frame would already reference.
-    if (PendingStagingRequest > StagingCapacity)
-    {
-        const VkDeviceSize request = PendingStagingRequest;
-        PendingStagingRequest = 0;
-        if (!EnsureStaging(request))
-            return false;
-    }
-
     const bool presenterFencePending = Frames.NextFrameHasPendingSubmission();
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const bool perfEnabled = VulkanPerf::IsEnabled();
@@ -1619,9 +1617,12 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         ? VulkanPerf::Clock::now()
         : VulkanPerf::Clock::time_point{};
 #endif
-    Vk::FrameContext* frame = Frames.BeginFrame();
+    Vk::FrameBeginResult beginResult = Vk::FrameBeginResult::Error;
+    Vk::FrameContext* frame = waitForPresentSlot
+        ? Frames.BeginFrame()
+        : Frames.TryBeginFrame(&beginResult);
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
-    if (perfEnabled && presenterFencePending)
+    if (perfEnabled && waitForPresentSlot && presenterFencePending)
     {
         const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
             std::chrono::nanoseconds>(
@@ -1633,10 +1634,44 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     }
 #endif
     if (!frame)
+    {
+        if (!waitForPresentSlot && beginResult == Vk::FrameBeginResult::Busy)
+        {
+            // The probe ran before swapchain acquisition and before any
+            // presenter-owned recording state was touched. Keep this callback
+            // a no-op: its renderer lease remains owned by the caller and the
+            // next presentation callback will retry the same ring slot.
+            LastBeginLatencySkip = true;
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresenterSlotBusySkipCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
+            return false;
+        }
         return Fail("the Vulkan presenter's frame ring could not begin a frame");
+    }
 
     const u32 frameIndex = Frames.GetFrameIndex();
     CurrentCommandBuffer = frame->CommandBuffer;
+
+    // Upload-ring growth requested by a previous frame. In low-latency mode
+    // this is deliberately reached only after TryBeginFrame() proved that the
+    // target slot is reusable; a busy skip never destroys or reallocates
+    // staging storage. The current command buffer has no staging references
+    // yet, so a growth failure can be closed with the same empty submission
+    // used by the existing pre-recording failure paths.
+    if (PendingStagingRequest > StagingCapacity)
+    {
+        const VkDeviceSize request = PendingStagingRequest;
+        PendingStagingRequest = 0;
+        if (!EnsureStaging(request))
+        {
+            Frames.SubmitFrame(Device.GetMainQueue());
+            CurrentCommandBuffer = VK_NULL_HANDLE;
+            return false;
+        }
+    }
+
     RecordVulkanGpuMetric(
         Frames, GpuMetric::PresenterRenderPass,
         VulkanPerf::Counter::PresenterRenderPassGpuTimeNs);
