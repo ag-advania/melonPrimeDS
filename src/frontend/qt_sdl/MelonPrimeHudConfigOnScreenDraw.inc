@@ -40,6 +40,8 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
             cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardStarsHeight), 0, 24);
         layoutConfig.scoreboard.scale = std::clamp(
             cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardScale), 10, 800) / 100.0f;
+        layoutConfig.scoreboard.textScalePct = std::clamp(
+            cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardTextScale), 10, 800);
         layoutConfig.textScalePct = cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale);
         if (!s_cache.valid) {
             layoutConfig.scaleText = 1.0f;

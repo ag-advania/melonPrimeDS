@@ -205,6 +205,10 @@ struct ScoreboardHudConfig {
     int anchor, ofsX, ofsY;           // raw anchor + offsets
     int columnSpacing, rightPadding, rowSpacing;
     int hunterIconHeight, starsHeight;
+    int textScalePct;
+    bool fontSizeBinary;
+    bool rankShow;
+    HudOutlineConfig outline;
     float scale;
     float opacity, backgroundOpacity;
     QColor textColor, headerColor, localPlayerColor, teamRowColor, backgroundColor;
@@ -1166,6 +1170,9 @@ static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table&
     scoreboard.ofsY = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardY);
     scoreboard.scale = static_cast<float>(std::clamp(
         cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardScale), 10, 800)) / 100.0f;
+    scoreboard.textScalePct = std::clamp(
+        cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardTextScale), 10, 800);
+    scoreboard.fontSizeBinary = cfg.GetBool(MP_HUD_PROP_KEY_HudScoreboardFontSizeBinary);
     scoreboard.columnSpacing = std::clamp(
         cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardColumnSpacing), 0, 32);
     scoreboard.rightPadding = std::clamp(
@@ -1177,6 +1184,7 @@ static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table&
         cfg.GetDouble(MP_HUD_PROP_KEY_HudScoreboardOpacity), 0.0, 1.0));
     scoreboard.backgroundOpacity = static_cast<float>(std::clamp(
         cfg.GetDouble(MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity), 0.0, 1.0));
+    scoreboard.rankShow = cfg.GetBool(MP_HUD_PROP_KEY_HudScoreboardRankShow);
     scoreboard.textColor = ReadRgbColor(cfg,
         MP_HUD_PROP_KEY_HudScoreboardTextColorR,
         MP_HUD_PROP_KEY_HudScoreboardTextColorG,
@@ -1323,6 +1331,7 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     loadOL(c.bombLeft.iconOutline,  MP_HUD_OUTLINE_KEYS(HudBombIcon));
     loadOL(c.radar.outline,        MP_HUD_OUTLINE_KEYS(BtmOverlay));
     loadOL(c.radar.frameOutline,   MP_HUD_OUTLINE_KEYS(BtmOverlayFrame));
+    loadOL(c.scoreboard.outline,   MP_HUD_OUTLINE_KEYS(HudScoreboard));
 #undef MP_HUD_OUTLINE_KEYS
     c.textScalePct        = std::max(100, cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale));
     const bool autoScaleEnable = cfg.GetBool(MP_HUD_PROP_KEY_HudAutoScaleEnable);

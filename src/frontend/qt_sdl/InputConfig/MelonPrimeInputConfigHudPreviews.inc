@@ -228,10 +228,38 @@ protected:
 
     static void drawCellText(QPainter& p, const QRectF& rect,
                              const QString& text, const QColor& color,
-                             Qt::Alignment alignment)
+                             Qt::Alignment alignment,
+                             const QColor& outlineColor, float outlineOpacity,
+                             int outlineThickness, float scoreboardScale)
     {
+        const QString display = text;
+        const auto flags = alignment | Qt::AlignVCenter | Qt::TextSingleLine;
+        const float radius = outlineOpacity > 0.0f
+            ? qMax(0.0f, outlineThickness * scoreboardScale) : 0.0f;
+        if (radius > 0.0f) {
+            const QFontMetrics fm(p.font());
+            const Qt::Alignment horizontal = alignment & Qt::AlignHorizontal_Mask;
+            const qreal advance = fm.horizontalAdvance(display);
+            qreal textX = rect.left();
+            if (horizontal == Qt::AlignRight)
+                textX = rect.right() - advance;
+            else if (horizontal == Qt::AlignHCenter)
+                textX = rect.center().x() - advance * 0.5;
+            const qreal baseline = rect.top()
+                + (rect.height() - fm.height()) * 0.5 + fm.ascent();
+            QPainterPath path;
+            path.addText(QPointF(textX, baseline), p.font(), display);
+            QColor oc = outlineColor;
+            oc.setAlphaF(qBound(0.0f, outlineOpacity, 1.0f));
+            QPen pen(oc, radius * 2.0f);
+            pen.setJoinStyle(Qt::RoundJoin);
+            p.setPen(pen);
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(path);
+        }
         p.setPen(color);
-        p.drawText(rect, alignment | Qt::AlignVCenter, text);
+        p.setBrush(Qt::NoBrush);
+        p.drawText(rect, flags, display);
     }
 
     void paintEvent(QPaintEvent*) override
@@ -253,10 +281,18 @@ protected:
             MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard);
         const float scoreboardScale = qBound(
             0.1f, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardScale) / 100.0f, 8.0f);
+        const float scoreboardTextScale = qBound(
+            0.1f, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardTextScale) / 100.0f, 8.0f);
+        const bool fontSizeBinary = c.GetBool(MP_HUD_PROP_KEY_HudScoreboardFontSizeBinary);
+        const bool rankShow = c.GetBool(MP_HUD_PROP_KEY_HudScoreboardRankShow);
         QFont boardFont = previewHudFont(
             c, MP_HUD_PROP_KEY_HudAutoScaleCapText,
             MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard, 500, 800);
-        boardFont.setPixelSize(qMax(1, qRound(boardFont.pixelSize() * scoreboardScale)));
+        int boardFontPx = qMax(1, qRound(
+            boardFont.pixelSize() * scoreboardTextScale * scoreboardScale));
+        if (fontSizeBinary)
+            boardFontPx = MelonPrime::CustomHud_QuantizeFontSizeToPowerOfTwo(boardFontPx);
+        boardFont.setPixelSize(boardFontPx);
         p.setFont(boardFont);
         p.setRenderHint(QPainter::SmoothPixmapTransform, false);
 
@@ -307,9 +343,10 @@ protected:
             playerW = qMax(playerW, textWidthDS(p, QString::fromLatin1(row.name)));
             const QString rankLabel = QStringLiteral("%1 %2")
                 .arg(MelonPrime::UiText::Tr("Rank")).arg(row.rank);
-            int rankLineW = textWidthDS(p, rankLabel);
+            int rankLineW = rankShow ? textWidthDS(p, rankLabel) : 0;
             const QImage& stars = starsImage(row.stars, starsH);
-            rankLineW += stars.isNull() ? 0 : scaleDs(3) + imageWidthDS(stars);
+            rankLineW += stars.isNull() ? 0
+                : (rankShow ? scaleDs(3) : 0) + imageWidthDS(stars);
             playerW = qMax(playerW, rankLineW);
             const QImage& hunter = hunterIcon(row.hunter, hunterH);
             portraitW = qMax(portraitW, hunter.isNull() ? 0 : hunter.width() + scaleDs(2));
@@ -358,13 +395,41 @@ protected:
             MP_HUD_PROP_KEY_HudScoreboardHeaderColorR,
             MP_HUD_PROP_KEY_HudScoreboardHeaderColorG,
             MP_HUD_PROP_KEY_HudScoreboardHeaderColorB);
+        const QColor outlineColor = readColor(
+            MP_HUD_PROP_KEY_HudScoreboardOutlineColorR,
+            MP_HUD_PROP_KEY_HudScoreboardOutlineColorG,
+            MP_HUD_PROP_KEY_HudScoreboardOutlineColorB);
+        const float outlineOpacity = qBound(
+            0.0f, static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudScoreboardOutlineOpacity)), 1.0f);
+        const int outlineThickness = qMax(
+            1, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardOutlineThickness));
+        const bool outlineEnabled = c.GetBool(MP_HUD_PROP_KEY_HudScoreboardOutline);
+        const QColor effectiveOutlineColor = c.GetBool(MP_HUD_PROP_KEY_HudGlobalOutline)
+            ? readColor(MP_HUD_PROP_KEY_HudGlobalOutlineColorR,
+                        MP_HUD_PROP_KEY_HudGlobalOutlineColorG,
+                        MP_HUD_PROP_KEY_HudGlobalOutlineColorB)
+            : outlineColor;
+        const float effectiveOutlineOpacity = c.GetBool(MP_HUD_PROP_KEY_HudGlobalOutline)
+            ? qBound(0.0f, static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudGlobalOutlineOpacity)), 1.0f)
+            : outlineOpacity;
+        const int effectiveOutlineThickness = c.GetBool(MP_HUD_PROP_KEY_HudGlobalOutline)
+            ? qMax(1, c.GetInt(MP_HUD_PROP_KEY_HudGlobalOutlineThickness))
+            : outlineThickness;
+        const bool effectiveOutlineEnabled = c.GetBool(MP_HUD_PROP_KEY_HudGlobalOutline)
+            || outlineEnabled;
         const int headerCellHeight = qMax(1, rowH - headerInset * 2);
         const QRectF playerHeaderRect(nameX, panelY + headerInset, playerW, headerCellHeight);
         const QRectF pointsHeaderRect(pointsX, panelY + headerInset, pointsW, headerCellHeight);
         const QRectF deathsHeaderRect(deathsX, panelY + headerInset, deathsW, headerCellHeight);
-        drawCellText(p, playerHeaderRect, playerHeader, headerColor, Qt::AlignLeft);
-        drawCellText(p, pointsHeaderRect, pointsHeader, headerColor, Qt::AlignRight);
-        drawCellText(p, deathsHeaderRect, deathsHeader, headerColor, Qt::AlignRight);
+        drawCellText(p, playerHeaderRect, playerHeader, headerColor, Qt::AlignLeft,
+                     effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                     effectiveOutlineThickness, scoreboardScale);
+        drawCellText(p, pointsHeaderRect, pointsHeader, headerColor, Qt::AlignRight,
+                     effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                     effectiveOutlineThickness, scoreboardScale);
+        drawCellText(p, deathsHeaderRect, deathsHeader, headerColor, Qt::AlignRight,
+                     effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                     effectiveOutlineThickness, scoreboardScale);
 
         const QColor textColor = readColor(
             MP_HUD_PROP_KEY_HudScoreboardTextColorR,
@@ -390,17 +455,23 @@ protected:
             }
 
             drawCellText(p, QRectF(nameRect.x(), nameRect.y(), nameRect.width(), rowH * 0.58),
-                         QString::fromLatin1(row.name), rowColor, Qt::AlignLeft);
+                         QString::fromLatin1(row.name), rowColor, Qt::AlignLeft,
+                         effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                         effectiveOutlineThickness, scoreboardScale);
             const QString rankLabel = QStringLiteral("%1 %2")
                 .arg(MelonPrime::UiText::Tr("Rank")).arg(row.rank);
             const QRectF rankRect(nameRect.x(), y + rowH * 0.58,
                                   nameRect.width(), rowH * 0.42);
-            drawCellText(p, rankRect, rankLabel, rowColor, Qt::AlignLeft);
+            if (rankShow)
+                drawCellText(p, rankRect, rankLabel, rowColor, Qt::AlignLeft,
+                             effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                             effectiveOutlineThickness, scoreboardScale);
             if (starsH > 0) {
                 const QImage& stars = starsImage(row.stars, starsH);
                 if (!stars.isNull()) {
-                    const int rankW = textWidthDS(p, rankLabel);
-                    const float starsX = nameX + rankW + scaleDs(3);
+                    const int rankW = rankShow ? textWidthDS(p, rankLabel) : 0;
+                    const float starsX = nameX + rankW
+                        + (rankW > 0 ? scaleDs(3) : 0);
                     const float available = qMax(0.0f,
                         static_cast<float>(nameRect.right()) - starsX - scaleDs(2));
                     const float starsW = qMin(static_cast<float>(stars.width()), available);
@@ -410,8 +481,12 @@ protected:
                                            starsW, stars.height()), stars);
                 }
             }
-            drawCellText(p, pointsRect, QString::number(row.points), rowColor, Qt::AlignRight);
-            drawCellText(p, deathsRect, QString::number(row.deaths), rowColor, Qt::AlignRight);
+            drawCellText(p, pointsRect, QString::number(row.points), rowColor, Qt::AlignRight,
+                         effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                         effectiveOutlineThickness, scoreboardScale);
+            drawCellText(p, deathsRect, QString::number(row.deaths), rowColor, Qt::AlignRight,
+                         effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                         effectiveOutlineThickness, scoreboardScale);
         }
         p.setOpacity(1.0);
     }

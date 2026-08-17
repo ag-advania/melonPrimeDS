@@ -617,10 +617,19 @@
 #define MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG "Metroid.Visual.HudScoreboardBackgroundColorG"
 #define MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB "Metroid.Visual.HudScoreboardBackgroundColorB"
 #define MP_HUD_PROP_KEY_HudScoreboardShow "Metroid.Visual.HudScoreboardShow"
+#define MP_HUD_PROP_KEY_HudScoreboardRankShow "Metroid.Visual.HudScoreboardRankShow"
 #define MP_HUD_PROP_KEY_HudScoreboardOpacity "Metroid.Visual.HudScoreboardOpacity"
 #define MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity "Metroid.Visual.HudScoreboardBackgroundOpacity"
 #define MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard "Metroid.Visual.HudAutoScaleCapScoreboard"
 #define MP_HUD_PROP_KEY_HudScoreboardScale "Metroid.Visual.HudScoreboardScale"
+#define MP_HUD_PROP_KEY_HudScoreboardTextScale "Metroid.Visual.HudScoreboardTextScale"
+#define MP_HUD_PROP_KEY_HudScoreboardFontSizeBinary "Metroid.Visual.HudScoreboardFontSizeBinary"
+#define MP_HUD_PROP_KEY_HudScoreboardOutline "Metroid.Visual.HudScoreboardOutline"
+#define MP_HUD_PROP_KEY_HudScoreboardOutlineColorR "Metroid.Visual.HudScoreboardOutlineColorR"
+#define MP_HUD_PROP_KEY_HudScoreboardOutlineColorG "Metroid.Visual.HudScoreboardOutlineColorG"
+#define MP_HUD_PROP_KEY_HudScoreboardOutlineColorB "Metroid.Visual.HudScoreboardOutlineColorB"
+#define MP_HUD_PROP_KEY_HudScoreboardOutlineThickness "Metroid.Visual.HudScoreboardOutlineThickness"
+#define MP_HUD_PROP_KEY_HudScoreboardOutlineOpacity "Metroid.Visual.HudScoreboardOutlineOpacity"
 
 // X(identifier, key, cfgType, defaultExpr, uiMin, uiMax, uiStep, label, uiKind, surfaceMask, flags)
 #define MP_HUD_PROP_ROW_HudFontMode(X) X(HudFontMode, MP_HUD_PROP_KEY_HudFontMode, Int, 0, 0, 2, 1, "Font Source", "FontMode", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1225,10 +1234,19 @@
 #define MP_HUD_PROP_ROW_HudScoreboardBackgroundColorG(X) X(HudScoreboardBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG, Int, 0, 0, 255, 1, "Background Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardBackgroundColorB(X) X(HudScoreboardBackgroundColorB, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB, Int, 0, 0, 255, 1, "Background Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardShow(X) X(HudScoreboardShow, MP_HUD_PROP_KEY_HudScoreboardShow, Bool, true, 0, 0, 0, "Show", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
-#define MP_HUD_PROP_ROW_HudScoreboardOpacity(X) X(HudScoreboardOpacity, MP_HUD_PROP_KEY_HudScoreboardOpacity, Double, 1.000000, 0, 100, 5, "Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
-#define MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X) X(HudScoreboardBackgroundOpacity, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, Double, 0.850000, 0, 100, 5, "Background Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardRankShow(X) X(HudScoreboardRankShow, MP_HUD_PROP_KEY_HudScoreboardRankShow, Bool, true, 0, 0, 0, "Rank", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardOpacity(X) X(HudScoreboardOpacity, MP_HUD_PROP_KEY_HudScoreboardOpacity, Double, 0.750000, 0, 100, 5, "Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X) X(HudScoreboardBackgroundOpacity, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, Double, 0.500000, 0, 100, 5, "Background Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudAutoScaleCapScoreboard(X) X(HudAutoScaleCapScoreboard, MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard, Int, 800, 100, 800, 25, "Auto Scale Scoreboard Cap %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardScale(X) X(HudScoreboardScale, MP_HUD_PROP_KEY_HudScoreboardScale, Int, 100, 10, 800, 1, "Scoreboard Scale %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardTextScale(X) X(HudScoreboardTextScale, MP_HUD_PROP_KEY_HudScoreboardTextScale, Int, 100, 10, 800, 1, "Text Scale %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardFontSizeBinary(X) X(HudScoreboardFontSizeBinary, MP_HUD_PROP_KEY_HudScoreboardFontSizeBinary, Bool, false, 0, 0, 0, "Font Size Binary", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardOutline(X) X(HudScoreboardOutline, MP_HUD_PROP_KEY_HudScoreboardOutline, Bool, true, 0, 0, 0, "Outline", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardOutlineColorR(X) X(HudScoreboardOutlineColorR, MP_HUD_PROP_KEY_HudScoreboardOutlineColorR, Int, 0, 0, 255, 1, "Outline Color R", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardOutlineColorG(X) X(HudScoreboardOutlineColorG, MP_HUD_PROP_KEY_HudScoreboardOutlineColorG, Int, 0, 0, 255, 1, "Outline Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardOutlineColorB(X) X(HudScoreboardOutlineColorB, MP_HUD_PROP_KEY_HudScoreboardOutlineColorB, Int, 0, 0, 255, 1, "Outline Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardOutlineThickness(X) X(HudScoreboardOutlineThickness, MP_HUD_PROP_KEY_HudScoreboardOutlineThickness, Int, 1, 1, 10, 1, "Outline Thickness", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X) X(HudScoreboardOutlineOpacity, MP_HUD_PROP_KEY_HudScoreboardOutlineOpacity, Double, 0.75, 0, 100, 5, "Outline Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 
 // Schema views reference row macros so each key literal has a single owner.
 #define MP_HUD_PROP_SCHEMA(X) \
@@ -1834,10 +1852,19 @@
     MP_HUD_PROP_ROW_HudScoreboardBackgroundColorG(X) \
     MP_HUD_PROP_ROW_HudScoreboardBackgroundColorB(X) \
     MP_HUD_PROP_ROW_HudScoreboardShow(X) \
+    MP_HUD_PROP_ROW_HudScoreboardRankShow(X) \
     MP_HUD_PROP_ROW_HudScoreboardOpacity(X) \
     MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X) \
     MP_HUD_PROP_ROW_HudAutoScaleCapScoreboard(X) \
-    MP_HUD_PROP_ROW_HudScoreboardScale(X)
+    MP_HUD_PROP_ROW_HudScoreboardScale(X) \
+    MP_HUD_PROP_ROW_HudScoreboardTextScale(X) \
+    MP_HUD_PROP_ROW_HudScoreboardFontSizeBinary(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutline(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineColorR(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineColorG(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineColorB(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineThickness(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X)
 
 // Type-filtered views preserve the Config.cpp DefaultList<T> ownership.
 #define MP_HUD_PROP_SCHEMA_INT(X) \
@@ -2302,7 +2329,12 @@
     MP_HUD_PROP_ROW_HudScoreboardBackgroundColorG(X) \
     MP_HUD_PROP_ROW_HudScoreboardBackgroundColorB(X) \
     MP_HUD_PROP_ROW_HudAutoScaleCapScoreboard(X) \
-    MP_HUD_PROP_ROW_HudScoreboardScale(X)
+    MP_HUD_PROP_ROW_HudScoreboardScale(X) \
+    MP_HUD_PROP_ROW_HudScoreboardTextScale(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineColorR(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineColorG(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineColorB(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineThickness(X)
 
 #define MP_HUD_PROP_SCHEMA_BOOL(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeCenterDot(X) \
@@ -2397,7 +2429,10 @@
     MP_HUD_PROP_ROW_HudWeaponInventoryOutline(X) \
     MP_HUD_PROP_ROW_HudWeaponInventoryIconOutline(X) \
     MP_HUD_PROP_ROW_HudWeaponInventoryHighlightEnable(X) \
-    MP_HUD_PROP_ROW_HudScoreboardShow(X)
+    MP_HUD_PROP_ROW_HudScoreboardShow(X) \
+    MP_HUD_PROP_ROW_HudScoreboardRankShow(X) \
+    MP_HUD_PROP_ROW_HudScoreboardFontSizeBinary(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutline(X)
 
 #define MP_HUD_PROP_SCHEMA_STRING(X) \
     MP_HUD_PROP_ROW_HudFontFamily(X) \
@@ -2452,6 +2487,7 @@
     MP_HUD_PROP_ROW_BtmOverlayFrameOutlineOpacity(X) \
     MP_HUD_PROP_ROW_BtmOverlayOpacity(X) \
     MP_HUD_PROP_ROW_HudScoreboardOpacity(X) \
-    MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X)
+    MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X) \
+    MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X)
 
 #endif // MELONPRIME_HUD_PROP_SCHEMA_INC

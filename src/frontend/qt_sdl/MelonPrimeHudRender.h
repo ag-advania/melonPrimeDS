@@ -23,6 +23,19 @@ namespace MelonPrime {
     struct GameAddressesHot;
     struct CustomHudConfigState;
 
+    // When enabled for the scoreboard, text sizes are snapped to the nearest
+    // power of two (1, 2, 4, 8, ...). Keep this helper inline so the runtime
+    // renderer and the settings preview use exactly the same quantization.
+    inline int CustomHud_QuantizeFontSizeToPowerOfTwo(int pixels)
+    {
+        const int value = pixels < 1 ? 1 : pixels;
+        int lower = 1;
+        while (lower <= value / 2 && lower <= 0x3fffffff)
+            lower <<= 1;
+        const int upper = lower <= 0x3fffffff ? lower << 1 : lower;
+        return value - lower < upper - value ? lower : upper;
+    }
+
     std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState();
 
     // =========================================================================

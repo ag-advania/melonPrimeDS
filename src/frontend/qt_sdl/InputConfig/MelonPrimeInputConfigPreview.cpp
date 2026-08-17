@@ -84,7 +84,11 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
         if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             s[qk] = cb->isChecked();
         else if (auto* slider = qobject_cast<QSlider*>(widget.data()))
-            s[qk] = slider->value();
+            // Opacity widgets store percentages in the slider, while the
+            // snapshot restore path uses the normalized config representation.
+            // Keep the snapshot in that same 0.0..1.0 representation so a
+            // 50/75% value cannot be clamped to 100% during restoration.
+            s[qk] = slider->value() / 100.0;
         else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             s[qk] = sb->value();
         else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))
