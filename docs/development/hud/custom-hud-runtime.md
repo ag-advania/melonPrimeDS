@@ -392,6 +392,14 @@ Validation for this re-audit:
   separate compile-time switch and was not enabled by this HUD change.
 - Renderer zero-overhead, SRP/performance, GUI/EmuThread boundary,
   Software-parity, `.inc` ownership, HUD-key, and config-default audits passed.
+- A current-tree controlled DX12 smoke run with `CustomHUD=true`, the `.ml4`
+  gameplay savestate, `MELONPRIME_PERF=1`, and an NVIDIA GeForce RTX 5070 Ti
+  completed without a process failure and produced approximately 490 emulated
+  frames. The developer report observed scoreboard raster work and HUD upload
+  work, with the new-frame counter shape of one identity probe, zero stamp
+  checks, and one stamp commit per rendered frame. This run exercised the
+  new-frame path; its `visual_reuse` counter stayed at zero, so it is not a
+  substitute for the retained same-frame A/B comparison.
 - macOS/Metal compilation, physical DX12/Vulkan/Metal runtime, controlled
   60/120/144/240 Hz A/B capture, GPU upload counters, and pixel-level
   cross-backend comparison remain `NOT RUN`/`OPEN`; no runtime completion claim
