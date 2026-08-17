@@ -85,7 +85,17 @@
             // Composite only the dirty region (prev cleared + curr drawn).
             const QRect compositeRect = reuseVisual
                 ? s_hudPrevDirtyS : s_hudPrevDirtyS.united(curDirty);
+#if defined(MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE) \
+    && MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
+            // DX12 retains both this target and the uploaded HUD layer.  When
+            // the visual frame is reused, the target already contains the
+            // exact retained HUD pixels, so do not copy Overlay[0] into it a
+            // second time. Native Software has no retained target contract
+            // and intentionally takes the normal branch below.
+            if (!reuseVisual && !compositeRect.isEmpty()) {
+#else
             if (!compositeRect.isEmpty()) {
+#endif
                 painter.resetTransform();
                 painter.drawImage(QPoint(compositeRect.x(), compositeRect.y()),
                                   Overlay[0], compositeRect);

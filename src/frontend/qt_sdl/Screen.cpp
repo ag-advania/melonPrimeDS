@@ -2172,7 +2172,9 @@ void ScreenPanelDX12::drawScreen()
         // the retained image while preserving the dirty-only upload.
         painter.setCompositionMode(QPainter::CompositionMode_Source);
 #define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (cpuBottom ? &bottomScreenImage : nullptr)
+#define MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE 1
 #include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+#undef MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
 #undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
         painter.end();
 

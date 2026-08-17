@@ -279,7 +279,7 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 | OPT-SCB2 | Scoreboard/rank `QFont` and `QFontMetrics` values are cached by HUD config epoch, base-font generation/size, and HUD scale | Removes scoreboard font-size and metrics reconstruction from the high-refresh per-frame draw path while keeping settings and scale changes immediate | On relevant change |
 | OPT-SCB3 | `ScoreboardRenderPlan` retains final localized/elided strings, text advances, cell geometry, colors, icon rectangles, and rank/metric roles. A compact `ScoreboardStructureKey` compares only match serial, mode/roster/order/team structure, visibility, and active slots; live cells use a semantic value key, so time changes are bucketed to the displayed second | Removes per-frame name/string comparison, repeated localization/elision, and full-layout rebuilding. A changed dynamic cell formats and measures once, then updates in place when it fits; overflow falls back to a structural rebuild | Structural change / changed dynamic cells per game frame |
 | OPT-SCB4 | Scoreboard outline paths are stored on each retained text cell. Outline OFF bypasses path creation and lookup entirely; outline ON lazily builds one path per cell and clears it only when the displayed text/font plan changes | Removes the old 35-slot raster-cache machinery and avoids outline work when the feature is disabled while retaining the existing drawText behavior | Cell text/font change / outline-enabled draw |
-| OPT-VFR1 | Software, OpenGL, Vulkan, DX12, and Metal presentation paths first probe only NDS identity plus emulated game frame. A new frame renders and commits the already-probed identity with its stamp after rendering; only a same-frame candidate constructs and compares the extended stamp containing config/font/state generations, menu language, output size, transform/origin, renderer generation, HUD toggle, and edit mode | Avoids the full 14-field stamp construction and duplicate game-frame probe on every new emulated frame while retaining exact same-frame image/texture reuse and invalidation | Per presentation callback |
+| OPT-VFR1 | Software, OpenGL, Vulkan, DX12, and Metal presentation paths first probe only NDS identity plus emulated game frame. A new frame renders and commits the already-probed identity with its stamp after rendering; only a same-frame candidate constructs and compares the extended stamp containing config/font/state generations, menu language, output size, transform/origin, renderer generation, HUD toggle, and edit mode | Avoids extended-stamp pre-render validation and duplicate game-frame probing on new emulated frames while retaining exact same-frame image/texture reuse and invalidation. A rendered frame still commits one stamp after rendering for later same-frame validation | Per presentation callback |
 | OPT-PERF1 | Developer-only HUD phase probe reports `HudStateRead`, scoreboard plan/raster, other painter, clear, hash, upload preparation, GPU upload, composite, and total-active timing with calls/sum/avg/p50/p95/max plus visual render/reuse, identity-probe, stamp-check/commit, plan rebuild, structure-check, dynamic-cell, time-visual-change, outline-path, hash, and upload counters | Makes 60/120/144/240 Hz high-refresh regressions measurable without per-frame log spam | Aggregate once per second when `MELONPRIME_PERF=1` |
 
 ### Scoreboard render-plan and visual-frame reuse contract
@@ -366,8 +366,9 @@ changing the retained `ScoreboardRenderPlan` design:
   stamp commits in the one-second report.
 - DX12 now separates retained-layer readiness from upload completion. A reused
   HUD layer is still drawn in every composition, and a changed frame uploads the
-  union of the previous and current dirty regions. The native Software path keeps
-  its existing clear/composite behavior.
+  union of the previous and current dirty regions. DX12 also skips the redundant
+  CPU `Overlay[0]` to retained-target composite on same-frame reuse; native
+  Software keeps its required CPU composite behavior.
 - Team-row and player-row Rank use one role-aware resolver in initial layout,
   retained-plan construction, and dynamic updates. Stars retain full source
   height so they can reappear after Rank width shrinks. Outline-path validity is
@@ -375,6 +376,10 @@ changing the retained `ScoreboardRenderPlan` design:
 - Metal creates its `QPainter` lazily; an eligible same-frame reuse with no other
   UI overlay therefore reuses the retained texture without constructing a
   painter or rasterizing the HUD.
+- New-frame counter expectation: one identity probe, zero stamp checks, and one
+  post-render stamp commit per rendered visual frame. Same-frame candidates add
+  one stamp check and may reuse the retained visual without raster, clear, hash,
+  or upload work.
 
 Validation for this re-audit:
 
