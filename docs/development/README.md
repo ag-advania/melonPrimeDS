@@ -6,6 +6,7 @@
 - [Linux VM](build/linux-vm.md)
 - [Developer-only features](developer-features.md)
 - [Custom HUD runtime](hud/custom-hud-runtime.md)
+- [Savestate load and runtime safety](testing/savestate-load.md)
 - [Settings and edit mode](ui/settings-and-edit-mode.md)
 - [Qt menu actions](ui/qt-menu-actions.md)
 - [Add a menu language](localization/add-menu-language.md)

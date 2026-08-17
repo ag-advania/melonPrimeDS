@@ -392,18 +392,29 @@ Validation for this re-audit:
   separate compile-time switch and was not enabled by this HUD change.
 - Renderer zero-overhead, SRP/performance, GUI/EmuThread boundary,
   Software-parity, `.inc` ownership, HUD-key, and config-default audits passed.
-- A current-tree controlled DX12 smoke run with `CustomHUD=true`, the `.ml4`
+- A historical current-tree DX12 smoke run with `CustomHUD=true`, the `.ml4`
   gameplay savestate, `MELONPRIME_PERF=1`, and an NVIDIA GeForce RTX 5070 Ti
-  completed without a process failure and produced approximately 490 emulated
-  frames. The developer report observed scoreboard raster work and HUD upload
-  work, with the new-frame counter shape of one identity probe, zero stamp
-  checks, and one stamp commit per rendered frame. This run exercised the
-  new-frame path; its `visual_reuse` counter stayed at zero, so it is not a
-  substitute for the retained same-frame A/B comparison.
+  produced approximately 490 emulated frames and recorded scoreboard/HUD
+  counters. It was run before the savestate-load correction and is now
+  rejected as runtime evidence because the diagnostic load boundary and
+  optional synthetic START/extra-frame path were invalid. It is retained only
+  as incident history; its `visual_reuse` counter was also zero and it never
+  substituted for the retained same-frame A/B comparison.
+- After that correction, the same exact ROM/state passed a developer-only DX12
+  savestate liveness/raster-differential run: renderer setup preceded the load
+  marker, the state loaded successfully, 392 post-load frames advanced with
+  zero pixel mismatches, and no ARM9 abort or renderer-fatal marker occurred.
+  This is valid state-load/liveness evidence only; it is not the controlled
+  60/120/144/240 Hz HUD performance A/B.
 - macOS/Metal compilation, physical DX12/Vulkan/Metal runtime, controlled
   60/120/144/240 Hz A/B capture, GPU upload counters, and pixel-level
   cross-backend comparison remain `NOT RUN`/`OPEN`; no runtime completion claim
   is made from source/build evidence alone.
+
+The diagnostic savestate incident, corrected liveness result, and rejected
+pre-correction evidence are recorded in
+[`savestate-load.md`](../testing/savestate-load.md). The 60/120/144/240 Hz
+and cross-backend pixel gates remain `NOT RUN`/`OPEN`.
 
 ### HUD Auto-Scale System
 Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.
