@@ -112,6 +112,15 @@ VulkanPresenter::~VulkanPresenter()
     Shutdown();
 }
 
+void VulkanPresenter::ClearRetainedDirectBinding(LayerTexture& texture) noexcept
+{
+    texture.RetainedDirectImage = VK_NULL_HANDLE;
+    texture.RetainedDirectView = VK_NULL_HANDLE;
+    texture.RetainedDirectResourceGeneration = 0;
+    texture.RetainedDirectDescriptorSets.fill(VK_NULL_HANDLE);
+    texture.RetainedDirectValid = false;
+}
+
 void VulkanPresenter::Quiesce() noexcept
 {
     if (Device.IsValid())
@@ -238,6 +247,7 @@ bool VulkanPresenter::PrepareDirectOutputDescriptors(
             hadEntries |= entry.Valid;
         if (hadEntries)
             Frames.WaitIdle();
+        InvalidateScreenLayerRetention();
         for (DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
         {
             entry.Image = VK_NULL_HANDLE;
@@ -263,6 +273,7 @@ bool VulkanPresenter::PrepareDirectOutputDescriptors(
 
 void VulkanPresenter::InvalidateDirectDescriptorCache() noexcept
 {
+    InvalidateScreenLayerRetention();
     for (DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
     {
         entry.Image = VK_NULL_HANDLE;
@@ -273,6 +284,92 @@ void VulkanPresenter::InvalidateDirectDescriptorCache() noexcept
     CachedDirectResourceGeneration = 0;
     VulkanPerf::AddCounter(
         VulkanPerf::Counter::PresenterDescriptorCacheInvalidateCount);
+}
+
+
+bool VulkanPresenter::ReuseScreenLayerFromFrame(
+    Layer layer, const melonDS::VulkanPresentedFrame& frame)
+{
+    if (!FrameOpen || CompositionOpen
+        || (layer != Layer::ScreenTop && layer != Layer::ScreenBottom)
+        || frame.Width == 0 || frame.Height == 0)
+    {
+        return false;
+    }
+
+    LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    if (frame.HasDirectSampledOutput())
+    {
+        if (!texture.RetainedDirectValid
+            || texture.Width != frame.Width
+            || texture.Height != frame.Height
+            || texture.RetainedDirectResourceGeneration
+                != frame.ResourceGeneration)
+        {
+            return false;
+        }
+
+        const VkImage expectedImage = layer == Layer::ScreenTop
+            ? frame.DirectImageTop : frame.DirectImageBottom;
+        const VkImageView expectedView = layer == Layer::ScreenTop
+            ? frame.DirectImageViewTop : frame.DirectImageViewBottom;
+        if (texture.RetainedDirectImage != expectedImage
+            || texture.RetainedDirectView != expectedView)
+        {
+            return false;
+        }
+
+        texture.DirectImage = texture.RetainedDirectImage;
+        texture.DirectView = texture.RetainedDirectView;
+        texture.DirectResourceGeneration = texture.RetainedDirectResourceGeneration;
+        texture.DirectDescriptorSets = texture.RetainedDirectDescriptorSets;
+        texture.UsesDirect = true;
+        texture.HasContent = true;
+    }
+    else
+    {
+        // Buffer output was already copied into the presenter-owned layer
+        // image. The frame key is checked by ScreenPanelVulkan; only verify
+        // the retained target still exists here.
+        if (texture.UsesDirect || !texture.Image.IsValid()
+            || !texture.HasContent || texture.Width != frame.Width
+            || texture.Height != frame.Height)
+        {
+            return false;
+        }
+        texture.DirectImage = VK_NULL_HANDLE;
+        texture.DirectView = VK_NULL_HANDLE;
+        texture.DirectResourceGeneration = 0;
+        texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
+    }
+
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::VulkanScreenLayerUploadSkipCount);
+    return true;
+}
+
+
+bool VulkanPresenter::HasRetainedDirectLayer(Layer layer) const noexcept
+{
+    if (layer != Layer::ScreenTop && layer != Layer::ScreenBottom)
+        return false;
+    return Layers[static_cast<std::size_t>(layer)].RetainedDirectValid;
+}
+
+
+void VulkanPresenter::InvalidateScreenLayerRetention() noexcept
+{
+    for (const Layer layer : {Layer::ScreenTop, Layer::ScreenBottom})
+    {
+        LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+        ClearRetainedDirectBinding(texture);
+        texture.DirectImage = VK_NULL_HANDLE;
+        texture.DirectView = VK_NULL_HANDLE;
+        texture.DirectResourceGeneration = 0;
+        texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
+        texture.UsesDirect = false;
+        texture.HasContent = false;
+    }
 }
 
 
@@ -1455,6 +1552,7 @@ bool VulkanPresenter::EnsureLayerImage(
         // no handle-release API, so it cannot be routed through the deferred
         // destruction queue.
         Frames.WaitIdle();
+        ClearRetainedDirectBinding(texture);
         texture.Image.Destroy();
     }
 
@@ -1826,6 +1924,7 @@ bool VulkanPresenter::UploadLayerRegion(
     // new image here.
     if (layer == Layer::ScreenTop || layer == Layer::ScreenBottom)
     {
+        ClearRetainedDirectBinding(texture);
         if (!EnsureLayerImage(layer, texture, width, height, LayerDebugName(layer)))
             return false;
     }
@@ -1939,6 +2038,7 @@ bool VulkanPresenter::UploadLayerFromBuffer(
     }
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    ClearRetainedDirectBinding(texture);
     texture.DirectImage = VK_NULL_HANDLE;
     if (!EnsureLayerImage(layer, texture, frame.Width, frame.Height, LayerDebugName(layer)))
         return false;
@@ -2017,6 +2117,7 @@ bool VulkanPresenter::UploadLayerFromImage(
         return false;
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    ClearRetainedDirectBinding(texture);
     std::array<VkDescriptorSet, kPresenterSamplerCount> descriptorSets{};
     const DirectDescriptorCacheEntry* cached = FindDirectDescriptor(
         image, view, frame.ResourceGeneration);
@@ -2096,6 +2197,18 @@ bool VulkanPresenter::UploadLayerFromImage(
     texture.DirectDescriptorSets = descriptorSets;
     texture.UsesDirect = true;
     texture.HasContent = true;
+    if (cached)
+    {
+        texture.RetainedDirectImage = image;
+        texture.RetainedDirectView = view;
+        texture.RetainedDirectResourceGeneration = frame.ResourceGeneration;
+        texture.RetainedDirectDescriptorSets = descriptorSets;
+        texture.RetainedDirectValid = true;
+    }
+    else
+    {
+        ClearRetainedDirectBinding(texture);
+    }
     return true;
 }
 
@@ -2788,6 +2901,7 @@ void VulkanPresenter::Shutdown() noexcept
             texture.DirectResourceGeneration = 0;
             texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
             texture.UsesDirect = false;
+            ClearRetainedDirectBinding(texture);
         }
 
         for (Vk::StagingRing& ring : Staging)

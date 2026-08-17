@@ -115,6 +115,13 @@ public:
     // resource-generation change is the only direct descriptor path that may
     // quiesce the device.
     bool PrepareDirectOutputDescriptors(const melonDS::VulkanPresentedFrame& frame);
+    // Rebinds a retained screen layer for the current frame without allocating
+    // descriptors or uploading renderer output. The caller must have already
+    // proved that the renderer frame identity is unchanged.
+    bool ReuseScreenLayerFromFrame(
+        Layer layer, const melonDS::VulkanPresentedFrame& frame);
+    [[nodiscard]] bool HasRetainedDirectLayer(Layer layer) const noexcept;
+    void InvalidateScreenLayerRetention() noexcept;
     // Renderer transition hook. The preallocated descriptor sets survive; only
     // their resource/view identity mapping is invalidated.
     void InvalidateDirectDescriptorCache() noexcept;
@@ -318,6 +325,16 @@ private:
         melonDS::u64 DirectResourceGeneration = 0;
         std::array<VkDescriptorSet, 2> DirectDescriptorSets{};
         bool UsesDirect = false;
+
+        // Only persistent descriptor-cache bindings may cross a presentation
+        // frame. Current-frame direct state above is still cleared at every
+        // BeginFrame; this retained state is restored only after the caller
+        // proves that the renderer frame identity is unchanged.
+        VkImage RetainedDirectImage = VK_NULL_HANDLE;
+        VkImageView RetainedDirectView = VK_NULL_HANDLE;
+        melonDS::u64 RetainedDirectResourceGeneration = 0;
+        std::array<VkDescriptorSet, 2> RetainedDirectDescriptorSets{};
+        bool RetainedDirectValid = false;
     };
 
     struct DirectDescriptorCacheEntry
@@ -362,6 +379,7 @@ private:
         VkImage image,
         VkImageView view,
         melonDS::u64 resourceGeneration);
+    static void ClearRetainedDirectBinding(LayerTexture& texture) noexcept;
     const DirectDescriptorCacheEntry* FindDirectDescriptor(
         VkImage image,
         VkImageView view,
