@@ -9,8 +9,11 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLineEdit>
+#include <QLabel>
+#include <QSlider>
 #include <QPointer>
 #include <QSignalBlocker>
+#include <cmath>
 
 #include "MelonPrimeInputConfig.h"
 #include "ui_MelonPrimeInputConfig.h"
@@ -80,6 +83,8 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
         QString qk = QString::fromStdString(key);
         if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             s[qk] = cb->isChecked();
+        else if (auto* slider = qobject_cast<QSlider*>(widget.data()))
+            s[qk] = slider->value();
         else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             s[qk] = sb->value();
         else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))
@@ -146,6 +151,13 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
         widget->blockSignals(true);
         if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             cb->setChecked(it->toBool());
+        else if (auto* slider = qobject_cast<QSlider*>(widget.data())) {
+            slider->setValue(static_cast<int>(std::lround(
+                std::clamp(it->toDouble(), 0.0, 1.0) * 100.0)));
+            if (auto* valueLabel = slider->parentWidget()->findChild<QLabel*>(
+                    slider->objectName() + QStringLiteral("_value")))
+                valueLabel->setText(QStringLiteral("%1%").arg(slider->value()));
+        }
         else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             sb->setValue(it->toInt());
         else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))
@@ -198,6 +210,8 @@ void MelonPrimeInputConfig::applyVisualPreview()
             continue;
         if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             instcfg.SetBool(key, cb->isChecked());
+        else if (auto* slider = qobject_cast<QSlider*>(widget.data()))
+            instcfg.SetDouble(key, slider->value() / 100.0);
         else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             instcfg.SetInt(key, sb->value());
         else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))
@@ -211,8 +225,12 @@ void MelonPrimeInputConfig::applyVisualPreview()
     }
 
     if (auto* thread = emuInstance->getEmuThread()) {
-        if (auto* core = thread->GetMelonPrimeCore())
+        if (auto* core = thread->GetMelonPrimeCore()) {
             MelonPrime::CustomHud_InvalidateConfigCache(core->HudConfigState());
+            // Match the normal save path: preview values must be visible to
+            // the runtime reload path as well as to the dialog-side preview.
+            core->NotifyConfigChanged();
+        }
     }
 
     // Refresh preview widgets

@@ -514,18 +514,19 @@ static const HudWidgetProp kSecScoreboard[] = {
     { "Anchor", HWType::Anchor9, MP_HUD_PROP_KEY_HudScoreboardAnchor, 0, 8, 1, nullptr, nullptr },
     { "Offset X", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardX, -256, 256, 1, nullptr, nullptr },
     { "Offset Y", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardY, -256, 256, 1, nullptr, nullptr },
-    { "Width", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardWidth, 96, 256, 1, nullptr, nullptr },
-    { "Row Height", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardRowHeight, 12, 48, 1, nullptr, nullptr },
     { "Row Spacing", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16, 1, nullptr, nullptr },
     { "Hunter Icon Height", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48, 1, nullptr, nullptr },
     { "Stars Height", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardStarsHeight, 0, 24, 1, nullptr, nullptr },
-    { "Opacity", HWType::Float, MP_HUD_PROP_KEY_HudScoreboardOpacity, 0, 100, 5, nullptr, nullptr },
-    { "Background Opacity", HWType::Float, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, 0, 100, 5, nullptr, nullptr },
+    { "Opacity", HWType::Opacity, MP_HUD_PROP_KEY_HudScoreboardOpacity, 0, 100, 5, nullptr, nullptr },
+    { "Background Opacity", HWType::Opacity, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, 0, 100, 5, nullptr, nullptr },
     { "Text Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardTextColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardTextColorG, MP_HUD_PROP_KEY_HudScoreboardTextColorB },
     { "Header Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardHeaderColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardHeaderColorG, MP_HUD_PROP_KEY_HudScoreboardHeaderColorB },
     { "Local Player Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorG, MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorB },
     { "Team Row Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB },
     { "Background Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB },
+    { "Column Spacing", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardColumnSpacing, 0, 32, 1, nullptr, nullptr },
+    { "Right Padding", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardRightPadding, 0, 32, 1, nullptr, nullptr },
+    { "Scoreboard Scale %", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardScale, 10, 800, 1, nullptr, nullptr },
 };
 
 #define MELONPRIME_OSD_COLOR_EMIT_DIALOG_PROPS

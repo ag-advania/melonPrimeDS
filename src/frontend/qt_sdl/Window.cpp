@@ -1220,6 +1220,13 @@ void MainWindow::setHudEditModeActive(bool active)
     if (panel)
         panel->setHudEditModeActive(active);
 }
+
+void MainWindow::setHudLivePreviewActive(bool active)
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->setHudLivePreviewActive(active);
+}
 #endif
 #endif
 
@@ -2496,6 +2503,11 @@ void MainWindow::onOpenInputConfig()
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+#ifdef MELONPRIME_CUSTOM_HUD
+    // This dialog also contains the Custom HUD tab. Keep the real top-screen
+    // presentation live regardless of which menu entry opened the dialog.
+    setHudLivePreviewActive(true);
+#endif
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
 }
 
@@ -2507,6 +2519,9 @@ void MainWindow::onOpenMetroidInputSettings()
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+#ifdef MELONPRIME_CUSTOM_HUD
+    setHudLivePreviewActive(true);
+#endif
     dlg->switchTabToAddons();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
@@ -2518,6 +2533,9 @@ void MainWindow::onOpenMetroidOtherSettings()
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+#ifdef MELONPRIME_CUSTOM_HUD
+    setHudLivePreviewActive(true);
+#endif
     dlg->switchTabToMetroid();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
@@ -2529,6 +2547,9 @@ void MainWindow::onOpenMetroidCustomHudSettings()
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+#ifdef MELONPRIME_CUSTOM_HUD
+    setHudLivePreviewActive(true);
+#endif
     dlg->switchTabToCustomHud();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
@@ -2596,6 +2617,7 @@ void MainWindow::onInputConfigFinished(int res)
 #ifdef MELONPRIME_CUSTOM_HUD
     // Balances the "Edit HUD Layout" hand-off; emulation drives the panel again.
     setHudEditModeActive(false);
+    setHudLivePreviewActive(false);
 #endif
     endModalPresentationPause();
 #endif

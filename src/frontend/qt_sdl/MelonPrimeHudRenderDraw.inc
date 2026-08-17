@@ -221,20 +221,28 @@ static void DrawScoreboardNameAndRank(QPainter* p, const QRectF& rect,
     p->restore();
 }
 
-static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
-                           const CachedHudConfig& c, float hudScale,
-                           uint8_t localPlayerSlot)
-{
-    if (!p || !snapshot.visible || !c.scoreboard.show
-        || c.scoreboard.opacity <= 0.0f)
-        return;
+struct ScoreboardRenderRow {
+    bool team = false;
+    uint8_t slot = 0xFF;
+    uint8_t teamIndex = 0xFF;
+};
 
-    struct RenderRow {
-        bool team = false;
-        uint8_t slot = 0xFF;
-        uint8_t teamIndex = 0xFF;
-    };
-    std::array<RenderRow, 8> rows{};
+struct ScoreboardLayout {
+    int panelW = 1;
+    int panelH = 0;
+    int rowH = 12;
+    int rowSpacing = 0;
+    int columnSpacing = 0;
+    int rightPadding = 0;
+    int portraitW = 20;
+    int playerW = 1;
+    int firstW = 20;
+    int secondW = 20;
+};
+
+static int BuildScoreboardRenderRows(const ScoreboardSnapshot& snapshot,
+                                     std::array<ScoreboardRenderRow, 8>& rows)
+{
     int rowCount = 0;
     int previousTeam = -1;
     const int displayCount = std::min<int>(snapshot.activePlayers, 4);
@@ -256,38 +264,201 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         if (rowCount < static_cast<int>(rows.size()))
             rows[rowCount++] = {false, slot, player.teamIndex};
     }
-    if (rowCount == 0)
-        return;
+    return rowCount;
+}
 
-    const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
-    const int panelW = std::max(96, c.scoreboard.width);
-    const int rowH = std::max(12, c.scoreboard.rowHeight);
-    const int spacing = std::max(0, c.scoreboard.rowSpacing);
-    const int panelH = rowH + rowCount * (rowH + spacing) + 4;
-    int panelX = c.scoreboard.x;
-    int panelY = c.scoreboard.y;
-    const int safeAnchor = std::clamp(c.scoreboard.anchor, 0, 8);
-    HudGeometry::ApplyRectAnchor(panelX, panelY, panelW, panelH,
-                                 safeAnchor % 3, safeAnchor / 3);
-    const float invHudScale = hudScale > 0.0f ? 1.0f / hudScale : 1.0f;
+static float ScoreboardUserScale(const CachedHudConfig& c)
+{
+    return std::clamp(c.scoreboard.scale, 0.1f, 8.0f);
+}
+
+static float ScoreboardTextDrawScale(const CachedHudConfig& c, float hudScale)
+{
     // Scoreboard has its own auto-scale cap in addition to the shared text
-    // cap. Manual row geometry remains in DS units, matching the other HUD
-    // category caps while keeping the configured layout stable.
+    // cap. The user-controlled scoreboard scale is applied after those
+    // automatic factors so it remains independent from the common HUD scale.
     const float boardAutoTextScale = std::min(c.scaleText, c.scaleScoreboard);
     const float boardEffectiveTextPct = boardAutoTextScale * 100.0f
                                       + (c.textScalePct - 100);
-    const float boardTextDrawScale = hudScale > 0.0f
+    const float autoTextScale = hudScale > 0.0f
         ? (boardEffectiveTextPct / 100.0f) / hudScale
         : boardEffectiveTextPct / 100.0f;
+    return autoTextScale * ScoreboardUserScale(c);
+}
 
-    QFont boardFont = s_frameFont;
+static void ConfigureScoreboardFonts(const CachedHudConfig& c, float hudScale,
+                                     QFont& boardFont, QFont& rankFont)
+{
+    boardFont = s_frameFont;
     const int boardFontPx = std::max(1, static_cast<int>(std::lround(
-        s_frameFpx * std::max(0.5f, boardTextDrawScale))));
+        s_frameFpx * std::max(0.5f, ScoreboardTextDrawScale(c, hudScale)))));
     boardFont.setPixelSize(boardFontPx);
-    const QFontMetrics boardFm(boardFont);
-    QFont rankFont = boardFont;
+    rankFont = boardFont;
     rankFont.setPixelSize(std::max(1, static_cast<int>(std::lround(boardFontPx * 0.72))));
+}
+
+static int ScoreboardImageWidthDS(const QImage& image, float invHudScale)
+{
+    return image.isNull() ? 0
+        : std::max(0, static_cast<int>(std::ceil(image.width() * invHudScale)));
+}
+
+static int ScoreboardAutoRowHeight(const QFontMetrics& boardFm,
+                                   const QFontMetrics& rankFm,
+                                   int headerInset, int assetHeightDS)
+{
+    // Each player cell contains two lines. Derive the row height from the
+    // actual fonts/assets instead of scaling a user-entered fixed height;
+    // otherwise a small scoreboard scale clips the name/rank pair.
+    const int nameLineHeight = boardFm.height() + 1;
+    const int rankLineHeight = rankFm.height() + 1;
+    const int nameSplitHeight = static_cast<int>(std::ceil(
+        static_cast<float>(nameLineHeight) / 0.58f));
+    const int rankSplitHeight = static_cast<int>(std::ceil(
+        static_cast<float>(rankLineHeight) / 0.42f));
+    const int headerHeight = boardFm.height() + headerInset * 2 + 1;
+    int rowHeight = std::max(nameSplitHeight, rankSplitHeight);
+    rowHeight = std::max(rowHeight, headerHeight);
+    rowHeight = std::max(rowHeight, assetHeightDS);
+    return std::max(1, rowHeight);
+}
+
+static ScoreboardLayout BuildScoreboardLayout(
+    const ScoreboardSnapshot& snapshot,
+    const std::array<ScoreboardRenderRow, 8>& rows, int rowCount,
+    const CachedHudConfig& c, float hudScale,
+    const QFontMetrics& boardFm, const QFontMetrics& rankFm)
+{
+    ScoreboardLayout layout;
+    const float boardScale = ScoreboardUserScale(c);
+    const auto scaleDs = [boardScale](int value) {
+        return std::max(0, static_cast<int>(std::lround(value * boardScale)));
+    };
+    const float invHudScale = hudScale > 0.0f ? 1.0f / hudScale : 1.0f;
+    const int headerInset = std::max(1, scaleDs(1));
+    const int assetHeightDS = std::max(0, static_cast<int>(std::ceil(
+        std::max(s_scoreboardHunterIconHeight, s_scoreboardStarsHeight)
+        * invHudScale)));
+    // Preserve the established default breathing room while allowing the
+    // font/asset minimum to win whenever the user scales the board down.
+    layout.rowH = std::max(ScoreboardAutoRowHeight(
+        boardFm, rankFm, headerInset, assetHeightDS), scaleDs(22));
+    layout.rowSpacing = scaleDs(std::max(0, c.scoreboard.rowSpacing));
+    layout.columnSpacing = scaleDs(std::clamp(c.scoreboard.columnSpacing, 0, 32));
+    layout.rightPadding = scaleDs(std::clamp(c.scoreboard.rightPadding, 0, 32));
+    layout.panelH = layout.rowH + rowCount * (layout.rowH + layout.rowSpacing)
+                  + scaleDs(4);
+
+    layout.portraitW = std::max(scaleDs(20),
+                                scaleDs(c.scoreboard.hunterIconHeight) + scaleDs(4));
+    int playerContentW = boardFm.horizontalAdvance(UiText::Tr("Player"));
+
+    const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
+    int firstContentW = boardFm.horizontalAdvance(UiText::Tr(metric.firstLabel));
+    int secondContentW = boardFm.horizontalAdvance(UiText::Tr(metric.secondLabel));
+
+    for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+        const ScoreboardRenderRow& row = rows[rowIndex];
+        if (row.team) {
+            const ScoreboardPlayerSnapshot& representative = snapshot.playersBySlot[row.slot];
+            const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[row.teamIndex];
+            const QString teamName = QStringLiteral("%1 %2").arg(UiText::Tr("Team"))
+                .arg(static_cast<int>(row.teamIndex) + 1);
+            const int teamRank = static_cast<int>(representative.standing) + 1;
+            playerContentW = std::max(playerContentW, boardFm.horizontalAdvance(teamName));
+            playerContentW = std::max(playerContentW,
+                                       rankFm.horizontalAdvance(FormatScoreboardRankLabel(teamRank)));
+            firstContentW = std::max(firstContentW,
+                boardFm.horizontalAdvance(FormatScoreboardMetric(
+                    metric.firstIsTime ? team.time : team.points,
+                    metric.firstIsTime, snapshot.gameMode)));
+            secondContentW = std::max(secondContentW,
+                boardFm.horizontalAdvance(FormatScoreboardMetric(
+                    metric.secondIsTime ? team.time
+                        : metric.secondIsKills ? team.kills : team.deaths,
+                    metric.secondIsTime, snapshot.gameMode)));
+            continue;
+        }
+
+        const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[row.slot];
+        const int rank = static_cast<int>(snapshot.teams ? player.teamStanding : player.standing) + 1;
+        playerContentW = std::max(playerContentW, boardFm.horizontalAdvance(player.displayName));
+        int rankLineW = rankFm.horizontalAdvance(FormatScoreboardRankLabel(rank));
+        if (player.stars <= 4) {
+            const QImage& stars = s_scoreboardStars[player.stars];
+            rankLineW += stars.isNull() ? 0
+                : scaleDs(3) + ScoreboardImageWidthDS(stars, invHudScale);
+        }
+        playerContentW = std::max(playerContentW, rankLineW);
+        const QImage* hunter = player.hunterId < 7
+            ? &s_scoreboardHunterIcons[player.hunterId] : nullptr;
+        if (hunter && !hunter->isNull())
+            layout.portraitW = std::max(layout.portraitW,
+                                        scaleDs(2) + ScoreboardImageWidthDS(*hunter, invHudScale));
+
+        firstContentW = std::max(firstContentW,
+            boardFm.horizontalAdvance(FormatScoreboardMetric(
+                metric.firstIsTime ? player.time : player.points,
+                metric.firstIsTime, snapshot.gameMode)));
+        secondContentW = std::max(secondContentW,
+            boardFm.horizontalAdvance(FormatScoreboardMetric(
+                metric.secondIsTime ? player.time
+                    : metric.secondIsKills ? player.kills : player.deaths,
+                metric.secondIsTime, snapshot.gameMode)));
+    }
+
+    // The two statistics columns size themselves to their labels/content.
+    // This is the scoreboard equivalent of an HTML auto-layout table: the
+    // user controls gaps and edge padding, not an arbitrary total width.
+    layout.playerW = std::max(1, playerContentW + scaleDs(2));
+    layout.firstW = std::max(scaleDs(20), firstContentW + scaleDs(2));
+    layout.secondW = std::max(scaleDs(20), secondContentW + scaleDs(2));
+
+    const int fixedW = layout.portraitW + scaleDs(3) + layout.firstW + layout.secondW
+                     + layout.columnSpacing * 2 + layout.rightPadding;
+    const int naturalW = fixedW + layout.playerW;
+    // A DS top screen is 256 units wide. Long localized names still elide in
+    // the Player cell rather than allowing the panel to grow without bound.
+    layout.panelW = std::max(fixedW + 1, std::min(256, naturalW));
+    layout.playerW = std::max(1, layout.panelW - fixedW);
+    return layout;
+}
+
+static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
+                           const CachedHudConfig& c, float hudScale,
+                           uint8_t localPlayerSlot)
+{
+    if (!p || !snapshot.visible || !c.scoreboard.show
+        || c.scoreboard.opacity <= 0.0f)
+        return;
+
+    std::array<ScoreboardRenderRow, 8> rows{};
+    const int rowCount = BuildScoreboardRenderRows(snapshot, rows);
+    if (rowCount == 0)
+        return;
+
+    QFont boardFont, rankFont;
+    ConfigureScoreboardFonts(c, hudScale, boardFont, rankFont);
+    const QFontMetrics boardFm(boardFont);
     const QFontMetrics rankFm(rankFont);
+    const ScoreboardLayout layout = BuildScoreboardLayout(
+        snapshot, rows, rowCount, c, hudScale, boardFm, rankFm);
+
+    int panelX = c.scoreboard.x;
+    int panelY = c.scoreboard.y;
+    const int safeAnchor = std::clamp(c.scoreboard.anchor, 0, 8);
+    HudGeometry::ApplyRectAnchor(panelX, panelY, layout.panelW, layout.panelH,
+                                 safeAnchor % 3, safeAnchor / 3);
+    const float invHudScale = hudScale > 0.0f ? 1.0f / hudScale : 1.0f;
+    const float boardScale = ScoreboardUserScale(c);
+    const auto scaleDs = [boardScale](int value) {
+        return std::max(0, static_cast<int>(std::lround(value * boardScale)));
+    };
+    const int nameX = panelX + layout.portraitW + scaleDs(3);
+    const int firstX = nameX + layout.playerW + layout.columnSpacing;
+    const int secondX = firstX + layout.firstW + layout.columnSpacing;
+    const int panelInset = std::max(1, scaleDs(1));
+    const int headerInset = panelInset;
 
     p->save();
     p->setFont(boardFont);
@@ -296,19 +467,19 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     QColor background = c.scoreboard.backgroundColor;
     background.setAlphaF(c.scoreboard.backgroundOpacity);
     p->setBrush(background);
-    const QRectF panelRect(panelX, panelY, panelW, panelH);
+    const QRectF panelRect(panelX, panelY, layout.panelW, layout.panelH);
     p->drawRect(panelRect);
     AccumDirtyDs(p, panelRect);
 
-    const int portraitW = std::min(
-        std::max(20, c.scoreboard.hunterIconHeight + 4),
-        std::max(0, panelW - 76 - 3));
-    const int nameX = panelX + portraitW + 3;
-    const int nameW = std::max(0, panelW - portraitW - 3 - 76);
-    const int firstX = panelX + panelW - 76;
-    const QRectF playerHeader(nameX, panelY + 1, nameW, rowH - 2);
-    const QRectF firstHeader(firstX, panelY + 1, 38, rowH - 2);
-    const QRectF secondHeader(firstX + 38, panelY + 1, 38, rowH - 2);
+    // Hunter portraits and Stars are pixel art. Disable Qt's smooth transform
+    // for this scope so both the cached resize and the final draw stay NEAREST.
+    p->setRenderHint(QPainter::SmoothPixmapTransform, false);
+
+    const int headerHeight = std::max(1, layout.rowH - headerInset * 2);
+    const QRectF playerHeader(nameX, panelY + headerInset, layout.playerW, headerHeight);
+    const QRectF firstHeader(firstX, panelY + headerInset, layout.firstW, headerHeight);
+    const QRectF secondHeader(secondX, panelY + headerInset, layout.secondW, headerHeight);
+    const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
     DrawScoreboardText(p, playerHeader, UiText::Tr("Player"), c.scoreboard.headerColor, boardFm);
     DrawScoreboardText(p, firstHeader, UiText::Tr(metric.firstLabel), c.scoreboard.headerColor,
                        boardFm, Qt::AlignRight);
@@ -316,11 +487,12 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
                        boardFm, Qt::AlignRight);
 
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
-        const RenderRow& row = rows[rowIndex];
-        const int y = panelY + rowH + rowIndex * (rowH + spacing);
-        const QRectF nameRect(nameX, y, nameW, rowH);
-        const QRectF firstRect(firstX, y, 38, rowH);
-        const QRectF secondRect(firstX + 38, y, 38, rowH);
+        const ScoreboardRenderRow& row = rows[rowIndex];
+        const int y = panelY + layout.rowH
+                    + rowIndex * (layout.rowH + layout.rowSpacing);
+        const QRectF nameRect(nameX, y, layout.playerW, layout.rowH);
+        const QRectF firstRect(firstX, y, layout.firstW, layout.rowH);
+        const QRectF secondRect(secondX, y, layout.secondW, layout.rowH);
         if (row.team) {
             const ScoreboardPlayerSnapshot& representative = snapshot.playersBySlot[row.slot];
             const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[row.teamIndex];
@@ -347,7 +519,7 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
             ? c.scoreboard.localPlayerColor : c.scoreboard.textColor;
         const int rank = static_cast<int>(snapshot.teams ? player.teamStanding : player.standing) + 1;
 
-        const int iconX = panelX + 1;
+        const int iconX = panelX + panelInset;
         // Guardian/invalid IDs have no scoreboard portrait asset; leave the
         // portrait empty instead of silently misidentifying the hunter.
         const QImage* hunter = player.hunterId < 7
@@ -355,15 +527,14 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         if (hunter && !hunter->isNull()) {
             const float iconH = static_cast<float>(hunter->height()) * invHudScale;
             const float iconW = static_cast<float>(hunter->width()) * invHudScale;
-            const QRectF iconRect(iconX, y + (rowH - iconH) * 0.5f, iconW, iconH);
+            const QRectF iconRect(iconX, y + (layout.rowH - iconH) * 0.5f, iconW, iconH);
             p->drawImage(iconRect, *hunter);
             AccumDirtyDs(p, iconRect);
         }
         DrawScoreboardNameAndRank(p, nameRect, player.displayName, rank,
                                   rowColor, boardFont, boardFm, rankFont, rankFm);
         // Stars are the Hunter Rank image. Keep it on the second line of the
-        // Player cell, immediately after the localized Standings label/value;
-        // it must not remain in a separate column beside the name.
+        // Player cell, immediately after the localized Rank label/value.
         if (player.stars <= 4) {
             const QImage& stars = s_scoreboardStars[player.stars];
             if (!stars.isNull()) {
@@ -373,9 +544,9 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
                 const QString rankLabel = FormatScoreboardRankLabel(rank);
                 const float starsX = static_cast<float>(nameX)
                                    + static_cast<float>(rankFm.horizontalAdvance(rankLabel))
-                                   + 3.0f;
+                                   + static_cast<float>(scaleDs(3));
                 const float availableStarsW = std::max(
-                    0.0f, static_cast<float>(firstX - starsX - 2));
+                    0.0f, static_cast<float>(nameRect.right() - starsX - scaleDs(2)));
                 const float drawStarsW = std::min(starsW, availableStarsW);
                 if (drawStarsW > 0.0f) {
                     const QRectF starsRect(starsX,

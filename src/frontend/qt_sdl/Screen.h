@@ -146,6 +146,11 @@ public:
     // additionally have to keep presenting while paused, or the editor overlay
     // never reaches the screen at all.
     virtual void setHudEditModeActive(bool active);
+    // The regular Custom HUD settings page also uses the paused emulation
+    // thread to repaint the real top-screen HUD while its controls change.
+    // This is separate from edit mode so it does not expose editor hit targets
+    // or change cursor ownership.
+    virtual void setHudLivePreviewActive(bool active) { (void)active; }
 #endif
 
     void unfocus();
@@ -438,6 +443,7 @@ public:
     void drawScreen() override;
 #ifdef MELONPRIME_CUSTOM_HUD
     void setHudEditModeActive(bool active) override;
+    void setHudLivePreviewActive(bool active) override;
 #endif
 
     // Quiesce all DX12 panels belonging to one EmuInstance before its
@@ -486,6 +492,7 @@ public:
     void finishVulkanLowLatencyFrame() override;
 #ifdef MELONPRIME_CUSTOM_HUD
     void setHudEditModeActive(bool active) override;
+    void setHudLivePreviewActive(bool active) override;
 #endif
 
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)

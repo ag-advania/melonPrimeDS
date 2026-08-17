@@ -810,18 +810,45 @@ def parse_dialog_sections(ident_to_key: dict[str, str]) -> list[DialogSection]:
                 strip_comments(read(DIALOG_TABLES_INC)), ident_to_key):
             existing = next((item for item in sections if item.name == section.name), None)
             if existing is not None:
-                existing_rows = {
+                seen_cfg_keys: set[str] = set()
+                deduped_rows: list[DialogRow] = []
+                for existing_row in existing.rows:
+                    if existing_row.cfg_key is not None:
+                        if existing_row.cfg_key in seen_cfg_keys:
+                            continue
+                        seen_cfg_keys.add(existing_row.cfg_key)
+                    deduped_rows.append(existing_row)
+                existing.rows = deduped_rows
+                existing_by_key = {
+                    row.cfg_key: index
+                    for index, row in enumerate(existing.rows)
+                    if row.cfg_key is not None
+                }
+                existing_identities = {
                     (row.label, row.widget_type, row.cfg_key, row.cfg_key_g, row.cfg_key_b)
                     for row in existing.rows
                 }
                 for row in section.rows:
                     identity = (row.label, row.widget_type, row.cfg_key, row.cfg_key_g, row.cfg_key_b)
-                    if identity not in existing_rows:
+                    if row.cfg_key is not None and row.cfg_key in existing_by_key:
+                        existing.rows[existing_by_key[row.cfg_key]] = row
+                        existing_identities.add(identity)
+                    elif identity not in existing_identities:
                         existing.rows.append(row)
-                        existing_rows.add(identity)
+                        if row.cfg_key is not None:
+                            existing_by_key[row.cfg_key] = len(existing.rows) - 1
+                        existing_identities.add(identity)
             elif section.name not in known:
                 sections.append(section)
                 known.add(section.name)
+    # A removed HUD property can remain in the previous generated include
+    # until this pass rewrites it. Drop stale non-label rows whose key no
+    # longer exists in the schema instead of emitting an empty key literal.
+    for section in sections:
+        section.rows = [
+            row for row in section.rows
+            if row.widget_type == "Label" or row.cfg_key is not None
+        ]
     sections.extend(osd_dialog_sections())
     return sections
 
@@ -844,6 +871,7 @@ def add_dialog_row_meta(
         "Int": ("Int", "Int", True),
         "Float": ("Double", "Float", True),
         "Double": ("Double", "Double", True),
+        "Opacity": ("Double", "Opacity", True),
         "String": ("String", "String", False),
         "Anchor9": ("Int", "Anchor9", True),
         "Align3": ("Int", "Align3", True),
@@ -892,6 +920,9 @@ def edit_value_from_expr(expr: str, ident_to_key: dict[str, str]) -> str | None:
         return key
     token = expr.strip()
     if token == "nullptr":
+        return None
+    if token.startswith("MP_HUD_PROP_KEY_"):
+        # Treat a reference to a deleted schema key as stale generated input.
         return None
     return token
 
@@ -954,13 +985,49 @@ def parse_edit_descriptor_tables(ident_to_key: dict[str, str]) -> tuple[list[Edi
     )
     # The generated include is the complete legacy table; small additions live
     # in the hand-maintained Defs.inc source surface. Merge by descriptor name
-    # so regeneration remains idempotent after the new rows are emitted.
+    # and configuration key so a source-surface label/type correction replaces
+    # the legacy generated row instead of emitting a duplicate control.
     prop_arrays = list(generated_tables[0])
     known_arrays = {array.name for array in prop_arrays}
     for array in source_tables[0]:
-        if array.name not in known_arrays:
+        existing = next((item for item in prop_arrays if item.name == array.name), None)
+        if existing is None:
             prop_arrays.append(array)
             known_arrays.add(array.name)
+            continue
+        seen_cfg_keys: set[str] = set()
+        deduped_rows: list[EditPropRow] = []
+        for existing_row in existing.rows:
+            if existing_row.cfg_key is not None:
+                if existing_row.cfg_key in seen_cfg_keys:
+                    continue
+                seen_cfg_keys.add(existing_row.cfg_key)
+            deduped_rows.append(existing_row)
+        existing.rows = deduped_rows
+        existing_by_key = {
+            row.cfg_key: index
+            for index, row in enumerate(existing.rows)
+            if row.cfg_key is not None
+        }
+        existing_rows = {
+            (row.label, row.prop_type, row.cfg_key, row.extra1, row.extra2, row.extra3)
+            for row in existing.rows
+        }
+        for row in array.rows:
+            identity = (row.label, row.prop_type, row.cfg_key,
+                        row.extra1, row.extra2, row.extra3)
+            if row.cfg_key is not None and row.cfg_key in existing_by_key:
+                existing.rows[existing_by_key[row.cfg_key]] = row
+                existing_rows.add(identity)
+            elif identity not in existing_rows:
+                existing.rows.append(row)
+                if row.cfg_key is not None:
+                    existing_by_key[row.cfg_key] = len(existing.rows) - 1
+                existing_rows.add(identity)
+    for prop_array in prop_arrays:
+        # Keep regeneration idempotent when a property was removed from the
+        # schema but is still present in the last generated descriptor file.
+        prop_array.rows = [row for row in prop_array.rows if row.cfg_key is not None]
     edit_elems = list(generated_tables[1])
     known_elems = {elem.name for elem in edit_elems}
     for elem in source_tables[1]:

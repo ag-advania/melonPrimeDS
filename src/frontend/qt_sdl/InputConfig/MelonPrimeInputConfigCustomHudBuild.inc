@@ -80,6 +80,46 @@
             });
             break;
         }
+        case HWType::Opacity: {
+            auto* rowW = new QWidget(parent);
+            auto* hlay = new QHBoxLayout(rowW);
+            hlay->setContentsMargins(0, 0, 0, 0);
+            hlay->setSpacing(4);
+
+            const int minValue = std::clamp(p.min, 0, 100);
+            const int maxValue = std::clamp(p.max, minValue, 100);
+            const int value = std::clamp(
+                static_cast<int>(std::lround(instcfg.GetDouble(p.cfgKey) * 100.0)),
+                minValue, maxValue);
+            auto* slider = new QSlider(Qt::Horizontal, rowW);
+            slider->setObjectName(objName);
+            slider->setRange(minValue, maxValue);
+            slider->setSingleStep(std::max(1, p.step));
+            slider->setPageStep(std::max(1, p.step * 5));
+            slider->setValue(value);
+
+            auto* valueLabel = new QLabel(rowW);
+            valueLabel->setObjectName(objName + QStringLiteral("_value"));
+            valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            valueLabel->setMinimumWidth(42);
+            valueLabel->setText(QStringLiteral("%1%").arg(value));
+
+            hlay->addWidget(slider, 1);
+            hlay->addWidget(valueLabel);
+            form->addRow(QString::fromUtf8(p.label), rowW);
+            m_hudWidgets[p.cfgKey] = slider;
+
+            connect(slider, &QSlider::valueChanged, valueLabel, [valueLabel](int val) {
+                valueLabel->setText(QStringLiteral("%1%").arg(val));
+            });
+            connect(slider, &QSlider::valueChanged, this,
+                    [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetDouble(key, val / 100.0);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::Double: {
             auto* dsb = new QDoubleSpinBox(parent);
             dsb->setObjectName(objName);
@@ -689,6 +729,7 @@
             case 2: preview = new HpAmmoPreviewWidget(emuInstance, mainBody); break;
             case 3: preview = new MatchStatusPreviewWidget(emuInstance, mainBody); break;
             case 4: preview = new RadarPreviewWidget(emuInstance, mainBody); break;
+            case 5: preview = new ScoreboardPreviewWidget(emuInstance, mainBody); break;
             }
             if (preview) {
                 hbox->addWidget(preview, 0);

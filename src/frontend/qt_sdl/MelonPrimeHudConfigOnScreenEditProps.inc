@@ -196,10 +196,8 @@ static const HudEditPropDesc kPropsCrosshairOuter[] = {
 };
 
 static const HudEditPropDesc kPropsScoreboard[] = {
-    {"Width", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardWidth, 96, 256, 1, nullptr, nullptr, nullptr},
-    {"Row Height", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRowHeight, 12, 48, 1, nullptr, nullptr, nullptr},
     {"Row Spacing", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16, 1, nullptr, nullptr, nullptr},
-    {"Hunter Icon", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48, 1, nullptr, nullptr, nullptr},
+    {"Hunter Icon Height", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48, 1, nullptr, nullptr, nullptr},
     {"Stars Height", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardStarsHeight, 0, 24, 1, nullptr, nullptr, nullptr},
     {"Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudScoreboardOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
     {"Background Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
@@ -207,6 +205,9 @@ static const HudEditPropDesc kPropsScoreboard[] = {
     {"Local Player Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorG, MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorB, nullptr},
     {"Team Row Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB, nullptr},
     {"Background Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB, nullptr},
+    {"Column Spacing", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardColumnSpacing, 0, 32, 1, nullptr, nullptr, nullptr},
+    {"Right Padding", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRightPadding, 0, 32, 1, nullptr, nullptr, nullptr},
+    {"Scoreboard Scale %", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardScale, 10, 800, 1, nullptr, nullptr, nullptr},
 };
 
 static constexpr int kCrosshairNormalCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairNormal);

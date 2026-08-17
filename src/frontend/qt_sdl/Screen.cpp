@@ -1824,8 +1824,10 @@ struct ScreenPanelDX12::DX12State
     QImage osdStrip;
     std::atomic_bool surfaceVisibleRequested{false};
     // Set by the GUI thread while the Custom HUD on-screen editor owns the
-    // panel, read by the emulation thread's paused draw pass.
+    // panel, read by the emulation thread's paused draw pass. The live settings
+    // preview shares this presentation exception without entering edit mode.
     std::atomic_bool hudEditLivePresentation{false};
+    std::atomic_bool hudLivePreviewPresentation{false};
     bool initialized = false;
     bool runtimeFailureReported = false;
 };
@@ -1973,6 +1975,14 @@ void ScreenPanelDX12::setHudEditModeActive(bool active)
 
     dx12->hudEditLivePresentation.store(active, std::memory_order_relaxed);
 }
+
+void ScreenPanelDX12::setHudLivePreviewActive(bool active)
+{
+    if (!dx12)
+        return;
+
+    dx12->hudLivePreviewPresentation.store(active, std::memory_order_release);
+}
 #endif
 
 void ScreenPanelDX12::drawScreen()
@@ -2000,12 +2010,13 @@ void ScreenPanelDX12::drawScreen()
     // the editor is invisible. Same contract as ScreenPanelVulkan; the
     // software/OpenGL panels gate on emuIsActive() and keep drawing anyway.
 #ifdef MELONPRIME_CUSTOM_HUD
-    const bool hudEditLivePresentation =
-        dx12->hudEditLivePresentation.load(std::memory_order_relaxed);
+    const bool hudLivePresentation =
+        dx12->hudEditLivePresentation.load(std::memory_order_relaxed)
+        || dx12->hudLivePreviewPresentation.load(std::memory_order_acquire);
 #else
-    constexpr bool hudEditLivePresentation = false;
+    constexpr bool hudLivePresentation = false;
 #endif
-    if (!emuThread->emuIsRunning() && !hudEditLivePresentation)
+    if (!emuThread->emuIsRunning() && !hudLivePresentation)
         return;
 
     auto* nds = emuInstance->getNDS();

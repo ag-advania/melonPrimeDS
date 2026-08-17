@@ -203,8 +203,9 @@ struct ScoreboardHudConfig {
     bool show;
     int x, y;                         // final DS-space position
     int anchor, ofsX, ofsY;           // raw anchor + offsets
-    int width, rowHeight, rowSpacing;
+    int columnSpacing, rightPadding, rowSpacing;
     int hunterIconHeight, starsHeight;
+    float scale;
     float opacity, backgroundOpacity;
     QColor textColor, headerColor, localPlayerColor, teamRowColor, backgroundColor;
 };
@@ -1163,8 +1164,12 @@ static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table&
     scoreboard.anchor = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardAnchor);
     scoreboard.ofsX = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardX);
     scoreboard.ofsY = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardY);
-    scoreboard.width = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardWidth), 96, 256);
-    scoreboard.rowHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowHeight), 12, 48);
+    scoreboard.scale = static_cast<float>(std::clamp(
+        cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardScale), 10, 800)) / 100.0f;
+    scoreboard.columnSpacing = std::clamp(
+        cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardColumnSpacing), 0, 32);
+    scoreboard.rightPadding = std::clamp(
+        cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRightPadding), 0, 32);
     scoreboard.rowSpacing = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowSpacing), 0, 16);
     scoreboard.hunterIconHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight), 0, 48);
     scoreboard.starsHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardStarsHeight), 0, 24);

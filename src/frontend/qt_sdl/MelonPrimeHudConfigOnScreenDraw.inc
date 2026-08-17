@@ -27,16 +27,44 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
     // rows plus a Team row before each team change), so the selection box
     // remains valid for both individual and Team modes.
     if (idx == 14) {
-        const int width = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardWidth), 96, 256);
-        const int rowHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowHeight), 12, 48);
         const int rowSpacing = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowSpacing), 0, 16);
-        const int height = rowHeight + 8 * (rowHeight + rowSpacing) + 4;
+        CachedHudConfig layoutConfig = s_cache;
+        layoutConfig.scoreboard.columnSpacing = std::clamp(
+            cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardColumnSpacing), 0, 32);
+        layoutConfig.scoreboard.rightPadding = std::clamp(
+            cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardRightPadding), 0, 32);
+        layoutConfig.scoreboard.rowSpacing = rowSpacing;
+        layoutConfig.scoreboard.hunterIconHeight = std::clamp(
+            cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight), 0, 48);
+        layoutConfig.scoreboard.starsHeight = std::clamp(
+            cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardStarsHeight), 0, 24);
+        layoutConfig.scoreboard.scale = std::clamp(
+            cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardScale), 10, 800) / 100.0f;
+        layoutConfig.textScalePct = cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale);
+        if (!s_cache.valid) {
+            layoutConfig.scaleText = 1.0f;
+            layoutConfig.scaleIcons = 1.0f;
+            layoutConfig.scaleScoreboard = 1.0f;
+        }
+        EnsureScoreboardAssetsLoaded(layoutConfig.scoreboard,
+                                     std::min(layoutConfig.scaleIcons,
+                                              layoutConfig.scaleScoreboard)
+                                         * ScoreboardUserScale(layoutConfig));
+        QFont boardFont, rankFont;
+        ConfigureScoreboardFonts(layoutConfig, hs, boardFont, rankFont);
+        const QFontMetrics boardFm(boardFont);
+        const QFontMetrics rankFm(rankFont);
+        const ScoreboardSnapshot preview = MakeScoreboardPreviewSnapshot();
+        std::array<ScoreboardRenderRow, 8> rows{};
+        const int rowCount = BuildScoreboardRenderRows(preview, rows);
+        const ScoreboardLayout layout = BuildScoreboardLayout(
+            preview, rows, rowCount, layoutConfig, hs, boardFm, rankFm);
         float panelX = static_cast<float>(fx);
         float panelY = static_cast<float>(fy);
         const int safeAnchor = std::clamp(anchor, 0, 8);
-        HudGeometry::ApplyRectAnchorF(panelX, panelY, width, height,
+        HudGeometry::ApplyRectAnchorF(panelX, panelY, layout.panelW, layout.panelH,
                                       safeAnchor % 3, safeAnchor / 3);
-        return QRectF(panelX, panelY, width, height);
+        return QRectF(panelX, panelY, layout.panelW, layout.panelH);
     }
 
     // ── Radar (idx=11) — must come before gauge branch (radar reuses lengthKey for square resize) ──
@@ -470,7 +498,8 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     // The editor uses deterministic dummy rows so layout tuning never
     // depends on live match RAM or a particular ResultSlots ordering.
     EnsureScoreboardAssetsLoaded(c.scoreboard,
-                                 std::min(c.scaleIcons, c.scaleScoreboard));
+                                 std::min(c.scaleIcons, c.scaleScoreboard)
+                                     * ScoreboardUserScale(c));
     DrawScoreboard(p, MakeScoreboardPreviewSnapshot(), c, hudScale, 0);
 }
 
@@ -907,7 +936,8 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
             }
         } else if (i == 14) {
             EnsureScoreboardAssetsLoaded(s_cache.scoreboard,
-                                         std::min(s_cache.scaleIcons, s_cache.scaleScoreboard));
+                                         std::min(s_cache.scaleIcons, s_cache.scaleScoreboard)
+                                             * ScoreboardUserScale(s_cache));
             DrawScoreboard(p, MakeScoreboardPreviewSnapshot(), s_cache,
                            s_editHudScale, 0);
         } else {

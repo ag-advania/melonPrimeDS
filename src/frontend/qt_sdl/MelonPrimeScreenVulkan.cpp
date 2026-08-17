@@ -256,7 +256,10 @@ struct ScreenPanelVulkan::VulkanState
     QImage osdStrip;
 
     std::atomic_bool surfaceVisibleRequested{false};
+    // Set by the GUI thread while either the on-screen editor or the Custom
+    // HUD settings live preview owns the paused presentation path.
     std::atomic_bool hudEditLivePresentation{false};
+    std::atomic_bool hudLivePreviewPresentation{false};
     std::atomic_bool modalPauseActive{false};
     std::atomic_bool surfaceHandleDirty{true};
 
@@ -1013,6 +1016,14 @@ void ScreenPanelVulkan::setHudEditModeActive(bool active)
     // session only.
     vulkan->hudEditLivePresentation.store(active, std::memory_order_release);
 }
+
+void ScreenPanelVulkan::setHudLivePreviewActive(bool active)
+{
+    if (!vulkan)
+        return;
+
+    vulkan->hudLivePreviewPresentation.store(active, std::memory_order_release);
+}
 #endif
 
 
@@ -1373,18 +1384,19 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    const bool hudEditLivePresentation =
-        vulkan->hudEditLivePresentation.load(std::memory_order_acquire);
+    const bool hudLivePresentation =
+        vulkan->hudEditLivePresentation.load(std::memory_order_acquire)
+        || vulkan->hudLivePreviewPresentation.load(std::memory_order_acquire);
 #else
-    constexpr bool hudEditLivePresentation = false;
+    constexpr bool hudLivePresentation = false;
 #endif
 
-    if (vulkan->modalPauseActive.load(std::memory_order_acquire) && !hudEditLivePresentation)
+    if (vulkan->modalPauseActive.load(std::memory_order_acquire) && !hudLivePresentation)
     {
         noteFrameIdle();
         return;
     }
-    if (!emuThread->emuIsRunning() && !hudEditLivePresentation)
+    if (!emuThread->emuIsRunning() && !hudLivePresentation)
     {
         noteFrameIdle();
         return;

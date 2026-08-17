@@ -37,6 +37,7 @@
 #include <QAbstractScrollArea>
 #include <QSignalBlocker> // MELONPRIME_RESET_SENSITIVITY_SECTION_FROM_CONFIG_V17
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 
 #include "MelonPrimeInputConfig.h"
@@ -1508,8 +1509,14 @@ void MelonPrimeInputConfig::invalidateHudAndRefreshPreviews()
 {
 #ifdef MELONPRIME_CUSTOM_HUD
     if (auto* thread = emuInstance->getEmuThread()) {
-        if (auto* core = thread->GetMelonPrimeCore())
+        if (auto* core = thread->GetMelonPrimeCore()) {
             MelonPrime::CustomHud_InvalidateConfigCache(core->HudConfigState());
+            // The settings dialog writes the shared local config from the GUI
+            // thread. Keep the emulation-side runtime reload contract in sync
+            // with saveConfig(), so the real top-screen HUD observes the
+            // change while the dialog's live presentation is active.
+            core->NotifyConfigChanged();
+        }
     }
 #endif
     for (auto* pw : m_hudPreviews) pw->update();
@@ -1555,6 +1562,13 @@ void MelonPrimeInputConfig::refreshAfterHudEditSave()
         widget->blockSignals(true);
         if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             cb->setChecked(cfg.GetBool(key));
+        else if (auto* slider = qobject_cast<QSlider*>(widget.data())) {
+            slider->setValue(static_cast<int>(std::lround(
+                std::clamp(cfg.GetDouble(key), 0.0, 1.0) * 100.0)));
+            if (auto* valueLabel = slider->parentWidget()->findChild<QLabel*>(
+                    slider->objectName() + QStringLiteral("_value")))
+                valueLabel->setText(QStringLiteral("%1%").arg(slider->value()));
+        }
         else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             sb->setValue(cfg.GetInt(key));
         else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))

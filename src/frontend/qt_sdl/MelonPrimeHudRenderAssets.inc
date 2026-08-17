@@ -29,8 +29,9 @@ static QImage loadRasterToHeight(const char* path, int h)
     if (sz.isEmpty())
         sz = QSize(h, h);
     const int w = qMax(1, sz.width() * h / qMax(1, sz.height()));
-    reader.setScaledSize(QSize(w, h));
     QImage img = reader.read();
+    if (!img.isNull() && img.size() != QSize(w, h))
+        img = img.scaled(QSize(w, h), Qt::IgnoreAspectRatio, Qt::FastTransformation);
     return img.isNull() ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 }
 
