@@ -109,6 +109,9 @@ enum class Counter : u32
     NativeReadbackWaitNs,
     VulkanPresenterFrameFenceWaitCount,
     VulkanPresenterFrameFenceWaitNs,
+    VulkanPresenterSlotBusySkipCount,
+    VulkanScreenFrameReuseCount,
+    VulkanScreenLayerUploadSkipCount,
     VulkanPresenterLatestSubmissionWaitCount,
     VulkanPresenterLatestSubmissionWaitNs,
     VulkanPresenterLatestSubmissionWaitTimeoutCount,
@@ -405,6 +408,8 @@ inline void MaybeReport()
         "fallback_buffer_frames=%llu native_resolves=%llu native_readback_copy_B=%llu "
         "native_readback_demands=%llu native_readback_wait_ns=%llu "
         "presenter_frame_fence_wait_count=%llu presenter_frame_fence_wait_ns=%llu "
+        "presenter_slot_busy_skip_count=%llu "
+        "screen_frame_reuse_count=%llu screen_layer_upload_skip_count=%llu "
         "latest_submission_wait_count=%llu latest_submission_wait_ns=%llu "
         "latest_submission_wait_timeout_count=%llu presenter_budget_miss_count=%llu "
         "acquire_wait_count=%llu acquire_wait_ns=%llu acquire_not_ready_count=%llu "
@@ -454,6 +459,9 @@ inline void MaybeReport()
         count(Counter::NativeReadbackWaitNs),
         count(Counter::VulkanPresenterFrameFenceWaitCount),
         count(Counter::VulkanPresenterFrameFenceWaitNs),
+        count(Counter::VulkanPresenterSlotBusySkipCount),
+        count(Counter::VulkanScreenFrameReuseCount),
+        count(Counter::VulkanScreenLayerUploadSkipCount),
         count(Counter::VulkanPresenterLatestSubmissionWaitCount),
         count(Counter::VulkanPresenterLatestSubmissionWaitNs),
         count(Counter::VulkanPresenterLatestSubmissionWaitTimeoutCount),
@@ -630,6 +638,9 @@ enum class Counter : u32
     NativeReadbackWaitNs,
     VulkanPresenterFrameFenceWaitCount,
     VulkanPresenterFrameFenceWaitNs,
+    VulkanPresenterSlotBusySkipCount,
+    VulkanScreenFrameReuseCount,
+    VulkanScreenLayerUploadSkipCount,
     VulkanPresenterLatestSubmissionWaitCount,
     VulkanPresenterLatestSubmissionWaitNs,
     VulkanPresenterLatestSubmissionWaitTimeoutCount,
