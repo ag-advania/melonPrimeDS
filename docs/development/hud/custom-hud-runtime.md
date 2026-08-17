@@ -380,6 +380,14 @@ changing the retained `ScoreboardRenderPlan` design:
   post-render stamp commit per rendered visual frame. Same-frame candidates add
   one stamp check and may reuse the retained visual without raster, clear, hash,
   or upload work.
+- Counter interpretation for the refresh-rate matrix is intentionally explicit:
+  at 60 Hz with one presentation per emulated frame, identity probes should be
+  approximately equal to presentations, stamp checks should be approximately
+  zero, stamp commits should be approximately equal to rendered visual frames,
+  and visual reuses should be approximately zero. At higher refresh rates,
+  identity probes should still track presentations, stamp checks should track
+  same-frame candidates, stamp commits should track actual visual renders, and
+  visual reuses should track valid same-frame candidates.
 
 Validation for this re-audit:
 
@@ -406,15 +414,313 @@ Validation for this re-audit:
   zero pixel mismatches, and no ARM9 abort or renderer-fatal marker occurred.
   This is valid state-load/liveness evidence only; it is not the controlled
   60/120/144/240 Hz HUD performance A/B.
-- macOS/Metal compilation, physical DX12/Vulkan/Metal runtime, controlled
-  60/120/144/240 Hz A/B capture, GPU upload counters, and pixel-level
-  cross-backend comparison remain `NOT RUN`/`OPEN`; no runtime completion claim
-  is made from source/build evidence alone.
+- A controlled developer-only DX12 presentation probe then paused emulation
+  after the savestate settled and continued through the normal
+  `ScreenPanelDX12::drawScreen()` live-presentation path. The probe hooks were
+  removed before the final build; they did not change shipping or normal input
+  behavior. Direct GUI-thread evidence from that run is recorded below.
+- At the time of this diagnostic run, macOS/Metal compilation and controlled
+  baseline A/B capture remained `NOT RUN`/`OPEN`. A later direct Windows A/E
+  matrix is recorded below. The DX12 same-frame and pixel evidence closes only
+  the corresponding Windows/DX12 gates; it does not substitute for
+  cross-backend same-frame or pixel comparison.
+
+### 2026-08-18 Windows DX12 runtime capture
+
+The current HEAD was exercised on Windows with an NVIDIA GeForce RTX 5070 Ti,
+DX12 native presentation, `CustomHUD=true`, the Metroid Prime Hunters ROM and
+the same `.ml4` gameplay savestate used by the diagnostic runs. Renderer
+initialization, the first native Present, and savestate loading all succeeded;
+the raster-differential path reported no renderer-fatal or ARM9-abort marker.
+
+The developer HUD probe was captured at target rates 60/120/144/240. The normal
+emulation path produced one presentation draw for each emulated frame, so these
+runs are useful new-frame evidence but did not generate controlled same-game-frame
+presentation candidates:
+
+| Target | Frame-time p50 | HUD report pattern | Result |
+|---|---:|---|---|
+| 60 Hz | 16.709 ms | `identity_probes=60`, `stamp_checks=0`, `stamp_commits=60`, `visual_reuse=0`, `uploads=60` | new-frame contract PASS |
+| 120 Hz | 11.141 ms | `identity_probes ~= presentations`, `stamp_checks=0`, `stamp_commits ~= renders`, `visual_reuse=0` | no same-frame candidate generated |
+| 144 Hz | 11.151 ms | `identity_probes ~= presentations`, `stamp_checks=0`, `stamp_commits ~= renders`, `visual_reuse=0` | no same-frame candidate generated |
+| 240 Hz | 11.199 ms | `identity_probes ~= presentations`, `stamp_checks=0`, `stamp_commits ~= renders`, `visual_reuse=0` | no same-frame candidate generated |
+
+The scoreboard plan remained sub-microsecond in the steady reports, while the
+scoreboard raster phase remained roughly 0.62--0.65 ms. These measurements are
+developer-instrumented attribution data, not shipping-build absolute timing.
+
+A Windows UI Automation attempt also reached the localized `Custom HUD settings`
+menu action after the state warm-up, but the resulting run kept emulation active
+and still reported `visual_reuse=0`, `stamp_checks=0`, and one render/upload per
+presentation. It is therefore not accepted as same-game-frame reuse evidence.
+
+The direct `1b46381f1` baseline was also configured and built successfully in a
+short-path out-of-tree Debug build. Its executable remained at startup without
+creating a visible emulator window under the identical capture conditions; a
+Software renderer fallback configuration behaved the same way. A Release retry
+compiled the target sources, but its final Windows `melonDS` target command
+failed before producing an executable, so it could not provide a second runtime
+baseline. Consequently no baseline A/B delta is recorded or inferred from
+either attempt.
+
+### 2026-08-18 controlled DX12 same-frame reuse probe
+
+The normal target-rate runs above did not naturally produce same-game-frame
+presentation candidates, so a developer-only measurement condition held the
+emulated frame constant after the valid savestate load while allowing the
+existing DX12 live-presentation callback to continue. This exercised the
+production visual-key comparison, retained HUD layer, upload decision, and
+`DrawLayer(Hud)` call; no extra emulated frames were generated.
+
+The direct GUI-thread probe results were:
+
+| TargetFPS config | Same-frame reuse | CPU retained-target composite skipped | `DrawLayer(Hud)` |
+|---:|---:|---:|---:|
+| 59.8261 (60 Hz) | 58 | 58 | 58 |
+| 120 | 55 | 55 | 55 |
+| 144 | 65 | 65 | 65 |
+| 240 | 62 | 62 | 62 |
+
+Every counted reuse had `identity same=1`, `reuse=1`,
+`skip_target_composite=1`, and `DrawLayer(Hud)=1`. No visual-stamp mismatch
+was observed in the controlled run. This closes the DX12 source/runtime
+acceptance for `CustomHud_Render=0`, clear/hash/upload work being skipped on a
+same-frame candidate, CPU retained-target `drawImage=0`, and retained
+`DrawLayer(Hud)=1`.
+
+The existing one-second `MelonPrimePerf` aggregate is scoped to the
+emulation-thread `frameOpen` interval, while DX12 HUD presentation runs on the
+GUI thread; its aggregate HUD counters therefore remain zero for this
+particular callback. The direct probe counts above are the accepted runtime
+evidence for this run and should not be conflated with the emulation-thread
+new-frame phase report.
+
+For a pixel-level check, four consecutive PrintWindow captures were taken after
+the held frame was established. The first capture was the initial presentation;
+captures 001--003 were byte-identical:
+
+```text
+frame-001.png SHA-256 FAD42C1DAF36AFE262DB8752C7CC39D1F3310C873CE3FA3BDDD7257404CC7953
+frame-002.png SHA-256 FAD42C1DAF36AFE262DB8752C7CC39D1F3310C873CE3FA3BDDD7257404CC7953
+frame-003.png SHA-256 FAD42C1DAF36AFE262DB8752C7CC39D1F3310C873CE3FA3BDDD7257404CC7953
+```
+
+### 2026-08-18 controlled Windows all-backend same-frame reuse probe
+
+The DX12-only probe above was extended to every renderer available on the
+Windows host. A developer-only measurement hook held the emulated frame after
+the valid `.ml4` savestate load while preserving the production presentation
+boundary. The hook was removed from `EmuThread.cpp` after measurement; it is
+not a shipping pacing or rendering path.
+
+The matrix covered five renderers and four target rates. The values below are
+the `visual_reuse` count from the highest-reuse HUD report in each run; the
+small variation with target rate is the number of GUI presentations captured
+after the warm-up window.
+
+| Renderer | 60 Hz | 120 Hz | 144 Hz | 240 Hz | Retained path observed |
+|---|---:|---:|---:|---:|---|
+| Software | 60 | 121 | 145 | 241 | native CPU `QPainter::drawImage` composite retained |
+| OpenGL | 60 | 121 | 145 | 241 | retained texture composite (`composite` matched reuse) |
+| OpenGL Compute | 60 | 121 | 145 | 241 | retained texture composite (`composite` matched reuse) |
+| Vulkan | 60 | 121 | 145 | 241 | retained GPU composite (`composite` matched reuse) |
+| DX12 | 60 | 121 | 145 | 241 | retained HUD layer; GUI-thread aggregate phase counters are zero |
+
+All 20 runs logged `SavestateDiff ... loaded=1` and the
+`HudReuseProbe` marker. For every counted report,
+`identity_probes == stamp_checks == visual_reuse`, `stamp_commits == 0`, and
+`clear == hash_calls == uploads == 0`. OpenGL, OpenGL Compute, and Vulkan also
+reported `composite == visual_reuse`. DX12's GUI-thread retained-layer path is
+covered by the direct `DrawLayer(Hud)` probe above; its emulation-thread
+aggregate is intentionally not used for that callback.
+
+As a visual stability check, 20 PrintWindow captures per run were compared
+after excluding the changing native title bar. Every renderer/rate pair had
+one unique emulator-content hash across all held-frame captures. This verifies
+that the retained path kept the visible HUD and game image stable while no new
+HUD raster, hash, clear, or upload work was performed. The Software path also
+retains its normal CPU composite contract: its include is compiled without the
+DX12 skip macro, so the retained `QImage` is still drawn into the newly painted
+software target on reuse.
+
+This closes the Windows non-DX12 same-frame runtime gate for the available
+Battle `.ml4` state and strengthens the existing DX12 gate. macOS/Metal and
+Metal Compute were unavailable on this host, and mode-complete and
+cross-backend A/B pixel comparison remain `OPEN`/`NOT RUN`.
+
+### 2026-08-18 DX12 held-frame dirty-transition probe
+
+The current Debug developer build was run with the same `.ml4` Battle state
+and DX12 renderer while a temporary measurement-only hook held the emulated
+frame. On held NDS frame `8701`, the hook changed
+`Metroid.Visual.HudScoreboardShow` from ON to OFF and back to ON, invalidating
+the normal HUD config cache after each change. The hook was removed from
+`EmuThread.cpp` before the final Debug rebuild.
+
+The run logged both transitions on the same frame:
+
+```text
+[HudReuseProbe] holding NDS frame=8701 for drawScreen reuse
+[HudDirtyProbe] scoreboard=off held_frame=8701
+[HudDirtyProbe] scoreboard=on held_frame=8701
+```
+
+The post-transition HUD report was:
+
+```text
+identity_probes=61 stamp_checks=61 visual_render=3 visual_reuse=58
+stamp_commits=3 clear=3 hash_calls=0 uploads=3
+```
+
+The three renders/uploads are the initial image and the two intentional
+configuration transitions; the 58 retained presentations performed no HUD
+raster, clear, region hash, or upload work. This closes the runtime dirty
+transition check for the DX12 CPU-side HUD producer. The retained DX12 GPU
+layer draw remains covered by the direct presenter probe above; a separate
+same-frame pixel regression claim is not inferred from this transition probe.
+
+### 2026-08-18 Metal same-frame source audit
+
+Physical macOS/Metal execution is unavailable on this Windows host, so AC-6
+cannot be promoted to a physical runtime PASS. The current
+`MelonPrimeScreenMetal.mm` source nevertheless has the required retained path:
+
+- the preflight reuses the visual frame only when there is no OSD and the
+  retained `uiTex` dimensions match;
+- the reuse branch sets `overlayHasContent` without calling
+  `ensureOverlayPainter()` or `CustomHud_Render()`;
+- `uiTex replaceRegion` is guarded by `!hudVisualReuse`;
+- the retained `uiTex` is still bound and drawn for every presentation, while
+  the GPU radar pass remains live.
+
+This is strong source-level evidence for `QPainter construction = 0`,
+`uiTex upload = 0`, and `retained uiTex draw = 1` on the Metal reuse branch.
+Metal/Metal Compute physical runtime and macOS compile evidence remain
+`OPEN`/`NOT RUN`.
+
+A supplementary state-slot probe loaded the eight available USA Rev.1 states
+(`.ml1` through `.ml8`) individually; all eight reported
+`SavestateDiff ... loaded=1` and none produced a fatal/device-lost marker. The
+captures showed menu/transition, gameplay, death, and game-over screens, but
+the files do not carry a trustworthy mode label and only `.ml4` was the stable
+Battle gameplay state used for the performance matrix. The probe therefore
+does not claim Battle Teams, Survival, Defender, Nodes, or Bounty coverage.
+
+The direct baseline executable and a fresh baseline build were retried during
+this earlier diagnostic run. The executable did not create a window, and the
+isolated baseline build stopped at the old CMake/Ninja dependency-file
+emission for `vulkan-linux-surface-lifecycle-tests.cpp`; that attempt did not
+provide an A-vs-D/E delta. A separate direct A/E matrix was captured later and
+is reported below.
+
+Therefore the Windows/NVIDIA new-frame and same-frame paths are covered for
+all five available Windows renderers, with the direct DX12 retained-layer and
+pixel evidence above. The later A/E matrix covers the Windows new-frame
+baseline comparison. macOS/Metal, unrepresented game modes, and
+cross-backend GPU/pixel comparison remain `OPEN`/`NOT RUN`.
 
 The diagnostic savestate incident, corrected liveness result, and rejected
 pre-correction evidence are recorded in
 [`savestate-load.md`](../testing/savestate-load.md). The 60/120/144/240 Hz
-and cross-backend pixel gates remain `NOT RUN`/`OPEN`.
+same-frame reuse evidence and the remaining baseline/cross-backend gates are
+recorded above.
+
+### 2026-08-18 direct Windows A/E performance matrix
+
+The failed baseline-launch attempt described above was followed by a clean,
+direct A/E capture on the same Windows host. The comparison provenance was:
+
+| Run | Source | Executable evidence |
+|---|---|---|
+| A | clean `1b46381f1bf92cf3f55539da7e7f532292b3803b` checkout (`build/customhud-baseline-1b-src`) | all 80 A directories used SHA-256 `C8477F3A39CE95A30A053AF20CC4E3D7ACCC00CC26C59B0F1DCF24D0C310D9E9` |
+| E | current HUD tree at HEAD `9771d423fcaab4173c7fab4671a4343125328e03` | representative E executable SHA-256 `4F175986B5D249E1AD1EA5B69BD59456412C8454ED4A60EA67B67650B338D9E1` |
+
+The matrix contains 80 paired shutdown reports: five Windows renderers
+(`Software`, `OpenGL`, `OpenGL Compute`, `Vulkan`, and `DX12`) × four target
+rates (60/120/144/240) × four HUD conditions (HUD OFF, HUD ON with Scoreboard
+OFF, Scoreboard ON with Outline OFF, and Scoreboard ON with Outline ON). All
+160 logs had a shutdown summary, and the checked logs contained no ARM9 abort,
+renderer-fatal, device-lost, Vulkan VUID, validation-error, or fatal-error
+marker.
+
+For the 60 Hz baseline-sensitive conditions, the largest absolute A-to-E
+change across the five renderers was:
+
+| Condition | max abs delta p50 | max abs delta p95 |
+|---|---:|---:|
+| HUD OFF | 0.35% | 1.42% |
+| HUD ON / Scoreboard OFF | 0.26% | 1.74% |
+
+Across all 80 pairs and all four HUD conditions, the largest absolute p50 and
+p95 changes were 3.14% and 4.91%. The p99/max columns contain isolated
+runtime outliers (up to 62.08%/94.77% relative in this capture), so they are
+reported rather than treated as a clean no-regression claim. The 60 Hz p50/p95
+results support the no-regression gate for HUD OFF and Scoreboard OFF; they do
+not erase the need for longer, repeated soak runs when p99/max guarantees are
+required.
+
+The final current-tree HUD reports also satisfy the new-frame contract in all
+80 matrix entries: active HUD conditions have identity probes equal to
+presentation calls, zero stamp checks, stamp commits equal to visual renders,
+and zero visual reuses; HUD-OFF entries have zero HUD work. The invariant check
+reported zero failures. The normal emulation runs did not naturally generate
+same-game-frame candidates at 120/144/240 Hz, so they must not be presented as
+high-refresh reuse evidence. The controlled DX12 probe above remains the
+accepted AC-5 evidence (`CPU retained-target composite skipped` and
+`DrawLayer(Hud)` both 58/55/65/62 at 60/120/144/240 Hz).
+
+The matrix used the available `.ml4` Battle gameplay state. Battle Teams,
+Survival/Survival Teams, Defender, and Nodes/Bounty counter variants were not
+available in this run and remain `OPEN`. Windows Vulkan ran on the physical
+NVIDIA GeForce RTX 5070 Ti with validation enabled and no VUID/device-lost
+marker; macOS/Metal and Metal Compute were not available.
+
+The direct A/E PNG captures were not used as a byte-for-byte regression gate:
+the runs were captured at different runtime moments, and one current DX12
+capture was visibly incomplete during a transient presentation. This is
+rejected evidence, not a claimed pixel pass. The controlled same-frame DX12
+captures remain the valid pixel check: captures 001--003 are byte-identical
+with the SHA-256 recorded above. Cross-backend and mode-complete pixel
+comparison therefore remains `OPEN`/`NOT RUN`.
+
+### 2026-08-18 current-tree build and HUD golden verification
+
+The current tree was rebuilt after the runtime probes. The normal Debug build
+passed with developer features enabled and ran the available nine test targets.
+The existing Release output directory was intentionally left untouched because
+three already-running emulator processes held its executable open; instead, a
+separate shipping tree was configured and built at
+`build/release-mingw-shipping-x86_64`. That build passed all 73 build/test
+tasks, including the 82 registered-language Classic On-Screen Edit geometry
+cases and the Vulkan presenter/pacer/fallback and XeLL state-machine tests.
+
+The shipping cache confirms that this validation binary was compiled with
+`CMAKE_BUILD_TYPE=Release`, `MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF`,
+`MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF`, and
+`MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF`. Its executable SHA-256 is:
+
+```text
+D84EFC11F49148E6424EE9CC89BCBBC3338131ABE1C13B2FB8230D765CD91FEA
+```
+
+The shipping binary also passed
+`tools/testing/hud-golden/run-hud-golden.ps1` for all four HUD cases:
+`mph-100-outline-off`, `mph-200-outline-on`, `system-100-outline-on`, and
+`file-fallback-200-outline-off`. This is the reproducible pixel gate available
+in the repository; it complements, but does not replace, the rejected direct
+A/E captures and the accepted controlled DX12 held-frame captures above.
+
+The current-tree static re-audit also passed the renderer telemetry
+zero-overhead, SRP/performance, GUI/EmuThread boundary, `.inc` ownership,
+HUD-key parity, config-default, Software-parity, QColorDialog, and
+`git diff --check` checks. The developer-only probe artifacts remain attribution
+evidence and are not used as shipping absolute-performance measurements.
+
+The remaining validation status is deliberately unchanged: physical
+macOS/Metal execution and compilation, mode-complete runtime coverage beyond
+the available Battle `.ml4` state, and cross-backend byte-for-byte pixel A/B
+comparison are `OPEN`/`NOT RUN` on this Windows host. No completion claim is
+made for those unavailable gates.
 
 ### HUD Auto-Scale System
 Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.
