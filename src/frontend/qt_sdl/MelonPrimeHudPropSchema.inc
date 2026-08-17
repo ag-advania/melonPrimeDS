@@ -600,9 +600,6 @@
 #define MP_HUD_PROP_KEY_HudScoreboardRightPadding "Metroid.Visual.HudScoreboardRightPadding"
 #define MP_HUD_PROP_KEY_HudScoreboardRowSpacing "Metroid.Visual.HudScoreboardRowSpacing"
 #define MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight "Metroid.Visual.HudScoreboardHunterIconHeight"
-#define MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorR "Metroid.Visual.HudScoreboardHunterIconBackgroundColorR"
-#define MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorG "Metroid.Visual.HudScoreboardHunterIconBackgroundColorG"
-#define MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorB "Metroid.Visual.HudScoreboardHunterIconBackgroundColorB"
 #define MP_HUD_PROP_KEY_HudScoreboardStarsHeight "Metroid.Visual.HudScoreboardStarsHeight"
 #define MP_HUD_PROP_KEY_HudScoreboardTextColorR "Metroid.Visual.HudScoreboardTextColorR"
 #define MP_HUD_PROP_KEY_HudScoreboardTextColorG "Metroid.Visual.HudScoreboardTextColorG"
@@ -1219,9 +1216,6 @@
 #define MP_HUD_PROP_ROW_HudScoreboardRightPadding(X) X(HudScoreboardRightPadding, MP_HUD_PROP_KEY_HudScoreboardRightPadding, Int, 7, 0, 32, 1, "Right Padding", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardRowSpacing(X) X(HudScoreboardRowSpacing, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, Int, 0, 0, 16, 1, "Row Spacing", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardHunterIconHeight(X) X(HudScoreboardHunterIconHeight, MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, Int, 20, 0, 48, 1, "Hunter Icon Height", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
-#define MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorR(X) X(HudScoreboardHunterIconBackgroundColorR, MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorR, Int, 195, 0, 255, 1, "Hunter Icon Background Color R", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
-#define MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorG(X) X(HudScoreboardHunterIconBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorG, Int, 8, 0, 255, 1, "Hunter Icon Background Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
-#define MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorB(X) X(HudScoreboardHunterIconBackgroundColorB, MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorB, Int, 16, 0, 255, 1, "Hunter Icon Background Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardStarsHeight(X) X(HudScoreboardStarsHeight, MP_HUD_PROP_KEY_HudScoreboardStarsHeight, Int, 8, 0, 24, 1, "Stars Height", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardTextColorR(X) X(HudScoreboardTextColorR, MP_HUD_PROP_KEY_HudScoreboardTextColorR, Int, 125, 0, 255, 1, "Text Color R", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardTextColorG(X) X(HudScoreboardTextColorG, MP_HUD_PROP_KEY_HudScoreboardTextColorG, Int, 125, 0, 255, 1, "Text Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1839,9 +1833,6 @@
     MP_HUD_PROP_ROW_HudScoreboardRightPadding(X) \
     MP_HUD_PROP_ROW_HudScoreboardRowSpacing(X) \
     MP_HUD_PROP_ROW_HudScoreboardHunterIconHeight(X) \
-    MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorR(X) \
-    MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorG(X) \
-    MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorB(X) \
     MP_HUD_PROP_ROW_HudScoreboardStarsHeight(X) \
     MP_HUD_PROP_ROW_HudScoreboardTextColorR(X) \
     MP_HUD_PROP_ROW_HudScoreboardTextColorG(X) \
@@ -2318,9 +2309,6 @@
     MP_HUD_PROP_ROW_HudScoreboardRightPadding(X) \
     MP_HUD_PROP_ROW_HudScoreboardRowSpacing(X) \
     MP_HUD_PROP_ROW_HudScoreboardHunterIconHeight(X) \
-    MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorR(X) \
-    MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorG(X) \
-    MP_HUD_PROP_ROW_HudScoreboardHunterIconBackgroundColorB(X) \
     MP_HUD_PROP_ROW_HudScoreboardStarsHeight(X) \
     MP_HUD_PROP_ROW_HudScoreboardTextColorR(X) \
     MP_HUD_PROP_ROW_HudScoreboardTextColorG(X) \

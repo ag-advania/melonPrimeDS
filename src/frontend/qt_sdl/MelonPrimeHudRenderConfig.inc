@@ -211,7 +211,7 @@ struct ScoreboardHudConfig {
     float scale;
     float opacity, backgroundOpacity;
     QColor textColor, headerColor, localPlayerColor, teamRowColor;
-    QColor hunterIconBackgroundColor, backgroundColor;
+    QColor backgroundColor;
 };
 struct CachedHudConfig {
     HpHudConfig hp;
@@ -1200,10 +1200,6 @@ static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table&
         MP_HUD_PROP_KEY_HudScoreboardTeamRowColorR,
         MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG,
         MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB);
-    scoreboard.hunterIconBackgroundColor = ReadRgbColor(cfg,
-        MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorR,
-        MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorG,
-        MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorB);
     scoreboard.backgroundColor = ReadRgbColor(cfg,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG,

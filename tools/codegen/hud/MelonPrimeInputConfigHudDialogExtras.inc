@@ -10,8 +10,6 @@ static const HudWidgetProp kSecScoreboard[] = {
     {"Scoreboard Scale %", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardScale, 10, 800, 1, nullptr, nullptr},
     {"Row Spacing", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16, 1, nullptr, nullptr},
     {"Hunter Icon Height", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48, 1, nullptr, nullptr},
-    {"Hunter Icon Background Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorR, 0, 255, 1,
-        MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorB},
     {"Stars Height", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardStarsHeight, 0, 24, 1, nullptr, nullptr},
     {"Opacity", HWType::Opacity, MP_HUD_PROP_KEY_HudScoreboardOpacity, 0, 100, 5, nullptr, nullptr},
     {"Background Opacity", HWType::Opacity, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, 0, 100, 5, nullptr, nullptr},

@@ -573,7 +573,6 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     DrawScoreboardText(p, secondHeader, UiText::Tr(metric.secondLabel), c.scoreboard.headerColor,
                        boardFm, scoreboardOutline, hudScale, Qt::AlignRight);
 
-    const QColor& hunterIconBackgroundColor = c.scoreboard.hunterIconBackgroundColor;
     int y = panelY + layout.rowH;
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
         const ScoreboardRenderRow& row = rows[rowIndex];
@@ -623,25 +622,8 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
             const float iconH = static_cast<float>(hunter->height()) * invHudScale;
             const float iconW = static_cast<float>(hunter->width()) * invHudScale;
             const QRectF iconRect(iconX, y + (currentRowH - iconH) * 0.5f, iconW, iconH);
-            const float backgroundW = iconW * 1.1f;
-            const float backgroundH = iconH * 1.1f;
-            const QRectF iconBackgroundRect(
-                iconRect.center().x() - backgroundW * 0.5f,
-                iconRect.center().y() - backgroundH * 0.5f,
-                backgroundW, backgroundH);
-            p->fillRect(iconBackgroundRect, hunterIconBackgroundColor);
-            // The portrait is pixel art and may contain transparent or
-            // semi-transparent pixels after resource decoding/scaling.  Matte
-            // the exact image bounds with the scoreboard panel color at full
-            // opacity before drawing the portrait.  Otherwise the colored
-            // 110% backing rectangle leaks through the portrait whenever the
-            // HUD itself is translucent.
-            const qreal portraitOpacity = p->opacity();
-            p->setOpacity(1.0);
-            p->fillRect(iconRect, c.scoreboard.backgroundColor);
-            p->setOpacity(portraitOpacity);
             p->drawImage(iconRect, *hunter);
-            AccumDirtyDs(p, iconBackgroundRect);
+            AccumDirtyDs(p, iconRect);
         }
         DrawScoreboardNameAndRank(p, nameRect, player.displayName, rank,
                                   c.scoreboard.rankShow,

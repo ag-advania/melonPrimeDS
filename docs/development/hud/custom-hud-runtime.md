@@ -102,10 +102,7 @@ continue to update immediately. Team aggregate counters are read per frame
 only when the cached runtime team flag says team rows are meaningful.
 The draw layout gives team rows their own compact height when Rank is hidden,
 while player rows retain the name/Stars two-line layout. Hunter portraits are
-drawn with a configurable background rectangle, centered behind each portrait
-at 110% of its rendered width and height. The portrait bounds are first matted
-with the scoreboard background at full opacity, so transparent or
-semi-transparent portrait pixels cannot reveal the colored backing rectangle.
+drawn as pixel-art images with nearest-neighbor scaling.
 
 ### Patch and cache lifecycle
 Important lifecycle helpers:

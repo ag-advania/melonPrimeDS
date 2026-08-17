@@ -533,7 +533,6 @@ static const HudWidgetProp kSecScoreboard[] = {
     { "Outline Opacity", HWType::Opacity, MP_HUD_PROP_KEY_HudScoreboardOutlineOpacity, 0, 100, 5, nullptr, nullptr },
     { "Outline Thickness", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardOutlineThickness, 1, 10, 1, nullptr, nullptr },
     { "Rank", HWType::Bool, MP_HUD_PROP_KEY_HudScoreboardRankShow, 0, 0, 0, nullptr, nullptr },
-    { "Hunter Icon Background Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorB },
 };
 
 #define MELONPRIME_OSD_COLOR_EMIT_DIALOG_PROPS
