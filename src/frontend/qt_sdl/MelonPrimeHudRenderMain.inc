@@ -68,9 +68,8 @@ HOT_FUNCTION QRect CustomHud_Render(
         return QRect();
     }
 
-    // The scoreboard must be able to draw while START/native UI is held, but
-    // it must never appear over Adventure. Read the shared isInAdventure
-    // decision before the early native-UI return.
+    // Read the shared Adventure/map-pause state before applying the common HUD
+    // visibility decision used by HP and the other regular HUD elements.
     ReadHudRuntimeAdventurePauseState(rom, st);
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
@@ -97,12 +96,24 @@ HOT_FUNCTION QRect CustomHud_Render(
         ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);
     CustomHud_MarkNoHudPatchDesired();
 
-    // Apply the transform/font before the scoreboard so it is rendered on the
-    // same QPainter path and so a native-UI early return cannot skip it.
+    // Apply the transform/font before the regular HUD. The scoreboard follows
+    // the same gameplay-state early return as HP: its own Show setting remains
+    // independent, but it is hidden during START, death, game-over, and the
+    // other states where the regular HUD is hidden.
     ApplyHudPainterTransform(topPaint, xf);
     EnsureHudFont(topPaint);
-    if (c.scoreboard.show && !st.isAdventure && !st.isAdventureCameraScene
-        && !st.isMapOrUserActionPaused) {
+
+    // Adventure camera scenes blank the game's own HUD and crosshair; Custom HUD
+    // follows. Deliberately not folded into hideForNativeUi: no native UI is
+    // coming up here, so the helmet-layer suppression above must stay applied.
+    if (hideForNativeUi || st.isAdventureCameraScene) {
+        NotifyCrosshairZoomNotDrawn();
+        return CurrentHudDirtyRect(xf);
+    }
+
+    ReadHudRuntimeVisibleState(rom, addrHot, st);
+
+    if (c.scoreboard.show) {
         ScoreboardSnapshot scoreboard{};
         if (ReadHudRuntimeScoreboardSnapshot(rom, st, scoreboard)) {
             EnsureScoreboardAssetsLoaded(c.scoreboard,
@@ -111,19 +122,6 @@ HOT_FUNCTION QRect CustomHud_Render(
             DrawScoreboard(topPaint, scoreboard, c, hudScale, playerPosition);
         }
     }
-
-    // Adventure camera scenes blank the game's own HUD and crosshair; Custom HUD
-    // follows. Deliberately not folded into hideForNativeUi: no native UI is
-    // coming up here, so the helmet-layer suppression above must stay applied.
-    if (hideForNativeUi || st.isAdventureCameraScene) {
-        NotifyCrosshairZoomNotDrawn();
-        // START/native UI is an early return for the regular HUD, but the
-        // scoreboard was intentionally drawn above it and must report its
-        // dirty rect so the same QPainter overlay is presented.
-        return CurrentHudDirtyRect(xf);
-    }
-
-    ReadHudRuntimeVisibleState(rom, addrHot, st);
 
     // hudScale = scaleY: DS Y-unit maps to hudScale px. The painter transform
     // and font were established above so the scoreboard shares this path.

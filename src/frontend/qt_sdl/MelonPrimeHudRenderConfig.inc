@@ -206,12 +206,12 @@ struct ScoreboardHudConfig {
     int columnSpacing, rightPadding, rowSpacing;
     int hunterIconHeight, starsHeight;
     int textScalePct;
-    bool fontSizeBinary;
     bool rankShow;
     HudOutlineConfig outline;
     float scale;
     float opacity, backgroundOpacity;
-    QColor textColor, headerColor, localPlayerColor, teamRowColor, backgroundColor;
+    QColor textColor, headerColor, localPlayerColor, teamRowColor;
+    QColor hunterIconBackgroundColor, backgroundColor;
 };
 struct CachedHudConfig {
     HpHudConfig hp;
@@ -1172,7 +1172,6 @@ static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table&
         cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardScale), 10, 800)) / 100.0f;
     scoreboard.textScalePct = std::clamp(
         cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardTextScale), 10, 800);
-    scoreboard.fontSizeBinary = cfg.GetBool(MP_HUD_PROP_KEY_HudScoreboardFontSizeBinary);
     scoreboard.columnSpacing = std::clamp(
         cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardColumnSpacing), 0, 32);
     scoreboard.rightPadding = std::clamp(
@@ -1201,6 +1200,10 @@ static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table&
         MP_HUD_PROP_KEY_HudScoreboardTeamRowColorR,
         MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG,
         MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB);
+    scoreboard.hunterIconBackgroundColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorR,
+        MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorG,
+        MP_HUD_PROP_KEY_HudScoreboardHunterIconBackgroundColorB);
     scoreboard.backgroundColor = ReadRgbColor(cfg,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG,

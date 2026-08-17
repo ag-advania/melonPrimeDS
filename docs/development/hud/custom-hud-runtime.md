@@ -86,10 +86,36 @@ This cached state is later used by:
 - `DrawMatchStatusHud()`
 - `DrawRankAndTime()`
 
+The scoreboard has a separate match-scoped cache. On the first valid scoreboard
+frame after `CustomHud_OnMatchJoin()` (when `ActivePlayers` is populated), it
+reads and retains the match-static metadata:
+
+- game mode, active-player count, team flags, and team-mode state
+- each slot's active flag, `TeamIndex`, Hunter ID, Hunter Rank (`Stars`), and
+  decoded license/player name
+
+The cache is keyed by the emulated NDS/RAM/ROM group and a match serial that is
+advanced at every match join. It is cleared by `CustomHud_ResetPatchState()`.
+Player time, kills, deaths, points, standings, team standings, and
+`ResultSlots` remain live per emulated frame so score changes and display order
+continue to update immediately. Team aggregate counters are read per frame
+only when the cached runtime team flag says team rows are meaningful.
+The draw layout gives team rows their own compact height when Rank is hidden,
+while player rows retain the name/Stars two-line layout. Hunter portraits are
+drawn with a configurable background rectangle, centered behind each portrait
+at 110% of its rendered width and height. The portrait bounds are first matted
+with the scoreboard background at full opacity, so transparent or
+semi-transparent portrait pixels cannot reveal the colored backing rectangle.
+
 ### Patch and cache lifecycle
 Important lifecycle helpers:
 - `CustomHud_ResetPatchState()` resets no-HUD patch tracking, HUD config cache, and battle-state cache. Call on emu stop/reset.
 - `CustomHud_InvalidateConfigCache()` marks the HUD config cache dirty. It is called after settings are saved and also from preview/apply paths.
+
+The always-on scoreboard still follows the regular HUD gameplay-state timing:
+it is not tied to the native START/TAB scoreboard, and it is not forced on by
+the HP gauge's individual Show setting. Its independent Show setting controls
+only whether the scoreboard is drawn during normal gameplay.
 
 Current cached data inside `MelonPrimeHudRender.cpp` includes:
 - weapon icon images
@@ -99,9 +125,9 @@ Current cached data inside `MelonPrimeHudRender.cpp` includes:
 - text measurement / text bitmap caches
 - `CachedHudConfig` (contains `HpHudConfig`, `WeaponHudConfig`, `CrosshairHudConfig`, `MatchStatusHudConfig`, `BombLeftHudConfig`, `RankTimeHudConfig`, `RadarOverlayConfig`, `ScoreboardHudConfig`, `HudOutlineConfig`)
 - `BattleMatchState`
-- P-9: `s_frameFm` / `s_frameFpx` - frame-level `QFontMetrics` cache constructed once on first call and shared by all draw sub-functions via statics
+- P-9: `s_frameFm` / `s_frameFpx` - frame-level `QFontMetrics` cache constructed once on first call and shared by the non-scoreboard draw sub-functions via statics; the scoreboard has its own scale-aware font/metrics cache
 - P-11: `CrosshairHudConfig::chInnerColor/chOuterColor/chDotColor` - pre-computed arm/dot colors with alpha set at config load time
-- `ScoreboardHudConfig::fontSizeBinary` - when enabled, scoreboard text pixel sizes are snapped to the nearest power of two (1, 2, 4, 8, ...); the settings preview uses the same inline quantizer
+- `HudFrameOwnedState::scoreboardFont` - cached scoreboard/rank `QFont` and `QFontMetrics` values, rebuilt only when the HUD config epoch, base-font generation/size, or HUD scale changes
 - Radar frame SVG (`s_radarFrame` / `s_radarFrameTinted` / `s_radarFrameOutline`) - loaded once via `loadSvgToHeight()`, tinted and outline-colored images cached separately; re-tinted on color change
 
 ### `CachedHudConfig` struct notes
@@ -239,7 +265,7 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
   pause (native UI keeps normal layers) → clamp (2 reads, writes only during spawn frames).
 - Full analysis and rejected alternatives: `docs/features/hud/custom-hud-helmet-spawn-flash.md`.
 
-### Performance optimizations (P-9 through P-12, OPT-DR1)
+### Performance optimizations (P-9 through P-12, OPT-DR1, OPT-SCB1)
 
 | ID | Description | Impact | When |
 |---|---|---|---|
@@ -252,6 +278,8 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 | OPT-SC1 | Screen-fragment HUD enable/radar config caching by epoch, cached top-screen matrix/radar anchor coordinates, empty dirty-rect GL overlay skip, and conditional GL state restore | Avoids repeated config lookups, screen-matrix scans, zero-work GL upload/composite setup, and redundant shader/buffer restore calls | Per frame |
 | OPT-ZOOM1 | Zoom crosshair state, crosshair DS aim position, and display smoothing are keyed by `NDS::NumFrames`: `UpdateCrosshairZoomAmountForGameFrame()` polls RAM once per emulated game frame, `crosshairPosX/Y` are cached for repeated draws of that frame, and `s_chDisplayZoom` advances once per game frame | Prevents high-refresh presentation from accelerating 2-frame zoom/debounce transitions and avoids per-draw zoom/aim RAM polling | Per game frame |
 | OPT-HRT1 | HUD runtime state is cached by `NDS* + MainRAM + NumFrames + player offset + ROM group`; base/adventure/visible reads are cached eagerly, while ammo, owned weapons, bomb count, match status, rank, and time values are cached lazily only when their HUD elements need them | Repeated 120/240Hz draws of the same emulated frame reuse gameplay HUD state instead of re-reading RAM, while disabled elements do not populate unused cache fields | Per game frame |
+| OPT-SCB1 | Scoreboard match metadata (Hunter ID, Hunter Rank/Stars, decoded player name, active roster, TeamIndex, game mode, and team flags) is cached once after match join and keyed by NDS/RAM/ROM group plus match serial; only live metrics and `ResultSlots` are read per emulated frame | Removes repeated static scoreboard RAM reads and name decoding from the per-frame path while preserving live score, standing, and display-order updates | Once per match / dynamic fields per game frame |
+| OPT-SCB2 | Scoreboard/rank `QFont` and `QFontMetrics` values are cached by HUD config epoch, base-font generation/size, and HUD scale | Removes scoreboard font-size and metrics reconstruction from the high-refresh per-frame draw path while keeping settings and scale changes immediate | On relevant change |
 
 ### HUD Auto-Scale System
 Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.

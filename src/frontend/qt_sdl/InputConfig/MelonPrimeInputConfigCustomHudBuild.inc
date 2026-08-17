@@ -92,27 +92,30 @@
                 static_cast<int>(std::lround(instcfg.GetDouble(p.cfgKey) * 100.0)),
                 minValue, maxValue);
             auto* slider = new QSlider(Qt::Horizontal, rowW);
-            slider->setObjectName(objName);
             slider->setRange(minValue, maxValue);
             slider->setSingleStep(std::max(1, p.step));
             slider->setPageStep(std::max(1, p.step * 5));
             slider->setValue(value);
 
-            auto* valueLabel = new QLabel(rowW);
-            valueLabel->setObjectName(objName + QStringLiteral("_value"));
-            valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-            valueLabel->setMinimumWidth(42);
-            valueLabel->setText(QStringLiteral("%1%").arg(value));
+            auto* sb = new QSpinBox(rowW);
+            sb->setObjectName(objName);
+            sb->setRange(minValue, maxValue);
+            sb->setSingleStep(std::max(1, p.step));
+            sb->setValue(value);
+            sb->setSuffix(QStringLiteral("%"));
+            sb->setFixedWidth(78);
 
             hlay->addWidget(slider, 1);
-            hlay->addWidget(valueLabel);
+            hlay->addWidget(sb);
             form->addRow(QString::fromUtf8(p.label), rowW);
-            m_hudWidgets[p.cfgKey] = slider;
+            m_hudWidgets[p.cfgKey] = sb;
 
-            connect(slider, &QSlider::valueChanged, valueLabel, [valueLabel](int val) {
-                valueLabel->setText(QStringLiteral("%1%").arg(val));
-            });
-            connect(slider, &QSlider::valueChanged, this,
+            // Keep the slider and percentage input synchronized while
+            // retaining the normalized double representation in the config.
+            connect(slider, &QSlider::valueChanged, sb, &QSpinBox::setValue);
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), slider,
+                    &QSlider::setValue);
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
                     [this, key = std::string(p.cfgKey)](int val) {
                 if (!m_applyPreviewEnabled) return;
                 emuInstance->getLocalConfig().SetDouble(key, val / 100.0);

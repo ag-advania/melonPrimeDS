@@ -53,7 +53,7 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
                                               layoutConfig.scaleScoreboard)
                                          * ScoreboardUserScale(layoutConfig));
         QFont boardFont, rankFont;
-        ConfigureScoreboardFonts(layoutConfig, hs, boardFont, rankFont);
+        BuildScoreboardFonts(layoutConfig, hs, boardFont, rankFont);
         const QFontMetrics boardFm(boardFont);
         const QFontMetrics rankFm(rankFont);
         const ScoreboardSnapshot preview = MakeScoreboardPreviewSnapshot();

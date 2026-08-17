@@ -283,15 +283,12 @@ protected:
             0.1f, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardScale) / 100.0f, 8.0f);
         const float scoreboardTextScale = qBound(
             0.1f, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardTextScale) / 100.0f, 8.0f);
-        const bool fontSizeBinary = c.GetBool(MP_HUD_PROP_KEY_HudScoreboardFontSizeBinary);
         const bool rankShow = c.GetBool(MP_HUD_PROP_KEY_HudScoreboardRankShow);
         QFont boardFont = previewHudFont(
             c, MP_HUD_PROP_KEY_HudAutoScaleCapText,
             MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard, 500, 800);
         int boardFontPx = qMax(1, qRound(
             boardFont.pixelSize() * scoreboardTextScale * scoreboardScale));
-        if (fontSizeBinary)
-            boardFontPx = MelonPrime::CustomHud_QuantizeFontSizeToPowerOfTwo(boardFontPx);
         boardFont.setPixelSize(boardFontPx);
         p.setFont(boardFont);
         p.setRenderHint(QPainter::SmoothPixmapTransform, false);

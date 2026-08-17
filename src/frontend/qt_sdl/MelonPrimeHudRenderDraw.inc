@@ -264,6 +264,7 @@ struct ScoreboardLayout {
     int panelW = 1;
     int panelH = 0;
     int rowH = 12;
+    int teamRowH = 12;
     int rowSpacing = 0;
     int columnSpacing = 0;
     int rightPadding = 0;
@@ -321,20 +322,37 @@ static float ScoreboardTextDrawScale(const CachedHudConfig& c, float hudScale)
     return logicalTextScale * ScoreboardUserScale(c);
 }
 
-static void ConfigureScoreboardFonts(const CachedHudConfig& c, float hudScale,
-                                     QFont& boardFont, QFont& rankFont)
+static void BuildScoreboardFonts(const CachedHudConfig& c, float hudScale,
+                                 QFont& boardFont, QFont& rankFont)
 {
     boardFont = s_frameFont;
     int boardFontPx = std::max(1, static_cast<int>(std::lround(
         s_frameFpx * std::max(0.1f, ScoreboardTextDrawScale(c, hudScale)))));
-    if (c.scoreboard.fontSizeBinary)
-        boardFontPx = CustomHud_QuantizeFontSizeToPowerOfTwo(boardFontPx);
     boardFont.setPixelSize(boardFontPx);
     rankFont = boardFont;
     int rankFontPx = std::max(1, static_cast<int>(std::lround(boardFontPx * 0.72)));
-    if (c.scoreboard.fontSizeBinary)
-        rankFontPx = CustomHud_QuantizeFontSizeToPowerOfTwo(rankFontPx);
     rankFont.setPixelSize(rankFontPx);
+}
+
+static void EnsureScoreboardFontCache(const CachedHudConfig& c, float hudScale)
+{
+    auto& cache = HudFrameState().scoreboardFont;
+    if (cache.valid
+        && cache.configEpoch == s_cacheEpoch
+        && cache.baseFontGeneration == s_textCacheGen
+        && cache.baseFontPx == s_frameFpx
+        && cache.hudScale == hudScale) {
+        return;
+    }
+
+    BuildScoreboardFonts(c, hudScale, cache.boardFont, cache.rankFont);
+    cache.boardFm = QFontMetrics(cache.boardFont);
+    cache.rankFm = QFontMetrics(cache.rankFont);
+    cache.configEpoch = s_cacheEpoch;
+    cache.baseFontGeneration = s_textCacheGen;
+    cache.baseFontPx = s_frameFpx;
+    cache.hudScale = hudScale;
+    cache.valid = true;
 }
 
 static int ScoreboardImageWidthDS(const QImage& image, float invHudScale)
@@ -363,6 +381,24 @@ static int ScoreboardAutoRowHeight(const QFontMetrics& boardFm,
     return std::max(1, rowHeight);
 }
 
+static int ScoreboardTeamRowHeight(const QFontMetrics& boardFm,
+                                   const QFontMetrics& rankFm,
+                                   int headerInset, bool rankShow)
+{
+    const int headerHeight = boardFm.height() + headerInset * 2 + 1;
+    if (!rankShow)
+        return std::max(1, headerHeight);
+
+    const int nameLineHeight = boardFm.height() + 1;
+    const int rankLineHeight = rankFm.height() + 1;
+    const int nameSplitHeight = static_cast<int>(std::ceil(
+        static_cast<float>(nameLineHeight) / 0.58f));
+    const int rankSplitHeight = static_cast<int>(std::ceil(
+        static_cast<float>(rankLineHeight) / 0.42f));
+    int rowHeight = std::max(nameSplitHeight, rankSplitHeight);
+    return std::max(rowHeight, headerHeight);
+}
+
 static ScoreboardLayout BuildScoreboardLayout(
     const ScoreboardSnapshot& snapshot,
     const std::array<ScoreboardRenderRow, 8>& rows, int rowCount,
@@ -383,11 +419,16 @@ static ScoreboardLayout BuildScoreboardLayout(
     // font/asset minimum to win whenever the user scales the board down.
     layout.rowH = std::max(ScoreboardAutoRowHeight(
         boardFm, rankFm, headerInset, assetHeightDS), scaleDs(22));
+    layout.teamRowH = ScoreboardTeamRowHeight(
+        boardFm, rankFm, headerInset, c.scoreboard.rankShow);
     layout.rowSpacing = scaleDs(std::max(0, c.scoreboard.rowSpacing));
     layout.columnSpacing = scaleDs(std::clamp(c.scoreboard.columnSpacing, 0, 32));
     layout.rightPadding = scaleDs(std::clamp(c.scoreboard.rightPadding, 0, 32));
-    layout.panelH = layout.rowH + rowCount * (layout.rowH + layout.rowSpacing)
-                  + scaleDs(4);
+    layout.panelH = layout.rowH + scaleDs(4);
+    for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+        layout.panelH += rows[rowIndex].team ? layout.teamRowH : layout.rowH;
+        layout.panelH += layout.rowSpacing;
+    }
 
     layout.portraitW = std::max(scaleDs(20),
                                 scaleDs(c.scoreboard.hunterIconHeight) + scaleDs(4));
@@ -479,10 +520,12 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     if (rowCount == 0)
         return;
 
-    QFont boardFont, rankFont;
-    ConfigureScoreboardFonts(c, hudScale, boardFont, rankFont);
-    const QFontMetrics boardFm(boardFont);
-    const QFontMetrics rankFm(rankFont);
+    EnsureScoreboardFontCache(c, hudScale);
+    const auto& scoreboardFont = HudFrameState().scoreboardFont;
+    const QFont& boardFont = scoreboardFont.boardFont;
+    const QFont& rankFont = scoreboardFont.rankFont;
+    const QFontMetrics& boardFm = scoreboardFont.boardFm;
+    const QFontMetrics& rankFm = scoreboardFont.rankFm;
     const ScoreboardLayout layout = BuildScoreboardLayout(
         snapshot, rows, rowCount, c, hudScale, boardFm, rankFm);
 
@@ -530,24 +573,29 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     DrawScoreboardText(p, secondHeader, UiText::Tr(metric.secondLabel), c.scoreboard.headerColor,
                        boardFm, scoreboardOutline, hudScale, Qt::AlignRight);
 
+    const QColor& hunterIconBackgroundColor = c.scoreboard.hunterIconBackgroundColor;
+    int y = panelY + layout.rowH;
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
         const ScoreboardRenderRow& row = rows[rowIndex];
-        const int y = panelY + layout.rowH
-                    + rowIndex * (layout.rowH + layout.rowSpacing);
-        const QRectF nameRect(nameX, y, layout.playerW, layout.rowH);
-        const QRectF firstRect(firstX, y, layout.firstW, layout.rowH);
-        const QRectF secondRect(secondX, y, layout.secondW, layout.rowH);
+        const int currentRowH = row.team ? layout.teamRowH : layout.rowH;
+        const QRectF nameRect(nameX, y, layout.playerW, currentRowH);
+        const QRectF firstRect(firstX, y, layout.firstW, currentRowH);
+        const QRectF secondRect(secondX, y, layout.secondW, currentRowH);
         if (row.team) {
             const ScoreboardPlayerSnapshot& representative = snapshot.playersBySlot[row.slot];
             const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[row.teamIndex];
             const QColor& teamColor = ResolveScoreboardTeamColor(c, row.teamIndex);
-            DrawScoreboardNameAndRank(p, nameRect,
-                QStringLiteral("%1 %2").arg(UiText::Tr("Team"))
-                    .arg(static_cast<int>(row.teamIndex) + 1),
-                static_cast<int>(representative.standing) + 1,
-                c.scoreboard.rankShow,
-                teamColor, boardFont, boardFm, rankFont, rankFm,
-                scoreboardOutline, hudScale);
+            const QString teamName = QStringLiteral("%1 %2").arg(UiText::Tr("Team"))
+                .arg(static_cast<int>(row.teamIndex) + 1);
+            if (c.scoreboard.rankShow) {
+                DrawScoreboardNameAndRank(p, nameRect, teamName,
+                    static_cast<int>(representative.standing) + 1, true,
+                    teamColor, boardFont, boardFm, rankFont, rankFm,
+                    scoreboardOutline, hudScale);
+            } else {
+                DrawScoreboardText(p, nameRect, teamName, teamColor, boardFm,
+                                   scoreboardOutline, hudScale);
+            }
             DrawScoreboardText(p, firstRect,
                 FormatScoreboardMetric(metric.firstIsTime ? team.time : team.points,
                                        metric.firstIsTime, snapshot.gameMode),
@@ -557,6 +605,7 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
                                        : metric.secondIsKills ? team.kills : team.deaths,
                                        metric.secondIsTime, snapshot.gameMode),
                  teamColor, boardFm, scoreboardOutline, hudScale, Qt::AlignRight);
+            y += currentRowH + layout.rowSpacing;
             continue;
         }
 
@@ -573,9 +622,26 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         if (hunter && !hunter->isNull()) {
             const float iconH = static_cast<float>(hunter->height()) * invHudScale;
             const float iconW = static_cast<float>(hunter->width()) * invHudScale;
-            const QRectF iconRect(iconX, y + (layout.rowH - iconH) * 0.5f, iconW, iconH);
+            const QRectF iconRect(iconX, y + (currentRowH - iconH) * 0.5f, iconW, iconH);
+            const float backgroundW = iconW * 1.1f;
+            const float backgroundH = iconH * 1.1f;
+            const QRectF iconBackgroundRect(
+                iconRect.center().x() - backgroundW * 0.5f,
+                iconRect.center().y() - backgroundH * 0.5f,
+                backgroundW, backgroundH);
+            p->fillRect(iconBackgroundRect, hunterIconBackgroundColor);
+            // The portrait is pixel art and may contain transparent or
+            // semi-transparent pixels after resource decoding/scaling.  Matte
+            // the exact image bounds with the scoreboard panel color at full
+            // opacity before drawing the portrait.  Otherwise the colored
+            // 110% backing rectangle leaks through the portrait whenever the
+            // HUD itself is translucent.
+            const qreal portraitOpacity = p->opacity();
+            p->setOpacity(1.0);
+            p->fillRect(iconRect, c.scoreboard.backgroundColor);
+            p->setOpacity(portraitOpacity);
             p->drawImage(iconRect, *hunter);
-            AccumDirtyDs(p, iconRect);
+            AccumDirtyDs(p, iconBackgroundRect);
         }
         DrawScoreboardNameAndRank(p, nameRect, player.displayName, rank,
                                   c.scoreboard.rankShow,
@@ -614,8 +680,9 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         DrawScoreboardText(p, secondRect,
             FormatScoreboardMetric(metric.secondIsTime ? player.time
                                    : metric.secondIsKills ? player.kills : player.deaths,
-                                   metric.secondIsTime, snapshot.gameMode),
+                                    metric.secondIsTime, snapshot.gameMode),
              rowColor, boardFm, scoreboardOutline, hudScale, Qt::AlignRight);
+        y += currentRowH + layout.rowSpacing;
     }
     p->restore();
 }
