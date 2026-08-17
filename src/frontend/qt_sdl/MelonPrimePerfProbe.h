@@ -107,6 +107,9 @@ struct State {
     uint64_t cntCustomHudDrawn = 0;
     uint64_t cntHudVisualRenders = 0;
     uint64_t cntHudVisualReuses = 0;
+    uint64_t cntHudVisualIdentityProbes = 0;
+    uint64_t cntHudVisualStampChecks = 0;
+    uint64_t cntHudVisualStampCommits = 0;
     uint64_t cntScoreboardPlanBuilds = 0;
     uint64_t cntScoreboardFullPlanRebuilds = 0;
     uint64_t cntScoreboardDynamicCellUpdates = 0;
@@ -209,6 +212,9 @@ inline void ResetWindowStats()
     st.cntCustomHudDrawn = 0;
     st.cntHudVisualRenders = 0;
     st.cntHudVisualReuses = 0;
+    st.cntHudVisualIdentityProbes = 0;
+    st.cntHudVisualStampChecks = 0;
+    st.cntHudVisualStampCommits = 0;
     st.cntScoreboardPlanBuilds = 0;
     st.cntScoreboardFullPlanRebuilds = 0;
     st.cntScoreboardDynamicCellUpdates = 0;
@@ -325,7 +331,8 @@ inline void MaybeReport1Hz()
         "composite[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "total_active[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "calls=%llu drawn=%llu "
-        "visual_render=%llu visual_reuse=%llu plan_build=%llu full_rebuild=%llu "
+        "visual_render=%llu visual_reuse=%llu identity_probes=%llu "
+        "stamp_checks=%llu stamp_commits=%llu plan_build=%llu full_rebuild=%llu "
         "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
         "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu\n",
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::State)]),
@@ -376,6 +383,9 @@ inline void MaybeReport1Hz()
         static_cast<unsigned long long>(st.cntCustomHudDrawn),
         static_cast<unsigned long long>(st.cntHudVisualRenders),
         static_cast<unsigned long long>(st.cntHudVisualReuses),
+        static_cast<unsigned long long>(st.cntHudVisualIdentityProbes),
+        static_cast<unsigned long long>(st.cntHudVisualStampChecks),
+        static_cast<unsigned long long>(st.cntHudVisualStampCommits),
         static_cast<unsigned long long>(st.cntScoreboardPlanBuilds),
         static_cast<unsigned long long>(st.cntScoreboardFullPlanRebuilds),
         static_cast<unsigned long long>(st.cntScoreboardStructureChecks),
@@ -574,6 +584,24 @@ inline void CountHudVisualReuse()
     }
 }
 
+inline void CountHudVisualIdentityProbe()
+{
+    if (S().frameOpen)
+        ++S().cntHudVisualIdentityProbes;
+}
+
+inline void CountHudVisualStampCheck()
+{
+    if (S().frameOpen)
+        ++S().cntHudVisualStampChecks;
+}
+
+inline void CountHudVisualStampCommit()
+{
+    if (S().frameOpen)
+        ++S().cntHudVisualStampCommits;
+}
+
 inline void CountScoreboardPlanBuild()
 {
     if (S().frameOpen)
@@ -742,6 +770,9 @@ inline void CountCustomHudCall() {}
 inline void CountCustomHudDrawn() {}
 inline void CountHudVisualRender() {}
 inline void CountHudVisualReuse() {}
+inline void CountHudVisualIdentityProbe() {}
+inline void CountHudVisualStampCheck() {}
+inline void CountHudVisualStampCommit() {}
 inline void CountScoreboardPlanBuild() {}
 inline void CountScoreboardFullPlanRebuild() {}
 inline void CountScoreboardDynamicCellUpdate(bool) {}

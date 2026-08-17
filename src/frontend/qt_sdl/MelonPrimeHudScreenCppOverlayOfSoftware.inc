@@ -31,16 +31,20 @@
             const int topOutW = std::max(1, fullW);
             const int topOutH = std::max(1, fullH);
 
+            const HudVisualFrameIdentity visualIdentity =
+                MelonPrimeHud_ProbeVisualFrameIdentity(emuInstance);
+            MelonPrimePerf::CountHudVisualIdentityProbe();
             const bool sameGameFrame = m_hudVisualFrameValid
                 && MelonPrimeHud_IsSameVisualGameFrame(
-                    emuInstance, m_hudVisualFrameKey);
+                    visualIdentity, m_hudVisualFrameKey);
             HudVisualFrameKey visualKey{};
             if (sameGameFrame) {
                 visualKey = MelonPrimeHud_MakeVisualFrameKey(
-                    emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                    visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
                     topOutW, topOutH, topStretchX, hudScale,
                     m_hudOriginX, m_hudOriginY,
                     m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+                MelonPrimePerf::CountHudVisualStampCheck();
             }
             const bool reuseVisual = m_hudVisualFrameValid
                 && sameGameFrame
@@ -68,11 +72,12 @@
                 s_hudPrevDirtyS = curDirty;
                 if (!sameGameFrame) {
                     visualKey = MelonPrimeHud_MakeVisualFrameKey(
-                        emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                        visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
                         topOutW, topOutH, topStretchX, hudScale,
                         m_hudOriginX, m_hudOriginY,
                         m_hudVisualRendererGeneration, m_hudEnabled, editMode);
                 }
+                MelonPrimePerf::CountHudVisualStampCommit();
                 m_hudVisualFrameKey = visualKey;
                 m_hudVisualFrameValid = true;
             }

@@ -44,13 +44,20 @@
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeLocalization.h"
 
-// Identity of the fully rendered Custom HUD image.  The emulation frame is
-// part of the key deliberately: presentation callbacks can repeat while the
-// game is paused or the window is refreshed, but NDS::NumFrames alone is not
-// sufficient without the instance/config/geometry generations below.
-struct HudVisualFrameKey {
+// The emulation identity is probed separately from the extended stamp.  New
+// game frames can therefore render immediately without constructing a full
+// key; repeated presentation of one frame still validates the complete stamp.
+struct HudVisualFrameIdentity {
     const void* nds = nullptr;
     uint32_t gameFrame = 0;
+
+    bool operator==(const HudVisualFrameIdentity& other) const noexcept
+    {
+        return nds == other.nds && gameFrame == other.gameFrame;
+    }
+};
+
+struct HudVisualFrameStamp {
     uint32_t configEpoch = 0;
     uint32_t fontEpoch = 0;
     uint32_t stateGeneration = 0;
@@ -65,11 +72,9 @@ struct HudVisualFrameKey {
     bool hudEnabled = false;
     bool editMode = false;
 
-    bool operator==(const HudVisualFrameKey& other) const noexcept
+    bool operator==(const HudVisualFrameStamp& other) const noexcept
     {
-        return nds == other.nds
-            && gameFrame == other.gameFrame
-            && configEpoch == other.configEpoch
+        return configEpoch == other.configEpoch
             && fontEpoch == other.fontEpoch
             && stateGeneration == other.stateGeneration
             && menuLanguage == other.menuLanguage
@@ -84,6 +89,16 @@ struct HudVisualFrameKey {
             && editMode == other.editMode;
     }
 };
+
+struct HudVisualFrameKey {
+    HudVisualFrameIdentity identity{};
+    HudVisualFrameStamp stamp{};
+
+    bool operator==(const HudVisualFrameKey& other) const noexcept
+    {
+        return identity == other.identity && stamp == other.stamp;
+    }
+};
 #endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
@@ -91,16 +106,24 @@ class EmuInstance;
 class EmuThread;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-static inline bool MelonPrimeHud_IsSameVisualGameFrame(
-    EmuInstance* emu, const HudVisualFrameKey& previous)
+static inline HudVisualFrameIdentity MelonPrimeHud_ProbeVisualFrameIdentity(
+    EmuInstance* emu)
 {
-    const void* nds = nullptr;
-    const uint32_t gameFrame = MelonPrime::CustomHud_GetVisualGameFrame(emu, &nds);
-    return previous.nds == nds && previous.gameFrame == gameFrame;
+    HudVisualFrameIdentity identity;
+    identity.gameFrame = MelonPrime::CustomHud_GetVisualGameFrame(
+        emu, &identity.nds);
+    return identity;
+}
+
+static inline bool MelonPrimeHud_IsSameVisualGameFrame(
+    const HudVisualFrameIdentity& identity,
+    const HudVisualFrameKey& previous)
+{
+    return previous.identity == identity;
 }
 
 static inline HudVisualFrameKey MelonPrimeHud_MakeVisualFrameKey(
-    EmuInstance* emu,
+    const HudVisualFrameIdentity& identity,
     const MelonPrime::CustomHudConfigState& hudConfig,
     uint32_t configEpoch,
     uint32_t fontEpoch,
@@ -115,20 +138,20 @@ static inline HudVisualFrameKey MelonPrimeHud_MakeVisualFrameKey(
     bool editMode)
 {
     HudVisualFrameKey key;
-    key.gameFrame = MelonPrime::CustomHud_GetVisualGameFrame(emu, &key.nds);
-    key.configEpoch = configEpoch;
-    key.fontEpoch = fontEpoch;
-    key.stateGeneration = MelonPrime::CustomHud_GetVisualGeneration(hudConfig);
-    key.menuLanguage = static_cast<int>(MelonPrime::UiText::ActiveMenuLanguage());
-    key.overlayWidth = overlayWidth;
-    key.overlayHeight = overlayHeight;
-    key.topStretchX = topStretchX;
-    key.hudScale = hudScale;
-    key.originX = originX;
-    key.originY = originY;
-    key.rendererGeneration = rendererGeneration;
-    key.hudEnabled = hudEnabled;
-    key.editMode = editMode;
+    key.identity = identity;
+    key.stamp.configEpoch = configEpoch;
+    key.stamp.fontEpoch = fontEpoch;
+    key.stamp.stateGeneration = MelonPrime::CustomHud_GetVisualGeneration(hudConfig);
+    key.stamp.menuLanguage = static_cast<int>(MelonPrime::UiText::ActiveMenuLanguage());
+    key.stamp.overlayWidth = overlayWidth;
+    key.stamp.overlayHeight = overlayHeight;
+    key.stamp.topStretchX = topStretchX;
+    key.stamp.hudScale = hudScale;
+    key.stamp.originX = originX;
+    key.stamp.originY = originY;
+    key.stamp.rendererGeneration = rendererGeneration;
+    key.stamp.hudEnabled = hudEnabled;
+    key.stamp.editMode = editMode;
     return key;
 }
 #endif

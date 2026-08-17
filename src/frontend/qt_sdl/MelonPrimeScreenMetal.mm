@@ -1026,6 +1026,8 @@ void ScreenPanelMetal::drawScreen()
         RadarFragmentUniforms gpuRadarFragmentUniforms{};
         HudVisualFrameKey hudVisualKey{};
         bool hudVisualKeyValid = false;
+        HudVisualFrameIdentity visualIdentity{};
+        bool visualIdentityValid = false;
         m_hudVisualFrameWasReused = false;
         // Metal's UI texture also carries OSD/splash pixels. Reuse is safe
         // only when this frame has no other CPU overlay that would need the
@@ -1051,16 +1053,19 @@ void ScreenPanelMetal::drawScreen()
                 overlayFont.setPixelSize(
                     MelonPrime::CustomHud_ResolveFontPixelSize(preflightCfg));
             }
+            visualIdentity = MelonPrimeHud_ProbeVisualFrameIdentity(emuInstance);
+            MelonPrimePerf::CountHudVisualIdentityProbe();
+            visualIdentityValid = true;
             const bool preflightVisible = m_hudEnabled || preflightEditMode;
             const bool sameGameFrame = m_hudVisualFrameValid
                 && MelonPrimeHud_IsSameVisualGameFrame(
-                    emuInstance, m_hudVisualFrameKey);
+                    visualIdentity, m_hudVisualFrameKey);
             if (preflightVisible && noOtherUiOverlay
                 && m->uiTex && m->uiTexW == logicalW && m->uiTexH == logicalH
                 && sameGameFrame)
             {
                 hudVisualKey = MelonPrimeHud_MakeVisualFrameKey(
-                    emuInstance, preflightMp->HudConfigState(),
+                    visualIdentity, preflightMp->HudConfigState(),
                     m_hudCfgEpoch, m_hudFontEpoch,
                     logicalW, logicalH,
                     m_hudTopMatrixValid ? m_topStretchX : 1.0f,
@@ -1068,6 +1073,7 @@ void ScreenPanelMetal::drawScreen()
                     m_hudVisualRendererGeneration, m_hudEnabled,
                     preflightEditMode);
                 hudVisualKeyValid = true;
+                MelonPrimePerf::CountHudVisualStampCheck();
                 hudVisualReuse = m_hudVisualFrameValid
                     && hudVisualKey == m_hudVisualFrameKey;
             } else {
@@ -1094,7 +1100,12 @@ void ScreenPanelMetal::drawScreen()
             overlayHasContent = true;
 #endif
 
-        QPainter overlayPainter(&m->uiOverlay);
+        std::optional<QPainter> overlayPainter;
+        const auto ensureOverlayPainter = [&]() -> QPainter& {
+            if (!overlayPainter)
+                overlayPainter.emplace(&m->uiOverlay);
+            return *overlayPainter;
+        };
 
 #ifdef MELONPRIME_CUSTOM_HUD
         if (emuThread->emuIsActive())
@@ -1216,7 +1227,7 @@ void ScreenPanelMetal::drawScreen()
                         if (overlayFont.family().isEmpty())
                             overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
                         overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
-                        overlayPainter.setFont(overlayFont);
+                        ensureOverlayPainter().setFont(overlayFont);
 
                         MelonPrimePerf::CountHudVisualRender();
                         const auto hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
@@ -1225,7 +1236,7 @@ void ScreenPanelMetal::drawScreen()
                             emuInstance, instcfg,
                             mp->GetCurrentRom(), mp->GetAddrHot(),
                             mp->GetPlayerPosition(),
-                            &overlayPainter, nullptr,
+                            &ensureOverlayPainter(), nullptr,
                             &m->uiOverlay, nullptr,
                             mp->IsInGame(),
                             m_hudTopMatrixValid ? m_topStretchX : 1.0f,
@@ -1242,8 +1253,14 @@ void ScreenPanelMetal::drawScreen()
                         }
                         overlayHasContent = overlayHasContent || !dirty.isEmpty();
                         if (!hudVisualKeyValid) {
+                            if (!visualIdentityValid) {
+                                visualIdentity = MelonPrimeHud_ProbeVisualFrameIdentity(
+                                    emuInstance);
+                                MelonPrimePerf::CountHudVisualIdentityProbe();
+                                visualIdentityValid = true;
+                            }
                             hudVisualKey = MelonPrimeHud_MakeVisualFrameKey(
-                                emuInstance, mp->HudConfigState(), m_hudCfgEpoch,
+                                visualIdentity, mp->HudConfigState(), m_hudCfgEpoch,
                                 m_hudFontEpoch, logicalW, logicalH,
                                 m_hudTopMatrixValid ? m_topStretchX : 1.0f,
                                 m_hudScale, m_hudOriginX, m_hudOriginY,
@@ -1251,6 +1268,7 @@ void ScreenPanelMetal::drawScreen()
                                 editMode);
                             hudVisualKeyValid = true;
                         }
+                        MelonPrimePerf::CountHudVisualStampCommit();
                         m_hudVisualFrameKey = hudVisualKey;
                         m_hudVisualFrameValid = true;
                     }
@@ -1262,9 +1280,10 @@ void ScreenPanelMetal::drawScreen()
         if (!emuThread->emuIsActive())
         {
             osdMutex.lock();
-            overlayPainter.drawPixmap(QRect(splashPos[3], QSize(kMetalLogoWidth, kMetalLogoWidth)), splashLogo);
+            ensureOverlayPainter().drawPixmap(
+                QRect(splashPos[3], QSize(kMetalLogoWidth, kMetalLogoWidth)), splashLogo);
             for (int i = 0; i < 3; i++)
-                overlayPainter.drawImage(splashPos[i], splashText[i].bitmap);
+                ensureOverlayPainter().drawImage(splashPos[i], splashText[i].bitmap);
             osdMutex.unlock();
             overlayHasContent = true;
         }
@@ -1280,7 +1299,7 @@ void ScreenPanelMetal::drawScreen()
             for (auto it = osdItems.begin(); it != osdItems.end(); )
             {
                 OSDItem& item = *it;
-                overlayPainter.drawImage(kMetalOSDMargin, y, item.bitmap);
+                ensureOverlayPainter().drawImage(kMetalOSDMargin, y, item.bitmap);
                 y += item.bitmap.height();
                 it++;
             }
@@ -1288,7 +1307,8 @@ void ScreenPanelMetal::drawScreen()
             overlayHasContent = true;
         }
 
-        overlayPainter.end();
+        if (overlayPainter)
+            overlayPainter->end();
 
         if (overlayHasContent)
         {

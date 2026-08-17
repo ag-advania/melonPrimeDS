@@ -1977,16 +1977,20 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     // visible in the black bars.
     const int overlayWidth = std::max(1, width());
     const int overlayHeight = std::max(1, height());
+    const HudVisualFrameIdentity visualIdentity =
+        MelonPrimeHud_ProbeVisualFrameIdentity(emuInstance);
+    MelonPrimePerf::CountHudVisualIdentityProbe();
     const bool sameGameFrame = m_hudVisualFrameValid
         && MelonPrimeHud_IsSameVisualGameFrame(
-            emuInstance, m_hudVisualFrameKey);
+            visualIdentity, m_hudVisualFrameKey);
     HudVisualFrameKey visualKey{};
     if (sameGameFrame) {
         visualKey = MelonPrimeHud_MakeVisualFrameKey(
-            emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+            visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
             overlayWidth, overlayHeight, m_topStretchX, m_hudScale,
             m_hudOriginX, m_hudOriginY,
             m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+        MelonPrimePerf::CountHudVisualStampCheck();
     }
     const bool reuseVisual = m_hudVisualFrameValid
         && sameGameFrame
@@ -2066,11 +2070,12 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     m_hudPrevDirty = dirty;
     if (!sameGameFrame) {
         visualKey = MelonPrimeHud_MakeVisualFrameKey(
-            emuInstance, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+            visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
             overlayWidth, overlayHeight, m_topStretchX, m_hudScale,
             m_hudOriginX, m_hudOriginY,
             m_hudVisualRendererGeneration, m_hudEnabled, editMode);
     }
+    MelonPrimePerf::CountHudVisualStampCommit();
     m_hudVisualFrameKey = visualKey;
     m_hudVisualFrameValid = true;
     outDirty = overlayRecreated

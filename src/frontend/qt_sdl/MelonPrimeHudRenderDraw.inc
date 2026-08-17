@@ -230,6 +230,18 @@ struct ScoreboardRenderRow {
     uint8_t teamIndex = 0xFF;
 };
 
+static int ResolveScoreboardDisplayedRank(const ScoreboardSnapshot& snapshot,
+                                          bool teamRow, uint8_t slot)
+{
+    if (slot >= 4)
+        return 1;
+    const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[slot];
+    if (teamRow)
+        return static_cast<int>(player.standing) + 1;
+    return static_cast<int>(snapshot.teams
+        ? player.teamStanding : player.standing) + 1;
+}
+
 struct ScoreboardLayout {
     int panelW = 1;
     int panelH = 0;
@@ -411,11 +423,11 @@ static ScoreboardLayout BuildScoreboardLayout(
     for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
         const ScoreboardRenderRow& row = rows[rowIndex];
         if (row.team) {
-            const ScoreboardPlayerSnapshot& representative = snapshot.playersBySlot[row.slot];
             const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[row.teamIndex];
             const QString teamName = QStringLiteral("%1 %2").arg(UiText::Tr("Team"))
                 .arg(static_cast<int>(row.teamIndex) + 1);
-            const int teamRank = static_cast<int>(representative.standing) + 1;
+            const int teamRank = ResolveScoreboardDisplayedRank(
+                snapshot, true, row.slot);
             playerContentW = std::max(playerContentW, boardFm.horizontalAdvance(teamName));
             if (c.scoreboard.rankShow)
                 playerContentW = std::max(playerContentW,
@@ -433,7 +445,8 @@ static ScoreboardLayout BuildScoreboardLayout(
         }
 
         const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[row.slot];
-        const int rank = static_cast<int>(snapshot.teams ? player.teamStanding : player.standing) + 1;
+        const int rank = ResolveScoreboardDisplayedRank(
+            snapshot, false, row.slot);
         playerContentW = std::max(playerContentW, boardFm.horizontalAdvance(player.displayName));
         int rankLineW = c.scoreboard.rankShow
             ? rankFm.horizontalAdvance(FormatScoreboardRankLabel(rank)) : 0;
@@ -634,12 +647,12 @@ static ScoreboardRenderPlan BuildScoreboardRenderPlan(
         const QRectF secondRect(secondX, y, plan.secondW, currentRowH);
 
         if (row.team) {
-            const ScoreboardPlayerSnapshot& representative = snapshot.playersBySlot[row.slot];
             const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[row.teamIndex];
             planned.color = ResolveScoreboardTeamColor(c, row.teamIndex);
             const QString teamName = QStringLiteral("%1 %2").arg(UiText::Tr("Team"))
                 .arg(static_cast<int>(row.teamIndex) + 1);
-            const int teamRank = static_cast<int>(representative.standing) + 1;
+            const int teamRank = ResolveScoreboardDisplayedRank(
+                snapshot, true, row.slot);
             if (c.scoreboard.rankShow) {
                 planned.name = MakeScoreboardPlanText(
                     teamName, QRectF(nameRect.x(), nameRect.y(), nameRect.width(),
@@ -678,8 +691,8 @@ static ScoreboardRenderPlan BuildScoreboardRenderPlan(
                     iconW, iconH);
             }
 
-            const int rank = static_cast<int>(snapshot.teams
-                ? player.teamStanding : player.standing) + 1;
+            const int rank = ResolveScoreboardDisplayedRank(
+                snapshot, false, row.slot);
             planned.name = MakeScoreboardPlanText(
                 player.displayName,
                 QRectF(nameRect.x(), nameRect.y(), nameRect.width(),
@@ -705,6 +718,7 @@ static ScoreboardRenderPlan BuildScoreboardRenderPlan(
                         0.0f, static_cast<float>(nameRect.right() - starsX - scaleDs(2)));
                     const float drawStarsW = std::min(starsW, availableStarsW);
                     planned.starsFullW = starsW;
+                    planned.starsFullH = starsH;
                     if (drawStarsW > 0.0f) {
                         planned.starsRect = QRectF(
                             starsX,
@@ -753,6 +767,7 @@ static bool UpdateScoreboardPlanCell(
 
     cell.display = std::move(display);
     cell.outlinePath.clear();
+    cell.outlinePathPrepared = false;
     cell.color = color;
     cell.visual = visual;
     cell.advance = advance;
@@ -781,8 +796,8 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
 
         const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[current.slot];
         if (c.scoreboard.rankShow) {
-            const int rank = static_cast<int>(snapshot.teams
-                ? player.teamStanding : player.standing) + 1;
+            const int rank = ResolveScoreboardDisplayedRank(
+                snapshot, current.team, current.slot);
             const ScoreboardVisualValue previousRank = current.rank.visual;
             if (!UpdateScoreboardPlanCell(
                     current.rank, rank, false, snapshot.gameMode,
@@ -801,10 +816,10 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
                     0.0f, static_cast<float>(current.name.rect.right() - starsX - scaleDs(2)));
                 const float drawStarsW = std::min(
                     static_cast<float>(current.starsFullW), availableStarsW);
-                current.starsRect = drawStarsW > 0.0f
+                current.starsRect = drawStarsW > 0.0f && current.starsFullH > 0.0
                     ? QRectF(starsX,
-                             rankLine.y() + (rankLine.height() - current.starsRect.height()) * 0.5f,
-                             drawStarsW, current.starsRect.height())
+                             rankLine.y() + (rankLine.height() - current.starsFullH) * 0.5f,
+                             drawStarsW, current.starsFullH)
                     : QRectF();
             }
         }
@@ -849,8 +864,9 @@ static void DrawScoreboardPlanText(
             / std::max(0.001f, hudScale)
         : 0.0f;
     if (outlineRadius > 0.0f) {
-        if (text.outlinePath.isEmpty()) {
+        if (!text.outlinePathPrepared) {
             text.outlinePath.addText(QPointF(0.0f, 0.0f), font, text.display);
+            text.outlinePathPrepared = true;
             MelonPrimePerf::CountScoreboardOutlinePathMiss();
         } else {
             MelonPrimePerf::CountScoreboardOutlinePathHit();

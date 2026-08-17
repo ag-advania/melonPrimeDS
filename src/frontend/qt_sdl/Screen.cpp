@@ -2146,7 +2146,7 @@ void ScreenPanelDX12::drawScreen()
             QImage::Format_RGB32);
     }
 
-    bool hudUploaded = false;
+    bool hudLayerReady = false;
     bool hudVisible = false;
     m_hudVisualFrameWasReused = false;
     auto* mpForHud = emuThread->GetMelonPrimeCore();
@@ -2162,6 +2162,7 @@ void ScreenPanelDX12::drawScreen()
                 logicalWidth, logicalHeight, QImage::Format_ARGB32_Premultiplied);
             dx12->hudFrame.fill(Qt::transparent);
         }
+        const QRect previousHudDirty = m_hudPrevDirty;
         QPainter painter(&dx12->hudFrame);
         // hudFrame is retained between frames so only the current HUD dirty
         // rectangle needs uploading. SourceOver would leave old pixels behind
@@ -2178,9 +2179,22 @@ void ScreenPanelDX12::drawScreen()
         auto& instcfg = emuInstance->getLocalConfig();
         hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
             emuInstance, instcfg, mpForHud, m_hudEnabled, hudEditMode);
-        dx12->hudRect = m_hudPrevDirty.intersected(
+        // DX12 retains the HUD texture between compositions. The source
+        // painter clears the previous dirty region before drawing the current
+        // one, so both regions must be uploaded when the visual changes.
+        dx12->hudRect = m_hudPrevDirty.united(previousHudDirty).intersected(
             QRect(0, 0, logicalWidth, logicalHeight));
-        if (hudVisible && !m_hudVisualFrameWasReused && !dx12->hudRect.isEmpty())
+        const auto hudLayer = MelonPrime::DX12SurfacePresenter::Layer::Hud;
+        if (hudVisible && m_hudVisualFrameWasReused
+            && dx12->presenter.HasLayerContent(hudLayer)
+            && !dx12->hudRect.isEmpty())
+        {
+            // Upload is intentionally skipped, but the retained layer still
+            // has to participate in this presentation's composition.
+            hudLayerReady = true;
+        }
+        else if (hudVisible && !m_hudVisualFrameWasReused
+                 && !dx12->hudRect.isEmpty())
         {
             MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                 MelonPrimePerf::HudPhase::UploadPrepare);
@@ -2189,14 +2203,15 @@ void ScreenPanelDX12::drawScreen()
             MelonPrimePerf::CountHudUploadCall();
             const int patchWidth = dx12->hudRect.width();
             const int patchHeight = dx12->hudRect.height();
-            hudUploaded = dx12->presenter.UploadLayerRegion(
-                MelonPrime::DX12SurfacePresenter::Layer::Hud,
+            const bool hudUploadPerformed = dx12->presenter.UploadLayerRegion(
+                hudLayer,
                 dx12->hudFrame.constBits(),
                 static_cast<u32>(dx12->hudRect.x()),
                 static_cast<u32>(dx12->hudRect.y()),
                 static_cast<u32>(patchWidth),
                 static_cast<u32>(patchHeight),
                 static_cast<std::size_t>(dx12->hudFrame.bytesPerLine()));
+            hudLayerReady = hudUploadPerformed;
         }
     }
 
@@ -2331,7 +2346,7 @@ void ScreenPanelDX12::drawScreen()
     }
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    if (hudUploaded)
+    if (hudLayerReady)
     {
         MelonPrime::DX12SurfacePresenter::Quad quad;
         quad.Axis[0] = static_cast<float>(dx12->hudRect.width()) * scaleX;

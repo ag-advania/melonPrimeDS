@@ -279,8 +279,8 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 | OPT-SCB2 | Scoreboard/rank `QFont` and `QFontMetrics` values are cached by HUD config epoch, base-font generation/size, and HUD scale | Removes scoreboard font-size and metrics reconstruction from the high-refresh per-frame draw path while keeping settings and scale changes immediate | On relevant change |
 | OPT-SCB3 | `ScoreboardRenderPlan` retains final localized/elided strings, text advances, cell geometry, colors, icon rectangles, and rank/metric roles. A compact `ScoreboardStructureKey` compares only match serial, mode/roster/order/team structure, visibility, and active slots; live cells use a semantic value key, so time changes are bucketed to the displayed second | Removes per-frame name/string comparison, repeated localization/elision, and full-layout rebuilding. A changed dynamic cell formats and measures once, then updates in place when it fits; overflow falls back to a structural rebuild | Structural change / changed dynamic cells per game frame |
 | OPT-SCB4 | Scoreboard outline paths are stored on each retained text cell. Outline OFF bypasses path creation and lookup entirely; outline ON lazily builds one path per cell and clears it only when the displayed text/font plan changes | Removes the old 35-slot raster-cache machinery and avoids outline work when the feature is disabled while retaining the existing drawText behavior | Cell text/font change / outline-enabled draw |
-| OPT-VFR1 | Software, OpenGL, Vulkan, DX12, and Metal presentation paths first compare only NDS identity plus emulated game frame. Only a same-frame candidate builds the extended visual-frame key containing config/font/state generations, menu language, output size, transform/origin, renderer generation, HUD toggle, and edit mode | Avoids the full 14-field key construction on every new emulated frame while retaining exact same-frame image/texture reuse and invalidation | Per presentation callback |
-| OPT-PERF1 | Developer-only HUD phase probe reports `HudStateRead`, scoreboard plan/raster, other painter, clear, hash, upload preparation, GPU upload, composite, and total-active timing with calls/sum/avg/p50/p95/max plus visual reuse, plan rebuild, structure-check, dynamic-cell, time-visual-change, outline-path, hash, and upload counters | Makes 60/120/144/240 Hz high-refresh regressions measurable without per-frame log spam | Aggregate once per second when `MELONPRIME_PERF=1` |
+| OPT-VFR1 | Software, OpenGL, Vulkan, DX12, and Metal presentation paths first probe only NDS identity plus emulated game frame. A new frame renders and commits the already-probed identity with its stamp after rendering; only a same-frame candidate constructs and compares the extended stamp containing config/font/state generations, menu language, output size, transform/origin, renderer generation, HUD toggle, and edit mode | Avoids the full 14-field stamp construction and duplicate game-frame probe on every new emulated frame while retaining exact same-frame image/texture reuse and invalidation | Per presentation callback |
+| OPT-PERF1 | Developer-only HUD phase probe reports `HudStateRead`, scoreboard plan/raster, other painter, clear, hash, upload preparation, GPU upload, composite, and total-active timing with calls/sum/avg/p50/p95/max plus visual render/reuse, identity-probe, stamp-check/commit, plan rebuild, structure-check, dynamic-cell, time-visual-change, outline-path, hash, and upload counters | Makes 60/120/144/240 Hz high-refresh regressions measurable without per-frame log spam | Aggregate once per second when `MELONPRIME_PERF=1` |
 
 ### Scoreboard render-plan and visual-frame reuse contract
 
@@ -353,6 +353,44 @@ and pixel-level visual regression across all hardware/backend combinations remai
 `NOT RUN`/`OPEN` in this environment. The Windows MinGW build and the available
 automated tests are the reproducible evidence recorded for this change; those tests
 do not substitute for physical GPU runtime coverage.
+
+### 2026-08-18 performance re-audit fixes
+
+The follow-up audit corrected the remaining source-level contract gaps without
+changing the retained `ScoreboardRenderPlan` design:
+
+- `HudVisualFrameIdentity` and `HudVisualFrameStamp` are separate. Each eligible
+  presentation probes `CustomHud_GetVisualGameFrame()` once; new frames render
+  before committing a stamp, while same-frame candidates perform the extended
+  stamp check. Developer counters expose identity probes, stamp checks, and
+  stamp commits in the one-second report.
+- DX12 now separates retained-layer readiness from upload completion. A reused
+  HUD layer is still drawn in every composition, and a changed frame uploads the
+  union of the previous and current dirty regions. The native Software path keeps
+  its existing clear/composite behavior.
+- Team-row and player-row Rank use one role-aware resolver in initial layout,
+  retained-plan construction, and dynamic updates. Stars retain full source
+  height so they can reappear after Rank width shrinks. Outline-path validity is
+  an explicit boolean, so empty glyph paths are not regenerated every draw.
+- Metal creates its `QPainter` lazily; an eligible same-frame reuse with no other
+  UI overlay therefore reuses the retained texture without constructing a
+  painter or rasterizing the HUD.
+
+Validation for this re-audit:
+
+- Windows MinGW Release existing-tree build passed, including the 82 registered
+  language Classic On-Screen Edit cases and the available Vulkan/presenter/XeLL
+  tests.
+- Windows MinGW Debug existing-tree build with
+  `MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON` is the developer-instrumentation
+  build used for source compilation. The renderer telemetry option remains a
+  separate compile-time switch and was not enabled by this HUD change.
+- Renderer zero-overhead, SRP/performance, GUI/EmuThread boundary,
+  Software-parity, `.inc` ownership, HUD-key, and config-default audits passed.
+- macOS/Metal compilation, physical DX12/Vulkan/Metal runtime, controlled
+  60/120/144/240 Hz A/B capture, GPU upload counters, and pixel-level
+  cross-backend comparison remain `NOT RUN`/`OPEN`; no runtime completion claim
+  is made from source/build evidence alone.
 
 ### HUD Auto-Scale System
 Automatic integer-based scaling that makes HUD elements readable at high resolutions without manual adjustment.

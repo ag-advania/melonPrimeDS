@@ -404,6 +404,7 @@ struct ScoreboardPlanText {
     QColor color;
     ScoreboardVisualValue visual;
     QPainterPath outlinePath;
+    bool outlinePathPrepared = false;
     qreal advance = 0.0;
     Qt::Alignment alignment = Qt::AlignLeft;
     bool rankFont = false;
@@ -422,6 +423,7 @@ struct ScoreboardPlanRow {
     QRectF hunterIconRect;
     QRectF starsRect;
     qreal starsFullW = 0.0;
+    qreal starsFullH = 0.0;
     uint8_t hunterId = 0xFF;
     uint8_t stars = 0xFF;
 };
