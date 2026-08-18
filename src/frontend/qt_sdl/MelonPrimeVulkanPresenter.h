@@ -154,6 +154,14 @@ public:
     // Presenter thread. Applies saved preferences without opening a latency
     // frame; startup uses this before emitting the first effective-state log.
     void SetLowLatencyPreferences(int reflexMode, bool antiLag2Enabled);
+    // The renderer publishes configuration requests, but only the presenter
+    // knows whether the vendor path is available and still accepted at
+    // runtime. Screen-panel admission must use this effective authority.
+    [[nodiscard]] bool HasEffectiveLowLatencyAuthority() const noexcept
+    {
+        return melonDS::VulkanHasEffectiveLowLatencyAuthority(
+            Reflex.IsActive(), AntiLag.IsActive());
+    }
     void SetGenericPresentPacingPolicy(int policy) noexcept { PresentPacer.SetPolicy(policy); }
     // Physical-pixel size of the current swapchain. Zero before the first
     // successful BeginFrame().

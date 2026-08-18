@@ -1587,7 +1587,7 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
     const bool waitForPresentSlot =
-        !vulkanRenderer || !vulkanRenderer->ShouldBypassPresentWait();
+        !vulkanRenderer || !vulkan->presenter.HasEffectiveLowLatencyAuthority();
     if (!vulkan->presenter.BeginFrame(
             physicalWidth, physicalHeight, waitForPresentSlot))
     {

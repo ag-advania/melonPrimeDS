@@ -63,19 +63,12 @@ public:
     [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept;
 
     // Configured low-latency settings, published for the emulation thread's
-    // beginVulkanLowLatencyFrame() call (EmuThread.cpp) and the Vulkan screen
-    // panel's present-slot admission policy. These are the values
+    // beginVulkanLowLatencyFrame() call (EmuThread.cpp). These are the values
     // SetRenderSettings() was given; the presenter separately capability-gates
-    // the VK_NV_low_latency2 / VK_AMD_anti_lag paths.
+    // the VK_NV_low_latency2 / VK_AMD_anti_lag paths and owns effective
+    // present-slot authority.
     [[nodiscard]] int GetNvidiaReflexMode() const noexcept { return NvidiaReflexMode; }
     [[nodiscard]] bool GetAmdAntiLag2Enabled() const noexcept { return AmdAntiLag2Enabled; }
-    [[nodiscard]] bool ShouldBypassPresentWait() const noexcept
-    {
-        // The renderer owns the configured low-latency policy. The presenter
-        // still owns capability checks and synchronization; unsupported vendor
-        // paths simply keep their existing safe failure/fallback behavior.
-        return NvidiaReflexMode != 0 || AmdAntiLag2Enabled;
-    }
 
     [[nodiscard]] VulkanRenderer3D* GetVulkanRenderer3D() noexcept;
     [[nodiscard]] const VulkanRenderer3D* GetVulkanRenderer3D() const noexcept;

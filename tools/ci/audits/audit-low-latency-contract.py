@@ -118,6 +118,7 @@ def main() -> int:
     vulkan_sync = read("src/VulkanSync.cpp")
     vulkan_sync_header = read("src/VulkanSync.h")
     vulkan_screen = read("src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp")
+    gpu_vulkan_header = read("src/GPU_Vulkan.h")
     vulkan_timeout_policy = read(
         "src/frontend/qt_sdl/MelonPrimeVulkanPresenterTimeout.cpp"
     )
@@ -439,6 +440,25 @@ def main() -> int:
         and "JustInTimeFifoLatestReady" in vulkan_pacer
         and "PresentPacer.ShouldUseFifoLatestReady()" in vulkan_presenter,
         "Vulkan behavioural pacing must default to telemetry-only and gate FIFO latest-ready",
+        failures,
+    )
+    require(
+        "VulkanHasEffectiveLowLatencyAuthority" in vulkan_pacing_policy
+        and "HasEffectiveLowLatencyAuthority() const noexcept" in vulkan_presenter_header
+        and "Reflex.IsActive(), AntiLag.IsActive()" in vulkan_presenter_header
+        and "HasEffectiveLowLatencyAuthority()" in vulkan_screen
+        and "ShouldBypassPresentWait" not in gpu_vulkan_header
+        and "ShouldBypassPresentWait" not in vulkan_screen
+        and all(
+            token in vulkan_timing_tests
+            for token in (
+                "TestEffectiveLowLatencyAuthority",
+                "configuration ON with an unavailable vendor extension",
+                "a Reflex runtime failure",
+                "an active Anti-Lag path",
+            )
+        ),
+        "present-slot admission must use effective presenter-owned vendor authority",
         failures,
     )
     require(
