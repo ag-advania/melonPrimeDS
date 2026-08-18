@@ -1398,7 +1398,6 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     SwapchainImageViews.assign(realImageCount, VK_NULL_HANDLE);
     SwapchainFramebuffers.assign(realImageCount, VK_NULL_HANDLE);
     RenderFinished.assign(realImageCount, VK_NULL_HANDLE);
-    ImagesInFlight.assign(realImageCount, VK_NULL_HANDLE);
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanSwapchainImageCount, realImageCount);
     VulkanPerf::SetCounter(
@@ -1527,7 +1526,6 @@ void VulkanPresenter::DestroySwapchainObjects(bool immediate)
     // The VkImages themselves belong to the swapchain and must not be
     // destroyed; only the views the presenter created are its own.
     SwapchainImages.clear();
-    ImagesInFlight.clear();
 }
 
 
@@ -1868,34 +1866,13 @@ bool VulkanPresenter::BeginFrame(
         return Fail("vkAcquireNextImageKHR", res);
     }
 
-    // A swapchain image may be handed out again while an earlier frame that
-    // targeted it is still executing (more images than frames in flight). The
-    // frame fence covers the slot, not the image, so the image gets its own
-    // wait. The current slot's fence is skipped: BeginFrame() has just reset
-    // it, and waiting on an unsignalled fence nothing will signal would hang.
-    if (CurrentImageIndex < ImagesInFlight.size())
-    {
-        VkFence imageFence = ImagesInFlight[CurrentImageIndex];
-        if (imageFence != VK_NULL_HANDLE && imageFence != frame->InFlightFence)
-        {
-            VkResult waitRes = VK_SUCCESS;
-            {
-                VulkanPerf::ScopedCpuTimer imageWaitTimer(
-                    VulkanPerf::CpuMetric::PresentImageFence);
-                waitRes = Device.Fns().WaitForFences(
-                    Device.GetHandle(), 1, &imageFence, VK_TRUE,
-                    PresenterImageFenceTimeoutNanoseconds());
-            }
-            if (waitRes != VK_SUCCESS)
-            {
-                Frames.SubmitFrame(Device.GetMainQueue());
-                CurrentCommandBuffer = VK_NULL_HANDLE;
-                return Fail("vkWaitForFences(swapchain image)", waitRes);
-            }
-        }
-        ImagesInFlight[CurrentImageIndex] = frame->InFlightFence;
-    }
-
+    // AcquireNextImageKHR has returned an image that the presentation engine
+    // has released for this submission. The acquire semaphore is waited at
+    // COLOR_ATTACHMENT_OUTPUT, so the render-pass transition and the first
+    // swapchain-image write are ordered after that release. No second host
+    // fence is needed here: frame-slot fences protect command buffers,
+    // staging, descriptors, and leases, while RenderFinished remains indexed
+    // by swapchain image for safe present-wait semaphore reuse.
     FrameOpen = true;
     CompositionOpen = false;
     return true;

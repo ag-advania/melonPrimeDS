@@ -441,10 +441,6 @@ private:
     // waiting on it. VulkanSync.h documents exactly this case.
     std::vector<VkSemaphore> RenderFinished;
 
-    // Fence of the frame that last targeted each swapchain image, so a frame
-    // never records into an image the GPU has not finished with.
-    std::vector<VkFence> ImagesInFlight;
-
     VkRenderPass RenderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout SetLayout = VK_NULL_HANDLE;
     VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;

@@ -62,25 +62,16 @@ int main()
         Require(
             MelonPrime::PresenterAcquireTimeoutNanoseconds() == 0,
             "acquire timeout environment override was not applied");
-        Require(
-            MelonPrime::PresenterImageFenceTimeoutNanoseconds() == expectedDefault,
-            "image-fence timeout inherited the acquire override");
 
         SetAcquireTimeoutEnvironment("123456789");
         Require(
             MelonPrime::PresenterAcquireTimeoutNanoseconds() == 123456789,
             "acquire timeout did not follow the configured value");
-        Require(
-            MelonPrime::PresenterImageFenceTimeoutNanoseconds() == expectedDefault,
-            "image-fence timeout changed with the acquire value");
 
         SetAcquireTimeoutEnvironment(nullptr);
         Require(
             MelonPrime::PresenterAcquireTimeoutNanoseconds() == expectedDefault,
             "acquire timeout default is incorrect");
-        Require(
-            MelonPrime::PresenterImageFenceTimeoutNanoseconds() == expectedDefault,
-            "image-fence timeout default is incorrect");
 
         std::cout << "Vulkan presenter timeout policy tests: PASS\n";
         return 0;

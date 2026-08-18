@@ -23,8 +23,8 @@ namespace
 {
 
 // Keep this aligned with VulkanSync's one-second frame-fence watchdog. It is
-// long enough not to affect normal frame intervals, while a stuck Linux WSI
-// or image fence cannot hold native-surface retirement forever.
+// long enough not to affect normal frame intervals while a stuck Linux WSI
+// cannot hold native-surface retirement forever.
 constexpr std::uint64_t kLinuxPresentationWaitTimeoutNanoseconds =
     1000ull * 1000ull * 1000ull;
 
@@ -54,17 +54,6 @@ std::uint64_t PresenterAcquireTimeoutNanoseconds() noexcept
     return static_cast<std::uint64_t>(parsed);
 }
 
-
-std::uint64_t PresenterImageFenceTimeoutNanoseconds() noexcept
-{
-    // Do not read MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS here. That variable is
-    // an acquire experiment and must not change the GPU/image-fence watchdog.
-#if defined(__linux__)  // scatter-budget-exempt: Linux Vulkan image-fence watchdog policy, not input/runtime dispatch
-    return kLinuxPresentationWaitTimeoutNanoseconds;
-#else
-    return std::numeric_limits<std::uint64_t>::max();
-#endif
-}
 
 } // namespace MelonPrime
 

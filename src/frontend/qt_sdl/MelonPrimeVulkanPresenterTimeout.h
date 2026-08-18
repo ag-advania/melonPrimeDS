@@ -19,9 +19,7 @@ namespace MelonPrime
 {
 
 // The environment override is deliberately scoped to vkAcquireNextImageKHR.
-// Image-fence waits use the fixed Linux presentation watchdog instead.
 std::uint64_t PresenterAcquireTimeoutNanoseconds() noexcept;
-std::uint64_t PresenterImageFenceTimeoutNanoseconds() noexcept;
 
 } // namespace MelonPrime
 
