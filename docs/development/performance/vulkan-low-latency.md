@@ -3,19 +3,23 @@
 This document records the implementation corresponding to the Vulkan
 low-latency instruction dated 2026-08-18. The presenter remains synchronized;
 the optimization is allowed to drop a presentation callback, never to reuse a
-busy slot or an acquired swapchain image.
+busy slot or an acquired swapchain image. The acquired-image synchronization
+contract is documented separately from the frame-slot admission contract so a
+zero image-fence counter cannot be mistaken for an unmeasured wait.
 
 ## Phase 0: telemetry contract
 
 The renderer-performance build reports the low-latency measurements required
 by the instruction without adding state or timing work to a normal build. The
 CPU samples cover presenter-begin, presenter-slot fence wait, swapchain image
-acquire, acquired-image fence wait, HUD upload, and queue submit. The counters
-cover busy-slot skips, acquired-image `VK_NOT_READY`, latency-budget skips,
-screen-frame reuse, screen-layer upload skips, direct/buffer output selection,
-swapchain image count, logical presenter depth, present mode, VSync, and vendor
-latency mode. GPU timestamps cover the raster/compositor/presenter stages when
-the telemetry build can create timestamp query pools.
+acquire, HUD upload, and queue submit. The legacy `present_image_fence` metric
+remains in the report schema as a required zero counter after the acquired-image
+host wait was removed. The other counters cover busy-slot skips,
+acquired-image `VK_NOT_READY`, latency-budget skips, screen-frame reuse,
+screen-layer upload skips, direct/buffer output selection, swapchain image
+count, logical presenter depth, present mode, VSync, and vendor latency mode.
+GPU timestamps cover the raster/compositor/presenter stages when the telemetry
+build can create timestamp query pools.
 
 The runtime matrix is kept separate from the implementation claim: a zero
 counter means that branch was not triggered by that workload, not that a
@@ -32,13 +36,42 @@ contract. When low-latency mode bypasses the wait,
 
 If the fence is not ready, the callback returns before swapchain acquisition,
 fence reset, command-buffer reset/begin, staging or descriptor reset, lease
-replacement, `ImagesInFlight` mutation, submit, and present. Only telemetry
-counters are updated. Blocking mode continues to use the existing bounded
-fence wait. Swapchain-image fence handling remains blocking and unchanged.
+replacement, submit, and present. Only telemetry counters are updated.
+Blocking mode continues to use the existing bounded frame-slot fence wait.
 
 The frame ring does not advance `CurrentIndex` until the readiness probe and
 command-buffer recording boundary have succeeded. This is the invariant that
 makes a busy skip a no-op for frame-ring state.
+
+### P0: acquired-image host fence removal
+
+The old `ImagesInFlight` array and its post-acquire `vkWaitForFences` were
+removed in commit `05a18fb7b`. The removal is safe because the static proof
+found no mutable application resource indexed by the acquired swapchain image:
+
+1. `SwapchainImages`, their image views, and their framebuffers are immutable
+   between swapchain recreations. Recreation drains the device before those
+   objects are destroyed.
+2. `RenderFinished` is the only synchronization object indexed by the acquired
+   image. It has one semaphore per real swapchain image and is selected with
+   `RenderFinished[CurrentImageIndex]`.
+3. `ImageAvailable`, command buffers, staging storage, transient descriptors,
+   frame leases, and frame fences remain owned by the frame-slot ring. Deferred
+   destruction is keyed by the submitted frame number, not by an image index.
+4. `vkAcquireNextImageKHR` returns the image and signals the frame-slot
+   `ImageAvailable` semaphore. The submit waits for that semaphore at
+   `COLOR_ATTACHMENT_OUTPUT`; the render-pass external dependency orders the
+   implicit acquired-image layout transition at the same stage.
+5. No screenshot/readback or other deferred callback retains a swapchain image
+   through `ImagesInFlight`. The `present_image_fence` telemetry field is kept
+   only to expose a zero post-removal measurement and compatibility with older
+   report parsers.
+
+Consequently, the normal path performs no host wait after acquire. The submit
+waits on the per-slot `ImageAvailable`, signals the per-image `RenderFinished`,
+and `vkQueuePresentKHR` waits on that per-image semaphore. Reuse is therefore
+ordered by the next acquire of the same swapchain image rather than by a
+second CPU fence wait.
 
 ### Phase 2: same renderer-frame screen retention
 
@@ -70,13 +103,21 @@ The counters are emitted in renderer performance telemetry:
 - `screen_frame_reuse_count`
 - `screen_layer_upload_skip_count`
 
-## Intentionally not implemented
+## Deferred experiments and gates
 
-Phase 3 image-fence non-blocking admission is not enabled. An acquired
-swapchain image still follows the existing blocking fence and lifecycle path;
-an acquired image is never abandoned by an early return. It should only be
-revisited after telemetry proves that wait is a material hotspot and a safe
-acquire/submit/present lifecycle is designed and tested.
+The optional two-image swapchain experiment is available only through
+`MELONPRIME_VULKAN_SWAPCHAIN_IMAGE_COUNT=2`. The default remains
+`minImageCount + 1`; the surface minimum/maximum remains authoritative. It is
+not promoted by source inspection alone. Promotion requires same-machine A/B
+evidence for latency, p95/p99, starvation/errors, fullscreen/windowed mode,
+NVIDIA/AMD, and FIFO/IMMEDIATE/MAILBOX where available.
+
+The direct-descriptor generation transition still has a rare `Frames.WaitIdle`
+when the renderer publishes a new resource lifetime. Moving that wait to a
+single renderer-transition boundary is deferred because resource recreation
+also occurs at resolution-dependent renderer lifecycle boundaries; removing it
+without proving that ordering would reintroduce use-after-destroy risk. It is
+not a steady-state same-generation path.
 
 The instruction's 60/120/144/240 Hz, VSync on/off, HUD, internal-resolution,
 and lifecycle matrix must be recorded per available physical environment.
@@ -89,8 +130,8 @@ Static and build checks:
 
 - `py -3 tools/ci/audits/audit-low-latency-contract.py`: PASS. The audit covers
   the pre-acquire readiness probe, the frame-ring no-op invariant, the screen
-  retention key, invalidation boundaries, and the single-`VkPresentIdKHR`
-  pNext-chain invariant.
+  retention key, invalidation boundaries, the single-`VkPresentIdKHR`
+  pNext-chain invariant, and the acquired-image no-host-fence proof.
 - `cmd /c tools\build\windows\build-mingw-existing.bat --jobs 1`: PASS.
 - `cmd /c tools\build\windows\build-mingw-existing.bat --build-dir
   build\debug-mingw-x86_64 --jobs 1`: PASS; 13 registered tests passed.
@@ -99,11 +140,12 @@ Static and build checks:
   completed with all 13 registered tests passing.
 - `git diff --check`: PASS.
 
-The matrix below retains the earlier telemetry measurements for comparison.
-Those captures were produced before the current-tree telemetry executable was
-rebuilt, so they are not used as exact-SHA evidence for the current worktree.
+The matrix below retains pre-P0 telemetry measurements for comparison. Those
+captures used the former acquired-image host fence path and are not evidence
+for the current post-P0 behavior; in particular, their nonzero
+`present_image_fence` values are historical.
 
-The telemetry-enabled runtime was previously executed on Windows with an NVIDIA GeForce
+The pre-P0 telemetry-enabled runtime was previously executed on Windows with an NVIDIA GeForce
 RTX 5070 Ti, Vulkan validation enabled, Reflex on, Anti-Lag 2 off, and three
 swapchain images/two logical presenter slots. The checked variants were Vulkan
 at 4x internal resolution with VSync off at 60/120/144/240 Hz, 16x at 240 Hz,
@@ -138,7 +180,7 @@ The HUD/scoreboard run also exercised the live Custom HUD renderer path:
 after loading savestate slot 4. The VSync-on run selected FIFO and reported
 `vsync_enabled=1`, `present_mode=2`.
 
-One validation-layer regression found during the run was a duplicate
+One validation-layer regression found during the pre-P0 run was a duplicate
 `VkPresentIdKHR` in `VkPresentInfoKHR` when Reflex and the generic Vulkan
 pacer were both active. `PreparePresent()` may already attach the legacy
 present-id node; EndFrame now adds its Reflex node only when that node is not
@@ -152,9 +194,8 @@ not claimed as pass evidence:
 - Linux runtime coverage: `NOT RUN`.
 - macOS/Metal and BSD runtime coverage: `NOT RUN` because those platforms are
   unavailable on this Windows host.
-- The instruction's Phase 3 nonblocking acquired-image fence path remains
-  intentionally unimplemented; the current code keeps the existing blocking
-  acquired-image lifecycle.
+- A post-P0 telemetry rerun that records `present_image_fence=0` under the same
+  workload is still required before claiming the runtime gate closed.
 
 ## Current-tree runtime smoke rerun
 
