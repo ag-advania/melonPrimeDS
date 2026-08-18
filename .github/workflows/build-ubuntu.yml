@@ -173,7 +173,9 @@ jobs:
     # No ROM is loaded here (CI cannot ship one). The smoke-only environment
     # switch keeps the Linux native child visible long enough to exercise the
     # full show -> snapshot -> surface -> presenter/swapchain path without
-    # changing normal no-ROM splash behavior.
+    # changing normal no-ROM splash behavior. Each validation profile gets its
+    # own settings file and log so Core, SyncVal, Best Practices and GPU-AV are
+    # separate gates rather than one blended result.
     #
     # At the 30s mark, timeout sends SIGTERM to xvfb-run, which tears down
     # its Xvfb server; melonPrimeDS then sees its X connection break and
@@ -188,24 +190,38 @@ jobs:
     # than patch upstream-owned Platform.cpp's buffering, force melonPrimeDS
     # itself unbuffered from here with stdbuf so every write() lands
     # immediately, independent of how or when the process is torn down.
-    - name: Run Vulkan validation smoke test
+    - name: Run Vulkan validation profile smoke tests
       if: matrix.arch.name == 'x86_64'
       run: |
         mkdir -p build-validation/portable
         printf '3D.Renderer = 3\nScreen.VSync = false\n' > build-validation/portable/melonDS.toml
-        set +e
-        MELONPRIME_VULKAN_SMOKE=1 SDL_AUDIODRIVER=dummy timeout 30s xvfb-run -a stdbuf -o0 -e0 ./build-validation/melonPrimeDS > build-validation/vulkan-validation.log 2>&1
-        status=$?
-        set -e
-        test "$status" -eq 0 -o "$status" -eq 124
-        python ./tools/ci/audits/verify-vulkan-linux-smoke.py build-validation/vulkan-validation.log
+        for profile in core sync best-practices gpu-av; do
+          python ./tools/testing/vulkan-validation-profile.py \
+            --profile "$profile" \
+            --output "build-validation/vk_layer_settings.txt"
+          set +e
+          (cd build-validation && \
+            MELONPRIME_VULKAN_SMOKE=1 SDL_AUDIODRIVER=dummy \
+            timeout 30s xvfb-run -a stdbuf -o0 -e0 ./melonPrimeDS \
+            > "vulkan-validation-$profile.log" 2>&1)
+          status=$?
+          set -e
+          test "$status" -eq 0 -o "$status" -eq 124
+          python ./tools/ci/audits/verify-vulkan-linux-smoke.py \
+            "build-validation/vulkan-validation-$profile.log"
+          python ./tools/ci/audits/verify-vulkan-validation-profile.py \
+            --profile "$profile" \
+            --log "build-validation/vulkan-validation-$profile.log" \
+            --settings build-validation/vk_layer_settings.txt
+        done
+        cp build-validation/vulkan-validation-sync.log build-validation/vulkan-validation.log
 
     # The smoke test above redirects the run to a log file it asserts
     # against without ever printing it, so a failure otherwise gives no
     # evidence to act on. Surface it unconditionally.
-    - name: Show Vulkan validation log
+    - name: Show Vulkan validation logs
       if: always() && matrix.arch.name == 'x86_64'
-      run: cat build-validation/vulkan-validation.log || true
+      run: cat build-validation/vulkan-validation-*.log || true
 
     # This diagnostic artifact is useful evidence, but a transient GitHub
     # artifact-service timeout must not prevent the release binary from being
@@ -219,7 +235,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: vulkan-validation-log-${{ matrix.arch.name }}
-        path: build-validation/vulkan-validation.log
+        path: build-validation/vulkan-validation-*.log
         archive: false
 
     - name: Wait before retrying Vulkan validation log upload
@@ -233,7 +249,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: vulkan-validation-log-${{ matrix.arch.name }}
-        path: build-validation/vulkan-validation.log
+        path: build-validation/vulkan-validation-*.log
         archive: false
         overwrite: true
 
@@ -248,7 +264,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: vulkan-validation-log-${{ matrix.arch.name }}
-        path: build-validation/vulkan-validation.log
+        path: build-validation/vulkan-validation-*.log
         archive: false
         overwrite: true
 
