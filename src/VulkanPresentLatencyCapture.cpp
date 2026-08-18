@@ -88,6 +88,8 @@ void VulkanPresentLatencyCapture::MarkInputSample() noexcept
     // over from a frame that never presented must not leak into this one.
     const u64 index = NextSampleIndex;
     const int reflexMode = Pending.ReflexMode;
+    AcquireOpen = false;
+    AcquireStartUs = 0;
     Pending = VulkanLatencySample{};
     Pending.SampleIndex = index;
     Pending.ReflexMode = reflexMode;
@@ -124,10 +126,47 @@ void VulkanPresentLatencyCapture::MarkPresentEnd() noexcept
     Pending.PresentEndUs = NowUs();
 }
 
+void VulkanPresentLatencyCapture::MarkAcquireStart() noexcept
+{
+    AcquireStartUs = NowUs();
+    AcquireOpen = true;
+}
+
+void VulkanPresentLatencyCapture::MarkAcquireEnd() noexcept
+{
+    if (!AcquireOpen)
+        return;
+    const u64 endUs = NowUs();
+    Pending.AcquireWaitUs = endUs >= AcquireStartUs ? endUs - AcquireStartUs : 0;
+    AcquireOpen = false;
+}
+
 void VulkanPresentLatencyCapture::SetGpuRenderBounds(u64 startUs, u64 endUs) noexcept
 {
     Pending.GpuRenderStartUs = startUs;
     Pending.GpuRenderEndUs = endUs;
+}
+
+void VulkanPresentLatencyCapture::SetFrameContext(
+    u64 logicalFrameId,
+    u64 reflexPresentId,
+    u32 swapchainImageIndex,
+    u32 frameSlot,
+    u32 swapchainImageCount,
+    u32 unavailableSwapchainImages,
+    u64 cpuLogicalFramesAhead,
+    u64 presenterLogicalDepth,
+    u64 gpuSubmittedFramesAhead) noexcept
+{
+    Pending.LogicalFrameId = logicalFrameId;
+    Pending.ReflexPresentId = reflexPresentId;
+    Pending.SwapchainImageIndex = swapchainImageIndex;
+    Pending.FrameSlot = frameSlot;
+    Pending.SwapchainImageCount = swapchainImageCount;
+    Pending.UnavailableSwapchainImages = unavailableSwapchainImages;
+    Pending.CpuLogicalFramesAhead = cpuLogicalFramesAhead;
+    Pending.PresenterLogicalDepth = presenterLogicalDepth;
+    Pending.GpuSubmittedFramesAhead = gpuSubmittedFramesAhead;
 }
 
 void VulkanPresentLatencyCapture::Commit(
@@ -179,7 +218,10 @@ bool VulkanPresentLatencyCapture::Flush()
     //                           one swapchain; the aggregator invalidates a
     //                           measured window that crosses a recreation
     std::fprintf(file,
-        "run_id,sample_index,present_id,"
+        "run_id,sample_index,logical_frame_id,reflex_present_id,present_id,"
+        "swapchain_image_index,frame_slot,swapchain_image_count,"
+        "unavailable_swapchain_images,cpu_logical_frames_ahead,"
+        "presenter_logical_depth,gpu_submitted_frames_ahead,acquire_wait_us,"
         "input_sample_time_us,sim_start_time_us,sim_end_time_us,"
         "render_submit_start_time_us,render_submit_end_time_us,"
         "present_start_time_us,present_end_time_us,"
@@ -201,7 +243,8 @@ bool VulkanPresentLatencyCapture::Flush()
     {
         const VulkanPresentPacer::StateSnapshot& p = sample.Pacing;
         std::fprintf(file,
-            "%s,%llu,%llu,"
+            "%s,%llu,%llu,%llu,%llu,"
+            "%u,%u,%u,%u,%llu,%llu,%llu,%llu,"
             "%llu,%llu,%llu,"
             "%llu,%llu,"
             "%llu,%llu,"
@@ -216,7 +259,17 @@ bool VulkanPresentLatencyCapture::Flush()
             "%u,%u,%u,%u\n",
             RunId.c_str(),
             static_cast<unsigned long long>(sample.SampleIndex),
+            static_cast<unsigned long long>(sample.LogicalFrameId),
+            static_cast<unsigned long long>(sample.ReflexPresentId),
             static_cast<unsigned long long>(sample.PresentId),
+            sample.SwapchainImageIndex,
+            sample.FrameSlot,
+            sample.SwapchainImageCount,
+            sample.UnavailableSwapchainImages,
+            static_cast<unsigned long long>(sample.CpuLogicalFramesAhead),
+            static_cast<unsigned long long>(sample.PresenterLogicalDepth),
+            static_cast<unsigned long long>(sample.GpuSubmittedFramesAhead),
+            static_cast<unsigned long long>(sample.AcquireWaitUs),
             static_cast<unsigned long long>(sample.InputSampleUs),
             static_cast<unsigned long long>(sample.SimStartUs),
             static_cast<unsigned long long>(sample.SimEndUs),

@@ -715,6 +715,50 @@ def main() -> int:
         "the latency capture flag must be independent of pacing and stage-query behaviour",
         failures,
     )
+    require(
+        all(
+            token in vulkan_latency_capture
+            for token in (
+                "logical_frame_id",
+                "reflex_present_id",
+                "swapchain_image_index",
+                "frame_slot",
+                "acquire_wait_us",
+                "CpuLogicalFramesAhead",
+                "PresenterLogicalDepth",
+                "GpuSubmittedFramesAhead",
+                "MarkAcquireStart",
+                "MarkAcquireEnd",
+                "SetFrameContext",
+            )
+        )
+        and all(
+            token in vulkan_perf
+            for token in (
+                "VulkanPresenterCpuLogicalAhead",
+                "VulkanPresenterGpuSubmittedAhead",
+                "VulkanPresenterUnavailableSwapchainImages",
+                "cpu_logical_ahead=%llu",
+                "gpu_submitted_ahead=%llu",
+                "unavailable_swapchain_images=%llu",
+            )
+        )
+        and all(
+            token in vulkan_presenter
+            for token in (
+                "LatencyCapture.MarkAcquireStart();",
+                "LatencyCapture.MarkAcquireEnd();",
+                "Frames.GetAbsoluteFrame()",
+                "LastAcceptedLogicalFrameId",
+                "UnavailableSwapchainImageCount",
+                "SwapchainImageUnavailable.assign",
+            )
+        )
+        and "ImagesInFlight" not in vulkan_presenter
+        and "fence map" in vulkan_presenter_header,
+        "Vulkan low-latency telemetry must expose logical/submit depth and bounded Acquire context without reintroducing image-fence ownership",
+        failures,
+    )
     # --- absolute / relative target scheduling ------------------------------
     # A surface may support presentAtRelativeTime and not presentAtAbsoluteTime,
     # which is the case on the driver this path was validated against. Requiring

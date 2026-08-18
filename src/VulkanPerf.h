@@ -131,6 +131,9 @@ enum class Counter : u32
     VulkanSwapchainImageCount,
     VulkanPresenterFramesInFlight,
     VulkanPresenterLogicalDepth,
+    VulkanPresenterCpuLogicalAhead,
+    VulkanPresenterGpuSubmittedAhead,
+    VulkanPresenterUnavailableSwapchainImages,
     VulkanPacingAuthority,
     VulkanPresentMode,
     VulkanVsyncEnabled,
@@ -500,6 +503,9 @@ inline void MaybeReport()
         count(Counter::VulkanSwapchainImageCount),
         count(Counter::VulkanPresenterFramesInFlight),
         count(Counter::VulkanPresenterLogicalDepth),
+        count(Counter::VulkanPresenterCpuLogicalAhead),
+        count(Counter::VulkanPresenterGpuSubmittedAhead),
+        count(Counter::VulkanPresenterUnavailableSwapchainImages),
         count(Counter::VulkanPacingAuthority),
         count(Counter::VulkanPresentMode), count(Counter::VulkanVsyncEnabled),
         count(Counter::VulkanReflexMode));
@@ -510,6 +516,12 @@ inline void MaybeReport()
         count(Counter::VulkanPresenterFramesInFlight);
     const unsigned long long presenterLogicalDepth =
         count(Counter::VulkanPresenterLogicalDepth);
+    const unsigned long long presenterCpuLogicalAhead =
+        count(Counter::VulkanPresenterCpuLogicalAhead);
+    const unsigned long long presenterGpuSubmittedAhead =
+        count(Counter::VulkanPresenterGpuSubmittedAhead);
+    const unsigned long long presenterUnavailableSwapchainImages =
+        count(Counter::VulkanPresenterUnavailableSwapchainImages);
     const unsigned long long pacingAuthority =
         count(Counter::VulkanPacingAuthority);
     const unsigned long long presentMode = count(Counter::VulkanPresentMode);
@@ -518,9 +530,13 @@ inline void MaybeReport()
     std::fprintf(stderr,
         "[VulkanPerf] summary renderer=Vulkan vsync=%llu present_mode=%llu "
         "vendor_pacing_authority=%llu reflex_mode=%llu "
-        "swapchain_backbuffer_count=%llu presenter_logical_depth=%llu\n",
+        "swapchain_backbuffer_count=%llu presenter_logical_depth=%llu "
+        "cpu_logical_ahead=%llu gpu_submitted_ahead=%llu "
+        "unavailable_swapchain_images=%llu\n",
         vsyncEnabled, presentMode, pacingAuthority, reflexMode,
-        swapchainImageCount, presenterLogicalDepth);
+        swapchainImageCount, presenterLogicalDepth,
+        presenterCpuLogicalAhead, presenterGpuSubmittedAhead,
+        presenterUnavailableSwapchainImages);
     for (SampleWindow& window : state.Cpu)
         window.Reset();
     state.Counters.fill(0);
@@ -530,6 +546,12 @@ inline void MaybeReport()
         presenterFramesInFlight;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterLogicalDepth)] =
         presenterLogicalDepth;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterCpuLogicalAhead)] =
+        presenterCpuLogicalAhead;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterGpuSubmittedAhead)] =
+        presenterGpuSubmittedAhead;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterUnavailableSwapchainImages)] =
+        presenterUnavailableSwapchainImages;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPacingAuthority)] =
         pacingAuthority;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPresentMode)] = presentMode;
@@ -683,6 +705,9 @@ enum class Counter : u32
     VulkanSwapchainImageCount,
     VulkanPresenterFramesInFlight,
     VulkanPresenterLogicalDepth,
+    VulkanPresenterCpuLogicalAhead,
+    VulkanPresenterGpuSubmittedAhead,
+    VulkanPresenterUnavailableSwapchainImages,
     VulkanPacingAuthority,
     VulkanPresentMode,
     VulkanVsyncEnabled,

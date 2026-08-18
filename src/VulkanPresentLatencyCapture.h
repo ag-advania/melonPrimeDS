@@ -44,7 +44,18 @@ namespace melonDS
 struct VulkanLatencySample
 {
     u64 SampleIndex = 0;
+    u64 LogicalFrameId = 0;
+    u64 ReflexPresentId = 0;
     u64 PresentId = 0;
+
+    u32 SwapchainImageIndex = 0;
+    u32 FrameSlot = 0;
+    u32 SwapchainImageCount = 0;
+    u32 UnavailableSwapchainImages = 0;
+    u64 CpuLogicalFramesAhead = 0;
+    u64 PresenterLogicalDepth = 0;
+    u64 GpuSubmittedFramesAhead = 0;
+    u64 AcquireWaitUs = 0;
 
     u64 InputSampleUs = 0;
     u64 SimStartUs = 0;
@@ -83,9 +94,21 @@ public:
     void MarkRenderSubmitEnd() noexcept;
     void MarkPresentStart() noexcept;
     void MarkPresentEnd() noexcept;
+    void MarkAcquireStart() noexcept;
+    void MarkAcquireEnd() noexcept;
 
     void SetGpuRenderBounds(u64 startUs, u64 endUs) noexcept;
     void SetReflexMode(int mode) noexcept { Pending.ReflexMode = mode; }
+    void SetFrameContext(
+        u64 logicalFrameId,
+        u64 reflexPresentId,
+        u32 swapchainImageIndex,
+        u32 frameSlot,
+        u32 swapchainImageCount,
+        u32 unavailableSwapchainImages,
+        u64 cpuLogicalFramesAhead,
+        u64 presenterLogicalDepth,
+        u64 gpuSubmittedFramesAhead) noexcept;
 
     // Closes the frame and stores it. Called once per accepted present.
     void Commit(u64 presentId, const VulkanPresentPacer::StateSnapshot& pacing) noexcept;
@@ -101,6 +124,8 @@ private:
     std::string OutputPath;
     u64 StartTicks = 0;
     u64 NextSampleIndex = 0;
+    u64 AcquireStartUs = 0;
+    bool AcquireOpen = false;
     VulkanLatencySample Pending{};
     std::vector<VulkanLatencySample> Samples;
 };
@@ -121,9 +146,12 @@ public:
     void MarkRenderSubmitEnd() noexcept {}
     void MarkPresentStart() noexcept {}
     void MarkPresentEnd() noexcept {}
+    void MarkAcquireStart() noexcept {}
+    void MarkAcquireEnd() noexcept {}
 
     void SetGpuRenderBounds(u64, u64) noexcept {}
     void SetReflexMode(int) noexcept {}
+    void SetFrameContext(u64, u64, u32, u32, u32, u32, u64, u64, u64) noexcept {}
     void Commit(u64, const VulkanPresentPacer::StateSnapshot&) noexcept {}
     bool Flush() { return true; }
 };

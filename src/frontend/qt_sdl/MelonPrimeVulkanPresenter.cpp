@@ -652,9 +652,28 @@ bool VulkanPresenter::CreateDeviceObjects()
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresenterFramesInFlight,
         Frames.GetFramesInFlight());
+    const u64 submittedFrameCount = Frames.GetAbsoluteFrame() > 0
+        ? Frames.GetAbsoluteFrame() - 1
+        : 0;
+    const u64 completedFrame = Frames.GetCompletedFrame();
+    const u64 presenterLogicalDepth = submittedFrameCount > completedFrame
+        ? submittedFrameCount - completedFrame
+        : 0;
+    const u64 cpuLogicalAhead = LowLatencyFrameIndex > LastAcceptedLogicalFrameId
+        ? LowLatencyFrameIndex - LastAcceptedLogicalFrameId
+        : 0;
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresenterLogicalDepth,
-        Frames.GetFramesInFlight());
+        presenterLogicalDepth);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterCpuLogicalAhead,
+        cpuLogicalAhead);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterGpuSubmittedAhead,
+        presenterLogicalDepth);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages,
+        UnavailableSwapchainImageCount);
 
     if (!CreateSamplers())
         return false;
@@ -1395,6 +1414,10 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         return Fail("vkGetSwapchainImagesKHR", res);
     SwapchainImages.resize(realImageCount);
 
+    SwapchainImageUnavailable.assign(realImageCount, false);
+    UnavailableSwapchainImageCount = 0;
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages, 0);
     SwapchainImageViews.assign(realImageCount, VK_NULL_HANDLE);
     SwapchainFramebuffers.assign(realImageCount, VK_NULL_HANDLE);
     RenderFinished.assign(realImageCount, VK_NULL_HANDLE);
@@ -1529,6 +1552,10 @@ void VulkanPresenter::DestroySwapchainObjects(bool immediate)
     // The VkImages themselves belong to the swapchain and must not be
     // destroyed; only the views the presenter created are its own.
     SwapchainImages.clear();
+    SwapchainImageUnavailable.clear();
+    UnavailableSwapchainImageCount = 0;
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages, 0);
 }
 
 
@@ -1821,6 +1848,7 @@ bool VulkanPresenter::BeginFrame(
 #endif
     {
         VulkanPerf::ScopedCpuTimer acquireTimer(VulkanPerf::CpuMetric::PresentAcquire);
+        LatencyCapture.MarkAcquireStart();
         res = Device.Fns().AcquireNextImageKHR(
             Device.GetHandle(),
             Swapchain,
@@ -1828,6 +1856,7 @@ bool VulkanPresenter::BeginFrame(
             frame->ImageAvailable,
             VK_NULL_HANDLE,
             &CurrentImageIndex);
+        LatencyCapture.MarkAcquireEnd();
     }
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (acquirePerfEnabled)
@@ -1839,6 +1868,19 @@ bool VulkanPresenter::BeginFrame(
         VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireWaitNs, waitNs);
     }
 #endif
+
+    if ((res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR)
+        && CurrentImageIndex < SwapchainImageUnavailable.size()
+        && !SwapchainImageUnavailable[CurrentImageIndex])
+    {
+        // A successful acquire is the only availability observation needed by
+        // this diagnostic. It is not synchronization and never gates reuse.
+        SwapchainImageUnavailable[CurrentImageIndex] = true;
+        ++UnavailableSwapchainImageCount;
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages,
+            UnavailableSwapchainImageCount);
+    }
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR)
     {
@@ -2465,9 +2507,9 @@ bool VulkanPresenter::EndFrame()
         // Anti-Lag's PRESENT stage is specified to be issued immediately before
         // vkQueuePresentKHR, with the frame index its INPUT partner used. Keep
         // the update under the same queue lock so contention cannot separate
-        // the vendor marker from the queue operation. The index is the Reflex
-        // frame id when Reflex is running and the presenter's own absolute
-        // frame counter otherwise -- see BeginLowLatencyFrame.
+        // the vendor marker from the queue operation. The index is the logical
+        // emulated frame ID allocated by EmuThread, shared with Reflex when
+        // it is active -- see BeginLowLatencyFrame.
         AntiLag.EndFrame(LowLatencyFrameIndex);
 
         if (tagLatency)
@@ -2489,16 +2531,57 @@ bool VulkanPresenter::EndFrame()
 
     PresentPacer.NotifyPresentResult(res, genericPresentMetadata);
 
+    const bool presentAccepted = res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR;
+    const u64 logicalFrameId = LowLatencyFrameIndex;
+    const u64 cpuLogicalAhead = logicalFrameId > LastAcceptedLogicalFrameId
+        ? logicalFrameId - LastAcceptedLogicalFrameId
+        : 0;
+    const u64 submittedFrameCount = Frames.GetAbsoluteFrame() > 0
+        ? Frames.GetAbsoluteFrame() - 1
+        : 0;
+    const u64 completedFrame = Frames.GetCompletedFrame();
+    const u64 presenterLogicalDepth = submittedFrameCount > completedFrame
+        ? submittedFrameCount - completedFrame
+        : 0;
+
     // Only a present the engine accepted is a measurable frame. Recording the
     // rejected ones would mix "displayed at time T" with "never displayed".
     // This runs after NotifyPresentResult so the row's presentation sequence is
     // the one this present just committed.
-    if (LatencyCapture.IsEnabled() && (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR))
+    if (LatencyCapture.IsEnabled() && presentAccepted)
     {
         LatencyCapture.SetReflexMode(static_cast<int>(Reflex.GetMode()));
+        LatencyCapture.SetFrameContext(
+            logicalFrameId,
+            tagLatency ? latencyFrameId : 0,
+            CurrentImageIndex,
+            Frames.GetFrameIndex(),
+            static_cast<u32>(SwapchainImages.size()),
+            UnavailableSwapchainImageCount,
+            cpuLogicalAhead,
+            presenterLogicalDepth,
+            presenterLogicalDepth);
         LatencyCapture.Commit(
             genericPresentMetadata.LogicalId,
             PresentPacer.CaptureState(genericPresentMetadata));
+    }
+
+    if (presentAccepted)
+    {
+        if (logicalFrameId > LastAcceptedLogicalFrameId)
+            LastAcceptedLogicalFrameId = logicalFrameId;
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterLogicalDepth,
+            presenterLogicalDepth);
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterCpuLogicalAhead,
+            cpuLogicalAhead);
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterGpuSubmittedAhead,
+            presenterLogicalDepth);
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages,
+            UnavailableSwapchainImageCount);
     }
 
     // Not a marker: this is vkLatencySleepNV's "once between presents"
@@ -2683,6 +2766,8 @@ void VulkanPresenter::BeginLowLatencyFrame(
     // owned by EmuThread, so turning either feature off does not create a
     // presenter-local counter with different semantics.
     LowLatencyFrameIndex = logicalFrameId;
+    if (LastAcceptedLogicalFrameId == 0 && logicalFrameId > 0)
+        LastAcceptedLogicalFrameId = logicalFrameId - 1;
 
     // Anti-Lag's INPUT stage, specified to be issued immediately before the
     // application reads input -- the same point the Reflex sleep just returned

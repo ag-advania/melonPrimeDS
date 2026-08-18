@@ -414,6 +414,10 @@ private:
     // when Reflex is unavailable, Anti-Lag still uses the same logical-frame
     // semantics rather than creating a presenter-local counter.
     melonDS::u64 LowLatencyFrameIndex = 0;
+    // Last logical emulated frame whose present was accepted by WSI. The
+    // difference from LowLatencyFrameIndex is a diagnostic CPU-ahead gauge;
+    // it never participates in synchronization or frame admission.
+    melonDS::u64 LastAcceptedLogicalFrameId = 0;
     // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
     // logs a transition once instead of every frame.
     int LoggedReflexMode = -1;
@@ -431,6 +435,12 @@ private:
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     VkExtent2D SwapchainExtent{0, 0};
     std::vector<VkImage> SwapchainImages;
+    // Diagnostic WSI availability estimate only. This is deliberately not a
+    // fence map: AcquireNextImageKHR itself is the observation that an image
+    // became available, and the bit is set again for the current presentation.
+    // It must never be used to gate, wait, or recreate the swapchain.
+    std::vector<bool> SwapchainImageUnavailable;
+    melonDS::u32 UnavailableSwapchainImageCount = 0;
     std::vector<VkImageView> SwapchainImageViews;
     std::vector<VkFramebuffer> SwapchainFramebuffers;
 
