@@ -103,6 +103,37 @@ The counters are emitted in renderer performance telemetry:
 - `screen_frame_reuse_count`
 - `screen_layer_upload_skip_count`
 
+### Phase 3: bounded low-latency swapchain Acquire
+
+The low-latency presenter path now gives `vkAcquireNextImageKHR` its own
+bounded policy. The existing normal path is unchanged:
+
+| Presenter path | Timeout source | Default on Windows | Evaluation |
+| --- | --- | ---: | --- |
+| `waitForPresentSlot=true` | `MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS` | `UINT64_MAX` | cached once |
+| `waitForPresentSlot=false` | `MELONPRIME_VULKAN_LOW_LATENCY_ACQUIRE_TIMEOUT_NS` | `500000 ns` | cached once |
+
+The low-latency override is an A/B control. Values `0`, `250000`, `500000`,
+and `1000000` ns are accepted; the environment is not read from the frame
+loop. The initial default is the finite 500 us candidate, not an unconditional
+zero, so a real driver/display comparison can choose the final budget.
+
+When a bounded low-latency Acquire returns `VK_TIMEOUT` or `VK_NOT_READY`, no
+swapchain image or `ImageAvailable` signal exists. The presenter marks
+`LastBeginLatencySkip`, submits the empty logical frame-ring frame, retires the
+logical frame, and retries on the next callback. The result is not classified
+as surface loss, device loss, or swapchain recreation. The existing
+`EmuThread` low-latency finish boundary therefore still closes the Reflex
+logical frame. No post-success image fence wait, `vkDeviceWaitIdle`, sleep, or
+spin was added.
+
+Telemetry adds the selected `acquire_timeout_ns`, low-latency attempt/skip
+counters, and `acquire_repeat_image_index_count`. The last field counts
+consecutive successful acquisitions returning the same swapchain image index;
+it is a validation probe and explicitly is **not** queue-ownership telemetry.
+The existing Acquire wait, not-ready, and latency-budget skip counters remain
+unchanged.
+
 ## Deferred experiments and gates
 
 The optional two-image swapchain experiment is available only through
@@ -129,7 +160,8 @@ treated as pass evidence.
 Static and build checks:
 
 - `py -3 tools/ci/audits/audit-low-latency-contract.py`: PASS. The audit covers
-  the pre-acquire readiness probe, the frame-ring no-op invariant, the screen
+  the pre-acquire readiness probe, the cached low-latency Acquire timeout and
+  timeout-skip retirement contract, the frame-ring no-op invariant, the screen
   retention key, invalidation boundaries, the single-`VkPresentIdKHR`
   pNext-chain invariant, and the acquired-image no-host-fence proof.
 - `cmd /c tools\build\windows\build-mingw-existing.bat --jobs 1`: PASS.
@@ -259,3 +291,29 @@ A/B latency and p95/p99 coverage across the relevant VSync/present-mode,
 window/fullscreen, refresh-rate, and available vendor matrix; this run covers
 only one Windows/NVIDIA workload. The default remains the surface-authorized
 3-image policy until that broader gate is closed.
+
+## Post-P1 bounded-Acquire runtime evidence
+
+The exact telemetry executable used for the post-P1 runs has SHA256
+`0E9410B8D75CDDFCD0EB94570F1F2BCB8E682DE2746E80EB144EAEAE6DAD75E4`.
+The detailed run record is
+[`docs/audit/vulkan_reflex_acquire_budget_2026-08-18.md`](../../audit/vulkan_reflex_acquire_budget_2026-08-18.md).
+It covers the same Windows/NVIDIA machine, ROM, `.ml4` slot 4, windowed 4x
+Vulkan workload, validation marker, and no VUID/device-lost/fatal markers.
+
+The 3-image A/B selected every requested timeout value in a fresh process.
+At 60-target FPS the low-latency path recorded 61 attempts and zero skips for
+each value; the 144/240-target runs recorded 145/224 attempts and zero skips.
+The 2-image experiment also recorded 61 attempts and zero skips, so it remains
+an experiment rather than a promoted default. The 500 us VSync-on run selected
+FIFO (`present_mode=2`, `vsync_enabled=1`). A Custom HUD + scoreboard-on run
+reported `hud_upload_B=147091008`, `scoreboard_raster` p50 642.5 us, and 61
+low-latency Acquire attempts.
+
+The available workload did not produce a real `VK_TIMEOUT`/`VK_NOT_READY`
+Acquire skip, so the runtime stress gate for nonzero skip rate remains
+`OPEN`; the fake/contract tests and source audit cover the skip semantics. A
+DX12 run is recorded as a renderer-health comparison only: its Debug/developer
+build and native `frame_ms` report are not a Vulkan Acquire-latency parity
+claim. Reflex Boost, Linux/AMD, fullscreen, and a controlled GPU-saturation
+skip run remain `NOT RUN`/`OPEN`.

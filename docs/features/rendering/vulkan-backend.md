@@ -645,10 +645,13 @@ Set `MELONPRIME_PERF=1` before starting the application to enable the existing
 `[MelonPrimePerf]` frame report and Vulkan's `[VulkanPerf]` stage report. The
 Vulkan report emits 1 Hz p50/p95/p99/max CPU timings for raster-fence wait,
 texture-cache update, polygon preparation, descriptor updates, structured-plane
-packing, software 2D, acquire/image-fence waits, HUD upload and queue submission.
-Its counter line records geometry expansion, copy/upload bytes, descriptor writes,
-texture-staging scratch fallback and compositor drops. The scale-change log also
-splits the raster, compositor-device and compositor-host allocation estimates.
+packing, software 2D, Acquire waits, HUD upload and queue submission. Its
+counter line records the selected `acquire_timeout_ns`, low-latency Acquire
+attempt/skip counts, the validation-only repeated-image-index probe (not queue
+ownership), the retained zero `present_image_fence` measurement, geometry
+expansion, copy/upload bytes, descriptor writes, texture-staging scratch
+fallback and compositor drops. The scale-change log also splits the raster,
+compositor-device and compositor-host allocation estimates.
 The gate is off by default and the disabled path does no timestamp sampling.
 
 For present-pacing A/B measurement there is a separate build option,
