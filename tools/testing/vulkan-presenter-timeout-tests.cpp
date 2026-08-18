@@ -92,8 +92,14 @@ int main()
             "low-latency acquire timeout environment override was not applied");
 
         SetLowLatencyAcquireTimeoutEnvironment("0");
+        MelonPrime::ResetPresenterAcquireTimeoutCachesForTesting();
         Require(
-            MelonPrime::PresenterLowLatencyAcquireTimeoutNanoseconds() == 250000,
+            MelonPrime::PresenterLowLatencyAcquireTimeoutNanoseconds() == 0,
+            "zero low-latency acquire timeout was not accepted");
+
+        SetLowLatencyAcquireTimeoutEnvironment("1000000");
+        Require(
+            MelonPrime::PresenterLowLatencyAcquireTimeoutNanoseconds() == 0,
             "low-latency acquire timeout was not cached");
 
         SetLowLatencyAcquireTimeoutEnvironment(nullptr);

@@ -255,6 +255,80 @@ def main() -> int:
         failures,
     )
     require(
+        "PresenterLowLatencyAcquireTimeoutNanoseconds" in vulkan_timeout_header
+        and "PresenterLowLatencyAcquireTimeoutNanoseconds" in vulkan_timeout_policy
+        and "MELONPRIME_VULKAN_LOW_LATENCY_ACQUIRE_TIMEOUT_NS" in vulkan_timeout_policy
+        and "kDefaultLowLatencyAcquireTimeoutNanoseconds" in vulkan_timeout_policy
+        and "CachedTimeout" in vulkan_timeout_policy
+        and "std::atomic" in vulkan_timeout_policy
+        and "std::getenv" not in presenter_begin
+        and ordered(
+            presenter_begin,
+            [
+                "const bool lowLatencyAcquire = !waitForPresentSlot;",
+                "const u64 acquireTimeoutNs = lowLatencyAcquire",
+                "PresenterLowLatencyAcquireTimeoutNanoseconds()",
+                "PresenterAcquireTimeoutNanoseconds()",
+                "Device.Fns().AcquireNextImageKHR(",
+                "acquireTimeoutNs,",
+            ],
+        ),
+        "Vulkan low-latency Acquire must use a cached, separately bounded timeout policy",
+        failures,
+    )
+    require(
+        ordered(
+            presenter_begin,
+            [
+                "if (res == VK_TIMEOUT || res == VK_NOT_READY)",
+                "LastBeginLatencySkip = true;",
+                "VulkanAcquireLowLatencySkipCount",
+                "VulkanPresentSkippedForLatencyBudgetCount",
+                "Frames.SubmitFrame(Device.GetMainQueue());",
+                "return false;",
+                "else if (res != VK_SUCCESS)",
+            ]
+        )
+        and all(
+            token in vulkan_perf
+            for token in (
+                "VulkanAcquireTimeoutNs",
+                "VulkanAcquireLowLatencyAttemptCount",
+                "VulkanAcquireLowLatencySkipCount",
+                "VulkanAcquireRepeatImageIndexCount",
+                "acquire_timeout_ns=%llu",
+                "acquire_low_latency_attempt_count=%llu",
+                "acquire_low_latency_skip_count=%llu",
+                "acquire_repeat_image_index_count=%llu",
+            )
+        )
+        and all(
+            token in vulkan_presenter
+            for token in (
+                "VulkanAcquireLowLatencyAttemptCount",
+                "VulkanAcquireLowLatencySkipCount",
+                "VulkanAcquireRepeatImageIndexCount",
+            )
+        )
+        and "This is not queue ownership" in vulkan_presenter_header,
+        "Acquire timeout/not-ready must retire an intentional logical skip and expose the correct telemetry names",
+        failures,
+    )
+    require(
+        all(
+            "VulkanAcquireQueueOwnershipTransferCount" not in source
+            for source in (
+                vulkan_perf,
+                vulkan_presenter,
+                vulkan_presenter_header,
+                vulkan_timeout_policy,
+                vulkan_timeout_header,
+            )
+        ),
+        "Acquire repeat-image telemetry must not be mislabeled as queue ownership transfer",
+        failures,
+    )
+    require(
         "if (tagLatency && !genericPresentMetadata.LegacyIdAttached)" in vulkan_presenter
         and "must not both" in vulkan_presenter
         and "same correlation value" in vulkan_presenter,
