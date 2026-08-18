@@ -375,7 +375,20 @@ inline void MaybeReport()
     {
         const SampleWindow& window = state.Cpu[index];
         if (window.Count == 0)
+        {
+            // The acquired-image host fence wait was removed from the normal
+            // presenter path. Keep its historical report field explicit so a
+            // telemetry consumer can distinguish "zero waits" from a missing
+            // sample while older report parsers remain compatible.
+            if (index == static_cast<std::size_t>(CpuMetric::PresentImageFence))
+            {
+                std::fprintf(stderr,
+                    "[VulkanPerf] cpu scale=%u name=%s p50_us=0.00 p95_us=0.00 "
+                    "p99_us=0.00 max_us=0.00 n=0\n",
+                    state.Scale, CpuMetricNames[index]);
+            }
             continue;
+        }
         std::fprintf(stderr,
             "[VulkanPerf] cpu scale=%u name=%s p50_us=%.2f p95_us=%.2f p99_us=%.2f max_us=%.2f n=%zu\n",
             state.Scale, CpuMetricNames[index],
