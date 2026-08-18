@@ -22,6 +22,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <memory>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <vector>

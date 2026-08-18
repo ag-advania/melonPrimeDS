@@ -68,6 +68,8 @@ struct VulkanDeviceState
     VulkanLowLatencyStatus AmdAntiLag;
     bool GenericPresentTimingRequested = false;
     VulkanPresentTimingDeviceFeatures PresentTimingFeatures{};
+    bool DeviceFaultEnabled = false;
+    std::atomic<bool> DeviceFaultReported{false};
     mutable std::mutex QueueMutex;
     mutable std::mutex MemoryMutex;
     std::atomic<u32> MemoryAllocationCount{0};
@@ -403,6 +405,76 @@ void VulkanDevice::ReleaseMemoryAllocation(u32 memoryTypeIndex, VkDeviceSize siz
         State->MemoryAllocationCount.load(std::memory_order_relaxed);
 }
 
+void VulkanDevice::ReportDeviceLost(const char* operation) const
+{
+    if (!State || !State->DeviceFaultEnabled
+        || State->DeviceFaultReported.exchange(true, std::memory_order_acq_rel))
+        return;
+
+    const PFN_vkGetDeviceFaultInfoEXT getFaultInfo = State->DeviceFns.GetDeviceFaultInfoEXT;
+    if (!getFaultInfo)
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] device lost during %s; VK_EXT_device_fault entry point unavailable\n",
+            operation ? operation : "unknown operation");
+        return;
+    }
+
+    VkDeviceFaultCountsEXT counts{};
+    counts.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT;
+    VkResult res = getFaultInfo(State->Device, &counts, nullptr);
+    if (res != VK_SUCCESS && res != VK_INCOMPLETE)
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] device lost during %s; vkGetDeviceFaultInfoEXT counts failed: %s\n",
+            operation ? operation : "unknown operation",
+            Vk::FormatResult(res).c_str());
+        return;
+    }
+
+    std::vector<VkDeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+    std::vector<VkDeviceFaultVendorInfoEXT> vendors(counts.vendorInfoCount);
+    VkDeviceFaultInfoEXT info{};
+    info.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
+    info.pAddressInfos = addresses.empty() ? nullptr : addresses.data();
+    info.pVendorInfos = vendors.empty() ? nullptr : vendors.data();
+    // Do not allocate or print vendorBinarySize here. The binary can be large;
+    // release logs keep only availability metadata and a developer artifact
+    // collector can opt into copying it later.
+    info.pVendorBinaryData = nullptr;
+    res = getFaultInfo(State->Device, &counts, &info);
+    if (res != VK_SUCCESS && res != VK_INCOMPLETE)
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] device lost during %s; vkGetDeviceFaultInfoEXT info failed: %s\n",
+            operation ? operation : "unknown operation",
+            Vk::FormatResult(res).c_str());
+        return;
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "[Vulkan] device fault diagnostics operation=%s description=\"%s\" "
+        "address-info=%u vendor-info=%u vendor-binary=%llu bytes\n",
+        operation ? operation : "unknown operation",
+        info.description[0] ? info.description : "<none>",
+        counts.addressInfoCount,
+        counts.vendorInfoCount,
+        static_cast<unsigned long long>(counts.vendorBinarySize));
+    for (const VkDeviceFaultVendorInfoEXT& vendor : vendors)
+    {
+        Platform::Log(
+            Platform::LogLevel::Debug,
+            "[Vulkan] device fault vendor-info description=\"%s\" code=%llu data=%llu\n",
+            vendor.description[0] ? vendor.description : "<none>",
+            static_cast<unsigned long long>(vendor.vendorFaultCode),
+            static_cast<unsigned long long>(vendor.vendorFaultData));
+    }
+}
+
 bool VulkanDevice::HasSharedDevice(const VulkanContext& context) noexcept
 {
     std::lock_guard<std::mutex> lock(SharedDeviceMutex);
@@ -599,6 +671,13 @@ bool VulkanDevice::Create(
     if (Profile.RequiresPortabilitySubset)
         EnabledExtensions.push_back(PortabilitySubsetExtensionName);
 
+    // VK_EXT_device_fault is optional diagnostics. It is enabled only when the
+    // physical-device feature probe confirmed deviceFault, so a driver that
+    // merely advertises the extension cannot make device creation invalid.
+    if (Profile.HasDeviceFault
+        && Vk::FeatureProbe::HasExtension(available, "VK_EXT_device_fault"))
+        EnabledExtensions.push_back("VK_EXT_device_fault");
+
     // --- optional vendor low-latency extensions -----------------------------
     //
     // Everything below is strictly additive: a device that cannot do any of it
@@ -615,12 +694,23 @@ bool VulkanDevice::Create(
     VkPhysicalDevicePresentWait2FeaturesKHR presentWait2Features{};
     VkPhysicalDevicePresentTimingFeaturesEXT presentTimingFeatures{};
     VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR latestReadyFeatures{};
+    VkPhysicalDeviceFaultFeaturesEXT deviceFaultFeatures{};
     const void* featureChain = nullptr;
 
     const auto chain = [&featureChain](auto& feature) {
         feature.pNext = const_cast<void*>(featureChain);
         featureChain = &feature;
     };
+
+    if (Profile.HasDeviceFault
+        && Vk::FeatureProbe::HasExtension(available, "VK_EXT_device_fault"))
+    {
+        deviceFaultFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
+        deviceFaultFeatures.deviceFault = VK_TRUE;
+        deviceFaultFeatures.deviceFaultVendorBinary = VK_FALSE;
+        chain(deviceFaultFeatures);
+        State->DeviceFaultEnabled = true;
+    }
 
     if (lowLatency.NvLowLatency2 || lowLatency.AmdAntiLag
         || lowLatency.GenericPresentTiming)
@@ -911,7 +1001,8 @@ bool VulkanDevice::Create(
         context.Fns().CreateDevice(PhysicalDevice, &createInfo, nullptr, &Device);
 
     if (res != VK_SUCCESS
-        && (NvLowLatency2.Enabled || AmdAntiLag.Enabled || genericPresentExtensionsEnabled))
+        && (NvLowLatency2.Enabled || AmdAntiLag.Enabled || genericPresentExtensionsEnabled
+            || State->DeviceFaultEnabled))
     {
         // A vendor latency extension must never be the reason the renderer
         // fails to start. The driver accepted every extension name and every
@@ -920,7 +1011,7 @@ bool VulkanDevice::Create(
         // and the loss is reported instead of propagated.
         const std::string firstAttempt = Vk::FormatResult(res);
         Platform::Log(Platform::LogLevel::Warn,
-            "[Vulkan] vkCreateDevice rejected the low-latency extensions (%s); "
+            "[Vulkan] vkCreateDevice rejected optional extensions (%s); "
             "retrying without them\n",
             firstAttempt.c_str());
 
@@ -940,7 +1031,8 @@ bool VulkanDevice::Create(
                         || std::strcmp(name, VK_EXT_PRESENT_TIMING_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME) == 0
                         || std::strcmp(
-                            name, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0;
+                            name, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0
+                        || std::strcmp(name, "VK_EXT_device_fault") == 0;
                 }),
             EnabledExtensions.end());
 
@@ -962,6 +1054,7 @@ bool VulkanDevice::Create(
         // survives it either. Leaving these set would let the pacer request a
         // target time through entry points this device never enabled.
         State->PresentTimingFeatures = VulkanPresentTimingDeviceFeatures{};
+        State->DeviceFaultEnabled = false;
 
         createInfo.pNext = nullptr;
         createInfo.enabledExtensionCount = static_cast<u32>(EnabledExtensions.size());

@@ -232,6 +232,7 @@ struct DeviceProbeResult
     bool HasDebugMarkerSupport = false;
     bool HasNvLowLatency2 = false;
     bool HasAmdAntiLag = false;
+    bool HasDeviceFault = false;
 
     // Higher is better. Discrete GPUs outrank integrated, which outrank
     // software rasterizers; ties break on supported internal resolution.

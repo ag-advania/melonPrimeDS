@@ -472,6 +472,10 @@ void VulkanRenderer3D::SetRuntimeFailure(std::string reason)
     if (RuntimeFailed)
         return;
 
+    if (reason.find("VK_ERROR_DEVICE_LOST") != std::string::npos
+        || reason.find("DEVICE_LOST") != std::string::npos)
+        Device.ReportDeviceLost("3D renderer runtime failure");
+
     RuntimeFailed = true;
     RuntimeFailureReason = reason.empty() ? "unspecified Vulkan renderer failure" : std::move(reason);
     Platform::Log(Platform::LogLevel::Error,

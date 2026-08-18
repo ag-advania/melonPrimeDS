@@ -823,6 +823,8 @@ DeviceProbeResult FeatureProbe::ProbeDevice(
             const bool hasPresentIdExtension =
                 HasExtension(available, VK_KHR_PRESENT_ID_EXTENSION_NAME);
             const bool hasAmdExtension = HasExtension(available, VK_AMD_ANTI_LAG_EXTENSION_NAME);
+            const bool hasDeviceFaultExtension =
+                HasExtension(available, "VK_EXT_device_fault");
 
             VkPhysicalDeviceTimelineSemaphoreFeaturesKHR timelineFeatures{};
             VkPhysicalDevicePresentIdFeaturesKHR presentIdFeatures{};
@@ -868,6 +870,21 @@ DeviceProbeResult FeatureProbe::ProbeDevice(
                 && presentIdFeatures.presentId == VK_TRUE;
             result.HasAmdAntiLag =
                 hasAmdExtension && antiLagFeatures.antiLag == VK_TRUE;
+
+            if (hasDeviceFaultExtension && fns.GetPhysicalDeviceFeatures2)
+            {
+                VkPhysicalDeviceFaultFeaturesEXT faultFeatures{};
+                faultFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
+                VkPhysicalDeviceFeatures2 faultProbe{};
+                faultProbe.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+                faultProbe.pNext = &faultFeatures;
+                fns.GetPhysicalDeviceFeatures2(physicalDevice, &faultProbe);
+                result.HasDeviceFault = faultFeatures.deviceFault == VK_TRUE;
+                if (result.HasDeviceFault)
+                    result.Report.Pass("VK_EXT_device_fault", "deviceFault feature supported");
+                else
+                    result.Report.Pass("VK_EXT_device_fault", "extension present; feature unavailable");
+            }
         }
     }
 

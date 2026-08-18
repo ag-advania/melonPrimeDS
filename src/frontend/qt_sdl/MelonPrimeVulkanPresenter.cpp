@@ -375,6 +375,8 @@ void VulkanPresenter::InvalidateScreenLayerRetention() noexcept
 
 bool VulkanPresenter::Fail(const char* operation, VkResult result)
 {
+    if (result == VK_ERROR_DEVICE_LOST)
+        Device.ReportDeviceLost(operation);
     Error = std::string(operation) + " failed: " + Vk::FormatResult(result);
     Failed = true;
     SurfaceRebindRequested = false;
