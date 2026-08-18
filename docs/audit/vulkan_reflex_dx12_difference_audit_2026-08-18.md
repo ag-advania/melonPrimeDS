@@ -193,3 +193,25 @@ Source-level behavior and configured test coverage are PASS. Physical Vulkan and
 DX12 latency parity, refresh-rate behavior, WSI behavior, and external
 click-to-photon equivalence remain OPEN/NOT RUN as recorded above; the audit does
 not claim those results without matching hardware evidence.
+
+## Post-audit remediation: DX12 XeLL FinishFrame marker semantics
+
+The follow-up review identified and closed the P3 marker-semantics finding. The
+production `DX12IntelXeLL::FinishFrame()` now performs cleanup only: it closes an
+already-open Present, Render Submit, or Simulation span and resets frame state.
+It does not synthesize `InputSample`, `PresentStart`, or `PresentEnd` for a frame
+that never reached the corresponding production phase.
+
+The Fake API state-machine coverage now includes:
+
+- normal Present bracketing, with one `PresentStart` and one `PresentEnd`;
+- a frame that reaches Render Submit but no actual Present, with no Present markers;
+- `BeginFrame()` followed immediately by cleanup, with no input or Present marker;
+- cleanup after `PresentStart`, proving that the existing open span closes once
+  without a duplicate marker pair.
+
+The low-latency source contract audit asserts that `FinishFrame()` cannot call
+`MarkPresentStart()`, `MarkInputSample()`, or `EndRenderPhase()` and that the
+regression cases remain present in the Fake API test. Physical Intel Arc XeLL
+runtime validation and exact-current-SHA external latency measurements remain
+OPEN/NOT RUN; this remediation closes the source/build P3 only.

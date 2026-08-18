@@ -160,7 +160,8 @@ public:
     // Required XeLL order:
     // Sleep -> SimulationStart -> InputSample -> RenderSubmitStart/End ->
     // PresentStart/End. Simulation and RenderSubmit are closed defensively on
-    // every transition/early-exit path.
+    // every transition/early-exit path. FinishFrame only closes phases that
+    // actually started; it never synthesizes an input or Present marker.
     void BeginFrame();
     void MarkInputSample();
     void MarkRenderSubmitStart();

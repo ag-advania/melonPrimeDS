@@ -132,6 +132,11 @@ def main() -> int:
     probe = read("src/VulkanFeatureProbe.cpp")
     amd = read("src/DX12AmdAntiLag2.cpp")
     xell = read("src/DX12IntelXeLL.cpp")
+    xell_finish_start = xell.index("void DX12IntelXeLL::FinishFrame()")
+    xell_finish_end = xell.index(
+        "\nbool DX12IntelXeLL::SendMarker", xell_finish_start
+    )
+    xell_finish = xell[xell_finish_start:xell_finish_end]
     xell_header = read("src/DX12IntelXeLL.h")
     pacing = read("src/DX12LowLatencyPacing.h")
     xell_tests = read("tools/testing/xell-state-machine-tests.cpp")
@@ -1620,9 +1625,26 @@ def main() -> int:
                 "InputSample",
             )
         )
-        and "if (!RenderSubmitStarted)\n        MarkRenderSubmitStart();" in xell
-        and "if (!PresentStarted)\n        MarkPresentStart();" in xell,
-        "Intel XeLL must deliver the complete required marker set on early-exit frames",
+        and "if (PresentOpen)\n        MarkPresentEnd();" in xell_finish
+        and "if (RenderSubmitOpen)\n        MarkRenderSubmitEnd();" in xell_finish
+        and "if (SimulationOpen)" in xell_finish
+        and "MarkPresentStart();" not in xell_finish
+        and "MarkInputSample();" not in xell_finish
+        and "EndRenderPhase();" not in xell_finish,
+        "Intel XeLL FinishFrame must close only phases that actually started",
+        failures,
+    )
+    require(
+        all(
+            token in xell_tests
+            for token in (
+                "void TestNoPresentFrame()",
+                "void TestAbortedFrame()",
+                "void TestInterruptedPresentCleanup()",
+                "must not synthesize Present markers",
+            )
+        ),
+        "Intel XeLL fake tests must cover no-Present cleanup without synthetic markers",
         failures,
     )
 

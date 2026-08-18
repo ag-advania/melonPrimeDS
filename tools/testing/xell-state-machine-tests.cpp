@@ -222,6 +222,19 @@ void RequireCompleteMarkerOrder(const FakeXeLL& fake, const char* scenario)
         std::string(scenario) + " must emit the complete ordered marker set");
 }
 
+void RequireNoPresentMarkers(const FakeXeLL& fake, const char* scenario)
+{
+    for (const Event& event : fake.Events)
+    {
+        if (event.Op != Operation::Marker)
+            continue;
+        Require(event.Marker != DX12IntelXeLLMarker::PresentStart
+                && event.Marker != DX12IntelXeLLMarker::PresentEnd,
+            std::string(scenario)
+                + " must not synthesize Present markers");
+    }
+}
+
 void TestNormalFrame()
 {
     FakeXeLL fake;
@@ -248,18 +261,71 @@ void TestNormalFrame()
     Require(fake.DestroyCount == 1, "normal shutdown must destroy one context");
 }
 
-void TestDefensiveClose(const char* scenario, bool startPresent)
+void TestNoPresentFrame()
 {
     FakeXeLL fake;
     DX12IntelXeLL xell;
     Initialize(xell, fake);
-    Require(xell.SetEnabled(true), "defensive-close mode must apply");
+    Require(xell.SetEnabled(true), "no-present mode must apply");
     xell.BeginFrame();
     xell.MarkInputSample();
-    if (startPresent)
-        xell.MarkPresentStart();
+    xell.MarkRenderSubmitStart();
+    xell.MarkRenderSubmitEnd();
     xell.FinishFrame();
-    RequireCompleteMarkerOrder(fake, scenario);
+
+    const std::vector<DX12IntelXeLLMarker> expected = {
+        DX12IntelXeLLMarker::SimulationStart,
+        DX12IntelXeLLMarker::InputSample,
+        DX12IntelXeLLMarker::SimulationEnd,
+        DX12IntelXeLLMarker::RenderSubmitStart,
+        DX12IntelXeLLMarker::RenderSubmitEnd,
+    };
+    Require(Markers(fake) == expected,
+        "no-present frame must close only the phases that started");
+    RequireNoPresentMarkers(fake, "no-present frame");
+}
+
+void TestAbortedFrame()
+{
+    FakeXeLL fake;
+    DX12IntelXeLL xell;
+    Initialize(xell, fake);
+    Require(xell.SetEnabled(true), "aborted-frame mode must apply");
+    xell.BeginFrame();
+    xell.FinishFrame();
+
+    const std::vector<DX12IntelXeLLMarker> expected = {
+        DX12IntelXeLLMarker::SimulationStart,
+        DX12IntelXeLLMarker::SimulationEnd,
+    };
+    Require(Markers(fake) == expected,
+        "an immediately aborted frame must not synthesize input or Present");
+    RequireNoPresentMarkers(fake, "immediately aborted frame");
+}
+
+void TestInterruptedPresentCleanup()
+{
+    FakeXeLL fake;
+    DX12IntelXeLL xell;
+    Initialize(xell, fake);
+    Require(xell.SetEnabled(true), "interrupted-present mode must apply");
+    xell.BeginFrame();
+    xell.MarkInputSample();
+    xell.MarkPresentStart();
+    xell.FinishFrame();
+
+    RequireCompleteMarkerOrder(fake, "interrupted Present cleanup");
+    int presentStarts = 0;
+    int presentEnds = 0;
+    for (const Event& event : fake.Events)
+    {
+        if (event.Op != Operation::Marker)
+            continue;
+        presentStarts += event.Marker == DX12IntelXeLLMarker::PresentStart;
+        presentEnds += event.Marker == DX12IntelXeLLMarker::PresentEnd;
+    }
+    Require(presentStarts == 1 && presentEnds == 1,
+        "interrupted Present cleanup must not duplicate marker pairs");
 }
 
 void TestMonotonicFrameIds()
@@ -462,9 +528,9 @@ void TestPacingResolver()
 int main()
 {
     TestNormalFrame();
-    TestDefensiveClose("3D-work-free frame", false);
-    TestDefensiveClose("Present-skipped renderer transition", false);
-    TestDefensiveClose("Present-failure close", true);
+    TestNoPresentFrame();
+    TestAbortedFrame();
+    TestInterruptedPresentCleanup();
     TestMonotonicFrameIds();
     TestInitializationFailures();
     TestSleepModeFailures();
