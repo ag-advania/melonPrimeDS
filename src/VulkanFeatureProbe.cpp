@@ -71,6 +71,15 @@ constexpr u32 TexcacheMaxDimension = 1024;
 // power of two and is the figure the probe demands.
 constexpr u32 MetaUniformBytes = 4096;
 
+// OutputState mirrors the structured compositor in GPU3D_Vulkan.cpp. Keep the
+// scale admission conservative: account for all three device-local output
+// slots and the optional direct images. Host staging is admitted separately
+// once its exact memory type is known.
+constexpr u32 CompositorFramesInFlight = 3;
+constexpr VkDeviceSize StructuredInputBytes =
+    static_cast<VkDeviceSize>(
+        14u * (256u * 192u) + (2u * 192u) + (192u * 4u)) * sizeof(u32);
+
 // Formats the backend creates images and texel buffer views with.
 constexpr VkFormat TexcacheFormat = VK_FORMAT_R8G8B8A8_UINT;    // usampler2DArray
 constexpr VkFormat ClearBitmapFormat = VK_FORMAT_R32_UINT;      // usampler2D, GL_R32UI equivalent
@@ -373,6 +382,7 @@ ResolutionBudget ResolutionBudget::ForScaleFactor(int scaleFactor) noexcept
         captureSidecarBytes,
         blendStateBytes,
     });
+    budget.LargestDeviceAllocation = budget.LargestStorageBuffer;
 
     budget.TotalDeviceBytes =
         tileMemoryBytes * 3
@@ -388,6 +398,22 @@ ResolutionBudget ResolutionBudget::ForScaleFactor(int scaleFactor) noexcept
         + captureSidecarBytes
         + blendStateBytes
         + MetaUniformBytes;
+
+    const VkDeviceSize compositorOutputBytes =
+        composeOutputBytes * CompositorFramesInFlight;
+    const VkDeviceSize structuredInputBytes =
+        StructuredInputBytes * CompositorFramesInFlight;
+    const VkDeviceSize directImageBytes =
+        4ull * screenPixels * 2ull * CompositorFramesInFlight;
+    budget.ProjectedDeviceLocalBytes =
+        budget.TotalDeviceBytes - composeOutputBytes
+        + compositorOutputBytes
+        + structuredInputBytes
+        + directImageBytes;
+    // Three raster tile buffers, raster buffers/images, three structured
+    // compositor slots, and worst-case direct images. The exact count is also
+    // enforced incrementally by VulkanDevice::ReserveMemoryAllocation().
+    budget.ProjectedAllocationCount = 24;
 
     return budget;
 }
@@ -506,6 +532,108 @@ bool FeatureProbe::EnumerateDeviceExtensions(
 }
 
 
+VulkanMemoryAdmissionSnapshot FeatureProbe::QueryMemoryAdmission(
+    const InstanceDispatch& fns,
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceProperties& properties,
+    const VkPhysicalDeviceMemoryProperties& memoryProperties)
+{
+    VulkanMemoryAdmissionSnapshot snapshot;
+    snapshot.QueryAttempted = true;
+    snapshot.HeapCount = memoryProperties.memoryHeapCount;
+    snapshot.MemoryTypeCount = memoryProperties.memoryTypeCount;
+    snapshot.MaxMemoryAllocationCount = properties.limits.maxMemoryAllocationCount;
+    snapshot.MemoryTypeHeapIndex.fill(InvalidMemoryHeap);
+
+    for (u32 i = 0; i < snapshot.HeapCount; ++i)
+    {
+        snapshot.HeapSize[i] = memoryProperties.memoryHeaps[i].size;
+        snapshot.HeapDeviceLocal[i] =
+            (memoryProperties.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) != 0;
+    }
+    for (u32 i = 0; i < snapshot.MemoryTypeCount; ++i)
+        snapshot.MemoryTypeHeapIndex[i] = memoryProperties.memoryTypes[i].heapIndex;
+
+    u32 largestDeviceHeap = InvalidMemoryHeap;
+    for (u32 i = 0; i < snapshot.HeapCount; ++i)
+    {
+        if (!snapshot.HeapDeviceLocal[i]
+            || (largestDeviceHeap != InvalidMemoryHeap
+                && snapshot.HeapSize[i] <= snapshot.HeapSize[largestDeviceHeap]))
+            continue;
+
+        largestDeviceHeap = i;
+        for (u32 type = 0; type < snapshot.MemoryTypeCount; ++type)
+        {
+            if (snapshot.MemoryTypeHeapIndex[type] == i
+                && (memoryProperties.memoryTypes[type].propertyFlags
+                    & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0)
+            {
+                snapshot.PreferredDeviceLocalMemoryType = type;
+                break;
+            }
+        }
+    }
+
+    if (fns.GetPhysicalDeviceProperties2)
+    {
+        VkPhysicalDeviceMaintenance3Properties maintenance3{};
+        maintenance3.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES;
+        VkPhysicalDeviceProperties2 properties2{};
+        properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        properties2.pNext = &maintenance3;
+        fns.GetPhysicalDeviceProperties2(physicalDevice, &properties2);
+        snapshot.MaxMemoryAllocationSize = maintenance3.maxMemoryAllocationSize;
+    }
+
+    std::vector<VkExtensionProperties> extensions;
+    const bool extensionListReady = FeatureProbe::EnumerateDeviceExtensions(
+        fns, physicalDevice, extensions);
+    const bool hasBudgetExtension = extensionListReady
+        && FeatureProbe::HasExtension(extensions, "VK_EXT_memory_budget");
+
+#if defined(VK_EXT_memory_budget)
+    if (hasBudgetExtension && fns.GetPhysicalDeviceMemoryProperties2)
+    {
+        VkPhysicalDeviceMemoryBudgetPropertiesEXT budget{};
+        budget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
+        VkPhysicalDeviceMemoryProperties2 properties2{};
+        properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+        properties2.pNext = &budget;
+        fns.GetPhysicalDeviceMemoryProperties2(physicalDevice, &properties2);
+
+        bool hasUsableBudget = false;
+        for (u32 i = 0; i < snapshot.HeapCount; ++i)
+        {
+            snapshot.HeapBudget[i] = budget.heapBudget[i];
+            snapshot.HeapUsage[i] = budget.heapUsage[i];
+            hasUsableBudget = hasUsableBudget
+                || (snapshot.HeapDeviceLocal[i] && budget.heapBudget[i] != 0);
+        }
+        snapshot.HasLiveBudget = hasUsableBudget;
+        snapshot.UsesHeuristicFallback = !snapshot.HasLiveBudget;
+    }
+#else
+    (void)hasBudgetExtension;
+#endif
+
+    if (!snapshot.HasLiveBudget)
+    {
+        snapshot.UsesHeuristicFallback = true;
+        for (u32 i = 0; i < snapshot.HeapCount; ++i)
+        {
+            snapshot.HeapUsage[i] = 0;
+            snapshot.HeapBudget[i] = snapshot.HeapDeviceLocal[i]
+                ? snapshot.HeapSize[i] / DeviceMemoryBudgetDenominator
+                    * DeviceMemoryBudgetNumerator
+                : 0;
+        }
+    }
+
+    return snapshot;
+}
+
+
 bool FeatureProbe::HasExtension(
     const std::vector<VkExtensionProperties>& available, const char* name) noexcept
 {
@@ -538,6 +666,8 @@ DeviceProbeResult FeatureProbe::ProbeDevice(
     fns.GetPhysicalDeviceProperties(physicalDevice, &result.Properties);
     fns.GetPhysicalDeviceFeatures(physicalDevice, &result.Features);
     fns.GetPhysicalDeviceMemoryProperties(physicalDevice, &result.MemoryProperties);
+    result.MemoryAdmission = QueryMemoryAdmission(
+        fns, physicalDevice, result.Properties, result.MemoryProperties);
 
     result.DeviceName = result.Properties.deviceName;
     result.VendorName = FormatVendor(result.Properties.vendorID);
@@ -866,9 +996,6 @@ DeviceProbeResult FeatureProbe::ProbeDevice(
     // cannot satisfy. Reporting the actual ceiling is the whole point: the
     // frontend can then refuse an unreachable setting with a real number
     // instead of allocating and crashing.
-    const VkDeviceSize memoryBudget =
-        result.DeviceLocalMemory / DeviceMemoryBudgetDenominator * DeviceMemoryBudgetNumerator;
-
     std::string scaleLimitReason;
     for (int scale = 1; scale <= MaxSupportedScaleFactor; scale++)
     {
@@ -906,10 +1033,22 @@ DeviceProbeResult FeatureProbe::ProbeDevice(
             scaleLimitReason = "maxComputeWorkGroupCount is too small for the tile grid";
             break;
         }
-        if (budget.TotalDeviceBytes > memoryBudget)
+        const VulkanMemoryAdmissionRequest admissionRequest{
+            budget.ProjectedDeviceLocalBytes,
+            0,
+            budget.LargestDeviceAllocation,
+            budget.ProjectedAllocationCount,
+            result.MemoryAdmission.PreferredDeviceLocalMemoryType,
+        };
+        const VulkanMemoryAdmissionResult admission =
+            EvaluateVulkanMemoryAdmission(result.MemoryAdmission, admissionRequest);
+        if (!admission.Accepted)
         {
-            scaleLimitReason = "device-local memory budget " + FormatMiB(memoryBudget)
-                + " below the " + FormatMiB(budget.TotalDeviceBytes) + " the rasterizer needs";
+            scaleLimitReason = admission.Reason + "; heap=" + FormatU64(admission.HeapIndex)
+                + " budget=" + FormatMiB(admission.HeapBudget)
+                + " usage=" + FormatMiB(admission.HeapUsage)
+                + " available=" + FormatMiB(admission.AvailableBytes)
+                + " requested=" + FormatMiB(budget.ProjectedDeviceLocalBytes);
             break;
         }
 
@@ -957,14 +1096,21 @@ DeviceProbeResult FeatureProbe::ProbeDevice(
         result.Score += gigabytes;
     }
 
+    const std::string maxAllocationText = result.MemoryAdmission.MaxMemoryAllocationSize == 0
+        ? std::string("unavailable")
+        : FormatMiB(result.MemoryAdmission.MaxMemoryAllocationSize);
     Platform::Log(Platform::LogLevel::Info,
-        "[Vulkan] probed %s (%s, %s) API %s driver %s: %s\n",
+        "[Vulkan] probed %s (%s, %s) API %s driver %s: %s; memory-budget=%s "
+        "max-allocation=%s max-count=%u\n",
         result.DeviceName.c_str(),
         result.VendorName.c_str(),
         DeviceTypeName(result.Properties.deviceType),
         result.ApiVersionText.c_str(),
         result.DriverVersionText.c_str(),
-        result.IsEligible() ? "eligible" : "REJECTED");
+        result.IsEligible() ? "eligible" : "REJECTED",
+        result.MemoryAdmission.HasLiveBudget ? "live" : "75%-heuristic",
+        maxAllocationText.c_str(),
+        result.MemoryAdmission.MaxMemoryAllocationCount);
 
     return result;
 }

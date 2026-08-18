@@ -21,6 +21,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -68,6 +69,9 @@ struct VulkanDeviceState
     bool GenericPresentTimingRequested = false;
     VulkanPresentTimingDeviceFeatures PresentTimingFeatures{};
     mutable std::mutex QueueMutex;
+    mutable std::mutex MemoryMutex;
+    std::atomic<u32> MemoryAllocationCount{0};
+    std::array<VkDeviceSize, VK_MAX_MEMORY_HEAPS> MemoryAllocationBytes{};
 };
 
 namespace
@@ -108,6 +112,7 @@ const VkPhysicalDeviceFeatures EmptyFeatures{};
 const VulkanLowLatencyStatus EmptyLowLatencyStatus{};
 const VkPhysicalDeviceMemoryProperties EmptyMemoryProperties{};
 const VkPhysicalDeviceLimits EmptyLimits{};
+const Vk::VulkanMemoryAdmissionSnapshot EmptyMemoryAdmission{};
 std::mutex EmptyQueueMutex;
 
 const char* DeviceTypeName(VkPhysicalDeviceType type) noexcept
@@ -228,6 +233,176 @@ const VkPhysicalDeviceLimits& VulkanDevice::GetLimits() const noexcept
     return State ? State->Profile.Properties.limits : EmptyLimits;
 }
 
+bool VulkanDevice::RefreshMemoryAdmission()
+{
+    if (!State || !State->Context || State->PhysicalDevice == VK_NULL_HANDLE)
+        return false;
+
+    Vk::VulkanMemoryAdmissionSnapshot snapshot = Vk::FeatureProbe::QueryMemoryAdmission(
+        State->Context->Fns(),
+        State->PhysicalDevice,
+        State->Profile.Properties,
+        State->Profile.MemoryProperties);
+    {
+        std::lock_guard<std::mutex> lock(State->MemoryMutex);
+        snapshot.CurrentAllocationCount = State->MemoryAllocationCount.load(
+            std::memory_order_relaxed);
+        snapshot.CurrentReservedBytes = State->MemoryAllocationBytes;
+        State->Profile.MemoryAdmission = snapshot;
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Debug,
+        "[Vulkan] memory admission refreshed: budget=%s allocation-size=%s "
+        "allocation-count=%u current=%u\n",
+        snapshot.HasLiveBudget ? "live" : "75%-heuristic",
+        snapshot.MaxMemoryAllocationSize == 0 ? "unavailable" : "available",
+        snapshot.MaxMemoryAllocationCount,
+        snapshot.CurrentAllocationCount);
+    return true;
+}
+
+Vk::VulkanMemoryAdmissionSnapshot VulkanDevice::GetMemoryAdmissionSnapshot() const
+{
+    if (!State)
+        return EmptyMemoryAdmission;
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    Vk::VulkanMemoryAdmissionSnapshot snapshot = State->Profile.MemoryAdmission;
+    snapshot.CurrentAllocationCount = State->MemoryAllocationCount.load(
+        std::memory_order_relaxed);
+    return snapshot;
+}
+
+bool VulkanDevice::AdmitScaleDependentResources(
+    const Vk::ResolutionBudget& budget, const char* reason) const
+{
+    if (!State)
+        return false;
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    Vk::VulkanMemoryAdmissionSnapshot snapshot = State->Profile.MemoryAdmission;
+    snapshot.CurrentAllocationCount = State->MemoryAllocationCount.load(
+        std::memory_order_relaxed);
+    snapshot.CurrentReservedBytes = State->MemoryAllocationBytes;
+    const u32 heapIndex = snapshot.PreferredDeviceLocalMemoryType
+        < snapshot.MemoryTypeCount
+        ? snapshot.MemoryTypeHeapIndex[snapshot.PreferredDeviceLocalMemoryType]
+        : Vk::InvalidMemoryHeap;
+    const Vk::VulkanMemoryAdmissionRequest request{
+        budget.ProjectedDeviceLocalBytes,
+        heapIndex < snapshot.HeapCount ? snapshot.CurrentReservedBytes[heapIndex] : 0,
+        budget.LargestDeviceAllocation,
+        budget.ProjectedAllocationCount,
+        snapshot.PreferredDeviceLocalMemoryType,
+    };
+    const Vk::VulkanMemoryAdmissionResult result =
+        Vk::EvaluateVulkanMemoryAdmission(snapshot, request);
+    if (result.Accepted)
+        return true;
+
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "[Vulkan] scale admission refused reason=%s scale=%d requested=%.1f MiB "
+        "heap=%u type=%u budget=%.1f MiB usage=%.1f MiB available=%.1f MiB "
+        "reserve=%.1f MiB largest=%.1f MiB max-allocation=%.1f MiB "
+        "current-count=%u additional-count=%u max-count=%u boundary=%s\n",
+        result.Reason.c_str(),
+        budget.ScaleFactor,
+        static_cast<double>(budget.ProjectedDeviceLocalBytes) / Vk::MemoryMiB,
+        result.HeapIndex,
+        request.MemoryTypeIndex,
+        static_cast<double>(result.HeapBudget) / Vk::MemoryMiB,
+        static_cast<double>(result.HeapUsage) / Vk::MemoryMiB,
+        static_cast<double>(result.AvailableBytes) / Vk::MemoryMiB,
+        static_cast<double>(result.SafetyReserve) / Vk::MemoryMiB,
+        static_cast<double>(budget.LargestDeviceAllocation) / Vk::MemoryMiB,
+        static_cast<double>(snapshot.MaxMemoryAllocationSize) / Vk::MemoryMiB,
+        snapshot.CurrentAllocationCount,
+        budget.ProjectedAllocationCount,
+        snapshot.MaxMemoryAllocationCount,
+        reason ? reason : "scale resource recreation");
+    return false;
+}
+
+bool VulkanDevice::ReserveMemoryAllocation(
+    u32 memoryTypeIndex, VkDeviceSize size, const char* debugName) const
+{
+    if (!State)
+        return false;
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    Vk::VulkanMemoryAdmissionSnapshot snapshot = State->Profile.MemoryAdmission;
+    snapshot.CurrentAllocationCount = State->MemoryAllocationCount.load(
+        std::memory_order_relaxed);
+    snapshot.CurrentReservedBytes = State->MemoryAllocationBytes;
+    const u32 heapIndex = memoryTypeIndex < snapshot.MemoryTypeCount
+        ? snapshot.MemoryTypeHeapIndex[memoryTypeIndex] : Vk::InvalidMemoryHeap;
+    const Vk::VulkanMemoryAdmissionRequest request{
+        size,
+        heapIndex < snapshot.HeapCount ? snapshot.CurrentReservedBytes[heapIndex] : 0,
+        size,
+        1,
+        memoryTypeIndex };
+    const Vk::VulkanMemoryAdmissionResult result =
+        Vk::EvaluateVulkanMemoryAdmission(snapshot, request);
+    if (!result.Accepted)
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "[Vulkan] allocation admission refused name=%s requested=%.1f MiB "
+            "type=%u heap=%u budget=%.1f MiB usage=%.1f MiB available=%.1f MiB "
+            "reserve=%.1f MiB max-allocation=%.1f MiB current-count=%u max-count=%u "
+            "reason=%s\n",
+            debugName ? debugName : "<unnamed allocation>",
+            static_cast<double>(size) / Vk::MemoryMiB,
+            memoryTypeIndex,
+            result.HeapIndex,
+            static_cast<double>(result.HeapBudget) / Vk::MemoryMiB,
+            static_cast<double>(result.HeapUsage) / Vk::MemoryMiB,
+            static_cast<double>(result.AvailableBytes) / Vk::MemoryMiB,
+            static_cast<double>(result.SafetyReserve) / Vk::MemoryMiB,
+            static_cast<double>(snapshot.MaxMemoryAllocationSize) / Vk::MemoryMiB,
+            snapshot.CurrentAllocationCount,
+            snapshot.MaxMemoryAllocationCount,
+            result.Reason.c_str());
+        return false;
+    }
+
+    State->MemoryAllocationCount.fetch_add(1, std::memory_order_relaxed);
+    if (result.HeapIndex < State->MemoryAllocationBytes.size())
+    {
+        State->MemoryAllocationBytes[result.HeapIndex] += size;
+        State->Profile.MemoryAdmission.CurrentReservedBytes = State->MemoryAllocationBytes;
+        State->Profile.MemoryAdmission.CurrentAllocationCount =
+            State->MemoryAllocationCount.load(std::memory_order_relaxed);
+    }
+    return true;
+}
+
+void VulkanDevice::ReleaseMemoryAllocation(u32 memoryTypeIndex, VkDeviceSize size) const noexcept
+{
+    if (!State)
+        return;
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    const u32 count = State->MemoryAllocationCount.load(std::memory_order_relaxed);
+    if (count != 0)
+        State->MemoryAllocationCount.store(count - 1, std::memory_order_relaxed);
+    if (memoryTypeIndex < State->Profile.MemoryAdmission.MemoryTypeCount)
+    {
+        const u32 heapIndex = State->Profile.MemoryAdmission.MemoryTypeHeapIndex[memoryTypeIndex];
+        if (heapIndex < State->MemoryAllocationBytes.size())
+        {
+            const VkDeviceSize current = State->MemoryAllocationBytes[heapIndex];
+            State->MemoryAllocationBytes[heapIndex] = current > size ? current - size : 0;
+        }
+    }
+    State->Profile.MemoryAdmission.CurrentReservedBytes = State->MemoryAllocationBytes;
+    State->Profile.MemoryAdmission.CurrentAllocationCount =
+        State->MemoryAllocationCount.load(std::memory_order_relaxed);
+}
+
 bool VulkanDevice::HasSharedDevice(const VulkanContext& context) noexcept
 {
     std::lock_guard<std::mutex> lock(SharedDeviceMutex);
@@ -285,6 +460,7 @@ bool VulkanDevice::Create(
             return false;
         }
         State = std::move(shared);
+        RefreshMemoryAdmission();
         LogStartupSummary(requestedRendererName);
         return true;
     }
@@ -841,6 +1017,12 @@ bool VulkanDevice::Create(
             }
         }
     }
+
+    // Device-local usage can include allocations made by the loader or other
+    // shared-device clients after the physical-device probe. Refresh once at
+    // logical-device initialization so the first scale admission sees current
+    // live budget and allocation-count state.
+    RefreshMemoryAdmission();
 
     SetDebugName(VK_OBJECT_TYPE_DEVICE, Device, "melonPrimeDS device");
     SetDebugName(VK_OBJECT_TYPE_QUEUE, MainQueue, "melonPrimeDS main queue");

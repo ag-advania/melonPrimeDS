@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "DX12Common.h"
+#include "DX12MemoryAdmission.h"
 
 namespace melonDS
 {
@@ -47,6 +48,7 @@ public:
         u32 DeviceId = 0;
         u64 DriverVersion = 0;
         u64 DedicatedVideoMemory = 0;
+        DX12::MemoryAdmissionSnapshot MemoryAdmission;
         D3D_FEATURE_LEVEL FeatureLevel = D3D_FEATURE_LEVEL_11_0;
         // Highest shader model the device reports, as a packed 0xMm value
         // (0x51 == 5.1, 0x60 == 6.0). D3DCompile only emits DXBC up to 5.1, so
@@ -72,6 +74,12 @@ public:
     [[nodiscard]] ID3D12CommandQueue* GetQueue() const noexcept { return Queue.Get(); }
     [[nodiscard]] const DeviceProfile& GetDeviceProfile() const noexcept { return Profile; }
     [[nodiscard]] const std::string& GetFailureReason() const noexcept { return FailureReason; }
+
+    // QueryInterface/QueryVideoMemoryInfo is optional and fail-soft. Refresh
+    // only at device init, scale recreation and renderer-switch boundaries.
+    bool RefreshMemoryAdmission();
+    [[nodiscard]] bool AdmitScaleDependentResources(
+        const DX12::ScaleFootprint& footprint, const char* reason) const;
 
     // Compiles HLSL with the runtime d3dcompiler_47.dll. `target` is a shader
     // model string such as "cs_5_1". Returns nullptr and logs on failure.

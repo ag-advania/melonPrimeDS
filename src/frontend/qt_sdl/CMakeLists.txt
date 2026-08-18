@@ -616,6 +616,23 @@ if (MELONPRIME_VULKAN_ACTIVE)
         COMMENT "Running Vulkan present timing model tests..."
         VERBATIM)
 
+    add_executable(melonprime_vulkan_memory_admission_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-memory-admission-tests.cpp)
+    target_include_directories(melonprime_vulkan_memory_admission_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_memory_admission_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    set_target_properties(melonprime_vulkan_memory_admission_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_memory_admission_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_memory_admission_tests>
+        DEPENDS melonprime_vulkan_memory_admission_tests
+        COMMENT "Running Vulkan memory admission model tests..."
+        VERBATIM)
+
     add_executable(melonprime_vulkan_linux_surface_lifecycle_tests
         ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-linux-surface-lifecycle-tests.cpp)
     set_target_properties(melonprime_vulkan_linux_surface_lifecycle_tests PROPERTIES
@@ -879,6 +896,21 @@ if (MELONPRIME_DX12_ACTIVE)
         COMMAND $<TARGET_FILE:melonprime_xell_state_machine_tests>
         DEPENDS melonprime_xell_state_machine_tests
         COMMENT "Running Intel XeLL fake API state-machine tests..."
+        VERBATIM)
+
+    add_executable(melonprime_dx12_memory_admission_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/dx12-memory-admission-tests.cpp)
+    target_include_directories(melonprime_dx12_memory_admission_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_dx12_memory_admission_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_DX12=1)
+    set_target_properties(melonprime_dx12_memory_admission_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_dx12_memory_admission_check ALL
+        COMMAND $<TARGET_FILE:melonprime_dx12_memory_admission_tests>
+        DEPENDS melonprime_dx12_memory_admission_tests
+        COMMENT "Running DX12 memory admission model tests..."
         VERBATIM)
 
     set(MELONPRIME_XELL_RUNTIME_DIR

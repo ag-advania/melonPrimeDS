@@ -589,6 +589,19 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
 {
     ReleaseScaleDependentResources();
 
+    // Re-query the optional live budget at the recreation boundary. This is
+    // intentionally outside RenderFrame(): other processes may change the
+    // estimate between scale changes, while a per-frame query would add driver
+    // overhead to the steady state. Refusal is explicit; no scale is silently
+    // clamped to a smaller setting.
+    if (!Device.RefreshMemoryAdmission())
+        return false;
+    const Vk::ResolutionBudget admissionBudget =
+        Vk::ResolutionBudget::ForScaleFactor(ScaleFactor);
+    if (!Device.AdmitScaleDependentResources(
+            admissionBudget, "Vulkan scale-dependent resource recreation"))
+        return false;
+
     const VkDeviceSize screenPixels =
         static_cast<VkDeviceSize>(ScreenWidth) * static_cast<VkDeviceSize>(ScreenHeight);
     const VkDeviceSize workTiles = static_cast<VkDeviceSize>(MaxWorkTiles);

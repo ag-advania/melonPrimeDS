@@ -775,6 +775,19 @@ bool DX12Renderer3D::CreateScaleDependentResources()
 {
     ReleaseScaleDependentResources();
 
+    // Query live DXGI budget only at the scale-resource boundary. The full
+    // requested tile footprint is admitted before the historical halve/retry
+    // loop, so a budget refusal is explicit while CreateCommittedResource
+    // failures retain the existing tile retry behavior.
+    if (!Context->RefreshMemoryAdmission())
+        return false;
+    const DX12::ScaleFootprint admissionFootprint = DX12::ComputeScaleFootprint(
+        ScaleFactor,
+        static_cast<u32>(TilesPerLine * TileLines * 16));
+    if (!Context->AdmitScaleDependentResources(
+            admissionFootprint, "DX12 scale-dependent resource recreation"))
+        return false;
+
     const u64 pixels = static_cast<u64>(ScreenWidth) * static_cast<u64>(ScreenHeight);
 
     // color/depth/attr, two layers each, one 32-bit word per entry -- the same
