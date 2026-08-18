@@ -55,8 +55,9 @@ struct MemoryAdmissionResult
 
 // The pure model mirrors GPU3D_DX12::CreateScaleDependentResources. It is
 // deliberately conservative about optional direct textures and compositor
-// slots, while leaving actual D3D12 alignment to GetResourceAllocationInfo at
-// resource creation time.
+// slots. Actual committed-resource validation and driver alignment remain the
+// authority of CreateCommittedResource; ordinary resource creation must not
+// perform a redundant allocation-info preflight.
 [[nodiscard]] inline ScaleFootprint ComputeScaleFootprint(
     int scaleFactor, u32 requestedWorkTiles = 0) noexcept
 {

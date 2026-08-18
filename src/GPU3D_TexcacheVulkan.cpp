@@ -247,6 +247,13 @@ u32 VulkanTextureHeap::Create(u32 width, u32 height, u32 layers)
     allocInfo.allocationSize = requirements.size;
     allocInfo.memoryTypeIndex = typeIndex;
 
+    // The persistent texture-cache array is a deliberately direct Vulkan
+    // allocation. It is not part of VulkanMemory.cpp's wrapped reservation
+    // accounting: the scale-admission boundary accounts for planned
+    // scale-dependent resources, while this cache is grown on demand and the
+    // driver allocation remains the final authority. Keep this path free of
+    // per-allocation diagnostic work in shipping builds; all failure cleanup
+    // below must leave the cache entry unusable and return 0.
     if (!MELONPRIME_VK_CHECK("vkAllocateMemory (texcache array)",
             fns.AllocateMemory(handle, &allocInfo, nullptr, &entry.Memory)))
     {
@@ -346,6 +353,12 @@ bool VulkanTextureHeap::CreateScratchUpload(
     allocInfo.allocationSize = requirements.size;
     allocInfo.memoryTypeIndex = typeIndex;
 
+    // This is the bounded per-upload spill path used only when the frame
+    // staging ring is full. It intentionally bypasses the persistent
+    // reservation/diagnostic counters; vkAllocateMemory is the final memory
+    // pressure check, and the caller drops this upload safely when creation,
+    // binding, or mapping fails. Destruction is deferred with the upload's
+    // frame so the GPU never observes a recycled scratch allocation.
     if (!MELONPRIME_VK_CHECK("vkAllocateMemory (texcache scratch upload)",
             fns.AllocateMemory(handle, &allocInfo, nullptr, &outMemory)))
     {

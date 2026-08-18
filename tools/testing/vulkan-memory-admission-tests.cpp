@@ -1,9 +1,12 @@
 #include "VulkanMemoryAdmission.h"
 
 #include <cstdio>
+#include <cstring>
+#include <limits>
 
 using melonDS::Vk::EvaluateVulkanMemoryAdmission;
 using melonDS::Vk::VulkanMemoryAdmissionRequest;
+using melonDS::Vk::VulkanMemoryAdmissionReason;
 using melonDS::Vk::VulkanMemoryAdmissionSnapshot;
 
 namespace
@@ -81,6 +84,17 @@ int main()
     budgetRejected.ProjectedBytes = 4ull * melonDS::Vk::MemoryMiB * 1024ull;
     ok &= Require(!EvaluateVulkanMemoryAdmission(live, budgetRejected).Accepted,
         "live heap budget boundary must refuse without clamping");
+
+    auto overflowRejected = accepted;
+    overflowRejected.AlreadyReservedBytes = std::numeric_limits<VkDeviceSize>::max();
+    const auto overflowResult = EvaluateVulkanMemoryAdmission(live, overflowRejected);
+    ok &= Require(!overflowResult.Accepted
+            && overflowResult.Reason == VulkanMemoryAdmissionReason::ProjectedBytesOverflow,
+        "reservation-byte overflow must refuse with a stable POD reason");
+    ok &= Require(std::strcmp(
+            melonDS::Vk::VulkanMemoryAdmissionReasonText(overflowResult.Reason),
+            "projected bytes overflow the reservation accounting range") == 0,
+        "admission reason text must remain deterministic");
 
     VulkanMemoryAdmissionSnapshot fallback = live;
     fallback.HasLiveBudget = false;

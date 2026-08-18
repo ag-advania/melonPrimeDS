@@ -116,15 +116,6 @@ const VkPhysicalDeviceLimits EmptyLimits{};
 const Vk::VulkanMemoryAdmissionSnapshot EmptyMemoryAdmission{};
 std::mutex EmptyQueueMutex;
 
-void ApplyMemoryTelemetry(
-    Vk::VulkanMemoryAdmissionSnapshot& admission,
-    const Vk::VulkanMemoryTelemetrySnapshot& telemetry) noexcept
-{
-    admission.CurrentAllocationCount = telemetry.CurrentAllocationCount;
-    for (u32 i = 0; i < VK_MAX_MEMORY_HEAPS; ++i)
-        admission.CurrentReservedBytes[i] = telemetry.CurrentBytes[i];
-}
-
 const char* DeviceTypeName(VkPhysicalDeviceType type) noexcept
 {
     switch (type)
@@ -255,7 +246,13 @@ bool VulkanDevice::RefreshMemoryAdmission()
         State->Profile.MemoryProperties);
     {
         std::lock_guard<std::mutex> lock(State->MemoryMutex);
-        ApplyMemoryTelemetry(snapshot, State->MemoryTelemetry.GetSnapshot());
+        // Preserve the minimal process-local reservation state across a fresh
+        // driver budget snapshot. Detailed telemetry is optional diagnostics
+        // and is never the authority for admission.
+        snapshot.CurrentAllocationCount =
+            State->Profile.MemoryAdmission.CurrentAllocationCount;
+        snapshot.CurrentReservedBytes =
+            State->Profile.MemoryAdmission.CurrentReservedBytes;
         State->Profile.MemoryAdmission = snapshot;
     }
 
@@ -277,9 +274,7 @@ Vk::VulkanMemoryAdmissionSnapshot VulkanDevice::GetMemoryAdmissionSnapshot() con
         return EmptyMemoryAdmission;
 
     std::lock_guard<std::mutex> lock(State->MemoryMutex);
-    Vk::VulkanMemoryAdmissionSnapshot snapshot = State->Profile.MemoryAdmission;
-    ApplyMemoryTelemetry(snapshot, State->MemoryTelemetry.GetSnapshot());
-    return snapshot;
+    return State->Profile.MemoryAdmission;
 }
 
 Vk::VulkanMemoryTelemetrySnapshot VulkanDevice::GetMemoryTelemetry() const
@@ -293,6 +288,7 @@ Vk::VulkanMemoryTelemetrySnapshot VulkanDevice::GetMemoryTelemetry() const
 
 void VulkanDevice::LogMemoryTelemetry(const char* boundary) const
 {
+#if defined(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
     const Vk::VulkanMemoryTelemetrySnapshot telemetry = GetMemoryTelemetry();
     VkDeviceSize currentBytes = 0;
     VkDeviceSize peakBytes = 0;
@@ -335,6 +331,9 @@ void VulkanDevice::LogMemoryTelemetry(const char* boundary) const
             static_cast<double>(telemetry.CurrentBytes[heap]) / Vk::MemoryMiB,
             static_cast<double>(telemetry.PeakBytes[heap]) / Vk::MemoryMiB);
     }
+#else
+    (void)boundary;
+#endif
 }
 
 bool VulkanDevice::AdmitScaleDependentResources(
@@ -344,8 +343,7 @@ bool VulkanDevice::AdmitScaleDependentResources(
         return false;
 
     std::lock_guard<std::mutex> lock(State->MemoryMutex);
-    Vk::VulkanMemoryAdmissionSnapshot snapshot = State->Profile.MemoryAdmission;
-    ApplyMemoryTelemetry(snapshot, State->MemoryTelemetry.GetSnapshot());
+    const Vk::VulkanMemoryAdmissionSnapshot& snapshot = State->Profile.MemoryAdmission;
     const u32 heapIndex = snapshot.PreferredDeviceLocalMemoryType
         < snapshot.MemoryTypeCount
         ? snapshot.MemoryTypeHeapIndex[snapshot.PreferredDeviceLocalMemoryType]
@@ -368,7 +366,7 @@ bool VulkanDevice::AdmitScaleDependentResources(
         "heap=%u type=%u budget=%.1f MiB usage=%.1f MiB available=%.1f MiB "
         "reserve=%.1f MiB largest=%.1f MiB max-allocation=%.1f MiB "
         "current-count=%u additional-count=%u max-count=%u boundary=%s\n",
-        result.Reason.c_str(),
+        Vk::VulkanMemoryAdmissionReasonText(result.Reason),
         budget.ScaleFactor,
         static_cast<double>(budget.ProjectedDeviceLocalBytes) / Vk::MemoryMiB,
         result.HeapIndex,
@@ -393,8 +391,7 @@ bool VulkanDevice::ReserveMemoryAllocation(
         return false;
 
     std::lock_guard<std::mutex> lock(State->MemoryMutex);
-    Vk::VulkanMemoryAdmissionSnapshot snapshot = State->Profile.MemoryAdmission;
-    ApplyMemoryTelemetry(snapshot, State->MemoryTelemetry.GetSnapshot());
+    const Vk::VulkanMemoryAdmissionSnapshot& snapshot = State->Profile.MemoryAdmission;
     const u32 heapIndex = memoryTypeIndex < snapshot.MemoryTypeCount
         ? snapshot.MemoryTypeHeapIndex[memoryTypeIndex] : Vk::InvalidMemoryHeap;
     const Vk::VulkanMemoryAdmissionRequest request{
@@ -424,13 +421,16 @@ bool VulkanDevice::ReserveMemoryAllocation(
             static_cast<double>(snapshot.MaxMemoryAllocationSize) / Vk::MemoryMiB,
             snapshot.CurrentAllocationCount,
             snapshot.MaxMemoryAllocationCount,
-            result.Reason.c_str());
+            Vk::VulkanMemoryAdmissionReasonText(result.Reason));
         return false;
     }
 
+    auto& admission = State->Profile.MemoryAdmission;
+    ++admission.CurrentAllocationCount;
+    admission.CurrentReservedBytes[result.HeapIndex] += size;
+#if defined(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
     State->MemoryTelemetry.RecordAllocation(result.HeapIndex, size);
-    ApplyMemoryTelemetry(
-        State->Profile.MemoryAdmission, State->MemoryTelemetry.GetSnapshot());
+#endif
     return true;
 }
 
@@ -440,12 +440,20 @@ void VulkanDevice::ReleaseMemoryAllocation(u32 memoryTypeIndex, VkDeviceSize siz
         return;
 
     std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    auto& admission = State->Profile.MemoryAdmission;
     u32 heapIndex = Vk::InvalidMemoryHeap;
-    if (memoryTypeIndex < State->Profile.MemoryAdmission.MemoryTypeCount)
-        heapIndex = State->Profile.MemoryAdmission.MemoryTypeHeapIndex[memoryTypeIndex];
+    if (memoryTypeIndex < admission.MemoryTypeCount)
+        heapIndex = admission.MemoryTypeHeapIndex[memoryTypeIndex];
+    if (admission.CurrentAllocationCount != 0)
+        --admission.CurrentAllocationCount;
+    if (heapIndex < admission.HeapCount)
+    {
+        const VkDeviceSize current = admission.CurrentReservedBytes[heapIndex];
+        admission.CurrentReservedBytes[heapIndex] = current > size ? current - size : 0;
+    }
+#if defined(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
     State->MemoryTelemetry.RecordFree(heapIndex, size);
-    ApplyMemoryTelemetry(
-        State->Profile.MemoryAdmission, State->MemoryTelemetry.GetSnapshot());
+#endif
 }
 
 void VulkanDevice::ReportDeviceLost(const char* operation) const

@@ -145,6 +145,13 @@ option(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY
     "Compile Vulkan/DX12 renderer performance telemetry instrumentation"
     OFF)
 
+# Detailed Vulkan allocation telemetry is diagnostic-only. Memory safety uses
+# a separate minimal reservation counter in the admission state, so ordinary
+# Release/shipping allocations do not update peak/total/bucket statistics.
+option(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY
+    "Compile detailed Vulkan GPU memory allocation telemetry"
+    OFF)
+
 function(melonprime_apply_renderer_perf_telemetry_definition target)
     if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         target_compile_definitions(${target} PRIVATE
@@ -499,6 +506,18 @@ else()
         "MelonPrime renderer performance telemetry: COMPILED OUT")
 endif()
 
+if (MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
+    target_compile_definitions(core PRIVATE
+        MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=1)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=1)
+    message(STATUS
+        "MelonPrime GPU memory telemetry: COMPILED IN (diagnostic build)")
+else()
+    message(STATUS
+        "MelonPrime GPU memory telemetry: COMPILED OUT")
+endif()
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(core PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -641,6 +660,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
     target_compile_definitions(melonprime_vulkan_memory_telemetry_tests PRIVATE
         MELONPRIME_DS
         MELONPRIME_ENABLE_VULKAN=1
+        MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=1
         VK_NO_PROTOTYPES=1)
     set_target_properties(melonprime_vulkan_memory_telemetry_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")

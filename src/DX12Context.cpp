@@ -603,17 +603,6 @@ DX12::ComPtr<ID3D12Resource> DX12Context::CreateBuffer(
     desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
     desc.Flags = flags;
 
-    const D3D12_RESOURCE_ALLOCATION_INFO allocationInfo =
-        Device->GetResourceAllocationInfo(0, 1, &desc);
-    if (allocationInfo.SizeInBytes == UINT64_MAX)
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "DX12: GetResourceAllocationInfo(buffer) rejected requested=%llu bytes\n",
-            static_cast<unsigned long long>(size));
-        return resource;
-    }
-
     const HRESULT hr = Device->CreateCommittedResource(
         &heap,
         D3D12_HEAP_FLAG_NONE,
@@ -664,17 +653,6 @@ DX12::ComPtr<ID3D12Resource> DX12Context::CreateTexture2D(
     desc.SampleDesc.Quality = 0;
     desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     desc.Flags = flags;
-
-    const D3D12_RESOURCE_ALLOCATION_INFO allocationInfo =
-        Device->GetResourceAllocationInfo(0, 1, &desc);
-    if (allocationInfo.SizeInBytes == UINT64_MAX)
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "DX12: GetResourceAllocationInfo(texture) rejected %ux%u array=%u\n",
-            width, height, arraySize);
-        return resource;
-    }
 
     const HRESULT hr = Device->CreateCommittedResource(
         &heap,

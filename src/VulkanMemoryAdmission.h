@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <array>
 #include <limits>
-#include <string>
 
 #include "VulkanCommon.h"
 
@@ -63,6 +62,52 @@ struct VulkanMemoryAdmissionRequest
     u32 MemoryTypeIndex = ~0u;
 };
 
+enum class VulkanMemoryAdmissionReason : u8
+{
+    None,
+    InvalidMemoryType,
+    InvalidMemoryHeap,
+    LargestAllocationLimit,
+    AllocationCountLimit,
+    ProjectedBytesOverflow,
+    HostHeapNoLiveBudget,
+    HeuristicBudget,
+    HeuristicBudgetExceeded,
+    LiveBudgetReserve,
+    LiveBudgetExceeded,
+};
+
+[[nodiscard]] inline constexpr const char* VulkanMemoryAdmissionReasonText(
+    VulkanMemoryAdmissionReason reason) noexcept
+{
+    switch (reason)
+    {
+    case VulkanMemoryAdmissionReason::InvalidMemoryType:
+        return "memory type index is not present in the capability snapshot";
+    case VulkanMemoryAdmissionReason::InvalidMemoryHeap:
+        return "memory type maps to an invalid memory heap";
+    case VulkanMemoryAdmissionReason::LargestAllocationLimit:
+        return "largest allocation exceeds maxMemoryAllocationSize";
+    case VulkanMemoryAdmissionReason::AllocationCountLimit:
+        return "projected allocation count exceeds maxMemoryAllocationCount";
+    case VulkanMemoryAdmissionReason::ProjectedBytesOverflow:
+        return "projected bytes overflow the reservation accounting range";
+    case VulkanMemoryAdmissionReason::HostHeapNoLiveBudget:
+        return "no live budget; host heap left to vkAllocateMemory";
+    case VulkanMemoryAdmissionReason::HeuristicBudget:
+        return "75% device-local heuristic fallback";
+    case VulkanMemoryAdmissionReason::HeuristicBudgetExceeded:
+        return "projected bytes exceed the device-local heuristic budget";
+    case VulkanMemoryAdmissionReason::LiveBudgetReserve:
+        return "live heap budget has no room after the safety reserve";
+    case VulkanMemoryAdmissionReason::LiveBudgetExceeded:
+        return "projected bytes exceed live heap budget after the safety reserve";
+    case VulkanMemoryAdmissionReason::None:
+    default:
+        return "unspecified memory admission result";
+    }
+}
+
 struct VulkanMemoryAdmissionResult
 {
     bool Accepted = false;
@@ -71,7 +116,7 @@ struct VulkanMemoryAdmissionResult
     VkDeviceSize HeapUsage = 0;
     VkDeviceSize AvailableBytes = 0;
     VkDeviceSize SafetyReserve = 0;
-    std::string Reason;
+    VulkanMemoryAdmissionReason Reason = VulkanMemoryAdmissionReason::None;
 };
 
 [[nodiscard]] inline bool AddWouldOverflow(VkDeviceSize left, VkDeviceSize right) noexcept
@@ -90,22 +135,28 @@ struct VulkanMemoryAdmissionResult
 
     if (request.MemoryTypeIndex >= snapshot.MemoryTypeCount)
     {
-        result.Reason = "memory type index is not present in the capability snapshot";
+        result.Reason = VulkanMemoryAdmissionReason::InvalidMemoryType;
         return result;
     }
 
     const u32 heapIndex = snapshot.MemoryTypeHeapIndex[request.MemoryTypeIndex];
     if (heapIndex >= snapshot.HeapCount)
     {
-        result.Reason = "memory type maps to an invalid memory heap";
+        result.Reason = VulkanMemoryAdmissionReason::InvalidMemoryHeap;
         return result;
     }
     result.HeapIndex = heapIndex;
 
+    if (AddWouldOverflow(request.AlreadyReservedBytes, request.ProjectedBytes))
+    {
+        result.Reason = VulkanMemoryAdmissionReason::ProjectedBytesOverflow;
+        return result;
+    }
+
     if (snapshot.MaxMemoryAllocationSize != 0
         && request.LargestAllocation > snapshot.MaxMemoryAllocationSize)
     {
-        result.Reason = "largest allocation exceeds maxMemoryAllocationSize";
+        result.Reason = VulkanMemoryAdmissionReason::LargestAllocationLimit;
         return result;
     }
 
@@ -114,7 +165,7 @@ struct VulkanMemoryAdmissionResult
             || snapshot.CurrentAllocationCount
                 > snapshot.MaxMemoryAllocationCount - request.AdditionalAllocationCount))
     {
-        result.Reason = "projected allocation count exceeds maxMemoryAllocationCount";
+        result.Reason = VulkanMemoryAdmissionReason::AllocationCountLimit;
         return result;
     }
 
@@ -129,20 +180,20 @@ struct VulkanMemoryAdmissionResult
         if (!snapshot.HeapDeviceLocal[heapIndex])
         {
             result.Accepted = true;
-            result.Reason = "no live budget; host heap left to vkAllocateMemory";
+            result.Reason = VulkanMemoryAdmissionReason::HostHeapNoLiveBudget;
             return result;
         }
 
         if (AddWouldOverflow(request.AlreadyReservedBytes, request.ProjectedBytes)
             || request.AlreadyReservedBytes + request.ProjectedBytes > result.HeapBudget)
         {
-            result.Reason = "projected bytes exceed the device-local heuristic budget";
+            result.Reason = VulkanMemoryAdmissionReason::HeuristicBudgetExceeded;
             return result;
         }
 
         result.AvailableBytes = result.HeapBudget;
         result.Accepted = true;
-        result.Reason = "75% device-local heuristic fallback";
+        result.Reason = VulkanMemoryAdmissionReason::HeuristicBudget;
         return result;
     }
 
@@ -154,19 +205,19 @@ struct VulkanMemoryAdmissionResult
 
     if (result.AvailableBytes < result.SafetyReserve)
     {
-        result.Reason = "live heap budget has no room after the safety reserve";
+        result.Reason = VulkanMemoryAdmissionReason::LiveBudgetReserve;
         return result;
     }
 
     const VkDeviceSize spendable = result.AvailableBytes - result.SafetyReserve;
     if (request.ProjectedBytes > spendable)
     {
-        result.Reason = "projected bytes exceed live heap budget after the safety reserve";
+        result.Reason = VulkanMemoryAdmissionReason::LiveBudgetExceeded;
         return result;
     }
 
     result.Accepted = true;
-    result.Reason = "live heap budget admission";
+    result.Reason = VulkanMemoryAdmissionReason::None;
     return result;
 }
 

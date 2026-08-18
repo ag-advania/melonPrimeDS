@@ -92,6 +92,10 @@ jobs:
       shell: pwsh
       run: python .\tools\ci\audits\audit-renderer-perf-zero-overhead.py
 
+    - name: Audit GPU memory production-overhead contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-renderer-memory-production-overhead.py
+
     - name: Audit Vulkan native surface visibility contract
       shell: pwsh
       run: python .\tools\ci\audits\audit-vulkan-native-surface-visibility.py
@@ -191,6 +195,7 @@ jobs:
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DMELONPRIME_ENABLE_VULKAN=ON \
           -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF \
+          -DMELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=OFF \
           -DCMAKE_BUILD_PARALLEL_LEVEL=${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
@@ -203,6 +208,7 @@ jobs:
         grep -F 'ENABLE_LTO_RELEASE:BOOL=OFF' "$cache"
         grep -F 'MELONPRIME_ENABLE_DEVELOPER_FEATURES:BOOL=OFF' "$cache"
         grep -F 'MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY:BOOL=OFF' "$cache"
+        grep -F 'MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY:BOOL=OFF' "$cache"
         grep -F 'MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE:BOOL=OFF' "$cache"
         grep -F 'MELONPRIME_ENABLE_VULKAN:BOOL=ON' "$cache"
         grep -F 'MELONPRIME_ENABLE_DX12:BOOL=ON' "$cache"
@@ -222,6 +228,10 @@ jobs:
         cmake --build --preset=release-mingw-shipping-x86_64 --parallel ${{ env.CMAKE_BUILD_PARALLEL_LEVEL }}
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
+
+    - name: Audit shipping binary GPU memory strings
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-renderer-memory-production-overhead.py --binary .\build\release-mingw-shipping-x86_64\melonPrimeDS.exe
 
     - name: Run raster edge executable vectors
       run: |

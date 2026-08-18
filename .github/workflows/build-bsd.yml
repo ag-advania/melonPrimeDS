@@ -220,6 +220,7 @@ jobs:
         fi
         echo "Using Python executable: $python_cmd"
         "$python_cmd" tools/ci/audits/audit-renderer-perf-zero-overhead.py
+        "$python_cmd" tools/ci/audits/audit-renderer-memory-production-overhead.py
         "$python_cmd" tools/ci/audits/audit-onscreen-edit-classic-layout.py
 
     # pkgin's failure summary ("pkg_install warnings: N, errors: N") names
@@ -239,6 +240,7 @@ jobs:
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF \
           -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF \
+          -DMELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=OFF \
           -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF \
           -DMELONPRIME_ENABLE_VULKAN=ON \
           -DMELONPRIME_REQUIRE_QT6_5=ON \
@@ -378,6 +380,7 @@ jobs:
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF \
           -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF \
+          -DMELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=OFF \
           -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF \
           -DMELONPRIME_ENABLE_VULKAN=OFF \
           -DMELONPRIME_REQUIRE_QT6_5=ON \

@@ -14,17 +14,21 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#if defined(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
 #include <array>
+#endif
 
 #include "VulkanCommon.h"
 
 namespace melonDS::Vk
 {
 
-// Allocation sizes are recorded at the vkAllocateMemory/vkFreeMemory boundary,
-// not from RenderFrame(). The buckets are intentionally coarse: the useful
-// question for the dedicated-allocation policy is whether the backend is
-// dominated by a few large resources or by many small ones.
+#if defined(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
+
+// Detailed allocation sizes are recorded at the vkAllocateMemory/vkFreeMemory
+// boundary, not from RenderFrame(). This diagnostic model is deliberately
+// compiled out of shipping builds; the admission path owns only the minimal
+// current reservation counters needed for safety.
 inline constexpr u32 VulkanMemoryTelemetryBucketCount = 8;
 
 struct VulkanMemoryTelemetrySnapshot
@@ -132,6 +136,29 @@ private:
     VkDeviceSize LargestAllocation = 0;
     std::array<u64, VulkanMemoryTelemetryBucketCount> AllocationSizeBuckets{};
 };
+
+#else
+
+// Shipping facade: detailed allocation telemetry has no fields, no locks, and
+// no counter updates. VulkanDevice keeps the separate minimal reservation
+// counters used by the memory-safety admission policy.
+struct VulkanMemoryTelemetrySnapshot
+{
+};
+
+class VulkanMemoryTelemetry
+{
+public:
+    constexpr VulkanMemoryTelemetry() noexcept = default;
+    constexpr void RecordAllocation(u32, VkDeviceSize) noexcept {}
+    constexpr void RecordFree(u32, VkDeviceSize) noexcept {}
+    [[nodiscard]] constexpr VulkanMemoryTelemetrySnapshot GetSnapshot() const noexcept
+    {
+        return {};
+    }
+};
+
+#endif
 
 } // namespace melonDS::Vk
 

@@ -1061,7 +1061,8 @@ DeviceProbeResult FeatureProbe::ProbeDevice(
             EvaluateVulkanMemoryAdmission(result.MemoryAdmission, admissionRequest);
         if (!admission.Accepted)
         {
-            scaleLimitReason = admission.Reason + "; heap=" + FormatU64(admission.HeapIndex)
+            scaleLimitReason = std::string(VulkanMemoryAdmissionReasonText(admission.Reason))
+                + "; heap=" + FormatU64(admission.HeapIndex)
                 + " budget=" + FormatMiB(admission.HeapBudget)
                 + " usage=" + FormatMiB(admission.HeapUsage)
                 + " available=" + FormatMiB(admission.AvailableBytes)
