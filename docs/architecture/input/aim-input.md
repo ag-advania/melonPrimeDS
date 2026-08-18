@@ -179,6 +179,29 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
   - Prebuilds hotkey masks via `setHotkeyVks()`
   - `snapshotInputFrameNoEdges()` preserves outer `m_hkPrev` state
 
+### 8.1 Windows registration generations
+
+Raw mouse aim deltas, XButton edge state, and wheel impulses share the same
+`MelonPrimeInputSubscription::generation`. Every active-registration change is
+an input-timeline boundary, including a target-window, Joy2Key, or Qt-filter
+change where the capture owner itself does not change. The transaction is:
+
+1. Drain pending `WM_INPUT` using the existing `GetRawInputBuffer` then
+   `PeekMessage` order.
+2. Mark the snapshot not ready and advance the subscription generation.
+3. Unregister and register the new target/filter configuration.
+4. Discard old deltas, edge/deferred presses, and wheel impulses.
+5. Synchronize the physical button baseline, then publish `baselineReady`.
+
+A frame may use Raw Input buttons, wheel, and aim only when the subscription is
+the active owner, its snapshot is baseline-ready, and the snapshot generation
+equals the current generation. A held XButton after re-registration is
+therefore `down` without `pressed`; a release followed by a new press creates
+the next edge. Raw wheel steps are consumed from the same ready snapshot. The
+Qt wheel mailbox is consumed only when Raw Input is not the owner, so a single
+physical wheel tick cannot be counted twice. The source-level contract check is
+`tools/testing/test_mouse_input_savestate_contract.py`.
+
 ## 9. Linux Raw / Relative Aim Notes
 
 Since 2026-07-03, Linux aim uses XInput2 `XI_RawMotion` as the source of truth when available.

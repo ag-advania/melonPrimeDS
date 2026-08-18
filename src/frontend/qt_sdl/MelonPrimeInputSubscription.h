@@ -59,6 +59,21 @@ public:
         return true;
     }
 
+    // A raw-input registration change is an input-timeline boundary even when
+    // the capture owner does not change. Keep the existing subscription
+    // generation authoritative so button edges, wheel impulses, and aim
+    // deltas can all reject events from the previous registration.
+    static uint64_t BeginRegistrationGeneration(
+        MelonPrimeInputSubscription& subscription)
+    {
+        std::lock_guard<std::mutex> lock(Mutex());
+        ++subscription.generation;
+        if (subscription.generation == 0)
+            subscription.generation = 1;
+        subscription.hotkeyPrevious = subscription.hotkeyDownSnapshot;
+        return subscription.generation;
+    }
+
     static void Release(MelonPrimeInputSubscription& subscription)
     {
         std::lock_guard<std::mutex> lock(Mutex());

@@ -317,6 +317,12 @@ namespace MelonPrime {
         }
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
+            if (UNLIKELY(m_postSavestateReconcilePending)) {
+                // OnSavestateLoaded already invalidated host bookkeeping. This
+                // normal-frame boundary now consumes the marker immediately
+                // before loaded lifecycle reads; NDS::RunFrame has not started.
+                m_postSavestateReconcilePending = false;
+            }
             const bool isInGame = (*m_ptrs.inGame) == 0x0001;
             const bool wasInGame = m_flags.test(StateFlags::BIT_IN_GAME);
             m_flags.assign(StateFlags::BIT_IN_GAME, isInGame);

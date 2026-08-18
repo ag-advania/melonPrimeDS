@@ -50,7 +50,8 @@ namespace MelonPrime {
     // kReentrant=false (full path):
     //   - PollAndSnapshot        : drains WM_INPUT and latches edge state
     //   - reads press mask       : ProjectPressMask from hotPressMask
-    //   - reads wheelDelta       : from cached panel (P-3)
+    //   - reads wheelDelta       : from the Raw Input generation, or the
+    //                              generation-tagged Qt fallback mailbox
     //
     // kReentrant=true (re-entrant FrameAdvance path):
     //   - PollAndSnapshotNoEdges : drains WM_INPUT, no edge latch
@@ -80,6 +81,7 @@ namespace MelonPrime {
             && m_threadBridge.CaptureWantedForEmu();
         const bool wasInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
+        const uint64_t wasInputGeneration = m_inputSubscription.generation;
 #ifdef _WIN32
         auto* const rawFilter = m_rawFilter.get();
 
@@ -91,10 +93,15 @@ namespace MelonPrime {
                 m_rawInputSubscription,
                 reinterpret_cast<HWND>(m_threadBridge.WindowHandleForEmu()));
             rawFilter->UpdateOwner(m_rawInputSubscription, captureEligible);
+            m_threadBridge.SetInputGenerationFromEmu(m_inputSubscription.generation);
             if constexpr (kReentrant)
-                rawFilter->PollAndSnapshotNoEdges(m_rawInputSubscription, hk, m_input.mouseX, m_input.mouseY);
+                rawFilter->PollAndSnapshotNoEdges(
+                    m_rawInputSubscription, hk,
+                    m_input.mouseX, m_input.mouseY, m_input.wheelDelta);
             else {
-                rawFilter->PollAndSnapshot(m_rawInputSubscription, hk, m_input.mouseX, m_input.mouseY);
+                rawFilter->PollAndSnapshot(
+                    m_rawInputSubscription, hk,
+                    m_input.mouseX, m_input.mouseY, m_input.wheelDelta);
                 // P-47: Kernel buffer just drained; no FrameAdvance has occurred yet.
                 // LateLatch skips processRawInputBatched on frames with no FrameAdvance.
                 m_didFrameAdvanceSinceSnapshot = false;
@@ -104,10 +111,12 @@ namespace MelonPrime {
 
 #if !defined(_WIN32)
         PlatformInputOwnerService::Update(m_inputSubscription, captureEligible);
+        m_threadBridge.SetInputGenerationFromEmu(m_inputSubscription.generation);
 #endif
         const bool isInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
-        if (wasInputOwner != isInputOwner) {
+        if (wasInputOwner != isInputOwner
+            || wasInputGeneration != m_inputSubscription.generation) {
             InstanceDiagnostics::LogInputSubscription(
                 emuInstance, &m_inputSubscription,
                 static_cast<unsigned long long>(m_inputSubscription.generation),
@@ -129,20 +138,44 @@ namespace MelonPrime {
             return;
         }
 
-        if constexpr (!kReentrant)
-            m_input.wheelDelta = m_threadBridge.ConsumeWheelForEmu();
-        else
+        if constexpr (!kReentrant) {
+#ifdef _WIN32
+            const bool rawActionReady = isInputOwner
+                && hk.baselineReady
+                && hk.generation == m_inputSubscription.generation;
+            if (isInputOwner) {
+                // Qt remains a fallback producer for cursor mode. While Raw
+                // Input owns the registration, consume and discard that
+                // mailbox so the same wheel tick cannot be counted twice.
+                (void)m_threadBridge.ConsumeWheelForEmu(
+                    m_inputSubscription.generation);
+                m_input.wheelDelta = rawActionReady ? hk.wheelDelta : 0;
+            }
+            else {
+                m_input.wheelDelta = m_threadBridge.ConsumeWheelForEmu(
+                    m_inputSubscription.generation);
+            }
+#else
+            m_input.wheelDelta = m_threadBridge.ConsumeWheelForEmu(
+                m_inputSubscription.generation);
+#endif
+        }
+        else {
             m_input.wheelDelta = 0;
+        }
 
 #ifdef _WIN32
+        const bool rawActionReady = isInputOwner
+            && hk.baselineReady
+            && hk.generation == m_inputSubscription.generation;
         // Mouse-wheel bindings are virtual one-frame keys. Raw Input has no VK
-        // for wheel ticks, so when Windows Raw Input owns the keyboard source,
-        // inject matching hotkey bits from the consumed wheel delta. The Qt
-        // path (!isInputOwner / non-Windows) already gets these via
-        // EmuInstance::onMouseWheel + inputProcess.
+        // for wheel ticks, so a ready Raw Input snapshot injects matching bits.
+        // The Qt path (!isInputOwner / non-Windows) gets these via
+        // EmuInstance::onMouseWheel + inputProcess. The two sources are
+        // deliberately exclusive; never OR Raw and Qt wheel pulses.
         uint64_t wheelHotkeyBits = 0;
         if constexpr (!kReentrant) {
-            if (isInputOwner && m_input.wheelDelta) {
+            if (rawActionReady && m_input.wheelDelta) {
                 const int wheelKey = (m_input.wheelDelta > 0)
                     ? InputKey::MouseWheelUp
                     : InputKey::MouseWheelDown;
@@ -162,11 +195,13 @@ namespace MelonPrime {
         // This keeps instances isolated and avoids duplicate press edges when
         // active ownership changes.
         const uint64_t hotDownMask = isInputOwner
-            ? (hk.down | emuInstance->joyHotkeyMask | wheelHotkeyBits)
+            ? ((rawActionReady ? hk.down : 0)
+                | emuInstance->joyHotkeyMask | wheelHotkeyBits)
             : emuInstance->hotkeyMask;
         if constexpr (!kReentrant) {
             const uint64_t hotPressMask = isInputOwner
-                ? (hk.pressed | emuInstance->joyHotkeyPress | wheelHotkeyBits)
+                ? ((rawActionReady ? hk.pressed : 0)
+                    | emuInstance->joyHotkeyPress | wheelHotkeyBits)
                 : emuInstance->hotkeyPress;
             m_input.press = InputProjection::ProjectPressMask(hotPressMask);
         } else {

@@ -19,6 +19,27 @@ The diagnostic path must not invent a second emulated frame. In particular, it
 must not call `NDS::RunFrame()` directly from `handleMessages()` and must not
 inject START into an in-match snapshot.
 
+## Host-state reconciliation after a successful load
+
+`OnSavestateLoaded()` is a host-state invalidation boundary, not a second load
+or an emulation step. It clears MelonPrime lifecycle/patch bookkeeping and
+transient aim, overlay, direct-transform, biped-fire, weapon-switch, and zoom
+state, then marks one pending reconciliation epoch. The DS-side reconcile drops
+the host patch registry and ARM9 hook bookkeeping without restoring guest RAM.
+
+The next ordinary `RunFrameHook()` consumes that marker before reading the
+loaded `isInGame`, mode/flow, and player-position values. The existing
+`HandleGameJoinInit()` and battle-runtime entry path then resolve pointers from
+loaded RAM, reapply battle patches, and re-register the LowLatencyAim ARM9
+instruction hook/JIT trampolines when the loaded state is an active match. No
+callback-side `NDS::RunFrame()` or synthetic START is valid.
+
+The static ordering/ownership check is
+`tools/testing/test_mouse_input_savestate_contract.py`. A source/build pass is
+not physical runtime evidence: Raw Input aim/XButton/wheel capture and the
+post-load ARM9 hook/JIT path still require the Windows runtime acceptance run
+described below.
+
 ## 2026-08-18 incident and correction
 
 The first Windows DX12 scoreboard smoke runs were invalidated. The diagnostic

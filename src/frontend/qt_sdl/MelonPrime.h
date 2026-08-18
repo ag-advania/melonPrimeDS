@@ -641,6 +641,10 @@ namespace MelonPrime {
         // resolved once per ROM detect.
         BattleFlow::MatchBlackWindowState m_matchBlackWindow{};
         BattleFlow::MatchTransitionPtrs m_matchTransitionPtrs{};
+        // Host-side epoch for successful savestate loads. The pending bit is
+        // consumed at the next normal RunFrameHook before loaded RAM is read.
+        uint64_t m_timelineGeneration = 0;
+        bool m_postSavestateReconcilePending = false;
         // Gate for the two above. Written only by
         // SetForceSoftwareOutsideMatchEnabled (emulation thread, cold).
         bool m_forceSoftwareOutsideMatch = false;
