@@ -20,6 +20,7 @@
 #include "VulkanPresentPacer.h"
 #include "VulkanPresenterFrameBudget.h"
 #include "VulkanGoogleDisplayTimingModel.h"
+#include "VulkanNvidiaReflex.h"
 #include "VulkanPresentTimingModel.h"
 
 namespace
@@ -1523,6 +1524,20 @@ void TestEffectiveLowLatencyAuthority()
         "an active Anti-Lag path must own present-slot admission");
 }
 
+
+void TestVulkanReflexSleepWaitContract()
+{
+    Require(ClassifyVulkanReflexSleepWaitResult(VK_SUCCESS)
+                == VulkanReflexSleepWaitAction::Continue,
+        "a successful Reflex sleep wait must continue the frame");
+    Require(ClassifyVulkanReflexSleepWaitResult(VK_TIMEOUT)
+                == VulkanReflexSleepWaitAction::DisableForRuntimeFailure,
+        "a Reflex sleep watchdog timeout must disable the vendor path");
+    Require(ClassifyVulkanReflexSleepWaitResult(VK_NOT_READY)
+                == VulkanReflexSleepWaitAction::DisableForRuntimeFailure,
+        "a non-success Reflex sleep wait must use the runtime failure fallback");
+}
+
 } // namespace
 
 int main()
@@ -1555,6 +1570,7 @@ int main()
     TestFallbackReasonsAreSpecific();
     TestNonFifoKeepsWaitButNotTarget();
     TestEffectiveLowLatencyAuthority();
+    TestVulkanReflexSleepWaitContract();
 
     TestRelativeFallbackWhenSurfaceLacksAbsolute();
     TestAbsolutePreferredOverRelative();

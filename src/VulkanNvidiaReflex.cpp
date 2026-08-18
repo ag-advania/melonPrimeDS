@@ -354,9 +354,14 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
     // One second is far beyond any legitimate pacing delay; it exists so a
     // driver bug degrades into a dropped frame instead of a hung emulator.
     res = fns.WaitSemaphoresKHR(Device->GetHandle(), &wait, 1000ull * 1000ull * 1000ull);
-    if (res != VK_SUCCESS && res != VK_TIMEOUT)
+    if (ClassifyVulkanReflexSleepWaitResult(res)
+        == VulkanReflexSleepWaitAction::DisableForRuntimeFailure)
     {
         DisableForRuntimeFailure("vkWaitSemaphores(Reflex sleep)", res);
+        // The frame is closed by DisableForRuntimeFailure(). Mark the sleep as
+        // consumed so a later recovery/re-enable cannot wait on this
+        // unsignalled semaphore value.
+        PresentedSinceSleep = true;
         FrameOpen = false;
         return;
     }

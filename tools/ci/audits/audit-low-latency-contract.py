@@ -1686,6 +1686,40 @@ def main() -> int:
         "Vulkan must keep Sleep, markers and Present ID correlation live in Off mode",
         failures,
     )
+    reflex_begin = function_body(
+        vulkan,
+        "void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)",
+        "void VulkanNvidiaReflex::SetMarker(VkLatencyMarkerNV marker)",
+    )
+    require(
+        "ClassifyVulkanReflexSleepWaitResult" in vulkan_reflex_header
+        and "VulkanReflexSleepWaitAction::DisableForRuntimeFailure" in vulkan_reflex_header
+        and "1000ull * 1000ull * 1000ull" in reflex_begin
+        and "ClassifyVulkanReflexSleepWaitResult(res)" in reflex_begin
+        and "DisableForRuntimeFailure(\"vkWaitSemaphores(Reflex sleep)\", res);" in reflex_begin
+        and "PresentedSinceSleep = true;" in reflex_begin
+        and "res != VK_SUCCESS && res != VK_TIMEOUT" not in reflex_begin
+        and ordered(
+            reflex_begin,
+            [
+                "ClassifyVulkanReflexSleepWaitResult(res)",
+                "DisableForRuntimeFailure(\"vkWaitSemaphores(Reflex sleep)\", res);",
+                "PresentedSinceSleep = true;",
+                "return;",
+                "PresentedSinceSleep = false;",
+            ],
+        )
+        and all(
+            token in vulkan_timing_tests
+            for token in (
+                "TestVulkanReflexSleepWaitContract",
+                "VK_TIMEOUT",
+                "a Reflex sleep watchdog timeout",
+            )
+        ),
+        "Vulkan Reflex sleep timeout must close and disable the frame instead of counting timeout as success",
+        failures,
+    )
 
     for token in (
         "hasTimelineExtension",
