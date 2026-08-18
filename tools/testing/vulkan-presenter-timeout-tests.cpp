@@ -79,6 +79,12 @@ int main()
             MelonPrime::PresenterAcquireTimeoutNanoseconds() == 123456789,
             "normal acquire timeout was not cached");
 
+        SetNormalAcquireTimeoutEnvironment("-1");
+        MelonPrime::ResetPresenterAcquireTimeoutCachesForTesting();
+        Require(
+            MelonPrime::PresenterAcquireTimeoutNanoseconds() == expectedDefault,
+            "negative normal acquire timeout did not use the fallback");
+
         SetNormalAcquireTimeoutEnvironment(nullptr);
         MelonPrime::ResetPresenterAcquireTimeoutCachesForTesting();
         Require(

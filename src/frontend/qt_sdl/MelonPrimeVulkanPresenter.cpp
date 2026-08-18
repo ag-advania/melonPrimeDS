@@ -1859,20 +1859,20 @@ bool VulkanPresenter::BeginFrame(
     }
     else if (res == VK_TIMEOUT || res == VK_NOT_READY)
     {
-        // A bounded developer acquire has no image and therefore does not
-        // signal ImageAvailable. Submit the command buffer without any
-        // semaphore dependency, retire this logical frame, and let the next
-        // frame retry. Reusing the semaphore is safe because it was never
-        // signalled or submitted as a wait in this branch.
+        // No swapchain image was acquired, so ImageAvailable was not signalled.
+        // The low-latency policy classifies this as an intentional presentation
+        // skip; the normal bounded policy preserves the existing stall
+        // classification. Close the frame-ring recording without an acquire
+        // semaphore wait and retry on the next callback.
         if (lowLatencyAcquire)
         {
             LastBeginLatencySkip = true;
             VulkanPerf::AddCounter(
                 VulkanPerf::Counter::VulkanAcquireLowLatencySkipCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
         }
         VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireNotReadyCount);
-        VulkanPerf::AddCounter(
-            VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
         Frames.SubmitFrame(Device.GetMainQueue());
         CurrentCommandBuffer = VK_NULL_HANDLE;
         return false;

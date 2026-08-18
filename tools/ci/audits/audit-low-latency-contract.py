@@ -37,6 +37,24 @@ def function_body(source: str, signature: str, next_signature: str) -> str:
     return source[start:end]
 
 
+def braced_block(source: str, signature: str) -> str:
+    start = source.find(signature)
+    if start < 0:
+        return ""
+    opening = source.find("{", start + len(signature))
+    if opening < 0:
+        return ""
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening : index + 1]
+    return ""
+
+
 def pe_exports(path: Path) -> set[str]:
     """Read the PE export-name table without platform-specific SDK tools."""
     data = path.read_bytes()
@@ -183,6 +201,10 @@ def main() -> int:
         "else if (res == VK_TIMEOUT || res == VK_NOT_READY)",
         "else if (res != VK_SUCCESS)",
     )
+    low_latency_timeout_block = braced_block(
+        acquire_timeout_branch,
+        "if (lowLatencyAcquire)",
+    )
     frame_begin = function_body(
         vulkan_sync,
         "FrameContext* FrameRing::BeginFrameInternal(",
@@ -282,16 +304,31 @@ def main() -> int:
         failures,
     )
     require(
-        ordered(
-            acquire_timeout_branch,
+        low_latency_timeout_block != ""
+        and ordered(
+            low_latency_timeout_block,
             [
-                "if (lowLatencyAcquire)",
                 "LastBeginLatencySkip = true;",
                 "VulkanAcquireLowLatencySkipCount",
                 "VulkanPresentSkippedForLatencyBudgetCount",
+            ]
+        )
+        and low_latency_timeout_block.count(
+            "VulkanPresentSkippedForLatencyBudgetCount"
+        ) == 1
+        and acquire_timeout_branch.count(
+            "VulkanPresentSkippedForLatencyBudgetCount"
+        ) == 1
+        and "VulkanAcquireNotReadyCount" not in low_latency_timeout_block
+        and ordered(
+            acquire_timeout_branch,
+            [
+                "if (lowLatencyAcquire)",
+                "VulkanPresentSkippedForLatencyBudgetCount",
+                "VulkanAcquireNotReadyCount",
                 "Frames.SubmitFrame(Device.GetMainQueue());",
                 "return false;",
-            ]
+            ],
         )
         and acquire_timeout_branch.count("LastBeginLatencySkip = true;") == 1
         and all(
@@ -316,7 +353,7 @@ def main() -> int:
             )
         )
         and "This is not queue ownership" in vulkan_presenter_header,
-        "Acquire timeout/not-ready must classify LastBeginLatencySkip only inside the low-latency branch and expose the correct telemetry names",
+        "Acquire timeout/not-ready must keep low-latency skip telemetry inside its branch while retaining the all-outcome not-ready counter",
         failures,
     )
     require(
