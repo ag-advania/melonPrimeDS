@@ -483,7 +483,7 @@ def main() -> int:
                 "VulkanPreviousPresentWaitTimeoutCount",
                 "VulkanSwapchainImageCount",
                 "VulkanPresenterFramesInFlight",
-                "VulkanPresenterLogicalDepth",
+                "VulkanPresenterUnretiredFrameRingSubmissionDepth",
                 "VulkanPacingAuthority",
                 "VulkanPresentMode",
             )
@@ -744,9 +744,9 @@ def main() -> int:
                 "swapchain_image_index",
                 "frame_slot",
                 "acquire_wait_us",
-                "CpuLogicalFramesAhead",
-                "PresenterLogicalDepth",
-                "GpuSubmittedFramesAhead",
+                "DistinctSwapchainImagesAcquiredSinceRecreate",
+                "LogicalFramesSinceLastAcceptedPresent",
+                "UnretiredFrameRingSubmissionDepth",
                 "MarkAcquireStart",
                 "MarkAcquireEnd",
                 "SetFrameContext",
@@ -755,12 +755,12 @@ def main() -> int:
         and all(
             token in vulkan_perf
             for token in (
-                "VulkanPresenterCpuLogicalAhead",
-                "VulkanPresenterGpuSubmittedAhead",
-                "VulkanPresenterUnavailableSwapchainImages",
-                "cpu_logical_ahead=%llu",
-                "gpu_submitted_ahead=%llu",
-                "unavailable_swapchain_images=%llu",
+                "VulkanPresenterUnretiredFrameRingSubmissionDepth",
+                "VulkanPresenterLogicalFramesSinceLastAcceptedPresent",
+                "VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate",
+                "unretired_frame_ring_submission_depth=%llu",
+                "logical_frames_since_last_accepted_present=%llu",
+                "distinct_swapchain_images_acquired_since_recreate=%llu",
             )
         )
         and all(
@@ -770,8 +770,10 @@ def main() -> int:
                 "LatencyCapture.MarkAcquireEnd();",
                 "Frames.GetAbsoluteFrame()",
                 "LastAcceptedLogicalFrameId",
-                "UnavailableSwapchainImageCount",
-                "SwapchainImageUnavailable.assign",
+                "DistinctSwapchainImagesAcquiredSinceRecreate",
+                "SwapchainImageAcquireObserved.assign",
+                "unretiredFrameRingSubmissionDepth",
+                "logicalFramesSinceLastAcceptedPresent",
             )
         )
         and "ImagesInFlight" not in vulkan_presenter

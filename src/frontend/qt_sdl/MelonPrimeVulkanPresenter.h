@@ -423,8 +423,9 @@ private:
     // semantics rather than creating a presenter-local counter.
     melonDS::u64 LowLatencyFrameIndex = 0;
     // Last logical emulated frame whose present was accepted by WSI. The
-    // difference from LowLatencyFrameIndex is a diagnostic CPU-ahead gauge;
-    // it never participates in synchronization or frame admission.
+    // difference from LowLatencyFrameIndex is a diagnostic count of logical
+    // frames since that accepted present; it never participates in
+    // synchronization or frame admission.
     melonDS::u64 LastAcceptedLogicalFrameId = 0;
     // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
     // logs a transition once instead of every frame.
@@ -443,12 +444,11 @@ private:
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     VkExtent2D SwapchainExtent{0, 0};
     std::vector<VkImage> SwapchainImages;
-    // Diagnostic WSI availability estimate only. This is deliberately not a
-    // fence map: AcquireNextImageKHR itself is the observation that an image
-    // became available, and the bit is set again for the current presentation.
-    // It must never be used to gate, wait, or recreate the swapchain.
-    std::vector<bool> SwapchainImageUnavailable;
-    melonDS::u32 UnavailableSwapchainImageCount = 0;
+    // Distinct successful-acquire observations since the current swapchain was
+    // created. This is diagnostic only, not a WSI availability query or fence map:
+    // it must never gate, wait, or recreate the swapchain.
+    std::vector<bool> SwapchainImageAcquireObserved;
+    melonDS::u32 DistinctSwapchainImagesAcquiredSinceRecreate = 0;
     std::vector<VkImageView> SwapchainImageViews;
     std::vector<VkFramebuffer> SwapchainFramebuffers;
 

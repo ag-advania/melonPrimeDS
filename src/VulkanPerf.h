@@ -130,10 +130,9 @@ enum class Counter : u32
     VulkanPreviousPresentWaitTimeoutCount,
     VulkanSwapchainImageCount,
     VulkanPresenterFramesInFlight,
-    VulkanPresenterLogicalDepth,
-    VulkanPresenterCpuLogicalAhead,
-    VulkanPresenterGpuSubmittedAhead,
-    VulkanPresenterUnavailableSwapchainImages,
+    VulkanPresenterUnretiredFrameRingSubmissionDepth,
+    VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+    VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
     VulkanNvLowLatencyOptimizedModeCount,
     VulkanPresentModeIsNvLowLatencyOptimized,
     VulkanPacingAuthority,
@@ -440,7 +439,10 @@ inline void MaybeReport()
         "present_skipped_for_latency_budget_count=%llu transient_descriptor_pool_resets=%llu "
         "previous_present_wait_count=%llu previous_present_wait_ns=%llu "
         "previous_present_wait_timeout_count=%llu swapchain_image_count=%llu "
-        "presenter_frames_in_flight=%llu presenter_logical_depth=%llu "
+        "presenter_frames_in_flight=%llu "
+        "unretired_frame_ring_submission_depth=%llu "
+        "logical_frames_since_last_accepted_present=%llu "
+        "distinct_swapchain_images_acquired_since_recreate=%llu "
         "pacing_authority=%llu present_mode=%llu vsync_enabled=%llu "
         "reflex_mode=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
@@ -504,10 +506,9 @@ inline void MaybeReport()
         count(Counter::VulkanPreviousPresentWaitTimeoutCount),
         count(Counter::VulkanSwapchainImageCount),
         count(Counter::VulkanPresenterFramesInFlight),
-        count(Counter::VulkanPresenterLogicalDepth),
-        count(Counter::VulkanPresenterCpuLogicalAhead),
-        count(Counter::VulkanPresenterGpuSubmittedAhead),
-        count(Counter::VulkanPresenterUnavailableSwapchainImages),
+        count(Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth),
+        count(Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent),
+        count(Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate),
         count(Counter::VulkanNvLowLatencyOptimizedModeCount),
         count(Counter::VulkanPresentModeIsNvLowLatencyOptimized),
         count(Counter::VulkanPacingAuthority),
@@ -518,14 +519,12 @@ inline void MaybeReport()
         count(Counter::VulkanSwapchainImageCount);
     const unsigned long long presenterFramesInFlight =
         count(Counter::VulkanPresenterFramesInFlight);
-    const unsigned long long presenterLogicalDepth =
-        count(Counter::VulkanPresenterLogicalDepth);
-    const unsigned long long presenterCpuLogicalAhead =
-        count(Counter::VulkanPresenterCpuLogicalAhead);
-    const unsigned long long presenterGpuSubmittedAhead =
-        count(Counter::VulkanPresenterGpuSubmittedAhead);
-    const unsigned long long presenterUnavailableSwapchainImages =
-        count(Counter::VulkanPresenterUnavailableSwapchainImages);
+    const unsigned long long unretiredFrameRingSubmissionDepth =
+        count(Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth);
+    const unsigned long long logicalFramesSinceLastAcceptedPresent =
+        count(Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent);
+    const unsigned long long distinctSwapchainImagesAcquiredSinceRecreate =
+        count(Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate);
     const unsigned long long nvLowLatencyOptimizedModeCount =
         count(Counter::VulkanNvLowLatencyOptimizedModeCount);
     const unsigned long long presentModeIsNvLowLatencyOptimized =
@@ -538,15 +537,16 @@ inline void MaybeReport()
     std::fprintf(stderr,
         "[VulkanPerf] summary renderer=Vulkan vsync=%llu present_mode=%llu "
         "vendor_pacing_authority=%llu reflex_mode=%llu "
-        "swapchain_backbuffer_count=%llu presenter_logical_depth=%llu "
-        "cpu_logical_ahead=%llu gpu_submitted_ahead=%llu "
-        "unavailable_swapchain_images=%llu "
+        "swapchain_backbuffer_count=%llu "
+        "unretired_frame_ring_submission_depth=%llu "
+        "logical_frames_since_last_accepted_present=%llu "
+        "distinct_swapchain_images_acquired_since_recreate=%llu "
         "nv_low_latency_optimized_mode_count=%llu "
         "present_mode_is_nv_low_latency_optimized=%llu\n",
         vsyncEnabled, presentMode, pacingAuthority, reflexMode,
-        swapchainImageCount, presenterLogicalDepth,
-        presenterCpuLogicalAhead, presenterGpuSubmittedAhead,
-        presenterUnavailableSwapchainImages,
+        swapchainImageCount, unretiredFrameRingSubmissionDepth,
+        logicalFramesSinceLastAcceptedPresent,
+        distinctSwapchainImagesAcquiredSinceRecreate,
         nvLowLatencyOptimizedModeCount,
         presentModeIsNvLowLatencyOptimized);
     for (SampleWindow& window : state.Cpu)
@@ -556,14 +556,12 @@ inline void MaybeReport()
         swapchainImageCount;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterFramesInFlight)] =
         presenterFramesInFlight;
-    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterLogicalDepth)] =
-        presenterLogicalDepth;
-    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterCpuLogicalAhead)] =
-        presenterCpuLogicalAhead;
-    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterGpuSubmittedAhead)] =
-        presenterGpuSubmittedAhead;
-    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterUnavailableSwapchainImages)] =
-        presenterUnavailableSwapchainImages;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth)] =
+        unretiredFrameRingSubmissionDepth;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent)] =
+        logicalFramesSinceLastAcceptedPresent;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate)] =
+        distinctSwapchainImagesAcquiredSinceRecreate;
     state.Counters[static_cast<std::size_t>(Counter::VulkanNvLowLatencyOptimizedModeCount)] =
         nvLowLatencyOptimizedModeCount;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPresentModeIsNvLowLatencyOptimized)] =
@@ -720,10 +718,9 @@ enum class Counter : u32
     VulkanPreviousPresentWaitTimeoutCount,
     VulkanSwapchainImageCount,
     VulkanPresenterFramesInFlight,
-    VulkanPresenterLogicalDepth,
-    VulkanPresenterCpuLogicalAhead,
-    VulkanPresenterGpuSubmittedAhead,
-    VulkanPresenterUnavailableSwapchainImages,
+    VulkanPresenterUnretiredFrameRingSubmissionDepth,
+    VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+    VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
     VulkanNvLowLatencyOptimizedModeCount,
     VulkanPresentModeIsNvLowLatencyOptimized,
     VulkanPacingAuthority,

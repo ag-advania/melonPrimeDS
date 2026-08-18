@@ -656,24 +656,24 @@ bool VulkanPresenter::CreateDeviceObjects()
         ? Frames.GetAbsoluteFrame() - 1
         : 0;
     const u64 completedFrame = Frames.GetCompletedFrame();
-    const u64 presenterLogicalDepth = submittedFrameCount > completedFrame
+    // FrameRing retirement proxy only; this does not query the driver's WSI
+    // presentation queue depth.
+    const u64 unretiredFrameRingSubmissionDepth = submittedFrameCount > completedFrame
         ? submittedFrameCount - completedFrame
         : 0;
-    const u64 cpuLogicalAhead = LowLatencyFrameIndex > LastAcceptedLogicalFrameId
+    const u64 logicalFramesSinceLastAcceptedPresent =
+        LowLatencyFrameIndex > LastAcceptedLogicalFrameId
         ? LowLatencyFrameIndex - LastAcceptedLogicalFrameId
         : 0;
     VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterLogicalDepth,
-        presenterLogicalDepth);
+        VulkanPerf::Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth,
+        unretiredFrameRingSubmissionDepth);
     VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterCpuLogicalAhead,
-        cpuLogicalAhead);
+        VulkanPerf::Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+        logicalFramesSinceLastAcceptedPresent);
     VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterGpuSubmittedAhead,
-        presenterLogicalDepth);
-    VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages,
-        UnavailableSwapchainImageCount);
+        VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+        DistinctSwapchainImagesAcquiredSinceRecreate);
 
     if (!CreateSamplers())
         return false;
@@ -1427,10 +1427,11 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         return Fail("vkGetSwapchainImagesKHR", res);
     SwapchainImages.resize(realImageCount);
 
-    SwapchainImageUnavailable.assign(realImageCount, false);
-    UnavailableSwapchainImageCount = 0;
+    SwapchainImageAcquireObserved.assign(realImageCount, false);
+    DistinctSwapchainImagesAcquiredSinceRecreate = 0;
     VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages, 0);
+        VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+        0);
     SwapchainImageViews.assign(realImageCount, VK_NULL_HANDLE);
     SwapchainFramebuffers.assign(realImageCount, VK_NULL_HANDLE);
     RenderFinished.assign(realImageCount, VK_NULL_HANDLE);
@@ -1584,10 +1585,11 @@ void VulkanPresenter::DestroySwapchainObjects(bool immediate)
     // The VkImages themselves belong to the swapchain and must not be
     // destroyed; only the views the presenter created are its own.
     SwapchainImages.clear();
-    SwapchainImageUnavailable.clear();
-    UnavailableSwapchainImageCount = 0;
+    SwapchainImageAcquireObserved.clear();
+    DistinctSwapchainImagesAcquiredSinceRecreate = 0;
     VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages, 0);
+        VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+        0);
 }
 
 
@@ -1752,9 +1754,26 @@ bool VulkanPresenter::BeginFrame(
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresenterFramesInFlight,
         Frames.GetFramesInFlight());
+    const u64 submittedFrameCount = Frames.GetAbsoluteFrame() > 0
+        ? Frames.GetAbsoluteFrame() - 1
+        : 0;
+    const u64 completedFrame = Frames.GetCompletedFrame();
+    const u64 unretiredFrameRingSubmissionDepth = submittedFrameCount > completedFrame
+        ? submittedFrameCount - completedFrame
+        : 0;
     VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterLogicalDepth,
-        Frames.GetFramesInFlight());
+        VulkanPerf::Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth,
+        unretiredFrameRingSubmissionDepth);
+    const u64 logicalFramesSinceLastAcceptedPresent =
+        LowLatencyFrameIndex > LastAcceptedLogicalFrameId
+        ? LowLatencyFrameIndex - LastAcceptedLogicalFrameId
+        : 0;
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+        logicalFramesSinceLastAcceptedPresent);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+        DistinctSwapchainImagesAcquiredSinceRecreate);
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanVsyncEnabled,
         VSyncApplied ? 1u : 0u);
@@ -1902,16 +1921,16 @@ bool VulkanPresenter::BeginFrame(
 #endif
 
     if ((res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR)
-        && CurrentImageIndex < SwapchainImageUnavailable.size()
-        && !SwapchainImageUnavailable[CurrentImageIndex])
+        && CurrentImageIndex < SwapchainImageAcquireObserved.size()
+        && !SwapchainImageAcquireObserved[CurrentImageIndex])
     {
-        // A successful acquire is the only availability observation needed by
-        // this diagnostic. It is not synchronization and never gates reuse.
-        SwapchainImageUnavailable[CurrentImageIndex] = true;
-        ++UnavailableSwapchainImageCount;
+        // Count distinct successful acquisitions only. This is not
+        // synchronization and never gates reuse.
+        SwapchainImageAcquireObserved[CurrentImageIndex] = true;
+        ++DistinctSwapchainImagesAcquiredSinceRecreate;
         VulkanPerf::SetCounter(
-            VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages,
-            UnavailableSwapchainImageCount);
+            VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+            DistinctSwapchainImagesAcquiredSinceRecreate);
     }
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR)
@@ -2565,14 +2584,17 @@ bool VulkanPresenter::EndFrame()
 
     const bool presentAccepted = res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR;
     const u64 logicalFrameId = LowLatencyFrameIndex;
-    const u64 cpuLogicalAhead = logicalFrameId > LastAcceptedLogicalFrameId
+    const u64 logicalFramesSinceLastAcceptedPresent =
+        logicalFrameId > LastAcceptedLogicalFrameId
         ? logicalFrameId - LastAcceptedLogicalFrameId
         : 0;
     const u64 submittedFrameCount = Frames.GetAbsoluteFrame() > 0
         ? Frames.GetAbsoluteFrame() - 1
         : 0;
     const u64 completedFrame = Frames.GetCompletedFrame();
-    const u64 presenterLogicalDepth = submittedFrameCount > completedFrame
+    // FrameRing retirement proxy only; this does not query the driver's WSI
+    // presentation queue depth.
+    const u64 unretiredFrameRingSubmissionDepth = submittedFrameCount > completedFrame
         ? submittedFrameCount - completedFrame
         : 0;
 
@@ -2589,10 +2611,9 @@ bool VulkanPresenter::EndFrame()
             CurrentImageIndex,
             Frames.GetFrameIndex(),
             static_cast<u32>(SwapchainImages.size()),
-            UnavailableSwapchainImageCount,
-            cpuLogicalAhead,
-            presenterLogicalDepth,
-            presenterLogicalDepth);
+            DistinctSwapchainImagesAcquiredSinceRecreate,
+            logicalFramesSinceLastAcceptedPresent,
+            unretiredFrameRingSubmissionDepth);
         LatencyCapture.Commit(
             genericPresentMetadata.LogicalId,
             PresentPacer.CaptureState(genericPresentMetadata));
@@ -2603,17 +2624,14 @@ bool VulkanPresenter::EndFrame()
         if (logicalFrameId > LastAcceptedLogicalFrameId)
             LastAcceptedLogicalFrameId = logicalFrameId;
         VulkanPerf::SetCounter(
-            VulkanPerf::Counter::VulkanPresenterLogicalDepth,
-            presenterLogicalDepth);
+            VulkanPerf::Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth,
+            unretiredFrameRingSubmissionDepth);
         VulkanPerf::SetCounter(
-            VulkanPerf::Counter::VulkanPresenterCpuLogicalAhead,
-            cpuLogicalAhead);
+            VulkanPerf::Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+            logicalFramesSinceLastAcceptedPresent);
         VulkanPerf::SetCounter(
-            VulkanPerf::Counter::VulkanPresenterGpuSubmittedAhead,
-            presenterLogicalDepth);
-        VulkanPerf::SetCounter(
-            VulkanPerf::Counter::VulkanPresenterUnavailableSwapchainImages,
-            UnavailableSwapchainImageCount);
+            VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+            DistinctSwapchainImagesAcquiredSinceRecreate);
     }
 
     // Not a marker: this is vkLatencySleepNV's "once between presents"

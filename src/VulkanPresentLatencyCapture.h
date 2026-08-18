@@ -51,10 +51,11 @@ struct VulkanLatencySample
     u32 SwapchainImageIndex = 0;
     u32 FrameSlot = 0;
     u32 SwapchainImageCount = 0;
-    u32 UnavailableSwapchainImages = 0;
-    u64 CpuLogicalFramesAhead = 0;
-    u64 PresenterLogicalDepth = 0;
-    u64 GpuSubmittedFramesAhead = 0;
+    u32 DistinctSwapchainImagesAcquiredSinceRecreate = 0;
+    u64 LogicalFramesSinceLastAcceptedPresent = 0;
+    // FrameRing retirement proxy; this is not the driver's internal WSI queue
+    // depth and must not be presented as one.
+    u64 UnretiredFrameRingSubmissionDepth = 0;
     u64 AcquireWaitUs = 0;
 
     u64 InputSampleUs = 0;
@@ -105,10 +106,9 @@ public:
         u32 swapchainImageIndex,
         u32 frameSlot,
         u32 swapchainImageCount,
-        u32 unavailableSwapchainImages,
-        u64 cpuLogicalFramesAhead,
-        u64 presenterLogicalDepth,
-        u64 gpuSubmittedFramesAhead) noexcept;
+        u32 distinctSwapchainImagesAcquiredSinceRecreate,
+        u64 logicalFramesSinceLastAcceptedPresent,
+        u64 unretiredFrameRingSubmissionDepth) noexcept;
 
     // Closes the frame and stores it. Called once per accepted present.
     void Commit(u64 presentId, const VulkanPresentPacer::StateSnapshot& pacing) noexcept;
@@ -151,7 +151,7 @@ public:
 
     void SetGpuRenderBounds(u64, u64) noexcept {}
     void SetReflexMode(int) noexcept {}
-    void SetFrameContext(u64, u64, u32, u32, u32, u32, u64, u64, u64) noexcept {}
+    void SetFrameContext(u64, u64, u32, u32, u32, u32, u64, u64) noexcept {}
     void Commit(u64, const VulkanPresentPacer::StateSnapshot&) noexcept {}
     bool Flush() { return true; }
 };

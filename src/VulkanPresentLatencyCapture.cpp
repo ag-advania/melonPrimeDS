@@ -153,20 +153,19 @@ void VulkanPresentLatencyCapture::SetFrameContext(
     u32 swapchainImageIndex,
     u32 frameSlot,
     u32 swapchainImageCount,
-    u32 unavailableSwapchainImages,
-    u64 cpuLogicalFramesAhead,
-    u64 presenterLogicalDepth,
-    u64 gpuSubmittedFramesAhead) noexcept
+    u32 distinctSwapchainImagesAcquiredSinceRecreate,
+    u64 logicalFramesSinceLastAcceptedPresent,
+    u64 unretiredFrameRingSubmissionDepth) noexcept
 {
     Pending.LogicalFrameId = logicalFrameId;
     Pending.ReflexPresentId = reflexPresentId;
     Pending.SwapchainImageIndex = swapchainImageIndex;
     Pending.FrameSlot = frameSlot;
     Pending.SwapchainImageCount = swapchainImageCount;
-    Pending.UnavailableSwapchainImages = unavailableSwapchainImages;
-    Pending.CpuLogicalFramesAhead = cpuLogicalFramesAhead;
-    Pending.PresenterLogicalDepth = presenterLogicalDepth;
-    Pending.GpuSubmittedFramesAhead = gpuSubmittedFramesAhead;
+    Pending.DistinctSwapchainImagesAcquiredSinceRecreate =
+        distinctSwapchainImagesAcquiredSinceRecreate;
+    Pending.LogicalFramesSinceLastAcceptedPresent = logicalFramesSinceLastAcceptedPresent;
+    Pending.UnretiredFrameRingSubmissionDepth = unretiredFrameRingSubmissionDepth;
 }
 
 void VulkanPresentLatencyCapture::Commit(
@@ -220,8 +219,9 @@ bool VulkanPresentLatencyCapture::Flush()
     std::fprintf(file,
         "run_id,sample_index,logical_frame_id,reflex_present_id,present_id,"
         "swapchain_image_index,frame_slot,swapchain_image_count,"
-        "unavailable_swapchain_images,cpu_logical_frames_ahead,"
-        "presenter_logical_depth,gpu_submitted_frames_ahead,acquire_wait_us,"
+        "distinct_swapchain_images_acquired_since_recreate,"
+        "logical_frames_since_last_accepted_present,"
+        "unretired_frame_ring_submission_depth,acquire_wait_us,"
         "input_sample_time_us,sim_start_time_us,sim_end_time_us,"
         "render_submit_start_time_us,render_submit_end_time_us,"
         "present_start_time_us,present_end_time_us,"
@@ -265,10 +265,9 @@ bool VulkanPresentLatencyCapture::Flush()
             sample.SwapchainImageIndex,
             sample.FrameSlot,
             sample.SwapchainImageCount,
-            sample.UnavailableSwapchainImages,
-            static_cast<unsigned long long>(sample.CpuLogicalFramesAhead),
-            static_cast<unsigned long long>(sample.PresenterLogicalDepth),
-            static_cast<unsigned long long>(sample.GpuSubmittedFramesAhead),
+            sample.DistinctSwapchainImagesAcquiredSinceRecreate,
+            static_cast<unsigned long long>(sample.LogicalFramesSinceLastAcceptedPresent),
+            static_cast<unsigned long long>(sample.UnretiredFrameRingSubmissionDepth),
             static_cast<unsigned long long>(sample.AcquireWaitUs),
             static_cast<unsigned long long>(sample.InputSampleUs),
             static_cast<unsigned long long>(sample.SimStartUs),
