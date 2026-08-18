@@ -59,6 +59,8 @@ std::uint64_t ParseTimeoutEnvironment(
     const char* value = std::getenv(variable);
     if (value == nullptr || *value == '\0')
         return fallback;
+    if (*value == '-')
+        return fallback;
 
     errno = 0;
     char* end = nullptr;
