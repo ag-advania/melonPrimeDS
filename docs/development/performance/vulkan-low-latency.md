@@ -317,3 +317,19 @@ DX12 run is recorded as a renderer-health comparison only: its Debug/developer
 build and native `frame_ms` report are not a Vulkan Acquire-latency parity
 claim. Reflex Boost, Linux/AMD, fullscreen, and a controlled GPU-saturation
 skip run remain `NOT RUN`/`OPEN`.
+
+## Post-P2/P3 exact-current-binary follow-up
+
+The P2/P3 source fixes and the exact current-binary follow-up are recorded in
+[`vulkan_reflex_acquire_budget_followup_2026-08-18.md`](../../audit/vulkan_reflex_acquire_budget_followup_2026-08-18.md).
+P2 moves `LastBeginLatencySkip` into the low-latency Acquire timeout branch so
+the normal blocking Acquire path cannot be misclassified. P3 rejects negative
+timeout environment values and uses the cached fallback; both fixes have
+source audits/build tests and separate phase commits.
+
+The follow-up adds exact-SHA A/B, physical 60/240/540 Hz runs, a Release
+telemetry run, a same-build DX12 comparison, and an event-matrix run with core
+and Synchronization Validation. The current Windows/NVIDIA workload remained
+zero-skip, so true Acquire skip/recovery and confirmed fullscreen remain
+explicitly `OPEN`; the result is not promoted by inference from clean smoke
+runs.
