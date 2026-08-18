@@ -35,6 +35,7 @@
 #include "GPU3D_RasterDifferential.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "VulkanContext.h"
+#include "VulkanDebugLabels.h"
 #include "VulkanFeatureProbe.h"
 #include "VulkanPerf.h"
 #include "VulkanPresentedFrame.h"
@@ -2363,6 +2364,7 @@ void VulkanRenderer3D::RenderFrame()
 
     const bool wbuffer = numYSpans > 0 && GPU3D.RenderPolygonRAM[0]->WBuffer;
 
+    Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.Frame");
     for (u32 batchIndex = 0; batchIndex < polygonBatchCount; ++batchIndex)
     {
         const PolygonBatch& batch = PolygonBatches[batchIndex];
@@ -2393,6 +2395,7 @@ void VulkanRenderer3D::RenderFrame()
         // polygon batch.
         if (batchIndex == 0)
         {
+            Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.InterpSpans");
             fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                 Pipelines[wbuffer ? VulkanShaders::Pipeline_InterpSpansW : VulkanShaders::Pipeline_InterpSpansZ]);
             const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
@@ -2419,6 +2422,7 @@ void VulkanRenderer3D::RenderFrame()
             BufferBarrier(cmd, &xSpans, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+            Vk::EndCommandDebugLabel(fns, cmd);
         }
 
         // 4. bin polygons into coarse and fine tiles.
@@ -2427,6 +2431,7 @@ void VulkanRenderer3D::RenderFrame()
         batchPush.TexWidth = batch.PolygonCount;
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
             0, Vk::PushConstantSize, &batchPush);
+        Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.BinCombined");
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
             Pipelines[VulkanShaders::Pipeline_BinCombined]);
         fns.CmdDispatch(cmd,
@@ -2440,6 +2445,7 @@ void VulkanRenderer3D::RenderFrame()
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         }
+        Vk::EndCommandDebugLabel(fns, cmd);
 
         // 5. turn the per-variant counts into dispatch arguments and offsets.
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -2470,6 +2476,7 @@ void VulkanRenderer3D::RenderFrame()
         // tile buffers (tileOffset is derived from the sorted work index), so
         // the dispatches are independent, exactly as in the OpenGL renderer.
         {
+            Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.Rasterise");
             const bool highlightMode = (GPU3D.RenderDispCnt & (1 << 1)) != 0;
             VkPipeline prevPipeline = VK_NULL_HANDLE;
 
@@ -2537,7 +2544,7 @@ void VulkanRenderer3D::RenderFrame()
                 fns.CmdDispatchIndirect(cmd, binResult,
                     offsetof(BinResultHeader, VariantWorkCount) + i * 16);
             }
-
+            Vk::EndCommandDebugLabel(fns, cmd);
         }
 
         const VkBuffer tiles[3] = {
@@ -2566,6 +2573,7 @@ void VulkanRenderer3D::RenderFrame()
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
             0, Vk::PushConstantSize, &blendPush);
 
+        Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.DepthBlend");
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
             Pipelines[wbuffer ? VulkanShaders::Pipeline_DepthBlendW : VulkanShaders::Pipeline_DepthBlendZ]);
         fns.CmdDispatch(cmd,
@@ -2604,6 +2612,7 @@ void VulkanRenderer3D::RenderFrame()
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         }
+        Vk::EndCommandDebugLabel(fns, cmd);
     }
 
     // 9. final pass: edge marking / fog / anti-aliasing resolve.
@@ -2624,10 +2633,13 @@ void VulkanRenderer3D::RenderFrame()
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
 
+    Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.FinalPass");
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_FinalPass0 + finalPassVariant]);
     fns.CmdDispatch(cmd, DivRoundUp(static_cast<u32>(ScreenWidth), 32),
         static_cast<u32>(ScreenHeight), 1);
+    Vk::EndCommandDebugLabel(fns, cmd);
+    Vk::EndCommandDebugLabel(fns, cmd);
 
     if (!FrameStaging.FlushWritten())
     {
@@ -3199,6 +3211,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     push.TexIsCapture = 0u;
     fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
         0, Vk::PushConstantSize, &push);
+    Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Structured.Compositor");
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_Compositor]);
     // One dispatch covers both screens in the slot's device-local buffer.
@@ -3206,6 +3219,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1);
+    Vk::EndCommandDebugLabel(fns, cmd);
     ComposeFrames.WriteTimestamp(
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
         GpuMetricQueryIndex(GpuMetric::StructuredCompositor, true));

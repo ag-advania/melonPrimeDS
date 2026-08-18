@@ -24,6 +24,7 @@
 #include "VulkanContext.h"
 #include "VulkanFeatureProbe.h"
 #include "VulkanGpuTimestamp.h"
+#include "VulkanDebugLabels.h"
 #include "VulkanPerf.h"
 #include "VulkanQueueSharingExperiment.h"
 #include "MelonPrimeVulkanPresenterTimeout.h"
@@ -2275,6 +2276,12 @@ bool VulkanPresenter::UploadLayerRegion(
     if (!staging.FlushWritten())
         return Fail("the Vulkan presenter could not flush its upload buffer");
 
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    const char* uploadLabel = layer == Layer::Hud
+        ? "Vulkan.Present.UploadHUD"
+        : layer == Layer::Osd ? "Vulkan.Present.UploadOSD" : nullptr;
+    Vk::BeginCommandDebugLabel(fns, CurrentCommandBuffer, uploadLabel);
+
     const VkImageLayout currentLayout = texture.Image.GetLayout();
     texture.Image.RecordLayoutTransition(
         CurrentCommandBuffer,
@@ -2311,6 +2318,8 @@ bool VulkanPresenter::UploadLayerRegion(
         VK_ACCESS_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         VK_ACCESS_SHADER_READ_BIT);
+    if (uploadLabel)
+        Vk::EndCommandDebugLabel(fns, CurrentCommandBuffer);
 
     texture.HasContent = true;
     if (layer == Layer::Hud)
@@ -2525,6 +2534,7 @@ void VulkanPresenter::BeginComposition()
     Frames.WriteTimestamp(
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         GpuMetricQueryIndex(GpuMetric::PresenterRenderPass, false));
+    Vk::BeginCommandDebugLabel(fns, CurrentCommandBuffer, "Vulkan.Present.Compose");
     fns.CmdBeginRenderPass(CurrentCommandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport{};
@@ -2618,6 +2628,7 @@ bool VulkanPresenter::EndFrame()
     if (CompositionOpen)
     {
         fns.CmdEndRenderPass(CurrentCommandBuffer);
+        Vk::EndCommandDebugLabel(fns, CurrentCommandBuffer);
         Frames.WriteTimestamp(
             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
             GpuMetricQueryIndex(GpuMetric::PresenterRenderPass, true));
