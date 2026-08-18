@@ -100,6 +100,9 @@ def main() -> int:
     vulkan_timeout_policy = read(
         "src/frontend/qt_sdl/MelonPrimeVulkanPresenterTimeout.cpp"
     )
+    vulkan_timeout_header = read(
+        "src/frontend/qt_sdl/MelonPrimeVulkanPresenterTimeout.h"
+    )
     vulkan_compat = read("src/VulkanModernPresentCompat.h")
     vulkan_device = read("src/VulkanDevice.cpp")
     dx12_context = read("src/DX12Context.cpp")
@@ -223,6 +226,32 @@ def main() -> int:
             "CmdCopyBufferToImage",
         )),
         "Vulkan low-latency slot admission and same-renderer screen retention contracts are missing",
+        failures,
+    )
+    render_pass = function_body(
+        vulkan_presenter,
+        "bool VulkanPresenter::CreateRenderPass()",
+        "bool VulkanPresenter::CreatePipelines()",
+    )
+    require(
+        "ImagesInFlight" not in vulkan_presenter
+        and "ImagesInFlight" not in vulkan_presenter_header
+        and "PresenterImageFenceTimeoutNanoseconds" not in vulkan_timeout_policy
+        and "PresenterImageFenceTimeoutNanoseconds" not in vulkan_timeout_header
+        and "RenderFinished.assign(realImageCount, VK_NULL_HANDLE);" in vulkan_presenter
+        and "CurrentImageIndex < RenderFinished.size()" in vulkan_presenter
+        and "RenderFinished[CurrentImageIndex]" in vulkan_presenter
+        and "Device.Fns().WaitForFences(" not in presenter_begin
+        and all(
+            token in render_pass
+            for token in (
+                "dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;",
+                "dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;",
+                "dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;",
+            )
+        )
+        and "ImageAvailable" in presenter_begin,
+        "Vulkan must reuse present-wait semaphores per acquired image without a host image-fence wait",
         failures,
     )
     require(
