@@ -25,6 +25,7 @@
 #include "VulkanFeatureProbe.h"
 #include "VulkanGpuTimestamp.h"
 #include "VulkanPerf.h"
+#include "VulkanQueueSharingExperiment.h"
 #include "MelonPrimeVulkanPresenterTimeout.h"
 
 using namespace melonDS;
@@ -68,6 +69,16 @@ bool PresenterPreInputWaitExperimentEnabled() noexcept
 bool PresenterTwoImageSwapchainExperimentEnabled() noexcept
 {
     return EnvironmentEquals("MELONPRIME_VULKAN_SWAPCHAIN_IMAGE_COUNT", "2");
+}
+
+bool SplitQueueExclusiveExperimentRequested() noexcept
+{
+    return EnvironmentEquals("MELONPRIME_VULKAN_SPLIT_QUEUE_EXCLUSIVE", "1");
+}
+
+bool SplitQueueSyncValGateEnabled() noexcept
+{
+    return EnvironmentEquals("MELONPRIME_VULKAN_SPLIT_QUEUE_SYNCVAL_CLEAN", "1");
 }
 
 const char* PresentModeName(VkPresentModeKHR mode) noexcept
@@ -847,7 +858,14 @@ bool VulkanPresenter::CreateRenderPass()
     // contents of the acquired image are not needed, so the driver may discard
     // them instead of preserving them across the layout transition.
     color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    // The default universal-queue path lets the render pass perform the final
+    // transition. The split-queue experiment leaves the image in attachment
+    // layout so the graphics queue can release ownership, then a dedicated
+    // present-family command buffer repeats the layout transition as the
+    // acquire operation before vkQueuePresentKHR.
+    color.finalLayout = UseSplitQueueExclusiveExperiment
+        ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference colorRef{};
     colorRef.attachment = 0;
@@ -1296,6 +1314,19 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     if ((caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) == 0)
         return Fail("the surface does not allow swapchain images to be used as colour attachments");
 
+    const bool splitQueue = Device.RequiresPresentOwnershipTransfer();
+    const Vk::VulkanQueueSharingPlan sharingPlan = Vk::MakeVulkanQueueSharingPlan(
+        splitQueue,
+        SplitQueueExclusiveExperimentRequested(),
+        SplitQueueSyncValGateEnabled());
+    if (splitQueue && sharingPlan.Requested && !sharingPlan.UseOwnershipTransfer())
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] split-queue EXCLUSIVE experiment kept disabled: "
+            "requires MELONPRIME_VULKAN_SPLIT_QUEUE_SYNCVAL_CLEAN=1\n");
+    }
+
     // Every in-flight frame is drained before the old swapchain's views,
     // framebuffers and semaphores are destroyed. This is the one place in the
     // presenter that is allowed to wait for the device, and it is reached only
@@ -1305,6 +1336,7 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // once per event.
     Frames.WaitIdle();
     DestroySwapchainObjects(true);
+    UseSplitQueueExclusiveExperiment = sharingPlan.UseOwnershipTransfer();
 
     VkSwapchainKHR oldSwapchain = Swapchain;
 
@@ -1336,13 +1368,17 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     const u32 mainFamily = Device.GetMainQueueFamily();
     const u32 presentFamily = Device.GetPresentQueueFamily();
     const u32 families[2] = {mainFamily, presentFamily};
-    if (Device.RequiresPresentOwnershipTransfer())
+    if (sharingPlan.UseOwnershipTransfer())
     {
-        // CONCURRENT rather than explicit release/acquire barrier pairs. The
-        // presenter submits one command buffer per frame and the cost of
-        // concurrent access on a two-family split is far below the cost of
-        // getting an ownership transfer subtly wrong on the one path that has
-        // no way to be tested on the common (universal-family) hardware.
+        // Experimental split-family path. The render queue releases the
+        // image to the present family and a tiny present-family command buffer
+        // acquires it before vkQueuePresentKHR.
+        info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    }
+    else if (splitQueue)
+    {
+        // CONCURRENT remains the correctness-first default. The A/B is opt-in
+        // only after the SyncVal gate has been recorded clean.
         info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
         info.queueFamilyIndexCount = 2;
         info.pQueueFamilyIndices = families;
@@ -1423,6 +1459,8 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         return Fail("vkGetSwapchainImagesKHR", res == VK_SUCCESS ? VK_ERROR_INITIALIZATION_FAILED : res);
 
     SwapchainImages.resize(realImageCount);
+    if (!CreatePresentOwnershipResources(realImageCount))
+        return false;
     res = fns.GetSwapchainImagesKHR(
         Device.GetHandle(), Swapchain, &realImageCount, SwapchainImages.data());
     if (res != VK_SUCCESS && res != VK_INCOMPLETE)
@@ -1528,13 +1566,16 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     Platform::Log(
         Platform::LogLevel::Info,
         "[Vulkan] presentation: requested-vsync=%s available-present-modes=%s "
-        "selected-present-mode=%s swapchain-images=%u extent=%ux%u format=%d "
+        "selected-present-mode=%s queue-sharing=%s swapchain-images=%u extent=%ux%u format=%d "
         "window-mode=%s reason=%s nv-low-latency-optimized-mode-count=%u "
         "present-mode-is-nv-low-latency-optimized=%s "
         "nv-low-latency-optimized-modes=%s; VRR actual state is driver/display controlled\n",
         vsyncRequested ? "on" : "off",
         availableModeNames.empty() ? "none" : availableModeNames.c_str(),
         PresentModeName(PresentMode),
+        UseSplitQueueExclusiveExperiment
+            ? "exclusive-split-experiment"
+            : (splitQueue ? "concurrent" : "exclusive"),
         realImageCount,
         SwapchainExtent.width,
         SwapchainExtent.height,
@@ -1545,6 +1586,151 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         selectedNvOptimizedPresentMode ? "yes" : "no",
         optimizedModeNames.empty() ? "none" : optimizedModeNames.c_str());
 
+    return true;
+}
+
+
+bool VulkanPresenter::CreatePresentOwnershipResources(u32 imageCount)
+{
+    if (!UseSplitQueueExclusiveExperiment)
+        return true;
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    if (!fns.CreateCommandPool || !fns.AllocateCommandBuffers
+        || !fns.BeginCommandBuffer || !fns.EndCommandBuffer
+        || !fns.ResetCommandBuffer || !fns.QueueSubmit)
+    {
+        return Fail("split-queue ownership experiment lacks command-buffer entry points");
+    }
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = Device.GetPresentQueueFamily();
+    VkResult res = fns.CreateCommandPool(
+        Device.GetHandle(), &poolInfo, nullptr, &PresentOwnershipCommandPool);
+    if (res != VK_SUCCESS)
+        return Fail("vkCreateCommandPool(split-queue ownership)", res);
+
+    PresentOwnershipCommandBuffers.resize(imageCount, VK_NULL_HANDLE);
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = PresentOwnershipCommandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = imageCount;
+    res = fns.AllocateCommandBuffers(
+        Device.GetHandle(), &allocInfo, PresentOwnershipCommandBuffers.data());
+    if (res != VK_SUCCESS)
+    {
+        DestroyPresentOwnershipResources();
+        return Fail("vkAllocateCommandBuffers(split-queue ownership)", res);
+    }
+
+    PresentOwnershipFinished.resize(imageCount, VK_NULL_HANDLE);
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    for (u32 i = 0; i < imageCount; ++i)
+    {
+        res = fns.CreateSemaphore(
+            Device.GetHandle(), &semaphoreInfo, nullptr, &PresentOwnershipFinished[i]);
+        if (res != VK_SUCCESS)
+        {
+            DestroyPresentOwnershipResources();
+            return Fail("vkCreateSemaphore(split-queue ownership)", res);
+        }
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan] split-queue EXCLUSIVE experiment enabled: image-count=%u "
+        "graphics-family=%u present-family=%u\n",
+        imageCount,
+        Device.GetMainQueueFamily(),
+        Device.GetPresentQueueFamily());
+    return true;
+}
+
+
+void VulkanPresenter::DestroyPresentOwnershipResources()
+{
+    if (!Device.IsValid())
+    {
+        PresentOwnershipCommandBuffers.clear();
+        PresentOwnershipFinished.clear();
+        PresentOwnershipCommandPool = VK_NULL_HANDLE;
+        return;
+    }
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    VkDevice device = Device.GetHandle();
+    if (PresentOwnershipCommandPool != VK_NULL_HANDLE)
+    {
+        if (fns.FreeCommandBuffers && !PresentOwnershipCommandBuffers.empty())
+        {
+            fns.FreeCommandBuffers(
+                device,
+                PresentOwnershipCommandPool,
+                static_cast<u32>(PresentOwnershipCommandBuffers.size()),
+                PresentOwnershipCommandBuffers.data());
+        }
+        if (fns.DestroyCommandPool)
+            fns.DestroyCommandPool(device, PresentOwnershipCommandPool, nullptr);
+    }
+    PresentOwnershipCommandBuffers.clear();
+    PresentOwnershipCommandPool = VK_NULL_HANDLE;
+
+    for (VkSemaphore semaphore : PresentOwnershipFinished)
+    {
+        if (semaphore != VK_NULL_HANDLE)
+            fns.DestroySemaphore(device, semaphore, nullptr);
+    }
+    PresentOwnershipFinished.clear();
+}
+
+
+bool VulkanPresenter::RecordPresentOwnershipAcquire()
+{
+    if (!UseSplitQueueExclusiveExperiment)
+        return true;
+    if (CurrentImageIndex >= SwapchainImages.size()
+        || CurrentImageIndex >= PresentOwnershipCommandBuffers.size())
+        return Fail("split-queue ownership image index is out of range");
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    VkCommandBuffer commandBuffer = PresentOwnershipCommandBuffers[CurrentImageIndex];
+    VkResult res = fns.ResetCommandBuffer(commandBuffer, 0);
+    if (res != VK_SUCCESS)
+        return Fail("vkResetCommandBuffer(split-queue ownership)", res);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    res = fns.BeginCommandBuffer(commandBuffer, &beginInfo);
+    if (res != VK_SUCCESS)
+        return Fail("vkBeginCommandBuffer(split-queue ownership)", res);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcQueueFamilyIndex = Device.GetMainQueueFamily();
+    barrier.dstQueueFamilyIndex = Device.GetPresentQueueFamily();
+    barrier.image = SwapchainImages[CurrentImageIndex];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    fns.CmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier);
+
+    res = fns.EndCommandBuffer(commandBuffer);
+    if (res != VK_SUCCESS)
+        return Fail("vkEndCommandBuffer(split-queue ownership)", res);
     return true;
 }
 
@@ -1562,6 +1748,8 @@ void VulkanPresenter::DestroySwapchainObjects(bool immediate)
 
     const Vk::DeviceDispatch& fns = Device.Fns();
     VkDevice device = Device.GetHandle();
+
+    DestroyPresentOwnershipResources();
 
     for (VkSemaphore semaphore : RenderFinished)
     {
@@ -2435,6 +2623,33 @@ bool VulkanPresenter::EndFrame()
             GpuMetricQueryIndex(GpuMetric::PresenterRenderPass, true));
         CompositionOpen = false;
     }
+
+    if (UseSplitQueueExclusiveExperiment
+        && CurrentImageIndex < SwapchainImages.size())
+    {
+        // Graphics-family release. The matching acquire barrier is recorded
+        // on the present-family command buffer after the render-finished
+        // semaphore has been signalled.
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        barrier.srcQueueFamilyIndex = Device.GetMainQueueFamily();
+        barrier.dstQueueFamilyIndex = Device.GetPresentQueueFamily();
+        barrier.image = SwapchainImages[CurrentImageIndex];
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.layerCount = 1;
+        fns.CmdPipelineBarrier(
+            CurrentCommandBuffer,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier);
+    }
     Frames.WriteTimestamp(
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
         GpuMetricQueryIndex(GpuMetric::TotalQueueSpan, true));
@@ -2494,12 +2709,22 @@ bool VulkanPresenter::EndFrame()
     if (!submitted)
         return Fail("the Vulkan presenter could not submit its frame");
 
+    if (!RecordPresentOwnershipAcquire())
+        return false;
+
+    VkSemaphore presentWaitSemaphore = signalSemaphore;
     VkPresentInfoKHR present{};
     present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    if (signalSemaphore != VK_NULL_HANDLE)
+    if (UseSplitQueueExclusiveExperiment)
+    {
+        if (CurrentImageIndex >= PresentOwnershipFinished.size())
+            return Fail("split-queue ownership semaphore index is out of range");
+        presentWaitSemaphore = PresentOwnershipFinished[CurrentImageIndex];
+    }
+    if (presentWaitSemaphore != VK_NULL_HANDLE)
     {
         present.waitSemaphoreCount = 1;
-        present.pWaitSemaphores = &signalSemaphore;
+        present.pWaitSemaphores = &presentWaitSemaphore;
     }
     present.swapchainCount = 1;
     present.pSwapchains = &Swapchain;
@@ -2556,6 +2781,25 @@ bool VulkanPresenter::EndFrame()
     VkResult res = VK_SUCCESS;
     {
         std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex());
+
+        if (UseSplitQueueExclusiveExperiment)
+        {
+            const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+            VkSubmitInfo ownershipSubmit{};
+            ownershipSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            ownershipSubmit.waitSemaphoreCount = 1;
+            ownershipSubmit.pWaitSemaphores = &signalSemaphore;
+            ownershipSubmit.pWaitDstStageMask = &waitStage;
+            ownershipSubmit.commandBufferCount = 1;
+            ownershipSubmit.pCommandBuffers =
+                &PresentOwnershipCommandBuffers[CurrentImageIndex];
+            ownershipSubmit.signalSemaphoreCount = 1;
+            ownershipSubmit.pSignalSemaphores = &presentWaitSemaphore;
+            res = fns.QueueSubmit(
+                Device.GetPresentQueue(), 1, &ownershipSubmit, VK_NULL_HANDLE);
+            if (res != VK_SUCCESS)
+                return Fail("vkQueueSubmit(split-queue ownership)", res);
+        }
 
         // Anti-Lag's PRESENT stage is specified to be issued immediately before
         // vkQueuePresentKHR, with the frame index its INPUT partner used. Keep

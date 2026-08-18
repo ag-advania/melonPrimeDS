@@ -650,6 +650,23 @@ if (MELONPRIME_VULKAN_ACTIVE)
         COMMENT "Running Vulkan memory telemetry model tests..."
         VERBATIM)
 
+    add_executable(melonprime_vulkan_queue_sharing_experiment_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-queue-sharing-experiment-tests.cpp)
+    target_include_directories(melonprime_vulkan_queue_sharing_experiment_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_queue_sharing_experiment_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    set_target_properties(melonprime_vulkan_queue_sharing_experiment_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_queue_sharing_experiment_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_queue_sharing_experiment_tests>
+        DEPENDS melonprime_vulkan_queue_sharing_experiment_tests
+        COMMENT "Running Vulkan split-queue experiment policy tests..."
+        VERBATIM)
+
     add_executable(melonprime_vulkan_linux_surface_lifecycle_tests
         ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-linux-surface-lifecycle-tests.cpp)
     set_target_properties(melonprime_vulkan_linux_surface_lifecycle_tests PROPERTIES

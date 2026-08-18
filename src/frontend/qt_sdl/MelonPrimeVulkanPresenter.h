@@ -368,6 +368,9 @@ private:
 
     bool RecreateSwapchain(melonDS::u32 requestedWidth, melonDS::u32 requestedHeight);
     void DestroySwapchainObjects(bool immediate);
+    bool CreatePresentOwnershipResources(melonDS::u32 imageCount);
+    void DestroyPresentOwnershipResources();
+    bool RecordPresentOwnershipAcquire();
     bool ChoosePresentMode(const std::vector<VkPresentModeKHR>& available, VkPresentModeKHR& out,
                            std::string& reason) const;
     bool ChooseSurfaceFormat(
@@ -443,6 +446,9 @@ private:
     VkSurfaceFormatKHR SurfaceFormat{};
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     VkExtent2D SwapchainExtent{0, 0};
+    // Disabled by default. This is only enabled for a split-family device
+    // when the explicit SyncVal-clean environment gate is present.
+    bool UseSplitQueueExclusiveExperiment = false;
     std::vector<VkImage> SwapchainImages;
     // Distinct successful-acquire observations since the current swapchain was
     // created. This is diagnostic only, not a WSI availability query or fence map:
@@ -459,6 +465,9 @@ private:
     // per-slot semaphore could be re-signalled while a present was still
     // waiting on it. VulkanSync.h documents exactly this case.
     std::vector<VkSemaphore> RenderFinished;
+    VkCommandPool PresentOwnershipCommandPool = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> PresentOwnershipCommandBuffers;
+    std::vector<VkSemaphore> PresentOwnershipFinished;
 
     VkRenderPass RenderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout SetLayout = VK_NULL_HANDLE;
