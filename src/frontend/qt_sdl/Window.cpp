@@ -1464,13 +1464,21 @@ void MainWindow::invalidateRendererOutput()
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
 void MainWindow::beginVulkanLowLatencyFrame(
-    int reflexMode, bool antiLag2Enabled, bool normalSpeed, melonDS::u64 targetFrameIntervalNs)
+    int reflexMode,
+    bool antiLag2Enabled,
+    bool normalSpeed,
+    melonDS::u64 targetFrameIntervalNs,
+    melonDS::u64 logicalFrameId)
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
     {
         panel->beginVulkanLowLatencyFrame(
-            reflexMode, antiLag2Enabled, normalSpeed, targetFrameIntervalNs);
+            reflexMode,
+            antiLag2Enabled,
+            normalSpeed,
+            targetFrameIntervalNs,
+            logicalFrameId);
     }
 }
 

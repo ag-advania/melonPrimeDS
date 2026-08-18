@@ -1144,7 +1144,14 @@ u64 VulkanPresentPacer::PreparePresent(
         && Dispatch.WaitForPresentKHR != nullptr;
     if (!PresentId2Surface && backend != VulkanPresentTimingBackend::GoogleDisplayTiming
         && !legacyWaitCurrent)
+    {
+        // The Reflex presenter owns the VK_KHR_present_id node when the generic
+        // pacer has no optional ID/timing policy to attach. Preserve its
+        // externally-owned logical ID in the metadata so accepted-present
+        // telemetry and NotifyPresentResult still describe the actual ID.
+        metadata.LogicalId = preferredId;
         return 0;
+    }
 
     metadata.LogicalId = preferredId != 0 ? preferredId : LastSubmittedId + 1;
     LastSubmittedId = metadata.LogicalId;

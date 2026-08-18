@@ -58,7 +58,7 @@ public:
     RendererOutput GetOutput() override;
     RendererOutputLease AcquireOutputLease() override;
 
-    void BeginReflexFrame();
+    void BeginReflexFrame(melonDS::u64 logicalFrameId);
     void BeginAmdAntiLag2Frame();
     void BeginIntelXeLLFrame();
     void MarkReflexInputSample();

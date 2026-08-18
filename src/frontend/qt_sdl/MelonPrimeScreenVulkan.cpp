@@ -1085,7 +1085,11 @@ void ScreenPanelVulkan::setHudLivePreviewActive(bool active)
 // ---------------------------------------------------------------------------
 
 void ScreenPanelVulkan::beginVulkanLowLatencyFrame(
-    int reflexMode, bool antiLag2Enabled, bool normalSpeed, melonDS::u64 targetFrameIntervalNs)
+    int reflexMode,
+    bool antiLag2Enabled,
+    bool normalSpeed,
+    melonDS::u64 targetFrameIntervalNs,
+    melonDS::u64 logicalFrameId)
 {
     if (!vulkan)
         return;
@@ -1098,7 +1102,11 @@ void ScreenPanelVulkan::beginVulkanLowLatencyFrame(
     if (!vulkan->presenter.IsInitialized())
         return;
     vulkan->presenter.BeginLowLatencyFrame(
-        reflexMode, antiLag2Enabled, normalSpeed, targetFrameIntervalNs);
+        reflexMode,
+        antiLag2Enabled,
+        normalSpeed,
+        targetFrameIntervalNs,
+        logicalFrameId);
 }
 
 void ScreenPanelVulkan::markVulkanReflexInputSample()

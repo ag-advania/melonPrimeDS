@@ -290,7 +290,8 @@ public:
         int reflexMode,
         bool antiLag2Enabled,
         bool normalSpeed,
-        melonDS::u64 targetFrameIntervalNs);
+        melonDS::u64 targetFrameIntervalNs,
+        melonDS::u64 logicalFrameId);
     void MarkLowLatencyInputSample();
     void MarkLowLatencySimulationStart();
     void MarkLowLatencySimulationEnd();
@@ -408,10 +409,10 @@ private:
     // A/B measurement instrument. Stateless and free unless the build defines
     // MELONPRIME_VULKAN_LATENCY_CAPTURE; it never influences what is presented.
     melonDS::VulkanPresentLatencyCapture LatencyCapture;
-    // Frame index handed to Anti-Lag's INPUT/PRESENT pair. It follows the
-    // Reflex frame id when Reflex is running so both features describe the same
-    // frame, and falls back to its own counter otherwise (an AMD GPU has
-    // Anti-Lag and no Reflex, so that is the normal case for it).
+    // Logical game-frame ID handed to Anti-Lag's INPUT/PRESENT pair. It is
+    // allocated once by EmuThread and remains shared across Reflex/Anti-Lag;
+    // when Reflex is unavailable, Anti-Lag still uses the same logical-frame
+    // semantics rather than creating a presenter-local counter.
     melonDS::u64 LowLatencyFrameIndex = 0;
     // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
     // logs a transition once instead of every frame.

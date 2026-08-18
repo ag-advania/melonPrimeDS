@@ -234,12 +234,14 @@ public:
         int reflexMode,
         bool antiLag2Enabled,
         bool normalSpeed,
-        melonDS::u64 targetFrameIntervalNs)
+        melonDS::u64 targetFrameIntervalNs,
+        melonDS::u64 logicalFrameId)
     {
         (void)reflexMode;
         (void)antiLag2Enabled;
         (void)normalSpeed;
         (void)targetFrameIntervalNs;
+        (void)logicalFrameId;
     }
     virtual void markVulkanReflexInputSample() {}
     virtual void markVulkanReflexSimulationStart() {}
@@ -598,7 +600,8 @@ public:
         int reflexMode,
         bool antiLag2Enabled,
         bool normalSpeed,
-        melonDS::u64 targetFrameIntervalNs) override;
+        melonDS::u64 targetFrameIntervalNs,
+        melonDS::u64 logicalFrameId) override;
     void markVulkanReflexInputSample() override;
     void markVulkanReflexSimulationStart() override;
     void markVulkanReflexSimulationEnd() override;

@@ -39,7 +39,6 @@
 
 #include "DX12NvidiaReflex.h"
 
-#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -135,11 +134,6 @@ public:
         return "NVAPI status " + std::to_string(status);
     }
 
-    NvU64 AllocateFrameId() noexcept
-    {
-        return NextFrameId.fetch_add(1, std::memory_order_relaxed);
-    }
-
     InitializeFn Initialize = nullptr;
     GetErrorMessageFn GetErrorMessage = nullptr;
     GetSleepStatusFn GetSleepStatus = nullptr;
@@ -201,7 +195,6 @@ private:
 
     std::once_flag LoadOnce;
     HMODULE Module = nullptr; // Kept loaded for process lifetime, like DX12Context's entry points.
-    std::atomic<NvU64> NextFrameId{1};
     bool Ready = false;
 };
 
@@ -320,7 +313,7 @@ bool DX12NvidiaReflex::SetMode(int mode)
     return true;
 }
 
-void DX12NvidiaReflex::BeginFrame()
+void DX12NvidiaReflex::BeginFrame(u64 logicalFrameId)
 {
     if (!Available || !Device)
         return;
@@ -335,7 +328,18 @@ void DX12NvidiaReflex::BeginFrame()
         return;
     }
 
-    FrameId = nvapi.AllocateFrameId();
+    // The emulation thread owns this ID. NVAPI marker IDs are correlation keys,
+    // not a license to allocate a second counter inside the DX12 backend.
+    if (logicalFrameId == 0 || logicalFrameId <= FrameId)
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "NVIDIA Reflex rejected a non-increasing logical frame ID=%llu previous=%llu\n",
+            static_cast<unsigned long long>(logicalFrameId),
+            static_cast<unsigned long long>(FrameId));
+        return;
+    }
+    FrameId = logicalFrameId;
     FrameOpen = true;
     InputSampled = false;
     SimulationOpen = false;

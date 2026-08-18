@@ -112,6 +112,9 @@ def main() -> int:
     vulkan_presenter_header = read(
         "src/frontend/qt_sdl/MelonPrimeVulkanPresenter.h"
     )
+    emu_header = read("src/frontend/qt_sdl/EmuThread.h")
+    dx12_header = read("src/DX12NvidiaReflex.h")
+    vulkan_reflex_header = read("src/VulkanNvidiaReflex.h")
     vulkan_sync = read("src/VulkanSync.cpp")
     vulkan_sync_header = read("src/VulkanSync.h")
     vulkan_screen = read("src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp")
@@ -149,8 +152,9 @@ def main() -> int:
             [
                 "if (UNLIKELY(videoSettingsDirty))",
                 "applyPendingVideoSettings();",
-                "BeginReflexFrame();",
+                "BeginReflexFrame(logicalFrameId);",
                 "beginVulkanLowLatencyFrame(",
+                "logicalFrameId);",
             ],
         ),
         "Pending renderer settings must be applied before DX12/Vulkan low-latency Begin",
@@ -163,7 +167,8 @@ def main() -> int:
                 "SetLowLatencyPreferences(reflexMode, antiLag2Enabled);",
                 "PresentPacer.BeginFrame(",
                 "Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs)",
-                "Reflex.BeginFrame();",
+                "Reflex.BeginFrame(logicalFrameId);",
+                "LowLatencyFrameIndex = logicalFrameId;",
                 "AntiLag.BeginFrame(LowLatencyFrameIndex);",
             ],
         ),
@@ -189,6 +194,31 @@ def main() -> int:
         "bypassVulkanHostLimiter" not in emu
         and "ShouldBypassHostLimiter" not in vulkan_pacer,
         "Vulkan latency waits must never bypass the exact host FPS limiter",
+        failures,
+    )
+    require(
+        ordered(
+            emu,
+            [
+                "const melonDS::u64 logicalFrameId = ++lowLatencyLogicalFrameId;",
+                "dx12LowLatencyRenderer->BeginReflexFrame(logicalFrameId);",
+                "emuInstance->beginVulkanLowLatencyFrame(",
+                "logicalFrameId);",
+            ],
+        )
+        and "lowLatencyLogicalFrameId" in emu_header
+        and "emulation thread is the single owner" in emu
+        and "void BeginFrame(u64 logicalFrameId);" in dx12_header
+        and "void BeginFrame(u64 logicalFrameId);" in vulkan_reflex_header
+        and "AllocateFrameId" not in dx12
+        and "NextFrameId" not in dx12
+        and "FrameId = logicalFrameId;" in dx12
+        and "FrameId = logicalFrameId;" in vulkan
+        and "presentID = latencyFrameId;" in vulkan_presenter
+        and "tagLatency ? latencyFrameId : 0" in vulkan_presenter
+        and "genericPresentMetadata.LogicalId = latencyFrameId;" in vulkan_presenter
+        and "metadata.LogicalId = preferredId;" in vulkan_pacer,
+        "One emulation-frame ID must be owned by EmuThread and reused by DX12/Vulkan markers, submit, and present",
         failures,
     )
     presenter_begin = function_body(
@@ -451,7 +481,7 @@ def main() -> int:
                 "Frames.LatestSubmittedFrameHasPendingSubmission()",
                 "VulkanPresenterOneFrameBudgetTimeoutNs(",
                 "Frames.WaitForLatestSubmittedFrame(",
-                "Reflex.BeginFrame();",
+                "Reflex.BeginFrame(logicalFrameId);",
                 "AntiLag.BeginFrame(",
             ],
         )
@@ -1507,7 +1537,7 @@ def main() -> int:
         ordered(
             emu,
             [
-                "BeginReflexFrame();",
+                "BeginReflexFrame(logicalFrameId);",
                 "MarkReflexInputSample();",
                 "inputRefreshJoystickState();",
                 "RunFrameHook();",
@@ -1536,7 +1566,7 @@ def main() -> int:
 
     begin = function_body(
         dx12,
-        "void DX12NvidiaReflex::BeginFrame()",
+        "void DX12NvidiaReflex::BeginFrame(u64 logicalFrameId)",
         "void DX12NvidiaReflex::MarkInputSample()",
     )
     require(begin != "", "DX12 BeginFrame body was not found", failures)

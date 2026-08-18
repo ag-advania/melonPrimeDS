@@ -339,6 +339,10 @@ void EmuThread::run()
     auto frameAdvanceOnce = [&]() {
 #ifdef MELONPRIME_DS
         MelonPrimePerf::FrameBegin();
+        // The emulation thread is the single owner of the logical game-frame
+        // ID. A skipped present leaves a gap; a retry never allocates another
+        // ID for the same emulated frame.
+        const melonDS::u64 logicalFrameId = ++lowLatencyLogicalFrameId;
         // GUI actions update these flags on the main thread. Snapshot them
         // once so this frame uses one coherent pacing decision.
         const bool limitFPS =
@@ -487,7 +491,7 @@ void EmuThread::run()
         if (dx12LowLatencyRenderer)
         {
             dx12LowLatencyRenderer->BeginAmdAntiLag2Frame();
-            dx12LowLatencyRenderer->BeginReflexFrame();
+            dx12LowLatencyRenderer->BeginReflexFrame(logicalFrameId);
             dx12LowLatencyRenderer->BeginIntelXeLLFrame();
         }
 #endif
@@ -515,7 +519,8 @@ void EmuThread::run()
                 vulkanLowLatencyRenderer->GetNvidiaReflexMode(),
                 vulkanLowLatencyRenderer->GetAmdAntiLag2Enabled(),
                 vulkanNormalSpeed,
-                targetFrameIntervalNs);
+                targetFrameIntervalNs,
+                logicalFrameId);
         }
 #endif
 

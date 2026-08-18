@@ -2417,6 +2417,12 @@ bool VulkanPresenter::EndFrame()
     melonDS::VulkanPresentPacer::PresentMetadata genericPresentMetadata{};
     const melonDS::u64 logicalPresentId = PresentPacer.PreparePresent(
         present, tagLatency ? latencyFrameId : 0, genericPresentMetadata);
+    // When no generic present-timing policy is active, PreparePresent() returns
+    // zero because it attaches no optional node. Reflex still attaches the
+    // required VK_KHR_present_id node below, so keep the capture metadata tied
+    // to that same logical frame ID.
+    if (tagLatency && genericPresentMetadata.LogicalId == 0)
+        genericPresentMetadata.LogicalId = latencyFrameId;
 
     VkPresentIdKHR presentId{};
     if (tagLatency && !genericPresentMetadata.LegacyIdAttached)
@@ -2561,7 +2567,11 @@ void VulkanPresenter::SetLowLatencyPreferences(int reflexMode, bool antiLag2Enab
 
 
 void VulkanPresenter::BeginLowLatencyFrame(
-    int reflexMode, bool antiLag2Enabled, bool normalSpeed, u64 targetFrameIntervalNs)
+    int reflexMode,
+    bool antiLag2Enabled,
+    bool normalSpeed,
+    u64 targetFrameIntervalNs,
+    u64 logicalFrameId)
 {
     if (!Initialized || Failed || !Device.IsValid())
         return;
@@ -2667,15 +2677,12 @@ void VulkanPresenter::BeginLowLatencyFrame(
     // -- that delay is the entire mechanism. SIMULATION_START is deliberately
     // NOT emitted here: it belongs after the sleep and after input sampling,
     // which is MarkLowLatencySimulationStart().
-    Reflex.BeginFrame();
+    Reflex.BeginFrame(logicalFrameId);
 
-    // Keep the two features on the same frame numbering when both are live.
-    // Reflex bumps its id inside BeginFrame() above; when it is not running,
-    // its id stays put and Anti-Lag needs a counter of its own.
-    if (Reflex.WantsFrameIdChaining())
-        LowLatencyFrameIndex = Reflex.GetFrameId();
-    else
-        ++LowLatencyFrameIndex;
+    // Anti-Lag and Reflex describe the same logical emulated frame. The ID is
+    // owned by EmuThread, so turning either feature off does not create a
+    // presenter-local counter with different semantics.
+    LowLatencyFrameIndex = logicalFrameId;
 
     // Anti-Lag's INPUT stage, specified to be issued immediately before the
     // application reads input -- the same point the Reflex sleep just returned

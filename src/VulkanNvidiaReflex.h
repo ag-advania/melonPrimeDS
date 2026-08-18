@@ -152,7 +152,9 @@ public:
     // GetFrameId(), and the same value is chained into the submission
     // (VkLatencySubmissionPresentIdNV) and the present (VkPresentIdKHR), which
     // is what lets the driver correlate the three.
-    void BeginFrame();
+    // `logicalFrameId` is allocated by the emulation thread exactly once per
+    // game frame and remains stable through every marker, submit, and present.
+    void BeginFrame(u64 logicalFrameId);
     void MarkInputSample();
     void MarkSimulationStart();
     void MarkSimulationEnd();
@@ -216,6 +218,8 @@ private:
     bool FrameOpen = false;
     bool InputSampled = false;
     bool SimulationOpen = false;
+    bool RenderSubmitOpen = false;
+    bool PresentOpen = false;
     bool PresentedSinceSleep = true;
 };
 
