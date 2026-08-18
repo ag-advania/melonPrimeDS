@@ -18,8 +18,14 @@
 namespace MelonPrime
 {
 
-// The environment override is deliberately scoped to vkAcquireNextImageKHR.
+// The normal-path override is deliberately scoped to vkAcquireNextImageKHR.
+// Both policies are cached on first use so the frame path never calls getenv().
 std::uint64_t PresenterAcquireTimeoutNanoseconds() noexcept;
+std::uint64_t PresenterLowLatencyAcquireTimeoutNanoseconds() noexcept;
+
+#if defined(MELONPRIME_VULKAN_PRESENTER_TIMEOUT_TESTING)
+void ResetPresenterAcquireTimeoutCachesForTesting() noexcept;
+#endif
 
 } // namespace MelonPrime
 

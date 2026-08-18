@@ -663,7 +663,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${MELONPRIME_VULKAN_INCLUDE_DIR}")
     target_compile_definitions(melonprime_vulkan_presenter_timeout_tests PRIVATE
         MELONPRIME_DS
-        MELONPRIME_ENABLE_VULKAN=1)
+        MELONPRIME_ENABLE_VULKAN=1
+        MELONPRIME_VULKAN_PRESENTER_TIMEOUT_TESTING=1)
     set_target_properties(melonprime_vulkan_presenter_timeout_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
     add_custom_target(melonprime_vulkan_presenter_timeout_check ALL

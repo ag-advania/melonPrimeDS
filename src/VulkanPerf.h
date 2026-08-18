@@ -118,6 +118,10 @@ enum class Counter : u32
     VulkanPresenterBudgetMissCount,
     VulkanAcquireWaitCount,
     VulkanAcquireWaitNs,
+    VulkanAcquireTimeoutNs,
+    VulkanAcquireLowLatencyAttemptCount,
+    VulkanAcquireLowLatencySkipCount,
+    VulkanAcquireRepeatImageIndexCount,
     VulkanAcquireNotReadyCount,
     VulkanPresentSkippedForLatencyBudgetCount,
     VulkanTransientDescriptorPoolResetCount,
@@ -425,7 +429,9 @@ inline void MaybeReport()
         "screen_frame_reuse_count=%llu screen_layer_upload_skip_count=%llu "
         "latest_submission_wait_count=%llu latest_submission_wait_ns=%llu "
         "latest_submission_wait_timeout_count=%llu presenter_budget_miss_count=%llu "
-        "acquire_wait_count=%llu acquire_wait_ns=%llu acquire_not_ready_count=%llu "
+        "acquire_timeout_ns=%llu acquire_wait_count=%llu acquire_wait_ns=%llu "
+        "acquire_low_latency_attempt_count=%llu acquire_low_latency_skip_count=%llu "
+        "acquire_repeat_image_index_count=%llu acquire_not_ready_count=%llu "
         "present_skipped_for_latency_budget_count=%llu transient_descriptor_pool_resets=%llu "
         "previous_present_wait_count=%llu previous_present_wait_ns=%llu "
         "previous_present_wait_timeout_count=%llu swapchain_image_count=%llu "
@@ -479,8 +485,12 @@ inline void MaybeReport()
         count(Counter::VulkanPresenterLatestSubmissionWaitNs),
         count(Counter::VulkanPresenterLatestSubmissionWaitTimeoutCount),
         count(Counter::VulkanPresenterBudgetMissCount),
+        count(Counter::VulkanAcquireTimeoutNs),
         count(Counter::VulkanAcquireWaitCount),
         count(Counter::VulkanAcquireWaitNs),
+        count(Counter::VulkanAcquireLowLatencyAttemptCount),
+        count(Counter::VulkanAcquireLowLatencySkipCount),
+        count(Counter::VulkanAcquireRepeatImageIndexCount),
         count(Counter::VulkanAcquireNotReadyCount),
         count(Counter::VulkanPresentSkippedForLatencyBudgetCount),
         count(Counter::VulkanTransientDescriptorPoolResetCount),
@@ -660,6 +670,10 @@ enum class Counter : u32
     VulkanPresenterBudgetMissCount,
     VulkanAcquireWaitCount,
     VulkanAcquireWaitNs,
+    VulkanAcquireTimeoutNs,
+    VulkanAcquireLowLatencyAttemptCount,
+    VulkanAcquireLowLatencySkipCount,
+    VulkanAcquireRepeatImageIndexCount,
     VulkanAcquireNotReadyCount,
     VulkanPresentSkippedForLatencyBudgetCount,
     VulkanTransientDescriptorPoolResetCount,

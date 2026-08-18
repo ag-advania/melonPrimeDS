@@ -496,6 +496,12 @@ private:
     bool VSyncApplied = true;
 
     melonDS::u32 CurrentImageIndex = 0;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    // Validation-only probe: counts consecutive successful acquisitions that
+    // return the same swapchain image index. This is not queue ownership.
+    melonDS::u32 PreviousAcquiredImageIndex = 0;
+    bool HasPreviousAcquiredImageIndex = false;
+#endif
     VkCommandBuffer CurrentCommandBuffer = VK_NULL_HANDLE;
     bool FrameOpen = false;
     bool CompositionOpen = false;

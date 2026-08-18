@@ -21,18 +21,28 @@ namespace
 
 constexpr std::uint64_t kOneSecondNanoseconds = 1000ull * 1000ull * 1000ull;
 
-void SetAcquireTimeoutEnvironment(const char* value)
+void SetEnvironment(const char* name, const char* value)
 {
 #if defined(_WIN32)
-    if (_putenv_s("MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS", value ? value : "") != 0)
+    if (_putenv_s(name, value ? value : "") != 0)
         throw std::runtime_error("_putenv_s failed");
 #else
     const int result = value
-        ? setenv("MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS", value, 1)
-        : unsetenv("MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS");
+        ? setenv(name, value, 1)
+        : unsetenv(name);
     if (result != 0)
         throw std::runtime_error("setenv/unsetenv failed");
 #endif
+}
+
+void SetNormalAcquireTimeoutEnvironment(const char* value)
+{
+    SetEnvironment("MELONPRIME_VULKAN_ACQUIRE_TIMEOUT_NS", value);
+}
+
+void SetLowLatencyAcquireTimeoutEnvironment(const char* value)
+{
+    SetEnvironment("MELONPRIME_VULKAN_LOW_LATENCY_ACQUIRE_TIMEOUT_NS", value);
 }
 
 std::uint64_t ExpectedDefaultTimeout() noexcept
@@ -58,27 +68,47 @@ int main()
     {
         const std::uint64_t expectedDefault = ExpectedDefaultTimeout();
 
-        SetAcquireTimeoutEnvironment("0");
-        Require(
-            MelonPrime::PresenterAcquireTimeoutNanoseconds() == 0,
-            "acquire timeout environment override was not applied");
-
-        SetAcquireTimeoutEnvironment("123456789");
+        SetNormalAcquireTimeoutEnvironment("123456789");
+        MelonPrime::ResetPresenterAcquireTimeoutCachesForTesting();
         Require(
             MelonPrime::PresenterAcquireTimeoutNanoseconds() == 123456789,
-            "acquire timeout did not follow the configured value");
+            "normal acquire timeout environment override was not applied");
 
-        SetAcquireTimeoutEnvironment(nullptr);
+        SetNormalAcquireTimeoutEnvironment("0");
+        Require(
+            MelonPrime::PresenterAcquireTimeoutNanoseconds() == 123456789,
+            "normal acquire timeout was not cached");
+
+        SetNormalAcquireTimeoutEnvironment(nullptr);
+        MelonPrime::ResetPresenterAcquireTimeoutCachesForTesting();
         Require(
             MelonPrime::PresenterAcquireTimeoutNanoseconds() == expectedDefault,
-            "acquire timeout default is incorrect");
+            "normal acquire timeout default is incorrect");
+
+        SetLowLatencyAcquireTimeoutEnvironment("250000");
+        MelonPrime::ResetPresenterAcquireTimeoutCachesForTesting();
+        Require(
+            MelonPrime::PresenterLowLatencyAcquireTimeoutNanoseconds() == 250000,
+            "low-latency acquire timeout environment override was not applied");
+
+        SetLowLatencyAcquireTimeoutEnvironment("0");
+        Require(
+            MelonPrime::PresenterLowLatencyAcquireTimeoutNanoseconds() == 250000,
+            "low-latency acquire timeout was not cached");
+
+        SetLowLatencyAcquireTimeoutEnvironment(nullptr);
+        MelonPrime::ResetPresenterAcquireTimeoutCachesForTesting();
+        Require(
+            MelonPrime::PresenterLowLatencyAcquireTimeoutNanoseconds() == 500000,
+            "low-latency acquire timeout default is incorrect");
 
         std::cout << "Vulkan presenter timeout policy tests: PASS\n";
         return 0;
     }
     catch (const std::exception& error)
     {
-        SetAcquireTimeoutEnvironment(nullptr);
+        SetNormalAcquireTimeoutEnvironment(nullptr);
+        SetLowLatencyAcquireTimeoutEnvironment(nullptr);
         std::cerr << "Vulkan presenter timeout policy tests: FAIL: "
                   << error.what() << '\n';
         return 1;

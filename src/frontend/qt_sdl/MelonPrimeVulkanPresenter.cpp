@@ -1398,6 +1398,9 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     SwapchainImageViews.assign(realImageCount, VK_NULL_HANDLE);
     SwapchainFramebuffers.assign(realImageCount, VK_NULL_HANDLE);
     RenderFinished.assign(realImageCount, VK_NULL_HANDLE);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    HasPreviousAcquiredImageIndex = false;
+#endif
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanSwapchainImageCount, realImageCount);
     VulkanPerf::SetCounter(
@@ -1799,7 +1802,18 @@ bool VulkanPresenter::BeginFrame(
     }
 
     VkResult res = VK_SUCCESS;
+    const bool lowLatencyAcquire = !waitForPresentSlot;
+    const u64 acquireTimeoutNs = lowLatencyAcquire
+        ? PresenterLowLatencyAcquireTimeoutNanoseconds()
+        : PresenterAcquireTimeoutNanoseconds();
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanAcquireTimeoutNs, acquireTimeoutNs);
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    if (lowLatencyAcquire)
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanAcquireLowLatencyAttemptCount);
+    }
     const bool acquirePerfEnabled = VulkanPerf::IsEnabled();
     const VulkanPerf::Clock::time_point acquireWaitStart = acquirePerfEnabled
         ? VulkanPerf::Clock::now()
@@ -1810,7 +1824,7 @@ bool VulkanPresenter::BeginFrame(
         res = Device.Fns().AcquireNextImageKHR(
             Device.GetHandle(),
             Swapchain,
-            PresenterAcquireTimeoutNanoseconds(),
+            acquireTimeoutNs,
             frame->ImageAvailable,
             VK_NULL_HANDLE,
             &CurrentImageIndex);
@@ -1850,6 +1864,12 @@ bool VulkanPresenter::BeginFrame(
         // semaphore dependency, retire this logical frame, and let the next
         // frame retry. Reusing the semaphore is safe because it was never
         // signalled or submitted as a wait in this branch.
+        LastBeginLatencySkip = true;
+        if (lowLatencyAcquire)
+        {
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanAcquireLowLatencySkipCount);
+        }
         VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireNotReadyCount);
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
@@ -1865,6 +1885,17 @@ bool VulkanPresenter::BeginFrame(
             return RequestSurfaceRebind("vkAcquireNextImageKHR", res);
         return Fail("vkAcquireNextImageKHR", res);
     }
+
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    if (HasPreviousAcquiredImageIndex
+        && PreviousAcquiredImageIndex == CurrentImageIndex)
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanAcquireRepeatImageIndexCount);
+    }
+    PreviousAcquiredImageIndex = CurrentImageIndex;
+    HasPreviousAcquiredImageIndex = true;
+#endif
 
     // AcquireNextImageKHR has returned an image that the presentation engine
     // has released for this submission. The acquire semaphore is waited at
