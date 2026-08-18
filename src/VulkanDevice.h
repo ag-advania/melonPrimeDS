@@ -31,6 +31,7 @@
 #include "VulkanContext.h"
 #include "VulkanFeatureProbe.h"
 #include "VulkanLoader.h"
+#include "VulkanMemoryTelemetry.h"
 
 namespace melonDS
 {
@@ -193,6 +194,8 @@ public:
     // recreation boundaries. This is deliberately not a per-frame operation.
     bool RefreshMemoryAdmission();
     [[nodiscard]] Vk::VulkanMemoryAdmissionSnapshot GetMemoryAdmissionSnapshot() const;
+    [[nodiscard]] Vk::VulkanMemoryTelemetrySnapshot GetMemoryTelemetry() const;
+    void LogMemoryTelemetry(const char* boundary) const;
     [[nodiscard]] bool AdmitScaleDependentResources(
         const Vk::ResolutionBudget& budget, const char* reason) const;
 

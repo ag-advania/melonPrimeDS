@@ -747,6 +747,7 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
     // The new FinalFB starts UNDEFINED and has to be moved into GENERAL by
     // the next frame's command buffer.
     NeedsFinalFBTransition = true;
+    Device.LogMemoryTelemetry("scale resource recreation");
     return true;
 }
 
