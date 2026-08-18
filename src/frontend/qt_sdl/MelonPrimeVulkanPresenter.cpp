@@ -1223,13 +1223,26 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     const bool vsyncRequested = VSyncRequested.load(std::memory_order_acquire);
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     std::string presentReason;
-    if (vsyncRequested && PresentPacer.ShouldUseFifoLatestReady()
+    const auto& nvOptimizedPresentModes =
+        PresentPacer.GetNvLowLatencyOptimizedPresentModes();
+    const bool selectedNvOptimizedPresentMode =
+        PresentPacer.SelectNvLowLatencyOptimizedPresentMode(
+            presentModes,
+            nvOptimizedPresentModes,
+            vsyncRequested,
+            PresentPacer.ShouldUseFifoLatestReady(),
+            presentMode,
+            presentReason);
+    if (!selectedNvOptimizedPresentMode
+        && vsyncRequested && PresentPacer.ShouldUseFifoLatestReady()
         && ListContains(presentModes, VK_PRESENT_MODE_FIFO_LATEST_READY_KHR))
     {
         presentMode = VK_PRESENT_MODE_FIFO_LATEST_READY_KHR;
         presentReason = "VSync on: verified present-timing path selected FIFO_LATEST_READY";
     }
-    else if (!ChoosePresentMode(presentModes, presentMode, presentReason))
+    else if (!selectedNvOptimizedPresentMode
+        && presentMode != VK_PRESENT_MODE_FIFO_LATEST_READY_KHR
+        && !ChoosePresentMode(presentModes, presentMode, presentReason))
     {
         return Fail("the surface reported no Vulkan present modes");
     }
@@ -1429,6 +1442,12 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresentMode,
         static_cast<u64>(PresentMode));
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanNvLowLatencyOptimizedModeCount,
+        static_cast<u64>(nvOptimizedPresentModes.size()));
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresentModeIsNvLowLatencyOptimized,
+        selectedNvOptimizedPresentMode ? 1 : 0);
 
     for (u32 i = 0; i < realImageCount; ++i)
     {
@@ -1495,11 +1514,21 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         }
     }
 
+    std::string optimizedModeNames;
+    for (VkPresentModeKHR mode : nvOptimizedPresentModes)
+    {
+        if (!optimizedModeNames.empty())
+            optimizedModeNames += ',';
+        optimizedModeNames += PresentModeName(mode);
+    }
+
     Platform::Log(
         Platform::LogLevel::Info,
         "[Vulkan] presentation: requested-vsync=%s available-present-modes=%s "
         "selected-present-mode=%s swapchain-images=%u extent=%ux%u format=%d "
-        "window-mode=%s reason=%s; VRR actual state is driver/display controlled\n",
+        "window-mode=%s reason=%s nv-low-latency-optimized-mode-count=%u "
+        "present-mode-is-nv-low-latency-optimized=%s "
+        "nv-low-latency-optimized-modes=%s; VRR actual state is driver/display controlled\n",
         vsyncRequested ? "on" : "off",
         availableModeNames.empty() ? "none" : availableModeNames.c_str(),
         PresentModeName(PresentMode),
@@ -1508,7 +1537,10 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         SwapchainExtent.height,
         static_cast<int>(SurfaceFormat.format),
         WindowFullscreen.load(std::memory_order_acquire) ? "fullscreen" : "windowed",
-        presentReason.c_str());
+        presentReason.c_str(),
+        static_cast<unsigned int>(nvOptimizedPresentModes.size()),
+        selectedNvOptimizedPresentMode ? "yes" : "no",
+        optimizedModeNames.empty() ? "none" : optimizedModeNames.c_str());
 
     return true;
 }

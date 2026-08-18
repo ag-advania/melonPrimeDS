@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <string>
+#include <vector>
 
 #include "VulkanDevice.h"
 #include "VulkanGoogleDisplayTimingModel.h"
@@ -60,6 +61,7 @@ struct VulkanPresentPacerInitInfo
     bool PresentAtAbsoluteTimeFeatureEnabled = false;
     bool PresentAtRelativeTimeFeatureEnabled = false;
     bool LatestReadyExtensionEnabled = false;
+    bool NvidiaLowLatency2ExtensionEnabled = false;
 };
 
 // vkWaitForPresent2KHR has a different success/status contract from the
@@ -312,6 +314,22 @@ public:
     }
     [[nodiscard]] VkSwapchainCreateFlagsKHR GetSwapchainCreateFlags() const noexcept;
     [[nodiscard]] bool ShouldUseFifoLatestReady() const noexcept;
+    [[nodiscard]] const std::vector<VkPresentModeKHR>&
+    GetNvLowLatencyOptimizedPresentModes() const noexcept
+    {
+        return NvLowLatencyOptimizedPresentModes;
+    }
+
+    // Selects a driver-reported optimized mode only when it preserves the
+    // caller's VSync semantics. The generic presenter selection remains the
+    // fallback when the optimized list has no valid intersection.
+    static bool SelectNvLowLatencyOptimizedPresentMode(
+        const std::vector<VkPresentModeKHR>& available,
+        const std::vector<VkPresentModeKHR>& optimized,
+        bool vsyncRequested,
+        bool fifoLatestReadyAllowed,
+        VkPresentModeKHR& out,
+        std::string& reason);
 
     // `imageCount` sizes the optional timing-results queue: a report only frees
     // its slot once the presentation engine has completed it, which can take
@@ -458,6 +476,7 @@ private:
     std::atomic<bool> TargetSchedulingActive{false};
 
     bool Caps2Available = false;
+    bool NvidiaLowLatency2Device = false;
     bool PresentIdDevice = false;
     bool PresentWaitLegacyDevice = false;
     bool PresentId2Device = false;
@@ -469,6 +488,7 @@ private:
     bool AbsoluteTimingDevice = false;
     bool RelativeTimingDevice = false;
     bool LatestReadyDevice = false;
+    std::vector<VkPresentModeKHR> NvLowLatencyOptimizedPresentModes;
     bool TimeDomainQueryAvailable = false;
     bool PresentId2Surface = false;
     bool PresentWaitLegacySurface = false;

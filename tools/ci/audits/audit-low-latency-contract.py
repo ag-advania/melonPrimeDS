@@ -1415,6 +1415,33 @@ def main() -> int:
         failures,
     )
     require(
+        all(token in vulkan_pacer for token in (
+            "VkLatencySurfaceCapabilitiesNV",
+            "VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV",
+            "NvidiaLowLatency2ExtensionEnabled",
+            "NvLowLatencyOptimizedPresentModes",
+            "SelectNvLowLatencyOptimizedPresentMode",
+            "VK_INCOMPLETE",
+            "falling back to generic present-mode selection",
+        ))
+        and all(token in vulkan_presenter for token in (
+            "GetNvLowLatencyOptimizedPresentModes()",
+            "SelectNvLowLatencyOptimizedPresentMode(",
+            "VulkanNvLowLatencyOptimizedModeCount",
+            "VulkanPresentModeIsNvLowLatencyOptimized",
+            "nv-low-latency-optimized-mode-count",
+            "present-mode-is-nv-low-latency-optimized",
+        ))
+        and all(token in vulkan_dispatch_tests for token in (
+            "TestNvLowLatencySurfaceCapabilitiesAndSelection",
+            "NvOptimizedModeCountCalls",
+            "NvOptimizedModeArrayCalls",
+            "SelectNvLowLatencyOptimizedPresentMode",
+        )),
+        "Vulkan must query and select VK_NV_low_latency2 optimized present modes with a safe fallback",
+        failures,
+    )
+    require(
         ("VK_ERROR_DEVICE_LOST" in vulkan_pacer
             or "VK_ERROR_DEVICE_LOST" in vulkan_pacer_header)
         and "TimingModel.AbandonPresent();" in vulkan_pacer
