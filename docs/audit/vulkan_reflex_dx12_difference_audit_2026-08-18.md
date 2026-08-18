@@ -215,3 +215,65 @@ The low-latency source contract audit asserts that `FinishFrame()` cannot call
 regression cases remain present in the Fake API test. Physical Intel Arc XeLL
 runtime validation and exact-current-SHA external latency measurements remain
 OPEN/NOT RUN; this remediation closes the source/build P3 only.
+
+## Current-head follow-up evidence: `e69ec9d86432a2f61d95c6cbb85b0729d032c648`
+
+The source/build remediation above was pushed as `e69ec9d86` on
+`develop_hud`. The following evidence belongs to that exact source HEAD and is
+reported separately from the historical P1--P4 rows above.
+
+### Source and configured-build gates
+
+- `python tools/ci/audits/audit-low-latency-contract.py`: PASS.
+- The capture-enabled Debug build `build/debug-vulkan-capture-p2` completed
+  successfully, including the Fake XeLL state-machine tests.
+- The current developer/validation build `build/debug-mingw-vulkan-validation2`
+  completed successfully, including the Vulkan presenter/lifecycle/pacer,
+  renderer fallback, XeLL, and DX12 memory-admission tests.
+- `git diff --check`: PASS.
+
+### Exact-head GitHub Actions result
+
+The workflows were manually dispatched against the exact SHA above. The
+result is mixed rather than an all-green claim:
+
+| Workflow | Run | Result |
+|---|---:|---|
+| Windows | `32132225644` | PASS |
+| Ubuntu | `32132225961` | PASS |
+| macOS | `32132225759` | FAIL in the unrelated Classic HUD Qt geometry test |
+| BSD | `32132226541` | FAIL in the unrelated Classic HUD Qt/offscreen geometry tests |
+
+All four runs reported `headSha` equal to
+`e69ec9d86432a2f61d95c6cbb85b0729d032c648`. The macOS/BSD failures do not
+exercise or report a failure in the XeLL or Vulkan/DX12 low-latency changes;
+they remain CI failures and are not reclassified as passes here.
+
+### Current-source NVIDIA runtime smoke
+
+The available physical device was an NVIDIA GeForce RTX 5070 Ti. Using the
+current capture-enabled Debug build and the ROM/state pair documented in the
+run artifacts:
+
+- Vulkan formal smoke completed for Reflex `OFF`, `ON`, and `ON+Boost`, each
+  with VSync `ON` and `OFF`; every process exited successfully and restored the
+  configuration and validation-layer state.
+- The Vulkan event matrix completed resize x40, minimize/restore x20,
+  fullscreen toggle x8, and 69 swapchain rebuilds with zero device-lost events,
+  zero sync hazards, and clean configuration/layer restoration.
+- Vulkan target-FPS captures completed for 60, 120, 144, and 240 targets. These
+  are controlled target-FPS captures, not evidence that the physical monitor
+  changed refresh mode.
+- DX12 current-source smoke completed for Reflex `OFF`, `ON`, and `ON+Boost`
+  with VSync `ON` and `OFF`. Every case initialized DX12 on the RTX 5070 Ti,
+  initialized NVIDIA Reflex with the requested effective mode, reached a
+  successful presentation, and exited cleanly. One VSync-ON Reflex-ON case
+  also completed a paired F11 fullscreen toggle.
+
+This closes the available NVIDIA source-current smoke matrix, but not the
+stronger release-runtime or click-to-photon gates. Intel Arc XeLL physical
+validation is not run because no Intel Arc device is available on this host.
+The runbook's long formal phase (600 warm-up frames plus 10,000 measured frames,
+three randomized runs per mode), AMD Anti-Lag 2, Linux WSI, physical
+`VK_TIMEOUT`/`VK_NOT_READY` fault injection, and Reflex Analyzer/photodiode
+measurements remain OPEN/NOT RUN.
