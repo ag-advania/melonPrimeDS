@@ -194,10 +194,11 @@ not claimed as pass evidence:
 - Linux runtime coverage: `NOT RUN`.
 - macOS/Metal and BSD runtime coverage: `NOT RUN` because those platforms are
   unavailable on this Windows host.
-- A post-P0 telemetry rerun that records `present_image_fence=0` under the same
-  workload is still required before claiming the runtime gate closed.
+- The complete post-P0 refresh/VSync/window-mode/renderer-switch matrix remains
+  `OPEN` where an exact current-binary run was not repeated below. The
+  available 3-image and 2-image smoke evidence is recorded separately.
 
-## Current-tree runtime smoke rerun
+## Pre-P0 current-tree runtime smoke reference
 
 The current telemetry executable was rebuilt from the worktree and has SHA256
 `04ACA95D4E5C259BE038AAC5E3956EFC9E004D73026A476327854473372BB6E4`.
@@ -228,3 +229,33 @@ The zero busy/reuse values mean the available workload did not fill the
 two-slot presenter ring and did not deliver repeated presentations of one
 renderer frame. They are not stress proof of those branches; controlled
 GPU-saturation and repeated same-frame runtime evidence remain `OPEN`.
+
+## Post-P0 exact-current-binary runtime smoke
+
+After removing the acquired-image host fence wait, the telemetry executable
+was rebuilt from the exact current source tree. Its SHA256 is
+`4D3FFF627F0541C0BED4DE4711E27BE53ED14A1A2EF9657DF4D114C3F2333399`.
+Both runs used Windows, an NVIDIA GeForce RTX 5070 Ti, Vulkan validation
+enabled, Reflex on, Anti-Lag 2 off, 4x internal resolution, VSync off,
+windowed presentation, the same ROM and `.ml4` savestate slot 4, and two
+logical presenter slots. The `.ml4` was opened successfully and each run
+exited with code 0 after writing 60 capture PNGs.
+
+| Swapchain | Captures | `present_begin_total` p50/p95 (n) | `present_image_fence` p50/p95/p99/max (n) | Key counters |
+| --- | ---: | ---: | ---: | --- |
+| Default, 3 images | 60 | 28.90/40.10 us (61) | 0/0/0/0 us (0) | image-fence wait 0/0 ns, busy 0, `screen_copy_B=0`, `acquire_not_ready=0` |
+| Experiment, 2 images | 60 | 30.55/38.24 us (60) | 0/0/0/0 us (0) | image-fence wait 0/0 ns, busy 0, `screen_copy_B=0`, `acquire_not_ready=0` |
+
+The 3-image report selected `swapchain_image_count=3`, and the experiment
+selected `swapchain_image_count=2`; both reports also showed
+`presenter_frame_fence_wait_count=0`, `presenter_frame_fence_wait_ns=0`, and
+`direct_image_frames` equal to the telemetry sample count. Combined stdout and
+stderr contained the validation-layer enable marker and no `VUID-*`,
+`SYNC-HAZARD`, `VK_ERROR_DEVICE_LOST`, `DEVICE_LOST`, or fatal marker.
+
+The 2-image path therefore passed this bounded synchronization smoke test,
+but it is not promoted as the default. The instruction requires same-machine
+A/B latency and p95/p99 coverage across the relevant VSync/present-mode,
+window/fullscreen, refresh-rate, and available vendor matrix; this run covers
+only one Windows/NVIDIA workload. The default remains the surface-authorized
+3-image policy until that broader gate is closed.
