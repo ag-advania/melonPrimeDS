@@ -14,36 +14,60 @@ The source fixes were intentionally committed as separate phases:
 | --- | --- | --- | --- |
 | P2 | `6e23f76edea74f3fd60c8dbbf862f112c83601f5` | Classify `LastBeginLatencySkip` only inside the low-latency Acquire timeout branch; tighten the static audit to inspect that branch | PASS |
 | P3 | `ee3bfd15c5dfb980ed86c6d9135fb9bcd8e77208` | Reject a leading `-` in the cached timeout environment parser and cover the fallback in the timeout unit test | PASS |
+| P3 cleanup | `5c77069b8ba0e532c268e41c87619accb7790ddd` | Count `VulkanPresentSkippedForLatencyBudgetCount` only for low-latency Acquire skips; retain the all-outcome `VulkanAcquireNotReadyCount`; strengthen the block audit and normal negative override coverage | PASS |
 
 The implementation parent is `f6d17a4ac06c5baa3f7a9f0c9b9d8628850eb74e`.
-The current source used for all post-fix binaries below is
-`ee3bfd15c5dfb980ed86c6d9135fb9bcd8e77208`.
+The historical A/B and refresh-rate binaries below were built from
+`ee3bfd15c5dfb980ed86c6d9135fb9bcd8e77208`. The current source after the
+telemetry cleanup is `5c77069b8ba0e532c268e41c87619accb7790ddd`.
 
 P2 is required for correctness: a normal presenter Acquire timeout must not
 become an intentional low-latency idle result. P3 is defensive input handling:
 negative values now use the documented fallback instead of entering numeric
-conversion with an invalid sign.
+conversion with an invalid sign. The follow-up P3 cleanup makes the
+latency-budget skip counter match its name without changing synchronization,
+frame submission, or user-visible behavior.
 
 ## Build and static evidence
 
 | Artifact | Configuration | SHA256 | Validation |
 | --- | --- | --- | --- |
 | A baseline | historical post-P0 Debug telemetry binary, source phase `8438e8278` | `4D3FFF627F0541C0BED4DE4711E27BE53ED14A1A2EF9657DF4D114C3F2333399` | historical baseline; no P2/P3 fix |
-| B current | Debug, Vulkan + renderer telemetry, validation enabled | `8A606BD3B035B2F7D512628967EC481775CF56F572279769C0307BCECE987EDC` | P2/P3 source |
-| Release current | Release, developer features off, Vulkan + renderer telemetry | `387BE30BD95CD50CBE6B66886AFF2CDE94C188F9F70A0789FD4DDD52AE24E006` | shipping-like; validation not enabled |
+| B historical | Debug, Vulkan + renderer telemetry, validation enabled | `8A606BD3B035B2F7D512628967EC481775CF56F572279769C0307BCECE987EDC` | P2/P3 source before the telemetry-only cleanup |
+| P3 cleanup Debug | Debug, Vulkan + renderer telemetry | `C6411AF6A5D9EB814DC4A4BAC9EA2DCBFF26ED3816EE6C351EBF614762CBC91C` | current source; full configured build PASS |
+| Release historical | Release, developer features off, Vulkan + renderer telemetry | `387BE30BD95CD50CBE6B66886AFF2CDE94C188F9F70A0789FD4DDD52AE24E006` | pre-cleanup shipping-like binary; validation not enabled |
 
 The following checks passed against the current source:
 
 - `py -3 tools/ci/audits/audit-low-latency-contract.py`
 - `cmd /c tools\build\windows\build-mingw-existing.bat --build-dir build\debug-mingw-x86_64 --jobs 1`
 - `cmd /c tools\build\windows\build-mingw-existing.bat --build-dir build\debug-vulkan-telemetry --jobs 1`
-- `cmd /c tools\build\windows\build-mingw-existing.bat --build-dir build\telemetry-on-release --jobs 1`
-- Debug and Release `melonprime_vulkan_presenter_timeout_tests.exe`
+- Debug `melonprime_vulkan_presenter_timeout_tests.exe`, including normal and low-latency negative overrides
 - The configured build suites, including the 82 registered-language Classic On-Screen Edit geometry cases
 
-The Release build completed all 217 configured steps. The negative timeout
-unit case and the existing `0`, `250000`, `500000`, and `1000000 ns` selection
-cases passed.
+The current Debug build completed all 16 configured steps and its timeout,
+present timing, surface lifecycle, fake-dispatch, renderer fallback, XeLL,
+and 82-language layout checks passed. A Release rebuild was attempted with
+the same existing-tree command, but the environment repeatedly failed to load
+MSYS2 `sh.exe` during the link/LTO phase (`CANNOT_OPEN_SHARED_OBJECT_FILE`);
+there is no valid current Release binary from this attempt. The previous
+Release hash above remains historical evidence only, and a current Release
+validation is `OPEN` for this host environment.
+
+The current Debug executable also completed a short physical Vulkan smoke
+with the ROM used by the preceding matrix, Reflex On, Just-in-Time pacing,
+VSync On, two-frame logical depth, and a `0 ns` low-latency override. The
+process exited normally and emitted the following final-window counters:
+
+```text
+acquire_low_latency_attempt_count=60
+acquire_low_latency_skip_count=0
+acquire_not_ready_count=0
+present_skipped_for_latency_budget_count=0
+```
+
+This smoke used the renderer performance log rather than a formal CSV capture
+(`capture_rows=0`), so it is runtime smoke evidence and not a new A/B result.
 
 ## Fixed machine and common runtime conditions
 
@@ -173,10 +197,11 @@ claimed from the event script label.
 
 | Gate | Status | Evidence/limitation |
 | --- | --- | --- |
-| P2 normal-path classification | PASS | source audit and exact current Debug/Release builds |
-| P3 negative timeout fallback | PASS | unit test in Debug and Release builds |
-| Physical 60/240/540 Hz windowed Vulkan | PASS for this Windows/NVIDIA workload | exact current B, 60 captures per run, zero error markers |
-| Release Vulkan smoke | PASS for shipping-like telemetry | validation intentionally not enabled |
+| P2 normal-path classification | PASS | source audit, current Debug build, and historical Release artifact |
+| P3 negative timeout fallback | PASS for current Debug | normal and low-latency unit cases; current Release rebuild blocked by the host MSYS2 linker environment |
+| P3 telemetry semantics cleanup | PASS for current Debug/source | counter is structurally inside the low-latency timeout block; normal timeout retains only `acquire_not_ready_count` |
+| Physical 60/240/540 Hz windowed Vulkan | PASS for this Windows/NVIDIA workload | historical pre-cleanup B, 60 captures per run, zero error markers; cleanup is telemetry-only |
+| Release Vulkan smoke | PASS historically; current rebuild OPEN | historical pre-cleanup binary passed; current Release artifact was not produced because of the MSYS2 `sh.exe` environment failure |
 | Fullscreen Vulkan with synchronization validation | OPEN | F11 cycle clean, but logs did not confirm `window-mode=fullscreen` |
 | Controlled nonzero `VK_TIMEOUT`/`VK_NOT_READY` skip and recovery | OPEN | 0 ns/high-rate/2-image stress still produced 0 skips |
 | Reflex ON + Boost | NOT RUN | all runs report `lowLatencyBoost=false` |
@@ -186,4 +211,3 @@ claimed from the event script label.
 No source change restores `ImagesInFlight`, adds a post-Acquire fence wait,
 calls `vkDeviceWaitIdle` in the frame path, or changes the 500 us default to
 zero. Those exclusions remain part of the bounded Acquire contract.
-

@@ -333,3 +333,22 @@ and Synchronization Validation. The current Windows/NVIDIA workload remained
 zero-skip, so true Acquire skip/recovery and confirmed fullscreen remain
 explicitly `OPEN`; the result is not promoted by inference from clean smoke
 runs.
+
+The follow-up also completed the optional telemetry-only P3 cleanup in
+`5c77069b8ba0e532c268e41c87619accb7790ddd`: the
+`present_skipped_for_latency_budget_count` counter is now incremented only by
+the low-latency Acquire timeout branch. The all-outcome
+`acquire_not_ready_count` remains outside that branch, so a normal bounded
+Acquire timeout cannot be reported as an intentional latency-budget skip.
+The static audit now extracts the braced low-latency block and checks this
+placement, and the timeout test covers negative normal and low-latency
+overrides.
+
+The current Debug telemetry build and its configured test suite passed. A
+short physical Vulkan smoke on the RTX 5070 Ti also exited normally with
+`acquire_low_latency_attempt_count=60`, zero low-latency skips, zero not-ready
+outcomes, and zero latency-budget skips. It was a renderer telemetry smoke,
+not a new formal CSV/A-B run. A current Release rebuild remains OPEN because
+the existing MSYS2 environment repeatedly failed to load `sh.exe` during the
+link/LTO phase; the older Release A/B artifact is retained as historical
+evidence only.
