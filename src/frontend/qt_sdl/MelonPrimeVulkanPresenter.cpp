@@ -1986,6 +1986,8 @@ bool VulkanPresenter::BeginFrame(
         : VulkanPerf::Clock::time_point{};
 #endif
     Vk::FrameBeginResult beginResult = Vk::FrameBeginResult::Error;
+    VulkanPerf::ScopedCpuTimer slotWaitTimer(
+        VulkanPerf::CpuMetric::PresentSlotWait, waitForPresentSlot);
     Vk::FrameContext* frame = waitForPresentSlot
         ? Frames.BeginFrame()
         : Frames.TryBeginFrame(&beginResult);

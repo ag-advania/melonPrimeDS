@@ -2163,17 +2163,30 @@ void DX12Renderer3D::RenderFrame()
 
     u8 texcacheClearBitmapDirty = 0;
     bool textureCacheChanged = false;
+    int numYSpans = 0;
+    int numSetupIndices = 0;
+    u32 numPolygons = 0;
+    u32 numVariants = 0;
     {
-        DX12Perf::ScopedCpuTimer texcacheTimer(DX12Perf::CpuMetric::TexcacheUpdate);
-        textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
-    }
-    ClearBitmapDirty |= texcacheClearBitmapDirty;
-    if (!textureCacheChanged && GPU3D.RenderFrameIdentical
-        && FinalFBHasValidFrame && ClearBitmapDirty == 0)
-    {
-        DX12Perf::AddCounter(DX12Perf::Counter::IdenticalFrames);
-        DX12Perf::MaybeReport();
-        return;
+        DX12Perf::ScopedCpuTimer prepareTimer(DX12Perf::CpuMetric::RasterCpuPrepare);
+        {
+            DX12Perf::ScopedCpuTimer texcacheTimer(DX12Perf::CpuMetric::TexcacheUpdate);
+            textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+        }
+        ClearBitmapDirty |= texcacheClearBitmapDirty;
+        if (!textureCacheChanged && GPU3D.RenderFrameIdentical
+            && FinalFBHasValidFrame && ClearBitmapDirty == 0)
+        {
+            DX12Perf::AddCounter(DX12Perf::Counter::IdenticalFrames);
+            DX12Perf::MaybeReport();
+            return;
+        }
+
+        // BuildPolygons is CPU-only until the texture heap records its queued
+        // uploads below. This lets the previous GPU submission continue while
+        // the current frame resolves polygon/span and texture identity.
+        DX12Perf::ScopedCpuTimer polygonTimer(DX12Perf::CpuMetric::BuildPolygons);
+        numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
     }
 
     ID3D12GraphicsCommandList* list = nullptr;
@@ -2183,6 +2196,7 @@ void DX12Renderer3D::RenderFrame()
         SetRuntimeFailure("could not begin a frame command list");
         return;
     }
+    DX12Perf::ScopedCpuTimer rasterRecordTimer(DX12Perf::CpuMetric::RasterRecordSubmit);
     RecordDX12GpuMetric(
         Commands, GpuMetric::Raster, DX12Perf::Counter::RasterGpuTimeNs);
     Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, false));
@@ -2198,18 +2212,7 @@ void DX12Renderer3D::RenderFrame()
     ResetFrameSrvCache();
 
     UpdateClearBitmap();
-
-    // Polygon/span setup runs on the CPU exactly like the OpenGL compute
-    // renderer; the texcache uploads it triggers are recorded into this same
-    // list, which is why it has to happen while the list is open.
-    int numYSpans = 0;
-    int numSetupIndices = 0;
-    u32 numPolygons = 0;
-    u32 numVariants = 0;
-    {
-        DX12Perf::ScopedCpuTimer polygonTimer(DX12Perf::CpuMetric::BuildPolygons);
-        numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
-    }
+    TextureHeap.RecordPendingUploads();
     if (TextureHeap.HadUploadFailure())
     {
         Commands.Submit();

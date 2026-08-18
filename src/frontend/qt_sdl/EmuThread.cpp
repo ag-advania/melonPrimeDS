@@ -535,6 +535,7 @@ void EmuThread::run()
         //
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Input);
+        MelonPrimePerf::MarkInputSample();
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         // Reflex INPUT_SAMPLE marks the point immediately before the first
         // input read. It must precede both SDL's joystick refresh and the raw
@@ -666,6 +667,7 @@ void EmuThread::run()
 
 #ifdef MELONPRIME_DS
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::RunFrame);
+        MelonPrimePerf::MarkRunFrameBegin();
 #endif
         if (UNLIKELY(needsCompile))
         {
@@ -732,6 +734,7 @@ void EmuThread::run()
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Draw);
 #endif
         emuInstance->drawScreen();
+        MelonPrimePerf::MarkPresentEnd();
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         if (dx12LowLatencyRenderer)
         {

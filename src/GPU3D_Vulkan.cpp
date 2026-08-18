@@ -2138,6 +2138,36 @@ void VulkanRenderer3D::RenderFrame()
     const Vk::DeviceDispatch& fns = Device.Fns();
     VulkanPerf::SetScale(static_cast<u32>(ScaleFactor));
 
+    u8 texcacheClearBitmapDirty = 0;
+    bool textureCacheChanged = false;
+    int numYSpans = 0;
+    int numSetupIndices = 0;
+    u32 numPolygons = 0;
+    u32 numVariants = 0;
+    bool canReuseIdenticalFrame = false;
+    {
+        VulkanPerf::ScopedCpuTimer prepareTimer(VulkanPerf::CpuMetric::RasterCpuPrepare);
+        {
+            VulkanPerf::ScopedCpuTimer texcacheTimer(VulkanPerf::CpuMetric::TexcacheUpdate);
+            textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+        }
+        ClearBitmapDirty |= texcacheClearBitmapDirty;
+        canReuseIdenticalFrame =
+            !textureCacheChanged
+            && GPU3D.RenderFrameIdentical
+            && FinalFBHasContent
+            && !NeedsFinalFBTransition
+            && PlaceholdersInitialized;
+
+        if (!canReuseIdenticalFrame)
+        {
+            // BuildPolygons is CPU-only until the texture heap records its
+            // queued uploads after BeginFrame() retires the prior raster slot.
+            VulkanPerf::ScopedCpuTimer polygonTimer(VulkanPerf::CpuMetric::BuildPolygons);
+            numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+        }
+    }
+
     Vk::FrameContext* frame = nullptr;
     frame = Frames.BeginFrame(true);
     if (!frame)
@@ -2148,6 +2178,7 @@ void VulkanRenderer3D::RenderFrame()
 
     VkCommandBuffer cmd = frame->CommandBuffer;
     const u32 frameIndex = Frames.GetFrameIndex();
+    VulkanPerf::ScopedCpuTimer rasterRecordTimer(VulkanPerf::CpuMetric::RasterRecordSubmit);
     RecordVulkanGpuMetric(
         Frames, GpuMetric::Raster, VulkanPerf::Counter::RasterGpuTimeNs);
     Frames.WriteTimestamp(
@@ -2173,20 +2204,6 @@ void VulkanRenderer3D::RenderFrame()
     if (NeedsFinalFBTransition || !PlaceholdersInitialized)
         RecordInitialTransitions(cmd);
 
-    u8 texcacheClearBitmapDirty = 0;
-    bool textureCacheChanged = false;
-    {
-        VulkanPerf::ScopedCpuTimer texcacheTimer(VulkanPerf::CpuMetric::TexcacheUpdate);
-        textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
-    }
-    ClearBitmapDirty |= texcacheClearBitmapDirty;
-
-    const bool canReuseIdenticalFrame =
-        !textureCacheChanged
-        && GPU3D.RenderFrameIdentical
-        && FinalFBHasContent
-        && !NeedsFinalFBTransition
-        && PlaceholdersInitialized;
     if (canReuseIdenticalFrame)
     {
         // Keep the frame-ring fence progression intact while skipping every
@@ -2219,17 +2236,7 @@ void VulkanRenderer3D::RenderFrame()
 
     UpdateClearBitmap(cmd, FrameStaging);
 
-    // Polygon/span setup runs on the CPU exactly like the OpenGL compute
-    // renderer; the texcache uploads it triggers are recorded into this same
-    // command buffer, which is why it happens while the buffer is open.
-    int numYSpans = 0;
-    int numSetupIndices = 0;
-    u32 numPolygons = 0;
-    u32 numVariants = 0;
-    {
-        VulkanPerf::ScopedCpuTimer polygonTimer(VulkanPerf::CpuMetric::BuildPolygons);
-        numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
-    }
+    TextureHeap.RecordPendingUploads();
     VulkanPerf::RecordGeometry(
         numPolygons, numVariants, static_cast<u32>(std::max(numYSpans, 0)),
         static_cast<u32>(std::max(numSetupIndices, 0)));

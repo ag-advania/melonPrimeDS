@@ -84,6 +84,9 @@ jobs:
     - name: Audit GPU memory production-overhead contract
       run: python ./tools/ci/audits/audit-renderer-memory-production-overhead.py
 
+    - name: Audit explicit renderer late-fence contract
+      run: python ./tools/ci/audits/audit-explicit-renderer-late-fence.py
+
     - name: Audit Vulkan native surface visibility contract
       run: python ./tools/ci/audits/audit-vulkan-native-surface-visibility.py
 

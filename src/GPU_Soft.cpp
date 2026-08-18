@@ -97,6 +97,11 @@ void SoftRenderer::Reset()
     StructuredFallbackLines = 0;
     StructuredFrameGeneration = 0;
     StructuredContentGeneration = {};
+    StructuredPendingPlaneDirtyMask = 0;
+    StructuredPendingLineMetaDirtyMask = 0;
+    StructuredPendingCaptureCommandsDirty = false;
+    StructuredEngineChangedMask[0] = 0;
+    StructuredEngineChangedMask[1] = 0;
 #endif
 }
 
@@ -247,6 +252,11 @@ void SoftRenderer::DrawScanline(u32 line)
             StructuredScreenRouteCopyNanoseconds = 0;
             StructuredRegularLines = 0;
             StructuredFallbackLines = 0;
+            StructuredPendingPlaneDirtyMask = 0;
+            StructuredPendingLineMetaDirtyMask = 0;
+            StructuredPendingCaptureCommandsDirty = false;
+            StructuredEngineChangedMask[0] = 0;
+            StructuredEngineChangedMask[1] = 0;
 
             const u32 captureMode = (GPU.CaptureCnt >> 29u) & 0x3u;
             const bool sourceAContributes = captureMode == 0u
@@ -362,6 +372,8 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     if (UseStructuredVulkan2D() && outputLine == 191u)
         FinalizeStructuredCaptureFrame();
+    if (UseStructuredVulkan2D() && outputLine == 191u)
+        FlushStructuredGeneration();
     if (measureStructured2D && outputLine == 191u)
         VulkanPerf::EndStructured2DFrame();
 #endif
@@ -745,6 +757,7 @@ bool SoftRenderer::SnapshotStructuredVramDisplayLine(
     const std::size_t stateBase =
         static_cast<std::size_t>(bank) * StructuredCapturePixelCount;
     const u16* nativeVram = reinterpret_cast<const u16*>(GPU.VRAM[bank]);
+    u8 changedPlaneMask = 0;
 
     for (u32 x = 0; x < 256u; ++x)
     {
@@ -757,11 +770,11 @@ bool SoftRenderer::SnapshotStructuredVramDisplayLine(
         // carries the display-time native RGB fallback, including the half of
         // a 128-wide row that has no retained high-resolution capture.
         StoreStructuredScreenPlaneWord(
-            screen, 0u, destination, PackedCaptureColorToColor6(native));
-        StoreStructuredScreenPlaneWord(screen, 1u, destination, 0u);
+            screen, 0u, destination, PackedCaptureColorToColor6(native), &changedPlaneMask);
+        StoreStructuredScreenPlaneWord(screen, 1u, destination, 0u, &changedPlaneMask);
         StoreStructuredScreenPlaneWord(
             screen, 2u, destination,
-            Contract::kControlPlain2D << Contract::kControlFlagShift);
+            Contract::kControlPlain2D << Contract::kControlFlagShift, &changedPlaneMask);
 
         u32 reference = 0u;
         if (StructuredCapturePixelValid[stateIndex] != 0u
@@ -772,7 +785,12 @@ bool SoftRenderer::SnapshotStructuredVramDisplayLine(
                 bank, StructuredCapturePixelVersion[stateIndex], address);
         }
         StoreStructuredScreenPlaneWord(screen, Contract::kPlaneCaptureReference,
-            destination, reference);
+            destination, reference, &changedPlaneMask);
+    }
+    for (u32 plane = 0; plane < Contract::kPlaneCount; ++plane)
+    {
+        if (changedPlaneMask & static_cast<u8>(1u << plane))
+            MarkStructuredPlaneDirty(screen * Contract::kPlaneCount + plane);
     }
 
     const u16 brightness = GPU.MasterBrightnessA;
@@ -1088,18 +1106,26 @@ void SoftRenderer::BuildStructuredScreenLine(
     {
         StoreStructuredScreenSource(screen, line, Contract::kScreenSourceFallback);
         ++StructuredFallbackLines;
+        u8 changedPlaneMask = 0;
         for (std::size_t x = 0; x < 256u; ++x)
         {
             const std::size_t pixelIndex = rowBase + x;
             StoreStructuredScreenPlaneWord(
                 screen, 0u, pixelIndex,
-                (output[x] & 0x00FFFFFFu) | 0x01000000u);
-            StoreStructuredScreenPlaneWord(screen, 1u, pixelIndex, 0u);
+                (output[x] & 0x00FFFFFFu) | 0x01000000u, &changedPlaneMask);
+            StoreStructuredScreenPlaneWord(screen, 1u, pixelIndex, 0u, &changedPlaneMask);
             StoreStructuredScreenPlaneWord(
                 screen, 2u, pixelIndex,
-                Contract::kControlPlain2D << Contract::kControlFlagShift);
+                Contract::kControlPlain2D << Contract::kControlFlagShift, &changedPlaneMask);
             StoreStructuredScreenPlaneWord(
-                screen, Contract::kPlaneCaptureReference, pixelIndex, 0u);
+                screen, Contract::kPlaneCaptureReference, pixelIndex, 0u, &changedPlaneMask);
+        }
+        // Keep the capture-reference plane in the same scanline-level dirty
+        // batch; it is normally zero but can retain a stale capture marker.
+        for (u32 plane = 0; plane < Contract::kPlaneCount; ++plane)
+        {
+            if (changedPlaneMask & static_cast<u8>(1u << plane))
+                MarkStructuredPlaneDirty(screen * Contract::kPlaneCount + plane);
         }
         // Every line that reaches this path carries the software renderer's
         // final pixel, which DrawScanlineA/DrawScanlineB already ran

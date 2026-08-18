@@ -33,6 +33,7 @@ namespace
 {
 constexpr u64 kRowPitchAlignment = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;      // 256
 constexpr u64 kPlacementAlignment = D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT; // 512
+constexpr u32 kInitialPendingUploadCapacity = 64;
 
 constexpr u64 AlignUp(u64 value, u64 alignment) noexcept
 {
@@ -46,6 +47,8 @@ void DX12TextureHeap::Init(DX12Context* context, DX12CommandContext* commands, D
     Commands = commands;
     Uploads = uploads;
     UploadFailed = false;
+    PendingUploadCount = 0;
+    PendingUploads.reserve(kInitialPendingUploadCapacity);
 }
 
 void DX12TextureHeap::Shutdown()
@@ -53,6 +56,8 @@ void DX12TextureHeap::Shutdown()
     Entries.clear();
     FreeSlots.clear();
     PendingBarriers.clear();
+    PendingUploads.clear();
+    PendingUploadCount = 0;
     Graveyard.clear();
     SpillUploads.clear();
     Context = nullptr;
@@ -103,11 +108,54 @@ u32 DX12TextureHeap::Create(u32 width, u32 height, u32 layers)
 
 void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data)
 {
+    if (!Commands || !data || handle == 0 || handle > Entries.size())
+        return;
+
+    const Entry& entry = Entries[handle - 1];
+    if (!entry.InUse || layer >= entry.Layers || width != entry.Width || height != entry.Height)
+        return;
+
+    if (!Commands->IsRecording())
+    {
+        if (PendingUploadCount == PendingUploads.size())
+            PendingUploads.emplace_back();
+        PendingUpload& pending = PendingUploads[PendingUploadCount++];
+        pending.Handle = handle;
+        pending.Width = width;
+        pending.Height = height;
+        pending.Layer = layer;
+        pending.Data.resize(static_cast<size_t>(width) * height * 4u);
+        std::memcpy(pending.Data.data(), data, pending.Data.size());
+        return;
+    }
+
+    RecordUpload(handle, width, height, layer, data);
+}
+
+void DX12TextureHeap::RecordPendingUploads()
+{
+    if (PendingUploadCount == 0 || !Commands || !Commands->IsRecording())
+        return;
+
+    for (u32 i = 0; i < PendingUploadCount; i++)
+    {
+        const PendingUpload& pending = PendingUploads[i];
+        RecordUpload(
+            pending.Handle, pending.Width, pending.Height, pending.Layer,
+            pending.Data.data());
+    }
+    PendingUploadCount = 0;
+}
+
+void DX12TextureHeap::RecordUpload(
+    u32 handle, u32 width, u32 height, u32 layer, const void* data)
+{
     if (!Commands || !Uploads || handle == 0 || handle > Entries.size())
         return;
 
     Entry& entry = Entries[handle - 1];
-    if (!entry.InUse || !entry.Resource || layer >= entry.Layers)
+    if (!entry.InUse || !entry.Resource || layer >= entry.Layers
+        || width != entry.Width || height != entry.Height)
         return;
 
     ID3D12GraphicsCommandList* list = Commands->GetList();
@@ -269,6 +317,19 @@ void DX12TextureHeap::Destroy(u32 handle)
     PendingBarriers.erase(
         std::remove(PendingBarriers.begin(), PendingBarriers.end(), handle - 1),
         PendingBarriers.end());
+    u32 i = 0;
+    while (i < PendingUploadCount)
+    {
+        if (PendingUploads[i].Handle != handle)
+        {
+            i++;
+            continue;
+        }
+
+        PendingUploadCount--;
+        if (i != PendingUploadCount)
+            std::swap(PendingUploads[i], PendingUploads[PendingUploadCount]);
+    }
 }
 
 void DX12TextureHeap::CollectGarbage()

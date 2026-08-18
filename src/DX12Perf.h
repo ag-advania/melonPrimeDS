@@ -29,8 +29,13 @@ namespace melonDS::DX12Perf
 enum class CpuMetric : u32
 {
     RasterBeginWait = 0,
+    RasterCpuPrepare,
+    RasterReuseWait,
+    RasterRecordSubmit,
     TexcacheUpdate,
     BuildPolygons,
+    Soft2DTotal,
+    Structured2DMetadata,
     SpanStagingCopy,
     DescriptorUpdate,
     ComposePack,
@@ -131,16 +136,21 @@ inline constexpr bool IsCompiledIn() noexcept
 
 inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Count)> CpuMetricNames = {
     "raster_begin_wait",
+    "raster_cpu_prepare_us",
+    "raster_reuse_wait_us",
+    "raster_record_submit_us",
     "texcache_update",
     "build_polygons",
+    "soft2d_total_us",
+    "structured2d_metadata_us",
     "span_staging_copy",
     "descriptor_update",
-    "compose_pack",
+    "structured_pack_us",
     "compose_record",
     "capture_wait",
     "capture_map_copy",
-    "present_slot_wait",
-    "present_begin_wait",
+    "present_slot_wait_us",
+    "present_begin_wait_us",
     "hud_patch_copy",
     "hud_upload",
     "present_record",
@@ -234,6 +244,8 @@ public:
             Clock::now() - Start).count());
         State& state = GetState();
         state.Cpu[static_cast<std::size_t>(CpuMetric::RasterBeginWait)].Add(
+            static_cast<double>(ns) / 1000.0);
+        state.Cpu[static_cast<std::size_t>(CpuMetric::RasterReuseWait)].Add(
             static_cast<double>(ns) / 1000.0);
         state.Counters[static_cast<std::size_t>(Counter::RasterBeginWaitNs)] += ns;
         state.Counters[static_cast<std::size_t>(Counter::RasterBeginWaitCount)]++;
@@ -486,7 +498,8 @@ public:
 
 namespace melonDS::DX12Perf
 {
-enum class CpuMetric : u32 { RasterBeginWait, TexcacheUpdate, BuildPolygons, SpanStagingCopy,
+enum class CpuMetric : u32 { RasterBeginWait, RasterCpuPrepare, RasterReuseWait, RasterRecordSubmit,
+    TexcacheUpdate, BuildPolygons, Soft2DTotal, Structured2DMetadata, SpanStagingCopy,
     DescriptorUpdate, ComposePack, ComposeRecord, CaptureWait, CaptureMapCopy,
     PresentSlotWait, PresentBeginWait, HudPatchCopy, HudUpload, PresentRecord, QueueSubmit, Count };
 enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,

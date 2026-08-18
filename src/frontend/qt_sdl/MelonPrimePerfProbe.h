@@ -68,6 +68,10 @@ struct State {
     Uint64 sectionStartTick = 0;
     bool sectionOpen = false;
     Section openSection = Section::LimiterSleep;
+    Uint64 inputSampleTick = 0;
+    bool inputSampleOpen = false;
+    bool runFrameBeginRecorded = false;
+    bool presentEndRecorded = false;
 
     static constexpr uint32_t kRingCap = 8192;
     static constexpr uint32_t kHistBuckets = 64;
@@ -80,6 +84,12 @@ struct State {
     static constexpr uint32_t kFrameWindowCap = 512;
     double windowFrameMs[kFrameWindowCap]{};
     uint32_t windowFrameCount = 0;
+
+    static constexpr uint32_t kLatencyCap = 512;
+    double inputToRunFrameUs[kLatencyCap]{};
+    double inputToPresentEndUs[kLatencyCap]{};
+    uint32_t inputToRunFrameCount = 0;
+    uint32_t inputToPresentEndCount = 0;
 
     double secSumMs[static_cast<uint32_t>(Section::Count)]{};
     double secMaxMs[static_cast<uint32_t>(Section::Count)]{};
@@ -183,10 +193,39 @@ inline double PercentileSorted(const double* data, uint32_t count, double p)
     return data[lo] * (1.0 - frac) + data[hi] * frac;
 }
 
+inline double LatencyPercentile(const double* samples, uint32_t count, double p)
+{
+    if (count == 0)
+        return 0.0;
+    double sorted[State::kLatencyCap];
+    for (uint32_t i = 0; i < count; ++i)
+        sorted[i] = samples[i];
+    std::sort(sorted, sorted + count);
+    return PercentileSorted(sorted, count, p);
+}
+
+inline double LatencyMax(const double* samples, uint32_t count)
+{
+    double max = 0.0;
+    for (uint32_t i = 0; i < count; ++i)
+        if (samples[i] > max)
+            max = samples[i];
+    return max;
+}
+
+inline void RecordLatencySample(
+    double* samples, uint32_t& count, double microseconds)
+{
+    if (count < State::kLatencyCap)
+        samples[count++] = microseconds;
+}
+
 inline void ResetWindowStats()
 {
     State& st = S();
     st.windowFrameCount = 0;
+    st.inputToRunFrameCount = 0;
+    st.inputToPresentEndCount = 0;
     for (uint32_t i = 0; i < static_cast<uint32_t>(Section::Count); ++i) {
         st.secSumMs[i] = 0.0;
         st.secMaxMs[i] = 0.0;
@@ -293,6 +332,23 @@ inline void MaybeReport1Hz()
         st.cntCustomHudFrames
             ? TicksToMs(st.sumCustomHudTicks) * 1000.0 / static_cast<double>(st.cntCustomHudFrames)
             : 0.0);
+
+    fprintf(stderr,
+        "[MelonPrimePerf] explicit_latency_us "
+        "frame_input_sample_to_runframe_begin_us="
+        "p50=%.1f p95=%.1f p99=%.1f max=%.1f n=%u "
+        "input_sample_to_present_end_us="
+        "p50=%.1f p95=%.1f p99=%.1f max=%.1f n=%u\n",
+        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.50),
+        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.95),
+        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.99),
+        LatencyMax(st.inputToRunFrameUs, st.inputToRunFrameCount),
+        st.inputToRunFrameCount,
+        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.50),
+        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.95),
+        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.99),
+        LatencyMax(st.inputToPresentEndUs, st.inputToPresentEndCount),
+        st.inputToPresentEndCount);
 
     const auto hudPercentileUs = [&](HudPhase phase, double percentile) -> double {
         const uint32_t index = static_cast<uint32_t>(phase);
@@ -413,8 +469,45 @@ inline void FrameBegin()
     st.frameOpen = true;
     st.frameStartTick = SDL_GetPerformanceCounter();
     st.sectionOpen = false;
+    st.inputSampleTick = 0;
+    st.inputSampleOpen = false;
+    st.runFrameBeginRecorded = false;
+    st.presentEndRecorded = false;
     st.currentHudPhaseTicks = 0;
     st.currentHudDrawn = false;
+}
+
+inline void MarkInputSample()
+{
+    State& st = S();
+    if (!st.frameOpen || st.inputSampleOpen)
+        return;
+    st.inputSampleTick = SDL_GetPerformanceCounter();
+    st.inputSampleOpen = true;
+}
+
+inline void MarkRunFrameBegin()
+{
+    State& st = S();
+    if (!st.frameOpen || !st.inputSampleOpen || st.runFrameBeginRecorded)
+        return;
+    const Uint64 now = SDL_GetPerformanceCounter();
+    RecordLatencySample(
+        st.inputToRunFrameUs, st.inputToRunFrameCount,
+        TicksToMs(now - st.inputSampleTick) * 1000.0);
+    st.runFrameBeginRecorded = true;
+}
+
+inline void MarkPresentEnd()
+{
+    State& st = S();
+    if (!st.frameOpen || !st.inputSampleOpen || st.presentEndRecorded)
+        return;
+    const Uint64 now = SDL_GetPerformanceCounter();
+    RecordLatencySample(
+        st.inputToPresentEndUs, st.inputToPresentEndCount,
+        TicksToMs(now - st.inputSampleTick) * 1000.0);
+    st.presentEndRecorded = true;
 }
 
 inline void SectionBegin(Section sec)
@@ -754,6 +847,9 @@ inline bool IsFrameActive() { return false; }
 inline unsigned long long ReadTicksIfActive() { return 0; }
 inline void FrameBegin() {}
 inline void FrameEnd() {}
+inline void MarkInputSample() {}
+inline void MarkRunFrameBegin() {}
+inline void MarkPresentEnd() {}
 inline void SectionBegin(Section) {}
 inline void SectionEnd(Section) {}
 inline void CountInputSource(InputSource) {}

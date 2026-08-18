@@ -38,6 +38,7 @@ namespace
 constexpr VkFormat TexcacheFormat = VK_FORMAT_R8G8B8A8_UINT;
 
 constexpr VkDeviceSize TexelBytes = 4;
+constexpr u32 kInitialPendingUploadCapacity = 64;
 
 } // namespace
 
@@ -156,6 +157,8 @@ void VulkanTextureHeap::Init(const VulkanDevice* device, Vk::FrameRing* frames) 
 {
     Device = device;
     Frames = frames;
+    PendingUploadCount = 0;
+    PendingUploads.reserve(kInitialPendingUploadCapacity);
 }
 
 void VulkanTextureHeap::Shutdown()
@@ -182,6 +185,8 @@ void VulkanTextureHeap::Shutdown()
     Entries.clear();
     FreeSlots.clear();
     PendingBarriers.clear();
+    PendingUploads.clear();
+    PendingUploadCount = 0;
     FrameCommandBuffer = VK_NULL_HANDLE;
     FrameStaging = nullptr;
     Device = nullptr;
@@ -388,7 +393,57 @@ bool VulkanTextureHeap::CreateScratchUpload(
 
 void VulkanTextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data)
 {
-    if (!Device || !Device->IsValid() || !Frames || FrameCommandBuffer == VK_NULL_HANDLE || !data)
+    if (!Device || !Device->IsValid() || !Frames || !data)
+        return;
+    if (handle == 0 || handle > Entries.size())
+        return;
+
+    Entry& entry = Entries[handle - 1];
+    if (!entry.InUse || layer >= entry.Layers || width != entry.Width || height != entry.Height)
+        return;
+
+    const Vk::FrameContext* frame = Frames->GetCurrentFrame();
+    if (FrameCommandBuffer == VK_NULL_HANDLE || !FrameStaging
+        || !frame || !frame->Recording)
+    {
+        if (PendingUploadCount == PendingUploads.size())
+            PendingUploads.emplace_back();
+        PendingUpload& pending = PendingUploads[PendingUploadCount++];
+        pending.Handle = handle;
+        pending.Width = width;
+        pending.Height = height;
+        pending.Layer = layer;
+        pending.Data.resize(static_cast<size_t>(width) * height * TexelBytes);
+        std::memcpy(pending.Data.data(), data, pending.Data.size());
+        return;
+    }
+
+    RecordUpload(handle, width, height, layer, data);
+}
+
+void VulkanTextureHeap::RecordPendingUploads()
+{
+    const Vk::FrameContext* frame = Frames ? Frames->GetCurrentFrame() : nullptr;
+    if (PendingUploadCount == 0 || FrameCommandBuffer == VK_NULL_HANDLE || !FrameStaging
+        || !frame || !frame->Recording)
+        return;
+
+    for (u32 i = 0; i < PendingUploadCount; i++)
+    {
+        const PendingUpload& pending = PendingUploads[i];
+        RecordUpload(
+            pending.Handle, pending.Width, pending.Height, pending.Layer,
+            pending.Data.data());
+    }
+    PendingUploadCount = 0;
+}
+
+void VulkanTextureHeap::RecordUpload(
+    u32 handle, u32 width, u32 height, u32 layer, const void* data)
+{
+    const Vk::FrameContext* frame = Frames ? Frames->GetCurrentFrame() : nullptr;
+    if (!Device || !Device->IsValid() || !Frames || FrameCommandBuffer == VK_NULL_HANDLE
+        || !frame || !frame->Recording || !data)
         return;
     if (handle == 0 || handle > Entries.size())
         return;
@@ -624,6 +679,19 @@ void VulkanTextureHeap::Destroy(u32 handle)
     PendingBarriers.erase(
         std::remove(PendingBarriers.begin(), PendingBarriers.end(), handle - 1),
         PendingBarriers.end());
+    u32 i = 0;
+    while (i < PendingUploadCount)
+    {
+        if (PendingUploads[i].Handle != handle)
+        {
+            i++;
+            continue;
+        }
+
+        PendingUploadCount--;
+        if (i != PendingUploadCount)
+            std::swap(PendingUploads[i], PendingUploads[PendingUploadCount]);
+    }
 }
 
 } // namespace melonDS

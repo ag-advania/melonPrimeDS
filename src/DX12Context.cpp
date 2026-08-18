@@ -892,8 +892,20 @@ bool DX12CommandContext::WaitForFence(u64 value, bool recordRasterBegin)
         return DX12::Fail("SetEventOnCompletion", hr);
 
     DX12Perf::ScopedRasterBeginWait rasterWait(recordRasterBegin);
-    WaitForSingleObject(FenceEvent, INFINITE);
-    return true;
+    constexpr DWORD kFenceWaitTimeoutMs = 5000;
+    const DWORD waitResult = WaitForSingleObject(FenceEvent, kFenceWaitTimeoutMs);
+    if (waitResult == WAIT_OBJECT_0)
+        return true;
+
+    const HRESULT removedReason = Device
+        ? Device->GetDeviceRemovedReason() : E_FAIL;
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "DX12: raster reuse fence did not retire within %lu ms (wait=%lu, removed=0x%08lX)\n",
+        static_cast<unsigned long>(kFenceWaitTimeoutMs),
+        static_cast<unsigned long>(waitResult),
+        static_cast<unsigned long>(removedReason));
+    return false;
 }
 
 void DX12CommandContext::WaitIdle()
@@ -933,7 +945,8 @@ ID3D12GraphicsCommandList* DX12CommandContext::Begin(bool recordRasterBegin)
 
     // The allocator can only be recycled once the GPU is done with everything
     // recorded from it.
-    WaitForFence(SubmittedValue, recordRasterBegin);
+    if (!WaitForFence(SubmittedValue, recordRasterBegin))
+        return nullptr;
 
     return ResetList();
 }

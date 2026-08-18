@@ -34,11 +34,16 @@ namespace melonDS::VulkanPerf
 enum class CpuMetric : u32
 {
     RasterBeginWait = 0,
+    RasterCpuPrepare,
+    RasterReuseWait,
+    RasterRecordSubmit,
     TexcacheUpdate,
     BuildPolygons,
+    Soft2DTotal,
+    Structured2DMetadata,
     DescriptorUpdate,
     ComposePack,
-    Structured2D,
+    PresentSlotWait,
     PresentBeginTotal,
     PresentAcquire,
     PresentImageFence,
@@ -151,14 +156,19 @@ inline constexpr bool IsCompiledIn() noexcept
 
 inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Count)> CpuMetricNames = {
     "raster_begin_wait",
+    "raster_cpu_prepare_us",
+    "raster_reuse_wait_us",
+    "raster_record_submit_us",
     "texcache_update",
     "build_polygons",
+    "soft2d_total_us",
+    "structured2d_metadata_us",
     "descriptor_update",
-    "compose_pack",
-    "structured_2d",
-    "present_begin_total",
-    "present_acquire",
-    "present_image_fence",
+    "structured_pack_us",
+    "present_slot_wait_us",
+    "present_begin_total_us",
+    "present_acquire_wait_us",
+    "present_image_fence_us",
     "hud_upload",
     "queue_submit",
 };
@@ -261,6 +271,8 @@ public:
         State& state = GetState();
         state.Cpu[static_cast<std::size_t>(CpuMetric::RasterBeginWait)].Add(
             static_cast<double>(ns) / 1000.0);
+        state.Cpu[static_cast<std::size_t>(CpuMetric::RasterReuseWait)].Add(
+            static_cast<double>(ns) / 1000.0);
         state.Counters[static_cast<std::size_t>(Counter::RasterBeginWaitNs)] += ns;
         state.Counters[static_cast<std::size_t>(Counter::RasterBeginWaitCount)]++;
     }
@@ -321,15 +333,15 @@ inline void EndStructured2DFrame() noexcept
     State& state = GetState();
     if (!state.Structured2DOpen)
         return;
-    AddDuration(CpuMetric::Structured2D, state.Structured2DStart);
+    AddDuration(CpuMetric::Soft2DTotal, state.Structured2DStart);
     state.Structured2DOpen = false;
 }
 
 class ScopedCpuTimer
 {
 public:
-    explicit ScopedCpuTimer(CpuMetric metric) noexcept
-        : Metric(metric), Enabled(IsEnabled())
+    explicit ScopedCpuTimer(CpuMetric metric, bool enabled = true) noexcept
+        : Metric(metric), Enabled(enabled && IsEnabled())
     {
         if (Enabled)
             Start = Clock::now();
@@ -623,11 +635,16 @@ namespace melonDS::VulkanPerf
 enum class CpuMetric : u32
 {
     RasterBeginWait,
+    RasterCpuPrepare,
+    RasterReuseWait,
+    RasterRecordSubmit,
     TexcacheUpdate,
     BuildPolygons,
+    Soft2DTotal,
+    Structured2DMetadata,
     DescriptorUpdate,
     ComposePack,
-    Structured2D,
+    PresentSlotWait,
     PresentBeginTotal,
     PresentAcquire,
     PresentImageFence,

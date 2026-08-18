@@ -139,6 +139,10 @@ public:
 
     u32 Create(u32 width, u32 height, u32 layers);
     void Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
+    // Texture decode and logical resource selection can run before the
+    // raster frame slot is reusable. Record the actual transfer only after
+    // BeginFrame() has retired that slot's fence.
+    void RecordPendingUploads();
     void Destroy(u32 handle);
 
     [[nodiscard]] const Entry* Lookup(u32 handle) const noexcept
@@ -150,10 +154,20 @@ public:
     }
 
 private:
+    struct PendingUpload
+    {
+        u32 Handle = 0;
+        u32 Width = 0;
+        u32 Height = 0;
+        u32 Layer = 0;
+        std::vector<u8> Data;
+    };
+
     // Records a temporary host-visible buffer for one oversized upload. The
     // ring cannot serve it, and dropping the texture would render garbage, so
     // a dedicated buffer is created and handed to the deferred destroy queue.
     bool CreateScratchUpload(VkDeviceSize size, VkBuffer& outBuffer, VkDeviceMemory& outMemory, void*& outMapped);
+    void RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
 
     void RetireEntry(Entry& entry);
 
@@ -166,6 +180,10 @@ private:
     std::vector<Entry> Entries;
     std::vector<u32> FreeSlots;
     std::vector<u32> PendingBarriers;
+    // The active prefix is drained by count; backing objects and decoded-byte
+    // capacities stay allocated for reuse instead of churning each frame.
+    std::vector<PendingUpload> PendingUploads;
+    u32 PendingUploadCount = 0;
 };
 
 
