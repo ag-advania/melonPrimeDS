@@ -1864,9 +1864,9 @@ bool VulkanPresenter::BeginFrame(
         // semaphore dependency, retire this logical frame, and let the next
         // frame retry. Reusing the semaphore is safe because it was never
         // signalled or submitted as a wait in this branch.
-        LastBeginLatencySkip = true;
         if (lowLatencyAcquire)
         {
+            LastBeginLatencySkip = true;
             VulkanPerf::AddCounter(
                 VulkanPerf::Counter::VulkanAcquireLowLatencySkipCount);
         }

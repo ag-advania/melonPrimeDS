@@ -178,6 +178,11 @@ def main() -> int:
         "bool VulkanPresenter::BeginFrame(",
         "void VulkanPresenter::BeginComposition()",
     )
+    acquire_timeout_branch = function_body(
+        presenter_begin,
+        "else if (res == VK_TIMEOUT || res == VK_NOT_READY)",
+        "else if (res != VK_SUCCESS)",
+    )
     frame_begin = function_body(
         vulkan_sync,
         "FrameContext* FrameRing::BeginFrameInternal(",
@@ -278,17 +283,17 @@ def main() -> int:
     )
     require(
         ordered(
-            presenter_begin,
+            acquire_timeout_branch,
             [
-                "if (res == VK_TIMEOUT || res == VK_NOT_READY)",
+                "if (lowLatencyAcquire)",
                 "LastBeginLatencySkip = true;",
                 "VulkanAcquireLowLatencySkipCount",
                 "VulkanPresentSkippedForLatencyBudgetCount",
                 "Frames.SubmitFrame(Device.GetMainQueue());",
                 "return false;",
-                "else if (res != VK_SUCCESS)",
             ]
         )
+        and acquire_timeout_branch.count("LastBeginLatencySkip = true;") == 1
         and all(
             token in vulkan_perf
             for token in (
@@ -311,7 +316,7 @@ def main() -> int:
             )
         )
         and "This is not queue ownership" in vulkan_presenter_header,
-        "Acquire timeout/not-ready must retire an intentional logical skip and expose the correct telemetry names",
+        "Acquire timeout/not-ready must classify LastBeginLatencySkip only inside the low-latency branch and expose the correct telemetry names",
         failures,
     )
     require(
