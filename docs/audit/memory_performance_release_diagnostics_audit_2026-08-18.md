@@ -16,7 +16,7 @@ result.
 | DX12 per-resource allocation overhead | PASS | Removed redundant `GetResourceAllocationInfo()` preflights from `CreateBuffer()` and `CreateTexture2D()`; `CreateCommittedResource()` HRESULT handling and scale admission remain. |
 | Vulkan Release allocation path | PASS | Detailed memory telemetry is compile-gated and defaults OFF; accepted reservation carries only minimal POD count/byte state. |
 | Scale and memory safety | PASS | Admission limits, live-budget boundary checks, arithmetic-overflow rejection, and allocation rollback are retained and unit-tested. |
-| Release diagnostic gate | PASS locally | Static source audit, shipping cache audit, and shipping-binary string audit pass. Exact-head GitHub CI is pending after this push. |
+| Release diagnostic gate | PASS locally / mixed CI | Static source audit, shipping cache audit, shipping-binary string audit, and exact-head Windows release gate pass. The exact-head cross-platform workflow results are recorded below. |
 | Same-GPU Vulkan/DX12 frametime smoke | PASS, diagnostic | Windows/NVIDIA RTX 5070 Ti, same ROM, 20-second startup/boot runs; no savestate result is used. |
 | Physical memory-pressure failure run | OPEN | No controlled VRAM exhaustion or allocation-failure injection was available in this run. |
 | AMD/Intel physical coverage | NOT RUN | No matching physical devices were available. |
@@ -180,11 +180,28 @@ requires at least three randomized runs per mode.
 | Direct texcache/scratch partial-allocation cleanup | PASS by source contract | Vulkan call checks and cleanup paths audited/documented |
 | Real VRAM pressure / driver OOM | OPEN | No reproducible controlled pressure injector in the available host |
 
+## Exact-head GitHub Actions
+
+The implementation commit is `a2c2d304fb1b91c21c0ee4d7f6b7ba85aed19980`.
+The branch's workflow triggers do not run on `develop_hud` pushes, so these
+workflow-dispatch runs were explicitly launched against that SHA:
+
+| Workflow | Run | Workflow result | Evidence |
+| --- | ---: | --- | --- |
+| Windows | `32139893658` | PASS | The complete build job passed, including the GPU memory source audit, shipping Release feature-gate check, shipping-binary memory-string audit, raster edge vectors, shader sync, and Vulkan-disabled variant. |
+| Ubuntu | `32139893296` | SUCCESS with non-gating platform failures | The `Audits` job passed, including the GPU memory audit. The aarch64/x86_64 build jobs and artifact aggregation reported runner `git` exit 128/build-artifact failures. |
+| macOS | `32139893246` | FAILURE | arm64/x86_64 GPU memory audits passed, but both builds failed in the existing runner git/Homebrew trust/CMake environment before runtime validation. |
+| BSD | `32139893725` | FAILURE | The GPU memory source audit passed; OpenBSD/NetBSD BSD validation builds failed, and FreeBSD failed during dependency installation. |
+
+All four runs reported `headSha` equal to the implementation commit above. The
+platform failures are retained as failures and are not reclassified as product
+passes based on the local Windows build.
+
 ## Remaining evidence gates
 
 | Gate | Status |
 | --- | --- |
-| Exact-head GitHub Actions result | OPEN until the pushed SHA's runs are queried |
+| Exact-head GitHub Actions result | MIXED; Windows and audit gates PASS, platform matrix has environment/build failures |
 | AMD Anti-Lag / AMD Vulkan physical run | NOT RUN |
 | Intel XeLL / Intel Vulkan physical run | NOT RUN |
 | Linux/macOS/BSD physical renderer run | NOT RUN |
