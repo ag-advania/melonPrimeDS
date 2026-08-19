@@ -2237,6 +2237,550 @@ void main(uint3 id : SV_DispatchThreadID)
 }
 )";
 
+// ---------------------------------------------------------------------------
+// Native GPU2D register/VRAM compositor
+// ---------------------------------------------------------------------------
+// ResultValue is rebound to GPU2DNative::PackFrame's fixed-width input.  The
+// shader deliberately performs the byte/BGR555 fetches itself; no software
+// pixel plane is uploaded to this path.
+inline const std::string GPU2DNative = R"(
+#define line nativeScanline
+#pragma warning(disable: 4000)
+static const uint NativeHeaderWords = 32u;
+static const uint NativeLineWords = 68u;
+static const uint NativeEngineWords = 131072u + 65536u + 8192u + 2048u;
+static const uint NativeEngineBase = NativeHeaderWords + NativeLineWords * 384u;
+static const uint NativePaletteBase = NativeEngineBase + NativeEngineWords * 2u;
+static const uint NativeOamBase = NativePaletteBase + 512u;
+static const uint NativeFifoBase = NativeOamBase + 512u;
+static const uint NativeLcdBase = NativeFifoBase + 256u;
+static const uint NativeRouteBase = NativeLcdBase + 131072u;
+
+static const uint NativeDispCnt = 0u;
+static const uint NativeLayerEnable = 1u;
+static const uint NativeOBJEnable = 2u;
+static const uint NativeForcedBlank = 3u;
+static const uint NativeBGCnt = 4u;
+static const uint NativeBGXPos = 8u;
+static const uint NativeBGYPos = 12u;
+static const uint NativeBGXRef = 16u;
+static const uint NativeBGYRef = 18u;
+static const uint NativeRotA = 20u;
+static const uint NativeRotC = 24u;
+static const uint NativeWinRegs = 59u;
+static const uint NativeWinMask = 60u;
+static const uint NativeWinPos = 61u;
+static const uint NativeUnitEnabled = 65u;
+static const uint NativeBGMosaic = 42u;
+static const uint NativeOBJMosaic = 44u;
+static const uint NativeBGMosaicLine = 46u;
+static const uint NativeOBJMosaicLine = 47u;
+static const uint NativeBlendCnt = 48u;
+static const uint NativeEVA = 50u;
+static const uint NativeEVB = 51u;
+static const uint NativeEVY = 52u;
+static const uint NativeMasterBrightness = 53u;
+static const uint NativeRenderXPos = 54u;
+
+uint NativeLine(uint engine, uint scanline, uint field)
+{
+    return ResultValue[NativeHeaderWords + (engine * 192u + scanline) * NativeLineWords + field];
+}
+uint NativeEngine(uint engine, uint section, uint word)
+{
+    return ResultValue[NativeEngineBase + engine * NativeEngineWords + section + word];
+}
+uint NativeByte(uint base, uint size, uint address)
+{
+    uint offset = 0u;
+    uint word = 0u;
+    if (size != 0u)
+    {
+        offset = address & (size - 1u);
+        word = ResultValue[base + (offset >> 2u)];
+    }
+    return (word >> ((offset & 3u) * 8u)) & 0xFFu;
+}
+uint Native16(uint base, uint size, uint address)
+{
+    return NativeByte(base, size, address)
+        | (NativeByte(base, size, address + 1u) << 8u);
+}
+uint NativeBGSize(uint engine) { return ResultValue[16u + engine * 4u]; }
+uint NativeOBJSize(uint engine) { return ResultValue[17u + engine * 4u]; }
+uint NativeBGExtSize(uint engine) { return ResultValue[18u + engine * 4u]; }
+uint NativeOBJExtSize(uint engine) { return ResultValue[19u + engine * 4u]; }
+uint NativeBG8(uint engine, uint address)
+{
+    return NativeByte(NativeEngineBase + engine * NativeEngineWords,
+        NativeBGSize(engine), address);
+}
+uint NativeBG16(uint engine, uint address)
+{
+    return Native16(NativeEngineBase + engine * NativeEngineWords,
+        NativeBGSize(engine), address);
+}
+uint NativeOBJ8(uint engine, uint address)
+{
+    return NativeByte(NativeEngineBase + engine * NativeEngineWords + 131072u,
+        NativeOBJSize(engine), address);
+}
+uint NativeOBJ16(uint engine, uint address)
+{
+    return Native16(NativeEngineBase + engine * NativeEngineWords + 131072u,
+        NativeOBJSize(engine), address);
+}
+uint NativeBGExt16(uint engine, uint address)
+{
+    return Native16(NativeEngineBase + engine * NativeEngineWords + 196608u,
+        NativeBGExtSize(engine), address);
+}
+uint NativeOBJExt16(uint engine, uint address)
+{
+    return Native16(NativeEngineBase + engine * NativeEngineWords + 204800u,
+        NativeOBJExtSize(engine), address);
+}
+uint NativePalette16(uint engine, uint address)
+{
+    return Native16(NativePaletteBase + (engine == 0u ? 0u : 256u), 0x400u, address);
+}
+uint NativeOAM16(uint engine, uint address)
+{
+    return Native16(NativeOamBase + engine * 256u, 0x400u, address);
+}
+uint NativeFIFO16(uint index)
+{
+    uint word = ResultValue[NativeFifoBase + (index >> 1u)];
+    return (word >> ((index & 1u) * 16u)) & 0xFFFFu;
+}
+uint NativeLCD16(uint bank, uint address)
+{
+    return Native16(NativeLcdBase + bank * 32768u, 0x20000u, address);
+}
+
+uint NativePack(uint r, uint g, uint b, uint a)
+{
+    return min(r, 63u) | (min(g, 63u) << 8u) | (min(b, 63u) << 16u) | (a << 24u);
+}
+uint NativeColorR(uint c) { return c & 0x3Fu; }
+uint NativeColorG(uint c) { return (c >> 8u) & 0x3Fu; }
+uint NativeColorB(uint c) { return (c >> 16u) & 0x3Fu; }
+uint NativeBGR555(uint c, uint flag)
+{
+    return NativePack((c & 0x1Fu) << 1u,
+        ((c >> 5u) & 0x3Eu) | ((c >> 15u) & 1u),
+        (c >> 10u) & 0x3Eu, flag);
+}
+uint NativeVRAMColor(uint c)
+{
+    return NativePack((c & 0x1Fu) << 1u, (c >> 4u) & 0x3Eu,
+        (c >> 9u) & 0x3Eu, 0u);
+}
+uint NativeFinalFB(uint x, uint y)
+{
+    return FinalFB[x + y * ScreenWidth];
+}
+
+struct NativePixel
+{
+    uint Color;
+    uint Flag;
+    uint Priority;
+    uint Present;
+    uint Mosaic;
+};
+NativePixel NativeEmpty()
+{
+    NativePixel p;
+    p.Color=0u;p.Flag=0u;p.Priority=4u;p.Present=0u;p.Mosaic=0u;
+    return p;
+}
+NativePixel NativeBackdrop(uint engine)
+{
+    NativePixel p = NativeEmpty();
+    p.Color = NativeBGR555(NativePalette16(engine, 0u), 0x20u);
+    p.Present = 1u;
+    return p;
+}
+
+uint NativeWindow(uint engine, uint line, int x, uint objWindow)
+{
+    uint disp = NativeLine(engine, line, NativeDispCnt);
+    uint result = 0x3Fu;
+    if ((disp & 0xE000u) == 0u) return result;
+    uint regs = NativeLine(engine, line, NativeWinRegs);
+    uint mask = NativeLine(engine, line, NativeWinMask);
+    uint p0 = NativeLine(engine, line, NativeWinPos + 0u);
+    uint p1 = NativeLine(engine, line, NativeWinPos + 1u);
+    uint p2 = NativeLine(engine, line, NativeWinPos + 2u);
+    uint p3 = NativeLine(engine, line, NativeWinPos + 3u);
+    bool in0 = x < (int)p0 ? (mask & 1u) != 0u
+        : (x < (int)p1 ? (mask & 2u) != 0u : (mask & 4u) != 0u);
+    bool in1 = x < (int)p2 ? (mask & 8u) != 0u
+        : (x < (int)p3 ? (mask & 16u) != 0u : (mask & 32u) != 0u);
+    uint selected = regs;
+    if (objWindow != 0u && (disp & (1u << 15u)) != 0u) selected = regs >> 8u;
+    if (in1) selected = regs >> 16u;
+    if (in0) selected = regs >> 24u;
+    result = selected & 0x3Fu;
+    return result;
+}
+
+uint NativeBGPalette(uint engine, uint line, uint bg, uint palette, uint index)
+{
+    uint cnt = NativeLine(engine, line, NativeBGCnt + bg);
+    uint result = 0u;
+    if ((NativeLine(engine, line, NativeDispCnt) & (1u << 30u)) != 0u)
+    {
+        uint slot = bg;
+        if (bg < 2u && (cnt & (1u << 13u)) != 0u) slot += 2u;
+        result = NativeBGExt16(engine, slot * 4096u + palette * 512u + index * 2u);
+    }
+    else
+        result = NativePalette16(engine,
+            (engine == 0u ? 0u : 0x400u) + palette * 32u + index * 2u);
+    return result;
+}
+
+int NativeSpriteWidth(uint v)
+{
+    static const int t[16] = {8,16,8,8,16,32,8,8,32,32,16,8,64,64,32,8};
+    return t[v & 15u];
+}
+int NativeSpriteHeight(uint v)
+{
+    static const int t[16] = {8,8,16,8,16,8,32,8,32,16,32,8,64,32,64,8};
+    return t[v & 15u];
+}
+
+NativePixel NativeBGText(uint engine, uint line, uint bg, int x)
+{
+    NativePixel p;
+    p.Color=0u;p.Flag=0u;p.Priority=4u;p.Present=0u;p.Mosaic=0u;
+    uint cnt = NativeLine(engine, line, NativeBGCnt + bg);
+    uint disp = NativeLine(engine, line, NativeDispCnt);
+    uint xoff = NativeLine(engine, line, NativeBGXPos + bg);
+    uint yoff = NativeLine(engine, line, NativeBGYPos + bg);
+    uint mosaic = NativeLine(engine, line, NativeBGMosaic);
+    if ((cnt & (1u << 6u)) != 0u)
+    {
+        yoff += NativeLine(engine, line, NativeBGMosaicLine);
+        if (mosaic != 0u) xoff += (uint)x - ((uint)x % (mosaic + 1u));
+    }
+    else { yoff += line; xoff += (uint)x; }
+    uint tileBase = engine == 0u ? ((disp >> 24u) & 7u) << 16u : 0u;
+    uint mapBase = engine == 0u ? ((disp >> 27u) & 7u) << 16u : 0u;
+    tileBase += (cnt & 0x3Cu) << 12u;
+    mapBase += (cnt & 0x1F00u) << 3u;
+    uint mapOffset = mapBase + ((yoff & 0xF8u) << 3u);
+    if ((cnt & (1u << 15u)) != 0u)
+    {
+        mapOffset = mapBase + ((yoff & 0x1F8u) << 3u);
+        if ((cnt & (1u << 14u)) != 0u) mapOffset += (yoff & 0x100u) << 3u;
+    }
+    uint wide = (cnt & (1u << 14u)) != 0u ? 0x100u : 0u;
+    mapOffset += ((xoff & 0xF8u) >> 2u) + ((xoff & wide) << 3u);
+    uint map = NativeBG16(engine, mapOffset);
+    uint tx = (map & (1u << 10u)) != 0u ? 7u - (xoff & 7u) : xoff & 7u;
+    uint ty = (map & (1u << 11u)) != 0u ? 7u - (yoff & 7u) : yoff & 7u;
+    uint index = 0u, palette = 0u;
+    if ((cnt & (1u << 7u)) != 0u)
+    {
+        index = NativeBG8(engine, tileBase + (map & 0x3FFu) * 64u + ty * 8u + tx);
+        palette = (disp & (1u << 30u)) != 0u ? map >> 12u : 0u;
+    }
+    else
+    {
+        uint packed = NativeBG8(engine,
+            tileBase + (map & 0x3FFu) * 32u + ty * 4u + (tx >> 1u));
+        index = (tx & 1u) != 0u ? packed >> 4u : packed & 0xFu;
+        palette = map >> 12u;
+    }
+    if (index != 0u)
+    {
+        p.Color = NativeBGR555(NativeBGPalette(engine, line, bg, palette, index), 1u << bg);
+        p.Present = 1u;
+    }
+    p.Flag = 1u << bg;
+    p.Priority = cnt & 3u;
+    return p;
+}
+
+NativePixel NativeBGAffine(uint engine, uint line, uint bg, int x, bool large)
+{
+    NativePixel p;
+    p.Color=0u;p.Flag=0u;p.Priority=4u;p.Present=0u;p.Mosaic=0u;
+    uint cnt = NativeLine(engine, line, NativeBGCnt + bg);
+    int fx = (int)NativeLine(engine, line, NativeBGXRef + bg - 2u)
+        + x * (int)NativeLine(engine, line, NativeRotA + bg - 2u);
+    int fy = (int)NativeLine(engine, line, NativeBGYRef + bg - 2u)
+        + x * (int)NativeLine(engine, line, NativeRotC + bg - 2u);
+    uint mosaic = NativeLine(engine, line, NativeBGMosaic);
+    if ((cnt & (1u << 6u)) != 0u && mosaic != 0u)
+    {
+        uint offset = (uint)x % (mosaic + 1u);
+        fx -= (int)offset * (int)NativeLine(engine, line, NativeRotA + bg - 2u);
+        fy -= (int)offset * (int)NativeLine(engine, line, NativeRotC + bg - 2u);
+    }
+    uint size = (cnt >> 14u) & 3u;
+    if (large)
+    {
+        static const uint xm[4] = {0x1FFFFu,0x3FFFFu,0x1FFFFu,0x1FFFFu};
+        static const uint ym[4] = {0x3FFFFu,0x1FFFFu,0x0FFFFu,0x1FFFFu};
+        static const uint sh[4] = {9u,10u,9u,9u};
+        if (((uint)fx & ~xm[size]) != 0u || ((uint)fy & ~ym[size]) != 0u) return p;
+        uint address = (cnt & 0x1F00u) << 6u
+            + (((uint)fy & ym[size]) >> 8u) * (1u << sh[size])
+            + (((uint)fx & xm[size]) >> 8u);
+        uint index = NativeBG8(engine, address);
+        if (index != 0u)
+        {
+            p.Color = NativeBGR555(NativePalette16(engine,
+                engine == 0u ? index * 2u : 0x400u + index * 2u), 1u << bg);
+            p.Present = 1u;
+        }
+    }
+    else
+    {
+        static const uint cm[4] = {0x07800u,0x0F800u,0x1F800u,0x3F800u};
+        static const uint sh[4] = {7u,8u,9u,10u};
+        uint mask = cm[size];
+        uint overflow = (cnt & (1u << 13u)) != 0u ? 0u : ~(mask | 0x7FFu);
+        if (((uint)fx & overflow) != 0u || ((uint)fy & overflow) != 0u) return p;
+        uint tileBase = engine == 0u ? ((NativeLine(engine,line,NativeDispCnt)>>24u)&7u)<<16u : 0u;
+        uint mapBase = engine == 0u ? ((NativeLine(engine,line,NativeDispCnt)>>27u)&7u)<<16u : 0u;
+        tileBase += (cnt & 0x3Cu) << 12u;
+        mapBase += (cnt & 0x1F00u) << 3u;
+        uint map = NativeBG16(engine, mapBase
+            + ((((uint)fy & mask) >> 11u) << (sh[size] - 3u)
+            + (((uint)fx & mask) >> 11u)) * 2u);
+        uint tx = ((uint)fx >> 8u) & 7u, ty = ((uint)fy >> 8u) & 7u;
+        if ((map & (1u<<10u)) != 0u) tx = 7u - tx;
+        if ((map & (1u<<11u)) != 0u) ty = 7u - ty;
+        uint index = NativeBG8(engine, tileBase + (map & 0x3FFu)*64u + ty*8u + tx);
+        if (index != 0u)
+        {
+            p.Color = NativeBGR555(NativeBGPalette(engine,line,bg,0u,index),1u<<bg);
+            p.Present = 1u;
+        }
+    }
+    p.Flag = 1u << bg; p.Priority = cnt & 3u; return p;
+}
+
+NativePixel NativeBGExtended(uint engine, uint line, uint bg, int x)
+{
+    NativePixel p;
+    p.Color=0u;p.Flag=0u;p.Priority=4u;p.Present=0u;p.Mosaic=0u;
+    uint cnt = NativeLine(engine,line,NativeBGCnt+bg);
+    int fx = (int)NativeLine(engine,line,NativeBGXRef+bg-2u)
+        + x*(int)NativeLine(engine,line,NativeRotA+bg-2u);
+    int fy = (int)NativeLine(engine,line,NativeBGYRef+bg-2u)
+        + x*(int)NativeLine(engine,line,NativeRotC+bg-2u);
+    uint mosaic = NativeLine(engine,line,NativeBGMosaic);
+    if ((cnt&(1u<<6u))!=0u && mosaic!=0u)
+    {
+        uint off=(uint)x%(mosaic+1u);
+        fx-=(int)off*(int)NativeLine(engine,line,NativeRotA+bg-2u);
+        fy-=(int)off*(int)NativeLine(engine,line,NativeRotC+bg-2u);
+    }
+    uint size=(cnt>>14u)&3u;
+    static const uint xm[4]={0x07FFFu,0x0FFFFu,0x1FFFFu,0x1FFFFu};
+    static const uint ym[4]={0x07FFFu,0x0FFFFu,0x0FFFFu,0x1FFFFu};
+    static const uint sh[4]={7u,8u,9u,9u};
+    if (((uint)fx & ((cnt&(1u<<13u))!=0u?0u:~xm[size]))!=0u
+        || ((uint)fy & ((cnt&(1u<<13u))!=0u?0u:~ym[size]))!=0u) return p;
+    uint mapBase=(cnt&0x1F00u)<<6u;
+    if ((cnt&(1u<<7u))!=0u)
+    {
+        uint address=mapBase+((((uint)fy&ym[size])>>8u)<<sh[size])+(((uint)fx&xm[size])>>8u);
+        if ((cnt&(1u<<2u))!=0u)
+        {
+            uint c=NativeBG16(engine,address*2u);
+            if ((c&0x8000u)!=0u){p.Color=NativeBGR555(c&0x7FFFu,1u<<bg);p.Present=1u;}
+        }
+        else
+        {
+            uint c=NativeBG8(engine,address);
+            if (c!=0u){p.Color=NativeBGR555(NativeBGPalette(engine,line,bg,0u,c),1u<<bg);p.Present=1u;}
+        }
+    }
+    else
+    {
+        static const uint cm[4]={0x07800u,0x0F800u,0x1F800u,0x3F800u};
+        static const uint ms[4]={7u,8u,9u,10u};
+        uint mask=cm[size];
+        uint map=NativeBG16(engine,(cnt&0x1F00u)<<3u
+            + ((((uint)fy&mask)>>11u)<<(ms[size]-3u)+(((uint)fx&mask)>>11u))*2u);
+        uint tx=((uint)fx>>8u)&7u,ty=((uint)fy>>8u)&7u;
+        if ((map&(1u<<10u))!=0u)tx=7u-tx;if((map&(1u<<11u))!=0u)ty=7u-ty;
+        uint c=NativeBG8(engine,(cnt&0x3Cu)<<12u+(map&0x3FFu)*64u+ty*8u+tx);
+        if(c!=0u){p.Color=NativeBGR555(NativeBGPalette(engine,line,bg,map>>12u,c),1u<<bg);p.Present=1u;}
+    }
+    p.Flag=1u<<bg;p.Priority=cnt&3u;return p;
+}
+
+NativePixel NativeBG(uint engine,uint line,uint bg,int x,uint ox,uint oy)
+{
+    NativePixel p;
+    p.Color=0u;p.Flag=0u;p.Priority=4u;p.Present=0u;p.Mosaic=0u;
+    uint disp=NativeLine(engine,line,NativeDispCnt);
+    uint cnt=NativeLine(engine,line,NativeBGCnt+bg),mode=disp&7u;
+    if ((NativeLine(engine,line,NativeLayerEnable)&(1u<<bg))==0u)return p;
+    if(engine==0u&&bg==0u&&(disp&8u)!=0u)
+    {
+        uint rx=NativeLine(engine,line,NativeRenderXPos)&0x1FFu;
+        int sx=(rx&0x100u)!=0u?(int)ox-(int)((512u-rx)*ScaleFactor):(int)ox+(int)(rx*ScaleFactor);
+        if(TexWidth==0u||sx<0||sx>=int(ScreenWidth))return p;
+        p.Color=NativeFinalFB((uint)sx,oy);p.Flag=0x40u;p.Priority=cnt&3u;
+        p.Present=((p.Color>>24u)&0x1Fu)!=0u?1u:0u;return p;
+    }
+    if(mode==6u&&bg!=2u)return p;if(mode==7u&&bg>=2u)return p;
+    if(bg==0u||bg==1u||mode==0u||(mode==3u&&bg==2u))return NativeBGText(engine,line,bg,x);
+    if(mode==6u&&bg==2u)return NativeBGAffine(engine,line,bg,x,true);
+    if((mode==1u&&bg==2u)||(mode==2u&&bg==2u)||(mode==1u&&bg==3u)||(mode==2u&&bg==3u)||(mode==4u&&bg==2u))
+        return NativeBGAffine(engine,line,bg,x,false);
+    if((mode>=3u&&bg>=2u)||mode==5u)return NativeBGExtended(engine,line,bg,x);
+    return NativeBGText(engine,line,bg,x);
+}
+
+NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly)
+{
+    NativePixel selected=NativeEmpty();
+    if(NativeLine(engine,line,NativeOBJEnable)==0u)return selected;
+    uint best=4u;
+    for(uint sprite=0u;sprite<128u;sprite++)
+    {
+        uint a0=NativeOAM16(engine,sprite*8u),a1=NativeOAM16(engine,sprite*8u+2u),a2=NativeOAM16(engine,sprite*8u+4u);
+        uint type=(a0>>8u)&3u;if(type==2u)continue;bool isWindow=((a0>>10u)&3u)==2u;
+        if((windowOnly && !isWindow)||(!windowOnly && isWindow))continue;
+        uint size=(a0>>14u)|((a1>>12u)&0xCu);int w=NativeSpriteWidth(size),h=NativeSpriteHeight(size);
+        int bw=w,bh=h;bool rotate=(type&1u)!=0u;if(type==3u){bw<<=1;bh<<=1;}
+        int y=(int)line-(int)(a0&0xFFu);if(((uint)y&0xFFu)>=(uint)bh)continue;
+        int xpos=((int)(a1<<23u))>>23;if(xpos<=-bw||xpos>=256)continue;
+        int ypos;if((a0&(1u<<12u))!=0u&&!isWindow){ypos=(int)((NativeLine(engine,line,NativeOBJMosaicLine)-(a0&0xFFu))&0xFFu);if(ypos>=bh)ypos=0;}else ypos=y&0xFF;
+        int lx=x-max(xpos,0);if(xpos<0)lx=x;if(lx<0||lx>=bw)continue;
+        int sx=0,sy=0;if(rotate)
+        {
+            uint rot=(a1>>9u)&0x1Fu;int ma=(int)NativeOAM16(engine,rot*32u+6u),mb=(int)NativeOAM16(engine,rot*32u+14u),mc=(int)NativeOAM16(engine,rot*32u+22u),md=(int)NativeOAM16(engine,rot*32u+30u);
+            if((ma&0x8000)!=0)ma-=0x10000;if((mb&0x8000)!=0)mb-=0x10000;if((mc&0x8000)!=0)mc-=0x10000;if((md&0x8000)!=0)md-=0x10000;
+            int cx=bw>>1,cy=bh>>1,rx=(lx+max(-xpos,0)-cx)*ma+(ypos-cy)*mb+(w<<7),ry=(lx+max(-xpos,0)-cx)*mc+(ypos-cy)*md+(h<<7);
+            if(rx<0||ry<0||rx>=(w<<8)||ry>=(h<<8))continue;sx=rx>>8;sy=ry>>8;
+        }
+        else {sx=lx;sy=ypos;if((a1&(1u<<13u))!=0u)sy=h-1-sy;if((a1&(1u<<12u))!=0u)sx=w-1-sx;}
+        uint mode=(a0>>10u)&3u,tile=a2&0x3FFu,color=0u,flag=0u;bool opaque=false;
+        uint disp=NativeLine(engine,line,NativeDispCnt);
+        if(mode==3u)
+        {
+            uint alpha=(a2>>12u)&0xFu;if(alpha==0u)continue;uint address,stride;
+            if((disp&0x40u)!=0u){if((disp&0x20u)!=0u)continue;address=tile<<(7u+((disp>>22u)&1u));stride=(uint)w*2u;}
+            else if((disp&0x20u)!=0u){address=((tile&0x1Fu)<<4u)+((tile&0x3E0u)<<7u);stride=512u;}
+            else {address=((tile&0x0Fu)<<4u)+((tile&0x3F0u)<<7u);stride=256u;}
+            color=NativeOBJ16(engine,address+(uint)sy*stride+(uint)sx*2u);opaque=(color&0x8000u)!=0u;color&=0x7FFFu;flag=0xC0u+alpha+1u;
+        }
+        else
+        {
+            uint address=tile,yFactor;
+            if((disp&(1u<<4u))!=0u){address<<=(disp>>20u)&3u;yFactor=(uint)(w>>3);if((a0&(1u<<13u))!=0u)yFactor<<=1u;}
+            else yFactor=0x20u;yFactor<<=5u;address<<=5u;
+            if((a0&(1u<<13u))!=0u)
+            {
+                address+=(uint)((sy>>3)*int(yFactor))+(uint)((sy&7)*8)+(uint)((sx>>3)*64)+(uint)(sx&7);color=NativeOBJ8(engine,address);opaque=color!=0u;
+                if(opaque&&(disp&(1u<<31u))!=0u)color=NativeOBJExt16(engine,((a2&0xF000u)>>4u)+color*2u);else if(opaque)color=NativePalette16(engine,(engine==0u?0x200u:0x600u)+color*2u);
+                flag=mode==1u?0x80u:0x10u;
+            }
+            else
+            {
+                address+=(uint)((sy>>3)*int(yFactor))+(uint)((sy&7)*4)+(uint)((sx>>3)*32)+((uint(sx)&7u)>>1u);uint packed=NativeOBJ8(engine,address);color=(uint(sx)&1u)!=0u?packed>>4u:packed&0xFu;opaque=color!=0u;
+                if(opaque)color=NativePalette16(engine,(engine==0u?0x200u:0x600u)+((a2>>12u)&0xFu)*32u+color*2u);flag=mode==1u?0x80u:0x10u;
+            }
+        }
+        if(!opaque)continue;
+        if(windowOnly){selected.Present=1u;selected.Priority=(a2>>10u)&3u;return selected;}
+        uint priority=(a2>>10u)&3u;
+        if(selected.Present==0u||priority<best){selected.Color=NativeBGR555(color,flag);selected.Flag=flag;selected.Priority=priority;selected.Present=1u;selected.Mosaic=(a0&(1u<<12u))!=0u?1u:0u;best=priority;}
+    }
+    return selected;
+}
+
+NativePixel NativeOBJ(uint engine,uint line,int x)
+{
+    uint width=NativeLine(engine,line,NativeOBJMosaic);if(width==0u)return NativeOBJRaw(engine,line,x,false);
+    int mosaicSpan=(int)(width+1u),remainder=x;
+    while(remainder>=mosaicSpan)remainder-=mosaicSpan;
+    int begin=x-remainder;
+    NativePixel latch=NativeEmpty(),selected=NativeEmpty();
+    for(int current=begin;current<=x;current++){NativePixel raw=NativeOBJRaw(engine,line,current,false);uint off=(uint)(current-begin);bool take=off==0u||raw.Mosaic==0u||latch.Mosaic==0u||raw.Priority<latch.Priority;if(take)latch=raw;selected=latch;}
+    return selected;
+}
+
+uint NativeBlend4(uint a,uint b,uint eva,uint evb)
+{
+    return NativePack((NativeColorR(a)*eva+NativeColorR(b)*evb+8u)>>4u,(NativeColorG(a)*eva+NativeColorG(b)*evb+8u)>>4u,(NativeColorB(a)*eva+NativeColorB(b)*evb+8u)>>4u,0u);
+}
+uint NativeBlend5(uint a,uint b)
+{
+    uint eva=((a>>24u)&0x1Fu)+1u,evb=32u-eva;
+    return NativePack((NativeColorR(a)*eva+NativeColorR(b)*evb+16u)>>5u,(NativeColorG(a)*eva+NativeColorG(b)*evb+16u)>>5u,(NativeColorB(a)*eva+NativeColorB(b)*evb+16u)>>5u,0u);
+}
+uint NativeComposite(uint engine,uint line,int x,uint ox,uint oy)
+{
+    NativePixel first=NativeBackdrop(engine),second=NativeEmpty();
+    uint objWindow=NativeOBJRaw(engine,line,x,true).Present,window=NativeWindow(engine,line,x,objWindow);
+    uint enableObj=NativeLine(engine,line,NativeLayerEnable)&(1u<<4u);
+    enableObj&=NativeLine(engine,line,NativeOBJEnable)!=0u?0x10u:0u;
+    for(int priority=3;priority>=0;priority--)
+    {
+        for(int bg=3;bg>=0;bg--){NativePixel current=NativeBG(engine,line,(uint)bg,x,ox,oy);if(current.Present!=0u&&(int)current.Priority==priority&&(window&(1u<<(uint)bg))!=0u){second=first;first=current;}}
+        if(enableObj!=0u){NativePixel current=NativeOBJ(engine,line,x);if(current.Present!=0u&&(int)current.Priority==priority&&(window&(1u<<4u))!=0u){second=first;first=current;}}
+    }
+    uint f1=first.Flag,f2=second.Flag,target2=(f2&0x80u)!=0u?0x1000u:((f2&0x40u)!=0u?0x0100u:f2<<8u),blend=NativeLine(engine,line,NativeBlendCnt),effect=0u,eva=NativeLine(engine,line,NativeEVA),evb=NativeLine(engine,line,NativeEVB);
+    if((f1&0x80u)!=0u&&(blend&target2)!=0u){effect=1u;if((f1&0x40u)!=0u){eva=f1&0x1Fu;evb=16u-eva;}}
+    else if((f1&0x40u)!=0u&&(blend&target2)!=0u)effect=4u;
+    else{uint source=(f1&0x80u)!=0u?0x10u:((f1&0x40u)!=0u?0x01u:f1);if((blend&source)!=0u&&(window&(1u<<5u))!=0u){effect=(blend>>6u)&3u;if(effect==1u&&(blend&target2)==0u)effect=0u;}}
+    uint color=first.Color;if(effect==1u)color=NativeBlend4(first.Color,second.Color,eva,evb);else if(effect==2u)color=NativePack(NativeColorR(first.Color)+(((63u-NativeColorR(first.Color))*min(NativeLine(engine,line,NativeEVY),16u)+8u)>>4u),NativeColorG(first.Color)+(((63u-NativeColorG(first.Color))*min(NativeLine(engine,line,NativeEVY),16u)+8u)>>4u),NativeColorB(first.Color)+(((63u-NativeColorB(first.Color))*min(NativeLine(engine,line,NativeEVY),16u)+8u)>>4u),0u);else if(effect==3u)color=NativePack(NativeColorR(first.Color)-((NativeColorR(first.Color)*min(NativeLine(engine,line,NativeEVY),16u)+7u)>>4u),NativeColorG(first.Color)-((NativeColorG(first.Color)*min(NativeLine(engine,line,NativeEVY),16u)+7u)>>4u),NativeColorB(first.Color)-((NativeColorB(first.Color)*min(NativeLine(engine,line,NativeEVY),16u)+7u)>>4u),0u);else if(effect==4u)color=NativeBlend5(first.Color,second.Color);
+    return color;
+}
+uint NativeMaster(uint c,uint b)
+{
+    uint mode=b>>14u,f=min(b&0x1Fu,16u),result=c;
+    if(mode==1u)result=NativePack(NativeColorR(c)+(((63u-NativeColorR(c))*f)>>4u),NativeColorG(c)+(((63u-NativeColorG(c))*f)>>4u),NativeColorB(c)+(((63u-NativeColorB(c))*f)>>4u),0u);
+    else if(mode==2u)result=NativePack(NativeColorR(c)-((NativeColorR(c)*f+15u)>>4u),NativeColorG(c)-((NativeColorG(c)*f+15u)>>4u),NativeColorB(c)-((NativeColorB(c)*f+15u)>>4u),0u);
+    return result;
+}
+uint NativeDisplay(uint engine,uint line,int x,uint ox,uint oy)
+{
+    uint disp=NativeLine(engine,line,NativeDispCnt),mode=(disp>>16u)&(engine==0u?3u:1u),result=0u;
+    if(mode==0u)result=NativePack(63u,63u,63u,0u);
+    else if(mode==1u&&NativeLine(engine,line,NativeUnitEnabled)==0u)result=engine==0u?NativePack(0u,0u,0u,0u):NativePack(63u,63u,63u,0u);
+    else if(mode==1u&&NativeLine(engine,line,NativeForcedBlank)!=0u)result=NativePack(63u,63u,63u,0u);
+    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((ResultValue[14u]&(1u<<bank))!=0u)result=NativeMaster(NativeVRAMColor(NativeLCD16(bank,line*512u+(uint)x*2u)),NativeLine(engine,line,NativeMasterBrightness));}
+    else if(mode==3u&&engine==0u)result=NativeMaster(NativeVRAMColor(NativeFIFO16((uint)x)),NativeLine(engine,line,NativeMasterBrightness));
+    else result=NativeMaster(NativeComposite(engine,line,x,ox,oy),NativeLine(engine,line,NativeMasterBrightness));
+    return result;
+}
+
+uint NativeBGRA8(uint c)
+{
+    uint r=(NativeColorR(c)<<2u)|(NativeColorR(c)>>4u),g=(NativeColorG(c)<<2u)|(NativeColorG(c)>>4u),b=(NativeColorB(c)<<2u)|(NativeColorB(c)>>4u);
+    return b|(g<<8u)|(r<<16u)|0xFF000000u;
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
+    if(id.x>=ScreenWidth||id.y>=ScreenHeight*2u)return;
+    uint screen=id.y/ScreenHeight,scaledY=id.y-screen*ScreenHeight,x=id.x/ScaleFactor,line=scaledY/ScaleFactor;
+    uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
+    uint color=ResultValue[13u]==0u?0u:NativeDisplay(engine,line,(int)x,id.x,scaledY);
+    uint bgra8=NativeBGRA8(color);
+    if((DispatchPad&1u)!=0u)
+        DirectOutput[uint3(id.x,scaledY,screen)]=float4(float((bgra8>>16u)&0xFFu)/255.0,float((bgra8>>8u)&0xFFu)/255.0,float(bgra8&0xFFu)/255.0,float((bgra8>>24u)&0xFFu)/255.0);
+    else
+        ResolveOut[screen*FramebufferStride+scaledY*ScreenWidth+id.x]=bgra8;
+}
+#undef line
+)";
+
 } // namespace melonDS::DX12Shaders
 
 #endif // MELONPRIME_DS && _WIN32 && MELONPRIME_ENABLE_DX12

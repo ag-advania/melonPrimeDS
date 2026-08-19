@@ -141,7 +141,8 @@ enum Pipeline : uint32_t
     Pipeline_CaptureSidecar = 34,
     Pipeline_Compositor = 35,
     Pipeline_CorrectCoverage = 36,
-    Pipeline_Count = 37,
+    Pipeline_GPU2DNative = 37,
+    Pipeline_Count = 38,
 };
 
 // Tile geometry bucket. Mirrors `range` in

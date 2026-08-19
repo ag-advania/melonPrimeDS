@@ -84,6 +84,16 @@ enum class Counter : u32
     StructuredRegularLines,
     StructuredFallbackLines,
     StructuredRouteRuns,
+    NativeGPU2DFrames,
+    NativeGPU2DInputPackBytes,
+    NativeGPU2DVRAMUploadBytes,
+    NativeGPU2DPaletteUploadBytes,
+    NativeGPU2DOAMUploadBytes,
+    NativeGPU2DDispatchCount,
+    NativeGPU2DFallbackFrames,
+    NativeGPU2DReadbackBytes,
+    NativeGPU2DReadbackCount,
+    NativeGPU2DMismatchCount,
     TextureUploadBytes,
     TextureMaterializeCount,
     TextureMaterializePreFenceFailCount,
@@ -415,6 +425,10 @@ inline void MaybeReport()
         "structured_input_regions=%llu structured_input_full=%llu structured_input_partial=%llu "
         "route_copy_B=%llu route_copy_ns=%llu regular_lines=%llu fallback_lines=%llu "
         "route_runs=%llu "
+        "native_gpu2d_frames=%llu native_gpu2d_input_pack_B=%llu native_gpu2d_vram_B=%llu "
+        "native_gpu2d_palette_B=%llu native_gpu2d_oam_B=%llu native_gpu2d_dispatches=%llu "
+        "native_gpu2d_fallback_frames=%llu native_gpu2d_readback_B=%llu "
+        "native_gpu2d_readbacks=%llu native_gpu2d_mismatches=%llu "
         "texture_upload_B=%llu texture_materialize_count=%llu "
         "texture_materialize_pre_fence_fail_count=%llu "
         "texture_materialize_retry_after_retire_count=%llu "
@@ -454,7 +468,12 @@ inline void MaybeReport()
         count(Counter::StructuredScreenRouteCopyBytes),
         count(Counter::StructuredScreenRouteCopyNanoseconds),
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
-        count(Counter::StructuredRouteRuns), count(Counter::TextureUploadBytes),
+        count(Counter::StructuredRouteRuns), count(Counter::NativeGPU2DFrames),
+        count(Counter::NativeGPU2DInputPackBytes), count(Counter::NativeGPU2DVRAMUploadBytes),
+        count(Counter::NativeGPU2DPaletteUploadBytes), count(Counter::NativeGPU2DOAMUploadBytes),
+        count(Counter::NativeGPU2DDispatchCount), count(Counter::NativeGPU2DFallbackFrames),
+        count(Counter::NativeGPU2DReadbackBytes), count(Counter::NativeGPU2DReadbackCount),
+        count(Counter::NativeGPU2DMismatchCount), count(Counter::TextureUploadBytes),
         count(Counter::TextureMaterializeCount),
         count(Counter::TextureMaterializePreFenceFailCount),
         count(Counter::TextureMaterializeRetryAfterRetireCount),
@@ -582,7 +601,10 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     StructuredInputFullUploadCount, StructuredInputPartialUploadCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
-    StructuredRouteRuns, TextureUploadBytes, TextureMaterializeCount,
+    StructuredRouteRuns, NativeGPU2DFrames, NativeGPU2DInputPackBytes,
+    NativeGPU2DVRAMUploadBytes, NativeGPU2DPaletteUploadBytes, NativeGPU2DOAMUploadBytes,
+    NativeGPU2DDispatchCount, NativeGPU2DFallbackFrames, NativeGPU2DReadbackBytes,
+    NativeGPU2DReadbackCount, NativeGPU2DMismatchCount, TextureUploadBytes, TextureMaterializeCount,
     TextureMaterializePreFenceFailCount, TextureMaterializeRetryAfterRetireCount,
     TextureMaterializeRetrySuccessCount, TextureMaterializeRetryFailCount,
     TextureMaterializeFailureReason, TexturePendingUploadBytes, TexturePendingUploadCount,

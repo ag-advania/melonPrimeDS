@@ -1,0 +1,960 @@
+/*
+    MelonPrimeDS native Vulkan GPU2D.
+
+    This is deliberately a logical-pixel compute path.  The input is the
+    backend-neutral GPU2DNative packed state; registers, VRAM, palette and OAM
+    are inputs, while BG/OBJ fetch, windows, priority, effects, display mode
+    and screen routing are evaluated by the shader.  No software-rendered
+    pixel plane is consumed here.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "Presentation.glsl"
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout (std430, set = 0, binding = 12) readonly buffer NativeGPU2DInputBuffer
+{
+    uint NativeGPU2DInput[];
+};
+
+layout (std430, set = 0, binding = 13) buffer NativeGPU2DOutputBuffer
+{
+    uint NativeGPU2DOutput[];
+};
+
+layout (set = 0, binding = 17, rgba8) writeonly uniform image2D NativeDirectOutputTop;
+layout (set = 0, binding = 18, rgba8) writeonly uniform image2D NativeDirectOutputBottom;
+
+// The C++ serializer in GPU2DNative.h is intentionally fixed-width.  Keep the
+// offsets here literal and audit-friendly; a drift is a shader ABI break.
+const uint kHeaderWords = 32u;
+const uint kLineWords = 68u;
+const uint kLineCount = 384u;
+const uint kLinesWords = kLineWords * kLineCount;
+const uint kBGWords = 131072u;
+const uint kOBJWords = 65536u;
+const uint kBGExtWords = 8192u;
+const uint kOBJExtWords = 2048u;
+const uint kEngineWords = kBGWords + kOBJWords + kBGExtWords + kOBJExtWords;
+const uint kEngineBase = kHeaderWords + kLinesWords;
+const uint kPaletteWords = 512u;
+const uint kOAMWords = 512u;
+const uint kFIFOWords = 256u;
+const uint kLCDVRAMWords = 131072u;
+const uint kPaletteBase = kEngineBase + 2u * kEngineWords;
+const uint kOAMBase = kPaletteBase + kPaletteWords;
+const uint kFIFOBase = kOAMBase + kOAMWords;
+const uint kLCDVRAMBase = kFIFOBase + kFIFOWords;
+const uint kRouteBase = kLCDVRAMBase + kLCDVRAMWords;
+
+// LineState word offsets.
+const uint kDispCnt = 0u;
+const uint kLayerEnable = 1u;
+const uint kOBJEnable = 2u;
+const uint kForcedBlank = 3u;
+const uint kBGCnt = 4u;
+const uint kBGXPos = 8u;
+const uint kBGYPos = 12u;
+const uint kBGXRef = 16u;
+const uint kBGYRef = 18u;
+const uint kRotA = 20u;
+const uint kRotB = 22u;
+const uint kRotC = 24u;
+const uint kRotD = 26u;
+const uint kWin0Active = 40u;
+const uint kWin1Active = 41u;
+const uint kBGMosaic = 42u;
+const uint kOBJMosaic = 44u;
+const uint kBGMosaicLine = 46u;
+const uint kOBJMosaicLine = 47u;
+const uint kBlendCnt = 48u;
+const uint kEVA = 50u;
+const uint kEVB = 51u;
+const uint kEVY = 52u;
+const uint kMasterBrightness = 53u;
+const uint kRenderXPos = 54u;
+const uint kCaptureCnt = 55u;
+const uint kCaptureEnable = 56u;
+const uint kScreensEnabled = 57u;
+const uint kScreenSwap = 58u;
+const uint kWinRegs = 59u;
+const uint kWinMask = 60u;
+const uint kWinPos = 61u;
+const uint kUnitEnabled = 65u;
+
+uint LineWord(uint engine, uint line, uint word)
+{
+    return NativeGPU2DInput[kHeaderWords + (engine * 192u + line) * kLineWords + word];
+}
+
+uint EngineWord(uint engine, uint section, uint word)
+{
+    return NativeGPU2DInput[kEngineBase + engine * kEngineWords + section + word];
+}
+
+uint MemoryByte(uint base, uint size, uint address)
+{
+    if (size == 0u)
+        return 0u;
+    uint offset = address & (size - 1u);
+    uint word = NativeGPU2DInput[base + (offset >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFu;
+}
+
+uint Memory16(uint base, uint size, uint address)
+{
+    return MemoryByte(base, size, address)
+        | (MemoryByte(base, size, address + 1u) << 8u);
+}
+
+uint BGSize(uint engine) { return NativeGPU2DInput[16u + engine * 4u]; }
+uint OBJSize(uint engine) { return NativeGPU2DInput[17u + engine * 4u]; }
+uint BGExtSize(uint engine) { return NativeGPU2DInput[18u + engine * 4u]; }
+uint OBJExtSize(uint engine) { return NativeGPU2DInput[19u + engine * 4u]; }
+
+uint BGByte(uint engine, uint address)
+{
+    return MemoryByte(kEngineBase + engine * kEngineWords, BGSize(engine), address);
+}
+
+uint BG16(uint engine, uint address)
+{
+    return Memory16(kEngineBase + engine * kEngineWords, BGSize(engine), address);
+}
+
+uint OBJByte(uint engine, uint address)
+{
+    return MemoryByte(
+        kEngineBase + engine * kEngineWords + kBGWords, OBJSize(engine), address);
+}
+
+uint OBJ16(uint engine, uint address)
+{
+    return Memory16(
+        kEngineBase + engine * kEngineWords + kBGWords, OBJSize(engine), address);
+}
+
+uint BGExt16(uint engine, uint address)
+{
+    return Memory16(
+        kEngineBase + engine * kEngineWords + kBGWords + kOBJWords,
+        BGExtSize(engine), address);
+}
+
+uint OBJExt16(uint engine, uint address)
+{
+    return Memory16(
+        kEngineBase + engine * kEngineWords + kBGWords + kOBJWords + kBGExtWords,
+        OBJExtSize(engine), address);
+}
+
+uint Palette16(uint engine, uint byteAddress)
+{
+    uint base = kPaletteBase + (engine == 0u ? 0u : 0x400u) / 4u;
+    return Memory16(base, 0x400u, byteAddress);
+}
+
+uint OAM16(uint engine, uint byteAddress)
+{
+    uint base = kOAMBase + (engine * 0x400u) / 4u;
+    return Memory16(base, 0x400u, byteAddress);
+}
+
+uint FIFO16(uint index)
+{
+    uint word = NativeGPU2DInput[kFIFOBase + (index >> 1u)];
+    return (word >> ((index & 1u) * 16u)) & 0xFFFFu;
+}
+
+uint LCD16(uint bank, uint byteAddress)
+{
+    uint base = kLCDVRAMBase + bank * 32768u;
+    return Memory16(base, 0x20000u, byteAddress);
+}
+
+uint ConvertBGR555(uint color, uint flag)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        ((color >> 5u) & 0x3Eu) | ((color >> 15u) & 1u),
+        ((color >> 10u) & 0x3Eu),
+        flag);
+}
+
+uint ConvertVRAMDisplay(uint color)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        (color >> 4u) & 0x3Eu,
+        (color >> 9u) & 0x3Eu,
+        0u);
+}
+
+struct Pixel
+{
+    uint Color;
+    uint Flag;
+    uint Priority;
+    uint Present;
+    uint Mosaic;
+};
+
+Pixel EmptyPixel()
+{
+    Pixel p;
+    p.Color = 0u;
+    p.Flag = 0u;
+    p.Priority = 4u;
+    p.Present = 0u;
+    p.Mosaic = 0u;
+    return p;
+}
+
+Pixel BackdropPixel(uint engine)
+{
+    Pixel p = EmptyPixel();
+    p.Color = ConvertBGR555(Palette16(engine, 0u), 0x20u);
+    p.Present = 1u;
+    p.Priority = 4u;
+    return p;
+}
+
+int SpriteWidth(uint value)
+{
+    const int table[16] = int[16](8, 16, 8, 8, 16, 32, 8, 8,
+        32, 32, 16, 8, 64, 64, 32, 8);
+    return table[value & 15u];
+}
+
+int SpriteHeight(uint value)
+{
+    const int table[16] = int[16](8, 8, 16, 8, 16, 8, 32, 8,
+        32, 16, 32, 8, 64, 32, 64, 8);
+    return table[value & 15u];
+}
+
+uint WindowSelect(uint engine, uint line, int x, uint objWindow)
+{
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    if ((dispCnt & 0xE000u) == 0u)
+        return 0x3Fu;
+
+    uint winRegs = LineWord(engine, line, kWinRegs);
+    uint winMask = LineWord(engine, line, kWinMask);
+    uint pos0 = LineWord(engine, line, kWinPos + 0u);
+    uint pos1 = LineWord(engine, line, kWinPos + 1u);
+    uint pos2 = LineWord(engine, line, kWinPos + 2u);
+    uint pos3 = LineWord(engine, line, kWinPos + 3u);
+    bool inside0 = x < int(pos0)
+        ? (winMask & (1u << 0u)) != 0u
+        : (x < int(pos1)
+            ? (winMask & (1u << 1u)) != 0u
+            : (winMask & (1u << 2u)) != 0u);
+    bool inside1 = x < int(pos2)
+        ? (winMask & (1u << 3u)) != 0u
+        : (x < int(pos3)
+            ? (winMask & (1u << 4u)) != 0u
+            : (winMask & (1u << 5u)) != 0u);
+
+    uint selected = winRegs;
+    if (objWindow != 0u && (dispCnt & (1u << 15u)) != 0u)
+        selected = winRegs >> 8u;
+    if (inside1)
+        selected = winRegs >> 16u;
+    if (inside0)
+        selected = winRegs >> 24u;
+    return selected & 0x3Fu;
+}
+
+uint BGPalette(uint engine, uint line, uint bg, uint palette, uint index)
+{
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    if ((LineWord(engine, line, kDispCnt) & (1u << 30u)) != 0u)
+    {
+        uint slot = bg;
+        if (bg < 2u && (bgcnt & (1u << 13u)) != 0u)
+            slot += 2u;
+        return BGExt16(engine, (slot * 4096u) + palette * 512u + index * 2u);
+    }
+    uint base = engine == 0u ? 0u : 0x400u;
+    return Palette16(engine, base + palette * 32u + index * 2u);
+}
+
+Pixel BGText(uint engine, uint line, uint bg, int x)
+{
+    Pixel p = EmptyPixel();
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    uint xoff = LineWord(engine, line, kBGXPos + bg);
+    uint yoff = LineWord(engine, line, kBGYPos + bg);
+    uint mosaic = LineWord(engine, line, kBGMosaic + 0u);
+    if ((bgcnt & (1u << 6u)) != 0u)
+    {
+        yoff += LineWord(engine, line, kBGMosaicLine);
+        if (mosaic != 0u)
+            xoff += uint(x) - (uint(x) % (mosaic + 1u));
+    }
+    else
+    {
+        yoff += line;
+        xoff += uint(x);
+    }
+
+    uint tileBase = engine == 0u
+        ? ((dispCnt >> 24u) & 7u) << 16u
+        : 0u;
+    uint mapBase = engine == 0u
+        ? ((dispCnt >> 27u) & 7u) << 16u
+        : 0u;
+    tileBase += (bgcnt & 0x003Cu) << 12u;
+    mapBase += (bgcnt & 0x1F00u) << 3u;
+
+    uint mapOffset = mapBase + ((yoff & 0xF8u) << 3u);
+    if ((bgcnt & (1u << 15u)) != 0u)
+    {
+        mapOffset = mapBase + ((yoff & 0x1F8u) << 3u);
+        if ((bgcnt & (1u << 14u)) != 0u)
+            mapOffset += (yoff & 0x100u) << 3u;
+    }
+    uint wide = (bgcnt & (1u << 14u)) != 0u ? 0x100u : 0u;
+    mapOffset += ((xoff & 0xF8u) >> 2u) + ((xoff & wide) << 3u);
+    uint map = BG16(engine, mapOffset);
+    uint tileX = (map & (1u << 10u)) != 0u ? 7u - (xoff & 7u) : xoff & 7u;
+    uint tileY = (map & (1u << 11u)) != 0u ? 7u - (yoff & 7u) : yoff & 7u;
+    uint tileOffset;
+    uint index;
+    uint palette;
+    if ((bgcnt & (1u << 7u)) != 0u)
+    {
+        tileOffset = tileBase + (map & 0x3FFu) * 64u + tileY * 8u + tileX;
+        index = BGByte(engine, tileOffset);
+        palette = (LineWord(engine, line, kDispCnt) & (1u << 30u)) != 0u
+            ? map >> 12u : 0u;
+        p.Present = index == 0u ? 0u : 1u;
+    }
+    else
+    {
+        tileOffset = tileBase + (map & 0x3FFu) * 32u + tileY * 4u + (tileX >> 1u);
+        uint packed = BGByte(engine, tileOffset);
+        index = (tileX & 1u) != 0u ? packed >> 4u : packed & 0xFu;
+        palette = map >> 12u;
+        p.Present = index == 0u ? 0u : 1u;
+    }
+    if (p.Present != 0u)
+        p.Color = ConvertBGR555(BGPalette(engine, line, bg, palette, index), 1u << bg);
+    p.Flag = 1u << bg;
+    p.Priority = bgcnt & 3u;
+    return p;
+}
+
+Pixel BGAffine(uint engine, uint line, uint bg, int x, bool large)
+{
+    Pixel p = EmptyPixel();
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    int fx = int(LineWord(engine, line, kBGXRef + (bg - 2u)))
+        + x * int(LineWord(engine, line, kRotA + (bg - 2u)));
+    int fy = int(LineWord(engine, line, kBGYRef + (bg - 2u)))
+        + x * int(LineWord(engine, line, kRotC + (bg - 2u)));
+    uint mosaic = LineWord(engine, line, kBGMosaic + 0u);
+    if ((bgcnt & (1u << 6u)) != 0u && mosaic != 0u)
+    {
+        uint offset = uint(x) % (mosaic + 1u);
+        fx -= int(offset) * int(LineWord(engine, line, kRotA + (bg - 2u)));
+        fy -= int(offset) * int(LineWord(engine, line, kRotC + (bg - 2u)));
+    }
+
+    uint sizeParam = (bgcnt >> 14u) & 3u;
+    uint coordMask;
+    uint yShift;
+    if (large)
+    {
+        const uint xMasks[4] = uint[4](0x1FFFFu, 0x3FFFFu, 0x1FFFFu, 0x1FFFFu);
+        const uint yMasks[4] = uint[4](0x3FFFFu, 0x1FFFFu, 0x0FFFFu, 0x1FFFFu);
+        const uint shifts[4] = uint[4](9u, 10u, 9u, 9u);
+        uint xm = xMasks[sizeParam];
+        uint ym = yMasks[sizeParam];
+        if ((uint(fx) & ~xm) != 0u || (uint(fy) & ~ym) != 0u)
+            return p;
+        uint mapBase = (bgcnt & 0x1F00u) << 6u;
+        uint address = mapBase + ((uint(fy) & ym) >> 8u) * (1u << shifts[sizeParam])
+            + ((uint(fx) & xm) >> 8u);
+        uint index = BGByte(engine, address);
+        if (index != 0u)
+        {
+            p.Color = ConvertBGR555(
+                Palette16(engine, engine == 0u ? index * 2u : 0x400u + index * 2u),
+                1u << bg);
+            p.Present = 1u;
+        }
+        p.Flag = 1u << bg;
+        p.Priority = bgcnt & 3u;
+        return p;
+    }
+
+    const uint coordMasks[4] = uint[4](0x07800u, 0x0F800u, 0x1F800u, 0x3F800u);
+    const uint shifts[4] = uint[4](7u, 8u, 9u, 10u);
+    coordMask = coordMasks[sizeParam];
+    yShift = shifts[sizeParam] - 3u;
+    uint overflow = (bgcnt & (1u << 13u)) != 0u ? 0u : ~(coordMask | 0x7FFu);
+    if ((uint(fx) & overflow) != 0u || (uint(fy) & overflow) != 0u)
+        return p;
+    uint tileBase = engine == 0u
+        ? ((LineWord(engine, line, kDispCnt) >> 24u) & 7u) << 16u
+        : 0u;
+    uint mapBase = engine == 0u
+        ? ((LineWord(engine, line, kDispCnt) >> 27u) & 7u) << 16u
+        : 0u;
+    tileBase += (bgcnt & 0x003Cu) << 12u;
+    mapBase += (bgcnt & 0x1F00u) << 3u;
+    uint map = BG16(engine,
+        mapBase + ((((uint(fy) & coordMask) >> 11u) << yShift)
+        + ((uint(fx) & coordMask) >> 11u)) * 2u);
+    uint tileX = (uint(fx) >> 8u) & 7u;
+    uint tileY = (uint(fy) >> 8u) & 7u;
+    if ((map & (1u << 10u)) != 0u) tileX = 7u - tileX;
+    if ((map & (1u << 11u)) != 0u) tileY = 7u - tileY;
+    uint index = BGByte(engine, tileBase + (map & 0x3FFu) * 64u + tileY * 8u + tileX);
+    if (index != 0u)
+    {
+        p.Color = ConvertBGR555(BGPalette(engine, line, bg, 0u, index), 1u << bg);
+        p.Present = 1u;
+    }
+    p.Flag = 1u << bg;
+    p.Priority = bgcnt & 3u;
+    return p;
+}
+
+Pixel BGExtended(uint engine, uint line, uint bg, int x)
+{
+    Pixel p = EmptyPixel();
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    int fx = int(LineWord(engine, line, kBGXRef + (bg - 2u)))
+        + x * int(LineWord(engine, line, kRotA + (bg - 2u)));
+    int fy = int(LineWord(engine, line, kBGYRef + (bg - 2u)))
+        + x * int(LineWord(engine, line, kRotC + (bg - 2u)));
+    uint mosaic = LineWord(engine, line, kBGMosaic + 0u);
+    if ((bgcnt & (1u << 6u)) != 0u && mosaic != 0u)
+    {
+        uint offset = uint(x) % (mosaic + 1u);
+        fx -= int(offset) * int(LineWord(engine, line, kRotA + (bg - 2u)));
+        fy -= int(offset) * int(LineWord(engine, line, kRotC + (bg - 2u)));
+    }
+    uint sizeParam = (bgcnt >> 14u) & 3u;
+    uint xMask;
+    uint yMask;
+    uint yShift;
+    const uint xMasks[4] = uint[4](0x07FFFu, 0x0FFFFu, 0x1FFFFu, 0x1FFFFu);
+    const uint yMasks[4] = uint[4](0x07FFFu, 0x0FFFFu, 0x0FFFFu, 0x1FFFFu);
+    const uint shifts[4] = uint[4](7u, 8u, 9u, 9u);
+    xMask = xMasks[sizeParam];
+    yMask = yMasks[sizeParam];
+    yShift = shifts[sizeParam];
+    uint overflowX = (bgcnt & (1u << 13u)) != 0u ? 0u : ~xMask;
+    uint overflowY = (bgcnt & (1u << 13u)) != 0u ? 0u : ~yMask;
+    if ((uint(fx) & overflowX) != 0u || (uint(fy) & overflowY) != 0u)
+        return p;
+
+    uint mapBase = (bgcnt & 0x1F00u) << 6u;
+    if ((bgcnt & (1u << 7u)) != 0u)
+    {
+        uint address = mapBase
+            + ((((uint(fy) & yMask) >> 8u) << yShift)
+            + ((uint(fx) & xMask) >> 8u));
+        if ((bgcnt & (1u << 2u)) != 0u)
+        {
+            uint color = BG16(engine, address * 2u);
+            if ((color & 0x8000u) != 0u)
+            {
+                p.Color = ConvertBGR555(color & 0x7FFFu, 1u << bg);
+                p.Present = 1u;
+            }
+        }
+        else
+        {
+            uint color = BGByte(engine, address);
+            if (color != 0u)
+            {
+                p.Color = ConvertBGR555(BGPalette(engine, line, bg, 0u, color), 1u << bg);
+                p.Present = 1u;
+            }
+        }
+    }
+    else
+    {
+        uint coordMask = uint[4](0x07800u, 0x0F800u, 0x1F800u, 0x3F800u)[sizeParam];
+        uint mapShift = uint[4](7u, 8u, 9u, 10u)[sizeParam] - 3u;
+        uint map = BG16(engine,
+            ((bgcnt & 0x1F00u) << 3u)
+            + ((((uint(fy) & coordMask) >> 11u) << mapShift)
+            + ((uint(fx) & coordMask) >> 11u)) * 2u);
+        uint tileX = (uint(fx) >> 8u) & 7u;
+        uint tileY = (uint(fy) >> 8u) & 7u;
+        if ((map & (1u << 10u)) != 0u) tileX = 7u - tileX;
+        if ((map & (1u << 11u)) != 0u) tileY = 7u - tileY;
+        uint color = BGByte(engine,
+            ((bgcnt & 0x003Cu) << 12u) + (map & 0x3FFu) * 64u
+            + tileY * 8u + tileX);
+        if (color != 0u)
+        {
+            p.Color = ConvertBGR555(BGPalette(engine, line, bg, map >> 12u, color), 1u << bg);
+            p.Present = 1u;
+        }
+    }
+    p.Flag = 1u << bg;
+    p.Priority = bgcnt & 3u;
+    return p;
+}
+
+Pixel BGPixel(uint engine, uint line, uint bg, int x, uint outputX, uint outputY)
+{
+    Pixel p = EmptyPixel();
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    uint mode = dispCnt & 7u;
+    if ((LineWord(engine, line, kLayerEnable) & (1u << bg)) == 0u)
+        return p;
+    if (engine == 0u && bg == 0u && (dispCnt & 8u) != 0u)
+    {
+        if (outputX >= uint(ScreenWidth) || outputY >= uint(ScreenHeight))
+            return p;
+        uint renderX = LineWord(engine, line, kRenderXPos) & 0x1FFu;
+        int sourceX = (renderX & 0x100u) != 0u
+            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
+            : int(outputX) + int(renderX * uint(ScaleFactor));
+        if (pc.TexWidth == 0u || sourceX < 0 || sourceX >= ScreenWidth)
+            return p;
+        p.Color = LoadFinalFB(ivec2(sourceX, int(outputY)));
+        p.Flag = 0x40u;
+        p.Priority = bgcnt & 3u;
+        p.Present = ((p.Color >> 24u) & 0x1Fu) != 0u ? 1u : 0u;
+        return p;
+    }
+
+    // BG0/BG1 are always text except for the documented mode-6/7 omissions.
+    if (mode == 6u && bg != 2u)
+        return p;
+    if (mode == 7u && bg >= 2u)
+        return p;
+    if (bg == 0u || bg == 1u || (mode == 0u) || (mode == 3u && bg == 2u))
+        return BGText(engine, line, bg, x);
+    if (mode == 6u && bg == 2u)
+        return BGAffine(engine, line, bg, x, true);
+    if ((mode == 1u && bg == 2u) || (mode == 2u && bg == 2u)
+        || (mode == 1u && bg == 3u) || (mode == 2u && bg == 3u)
+        || (mode == 4u && bg == 2u))
+        return BGAffine(engine, line, bg, x, false);
+    if ((mode >= 3u && bg >= 2u) || mode == 5u)
+        return BGExtended(engine, line, bg, x);
+    return BGText(engine, line, bg, x);
+}
+
+Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
+{
+    Pixel selected = EmptyPixel();
+    if (LineWord(engine, line, kOBJEnable) == 0u)
+        return selected;
+    uint bestPriority = 4u;
+    for (uint sprite = 0u; sprite < 128u; ++sprite)
+    {
+        uint a0 = OAM16(engine, sprite * 8u + 0u);
+        uint a1 = OAM16(engine, sprite * 8u + 2u);
+        uint a2 = OAM16(engine, sprite * 8u + 4u);
+        uint spriteType = (a0 >> 8u) & 3u;
+        if (spriteType == 2u)
+            continue;
+        bool isWindow = ((a0 >> 10u) & 3u) == 2u;
+        if (windowOnly != isWindow)
+            continue;
+        uint sizeParam = (a0 >> 14u) | ((a1 >> 12u) & 0xCu);
+        int width = SpriteWidth(sizeParam);
+        int height = SpriteHeight(sizeParam);
+        int boundWidth = width;
+        int boundHeight = height;
+        bool rotScale = (spriteType & 1u) != 0u;
+        if (spriteType == 3u)
+        {
+            boundWidth <<= 1;
+            boundHeight <<= 1;
+        }
+        int y = int(line) - int(a0 & 0xFFu);
+        if ((uint(y) & 0xFFu) >= uint(boundHeight))
+            continue;
+        int xpos = (int(a1 << 23u)) >> 23;
+        if (xpos <= -boundWidth || xpos >= 256)
+            continue;
+        int ypos;
+        if ((a0 & (1u << 12u)) != 0u && !isWindow)
+        {
+            ypos = int((LineWord(engine, line, kOBJMosaicLine) - (a0 & 0xFFu)) & 0xFFu);
+            if (ypos >= boundHeight)
+                ypos = 0;
+        }
+        else
+            ypos = y & 0xFF;
+
+        int localX = x - max(xpos, 0);
+        if (xpos < 0)
+            localX = x;
+        if (localX < 0 || localX >= boundWidth)
+            continue;
+
+        int sx = 0;
+        int sy = 0;
+        int matrixA = 0;
+        int matrixB = 0;
+        int matrixC = 0;
+        int matrixD = 0;
+        if (rotScale)
+        {
+            uint rot = (a1 >> 9u) & 0x1Fu;
+            matrixA = int(OAM16(engine, rot * 32u + 6u));
+            matrixB = int(OAM16(engine, rot * 32u + 14u));
+            matrixC = int(OAM16(engine, rot * 32u + 22u));
+            matrixD = int(OAM16(engine, rot * 32u + 30u));
+            if ((matrixA & 0x8000) != 0) matrixA -= 0x10000;
+            if ((matrixB & 0x8000) != 0) matrixB -= 0x10000;
+            if ((matrixC & 0x8000) != 0) matrixC -= 0x10000;
+            if ((matrixD & 0x8000) != 0) matrixD -= 0x10000;
+            int centerX = boundWidth >> 1;
+            int centerY = boundHeight >> 1;
+            int sourceX = localX + max(-xpos, 0);
+            int rx = (sourceX - centerX) * matrixA
+                + (ypos - centerY) * matrixB + (width << 7);
+            int ry = (sourceX - centerX) * matrixC
+                + (ypos - centerY) * matrixD + (height << 7);
+            if (rx < 0 || ry < 0 || rx >= (width << 8) || ry >= (height << 8))
+                continue;
+            sx = rx >> 8;
+            sy = ry >> 8;
+        }
+        else
+        {
+            sx = localX;
+            sy = ypos;
+            if ((a1 & (1u << 13u)) != 0u)
+                sy = height - 1 - sy;
+            if ((a1 & (1u << 12u)) != 0u)
+                sx = width - 1 - sx;
+        }
+
+        uint mode = (a0 >> 10u) & 3u;
+        uint tile = a2 & 0x3FFu;
+        uint color = 0u;
+        uint flag = 0u;
+        bool opaque = false;
+        if (mode == 3u)
+        {
+            uint alpha = (a2 >> 12u) & 0xFu;
+            if (alpha == 0u)
+                continue;
+            uint address;
+            uint stride;
+            uint dispCnt = LineWord(engine, line, kDispCnt);
+            if ((dispCnt & 0x40u) != 0u)
+            {
+                if ((dispCnt & 0x20u) != 0u)
+                    continue;
+                address = tile << (7u + ((dispCnt >> 22u) & 1u));
+                stride = uint(width * 2);
+            }
+            else if ((dispCnt & 0x20u) != 0u)
+            {
+                address = ((tile & 0x1Fu) << 4u) + ((tile & 0x3E0u) << 7u);
+                stride = 512u;
+            }
+            else
+            {
+                address = ((tile & 0x0Fu) << 4u) + ((tile & 0x3F0u) << 7u);
+                stride = 256u;
+            }
+            color = OBJ16(engine, address + uint(sy) * stride + uint(sx) * 2u);
+            opaque = (color & 0x8000u) != 0u;
+            color &= 0x7FFFu;
+            flag = 0xC0u | (alpha + 1u);
+        }
+        else
+        {
+            uint dispCnt = LineWord(engine, line, kDispCnt);
+            uint address = tile;
+            uint yTileFactor;
+            if ((dispCnt & (1u << 4u)) != 0u)
+            {
+                address <<= (dispCnt >> 20u) & 3u;
+                yTileFactor = uint(width >> 3);
+                if ((a0 & (1u << 13u)) != 0u)
+                    yTileFactor <<= 1u;
+            }
+            else
+                yTileFactor = 0x20u;
+            yTileFactor <<= 5u;
+            address <<= 5u;
+            if ((a0 & (1u << 13u)) != 0u)
+            {
+                address += uint((sy >> 3) * int(yTileFactor))
+                    + uint((sy & 7) * 8)
+                    + uint((sx >> 3) * 64)
+                    + uint(sx & 7);
+                color = OBJByte(engine, address);
+                opaque = color != 0u;
+                if (opaque && (dispCnt & (1u << 31u)) != 0u)
+                {
+                    color = OBJExt16(engine,
+                        ((a2 & 0xF000u) >> 4u) + color * 2u);
+                }
+                else if (opaque)
+                    color = Palette16(engine, (engine == 0u ? 0x200u : 0x600u) + color * 2u);
+                flag = mode == 1u ? 0x80u : 0x10u;
+            }
+            else
+            {
+                address += uint((sy >> 3) * int(yTileFactor))
+                    + uint((sy & 7) * 4)
+                    + uint((sx >> 3) * 32)
+                    + uint((sx & 7) >> 1);
+                uint packed = OBJByte(engine, address);
+                color = (sx & 1) != 0 ? packed >> 4u : packed & 0xFu;
+                opaque = color != 0u;
+                if (opaque)
+                    color = Palette16(engine,
+                        (engine == 0u ? 0x200u : 0x600u)
+                        + ((a2 >> 12u) & 0xFu) * 32u + color * 2u);
+                flag = mode == 1u ? 0x80u : 0x10u;
+            }
+        }
+        if (!opaque)
+            continue;
+        if (windowOnly)
+        {
+            selected.Present = 1u;
+            selected.Priority = (a2 >> 10u) & 3u;
+            return selected;
+        }
+        uint priority = (a2 >> 10u) & 3u;
+        if (selected.Present == 0u || priority < bestPriority)
+        {
+            selected.Color = mode == 3u
+                ? ConvertBGR555(color, flag)
+                : ConvertBGR555(color, flag);
+            selected.Flag = flag;
+            selected.Priority = priority;
+            selected.Present = 1u;
+            selected.Mosaic = ((a0 & (1u << 12u)) != 0u) ? 1u : 0u;
+            bestPriority = priority;
+        }
+    }
+    return selected;
+}
+
+Pixel ObjPixel(uint engine, uint line, int x)
+{
+    uint mosaicWidth = LineWord(engine, line, kOBJMosaic + 0u);
+    Pixel selected = EmptyPixel();
+    if (mosaicWidth == 0u)
+        return ObjRawPixel(engine, line, x, false);
+
+    int begin = x - (x % int(mosaicWidth + 1u));
+    Pixel latch = EmptyPixel();
+    for (int current = begin; current <= x; ++current)
+    {
+        Pixel raw = ObjRawPixel(engine, line, current, false);
+        uint offset = uint(current - begin);
+        bool take = offset == 0u
+            || raw.Mosaic == 0u
+            || latch.Mosaic == 0u
+            || raw.Priority < latch.Priority;
+        if (take)
+            latch = raw;
+        selected = latch;
+    }
+    return selected;
+}
+
+uint Blend4Native(uint first, uint second, uint eva, uint evb)
+{
+    return PackColor6(
+        ((Color6R(first) * eva) + Color6R(second) * evb + 8u) >> 4u,
+        ((Color6G(first) * eva) + Color6G(second) * evb + 8u) >> 4u,
+        ((Color6B(first) * eva) + Color6B(second) * evb + 8u) >> 4u,
+        0u);
+}
+
+uint Blend5Native(uint first, uint second)
+{
+    uint eva = ((first >> 24u) & 0x1Fu) + 1u;
+    uint evb = 32u - eva;
+    return PackColor6(
+        ((Color6R(first) * eva) + Color6R(second) * evb + 0x10u) >> 5u,
+        ((Color6G(first) * eva) + Color6G(second) * evb + 0x10u) >> 5u,
+        ((Color6B(first) * eva) + Color6B(second) * evb + 0x10u) >> 5u,
+        0u);
+}
+
+uint Composite2D(uint engine, uint line, int x, uint outputX, uint outputY)
+{
+    Pixel first = BackdropPixel(engine);
+    Pixel second = EmptyPixel();
+    uint objWindow = ObjRawPixel(engine, line, x, true).Present;
+    uint window = WindowSelect(engine, line, x, objWindow);
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    uint enableOBJ = LineWord(engine, line, kLayerEnable) & (1u << 4u);
+    enableOBJ &= LineWord(engine, line, kOBJEnable) != 0u ? 0x10u : 0u;
+
+    for (int priority = 3; priority >= 0; --priority)
+    {
+        for (int bg = 3; bg >= 0; --bg)
+        {
+            Pixel current = BGPixel(engine, line, uint(bg), x, outputX, outputY);
+            if (current.Present != 0u && int(current.Priority) == priority
+                && (window & (1u << uint(bg))) != 0u)
+            {
+                second = first;
+                first = current;
+            }
+        }
+        if (enableOBJ != 0u)
+        {
+            Pixel current = ObjPixel(engine, line, x);
+            if (current.Present != 0u && int(current.Priority) == priority
+                && (window & (1u << 4u)) != 0u)
+            {
+                second = first;
+                first = current;
+            }
+        }
+    }
+
+    uint flag1 = first.Flag;
+    uint flag2 = second.Flag;
+    uint target2 = (flag2 & 0x80u) != 0u ? 0x1000u
+        : ((flag2 & 0x40u) != 0u ? 0x0100u : flag2 << 8u);
+    uint blendCnt = LineWord(engine, line, kBlendCnt);
+    uint effect = 0u;
+    uint eva = LineWord(engine, line, kEVA);
+    uint evb = LineWord(engine, line, kEVB);
+    if ((flag1 & 0x80u) != 0u && (blendCnt & target2) != 0u)
+    {
+        effect = 1u;
+        if ((flag1 & 0x40u) != 0u)
+        {
+            eva = flag1 & 0x1Fu;
+            evb = 16u - eva;
+        }
+    }
+    else if ((flag1 & 0x40u) != 0u && (blendCnt & target2) != 0u)
+    {
+        effect = 4u;
+    }
+    else
+    {
+        uint sourceMask = (flag1 & 0x80u) != 0u ? 0x10u
+            : ((flag1 & 0x40u) != 0u ? 0x01u : flag1);
+        if ((blendCnt & sourceMask) != 0u && (window & (1u << 5u)) != 0u)
+        {
+            effect = (blendCnt >> 6u) & 3u;
+            if (effect == 1u && (blendCnt & target2) == 0u)
+                effect = 0u;
+        }
+    }
+    uint color = first.Color;
+    if (effect == 1u)
+        color = Blend4Native(first.Color, second.Color, eva, evb);
+    else if (effect == 2u)
+        color = BrightnessUp(first.Color, min(LineWord(engine, line, kEVY), 16u), 8u);
+    else if (effect == 3u)
+        color = BrightnessDown(first.Color, min(LineWord(engine, line, kEVY), 16u), 7u);
+    else if (effect == 4u)
+        color = Blend5Native(first.Color, second.Color);
+    return color;
+}
+
+uint ApplyMasterNative(uint color, uint brightness)
+{
+    uint mode = brightness >> 14u;
+    uint factor = min(brightness & 0x1Fu, 16u);
+    if (mode == 1u)
+        return BrightnessUp(color, factor, 0u);
+    if (mode == 2u)
+        return BrightnessDown(color, factor, 15u);
+    return color;
+}
+
+uint DisplayPixel(uint engine, uint line, int x, uint outputX, uint outputY)
+{
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    uint mode = engine == 0u ? (dispCnt >> 16u) & 3u : (dispCnt >> 16u) & 1u;
+    if (mode == 0u)
+        return PackColor6(63u, 63u, 63u, 0u);
+    if (mode == 1u && LineWord(engine, line, kUnitEnabled) == 0u)
+        return engine == 0u
+            ? PackColor6(0u, 0u, 0u, 0u)
+            : PackColor6(63u, 63u, 63u, 0u);
+    if (mode == 1u && LineWord(engine, line, kForcedBlank) != 0u)
+        return PackColor6(63u, 63u, 63u, 0u);
+    if (mode == 2u && engine == 0u)
+    {
+        uint bank = (dispCnt >> 18u) & 3u;
+        uint map = NativeGPU2DInput[14u];
+        if ((map & (1u << bank)) == 0u)
+            return 0u;
+        return ApplyMasterNative(
+            ConvertVRAMDisplay(LCD16(bank, line * 512u + uint(x) * 2u)),
+            LineWord(engine, line, kMasterBrightness));
+    }
+    if (mode == 3u && engine == 0u)
+        return ApplyMasterNative(
+            ConvertVRAMDisplay(FIFO16(uint(x))),
+            LineWord(engine, line, kMasterBrightness));
+    return ApplyMasterNative(
+        Composite2D(engine, line, x, outputX, outputY),
+        LineWord(engine, line, kMasterBrightness));
+}
+
+uint ToBgra8Native(uint color)
+{
+    uint r = Color6R(color);
+    uint g = Color6G(color);
+    uint b = Color6B(color);
+    return ((b << 2u) | (b >> 4u))
+        | (((g << 2u) | (g >> 4u)) << 8u)
+        | (((r << 2u) | (r >> 4u)) << 16u)
+        | 0xFF000000u;
+}
+
+void main()
+{
+    uvec2 id = gl_GlobalInvocationID.xy;
+    if (id.x >= uint(ScreenWidth) || id.y >= uint(ScreenHeight) * 2u)
+        return;
+
+    uint screen = id.y / uint(ScreenHeight);
+    uint scaledY = id.y - screen * uint(ScreenHeight);
+    uint x = id.x / uint(ScaleFactor);
+    uint line = scaledY / uint(ScaleFactor);
+    uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
+    uint color = NativeGPU2DInput[13u] == 0u
+        ? 0u
+        : DisplayPixel(engine, line, int(x), id.x, scaledY);
+
+    uint bgra8 = ToBgra8Native(color);
+    if (pc._pad != 0u)
+    {
+        vec4 rgba8 = vec4(
+            float((bgra8 >> 16u) & 0xFFu) / 255.0,
+            float((bgra8 >> 8u) & 0xFFu) / 255.0,
+            float(bgra8 & 0xFFu) / 255.0,
+            float((bgra8 >> 24u) & 0xFFu) / 255.0);
+        if (screen == 0u)
+            imageStore(NativeDirectOutputTop, ivec2(id.x, scaledY), rgba8);
+        else
+            imageStore(NativeDirectOutputBottom, ivec2(id.x, scaledY), rgba8);
+    }
+    else
+    {
+        NativeGPU2DOutput[screen * uint(FramebufferStride)
+            + scaledY * uint(ScreenWidth) + id.x] = bgra8;
+    }
+}

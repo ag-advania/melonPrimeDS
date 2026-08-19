@@ -71,11 +71,24 @@ struct LineState
 
     u32 MasterBrightness = 0;
     u32 RenderXPos = 0;
-    u32 Padding = 0;
+    u32 CaptureCnt = 0;
+    u32 CaptureEnable = 0;
+    u32 ScreensEnabled = 0;
+    u32 ScreenSwap = 0;
+    u32 WinRegs = 0;
+    u32 WinMask = 0;
+    std::array<u32, 4> WinPos{};
+    // POWCNT1's engine-enable latch is distinct from LayerEnable. The
+    // software renderer uses it before BG/OBJ evaluation, while display modes
+    // 2/3 are still sourced by the outer display circuit.
+    u32 UnitEnabled = 0;
+    std::array<u32, 2> Padding{};
 };
 
-static_assert(sizeof(LineState) % 16 == 0,
-    "GPU2D native line state must be block aligned");
+static_assert(sizeof(LineState) == 68u * sizeof(u32),
+    "GPU2D native line state must stay a 68-word block");
+static_assert(offsetof(LineState, WinRegs) == 59u * sizeof(u32),
+    "GPU2D native derived window state offset");
 
 struct MemorySnapshot
 {
@@ -116,8 +129,49 @@ struct FrameInput
     u32 CaptureEnable = 0;
     u32 ScreenSwap = 0;
     u32 ScreensEnabled = 0;
+    u32 LCDVRAMMap = 0;
+    std::array<u8, 4 * 128 * 1024> LCDVRAM{};
     FrameGeneration Generation{};
 };
+
+// Fixed serialization layout consumed by both native shader backends.  The
+// byte arrays are copied verbatim into u32 words; shaders perform the byte
+// and BGR555 reads, so no host-side pixel generation is hidden in the packer.
+inline constexpr u32 PackedHeaderWords = 32;
+inline constexpr u32 PackedLineWords = sizeof(LineState) / sizeof(u32);
+inline constexpr u32 PackedLineCount = 2 * ScreenHeight;
+inline constexpr u32 PackedLinesWords = PackedLineWords * PackedLineCount;
+inline constexpr u32 PackedBGWords = (512 * 1024) / sizeof(u32);
+inline constexpr u32 PackedOBJWords = (256 * 1024) / sizeof(u32);
+inline constexpr u32 PackedBGExtendedPaletteWords = (32 * 1024) / sizeof(u32);
+inline constexpr u32 PackedOBJExtendedPaletteWords = (8 * 1024) / sizeof(u32);
+inline constexpr u32 PackedEngineWords =
+    PackedBGWords + PackedOBJWords
+    + PackedBGExtendedPaletteWords + PackedOBJExtendedPaletteWords;
+inline constexpr u32 PackedPaletteWords = (2 * 1024) / sizeof(u32);
+inline constexpr u32 PackedOAMWords = (2 * 1024) / sizeof(u32);
+inline constexpr u32 PackedFIFOWords = 256;
+inline constexpr u32 PackedLCDVRAMWords = (4 * 128 * 1024) / sizeof(u32);
+inline constexpr u32 PackedRouteWords = 2 * ScreenHeight;
+inline constexpr u32 PackedEngineBase = PackedHeaderWords + PackedLinesWords;
+inline constexpr u32 PackedPaletteBase = PackedEngineBase + 2 * PackedEngineWords;
+inline constexpr u32 PackedOAMBase = PackedPaletteBase + PackedPaletteWords;
+inline constexpr u32 PackedFIFOBase = PackedOAMBase + PackedOAMWords;
+inline constexpr u32 PackedLCDVRAMBase = PackedFIFOBase + PackedFIFOWords;
+inline constexpr u32 PackedRouteBase = PackedLCDVRAMBase + PackedLCDVRAMWords;
+inline constexpr u32 PackedFrameWords = PackedRouteBase + PackedRouteWords;
+
+static_assert(PackedLineWords == 68u, "native line serialization drift");
+
+[[nodiscard]] constexpr std::size_t PackedFrameBytes() noexcept
+{
+    return static_cast<std::size_t>(PackedFrameWords) * sizeof(u32);
+}
+
+// Returns false only when the destination is too small or null.  This is a
+// state/memory pack operation; it never converts pixels or runs the software
+// renderer.
+bool PackFrame(const FrameInput& input, u32* destination, std::size_t wordCount) noexcept;
 
 struct Mismatch
 {

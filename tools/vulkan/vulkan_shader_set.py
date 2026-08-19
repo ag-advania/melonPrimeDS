@@ -160,6 +160,7 @@ def pipelines() -> list[tuple[str, str, list[str]]]:
     out.append(("CaptureSidecar", "CaptureSidecar", ["CaptureSidecar"])) # 34
     out.append(("Compositor", "Compositor", ["Compositor"]))        # 35
     out.append(("CorrectCoverage", "CorrectCoverage", ["CorrectCoverage"])) # 36
+    out.append(("GPU2DNative", "GPU2DNative", ["GPU2DNative"]))    # 37
 
     return out
 

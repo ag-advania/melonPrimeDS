@@ -106,6 +106,9 @@ private:
     DX12LowLatencyPacingDecision LastLoggedPacingDecision{};
     bool PacingDecisionLogged = false;
     DX12NvidiaReflex NvidiaReflex;
+    bool NativeGPU2DAnnounced = false;
+    bool NativeGPU2DFallbackAnnounced = false;
+    bool NativeGPU2DStartupFallbackAnnounced = false;
 
     void LogLowLatencyPacingStateIfChanged();
 };

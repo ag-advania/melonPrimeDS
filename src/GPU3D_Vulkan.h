@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "GPU3D.h"
+#include "GPU2DNative.h"
 #include "GPU3D_FixedVariantIndex.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "GPU3D_TexcacheVulkan.h"
@@ -106,11 +107,21 @@ public:
         u64 generation,
         const StructuredComposition::GenerationState& contentGeneration);
 
+    // Native GPU2D input is packed from registers and VRAM snapshots. The
+    // shader evaluates BG/OBJ/windows/effects and writes the same two-screen
+    // presentation contract as the structured compositor, without consuming
+    // software-rendered pixel planes.
+    bool ComposeNativeGPU2D(
+        const GPU2DNative::FrameInput& input,
+        u64 generation,
+        bool finalFBValid);
+
     // Legacy CPU accessor. Vulkan presentation is GPU-native and therefore
     // returns nullptr here; callers use AcquireComposedOutputLease().
     [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
     [[nodiscard]] RendererOutput GetComposedOutput() const;
+    [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasContent; }
 
     // Internal resolution, not 256x192. This is the mechanism by which high
     // resolution survives to present: the display path never sees a

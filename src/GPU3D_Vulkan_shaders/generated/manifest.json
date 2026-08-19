@@ -1,9 +1,9 @@
 {
   "generator": "tools/vulkan/compile-shaders.py",
-  "sourceSetSha256": "b194e55aa9796a4fb7f50ea4f10f7ce62ee11de6418fe3904d2e78325510f1fb",
+  "sourceSetSha256": "dba9415f40806aad3462c44ef4b6039365da253cc9b50768e7532b600f5d7d0e",
   "targetEnv": "vulkan1.1",
   "entryPoint": "main",
-  "pipelineCount": 37,
+  "pipelineCount": 38,
   "bucketCount": 3,
   "bucketRepresentativeScale": [
     1,
@@ -125,8 +125,8 @@
       "binding": 4
     }
   ],
-  "uniqueModules": 111,
-  "totalSpirvBytes": 3006556,
+  "uniqueModules": 114,
+  "totalSpirvBytes": 3297416,
   "generatedFiles": [
     "GPU3D_Vulkan_ShaderBlobs.h",
     "GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp",
@@ -138,6 +138,7 @@
     "GPU3D_Vulkan_ShaderBlobs_CorrectCoverage.cpp",
     "GPU3D_Vulkan_ShaderBlobs_DepthBlend.cpp",
     "GPU3D_Vulkan_ShaderBlobs_FinalPass.cpp",
+    "GPU3D_Vulkan_ShaderBlobs_GPU2DNative.cpp",
     "GPU3D_Vulkan_ShaderBlobs_InterpSpans.cpp",
     "GPU3D_Vulkan_ShaderBlobs_Rasterise.cpp",
     "GPU3D_Vulkan_ShaderBlobs_Resolve.cpp",
@@ -911,6 +912,25 @@
       "sha256": "0c1f354974393a97c92e18a06db033b0205e81eda9bfec08de0a3673a796024b"
     },
     {
+      "pipeline": 37,
+      "name": "GPU2DNative",
+      "bucket": 0,
+      "source": "src/GPU3D_Vulkan_shaders/GPU2DNative.comp",
+      "entryPoint": "main",
+      "defines": [
+        "GPU2DNative"
+      ],
+      "geometryDefines": {
+        "TileSize": 8,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 37,
+      "words": 24237,
+      "sha256": "56809e4963636d76595c79044fac80e38414f2d43d750c2a1573f873f5d647a3"
+    },
+    {
       "pipeline": 0,
       "name": "InterpSpansZ",
       "bucket": 1,
@@ -926,7 +946,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 37,
+      "blob": 38,
       "words": 14789,
       "sha256": "bd8c14c069d4e953810a3594240e4910731c4f3e92e8be3e6574d43ee0832564"
     },
@@ -946,7 +966,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 38,
+      "blob": 39,
       "words": 14573,
       "sha256": "ec416d4ae5ebbc7802c5374208be07f0faead2d21de34159f4bf57077f7da554"
     },
@@ -965,7 +985,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 39,
+      "blob": 40,
       "words": 4811,
       "sha256": "61681339d8704a51d189fc0ad72039aafe8393bce2bd67b7df7e393133eb87e0"
     },
@@ -985,7 +1005,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 40,
+      "blob": 41,
       "words": 6690,
       "sha256": "52bd17de44c40875ad6c1d7559edffbd6012a7f255b229f92e12899271dd8158"
     },
@@ -1005,7 +1025,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 41,
+      "blob": 42,
       "words": 6690,
       "sha256": "012eef19fc91751d5cfaca24c6db8b8160f43aa337e4883bcf8b13fd554af9bf"
     },
@@ -1026,7 +1046,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 42,
+      "blob": 43,
       "words": 9467,
       "sha256": "333b615c49ec66e5ffbf28e2eee17d23ee001726e0c21bf7760e8e09bddc676e"
     },
@@ -1047,7 +1067,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 43,
+      "blob": 44,
       "words": 9259,
       "sha256": "1dc9cefda7fd2bb94c7b3e5afabd641c10e83d9c4c13292eef31af669befdd53"
     },
@@ -1069,7 +1089,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 44,
+      "blob": 45,
       "words": 9550,
       "sha256": "cc0c711fc69ce88494445bfb4b01e71210b389e4139d53b4bd26a2ec65e64d1e"
     },
@@ -1091,7 +1111,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 45,
+      "blob": 46,
       "words": 9342,
       "sha256": "db15ab4b55b50984aa8d2f0dd3f4c890707ceb500df51dbea82da3e9ba62ac21"
     },
@@ -1113,7 +1133,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 46,
+      "blob": 47,
       "words": 9624,
       "sha256": "e1de5b23e1df0bb0ad6eb4431ff8ecee7c538c4e3652df25501901f93b056ea0"
     },
@@ -1135,7 +1155,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 47,
+      "blob": 48,
       "words": 9416,
       "sha256": "9f1bf1e3b644a1b228e8ccc29b9e1d5e59758570bac7f94f76d68cef4f39a076"
     },
@@ -1157,7 +1177,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 48,
+      "blob": 49,
       "words": 11194,
       "sha256": "4dc7ed90010f352aa1c501e834bd11abd9caf8a5f31033569f1d7dbee5f72949"
     },
@@ -1179,7 +1199,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 49,
+      "blob": 50,
       "words": 10986,
       "sha256": "657021e7d1bf8e45cada7501e8e3194123dd7c47d4666f8fda02f5defb362123"
     },
@@ -1201,7 +1221,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 50,
+      "blob": 51,
       "words": 11056,
       "sha256": "2b8980e2e92eb33484efb281fc8bc8f793c5c44558538b99d4a720516148cc5a"
     },
@@ -1223,7 +1243,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 51,
+      "blob": 52,
       "words": 10848,
       "sha256": "718503fa338bb2da181dfb44f7dc5ae1dd20e029e6a41da91504e51ba74c1452"
     },
@@ -1245,7 +1265,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 52,
+      "blob": 53,
       "words": 11139,
       "sha256": "d5aebb01bbb8f662832358b5e5c7b1b86b41ad3e9d1adee839678860ccfd2199"
     },
@@ -1267,7 +1287,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 53,
+      "blob": 54,
       "words": 10931,
       "sha256": "da7eabccfffa1f2dec09d25b230e83b4df1d797aa2f88bfd2fa2ec9c60ecb243"
     },
@@ -1289,7 +1309,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 54,
+      "blob": 55,
       "words": 11213,
       "sha256": "e2a67f1e9fabccf3538479529c549c1349add30aa799bd3bb4590640eab3dc11"
     },
@@ -1311,7 +1331,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 55,
+      "blob": 56,
       "words": 11005,
       "sha256": "1c5a7a1eea12b69bc7c602a69d684034be740c892eca2390e056510d6758aed8"
     },
@@ -1332,7 +1352,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 56,
+      "blob": 57,
       "words": 9201,
       "sha256": "f2d1bf9aecb94ecd1b461b722af2d4212a154718cae3bc61fa811a8061cebf23"
     },
@@ -1353,7 +1373,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 57,
+      "blob": 58,
       "words": 8993,
       "sha256": "3bd048320cb4340125c3da1b83dd40444a9055e893239493e43bef16c8eed16d"
     },
@@ -1372,7 +1392,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 58,
+      "blob": 59,
       "words": 816,
       "sha256": "b9aaed4c7ca6fcecf7e08d6c1c41704ffb0126fd29e1d7d45547223ad9404f5f"
     },
@@ -1391,7 +1411,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 59,
+      "blob": 60,
       "words": 767,
       "sha256": "bb62cfd0fce39e37e4f8d98bde87025c932a901d5967166e23fce8b1d2278caa"
     },
@@ -1410,7 +1430,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 60,
+      "blob": 61,
       "words": 1049,
       "sha256": "ca4c85dd9ee4fbfb7b6a28ddf72cab1e96e6ab01f4fc420407289a7d1e0a4408"
     },
@@ -1429,7 +1449,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 61,
+      "blob": 62,
       "words": 1308,
       "sha256": "98c0b0a56d2c11545ba8a39ff0e822876e98e74dc0b2c71146bd6b25429bc226"
     },
@@ -1448,7 +1468,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 62,
+      "blob": 63,
       "words": 1140,
       "sha256": "76788d5273937c54f85de7c552cc64dc7c90689db6585f80f4ef6f7ab8bea780"
     },
@@ -1468,7 +1488,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 63,
+      "blob": 64,
       "words": 2070,
       "sha256": "e3ce4c83979ba5076f81b33351623394dd817554d379e3b86dae3f7b3029a08e"
     },
@@ -1488,7 +1508,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 64,
+      "blob": 65,
       "words": 2019,
       "sha256": "ab90d81bb8b869b02f097390abb2c7f8f46793d2fed22f99a538bf9ae8f3b3e8"
     },
@@ -1509,7 +1529,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 65,
+      "blob": 66,
       "words": 2927,
       "sha256": "3b38b0f2be7fa68e2bdb80906702f9c239d35099b92af816800f3c69f91692aa"
     },
@@ -1529,7 +1549,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 66,
+      "blob": 67,
       "words": 1649,
       "sha256": "06405af2842af1aeda5de2bcdd1f5adb741c685cee611a3b08dfeb00ef77df27"
     },
@@ -1550,7 +1570,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 67,
+      "blob": 68,
       "words": 2569,
       "sha256": "a5bc070431b928740761a2e25c1aa61090abf00c61c93537927e0c1b8fe60ac3"
     },
@@ -1571,7 +1591,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 68,
+      "blob": 69,
       "words": 2522,
       "sha256": "cbcd535c7a42c7acf765cacfd25fbc8533576d952f26ebdd832dd32c98cde5c7"
     },
@@ -1593,7 +1613,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 69,
+      "blob": 70,
       "words": 3422,
       "sha256": "864b1300d7edf8fbd7c6446affa6f11095419305e68efa80b0201db33be7843f"
     },
@@ -1612,7 +1632,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 70,
+      "blob": 71,
       "words": 1451,
       "sha256": "6542a811f568d06223f7248b7af887b135936510071f88a5cc0a915272c677a6"
     },
@@ -1631,7 +1651,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 71,
+      "blob": 72,
       "words": 6439,
       "sha256": "7cd68c400661c4a72aaefd2455b4bd73bdf62c49a0f12ec5e36e84afba3004c2"
     },
@@ -1650,7 +1670,7 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 72,
+      "blob": 73,
       "words": 5431,
       "sha256": "3abf7c8ef621d0756d9d84353f974a14dec190d66053e36ce61e6f9e45ceb63b"
     },
@@ -1669,9 +1689,28 @@
         "CoarseTileArea": 32,
         "ClearCoarseBinMaskLocalSize": 64
       },
-      "blob": 73,
+      "blob": 74,
       "words": 4125,
       "sha256": "22f4e33687b8936e9360095d6a6356f622fe870ed02f4551595fc367d8c5f9a7"
+    },
+    {
+      "pipeline": 37,
+      "name": "GPU2DNative",
+      "bucket": 1,
+      "source": "src/GPU3D_Vulkan_shaders/GPU2DNative.comp",
+      "entryPoint": "main",
+      "defines": [
+        "GPU2DNative"
+      ],
+      "geometryDefines": {
+        "TileSize": 16,
+        "CoarseTileCountY": 4,
+        "CoarseTileArea": 32,
+        "ClearCoarseBinMaskLocalSize": 64
+      },
+      "blob": 75,
+      "words": 24241,
+      "sha256": "61c4ee590e04a676dd0147ebe9d058933193675457e89fa3449a78e71c0addf2"
     },
     {
       "pipeline": 0,
@@ -1689,7 +1728,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 74,
+      "blob": 76,
       "words": 14797,
       "sha256": "a97daf0c7e8dfa67c4843ff1f666c387c7d60f3200b181d0848b61651461b97c"
     },
@@ -1709,7 +1748,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 75,
+      "blob": 77,
       "words": 14581,
       "sha256": "8ca146fa2f2876e030a296b20151c58a899e022f7992dcef5bbd736bcce7ef5b"
     },
@@ -1728,7 +1767,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 76,
+      "blob": 78,
       "words": 4815,
       "sha256": "9060dcd616b9c939973a125f3f0e5aec4cc5e7766e2ee1287c7a4f8c64924442"
     },
@@ -1748,7 +1787,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 77,
+      "blob": 79,
       "words": 6690,
       "sha256": "d12f6f3bbdc7d414c05456c7ec73b56e91f7cf4efff8d982f365e6ea9c210fec"
     },
@@ -1768,7 +1807,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 78,
+      "blob": 80,
       "words": 6690,
       "sha256": "9f91b0f618328ddccd2bfe072d6ce312d66de6e8251c94edc50fbcdf9b7e90ba"
     },
@@ -1789,7 +1828,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 79,
+      "blob": 81,
       "words": 9471,
       "sha256": "e81a739dd62417d525178915550dc415b3a8ee7e1b2ba7b5a7f4cfc29982203a"
     },
@@ -1810,7 +1849,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 80,
+      "blob": 82,
       "words": 9263,
       "sha256": "cfbeaad81c1066a71aee4718c16bfa3c59f77c4eb165adc987f02eaa306ff2a0"
     },
@@ -1832,7 +1871,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 81,
+      "blob": 83,
       "words": 9554,
       "sha256": "840f89485a7a1069340b1594b7ed8258d67a8950b5d6cb2e148282762b6dec04"
     },
@@ -1854,7 +1893,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 82,
+      "blob": 84,
       "words": 9346,
       "sha256": "d7d09da03f8accd96a625267fc4beb08be6ed7972aa4e4ae52c50f882cf3baa2"
     },
@@ -1876,7 +1915,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 83,
+      "blob": 85,
       "words": 9628,
       "sha256": "359f2976eb04f7510bb4f8ea3bdc0c4605a8fe84131432103b7eb8f6e2dd378a"
     },
@@ -1898,7 +1937,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 84,
+      "blob": 86,
       "words": 9420,
       "sha256": "1edf2cceafa0008380579ee74c9ef155347ba26f883113824c1311540c1b0cce"
     },
@@ -1920,7 +1959,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 85,
+      "blob": 87,
       "words": 11202,
       "sha256": "675eb07492c2f9ccadd253df7b8bfa8b5c262ab7e2531431ccde207ce7aaea7a"
     },
@@ -1942,7 +1981,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 86,
+      "blob": 88,
       "words": 10994,
       "sha256": "9ff0bbb3294eace5264b1f3d9f8752f4ecfc5dd194e9afd1569f0ec6aea9fb3e"
     },
@@ -1964,7 +2003,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 87,
+      "blob": 89,
       "words": 11064,
       "sha256": "10de9eee6d08ffc52c5fdc9baf96cd9fa60e045bdbdc6708c40eb0a2878701d1"
     },
@@ -1986,7 +2025,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 88,
+      "blob": 90,
       "words": 10856,
       "sha256": "26d1493b9d91f0d648473af11c5ed8b095295de1da32b85f308599fb0c06b7dd"
     },
@@ -2008,7 +2047,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 89,
+      "blob": 91,
       "words": 11147,
       "sha256": "26fb8ed98019897462a17571472bd769a2e1b7099ec374f359f91aeaa4363260"
     },
@@ -2030,7 +2069,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 90,
+      "blob": 92,
       "words": 10939,
       "sha256": "530af82d3f6230d09c7009c58da7b831d14ec221ceb001789227d50b6af9316d"
     },
@@ -2052,7 +2091,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 91,
+      "blob": 93,
       "words": 11221,
       "sha256": "c3d21e2b82d0dc46f1609ae0269358f4f5e6ae81dfc9c8c48e1b9f98eb9ee0ea"
     },
@@ -2074,7 +2113,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 92,
+      "blob": 94,
       "words": 11013,
       "sha256": "5fea750c3fa2c0fd942a56295e29282842f5f7c10314b5cb5346e425e91a41cb"
     },
@@ -2095,7 +2134,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 93,
+      "blob": 95,
       "words": 9205,
       "sha256": "9c4bf4bc3517b4629b512b9b1491a2b66ab842aa30e287e365c417488e355a65"
     },
@@ -2116,7 +2155,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 94,
+      "blob": 96,
       "words": 8997,
       "sha256": "73b2cf0d5cc2ec45119c14ea07f4ad49a336f8ff3e71a1a330de43e8b40e291e"
     },
@@ -2135,7 +2174,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 95,
+      "blob": 97,
       "words": 820,
       "sha256": "0ab90383636c40a3e697e768bcdabe2f2d040400e22b2fd2393ee6e90927d0fe"
     },
@@ -2154,7 +2193,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 96,
+      "blob": 98,
       "words": 771,
       "sha256": "a80b4858060fa433fd11623fa86dbd8485ea7148e83803770d700e5089a24103"
     },
@@ -2173,7 +2212,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 97,
+      "blob": 99,
       "words": 1053,
       "sha256": "0c275c1c481608ba4a8e4563f0045d3bc473b58970db4038ea2ad99a768a2dd1"
     },
@@ -2192,7 +2231,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 98,
+      "blob": 100,
       "words": 1312,
       "sha256": "b69b0ac5e98e89341b6d7f0dbeb0db80c553fec00bf3730df621599561aa6747"
     },
@@ -2211,7 +2250,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 99,
+      "blob": 101,
       "words": 1148,
       "sha256": "1ae9eb6ca300b12635ffca796149a4152ddabc36e9a82a8db9c2b2d8c96e8f90"
     },
@@ -2231,7 +2270,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 100,
+      "blob": 102,
       "words": 2078,
       "sha256": "aab835669f443d3e2e40ce204d2f8200db9ac88600a00c06512cc51744987706"
     },
@@ -2251,7 +2290,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 101,
+      "blob": 103,
       "words": 2027,
       "sha256": "c3c498074fb7240a71fd7018d687d32f946e9113b7c840c0bdb48a1c8c81a364"
     },
@@ -2272,7 +2311,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 102,
+      "blob": 104,
       "words": 2935,
       "sha256": "086f134f27a8fdd277cc932f92daec4f8a75be76c0bd89edf20f1755ac274e2b"
     },
@@ -2292,7 +2331,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 103,
+      "blob": 105,
       "words": 1657,
       "sha256": "6b75f9aa5aa28cfcedac9292072fe29c1c8d38a3558ceec52296fb9d953015b1"
     },
@@ -2313,7 +2352,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 104,
+      "blob": 106,
       "words": 2577,
       "sha256": "118ebfed518a241bf96dedbbe5a4b0ef3aa7692e2705631eec28bdb2e8a102df"
     },
@@ -2334,7 +2373,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 105,
+      "blob": 107,
       "words": 2530,
       "sha256": "88398b3e2ccb0536ca825e4a80a75afee7ccca4a301610f372a34ad63b888e22"
     },
@@ -2356,7 +2395,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 106,
+      "blob": 108,
       "words": 3430,
       "sha256": "39378fd4a420234a7af348b5914f8000fc1564108d0a52e019b5ab9b7ac25576"
     },
@@ -2375,7 +2414,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 107,
+      "blob": 109,
       "words": 1451,
       "sha256": "74d2044802a68a6237ff93aaf4bad0b1de3c94e1ddf50d4ff511cbe80eb49e80"
     },
@@ -2394,7 +2433,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 108,
+      "blob": 110,
       "words": 6439,
       "sha256": "f2b28836878f401d3e1006d720d64b8bad3a96e146a6ffc0518693760abb2700"
     },
@@ -2413,7 +2452,7 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 109,
+      "blob": 111,
       "words": 5431,
       "sha256": "04eae50f455d8c26f3343e750a1315c73038f27bf28bdd450ef298d6459306ae"
     },
@@ -2432,9 +2471,28 @@
         "CoarseTileArea": 48,
         "ClearCoarseBinMaskLocalSize": 48
       },
-      "blob": 110,
+      "blob": 112,
       "words": 4133,
       "sha256": "70e40cb46663e9173b6c22b0ebd8d29826360c37e50d5f06e6eca55741ecbf48"
+    },
+    {
+      "pipeline": 37,
+      "name": "GPU2DNative",
+      "bucket": 2,
+      "source": "src/GPU3D_Vulkan_shaders/GPU2DNative.comp",
+      "entryPoint": "main",
+      "defines": [
+        "GPU2DNative"
+      ],
+      "geometryDefines": {
+        "TileSize": 32,
+        "CoarseTileCountY": 6,
+        "CoarseTileArea": 48,
+        "ClearCoarseBinMaskLocalSize": 48
+      },
+      "blob": 113,
+      "words": 24237,
+      "sha256": "0334b6627b60bd71e12ad178e5db45af4a19b6a584b5a5deb0ab92a8870377cd"
     }
   ]
 }

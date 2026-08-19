@@ -56,7 +56,11 @@ constexpr u32 kUavTableSize = 14;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
 constexpr u32 kCompositionInputDwords =
     (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
+constexpr u64 kNativeGPU2DInputBytes = GPU2DNative::PackedFrameBytes();
 constexpr u32 kCompositorFramesInFlight = 3;
+static_assert(kNativeGPU2DInputBytes
+        <= static_cast<u64>(kCompositionInputDwords) * sizeof(u32),
+    "native GPU2D input must fit the compositor input resource");
 
 constexpr u32 kRootParamDispatchConstants = 0;
 constexpr u32 kRootParamMetaCbv = 1;
@@ -734,6 +738,7 @@ void DX12Renderer3D::ReleasePipelines()
     PipelineCaptureSidecar.Reset();
     PipelineCompositor.Reset();
     PipelineCorrectCoverage.Reset();
+    PipelineGPU2DNative.Reset();
 }
 
 void DX12Renderer3D::ReleaseScaleDependentResources()
@@ -1228,6 +1233,13 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
     {
         build(PipelineCorrectCoverage, DX12Shaders::CorrectCoverage,
             { "CorrectCoverage" }, "DX12CorrectCoverage");
+        return;
+    }
+
+    if (step == ShaderStep_GPU2DNative)
+    {
+        build(PipelineGPU2DNative, DX12Shaders::GPU2DNative,
+            { "GPU2DNative" }, "DX12GPU2DNative");
         return;
     }
 }
@@ -3082,6 +3094,157 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         ComposedGeneration = generation;
         ComposedOutputValid = true;
     }
+    return true;
+}
+
+bool DX12Renderer3D::ComposeNativeGPU2D(
+    const GPU2DNative::FrameInput& input,
+    u64 generation,
+    bool finalFBValid)
+{
+    if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
+        return false;
+    if (ComposedOutputValid && ComposedGeneration == generation)
+        return true;
+    const std::shared_ptr<OutputState> state = ComposedOutput;
+    if (!Context || !PipelineGPU2DNative || !state || !FinalFBBuffer)
+    {
+        SetRuntimeFailure("required native GPU2D resources are unavailable");
+        return false;
+    }
+
+    u32 slotIndex = 0;
+    {
+        std::lock_guard<std::mutex> lock(state->Mutex);
+        slotIndex = state->NextSlot;
+        state->NextSlot = (state->NextSlot + 1u) % kCompositorFramesInFlight;
+    }
+    OutputState::Slot& slot = state->Slots[slotIndex];
+    if (slot.PresenterRefs.load(std::memory_order_acquire) != 0)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
+        return false;
+    }
+    ID3D12GraphicsCommandList* list = slot.Commands.TryBegin();
+    if (!list)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
+        return false;
+    }
+
+    u32* staging = slot.StructuredMapped;
+    if (!staging
+        || !GPU2DNative::PackFrame(
+            input, staging, GPU2DNative::PackedFrameWords))
+    {
+        slot.Commands.Submit();
+        SetRuntimeFailure("the native GPU2D input staging upload failed");
+        return false;
+    }
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DInputPackBytes,
+        static_cast<u64>(GPU2DNative::PackedFrameBytes()));
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DVRAMUploadBytes,
+        static_cast<u64>(input.Engine[0].BGVRAM.size() + input.Engine[1].BGVRAM.size()
+            + input.Engine[0].OBJVRAM.size() + input.Engine[1].OBJVRAM.size()
+            + input.Engine[0].BGExtendedPalette.size()
+            + input.Engine[1].BGExtendedPalette.size()
+            + input.Engine[0].OBJExtendedPalette.size()
+            + input.Engine[1].OBJExtendedPalette.size()
+            + input.LCDVRAM.size()));
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DPaletteUploadBytes,
+        static_cast<u64>(input.Palette.size()));
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DOAMUploadBytes,
+        static_cast<u64>(input.OAM.size()));
+
+    slot.Descriptors.Reset();
+    BoundSrvTexture = nullptr;
+    BoundSrvTable = {};
+    ResetFrameSrvCache();
+    list->CopyBufferRegion(
+        slot.StructuredInput.Get(), 0,
+        slot.StructuredStaging.Get(), 0, kNativeGPU2DInputBytes);
+    TransitionBuffer(
+        list,
+        slot.StructuredInput.Get(),
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+    if (slot.DirectTexture && slot.DirectTextureInShaderResource)
+    {
+        TransitionBuffer(
+            list,
+            slot.DirectTexture.Get(),
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        slot.DirectTextureInShaderResource = false;
+    }
+
+    InsertUavBarrier(list, FinalFBBuffer.Get());
+
+    ID3D12DescriptorHeap* heaps[] = { slot.Descriptors.GetHeap() };
+    list->SetDescriptorHeaps(1, heaps);
+    list->SetComputeRootSignature(RootSignature.Get());
+    if (!BindCompositionUavTable(
+            list, slot.Descriptors, CompositorUavCpu[slotIndex]))
+    {
+        TransitionBuffer(
+            list,
+            slot.StructuredInput.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COPY_DEST);
+        slot.Commands.Submit();
+        SetRuntimeFailure("could not bind the native GPU2D descriptor table");
+        return false;
+    }
+
+    DispatchUniform constants = MakeDispatchUniform();
+    constants.TexWidth = finalFBValid ? 1u : 0u;
+    constants.Pad = slot.DirectTexture ? 1u : 0u;
+    SetDispatchConstants(list, constants);
+    list->SetPipelineState(PipelineGPU2DNative.Get());
+    list->Dispatch(
+        DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+        DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
+        1u);
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount);
+
+    if (slot.DirectTexture)
+    {
+        InsertUavBarrier(list, slot.DirectTexture.Get());
+        TransitionBuffer(
+            list,
+            slot.DirectTexture.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        slot.DirectTextureInShaderResource = true;
+        DX12Perf::AddCounter(DX12Perf::Counter::DirectCompositorImageFrames);
+    }
+    else
+    {
+        InsertUavBarrier(list, slot.Composed.Get());
+        DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
+    }
+    TransitionBuffer(
+        list,
+        slot.StructuredInput.Get(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_COPY_DEST);
+
+    if (!slot.Commands.Submit())
+    {
+        SetRuntimeFailure("native GPU2D command submission failed");
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(state->Mutex);
+        slot.Frame.Serial = state->NextSerial++;
+        slot.Frame.Generation = generation;
+        state->PublishedSlot = static_cast<int>(slotIndex);
+        ComposedGeneration = generation;
+        ComposedOutputValid = true;
+    }
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFrames);
     return true;
 }
 

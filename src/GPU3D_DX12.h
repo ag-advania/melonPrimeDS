@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "GPU3D.h"
+#include "GPU2DNative.h"
 #include "GPU3D_FixedVariantIndex.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "DX12Context.h"
@@ -84,7 +85,12 @@ public:
         const StructuredComposition::ScreenRoutingView& screenRouting,
         u64 generation,
         const StructuredComposition::GenerationState& contentGeneration);
+    bool ComposeNativeGPU2D(
+        const GPU2DNative::FrameInput& input,
+        u64 generation,
+        bool finalFBValid);
     [[nodiscard]] RendererOutput GetComposedOutput() const;
+    [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasValidFrame; }
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
     [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
@@ -308,6 +314,7 @@ private:
         ShaderStep_CaptureSidecar,
         ShaderStep_Compositor,
         ShaderStep_CorrectCoverage,
+        ShaderStep_GPU2DNative,
         ShaderStepCount,
     };
 
@@ -399,6 +406,7 @@ private:
     DX12::ComPtr<ID3D12PipelineState> PipelineCaptureSidecar;
     DX12::ComPtr<ID3D12PipelineState> PipelineCompositor;
     DX12::ComPtr<ID3D12PipelineState> PipelineCorrectCoverage;
+    DX12::ComPtr<ID3D12PipelineState> PipelineGPU2DNative;
 
     // GPU-side buffers.
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each

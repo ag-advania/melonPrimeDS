@@ -4,65 +4,12 @@
 
 #include "GPU2DNative.h"
 
-#include <algorithm>
 #include <cstring>
 
 #include "GPU.h"
 
 namespace melonDS::GPU2DNative
 {
-
-CompareResult CompareExact(
-    const u32* expectedTop,
-    const u32* expectedBottom,
-    const u32* actualTop,
-    const u32* actualBottom) noexcept
-{
-    CompareResult result{};
-    if (!expectedTop || !expectedBottom || !actualTop || !actualBottom)
-    {
-        // A missing logical frame is a failed comparison, but there is no
-        // coordinate to report.  Keep the result machine-readable and make
-        // the failure impossible to confuse with an exact zero-pixel frame.
-        result.TotalMismatchCount = 1;
-        result.TopMismatchCount = 1;
-        return result;
-    }
-
-    for (u32 screen = 0; screen < 2; ++screen)
-    {
-        const u32* expected = screen == 0 ? expectedTop : expectedBottom;
-        const u32* actual = screen == 0 ? actualTop : actualBottom;
-        for (u32 y = 0; y < ScreenHeight; ++y)
-        {
-            for (u32 x = 0; x < ScreenWidth; ++x)
-            {
-                const std::size_t index = static_cast<std::size_t>(y) * ScreenWidth + x;
-                if (expected[index] == actual[index])
-                    continue;
-
-                ++result.TotalMismatchCount;
-                if (screen == 0)
-                    ++result.TopMismatchCount;
-                else
-                    ++result.BottomMismatchCount;
-                ++result.MismatchPerLine[screen * ScreenHeight + y];
-
-                if (result.FirstMismatchLine == ScreenHeight)
-                {
-                    result.FirstMismatchLine = y;
-                    result.FirstMismatchX = x;
-                }
-                if (result.SampleCount < result.Samples.size())
-                {
-                    result.Samples[result.SampleCount++] = {
-                        screen, x, y, expected[index], actual[index]};
-                }
-            }
-        }
-    }
-    return result;
-}
 
 namespace
 {
@@ -103,6 +50,65 @@ void CopyLineState(LineState& destination, const GPU2D& source, u32 renderXPos) 
     destination.EVB = source.EVB;
     destination.EVY = source.EVY;
     destination.RenderXPos = renderXPos & 0x1FFu;
+
+    // Keep the same packed window representation as the OpenGL scanline
+    // configuration.  The active bit is the vertical latch; the horizontal
+    // bit is consumed locally here, so a shader does not need to mutate state
+    // while evaluating a pixel.
+    destination.WinRegs = (source.DispCnt & 0xE000u) != 0u
+        ? source.WinCnt[2]
+        : 0xFFu;
+    destination.WinRegs |= (source.DispCnt & (1u << 15u))
+        ? static_cast<u32>(source.WinCnt[3]) << 8u : 0xFF00u;
+    destination.WinRegs |= (source.DispCnt & (1u << 14u))
+        ? static_cast<u32>(source.WinCnt[1]) << 16u : 0xFF0000u;
+    destination.WinRegs |= (source.DispCnt & (1u << 13u))
+        ? static_cast<u32>(source.WinCnt[0]) << 24u : 0xFF000000u;
+
+    destination.WinPos = {256u, 256u, 256u, 256u};
+    destination.WinMask = 0;
+    if ((source.DispCnt & (1u << 13u)) && (source.Win0Active & 0x1u))
+    {
+        const u32 x0 = source.Win0Coords[0];
+        const u32 x1 = source.Win0Coords[1];
+        if (x0 <= x1)
+        {
+            destination.WinPos[0] = x0;
+            destination.WinPos[1] = x1;
+            if (source.Win0Active == 0x3u)
+                destination.WinMask |= 1u << 0u;
+            destination.WinMask |= 1u << 1u;
+        }
+        else
+        {
+            destination.WinPos[0] = x1;
+            destination.WinPos[1] = x0;
+            if (source.Win0Active == 0x3u)
+                destination.WinMask |= 1u << 0u;
+            destination.WinMask |= 1u << 2u;
+        }
+    }
+    if ((source.DispCnt & (1u << 14u)) && (source.Win1Active & 0x1u))
+    {
+        const u32 x0 = source.Win1Coords[0];
+        const u32 x1 = source.Win1Coords[1];
+        if (x0 <= x1)
+        {
+            destination.WinPos[2] = x0;
+            destination.WinPos[3] = x1;
+            if (source.Win1Active == 0x3u)
+                destination.WinMask |= 1u << 3u;
+            destination.WinMask |= 1u << 4u;
+        }
+        else
+        {
+            destination.WinPos[2] = x1;
+            destination.WinPos[3] = x0;
+            if (source.Win1Active == 0x3u)
+                destination.WinMask |= 1u << 3u;
+            destination.WinMask |= 1u << 5u;
+        }
+    }
 }
 }
 
@@ -130,6 +136,18 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     Input.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
     Input.ScreenSwap = GPU.ScreenSwap ? 1u : 0u;
     Input.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
+    Input.LCDVRAMMap = GPU.VRAMMap_LCDC;
+    // A display-capture write is visible to later scanlines, not to the
+    // scanline whose display read happened before DoCapture(). Keep the
+    // frame-start LCD mirror here; the core owns the final VRAM state that is
+    // copied into the next frame's snapshot.
+    for (u32 bank = 0; bank < 4u; ++bank)
+    {
+        std::memcpy(
+            Input.LCDVRAM.data() + static_cast<std::size_t>(bank) * 128u * 1024u,
+            GPU.VRAM[bank],
+            128u * 1024u);
+    }
     EngineLineSeen[0] = false;
     EngineLineSeen[1] = false;
     Valid = false;
@@ -150,6 +168,13 @@ void FrameRecorder::CaptureLine(
         Input.Lines[engine * ScreenHeight + line],
         gpu2D,
         GPU.GPU3D.GetRenderXPos());
+    LineState& state = Input.Lines[engine * ScreenHeight + line];
+    state.UnitEnabled = gpu2D.Enabled ? 1u : 0u;
+    state.MasterBrightness = engine == 0u ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
+    state.CaptureCnt = GPU.CaptureCnt;
+    state.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
+    state.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
+    state.ScreenSwap = screenSwap ? 1u : 0u;
 
     // This is the emulation-time LCD assignment.  Present-time POWCNT1 is not
     // authoritative when a title changes routing within a frame.

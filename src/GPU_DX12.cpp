@@ -65,6 +65,9 @@ bool DX12Renderer::Init()
         DifferentialReference->Reset();
         DifferentialState.Reset();
     }
+    NativeGPU2DAnnounced = false;
+    NativeGPU2DFallbackAnnounced = false;
+    NativeGPU2DStartupFallbackAnnounced = false;
 
     auto& context = DX12Context::Get();
     AmdAntiLag2.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
@@ -158,8 +161,59 @@ void DX12Renderer::Start3DRendering()
 void DX12Renderer::VBlank()
 {
     auto* dx12 = GetDX12Renderer3D();
+    bool nativeComposed = false;
+    if (dx12 && HasNativeGPU2DFrame())
+    {
+        const GPU2DNative::FrameInput& nativeFrame = GetNativeGPU2DFrame();
+        nativeComposed = dx12->ComposeNativeGPU2D(
+            nativeFrame,
+            nativeFrame.Generation.Frame,
+            !GPU.GPU3D.AbortFrame && dx12->HasFinalFBContent());
+        if (nativeComposed)
+        {
+            if (!NativeGPU2DAnnounced)
+            {
+                Platform::Log(Platform::LogLevel::Info,
+                    "DX12 renderer gpu2d=DX12 gpu3d=DX12 fallback=0\n");
+                NativeGPU2DAnnounced = true;
+            }
+        }
+        else
+        {
+            DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFallbackFrames);
+            if (!NativeGPU2DFallbackAnnounced)
+            {
+                Platform::Log(Platform::LogLevel::Warn,
+                    "DX12 renderer gpu2d=Software fallback=1 reason=native dispatch unavailable\n");
+                NativeGPU2DFallbackAnnounced = true;
+            }
+        }
+    }
+    if (dx12 && !nativeComposed && dx12->HasRuntimeFailure())
+    {
+        Platform::Log(Platform::LogLevel::Error,
+            "DX12 renderer gpu2d=Software fallback=1 disabled=1 reason=%s\n",
+            dx12->GetRuntimeFailureReason().c_str());
+        IntelXeLL.MarkRenderSubmitEnd();
+        NvidiaReflex.MarkRenderSubmitEnd();
+        return;
+    }
+    if (dx12 && !nativeComposed && !NativeGPU2DFallbackAnnounced)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFallbackFrames);
+        Platform::Log(Platform::LogLevel::Warn,
+            "DX12 renderer gpu2d=Software fallback=1 reason=native frame unavailable\n");
+        NativeGPU2DFallbackAnnounced = true;
+    }
     StructuredVulkanFrameView view{};
-    if (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid)
+    if (!nativeComposed && (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid))
+    {
+        IntelXeLL.MarkRenderSubmitEnd();
+        NvidiaReflex.MarkRenderSubmitEnd();
+        return;
+    }
+
+    if (nativeComposed)
     {
         IntelXeLL.MarkRenderSubmitEnd();
         NvidiaReflex.MarkRenderSubmitEnd();
@@ -235,6 +289,13 @@ RendererOutput DX12Renderer::GetOutput()
         // panel on the initialized software buffers instead of making it draw
         // its as-yet-uninitialized cached images. Metal uses the same fallback
         // during its output transition.
+        if (!NativeGPU2DStartupFallbackAnnounced)
+        {
+            Platform::Log(Platform::LogLevel::Warn,
+                "requested=DX12 actual=DX12 gpu2d=Software gpu3d=DX12 "
+                "fallback=1 startupFallback=1 reason=pipeline compilation\n");
+            NativeGPU2DStartupFallbackAnnounced = true;
+        }
         return SoftRenderer::GetOutput();
     }
 
@@ -250,6 +311,13 @@ RendererOutputLease DX12Renderer::AcquireOutputLease()
     RendererOutputLease lease = dx12->AcquireComposedOutputLease();
     if (lease.Output.Kind != RendererOutputKind::None)
         return lease;
+    if (!NativeGPU2DStartupFallbackAnnounced)
+    {
+        Platform::Log(Platform::LogLevel::Warn,
+            "requested=DX12 actual=DX12 gpu2d=Software gpu3d=DX12 "
+            "fallback=1 startupFallback=1 reason=pipeline compilation\n");
+        NativeGPU2DStartupFallbackAnnounced = true;
+    }
     return RendererOutputLease(SoftRenderer::GetOutput(), nullptr, nullptr);
 }
 

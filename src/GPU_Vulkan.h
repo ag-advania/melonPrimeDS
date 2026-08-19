@@ -99,6 +99,9 @@ private:
     RasterDifferential::State DifferentialState;
     int NvidiaReflexMode = 0;
     bool AmdAntiLag2Enabled = false;
+    bool NativeGPU2DAnnounced = false;
+    bool NativeGPU2DFallbackAnnounced = false;
+    bool NativeGPU2DStartupFallbackAnnounced = false;
 
     VBlankObserver VBlankObserverFn = nullptr;
     void* VBlankObserverData = nullptr;
