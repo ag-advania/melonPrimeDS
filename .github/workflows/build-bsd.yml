@@ -157,6 +157,7 @@ jobs:
     - name: Start ${{ matrix.os_name }} VM
       id: start_vm
       continue-on-error: true
+      timeout-minutes: 20
       uses: jenseng/dynamic-uses@v1
       with: &vm_start_with
         uses: vmactions/${{ matrix.flavor }}-vm@v1
@@ -191,10 +192,12 @@ jobs:
     # more before letting the job fail.
     - name: Retry ${{ matrix.os_name }} VM start
       if: steps.start_vm.outcome == 'failure'
+      timeout-minutes: 20
       uses: jenseng/dynamic-uses@v1
       with: *vm_start_with
 
     - name: Install dependencies
+      timeout-minutes: 30
       run: ${{ matrix.install_deps }}
 
     - name: Audit renderer telemetry zero-overhead contract
