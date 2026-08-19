@@ -87,3 +87,5 @@ baselineとcandidateを別worktree/buildで実行し、同じROM/state、Scale 1
 ## Provenance / handoff
 
 本監査を含む最終変更は `develop_hud` から `origin/develop_hud` へpushした。最終handoffでは、commit SHA、clean build executable SHA-256、`--build-info-json` のsource SHA/dirty state、12件のphysical matrix出力を突き合わせる。`.codex` 配下の指示書はuntrackedのまま保持し、コミット対象から除外した。
+
+physical A/B runnerはdetached HEADの空の `symbolic-ref` をWindows PowerShellでも安全に扱い、clean provenanceをfail-closedで検証する。

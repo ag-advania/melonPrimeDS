@@ -94,8 +94,11 @@ $out = (Resolve-Path (New-Item -ItemType Directory -Force -Path $OutputDir)).Pat
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Executable not found: $exe" }
 
 $ExpectedSourceHead = $ExpectedSourceHead.ToLowerInvariant()
-$checkoutSourceHead = (git -C "$repo" rev-parse HEAD).Trim().ToLowerInvariant()
-$checkoutBranch = (git -C "$repo" symbolic-ref --quiet --short HEAD 2>$null).Trim()
+$checkoutSourceHead = ([string](git -C "$repo" rev-parse HEAD 2>$null)).Trim().ToLowerInvariant()
+# Detached HEAD is the required clean-provenance mode.  symbolic-ref emits no
+# output in that mode, so cast the result before calling Trim instead of
+# dereferencing a null expression under Windows PowerShell 5.1.
+$checkoutBranch = ([string](git -C "$repo" symbolic-ref --quiet --short HEAD 2>$null)).Trim()
 $checkoutStatus = @(git -C "$repo" status --porcelain --untracked-files=all)
 $checkoutGitDirty = $checkoutStatus.Count -gt 0
 $executableSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
