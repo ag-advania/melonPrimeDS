@@ -18,9 +18,6 @@
 
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
-#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-#include "VulkanPerf.h"
-#endif
 
 namespace melonDS
 {
@@ -398,9 +395,11 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
     // can likely be optimized
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-    VulkanPerf::ScopedCpuTimer metadataTimer(
-        VulkanPerf::CpuMetric::Structured2DMetadata,
-        Parent.UseStructuredVulkan2D());
+    const StructuredPerfBackend perfBackend = Parent.GetStructured2DPerfBackendForFrame();
+    ScopedStructuredPerfTimer metadataTimer(
+        perfBackend,
+        StructuredPerfMetric::Structured2DMetadata,
+        perfBackend != StructuredPerfBackend::None);
 #endif
     for (int i = 0; i < 256; i++)
     {

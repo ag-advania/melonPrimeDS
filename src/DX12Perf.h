@@ -36,6 +36,9 @@ enum class CpuMetric : u32
     BuildPolygons,
     Soft2DTotal,
     Structured2DMetadata,
+    TextureDecode,
+    TexturePendingCpuCopy,
+    TextureResourceCreate,
     SpanStagingCopy,
     DescriptorUpdate,
     ComposePack,
@@ -79,6 +82,9 @@ enum class Counter : u32
     StructuredFallbackLines,
     StructuredRouteRuns,
     TextureUploadBytes,
+    TextureMaterializeCount,
+    TexturePendingUploadBytes,
+    TexturePendingUploadCount,
     UploadOverflowCount,
     UploadSpillBytes,
     DescriptorWriteCount,
@@ -143,6 +149,9 @@ inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Cou
     "build_polygons",
     "soft2d_total_us",
     "structured2d_metadata_us",
+    "texture_decode_us",
+    "texture_pending_cpu_copy_us",
+    "texture_resource_create_us",
     "span_staging_copy",
     "descriptor_update",
     "structured_pack_us",
@@ -194,6 +203,8 @@ struct State
     std::array<SampleWindow, static_cast<std::size_t>(CpuMetric::Count)> Cpu{};
     std::array<u64, static_cast<std::size_t>(Counter::Count)> Counters{};
     Clock::time_point LastReport{};
+    Clock::time_point Structured2DStart{};
+    bool Structured2DOpen = false;
     u32 Scale = 0;
 };
 
@@ -291,6 +302,26 @@ inline void AddDuration(CpuMetric metric, Clock::time_point start) noexcept
         AddCounter(Counter::DescriptorCpuTimeNs, ns);
 }
 
+inline void BeginStructured2DFrame() noexcept
+{
+    if (!IsEnabled())
+        return;
+    State& state = GetState();
+    state.Structured2DStart = Clock::now();
+    state.Structured2DOpen = true;
+}
+
+inline void EndStructured2DFrame() noexcept
+{
+    if (!IsEnabled())
+        return;
+    State& state = GetState();
+    if (!state.Structured2DOpen)
+        return;
+    AddDuration(CpuMetric::Soft2DTotal, state.Structured2DStart);
+    state.Structured2DOpen = false;
+}
+
 class ScopedCpuTimer
 {
 public:
@@ -367,7 +398,9 @@ inline void MaybeReport()
         "structured_input_regions=%llu structured_input_full=%llu structured_input_partial=%llu "
         "route_copy_B=%llu route_copy_ns=%llu regular_lines=%llu fallback_lines=%llu "
         "route_runs=%llu "
-        "texture_upload_B=%llu upload_overflows=%llu spill_B=%llu descriptor_writes=%llu "
+        "texture_upload_B=%llu texture_materialize_count=%llu "
+        "texture_pending_upload_bytes=%llu texture_pending_upload_count=%llu "
+        "upload_overflows=%llu spill_B=%llu descriptor_writes=%llu "
         "descriptor_creates=%llu descriptor_updates=%llu descriptor_copies=%llu "
         "descriptor_cpu_ns=%llu presenter_srv_creates=%llu "
         "presenter_descriptor_copies=%llu presenter_descriptor_cpu_ns=%llu "
@@ -398,6 +431,8 @@ inline void MaybeReport()
         count(Counter::StructuredScreenRouteCopyNanoseconds),
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
         count(Counter::StructuredRouteRuns), count(Counter::TextureUploadBytes),
+        count(Counter::TextureMaterializeCount), count(Counter::TexturePendingUploadBytes),
+        count(Counter::TexturePendingUploadCount),
         count(Counter::UploadOverflowCount), count(Counter::UploadSpillBytes),
         count(Counter::DescriptorWriteCount), count(Counter::DescriptorCreateCount),
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
@@ -473,6 +508,8 @@ inline constexpr void RecordNativeReadbackWait(u64) noexcept {}
 inline constexpr void RecordRasterBeginNoWait() noexcept {}
 inline constexpr void RecordRasterBeginFenceTimeout() noexcept {}
 inline constexpr void RecordGeometry(u32, u32, u32, u32) noexcept {}
+inline constexpr void BeginStructured2DFrame() noexcept {}
+inline constexpr void EndStructured2DFrame() noexcept {}
 inline constexpr void MaybeReport() noexcept {}
 
 template <typename TimePoint>
@@ -499,7 +536,8 @@ public:
 namespace melonDS::DX12Perf
 {
 enum class CpuMetric : u32 { RasterBeginWait, RasterCpuPrepare, RasterReuseWait, RasterRecordSubmit,
-    TexcacheUpdate, BuildPolygons, Soft2DTotal, Structured2DMetadata, SpanStagingCopy,
+    TexcacheUpdate, BuildPolygons, Soft2DTotal, Structured2DMetadata, TextureDecode,
+    TexturePendingCpuCopy, TextureResourceCreate, SpanStagingCopy,
     DescriptorUpdate, ComposePack, ComposeRecord, CaptureWait, CaptureMapCopy,
     PresentSlotWait, PresentBeginWait, HudPatchCopy, HudUpload, PresentRecord, QueueSubmit, Count };
 enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
@@ -511,7 +549,8 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     StructuredInputFullUploadCount, StructuredInputPartialUploadCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
-    StructuredRouteRuns, TextureUploadBytes, UploadOverflowCount,
+    StructuredRouteRuns, TextureUploadBytes, TextureMaterializeCount,
+    TexturePendingUploadBytes, TexturePendingUploadCount, UploadOverflowCount,
     UploadSpillBytes, DescriptorWriteCount,
     DescriptorCreateCount, DescriptorUpdateCount, DescriptorCopyCount, DescriptorCpuTimeNs,
     PresenterSrvCreateCount, PresenterDescriptorCopyCount, PresenterDescriptorCpuTimeNs,

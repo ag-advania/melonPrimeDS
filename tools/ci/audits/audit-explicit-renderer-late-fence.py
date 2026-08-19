@@ -4,7 +4,10 @@
 The explicit renderers intentionally keep one scale-dependent raster resource
 set.  Correctness therefore requires the CPU-only polygon/texture plan to run
 before the single-slot reuse wait, while uploads and command recording remain
-after the fence retires.  This is a source contract, not a performance claim.
+after the fence retires.  Texture arrays retain their logical handle during
+CPU preparation, but physical resources and descriptor-visible views may only
+be created at the post-fence materialization boundary.  This is a source
+contract, not a performance claim.
 """
 
 from __future__ import annotations
@@ -68,6 +71,13 @@ def main() -> int:
     soft_source = read("src/GPU_Soft.cpp")
     dx12_perf = read("src/DX12Perf.h")
     vulkan_perf = read("src/VulkanPerf.h")
+    dx12_texcache_header = read("src/GPU3D_TexcacheDX12.h")
+    dx12_texcache_source = read("src/GPU3D_TexcacheDX12.cpp")
+    vulkan_texcache_header = read("src/GPU3D_TexcacheVulkan.h")
+    vulkan_texcache_source = read("src/GPU3D_TexcacheVulkan.cpp")
+    generic_texcache = read("src/GPU3D_Texcache.h")
+    structured_perf = read("src/MelonPrimeStructuredPerf.h")
+    soft2d_source = read("src/GPU2D_Soft.cpp")
     perf_probe = read("src/frontend/qt_sdl/MelonPrimePerfProbe.h")
     emu_thread = read("src/frontend/qt_sdl/EmuThread.cpp")
 
@@ -91,14 +101,35 @@ def main() -> int:
             "Frames.BeginFrame(true)",
             "TextureHeap.RecordPendingUploads()",
         ),
-    ):
+        ):
         require_order(frame, "BuildPolygons(", begin, f"{name} CPU preparation", failures)
         require_order(frame, begin, record, f"{name} upload recording", failures)
+        require_order(
+            frame,
+            begin,
+            "TextureHeap.MaterializePendingCreates()",
+            f"{name} physical texture materialization",
+            failures,
+        )
+        require_order(
+            frame,
+            "TextureHeap.MaterializePendingCreates()",
+            record,
+            f"{name} materialization before uploads",
+            failures,
+        )
         require_order(
             frame,
             record,
             "FlushUploadBarriers()",
             f"{name} texture barriers",
+            failures,
+        )
+        reset_position = frame.find("TextureHeap.ResetFailures();")
+        update_position = frame.find("Texcache.Update(")
+        require(
+            reset_position >= 0 and update_position >= 0 and reset_position < update_position,
+            f"{name} texture preparation failures must be reset before Texcache.Update",
             failures,
         )
         require(
@@ -124,6 +155,141 @@ def main() -> int:
         "WaitForFences(" in vulkan_sync
         and "DefaultFenceTimeoutNanoseconds" in vulkan_sync,
         "Vulkan raster reuse waits must retain a bounded fence timeout",
+        failures,
+    )
+
+    # P2-001: reserve/identity is CPU-only; driver objects are materialized
+    # after the explicit frame slot has been acquired.  Keep this check close
+    # to the implementation so a future Create/Reserve regression fails CI.
+    for name, header, source, reserve_signature, materialize_signature in (
+        (
+            "DX12",
+            dx12_texcache_header,
+            dx12_texcache_source,
+            "u32 DX12TextureHeap::Reserve",
+            "bool DX12TextureHeap::MaterializePendingCreates",
+        ),
+        (
+            "Vulkan",
+            vulkan_texcache_header,
+            vulkan_texcache_source,
+            "u32 VulkanTextureHeap::Reserve",
+            "bool VulkanTextureHeap::MaterializePendingCreates",
+        ),
+    ):
+        try:
+            reserve_body = function_body(source, reserve_signature)
+            materialize_body = function_body(source, materialize_signature)
+        except ValueError as error:
+            failures.append(str(error))
+            reserve_body = materialize_body = ""
+
+        require(
+            "PendingCreate" in header and "PhysicalReady" in header,
+            f"{name} texture entries must expose logical/physical lifecycle state",
+            failures,
+        )
+        require(
+            "PendingCreate = true" in reserve_body
+            and "PhysicalReady = true" not in reserve_body,
+            f"{name} Reserve must create a logical identity without a physical resource",
+            failures,
+        )
+        physical_create = "CreateTexture2D" if name == "DX12" else "CreateImage"
+        require(
+            physical_create in materialize_body
+            and "PhysicalReady = true" in materialize_body
+            and "PendingCreate = false" in materialize_body,
+            f"{name} MaterializePendingCreates must own physical creation and readiness",
+            failures,
+        )
+
+        try:
+            record_body = function_body(source, f"bool {name}TextureHeap::RecordUpload")
+        except ValueError as error:
+            failures.append(str(error))
+            record_body = ""
+        require(
+            "PhysicalReady" in record_body,
+            f"{name} uploads must reject handles before physical materialization",
+            failures,
+        )
+        require(
+            "PendingUpload" in source and "Data.resize(bytes)" in source,
+            f"{name} pending upload storage must be reusable backend-owned CPU storage",
+            failures,
+        )
+
+    # P2-002: the generic decoder writes into the explicit backend's pending
+    # CPU storage.  The old common decoded-buffer-to-pending-buffer memcpy must
+    # not return to the hot miss path.
+    try:
+        get_texture_body = function_body(generic_texcache, "void GetTexture(")
+    except ValueError as error:
+        failures.append(str(error))
+        get_texture_body = ""
+    require(
+        "TextureDecodeTarget" in generic_texcache
+        and "BeginTextureUpload" in get_texture_body
+        and "decodeBuffer" in get_texture_body,
+        "generic texture decoding must target backend-owned pending CPU storage",
+        failures,
+    )
+    require_order(
+        get_texture_body,
+        "BeginTextureUpload(",
+        "BeginTextureDecode()",
+        "texture direct decode setup",
+        failures,
+    )
+    require_order(
+        get_texture_body,
+        "BeginTextureDecode()",
+        "CommitTextureUpload(",
+        "texture direct decode commit",
+        failures,
+    )
+    require(
+        "std::memcpy" not in get_texture_body,
+        "generic texture miss path must not copy DecodingBuffer into pending upload data",
+        failures,
+    )
+
+    # P3-001/P3-002: the shared software producer selects its explicit backend
+    # once per frame and routes both structured timers through that selection.
+    require(
+        "enum class StructuredPerfBackend" in structured_perf
+        and "BeginStructured2DPerfFrame" in structured_perf
+        and "EndStructured2DPerfFrame" in structured_perf
+        and "ToDX12Metric" in structured_perf
+        and "ToVulkanMetric" in structured_perf,
+        "structured software timing must use a backend-neutral explicit wrapper",
+        failures,
+    )
+    try:
+        draw_scanline_body = function_body(
+            soft_source, "void SoftRenderer::DrawScanline(u32 line)"
+        )
+    except ValueError as error:
+        failures.append(str(error))
+        draw_scanline_body = ""
+    require(
+        draw_scanline_body.count("GetStructured2DPerfBackend()") == 1
+        and "StructuredPerfBackendForFrame" in draw_scanline_body,
+        "structured backend selection must occur once at frame start",
+        failures,
+    )
+    require(
+        "VulkanPerf::" not in soft_source
+        and "VulkanPerf::" not in soft2d_source
+        and "DX12Perf::" not in soft_source
+        and "DX12Perf::" not in soft2d_source,
+        "shared structured producers must not hard-code a renderer telemetry backend",
+        failures,
+    )
+    require(
+        "PhysicalReady" in dx12_source and "PhysicalReady" in vulkan_source,
+        "explicit descriptor setup must require a physically materialized texture",
         failures,
     )
 
@@ -166,6 +332,9 @@ def main() -> int:
             "soft2d_total_us",
             "structured2d_metadata_us",
             "structured_pack_us",
+            "texture_decode_us",
+            "texture_pending_cpu_copy_us",
+            "texture_resource_create_us",
         ):
             require(
                 f'"{metric}"' in perf,
@@ -175,6 +344,24 @@ def main() -> int:
         require(
             "#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)" in perf,
             f"{name} telemetry must remain compile-time gated",
+            failures,
+        )
+        for counter_name in (
+            "texture_materialize_count",
+            "texture_pending_upload_bytes",
+            "texture_pending_upload_count",
+        ):
+            require(
+                counter_name in perf,
+                f"{name} telemetry must expose {counter_name}",
+                failures,
+            )
+        require(
+            "p50_us=" in perf
+            and "p95_us=" in perf
+            and "p99_us=" in perf
+            and "max_us=" in perf,
+            f"{name} telemetry must report p50/p95/p99/max samples",
             failures,
         )
 

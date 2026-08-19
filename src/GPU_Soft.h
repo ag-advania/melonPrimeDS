@@ -27,6 +27,7 @@
 // Defines MELONPRIME_HAS_STRUCTURED_SOFT_2D, shared with the GPU2D_Soft
 // producer side.
 #include "MelonPrimeStructuredComposition.h"
+#include "MelonPrimeStructuredPerf.h"
 #endif
 
 namespace melonDS
@@ -89,6 +90,10 @@ public:
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
+    [[nodiscard]] StructuredPerfBackend GetStructured2DPerfBackendForFrame() const noexcept
+    {
+        return StructuredPerfBackendForFrame;
+    }
     // Published to the frontend so the Custom HUD can tell when MPH's native
     // START menu is held. It never selects composition behaviour.
     void SetNativeMenuHeldForFrame(bool held) noexcept
@@ -143,6 +148,7 @@ private:
     u8 StructuredPendingLineMetaDirtyMask = 0;
     bool StructuredPendingCaptureCommandsDirty = false;
     u8 StructuredEngineChangedMask[2] = { 0, 0 };
+    StructuredPerfBackend StructuredPerfBackendForFrame = StructuredPerfBackend::None;
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
     inline void MarkStructuredPlaneDirty(u32 plane) noexcept

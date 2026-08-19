@@ -25,6 +25,7 @@
 
 #include "GPU3D_Texcache.h"
 #include "DX12Context.h"
+#include "DX12Perf.h"
 
 namespace melonDS
 {
@@ -51,13 +52,23 @@ public:
         // transitioning every array every frame.
         D3D12_RESOURCE_STATES State = D3D12_RESOURCE_STATE_COMMON;
         bool InUse = false;
+        bool PhysicalReady = false;
+        bool PendingCreate = false;
     };
 
     void Init(DX12Context* context, DX12CommandContext* commands, DX12UploadRing* uploads);
     void Shutdown();
 
-    u32 Create(u32 width, u32 height, u32 layers);
+    // CPU-side cache misses reserve an opaque identity only. The resource is
+    // created by MaterializePendingCreates() after Begin() has retired the
+    // previous command-list slot.
+    u32 Reserve(u32 width, u32 height, u32 layers);
+    bool MaterializePendingCreates();
     void Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
+    TextureDecodeTarget BeginTextureUpload(
+        u32 handle, u32 width, u32 height, u32 layer);
+    void CommitTextureUpload(u32 token) noexcept;
+    void CancelTextureUpload(u32 token) noexcept;
     // Texture decoding and logical array allocation happen during the CPU
     // preparation phase, before the raster command allocator can be reused.
     // Uploads therefore queue their decoded bytes until the caller has opened
@@ -73,8 +84,18 @@ public:
     // been referencing them. Call after the command context went idle.
     void CollectGarbage();
 
+    void ResetFailures() noexcept
+    {
+        CreationFailed = false;
+        UploadFailed = false;
+    }
     void ResetUploadFailure() noexcept { UploadFailed = false; }
+    [[nodiscard]] bool HadCreationFailure() const noexcept { return CreationFailed; }
     [[nodiscard]] bool HadUploadFailure() const noexcept { return UploadFailed; }
+    [[nodiscard]] bool HadFailure() const noexcept
+    {
+        return CreationFailed || UploadFailed;
+    }
 
     [[nodiscard]] const Entry* Lookup(u32 handle) const noexcept
     {
@@ -91,9 +112,12 @@ private:
         u32 Height = 0;
         u32 Layer = 0;
         std::vector<u8> Data;
+        bool Committed = false;
     };
 
-    void RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
+    bool RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
+    PendingUpload* AcquirePendingUpload(
+        u32 handle, u32 width, u32 height, u32 layer, std::size_t bytes);
 
     DX12Context* Context = nullptr;
     DX12CommandContext* Commands = nullptr;
@@ -110,6 +134,7 @@ private:
     // Oversized/overflow uploads stay alive until the next frame's Begin()
     // retires this command list. This avoids a synchronous mid-frame flush.
     std::vector<DX12::ComPtr<ID3D12Resource>> SpillUploads;
+    bool CreationFailed = false;
     bool UploadFailed = false;
 };
 
@@ -122,7 +147,29 @@ public:
 
     u32 GenerateTexture(u32 width, u32 height, u32 layers)
     {
-        return Heap ? Heap->Create(width, height, layers) : 0;
+        return Heap ? Heap->Reserve(width, height, layers) : 0;
+    }
+
+    DX12Perf::ScopedCpuTimer BeginTextureDecode() noexcept
+    {
+        return DX12Perf::ScopedCpuTimer(
+            DX12Perf::CpuMetric::TextureDecode, Heap != nullptr);
+    }
+
+    TextureDecodeTarget BeginTextureUpload(
+        u32 handle, u32 width, u32 height, u32 layer)
+    {
+        return Heap ? Heap->BeginTextureUpload(handle, width, height, layer) : TextureDecodeTarget{};
+    }
+
+    void CommitTextureUpload(u32 token) noexcept
+    {
+        if (Heap) Heap->CommitTextureUpload(token);
+    }
+
+    void CancelTextureUpload(u32 token) noexcept
+    {
+        if (Heap) Heap->CancelTextureUpload(token);
     }
 
     void UploadTexture(u32 handle, u32 width, u32 height, u32 layer, void* data)

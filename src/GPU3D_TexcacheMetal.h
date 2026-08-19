@@ -72,6 +72,12 @@ public:
         // ARC releases the strong id<MTLTexture> references held by Texcache.
     }
 
+    NoopTextureDecodeTimer BeginTextureDecode() noexcept { return {}; }
+    TextureDecodeTarget BeginTextureUpload(
+        id<MTLTexture>, u32, u32, u32) noexcept { return {}; }
+    void CommitTextureUpload(u32) noexcept {}
+    void CancelTextureUpload(u32) noexcept {}
+
 private:
     id<MTLDevice> Device = nil;
 };

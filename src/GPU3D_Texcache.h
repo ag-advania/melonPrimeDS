@@ -5,6 +5,7 @@
 #include "GPU.h"
 
 #include <assert.h>
+#include <cstddef>
 #include <unordered_map>
 #include <vector>
 
@@ -39,6 +40,22 @@ template <int outputFmt, int X, int Y>
 void ConvertAXIYTexture(u32 width, u32 height, u32* output, u32 addr, u32 palAddr, GPU& gpu);
 template <int outputFmt, int colorBits>
 void ConvertNColorsTexture(u32 width, u32 height, u32* output, u32 addr, u32 palAddr, bool color0Transparent, GPU& gpu);
+
+// Explicit backends reserve CPU-owned upload storage before decoding. The
+// decoder writes into that storage directly, so the old
+// DecodingBuffer -> PendingUpload::Data memcpy is not part of the normal path.
+// OpenGL/Metal return an empty target and retain their existing upload API.
+struct TextureDecodeTarget
+{
+    u32* Pixels = nullptr;
+    std::size_t ByteCapacity = 0;
+    u32 Token = 0;
+};
+
+struct NoopTextureDecodeTimer
+{
+    constexpr NoopTextureDecodeTimer() noexcept = default;
+};
 
 template <typename TexLoaderT, typename TexHandleT>
 class Texcache
@@ -203,59 +220,105 @@ public:
         entry.WidthLog2 = widthLog2;
         entry.HeightLog2 = heightLog2;
 
-        // apparently a new texture
-        if (fmt == 7)
-        {
-            entry.TextureRAMSize[0] = width*height*2;
+        auto& texArrays = TexArrays[widthLog2][heightLog2];
+        auto& freeTextures = FreeTextures[widthLog2][heightLog2];
 
-            ConvertBitmapTexture<outputFmt_RGB6A5>(width, height, DecodingBuffer, addr, GPU);
-        }
-        else if (fmt == 5)
+        if (freeTextures.empty())
         {
-            u32 slot1addr = 0x20000 + ((addr & 0x1FFFC) >> 1);
-            if (addr >= 0x40000)
-                slot1addr += 0x10000;
+            texArrays.resize(texArrays.size() + 1);
+            TexHandleT& array = texArrays[texArrays.size() - 1];
 
-            entry.TextureRAMSize[0] = width*height/16*4;
-            entry.TextureRAMStart[1] = slot1addr;
-            entry.TextureRAMSize[1] = width*height/16*2;
-            entry.TexPalStart = palBase*16;
-            entry.TexPalSize = 0x10000;
+            const u32 layers = std::min<u32>((8 * 1024 * 1024) / (width * height * 4), 64);
 
-            ConvertCompressedTexture<outputFmt_RGB6A5>(width, height, DecodingBuffer, addr, slot1addr, entry.TexPalStart, GPU);
-        }
-        else
-        {
-            u32 texSize, palAddr = palBase*16, numPalEntries;
-            switch (fmt)
+            // Explicit backends only reserve a logical handle here. Physical
+            // image/resource creation is deferred until their frame command
+            // recording boundary has retired the previous submission.
+            array = TexLoader.GenerateTexture(width, height, layers);
+            if (!array)
             {
-            case 1: texSize = width*height; numPalEntries = 32; break;
-            case 6: texSize = width*height; numPalEntries = 8; break;
-            case 2: texSize = width*height/4; numPalEntries = 4; palAddr >>= 1; break;
-            case 3: texSize = width*height/2; numPalEntries = 16; break;
-            case 4: texSize = width*height; numPalEntries = 256; break;
+                texArrays.pop_back();
+                return;
             }
 
-            palAddr &= 0x1FFFF;
+            for (u32 i = 0; i < layers; i++)
+                freeTextures.push_back(TexArrayEntry{array, i});
+        }
 
-            /*printf("creating texture | fmt: %d | %dx%d | %08x | %08x\n", fmt, width, height, addr, palAddr);
-            svcSleepThread(1000*1000);*/
+        TexArrayEntry storagePlace = freeTextures.back();
+        freeTextures.pop_back();
+        entry.Texture = storagePlace;
 
-            entry.TextureRAMSize[0] = texSize;
-            entry.TexPalStart = palAddr;
-            entry.TexPalSize = numPalEntries*2;
+        const std::size_t decodedBytes = static_cast<std::size_t>(width) * height * 4u;
+        TextureDecodeTarget decodeTarget = TexLoader.BeginTextureUpload(
+            storagePlace.TextureID, width, height, storagePlace.Layer);
+        if (decodeTarget.Pixels == nullptr || decodeTarget.ByteCapacity < decodedBytes)
+        {
+            if (decodeTarget.Token != 0)
+                TexLoader.CancelTextureUpload(decodeTarget.Token);
+            decodeTarget = {};
+        }
+        u32* const decodeBuffer = decodeTarget.Pixels != nullptr
+            ? decodeTarget.Pixels
+            : DecodingBuffer;
 
-            //assert(entry.TexPalStart+entry.TexPalSize <= 128*1024*1024);
-
-            bool color0Transparent = texParam & (1 << 29);
-
-            switch (fmt)
+        {
+            auto decodeTimer = TexLoader.BeginTextureDecode();
+            // apparently a new texture
+            if (fmt == 7)
             {
-            case 1: ConvertAXIYTexture<outputFmt_RGB6A5, 3, 5>(width, height, DecodingBuffer, addr, palAddr, GPU); break;
-            case 6: ConvertAXIYTexture<outputFmt_RGB6A5, 5, 3>(width, height, DecodingBuffer, addr, palAddr, GPU); break;
-            case 2: ConvertNColorsTexture<outputFmt_RGB6A5, 2>(width, height, DecodingBuffer, addr, palAddr, color0Transparent, GPU); break;
-            case 3: ConvertNColorsTexture<outputFmt_RGB6A5, 4>(width, height, DecodingBuffer, addr, palAddr, color0Transparent, GPU); break;
-            case 4: ConvertNColorsTexture<outputFmt_RGB6A5, 8>(width, height, DecodingBuffer, addr, palAddr, color0Transparent, GPU); break;
+                entry.TextureRAMSize[0] = width * height * 2;
+                ConvertBitmapTexture<outputFmt_RGB6A5>(width, height, decodeBuffer, addr, GPU);
+            }
+            else if (fmt == 5)
+            {
+                u32 slot1addr = 0x20000 + ((addr & 0x1FFFC) >> 1);
+                if (addr >= 0x40000)
+                    slot1addr += 0x10000;
+
+                entry.TextureRAMSize[0] = width * height / 16 * 4;
+                entry.TextureRAMStart[1] = slot1addr;
+                entry.TextureRAMSize[1] = width * height / 16 * 2;
+                entry.TexPalStart = palBase * 16;
+                entry.TexPalSize = 0x10000;
+
+                ConvertCompressedTexture<outputFmt_RGB6A5>(
+                    width, height, decodeBuffer, addr, slot1addr, entry.TexPalStart, GPU);
+            }
+            else
+            {
+                u32 texSize, palAddr = palBase * 16, numPalEntries;
+                switch (fmt)
+                {
+                case 1: texSize = width * height; numPalEntries = 32; break;
+                case 6: texSize = width * height; numPalEntries = 8; break;
+                case 2: texSize = width * height / 4; numPalEntries = 4; palAddr >>= 1; break;
+                case 3: texSize = width * height / 2; numPalEntries = 16; break;
+                case 4: texSize = width * height; numPalEntries = 256; break;
+                default: texSize = 0; numPalEntries = 0; break;
+                }
+
+                palAddr &= 0x1FFFF;
+
+                entry.TextureRAMSize[0] = texSize;
+                entry.TexPalStart = palAddr;
+                entry.TexPalSize = numPalEntries * 2;
+
+                const bool color0Transparent = texParam & (1 << 29);
+
+                switch (fmt)
+                {
+                case 1: ConvertAXIYTexture<outputFmt_RGB6A5, 3, 5>(
+                    width, height, decodeBuffer, addr, palAddr, GPU); break;
+                case 6: ConvertAXIYTexture<outputFmt_RGB6A5, 5, 3>(
+                    width, height, decodeBuffer, addr, palAddr, GPU); break;
+                case 2: ConvertNColorsTexture<outputFmt_RGB6A5, 2>(
+                    width, height, decodeBuffer, addr, palAddr, color0Transparent, GPU); break;
+                case 3: ConvertNColorsTexture<outputFmt_RGB6A5, 4>(
+                    width, height, decodeBuffer, addr, palAddr, color0Transparent, GPU); break;
+                case 4: ConvertNColorsTexture<outputFmt_RGB6A5, 8>(
+                    width, height, decodeBuffer, addr, palAddr, color0Transparent, GPU); break;
+                default: break;
+                }
             }
         }
 
@@ -269,32 +332,11 @@ public:
             entry.TexPalHash = MaskedHash(GPU.VRAMFlat_TexPal, sizeof(GPU.VRAMFlat_TexPal),
                 entry.TexPalStart, entry.TexPalSize);
 
-        auto& texArrays = TexArrays[widthLog2][heightLog2];
-        auto& freeTextures = FreeTextures[widthLog2][heightLog2];
-
-        if (freeTextures.size() == 0)
-        {
-            texArrays.resize(texArrays.size()+1);
-            TexHandleT& array = texArrays[texArrays.size()-1];
-
-            u32 layers = std::min<u32>((8*1024*1024) / (width*height*4), 64);
-
-            // allocate new array texture
-            //printf("allocating new layer set for %d %d %d %d\n", width, height, texArrays.size()-1, array.ImageDescriptor);
-            array = TexLoader.GenerateTexture(width, height, layers);
-
-            for (u32 i = 0; i < layers; i++)
-            {
-                freeTextures.push_back(TexArrayEntry{array, i});
-            }
-        }
-
-        TexArrayEntry storagePlace = freeTextures[freeTextures.size()-1];
-        freeTextures.pop_back();
-
-        entry.Texture = storagePlace;
-
-        TexLoader.UploadTexture(storagePlace.TextureID, width, height, storagePlace.Layer, DecodingBuffer);
+        if (decodeTarget.Pixels != nullptr)
+            TexLoader.CommitTextureUpload(decodeTarget.Token);
+        else
+            TexLoader.UploadTexture(
+                storagePlace.TextureID, width, height, storagePlace.Layer, decodeBuffer);
         //printf("using storage place %d %d | %d %d (%d)\n", width, height, storagePlace.TexArrayIdx, storagePlace.LayerIdx, array.ImageDescriptor);
 
         textureHandle = storagePlace.TextureID;

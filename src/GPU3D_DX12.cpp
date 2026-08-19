@@ -2168,10 +2168,16 @@ void DX12Renderer3D::RenderFrame()
     u32 numPolygons = 0;
     u32 numVariants = 0;
     {
+        TextureHeap.ResetFailures();
         DX12Perf::ScopedCpuTimer prepareTimer(DX12Perf::CpuMetric::RasterCpuPrepare);
         {
             DX12Perf::ScopedCpuTimer texcacheTimer(DX12Perf::CpuMetric::TexcacheUpdate);
             textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+        }
+        if (TextureHeap.HadFailure())
+        {
+            SetRuntimeFailure("texture cache logical reservation or CPU upload preparation failed");
+            return;
         }
         ClearBitmapDirty |= texcacheClearBitmapDirty;
         if (!textureCacheChanged && GPU3D.RenderFrameIdentical
@@ -2206,17 +2212,25 @@ void DX12Renderer3D::RenderFrame()
     Descriptors.Reset();
     Uploads.Reset();
     TextureHeap.CollectGarbage();
-    TextureHeap.ResetUploadFailure();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
     ResetFrameSrvCache();
 
-    UpdateClearBitmap();
-    TextureHeap.RecordPendingUploads();
-    if (TextureHeap.HadUploadFailure())
+    if (!TextureHeap.MaterializePendingCreates())
     {
         Commands.Submit();
-        SetRuntimeFailure("could not allocate or map a texture spill upload");
+        SetRuntimeFailure("could not materialize a DX12 texture resource");
+        return;
+    }
+
+    UpdateClearBitmap();
+    TextureHeap.RecordPendingUploads();
+    if (TextureHeap.HadFailure())
+    {
+        Commands.Submit();
+        SetRuntimeFailure(TextureHeap.HadCreationFailure()
+            ? "could not materialize a DX12 texture resource"
+            : "could not allocate or map a texture spill upload");
         return;
     }
     DX12Perf::RecordGeometry(
@@ -2419,6 +2433,11 @@ void DX12Renderer3D::RenderFrame()
                 }
 
                 const DX12TextureHeap::Entry* texture = TextureHeap.Lookup(variant.Texture);
+                if (variant.Texture != 0 && (!texture || !texture->PhysicalReady))
+                {
+                    descriptorsValid = false;
+                    break;
+                }
                 if (!BindSrvTable(list, texture ? texture->Resource.Get() : nullptr))
                 {
                     descriptorsValid = false;

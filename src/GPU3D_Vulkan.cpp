@@ -2146,10 +2146,16 @@ void VulkanRenderer3D::RenderFrame()
     u32 numVariants = 0;
     bool canReuseIdenticalFrame = false;
     {
+        TextureHeap.ResetFailures();
         VulkanPerf::ScopedCpuTimer prepareTimer(VulkanPerf::CpuMetric::RasterCpuPrepare);
         {
             VulkanPerf::ScopedCpuTimer texcacheTimer(VulkanPerf::CpuMetric::TexcacheUpdate);
             textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+        }
+        if (TextureHeap.HadFailure())
+        {
+            SetRuntimeFailure("texture cache logical reservation or CPU upload preparation failed");
+            return;
         }
         ClearBitmapDirty |= texcacheClearBitmapDirty;
         canReuseIdenticalFrame =
@@ -2201,6 +2207,13 @@ void VulkanRenderer3D::RenderFrame()
     BoundTextureSet = VK_NULL_HANDLE;
     TextureHeap.BeginFrame(cmd, &FrameStaging);
 
+    if (!TextureHeap.MaterializePendingCreates())
+    {
+        Frames.SubmitFrame(Device.GetMainQueue());
+        SetRuntimeFailure("could not materialize a Vulkan texture resource");
+        return;
+    }
+
     if (NeedsFinalFBTransition || !PlaceholdersInitialized)
         RecordInitialTransitions(cmd);
 
@@ -2237,6 +2250,14 @@ void VulkanRenderer3D::RenderFrame()
     UpdateClearBitmap(cmd, FrameStaging);
 
     TextureHeap.RecordPendingUploads();
+    if (TextureHeap.HadFailure())
+    {
+        Frames.SubmitFrame(Device.GetMainQueue());
+        SetRuntimeFailure(TextureHeap.HadCreationFailure()
+            ? "could not materialize a Vulkan texture resource"
+            : "could not stage a Vulkan texture upload");
+        return;
+    }
     VulkanPerf::RecordGeometry(
         numPolygons, numVariants, static_cast<u32>(std::max(numYSpans, 0)),
         static_cast<u32>(std::max(numSetupIndices, 0)));
@@ -2358,6 +2379,12 @@ void VulkanRenderer3D::RenderFrame()
     {
         const Variant& variant = Variants[i];
         const VulkanTextureHeap::Entry* texture = TextureHeap.Lookup(variant.Texture);
+        if (variant.Texture != 0 && (!texture || !texture->PhysicalReady))
+        {
+            Frames.SubmitFrame(Device.GetMainQueue());
+            SetRuntimeFailure("texture resource was not materialized before descriptor creation");
+            return;
+        }
         VkImageView view = texture ? texture->View : DummyTextureImage.GetView();
         VariantTextureSets[i] = AcquireTextureSet(
             frameIndex, view, Samplers.Get(variant.WrapS, variant.WrapT));

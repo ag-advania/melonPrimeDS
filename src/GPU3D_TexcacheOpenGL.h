@@ -19,6 +19,12 @@ public:
     void UploadTexture(GLuint handle, u32 width, u32 height, u32 layer, void* data);
     void DeleteTexture(GLuint handle);
 
+    NoopTextureDecodeTimer BeginTextureDecode() noexcept { return {}; }
+    TextureDecodeTarget BeginTextureUpload(
+        GLuint, u32, u32, u32) noexcept { return {}; }
+    void CommitTextureUpload(u32) noexcept {}
+    void CancelTextureUpload(u32) noexcept {}
+
 private:
     bool IsCompute;
 };

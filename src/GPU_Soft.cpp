@@ -21,7 +21,6 @@
 #include "GPU_ColorOp.h"
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 #include "MelonPrimeStructuredComposition.h"
-#include "VulkanPerf.h"
 #endif
 
 namespace melonDS
@@ -102,6 +101,7 @@ void SoftRenderer::Reset()
     StructuredPendingCaptureCommandsDirty = false;
     StructuredEngineChangedMask[0] = 0;
     StructuredEngineChangedMask[1] = 0;
+    StructuredPerfBackendForFrame = StructuredPerfBackend::None;
 #endif
 }
 
@@ -213,10 +213,17 @@ void SoftRenderer::DrawScanline(u32 line)
 {
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     const u32 outputLine = line;
-    const bool measureStructured2D = outputLine < 192u && UseStructuredVulkan2D();
+    if (outputLine == 0u)
+    {
+        StructuredPerfBackendForFrame = UseStructuredVulkan2D() && Rend3D != nullptr
+            ? Rend3D->GetStructured2DPerfBackend()
+            : StructuredPerfBackend::None;
+    }
+    const bool measureStructured2D = outputLine < 192u
+        && StructuredPerfBackendForFrame != StructuredPerfBackend::None;
     bool structuredVramDisplaySnapshotted = false;
     if (measureStructured2D && outputLine == 0u)
-        VulkanPerf::BeginStructured2DFrame();
+        BeginStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
     u32 *dstA, *dstB;
     u32 dstoffset = 256 * line;
@@ -375,7 +382,7 @@ void SoftRenderer::DrawScanline(u32 line)
     if (UseStructuredVulkan2D() && outputLine == 191u)
         FlushStructuredGeneration();
     if (measureStructured2D && outputLine == 191u)
-        VulkanPerf::EndStructured2DFrame();
+        EndStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
 }
 

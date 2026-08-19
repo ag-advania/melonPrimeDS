@@ -28,6 +28,7 @@
 #include "VulkanCommon.h"
 #include "VulkanDevice.h"
 #include "VulkanMemory.h"
+#include "VulkanPerf.h"
 #include "VulkanSync.h"
 
 namespace melonDS
@@ -114,6 +115,8 @@ public:
         // instead of moving every array through TRANSFER_DST every frame.
         VkImageLayout Layout = VK_IMAGE_LAYOUT_UNDEFINED;
         bool InUse = false;
+        bool PhysicalReady = false;
+        bool PendingCreate = false;
     };
 
     VulkanTextureHeap() = default;
@@ -137,13 +140,32 @@ public:
     // rasterise dispatch that samples them.
     void FlushUploadBarriers();
 
-    u32 Create(u32 width, u32 height, u32 layers);
+    // CPU-side cache misses reserve an opaque identity only. The image, memory,
+    // binding and view are materialized after BeginFrame() retires the slot.
+    u32 Reserve(u32 width, u32 height, u32 layers);
+    bool MaterializePendingCreates();
     void Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
+    TextureDecodeTarget BeginTextureUpload(
+        u32 handle, u32 width, u32 height, u32 layer);
+    void CommitTextureUpload(u32 token) noexcept;
+    void CancelTextureUpload(u32 token) noexcept;
     // Texture decode and logical resource selection can run before the
     // raster frame slot is reusable. Record the actual transfer only after
     // BeginFrame() has retired that slot's fence.
     void RecordPendingUploads();
     void Destroy(u32 handle);
+
+    void ResetFailures() noexcept
+    {
+        CreationFailed = false;
+        UploadFailed = false;
+    }
+    [[nodiscard]] bool HadCreationFailure() const noexcept { return CreationFailed; }
+    [[nodiscard]] bool HadUploadFailure() const noexcept { return UploadFailed; }
+    [[nodiscard]] bool HadFailure() const noexcept
+    {
+        return CreationFailed || UploadFailed;
+    }
 
     [[nodiscard]] const Entry* Lookup(u32 handle) const noexcept
     {
@@ -161,13 +183,16 @@ private:
         u32 Height = 0;
         u32 Layer = 0;
         std::vector<u8> Data;
+        bool Committed = false;
     };
 
     // Records a temporary host-visible buffer for one oversized upload. The
     // ring cannot serve it, and dropping the texture would render garbage, so
     // a dedicated buffer is created and handed to the deferred destroy queue.
     bool CreateScratchUpload(VkDeviceSize size, VkBuffer& outBuffer, VkDeviceMemory& outMemory, void*& outMapped);
-    void RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
+    bool RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
+    PendingUpload* AcquirePendingUpload(
+        u32 handle, u32 width, u32 height, u32 layer, std::size_t bytes);
 
     void RetireEntry(Entry& entry);
 
@@ -184,6 +209,8 @@ private:
     // capacities stay allocated for reuse instead of churning each frame.
     std::vector<PendingUpload> PendingUploads;
     u32 PendingUploadCount = 0;
+    bool CreationFailed = false;
+    bool UploadFailed = false;
 };
 
 
@@ -199,7 +226,29 @@ public:
 
     u32 GenerateTexture(u32 width, u32 height, u32 layers)
     {
-        return Heap ? Heap->Create(width, height, layers) : 0;
+        return Heap ? Heap->Reserve(width, height, layers) : 0;
+    }
+
+    VulkanPerf::ScopedCpuTimer BeginTextureDecode() noexcept
+    {
+        return VulkanPerf::ScopedCpuTimer(
+            VulkanPerf::CpuMetric::TextureDecode, Heap != nullptr);
+    }
+
+    TextureDecodeTarget BeginTextureUpload(
+        u32 handle, u32 width, u32 height, u32 layer)
+    {
+        return Heap ? Heap->BeginTextureUpload(handle, width, height, layer) : TextureDecodeTarget{};
+    }
+
+    void CommitTextureUpload(u32 token) noexcept
+    {
+        if (Heap) Heap->CommitTextureUpload(token);
+    }
+
+    void CancelTextureUpload(u32 token) noexcept
+    {
+        if (Heap) Heap->CancelTextureUpload(token);
     }
 
     void UploadTexture(u32 handle, u32 width, u32 height, u32 layer, void* data)
