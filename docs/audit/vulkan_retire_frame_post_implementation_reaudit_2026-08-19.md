@@ -36,6 +36,22 @@ The FreeBSD retry log records the AnyVM action timing out at 20 minutes, retry
 setup ending with `sudo` exit 100, and the later target shell reporting
 `freebsd: command not found` because the VM was never established.
 
+A final documentation-only exact-head re-dispatch at `7b253bd0279c4627d47ce771d61cefc2bb4d5e8f`
+produced Windows run [`32231255914`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32231255914),
+Ubuntu run [`32231258079`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32231258079),
+BSD run [`32231260692`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32231260692),
+and macOS run [`32231263380`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32231263380).
+Windows completed PASS, including its production retire target. Ubuntu Audits
+and the aarch64 retire target passed; x86_64 dependency installation timed out
+against the hosted apt mirror after 20 minutes, so its target could not build,
+and the artifact aggregator then failed because the expected artifacts were not
+created. BSD VM startup/retry failed externally for NetBSD, FreeBSD, and
+OpenBSD before their targets. macOS reached PASS for both retire targets, while
+both build jobs failed later in the existing Classic On-Screen Edit geometry
+test. These results supersede neither the prior exact `dbce40fde` target PASS
+evidence nor the separately documented FreeBSD VM gap; they are the final
+revision's hosted status.
+
 The result separates source/build/model evidence, hosted CI evidence, and
 physical GPU evidence. A successful local build or static audit is not
 promoted to a cross-platform driver or latency result.
@@ -53,6 +69,10 @@ promoted to a cross-platform driver or latency result.
 | Hosted macOS CI at `dbce40fd` | TARGET PASS / JOB FAILURE | Run [`32227422312`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32227422312) ran the dedicated retire step successfully on both x86_64 and arm64. Both jobs later failed in the pre-existing Classic On-Screen Edit geometry check, unrelated to this Vulkan change. |
 | Hosted Ubuntu CI at `dbce40fd` | TARGET PASS / JOB FAILURE | Run [`32227417529`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32227417529) had the Audits job PASS and the independent retire target PASS on both x86_64 and aarch64. Both full Builds failed in the existing non-retire build surface, so the workflow job remained red. |
 | Hosted BSD CI at `dbce40fd` | TARGET PARTIAL / JOB FAILURE | Run [`32227419672`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32227419672) had NetBSD and OpenBSD loader/presenter/retire targets PASS. FreeBSD's VM retry failed at the bounded setup step, so its retire target could not run; the workflow remained red. Supplemental retry [`32229161939`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32229161939) reproduced the FreeBSD failure and had a separate NetBSD VM setup failure while OpenBSD's target passed again. |
+| Final exact-head Windows CI at `7b253bd0` | PASS | Run [`32231255914`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32231255914) completed the build job and production Vulkan retire target successfully. |
+| Final exact-head Ubuntu CI at `7b253bd0` | TARGET PARTIAL / HOST FAILURE | Run [`32231258079`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32231258079) had Audits PASS and the aarch64 retire target PASS. x86_64 dependency installation timed out after 20 minutes against the apt mirror; its independent retire step then reported no build directory. The artifact aggregator failed only because those artifacts did not exist. |
+| Final exact-head BSD CI at `7b253bd0` | TARGET UNAVAILABLE / VM FAILURE | Run [`32231260692`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32231260692) could not establish NetBSD, FreeBSD, or OpenBSD VMs: startup timed out, retries failed in `sudo`, and the fallback target shells reported `<os>: command not found`. No BSD source assertion or retire target result was obtained on this final revision. |
+| Final exact-head macOS CI at `7b253bd0` | TARGET PASS / JOB FAILURE | Run [`32231263380`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32231263380) passed the dedicated retire target on x86_64 and arm64. Both build jobs later failed in the existing Classic On-Screen Edit geometry test, including narrow-window/large-font cases; this is unrelated to the Vulkan retire mapping. |
 | Physical measurement runner and artifact restoration | PASS | `tools/testing/renderer-physical-ab.ps1` passed PowerShell parsing; it records renderer/scale/VSync/low-latency/HUD/action seed, restores config and layer settings byte-for-byte, requires the state marker, and rejects device/VUID/SYNC failure markers. |
 | Physical Vulkan validation-layer lifecycle | PASS | Current-head Debug build completed resize x40, minimize/restore x20, and fullscreen x8 with 69 swapchain rebuilds, device lost 0, Sync hazards 0, clean validation, and config/layer restoration PASS. |
 | Physical DX12/Vulkan/OpenGL Compute A/B and hardware acceptance | OPEN / PARTIAL | Vulkan and DX12 completed three-seed warmed action-all baselines plus scale/pacing representatives. OpenGL Compute passed steady-state and individual actions but reproducibly crashed on the Reset action (`0xC0000005`), so no cross-backend hardware acceptance is claimed. |
@@ -176,19 +196,42 @@ artifacts are `vk-20260819-current-all-sync.out.log` and
 and Synchronization Validation, `sync hazards=0`, `device lost=0`, and
 `validation=clean` after resize/minimize/fullscreen cycling.
 
+### OpenGL Compute Reset triage
+
+The Reset-only physical run remains a real open crash, not a harness timeout:
+the measurement build exited with Windows exception `0xC0000005`, and the
+Windows Application Error record identifies `melonPrimeDS.exe`. Repeating the
+same action with the Debug executable reproduced `0xC0000005`; the debug PE
+fault address `0x140b802b4` resolves with `addr2line` to
+`MainWindow::makeCurrentGL()` at `src/frontend/qt_sdl/Window.cpp:1434`.
+The corresponding instruction reads `hasOGL` from `this+0x79` with an invalid
+`RCX`, so the failure is a stale/invalid `MainWindow` object dereference
+rather than a Vulkan retire assertion.
+
+The GDB run separately confirmed the Reset call path
+`EmuThread::handleMessages()` -> `EmuInstance::reset()` and showed a valid
+`mainWindow`, `hasOGL`, and `panel` on the first post-Reset
+`makeCurrentGL()` call. Breakpoints on `MainWindow::closeEvent()`,
+`MainWindow::~MainWindow()`, and `EmuInstance::deleteWindow()` did not fire
+during the instrumented Reset sequence. This narrows the issue to a timing-
+dependent lifetime or memory-corruption path but does not prove which one;
+therefore no speculative null-check or unrelated OpenGL change is claimed as
+the fix. The investigation configuration was restored after the run.
+
 ## Remaining acceptance gates
 
 The following remain explicitly open:
 
-- Complete and retain the Ubuntu x86_64/aarch64 and BSD FreeBSD/NetBSD/OpenBSD
-  retire-target logs for the final CI verification revision. The exact-head
-  run above has Windows, Ubuntu x86_64/aarch64, NetBSD, OpenBSD, and macOS
-  x86_64/arm64 target PASS. FreeBSD remains the hosted target gap because its
-  VM retry failed before dependency setup; the supplemental BSD retry also
-  confirms the external VM instability.
-- Resolve or separately triage the reproducible OpenGL Compute Reset-path
-  `0xC0000005` before claiming all-action cross-backend acceptance. It is not
-  part of the Vulkan retire-frame patch and was not changed here.
+- Retain the final exact-head hosted status above. Windows and macOS reached
+  their retire targets; Ubuntu aarch64 reached its target while x86_64 was
+  blocked by the hosted apt mirror timeout; and the final BSD dispatch could
+  not establish any VM. The earlier exact `dbce40fde` run remains the source /
+  workflow evidence for Ubuntu x86_64, Ubuntu aarch64, NetBSD, and OpenBSD
+  target PASS; FreeBSD remains unavailable in both the primary and retry
+  evidence.
+- The reproducible OpenGL Compute Reset-path `0xC0000005` is separately
+  triaged above but remains unresolved. It is not part of the Vulkan
+  retire-frame patch and is not promoted to cross-backend acceptance.
 - Obtain AMD/Intel hardware for Anti-Lag 2/XeLL coverage; the current NVIDIA
   host can only provide explicit unsupported capability evidence.
 - Retain visual parity, no-crash/device-reset/savestate checks, validation
@@ -196,6 +239,7 @@ The following remain explicitly open:
 
 Accordingly, the requested production test hardening is implemented, the
 Windows/NVIDIA physical evidence is now reproducible and partially complete,
-and the validation-layer lifecycle is clean. OpenGL Reset, the FreeBSD hosted
-target, and non-NVIDIA vendor coverage remain explicitly unverified; none is
-promoted to PASS.
+and the validation-layer lifecycle is clean. OpenGL Reset remains an
+explicitly triaged but unresolved crash, the BSD VM coverage remains
+environment-blocked on the final dispatch, and non-NVIDIA vendor coverage is
+unavailable; none is promoted to PASS.
