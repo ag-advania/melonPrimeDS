@@ -2257,6 +2257,31 @@ static const uint NativeOamBase = NativePaletteBase + 512u;
 static const uint NativeFifoBase = NativeOamBase + 512u;
 static const uint NativeLcdBase = NativeFifoBase + 256u;
 static const uint NativeRouteBase = NativeLcdBase + 131072u;
+static const uint NativeTimelineEngineBGBlocks = 1024u;
+static const uint NativeTimelineEngineOBJBlocks = 512u;
+static const uint NativeTimelineEngineBGExtBlocks = 64u;
+static const uint NativeTimelineEngineOBJExtBlocks = 16u;
+static const uint NativeTimelineEngineBlocks = NativeTimelineEngineBGBlocks
+    + NativeTimelineEngineOBJBlocks + NativeTimelineEngineBGExtBlocks
+    + NativeTimelineEngineOBJExtBlocks;
+static const uint NativeTimelinePaletteBlocks = 4u;
+static const uint NativeTimelineOAMBlocks = 4u;
+static const uint NativeTimelineFIFOBlocks = 1u;
+static const uint NativeTimelineLCDVRAMBlocks = 1024u;
+static const uint NativeTimelineEngineBaseBlock = 0u;
+static const uint NativeTimelinePaletteBaseBlock = 2u * NativeTimelineEngineBlocks;
+static const uint NativeTimelineOAMBaseBlock = NativeTimelinePaletteBaseBlock
+    + NativeTimelinePaletteBlocks;
+static const uint NativeTimelineFIFOBaseBlock = NativeTimelineOAMBaseBlock
+    + NativeTimelineOAMBlocks;
+static const uint NativeTimelineLCDVRAMBaseBlock = NativeTimelineFIFOBaseBlock
+    + NativeTimelineFIFOBlocks;
+static const uint NativeTimelineBlockCount = NativeTimelineLCDVRAMBaseBlock
+    + NativeTimelineLCDVRAMBlocks;
+static const uint NativeTimelineIndexBase = NativeRouteBase + 2u * 192u;
+static const uint NativeTimelinePayloadBase = NativeTimelineIndexBase
+    + NativeTimelineBlockCount * 192u;
+static const uint NativeTimelinePayloadStride = 512u / 4u;
 
 static const uint NativeDispCnt = 0u;
 static const uint NativeLayerEnable = 1u;
@@ -2292,21 +2317,34 @@ uint NativeEngine(uint engine, uint section, uint word)
 {
     return ResultValue[NativeEngineBase + engine * NativeEngineWords + section + word];
 }
-uint NativeByte(uint base, uint size, uint address)
+uint NativeTimelineVersion(uint block)
+{
+    uint line = InterpSpanCount;
+    if (line >= 192u || block >= NativeTimelineBlockCount)
+        return 0u;
+    return ResultValue[
+        NativeTimelineIndexBase + line * NativeTimelineBlockCount + block];
+}
+uint NativeByte(uint base, uint size, uint address, uint timelineBlockBase)
 {
     uint offset = 0u;
     uint word = 0u;
     if (size != 0u)
     {
         offset = address & (size - 1u);
-        word = ResultValue[base + (offset >> 2u)];
+        uint version = NativeTimelineVersion(timelineBlockBase + offset / 512u);
+        word = version == 0u
+            ? ResultValue[base + (offset >> 2u)]
+            : ResultValue[NativeTimelinePayloadBase
+                + (version - 1u) * NativeTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
     }
     return (word >> ((offset & 3u) * 8u)) & 0xFFu;
 }
-uint Native16(uint base, uint size, uint address)
+uint Native16(uint base, uint size, uint address, uint timelineBlockBase)
 {
-    return NativeByte(base, size, address)
-        | (NativeByte(base, size, address + 1u) << 8u);
+    return NativeByte(base, size, address, timelineBlockBase)
+        | (NativeByte(base, size, address + 1u, timelineBlockBase) << 8u);
 }
 uint NativeBGSize(uint engine) { return ResultValue[16u + engine * 4u]; }
 uint NativeOBJSize(uint engine) { return ResultValue[17u + engine * 4u]; }
@@ -2315,51 +2353,79 @@ uint NativeOBJExtSize(uint engine) { return ResultValue[19u + engine * 4u]; }
 uint NativeBG8(uint engine, uint address)
 {
     return NativeByte(NativeEngineBase + engine * NativeEngineWords,
-        NativeBGSize(engine), address);
+        NativeBGSize(engine), address,
+        NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks);
 }
 uint NativeBG16(uint engine, uint address)
 {
     return Native16(NativeEngineBase + engine * NativeEngineWords,
-        NativeBGSize(engine), address);
+        NativeBGSize(engine), address,
+        NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks);
 }
 uint NativeOBJ8(uint engine, uint address)
 {
     return NativeByte(NativeEngineBase + engine * NativeEngineWords + 131072u,
-        NativeOBJSize(engine), address);
+        NativeOBJSize(engine), address,
+        NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks
+            + NativeTimelineEngineBGBlocks);
 }
 uint NativeOBJ16(uint engine, uint address)
 {
     return Native16(NativeEngineBase + engine * NativeEngineWords + 131072u,
-        NativeOBJSize(engine), address);
+        NativeOBJSize(engine), address,
+        NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks
+            + NativeTimelineEngineBGBlocks);
 }
 uint NativeBGExt16(uint engine, uint address)
 {
     return Native16(NativeEngineBase + engine * NativeEngineWords + 196608u,
-        NativeBGExtSize(engine), address);
+        NativeBGExtSize(engine), address,
+        NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks
+            + NativeTimelineEngineBGBlocks + NativeTimelineEngineOBJBlocks);
 }
 uint NativeOBJExt16(uint engine, uint address)
 {
     return Native16(NativeEngineBase + engine * NativeEngineWords + 204800u,
-        NativeOBJExtSize(engine), address);
+        NativeOBJExtSize(engine), address,
+        NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks
+            + NativeTimelineEngineBGBlocks + NativeTimelineEngineOBJBlocks
+            + NativeTimelineEngineBGExtBlocks);
 }
 uint NativePalette16(uint engine, uint address)
 {
-    return Native16(NativePaletteBase + (engine == 0u ? 0u : 256u), 0x400u, address);
+    return Native16(
+        NativePaletteBase + (engine == 0u ? 0u : 256u), 0x400u, address,
+        NativeTimelinePaletteBaseBlock + engine * 2u);
 }
 uint NativeOAM16(uint engine, uint address)
 {
-    return Native16(NativeOamBase + engine * 256u, 0x400u, address);
+    return Native16(
+        NativeOamBase + engine * 256u, 0x400u, address,
+        NativeTimelineOAMBaseBlock + engine * 2u);
 }
 uint NativeFIFO16(uint index)
 {
-    uint word = ResultValue[NativeFifoBase + (index >> 1u)];
-    return (word >> ((index & 1u) * 16u)) & 0xFFFFu;
+    uint offset = (index & 0xFFu) * 2u;
+    uint version = NativeTimelineVersion(NativeTimelineFIFOBaseBlock);
+    uint word = version == 0u
+        ? ResultValue[NativeFifoBase + (offset >> 2u)]
+        : ResultValue[NativeTimelinePayloadBase
+            + (version - 1u) * NativeTimelinePayloadStride
+            + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 2u) * 8u)) & 0xFFFFu;
 }
 uint NativeLCD16(uint bank, uint address)
 {
-    uint word = BlendContinuationState[FramebufferStride + bank * 32768u
-        + (address >> 2u)];
-    return (word >> ((address & 3u) * 8u)) & 0xFFFFu;
+    uint offset = address & 0x1FFFFu;
+    uint version = NativeTimelineVersion(
+        NativeTimelineLCDVRAMBaseBlock + bank * 256u + offset / 512u);
+    uint word = version == 0u
+        ? BlendContinuationState[FramebufferStride + bank * 32768u
+            + (offset >> 2u)]
+        : ResultValue[NativeTimelinePayloadBase
+            + (version - 1u) * NativeTimelinePayloadStride
+            + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFFFu;
 }
 
 uint NativePack(uint r, uint g, uint b, uint a)
@@ -2842,7 +2908,20 @@ void main(uint3 id : SV_DispatchThreadID)
 void main(uint3 id : SV_DispatchThreadID)
 {
     if(id.x>=ScreenWidth||id.y>=ScreenHeight*2u)return;
-    uint screen=id.y/ScreenHeight,scaledY=id.y-screen*ScreenHeight,x=id.x/ScaleFactor,line=scaledY/ScaleFactor;
+    bool linePass=(DispatchPad&8u)!=0u;
+    uint screen,scaledY;
+    if(linePass)
+    {
+        if(id.y>=2u)return;
+        screen=id.y;
+        scaledY=InterpSpanCount*ScaleFactor;
+    }
+    else
+    {
+        screen=id.y/ScreenHeight;
+        scaledY=id.y-screen*ScreenHeight;
+    }
+    uint x=id.x/ScaleFactor,line=scaledY/ScaleFactor;
     uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
     uint color=ResultValue[13u]==0u?0u:NativeDisplay(engine,line,(int)x,id.x,scaledY);
     uint bgra8=NativeBGRA8(color);

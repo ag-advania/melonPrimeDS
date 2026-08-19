@@ -54,12 +54,14 @@ constexpr u32 kStaticSrvCount = 5;
 constexpr u32 kTextureSrvCount = 1;
 constexpr u32 kUavTableSize = 14;
 constexpr u32 kStructuredPixelCount = 256u * 192u;
-constexpr u32 kCompositionInputDwords =
+constexpr u32 kStructuredCompositionInputDwords =
     (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
 constexpr u64 kNativeGPU2DInputBytes = GPU2DNative::PackedFrameBytes();
 constexpr u64 kNativeGPU2DOutputBytes =
     static_cast<u64>(GPU2DNative::ScreenPixelCount) * 2ull * sizeof(u32);
 constexpr u64 kNativeCaptureWords = (4ull * 128ull * 1024ull) / sizeof(u32);
+constexpr u32 kCompositionInputDwords = std::max<u32>(
+    kStructuredCompositionInputDwords, GPU2DNative::PackedFrameWords);
 constexpr u32 kCompositorFramesInFlight = 3;
 static_assert(kNativeGPU2DInputBytes
         <= static_cast<u64>(kCompositionInputDwords) * sizeof(u32),
@@ -457,6 +459,7 @@ void DX12Renderer3D::Stop()
     FinalFBHasValidFrame = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    PublishedOutputGeneration = 0;
     NativeCaptureStateInitialized = false;
 }
 
@@ -473,6 +476,7 @@ void DX12Renderer3D::Reset()
     FinalFBHasValidFrame = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    PublishedOutputGeneration = 0;
     NativeCaptureStateInitialized = false;
     ColorBuffer.fill(0);
     if (ComposedOutput)
@@ -791,6 +795,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     CompositorUavCpu.fill({});
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    PublishedOutputGeneration = 0;
     FinalFBHasValidFrame = false;
 }
 
@@ -3117,6 +3122,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         slot.Frame.Generation = generation;
         state->PublishedSlot = static_cast<int>(slotIndex);
         ComposedGeneration = generation;
+        PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
     }
     return true;
@@ -3140,8 +3146,6 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const u32* expectedBottom)
 {
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
-    const bool skipExactValidationTransition = exactValidation
-        && GPU2DNative::IsExactValidationSavestateTransitionFrame(generation);
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
@@ -3149,8 +3153,6 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     }
     if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
         return false;
-    if (ComposedOutputValid && ComposedGeneration == generation)
-        return true;
     const std::shared_ptr<OutputState> state = ComposedOutput;
     if (!Context || !PipelineGPU2DNative || !state || !FinalFBBuffer)
     {
@@ -3288,14 +3290,6 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     constants.TexWidth = finalFBValid ? 1u : 0u;
     constants.Pad = (slot.DirectTexture ? 1u : 0u)
         | (exactValidation ? 2u : 0u);
-    SetDispatchConstants(list, constants);
-    list->SetPipelineState(PipelineGPU2DNative.Get());
-    list->Dispatch(
-        DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
-        DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
-        1u);
-    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount);
-
     if (input.CaptureEnable != 0u)
     {
         if (!PipelineGPU2DNativeCapture)
@@ -3303,18 +3297,44 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             SetRuntimeFailure("native GPU2D capture pipeline is unavailable");
             return false;
         }
-        InsertUavBarrier(list, BlendStateBuffer.Get());
-        list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+        // Capture is an intra-frame feedback loop: render and commit one
+        // native line before the capture line is evaluated. A full-screen
+        // native dispatch followed by capture writes would expose future
+        // memory to earlier lines.
         for (u32 lineNumber = 0; lineNumber < GPU2DNative::ScreenHeight; ++lineNumber)
         {
             constants.InterpSpanCount = lineNumber;
-            constants.Pad = 4u; // capture-only, one logical line
+            constants.Pad = (slot.DirectTexture ? 1u : 0u)
+                | (exactValidation ? 2u : 0u) | 8u; // native one-line pass
             SetDispatchConstants(list, constants);
+            list->SetPipelineState(PipelineGPU2DNative.Get());
             list->Dispatch(
                 DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
             InsertUavBarrier(list, BlendStateBuffer.Get());
-            DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount);
+
+            constants.Pad = 4u; // capture-only, one logical line
+            SetDispatchConstants(list, constants);
+            list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+            list->Dispatch(
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
+            InsertUavBarrier(list, BlendStateBuffer.Get());
+            DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 2u);
         }
+    }
+    else
+    {
+        list->SetPipelineState(PipelineGPU2DNative.Get());
+        for (u32 lineNumber = 0; lineNumber < GPU2DNative::ScreenHeight; ++lineNumber)
+        {
+            constants.InterpSpanCount = lineNumber;
+            constants.Pad = (slot.DirectTexture ? 1u : 0u)
+                | (exactValidation ? 2u : 0u) | 8u; // native one-line pass
+            SetDispatchConstants(list, constants);
+            list->Dispatch(
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
+        }
+        DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount,
+            GPU2DNative::ScreenHeight);
     }
 
     if (slot.DirectTexture)
@@ -3334,7 +3354,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
     }
 
-    if (exactValidation && !skipExactValidationTransition)
+    if (exactValidation)
     {
         InsertUavBarrier(list, slot.Composed.Get());
         TransitionBuffer(
@@ -3364,7 +3384,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         return false;
     }
 
-    if (exactValidation && !skipExactValidationTransition)
+    if (exactValidation)
     {
         slot.Commands.WaitIdle();
         D3D12_RANGE readRange{0, static_cast<SIZE_T>(kNativeGPU2DOutputBytes)};
@@ -3409,13 +3429,17 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                     "DX12 native GPU2D exact mismatch frame=%llu total=%u top=%u bottom=%u "
                     "first=screen%u(%u,%u) expected=0x%08X actual=0x%08X engine=%u "
                     "DispCnt=0x%08X Layer=0x%08X BGCnt0=0x%08X WinRegs=0x%08X "
-                    "BlendCnt=0x%08X Master=0x%08X Capture=0x%08X\n",
+                    "BlendCnt=0x%08X Master=0x%08X Screens=%u/%u LineScreens=%u "
+                    "ExpectedRow8=%08X/%08X Capture=0x%08X\n",
                     static_cast<unsigned long long>(generation),
                     result.TotalMismatchCount, result.TopMismatchCount,
                     result.BottomMismatchCount, sample.Screen, sample.X, sample.Y,
                     sample.Expected, sample.Actual, engine, state.DispCnt,
                     state.LayerEnable, state.BGCnt[0], state.WinRegs,
-                    state.BlendCnt, state.MasterBrightness, state.CaptureCnt);
+                    state.BlendCnt, state.MasterBrightness, input.ScreensEnabled,
+                    input.ScreenSwap, state.ScreensEnabled,
+                    expectedTop[8u * GPU2DNative::ScreenWidth],
+                    expectedBottom[8u * GPU2DNative::ScreenWidth], state.CaptureCnt);
             }
             SetRuntimeFailure("native GPU2D exact differential mismatch");
             return false;
@@ -3428,6 +3452,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         slot.Frame.Generation = generation;
         state->PublishedSlot = static_cast<int>(slotIndex);
         ComposedGeneration = generation;
+        PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
     }
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFrames);

@@ -130,12 +130,37 @@ bool RunUploadPlanVectors()
     return passed;
 }
 
+bool RunFrameIdentityVectors()
+{
+    bool passed = true;
+    passed &= Require(IsCurrentFrame(1u, 1u, 1u),
+        "a completed native frame was not accepted for its own generation");
+    passed &= Require(!IsCurrentFrame(2u, 1u, 1u),
+        "a native frame from the prior emulated generation was reused");
+    passed &= Require(!IsCurrentFrame(2u, 0u, 2u),
+        "a non-native frame was treated as a completed native frame");
+    passed &= Require(IsCurrentFrame(3u, 3u, 3u),
+        "native production did not become current after switching back on");
+    // The mandatory lifecycle is normal native -> CaptureEnable/non-native ->
+    // normal native. The middle frame must not retain frame 1's identity.
+    const u64 normalFrame = 11u;
+    const u64 captureFrame = normalFrame + 1u;
+    const u64 resumedFrame = captureFrame + 1u;
+    passed &= Require(IsCurrentFrame(normalFrame, normalFrame, normalFrame),
+        "normal native frame was not accepted before CaptureEnable");
+    passed &= Require(!IsCurrentFrame(captureFrame, 0u, captureFrame),
+        "CaptureEnable/non-native frame retained a prior native identity");
+    passed &= Require(IsCurrentFrame(resumedFrame, resumedFrame, resumedFrame),
+        "native frame did not resume with a new current identity");
+    return passed;
+}
+
 } // namespace
 
 int main()
 {
     const bool passed = RunPackVectors() && RunCompareVectors()
-        && RunUploadPlanVectors();
+        && RunUploadPlanVectors() && RunFrameIdentityVectors();
     std::fprintf(stderr, "%s: GPU2D native contract vectors\n", passed ? "PASS" : "FAIL");
     return passed ? 0 : 1;
 }

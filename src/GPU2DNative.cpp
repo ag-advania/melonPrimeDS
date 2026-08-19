@@ -27,15 +27,6 @@ bool ExactValidationEnabled() noexcept
     return enabled;
 }
 
-bool IsExactValidationSavestateTransitionFrame(u64 frame) noexcept
-{
-    static const bool diagnosticSavestate = [] {
-        const char* value = std::getenv("MELONPRIME_TEST_SAVESTATE");
-        return value && value[0] != '\0';
-    }();
-    return diagnosticSavestate && frame == 1u;
-}
-
 namespace
 {
 void MarkDirtyRange(FrameInput& input, u32 offset, u32 size) noexcept
@@ -246,6 +237,99 @@ void CopyMappedVRAMBlocks(
         MarkDirtyRange(input, packedOffset + offset, blockSize);
     }
 }
+
+u32 AppendTimelineDelta(FrameInput& input, const u8* source) noexcept
+{
+    if (!source || input.TimelineDeltaCount >= MaxMemoryDeltas)
+    {
+        input.TimelineOverflow = 1u;
+        return 0u;
+    }
+
+    const u32 version = ++input.TimelineDeltaCount;
+    std::memcpy(
+        input.TimelinePayload.data()
+            + static_cast<std::size_t>(version - 1u) * DirtyBlockBytes,
+        source,
+        DirtyBlockBytes);
+    MarkDirtyRange(
+        input,
+        PackedTimelinePayloadBase * sizeof(u32)
+            + (version - 1u) * DirtyBlockBytes,
+        DirtyBlockBytes);
+    return version;
+}
+
+template <u32 MappingBytes>
+void CaptureMappedMemoryBlocks(
+    FrameInput& input,
+    std::array<u32, TimelineBlockCount>& currentVersions,
+    u8* current,
+    u32 size,
+    const u32* mappings,
+    u32 mappingCount,
+    const melonDS::GPU& gpu,
+    u32 blockBase) noexcept
+{
+    std::array<u8, DirtyBlockBytes> source{};
+    for (u32 offset = 0; offset < size; offset += DirtyBlockBytes)
+    {
+        source.fill(0u);
+        const u32 blockSize = std::min(DirtyBlockBytes, size - offset);
+        for (u32 blockOffset = 0; blockOffset < blockSize; blockOffset += sizeof(u64))
+        {
+            const u64 value = ReadMappedWord<MappingBytes>(
+                gpu, mappings, mappingCount, offset + blockOffset);
+            std::memcpy(source.data() + blockOffset, &value, sizeof(value));
+        }
+
+        if (std::memcmp(current + offset, source.data(), blockSize) == 0)
+            continue;
+
+        const u32 block = blockBase + offset / DirtyBlockBytes;
+        if (block >= currentVersions.size())
+        {
+            input.TimelineOverflow = 1u;
+            continue;
+        }
+        const u32 version = AppendTimelineDelta(input, source.data());
+        if (version == 0u)
+            continue;
+        std::memcpy(current + offset, source.data(), blockSize);
+        currentVersions[block] = version;
+    }
+}
+
+void CaptureDirectMemoryBlocks(
+    FrameInput& input,
+    std::array<u32, TimelineBlockCount>& currentVersions,
+    u8* current,
+    const u8* source,
+    u32 size,
+    u32 blockBase) noexcept
+{
+    std::array<u8, DirtyBlockBytes> block{};
+    for (u32 offset = 0; offset < size; offset += DirtyBlockBytes)
+    {
+        const u32 blockSize = std::min(DirtyBlockBytes, size - offset);
+        block.fill(0u);
+        std::memcpy(block.data(), source + offset, blockSize);
+        if (std::memcmp(current + offset, block.data(), blockSize) == 0)
+            continue;
+
+        const u32 blockIndex = blockBase + offset / DirtyBlockBytes;
+        if (blockIndex >= currentVersions.size())
+        {
+            input.TimelineOverflow = 1u;
+            continue;
+        }
+        const u32 version = AppendTimelineDelta(input, block.data());
+        if (version == 0u)
+            continue;
+        std::memcpy(current + offset, block.data(), blockSize);
+        currentVersions[blockIndex] = version;
+    }
+}
 }
 
 FrameRecorder::FrameRecorder(const melonDS::GPU& gpu) noexcept
@@ -257,8 +341,17 @@ void FrameRecorder::Reset() noexcept
 {
     Input = {};
     Valid = false;
-    EngineLineSeen[0] = false;
-    EngineLineSeen[1] = false;
+    LineSeen.fill(false);
+    EngineLineCount[0] = 0;
+    EngineLineCount[1] = 0;
+    CurrentEngine[0] = {};
+    CurrentEngine[1] = {};
+    CurrentPalette.fill(0u);
+    CurrentOAM.fill(0u);
+    CurrentDisplayFIFO.fill(0u);
+    CurrentLCDVRAM.fill(0u);
+    CurrentTimelineVersion.fill(0u);
+    MemoryBaselineReady = false;
 }
 
 void FrameRecorder::BeginFrame(u64 frame) noexcept
@@ -301,24 +394,182 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         PackedLinesWords * sizeof(u32));
     MarkDirtyRange(Input, PackedRouteBase * sizeof(u32),
         PackedRouteWords * sizeof(u32));
-    // A display-capture write is visible to later scanlines, not to the
-    // scanline whose display read happened before DoCapture(). Keep the
-    // frame-start LCD mirror here; the core owns the final VRAM state that is
-    // copied into the next frame's snapshot.
-    for (u32 bank = 0; bank < 4u; ++bank)
+    Input.TimelineDeltaCount = 0u;
+    Input.TimelineOverflow = 0u;
+    std::fill(Input.TimelineIndex.begin(), Input.TimelineIndex.end(), 0u);
+    MemoryBaselineReady = false;
+    CurrentTimelineVersion.fill(0u);
+    LineSeen.fill(false);
+    EngineLineCount[0] = 0;
+    EngineLineCount[1] = 0;
+    Valid = false;
+}
+
+void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
+{
+    if (line >= ScreenHeight)
+        return;
+
+    if (!MemoryBaselineReady || line == 0u)
     {
+        // The baseline is captured before line 0 is evaluated. This is the
+        // only full snapshot; every later line carries only changed blocks.
+        SnapshotEngine(0u);
+        SnapshotEngine(1u);
+        CopyChangedBlocks(
+            Input, Input.Palette.data(), GPU.Palette,
+            static_cast<u32>(Input.Palette.size()), PackedPaletteBase * sizeof(u32));
+        CopyChangedBlocks(
+            Input, Input.OAM.data(), GPU.OAM,
+            static_cast<u32>(Input.OAM.size()), PackedOAMBase * sizeof(u32));
         CopyChangedBlocks(
             Input,
-            Input.LCDVRAM.data()
-                + static_cast<std::size_t>(bank) * 128u * 1024u,
-            GPU.VRAM[bank],
-            128u * 1024u,
-            PackedLCDVRAMBase * sizeof(u32)
-                + bank * 128u * 1024u);
+            reinterpret_cast<u8*>(Input.DisplayFIFO.data()),
+            reinterpret_cast<const u8*>(GPU.DispFIFOBuffer),
+            static_cast<u32>(Input.DisplayFIFO.size() * sizeof(u16)),
+            PackedFIFOBase * sizeof(u32));
+        for (u32 bank = 0; bank < 4u; ++bank)
+        {
+            CopyChangedBlocks(
+                Input,
+                Input.LCDVRAM.data()
+                    + static_cast<std::size_t>(bank) * 128u * 1024u,
+                GPU.VRAM[bank],
+                128u * 1024u,
+                PackedLCDVRAMBase * sizeof(u32)
+                    + bank * 128u * 1024u);
+        }
+
+        CurrentEngine[0] = Input.Engine[0];
+        CurrentEngine[1] = Input.Engine[1];
+        std::memcpy(CurrentPalette.data(), Input.Palette.data(), CurrentPalette.size());
+        std::memcpy(CurrentOAM.data(), Input.OAM.data(), CurrentOAM.size());
+        std::memcpy(
+            CurrentDisplayFIFO.data(), Input.DisplayFIFO.data(),
+            CurrentDisplayFIFO.size() * sizeof(u16));
+        std::memcpy(CurrentLCDVRAM.data(), Input.LCDVRAM.data(), CurrentLCDVRAM.size());
+        CurrentTimelineVersion.fill(0u);
+        MemoryBaselineReady = true;
     }
-    EngineLineSeen[0] = false;
-    EngineLineSeen[1] = false;
-    Valid = false;
+    else
+    {
+        CaptureMappedMemoryForLine(
+            0u, 0u, CurrentEngine[0].BGVRAM.data(), CurrentEngine[0].BGSize,
+            GPU.VRAMMap_ABG, 32u, 16u * 1024u,
+            TimelineEngineBaseBlock + 0u);
+        CaptureMappedMemoryForLine(
+            0u, 1u, CurrentEngine[0].OBJVRAM.data(), CurrentEngine[0].OBJSize,
+            GPU.VRAMMap_AOBJ, 16u, 16u * 1024u,
+            TimelineEngineBaseBlock + TimelineEngineBGBlocks);
+        CaptureMappedMemoryForLine(
+            0u, 2u, CurrentEngine[0].BGExtendedPalette.data(),
+            CurrentEngine[0].BGExtendedPaletteSize, GPU.VRAMMap_ABGExtPal, 4u,
+            8u * 1024u,
+            TimelineEngineBaseBlock + TimelineEngineBGBlocks + TimelineEngineOBJBlocks);
+        CaptureMappedMemoryForLine(
+            0u, 3u, CurrentEngine[0].OBJExtendedPalette.data(),
+            CurrentEngine[0].OBJExtendedPaletteSize, &GPU.VRAMMap_AOBJExtPal, 1u,
+            8u * 1024u,
+            TimelineEngineBaseBlock + TimelineEngineBGBlocks + TimelineEngineOBJBlocks
+                + TimelineEngineBGExtBlocks);
+
+        const u32 engine1Base = TimelineEngineBaseBlock + TimelineEngineBlocks;
+        CaptureMappedMemoryForLine(
+            1u, 0u, CurrentEngine[1].BGVRAM.data(), CurrentEngine[1].BGSize,
+            GPU.VRAMMap_BBG, 8u, 16u * 1024u, engine1Base + 0u);
+        CaptureMappedMemoryForLine(
+            1u, 1u, CurrentEngine[1].OBJVRAM.data(), CurrentEngine[1].OBJSize,
+            GPU.VRAMMap_BOBJ, 8u, 16u * 1024u,
+            engine1Base + TimelineEngineBGBlocks);
+        CaptureMappedMemoryForLine(
+            1u, 2u, CurrentEngine[1].BGExtendedPalette.data(),
+            CurrentEngine[1].BGExtendedPaletteSize, GPU.VRAMMap_BBGExtPal, 4u,
+            8u * 1024u,
+            engine1Base + TimelineEngineBGBlocks + TimelineEngineOBJBlocks);
+        CaptureMappedMemoryForLine(
+            1u, 3u, CurrentEngine[1].OBJExtendedPalette.data(),
+            CurrentEngine[1].OBJExtendedPaletteSize, &GPU.VRAMMap_BOBJExtPal, 1u,
+            8u * 1024u,
+            engine1Base + TimelineEngineBGBlocks + TimelineEngineOBJBlocks
+                + TimelineEngineBGExtBlocks);
+
+        CaptureDirectMemoryForLine(
+            GPU.Palette, CurrentPalette.data(),
+            static_cast<u32>(CurrentPalette.size()), TimelinePaletteBaseBlock);
+        CaptureDirectMemoryForLine(
+            GPU.OAM, CurrentOAM.data(),
+            static_cast<u32>(CurrentOAM.size()), TimelineOAMBaseBlock);
+        CaptureDirectMemoryForLine(
+            reinterpret_cast<const u8*>(GPU.DispFIFOBuffer),
+            reinterpret_cast<u8*>(CurrentDisplayFIFO.data()),
+            static_cast<u32>(CurrentDisplayFIFO.size() * sizeof(u16)),
+            TimelineFIFOBaseBlock);
+        for (u32 bank = 0; bank < 4u; ++bank)
+        {
+            CaptureDirectMemoryForLine(
+                GPU.VRAM[bank],
+                CurrentLCDVRAM.data()
+                    + static_cast<std::size_t>(bank) * 128u * 1024u,
+                128u * 1024u,
+                TimelineLCDVRAMBaseBlock + bank * (128u * 1024u / DirtyBlockBytes));
+        }
+    }
+
+    if (line < ScreenHeight)
+        FillTimelineLine(line);
+}
+
+void FrameRecorder::CaptureMappedMemoryForLine(
+    u32 engine,
+    u32 section,
+    u8* current,
+    u32 size,
+    const u32* mappings,
+    u32 mappingCount,
+    u32 mappingBytes,
+    u32 blockBase) noexcept
+{
+    (void)engine;
+    (void)section;
+    if (mappingBytes == 16u * 1024u)
+    {
+        CaptureMappedMemoryBlocks<16u * 1024u>(
+            Input, CurrentTimelineVersion, current, size, mappings, mappingCount,
+            GPU, blockBase);
+    }
+    else
+    {
+        CaptureMappedMemoryBlocks<8u * 1024u>(
+            Input, CurrentTimelineVersion, current, size, mappings, mappingCount,
+            GPU, blockBase);
+    }
+}
+
+void FrameRecorder::CaptureDirectMemoryForLine(
+    const u8* source,
+    u8* current,
+    u32 size,
+    u32 blockBase) noexcept
+{
+    CaptureDirectMemoryBlocks(
+        Input, CurrentTimelineVersion, current, source, size, blockBase);
+}
+
+void FrameRecorder::FillTimelineLine(u32 line) noexcept
+{
+    if (line >= ScreenHeight)
+        return;
+    u32* destination = Input.TimelineIndex.data()
+        + static_cast<std::size_t>(line) * TimelineBlockCount;
+    std::memcpy(
+        destination,
+        CurrentTimelineVersion.data(),
+        TimelineBlockCount * sizeof(u32));
+    MarkDirtyRange(
+        Input,
+        PackedTimelineBase * sizeof(u32)
+            + line * TimelineBlockCount * sizeof(u32),
+        TimelineBlockCount * sizeof(u32));
 }
 
 void FrameRecorder::CaptureLine(
@@ -330,8 +581,12 @@ void FrameRecorder::CaptureLine(
     if (engine >= 2u || line >= ScreenHeight)
         return;
 
-    if (line == 0u)
-        EngineLineSeen[engine] = true;
+    const std::size_t lineIndex = static_cast<std::size_t>(engine) * ScreenHeight + line;
+    if (!LineSeen[lineIndex])
+    {
+        LineSeen[lineIndex] = true;
+        ++EngineLineCount[engine];
+    }
     CopyLineState(
         Input.Lines[engine * ScreenHeight + line],
         gpu2D,
@@ -343,6 +598,8 @@ void FrameRecorder::CaptureLine(
     state.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
     state.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
     state.ScreenSwap = screenSwap ? 1u : 0u;
+    if (engine == 0u)
+        Input.CaptureEnable |= state.CaptureEnable;
 
     // This is the emulation-time LCD assignment.  Present-time POWCNT1 is not
     // authoritative when a title changes routing within a frame.
@@ -397,24 +654,10 @@ void FrameRecorder::SnapshotEngine(u32 engine) noexcept
 
 void FrameRecorder::FinalizeMemory() noexcept
 {
-    if (!EngineLineSeen[0] || !EngineLineSeen[1])
+    if (EngineLineCount[0] != ScreenHeight || EngineLineCount[1] != ScreenHeight)
         return;
-
-    SnapshotEngine(0u);
-    SnapshotEngine(1u);
-
-    CopyChangedBlocks(
-        Input, Input.Palette.data(), GPU.Palette,
-        static_cast<u32>(Input.Palette.size()), PackedPaletteBase * sizeof(u32));
-    CopyChangedBlocks(
-        Input, Input.OAM.data(), GPU.OAM,
-        static_cast<u32>(Input.OAM.size()), PackedOAMBase * sizeof(u32));
-    CopyChangedBlocks(
-        Input,
-        reinterpret_cast<u8*>(Input.DisplayFIFO.data()),
-        reinterpret_cast<const u8*>(GPU.DispFIFOBuffer),
-        static_cast<u32>(Input.DisplayFIFO.size() * sizeof(u16)),
-        PackedFIFOBase * sizeof(u32));
+    if (!MemoryBaselineReady)
+        CaptureMemoryForLine(0u);
     if (HasDirtyOverlap(
             Input,
             PackedEngineBase * sizeof(u32),
@@ -437,10 +680,10 @@ void FrameRecorder::FinalizeMemory() noexcept
         ++Input.Generation.CaptureGeneration;
     }
     Input.CaptureCnt = GPU.CaptureCnt;
-    Input.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
+    Input.CaptureEnable |= GPU.CaptureEnable ? 1u : 0u;
     Input.ScreenSwap = GPU.ScreenSwap ? 1u : 0u;
     Input.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
-    Valid = true;
+    Valid = Input.TimelineOverflow == 0u;
 }
 
 } // namespace melonDS::GPU2DNative

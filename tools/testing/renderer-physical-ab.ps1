@@ -38,6 +38,7 @@ param(
     [ValidateSet('On', 'Off')]
     [string]$Hud = 'On',
     [switch]$AllowUnverifiedBinary,
+    [switch]$RequireCleanProvenance,
     [int]$WarmupSeconds = 15,
     [int]$MeasuredSeconds = 20,
     [int]$GraceSeconds = 15
@@ -94,6 +95,7 @@ if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Executable not f
 
 $ExpectedSourceHead = $ExpectedSourceHead.ToLowerInvariant()
 $checkoutSourceHead = (git -C "$repo" rev-parse HEAD).Trim().ToLowerInvariant()
+$checkoutBranch = (git -C "$repo" symbolic-ref --quiet --short HEAD 2>$null).Trim()
 $checkoutStatus = @(git -C "$repo" status --porcelain --untracked-files=all)
 $checkoutGitDirty = $checkoutStatus.Count -gt 0
 $executableSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -146,7 +148,7 @@ foreach ($path in @($csv, $frameCsv, $buildInfoStdout, $buildInfoStderr, $stdout
 $buildInfoProcess = $null
 $buildInfoExitCode = -1
 $buildInfoOutput = @()
-if (-not $AllowUnverifiedBinary) {
+if (-not $AllowUnverifiedBinary -or $RequireCleanProvenance) {
     $buildInfoProcess = Start-Process -FilePath $exe -ArgumentList '--build-info-json' -WorkingDirectory $build -Wait -PassThru -RedirectStandardOutput $buildInfoStdout -RedirectStandardError $buildInfoStderr
     $buildInfoProcess.Refresh()
     $buildInfoExitCode = [int]$buildInfoProcess.ExitCode
@@ -168,7 +170,20 @@ if ($actualSourceHead -ne $ExpectedSourceHead) {
 if ($checkoutSourceHead -ne $ExpectedSourceHead) {
     [void]$provenanceFailures.Add("checkout HEAD=$checkoutSourceHead expected=$ExpectedSourceHead")
 }
-if ($provenanceFailures.Count -gt 0 -and -not $AllowUnverifiedBinary) {
+if ($RequireCleanProvenance) {
+    if ($checkoutBranch) {
+        [void]$provenanceFailures.Add("checkout is attached to branch=$checkoutBranch; final acceptance requires detached HEAD")
+    }
+    if ($checkoutGitDirty) {
+        [void]$provenanceFailures.Add('checkout is dirty; final acceptance requires no tracked or untracked changes')
+    }
+    $hasGitDirtyField = $null -ne $buildInfo -and ($buildInfo.PSObject.Properties.Name -contains 'git_dirty')
+    if (-not $hasGitDirtyField -or $buildInfo.git_dirty -ne $false) {
+        $binaryDirtyValue = if ($hasGitDirtyField) { [string]$buildInfo.git_dirty } else { 'missing' }
+        [void]$provenanceFailures.Add("binary git_dirty=$binaryDirtyValue; final acceptance requires false")
+    }
+}
+if ($provenanceFailures.Count -gt 0 -and (-not $AllowUnverifiedBinary -or $RequireCleanProvenance)) {
     throw "Binary provenance verification failed before process launch: $([string]::Join('; ', $provenanceFailures))"
 }
 $provenanceVerified = $provenanceFailures.Count -eq 0
@@ -549,10 +564,12 @@ $manifestObject = [ordered]@{
         build_info_exit_code = $buildInfoExitCode
         provenance_verified = $provenanceVerified
         allow_unverified_binary = [bool]$AllowUnverifiedBinary
+        require_clean_provenance = [bool]$RequireCleanProvenance
         verification_failures = @($provenanceFailures)
         checkout_git_dirty = $checkoutGitDirty
+        checkout_branch = $checkoutBranch
         checkout_git_status_lines = $checkoutStatus
-        git_dirty_policy = 'record_only; benchmark source SHA and binary SHA must still match'
+        git_dirty_policy = if ($RequireCleanProvenance) { 'required false for checkout and binary' } else { 'record_only; benchmark source SHA and binary SHA must still match' }
         binary_build_info = $buildInfoJson
         build_gates = $buildGates
     }
@@ -630,6 +647,7 @@ rom_sha256=$romSha256
 build_info_exit_code=$buildInfoExitCode
 provenance_verified=$($provenanceVerified.ToString().ToLowerInvariant())
 allow_unverified_binary=$($AllowUnverifiedBinary.IsPresent.ToString().ToLowerInvariant())
+require_clean_provenance=$($RequireCleanProvenance.IsPresent.ToString().ToLowerInvariant())
 build_type=$($buildInfo.build_type)
 renderer_perf_telemetry=$($buildInfo.renderer_perf_telemetry)
 vulkan_latency_capture=$($buildInfo.vulkan_latency_capture)
@@ -637,7 +655,8 @@ gpu_memory_telemetry=$($buildInfo.gpu_memory_telemetry)
 developer_features=$($buildInfo.developer_features)
 binary_git_dirty=$($buildInfo.git_dirty)
 checkout_git_dirty=$($checkoutGitDirty.ToString().ToLowerInvariant())
-git_dirty_policy=record_only; benchmark source SHA and binary SHA must still match
+checkout_branch=$checkoutBranch
+git_dirty_policy=$(if ($RequireCleanProvenance) { 'required false for checkout and binary' } else { 'record_only; benchmark source SHA and binary SHA must still match' })
 executable=$exe
 csv=$csv
 per_frame_csv=$frameCsv

@@ -98,6 +98,10 @@ public:
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
     [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
+    [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
+    {
+        return PublishedOutputGeneration;
+    }
     [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept
     {
         return RuntimeFailureReason;
@@ -510,6 +514,7 @@ private:
     bool NativeReadbackSubmitted = false;
     bool FinalFBHasValidFrame = false;
     u64 ComposedGeneration = 0;
+    u64 PublishedOutputGeneration = 0;
     bool ComposedOutputValid = false;
     bool NativeCaptureStateInitialized = false;
     // Resource lifetime generation is owned by the renderer and advances only

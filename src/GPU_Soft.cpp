@@ -19,105 +19,14 @@
 #include "NDS.h"
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
+#include "GPU2DFrameDump.h"
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 #include "MelonPrimeStructuredComposition.h"
 #endif
 
 namespace melonDS
 {
-
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-namespace
-{
-constexpr u32 FrameDumpWidth = 256u;
-constexpr u32 FrameDumpHeight = 192u;
-constexpr u32 FrameDumpPixels = FrameDumpWidth * FrameDumpHeight;
-
-struct FrameDumpHeader
-{
-    char Magic[8];
-    u32 Version;
-    u32 Frame;
-    u32 Width;
-    u32 Height;
-    u64 TopHash;
-    u64 BottomHash;
-};
-
-u64 HashFrame(const u32* pixels) noexcept
-{
-    u64 hash = 1469598103934665603ull;
-    for (u32 i = 0; i < FrameDumpPixels; ++i)
-    {
-        u32 value = pixels[i];
-        for (u32 byte = 0; byte < sizeof(value); ++byte)
-        {
-            hash ^= static_cast<u8>(value);
-            hash *= 1099511628211ull;
-            value >>= 8u;
-        }
-    }
-    return hash;
-}
-
-void DumpSoftwareFrame(const u32* top, const u32* bottom) noexcept
-{
-    static bool initialized = false;
-    static std::FILE* output = nullptr;
-    static u32 frame = 0;
-    static u32 canonical[2u * FrameDumpPixels]{};
-    if (!initialized)
-    {
-        initialized = true;
-        const char* path = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP");
-        if (path && path[0] != '\0')
-            output = std::fopen(path, "wb");
-    }
-    if (!output)
-        return;
-
-    u32 limit = 1u;
-    if (const char* value = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_LIMIT"))
-    {
-        const unsigned long parsed = std::strtoul(value, nullptr, 10);
-        if (parsed != 0ul)
-            limit = static_cast<u32>(parsed);
-    }
-    if (frame >= limit)
-        return;
-
-    const u32* sources[2] = {top, bottom};
-    for (u32 screen = 0; screen < 2u; ++screen)
-    {
-        for (u32 i = 0; i < FrameDumpPixels; ++i)
-        {
-            const u32 color = sources[screen][i];
-            canonical[screen * FrameDumpPixels + i] =
-                (((color >> 16u) & 0xFFu) >> 2u)
-                | ((((color >> 8u) & 0xFFu) >> 2u) << 8u)
-                | (((color & 0xFFu) >> 2u) << 16u);
-        }
-    }
-
-    const FrameDumpHeader header = {
-        {'M', 'P', '2', 'D', 'D', 'U', 'M', 'P'},
-        1u,
-        frame,
-        FrameDumpWidth,
-        FrameDumpHeight,
-        HashFrame(canonical),
-        HashFrame(canonical + FrameDumpPixels),
-    };
-    std::fwrite(&header, sizeof(header), 1, output);
-    std::fwrite(canonical, sizeof(canonical), 1, output);
-    std::fflush(output);
-    ++frame;
-}
-} // namespace
-#endif
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 // Canonical bit layout of the structured 2D contract this renderer publishes.
@@ -160,6 +69,9 @@ void SoftRenderer::Reset()
     NativeGPU2DFrame.Reset();
     NativeGPU2DProducerForFrame = false;
     RecordNativeGPU2DFrameForFrame = false;
+    EmulatedFrameSerial = 0;
+    NativeGPU2DRecordedFrameSerial = 0;
+    GPU2DFallbacks = {};
 
     Rend2D_A->Reset();
     Rend2D_B->Reset();
@@ -205,9 +117,7 @@ void SoftRenderer::Reset()
 
 void SoftRenderer::VBlank()
 {
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    DumpSoftwareFrame(Framebuffer[BackBuffer][0], Framebuffer[BackBuffer][1]);
-#endif
+    DumpGPU2DFrame(Framebuffer[BackBuffer][0], Framebuffer[BackBuffer][1]);
 }
 
 void SoftRenderer::Stop()
@@ -321,33 +231,47 @@ void SoftRenderer::DrawScanline(u32 line)
 {
     const u32 outputLine = line;
 
-    // Latch the producer choice once per emulated frame.  Native GPU2D is
-    // allowed to take ownership only after its pipeline is ready and only for
-    // frames that do not require the legacy CPU capture source.  Exact
-    // validation deliberately keeps the Software pixel path alive as the
-    // oracle; ordinary native frames do not render a CPU BG/OBJ pixel plane.
+    // Latch the producer choice once per emulated frame and invalidate the
+    // previous recorder before making the choice. A frame without a complete
+    // recorder must never be allowed to reuse the prior frame's native output.
     if (GPU.VCount == 0u)
     {
+        ++EmulatedFrameSerial;
         const bool nativeGPU2DReady = CanUseNativeGPU2DForFrame();
         const bool exactValidation = GPU2DNative::ExactValidationEnabled();
+        NativeGPU2DFrame.Reset();
+        SoftwareScreenFrame.fill(0u);
         NativeGPU2DProducerForFrame = nativeGPU2DReady
-            && !exactValidation
-            && !GPU.CaptureEnable;
+            && !exactValidation;
         RecordNativeGPU2DFrameForFrame = nativeGPU2DReady
             && (NativeGPU2DProducerForFrame || exactValidation);
+        if (RecordNativeGPU2DFrameForFrame)
+            NativeGPU2DFrame.BeginFrame(EmulatedFrameSerial);
+
+        // Savestate restore resets the software 2D renderer's per-line OBJ
+        // cache, but the normal scheduler repopulates line 0 during the
+        // preceding VBlank (VCOUNT 262). A state loaded immediately before a
+        // frame has no such preceding event, so refresh the cache at the
+        // actual line-0 latch before the exact oracle or Software output reads
+        // it. Native GPU2D ownership does not use this CPU cache.
+        if (!NativeGPU2DProducerForFrame)
+        {
+            Rend2D_A->DrawSprites(0u);
+            Rend2D_B->DrawSprites(0u);
+        }
     }
     if (NativeGPU2DProducerForFrame && GPU.VCount < GPU2DNative::ScreenHeight)
     {
         const u32 nativeLine = GPU.VCount;
-        if (nativeLine == 0u)
-        {
-            NativeGPU2DFrame.BeginFrame(
-                NativeGPU2DFrame.GetFrame().Generation.Frame + 1u);
-        }
+        NativeGPU2DFrame.CaptureMemoryForLine(nativeLine);
         NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, nativeLine, GPU.ScreenSwap);
         NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, nativeLine, GPU.ScreenSwap);
         if (nativeLine == GPU2DNative::ScreenHeight - 1u)
+        {
             NativeGPU2DFrame.FinalizeMemory();
+            if (NativeGPU2DFrame.IsValid())
+                NativeGPU2DRecordedFrameSerial = EmulatedFrameSerial;
+        }
         return;
     }
 
@@ -381,13 +305,9 @@ void SoftRenderer::DrawScanline(u32 line)
     line = GPU.VCount;
     if (line < 192)
     {
-        if (RecordNativeGPU2DFrameForFrame && line == 0u)
-        {
-            NativeGPU2DFrame.BeginFrame(
-                NativeGPU2DFrame.GetFrame().Generation.Frame + 1u);
-        }
         if (RecordNativeGPU2DFrameForFrame)
         {
+            NativeGPU2DFrame.CaptureMemoryForLine(line);
             NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, line, GPU.ScreenSwap);
             NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, line, GPU.ScreenSwap);
         }
@@ -512,19 +432,25 @@ void SoftRenderer::DrawScanline(u32 line)
         // Gate B oracle: keep the final software LCD result in canonical
         // 6-bit form. Native Vulkan/DX12 never consume these pixels; they
         // evaluate their own display path from the recorded state/mirrors.
-        if (outputLine < GPU2DNative::ScreenHeight)
+        // The native compositor's y coordinate is the emulated VCOUNT line,
+        // not the scheduler argument used as the destination framebuffer row.
+        // They normally match, but a savestate can resume between those two
+        // clocks. Keying the exact oracle by outputLine then leaves a visible
+        // first row unrecorded while the native recorder correctly has VCOUNT
+        // line 0. Keep the oracle in the same line domain as FrameInput.
+        if (line < GPU2DNative::ScreenHeight)
         {
             const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
             const u32 screenB = screenA ^ 1u;
             u32* finalA = SoftwareScreenFrame.data()
                 + static_cast<std::size_t>(screenA)
                     * GPU2DNative::ScreenPixelCount
-                + static_cast<std::size_t>(outputLine)
+                + static_cast<std::size_t>(line)
                     * GPU2DNative::ScreenWidth;
             u32* finalB = SoftwareScreenFrame.data()
                 + static_cast<std::size_t>(screenB)
                     * GPU2DNative::ScreenPixelCount
-                + static_cast<std::size_t>(outputLine)
+                + static_cast<std::size_t>(line)
                     * GPU2DNative::ScreenWidth;
             if (GPU.ScreensEnabled)
             {
@@ -593,7 +519,11 @@ void SoftRenderer::DrawScanline(u32 line)
         EndStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
         if (RecordNativeGPU2DFrameForFrame && outputLine == 191u)
+        {
             NativeGPU2DFrame.FinalizeMemory();
+            if (NativeGPU2DFrame.IsValid())
+                NativeGPU2DRecordedFrameSerial = EmulatedFrameSerial;
+        }
 }
 
 void SoftRenderer::DrawSprites(u32 line)

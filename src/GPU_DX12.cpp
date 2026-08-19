@@ -82,6 +82,16 @@ bool DX12Renderer::Init()
 
 void DX12Renderer::Stop()
 {
+    const auto& fallback = GetGPU2DFallbackCounters();
+    Platform::Log(Platform::LogLevel::Info,
+        "[GPU2DFallbackCounters] backend=DX12 startup_pipeline_fallback=%llu "
+        "runtime_native_unavailable_fallback=%llu capture_software_fallback=%llu "
+        "stale_generation_reject=%llu structured_fallback=%llu\n",
+        static_cast<unsigned long long>(fallback.startup_pipeline_fallback),
+        static_cast<unsigned long long>(fallback.runtime_native_unavailable_fallback),
+        static_cast<unsigned long long>(fallback.capture_software_fallback),
+        static_cast<unsigned long long>(fallback.stale_generation_reject),
+        static_cast<unsigned long long>(fallback.structured_fallback));
     FinishIntelXeLLFrame();
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->WaitForQueueIdle();
@@ -164,7 +174,7 @@ void DX12Renderer::VBlank()
     bool nativeComposed = false;
     const bool nativeProducer = UsesNativeGPU2DProducerForFrame();
     const bool exactValidation = GPU2DNative::ExactValidationEnabled();
-    if (dx12 && HasNativeGPU2DFrame())
+    if (dx12 && HasNativeGPU2DFrameForCurrentEmulatedFrame())
     {
         const GPU2DNative::FrameInput& nativeFrame = GetNativeGPU2DFrame();
         nativeComposed = dx12->ComposeNativeGPU2D(
@@ -184,6 +194,7 @@ void DX12Renderer::VBlank()
         }
         else
         {
+            RecordGPU2DRuntimeNativeUnavailableFallback();
             DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFallbackFrames);
             if (!NativeGPU2DFallbackAnnounced)
             {
@@ -192,6 +203,13 @@ void DX12Renderer::VBlank()
                 NativeGPU2DFallbackAnnounced = true;
             }
         }
+    }
+    else if (dx12 && HasNativeGPU2DFrame())
+    {
+        RecordGPU2DStaleGenerationReject();
+        Platform::Log(Platform::LogLevel::Warn,
+            "DX12 renderer gpu2d=Software fallback=1 reason=stale_generation_reject "
+            "stale_generation_reject=1\n");
     }
     if (nativeProducer && !nativeComposed)
     {
@@ -224,6 +242,9 @@ void DX12Renderer::VBlank()
     }
     if (dx12 && !nativeComposed && !NativeGPU2DFallbackAnnounced)
     {
+        RecordGPU2DRuntimeNativeUnavailableFallback();
+        if (GPU.CaptureEnable && !nativeProducer)
+            RecordGPU2DCaptureSoftwareFallback();
         DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFallbackFrames);
         Platform::Log(Platform::LogLevel::Warn,
             "DX12 renderer gpu2d=Software fallback=1 reason=native frame unavailable\n");
@@ -267,6 +288,7 @@ void DX12Renderer::VBlank()
     const bool composed = dx12->ComposeStructuredOutput(
         planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation,
         view.ContentGeneration);
+    RecordGPU2DStructuredFallback();
     DX12Perf::AddCounter(
         DX12Perf::Counter::StructuredScreenRouteCopyBytes,
         view.ScreenRouteCopyBytes);
@@ -315,6 +337,7 @@ RendererOutput DX12Renderer::GetOutput()
         // during its output transition.
         if (!NativeGPU2DStartupFallbackAnnounced)
         {
+            RecordGPU2DStartupPipelineFallback();
             Platform::Log(Platform::LogLevel::Warn,
                 "requested=DX12 actual=DX12 gpu2d=Software gpu3d=DX12 "
                 "fallback=1 startupFallback=1 reason=pipeline compilation\n");
@@ -337,6 +360,7 @@ RendererOutputLease DX12Renderer::AcquireOutputLease()
         return lease;
     if (!NativeGPU2DStartupFallbackAnnounced)
     {
+        RecordGPU2DStartupPipelineFallback();
         Platform::Log(Platform::LogLevel::Warn,
             "requested=DX12 actual=DX12 gpu2d=Software gpu3d=DX12 "
             "fallback=1 startupFallback=1 reason=pipeline compilation\n");

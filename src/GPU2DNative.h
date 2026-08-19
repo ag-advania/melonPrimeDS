@@ -36,12 +36,15 @@ inline constexpr u32 ScreenPixelCount = ScreenWidth * ScreenHeight;
 // shorter MELONPRIME_GPU2D_EXACT=1) enables exact native-output validation.
 [[nodiscard]] bool ExactValidationEnabled() noexcept;
 
-// A diagnostic savestate load restores the serialized GPU state before the
-// renderer-owned one-line-ahead sprite cache has naturally advanced. The
-// first native frame therefore belongs to the load transition itself. Match
-// the existing raster-differential transition policy by excluding only that
-// frame from the exact readback gate; subsequent frames remain mandatory.
-[[nodiscard]] bool IsExactValidationSavestateTransitionFrame(u64 frame) noexcept;
+[[nodiscard]] constexpr bool IsCurrentFrame(
+    u64 emulatedFrame,
+    u64 recordedFrame,
+    u64 inputFrame) noexcept
+{
+    return emulatedFrame != 0u
+        && recordedFrame == emulatedFrame
+        && inputFrame == emulatedFrame;
+}
 
 // All members are 32-bit slots on purpose.  This is the canonical layout for
 // both std430 (Vulkan) and StructuredBuffer (DX12); it also keeps packing rules
@@ -131,6 +134,33 @@ struct FrameGeneration
 
 inline constexpr u32 DirtyBlockBytes = 512u;
 inline constexpr u32 MaxDirtyRanges = 8192u;
+inline constexpr u32 MaxMemoryDeltas = 8192u;
+
+// Memory is resolved at the beginning of each visible line.  A line carries
+// the latest version of every 512-byte block; version zero means the frame
+// start snapshot and non-zero versions index TimelinePayload.  The dense
+// index is deliberately shared by Vulkan and DX12 so neither backend can
+// accidentally turn a mid-frame write into a frame-end snapshot.
+inline constexpr u32 TimelineEngineBGBlocks = (512u * 1024u) / DirtyBlockBytes;
+inline constexpr u32 TimelineEngineOBJBlocks = (256u * 1024u) / DirtyBlockBytes;
+inline constexpr u32 TimelineEngineBGExtBlocks = (32u * 1024u) / DirtyBlockBytes;
+inline constexpr u32 TimelineEngineOBJExtBlocks = (8u * 1024u) / DirtyBlockBytes;
+inline constexpr u32 TimelineEngineBlocks = TimelineEngineBGBlocks
+    + TimelineEngineOBJBlocks + TimelineEngineBGExtBlocks + TimelineEngineOBJExtBlocks;
+inline constexpr u32 TimelineEngineAllBlocks = 2u * TimelineEngineBlocks;
+inline constexpr u32 TimelinePaletteBlocks = (2u * 1024u) / DirtyBlockBytes;
+inline constexpr u32 TimelineOAMBlocks = (2u * 1024u) / DirtyBlockBytes;
+inline constexpr u32 TimelineFIFOBlocks = (256u * sizeof(u16)) / DirtyBlockBytes;
+inline constexpr u32 TimelineLCDVRAMBlocks = (4u * 128u * 1024u) / DirtyBlockBytes;
+inline constexpr u32 TimelineEngineBaseBlock = 0u;
+inline constexpr u32 TimelinePaletteBaseBlock = TimelineEngineAllBlocks;
+inline constexpr u32 TimelineOAMBaseBlock = TimelinePaletteBaseBlock + TimelinePaletteBlocks;
+inline constexpr u32 TimelineFIFOBaseBlock = TimelineOAMBaseBlock + TimelineOAMBlocks;
+inline constexpr u32 TimelineLCDVRAMBaseBlock = TimelineFIFOBaseBlock + TimelineFIFOBlocks;
+inline constexpr u32 TimelineBlockCount = TimelineLCDVRAMBaseBlock + TimelineLCDVRAMBlocks;
+inline constexpr u32 PackedTimelineIndexWords = TimelineBlockCount * ScreenHeight;
+inline constexpr u32 PackedTimelinePayloadWords =
+    MaxMemoryDeltas * (DirtyBlockBytes / sizeof(u32));
 
 struct DirtyRange
 {
@@ -148,6 +178,7 @@ struct UploadPlan
     u64 OAMBytes = 0;
     u64 FIFOBytes = 0;
     u64 LCDVRAMBytes = 0;
+    u64 TimelineBytes = 0;
 };
 
 struct FrameInput
@@ -169,6 +200,10 @@ struct FrameInput
     u32 LCDVRAMMap = 0;
     std::array<u8, 4 * 128 * 1024> LCDVRAM{};
     FrameGeneration Generation{};
+    std::array<u32, PackedTimelineIndexWords> TimelineIndex{};
+    std::array<u8, MaxMemoryDeltas * DirtyBlockBytes> TimelinePayload{};
+    u32 TimelineDeltaCount = 0;
+    u32 TimelineOverflow = 0;
     // Byte ranges in the serialized frame that changed since the previous
     // frame. They are metadata only and are not part of PackedFrameWords.
     std::array<DirtyRange, MaxDirtyRanges> DirtyRanges{};
@@ -200,7 +235,9 @@ inline constexpr u32 PackedOAMBase = PackedPaletteBase + PackedPaletteWords;
 inline constexpr u32 PackedFIFOBase = PackedOAMBase + PackedOAMWords;
 inline constexpr u32 PackedLCDVRAMBase = PackedFIFOBase + PackedFIFOWords;
 inline constexpr u32 PackedRouteBase = PackedLCDVRAMBase + PackedLCDVRAMWords;
-inline constexpr u32 PackedFrameWords = PackedRouteBase + PackedRouteWords;
+inline constexpr u32 PackedTimelineBase = PackedRouteBase + PackedRouteWords;
+inline constexpr u32 PackedTimelinePayloadBase = PackedTimelineBase + PackedTimelineIndexWords;
+inline constexpr u32 PackedFrameWords = PackedTimelinePayloadBase + PackedTimelinePayloadWords;
 
 static_assert(PackedLineWords == 68u, "native line serialization drift");
 
@@ -278,6 +315,7 @@ public:
         const melonDS::GPU2D& gpu2D,
         u32 line,
         bool screenSwap) noexcept;
+    void CaptureMemoryForLine(u32 line) noexcept;
     void FinalizeMemory() noexcept;
 
     [[nodiscard]] const FrameInput& GetFrame() const noexcept { return Input; }
@@ -287,9 +325,32 @@ private:
     const melonDS::GPU& GPU;
     FrameInput Input{};
     bool Valid = false;
-    bool EngineLineSeen[2] = {false, false};
+    std::array<bool, 2 * ScreenHeight> LineSeen{};
+    u32 EngineLineCount[2] = {0, 0};
+    MemorySnapshot CurrentEngine[2]{};
+    std::array<u8, 2 * 1024> CurrentPalette{};
+    std::array<u8, 2 * 1024> CurrentOAM{};
+    std::array<u16, 256> CurrentDisplayFIFO{};
+    std::array<u8, 4 * 128 * 1024> CurrentLCDVRAM{};
+    std::array<u32, TimelineBlockCount> CurrentTimelineVersion{};
+    bool MemoryBaselineReady = false;
 
     void SnapshotEngine(u32 engine) noexcept;
+    void CaptureMappedMemoryForLine(
+        u32 engine,
+        u32 section,
+        u8* current,
+        u32 size,
+        const u32* mappings,
+        u32 mappingCount,
+        u32 mappingBytes,
+        u32 blockBase) noexcept;
+    void CaptureDirectMemoryForLine(
+        const u8* source,
+        u8* current,
+        u32 size,
+        u32 blockBase) noexcept;
+    void FillTimelineLine(u32 line) noexcept;
 };
 
 } // namespace GPU2DNative

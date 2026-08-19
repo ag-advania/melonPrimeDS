@@ -125,6 +125,10 @@ public:
     [[nodiscard]] RendererOutput GetComposedOutput() const;
     [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasContent; }
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
+    [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
+    {
+        return PublishedOutputGeneration;
+    }
 
     // Internal resolution, not 256x192. This is the mechanism by which high
     // resolution survives to present: the display path never sees a
@@ -583,6 +587,7 @@ private:
     // slot until its copy command retires.
     bool ComposedOutputValid = false;
     u64 ComposedGeneration = 0;
+    u64 PublishedOutputGeneration = 0;
     bool NativeCaptureStateInitialized = false;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely

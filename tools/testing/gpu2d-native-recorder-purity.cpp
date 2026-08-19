@@ -181,8 +181,12 @@ void SeedSharedState(GPU& gpu)
 void RunRecorder(FrameRecorder& recorder, GPU& gpu)
 {
     recorder.BeginFrame(1u);
-    recorder.CaptureLine(0u, gpu.GPU2D_A, 0u, gpu.ScreenSwap);
-    recorder.CaptureLine(1u, gpu.GPU2D_B, 0u, gpu.ScreenSwap);
+    for (u32 line = 0; line < ScreenHeight; ++line)
+    {
+        recorder.CaptureMemoryForLine(line);
+        recorder.CaptureLine(0u, gpu.GPU2D_A, line, gpu.ScreenSwap);
+        recorder.CaptureLine(1u, gpu.GPU2D_B, line, gpu.ScreenSwap);
+    }
     recorder.FinalizeMemory();
 }
 
@@ -232,6 +236,85 @@ bool RunMultiConsumerOrder()
     return passed;
 }
 
+u32 TimelineValue(const FrameInput& input, u32 line, u32 block)
+{
+    return input.TimelineIndex[
+        static_cast<std::size_t>(line) * TimelineBlockCount + block];
+}
+
+bool RunRecorderTimeline()
+{
+    const auto nds = std::make_unique<NDS>();
+    GPU& gpu = nds->GPU;
+    SeedSharedState(gpu);
+
+    const auto recorder = std::make_unique<FrameRecorder>(gpu);
+    recorder->BeginFrame(1u);
+    recorder->CaptureMemoryForLine(0u);
+    recorder->CaptureLine(0u, gpu.GPU2D_A, 0u, gpu.ScreenSwap);
+    recorder->CaptureLine(1u, gpu.GPU2D_B, 0u, gpu.ScreenSwap);
+
+    for (u32 line = 1u; line < ScreenHeight; ++line)
+    {
+        if (line == 50u)
+            gpu.VRAM[0][0x10] = 0xC1u;
+        if (line == 96u)
+            gpu.Palette[37u] = 0xD6u;
+        if (line == 128u)
+            gpu.OAM[513u] = 0xE7u;
+        // FIFO is sampled for every line. Writing immediately before the
+        // line latch models a line-by-line FIFO pattern without touching the
+        // renderer's destructive dirty ownership.
+        gpu.DispFIFOBuffer[7u] = static_cast<u16>(0x1000u + line);
+
+        recorder->CaptureMemoryForLine(line);
+        recorder->CaptureLine(0u, gpu.GPU2D_A, line, gpu.ScreenSwap);
+        recorder->CaptureLine(1u, gpu.GPU2D_B, line, gpu.ScreenSwap);
+    }
+    recorder->FinalizeMemory();
+
+    const FrameInput& input = recorder->GetFrame();
+    bool passed = Require(recorder->IsValid(),
+        "a complete 192-line recorder run was not valid");
+    const u32 vramBefore = TimelineValue(input, 49u, TimelineEngineBaseBlock);
+    const u32 vramAfter = TimelineValue(input, 50u, TimelineEngineBaseBlock);
+    passed &= Require(vramBefore == 0u && vramAfter != 0u,
+        "mid-frame VRAM write did not begin at its emulated line");
+    passed &= Require(
+        input.TimelinePayload[(vramAfter - 1u) * DirtyBlockBytes + 0x10u] == 0xC1u,
+        "mid-frame VRAM delta payload was not captured");
+
+    const u32 paletteVersion = TimelineValue(
+        input, 96u, TimelinePaletteBaseBlock);
+    passed &= Require(
+        TimelineValue(input, 95u, TimelinePaletteBaseBlock) == 0u
+            && paletteVersion != 0u,
+        "mid-frame palette write did not begin at its emulated line");
+    passed &= Require(
+        input.TimelinePayload[(paletteVersion - 1u) * DirtyBlockBytes + 37u] == 0xD6u,
+        "mid-frame palette delta payload was not captured");
+
+    const u32 oamBlock = TimelineOAMBaseBlock + 1u;
+    const u32 oamVersion = TimelineValue(input, 128u, oamBlock);
+    passed &= Require(
+        TimelineValue(input, 127u, oamBlock) == 0u && oamVersion != 0u,
+        "OAM timeline did not follow the one-line-ahead latch boundary");
+    passed &= Require(
+        input.TimelinePayload[(oamVersion - 1u) * DirtyBlockBytes + 1u] == 0xE7u,
+        "OAM delta payload was not captured");
+
+    const u32 fifoVersion = TimelineValue(input, 190u, TimelineFIFOBaseBlock);
+    const std::size_t fifoPayload =
+        static_cast<std::size_t>(fifoVersion - 1u) * DirtyBlockBytes + 7u * sizeof(u16);
+    u16 fifoValue = 0u;
+    std::memcpy(&fifoValue, input.TimelinePayload.data() + fifoPayload, sizeof(fifoValue));
+    passed &= Require(fifoVersion != 0u && fifoValue == 0x10BEu,
+        "line-by-line display FIFO pattern was not captured");
+    passed &= Require(input.TimelineDeltaCount >= 4u,
+        "temporal recorder did not retain changed-block generations");
+    return passed;
+}
+
 } // namespace
 
 namespace melonDS::Testing
@@ -239,7 +322,8 @@ namespace melonDS::Testing
 
 int RunGPU2DNativeRecorderPurity()
 {
-    const bool passed = RunRecorderPurity() && RunMultiConsumerOrder();
+    const bool passed = RunRecorderPurity() && RunMultiConsumerOrder()
+        && RunRecorderTimeline();
     std::fprintf(stdout, "%s: GPU2D native recorder purity\n",
         passed ? "PASS" : "FAIL");
     std::fflush(stdout);

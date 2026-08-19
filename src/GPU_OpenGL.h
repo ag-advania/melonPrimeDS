@@ -148,6 +148,9 @@ private:
     void RenderScreen(int ystart, int yend);
     void DoCapture(int ystart, int yend);
     void DownscaleCapture(int width, int height, int layer);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    void DumpFrameForValidation();
+#endif
 };
 
 }

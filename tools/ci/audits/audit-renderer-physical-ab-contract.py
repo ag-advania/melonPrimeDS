@@ -37,6 +37,7 @@ def main() -> int:
         for needle in (
             "[string]$ExpectedSourceHead",
             "[switch]$AllowUnverifiedBinary",
+            "[switch]$RequireCleanProvenance",
             "'--build-info-json'",
             "Start-Process -FilePath $exe -ArgumentList '--build-info-json'",
             "buildInfoStdout",
@@ -48,6 +49,9 @@ def main() -> int:
             "expected_source_sha",
             "binary_source_sha",
             "checkout_source_sha",
+            "require_clean_provenance",
+            "checkout_branch",
+            "final acceptance requires detached HEAD",
             "runManifest",
             "'measurement_start'",
             "'measurement_end'",

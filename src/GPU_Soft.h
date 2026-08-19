@@ -37,6 +37,15 @@ namespace melonDS
 class SoftRenderer : public Renderer
 {
 public:
+    struct GPU2DFallbackCounters
+    {
+        u64 startup_pipeline_fallback = 0;
+        u64 runtime_native_unavailable_fallback = 0;
+        u64 capture_software_fallback = 0;
+        u64 stale_generation_reject = 0;
+        u64 structured_fallback = 0;
+    };
+
     explicit SoftRenderer(melonDS::NDS& nds);
     ~SoftRenderer() override;
     bool Init() override { return true; }
@@ -93,9 +102,53 @@ public:
     {
         return NativeGPU2DFrame.IsValid();
     }
+    [[nodiscard]] bool HasNativeGPU2DFrameForCurrentEmulatedFrame() const noexcept
+    {
+        return NativeGPU2DFrame.IsValid()
+            && GPU2DNative::IsCurrentFrame(
+                EmulatedFrameSerial,
+                NativeGPU2DRecordedFrameSerial,
+                NativeGPU2DFrame.GetFrame().Generation.Frame);
+    }
+    [[nodiscard]] u64 GetEmulatedFrameSerial() const noexcept
+    {
+        return EmulatedFrameSerial;
+    }
+    [[nodiscard]] u64 GetRecordedNativeFrameSerial() const noexcept
+    {
+        return NativeGPU2DRecordedFrameSerial;
+    }
     [[nodiscard]] bool UsesNativeGPU2DProducerForFrame() const noexcept
     {
         return NativeGPU2DProducerForFrame;
+    }
+    [[nodiscard]] const GPU2DFallbackCounters& GetGPU2DFallbackCounters() const noexcept
+    {
+        return GPU2DFallbacks;
+    }
+    void ResetGPU2DFallbackCounters() noexcept
+    {
+        GPU2DFallbacks = {};
+    }
+    void RecordGPU2DStartupPipelineFallback() noexcept
+    {
+        ++GPU2DFallbacks.startup_pipeline_fallback;
+    }
+    void RecordGPU2DRuntimeNativeUnavailableFallback() noexcept
+    {
+        ++GPU2DFallbacks.runtime_native_unavailable_fallback;
+    }
+    void RecordGPU2DCaptureSoftwareFallback() noexcept
+    {
+        ++GPU2DFallbacks.capture_software_fallback;
+    }
+    void RecordGPU2DStaleGenerationReject() noexcept
+    {
+        ++GPU2DFallbacks.stale_generation_reject;
+    }
+    void RecordGPU2DStructuredFallback() noexcept
+    {
+        ++GPU2DFallbacks.structured_fallback;
     }
 
 protected:
@@ -162,6 +215,9 @@ private:
     GPU2DNative::FrameRecorder NativeGPU2DFrame;
     bool NativeGPU2DProducerForFrame = false;
     bool RecordNativeGPU2DFrameForFrame = false;
+    u64 EmulatedFrameSerial = 0;
+    u64 NativeGPU2DRecordedFrameSerial = 0;
+    GPU2DFallbackCounters GPU2DFallbacks{};
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;

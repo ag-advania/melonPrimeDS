@@ -74,6 +74,16 @@ bool VulkanRenderer::Init()
 
 void VulkanRenderer::Stop()
 {
+    const auto& fallback = GetGPU2DFallbackCounters();
+    Platform::Log(Platform::LogLevel::Info,
+        "[GPU2DFallbackCounters] backend=Vulkan startup_pipeline_fallback=%llu "
+        "runtime_native_unavailable_fallback=%llu capture_software_fallback=%llu "
+        "stale_generation_reject=%llu structured_fallback=%llu\n",
+        static_cast<unsigned long long>(fallback.startup_pipeline_fallback),
+        static_cast<unsigned long long>(fallback.runtime_native_unavailable_fallback),
+        static_cast<unsigned long long>(fallback.capture_software_fallback),
+        static_cast<unsigned long long>(fallback.stale_generation_reject),
+        static_cast<unsigned long long>(fallback.structured_fallback));
     if (auto* vulkan = GetVulkanRenderer3D())
         vulkan->Stop();
     SoftRenderer::Stop();
@@ -166,7 +176,7 @@ void VulkanRenderer::VBlank()
     bool nativeComposed = false;
     const bool nativeProducer = UsesNativeGPU2DProducerForFrame();
     const bool exactValidation = GPU2DNative::ExactValidationEnabled();
-    if (vulkan && HasNativeGPU2DFrame())
+    if (vulkan && HasNativeGPU2DFrameForCurrentEmulatedFrame())
     {
         const GPU2DNative::FrameInput& nativeFrame = GetNativeGPU2DFrame();
         nativeComposed = vulkan->ComposeNativeGPU2D(
@@ -186,6 +196,7 @@ void VulkanRenderer::VBlank()
         }
         else
         {
+            RecordGPU2DRuntimeNativeUnavailableFallback();
             VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFallbackFrames);
             if (!NativeGPU2DFallbackAnnounced)
             {
@@ -194,6 +205,13 @@ void VulkanRenderer::VBlank()
                 NativeGPU2DFallbackAnnounced = true;
             }
         }
+    }
+    else if (vulkan && HasNativeGPU2DFrame())
+    {
+        RecordGPU2DStaleGenerationReject();
+        Platform::Log(Platform::LogLevel::Warn,
+            "Vulkan renderer gpu2d=Software fallback=1 reason=stale_generation_reject "
+            "stale_generation_reject=1\n");
     }
 
     if (nativeProducer && !nativeComposed)
@@ -228,6 +246,9 @@ void VulkanRenderer::VBlank()
     }
     if (vulkan && !nativeComposed && !NativeGPU2DFallbackAnnounced)
     {
+        RecordGPU2DRuntimeNativeUnavailableFallback();
+        if (GPU.CaptureEnable && !nativeProducer)
+            RecordGPU2DCaptureSoftwareFallback();
         VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFallbackFrames);
         Platform::Log(Platform::LogLevel::Warn,
             "Vulkan renderer gpu2d=Software fallback=1 reason=native frame unavailable\n");
@@ -237,6 +258,7 @@ void VulkanRenderer::VBlank()
     StructuredVulkanFrameView view{};
     if (!nativeComposed && vulkan && GetStructuredVulkanFrame(view) && view.Valid)
     {
+        RecordGPU2DStructuredFallback();
         const std::array<const u32*, 14> planes = {
             view.Plane[0][0],
             view.Plane[0][1],
@@ -309,6 +331,7 @@ RendererOutput VulkanRenderer::GetOutput()
         // fallback for the same window.
         if (!NativeGPU2DStartupFallbackAnnounced)
         {
+            RecordGPU2DStartupPipelineFallback();
             Platform::Log(Platform::LogLevel::Warn,
                 "requested=Vulkan actual=Vulkan gpu2d=Software gpu3d=Vulkan "
                 "fallback=1 startupFallback=1 reason=pipeline compilation\n");
@@ -331,6 +354,7 @@ RendererOutputLease VulkanRenderer::AcquireOutputLease()
         return lease;
     if (!NativeGPU2DStartupFallbackAnnounced)
     {
+        RecordGPU2DStartupPipelineFallback();
         Platform::Log(Platform::LogLevel::Warn,
             "requested=Vulkan actual=Vulkan gpu2d=Software gpu3d=Vulkan "
             "fallback=1 startupFallback=1 reason=pipeline compilation\n");

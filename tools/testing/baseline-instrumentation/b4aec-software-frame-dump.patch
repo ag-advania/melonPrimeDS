@@ -1,0 +1,138 @@
+diff --git a/src/GPU_Soft.cpp b/src/GPU_Soft.cpp
+index b415420a3..4f06e89b6 100644
+--- a/src/GPU_Soft.cpp
++++ b/src/GPU_Soft.cpp
+@@ -19,6 +19,9 @@
+ #include "NDS.h"
+ #include "GPU_Soft.h"
+ #include "GPU_ColorOp.h"
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
+ #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+ #include "MelonPrimeStructuredComposition.h"
+ #endif
+@@ -26,6 +29,96 @@
+ namespace melonDS
+ {
+ 
++#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++namespace
++{
++constexpr u32 FrameDumpWidth = 256u;
++constexpr u32 FrameDumpHeight = 192u;
++constexpr u32 FrameDumpPixels = FrameDumpWidth * FrameDumpHeight;
++
++struct FrameDumpHeader
++{
++    char Magic[8];
++    u32 Version;
++    u32 Frame;
++    u32 Width;
++    u32 Height;
++    u64 TopHash;
++    u64 BottomHash;
++};
++
++u64 HashFrame(const u32* pixels) noexcept
++{
++    u64 hash = 1469598103934665603ull;
++    for (u32 i = 0; i < FrameDumpPixels; ++i)
++    {
++        u32 value = pixels[i];
++        for (u32 byte = 0; byte < sizeof(value); ++byte)
++        {
++            hash ^= static_cast<u8>(value);
++            hash *= 1099511628211ull;
++            value >>= 8u;
++        }
++    }
++    return hash;
++}
++
++void DumpSoftwareFrame(const u32* top, const u32* bottom) noexcept
++{
++    static bool initialized = false;
++    static std::FILE* output = nullptr;
++    static u32 frame = 0;
++    static u32 canonical[2u * FrameDumpPixels]{};
++    if (!initialized)
++    {
++        initialized = true;
++        const char* path = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP");
++        if (path && path[0] != '\0')
++            output = std::fopen(path, "wb");
++    }
++    if (!output)
++        return;
++
++    u32 limit = 1u;
++    if (const char* value = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_LIMIT"))
++    {
++        const unsigned long parsed = std::strtoul(value, nullptr, 10);
++        if (parsed != 0ul)
++            limit = static_cast<u32>(parsed);
++    }
++    if (frame >= limit)
++        return;
++
++    const u32* sources[2] = {top, bottom};
++    for (u32 screen = 0; screen < 2u; ++screen)
++    {
++        for (u32 i = 0; i < FrameDumpPixels; ++i)
++        {
++            const u32 color = sources[screen][i];
++            canonical[screen * FrameDumpPixels + i] =
++                (((color >> 16u) & 0xFFu) >> 2u)
++                | ((((color >> 8u) & 0xFFu) >> 2u) << 8u)
++                | (((color & 0xFFu) >> 2u) << 16u);
++        }
++    }
++
++    const FrameDumpHeader header = {
++        {'M', 'P', '2', 'D', 'D', 'U', 'M', 'P'},
++        1u,
++        frame,
++        FrameDumpWidth,
++        FrameDumpHeight,
++        HashFrame(canonical),
++        HashFrame(canonical + FrameDumpPixels),
++    };
++    std::fwrite(&header, sizeof(header), 1, output);
++    std::fwrite(canonical, sizeof(canonical), 1, output);
++    std::fflush(output);
++    ++frame;
++}
++} // namespace
++#endif
++
+ #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+ // Canonical bit layout of the structured 2D contract this renderer publishes.
+ // The DX12 and Vulkan compositors decode the same values.
+@@ -47,6 +140,13 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
+     Rend3D = std::make_unique<SoftRenderer3D>(GPU.GPU3D, *this);
+ }
+ 
++void SoftRenderer::VBlank()
++{
++#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++    DumpSoftwareFrame(Framebuffer[BackBuffer][0], Framebuffer[BackBuffer][1]);
++#endif
++}
++
+ SoftRenderer::~SoftRenderer()
+ {
+     delete[] Framebuffer[0][0];
+diff --git a/src/GPU_Soft.h b/src/GPU_Soft.h
+index 0f6625a00..0d6f6659a 100644
+--- a/src/GPU_Soft.h
++++ b/src/GPU_Soft.h
+@@ -50,7 +50,7 @@ public:
+     void DrawScanline(u32 line) override;
+     void DrawSprites(u32 line) override;
+ 
+-    void VBlank() override {};
++    void VBlank() override;
+     void VBlankEnd() override {};
+ 
+     void AllocCapture(u32 bank, u32 start, u32 len) override;

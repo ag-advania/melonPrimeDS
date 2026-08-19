@@ -35,6 +35,8 @@ void AddClassifiedBytes(UploadPlan& plan, u32 offset, u32 size) noexcept
         plan.FIFOBytes);
     addOverlap(PackedLCDVRAMBase * sizeof(u32), PackedRouteBase * sizeof(u32),
         plan.LCDVRAMBytes);
+    addOverlap(PackedTimelineBase * sizeof(u32), PackedFrameWords * sizeof(u32),
+        plan.TimelineBytes);
 }
 
 void AddRange(UploadPlan& plan, DirtyRange range) noexcept
@@ -216,6 +218,11 @@ bool PackFrame(const FrameInput& input, u32* destination, std::size_t wordCount)
     destination[23] = input.Engine[1].OBJExtendedPaletteSize;
     destination[24] = PackedLineWords;
     destination[25] = PackedEngineWords;
+    destination[26] = TimelineBlockCount;
+    destination[27] = input.TimelineDeltaCount;
+    destination[28] = input.TimelineOverflow;
+    destination[29] = PackedTimelineIndexWords;
+    destination[30] = PackedTimelinePayloadWords;
 
     std::memcpy(
         destination + PackedHeaderWords,
@@ -260,6 +267,14 @@ bool PackFrame(const FrameInput& input, u32* destination, std::size_t wordCount)
         input.LCDVRAM.size());
     for (u32 i = 0; i < PackedRouteWords; ++i)
         destination[PackedRouteBase + i] = input.ScreenSource[i];
+    std::memcpy(
+        destination + PackedTimelineBase,
+        input.TimelineIndex.data(),
+        static_cast<std::size_t>(PackedTimelineIndexWords) * sizeof(u32));
+    std::memcpy(
+        destination + PackedTimelinePayloadBase,
+        input.TimelinePayload.data(),
+        input.TimelinePayload.size());
     return true;
 }
 

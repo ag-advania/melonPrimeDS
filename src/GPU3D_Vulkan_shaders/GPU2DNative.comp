@@ -59,6 +59,27 @@ const uint kOAMBase = kPaletteBase + kPaletteWords;
 const uint kFIFOBase = kOAMBase + kOAMWords;
 const uint kLCDVRAMBase = kFIFOBase + kFIFOWords;
 const uint kRouteBase = kLCDVRAMBase + kLCDVRAMWords;
+const uint kTimelineEngineBGBlocks = 1024u;
+const uint kTimelineEngineOBJBlocks = 512u;
+const uint kTimelineEngineBGExtBlocks = 64u;
+const uint kTimelineEngineOBJExtBlocks = 16u;
+const uint kTimelineEngineBlocks = kTimelineEngineBGBlocks
+    + kTimelineEngineOBJBlocks + kTimelineEngineBGExtBlocks
+    + kTimelineEngineOBJExtBlocks;
+const uint kTimelinePaletteBlocks = 4u;
+const uint kTimelineOAMBlocks = 4u;
+const uint kTimelineFIFOBlocks = 1u;
+const uint kTimelineLCDVRAMBlocks = 1024u;
+const uint kTimelineEngineBaseBlock = 0u;
+const uint kTimelinePaletteBaseBlock = 2u * kTimelineEngineBlocks;
+const uint kTimelineOAMBaseBlock = kTimelinePaletteBaseBlock + kTimelinePaletteBlocks;
+const uint kTimelineFIFOBaseBlock = kTimelineOAMBaseBlock + kTimelineOAMBlocks;
+const uint kTimelineLCDVRAMBaseBlock = kTimelineFIFOBaseBlock + kTimelineFIFOBlocks;
+const uint kTimelineBlockCount = kTimelineLCDVRAMBaseBlock + kTimelineLCDVRAMBlocks;
+const uint kTimelineIndexBase = kRouteBase + 2u * 192u;
+const uint kTimelinePayloadBase = kTimelineIndexBase
+    + kTimelineBlockCount * 192u;
+const uint kTimelinePayloadStride = 512u / 4u;
 
 // LineState word offsets.
 const uint kDispCnt = 0u;
@@ -107,19 +128,37 @@ uint EngineWord(uint engine, uint section, uint word)
     return NativeGPU2DInput[kEngineBase + engine * kEngineWords + section + word];
 }
 
-uint MemoryByte(uint base, uint size, uint address)
+uint TimelineVersion(uint block)
+{
+    uint line = uint(max(pc.CaptureYOffset, 0));
+    if (line >= 192u || block >= kTimelineBlockCount)
+        return 0u;
+    return NativeGPU2DInput[
+        kTimelineIndexBase + line * kTimelineBlockCount + block];
+}
+
+uint MemoryByte(
+    uint base,
+    uint size,
+    uint address,
+    uint timelineBlockBase)
 {
     if (size == 0u)
         return 0u;
     uint offset = address & (size - 1u);
-    uint word = NativeGPU2DInput[base + (offset >> 2u)];
+    uint version = TimelineVersion(timelineBlockBase + offset / 512u);
+    uint word = version == 0u
+        ? NativeGPU2DInput[base + (offset >> 2u)]
+        : NativeGPU2DInput[
+            kTimelinePayloadBase + (version - 1u) * kTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
     return (word >> ((offset & 3u) * 8u)) & 0xFFu;
 }
 
-uint Memory16(uint base, uint size, uint address)
+uint Memory16(uint base, uint size, uint address, uint timelineBlockBase)
 {
-    return MemoryByte(base, size, address)
-        | (MemoryByte(base, size, address + 1u) << 8u);
+    return MemoryByte(base, size, address, timelineBlockBase)
+        | (MemoryByte(base, size, address + 1u, timelineBlockBase) << 8u);
 }
 
 uint BGSize(uint engine) { return NativeGPU2DInput[16u + engine * 4u]; }
@@ -129,63 +168,93 @@ uint OBJExtSize(uint engine) { return NativeGPU2DInput[19u + engine * 4u]; }
 
 uint BGByte(uint engine, uint address)
 {
-    return MemoryByte(kEngineBase + engine * kEngineWords, BGSize(engine), address);
+    return MemoryByte(
+        kEngineBase + engine * kEngineWords, BGSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks);
 }
 
 uint BG16(uint engine, uint address)
 {
-    return Memory16(kEngineBase + engine * kEngineWords, BGSize(engine), address);
+    return Memory16(
+        kEngineBase + engine * kEngineWords, BGSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks);
 }
 
 uint OBJByte(uint engine, uint address)
 {
     return MemoryByte(
-        kEngineBase + engine * kEngineWords + kBGWords, OBJSize(engine), address);
+        kEngineBase + engine * kEngineWords + kBGWords, OBJSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
+            + kTimelineEngineBGBlocks);
 }
 
 uint OBJ16(uint engine, uint address)
 {
     return Memory16(
-        kEngineBase + engine * kEngineWords + kBGWords, OBJSize(engine), address);
+        kEngineBase + engine * kEngineWords + kBGWords, OBJSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
+            + kTimelineEngineBGBlocks);
 }
 
 uint BGExt16(uint engine, uint address)
 {
     return Memory16(
         kEngineBase + engine * kEngineWords + kBGWords + kOBJWords,
-        BGExtSize(engine), address);
+        BGExtSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
+            + kTimelineEngineBGBlocks + kTimelineEngineOBJBlocks);
 }
 
 uint OBJExt16(uint engine, uint address)
 {
     return Memory16(
         kEngineBase + engine * kEngineWords + kBGWords + kOBJWords + kBGExtWords,
-        OBJExtSize(engine), address);
+        OBJExtSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
+            + kTimelineEngineBGBlocks + kTimelineEngineOBJBlocks
+            + kTimelineEngineBGExtBlocks);
 }
 
 uint Palette16(uint engine, uint byteAddress)
 {
     uint base = kPaletteBase + (engine == 0u ? 0u : 0x400u) / 4u;
-    return Memory16(base, 0x400u, byteAddress);
+    return Memory16(
+        base, 0x400u, byteAddress,
+        kTimelinePaletteBaseBlock + engine * 2u);
 }
 
 uint OAM16(uint engine, uint byteAddress)
 {
     uint base = kOAMBase + (engine * 0x400u) / 4u;
-    return Memory16(base, 0x400u, byteAddress);
+    return Memory16(
+        base, 0x400u, byteAddress,
+        kTimelineOAMBaseBlock + engine * 2u);
 }
 
 uint FIFO16(uint index)
 {
-    uint word = NativeGPU2DInput[kFIFOBase + (index >> 1u)];
-    return (word >> ((index & 1u) * 16u)) & 0xFFFFu;
+    uint offset = (index & 0xFFu) * 2u;
+    uint version = TimelineVersion(kTimelineFIFOBaseBlock);
+    uint word = version == 0u
+        ? NativeGPU2DInput[kFIFOBase + (offset >> 2u)]
+        : NativeGPU2DInput[
+            kTimelinePayloadBase + (version - 1u) * kTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 2u) * 8u)) & 0xFFFFu;
 }
 
 uint LCD16(uint bank, uint byteAddress)
 {
-    uint word = NativeCaptureState[uint(FramebufferStride) + bank * 32768u
-        + (byteAddress >> 2u)];
-    return (word >> ((byteAddress & 3u) * 8u)) & 0xFFFFu;
+    uint offset = byteAddress & 0x1FFFFu;
+    uint version = TimelineVersion(
+        kTimelineLCDVRAMBaseBlock + bank * 256u + offset / 512u);
+    uint word = version == 0u
+        ? NativeCaptureState[uint(FramebufferStride) + bank * 32768u
+            + (offset >> 2u)]
+        : NativeGPU2DInput[
+            kTimelinePayloadBase + (version - 1u) * kTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFFFu;
 }
 
 uint ConvertBGR555(uint color, uint flag)
@@ -1052,8 +1121,21 @@ void main()
     if (id.x >= uint(ScreenWidth) || id.y >= uint(ScreenHeight) * 2u)
         return;
 
-    uint screen = id.y / uint(ScreenHeight);
-    uint scaledY = id.y - screen * uint(ScreenHeight);
+    const bool linePass = (pc._pad & 8u) != 0u;
+    uint screen;
+    uint scaledY;
+    if (linePass)
+    {
+        if (id.y >= 2u)
+            return;
+        screen = id.y;
+        scaledY = uint(max(pc.CaptureYOffset, 0)) * uint(ScaleFactor);
+    }
+    else
+    {
+        screen = id.y / uint(ScreenHeight);
+        scaledY = id.y - screen * uint(ScreenHeight);
+    }
     uint x = id.x / uint(ScaleFactor);
     uint line = scaledY / uint(ScaleFactor);
     uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
