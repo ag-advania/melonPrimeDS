@@ -217,6 +217,7 @@ bool FrameRing::Create(const VulkanDevice& device, u32 queueFamily, u32 framesIn
     AbsoluteFrame = 1;
     CompletedFrame = 0;
     LastSubmittedIndex = 0;
+    LastSubmittedFrameNumber = 0;
     HasSubmittedFrame = false;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampPeriodNs = 0.0f;
@@ -376,6 +377,7 @@ void FrameRing::Destroy()
         AbsoluteFrame = 1;
         CompletedFrame = 0;
         LastSubmittedIndex = 0;
+        LastSubmittedFrameNumber = 0;
         HasSubmittedFrame = false;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
         TimestampPeriodNs = 0.0f;
@@ -397,6 +399,7 @@ void FrameRing::Destroy()
     AbsoluteFrame = 1;
     CompletedFrame = 0;
     LastSubmittedIndex = 0;
+    LastSubmittedFrameNumber = 0;
     HasSubmittedFrame = false;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     TimestampPeriodNs = 0.0f;
@@ -548,9 +551,7 @@ u64 FrameRing::GetCurrentRecordingFrameNumber() const noexcept
 
 u64 FrameRing::GetLastSubmittedFrameNumber() const noexcept
 {
-    if (!HasSubmittedFrame || Frames.empty() || LastSubmittedIndex >= Frames.size())
-        return 0;
-    return Frames[LastSubmittedIndex].SubmittedFrame;
+    return HasSubmittedFrame ? LastSubmittedFrameNumber : 0;
 }
 
 VulkanResourceRetireFrameState FrameRing::BuildResourceRetireFrameState() const noexcept
@@ -801,6 +802,7 @@ bool FrameRing::SubmitFrame(
     }
 #endif
     LastSubmittedIndex = CurrentIndex;
+    LastSubmittedFrameNumber = frame.SubmittedFrame;
     HasSubmittedFrame = true;
     AbsoluteFrame++;
     return true;

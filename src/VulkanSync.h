@@ -420,6 +420,10 @@ private:
     u64 AbsoluteFrame = 1;      // 1-based so that 0 means "never used"
     u64 CompletedFrame = 0;
     u32 LastSubmittedIndex = 0;
+    // Frame number of the last successful queue submission. This is kept
+    // separately from the slot's SubmittedFrame because a one-slot ring
+    // overwrites that field when the next recording begins.
+    u64 LastSubmittedFrameNumber = 0;
     bool HasSubmittedFrame = false;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     float TimestampPeriodNs = 0.0f;
