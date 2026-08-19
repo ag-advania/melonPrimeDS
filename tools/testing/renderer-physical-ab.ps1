@@ -717,7 +717,7 @@ if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMar
     $nativeGPU2DMismatchMax -ne 0 -or $nativeGPU2DFallbackMax -ne 0 -or $fallbackLineMax -ne 0 -or
     ($null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $stateMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
-    ($Hud -eq 'Off' -and $null -ne $statePath -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
+    ($Hud -eq 'Off' -and $null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($frameRows -lt 1 -and -not $AllowUnverifiedBinary) -or
     ($Renderer -eq 'Vulkan' -and $captureRows -lt 1)) {
     $badMarkers | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
