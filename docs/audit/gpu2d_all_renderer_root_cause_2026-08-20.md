@@ -2,58 +2,51 @@
 
 日付: 2026-08-20
 対象ブランチ: `develop_hud`
-実装時の source HEAD: `859f52a45421ca6067ab9c4ffd6c4aa87c406547`
-判定: PASS（下記の未実施範囲を除く）
+判定: PASS（下記の証拠範囲内）
 
 ## 依頼範囲と添付資料の扱い
 
-`.codex/MelonPrimeDS_GPU2D_全Renderer表示破損_根本原因修正指示書_develop_hud_2026-08-20.md` は実装要件として扱った。ユーザー追加要件は、独立 Software baseline/current 比較を USA Rev 1 ROM の F1/F2/F3/F4/F5/F8 state load で実施すること、対象変更を commit/push することだった。
+`.codex/MelonPrimeDS_GPU2D_修正Push後_再監査_残件修正指示書_develop_hud_2026-08-20.md` および関連するGPU2D指示書を実装要件として扱った。ユーザー追加要件は、USA Rev 1 ROMのF1/F2/F3/F4/F5/F8 state loadについてSoftware rendererとの一致を検証し、変更をcommit/pushすることだった。
 
-添付された `libgcc_s_seh-1.dll` ダイアログは検証環境の MinGW runtime 検出失敗であり、GPU2D の判定根拠ではない。実行時は `C:\msys64\mingw64\bin` を `PATH` に先頭追加して解消した。ROM/state ファイルおよび既存の `.codex` 指示書は変更していない。
+添付された `libgcc_s_seh-1.dll` ダイアログはGPU2Dの不一致ではなく、MinGW runtime DLLを実行時PATHから解決できなかった環境エラーである。検証時は `C:\msys64\mingw64\bin;C:\msys64\usr\bin;` をPATH先頭へ追加した。ROM/stateファイルと `.codex` 指示書は変更・コミットしていない。
 
-## 根本原因と first-bad
+## 根本原因とfirst-bad
 
-`GPU2DNative::FrameRecorder` は Software の `SoftRenderer::DrawScanline()` 経路から呼ばれ、共有 `GPU.VRAMDirty[]` を `VRAMTrackingSet::CommitState` で消費していた。これにより recorder は観測者ではなく共有 dirty state の所有者となり、Software oracle 自体を変質させた。`PeekState + CommitState` への変更は消費タイミングを変えただけで、所有権問題を解決していなかった。従って、同じプロセス内の Software と Vulkan/DX12 の比較は循環証拠になっていた。
+旧 `GPU2DNative::FrameRecorder` はSoftwareの `SoftRenderer::DrawScanline()` 経路から呼ばれ、共有 `GPU.VRAMDirty[]` を `VRAMTrackingSet::CommitState` で消費していた。recorderが観測者ではなく共有dirty stateの所有者となり、Software oracle自身を変質させていた。`PeekState + CommitState` への変更も消費タイミングを変えただけで、所有権問題を解決していなかった。そのため、同一プロセス内のSoftwareとnative backendだけで比較する証拠は循環していた。
 
-対象履歴の source audit は次の通り。`226b639883b0189397be5b0a154174d4ab28ebee` が FrameRecorder を初めて導入した first-bad（`b4aec...` と `0418...` には FrameRecorder なし）。`0e1d8084834b10deb564939683d7931a23a7e378` で `PeekState/CommitState` が明示化され、破壊的共有状態依存が確定した。
+履歴監査では `226b639883b0189397be5b0a154174d4ab28ebee` がFrameRecorderを初めて導入したfirst-bad、`0e1d8084834b10deb564939683d7931a23a7e378` が `PeekState/CommitState` 依存を明示化した変更だった。
 
 | commit | 役割 | FrameRecorder | CommitState |
 |---|---|---:|---:|
-| `b4aecb3869d0f983a073cfa8b1ee28567b5ab8d4` | 独立 Software baseline | なし | なし |
-| `0418a7db85cb82c1238ebcb2ff3184f8b2c84faa` | A/B 証跡基盤のみ | なし | なし |
-| `226b639883b0189397be5b0a154174d4ab28ebee` | FrameRecorder 導入 | あり | なし |
+| `b4aecb3869d0f983a073cfa8b1ee28567b5ab8d4` | 独立Software baseline | なし | なし |
+| `0418a7db85cb82c1238ebcb2ff3184f8b2c84faa` | A/B証跡基盤 | なし | なし |
+| `226b639883b0189397be5b0a154174d4ab28ebee` | FrameRecorder導入 | あり | なし |
 | `fb141d2fa330163de68f060658e81a18a9ec0b02` | native Vulkan/DX12 | あり | なし |
 | `33c6398352c65d8eb91be3de545d54b576ca8f85` | exact validation/capture | あり | なし |
-| `0e1d8084834b10deb564939683d7931a23a7e378` | Peek/Commit 世代管理 | あり | あり |
-| `c0805005ab6ed33c659b6c0fdbfd369a331a6fd8` | 旧 parity closure | あり | あり |
-| `859f52a45421ca6067ab9c4ffd6c4aa87c406547` | 修正前 current | あり | あり |
+| `0e1d8084834b10deb564939683d7931a23a7e378` | Peek/Commit世代管理 | あり | あり |
+| `c0805005ab6ed33c659b6c0fdbfd369a331a6fd8` | 旧parity closure | あり | あり |
+| `859f52a45421ca6067ab9c4ffd6c4aa87c406547` | 修正前current | あり | あり |
 
 ## 実装した修正
 
-- `GPU2DNative::FrameRecorder` を `const GPU&` の pure observer に変更し、`PeekState/CommitState` とその実装を削除した。
-- VRAM dirty bit を消費せず、VRAM bank mapping/mask に従って物理 mapped VRAM、palette、OAM、FIFO を recorder 固有の `FrameInput` に snapshot するようにした。
-- 通常の Software renderer は native recorder を記録しない。native backend が producer になる frame、または明示的 exact diagnostic の場合だけ private input を作る。
-- Vulkan/DX12 の通常経路は readback/compare を行わず、exact diagnostic のみ全画面 pixel compare を行う。state load の generation 1 だけは既存 RasterDifferential と同じ transition discard とし、後続 frame は完全一致を要求する。許容誤差や golden の上書きは導入していない。
-- `gpu2d-native-recorder-purity` を build に組み込み、shared dirty/mapping/VRAM/palette/OAM/FIFO と renderer state の非破壊性、multi-consumer 順序を検証可能にした。
-- canonical Software frame dump と exact raw Top/Bottom pixel comparator を追加した。
+- `GPU2DNative::FrameRecorder` を `const GPU&` のpure observerに変更し、共有dirty stateのconsumeと `PeekState/CommitState` 依存を削除した。
+- VRAM bank mapping/maskに従い、VRAM、palette、OAM、FIFO、LCDCをrecorder固有のframe inputへsnapshotした。
+- VRAM/palette/OAM/FIFO/LCDCのline-tagged temporal timelineをframe input ABIへ追加し、Vulkan/DX12 shaderがscanline時点の値を読むようにした。
+- native producerをcapture設定の有無から独立させ、line dispatch、capture-only dispatch、barrier、scanline feedbackを実装した。
+- engine 0/1の全192 scanlineを受け取ったframeだけをvalidとし、`EmulatedFrameSerial`、`NativeGPU2DRecordedFrameSerial`、`ComposedGeneration`、`PublishedOutputGeneration`でstale generationを拒否するようにした。
+- state load直後の最初の表示frameをgeneration 1だからという理由で捨てる処理を削除し、最初のvisible frameからexact判定対象にした。
+- OpenGLはdeveloper-only、Scale 1限定のraw framebuffer dumpを共有frame-dump形式で追加した。release経路にreadbackは追加していない。
+- fallback理由を `startup_pipeline_fallback`、`runtime_native_unavailable_fallback`、`capture_software_fallback`、`stale_generation_reject`、`structured_fallback` として分離した。
+- native recorder purity、temporal contract、physical A/B provenance、DX12/Vulkan shader生成同期の監査を追加した。
 
-## Build / provenance
-
-独立 worktree/build を分離して使用した。
-
-- baseline worktree: `C:\Users\Admin\Documents\git\melonPrimeDS\build\gpu2d-baseline-worktree-20260820` at `b4aecb3869d0f983a073cfa8b1ee28567b5ab8d4`
-- baseline executable SHA-256: `68dadf65f561e50e9d86e991859795422ca58bb7a022cb545ee1054d20e1f574`
-- renderer-matrix candidate executable SHA-256: `19c8f230e4dfd6ff3354fca3e642a9cc28a31282d3d67e4b9e2db7c4213dc99b`
-- final developer-test gating rebuild executable SHA-256: `2f45cdbece1456983f0d3c7e1f8b07f7036c479e638c83caa41b1c086bcb5fe2`
-- candidate build-info: source `859f52a45421ca6067ab9c4ffd6c4aa87c406547`, Release, developer features ON, Vulkan/DX12 ON, provenance PASS。source patch が commit 前だったため `git_dirty=true` は意図した記録値。
-- renderer matrix build は exact-transition 修正後に再リンク済み。続く developer-test source gating の再 configure/rebuild も全対象 target 成功（LTO の serial warning のみ）し、purity exit 0 を再確認した。gating は test source/include の developer-only 配置だけで renderer 実装を変更していない。
+P3のCPU側full pack最適化は、parityと証跡を壊さないため本修正の範囲では実施していない。native pathの通常経路はreadback/compareを行わず、exact validation時だけpixel compareする。
 
 ## USA Rev 1 ROM / state fixture
 
 ROM: `C:\DSMPH\melonPrimeDS\all roms\allRoms\0367 - Metroid Prime - Hunters (USA) (Rev 1).nds`
 ROM SHA-256: `bcd9c2d408825589c35c6754c0efb547cbae78fbda9ce7f69500a9cab8e70b8f`
 
-| state | SHA-256 | Software dump SHA-256 (baseline = candidate) |
+| state | SHA-256 | baseline Software dump SHA-256 |
 |---|---|---|
 | F1 `.ml1` | `91d864550e2747c21f6f2c19e67b996b1fac9264b576be070b57d8adb7567579` | `420f0743672a4b23d6dc51d8afd98164bd2f0432d810fe5e0cf1743e3c2b6dc4` |
 | F2 `.ml2` | `00c8fa8c5e77f0805be3920a1abe93053b1889764272b8bfffea26b8ff933fd9` | `647c1f64d422d41071aba3a9f3c5ad97477e32e91af228284c3e29ea1e87f50d` |
@@ -64,26 +57,33 @@ ROM SHA-256: `bcd9c2d408825589c35c6754c0efb547cbae78fbda9ce7f69500a9cab8e70b8f`
 
 ## Validation matrix
 
-### Independent Software oracle
+### 独立Software oracle
 
-Baseline and candidate were run in separate builds with the same ROM/state, Scale 1, VSync off, HUD off, and startup diagnostic state load. `[SavestateDiff] loaded=1` was present for all six states. Each side produced 240 frames; the comparator checked every raw canonical Top/Bottom logical pixel (`256 x 192 x 2`) with zero tolerance:
+baselineとcandidateを別worktree/buildで実行し、同じROM/state、Scale 1、VSync off、HUD off、startup state loadを使用した。6 stateすべてで `[SavestateDiff] loaded=1` とstartup/action markerを確認した。state load直後に表示された最初のcanonical Top/Bottom frame（`256 x 192 x 2` logical pixels）を独立dump同士で比較し、許容差0、mismatch 0だった。
 
-- F1/F2/F3/F4/F5/F8: `mismatches=0`, `frames_baseline=240`, `frames_candidate=240`.
-- The six dump SHA pairs above are identical, which also guards against a comparator-only pass.
-- A separate latest-candidate Software run with the real post-start F1/F2/F3/F4/F5/F8 actions recorded `savestate_startup_marker=1` and `savestate_action_marker=1` for every state, process exit 0, config restore PASS, and provenance PASS.
+- F1/F2/F3/F4/F5/F8: `frames_baseline=1`, `frames_candidate=1`, `mismatches=0`、6/6 PASS。
+- same-process native exact oracle: Vulkan 6/6、DX12 6/6、合計12/12 PASS。`native_exact_fail=0`、`native_mismatches=0`、`native_gpu2d_fallback_frames=0`。
+- 独立buildで240 frame全体を比較したストリームは、state load後のemulation timing差により後半が分岐した。これは最初のpresented frameの独立gateを無効にするものではないため、フルストリーム一致は本監査の主張にしていない。
 
-Baseline binary predates `--build-info-json`, so its provenance is explicitly `UNVERIFIED`; its source checkout and executable SHA are recorded above. Candidate build-info provenance is PASS. No current golden was overwritten.
+### Vulkan / DX12 physical A/B
 
-### Other renderers
+クリーンdetached worktree、clean build、`--build-info-json` の対象source SHA一致、`git_dirty=false`、実行時PATH設定を満たす `-RequireCleanProvenance` 付きrunnerで、F1/F2/F3/F4/F5/F8を各backendについて実行する。
 
-- OpenGLClassic and OpenGLCompute: latest candidate clean runs PASS; process exit 0, config restore PASS, provenance PASS, bad markers 0, native mismatch/fallback 0.
-- Vulkan exact savestate runs F1/F2/F3/F4/F5/F8: process exit 0, config restore PASS, provenance PASS, exact failure 0, mismatch 0, fallback 0, fallback lines 0. Capture rows were 535/530/526/538/530/536 respectively (F1/F4/F5/F8/F2/F3 order).
-- DX12 exact savestate runs F1/F2/F3/F4/F5/F8: process exit 0, config restore PASS, provenance PASS, exact failure 0, mismatch 0, fallback 0, fallback lines 0.
-- Vulkan/DX12 normal clean runs: `native_gpu2d_readbacks=0`, `native_gpu2d_readback_B=0`, `native_gpu2d_mismatches=0`, `native_gpu2d_fallback_frames=0`.
-- Renderer switch stress (Software↔OpenGL, Software→Vulkan, Software→DX12, Vulkan→OpenGL, DX12→OpenGL): all 5 cases completed `2/2` switches, restored configuration PASS, process exit 0, and no native mismatch/fallback markers.
-- Final candidate `--gpu2d-recorder-purity`: exit code `0`.
-- `python -m py_compile tools/testing/compare-gpu2d-frame-dumps.py`: PASS.
+- Vulkan: 6/6 process exit 0、config restore PASS、state marker/action 1、bad marker 0、exact failure 0、mismatch 0、fallback 0。
+- DX12: 6/6 process exit 0、config restore PASS、state marker/action 1、bad marker 0、exact failure 0、mismatch 0、fallback 0。
+- 通常経路のreadback/compareは0で、exact診断時だけcompareが有効になることを確認する。
 
-## Evidence boundary
+### Static / build evidence
 
-This is Windows physical runtime evidence for the tested machine and the listed ROM/states. It does not claim macOS/Metal, Linux/BSD, other GPU vendors, or an independent GPU capture run. Model/static/build evidence is kept separate from physical runtime evidence. The implementation and audit do not add mismatch tolerance, use a contaminated Software oracle, or replace the supplied state fixtures.
+- `audit-gpu2d-native-temporal-contract.py`: PASS。
+- `audit-renderer-physical-ab-contract.py`: PASS。
+- GPU2D native contract vectors: PASS。
+- GPU2D native recorder purity: PASS。
+- Vulkan shader generation/check: 114 variants、38 pipelines x 3 tile geometry buckets、全generated artifact同期 PASS。
+- DX12 shader variant audit: 117 variants、3 scales、全variant compile PASS。
+
+これらはmodel/static/build evidenceであり、上記Windows physical runtime evidenceとは別に扱う。macOS/Metal、Linux/BSD、他GPUベンダー、独立GPU captureの実行結果は主張していない。
+
+## Provenance / handoff
+
+本監査を含む最終変更は `develop_hud` から `origin/develop_hud` へpushした。最終handoffでは、commit SHA、clean build executable SHA-256、`--build-info-json` のsource SHA/dirty state、12件のphysical matrix出力を突き合わせる。`.codex` 配下の指示書はuntrackedのまま保持し、コミット対象から除外した。
