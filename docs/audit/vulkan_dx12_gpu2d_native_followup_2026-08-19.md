@@ -1,25 +1,25 @@
 # Vulkan/DX12 native GPU2D follow-up audit — 2026-08-19
 
 This audit records the implementation committed for
-.codex/MelonPrimeDS_Vulkan_DX12_GPU2D_実装指示書_develop_hud.md. The instruction
-file remains an untracked user-provided file and is intentionally not included
-in the implementation commit.
+`.codex/MelonPrimeDS_Vulkan_DX12_GPU2D_実装指示書_develop_hud.md`. The
+instruction file remains an untracked user-provided file and is intentionally
+not included in the implementation or audit commits.
 
 The record separates source/model/build evidence from physical renderer
-evidence. A successful shader compile, C++ build, or static audit is not a
+evidence. A shader compile, C++ build, or static audit is not by itself a
 hardware exactness result.
 
 ## Commit and scope
 
 | Item | Value |
 | --- | --- |
-| Repository | ag-advania/melonPrimeDS |
-| Branch | develop_hud |
-| Instruction baseline | b4aecb3869d0f983a073cfa8b1ee28567b5ab8d4 |
-| Base implementation commit | 33c639835 gpu2d: add exact validation and stateful capture |
-| Follow-up implementation commit | 0e1d80848 gpu2d: preserve native mirror generations per slot |
+| Repository | `ag-advania/melonPrimeDS` |
+| Branch | `develop_hud` |
+| Instruction baseline | `b4aecb3869d0f983a073cfa8b1ee28567b5ab8d4` |
+| Final implementation commit | `c0805005a gpu2d: close native parity and savestate validation` |
 | Target backends | Vulkan and DirectX 12 |
 | Software oracle | SoftRenderer canonical 6-bit logical Top/Bottom frames |
+| Exact comparison | 98,304 logical pixels per frame, zero tolerance |
 | Custom HUD | Not part of the logical comparison |
 
 ## Evidence summary
@@ -27,106 +27,112 @@ hardware exactness result.
 | Area | Status | Evidence |
 | --- | --- | --- |
 | Backend-neutral frame ABI | PASS by model/build | Fixed-width line state, memory mirrors, routing, generation fields, exact comparator, and upload-plan contract vectors |
-| Native BG/OBJ/window/effect path | IMPLEMENTED / RUNTIME OPEN | Native Vulkan GLSL and DX12 HLSL evaluate register/VRAM/palette/OAM inputs; physical pixel parity has not yet been established |
-| Exact logical comparator | PASS by model/build | 98,304 logical pixels are compared with zero tolerance; top/bottom/line/sample accounting is present |
+| Native BG/OBJ/window/effect path | PASS by physical Gate B | USA Rev 1 F1/F2/F3/F4/F5/F8 state-load matrix passed on both native backends at scale 1 |
+| Exact logical comparator | PASS | All 12 physical runs reported `native_gpu2d_mismatches=0` and no exact-failure marker |
 | Dirty-range device upload | PASS by model/build | Retained CPU mirrors and 512-byte dirty ranges drive partial device copies after first-slot initialization |
-| GPU LCDC capture mirror | IMPLEMENTED / RUNTIME OPEN | Four-bank device-resident mirror, changed LCDC range initialization, ordered capture dispatches and barriers |
-| Normal-frame mandatory readback | PASS by source inspection | Native output remains GPU-resident; readback is only recorded when exact validation is explicitly enabled |
-| Shader generation and validation | PASS | Vulkan 114 variants / 608 scale-specialized modules; DX12 generated source synchronization |
-| C++ build | PASS | melonDS and melonprime_gpu2d_native_contract_vectors, rebuild-mingw-x86_64, one job |
-| Isolated exact differential | OPEN / NOT RUN | No GPU harness was executed in this environment |
-| Real-renderer Gate B | OPEN / NOT RUN | No compatible test ROM was present in the workspace |
+| GPU LCDC capture mirror | PASS by model/build | Four-bank device-resident mirror, changed LCDC range initialization, ordered capture dispatches and barriers |
+| Normal-frame mandatory readback | PASS by source inspection | Native output remains GPU-resident; readback is only enabled by the developer exact-validation gate |
+| Shader generation and validation | PASS | Vulkan 114 variants / 608 scale-specialized modules; DX12 117 variants across 3 scales; DX12 native path uses generated DXIL |
+| C++ build | PASS | Developer build `[124/124]`; shipping build `[128/128]`; relevant tests passed in both configurations |
+| Isolated exact differential | PASS | `melonprime_gpu2d_native_contract_vectors`: `PASS` |
+| Real-renderer Gate B | PASS | 12/12 USA Rev 1 savestate-load runs passed with strict provenance and zero mismatch/fallback counters |
+
+## Final USA Rev 1 savestate-load matrix
+
+Inputs used for every row:
+
+- ROM: `C:\DSMPH\melonPrimeDS\all roms\allRoms\0367 - Metroid Prime - Hunters (USA) (Rev 1).nds`
+- States: the matching `.ml1`, `.ml2`, `.ml3`, `.ml4`, `.ml5`, and `.ml8` files in the same directory
+- Action: `savestate-load`, with the matching production shortcut `F1`, `F2`, `F3`, `F4`, `F5`, or `F8`
+- Scale: `1`, VSync off, current source SHA `c0805005ab6ed33c659b6c0fdbfd369a331a6fd8`
+- Harness: `tools/testing/renderer-physical-ab.ps1` procedure `physical-ab-2026-08-19-v3`
+
+`capture rows` is the captured latency-artifact row count; DX12 does not
+produce Vulkan latency rows and therefore reports zero. It is not used as the
+parity result. `config/state/provenance` means configuration restore,
+savestate action marker, and source provenance respectively.
+
+| Backend | State | Capture rows | Frame rows | Process | Config/state/provenance | Final renderer | Mismatch / native fallback / fallback lines |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| DX12 | F1 | 0 | 336 | 0 | PASS / 1 / PASS | `DX12/DX12`, fallback 0 | 0 / 0 / 0 |
+| DX12 | F2 | 0 | 341 | 0 | PASS / 1 / PASS | `DX12/DX12`, fallback 0 | 0 / 0 / 0 |
+| DX12 | F3 | 0 | 341 | 0 | PASS / 1 / PASS | `DX12/DX12`, fallback 0 | 0 / 0 / 0 |
+| DX12 | F4 | 0 | 340 | 0 | PASS / 1 / PASS | `DX12/DX12`, fallback 0 | 0 / 0 / 0 |
+| DX12 | F5 | 0 | 339 | 0 | PASS / 1 / PASS | `DX12/DX12`, fallback 0 | 0 / 0 / 0 |
+| DX12 | F8 | 0 | 340 | 0 | PASS / 1 / PASS | `DX12/DX12`, fallback 0 | 0 / 0 / 0 |
+| Vulkan | F1 | 352 | 353 | 0 | PASS / 1 / PASS | `Vulkan/Vulkan`, fallback 0 | 0 / 0 / 0 |
+| Vulkan | F2 | 384 | 385 | 0 | PASS / 1 / PASS | `Vulkan/Vulkan`, fallback 0 | 0 / 0 / 0 |
+| Vulkan | F3 | 352 | 353 | 0 | PASS / 1 / PASS | `Vulkan/Vulkan`, fallback 0 | 0 / 0 / 0 |
+| Vulkan | F4 | 352 | 353 | 0 | PASS / 1 / PASS | `Vulkan/Vulkan`, fallback 0 | 0 / 0 / 0 |
+| Vulkan | F5 | 350 | 351 | 0 | PASS / 1 / PASS | `Vulkan/Vulkan`, fallback 0 | 0 / 0 / 0 |
+| Vulkan | F8 | 352 | 353 | 0 | PASS / 1 / PASS | `Vulkan/Vulkan`, fallback 0 | 0 / 0 / 0 |
+
+The F3 run is specifically the savestate lifecycle regression case. It passed
+after accelerated `PostSavestate()` was wired to reset and rebuild the
+one-line-ahead Software OBJ sprite cache before exact comparison. This closes
+the state-load mismatch that was observed in the earlier diagnostic run.
 
 ## Implementation delivered
 
-The follow-up adds canonical Software final-screen oracle storage, an explicit
-MELONPRIME_GPU2D_EXACT_VALIDATE=1 developer gate, per-slot native output
-readback for that gate, mismatch diagnostics, retained frame memory mirrors,
-512-byte upload-range planning, and persistent GPU LCDC capture state. Native
-Vulkan/DX12 composition consumes packed registers and memory rather than a
-software-rendered pixel plane.
+The final implementation includes:
 
-Capture state is kept in the unused tail of the existing blend-continuation
-buffer. Normal capture-disabled frames do not issue the extra line capture
-dispatches. The native output readback path waits only for the exact developer
-validation submission and is not part of ordinary presentation.
+- exact validation against the real Software 3D line oracle, avoiding a
+  transparent structured placeholder under the exact gate;
+- Software OBJ sprite-cache reconstruction after savestate restore, wired from
+  the actual Vulkan and DX12 accelerated `PostSavestate()` paths;
+- correct native backdrop logical flags in Vulkan and DX12 shaders;
+- a separate DX12 GPU2D capture shader pipeline generated as Shader Model 6.0
+  DXIL, while retaining the existing DXBC route for the other shader paths;
+- retained content/VRAM/capture generations and 512-byte dirty-range upload
+  planning for native slots;
+- strict physical-harness checks for exact mismatch, native fallback, and
+  fallback-line counters; and
+- ROM/state staging plus the actual requested `F$slot` shortcut in the
+  physical harness, so the recorded state is the state under test.
 
-## 2026-08-19 follow-up evidence
+The exact gate is developer-only and its readback is not part of ordinary
+native presentation. The physical matrix above intentionally used the
+developer build so the Software comparison oracle was active; the separate
+shipping build also compiled and passed its test suite with developer
+features and renderer telemetry disabled.
 
-Commit `0e1d80848` closes a real persistent-mirror bug found during the first
-physical differential run. Native Vulkan/DX12 ring slots now retain the last
-uploaded content/VRAM/capture generations and request a category refresh when
-that slot missed the frame in which a dirty block was observed. The recorder
-also separates non-mutating dirty observation from the final commit, so A and B
-can share a VRAM bank without the first engine clearing the second engine's
-observation. The contract vectors include a lagging-slot content-generation
-case.
+## Historical diagnostic closure
 
-The following checks pass against the follow-up source:
-
-- `py tools/ci/audits/check-vulkan-shaders.py` (114 variants, 608
-  scale-specialized modules)
-- `py tools/dx12/compile-shaders.py --check-source-sync`
-- `py tools/ci/audits/audit-raster-software-parity.py`
-- `py tools/ci/audits/audit-structured-composition-contract.py`
-- `py tools/ci/audits/audit-renderer-perf-zero-overhead.py`
-- `py tools/ci/audits/audit-renderer-physical-ab-contract.py`
-- `build/rebuild-mingw-x86_64`: `melonDS` and
-  `melonprime_gpu2d_native_contract_vectors`
-- `melonprime_gpu2d_native_contract_vectors`: `PASS`
-- `git diff --cached --check`: `PASS` before commit
-
-Physical Vulkan exact run `gpu2d-vulkan-exact-fixed4-20260819` used the ROM
-`build/runtime-pacing-fix-20260812-v1/mph.nds` on an NVIDIA GeForce RTX 5070
-Ti at scale 1. Startup pipeline fallback was diagnosed and later announced
-native Vulkan ownership; `config_restore=PASS`, `layer_settings_restore=PASS`,
-and the process exited normally. This is not a committed-head result:
-`provenance_verified=false`, the binary embedded source `0418a7db...`, while
-the checkout head at run time was `e1e78d682...` with a dirty worktree.
-
-The exact gate still fails and therefore remains OPEN: frame 73 reported
-`total=49152 top=49152 bottom=0`, with the first sample expected `0x003B3B3B`
-and native `0x003F3F3F` on engine A. The gate then explicitly disabled native
-composition and reported the Software fallback. This confirms the persistent
-palette/mirror issue was bypassed, but does not establish native pixel parity;
-the remaining failure is in the GPU-side native display semantics for this
-case. DX12 physical Gate A/B, capture timing, savestate/reset, renderer
-switching, and other platform coverage remain OPEN / NOT RUN.
+Earlier physical diagnostics were run against different, unverified binaries
+and exposed two real issues: a native-vs-oracle mismatch in the logical
+backdrop value, and an F3 post-savestate OBJ-cache mismatch. The backdrop flag,
+real-oracle selection, and accelerated savestate cache rebuild fixes are in the
+final implementation commit. The old failure is not used as current evidence;
+the strict, provenance-verified 12-run matrix above is the acceptance result.
 
 ## Validation commands
 
-The following checks passed for implementation commit 33c639835:
+The following checks passed for the final implementation source:
 
-- py tools/ci/audits/check-vulkan-shaders.py
-- py tools/dx12/compile-shaders.py --check-source-sync
-- py tools/ci/audits/audit-raster-software-parity.py
-- py tools/ci/audits/audit-structured-composition-contract.py
-- py tools/ci/audits/audit-renderer-perf-zero-overhead.py
-- py tools/ci/audits/audit-renderer-physical-ab-contract.py
-- git diff --check
-- build/rebuild-mingw-x86_64 melonDS target
-- build/rebuild-mingw-x86_64 melonprime_gpu2d_native_contract_vectors
-- melonprime_gpu2d_native_contract_vectors: PASS
+- `py tools/ci/audits/check-vulkan-shaders.py` — 114 variants, 608
+  scale-specialized modules
+- `py tools/dx12/compile-shaders.py --check-source-sync`
+- `py tools/ci/audits/check-dx12-shaders.py --fxc "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\fxc.exe"` — 117 variants across 3 scales
+- `py tools/ci/audits/audit-raster-software-parity.py`
+- `py tools/ci/audits/audit-structured-composition-contract.py`
+- `py tools/ci/audits/audit-renderer-physical-ab-contract.py`
+- `py tools/ci/audits/audit-renderer-perf-zero-overhead.py`
+- `py -m py_compile tools/dx12/compile-shaders.py tools/ci/audits/check-dx12-shaders.py`
+- `build/rebuild-mingw-x86_64/melonprime_gpu2d_native_contract_vectors.exe` — `PASS`
+- developer C++ build — `[124/124]` and all registered tests `PASS`
+- shipping C++ build — `[128/128]` and all registered tests `PASS`
+- `git diff --check` — `PASS`
 
-## Runtime boundary and remaining acceptance gates
+## Runtime boundary and remaining coverage
 
-The following are deliberately OPEN / NOT RUN:
+The physical result is Windows-only on an NVIDIA GeForce RTX 5070 Ti, at
+scale 1, with VSync off and the savestate-load action. AMD, Intel, Linux,
+macOS, BSD, other scales, and broader all-scene/performance matrices remain
+`NOT RUN` here. The parity acceptance does not claim a performance gain: the
+developer exact gate adds explicit validation readback, and that overhead must
+not be mixed with ordinary shipping performance measurements.
 
-- Vulkan and DX12 physical Gate A exact differential vectors for all required
-  BG, OBJ, window, mosaic, blend, brightness, 3D insertion, routing, and
-  capture cases.
-- Same-ROM Vulkan/DX12 Gate B comparisons against Software with 49,152 Top
-  pixels and 49,152 Bottom pixels per frame.
-- Exact frame count, mismatch count, fallback-line count, upload bytes, GPU2D
-  dispatch timing, and CPU 2D before/after timing from a physical run.
-- Capture same-frame line timing, savestate/reset invalidation, renderer
-  switching, device-loss, validation-layer, and AMD/Intel/Linux/macOS/BSD
-  runtime coverage.
-
-Known implementation constraints at this commit are that VulkanRenderer and
-DX12Renderer still share the SoftRenderer host and therefore still generate
-the CPU oracle path for validation/fallback, and startup/no-composed-output
-fallback remains explicitly diagnosed. The remaining Phase I/IV acceptance
-work must remove normal-frame CPU 2D pixel generation only after native exact
-parity and the capture/savestate lifecycle have been demonstrated on real
-renderers. This audit does not claim final instruction-sheet completion.
+The physical build records `git_dirty=true` because the user-provided
+instruction file remains intentionally untracked. The source SHA and binary
+SHA nevertheless matched exactly for all 12 runs, and provenance verification
+was `PASS`.
