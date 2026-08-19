@@ -32,6 +32,10 @@ OpenBSD again reached and passed its retire target. The primary `dbce40fde`
 run remains the exact matrix evidence for NetBSD's PASS; the rerun demonstrates
 that the BSD VM failures are not a source-test assertion failure.
 
+The FreeBSD retry log records the AnyVM action timing out at 20 minutes, retry
+setup ending with `sudo` exit 100, and the later target shell reporting
+`freebsd: command not found` because the VM was never established.
+
 The result separates source/build/model evidence, hosted CI evidence, and
 physical GPU evidence. A successful local build or static audit is not
 promoted to a cross-platform driver or latency result.
