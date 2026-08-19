@@ -10,6 +10,11 @@ states`). The CI reachability adjustment is `179e2d110`
 (`ci: run Vulkan retire check before macOS packaging`). The instruction file is
 intentionally not modified or staged.
 
+The production application used for the physical evidence was built from
+`1a71113c8725da30e77e3eb990d316bc28552b54` (`docs: record exact-head Vulkan
+retire mapping evidence`). The physical runner records that source head in
+every artifact; it does not change production renderer code.
+
 The result separates source/build/model evidence, hosted CI evidence, and
 physical GPU evidence. A successful local build or static audit is not
 promoted to a cross-platform driver or latency result.
@@ -27,7 +32,9 @@ promoted to a cross-platform driver or latency result.
 | Hosted macOS CI at `179e2d110` | TARGET PASS / JOB FAILURE | Run [`32217654921`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32217654921) ran the dedicated retire step successfully on both x86_64 and arm64. Both jobs later failed in the pre-existing Classic On-Screen Edit geometry check (`T10`/17pt controls), unrelated to this Vulkan change. |
 | Hosted Ubuntu CI at `179e2d110` | OPEN / IN PROGRESS | Run [`32217655118`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32217655118) was still in the Vulkan shader-toolchain audit when this record was prepared; x86_64/aarch64 build jobs and their retire steps are not yet verified. |
 | Hosted BSD CI at `179e2d110` | OPEN / PARTIAL | Run [`32217655100`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32217655100) had FreeBSD fail during VM startup before the retire target, while NetBSD/OpenBSD VM jobs were still in progress; no BSD-wide PASS is claimed. |
-| Physical DX12/Vulkan/OpenGL Compute A/B and hardware acceptance | OPEN / NOT RUN | The required same-ROM, warmed, randomized 3-run latency matrix and validation-layer/capture evidence were not run. |
+| Physical measurement runner and artifact restoration | PASS | `tools/testing/renderer-physical-ab.ps1` passed PowerShell parsing; it records renderer/scale/VSync/low-latency/HUD/action seed, restores config and layer settings byte-for-byte, requires the state marker, and rejects device/VUID/SYNC failure markers. |
+| Physical Vulkan validation-layer lifecycle | PASS | Current-head Debug build completed resize x40, minimize/restore x20, and fullscreen x8 with 69 swapchain rebuilds, device lost 0, Sync hazards 0, clean validation, and config/layer restoration PASS. |
+| Physical DX12/Vulkan/OpenGL Compute A/B and hardware acceptance | OPEN / PARTIAL | Vulkan and DX12 completed three-seed warmed action-all baselines plus scale/pacing representatives. OpenGL Compute passed steady-state and individual actions but reproducibly crashed on the Reset action (`0xC0000005`), so no cross-backend hardware acceptance is claimed. |
 
 ## Implementation
 
@@ -60,6 +67,14 @@ The following workflow steps now explicitly exercise the target:
 - `.github/workflows/build-bsd.yml`
 - `.github/workflows/build-macos.yml`
 
+The physical runner is intentionally an explicit-renderer, Windows-only
+diagnostic harness. `-ActionSeed` applies a reproducible Fisher-Yates order to
+the eight action scenarios when `-Action all` is selected; `-GraceSeconds`
+allows final renderer telemetry to flush before shutdown. HUD OFF runs require
+the developer `customHudForcedOff=1` marker in addition to the savestate marker.
+The harness demonstrates injected actions and runtime safety markers; it does
+not claim that every game-side action produced a particular gameplay result.
+
 ## Validation evidence
 
 | Check | Status | Evidence |
@@ -76,10 +91,69 @@ The following workflow steps now explicitly exercise the target:
 | Whitespace/error check | PASS | `git diff --check`; only expected LF/CRLF conversion warnings |
 | Measurement Windows build | PASS | `build/rebuild-mingw-x86_64`; developer features, renderer telemetry, and Vulkan latency capture enabled; full build and `vulkan-frame-retire-tests: PASS` |
 | Shipping Windows build | PASS | `build/release-mingw-shipping-x86_64`; developer features and renderer telemetry disabled; full build and `vulkan-frame-retire-tests: PASS` |
+| Physical runner parser and whitespace check | PASS | PowerShell AST parser and `git diff --check -- tools/testing/renderer-physical-ab.ps1` |
+| Physical measurement build | PASS | `build/rebuild-mingw-x86_64`; Vulkan/DX12/OpenGL Compute runs used the NVIDIA GeForce RTX 5070 Ti, driver 610.74, with process exit/config restore/state marker/bad-marker results retained per run. |
+| Physical validation-layer run | PASS | `build/physical-ab-20260819/vk-20260819-current-all-sync.{out,err}.log`; validation banner confirmed Sync Validation, hazards 0, device lost 0, and validation clean. |
 
-These local results are source, model, and Windows build evidence only. They
-do not establish GPU runtime behavior, physical frame-time parity, or hosted
-cross-platform coverage.
+The source/model/build rows remain distinct from the physical rows. The
+physical rows are Windows/NVIDIA evidence only and do not establish hosted
+cross-platform coverage or AMD/Intel vendor behavior.
+
+## Physical GPU evidence
+
+The fixed input was the Metroid Prime: Hunters USA Rev 1 ROM with matching
+`ml1` savestate, using the same `build/rebuild-mingw-x86_64/melonPrimeDS.exe`
+measurement binary. Artifacts are retained under
+`build/physical-ab-20260819/`; the instruction file and ROM/save/state files
+were not modified.
+
+| Backend | Warmed randomized action-all baseline | Scale/pacing representatives | Result |
+| --- | --- | --- | --- |
+| Vulkan | Seeds 11, 29, 47; scale 4; VSync OFF; low-latency OFF; all three exited 0 with state marker 1 and bad markers 0 | Scale 1/OFF, 4/ON, and 16/OFF all exited 0; Reflex run was active and clean | PASS for the exercised NVIDIA cases |
+| DX12 | Seeds 11, 29, 47; scale 4; VSync OFF; low-latency OFF; all three exited 0 with state marker 1 and bad markers 0 | Scale 1/OFF, 4/ON, and 16/OFF all exited 0; Reflex and ReflexBoost were active and clean | PASS for the exercised NVIDIA cases |
+| OpenGL Compute | Seed 11 action-all reached all logged actions but exited `0xC0000005`; Reset alone reproduced the same crash | Scale 1/OFF, 4/ON, and 16/OFF steady-state runs exited 0; individual non-Reset actions exited 0 | OPEN: Reset crash prevents full action-all acceptance |
+
+For the three-seed baseline's final four one-second telemetry windows, the
+frame-time summaries were:
+
+| Backend | p50 (ms) | p95 (ms) | p99 (ms) | max (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Vulkan | 16.678 | 18.553 | 19.561 | 19.891 |
+| DX12 | 16.581 | 18.498 | 19.004 | 19.703 |
+
+Representative scale-4 renderer telemetry aggregated over the same four
+windows (median of per-window p50/p95/p99/max, microseconds) was:
+
+| Backend | raster prepare | reuse wait | record/submit | soft2d total | structured pack | present wait |
+| --- | --- | --- | --- | --- | --- | --- |
+| Vulkan | 41.150/81.450/92.610/93.750 | 1.550/3.150/3.870/4.050 | 44.150/85.000/97.680/102.900 | 2749.950/4193.350/5858.430/6318.750 | 77.800/133.700/146.440/152.500 | acquire 2.200/4.000/5.310/5.850; slot 9.225/16.950/21.930/23.900 |
+| DX12 | 40.600/55.980/82.895/97.850 | n/a | n/a | 2754.725/4076.120/5126.265/5542.200 | n/a | slot 0.900/1.205/1.730/2.100 |
+
+The Vulkan first action window also recorded `texture_materialize_count=9`,
+`texture_materialize_pre_fence_fail_count=0`,
+`texture_materialize_retry_after_retire_count=0`,
+`texture_materialize_retry_success_count=0`, and
+`texture_materialize_retry_fail_count=0`, with 15 pending-storage growth
+events. DX12's corresponding first action window recorded materialize count 9
+and all four materialization failure/retry counters at zero. OpenGL Compute has
+no corresponding detailed Vulkan/DX12 renderer telemetry stream in the current
+source; its generic frame and input-to-present telemetry was captured instead.
+
+The Vulkan action-all seed-11 run produced a non-empty display capture at
+`build/physical-ab-20260819/20260819_current_Vulkan_state1_baseline_seed11.display.png`.
+The HUD OFF smoke also passed with `custom_hud_off_marker=1`.
+
+Low-latency capability evidence is vendor-qualified: NVIDIA Reflex was active
+for Vulkan (`VK_NV_low_latency2`) and DX12 (`vendor_pacing_authority=1`, modes
+On and On+Boost). On this NVIDIA adapter Anti-Lag 2 reported unsupported as
+AMD-only, and XeLL reported unsupported as requiring a supported Intel Arc GPU;
+those runs exited cleanly but are not vendor PASS results.
+
+The Debug validation run is separate from latency measurement. Its exact
+artifacts are `vk-20260819-current-all-sync.out.log` and
+`vk-20260819-current-all-sync.err.log`: the validation banner confirmed core
+and Synchronization Validation, `sync hazards=0`, `device lost=0`, and
+`validation=clean` after resize/minimize/fullscreen cycling.
 
 ## Remaining acceptance gates
 
@@ -89,12 +163,17 @@ The following remain explicitly open:
   retire-target logs for the final CI verification revision. Windows is PASS;
   macOS's retire target is PASS on both architectures but its surrounding job
   remains red because of the unrelated Classic layout geometry check.
-- Run the physical DX12/Vulkan/OpenGL Compute A/B on the same ROM/save,
-  location, actions, scale matrix, VSync/low-latency matrix, and randomized
-  three-run protocol; report p50/p95/p99/max and renderer telemetry.
+- Resolve or separately triage the reproducible OpenGL Compute Reset-path
+  `0xC0000005` before claiming all-action cross-backend acceptance. It is not
+  part of the Vulkan retire-frame patch and was not changed here.
+- Complete hosted Ubuntu/BSD exact-head execution and retain their target logs.
+- Obtain AMD/Intel hardware for Anti-Lag 2/XeLL coverage; the current NVIDIA
+  host can only provide explicit unsupported capability evidence.
 - Retain visual parity, no-crash/device-reset/savestate checks, validation
-  layer lifetime errors of zero, and capture evidence for the physical runs.
+  layer lifetime errors of zero, and capture evidence for future physical runs.
 
-Accordingly, the requested production test hardening and CI wiring are
-implemented and locally validated. Hardware-level latency and hosted
-cross-platform evidence remain unverified and are not represented as PASS.
+Accordingly, the requested production test hardening is implemented, the
+Windows/NVIDIA physical evidence is now reproducible and partially complete,
+and the validation-layer lifecycle is clean. OpenGL Reset, hosted Ubuntu/BSD,
+and non-NVIDIA vendor coverage remain explicitly unverified; none is promoted
+to PASS.
