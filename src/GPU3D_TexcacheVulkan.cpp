@@ -740,10 +740,11 @@ bool VulkanTextureHeap::RecordUpload(
         range.memory = scratchMemory;
         range.offset = 0;
         range.size = VK_WHOLE_SIZE;
+        const u64 recordingFrame = Frames->GetCurrentRecordingFrameNumber();
         Frames->GetDestroyQueue().Enqueue(
-            Vk::DeferredObject::Buffer, srcBuffer, Frames->GetAbsoluteFrame());
+            Vk::DeferredObject::Buffer, srcBuffer, recordingFrame);
         Frames->GetDestroyQueue().Enqueue(
-            Vk::DeferredObject::DeviceMemory, scratchMemory, Frames->GetAbsoluteFrame());
+            Vk::DeferredObject::DeviceMemory, scratchMemory, recordingFrame);
 
         if (!MELONPRIME_VK_CHECK("vkFlushMappedMemoryRanges (texcache scratch upload)",
                 fns.FlushMappedMemoryRanges(device, 1, &range)))
@@ -886,11 +887,11 @@ void VulkanTextureHeap::RetireEntry(Entry& entry)
 
     if (Frames)
     {
-        // A cached image can be invalidated while the previous frame's command
-        // buffer still references it, so ownership moves to the deferred
-        // destroy queue keyed to the current frame number. Collect() retires it
-        // only after that frame's fence has signalled.
-        const u64 frame = Frames->GetAbsoluteFrame();
+        // A cached image can be invalidated while a submitted or currently
+        // recording command buffer still references it. Tag the last frame
+        // that may legally reference it; the scheduler's next-frame counter
+        // would retain CPU-prep invalidations one frame too long.
+        const u64 frame = Frames->GetResourceRetireFrame();
         Vk::DeferredDestroyQueue& queue = Frames->GetDestroyQueue();
         queue.Enqueue(Vk::DeferredObject::ImageView, entry.View, frame);
         queue.Enqueue(Vk::DeferredObject::Image, entry.Image, frame);

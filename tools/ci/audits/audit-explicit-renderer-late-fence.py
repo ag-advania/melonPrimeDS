@@ -66,6 +66,7 @@ def main() -> int:
     dx12_source = read("src/GPU3D_DX12.cpp")
     vulkan_source = read("src/GPU3D_Vulkan.cpp")
     dx12_context = read("src/DX12Context.cpp")
+    vulkan_sync_header = read("src/VulkanSync.h")
     vulkan_sync = read("src/VulkanSync.cpp")
     vulkan_header = read("src/GPU3D_Vulkan.h")
     soft_header = read("src/GPU_Soft.h")
@@ -81,6 +82,8 @@ def main() -> int:
     soft2d_source = read("src/GPU2D_Soft.cpp")
     perf_probe = read("src/frontend/qt_sdl/MelonPrimePerfProbe.h")
     emu_thread = read("src/frontend/qt_sdl/EmuThread.cpp")
+    frame_retire_test = read("tools/testing/vulkan-frame-retire-tests.cpp")
+    vulkan_cmake = read("src/frontend/qt_sdl/CMakeLists.txt")
 
     try:
         dx12_frame = function_body(dx12_source, "void DX12Renderer3D::RenderFrame()")
@@ -186,6 +189,91 @@ def main() -> int:
         "WaitForFences(" in vulkan_sync
         and "DefaultFenceTimeoutNanoseconds" in vulkan_sync,
         "Vulkan raster reuse waits must retain a bounded fence timeout",
+        failures,
+    )
+
+    # P2-001: deferred resource tags must name the last frame that can still
+    # reference an object, not the scheduler's next frame. Keep the policy
+    # pure so the no-submission / submitted / recording cases remain runnable
+    # without a Vulkan device, and keep the queue/fake-OOM ordering test next
+    # to the production test target.
+    require(
+        "struct VulkanResourceRetireFrameState" in vulkan_sync_header
+        and "constexpr u64 VulkanResourceRetireFrame(" in vulkan_sync_header
+        and "if (state.Recording)" in vulkan_sync_header
+        and "if (state.HasSubmittedFrame)" in vulkan_sync_header,
+        "Vulkan resource retirement must expose a pure recording/submission policy",
+        failures,
+    )
+    require(
+        all(
+            f"Get{method}()" in vulkan_sync_header
+            for method in (
+                "CurrentRecordingFrameNumber",
+                "LastSubmittedFrameNumber",
+                "ResourceRetireFrame",
+            )
+        )
+        and "GetCurrentRecordingFrameNumber" in vulkan_sync
+        and "GetLastSubmittedFrameNumber" in vulkan_sync
+        and "GetResourceRetireFrame" in vulkan_sync,
+        "FrameRing must distinguish recording, last-submitted, and resource-retire frame APIs",
+        failures,
+    )
+    try:
+        retire_entry_body = function_body(
+            vulkan_texcache_source, "void VulkanTextureHeap::RetireEntry"
+        )
+        record_upload_body = function_body(
+            vulkan_texcache_source, "bool VulkanTextureHeap::RecordUpload"
+        )
+    except ValueError as error:
+        failures.append(str(error))
+        retire_entry_body = record_upload_body = ""
+    require(
+        "GetResourceRetireFrame()" in retire_entry_body
+        and "GetAbsoluteFrame()" not in retire_entry_body,
+        "Vulkan texcache RetireEntry must not tag resources with the next scheduler frame",
+        failures,
+    )
+    require(
+        "GetCurrentRecordingFrameNumber()" in record_upload_body
+        and "GetAbsoluteFrame()" not in record_upload_body,
+        "Vulkan scratch uploads must retain the current recording-frame lifetime semantics",
+        failures,
+    )
+    require(
+        all(
+            token in frame_retire_test
+            for token in (
+                "Case 1: no submission",
+                "Case 2: frame 10 submitted",
+                "Case 3: frame 11 recording",
+                "Case 4: previous frame completion",
+                "VK_ERROR_OUT_OF_DEVICE_MEMORY",
+                "DeferredDestroyQueue",
+                "queue.Collect(10)",
+                "materializeCalls == 2",
+                "RuntimeFailed",
+                "allocate:success",
+                "destroy:image_view",
+            )
+        )
+        and "melonprime_vulkan_frame_retire_tests" in vulkan_cmake
+        and "melonprime_vulkan_frame_retire_check" in vulkan_cmake,
+        "Vulkan frame-retire model/fake-dispatch tests must be built and executed",
+        failures,
+    )
+    require(
+        "image/resource creation happens after CPU polygon/texture" in generic_texcache
+        and "GPU upload recording" in generic_texcache,
+        "generic texcache comments must describe pre-fence materialization and post-fence uploads",
+        failures,
+    )
+    require(
+        "last frame that may" in vulkan_source
+        and "current frame number" not in vulkan_source[vulkan_source.find("void VulkanRenderer3D::Reset()"):],
+        "Vulkan Reset comments must describe the last GPU-referencing frame",
         failures,
     )
 

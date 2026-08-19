@@ -538,6 +538,35 @@ FrameContext* FrameRing::BeginFrame(bool recordRasterBegin)
     return BeginFrameInternal(true, recordRasterBegin);
 }
 
+u64 FrameRing::GetCurrentRecordingFrameNumber() const noexcept
+{
+    if (Frames.empty() || CurrentIndex >= Frames.size())
+        return 0;
+    const FrameContext& frame = Frames[CurrentIndex];
+    return frame.Recording ? frame.SubmittedFrame : 0;
+}
+
+u64 FrameRing::GetLastSubmittedFrameNumber() const noexcept
+{
+    if (!HasSubmittedFrame || Frames.empty() || LastSubmittedIndex >= Frames.size())
+        return 0;
+    return Frames[LastSubmittedIndex].SubmittedFrame;
+}
+
+u64 FrameRing::GetResourceRetireFrame() const noexcept
+{
+    const bool recording = !Frames.empty()
+        && CurrentIndex < Frames.size()
+        && Frames[CurrentIndex].Recording;
+    return VulkanResourceRetireFrame({
+        CompletedFrame,
+        GetLastSubmittedFrameNumber(),
+        GetCurrentRecordingFrameNumber(),
+        HasSubmittedFrame,
+        recording,
+    });
+}
+
 FrameWaitResult FrameRing::WaitForLatestSubmittedFrame(u64 timeoutNanoseconds)
 {
     if (!Device || Frames.empty())

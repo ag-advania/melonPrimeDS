@@ -252,8 +252,9 @@ public:
             const u32 layers = std::min<u32>((8 * 1024 * 1024) / (width * height * 4), 64);
 
             // Explicit backends only reserve a logical handle here. Physical
-            // image/resource creation is deferred until their frame command
-            // recording boundary has retired the previous submission.
+            // image/resource creation happens after CPU polygon/texture
+            // planning but before the reuse-fence wait; GPU upload recording
+            // remains after that wait.
             array = TexLoader.GenerateTexture(width, height, layers);
             if (!array)
             {

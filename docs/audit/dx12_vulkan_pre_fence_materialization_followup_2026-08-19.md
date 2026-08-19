@@ -14,7 +14,7 @@ frame-time result.
 
 | Area | Status | Result |
 | --- | --- | --- |
-| P2-001: OOM retire-and-retry | PASS by source/build | DX12 and Vulkan keep normal physical creation pre-fence, classify retryable allocation failures, retire the frame slot, collect deferred resources, retry exactly once, and fail closed with a submission plus runtime failure if the retry is not ready. |
+| P2-001: OOM retire-and-retry | PASS by source/build/model | DX12 and Vulkan keep normal physical creation pre-fence, classify retryable allocation failures, retire the frame slot, collect deferred resources, retry exactly once, and fail closed with a submission plus runtime failure if the retry is not ready. Vulkan deferred texcache destruction now tags the last frame that may reference the resource, and the fake-dispatch OOM model verifies destruction before the retry allocation. |
 | P2-001: partial success and bounded state | PASS by source/build | Already materialized entries are marked ready and skipped on retry; the pending-slot worklist is cleared only after the complete pass succeeds; device-loss, invalid-memory-type, and other contract failures are terminal. |
 | P2-002: typed decode storage | PASS by source/build | DX12/Vulkan use `std::unique_ptr<u32[]>` with `CapacityWords` and `UsedWords`; growth uses `new (std::nothrow) u32[words]` without value-initializing the decoder target. Allocation failure latches `UploadFailed`, returns an empty decode target, and is checked after `BuildPolygons()`. |
 | P3-001/P3-002: evidence and audit contracts | PASS | The Vulkan memory-admission documentation and production-overhead audit describe the current APIs and retry contract; the prior audit record names commit `6411ab7d9` and baseline `f4e5f389`. |
@@ -48,7 +48,11 @@ memory types, and other Vulkan results are terminal. The one retry occurs
 after `Frames.BeginFrame(true)` has retired the slot and collected its
 `DestroyQueue`; a failed retry submits
 `Frames.SubmitFrame(Device.GetMainQueue())` and latches the existing runtime
-failure.
+failure. `VulkanTextureHeap::RetireEntry()` uses
+`FrameRing::GetResourceRetireFrame()`: CPU-prep invalidations use the last
+submitted frame, while invalidations during recording use the current
+recording frame. Scratch upload buffers retain the latter semantics explicitly
+through `GetCurrentRecordingFrameNumber()`.
 
 The failure path has no unbounded retry or VSync-dependent behavior. The
 shipping telemetry gate still compiles the counters and timers out. Enabled
@@ -71,6 +75,7 @@ texture_materialize_failure_reason
 | Renderer telemetry zero-overhead audit | PASS | `python tools/ci/audits/audit-renderer-perf-zero-overhead.py` |
 | Structured composition contract audit | PASS | `python tools/ci/audits/audit-structured-composition-contract.py` — 24 constants and 11 pinned expressions |
 | Software raster parity audit | PASS | `python tools/ci/audits/audit-raster-software-parity.py` |
+| Vulkan retire-frame policy and forced-OOM fake-dispatch test | PASS | `melonprime_vulkan_frame_retire_tests` — no-submission, last-submitted, recording, completion, and old-object-destroy-before-retry-allocation cases |
 | Whitespace/error check | PASS | `git diff --check`; only expected LF/CRLF conversion warnings were emitted |
 | Shipping build, developer OFF and renderer telemetry OFF | PASS | `cmd /c tools\build\windows\build-mingw-existing.bat --build-dir build\release-mingw-shipping-x86_64 --jobs 1 --tail 160` — `[148/148]` |
 | Measurement build, developer ON, renderer telemetry ON, Vulkan latency capture ON | PASS | `cmd /c tools\build\windows\build-mingw-existing.bat --build-dir build\rebuild-mingw-x86_64 --jobs 1 --tail 220` — `[154/154]` |
@@ -94,5 +99,5 @@ The following remain `OPEN / NOT RUN`:
   validation, debug-layer validation, device-loss injection, and capture
   inspection.
 
-Accordingly, the directed residual P2/P3 implementation is source/build
+Accordingly, the directed residual P2/P3 implementation is source/build/model
 complete, while hardware-level latency and driver behavior remain unverified.

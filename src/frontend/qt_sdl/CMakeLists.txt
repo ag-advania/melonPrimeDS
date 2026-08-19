@@ -670,6 +670,29 @@ if (MELONPRIME_VULKAN_ACTIVE)
         COMMENT "Running Vulkan memory telemetry model tests..."
         VERBATIM)
 
+    # Exercise the production deferred-destroy queue with a pure frame-tag
+    # model and an API-level fake allocation dispatch. This fixes the
+    # distinction between the next scheduler frame and the last frame that may
+    # still reference a reset texcache image, and verifies the forced-OOM retry
+    # frees old image/view/memory objects before the retry allocation.
+    add_executable(melonprime_vulkan_frame_retire_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-frame-retire-tests.cpp)
+    target_include_directories(melonprime_vulkan_frame_retire_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_frame_retire_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    target_link_libraries(melonprime_vulkan_frame_retire_tests PRIVATE core)
+    set_target_properties(melonprime_vulkan_frame_retire_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_frame_retire_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_frame_retire_tests>
+        DEPENDS melonprime_vulkan_frame_retire_tests
+        COMMENT "Running Vulkan deferred-destroy frame-retire model tests..."
+        VERBATIM)
+
     add_executable(melonprime_vulkan_queue_sharing_experiment_tests EXCLUDE_FROM_ALL
         ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-queue-sharing-experiment-tests.cpp)
     target_include_directories(melonprime_vulkan_queue_sharing_experiment_tests PRIVATE

@@ -443,8 +443,8 @@ void VulkanRenderer3D::Reset()
 
     // No WaitIdle here: a reset can land while a submission is still in flight,
     // and the texcache images it drops are exactly what the deferred destroy
-    // queue exists for -- they are retired against the current frame number and
-    // collected once that frame's fence signals.
+    // queue exists for -- they are retired against the last frame that may
+    // reference each texture and collected once that frame's fence signals.
     Texcache.Reset();
     ClearBitmapDirty = 0x3;
     FrameInFlight = false;
