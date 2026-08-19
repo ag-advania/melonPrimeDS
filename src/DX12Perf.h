@@ -84,6 +84,11 @@ enum class Counter : u32
     StructuredRouteRuns,
     TextureUploadBytes,
     TextureMaterializeCount,
+    TextureMaterializePreFenceFailCount,
+    TextureMaterializeRetryAfterRetireCount,
+    TextureMaterializeRetrySuccessCount,
+    TextureMaterializeRetryFailCount,
+    TextureMaterializeFailureReason,
     TexturePendingUploadBytes,
     TexturePendingUploadCount,
     TexturePendingStorageGrowCount,
@@ -403,6 +408,11 @@ inline void MaybeReport()
         "route_copy_B=%llu route_copy_ns=%llu regular_lines=%llu fallback_lines=%llu "
         "route_runs=%llu "
         "texture_upload_B=%llu texture_materialize_count=%llu "
+        "texture_materialize_pre_fence_fail_count=%llu "
+        "texture_materialize_retry_after_retire_count=%llu "
+        "texture_materialize_retry_success_count=%llu "
+        "texture_materialize_retry_fail_count=%llu "
+        "texture_materialize_failure_reason=%llu "
         "texture_pending_upload_bytes=%llu texture_pending_upload_count=%llu "
         "texture_pending_storage_grow_count=%llu "
         "texture_pending_storage_grow_bytes=%llu "
@@ -437,7 +447,13 @@ inline void MaybeReport()
         count(Counter::StructuredScreenRouteCopyNanoseconds),
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
         count(Counter::StructuredRouteRuns), count(Counter::TextureUploadBytes),
-        count(Counter::TextureMaterializeCount), count(Counter::TexturePendingUploadBytes),
+        count(Counter::TextureMaterializeCount),
+        count(Counter::TextureMaterializePreFenceFailCount),
+        count(Counter::TextureMaterializeRetryAfterRetireCount),
+        count(Counter::TextureMaterializeRetrySuccessCount),
+        count(Counter::TextureMaterializeRetryFailCount),
+        count(Counter::TextureMaterializeFailureReason),
+        count(Counter::TexturePendingUploadBytes),
         count(Counter::TexturePendingUploadCount),
         count(Counter::TexturePendingStorageGrowCount),
         count(Counter::TexturePendingStorageGrowBytes),
@@ -559,7 +575,9 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
     StructuredRouteRuns, TextureUploadBytes, TextureMaterializeCount,
-    TexturePendingUploadBytes, TexturePendingUploadCount,
+    TextureMaterializePreFenceFailCount, TextureMaterializeRetryAfterRetireCount,
+    TextureMaterializeRetrySuccessCount, TextureMaterializeRetryFailCount,
+    TextureMaterializeFailureReason, TexturePendingUploadBytes, TexturePendingUploadCount,
     TexturePendingStorageGrowCount, TexturePendingStorageGrowBytes, UploadOverflowCount,
     UploadSpillBytes, DescriptorWriteCount,
     DescriptorCreateCount, DescriptorUpdateCount, DescriptorCopyCount, DescriptorCpuTimeNs,

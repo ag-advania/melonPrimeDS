@@ -4,8 +4,10 @@ This is the implementation and evidence record for
 `.codex/MelonPrimeDS_DX12_Vulkan_texture_materialization再監査_修正指示_2026-08-19.md`.
 The baseline for this follow-up is `f4e5f3890b2af0ba9e40297b3daf25244b000a1e`
 (`docs: record final renderer revalidation`). The implementation described
-below is currently in the working tree and has not been committed in this
-task. The instruction document is intentionally not modified or staged.
+below was committed at
+`6411ab7d90e737eccc475a556349c145e7e6ac9f`
+(`perf: move DX12/Vulkan texture materialization before fence`). The
+instruction document is intentionally not modified or staged.
 
 The record separates source/build evidence from physical-runtime evidence. A
 successful build or static audit is not promoted to a hardware, driver, or

@@ -35,20 +35,24 @@ remains a separate boundary check.
 
 ## Direct Vulkan allocations and accounting scope
 
-The Vulkan texture heap has two intentional direct-allocation paths:
+The Vulkan texture heap separates logical reservation from the physical
+device-allocation path and also has a temporary spill path:
 
 | Path | Allocation | Admission/diagnostic accounting | Failure behavior |
 | --- | --- | --- | --- |
-| `VulkanTextureHeap::Create()` | Persistent device-local texcache image array | Bypasses the shared reservation counters and detailed telemetry; the scale planner covers planned scale resources, not on-demand cache growth | Destroy the image and return handle `0` when allocation/bind/view creation fails |
+| `VulkanTextureHeap::Reserve()` | Logical texcache image-array identity only; no Vulkan object is created | No driver allocation occurs at this boundary, so no memory reservation is charged here | Return the opaque handle with `PendingCreate` set; physical creation is deferred to `MaterializePendingCreates()` |
+| `VulkanTextureHeap::MaterializePendingCreates()` | Persistent device-local texcache image, memory, binding, and view | Bypasses the scale planner's persistent reservation counters for on-demand cache growth; `texture_resource_create_us` and materialization counters remain available | Create before the reuse-fence wait; on `VK_ERROR_OUT_OF_DEVICE_MEMORY` or `VK_ERROR_OUT_OF_HOST_MEMORY`, retire deferred objects and retry once; final failure latches renderer runtime failure after cleaning partial objects |
 | `CreateScratchUpload()` | Temporary host-visible upload buffer when the frame staging ring is full | Bypasses the persistent reservation counters and detailed telemetry; `VulkanPerf` still reports scratch-upload count/bytes when renderer telemetry is enabled | Return `false`; the upload caller logs and drops that upload, and successful spill objects retire through the frame destroy queue |
 
 This means the detailed GPU-memory model is intentionally not a complete
 driver-allocation census. It is a diagnostic view of the wrapped allocation
-path only. The direct paths remain safe because every Vulkan call is checked,
-partial objects are destroyed on failure, and the driver is the final
-authority for the on-demand allocation. Any future change that moves these
-paths into shared accounting must preserve the Release zero-overhead contract
-and add a matching A/B measurement.
+path only. The physical texcache path remains safe because every Vulkan call is
+checked, partial objects are destroyed on failure, and the driver is the final
+authority for the on-demand allocation. The bounded retire-and-retry slow path
+does not turn a device-lost or contract failure into an OOM retry and does not
+retry indefinitely. Any future change that moves these paths into shared
+accounting must preserve the Release zero-overhead contract and add a matching
+A/B measurement.
 
 ## Validation contract
 

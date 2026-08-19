@@ -22,6 +22,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <array>
+#include <memory>
 #include <vector>
 
 #include "GPU3D_Texcache.h"
@@ -145,7 +146,12 @@ public:
     // because host-side creation does not touch frame-local command, staging,
     // or descriptor resources.
     u32 Reserve(u32 width, u32 height, u32 layers);
-    bool MaterializePendingCreates();
+    TextureMaterializeResult MaterializePendingCreates();
+    void ClearRetryableCreationFailure() noexcept
+    {
+        RetryableCreationFailure = false;
+        MaterializeRetryAttempted = true;
+    }
     void Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
     TextureDecodeTarget BeginTextureUpload(
         u32 handle, u32 width, u32 height, u32 layer);
@@ -161,6 +167,8 @@ public:
     {
         CreationFailed = false;
         UploadFailed = false;
+        RetryableCreationFailure = false;
+        MaterializeRetryAttempted = false;
     }
     [[nodiscard]] bool HadCreationFailure() const noexcept { return CreationFailed; }
     [[nodiscard]] bool HadUploadFailure() const noexcept { return UploadFailed; }
@@ -184,19 +192,24 @@ private:
         u32 Width = 0;
         u32 Height = 0;
         u32 Layer = 0;
-        // One u32 per decoded texel keeps the direct-decode target naturally
-        // aligned and avoids type-punning a byte vector as u32 storage.
-        std::vector<u32> Data;
+        // Decoders overwrite every word. A nothrow high-watermark allocation
+        // avoids value-initializing the entire upload before that overwrite.
+        std::unique_ptr<u32[]> Data;
+        std::size_t CapacityWords = 0;
+        std::size_t UsedWords = 0;
         bool Committed = false;
     };
 
+    bool EnsurePendingStorage(PendingUpload& pending, std::size_t words) noexcept;
+    TextureMaterializeResult HandleMaterializeFailure(
+        TextureMaterializeFailureReason reason) noexcept;
     // Records a temporary host-visible buffer for one oversized upload. The
     // ring cannot serve it, and dropping the texture would render garbage, so
     // a dedicated buffer is created and handed to the deferred destroy queue.
     bool CreateScratchUpload(VkDeviceSize size, VkBuffer& outBuffer, VkDeviceMemory& outMemory, void*& outMapped);
     bool RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
     PendingUpload* AcquirePendingUpload(
-        u32 handle, u32 width, u32 height, u32 layer, std::size_t words);
+        u32 handle, u32 width, u32 height, u32 layer, std::size_t words) noexcept;
 
     void RetireEntry(Entry& entry);
 
@@ -212,11 +225,13 @@ private:
     std::vector<u32> PendingCreateSlots;
     std::vector<u32> PendingBarriers;
     // The active prefix is drained by count; backing objects and decoded-word
-    // capacities stay allocated for reuse instead of churning each frame.
+    // high-watermarks stay allocated for reuse instead of churning each frame.
     std::vector<PendingUpload> PendingUploads;
     u32 PendingUploadCount = 0;
     bool CreationFailed = false;
     bool UploadFailed = false;
+    bool RetryableCreationFailure = false;
+    bool MaterializeRetryAttempted = false;
 };
 
 

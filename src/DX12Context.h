@@ -106,7 +106,8 @@ public:
         u32 arraySize,
         D3D12_RESOURCE_FLAGS flags,
         D3D12_RESOURCE_STATES initialState,
-        const wchar_t* debugName = nullptr) const;
+        const wchar_t* debugName = nullptr,
+        HRESULT* outResult = nullptr) const;
 
 private:
     DX12Context() = default;

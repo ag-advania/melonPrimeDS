@@ -123,9 +123,12 @@ def main() -> int:
     memory_doc = read("docs/development/performance/vulkan-memory-admission.md")
     memory_doc_lower = memory_doc.lower()
     for token in (
-        "VulkanTextureHeap::Create()",
+        "VulkanTextureHeap::Reserve()",
+        "VulkanTextureHeap::MaterializePendingCreates()",
         "CreateScratchUpload()",
-        "bypasses the shared reservation counters",
+        "retry once",
+        "device-lost",
+        "bypasses the persistent reservation counters",
         "driver is the final",
     ):
         require(token.lower() in memory_doc_lower,

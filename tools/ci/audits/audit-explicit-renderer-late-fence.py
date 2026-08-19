@@ -89,45 +89,64 @@ def main() -> int:
         failures.append(str(error))
         dx12_frame = vulkan_frame = ""
 
-    for name, frame, begin, record in (
+    for name, frame, begin, record, submit in (
         (
             "DX12",
             dx12_frame,
             "Commands.Begin(true)",
             "TextureHeap.RecordPendingUploads()",
+            "Commands.Submit()",
         ),
         (
             "Vulkan",
             vulkan_frame,
             "Frames.BeginFrame(true)",
             "TextureHeap.RecordPendingUploads()",
+            "Frames.SubmitFrame(Device.GetMainQueue())",
         ),
         ):
-        require_order(
-            frame,
-            "BuildPolygons(",
-            "TextureHeap.MaterializePendingCreates()",
-            f"{name} CPU preparation",
-            failures,
-        )
-        require_order(
-            frame,
-            "TextureHeap.MaterializePendingCreates()",
-            begin,
-            f"{name} physical creation before reuse wait",
-            failures,
-        )
-        require_order(frame, begin, record, f"{name} upload recording", failures)
-        require_order(
-            frame,
-            "TextureHeap.MaterializePendingCreates()",
-            record,
-            f"{name} materialization before uploads",
+        build_position = frame.find("BuildPolygons(")
+        failure_after_build = frame.find("TextureHeap.HadFailure()", build_position + 1)
+        materialize = "TextureHeap.MaterializePendingCreates()"
+        first_materialize = frame.find(materialize)
+        second_materialize = frame.find(materialize, first_materialize + len(materialize))
+        begin_position = frame.find(begin)
+        record_position = frame.find(record)
+        retry_guard = frame.find(
+            "materializeResult == TextureMaterializeResult::RetryAfterRetire")
+        clear_retry_position = frame.find(
+            "TextureHeap.ClearRetryableCreationFailure()", retry_guard)
+        retry_submit_position = frame.find(submit, second_materialize)
+
+        require(
+            build_position >= 0 and failure_after_build > build_position,
+            f"{name} BuildPolygons must be followed by a CPU-preparation failure check",
             failures,
         )
         require(
-            frame.count("TextureHeap.MaterializePendingCreates()") == 1,
-            f"{name} must materialize pending textures exactly once before the reuse wait",
+            first_materialize > failure_after_build and first_materialize < begin_position,
+            f"{name} pre-fence materialization must follow BuildPolygons failure checking",
+            failures,
+        )
+        require(
+            second_materialize > begin_position,
+            f"{name} must have a post-retire retry materialization call",
+            failures,
+        )
+        require_order(frame, begin, record, f"{name} upload recording", failures)
+        require(
+            frame.count(materialize) == 2
+            and retry_guard >= begin_position
+            and retry_guard < second_materialize
+            and clear_retry_position >= 0
+            and clear_retry_position < second_materialize
+            and retry_submit_position > second_materialize,
+            f"{name} retry path must begin after the reuse wait, clear retry state, retry once, and recover the frame slot",
+            failures,
+        )
+        require(
+            second_materialize < record_position,
+            f"{name} retry materialization must finish before upload recording",
             failures,
         )
         require_order(
@@ -173,30 +192,34 @@ def main() -> int:
     # P2-001/P2-002: reserve/identity is CPU-only; driver objects are
     # materialized before the explicit frame slot is acquired, from a
     # pending-only worklist. Keep this check close to the implementation so a
-    # future Create/Reserve or full-scan regression fails CI.
+    # future Create/Reserve, full-scan, or unbounded-retry regression fails CI.
     for name, header, source, reserve_signature, materialize_signature in (
         (
             "DX12",
             dx12_texcache_header,
             dx12_texcache_source,
             "u32 DX12TextureHeap::Reserve",
-            "bool DX12TextureHeap::MaterializePendingCreates",
+            "TextureMaterializeResult DX12TextureHeap::MaterializePendingCreates",
         ),
         (
             "Vulkan",
             vulkan_texcache_header,
             vulkan_texcache_source,
             "u32 VulkanTextureHeap::Reserve",
-            "bool VulkanTextureHeap::MaterializePendingCreates",
+            "TextureMaterializeResult VulkanTextureHeap::MaterializePendingCreates",
         ),
     ):
         try:
             reserve_body = function_body(source, reserve_signature)
             materialize_body = function_body(source, materialize_signature)
+            failure_body = function_body(
+                source,
+                f"TextureMaterializeResult {name}TextureHeap::HandleMaterializeFailure",
+            )
             destroy_body = function_body(source, f"void {name}TextureHeap::Destroy")
         except ValueError as error:
             failures.append(str(error))
-            reserve_body = materialize_body = destroy_body = ""
+            reserve_body = materialize_body = failure_body = destroy_body = ""
 
         require(
             "PendingCreate" in header and "PhysicalReady" in header,
@@ -215,6 +238,15 @@ def main() -> int:
             and "PhysicalReady = true" in materialize_body
             and "PendingCreate = false" in materialize_body,
             f"{name} MaterializePendingCreates must own physical creation and readiness",
+            failures,
+        )
+        require(
+            "TextureMaterializeResult::RetryAfterRetire" in materialize_body + failure_body
+            and "TextureMaterializeResult::Fatal" in materialize_body + failure_body
+            and "TextureMaterializeResult::Ready" in materialize_body + failure_body
+            and "RetryableCreationFailure" in materialize_body + failure_body
+            and "MaterializeRetryAttempted" in materialize_body + failure_body,
+            f"{name} materialization must classify a bounded retryable failure",
             failures,
         )
         require(
@@ -254,11 +286,17 @@ def main() -> int:
         )
         require(
             "PendingUpload" in source
-            and "std::vector<u32> Data" in header
-            and "Data.resize(words)" in source
+            and "std::unique_ptr<u32[]> Data" in header
+            and "std::size_t CapacityWords" in header
+            and "std::size_t UsedWords" in header
+            and "EnsurePendingStorage" in source
+            and "new (std::nothrow) u32[words]" in source
+            and "std::make_unique" not in source
+            and "Data.resize(words)" not in source
             and "reinterpret_cast<u32*>" not in source
-            and "pending->Data.data(), pending->Data.size() * sizeof(u32)" in source,
-            f"{name} pending upload storage must be reusable typed u32 CPU storage",
+            and "pending->Data.get(), pending->UsedWords * sizeof(u32)" in source
+            and "UploadFailed = true" in source,
+            f"{name} pending upload storage must be typed, high-watermark, nothrow, and fail-closed",
             failures,
         )
 
@@ -334,6 +372,27 @@ def main() -> int:
         "explicit descriptor setup must require a physically materialized texture",
         failures,
     )
+    require(
+        "enum class TextureMaterializeResult" in generic_texcache
+        and "enum class TextureMaterializeFailureReason" in generic_texcache,
+        "explicit texture materialization must expose typed result and failure enums",
+        failures,
+    )
+    require(
+        "HRESULT* outResult" in dx12_context
+        and "ClassifyDx12TextureCreationFailure" in dx12_texcache_source
+        and "E_OUTOFMEMORY" in dx12_texcache_source,
+        "DX12 materialization must preserve HRESULT classification for OOM retry",
+        failures,
+    )
+    require(
+        "ClassifyVulkanTextureCreationFailure" in vulkan_texcache_source
+        and "VK_ERROR_OUT_OF_DEVICE_MEMORY" in vulkan_texcache_source
+        and "VK_ERROR_OUT_OF_HOST_MEMORY" in vulkan_texcache_source
+        and "VK_ERROR_DEVICE_LOST" in vulkan_texcache_source,
+        "Vulkan materialization must preserve VkResult classification for OOM retry",
+        failures,
+    )
 
     store_start = soft_header.find("inline void StoreStructuredEnginePixel(")
     store_end = soft_header.find("inline void FlushStructuredEngineLine(", store_start)
@@ -391,6 +450,11 @@ def main() -> int:
         )
         for counter_name in (
             "texture_materialize_count",
+            "texture_materialize_pre_fence_fail_count",
+            "texture_materialize_retry_after_retire_count",
+            "texture_materialize_retry_success_count",
+            "texture_materialize_retry_fail_count",
+            "texture_materialize_failure_reason",
             "texture_pending_upload_bytes",
             "texture_pending_upload_count",
             "texture_pending_storage_grow_count",

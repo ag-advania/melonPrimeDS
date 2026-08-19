@@ -2193,12 +2193,19 @@ void DX12Renderer3D::RenderFrame()
         // the current frame resolves polygon/span and texture identity.
         DX12Perf::ScopedCpuTimer polygonTimer(DX12Perf::CpuMetric::BuildPolygons);
         numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+        if (TextureHeap.HadFailure())
+        {
+            SetRuntimeFailure("texture cache CPU decode/upload preparation failed");
+            return;
+        }
     }
 
     // Physical resource creation is host-side and independent of the
     // frame-local command allocator, descriptor heap, and upload ring. Start
     // it before Begin(true) waits for the previous raster submission.
-    if (!TextureHeap.MaterializePendingCreates())
+    const TextureMaterializeResult materializeResult =
+        TextureHeap.MaterializePendingCreates();
+    if (materializeResult == TextureMaterializeResult::Fatal)
     {
         SetRuntimeFailure("could not materialize a DX12 texture resource");
         return;
@@ -2211,19 +2218,38 @@ void DX12Renderer3D::RenderFrame()
         SetRuntimeFailure("could not begin a frame command list");
         return;
     }
+
+    // A retryable allocation failure is the only path allowed to create a
+    // texture after Begin(): the begin has retired the prior frame and the
+    // reset below releases this heap's deferred resources before one retry.
+    auto resetFrameResources = [&] {
+        Descriptors.Reset();
+        Uploads.Reset();
+        TextureHeap.CollectGarbage();
+        BoundSrvTexture = nullptr;
+        BoundSrvTable = {};
+        ResetFrameSrvCache();
+    };
+    resetFrameResources();
+
+    if (materializeResult == TextureMaterializeResult::RetryAfterRetire)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializeRetryAfterRetireCount);
+        TextureHeap.ClearRetryableCreationFailure();
+        if (TextureHeap.MaterializePendingCreates() != TextureMaterializeResult::Ready)
+        {
+            DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializeRetryFailCount);
+            Commands.Submit();
+            SetRuntimeFailure("could not materialize a DX12 texture resource after frame retirement");
+            return;
+        }
+        DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializeRetrySuccessCount);
+    }
+
     DX12Perf::ScopedCpuTimer rasterRecordTimer(DX12Perf::CpuMetric::RasterRecordSubmit);
     RecordDX12GpuMetric(
         Commands, GpuMetric::Raster, DX12Perf::Counter::RasterGpuTimeNs);
     Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, false));
-
-    // Begin() waited for the previous submission, so both rings are free to
-    // reuse and retired textures can go.
-    Descriptors.Reset();
-    Uploads.Reset();
-    TextureHeap.CollectGarbage();
-    BoundSrvTexture = nullptr;
-    BoundSrvTable = {};
-    ResetFrameSrvCache();
 
     UpdateClearBitmap();
     TextureHeap.RecordPendingUploads();

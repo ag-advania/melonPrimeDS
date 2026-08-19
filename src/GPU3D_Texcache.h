@@ -52,6 +52,27 @@ struct TextureDecodeTarget
     u32 Token = 0;
 };
 
+// Explicit texture creation normally runs before the renderer reuse-fence wait.
+// A driver-reported memory failure is the one bounded exception: the caller may
+// retire the previous frame's deferred resources and retry exactly once.
+enum class TextureMaterializeResult : u8
+{
+    Ready,
+    RetryAfterRetire,
+    Fatal,
+};
+
+// Kept as a small POD enum so telemetry can expose the last failure reason
+// without constructing a diagnostic string on the renderer hot path.
+enum class TextureMaterializeFailureReason : u8
+{
+    None,
+    OutOfMemory,
+    DeviceLost,
+    InvalidMemoryType,
+    Other,
+};
+
 struct NoopTextureDecodeTimer
 {
     constexpr NoopTextureDecodeTimer() noexcept = default;

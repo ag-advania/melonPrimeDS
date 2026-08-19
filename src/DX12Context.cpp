@@ -628,11 +628,18 @@ DX12::ComPtr<ID3D12Resource> DX12Context::CreateTexture2D(
     u32 arraySize,
     D3D12_RESOURCE_FLAGS flags,
     D3D12_RESOURCE_STATES initialState,
-    const wchar_t* debugName) const
+    const wchar_t* debugName,
+    HRESULT* outResult) const
 {
     DX12::ComPtr<ID3D12Resource> resource;
+    if (outResult)
+        *outResult = E_FAIL;
     if (!Device || width == 0 || height == 0 || arraySize == 0)
+    {
+        if (outResult)
+            *outResult = !Device ? E_FAIL : E_INVALIDARG;
         return resource;
+    }
 
     D3D12_HEAP_PROPERTIES heap{};
     heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -663,12 +670,16 @@ DX12::ComPtr<ID3D12Resource> DX12Context::CreateTexture2D(
         IID_PPV_ARGS(resource.ReleaseAndGetAddressOf()));
     if (FAILED(hr))
     {
+        if (outResult)
+            *outResult = hr;
         DX12::Fail("CreateCommittedResource(texture2D)", hr);
         resource.Reset();
         return resource;
     }
 
     if (debugName) resource->SetName(debugName);
+    if (outResult)
+        *outResult = S_OK;
     return resource;
 }
 

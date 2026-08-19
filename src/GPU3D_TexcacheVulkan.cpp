@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <new>
 
 #include "VulkanMemory.h"
 #include "VulkanPerf.h"
@@ -40,6 +41,19 @@ constexpr VkFormat TexcacheFormat = VK_FORMAT_R8G8B8A8_UINT;
 constexpr VkDeviceSize TexelBytes = 4;
 constexpr u32 kInitialPendingUploadCapacity = 64;
 constexpr u32 kInitialPendingCreateCapacity = 64;
+
+TextureMaterializeFailureReason ClassifyVulkanTextureCreationFailure(
+    VkResult result) noexcept
+{
+    if (result == VK_ERROR_OUT_OF_DEVICE_MEMORY
+        || result == VK_ERROR_OUT_OF_HOST_MEMORY)
+    {
+        return TextureMaterializeFailureReason::OutOfMemory;
+    }
+    if (result == VK_ERROR_DEVICE_LOST)
+        return TextureMaterializeFailureReason::DeviceLost;
+    return TextureMaterializeFailureReason::Other;
+}
 
 } // namespace
 
@@ -160,6 +174,8 @@ void VulkanTextureHeap::Init(const VulkanDevice* device, Vk::FrameRing* frames) 
     Frames = frames;
     CreationFailed = false;
     UploadFailed = false;
+    RetryableCreationFailure = false;
+    MaterializeRetryAttempted = false;
     PendingUploadCount = 0;
     PendingCreateSlots.reserve(kInitialPendingCreateCapacity);
     PendingUploads.reserve(kInitialPendingUploadCapacity);
@@ -198,6 +214,8 @@ void VulkanTextureHeap::Shutdown()
     Frames = nullptr;
     CreationFailed = false;
     UploadFailed = false;
+    RetryableCreationFailure = false;
+    MaterializeRetryAttempted = false;
 }
 
 void VulkanTextureHeap::BeginFrame(VkCommandBuffer cmd, Vk::StagingRing* staging) noexcept
@@ -240,15 +258,34 @@ u32 VulkanTextureHeap::Reserve(u32 width, u32 height, u32 layers)
     return slot + 1;
 }
 
-bool VulkanTextureHeap::MaterializePendingCreates()
+TextureMaterializeResult VulkanTextureHeap::HandleMaterializeFailure(
+    TextureMaterializeFailureReason reason) noexcept
+{
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::TextureMaterializeFailureReason,
+        static_cast<u64>(reason));
+    if (!MaterializeRetryAttempted)
+    {
+        VulkanPerf::AddCounter(VulkanPerf::Counter::TextureMaterializePreFenceFailCount);
+        if (reason == TextureMaterializeFailureReason::OutOfMemory)
+        {
+            RetryableCreationFailure = true;
+            return TextureMaterializeResult::RetryAfterRetire;
+        }
+    }
+
+    CreationFailed = true;
+    return TextureMaterializeResult::Fatal;
+}
+
+TextureMaterializeResult VulkanTextureHeap::MaterializePendingCreates()
 {
     if (CreationFailed)
-        return false;
+        return TextureMaterializeResult::Fatal;
+    if (RetryableCreationFailure)
+        return TextureMaterializeResult::RetryAfterRetire;
     if (!Device || !Device->IsValid())
-    {
-        CreationFailed = true;
-        return false;
-    }
+        return HandleMaterializeFailure(TextureMaterializeFailureReason::Other);
 
     const Vk::DeviceDispatch& fns = Device->Fns();
     VkDevice handle = Device->GetHandle();
@@ -278,11 +315,12 @@ bool VulkanTextureHeap::MaterializePendingCreates()
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-        if (!MELONPRIME_VK_CHECK("vkCreateImage (texcache array)",
-                fns.CreateImage(handle, &imageInfo, nullptr, &entry.Image)))
+        const VkResult createImageResult = fns.CreateImage(
+            handle, &imageInfo, nullptr, &entry.Image);
+        if (!MELONPRIME_VK_CHECK("vkCreateImage (texcache array)", createImageResult))
         {
-            CreationFailed = true;
-            return false;
+            return HandleMaterializeFailure(
+                ClassifyVulkanTextureCreationFailure(createImageResult));
         }
 
         VkMemoryRequirements requirements{};
@@ -300,8 +338,8 @@ bool VulkanTextureHeap::MaterializePendingCreates()
                 entry.Width, entry.Height, entry.Layers);
             fns.DestroyImage(handle, entry.Image, nullptr);
             entry.Image = VK_NULL_HANDLE;
-            CreationFailed = true;
-            return false;
+            return HandleMaterializeFailure(
+                TextureMaterializeFailureReason::InvalidMemoryType);
         }
 
         VkMemoryAllocateInfo allocInfo{};
@@ -309,24 +347,26 @@ bool VulkanTextureHeap::MaterializePendingCreates()
         allocInfo.allocationSize = requirements.size;
         allocInfo.memoryTypeIndex = typeIndex;
 
-        if (!MELONPRIME_VK_CHECK("vkAllocateMemory (texcache array)",
-                fns.AllocateMemory(handle, &allocInfo, nullptr, &entry.Memory)))
+        const VkResult allocateResult = fns.AllocateMemory(
+            handle, &allocInfo, nullptr, &entry.Memory);
+        if (!MELONPRIME_VK_CHECK("vkAllocateMemory (texcache array)", allocateResult))
         {
             fns.DestroyImage(handle, entry.Image, nullptr);
             entry.Image = VK_NULL_HANDLE;
-            CreationFailed = true;
-            return false;
+            return HandleMaterializeFailure(
+                ClassifyVulkanTextureCreationFailure(allocateResult));
         }
 
-        if (!MELONPRIME_VK_CHECK("vkBindImageMemory (texcache array)",
-                fns.BindImageMemory(handle, entry.Image, entry.Memory, 0)))
+        const VkResult bindResult = fns.BindImageMemory(
+            handle, entry.Image, entry.Memory, 0);
+        if (!MELONPRIME_VK_CHECK("vkBindImageMemory (texcache array)", bindResult))
         {
             fns.FreeMemory(handle, entry.Memory, nullptr);
             fns.DestroyImage(handle, entry.Image, nullptr);
             entry.Memory = VK_NULL_HANDLE;
             entry.Image = VK_NULL_HANDLE;
-            CreationFailed = true;
-            return false;
+            return HandleMaterializeFailure(
+                ClassifyVulkanTextureCreationFailure(bindResult));
         }
 
         VkImageViewCreateInfo viewInfo{};
@@ -343,15 +383,16 @@ bool VulkanTextureHeap::MaterializePendingCreates()
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = entry.Layers;
 
-        if (!MELONPRIME_VK_CHECK("vkCreateImageView (texcache array)",
-                fns.CreateImageView(handle, &viewInfo, nullptr, &entry.View)))
+        const VkResult createViewResult = fns.CreateImageView(
+            handle, &viewInfo, nullptr, &entry.View);
+        if (!MELONPRIME_VK_CHECK("vkCreateImageView (texcache array)", createViewResult))
         {
             fns.FreeMemory(handle, entry.Memory, nullptr);
             fns.DestroyImage(handle, entry.Image, nullptr);
             entry.Memory = VK_NULL_HANDLE;
             entry.Image = VK_NULL_HANDLE;
-            CreationFailed = true;
-            return false;
+            return HandleMaterializeFailure(
+                ClassifyVulkanTextureCreationFailure(createViewResult));
         }
 
         entry.Layout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -365,7 +406,7 @@ bool VulkanTextureHeap::MaterializePendingCreates()
 
     PendingCreateSlots.clear();
 
-    return true;
+    return TextureMaterializeResult::Ready;
 }
 
 bool VulkanTextureHeap::CreateScratchUpload(
@@ -441,30 +482,60 @@ bool VulkanTextureHeap::CreateScratchUpload(
     return true;
 }
 
+bool VulkanTextureHeap::EnsurePendingStorage(
+    PendingUpload& pending, std::size_t words) noexcept
+{
+    if (pending.CapacityWords >= words)
+        return true;
+
+    // Scalar array default-initialization leaves the words uninitialized. The
+    // decoder overwrites the complete target before it is committed.
+    std::unique_ptr<u32[]> replacement(new (std::nothrow) u32[words]);
+    if (!replacement)
+        return false;
+
+    pending.Data = std::move(replacement);
+    pending.CapacityWords = words;
+    return true;
+}
+
 VulkanTextureHeap::PendingUpload* VulkanTextureHeap::AcquirePendingUpload(
-    u32 handle, u32 width, u32 height, u32 layer, std::size_t words)
+    u32 handle, u32 width, u32 height, u32 layer, std::size_t words) noexcept
 {
     if (PendingUploadCount == PendingUploads.size())
-        PendingUploads.emplace_back();
+    {
+        try
+        {
+            PendingUploads.emplace_back();
+        }
+        catch (...)
+        {
+            return nullptr;
+        }
+    }
 
     PendingUpload& pending = PendingUploads[PendingUploadCount];
     pending.Handle = handle;
     pending.Width = width;
     pending.Height = height;
     pending.Layer = layer;
-    const bool storageGrows = pending.Data.capacity() < words;
+    const bool storageGrows = pending.CapacityWords < words;
+    bool storageReady = false;
     {
         VulkanPerf::ScopedCpuTimer growTimer(
             VulkanPerf::CpuMetric::TexturePendingStorageGrow, storageGrows);
-        pending.Data.resize(words);
+        storageReady = EnsurePendingStorage(pending, words);
     }
+    if (!storageReady)
+        return nullptr;
     if (storageGrows)
     {
         VulkanPerf::AddCounter(VulkanPerf::Counter::TexturePendingStorageGrowCount);
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::TexturePendingStorageGrowBytes,
-            pending.Data.capacity() * sizeof(u32));
+            pending.CapacityWords * sizeof(u32));
     }
+    pending.UsedWords = words;
     pending.Committed = false;
     PendingUploadCount++;
     return &pending;
@@ -488,8 +559,13 @@ TextureDecodeTarget VulkanTextureHeap::BeginTextureUpload(
 
     const std::size_t words = static_cast<std::size_t>(width) * height;
     PendingUpload* pending = AcquirePendingUpload(handle, width, height, layer, words);
+    if (!pending)
+    {
+        UploadFailed = true;
+        return {};
+    }
     return {
-        pending->Data.data(), pending->Data.size() * sizeof(u32), PendingUploadCount};
+        pending->Data.get(), pending->UsedWords * sizeof(u32), PendingUploadCount};
 }
 
 void VulkanTextureHeap::CommitTextureUpload(u32 token) noexcept
@@ -509,7 +585,7 @@ void VulkanTextureHeap::CommitTextureUpload(u32 token) noexcept
     pending.Committed = true;
     VulkanPerf::AddCounter(
         VulkanPerf::Counter::TexturePendingUploadBytes,
-        pending.Data.size() * sizeof(u32));
+        pending.UsedWords * sizeof(u32));
     VulkanPerf::AddCounter(VulkanPerf::Counter::TexturePendingUploadCount);
 }
 
@@ -523,11 +599,14 @@ void VulkanTextureHeap::CancelTextureUpload(u32 token) noexcept
     if (index != last)
         std::swap(PendingUploads[index], PendingUploads[last]);
     PendingUploads[last].Committed = false;
+    PendingUploads[last].UsedWords = 0;
     PendingUploadCount = last;
 }
 
 void VulkanTextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data)
 {
+    if (UploadFailed)
+        return;
     if (!Device || !Device->IsValid() || !Frames || !data)
     {
         UploadFailed = true;
@@ -552,9 +631,14 @@ void VulkanTextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, con
     {
         const std::size_t words = static_cast<std::size_t>(width) * height;
         PendingUpload* pending = AcquirePendingUpload(handle, width, height, layer, words);
+        if (!pending)
+        {
+            UploadFailed = true;
+            return;
+        }
         VulkanPerf::ScopedCpuTimer copyTimer(VulkanPerf::CpuMetric::TexturePendingCpuCopy);
-        const std::size_t bytes = pending->Data.size() * sizeof(u32);
-        std::memcpy(pending->Data.data(), data, bytes);
+        const std::size_t bytes = pending->UsedWords * sizeof(u32);
+        std::memcpy(pending->Data.get(), data, bytes);
         pending->Committed = true;
         VulkanPerf::AddCounter(VulkanPerf::Counter::TexturePendingUploadBytes, bytes);
         VulkanPerf::AddCounter(VulkanPerf::Counter::TexturePendingUploadCount);
@@ -577,11 +661,12 @@ void VulkanTextureHeap::RecordPendingUploads()
         PendingUpload& pending = PendingUploads[i];
         if (pending.Committed && !RecordUpload(
             pending.Handle, pending.Width, pending.Height, pending.Layer,
-            pending.Data.data()))
+            pending.Data.get()))
         {
             UploadFailed = true;
         }
         pending.Committed = false;
+        pending.UsedWords = 0;
     }
     PendingUploadCount = 0;
 }
@@ -853,6 +938,8 @@ void VulkanTextureHeap::Destroy(u32 handle)
         PendingUploadCount--;
         if (i != PendingUploadCount)
             std::swap(PendingUploads[i], PendingUploads[PendingUploadCount]);
+        PendingUploads[PendingUploadCount].Committed = false;
+        PendingUploads[PendingUploadCount].UsedWords = 0;
     }
 }
 

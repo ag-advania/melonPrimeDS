@@ -21,6 +21,7 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#include <memory>
 #include <vector>
 
 #include "GPU3D_Texcache.h"
@@ -64,7 +65,12 @@ public:
     // previous command-list slot, because creation does not touch frame-local
     // command, descriptor, or upload resources.
     u32 Reserve(u32 width, u32 height, u32 layers);
-    bool MaterializePendingCreates();
+    TextureMaterializeResult MaterializePendingCreates();
+    void ClearRetryableCreationFailure() noexcept
+    {
+        RetryableCreationFailure = false;
+        MaterializeRetryAttempted = true;
+    }
     void Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
     TextureDecodeTarget BeginTextureUpload(
         u32 handle, u32 width, u32 height, u32 layer);
@@ -89,6 +95,8 @@ public:
     {
         CreationFailed = false;
         UploadFailed = false;
+        RetryableCreationFailure = false;
+        MaterializeRetryAttempted = false;
     }
     void ResetUploadFailure() noexcept { UploadFailed = false; }
     [[nodiscard]] bool HadCreationFailure() const noexcept { return CreationFailed; }
@@ -112,15 +120,20 @@ private:
         u32 Width = 0;
         u32 Height = 0;
         u32 Layer = 0;
-        // One u32 per decoded texel keeps the direct-decode target naturally
-        // aligned and avoids type-punning a byte vector as u32 storage.
-        std::vector<u32> Data;
+        // Decoders overwrite every word. A nothrow high-watermark allocation
+        // avoids value-initializing the entire upload before that overwrite.
+        std::unique_ptr<u32[]> Data;
+        std::size_t CapacityWords = 0;
+        std::size_t UsedWords = 0;
         bool Committed = false;
     };
 
+    bool EnsurePendingStorage(PendingUpload& pending, std::size_t words) noexcept;
+    TextureMaterializeResult HandleMaterializeFailure(
+        TextureMaterializeFailureReason reason) noexcept;
     bool RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
     PendingUpload* AcquirePendingUpload(
-        u32 handle, u32 width, u32 height, u32 layer, std::size_t words);
+        u32 handle, u32 width, u32 height, u32 layer, std::size_t words) noexcept;
 
     DX12Context* Context = nullptr;
     DX12CommandContext* Commands = nullptr;
@@ -132,7 +145,7 @@ private:
     std::vector<u32> PendingCreateSlots;
     std::vector<u32> PendingBarriers;
     // The active prefix is drained by count; backing objects and decoded-word
-    // capacities stay allocated for reuse instead of churning each frame.
+    // high-watermarks stay allocated for reuse instead of churning each frame.
     std::vector<PendingUpload> PendingUploads;
     u32 PendingUploadCount = 0;
     std::vector<DX12::ComPtr<ID3D12Resource>> Graveyard;
@@ -141,6 +154,8 @@ private:
     std::vector<DX12::ComPtr<ID3D12Resource>> SpillUploads;
     bool CreationFailed = false;
     bool UploadFailed = false;
+    bool RetryableCreationFailure = false;
+    bool MaterializeRetryAttempted = false;
 };
 
 class TexcacheDX12Loader

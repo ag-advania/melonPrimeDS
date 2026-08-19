@@ -2171,13 +2171,20 @@ void VulkanRenderer3D::RenderFrame()
             // queued uploads after BeginFrame() retires the prior raster slot.
             VulkanPerf::ScopedCpuTimer polygonTimer(VulkanPerf::CpuMetric::BuildPolygons);
             numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+            if (TextureHeap.HadFailure())
+            {
+                SetRuntimeFailure("texture cache CPU decode/upload preparation failed");
+                return;
+            }
         }
     }
 
     // Image/memory/view creation is host-side and independent of the
     // frame-local command pool, staging ring, and descriptor resources. Start
     // it before BeginFrame(true) waits for the previous raster slot.
-    if (!TextureHeap.MaterializePendingCreates())
+    const TextureMaterializeResult materializeResult =
+        TextureHeap.MaterializePendingCreates();
+    if (materializeResult == TextureMaterializeResult::Fatal)
     {
         SetRuntimeFailure("could not materialize a Vulkan texture resource");
         return;
@@ -2189,6 +2196,23 @@ void VulkanRenderer3D::RenderFrame()
     {
         SetRuntimeFailure("could not begin a frame command buffer");
         return;
+    }
+
+    // A retryable allocation failure is the only path allowed to create an
+    // image after BeginFrame(): it has retired the prior frame and collected
+    // the deferred destroy queue before this one retry.
+    if (materializeResult == TextureMaterializeResult::RetryAfterRetire)
+    {
+        VulkanPerf::AddCounter(VulkanPerf::Counter::TextureMaterializeRetryAfterRetireCount);
+        TextureHeap.ClearRetryableCreationFailure();
+        if (TextureHeap.MaterializePendingCreates() != TextureMaterializeResult::Ready)
+        {
+            VulkanPerf::AddCounter(VulkanPerf::Counter::TextureMaterializeRetryFailCount);
+            Frames.SubmitFrame(Device.GetMainQueue());
+            SetRuntimeFailure("could not materialize a Vulkan texture resource after frame retirement");
+            return;
+        }
+        VulkanPerf::AddCounter(VulkanPerf::Counter::TextureMaterializeRetrySuccessCount);
     }
 
     VkCommandBuffer cmd = frame->CommandBuffer;

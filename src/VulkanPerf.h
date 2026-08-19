@@ -81,6 +81,11 @@ enum class Counter : u32
     HudUploadBytes,
     TextureUploadBytes,
     TextureMaterializeCount,
+    TextureMaterializePreFenceFailCount,
+    TextureMaterializeRetryAfterRetireCount,
+    TextureMaterializeRetrySuccessCount,
+    TextureMaterializeRetryFailCount,
+    TextureMaterializeFailureReason,
     TexturePendingUploadBytes,
     TexturePendingUploadCount,
     TexturePendingStorageGrowCount,
@@ -439,7 +444,13 @@ inline void MaybeReport()
         "structured_input_uploaded_B=%llu structured_input_regions=%llu structured_input_full=%llu "
         "structured_input_partial=%llu route_copy_B=%llu route_copy_ns=%llu "
         "regular_lines=%llu fallback_lines=%llu route_runs=%llu hud_upload_B=%llu texture_upload_B=%llu "
-        "texture_materialize_count=%llu texture_pending_upload_bytes=%llu "
+        "texture_materialize_count=%llu "
+        "texture_materialize_pre_fence_fail_count=%llu "
+        "texture_materialize_retry_after_retire_count=%llu "
+        "texture_materialize_retry_success_count=%llu "
+        "texture_materialize_retry_fail_count=%llu "
+        "texture_materialize_failure_reason=%llu "
+        "texture_pending_upload_bytes=%llu "
         "texture_pending_upload_count=%llu "
         "texture_pending_storage_grow_count=%llu "
         "texture_pending_storage_grow_bytes=%llu "
@@ -488,7 +499,13 @@ inline void MaybeReport()
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
         count(Counter::StructuredRouteRuns),
         count(Counter::HudUploadBytes), count(Counter::TextureUploadBytes),
-        count(Counter::TextureMaterializeCount), count(Counter::TexturePendingUploadBytes),
+        count(Counter::TextureMaterializeCount),
+        count(Counter::TextureMaterializePreFenceFailCount),
+        count(Counter::TextureMaterializeRetryAfterRetireCount),
+        count(Counter::TextureMaterializeRetrySuccessCount),
+        count(Counter::TextureMaterializeRetryFailCount),
+        count(Counter::TextureMaterializeFailureReason),
+        count(Counter::TexturePendingUploadBytes),
         count(Counter::TexturePendingUploadCount),
         count(Counter::TexturePendingStorageGrowCount),
         count(Counter::TexturePendingStorageGrowBytes),
@@ -702,6 +719,11 @@ enum class Counter : u32
     HudUploadBytes,
     TextureUploadBytes,
     TextureMaterializeCount,
+    TextureMaterializePreFenceFailCount,
+    TextureMaterializeRetryAfterRetireCount,
+    TextureMaterializeRetrySuccessCount,
+    TextureMaterializeRetryFailCount,
+    TextureMaterializeFailureReason,
     TexturePendingUploadBytes,
     TexturePendingUploadCount,
     TexturePendingStorageGrowCount,
