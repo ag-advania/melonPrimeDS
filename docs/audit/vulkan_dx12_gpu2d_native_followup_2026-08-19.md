@@ -16,7 +16,8 @@ hardware exactness result.
 | Repository | ag-advania/melonPrimeDS |
 | Branch | develop_hud |
 | Instruction baseline | b4aecb3869d0f983a073cfa8b1ee28567b5ab8d4 |
-| Implementation commit | 33c639835 gpu2d: add exact validation and stateful capture |
+| Base implementation commit | 33c639835 gpu2d: add exact validation and stateful capture |
+| Follow-up implementation commit | 0e1d80848 gpu2d: preserve native mirror generations per slot |
 | Target backends | Vulkan and DirectX 12 |
 | Software oracle | SoftRenderer canonical 6-bit logical Top/Bottom frames |
 | Custom HUD | Not part of the logical comparison |
@@ -49,6 +50,48 @@ Capture state is kept in the unused tail of the existing blend-continuation
 buffer. Normal capture-disabled frames do not issue the extra line capture
 dispatches. The native output readback path waits only for the exact developer
 validation submission and is not part of ordinary presentation.
+
+## 2026-08-19 follow-up evidence
+
+Commit `0e1d80848` closes a real persistent-mirror bug found during the first
+physical differential run. Native Vulkan/DX12 ring slots now retain the last
+uploaded content/VRAM/capture generations and request a category refresh when
+that slot missed the frame in which a dirty block was observed. The recorder
+also separates non-mutating dirty observation from the final commit, so A and B
+can share a VRAM bank without the first engine clearing the second engine's
+observation. The contract vectors include a lagging-slot content-generation
+case.
+
+The following checks pass against the follow-up source:
+
+- `py tools/ci/audits/check-vulkan-shaders.py` (114 variants, 608
+  scale-specialized modules)
+- `py tools/dx12/compile-shaders.py --check-source-sync`
+- `py tools/ci/audits/audit-raster-software-parity.py`
+- `py tools/ci/audits/audit-structured-composition-contract.py`
+- `py tools/ci/audits/audit-renderer-perf-zero-overhead.py`
+- `py tools/ci/audits/audit-renderer-physical-ab-contract.py`
+- `build/rebuild-mingw-x86_64`: `melonDS` and
+  `melonprime_gpu2d_native_contract_vectors`
+- `melonprime_gpu2d_native_contract_vectors`: `PASS`
+- `git diff --cached --check`: `PASS` before commit
+
+Physical Vulkan exact run `gpu2d-vulkan-exact-fixed4-20260819` used the ROM
+`build/runtime-pacing-fix-20260812-v1/mph.nds` on an NVIDIA GeForce RTX 5070
+Ti at scale 1. Startup pipeline fallback was diagnosed and later announced
+native Vulkan ownership; `config_restore=PASS`, `layer_settings_restore=PASS`,
+and the process exited normally. This is not a committed-head result:
+`provenance_verified=false`, the binary embedded source `0418a7db...`, while
+the checkout head at run time was `e1e78d682...` with a dirty worktree.
+
+The exact gate still fails and therefore remains OPEN: frame 73 reported
+`total=49152 top=49152 bottom=0`, with the first sample expected `0x003B3B3B`
+and native `0x003F3F3F` on engine A. The gate then explicitly disabled native
+composition and reported the Software fallback. This confirms the persistent
+palette/mirror issue was bypassed, but does not establish native pixel parity;
+the remaining failure is in the GPU-side native display semantics for this
+case. DX12 physical Gate A/B, capture timing, savestate/reset, renderer
+switching, and other platform coverage remain OPEN / NOT RUN.
 
 ## Validation commands
 
