@@ -322,6 +322,7 @@ private:
         ShaderStep_Compositor,
         ShaderStep_CorrectCoverage,
         ShaderStep_GPU2DNative,
+        ShaderStep_GPU2DNativeCapture,
         ShaderStepCount,
     };
 
@@ -414,6 +415,7 @@ private:
     DX12::ComPtr<ID3D12PipelineState> PipelineCompositor;
     DX12::ComPtr<ID3D12PipelineState> PipelineCorrectCoverage;
     DX12::ComPtr<ID3D12PipelineState> PipelineGPU2DNative;
+    DX12::ComPtr<ID3D12PipelineState> PipelineGPU2DNativeCapture;
 
     // GPU-side buffers.
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each

@@ -2230,8 +2230,13 @@ void MainWindow::onLoadState()
         else          emuInstance->osdAddMessage(0, "State loaded from file");
 
         const char* physicalABState = std::getenv("MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH");
+        QString loadedPhysicalABPath = filename;
+        loadedPhysicalABPath.replace('\\', '/');
+        QString expectedPhysicalABPath = physicalABState ?
+            QString::fromLocal8Bit(physicalABState) : QString();
+        expectedPhysicalABPath.replace('\\', '/');
         if (physicalABState && *physicalABState &&
-            filename.toStdString() == physicalABState)
+            loadedPhysicalABPath.compare(expectedPhysicalABPath, Qt::CaseInsensitive) == 0)
         {
             Platform::Log(Platform::LogLevel::Info,
                 "[PhysicalAB] savestate_action_loaded=1 path=%s\n",

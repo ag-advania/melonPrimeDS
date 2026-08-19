@@ -46,6 +46,10 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
 
+    // Restore the one-line-ahead Software OBJ cache after an accelerated
+    // backend resets renderer-private state during savestate I/O.
+    void RebuildSpriteCacheForSavestate() noexcept;
+
     void SetRenderSettings(RendererSettings& settings) override;
 
     void DrawScanline(u32 line) override;

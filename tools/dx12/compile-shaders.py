@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the committed DXBC table used by the DX12 renderer.
+"""Generate the committed DXBC/DXIL table used by the DX12 renderer.
 
 Only three shader sets exist: 1x-4x, 5x-8x and 9x-16x. Values that vary
 inside those buckets are supplied through MetaUniform at runtime.
@@ -8,6 +8,7 @@ inside those buckets are supplied through MetaUniform at runtime.
 from __future__ import annotations
 
 import argparse
+import glob
 import hashlib
 import importlib.util
 import os
@@ -47,7 +48,24 @@ def source_hash() -> str:
     return digest.hexdigest()
 
 
-def compile_all(audit, fxc: str) -> tuple[list[bytes], list[tuple[int, int]]]:
+def find_dxc() -> str | None:
+    candidates = sorted(
+        glob.glob(r"C:\\Program Files (x86)\\Windows Kits\\10\\bin\\*\\x64\\dxc.exe"),
+        reverse=True,
+    )
+    candidates += sorted(
+        glob.glob(r"C:\\Program Files\\Windows Kits\\10\\bin\\*\\x64\\dxc.exe"),
+        reverse=True,
+    )
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def compile_all(
+    audit, fxc: str, dxc: str
+) -> tuple[list[bytes], list[tuple[int, int]]]:
     shaders = audit.parse_shaders(audit.SHADER_HEADER)
     variants = audit.variants()
     blobs: list[bytes] = []
@@ -63,15 +81,28 @@ def compile_all(audit, fxc: str) -> tuple[list[bytes], list[tuple[int, int]]]:
                 source = audit.build_source(shaders, geometry, body_key, defines)
                 with open(source_path, "w", encoding="utf-8") as handle:
                     handle.write(source)
-                result = subprocess.run(
-                    [fxc, "/nologo", "/T", "cs_5_1", "/E", "main", "/O3",
-                     "/Ges", "/Fo", output_path, source_path],
-                    capture_output=True,
-                    text=True,
-                )
+                if body_key == "GPU2DNative":
+                    # NVIDIA's DXBC compiler path can return E_OUTOFMEMORY for
+                    # this valid, heavily branched compositor during
+                    # CreateComputePipelineState. DXC emits the same shader as
+                    # Shader Model 6.0 DXIL and keeps the normal/capture
+                    # pipelines within the driver's stable PSO path.
+                    command = [
+                        dxc, "-T", "cs_6_0", "-E", "main", "-O3", "-Ges",
+                        "-Wno-shift-op-parentheses", "-Fo", output_path,
+                        source_path,
+                    ]
+                else:
+                    command = [
+                        fxc, "/nologo", "/T", "cs_5_1", "/E", "main", "/O3",
+                        "/Ges", "/Fo", output_path, source_path,
+                    ]
+                result = subprocess.run(command, capture_output=True, text=True)
                 diagnostics = "\n".join(
                     part.strip() for part in (result.stdout, result.stderr) if part.strip())
-                if result.returncode != 0 or "warning " in diagnostics.lower():
+                if result.returncode != 0 or (
+                    body_key != "GPU2DNative" and "warning " in diagnostics.lower()
+                ):
                     print(f"FAIL: bucket-scale={scale} shader={name}\n{diagnostics}", file=sys.stderr)
                     raise SystemExit(1)
                 with open(output_path, "rb") as handle:
@@ -127,6 +158,7 @@ def render(blobs: list[bytes], ranges: list[tuple[int, int]], digest: str, varia
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fxc", default=None, help="path to fxc.exe")
+    parser.add_argument("--dxc", default=None, help="path to dxc.exe")
     parser.add_argument("--check-source-sync", action="store_true")
     args = parser.parse_args()
 
@@ -149,8 +181,12 @@ def main() -> int:
     if not fxc:
         print("FAIL: fxc.exe was not found", file=sys.stderr)
         return 1
+    dxc = args.dxc or find_dxc()
+    if not dxc:
+        print("FAIL: dxc.exe was not found (required for GPU2DNative)", file=sys.stderr)
+        return 1
     variants = audit.variants()
-    blobs, ranges = compile_all(audit, fxc)
+    blobs, ranges = compile_all(audit, fxc, dxc)
     output = render(blobs, ranges, digest, len(variants))
     with open(OUTPUT_PATH, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(output)

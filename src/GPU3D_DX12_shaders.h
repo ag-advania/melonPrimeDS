@@ -25,8 +25,10 @@
 
 // HLSL port of the OpenGL compute renderer's shader set
 // (GPU3D_Compute_shaders.h). The compute variants are compiled offline into
-// GPU3D_DX12_ShaderBlobs.inc; only the native presenter's small VS/PS pair
-// still uses d3dcompiler_47.dll at runtime.
+// GPU3D_DX12_ShaderBlobs.inc; GPU2DNative uses Shader Model 6.0 DXIL because
+// NVIDIA's DXBC PSO compiler rejects that heavily branched compositor with
+// E_OUTOFMEMORY, while the native presenter's small VS/PS pair still uses
+// d3dcompiler_47.dll at runtime.
 //
 // The tile-binned pipeline, the fixed-point math and the intermediate buffer
 // layouts are a 1:1 port; the differences are all forced by HLSL:
@@ -2401,6 +2403,7 @@ NativePixel NativeBackdrop(uint engine)
 {
     NativePixel p = NativeEmpty();
     p.Color = NativeBGR555(NativePalette16(engine, 0u), 0x20u);
+    p.Flag = 0x20u;
     p.Present = 1u;
     return p;
 }
@@ -2825,15 +2828,19 @@ void NativeWriteCapturePair(uint line,uint x,uint ox)
     BlendContinuationState[FramebufferStride+bank*32768u+(address>>2u)]=first|(second<<16u);
 }
 
+#ifdef GPU2DNativeCapture
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
-    if((DispatchPad&4u)!=0u)
-    {
-        if(id.x>=ScreenWidth||id.y!=0u)return;
-        uint x=id.x/ScaleFactor;if(id.x%ScaleFactor!=0u||(x&1u)!=0u)return;
-        NativeWriteCapturePair(InterpSpanCount,x,id.x);return;
-    }
+    if(id.x>=ScreenWidth||id.y!=0u)return;
+    uint x=id.x/ScaleFactor;
+    if(id.x%ScaleFactor!=0u||(x&1u)!=0u)return;
+    NativeWriteCapturePair(InterpSpanCount,x,id.x);
+}
+#else
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID)
+{
     if(id.x>=ScreenWidth||id.y>=ScreenHeight*2u)return;
     uint screen=id.y/ScreenHeight,scaledY=id.y-screen*ScreenHeight,x=id.x/ScaleFactor,line=scaledY/ScaleFactor;
     uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
@@ -2846,6 +2853,7 @@ void main(uint3 id : SV_DispatchThreadID)
     if(exactOutput||!directOutput)
         ResolveOut[screen*FramebufferStride+scaledY*ScreenWidth+id.x]=bgra8;
 }
+#endif
 #undef line
 )";
 

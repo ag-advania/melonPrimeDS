@@ -105,6 +105,7 @@ void DX12Renderer::PostSavestate()
     // same here: FinalFB, the high-resolution capture sidecar and structured
     // 2D capture references are derived caches, not serialized DS state.
     SoftRenderer::Reset();
+    RebuildSpriteCacheForSavestate();
     if (DifferentialReference)
     {
         DifferentialReference->Reset();

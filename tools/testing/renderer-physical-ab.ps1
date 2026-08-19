@@ -15,6 +15,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Rom,
     [string]$Savestate = '',
+    [ValidateRange(0, 8)]
+    [int]$SavestateSlot = 0,
     [string]$BuildDir = 'build\rebuild-mingw-x86_64',
     [Parameter(Mandatory = $true)]
     [string]$RunId,
@@ -164,13 +166,25 @@ $provenanceVerified = $provenanceFailures.Count -eq 0
 $savestateFixtureDir = $null
 $savestateSlotPath = $null
 $savestateSlotPathForApp = $null
+$launchRomPath = $romPath
 if ($null -ne $statePath) {
+    if ($SavestateSlot -eq 0) {
+        $slotMatch = [regex]::Match(
+            $statePath, '\.ml([1-8])$', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $SavestateSlot = if ($slotMatch.Success) { [int]$slotMatch.Groups[1].Value } else { 1 }
+    }
     $savestateFixtureDir = Join-Path $out "$RunId.savestate-fixture"
     if (Test-Path -LiteralPath $savestateFixtureDir) {
         throw "Refusing to overwrite savestate fixture directory: $savestateFixtureDir"
     }
     New-Item -ItemType Directory -Force -Path $savestateFixtureDir | Out-Null
-    $savestateLeaf = ([IO.Path]::GetFileNameWithoutExtension($romPath) + '.ml1')
+    # Stage the ROM alongside the requested state. EmuInstance resolves
+    # QAction F-key slots relative to the loaded ROM, so a state copied to a
+    # separate directory is only a real post-start slot load when the ROM is
+    # staged there too. This also keeps the run from touching the user's .sav.
+    $launchRomPath = Join-Path $savestateFixtureDir ([IO.Path]::GetFileName($romPath))
+    Copy-Item -LiteralPath $romPath -Destination $launchRomPath
+    $savestateLeaf = ([IO.Path]::GetFileNameWithoutExtension($romPath) + ".ml$SavestateSlot")
     $savestateSlotPath = Join-Path $savestateFixtureDir $savestateLeaf
     # EmuInstance::getAssetPath() emits forward slashes on Windows. Keep the
     # action marker comparison in the same spelling as the production path.
@@ -306,12 +320,12 @@ function Run-Action([string]$name) {
             if ($null -eq $statePath) {
                 Add-Content -LiteralPath $harness -Value 'savestate-load=NOT_REQUESTED'
             } else {
-                # F1 is the production Load state 1 QAction shortcut. The
-                # fixture is named exactly as EmuInstance::getSavestateName(1)
-                # expects, so this is a real post-start load, not the old
-                # startup-only diagnostic hook.
-                Send-Key '{F1}'
-                Add-Content -LiteralPath $harness -Value "savestate-load=F1 fixture=$savestateSlotPath"
+                # This is the production Load state QAction shortcut. The
+                # staged ROM makes the requested .mlN the actual slot path,
+                # so the action is a real post-start load rather than the
+                # developer-only startup diagnostic hook.
+                Send-Key "{F$SavestateSlot}"
+                Add-Content -LiteralPath $harness -Value "savestate-load=F$SavestateSlot fixture=$savestateSlotPath"
                 Start-Sleep -Seconds 3
             }
         }
@@ -362,7 +376,7 @@ try {
     if ($null -ne $savestateSlotPathForApp) { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $savestateSlotPathForApp } else { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue }
 
     $processStart = Record-Phase 'process_start'
-    $proc = Start-Process -FilePath $exe -ArgumentList ('"' + $romPath + '"') -WorkingDirectory $build -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $proc = Start-Process -FilePath $exe -ArgumentList ('"' + $launchRomPath + '"') -WorkingDirectory $build -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     $processStart['process_id'] = $proc.Id
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
@@ -425,6 +439,34 @@ $allLog = @()
 foreach ($path in @($stdout, $stderr)) { if (Test-Path -LiteralPath $path) { $allLog += Get-Content -LiteralPath $path -ErrorAction SilentlyContinue } }
 [IO.File]::WriteAllText($telemetryLog, [string]::Join([Environment]::NewLine, [string[]]$allLog), $utf8)
 $badMarkers = @($allLog | Select-String -Pattern 'VUID-|SYNC-HAZARD|DEVICE_LOST|GPU failure|command submission failed|Renderer fatal' -ErrorAction SilentlyContinue)
+$nativeGPU2DExactFailureMarkers = @($allLog | Select-String -Pattern 'native GPU2D exact (?:differential )?mismatch|native GPU2D exact gate rejected' -ErrorAction SilentlyContinue)
+$nativeGPU2DMismatchValues = @(
+    foreach ($line in $allLog) {
+        $match = [regex]::Match($line, 'native_gpu2d_mismatches=(\d+)')
+        if ($match.Success) { [Int64]$match.Groups[1].Value }
+    }
+)
+$nativeGPU2DFallbackValues = @(
+    foreach ($line in $allLog) {
+        $match = [regex]::Match($line, 'native_gpu2d_fallback_frames=(\d+)')
+        if ($match.Success) { [Int64]$match.Groups[1].Value }
+    }
+)
+$fallbackLineValues = @(
+    foreach ($line in $allLog) {
+        $match = [regex]::Match($line, 'fallback_lines=(\d+)')
+        if ($match.Success) { [Int64]$match.Groups[1].Value }
+    }
+)
+$nativeGPU2DMismatchMax = if ($nativeGPU2DMismatchValues.Count -gt 0) {
+    ($nativeGPU2DMismatchValues | Measure-Object -Maximum).Maximum
+} else { 0 }
+$nativeGPU2DFallbackMax = if ($nativeGPU2DFallbackValues.Count -gt 0) {
+    ($nativeGPU2DFallbackValues | Measure-Object -Maximum).Maximum
+} else { 0 }
+$fallbackLineMax = if ($fallbackLineValues.Count -gt 0) {
+    ($fallbackLineValues | Measure-Object -Maximum).Maximum
+} else { 0 }
 $stateMarker = if ($null -ne $statePath) { @($allLog | Select-String -SimpleMatch "[SavestateDiff] path=$statePath loaded=1" -ErrorAction SilentlyContinue).Count } else { 0 }
 $stateActionMarker = if ($null -ne $savestateSlotPathForApp) { @($allLog | Select-String -SimpleMatch "[PhysicalAB] savestate_action_loaded=1 path=$savestateSlotPathForApp" -ErrorAction SilentlyContinue).Count } else { 0 }
 $hudOffMarker = if ($Hud -eq 'Off') { @($allLog | Select-String -SimpleMatch '[SavestateDiff] customHudForcedOff=1' -ErrorAction SilentlyContinue).Count } else { 0 }
@@ -469,17 +511,20 @@ $manifestObject = [ordered]@{
         action = $Action
         action_seed = $ActionSeed
         action_order = $actionSequence
+        savestate_slot = if ($null -ne $statePath) { $SavestateSlot } else { $null }
         warmup_seconds = $WarmupSeconds
         measured_seconds = $MeasuredSeconds
         grace_seconds = $GraceSeconds
     }
     fixture = [ordered]@{
         rom = $romPath
+        launch_rom = $launchRomPath
         rom_sha256 = $romSha256
         savestate = if ($null -ne $statePath) { $statePath } else { $null }
         savestate_sha256 = if ($null -ne $statePath) { (Get-FileHash -LiteralPath $statePath -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+        savestate_slot = if ($null -ne $statePath) { $SavestateSlot } else { $null }
         savestate_fixture = $savestateSlotPath
-        procedure_version = 'physical-ab-2026-08-19-v2'
+        procedure_version = 'physical-ab-2026-08-19-v3'
         required_scenes = @('steady-state match', 'weapon switch', 'projectile/effect burst', 'room/map transition', 'scoreboard open/close', 'display capture', 'renderer Reset immediately', 'savestate load immediately', 'Custom HUD OFF', 'Custom HUD ON')
     }
     provenance = [ordered]@{
@@ -527,6 +572,10 @@ $manifestObject = [ordered]@{
         capture_rows = $captureRows
         frame_rows = $frameRows
         bad_marker_count = $badMarkers.Count
+        native_gpu2d_exact_failure_marker_count = $nativeGPU2DExactFailureMarkers.Count
+        native_gpu2d_mismatch_max = $nativeGPU2DMismatchMax
+        native_gpu2d_fallback_frames_max = $nativeGPU2DFallbackMax
+        fallback_lines_max = $fallbackLineMax
     }
 }
 [IO.File]::WriteAllText($runManifest, ($manifestObject | ConvertTo-Json -Depth 12), $utf8)
@@ -548,12 +597,17 @@ process_exit_code=$exitCode
 config_restore=$(if ($configRestored) { 'PASS' } else { 'FAIL' })
 layer_settings_restore=$(if ($layerRestored) { 'PASS' } else { 'FAIL' })
 savestate=$(if ($null -ne $statePath) { $statePath } else { 'NONE' })
+savestate_slot=$(if ($null -ne $statePath) { $SavestateSlot } else { 'NONE' })
 savestate_loaded_marker=$stateMarker
 savestate_action_loaded_marker=$stateActionMarker
 custom_hud_off_marker=$hudOffMarker
 capture_rows=$captureRows
 frame_rows=$frameRows
 bad_marker_count=$($badMarkers.Count)
+native_gpu2d_exact_failure_marker_count=$($nativeGPU2DExactFailureMarkers.Count)
+native_gpu2d_mismatch_max=$nativeGPU2DMismatchMax
+native_gpu2d_fallback_frames_max=$nativeGPU2DFallbackMax
+fallback_lines_max=$fallbackLineMax
 expected_source_head=$ExpectedSourceHead
 expected_source_sha=$ExpectedSourceHead
 actual_binary_source_head=$actualSourceHead
@@ -602,7 +656,13 @@ Write-Host "capture rows       : $captureRows"
 Write-Host "frame rows         : $frameRows"
 Write-Host "provenance         : $(if ($provenanceVerified) { 'PASS' } else { 'UNVERIFIED' })"
 Write-Host "bad markers        : $($badMarkers.Count)"
+Write-Host "native exact fail  : $($nativeGPU2DExactFailureMarkers.Count)"
+Write-Host "native mismatches  : $nativeGPU2DMismatchMax"
+Write-Host "native fallbacks   : $nativeGPU2DFallbackMax"
+Write-Host "fallback lines     : $fallbackLineMax"
 if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMarkers.Count -ne 0 -or
+    $nativeGPU2DExactFailureMarkers.Count -ne 0 -or
+    $nativeGPU2DMismatchMax -ne 0 -or $nativeGPU2DFallbackMax -ne 0 -or $fallbackLineMax -ne 0 -or
     ($null -ne $statePath -and $stateMarker -eq 0) -or
     ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0) -or
     ($Hud -eq 'Off' -and $hudOffMarker -eq 0) -or

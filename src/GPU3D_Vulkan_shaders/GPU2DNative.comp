@@ -230,6 +230,7 @@ Pixel BackdropPixel(uint engine)
 {
     Pixel p = EmptyPixel();
     p.Color = ConvertBGR555(Palette16(engine, 0u), 0x20u);
+    p.Flag = 0x20u;
     p.Present = 1u;
     p.Priority = 4u;
     return p;

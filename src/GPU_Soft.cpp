@@ -205,6 +205,27 @@ void SoftRenderer::PostSavestate()
     auto rend3d = dynamic_cast<SoftRenderer3D*>(Rend3D.get());
     if (rend3d->IsThreaded())
         rend3d->EnableRenderThread();
+
+    RebuildSpriteCacheForSavestate();
+}
+
+void SoftRenderer::RebuildSpriteCacheForSavestate() noexcept
+{
+    // Sprite scanlines are prepared one line ahead of the visible draw.  A
+    // savestate restore resets the renderer-owned OBJ cache, while the loaded
+    // GPU state may resume at any VCOUNT.  Rebuild the cache for that line
+    // before the next DrawScanline so the Software oracle and native GPU2D
+    // consume the same post-restore OBJ state.
+    if (GPU.VCount < GPU2DNative::ScreenHeight)
+    {
+        Rend2D_A->DrawSprites(GPU.VCount);
+        Rend2D_B->DrawSprites(GPU.VCount);
+    }
+    else if (GPU.VCount == 262u)
+    {
+        Rend2D_A->DrawSprites(0u);
+        Rend2D_B->DrawSprites(0u);
+    }
 }
 
 
@@ -321,7 +342,16 @@ void SoftRenderer::DrawScanline(u32 line)
                 StructuredCapturePreparedThisFrame = true;
             }
         }
-        Output3D = structuredVulkan2D ? Structured3DPlaceholderLine : Rend3D->GetLine(line);
+        // Structured native composition owns the 3D image in normal frames and
+        // therefore uses a transparent placeholder here to avoid a CPU 3D
+        // readback. The exact differential gate is different: its Software
+        // oracle must include the real 3D layer, otherwise a native compositor
+        // that correctly samples FinalFB is compared against an artificial
+        // transparent frame.
+        const bool exactNativeGPU2D = GPU2DNative::ExactValidationEnabled();
+        Output3D = structuredVulkan2D && !exactNativeGPU2D
+            ? Structured3DPlaceholderLine
+            : Rend3D->GetLine(line);
 #else
         Output3D = Rend3D->GetLine(line);
 #endif

@@ -755,6 +755,7 @@ void DX12Renderer3D::ReleasePipelines()
     PipelineCompositor.Reset();
     PipelineCorrectCoverage.Reset();
     PipelineGPU2DNative.Reset();
+    PipelineGPU2DNativeCapture.Reset();
 }
 
 void DX12Renderer3D::ReleaseScaleDependentResources()
@@ -1257,6 +1258,13 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
     {
         build(PipelineGPU2DNative, DX12Shaders::GPU2DNative,
             { "GPU2DNative" }, "DX12GPU2DNative");
+        return;
+    }
+
+    if (step == ShaderStep_GPU2DNativeCapture)
+    {
+        build(PipelineGPU2DNativeCapture, DX12Shaders::GPU2DNative,
+            { "GPU2DNative", "GPU2DNativeCapture" }, "DX12GPU2DNativeCapture");
         return;
     }
 }
@@ -3288,7 +3296,13 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 
     if (input.CaptureEnable != 0u)
     {
+        if (!PipelineGPU2DNativeCapture)
+        {
+            SetRuntimeFailure("native GPU2D capture pipeline is unavailable");
+            return false;
+        }
         InsertUavBarrier(list, BlendStateBuffer.Get());
+        list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
         for (u32 lineNumber = 0; lineNumber < GPU2DNative::ScreenHeight; ++lineNumber)
         {
             constants.InterpSpanCount = lineNumber;
