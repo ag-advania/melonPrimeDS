@@ -95,10 +95,15 @@ if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Executable not f
 
 $ExpectedSourceHead = $ExpectedSourceHead.ToLowerInvariant()
 $checkoutSourceHead = ([string](git -C "$repo" rev-parse HEAD 2>$null)).Trim().ToLowerInvariant()
-# Detached HEAD is the required clean-provenance mode.  symbolic-ref emits no
-# output in that mode, so cast the result before calling Trim instead of
-# dereferencing a null expression under Windows PowerShell 5.1.
-$checkoutBranch = ([string](git -C "$repo" symbolic-ref --quiet --short HEAD 2>$null)).Trim()
+# Detached HEAD is the required clean-provenance mode. symbolic-ref emits no
+# output in that mode, so normalize the empty command result before Trim
+# instead of dereferencing a null expression under Windows PowerShell 5.1.
+$checkoutBranchOutput = @(git -C "$repo" symbolic-ref --quiet --short HEAD 2>$null)
+$checkoutBranch = if ($checkoutBranchOutput.Count -eq 0) {
+    ''
+} else {
+    ([string]::Join([Environment]::NewLine, [string[]]$checkoutBranchOutput)).Trim()
+}
 $checkoutStatus = @(git -C "$repo" status --porcelain --untracked-files=all)
 $checkoutGitDirty = $checkoutStatus.Count -gt 0
 $executableSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
