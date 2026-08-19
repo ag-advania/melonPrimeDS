@@ -553,18 +553,23 @@ u64 FrameRing::GetLastSubmittedFrameNumber() const noexcept
     return Frames[LastSubmittedIndex].SubmittedFrame;
 }
 
-u64 FrameRing::GetResourceRetireFrame() const noexcept
+VulkanResourceRetireFrameState FrameRing::BuildResourceRetireFrameState() const noexcept
 {
     const bool recording = !Frames.empty()
         && CurrentIndex < Frames.size()
         && Frames[CurrentIndex].Recording;
-    return VulkanResourceRetireFrame({
+    return {
         CompletedFrame,
         GetLastSubmittedFrameNumber(),
         GetCurrentRecordingFrameNumber(),
         HasSubmittedFrame,
         recording,
-    });
+    };
+}
+
+u64 FrameRing::GetResourceRetireFrame() const noexcept
+{
+    return VulkanResourceRetireFrame(BuildResourceRetireFrameState());
 }
 
 FrameWaitResult FrameRing::WaitForLatestSubmittedFrame(u64 timeoutNanoseconds)

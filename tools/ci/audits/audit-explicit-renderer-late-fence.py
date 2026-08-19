@@ -84,6 +84,15 @@ def main() -> int:
     emu_thread = read("src/frontend/qt_sdl/EmuThread.cpp")
     frame_retire_test = read("tools/testing/vulkan-frame-retire-tests.cpp")
     vulkan_cmake = read("src/frontend/qt_sdl/CMakeLists.txt")
+    vulkan_workflows = {
+        workflow: read(f".github/workflows/{workflow}")
+        for workflow in (
+            "build-windows.yml",
+            "build-ubuntu.yml",
+            "build-bsd.yml",
+            "build-macos.yml",
+        )
+    }
 
     try:
         dx12_frame = function_body(dx12_source, "void DX12Renderer3D::RenderFrame()")
@@ -220,6 +229,14 @@ def main() -> int:
         "FrameRing must distinguish recording, last-submitted, and resource-retire frame APIs",
         failures,
     )
+    require(
+        "BuildResourceRetireFrameState() const noexcept" in vulkan_sync_header
+        and "VulkanFrameRingTestAccess" in vulkan_sync_header
+        and "BuildResourceRetireFrameState" in vulkan_sync
+        and "VulkanResourceRetireFrame(BuildResourceRetireFrameState())" in vulkan_sync,
+        "FrameRing resource-retire mapping must be extracted through the production testable helper",
+        failures,
+    )
     try:
         retire_entry_body = function_body(
             vulkan_texcache_source, "void VulkanTextureHeap::RetireEntry"
@@ -252,6 +269,9 @@ def main() -> int:
                 "Case 4: previous frame completion",
                 "VK_ERROR_OUT_OF_DEVICE_MEMORY",
                 "DeferredDestroyQueue",
+                "VulkanFrameRingTestAccess",
+                "ring.GetResourceRetireFrame()",
+                "production FrameRing",
                 "queue.Collect(10)",
                 "materializeCalls == 2",
                 "RuntimeFailed",
@@ -262,6 +282,20 @@ def main() -> int:
         and "melonprime_vulkan_frame_retire_tests" in vulkan_cmake
         and "melonprime_vulkan_frame_retire_check" in vulkan_cmake,
         "Vulkan frame-retire model/fake-dispatch tests must be built and executed",
+        failures,
+    )
+    require(
+        "melonprime_apply_renderer_perf_telemetry_definition(\n        melonprime_vulkan_frame_retire_tests)"
+        in vulkan_cmake,
+        "Vulkan FrameRing production mapping test must match core telemetry layout",
+        failures,
+    )
+    require(
+        all(
+            "melonprime_vulkan_frame_retire_check" in workflow_source
+            for workflow_source in vulkan_workflows.values()
+        ),
+        "Windows/Linux/BSD/macOS workflows must explicitly run the production Vulkan retire-frame test",
         failures,
     )
     require(

@@ -160,6 +160,9 @@ jobs:
         cmake --build build
         DESTDIR=AppDir cmake --install build
 
+    - name: Run production Vulkan retire-frame mapping test
+      run: cmake --build build --target melonprime_vulkan_frame_retire_check --parallel 1
+
     - name: Run raster edge executable vectors
       run: |
         cmake --build build --target melonprime_raster_edge_vectors

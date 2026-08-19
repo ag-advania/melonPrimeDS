@@ -26,6 +26,50 @@ void Log(LogLevel, const char*, ...)
 }
 } // namespace melonDS::Platform
 
+namespace melonDS::Vk
+{
+struct VulkanFrameRingTestAccess
+{
+    static void SetState(
+        FrameRing& ring,
+        const VulkanResourceRetireFrameState& state) noexcept
+    {
+        ring.Device = nullptr;
+        ring.CoreResourcesReady = false;
+        ring.CompletedFrame = state.CompletedFrame;
+        ring.HasSubmittedFrame = state.HasSubmittedFrame;
+        ring.CurrentIndex = 0;
+        ring.LastSubmittedIndex = 0;
+        ring.AbsoluteFrame = state.Recording
+            ? state.CurrentRecordingFrame + 1
+            : state.HasSubmittedFrame ? state.LastSubmittedFrame + 1 : 1;
+        ring.Frames.clear();
+
+        if (state.Recording && state.HasSubmittedFrame)
+        {
+            ring.Frames.resize(2);
+            ring.Frames[0].SubmittedFrame = state.CurrentRecordingFrame;
+            ring.Frames[0].Recording = true;
+            ring.LastSubmittedIndex = 1;
+            ring.Frames[1].SubmittedFrame = state.LastSubmittedFrame;
+            ring.Frames[1].HasPendingSubmission = true;
+        }
+        else if (state.Recording)
+        {
+            ring.Frames.resize(1);
+            ring.Frames[0].SubmittedFrame = state.CurrentRecordingFrame;
+            ring.Frames[0].Recording = true;
+        }
+        else if (state.HasSubmittedFrame)
+        {
+            ring.Frames.resize(1);
+            ring.Frames[0].SubmittedFrame = state.LastSubmittedFrame;
+            ring.Frames[0].HasPendingSubmission = true;
+        }
+    }
+};
+} // namespace melonDS::Vk
+
 namespace
 {
 
@@ -149,6 +193,35 @@ bool TestRetireFramePolicy()
     return ok;
 }
 
+bool TestProductionFrameRingMapping()
+{
+    bool ok = true;
+    FrameRing ring;
+
+    // The test access seeds only lifecycle state; the assertions call the
+    // production FrameRing getters and therefore exercise its extraction path.
+    VulkanFrameRingTestAccess::SetState(ring, {
+        0, 0, 0, false, false});
+    ok &= Require(ring.GetResourceRetireFrame() == 0,
+        "production FrameRing no-submission mapping must return zero");
+
+    VulkanFrameRingTestAccess::SetState(ring, {
+        9, 10, 0, true, false});
+    ok &= Require(ring.GetResourceRetireFrame() == 10
+            && ring.GetLastSubmittedFrameNumber() == 10
+            && ring.GetCurrentRecordingFrameNumber() == 0,
+        "production FrameRing submitted mapping must use last submitted frame");
+
+    VulkanFrameRingTestAccess::SetState(ring, {
+        10, 10, 11, true, true});
+    ok &= Require(ring.GetResourceRetireFrame() == 11
+            && ring.GetLastSubmittedFrameNumber() == 10
+            && ring.GetCurrentRecordingFrameNumber() == 11,
+        "production FrameRing recording mapping must use current recording frame");
+
+    return ok;
+}
+
 bool TestForcedOomRetryReclaimsBeforeAllocation()
 {
     FakeVulkan fake;
@@ -231,6 +304,7 @@ bool TestForcedOomRetryReclaimsBeforeAllocation()
 int main()
 {
     const bool ok = TestRetireFramePolicy()
+        && TestProductionFrameRingMapping()
         && TestForcedOomRetryReclaimsBeforeAllocation();
     if (!ok)
         return 1;

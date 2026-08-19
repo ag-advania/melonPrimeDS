@@ -235,6 +235,8 @@ enum class FrameBeginResult : u32
 // of the GPU. vkDeviceWaitIdle / vkQueueWaitIdle appear nowhere in this class
 // except WaitIdle(), which is restricted to teardown/resource-recreation
 // boundaries and never used in the steady-state frame path.
+struct VulkanFrameRingTestAccess;
+
 class FrameRing
 {
 public:
@@ -393,6 +395,15 @@ public:
     void WaitIdle();
 
 private:
+    // Keep the production mapping in one testable extraction point. The
+    // friend is defined only by the model-test translation unit; it adds no
+    // production API or binary code and lets that test seed lifecycle state
+    // without manufacturing a Vulkan device.
+    friend struct VulkanFrameRingTestAccess;
+
+    [[nodiscard]] VulkanResourceRetireFrameState
+    BuildResourceRetireFrameState() const noexcept;
+
     FrameContext* BeginFrameInternal(
         bool waitForSlot,
         bool recordRasterBegin,

@@ -684,6 +684,11 @@ if (MELONPRIME_VULKAN_ACTIVE)
         MELONPRIME_DS
         MELONPRIME_ENABLE_VULKAN=1
         VK_NO_PROTOTYPES=1)
+    # FrameRing's test seam reads the production class layout. Keep the model
+    # test's compile-time telemetry gate identical to core so measurement
+    # builds cannot create an ODR/layout mismatch with the linked library.
+    melonprime_apply_renderer_perf_telemetry_definition(
+        melonprime_vulkan_frame_retire_tests)
     target_link_libraries(melonprime_vulkan_frame_retire_tests PRIVATE core)
     set_target_properties(melonprime_vulkan_frame_retire_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")

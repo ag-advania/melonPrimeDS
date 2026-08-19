@@ -233,6 +233,9 @@ jobs:
       env:
         NINJA_STATUS: "[%f/%t %o/s %es] "
 
+    - name: Run production Vulkan retire-frame mapping test
+      run: cmake --build --preset=release-mingw-shipping-x86_64 --target melonprime_vulkan_frame_retire_check --parallel 1
+
     - name: Audit shipping binary GPU memory strings
       shell: pwsh
       run: python .\tools\ci\audits\audit-renderer-memory-production-overhead.py --binary .\build\release-mingw-shipping-x86_64\melonPrimeDS.exe

@@ -369,6 +369,8 @@ jobs:
           --target melonprime_vulkan_present_timing_check --parallel 1
         cmake --build /tmp/build \
           --target melonprime_vulkan_present_pacer_dispatch_check --parallel 1
+        cmake --build /tmp/build \
+          --target melonprime_vulkan_frame_retire_check --parallel 1
         cmake --build /tmp/build --parallel 1
 
     - name: Build Vulkan-disabled BSD variant
