@@ -1,5 +1,5 @@
 diff --git a/src/GPU_Soft.cpp b/src/GPU_Soft.cpp
-index b415420a3..4f06e89b6 100644
+index b415420a3..e87f6fc0c 100644
 --- a/src/GPU_Soft.cpp
 +++ b/src/GPU_Soft.cpp
 @@ -19,6 +19,9 @@
@@ -12,7 +12,7 @@ index b415420a3..4f06e89b6 100644
  #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
  #include "MelonPrimeStructuredComposition.h"
  #endif
-@@ -26,6 +29,96 @@
+@@ -26,6 +29,104 @@
  namespace melonDS
  {
  
@@ -65,6 +65,14 @@ index b415420a3..4f06e89b6 100644
 +    }
 +    if (!output)
 +        return;
++    const char* trigger = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE");
++    if (trigger && trigger[0] != '\0')
++    {
++        std::FILE* marker = std::fopen(trigger, "rb");
++        if (!marker)
++            return;
++        std::fclose(marker);
++    }
 +
 +    u32 limit = 1u;
 +    if (const char* value = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_LIMIT"))
@@ -109,7 +117,7 @@ index b415420a3..4f06e89b6 100644
  #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
  // Canonical bit layout of the structured 2D contract this renderer publishes.
  // The DX12 and Vulkan compositors decode the same values.
-@@ -47,6 +140,13 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
+@@ -47,6 +148,13 @@ SoftRenderer::SoftRenderer(melonDS::NDS& nds)
      Rend3D = std::make_unique<SoftRenderer3D>(GPU.GPU3D, *this);
  }
  

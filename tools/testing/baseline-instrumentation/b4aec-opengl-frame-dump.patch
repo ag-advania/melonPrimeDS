@@ -1,5 +1,5 @@
 diff --git a/src/GPU_OpenGL.cpp b/src/GPU_OpenGL.cpp
-index 48533694e..bf111430b 100644
+index 48533694e..4193f1273 100644
 --- a/src/GPU_OpenGL.cpp
 +++ b/src/GPU_OpenGL.cpp
 @@ -17,6 +17,11 @@
@@ -14,7 +14,7 @@ index 48533694e..bf111430b 100644
  #include "NDS.h"
  #include "GPU_OpenGL.h"
  
-@@ -622,10 +627,103 @@ void GLRenderer::VBlank()
+@@ -622,10 +627,111 @@ void GLRenderer::VBlank()
      if (GPU.CaptureEnable)
          DoCapture(LastCapLine, 192);
  
@@ -69,6 +69,14 @@ index 48533694e..bf111430b 100644
 +    }
 +    if (!output)
 +        return;
++    const char* trigger = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE");
++    if (trigger && trigger[0] != '\0')
++    {
++        std::FILE* marker = std::fopen(trigger, "rb");
++        if (!marker)
++            return;
++        std::fclose(marker);
++    }
 +    u32 limit = 1u;
 +    if (const char* value = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_LIMIT"))
 +    {

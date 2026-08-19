@@ -39,6 +39,7 @@ param(
     [string]$Hud = 'On',
     [switch]$AllowUnverifiedBinary,
     [switch]$RequireCleanProvenance,
+    [switch]$SkipDiagnosticStartupSavestate,
     [int]$WarmupSeconds = 15,
     [int]$MeasuredSeconds = 20,
     [int]$GraceSeconds = 15
@@ -142,8 +143,13 @@ $metadata = Join-Path $out "$RunId.metadata.txt"
 $metadataJson = Join-Path $out "$RunId.metadata.json"
 $runManifest = Join-Path $out "$RunId.run-manifest.json"
 $screenshot = Join-Path $out "$RunId.display.png"
+$frameDumpTrigger = if ($null -ne $statePath) {
+    Join-Path $out "$RunId.gpu2d-frame.trigger"
+} else {
+    $null
+}
 foreach ($path in @($csv, $frameCsv, $buildInfoStdout, $buildInfoStderr, $stdout, $stderr, $telemetryLog, $harness,
-        $metadata, $metadataJson, $runManifest, $screenshot)) {
+        $metadata, $metadataJson, $runManifest, $screenshot, $frameDumpTrigger)) {
     if (Test-Path -LiteralPath $path) { throw "Refusing to overwrite artifact: $path" }
 }
 
@@ -236,6 +242,7 @@ $oldFrameCsv = $env:MELONPRIME_PERF_CSV
 $oldState = $env:MELONPRIME_TEST_SAVESTATE
 $oldHud = $env:MELONPRIME_TEST_CUSTOM_HUD_OFF
 $oldPhysicalState = $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH
+$oldFrameDumpTrigger = $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE
 $proc = $null
 $window = [IntPtr]::Zero
 $configRestored = -not $hadConfig
@@ -404,9 +411,10 @@ try {
         Remove-Item Env:MELONPRIME_LATENCY_CSV -ErrorAction SilentlyContinue
     }
     $env:MELONPRIME_PERF = '1'
-    if ($null -ne $statePath) { $env:MELONPRIME_TEST_SAVESTATE = $statePath } else { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue }
+    if ($null -ne $statePath -and -not $SkipDiagnosticStartupSavestate) { $env:MELONPRIME_TEST_SAVESTATE = $statePath } else { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue }
     if ($Hud -eq 'Off') { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = '1' } else { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue }
     if ($null -ne $savestateSlotPathForApp) { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $savestateSlotPathForApp } else { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue }
+    if ($null -ne $frameDumpTrigger) { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $frameDumpTrigger } else { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue }
 
     $processStart = Record-Phase 'process_start'
     $proc = Start-Process -FilePath $exe -ArgumentList ('"' + $launchRomPath + '"') -WorkingDirectory $build -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
@@ -457,6 +465,7 @@ finally {
     if ($null -eq $oldState) { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_SAVESTATE = $oldState }
     if ($null -eq $oldHud) { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = $oldHud }
     if ($null -eq $oldPhysicalState) { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $oldPhysicalState }
+    if ($null -eq $oldFrameDumpTrigger) { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $oldFrameDumpTrigger }
 }
 
 $exitCode = -1
@@ -544,6 +553,7 @@ $manifestObject = [ordered]@{
         action = $Action
         action_seed = $ActionSeed
         action_order = $actionSequence
+        diagnostic_startup_savestate = -not $SkipDiagnosticStartupSavestate
         savestate_slot = if ($null -ne $statePath) { $SavestateSlot } else { $null }
         warmup_seconds = $WarmupSeconds
         measured_seconds = $MeasuredSeconds
@@ -596,6 +606,7 @@ $manifestObject = [ordered]@{
         harness = $harness
         metadata = $metadata
         display_capture = $screenshot
+        gpu2d_frame_dump_trigger = $frameDumpTrigger
     }
     validation = [ordered]@{
         config_restore = if ($configRestored) { 'PASS' } else { 'FAIL' }
@@ -603,6 +614,7 @@ $manifestObject = [ordered]@{
         process_exit_code = $exitCode
         savestate_startup_marker = $stateMarker
         savestate_action_marker = $stateActionMarker
+        gpu2d_frame_dump_trigger_exists = if ($null -ne $frameDumpTrigger) { Test-Path -LiteralPath $frameDumpTrigger } else { $false }
         custom_hud_off_marker = $hudOffMarker
         capture_rows = $captureRows
         frame_rows = $frameRows
@@ -625,6 +637,7 @@ hud=$Hud
 action=$Action
 action_seed=$ActionSeed
 action_order=$actionOrder
+diagnostic_startup_savestate=$(-not $SkipDiagnosticStartupSavestate)
 warmup_seconds=$WarmupSeconds
 measured_seconds=$MeasuredSeconds
 grace_seconds=$GraceSeconds
@@ -635,6 +648,8 @@ savestate=$(if ($null -ne $statePath) { $statePath } else { 'NONE' })
 savestate_slot=$(if ($null -ne $statePath) { $SavestateSlot } else { 'NONE' })
 savestate_loaded_marker=$stateMarker
 savestate_action_loaded_marker=$stateActionMarker
+gpu2d_frame_dump_trigger=$frameDumpTrigger
+gpu2d_frame_dump_trigger_exists=$(if ($null -ne $frameDumpTrigger) { Test-Path -LiteralPath $frameDumpTrigger } else { $false })
 custom_hud_off_marker=$hudOffMarker
 capture_rows=$captureRows
 frame_rows=$frameRows
@@ -700,7 +715,7 @@ Write-Host "fallback lines     : $fallbackLineMax"
 if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMarkers.Count -ne 0 -or
     $nativeGPU2DExactFailureMarkers.Count -ne 0 -or
     $nativeGPU2DMismatchMax -ne 0 -or $nativeGPU2DFallbackMax -ne 0 -or $fallbackLineMax -ne 0 -or
-    ($null -ne $statePath -and $stateMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
+    ($null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $stateMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($Hud -eq 'Off' -and $null -ne $statePath -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($frameRows -lt 1 -and -not $AllowUnverifiedBinary) -or

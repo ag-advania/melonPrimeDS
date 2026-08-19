@@ -248,13 +248,12 @@ void SoftRenderer::DrawScanline(u32 line)
         if (RecordNativeGPU2DFrameForFrame)
             NativeGPU2DFrame.BeginFrame(EmulatedFrameSerial);
 
-        // Savestate restore resets the software 2D renderer's per-line OBJ
-        // cache, but the normal scheduler repopulates line 0 during the
-        // preceding VBlank (VCOUNT 262). A state loaded immediately before a
-        // frame has no such preceding event, so refresh the cache at the
-        // actual line-0 latch before the exact oracle or Software output reads
-        // it. Native GPU2D ownership does not use this CPU cache.
-        if (!NativeGPU2DProducerForFrame)
+        // Savestate restore can leave the software 2D renderer's per-line OBJ
+        // cache without the preceding VBlank (VCOUNT 262) that normally
+        // prepares line 0. Rebuild it only for the exact native GPU2D oracle:
+        // standalone Software remains an independent baseline path, while a
+        // native producer does not consume this CPU-side cache at all.
+        if (exactValidation && !NativeGPU2DProducerForFrame)
         {
             Rend2D_A->DrawSprites(0u);
             Rend2D_B->DrawSprites(0u);

@@ -2243,6 +2243,17 @@ void MainWindow::onLoadState()
                 physicalABState);
         }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        const char* gpu2dDumpTrigger =
+            std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE");
+        if (gpu2dDumpTrigger && gpu2dDumpTrigger[0] != '\0')
+        {
+            std::FILE* marker = std::fopen(gpu2dDumpTrigger, "wb");
+            if (marker)
+                std::fclose(marker);
+        }
+#endif
+
         actUndoStateLoad->setEnabled(true);
     }
     else

@@ -52,6 +52,19 @@ u64 HashFrame(const u32* pixels) noexcept
     }
     return hash;
 }
+
+bool DumpTriggerReady() noexcept
+{
+    const char* trigger = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE");
+    if (!trigger || trigger[0] == '\0')
+        return true;
+
+    std::FILE* marker = std::fopen(trigger, "rb");
+    if (!marker)
+        return false;
+    std::fclose(marker);
+    return true;
+}
 } // namespace
 #endif
 
@@ -70,6 +83,8 @@ void DumpGPU2DFrame(const u32* top, const u32* bottom) noexcept
             output = std::fopen(path, "wb");
     }
     if (!output)
+        return;
+    if (!DumpTriggerReady())
         return;
 
     u32 limit = 1u;
