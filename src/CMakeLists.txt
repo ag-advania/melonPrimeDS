@@ -36,6 +36,7 @@ add_library(core STATIC
     GPU.cpp
     GPU_Soft.cpp
     GPU2D.cpp
+    GPU2DNative.cpp
     GPU2D_Soft.cpp
     GPU3D.cpp
     GPU3D_Soft.cpp

@@ -20,6 +20,7 @@
 #define GPU_SOFT_H
 
 #include "GPU.h"
+#include "GPU2DNative.h"
 #include "GPU2D_Soft.h"
 #include "GPU3D_Soft.h"
 
@@ -58,6 +59,28 @@ public:
     void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) override;
 
     bool GetFramebuffers(void** top, void** bottom) override;
+
+    // Native GPU2D validation consumes the same native logical words that the
+    // software engine produced before display-mode/master-brightness handling.
+    // This is intentionally not a Qt/presenter image and is never used as a
+    // hidden fallback for Vulkan or DX12 output.
+    [[nodiscard]] const u32* GetSoftwareLogicalFrame(u32 engine) const noexcept
+    {
+        if (engine >= 2u)
+            return nullptr;
+        return SoftwareLogicalFrame.data()
+            + static_cast<std::size_t>(engine)
+                * GPU2DNative::ScreenPixelCount;
+    }
+
+    [[nodiscard]] const GPU2DNative::FrameInput& GetNativeGPU2DFrame() const noexcept
+    {
+        return NativeGPU2DFrame.GetFrame();
+    }
+    [[nodiscard]] bool HasNativeGPU2DFrame() const noexcept
+    {
+        return NativeGPU2DFrame.IsValid();
+    }
 
 protected:
     [[nodiscard]] const u32* GetSoftwareCaptureSourceLine(bool source3D) const noexcept
@@ -110,6 +133,8 @@ private:
 
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
+    std::array<u32, 2u * GPU2DNative::ScreenPixelCount> SoftwareLogicalFrame{};
+    GPU2DNative::FrameRecorder NativeGPU2DFrame;
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;

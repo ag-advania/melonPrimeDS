@@ -33,7 +33,7 @@ namespace Contract = StructuredComposition;
 #endif
 
 SoftRenderer::SoftRenderer(melonDS::NDS& nds)
-    : Renderer(nds.GPU)
+    : Renderer(nds.GPU), NativeGPU2DFrame(nds.GPU)
 {
     const size_t len = 256 * 192;
     Framebuffer[0][0] = new u32[len];
@@ -62,6 +62,8 @@ void SoftRenderer::Reset()
     memset(Framebuffer[0][1], 0, len);
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
+    SoftwareLogicalFrame.fill(0);
+    NativeGPU2DFrame.Reset();
 
     Rend2D_A->Reset();
     Rend2D_B->Reset();
@@ -242,6 +244,14 @@ void SoftRenderer::DrawScanline(u32 line)
     line = GPU.VCount;
     if (line < 192)
     {
+        if (line == 0u)
+        {
+            NativeGPU2DFrame.BeginFrame(
+                NativeGPU2DFrame.GetFrame().Generation.Frame + 1u);
+        }
+        NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, line, GPU.ScreenSwap);
+        NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, line, GPU.ScreenSwap);
+
         // retrieve 3D output
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const bool structuredVulkan2D = UseStructuredVulkan2D();
@@ -288,6 +298,23 @@ void SoftRenderer::DrawScanline(u32 line)
         // draw BG/OBJ layers
         Rend2D_A->DrawScanline(line);
         Rend2D_B->DrawScanline(line);
+
+        // Preserve the exact native logical words before DrawScanlineA/B
+        // applies display mode and master brightness.  Native Vulkan/DX12
+        // GPU2D validation compares against this array, never against a
+        // scaled presenter image or a screenshot.
+        std::memcpy(
+            SoftwareLogicalFrame.data()
+                + static_cast<std::size_t>(0u) * GPU2DNative::ScreenPixelCount
+                + static_cast<std::size_t>(line) * GPU2DNative::ScreenWidth,
+            Output2D[0],
+            GPU2DNative::ScreenWidth * sizeof(u32));
+        std::memcpy(
+            SoftwareLogicalFrame.data()
+                + static_cast<std::size_t>(1u) * GPU2DNative::ScreenPixelCount
+                + static_cast<std::size_t>(line) * GPU2DNative::ScreenWidth,
+            Output2D[1],
+            GPU2DNative::ScreenWidth * sizeof(u32));
 
         // draw the final screen output
         DrawScanlineA(line, dstA);
@@ -384,6 +411,8 @@ void SoftRenderer::DrawScanline(u32 line)
     if (measureStructured2D && outputLine == 191u)
         EndStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
+        if (outputLine == 191u)
+            NativeGPU2DFrame.FinalizeMemory();
 }
 
 void SoftRenderer::DrawSprites(u32 line)
