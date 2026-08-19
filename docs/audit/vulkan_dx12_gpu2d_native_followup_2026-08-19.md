@@ -17,6 +17,7 @@ hardware exactness result.
 | Branch | `develop_hud` |
 | Instruction baseline | `b4aecb3869d0f983a073cfa8b1ee28567b5ab8d4` |
 | Final implementation commit | `c0805005a gpu2d: close native parity and savestate validation` |
+| Audit documentation commit | `0d4d21910 docs: record USA Rev1 GPU2D parity matrix` |
 | Target backends | Vulkan and DirectX 12 |
 | Software oracle | SoftRenderer canonical 6-bit logical Top/Bottom frames |
 | Exact comparison | 98,304 logical pixels per frame, zero tolerance |
@@ -44,7 +45,7 @@ Inputs used for every row:
 - ROM: `C:\DSMPH\melonPrimeDS\all roms\allRoms\0367 - Metroid Prime - Hunters (USA) (Rev 1).nds`
 - States: the matching `.ml1`, `.ml2`, `.ml3`, `.ml4`, `.ml5`, and `.ml8` files in the same directory
 - Action: `savestate-load`, with the matching production shortcut `F1`, `F2`, `F3`, `F4`, `F5`, or `F8`
-- Scale: `1`, VSync off, current source SHA `c0805005ab6ed33c659b6c0fdbfd369a331a6fd8`
+- Scale: `1`, VSync off, implementation/binary source SHA `c0805005ab6ed33c659b6c0fdbfd369a331a6fd8`
 - Harness: `tools/testing/renderer-physical-ab.ps1` procedure `physical-ab-2026-08-19-v3`
 
 `capture rows` is the captured latency-artifact row count; DX12 does not
