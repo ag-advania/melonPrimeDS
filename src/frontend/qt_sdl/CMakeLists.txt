@@ -128,7 +128,6 @@ set(SOURCES_QT_SDL
     MelonPrimePatchRegistry.cpp
     MelonPrimeArm9Hook.cpp
 
-
 )
 
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
@@ -136,6 +135,11 @@ option(MELONPRIME_REQUIRE_QT6_5
     "Fail configure unless the selected Qt is Qt 6.5 or newer"
     OFF)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
+
+if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    list(APPEND SOURCES_QT_SDL
+        ${CMAKE_SOURCE_DIR}/tools/testing/gpu2d-native-recorder-purity.cpp)
+endif()
 
 # Renderer performance telemetry is a separate, shared compile-time gate. It
 # is intentionally independent of developer features: a measurement build can

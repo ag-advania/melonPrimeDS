@@ -98,7 +98,6 @@ void VulkanRenderer::PostSavestate()
     // save that synchronized native VRAM captures). VulkanRenderer3D::Reset()
     // retires in-flight texture-cache resources without a device-wide idle.
     SoftRenderer::Reset();
-    RebuildSpriteCacheForSavestate();
     if (DifferentialReference)
     {
         DifferentialReference->Reset();

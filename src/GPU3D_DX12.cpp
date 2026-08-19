@@ -3140,6 +3140,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const u32* expectedBottom)
 {
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
+    const bool skipExactValidationTransition = exactValidation
+        && GPU2DNative::IsExactValidationSavestateTransitionFrame(generation);
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
@@ -3332,7 +3334,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
     }
 
-    if (exactValidation)
+    if (exactValidation && !skipExactValidationTransition)
     {
         InsertUavBarrier(list, slot.Composed.Get());
         TransitionBuffer(
@@ -3362,7 +3364,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         return false;
     }
 
-    if (exactValidation)
+    if (exactValidation && !skipExactValidationTransition)
     {
         slot.Commands.WaitIdle();
         D3D12_RANGE readRange{0, static_cast<SIZE_T>(kNativeGPU2DOutputBytes)};

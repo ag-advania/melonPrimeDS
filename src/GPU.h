@@ -209,9 +209,6 @@ struct VRAMTrackingSet
         }
     }
     NonStupidBitField<Size/VRAMDirtyGranularity> DeriveState(const u32* currentMappings, GPU& gpu);
-    NonStupidBitField<Size/VRAMDirtyGranularity> PeekState(
-        const u32* currentMappings, const GPU& gpu) const;
-    void CommitState(const u32* currentMappings, GPU& gpu);
 };
 
 class Renderer;

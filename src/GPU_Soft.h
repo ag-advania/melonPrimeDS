@@ -46,16 +46,12 @@ public:
     void PreSavestate() override;
     void PostSavestate() override;
 
-    // Restore the one-line-ahead Software OBJ cache after an accelerated
-    // backend resets renderer-private state during savestate I/O.
-    void RebuildSpriteCacheForSavestate() noexcept;
-
     void SetRenderSettings(RendererSettings& settings) override;
 
     void DrawScanline(u32 line) override;
     void DrawSprites(u32 line) override;
 
-    void VBlank() override {};
+    void VBlank() override;
     void VBlankEnd() override {};
 
     void AllocCapture(u32 bank, u32 start, u32 len) override;
@@ -165,6 +161,7 @@ private:
     std::array<u32, 2u * GPU2DNative::ScreenPixelCount> SoftwareScreenFrame{};
     GPU2DNative::FrameRecorder NativeGPU2DFrame;
     bool NativeGPU2DProducerForFrame = false;
+    bool RecordNativeGPU2DFrameForFrame = false;
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;

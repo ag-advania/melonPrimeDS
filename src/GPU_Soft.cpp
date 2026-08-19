@@ -19,12 +19,105 @@
 #include "NDS.h"
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 #include "MelonPrimeStructuredComposition.h"
 #endif
 
 namespace melonDS
 {
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+namespace
+{
+constexpr u32 FrameDumpWidth = 256u;
+constexpr u32 FrameDumpHeight = 192u;
+constexpr u32 FrameDumpPixels = FrameDumpWidth * FrameDumpHeight;
+
+struct FrameDumpHeader
+{
+    char Magic[8];
+    u32 Version;
+    u32 Frame;
+    u32 Width;
+    u32 Height;
+    u64 TopHash;
+    u64 BottomHash;
+};
+
+u64 HashFrame(const u32* pixels) noexcept
+{
+    u64 hash = 1469598103934665603ull;
+    for (u32 i = 0; i < FrameDumpPixels; ++i)
+    {
+        u32 value = pixels[i];
+        for (u32 byte = 0; byte < sizeof(value); ++byte)
+        {
+            hash ^= static_cast<u8>(value);
+            hash *= 1099511628211ull;
+            value >>= 8u;
+        }
+    }
+    return hash;
+}
+
+void DumpSoftwareFrame(const u32* top, const u32* bottom) noexcept
+{
+    static bool initialized = false;
+    static std::FILE* output = nullptr;
+    static u32 frame = 0;
+    static u32 canonical[2u * FrameDumpPixels]{};
+    if (!initialized)
+    {
+        initialized = true;
+        const char* path = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP");
+        if (path && path[0] != '\0')
+            output = std::fopen(path, "wb");
+    }
+    if (!output)
+        return;
+
+    u32 limit = 1u;
+    if (const char* value = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_LIMIT"))
+    {
+        const unsigned long parsed = std::strtoul(value, nullptr, 10);
+        if (parsed != 0ul)
+            limit = static_cast<u32>(parsed);
+    }
+    if (frame >= limit)
+        return;
+
+    const u32* sources[2] = {top, bottom};
+    for (u32 screen = 0; screen < 2u; ++screen)
+    {
+        for (u32 i = 0; i < FrameDumpPixels; ++i)
+        {
+            const u32 color = sources[screen][i];
+            canonical[screen * FrameDumpPixels + i] =
+                (((color >> 16u) & 0xFFu) >> 2u)
+                | ((((color >> 8u) & 0xFFu) >> 2u) << 8u)
+                | (((color & 0xFFu) >> 2u) << 16u);
+        }
+    }
+
+    const FrameDumpHeader header = {
+        {'M', 'P', '2', 'D', 'D', 'U', 'M', 'P'},
+        1u,
+        frame,
+        FrameDumpWidth,
+        FrameDumpHeight,
+        HashFrame(canonical),
+        HashFrame(canonical + FrameDumpPixels),
+    };
+    std::fwrite(&header, sizeof(header), 1, output);
+    std::fwrite(canonical, sizeof(canonical), 1, output);
+    std::fflush(output);
+    ++frame;
+}
+} // namespace
+#endif
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 // Canonical bit layout of the structured 2D contract this renderer publishes.
@@ -66,6 +159,7 @@ void SoftRenderer::Reset()
     SoftwareScreenFrame.fill(0);
     NativeGPU2DFrame.Reset();
     NativeGPU2DProducerForFrame = false;
+    RecordNativeGPU2DFrameForFrame = false;
 
     Rend2D_A->Reset();
     Rend2D_B->Reset();
@@ -109,6 +203,13 @@ void SoftRenderer::Reset()
 #endif
 }
 
+void SoftRenderer::VBlank()
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    DumpSoftwareFrame(Framebuffer[BackBuffer][0], Framebuffer[BackBuffer][1]);
+#endif
+}
+
 void SoftRenderer::Stop()
 {
     // clear framebuffers to black
@@ -119,6 +220,7 @@ void SoftRenderer::Stop()
     memset(Framebuffer[1][1], 0, len);
     SoftwareScreenFrame.fill(0);
     NativeGPU2DProducerForFrame = false;
+    RecordNativeGPU2DFrameForFrame = false;
 }
 
 void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
@@ -205,27 +307,6 @@ void SoftRenderer::PostSavestate()
     auto rend3d = dynamic_cast<SoftRenderer3D*>(Rend3D.get());
     if (rend3d->IsThreaded())
         rend3d->EnableRenderThread();
-
-    RebuildSpriteCacheForSavestate();
-}
-
-void SoftRenderer::RebuildSpriteCacheForSavestate() noexcept
-{
-    // Sprite scanlines are prepared one line ahead of the visible draw.  A
-    // savestate restore resets the renderer-owned OBJ cache, while the loaded
-    // GPU state may resume at any VCOUNT.  Rebuild the cache for that line
-    // before the next DrawScanline so the Software oracle and native GPU2D
-    // consume the same post-restore OBJ state.
-    if (GPU.VCount < GPU2DNative::ScreenHeight)
-    {
-        Rend2D_A->DrawSprites(GPU.VCount);
-        Rend2D_B->DrawSprites(GPU.VCount);
-    }
-    else if (GPU.VCount == 262u)
-    {
-        Rend2D_A->DrawSprites(0u);
-        Rend2D_B->DrawSprites(0u);
-    }
 }
 
 
@@ -247,9 +328,13 @@ void SoftRenderer::DrawScanline(u32 line)
     // oracle; ordinary native frames do not render a CPU BG/OBJ pixel plane.
     if (GPU.VCount == 0u)
     {
-        NativeGPU2DProducerForFrame = CanUseNativeGPU2DForFrame()
-            && !GPU2DNative::ExactValidationEnabled()
+        const bool nativeGPU2DReady = CanUseNativeGPU2DForFrame();
+        const bool exactValidation = GPU2DNative::ExactValidationEnabled();
+        NativeGPU2DProducerForFrame = nativeGPU2DReady
+            && !exactValidation
             && !GPU.CaptureEnable;
+        RecordNativeGPU2DFrameForFrame = nativeGPU2DReady
+            && (NativeGPU2DProducerForFrame || exactValidation);
     }
     if (NativeGPU2DProducerForFrame && GPU.VCount < GPU2DNative::ScreenHeight)
     {
@@ -296,13 +381,16 @@ void SoftRenderer::DrawScanline(u32 line)
     line = GPU.VCount;
     if (line < 192)
     {
-        if (line == 0u)
+        if (RecordNativeGPU2DFrameForFrame && line == 0u)
         {
             NativeGPU2DFrame.BeginFrame(
                 NativeGPU2DFrame.GetFrame().Generation.Frame + 1u);
         }
-        NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, line, GPU.ScreenSwap);
-        NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, line, GPU.ScreenSwap);
+        if (RecordNativeGPU2DFrameForFrame)
+        {
+            NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, line, GPU.ScreenSwap);
+            NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, line, GPU.ScreenSwap);
+        }
 
         // retrieve 3D output
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
@@ -504,7 +592,7 @@ void SoftRenderer::DrawScanline(u32 line)
     if (measureStructured2D && outputLine == 191u)
         EndStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
-        if (outputLine == 191u)
+        if (RecordNativeGPU2DFrameForFrame && outputLine == 191u)
             NativeGPU2DFrame.FinalizeMemory();
 }
 

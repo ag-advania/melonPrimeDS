@@ -27,6 +27,15 @@ bool ExactValidationEnabled() noexcept
     return enabled;
 }
 
+bool IsExactValidationSavestateTransitionFrame(u64 frame) noexcept
+{
+    static const bool diagnosticSavestate = [] {
+        const char* value = std::getenv("MELONPRIME_TEST_SAVESTATE");
+        return value && value[0] != '\0';
+    }();
+    return diagnosticSavestate && frame == 1u;
+}
+
 namespace
 {
 void MarkDirtyRange(FrameInput& input, u32 offset, u32 size) noexcept
@@ -180,9 +189,66 @@ bool HasDirtyOverlap(const FrameInput& input, u32 begin, u32 end) noexcept
     }
     return false;
 }
+
+template <u32 MappingBytes>
+u64 ReadMappedWord(
+    const melonDS::GPU& gpu,
+    const u32* mappings,
+    u32 mappingCount,
+    u32 address) noexcept
+{
+    const u32 mappingIndex = address / MappingBytes;
+    if (mappingIndex >= mappingCount)
+        return 0;
+
+    const u32 bankMask = mappings[mappingIndex];
+    u64 value = 0;
+    for (u32 bank = 0; bank < 9u; ++bank)
+    {
+        if ((bankMask & (1u << bank)) == 0u)
+            continue;
+
+        u64 bankValue = 0;
+        std::memcpy(
+            &bankValue,
+            gpu.VRAM[bank] + (address & gpu.VRAMMask[bank]),
+            sizeof(bankValue));
+        value |= bankValue;
+    }
+    return value;
 }
 
-FrameRecorder::FrameRecorder(melonDS::GPU& gpu) noexcept
+template <u32 MappingBytes>
+void CopyMappedVRAMBlocks(
+    FrameInput& input,
+    u8* destination,
+    u32 size,
+    const u32* mappings,
+    u32 mappingCount,
+    const melonDS::GPU& gpu,
+    u32 packedOffset) noexcept
+{
+    std::array<u8, DirtyBlockBytes> source{};
+    for (u32 offset = 0; offset < size; offset += DirtyBlockBytes)
+    {
+        const u32 blockSize = std::min(DirtyBlockBytes, size - offset);
+        source.fill(0);
+        for (u32 blockOffset = 0; blockOffset < blockSize; blockOffset += sizeof(u64))
+        {
+            const u64 value = ReadMappedWord<MappingBytes>(
+                gpu, mappings, mappingCount, offset + blockOffset);
+            std::memcpy(source.data() + blockOffset, &value, sizeof(value));
+        }
+
+        if (std::memcmp(destination + offset, source.data(), blockSize) == 0)
+            continue;
+        std::memcpy(destination + offset, source.data(), blockSize);
+        MarkDirtyRange(input, packedOffset + offset, blockSize);
+    }
+}
+}
+
+FrameRecorder::FrameRecorder(const melonDS::GPU& gpu) noexcept
     : GPU(gpu)
 {
 }
@@ -286,72 +352,47 @@ void FrameRecorder::CaptureLine(
     Input.ScreenSource[screenB * ScreenHeight + line] = 1u;
 }
 
-void FrameRecorder::SnapshotEngine(u32 engine, const melonDS::GPU2D& gpu2D) noexcept
+void FrameRecorder::SnapshotEngine(u32 engine) noexcept
 {
     if (engine >= 2u)
         return;
 
-    if (engine == 0u)
-    {
-        auto bgDirty = GPU.VRAMDirty_ABG.PeekState(GPU.VRAMMap_ABG, GPU);
-        GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
-        auto objDirty = GPU.VRAMDirty_AOBJ.PeekState(GPU.VRAMMap_AOBJ, GPU);
-        GPU.MakeVRAMFlat_AOBJCoherent(objDirty);
-        auto bgExtDirty = GPU.VRAMDirty_ABGExtPal.PeekState(
-            GPU.VRAMMap_ABGExtPal, GPU);
-        GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtDirty);
-        auto objExtDirty = GPU.VRAMDirty_AOBJExtPal.PeekState(
-            &GPU.VRAMMap_AOBJExtPal, GPU);
-        GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtDirty);
-    }
-    else
-    {
-        auto bgDirty = GPU.VRAMDirty_BBG.PeekState(GPU.VRAMMap_BBG, GPU);
-        GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
-        auto objDirty = GPU.VRAMDirty_BOBJ.PeekState(GPU.VRAMMap_BOBJ, GPU);
-        GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
-        auto bgExtDirty = GPU.VRAMDirty_BBGExtPal.PeekState(
-            GPU.VRAMMap_BBGExtPal, GPU);
-        GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtDirty);
-        auto objExtDirty = GPU.VRAMDirty_BOBJExtPal.PeekState(
-            &GPU.VRAMMap_BOBJExtPal, GPU);
-        GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtDirty);
-    }
-
     MemorySnapshot& destination = Input.Engine[engine];
-    u8* bg = nullptr;
-    u32 bgMask = 0;
-    gpu2D.GetBGVRAM(bg, bgMask);
-    destination.BGSize = std::min<u32>(bgMask + 1u, destination.BGVRAM.size());
-    if (bg && destination.BGSize != 0u)
-        CopyChangedBlocks(
-            Input, destination.BGVRAM.data(), bg, destination.BGSize,
-            (PackedEngineBase + engine * PackedEngineWords) * sizeof(u32));
 
-    u8* obj = nullptr;
-    u32 objMask = 0;
-    gpu2D.GetOBJVRAM(obj, objMask);
-    destination.OBJSize = std::min<u32>(objMask + 1u, destination.OBJVRAM.size());
-    if (obj && destination.OBJSize != 0u)
-        CopyChangedBlocks(
-            Input, destination.OBJVRAM.data(), obj, destination.OBJSize,
-            (PackedEngineBase + engine * PackedEngineWords + PackedBGWords)
-                * sizeof(u32));
+    const bool engineA = engine == 0u;
+    const u32 bgSize = engineA ? 512u * 1024u : 128u * 1024u;
+    const u32 objSize = engineA ? 256u * 1024u : 128u * 1024u;
+    const u32* bgMappings = engineA ? GPU.VRAMMap_ABG : GPU.VRAMMap_BBG;
+    const u32 bgMappingCount = engineA ? 32u : 8u;
+    const u32* objMappings = engineA ? GPU.VRAMMap_AOBJ : GPU.VRAMMap_BOBJ;
+    const u32 objMappingCount = engineA ? 16u : 8u;
+    const u32* bgExtMappings = engineA ? GPU.VRAMMap_ABGExtPal : GPU.VRAMMap_BBGExtPal;
+    const u32 bgExtMappingCount = 4u;
+    const u32* objExtMappings = engineA
+        ? &GPU.VRAMMap_AOBJExtPal : &GPU.VRAMMap_BOBJExtPal;
 
-    const u8* bgExt = engine == 0u ? GPU.VRAMFlat_ABGExtPal : GPU.VRAMFlat_BBGExtPal;
-    const u8* objExt = engine == 0u ? GPU.VRAMFlat_AOBJExtPal : GPU.VRAMFlat_BOBJExtPal;
+    destination.BGSize = bgSize;
+    destination.OBJSize = objSize;
     destination.BGExtendedPaletteSize = 32u * 1024u;
     destination.OBJExtendedPaletteSize = 8u * 1024u;
-    CopyChangedBlocks(
-        Input, destination.BGExtendedPalette.data(), bgExt,
-        destination.BGExtendedPaletteSize,
-        (PackedEngineBase + engine * PackedEngineWords + PackedBGWords
-            + PackedOBJWords) * sizeof(u32));
-    CopyChangedBlocks(
-        Input, destination.OBJExtendedPalette.data(), objExt,
-        destination.OBJExtendedPaletteSize,
-        (PackedEngineBase + engine * PackedEngineWords + PackedBGWords
-            + PackedOBJWords + PackedBGExtendedPaletteWords) * sizeof(u32));
+    const u32 engineBase = PackedEngineBase + engine * PackedEngineWords;
+    CopyMappedVRAMBlocks<16u * 1024u>(
+        Input, destination.BGVRAM.data(), destination.BGSize,
+        bgMappings, bgMappingCount, GPU,
+        engineBase * sizeof(u32));
+    CopyMappedVRAMBlocks<16u * 1024u>(
+        Input, destination.OBJVRAM.data(), destination.OBJSize,
+        objMappings, objMappingCount, GPU,
+        (engineBase + PackedBGWords) * sizeof(u32));
+    CopyMappedVRAMBlocks<8u * 1024u>(
+        Input, destination.BGExtendedPalette.data(),
+        destination.BGExtendedPaletteSize, bgExtMappings, bgExtMappingCount,
+        GPU, (engineBase + PackedBGWords + PackedOBJWords) * sizeof(u32));
+    CopyMappedVRAMBlocks<8u * 1024u>(
+        Input, destination.OBJExtendedPalette.data(),
+        destination.OBJExtendedPaletteSize, objExtMappings, 1u, GPU,
+        (engineBase + PackedBGWords + PackedOBJWords
+            + PackedBGExtendedPaletteWords) * sizeof(u32));
 }
 
 void FrameRecorder::FinalizeMemory() noexcept
@@ -359,20 +400,8 @@ void FrameRecorder::FinalizeMemory() noexcept
     if (!EngineLineSeen[0] || !EngineLineSeen[1])
         return;
 
-    SnapshotEngine(0u, GPU.GPU2D_A);
-    SnapshotEngine(1u, GPU.GPU2D_B);
-
-    // Both engines have now observed the same physical dirty snapshot.  Only
-    // clear it after every BG/OBJ/palette mirror has been made coherent; A and
-    // B can legally map the same VRAM bank.
-    GPU.VRAMDirty_ABG.CommitState(GPU.VRAMMap_ABG, GPU);
-    GPU.VRAMDirty_AOBJ.CommitState(GPU.VRAMMap_AOBJ, GPU);
-    GPU.VRAMDirty_ABGExtPal.CommitState(GPU.VRAMMap_ABGExtPal, GPU);
-    GPU.VRAMDirty_AOBJExtPal.CommitState(&GPU.VRAMMap_AOBJExtPal, GPU);
-    GPU.VRAMDirty_BBG.CommitState(GPU.VRAMMap_BBG, GPU);
-    GPU.VRAMDirty_BOBJ.CommitState(GPU.VRAMMap_BOBJ, GPU);
-    GPU.VRAMDirty_BBGExtPal.CommitState(GPU.VRAMMap_BBGExtPal, GPU);
-    GPU.VRAMDirty_BOBJExtPal.CommitState(&GPU.VRAMMap_BOBJExtPal, GPU);
+    SnapshotEngine(0u);
+    SnapshotEngine(1u);
 
     CopyChangedBlocks(
         Input, Input.Palette.data(), GPU.Palette,

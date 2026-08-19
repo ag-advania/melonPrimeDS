@@ -72,6 +72,9 @@
 #include "Net.h"
 
 #include "CLI.h"
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+#include "../../../tools/testing/gpu2d-native-recorder-purity.h"
+#endif
 
 #include "Net_PCap.h"
 #include "Net_Slirp.h"
@@ -427,12 +430,23 @@ int main(int argc, char** argv)
     std::signal(SIGTERM, signalHandler);
 #endif
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const bool runGPU2DRecorderPurity =
+        melonPrimeHasCommandLineOption(argc, argv, "--gpu2d-recorder-purity")
+        || std::getenv("MELONPRIME_GPU2D_RECORDER_PURITY");
+#endif
+
     // The physical A/B harness invokes this before opening Qt or an emulation
     // window. It is intentionally a tiny machine-readable contract: the
     // harness hashes the executable separately and compares this embedded SHA
     // with its required checkout head before launching the real run.
     if (melonPrimeHasCommandLineOption(argc, argv, "--build-info-json"))
         return melonPrimePrintBuildInfoJson();
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (runGPU2DRecorderPurity)
+        return Testing::RunGPU2DNativeRecorderPurity();
+#endif
 
 #ifdef MELONPRIME_DS
     printf(MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX "\n", MelonPrime::kBuildStamp);

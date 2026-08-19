@@ -10,7 +10,7 @@
 #>
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Vulkan', 'DX12', 'OpenGLCompute')]
+    [ValidateSet('Software', 'OpenGLClassic', 'OpenGLCompute', 'Vulkan', 'DX12')]
     [string]$Renderer,
     [Parameter(Mandatory = $true)]
     [string]$Rom,
@@ -100,11 +100,13 @@ $executableSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLo
 $romSha256 = (Get-FileHash -LiteralPath $romPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
 $rendererId = switch ($Renderer) {
+    'Software' { 0 }
+    'OpenGLClassic' { 1 }
     'OpenGLCompute' { 2 }
     'Vulkan' { 3 }
     'DX12' { 4 }
 }
-$useGL = if ($Renderer -eq 'OpenGLCompute') { 'true' } else { 'false' }
+$useGL = if ($Renderer -in @('OpenGLClassic', 'OpenGLCompute')) { 'true' } else { 'false' }
 $reflexMode = switch ($LowLatency) {
     'Reflex' { 1 }
     'ReflexBoost' { 2 }
@@ -137,11 +139,19 @@ foreach ($path in @($csv, $frameCsv, $buildInfoStdout, $buildInfoStderr, $stdout
 
 # A GUI-subsystem executable does not always inherit PowerShell's stdout
 # handle. Start the tiny build-info query with redirected files so provenance
-# verification works both from a terminal and from a non-console host.
-$buildInfoProcess = Start-Process -FilePath $exe -ArgumentList '--build-info-json' -WorkingDirectory $build -Wait -PassThru -RedirectStandardOutput $buildInfoStdout -RedirectStandardError $buildInfoStderr
-$buildInfoProcess.Refresh()
-$buildInfoExitCode = [int]$buildInfoProcess.ExitCode
-$buildInfoOutput = if (Test-Path -LiteralPath $buildInfoStdout) { Get-Content -LiteralPath $buildInfoStdout } else { @() }
+# verification works both from a terminal and from a non-console host. The
+# independent baseline predates this developer-only option; in that one
+# explicitly unverified mode, do not launch it as though --build-info-json
+# were a ROM path.
+$buildInfoProcess = $null
+$buildInfoExitCode = -1
+$buildInfoOutput = @()
+if (-not $AllowUnverifiedBinary) {
+    $buildInfoProcess = Start-Process -FilePath $exe -ArgumentList '--build-info-json' -WorkingDirectory $build -Wait -PassThru -RedirectStandardOutput $buildInfoStdout -RedirectStandardError $buildInfoStderr
+    $buildInfoProcess.Refresh()
+    $buildInfoExitCode = [int]$buildInfoProcess.ExitCode
+    $buildInfoOutput = if (Test-Path -LiteralPath $buildInfoStdout) { Get-Content -LiteralPath $buildInfoStdout } else { @() }
+}
 $buildInfoText = [string]::Join([Environment]::NewLine, [string[]]$buildInfoOutput).Trim()
 $buildInfo = $null
 try { $buildInfo = $buildInfoText | ConvertFrom-Json -ErrorAction Stop } catch { }
@@ -663,10 +673,10 @@ Write-Host "fallback lines     : $fallbackLineMax"
 if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMarkers.Count -ne 0 -or
     $nativeGPU2DExactFailureMarkers.Count -ne 0 -or
     $nativeGPU2DMismatchMax -ne 0 -or $nativeGPU2DFallbackMax -ne 0 -or $fallbackLineMax -ne 0 -or
-    ($null -ne $statePath -and $stateMarker -eq 0) -or
-    ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0) -or
-    ($Hud -eq 'Off' -and $hudOffMarker -eq 0) -or
-    $frameRows -lt 1 -or
+    ($null -ne $statePath -and $stateMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
+    ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
+    ($Hud -eq 'Off' -and $null -ne $statePath -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
+    ($frameRows -lt 1 -and -not $AllowUnverifiedBinary) -or
     ($Renderer -eq 'Vulkan' -and $captureRows -lt 1)) {
     $badMarkers | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
     exit 1

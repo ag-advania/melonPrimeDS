@@ -36,6 +36,13 @@ inline constexpr u32 ScreenPixelCount = ScreenWidth * ScreenHeight;
 // shorter MELONPRIME_GPU2D_EXACT=1) enables exact native-output validation.
 [[nodiscard]] bool ExactValidationEnabled() noexcept;
 
+// A diagnostic savestate load restores the serialized GPU state before the
+// renderer-owned one-line-ahead sprite cache has naturally advanced. The
+// first native frame therefore belongs to the load transition itself. Match
+// the existing raster-differential transition policy by excluding only that
+// frame from the exact readback gate; subsequent frames remain mandatory.
+[[nodiscard]] bool IsExactValidationSavestateTransitionFrame(u64 frame) noexcept;
+
 // All members are 32-bit slots on purpose.  This is the canonical layout for
 // both std430 (Vulkan) and StructuredBuffer (DX12); it also keeps packing rules
 // out of the backend implementations.
@@ -262,7 +269,7 @@ CompareResult CompareExact(
 class FrameRecorder
 {
 public:
-    explicit FrameRecorder(melonDS::GPU& gpu) noexcept;
+    explicit FrameRecorder(const melonDS::GPU& gpu) noexcept;
 
     void Reset() noexcept;
     void BeginFrame(u64 frame) noexcept;
@@ -277,12 +284,12 @@ public:
     [[nodiscard]] bool IsValid() const noexcept { return Valid; }
 
 private:
-    melonDS::GPU& GPU;
+    const melonDS::GPU& GPU;
     FrameInput Input{};
     bool Valid = false;
     bool EngineLineSeen[2] = {false, false};
 
-    void SnapshotEngine(u32 engine, const melonDS::GPU2D& gpu2D) noexcept;
+    void SnapshotEngine(u32 engine) noexcept;
 };
 
 } // namespace GPU2DNative

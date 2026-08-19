@@ -3400,6 +3400,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     const u32* expectedBottom)
 {
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
+    const bool skipExactValidationTransition = exactValidation
+        && GPU2DNative::IsExactValidationSavestateTransitionFrame(generation);
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
@@ -3624,7 +3626,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         VulkanPerf::AddCounter(VulkanPerf::Counter::FallbackCompositorBufferFrames);
     }
 
-    if (exactValidation)
+    if (exactValidation && !skipExactValidationTransition)
     {
         const VkBuffer composed = outputSlot.Composed.GetHandle();
         BufferBarrier(cmd, &composed, 1,
@@ -3655,7 +3657,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         return false;
     }
 
-    if (exactValidation)
+    if (exactValidation && !skipExactValidationTransition)
     {
         const VkResult waitResult = fns.WaitForFences(
             Device.GetHandle(), 1, &frame->InFlightFence, VK_TRUE,
