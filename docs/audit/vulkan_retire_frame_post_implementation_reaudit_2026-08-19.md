@@ -36,9 +36,9 @@ promoted to a cross-platform driver or latency result.
 | P3 production `FrameRing` one-slot mapping direct test | PASS by source/build/model | `VulkanFrameRingTestAccess` seeds first-recording, same-slot recording reuse, and same-slot submit-failure states without a Vulkan device, while the test calls production `FrameRing::GetResourceRetireFrame()`, `GetLastSubmittedFrameNumber()`, and `GetCurrentRecordingFrameNumber()`. |
 | Telemetry/layout configuration parity | PASS | The frame-retire test target now receives the same `MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY` definition as `core`, preventing a measurement-build class-layout/ODR mismatch. Both telemetry-ON and telemetry-OFF Windows builds pass the direct test. |
 | Windows/Ubuntu/BSD/macOS CI target wiring | PASS by workflow/YAML audit | Each workflow explicitly invokes `melonprime_vulkan_frame_retire_check`; workflow YAML parses successfully. |
-| Hosted Windows CI at `8b7ad7f5` | OPEN / IN PROGRESS | Run [`32225170997`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32225170997) checked out the exact source/workflow SHA; the shipping Build is still running and the dedicated retire target is pending. |
+| Hosted Windows CI at `8b7ad7f5` | PASS | Run [`32225170997`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32225170997) checked out the exact source/workflow SHA and completed successfully. The production retire target, Vulkan-disabled build, release-binary harness absence check, and artifact upload all passed. |
 | Hosted macOS CI at `8b7ad7f5` | TARGET PASS / JOB FAILURE | Run [`32225177339`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32225177339) ran the dedicated retire step successfully on both x86_64 and arm64. Both jobs later failed in the pre-existing Classic On-Screen Edit geometry check, unrelated to this Vulkan change. |
-| Hosted Ubuntu CI at `8b7ad7f5` | TARGET PARTIAL / JOB IN PROGRESS | Run [`32225173240`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32225173240) has the Audits job PASS; aarch64 failed its full Build but its independent retire target PASSed, while x86_64 remains in Build with its retire target pending. |
+| Hosted Ubuntu CI at `8b7ad7f5` | TARGET PARTIAL / JOB IN PROGRESS | Run [`32225173240`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32225173240) has the Audits job PASS; aarch64 failed its full Build but its independent retire target PASSed, while x86_64 is still installing dependencies before its target. |
 | Hosted BSD CI at `8b7ad7f5` | OPEN / PARTIAL | Run [`32225175140`](https://github.com/ag-advania/melonPrimeDS/actions/runs/32225175140) has FreeBSD failing dependency installation and its independent retire target, while NetBSD/OpenBSD are still in VM startup before their target steps. |
 | Physical measurement runner and artifact restoration | PASS | `tools/testing/renderer-physical-ab.ps1` passed PowerShell parsing; it records renderer/scale/VSync/low-latency/HUD/action seed, restores config and layer settings byte-for-byte, requires the state marker, and rejects device/VUID/SYNC failure markers. |
 | Physical Vulkan validation-layer lifecycle | PASS | Current-head Debug build completed resize x40, minimize/restore x20, and fullscreen x8 with 69 swapchain rebuilds, device lost 0, Sync hazards 0, clean validation, and config/layer restoration PASS. |
@@ -169,8 +169,8 @@ The following remain explicitly open:
 
 - Complete and retain the Ubuntu x86_64/aarch64 and BSD FreeBSD/NetBSD/OpenBSD
   retire-target logs for the final CI verification revision. The exact-head
-  run above has macOS PASS on both architectures and Ubuntu aarch64 PASS after
-  target-step isolation; Windows and Ubuntu x86_64 are still running, while
+  run above has Windows and macOS PASS, plus Ubuntu aarch64 PASS after
+  target-step isolation; Ubuntu x86_64 is still installing dependencies, while
   FreeBSD is blocked by dependency setup and NetBSD/OpenBSD are still in VM
   startup.
 - Resolve or separately triage the reproducible OpenGL Compute Reset-path
