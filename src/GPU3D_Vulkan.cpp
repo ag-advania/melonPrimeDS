@@ -142,6 +142,7 @@ struct VulkanRenderer3D::OutputState
         Vk::Image DirectImageTop;
         Vk::Image DirectImageBottom;
         StructuredComposition::GenerationState UploadedContentGeneration{};
+        GPU2DNative::FrameGeneration UploadedNativeGeneration{};
         bool StructuredUploadInitialized = false;
         bool NativeUploadInitialized = false;
         VulkanPresentedFrame Frame;
@@ -493,6 +494,7 @@ void VulkanRenderer3D::Reset()
         for (OutputState::Slot& slot : ComposedOutput->Slots)
         {
             slot.UploadedContentGeneration = {};
+            slot.UploadedNativeGeneration = {};
             slot.StructuredUploadInitialized = false;
             slot.NativeUploadInitialized = false;
         }
@@ -3379,6 +3381,17 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     return true;
 }
 
+bool VulkanRenderer3D::CanComposeNativeGPU2D() const noexcept
+{
+    return !RuntimeFailed
+        && Initialized
+        && ScaleFactor > 0
+        && ShaderStepIdx >= ShaderStepCount
+        && Pipelines[VulkanShaders::Pipeline_GPU2DNative] != VK_NULL_HANDLE
+        && ComposedOutput
+        && FinalFB.IsValid();
+}
+
 bool VulkanRenderer3D::ComposeNativeGPU2D(
     const GPU2DNative::FrameInput& input,
     u64 generation,
@@ -3431,7 +3444,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     }
 
     const GPU2DNative::UploadPlan uploadPlan = GPU2DNative::BuildUploadPlan(
-        input, !outputSlot.NativeUploadInitialized);
+        input, outputSlot.UploadedNativeGeneration,
+        !outputSlot.NativeUploadInitialized);
     u32* staging = static_cast<u32*>(outputSlot.NativeStaging.GetMappedPointer());
     if (!staging
         || !GPU2DNative::PackFrame(input, staging, GPU2DNative::PackedFrameWords)
@@ -3694,14 +3708,32 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 Platform::Log(Platform::LogLevel::Error,
                     "Vulkan native GPU2D exact mismatch frame=%llu total=%u top=%u bottom=%u "
                     "first=screen%u(%u,%u) expected=0x%08X actual=0x%08X engine=%u "
-                    "DispCnt=0x%08X Layer=0x%08X BGCnt0=0x%08X WinRegs=0x%08X "
-                    "BlendCnt=0x%08X Master=0x%08X Capture=0x%08X\n",
+                    "DispCnt=0x%08X Layer=0x%08X OBJ=0x%08X Blank=0x%08X Unit=0x%08X "
+                    "BGCnt=0x%08X/0x%08X/0x%08X/0x%08X "
+                    "BGPos3=%u,%u WinRegs=0x%08X BlendCnt=0x%08X Master=0x%08X "
+                    "Capture=0x%08X Route=%u/%u PaletteA0=0x%02X%02X PaletteB0=0x%02X%02X "
+                    "BG0=0x%02X%02X%02X%02X BG4000=0x%02X%02X BG4040=0x%02X%02X\n",
                     static_cast<unsigned long long>(generation),
                     result.TotalMismatchCount, result.TopMismatchCount,
                     result.BottomMismatchCount, sample.Screen, sample.X, sample.Y,
                     sample.Expected, sample.Actual, engine, state.DispCnt,
-                    state.LayerEnable, state.BGCnt[0], state.WinRegs,
-                    state.BlendCnt, state.MasterBrightness, state.CaptureCnt);
+                    state.LayerEnable, state.OBJEnable, state.ForcedBlank,
+                    state.UnitEnabled, state.BGCnt[0], state.BGCnt[1],
+                    state.BGCnt[2], state.BGCnt[3], state.BGXPos[3],
+                    state.BGYPos[3], state.WinRegs, state.BlendCnt,
+                    state.MasterBrightness, state.CaptureCnt,
+                    input.ScreenSource[0u * GPU2DNative::ScreenHeight + sample.Y],
+                    input.ScreenSource[1u * GPU2DNative::ScreenHeight + sample.Y],
+                    input.Palette[1u], input.Palette[0u],
+                    input.Palette[1025u], input.Palette[1024u],
+                    input.Engine[engine].BGVRAM[0],
+                    input.Engine[engine].BGVRAM[1],
+                    input.Engine[engine].BGVRAM[2],
+                    input.Engine[engine].BGVRAM[3],
+                    input.Engine[engine].BGVRAM[0x4001u],
+                    input.Engine[engine].BGVRAM[0x4000u],
+                    input.Engine[engine].BGVRAM[0x4041u],
+                    input.Engine[engine].BGVRAM[0x4040u]);
             }
             SetRuntimeFailure("native GPU2D exact differential mismatch");
             return false;
@@ -3709,6 +3741,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     }
 
     outputSlot.NativeUploadInitialized = true;
+    outputSlot.UploadedNativeGeneration = input.Generation;
     NativeCaptureStateInitialized = true;
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFrames);
     {

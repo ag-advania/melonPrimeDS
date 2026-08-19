@@ -170,6 +170,7 @@ struct DX12Renderer3D::OutputState
         DX12::ComPtr<ID3D12Resource> DirectTexture;
         u32* StructuredMapped = nullptr;
         StructuredComposition::GenerationState UploadedContentGeneration{};
+        GPU2DNative::FrameGeneration UploadedNativeGeneration{};
         bool StructuredUploadInitialized = false;
         bool NativeUploadInitialized = false;
         bool DirectTextureInShaderResource = false;
@@ -481,6 +482,7 @@ void DX12Renderer3D::Reset()
         for (OutputState::Slot& slot : ComposedOutput->Slots)
         {
             slot.UploadedContentGeneration = {};
+            slot.UploadedNativeGeneration = {};
             slot.StructuredUploadInitialized = false;
             slot.NativeUploadInitialized = false;
         }
@@ -3112,6 +3114,16 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     return true;
 }
 
+bool DX12Renderer3D::CanComposeNativeGPU2D() const noexcept
+{
+    return !RuntimeFailed
+        && ShaderStepIdx >= ShaderStepCount
+        && Context
+        && PipelineGPU2DNative
+        && ComposedOutput
+        && FinalFBBuffer;
+}
+
 bool DX12Renderer3D::ComposeNativeGPU2D(
     const GPU2DNative::FrameInput& input,
     u64 generation,
@@ -3156,7 +3168,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     }
 
     const GPU2DNative::UploadPlan uploadPlan = GPU2DNative::BuildUploadPlan(
-        input, !slot.NativeUploadInitialized);
+        input, slot.UploadedNativeGeneration,
+        !slot.NativeUploadInitialized);
     u32* staging = slot.StructuredMapped;
     if (!staging
         || !GPU2DNative::PackFrame(
@@ -3403,6 +3416,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     }
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFrames);
     slot.NativeUploadInitialized = true;
+    slot.UploadedNativeGeneration = input.Generation;
     NativeCaptureStateInitialized = true;
     return true;
 }

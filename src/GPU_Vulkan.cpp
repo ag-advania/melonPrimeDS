@@ -164,6 +164,7 @@ void VulkanRenderer::VBlank()
     // disagree with.
     auto* vulkan = GetVulkanRenderer3D();
     bool nativeComposed = false;
+    const bool nativeProducer = UsesNativeGPU2DProducerForFrame();
     const bool exactValidation = GPU2DNative::ExactValidationEnabled();
     if (vulkan && HasNativeGPU2DFrame())
     {
@@ -193,6 +194,19 @@ void VulkanRenderer::VBlank()
                 NativeGPU2DFallbackAnnounced = true;
             }
         }
+    }
+
+    if (nativeProducer && !nativeComposed)
+    {
+        // No CPU structured 2D frame exists when native ownership was latched.
+        // Refuse to publish a stale or mixed-generation output instead of
+        // silently falling back to a buffer that was not rendered this frame.
+        if (vulkan && !vulkan->HasRuntimeFailure())
+            vulkan->FailNativeGPU2DExact(
+                "native GPU2D producer could not publish its owned frame");
+        if (VBlankObserverFn)
+            VBlankObserverFn(VBlankObserverData);
+        return;
     }
 
     if (vulkan && !nativeComposed && vulkan->HasRuntimeFailure())
@@ -357,6 +371,12 @@ VulkanRenderer3D* VulkanRenderer::GetVulkanRenderer3D() noexcept
 const VulkanRenderer3D* VulkanRenderer::GetVulkanRenderer3D() const noexcept
 {
     return dynamic_cast<const VulkanRenderer3D*>(Rend3D.get());
+}
+
+bool VulkanRenderer::CanUseNativeGPU2DForFrame() const noexcept
+{
+    const auto* vulkan = GetVulkanRenderer3D();
+    return vulkan && vulkan->CanComposeNativeGPU2D();
 }
 
 } // namespace melonDS

@@ -65,6 +65,7 @@ void SoftRenderer::Reset()
     SoftwareLogicalFrame.fill(0);
     SoftwareScreenFrame.fill(0);
     NativeGPU2DFrame.Reset();
+    NativeGPU2DProducerForFrame = false;
 
     Rend2D_A->Reset();
     Rend2D_B->Reset();
@@ -117,6 +118,7 @@ void SoftRenderer::Stop()
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
     SoftwareScreenFrame.fill(0);
+    NativeGPU2DProducerForFrame = false;
 }
 
 void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
@@ -216,6 +218,33 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 void SoftRenderer::DrawScanline(u32 line)
 {
     const u32 outputLine = line;
+
+    // Latch the producer choice once per emulated frame.  Native GPU2D is
+    // allowed to take ownership only after its pipeline is ready and only for
+    // frames that do not require the legacy CPU capture source.  Exact
+    // validation deliberately keeps the Software pixel path alive as the
+    // oracle; ordinary native frames do not render a CPU BG/OBJ pixel plane.
+    if (GPU.VCount == 0u)
+    {
+        NativeGPU2DProducerForFrame = CanUseNativeGPU2DForFrame()
+            && !GPU2DNative::ExactValidationEnabled()
+            && !GPU.CaptureEnable;
+    }
+    if (NativeGPU2DProducerForFrame && GPU.VCount < GPU2DNative::ScreenHeight)
+    {
+        const u32 nativeLine = GPU.VCount;
+        if (nativeLine == 0u)
+        {
+            NativeGPU2DFrame.BeginFrame(
+                NativeGPU2DFrame.GetFrame().Generation.Frame + 1u);
+        }
+        NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, nativeLine, GPU.ScreenSwap);
+        NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, nativeLine, GPU.ScreenSwap);
+        if (nativeLine == GPU2DNative::ScreenHeight - 1u)
+            NativeGPU2DFrame.FinalizeMemory();
+        return;
+    }
+
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     if (outputLine == 0u)
     {
@@ -451,6 +480,8 @@ void SoftRenderer::DrawScanline(u32 line)
 
 void SoftRenderer::DrawSprites(u32 line)
 {
+    if (NativeGPU2DProducerForFrame)
+        return;
     Rend2D_A->DrawSprites(line);
     Rend2D_B->DrawSprites(line);
 }

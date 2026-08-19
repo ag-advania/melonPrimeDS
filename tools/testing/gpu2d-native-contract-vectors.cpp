@@ -115,6 +115,18 @@ bool RunUploadPlanVectors()
     passed &= Require(full.Count == 1u
             && full.TotalBytes == PackedFrameBytes(),
         "first-slot upload plan is not a complete frame upload");
+
+    input->Generation.ContentGeneration = 7u;
+    FrameGeneration laggingSlot{};
+    laggingSlot.ContentGeneration = 6u;
+    laggingSlot.VRAMGeneration = input->Generation.VRAMGeneration;
+    laggingSlot.CaptureGeneration = input->Generation.CaptureGeneration;
+    const UploadPlan staleContent = BuildUploadPlan(*input, laggingSlot, false);
+    passed &= Require(
+        staleContent.PaletteBytes == (PackedOAMBase - PackedPaletteBase) * sizeof(u32)
+            && staleContent.OAMBytes == (PackedFIFOBase - PackedOAMBase) * sizeof(u32)
+            && staleContent.FIFOBytes == (PackedLCDVRAMBase - PackedFIFOBase) * sizeof(u32),
+        "a reused slot did not refresh the complete shared content mirror");
     return passed;
 }
 

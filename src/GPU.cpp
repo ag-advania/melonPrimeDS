@@ -1481,12 +1481,94 @@ NonStupidBitField<Size/VRAMDirtyGranularity> VRAMTrackingSet<Size, MappingGranul
     return result;
 }
 
+template <u32 Size, u32 MappingGranularity>
+NonStupidBitField<Size/VRAMDirtyGranularity> VRAMTrackingSet<Size, MappingGranularity>::PeekState(
+    const u32* currentMappings, const GPU& gpu) const
+{
+    NonStupidBitField<Size/VRAMDirtyGranularity> result;
+    for (u32 i = 0; i < Size / MappingGranularity; i++)
+    {
+        if (currentMappings[i] != Mapping[i])
+        {
+            result.SetRange(i * VRAMBitsPerMapping, VRAMBitsPerMapping);
+            continue;
+        }
+
+        u32 mapping = Mapping[i];
+        while (mapping != 0)
+        {
+            u32 num = __builtin_ctz(mapping);
+            mapping &= ~(1 << num);
+
+            static_assert(VRAMDirtyGranularity == 512, "");
+            if (MappingGranularity == 16 * 1024)
+            {
+                u32 dirty = ((const u32*)gpu.VRAMDirty[num].Data)[
+                    i & (gpu.VRAMMask[num] >> 14)];
+                result.Data[i / 2] |= (u64)dirty << ((i & 1) * 32);
+            }
+            else if (MappingGranularity == 8 * 1024)
+            {
+                u16 dirty = ((const u16*)gpu.VRAMDirty[num].Data)[
+                    i & (gpu.VRAMMask[num] >> 13)];
+                result.Data[i / 4] |= (u64)dirty << ((i & 3) * 16);
+            }
+            else if (MappingGranularity == 128 * 1024)
+            {
+                result.Data[i * 4 + 0] |= gpu.VRAMDirty[num].Data[0];
+                result.Data[i * 4 + 1] |= gpu.VRAMDirty[num].Data[1];
+                result.Data[i * 4 + 2] |= gpu.VRAMDirty[num].Data[2];
+                result.Data[i * 4 + 3] |= gpu.VRAMDirty[num].Data[3];
+            }
+            else
+            {
+                abort();
+            }
+        }
+    }
+    return result;
+}
+
+template <u32 Size, u32 MappingGranularity>
+void VRAMTrackingSet<Size, MappingGranularity>::CommitState(
+    const u32* currentMappings, GPU& gpu)
+{
+    u16 banksToBeZeroed = 0;
+    for (u32 i = 0; i < Size / MappingGranularity; i++)
+    {
+        banksToBeZeroed |= currentMappings[i];
+        banksToBeZeroed |= Mapping[i];
+        Mapping[i] = currentMappings[i];
+    }
+
+    while (banksToBeZeroed != 0)
+    {
+        u32 num = __builtin_ctz(banksToBeZeroed);
+        banksToBeZeroed &= ~(1 << num);
+        gpu.VRAMDirty[num].Clear();
+    }
+}
+
 template NonStupidBitField<32*1024/VRAMDirtyGranularity> VRAMTrackingSet<32*1024, 8*1024>::DeriveState(const u32*, GPU& gpu);
 template NonStupidBitField<8*1024/VRAMDirtyGranularity> VRAMTrackingSet<8*1024, 8*1024>::DeriveState(const u32*, GPU& gpu);
 template NonStupidBitField<512*1024/VRAMDirtyGranularity> VRAMTrackingSet<512*1024, 128*1024>::DeriveState(const u32*, GPU& gpu);
 template NonStupidBitField<128*1024/VRAMDirtyGranularity> VRAMTrackingSet<128*1024, 16*1024>::DeriveState(const u32*, GPU& gpu);
 template NonStupidBitField<256*1024/VRAMDirtyGranularity> VRAMTrackingSet<256*1024, 16*1024>::DeriveState(const u32*, GPU& gpu);
 template NonStupidBitField<512*1024/VRAMDirtyGranularity> VRAMTrackingSet<512*1024, 16*1024>::DeriveState(const u32*, GPU& gpu);
+
+template NonStupidBitField<32*1024/VRAMDirtyGranularity> VRAMTrackingSet<32*1024, 8*1024>::PeekState(const u32*, const GPU&) const;
+template NonStupidBitField<8*1024/VRAMDirtyGranularity> VRAMTrackingSet<8*1024, 8*1024>::PeekState(const u32*, const GPU&) const;
+template NonStupidBitField<512*1024/VRAMDirtyGranularity> VRAMTrackingSet<512*1024, 128*1024>::PeekState(const u32*, const GPU&) const;
+template NonStupidBitField<128*1024/VRAMDirtyGranularity> VRAMTrackingSet<128*1024, 16*1024>::PeekState(const u32*, const GPU&) const;
+template NonStupidBitField<256*1024/VRAMDirtyGranularity> VRAMTrackingSet<256*1024, 16*1024>::PeekState(const u32*, const GPU&) const;
+template NonStupidBitField<512*1024/VRAMDirtyGranularity> VRAMTrackingSet<512*1024, 16*1024>::PeekState(const u32*, const GPU&) const;
+
+template void VRAMTrackingSet<32*1024, 8*1024>::CommitState(const u32*, GPU&);
+template void VRAMTrackingSet<8*1024, 8*1024>::CommitState(const u32*, GPU&);
+template void VRAMTrackingSet<512*1024, 128*1024>::CommitState(const u32*, GPU&);
+template void VRAMTrackingSet<128*1024, 16*1024>::CommitState(const u32*, GPU&);
+template void VRAMTrackingSet<256*1024, 16*1024>::CommitState(const u32*, GPU&);
+template void VRAMTrackingSet<512*1024, 16*1024>::CommitState(const u32*, GPU&);
 
 
 

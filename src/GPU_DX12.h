@@ -96,6 +96,8 @@ public:
     [[nodiscard]] const DX12Renderer3D* GetDX12Renderer3D() const noexcept;
 
 private:
+    [[nodiscard]] bool CanUseNativeGPU2DForFrame() const noexcept override;
+
     std::unique_ptr<Renderer3D> DifferentialReference;
     RasterDifferential::State DifferentialState;
     DX12AmdAntiLag2 AmdAntiLag2;

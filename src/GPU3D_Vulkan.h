@@ -124,6 +124,7 @@ public:
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
     [[nodiscard]] RendererOutput GetComposedOutput() const;
     [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasContent; }
+    [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
 
     // Internal resolution, not 256x192. This is the mechanism by which high
     // resolution survives to present: the display path never sees a

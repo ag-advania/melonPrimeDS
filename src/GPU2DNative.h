@@ -113,9 +113,13 @@ struct MemorySnapshot
 struct FrameGeneration
 {
     u64 Frame = 0;
-    u64 ContentGeneration = 0;
-    u64 VRAMGeneration = 0;
-    u64 CaptureGeneration = 0;
+    // These generations describe persistent device mirrors, not the logical
+    // frame number.  A compositor ring slot can miss the one frame in which a
+    // dirty range was observed, so the backend uses these values to request a
+    // category refresh when that slot is reused later.
+    u64 ContentGeneration = 0; // palette, OAM, and display FIFO
+    u64 VRAMGeneration = 0;    // BG/OBJ VRAM and extended palettes
+    u64 CaptureGeneration = 0; // LCDC VRAM mirror
 };
 
 inline constexpr u32 DirtyBlockBytes = 512u;
@@ -207,6 +211,14 @@ bool PackFrame(const FrameInput& input, u32* destination, std::size_t wordCount)
 // slot must pass fullUpload=true; subsequent uses can copy only the ranges
 // recorded by FrameRecorder, leaving unchanged GPU-resident mirrors intact.
 UploadPlan BuildUploadPlan(const FrameInput& input, bool fullUpload) noexcept;
+
+// Builds a plan against one compositor slot's last uploaded generations.  The
+// bool-only overload above remains the isolated-contract form: it consumes the
+// current frame's dirty ranges without a per-slot history.
+UploadPlan BuildUploadPlan(
+    const FrameInput& input,
+    const FrameGeneration& uploadedGeneration,
+    bool fullUpload) noexcept;
 
 struct Mismatch
 {

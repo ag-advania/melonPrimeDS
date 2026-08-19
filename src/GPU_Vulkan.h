@@ -95,6 +95,8 @@ public:
     }
 
 private:
+    [[nodiscard]] bool CanUseNativeGPU2DForFrame() const noexcept override;
+
     std::unique_ptr<Renderer3D> DifferentialReference;
     RasterDifferential::State DifferentialState;
     int NvidiaReflexMode = 0;

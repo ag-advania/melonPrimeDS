@@ -39,25 +39,97 @@ void AddClassifiedBytes(UploadPlan& plan, u32 offset, u32 size) noexcept
 
 void AddRange(UploadPlan& plan, DirtyRange range) noexcept
 {
-    if (range.Size == 0u || plan.Count >= MaxDirtyRanges)
+    if (range.Size == 0u)
         return;
-    plan.Ranges[plan.Count++] = range;
-    AddClassifiedBytes(plan, range.Offset, range.Size);
+
+    u64 begin = range.Offset;
+    u64 end = begin + range.Size;
+    for (u32 i = 0; i < plan.Count;)
+    {
+        const u64 existingBegin = plan.Ranges[i].Offset;
+        const u64 existingEnd = existingBegin + plan.Ranges[i].Size;
+        if (end < existingBegin || begin > existingEnd)
+        {
+            ++i;
+            continue;
+        }
+
+        begin = std::min(begin, existingBegin);
+        end = std::max(end, existingEnd);
+        for (u32 j = i + 1u; j < plan.Count; ++j)
+            plan.Ranges[j - 1u] = plan.Ranges[j];
+        --plan.Count;
+    }
+
+    if (plan.Count >= MaxDirtyRanges)
+        return;
+
+    u32 insertion = plan.Count;
+    while (insertion != 0u
+        && plan.Ranges[insertion - 1u].Offset > static_cast<u32>(begin))
+    {
+        plan.Ranges[insertion] = plan.Ranges[insertion - 1u];
+        --insertion;
+    }
+    plan.Ranges[insertion] = {
+        static_cast<u32>(begin), static_cast<u32>(end - begin)};
+    ++plan.Count;
+}
+
+void ClassifyRanges(UploadPlan& plan) noexcept
+{
+    plan.TotalBytes = 0;
+    plan.EngineMemoryBytes = 0;
+    plan.PaletteBytes = 0;
+    plan.OAMBytes = 0;
+    plan.FIFOBytes = 0;
+    plan.LCDVRAMBytes = 0;
+    for (u32 i = 0; i < plan.Count; ++i)
+        AddClassifiedBytes(plan, plan.Ranges[i].Offset, plan.Ranges[i].Size);
 }
 }
 
 UploadPlan BuildUploadPlan(const FrameInput& input, bool fullUpload) noexcept
 {
+    return BuildUploadPlan(input, input.Generation, fullUpload);
+}
+
+UploadPlan BuildUploadPlan(
+    const FrameInput& input,
+    const FrameGeneration& uploadedGeneration,
+    bool fullUpload) noexcept
+{
     UploadPlan plan{};
     if (fullUpload)
     {
         AddRange(plan, {0u, static_cast<u32>(PackedFrameBytes())});
+        ClassifyRanges(plan);
         return plan;
     }
 
     const u32 count = std::min(input.DirtyRangeCount, MaxDirtyRanges);
     for (u32 i = 0; i < count; ++i)
         AddRange(plan, input.DirtyRanges[i]);
+
+    if (uploadedGeneration.VRAMGeneration != input.Generation.VRAMGeneration)
+    {
+        AddRange(plan, {
+            PackedEngineBase * sizeof(u32),
+            (PackedPaletteBase - PackedEngineBase) * sizeof(u32)});
+    }
+    if (uploadedGeneration.ContentGeneration != input.Generation.ContentGeneration)
+    {
+        AddRange(plan, {
+            PackedPaletteBase * sizeof(u32),
+            (PackedLCDVRAMBase - PackedPaletteBase) * sizeof(u32)});
+    }
+    if (uploadedGeneration.CaptureGeneration != input.Generation.CaptureGeneration)
+    {
+        AddRange(plan, {
+            PackedLCDVRAMBase * sizeof(u32),
+            (PackedRouteBase - PackedLCDVRAMBase) * sizeof(u32)});
+    }
+    ClassifyRanges(plan);
     return plan;
 }
 

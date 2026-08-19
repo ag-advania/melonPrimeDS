@@ -97,6 +97,7 @@ public:
     [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
     [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
+    [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
     [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept
     {
         return RuntimeFailureReason;

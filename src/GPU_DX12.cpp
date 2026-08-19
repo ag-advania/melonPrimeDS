@@ -162,6 +162,7 @@ void DX12Renderer::VBlank()
 {
     auto* dx12 = GetDX12Renderer3D();
     bool nativeComposed = false;
+    const bool nativeProducer = UsesNativeGPU2DProducerForFrame();
     const bool exactValidation = GPU2DNative::ExactValidationEnabled();
     if (dx12 && HasNativeGPU2DFrame())
     {
@@ -191,6 +192,18 @@ void DX12Renderer::VBlank()
                 NativeGPU2DFallbackAnnounced = true;
             }
         }
+    }
+    if (nativeProducer && !nativeComposed)
+    {
+        // Native ownership means no CPU structured frame was produced for this
+        // generation. Do not present a previous frame or silently switch to
+        // Software after a native submission/drop failure.
+        if (dx12 && !dx12->HasRuntimeFailure())
+            dx12->FailNativeGPU2DExact(
+                "native GPU2D producer could not publish its owned frame");
+        IntelXeLL.MarkRenderSubmitEnd();
+        NvidiaReflex.MarkRenderSubmitEnd();
+        return;
     }
     if (dx12 && !nativeComposed && dx12->HasRuntimeFailure())
     {
@@ -364,6 +377,12 @@ DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() noexcept
 const DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() const noexcept
 {
     return dynamic_cast<const DX12Renderer3D*>(Rend3D.get());
+}
+
+bool DX12Renderer::CanUseNativeGPU2DForFrame() const noexcept
+{
+    const auto* dx12 = GetDX12Renderer3D();
+    return dx12 && dx12->CanComposeNativeGPU2D();
 }
 
 void DX12Renderer::BeginReflexFrame(melonDS::u64 logicalFrameId)

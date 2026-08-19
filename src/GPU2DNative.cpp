@@ -168,6 +168,18 @@ void CopyLineState(LineState& destination, const GPU2D& source, u32 renderXPos) 
         }
     }
 }
+
+bool HasDirtyOverlap(const FrameInput& input, u32 begin, u32 end) noexcept
+{
+    for (u32 i = 0; i < input.DirtyRangeCount; ++i)
+    {
+        const DirtyRange& range = input.DirtyRanges[i];
+        const u32 rangeEnd = range.Offset + range.Size;
+        if (range.Offset < end && rangeEnd > begin)
+            return true;
+    }
+    return false;
+}
 }
 
 FrameRecorder::FrameRecorder(melonDS::GPU& gpu) noexcept
@@ -185,6 +197,8 @@ void FrameRecorder::Reset() noexcept
 
 void FrameRecorder::BeginFrame(u64 frame) noexcept
 {
+    const FrameGeneration previousGeneration = Input.Generation;
+    const bool hadPreviousFrame = Valid;
     if (!Valid)
         Input = {};
     else
@@ -196,9 +210,21 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         Input.DirtyRangeCount = 0u;
     }
     Input.Generation.Frame = frame;
-    Input.Generation.ContentGeneration = frame;
-    Input.Generation.VRAMGeneration = frame;
-    Input.Generation.CaptureGeneration = frame;
+    if (hadPreviousFrame)
+    {
+        Input.Generation.ContentGeneration = previousGeneration.ContentGeneration;
+        Input.Generation.VRAMGeneration = previousGeneration.VRAMGeneration;
+        Input.Generation.CaptureGeneration = previousGeneration.CaptureGeneration;
+    }
+    else
+    {
+        // A newly created recorder has no device mirror history.  The first
+        // slot use still performs a full upload, while the non-zero seed makes
+        // a later slot generation comparison unambiguous after the first frame.
+        Input.Generation.ContentGeneration = 1u;
+        Input.Generation.VRAMGeneration = 1u;
+        Input.Generation.CaptureGeneration = 1u;
+    }
     Input.CaptureCnt = GPU.CaptureCnt;
     Input.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
     Input.ScreenSwap = GPU.ScreenSwap ? 1u : 0u;
@@ -267,24 +293,28 @@ void FrameRecorder::SnapshotEngine(u32 engine, const melonDS::GPU2D& gpu2D) noex
 
     if (engine == 0u)
     {
-        auto bgDirty = GPU.VRAMDirty_ABG.DeriveState(GPU.VRAMMap_ABG, GPU);
+        auto bgDirty = GPU.VRAMDirty_ABG.PeekState(GPU.VRAMMap_ABG, GPU);
         GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
-        auto objDirty = GPU.VRAMDirty_AOBJ.DeriveState(GPU.VRAMMap_AOBJ, GPU);
+        auto objDirty = GPU.VRAMDirty_AOBJ.PeekState(GPU.VRAMMap_AOBJ, GPU);
         GPU.MakeVRAMFlat_AOBJCoherent(objDirty);
-        auto bgExtDirty = GPU.VRAMDirty_ABGExtPal.DeriveState(GPU.VRAMMap_ABGExtPal, GPU);
+        auto bgExtDirty = GPU.VRAMDirty_ABGExtPal.PeekState(
+            GPU.VRAMMap_ABGExtPal, GPU);
         GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtDirty);
-        auto objExtDirty = GPU.VRAMDirty_AOBJExtPal.DeriveState(&GPU.VRAMMap_AOBJExtPal, GPU);
+        auto objExtDirty = GPU.VRAMDirty_AOBJExtPal.PeekState(
+            &GPU.VRAMMap_AOBJExtPal, GPU);
         GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtDirty);
     }
     else
     {
-        auto bgDirty = GPU.VRAMDirty_BBG.DeriveState(GPU.VRAMMap_BBG, GPU);
+        auto bgDirty = GPU.VRAMDirty_BBG.PeekState(GPU.VRAMMap_BBG, GPU);
         GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
-        auto objDirty = GPU.VRAMDirty_BOBJ.DeriveState(GPU.VRAMMap_BOBJ, GPU);
+        auto objDirty = GPU.VRAMDirty_BOBJ.PeekState(GPU.VRAMMap_BOBJ, GPU);
         GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
-        auto bgExtDirty = GPU.VRAMDirty_BBGExtPal.DeriveState(GPU.VRAMMap_BBGExtPal, GPU);
+        auto bgExtDirty = GPU.VRAMDirty_BBGExtPal.PeekState(
+            GPU.VRAMMap_BBGExtPal, GPU);
         GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtDirty);
-        auto objExtDirty = GPU.VRAMDirty_BOBJExtPal.DeriveState(&GPU.VRAMMap_BOBJExtPal, GPU);
+        auto objExtDirty = GPU.VRAMDirty_BOBJExtPal.PeekState(
+            &GPU.VRAMMap_BOBJExtPal, GPU);
         GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtDirty);
     }
 
@@ -331,6 +361,19 @@ void FrameRecorder::FinalizeMemory() noexcept
 
     SnapshotEngine(0u, GPU.GPU2D_A);
     SnapshotEngine(1u, GPU.GPU2D_B);
+
+    // Both engines have now observed the same physical dirty snapshot.  Only
+    // clear it after every BG/OBJ/palette mirror has been made coherent; A and
+    // B can legally map the same VRAM bank.
+    GPU.VRAMDirty_ABG.CommitState(GPU.VRAMMap_ABG, GPU);
+    GPU.VRAMDirty_AOBJ.CommitState(GPU.VRAMMap_AOBJ, GPU);
+    GPU.VRAMDirty_ABGExtPal.CommitState(GPU.VRAMMap_ABGExtPal, GPU);
+    GPU.VRAMDirty_AOBJExtPal.CommitState(&GPU.VRAMMap_AOBJExtPal, GPU);
+    GPU.VRAMDirty_BBG.CommitState(GPU.VRAMMap_BBG, GPU);
+    GPU.VRAMDirty_BOBJ.CommitState(GPU.VRAMMap_BOBJ, GPU);
+    GPU.VRAMDirty_BBGExtPal.CommitState(GPU.VRAMMap_BBGExtPal, GPU);
+    GPU.VRAMDirty_BOBJExtPal.CommitState(&GPU.VRAMMap_BOBJExtPal, GPU);
+
     CopyChangedBlocks(
         Input, Input.Palette.data(), GPU.Palette,
         static_cast<u32>(Input.Palette.size()), PackedPaletteBase * sizeof(u32));
@@ -343,6 +386,27 @@ void FrameRecorder::FinalizeMemory() noexcept
         reinterpret_cast<const u8*>(GPU.DispFIFOBuffer),
         static_cast<u32>(Input.DisplayFIFO.size() * sizeof(u16)),
         PackedFIFOBase * sizeof(u32));
+    if (HasDirtyOverlap(
+            Input,
+            PackedEngineBase * sizeof(u32),
+            PackedPaletteBase * sizeof(u32)))
+    {
+        ++Input.Generation.VRAMGeneration;
+    }
+    if (HasDirtyOverlap(
+            Input,
+            PackedPaletteBase * sizeof(u32),
+            PackedLCDVRAMBase * sizeof(u32)))
+    {
+        ++Input.Generation.ContentGeneration;
+    }
+    if (HasDirtyOverlap(
+            Input,
+            PackedLCDVRAMBase * sizeof(u32),
+            PackedRouteBase * sizeof(u32)))
+    {
+        ++Input.Generation.CaptureGeneration;
+    }
     Input.CaptureCnt = GPU.CaptureCnt;
     Input.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
     Input.ScreenSwap = GPU.ScreenSwap ? 1u : 0u;

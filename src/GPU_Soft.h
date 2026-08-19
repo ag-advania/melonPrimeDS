@@ -93,8 +93,20 @@ public:
     {
         return NativeGPU2DFrame.IsValid();
     }
+    [[nodiscard]] bool UsesNativeGPU2DProducerForFrame() const noexcept
+    {
+        return NativeGPU2DProducerForFrame;
+    }
 
 protected:
+    // Vulkan/DX12 override this only when their native GPU2D pipeline is
+    // already usable for the next frame.  The default keeps Software and
+    // other SoftRenderer-derived backends on their existing raster path.
+    [[nodiscard]] virtual bool CanUseNativeGPU2DForFrame() const noexcept
+    {
+        return false;
+    }
+
     [[nodiscard]] const u32* GetSoftwareCaptureSourceLine(bool source3D) const noexcept
     {
         return source3D ? Output3D : Output2D[0];
@@ -148,6 +160,7 @@ private:
     std::array<u32, 2u * GPU2DNative::ScreenPixelCount> SoftwareLogicalFrame{};
     std::array<u32, 2u * GPU2DNative::ScreenPixelCount> SoftwareScreenFrame{};
     GPU2DNative::FrameRecorder NativeGPU2DFrame;
+    bool NativeGPU2DProducerForFrame = false;
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;
