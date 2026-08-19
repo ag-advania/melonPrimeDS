@@ -94,6 +94,8 @@ path writes directly into that storage.
 | Whitespace/error check | PASS | `git diff --check`; only expected LF/CRLF conversion warnings were emitted |
 | Release DX12/Vulkan shipping build, developer OFF, telemetry OFF | PASS | `cmd /c tools\build\windows\build-mingw-existing.bat --build-dir build\release-mingw-shipping-x86_64 --jobs 1 --tail 120` — `[151/151]` |
 | Release DX12/Vulkan measurement build, developer ON, telemetry ON, latency capture ON | PASS | `cmd /c tools\build\windows\build-mingw-existing.bat --build-dir build\rebuild-mingw-x86_64 --jobs 1 --tail 180` — `[157/157]` |
+| Post-fail-closed-patch shipping revalidation | PASS | Same shipping command after the Vulkan scratch-flush failure check — `[15/15]`, with the existing direct tests passing |
+| Post-fail-closed-patch measurement revalidation | PASS | Same telemetry/developer command after the Vulkan scratch-flush failure check — `[155/155]`, with the existing direct tests passing |
 
 The configured builds also passed the existing direct test set, including the
 82 registered-language Classic HUD layout cases, structured-capture
@@ -102,6 +104,10 @@ sharing, Linux/direct surface lifecycle, presenter timeout, present-pacer
 fake dispatch, renderer fallback, Intel XeLL state machine, and DX12
 memory-admission tests. These are model/build tests and do not establish
 physical GPU runtime coverage.
+
+The final Vulkan scratch-upload flush check was compiled and linked in both
+post-patch revalidations above; its result is fail-closed and reaches the
+existing texture-upload failure latch instead of silently continuing.
 
 ## Runtime boundary and remaining acceptance gates
 
