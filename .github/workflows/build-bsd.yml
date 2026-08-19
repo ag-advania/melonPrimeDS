@@ -362,15 +362,24 @@ jobs:
         cmake --build /tmp/build \
           --target melonprime_vulkan_loader_open_check --parallel 1
 
-    - name: Build and run BSD Vulkan validation targets
+    - name: Build and run BSD Vulkan presenter validation targets
       run: |
         set -eu
         cmake --build /tmp/build \
           --target melonprime_vulkan_present_timing_check --parallel 1
         cmake --build /tmp/build \
           --target melonprime_vulkan_present_pacer_dispatch_check --parallel 1
+
+    - name: Run production Vulkan retire-frame mapping test
+      if: always()
+      run: |
+        set -eu
         cmake --build /tmp/build \
           --target melonprime_vulkan_frame_retire_check --parallel 1
+
+    - name: Build BSD release tree
+      if: always()
+      run: |
         cmake --build /tmp/build --parallel 1
 
     - name: Build Vulkan-disabled BSD variant
