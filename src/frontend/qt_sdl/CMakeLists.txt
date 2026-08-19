@@ -493,6 +493,53 @@ else()
 endif()
 target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz}")
 
+if (MELONDS_GIT_HASH)
+    set(_mp_git_sha "${MELONDS_GIT_HASH}")
+else()
+    set(_mp_git_sha "unknown")
+endif()
+if (MELONDS_GIT_BRANCH)
+    set(_mp_git_branch "${MELONDS_GIT_BRANCH}")
+else()
+    set(_mp_git_branch "unknown")
+endif()
+if (MELONDS_BUILD_PROVIDER)
+    set(_mp_build_provider "${MELONDS_BUILD_PROVIDER}")
+else()
+    set(_mp_build_provider "unknown")
+endif()
+if (CMAKE_BUILD_TYPE)
+    set(_mp_build_type "${CMAKE_BUILD_TYPE}")
+else()
+    set(_mp_build_type "unknown")
+endif()
+set(_mp_renderer_perf_gate 0)
+if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    set(_mp_renderer_perf_gate 1)
+endif()
+set(_mp_vulkan_latency_gate 0)
+if (MELONPRIME_VULKAN_ACTIVE AND MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE)
+    set(_mp_vulkan_latency_gate 1)
+endif()
+set(_mp_gpu_memory_gate 0)
+if (MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
+    set(_mp_gpu_memory_gate 1)
+endif()
+set(_mp_developer_gate 0)
+if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    set(_mp_developer_gate 1)
+endif()
+target_compile_definitions(melonDS PRIVATE
+    MELONPRIMEDS_GIT_SHA="${_mp_git_sha}"
+    MELONPRIMEDS_GIT_BRANCH="${_mp_git_branch}"
+    MELONPRIMEDS_GIT_DIRTY="${MELONDS_GIT_DIRTY}"
+    MELONPRIMEDS_BUILD_PROVIDER="${_mp_build_provider}"
+    MELONPRIMEDS_BUILD_TYPE="${_mp_build_type}"
+    MELONPRIMEDS_BUILD_RENDERER_PERF_TELEMETRY=${_mp_renderer_perf_gate}
+    MELONPRIMEDS_BUILD_VULKAN_LATENCY_CAPTURE=${_mp_vulkan_latency_gate}
+    MELONPRIMEDS_BUILD_GPU_MEMORY_TELEMETRY=${_mp_gpu_memory_gate}
+    MELONPRIMEDS_BUILD_DEVELOPER_FEATURES=${_mp_developer_gate})
+
 if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     target_compile_definitions(core PRIVATE
         MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=1)

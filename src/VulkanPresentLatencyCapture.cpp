@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "MelonPrimePerfClock.h"
 #include "Platform.h"
 
 namespace melonDS
@@ -57,8 +58,9 @@ VulkanPresentLatencyCapture::VulkanPresentLatencyCapture()
     // Reserve the whole ring now. Growing it mid-run would allocate on the
     // frame path, which is exactly what this instrument must not do.
     Samples.reserve(Capacity);
-    StartTicks = static_cast<u64>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto clock = MelonPrimePerfClock::Now();
+    StartTicks = clock.Ticks;
+    ClockFrequency = clock.Frequency;
     Enabled = true;
 
     Platform::Log(Platform::LogLevel::Info,
@@ -74,12 +76,14 @@ VulkanPresentLatencyCapture::~VulkanPresentLatencyCapture()
 
 u64 VulkanPresentLatencyCapture::NowUs() const noexcept
 {
-    using Clock = std::chrono::steady_clock;
-    const auto now = Clock::now().time_since_epoch();
-    const auto elapsed = Clock::duration(
-        static_cast<Clock::rep>(static_cast<u64>(now.count()) - StartTicks));
-    return static_cast<u64>(
-        std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count());
+    const auto now = MelonPrimePerfClock::Now();
+    return MelonPrimePerfClock::ElapsedUs(
+        {StartTicks, ClockFrequency}, now);
+}
+
+u64 VulkanPresentLatencyCapture::NowTicks() const noexcept
+{
+    return MelonPrimePerfClock::Now().Ticks;
 }
 
 void VulkanPresentLatencyCapture::MarkInputSample() noexcept
@@ -93,6 +97,8 @@ void VulkanPresentLatencyCapture::MarkInputSample() noexcept
     Pending = VulkanLatencySample{};
     Pending.SampleIndex = index;
     Pending.ReflexMode = reflexMode;
+    Pending.InputSampleQpcTicks = NowTicks();
+    Pending.QpcFrequency = ClockFrequency;
     Pending.InputSampleUs = NowUs();
 }
 
@@ -124,6 +130,8 @@ void VulkanPresentLatencyCapture::MarkPresentStart() noexcept
 void VulkanPresentLatencyCapture::MarkPresentEnd() noexcept
 {
     Pending.PresentEndUs = NowUs();
+    Pending.PresentEndQpcTicks = NowTicks();
+    Pending.QpcFrequency = ClockFrequency;
 }
 
 void VulkanPresentLatencyCapture::MarkAcquireStart() noexcept
@@ -226,6 +234,7 @@ bool VulkanPresentLatencyCapture::Flush()
         "render_submit_start_time_us,render_submit_end_time_us,"
         "present_start_time_us,present_end_time_us,"
         "gpu_render_start_time_us,gpu_render_end_time_us,"
+        "input_sample_qpc_ticks,present_end_qpc_ticks,qpc_frequency,"
         "policy,authority,reflex_mode,target_scheduling,bounded_wait,"
         "bounded_wait_attempted,"
         "present_mode,fallback_reason,swapchain_generation,"
@@ -249,6 +258,7 @@ bool VulkanPresentLatencyCapture::Flush()
             "%llu,%llu,"
             "%llu,%llu,"
             "%llu,%llu,"
+            "%llu,%llu,%llu,"
             "%d,%d,%d,%d,%d,"
             "%d,"
             "%d,%d,"
@@ -278,6 +288,9 @@ bool VulkanPresentLatencyCapture::Flush()
             static_cast<unsigned long long>(sample.PresentEndUs),
             static_cast<unsigned long long>(sample.GpuRenderStartUs),
             static_cast<unsigned long long>(sample.GpuRenderEndUs),
+            static_cast<unsigned long long>(sample.InputSampleQpcTicks),
+            static_cast<unsigned long long>(sample.PresentEndQpcTicks),
+            static_cast<unsigned long long>(sample.QpcFrequency),
             p.Policy,
             p.Authority,
             sample.ReflexMode,

@@ -2229,6 +2229,15 @@ void MainWindow::onLoadState()
         if (slot > 0) emuInstance->osdAddMessage(0, "State loaded from slot %d", slot);
         else          emuInstance->osdAddMessage(0, "State loaded from file");
 
+        const char* physicalABState = std::getenv("MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH");
+        if (physicalABState && *physicalABState &&
+            filename.toStdString() == physicalABState)
+        {
+            Platform::Log(Platform::LogLevel::Info,
+                "[PhysicalAB] savestate_action_loaded=1 path=%s\n",
+                physicalABState);
+        }
+
         actUndoStateLoad->setEnabled(true);
     }
     else

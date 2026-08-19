@@ -225,6 +225,8 @@ jobs:
         "$python_cmd" tools/ci/audits/audit-renderer-perf-zero-overhead.py
         "$python_cmd" tools/ci/audits/audit-renderer-memory-production-overhead.py
         "$python_cmd" tools/ci/audits/audit-onscreen-edit-classic-layout.py
+        "$python_cmd" tools/ci/audits/audit-renderer-physical-ab-contract.py
+        "$python_cmd" tools/testing/summarize-renderer-physical-ab-tests.py
 
     # pkgin's failure summary ("pkg_install warnings: N, errors: N") names
     # neither the packages nor the reason; the detail only goes to this file

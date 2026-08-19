@@ -47,6 +47,12 @@ jobs:
       - name: Audit Classic On-Screen Edit layout contract
         run: python3 tools/ci/audits/audit-onscreen-edit-classic-layout.py
 
+      - name: Audit physical renderer A/B provenance and phase contract
+        run: python3 tools/ci/audits/audit-renderer-physical-ab-contract.py
+
+      - name: Test physical renderer A/B deterministic summarizer
+        run: python3 tools/testing/summarize-renderer-physical-ab-tests.py
+
       - name: Install dependencies for package building
         run: |
           brew install autoconf automake autoconf-archive libtool python-setuptools

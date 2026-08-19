@@ -69,6 +69,9 @@ struct VulkanLatencySample
     // measured on this path", never "measured as zero".
     u64 GpuRenderStartUs = 0;
     u64 GpuRenderEndUs = 0;
+    u64 InputSampleQpcTicks = 0;
+    u64 PresentEndQpcTicks = 0;
+    u64 QpcFrequency = 0;
 
     int ReflexMode = 0;
     VulkanPresentPacer::StateSnapshot Pacing{};
@@ -118,11 +121,13 @@ public:
 
 private:
     [[nodiscard]] u64 NowUs() const noexcept;
+    [[nodiscard]] u64 NowTicks() const noexcept;
 
     bool Enabled = false;
     std::string RunId;
     std::string OutputPath;
     u64 StartTicks = 0;
+    u64 ClockFrequency = 0;
     u64 NextSampleIndex = 0;
     u64 AcquireStartUs = 0;
     bool AcquireOpen = false;

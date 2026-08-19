@@ -21,6 +21,8 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+
+#include "MelonPrimePerfClock.h"
 #endif
 
 namespace melonDS::DX12Perf
@@ -383,6 +385,12 @@ inline void MaybeReport()
     }
     if (now - state.LastReport < std::chrono::seconds(1))
         return;
+
+    const auto reportClock = MelonPrimePerfClock::Now();
+    std::fprintf(stderr,
+        "[MelonPrimePerfPhase] report_qpc_ticks=%llu qpc_frequency=%llu\n",
+        static_cast<unsigned long long>(reportClock.Ticks),
+        static_cast<unsigned long long>(reportClock.Frequency));
 
     for (std::size_t index = 0; index < state.Cpu.size(); ++index)
     {

@@ -19,6 +19,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RunId,
     [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[0-9a-fA-F]{40}$')]
+    [string]$ExpectedSourceHead,
+    [Parameter(Mandatory = $true)]
     [string]$OutputDir,
     [ValidateSet(1, 4, 16)]
     [int]$Scale = 4,
@@ -32,6 +35,7 @@ param(
     [int]$ActionSeed = 0,
     [ValidateSet('On', 'Off')]
     [string]$Hud = 'On',
+    [switch]$AllowUnverifiedBinary,
     [int]$WarmupSeconds = 15,
     [int]$MeasuredSeconds = 20,
     [int]$GraceSeconds = 15
@@ -86,6 +90,13 @@ $statePath = if ([string]::IsNullOrWhiteSpace($Savestate)) { $null } else { (Res
 $out = (Resolve-Path (New-Item -ItemType Directory -Force -Path $OutputDir)).Path
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Executable not found: $exe" }
 
+$ExpectedSourceHead = $ExpectedSourceHead.ToLowerInvariant()
+$checkoutSourceHead = (git -C "$repo" rev-parse HEAD).Trim().ToLowerInvariant()
+$checkoutStatus = @(git -C "$repo" status --porcelain --untracked-files=all)
+$checkoutGitDirty = $checkoutStatus.Count -gt 0
+$executableSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+$romSha256 = (Get-FileHash -LiteralPath $romPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
 $rendererId = switch ($Renderer) {
     'OpenGLCompute' { 2 }
     'Vulkan' { 3 }
@@ -106,13 +117,65 @@ $configRoot = if (Test-Path -LiteralPath $portableDir -PathType Container) { $po
 $configPath = Join-Path $configRoot 'melonDS.toml'
 $layerSettings = Join-Path $build 'vk_layer_settings.txt'
 $csv = Join-Path $out "$RunId.csv"
+$frameCsv = Join-Path $out "$RunId.frames.csv"
+$buildInfoStdout = Join-Path $out "$RunId.build-info.out.log"
+$buildInfoStderr = Join-Path $out "$RunId.build-info.err.log"
 $stdout = Join-Path $out "$RunId.out.log"
 $stderr = Join-Path $out "$RunId.err.log"
+$telemetryLog = Join-Path $out "$RunId.telemetry.log"
 $harness = Join-Path $out "$RunId.harness.log"
 $metadata = Join-Path $out "$RunId.metadata.txt"
+$metadataJson = Join-Path $out "$RunId.metadata.json"
+$runManifest = Join-Path $out "$RunId.run-manifest.json"
 $screenshot = Join-Path $out "$RunId.display.png"
-foreach ($path in @($csv, $stdout, $stderr, $harness, $metadata, $screenshot)) {
+foreach ($path in @($csv, $frameCsv, $buildInfoStdout, $buildInfoStderr, $stdout, $stderr, $telemetryLog, $harness,
+        $metadata, $metadataJson, $runManifest, $screenshot)) {
     if (Test-Path -LiteralPath $path) { throw "Refusing to overwrite artifact: $path" }
+}
+
+# A GUI-subsystem executable does not always inherit PowerShell's stdout
+# handle. Start the tiny build-info query with redirected files so provenance
+# verification works both from a terminal and from a non-console host.
+$buildInfoProcess = Start-Process -FilePath $exe -ArgumentList '--build-info-json' -WorkingDirectory $build -Wait -PassThru -RedirectStandardOutput $buildInfoStdout -RedirectStandardError $buildInfoStderr
+$buildInfoProcess.Refresh()
+$buildInfoExitCode = [int]$buildInfoProcess.ExitCode
+$buildInfoOutput = if (Test-Path -LiteralPath $buildInfoStdout) { Get-Content -LiteralPath $buildInfoStdout } else { @() }
+$buildInfoText = [string]::Join([Environment]::NewLine, [string[]]$buildInfoOutput).Trim()
+$buildInfo = $null
+try { $buildInfo = $buildInfoText | ConvertFrom-Json -ErrorAction Stop } catch { }
+$actualSourceHead = if ($null -ne $buildInfo -and $buildInfo.git_sha) {
+    ([string]$buildInfo.git_sha).ToLowerInvariant()
+} else { 'unknown' }
+$provenanceFailures = [System.Collections.Generic.List[string]]::new()
+if ($buildInfoExitCode -ne 0) { [void]$provenanceFailures.Add("--build-info-json exit=$buildInfoExitCode") }
+if ($null -eq $buildInfo) { [void]$provenanceFailures.Add('binary build-info JSON is missing or invalid') }
+if ($actualSourceHead -eq 'unknown') { [void]$provenanceFailures.Add('binary git_sha is unknown') }
+if ($actualSourceHead -ne $ExpectedSourceHead) {
+    [void]$provenanceFailures.Add("binary git_sha=$actualSourceHead expected=$ExpectedSourceHead")
+}
+if ($checkoutSourceHead -ne $ExpectedSourceHead) {
+    [void]$provenanceFailures.Add("checkout HEAD=$checkoutSourceHead expected=$ExpectedSourceHead")
+}
+if ($provenanceFailures.Count -gt 0 -and -not $AllowUnverifiedBinary) {
+    throw "Binary provenance verification failed before process launch: $([string]::Join('; ', $provenanceFailures))"
+}
+$provenanceVerified = $provenanceFailures.Count -eq 0
+
+$savestateFixtureDir = $null
+$savestateSlotPath = $null
+$savestateSlotPathForApp = $null
+if ($null -ne $statePath) {
+    $savestateFixtureDir = Join-Path $out "$RunId.savestate-fixture"
+    if (Test-Path -LiteralPath $savestateFixtureDir) {
+        throw "Refusing to overwrite savestate fixture directory: $savestateFixtureDir"
+    }
+    New-Item -ItemType Directory -Force -Path $savestateFixtureDir | Out-Null
+    $savestateLeaf = ([IO.Path]::GetFileNameWithoutExtension($romPath) + '.ml1')
+    $savestateSlotPath = Join-Path $savestateFixtureDir $savestateLeaf
+    # EmuInstance::getAssetPath() emits forward slashes on Windows. Keep the
+    # action marker comparison in the same spelling as the production path.
+    $savestateSlotPathForApp = $savestateSlotPath.Replace('\', '/')
+    Copy-Item -LiteralPath $statePath -Destination $savestateSlotPath
 }
 
 $hadConfig = Test-Path -LiteralPath $configPath
@@ -122,14 +185,20 @@ $originalLayer = if ($hadLayer) { [IO.File]::ReadAllBytes($layerSettings) } else
 $oldPerf = $env:MELONPRIME_PERF
 $oldRunId = $env:MELONPRIME_LATENCY_RUN_ID
 $oldCsv = $env:MELONPRIME_LATENCY_CSV
+$oldFrameCsv = $env:MELONPRIME_PERF_CSV
 $oldState = $env:MELONPRIME_TEST_SAVESTATE
 $oldHud = $env:MELONPRIME_TEST_CUSTOM_HUD_OFF
+$oldPhysicalState = $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH
 $proc = $null
 $window = [IntPtr]::Zero
 $configRestored = -not $hadConfig
 $layerRestored = -not $hadLayer
-$startedUtc = [DateTime]::UtcNow
+$stopwatchFrequency = [Diagnostics.Stopwatch]::Frequency
+$phaseRecords = [ordered]@{}
 $utf8 = [Text.UTF8Encoding]::new($false)
+$savestateConfigPath = if ($null -ne $savestateFixtureDir) {
+    $savestateFixtureDir.Replace('\', '/')
+} else { '' }
 
 $cfg = @"
 3D.Renderer = $rendererId
@@ -147,6 +216,7 @@ TargetFPS = 60.0
 3D.Intel.XeLLPacingPolicy = $xellPolicy
 Emu.DirectBoot = true
 Emu.ExternalBIOSEnable = false
+$(if ($savestateConfigPath) { 'SavestatePath = "' + $savestateConfigPath + '"' } else { '' })
 
 [Instance0]
 
@@ -166,6 +236,19 @@ HK_MetroidWeapon4 = 52
 HK_MetroidWeapon5 = 53
 HK_MetroidWeapon6 = 54
 "@
+
+function Record-Phase([string]$name) {
+    $record = [ordered]@{
+        name = $name
+        utc = [DateTime]::UtcNow.ToString('o')
+        monotonic_ticks = [Int64][Diagnostics.Stopwatch]::GetTimestamp()
+        monotonic_frequency = [Int64]$stopwatchFrequency
+    }
+    $phaseRecords[$name] = $record
+    Add-Content -LiteralPath $harness -Value (
+        "physical_ab_phase=$name utc=$($record.utc) monotonic_ticks=$($record.monotonic_ticks) frequency=$stopwatchFrequency")
+    return $record
+}
 
 function Focus-RendererWindow {
     if ($window -eq [IntPtr]::Zero) { throw 'renderer window was not found' }
@@ -220,8 +303,17 @@ function Run-Action([string]$name) {
         }
         'reset' { Send-Key 'r'; Start-Sleep -Seconds 3 }
         'savestate-load' {
-            if ($null -eq $statePath) { Add-Content -LiteralPath $harness -Value 'savestate-load=NOT_REQUESTED' }
-            else { Add-Content -LiteralPath $harness -Value "diagnostic-state=$statePath (developer hook)"; Start-Sleep -Seconds 3 }
+            if ($null -eq $statePath) {
+                Add-Content -LiteralPath $harness -Value 'savestate-load=NOT_REQUESTED'
+            } else {
+                # F1 is the production Load state 1 QAction shortcut. The
+                # fixture is named exactly as EmuInstance::getSavestateName(1)
+                # expects, so this is a real post-start load, not the old
+                # startup-only diagnostic hook.
+                Send-Key '{F1}'
+                Add-Content -LiteralPath $harness -Value "savestate-load=F1 fixture=$savestateSlotPath"
+                Start-Sleep -Seconds 3
+            }
         }
         default { throw "Unsupported action: $name" }
     }
@@ -254,19 +346,24 @@ try {
         'action=' + $Action + [Environment]::NewLine +
         'action_seed=' + $ActionSeed + [Environment]::NewLine +
         'action_order=' + $actionOrder + [Environment]::NewLine
-    [IO.File]::WriteAllText($harness, $header, $utf8)
+    [IO.File]::WriteAllText($harness, $header +
+        "clock_authority=PowerShell Stopwatch / Windows QPC frequency=$stopwatchFrequency" +
+        [Environment]::NewLine, $utf8)
+    $env:MELONPRIME_LATENCY_RUN_ID = $RunId
+    $env:MELONPRIME_PERF_CSV = $frameCsv
     if ($Renderer -eq 'Vulkan') {
-        $env:MELONPRIME_LATENCY_RUN_ID = $RunId
         $env:MELONPRIME_LATENCY_CSV = $csv
     } else {
-        Remove-Item Env:MELONPRIME_LATENCY_RUN_ID -ErrorAction SilentlyContinue
         Remove-Item Env:MELONPRIME_LATENCY_CSV -ErrorAction SilentlyContinue
     }
     $env:MELONPRIME_PERF = '1'
     if ($null -ne $statePath) { $env:MELONPRIME_TEST_SAVESTATE = $statePath } else { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue }
     if ($Hud -eq 'Off') { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = '1' } else { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue }
+    if ($null -ne $savestateSlotPathForApp) { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $savestateSlotPathForApp } else { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue }
 
+    $processStart = Record-Phase 'process_start'
     $proc = Start-Process -FilePath $exe -ArgumentList ('"' + $romPath + '"') -WorkingDirectory $build -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $processStart['process_id'] = $proc.Id
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
         $window = [MpRendererPerfWin]::Find([uint32]$proc.Id)
@@ -276,12 +373,14 @@ try {
     } while ([DateTime]::UtcNow -lt $deadline)
     if ($window -eq [IntPtr]::Zero) { throw 'renderer window did not appear' }
     Start-Sleep -Seconds $WarmupSeconds
-    Add-Content -LiteralPath $harness -Value "warmup_complete_utc=$([DateTime]::UtcNow.ToString('o'))"
+    [void](Record-Phase 'warmup_end')
+    [void](Record-Phase 'measurement_start')
     foreach ($name in $actionSequence) { Run-Action $name }
     Start-Sleep -Seconds $MeasuredSeconds
+    [void](Record-Phase 'measurement_end')
     if ($GraceSeconds -gt 0) {
         Start-Sleep -Seconds $GraceSeconds
-        Add-Content -LiteralPath $harness -Value "grace_complete_utc=$([DateTime]::UtcNow.ToString('o'))"
+        [void](Record-Phase 'grace_end')
     }
 }
 finally {
@@ -307,21 +406,130 @@ finally {
     if ($null -eq $oldPerf) { Remove-Item Env:MELONPRIME_PERF -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PERF = $oldPerf }
     if ($null -eq $oldRunId) { Remove-Item Env:MELONPRIME_LATENCY_RUN_ID -ErrorAction SilentlyContinue } else { $env:MELONPRIME_LATENCY_RUN_ID = $oldRunId }
     if ($null -eq $oldCsv) { Remove-Item Env:MELONPRIME_LATENCY_CSV -ErrorAction SilentlyContinue } else { $env:MELONPRIME_LATENCY_CSV = $oldCsv }
+    if ($null -eq $oldFrameCsv) { Remove-Item Env:MELONPRIME_PERF_CSV -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PERF_CSV = $oldFrameCsv }
     if ($null -eq $oldState) { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_SAVESTATE = $oldState }
     if ($null -eq $oldHud) { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = $oldHud }
+    if ($null -eq $oldPhysicalState) { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $oldPhysicalState }
 }
 
 $exitCode = -1
 if ($null -ne $proc) {
     try { $proc.Refresh(); if ($proc.HasExited) { $exitCode = [int]$proc.ExitCode } } catch { }
 }
+[void](Record-Phase 'process_exit')
 $captureRows = 0
 if (Test-Path -LiteralPath $csv) { $captureRows = [Math]::Max(0, (@(Get-Content -LiteralPath $csv).Count - 1)) }
+$frameRows = 0
+if (Test-Path -LiteralPath $frameCsv) { $frameRows = [Math]::Max(0, (@(Get-Content -LiteralPath $frameCsv).Count - 1)) }
 $allLog = @()
 foreach ($path in @($stdout, $stderr)) { if (Test-Path -LiteralPath $path) { $allLog += Get-Content -LiteralPath $path -ErrorAction SilentlyContinue } }
+[IO.File]::WriteAllText($telemetryLog, [string]::Join([Environment]::NewLine, [string[]]$allLog), $utf8)
 $badMarkers = @($allLog | Select-String -Pattern 'VUID-|SYNC-HAZARD|DEVICE_LOST|GPU failure|command submission failed|Renderer fatal' -ErrorAction SilentlyContinue)
 $stateMarker = if ($null -ne $statePath) { @($allLog | Select-String -SimpleMatch "[SavestateDiff] path=$statePath loaded=1" -ErrorAction SilentlyContinue).Count } else { 0 }
+$stateActionMarker = if ($null -ne $savestateSlotPathForApp) { @($allLog | Select-String -SimpleMatch "[PhysicalAB] savestate_action_loaded=1 path=$savestateSlotPathForApp" -ErrorAction SilentlyContinue).Count } else { 0 }
 $hudOffMarker = if ($Hud -eq 'Off') { @($allLog | Select-String -SimpleMatch '[SavestateDiff] customHudForcedOff=1' -ErrorAction SilentlyContinue).Count } else { 0 }
+$buildInfoJson = if ($null -ne $buildInfo) { $buildInfo } else { [ordered]@{} }
+$buildGates = [ordered]@{
+    build_type = if ($null -ne $buildInfo) { $buildInfo.build_type } else { $null }
+    renderer_perf_telemetry = if ($null -ne $buildInfo) { $buildInfo.renderer_perf_telemetry } else { $null }
+    vulkan_latency_capture = if ($null -ne $buildInfo) { $buildInfo.vulkan_latency_capture } else { $null }
+    gpu_memory_telemetry = if ($null -ne $buildInfo) { $buildInfo.gpu_memory_telemetry } else { $null }
+    developer_features = if ($null -ne $buildInfo) { $buildInfo.developer_features } else { $null }
+    git_dirty = if ($null -ne $buildInfo) { $buildInfo.git_dirty } else { $null }
+}
+$manifestObject = [ordered]@{
+    schema_version = 1
+    artifact_type = 'renderer_physical_ab_run_manifest'
+    run_id = $RunId
+    expected_source_sha = $ExpectedSourceHead
+    binary_source_sha = $actualSourceHead
+    checkout_source_sha = $checkoutSourceHead
+    executable_sha256 = $executableSha256
+    rom_sha256 = $romSha256
+    build_gates = $buildGates
+    clock = [ordered]@{
+        authority = 'PowerShell Stopwatch / Windows QueryPerformanceCounter'
+        unit = 'ticks'
+        frequency = [Int64]$stopwatchFrequency
+        source = '[Diagnostics.Stopwatch]::GetTimestamp()'
+    }
+    phases = $phaseRecords
+    measurement_window = [ordered]@{
+        start = $phaseRecords['measurement_start']
+        end = $phaseRecords['measurement_end']
+        selection = 'frame_end_ticks >= measurement_start.monotonic_ticks && frame_end_ticks <= measurement_end.monotonic_ticks'
+    }
+    conditions = [ordered]@{
+        renderer = $Renderer
+        renderer_id = $rendererId
+        scale = $Scale
+        vsync = $vsyncName
+        low_latency = $LowLatency
+        hud = $Hud
+        action = $Action
+        action_seed = $ActionSeed
+        action_order = $actionSequence
+        warmup_seconds = $WarmupSeconds
+        measured_seconds = $MeasuredSeconds
+        grace_seconds = $GraceSeconds
+    }
+    fixture = [ordered]@{
+        rom = $romPath
+        rom_sha256 = $romSha256
+        savestate = if ($null -ne $statePath) { $statePath } else { $null }
+        savestate_sha256 = if ($null -ne $statePath) { (Get-FileHash -LiteralPath $statePath -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+        savestate_fixture = $savestateSlotPath
+        procedure_version = 'physical-ab-2026-08-19-v2'
+        required_scenes = @('steady-state match', 'weapon switch', 'projectile/effect burst', 'room/map transition', 'scoreboard open/close', 'display capture', 'renderer Reset immediately', 'savestate load immediately', 'Custom HUD OFF', 'Custom HUD ON')
+    }
+    provenance = [ordered]@{
+        expected_source_head = $ExpectedSourceHead
+        expected_source_sha = $ExpectedSourceHead
+        actual_binary_source_head = $actualSourceHead
+        binary_source_sha = $actualSourceHead
+        checkout_source_head = $checkoutSourceHead
+        checkout_source_sha = $checkoutSourceHead
+        executable_sha256 = $executableSha256
+        rom_sha256 = $romSha256
+        build_info_exit_code = $buildInfoExitCode
+        provenance_verified = $provenanceVerified
+        allow_unverified_binary = [bool]$AllowUnverifiedBinary
+        verification_failures = @($provenanceFailures)
+        checkout_git_dirty = $checkoutGitDirty
+        checkout_git_status_lines = $checkoutStatus
+        git_dirty_policy = 'record_only; benchmark source SHA and binary SHA must still match'
+        binary_build_info = $buildInfoJson
+        build_gates = $buildGates
+    }
+    process = [ordered]@{
+        pid = if ($null -ne $proc) { $proc.Id } else { $null }
+        exit_code = $exitCode
+    }
+    artifacts = [ordered]@{
+        per_frame_csv = $frameCsv
+        vulkan_latency_csv = if ($Renderer -eq 'Vulkan') { $csv } else { $null }
+        renderer_telemetry_log = $telemetryLog
+        build_info_stdout = $buildInfoStdout
+        build_info_stderr = $buildInfoStderr
+        stdout = $stdout
+        stderr = $stderr
+        harness = $harness
+        metadata = $metadata
+        display_capture = $screenshot
+    }
+    validation = [ordered]@{
+        config_restore = if ($configRestored) { 'PASS' } else { 'FAIL' }
+        layer_settings_restore = if ($layerRestored) { 'PASS' } else { 'FAIL' }
+        process_exit_code = $exitCode
+        savestate_startup_marker = $stateMarker
+        savestate_action_marker = $stateActionMarker
+        custom_hud_off_marker = $hudOffMarker
+        capture_rows = $captureRows
+        frame_rows = $frameRows
+        bad_marker_count = $badMarkers.Count
+    }
+}
+[IO.File]::WriteAllText($runManifest, ($manifestObject | ConvertTo-Json -Depth 12), $utf8)
 $metadataText = @"
 run_id=$RunId
 renderer=$Renderer
@@ -341,18 +549,45 @@ config_restore=$(if ($configRestored) { 'PASS' } else { 'FAIL' })
 layer_settings_restore=$(if ($layerRestored) { 'PASS' } else { 'FAIL' })
 savestate=$(if ($null -ne $statePath) { $statePath } else { 'NONE' })
 savestate_loaded_marker=$stateMarker
+savestate_action_loaded_marker=$stateActionMarker
 custom_hud_off_marker=$hudOffMarker
 capture_rows=$captureRows
+frame_rows=$frameRows
 bad_marker_count=$($badMarkers.Count)
-source_head=$(git -C "$repo" rev-parse HEAD)
+expected_source_head=$ExpectedSourceHead
+expected_source_sha=$ExpectedSourceHead
+actual_binary_source_head=$actualSourceHead
+binary_source_sha=$actualSourceHead
+checkout_source_head=$checkoutSourceHead
+checkout_source_sha=$checkoutSourceHead
+source_head=$actualSourceHead
+executable_sha256=$executableSha256
+rom_sha256=$romSha256
+build_info_exit_code=$buildInfoExitCode
+provenance_verified=$($provenanceVerified.ToString().ToLowerInvariant())
+allow_unverified_binary=$($AllowUnverifiedBinary.IsPresent.ToString().ToLowerInvariant())
+build_type=$($buildInfo.build_type)
+renderer_perf_telemetry=$($buildInfo.renderer_perf_telemetry)
+vulkan_latency_capture=$($buildInfo.vulkan_latency_capture)
+gpu_memory_telemetry=$($buildInfo.gpu_memory_telemetry)
+developer_features=$($buildInfo.developer_features)
+binary_git_dirty=$($buildInfo.git_dirty)
+checkout_git_dirty=$($checkoutGitDirty.ToString().ToLowerInvariant())
+git_dirty_policy=record_only; benchmark source SHA and binary SHA must still match
 executable=$exe
 csv=$csv
+per_frame_csv=$frameCsv
+renderer_telemetry_log=$telemetryLog
+build_info_stdout=$buildInfoStdout
+build_info_stderr=$buildInfoStderr
 stdout=$stdout
 stderr=$stderr
 harness=$harness
+run_manifest=$runManifest
 display_capture=$screenshot
 "@
 [IO.File]::WriteAllText($metadata, $metadataText, $utf8)
+[IO.File]::WriteAllText($metadataJson, ($manifestObject | ConvertTo-Json -Depth 12), $utf8)
 
 Write-Host "run_id             : $RunId"
 Write-Host "renderer           : $Renderer"
@@ -362,11 +597,16 @@ Write-Host "low latency        : $LowLatency"
 Write-Host "process exit       : $exitCode"
 Write-Host "config restore     : $(if ($configRestored) { 'PASS' } else { 'FAIL' })"
 Write-Host "state marker       : $stateMarker"
+Write-Host "state action       : $stateActionMarker"
 Write-Host "capture rows       : $captureRows"
+Write-Host "frame rows         : $frameRows"
+Write-Host "provenance         : $(if ($provenanceVerified) { 'PASS' } else { 'UNVERIFIED' })"
 Write-Host "bad markers        : $($badMarkers.Count)"
 if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMarkers.Count -ne 0 -or
     ($null -ne $statePath -and $stateMarker -eq 0) -or
+    ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0) -or
     ($Hud -eq 'Off' -and $hudOffMarker -eq 0) -or
+    $frameRows -lt 1 -or
     ($Renderer -eq 'Vulkan' -and $captureRows -lt 1)) {
     $badMarkers | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
     exit 1

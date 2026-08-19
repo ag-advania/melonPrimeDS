@@ -96,6 +96,14 @@ jobs:
       shell: pwsh
       run: python .\tools\ci\audits\audit-renderer-memory-production-overhead.py
 
+    - name: Audit physical renderer A/B provenance and phase contract
+      shell: pwsh
+      run: python .\tools\ci\audits\audit-renderer-physical-ab-contract.py
+
+    - name: Test physical renderer A/B deterministic summarizer
+      shell: pwsh
+      run: python .\tools\testing\summarize-renderer-physical-ab-tests.py
+
     - name: Audit explicit renderer late-fence contract
       shell: pwsh
       run: python .\tools\ci\audits\audit-explicit-renderer-late-fence.py

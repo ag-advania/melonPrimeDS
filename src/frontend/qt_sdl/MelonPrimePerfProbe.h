@@ -17,6 +17,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "MelonPrimePerfClock.h"
+
 namespace MelonPrimePerf {
 
 enum class InputSource : uint8_t {
@@ -72,6 +74,8 @@ struct State {
     bool inputSampleOpen = false;
     bool runFrameBeginRecorded = false;
     bool presentEndRecorded = false;
+    double currentInputToRunFrameUs = 0.0;
+    double currentInputToPresentEndUs = 0.0;
 
     static constexpr uint32_t kRingCap = 8192;
     static constexpr uint32_t kHistBuckets = 64;
@@ -134,6 +138,10 @@ struct State {
     Uint64 lastReportTick = 0;
     uint32_t histTotal[kHistBuckets]{};
     uint32_t histOverflow = 0;
+
+    std::FILE* frameCsv = nullptr;
+    bool frameCsvAttempted = false;
+    uint64_t frameIndex = 0;
 };
 
 inline State& S()
@@ -191,6 +199,59 @@ inline double PercentileSorted(const double* data, uint32_t count, double p)
     const uint32_t hi = lo + 1 < count ? lo + 1 : lo;
     const double frac = idx - static_cast<double>(lo);
     return data[lo] * (1.0 - frac) + data[hi] * frac;
+}
+
+inline void CloseFrameCsv()
+{
+    State& st = S();
+    if (st.frameCsv)
+    {
+        std::fclose(st.frameCsv);
+        st.frameCsv = nullptr;
+    }
+}
+
+inline void EnsureFrameCsv()
+{
+    State& st = S();
+    if (st.frameCsvAttempted)
+        return;
+    st.frameCsvAttempted = true;
+
+    const char* path = std::getenv("MELONPRIME_PERF_CSV");
+    if (!path || !*path)
+        return;
+
+    st.frameCsv = std::fopen(path, "wb");
+    if (!st.frameCsv)
+    {
+        std::fprintf(stderr,
+            "[MelonPrimePerf] frame CSV could not be opened: %s\n", path);
+        return;
+    }
+    std::fprintf(st.frameCsv,
+        "run_id,frame_index,frame_start_ticks,frame_end_ticks,qpc_frequency,"
+        "frame_time_us,input_sample_to_runframe_begin_us,"
+        "input_sample_to_present_end_us\n");
+    std::atexit(CloseFrameCsv);
+}
+
+inline void WriteFrameCsv(
+    State& st, Uint64 endTick, double frameMs)
+{
+    if (!st.frameCsv)
+        return;
+    const char* runId = std::getenv("MELONPRIME_LATENCY_RUN_ID");
+    std::fprintf(st.frameCsv,
+        "%s,%llu,%llu,%llu,%llu,%.6f,%.6f,%.6f\n",
+        runId ? runId : "unnamed-run",
+        static_cast<unsigned long long>(st.frameIndex++),
+        static_cast<unsigned long long>(st.frameStartTick),
+        static_cast<unsigned long long>(endTick),
+        static_cast<unsigned long long>(st.freq),
+        frameMs,
+        st.currentInputToRunFrameUs,
+        st.currentInputToPresentEndUs);
 }
 
 inline double LatencyPercentile(const double* samples, uint32_t count, double p)
@@ -279,6 +340,12 @@ inline void MaybeReport1Hz()
     const double sinceReportMs = TicksToMs(now - st.lastReportTick);
     if (sinceReportMs < 1000.0)
         return;
+
+    const auto reportClock = melonDS::MelonPrimePerfClock::Now();
+    std::fprintf(stderr,
+        "[MelonPrimePerfPhase] report_qpc_ticks=%llu qpc_frequency=%llu\n",
+        static_cast<unsigned long long>(reportClock.Ticks),
+        static_cast<unsigned long long>(reportClock.Frequency));
 
     double sorted[State::kFrameWindowCap];
     const uint32_t n = st.windowFrameCount;
@@ -455,6 +522,8 @@ inline void MaybeReport1Hz()
 
     st.lastReportTick = now;
     ResetWindowStats();
+    if (st.frameCsv)
+        std::fflush(st.frameCsv);
 }
 
 inline void FrameBegin()
@@ -466,6 +535,8 @@ inline void FrameBegin()
     if (!st.freq)
         st.freq = SDL_GetPerformanceFrequency();
 
+    EnsureFrameCsv();
+
     st.frameOpen = true;
     st.frameStartTick = SDL_GetPerformanceCounter();
     st.sectionOpen = false;
@@ -473,6 +544,8 @@ inline void FrameBegin()
     st.inputSampleOpen = false;
     st.runFrameBeginRecorded = false;
     st.presentEndRecorded = false;
+    st.currentInputToRunFrameUs = 0.0;
+    st.currentInputToPresentEndUs = 0.0;
     st.currentHudPhaseTicks = 0;
     st.currentHudDrawn = false;
 }
@@ -492,9 +565,9 @@ inline void MarkRunFrameBegin()
     if (!st.frameOpen || !st.inputSampleOpen || st.runFrameBeginRecorded)
         return;
     const Uint64 now = SDL_GetPerformanceCounter();
-    RecordLatencySample(
-        st.inputToRunFrameUs, st.inputToRunFrameCount,
-        TicksToMs(now - st.inputSampleTick) * 1000.0);
+    const double latencyUs = TicksToMs(now - st.inputSampleTick) * 1000.0;
+    RecordLatencySample(st.inputToRunFrameUs, st.inputToRunFrameCount, latencyUs);
+    st.currentInputToRunFrameUs = latencyUs;
     st.runFrameBeginRecorded = true;
 }
 
@@ -504,9 +577,9 @@ inline void MarkPresentEnd()
     if (!st.frameOpen || !st.inputSampleOpen || st.presentEndRecorded)
         return;
     const Uint64 now = SDL_GetPerformanceCounter();
-    RecordLatencySample(
-        st.inputToPresentEndUs, st.inputToPresentEndCount,
-        TicksToMs(now - st.inputSampleTick) * 1000.0);
+    const double latencyUs = TicksToMs(now - st.inputSampleTick) * 1000.0;
+    RecordLatencySample(st.inputToPresentEndUs, st.inputToPresentEndCount, latencyUs);
+    st.currentInputToPresentEndUs = latencyUs;
     st.presentEndRecorded = true;
 }
 
@@ -555,7 +628,9 @@ inline void FrameEnd()
         if (st.currentHudPhaseTicks > st.hudPhaseMaxTicks[index])
             st.hudPhaseMaxTicks[index] = st.currentHudPhaseTicks;
     }
-    RecordFrameMs(TicksToMs(endTick - st.frameStartTick));
+    const double frameMs = TicksToMs(endTick - st.frameStartTick);
+    WriteFrameCsv(st, endTick, frameMs);
+    RecordFrameMs(frameMs);
     st.frameOpen = false;
     MaybeReport1Hz();
 }
