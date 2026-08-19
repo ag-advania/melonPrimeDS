@@ -22,6 +22,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <memory>
+#include <cstdint>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -30,6 +31,7 @@
 #include "VulkanContext.h"
 #include "VulkanFeatureProbe.h"
 #include "VulkanLoader.h"
+#include "VulkanMemoryTelemetry.h"
 
 namespace melonDS
 {
@@ -187,6 +189,26 @@ public:
     // allocation and the query is not free on some drivers.
     [[nodiscard]] const VkPhysicalDeviceMemoryProperties& GetMemoryProperties() const noexcept;
     [[nodiscard]] const VkPhysicalDeviceLimits& GetLimits() const noexcept;
+
+    // Re-queries optional live budget data at device init and resource
+    // recreation boundaries. This is deliberately not a per-frame operation.
+    bool RefreshMemoryAdmission();
+    [[nodiscard]] Vk::VulkanMemoryAdmissionSnapshot GetMemoryAdmissionSnapshot() const;
+    [[nodiscard]] Vk::VulkanMemoryTelemetrySnapshot GetMemoryTelemetry() const;
+    void LogMemoryTelemetry(const char* boundary) const;
+    [[nodiscard]] bool AdmitScaleDependentResources(
+        const Vk::ResolutionBudget& budget, const char* reason) const;
+
+    // Dedicated allocations reserve the process-local allocation count before
+    // vkAllocateMemory. The reservation closes the check/register race between
+    // concurrent resource creators; failed Vulkan calls release it again.
+    [[nodiscard]] bool ReserveMemoryAllocation(
+        u32 memoryTypeIndex, VkDeviceSize size, const char* debugName) const;
+    void ReleaseMemoryAllocation(u32 memoryTypeIndex, VkDeviceSize size) const noexcept;
+
+    // Captures compact VK_EXT_device_fault metadata once after a device-loss
+    // boundary. Vendor binary data is intentionally not dumped into the log.
+    void ReportDeviceLost(const char* operation) const;
 
     // Attaches a debug name, no-op without VK_EXT_debug_utils.
     template <typename HandleT>

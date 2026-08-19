@@ -6,4 +6,6 @@ glDeleteTextures(2, overlayTextures);
 glDeleteProgram(btmOverlayShader);
 glDeleteBuffers(1, &btmOverlayVertexBuffer);
 glDeleteVertexArrays(1, &btmOverlayVertexArray);
+m_hudVisualFrameValid = false;
+++m_hudVisualRendererGeneration;
 #endif

@@ -1220,6 +1220,13 @@ void MainWindow::setHudEditModeActive(bool active)
     if (panel)
         panel->setHudEditModeActive(active);
 }
+
+void MainWindow::setHudLivePreviewActive(bool active)
+{
+    QMutexLocker panelLock(&screenPanelLock);
+    if (panel)
+        panel->setHudLivePreviewActive(active);
+}
 #endif
 #endif
 
@@ -1457,13 +1464,21 @@ void MainWindow::invalidateRendererOutput()
 
 #if defined(MELONPRIME_ENABLE_VULKAN)
 void MainWindow::beginVulkanLowLatencyFrame(
-    int reflexMode, bool antiLag2Enabled, bool normalSpeed, melonDS::u64 targetFrameIntervalNs)
+    int reflexMode,
+    bool antiLag2Enabled,
+    bool normalSpeed,
+    melonDS::u64 targetFrameIntervalNs,
+    melonDS::u64 logicalFrameId)
 {
     QMutexLocker panelLock(&screenPanelLock);
     if (panel)
     {
         panel->beginVulkanLowLatencyFrame(
-            reflexMode, antiLag2Enabled, normalSpeed, targetFrameIntervalNs);
+            reflexMode,
+            antiLag2Enabled,
+            normalSpeed,
+            targetFrameIntervalNs,
+            logicalFrameId);
     }
 }
 
@@ -2214,6 +2229,15 @@ void MainWindow::onLoadState()
         if (slot > 0) emuInstance->osdAddMessage(0, "State loaded from slot %d", slot);
         else          emuInstance->osdAddMessage(0, "State loaded from file");
 
+        const char* physicalABState = std::getenv("MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH");
+        if (physicalABState && *physicalABState &&
+            filename.toStdString() == physicalABState)
+        {
+            Platform::Log(Platform::LogLevel::Info,
+                "[PhysicalAB] savestate_action_loaded=1 path=%s\n",
+                physicalABState);
+        }
+
         actUndoStateLoad->setEnabled(true);
     }
     else
@@ -2496,6 +2520,11 @@ void MainWindow::onOpenInputConfig()
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+#ifdef MELONPRIME_CUSTOM_HUD
+    // This dialog also contains the Custom HUD tab. Keep the real top-screen
+    // presentation live regardless of which menu entry opened the dialog.
+    setHudLivePreviewActive(true);
+#endif
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
 }
 
@@ -2507,6 +2536,9 @@ void MainWindow::onOpenMetroidInputSettings()
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+#ifdef MELONPRIME_CUSTOM_HUD
+    setHudLivePreviewActive(true);
+#endif
     dlg->switchTabToAddons();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
@@ -2518,6 +2550,9 @@ void MainWindow::onOpenMetroidOtherSettings()
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+#ifdef MELONPRIME_CUSTOM_HUD
+    setHudLivePreviewActive(true);
+#endif
     dlg->switchTabToMetroid();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
@@ -2529,6 +2564,9 @@ void MainWindow::onOpenMetroidCustomHudSettings()
     emuThread->emuPause();
 
     InputConfigDialog* dlg = MP_OPEN_MELONDS_DLG(InputConfigDialog, this);
+#ifdef MELONPRIME_CUSTOM_HUD
+    setHudLivePreviewActive(true);
+#endif
     dlg->switchTabToCustomHud();
 
     connect(dlg, &InputConfigDialog::finished, this, &MainWindow::onInputConfigFinished);
@@ -2596,6 +2634,7 @@ void MainWindow::onInputConfigFinished(int res)
 #ifdef MELONPRIME_CUSTOM_HUD
     // Balances the "Edit HUD Layout" hand-off; emulation drives the panel again.
     setHudEditModeActive(false);
+    setHudLivePreviewActive(false);
 #endif
     endModalPresentationPause();
 #endif

@@ -77,7 +77,8 @@ public:
         int reflexMode,
         bool antiLag2Enabled,
         bool normalSpeed,
-        melonDS::u64 targetFrameIntervalNs);
+        melonDS::u64 targetFrameIntervalNs,
+        melonDS::u64 logicalFrameId);
     void markVulkanReflexInputSample();
     void markVulkanReflexSimulationStart();
     void markVulkanReflexSimulationEnd();
@@ -106,6 +107,9 @@ public:
     // Entered/left by the Custom HUD "Edit HUD Layout" button, which hands the
     // screen panel to the on-screen editor while emulation stays paused.
     void setHudEditModeActive(bool active);
+    // Entered while the Custom HUD settings page is open so the real top-screen
+    // HUD remains visible and follows control changes during the modal pause.
+    void setHudLivePreviewActive(bool active);
 #endif
 
 protected:

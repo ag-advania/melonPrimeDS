@@ -80,6 +80,49 @@
             });
             break;
         }
+        case HWType::Opacity: {
+            auto* rowW = new QWidget(parent);
+            auto* hlay = new QHBoxLayout(rowW);
+            hlay->setContentsMargins(0, 0, 0, 0);
+            hlay->setSpacing(4);
+
+            const int minValue = std::clamp(p.min, 0, 100);
+            const int maxValue = std::clamp(p.max, minValue, 100);
+            const int value = std::clamp(
+                static_cast<int>(std::lround(instcfg.GetDouble(p.cfgKey) * 100.0)),
+                minValue, maxValue);
+            auto* slider = new QSlider(Qt::Horizontal, rowW);
+            slider->setRange(minValue, maxValue);
+            slider->setSingleStep(std::max(1, p.step));
+            slider->setPageStep(std::max(1, p.step * 5));
+            slider->setValue(value);
+
+            auto* sb = new QSpinBox(rowW);
+            sb->setObjectName(objName);
+            sb->setRange(minValue, maxValue);
+            sb->setSingleStep(std::max(1, p.step));
+            sb->setValue(value);
+            sb->setSuffix(QStringLiteral("%"));
+            sb->setFixedWidth(78);
+
+            hlay->addWidget(slider, 1);
+            hlay->addWidget(sb);
+            form->addRow(QString::fromUtf8(p.label), rowW);
+            m_hudWidgets[p.cfgKey] = sb;
+
+            // Keep the slider and percentage input synchronized while
+            // retaining the normalized double representation in the config.
+            connect(slider, &QSlider::valueChanged, sb, &QSpinBox::setValue);
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), slider,
+                    &QSlider::setValue);
+            connect(sb, QOverload<int>::of(&QSpinBox::valueChanged), this,
+                    [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetDouble(key, val / 100.0);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::Double: {
             auto* dsb = new QDoubleSpinBox(parent);
             dsb->setObjectName(objName);
@@ -689,6 +732,7 @@
             case 2: preview = new HpAmmoPreviewWidget(emuInstance, mainBody); break;
             case 3: preview = new MatchStatusPreviewWidget(emuInstance, mainBody); break;
             case 4: preview = new RadarPreviewWidget(emuInstance, mainBody); break;
+            case 5: preview = new ScoreboardPreviewWidget(emuInstance, mainBody); break;
             }
             if (preview) {
                 hbox->addWidget(preview, 0);

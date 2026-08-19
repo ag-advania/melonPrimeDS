@@ -36,10 +36,10 @@ namespace MelonPrime {
         void setQtFilterRequested(RawInputSubscription* subscription, bool enable);
 
         // Merged Poll + snapshot in single call
-        void PollAndSnapshot(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
+        void PollAndSnapshot(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY, int& outWheelSteps);
 
         // Re-entrant path: same as PollAndSnapshot but does not advance hkPrev.
-        void PollAndSnapshotNoEdges(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY);
+        void PollAndSnapshotNoEdges(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY, int& outWheelSteps);
 
         // P-22: Drain WM_INPUT queue after RunFrame (non-latency-critical).
         void DeferredDrain(RawInputSubscription* subscription) noexcept;
@@ -65,6 +65,9 @@ namespace MelonPrime {
         void RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
         void ApplyOwnerRegistration(RawInputSubscription* subscription);
+        void ReconfigureActiveRegistration(
+            RawInputSubscription* subscription, bool generationAlreadyAdvanced);
+        void DeactivateActiveRegistration(RawInputSubscription* subscription);
         InputState* StateFor(RawInputSubscription* subscription) const noexcept;
         InputState* ActiveState() const noexcept;
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

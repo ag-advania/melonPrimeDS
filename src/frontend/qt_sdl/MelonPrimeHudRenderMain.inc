@@ -4,7 +4,7 @@
 // =========================================================================
 //  P-7 forward declarations (full definitions follow CustomHud_Render)
 // =========================================================================
-static constexpr int kEditElemCount   = 14; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair
+static constexpr int kEditElemCount   = 15; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair, 14 = Scoreboard
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX);
 static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer);
 
@@ -68,8 +68,9 @@ HOT_FUNCTION QRect CustomHud_Render(
         return QRect();
     }
 
-    if (!st.isStartPressed && st.currentHP != 0 && !st.isGameOver)
-        ReadHudRuntimeAdventurePauseState(rom, st);
+    // Read the shared Adventure/map-pause state before applying the common HUD
+    // visibility decision used by HP and the other regular HUD elements.
+    ReadHudRuntimeAdventurePauseState(rom, st);
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
@@ -95,32 +96,43 @@ HOT_FUNCTION QRect CustomHud_Render(
         ActiveHudConfigState().noHudPatch, st.nds, st.romGroup, desiredNoHudMask);
     CustomHud_MarkNoHudPatchDesired();
 
+    // Apply the transform/font before the regular HUD. The scoreboard follows
+    // the same gameplay-state early return as HP: its own Show setting remains
+    // independent, but it is hidden during START, death, game-over, and the
+    // other states where the regular HUD is hidden.
+    ApplyHudPainterTransform(topPaint, xf);
+    EnsureHudFont(topPaint);
+
     // Adventure camera scenes blank the game's own HUD and crosshair; Custom HUD
     // follows. Deliberately not folded into hideForNativeUi: no native UI is
     // coming up here, so the helmet-layer suppression above must stay applied.
     if (hideForNativeUi || st.isAdventureCameraScene) {
         NotifyCrosshairZoomNotDrawn();
-        return QRect();
+        return CurrentHudDirtyRect(xf);
     }
 
     ReadHudRuntimeVisibleState(rom, addrHot, st);
 
-    // hudScale = scaleY: DS Y-unit maps to hudScale px.
-    // Buffer now covers the full window. Translate has two parts:
-    //   (topStretchX-1)*128 — centres the DS canvas when content is wider/narrower than 4:3
-    //   hudOriginXds        — shifts right by the left black-bar width (DS units), so DS x=0
-    //                          lands at the game-content left edge inside the full-window buffer.
-    ApplyHudPainterTransform(topPaint, xf);
+    // Scoreboard work is profiled separately from state reads and the other
+    // HUD painter work.  This also makes the expensive plan/raster boundary
+    // visible in the aggregate developer report.
+    stateTimer.Stop();
+    if (c.scoreboard.show) {
+        ScoreboardSnapshot scoreboard{};
+        if (ReadHudRuntimeScoreboardSnapshot(rom, st, scoreboard)) {
+            EnsureScoreboardAssetsLoaded(c.scoreboard,
+                                         std::min(c.scaleIcons, c.scaleScoreboard)
+                                             * ScoreboardUserScale(c));
+            DrawScoreboard(topPaint, scoreboard, c, hudScale, playerPosition);
+        }
+    }
 
-    // Font base size = the resolved HUD font px (6px for MPH; Metroid.Visual.HudFontSize for
-    // system/file fonts). EnsureHudFont adopts the painter's overlayFont size set by Screen.cpp.
-    // Visual text size is controlled by textDrawScale applied at draw time.
-    EnsureHudFont(topPaint);
+    // hudScale = scaleY: DS Y-unit maps to hudScale px. The painter transform
+    // and font were established above so the scoreboard shares this path.
     const float textDrawScale = c.textDrawScale;
     // s_textRenderScale and the hi-DPI font were built event-driven in RefreshCachedConfig;
     // nothing to recompute per frame here.
 
-    stateTimer.Stop();
     MelonPrimePerf::ScopedHudPhase drawTimer(MelonPrimePerf::HudPhase::QPainter);
 
     // Draw crosshair/scope first so large zoom reticles sit behind HP, ammo,

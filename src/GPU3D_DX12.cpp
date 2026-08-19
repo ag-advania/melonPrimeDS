@@ -775,6 +775,19 @@ bool DX12Renderer3D::CreateScaleDependentResources()
 {
     ReleaseScaleDependentResources();
 
+    // Query live DXGI budget only at the scale-resource boundary. The full
+    // requested tile footprint is admitted before the historical halve/retry
+    // loop, so a budget refusal is explicit while CreateCommittedResource
+    // failures retain the existing tile retry behavior.
+    if (!Context->RefreshMemoryAdmission())
+        return false;
+    const DX12::ScaleFootprint admissionFootprint = DX12::ComputeScaleFootprint(
+        ScaleFactor,
+        static_cast<u32>(TilesPerLine * TileLines * 16));
+    if (!Context->AdmitScaleDependentResources(
+            admissionFootprint, "DX12 scale-dependent resource recreation"))
+        return false;
+
     const u64 pixels = static_cast<u64>(ScreenWidth) * static_cast<u64>(ScreenHeight);
 
     // color/depth/attr, two layers each, one 32-bit word per entry -- the same
@@ -2150,16 +2163,51 @@ void DX12Renderer3D::RenderFrame()
 
     u8 texcacheClearBitmapDirty = 0;
     bool textureCacheChanged = false;
+    int numYSpans = 0;
+    int numSetupIndices = 0;
+    u32 numPolygons = 0;
+    u32 numVariants = 0;
     {
-        DX12Perf::ScopedCpuTimer texcacheTimer(DX12Perf::CpuMetric::TexcacheUpdate);
-        textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+        TextureHeap.ResetFailures();
+        DX12Perf::ScopedCpuTimer prepareTimer(DX12Perf::CpuMetric::RasterCpuPrepare);
+        {
+            DX12Perf::ScopedCpuTimer texcacheTimer(DX12Perf::CpuMetric::TexcacheUpdate);
+            textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+        }
+        if (TextureHeap.HadFailure())
+        {
+            SetRuntimeFailure("texture cache logical reservation or CPU upload preparation failed");
+            return;
+        }
+        ClearBitmapDirty |= texcacheClearBitmapDirty;
+        if (!textureCacheChanged && GPU3D.RenderFrameIdentical
+            && FinalFBHasValidFrame && ClearBitmapDirty == 0)
+        {
+            DX12Perf::AddCounter(DX12Perf::Counter::IdenticalFrames);
+            DX12Perf::MaybeReport();
+            return;
+        }
+
+        // BuildPolygons is CPU-only until the texture heap records its queued
+        // uploads below. This lets the previous GPU submission continue while
+        // the current frame resolves polygon/span and texture identity.
+        DX12Perf::ScopedCpuTimer polygonTimer(DX12Perf::CpuMetric::BuildPolygons);
+        numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+        if (TextureHeap.HadFailure())
+        {
+            SetRuntimeFailure("texture cache CPU decode/upload preparation failed");
+            return;
+        }
     }
-    ClearBitmapDirty |= texcacheClearBitmapDirty;
-    if (!textureCacheChanged && GPU3D.RenderFrameIdentical
-        && FinalFBHasValidFrame && ClearBitmapDirty == 0)
+
+    // Physical resource creation is host-side and independent of the
+    // frame-local command allocator, descriptor heap, and upload ring. Start
+    // it before Begin(true) waits for the previous raster submission.
+    const TextureMaterializeResult materializeResult =
+        TextureHeap.MaterializePendingCreates();
+    if (materializeResult == TextureMaterializeResult::Fatal)
     {
-        DX12Perf::AddCounter(DX12Perf::Counter::IdenticalFrames);
-        DX12Perf::MaybeReport();
+        SetRuntimeFailure("could not materialize a DX12 texture resource");
         return;
     }
 
@@ -2170,37 +2218,47 @@ void DX12Renderer3D::RenderFrame()
         SetRuntimeFailure("could not begin a frame command list");
         return;
     }
+
+    // A retryable allocation failure is the only path allowed to create a
+    // texture after Begin(): the begin has retired the prior frame and the
+    // reset below releases this heap's deferred resources before one retry.
+    auto resetFrameResources = [&] {
+        Descriptors.Reset();
+        Uploads.Reset();
+        TextureHeap.CollectGarbage();
+        BoundSrvTexture = nullptr;
+        BoundSrvTable = {};
+        ResetFrameSrvCache();
+    };
+    resetFrameResources();
+
+    if (materializeResult == TextureMaterializeResult::RetryAfterRetire)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializeRetryAfterRetireCount);
+        TextureHeap.ClearRetryableCreationFailure();
+        if (TextureHeap.MaterializePendingCreates() != TextureMaterializeResult::Ready)
+        {
+            DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializeRetryFailCount);
+            Commands.Submit();
+            SetRuntimeFailure("could not materialize a DX12 texture resource after frame retirement");
+            return;
+        }
+        DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializeRetrySuccessCount);
+    }
+
+    DX12Perf::ScopedCpuTimer rasterRecordTimer(DX12Perf::CpuMetric::RasterRecordSubmit);
     RecordDX12GpuMetric(
         Commands, GpuMetric::Raster, DX12Perf::Counter::RasterGpuTimeNs);
     Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, false));
 
-    // Begin() waited for the previous submission, so both rings are free to
-    // reuse and retired textures can go.
-    Descriptors.Reset();
-    Uploads.Reset();
-    TextureHeap.CollectGarbage();
-    TextureHeap.ResetUploadFailure();
-    BoundSrvTexture = nullptr;
-    BoundSrvTable = {};
-    ResetFrameSrvCache();
-
     UpdateClearBitmap();
-
-    // Polygon/span setup runs on the CPU exactly like the OpenGL compute
-    // renderer; the texcache uploads it triggers are recorded into this same
-    // list, which is why it has to happen while the list is open.
-    int numYSpans = 0;
-    int numSetupIndices = 0;
-    u32 numPolygons = 0;
-    u32 numVariants = 0;
-    {
-        DX12Perf::ScopedCpuTimer polygonTimer(DX12Perf::CpuMetric::BuildPolygons);
-        numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
-    }
-    if (TextureHeap.HadUploadFailure())
+    TextureHeap.RecordPendingUploads();
+    if (TextureHeap.HadFailure())
     {
         Commands.Submit();
-        SetRuntimeFailure("could not allocate or map a texture spill upload");
+        SetRuntimeFailure(TextureHeap.HadCreationFailure()
+            ? "could not materialize a DX12 texture resource"
+            : "could not allocate or map a texture spill upload");
         return;
     }
     DX12Perf::RecordGeometry(
@@ -2403,6 +2461,11 @@ void DX12Renderer3D::RenderFrame()
                 }
 
                 const DX12TextureHeap::Entry* texture = TextureHeap.Lookup(variant.Texture);
+                if (variant.Texture != 0 && (!texture || !texture->PhysicalReady))
+                {
+                    descriptorsValid = false;
+                    break;
+                }
                 if (!BindSrvTable(list, texture ? texture->Resource.Get() : nullptr))
                 {
                     descriptorsValid = false;

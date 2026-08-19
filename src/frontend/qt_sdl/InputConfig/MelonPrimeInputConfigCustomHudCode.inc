@@ -127,6 +127,13 @@ QString MelonPrimeInputConfig::buildCustomHudCode() const
     });
     root["double_spin_boxes"] = doubleSpinBoxes;
 
+    toml::table sliders;
+    ExportWidgetTable<QSlider>(sliders, ui->tabCrosshair, [](const QSlider* widget)
+    {
+        return widget->value();
+    });
+    root["sliders"] = sliders;
+
     toml::table lineEdits;
     ExportWidgetTable<QLineEdit>(lineEdits, ui->tabCrosshair, [](const QLineEdit* widget)
     {
@@ -196,6 +203,12 @@ bool MelonPrimeInputConfig::applyCustomHudCode(const QString& code, QString* err
                 widget->setValue(value.as_floating());
             else if (value.is_integer())
                 widget->setValue(static_cast<double>(value.as_integer()));
+        });
+
+        ImportWidgetTable<QSlider>(root, "sliders", ui->tabCrosshair, [](QSlider* widget, const toml::value& value)
+        {
+            if (value.is_integer())
+                widget->setValue(static_cast<int>(value.as_integer()));
         });
 
         ImportWidgetTable<QLineEdit>(root, "line_edits", ui->tabCrosshair, [](QLineEdit* widget, const toml::value& value)

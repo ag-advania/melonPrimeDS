@@ -2,6 +2,8 @@
 // This is a unity-build fragment included by Screen.cpp; do not add it to CMakeLists.txt.
 
 #ifdef MELONPRIME_CUSTOM_HUD
+#include "MelonPrimeHudEditorPanelGeometry.h"
+#include "MelonPrimeHudEditorFormLayout.h"
 static void MelonPrimeHud_PositionEditPanel(
     QWidget* host,
     MelonPrimeHudConfigOnScreenEdit* panel,
@@ -15,11 +17,54 @@ static void MelonPrimeHud_PositionEditPanel(
     const QRect bounds = boundsWidget
         ? QRect(boundsWidget->mapToGlobal(QPoint(0, 0)), boundsWidget->size())
         : QRect(host->mapToGlobal(QPoint(0, 0)), host->size());
-    const int maxH = std::max(120, bounds.height() - 8);
+    const int usableWidth = MelonPrime::HudEditorPanelGeometry::UsableWidth(bounds.width());
+
+    // The panel starts from its natural content size, keeps the historical
+    // width only as a preferred baseline for short English labels, and then
+    // yields to the actual window width.  The width is established before
+    // activating the layout so WrapLongRows can make the final height honest.
+    panel->setMinimumWidth(0);
+    panel->setMaximumWidth(usableWidth);
+    const int naturalWidth = std::max(panel->sizeHint().width(), panel->minimumSizeHint().width());
+    const int desiredWidth = naturalWidth > MelonPrime::HudEditorPanelGeometry::kPreferredWidth
+        ? naturalWidth
+        : MelonPrime::HudEditorPanelGeometry::kPreferredWidth;
+    const int panelW = std::min(desiredWidth, usableWidth);
+    if (panel->width() != panelW)
+        panel->resize(panelW, panel->height());
+    if (panel->layout())
+        panel->layout()->activate();
+    auto constrainLabelsToViewport = [&]() {
+        if (auto* scroll = panel->findChild<QScrollArea*>())
+        {
+            const int viewportWidth = scroll->viewport()->width() > 0
+                ? scroll->viewport()->width()
+                : panelW;
+            MelonPrime::HudEditorForm::ConstrainWrappedFormLabels(*panel, viewportWidth);
+        }
+    };
+    constrainLabelsToViewport();
+    if (panel->layout())
+        panel->layout()->activate();
+    constrainLabelsToViewport();
+    if (panel->layout())
+        panel->layout()->activate();
+    if (adjustSize)
+    {
+        panel->adjustSize();
+        if (panel->width() != panelW)
+            panel->resize(panelW, panel->height());
+        if (panel->layout())
+            panel->layout()->activate();
+        constrainLabelsToViewport();
+        if (panel->layout())
+            panel->layout()->activate();
+    }
+
+    const int maxH = std::max(120, bounds.height()
+        - (2 * MelonPrime::HudEditorPanelGeometry::kSafeMargin));
     if (setMaximumHeight)
         panel->setMaximumHeight(maxH);
-    if (adjustSize)
-        panel->adjustSize();
 
     const int desiredH = setMaximumHeight ? panel->sizeHint().height() : panel->height();
     const int panelH = std::min(desiredH, maxH);
@@ -35,16 +80,17 @@ static void MelonPrimeHud_PositionEditPanel(
 
     const int outsideTopX = targetGlobal.right() + 1 + 12;
     const int insideTopX = targetGlobal.right() + 1 - panel->width() - 24;
-    const int preferredX = (outsideTopX + panel->width() <= bounds.right() + 1 - 4)
+    const int preferredX = (outsideTopX + panel->width() <= bounds.right() + 1
+        - MelonPrime::HudEditorPanelGeometry::kSafeMargin)
         ? outsideTopX
         : insideTopX;
-    const int minX = bounds.left() + 4;
-    const int maxX = bounds.right() - panel->width() + 1 - 4;
+    const int minX = bounds.left() + MelonPrime::HudEditorPanelGeometry::kSafeMargin;
+    const int maxX = bounds.right() - panel->width() + 1 - MelonPrime::HudEditorPanelGeometry::kSafeMargin;
     const int px = std::clamp(preferredX, minX, std::max(minX, maxX));
 
     const int preferredY = bounds.top() + (bounds.height() - panelH) / 2;
-    const int minY = bounds.top() + 4;
-    const int maxY = bounds.bottom() - panelH + 1 - 4;
+    const int minY = bounds.top() + MelonPrime::HudEditorPanelGeometry::kSafeMargin;
+    const int maxY = bounds.bottom() - panelH + 1 - MelonPrime::HudEditorPanelGeometry::kSafeMargin;
     const int py = std::clamp(preferredY, minY, std::max(minY, maxY));
     panel->move(QPoint(px, py));
 }
@@ -100,6 +146,8 @@ static uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
         return h;
 
     const int rowBytes = (right - left + 1) * 4; // ARGB32 = 4 bytes/pixel
+    MelonPrimePerf::CountHudRegionHash(
+        static_cast<std::size_t>(rowBytes) * static_cast<std::size_t>(bot - top + 1));
     for (int y = top; y <= bot; ++y) {
         const uchar* row = img.scanLine(y) + left * 4;
         int i = 0;

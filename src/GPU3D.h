@@ -24,6 +24,9 @@
 
 #include "Savestate.h"
 #include "FIFO.h"
+#if defined(MELONPRIME_DS)
+#include "MelonPrimeStructuredPerf.h"
+#endif
 
 namespace melonDS
 {
@@ -342,6 +345,12 @@ public:
     virtual void PrepareCaptureFrame() {}
     virtual void BeginCaptureFrame() {}
     [[nodiscard]] virtual bool UsesStructured2DMetadata() const noexcept { return false; }
+    // The shared software 2D producer asks for this once at frame start. It
+    // must remain a stable backend identity for the whole structured frame.
+    [[nodiscard]] virtual StructuredPerfBackend GetStructured2DPerfBackend() const noexcept
+    {
+        return StructuredPerfBackend::None;
+    }
     // True only when GetLine() returned pixels from the renderer's current
     // 3D frame. Structured capture must not replace a transparent fallback
     // with a FinalFB that became available later in the DS frame.

@@ -44,7 +44,19 @@ namespace melonDS
 struct VulkanLatencySample
 {
     u64 SampleIndex = 0;
+    u64 LogicalFrameId = 0;
+    u64 ReflexPresentId = 0;
     u64 PresentId = 0;
+
+    u32 SwapchainImageIndex = 0;
+    u32 FrameSlot = 0;
+    u32 SwapchainImageCount = 0;
+    u32 DistinctSwapchainImagesAcquiredSinceRecreate = 0;
+    u64 LogicalFramesSinceLastAcceptedPresent = 0;
+    // FrameRing retirement proxy; this is not the driver's internal WSI queue
+    // depth and must not be presented as one.
+    u64 UnretiredFrameRingSubmissionDepth = 0;
+    u64 AcquireWaitUs = 0;
 
     u64 InputSampleUs = 0;
     u64 SimStartUs = 0;
@@ -57,6 +69,9 @@ struct VulkanLatencySample
     // measured on this path", never "measured as zero".
     u64 GpuRenderStartUs = 0;
     u64 GpuRenderEndUs = 0;
+    u64 InputSampleQpcTicks = 0;
+    u64 PresentEndQpcTicks = 0;
+    u64 QpcFrequency = 0;
 
     int ReflexMode = 0;
     VulkanPresentPacer::StateSnapshot Pacing{};
@@ -83,9 +98,20 @@ public:
     void MarkRenderSubmitEnd() noexcept;
     void MarkPresentStart() noexcept;
     void MarkPresentEnd() noexcept;
+    void MarkAcquireStart() noexcept;
+    void MarkAcquireEnd() noexcept;
 
     void SetGpuRenderBounds(u64 startUs, u64 endUs) noexcept;
     void SetReflexMode(int mode) noexcept { Pending.ReflexMode = mode; }
+    void SetFrameContext(
+        u64 logicalFrameId,
+        u64 reflexPresentId,
+        u32 swapchainImageIndex,
+        u32 frameSlot,
+        u32 swapchainImageCount,
+        u32 distinctSwapchainImagesAcquiredSinceRecreate,
+        u64 logicalFramesSinceLastAcceptedPresent,
+        u64 unretiredFrameRingSubmissionDepth) noexcept;
 
     // Closes the frame and stores it. Called once per accepted present.
     void Commit(u64 presentId, const VulkanPresentPacer::StateSnapshot& pacing) noexcept;
@@ -95,12 +121,16 @@ public:
 
 private:
     [[nodiscard]] u64 NowUs() const noexcept;
+    [[nodiscard]] u64 NowTicks() const noexcept;
 
     bool Enabled = false;
     std::string RunId;
     std::string OutputPath;
     u64 StartTicks = 0;
+    u64 ClockFrequency = 0;
     u64 NextSampleIndex = 0;
+    u64 AcquireStartUs = 0;
+    bool AcquireOpen = false;
     VulkanLatencySample Pending{};
     std::vector<VulkanLatencySample> Samples;
 };
@@ -121,9 +151,12 @@ public:
     void MarkRenderSubmitEnd() noexcept {}
     void MarkPresentStart() noexcept {}
     void MarkPresentEnd() noexcept {}
+    void MarkAcquireStart() noexcept {}
+    void MarkAcquireEnd() noexcept {}
 
     void SetGpuRenderBounds(u64, u64) noexcept {}
     void SetReflexMode(int) noexcept {}
+    void SetFrameContext(u64, u64, u32, u32, u32, u32, u64, u64) noexcept {}
     void Commit(u64, const VulkanPresentPacer::StateSnapshot&) noexcept {}
     bool Flush() { return true; }
 };

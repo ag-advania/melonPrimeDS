@@ -26,6 +26,8 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+
+#include "MelonPrimePerfClock.h"
 #endif
 
 namespace melonDS::VulkanPerf
@@ -34,11 +36,20 @@ namespace melonDS::VulkanPerf
 enum class CpuMetric : u32
 {
     RasterBeginWait = 0,
+    RasterCpuPrepare,
+    RasterReuseWait,
+    RasterRecordSubmit,
     TexcacheUpdate,
     BuildPolygons,
+    Soft2DTotal,
+    Structured2DMetadata,
+    TextureDecode,
+    TexturePendingCpuCopy,
+    TextureResourceCreate,
+    TexturePendingStorageGrow,
     DescriptorUpdate,
     ComposePack,
-    Structured2D,
+    PresentSlotWait,
     PresentBeginTotal,
     PresentAcquire,
     PresentImageFence,
@@ -71,6 +82,16 @@ enum class Counter : u32
     StructuredRouteRuns,
     HudUploadBytes,
     TextureUploadBytes,
+    TextureMaterializeCount,
+    TextureMaterializePreFenceFailCount,
+    TextureMaterializeRetryAfterRetireCount,
+    TextureMaterializeRetrySuccessCount,
+    TextureMaterializeRetryFailCount,
+    TextureMaterializeFailureReason,
+    TexturePendingUploadBytes,
+    TexturePendingUploadCount,
+    TexturePendingStorageGrowCount,
+    TexturePendingStorageGrowBytes,
     ScratchUploadCount,
     ScratchUploadBytes,
     DescriptorWriteCount,
@@ -109,12 +130,19 @@ enum class Counter : u32
     NativeReadbackWaitNs,
     VulkanPresenterFrameFenceWaitCount,
     VulkanPresenterFrameFenceWaitNs,
+    VulkanPresenterSlotBusySkipCount,
+    VulkanScreenFrameReuseCount,
+    VulkanScreenLayerUploadSkipCount,
     VulkanPresenterLatestSubmissionWaitCount,
     VulkanPresenterLatestSubmissionWaitNs,
     VulkanPresenterLatestSubmissionWaitTimeoutCount,
     VulkanPresenterBudgetMissCount,
     VulkanAcquireWaitCount,
     VulkanAcquireWaitNs,
+    VulkanAcquireTimeoutNs,
+    VulkanAcquireLowLatencyAttemptCount,
+    VulkanAcquireLowLatencySkipCount,
+    VulkanAcquireRepeatImageIndexCount,
     VulkanAcquireNotReadyCount,
     VulkanPresentSkippedForLatencyBudgetCount,
     VulkanTransientDescriptorPoolResetCount,
@@ -123,7 +151,11 @@ enum class Counter : u32
     VulkanPreviousPresentWaitTimeoutCount,
     VulkanSwapchainImageCount,
     VulkanPresenterFramesInFlight,
-    VulkanPresenterLogicalDepth,
+    VulkanPresenterUnretiredFrameRingSubmissionDepth,
+    VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+    VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+    VulkanNvLowLatencyOptimizedModeCount,
+    VulkanPresentModeIsNvLowLatencyOptimized,
     VulkanPacingAuthority,
     VulkanPresentMode,
     VulkanVsyncEnabled,
@@ -140,14 +172,23 @@ inline constexpr bool IsCompiledIn() noexcept
 
 inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Count)> CpuMetricNames = {
     "raster_begin_wait",
+    "raster_cpu_prepare_us",
+    "raster_reuse_wait_us",
+    "raster_record_submit_us",
     "texcache_update",
     "build_polygons",
+    "soft2d_total_us",
+    "structured2d_metadata_us",
+    "texture_decode_us",
+    "texture_pending_cpu_copy_us",
+    "texture_resource_create_us",
+    "texture_pending_storage_grow_us",
     "descriptor_update",
-    "compose_pack",
-    "structured_2d",
-    "present_begin_total",
-    "present_acquire",
-    "present_image_fence",
+    "structured_pack_us",
+    "present_slot_wait_us",
+    "present_begin_total_us",
+    "present_acquire_wait_us",
+    "present_image_fence_us",
     "hud_upload",
     "queue_submit",
 };
@@ -250,6 +291,8 @@ public:
         State& state = GetState();
         state.Cpu[static_cast<std::size_t>(CpuMetric::RasterBeginWait)].Add(
             static_cast<double>(ns) / 1000.0);
+        state.Cpu[static_cast<std::size_t>(CpuMetric::RasterReuseWait)].Add(
+            static_cast<double>(ns) / 1000.0);
         state.Counters[static_cast<std::size_t>(Counter::RasterBeginWaitNs)] += ns;
         state.Counters[static_cast<std::size_t>(Counter::RasterBeginWaitCount)]++;
     }
@@ -310,15 +353,15 @@ inline void EndStructured2DFrame() noexcept
     State& state = GetState();
     if (!state.Structured2DOpen)
         return;
-    AddDuration(CpuMetric::Structured2D, state.Structured2DStart);
+    AddDuration(CpuMetric::Soft2DTotal, state.Structured2DStart);
     state.Structured2DOpen = false;
 }
 
 class ScopedCpuTimer
 {
 public:
-    explicit ScopedCpuTimer(CpuMetric metric) noexcept
-        : Metric(metric), Enabled(IsEnabled())
+    explicit ScopedCpuTimer(CpuMetric metric, bool enabled = true) noexcept
+        : Metric(metric), Enabled(enabled && IsEnabled())
     {
         if (Enabled)
             Start = Clock::now();
@@ -368,11 +411,30 @@ inline void MaybeReport()
     if (now - state.LastReport < std::chrono::seconds(1))
         return;
 
+    const auto reportClock = MelonPrimePerfClock::Now();
+    std::fprintf(stderr,
+        "[MelonPrimePerfPhase] report_qpc_ticks=%llu qpc_frequency=%llu\n",
+        static_cast<unsigned long long>(reportClock.Ticks),
+        static_cast<unsigned long long>(reportClock.Frequency));
+
     for (std::size_t index = 0; index < state.Cpu.size(); ++index)
     {
         const SampleWindow& window = state.Cpu[index];
         if (window.Count == 0)
+        {
+            // The acquired-image host fence wait was removed from the normal
+            // presenter path. Keep its historical report field explicit so a
+            // telemetry consumer can distinguish "zero waits" from a missing
+            // sample while older report parsers remain compatible.
+            if (index == static_cast<std::size_t>(CpuMetric::PresentImageFence))
+            {
+                std::fprintf(stderr,
+                    "[VulkanPerf] cpu scale=%u name=%s p50_us=0.00 p95_us=0.00 "
+                    "p99_us=0.00 max_us=0.00 n=0\n",
+                    state.Scale, CpuMetricNames[index]);
+            }
             continue;
+        }
         std::fprintf(stderr,
             "[VulkanPerf] cpu scale=%u name=%s p50_us=%.2f p95_us=%.2f p99_us=%.2f max_us=%.2f n=%zu\n",
             state.Scale, CpuMetricNames[index],
@@ -390,6 +452,16 @@ inline void MaybeReport()
         "structured_input_uploaded_B=%llu structured_input_regions=%llu structured_input_full=%llu "
         "structured_input_partial=%llu route_copy_B=%llu route_copy_ns=%llu "
         "regular_lines=%llu fallback_lines=%llu route_runs=%llu hud_upload_B=%llu texture_upload_B=%llu "
+        "texture_materialize_count=%llu "
+        "texture_materialize_pre_fence_fail_count=%llu "
+        "texture_materialize_retry_after_retire_count=%llu "
+        "texture_materialize_retry_success_count=%llu "
+        "texture_materialize_retry_fail_count=%llu "
+        "texture_materialize_failure_reason=%llu "
+        "texture_pending_upload_bytes=%llu "
+        "texture_pending_upload_count=%llu "
+        "texture_pending_storage_grow_count=%llu "
+        "texture_pending_storage_grow_bytes=%llu "
         "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu descriptor_creates=%llu "
         "descriptor_updates=%llu descriptor_copies=%llu descriptor_cpu_ns=%llu "
         "presenter_srv_creates=%llu presenter_descriptor_copies=%llu "
@@ -405,13 +477,20 @@ inline void MaybeReport()
         "fallback_buffer_frames=%llu native_resolves=%llu native_readback_copy_B=%llu "
         "native_readback_demands=%llu native_readback_wait_ns=%llu "
         "presenter_frame_fence_wait_count=%llu presenter_frame_fence_wait_ns=%llu "
+        "presenter_slot_busy_skip_count=%llu "
+        "screen_frame_reuse_count=%llu screen_layer_upload_skip_count=%llu "
         "latest_submission_wait_count=%llu latest_submission_wait_ns=%llu "
         "latest_submission_wait_timeout_count=%llu presenter_budget_miss_count=%llu "
-        "acquire_wait_count=%llu acquire_wait_ns=%llu acquire_not_ready_count=%llu "
+        "acquire_timeout_ns=%llu acquire_wait_count=%llu acquire_wait_ns=%llu "
+        "acquire_low_latency_attempt_count=%llu acquire_low_latency_skip_count=%llu "
+        "acquire_repeat_image_index_count=%llu acquire_not_ready_count=%llu "
         "present_skipped_for_latency_budget_count=%llu transient_descriptor_pool_resets=%llu "
         "previous_present_wait_count=%llu previous_present_wait_ns=%llu "
         "previous_present_wait_timeout_count=%llu swapchain_image_count=%llu "
-        "presenter_frames_in_flight=%llu presenter_logical_depth=%llu "
+        "presenter_frames_in_flight=%llu "
+        "unretired_frame_ring_submission_depth=%llu "
+        "logical_frames_since_last_accepted_present=%llu "
+        "distinct_swapchain_images_acquired_since_recreate=%llu "
         "pacing_authority=%llu present_mode=%llu vsync_enabled=%llu "
         "reflex_mode=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
@@ -428,6 +507,16 @@ inline void MaybeReport()
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
         count(Counter::StructuredRouteRuns),
         count(Counter::HudUploadBytes), count(Counter::TextureUploadBytes),
+        count(Counter::TextureMaterializeCount),
+        count(Counter::TextureMaterializePreFenceFailCount),
+        count(Counter::TextureMaterializeRetryAfterRetireCount),
+        count(Counter::TextureMaterializeRetrySuccessCount),
+        count(Counter::TextureMaterializeRetryFailCount),
+        count(Counter::TextureMaterializeFailureReason),
+        count(Counter::TexturePendingUploadBytes),
+        count(Counter::TexturePendingUploadCount),
+        count(Counter::TexturePendingStorageGrowCount),
+        count(Counter::TexturePendingStorageGrowBytes),
         count(Counter::ScratchUploadCount), count(Counter::ScratchUploadBytes),
         count(Counter::DescriptorWriteCount), count(Counter::DescriptorCreateCount),
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
@@ -454,12 +543,19 @@ inline void MaybeReport()
         count(Counter::NativeReadbackWaitNs),
         count(Counter::VulkanPresenterFrameFenceWaitCount),
         count(Counter::VulkanPresenterFrameFenceWaitNs),
+        count(Counter::VulkanPresenterSlotBusySkipCount),
+        count(Counter::VulkanScreenFrameReuseCount),
+        count(Counter::VulkanScreenLayerUploadSkipCount),
         count(Counter::VulkanPresenterLatestSubmissionWaitCount),
         count(Counter::VulkanPresenterLatestSubmissionWaitNs),
         count(Counter::VulkanPresenterLatestSubmissionWaitTimeoutCount),
         count(Counter::VulkanPresenterBudgetMissCount),
+        count(Counter::VulkanAcquireTimeoutNs),
         count(Counter::VulkanAcquireWaitCount),
         count(Counter::VulkanAcquireWaitNs),
+        count(Counter::VulkanAcquireLowLatencyAttemptCount),
+        count(Counter::VulkanAcquireLowLatencySkipCount),
+        count(Counter::VulkanAcquireRepeatImageIndexCount),
         count(Counter::VulkanAcquireNotReadyCount),
         count(Counter::VulkanPresentSkippedForLatencyBudgetCount),
         count(Counter::VulkanTransientDescriptorPoolResetCount),
@@ -468,7 +564,11 @@ inline void MaybeReport()
         count(Counter::VulkanPreviousPresentWaitTimeoutCount),
         count(Counter::VulkanSwapchainImageCount),
         count(Counter::VulkanPresenterFramesInFlight),
-        count(Counter::VulkanPresenterLogicalDepth),
+        count(Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth),
+        count(Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent),
+        count(Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate),
+        count(Counter::VulkanNvLowLatencyOptimizedModeCount),
+        count(Counter::VulkanPresentModeIsNvLowLatencyOptimized),
         count(Counter::VulkanPacingAuthority),
         count(Counter::VulkanPresentMode), count(Counter::VulkanVsyncEnabled),
         count(Counter::VulkanReflexMode));
@@ -477,8 +577,16 @@ inline void MaybeReport()
         count(Counter::VulkanSwapchainImageCount);
     const unsigned long long presenterFramesInFlight =
         count(Counter::VulkanPresenterFramesInFlight);
-    const unsigned long long presenterLogicalDepth =
-        count(Counter::VulkanPresenterLogicalDepth);
+    const unsigned long long unretiredFrameRingSubmissionDepth =
+        count(Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth);
+    const unsigned long long logicalFramesSinceLastAcceptedPresent =
+        count(Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent);
+    const unsigned long long distinctSwapchainImagesAcquiredSinceRecreate =
+        count(Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate);
+    const unsigned long long nvLowLatencyOptimizedModeCount =
+        count(Counter::VulkanNvLowLatencyOptimizedModeCount);
+    const unsigned long long presentModeIsNvLowLatencyOptimized =
+        count(Counter::VulkanPresentModeIsNvLowLatencyOptimized);
     const unsigned long long pacingAuthority =
         count(Counter::VulkanPacingAuthority);
     const unsigned long long presentMode = count(Counter::VulkanPresentMode);
@@ -487,9 +595,18 @@ inline void MaybeReport()
     std::fprintf(stderr,
         "[VulkanPerf] summary renderer=Vulkan vsync=%llu present_mode=%llu "
         "vendor_pacing_authority=%llu reflex_mode=%llu "
-        "swapchain_backbuffer_count=%llu presenter_logical_depth=%llu\n",
+        "swapchain_backbuffer_count=%llu "
+        "unretired_frame_ring_submission_depth=%llu "
+        "logical_frames_since_last_accepted_present=%llu "
+        "distinct_swapchain_images_acquired_since_recreate=%llu "
+        "nv_low_latency_optimized_mode_count=%llu "
+        "present_mode_is_nv_low_latency_optimized=%llu\n",
         vsyncEnabled, presentMode, pacingAuthority, reflexMode,
-        swapchainImageCount, presenterLogicalDepth);
+        swapchainImageCount, unretiredFrameRingSubmissionDepth,
+        logicalFramesSinceLastAcceptedPresent,
+        distinctSwapchainImagesAcquiredSinceRecreate,
+        nvLowLatencyOptimizedModeCount,
+        presentModeIsNvLowLatencyOptimized);
     for (SampleWindow& window : state.Cpu)
         window.Reset();
     state.Counters.fill(0);
@@ -497,8 +614,16 @@ inline void MaybeReport()
         swapchainImageCount;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterFramesInFlight)] =
         presenterFramesInFlight;
-    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterLogicalDepth)] =
-        presenterLogicalDepth;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth)] =
+        unretiredFrameRingSubmissionDepth;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent)] =
+        logicalFramesSinceLastAcceptedPresent;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate)] =
+        distinctSwapchainImagesAcquiredSinceRecreate;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanNvLowLatencyOptimizedModeCount)] =
+        nvLowLatencyOptimizedModeCount;
+    state.Counters[static_cast<std::size_t>(Counter::VulkanPresentModeIsNvLowLatencyOptimized)] =
+        presentModeIsNvLowLatencyOptimized;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPacingAuthority)] =
         pacingAuthority;
     state.Counters[static_cast<std::size_t>(Counter::VulkanPresentMode)] = presentMode;
@@ -556,11 +681,20 @@ namespace melonDS::VulkanPerf
 enum class CpuMetric : u32
 {
     RasterBeginWait,
+    RasterCpuPrepare,
+    RasterReuseWait,
+    RasterRecordSubmit,
     TexcacheUpdate,
     BuildPolygons,
+    Soft2DTotal,
+    Structured2DMetadata,
+    TextureDecode,
+    TexturePendingCpuCopy,
+    TextureResourceCreate,
+    TexturePendingStorageGrow,
     DescriptorUpdate,
     ComposePack,
-    Structured2D,
+    PresentSlotWait,
     PresentBeginTotal,
     PresentAcquire,
     PresentImageFence,
@@ -592,6 +726,16 @@ enum class Counter : u32
     StructuredRouteRuns,
     HudUploadBytes,
     TextureUploadBytes,
+    TextureMaterializeCount,
+    TextureMaterializePreFenceFailCount,
+    TextureMaterializeRetryAfterRetireCount,
+    TextureMaterializeRetrySuccessCount,
+    TextureMaterializeRetryFailCount,
+    TextureMaterializeFailureReason,
+    TexturePendingUploadBytes,
+    TexturePendingUploadCount,
+    TexturePendingStorageGrowCount,
+    TexturePendingStorageGrowBytes,
     ScratchUploadCount,
     ScratchUploadBytes,
     DescriptorWriteCount,
@@ -630,12 +774,19 @@ enum class Counter : u32
     NativeReadbackWaitNs,
     VulkanPresenterFrameFenceWaitCount,
     VulkanPresenterFrameFenceWaitNs,
+    VulkanPresenterSlotBusySkipCount,
+    VulkanScreenFrameReuseCount,
+    VulkanScreenLayerUploadSkipCount,
     VulkanPresenterLatestSubmissionWaitCount,
     VulkanPresenterLatestSubmissionWaitNs,
     VulkanPresenterLatestSubmissionWaitTimeoutCount,
     VulkanPresenterBudgetMissCount,
     VulkanAcquireWaitCount,
     VulkanAcquireWaitNs,
+    VulkanAcquireTimeoutNs,
+    VulkanAcquireLowLatencyAttemptCount,
+    VulkanAcquireLowLatencySkipCount,
+    VulkanAcquireRepeatImageIndexCount,
     VulkanAcquireNotReadyCount,
     VulkanPresentSkippedForLatencyBudgetCount,
     VulkanTransientDescriptorPoolResetCount,
@@ -644,7 +795,11 @@ enum class Counter : u32
     VulkanPreviousPresentWaitTimeoutCount,
     VulkanSwapchainImageCount,
     VulkanPresenterFramesInFlight,
-    VulkanPresenterLogicalDepth,
+    VulkanPresenterUnretiredFrameRingSubmissionDepth,
+    VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+    VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+    VulkanNvLowLatencyOptimizedModeCount,
+    VulkanPresentModeIsNvLowLatencyOptimized,
     VulkanPacingAuthority,
     VulkanPresentMode,
     VulkanVsyncEnabled,

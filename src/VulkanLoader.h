@@ -294,6 +294,9 @@ struct DeviceDispatch
     // --- VK_AMD_anti_lag (optional: AMD Radeon Anti-Lag 2) ---
     PFN_vkAntiLagUpdateAMD              AntiLagUpdateAMD = nullptr;
 
+    // --- VK_EXT_device_fault (optional diagnostics) ---
+    PFN_vkGetDeviceFaultInfoEXT          GetDeviceFaultInfoEXT = nullptr;
+
     // --- VK_EXT_debug_utils (optional) ---
     // Consumed through Vk::SetDebugName(); null in a release build, which is
     // the entire opt-out path.

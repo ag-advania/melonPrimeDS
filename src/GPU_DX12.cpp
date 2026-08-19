@@ -287,9 +287,9 @@ const DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() const noexcept
     return dynamic_cast<const DX12Renderer3D*>(Rend3D.get());
 }
 
-void DX12Renderer::BeginReflexFrame()
+void DX12Renderer::BeginReflexFrame(melonDS::u64 logicalFrameId)
 {
-    NvidiaReflex.BeginFrame();
+    NvidiaReflex.BeginFrame(logicalFrameId);
 }
 
 void DX12Renderer::BeginAmdAntiLag2Frame()

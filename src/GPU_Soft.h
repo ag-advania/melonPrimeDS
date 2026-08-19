@@ -27,6 +27,7 @@
 // Defines MELONPRIME_HAS_STRUCTURED_SOFT_2D, shared with the GPU2D_Soft
 // producer side.
 #include "MelonPrimeStructuredComposition.h"
+#include "MelonPrimeStructuredPerf.h"
 #endif
 
 namespace melonDS
@@ -89,6 +90,10 @@ public:
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
+    [[nodiscard]] StructuredPerfBackend GetStructured2DPerfBackendForFrame() const noexcept
+    {
+        return StructuredPerfBackendForFrame;
+    }
     // Published to the frontend so the Custom HUD can tell when MPH's native
     // START menu is held. It never selects composition behaviour.
     void SetNativeMenuHeldForFrame(bool held) noexcept
@@ -139,29 +144,35 @@ private:
     u32 StructuredFallbackLines = 0;
     u64 StructuredFrameGeneration = 0;
     StructuredComposition::GenerationState StructuredContentGeneration{};
+    u16 StructuredPendingPlaneDirtyMask = 0;
+    u8 StructuredPendingLineMetaDirtyMask = 0;
+    bool StructuredPendingCaptureCommandsDirty = false;
+    u8 StructuredEngineChangedMask[2] = { 0, 0 };
+    StructuredPerfBackend StructuredPerfBackendForFrame = StructuredPerfBackend::None;
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
     inline void MarkStructuredPlaneDirty(u32 plane) noexcept
     {
         if (plane < StructuredComposition::kStructuredInputPlaneCount)
-            StructuredContentGeneration.Plane[plane] = StructuredFrameGeneration;
+        {
+            // Generation publication is deferred until the frame boundary.
+            // The producer can touch a plane thousands of times per frame;
+            // only the logical plane unit needs one generation commit.
+            StructuredPendingPlaneDirtyMask |= static_cast<u16>(1u << plane);
+        }
     }
     inline void MarkStructuredScreenPlanesDirty() noexcept
     {
-        for (u32 plane = 0; plane < 8u; ++plane)
-            MarkStructuredPlaneDirty(plane);
+        StructuredPendingPlaneDirtyMask |= 0x00FFu;
     }
     inline void MarkStructuredLineMetaDirty(u32 screen) noexcept
     {
         if (screen < StructuredComposition::kStructuredInputLineMetaCount)
-        {
-            StructuredContentGeneration.LineMeta[screen] =
-                StructuredFrameGeneration;
-        }
+            StructuredPendingLineMetaDirtyMask |= static_cast<u8>(1u << screen);
     }
     inline void MarkStructuredCaptureCommandsDirty() noexcept
     {
-        StructuredContentGeneration.CaptureCommands = StructuredFrameGeneration;
+        StructuredPendingCaptureCommandsDirty = true;
     }
     inline void StoreStructuredScreenSource(u32 screen, u32 line, u8 value) noexcept
     {
@@ -175,7 +186,8 @@ private:
         MarkStructuredScreenPlanesDirty();
     }
     inline void StoreStructuredScreenPlaneWord(
-        u32 screen, u32 plane, std::size_t pixelIndex, u32 value) noexcept
+        u32 screen, u32 plane, std::size_t pixelIndex, u32 value,
+        u8* changedMask = nullptr) noexcept
     {
         if (screen >= 2u || plane >= StructuredComposition::kPlaneCount
             || pixelIndex >= StructuredPixelCount)
@@ -190,7 +202,10 @@ private:
         if (destination == value)
             return;
         destination = value;
-        MarkStructuredPlaneDirty(screen * StructuredComposition::kPlaneCount + plane);
+        if (changedMask)
+            *changedMask |= static_cast<u8>(1u << plane);
+        else
+            MarkStructuredPlaneDirty(screen * StructuredComposition::kPlaneCount + plane);
     }
     inline void StoreStructuredCaptureSourceWord(
         u32 plane, u32& destination, u32 value) noexcept
@@ -267,7 +282,7 @@ private:
             ((controlAlpha & Contract::kControlFlagMask) << Contract::kControlFlagShift)
             | ((evb & 0xFFu) << Contract::kControlEvbShift)
             | ((eva & 0xFFu) << Contract::kControlEvaShift);
-        std::array<bool, Contract::kPlaneCount> changedPlane{};
+        u8 changedPlaneMask = 0;
         const auto store = [&](u32 plane, u32 value) {
             u32& destination = StructuredEnginePlanes[
                 engineBase + (static_cast<std::size_t>(plane) * StructuredPixelCount)
@@ -275,14 +290,32 @@ private:
             if (destination == value)
                 return;
             destination = value;
-            changedPlane[plane] = true;
-            if (engine == 0u)
-                MarkStructuredPlaneDirty(8u + plane);
+            changedPlaneMask |= static_cast<u8>(1u << plane);
         };
         store(0u, plane0);
         store(1u, plane1);
         store(2u, control);
         store(3u, captureReference);
+        StructuredEngineChangedMask[engine] |= changedPlaneMask;
+    }
+    inline void FlushStructuredEngineLine(u32 engine, u32 line) noexcept
+    {
+        if (engine >= 2u)
+            return;
+        const u8 changedPlaneMask = StructuredEngineChangedMask[engine];
+        StructuredEngineChangedMask[engine] = 0;
+        if (changedPlaneMask == 0 || line >= StructuredComposition::kScreenHeight)
+            return;
+
+        if (engine == 0u)
+        {
+            for (u32 plane = 0; plane < StructuredComposition::kPlaneCount; ++plane)
+            {
+                if (changedPlaneMask & static_cast<u8>(1u << plane))
+                    MarkStructuredPlaneDirty(8u + plane);
+            }
+        }
+
         for (u32 screen = 0; screen < 2u; ++screen)
         {
             const u8 source = StructuredScreenSource[
@@ -290,15 +323,30 @@ private:
                 + line];
             if (source != engine)
                 continue;
-            for (u32 plane = 0; plane < Contract::kPlaneCount; ++plane)
+            for (u32 plane = 0; plane < StructuredComposition::kPlaneCount; ++plane)
             {
-                if (changedPlane[plane])
-                {
-                    MarkStructuredPlaneDirty(
-                        screen * Contract::kPlaneCount + plane);
-                }
+                if (changedPlaneMask & static_cast<u8>(1u << plane))
+                    MarkStructuredPlaneDirty(screen * StructuredComposition::kPlaneCount + plane);
             }
         }
+    }
+    inline void FlushStructuredGeneration() noexcept
+    {
+        for (u32 plane = 0; plane < StructuredComposition::kStructuredInputPlaneCount; ++plane)
+        {
+            if (StructuredPendingPlaneDirtyMask & static_cast<u16>(1u << plane))
+                StructuredContentGeneration.Plane[plane] = StructuredFrameGeneration;
+        }
+        for (u32 screen = 0; screen < StructuredComposition::kStructuredInputLineMetaCount; ++screen)
+        {
+            if (StructuredPendingLineMetaDirtyMask & static_cast<u8>(1u << screen))
+                StructuredContentGeneration.LineMeta[screen] = StructuredFrameGeneration;
+        }
+        if (StructuredPendingCaptureCommandsDirty)
+            StructuredContentGeneration.CaptureCommands = StructuredFrameGeneration;
+        StructuredPendingPlaneDirtyMask = 0;
+        StructuredPendingLineMetaDirtyMask = 0;
+        StructuredPendingCaptureCommandsDirty = false;
     }
     void PrepareStructuredCaptureLine(u32 line, const u32* exact3DLine);
     void StoreStructuredCaptureLine(

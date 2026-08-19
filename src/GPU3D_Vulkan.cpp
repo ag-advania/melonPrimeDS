@@ -35,6 +35,7 @@
 #include "GPU3D_RasterDifferential.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "VulkanContext.h"
+#include "VulkanDebugLabels.h"
 #include "VulkanFeatureProbe.h"
 #include "VulkanPerf.h"
 #include "VulkanPresentedFrame.h"
@@ -442,8 +443,8 @@ void VulkanRenderer3D::Reset()
 
     // No WaitIdle here: a reset can land while a submission is still in flight,
     // and the texcache images it drops are exactly what the deferred destroy
-    // queue exists for -- they are retired against the current frame number and
-    // collected once that frame's fence signals.
+    // queue exists for -- they are retired against the last frame that may
+    // reference each texture and collected once that frame's fence signals.
     Texcache.Reset();
     ClearBitmapDirty = 0x3;
     FrameInFlight = false;
@@ -471,6 +472,10 @@ void VulkanRenderer3D::SetRuntimeFailure(std::string reason)
 {
     if (RuntimeFailed)
         return;
+
+    if (reason.find("VK_ERROR_DEVICE_LOST") != std::string::npos
+        || reason.find("DEVICE_LOST") != std::string::npos)
+        Device.ReportDeviceLost("3D renderer runtime failure");
 
     RuntimeFailed = true;
     RuntimeFailureReason = reason.empty() ? "unspecified Vulkan renderer failure" : std::move(reason);
@@ -588,6 +593,19 @@ bool VulkanRenderer3D::CreateFixedResources()
 bool VulkanRenderer3D::CreateScaleDependentResources()
 {
     ReleaseScaleDependentResources();
+
+    // Re-query the optional live budget at the recreation boundary. This is
+    // intentionally outside RenderFrame(): other processes may change the
+    // estimate between scale changes, while a per-frame query would add driver
+    // overhead to the steady state. Refusal is explicit; no scale is silently
+    // clamped to a smaller setting.
+    if (!Device.RefreshMemoryAdmission())
+        return false;
+    const Vk::ResolutionBudget admissionBudget =
+        Vk::ResolutionBudget::ForScaleFactor(ScaleFactor);
+    if (!Device.AdmitScaleDependentResources(
+            admissionBudget, "Vulkan scale-dependent resource recreation"))
+        return false;
 
     const VkDeviceSize screenPixels =
         static_cast<VkDeviceSize>(ScreenWidth) * static_cast<VkDeviceSize>(ScreenHeight);
@@ -730,6 +748,7 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
     // The new FinalFB starts UNDEFINED and has to be moved into GENERAL by
     // the next frame's command buffer.
     NeedsFinalFBTransition = true;
+    Device.LogMemoryTelemetry("scale resource recreation");
     return true;
 }
 
@@ -2119,6 +2138,58 @@ void VulkanRenderer3D::RenderFrame()
     const Vk::DeviceDispatch& fns = Device.Fns();
     VulkanPerf::SetScale(static_cast<u32>(ScaleFactor));
 
+    u8 texcacheClearBitmapDirty = 0;
+    bool textureCacheChanged = false;
+    int numYSpans = 0;
+    int numSetupIndices = 0;
+    u32 numPolygons = 0;
+    u32 numVariants = 0;
+    bool canReuseIdenticalFrame = false;
+    {
+        TextureHeap.ResetFailures();
+        VulkanPerf::ScopedCpuTimer prepareTimer(VulkanPerf::CpuMetric::RasterCpuPrepare);
+        {
+            VulkanPerf::ScopedCpuTimer texcacheTimer(VulkanPerf::CpuMetric::TexcacheUpdate);
+            textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
+        }
+        if (TextureHeap.HadFailure())
+        {
+            SetRuntimeFailure("texture cache logical reservation or CPU upload preparation failed");
+            return;
+        }
+        ClearBitmapDirty |= texcacheClearBitmapDirty;
+        canReuseIdenticalFrame =
+            !textureCacheChanged
+            && GPU3D.RenderFrameIdentical
+            && FinalFBHasContent
+            && !NeedsFinalFBTransition
+            && PlaceholdersInitialized;
+
+        if (!canReuseIdenticalFrame)
+        {
+            // BuildPolygons is CPU-only until the texture heap records its
+            // queued uploads after BeginFrame() retires the prior raster slot.
+            VulkanPerf::ScopedCpuTimer polygonTimer(VulkanPerf::CpuMetric::BuildPolygons);
+            numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+            if (TextureHeap.HadFailure())
+            {
+                SetRuntimeFailure("texture cache CPU decode/upload preparation failed");
+                return;
+            }
+        }
+    }
+
+    // Image/memory/view creation is host-side and independent of the
+    // frame-local command pool, staging ring, and descriptor resources. Start
+    // it before BeginFrame(true) waits for the previous raster slot.
+    const TextureMaterializeResult materializeResult =
+        TextureHeap.MaterializePendingCreates();
+    if (materializeResult == TextureMaterializeResult::Fatal)
+    {
+        SetRuntimeFailure("could not materialize a Vulkan texture resource");
+        return;
+    }
+
     Vk::FrameContext* frame = nullptr;
     frame = Frames.BeginFrame(true);
     if (!frame)
@@ -2127,8 +2198,26 @@ void VulkanRenderer3D::RenderFrame()
         return;
     }
 
+    // A retryable allocation failure is the only path allowed to create an
+    // image after BeginFrame(): it has retired the prior frame and collected
+    // the deferred destroy queue before this one retry.
+    if (materializeResult == TextureMaterializeResult::RetryAfterRetire)
+    {
+        VulkanPerf::AddCounter(VulkanPerf::Counter::TextureMaterializeRetryAfterRetireCount);
+        TextureHeap.ClearRetryableCreationFailure();
+        if (TextureHeap.MaterializePendingCreates() != TextureMaterializeResult::Ready)
+        {
+            VulkanPerf::AddCounter(VulkanPerf::Counter::TextureMaterializeRetryFailCount);
+            Frames.SubmitFrame(Device.GetMainQueue());
+            SetRuntimeFailure("could not materialize a Vulkan texture resource after frame retirement");
+            return;
+        }
+        VulkanPerf::AddCounter(VulkanPerf::Counter::TextureMaterializeRetrySuccessCount);
+    }
+
     VkCommandBuffer cmd = frame->CommandBuffer;
     const u32 frameIndex = Frames.GetFrameIndex();
+    VulkanPerf::ScopedCpuTimer rasterRecordTimer(VulkanPerf::CpuMetric::RasterRecordSubmit);
     RecordVulkanGpuMetric(
         Frames, GpuMetric::Raster, VulkanPerf::Counter::RasterGpuTimeNs);
     Frames.WriteTimestamp(
@@ -2154,20 +2243,6 @@ void VulkanRenderer3D::RenderFrame()
     if (NeedsFinalFBTransition || !PlaceholdersInitialized)
         RecordInitialTransitions(cmd);
 
-    u8 texcacheClearBitmapDirty = 0;
-    bool textureCacheChanged = false;
-    {
-        VulkanPerf::ScopedCpuTimer texcacheTimer(VulkanPerf::CpuMetric::TexcacheUpdate);
-        textureCacheChanged = Texcache.Update(texcacheClearBitmapDirty);
-    }
-    ClearBitmapDirty |= texcacheClearBitmapDirty;
-
-    const bool canReuseIdenticalFrame =
-        !textureCacheChanged
-        && GPU3D.RenderFrameIdentical
-        && FinalFBHasContent
-        && !NeedsFinalFBTransition
-        && PlaceholdersInitialized;
     if (canReuseIdenticalFrame)
     {
         // Keep the frame-ring fence progression intact while skipping every
@@ -2200,16 +2275,14 @@ void VulkanRenderer3D::RenderFrame()
 
     UpdateClearBitmap(cmd, FrameStaging);
 
-    // Polygon/span setup runs on the CPU exactly like the OpenGL compute
-    // renderer; the texcache uploads it triggers are recorded into this same
-    // command buffer, which is why it happens while the buffer is open.
-    int numYSpans = 0;
-    int numSetupIndices = 0;
-    u32 numPolygons = 0;
-    u32 numVariants = 0;
+    TextureHeap.RecordPendingUploads();
+    if (TextureHeap.HadFailure())
     {
-        VulkanPerf::ScopedCpuTimer polygonTimer(VulkanPerf::CpuMetric::BuildPolygons);
-        numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
+        Frames.SubmitFrame(Device.GetMainQueue());
+        SetRuntimeFailure(TextureHeap.HadCreationFailure()
+            ? "could not materialize a Vulkan texture resource"
+            : "could not stage a Vulkan texture upload");
+        return;
     }
     VulkanPerf::RecordGeometry(
         numPolygons, numVariants, static_cast<u32>(std::max(numYSpans, 0)),
@@ -2332,6 +2405,12 @@ void VulkanRenderer3D::RenderFrame()
     {
         const Variant& variant = Variants[i];
         const VulkanTextureHeap::Entry* texture = TextureHeap.Lookup(variant.Texture);
+        if (variant.Texture != 0 && (!texture || !texture->PhysicalReady))
+        {
+            Frames.SubmitFrame(Device.GetMainQueue());
+            SetRuntimeFailure("texture resource was not materialized before descriptor creation");
+            return;
+        }
         VkImageView view = texture ? texture->View : DummyTextureImage.GetView();
         VariantTextureSets[i] = AcquireTextureSet(
             frameIndex, view, Samplers.Get(variant.WrapS, variant.WrapT));
@@ -2345,6 +2424,7 @@ void VulkanRenderer3D::RenderFrame()
 
     const bool wbuffer = numYSpans > 0 && GPU3D.RenderPolygonRAM[0]->WBuffer;
 
+    Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.Frame");
     for (u32 batchIndex = 0; batchIndex < polygonBatchCount; ++batchIndex)
     {
         const PolygonBatch& batch = PolygonBatches[batchIndex];
@@ -2375,6 +2455,7 @@ void VulkanRenderer3D::RenderFrame()
         // polygon batch.
         if (batchIndex == 0)
         {
+            Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.InterpSpans");
             fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
                 Pipelines[wbuffer ? VulkanShaders::Pipeline_InterpSpansW : VulkanShaders::Pipeline_InterpSpansZ]);
             const u32 setupIndexCount = static_cast<u32>(numSetupIndices);
@@ -2401,6 +2482,7 @@ void VulkanRenderer3D::RenderFrame()
             BufferBarrier(cmd, &xSpans, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+            Vk::EndCommandDebugLabel(fns, cmd);
         }
 
         // 4. bin polygons into coarse and fine tiles.
@@ -2409,6 +2491,7 @@ void VulkanRenderer3D::RenderFrame()
         batchPush.TexWidth = batch.PolygonCount;
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
             0, Vk::PushConstantSize, &batchPush);
+        Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.BinCombined");
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
             Pipelines[VulkanShaders::Pipeline_BinCombined]);
         fns.CmdDispatch(cmd,
@@ -2422,6 +2505,7 @@ void VulkanRenderer3D::RenderFrame()
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         }
+        Vk::EndCommandDebugLabel(fns, cmd);
 
         // 5. turn the per-variant counts into dispatch arguments and offsets.
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -2452,6 +2536,7 @@ void VulkanRenderer3D::RenderFrame()
         // tile buffers (tileOffset is derived from the sorted work index), so
         // the dispatches are independent, exactly as in the OpenGL renderer.
         {
+            Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.Rasterise");
             const bool highlightMode = (GPU3D.RenderDispCnt & (1 << 1)) != 0;
             VkPipeline prevPipeline = VK_NULL_HANDLE;
 
@@ -2519,7 +2604,7 @@ void VulkanRenderer3D::RenderFrame()
                 fns.CmdDispatchIndirect(cmd, binResult,
                     offsetof(BinResultHeader, VariantWorkCount) + i * 16);
             }
-
+            Vk::EndCommandDebugLabel(fns, cmd);
         }
 
         const VkBuffer tiles[3] = {
@@ -2548,6 +2633,7 @@ void VulkanRenderer3D::RenderFrame()
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
             0, Vk::PushConstantSize, &blendPush);
 
+        Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.DepthBlend");
         fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
             Pipelines[wbuffer ? VulkanShaders::Pipeline_DepthBlendW : VulkanShaders::Pipeline_DepthBlendZ]);
         fns.CmdDispatch(cmd,
@@ -2586,6 +2672,7 @@ void VulkanRenderer3D::RenderFrame()
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
         }
+        Vk::EndCommandDebugLabel(fns, cmd);
     }
 
     // 9. final pass: edge marking / fog / anti-aliasing resolve.
@@ -2606,10 +2693,13 @@ void VulkanRenderer3D::RenderFrame()
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
 
+    Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Raster.FinalPass");
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_FinalPass0 + finalPassVariant]);
     fns.CmdDispatch(cmd, DivRoundUp(static_cast<u32>(ScreenWidth), 32),
         static_cast<u32>(ScreenHeight), 1);
+    Vk::EndCommandDebugLabel(fns, cmd);
+    Vk::EndCommandDebugLabel(fns, cmd);
 
     if (!FrameStaging.FlushWritten())
     {
@@ -3181,6 +3271,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     push.TexIsCapture = 0u;
     fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
         0, Vk::PushConstantSize, &push);
+    Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Structured.Compositor");
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_Compositor]);
     // One dispatch covers both screens in the slot's device-local buffer.
@@ -3188,6 +3279,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1);
+    Vk::EndCommandDebugLabel(fns, cmd);
     ComposeFrames.WriteTimestamp(
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
         GpuMetricQueryIndex(GpuMetric::StructuredCompositor, true));

@@ -41,10 +41,16 @@ if ($LoadSlot -gt 0) {
 }
 $oldDifferential = $env:MELONPRIME_RASTER_DIFFERENTIAL
 $oldTestSavestate = $env:MELONPRIME_TEST_SAVESTATE
+$oldTestSavestateUnpause = $env:MELONPRIME_TEST_SAVESTATE_UNPAUSE
 $env:MELONPRIME_RASTER_DIFFERENTIAL = '1'
+# A diagnostic state must already represent the running gameplay scene. Never
+# allow a stale caller environment to re-enable the removed synthetic START /
+# extra-frame path.
+Remove-Item Env:MELONPRIME_TEST_SAVESTATE_UNPAUSE -ErrorAction SilentlyContinue
 if ($testSavestate) {
-    # Let the dormant frontend hook load the state after the ROM and renderer
-    # exist. This also tells RasterDifferential to discard the load transition.
+    # Let the developer-only frontend hook load the state after the ROM and
+    # renderer exist. This also tells RasterDifferential to discard the load
+    # transition.
     $env:MELONPRIME_TEST_SAVESTATE = $testSavestate
 }
 $process = $null
@@ -75,6 +81,12 @@ finally {
     }
     $env:MELONPRIME_RASTER_DIFFERENTIAL = $oldDifferential
     $env:MELONPRIME_TEST_SAVESTATE = $oldTestSavestate
+    if ($null -eq $oldTestSavestateUnpause) {
+        Remove-Item Env:MELONPRIME_TEST_SAVESTATE_UNPAUSE -ErrorAction SilentlyContinue
+    }
+    else {
+        $env:MELONPRIME_TEST_SAVESTATE_UNPAUSE = $oldTestSavestateUnpause
+    }
 }
 
 $lines = @()
@@ -97,6 +109,9 @@ if ($testSavestate) {
     }
     if (!($allLog | Where-Object { $_ -match '\[RasterDiffTransition\].*savestate-load' })) {
         throw "Raster differential did not discard the savestate transition. Logs: $stdout, $stderr"
+    }
+    if ($allLog | Where-Object { $_ -match 'ARM9:\s*data abort|DEVICE_LOST|Renderer fatal' }) {
+        throw "Savestate load produced a fatal emulation/renderer error. Logs: $stdout, $stderr"
     }
 }
 

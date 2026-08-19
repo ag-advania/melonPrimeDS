@@ -299,6 +299,79 @@ static std::optional<QString> melonPrimeHudGoldenOutputPath(int argc, char** arg
     return std::nullopt;
 }
 
+static std::string melonPrimeJsonString(const char* value)
+{
+    std::string result = "\"";
+    if (value)
+    {
+        for (const unsigned char c : std::string(value))
+        {
+            switch (c)
+            {
+            case '\\': result += "\\\\"; break;
+            case '"': result += "\\\""; break;
+            case '\b': result += "\\b"; break;
+            case '\f': result += "\\f"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default:
+                if (c < 0x20)
+                {
+                    char escaped[7]{};
+                    std::snprintf(escaped, sizeof(escaped), "\\u%04x", c);
+                    result += escaped;
+                }
+                else
+                    result += static_cast<char>(c);
+                break;
+            }
+        }
+    }
+    result += '"';
+    return result;
+}
+
+static bool melonPrimeHasCommandLineOption(int argc, char** argv, const char* option)
+{
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::strcmp(argv[i], option) == 0)
+            return true;
+    }
+    return false;
+}
+
+static const char* melonPrimeJsonBoolOrNull(const char* value)
+{
+    if (value && (std::strcmp(value, "1") == 0 || std::strcmp(value, "true") == 0))
+        return "true";
+    if (value && (std::strcmp(value, "0") == 0 || std::strcmp(value, "false") == 0))
+        return "false";
+    return "null";
+}
+
+static int melonPrimePrintBuildInfoJson()
+{
+    std::printf(
+        "{\"schema_version\":1,\"git_sha\":%s,\"git_branch\":%s,"
+        "\"git_dirty\":%s,\"build_provider\":%s,\"build_type\":%s,"
+        "\"renderer_perf_telemetry\":%s,\"vulkan_latency_capture\":%s,"
+        "\"gpu_memory_telemetry\":%s,\"developer_features\":%s,"
+        "\"melonDS_version\":%s}\n",
+        melonPrimeJsonString(MELONPRIMEDS_GIT_SHA).c_str(),
+        melonPrimeJsonString(MELONPRIMEDS_GIT_BRANCH).c_str(),
+        melonPrimeJsonBoolOrNull(MELONPRIMEDS_GIT_DIRTY),
+        melonPrimeJsonString(MELONPRIMEDS_BUILD_PROVIDER).c_str(),
+        melonPrimeJsonString(MELONPRIMEDS_BUILD_TYPE).c_str(),
+        MELONPRIMEDS_BUILD_RENDERER_PERF_TELEMETRY ? "true" : "false",
+        MELONPRIMEDS_BUILD_VULKAN_LATENCY_CAPTURE ? "true" : "false",
+        MELONPRIMEDS_BUILD_GPU_MEMORY_TELEMETRY ? "true" : "false",
+        MELONPRIMEDS_BUILD_DEVELOPER_FEATURES ? "true" : "false",
+        melonPrimeJsonString(MELONDS_VERSION).c_str());
+    return 0;
+}
+
 int main(int argc, char** argv)
 {
     sysTimer.start();
@@ -353,6 +426,13 @@ int main(int argc, char** argv)
     std::signal(SIGINT, signalHandler);
     std::signal(SIGTERM, signalHandler);
 #endif
+
+    // The physical A/B harness invokes this before opening Qt or an emulation
+    // window. It is intentionally a tiny machine-readable contract: the
+    // harness hashes the executable separately and compares this embedded SHA
+    // with its required checkout head before launching the real run.
+    if (melonPrimeHasCommandLineOption(argc, argv, "--build-info-json"))
+        return melonPrimePrintBuildInfoJson();
 
 #ifdef MELONPRIME_DS
     printf(MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX "\n", MelonPrime::kBuildStamp);

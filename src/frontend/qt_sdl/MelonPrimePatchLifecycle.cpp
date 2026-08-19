@@ -116,6 +116,23 @@ void ReapplyForConfigReload(melonDS::NDS* nds,
     ApplyRegistryPatches(PatchSite_ConfigReload, nds, emu, cfg, rom, core);
 }
 
+void ReconcileAfterSavestateLoad(melonDS::NDS* nds,
+                                 EmuInstance* emu,
+                                 MelonPrimeCore* core)
+{
+    // Savestate restores the emulated timeline, not MelonPrime host-owned lifecycle
+    // and patch bookkeeping. Post-load reconciliation must rebuild host state from
+    // the loaded RAM before the next emulated frame. Do not restore old guest RAM
+    // values here and do not advance an extra frame.
+    ARM9Hook_Uninstall(nds, core, emu);
+    Patches_ResetAll(core->PatchState());
+
+    // LowLatencyAim uses NDS::SetARM9InstructionHook, not an ARM9 RAM opcode patch.
+    // Re-registering after a savestate reconciles the active address set and JIT
+    // trampolines with the loaded timeline.
+    ARM9Hook_ResetPatchState();
+}
+
 void ApplyOutOfGameFrame(melonDS::NDS* nds,
                          EmuInstance* emu,
                          Config::Table& cfg,

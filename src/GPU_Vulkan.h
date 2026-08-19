@@ -64,8 +64,9 @@ public:
 
     // Configured low-latency settings, published for the emulation thread's
     // beginVulkanLowLatencyFrame() call (EmuThread.cpp). These are the values
-    // SetRenderSettings() was given and nothing more -- the VK_NV_low_latency2
-    // / VK_AMD_anti_lag integration that consumes them is phase 13.
+    // SetRenderSettings() was given; the presenter separately capability-gates
+    // the VK_NV_low_latency2 / VK_AMD_anti_lag paths and owns effective
+    // present-slot authority.
     [[nodiscard]] int GetNvidiaReflexMode() const noexcept { return NvidiaReflexMode; }
     [[nodiscard]] bool GetAmdAntiLag2Enabled() const noexcept { return AmdAntiLag2Enabled; }
 

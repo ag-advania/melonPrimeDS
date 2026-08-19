@@ -110,10 +110,18 @@ public:
     void Shutdown() noexcept;
     void Quiesce() noexcept;
 
-    // Must run after acquiring the renderer output lease and before BeginFrame
-    // opens a command buffer. A resource-generation change is the only direct
-    // descriptor path that may quiesce the device.
+    // Must run after acquiring the renderer output lease and after BeginFrame
+    // admits a writable presenter slot, before UploadLayerFromImage(). A
+    // resource-generation change is the only direct descriptor path that may
+    // quiesce the device.
     bool PrepareDirectOutputDescriptors(const melonDS::VulkanPresentedFrame& frame);
+    // Rebinds a retained screen layer for the current frame without allocating
+    // descriptors or uploading renderer output. The caller must have already
+    // proved that the renderer frame identity is unchanged.
+    bool ReuseScreenLayerFromFrame(
+        Layer layer, const melonDS::VulkanPresentedFrame& frame);
+    [[nodiscard]] bool HasRetainedDirectLayer(Layer layer) const noexcept;
+    void InvalidateScreenLayerRetention() noexcept;
     // Renderer transition hook. The preallocated descriptor sets survive; only
     // their resource/view identity mapping is invalidated.
     void InvalidateDirectDescriptorCache() noexcept;
@@ -146,6 +154,14 @@ public:
     // Presenter thread. Applies saved preferences without opening a latency
     // frame; startup uses this before emitting the first effective-state log.
     void SetLowLatencyPreferences(int reflexMode, bool antiLag2Enabled);
+    // The renderer publishes configuration requests, but only the presenter
+    // knows whether the vendor path is available and still accepted at
+    // runtime. Screen-panel admission must use this effective authority.
+    [[nodiscard]] bool HasEffectiveLowLatencyAuthority() const noexcept
+    {
+        return melonDS::VulkanHasEffectiveLowLatencyAuthority(
+            Reflex.IsActive(), AntiLag.IsActive());
+    }
     void SetGenericPresentPacingPolicy(int policy) noexcept { PresentPacer.SetPolicy(policy); }
     // Physical-pixel size of the current swapchain. Zero before the first
     // successful BeginFrame().
@@ -164,7 +180,14 @@ public:
 
     // `requestedWidth/Height` are the widget's physical pixel size, used only
     // when the surface reports currentExtent == 0xFFFFFFFF (Wayland).
-    bool BeginFrame(melonDS::u32 requestedWidth, melonDS::u32 requestedHeight);
+    // `waitForPresentSlot=false` performs a side-effect-free readiness probe
+    // before swapchain acquisition. A busy presenter slot is an intentional
+    // latency skip, not a presenter failure; the caller can distinguish it
+    // through LastBeginWasLatencySkip().
+    bool BeginFrame(
+        melonDS::u32 requestedWidth,
+        melonDS::u32 requestedHeight,
+        bool waitForPresentSlot = true);
 
     // Records the staging copy for one layer. Tightly packed or `rowBytes`-
     // strided BGRA8. Must be called before BeginComposition(), because
@@ -229,6 +252,10 @@ public:
     // (device lost, out of memory, etc.). Surface loss is intentionally not a
     // permanent failure: it sets NeedsSurfaceRebind() instead.
     [[nodiscard]] bool HasFailed() const noexcept { return Failed; }
+    [[nodiscard]] bool LastBeginWasLatencySkip() const noexcept
+    {
+        return LastBeginLatencySkip;
+    }
     [[nodiscard]] bool NeedsSurfaceRebind() const noexcept
     {
         return SurfaceRebindRequested;
@@ -271,7 +298,8 @@ public:
         int reflexMode,
         bool antiLag2Enabled,
         bool normalSpeed,
-        melonDS::u64 targetFrameIntervalNs);
+        melonDS::u64 targetFrameIntervalNs,
+        melonDS::u64 logicalFrameId);
     void MarkLowLatencyInputSample();
     void MarkLowLatencySimulationStart();
     void MarkLowLatencySimulationEnd();
@@ -306,6 +334,16 @@ private:
         melonDS::u64 DirectResourceGeneration = 0;
         std::array<VkDescriptorSet, 2> DirectDescriptorSets{};
         bool UsesDirect = false;
+
+        // Only persistent descriptor-cache bindings may cross a presentation
+        // frame. Current-frame direct state above is still cleared at every
+        // BeginFrame; this retained state is restored only after the caller
+        // proves that the renderer frame identity is unchanged.
+        VkImage RetainedDirectImage = VK_NULL_HANDLE;
+        VkImageView RetainedDirectView = VK_NULL_HANDLE;
+        melonDS::u64 RetainedDirectResourceGeneration = 0;
+        std::array<VkDescriptorSet, 2> RetainedDirectDescriptorSets{};
+        bool RetainedDirectValid = false;
     };
 
     struct DirectDescriptorCacheEntry
@@ -330,6 +368,9 @@ private:
 
     bool RecreateSwapchain(melonDS::u32 requestedWidth, melonDS::u32 requestedHeight);
     void DestroySwapchainObjects(bool immediate);
+    bool CreatePresentOwnershipResources(melonDS::u32 imageCount);
+    void DestroyPresentOwnershipResources();
+    bool RecordPresentOwnershipAcquire();
     bool ChoosePresentMode(const std::vector<VkPresentModeKHR>& available, VkPresentModeKHR& out,
                            std::string& reason) const;
     bool ChooseSurfaceFormat(
@@ -350,6 +391,7 @@ private:
         VkImage image,
         VkImageView view,
         melonDS::u64 resourceGeneration);
+    static void ClearRetainedDirectBinding(LayerTexture& texture) noexcept;
     const DirectDescriptorCacheEntry* FindDirectDescriptor(
         VkImage image,
         VkImageView view,
@@ -378,11 +420,16 @@ private:
     // A/B measurement instrument. Stateless and free unless the build defines
     // MELONPRIME_VULKAN_LATENCY_CAPTURE; it never influences what is presented.
     melonDS::VulkanPresentLatencyCapture LatencyCapture;
-    // Frame index handed to Anti-Lag's INPUT/PRESENT pair. It follows the
-    // Reflex frame id when Reflex is running so both features describe the same
-    // frame, and falls back to its own counter otherwise (an AMD GPU has
-    // Anti-Lag and no Reflex, so that is the normal case for it).
+    // Logical game-frame ID handed to Anti-Lag's INPUT/PRESENT pair. It is
+    // allocated once by EmuThread and remains shared across Reflex/Anti-Lag;
+    // when Reflex is unavailable, Anti-Lag still uses the same logical-frame
+    // semantics rather than creating a presenter-local counter.
     melonDS::u64 LowLatencyFrameIndex = 0;
+    // Last logical emulated frame whose present was accepted by WSI. The
+    // difference from LowLatencyFrameIndex is a diagnostic count of logical
+    // frames since that accepted present; it never participates in
+    // synchronization or frame admission.
+    melonDS::u64 LastAcceptedLogicalFrameId = 0;
     // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
     // logs a transition once instead of every frame.
     int LoggedReflexMode = -1;
@@ -393,12 +440,21 @@ private:
     // renderer failure. Consume this at the next frame boundary so the
     // presenter stays alive and retries on the following frame.
     bool SkipNextPresentationForLatencyBudget = false;
+    bool LastBeginLatencySkip = false;
 
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
     VkSurfaceFormatKHR SurfaceFormat{};
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     VkExtent2D SwapchainExtent{0, 0};
+    // Disabled by default. This is only enabled for a split-family device
+    // when the explicit SyncVal-clean environment gate is present.
+    bool UseSplitQueueExclusiveExperiment = false;
     std::vector<VkImage> SwapchainImages;
+    // Distinct successful-acquire observations since the current swapchain was
+    // created. This is diagnostic only, not a WSI availability query or fence map:
+    // it must never gate, wait, or recreate the swapchain.
+    std::vector<bool> SwapchainImageAcquireObserved;
+    melonDS::u32 DistinctSwapchainImagesAcquiredSinceRecreate = 0;
     std::vector<VkImageView> SwapchainImageViews;
     std::vector<VkFramebuffer> SwapchainFramebuffers;
 
@@ -409,10 +465,9 @@ private:
     // per-slot semaphore could be re-signalled while a present was still
     // waiting on it. VulkanSync.h documents exactly this case.
     std::vector<VkSemaphore> RenderFinished;
-
-    // Fence of the frame that last targeted each swapchain image, so a frame
-    // never records into an image the GPU has not finished with.
-    std::vector<VkFence> ImagesInFlight;
+    VkCommandPool PresentOwnershipCommandPool = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> PresentOwnershipCommandBuffers;
+    std::vector<VkSemaphore> PresentOwnershipFinished;
 
     VkRenderPass RenderPass = VK_NULL_HANDLE;
     VkDescriptorSetLayout SetLayout = VK_NULL_HANDLE;
@@ -469,6 +524,12 @@ private:
     bool VSyncApplied = true;
 
     melonDS::u32 CurrentImageIndex = 0;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    // Validation-only probe: counts consecutive successful acquisitions that
+    // return the same swapchain image index. This is not queue ownership.
+    melonDS::u32 PreviousAcquiredImageIndex = 0;
+    bool HasPreviousAcquiredImageIndex = false;
+#endif
     VkCommandBuffer CurrentCommandBuffer = VK_NULL_HANDLE;
     bool FrameOpen = false;
     bool CompositionOpen = false;

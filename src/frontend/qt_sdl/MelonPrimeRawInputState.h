@@ -16,6 +16,9 @@ namespace MelonPrime {
     struct FrameHotkeyState {
         uint64_t down{};
         uint64_t pressed{};
+        int wheelDelta{};
+        uint64_t generation{};
+        bool baselineReady = false;
 
         [[nodiscard]] FORCE_INLINE bool isDown(int id) const noexcept {
             return (down >> id) & 1;
@@ -59,9 +62,9 @@ namespace MelonPrime {
 
         void pollHotkeys(FrameHotkeyState& out) noexcept;
         void snapshotInputFrame(FrameHotkeyState& outHk,
-            int& outMouseX, int& outMouseY) noexcept;
+            int& outMouseX, int& outMouseY, int& outWheelSteps) noexcept;
         void snapshotInputFrameNoEdges(FrameHotkeyState& outHk,
-            int& outMouseX, int& outMouseY) noexcept;
+            int& outMouseX, int& outMouseY, int& outWheelSteps) noexcept;
 
         // Clears mouse button bits that are physically released.
         // Guards against stuck buttons caused by stale GetRawInputData returns.
@@ -143,6 +146,7 @@ namespace MelonPrime {
 
         std::atomic<int64_t>  m_accumMouseX{ 0 };
         std::atomic<int64_t>  m_accumMouseY{ 0 };
+        std::atomic<int>      m_accumWheelSteps{ 0 };
         std::atomic<uint8_t>  m_mouseButtons{ 0 };
         // Mouse DOWN edges seen since the last outer-frame snapshot.
         // Preserves very short clicks whose DOWN+UP both arrive in one batch.

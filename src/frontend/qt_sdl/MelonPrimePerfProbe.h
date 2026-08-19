@@ -12,9 +12,12 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+#include "MelonPrimePerfClock.h"
 
 namespace MelonPrimePerf {
 
@@ -39,10 +42,14 @@ enum class Section : uint8_t {
 
 enum class HudPhase : uint8_t {
     State = 0,
+    ScoreboardPlan,
+    ScoreboardRaster,
     QPainter,
     Clear,
     Hash,
     UploadPrepare,
+    GpuUpload,
+    Composite,
     TotalActive,
     Count
 };
@@ -63,6 +70,12 @@ struct State {
     Uint64 sectionStartTick = 0;
     bool sectionOpen = false;
     Section openSection = Section::LimiterSleep;
+    Uint64 inputSampleTick = 0;
+    bool inputSampleOpen = false;
+    bool runFrameBeginRecorded = false;
+    bool presentEndRecorded = false;
+    double currentInputToRunFrameUs = 0.0;
+    double currentInputToPresentEndUs = 0.0;
 
     static constexpr uint32_t kRingCap = 8192;
     static constexpr uint32_t kHistBuckets = 64;
@@ -72,8 +85,15 @@ struct State {
     uint32_t ringWrite = 0;
     uint32_t ringCount = 0;
 
-    double windowFrameMs[120]{};
+    static constexpr uint32_t kFrameWindowCap = 512;
+    double windowFrameMs[kFrameWindowCap]{};
     uint32_t windowFrameCount = 0;
+
+    static constexpr uint32_t kLatencyCap = 512;
+    double inputToRunFrameUs[kLatencyCap]{};
+    double inputToPresentEndUs[kLatencyCap]{};
+    uint32_t inputToRunFrameCount = 0;
+    uint32_t inputToPresentEndCount = 0;
 
     double secSumMs[static_cast<uint32_t>(Section::Count)]{};
     double secMaxMs[static_cast<uint32_t>(Section::Count)]{};
@@ -89,17 +109,39 @@ struct State {
     uint64_t cntDr3HashSkip = 0;
     uint64_t sumCustomHudTicks = 0;
     uint64_t cntCustomHudFrames = 0;
-    static constexpr uint32_t kHudPhaseCap = 120;
+    static constexpr uint32_t kHudPhaseCap = 512;
     Uint64 hudPhaseTicks[static_cast<uint32_t>(HudPhase::Count)][kHudPhaseCap]{};
     uint32_t hudPhaseCount[static_cast<uint32_t>(HudPhase::Count)]{};
+    uint64_t hudPhaseCalls[static_cast<uint32_t>(HudPhase::Count)]{};
+    Uint64 hudPhaseSumTicks[static_cast<uint32_t>(HudPhase::Count)]{};
+    Uint64 hudPhaseMaxTicks[static_cast<uint32_t>(HudPhase::Count)]{};
     Uint64 currentHudPhaseTicks = 0;
     bool currentHudDrawn = false;
     uint64_t cntCustomHudCalls = 0;
     uint64_t cntCustomHudDrawn = 0;
+    uint64_t cntHudVisualRenders = 0;
+    uint64_t cntHudVisualReuses = 0;
+    uint64_t cntHudVisualIdentityProbes = 0;
+    uint64_t cntHudVisualStampChecks = 0;
+    uint64_t cntHudVisualStampCommits = 0;
+    uint64_t cntScoreboardPlanBuilds = 0;
+    uint64_t cntScoreboardFullPlanRebuilds = 0;
+    uint64_t cntScoreboardDynamicCellUpdates = 0;
+    uint64_t cntScoreboardTimeVisualChanges = 0;
+    uint64_t cntScoreboardStructureChecks = 0;
+    uint64_t cntScoreboardOutlinePathHits = 0;
+    uint64_t cntScoreboardOutlinePathMisses = 0;
+    uint64_t cntHudRegionHashCalls = 0;
+    uint64_t sumHudRegionHashBytes = 0;
+    uint64_t cntHudUploadCalls = 0;
 
     Uint64 lastReportTick = 0;
     uint32_t histTotal[kHistBuckets]{};
     uint32_t histOverflow = 0;
+
+    std::FILE* frameCsv = nullptr;
+    bool frameCsvAttempted = false;
+    uint64_t frameIndex = 0;
 };
 
 inline State& S()
@@ -138,7 +180,7 @@ inline void RecordFrameMs(double frameMs)
     if (st.ringCount < State::kRingCap)
         ++st.ringCount;
 
-    if (st.windowFrameCount < 120)
+    if (st.windowFrameCount < State::kFrameWindowCap)
         st.windowFrameMs[st.windowFrameCount++] = frameMs;
 
     const int bucket = static_cast<int>(frameMs / State::kHistBucketMs);
@@ -159,10 +201,92 @@ inline double PercentileSorted(const double* data, uint32_t count, double p)
     return data[lo] * (1.0 - frac) + data[hi] * frac;
 }
 
+inline void CloseFrameCsv()
+{
+    State& st = S();
+    if (st.frameCsv)
+    {
+        std::fclose(st.frameCsv);
+        st.frameCsv = nullptr;
+    }
+}
+
+inline void EnsureFrameCsv()
+{
+    State& st = S();
+    if (st.frameCsvAttempted)
+        return;
+    st.frameCsvAttempted = true;
+
+    const char* path = std::getenv("MELONPRIME_PERF_CSV");
+    if (!path || !*path)
+        return;
+
+    st.frameCsv = std::fopen(path, "wb");
+    if (!st.frameCsv)
+    {
+        std::fprintf(stderr,
+            "[MelonPrimePerf] frame CSV could not be opened: %s\n", path);
+        return;
+    }
+    std::fprintf(st.frameCsv,
+        "run_id,frame_index,frame_start_ticks,frame_end_ticks,qpc_frequency,"
+        "frame_time_us,input_sample_to_runframe_begin_us,"
+        "input_sample_to_present_end_us\n");
+    std::atexit(CloseFrameCsv);
+}
+
+inline void WriteFrameCsv(
+    State& st, Uint64 endTick, double frameMs)
+{
+    if (!st.frameCsv)
+        return;
+    const char* runId = std::getenv("MELONPRIME_LATENCY_RUN_ID");
+    std::fprintf(st.frameCsv,
+        "%s,%llu,%llu,%llu,%llu,%.6f,%.6f,%.6f\n",
+        runId ? runId : "unnamed-run",
+        static_cast<unsigned long long>(st.frameIndex++),
+        static_cast<unsigned long long>(st.frameStartTick),
+        static_cast<unsigned long long>(endTick),
+        static_cast<unsigned long long>(st.freq),
+        frameMs,
+        st.currentInputToRunFrameUs,
+        st.currentInputToPresentEndUs);
+}
+
+inline double LatencyPercentile(const double* samples, uint32_t count, double p)
+{
+    if (count == 0)
+        return 0.0;
+    double sorted[State::kLatencyCap];
+    for (uint32_t i = 0; i < count; ++i)
+        sorted[i] = samples[i];
+    std::sort(sorted, sorted + count);
+    return PercentileSorted(sorted, count, p);
+}
+
+inline double LatencyMax(const double* samples, uint32_t count)
+{
+    double max = 0.0;
+    for (uint32_t i = 0; i < count; ++i)
+        if (samples[i] > max)
+            max = samples[i];
+    return max;
+}
+
+inline void RecordLatencySample(
+    double* samples, uint32_t& count, double microseconds)
+{
+    if (count < State::kLatencyCap)
+        samples[count++] = microseconds;
+}
+
 inline void ResetWindowStats()
 {
     State& st = S();
     st.windowFrameCount = 0;
+    st.inputToRunFrameCount = 0;
+    st.inputToPresentEndCount = 0;
     for (uint32_t i = 0; i < static_cast<uint32_t>(Section::Count); ++i) {
         st.secSumMs[i] = 0.0;
         st.secMaxMs[i] = 0.0;
@@ -181,8 +305,26 @@ inline void ResetWindowStats()
     st.cntCustomHudFrames = 0;
     std::memset(st.hudPhaseTicks, 0, sizeof(st.hudPhaseTicks));
     std::memset(st.hudPhaseCount, 0, sizeof(st.hudPhaseCount));
+    std::memset(st.hudPhaseCalls, 0, sizeof(st.hudPhaseCalls));
+    std::memset(st.hudPhaseSumTicks, 0, sizeof(st.hudPhaseSumTicks));
+    std::memset(st.hudPhaseMaxTicks, 0, sizeof(st.hudPhaseMaxTicks));
     st.cntCustomHudCalls = 0;
     st.cntCustomHudDrawn = 0;
+    st.cntHudVisualRenders = 0;
+    st.cntHudVisualReuses = 0;
+    st.cntHudVisualIdentityProbes = 0;
+    st.cntHudVisualStampChecks = 0;
+    st.cntHudVisualStampCommits = 0;
+    st.cntScoreboardPlanBuilds = 0;
+    st.cntScoreboardFullPlanRebuilds = 0;
+    st.cntScoreboardDynamicCellUpdates = 0;
+    st.cntScoreboardTimeVisualChanges = 0;
+    st.cntScoreboardStructureChecks = 0;
+    st.cntScoreboardOutlinePathHits = 0;
+    st.cntScoreboardOutlinePathMisses = 0;
+    st.cntHudRegionHashCalls = 0;
+    st.sumHudRegionHashBytes = 0;
+    st.cntHudUploadCalls = 0;
 }
 
 inline void MaybeReport1Hz()
@@ -199,7 +341,13 @@ inline void MaybeReport1Hz()
     if (sinceReportMs < 1000.0)
         return;
 
-    double sorted[120];
+    const auto reportClock = melonDS::MelonPrimePerfClock::Now();
+    std::fprintf(stderr,
+        "[MelonPrimePerfPhase] report_qpc_ticks=%llu qpc_frequency=%llu\n",
+        static_cast<unsigned long long>(reportClock.Ticks),
+        static_cast<unsigned long long>(reportClock.Frequency));
+
+    double sorted[State::kFrameWindowCap];
     const uint32_t n = st.windowFrameCount;
     for (uint32_t i = 0; i < n; ++i)
         sorted[i] = st.windowFrameMs[i];
@@ -252,6 +400,23 @@ inline void MaybeReport1Hz()
             ? TicksToMs(st.sumCustomHudTicks) * 1000.0 / static_cast<double>(st.cntCustomHudFrames)
             : 0.0);
 
+    fprintf(stderr,
+        "[MelonPrimePerf] explicit_latency_us "
+        "frame_input_sample_to_runframe_begin_us="
+        "p50=%.1f p95=%.1f p99=%.1f max=%.1f n=%u "
+        "input_sample_to_present_end_us="
+        "p50=%.1f p95=%.1f p99=%.1f max=%.1f n=%u\n",
+        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.50),
+        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.95),
+        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.99),
+        LatencyMax(st.inputToRunFrameUs, st.inputToRunFrameCount),
+        st.inputToRunFrameCount,
+        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.50),
+        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.95),
+        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.99),
+        LatencyMax(st.inputToPresentEndUs, st.inputToPresentEndCount),
+        st.inputToPresentEndCount);
+
     const auto hudPercentileUs = [&](HudPhase phase, double percentile) -> double {
         const uint32_t index = static_cast<uint32_t>(phase);
         const uint32_t count = st.hudPhaseCount[index];
@@ -263,26 +428,102 @@ inline void MaybeReport1Hz()
         std::sort(samples, samples + count);
         return PercentileSorted(samples, count, percentile);
     };
+    const auto hudAverageUs = [&](HudPhase phase) -> double {
+        const uint32_t index = static_cast<uint32_t>(phase);
+        return st.hudPhaseCalls[index]
+            ? TicksToMs(st.hudPhaseSumTicks[index]) * 1000.0
+                / static_cast<double>(st.hudPhaseCalls[index])
+            : 0.0;
+    };
+    const auto hudSumUs = [&](HudPhase phase) -> double {
+        return TicksToMs(st.hudPhaseSumTicks[static_cast<uint32_t>(phase)]) * 1000.0;
+    };
+    const auto hudMaxUs = [&](HudPhase phase) -> double {
+        return TicksToMs(st.hudPhaseMaxTicks[static_cast<uint32_t>(phase)]) * 1000.0;
+    };
     fprintf(stderr,
         "[MelonPrimePerf] hud_phase_us "
-        "state_p50=%.1f state_p99=%.1f qpainter_p50=%.1f qpainter_p99=%.1f "
-        "clear_p50=%.1f clear_p99=%.1f hash_p50=%.1f hash_p99=%.1f "
-        "upload_prepare_p50=%.1f upload_prepare_p99=%.1f "
-        "total_active_p50=%.1f total_active_p99=%.1f calls=%llu drawn=%llu\n",
-        hudPercentileUs(HudPhase::State, 0.50), hudPercentileUs(HudPhase::State, 0.99),
-        hudPercentileUs(HudPhase::QPainter, 0.50),
-        hudPercentileUs(HudPhase::QPainter, 0.99),
-        hudPercentileUs(HudPhase::Clear, 0.50), hudPercentileUs(HudPhase::Clear, 0.99),
-        hudPercentileUs(HudPhase::Hash, 0.50), hudPercentileUs(HudPhase::Hash, 0.99),
+        "state[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "scoreboard_plan[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "scoreboard_raster[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "painter_other[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "clear[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "hash[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "upload_prepare[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "gpu_upload[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "composite[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "total_active[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
+        "calls=%llu drawn=%llu "
+        "visual_render=%llu visual_reuse=%llu identity_probes=%llu "
+        "stamp_checks=%llu stamp_commits=%llu plan_build=%llu full_rebuild=%llu "
+        "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
+        "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu\n",
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::State)]),
+        hudSumUs(HudPhase::State), hudAverageUs(HudPhase::State),
+        hudPercentileUs(HudPhase::State, 0.50), hudPercentileUs(HudPhase::State, 0.95),
+        hudMaxUs(HudPhase::State),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::ScoreboardPlan)]),
+        hudSumUs(HudPhase::ScoreboardPlan), hudAverageUs(HudPhase::ScoreboardPlan),
+        hudPercentileUs(HudPhase::ScoreboardPlan, 0.50),
+        hudPercentileUs(HudPhase::ScoreboardPlan, 0.95), hudMaxUs(HudPhase::ScoreboardPlan),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::ScoreboardRaster)]),
+        hudSumUs(HudPhase::ScoreboardRaster), hudAverageUs(HudPhase::ScoreboardRaster),
+        hudPercentileUs(HudPhase::ScoreboardRaster, 0.50),
+        hudPercentileUs(HudPhase::ScoreboardRaster, 0.95), hudMaxUs(HudPhase::ScoreboardRaster),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::QPainter)]),
+        hudSumUs(HudPhase::QPainter), hudAverageUs(HudPhase::QPainter),
+        hudPercentileUs(HudPhase::QPainter, 0.50), hudPercentileUs(HudPhase::QPainter, 0.95),
+        hudMaxUs(HudPhase::QPainter),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::Clear)]),
+        hudSumUs(HudPhase::Clear), hudAverageUs(HudPhase::Clear),
+        hudPercentileUs(HudPhase::Clear, 0.50), hudPercentileUs(HudPhase::Clear, 0.95),
+        hudMaxUs(HudPhase::Clear),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::Hash)]),
+        hudSumUs(HudPhase::Hash), hudAverageUs(HudPhase::Hash),
+        hudPercentileUs(HudPhase::Hash, 0.50), hudPercentileUs(HudPhase::Hash, 0.95),
+        hudMaxUs(HudPhase::Hash),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::UploadPrepare)]),
+        hudSumUs(HudPhase::UploadPrepare), hudAverageUs(HudPhase::UploadPrepare),
         hudPercentileUs(HudPhase::UploadPrepare, 0.50),
-        hudPercentileUs(HudPhase::UploadPrepare, 0.99),
+        hudPercentileUs(HudPhase::UploadPrepare, 0.95),
+        hudMaxUs(HudPhase::UploadPrepare),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::GpuUpload)]),
+        hudSumUs(HudPhase::GpuUpload), hudAverageUs(HudPhase::GpuUpload),
+        hudPercentileUs(HudPhase::GpuUpload, 0.50),
+        hudPercentileUs(HudPhase::GpuUpload, 0.95),
+        hudMaxUs(HudPhase::GpuUpload),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::Composite)]),
+        hudSumUs(HudPhase::Composite), hudAverageUs(HudPhase::Composite),
+        hudPercentileUs(HudPhase::Composite, 0.50),
+        hudPercentileUs(HudPhase::Composite, 0.95),
+        hudMaxUs(HudPhase::Composite),
+        static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::TotalActive)]),
+        hudSumUs(HudPhase::TotalActive), hudAverageUs(HudPhase::TotalActive),
         hudPercentileUs(HudPhase::TotalActive, 0.50),
-        hudPercentileUs(HudPhase::TotalActive, 0.99),
+        hudPercentileUs(HudPhase::TotalActive, 0.95),
+        hudMaxUs(HudPhase::TotalActive),
         static_cast<unsigned long long>(st.cntCustomHudCalls),
-        static_cast<unsigned long long>(st.cntCustomHudDrawn));
+        static_cast<unsigned long long>(st.cntCustomHudDrawn),
+        static_cast<unsigned long long>(st.cntHudVisualRenders),
+        static_cast<unsigned long long>(st.cntHudVisualReuses),
+        static_cast<unsigned long long>(st.cntHudVisualIdentityProbes),
+        static_cast<unsigned long long>(st.cntHudVisualStampChecks),
+        static_cast<unsigned long long>(st.cntHudVisualStampCommits),
+        static_cast<unsigned long long>(st.cntScoreboardPlanBuilds),
+        static_cast<unsigned long long>(st.cntScoreboardFullPlanRebuilds),
+        static_cast<unsigned long long>(st.cntScoreboardStructureChecks),
+        static_cast<unsigned long long>(st.cntScoreboardDynamicCellUpdates),
+        static_cast<unsigned long long>(st.cntScoreboardTimeVisualChanges),
+        static_cast<unsigned long long>(st.cntScoreboardOutlinePathHits),
+        static_cast<unsigned long long>(st.cntScoreboardOutlinePathMisses),
+        static_cast<unsigned long long>(st.cntHudRegionHashCalls),
+        static_cast<unsigned long long>(st.sumHudRegionHashBytes),
+        static_cast<unsigned long long>(st.cntHudUploadCalls));
 
     st.lastReportTick = now;
     ResetWindowStats();
+    if (st.frameCsv)
+        std::fflush(st.frameCsv);
 }
 
 inline void FrameBegin()
@@ -294,11 +535,52 @@ inline void FrameBegin()
     if (!st.freq)
         st.freq = SDL_GetPerformanceFrequency();
 
+    EnsureFrameCsv();
+
     st.frameOpen = true;
     st.frameStartTick = SDL_GetPerformanceCounter();
     st.sectionOpen = false;
+    st.inputSampleTick = 0;
+    st.inputSampleOpen = false;
+    st.runFrameBeginRecorded = false;
+    st.presentEndRecorded = false;
+    st.currentInputToRunFrameUs = 0.0;
+    st.currentInputToPresentEndUs = 0.0;
     st.currentHudPhaseTicks = 0;
     st.currentHudDrawn = false;
+}
+
+inline void MarkInputSample()
+{
+    State& st = S();
+    if (!st.frameOpen || st.inputSampleOpen)
+        return;
+    st.inputSampleTick = SDL_GetPerformanceCounter();
+    st.inputSampleOpen = true;
+}
+
+inline void MarkRunFrameBegin()
+{
+    State& st = S();
+    if (!st.frameOpen || !st.inputSampleOpen || st.runFrameBeginRecorded)
+        return;
+    const Uint64 now = SDL_GetPerformanceCounter();
+    const double latencyUs = TicksToMs(now - st.inputSampleTick) * 1000.0;
+    RecordLatencySample(st.inputToRunFrameUs, st.inputToRunFrameCount, latencyUs);
+    st.currentInputToRunFrameUs = latencyUs;
+    st.runFrameBeginRecorded = true;
+}
+
+inline void MarkPresentEnd()
+{
+    State& st = S();
+    if (!st.frameOpen || !st.inputSampleOpen || st.presentEndRecorded)
+        return;
+    const Uint64 now = SDL_GetPerformanceCounter();
+    const double latencyUs = TicksToMs(now - st.inputSampleTick) * 1000.0;
+    RecordLatencySample(st.inputToPresentEndUs, st.inputToPresentEndCount, latencyUs);
+    st.currentInputToPresentEndUs = latencyUs;
+    st.presentEndRecorded = true;
 }
 
 inline void SectionBegin(Section sec)
@@ -341,8 +623,14 @@ inline void FrameEnd()
         uint32_t& count = st.hudPhaseCount[index];
         if (count < State::kHudPhaseCap)
             st.hudPhaseTicks[index][count++] = st.currentHudPhaseTicks;
+        ++st.hudPhaseCalls[index];
+        st.hudPhaseSumTicks[index] += st.currentHudPhaseTicks;
+        if (st.currentHudPhaseTicks > st.hudPhaseMaxTicks[index])
+            st.hudPhaseMaxTicks[index] = st.currentHudPhaseTicks;
     }
-    RecordFrameMs(TicksToMs(endTick - st.frameStartTick));
+    const double frameMs = TicksToMs(endTick - st.frameStartTick);
+    WriteFrameCsv(st, endTick, frameMs);
+    RecordFrameMs(frameMs);
     st.frameOpen = false;
     MaybeReport1Hz();
 }
@@ -426,6 +714,10 @@ inline void AddHudPhaseTicks(HudPhase phase, Uint64 ticks)
     uint32_t& count = st.hudPhaseCount[index];
     if (count < State::kHudPhaseCap)
         st.hudPhaseTicks[index][count++] = ticks;
+    ++st.hudPhaseCalls[index];
+    st.hudPhaseSumTicks[index] += ticks;
+    if (ticks > st.hudPhaseMaxTicks[index])
+        st.hudPhaseMaxTicks[index] = ticks;
     if (phase != HudPhase::TotalActive)
         st.currentHudPhaseTicks += ticks;
 }
@@ -442,6 +734,93 @@ inline void CountCustomHudDrawn()
         return;
     ++S().cntCustomHudDrawn;
     S().currentHudDrawn = true;
+}
+
+inline void CountHudVisualRender()
+{
+    if (S().frameOpen) {
+        ++S().cntHudVisualRenders;
+        S().currentHudDrawn = true;
+    }
+}
+
+inline void CountHudVisualReuse()
+{
+    if (S().frameOpen) {
+        ++S().cntHudVisualReuses;
+        S().currentHudDrawn = true;
+    }
+}
+
+inline void CountHudVisualIdentityProbe()
+{
+    if (S().frameOpen)
+        ++S().cntHudVisualIdentityProbes;
+}
+
+inline void CountHudVisualStampCheck()
+{
+    if (S().frameOpen)
+        ++S().cntHudVisualStampChecks;
+}
+
+inline void CountHudVisualStampCommit()
+{
+    if (S().frameOpen)
+        ++S().cntHudVisualStampCommits;
+}
+
+inline void CountScoreboardPlanBuild()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardPlanBuilds;
+}
+
+inline void CountScoreboardFullPlanRebuild()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardFullPlanRebuilds;
+}
+
+inline void CountScoreboardDynamicCellUpdate(bool timeVisualChange)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntScoreboardDynamicCellUpdates;
+    if (timeVisualChange)
+        ++S().cntScoreboardTimeVisualChanges;
+}
+
+inline void CountScoreboardStructureCheck()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardStructureChecks;
+}
+
+inline void CountScoreboardOutlinePathHit()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardOutlinePathHits;
+}
+
+inline void CountScoreboardOutlinePathMiss()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardOutlinePathMisses;
+}
+
+inline void CountHudRegionHash(std::size_t bytes)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntHudRegionHashCalls;
+    S().sumHudRegionHashBytes += static_cast<uint64_t>(bytes);
+}
+
+inline void CountHudUploadCall()
+{
+    if (S().frameOpen)
+        ++S().cntHudUploadCalls;
 }
 
 class ScopedHudPhase {
@@ -533,13 +912,19 @@ enum class Section : uint8_t {
     DeferredDrain,
     Count
 };
-enum class HudPhase : uint8_t { State, QPainter, Clear, Hash, UploadPrepare, TotalActive, Count };
+enum class HudPhase : uint8_t {
+    State, ScoreboardPlan, ScoreboardRaster, QPainter, Clear, Hash,
+    UploadPrepare, GpuUpload, Composite, TotalActive, Count
+};
 
 inline bool IsEnabled() { return false; }
 inline bool IsFrameActive() { return false; }
 inline unsigned long long ReadTicksIfActive() { return 0; }
 inline void FrameBegin() {}
 inline void FrameEnd() {}
+inline void MarkInputSample() {}
+inline void MarkRunFrameBegin() {}
+inline void MarkPresentEnd() {}
 inline void SectionBegin(Section) {}
 inline void SectionEnd(Section) {}
 inline void CountInputSource(InputSource) {}
@@ -554,6 +939,19 @@ inline void AddCustomHudRenderTicks(unsigned long long) {}
 inline void AddHudPhaseTicks(HudPhase, unsigned long long) {}
 inline void CountCustomHudCall() {}
 inline void CountCustomHudDrawn() {}
+inline void CountHudVisualRender() {}
+inline void CountHudVisualReuse() {}
+inline void CountHudVisualIdentityProbe() {}
+inline void CountHudVisualStampCheck() {}
+inline void CountHudVisualStampCommit() {}
+inline void CountScoreboardPlanBuild() {}
+inline void CountScoreboardFullPlanRebuild() {}
+inline void CountScoreboardDynamicCellUpdate(bool) {}
+inline void CountScoreboardStructureCheck() {}
+inline void CountScoreboardOutlinePathHit() {}
+inline void CountScoreboardOutlinePathMiss() {}
+inline void CountHudRegionHash(std::size_t) {}
+inline void CountHudUploadCall() {}
 inline void ShutdownReport() {}
 
 class ScopedHudPhase {

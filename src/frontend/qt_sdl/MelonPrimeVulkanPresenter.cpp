@@ -24,7 +24,9 @@
 #include "VulkanContext.h"
 #include "VulkanFeatureProbe.h"
 #include "VulkanGpuTimestamp.h"
+#include "VulkanDebugLabels.h"
 #include "VulkanPerf.h"
+#include "VulkanQueueSharingExperiment.h"
 #include "MelonPrimeVulkanPresenterTimeout.h"
 
 using namespace melonDS;
@@ -70,6 +72,16 @@ bool PresenterTwoImageSwapchainExperimentEnabled() noexcept
     return EnvironmentEquals("MELONPRIME_VULKAN_SWAPCHAIN_IMAGE_COUNT", "2");
 }
 
+bool SplitQueueExclusiveExperimentRequested() noexcept
+{
+    return EnvironmentEquals("MELONPRIME_VULKAN_SPLIT_QUEUE_EXCLUSIVE", "1");
+}
+
+bool SplitQueueSyncValGateEnabled() noexcept
+{
+    return EnvironmentEquals("MELONPRIME_VULKAN_SPLIT_QUEUE_SYNCVAL_CLEAN", "1");
+}
+
 const char* PresentModeName(VkPresentModeKHR mode) noexcept
 {
     switch (mode)
@@ -110,6 +122,15 @@ const char* LayerDebugName(VulkanPresenter::Layer layer) noexcept
 VulkanPresenter::~VulkanPresenter()
 {
     Shutdown();
+}
+
+void VulkanPresenter::ClearRetainedDirectBinding(LayerTexture& texture) noexcept
+{
+    texture.RetainedDirectImage = VK_NULL_HANDLE;
+    texture.RetainedDirectView = VK_NULL_HANDLE;
+    texture.RetainedDirectResourceGeneration = 0;
+    texture.RetainedDirectDescriptorSets.fill(VK_NULL_HANDLE);
+    texture.RetainedDirectValid = false;
 }
 
 void VulkanPresenter::Quiesce() noexcept
@@ -238,6 +259,7 @@ bool VulkanPresenter::PrepareDirectOutputDescriptors(
             hadEntries |= entry.Valid;
         if (hadEntries)
             Frames.WaitIdle();
+        InvalidateScreenLayerRetention();
         for (DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
         {
             entry.Image = VK_NULL_HANDLE;
@@ -263,6 +285,7 @@ bool VulkanPresenter::PrepareDirectOutputDescriptors(
 
 void VulkanPresenter::InvalidateDirectDescriptorCache() noexcept
 {
+    InvalidateScreenLayerRetention();
     for (DirectDescriptorCacheEntry& entry : DirectDescriptorCache)
     {
         entry.Image = VK_NULL_HANDLE;
@@ -276,8 +299,96 @@ void VulkanPresenter::InvalidateDirectDescriptorCache() noexcept
 }
 
 
+bool VulkanPresenter::ReuseScreenLayerFromFrame(
+    Layer layer, const melonDS::VulkanPresentedFrame& frame)
+{
+    if (!FrameOpen || CompositionOpen
+        || (layer != Layer::ScreenTop && layer != Layer::ScreenBottom)
+        || frame.Width == 0 || frame.Height == 0)
+    {
+        return false;
+    }
+
+    LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    if (frame.HasDirectSampledOutput())
+    {
+        if (!texture.RetainedDirectValid
+            || texture.Width != frame.Width
+            || texture.Height != frame.Height
+            || texture.RetainedDirectResourceGeneration
+                != frame.ResourceGeneration)
+        {
+            return false;
+        }
+
+        const VkImage expectedImage = layer == Layer::ScreenTop
+            ? frame.DirectImageTop : frame.DirectImageBottom;
+        const VkImageView expectedView = layer == Layer::ScreenTop
+            ? frame.DirectImageViewTop : frame.DirectImageViewBottom;
+        if (texture.RetainedDirectImage != expectedImage
+            || texture.RetainedDirectView != expectedView)
+        {
+            return false;
+        }
+
+        texture.DirectImage = texture.RetainedDirectImage;
+        texture.DirectView = texture.RetainedDirectView;
+        texture.DirectResourceGeneration = texture.RetainedDirectResourceGeneration;
+        texture.DirectDescriptorSets = texture.RetainedDirectDescriptorSets;
+        texture.UsesDirect = true;
+        texture.HasContent = true;
+    }
+    else
+    {
+        // Buffer output was already copied into the presenter-owned layer
+        // image. The frame key is checked by ScreenPanelVulkan; only verify
+        // the retained target still exists here.
+        if (texture.UsesDirect || !texture.Image.IsValid()
+            || !texture.HasContent || texture.Width != frame.Width
+            || texture.Height != frame.Height)
+        {
+            return false;
+        }
+        texture.DirectImage = VK_NULL_HANDLE;
+        texture.DirectView = VK_NULL_HANDLE;
+        texture.DirectResourceGeneration = 0;
+        texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
+    }
+
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::VulkanScreenLayerUploadSkipCount);
+    return true;
+}
+
+
+bool VulkanPresenter::HasRetainedDirectLayer(Layer layer) const noexcept
+{
+    if (layer != Layer::ScreenTop && layer != Layer::ScreenBottom)
+        return false;
+    return Layers[static_cast<std::size_t>(layer)].RetainedDirectValid;
+}
+
+
+void VulkanPresenter::InvalidateScreenLayerRetention() noexcept
+{
+    for (const Layer layer : {Layer::ScreenTop, Layer::ScreenBottom})
+    {
+        LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+        ClearRetainedDirectBinding(texture);
+        texture.DirectImage = VK_NULL_HANDLE;
+        texture.DirectView = VK_NULL_HANDLE;
+        texture.DirectResourceGeneration = 0;
+        texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
+        texture.UsesDirect = false;
+        texture.HasContent = false;
+    }
+}
+
+
 bool VulkanPresenter::Fail(const char* operation, VkResult result)
 {
+    if (result == VK_ERROR_DEVICE_LOST)
+        Device.ReportDeviceLost(operation);
     Error = std::string(operation) + " failed: " + Vk::FormatResult(result);
     Failed = true;
     SurfaceRebindRequested = false;
@@ -555,9 +666,28 @@ bool VulkanPresenter::CreateDeviceObjects()
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresenterFramesInFlight,
         Frames.GetFramesInFlight());
+    const u64 submittedFrameCount = Frames.GetAbsoluteFrame() > 0
+        ? Frames.GetAbsoluteFrame() - 1
+        : 0;
+    const u64 completedFrame = Frames.GetCompletedFrame();
+    // FrameRing retirement proxy only; this does not query the driver's WSI
+    // presentation queue depth.
+    const u64 unretiredFrameRingSubmissionDepth = submittedFrameCount > completedFrame
+        ? submittedFrameCount - completedFrame
+        : 0;
+    const u64 logicalFramesSinceLastAcceptedPresent =
+        LowLatencyFrameIndex > LastAcceptedLogicalFrameId
+        ? LowLatencyFrameIndex - LastAcceptedLogicalFrameId
+        : 0;
     VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterLogicalDepth,
-        Frames.GetFramesInFlight());
+        VulkanPerf::Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth,
+        unretiredFrameRingSubmissionDepth);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+        logicalFramesSinceLastAcceptedPresent);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+        DistinctSwapchainImagesAcquiredSinceRecreate);
 
     if (!CreateSamplers())
         return false;
@@ -729,7 +859,14 @@ bool VulkanPresenter::CreateRenderPass()
     // contents of the acquired image are not needed, so the driver may discard
     // them instead of preserving them across the layout transition.
     color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    // The default universal-queue path lets the render pass perform the final
+    // transition. The split-queue experiment leaves the image in attachment
+    // layout so the graphics queue can release ownership, then a dedicated
+    // present-family command buffer repeats the layout transition as the
+    // acquire operation before vkQueuePresentKHR.
+    color.finalLayout = UseSplitQueueExclusiveExperiment
+        ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+        : VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     VkAttachmentReference colorRef{};
     colorRef.attachment = 0;
@@ -1107,13 +1244,26 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     const bool vsyncRequested = VSyncRequested.load(std::memory_order_acquire);
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     std::string presentReason;
-    if (vsyncRequested && PresentPacer.ShouldUseFifoLatestReady()
+    const auto& nvOptimizedPresentModes =
+        PresentPacer.GetNvLowLatencyOptimizedPresentModes();
+    const bool selectedNvOptimizedPresentMode =
+        PresentPacer.SelectNvLowLatencyOptimizedPresentMode(
+            presentModes,
+            nvOptimizedPresentModes,
+            vsyncRequested,
+            PresentPacer.ShouldUseFifoLatestReady(),
+            presentMode,
+            presentReason);
+    if (!selectedNvOptimizedPresentMode
+        && vsyncRequested && PresentPacer.ShouldUseFifoLatestReady()
         && ListContains(presentModes, VK_PRESENT_MODE_FIFO_LATEST_READY_KHR))
     {
         presentMode = VK_PRESENT_MODE_FIFO_LATEST_READY_KHR;
         presentReason = "VSync on: verified present-timing path selected FIFO_LATEST_READY";
     }
-    else if (!ChoosePresentMode(presentModes, presentMode, presentReason))
+    else if (!selectedNvOptimizedPresentMode
+        && presentMode != VK_PRESENT_MODE_FIFO_LATEST_READY_KHR
+        && !ChoosePresentMode(presentModes, presentMode, presentReason))
     {
         return Fail("the surface reported no Vulkan present modes");
     }
@@ -1165,6 +1315,19 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     if ((caps.supportedUsageFlags & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) == 0)
         return Fail("the surface does not allow swapchain images to be used as colour attachments");
 
+    const bool splitQueue = Device.RequiresPresentOwnershipTransfer();
+    const Vk::VulkanQueueSharingPlan sharingPlan = Vk::MakeVulkanQueueSharingPlan(
+        splitQueue,
+        SplitQueueExclusiveExperimentRequested(),
+        SplitQueueSyncValGateEnabled());
+    if (splitQueue && sharingPlan.Requested && !sharingPlan.UseOwnershipTransfer())
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] split-queue EXCLUSIVE experiment kept disabled: "
+            "requires MELONPRIME_VULKAN_SPLIT_QUEUE_SYNCVAL_CLEAN=1\n");
+    }
+
     // Every in-flight frame is drained before the old swapchain's views,
     // framebuffers and semaphores are destroyed. This is the one place in the
     // presenter that is allowed to wait for the device, and it is reached only
@@ -1174,6 +1337,7 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // once per event.
     Frames.WaitIdle();
     DestroySwapchainObjects(true);
+    UseSplitQueueExclusiveExperiment = sharingPlan.UseOwnershipTransfer();
 
     VkSwapchainKHR oldSwapchain = Swapchain;
 
@@ -1205,13 +1369,17 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     const u32 mainFamily = Device.GetMainQueueFamily();
     const u32 presentFamily = Device.GetPresentQueueFamily();
     const u32 families[2] = {mainFamily, presentFamily};
-    if (Device.RequiresPresentOwnershipTransfer())
+    if (sharingPlan.UseOwnershipTransfer())
     {
-        // CONCURRENT rather than explicit release/acquire barrier pairs. The
-        // presenter submits one command buffer per frame and the cost of
-        // concurrent access on a two-family split is far below the cost of
-        // getting an ownership transfer subtly wrong on the one path that has
-        // no way to be tested on the common (universal-family) hardware.
+        // Experimental split-family path. The render queue releases the
+        // image to the present family and a tiny present-family command buffer
+        // acquires it before vkQueuePresentKHR.
+        info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    }
+    else if (splitQueue)
+    {
+        // CONCURRENT remains the correctness-first default. The A/B is opt-in
+        // only after the SyncVal gate has been recorded clean.
         info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
         info.queueFamilyIndexCount = 2;
         info.pQueueFamilyIndices = families;
@@ -1292,21 +1460,36 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         return Fail("vkGetSwapchainImagesKHR", res == VK_SUCCESS ? VK_ERROR_INITIALIZATION_FAILED : res);
 
     SwapchainImages.resize(realImageCount);
+    if (!CreatePresentOwnershipResources(realImageCount))
+        return false;
     res = fns.GetSwapchainImagesKHR(
         Device.GetHandle(), Swapchain, &realImageCount, SwapchainImages.data());
     if (res != VK_SUCCESS && res != VK_INCOMPLETE)
         return Fail("vkGetSwapchainImagesKHR", res);
     SwapchainImages.resize(realImageCount);
 
+    SwapchainImageAcquireObserved.assign(realImageCount, false);
+    DistinctSwapchainImagesAcquiredSinceRecreate = 0;
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+        0);
     SwapchainImageViews.assign(realImageCount, VK_NULL_HANDLE);
     SwapchainFramebuffers.assign(realImageCount, VK_NULL_HANDLE);
     RenderFinished.assign(realImageCount, VK_NULL_HANDLE);
-    ImagesInFlight.assign(realImageCount, VK_NULL_HANDLE);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    HasPreviousAcquiredImageIndex = false;
+#endif
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanSwapchainImageCount, realImageCount);
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresentMode,
         static_cast<u64>(PresentMode));
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanNvLowLatencyOptimizedModeCount,
+        static_cast<u64>(nvOptimizedPresentModes.size()));
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresentModeIsNvLowLatencyOptimized,
+        selectedNvOptimizedPresentMode ? 1 : 0);
 
     for (u32 i = 0; i < realImageCount; ++i)
     {
@@ -1373,21 +1556,182 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         }
     }
 
+    std::string optimizedModeNames;
+    for (VkPresentModeKHR mode : nvOptimizedPresentModes)
+    {
+        if (!optimizedModeNames.empty())
+            optimizedModeNames += ',';
+        optimizedModeNames += PresentModeName(mode);
+    }
+
     Platform::Log(
         Platform::LogLevel::Info,
         "[Vulkan] presentation: requested-vsync=%s available-present-modes=%s "
-        "selected-present-mode=%s swapchain-images=%u extent=%ux%u format=%d "
-        "window-mode=%s reason=%s; VRR actual state is driver/display controlled\n",
+        "selected-present-mode=%s queue-sharing=%s swapchain-images=%u extent=%ux%u format=%d "
+        "window-mode=%s reason=%s nv-low-latency-optimized-mode-count=%u "
+        "present-mode-is-nv-low-latency-optimized=%s "
+        "nv-low-latency-optimized-modes=%s; VRR actual state is driver/display controlled\n",
         vsyncRequested ? "on" : "off",
         availableModeNames.empty() ? "none" : availableModeNames.c_str(),
         PresentModeName(PresentMode),
+        UseSplitQueueExclusiveExperiment
+            ? "exclusive-split-experiment"
+            : (splitQueue ? "concurrent" : "exclusive"),
         realImageCount,
         SwapchainExtent.width,
         SwapchainExtent.height,
         static_cast<int>(SurfaceFormat.format),
         WindowFullscreen.load(std::memory_order_acquire) ? "fullscreen" : "windowed",
-        presentReason.c_str());
+        presentReason.c_str(),
+        static_cast<unsigned int>(nvOptimizedPresentModes.size()),
+        selectedNvOptimizedPresentMode ? "yes" : "no",
+        optimizedModeNames.empty() ? "none" : optimizedModeNames.c_str());
 
+    return true;
+}
+
+
+bool VulkanPresenter::CreatePresentOwnershipResources(u32 imageCount)
+{
+    if (!UseSplitQueueExclusiveExperiment)
+        return true;
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    if (!fns.CreateCommandPool || !fns.AllocateCommandBuffers
+        || !fns.BeginCommandBuffer || !fns.EndCommandBuffer
+        || !fns.ResetCommandBuffer || !fns.QueueSubmit)
+    {
+        return Fail("split-queue ownership experiment lacks command-buffer entry points");
+    }
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = Device.GetPresentQueueFamily();
+    VkResult res = fns.CreateCommandPool(
+        Device.GetHandle(), &poolInfo, nullptr, &PresentOwnershipCommandPool);
+    if (res != VK_SUCCESS)
+        return Fail("vkCreateCommandPool(split-queue ownership)", res);
+
+    PresentOwnershipCommandBuffers.resize(imageCount, VK_NULL_HANDLE);
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = PresentOwnershipCommandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = imageCount;
+    res = fns.AllocateCommandBuffers(
+        Device.GetHandle(), &allocInfo, PresentOwnershipCommandBuffers.data());
+    if (res != VK_SUCCESS)
+    {
+        DestroyPresentOwnershipResources();
+        return Fail("vkAllocateCommandBuffers(split-queue ownership)", res);
+    }
+
+    PresentOwnershipFinished.resize(imageCount, VK_NULL_HANDLE);
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    for (u32 i = 0; i < imageCount; ++i)
+    {
+        res = fns.CreateSemaphore(
+            Device.GetHandle(), &semaphoreInfo, nullptr, &PresentOwnershipFinished[i]);
+        if (res != VK_SUCCESS)
+        {
+            DestroyPresentOwnershipResources();
+            return Fail("vkCreateSemaphore(split-queue ownership)", res);
+        }
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan] split-queue EXCLUSIVE experiment enabled: image-count=%u "
+        "graphics-family=%u present-family=%u\n",
+        imageCount,
+        Device.GetMainQueueFamily(),
+        Device.GetPresentQueueFamily());
+    return true;
+}
+
+
+void VulkanPresenter::DestroyPresentOwnershipResources()
+{
+    if (!Device.IsValid())
+    {
+        PresentOwnershipCommandBuffers.clear();
+        PresentOwnershipFinished.clear();
+        PresentOwnershipCommandPool = VK_NULL_HANDLE;
+        return;
+    }
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    VkDevice device = Device.GetHandle();
+    if (PresentOwnershipCommandPool != VK_NULL_HANDLE)
+    {
+        if (fns.FreeCommandBuffers && !PresentOwnershipCommandBuffers.empty())
+        {
+            fns.FreeCommandBuffers(
+                device,
+                PresentOwnershipCommandPool,
+                static_cast<u32>(PresentOwnershipCommandBuffers.size()),
+                PresentOwnershipCommandBuffers.data());
+        }
+        if (fns.DestroyCommandPool)
+            fns.DestroyCommandPool(device, PresentOwnershipCommandPool, nullptr);
+    }
+    PresentOwnershipCommandBuffers.clear();
+    PresentOwnershipCommandPool = VK_NULL_HANDLE;
+
+    for (VkSemaphore semaphore : PresentOwnershipFinished)
+    {
+        if (semaphore != VK_NULL_HANDLE)
+            fns.DestroySemaphore(device, semaphore, nullptr);
+    }
+    PresentOwnershipFinished.clear();
+}
+
+
+bool VulkanPresenter::RecordPresentOwnershipAcquire()
+{
+    if (!UseSplitQueueExclusiveExperiment)
+        return true;
+    if (CurrentImageIndex >= SwapchainImages.size()
+        || CurrentImageIndex >= PresentOwnershipCommandBuffers.size())
+        return Fail("split-queue ownership image index is out of range");
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    VkCommandBuffer commandBuffer = PresentOwnershipCommandBuffers[CurrentImageIndex];
+    VkResult res = fns.ResetCommandBuffer(commandBuffer, 0);
+    if (res != VK_SUCCESS)
+        return Fail("vkResetCommandBuffer(split-queue ownership)", res);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    res = fns.BeginCommandBuffer(commandBuffer, &beginInfo);
+    if (res != VK_SUCCESS)
+        return Fail("vkBeginCommandBuffer(split-queue ownership)", res);
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    barrier.srcQueueFamilyIndex = Device.GetMainQueueFamily();
+    barrier.dstQueueFamilyIndex = Device.GetPresentQueueFamily();
+    barrier.image = SwapchainImages[CurrentImageIndex];
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    fns.CmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &barrier);
+
+    res = fns.EndCommandBuffer(commandBuffer);
+    if (res != VK_SUCCESS)
+        return Fail("vkEndCommandBuffer(split-queue ownership)", res);
     return true;
 }
 
@@ -1405,6 +1749,8 @@ void VulkanPresenter::DestroySwapchainObjects(bool immediate)
 
     const Vk::DeviceDispatch& fns = Device.Fns();
     VkDevice device = Device.GetHandle();
+
+    DestroyPresentOwnershipResources();
 
     for (VkSemaphore semaphore : RenderFinished)
     {
@@ -1430,7 +1776,11 @@ void VulkanPresenter::DestroySwapchainObjects(bool immediate)
     // The VkImages themselves belong to the swapchain and must not be
     // destroyed; only the views the presenter created are its own.
     SwapchainImages.clear();
-    ImagesInFlight.clear();
+    SwapchainImageAcquireObserved.clear();
+    DistinctSwapchainImagesAcquiredSinceRecreate = 0;
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+        0);
 }
 
 
@@ -1455,6 +1805,7 @@ bool VulkanPresenter::EnsureLayerImage(
         // no handle-release API, so it cannot be routed through the deferred
         // destruction queue.
         Frames.WaitIdle();
+        ClearRetainedDirectBinding(texture);
         texture.Image.Destroy();
     }
 
@@ -1552,9 +1903,13 @@ VkDescriptorSet VulkanPresenter::AcquireDescriptorSet(Layer layer, bool linearFi
 // Frame path
 // ---------------------------------------------------------------------------
 
-bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
+bool VulkanPresenter::BeginFrame(
+    u32 requestedWidth,
+    u32 requestedHeight,
+    bool waitForPresentSlot)
 {
     VulkanPerf::ScopedCpuTimer beginTimer(VulkanPerf::CpuMetric::PresentBeginTotal);
+    LastBeginLatencySkip = false;
     if (!Initialized || Failed || !Device.IsValid())
         return false;
     if (FrameOpen)
@@ -1573,6 +1928,11 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     if (SkipNextPresentationForLatencyBudget)
     {
         SkipNextPresentationForLatencyBudget = false;
+        // The previous strict presenter-budget wait already classified this
+        // callback as an intentional latency skip. Preserve that result for
+        // the screen caller so it does not report a normal presentation stall
+        // or trigger surface/failure recovery.
+        LastBeginLatencySkip = true;
         return false;
     }
 
@@ -1585,9 +1945,26 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanPresenterFramesInFlight,
         Frames.GetFramesInFlight());
+    const u64 submittedFrameCount = Frames.GetAbsoluteFrame() > 0
+        ? Frames.GetAbsoluteFrame() - 1
+        : 0;
+    const u64 completedFrame = Frames.GetCompletedFrame();
+    const u64 unretiredFrameRingSubmissionDepth = submittedFrameCount > completedFrame
+        ? submittedFrameCount - completedFrame
+        : 0;
     VulkanPerf::SetCounter(
-        VulkanPerf::Counter::VulkanPresenterLogicalDepth,
-        Frames.GetFramesInFlight());
+        VulkanPerf::Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth,
+        unretiredFrameRingSubmissionDepth);
+    const u64 logicalFramesSinceLastAcceptedPresent =
+        LowLatencyFrameIndex > LastAcceptedLogicalFrameId
+        ? LowLatencyFrameIndex - LastAcceptedLogicalFrameId
+        : 0;
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+        logicalFramesSinceLastAcceptedPresent);
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+        DistinctSwapchainImagesAcquiredSinceRecreate);
     VulkanPerf::SetCounter(
         VulkanPerf::Counter::VulkanVsyncEnabled,
         VSyncApplied ? 1u : 0u);
@@ -1601,17 +1978,6 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         VulkanPerf::Counter::VulkanPresentMode,
         static_cast<u64>(PresentMode));
 
-    // Upload-ring growth requested by a previous frame. Applied here, before
-    // any command buffer is open, because it destroys and reallocates the
-    // buffers a recording frame would already reference.
-    if (PendingStagingRequest > StagingCapacity)
-    {
-        const VkDeviceSize request = PendingStagingRequest;
-        PendingStagingRequest = 0;
-        if (!EnsureStaging(request))
-            return false;
-    }
-
     const bool presenterFencePending = Frames.NextFrameHasPendingSubmission();
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const bool perfEnabled = VulkanPerf::IsEnabled();
@@ -1619,9 +1985,14 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         ? VulkanPerf::Clock::now()
         : VulkanPerf::Clock::time_point{};
 #endif
-    Vk::FrameContext* frame = Frames.BeginFrame();
+    Vk::FrameBeginResult beginResult = Vk::FrameBeginResult::Error;
+    VulkanPerf::ScopedCpuTimer slotWaitTimer(
+        VulkanPerf::CpuMetric::PresentSlotWait, waitForPresentSlot);
+    Vk::FrameContext* frame = waitForPresentSlot
+        ? Frames.BeginFrame()
+        : Frames.TryBeginFrame(&beginResult);
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
-    if (perfEnabled && presenterFencePending)
+    if (perfEnabled && waitForPresentSlot && presenterFencePending)
     {
         const u64 waitNs = static_cast<u64>(std::chrono::duration_cast<
             std::chrono::nanoseconds>(
@@ -1633,10 +2004,44 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     }
 #endif
     if (!frame)
+    {
+        if (!waitForPresentSlot && beginResult == Vk::FrameBeginResult::Busy)
+        {
+            // The probe ran before swapchain acquisition and before any
+            // presenter-owned recording state was touched. Keep this callback
+            // a no-op: its renderer lease remains owned by the caller and the
+            // next presentation callback will retry the same ring slot.
+            LastBeginLatencySkip = true;
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresenterSlotBusySkipCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
+            return false;
+        }
         return Fail("the Vulkan presenter's frame ring could not begin a frame");
+    }
 
     const u32 frameIndex = Frames.GetFrameIndex();
     CurrentCommandBuffer = frame->CommandBuffer;
+
+    // Upload-ring growth requested by a previous frame. In low-latency mode
+    // this is deliberately reached only after TryBeginFrame() proved that the
+    // target slot is reusable; a busy skip never destroys or reallocates
+    // staging storage. The current command buffer has no staging references
+    // yet, so a growth failure can be closed with the same empty submission
+    // used by the existing pre-recording failure paths.
+    if (PendingStagingRequest > StagingCapacity)
+    {
+        const VkDeviceSize request = PendingStagingRequest;
+        PendingStagingRequest = 0;
+        if (!EnsureStaging(request))
+        {
+            Frames.SubmitFrame(Device.GetMainQueue());
+            CurrentCommandBuffer = VK_NULL_HANDLE;
+            return false;
+        }
+    }
+
     RecordVulkanGpuMetric(
         Frames, GpuMetric::PresenterRenderPass,
         VulkanPerf::Counter::PresenterRenderPassGpuTimeNs);
@@ -1668,7 +2073,18 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     }
 
     VkResult res = VK_SUCCESS;
+    const bool lowLatencyAcquire = !waitForPresentSlot;
+    const u64 acquireTimeoutNs = lowLatencyAcquire
+        ? PresenterLowLatencyAcquireTimeoutNanoseconds()
+        : PresenterAcquireTimeoutNanoseconds();
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::VulkanAcquireTimeoutNs, acquireTimeoutNs);
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    if (lowLatencyAcquire)
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanAcquireLowLatencyAttemptCount);
+    }
     const bool acquirePerfEnabled = VulkanPerf::IsEnabled();
     const VulkanPerf::Clock::time_point acquireWaitStart = acquirePerfEnabled
         ? VulkanPerf::Clock::now()
@@ -1676,13 +2092,15 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
 #endif
     {
         VulkanPerf::ScopedCpuTimer acquireTimer(VulkanPerf::CpuMetric::PresentAcquire);
+        LatencyCapture.MarkAcquireStart();
         res = Device.Fns().AcquireNextImageKHR(
             Device.GetHandle(),
             Swapchain,
-            PresenterAcquireTimeoutNanoseconds(),
+            acquireTimeoutNs,
             frame->ImageAvailable,
             VK_NULL_HANDLE,
             &CurrentImageIndex);
+        LatencyCapture.MarkAcquireEnd();
     }
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     if (acquirePerfEnabled)
@@ -1694,6 +2112,19 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireWaitNs, waitNs);
     }
 #endif
+
+    if ((res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR)
+        && CurrentImageIndex < SwapchainImageAcquireObserved.size()
+        && !SwapchainImageAcquireObserved[CurrentImageIndex])
+    {
+        // Count distinct successful acquisitions only. This is not
+        // synchronization and never gates reuse.
+        SwapchainImageAcquireObserved[CurrentImageIndex] = true;
+        ++DistinctSwapchainImagesAcquiredSinceRecreate;
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+            DistinctSwapchainImagesAcquiredSinceRecreate);
+    }
 
     if (res == VK_ERROR_OUT_OF_DATE_KHR)
     {
@@ -1714,14 +2145,20 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
     }
     else if (res == VK_TIMEOUT || res == VK_NOT_READY)
     {
-        // A bounded developer acquire has no image and therefore does not
-        // signal ImageAvailable. Submit the command buffer without any
-        // semaphore dependency, retire this logical frame, and let the next
-        // frame retry. Reusing the semaphore is safe because it was never
-        // signalled or submitted as a wait in this branch.
+        // No swapchain image was acquired, so ImageAvailable was not signalled.
+        // The low-latency policy classifies this as an intentional presentation
+        // skip; the normal bounded policy preserves the existing stall
+        // classification. Close the frame-ring recording without an acquire
+        // semaphore wait and retry on the next callback.
+        if (lowLatencyAcquire)
+        {
+            LastBeginLatencySkip = true;
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanAcquireLowLatencySkipCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
+        }
         VulkanPerf::AddCounter(VulkanPerf::Counter::VulkanAcquireNotReadyCount);
-        VulkanPerf::AddCounter(
-            VulkanPerf::Counter::VulkanPresentSkippedForLatencyBudgetCount);
         Frames.SubmitFrame(Device.GetMainQueue());
         CurrentCommandBuffer = VK_NULL_HANDLE;
         return false;
@@ -1735,34 +2172,24 @@ bool VulkanPresenter::BeginFrame(u32 requestedWidth, u32 requestedHeight)
         return Fail("vkAcquireNextImageKHR", res);
     }
 
-    // A swapchain image may be handed out again while an earlier frame that
-    // targeted it is still executing (more images than frames in flight). The
-    // frame fence covers the slot, not the image, so the image gets its own
-    // wait. The current slot's fence is skipped: BeginFrame() has just reset
-    // it, and waiting on an unsignalled fence nothing will signal would hang.
-    if (CurrentImageIndex < ImagesInFlight.size())
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    if (HasPreviousAcquiredImageIndex
+        && PreviousAcquiredImageIndex == CurrentImageIndex)
     {
-        VkFence imageFence = ImagesInFlight[CurrentImageIndex];
-        if (imageFence != VK_NULL_HANDLE && imageFence != frame->InFlightFence)
-        {
-            VkResult waitRes = VK_SUCCESS;
-            {
-                VulkanPerf::ScopedCpuTimer imageWaitTimer(
-                    VulkanPerf::CpuMetric::PresentImageFence);
-                waitRes = Device.Fns().WaitForFences(
-                    Device.GetHandle(), 1, &imageFence, VK_TRUE,
-                    PresenterImageFenceTimeoutNanoseconds());
-            }
-            if (waitRes != VK_SUCCESS)
-            {
-                Frames.SubmitFrame(Device.GetMainQueue());
-                CurrentCommandBuffer = VK_NULL_HANDLE;
-                return Fail("vkWaitForFences(swapchain image)", waitRes);
-            }
-        }
-        ImagesInFlight[CurrentImageIndex] = frame->InFlightFence;
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanAcquireRepeatImageIndexCount);
     }
+    PreviousAcquiredImageIndex = CurrentImageIndex;
+    HasPreviousAcquiredImageIndex = true;
+#endif
 
+    // AcquireNextImageKHR has returned an image that the presentation engine
+    // has released for this submission. The acquire semaphore is waited at
+    // COLOR_ATTACHMENT_OUTPUT, so the render-pass transition and the first
+    // swapchain-image write are ordered after that release. No second host
+    // fence is needed here: frame-slot fences protect command buffers,
+    // staging, descriptors, and leases, while RenderFinished remains indexed
+    // by swapchain image for safe present-wait semaphore reuse.
     FrameOpen = true;
     CompositionOpen = false;
     return true;
@@ -1791,6 +2218,7 @@ bool VulkanPresenter::UploadLayerRegion(
     // new image here.
     if (layer == Layer::ScreenTop || layer == Layer::ScreenBottom)
     {
+        ClearRetainedDirectBinding(texture);
         if (!EnsureLayerImage(layer, texture, width, height, LayerDebugName(layer)))
             return false;
     }
@@ -1850,6 +2278,12 @@ bool VulkanPresenter::UploadLayerRegion(
     if (!staging.FlushWritten())
         return Fail("the Vulkan presenter could not flush its upload buffer");
 
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    const char* uploadLabel = layer == Layer::Hud
+        ? "Vulkan.Present.UploadHUD"
+        : layer == Layer::Osd ? "Vulkan.Present.UploadOSD" : nullptr;
+    Vk::BeginCommandDebugLabel(fns, CurrentCommandBuffer, uploadLabel);
+
     const VkImageLayout currentLayout = texture.Image.GetLayout();
     texture.Image.RecordLayoutTransition(
         CurrentCommandBuffer,
@@ -1886,6 +2320,8 @@ bool VulkanPresenter::UploadLayerRegion(
         VK_ACCESS_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         VK_ACCESS_SHADER_READ_BIT);
+    if (uploadLabel)
+        Vk::EndCommandDebugLabel(fns, CurrentCommandBuffer);
 
     texture.HasContent = true;
     if (layer == Layer::Hud)
@@ -1904,6 +2340,7 @@ bool VulkanPresenter::UploadLayerFromBuffer(
     }
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    ClearRetainedDirectBinding(texture);
     texture.DirectImage = VK_NULL_HANDLE;
     if (!EnsureLayerImage(layer, texture, frame.Width, frame.Height, LayerDebugName(layer)))
         return false;
@@ -1982,6 +2419,7 @@ bool VulkanPresenter::UploadLayerFromImage(
         return false;
 
     LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    ClearRetainedDirectBinding(texture);
     std::array<VkDescriptorSet, kPresenterSamplerCount> descriptorSets{};
     const DirectDescriptorCacheEntry* cached = FindDirectDescriptor(
         image, view, frame.ResourceGeneration);
@@ -2061,6 +2499,18 @@ bool VulkanPresenter::UploadLayerFromImage(
     texture.DirectDescriptorSets = descriptorSets;
     texture.UsesDirect = true;
     texture.HasContent = true;
+    if (cached)
+    {
+        texture.RetainedDirectImage = image;
+        texture.RetainedDirectView = view;
+        texture.RetainedDirectResourceGeneration = frame.ResourceGeneration;
+        texture.RetainedDirectDescriptorSets = descriptorSets;
+        texture.RetainedDirectValid = true;
+    }
+    else
+    {
+        ClearRetainedDirectBinding(texture);
+    }
     return true;
 }
 
@@ -2086,6 +2536,7 @@ void VulkanPresenter::BeginComposition()
     Frames.WriteTimestamp(
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         GpuMetricQueryIndex(GpuMetric::PresenterRenderPass, false));
+    Vk::BeginCommandDebugLabel(fns, CurrentCommandBuffer, "Vulkan.Present.Compose");
     fns.CmdBeginRenderPass(CurrentCommandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
 
     VkViewport viewport{};
@@ -2179,10 +2630,38 @@ bool VulkanPresenter::EndFrame()
     if (CompositionOpen)
     {
         fns.CmdEndRenderPass(CurrentCommandBuffer);
+        Vk::EndCommandDebugLabel(fns, CurrentCommandBuffer);
         Frames.WriteTimestamp(
             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
             GpuMetricQueryIndex(GpuMetric::PresenterRenderPass, true));
         CompositionOpen = false;
+    }
+
+    if (UseSplitQueueExclusiveExperiment
+        && CurrentImageIndex < SwapchainImages.size())
+    {
+        // Graphics-family release. The matching acquire barrier is recorded
+        // on the present-family command buffer after the render-finished
+        // semaphore has been signalled.
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        barrier.srcQueueFamilyIndex = Device.GetMainQueueFamily();
+        barrier.dstQueueFamilyIndex = Device.GetPresentQueueFamily();
+        barrier.image = SwapchainImages[CurrentImageIndex];
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.layerCount = 1;
+        fns.CmdPipelineBarrier(
+            CurrentCommandBuffer,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier);
     }
     Frames.WriteTimestamp(
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
@@ -2243,12 +2722,22 @@ bool VulkanPresenter::EndFrame()
     if (!submitted)
         return Fail("the Vulkan presenter could not submit its frame");
 
+    if (!RecordPresentOwnershipAcquire())
+        return false;
+
+    VkSemaphore presentWaitSemaphore = signalSemaphore;
     VkPresentInfoKHR present{};
     present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    if (signalSemaphore != VK_NULL_HANDLE)
+    if (UseSplitQueueExclusiveExperiment)
+    {
+        if (CurrentImageIndex >= PresentOwnershipFinished.size())
+            return Fail("split-queue ownership semaphore index is out of range");
+        presentWaitSemaphore = PresentOwnershipFinished[CurrentImageIndex];
+    }
+    if (presentWaitSemaphore != VK_NULL_HANDLE)
     {
         present.waitSemaphoreCount = 1;
-        present.pWaitSemaphores = &signalSemaphore;
+        present.pWaitSemaphores = &presentWaitSemaphore;
     }
     present.swapchainCount = 1;
     present.pSwapchains = &Swapchain;
@@ -2261,10 +2750,23 @@ bool VulkanPresenter::EndFrame()
     melonDS::VulkanPresentPacer::PresentMetadata genericPresentMetadata{};
     const melonDS::u64 logicalPresentId = PresentPacer.PreparePresent(
         present, tagLatency ? latencyFrameId : 0, genericPresentMetadata);
+    // When no generic present-timing policy is active, PreparePresent() returns
+    // zero because it attaches no optional node. Reflex still attaches the
+    // required VK_KHR_present_id node below, so keep the capture metadata tied
+    // to that same logical frame ID.
+    if (tagLatency && genericPresentMetadata.LogicalId == 0)
+        genericPresentMetadata.LogicalId = latencyFrameId;
 
     VkPresentIdKHR presentId{};
-    if (tagLatency)
+    if (tagLatency && !genericPresentMetadata.LegacyIdAttached)
     {
+        // PreparePresent() may already have attached the legacy
+        // VK_KHR_present_id node for its bounded-wait fallback. That node and
+        // Reflex's correlation ID have the same Vulkan sType and must not both
+        // appear in one VkPresentInfoKHR pNext chain. PreparePresent() was
+        // given the Reflex ID above, so its existing node already carries the
+        // same correlation value; only add the node here when the pacer did
+        // not attach one.
         presentId.sType = VK_STRUCTURE_TYPE_PRESENT_ID_KHR;
         presentId.swapchainCount = 1;
         presentId.pPresentIds = logicalPresentId != 0
@@ -2293,12 +2795,31 @@ bool VulkanPresenter::EndFrame()
     {
         std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex());
 
+        if (UseSplitQueueExclusiveExperiment)
+        {
+            const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+            VkSubmitInfo ownershipSubmit{};
+            ownershipSubmit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            ownershipSubmit.waitSemaphoreCount = 1;
+            ownershipSubmit.pWaitSemaphores = &signalSemaphore;
+            ownershipSubmit.pWaitDstStageMask = &waitStage;
+            ownershipSubmit.commandBufferCount = 1;
+            ownershipSubmit.pCommandBuffers =
+                &PresentOwnershipCommandBuffers[CurrentImageIndex];
+            ownershipSubmit.signalSemaphoreCount = 1;
+            ownershipSubmit.pSignalSemaphores = &presentWaitSemaphore;
+            res = fns.QueueSubmit(
+                Device.GetPresentQueue(), 1, &ownershipSubmit, VK_NULL_HANDLE);
+            if (res != VK_SUCCESS)
+                return Fail("vkQueueSubmit(split-queue ownership)", res);
+        }
+
         // Anti-Lag's PRESENT stage is specified to be issued immediately before
         // vkQueuePresentKHR, with the frame index its INPUT partner used. Keep
         // the update under the same queue lock so contention cannot separate
-        // the vendor marker from the queue operation. The index is the Reflex
-        // frame id when Reflex is running and the presenter's own absolute
-        // frame counter otherwise -- see BeginLowLatencyFrame.
+        // the vendor marker from the queue operation. The index is the logical
+        // emulated frame ID allocated by EmuThread, shared with Reflex when
+        // it is active -- see BeginLowLatencyFrame.
         AntiLag.EndFrame(LowLatencyFrameIndex);
 
         if (tagLatency)
@@ -2320,16 +2841,56 @@ bool VulkanPresenter::EndFrame()
 
     PresentPacer.NotifyPresentResult(res, genericPresentMetadata);
 
+    const bool presentAccepted = res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR;
+    const u64 logicalFrameId = LowLatencyFrameIndex;
+    const u64 logicalFramesSinceLastAcceptedPresent =
+        logicalFrameId > LastAcceptedLogicalFrameId
+        ? logicalFrameId - LastAcceptedLogicalFrameId
+        : 0;
+    const u64 submittedFrameCount = Frames.GetAbsoluteFrame() > 0
+        ? Frames.GetAbsoluteFrame() - 1
+        : 0;
+    const u64 completedFrame = Frames.GetCompletedFrame();
+    // FrameRing retirement proxy only; this does not query the driver's WSI
+    // presentation queue depth.
+    const u64 unretiredFrameRingSubmissionDepth = submittedFrameCount > completedFrame
+        ? submittedFrameCount - completedFrame
+        : 0;
+
     // Only a present the engine accepted is a measurable frame. Recording the
     // rejected ones would mix "displayed at time T" with "never displayed".
     // This runs after NotifyPresentResult so the row's presentation sequence is
     // the one this present just committed.
-    if (LatencyCapture.IsEnabled() && (res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR))
+    if (LatencyCapture.IsEnabled() && presentAccepted)
     {
         LatencyCapture.SetReflexMode(static_cast<int>(Reflex.GetMode()));
+        LatencyCapture.SetFrameContext(
+            logicalFrameId,
+            tagLatency ? latencyFrameId : 0,
+            CurrentImageIndex,
+            Frames.GetFrameIndex(),
+            static_cast<u32>(SwapchainImages.size()),
+            DistinctSwapchainImagesAcquiredSinceRecreate,
+            logicalFramesSinceLastAcceptedPresent,
+            unretiredFrameRingSubmissionDepth);
         LatencyCapture.Commit(
             genericPresentMetadata.LogicalId,
             PresentPacer.CaptureState(genericPresentMetadata));
+    }
+
+    if (presentAccepted)
+    {
+        if (logicalFrameId > LastAcceptedLogicalFrameId)
+            LastAcceptedLogicalFrameId = logicalFrameId;
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterUnretiredFrameRingSubmissionDepth,
+            unretiredFrameRingSubmissionDepth);
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterLogicalFramesSinceLastAcceptedPresent,
+            logicalFramesSinceLastAcceptedPresent);
+        VulkanPerf::SetCounter(
+            VulkanPerf::Counter::VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate,
+            DistinctSwapchainImagesAcquiredSinceRecreate);
     }
 
     // Not a marker: this is vkLatencySleepNV's "once between presents"
@@ -2398,7 +2959,11 @@ void VulkanPresenter::SetLowLatencyPreferences(int reflexMode, bool antiLag2Enab
 
 
 void VulkanPresenter::BeginLowLatencyFrame(
-    int reflexMode, bool antiLag2Enabled, bool normalSpeed, u64 targetFrameIntervalNs)
+    int reflexMode,
+    bool antiLag2Enabled,
+    bool normalSpeed,
+    u64 targetFrameIntervalNs,
+    u64 logicalFrameId)
 {
     if (!Initialized || Failed || !Device.IsValid())
         return;
@@ -2504,15 +3069,14 @@ void VulkanPresenter::BeginLowLatencyFrame(
     // -- that delay is the entire mechanism. SIMULATION_START is deliberately
     // NOT emitted here: it belongs after the sleep and after input sampling,
     // which is MarkLowLatencySimulationStart().
-    Reflex.BeginFrame();
+    Reflex.BeginFrame(logicalFrameId);
 
-    // Keep the two features on the same frame numbering when both are live.
-    // Reflex bumps its id inside BeginFrame() above; when it is not running,
-    // its id stays put and Anti-Lag needs a counter of its own.
-    if (Reflex.WantsFrameIdChaining())
-        LowLatencyFrameIndex = Reflex.GetFrameId();
-    else
-        ++LowLatencyFrameIndex;
+    // Anti-Lag and Reflex describe the same logical emulated frame. The ID is
+    // owned by EmuThread, so turning either feature off does not create a
+    // presenter-local counter with different semantics.
+    LowLatencyFrameIndex = logicalFrameId;
+    if (LastAcceptedLogicalFrameId == 0 && logicalFrameId > 0)
+        LastAcceptedLogicalFrameId = logicalFrameId - 1;
 
     // Anti-Lag's INPUT stage, specified to be issued immediately before the
     // application reads input -- the same point the Reflex sleep just returned
@@ -2753,6 +3317,7 @@ void VulkanPresenter::Shutdown() noexcept
             texture.DirectResourceGeneration = 0;
             texture.DirectDescriptorSets.fill(VK_NULL_HANDLE);
             texture.UsesDirect = false;
+            ClearRetainedDirectBinding(texture);
         }
 
         for (Vk::StagingRing& ring : Staging)

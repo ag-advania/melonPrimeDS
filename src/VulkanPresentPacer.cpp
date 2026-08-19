@@ -297,6 +297,8 @@ bool VulkanPresentPacer::Initialize(const VulkanDevice& device, VkSurfaceKHR sur
         device.GetPresentTimingFeatures().PresentAtRelativeTime;
     info.LatestReadyExtensionEnabled = HasEnabledExtension(
         device, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME);
+    info.NvidiaLowLatency2ExtensionEnabled = HasEnabledExtension(
+        device, VK_NV_LOW_LATENCY_2_EXTENSION_NAME);
     return InitializeCommon(dispatch, info, surface);
 }
 
@@ -321,6 +323,7 @@ bool VulkanPresentPacer::InitializeCommon(
     PhysicalDeviceHandle = info.PhysicalDevice;
     Surface = surface;
     Caps2Available = Dispatch.GetPhysicalDeviceSurfaceCapabilities2KHR != nullptr;
+    NvidiaLowLatency2Device = info.NvidiaLowLatency2ExtensionEnabled;
     PresentIdDevice = info.PresentIdExtensionEnabled;
     PresentWaitLegacyDevice = info.PresentWaitLegacyExtensionEnabled
         && PresentIdDevice && Dispatch.WaitForPresentKHR != nullptr;
@@ -374,6 +377,8 @@ void VulkanPresentPacer::Shutdown() noexcept
     AbsoluteTimingDevice = false;
     RelativeTimingDevice = false;
     LatestReadyDevice = false;
+    NvidiaLowLatency2Device = false;
+    NvLowLatencyOptimizedPresentModes.clear();
     TimeDomainQueryAvailable = false;
     PresentId2Surface = false;
     PresentWaitLegacySurface = false;
@@ -406,6 +411,50 @@ VulkanPresentPacingPolicy VulkanPresentPacer::GetPolicy() const noexcept
     return static_cast<VulkanPresentPacingPolicy>(Policy.load(std::memory_order_acquire));
 }
 
+bool VulkanPresentPacer::SelectNvLowLatencyOptimizedPresentMode(
+    const std::vector<VkPresentModeKHR>& available,
+    const std::vector<VkPresentModeKHR>& optimized,
+    bool vsyncRequested,
+    bool fifoLatestReadyAllowed,
+    VkPresentModeKHR& out,
+    std::string& reason)
+{
+    for (const VkPresentModeKHR mode : optimized)
+    {
+        if (std::find(available.begin(), available.end(), mode) == available.end())
+            continue;
+
+        if (vsyncRequested)
+        {
+            // Keep the existing no-tearing VSync contract. FIFO_RELAXED is
+            // deliberately excluded because it may tear when the app misses
+            // a refresh; FIFO_LATEST_READY is only allowed when the existing
+            // capability/policy gate has already enabled it.
+            if (mode == VK_PRESENT_MODE_FIFO_KHR
+                || (mode == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR
+                    && fifoLatestReadyAllowed))
+            {
+                out = mode;
+                reason = "VSync on: NVIDIA low-latency optimized FIFO mode";
+                return true;
+            }
+            continue;
+        }
+
+        // VSync off may use the existing tearing/non-blocking candidates, but
+        // must not select a driver-reported FIFO mode and silently turn VSync
+        // back on. Generic FIFO fallback remains available below.
+        if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR
+            || mode == VK_PRESENT_MODE_MAILBOX_KHR)
+        {
+            out = mode;
+            reason = "VSync off: NVIDIA low-latency optimized mode";
+            return true;
+        }
+    }
+    return false;
+}
+
 bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capabilities)
 {
     LastSurfaceQueryResult = VK_ERROR_INITIALIZATION_FAILED;
@@ -422,6 +471,7 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
     TimingResultsQueryEnabled = false;
     PresentStageQueries = 0;
     TargetPresentStage = 0;
+    NvLowLatencyOptimizedPresentModes.clear();
 
     const VulkanPresentPacerDispatch& fns = Dispatch;
     if (Caps2Available)
@@ -432,6 +482,8 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
         wait2.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_WAIT_2_KHR;
         VkPresentTimingSurfaceCapabilitiesEXT timing{};
         timing.sType = VK_STRUCTURE_TYPE_PRESENT_TIMING_SURFACE_CAPABILITIES_EXT;
+        VkLatencySurfaceCapabilitiesNV latency{};
+        latency.sType = VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV;
 
         void* chain = nullptr;
         if (PresentTimingDevice)
@@ -449,6 +501,14 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
             id2.pNext = chain;
             chain = &id2;
         }
+        if (NvidiaLowLatency2Device)
+        {
+            // VK_NV_low_latency2 exposes its optimized present modes through
+            // the same surface-capabilities2 query. The count pass is chained
+            // only when the extension was actually enabled on this device.
+            latency.pNext = chain;
+            chain = &latency;
+        }
 
         VkPhysicalDeviceSurfaceInfo2KHR surfaceInfo{};
         surfaceInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR;
@@ -456,12 +516,56 @@ bool VulkanPresentPacer::QuerySurfaceCapabilities(VkSurfaceCapabilitiesKHR& capa
         VkSurfaceCapabilities2KHR caps2{};
         caps2.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
         caps2.pNext = chain;
-        const VkResult result = fns.GetPhysicalDeviceSurfaceCapabilities2KHR(
-            PhysicalDeviceHandle, &surfaceInfo, &caps2);
+        const auto queryCapabilities2 = [&]() {
+            caps2.pNext = chain;
+            return fns.GetPhysicalDeviceSurfaceCapabilities2KHR(
+                PhysicalDeviceHandle, &surfaceInfo, &caps2);
+        };
+        VkResult result = queryCapabilities2();
         if (result == VK_SUCCESS)
         {
             LastSurfaceQueryResult = VK_SUCCESS;
             capabilities = caps2.surfaceCapabilities;
+
+            if (NvidiaLowLatency2Device && latency.presentModeCount > 0)
+            {
+                // Pass 2 supplies the driver's mode array. A bounded retry
+                // handles a concurrent capability change reported as
+                // VK_INCOMPLETE without ever moving this query into the frame
+                // path.
+                NvLowLatencyOptimizedPresentModes.resize(latency.presentModeCount);
+                latency.pPresentModes = NvLowLatencyOptimizedPresentModes.data();
+                result = queryCapabilities2();
+                if (result == VK_INCOMPLETE
+                    && latency.presentModeCount > NvLowLatencyOptimizedPresentModes.size())
+                {
+                    NvLowLatencyOptimizedPresentModes.resize(latency.presentModeCount);
+                    latency.pPresentModes = NvLowLatencyOptimizedPresentModes.data();
+                    result = queryCapabilities2();
+                }
+
+                if (result == VK_SUCCESS || result == VK_INCOMPLETE)
+                {
+                    NvLowLatencyOptimizedPresentModes.resize(std::min<u32>(
+                        latency.presentModeCount,
+                        static_cast<u32>(NvLowLatencyOptimizedPresentModes.size())));
+                }
+                else
+                {
+                    if (result == VK_ERROR_SURFACE_LOST_KHR)
+                    {
+                        LastSurfaceQueryResult = result;
+                        return false;
+                    }
+                    Platform::Log(
+                        Platform::LogLevel::Warn,
+                        "[Vulkan] VkLatencySurfaceCapabilitiesNV query failed (%s); "
+                        "falling back to generic present-mode selection\n",
+                        Vk::FormatResult(result).c_str());
+                    NvLowLatencyOptimizedPresentModes.clear();
+                }
+            }
+
             PresentId2Surface = PresentId2Device && id2.presentId2Supported == VK_TRUE;
             // VK_KHR_present_wait has no surface capability structure. A
             // successful surface query is the lifecycle boundary at which a
@@ -1144,7 +1248,14 @@ u64 VulkanPresentPacer::PreparePresent(
         && Dispatch.WaitForPresentKHR != nullptr;
     if (!PresentId2Surface && backend != VulkanPresentTimingBackend::GoogleDisplayTiming
         && !legacyWaitCurrent)
+    {
+        // The Reflex presenter owns the VK_KHR_present_id node when the generic
+        // pacer has no optional ID/timing policy to attach. Preserve its
+        // externally-owned logical ID in the metadata so accepted-present
+        // telemetry and NotifyPresentResult still describe the actual ID.
+        metadata.LogicalId = preferredId;
         return 0;
+    }
 
     metadata.LogicalId = preferredId != 0 ? preferredId : LastSubmittedId + 1;
     LastSubmittedId = metadata.LogicalId;

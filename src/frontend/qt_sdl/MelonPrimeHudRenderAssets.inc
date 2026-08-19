@@ -20,6 +20,53 @@ static QImage loadSvgToHeight(const char* path, int h)
     return img.isNull() ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 }
 
+static QImage loadRasterToHeight(const char* path, int h)
+{
+    if (h <= 0)
+        return QImage();
+    QImageReader reader(QString::fromLatin1(path));
+    QSize sz = reader.size();
+    if (sz.isEmpty())
+        sz = QSize(h, h);
+    const int w = qMax(1, sz.width() * h / qMax(1, sz.height()));
+    QImage img = reader.read();
+    if (!img.isNull() && img.size() != QSize(w, h))
+        img = img.scaled(QSize(w, h), Qt::IgnoreAspectRatio, Qt::FastTransformation);
+    return img.isNull() ? img : img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+}
+
+static void EnsureScoreboardAssetsLoaded(const ScoreboardHudConfig& scoreboard,
+                                         float iconScale)
+{
+    const int hunterH = scoreboard.hunterIconHeight > 0
+        ? std::max(1, static_cast<int>(std::lround(scoreboard.hunterIconHeight * iconScale)))
+        : 0;
+    const int starsH = scoreboard.starsHeight > 0
+        ? std::max(1, static_cast<int>(std::lround(scoreboard.starsHeight * iconScale)))
+        : 0;
+    if (s_scoreboardHunterIconHeight != hunterH) {
+        static const char* kHunterPaths[7] = {
+            ":/mph-scoreboard-hunter-0", ":/mph-scoreboard-hunter-1",
+            ":/mph-scoreboard-hunter-2", ":/mph-scoreboard-hunter-3",
+            ":/mph-scoreboard-hunter-4", ":/mph-scoreboard-hunter-5",
+            ":/mph-scoreboard-hunter-6",
+        };
+        for (int i = 0; i < 7; ++i)
+            s_scoreboardHunterIcons[i] = loadRasterToHeight(kHunterPaths[i], hunterH);
+        s_scoreboardHunterIconHeight = hunterH;
+    }
+    if (s_scoreboardStarsHeight != starsH) {
+        static const char* kStarsPaths[5] = {
+            ":/mph-scoreboard-stars-0", ":/mph-scoreboard-stars-1",
+            ":/mph-scoreboard-stars-2", ":/mph-scoreboard-stars-3",
+            ":/mph-scoreboard-stars-4",
+        };
+        for (int i = 0; i < 5; ++i)
+            s_scoreboardStars[i] = loadRasterToHeight(kStarsPaths[i], starsH);
+        s_scoreboardStarsHeight = starsH;
+    }
+}
+
 static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor& overlayColor)
 {
     const int idx = (bombs >= 0 && bombs <= 3) ? bombs : 0;

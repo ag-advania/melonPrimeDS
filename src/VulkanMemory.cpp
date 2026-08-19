@@ -33,7 +33,11 @@ namespace
 // implicitly unmaps, but doing it explicitly keeps the tracked pointer honest
 // and makes a use-after-free crash land on a null pointer instead of on memory
 // the driver has recycled.
-void FreeAllocation(const DeviceDispatch& fns, VkDevice device, DeviceAllocation& allocation) noexcept
+void FreeAllocation(
+    const VulkanDevice* owner,
+    const DeviceDispatch& fns,
+    VkDevice device,
+    DeviceAllocation& allocation) noexcept
 {
     if (allocation.Memory == VK_NULL_HANDLE)
         return;
@@ -45,6 +49,8 @@ void FreeAllocation(const DeviceDispatch& fns, VkDevice device, DeviceAllocation
     }
 
     fns.FreeMemory(device, allocation.Memory, nullptr);
+    if (owner)
+        owner->ReleaseMemoryAllocation(allocation.TypeIndex, allocation.Size);
     allocation = DeviceAllocation{};
 }
 
@@ -75,6 +81,9 @@ bool AllocateFor(
         return false;
     }
 
+    if (!device.ReserveMemoryAllocation(typeIndex, requirements.size, debugName))
+        return false;
+
     VkMemoryAllocateInfo info{};
     info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     info.allocationSize = requirements.size;
@@ -84,6 +93,7 @@ bool AllocateFor(
     const VkResult res = device.Fns().AllocateMemory(device.GetHandle(), &info, nullptr, &memory);
     if (res != VK_SUCCESS)
     {
+        device.ReleaseMemoryAllocation(typeIndex, requirements.size);
         const u32 heapIndex = memProps.memoryTypes[typeIndex].heapIndex;
         Platform::Log(Platform::LogLevel::Error,
             "[Vulkan] %s: vkAllocateMemory failed for %.1f MiB from memory type %u "
@@ -314,7 +324,7 @@ void Buffer::Destroy()
         Handle = VK_NULL_HANDLE;
     }
 
-    FreeAllocation(fns, device, Allocation);
+    FreeAllocation(Device, fns, device, Allocation);
 
     Size = 0;
     Device = nullptr;
@@ -635,7 +645,7 @@ void Image::Destroy()
         Handle = VK_NULL_HANDLE;
     }
 
-    FreeAllocation(fns, device, Allocation);
+    FreeAllocation(Device, fns, device, Allocation);
 
     Format = VK_FORMAT_UNDEFINED;
     Width = 0;

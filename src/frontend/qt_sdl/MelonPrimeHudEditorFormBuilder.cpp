@@ -2,6 +2,7 @@
 
 #include "Config.h"
 #include "MelonPrimeColorDialogPrefs.h"
+#include "MelonPrimeHudEditorFormLayout.h"
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeLocalization.h"
 
@@ -53,7 +54,7 @@ void UpdateColorButton(QPushButton& button, int r, int g, int b)
     const QString colorName = color.name();
     button.setMinimumWidth(kColorButtonWidth);
     button.setStyleSheet(QStringLiteral(
-        "font-size: 9px; color: %1; background-color: %2; border: 1px solid #888;"
+        "color: %1; background-color: %2; border: 1px solid #888;"
         "min-width: %3px; min-height: 16px; padding: 1px 4px;")
         .arg(textColor, colorName)
         .arg(kColorButtonWidth));
@@ -68,7 +69,8 @@ void InvalidateHudConfigCache(MelonPrime::CustomHudConfigState& hudConfig)
 void AppendLabeledRow(QFormLayout& form, QList<QWidget*>& rows,
                       const QString& label, QWidget& widget)
 {
-    form.addRow(UiText::Tr(label), &widget);
+    auto* labelWidget = CreateTranslatedFormLabel(form, UiText::Tr(label));
+    form.addRow(labelWidget, &widget);
     rows.append(&widget);
 }
 
@@ -116,9 +118,6 @@ QWidget* AddBoolRadioRow(WidgetFactoryContext& ctx,
     hlay->setContentsMargins(0, 0, 0, 0);
     hlay->setSpacing(6);
 
-    auto* rowLabel = new QLabel(UiText::Tr(label), container);
-    rowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-
     auto* on = new QRadioButton(QStringLiteral("ON"), container);
     auto* off = new QRadioButton(QStringLiteral("OFF"), container);
     on->setMinimumWidth(kRadioOnWidth);
@@ -142,12 +141,10 @@ QWidget* AddBoolRadioRow(WidgetFactoryContext& ctx,
             SetBoolIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, false);
         });
 
-    hlay->addWidget(rowLabel, 1);
     hlay->addWidget(on, 0);
     hlay->addWidget(off, 0);
 
-    ctx.form.addRow(container);
-    ctx.rows.append(container);
+    AppendLabeledRow(ctx.form, ctx.rows, label, *container);
     return container;
 }
 
@@ -231,8 +228,7 @@ QSlider* AddOpacitySliderRow(WidgetFactoryContext& ctx,
             SetDoubleIfEditing(ctx.hudConfig, ctx.cfg, ctx.populating, k, v / 100.0);
         });
 
-    ctx.form.addRow(UiText::Tr(label), container);
-    ctx.rows.append(container);
+    AppendLabeledRow(ctx.form, ctx.rows, label, *container);
     return slider;
 }
 
@@ -336,8 +332,7 @@ void AddSubColorRow(WidgetFactoryContext& ctx,
         PickAndApplyColor(ctx.hudConfig, ctx.parent, ctx.cfg, *btn, kR, kG, kB);
     });
 
-    ctx.form.addRow(UiText::Tr(label), container);
-    ctx.rows.append(container);
+    AppendLabeledRow(ctx.form, ctx.rows, label, *container);
 }
 
 void AddColorOverlayRow(WidgetFactoryContext& ctx,
@@ -348,9 +343,6 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
     auto* hlay = new QHBoxLayout(container);
     hlay->setContentsMargins(0, 0, 0, 0);
     hlay->setSpacing(4);
-
-    auto* rowLabel = new QLabel(UiText::Tr(label), container);
-    rowLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
     auto* on = new QRadioButton(QStringLiteral("ON"), container);
     auto* off = new QRadioButton(QStringLiteral("OFF"), container);
@@ -367,10 +359,9 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
     UpdateColorButton(*btn, ctx.cfg.GetInt(keyR), ctx.cfg.GetInt(keyG), ctx.cfg.GetInt(keyB));
     btn->setEnabled(enabled);
 
-    hlay->addWidget(rowLabel, 1);
     hlay->addWidget(on, 0);
     hlay->addWidget(off, 0);
-    hlay->addWidget(btn, 1);
+    hlay->addWidget(btn, 0);
 
     std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
     QObject::connect(on, &QRadioButton::toggled, &ctx.signalReceiver, [ctx, btn, kE](bool checked) {
@@ -389,8 +380,7 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
         PickAndApplyColor(ctx.hudConfig, ctx.parent, ctx.cfg, *btn, kR, kG, kB);
     });
 
-    ctx.form.addRow(container);
-    ctx.rows.append(container);
+    AppendLabeledRow(ctx.form, ctx.rows, label, *container);
 }
 
 } // namespace MelonPrime::HudEditorForm

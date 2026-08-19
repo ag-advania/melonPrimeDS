@@ -637,6 +637,16 @@ bool LoadDeviceDispatch(
         MELONPRIME_VK_LOAD_DEVICE(AntiLagUpdateAMD,             vkAntiLagUpdateAMD);
     }
 
+    if (ExtensionEnabled(enabledExtensions, VK_EXT_DEVICE_FAULT_EXTENSION_NAME))
+    {
+        // Device fault reporting is diagnostic-only. A driver that exposes the
+        // extension but fails to resolve the command must not make the normal
+        // renderer unavailable; ReportDeviceLost() will log that diagnostics
+        // are unavailable and retain the existing failure path.
+        out.GetDeviceFaultInfoEXT = reinterpret_cast<PFN_vkGetDeviceFaultInfoEXT>(
+            get("vkGetDeviceFaultInfoEXT"));
+    }
+
     #undef MELONPRIME_VK_LOAD_DEVICE
 
     // VK_EXT_debug_utils is an *instance* extension whose device-level

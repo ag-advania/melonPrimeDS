@@ -26,6 +26,17 @@ Inspector の妥当性を「確認済み」と表現しません。XeLL の既�
    高速化・低速化、ROM終了・再起動を各1回行う。
 8. Inspector のキャプチャとアプリログを同じ試行名で保存する。
 
+## Present marker の cleanup 契約
+
+実際の `PresentStart` / `PresentEnd` は、production の DXGI Present 呼び出しを
+囲む `BeginIntelXeLLPresent()` / `EndIntelXeLLPresent()` だけが発行する。
+`FinishFrame()` はフレームが途中終了した場合の cleanup であり、実際に開かれた
+Present、Render Submit、Simulation span だけを閉じる。Input sample や Present
+span を後から合成してはならない。
+
+この契約は `tools/testing/xell-state-machine-tests.cpp` のFake APIテストで、通常
+フレーム、Present未到達、BeginFrame直後の中断、PresentStart後のcleanupを検証する。
+
 比較ポリシーは次の5通りです。
 
 | ポリシー | ホストリミッター | DXGI待機 | XeLL frame cap |

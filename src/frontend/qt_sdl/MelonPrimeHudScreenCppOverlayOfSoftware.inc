@@ -31,27 +31,82 @@
             const int topOutW = std::max(1, fullW);
             const int topOutH = std::max(1, fullH);
 
-            // OPT-DR1: Track dirty rect to limit clear + composite to HUD area only.
-            MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, s_hudPrevDirtyS);
+            const HudVisualFrameIdentity visualIdentity =
+                MelonPrimeHud_ProbeVisualFrameIdentity(emuInstance);
+            MelonPrimePerf::CountHudVisualIdentityProbe();
+            const bool sameGameFrame = m_hudVisualFrameValid
+                && MelonPrimeHud_IsSameVisualGameFrame(
+                    visualIdentity, m_hudVisualFrameKey);
+            HudVisualFrameKey visualKey{};
+            if (sameGameFrame) {
+                visualKey = MelonPrimeHud_MakeVisualFrameKey(
+                    visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                    topOutW, topOutH, topStretchX, hudScale,
+                    m_hudOriginX, m_hudOriginY,
+                    m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+                MelonPrimePerf::CountHudVisualStampCheck();
+            }
+            const bool reuseVisual = m_hudVisualFrameValid
+                && sameGameFrame
+                && visualKey == m_hudVisualFrameKey;
+            m_hudVisualFrameWasReused = reuseVisual;
+            QRect curDirty = s_hudPrevDirtyS;
+            if (reuseVisual) {
+                // The retained QImage is still composited over the newly
+                // painted game frame, but no clear, painter, HUD state read,
+                // region hash, or CPU raster work is repeated.
+                MelonPrimePerf::CountHudVisualReuse();
+            } else {
+                MelonPrimePerf::CountHudVisualRender();
+                // OPT-DR1: Track dirty rect to limit clear + composite to HUD area only.
+                MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, s_hudPrevDirtyS);
 
-            // Per-frame painter (must end before reading image)
-            const QRect curDirty = MelonPrimeHud_RenderTopOverlay(
-                emuInstance, instcfg, mp,
-                Overlay[0], overlayFont,
-                topStretchX, hudScale,
-                m_hudOriginX, m_hudOriginY,
-                m_radarEnable ? MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE : nullptr,
-                &Overlay[1], m_radarSrcRadius);
+                // Per-frame painter (must end before reading image)
+                curDirty = MelonPrimeHud_RenderTopOverlay(
+                    emuInstance, instcfg, mp,
+                    Overlay[0], overlayFont,
+                    topStretchX, hudScale,
+                    m_hudOriginX, m_hudOriginY,
+                    m_radarEnable ? MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE : nullptr,
+                    &Overlay[1], m_radarSrcRadius);
+                s_hudPrevDirtyS = curDirty;
+                if (!sameGameFrame) {
+                    visualKey = MelonPrimeHud_MakeVisualFrameKey(
+                        visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+                        topOutW, topOutH, topStretchX, hudScale,
+                        m_hudOriginX, m_hudOriginY,
+                        m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+                }
+                MelonPrimePerf::CountHudVisualStampCommit();
+                m_hudVisualFrameKey = visualKey;
+                m_hudVisualFrameValid = true;
+            }
 
             // Composite only the dirty region (prev cleared + curr drawn).
-            const QRect compositeRect = s_hudPrevDirtyS.united(curDirty);
+            const QRect compositeRect = reuseVisual
+                ? s_hudPrevDirtyS : s_hudPrevDirtyS.united(curDirty);
+#if defined(MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE) \
+    && MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
+            // DX12 retains both this target and the uploaded HUD layer.  When
+            // the visual frame is reused, the target already contains the
+            // exact retained HUD pixels, so do not copy Overlay[0] into it a
+            // second time. Native Software has no retained target contract
+            // and intentionally takes the normal branch below.
+            if (!reuseVisual && !compositeRect.isEmpty()) {
+#else
             if (!compositeRect.isEmpty()) {
+#endif
                 painter.resetTransform();
                 painter.drawImage(QPoint(compositeRect.x(), compositeRect.y()),
                                   Overlay[0], compositeRect);
             }
-            s_hudPrevDirtyS = curDirty;
+        } else {
+            m_hudVisualFrameValid = false;
+            m_hudVisualFrameWasReused = false;
         }
+    } else {
+        m_hudVisualFrameValid = false;
+        m_hudVisualFrameWasReused = false;
     }
 }
 #endif

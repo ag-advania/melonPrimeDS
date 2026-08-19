@@ -200,7 +200,8 @@ public:
         int reflexMode,
         bool antiLag2Enabled,
         bool normalSpeed,
-        melonDS::u64 targetFrameIntervalNs);
+        melonDS::u64 targetFrameIntervalNs,
+        melonDS::u64 logicalFrameId);
     void markVulkanReflexInputSample();
     void markVulkanReflexSimulationStart();
     void markVulkanReflexSimulationEnd();

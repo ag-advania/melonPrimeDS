@@ -48,6 +48,44 @@ protected:
         return static_cast<int>(p.fontMetrics().horizontalAdvance(str) * 256.0f / width());
     }
 
+    // Settings previews do not have a game-output resolution from which to
+    // derive the runtime's integer auto-scale. Normalize each cap against its
+    // schema default so the default preview stays unchanged while every cap
+    // value in the 100-800% range remains visible in the preview. Runtime
+    // rendering still derives the actual factor from the output hudScale.
+    static float previewAutoScale(Config::Table& c,
+                                  const char* categoryCapKey,
+                                  const char* additionalCapKey = nullptr,
+                                  int categoryDefaultCap = 800,
+                                  int additionalDefaultCap = 800)
+    {
+        if (!c.GetBool(MP_HUD_PROP_KEY_HudAutoScaleEnable))
+            return 1.0f;
+        constexpr int kDefaultGlobalCap = 800;
+        const int globalCap = qBound(100, c.GetInt(MP_HUD_PROP_KEY_HudAutoScaleCap), 800);
+        const int categoryCap = qBound(100, c.GetInt(categoryCapKey), 800);
+        float scale = qMin(globalCap / static_cast<float>(kDefaultGlobalCap),
+                           categoryCap / static_cast<float>(qMax(1, categoryDefaultCap)));
+        if (additionalCapKey)
+            scale = qMin(scale,
+                         qBound(100, c.GetInt(additionalCapKey), 800)
+                         / static_cast<float>(qMax(1, additionalDefaultCap)));
+        return scale;
+    }
+
+    QFont previewHudFont(Config::Table& c, const char* categoryCapKey,
+                         const char* additionalCapKey = nullptr,
+                         int categoryDefaultCap = 800,
+                         int additionalDefaultCap = 800) const
+    {
+        QFont font = getMphHudFont(c);
+        const float autoScale = previewAutoScale(
+            c, categoryCapKey, additionalCapKey,
+            categoryDefaultCap, additionalDefaultCap);
+        font.setPixelSize(qMax(1, qRound(font.pixelSize() * autoScale)));
+        return font;
+    }
+
     // Alignment-adjusted X in DS-space: 0=left, 1=center, 2=right
     int alignedX(int anchorX, int align, int textW) const {
         return MelonPrime::HudGeometry::AlignedTextXInt(anchorX, align, textW);
@@ -115,6 +153,342 @@ protected:
     }
 };
 
+class ScoreboardPreviewWidget : public HudPreviewWidget
+{
+public:
+    using HudPreviewWidget::HudPreviewWidget;
+
+protected:
+    struct PreviewRow {
+        const char* name;
+        int hunter;
+        int rank;
+        int stars;
+        int points;
+        int deaths;
+    };
+
+    static QImage loadRasterToHeight(const char* path, int height)
+    {
+        if (height <= 0)
+            return QImage();
+        QImageReader reader(QString::fromLatin1(path));
+        const QSize sourceSize = reader.size();
+        const QSize fallbackSize = sourceSize.isEmpty()
+            ? QSize(height, height) : sourceSize;
+        const int width = qMax(1, fallbackSize.width() * height
+                                   / qMax(1, fallbackSize.height()));
+        QImage image = reader.read();
+        if (!image.isNull() && image.size() != QSize(width, height))
+            image = image.scaled(QSize(width, height), Qt::IgnoreAspectRatio,
+                                 Qt::FastTransformation);
+        return image.isNull()
+            ? image : image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    }
+
+    static const QImage& hunterIcon(int index, int height)
+    {
+        static QImage icons[7];
+        static int cachedHeight = -1;
+        if (cachedHeight != height) {
+            static const char* const paths[7] = {
+                ":/mph-scoreboard-hunter-0", ":/mph-scoreboard-hunter-1",
+                ":/mph-scoreboard-hunter-2", ":/mph-scoreboard-hunter-3",
+                ":/mph-scoreboard-hunter-4", ":/mph-scoreboard-hunter-5",
+                ":/mph-scoreboard-hunter-6",
+            };
+            for (int i = 0; i < 7; ++i)
+                icons[i] = loadRasterToHeight(paths[i], height);
+            cachedHeight = height;
+        }
+        return icons[qBound(0, index, 6)];
+    }
+
+    static const QImage& starsImage(int index, int height)
+    {
+        static QImage images[5];
+        static int cachedHeight = -1;
+        if (cachedHeight != height) {
+            static const char* const paths[5] = {
+                ":/mph-scoreboard-stars-0", ":/mph-scoreboard-stars-1",
+                ":/mph-scoreboard-stars-2", ":/mph-scoreboard-stars-3",
+                ":/mph-scoreboard-stars-4",
+            };
+            for (int i = 0; i < 5; ++i)
+                images[i] = loadRasterToHeight(paths[i], height);
+            cachedHeight = height;
+        }
+        return images[qBound(0, index, 4)];
+    }
+
+    static int imageWidthDS(const QImage& image)
+    {
+        return image.isNull() ? 0 : image.width();
+    }
+
+    static void drawCellText(QPainter& p, const QRectF& rect,
+                             const QString& text, const QColor& color,
+                             Qt::Alignment alignment,
+                             const QColor& outlineColor, float outlineOpacity,
+                             int outlineThickness, float scoreboardScale)
+    {
+        const QString display = text;
+        const auto flags = alignment | Qt::AlignVCenter | Qt::TextSingleLine;
+        const float radius = outlineOpacity > 0.0f
+            ? qMax(0.0f, outlineThickness * scoreboardScale) : 0.0f;
+        if (radius > 0.0f) {
+            const QFontMetrics fm(p.font());
+            const Qt::Alignment horizontal = alignment & Qt::AlignHorizontal_Mask;
+            const qreal advance = fm.horizontalAdvance(display);
+            qreal textX = rect.left();
+            if (horizontal == Qt::AlignRight)
+                textX = rect.right() - advance;
+            else if (horizontal == Qt::AlignHCenter)
+                textX = rect.center().x() - advance * 0.5;
+            const qreal baseline = rect.top()
+                + (rect.height() - fm.height()) * 0.5 + fm.ascent();
+            QPainterPath path;
+            path.addText(QPointF(textX, baseline), p.font(), display);
+            QColor oc = outlineColor;
+            oc.setAlphaF(qBound(0.0f, outlineOpacity, 1.0f));
+            QPen pen(oc, radius * 2.0f);
+            pen.setJoinStyle(Qt::RoundJoin);
+            p.setPen(pen);
+            p.setBrush(Qt::NoBrush);
+            p.drawPath(path);
+        }
+        p.setPen(color);
+        p.setBrush(Qt::NoBrush);
+        p.drawText(rect, flags, display);
+    }
+
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        QRect r = rect();
+        drawBackground(p, r);
+
+        auto& c = cfg();
+        if (!c.GetBool(MP_HUD_PROP_KEY_HudScoreboardShow)) {
+            p.setPen(QColor(130, 130, 150));
+            p.drawText(r, Qt::AlignCenter, MelonPrime::UiText::Tr("Scoreboard OFF"));
+            return;
+        }
+
+        setupDsTransform(p);
+        const float assetAutoScale = previewAutoScale(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapIcons,
+            MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard);
+        const float scoreboardScale = qBound(
+            0.1f, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardScale) / 100.0f, 8.0f);
+        const float scoreboardTextScale = qBound(
+            0.1f, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardTextScale) / 100.0f, 8.0f);
+        const bool rankShow = c.GetBool(MP_HUD_PROP_KEY_HudScoreboardRankShow);
+        QFont boardFont = previewHudFont(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapText,
+            MP_HUD_PROP_KEY_HudAutoScaleCapScoreboard, 500, 800);
+        int boardFontPx = qMax(1, qRound(
+            boardFont.pixelSize() * scoreboardTextScale * scoreboardScale));
+        boardFont.setPixelSize(boardFontPx);
+        p.setFont(boardFont);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, false);
+
+        static const PreviewRow rows[4] = {
+            {"COM-SPI", 0, 1, 0, 12, 0},
+            {"ZECTION_6V", 1, 2, 4, 9, 1},
+            {"COM-WEA", 2, 3, 1, 7, 2},
+            {"TRACE", 3, 4, 2, 4, 3},
+        };
+
+        const auto scaleDs = [scoreboardScale](int value) {
+            return qMax(0, qRound(value * scoreboardScale));
+        };
+        const int rowSpacing = scaleDs(
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardRowSpacing), 16));
+        const int columnSpacing = scaleDs(
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardColumnSpacing), 32));
+        const int rightPadding = scaleDs(
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardRightPadding), 32));
+        const int hunterH = qMax(0, qRound(
+            c.GetInt(MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight)
+            * assetAutoScale * scoreboardScale));
+        const int starsH = qMax(0, qRound(
+            c.GetInt(MP_HUD_PROP_KEY_HudScoreboardStarsHeight)
+            * assetAutoScale * scoreboardScale));
+        const int headerInset = qMax(1, scaleDs(1));
+        const int fontHeightDS = qMax(1, qRound(
+            p.fontMetrics().height() * 192.0f / qMax(1, height())));
+        const int lineHeight = fontHeightDS + 1;
+        const int nameSplitHeight = (lineHeight * 100 + 57) / 58;
+        const int rankSplitHeight = (lineHeight * 100 + 41) / 42;
+        const int headerHeight = fontHeightDS + headerInset * 2 + 1;
+        const int autoRowHeight = qMax(
+            qMax(nameSplitHeight, rankSplitHeight),
+            qMax(headerHeight, qMax(hunterH, starsH)));
+        // Keep the established default spacing, but let font/image metrics
+        // override it when a small scoreboard scale would clip two lines.
+        const int rowH = qMax(autoRowHeight, scaleDs(22));
+
+        const QString playerHeader = MelonPrime::UiText::Tr("Player");
+        const QString pointsHeader = MelonPrime::UiText::Tr("Points");
+        const QString deathsHeader = MelonPrime::UiText::Tr("Deaths");
+        int playerW = textWidthDS(p, playerHeader);
+        int pointsW = textWidthDS(p, pointsHeader);
+        int deathsW = textWidthDS(p, deathsHeader);
+        int portraitW = qMax(scaleDs(20), hunterH + scaleDs(4));
+        for (const PreviewRow& row : rows) {
+            playerW = qMax(playerW, textWidthDS(p, QString::fromLatin1(row.name)));
+            const QString rankLabel = QStringLiteral("%1 %2")
+                .arg(MelonPrime::UiText::Tr("Rank")).arg(row.rank);
+            int rankLineW = rankShow ? textWidthDS(p, rankLabel) : 0;
+            const QImage& stars = starsImage(row.stars, starsH);
+            rankLineW += stars.isNull() ? 0
+                : (rankShow ? scaleDs(3) : 0) + imageWidthDS(stars);
+            playerW = qMax(playerW, rankLineW);
+            const QImage& hunter = hunterIcon(row.hunter, hunterH);
+            portraitW = qMax(portraitW, hunter.isNull() ? 0 : hunter.width() + scaleDs(2));
+            pointsW = qMax(pointsW, textWidthDS(p, QString::number(row.points)));
+            deathsW = qMax(deathsW, textWidthDS(p, QString::number(row.deaths)));
+        }
+        playerW = qMax(1, playerW + scaleDs(2));
+        pointsW = qMax(scaleDs(20), pointsW + scaleDs(2));
+        deathsW = qMax(scaleDs(20), deathsW + scaleDs(2));
+
+        const int fixedW = portraitW + scaleDs(3) + pointsW + deathsW
+                         + columnSpacing * 2 + rightPadding;
+        const int naturalW = fixedW + playerW;
+        const int panelW = qMax(fixedW + 1, qMin(256, naturalW));
+        playerW = qMax(1, panelW - fixedW);
+        const int panelH = rowH + 4 * (rowH + rowSpacing) + scaleDs(4);
+
+        int panelX = 0;
+        int panelY = 0;
+        const QPoint anchor = dsPos(
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardAnchor), 8),
+            c.GetInt(MP_HUD_PROP_KEY_HudScoreboardX),
+            c.GetInt(MP_HUD_PROP_KEY_HudScoreboardY));
+        panelX = anchor.x();
+        panelY = anchor.y();
+        MelonPrime::HudGeometry::ApplyRectAnchor(
+            panelX, panelY, panelW, panelH,
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardAnchor), 8) % 3,
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardAnchor), 8) / 3);
+
+        const int nameX = panelX + portraitW + scaleDs(3);
+        const int pointsX = nameX + playerW + columnSpacing;
+        const int deathsX = pointsX + pointsW + columnSpacing;
+
+        QColor background = readColor(
+            MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR,
+            MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG,
+            MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB,
+            static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity)));
+        const float panelOpacity = qBound(
+            0.0f, static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudScoreboardOpacity)), 1.0f);
+        p.setOpacity(panelOpacity);
+        p.fillRect(QRectF(panelX, panelY, panelW, panelH), background);
+
+        const QColor headerColor = readColor(
+            MP_HUD_PROP_KEY_HudScoreboardHeaderColorR,
+            MP_HUD_PROP_KEY_HudScoreboardHeaderColorG,
+            MP_HUD_PROP_KEY_HudScoreboardHeaderColorB);
+        const QColor outlineColor = readColor(
+            MP_HUD_PROP_KEY_HudScoreboardOutlineColorR,
+            MP_HUD_PROP_KEY_HudScoreboardOutlineColorG,
+            MP_HUD_PROP_KEY_HudScoreboardOutlineColorB);
+        const float outlineOpacity = qBound(
+            0.0f, static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudScoreboardOutlineOpacity)), 1.0f);
+        const int outlineThickness = qMax(
+            1, c.GetInt(MP_HUD_PROP_KEY_HudScoreboardOutlineThickness));
+        const bool outlineEnabled = c.GetBool(MP_HUD_PROP_KEY_HudScoreboardOutline);
+        const QColor effectiveOutlineColor = c.GetBool(MP_HUD_PROP_KEY_HudGlobalOutline)
+            ? readColor(MP_HUD_PROP_KEY_HudGlobalOutlineColorR,
+                        MP_HUD_PROP_KEY_HudGlobalOutlineColorG,
+                        MP_HUD_PROP_KEY_HudGlobalOutlineColorB)
+            : outlineColor;
+        const float effectiveOutlineOpacity = c.GetBool(MP_HUD_PROP_KEY_HudGlobalOutline)
+            ? qBound(0.0f, static_cast<float>(c.GetDouble(MP_HUD_PROP_KEY_HudGlobalOutlineOpacity)), 1.0f)
+            : outlineOpacity;
+        const int effectiveOutlineThickness = c.GetBool(MP_HUD_PROP_KEY_HudGlobalOutline)
+            ? qMax(1, c.GetInt(MP_HUD_PROP_KEY_HudGlobalOutlineThickness))
+            : outlineThickness;
+        const bool effectiveOutlineEnabled = c.GetBool(MP_HUD_PROP_KEY_HudGlobalOutline)
+            || outlineEnabled;
+        const int headerCellHeight = qMax(1, rowH - headerInset * 2);
+        const QRectF playerHeaderRect(nameX, panelY + headerInset, playerW, headerCellHeight);
+        const QRectF pointsHeaderRect(pointsX, panelY + headerInset, pointsW, headerCellHeight);
+        const QRectF deathsHeaderRect(deathsX, panelY + headerInset, deathsW, headerCellHeight);
+        drawCellText(p, playerHeaderRect, playerHeader, headerColor, Qt::AlignLeft,
+                     effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                     effectiveOutlineThickness, scoreboardScale);
+        drawCellText(p, pointsHeaderRect, pointsHeader, headerColor, Qt::AlignRight,
+                     effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                     effectiveOutlineThickness, scoreboardScale);
+        drawCellText(p, deathsHeaderRect, deathsHeader, headerColor, Qt::AlignRight,
+                     effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                     effectiveOutlineThickness, scoreboardScale);
+
+        const QColor textColor = readColor(
+            MP_HUD_PROP_KEY_HudScoreboardTextColorR,
+            MP_HUD_PROP_KEY_HudScoreboardTextColorG,
+            MP_HUD_PROP_KEY_HudScoreboardTextColorB);
+        const QColor localColor = readColor(
+            MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorR,
+            MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorG,
+            MP_HUD_PROP_KEY_HudScoreboardLocalPlayerColorB);
+        for (int i = 0; i < 4; ++i) {
+            const PreviewRow& row = rows[i];
+            const int y = panelY + rowH + i * (rowH + rowSpacing);
+            const QRectF nameRect(nameX, y, playerW, rowH);
+            const QRectF pointsRect(pointsX, y, pointsW, rowH);
+            const QRectF deathsRect(deathsX, y, deathsW, rowH);
+            const QColor& rowColor = (i == 0) ? localColor : textColor;
+
+            if (hunterH > 0) {
+                const QImage& hunter = hunterIcon(row.hunter, hunterH);
+                if (!hunter.isNull())
+                    p.drawImage(QRectF(panelX + headerInset, y + (rowH - hunter.height()) * 0.5,
+                                       hunter.width(), hunter.height()), hunter);
+            }
+
+            drawCellText(p, QRectF(nameRect.x(), nameRect.y(), nameRect.width(), rowH * 0.58),
+                         QString::fromLatin1(row.name), rowColor, Qt::AlignLeft,
+                         effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                         effectiveOutlineThickness, scoreboardScale);
+            const QString rankLabel = QStringLiteral("%1 %2")
+                .arg(MelonPrime::UiText::Tr("Rank")).arg(row.rank);
+            const QRectF rankRect(nameRect.x(), y + rowH * 0.58,
+                                  nameRect.width(), rowH * 0.42);
+            if (rankShow)
+                drawCellText(p, rankRect, rankLabel, rowColor, Qt::AlignLeft,
+                             effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                             effectiveOutlineThickness, scoreboardScale);
+            if (starsH > 0) {
+                const QImage& stars = starsImage(row.stars, starsH);
+                if (!stars.isNull()) {
+                    const int rankW = rankShow ? textWidthDS(p, rankLabel) : 0;
+                    const float starsX = nameX + rankW
+                        + (rankW > 0 ? scaleDs(3) : 0);
+                    const float available = qMax(0.0f,
+                        static_cast<float>(nameRect.right()) - starsX - scaleDs(2));
+                    const float starsW = qMin(static_cast<float>(stars.width()), available);
+                    if (starsW > 0.0f)
+                        p.drawImage(QRectF(starsX,
+                                           rankRect.y() + (rankRect.height() - stars.height()) * 0.5,
+                                           starsW, stars.height()), stars);
+                }
+            }
+            drawCellText(p, pointsRect, QString::number(row.points), rowColor, Qt::AlignRight,
+                         effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                         effectiveOutlineThickness, scoreboardScale);
+            drawCellText(p, deathsRect, QString::number(row.deaths), rowColor, Qt::AlignRight,
+                         effectiveOutlineColor, effectiveOutlineEnabled ? effectiveOutlineOpacity : 0.0f,
+                         effectiveOutlineThickness, scoreboardScale);
+        }
+        p.setOpacity(1.0);
+    }
+};
+
 class CrosshairPreviewWidget : public HudPreviewWidget
 {
 public:
@@ -129,7 +503,10 @@ protected:
         auto& c = cfg();
         // Preview magnification × user Crosshair Scale % (matches the runtime
         // chScale = CrosshairScale/100 applied in LoadCrosshairConfig).
-        const float cs = qMax(100, c.GetInt(MP_HUD_PROP_KEY_CrosshairScale)) / 100.0f;
+        const float autoScale = previewAutoScale(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair);
+        const float cs = qMax(100, c.GetInt(MP_HUD_PROP_KEY_CrosshairScale))
+                       / 100.0f * autoScale;
         drawBaseCrosshair(p, r.center().x(), r.center().y(), 2.0f * cs, 1.0f);
     }
 };
@@ -164,9 +541,17 @@ protected:
         }
 
         const double scopeOpacity = qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeOpacity), 100) / 100.0;
-        const int radius    = qBound(4, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeRadius), 1024);
-        const int gap       = qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeGap), 64);
-        const int thickness = qBound(1, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeThickness), 12);
+        const float autoScale = previewAutoScale(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapCrosshair);
+        const int radius = qMax(1, qRound(
+            qBound(4, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeRadius), 1024)
+            * autoScale));
+        const int gap = qMax(0, qRound(
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeGap), 64)
+            * autoScale));
+        const int thickness = qMax(1, qRound(
+            qBound(1, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeThickness), 12)
+            * autoScale));
 
         const int cx = r.center().x();
         const int cy = r.center().y();
@@ -177,7 +562,8 @@ protected:
         // Zoom Base Opacity is 0 (base hidden while fully scoped, as in-game), so
         // nothing shows until the user raises it — then it scales by Zoom Base Scale %.
         {
-            const float cs = qMax(100, c.GetInt(MP_HUD_PROP_KEY_CrosshairScale)) / 100.0f;
+            const float cs = qMax(100, c.GetInt(MP_HUD_PROP_KEY_CrosshairScale))
+                           / 100.0f * autoScale;
             const float zoomScale = qBound(10, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScale), 200) / 100.0f;
             const float zoomBaseOpacity = qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomOpacity), 100) / 100.0f;
             drawBaseCrosshair(p, cx, cy, 2.0f * cs * zoomScale, zoomBaseOpacity);
@@ -226,7 +612,9 @@ protected:
             else            p.drawRect(dotRect);
         };
 
-        const int dotSizeDs = qBound(1, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize), 32);
+        const int dotSizeDs = qMax(1, qRound(
+            qBound(1, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotSize), 32)
+            * autoScale));
         const int dDotSize  = qMax(1, static_cast<int>(dotSizeDs * scale + 0.5));
         const double dotOpacity = qBound(0, c.GetInt(MP_HUD_PROP_KEY_CrosshairZoomScopeDotOpacity), 100) / 100.0;
         QColor dotColor = c.GetBool(MP_HUD_PROP_KEY_CrosshairZoomScopeDotCustomColor)
@@ -263,7 +651,12 @@ protected:
 
         auto& c = cfg();
         setupDsTransform(p);
-        p.setFont(getMphHudFont(c));
+        p.setFont(previewHudFont(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapText, nullptr, 500));
+        const float gaugeAutoScale = previewAutoScale(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapGauges);
+        const float iconAutoScale = previewAutoScale(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapIcons);
 
         // ── HP text ──
         {
@@ -277,8 +670,10 @@ protected:
             bool showGauge = c.GetBool(MP_HUD_PROP_KEY_HudHpGauge);
             int mode = showGauge ? c.GetInt(MP_HUD_PROP_KEY_HudHpGaugePosMode) : 0;
             int ori  = c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeOrientation);
-            int glen = c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeLength);
-            int gwid = c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeWidth);
+            int glen = qMax(1, qRound(
+                c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeLength) * gaugeAutoScale));
+            int gwid = qMax(1, qRound(
+                c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeWidth) * gaugeAutoScale));
             int galign = c.GetInt(MP_HUD_PROP_KEY_HudHpGaugeAlign);
 
             int tx, textY;
@@ -322,7 +717,8 @@ protected:
         if (c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconMode) != 0) {
             static QImage s_magmaul;
             static int s_magmaulH = 0;
-            int wantH = c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconHeight);
+            int wantH = qMax(1, qRound(
+                c.GetInt(MP_HUD_PROP_KEY_HudWeaponIconHeight) * iconAutoScale));
             if (s_magmaul.isNull() || s_magmaulH != wantH) {
                 QImageReader rd(QStringLiteral(":/mph-icon-magmaul"));
                 QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(wantH, wantH);
@@ -354,8 +750,10 @@ protected:
             bool showGauge = c.GetBool(MP_HUD_PROP_KEY_HudAmmoGauge);
             int mode = showGauge ? c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugePosMode) : 0;
             int ori  = c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeOrientation);
-            int glen = c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeLength);
-            int gwid = c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeWidth);
+            int glen = qMax(1, qRound(
+                c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeLength) * gaugeAutoScale));
+            int gwid = qMax(1, qRound(
+                c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeWidth) * gaugeAutoScale));
             int galign = c.GetInt(MP_HUD_PROP_KEY_HudAmmoGaugeAlign);
 
             int tx, textY;
@@ -415,7 +813,8 @@ protected:
             static const bool kOwned[9] = { true, true, true, true, true, true, false, false, false };
             const int highlightWeaponId = kOrder[0]; // highlight the first slot
 
-            const int iconH   = qBound(4, c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryIconHeight), 48);
+            const int iconH   = qBound(4, qRound(
+                c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryIconHeight) * iconAutoScale), 48);
             const int spacing = qMax(0, c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventorySpacing));
             const int orient  = c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryOrientation); // 0=horiz 1=vert
             const int align   = c.GetInt(MP_HUD_PROP_KEY_HudWeaponInventoryAlign);        // 0/1/2
@@ -524,7 +923,10 @@ protected:
 
         auto& c = cfg();
         setupDsTransform(p);
-        p.setFont(getMphHudFont(c));
+        p.setFont(previewHudFont(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapText, nullptr, 500));
+        const float iconAutoScale = previewAutoScale(
+            c, MP_HUD_PROP_KEY_HudAutoScaleCapIcons);
 
         // ── Score ──
         if (c.GetBool(MP_HUD_PROP_KEY_HudMatchStatusShow)) {
@@ -577,7 +979,8 @@ protected:
             if (c.GetBool(MP_HUD_PROP_KEY_HudBombLeftIconShow)) {
                 static QImage s_bombIcon;
                 static int s_bombIconH = 0;
-                int wantBH = c.GetInt(MP_HUD_PROP_KEY_HudBombIconHeight);
+                int wantBH = qMax(1, qRound(
+                    c.GetInt(MP_HUD_PROP_KEY_HudBombIconHeight) * iconAutoScale));
                 if (s_bombIcon.isNull() || s_bombIconH != wantBH) {
                     QImageReader rd(QStringLiteral(":/mph-icon-bombs3"));
                     QSize sz = rd.size(); if (sz.isEmpty()) sz = QSize(wantBH, wantBH);
