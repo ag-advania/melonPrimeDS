@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "MelonPrimePerfClock.h"
 #include "Platform.h"
 
 namespace melonDS
@@ -57,8 +58,9 @@ VulkanPresentLatencyCapture::VulkanPresentLatencyCapture()
     // Reserve the whole ring now. Growing it mid-run would allocate on the
     // frame path, which is exactly what this instrument must not do.
     Samples.reserve(Capacity);
-    StartTicks = static_cast<u64>(
-        std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto clock = MelonPrimePerfClock::Now();
+    StartTicks = clock.Ticks;
+    ClockFrequency = clock.Frequency;
     Enabled = true;
 
     Platform::Log(Platform::LogLevel::Info,
@@ -74,12 +76,14 @@ VulkanPresentLatencyCapture::~VulkanPresentLatencyCapture()
 
 u64 VulkanPresentLatencyCapture::NowUs() const noexcept
 {
-    using Clock = std::chrono::steady_clock;
-    const auto now = Clock::now().time_since_epoch();
-    const auto elapsed = Clock::duration(
-        static_cast<Clock::rep>(static_cast<u64>(now.count()) - StartTicks));
-    return static_cast<u64>(
-        std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count());
+    const auto now = MelonPrimePerfClock::Now();
+    return MelonPrimePerfClock::ElapsedUs(
+        {StartTicks, ClockFrequency}, now);
+}
+
+u64 VulkanPresentLatencyCapture::NowTicks() const noexcept
+{
+    return MelonPrimePerfClock::Now().Ticks;
 }
 
 void VulkanPresentLatencyCapture::MarkInputSample() noexcept
@@ -88,9 +92,13 @@ void VulkanPresentLatencyCapture::MarkInputSample() noexcept
     // over from a frame that never presented must not leak into this one.
     const u64 index = NextSampleIndex;
     const int reflexMode = Pending.ReflexMode;
+    AcquireOpen = false;
+    AcquireStartUs = 0;
     Pending = VulkanLatencySample{};
     Pending.SampleIndex = index;
     Pending.ReflexMode = reflexMode;
+    Pending.InputSampleQpcTicks = NowTicks();
+    Pending.QpcFrequency = ClockFrequency;
     Pending.InputSampleUs = NowUs();
 }
 
@@ -122,12 +130,50 @@ void VulkanPresentLatencyCapture::MarkPresentStart() noexcept
 void VulkanPresentLatencyCapture::MarkPresentEnd() noexcept
 {
     Pending.PresentEndUs = NowUs();
+    Pending.PresentEndQpcTicks = NowTicks();
+    Pending.QpcFrequency = ClockFrequency;
+}
+
+void VulkanPresentLatencyCapture::MarkAcquireStart() noexcept
+{
+    AcquireStartUs = NowUs();
+    AcquireOpen = true;
+}
+
+void VulkanPresentLatencyCapture::MarkAcquireEnd() noexcept
+{
+    if (!AcquireOpen)
+        return;
+    const u64 endUs = NowUs();
+    Pending.AcquireWaitUs = endUs >= AcquireStartUs ? endUs - AcquireStartUs : 0;
+    AcquireOpen = false;
 }
 
 void VulkanPresentLatencyCapture::SetGpuRenderBounds(u64 startUs, u64 endUs) noexcept
 {
     Pending.GpuRenderStartUs = startUs;
     Pending.GpuRenderEndUs = endUs;
+}
+
+void VulkanPresentLatencyCapture::SetFrameContext(
+    u64 logicalFrameId,
+    u64 reflexPresentId,
+    u32 swapchainImageIndex,
+    u32 frameSlot,
+    u32 swapchainImageCount,
+    u32 distinctSwapchainImagesAcquiredSinceRecreate,
+    u64 logicalFramesSinceLastAcceptedPresent,
+    u64 unretiredFrameRingSubmissionDepth) noexcept
+{
+    Pending.LogicalFrameId = logicalFrameId;
+    Pending.ReflexPresentId = reflexPresentId;
+    Pending.SwapchainImageIndex = swapchainImageIndex;
+    Pending.FrameSlot = frameSlot;
+    Pending.SwapchainImageCount = swapchainImageCount;
+    Pending.DistinctSwapchainImagesAcquiredSinceRecreate =
+        distinctSwapchainImagesAcquiredSinceRecreate;
+    Pending.LogicalFramesSinceLastAcceptedPresent = logicalFramesSinceLastAcceptedPresent;
+    Pending.UnretiredFrameRingSubmissionDepth = unretiredFrameRingSubmissionDepth;
 }
 
 void VulkanPresentLatencyCapture::Commit(
@@ -179,11 +225,16 @@ bool VulkanPresentLatencyCapture::Flush()
     //                           one swapchain; the aggregator invalidates a
     //                           measured window that crosses a recreation
     std::fprintf(file,
-        "run_id,sample_index,present_id,"
+        "run_id,sample_index,logical_frame_id,reflex_present_id,present_id,"
+        "swapchain_image_index,frame_slot,swapchain_image_count,"
+        "distinct_swapchain_images_acquired_since_recreate,"
+        "logical_frames_since_last_accepted_present,"
+        "unretired_frame_ring_submission_depth,acquire_wait_us,"
         "input_sample_time_us,sim_start_time_us,sim_end_time_us,"
         "render_submit_start_time_us,render_submit_end_time_us,"
         "present_start_time_us,present_end_time_us,"
         "gpu_render_start_time_us,gpu_render_end_time_us,"
+        "input_sample_qpc_ticks,present_end_qpc_ticks,qpc_frequency,"
         "policy,authority,reflex_mode,target_scheduling,bounded_wait,"
         "bounded_wait_attempted,"
         "present_mode,fallback_reason,swapchain_generation,"
@@ -201,11 +252,13 @@ bool VulkanPresentLatencyCapture::Flush()
     {
         const VulkanPresentPacer::StateSnapshot& p = sample.Pacing;
         std::fprintf(file,
-            "%s,%llu,%llu,"
+            "%s,%llu,%llu,%llu,%llu,"
+            "%u,%u,%u,%u,%llu,%llu,%llu,%llu,"
             "%llu,%llu,%llu,"
             "%llu,%llu,"
             "%llu,%llu,"
             "%llu,%llu,"
+            "%llu,%llu,%llu,"
             "%d,%d,%d,%d,%d,"
             "%d,"
             "%d,%d,"
@@ -216,7 +269,16 @@ bool VulkanPresentLatencyCapture::Flush()
             "%u,%u,%u,%u\n",
             RunId.c_str(),
             static_cast<unsigned long long>(sample.SampleIndex),
+            static_cast<unsigned long long>(sample.LogicalFrameId),
+            static_cast<unsigned long long>(sample.ReflexPresentId),
             static_cast<unsigned long long>(sample.PresentId),
+            sample.SwapchainImageIndex,
+            sample.FrameSlot,
+            sample.SwapchainImageCount,
+            sample.DistinctSwapchainImagesAcquiredSinceRecreate,
+            static_cast<unsigned long long>(sample.LogicalFramesSinceLastAcceptedPresent),
+            static_cast<unsigned long long>(sample.UnretiredFrameRingSubmissionDepth),
+            static_cast<unsigned long long>(sample.AcquireWaitUs),
             static_cast<unsigned long long>(sample.InputSampleUs),
             static_cast<unsigned long long>(sample.SimStartUs),
             static_cast<unsigned long long>(sample.SimEndUs),
@@ -226,6 +288,9 @@ bool VulkanPresentLatencyCapture::Flush()
             static_cast<unsigned long long>(sample.PresentEndUs),
             static_cast<unsigned long long>(sample.GpuRenderStartUs),
             static_cast<unsigned long long>(sample.GpuRenderEndUs),
+            static_cast<unsigned long long>(sample.InputSampleQpcTicks),
+            static_cast<unsigned long long>(sample.PresentEndQpcTicks),
+            static_cast<unsigned long long>(sample.QpcFrequency),
             p.Policy,
             p.Authority,
             sample.ReflexMode,

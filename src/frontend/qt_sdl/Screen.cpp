@@ -646,6 +646,14 @@ void ScreenPanel::setupScreenLayout()
     int w = width();
     int h = height();
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    // Layout/DPI/fullscreen changes alter the output transform and invalidate
+    // the retained visual frame before any backend-specific overlay path runs.
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
+
     int layoutType = screenLayout;
     int sizing = screenSizing;
     applyInGameTopScreenOnlyOverride(layoutType, sizing);
@@ -1824,8 +1832,10 @@ struct ScreenPanelDX12::DX12State
     QImage osdStrip;
     std::atomic_bool surfaceVisibleRequested{false};
     // Set by the GUI thread while the Custom HUD on-screen editor owns the
-    // panel, read by the emulation thread's paused draw pass.
+    // panel, read by the emulation thread's paused draw pass. The live settings
+    // preview shares this presentation exception without entering edit mode.
     std::atomic_bool hudEditLivePresentation{false};
+    std::atomic_bool hudLivePreviewPresentation{false};
     bool initialized = false;
     bool runtimeFailureReported = false;
 };
@@ -1867,6 +1877,15 @@ void ScreenPanelDX12::prepareForRendererTransition()
     if (!dx12)
         return;
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    // The presenter/layer resources are about to be detached from the active
+    // renderer. Do not let an identical visual key skip the first upload after
+    // the transition.
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
+
     // Keep the same lifetime contract as the Vulkan presenter: old queue work
     // must be complete before descriptor identity is cleared or the renderer
     // output lease is dropped.
@@ -1889,6 +1908,11 @@ bool ScreenPanelDX12::initDX12()
 {
     if (!dx12 || !dx12->surface)
         return false;
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
     const HWND window = reinterpret_cast<HWND>(dx12->surface->winId());
     dx12->initialized = dx12->presenter.Init(window);
     if (!dx12->initialized)
@@ -1973,6 +1997,14 @@ void ScreenPanelDX12::setHudEditModeActive(bool active)
 
     dx12->hudEditLivePresentation.store(active, std::memory_order_relaxed);
 }
+
+void ScreenPanelDX12::setHudLivePreviewActive(bool active)
+{
+    if (!dx12)
+        return;
+
+    dx12->hudLivePreviewPresentation.store(active, std::memory_order_release);
+}
 #endif
 
 void ScreenPanelDX12::drawScreen()
@@ -2000,12 +2032,13 @@ void ScreenPanelDX12::drawScreen()
     // the editor is invisible. Same contract as ScreenPanelVulkan; the
     // software/OpenGL panels gate on emuIsActive() and keep drawing anyway.
 #ifdef MELONPRIME_CUSTOM_HUD
-    const bool hudEditLivePresentation =
-        dx12->hudEditLivePresentation.load(std::memory_order_relaxed);
+    const bool hudLivePresentation =
+        dx12->hudEditLivePresentation.load(std::memory_order_relaxed)
+        || dx12->hudLivePreviewPresentation.load(std::memory_order_acquire);
 #else
-    constexpr bool hudEditLivePresentation = false;
+    constexpr bool hudLivePresentation = false;
 #endif
-    if (!emuThread->emuIsRunning() && !hudEditLivePresentation)
+    if (!emuThread->emuIsRunning() && !hudLivePresentation)
         return;
 
     auto* nds = emuInstance->getNDS();
@@ -2113,8 +2146,9 @@ void ScreenPanelDX12::drawScreen()
             QImage::Format_RGB32);
     }
 
-    bool hudUploaded = false;
+    bool hudLayerReady = false;
     bool hudVisible = false;
+    m_hudVisualFrameWasReused = false;
     auto* mpForHud = emuThread->GetMelonPrimeCore();
     const bool hudEditMode = mpForHud
         && MelonPrime::CustomHud_IsEditMode(mpForHud->HudConfigState());
@@ -2128,6 +2162,7 @@ void ScreenPanelDX12::drawScreen()
                 logicalWidth, logicalHeight, QImage::Format_ARGB32_Premultiplied);
             dx12->hudFrame.fill(Qt::transparent);
         }
+        const QRect previousHudDirty = m_hudPrevDirty;
         QPainter painter(&dx12->hudFrame);
         // hudFrame is retained between frames so only the current HUD dirty
         // rectangle needs uploading. SourceOver would leave old pixels behind
@@ -2137,29 +2172,48 @@ void ScreenPanelDX12::drawScreen()
         // the retained image while preserving the dirty-only upload.
         painter.setCompositionMode(QPainter::CompositionMode_Source);
 #define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (cpuBottom ? &bottomScreenImage : nullptr)
+#define MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE 1
 #include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+#undef MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
 #undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
         painter.end();
 
         auto& instcfg = emuInstance->getLocalConfig();
         hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
             emuInstance, instcfg, mpForHud, m_hudEnabled, hudEditMode);
-        dx12->hudRect = m_hudPrevDirty.intersected(
+        // DX12 retains the HUD texture between compositions. The source
+        // painter clears the previous dirty region before drawing the current
+        // one, so both regions must be uploaded when the visual changes.
+        dx12->hudRect = m_hudPrevDirty.united(previousHudDirty).intersected(
             QRect(0, 0, logicalWidth, logicalHeight));
-        if (hudVisible && !dx12->hudRect.isEmpty())
+        const auto hudLayer = MelonPrime::DX12SurfacePresenter::Layer::Hud;
+        if (hudVisible && m_hudVisualFrameWasReused
+            && dx12->presenter.HasLayerContent(hudLayer)
+            && !dx12->hudRect.isEmpty())
+        {
+            // Upload is intentionally skipped, but the retained layer still
+            // has to participate in this presentation's composition.
+            hudLayerReady = true;
+        }
+        else if (hudVisible && !m_hudVisualFrameWasReused
+                 && !dx12->hudRect.isEmpty())
         {
             MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                 MelonPrimePerf::HudPhase::UploadPrepare);
+            MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
+                MelonPrimePerf::HudPhase::GpuUpload);
+            MelonPrimePerf::CountHudUploadCall();
             const int patchWidth = dx12->hudRect.width();
             const int patchHeight = dx12->hudRect.height();
-            hudUploaded = dx12->presenter.UploadLayerRegion(
-                MelonPrime::DX12SurfacePresenter::Layer::Hud,
+            const bool hudUploadPerformed = dx12->presenter.UploadLayerRegion(
+                hudLayer,
                 dx12->hudFrame.constBits(),
                 static_cast<u32>(dx12->hudRect.x()),
                 static_cast<u32>(dx12->hudRect.y()),
                 static_cast<u32>(patchWidth),
                 static_cast<u32>(patchHeight),
                 static_cast<std::size_t>(dx12->hudFrame.bytesPerLine()));
+            hudLayerReady = hudUploadPerformed;
         }
     }
 
@@ -2294,7 +2348,7 @@ void ScreenPanelDX12::drawScreen()
     }
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    if (hudUploaded)
+    if (hudLayerReady)
     {
         MelonPrime::DX12SurfacePresenter::Quad quad;
         quad.Axis[0] = static_cast<float>(dx12->hudRect.width()) * scaleX;

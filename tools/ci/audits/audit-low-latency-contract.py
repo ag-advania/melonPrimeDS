@@ -37,6 +37,24 @@ def function_body(source: str, signature: str, next_signature: str) -> str:
     return source[start:end]
 
 
+def braced_block(source: str, signature: str) -> str:
+    start = source.find(signature)
+    if start < 0:
+        return ""
+    opening = source.find("{", start + len(signature))
+    if opening < 0:
+        return ""
+    depth = 0
+    for index in range(opening, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[opening : index + 1]
+    return ""
+
+
 def pe_exports(path: Path) -> set[str]:
     """Read the PE export-name table without platform-specific SDK tools."""
     data = path.read_bytes()
@@ -91,8 +109,21 @@ def main() -> int:
         "tools/testing/vulkan-present-pacer-dispatch-tests.cpp"
     )
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
+    vulkan_presenter_header = read(
+        "src/frontend/qt_sdl/MelonPrimeVulkanPresenter.h"
+    )
+    emu_header = read("src/frontend/qt_sdl/EmuThread.h")
+    dx12_header = read("src/DX12NvidiaReflex.h")
+    vulkan_reflex_header = read("src/VulkanNvidiaReflex.h")
+    vulkan_sync = read("src/VulkanSync.cpp")
+    vulkan_sync_header = read("src/VulkanSync.h")
+    vulkan_screen = read("src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp")
+    gpu_vulkan_header = read("src/GPU_Vulkan.h")
     vulkan_timeout_policy = read(
         "src/frontend/qt_sdl/MelonPrimeVulkanPresenterTimeout.cpp"
+    )
+    vulkan_timeout_header = read(
+        "src/frontend/qt_sdl/MelonPrimeVulkanPresenterTimeout.h"
     )
     vulkan_compat = read("src/VulkanModernPresentCompat.h")
     vulkan_device = read("src/VulkanDevice.cpp")
@@ -101,6 +132,11 @@ def main() -> int:
     probe = read("src/VulkanFeatureProbe.cpp")
     amd = read("src/DX12AmdAntiLag2.cpp")
     xell = read("src/DX12IntelXeLL.cpp")
+    xell_finish_start = xell.index("void DX12IntelXeLL::FinishFrame()")
+    xell_finish_end = xell.index(
+        "\nbool DX12IntelXeLL::SendMarker", xell_finish_start
+    )
+    xell_finish = xell[xell_finish_start:xell_finish_end]
     xell_header = read("src/DX12IntelXeLL.h")
     pacing = read("src/DX12LowLatencyPacing.h")
     xell_tests = read("tools/testing/xell-state-machine-tests.cpp")
@@ -122,8 +158,9 @@ def main() -> int:
             [
                 "if (UNLIKELY(videoSettingsDirty))",
                 "applyPendingVideoSettings();",
-                "BeginReflexFrame();",
+                "BeginReflexFrame(logicalFrameId);",
                 "beginVulkanLowLatencyFrame(",
+                "logicalFrameId);",
             ],
         ),
         "Pending renderer settings must be applied before DX12/Vulkan low-latency Begin",
@@ -136,7 +173,8 @@ def main() -> int:
                 "SetLowLatencyPreferences(reflexMode, antiLag2Enabled);",
                 "PresentPacer.BeginFrame(",
                 "Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs)",
-                "Reflex.BeginFrame();",
+                "Reflex.BeginFrame(logicalFrameId);",
+                "LowLatencyFrameIndex = logicalFrameId;",
                 "AntiLag.BeginFrame(LowLatencyFrameIndex);",
             ],
         ),
@@ -162,6 +200,217 @@ def main() -> int:
         "bypassVulkanHostLimiter" not in emu
         and "ShouldBypassHostLimiter" not in vulkan_pacer,
         "Vulkan latency waits must never bypass the exact host FPS limiter",
+        failures,
+    )
+    require(
+        ordered(
+            emu,
+            [
+                "const melonDS::u64 logicalFrameId = ++lowLatencyLogicalFrameId;",
+                "dx12LowLatencyRenderer->BeginReflexFrame(logicalFrameId);",
+                "emuInstance->beginVulkanLowLatencyFrame(",
+                "logicalFrameId);",
+            ],
+        )
+        and "lowLatencyLogicalFrameId" in emu_header
+        and "emulation thread is the single owner" in emu
+        and "void BeginFrame(u64 logicalFrameId);" in dx12_header
+        and "void BeginFrame(u64 logicalFrameId);" in vulkan_reflex_header
+        and "AllocateFrameId" not in dx12
+        and "NextFrameId" not in dx12
+        and "FrameId = logicalFrameId;" in dx12
+        and "FrameId = logicalFrameId;" in vulkan
+        and "presentID = latencyFrameId;" in vulkan_presenter
+        and "tagLatency ? latencyFrameId : 0" in vulkan_presenter
+        and "genericPresentMetadata.LogicalId = latencyFrameId;" in vulkan_presenter
+        and "metadata.LogicalId = preferredId;" in vulkan_pacer,
+        "One emulation-frame ID must be owned by EmuThread and reused by DX12/Vulkan markers, submit, and present",
+        failures,
+    )
+    presenter_begin = function_body(
+        vulkan_presenter,
+        "bool VulkanPresenter::BeginFrame(",
+        "void VulkanPresenter::BeginComposition()",
+    )
+    acquire_timeout_branch = function_body(
+        presenter_begin,
+        "else if (res == VK_TIMEOUT || res == VK_NOT_READY)",
+        "else if (res != VK_SUCCESS)",
+    )
+    low_latency_timeout_block = braced_block(
+        acquire_timeout_branch,
+        "if (lowLatencyAcquire)",
+    )
+    frame_begin = function_body(
+        vulkan_sync,
+        "FrameContext* FrameRing::BeginFrameInternal(",
+        "bool FrameRing::SubmitFrame(",
+    )
+    require(
+        all(token in vulkan_sync_header for token in (
+            "enum class FrameBeginResult",
+            "FrameContext* TryBeginFrame(FrameBeginResult* result = nullptr)",
+        ))
+        and ordered(
+            frame_begin,
+            [
+                "const u32 nextIndex = VulkanFrameRingIndexForAbsoluteFrame(",
+                "res = fns.GetFenceStatus(handle, frame.InFlightFence);",
+                "if (!waitForSlot && res == VK_NOT_READY)",
+                "res = fns.ResetFences(handle, 1, &frame.InFlightFence);",
+                "CurrentIndex = nextIndex;",
+                "frame.Recording = true;",
+            ],
+        )
+        and "if (frame.Recording)" in vulkan_sync
+        and all(token in vulkan_presenter_header for token in (
+            "bool BeginFrame(",
+            "bool waitForPresentSlot = true",
+            "LastBeginWasLatencySkip()",
+        ))
+        and ordered(
+            presenter_begin,
+            [
+                "Frames.TryBeginFrame(&beginResult)",
+                "VulkanPerf::Counter::VulkanPresenterSlotBusySkipCount",
+                "vkAcquireNextImageKHR",
+            ],
+        )
+        and "LastBeginLatencySkip = true;" in presenter_begin
+        and all(token in vulkan_screen for token in (
+            "sameRendererFrame",
+            "retainedScreenKey",
+            "ReuseScreenLayerFromFrame",
+            "VulkanPerf::Counter::VulkanScreenFrameReuseCount",
+            "invalidateScreenRetention();",
+        ))
+        and all(token in vulkan_presenter for token in (
+            "VulkanPerf::Counter::VulkanScreenLayerUploadSkipCount",
+            "CmdCopyBufferToImage",
+        )),
+        "Vulkan low-latency slot admission and same-renderer screen retention contracts are missing",
+        failures,
+    )
+    render_pass = function_body(
+        vulkan_presenter,
+        "bool VulkanPresenter::CreateRenderPass()",
+        "bool VulkanPresenter::CreatePipelines()",
+    )
+    require(
+        "ImagesInFlight" not in vulkan_presenter
+        and "ImagesInFlight" not in vulkan_presenter_header
+        and "PresenterImageFenceTimeoutNanoseconds" not in vulkan_timeout_policy
+        and "PresenterImageFenceTimeoutNanoseconds" not in vulkan_timeout_header
+        and "RenderFinished.assign(realImageCount, VK_NULL_HANDLE);" in vulkan_presenter
+        and "CurrentImageIndex < RenderFinished.size()" in vulkan_presenter
+        and "RenderFinished[CurrentImageIndex]" in vulkan_presenter
+        and "Device.Fns().WaitForFences(" not in presenter_begin
+        and all(
+            token in render_pass
+            for token in (
+                "dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;",
+                "dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;",
+                "dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;",
+            )
+        )
+        and "ImageAvailable" in presenter_begin,
+        "Vulkan must reuse present-wait semaphores per acquired image without a host image-fence wait",
+        failures,
+    )
+    require(
+        "PresenterLowLatencyAcquireTimeoutNanoseconds" in vulkan_timeout_header
+        and "PresenterLowLatencyAcquireTimeoutNanoseconds" in vulkan_timeout_policy
+        and "MELONPRIME_VULKAN_LOW_LATENCY_ACQUIRE_TIMEOUT_NS" in vulkan_timeout_policy
+        and "kDefaultLowLatencyAcquireTimeoutNanoseconds" in vulkan_timeout_policy
+        and "CachedTimeout" in vulkan_timeout_policy
+        and "std::atomic" in vulkan_timeout_policy
+        and "std::getenv" not in presenter_begin
+        and ordered(
+            presenter_begin,
+            [
+                "const bool lowLatencyAcquire = !waitForPresentSlot;",
+                "const u64 acquireTimeoutNs = lowLatencyAcquire",
+                "PresenterLowLatencyAcquireTimeoutNanoseconds()",
+                "PresenterAcquireTimeoutNanoseconds()",
+                "Device.Fns().AcquireNextImageKHR(",
+                "acquireTimeoutNs,",
+            ],
+        ),
+        "Vulkan low-latency Acquire must use a cached, separately bounded timeout policy",
+        failures,
+    )
+    require(
+        low_latency_timeout_block != ""
+        and ordered(
+            low_latency_timeout_block,
+            [
+                "LastBeginLatencySkip = true;",
+                "VulkanAcquireLowLatencySkipCount",
+                "VulkanPresentSkippedForLatencyBudgetCount",
+            ]
+        )
+        and low_latency_timeout_block.count(
+            "VulkanPresentSkippedForLatencyBudgetCount"
+        ) == 1
+        and acquire_timeout_branch.count(
+            "VulkanPresentSkippedForLatencyBudgetCount"
+        ) == 1
+        and "VulkanAcquireNotReadyCount" not in low_latency_timeout_block
+        and ordered(
+            acquire_timeout_branch,
+            [
+                "if (lowLatencyAcquire)",
+                "VulkanPresentSkippedForLatencyBudgetCount",
+                "VulkanAcquireNotReadyCount",
+                "Frames.SubmitFrame(Device.GetMainQueue());",
+                "return false;",
+            ],
+        )
+        and acquire_timeout_branch.count("LastBeginLatencySkip = true;") == 1
+        and all(
+            token in vulkan_perf
+            for token in (
+                "VulkanAcquireTimeoutNs",
+                "VulkanAcquireLowLatencyAttemptCount",
+                "VulkanAcquireLowLatencySkipCount",
+                "VulkanAcquireRepeatImageIndexCount",
+                "acquire_timeout_ns=%llu",
+                "acquire_low_latency_attempt_count=%llu",
+                "acquire_low_latency_skip_count=%llu",
+                "acquire_repeat_image_index_count=%llu",
+            )
+        )
+        and all(
+            token in vulkan_presenter
+            for token in (
+                "VulkanAcquireLowLatencyAttemptCount",
+                "VulkanAcquireLowLatencySkipCount",
+                "VulkanAcquireRepeatImageIndexCount",
+            )
+        )
+        and "This is not queue ownership" in vulkan_presenter_header,
+        "Acquire timeout/not-ready must keep low-latency skip telemetry inside its branch while retaining the all-outcome not-ready counter",
+        failures,
+    )
+    require(
+        all(
+            "VulkanAcquireQueueOwnershipTransferCount" not in source
+            for source in (
+                vulkan_perf,
+                vulkan_presenter,
+                vulkan_presenter_header,
+                vulkan_timeout_policy,
+                vulkan_timeout_header,
+            )
+        ),
+        "Acquire repeat-image telemetry must not be mislabeled as queue ownership transfer",
+        failures,
+    )
+    require(
+        "if (tagLatency && !genericPresentMetadata.LegacyIdAttached)" in vulkan_presenter
+        and "must not both" in vulkan_presenter
+        and "same correlation value" in vulkan_presenter,
+        "Reflex and Vulkan pacer must not chain duplicate VkPresentIdKHR nodes",
         failures,
     )
     require(
@@ -199,6 +448,25 @@ def main() -> int:
         failures,
     )
     require(
+        "VulkanHasEffectiveLowLatencyAuthority" in vulkan_pacing_policy
+        and "HasEffectiveLowLatencyAuthority() const noexcept" in vulkan_presenter_header
+        and "Reflex.IsActive(), AntiLag.IsActive()" in vulkan_presenter_header
+        and "HasEffectiveLowLatencyAuthority()" in vulkan_screen
+        and "ShouldBypassPresentWait" not in gpu_vulkan_header
+        and "ShouldBypassPresentWait" not in vulkan_screen
+        and all(
+            token in vulkan_timing_tests
+            for token in (
+                "TestEffectiveLowLatencyAuthority",
+                "configuration ON with an unavailable vendor extension",
+                "a Reflex runtime failure",
+                "an active Anti-Lag path",
+            )
+        ),
+        "present-slot admission must use effective presenter-owned vendor authority",
+        failures,
+    )
+    require(
         "PresenterOneFrameBudget = 4" in vulkan_pacing_policy
         and "VulkanPolicyUsesPresenterOneFrameBudget" in vulkan_pacing_policy
         and all(
@@ -220,7 +488,7 @@ def main() -> int:
                 "VulkanPreviousPresentWaitTimeoutCount",
                 "VulkanSwapchainImageCount",
                 "VulkanPresenterFramesInFlight",
-                "VulkanPresenterLogicalDepth",
+                "VulkanPresenterUnretiredFrameRingSubmissionDepth",
                 "VulkanPacingAuthority",
                 "VulkanPresentMode",
             )
@@ -238,7 +506,7 @@ def main() -> int:
                 "Frames.LatestSubmittedFrameHasPendingSubmission()",
                 "VulkanPresenterOneFrameBudgetTimeoutNs(",
                 "Frames.WaitForLatestSubmittedFrame(",
-                "Reflex.BeginFrame();",
+                "Reflex.BeginFrame(logicalFrameId);",
                 "AntiLag.BeginFrame(",
             ],
         )
@@ -470,6 +738,52 @@ def main() -> int:
                 "bool VulkanPresentPacer::ApplyTimingQueueSize(u32 size)",
             ),
         "the latency capture flag must be independent of pacing and stage-query behaviour",
+        failures,
+    )
+    require(
+        all(
+            token in vulkan_latency_capture
+            for token in (
+                "logical_frame_id",
+                "reflex_present_id",
+                "swapchain_image_index",
+                "frame_slot",
+                "acquire_wait_us",
+                "DistinctSwapchainImagesAcquiredSinceRecreate",
+                "LogicalFramesSinceLastAcceptedPresent",
+                "UnretiredFrameRingSubmissionDepth",
+                "MarkAcquireStart",
+                "MarkAcquireEnd",
+                "SetFrameContext",
+            )
+        )
+        and all(
+            token in vulkan_perf
+            for token in (
+                "VulkanPresenterUnretiredFrameRingSubmissionDepth",
+                "VulkanPresenterLogicalFramesSinceLastAcceptedPresent",
+                "VulkanPresenterDistinctSwapchainImagesAcquiredSinceRecreate",
+                "unretired_frame_ring_submission_depth=%llu",
+                "logical_frames_since_last_accepted_present=%llu",
+                "distinct_swapchain_images_acquired_since_recreate=%llu",
+            )
+        )
+        and all(
+            token in vulkan_presenter
+            for token in (
+                "LatencyCapture.MarkAcquireStart();",
+                "LatencyCapture.MarkAcquireEnd();",
+                "Frames.GetAbsoluteFrame()",
+                "LastAcceptedLogicalFrameId",
+                "DistinctSwapchainImagesAcquiredSinceRecreate",
+                "SwapchainImageAcquireObserved.assign",
+                "unretiredFrameRingSubmissionDepth",
+                "logicalFramesSinceLastAcceptedPresent",
+            )
+        )
+        and "ImagesInFlight" not in vulkan_presenter
+        and "fence map" in vulkan_presenter_header,
+        "Vulkan low-latency telemetry must expose logical/submit depth and bounded Acquire context without reintroducing image-fence ownership",
         failures,
     )
     # --- absolute / relative target scheduling ------------------------------
@@ -1128,6 +1442,33 @@ def main() -> int:
         failures,
     )
     require(
+        all(token in vulkan_pacer for token in (
+            "VkLatencySurfaceCapabilitiesNV",
+            "VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV",
+            "NvidiaLowLatency2ExtensionEnabled",
+            "NvLowLatencyOptimizedPresentModes",
+            "SelectNvLowLatencyOptimizedPresentMode",
+            "VK_INCOMPLETE",
+            "falling back to generic present-mode selection",
+        ))
+        and all(token in vulkan_presenter for token in (
+            "GetNvLowLatencyOptimizedPresentModes()",
+            "SelectNvLowLatencyOptimizedPresentMode(",
+            "VulkanNvLowLatencyOptimizedModeCount",
+            "VulkanPresentModeIsNvLowLatencyOptimized",
+            "nv-low-latency-optimized-mode-count",
+            "present-mode-is-nv-low-latency-optimized",
+        ))
+        and all(token in vulkan_dispatch_tests for token in (
+            "TestNvLowLatencySurfaceCapabilitiesAndSelection",
+            "NvOptimizedModeCountCalls",
+            "NvOptimizedModeArrayCalls",
+            "SelectNvLowLatencyOptimizedPresentMode",
+        )),
+        "Vulkan must query and select VK_NV_low_latency2 optimized present modes with a safe fallback",
+        failures,
+    )
+    require(
         ("VK_ERROR_DEVICE_LOST" in vulkan_pacer
             or "VK_ERROR_DEVICE_LOST" in vulkan_pacer_header)
         and "TimingModel.AbandonPresent();" in vulkan_pacer
@@ -1284,9 +1625,26 @@ def main() -> int:
                 "InputSample",
             )
         )
-        and "if (!RenderSubmitStarted)\n        MarkRenderSubmitStart();" in xell
-        and "if (!PresentStarted)\n        MarkPresentStart();" in xell,
-        "Intel XeLL must deliver the complete required marker set on early-exit frames",
+        and "if (PresentOpen)\n        MarkPresentEnd();" in xell_finish
+        and "if (RenderSubmitOpen)\n        MarkRenderSubmitEnd();" in xell_finish
+        and "if (SimulationOpen)" in xell_finish
+        and "MarkPresentStart();" not in xell_finish
+        and "MarkInputSample();" not in xell_finish
+        and "EndRenderPhase();" not in xell_finish,
+        "Intel XeLL FinishFrame must close only phases that actually started",
+        failures,
+    )
+    require(
+        all(
+            token in xell_tests
+            for token in (
+                "void TestNoPresentFrame()",
+                "void TestAbortedFrame()",
+                "void TestInterruptedPresentCleanup()",
+                "must not synthesize Present markers",
+            )
+        ),
+        "Intel XeLL fake tests must cover no-Present cleanup without synthetic markers",
         failures,
     )
 
@@ -1294,7 +1652,7 @@ def main() -> int:
         ordered(
             emu,
             [
-                "BeginReflexFrame();",
+                "BeginReflexFrame(logicalFrameId);",
                 "MarkReflexInputSample();",
                 "inputRefreshJoystickState();",
                 "RunFrameHook();",
@@ -1323,7 +1681,7 @@ def main() -> int:
 
     begin = function_body(
         dx12,
-        "void DX12NvidiaReflex::BeginFrame()",
+        "void DX12NvidiaReflex::BeginFrame(u64 logicalFrameId)",
         "void DX12NvidiaReflex::MarkInputSample()",
     )
     require(begin != "", "DX12 BeginFrame body was not found", failures)
@@ -1348,6 +1706,40 @@ def main() -> int:
         "if (!IsFramePathAvailable())" in vulkan
         and "return IsFramePathAvailable() && FrameOpen;" in read("src/VulkanNvidiaReflex.h"),
         "Vulkan must keep Sleep, markers and Present ID correlation live in Off mode",
+        failures,
+    )
+    reflex_begin = function_body(
+        vulkan,
+        "void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)",
+        "void VulkanNvidiaReflex::SetMarker(VkLatencyMarkerNV marker)",
+    )
+    require(
+        "ClassifyVulkanReflexSleepWaitResult" in vulkan_reflex_header
+        and "VulkanReflexSleepWaitAction::DisableForRuntimeFailure" in vulkan_reflex_header
+        and "1000ull * 1000ull * 1000ull" in reflex_begin
+        and "ClassifyVulkanReflexSleepWaitResult(res)" in reflex_begin
+        and "DisableForRuntimeFailure(\"vkWaitSemaphores(Reflex sleep)\", res);" in reflex_begin
+        and "PresentedSinceSleep = true;" in reflex_begin
+        and "res != VK_SUCCESS && res != VK_TIMEOUT" not in reflex_begin
+        and ordered(
+            reflex_begin,
+            [
+                "ClassifyVulkanReflexSleepWaitResult(res)",
+                "DisableForRuntimeFailure(\"vkWaitSemaphores(Reflex sleep)\", res);",
+                "PresentedSinceSleep = true;",
+                "return;",
+                "PresentedSinceSleep = false;",
+            ],
+        )
+        and all(
+            token in vulkan_timing_tests
+            for token in (
+                "TestVulkanReflexSleepWaitContract",
+                "VK_TIMEOUT",
+                "a Reflex sleep watchdog timeout",
+            )
+        ),
+        "Vulkan Reflex sleep timeout must close and disable the frame instead of counting timeout as success",
         failures,
     )
 

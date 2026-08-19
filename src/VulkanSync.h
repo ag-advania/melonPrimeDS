@@ -53,6 +53,29 @@ namespace melonDS::Vk
 // requires changing this value.
 inline constexpr u32 FramesInFlight = 2;
 
+// The frame number used for deferred destruction depends on which side of the
+// recording boundary the invalidation happens.  AbsoluteFrame is the number
+// assigned to the next frame that will be recorded, so it is deliberately not
+// used as a lifetime tag while the ring is between submissions.
+struct VulkanResourceRetireFrameState
+{
+    u64 CompletedFrame = 0;
+    u64 LastSubmittedFrame = 0;
+    u64 CurrentRecordingFrame = 0;
+    bool HasSubmittedFrame = false;
+    bool Recording = false;
+};
+
+[[nodiscard]] constexpr u64 VulkanResourceRetireFrame(
+    const VulkanResourceRetireFrameState& state) noexcept
+{
+    if (state.Recording)
+        return state.CurrentRecordingFrame;
+    if (state.HasSubmittedFrame)
+        return state.LastSubmittedFrame;
+    return state.CompletedFrame;
+}
+
 
 // Object kinds the deferred destruction queue can retire. Every one of these is
 // a non-dispatchable handle, which is what lets the queue store them uniformly
@@ -107,7 +130,8 @@ public:
     void Init(const DeviceDispatch& fns, VkDevice device) noexcept;
 
     // Queues `handle` for destruction once frame `lastUsedFrame` has retired.
-    // Passing the *current* absolute frame is the normal, safe choice.
+    // Callers must pass the last frame that may legally reference the object;
+    // the scheduler's next-frame counter is not a lifetime tag.
     template <typename HandleT>
     void Enqueue(DeferredObject type, HandleT handle, u64 lastUsedFrame)
     {
@@ -178,6 +202,13 @@ struct FrameContext
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     VkQueryPool TimestampQueryPool = VK_NULL_HANDLE;
     bool TimestampQueriesEnabled = false;
+    // Query results belong to the completed use of this slot. Keep them
+    // readable until the first timestamp of the new recording is emitted;
+    // resetting the pool in BeginFrame would make that reset command pending
+    // while the CPU tries to read the previous submission.
+    bool TimestampResultsAvailable = false;
+    bool TimestampQueriesReset = false;
+    bool TimestampQueriesWritten = false;
 #endif
 };
 
@@ -188,6 +219,13 @@ enum class FrameWaitResult : u32
     Error,
 };
 
+enum class FrameBeginResult : u32
+{
+    Ready = 0,
+    Busy,
+    Error,
+};
+
 
 // The frames-in-flight ring: per-frame command buffers, fences and semaphores,
 // plus the deferred destruction queue keyed to the same frame numbering.
@@ -195,7 +233,10 @@ enum class FrameWaitResult : u32
 // The only blocking call in the normal frame path is the vkWaitForFences at the
 // top of BeginFrame(), which throttles the CPU to `framesInFlight` frames ahead
 // of the GPU. vkDeviceWaitIdle / vkQueueWaitIdle appear nowhere in this class
-// except WaitIdle(), which is a teardown-only helper.
+// except WaitIdle(), which is restricted to teardown/resource-recreation
+// boundaries and never used in the steady-state frame path.
+struct VulkanFrameRingTestAccess;
+
 class FrameRing
 {
 public:
@@ -240,8 +281,10 @@ public:
 
     // Non-blocking counterpart for work that is allowed to drop a frame. If
     // the next slot's fence is not signalled, returns nullptr immediately
-    // without resetting or changing the ring.
-    FrameContext* TryBeginFrame();
+    // without resetting or changing the ring. `result` distinguishes a busy
+    // slot from a device/error result so callers do not hide real failures as
+    // intentional latency skips.
+    FrameContext* TryBeginFrame(FrameBeginResult* result = nullptr);
 
     // Ends and submits the open command buffer.
     //
@@ -323,21 +366,48 @@ public:
     }
 #endif
 
-    // Monotonic frame counter. Pass this to DeferredDestroyQueue::Enqueue().
+    // Monotonic scheduler counter: the absolute number assigned to the next
+    // recording frame. Use the explicit lifetime helpers below for deferred
+    // destruction tags.
     [[nodiscard]] u64 GetAbsoluteFrame() const noexcept { return AbsoluteFrame; }
+
+    // Number assigned to the frame whose command buffer is currently open, or
+    // zero when the ring is not recording.
+    [[nodiscard]] u64 GetCurrentRecordingFrameNumber() const noexcept;
+
+    // Number carried by the most recently submitted frame, or zero before the
+    // first successful submission.
+    [[nodiscard]] u64 GetLastSubmittedFrameNumber() const noexcept;
+
+    // Last frame that may legally reference a resource invalidated at this
+    // point in the ring lifecycle. This is the only tag RetireEntry should use.
+    [[nodiscard]] u64 GetResourceRetireFrame() const noexcept;
 
     // Highest absolute frame known to have completed on the GPU.
     [[nodiscard]] u64 GetCompletedFrame() const noexcept { return CompletedFrame; }
 
     [[nodiscard]] DeferredDestroyQueue& GetDestroyQueue() noexcept { return DestroyQueue; }
 
-    // Teardown / swapchain-recreation helper. This is one of the three places
-    // the backend may call vkDeviceWaitIdle; it must never appear in the frame
-    // path.
+    // Teardown / resource-recreation helper. This is one of the three places
+    // the backend may call vkDeviceWaitIdle; it is not used in the steady-state
+    // frame path. If called after a frame has been admitted, the open recording
+    // frame remains excluded from CompletedFrame bookkeeping until it submits.
     void WaitIdle();
 
 private:
-    FrameContext* BeginFrameInternal(bool waitForSlot, bool recordRasterBegin);
+    // Keep the production mapping in one testable extraction point. The
+    // friend is defined only by the model-test translation unit; it adds no
+    // production API or binary code and lets that test seed lifecycle state
+    // without manufacturing a Vulkan device.
+    friend struct VulkanFrameRingTestAccess;
+
+    [[nodiscard]] VulkanResourceRetireFrameState
+    BuildResourceRetireFrameState() const noexcept;
+
+    FrameContext* BeginFrameInternal(
+        bool waitForSlot,
+        bool recordRasterBegin,
+        FrameBeginResult* result = nullptr);
     void DestroyFrames();
 
     const VulkanDevice* Device = nullptr;
@@ -350,6 +420,10 @@ private:
     u64 AbsoluteFrame = 1;      // 1-based so that 0 means "never used"
     u64 CompletedFrame = 0;
     u32 LastSubmittedIndex = 0;
+    // Frame number of the last successful queue submission. This is kept
+    // separately from the slot's SubmittedFrame because a one-slot ring
+    // overwrites that field when the next recording begins.
+    u64 LastSubmittedFrameNumber = 0;
     bool HasSubmittedFrame = false;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     float TimestampPeriodNs = 0.0f;

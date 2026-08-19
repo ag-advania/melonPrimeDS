@@ -147,6 +147,8 @@ void SoftRenderer2D::DrawScanline(u32 line)
             if (Parent.UseStructuredVulkan2D())
                 Parent.StoreStructuredEnginePixel(GPU2D.Num, line, static_cast<u32>(i), fillcolor, 0, fillcolor, 7, 0, 0);
         }
+        if (Parent.UseStructuredVulkan2D())
+            Parent.FlushStructuredEngineLine(GPU2D.Num, line);
 #else
         for (int i = 0; i < 256; i++)
             dst[i] = fillcolor;
@@ -165,6 +167,8 @@ void SoftRenderer2D::DrawScanline(u32 line)
             if (Parent.UseStructuredVulkan2D())
                 Parent.StoreStructuredEnginePixel(GPU2D.Num, line, static_cast<u32>(i), dst[i], 0, dst[i], 7, 0, 0);
         }
+        if (Parent.UseStructuredVulkan2D())
+            Parent.FlushStructuredEngineLine(GPU2D.Num, line);
 #else
         for (int i = 0; i < 256; i++)
             dst[i] = 0xFF3F3F3F;
@@ -194,6 +198,10 @@ void SoftRenderer2D::DrawScanline(u32 line)
 
     // render BG layers and sprites
     DrawScanline_BGOBJ(line, dst);
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    if (Parent.UseStructuredVulkan2D())
+        Parent.FlushStructuredEngineLine(GPU2D.Num, line);
+#endif
 }
 
 #define DoDrawBG(type, line, num) \
@@ -386,6 +394,13 @@ void SoftRenderer2D::DrawScanline_BGOBJ(u32 line, u32* dst)
     // color special effects
     // can likely be optimized
 
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    const StructuredPerfBackend perfBackend = Parent.GetStructured2DPerfBackendForFrame();
+    ScopedStructuredPerfTimer metadataTimer(
+        perfBackend,
+        StructuredPerfMetric::Structured2DMetadata,
+        perfBackend != StructuredPerfBackend::None);
+#endif
     for (int i = 0; i < 256; i++)
     {
         u32 val1 = BGOBJLine[i];

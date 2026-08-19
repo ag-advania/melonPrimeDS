@@ -21,6 +21,7 @@ namespace MelonPrime {
         HWND windowHandle = nullptr;
         bool joy2KeySupport = false;
         bool qtFilterRequested = false;
+        bool baselineReady = false;
     };
 
     std::mutex          RawInputWinFilter::s_serviceMutex;
@@ -88,13 +89,7 @@ namespace MelonPrime {
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription) {
             if (subscription->owner)
                 PlatformInputOwnerService::Release(*subscription->owner);
-            m_activeSubscription.store(nullptr, std::memory_order_release);
-            UnregisterDevices();
-            if (m_qtFilterInstalled) {
-                if (auto* app = QCoreApplication::instance())
-                    app->removeNativeEventFilter(this);
-                m_qtFilterInstalled = false;
-            }
+            DeactivateActiveRegistration(subscription);
         }
         m_subscriptions.erase(
             std::remove_if(m_subscriptions.begin(), m_subscriptions.end(),
@@ -122,31 +117,76 @@ namespace MelonPrime {
         const bool owns = PlatformInputOwnerService::Update(*subscription->owner, eligible);
         if (!owns) {
             if (m_activeSubscription.load(std::memory_order_acquire) == subscription) {
-                m_activeSubscription.store(nullptr, std::memory_order_release);
-                subscription->state->discardDeltas();
-                subscription->state->resetHotkeyEdges();
-                UnregisterDevices();
-                if (m_qtFilterInstalled) {
-                    if (auto* app = QCoreApplication::instance())
-                        app->removeNativeEventFilter(this);
-                    m_qtFilterInstalled = false;
-                }
+                DeactivateActiveRegistration(subscription);
             }
             return false;
         }
 
-        auto* previous = m_activeSubscription.exchange(subscription, std::memory_order_acq_rel);
+        auto* previous = m_activeSubscription.load(std::memory_order_acquire);
         if (previous != subscription) {
-            if (previous && previous->state) {
-                previous->state->discardDeltas();
-                previous->state->resetAll();
-            }
-            ApplyOwnerRegistration(subscription);
-            resetAll(subscription);
-            subscription->state->discardDeltas();
-            subscription->state->syncPhysicalState();
+            if (previous)
+                DeactivateActiveRegistration(previous);
+            m_activeSubscription.store(subscription, std::memory_order_release);
+            ReconfigureActiveRegistration(subscription, true);
         }
         return true;
+    }
+
+    void RawInputWinFilter::ReconfigureActiveRegistration(
+        RawInputSubscription* subscription, bool generationAlreadyAdvanced)
+    {
+        if (!subscription
+            || m_activeSubscription.load(std::memory_order_acquire) != subscription)
+            return;
+
+        // Registration change is an input-timeline boundary.
+        // Raw mouse delta, button edge history and wheel impulses must enter the new
+        // registration generation together. Never preserve edge history across a new
+        // OS registration without syncing the physical baseline first.
+        // Drain the old registration first, then make the new generation
+        // not-ready until its physical baseline and edge history are synchronized.
+        if (m_isRegistered)
+            drainPendingMessages();
+        subscription->baselineReady = false;
+        if (!generationAlreadyAdvanced && subscription->owner)
+            PlatformInputOwnerService::BeginRegistrationGeneration(*subscription->owner);
+
+        UnregisterDevices();
+        ApplyOwnerRegistration(subscription);
+
+        // No delta, button edge, deferred click, or wheel pulse from the old
+        // registration may cross into this one. syncPhysicalState() establishes
+        // the held baseline so a held XButton is down but not pressed.
+        subscription->state->discardDeltas();
+        subscription->state->resetAll();
+        subscription->state->syncPhysicalState();
+        subscription->baselineReady = true;
+    }
+
+    void RawInputWinFilter::DeactivateActiveRegistration(
+        RawInputSubscription* subscription)
+    {
+        if (!subscription
+            || m_activeSubscription.load(std::memory_order_acquire) != subscription)
+            return;
+
+        // Registration change is an input-timeline boundary. Capture anything
+        // still owned by the old registration before unregistering it, then
+        // invalidate all host-side transient input state.
+        if (m_isRegistered)
+            drainPendingMessages();
+        subscription->baselineReady = false;
+        if (subscription->owner)
+            PlatformInputOwnerService::BeginRegistrationGeneration(*subscription->owner);
+        UnregisterDevices();
+        subscription->state->discardDeltas();
+        subscription->state->resetAll();
+        m_activeSubscription.store(nullptr, std::memory_order_release);
+        if (m_qtFilterInstalled) {
+            if (auto* app = QCoreApplication::instance())
+                app->removeNativeEventFilter(this);
+            m_qtFilterInstalled = false;
+        }
     }
 
     void RawInputWinFilter::ApplyOwnerRegistration(RawInputSubscription* subscription)
@@ -223,7 +263,8 @@ namespace MelonPrime {
     // =========================================================================
     void RawInputWinFilter::PollAndSnapshot(
         RawInputSubscription* subscription,
-        FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
+        FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+        int& outWheelSteps)
     {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
         auto* const state = StateFor(subscription);
@@ -234,6 +275,7 @@ namespace MelonPrime {
             outHk = {};
             outMouseX = 0;
             outMouseY = 0;
+            outWheelSteps = 0;
             return;
         }
 
@@ -242,7 +284,9 @@ namespace MelonPrime {
             // Drain deferred — see DeferredDrain()
         }
 
-        state->snapshotInputFrame(outHk, outMouseX, outMouseY);
+        state->snapshotInputFrame(outHk, outMouseX, outMouseY, outWheelSteps);
+        outHk.generation = subscription->owner->generation;
+        outHk.baselineReady = subscription->baselineReady;
     }
 
     // =========================================================================
@@ -253,7 +297,8 @@ namespace MelonPrime {
     // =========================================================================
     void RawInputWinFilter::PollAndSnapshotNoEdges(
         RawInputSubscription* subscription,
-        FrameHotkeyState& outHk, int& outMouseX, int& outMouseY)
+        FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+        int& outWheelSteps)
     {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
         auto* const state = StateFor(subscription);
@@ -264,6 +309,7 @@ namespace MelonPrime {
             outHk = {};
             outMouseX = 0;
             outMouseY = 0;
+            outWheelSteps = 0;
             return;
         }
 
@@ -272,7 +318,10 @@ namespace MelonPrime {
             // Drain deferred — see DeferredDrain()
         }
 
-        state->snapshotInputFrameNoEdges(outHk, outMouseX, outMouseY);
+        state->snapshotInputFrameNoEdges(
+            outHk, outMouseX, outMouseY, outWheelSteps);
+        outHk.generation = subscription->owner->generation;
+        outHk.baselineReady = subscription->baselineReady;
     }
 
     // =========================================================================
@@ -351,10 +400,8 @@ namespace MelonPrime {
         if (!subscription || subscription->joy2KeySupport == enable)
             return;
         subscription->joy2KeySupport = enable;
-        subscription->state->resetAll();
-        subscription->state->resetHotkeyEdges();
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription)
-            ApplyOwnerRegistration(subscription);
+            ReconfigureActiveRegistration(subscription, false);
     }
 
     void RawInputWinFilter::setRawInputTarget(
@@ -364,7 +411,7 @@ namespace MelonPrime {
             return;
         subscription->windowHandle = hwnd;
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription)
-            ApplyOwnerRegistration(subscription);
+            ReconfigureActiveRegistration(subscription, false);
     }
 
     void RawInputWinFilter::setQtFilterRequested(
@@ -374,7 +421,7 @@ namespace MelonPrime {
             return;
         subscription->qtFilterRequested = enable;
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription)
-            ApplyOwnerRegistration(subscription);
+            ReconfigureActiveRegistration(subscription, false);
     }
 
     void RawInputWinFilter::CreateHiddenWindow() {

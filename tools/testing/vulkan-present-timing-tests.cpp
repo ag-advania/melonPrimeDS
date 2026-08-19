@@ -20,6 +20,7 @@
 #include "VulkanPresentPacer.h"
 #include "VulkanPresenterFrameBudget.h"
 #include "VulkanGoogleDisplayTimingModel.h"
+#include "VulkanNvidiaReflex.h"
 #include "VulkanPresentTimingModel.h"
 
 namespace
@@ -1504,6 +1505,39 @@ void TestNonFifoKeepsWaitButNotTarget()
         "the surviving wait must keep the generic authority");
 }
 
+
+// Present-slot admission follows the runtime state owned by the presenter.
+// Configuration ON with an unsupported extension or a runtime failure is the
+// same effective state as configuration OFF; neither may disable the normal
+// bounded wait. Anti-Lag is an independent vendor authority.
+void TestEffectiveLowLatencyAuthority()
+{
+    Require(!VulkanHasEffectiveLowLatencyAuthority(false, false),
+        "configuration OFF/active OFF must keep the normal present wait");
+    Require(!VulkanHasEffectiveLowLatencyAuthority(false, false),
+        "configuration ON with an unavailable vendor extension must keep the normal present wait");
+    Require(VulkanHasEffectiveLowLatencyAuthority(true, false),
+        "an active Reflex path must own present-slot admission");
+    Require(!VulkanHasEffectiveLowLatencyAuthority(false, false),
+        "a Reflex runtime failure must return present-slot admission to the normal path");
+    Require(VulkanHasEffectiveLowLatencyAuthority(false, true),
+        "an active Anti-Lag path must own present-slot admission");
+}
+
+
+void TestVulkanReflexSleepWaitContract()
+{
+    Require(ClassifyVulkanReflexSleepWaitResult(VK_SUCCESS)
+                == VulkanReflexSleepWaitAction::Continue,
+        "a successful Reflex sleep wait must continue the frame");
+    Require(ClassifyVulkanReflexSleepWaitResult(VK_TIMEOUT)
+                == VulkanReflexSleepWaitAction::DisableForRuntimeFailure,
+        "a Reflex sleep watchdog timeout must disable the vendor path");
+    Require(ClassifyVulkanReflexSleepWaitResult(VK_NOT_READY)
+                == VulkanReflexSleepWaitAction::DisableForRuntimeFailure,
+        "a non-success Reflex sleep wait must use the runtime failure fallback");
+}
+
 } // namespace
 
 int main()
@@ -1535,6 +1569,8 @@ int main()
     TestSpeedAndPolicyGates();
     TestFallbackReasonsAreSpecific();
     TestNonFifoKeepsWaitButNotTarget();
+    TestEffectiveLowLatencyAuthority();
+    TestVulkanReflexSleepWaitContract();
 
     TestRelativeFallbackWhenSurfaceLacksAbsolute();
     TestAbsolutePreferredOverRelative();

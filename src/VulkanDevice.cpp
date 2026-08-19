@@ -21,6 +21,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -67,7 +68,11 @@ struct VulkanDeviceState
     VulkanLowLatencyStatus AmdAntiLag;
     bool GenericPresentTimingRequested = false;
     VulkanPresentTimingDeviceFeatures PresentTimingFeatures{};
+    bool DeviceFaultEnabled = false;
+    std::atomic<bool> DeviceFaultReported{false};
     mutable std::mutex QueueMutex;
+    mutable std::mutex MemoryMutex;
+    Vk::VulkanMemoryTelemetry MemoryTelemetry{};
 };
 
 namespace
@@ -108,6 +113,7 @@ const VkPhysicalDeviceFeatures EmptyFeatures{};
 const VulkanLowLatencyStatus EmptyLowLatencyStatus{};
 const VkPhysicalDeviceMemoryProperties EmptyMemoryProperties{};
 const VkPhysicalDeviceLimits EmptyLimits{};
+const Vk::VulkanMemoryAdmissionSnapshot EmptyMemoryAdmission{};
 std::mutex EmptyQueueMutex;
 
 const char* DeviceTypeName(VkPhysicalDeviceType type) noexcept
@@ -228,6 +234,298 @@ const VkPhysicalDeviceLimits& VulkanDevice::GetLimits() const noexcept
     return State ? State->Profile.Properties.limits : EmptyLimits;
 }
 
+bool VulkanDevice::RefreshMemoryAdmission()
+{
+    if (!State || !State->Context || State->PhysicalDevice == VK_NULL_HANDLE)
+        return false;
+
+    Vk::VulkanMemoryAdmissionSnapshot snapshot = Vk::FeatureProbe::QueryMemoryAdmission(
+        State->Context->Fns(),
+        State->PhysicalDevice,
+        State->Profile.Properties,
+        State->Profile.MemoryProperties);
+    {
+        std::lock_guard<std::mutex> lock(State->MemoryMutex);
+        // Preserve the minimal process-local reservation state across a fresh
+        // driver budget snapshot. Detailed telemetry is optional diagnostics
+        // and is never the authority for admission.
+        snapshot.CurrentAllocationCount =
+            State->Profile.MemoryAdmission.CurrentAllocationCount;
+        snapshot.CurrentReservedBytes =
+            State->Profile.MemoryAdmission.CurrentReservedBytes;
+        State->Profile.MemoryAdmission = snapshot;
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Debug,
+        "[Vulkan] memory admission refreshed: budget=%s allocation-size=%s "
+        "allocation-count=%u current=%u\n",
+        snapshot.HasLiveBudget ? "live" : "75%-heuristic",
+        snapshot.MaxMemoryAllocationSize == 0 ? "unavailable" : "available",
+        snapshot.MaxMemoryAllocationCount,
+        snapshot.CurrentAllocationCount);
+    LogMemoryTelemetry("memory admission refresh");
+    return true;
+}
+
+Vk::VulkanMemoryAdmissionSnapshot VulkanDevice::GetMemoryAdmissionSnapshot() const
+{
+    if (!State)
+        return EmptyMemoryAdmission;
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    return State->Profile.MemoryAdmission;
+}
+
+Vk::VulkanMemoryTelemetrySnapshot VulkanDevice::GetMemoryTelemetry() const
+{
+    if (!State)
+        return {};
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    return State->MemoryTelemetry.GetSnapshot();
+}
+
+void VulkanDevice::LogMemoryTelemetry(const char* boundary) const
+{
+#if defined(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
+    const Vk::VulkanMemoryTelemetrySnapshot telemetry = GetMemoryTelemetry();
+    VkDeviceSize currentBytes = 0;
+    VkDeviceSize peakBytes = 0;
+    for (u32 heap = 0; heap < VK_MAX_MEMORY_HEAPS; ++heap)
+    {
+        currentBytes += telemetry.CurrentBytes[heap];
+        peakBytes += telemetry.PeakBytes[heap];
+    }
+    Platform::Log(
+        Platform::LogLevel::Debug,
+        "[Vulkan] memory telemetry boundary=%s current-count=%u peak-count=%u "
+        "allocations=%llu frees=%llu current-bytes=%.1f MiB peak-bytes=%.1f MiB "
+        "largest=%.1f MiB "
+        "buckets=1M:%llu,4M:%llu,16M:%llu,64M:%llu,256M:%llu,1G:%llu,4G:%llu,large:%llu\n",
+        boundary ? boundary : "unspecified",
+        telemetry.CurrentAllocationCount,
+        telemetry.PeakAllocationCount,
+        static_cast<unsigned long long>(telemetry.TotalAllocationCount),
+        static_cast<unsigned long long>(telemetry.TotalFreeCount),
+        static_cast<double>(currentBytes) / Vk::MemoryMiB,
+        static_cast<double>(peakBytes) / Vk::MemoryMiB,
+        static_cast<double>(telemetry.LargestAllocation) / Vk::MemoryMiB,
+        static_cast<unsigned long long>(telemetry.AllocationSizeBuckets[0]),
+        static_cast<unsigned long long>(telemetry.AllocationSizeBuckets[1]),
+        static_cast<unsigned long long>(telemetry.AllocationSizeBuckets[2]),
+        static_cast<unsigned long long>(telemetry.AllocationSizeBuckets[3]),
+        static_cast<unsigned long long>(telemetry.AllocationSizeBuckets[4]),
+        static_cast<unsigned long long>(telemetry.AllocationSizeBuckets[5]),
+        static_cast<unsigned long long>(telemetry.AllocationSizeBuckets[6]),
+        static_cast<unsigned long long>(telemetry.AllocationSizeBuckets[7]));
+
+    for (u32 heap = 0; heap < VK_MAX_MEMORY_HEAPS; ++heap)
+    {
+        if (telemetry.CurrentBytes[heap] == 0 && telemetry.PeakBytes[heap] == 0)
+            continue;
+        Platform::Log(
+            Platform::LogLevel::Debug,
+            "[Vulkan] memory telemetry heap=%u current=%.1f MiB peak=%.1f MiB\n",
+            heap,
+            static_cast<double>(telemetry.CurrentBytes[heap]) / Vk::MemoryMiB,
+            static_cast<double>(telemetry.PeakBytes[heap]) / Vk::MemoryMiB);
+    }
+#else
+    (void)boundary;
+#endif
+}
+
+bool VulkanDevice::AdmitScaleDependentResources(
+    const Vk::ResolutionBudget& budget, const char* reason) const
+{
+    if (!State)
+        return false;
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    const Vk::VulkanMemoryAdmissionSnapshot& snapshot = State->Profile.MemoryAdmission;
+    const u32 heapIndex = snapshot.PreferredDeviceLocalMemoryType
+        < snapshot.MemoryTypeCount
+        ? snapshot.MemoryTypeHeapIndex[snapshot.PreferredDeviceLocalMemoryType]
+        : Vk::InvalidMemoryHeap;
+    const Vk::VulkanMemoryAdmissionRequest request{
+        budget.ProjectedDeviceLocalBytes,
+        heapIndex < snapshot.HeapCount ? snapshot.CurrentReservedBytes[heapIndex] : 0,
+        budget.LargestDeviceAllocation,
+        budget.ProjectedAllocationCount,
+        snapshot.PreferredDeviceLocalMemoryType,
+    };
+    const Vk::VulkanMemoryAdmissionResult result =
+        Vk::EvaluateVulkanMemoryAdmission(snapshot, request);
+    if (result.Accepted)
+        return true;
+
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "[Vulkan] scale admission refused reason=%s scale=%d requested=%.1f MiB "
+        "heap=%u type=%u budget=%.1f MiB usage=%.1f MiB available=%.1f MiB "
+        "reserve=%.1f MiB largest=%.1f MiB max-allocation=%.1f MiB "
+        "current-count=%u additional-count=%u max-count=%u boundary=%s\n",
+        Vk::VulkanMemoryAdmissionReasonText(result.Reason),
+        budget.ScaleFactor,
+        static_cast<double>(budget.ProjectedDeviceLocalBytes) / Vk::MemoryMiB,
+        result.HeapIndex,
+        request.MemoryTypeIndex,
+        static_cast<double>(result.HeapBudget) / Vk::MemoryMiB,
+        static_cast<double>(result.HeapUsage) / Vk::MemoryMiB,
+        static_cast<double>(result.AvailableBytes) / Vk::MemoryMiB,
+        static_cast<double>(result.SafetyReserve) / Vk::MemoryMiB,
+        static_cast<double>(budget.LargestDeviceAllocation) / Vk::MemoryMiB,
+        static_cast<double>(snapshot.MaxMemoryAllocationSize) / Vk::MemoryMiB,
+        snapshot.CurrentAllocationCount,
+        budget.ProjectedAllocationCount,
+        snapshot.MaxMemoryAllocationCount,
+        reason ? reason : "scale resource recreation");
+    return false;
+}
+
+bool VulkanDevice::ReserveMemoryAllocation(
+    u32 memoryTypeIndex, VkDeviceSize size, const char* debugName) const
+{
+    if (!State)
+        return false;
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    const Vk::VulkanMemoryAdmissionSnapshot& snapshot = State->Profile.MemoryAdmission;
+    const u32 heapIndex = memoryTypeIndex < snapshot.MemoryTypeCount
+        ? snapshot.MemoryTypeHeapIndex[memoryTypeIndex] : Vk::InvalidMemoryHeap;
+    const Vk::VulkanMemoryAdmissionRequest request{
+        size,
+        heapIndex < snapshot.HeapCount ? snapshot.CurrentReservedBytes[heapIndex] : 0,
+        size,
+        1,
+        memoryTypeIndex };
+    const Vk::VulkanMemoryAdmissionResult result =
+        Vk::EvaluateVulkanMemoryAdmission(snapshot, request);
+    if (!result.Accepted)
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "[Vulkan] allocation admission refused name=%s requested=%.1f MiB "
+            "type=%u heap=%u budget=%.1f MiB usage=%.1f MiB available=%.1f MiB "
+            "reserve=%.1f MiB max-allocation=%.1f MiB current-count=%u max-count=%u "
+            "reason=%s\n",
+            debugName ? debugName : "<unnamed allocation>",
+            static_cast<double>(size) / Vk::MemoryMiB,
+            memoryTypeIndex,
+            result.HeapIndex,
+            static_cast<double>(result.HeapBudget) / Vk::MemoryMiB,
+            static_cast<double>(result.HeapUsage) / Vk::MemoryMiB,
+            static_cast<double>(result.AvailableBytes) / Vk::MemoryMiB,
+            static_cast<double>(result.SafetyReserve) / Vk::MemoryMiB,
+            static_cast<double>(snapshot.MaxMemoryAllocationSize) / Vk::MemoryMiB,
+            snapshot.CurrentAllocationCount,
+            snapshot.MaxMemoryAllocationCount,
+            Vk::VulkanMemoryAdmissionReasonText(result.Reason));
+        return false;
+    }
+
+    auto& admission = State->Profile.MemoryAdmission;
+    ++admission.CurrentAllocationCount;
+    admission.CurrentReservedBytes[result.HeapIndex] += size;
+#if defined(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
+    State->MemoryTelemetry.RecordAllocation(result.HeapIndex, size);
+#endif
+    return true;
+}
+
+void VulkanDevice::ReleaseMemoryAllocation(u32 memoryTypeIndex, VkDeviceSize size) const noexcept
+{
+    if (!State)
+        return;
+
+    std::lock_guard<std::mutex> lock(State->MemoryMutex);
+    auto& admission = State->Profile.MemoryAdmission;
+    u32 heapIndex = Vk::InvalidMemoryHeap;
+    if (memoryTypeIndex < admission.MemoryTypeCount)
+        heapIndex = admission.MemoryTypeHeapIndex[memoryTypeIndex];
+    if (admission.CurrentAllocationCount != 0)
+        --admission.CurrentAllocationCount;
+    if (heapIndex < admission.HeapCount)
+    {
+        const VkDeviceSize current = admission.CurrentReservedBytes[heapIndex];
+        admission.CurrentReservedBytes[heapIndex] = current > size ? current - size : 0;
+    }
+#if defined(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
+    State->MemoryTelemetry.RecordFree(heapIndex, size);
+#endif
+}
+
+void VulkanDevice::ReportDeviceLost(const char* operation) const
+{
+    if (!State || !State->DeviceFaultEnabled
+        || State->DeviceFaultReported.exchange(true, std::memory_order_acq_rel))
+        return;
+
+    const PFN_vkGetDeviceFaultInfoEXT getFaultInfo = State->DeviceFns.GetDeviceFaultInfoEXT;
+    if (!getFaultInfo)
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] device lost during %s; VK_EXT_device_fault entry point unavailable\n",
+            operation ? operation : "unknown operation");
+        return;
+    }
+
+    VkDeviceFaultCountsEXT counts{};
+    counts.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT;
+    VkResult res = getFaultInfo(State->Device, &counts, nullptr);
+    if (res != VK_SUCCESS && res != VK_INCOMPLETE)
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] device lost during %s; vkGetDeviceFaultInfoEXT counts failed: %s\n",
+            operation ? operation : "unknown operation",
+            Vk::FormatResult(res).c_str());
+        return;
+    }
+
+    std::vector<VkDeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+    std::vector<VkDeviceFaultVendorInfoEXT> vendors(counts.vendorInfoCount);
+    VkDeviceFaultInfoEXT info{};
+    info.sType = VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT;
+    info.pAddressInfos = addresses.empty() ? nullptr : addresses.data();
+    info.pVendorInfos = vendors.empty() ? nullptr : vendors.data();
+    // Do not allocate or print vendorBinarySize here. The binary can be large;
+    // release logs keep only availability metadata and a developer artifact
+    // collector can opt into copying it later.
+    info.pVendorBinaryData = nullptr;
+    res = getFaultInfo(State->Device, &counts, &info);
+    if (res != VK_SUCCESS && res != VK_INCOMPLETE)
+    {
+        Platform::Log(
+            Platform::LogLevel::Warn,
+            "[Vulkan] device lost during %s; vkGetDeviceFaultInfoEXT info failed: %s\n",
+            operation ? operation : "unknown operation",
+            Vk::FormatResult(res).c_str());
+        return;
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "[Vulkan] device fault diagnostics operation=%s description=\"%s\" "
+        "address-info=%u vendor-info=%u vendor-binary=%llu bytes\n",
+        operation ? operation : "unknown operation",
+        info.description[0] ? info.description : "<none>",
+        counts.addressInfoCount,
+        counts.vendorInfoCount,
+        static_cast<unsigned long long>(counts.vendorBinarySize));
+    for (const VkDeviceFaultVendorInfoEXT& vendor : vendors)
+    {
+        Platform::Log(
+            Platform::LogLevel::Debug,
+            "[Vulkan] device fault vendor-info description=\"%s\" code=%llu data=%llu\n",
+            vendor.description[0] ? vendor.description : "<none>",
+            static_cast<unsigned long long>(vendor.vendorFaultCode),
+            static_cast<unsigned long long>(vendor.vendorFaultData));
+    }
+}
+
 bool VulkanDevice::HasSharedDevice(const VulkanContext& context) noexcept
 {
     std::lock_guard<std::mutex> lock(SharedDeviceMutex);
@@ -285,6 +583,7 @@ bool VulkanDevice::Create(
             return false;
         }
         State = std::move(shared);
+        RefreshMemoryAdmission();
         LogStartupSummary(requestedRendererName);
         return true;
     }
@@ -423,6 +722,13 @@ bool VulkanDevice::Create(
     if (Profile.RequiresPortabilitySubset)
         EnabledExtensions.push_back(PortabilitySubsetExtensionName);
 
+    // VK_EXT_device_fault is optional diagnostics. It is enabled only when the
+    // physical-device feature probe confirmed deviceFault, so a driver that
+    // merely advertises the extension cannot make device creation invalid.
+    if (Profile.HasDeviceFault
+        && Vk::FeatureProbe::HasExtension(available, "VK_EXT_device_fault"))
+        EnabledExtensions.push_back("VK_EXT_device_fault");
+
     // --- optional vendor low-latency extensions -----------------------------
     //
     // Everything below is strictly additive: a device that cannot do any of it
@@ -439,12 +745,23 @@ bool VulkanDevice::Create(
     VkPhysicalDevicePresentWait2FeaturesKHR presentWait2Features{};
     VkPhysicalDevicePresentTimingFeaturesEXT presentTimingFeatures{};
     VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR latestReadyFeatures{};
+    VkPhysicalDeviceFaultFeaturesEXT deviceFaultFeatures{};
     const void* featureChain = nullptr;
 
     const auto chain = [&featureChain](auto& feature) {
         feature.pNext = const_cast<void*>(featureChain);
         featureChain = &feature;
     };
+
+    if (Profile.HasDeviceFault
+        && Vk::FeatureProbe::HasExtension(available, "VK_EXT_device_fault"))
+    {
+        deviceFaultFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT;
+        deviceFaultFeatures.deviceFault = VK_TRUE;
+        deviceFaultFeatures.deviceFaultVendorBinary = VK_FALSE;
+        chain(deviceFaultFeatures);
+        State->DeviceFaultEnabled = true;
+    }
 
     if (lowLatency.NvLowLatency2 || lowLatency.AmdAntiLag
         || lowLatency.GenericPresentTiming)
@@ -735,7 +1052,8 @@ bool VulkanDevice::Create(
         context.Fns().CreateDevice(PhysicalDevice, &createInfo, nullptr, &Device);
 
     if (res != VK_SUCCESS
-        && (NvLowLatency2.Enabled || AmdAntiLag.Enabled || genericPresentExtensionsEnabled))
+        && (NvLowLatency2.Enabled || AmdAntiLag.Enabled || genericPresentExtensionsEnabled
+            || State->DeviceFaultEnabled))
     {
         // A vendor latency extension must never be the reason the renderer
         // fails to start. The driver accepted every extension name and every
@@ -744,7 +1062,7 @@ bool VulkanDevice::Create(
         // and the loss is reported instead of propagated.
         const std::string firstAttempt = Vk::FormatResult(res);
         Platform::Log(Platform::LogLevel::Warn,
-            "[Vulkan] vkCreateDevice rejected the low-latency extensions (%s); "
+            "[Vulkan] vkCreateDevice rejected optional extensions (%s); "
             "retrying without them\n",
             firstAttempt.c_str());
 
@@ -764,7 +1082,8 @@ bool VulkanDevice::Create(
                         || std::strcmp(name, VK_EXT_PRESENT_TIMING_EXTENSION_NAME) == 0
                         || std::strcmp(name, VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME) == 0
                         || std::strcmp(
-                            name, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0;
+                            name, VK_KHR_PRESENT_MODE_FIFO_LATEST_READY_EXTENSION_NAME) == 0
+                        || std::strcmp(name, "VK_EXT_device_fault") == 0;
                 }),
             EnabledExtensions.end());
 
@@ -786,6 +1105,7 @@ bool VulkanDevice::Create(
         // survives it either. Leaving these set would let the pacer request a
         // target time through entry points this device never enabled.
         State->PresentTimingFeatures = VulkanPresentTimingDeviceFeatures{};
+        State->DeviceFaultEnabled = false;
 
         createInfo.pNext = nullptr;
         createInfo.enabledExtensionCount = static_cast<u32>(EnabledExtensions.size());
@@ -841,6 +1161,12 @@ bool VulkanDevice::Create(
             }
         }
     }
+
+    // Device-local usage can include allocations made by the loader or other
+    // shared-device clients after the physical-device probe. Refresh once at
+    // logical-device initialization so the first scale admission sees current
+    // live budget and allocation-count state.
+    RefreshMemoryAdmission();
 
     SetDebugName(VK_OBJECT_TYPE_DEVICE, Device, "melonPrimeDS device");
     SetDebugName(VK_OBJECT_TYPE_QUEUE, MainQueue, "melonPrimeDS main queue");

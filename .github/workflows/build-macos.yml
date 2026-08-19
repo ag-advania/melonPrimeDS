@@ -41,6 +41,18 @@ jobs:
       - name: Audit renderer telemetry zero-overhead contract
         run: python3 tools/ci/audits/audit-renderer-perf-zero-overhead.py
 
+      - name: Audit GPU memory production-overhead contract
+        run: python3 tools/ci/audits/audit-renderer-memory-production-overhead.py
+
+      - name: Audit Classic On-Screen Edit layout contract
+        run: python3 tools/ci/audits/audit-onscreen-edit-classic-layout.py
+
+      - name: Audit physical renderer A/B provenance and phase contract
+        run: python3 tools/ci/audits/audit-renderer-physical-ab-contract.py
+
+      - name: Test physical renderer A/B deterministic summarizer
+        run: python3 tools/testing/summarize-renderer-physical-ab-tests.py
+
       - name: Install dependencies for package building
         run: |
           brew install autoconf automake autoconf-archive libtool python-setuptools
@@ -92,7 +104,12 @@ jobs:
         with:
           configurePreset: release-mac-${{ matrix.arch }}
           buildPreset: release-mac-${{ matrix.arch }}
-          configurePresetAdditionalArgs: "['-DCMAKE_BUILD_TYPE=Release', '-DMELONDS_EMBED_BUILD_INFO=ON', '-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF', '-DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF', '-DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF', '-DMELONPRIME_ENABLE_VULKAN=ON', '-DMELONPRIME_FORCE_DISABLE_VULKAN=OFF', '-DMELONPRIME_MOLTENVK_DYLIB=${{ github.workspace }}/.deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib', '-DMELONPRIME_MOLTENVK_LICENSE=${{ github.workspace }}/.deps/MoltenVK/LICENSE']"
+          configurePresetAdditionalArgs: "['-DCMAKE_BUILD_TYPE=Release', '-DMELONDS_EMBED_BUILD_INFO=ON', '-DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF', '-DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF', '-DMELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=OFF', '-DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF', '-DMELONPRIME_ENABLE_VULKAN=ON', '-DMELONPRIME_FORCE_DISABLE_VULKAN=OFF', '-DMELONPRIME_MOLTENVK_DYLIB=${{ github.workspace }}/.deps/MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib', '-DMELONPRIME_MOLTENVK_LICENSE=${{ github.workspace }}/.deps/MoltenVK/LICENSE']"
+
+      - name: Run production Vulkan retire-frame mapping test
+        if: always()
+        shell: bash
+        run: cmake --build "build/release-mac-${{ matrix.arch }}" --target melonprime_vulkan_frame_retire_check --parallel 1
 
       - name: Verify raster parity contracts
         shell: bash

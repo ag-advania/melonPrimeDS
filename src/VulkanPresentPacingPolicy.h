@@ -47,6 +47,16 @@ enum class VulkanPacingAuthority : int
     GenericPresentTiming,
 };
 
+// The presenter-slot admission path must follow the vendor API that is
+// actually active, not a renderer setting that merely requested it. An
+// unsupported extension and a runtime-disabled vendor path therefore both
+// continue through the normal safe wait path.
+constexpr bool VulkanHasEffectiveLowLatencyAuthority(
+    bool reflexActive, bool antiLagActive) noexcept
+{
+    return reflexActive || antiLagActive;
+}
+
 // How a frame asks the presentation engine to schedule its display.
 //
 // The two modes mean genuinely different things and must not be treated as two

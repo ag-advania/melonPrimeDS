@@ -71,6 +71,10 @@ public:
     void RenderFrame() override;
     u32* GetLine(int line) override;
     [[nodiscard]] bool UsesStructured2DMetadata() const noexcept override { return true; }
+    [[nodiscard]] StructuredPerfBackend GetStructured2DPerfBackend() const noexcept override
+    {
+        return StructuredPerfBackend::DX12;
+    }
     [[nodiscard]] bool HasValidCaptureFrame() const noexcept override { return FrameReadbackValid; }
 
     bool ComposeStructuredOutput(

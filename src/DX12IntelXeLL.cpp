@@ -543,12 +543,21 @@ void DX12IntelXeLL::FinishFrame()
 {
     if (!FrameOpen)
         return;
-    if (!InputSampled)
-        MarkInputSample();
-    EndRenderPhase();
-    if (!PresentStarted)
-        MarkPresentStart();
-    MarkPresentEnd();
+
+    // FinishFrame is cleanup for an emulated frame that may have stopped
+    // before rendering or the actual DXGI Present. Only close spans that the
+    // corresponding production phase explicitly opened; never manufacture an
+    // input sample, render-submit span, or Present span for an aborted frame.
+    if (PresentOpen)
+        MarkPresentEnd();
+    if (RenderSubmitOpen)
+        MarkRenderSubmitEnd();
+    if (SimulationOpen)
+    {
+        SendMarker(DX12IntelXeLLMarker::SimulationEnd);
+        SimulationOpen = false;
+    }
+
     FrameOpen = false;
     SimulationOpen = false;
     RenderSubmitStarted = false;

@@ -27,6 +27,7 @@
 #include "VulkanCommon.h"
 #include "VulkanDescriptors.h"
 #include "VulkanLoader.h"
+#include "VulkanMemoryAdmission.h"
 
 namespace melonDS::Vk
 {
@@ -181,6 +182,13 @@ struct ResolutionBudget
     // Largest single VkBuffer, which is what maxStorageBufferRange gates.
     VkDeviceSize LargestStorageBuffer = 0;
 
+    // Largest allocation and projected scale-dependent device-local demand.
+    // These are admission inputs, not a silent scale clamp: a rejected scale
+    // remains a hard failure with the observed budget in the log.
+    VkDeviceSize LargestDeviceAllocation = 0;
+    VkDeviceSize ProjectedDeviceLocalBytes = 0;
+    u32 ProjectedAllocationCount = 0;
+
     // Sum of every rasterizer allocation, which is what the device-local heap
     // has to hold.
     VkDeviceSize TotalDeviceBytes = 0;
@@ -213,6 +221,8 @@ struct DeviceProbeResult
     // Sum of the sizes of all VK_MEMORY_HEAP_DEVICE_LOCAL_BIT heaps.
     VkDeviceSize DeviceLocalMemory = 0;
 
+    VulkanMemoryAdmissionSnapshot MemoryAdmission;
+
     // VK_KHR_portability_subset was reported. The device is then a portability
     // implementation (MoltenVK), and the extension MUST be enabled at device
     // creation -- the spec makes that mandatory, not optional.
@@ -222,6 +232,7 @@ struct DeviceProbeResult
     bool HasDebugMarkerSupport = false;
     bool HasNvLowLatency2 = false;
     bool HasAmdAntiLag = false;
+    bool HasDeviceFault = false;
 
     // Higher is better. Discrete GPUs outrank integrated, which outrank
     // software rasterizers; ties break on supported internal resolution.
@@ -255,6 +266,14 @@ public:
         const InstanceDispatch& fns,
         VkPhysicalDevice physicalDevice,
         VkSurfaceKHR surface);
+
+    // Refreshes optional memory-budget and allocation-limit capabilities for a
+    // live logical device without probing queues or recreating the instance.
+    static VulkanMemoryAdmissionSnapshot QueryMemoryAdmission(
+        const InstanceDispatch& fns,
+        VkPhysicalDevice physicalDevice,
+        const VkPhysicalDeviceProperties& properties,
+        const VkPhysicalDeviceMemoryProperties& memoryProperties);
 
     // Device extensions every eligible device must expose.
     static std::vector<const char*> GetRequiredDeviceExtensions(bool needPresent);

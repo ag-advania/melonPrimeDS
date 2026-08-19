@@ -157,6 +157,7 @@ jobs:
     - name: Start ${{ matrix.os_name }} VM
       id: start_vm
       continue-on-error: true
+      timeout-minutes: 20
       uses: jenseng/dynamic-uses@v1
       with: &vm_start_with
         uses: vmactions/${{ matrix.flavor }}-vm@v1
@@ -191,10 +192,12 @@ jobs:
     # more before letting the job fail.
     - name: Retry ${{ matrix.os_name }} VM start
       if: steps.start_vm.outcome == 'failure'
+      timeout-minutes: 20
       uses: jenseng/dynamic-uses@v1
       with: *vm_start_with
 
     - name: Install dependencies
+      timeout-minutes: 30
       run: ${{ matrix.install_deps }}
 
     - name: Audit renderer telemetry zero-overhead contract
@@ -220,6 +223,10 @@ jobs:
         fi
         echo "Using Python executable: $python_cmd"
         "$python_cmd" tools/ci/audits/audit-renderer-perf-zero-overhead.py
+        "$python_cmd" tools/ci/audits/audit-renderer-memory-production-overhead.py
+        "$python_cmd" tools/ci/audits/audit-onscreen-edit-classic-layout.py
+        "$python_cmd" tools/ci/audits/audit-renderer-physical-ab-contract.py
+        "$python_cmd" tools/testing/summarize-renderer-physical-ab-tests.py
 
     # pkgin's failure summary ("pkg_install warnings: N, errors: N") names
     # neither the packages nor the reason; the detail only goes to this file
@@ -238,6 +245,7 @@ jobs:
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF \
           -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF \
+          -DMELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=OFF \
           -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF \
           -DMELONPRIME_ENABLE_VULKAN=ON \
           -DMELONPRIME_REQUIRE_QT6_5=ON \
@@ -359,13 +367,24 @@ jobs:
         cmake --build /tmp/build \
           --target melonprime_vulkan_loader_open_check --parallel 1
 
-    - name: Build and run BSD Vulkan validation targets
+    - name: Build and run BSD Vulkan presenter validation targets
       run: |
         set -eu
         cmake --build /tmp/build \
           --target melonprime_vulkan_present_timing_check --parallel 1
         cmake --build /tmp/build \
           --target melonprime_vulkan_present_pacer_dispatch_check --parallel 1
+
+    - name: Run production Vulkan retire-frame mapping test
+      if: always()
+      run: |
+        set -eu
+        cmake --build /tmp/build \
+          --target melonprime_vulkan_frame_retire_check --parallel 1
+
+    - name: Build BSD release tree
+      if: always()
+      run: |
         cmake --build /tmp/build --parallel 1
 
     - name: Build Vulkan-disabled BSD variant
@@ -377,6 +396,7 @@ jobs:
           -DMELONDS_EMBED_BUILD_INFO=ON \
           -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF \
           -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF \
+          -DMELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=OFF \
           -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF \
           -DMELONPRIME_ENABLE_VULKAN=OFF \
           -DMELONPRIME_REQUIRE_QT6_5=ON \

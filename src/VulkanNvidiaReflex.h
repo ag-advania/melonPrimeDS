@@ -29,6 +29,24 @@
 namespace melonDS
 {
 
+// A Reflex sleep wait is complete only when the driver reports success. A
+// watchdog timeout must close the active frame and disable Reflex; treating it
+// as success would leave the frame open while its semaphore value is still
+// unsignalled, causing the next sleep to wait on an invalid pacing contract.
+enum class VulkanReflexSleepWaitAction : int
+{
+    Continue = 0,
+    DisableForRuntimeFailure,
+};
+
+constexpr VulkanReflexSleepWaitAction ClassifyVulkanReflexSleepWaitResult(
+    VkResult result) noexcept
+{
+    return result == VK_SUCCESS
+        ? VulkanReflexSleepWaitAction::Continue
+        : VulkanReflexSleepWaitAction::DisableForRuntimeFailure;
+}
+
 // Mode values are the *config* values, shared with the DX12 backend so one
 // setting means the same thing on both. DX12NvidiaReflexMode has the identical
 // Off/On/OnBoost triple; keeping the numbers equal is what lets
@@ -152,7 +170,9 @@ public:
     // GetFrameId(), and the same value is chained into the submission
     // (VkLatencySubmissionPresentIdNV) and the present (VkPresentIdKHR), which
     // is what lets the driver correlate the three.
-    void BeginFrame();
+    // `logicalFrameId` is allocated by the emulation thread exactly once per
+    // game frame and remains stable through every marker, submit, and present.
+    void BeginFrame(u64 logicalFrameId);
     void MarkInputSample();
     void MarkSimulationStart();
     void MarkSimulationEnd();
@@ -216,6 +236,8 @@ private:
     bool FrameOpen = false;
     bool InputSampled = false;
     bool SimulationOpen = false;
+    bool RenderSubmitOpen = false;
+    bool PresentOpen = false;
     bool PresentedSinceSleep = true;
 };
 

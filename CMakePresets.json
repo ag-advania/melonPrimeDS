@@ -17,6 +17,10 @@
           "type": "BOOL",
           "value": "OFF"
         },
+        "MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY": {
+          "type": "BOOL",
+          "value": "OFF"
+        },
         "MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE": {
           "type": "BOOL",
           "value": "OFF"
@@ -76,6 +80,10 @@
           "value": "OFF"
         },
         "MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY": {
+          "type": "BOOL",
+          "value": "OFF"
+        },
+        "MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY": {
           "type": "BOOL",
           "value": "OFF"
         },

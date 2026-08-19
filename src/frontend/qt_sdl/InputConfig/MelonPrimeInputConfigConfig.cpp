@@ -9,6 +9,7 @@
 #include <QSpinBox>
 #include <QDoubleSpinBox>
 #include <QLineEdit>
+#include <QSlider>
 #include <QTimer>
 #include <QVariant>
 
@@ -183,6 +184,8 @@ void MelonPrimeInputConfig::saveConfig()
             continue;
         if (auto* cb = qobject_cast<QCheckBox*>(widget.data()))
             instcfg.SetBool(key, cb->isChecked());
+        else if (auto* slider = qobject_cast<QSlider*>(widget.data()))
+            instcfg.SetDouble(key, slider->value() / 100.0);
         else if (auto* sb = qobject_cast<QSpinBox*>(widget.data()))
             instcfg.SetInt(key, sb->value());
         else if (auto* dsb = qobject_cast<QDoubleSpinBox*>(widget.data()))

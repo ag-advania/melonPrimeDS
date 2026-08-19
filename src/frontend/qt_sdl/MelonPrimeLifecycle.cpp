@@ -152,6 +152,7 @@ namespace MelonPrime {
             emuInstance, hookState, patchState, hudState);
         m_flags.packed = 0;
         m_matchBlackWindow = {};
+        m_postSavestateReconcilePending = false;
         // A restarted/reopened ROM begins in menu cursor mode. Supersede any
         // hide/capture request left by the previous match before its next GUI pass.
         isCursorMode = true;
@@ -195,6 +196,7 @@ namespace MelonPrime {
     {
         m_flags.packed = 0;
         m_matchBlackWindow = {};
+        m_postSavestateReconcilePending = false;
         isCursorMode = true;
         m_threadBridge.ResetCursorPresentationFromEmu();
         m_zoomAimCanZoomCache = {};
@@ -223,6 +225,7 @@ namespace MelonPrime {
         InstanceDiagnostics::CheckEmuThread(emuInstance, "MelonPrimeCore::OnEmuStop");
         InstanceDiagnostics::LogLifecycle(emuInstance, this, "emu-stop");
         m_flags.clear(StateFlags::BIT_IN_GAME);
+        m_postSavestateReconcilePending = false;
         isCursorMode = true;
         m_threadBridge.ResetCursorPresentationFromEmu();
 #ifdef _WIN32
@@ -267,6 +270,39 @@ namespace MelonPrime {
         // full black this window keys off may already be in the past. Re-arm
         // the bootstrap so the next frame classifies the loaded state.
         m_matchBlackWindow = {};
+
+        // Savestate restores the emulated timeline, not MelonPrime host-owned
+        // lifecycle and patch bookkeeping. Invalidate host state now, then
+        // let the next normal RunFrameHook rebuild it from loaded RAM. Focus
+        // remains a host fact and is intentionally not changed here.
+        ++m_timelineGeneration;
+        if (m_timelineGeneration == 0)
+            m_timelineGeneration = 1;
+        m_postSavestateReconcilePending = true;
+        m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
+        m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+        m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
+        ResetTransientInputState(
+            TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform
+            | TR_BipedFire | TR_WeaponSwitchPending);
+        ResetMorphBoostSwipePulseState();
+        m_isWeaponCheckActive = false;
+        m_nativeZoomTogglePrevDown = false;
+        m_nativeZoomLastKnownEnabled = false;
+#ifdef MELONPRIME_DS
+        m_nativeZoomPending.Clear();
+#endif
+        m_zoomAimCanZoomCache = {};
+        m_input = {};
+        InputReset();
+
+#ifdef MELONPRIME_DS
+        // Host-only invalidation: do not restore pre-load guest RAM and do not
+        // advance a synthetic frame. The next normal frame reads loaded RAM
+        // and re-enters the existing join/battle lifecycle gates.
+        PatchLifecycle::ReconcileAfterSavestateLoad(
+            emuInstance->getNDS(), emuInstance, this);
+#endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
         // Savestates replace emulated ARM9 RAM, but the native-HUD patch

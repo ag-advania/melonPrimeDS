@@ -163,6 +163,8 @@ void VulkanNvidiaReflex::Shutdown() noexcept
     FrameOpen = false;
     InputSampled = false;
     SimulationOpen = false;
+    RenderSubmitOpen = false;
+    PresentOpen = false;
     FrameId = 0;
     SleepValue = 0;
     Mode = VulkanNvidiaReflexMode::Off;
@@ -178,6 +180,8 @@ void VulkanNvidiaReflex::Disable(std::string reason) noexcept
     FrameOpen = false;
     InputSampled = false;
     SimulationOpen = false;
+    RenderSubmitOpen = false;
+    PresentOpen = false;
     UnavailableReason = std::move(reason);
 }
 
@@ -209,6 +213,8 @@ void VulkanNvidiaReflex::SetSwapchain(VkSwapchainKHR swapchain)
     FrameOpen = false;
     InputSampled = false;
     SimulationOpen = false;
+    RenderSubmitOpen = false;
+    PresentOpen = false;
     PresentedSinceSleep = true;
 
     if (!Available || Swapchain == VK_NULL_HANDLE)
@@ -278,7 +284,7 @@ bool VulkanNvidiaReflex::ApplySleepMode()
 // Frame path
 // ---------------------------------------------------------------------------
 
-void VulkanNvidiaReflex::BeginFrame()
+void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
 {
     if (!IsFramePathAvailable())
     {
@@ -286,14 +292,28 @@ void VulkanNvidiaReflex::BeginFrame()
         return;
     }
 
-    // presentID must strictly increase for a swapchain, so it is bumped per
-    // frame the app *starts*, not per frame it manages to present. A skipped
-    // frame simply leaves a gap, which is legal and is what makes the id usable
-    // as the correlation key for the markers, the submit and the present.
-    ++FrameId;
+    if (FrameOpen)
+        FinishFrame();
+
+    // Reflex frame IDs represent logical emulated/game frames. They are not
+    // presenter callbacks, swapchain image indices, or frame-ring slots. A
+    // skipped frame therefore leaves a gap, while a repeated callback cannot
+    // split one logical frame into two driver IDs.
+    if (logicalFrameId == 0 || logicalFrameId <= FrameId)
+    {
+        Log(
+            LogLevel::Error,
+            "[Vulkan] NVIDIA Reflex rejected a non-increasing logical frame ID=%llu previous=%llu\n",
+            static_cast<unsigned long long>(logicalFrameId),
+            static_cast<unsigned long long>(FrameId));
+        return;
+    }
+    FrameId = logicalFrameId;
     FrameOpen = true;
     InputSampled = false;
     SimulationOpen = false;
+    RenderSubmitOpen = false;
+    PresentOpen = false;
 
     // vkLatencySleepNV is specified to be called exactly once between presents.
     // The presenter legitimately skips frames (minimised window, swapchain not
@@ -334,9 +354,14 @@ void VulkanNvidiaReflex::BeginFrame()
     // One second is far beyond any legitimate pacing delay; it exists so a
     // driver bug degrades into a dropped frame instead of a hung emulator.
     res = fns.WaitSemaphoresKHR(Device->GetHandle(), &wait, 1000ull * 1000ull * 1000ull);
-    if (res != VK_SUCCESS && res != VK_TIMEOUT)
+    if (ClassifyVulkanReflexSleepWaitResult(res)
+        == VulkanReflexSleepWaitAction::DisableForRuntimeFailure)
     {
         DisableForRuntimeFailure("vkWaitSemaphores(Reflex sleep)", res);
+        // The frame is closed by DisableForRuntimeFailure(). Mark the sleep as
+        // consumed so a later recovery/re-enable cannot wait on this
+        // unsignalled semaphore value.
+        PresentedSinceSleep = true;
         FrameOpen = false;
         return;
     }
@@ -387,30 +412,57 @@ void VulkanNvidiaReflex::MarkSimulationEnd()
 
 void VulkanNvidiaReflex::MarkRenderSubmitStart()
 {
+    if (!FrameOpen || RenderSubmitOpen || PresentOpen)
+        return;
+    if (SimulationOpen)
+    {
+        SetMarker(VK_LATENCY_MARKER_SIMULATION_END_NV);
+        SimulationOpen = false;
+    }
     SetMarker(VK_LATENCY_MARKER_RENDERSUBMIT_START_NV);
+    RenderSubmitOpen = true;
 }
 
 void VulkanNvidiaReflex::MarkRenderSubmitEnd()
 {
+    if (!FrameOpen || !RenderSubmitOpen)
+        return;
     SetMarker(VK_LATENCY_MARKER_RENDERSUBMIT_END_NV);
+    RenderSubmitOpen = false;
 }
 
 void VulkanNvidiaReflex::MarkPresentStart()
 {
+    if (!FrameOpen || PresentOpen)
+        return;
+    MarkRenderSubmitEnd();
+    MarkSimulationEnd();
     SetMarker(VK_LATENCY_MARKER_PRESENT_START_NV);
+    PresentOpen = true;
 }
 
 void VulkanNvidiaReflex::MarkPresentEnd()
 {
+    if (!FrameOpen || !PresentOpen)
+        return;
     SetMarker(VK_LATENCY_MARKER_PRESENT_END_NV);
+    PresentOpen = false;
 }
 
 
 void VulkanNvidiaReflex::FinishFrame()
 {
+    // Defensive closure covers a presenter admission skip or a renderer
+    // transition. It never invents a present: the present markers are only
+    // closed when MarkPresentStart() already bracketed QueuePresentKHR.
+    MarkPresentEnd();
+    MarkRenderSubmitEnd();
+    MarkSimulationEnd();
     FrameOpen = false;
     InputSampled = false;
     SimulationOpen = false;
+    RenderSubmitOpen = false;
+    PresentOpen = false;
 }
 
 

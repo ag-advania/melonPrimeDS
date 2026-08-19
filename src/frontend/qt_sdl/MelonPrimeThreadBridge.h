@@ -3,6 +3,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <algorithm>
+#include <limits>
 
 namespace MelonPrime {
 
@@ -77,7 +79,69 @@ public:
     }
     void AddWheelFromGui(int steps) noexcept
     {
-        m_wheelSteps.fetch_add(steps, std::memory_order_release);
+        if (!steps)
+            return;
+
+        // The wheel mailbox is a single-producer/single-consumer accumulator,
+        // but the generation tag must be published atomically with its value.
+        // A Qt pulse from an old capture registration is therefore discarded
+        // instead of being carried into the next Raw Input owner epoch.
+        const uint64_t generationValue =
+            m_inputGeneration.load(std::memory_order_acquire);
+        const uint32_t generation = static_cast<uint32_t>(generationValue);
+        uint64_t current = m_wheelMailbox.load(std::memory_order_relaxed);
+        for (;;) {
+            const uint32_t currentGeneration =
+                static_cast<uint32_t>(current >> 32);
+            const int32_t currentSteps = static_cast<int32_t>(
+                static_cast<uint32_t>(current));
+            int64_t nextSteps = (currentGeneration == generation ? currentSteps : 0);
+            nextSteps += steps;
+            nextSteps = std::clamp<int64_t>(
+                nextSteps,
+                std::numeric_limits<int32_t>::min(),
+                std::numeric_limits<int32_t>::max());
+            const uint64_t desired = PackWheelMailbox(
+                generation, static_cast<int32_t>(nextSteps));
+            if (m_wheelMailbox.compare_exchange_weak(
+                    current, desired,
+                    std::memory_order_release,
+                    std::memory_order_relaxed)) {
+                // A generation publication may race this GUI event. If the
+                // emulation thread advanced the source after our first load,
+                // retry with the current generation instead of resurrecting an
+                // old pulse after the boundary.
+                if (m_inputGeneration.load(std::memory_order_acquire)
+                    == generationValue)
+                    return;
+                current = m_wheelMailbox.load(std::memory_order_relaxed);
+            }
+        }
+    }
+    void SetInputGenerationFromEmu(uint64_t generation) noexcept
+    {
+        const uint64_t normalizedGeneration = generation ? generation : 1;
+        const uint64_t previous = m_inputGeneration.exchange(
+            normalizedGeneration, std::memory_order_acq_rel);
+        if (previous != normalizedGeneration) {
+            // Registration change is a hard mailbox boundary. Events already
+            // queued by Qt are intentionally not carried into the new source.
+            // Use CAS so a new-generation GUI pulse published concurrently
+            // with this boundary is retained rather than overwritten.
+            const uint32_t generation =
+                static_cast<uint32_t>(normalizedGeneration);
+            uint64_t current = m_wheelMailbox.load(std::memory_order_relaxed);
+            for (;;) {
+                if (static_cast<uint32_t>(current >> 32) == generation)
+                    break;
+                const uint64_t desired = PackWheelMailbox(generation, 0);
+                if (m_wheelMailbox.compare_exchange_weak(
+                        current, desired,
+                        std::memory_order_release,
+                        std::memory_order_relaxed))
+                    break;
+            }
+        }
     }
     void RequestCursorModeFromGui(bool enabled) noexcept
     {
@@ -150,9 +214,16 @@ public:
     {
         return m_windowHandle.load(std::memory_order_acquire);
     }
-    int ConsumeWheelForEmu() noexcept
+    int ConsumeWheelForEmu(uint64_t expectedGeneration = 0) noexcept
     {
-        return m_wheelSteps.exchange(0, std::memory_order_acq_rel);
+        const uint64_t packed = m_wheelMailbox.exchange(0, std::memory_order_acq_rel);
+        if (!packed)
+            return 0;
+        if (expectedGeneration != 0
+            && static_cast<uint32_t>(packed >> 32)
+                != static_cast<uint32_t>(expectedGeneration))
+            return 0;
+        return static_cast<int32_t>(static_cast<uint32_t>(packed));
     }
     int ConsumeCursorModeForEmu() noexcept
     {
@@ -247,6 +318,12 @@ public:
     }
 
 private:
+    static uint64_t PackWheelMailbox(uint32_t generation, int32_t steps) noexcept
+    {
+        return (static_cast<uint64_t>(generation) << 32)
+            | static_cast<uint32_t>(steps);
+    }
+
     std::atomic_bool m_focused{false};
     std::atomic_bool m_captureWanted{false};
     std::atomic_bool m_panelAvailable{false};
@@ -254,7 +331,8 @@ private:
     std::atomic<int> m_centerY{0};
     std::atomic<uint64_t> m_layoutGeneration{1};
     std::atomic<uintptr_t> m_windowHandle{0};
-    std::atomic<int> m_wheelSteps{0};
+    std::atomic<uint64_t> m_inputGeneration{1};
+    std::atomic<uint64_t> m_wheelMailbox{PackWheelMailbox(1, 0)};
     std::atomic<int> m_cursorModeCommand{-1};
     std::atomic<int32_t> m_panelAimX{0};
     std::atomic<int32_t> m_panelAimY{0};

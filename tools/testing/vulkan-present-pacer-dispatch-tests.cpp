@@ -7,6 +7,7 @@
 */
 
 #include <cstdint>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <deque>
@@ -60,6 +61,7 @@ struct FakeVulkan
     bool SurfaceAbsolute = true;
     bool SurfaceRelative = true;
     bool PresentStageDomain = true;
+    std::vector<VkPresentModeKHR> NvOptimizedPresentModes;
 
     std::deque<VkResult> WaitResults;
     std::deque<VkResult> LegacyWaitResults;
@@ -77,6 +79,8 @@ struct FakeVulkan
     uint64_t ReportTimeDomainsCounter = 1;
 
     int Caps2Calls = 0;
+    int NvOptimizedModeCountCalls = 0;
+    int NvOptimizedModeArrayCalls = 0;
     int LegacyCapsCalls = 0;
     int QueueSizeCalls = 0;
     int WaitCalls = 0;
@@ -147,6 +151,30 @@ struct FakeVulkan
                     Current->SurfaceTiming
                         ? VK_PRESENT_STAGE_IMAGE_FIRST_PIXEL_VISIBLE_BIT_EXT
                         : 0;
+                break;
+            }
+            case VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV:
+            {
+                auto* latency = reinterpret_cast<VkLatencySurfaceCapabilitiesNV*>(node);
+                if (latency->pPresentModes == nullptr)
+                {
+                    ++Current->NvOptimizedModeCountCalls;
+                    latency->presentModeCount = static_cast<u32>(
+                        Current->NvOptimizedPresentModes.size());
+                }
+                else
+                {
+                    ++Current->NvOptimizedModeArrayCalls;
+                    const u32 capacity = latency->presentModeCount;
+                    const u32 count = std::min<u32>(
+                        capacity,
+                        static_cast<u32>(Current->NvOptimizedPresentModes.size()));
+                    for (u32 i = 0; i < count; ++i)
+                        latency->pPresentModes[i] = Current->NvOptimizedPresentModes[i];
+                    latency->presentModeCount = count;
+                    if (count < Current->NvOptimizedPresentModes.size())
+                        return VK_INCOMPLETE;
+                }
                 break;
             }
             default:
@@ -342,7 +370,8 @@ VkPhysicalDevice FakePhysicalDevice()
 }
 
 VulkanPresentPacerInitInfo BaseInfo(
-    bool ext, bool wait, bool google, bool legacyWait = false)
+    bool ext, bool wait, bool google, bool legacyWait = false,
+    bool nvLowLatency2 = false)
 {
     VulkanPresentPacerInitInfo info;
     info.Device = FakeDevice();
@@ -357,6 +386,7 @@ VulkanPresentPacerInitInfo BaseInfo(
     info.PresentAtAbsoluteTimeFeatureEnabled = ext;
     info.PresentAtRelativeTimeFeatureEnabled = ext;
     info.LatestReadyExtensionEnabled = true;
+    info.NvidiaLowLatency2ExtensionEnabled = nvLowLatency2;
     return info;
 }
 
@@ -386,6 +416,56 @@ void TestSurfaceCapabilitiesFallback()
         "legacy surface capabilities must populate the returned capabilities");
     Require(pacer.GetSwapchainCreateFlags() == 0,
         "legacy surface capability fallback must disable modern swapchain flags");
+}
+
+void TestNvLowLatencySurfaceCapabilitiesAndSelection()
+{
+    FakeVulkan fake;
+    fake.NvOptimizedPresentModes = {
+        VK_PRESENT_MODE_MAILBOX_KHR,
+        VK_PRESENT_MODE_IMMEDIATE_KHR,
+    };
+    VulkanPresentPacer pacer;
+    const VulkanPresentPacerInitInfo info = BaseInfo(true, false, false, false, true);
+    Require(pacer.InitializeForTesting(fake.Dispatch(), info, Surface),
+        "NV optimized-mode pacer initialization must succeed");
+
+    VkSurfaceCapabilitiesKHR capabilities{};
+    Require(pacer.QuerySurfaceCapabilities(capabilities),
+        "NV optimized-mode surface query must succeed");
+    Require(fake.Caps2Calls == 2
+                && fake.NvOptimizedModeCountCalls == 1
+                && fake.NvOptimizedModeArrayCalls == 1,
+        "NV optimized-mode query must use one count pass and one array pass");
+    Require(pacer.GetNvLowLatencyOptimizedPresentModes()
+                == fake.NvOptimizedPresentModes,
+        "NV optimized-mode query must retain the driver's mode list");
+
+    VkPresentModeKHR selected = VK_PRESENT_MODE_FIFO_KHR;
+    std::string reason;
+    Require(VulkanPresentPacer::SelectNvLowLatencyOptimizedPresentMode(
+                {VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR,
+                 VK_PRESENT_MODE_MAILBOX_KHR},
+                {VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR},
+                false, false, selected, reason)
+                && selected == VK_PRESENT_MODE_MAILBOX_KHR,
+        "VSync-off selection must prefer an optimized non-FIFO intersection");
+    Require(!VulkanPresentPacer::SelectNvLowLatencyOptimizedPresentMode(
+                {VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_FIFO_LATEST_READY_KHR},
+                {VK_PRESENT_MODE_FIFO_LATEST_READY_KHR},
+                true, false, selected, reason),
+        "VSync-on selection must reject FIFO_LATEST_READY when its policy gate is off");
+    Require(VulkanPresentPacer::SelectNvLowLatencyOptimizedPresentMode(
+                {VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_FIFO_LATEST_READY_KHR},
+                {VK_PRESENT_MODE_FIFO_LATEST_READY_KHR, VK_PRESENT_MODE_FIFO_KHR},
+                true, true, selected, reason)
+                && selected == VK_PRESENT_MODE_FIFO_LATEST_READY_KHR,
+        "VSync-on selection must accept an optimized gated FIFO mode");
+    Require(!VulkanPresentPacer::SelectNvLowLatencyOptimizedPresentMode(
+                {VK_PRESENT_MODE_FIFO_KHR, VK_PRESENT_MODE_IMMEDIATE_KHR},
+                {VK_PRESENT_MODE_FIFO_KHR},
+                false, false, selected, reason),
+        "VSync-off selection must not choose an optimized FIFO mode");
 }
 
 void MakePacer(
@@ -999,6 +1079,7 @@ void TestSameFrameRecreationWithLifecycleFailure()
 int main()
 {
     TestSurfaceCapabilitiesFallback();
+    TestNvLowLatencySurfaceCapabilitiesAndSelection();
     TestWaitResults();
     TestPresenterOneFrameBudgetWait();
     TestLegacyPresentWaitFallback();

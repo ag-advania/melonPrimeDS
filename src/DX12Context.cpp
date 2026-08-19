@@ -271,6 +271,97 @@ void DX12Context::QueryShaderModel()
     Profile.HighestShaderModel = 0x51;
 }
 
+bool DX12Context::RefreshMemoryAdmission()
+{
+    if (!Adapter || !Device)
+        return false;
+
+    DX12::MemoryAdmissionSnapshot snapshot{};
+    snapshot.DedicatedVideoMemory = Profile.DedicatedVideoMemory;
+
+    D3D12_FEATURE_DATA_ARCHITECTURE architecture{};
+    architecture.NodeIndex = 0;
+    if (SUCCEEDED(Device->CheckFeatureSupport(
+            D3D12_FEATURE_ARCHITECTURE, &architecture, sizeof(architecture))))
+    {
+        snapshot.IsUMA = architecture.UMA != FALSE;
+    }
+
+    DX12::ComPtr<IDXGIAdapter3> adapter3;
+    HRESULT hr = Adapter->QueryInterface(
+        __uuidof(IDXGIAdapter3),
+        reinterpret_cast<void**>(adapter3.ReleaseAndGetAddressOf()));
+    if (FAILED(hr))
+    {
+        Profile.MemoryAdmission = snapshot;
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "DX12: live local-memory budget unavailable (IDXGIAdapter3 QueryInterface "
+            "hr=0x%08lX; UMA=%d; DedicatedVideoMemory is diagnostic only)\n",
+            static_cast<unsigned long>(hr), snapshot.IsUMA ? 1 : 0);
+        return true;
+    }
+
+    DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+    hr = adapter3->QueryVideoMemoryInfo(
+        0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info);
+    if (FAILED(hr))
+    {
+        Profile.MemoryAdmission = snapshot;
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "DX12: live local-memory budget unavailable (QueryVideoMemoryInfo "
+            "hr=0x%08lX; UMA=%d)\n",
+            static_cast<unsigned long>(hr), snapshot.IsUMA ? 1 : 0);
+        return true;
+    }
+
+    snapshot.HasLiveBudget = true;
+    snapshot.LocalBudget = info.Budget;
+    snapshot.LocalCurrentUsage = info.CurrentUsage;
+    snapshot.LocalAvailableForReservation = info.AvailableForReservation;
+    snapshot.LocalCurrentReservation = info.CurrentReservation;
+    Profile.MemoryAdmission = snapshot;
+    Platform::Log(
+        Platform::LogLevel::Debug,
+        "DX12: live local-memory budget budget=%lluMB usage=%lluMB "
+        "available-reservation=%lluMB current-reservation=%lluMB UMA=%d\n",
+        static_cast<unsigned long long>(info.Budget >> 20),
+        static_cast<unsigned long long>(info.CurrentUsage >> 20),
+        static_cast<unsigned long long>(info.AvailableForReservation >> 20),
+        static_cast<unsigned long long>(info.CurrentReservation >> 20),
+        snapshot.IsUMA ? 1 : 0);
+    return true;
+}
+
+bool DX12Context::AdmitScaleDependentResources(
+    const DX12::ScaleFootprint& footprint, const char* reason) const
+{
+    const DX12::MemoryAdmissionResult result =
+        DX12::EvaluateMemoryAdmission(Profile.MemoryAdmission, footprint);
+    if (result.Accepted)
+        return true;
+
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "DX12: scale admission refused reason=%s requested-default=%lluMB "
+        "largest=%lluMB available=%lluMB reserve=%lluMB budget=%lluMB "
+        "usage=%lluMB current-reservation=%lluMB dedicated-diagnostic=%lluMB "
+        "boundary=%s UMA=%d\n",
+        result.Reason.c_str(),
+        static_cast<unsigned long long>(footprint.DefaultBytes >> 20),
+        static_cast<unsigned long long>(footprint.LargestAllocation >> 20),
+        static_cast<unsigned long long>(result.AvailableBytes >> 20),
+        static_cast<unsigned long long>(result.SafetyReserve >> 20),
+        static_cast<unsigned long long>(Profile.MemoryAdmission.LocalBudget >> 20),
+        static_cast<unsigned long long>(Profile.MemoryAdmission.LocalCurrentUsage >> 20),
+        static_cast<unsigned long long>(Profile.MemoryAdmission.LocalCurrentReservation >> 20),
+        static_cast<unsigned long long>(Profile.DedicatedVideoMemory >> 20),
+        reason ? reason : "scale resource recreation",
+        Profile.MemoryAdmission.IsUMA ? 1 : 0);
+    return false;
+}
+
 bool DX12Context::CreateDevice()
 {
     FailureReason.clear();
@@ -385,6 +476,11 @@ bool DX12Context::CreateDevice()
         Profile.DriverVersion = static_cast<u64>(driverVersion.QuadPart);
     Profile.DedicatedVideoMemory = desc.DedicatedVideoMemory;
     Profile.IsSoftwareAdapter = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0;
+
+    // DedicatedVideoMemory is retained for diagnostics, but live admission is
+    // sourced from IDXGIAdapter3 when the OS exposes it. Failure is fail-soft;
+    // CreateCommittedResource remains the final authority on unsupported WDDM.
+    RefreshMemoryAdmission();
 
     Platform::Log(
         Platform::LogLevel::Info,
@@ -532,11 +628,18 @@ DX12::ComPtr<ID3D12Resource> DX12Context::CreateTexture2D(
     u32 arraySize,
     D3D12_RESOURCE_FLAGS flags,
     D3D12_RESOURCE_STATES initialState,
-    const wchar_t* debugName) const
+    const wchar_t* debugName,
+    HRESULT* outResult) const
 {
     DX12::ComPtr<ID3D12Resource> resource;
+    if (outResult)
+        *outResult = E_FAIL;
     if (!Device || width == 0 || height == 0 || arraySize == 0)
+    {
+        if (outResult)
+            *outResult = !Device ? E_FAIL : E_INVALIDARG;
         return resource;
+    }
 
     D3D12_HEAP_PROPERTIES heap{};
     heap.Type = D3D12_HEAP_TYPE_DEFAULT;
@@ -567,12 +670,16 @@ DX12::ComPtr<ID3D12Resource> DX12Context::CreateTexture2D(
         IID_PPV_ARGS(resource.ReleaseAndGetAddressOf()));
     if (FAILED(hr))
     {
+        if (outResult)
+            *outResult = hr;
         DX12::Fail("CreateCommittedResource(texture2D)", hr);
         resource.Reset();
         return resource;
     }
 
     if (debugName) resource->SetName(debugName);
+    if (outResult)
+        *outResult = S_OK;
     return resource;
 }
 
@@ -796,8 +903,20 @@ bool DX12CommandContext::WaitForFence(u64 value, bool recordRasterBegin)
         return DX12::Fail("SetEventOnCompletion", hr);
 
     DX12Perf::ScopedRasterBeginWait rasterWait(recordRasterBegin);
-    WaitForSingleObject(FenceEvent, INFINITE);
-    return true;
+    constexpr DWORD kFenceWaitTimeoutMs = 5000;
+    const DWORD waitResult = WaitForSingleObject(FenceEvent, kFenceWaitTimeoutMs);
+    if (waitResult == WAIT_OBJECT_0)
+        return true;
+
+    const HRESULT removedReason = Device
+        ? Device->GetDeviceRemovedReason() : E_FAIL;
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "DX12: raster reuse fence did not retire within %lu ms (wait=%lu, removed=0x%08lX)\n",
+        static_cast<unsigned long>(kFenceWaitTimeoutMs),
+        static_cast<unsigned long>(waitResult),
+        static_cast<unsigned long>(removedReason));
+    return false;
 }
 
 void DX12CommandContext::WaitIdle()
@@ -837,7 +956,8 @@ ID3D12GraphicsCommandList* DX12CommandContext::Begin(bool recordRasterBegin)
 
     // The allocator can only be recycled once the GPU is done with everything
     // recorded from it.
-    WaitForFence(SubmittedValue, recordRasterBegin);
+    if (!WaitForFence(SubmittedValue, recordRasterBegin))
+        return nullptr;
 
     return ResetList();
 }

@@ -8,6 +8,7 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     AnchorY3,      // 0=Top, 1=Center, 2=Bottom
                     LabelPos5,     // 0=Above, 1=Below, 2=Left, 3=Right, 4=Center
                     Double,        // lo/hi/step stored as x100 integers (e.g. 10,800,25 -> 0.10-8.00 step 0.25)
+                    Opacity,       // 0..100 percent slider stored as a 0.0..1.0 double
                     FontMode,      // 0=Default(MPH), 1=System font, 2=Font file (int combo)
                     FontFamily,    // QFontComboBox + picker -> family string
                     FontFile,      // QLineEdit + Browse -> font-file path string
@@ -41,7 +42,7 @@ struct HudMainSec {
     int directPropCount;
     const HudSubSec* subs;
     int subCount;
-    int previewKind; // 0=None, 1=Crosshair, 2=HpAmmo, 3=MatchStatus, 4=Radar
+    int previewKind; // 0=None, 1=Crosshair, 2=HpAmmo, 3=MatchStatus, 4=Radar, 5=Scoreboard
 };
 
 #include "../MelonPrimeHudPropSchema.inc"
@@ -134,6 +135,7 @@ static const HudSubSec kSubsRadar[] = {
     SUB("Frame Outline",        MelonPrime::CfgKey::SectionHudRadarFrameOutline,  kSecRadarFrameOutline),
 };
 
+
 // IN-GAME OSD COLOR sub-sections
 #define MP_OSD_COLOR_EMIT_LITERAL_SUBSECTION(id, dialogLabel, sectionKey, propArray) \
     SUB(dialogLabel, sectionKey, propArray),
@@ -164,6 +166,8 @@ static const HudMainSec kHudMainSections[] = {
       nullptr, 0, kSubsHpAmmo, static_cast<int>(sizeof(kSubsHpAmmo)/sizeof(kSubsHpAmmo[0])), /*preview*/ 2 },
     { "MATCH STATUS HUD",  MelonPrime::CfgKey::SectionHudMatchStatusGrp,
       nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
+    { "HUD SCOREBOARD",     MelonPrime::CfgKey::SectionHudScoreboard,
+      _P(kSecScoreboard), nullptr, 0, /*preview*/ 5 },
     { "HUD RADAR",         MelonPrime::CfgKey::SectionHudRadar,
       nullptr, 0, kSubsRadar, static_cast<int>(sizeof(kSubsRadar)/sizeof(kSubsRadar[0])), /*preview*/ 4 },
     { "IN-GAME OSD COLOR", MelonPrime::CfgKey::SectionOsdColor,

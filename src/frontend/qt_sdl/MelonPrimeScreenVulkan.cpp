@@ -249,6 +249,31 @@ struct ScreenPanelVulkan::VulkanState
     // immutable until the GPU has finished copying both screens from it.
     std::array<RendererOutputLease, Vk::FramesInFlight> frameLeases;
 
+    // Identity of the last native Vulkan renderer frame whose screen layers
+    // are retained in the presenter. This is deliberately POD-only: the
+    // presentation hot path compares renderer-owned handles/serials instead
+    // of hashing pixels or allocating a cache object.
+    struct RetainedScreenKey
+    {
+        const void* rendererIdentity = nullptr;
+        u64 serial = 0;
+        u64 resourceGeneration = 0;
+        u32 width = 0;
+        u32 height = 0;
+        VkBuffer buffer = VK_NULL_HANDLE;
+        VkImage directImageTop = VK_NULL_HANDLE;
+        VkImageView directImageViewTop = VK_NULL_HANDLE;
+        VkImage directImageBottom = VK_NULL_HANDLE;
+        VkImageView directImageViewBottom = VK_NULL_HANDLE;
+        bool directSampled = false;
+        bool valid = false;
+    } retainedScreenKey;
+    u8 retainedScreenLayerMask = 0;
+    // A direct sampled frame remains owned while the presenter can draw its
+    // retained image across multiple presenter slots. Buffer output is copied
+    // into presenter-owned images and therefore needs no extra source lease.
+    RendererOutputLease retainedScreenLease;
+
     // Renderer the VBlank observer is currently installed on, so the hook is
     // (re)installed exactly once per renderer instance.
     melonDS::VulkanRenderer* hookedRenderer = nullptr;
@@ -256,7 +281,10 @@ struct ScreenPanelVulkan::VulkanState
     QImage osdStrip;
 
     std::atomic_bool surfaceVisibleRequested{false};
+    // Set by the GUI thread while either the on-screen editor or the Custom
+    // HUD settings live preview owns the paused presentation path.
     std::atomic_bool hudEditLivePresentation{false};
+    std::atomic_bool hudLivePreviewPresentation{false};
     std::atomic_bool modalPauseActive{false};
     std::atomic_bool surfaceHandleDirty{true};
 
@@ -483,6 +511,11 @@ bool ScreenPanelVulkan::initVulkanPresenter()
         return false;
     if (vulkan->presenter.IsInitialized())
         return true;
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
 #if defined(__linux__)  // scatter-budget-exempt: Linux native-surface readiness, not input dispatch
     if (!vulkan->linuxSurfaceLifecycle->presentationReady())
     {
@@ -659,6 +692,7 @@ void ScreenPanelVulkan::serviceLinuxSurfaceRetire()
     {
         for (RendererOutputLease& lease : vulkan->frameLeases)
             lease.ReleaseNow();
+        invalidateScreenRetention();
         // The presenter may already have been torn down by a recoverable
         // surface-loss path. Complete the lifecycle handshake even in that
         // case; otherwise Retiring remains latched and the GUI-side native
@@ -829,6 +863,12 @@ void ScreenPanelVulkan::retireLinuxPresentationSurface(const char* reason)
     if (!vulkan || !vulkan->presenter.IsInitialized())
         return;
 
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
+
     const std::uint64_t oldGeneration = vulkan->presenterSurfaceGeneration;
     Platform::Log(
         Platform::LogLevel::Info,
@@ -836,6 +876,7 @@ void ScreenPanelVulkan::retireLinuxPresentationSurface(const char* reason)
         static_cast<unsigned long long>(oldGeneration),
         reason ? reason : "unspecified");
     vulkan->presenter.Quiesce();
+    invalidateScreenRetention();
     for (RendererOutputLease& lease : vulkan->frameLeases)
         lease.ReleaseNow();
     vulkan->presenter.Shutdown();
@@ -1013,6 +1054,14 @@ void ScreenPanelVulkan::setHudEditModeActive(bool active)
     // session only.
     vulkan->hudEditLivePresentation.store(active, std::memory_order_release);
 }
+
+void ScreenPanelVulkan::setHudLivePreviewActive(bool active)
+{
+    if (!vulkan)
+        return;
+
+    vulkan->hudLivePreviewPresentation.store(active, std::memory_order_release);
+}
 #endif
 
 
@@ -1036,7 +1085,11 @@ void ScreenPanelVulkan::setHudEditModeActive(bool active)
 // ---------------------------------------------------------------------------
 
 void ScreenPanelVulkan::beginVulkanLowLatencyFrame(
-    int reflexMode, bool antiLag2Enabled, bool normalSpeed, melonDS::u64 targetFrameIntervalNs)
+    int reflexMode,
+    bool antiLag2Enabled,
+    bool normalSpeed,
+    melonDS::u64 targetFrameIntervalNs,
+    melonDS::u64 logicalFrameId)
 {
     if (!vulkan)
         return;
@@ -1049,7 +1102,11 @@ void ScreenPanelVulkan::beginVulkanLowLatencyFrame(
     if (!vulkan->presenter.IsInitialized())
         return;
     vulkan->presenter.BeginLowLatencyFrame(
-        reflexMode, antiLag2Enabled, normalSpeed, targetFrameIntervalNs);
+        reflexMode,
+        antiLag2Enabled,
+        normalSpeed,
+        targetFrameIntervalNs,
+        logicalFrameId);
 }
 
 void ScreenPanelVulkan::markVulkanReflexInputSample()
@@ -1142,10 +1199,28 @@ void ScreenPanelVulkan::installVulkanComposeHook(melonDS::VulkanRenderer* render
 }
 
 
+void ScreenPanelVulkan::invalidateScreenRetention()
+{
+    if (!vulkan)
+        return;
+
+    vulkan->retainedScreenLease.ReleaseNow();
+    vulkan->retainedScreenKey = {};
+    vulkan->retainedScreenLayerMask = 0;
+    vulkan->presenter.InvalidateScreenLayerRetention();
+}
+
+
 void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver)
 {
     if (!vulkan)
         return;
+
+#ifdef MELONPRIME_CUSTOM_HUD
+    m_hudVisualFrameValid = false;
+    m_hudVisualFrameWasReused = false;
+    ++m_hudVisualRendererGeneration;
+#endif
 
     // Drop the borrowed composed-frame pointers *before* the renderer that owns
     // them is destroyed, and take the observer back off it. After this the panel
@@ -1162,6 +1237,7 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
     // VkSurfaceKHR/VkSwapchainKHR presenter lifetime paired with the lifecycle
     // state until an actual native-surface transition retires it.
     vulkan->presenter.Quiesce();
+    invalidateScreenRetention();
     vulkan->presenter.InvalidateDirectDescriptorCache();
     for (RendererOutputLease& lease : vulkan->frameLeases)
         lease.ReleaseNow();
@@ -1373,18 +1449,19 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    const bool hudEditLivePresentation =
-        vulkan->hudEditLivePresentation.load(std::memory_order_acquire);
+    const bool hudLivePresentation =
+        vulkan->hudEditLivePresentation.load(std::memory_order_acquire)
+        || vulkan->hudLivePreviewPresentation.load(std::memory_order_acquire);
 #else
-    constexpr bool hudEditLivePresentation = false;
+    constexpr bool hudLivePresentation = false;
 #endif
 
-    if (vulkan->modalPauseActive.load(std::memory_order_acquire) && !hudEditLivePresentation)
+    if (vulkan->modalPauseActive.load(std::memory_order_acquire) && !hudLivePresentation)
     {
         noteFrameIdle();
         return;
     }
-    if (!emuThread->emuIsRunning() && !hudEditLivePresentation)
+    if (!emuThread->emuIsRunning() && !hudLivePresentation)
     {
         noteFrameIdle();
         return;
@@ -1488,10 +1565,37 @@ void ScreenPanelVulkan::drawScreenFrame()
     const u32 physicalHeight = static_cast<u32>(std::max(1, qRound(logicalHeight * dpr)));
 #endif
 
-    if (gpuFrame && gpuFrame->HasDirectSampledOutput())
-        vulkan->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
-    if (!vulkan->presenter.BeginFrame(physicalWidth, physicalHeight))
+    const bool directSampledFrame = gpuFrame && gpuFrame->HasDirectSampledOutput();
+    bool sameRendererFrame = false;
+    if (gpuFrame)
     {
+        const auto& retained = vulkan->retainedScreenKey;
+        sameRendererFrame = retained.valid
+            && retained.rendererIdentity == vulkanRenderer
+            && retained.serial == gpuFrame->Serial
+            && retained.resourceGeneration == gpuFrame->ResourceGeneration
+            && retained.width == gpuFrame->Width
+            && retained.height == gpuFrame->Height
+            && retained.directSampled == directSampledFrame
+            && (!directSampledFrame || vulkan->retainedScreenLease.Context != nullptr)
+            && (directSampledFrame
+                ? retained.directImageTop == gpuFrame->DirectImageTop
+                    && retained.directImageViewTop == gpuFrame->DirectImageViewTop
+                    && retained.directImageBottom == gpuFrame->DirectImageBottom
+                    && retained.directImageViewBottom == gpuFrame->DirectImageViewBottom
+                : retained.buffer == gpuFrame->Buffer);
+    }
+
+    const bool waitForPresentSlot =
+        !vulkanRenderer || !vulkan->presenter.HasEffectiveLowLatencyAuthority();
+    if (!vulkan->presenter.BeginFrame(
+            physicalWidth, physicalHeight, waitForPresentSlot))
+    {
+        if (vulkan->presenter.LastBeginWasLatencySkip())
+        {
+            noteFrameIdle();
+            return;
+        }
         if (vulkan->presenter.NeedsSurfaceRebind())
         {
 #if defined(__linux__)  // scatter-budget-exempt: Linux acquire surface-loss recovery, not input dispatch
@@ -1510,6 +1614,13 @@ void ScreenPanelVulkan::drawScreenFrame()
 
     const u32 presenterFrameIndex = vulkan->presenter.GetFrameIndex();
     vulkan->frameLeases[presenterFrameIndex].ReleaseNow();
+
+    // A new renderer frame, backend output, or CPU fallback invalidates the
+    // retained screen source only after presenter admission succeeded. A
+    // latency skip therefore leaves both the previous binding and its
+    // dedicated direct-output lease untouched.
+    if (!sameRendererFrame)
+        invalidateScreenRetention();
 
     // The swapchain may be a different size than the widget for one frame
     // after a resize; every quad below is expressed in the swapchain's own
@@ -1535,12 +1646,35 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
     bool screenUploaded[2] = {false, false};
+    bool screenFrameReused = false;
+    bool rendererLeaseAssigned = false;
+    auto retainRendererOutputForFrame = [&]() {
+        if (!rendererLeaseAssigned)
+        {
+            // Even if a later upload or EndFrame fails, this presenter slot
+            // keeps the source alive until its fence retires or the transition
+            // path explicitly quiesces it.
+            vulkan->frameLeases[presenterFrameIndex] = std::move(rendererOutputLease);
+            rendererLeaseAssigned = true;
+        }
+    };
+    bool directDescriptorsPrepared = false;
+    auto prepareDirectDescriptors = [&]() {
+        if (directSampledFrame && !directDescriptorsPrepared)
+        {
+            // Descriptor preparation can invalidate/rebuild the direct-resource
+            // cache and may wait for old renderer resources. It is reached only
+            // after presenter admission, so a latency skip never touches it.
+            vulkan->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
+            directDescriptorsPrepared = true;
+        }
+    };
+
     if (gpuFrame)
     {
-        // Retain before recording the first copy. Even if a later upload or
-        // EndFrame fails, this presenter slot keeps the source alive until its
-        // fence is retired or the transition path explicitly quiesces it.
-        vulkan->frameLeases[presenterFrameIndex] = std::move(rendererOutputLease);
+        // First restore only layers whose source identity and presenter-owned
+        // binding are both retained. Uploads are decided separately so a
+        // layout that newly needs the other screen can still acquire a lease.
         for (int index = 0; index < screens; ++index)
         {
             const int kind = kinds[index] & 1;
@@ -1549,7 +1683,36 @@ void ScreenPanelVulkan::drawScreenFrame()
             const auto layer = kind == 0
                 ? MelonPrime::VulkanPresenter::Layer::ScreenTop
                 : MelonPrime::VulkanPresenter::Layer::ScreenBottom;
-            screenUploaded[kind] = gpuFrame->HasDirectSampledOutput()
+            if (sameRendererFrame
+                && (vulkan->retainedScreenLayerMask & (1u << kind)) != 0
+                && vulkan->presenter.ReuseScreenLayerFromFrame(layer, *gpuFrame))
+            {
+                screenUploaded[kind] = true;
+                screenFrameReused = true;
+                if (directSampledFrame)
+                {
+                    // A retained direct image is sampled by this presentation
+                    // too. Keep the renderer output slot leased by the current
+                    // presenter frame until its fence retires; the dedicated
+                    // retained lease may be released as soon as a new renderer
+                    // frame is admitted without exposing an older submission
+                    // to renderer-slot reuse.
+                    retainRendererOutputForFrame();
+                }
+            }
+        }
+
+        for (int index = 0; index < screens; ++index)
+        {
+            const int kind = kinds[index] & 1;
+            if (screenUploaded[kind])
+                continue;
+            const auto layer = kind == 0
+                ? MelonPrime::VulkanPresenter::Layer::ScreenTop
+                : MelonPrime::VulkanPresenter::Layer::ScreenBottom;
+            prepareDirectDescriptors();
+            retainRendererOutputForFrame();
+            screenUploaded[kind] = directSampledFrame
                 ? vulkan->presenter.UploadLayerFromImage(layer, *gpuFrame)
                 : vulkan->presenter.UploadLayerFromBuffer(
                     layer,
@@ -1574,6 +1737,11 @@ void ScreenPanelVulkan::drawScreenFrame()
                 sourceHeight,
                 rowBytes);
         }
+    }
+    if (screenFrameReused)
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanScreenFrameReuseCount);
     }
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -1620,6 +1788,8 @@ void ScreenPanelVulkan::drawScreenFrame()
             // Vulkan path instead of leaving ScreenBottom empty (or stale).
             if (!screenUploaded[1])
             {
+                prepareDirectDescriptors();
+                retainRendererOutputForFrame();
                 screenUploaded[1] = gpuFrame->HasDirectSampledOutput()
                     ? vulkan->presenter.UploadLayerFromImage(
                         MelonPrime::VulkanPresenter::Layer::ScreenBottom, *gpuFrame)
@@ -1668,6 +1838,9 @@ void ScreenPanelVulkan::drawScreenFrame()
             VulkanPerf::ScopedCpuTimer hudUploadTimer(VulkanPerf::CpuMetric::HudUpload);
             MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                 MelonPrimePerf::HudPhase::UploadPrepare);
+            MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
+                MelonPrimePerf::HudPhase::GpuUpload);
+            MelonPrimePerf::CountHudUploadCall();
             hudUploaded = vulkan->presenter.UploadLayerRegion(
                 layer,
                 Overlay[0].constBits(),
@@ -1681,6 +1854,61 @@ void ScreenPanelVulkan::drawScreenFrame()
         }
     }
 #endif
+
+    if (gpuFrame)
+    {
+        u8 retainedLayerMask = 0;
+        for (const int kind : {0, 1})
+        {
+            if (!screenUploaded[kind])
+                continue;
+            const auto layer = kind == 0
+                ? MelonPrime::VulkanPresenter::Layer::ScreenTop
+                : MelonPrime::VulkanPresenter::Layer::ScreenBottom;
+            const bool retainable = directSampledFrame
+                ? vulkan->presenter.HasRetainedDirectLayer(layer)
+                : vulkan->presenter.HasLayerContent(layer);
+            if (retainable)
+                retainedLayerMask |= static_cast<u8>(1u << kind);
+        }
+
+        if (directSampledFrame && retainedLayerMask != 0
+            && vulkan->retainedScreenLease.Context == nullptr)
+        {
+            RendererOutputLease retainedLease = nds->GPU.AcquireRendererOutputLease();
+            const RendererOutput& retainedOutput = retainedLease.Output;
+            if (retainedOutput.Kind == RendererOutputKind::VulkanBuffer
+                && retainedOutput.Top == gpuFrame
+                && retainedOutput.FrameSerial == gpuFrame->Serial)
+            {
+                vulkan->retainedScreenLease = std::move(retainedLease);
+            }
+        }
+
+        if (retainedLayerMask != 0
+            && (!directSampledFrame || vulkan->retainedScreenLease.Context != nullptr))
+        {
+            auto& retained = vulkan->retainedScreenKey;
+            retained.rendererIdentity = vulkanRenderer;
+            retained.serial = gpuFrame->Serial;
+            retained.resourceGeneration = gpuFrame->ResourceGeneration;
+            retained.width = gpuFrame->Width;
+            retained.height = gpuFrame->Height;
+            retained.buffer = gpuFrame->Buffer;
+            retained.directImageTop = gpuFrame->DirectImageTop;
+            retained.directImageViewTop = gpuFrame->DirectImageViewTop;
+            retained.directImageBottom = gpuFrame->DirectImageBottom;
+            retained.directImageViewBottom = gpuFrame->DirectImageViewBottom;
+            retained.directSampled = directSampledFrame;
+            retained.valid = true;
+            vulkan->retainedScreenLayerMask = retainedLayerMask;
+        }
+        else
+        {
+            vulkan->retainedScreenKey = {};
+            vulkan->retainedScreenLayerMask = 0;
+        }
+    }
 
     QSize osdSize;
     const bool osdUploaded = buildOsdStrip(osdSize)
@@ -1698,6 +1926,8 @@ void ScreenPanelVulkan::drawScreenFrame()
     // composed screen images by the Vulkan compositor, then the Custom HUD,
     // then the OSD on top of everything.
 
+    MelonPrimePerf::ScopedHudPhase compositeTimer(
+        MelonPrimePerf::HudPhase::Composite);
     vulkan->presenter.BeginComposition();
 
     for (int index = 0; index < screens; ++index)
@@ -1887,11 +2117,15 @@ bool ScreenPanelVulkan::buildOsdStrip(QSize& outSize)
 bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScreen, QRect& outDirty)
 {
     outDirty = QRect();
+    m_hudVisualFrameWasReused = false;
 
     auto* mp = emuThread ? emuThread->GetMelonPrimeCore() : nullptr;
     const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
     if (!mp || !mp->IsRomDetected() || !(mp->IsInGame() || editMode))
+    {
+        m_hudVisualFrameValid = false;
         return false;
+    }
 
     auto& instcfg = emuInstance->getLocalConfig();
 
@@ -1927,6 +2161,7 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
 
     if (!(m_hudEnabled || editMode))
     {
+        m_hudVisualFrameValid = false;
         MelonPrime::CustomHud_EnsurePatchRestored(
             mp->HudConfigState(), emuInstance, instcfg,
             mp->GetCurrentRom(), mp->GetPlayerPosition(), mp->IsInGame());
@@ -1938,6 +2173,35 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     // visible in the black bars.
     const int overlayWidth = std::max(1, width());
     const int overlayHeight = std::max(1, height());
+    const HudVisualFrameIdentity visualIdentity =
+        MelonPrimeHud_ProbeVisualFrameIdentity(emuInstance);
+    MelonPrimePerf::CountHudVisualIdentityProbe();
+    const bool sameGameFrame = m_hudVisualFrameValid
+        && MelonPrimeHud_IsSameVisualGameFrame(
+            visualIdentity, m_hudVisualFrameKey);
+    HudVisualFrameKey visualKey{};
+    if (sameGameFrame) {
+        visualKey = MelonPrimeHud_MakeVisualFrameKey(
+            visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+            overlayWidth, overlayHeight, m_topStretchX, m_hudScale,
+            m_hudOriginX, m_hudOriginY,
+            m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+        MelonPrimePerf::CountHudVisualStampCheck();
+    }
+    const bool reuseVisual = m_hudVisualFrameValid
+        && sameGameFrame
+        && visualKey == m_hudVisualFrameKey
+        && vulkan->presenter.HasLayerContent(
+            MelonPrime::VulkanPresenter::Layer::Hud);
+    m_hudVisualFrameWasReused = reuseVisual;
+    if (reuseVisual) {
+        // The presenter retains the HUD layer between compositions. Reuse the
+        // existing GPU image and report no dirty region; the caller still
+        // draws the retained layer in the current composition.
+        MelonPrimePerf::CountHudVisualReuse();
+        return true;
+    }
+    MelonPrimePerf::CountHudVisualRender();
     const QRect previousDirty = m_hudPrevDirty;
     bool overlayRecreated = false;
     {
@@ -2000,6 +2264,16 @@ bool ScreenPanelVulkan::renderHudOverlay(EmuThread* emuThread, QImage* bottomScr
     }
 
     m_hudPrevDirty = dirty;
+    if (!sameGameFrame) {
+        visualKey = MelonPrimeHud_MakeVisualFrameKey(
+            visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
+            overlayWidth, overlayHeight, m_topStretchX, m_hudScale,
+            m_hudOriginX, m_hudOriginY,
+            m_hudVisualRendererGeneration, m_hudEnabled, editMode);
+    }
+    MelonPrimePerf::CountHudVisualStampCommit();
+    m_hudVisualFrameKey = visualKey;
+    m_hudVisualFrameValid = true;
     outDirty = overlayRecreated
         ? QRect(0, 0, Overlay[0].width(), Overlay[0].height())
         : dirty.united(previousDirty);

@@ -102,6 +102,933 @@ static void CalcTextPosFromGauge(int gx, int gy, int gaugeLen, int gaugeWid, int
                                       outTextX, outTextY);
 }
 
+struct ScoreboardMetricSpec {
+    const char* firstLabel;
+    const char* secondLabel;
+    bool firstIsTime;
+    bool secondIsTime;
+    bool secondIsKills;
+};
+
+static ScoreboardMetricSpec ResolveScoreboardMetric(uint8_t mode)
+{
+    switch (static_cast<ScoreboardGameMode>(mode)) {
+    case ScoreboardGameMode::Battle:
+    case ScoreboardGameMode::BattleTeams:
+        return {"Points", "Deaths", false, false, false};
+    case ScoreboardGameMode::Survival:
+    case ScoreboardGameMode::SurvivalTeams:
+        return {"Time", "Deaths", true, false, false};
+    case ScoreboardGameMode::Capture:
+    case ScoreboardGameMode::Bounty:
+    case ScoreboardGameMode::BountyTeams:
+        return {"Octoliths", "Kills", false, false, true};
+    case ScoreboardGameMode::Nodes:
+    case ScoreboardGameMode::NodesTeams:
+        return {"Points", "Kills", false, false, true};
+    case ScoreboardGameMode::Defender:
+    case ScoreboardGameMode::DefenderTeams:
+    case ScoreboardGameMode::PrimeHunter:
+        return {"Time", "Kills", true, false, true};
+    default:
+        return {"", "", false, false, false};
+    }
+}
+
+static bool IsScoreboardSurvivalMode(uint8_t gameMode)
+{
+    return gameMode == static_cast<uint8_t>(ScoreboardGameMode::Survival)
+        || gameMode == static_cast<uint8_t>(ScoreboardGameMode::SurvivalTeams);
+}
+
+static ScoreboardVisualValue MakeScoreboardVisualValue(
+    int32_t rawValue, bool isTime, uint8_t gameMode)
+{
+    ScoreboardVisualValue visual;
+    visual.valid = true;
+    visual.isTime = isTime;
+    if (!isTime) {
+        visual.value = rawValue;
+        return visual;
+    }
+
+    // Match runtime time is 60 ticks/sec. Only Survival uses -1 as the
+    // game's unlimited/MAX sentinel; other negative values clamp to zero.
+    if (IsScoreboardSurvivalMode(gameMode) && rawValue == -1) {
+        visual.isMax = true;
+        return visual;
+    }
+    visual.value = std::max<int32_t>(0, rawValue) / 60;
+    return visual;
+}
+
+static QString FormatScoreboardVisualValue(const ScoreboardVisualValue& visual)
+{
+    if (!visual.valid)
+        return {};
+    if (visual.isTime && visual.isMax)
+        return UiText::Tr("MAX");
+    if (!visual.isTime)
+        return QString::number(visual.value);
+    const int totalSeconds = std::max(0, visual.value);
+    return QStringLiteral("%1:%2")
+        .arg(totalSeconds / 60)
+        .arg(totalSeconds % 60, 2, 10, QChar('0'));
+}
+
+static QString FormatScoreboardTime(int32_t rawTicks, uint8_t gameMode)
+{
+    return FormatScoreboardVisualValue(
+        MakeScoreboardVisualValue(rawTicks, true, gameMode));
+}
+
+static QString FormatScoreboardMetric(int32_t value, bool isTime, uint8_t gameMode)
+{
+    return FormatScoreboardVisualValue(
+        MakeScoreboardVisualValue(value, isTime, gameMode));
+}
+
+static const QColor& ResolveScoreboardTeamColor(const CachedHudConfig& c,
+                                                uint8_t teamIndex)
+{
+    // Native scoreboard colors are BGR555: TeamIndex 0 = 0x023F (Orange),
+    // TeamIndex 1 = 0x2BEA (Green). The configurable Team Row Color remains
+    // a single-color override when it differs from the native Team 1 default.
+    static const QColor nativeTeam1(
+        (0x023Fu & 0x1Fu) << 3,
+        ((0x023Fu >> 5) & 0x1Fu) << 3,
+        ((0x023Fu >> 10) & 0x1Fu) << 3);
+    static const QColor nativeTeam2(
+        (0x2BEAu & 0x1Fu) << 3,
+        ((0x2BEAu >> 5) & 0x1Fu) << 3,
+        ((0x2BEAu >> 10) & 0x1Fu) << 3);
+    if (c.scoreboard.teamRowColor == nativeTeam1)
+        return teamIndex == 1 ? nativeTeam2 : nativeTeam1;
+    return c.scoreboard.teamRowColor;
+}
+
+static QString ScoreboardElide(const QString& text, const QFontMetrics& fm, int width)
+{
+    return fm.elidedText(text, Qt::ElideRight, std::max(1, width));
+}
+
+static QRectF ScoreboardRankLine(const QRectF& rect)
+{
+    const qreal nameHeight = rect.height() * 0.58;
+    return QRectF(rect.x(), rect.y() + nameHeight,
+                  rect.width(), rect.height() - nameHeight);
+}
+
+static QString FormatScoreboardRankLabel(int rank)
+{
+    return QStringLiteral("%1 %2").arg(UiText::Tr("Rank")).arg(rank);
+}
+
+struct ScoreboardRenderRow {
+    bool team = false;
+    uint8_t slot = 0xFF;
+    uint8_t teamIndex = 0xFF;
+};
+
+static int ResolveScoreboardDisplayedRank(const ScoreboardSnapshot& snapshot,
+                                          bool teamRow, uint8_t slot)
+{
+    if (slot >= 4)
+        return 1;
+    const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[slot];
+    if (teamRow)
+        return static_cast<int>(player.standing) + 1;
+    return static_cast<int>(snapshot.teams
+        ? player.teamStanding : player.standing) + 1;
+}
+
+struct ScoreboardLayout {
+    int panelW = 1;
+    int panelH = 0;
+    int rowH = 12;
+    int teamRowH = 12;
+    int rowSpacing = 0;
+    int columnSpacing = 0;
+    int rightPadding = 0;
+    int portraitW = 20;
+    int playerW = 1;
+    int firstW = 20;
+    int secondW = 20;
+};
+
+static int BuildScoreboardRenderRows(const ScoreboardSnapshot& snapshot,
+                                     std::array<ScoreboardRenderRow, 8>& rows)
+{
+    int rowCount = 0;
+    int previousTeam = -1;
+    const int displayCount = std::min<int>(snapshot.activePlayers, 4);
+    for (int displayIndex = 0; displayIndex < displayCount; ++displayIndex) {
+        // ResultSlots is authoritative display order. It is deliberately not
+        // sorted here; slot and displayIndex are separate concepts.
+        const uint8_t slot = snapshot.resultSlots[displayIndex];
+        if (slot >= 4 || rowCount >= static_cast<int>(rows.size()))
+            continue;
+        const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[slot];
+        if (!player.active)
+            continue;
+        if (snapshot.teams && player.teamIndex <= 1) {
+            if (previousTeam != player.teamIndex && rowCount < static_cast<int>(rows.size())) {
+                rows[rowCount++] = {true, slot, player.teamIndex};
+                previousTeam = player.teamIndex;
+            }
+        }
+        if (rowCount < static_cast<int>(rows.size()))
+            rows[rowCount++] = {false, slot, player.teamIndex};
+    }
+    return rowCount;
+}
+
+static float ScoreboardUserScale(const CachedHudConfig& c)
+{
+    return std::clamp(c.scoreboard.scale, 0.1f, 8.0f);
+}
+
+static float ScoreboardTextDrawScale(const CachedHudConfig& c, float hudScale)
+{
+    // Scoreboard text keeps the shared resolution-aware automatic scale. The
+    // scoreboard-specific Text Scale % is an always-available multiplier on
+    // top of that result; 100% preserves the existing automatic size.
+    const float boardAutoTextScale = std::min(c.scaleText, c.scaleScoreboard);
+    const float sharedTextScale = (boardAutoTextScale * 100.0f
+                                   + (c.textScalePct - 100)) / 100.0f;
+    const float scoreboardTextScale = std::clamp(
+        c.scoreboard.textScalePct, 10, 800) / 100.0f;
+    const float requestedTextScale = sharedTextScale * scoreboardTextScale;
+    const float logicalTextScale = hudScale > 0.0f
+        ? requestedTextScale / hudScale : requestedTextScale;
+    return logicalTextScale * ScoreboardUserScale(c);
+}
+
+static void BuildScoreboardFonts(const CachedHudConfig& c, float hudScale,
+                                 QFont& boardFont, QFont& rankFont)
+{
+    boardFont = s_frameFont;
+    int boardFontPx = std::max(1, static_cast<int>(std::lround(
+        s_frameFpx * std::max(0.1f, ScoreboardTextDrawScale(c, hudScale)))));
+    boardFont.setPixelSize(boardFontPx);
+    rankFont = boardFont;
+    int rankFontPx = std::max(1, static_cast<int>(std::lround(boardFontPx * 0.72)));
+    rankFont.setPixelSize(rankFontPx);
+}
+
+static void EnsureScoreboardFontCache(const CachedHudConfig& c, float hudScale)
+{
+    auto& cache = HudFrameState().scoreboardFont;
+    if (cache.valid
+        && cache.configEpoch == s_cacheEpoch
+        && cache.baseFontGeneration == s_textCacheGen
+        && cache.baseFontPx == s_frameFpx
+        && cache.hudScale == hudScale) {
+        return;
+    }
+
+    BuildScoreboardFonts(c, hudScale, cache.boardFont, cache.rankFont);
+    cache.boardFm = QFontMetrics(cache.boardFont);
+    cache.rankFm = QFontMetrics(cache.rankFont);
+    cache.configEpoch = s_cacheEpoch;
+    cache.baseFontGeneration = s_textCacheGen;
+    cache.baseFontPx = s_frameFpx;
+    cache.hudScale = hudScale;
+    cache.valid = true;
+}
+
+static int ScoreboardImageWidthDS(const QImage& image, float invHudScale)
+{
+    return image.isNull() ? 0
+        : std::max(0, static_cast<int>(std::ceil(image.width() * invHudScale)));
+}
+
+static int ScoreboardAutoRowHeight(const QFontMetrics& boardFm,
+                                   const QFontMetrics& rankFm,
+                                   int headerInset, int assetHeightDS)
+{
+    // Each player cell contains two lines. Derive the row height from the
+    // actual fonts/assets instead of scaling a user-entered fixed height;
+    // otherwise a small scoreboard scale clips the name/rank pair.
+    const int nameLineHeight = boardFm.height() + 1;
+    const int rankLineHeight = rankFm.height() + 1;
+    const int nameSplitHeight = static_cast<int>(std::ceil(
+        static_cast<float>(nameLineHeight) / 0.58f));
+    const int rankSplitHeight = static_cast<int>(std::ceil(
+        static_cast<float>(rankLineHeight) / 0.42f));
+    const int headerHeight = boardFm.height() + headerInset * 2 + 1;
+    int rowHeight = std::max(nameSplitHeight, rankSplitHeight);
+    rowHeight = std::max(rowHeight, headerHeight);
+    rowHeight = std::max(rowHeight, assetHeightDS);
+    return std::max(1, rowHeight);
+}
+
+static int ScoreboardTeamRowHeight(const QFontMetrics& boardFm,
+                                   const QFontMetrics& rankFm,
+                                   int headerInset, bool rankShow)
+{
+    const int headerHeight = boardFm.height() + headerInset * 2 + 1;
+    if (!rankShow)
+        return std::max(1, headerHeight);
+
+    const int nameLineHeight = boardFm.height() + 1;
+    const int rankLineHeight = rankFm.height() + 1;
+    const int nameSplitHeight = static_cast<int>(std::ceil(
+        static_cast<float>(nameLineHeight) / 0.58f));
+    const int rankSplitHeight = static_cast<int>(std::ceil(
+        static_cast<float>(rankLineHeight) / 0.42f));
+    int rowHeight = std::max(nameSplitHeight, rankSplitHeight);
+    return std::max(rowHeight, headerHeight);
+}
+
+static ScoreboardLayout BuildScoreboardLayout(
+    const ScoreboardSnapshot& snapshot,
+    const std::array<ScoreboardRenderRow, 8>& rows, int rowCount,
+    const CachedHudConfig& c, float hudScale,
+    const QFontMetrics& boardFm, const QFontMetrics& rankFm)
+{
+    ScoreboardLayout layout;
+    const float boardScale = ScoreboardUserScale(c);
+    const auto scaleDs = [boardScale](int value) {
+        return std::max(0, static_cast<int>(std::lround(value * boardScale)));
+    };
+    const float invHudScale = hudScale > 0.0f ? 1.0f / hudScale : 1.0f;
+    const int headerInset = std::max(1, scaleDs(1));
+    const int assetHeightDS = std::max(0, static_cast<int>(std::ceil(
+        std::max(s_scoreboardHunterIconHeight, s_scoreboardStarsHeight)
+        * invHudScale)));
+    // Preserve the established default breathing room while allowing the
+    // font/asset minimum to win whenever the user scales the board down.
+    layout.rowH = std::max(ScoreboardAutoRowHeight(
+        boardFm, rankFm, headerInset, assetHeightDS), scaleDs(22));
+    layout.teamRowH = ScoreboardTeamRowHeight(
+        boardFm, rankFm, headerInset, c.scoreboard.rankShow);
+    layout.rowSpacing = scaleDs(std::max(0, c.scoreboard.rowSpacing));
+    layout.columnSpacing = scaleDs(std::clamp(c.scoreboard.columnSpacing, 0, 32));
+    layout.rightPadding = scaleDs(std::clamp(c.scoreboard.rightPadding, 0, 32));
+    layout.panelH = layout.rowH + scaleDs(4);
+    for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+        layout.panelH += rows[rowIndex].team ? layout.teamRowH : layout.rowH;
+        layout.panelH += layout.rowSpacing;
+    }
+
+    layout.portraitW = std::max(scaleDs(20),
+                                scaleDs(c.scoreboard.hunterIconHeight) + scaleDs(4));
+    int playerContentW = boardFm.horizontalAdvance(UiText::Tr("Player"));
+
+    const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
+    int firstContentW = boardFm.horizontalAdvance(UiText::Tr(metric.firstLabel));
+    int secondContentW = boardFm.horizontalAdvance(UiText::Tr(metric.secondLabel));
+
+    for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+        const ScoreboardRenderRow& row = rows[rowIndex];
+        if (row.team) {
+            const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[row.teamIndex];
+            const QString teamName = QStringLiteral("%1 %2").arg(UiText::Tr("Team"))
+                .arg(static_cast<int>(row.teamIndex) + 1);
+            const int teamRank = ResolveScoreboardDisplayedRank(
+                snapshot, true, row.slot);
+            playerContentW = std::max(playerContentW, boardFm.horizontalAdvance(teamName));
+            if (c.scoreboard.rankShow)
+                playerContentW = std::max(playerContentW,
+                                           rankFm.horizontalAdvance(FormatScoreboardRankLabel(teamRank)));
+            firstContentW = std::max(firstContentW,
+                boardFm.horizontalAdvance(FormatScoreboardMetric(
+                    metric.firstIsTime ? team.time : team.points,
+                    metric.firstIsTime, snapshot.gameMode)));
+            secondContentW = std::max(secondContentW,
+                boardFm.horizontalAdvance(FormatScoreboardMetric(
+                    metric.secondIsTime ? team.time
+                        : metric.secondIsKills ? team.kills : team.deaths,
+                    metric.secondIsTime, snapshot.gameMode)));
+            continue;
+        }
+
+        const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[row.slot];
+        const int rank = ResolveScoreboardDisplayedRank(
+            snapshot, false, row.slot);
+        playerContentW = std::max(playerContentW, boardFm.horizontalAdvance(player.displayName));
+        int rankLineW = c.scoreboard.rankShow
+            ? rankFm.horizontalAdvance(FormatScoreboardRankLabel(rank)) : 0;
+        if (player.stars <= 4) {
+            const QImage& stars = s_scoreboardStars[player.stars];
+            rankLineW += stars.isNull() ? 0
+                : scaleDs(3) + ScoreboardImageWidthDS(stars, invHudScale);
+        }
+        playerContentW = std::max(playerContentW, rankLineW);
+        const QImage* hunter = player.hunterId < 7
+            ? &s_scoreboardHunterIcons[player.hunterId] : nullptr;
+        if (hunter && !hunter->isNull())
+            layout.portraitW = std::max(layout.portraitW,
+                                        scaleDs(2) + ScoreboardImageWidthDS(*hunter, invHudScale));
+
+        firstContentW = std::max(firstContentW,
+            boardFm.horizontalAdvance(FormatScoreboardMetric(
+                metric.firstIsTime ? player.time : player.points,
+                metric.firstIsTime, snapshot.gameMode)));
+        secondContentW = std::max(secondContentW,
+            boardFm.horizontalAdvance(FormatScoreboardMetric(
+                metric.secondIsTime ? player.time
+                    : metric.secondIsKills ? player.kills : player.deaths,
+                metric.secondIsTime, snapshot.gameMode)));
+    }
+
+    // The two statistics columns size themselves to their labels/content.
+    // This is the scoreboard equivalent of an HTML auto-layout table: the
+    // user controls gaps and edge padding, not an arbitrary total width.
+    layout.playerW = std::max(1, playerContentW + scaleDs(2));
+    layout.firstW = std::max(scaleDs(20), firstContentW + scaleDs(2));
+    layout.secondW = std::max(scaleDs(20), secondContentW + scaleDs(2));
+
+    const int fixedW = layout.portraitW + scaleDs(3) + layout.firstW + layout.secondW
+                     + layout.columnSpacing * 2 + layout.rightPadding;
+    const int naturalW = fixedW + layout.playerW;
+    // A DS top screen is 256 units wide. Long localized names still elide in
+    // the Player cell rather than allowing the panel to grow without bound.
+    layout.panelW = std::max(fixedW + 1, std::min(256, naturalW));
+    layout.playerW = std::max(1, layout.panelW - fixedW);
+    return layout;
+}
+
+static ScoreboardStructureKey MakeScoreboardStructureKey(
+    const ScoreboardSnapshot& snapshot)
+{
+    ScoreboardStructureKey key;
+    key.matchSerial = snapshot.matchSerial;
+    key.gameMode = snapshot.gameMode;
+    key.activePlayers = snapshot.activePlayers;
+    key.teamFlags = snapshot.teamFlags;
+    key.teams = snapshot.teams;
+    key.visible = snapshot.visible;
+    key.resultSlots = snapshot.resultSlots;
+    for (int slot = 0; slot < 4; ++slot) {
+        key.teamIndex[slot] = snapshot.playersBySlot[slot].teamIndex;
+        key.active[slot] = snapshot.playersBySlot[slot].active;
+    }
+    return key;
+}
+
+static ScoreboardPlanText MakeScoreboardPlanText(
+    const QString& text, const QRectF& rect, const QColor& color,
+    const QFontMetrics& fm, bool rankFont,
+    Qt::Alignment alignment = Qt::AlignLeft,
+    ScoreboardVisualValue visual = {})
+{
+    ScoreboardPlanText out;
+    out.rect = rect;
+    out.color = color;
+    out.visual = visual;
+    out.alignment = alignment;
+    out.rankFont = rankFont;
+    out.display = ScoreboardElide(text, fm, static_cast<int>(rect.width()));
+    out.advance = fm.horizontalAdvance(out.display);
+    out.enabled = !out.display.isEmpty();
+    return out;
+}
+
+static ScoreboardPlanText MakeScoreboardMetricPlanText(
+    int32_t rawValue, bool isTime, uint8_t gameMode,
+    const QRectF& rect, const QColor& color, const QFontMetrics& fm,
+    Qt::Alignment alignment = Qt::AlignRight)
+{
+    const ScoreboardVisualValue visual = MakeScoreboardVisualValue(
+        rawValue, isTime, gameMode);
+    return MakeScoreboardPlanText(
+        FormatScoreboardVisualValue(visual), rect, color, fm, false,
+        alignment, visual);
+}
+
+static ScoreboardPlanText MakeScoreboardRankPlanText(
+    int rank, const QRectF& rect, const QColor& color,
+    const QFontMetrics& fm)
+{
+    const ScoreboardVisualValue visual{rank, false, false, true};
+    return MakeScoreboardPlanText(
+        FormatScoreboardRankLabel(rank), rect, color, fm, true,
+        Qt::AlignLeft, visual);
+}
+
+static bool ScoreboardPlanMatches(const ScoreboardRenderPlan& plan,
+                                  const ScoreboardStructureKey& structure,
+                                  const CachedHudConfig& c,
+                                  float hudScale,
+                                  uint8_t localPlayerSlot)
+{
+    return plan.valid
+        && plan.configEpoch == s_cacheEpoch
+        && plan.textCacheGeneration == s_textCacheGen
+        && plan.frameFontPx == s_frameFpx
+        && plan.hudScale == hudScale
+        && plan.stretchX == c.lastStretchX
+        && plan.localPlayerSlot == localPlayerSlot
+        && plan.structure == structure;
+}
+
+static ScoreboardRenderPlan BuildScoreboardRenderPlan(
+    const ScoreboardSnapshot& snapshot,
+    const ScoreboardStructureKey& structure,
+    const CachedHudConfig& c,
+    float hudScale,
+    uint8_t localPlayerSlot,
+    const QFontMetrics& boardFm,
+    const QFontMetrics& rankFm)
+{
+    ScoreboardRenderPlan plan;
+    std::array<ScoreboardRenderRow, 8> rows{};
+    const int rowCount = BuildScoreboardRenderRows(snapshot, rows);
+    if (rowCount == 0)
+        return plan;
+
+    const ScoreboardLayout layout = BuildScoreboardLayout(
+        snapshot, rows, rowCount, c, hudScale, boardFm, rankFm);
+    plan.configEpoch = s_cacheEpoch;
+    plan.textCacheGeneration = s_textCacheGen;
+    plan.frameFontPx = s_frameFpx;
+    plan.hudScale = hudScale;
+    plan.stretchX = c.lastStretchX;
+    plan.localPlayerSlot = localPlayerSlot;
+    plan.structure = structure;
+    plan.panelW = layout.panelW;
+    plan.panelH = layout.panelH;
+    plan.rowH = layout.rowH;
+    plan.teamRowH = layout.teamRowH;
+    plan.rowSpacing = layout.rowSpacing;
+    plan.columnSpacing = layout.columnSpacing;
+    plan.rightPadding = layout.rightPadding;
+    plan.portraitW = layout.portraitW;
+    plan.playerW = layout.playerW;
+    plan.firstW = layout.firstW;
+    plan.secondW = layout.secondW;
+    plan.rowCount = rowCount;
+
+    plan.panelX = c.scoreboard.x;
+    plan.panelY = c.scoreboard.y;
+    const int safeAnchor = std::clamp(c.scoreboard.anchor, 0, 8);
+    HudGeometry::ApplyRectAnchor(plan.panelX, plan.panelY,
+                                 plan.panelW, plan.panelH,
+                                 safeAnchor % 3, safeAnchor / 3);
+
+    const float invHudScale = hudScale > 0.0f ? 1.0f / hudScale : 1.0f;
+    const float boardScale = ScoreboardUserScale(c);
+    const auto scaleDs = [boardScale](int value) {
+        return std::max(0, static_cast<int>(std::lround(value * boardScale)));
+    };
+    const int nameX = plan.panelX + plan.portraitW + scaleDs(3);
+    const int firstX = nameX + plan.playerW + plan.columnSpacing;
+    const int secondX = firstX + plan.firstW + plan.columnSpacing;
+    const int panelInset = std::max(1, scaleDs(1));
+    const int headerInset = panelInset;
+    const int headerHeight = std::max(1, plan.rowH - headerInset * 2);
+    const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
+
+    plan.headers[0] = MakeScoreboardPlanText(
+        UiText::Tr("Player"),
+        QRectF(nameX, plan.panelY + headerInset, plan.playerW, headerHeight),
+        c.scoreboard.headerColor, boardFm, false);
+    plan.headers[1] = MakeScoreboardPlanText(
+        UiText::Tr(metric.firstLabel),
+        QRectF(firstX, plan.panelY + headerInset, plan.firstW, headerHeight),
+        c.scoreboard.headerColor, boardFm, false, Qt::AlignRight);
+    plan.headers[2] = MakeScoreboardPlanText(
+        UiText::Tr(metric.secondLabel),
+        QRectF(secondX, plan.panelY + headerInset, plan.secondW, headerHeight),
+        c.scoreboard.headerColor, boardFm, false, Qt::AlignRight);
+
+    int y = plan.panelY + plan.rowH;
+    for (int rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
+        const ScoreboardRenderRow& row = rows[rowIndex];
+        ScoreboardPlanRow& planned = plan.rows[rowIndex];
+        planned.team = row.team;
+        planned.slot = row.slot;
+        planned.teamIndex = row.teamIndex;
+        const int currentRowH = row.team ? plan.teamRowH : plan.rowH;
+        const QRectF nameRect(nameX, y, plan.playerW, currentRowH);
+        const QRectF firstRect(firstX, y, plan.firstW, currentRowH);
+        const QRectF secondRect(secondX, y, plan.secondW, currentRowH);
+
+        if (row.team) {
+            const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[row.teamIndex];
+            planned.color = ResolveScoreboardTeamColor(c, row.teamIndex);
+            const QString teamName = QStringLiteral("%1 %2").arg(UiText::Tr("Team"))
+                .arg(static_cast<int>(row.teamIndex) + 1);
+            const int teamRank = ResolveScoreboardDisplayedRank(
+                snapshot, true, row.slot);
+            if (c.scoreboard.rankShow) {
+                planned.name = MakeScoreboardPlanText(
+                    teamName, QRectF(nameRect.x(), nameRect.y(), nameRect.width(),
+                                     nameRect.height() * 0.58),
+                    planned.color, boardFm, false);
+                planned.rank = MakeScoreboardRankPlanText(
+                    teamRank, ScoreboardRankLine(nameRect), planned.color, rankFm);
+            } else {
+                planned.name = MakeScoreboardPlanText(
+                    teamName, nameRect, planned.color, boardFm, false);
+            }
+            planned.first = MakeScoreboardMetricPlanText(
+                metric.firstIsTime ? team.time : team.points,
+                metric.firstIsTime, snapshot.gameMode,
+                firstRect, planned.color, boardFm);
+            planned.second = MakeScoreboardMetricPlanText(
+                metric.secondIsTime ? team.time
+                    : metric.secondIsKills ? team.kills : team.deaths,
+                metric.secondIsTime, snapshot.gameMode,
+                secondRect, planned.color, boardFm);
+        } else {
+            const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[row.slot];
+            planned.color = (player.slot == localPlayerSlot)
+                ? c.scoreboard.localPlayerColor : c.scoreboard.textColor;
+            planned.hunterId = player.hunterId;
+            planned.stars = player.stars;
+
+            const QImage* hunter = player.hunterId < 7
+                ? &s_scoreboardHunterIcons[player.hunterId] : nullptr;
+            if (hunter && !hunter->isNull()) {
+                const float iconH = static_cast<float>(hunter->height()) * invHudScale;
+                const float iconW = static_cast<float>(hunter->width()) * invHudScale;
+                planned.hunterIconRect = QRectF(
+                    plan.panelX + panelInset,
+                    y + (currentRowH - iconH) * 0.5f,
+                    iconW, iconH);
+            }
+
+            const int rank = ResolveScoreboardDisplayedRank(
+                snapshot, false, row.slot);
+            planned.name = MakeScoreboardPlanText(
+                player.displayName,
+                QRectF(nameRect.x(), nameRect.y(), nameRect.width(),
+                       nameRect.height() * 0.58),
+                planned.color, boardFm, false);
+            const QString rankLabel = FormatScoreboardRankLabel(rank);
+            if (c.scoreboard.rankShow) {
+                planned.rank = MakeScoreboardRankPlanText(
+                    rank, ScoreboardRankLine(nameRect), planned.color, rankFm);
+            }
+
+            if (player.stars <= 4) {
+                const QImage& stars = s_scoreboardStars[player.stars];
+                if (!stars.isNull()) {
+                    const float starsH = static_cast<float>(stars.height()) * invHudScale;
+                    const float starsW = static_cast<float>(stars.width()) * invHudScale;
+                    const QRectF rankLine = ScoreboardRankLine(nameRect);
+                    const float rankTextW = c.scoreboard.rankShow
+                        ? static_cast<float>(rankFm.horizontalAdvance(rankLabel)) : 0.0f;
+                    const float starsX = static_cast<float>(nameX) + rankTextW
+                        + (rankTextW > 0.0f ? static_cast<float>(scaleDs(3)) : 0.0f);
+                    const float availableStarsW = std::max(
+                        0.0f, static_cast<float>(nameRect.right() - starsX - scaleDs(2)));
+                    const float drawStarsW = std::min(starsW, availableStarsW);
+                    planned.starsFullW = starsW;
+                    planned.starsFullH = starsH;
+                    if (drawStarsW > 0.0f) {
+                        planned.starsRect = QRectF(
+                            starsX,
+                            rankLine.y() + (rankLine.height() - starsH) * 0.5f,
+                            drawStarsW, starsH);
+                    }
+                }
+            }
+            planned.first = MakeScoreboardMetricPlanText(
+                metric.firstIsTime ? player.time : player.points,
+                metric.firstIsTime, snapshot.gameMode,
+                firstRect, planned.color, boardFm);
+            planned.second = MakeScoreboardMetricPlanText(
+                metric.secondIsTime ? player.time
+                    : metric.secondIsKills ? player.kills : player.deaths,
+                metric.secondIsTime, snapshot.gameMode,
+                secondRect, planned.color, boardFm);
+        }
+        y += currentRowH + plan.rowSpacing;
+    }
+
+    plan.valid = true;
+    return plan;
+}
+
+static bool UpdateScoreboardPlanCell(
+    ScoreboardPlanText& cell, int32_t rawValue, bool isTime,
+    uint8_t gameMode, const QColor& color, const QFontMetrics& fm,
+    bool rankFont, Qt::Alignment alignment)
+{
+    const ScoreboardVisualValue visual = MakeScoreboardVisualValue(
+        rawValue, isTime, gameMode);
+    if (cell.visual == visual)
+        return true;
+
+    MelonPrimePerf::CountScoreboardDynamicCellUpdate(
+        cell.visual.valid && cell.visual.isTime && visual.isTime);
+
+    // The normal dynamic case is a value that still fits its existing cell.
+    // Format and measure exactly once; elision is reserved for a structural
+    // rebuild where the column width is recomputed.
+    QString display = FormatScoreboardVisualValue(visual);
+    const qreal advance = fm.horizontalAdvance(display);
+    if (advance > std::max(1, static_cast<int>(cell.rect.width())))
+        return false;
+
+    cell.display = std::move(display);
+    cell.outlinePath.clear();
+    cell.outlinePathPrepared = false;
+    cell.color = color;
+    cell.visual = visual;
+    cell.advance = advance;
+    cell.alignment = alignment;
+    cell.rankFont = rankFont;
+    cell.enabled = !cell.display.isEmpty();
+    return true;
+}
+
+static bool UpdateScoreboardRenderPlanDynamicCells(
+    ScoreboardRenderPlan& plan,
+    const ScoreboardSnapshot& snapshot,
+    const CachedHudConfig& c,
+    const QFontMetrics& boardFm,
+    const QFontMetrics& rankFm)
+{
+    if (!plan.valid)
+        return false;
+
+    const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
+
+    for (int rowIndex = 0; rowIndex < plan.rowCount; ++rowIndex) {
+        ScoreboardPlanRow& current = plan.rows[rowIndex];
+        if (current.slot >= 4)
+            return false;
+
+        const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[current.slot];
+        if (c.scoreboard.rankShow) {
+            const int rank = ResolveScoreboardDisplayedRank(
+                snapshot, current.team, current.slot);
+            const ScoreboardVisualValue previousRank = current.rank.visual;
+            if (!UpdateScoreboardPlanCell(
+                    current.rank, rank, false, snapshot.gameMode,
+                    current.color, rankFm, true, Qt::AlignLeft))
+                return false;
+            if (!(previousRank == current.rank.visual) && current.starsFullW > 0.0) {
+                const float boardScale = ScoreboardUserScale(c);
+                const auto scaleDs = [boardScale](int value) {
+                    return std::max(0, static_cast<int>(std::lround(value * boardScale)));
+                };
+                const QRectF rankLine = ScoreboardRankLine(current.name.rect);
+                const float starsX = static_cast<float>(current.name.rect.x())
+                    + static_cast<float>(current.rank.advance)
+                    + static_cast<float>(scaleDs(3));
+                const float availableStarsW = std::max(
+                    0.0f, static_cast<float>(current.name.rect.right() - starsX - scaleDs(2)));
+                const float drawStarsW = std::min(
+                    static_cast<float>(current.starsFullW), availableStarsW);
+                current.starsRect = drawStarsW > 0.0f && current.starsFullH > 0.0
+                    ? QRectF(starsX,
+                             rankLine.y() + (rankLine.height() - current.starsFullH) * 0.5f,
+                             drawStarsW, current.starsFullH)
+                    : QRectF();
+            }
+        }
+
+        int firstValue = player.points;
+        int secondValue = metric.secondIsKills ? player.kills : player.deaths;
+        if (current.team) {
+            if (current.teamIndex > 1)
+                return false;
+            const ScoreboardTeamSnapshot& team = snapshot.teamsByIndex[current.teamIndex];
+            firstValue = metric.firstIsTime ? team.time : team.points;
+            secondValue = metric.secondIsTime ? team.time
+                : metric.secondIsKills ? team.kills : team.deaths;
+        } else {
+            firstValue = metric.firstIsTime ? player.time : player.points;
+            secondValue = metric.secondIsTime ? player.time
+                : metric.secondIsKills ? player.kills : player.deaths;
+        }
+
+        if (!UpdateScoreboardPlanCell(
+                current.first, firstValue, metric.firstIsTime, snapshot.gameMode,
+                current.color, boardFm, false, Qt::AlignRight)
+            || !UpdateScoreboardPlanCell(
+                current.second, secondValue, metric.secondIsTime, snapshot.gameMode,
+                current.color, boardFm, false, Qt::AlignRight))
+            return false;
+    }
+    return true;
+}
+
+static void DrawScoreboardPlanText(
+    QPainter* p, ScoreboardPlanText& text,
+    const QFont& font, const QFontMetrics& fm,
+    const HudOutlineConfig& outline, float hudScale)
+{
+    if (!p || !text.enabled)
+        return;
+
+    const auto flags = text.alignment | Qt::AlignVCenter | Qt::TextSingleLine;
+    const float outlineRadius = outline.enable && outline.opacity > 0.0f
+        ? static_cast<float>(std::max(1, outline.thickness))
+            / std::max(0.001f, hudScale)
+        : 0.0f;
+    if (outlineRadius > 0.0f) {
+        if (!text.outlinePathPrepared) {
+            text.outlinePath.addText(QPointF(0.0f, 0.0f), font, text.display);
+            text.outlinePathPrepared = true;
+            MelonPrimePerf::CountScoreboardOutlinePathMiss();
+        } else {
+            MelonPrimePerf::CountScoreboardOutlinePathHit();
+        }
+        const Qt::Alignment horizontal = text.alignment & Qt::AlignHorizontal_Mask;
+        qreal textX = text.rect.left();
+        if (horizontal == Qt::AlignRight)
+            textX = text.rect.right() - text.advance;
+        else if (horizontal == Qt::AlignHCenter)
+            textX = text.rect.center().x() - text.advance * 0.5;
+        const qreal baseline = text.rect.top()
+            + (text.rect.height() - fm.height()) * 0.5 + fm.ascent();
+        QColor outlineColor = outline.color;
+        outlineColor.setAlphaF(std::clamp(outline.opacity, 0.0f, 1.0f));
+        QPen outlinePen(outlineColor, outlineRadius * 2.0);
+        outlinePen.setJoinStyle(Qt::RoundJoin);
+        p->save();
+        p->setPen(outlinePen);
+        p->setBrush(Qt::NoBrush);
+        p->translate(textX, baseline);
+        p->drawPath(text.outlinePath);
+        p->restore();
+    }
+    p->setPen(text.color);
+    p->setBrush(Qt::NoBrush);
+    p->setFont(font);
+    p->drawText(text.rect, flags, text.display);
+    AccumDirtyDs(p, outlineRadius > 0.0f ? text.rect.adjusted(
+        -outlineRadius, -outlineRadius, outlineRadius, outlineRadius) : text.rect);
+}
+
+static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
+                           const CachedHudConfig& c, float hudScale,
+                           uint8_t localPlayerSlot)
+{
+    if (!p || !snapshot.visible || !c.scoreboard.show
+        || c.scoreboard.opacity <= 0.0f)
+        return;
+
+    EnsureScoreboardFontCache(c, hudScale);
+    auto& hudFrame = HudFrameState();
+    const auto& scoreboardFont = hudFrame.scoreboardFont;
+    const QFont& boardFont = scoreboardFont.boardFont;
+    const QFont& rankFont = scoreboardFont.rankFont;
+    const QFontMetrics& boardFm = scoreboardFont.boardFm;
+    const QFontMetrics& rankFm = scoreboardFont.rankFm;
+    const HudOutlineConfig& scoreboardOutline = EffOL(c, c.scoreboard.outline);
+    const ScoreboardStructureKey structure = MakeScoreboardStructureKey(snapshot);
+    MelonPrimePerf::CountScoreboardStructureCheck();
+
+    if (!ScoreboardPlanMatches(hudFrame.scoreboardPlan, structure, c,
+                               hudScale, localPlayerSlot)) {
+        MelonPrimePerf::ScopedHudPhase planTimer(
+            MelonPrimePerf::HudPhase::ScoreboardPlan);
+        hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
+            snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
+        MelonPrimePerf::CountScoreboardPlanBuild();
+        MelonPrimePerf::CountScoreboardFullPlanRebuild();
+    } else {
+        MelonPrimePerf::ScopedHudPhase planTimer(
+            MelonPrimePerf::HudPhase::ScoreboardPlan);
+        if (!UpdateScoreboardRenderPlanDynamicCells(
+                hudFrame.scoreboardPlan, snapshot, c, boardFm, rankFm))
+        {
+            hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
+                snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
+            MelonPrimePerf::CountScoreboardPlanBuild();
+            MelonPrimePerf::CountScoreboardFullPlanRebuild();
+        }
+    }
+    auto& plan = hudFrame.scoreboardPlan;
+    if (!plan.valid)
+        return;
+
+    MelonPrimePerf::ScopedHudPhase rasterTimer(
+        MelonPrimePerf::HudPhase::ScoreboardRaster);
+
+    p->save();
+    p->setFont(boardFont);
+    p->setOpacity(c.scoreboard.opacity);
+    p->setPen(Qt::NoPen);
+    QColor background = c.scoreboard.backgroundColor;
+    background.setAlphaF(c.scoreboard.backgroundOpacity);
+    p->setBrush(background);
+    const QRectF panelRect(plan.panelX, plan.panelY, plan.panelW, plan.panelH);
+    p->drawRect(panelRect);
+    AccumDirtyDs(p, panelRect);
+
+    // Hunter portraits and Stars are pixel art. Disable Qt's smooth transform
+    // for this scope so both the cached resize and the final draw stay NEAREST.
+    p->setRenderHint(QPainter::SmoothPixmapTransform, false);
+
+    for (int headerIndex = 0; headerIndex < 3; ++headerIndex) {
+        DrawScoreboardPlanText(p, plan.headers[headerIndex],
+                               boardFont, boardFm, scoreboardOutline, hudScale);
+    }
+
+    for (int rowIndex = 0; rowIndex < plan.rowCount; ++rowIndex) {
+        const ScoreboardPlanRow& row = plan.rows[rowIndex];
+        if (row.team) {
+            DrawScoreboardPlanText(p, plan.rows[rowIndex].name,
+                                   boardFont, boardFm, scoreboardOutline, hudScale);
+            DrawScoreboardPlanText(p, plan.rows[rowIndex].rank,
+                                   rankFont, rankFm, scoreboardOutline, hudScale);
+            DrawScoreboardPlanText(p, plan.rows[rowIndex].first,
+                                   boardFont, boardFm, scoreboardOutline, hudScale);
+            DrawScoreboardPlanText(p, plan.rows[rowIndex].second,
+                                   boardFont, boardFm, scoreboardOutline, hudScale);
+            continue;
+        }
+
+        const QImage* hunter = row.hunterId < 7
+            ? &s_scoreboardHunterIcons[row.hunterId] : nullptr;
+        if (hunter && !hunter->isNull() && !row.hunterIconRect.isEmpty()) {
+            p->drawImage(row.hunterIconRect, *hunter);
+            AccumDirtyDs(p, row.hunterIconRect);
+        }
+        DrawScoreboardPlanText(p, plan.rows[rowIndex].name,
+                               boardFont, boardFm, scoreboardOutline, hudScale);
+        DrawScoreboardPlanText(p, plan.rows[rowIndex].rank,
+                               rankFont, rankFm, scoreboardOutline, hudScale);
+        if (row.stars <= 4 && !row.starsRect.isEmpty()) {
+            const QImage& stars = s_scoreboardStars[row.stars];
+            if (!stars.isNull()) {
+                p->drawImage(row.starsRect, stars);
+                AccumDirtyDs(p, row.starsRect);
+            }
+        }
+        DrawScoreboardPlanText(p, plan.rows[rowIndex].first,
+                               boardFont, boardFm, scoreboardOutline, hudScale);
+        DrawScoreboardPlanText(p, plan.rows[rowIndex].second,
+                               boardFont, boardFm, scoreboardOutline, hudScale);
+    }
+    p->restore();
+}
+
+static ScoreboardSnapshot MakeScoreboardPreviewSnapshot()
+{
+    ScoreboardSnapshot preview{};
+    preview.gameMode = static_cast<uint8_t>(ScoreboardGameMode::BattleTeams);
+    preview.activePlayers = 4;
+    preview.teams = true;
+    preview.visible = true;
+    preview.resultSlots = {0, 1, 2, 3};
+    preview.teamsByIndex[0] = {420, 8, 3, 120};
+    preview.teamsByIndex[1] = {390, 6, 4, 96};
+    for (int slot = 0; slot < 4; ++slot) {
+        auto& player = preview.playersBySlot[slot];
+        player.slot = static_cast<uint8_t>(slot);
+        player.teamIndex = static_cast<uint8_t>(slot / 2);
+        player.hunterId = static_cast<uint8_t>(slot % 7);
+        player.stars = static_cast<uint8_t>(slot % 5);
+        player.standing = static_cast<uint8_t>(slot / 2);
+        player.teamStanding = static_cast<uint8_t>(slot % 2);
+        player.active = true;
+        player.points = 60 - slot * 7;
+        player.deaths = slot + 1;
+        player.displayName = QStringLiteral("Player %1").arg(slot + 1);
+    }
+    return preview;
+}
+
 // =========================================================================
 //  P-5: DrawHP — stack-buffer text, reads CachedHudConfig directly
 // =========================================================================

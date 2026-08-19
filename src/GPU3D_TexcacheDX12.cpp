@@ -23,6 +23,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <new>
 
 #include "Platform.h"
 
@@ -33,6 +34,21 @@ namespace
 {
 constexpr u64 kRowPitchAlignment = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;      // 256
 constexpr u64 kPlacementAlignment = D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT; // 512
+constexpr u32 kInitialPendingUploadCapacity = 64;
+constexpr u32 kInitialPendingCreateCapacity = 64;
+
+TextureMaterializeFailureReason ClassifyDx12TextureCreationFailure(HRESULT result) noexcept
+{
+    if (result == E_OUTOFMEMORY)
+        return TextureMaterializeFailureReason::OutOfMemory;
+    if (result == DXGI_ERROR_DEVICE_REMOVED
+        || result == DXGI_ERROR_DEVICE_RESET
+        || result == DXGI_ERROR_DEVICE_HUNG)
+    {
+        return TextureMaterializeFailureReason::DeviceLost;
+    }
+    return TextureMaterializeFailureReason::Other;
+}
 
 constexpr u64 AlignUp(u64 value, u64 alignment) noexcept
 {
@@ -45,45 +61,49 @@ void DX12TextureHeap::Init(DX12Context* context, DX12CommandContext* commands, D
     Context = context;
     Commands = commands;
     Uploads = uploads;
+    CreationFailed = false;
     UploadFailed = false;
+    RetryableCreationFailure = false;
+    MaterializeRetryAttempted = false;
+    PendingUploadCount = 0;
+    PendingCreateSlots.reserve(kInitialPendingCreateCapacity);
+    PendingUploads.reserve(kInitialPendingUploadCapacity);
 }
 
 void DX12TextureHeap::Shutdown()
 {
     Entries.clear();
     FreeSlots.clear();
+    PendingCreateSlots.clear();
     PendingBarriers.clear();
+    PendingUploads.clear();
+    PendingUploadCount = 0;
     Graveyard.clear();
     SpillUploads.clear();
     Context = nullptr;
     Commands = nullptr;
     Uploads = nullptr;
+    CreationFailed = false;
     UploadFailed = false;
+    RetryableCreationFailure = false;
+    MaterializeRetryAttempted = false;
 }
 
-u32 DX12TextureHeap::Create(u32 width, u32 height, u32 layers)
+u32 DX12TextureHeap::Reserve(u32 width, u32 height, u32 layers)
 {
-    if (!Context)
+    if (!Context || width == 0 || height == 0 || layers == 0)
+    {
+        CreationFailed = true;
         return 0;
-
-    auto resource = Context->CreateTexture2D(
-        DXGI_FORMAT_R8G8B8A8_UINT,
-        width,
-        height,
-        layers,
-        D3D12_RESOURCE_FLAG_NONE,
-        D3D12_RESOURCE_STATE_COPY_DEST,
-        L"MelonPrime DX12 texcache array");
-    if (!resource)
-        return 0;
+    }
 
     Entry entry;
-    entry.Resource = resource;
     entry.Width = width;
     entry.Height = height;
     entry.Layers = layers;
-    entry.State = D3D12_RESOURCE_STATE_COPY_DEST;
+    entry.State = D3D12_RESOURCE_STATE_COMMON;
     entry.InUse = true;
+    entry.PendingCreate = true;
 
     u32 slot;
     if (!FreeSlots.empty())
@@ -98,21 +118,278 @@ u32 DX12TextureHeap::Create(u32 width, u32 height, u32 layers)
         Entries.push_back(std::move(entry));
     }
 
+    PendingCreateSlots.push_back(slot);
+
     return slot + 1;
+}
+
+TextureMaterializeResult DX12TextureHeap::HandleMaterializeFailure(
+    TextureMaterializeFailureReason reason) noexcept
+{
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::TextureMaterializeFailureReason,
+        static_cast<u64>(reason));
+    if (!MaterializeRetryAttempted)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializePreFenceFailCount);
+        if (reason == TextureMaterializeFailureReason::OutOfMemory)
+        {
+            RetryableCreationFailure = true;
+            return TextureMaterializeResult::RetryAfterRetire;
+        }
+    }
+
+    CreationFailed = true;
+    return TextureMaterializeResult::Fatal;
+}
+
+TextureMaterializeResult DX12TextureHeap::MaterializePendingCreates()
+{
+    if (CreationFailed)
+        return TextureMaterializeResult::Fatal;
+    if (RetryableCreationFailure)
+        return TextureMaterializeResult::RetryAfterRetire;
+    if (!Context)
+        return HandleMaterializeFailure(TextureMaterializeFailureReason::Other);
+
+    for (u32 slot : PendingCreateSlots)
+    {
+        if (slot >= Entries.size())
+            continue;
+
+        Entry& entry = Entries[slot];
+        if (!entry.InUse || !entry.PendingCreate)
+            continue;
+
+        DX12Perf::ScopedCpuTimer createTimer(
+            DX12Perf::CpuMetric::TextureResourceCreate);
+        HRESULT createResult = E_FAIL;
+        auto resource = Context->CreateTexture2D(
+            DXGI_FORMAT_R8G8B8A8_UINT,
+            entry.Width,
+            entry.Height,
+            entry.Layers,
+            D3D12_RESOURCE_FLAG_NONE,
+            D3D12_RESOURCE_STATE_COPY_DEST,
+            L"MelonPrime DX12 texcache array",
+            &createResult);
+        if (!resource)
+        {
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "DX12: could not materialize texture array %ux%ux%u (hr=0x%08lX)\n",
+                entry.Width, entry.Height, entry.Layers,
+                static_cast<unsigned long>(createResult));
+            return HandleMaterializeFailure(
+                ClassifyDx12TextureCreationFailure(createResult));
+        }
+
+        entry.Resource = std::move(resource);
+        entry.State = D3D12_RESOURCE_STATE_COPY_DEST;
+        entry.PhysicalReady = true;
+        entry.PendingCreate = false;
+        DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializeCount);
+    }
+
+    PendingCreateSlots.clear();
+
+    return TextureMaterializeResult::Ready;
+}
+
+bool DX12TextureHeap::EnsurePendingStorage(
+    PendingUpload& pending, std::size_t words) noexcept
+{
+    if (pending.CapacityWords >= words)
+        return true;
+
+    // Scalar array default-initialization leaves the words uninitialized. The
+    // decoder overwrites the complete target before it is committed.
+    std::unique_ptr<u32[]> replacement(new (std::nothrow) u32[words]);
+    if (!replacement)
+        return false;
+
+    pending.Data = std::move(replacement);
+    pending.CapacityWords = words;
+    return true;
+}
+
+DX12TextureHeap::PendingUpload* DX12TextureHeap::AcquirePendingUpload(
+    u32 handle, u32 width, u32 height, u32 layer, std::size_t words) noexcept
+{
+    if (PendingUploadCount == PendingUploads.size())
+    {
+        try
+        {
+            PendingUploads.emplace_back();
+        }
+        catch (...)
+        {
+            return nullptr;
+        }
+    }
+
+    PendingUpload& pending = PendingUploads[PendingUploadCount];
+    pending.Handle = handle;
+    pending.Width = width;
+    pending.Height = height;
+    pending.Layer = layer;
+    const bool storageGrows = pending.CapacityWords < words;
+    bool storageReady = false;
+    {
+        DX12Perf::ScopedCpuTimer growTimer(
+            DX12Perf::CpuMetric::TexturePendingStorageGrow, storageGrows);
+        storageReady = EnsurePendingStorage(pending, words);
+    }
+    if (!storageReady)
+        return nullptr;
+    if (storageGrows)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::TexturePendingStorageGrowCount);
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::TexturePendingStorageGrowBytes,
+            pending.CapacityWords * sizeof(u32));
+    }
+    pending.UsedWords = words;
+    pending.Committed = false;
+    PendingUploadCount++;
+    return &pending;
+}
+
+TextureDecodeTarget DX12TextureHeap::BeginTextureUpload(
+    u32 handle, u32 width, u32 height, u32 layer)
+{
+    if (handle == 0 || handle > Entries.size())
+    {
+        UploadFailed = true;
+        return {};
+    }
+
+    const Entry& entry = Entries[handle - 1];
+    if (!entry.InUse || layer >= entry.Layers || width != entry.Width || height != entry.Height)
+    {
+        UploadFailed = true;
+        return {};
+    }
+
+    const std::size_t words = static_cast<std::size_t>(width) * height;
+    PendingUpload* pending = AcquirePendingUpload(handle, width, height, layer, words);
+    if (!pending)
+    {
+        UploadFailed = true;
+        return {};
+    }
+    return {
+        pending->Data.get(), pending->UsedWords * sizeof(u32), PendingUploadCount};
+}
+
+void DX12TextureHeap::CommitTextureUpload(u32 token) noexcept
+{
+    if (token == 0 || token > PendingUploadCount)
+    {
+        UploadFailed = true;
+        return;
+    }
+
+    PendingUpload& pending = PendingUploads[token - 1];
+    if (pending.Committed)
+    {
+        UploadFailed = true;
+        return;
+    }
+    pending.Committed = true;
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::TexturePendingUploadBytes,
+        pending.UsedWords * sizeof(u32));
+    DX12Perf::AddCounter(DX12Perf::Counter::TexturePendingUploadCount);
+}
+
+void DX12TextureHeap::CancelTextureUpload(u32 token) noexcept
+{
+    if (token == 0 || token > PendingUploadCount)
+        return;
+
+    const u32 index = token - 1;
+    const u32 last = PendingUploadCount - 1;
+    if (index != last)
+        std::swap(PendingUploads[index], PendingUploads[last]);
+    PendingUploads[last].Committed = false;
+    PendingUploads[last].UsedWords = 0;
+    PendingUploadCount = last;
 }
 
 void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data)
 {
-    if (!Commands || !Uploads || handle == 0 || handle > Entries.size())
+    if (UploadFailed)
+        return;
+    if (!Commands || !data || handle == 0 || handle > Entries.size())
+    {
+        UploadFailed = true;
+        return;
+    }
+
+    const Entry& entry = Entries[handle - 1];
+    if (!entry.InUse || layer >= entry.Layers || width != entry.Width || height != entry.Height)
+    {
+        UploadFailed = true;
+        return;
+    }
+
+    if (!Commands->IsRecording())
+    {
+        const std::size_t words = static_cast<std::size_t>(width) * height;
+        PendingUpload* pending = AcquirePendingUpload(handle, width, height, layer, words);
+        if (!pending)
+        {
+            UploadFailed = true;
+            return;
+        }
+        DX12Perf::ScopedCpuTimer copyTimer(DX12Perf::CpuMetric::TexturePendingCpuCopy);
+        const std::size_t bytes = pending->UsedWords * sizeof(u32);
+        std::memcpy(pending->Data.get(), data, bytes);
+        pending->Committed = true;
+        DX12Perf::AddCounter(DX12Perf::Counter::TexturePendingUploadBytes, bytes);
+        DX12Perf::AddCounter(DX12Perf::Counter::TexturePendingUploadCount);
+        return;
+    }
+
+    if (!RecordUpload(handle, width, height, layer, data))
+        UploadFailed = true;
+}
+
+void DX12TextureHeap::RecordPendingUploads()
+{
+    if (PendingUploadCount == 0 || !Commands || !Commands->IsRecording())
         return;
 
+    for (u32 i = 0; i < PendingUploadCount; i++)
+    {
+        PendingUpload& pending = PendingUploads[i];
+        if (pending.Committed && !RecordUpload(
+            pending.Handle, pending.Width, pending.Height, pending.Layer,
+            pending.Data.get()))
+        {
+            UploadFailed = true;
+        }
+        pending.Committed = false;
+        pending.UsedWords = 0;
+    }
+    PendingUploadCount = 0;
+}
+
+bool DX12TextureHeap::RecordUpload(
+    u32 handle, u32 width, u32 height, u32 layer, const void* data)
+{
+    if (!Commands || !Uploads || handle == 0 || handle > Entries.size())
+        return false;
+
     Entry& entry = Entries[handle - 1];
-    if (!entry.InUse || !entry.Resource || layer >= entry.Layers)
-        return;
+    if (!entry.InUse || !entry.PhysicalReady || !entry.Resource || layer >= entry.Layers
+        || width != entry.Width || height != entry.Height)
+        return false;
 
     ID3D12GraphicsCommandList* list = Commands->GetList();
     if (!list || !Commands->IsRecording())
-        return;
+        return false;
 
     const u64 srcRowBytes = static_cast<u64>(width) * 4u;
     const u64 dstRowPitch = AlignUp(srcRowBytes, kRowPitchAlignment);
@@ -142,7 +419,7 @@ void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const
                 Platform::LogLevel::Error,
                 "DX12: could not allocate texture spill upload of %llu bytes\n",
                 static_cast<unsigned long long>(totalBytes));
-            return;
+            return false;
         }
         D3D12_RANGE noRead{0, 0};
         if (FAILED(spillUpload->Map(0, &noRead, &mapped)) || !mapped)
@@ -152,7 +429,7 @@ void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const
                 Platform::LogLevel::Error,
                 "DX12: could not map texture spill upload of %llu bytes\n",
                 static_cast<unsigned long long>(totalBytes));
-            return;
+            return false;
         }
         offset = 0;
         uploadBuffer = spillUpload.Get();
@@ -203,6 +480,7 @@ void DX12TextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, const
     const u32 slot = handle - 1;
     if (std::find(PendingBarriers.begin(), PendingBarriers.end(), slot) == PendingBarriers.end())
         PendingBarriers.push_back(slot);
+    return true;
 }
 
 void DX12TextureHeap::FlushUploadBarriers()
@@ -257,10 +535,10 @@ void DX12TextureHeap::Destroy(u32 handle)
     if (!entry.InUse)
         return;
 
-    // The cache can free a texture while the previous frame's command list is
-    // still in flight, so ownership moves to the graveyard instead of being
-    // dropped here.
-    if (entry.Resource)
+    // A pending logical reservation has no GPU object to retire. A materialized
+    // resource can be freed only through the existing graveyard path because
+    // the previous submission may still reference it.
+    if (entry.PhysicalReady && entry.Resource)
         Graveyard.push_back(std::move(entry.Resource));
 
     entry = Entry{};
@@ -269,6 +547,24 @@ void DX12TextureHeap::Destroy(u32 handle)
     PendingBarriers.erase(
         std::remove(PendingBarriers.begin(), PendingBarriers.end(), handle - 1),
         PendingBarriers.end());
+    PendingCreateSlots.erase(
+        std::remove(PendingCreateSlots.begin(), PendingCreateSlots.end(), handle - 1),
+        PendingCreateSlots.end());
+    u32 i = 0;
+    while (i < PendingUploadCount)
+    {
+        if (PendingUploads[i].Handle != handle)
+        {
+            i++;
+            continue;
+        }
+
+        PendingUploadCount--;
+        if (i != PendingUploadCount)
+            std::swap(PendingUploads[i], PendingUploads[PendingUploadCount]);
+        PendingUploads[PendingUploadCount].Committed = false;
+        PendingUploads[PendingUploadCount].UsedWords = 0;
+    }
 }
 
 void DX12TextureHeap::CollectGarbage()

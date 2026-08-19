@@ -41,6 +41,14 @@ void ReapplyForConfigReload(melonDS::NDS* nds,
                             bool romDetected,
                             bool battleRuntimeMode);
 
+// Savestate replaces the guest timeline without serializing MelonPrime's
+// patch registry or ARM9 hook bookkeeping. Invalidate those host-owned states
+// after a successful load; the next normal RunFrameHook rebuilds lifecycle,
+// patches, and active hooks from loaded RAM without advancing an extra frame.
+void ReconcileAfterSavestateLoad(melonDS::NDS* nds,
+                                 EmuInstance* emu,
+                                 MelonPrimeCore* core);
+
 // Step 3 / Site E (see melonprime_patch_lifecycle_gateway_step3_plan.md).
 // Called every out-of-game focused frame from RunFrameHook. Registry
 // entries at PatchSite_OutOfGameFrame (FixWifi / UseFirmwareLanguage /

@@ -106,6 +106,7 @@ private:
     void populateBombIcon();
     void populateWeaponInventory();
     void populateRadar();
+    void populateScoreboard();
 };
 
 #endif // MELONPRIME_CUSTOM_HUD

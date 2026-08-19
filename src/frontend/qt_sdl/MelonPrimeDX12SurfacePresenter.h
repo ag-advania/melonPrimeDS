@@ -120,6 +120,10 @@ public:
     [[nodiscard]] const std::string& LastError() const noexcept { return Error; }
     [[nodiscard]] std::uint32_t GetWidth() const noexcept { return Width; }
     [[nodiscard]] std::uint32_t GetHeight() const noexcept { return Height; }
+    [[nodiscard]] bool HasLayerContent(Layer layer) const noexcept
+    {
+        return Layers[static_cast<std::size_t>(layer)].Valid;
+    }
 
 private:
     struct LayerTexture

@@ -339,6 +339,10 @@ void EmuThread::run()
     auto frameAdvanceOnce = [&]() {
 #ifdef MELONPRIME_DS
         MelonPrimePerf::FrameBegin();
+        // The emulation thread is the single owner of the logical game-frame
+        // ID. A skipped present leaves a gap; a retry never allocates another
+        // ID for the same emulated frame.
+        const melonDS::u64 logicalFrameId = ++lowLatencyLogicalFrameId;
         // GUI actions update these flags on the main thread. Snapshot them
         // once so this frame uses one coherent pacing decision.
         const bool limitFPS =
@@ -487,7 +491,7 @@ void EmuThread::run()
         if (dx12LowLatencyRenderer)
         {
             dx12LowLatencyRenderer->BeginAmdAntiLag2Frame();
-            dx12LowLatencyRenderer->BeginReflexFrame();
+            dx12LowLatencyRenderer->BeginReflexFrame(logicalFrameId);
             dx12LowLatencyRenderer->BeginIntelXeLLFrame();
         }
 #endif
@@ -515,7 +519,8 @@ void EmuThread::run()
                 vulkanLowLatencyRenderer->GetNvidiaReflexMode(),
                 vulkanLowLatencyRenderer->GetAmdAntiLag2Enabled(),
                 vulkanNormalSpeed,
-                targetFrameIntervalNs);
+                targetFrameIntervalNs,
+                logicalFrameId);
         }
 #endif
 
@@ -530,6 +535,7 @@ void EmuThread::run()
         //
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Input);
+        MelonPrimePerf::MarkInputSample();
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         // Reflex INPUT_SAMPLE marks the point immediately before the first
         // input read. It must precede both SDL's joystick refresh and the raw
@@ -661,6 +667,7 @@ void EmuThread::run()
 
 #ifdef MELONPRIME_DS
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::RunFrame);
+        MelonPrimePerf::MarkRunFrameBegin();
 #endif
         if (UNLIKELY(needsCompile))
         {
@@ -727,6 +734,7 @@ void EmuThread::run()
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Draw);
 #endif
         emuInstance->drawScreen();
+        MelonPrimePerf::MarkPresentEnd();
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         if (dx12LowLatencyRenderer)
         {
@@ -1194,9 +1202,6 @@ void EmuThread::handleMessages()
 
 #ifdef MELONPRIME_DS
             melonPrime->OnEmuStart();
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-            tryLoadDiagnosticSavestate();
-#endif
 #endif // MELONPRIME_DS
             break;
 
@@ -1415,20 +1420,45 @@ void EmuThread::handleMessages()
         glBorrowCond.wait(&glBorrowMutex);
         glBorrowMutex.unlock();
     }
+
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    // The diagnostic state load is deliberately issued after a normal frame
+    // and after the regular message queue has drained. This is the same
+    // message boundary used by the UI's F-key state load; unlike the old
+    // msg_EmuRun hook it does not run during startup before the game/renderer
+    // has reached a stable running state.
+    tryLoadDiagnosticSavestate();
+#endif
 }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 void EmuThread::tryLoadDiagnosticSavestate()
 {
-    // Dormant real-ROM differential hook. msg_EmuRun is handled only after
-    // NDS::Start(), and loadROM() has already installed the selected renderer.
-    // This matches the normal F-key load order without depending on macOS
-    // function-key routing.
-    static bool attempted = false;
-    const char* path = std::getenv("MELONPRIME_TEST_SAVESTATE");
-    if (attempted || !path || path[0] == '\0')
+    // Dormant real-ROM differential hook. This is called from the normal
+    // message-drain boundary after a short warm-up of ordinary frames. The
+    // UI's F-key load follows this same boundary; it must not execute a
+    // synthetic frame or inject input from the diagnostic path.
+    static bool checked = false;
+    static uint32_t warmupFrames = 0;
+    if (checked)
         return;
-    attempted = true;
+    const char* path = std::getenv("MELONPRIME_TEST_SAVESTATE");
+    if (!path || path[0] == '\0')
+    {
+        checked = true;
+        return;
+    }
+    if (emuStatus != emuStatus_Running)
+        return;
+
+    // Let the ROM execute ordinary startup frames first. Loading at the
+    // msg_EmuRun/first-frame boundary is not equivalent to loading an
+    // in-match state from the running UI and can leave game-side lifecycle
+    // state uninitialized.
+    constexpr uint32_t kWarmupFrames = 30;
+    if (warmupFrames++ < kWarmupFrames)
+        return;
+    checked = true;
 
     const char* customHudOff = std::getenv("MELONPRIME_TEST_CUSTOM_HUD_OFF");
     const bool customHudForcedOff = customHudOff && customHudOff[0] != '\0' &&
@@ -1444,21 +1474,21 @@ void EmuThread::tryLoadDiagnosticSavestate()
         melonPrime->OnSavestateLoaded();
         RasterDifferential::NotifyDiagnosticSavestateLoaded();
 
-        // Some real-ROM F2 snapshots are taken while the game is in its
-        // internal pause state. Keep the diagnostic path deterministic by
-        // allowing an explicit one-frame START pulse after the state load;
-        // production startup never sets this environment variable.
+        // Never call NDS::RunFrame() or inject START from this diagnostic hook.
+        // That would execute a second emulated frame outside the normal
+        // input/renderer boundary and is unsafe for an in-match snapshot.
+        // States used for timing must be captured in the desired running
+        // gameplay state instead. Keep the old variable as an explicit warning
+        // so stale test commands cannot silently reintroduce the bug.
         const char* unpause =
             std::getenv("MELONPRIME_TEST_SAVESTATE_UNPAUSE");
         if (unpause && unpause[0] != '\0' &&
             std::strcmp(unpause, "0") != 0)
         {
-            emuInstance->nds->SetKeyMask(0xFF7u); // START pressed (active low)
-            emuInstance->nds->RunFrame();
-            emuInstance->nds->SetKeyMask(0xFFFu); // release all buttons
             Platform::Log(
-                Platform::LogLevel::Info,
-                "[SavestateDiff] one-frame START pulse sent\n");
+                Platform::LogLevel::Warn,
+                "[SavestateDiff] ignoring MELONPRIME_TEST_SAVESTATE_UNPAUSE; "
+                "diagnostic loads never inject START\n");
         }
     }
     Platform::Log(

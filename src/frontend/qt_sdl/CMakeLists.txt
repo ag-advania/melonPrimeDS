@@ -98,6 +98,7 @@ set(SOURCES_QT_SDL
     MelonPrimeRuntimeConfig.cpp
     MelonPrimeVideoBackend.cpp
     MelonPrimeScreenCursorPolicy.cpp
+    MelonPrimeHudEditorFormLayout.cpp
     MelonPrimeHudEditorFormBuilder.cpp
     MelonPrimePatchLifecycle.cpp
     MelonPrimeLocalization.cpp
@@ -142,6 +143,13 @@ option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only se
 # compiles the observer out of both the core and Qt/SDL targets.
 option(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY
     "Compile Vulkan/DX12 renderer performance telemetry instrumentation"
+    OFF)
+
+# Detailed Vulkan allocation telemetry is diagnostic-only. Memory safety uses
+# a separate minimal reservation counter in the admission state, so ordinary
+# Release/shipping allocations do not update peak/total/bucket statistics.
+option(MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY
+    "Compile detailed Vulkan GPU memory allocation telemetry"
     OFF)
 
 function(melonprime_apply_renderer_perf_telemetry_definition target)
@@ -409,6 +417,41 @@ endif()
 
 add_executable(melonDS ${SOURCES_QT_SDL})
 
+# Geometry-level regression coverage for the production translated-label
+# helper and the same adaptive panel-width arithmetic used by Screen.cpp.
+# This is a Qt Widgets test, so it catches overlap/clipping that a source audit
+# cannot see. The custom target runs it with Qt's headless platform plugin.
+add_executable(melonprime_hud_classic_layout_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/hud-classic-layout-tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeHudEditorFormLayout.cpp)
+target_include_directories(melonprime_hud_classic_layout_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(melonprime_hud_classic_layout_tests PRIVATE
+    MELONPRIME_DS
+    MELONPRIME_CUSTOM_HUD)
+target_link_libraries(melonprime_hud_classic_layout_tests PRIVATE ${QT_LINK_LIBS})
+set_target_properties(melonprime_hud_classic_layout_tests PROPERTIES
+    WIN32_EXECUTABLE OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+if (WIN32)
+    # The static Windows Qt package exposes qwindows but does not ship the
+    # offscreen platform plugin. The test never shows an interactive window,
+    # so the normal Windows platform plugin is sufficient on the CI runner.
+    set(MELONPRIME_HUD_QPA_PLATFORM windows)
+elseif (APPLE)
+    # The macOS Qt package uses the native Cocoa integration on the hosted
+    # runner; selecting it avoids depending on an optional offscreen plugin.
+    set(MELONPRIME_HUD_QPA_PLATFORM cocoa)
+else()
+    set(MELONPRIME_HUD_QPA_PLATFORM offscreen)
+endif()
+add_custom_target(melonprime_hud_classic_layout_check ALL
+    COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=${MELONPRIME_HUD_QPA_PLATFORM}
+        $<TARGET_FILE:melonprime_hud_classic_layout_tests>
+    DEPENDS melonprime_hud_classic_layout_tests
+    COMMENT "Running Classic On-Screen Edit Qt geometry tests..."
+    VERBATIM)
+
 # MelonPrimeDS: keep the CMake target name "melonDS" (so all the target_* calls
 # below stay untouched), but emit the binary as "melonPrimeDS" (melonPrimeDS.exe
 # on Windows). The Apple block further down overrides OUTPUT_NAME for the bundle.
@@ -450,6 +493,53 @@ else()
 endif()
 target_compile_definitions(melonDS PRIVATE MELONPRIMEDS_BUILD_TZ="${_mp_build_tz}")
 
+if (MELONDS_GIT_HASH)
+    set(_mp_git_sha "${MELONDS_GIT_HASH}")
+else()
+    set(_mp_git_sha "unknown")
+endif()
+if (MELONDS_GIT_BRANCH)
+    set(_mp_git_branch "${MELONDS_GIT_BRANCH}")
+else()
+    set(_mp_git_branch "unknown")
+endif()
+if (MELONDS_BUILD_PROVIDER)
+    set(_mp_build_provider "${MELONDS_BUILD_PROVIDER}")
+else()
+    set(_mp_build_provider "unknown")
+endif()
+if (CMAKE_BUILD_TYPE)
+    set(_mp_build_type "${CMAKE_BUILD_TYPE}")
+else()
+    set(_mp_build_type "unknown")
+endif()
+set(_mp_renderer_perf_gate 0)
+if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    set(_mp_renderer_perf_gate 1)
+endif()
+set(_mp_vulkan_latency_gate 0)
+if (MELONPRIME_VULKAN_ACTIVE AND MELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE)
+    set(_mp_vulkan_latency_gate 1)
+endif()
+set(_mp_gpu_memory_gate 0)
+if (MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
+    set(_mp_gpu_memory_gate 1)
+endif()
+set(_mp_developer_gate 0)
+if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    set(_mp_developer_gate 1)
+endif()
+target_compile_definitions(melonDS PRIVATE
+    MELONPRIMEDS_GIT_SHA="${_mp_git_sha}"
+    MELONPRIMEDS_GIT_BRANCH="${_mp_git_branch}"
+    MELONPRIMEDS_GIT_DIRTY="${MELONDS_GIT_DIRTY}"
+    MELONPRIMEDS_BUILD_PROVIDER="${_mp_build_provider}"
+    MELONPRIMEDS_BUILD_TYPE="${_mp_build_type}"
+    MELONPRIMEDS_BUILD_RENDERER_PERF_TELEMETRY=${_mp_renderer_perf_gate}
+    MELONPRIMEDS_BUILD_VULKAN_LATENCY_CAPTURE=${_mp_vulkan_latency_gate}
+    MELONPRIMEDS_BUILD_GPU_MEMORY_TELEMETRY=${_mp_gpu_memory_gate}
+    MELONPRIMEDS_BUILD_DEVELOPER_FEATURES=${_mp_developer_gate})
+
 if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     target_compile_definitions(core PRIVATE
         MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=1)
@@ -461,6 +551,18 @@ if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 else()
     message(STATUS
         "MelonPrime renderer performance telemetry: COMPILED OUT")
+endif()
+
+if (MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
+    target_compile_definitions(core PRIVATE
+        MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=1)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=1)
+    message(STATUS
+        "MelonPrime GPU memory telemetry: COMPILED IN (diagnostic build)")
+else()
+    message(STATUS
+        "MelonPrime GPU memory telemetry: COMPILED OUT")
 endif()
 
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -580,6 +682,86 @@ if (MELONPRIME_VULKAN_ACTIVE)
         COMMENT "Running Vulkan present timing model tests..."
         VERBATIM)
 
+    add_executable(melonprime_vulkan_memory_admission_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-memory-admission-tests.cpp)
+    target_include_directories(melonprime_vulkan_memory_admission_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_memory_admission_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    set_target_properties(melonprime_vulkan_memory_admission_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_memory_admission_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_memory_admission_tests>
+        DEPENDS melonprime_vulkan_memory_admission_tests
+        COMMENT "Running Vulkan memory admission model tests..."
+        VERBATIM)
+
+    add_executable(melonprime_vulkan_memory_telemetry_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-memory-telemetry-tests.cpp)
+    target_include_directories(melonprime_vulkan_memory_telemetry_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_memory_telemetry_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=1
+        VK_NO_PROTOTYPES=1)
+    set_target_properties(melonprime_vulkan_memory_telemetry_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_memory_telemetry_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_memory_telemetry_tests>
+        DEPENDS melonprime_vulkan_memory_telemetry_tests
+        COMMENT "Running Vulkan memory telemetry model tests..."
+        VERBATIM)
+
+    # Exercise the production deferred-destroy queue with a pure frame-tag
+    # model and an API-level fake allocation dispatch. This fixes the
+    # distinction between the next scheduler frame and the last frame that may
+    # still reference a reset texcache image, and verifies the forced-OOM retry
+    # frees old image/view/memory objects before the retry allocation.
+    add_executable(melonprime_vulkan_frame_retire_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-frame-retire-tests.cpp)
+    target_include_directories(melonprime_vulkan_frame_retire_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_frame_retire_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    # FrameRing's test seam reads the production class layout. Keep the model
+    # test's compile-time telemetry gate identical to core so measurement
+    # builds cannot create an ODR/layout mismatch with the linked library.
+    melonprime_apply_renderer_perf_telemetry_definition(
+        melonprime_vulkan_frame_retire_tests)
+    target_link_libraries(melonprime_vulkan_frame_retire_tests PRIVATE core)
+    set_target_properties(melonprime_vulkan_frame_retire_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_frame_retire_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_frame_retire_tests>
+        DEPENDS melonprime_vulkan_frame_retire_tests
+        COMMENT "Running Vulkan deferred-destroy frame-retire model tests..."
+        VERBATIM)
+
+    add_executable(melonprime_vulkan_queue_sharing_experiment_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-queue-sharing-experiment-tests.cpp)
+    target_include_directories(melonprime_vulkan_queue_sharing_experiment_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..
+        "${MELONPRIME_VULKAN_INCLUDE_DIR}")
+    target_compile_definitions(melonprime_vulkan_queue_sharing_experiment_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_VULKAN=1
+        VK_NO_PROTOTYPES=1)
+    set_target_properties(melonprime_vulkan_queue_sharing_experiment_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_vulkan_queue_sharing_experiment_check ALL
+        COMMAND $<TARGET_FILE:melonprime_vulkan_queue_sharing_experiment_tests>
+        DEPENDS melonprime_vulkan_queue_sharing_experiment_tests
+        COMMENT "Running Vulkan split-queue experiment policy tests..."
+        VERBATIM)
+
     add_executable(melonprime_vulkan_linux_surface_lifecycle_tests
         ${CMAKE_SOURCE_DIR}/tools/testing/vulkan-linux-surface-lifecycle-tests.cpp)
     set_target_properties(melonprime_vulkan_linux_surface_lifecycle_tests PROPERTIES
@@ -627,7 +809,8 @@ if (MELONPRIME_VULKAN_ACTIVE)
         "${MELONPRIME_VULKAN_INCLUDE_DIR}")
     target_compile_definitions(melonprime_vulkan_presenter_timeout_tests PRIVATE
         MELONPRIME_DS
-        MELONPRIME_ENABLE_VULKAN=1)
+        MELONPRIME_ENABLE_VULKAN=1
+        MELONPRIME_VULKAN_PRESENTER_TIMEOUT_TESTING=1)
     set_target_properties(melonprime_vulkan_presenter_timeout_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
     add_custom_target(melonprime_vulkan_presenter_timeout_check ALL
@@ -842,6 +1025,21 @@ if (MELONPRIME_DX12_ACTIVE)
         COMMAND $<TARGET_FILE:melonprime_xell_state_machine_tests>
         DEPENDS melonprime_xell_state_machine_tests
         COMMENT "Running Intel XeLL fake API state-machine tests..."
+        VERBATIM)
+
+    add_executable(melonprime_dx12_memory_admission_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/dx12-memory-admission-tests.cpp)
+    target_include_directories(melonprime_dx12_memory_admission_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_dx12_memory_admission_tests PRIVATE
+        MELONPRIME_DS
+        MELONPRIME_ENABLE_DX12=1)
+    set_target_properties(melonprime_dx12_memory_admission_tests PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_dx12_memory_admission_check ALL
+        COMMAND $<TARGET_FILE:melonprime_dx12_memory_admission_tests>
+        DEPENDS melonprime_dx12_memory_admission_tests
+        COMMENT "Running DX12 memory admission model tests..."
         VERBATIM)
 
     set(MELONPRIME_XELL_RUNTIME_DIR

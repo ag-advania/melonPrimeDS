@@ -57,7 +57,7 @@ public:
     // BeginFrame (sleep only) -> MarkInputSample -> input polling ->
     // MarkSimulationStart -> MarkRenderSubmitStart/End ->
     // MarkPresentStart/End -> FinishFrame.
-    void BeginFrame();
+    void BeginFrame(u64 logicalFrameId);
     void MarkInputSample();
     void MarkSimulationStart();
     void MarkRenderSubmitStart();

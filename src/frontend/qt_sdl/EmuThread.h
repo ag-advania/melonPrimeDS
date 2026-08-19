@@ -27,6 +27,7 @@
 #include <QVariant>
 
 #include <atomic>
+#include <cstdint>
 #include <variant>
 #include <optional>
 #include <list>
@@ -229,6 +230,11 @@ private:
 #ifdef MELONPRIME_DS
     // --- MelonPrimeDS Integration ---
     std::unique_ptr<MelonPrime::MelonPrimeCore> melonPrime;
+    // One logical game-frame ID is allocated here, once per emulation frame.
+    // Renderer/presenter callbacks may run more than once (or be skipped), so
+    // neither backend derives a Reflex ID from those callbacks, swapchain
+    // images, or command-buffer slots.
+    std::uint64_t lowLatencyLogicalFrameId = 0;
     // --------------------------------
 #endif
 
