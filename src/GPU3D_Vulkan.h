@@ -114,7 +114,9 @@ public:
     bool ComposeNativeGPU2D(
         const GPU2DNative::FrameInput& input,
         u64 generation,
-        bool finalFBValid);
+        bool finalFBValid,
+        const u32* expectedTop = nullptr,
+        const u32* expectedBottom = nullptr);
 
     // Legacy CPU accessor. Vulkan presentation is GPU-native and therefore
     // returns nullptr here; callers use AcquireComposedOutputLease().
@@ -133,6 +135,10 @@ public:
     [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept
     {
         return RuntimeFailureReason;
+    }
+    void FailNativeGPU2DExact(const char* reason)
+    {
+        SetRuntimeFailure(reason ? std::string(reason) : std::string("native GPU2D exact validation failed"));
     }
 
     // The frontend compiles pipelines incrementally so ROM startup does not
@@ -576,6 +582,7 @@ private:
     // slot until its copy command retires.
     bool ComposedOutputValid = false;
     u64 ComposedGeneration = 0;
+    bool NativeCaptureStateInitialized = false;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely
     // cache descriptors by resource lifetime rather than content generation.

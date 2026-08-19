@@ -162,13 +162,16 @@ void DX12Renderer::VBlank()
 {
     auto* dx12 = GetDX12Renderer3D();
     bool nativeComposed = false;
+    const bool exactValidation = GPU2DNative::ExactValidationEnabled();
     if (dx12 && HasNativeGPU2DFrame())
     {
         const GPU2DNative::FrameInput& nativeFrame = GetNativeGPU2DFrame();
         nativeComposed = dx12->ComposeNativeGPU2D(
             nativeFrame,
             nativeFrame.Generation.Frame,
-            !GPU.GPU3D.AbortFrame && dx12->HasFinalFBContent());
+            !GPU.GPU3D.AbortFrame && dx12->HasFinalFBContent(),
+            exactValidation ? GetSoftwareScreenFrame(0u) : nullptr,
+            exactValidation ? GetSoftwareScreenFrame(1u) : nullptr);
         if (nativeComposed)
         {
             if (!NativeGPU2DAnnounced)
@@ -194,6 +197,14 @@ void DX12Renderer::VBlank()
         Platform::Log(Platform::LogLevel::Error,
             "DX12 renderer gpu2d=Software fallback=1 disabled=1 reason=%s\n",
             dx12->GetRuntimeFailureReason().c_str());
+        IntelXeLL.MarkRenderSubmitEnd();
+        NvidiaReflex.MarkRenderSubmitEnd();
+        return;
+    }
+    if (exactValidation && dx12 && !nativeComposed)
+    {
+        dx12->FailNativeGPU2DExact(
+            "native GPU2D exact gate rejected a fallback or unavailable frame");
         IntelXeLL.MarkRenderSubmitEnd();
         NvidiaReflex.MarkRenderSubmitEnd();
         return;

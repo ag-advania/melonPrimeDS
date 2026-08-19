@@ -26,6 +26,15 @@ layout (std430, set = 0, binding = 13) buffer NativeGPU2DOutputBuffer
     uint NativeGPU2DOutput[];
 };
 
+// The first FramebufferStride words are owned by the 3D blend continuation
+// state. The tail is a persistent four-bank LCDC capture mirror. Keeping the
+// mirror on the device lets display mode 2 consume completed captures without
+// a CPU pixel readback.
+layout (std430, set = 0, binding = 15) buffer NativeCaptureBuffer
+{
+    uint NativeCaptureState[];
+};
+
 layout (set = 0, binding = 17, rgba8) writeonly uniform image2D NativeDirectOutputTop;
 layout (set = 0, binding = 18, rgba8) writeonly uniform image2D NativeDirectOutputBottom;
 
@@ -67,6 +76,8 @@ const uint kRotC = 24u;
 const uint kRotD = 26u;
 const uint kWin0Active = 40u;
 const uint kWin1Active = 41u;
+const uint kWin0Coords = 28u;
+const uint kWin1Coords = 32u;
 const uint kBGMosaic = 42u;
 const uint kOBJMosaic = 44u;
 const uint kBGMosaicLine = 46u;
@@ -172,16 +183,17 @@ uint FIFO16(uint index)
 
 uint LCD16(uint bank, uint byteAddress)
 {
-    uint base = kLCDVRAMBase + bank * 32768u;
-    return Memory16(base, 0x20000u, byteAddress);
+    uint word = NativeCaptureState[uint(FramebufferStride) + bank * 32768u
+        + (byteAddress >> 2u)];
+    return (word >> ((byteAddress & 3u) * 8u)) & 0xFFFFu;
 }
 
 uint ConvertBGR555(uint color, uint flag)
 {
     return PackColor6(
         (color & 0x1Fu) << 1u,
-        ((color >> 5u) & 0x3Eu) | ((color >> 15u) & 1u),
-        ((color >> 10u) & 0x3Eu),
+        ((color >> 4u) & 0x3Eu) | ((color >> 15u) & 1u),
+        (color >> 9u) & 0x3Eu,
         flag);
 }
 
@@ -244,21 +256,25 @@ uint WindowSelect(uint engine, uint line, int x, uint objWindow)
         return 0x3Fu;
 
     uint winRegs = LineWord(engine, line, kWinRegs);
-    uint winMask = LineWord(engine, line, kWinMask);
-    uint pos0 = LineWord(engine, line, kWinPos + 0u);
-    uint pos1 = LineWord(engine, line, kWinPos + 1u);
-    uint pos2 = LineWord(engine, line, kWinPos + 2u);
-    uint pos3 = LineWord(engine, line, kWinPos + 3u);
-    bool inside0 = x < int(pos0)
-        ? (winMask & (1u << 0u)) != 0u
-        : (x < int(pos1)
-            ? (winMask & (1u << 1u)) != 0u
-            : (winMask & (1u << 2u)) != 0u);
-    bool inside1 = x < int(pos2)
-        ? (winMask & (1u << 3u)) != 0u
-        : (x < int(pos3)
-            ? (winMask & (1u << 4u)) != 0u
-            : (winMask & (1u << 5u)) != 0u);
+    uint win0Left = LineWord(engine, line, kWin0Coords + 0u);
+    uint win0Right = LineWord(engine, line, kWin0Coords + 1u);
+    uint win1Left = LineWord(engine, line, kWin1Coords + 0u);
+    uint win1Right = LineWord(engine, line, kWin1Coords + 1u);
+    uint win0Active = LineWord(engine, line, kWin0Active);
+    uint win1Active = LineWord(engine, line, kWin1Active);
+    // CalculateWindowMask() applies outside -> OBJ -> WIN1 -> WIN0.  The
+    // software renderer mutates the horizontal latch while walking x; this
+    // equivalent interval test is read-only and handles wrapping windows.
+    bool inside0 = (win0Active & 1u) != 0u
+        && win0Left != win0Right
+        && (win0Left < win0Right
+            ? (x >= int(win0Left) && x < int(win0Right))
+            : (x >= int(win0Left) || x < int(win0Right)));
+    bool inside1 = (win1Active & 1u) != 0u
+        && win1Left != win1Right
+        && (win1Left < win1Right
+            ? (x >= int(win1Left) && x < int(win1Right))
+            : (x >= int(win1Left) || x < int(win1Right)));
 
     uint selected = winRegs;
     if (objWindow != 0u && (dispCnt & (1u << 15u)) != 0u)
@@ -924,9 +940,114 @@ uint ToBgra8Native(uint color)
         | 0xFF000000u;
 }
 
+uint CaptureRawFromColor6(uint color)
+{
+    uint r = Color6R(color) >> 1u;
+    uint g = Color6G(color) >> 1u;
+    uint b = Color6B(color) >> 1u;
+    uint a = ((color >> 24u) != 0u) ? 0x8000u : 0u;
+    return r | (g << 5u) | (b << 10u) | a;
+}
+
+uint CaptureSourceB(uint line, uint x, uint captureCnt)
+{
+    if ((captureCnt & (1u << 25u)) != 0u)
+        return FIFO16(x);
+
+    uint dispCnt = LineWord(0u, line, kDispCnt);
+    uint bank = (dispCnt >> 18u) & 3u;
+    uint address = line * 512u + x * 2u;
+    if (((dispCnt >> 16u) & 3u) != 2u)
+        address += ((captureCnt >> 26u) & 3u) << 14u;
+    return LCD16(bank, address);
+}
+
+uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
+{
+    uint mode = (captureCnt >> 29u) & 3u;
+    if (mode == 0u)
+        return CaptureRawFromColor6(sourceA);
+    if (mode == 1u)
+        return sourceB;
+
+    uint eva = min(captureCnt & 0x1Fu, 16u);
+    uint evb = min((captureCnt >> 8u) & 0x1Fu, 16u);
+    uint aA = ((sourceA >> 24u) != 0u) ? 1u : 0u;
+    uint aB = (sourceB >> 15u) & 1u;
+    uint r = ((Color6R(sourceA) >> 1u) * aA * eva
+        + (sourceB & 0x1Fu) * aB * evb + 8u) >> 4u;
+    uint g = ((Color6G(sourceA) >> 1u) * aA * eva
+        + ((sourceB >> 5u) & 0x1Fu) * aB * evb + 8u) >> 4u;
+    uint b = ((Color6B(sourceA) >> 1u) * aA * eva
+        + ((sourceB >> 10u) & 0x1Fu) * aB * evb + 8u) >> 4u;
+    uint a = (eva > 0u ? aA : 0u) | (evb > 0u ? aB : 0u);
+    return min(r, 31u) | (min(g, 31u) << 5u)
+        | (min(b, 31u) << 10u) | (a << 15u);
+}
+
+uint CaptureSourceA(uint line, uint x, uint outputX)
+{
+    uint captureCnt = LineWord(0u, line, kCaptureCnt);
+    if ((captureCnt & (1u << 24u)) != 0u && pc.TexWidth != 0u)
+    {
+        uint renderX = LineWord(0u, line, kRenderXPos) & 0x1FFu;
+        int sx = (renderX & 0x100u) != 0u
+            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
+            : int(outputX) + int(renderX * uint(ScaleFactor));
+        if (sx >= 0 && sx < ScreenWidth)
+            return LoadFinalFB(ivec2(sx, int(line * uint(ScaleFactor))));
+        return 0u;
+    }
+    return Composite2D(0u, line, int(x), outputX,
+        line * uint(ScaleFactor));
+}
+
+void WriteNativeCapturePair(uint line, uint x, uint outputX)
+{
+    uint captureCnt = LineWord(0u, line, kCaptureCnt);
+    if (LineWord(0u, line, kCaptureEnable) == 0u)
+        return;
+
+    uint sizeCode = (captureCnt >> 20u) & 3u;
+    uint width = sizeCode == 0u ? 128u : 256u;
+    uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
+    if (line >= height || x >= width)
+        return;
+    uint destinationBank = (captureCnt >> 16u) & 3u;
+    if ((NativeGPU2DInput[14u] & (1u << destinationBank)) == 0u)
+        return;
+
+    uint firstA = CaptureSourceA(line, x, outputX);
+    uint firstB = CaptureSourceB(line, x, captureCnt);
+    uint first = CaptureCompositeRaw(firstA, firstB, captureCnt);
+    uint second = 0u;
+    if (x + 1u < width)
+    {
+        uint secondA = CaptureSourceA(line, x + 1u, outputX + uint(ScaleFactor));
+        uint secondB = CaptureSourceB(line, x + 1u, captureCnt);
+        second = CaptureCompositeRaw(secondA, secondB, captureCnt);
+    }
+
+    uint byteAddress = (((captureCnt >> 18u) & 3u) << 14u)
+        + line * width * 2u + x * 2u;
+    NativeCaptureState[uint(FramebufferStride) + destinationBank * 32768u
+        + (byteAddress >> 2u)] = first | (second << 16u);
+}
+
 void main()
 {
     uvec2 id = gl_GlobalInvocationID.xy;
+    const bool capturePass = (pc._pad & 4u) != 0u;
+    if (capturePass)
+    {
+        if (id.x >= uint(ScreenWidth) || id.y != 0u)
+            return;
+        uint x = id.x / uint(ScaleFactor);
+        if (id.x % uint(ScaleFactor) != 0u || (x & 1u) != 0u)
+            return;
+        WriteNativeCapturePair(uint(max(pc.CaptureYOffset, 0)), x, id.x);
+        return;
+    }
     if (id.x >= uint(ScreenWidth) || id.y >= uint(ScreenHeight) * 2u)
         return;
 
@@ -940,7 +1061,9 @@ void main()
         : DisplayPixel(engine, line, int(x), id.x, scaledY);
 
     uint bgra8 = ToBgra8Native(color);
-    if (pc._pad != 0u)
+    const bool directOutput = (pc._pad & 1u) != 0u;
+    const bool exactOutput = (pc._pad & 2u) != 0u;
+    if (directOutput)
     {
         vec4 rgba8 = vec4(
             float((bgra8 >> 16u) & 0xFFu) / 255.0,
@@ -952,7 +1075,7 @@ void main()
         else
             imageStore(NativeDirectOutputBottom, ivec2(id.x, scaledY), rgba8);
     }
-    else
+    if (exactOutput || !directOutput)
     {
         NativeGPU2DOutput[screen * uint(FramebufferStride)
             + scaledY * uint(ScreenWidth) + id.x] = bgra8;

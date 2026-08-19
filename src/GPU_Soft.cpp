@@ -63,6 +63,7 @@ void SoftRenderer::Reset()
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
     SoftwareLogicalFrame.fill(0);
+    SoftwareScreenFrame.fill(0);
     NativeGPU2DFrame.Reset();
 
     Rend2D_A->Reset();
@@ -115,6 +116,7 @@ void SoftRenderer::Stop()
     memset(Framebuffer[0][1], 0, len);
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
+    SoftwareScreenFrame.fill(0);
 }
 
 void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
@@ -213,8 +215,8 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 
 void SoftRenderer::DrawScanline(u32 line)
 {
-#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     const u32 outputLine = line;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     if (outputLine == 0u)
     {
         StructuredPerfBackendForFrame = UseStructuredVulkan2D() && Rend3D != nullptr
@@ -359,6 +361,38 @@ void SoftRenderer::DrawScanline(u32 line)
         if (GPU.CaptureEnable)
             DoCapture(line);
 #endif
+
+        // Gate B oracle: keep the final software LCD result in canonical
+        // 6-bit form. Native Vulkan/DX12 never consume these pixels; they
+        // evaluate their own display path from the recorded state/mirrors.
+        if (outputLine < GPU2DNative::ScreenHeight)
+        {
+            const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
+            const u32 screenB = screenA ^ 1u;
+            u32* finalA = SoftwareScreenFrame.data()
+                + static_cast<std::size_t>(screenA)
+                    * GPU2DNative::ScreenPixelCount
+                + static_cast<std::size_t>(outputLine)
+                    * GPU2DNative::ScreenWidth;
+            u32* finalB = SoftwareScreenFrame.data()
+                + static_cast<std::size_t>(screenB)
+                    * GPU2DNative::ScreenPixelCount
+                + static_cast<std::size_t>(outputLine)
+                    * GPU2DNative::ScreenWidth;
+            if (GPU.ScreensEnabled)
+            {
+                for (u32 x = 0; x < GPU2DNative::ScreenWidth; ++x)
+                {
+                    finalA[x] = dstA[x] & 0x003F3F3Fu;
+                    finalB[x] = dstB[x] & 0x003F3F3Fu;
+                }
+            }
+            else
+            {
+                std::fill_n(finalA, GPU2DNative::ScreenWidth, 0u);
+                std::fill_n(finalB, GPU2DNative::ScreenWidth, 0u);
+            }
+        }
     }
     else
     {

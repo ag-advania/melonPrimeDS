@@ -164,13 +164,16 @@ void VulkanRenderer::VBlank()
     // disagree with.
     auto* vulkan = GetVulkanRenderer3D();
     bool nativeComposed = false;
+    const bool exactValidation = GPU2DNative::ExactValidationEnabled();
     if (vulkan && HasNativeGPU2DFrame())
     {
         const GPU2DNative::FrameInput& nativeFrame = GetNativeGPU2DFrame();
         nativeComposed = vulkan->ComposeNativeGPU2D(
             nativeFrame,
             nativeFrame.Generation.Frame,
-            !GPU.GPU3D.AbortFrame && vulkan->HasFinalFBContent());
+            !GPU.GPU3D.AbortFrame && vulkan->HasFinalFBContent(),
+            exactValidation ? GetSoftwareScreenFrame(0u) : nullptr,
+            exactValidation ? GetSoftwareScreenFrame(1u) : nullptr);
         if (nativeComposed)
         {
             if (!NativeGPU2DAnnounced)
@@ -197,6 +200,14 @@ void VulkanRenderer::VBlank()
         Platform::Log(Platform::LogLevel::Error,
             "Vulkan renderer gpu2d=Software fallback=1 disabled=1 reason=%s\n",
             vulkan->GetRuntimeFailureReason().c_str());
+        if (VBlankObserverFn)
+            VBlankObserverFn(VBlankObserverData);
+        return;
+    }
+    if (exactValidation && vulkan && !nativeComposed)
+    {
+        vulkan->FailNativeGPU2DExact(
+            "native GPU2D exact gate rejected a fallback or unavailable frame");
         if (VBlankObserverFn)
             VBlankObserverFn(VBlankObserverData);
         return;

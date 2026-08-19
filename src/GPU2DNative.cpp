@@ -4,6 +4,8 @@
 
 #include "GPU2DNative.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 
 #include "GPU.h"
@@ -11,8 +13,64 @@
 namespace melonDS::GPU2DNative
 {
 
+bool ExactValidationEnabled() noexcept
+{
+    static const bool enabled = [] {
+        const char* value = std::getenv("MELONPRIME_GPU2D_EXACT_VALIDATE");
+        if (!value || value[0] == '\0')
+            value = std::getenv("MELONPRIME_GPU2D_EXACT");
+        if (!value)
+            return false;
+        return value[0] == '1' || value[0] == 'y' || value[0] == 'Y'
+            || value[0] == 't' || value[0] == 'T';
+    }();
+    return enabled;
+}
+
 namespace
 {
+void MarkDirtyRange(FrameInput& input, u32 offset, u32 size) noexcept
+{
+    if (size == 0u)
+        return;
+    if (input.DirtyRangeCount != 0u)
+    {
+        DirtyRange& previous = input.DirtyRanges[input.DirtyRangeCount - 1u];
+        if (previous.Offset + previous.Size == offset)
+        {
+            previous.Size += size;
+            return;
+        }
+    }
+    if (input.DirtyRangeCount >= MaxDirtyRanges)
+    {
+        input.DirtyRangeCount = 1u;
+        input.DirtyRanges[0] = {
+            0u, static_cast<u32>(PackedFrameBytes())};
+        return;
+    }
+    input.DirtyRanges[input.DirtyRangeCount++] = {offset, size};
+}
+
+void CopyChangedBlocks(
+    FrameInput& input,
+    u8* destination,
+    const u8* source,
+    u32 size,
+    u32 packedOffset) noexcept
+{
+    if (!destination || !source || size == 0u)
+        return;
+    for (u32 offset = 0; offset < size; offset += DirtyBlockBytes)
+    {
+        const u32 blockSize = std::min(DirtyBlockBytes, size - offset);
+        if (std::memcmp(destination + offset, source + offset, blockSize) == 0)
+            continue;
+        std::memcpy(destination + offset, source + offset, blockSize);
+        MarkDirtyRange(input, packedOffset + offset, blockSize);
+    }
+}
+
 void CopyLineState(LineState& destination, const GPU2D& source, u32 renderXPos) noexcept
 {
     destination = {};
@@ -127,7 +185,16 @@ void FrameRecorder::Reset() noexcept
 
 void FrameRecorder::BeginFrame(u64 frame) noexcept
 {
-    Input = {};
+    if (!Valid)
+        Input = {};
+    else
+    {
+        // Retain the coherent memory mirrors so changed blocks can be copied
+        // into both the CPU frame and the backend's device-resident mirror.
+        std::fill(Input.Lines.begin(), Input.Lines.end(), LineState{});
+        std::fill(Input.ScreenSource.begin(), Input.ScreenSource.end(), 0u);
+        Input.DirtyRangeCount = 0u;
+    }
     Input.Generation.Frame = frame;
     Input.Generation.ContentGeneration = frame;
     Input.Generation.VRAMGeneration = frame;
@@ -137,16 +204,25 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     Input.ScreenSwap = GPU.ScreenSwap ? 1u : 0u;
     Input.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
     Input.LCDVRAMMap = GPU.VRAMMap_LCDC;
+    MarkDirtyRange(Input, 0u, PackedHeaderWords * sizeof(u32));
+    MarkDirtyRange(Input, PackedHeaderWords * sizeof(u32),
+        PackedLinesWords * sizeof(u32));
+    MarkDirtyRange(Input, PackedRouteBase * sizeof(u32),
+        PackedRouteWords * sizeof(u32));
     // A display-capture write is visible to later scanlines, not to the
     // scanline whose display read happened before DoCapture(). Keep the
     // frame-start LCD mirror here; the core owns the final VRAM state that is
     // copied into the next frame's snapshot.
     for (u32 bank = 0; bank < 4u; ++bank)
     {
-        std::memcpy(
-            Input.LCDVRAM.data() + static_cast<std::size_t>(bank) * 128u * 1024u,
+        CopyChangedBlocks(
+            Input,
+            Input.LCDVRAM.data()
+                + static_cast<std::size_t>(bank) * 128u * 1024u,
             GPU.VRAM[bank],
-            128u * 1024u);
+            128u * 1024u,
+            PackedLCDVRAMBase * sizeof(u32)
+                + bank * 128u * 1024u);
     }
     EngineLineSeen[0] = false;
     EngineLineSeen[1] = false;
@@ -218,21 +294,34 @@ void FrameRecorder::SnapshotEngine(u32 engine, const melonDS::GPU2D& gpu2D) noex
     gpu2D.GetBGVRAM(bg, bgMask);
     destination.BGSize = std::min<u32>(bgMask + 1u, destination.BGVRAM.size());
     if (bg && destination.BGSize != 0u)
-        std::memcpy(destination.BGVRAM.data(), bg, destination.BGSize);
+        CopyChangedBlocks(
+            Input, destination.BGVRAM.data(), bg, destination.BGSize,
+            (PackedEngineBase + engine * PackedEngineWords) * sizeof(u32));
 
     u8* obj = nullptr;
     u32 objMask = 0;
     gpu2D.GetOBJVRAM(obj, objMask);
     destination.OBJSize = std::min<u32>(objMask + 1u, destination.OBJVRAM.size());
     if (obj && destination.OBJSize != 0u)
-        std::memcpy(destination.OBJVRAM.data(), obj, destination.OBJSize);
+        CopyChangedBlocks(
+            Input, destination.OBJVRAM.data(), obj, destination.OBJSize,
+            (PackedEngineBase + engine * PackedEngineWords + PackedBGWords)
+                * sizeof(u32));
 
     const u8* bgExt = engine == 0u ? GPU.VRAMFlat_ABGExtPal : GPU.VRAMFlat_BBGExtPal;
     const u8* objExt = engine == 0u ? GPU.VRAMFlat_AOBJExtPal : GPU.VRAMFlat_BOBJExtPal;
     destination.BGExtendedPaletteSize = 32u * 1024u;
     destination.OBJExtendedPaletteSize = 8u * 1024u;
-    std::memcpy(destination.BGExtendedPalette.data(), bgExt, destination.BGExtendedPaletteSize);
-    std::memcpy(destination.OBJExtendedPalette.data(), objExt, destination.OBJExtendedPaletteSize);
+    CopyChangedBlocks(
+        Input, destination.BGExtendedPalette.data(), bgExt,
+        destination.BGExtendedPaletteSize,
+        (PackedEngineBase + engine * PackedEngineWords + PackedBGWords
+            + PackedOBJWords) * sizeof(u32));
+    CopyChangedBlocks(
+        Input, destination.OBJExtendedPalette.data(), objExt,
+        destination.OBJExtendedPaletteSize,
+        (PackedEngineBase + engine * PackedEngineWords + PackedBGWords
+            + PackedOBJWords + PackedBGExtendedPaletteWords) * sizeof(u32));
 }
 
 void FrameRecorder::FinalizeMemory() noexcept
@@ -242,12 +331,18 @@ void FrameRecorder::FinalizeMemory() noexcept
 
     SnapshotEngine(0u, GPU.GPU2D_A);
     SnapshotEngine(1u, GPU.GPU2D_B);
-    std::memcpy(Input.Palette.data(), GPU.Palette, Input.Palette.size());
-    std::memcpy(Input.OAM.data(), GPU.OAM, Input.OAM.size());
-    std::copy(
-        std::begin(GPU.DispFIFOBuffer),
-        std::end(GPU.DispFIFOBuffer),
-        Input.DisplayFIFO.begin());
+    CopyChangedBlocks(
+        Input, Input.Palette.data(), GPU.Palette,
+        static_cast<u32>(Input.Palette.size()), PackedPaletteBase * sizeof(u32));
+    CopyChangedBlocks(
+        Input, Input.OAM.data(), GPU.OAM,
+        static_cast<u32>(Input.OAM.size()), PackedOAMBase * sizeof(u32));
+    CopyChangedBlocks(
+        Input,
+        reinterpret_cast<u8*>(Input.DisplayFIFO.data()),
+        reinterpret_cast<const u8*>(GPU.DispFIFOBuffer),
+        static_cast<u32>(Input.DisplayFIFO.size() * sizeof(u16)),
+        PackedFIFOBase * sizeof(u32));
     Input.CaptureCnt = GPU.CaptureCnt;
     Input.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
     Input.ScreenSwap = GPU.ScreenSwap ? 1u : 0u;

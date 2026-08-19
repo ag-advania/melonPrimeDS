@@ -2355,7 +2355,9 @@ uint NativeFIFO16(uint index)
 }
 uint NativeLCD16(uint bank, uint address)
 {
-    return Native16(NativeLcdBase + bank * 32768u, 0x20000u, address);
+    uint word = BlendContinuationState[FramebufferStride + bank * 32768u
+        + (address >> 2u)];
+    return (word >> ((address & 3u) * 8u)) & 0xFFFFu;
 }
 
 uint NativePack(uint r, uint g, uint b, uint a)
@@ -2368,8 +2370,8 @@ uint NativeColorB(uint c) { return (c >> 16u) & 0x3Fu; }
 uint NativeBGR555(uint c, uint flag)
 {
     return NativePack((c & 0x1Fu) << 1u,
-        ((c >> 5u) & 0x3Eu) | ((c >> 15u) & 1u),
-        (c >> 10u) & 0x3Eu, flag);
+        ((c >> 4u) & 0x3Eu) | ((c >> 15u) & 1u),
+        (c >> 9u) & 0x3Eu, flag);
 }
 uint NativeVRAMColor(uint c)
 {
@@ -2409,15 +2411,22 @@ uint NativeWindow(uint engine, uint line, int x, uint objWindow)
     uint result = 0x3Fu;
     if ((disp & 0xE000u) == 0u) return result;
     uint regs = NativeLine(engine, line, NativeWinRegs);
-    uint mask = NativeLine(engine, line, NativeWinMask);
-    uint p0 = NativeLine(engine, line, NativeWinPos + 0u);
-    uint p1 = NativeLine(engine, line, NativeWinPos + 1u);
-    uint p2 = NativeLine(engine, line, NativeWinPos + 2u);
-    uint p3 = NativeLine(engine, line, NativeWinPos + 3u);
-    bool in0 = x < (int)p0 ? (mask & 1u) != 0u
-        : (x < (int)p1 ? (mask & 2u) != 0u : (mask & 4u) != 0u);
-    bool in1 = x < (int)p2 ? (mask & 8u) != 0u
-        : (x < (int)p3 ? (mask & 16u) != 0u : (mask & 32u) != 0u);
+    uint win0Left = NativeLine(engine, line, 28u);
+    uint win0Right = NativeLine(engine, line, 29u);
+    uint win1Left = NativeLine(engine, line, 32u);
+    uint win1Right = NativeLine(engine, line, 33u);
+    uint win0Active = NativeLine(engine, line, 40u);
+    uint win1Active = NativeLine(engine, line, 41u);
+    bool in0 = (win0Active & 1u) != 0u
+        && win0Left != win0Right
+        && (win0Left < win0Right
+            ? (x >= (int)win0Left && x < (int)win0Right)
+            : (x >= (int)win0Left || x < (int)win0Right));
+    bool in1 = (win1Active & 1u) != 0u
+        && win1Left != win1Right
+        && (win1Left < win1Right
+            ? (x >= (int)win1Left && x < (int)win1Right)
+            : (x >= (int)win1Left || x < (int)win1Right));
     uint selected = regs;
     if (objWindow != 0u && (disp & (1u << 15u)) != 0u) selected = regs >> 8u;
     if (in1) selected = regs >> 16u;
@@ -2765,17 +2774,76 @@ uint NativeBGRA8(uint c)
     return b|(g<<8u)|(r<<16u)|0xFF000000u;
 }
 
+uint NativeCaptureRaw(uint c)
+{
+    uint r=NativeColorR(c)>>1u,g=NativeColorG(c)>>1u,b=NativeColorB(c)>>1u;
+    return r|(g<<5u)|(b<<10u)|(((c>>24u)!=0u)?0x8000u:0u);
+}
+uint NativeCaptureSourceB(uint line,uint x,uint cnt)
+{
+    if((cnt&(1u<<25u))!=0u)return NativeFIFO16(x);
+    uint disp=NativeLine(0u,line,NativeDispCnt),bank=(disp>>18u)&3u;
+    uint address=line*512u+x*2u;
+    if(((disp>>16u)&3u)!=2u)address+=((cnt>>26u)&3u)<<14u;
+    return NativeLCD16(bank,address);
+}
+uint NativeCaptureComposite(uint a,uint b,uint cnt)
+{
+    uint mode=(cnt>>29u)&3u;if(mode==0u)return NativeCaptureRaw(a);if(mode==1u)return b;
+    uint eva=min(cnt&0x1Fu,16u),evb=min((cnt>>8u)&0x1Fu,16u),aa=((a>>24u)!=0u)?1u:0u,ab=(b>>15u)&1u;
+    uint r=((NativeColorR(a)>>1u)*aa*eva+(b&0x1Fu)*ab*evb+8u)>>4u;
+    uint g=((NativeColorG(a)>>1u)*aa*eva+((b>>5u)&0x1Fu)*ab*evb+8u)>>4u;
+    uint bl=((NativeColorB(a)>>1u)*aa*eva+((b>>10u)&0x1Fu)*ab*evb+8u)>>4u;
+    uint al=(eva>0u?aa:0u)|(evb>0u?ab:0u);
+    return min(r,31u)|(min(g,31u)<<5u)|(min(bl,31u)<<10u)|(al<<15u);
+}
+uint NativeCaptureSourceA(uint line,uint x,uint ox)
+{
+    uint cnt=NativeLine(0u,line,55u);
+    if((cnt&(1u<<24u))!=0u&&TexWidth!=0u)
+    {
+        uint rx=NativeLine(0u,line,NativeRenderXPos)&0x1FFu;
+        int sx=(rx&0x100u)!=0u?(int)ox-(int)((512u-rx)*ScaleFactor):(int)ox+(int)(rx*ScaleFactor);
+        if(sx>=0&&sx<(int)ScreenWidth)return NativeFinalFB((uint)sx,line*ScaleFactor);
+        return 0u;
+    }
+    return NativeComposite(0u,line,(int)x,ox,line*ScaleFactor);
+}
+void NativeWriteCapturePair(uint line,uint x,uint ox)
+{
+    uint cnt=NativeLine(0u,line,56u);if(cnt==0u||NativeLine(0u,line,55u)==0u)return;
+    uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
+    if(line>=height||x>=width)return;
+    uint bank=(cnt>>16u)&3u;if((ResultValue[14u]&(1u<<bank))==0u)return;
+    uint a=NativeCaptureSourceA(line,x,ox),b=NativeCaptureSourceB(line,x,cnt),first=NativeCaptureComposite(a,b,cnt),second=0u;
+    if(x+1u<width)
+    {
+        a=NativeCaptureSourceA(line,x+1u,ox+ScaleFactor);b=NativeCaptureSourceB(line,x+1u,cnt);
+        second=NativeCaptureComposite(a,b,cnt);
+    }
+    uint address=(((cnt>>18u)&3u)<<14u)+line*width*2u+x*2u;
+    BlendContinuationState[FramebufferStride+bank*32768u+(address>>2u)]=first|(second<<16u);
+}
+
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
+    if((DispatchPad&4u)!=0u)
+    {
+        if(id.x>=ScreenWidth||id.y!=0u)return;
+        uint x=id.x/ScaleFactor;if(id.x%ScaleFactor!=0u||(x&1u)!=0u)return;
+        NativeWriteCapturePair(InterpSpanCount,x,id.x);return;
+    }
     if(id.x>=ScreenWidth||id.y>=ScreenHeight*2u)return;
     uint screen=id.y/ScreenHeight,scaledY=id.y-screen*ScreenHeight,x=id.x/ScaleFactor,line=scaledY/ScaleFactor;
     uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
     uint color=ResultValue[13u]==0u?0u:NativeDisplay(engine,line,(int)x,id.x,scaledY);
     uint bgra8=NativeBGRA8(color);
-    if((DispatchPad&1u)!=0u)
+    bool directOutput=(DispatchPad&1u)!=0u;
+    bool exactOutput=(DispatchPad&2u)!=0u;
+    if(directOutput)
         DirectOutput[uint3(id.x,scaledY,screen)]=float4(float((bgra8>>16u)&0xFFu)/255.0,float((bgra8>>8u)&0xFFu)/255.0,float(bgra8&0xFFu)/255.0,float((bgra8>>24u)&0xFFu)/255.0);
-    else
+    if(exactOutput||!directOutput)
         ResolveOut[screen*FramebufferStride+scaledY*ScreenWidth+id.x]=bgra8;
 }
 #undef line

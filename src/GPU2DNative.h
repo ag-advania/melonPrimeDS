@@ -31,6 +31,11 @@ inline constexpr u32 ScreenWidth = 256;
 inline constexpr u32 ScreenHeight = 192;
 inline constexpr u32 ScreenPixelCount = ScreenWidth * ScreenHeight;
 
+// Developer-only Gate B switch. The normal renderer never waits for a
+// compositor readback; setting MELONPRIME_GPU2D_EXACT_VALIDATE=1 (or the
+// shorter MELONPRIME_GPU2D_EXACT=1) enables exact native-output validation.
+[[nodiscard]] bool ExactValidationEnabled() noexcept;
+
 // All members are 32-bit slots on purpose.  This is the canonical layout for
 // both std430 (Vulkan) and StructuredBuffer (DX12); it also keeps packing rules
 // out of the backend implementations.
@@ -113,6 +118,27 @@ struct FrameGeneration
     u64 CaptureGeneration = 0;
 };
 
+inline constexpr u32 DirtyBlockBytes = 512u;
+inline constexpr u32 MaxDirtyRanges = 8192u;
+
+struct DirtyRange
+{
+    u32 Offset = 0;
+    u32 Size = 0;
+};
+
+struct UploadPlan
+{
+    std::array<DirtyRange, MaxDirtyRanges> Ranges{};
+    u32 Count = 0;
+    u64 TotalBytes = 0;
+    u64 EngineMemoryBytes = 0;
+    u64 PaletteBytes = 0;
+    u64 OAMBytes = 0;
+    u64 FIFOBytes = 0;
+    u64 LCDVRAMBytes = 0;
+};
+
 struct FrameInput
 {
     std::array<LineState, 2 * ScreenHeight> Lines{};
@@ -132,6 +158,10 @@ struct FrameInput
     u32 LCDVRAMMap = 0;
     std::array<u8, 4 * 128 * 1024> LCDVRAM{};
     FrameGeneration Generation{};
+    // Byte ranges in the serialized frame that changed since the previous
+    // frame. They are metadata only and are not part of PackedFrameWords.
+    std::array<DirtyRange, MaxDirtyRanges> DirtyRanges{};
+    u32 DirtyRangeCount = 0;
 };
 
 // Fixed serialization layout consumed by both native shader backends.  The
@@ -172,6 +202,11 @@ static_assert(PackedLineWords == 68u, "native line serialization drift");
 // state/memory pack operation; it never converts pixels or runs the software
 // renderer.
 bool PackFrame(const FrameInput& input, u32* destination, std::size_t wordCount) noexcept;
+
+// Builds non-overlapping serialized upload ranges. The first use of a device
+// slot must pass fullUpload=true; subsequent uses can copy only the ranges
+// recorded by FrameRecorder, leaving unchanged GPU-resident mirrors intact.
+UploadPlan BuildUploadPlan(const FrameInput& input, bool fullUpload) noexcept;
 
 struct Mismatch
 {

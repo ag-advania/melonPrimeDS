@@ -88,7 +88,9 @@ public:
     bool ComposeNativeGPU2D(
         const GPU2DNative::FrameInput& input,
         u64 generation,
-        bool finalFBValid);
+        bool finalFBValid,
+        const u32* expectedTop = nullptr,
+        const u32* expectedBottom = nullptr);
     [[nodiscard]] RendererOutput GetComposedOutput() const;
     [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasValidFrame; }
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
@@ -98,6 +100,10 @@ public:
     [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept
     {
         return RuntimeFailureReason;
+    }
+    void FailNativeGPU2DExact(const char* reason)
+    {
+        SetRuntimeFailure(reason ? std::string(reason) : std::string("native GPU2D exact validation failed"));
     }
 
     bool NeedsShaderCompile() override { return !RuntimeFailed && ShaderStepIdx < ShaderStepCount; }
@@ -502,6 +508,7 @@ private:
     bool FinalFBHasValidFrame = false;
     u64 ComposedGeneration = 0;
     bool ComposedOutputValid = false;
+    bool NativeCaptureStateInitialized = false;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely
     // cache descriptors by resource lifetime rather than content generation.

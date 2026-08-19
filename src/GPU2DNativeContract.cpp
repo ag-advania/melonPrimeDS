@@ -10,6 +10,57 @@
 namespace melonDS::GPU2DNative
 {
 
+namespace
+{
+void AddClassifiedBytes(UploadPlan& plan, u32 offset, u32 size) noexcept
+{
+    if (size == 0u)
+        return;
+
+    plan.TotalBytes += size;
+    const u32 end = offset + size;
+    const auto addOverlap = [&](u32 begin, u32 finish, u64& target) {
+        const u32 overlapBegin = std::max(offset, begin);
+        const u32 overlapEnd = std::min(end, finish);
+        if (overlapEnd > overlapBegin)
+            target += overlapEnd - overlapBegin;
+    };
+    addOverlap(PackedEngineBase * sizeof(u32), PackedPaletteBase * sizeof(u32),
+        plan.EngineMemoryBytes);
+    addOverlap(PackedPaletteBase * sizeof(u32), PackedOAMBase * sizeof(u32),
+        plan.PaletteBytes);
+    addOverlap(PackedOAMBase * sizeof(u32), PackedFIFOBase * sizeof(u32),
+        plan.OAMBytes);
+    addOverlap(PackedFIFOBase * sizeof(u32), PackedLCDVRAMBase * sizeof(u32),
+        plan.FIFOBytes);
+    addOverlap(PackedLCDVRAMBase * sizeof(u32), PackedRouteBase * sizeof(u32),
+        plan.LCDVRAMBytes);
+}
+
+void AddRange(UploadPlan& plan, DirtyRange range) noexcept
+{
+    if (range.Size == 0u || plan.Count >= MaxDirtyRanges)
+        return;
+    plan.Ranges[plan.Count++] = range;
+    AddClassifiedBytes(plan, range.Offset, range.Size);
+}
+}
+
+UploadPlan BuildUploadPlan(const FrameInput& input, bool fullUpload) noexcept
+{
+    UploadPlan plan{};
+    if (fullUpload)
+    {
+        AddRange(plan, {0u, static_cast<u32>(PackedFrameBytes())});
+        return plan;
+    }
+
+    const u32 count = std::min(input.DirtyRangeCount, MaxDirtyRanges);
+    for (u32 i = 0; i < count; ++i)
+        AddRange(plan, input.DirtyRanges[i]);
+    return plan;
+}
+
 CompareResult CompareExact(
     const u32* expectedTop,
     const u32* expectedBottom,

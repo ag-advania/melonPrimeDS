@@ -73,6 +73,18 @@ public:
                 * GPU2DNative::ScreenPixelCount;
     }
 
+    // Final LCD pixels after display mode, routing, master brightness, and
+    // the screens-enabled gate. Values are canonical r6g6b6 words and are
+    // used only as the exact differential oracle for a native backend.
+    [[nodiscard]] const u32* GetSoftwareScreenFrame(u32 screen) const noexcept
+    {
+        if (screen >= 2u)
+            return nullptr;
+        return SoftwareScreenFrame.data()
+            + static_cast<std::size_t>(screen)
+                * GPU2DNative::ScreenPixelCount;
+    }
+
     [[nodiscard]] const GPU2DNative::FrameInput& GetNativeGPU2DFrame() const noexcept
     {
         return NativeGPU2DFrame.GetFrame();
@@ -134,6 +146,7 @@ private:
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
     std::array<u32, 2u * GPU2DNative::ScreenPixelCount> SoftwareLogicalFrame{};
+    std::array<u32, 2u * GPU2DNative::ScreenPixelCount> SoftwareScreenFrame{};
     GPU2DNative::FrameRecorder NativeGPU2DFrame;
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)

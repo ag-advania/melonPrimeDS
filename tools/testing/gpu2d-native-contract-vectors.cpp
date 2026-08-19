@@ -96,11 +96,34 @@ bool RunCompareVectors()
     return passed;
 }
 
+bool RunUploadPlanVectors()
+{
+    auto input = std::make_unique<FrameInput>();
+    input->DirtyRangeCount = 3u;
+    input->DirtyRanges[0] = {PackedHeaderWords * sizeof(u32), 16u};
+    input->DirtyRanges[1] = {PackedEngineBase * sizeof(u32), 512u};
+    input->DirtyRanges[2] = {PackedPaletteBase * sizeof(u32), 64u};
+
+    const UploadPlan partial = BuildUploadPlan(*input, false);
+    bool passed = Require(partial.Count == 3u && partial.TotalBytes == 592u,
+        "partial upload plan did not preserve dirty ranges");
+    passed &= Require(partial.EngineMemoryBytes == 512u
+            && partial.PaletteBytes == 64u,
+        "partial upload plan category accounting drifted");
+
+    const UploadPlan full = BuildUploadPlan(*input, true);
+    passed &= Require(full.Count == 1u
+            && full.TotalBytes == PackedFrameBytes(),
+        "first-slot upload plan is not a complete frame upload");
+    return passed;
+}
+
 } // namespace
 
 int main()
 {
-    const bool passed = RunPackVectors() && RunCompareVectors();
+    const bool passed = RunPackVectors() && RunCompareVectors()
+        && RunUploadPlanVectors();
     std::fprintf(stderr, "%s: GPU2D native contract vectors\n", passed ? "PASS" : "FAIL");
     return passed ? 0 : 1;
 }

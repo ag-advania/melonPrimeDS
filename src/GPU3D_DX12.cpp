@@ -57,6 +57,9 @@ constexpr u32 kStructuredPixelCount = 256u * 192u;
 constexpr u32 kCompositionInputDwords =
     (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
 constexpr u64 kNativeGPU2DInputBytes = GPU2DNative::PackedFrameBytes();
+constexpr u64 kNativeGPU2DOutputBytes =
+    static_cast<u64>(GPU2DNative::ScreenPixelCount) * 2ull * sizeof(u32);
+constexpr u64 kNativeCaptureWords = (4ull * 128ull * 1024ull) / sizeof(u32);
 constexpr u32 kCompositorFramesInFlight = 3;
 static_assert(kNativeGPU2DInputBytes
         <= static_cast<u64>(kCompositionInputDwords) * sizeof(u32),
@@ -163,10 +166,12 @@ struct DX12Renderer3D::OutputState
         DX12::ComPtr<ID3D12Resource> StructuredStaging;
         DX12::ComPtr<ID3D12Resource> StructuredInput;
         DX12::ComPtr<ID3D12Resource> Composed;
+        DX12::ComPtr<ID3D12Resource> NativeReadback;
         DX12::ComPtr<ID3D12Resource> DirectTexture;
         u32* StructuredMapped = nullptr;
         StructuredComposition::GenerationState UploadedContentGeneration{};
         bool StructuredUploadInitialized = false;
+        bool NativeUploadInitialized = false;
         bool DirectTextureInShaderResource = false;
         DX12PresentedFrame Frame;
         std::atomic<u32> PresenterRefs{0};
@@ -238,7 +243,13 @@ struct DX12Renderer3D::OutputState
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                 D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
                 L"MelonPrime DX12 composed output slot");
-            if (!slot.StructuredInput || !slot.StructuredStaging || !slot.Composed)
+            slot.NativeReadback = context.CreateBuffer(
+                screenBytes * 2u, D3D12_HEAP_TYPE_READBACK,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_FLAG_NONE,
+                L"MelonPrime DX12 native GPU2D exact readback slot");
+            if (!slot.StructuredInput || !slot.StructuredStaging || !slot.Composed
+                || !slot.NativeReadback)
                 return false;
 
             D3D12_RANGE noRead{0, 0};
@@ -445,6 +456,7 @@ void DX12Renderer3D::Stop()
     FinalFBHasValidFrame = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    NativeCaptureStateInitialized = false;
 }
 
 void DX12Renderer3D::Reset()
@@ -460,6 +472,7 @@ void DX12Renderer3D::Reset()
     FinalFBHasValidFrame = false;
     ComposedOutputValid = false;
     ComposedGeneration = 0;
+    NativeCaptureStateInitialized = false;
     ColorBuffer.fill(0);
     if (ComposedOutput)
     {
@@ -469,6 +482,7 @@ void DX12Renderer3D::Reset()
         {
             slot.UploadedContentGeneration = {};
             slot.StructuredUploadInitialized = false;
+            slot.NativeUploadInitialized = false;
         }
     }
 }
@@ -755,6 +769,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     FinalFBBuffer.Reset();
     CaptureSidecarBuffer.Reset();
     ComposedOutput.reset();
+    NativeCaptureStateInitialized = false;
     TileBuffers[0].Reset();
     TileBuffers[1].Reset();
     TileBuffers[2].Reset();
@@ -903,7 +918,7 @@ bool DX12Renderer3D::CreateScaleDependentResources()
         return false;
 
     BlendStateBuffer = Context->CreateBuffer(
-        pixels * 4ull,
+        (static_cast<u64>(pixels) + kNativeCaptureWords) * 4ull,
         D3D12_HEAP_TYPE_DEFAULT,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
@@ -3100,8 +3115,16 @@ bool DX12Renderer3D::ComposeStructuredOutput(
 bool DX12Renderer3D::ComposeNativeGPU2D(
     const GPU2DNative::FrameInput& input,
     u64 generation,
-    bool finalFBValid)
+    bool finalFBValid,
+    const u32* expectedTop,
+    const u32* expectedBottom)
 {
+    const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
+    if (exactValidation && ScaleFactor != 1)
+    {
+        SetRuntimeFailure("native GPU2D exact validation requires scale=1");
+        return false;
+    }
     if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
         return false;
     if (ComposedOutputValid && ComposedGeneration == generation)
@@ -3132,6 +3155,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         return false;
     }
 
+    const GPU2DNative::UploadPlan uploadPlan = GPU2DNative::BuildUploadPlan(
+        input, !slot.NativeUploadInitialized);
     u32* staging = slot.StructuredMapped;
     if (!staging
         || !GPU2DNative::PackFrame(
@@ -3144,28 +3169,67 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DInputPackBytes,
         static_cast<u64>(GPU2DNative::PackedFrameBytes()));
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DVRAMUploadBytes,
-        static_cast<u64>(input.Engine[0].BGVRAM.size() + input.Engine[1].BGVRAM.size()
-            + input.Engine[0].OBJVRAM.size() + input.Engine[1].OBJVRAM.size()
-            + input.Engine[0].BGExtendedPalette.size()
-            + input.Engine[1].BGExtendedPalette.size()
-            + input.Engine[0].OBJExtendedPalette.size()
-            + input.Engine[1].OBJExtendedPalette.size()
-            + input.LCDVRAM.size()));
+        uploadPlan.EngineMemoryBytes + uploadPlan.FIFOBytes
+            + uploadPlan.LCDVRAMBytes);
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DPaletteUploadBytes,
-        static_cast<u64>(input.Palette.size()));
+        uploadPlan.PaletteBytes);
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DOAMUploadBytes,
-        static_cast<u64>(input.OAM.size()));
+        uploadPlan.OAMBytes);
 
     slot.Descriptors.Reset();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
     ResetFrameSrvCache();
-    list->CopyBufferRegion(
-        slot.StructuredInput.Get(), 0,
-        slot.StructuredStaging.Get(), 0, kNativeGPU2DInputBytes);
+    for (u32 i = 0; i < uploadPlan.Count; ++i)
+    {
+        const GPU2DNative::DirtyRange& range = uploadPlan.Ranges[i];
+        list->CopyBufferRegion(
+            slot.StructuredInput.Get(), range.Offset,
+            slot.StructuredStaging.Get(), range.Offset, range.Size);
+    }
     TransitionBuffer(
         list,
         slot.StructuredInput.Get(),
+        D3D12_RESOURCE_STATE_COPY_DEST,
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+
+    // The tail of BlendStateBuffer is the persistent GPU LCDC capture mirror.
+    // Synchronize only changed serialized LCD ranges from the mapped input;
+    // native capture commands below update it in scanline order.
+    InsertUavBarrier(list, BlendStateBuffer.Get());
+    TransitionBuffer(
+        list,
+        BlendStateBuffer.Get(),
+        D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        D3D12_RESOURCE_STATE_COPY_DEST);
+    const u32 lcdBegin = GPU2DNative::PackedLCDVRAMBase * sizeof(u32);
+    const u32 lcdEnd = GPU2DNative::PackedRouteBase * sizeof(u32);
+    const u64 captureBase = (static_cast<u64>(ScreenWidth)
+        * static_cast<u64>(ScreenHeight)) * sizeof(u32);
+    if (!NativeCaptureStateInitialized)
+    {
+        list->CopyBufferRegion(
+            BlendStateBuffer.Get(), captureBase,
+            slot.StructuredStaging.Get(), lcdBegin,
+            static_cast<u64>(input.LCDVRAM.size()));
+    }
+    else
+    {
+        for (u32 i = 0; i < input.DirtyRangeCount; ++i)
+        {
+            const GPU2DNative::DirtyRange& range = input.DirtyRanges[i];
+            const u32 begin = std::max(range.Offset, lcdBegin);
+            const u32 end = std::min(range.Offset + range.Size, lcdEnd);
+            if (end <= begin)
+                continue;
+            list->CopyBufferRegion(
+                BlendStateBuffer.Get(), captureBase + (begin - lcdBegin),
+                slot.StructuredStaging.Get(), begin, end - begin);
+        }
+    }
+    TransitionBuffer(
+        list,
+        BlendStateBuffer.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
@@ -3199,7 +3263,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 
     DispatchUniform constants = MakeDispatchUniform();
     constants.TexWidth = finalFBValid ? 1u : 0u;
-    constants.Pad = slot.DirectTexture ? 1u : 0u;
+    constants.Pad = (slot.DirectTexture ? 1u : 0u)
+        | (exactValidation ? 2u : 0u);
     SetDispatchConstants(list, constants);
     list->SetPipelineState(PipelineGPU2DNative.Get());
     list->Dispatch(
@@ -3207,6 +3272,21 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
         1u);
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount);
+
+    if (input.CaptureEnable != 0u)
+    {
+        InsertUavBarrier(list, BlendStateBuffer.Get());
+        for (u32 lineNumber = 0; lineNumber < GPU2DNative::ScreenHeight; ++lineNumber)
+        {
+            constants.InterpSpanCount = lineNumber;
+            constants.Pad = 4u; // capture-only, one logical line
+            SetDispatchConstants(list, constants);
+            list->Dispatch(
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
+            InsertUavBarrier(list, BlendStateBuffer.Get());
+            DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount);
+        }
+    }
 
     if (slot.DirectTexture)
     {
@@ -3224,6 +3304,25 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         InsertUavBarrier(list, slot.Composed.Get());
         DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
     }
+
+    if (exactValidation)
+    {
+        InsertUavBarrier(list, slot.Composed.Get());
+        TransitionBuffer(
+            list,
+            slot.Composed.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COPY_SOURCE);
+        list->CopyBufferRegion(
+            slot.NativeReadback.Get(), 0,
+            slot.Composed.Get(), 0,
+            kNativeGPU2DOutputBytes);
+        TransitionBuffer(
+            list,
+            slot.Composed.Get(),
+            D3D12_RESOURCE_STATE_COPY_SOURCE,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
     TransitionBuffer(
         list,
         slot.StructuredInput.Get(),
@@ -3236,6 +3335,64 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         return false;
     }
 
+    if (exactValidation)
+    {
+        slot.Commands.WaitIdle();
+        D3D12_RANGE readRange{0, static_cast<SIZE_T>(kNativeGPU2DOutputBytes)};
+        void* mapped = nullptr;
+        if (FAILED(slot.NativeReadback->Map(0, &readRange, &mapped)) || !mapped)
+        {
+            SetRuntimeFailure("native GPU2D exact readback mapping failed");
+            return false;
+        }
+        const u8* source = static_cast<const u8*>(mapped);
+        std::unique_ptr<u32[]> actual(new u32[2u * GPU2DNative::ScreenPixelCount]);
+        for (u32 i = 0; i < 2u * GPU2DNative::ScreenPixelCount; ++i)
+        {
+            u32 bgra8 = 0;
+            std::memcpy(&bgra8, source + static_cast<size_t>(i) * sizeof(u32), sizeof(u32));
+            actual[i] = (((bgra8 >> 16u) & 0xFFu) >> 2u)
+                | ((((bgra8 >> 8u) & 0xFFu) >> 2u) << 8u)
+                | (((bgra8 & 0xFFu) >> 2u) << 16u);
+        }
+        D3D12_RANGE noWrite{0, 0};
+        slot.NativeReadback->Unmap(0, &noWrite);
+        DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DReadbackCount);
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::NativeGPU2DReadbackBytes, kNativeGPU2DOutputBytes);
+
+        const GPU2DNative::CompareResult result = GPU2DNative::CompareExact(
+            expectedTop, expectedBottom,
+            actual.get(), actual.get() + GPU2DNative::ScreenPixelCount);
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::NativeGPU2DMismatchCount,
+            result.TotalMismatchCount);
+        if (!result.Exact())
+        {
+            if (result.SampleCount != 0u)
+            {
+                const GPU2DNative::Mismatch& sample = result.Samples[0];
+                const u32 engine = input.ScreenSource[
+                    sample.Screen * GPU2DNative::ScreenHeight + sample.Y] & 1u;
+                const GPU2DNative::LineState& state = input.Lines[
+                    engine * GPU2DNative::ScreenHeight + sample.Y];
+                Platform::Log(Platform::LogLevel::Error,
+                    "DX12 native GPU2D exact mismatch frame=%llu total=%u top=%u bottom=%u "
+                    "first=screen%u(%u,%u) expected=0x%08X actual=0x%08X engine=%u "
+                    "DispCnt=0x%08X Layer=0x%08X BGCnt0=0x%08X WinRegs=0x%08X "
+                    "BlendCnt=0x%08X Master=0x%08X Capture=0x%08X\n",
+                    static_cast<unsigned long long>(generation),
+                    result.TotalMismatchCount, result.TopMismatchCount,
+                    result.BottomMismatchCount, sample.Screen, sample.X, sample.Y,
+                    sample.Expected, sample.Actual, engine, state.DispCnt,
+                    state.LayerEnable, state.BGCnt[0], state.WinRegs,
+                    state.BlendCnt, state.MasterBrightness, state.CaptureCnt);
+            }
+            SetRuntimeFailure("native GPU2D exact differential mismatch");
+            return false;
+        }
+    }
+
     {
         std::lock_guard<std::mutex> lock(state->Mutex);
         slot.Frame.Serial = state->NextSerial++;
@@ -3245,6 +3402,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         ComposedOutputValid = true;
     }
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFrames);
+    slot.NativeUploadInitialized = true;
+    NativeCaptureStateInitialized = true;
     return true;
 }
 
@@ -3278,7 +3437,7 @@ bool DX12Renderer3D::BuildFrameUavDescriptors()
         { CaptureSidecarBuffer.Get(),
             8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
             4, false },
-        { BlendStateBuffer.Get(), pixels, 4, false },
+        { BlendStateBuffer.Get(), pixels + static_cast<u32>(kNativeCaptureWords), 4, false },
         { ResultWinnerBuffer.Get(), resultWinnerElements, 4, false },
         { IndirectArgsBuffer.Get(), static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
         { DirectOutputDummy.Get(), 0, 0, false, true,
@@ -3332,7 +3491,7 @@ bool DX12Renderer3D::BuildCompositorUavDescriptors()
             { CaptureSidecarBuffer.Get(),
                 8u * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor),
                 4, false },
-            { BlendStateBuffer.Get(),      pixels,                    4, false },
+            { BlendStateBuffer.Get(),      pixels + static_cast<u32>(kNativeCaptureWords), 4, false },
             { ResultWinnerBuffer.Get(),    resultWinnerElements,      4, false },
             { IndirectArgsBuffer.Get(),
                 static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
