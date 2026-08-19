@@ -229,6 +229,61 @@ def main() -> int:
         "FrameRing must distinguish recording, last-submitted, and resource-retire frame APIs",
         failures,
     )
+    try:
+        create_body = function_body(vulkan_sync, "bool FrameRing::Create(")
+        destroy_body = function_body(vulkan_sync, "void FrameRing::Destroy()")
+        begin_frame_body = function_body(
+            vulkan_sync, "FrameContext* FrameRing::BeginFrameInternal("
+        )
+        submit_frame_body = function_body(vulkan_sync, "bool FrameRing::SubmitFrame(")
+        last_submitted_getter_body = function_body(
+            vulkan_sync, "u64 FrameRing::GetLastSubmittedFrameNumber()"
+        )
+    except ValueError as error:
+        failures.append(str(error))
+        create_body = destroy_body = begin_frame_body = ""
+        submit_frame_body = last_submitted_getter_body = ""
+
+    last_submit_assignment = "LastSubmittedFrameNumber = frame.SubmittedFrame;"
+    end_command_buffer_check = submit_frame_body.find(
+        'if (!MELONPRIME_VK_CHECK("vkEndCommandBuffer", res))'
+    )
+    end_command_buffer_failure = submit_frame_body.find(
+        "return false;", end_command_buffer_check
+    )
+    queue_submit_check = submit_frame_body.find(
+        'if (!MELONPRIME_VK_CHECK("vkQueueSubmit", res))'
+    )
+    queue_submit_failure = submit_frame_body.find(
+        "return false;", queue_submit_check
+    )
+    last_submit_assignment_position = submit_frame_body.find(last_submit_assignment)
+    require(
+        "u64 LastSubmittedFrameNumber = 0;" in vulkan_sync_header
+        and create_body.count("LastSubmittedFrameNumber = 0;") == 1
+        and destroy_body.count("LastSubmittedFrameNumber = 0;") == 2,
+        "FrameRing must reset the independent last-successful-submit number on create and destroy",
+        failures,
+    )
+    require(
+        "return HasSubmittedFrame ? LastSubmittedFrameNumber : 0;"
+        in last_submitted_getter_body
+        and "Frames[LastSubmittedIndex].SubmittedFrame" not in last_submitted_getter_body,
+        "FrameRing last-submitted getter must use the independent frame number, not the slot field",
+        failures,
+    )
+    require(
+        submit_frame_body.count(last_submit_assignment) == 1
+        and "LastSubmittedFrameNumber =" not in begin_frame_body
+        and end_command_buffer_check >= 0
+        and end_command_buffer_failure > end_command_buffer_check
+        and last_submit_assignment_position > end_command_buffer_failure
+        and queue_submit_check >= 0
+        and queue_submit_failure > queue_submit_check
+        and last_submit_assignment_position > queue_submit_failure,
+        "FrameRing must update the independent number only after successful EndCommandBuffer and QueueSubmit",
+        failures,
+    )
     require(
         "BuildResourceRetireFrameState() const noexcept" in vulkan_sync_header
         and "VulkanFrameRingTestAccess" in vulkan_sync_header
@@ -267,6 +322,13 @@ def main() -> int:
                 "Case 2: frame 10 submitted",
                 "Case 3: frame 11 recording",
                 "Case 4: previous frame completion",
+                "Case A: the first frame is recording and no successful submit exists.",
+                "Case B: a one-slot ring is reused while frame 11 is recording",
+                "Case C: QueueSubmit for frame 11 failed",
+                "LastSubmittedFrameNumber",
+                "ring.AbsoluteFrame = state.Recording",
+                "state.LastSubmittedFrame + 1",
+                "ring.Frames.resize(1)",
                 "VK_ERROR_OUT_OF_DEVICE_MEMORY",
                 "DeferredDestroyQueue",
                 "VulkanFrameRingTestAccess",

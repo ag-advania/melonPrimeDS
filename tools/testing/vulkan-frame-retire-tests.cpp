@@ -32,7 +32,8 @@ struct VulkanFrameRingTestAccess
 {
     static void SetState(
         FrameRing& ring,
-        const VulkanResourceRetireFrameState& state) noexcept
+        const VulkanResourceRetireFrameState& state,
+        u64 slotFrame) noexcept
     {
         ring.Device = nullptr;
         ring.CoreResourcesReady = false;
@@ -40,32 +41,15 @@ struct VulkanFrameRingTestAccess
         ring.HasSubmittedFrame = state.HasSubmittedFrame;
         ring.CurrentIndex = 0;
         ring.LastSubmittedIndex = 0;
+        ring.LastSubmittedFrameNumber = state.HasSubmittedFrame
+            ? state.LastSubmittedFrame : 0;
         ring.AbsoluteFrame = state.Recording
-            ? state.CurrentRecordingFrame + 1
+            ? state.CurrentRecordingFrame
             : state.HasSubmittedFrame ? state.LastSubmittedFrame + 1 : 1;
         ring.Frames.clear();
-
-        if (state.Recording && state.HasSubmittedFrame)
-        {
-            ring.Frames.resize(2);
-            ring.Frames[0].SubmittedFrame = state.CurrentRecordingFrame;
-            ring.Frames[0].Recording = true;
-            ring.LastSubmittedIndex = 1;
-            ring.Frames[1].SubmittedFrame = state.LastSubmittedFrame;
-            ring.Frames[1].HasPendingSubmission = true;
-        }
-        else if (state.Recording)
-        {
-            ring.Frames.resize(1);
-            ring.Frames[0].SubmittedFrame = state.CurrentRecordingFrame;
-            ring.Frames[0].Recording = true;
-        }
-        else if (state.HasSubmittedFrame)
-        {
-            ring.Frames.resize(1);
-            ring.Frames[0].SubmittedFrame = state.LastSubmittedFrame;
-            ring.Frames[0].HasPendingSubmission = true;
-        }
+        ring.Frames.resize(1);
+        ring.Frames[0].SubmittedFrame = slotFrame;
+        ring.Frames[0].Recording = state.Recording;
     }
 };
 } // namespace melonDS::Vk
@@ -198,26 +182,33 @@ bool TestProductionFrameRingMapping()
     bool ok = true;
     FrameRing ring;
 
-    // The test access seeds only lifecycle state; the assertions call the
+    // Case A: the first frame is recording and no successful submit exists.
+    // The test access seeds only one-slot lifecycle state; the assertions call
     // production FrameRing getters and therefore exercise its extraction path.
     VulkanFrameRingTestAccess::SetState(ring, {
-        0, 0, 0, false, false});
-    ok &= Require(ring.GetResourceRetireFrame() == 0,
-        "production FrameRing no-submission mapping must return zero");
+        0, 0, 1, false, true}, 1);
+    ok &= Require(ring.GetResourceRetireFrame() == 1
+            && ring.GetLastSubmittedFrameNumber() == 0
+            && ring.GetCurrentRecordingFrameNumber() == 1,
+        "production FrameRing first recording mapping must use frame one");
 
+    // Case B: a one-slot ring is reused while frame 11 is recording, so the
+    // slot's SubmittedFrame has already overwritten the successful frame 10.
     VulkanFrameRingTestAccess::SetState(ring, {
-        9, 10, 0, true, false});
-    ok &= Require(ring.GetResourceRetireFrame() == 10
-            && ring.GetLastSubmittedFrameNumber() == 10
-            && ring.GetCurrentRecordingFrameNumber() == 0,
-        "production FrameRing submitted mapping must use last submitted frame");
-
-    VulkanFrameRingTestAccess::SetState(ring, {
-        10, 10, 11, true, true});
+        9, 10, 11, true, true}, 11);
     ok &= Require(ring.GetResourceRetireFrame() == 11
             && ring.GetLastSubmittedFrameNumber() == 10
             && ring.GetCurrentRecordingFrameNumber() == 11,
-        "production FrameRing recording mapping must use current recording frame");
+        "production FrameRing one-slot recording mapping must preserve last submit");
+
+    // Case C: QueueSubmit for frame 11 failed after the same-slot recording;
+    // the slot is not pending and the last successful submit is still 10.
+    VulkanFrameRingTestAccess::SetState(ring, {
+        10, 10, 0, true, false}, 11);
+    ok &= Require(ring.GetResourceRetireFrame() == 10
+            && ring.GetLastSubmittedFrameNumber() == 10
+            && ring.GetCurrentRecordingFrameNumber() == 0,
+        "production FrameRing submit failure mapping must preserve last submit");
 
     return ok;
 }
