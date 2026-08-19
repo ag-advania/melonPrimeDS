@@ -39,6 +39,7 @@ constexpr VkFormat TexcacheFormat = VK_FORMAT_R8G8B8A8_UINT;
 
 constexpr VkDeviceSize TexelBytes = 4;
 constexpr u32 kInitialPendingUploadCapacity = 64;
+constexpr u32 kInitialPendingCreateCapacity = 64;
 
 } // namespace
 
@@ -160,6 +161,7 @@ void VulkanTextureHeap::Init(const VulkanDevice* device, Vk::FrameRing* frames) 
     CreationFailed = false;
     UploadFailed = false;
     PendingUploadCount = 0;
+    PendingCreateSlots.reserve(kInitialPendingCreateCapacity);
     PendingUploads.reserve(kInitialPendingUploadCapacity);
 }
 
@@ -186,6 +188,7 @@ void VulkanTextureHeap::Shutdown()
 
     Entries.clear();
     FreeSlots.clear();
+    PendingCreateSlots.clear();
     PendingBarriers.clear();
     PendingUploads.clear();
     PendingUploadCount = 0;
@@ -232,6 +235,8 @@ u32 VulkanTextureHeap::Reserve(u32 width, u32 height, u32 layers)
         Entries.push_back(entry);
     }
 
+    PendingCreateSlots.push_back(slot);
+
     return slot + 1;
 }
 
@@ -248,8 +253,12 @@ bool VulkanTextureHeap::MaterializePendingCreates()
     const Vk::DeviceDispatch& fns = Device->Fns();
     VkDevice handle = Device->GetHandle();
 
-    for (Entry& entry : Entries)
+    for (u32 slot : PendingCreateSlots)
     {
+        if (slot >= Entries.size())
+            continue;
+
+        Entry& entry = Entries[slot];
         if (!entry.InUse || !entry.PendingCreate)
             continue;
 
@@ -354,6 +363,8 @@ bool VulkanTextureHeap::MaterializePendingCreates()
         VulkanPerf::AddCounter(VulkanPerf::Counter::TextureMaterializeCount);
     }
 
+    PendingCreateSlots.clear();
+
     return true;
 }
 
@@ -431,7 +442,7 @@ bool VulkanTextureHeap::CreateScratchUpload(
 }
 
 VulkanTextureHeap::PendingUpload* VulkanTextureHeap::AcquirePendingUpload(
-    u32 handle, u32 width, u32 height, u32 layer, std::size_t bytes)
+    u32 handle, u32 width, u32 height, u32 layer, std::size_t words)
 {
     if (PendingUploadCount == PendingUploads.size())
         PendingUploads.emplace_back();
@@ -441,7 +452,19 @@ VulkanTextureHeap::PendingUpload* VulkanTextureHeap::AcquirePendingUpload(
     pending.Width = width;
     pending.Height = height;
     pending.Layer = layer;
-    pending.Data.resize(bytes);
+    const bool storageGrows = pending.Data.capacity() < words;
+    {
+        VulkanPerf::ScopedCpuTimer growTimer(
+            VulkanPerf::CpuMetric::TexturePendingStorageGrow, storageGrows);
+        pending.Data.resize(words);
+    }
+    if (storageGrows)
+    {
+        VulkanPerf::AddCounter(VulkanPerf::Counter::TexturePendingStorageGrowCount);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::TexturePendingStorageGrowBytes,
+            pending.Data.capacity() * sizeof(u32));
+    }
     pending.Committed = false;
     PendingUploadCount++;
     return &pending;
@@ -463,10 +486,10 @@ TextureDecodeTarget VulkanTextureHeap::BeginTextureUpload(
         return {};
     }
 
-    const std::size_t bytes = static_cast<std::size_t>(width) * height * TexelBytes;
-    PendingUpload* pending = AcquirePendingUpload(handle, width, height, layer, bytes);
+    const std::size_t words = static_cast<std::size_t>(width) * height;
+    PendingUpload* pending = AcquirePendingUpload(handle, width, height, layer, words);
     return {
-        reinterpret_cast<u32*>(pending->Data.data()), pending->Data.size(), PendingUploadCount};
+        pending->Data.data(), pending->Data.size() * sizeof(u32), PendingUploadCount};
 }
 
 void VulkanTextureHeap::CommitTextureUpload(u32 token) noexcept
@@ -485,7 +508,8 @@ void VulkanTextureHeap::CommitTextureUpload(u32 token) noexcept
     }
     pending.Committed = true;
     VulkanPerf::AddCounter(
-        VulkanPerf::Counter::TexturePendingUploadBytes, pending.Data.size());
+        VulkanPerf::Counter::TexturePendingUploadBytes,
+        pending.Data.size() * sizeof(u32));
     VulkanPerf::AddCounter(VulkanPerf::Counter::TexturePendingUploadCount);
 }
 
@@ -526,10 +550,11 @@ void VulkanTextureHeap::Upload(u32 handle, u32 width, u32 height, u32 layer, con
     if (FrameCommandBuffer == VK_NULL_HANDLE || !FrameStaging
         || !frame || !frame->Recording)
     {
-        const std::size_t bytes = static_cast<std::size_t>(width) * height * TexelBytes;
-        PendingUpload* pending = AcquirePendingUpload(handle, width, height, layer, bytes);
+        const std::size_t words = static_cast<std::size_t>(width) * height;
+        PendingUpload* pending = AcquirePendingUpload(handle, width, height, layer, words);
         VulkanPerf::ScopedCpuTimer copyTimer(VulkanPerf::CpuMetric::TexturePendingCpuCopy);
-        std::memcpy(pending->Data.data(), data, pending->Data.size());
+        const std::size_t bytes = pending->Data.size() * sizeof(u32);
+        std::memcpy(pending->Data.data(), data, bytes);
         pending->Committed = true;
         VulkanPerf::AddCounter(VulkanPerf::Counter::TexturePendingUploadBytes, bytes);
         VulkanPerf::AddCounter(VulkanPerf::Counter::TexturePendingUploadCount);
@@ -813,6 +838,9 @@ void VulkanTextureHeap::Destroy(u32 handle)
     PendingBarriers.erase(
         std::remove(PendingBarriers.begin(), PendingBarriers.end(), handle - 1),
         PendingBarriers.end());
+    PendingCreateSlots.erase(
+        std::remove(PendingCreateSlots.begin(), PendingCreateSlots.end(), handle - 1),
+        PendingCreateSlots.end());
     u32 i = 0;
     while (i < PendingUploadCount)
     {

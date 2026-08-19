@@ -2174,6 +2174,15 @@ void VulkanRenderer3D::RenderFrame()
         }
     }
 
+    // Image/memory/view creation is host-side and independent of the
+    // frame-local command pool, staging ring, and descriptor resources. Start
+    // it before BeginFrame(true) waits for the previous raster slot.
+    if (!TextureHeap.MaterializePendingCreates())
+    {
+        SetRuntimeFailure("could not materialize a Vulkan texture resource");
+        return;
+    }
+
     Vk::FrameContext* frame = nullptr;
     frame = Frames.BeginFrame(true);
     if (!frame)
@@ -2206,13 +2215,6 @@ void VulkanRenderer3D::RenderFrame()
     BoundSampler = VK_NULL_HANDLE;
     BoundTextureSet = VK_NULL_HANDLE;
     TextureHeap.BeginFrame(cmd, &FrameStaging);
-
-    if (!TextureHeap.MaterializePendingCreates())
-    {
-        Frames.SubmitFrame(Device.GetMainQueue());
-        SetRuntimeFailure("could not materialize a Vulkan texture resource");
-        return;
-    }
 
     if (NeedsFinalFBTransition || !PlaceholdersInitialized)
         RecordInitialTransitions(cmd);

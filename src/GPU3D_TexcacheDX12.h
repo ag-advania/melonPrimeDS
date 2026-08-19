@@ -60,8 +60,9 @@ public:
     void Shutdown();
 
     // CPU-side cache misses reserve an opaque identity only. The resource is
-    // created by MaterializePendingCreates() after Begin() has retired the
-    // previous command-list slot.
+    // created by MaterializePendingCreates() before Begin() waits for the
+    // previous command-list slot, because creation does not touch frame-local
+    // command, descriptor, or upload resources.
     u32 Reserve(u32 width, u32 height, u32 layers);
     bool MaterializePendingCreates();
     void Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
@@ -111,13 +112,15 @@ private:
         u32 Width = 0;
         u32 Height = 0;
         u32 Layer = 0;
-        std::vector<u8> Data;
+        // One u32 per decoded texel keeps the direct-decode target naturally
+        // aligned and avoids type-punning a byte vector as u32 storage.
+        std::vector<u32> Data;
         bool Committed = false;
     };
 
     bool RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
     PendingUpload* AcquirePendingUpload(
-        u32 handle, u32 width, u32 height, u32 layer, std::size_t bytes);
+        u32 handle, u32 width, u32 height, u32 layer, std::size_t words);
 
     DX12Context* Context = nullptr;
     DX12CommandContext* Commands = nullptr;
@@ -125,8 +128,10 @@ private:
 
     std::vector<Entry> Entries;
     std::vector<u32> FreeSlots;
+    // Only newly reserved logical entries are visited by materialization.
+    std::vector<u32> PendingCreateSlots;
     std::vector<u32> PendingBarriers;
-    // The active prefix is drained by count; backing objects and decoded-byte
+    // The active prefix is drained by count; backing objects and decoded-word
     // capacities stay allocated for reuse instead of churning each frame.
     std::vector<PendingUpload> PendingUploads;
     u32 PendingUploadCount = 0;

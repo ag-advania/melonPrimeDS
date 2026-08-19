@@ -141,7 +141,9 @@ public:
     void FlushUploadBarriers();
 
     // CPU-side cache misses reserve an opaque identity only. The image, memory,
-    // binding and view are materialized after BeginFrame() retires the slot.
+    // binding and view are materialized before BeginFrame() waits for the slot,
+    // because host-side creation does not touch frame-local command, staging,
+    // or descriptor resources.
     u32 Reserve(u32 width, u32 height, u32 layers);
     bool MaterializePendingCreates();
     void Upload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
@@ -182,7 +184,9 @@ private:
         u32 Width = 0;
         u32 Height = 0;
         u32 Layer = 0;
-        std::vector<u8> Data;
+        // One u32 per decoded texel keeps the direct-decode target naturally
+        // aligned and avoids type-punning a byte vector as u32 storage.
+        std::vector<u32> Data;
         bool Committed = false;
     };
 
@@ -192,7 +196,7 @@ private:
     bool CreateScratchUpload(VkDeviceSize size, VkBuffer& outBuffer, VkDeviceMemory& outMemory, void*& outMapped);
     bool RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
     PendingUpload* AcquirePendingUpload(
-        u32 handle, u32 width, u32 height, u32 layer, std::size_t bytes);
+        u32 handle, u32 width, u32 height, u32 layer, std::size_t words);
 
     void RetireEntry(Entry& entry);
 
@@ -204,8 +208,10 @@ private:
 
     std::vector<Entry> Entries;
     std::vector<u32> FreeSlots;
+    // Only newly reserved logical entries are visited by materialization.
+    std::vector<u32> PendingCreateSlots;
     std::vector<u32> PendingBarriers;
-    // The active prefix is drained by count; backing objects and decoded-byte
+    // The active prefix is drained by count; backing objects and decoded-word
     // capacities stay allocated for reuse instead of churning each frame.
     std::vector<PendingUpload> PendingUploads;
     u32 PendingUploadCount = 0;

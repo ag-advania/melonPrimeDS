@@ -2195,6 +2195,15 @@ void DX12Renderer3D::RenderFrame()
         numVariants = BuildPolygons(numYSpans, numSetupIndices, numPolygons);
     }
 
+    // Physical resource creation is host-side and independent of the
+    // frame-local command allocator, descriptor heap, and upload ring. Start
+    // it before Begin(true) waits for the previous raster submission.
+    if (!TextureHeap.MaterializePendingCreates())
+    {
+        SetRuntimeFailure("could not materialize a DX12 texture resource");
+        return;
+    }
+
     ID3D12GraphicsCommandList* list = nullptr;
     list = Commands.Begin(true);
     if (!list)
@@ -2215,13 +2224,6 @@ void DX12Renderer3D::RenderFrame()
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
     ResetFrameSrvCache();
-
-    if (!TextureHeap.MaterializePendingCreates())
-    {
-        Commands.Submit();
-        SetRuntimeFailure("could not materialize a DX12 texture resource");
-        return;
-    }
 
     UpdateClearBitmap();
     TextureHeap.RecordPendingUploads();

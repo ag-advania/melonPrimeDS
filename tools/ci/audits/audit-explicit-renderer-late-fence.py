@@ -2,12 +2,13 @@
 """Audit the explicit DX12/Vulkan raster preparation/reuse-wait contract.
 
 The explicit renderers intentionally keep one scale-dependent raster resource
-set.  Correctness therefore requires the CPU-only polygon/texture plan to run
-before the single-slot reuse wait, while uploads and command recording remain
-after the fence retires.  Texture arrays retain their logical handle during
-CPU preparation, but physical resources and descriptor-visible views may only
-be created at the post-fence materialization boundary.  This is a source
-contract, not a performance claim.
+set.  Correctness therefore requires the CPU-only polygon/texture plan and
+independent host-side texture resource creation to run before the single-slot
+reuse wait, while uploads and command recording remain after the fence retires.
+Texture arrays retain their logical handle during CPU preparation, and
+physical resources are materialized from a pending-slot worklist before the
+frame-local resources are reused.  This is a source contract, not a
+performance claim.
 """
 
 from __future__ import annotations
@@ -102,20 +103,31 @@ def main() -> int:
             "TextureHeap.RecordPendingUploads()",
         ),
         ):
-        require_order(frame, "BuildPolygons(", begin, f"{name} CPU preparation", failures)
-        require_order(frame, begin, record, f"{name} upload recording", failures)
         require_order(
             frame,
-            begin,
+            "BuildPolygons(",
             "TextureHeap.MaterializePendingCreates()",
-            f"{name} physical texture materialization",
+            f"{name} CPU preparation",
             failures,
         )
         require_order(
             frame,
             "TextureHeap.MaterializePendingCreates()",
+            begin,
+            f"{name} physical creation before reuse wait",
+            failures,
+        )
+        require_order(frame, begin, record, f"{name} upload recording", failures)
+        require_order(
+            frame,
+            "TextureHeap.MaterializePendingCreates()",
             record,
             f"{name} materialization before uploads",
+            failures,
+        )
+        require(
+            frame.count("TextureHeap.MaterializePendingCreates()") == 1,
+            f"{name} must materialize pending textures exactly once before the reuse wait",
             failures,
         )
         require_order(
@@ -158,9 +170,10 @@ def main() -> int:
         failures,
     )
 
-    # P2-001: reserve/identity is CPU-only; driver objects are materialized
-    # after the explicit frame slot has been acquired.  Keep this check close
-    # to the implementation so a future Create/Reserve regression fails CI.
+    # P2-001/P2-002: reserve/identity is CPU-only; driver objects are
+    # materialized before the explicit frame slot is acquired, from a
+    # pending-only worklist. Keep this check close to the implementation so a
+    # future Create/Reserve or full-scan regression fails CI.
     for name, header, source, reserve_signature, materialize_signature in (
         (
             "DX12",
@@ -180,9 +193,10 @@ def main() -> int:
         try:
             reserve_body = function_body(source, reserve_signature)
             materialize_body = function_body(source, materialize_signature)
+            destroy_body = function_body(source, f"void {name}TextureHeap::Destroy")
         except ValueError as error:
             failures.append(str(error))
-            reserve_body = materialize_body = ""
+            reserve_body = materialize_body = destroy_body = ""
 
         require(
             "PendingCreate" in header and "PhysicalReady" in header,
@@ -203,6 +217,30 @@ def main() -> int:
             f"{name} MaterializePendingCreates must own physical creation and readiness",
             failures,
         )
+        require(
+            "std::vector<u32> PendingCreateSlots" in header
+            and "PendingCreateSlots.push_back(slot)" in reserve_body
+            and "for (u32 slot : PendingCreateSlots)" in materialize_body
+            and "for (Entry& entry : Entries)" not in materialize_body
+            and "PendingCreateSlots.clear()" in materialize_body
+            and "PendingCreateSlots.erase" in destroy_body,
+            f"{name} materialization must use a cancellable pending-slot worklist",
+            failures,
+        )
+        require(
+            all(
+                dependency not in materialize_body
+                for dependency in (
+                    "Commands",
+                    "Uploads",
+                    "FrameCommandBuffer",
+                    "FrameStaging",
+                    "Descriptors",
+                )
+            ),
+            f"{name} MaterializePendingCreates must not touch frame-local recording resources",
+            failures,
+        )
 
         try:
             record_body = function_body(source, f"bool {name}TextureHeap::RecordUpload")
@@ -215,8 +253,12 @@ def main() -> int:
             failures,
         )
         require(
-            "PendingUpload" in source and "Data.resize(bytes)" in source,
-            f"{name} pending upload storage must be reusable backend-owned CPU storage",
+            "PendingUpload" in source
+            and "std::vector<u32> Data" in header
+            and "Data.resize(words)" in source
+            and "reinterpret_cast<u32*>" not in source
+            and "pending->Data.data(), pending->Data.size() * sizeof(u32)" in source,
+            f"{name} pending upload storage must be reusable typed u32 CPU storage",
             failures,
         )
 
@@ -335,6 +377,7 @@ def main() -> int:
             "texture_decode_us",
             "texture_pending_cpu_copy_us",
             "texture_resource_create_us",
+            "texture_pending_storage_grow_us",
         ):
             require(
                 f'"{metric}"' in perf,
@@ -350,6 +393,8 @@ def main() -> int:
             "texture_materialize_count",
             "texture_pending_upload_bytes",
             "texture_pending_upload_count",
+            "texture_pending_storage_grow_count",
+            "texture_pending_storage_grow_bytes",
         ):
             require(
                 counter_name in perf,

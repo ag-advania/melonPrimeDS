@@ -39,6 +39,7 @@ enum class CpuMetric : u32
     TextureDecode,
     TexturePendingCpuCopy,
     TextureResourceCreate,
+    TexturePendingStorageGrow,
     SpanStagingCopy,
     DescriptorUpdate,
     ComposePack,
@@ -85,6 +86,8 @@ enum class Counter : u32
     TextureMaterializeCount,
     TexturePendingUploadBytes,
     TexturePendingUploadCount,
+    TexturePendingStorageGrowCount,
+    TexturePendingStorageGrowBytes,
     UploadOverflowCount,
     UploadSpillBytes,
     DescriptorWriteCount,
@@ -152,6 +155,7 @@ inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Cou
     "texture_decode_us",
     "texture_pending_cpu_copy_us",
     "texture_resource_create_us",
+    "texture_pending_storage_grow_us",
     "span_staging_copy",
     "descriptor_update",
     "structured_pack_us",
@@ -400,6 +404,8 @@ inline void MaybeReport()
         "route_runs=%llu "
         "texture_upload_B=%llu texture_materialize_count=%llu "
         "texture_pending_upload_bytes=%llu texture_pending_upload_count=%llu "
+        "texture_pending_storage_grow_count=%llu "
+        "texture_pending_storage_grow_bytes=%llu "
         "upload_overflows=%llu spill_B=%llu descriptor_writes=%llu "
         "descriptor_creates=%llu descriptor_updates=%llu descriptor_copies=%llu "
         "descriptor_cpu_ns=%llu presenter_srv_creates=%llu "
@@ -433,6 +439,8 @@ inline void MaybeReport()
         count(Counter::StructuredRouteRuns), count(Counter::TextureUploadBytes),
         count(Counter::TextureMaterializeCount), count(Counter::TexturePendingUploadBytes),
         count(Counter::TexturePendingUploadCount),
+        count(Counter::TexturePendingStorageGrowCount),
+        count(Counter::TexturePendingStorageGrowBytes),
         count(Counter::UploadOverflowCount), count(Counter::UploadSpillBytes),
         count(Counter::DescriptorWriteCount), count(Counter::DescriptorCreateCount),
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
@@ -537,7 +545,8 @@ namespace melonDS::DX12Perf
 {
 enum class CpuMetric : u32 { RasterBeginWait, RasterCpuPrepare, RasterReuseWait, RasterRecordSubmit,
     TexcacheUpdate, BuildPolygons, Soft2DTotal, Structured2DMetadata, TextureDecode,
-    TexturePendingCpuCopy, TextureResourceCreate, SpanStagingCopy,
+    TexturePendingCpuCopy, TextureResourceCreate, TexturePendingStorageGrow,
+    SpanStagingCopy,
     DescriptorUpdate, ComposePack, ComposeRecord, CaptureWait, CaptureMapCopy,
     PresentSlotWait, PresentBeginWait, HudPatchCopy, HudUpload, PresentRecord, QueueSubmit, Count };
 enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
@@ -550,7 +559,8 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
     StructuredRouteRuns, TextureUploadBytes, TextureMaterializeCount,
-    TexturePendingUploadBytes, TexturePendingUploadCount, UploadOverflowCount,
+    TexturePendingUploadBytes, TexturePendingUploadCount,
+    TexturePendingStorageGrowCount, TexturePendingStorageGrowBytes, UploadOverflowCount,
     UploadSpillBytes, DescriptorWriteCount,
     DescriptorCreateCount, DescriptorUpdateCount, DescriptorCopyCount, DescriptorCpuTimeNs,
     PresenterSrvCreateCount, PresenterDescriptorCopyCount, PresenterDescriptorCpuTimeNs,

@@ -44,6 +44,7 @@ enum class CpuMetric : u32
     TextureDecode,
     TexturePendingCpuCopy,
     TextureResourceCreate,
+    TexturePendingStorageGrow,
     DescriptorUpdate,
     ComposePack,
     PresentSlotWait,
@@ -82,6 +83,8 @@ enum class Counter : u32
     TextureMaterializeCount,
     TexturePendingUploadBytes,
     TexturePendingUploadCount,
+    TexturePendingStorageGrowCount,
+    TexturePendingStorageGrowBytes,
     ScratchUploadCount,
     ScratchUploadBytes,
     DescriptorWriteCount,
@@ -172,6 +175,7 @@ inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Cou
     "texture_decode_us",
     "texture_pending_cpu_copy_us",
     "texture_resource_create_us",
+    "texture_pending_storage_grow_us",
     "descriptor_update",
     "structured_pack_us",
     "present_slot_wait_us",
@@ -437,6 +441,8 @@ inline void MaybeReport()
         "regular_lines=%llu fallback_lines=%llu route_runs=%llu hud_upload_B=%llu texture_upload_B=%llu "
         "texture_materialize_count=%llu texture_pending_upload_bytes=%llu "
         "texture_pending_upload_count=%llu "
+        "texture_pending_storage_grow_count=%llu "
+        "texture_pending_storage_grow_bytes=%llu "
         "scratch_uploads=%llu scratch_upload_B=%llu descriptor_writes=%llu descriptor_creates=%llu "
         "descriptor_updates=%llu descriptor_copies=%llu descriptor_cpu_ns=%llu "
         "presenter_srv_creates=%llu presenter_descriptor_copies=%llu "
@@ -484,6 +490,8 @@ inline void MaybeReport()
         count(Counter::HudUploadBytes), count(Counter::TextureUploadBytes),
         count(Counter::TextureMaterializeCount), count(Counter::TexturePendingUploadBytes),
         count(Counter::TexturePendingUploadCount),
+        count(Counter::TexturePendingStorageGrowCount),
+        count(Counter::TexturePendingStorageGrowBytes),
         count(Counter::ScratchUploadCount), count(Counter::ScratchUploadBytes),
         count(Counter::DescriptorWriteCount), count(Counter::DescriptorCreateCount),
         count(Counter::DescriptorUpdateCount), count(Counter::DescriptorCopyCount),
@@ -658,6 +666,7 @@ enum class CpuMetric : u32
     TextureDecode,
     TexturePendingCpuCopy,
     TextureResourceCreate,
+    TexturePendingStorageGrow,
     DescriptorUpdate,
     ComposePack,
     PresentSlotWait,
@@ -695,6 +704,8 @@ enum class Counter : u32
     TextureMaterializeCount,
     TexturePendingUploadBytes,
     TexturePendingUploadCount,
+    TexturePendingStorageGrowCount,
+    TexturePendingStorageGrowBytes,
     ScratchUploadCount,
     ScratchUploadBytes,
     DescriptorWriteCount,
