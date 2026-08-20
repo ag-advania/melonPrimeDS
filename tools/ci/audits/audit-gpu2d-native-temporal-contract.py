@@ -55,14 +55,18 @@ def main() -> int:
         require(text["soft_renderer"], "NativeGPU2DRecordedFrameSerial", "recorded identity", failures)
         if "&& !GPU.CaptureEnable" in text["soft_renderer"]:
             failures.append("soft renderer: CaptureEnable still disables native GPU2D ownership")
-        require(text["soft_renderer"], "CaptureNativeDisplayLine", "native capture CPU mirror", failures)
+        require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
+        if "CaptureNativeDisplayLine" in text["soft_renderer"]:
+            failures.append("soft renderer: per-line CPU native capture mirror still present")
 
         for label in ("vulkan_renderer", "dx12_renderer"):
             require(text[label], "CaptureYOffset", f"{label} line dispatch", failures)
             require(text[label], "NativeGPU2DDispatchCount", f"{label} dispatch accounting", failures)
             require(text[label], "PublishedOutputGeneration", f"{label} published identity", failures)
-            require(text[label], "2u * static_cast<u32>(ScaleFactor)",
-                f"{label} high-resolution sub-row dispatch", failures)
+            require(text[label], "DivRoundUp(256u, 8u)",
+                f"{label} logical-width dispatch", failures)
+            require(text[label], "DivRoundUp(384u, 8u)",
+                f"{label} logical full-frame dispatch", failures)
             require(text[label], ", 1u, 1u);", f"{label} capture line dispatch", failures)
 
         require(text["vulkan_frontend"], "stale_generation_reject", "Vulkan stale diagnostic", failures)
@@ -76,8 +80,12 @@ def main() -> int:
             require(text[label], "LCDVRAMMap", f"{label} per-line LCDC shader", failures)
             require(text[label], "linePass", f"{label} line shader pass", failures)
             require(text[label], "scaledScreens", f"{label} high-resolution line shader", failures)
-        require(text["vulkan_shader"], "WriteNativeCapturePair", "Vulkan capture feedback", failures)
+        if ("WriteNativeCaptureSample" not in text["vulkan_shader"]
+                and "WriteNativeCapturePair" not in text["vulkan_shader"]):
+            failures.append("Vulkan capture feedback: missing native capture sample writer")
         require(text["dx12_shader"], "NativeCaptureSourceA", "DX12 capture feedback", failures)
+        require(text["vulkan_shader"], "NativeCaptureReference", "Vulkan capture reference", failures)
+        require(text["dx12_shader"], "NativeCaptureReference", "DX12 capture reference", failures)
 
         require(text["opengl_renderer"], "DumpFrameForValidation", "OpenGL pixel gate", failures)
         require(text["opengl_renderer"], "glReadPixels(0, 0, 256, 192", "OpenGL pixel gate", failures)

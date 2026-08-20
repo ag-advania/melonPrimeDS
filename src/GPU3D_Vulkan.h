@@ -125,6 +125,11 @@ public:
     [[nodiscard]] RendererOutput GetComposedOutput() const;
     [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasContent; }
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
+    // Materialize only the requested LCDC capture blocks when the emulation
+    // core actually reads them.  The normal native frame path keeps this
+    // mirror device-local and never calls this method.
+    bool ReadNativeCapture(
+        u32 bank, u32 start, u32 len, u8* destination);
     [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
     {
         return PublishedOutputGeneration;
@@ -190,14 +195,14 @@ private:
     static constexpr u32 CompositorFramesInFlight = 3;
     static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
 
-    // Two set-0 allocations per frame slot. They differ only in what binding 13
-    // points at -- the native capture buffer for the rasterizer's Resolve stage,
-    // the two-screen composed buffer for the compositor -- but the compositor
-    // records into a separate command buffer, so it cannot share the set the
-    // rasterizer's submission may still be reading.
+    // Three set-0 allocations per frame slot. The native logical Stage A writes
+    // the structured contract into binding 13, while the final Stage B writes
+    // the two-screen composed buffer. Keeping them separate also prevents a
+    // descriptor update for Stage B from changing a set still used by Stage A.
     static constexpr u32 RasterizerSetSlot = 0;
     static constexpr u32 CompositorSetSlot = 1;
-    static constexpr u32 RasterizerSetsPerFrame = 2;
+    static constexpr u32 NativeLogicalSetSlot = 2;
+    static constexpr u32 RasterizerSetsPerFrame = 3;
 
     // -----------------------------------------------------------------------
     // GPU-visible struct layouts.
@@ -485,6 +490,7 @@ private:
     // semantics have to stay DS-native even while presentation does not.
     Vk::Buffer NativeResolveBuffer;
     Vk::ReadbackBuffer NativeReadback;
+    Vk::ReadbackBuffer NativeCaptureReadback;
     VkDeviceSize MetaUniformStride = 0;
 
     // The structured 2D frame, staged once per VBlank and copied into device

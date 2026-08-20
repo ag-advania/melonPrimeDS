@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "GPU.h"
 #include "types.h"
 
 namespace melonDS
@@ -32,10 +33,26 @@ inline constexpr u32 ScreenWidth = 256;
 inline constexpr u32 ScreenHeight = 192;
 inline constexpr u32 ScreenPixelCount = ScreenWidth * ScreenHeight;
 
+// SpriteLatchValid is the last word in LineState and is consumed by the
+// native shader's OBJ timeline selector.  Its low bit remains the original
+// latch flag; the high byte carries the start line of the current display
+// capture command so Stage A can publish a precise CaptureReference without
+// walking earlier lines in every logical pixel invocation.  0xFF means that
+// no capture command has started in this frame.
+inline constexpr u32 SpriteLatchValidMask = 0x1u;
+inline constexpr u32 CaptureStartLineShift = 8u;
+inline constexpr u32 CaptureStartLineMask = 0xFFu;
+inline constexpr u32 CaptureStartLineNone = 0xFFu;
+
 // Developer-only Gate B switch. The normal renderer never waits for a
 // compositor readback; setting MELONPRIME_GPU2D_EXACT_VALIDATE=1 (or the
 // shorter MELONPRIME_GPU2D_EXACT=1) enables exact native-output validation.
 [[nodiscard]] bool ExactValidationEnabled() noexcept;
+
+// Physical A/B state-load runs deliberately begin with ordinary ROM startup
+// frames. Do not compare those transition frames against a later savestate;
+// arm exact validation at the same lifecycle boundary as the UI state load.
+void NotifySavestateLoaded() noexcept;
 
 [[nodiscard]] constexpr bool IsCurrentFrame(
     u64 emulatedFrame,
@@ -193,6 +210,19 @@ struct DirtyRange
     u32 Size = 0;
 };
 
+// Host-only recorder accounting.  This is intentionally outside the packed
+// frame layout: it describes how the private observer was built, not GPU2D
+// state consumed by either shader backend.
+struct RecorderMetrics
+{
+    u64 BlocksScanned = 0;
+    u64 BytesScanned = 0;
+    u64 BlocksCopied = 0;
+    u64 BytesCopied = 0;
+    u64 CaptureCPU2DLines = 0;
+    u64 CaptureCPU2DNs = 0;
+};
+
 struct UploadPlan
 {
     std::array<DirtyRange, MaxDirtyRanges> Ranges{};
@@ -238,6 +268,7 @@ struct FrameInput
     // frame. They are metadata only and are not part of PackedFrameWords.
     std::array<DirtyRange, MaxDirtyRanges> DirtyRanges{};
     u32 DirtyRangeCount = 0;
+    RecorderMetrics Recorder{};
 };
 
 static_assert(std::is_trivially_copyable_v<FrameInput>,
@@ -352,6 +383,7 @@ public:
         u32 line,
         bool screenSwap) noexcept;
     void CaptureMemoryForLine(u32 line) noexcept;
+    void RecordSoftwareCaptureLine(u64 nanoseconds) noexcept;
     // Called from the renderer's DrawSprites hook at the hardware latch
     // point, after DrawScanline(line) and before DrawScanline(line+1).
     void CaptureSpriteLatchForLine(u32 line) noexcept;
@@ -378,8 +410,32 @@ private:
     std::array<u8, 128u * 1024u> PendingEngineBOBJ{};
     std::array<u8, 2u * 1024u> PendingOAM{};
     bool PendingSpriteLatchReady = false;
+    u32 LastJournalSequence = 0u;
+    std::array<GPU2DWriteJournalEntry, GPU2DWriteJournalCapacity> JournalScratch{};
+    u32 CaptureStartLine = CaptureStartLineNone;
+    u32 CaptureStateCnt = 0u;
+    bool CaptureStateEnabled = false;
 
     void SnapshotEngine(u32 engine) noexcept;
+    void CaptureAllMappedMemoryForLine() noexcept;
+    void CaptureJournalWritesForLine() noexcept;
+    void CaptureMappedPhysicalBlock(
+        u32 engine,
+        u32 section,
+        u8* current,
+        u32 size,
+        const u32* mappings,
+        u32 mappingCount,
+        u32 mappingBytes,
+        u32 blockBase,
+        u32 bank,
+        u32 physicalBlock) noexcept;
+    void CaptureDirectMemoryBlock(
+        const u8* source,
+        u8* current,
+        u32 size,
+        u32 blockBase,
+        u32 block) noexcept;
     void CaptureMappedMemoryForLine(
         u32 engine,
         u32 section,

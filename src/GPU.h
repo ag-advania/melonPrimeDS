@@ -19,6 +19,8 @@
 #ifndef GPU_H
 #define GPU_H
 
+#include <algorithm>
+#include <array>
 #include <memory>
 
 #include "GPU2D.h"
@@ -29,6 +31,29 @@ namespace melonDS
 {
 class GPU3D;
 class ARMJIT;
+
+// Non-destructive producer journal for the native GPU2D recorder. The legacy
+// VRAMDirty/PaletteDirty/OAMDirty fields remain owned by their existing
+// consumers; this journal is an independent observer feed and is never
+// consumed or cleared by a renderer.
+enum class GPU2DWriteKind : u16
+{
+    VRAM = 1,
+    Palette = 2,
+    OAM = 3,
+    FIFO = 4,
+    Mapping = 5,
+};
+
+struct GPU2DWriteJournalEntry
+{
+    u32 Sequence = 0;
+    u16 Kind = 0;
+    u16 Bank = 0;
+    u32 Block = 0;
+};
+
+inline constexpr u32 GPU2DWriteJournalCapacity = 16384u;
 
 enum class RendererOutputKind
 {
@@ -447,6 +472,8 @@ public:
         {
             *(T*)&VRAM[bank][addr] = val;
             VRAMDirty[bank][addr / VRAMDirtyGranularity] = true;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, static_cast<u32>(bank),
+                addr / VRAMDirtyGranularity);
         }
     }
 
@@ -480,36 +507,50 @@ public:
         {
             VRAMDirty[0][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_A[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 0u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<1))
         {
             VRAMDirty[1][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_B[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 1u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<2))
         {
             VRAMDirty[2][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_C[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 2u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<3))
         {
             VRAMDirty[3][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_D[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 3u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<4))
         {
             VRAMDirty[4][(addr & 0xFFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_E[addr & 0xFFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 4u,
+                (addr & 0xFFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<5))
         {
             VRAMDirty[5][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_F[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 5u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<6))
         {
             VRAMDirty[6][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_G[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 6u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
     }
 
@@ -541,26 +582,36 @@ public:
         {
             VRAMDirty[0][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_A[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 0u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<1))
         {
             VRAMDirty[1][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_B[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 1u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<4))
         {
             VRAMDirty[4][(addr & 0xFFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_E[addr & 0xFFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 4u,
+                (addr & 0xFFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<5))
         {
             VRAMDirty[5][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_F[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 5u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<6))
         {
             VRAMDirty[6][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_G[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 6u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
     }
 
@@ -590,16 +641,22 @@ public:
         {
             VRAMDirty[2][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_C[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 2u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<7))
         {
             VRAMDirty[7][(addr & 0x7FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_H[addr & 0x7FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 7u,
+                (addr & 0x7FFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<8))
         {
             VRAMDirty[8][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_I[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 8u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
     }
 
@@ -628,11 +685,15 @@ public:
         {
             VRAMDirty[3][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_D[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 3u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<8))
         {
             VRAMDirty[8][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_I[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 8u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
     }
 
@@ -653,8 +714,20 @@ public:
     {
         u32 mask = VRAMMap_ARM7[(addr >> 17) & 0x1];
 
-        if (mask & (1<<2)) *(T*)&VRAM_C[addr & 0x1FFFF] = val;
-        if (mask & (1<<3)) *(T*)&VRAM_D[addr & 0x1FFFF] = val;
+        if (mask & (1<<2))
+        {
+            *(T*)&VRAM_C[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(
+                GPU2DWriteKind::VRAM, 2u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
+        }
+        if (mask & (1<<3))
+        {
+            *(T*)&VRAM_D[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(
+                GPU2DWriteKind::VRAM, 3u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
+        }
     }
 
 
@@ -720,6 +793,8 @@ public:
             PaletteDirty |= 1 << (addr / VRAMDirtyGranularity);
         else
             PaletteDirty |= 0x10 << (addr / VRAMDirtyGranularity);
+        RecordGPU2DWrite(
+            GPU2DWriteKind::Palette, 0u, addr / VRAMDirtyGranularity);
     }
 
     template<typename T>
@@ -735,6 +810,58 @@ public:
 
         *(T*)&OAM[addr] = val;
         OAMDirty |= 1 << (addr / 1024);
+        RecordGPU2DWrite(
+            GPU2DWriteKind::OAM, 0u, addr / VRAMDirtyGranularity);
+    }
+
+    void RecordGPU2DWrite(GPU2DWriteKind kind, u32 bank, u32 block) noexcept
+    {
+        const u32 sequence = ++GPU2DWriteJournalSequence;
+        GPU2DWriteJournal[sequence % GPU2DWriteJournalCapacity] = {
+            sequence,
+            static_cast<u16>(kind),
+            static_cast<u16>(bank),
+            block,
+        };
+    }
+
+    [[nodiscard]] u32 GetGPU2DWriteJournalSequence() const noexcept
+    {
+        return GPU2DWriteJournalSequence;
+    }
+
+    // Returns entries strictly after `afterSequence`. If the fixed ring
+    // wrapped before the caller consumed it, `overflow` is set and the caller
+    // must take a one-time baseline snapshot. No dirty bit or journal entry is
+    // cleared here.
+    u32 ReadGPU2DWriteJournal(
+        u32 afterSequence,
+        GPU2DWriteJournalEntry* destination,
+        u32 capacity,
+        bool& overflow) const noexcept
+    {
+        overflow = false;
+        if (!destination || capacity == 0u
+            || afterSequence >= GPU2DWriteJournalSequence)
+            return 0u;
+
+        const u32 first = afterSequence + 1u;
+        const u32 oldest = GPU2DWriteJournalSequence >= GPU2DWriteJournalCapacity
+            ? GPU2DWriteJournalSequence - GPU2DWriteJournalCapacity + 1u
+            : 1u;
+        u32 begin = first;
+        if (begin < oldest)
+        {
+            begin = oldest;
+            overflow = true;
+        }
+        const u32 count = std::min(
+            GPU2DWriteJournalSequence - begin + 1u, capacity);
+        for (u32 i = 0; i < count; ++i)
+            destination[i] = GPU2DWriteJournal[(begin + i) % GPU2DWriteJournalCapacity];
+        if (count < GPU2DWriteJournalSequence - begin + 1u)
+            overflow = true;
+        return count;
     }
 
     template <typename T>
@@ -868,6 +995,10 @@ public:
 
     u32 OAMDirty = 0;
     u32 PaletteDirty = 0;
+
+    std::array<GPU2DWriteJournalEntry, GPU2DWriteJournalCapacity>
+        GPU2DWriteJournal{};
+    u32 GPU2DWriteJournalSequence = 0;
 
 private:
     void ResetVRAMCache() noexcept;

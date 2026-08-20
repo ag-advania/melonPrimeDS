@@ -150,6 +150,17 @@ enum class Counter : u32
     DX12ReflexMode,
     DX12BackBufferCount,
     DX12PresenterLogicalDepth,
+    NativeGPU2DLogicalGpuTimeNs,
+    NativeGPU2DCaptureGpuTimeNs,
+    NativeGPU2DResolveGpuTimeNs,
+    RecorderBlocksScanned,
+    RecorderBytesScanned,
+    RecorderBlocksCopied,
+    RecorderBytesCopied,
+    CaptureCPU2DLines,
+    CaptureCPU2DNs,
+    CompositorGpuTimeNs,
+    PresentWaitNs,
     Count,
 };
 
@@ -451,7 +462,12 @@ inline void MaybeReport()
         "raster_gpu_ns=%llu structured_compositor_gpu_ns=%llu presenter_render_pass_gpu_ns=%llu "
         "total_queue_gpu_span_ns=%llu native_resolves=%llu native_readback_copy_B=%llu native_readback_demands=%llu "
         "native_readback_wait_ns=%llu screen_copy_B=%llu screen_copy_gpu_ns=%llu "
-        "direct_image_frames=%llu fallback_buffer_frames=%llu hud_upload_B=%llu hud_recreates=%llu\n",
+         "direct_image_frames=%llu fallback_buffer_frames=%llu hud_upload_B=%llu hud_recreates=%llu "
+         "native_gpu2d_logical_ns=%llu native_gpu2d_capture_ns=%llu "
+         "native_gpu2d_resolve_ns=%llu recorder_blocks_scanned=%llu "
+         "recorder_bytes_scanned=%llu recorder_blocks_copied=%llu "
+         "recorder_bytes_copied=%llu capture_cpu_2d_lines=%llu "
+         "capture_cpu_2d_ns=%llu compositor_gpu_ns=%llu present_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::IdenticalFrames),
@@ -509,7 +525,14 @@ inline void MaybeReport()
         count(Counter::NativeReadbackWaitNs), count(Counter::PresentedScreenCopyBytes),
         count(Counter::PresentedScreenCopyGpuTimeNs),
         count(Counter::DirectCompositorImageFrames), count(Counter::FallbackCompositorBufferFrames),
-        count(Counter::HudUploadBytes), count(Counter::HudTextureRecreateCount));
+         count(Counter::HudUploadBytes), count(Counter::HudTextureRecreateCount),
+         count(Counter::NativeGPU2DLogicalGpuTimeNs),
+         count(Counter::NativeGPU2DCaptureGpuTimeNs),
+         count(Counter::NativeGPU2DResolveGpuTimeNs),
+         count(Counter::RecorderBlocksScanned), count(Counter::RecorderBytesScanned),
+         count(Counter::RecorderBlocksCopied), count(Counter::RecorderBytesCopied),
+         count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
+         count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
 
     const unsigned long long vsyncEnabled = count(Counter::DX12VsyncEnabled);
     const unsigned long long presentMode = count(Counter::DX12PresentMode);
@@ -626,8 +649,12 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     PresentedScreenCopyBytes, PresentedScreenCopyGpuTimeNs,
     DirectCompositorImageFrames, FallbackCompositorBufferFrames,
      HudUploadBytes, HudTextureRecreateCount, DX12VsyncEnabled, DX12PresentMode,
-     DX12VendorPacingAuthority, DX12ReflexMode, DX12BackBufferCount,
-     DX12PresenterLogicalDepth, Count };
+      DX12VendorPacingAuthority, DX12ReflexMode, DX12BackBufferCount,
+      DX12PresenterLogicalDepth, NativeGPU2DLogicalGpuTimeNs,
+      NativeGPU2DCaptureGpuTimeNs, NativeGPU2DResolveGpuTimeNs,
+      RecorderBlocksScanned, RecorderBytesScanned, RecorderBlocksCopied,
+      RecorderBytesCopied, CaptureCPU2DLines, CaptureCPU2DNs,
+      CompositorGpuTimeNs, PresentWaitNs, Count };
 inline constexpr bool IsCompiledIn() noexcept { return false; }
 inline constexpr bool IsEnabled() noexcept { return false; }
 inline constexpr void SetScale(u32) noexcept {}

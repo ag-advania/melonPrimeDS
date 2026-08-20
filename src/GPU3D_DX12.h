@@ -98,6 +98,11 @@ public:
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
     [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
+    // Materialize only the requested LCDC capture blocks when the emulation
+    // core actually reads them.  The normal native frame path keeps this
+    // mirror device-local and never calls this method.
+    bool ReadNativeCapture(
+        u32 bank, u32 start, u32 len, u8* destination);
     [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
     {
         return PublishedOutputGeneration;
@@ -395,6 +400,7 @@ private:
     DX12DescriptorRing StaticSrvDescriptors;
     DX12DescriptorRing FrameUavDescriptors;
     DX12DescriptorRing CompositorUavDescriptors;
+    DX12DescriptorRing NativeUavDescriptors;
     // One shader-visible table for the lazy Resolve submission. It is reset
     // only after CaptureCommands has retired its prior submission.
     DX12DescriptorRing CaptureDescriptors;
@@ -428,6 +434,7 @@ private:
     DX12::ComPtr<ID3D12Resource> CaptureSidecarBuffer;
     DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192
     DX12::ComPtr<ID3D12Resource> ReadbackBuffer;
+    DX12::ComPtr<ID3D12Resource> NativeCaptureReadback;
     DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles
     DX12::ComPtr<ID3D12Resource> BinResultBuffer;
     DX12::ComPtr<ID3D12Resource> WorkDescBuffer;
@@ -508,6 +515,7 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
     D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> NativeUavCpu{};
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;

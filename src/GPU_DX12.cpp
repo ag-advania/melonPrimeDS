@@ -58,6 +58,23 @@ void DX12Renderer::AllocCapture(u32 bank, u32 start, u32 len)
 
 void DX12Renderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
 {
+    if (HasNativeGPU2DFrameForCurrentEmulatedFrame())
+    {
+        auto* dx12 = GetDX12Renderer3D();
+        if (dx12 && dx12->ReadNativeCapture(bank, start, len, GPU.VRAM[bank]))
+        {
+            const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+            for (u32 i = 0; i < blockCount; ++i)
+            {
+                const u32 block = (start + i) & 3u;
+                for (u32 subblock = 0; subblock < 64u; ++subblock)
+                    GPU.VRAMDirty[bank][block * 64u + subblock] = true;
+            }
+            return;
+        }
+        if (dx12)
+            dx12->FailNativeGPU2DExact("native DX12 GPU2D capture readback failed");
+    }
     SoftRenderer::SyncVRAMCapture(bank, start, len, complete);
 }
 

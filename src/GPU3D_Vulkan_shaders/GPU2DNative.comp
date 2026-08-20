@@ -26,6 +26,15 @@ layout (std430, set = 0, binding = 13) buffer NativeGPU2DOutputBuffer
     uint NativeGPU2DOutput[];
 };
 
+// CaptureReference points into the shared high-resolution sidecar consumed by
+// the existing compositor.  Native capture writes the same bank/version cell
+// layout as the structured software producer, so Stage B does not need a
+// backend-specific capture path.
+layout (std430, set = 0, binding = 14) buffer NativeCaptureSidecarBuffer
+{
+    uint NativeCaptureSidecar[];
+};
+
 // The first FramebufferStride words are owned by the 3D blend continuation
 // state. The tail is a persistent four-bank LCDC capture mirror. Keeping the
 // mirror on the device lets display mode 2 consume completed captures without
@@ -87,6 +96,25 @@ const uint kSpriteTimelineBlockCount = kSpriteTimelineOAMBlocks
 const uint kSpriteTimelineIndexBase = kTimelinePayloadBase
     + 8192u * kTimelinePayloadStride;
 
+// Stage A writes the backend-neutral structured composition contract.  Keep
+// this layout identical to PresentationBuffers.glsl and
+// MelonPrimeStructuredComposition.h; Stage B is the existing high-resolution
+// compositor and must never have to rediscover 2D semantics.
+const uint kStructuredPixelCount = 256u * 192u;
+const uint kStructuredPlaneStride = kStructuredPixelCount;
+const uint kStructuredLineMetaBase = 14u * kStructuredPlaneStride;
+const uint kStructuredCaptureCommandBase = kStructuredLineMetaBase + 384u;
+const uint kStructuredControlPlain2D = 0x87u;
+const uint kStructuredControlHas3D = 0x40u;
+const uint kStructuredControlAbove = 0x80u;
+const uint kStructuredControlOpaqueBlackBelow = 0x20u;
+const uint kStructuredCompositionBlend4 = 1u;
+const uint kStructuredCompositionPlain2D = 7u;
+const uint kStructuredDisplayRegular = 1u;
+const uint kStructuredDisplayOff = 0u;
+const uint kStructuredDisplayVram = 2u;
+const uint kStructuredDisplayFifo = 3u;
+
 // LineState word offsets.
 const uint kDispCnt = 0u;
 const uint kLayerEnable = 1u;
@@ -147,7 +175,8 @@ uint TimelineVersion(uint block)
 
 uint SpriteTimelineVersion(uint engine, uint line, uint block)
 {
-    if (line >= 192u || LineWord(engine, line, kSpriteLatchValid) == 0u)
+    if (line >= 192u
+        || (LineWord(engine, line, kSpriteLatchValid) & 1u) == 0u)
         return TimelineVersion(block);
 
     uint spriteBlock = 0u;
@@ -665,7 +694,8 @@ Pixel BGExtended(uint engine, uint line, uint bg, int x)
     return p;
 }
 
-Pixel BGPixel(uint engine, uint line, uint bg, int x, uint outputX, uint outputY)
+Pixel BGPixel(
+    uint engine, uint line, uint bg, int x, uint outputX, uint outputY, bool logical)
 {
     Pixel p = EmptyPixel();
     uint dispCnt = LineWord(engine, line, kDispCnt);
@@ -675,8 +705,18 @@ Pixel BGPixel(uint engine, uint line, uint bg, int x, uint outputX, uint outputY
         return p;
     if (engine == 0u && bg == 0u && (dispCnt & 8u) != 0u)
     {
-        if (outputX >= uint(ScreenWidth) || outputY >= uint(ScreenHeight))
+        if (!logical && (outputX >= uint(ScreenWidth) || outputY >= uint(ScreenHeight)))
             return p;
+        if (logical)
+        {
+            // Stage A records the 3D layer slot, not a high-resolution sample.
+            // Stage B supplies the actual FinalFB pixel at every scaled sample.
+            p.Color = 0x40000000u;
+            p.Flag = 0x40u;
+            p.Priority = bgcnt & 3u;
+            p.Present = 1u;
+            return p;
+        }
         uint renderX = LineWord(engine, line, kRenderXPos) & 0x1FFu;
         int sourceX = (renderX & 0x100u) != 0u
             ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
@@ -950,60 +990,94 @@ uint Blend5Native(uint first, uint second)
         0u);
 }
 
-uint Composite2D(uint engine, uint line, int x, uint outputX, uint outputY)
+struct CompositeLayers
 {
-    Pixel first = BackdropPixel(engine);
-    Pixel second = EmptyPixel();
+    Pixel First;
+    Pixel Second;
+    uint Effect;
+    uint Eva;
+    uint Evb;
+    uint Color;
+};
+
+uint StructuredPixelWord(Pixel pixel)
+{
+    // BG0's 3D pixel carries the real FinalFB alpha in Color, but the
+    // structured contract needs the software renderer's explicit 0x40 layer
+    // marker. All ordinary BG/OBJ words already carry their layer flag in the
+    // high byte of Color.
+    if ((pixel.Flag & 0x40u) != 0u && (pixel.Flag & 0x80u) == 0u)
+        return (pixel.Color & 0x00FFFFFFu) | 0x40000000u;
+    return pixel.Color;
+}
+
+CompositeLayers Composite2DLayers(
+    uint engine, uint line, int x, uint outputX, uint outputY, bool logical)
+{
+    CompositeLayers result;
+    result.First = BackdropPixel(engine);
+    result.Second = EmptyPixel();
+    result.Effect = 0u;
+    result.Eva = LineWord(engine, line, kEVA);
+    result.Evb = LineWord(engine, line, kEVB);
+    result.Color = result.First.Color;
+
     uint objWindow = ObjRawPixel(engine, line, x, true).Present;
     uint window = WindowSelect(engine, line, x, objWindow);
-    uint dispCnt = LineWord(engine, line, kDispCnt);
     uint enableOBJ = LineWord(engine, line, kLayerEnable) & (1u << 4u);
     enableOBJ &= LineWord(engine, line, kOBJEnable) != 0u ? 0x10u : 0u;
+
+    // BG and OBJ are semantic fetches. Evaluate them once per logical pixel;
+    // the priority loop only selects from these cached values. This is the
+    // critical invariant for both the logical Stage A and the legacy direct
+    // path.
+    Pixel bgPixels[4];
+    for (uint bg = 0u; bg < 4u; ++bg)
+        bgPixels[bg] = BGPixel(engine, line, bg, x, outputX, outputY, logical);
+    Pixel objPixel = enableOBJ != 0u
+        ? ObjPixel(engine, line, x) : EmptyPixel();
 
     for (int priority = 3; priority >= 0; --priority)
     {
         for (int bg = 3; bg >= 0; --bg)
         {
-            Pixel current = BGPixel(engine, line, uint(bg), x, outputX, outputY);
+            Pixel current = bgPixels[uint(bg)];
             if (current.Present != 0u && int(current.Priority) == priority
                 && (window & (1u << uint(bg))) != 0u)
             {
-                second = first;
-                first = current;
+                result.Second = result.First;
+                result.First = current;
             }
         }
         if (enableOBJ != 0u)
         {
-            Pixel current = ObjPixel(engine, line, x);
+            Pixel current = objPixel;
             if (current.Present != 0u && int(current.Priority) == priority
                 && (window & (1u << 4u)) != 0u)
             {
-                second = first;
-                first = current;
+                result.Second = result.First;
+                result.First = current;
             }
         }
     }
 
-    uint flag1 = first.Flag;
-    uint flag2 = second.Flag;
+    uint flag1 = result.First.Flag;
+    uint flag2 = result.Second.Flag;
     uint target2 = (flag2 & 0x80u) != 0u ? 0x1000u
         : ((flag2 & 0x40u) != 0u ? 0x0100u : flag2 << 8u);
     uint blendCnt = LineWord(engine, line, kBlendCnt);
-    uint effect = 0u;
-    uint eva = LineWord(engine, line, kEVA);
-    uint evb = LineWord(engine, line, kEVB);
     if ((flag1 & 0x80u) != 0u && (blendCnt & target2) != 0u)
     {
-        effect = 1u;
+        result.Effect = 1u;
         if ((flag1 & 0x40u) != 0u)
         {
-            eva = flag1 & 0x1Fu;
-            evb = 16u - eva;
+            result.Eva = flag1 & 0x1Fu;
+            result.Evb = 16u - result.Eva;
         }
     }
     else if ((flag1 & 0x40u) != 0u && (blendCnt & target2) != 0u)
     {
-        effect = 4u;
+        result.Effect = 4u;
     }
     else
     {
@@ -1011,21 +1085,30 @@ uint Composite2D(uint engine, uint line, int x, uint outputX, uint outputY)
             : ((flag1 & 0x40u) != 0u ? 0x01u : flag1);
         if ((blendCnt & sourceMask) != 0u && (window & (1u << 5u)) != 0u)
         {
-            effect = (blendCnt >> 6u) & 3u;
-            if (effect == 1u && (blendCnt & target2) == 0u)
-                effect = 0u;
+            result.Effect = (blendCnt >> 6u) & 3u;
+            if (result.Effect == 1u && (blendCnt & target2) == 0u)
+                result.Effect = 0u;
         }
+        if (result.Effect == 2u || result.Effect == 3u)
+            result.Eva = min(LineWord(engine, line, kEVY), 16u);
     }
-    uint color = first.Color;
-    if (effect == 1u)
-        color = Blend4Native(first.Color, second.Color, eva, evb);
-    else if (effect == 2u)
-        color = BrightnessUp(first.Color, min(LineWord(engine, line, kEVY), 16u), 8u);
-    else if (effect == 3u)
-        color = BrightnessDown(first.Color, min(LineWord(engine, line, kEVY), 16u), 7u);
-    else if (effect == 4u)
-        color = Blend5Native(first.Color, second.Color);
-    return color;
+
+    result.Color = result.First.Color;
+    if (result.Effect == 1u)
+        result.Color = Blend4Native(result.First.Color, result.Second.Color,
+            result.Eva, result.Evb);
+    else if (result.Effect == 2u)
+        result.Color = BrightnessUp(result.First.Color, result.Eva, 8u);
+    else if (result.Effect == 3u)
+        result.Color = BrightnessDown(result.First.Color, result.Eva, 7u);
+    else if (result.Effect == 4u)
+        result.Color = Blend5Native(result.First.Color, result.Second.Color);
+    return result;
+}
+
+uint Composite2D(uint engine, uint line, int x, uint outputX, uint outputY)
+{
+    return Composite2DLayers(engine, line, x, outputX, outputY, false).Color;
 }
 
 uint ApplyMasterNative(uint color, uint brightness)
@@ -1128,7 +1211,7 @@ uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
         | (min(b, 31u) << 10u) | (a << 15u);
 }
 
-uint CaptureSourceA(uint line, uint x, uint outputX)
+uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
 {
     uint captureCnt = LineWord(0u, line, kCaptureCnt);
     if ((captureCnt & (1u << 24u)) != 0u && pc.TexWidth != 0u)
@@ -1138,14 +1221,60 @@ uint CaptureSourceA(uint line, uint x, uint outputX)
             ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
             : int(outputX) + int(renderX * uint(ScaleFactor));
         if (sx >= 0 && sx < ScreenWidth)
-            return LoadFinalFB(ivec2(sx, int(line * uint(ScaleFactor))));
+            return LoadFinalFB(ivec2(
+                sx, int(line * uint(ScaleFactor) + sampleY)));
         return 0u;
     }
     return Composite2D(0u, line, int(x), outputX,
-        line * uint(ScaleFactor));
+        line * uint(ScaleFactor) + sampleY);
 }
 
-void WriteNativeCapturePair(uint line, uint x, uint outputX)
+uint CaptureRawToColor6(uint color)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        ((color >> 5u) & 0x1Fu) << 1u,
+        ((color >> 10u) & 0x1Fu) << 1u,
+        ((color >> 15u) & 1u) != 0u ? 31u : 0u);
+}
+
+uint NativeCaptureReference(uint engine, uint line, uint x)
+{
+    if (engine != 0u)
+        return 0u;
+
+    uint packedLatch = LineWord(0u, line, kSpriteLatchValid);
+    uint captureStart = (packedLatch >> 8u) & 0xFFu;
+    if (captureStart == 0xFFu || line <= captureStart)
+        return 0u;
+
+    uint captureCnt = LineWord(0u, line, kCaptureCnt);
+    uint sizeCode = (captureCnt >> 20u) & 3u;
+    uint width = sizeCode == 0u ? 128u : 256u;
+    uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
+    uint displayBank = (LineWord(0u, line, kDispCnt) >> 18u) & 3u;
+    uint destinationBank = (captureCnt >> 16u) & 3u;
+    if (displayBank != destinationBank
+        || (LineWord(0u, line, kLCDVRAMMap) & (1u << displayBank)) == 0u)
+        return 0u;
+
+    // Both values are DS word addresses.  The modulo preserves the LCDC
+    // 64-KiB bank wrap, while the line bound prevents the current capture line
+    // from reading its own not-yet-committed write.
+    uint displayAddress = (line * 256u + x) & 0xFFFFu;
+    uint destinationAddress = ((captureCnt >> 18u) & 3u) << 14u;
+    uint relative = (displayAddress - destinationAddress) & 0xFFFFu;
+    uint captureLine = relative / width;
+    if (captureLine < captureStart || captureLine >= line || captureLine >= height)
+        return 0u;
+
+    uint version = NativeGPU2DInput[2u] & 1u;
+    return 0x80000000u | (version << 30u) | (displayBank << 28u)
+        | displayAddress;
+}
+
+void WriteNativeCaptureSample(
+    uint line, uint x, uint outputX, uint sampleY)
 {
     uint captureCnt = LineWord(0u, line, kCaptureCnt);
     if (LineWord(0u, line, kCaptureEnable) == 0u)
@@ -1160,21 +1289,130 @@ void WriteNativeCapturePair(uint line, uint x, uint outputX)
     if ((LineWord(0u, line, kLCDVRAMMap) & (1u << destinationBank)) == 0u)
         return;
 
-    uint firstA = CaptureSourceA(line, x, outputX);
+    uint firstA = CaptureSourceA(line, x, outputX, sampleY);
     uint firstB = CaptureSourceB(line, x, captureCnt);
     uint first = CaptureCompositeRaw(firstA, firstB, captureCnt);
-    uint second = 0u;
-    if (x + 1u < width)
+
+    uint address = ((((captureCnt >> 18u) & 3u) << 14u)
+        + line * width + x) & 0xFFFFu;
+    uint version = NativeGPU2DInput[2u] & 1u;
+    uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
+    uint cell = ((version * 4u + destinationBank) * 65536u) + address;
+    uint sampleIndex = sampleY * uint(ScaleFactor) + (outputX % uint(ScaleFactor));
+    NativeCaptureSidecar[cell * samplesPerPixel + sampleIndex] =
+        CaptureRawToColor6(first);
+
+    // The compact LCDC mirror remains the authoritative source for a later
+    // CPU readback.  One invocation owns each pair, so no two shader lanes
+    // race on the packed 32-bit word.
+    if (sampleY == 0u && (outputX % uint(ScaleFactor)) == 0u && (x & 1u) == 0u)
     {
-        uint secondA = CaptureSourceA(line, x + 1u, outputX + uint(ScaleFactor));
-        uint secondB = CaptureSourceB(line, x + 1u, captureCnt);
-        second = CaptureCompositeRaw(secondA, secondB, captureCnt);
+        uint second = 0u;
+        if (x + 1u < width)
+        {
+            uint secondA = CaptureSourceA(
+                line, x + 1u, outputX + uint(ScaleFactor), 0u);
+            uint secondB = CaptureSourceB(line, x + 1u, captureCnt);
+            second = CaptureCompositeRaw(secondA, secondB, captureCnt);
+        }
+
+        uint byteAddress = (((captureCnt >> 18u) & 3u) << 14u)
+            + line * width * 2u + x * 2u;
+        NativeCaptureState[uint(FramebufferStride) + destinationBank * 32768u
+            + (byteAddress >> 2u)] = first | (second << 16u);
+    }
+}
+
+void WriteStructuredPixel(
+    uint screen, uint line, uint x, uint below, uint above,
+    uint control, uint captureReference)
+{
+    uint pixel = line * 256u + x;
+    uint base = screen * 4u * kStructuredPlaneStride;
+    NativeGPU2DOutput[base + pixel] = below;
+    NativeGPU2DOutput[base + kStructuredPlaneStride + pixel] = above;
+    NativeGPU2DOutput[base + 2u * kStructuredPlaneStride + pixel] = control;
+    NativeGPU2DOutput[base + 3u * kStructuredPlaneStride + pixel] = captureReference;
+}
+
+void WriteStructuredLineMeta(uint screen, uint line, uint meta)
+{
+    NativeGPU2DOutput[kStructuredLineMetaBase + screen * 192u + line] = meta;
+}
+
+void WriteStructuredLogicalPixel(uint screen, uint line, uint x, uint engine)
+{
+    const uint pixel = line * 256u + x;
+    const uint dispCnt = LineWord(engine, line, kDispCnt);
+    const uint displayMode = engine == 0u
+        ? (dispCnt >> 16u) & 3u : (dispCnt >> 16u) & 1u;
+    const uint masterBrightness = LineWord(engine, line, kMasterBrightness);
+    const uint renderX = LineWord(engine, line, kRenderXPos) & 0x1FFu;
+
+    if (NativeGPU2DInput[13u] == 0u)
+    {
+        WriteStructuredPixel(screen, line, x, 0u, 0u,
+            kStructuredControlPlain2D << 24u, 0u);
+        if (x == 0u)
+            WriteStructuredLineMeta(screen, line, kStructuredDisplayOff);
+        return;
     }
 
-    uint byteAddress = (((captureCnt >> 18u) & 3u) << 14u)
-        + line * width * 2u + x * 2u;
-    NativeCaptureState[uint(FramebufferStride) + destinationBank * 32768u
-        + (byteAddress >> 2u)] = first | (second << 16u);
+    if (displayMode == kStructuredDisplayRegular)
+    {
+        CompositeLayers layers = Composite2DLayers(
+            engine, line, int(x), x, line, true);
+        uint val1 = StructuredPixelWord(layers.First);
+        uint val2 = StructuredPixelWord(layers.Second);
+        uint plane0 = layers.Color;
+        uint plane1 = 0u;
+        uint captureReference = 0u;
+        uint alpha1 = val1 >> 24u;
+        uint alpha2 = val2 >> 24u;
+        bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
+        bool val2Is3D = (alpha2 & 0x40u) != 0u && (alpha2 & 0x80u) == 0u;
+        uint controlAlpha = kStructuredControlPlain2D;
+        if (val1Is3D)
+        {
+            plane0 = val2;
+            controlAlpha = kStructuredControlHas3D
+                | (layers.Effect & 0x0Fu);
+            if ((plane0 & 0x00FFFFFFu) == 0u && (plane0 >> 24u) != 0u)
+                controlAlpha |= kStructuredControlOpaqueBlackBelow;
+        }
+        else if (val2Is3D && layers.Effect == kStructuredCompositionBlend4)
+        {
+            plane0 = 0u;
+            plane1 = val1;
+            controlAlpha = kStructuredControlHas3D
+                | kStructuredControlAbove | kStructuredCompositionBlend4;
+            if ((plane1 & 0x00FFFFFFu) == 0u && (plane1 >> 24u) != 0u)
+                controlAlpha |= kStructuredControlOpaqueBlackBelow;
+        }
+        uint control = (controlAlpha << 24u)
+            | ((layers.Evb & 0xFFu) << 16u)
+            | ((layers.Eva & 0xFFu) << 8u);
+        WriteStructuredPixel(screen, line, x, plane0, plane1,
+            control, captureReference);
+        if (x == 0u)
+        {
+            uint meta = kStructuredDisplayRegular << 16u
+                | ((masterBrightness >> 14u) << 8u)
+                | ((masterBrightness & 0x1Fu))
+                | (renderX << 23u);
+            WriteStructuredLineMeta(screen, line, meta);
+        }
+        return;
+    }
+
+    // Display modes 0/2/3 are already final native display pixels. Mark them
+    // as display-mode-off so Stage B does not apply master brightness twice.
+    uint color = DisplayPixel(engine, line, int(x), x, line);
+    uint captureReference = NativeCaptureReference(engine, line, x);
+    WriteStructuredPixel(screen, line, x, color, 0u,
+        kStructuredControlPlain2D << 24u, captureReference);
+    if (x == 0u)
+        WriteStructuredLineMeta(screen, line, kStructuredDisplayOff);
 }
 
 void main()
@@ -1183,14 +1421,28 @@ void main()
     const bool capturePass = (pc._pad & 4u) != 0u;
     if (capturePass)
     {
-        if (id.x >= uint(ScreenWidth) || id.y != 0u)
+        if (id.x >= uint(ScreenWidth) || id.y >= uint(ScaleFactor))
             return;
         uint x = id.x / uint(ScaleFactor);
-        if (id.x % uint(ScaleFactor) != 0u || (x & 1u) != 0u)
-            return;
-        WriteNativeCapturePair(uint(max(pc.CaptureYOffset, 0)), x, id.x);
+        WriteNativeCaptureSample(
+            uint(max(pc.CaptureYOffset, 0)), x, id.x, id.y);
         return;
     }
+
+    const bool logicalStage = (pc._pad & 16u) != 0u;
+    if (logicalStage)
+    {
+        const bool logicalLine = (pc._pad & 8u) != 0u;
+        if (id.x >= 256u || (logicalLine ? id.y >= 2u : id.y >= 384u))
+            return;
+        uint screen = logicalLine ? id.y : id.y / 192u;
+        uint line = logicalLine
+            ? uint(max(pc.CaptureYOffset, 0)) : id.y % 192u;
+        uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
+        WriteStructuredLogicalPixel(screen, line, id.x, engine);
+        return;
+    }
+
     if (id.x >= uint(ScreenWidth) || id.y >= uint(ScreenHeight) * 2u)
         return;
 

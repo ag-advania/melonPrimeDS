@@ -493,11 +493,6 @@ private:
     void DrawScanlineA(u32 line, u32* dst);
     void DrawScanlineB(u32 line, u32* dst);
 
-    // Native GPU2D owns visible output, but core-visible Display Capture still
-    // needs a scanline-accurate semantic mirror. This helper evaluates only
-    // the capture source/destination path; it never writes a presenter
-    // framebuffer or publishes a software frame.
-    void CaptureNativeDisplayLine(u32 line);
     void DoCapture(u32 line);
 
     void ApplyMasterBrightness(u16 regval, u32* dst);

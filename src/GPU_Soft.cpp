@@ -19,6 +19,7 @@
 #include "NDS.h"
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
+#include <chrono>
 #include <cstring>
 #include "GPU2DFrameDump.h"
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
@@ -148,23 +149,13 @@ void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
 {
     (void)complete;
-    if (NativeGPU2DProducerForFrame)
-    {
-        // CaptureNativeDisplayLine materializes the core-visible VRAM mirror
-        // at the same HBlank as the native capture dispatch. There is no
-        // mandatory GPU readback and no stale inherited no-op: CPU/DMA reads
-        // see the exact bytes already written by the semantic mirror, while
-        // the native backend keeps its GPU capture state for presentation and
-        // subsequent line feedback.
-        (void)bank;
-        (void)start;
-        (void)len;
-        return;
-    }
+    // Native backends keep capture state in their GPU-side mirror. The normal
+    // path must not replay the software 2D rasterizer at every HBlank; a
+    // backend may override this hook to materialize the requested capture
+    // range when the emulation core actually accesses it.
     (void)bank;
     (void)start;
     (void)len;
-    // The ordinary software renderer has already materialized capture VRAM.
 }
 
 void SoftRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
@@ -277,7 +268,6 @@ void SoftRenderer::DrawScanline(u32 line)
         NativeGPU2DFrame.CaptureMemoryForLine(nativeLine);
         NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, nativeLine, GPU.ScreenSwap);
         NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, nativeLine, GPU.ScreenSwap);
-        CaptureNativeDisplayLine(nativeLine);
         if (nativeLine == GPU2DNative::ScreenHeight - 1u)
         {
             NativeGPU2DFrame.FinalizeMemory();
@@ -543,41 +533,16 @@ void SoftRenderer::DrawSprites(u32 line)
     if (NativeGPU2DProducerForFrame)
     {
         NativeGPU2DFrame.CaptureSpriteLatchForLine(line);
-        // Keep the private software OBJ preparation cache alive for the
-        // capture-only semantic mirror. Native visible output never consumes
-        // these lines; this is only the same one-HBlank-ahead latch that
-        // DoCapture's source-A evaluator needs when the core reads an active
-        // capture destination before VBlank.
-        Rend2D_A->DrawSprites(line);
-        Rend2D_B->DrawSprites(line);
         return;
     }
+    // Exact differential validation keeps the software renderer as the
+    // oracle, but the native shader must still receive the same one-line-ahead
+    // OBJ/OAM latch timeline. Record that boundary before rendering the CPU
+    // line; the ordinary software path remains the actual producer here.
+    if (RecordNativeGPU2DFrameForFrame)
+        NativeGPU2DFrame.CaptureSpriteLatchForLine(line);
     Rend2D_A->DrawSprites(line);
     Rend2D_B->DrawSprites(line);
-}
-
-void SoftRenderer::CaptureNativeDisplayLine(u32 line)
-{
-    if (!GPU.CaptureEnable || line >= GPU2DNative::ScreenHeight)
-        return;
-
-    const u32 captureMode = (GPU.CaptureCnt >> 29u) & 0x3u;
-    // Source-B-only capture never evaluates engine A or 3D. Avoid touching
-    // the software 2D source evaluator in that case.
-    if (captureMode != 1u)
-    {
-        const bool source3D = (GPU.CaptureCnt & (1u << 24u)) != 0u;
-        const bool engineAUses3D = (GPU.GPU2D_A.DispCnt & (1u << 3u)) != 0u;
-        if (source3D || engineAUses3D)
-            Output3D = Rend3D->GetLine(static_cast<int>(line));
-        Rend2D_A->DrawScanline(line);
-    }
-
-    // DoCapture writes GPU.VRAM and VRAMDirty exactly as the standalone
-    // software renderer does. The native Vulkan/DX12 capture state remains the
-    // presentation/GPU feedback owner; this CPU mirror exists only to satisfy
-    // the emulation core's read/write/savestate ownership at active HBlank.
-    DoCapture(line);
 }
 
 void SoftRenderer::DrawScanlineA(u32 line, u32* dst)
@@ -690,6 +655,10 @@ void SoftRenderer::DoCapture(u32 line)
     if (!(GPU.VRAMMap_LCDC & (1<<dstvram)))
         return;
 
+    const auto captureCpuStart = RecordNativeGPU2DFrameForFrame
+        ? std::chrono::steady_clock::now()
+        : std::chrono::steady_clock::time_point{};
+
     u16* dst = (u16*)GPU.VRAM[dstvram];
     u32 dstaddr = (((captureCnt >> 18) & 0x3) << 14) + (line * width);
     dst += (dstaddr & 0xFFFF);
@@ -743,6 +712,9 @@ void SoftRenderer::DoCapture(u32 line)
 
     static_assert(VRAMDirtyGranularity == 512);
     GPU.VRAMDirty[dstvram][(dstaddr * 2) / VRAMDirtyGranularity] = true;
+    GPU.RecordGPU2DWrite(
+        GPU2DWriteKind::VRAM, dstvram,
+        (dstaddr * 2u) / VRAMDirtyGranularity);
 
     switch ((captureCnt >> 29) & 0x3)
     {
@@ -850,6 +822,14 @@ void SoftRenderer::DoCapture(u32 line)
             dst);
     }
 #endif
+
+    if (RecordNativeGPU2DFrameForFrame)
+    {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - captureCpuStart).count();
+        NativeGPU2DFrame.RecordSoftwareCaptureLine(
+            static_cast<u64>(elapsed > 0 ? elapsed : 0));
+    }
 }
 
 void SoftRenderer::ApplyMasterBrightness(u16 regval, u32* dst)

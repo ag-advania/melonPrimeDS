@@ -125,6 +125,7 @@ constexpr VkDeviceSize NativeGPU2DInputBytes =
 constexpr VkDeviceSize NativeGPU2DOutputBytes =
     static_cast<VkDeviceSize>(GPU2DNative::ScreenPixelCount) * 2u * sizeof(u32);
 constexpr VkDeviceSize NativeCaptureWords = (4u * 128u * 1024u) / sizeof(u32);
+constexpr VkDeviceSize NativeCaptureBytes = 4u * 128u * 1024u;
 constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
 } // namespace
@@ -433,6 +434,7 @@ void VulkanRenderer3D::Stop()
     ReleaseScaleDependentResources();
 
     NativeReadback.Destroy();
+    NativeCaptureReadback.Destroy();
     NativeResolveBuffer.Destroy();
     DummyCaptureImage.Destroy();
     DummyTextureImage.Destroy();
@@ -620,6 +622,9 @@ bool VulkanRenderer3D::CreateFixedResources()
         return false;
 
     if (!NativeReadback.Create(Device, NativeResolveBytes, "MelonPrime Vulkan native readback"))
+        return false;
+    if (!NativeCaptureReadback.Create(
+            Device, NativeCaptureBytes, "MelonPrime Vulkan native capture readback"))
         return false;
 
     return true;
@@ -2893,6 +2898,86 @@ void VulkanRenderer3D::EnsureFrameReadback()
     FrameReadbackValid = true;
 }
 
+bool VulkanRenderer3D::ReadNativeCapture(
+    u32 bank, u32 start, u32 len, u8* destination)
+{
+    if (bank >= 4u || start >= 4u || !destination
+        || !NativeCaptureStateInitialized || !BlendStateBuffer.IsValid()
+        || !NativeCaptureReadback.IsValid())
+    {
+        return false;
+    }
+
+    // CaptureFrames is also used by the demand-driven 3D readback. Retire
+    // that optional submission before reusing its one command-buffer slot.
+    if (NativeReadbackSubmitted && !FrameReadbackValid)
+        EnsureFrameReadback();
+    if (RuntimeFailed)
+        return false;
+
+    const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+    const VkDeviceSize blockBytes = 32u * 1024u;
+    const VkDeviceSize totalBytes = static_cast<VkDeviceSize>(blockCount) * blockBytes;
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    Vk::FrameContext* frame = CaptureFrames.BeginFrame();
+    if (!frame)
+        return false;
+
+    VkCommandBuffer cmd = frame->CommandBuffer;
+    const VkBuffer nativeCapture = BlendStateBuffer.GetHandle();
+    BufferBarrier(cmd, &nativeCapture, 1,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+
+    const VkDeviceSize captureBase =
+        static_cast<VkDeviceSize>(ScreenWidth) * static_cast<VkDeviceSize>(ScreenHeight)
+        * sizeof(u32);
+    for (u32 i = 0; i < blockCount; ++i)
+    {
+        VkBufferCopy copy{};
+        copy.srcOffset = captureBase
+            + static_cast<VkDeviceSize>(bank) * 128u * 1024u
+            + static_cast<VkDeviceSize>((start + i) & 3u) * blockBytes;
+        copy.dstOffset = static_cast<VkDeviceSize>(i) * blockBytes;
+        copy.size = blockBytes;
+        fns.CmdCopyBuffer(cmd,
+            BlendStateBuffer.GetHandle(), NativeCaptureReadback.GetHandle(), 1, &copy);
+    }
+
+    const VkBuffer readback = NativeCaptureReadback.GetHandle();
+    BufferBarrier(cmd, &readback, 1,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
+    BufferBarrier(cmd, &nativeCapture, 1,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
+    if (!CaptureFrames.SubmitFrame(Device.GetMainQueue()))
+        return false;
+    const VkResult waitResult = fns.WaitForFences(
+        Device.GetHandle(), 1, &frame->InFlightFence, VK_TRUE,
+        1000000000ull);
+    if (waitResult != VK_SUCCESS)
+        return false;
+    if (!NativeCaptureReadback.Invalidate(0, totalBytes))
+        return false;
+    const u8* source = NativeCaptureReadback.GetData();
+    if (!source)
+        return false;
+
+    for (u32 i = 0; i < blockCount; ++i)
+    {
+        const u32 block = (start + i) & 3u;
+        std::memcpy(
+            destination + static_cast<std::size_t>(block) * blockBytes,
+            source + static_cast<std::size_t>(i) * blockBytes,
+            static_cast<std::size_t>(blockBytes));
+    }
+    return true;
+}
+
 bool VulkanRenderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 14>& planes,
     const std::array<const u32*, 2>& lineMeta,
@@ -2972,6 +3057,9 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     RecordVulkanGpuMetric(
         ComposeFrames, GpuMetric::StructuredCompositor,
         VulkanPerf::Counter::StructuredCompositorGpuTimeNs);
+    RecordVulkanGpuMetric(
+        ComposeFrames, GpuMetric::StructuredCompositor,
+        VulkanPerf::Counter::CompositorGpuTimeNs);
     ComposeFrames.WriteTimestamp(
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         GpuMetricQueryIndex(GpuMetric::StructuredCompositor, false));
@@ -3189,25 +3277,21 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         beginDirectWrite(outputSlot.DirectImageBottom);
     }
 
-    // Set-0 slot 1: identical to the rasterizer's set except that binding 13
-    // points at the composed output instead of the native capture buffer.
+    // Stage A: native GPU2D evaluates one 256x192 logical pixel per thread and
+    // writes the structured composition contract. It never writes a scaled
+    // color for the presenter.
     if (!WriteRasterizerDescriptorSet(
-            frameIndex, CompositorSetSlot, outputSlot.Composed.GetHandle(),
-            outputSlot.StructuredInput.GetHandle(),
-            directImageOutput ? outputSlot.DirectImageTop.GetView() : VK_NULL_HANDLE,
-            directImageOutput ? outputSlot.DirectImageBottom.GetView() : VK_NULL_HANDLE))
+            frameIndex, NativeLogicalSetSlot, outputSlot.StructuredInput.GetHandle(),
+            outputSlot.NativeInput.GetHandle(), VK_NULL_HANDLE, VK_NULL_HANDLE))
     {
         ComposeFrames.SubmitFrame(Device.GetMainQueue());
-        SetRuntimeFailure("could not write the compositor descriptor set");
+        SetRuntimeFailure("could not write the native logical GPU2D descriptor set");
         return false;
     }
 
-    VkDescriptorSet compositorSet = Descriptors.GetRasterizerSet(frameIndex, CompositorSetSlot);
+    VkDescriptorSet nativeSet = Descriptors.GetRasterizerSet(frameIndex, NativeLogicalSetSlot);
     fns.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, Layouts.GetPipelineLayout(),
-        Vk::RasterizerSetIndex, 1, &compositorSet, 0, nullptr);
-    // Set 1 is deliberately not bound: Compositor.comp declares no set-1
-    // resource, and rebinding a texture set here could overwrite one the
-    // rasterizer's still-pending submission is reading.
+        Vk::RasterizerSetIndex, 1, &nativeSet, 0, nullptr);
 
     Vk::RasterizerPushConstants push{};
     // Reused as "this frame's 3D image is real", matching the DX12 compositor.
@@ -3219,7 +3303,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     // The padding word is unused by the presentation stages otherwise and is
     // deliberately reused as a mode bit so the shared 32-byte push contract
     // does not change for the rasterizer pipelines.
-    push.Padding = directImageOutput ? 1u : 0u;
+    push.Padding = 16u;
     fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
         0, Vk::PushConstantSize, &push);
 
@@ -3392,6 +3476,7 @@ bool VulkanRenderer3D::CanComposeNativeGPU2D() const noexcept
         && ScaleFactor > 0
         && ShaderStepIdx >= ShaderStepCount
         && Pipelines[VulkanShaders::Pipeline_GPU2DNative] != VK_NULL_HANDLE
+        && Pipelines[VulkanShaders::Pipeline_Compositor] != VK_NULL_HANDLE
         && ComposedOutput
         && FinalFB.IsValid();
 }
@@ -3444,6 +3529,18 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("the native GPU2D frame ring selected an unexpected slot");
         return false;
     }
+    RecordVulkanGpuMetric(
+        ComposeFrames, GpuMetric::NativeGPU2DLogical,
+        VulkanPerf::Counter::NativeGPU2DLogicalGpuTimeNs);
+    RecordVulkanGpuMetric(
+        ComposeFrames, GpuMetric::NativeGPU2DCapture,
+        VulkanPerf::Counter::NativeGPU2DCaptureGpuTimeNs);
+    RecordVulkanGpuMetric(
+        ComposeFrames, GpuMetric::NativeGPU2DResolve,
+        VulkanPerf::Counter::NativeGPU2DResolveGpuTimeNs);
+    RecordVulkanGpuMetric(
+        ComposeFrames, GpuMetric::NativeGPU2DResolve,
+        VulkanPerf::Counter::CompositorGpuTimeNs);
 
     const GPU2DNative::UploadPlan uploadPlan = GPU2DNative::BuildUploadPlan(
         input, outputSlot.UploadedNativeGeneration,
@@ -3457,6 +3554,18 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("the native GPU2D input staging upload failed");
         return false;
     }
+    VulkanPerf::AddCounter(VulkanPerf::Counter::RecorderBlocksScanned,
+        input.Recorder.BlocksScanned);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::RecorderBytesScanned,
+        input.Recorder.BytesScanned);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::RecorderBlocksCopied,
+        input.Recorder.BlocksCopied);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::RecorderBytesCopied,
+        input.Recorder.BytesCopied);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::CaptureCPU2DLines,
+        input.Recorder.CaptureCPU2DLines);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::CaptureCPU2DNs,
+        input.Recorder.CaptureCPU2DNs);
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DInputPackBytes,
         static_cast<u64>(GPU2DNative::PackedFrameBytes()));
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DVRAMUploadBytes,
@@ -3489,6 +3598,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     // BlendStateBuffer. Native capture commands then update that tail in
     // line order below, without a mandatory CPU readback.
     const VkBuffer nativeCapture = BlendStateBuffer.GetHandle();
+    const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
     BufferBarrier(cmd, &nativeCapture, 1,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -3527,6 +3637,11 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    BufferBarrier(cmd, &captureSidecar, 1,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
     FinalFB.RecordLayoutTransition(cmd,
         VK_IMAGE_LAYOUT_GENERAL,
@@ -3535,7 +3650,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
 
     const bool directImageOutput = outputSlot.DirectImageTop.IsValid()
         && outputSlot.DirectImageBottom.IsValid();
-    if (directImageOutput)
+    const bool compositorDirectOutput = directImageOutput && !exactValidation;
+    if (compositorDirectOutput)
     {
         const auto beginDirectWrite = [&](Vk::Image& image) {
             const VkImageLayout previous = image.GetLayout();
@@ -3553,24 +3669,25 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         beginDirectWrite(outputSlot.DirectImageBottom);
     }
 
+    // Stage A writes the logical 2D planes into StructuredInput. Keep this
+    // descriptor set separate from the compositor set, which is updated only
+    // after the logical dispatch has completed.
     if (!WriteRasterizerDescriptorSet(
-            frameIndex, CompositorSetSlot, outputSlot.Composed.GetHandle(),
-            outputSlot.NativeInput.GetHandle(),
-            directImageOutput ? outputSlot.DirectImageTop.GetView() : VK_NULL_HANDLE,
-            directImageOutput ? outputSlot.DirectImageBottom.GetView() : VK_NULL_HANDLE))
+            frameIndex, NativeLogicalSetSlot, outputSlot.StructuredInput.GetHandle(),
+            outputSlot.NativeInput.GetHandle(), VK_NULL_HANDLE, VK_NULL_HANDLE))
     {
         ComposeFrames.SubmitFrame(Device.GetMainQueue());
-        SetRuntimeFailure("could not write the native GPU2D descriptor set");
+        SetRuntimeFailure("could not write the native logical GPU2D descriptor set");
         return false;
     }
 
-    VkDescriptorSet nativeSet = Descriptors.GetRasterizerSet(frameIndex, CompositorSetSlot);
+    VkDescriptorSet nativeSet = Descriptors.GetRasterizerSet(frameIndex, NativeLogicalSetSlot);
     fns.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, Layouts.GetPipelineLayout(),
         Vk::RasterizerSetIndex, 1, &nativeSet, 0, nullptr);
 
     Vk::RasterizerPushConstants push{};
     push.TexWidth = finalFBValid ? 1u : 0u;
-    push.Padding = (directImageOutput ? 1u : 0u)
+    push.Padding = (compositorDirectOutput ? 1u : 0u)
         | (exactValidation ? 2u : 0u);
     fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
         0, Vk::PushConstantSize, &push);
@@ -3578,18 +3695,22 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     Vk::BeginCommandDebugLabel(fns, cmd, "Vulkan.Native.GPU2D");
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_GPU2DNative]);
+    ComposeFrames.WriteTimestamp(
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::NativeGPU2DLogical, false));
     if (input.CaptureEnable != 0u)
     {
+        ComposeFrames.WriteTimestamp(
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, false));
         for (u32 line = 0; line < GPU2DNative::ScreenHeight; ++line)
         {
             push.CaptureYOffset = static_cast<s32>(line);
-            push.Padding = (directImageOutput ? 1u : 0u)
-                | (exactValidation ? 2u : 0u) | 8u; // native one-line pass
+            push.Padding = 16u | 8u; // two logical screens, one line
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
-                DivRoundUp(2u * static_cast<u32>(ScaleFactor), 8u), 1u);
+                DivRoundUp(256u, 8u), 1u, 1u);
             BufferBarrier(cmd, &nativeCapture, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -3600,34 +3721,84 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+                DivRoundUp(static_cast<u32>(ScaleFactor), 8u), 1u);
             BufferBarrier(cmd, &nativeCapture, 1,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            BufferBarrier(cmd, &captureSidecar, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
             VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 2u);
         }
+        ComposeFrames.WriteTimestamp(
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, true));
     }
     else
     {
-        for (u32 line = 0; line < GPU2DNative::ScreenHeight; ++line)
-        {
-            push.CaptureYOffset = static_cast<s32>(line);
-            push.Padding = (directImageOutput ? 1u : 0u)
-                | (exactValidation ? 2u : 0u) | 8u; // native one-line pass
-            fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
-                VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
-            fns.CmdDispatch(cmd,
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
-                DivRoundUp(2u * static_cast<u32>(ScaleFactor), 8u), 1u);
-        }
-        VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount,
-            GPU2DNative::ScreenHeight);
+        push.CaptureYOffset = 0;
+        push.Padding = 16u;
+        fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
+            VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
+        fns.CmdDispatch(cmd, DivRoundUp(256u, 8u), DivRoundUp(384u, 8u), 1u);
+        VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 1u);
     }
+    ComposeFrames.WriteTimestamp(
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::NativeGPU2DLogical, true));
     Vk::EndCommandDebugLabel(fns, cmd);
 
-    if (directImageOutput)
+    // Stage A output is now the input to the existing high-resolution
+    // compositor. This barrier is the only dependency between the two stages
+    // in the normal path; capture adds the line-order barriers above for its
+    // persistent LCDC mirror.
+    const VkBuffer structuredOutput = outputSlot.StructuredInput.GetHandle();
+    BufferBarrier(cmd, &structuredOutput, 1,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+    BufferBarrier(cmd, &captureSidecar, 1,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
+    if (!WriteRasterizerDescriptorSet(
+            frameIndex, CompositorSetSlot, outputSlot.Composed.GetHandle(),
+            outputSlot.StructuredInput.GetHandle(),
+            compositorDirectOutput ? outputSlot.DirectImageTop.GetView() : VK_NULL_HANDLE,
+            compositorDirectOutput ? outputSlot.DirectImageBottom.GetView() : VK_NULL_HANDLE))
+    {
+        ComposeFrames.SubmitFrame(Device.GetMainQueue());
+        SetRuntimeFailure("could not write the structured compositor descriptor set");
+        return false;
+    }
+    VkDescriptorSet compositorSet = Descriptors.GetRasterizerSet(frameIndex, CompositorSetSlot);
+    fns.CmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, Layouts.GetPipelineLayout(),
+        Vk::RasterizerSetIndex, 1, &compositorSet, 0, nullptr);
+    push.TexWidth = finalFBValid ? 1u : 0u;
+    push.CaptureYOffset = 0;
+    push.Padding = compositorDirectOutput ? 1u : 0u;
+    fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(), VK_SHADER_STAGE_COMPUTE_BIT,
+        0, Vk::PushConstantSize, &push);
+    fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
+        Pipelines[VulkanShaders::Pipeline_Compositor]);
+    ComposeFrames.WriteTimestamp(
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::NativeGPU2DResolve, false));
+    fns.CmdDispatch(cmd,
+        DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+        DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u), 1u);
+    ComposeFrames.WriteTimestamp(
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        GpuMetricQueryIndex(GpuMetric::NativeGPU2DResolve, true));
+
+    if (compositorDirectOutput)
     {
         const auto finishDirectRead = [&](Vk::Image& image) {
             image.RecordLayoutTransition(
@@ -3665,8 +3836,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
             VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
         // Restore the storage-buffer access contract before the slot is
-        // recycled. The debug wait below is the only CPU/GPU stall in this
-        // mode; production never records this copy.
+        // recycled. The exact-validation wait below is the only CPU/GPU
+        // stall in this mode; production never records this copy.
         BufferBarrier(cmd, &composed, 1,
             VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);

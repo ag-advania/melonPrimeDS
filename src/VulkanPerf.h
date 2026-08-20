@@ -170,6 +170,17 @@ enum class Counter : u32
     VulkanPresentMode,
     VulkanVsyncEnabled,
     VulkanReflexMode,
+    NativeGPU2DLogicalGpuTimeNs,
+    NativeGPU2DCaptureGpuTimeNs,
+    NativeGPU2DResolveGpuTimeNs,
+    RecorderBlocksScanned,
+    RecorderBytesScanned,
+    RecorderBlocksCopied,
+    RecorderBytesCopied,
+    CaptureCPU2DLines,
+    CaptureCPU2DNs,
+    CompositorGpuTimeNs,
+    PresentWaitNs,
     Count,
 };
 
@@ -507,7 +518,12 @@ inline void MaybeReport()
         "logical_frames_since_last_accepted_present=%llu "
         "distinct_swapchain_images_acquired_since_recreate=%llu "
         "pacing_authority=%llu present_mode=%llu vsync_enabled=%llu "
-        "reflex_mode=%llu\n",
+         "reflex_mode=%llu native_gpu2d_logical_ns=%llu "
+         "native_gpu2d_capture_ns=%llu native_gpu2d_resolve_ns=%llu "
+         "recorder_blocks_scanned=%llu recorder_bytes_scanned=%llu "
+         "recorder_blocks_copied=%llu recorder_bytes_copied=%llu "
+         "capture_cpu_2d_lines=%llu capture_cpu_2d_ns=%llu "
+         "compositor_gpu_ns=%llu present_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::Polygons), count(Counter::Variants),
@@ -591,8 +607,15 @@ inline void MaybeReport()
         count(Counter::VulkanNvLowLatencyOptimizedModeCount),
         count(Counter::VulkanPresentModeIsNvLowLatencyOptimized),
         count(Counter::VulkanPacingAuthority),
-        count(Counter::VulkanPresentMode), count(Counter::VulkanVsyncEnabled),
-        count(Counter::VulkanReflexMode));
+         count(Counter::VulkanPresentMode), count(Counter::VulkanVsyncEnabled),
+         count(Counter::VulkanReflexMode),
+         count(Counter::NativeGPU2DLogicalGpuTimeNs),
+         count(Counter::NativeGPU2DCaptureGpuTimeNs),
+         count(Counter::NativeGPU2DResolveGpuTimeNs),
+         count(Counter::RecorderBlocksScanned), count(Counter::RecorderBytesScanned),
+         count(Counter::RecorderBlocksCopied), count(Counter::RecorderBytesCopied),
+         count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
+         count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
 
     const unsigned long long swapchainImageCount =
         count(Counter::VulkanSwapchainImageCount);
@@ -835,6 +858,17 @@ enum class Counter : u32
     VulkanPresentMode,
     VulkanVsyncEnabled,
     VulkanReflexMode,
+    NativeGPU2DLogicalGpuTimeNs,
+    NativeGPU2DCaptureGpuTimeNs,
+    NativeGPU2DResolveGpuTimeNs,
+    RecorderBlocksScanned,
+    RecorderBytesScanned,
+    RecorderBlocksCopied,
+    RecorderBytesCopied,
+    CaptureCPU2DLines,
+    CaptureCPU2DNs,
+    CompositorGpuTimeNs,
+    PresentWaitNs,
     Count,
 };
 inline constexpr bool IsCompiledIn() noexcept { return false; }

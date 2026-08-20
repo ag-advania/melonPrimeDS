@@ -15,6 +15,7 @@
 #include "DX12Perf.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -825,8 +826,14 @@ bool DX12SurfacePresenter::BeginFrame(
     {
         melonDS::DX12Perf::ScopedCpuTimer waitTimer(
             melonDS::DX12Perf::CpuMetric::PresentSlotWait);
+        const auto waitStart = std::chrono::steady_clock::now();
         if (!WaitForPresentSlot())
             return false;
+        const auto waitNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - waitStart).count();
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::PresentWaitNs,
+            static_cast<std::uint64_t>(waitNs > 0 ? waitNs : 0));
     }
     if (!Resize(width, height))
         return false;

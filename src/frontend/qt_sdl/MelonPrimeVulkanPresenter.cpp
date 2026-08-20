@@ -2001,6 +2001,8 @@ bool VulkanPresenter::BeginFrame(
             VulkanPerf::Counter::VulkanPresenterFrameFenceWaitCount);
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::VulkanPresenterFrameFenceWaitNs, waitNs);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::PresentWaitNs, waitNs);
     }
 #endif
     if (!frame)
@@ -3039,6 +3041,8 @@ void VulkanPresenter::BeginLowLatencyFrame(
                 VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitCount);
             VulkanPerf::AddCounter(
                 VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitNs, waitNs);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::PresentWaitNs, waitNs);
         }
 #endif
         if (waitResult == melonDS::Vk::FrameWaitResult::Timeout)

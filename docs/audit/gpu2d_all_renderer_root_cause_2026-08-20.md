@@ -2,7 +2,7 @@
 
 日付: 2026-08-20
 対象ブランチ: `develop_hud`
-判定: SOURCE / MODEL / BUILD / Software state-load A/B は PASS。現行SHAのVulkan/DX12 physical matrixは未実施。
+判定: SOURCE / MODEL / BUILD / Software・Vulkan・DX12 state-load exact / scale=4 smoke は PASS。14FPSの物理性能測定は未実施。
 
 ## 依頼範囲と添付資料の扱い
 
@@ -46,6 +46,10 @@
 - LCDC VRAM mappingをframe headerではなく各LineStateへ保存し、mid-frame VRAMCNT remapをline単位でnative shaderへ渡すようにした。
 - TimelinePayloadをwrite event数ではなく512-byte内容のhash-consed block versionで保持し、高頻度bitmap/DMA stressで同一内容の反復がoverflowを起こさないことを確認した。`TimelineOverflow` が立ったframeは引き続きvalidにしない fail-closed設計である。
 - FrameInputの大きなaggregateを `Input = {}` でstack temporary化しないよう、trivially-copyable ABIを保ったmemset resetへ変更した。
+- Structured compositionでOBJの `0xD0` flag（OBJ `0x80` と3D `0x40` の併記）を3D層と誤認しないよう、Vulkan/DX12の判定を「`0x40` かつ `0x80` なし」に統一した。これがOBJ選択後にBackdropへ戻る表示破損の直接原因だった。
+- DX12 native GPU2DがStage Aとstructured compositorで同一frameに2つの14-UAV tableをbindできるよう、slot descriptor ringを16枠から `kUavTableSize * 2` へ拡張した。
+- Savestate指定時のstartup transition frameをexact比較へ混ぜず、UI/diagnosticのstate-load通知後にexact検証をarmするようにした。state load後は引き続き全logical pixelを比較する。
+- DX12のBG affine/extended address式をVulkanと同じ明示的なmap/tile base加算へ統一し、オフラインDXBC blobをHLSL変更と同時に再生成した。F1のBG3 direct-color先頭画素でVRAM16値 `0x8623` とSoftware期待値の一致を確認した。
 
 P3のCPU側full pack最適化は、parityと証跡を壊さないため本修正の範囲では実施していない。native pathの通常経路はreadback/compareを行わず、exact validation時だけpixel compareする。
 
@@ -69,7 +73,7 @@ ROM SHA-256: `bcd9c2d408825589c35c6754c0efb547cbae78fbda9ce7f69500a9cab8e70b8f`
 
 ### 現行Software state-load A/B（実測済み）
 
-対象ROMは `C:\DSMPH\melonPrimeDS\all roms\allRoms\0367 - Metroid Prime - Hunters (USA) (Rev 1).nds`、stateは同じディレクトリの `.ml1/.ml2/.ml3/.ml4/.ml5/.ml8`。Scale 1、VSync off、HUD off、startup state loadで現行Software実行を行い、runnerのprocess/config/state markerを各ケースで確認した。
+対象ROMは `C:\DSMPH\melonPrimeDS\all roms\allRoms\0367 - Metroid Prime - Hunters (USA) (Rev 1).nds`、stateは同じディレクトリの `.ml1/.ml2/.ml3/.ml4/.ml5/.ml8`。最終Release binary、Scale 1、savestate-load actionで現行Software実行を行い、runnerのprocess/config/state action/bad markerを各ケースで確認した。
 
 state load直後の最初のcanonical Top/Bottom frame（`256 x 192 x 2` logical pixels）を、既存の独立Software baseline dumpと比較した。許容差0で次の6件すべてが `frames_baseline=1`, `frames_candidate=1`, `mismatches=0` だった。
 
@@ -84,6 +88,8 @@ state load直後の最初のcanonical Top/Bottom frame（`256 x 192 x 2` logical
 
 この現行Software結果は、working treeがdirtyでDebug build infoの埋め込みSHAが `unknown` のため、clean provenance付きphysical証跡とは呼ばない。既存baselineとのcanonical pixel一致という範囲の実測証拠である。
 
+今回の最終candidateで再取得した6件は、F1/F2/F3/F4/F5/F8のすべてで `process exit=0`、`config restore=PASS`、`state action=1`、`bad markers=0` だった。Software側にはnative exact failure/fallbackはなく、各ケースの実行ログとmetadataを `build/gpu2d-validation-20260820-final-software-*-rootfix/` に保存した。
+
 ### Static / model / build evidence（実測済み）
 
 - `py -3 tools\ci\audits\audit-gpu2d-native-temporal-contract.py`: PASS。
@@ -92,21 +98,41 @@ state load直後の最初のcanonical Top/Bottom frame（`256 x 192 x 2` logical
 - Vulkan shader source/generated sync: PASS。114 variants、38 pipelines x 3 tile geometry buckets、manifest hash一致。
 - DX12 shader source/generated sync: PASS。117 generated modules、3 scales、source sync PASS。
 - Release `melonDS` build（Vulkan/DX12 enabled）: PASS。Debug developer buildとrecorder purity targetもPASS。
-- `--build-info-json`: 現行Debug binaryで受理され、schema出力を確認。
+- `python tools/ci/audits/check-vulkan-shaders.py`: PASS。114 variants、SPIR-V validation 114、scale-specialized 608。
+- `python tools/ci/audits/check-dx12-shaders.py`: PASS。HLSLから117 DXBC modulesを再生成し、source/blob同期とFXC検証を完了。
+- `python tools/ci/audits/audit-structured-composition-contract.py`: PASS。
+- `python tools/ci/audits/audit-gpu2d-native-temporal-contract.py`: PASS。
+- `git diff --check`: PASS。`MelonPrimeLifecycle.cpp` の改行をLFへ正規化した。
+- `--build-info-json`: 現行Release binaryで受理されschema出力を確認。ただし埋め込みgit SHA/branchは `unknown` で、runtime provenanceはUNVERIFIED。
 
 これらはsource/static/model/build evidenceであり、実GPU上のVulkan/DX12表示一致を意味しない。
 
 ### Current native physical matrix
 
-- Vulkan F1/F2/F3/F4/F5/F8: **OPEN / NOT RUN for this implementation SHA**。
-- DX12 F1/F2/F3/F4/F5/F8: **OPEN / NOT RUN for this implementation SHA**。
+検証時のsource HEADは `0ed223a026af42526a613677c309d8d046584d5b`。ROM/stateは上記fixture、Release binary、Scale 1、`savestate-load` actionで同一条件に固定した。embedded build-infoのgit fieldsは `unknown` なので provenanceはUNVERIFIEDだが、実行したnative routeとexact countersはログで確認できる。
+
+| renderer | F1/F2/F3/F4/F5/F8 | process/config/state | native exact | fallback | runner gate |
+|---|---|---|---|---|---|
+| Software | 6/6 | `0 / PASS / 1`、bad markers 0 | 対象外 | 0 | PASS |
+| Vulkan | 6/6 | `0 / PASS / 1`、bad markers 0 | fail 0、mismatch 0 | frames 0、lines 0 | capture rows=0のためrunner exit 1。ただしexact gateはPASS |
+| DX12 | 6/6 | `0 / PASS / 1`、bad markers 0 | fail 0、mismatch 0 | frames 0、lines 0 | PASS |
+
+Vulkan/DX12の全12ケースで、state action markerは1、native GPU2D exact failure/mismatch/fallback/fallback-linesはすべて0だった。DX12はF1で発生していたdescriptor table不足とBG3 extended direct-colorの差分を修正後、native route `gpu2d=DX12 gpu3d=DX12 fallback=0` で完了した。Vulkanも `gpu2d=Vulkan gpu3d=Vulkan fallback=0` を確認した。各runの詳細は `build/gpu2d-validation-20260820-final-{software,vulkan,dx12}-*-rootfix/` に保存した。
+
+### Scale=4 smoke
+
+同じUSA Rev1 F1 stateをScale 4で各renderer一度ずつ起動し、process exit 0、config restore PASS、state action 1、bad markers 0を確認した。Vulkan/DX12は起動直後のpipeline compilation中だけSoftware startup fallbackを記録し、その後それぞれ `gpu2d=Vulkan` / `gpu2d=DX12`、`fallback=0` へ復帰した。これは4x起動・表示経路のsmoke PASSであり、14FPSの持続性能を意味しない。
+
+### Remaining evidence gates
+
+- 14FPS targetの物理performance benchmark（固定scene、warmup、測定窓、平均/最低FPS、frame-time distribution）: **NOT RUN / NOT CLAIMED**。
 - OpenGL Classic/Compute runtime matrix: **NOT RUN for this implementation SHA**。
-- Scale 1/4/16 native physical high-resolution capture: **NOT RUN**。source dispatch、shader write bounds、recorder model coverageはPASS。
-- Native GPU capture read/write/remap/savestate/switch and independent hardware capture: **NOT RUN**。
+- Scale 1/4/16 native physical high-resolution captureの独立capture証跡: **NOT RUN**。scale=4の起動smokeとsource dispatch/write-bound/model coverageはPASS。
+- Native GPU capture read/write/remap/savestate/switchの独立hardware capture: **NOT RUN**。
 - macOS/Metal、Linux/BSD、他GPU vendor: **NOT RUN / NOT CLAIMED**。
 
 旧コミットで取得したVulkan/DX12 physical logは履歴資料として扱い、今回の変更のPASS根拠には再利用していない。
 
 ## Provenance / handoff
 
-`.codex` 配下の4件の指示書はuntrackedのまま保持し、コミット対象から除外する。最終コミットSHAとpush先はhandoff本文に記載し、clean provenance付きnative physical matrixを別実施するまで、上記OPEN/NOT RUNを維持する。
+`.codex` 配下の指示書群はuntrackedのまま保持し、コミット対象から除外する。最終コミットSHAとpush先はhandoff本文に記載し、clean provenance付きnative physical matrixを別実施するまで、上記NOT RUN/NOT CLAIMEDを維持する。

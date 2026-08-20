@@ -664,6 +664,8 @@ void GPU::MapVRAM_AB(u32 bank, u8 cnt) noexcept
             break;
         }
     }
+
+    RecordGPU2DWrite(GPU2DWriteKind::Mapping, bank, 0u);
 }
 
 void GPU::MapVRAM_CD(u32 bank, u8 cnt) noexcept
@@ -759,6 +761,7 @@ void GPU::MapVRAM_CD(u32 bank, u8 cnt) noexcept
     }
 
     // TODO sync capture blocks if we get mapped to ARM7?
+    RecordGPU2DWrite(GPU2DWriteKind::Mapping, bank, 0u);
 }
 
 void GPU::MapVRAM_E(u32 bank, u8 cnt) noexcept
@@ -827,6 +830,8 @@ void GPU::MapVRAM_E(u32 bank, u8 cnt) noexcept
             break;
         }
     }
+
+    RecordGPU2DWrite(GPU2DWriteKind::Mapping, bank, 0u);
 }
 
 void GPU::MapVRAM_FG(u32 bank, u8 cnt) noexcept
@@ -935,6 +940,8 @@ void GPU::MapVRAM_FG(u32 bank, u8 cnt) noexcept
             break;
         }
     }
+
+    RecordGPU2DWrite(GPU2DWriteKind::Mapping, bank, 0u);
 }
 
 void GPU::MapVRAM_H(u32 bank, u8 cnt) noexcept
@@ -993,6 +1000,8 @@ void GPU::MapVRAM_H(u32 bank, u8 cnt) noexcept
             break;
         }
     }
+
+    RecordGPU2DWrite(GPU2DWriteKind::Mapping, bank, 0u);
 }
 
 void GPU::MapVRAM_I(u32 bank, u8 cnt) noexcept
@@ -1118,6 +1127,8 @@ void GPU::SampleDisplayFIFO(u32 offset, u32 num)
 
         DispFIFOBuffer[offset+i] = val;
     }
+    if (num != 0u)
+        RecordGPU2DWrite(GPU2DWriteKind::FIFO, 0u, 0u);
 }
 
 void GPU::DisplayFIFO(u32 x) noexcept

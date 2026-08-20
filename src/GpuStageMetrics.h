@@ -17,6 +17,9 @@ namespace melonDS
 enum class GpuMetric : u32
 {
     Raster = 0,
+    NativeGPU2DLogical,
+    NativeGPU2DCapture,
+    NativeGPU2DResolve,
     CaptureSidecar,
     StructuredCompositor,
     PresenterRenderPass,
