@@ -123,6 +123,10 @@ enum class Counter : u32
     PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
+    // A compositor drop is the renderer's backpressure admission event.  The
+    // alias preserves one authoritative counter while exposing the contract's
+    // name to diagnostics and audits.
+    CompositorBackpressureCount = CompositorDropCount,
     CaptureReadCount,
     CaptureValidLineCount,
     CaptureIndependentLineCount,
@@ -469,7 +473,7 @@ inline void MaybeReport()
         "presenter_descriptor_updates=%llu presenter_descriptor_cache_hits=%llu "
         "presenter_descriptor_cache_misses=%llu presenter_descriptor_cache_invalidates=%llu "
         "presenter_descriptor_fallbacks=%llu presenter_descriptor_persistent_creates=%llu "
-        "compositor_descriptor_updates=%llu compose_drops=%llu capture_reads=%llu "
+        "compositor_descriptor_updates=%llu compose_drops=%llu backpressure_count=%llu capture_reads=%llu "
         "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
         "raster_gpu_ns=%llu structured_compositor_gpu_ns=%llu presenter_render_pass_gpu_ns=%llu "
@@ -529,6 +533,7 @@ inline void MaybeReport()
         count(Counter::PresenterDescriptorFallbackCount),
         count(Counter::PresenterDescriptorPersistentCreateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
+        count(Counter::CompositorBackpressureCount),
         count(Counter::CaptureReadCount),
         count(Counter::CaptureValidLineCount), count(Counter::CaptureIndependentLineCount),
         count(Counter::CaptureLegacyOrderedLineCount),
@@ -692,7 +697,7 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     PresenterDescriptorCacheMissCount, PresenterDescriptorCacheInvalidateCount,
     PresenterDescriptorFallbackCount, PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
-    CompositorDropCount, CaptureReadCount,
+    CompositorDropCount, CompositorBackpressureCount = CompositorDropCount, CaptureReadCount,
     CaptureValidLineCount, CaptureIndependentLineCount, CaptureLegacyOrderedLineCount,
     CaptureSidecarDispatchCount, CaptureSidecarBarrierCount, CaptureSidecarGpuTimeNs,
     RasterGpuTimeNs, StructuredCompositorGpuTimeNs, PresenterRenderPassGpuTimeNs,

@@ -176,6 +176,7 @@ struct DX12Renderer3D::OutputState
         DX12::ComPtr<ID3D12Resource> NativeInput;
         DX12::ComPtr<ID3D12Resource> Composed;
         DX12::ComPtr<ID3D12Resource> NativeReadback;
+        DX12::ComPtr<ID3D12Resource> StructuredReadback;
         DX12::ComPtr<ID3D12Resource> DirectTexture;
         u32* StructuredMapped = nullptr;
         u32* NativeMapped = nullptr;
@@ -279,9 +280,19 @@ struct DX12Renderer3D::OutputState
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 D3D12_RESOURCE_FLAG_NONE,
                 L"MelonPrime DX12 native GPU2D exact readback slot");
+            if (GPU2DNative::StageDiagnosticsEnabled())
+            {
+                slot.StructuredReadback = context.CreateBuffer(
+                    static_cast<u64>(kCompositionInputDwords) * sizeof(u32),
+                    D3D12_HEAP_TYPE_READBACK,
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    D3D12_RESOURCE_FLAG_NONE,
+                    L"MelonPrime DX12 GPU2D Stage A diagnostic readback slot");
+            }
             if (!slot.StructuredInput || !slot.StructuredStaging
                 || !slot.NativeInput || !slot.NativeStaging || !slot.Composed
-                || !slot.NativeReadback)
+                || !slot.NativeReadback
+                || (GPU2DNative::StageDiagnosticsEnabled() && !slot.StructuredReadback))
                 return false;
 
             D3D12_RANGE noRead{0, 0};
@@ -3280,6 +3291,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 {
     LastComposeResult = GPU2DComposeResult::Unavailable;
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
+    const bool stageDiagnostics = GPU2DNative::StageDiagnosticsEnabled();
+    const bool diagnosticReadback = exactValidation || stageDiagnostics;
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
@@ -3300,25 +3313,39 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         return false;
     }
 
-    u32 slotIndex = 0;
+    u32 slotIndex = kCompositorFramesInFlight;
+    ID3D12GraphicsCommandList* list = nullptr;
     {
         std::lock_guard<std::mutex> lock(state->Mutex);
-        slotIndex = state->NextSlot;
-        state->NextSlot = (state->NextSlot + 1u) % kCompositorFramesInFlight;
+        const u32 preferred = state->NextSlot;
+        for (u32 offset = 0; offset < kCompositorFramesInFlight; ++offset)
+        {
+            const u32 candidate = (preferred + offset) % kCompositorFramesInFlight;
+            OutputState::Slot& candidateSlot = state->Slots[candidate];
+            if (static_cast<int>(candidate) == state->PublishedSlot
+                || candidateSlot.PresenterRefs.load(std::memory_order_acquire) != 0)
+            {
+                continue;
+            }
+            list = candidateSlot.Commands.TryBegin();
+            if (!list)
+                continue;
+            slotIndex = candidate;
+            state->NextSlot = (candidate + 1u) % kCompositorFramesInFlight;
+            break;
+        }
+    }
+    if (slotIndex == kCompositorFramesInFlight || !list)
+    {
+        DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
+        return false;
     }
     OutputState::Slot& slot = state->Slots[slotIndex];
-    if (slot.PresenterRefs.load(std::memory_order_acquire) != 0)
+    u64 rendererSerial = 0;
     {
-        DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
-        LastComposeResult = GPU2DComposeResult::Backpressure;
-        return false;
-    }
-    ID3D12GraphicsCommandList* list = slot.Commands.TryBegin();
-    if (!list)
-    {
-        DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
-        LastComposeResult = GPU2DComposeResult::Backpressure;
-        return false;
+        std::lock_guard<std::mutex> lock(state->Mutex);
+        rendererSerial = state->NextSerial;
     }
     RecordDX12GpuMetric(
         slot.Commands, GpuMetric::NativeGPU2DLogical,
@@ -3560,7 +3587,27 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 
     InsertUavBarrier(list, slot.StructuredInput.Get());
     InsertUavBarrier(list, CaptureSidecarBuffer.Get());
-    const bool compositorDirectOutput = slot.DirectTexture && !exactValidation;
+    if (stageDiagnostics)
+    {
+        // Developer-only Stage A readback.  Keep the structured planes in a
+        // UAV state for the compositor after the copy; shipping never creates
+        // or touches this readback resource.
+        TransitionBuffer(
+            list,
+            slot.StructuredInput.Get(),
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            D3D12_RESOURCE_STATE_COPY_SOURCE);
+        list->CopyBufferRegion(
+            slot.StructuredReadback.Get(), 0,
+            slot.StructuredInput.Get(), 0,
+            static_cast<u64>(kCompositionInputDwords) * sizeof(u32));
+        TransitionBuffer(
+            list,
+            slot.StructuredInput.Get(),
+            D3D12_RESOURCE_STATE_COPY_SOURCE,
+            D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    }
+    const bool compositorDirectOutput = slot.DirectTexture && !diagnosticReadback;
     if (!BindCompositionUavTable(
             list, slot.Descriptors, CompositorUavCpu[slotIndex]))
     {
@@ -3602,7 +3649,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
     }
 
-    if (exactValidation)
+    if (diagnosticReadback)
     {
         InsertUavBarrier(list, slot.Composed.Get());
         TransitionBuffer(
@@ -3632,7 +3679,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         return false;
     }
 
-    if (exactValidation)
+    if (diagnosticReadback)
     {
         slot.Commands.WaitIdle();
         D3D12_RANGE readRange{0, static_cast<SIZE_T>(kNativeGPU2DOutputBytes)};
@@ -3658,50 +3705,81 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         DX12Perf::AddCounter(
             DX12Perf::Counter::NativeGPU2DReadbackBytes, kNativeGPU2DOutputBytes);
 
-        const GPU2DNative::CompareResult result = GPU2DNative::CompareExact(
-            expectedTop, expectedBottom,
-            actual.get(), actual.get() + GPU2DNative::ScreenPixelCount);
-        DX12Perf::AddCounter(
-            DX12Perf::Counter::NativeGPU2DMismatchCount,
-            result.TotalMismatchCount);
-        if (!result.Exact())
+        if (stageDiagnostics)
         {
-            if (result.SampleCount != 0u)
+            const D3D12_RANGE structuredReadRange{
+                0, static_cast<SIZE_T>(kCompositionInputDwords * sizeof(u32))};
+            void* structuredMapped = nullptr;
+            if (FAILED(slot.StructuredReadback->Map(
+                    0, &structuredReadRange, &structuredMapped)) || !structuredMapped)
             {
-                const GPU2DNative::Mismatch& sample = result.Samples[0];
-                const u32 engine = input.ScreenSource[
-                    sample.Screen * GPU2DNative::ScreenHeight + sample.Y] & 1u;
-                const GPU2DNative::LineState& state = input.Lines[
-                    engine * GPU2DNative::ScreenHeight + sample.Y];
-                Platform::Log(Platform::LogLevel::Error,
-                    "DX12 native GPU2D exact mismatch frame=%llu total=%u top=%u bottom=%u "
-                    "first=screen%u(%u,%u) expected=0x%08X actual=0x%08X engine=%u "
-                    "DispCnt=0x%08X Layer=0x%08X BGCnt0=0x%08X WinRegs=0x%08X "
-                    "BlendCnt=0x%08X Master=0x%08X Screens=%u/%u LineScreens=%u "
-                    "ExpectedRow8=%08X/%08X Capture=0x%08X\n",
-                    static_cast<unsigned long long>(generation),
-                    result.TotalMismatchCount, result.TopMismatchCount,
-                    result.BottomMismatchCount, sample.Screen, sample.X, sample.Y,
-                    sample.Expected, sample.Actual, engine, state.DispCnt,
-                    state.LayerEnable, state.BGCnt[0], state.WinRegs,
-                    state.BlendCnt, state.MasterBrightness, input.ScreensEnabled,
-                    input.ScreenSwap, state.ScreensEnabled,
-                    expectedTop[8u * GPU2DNative::ScreenWidth],
-                    expectedBottom[8u * GPU2DNative::ScreenWidth], state.CaptureCnt);
+                SetRuntimeFailure("native GPU2D Stage A readback mapping failed");
+                return false;
             }
-            SetRuntimeFailure("native GPU2D exact differential mismatch");
-            return false;
+            GPU2DNative::LogStageSnapshot(
+                "DX12", input.Generation.Frame, input.Generation.Frame,
+                rendererSerial, generation, slotIndex, input,
+                static_cast<const u32*>(structuredMapped),
+                actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
+                expectedTop, expectedBottom);
+            const D3D12_RANGE noStructuredWrite{0, 0};
+            slot.StructuredReadback->Unmap(0, &noStructuredWrite);
+        }
+
+        if (exactValidation)
+        {
+            const GPU2DNative::CompareResult result = GPU2DNative::CompareExact(
+                expectedTop, expectedBottom,
+                actual.get(), actual.get() + GPU2DNative::ScreenPixelCount);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DMismatchCount,
+                result.TotalMismatchCount);
+            if (!result.Exact())
+            {
+                if (result.SampleCount != 0u)
+                {
+                    const GPU2DNative::Mismatch& sample = result.Samples[0];
+                    const u32 engine = input.ScreenSource[
+                        sample.Screen * GPU2DNative::ScreenHeight + sample.Y] & 1u;
+                    const GPU2DNative::LineState& state = input.Lines[
+                        engine * GPU2DNative::ScreenHeight + sample.Y];
+                    Platform::Log(Platform::LogLevel::Error,
+                        "DX12 native GPU2D exact mismatch frame=%llu total=%u top=%u bottom=%u "
+                        "first=screen%u(%u,%u) expected=0x%08X actual=0x%08X engine=%u "
+                        "DispCnt=0x%08X Layer=0x%08X BGCnt0=0x%08X WinRegs=0x%08X "
+                        "BlendCnt=0x%08X Master=0x%08X Screens=%u/%u LineScreens=%u "
+                        "ExpectedRow8=%08X/%08X Capture=0x%08X\n",
+                        static_cast<unsigned long long>(generation),
+                        result.TotalMismatchCount, result.TopMismatchCount,
+                        result.BottomMismatchCount, sample.Screen, sample.X, sample.Y,
+                        sample.Expected, sample.Actual, engine, state.DispCnt,
+                        state.LayerEnable, state.BGCnt[0], state.WinRegs,
+                        state.BlendCnt, state.MasterBrightness, input.ScreensEnabled,
+                        input.ScreenSwap, state.ScreensEnabled,
+                        expectedTop[8u * GPU2DNative::ScreenWidth],
+                        expectedBottom[8u * GPU2DNative::ScreenWidth], state.CaptureCnt);
+                }
+                SetRuntimeFailure("native GPU2D exact differential mismatch");
+                return false;
+            }
         }
     }
 
     {
         std::lock_guard<std::mutex> lock(state->Mutex);
-        slot.Frame.Serial = state->NextSerial++;
+        slot.Frame.Serial = rendererSerial;
+        ++state->NextSerial;
         slot.Frame.Generation = generation;
         state->PublishedSlot = static_cast<int>(slotIndex);
         ComposedGeneration = generation;
         PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
+    }
+    if (stageDiagnostics)
+    {
+        GPU2DNative::LogPresentedIdentity(
+            "DX12", input.Generation.Frame, slot.Frame.Serial,
+            generation, slotIndex);
     }
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFrames);
     slot.NativeUploadInitialized = true;
@@ -3920,6 +3998,9 @@ RendererOutputLease DX12Renderer3D::AcquireComposedOutputLease()
 
     OutputState::Slot& slot = state->Slots[state->PublishedSlot];
     slot.PresenterRefs.fetch_add(1, std::memory_order_relaxed);
+    GPU2DNative::LogPresentedIdentity(
+        "DX12", slot.Frame.Generation, slot.Frame.Serial,
+        slot.Frame.Generation, static_cast<u32>(state->PublishedSlot));
     auto release = +[](void* opaque) {
         auto* leasedSlot = static_cast<OutputState::Slot*>(opaque);
         const u32 previous = leasedSlot->PresenterRefs.fetch_sub(1, std::memory_order_release);

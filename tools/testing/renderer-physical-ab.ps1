@@ -40,6 +40,7 @@ param(
     [string]$Hud = 'On',
     [switch]$AllowUnverifiedBinary,
     [switch]$RequireCleanProvenance,
+    [switch]$ExactGPU2DValidation,
     [switch]$SkipDiagnosticStartupSavestate,
     [ValidateRange(0,600)] [int]$CaptureFrames = 0,
     [ValidateRange(1,1000)] [int]$CaptureIntervalMs = 33,
@@ -257,6 +258,8 @@ $oldState = $env:MELONPRIME_TEST_SAVESTATE
 $oldHud = $env:MELONPRIME_TEST_CUSTOM_HUD_OFF
 $oldPhysicalState = $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH
 $oldFrameDumpTrigger = $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE
+$oldExactGPU2DValidation = $env:MELONPRIME_GPU2D_EXACT_VALIDATE
+$oldGPU2DStageDiagnostics = $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS
 $proc = $null
 $window = [IntPtr]::Zero
 $configRestored = -not $hadConfig
@@ -438,6 +441,7 @@ try {
         'frame_limit=' + $frameLimitName + [Environment]::NewLine +
         'low_latency=' + $LowLatency + [Environment]::NewLine +
         'hud=' + $Hud + [Environment]::NewLine +
+        'exact_gpu2d_validation=' + $ExactGPU2DValidation.IsPresent + [Environment]::NewLine +
         'action=' + $Action + [Environment]::NewLine +
         'action_seed=' + $ActionSeed + [Environment]::NewLine +
         'action_order=' + $actionOrder + [Environment]::NewLine
@@ -456,6 +460,13 @@ try {
     if ($Hud -eq 'Off') { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = '1' } else { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue }
     if ($null -ne $savestateSlotPathForApp) { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $savestateSlotPathForApp } else { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue }
     if ($null -ne $frameDumpTrigger) { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $frameDumpTrigger } else { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue }
+    if ($ExactGPU2DValidation) {
+        $env:MELONPRIME_GPU2D_EXACT_VALIDATE = '1'
+        $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS = '1'
+    } else {
+        Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue
+        Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS -ErrorAction SilentlyContinue
+    }
 
     $processStart = Record-Phase 'process_start'
     $proc = Start-Process -FilePath $exe -ArgumentList ('"' + $launchRomPath + '"') -WorkingDirectory $build -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
@@ -508,6 +519,8 @@ finally {
     if ($null -eq $oldHud) { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = $oldHud }
     if ($null -eq $oldPhysicalState) { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $oldPhysicalState }
     if ($null -eq $oldFrameDumpTrigger) { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $oldFrameDumpTrigger }
+    if ($null -eq $oldExactGPU2DValidation) { Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_EXACT_VALIDATE = $oldExactGPU2DValidation }
+    if ($null -eq $oldGPU2DStageDiagnostics) { Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS = $oldGPU2DStageDiagnostics }
 }
 
 $exitCode = -1
@@ -593,6 +606,8 @@ $manifestObject = [ordered]@{
         frame_limit = $frameLimitName
         low_latency = $LowLatency
         hud = $Hud
+        exact_gpu2d_validation = [bool]$ExactGPU2DValidation
+        stage_diagnostics = [bool]$ExactGPU2DValidation
         action = $Action
         action_seed = $ActionSeed
         action_order = $actionSequence
@@ -662,6 +677,8 @@ $manifestObject = [ordered]@{
         savestate_action_marker = $stateActionMarker
         gpu2d_frame_dump_trigger_exists = if ($null -ne $frameDumpTrigger) { Test-Path -LiteralPath $frameDumpTrigger } else { $false }
         custom_hud_off_marker = $hudOffMarker
+        exact_gpu2d_validation_requested = [bool]$ExactGPU2DValidation
+        stage_diagnostics_requested = [bool]$ExactGPU2DValidation
         capture_rows = $captureRows
         frame_rows = $frameRows
         bad_marker_count = $badMarkers.Count
@@ -681,6 +698,8 @@ vsync=$vsyncName
 frame_limit=$frameLimitName
 low_latency=$LowLatency
 hud=$Hud
+exact_gpu2d_validation=$($ExactGPU2DValidation.IsPresent.ToString().ToLowerInvariant())
+stage_diagnostics=$($ExactGPU2DValidation.IsPresent.ToString().ToLowerInvariant())
 action=$Action
 action_seed=$ActionSeed
 action_order=$actionOrder

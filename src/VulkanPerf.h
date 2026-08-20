@@ -120,6 +120,10 @@ enum class Counter : u32
     PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
+    // Every compositor drop is a non-blocking backpressure admission failure;
+    // keep the explicit semantic alias for audit/report consumers without
+    // allocating a second counter or double-counting the event.
+    CompositorBackpressureCount = CompositorDropCount,
     CaptureValidLineCount,
     CaptureIndependentLineCount,
     CaptureLegacyOrderedLineCount,
@@ -510,7 +514,7 @@ inline void MaybeReport()
         "presenter_descriptor_cache_hits=%llu presenter_descriptor_cache_misses=%llu "
         "presenter_descriptor_cache_invalidates=%llu presenter_descriptor_fallbacks=%llu "
         "presenter_descriptor_persistent_creates=%llu "
-        "compositor_descriptor_updates=%llu compose_drops=%llu "
+        "compositor_descriptor_updates=%llu compose_drops=%llu backpressure_count=%llu "
         "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
         "raster_gpu_ns=%llu structured_compositor_gpu_ns=%llu presenter_render_pass_gpu_ns=%llu "
@@ -587,6 +591,7 @@ inline void MaybeReport()
         count(Counter::PresenterDescriptorFallbackCount),
         count(Counter::PresenterDescriptorPersistentCreateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
+        count(Counter::CompositorBackpressureCount),
         count(Counter::CaptureValidLineCount), count(Counter::CaptureIndependentLineCount),
         count(Counter::CaptureLegacyOrderedLineCount),
         count(Counter::CaptureSidecarDispatchCount), count(Counter::CaptureSidecarBarrierCount),
@@ -869,6 +874,7 @@ enum class Counter : u32
     PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
+    CompositorBackpressureCount = CompositorDropCount,
     CaptureValidLineCount,
     CaptureIndependentLineCount,
     CaptureLegacyOrderedLineCount,

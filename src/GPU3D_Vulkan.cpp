@@ -144,12 +144,14 @@ struct VulkanRenderer3D::OutputState
         Vk::Buffer NativeInput;
         Vk::Buffer Composed;
         Vk::ReadbackBuffer NativeReadback;
+        Vk::ReadbackBuffer StructuredReadback;
         Vk::Image DirectImageTop;
         Vk::Image DirectImageBottom;
         StructuredComposition::GenerationState UploadedContentGeneration{};
         GPU2DNative::FrameGeneration UploadedNativeGeneration{};
         bool StructuredUploadInitialized = false;
         bool NativeUploadInitialized = false;
+        u64 LastSubmittedFrame = 0;
         VulkanPresentedFrame Frame;
         std::atomic<u32> PresenterRefs{0};
     };
@@ -214,8 +216,13 @@ struct VulkanRenderer3D::OutputState
                     "MelonPrime Vulkan composed output slot"))
                 return false;
             if (!slot.NativeReadback.Create(
-                    Device, screenBytes * 2u,
-                    "MelonPrime Vulkan native GPU2D exact readback slot"))
+                Device, screenBytes * 2u,
+                "MelonPrime Vulkan native GPU2D exact readback slot"))
+                return false;
+            if (GPU2DNative::StageDiagnosticsEnabled()
+                && !slot.StructuredReadback.Create(
+                    Device, StructuredInputBytes,
+                    "MelonPrime Vulkan GPU2D Stage A diagnostic readback slot"))
                 return false;
         }
 
@@ -3034,23 +3041,6 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     const StructuredComposition::CaptureLineAnalysis captureAnalysis =
         StructuredComposition::AnalyzeCaptureDependencies(planes, captureCommands);
 
-    const u32 nextSlot = static_cast<u32>(
-        (ComposeFrames.GetAbsoluteFrame() - 1u) % CompositorFramesInFlight);
-    if (ComposedOutput->Slots[nextSlot].PresenterRefs.load(std::memory_order_acquire) != 0)
-    {
-        // The presenter is still using this slot. Dropping one composed frame
-        // is preferable to blocking VBlank on presentation; the previously
-        // published frame remains valid and is reused.
-        VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
-        LastComposeResult = GPU2DComposeResult::Backpressure;
-        return false;
-    }
-
-    OutputState::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
-
-    // Acquire the compositor ring slot before touching its mapped staging
-    // buffer.  The slot's previous submission may still be reading that
-    // staging memory, so generation comparison alone is not a safe acquire.
     const Vk::DeviceDispatch& fns = Device.Fns();
     Vk::FrameContext* frame = ComposeFrames.TryBeginFrame();
     if (!frame)
@@ -3061,12 +3051,43 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     }
     VkCommandBuffer cmd = frame->CommandBuffer;
     const u32 frameIndex = ComposeFrames.GetFrameIndex();
-    if (frameIndex != nextSlot)
+    u32 nextSlot = CompositorFramesInFlight;
+    {
+        // A presenter lease makes the published slot immutable, but it must
+        // not force the producer to reuse one fixed ring index.  Search every
+        // unpublished slot whose previous GPU submission has retired.  The
+        // command ring has already passed its non-blocking readiness probe,
+        // so this remains a drop-only path when all resources are occupied.
+        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
+        const u64 completedFrame = ComposeFrames.GetCompletedFrame();
+        for (u32 offset = 0; offset < CompositorFramesInFlight; ++offset)
+        {
+            const u32 candidate = (frameIndex + offset) % CompositorFramesInFlight;
+            OutputState::Slot& slot = ComposedOutput->Slots[candidate];
+            if (static_cast<int>(candidate) == ComposedOutput->PublishedSlot
+                || slot.PresenterRefs.load(std::memory_order_acquire) != 0
+                || slot.LastSubmittedFrame > completedFrame)
+            {
+                continue;
+            }
+            nextSlot = candidate;
+            break;
+        }
+    }
+    if (nextSlot == CompositorFramesInFlight)
     {
         ComposeFrames.SubmitFrame(Device.GetMainQueue());
-        SetRuntimeFailure("the compositor frame ring selected an unexpected slot");
+        VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
+
+    OutputState::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
+
+    // Acquire the compositor ring slot before touching its mapped staging
+    // buffer.  The slot's previous submission has been checked against the
+    // completed command-ring frame above, so generation comparison alone is
+    // never used as a reuse proof.
     RecordVulkanGpuMetric(
         ComposeFrames, GpuMetric::CaptureSidecar,
         VulkanPerf::Counter::CaptureSidecarGpuTimeNs);
@@ -3442,6 +3463,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         VulkanPerf::AddCounter(VulkanPerf::Counter::FallbackCompositorBufferFrames);
     }
 
+    const u64 submittedComposeFrame = ComposeFrames.GetCurrentRecordingFrameNumber();
     bool composeSubmitted = false;
     {
         VulkanPerf::ScopedCpuTimer submitTimer(VulkanPerf::CpuMetric::QueueSubmit);
@@ -3452,6 +3474,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         SetRuntimeFailure("compositor command submission failed");
         return false;
     }
+    outputSlot.LastSubmittedFrame = submittedComposeFrame;
 
     if (uploadRequired)
     {
@@ -3507,6 +3530,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
 {
     LastComposeResult = GPU2DComposeResult::Unavailable;
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
+    const bool stageDiagnostics = GPU2DNative::StageDiagnosticsEnabled();
+    const bool diagnosticReadback = exactValidation || stageDiagnostics;
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
@@ -3528,16 +3553,6 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         return false;
     }
 
-    const u32 nextSlot = static_cast<u32>(
-        (ComposeFrames.GetAbsoluteFrame() - 1u) % CompositorFramesInFlight);
-    if (ComposedOutput->Slots[nextSlot].PresenterRefs.load(std::memory_order_acquire) != 0)
-    {
-        VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
-        LastComposeResult = GPU2DComposeResult::Backpressure;
-        return false;
-    }
-
-    OutputState::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
     const Vk::DeviceDispatch& fns = Device.Fns();
     Vk::FrameContext* frame = ComposeFrames.TryBeginFrame();
     if (!frame)
@@ -3548,11 +3563,36 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     }
     VkCommandBuffer cmd = frame->CommandBuffer;
     const u32 frameIndex = ComposeFrames.GetFrameIndex();
-    if (frameIndex != nextSlot)
+    u32 nextSlot = CompositorFramesInFlight;
+    {
+        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
+        const u64 completedFrame = ComposeFrames.GetCompletedFrame();
+        for (u32 offset = 0; offset < CompositorFramesInFlight; ++offset)
+        {
+            const u32 candidate = (frameIndex + offset) % CompositorFramesInFlight;
+            OutputState::Slot& slot = ComposedOutput->Slots[candidate];
+            if (static_cast<int>(candidate) == ComposedOutput->PublishedSlot
+                || slot.PresenterRefs.load(std::memory_order_acquire) != 0
+                || slot.LastSubmittedFrame > completedFrame)
+            {
+                continue;
+            }
+            nextSlot = candidate;
+            break;
+        }
+    }
+    if (nextSlot == CompositorFramesInFlight)
     {
         ComposeFrames.SubmitFrame(Device.GetMainQueue());
-        SetRuntimeFailure("the native GPU2D frame ring selected an unexpected slot");
+        VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
+    }
+    OutputState::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
+    u64 rendererSerial = 0;
+    {
+        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
+        rendererSerial = ComposedOutput->NextSerial;
     }
     RecordVulkanGpuMetric(
         ComposeFrames, GpuMetric::NativeGPU2DLogical,
@@ -3709,7 +3749,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
 
     const bool directImageOutput = outputSlot.DirectImageTop.IsValid()
         && outputSlot.DirectImageBottom.IsValid();
-    const bool compositorDirectOutput = directImageOutput && !exactValidation;
+    const bool compositorDirectOutput = directImageOutput && !diagnosticReadback;
     if (compositorDirectOutput)
     {
         const auto beginDirectWrite = [&](Vk::Image& image) {
@@ -3854,6 +3894,31 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
+    if (stageDiagnostics)
+    {
+        // Stage A is the structured native logical contract.  The copy is
+        // developer-only and is deliberately taken before Stage B consumes
+        // the planes, so a blank can be attributed without guessing from the
+        // final presenter image.
+        BufferBarrier(cmd, &structuredOutput, 1,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
+        VkBufferCopy structuredCopy{};
+        structuredCopy.size = StructuredInputBytes;
+        fns.CmdCopyBuffer(
+            cmd,
+            outputSlot.StructuredInput.GetHandle(),
+            outputSlot.StructuredReadback.GetHandle(), 1, &structuredCopy);
+        const VkBuffer structuredReadback = outputSlot.StructuredReadback.GetHandle();
+        BufferBarrier(cmd, &structuredReadback, 1,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
+        BufferBarrier(cmd, &structuredOutput, 1,
+            VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
+    }
+
     if (!WriteRasterizerDescriptorSet(
             frameIndex, CompositorSetSlot, outputSlot.Composed.GetHandle(),
             outputSlot.StructuredInput.GetHandle(),
@@ -3904,7 +3969,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         VulkanPerf::AddCounter(VulkanPerf::Counter::FallbackCompositorBufferFrames);
     }
 
-    if (exactValidation)
+    if (diagnosticReadback)
     {
         const VkBuffer composed = outputSlot.Composed.GetHandle();
         BufferBarrier(cmd, &composed, 1,
@@ -3929,13 +3994,15 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT);
     }
 
+    const u64 submittedNativeFrame = ComposeFrames.GetCurrentRecordingFrameNumber();
     if (!ComposeFrames.SubmitFrame(Device.GetMainQueue()))
     {
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
+    outputSlot.LastSubmittedFrame = submittedNativeFrame;
 
-    if (exactValidation)
+    if (diagnosticReadback)
     {
         const VkResult waitResult = fns.WaitForFences(
             Device.GetHandle(), 1, &frame->InFlightFence, VK_TRUE,
@@ -3970,56 +4037,81 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 | ((((bgra8 >> 8u) & 0xFFu) >> 2u) << 8u)
                 | (((bgra8 & 0xFFu) >> 2u) << 16u);
         }
-        const GPU2DNative::CompareResult result = GPU2DNative::CompareExact(
-            expectedTop, expectedBottom,
-            actual.get(), actual.get() + GPU2DNative::ScreenPixelCount);
-        VulkanPerf::AddCounter(
-            VulkanPerf::Counter::NativeGPU2DMismatchCount,
-            result.TotalMismatchCount);
-        if (!result.Exact())
+        const u32* structured = nullptr;
+        if (stageDiagnostics)
         {
-            if (result.SampleCount != 0u)
+            if (!outputSlot.StructuredReadback.Invalidate(0, StructuredInputBytes))
             {
-                const GPU2DNative::Mismatch& sample = result.Samples[0];
-                const u32 engine = input.ScreenSource[
-                    sample.Screen * GPU2DNative::ScreenHeight + sample.Y] & 1u;
-                const GPU2DNative::LineState& state = input.Lines[
-                    engine * GPU2DNative::ScreenHeight + sample.Y];
-                Platform::Log(Platform::LogLevel::Error,
-                    "Vulkan native GPU2D exact mismatch frame=%llu total=%u top=%u bottom=%u "
-                    "first=screen%u(%u,%u) expected=0x%08X actual=0x%08X engine=%u "
-                    "DispCnt=0x%08X Layer=0x%08X OBJ=0x%08X Blank=0x%08X Unit=0x%08X "
-                    "BGCnt=0x%08X/0x%08X/0x%08X/0x%08X "
-                    "BGPos3=%u,%u WinRegs=0x%08X BlendCnt=0x%08X Master=0x%08X "
-                    "Screens=%u/%u LineScreens=%u ExpectedRow0=%08X/%08X "
-                    "Capture=0x%08X Route=%u/%u PaletteA0=0x%02X%02X PaletteB0=0x%02X%02X "
-                    "BG0=0x%02X%02X%02X%02X BG4000=0x%02X%02X BG4040=0x%02X%02X\n",
-                    static_cast<unsigned long long>(generation),
-                    result.TotalMismatchCount, result.TopMismatchCount,
-                    result.BottomMismatchCount, sample.Screen, sample.X, sample.Y,
-                    sample.Expected, sample.Actual, engine, state.DispCnt,
-                    state.LayerEnable, state.OBJEnable, state.ForcedBlank,
-                    state.UnitEnabled, state.BGCnt[0], state.BGCnt[1],
-                    state.BGCnt[2], state.BGCnt[3], state.BGXPos[3],
-                    state.BGYPos[3], state.WinRegs, state.BlendCnt,
-                    state.MasterBrightness, input.ScreensEnabled,
-                    input.ScreenSwap, state.ScreensEnabled,
-                    expectedTop[0], expectedBottom[0], state.CaptureCnt,
-                    input.ScreenSource[0u * GPU2DNative::ScreenHeight + sample.Y],
-                    input.ScreenSource[1u * GPU2DNative::ScreenHeight + sample.Y],
-                    input.Palette[1u], input.Palette[0u],
-                    input.Palette[1025u], input.Palette[1024u],
-                    input.Engine[engine].BGVRAM[0],
-                    input.Engine[engine].BGVRAM[1],
-                    input.Engine[engine].BGVRAM[2],
-                    input.Engine[engine].BGVRAM[3],
-                    input.Engine[engine].BGVRAM[0x4001u],
-                    input.Engine[engine].BGVRAM[0x4000u],
-                    input.Engine[engine].BGVRAM[0x4041u],
-                    input.Engine[engine].BGVRAM[0x4040u]);
+                SetRuntimeFailure("native GPU2D Stage A readback invalidation failed");
+                return false;
             }
-            SetRuntimeFailure("native GPU2D exact differential mismatch");
-            return false;
+            structured = reinterpret_cast<const u32*>(
+                outputSlot.StructuredReadback.GetData());
+            if (!structured)
+            {
+                SetRuntimeFailure("native GPU2D Stage A readback is not mapped");
+                return false;
+            }
+            GPU2DNative::LogStageSnapshot(
+                "Vulkan", input.Generation.Frame, input.Generation.Frame,
+                rendererSerial, generation, nextSlot, input, structured,
+                actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
+                expectedTop, expectedBottom);
+        }
+
+        if (exactValidation)
+        {
+            const GPU2DNative::CompareResult result = GPU2DNative::CompareExact(
+                expectedTop, expectedBottom,
+                actual.get(), actual.get() + GPU2DNative::ScreenPixelCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::NativeGPU2DMismatchCount,
+                result.TotalMismatchCount);
+            if (!result.Exact())
+            {
+                if (result.SampleCount != 0u)
+                {
+                    const GPU2DNative::Mismatch& sample = result.Samples[0];
+                    const u32 engine = input.ScreenSource[
+                        sample.Screen * GPU2DNative::ScreenHeight + sample.Y] & 1u;
+                    const GPU2DNative::LineState& state = input.Lines[
+                        engine * GPU2DNative::ScreenHeight + sample.Y];
+                    Platform::Log(Platform::LogLevel::Error,
+                        "Vulkan native GPU2D exact mismatch frame=%llu total=%u top=%u bottom=%u "
+                        "first=screen%u(%u,%u) expected=0x%08X actual=0x%08X engine=%u "
+                        "DispCnt=0x%08X Layer=0x%08X OBJ=0x%08X Blank=0x%08X Unit=0x%08X "
+                        "BGCnt=0x%08X/0x%08X/0x%08X/0x%08X "
+                        "BGPos3=%u,%u WinRegs=0x%08X BlendCnt=0x%08X Master=0x%08X "
+                        "Screens=%u/%u LineScreens=%u ExpectedRow0=%08X/%08X "
+                        "Capture=0x%08X Route=%u/%u PaletteA0=0x%02X%02X PaletteB0=0x%02X%02X "
+                        "BG0=0x%02X%02X%02X%02X BG4000=0x%02X%02X BG4040=0x%02X%02X\n",
+                        static_cast<unsigned long long>(generation),
+                        result.TotalMismatchCount, result.TopMismatchCount,
+                        result.BottomMismatchCount, sample.Screen, sample.X, sample.Y,
+                        sample.Expected, sample.Actual, engine, state.DispCnt,
+                        state.LayerEnable, state.OBJEnable, state.ForcedBlank,
+                        state.UnitEnabled, state.BGCnt[0], state.BGCnt[1],
+                        state.BGCnt[2], state.BGCnt[3], state.BGXPos[3],
+                        state.BGYPos[3], state.WinRegs, state.BlendCnt,
+                        state.MasterBrightness, input.ScreensEnabled,
+                        input.ScreenSwap, state.ScreensEnabled,
+                        expectedTop[0], expectedBottom[0], state.CaptureCnt,
+                        input.ScreenSource[0u * GPU2DNative::ScreenHeight + sample.Y],
+                        input.ScreenSource[1u * GPU2DNative::ScreenHeight + sample.Y],
+                        input.Palette[1u], input.Palette[0u],
+                        input.Palette[1025u], input.Palette[1024u],
+                        input.Engine[engine].BGVRAM[0],
+                        input.Engine[engine].BGVRAM[1],
+                        input.Engine[engine].BGVRAM[2],
+                        input.Engine[engine].BGVRAM[3],
+                        input.Engine[engine].BGVRAM[0x4001u],
+                        input.Engine[engine].BGVRAM[0x4000u],
+                        input.Engine[engine].BGVRAM[0x4041u],
+                        input.Engine[engine].BGVRAM[0x4040u]);
+                }
+                SetRuntimeFailure("native GPU2D exact differential mismatch");
+                return false;
+            }
         }
     }
 
@@ -4029,12 +4121,19 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFrames);
     {
         std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
-        outputSlot.Frame.Serial = ComposedOutput->NextSerial++;
+        outputSlot.Frame.Serial = rendererSerial;
+        ++ComposedOutput->NextSerial;
         outputSlot.Frame.Generation = generation;
         ComposedOutput->PublishedSlot = static_cast<int>(nextSlot);
         ComposedGeneration = generation;
         PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
+    }
+    if (stageDiagnostics)
+    {
+        GPU2DNative::LogPresentedIdentity(
+            "Vulkan", input.Generation.Frame, outputSlot.Frame.Serial,
+            generation, nextSlot);
     }
     LastComposeResult = GPU2DComposeResult::Success;
     return true;
@@ -4073,6 +4172,9 @@ RendererOutputLease VulkanRenderer3D::AcquireComposedOutputLease()
     const int slotIndex = state->PublishedSlot;
     OutputState::Slot& slot = state->Slots[slotIndex];
     slot.PresenterRefs.fetch_add(1, std::memory_order_relaxed);
+    GPU2DNative::LogPresentedIdentity(
+        "Vulkan", slot.Frame.Generation, slot.Frame.Serial,
+        slot.Frame.Generation, static_cast<u32>(slotIndex));
 
     auto release = +[](void* opaque) {
         auto* leasedSlot = static_cast<OutputState::Slot*>(opaque);

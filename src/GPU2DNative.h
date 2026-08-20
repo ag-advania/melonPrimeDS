@@ -49,6 +49,29 @@ inline constexpr u32 CaptureStartLineNone = 0xFFu;
 // shorter MELONPRIME_GPU2D_EXACT=1) enables exact native-output validation.
 [[nodiscard]] bool ExactValidationEnabled() noexcept;
 
+// Developer-only three-stage evidence.  This is intentionally a separate
+// switch from the shipping renderer path: it enables readback of Stage A's
+// structured planes and Stage B's resolved pixels so a blank LCD can be
+// attributed to the producer, compositor, or presenter without changing
+// normal frame ownership.
+[[nodiscard]] bool StageDiagnosticsEnabled() noexcept;
+
+enum class BlankClass : u8
+{
+    NonBlank = 0,
+    AllBlack,
+    AllWhite,
+};
+
+[[nodiscard]] u64 HashWords(
+    const u32* words,
+    std::size_t count,
+    u64 seed = 1469598103934665603ull) noexcept;
+[[nodiscard]] BlankClass ClassifyNativePixels(
+    const u32* pixels,
+    std::size_t count) noexcept;
+[[nodiscard]] const char* BlankClassName(BlankClass value) noexcept;
+
 // Physical A/B state-load runs deliberately begin with ordinary ROM startup
 // frames. Do not compare those transition frames against a later savestate;
 // arm exact validation at the same lifecycle boundary as the UI state load.
@@ -290,6 +313,45 @@ struct FrameInput
     u32 DirtyRangeCount = 0;
     RecorderMetrics Recorder{};
 };
+
+// Structured Stage A layout shared by the Vulkan and DX12 diagnostic
+// readbacks.  The hash covers the four per-screen planes and that screen's
+// line metadata; it does not include capture-only source planes.
+inline constexpr u32 StructuredPlaneCount = 14u;
+inline constexpr u32 StructuredLineMetaBase =
+    StructuredPlaneCount * ScreenPixelCount;
+
+[[nodiscard]] u64 HashStructuredScreen(
+    const u32* structured,
+    u32 screen) noexcept;
+[[nodiscard]] BlankClass ClassifyStructuredScreen(
+    const u32* structured,
+    u32 screen) noexcept;
+
+// Emit one developer-only record for Stage A (logical structured planes) and
+// Stage B (resolved native pixels), including state dumps for blank physical
+// screens.  `expectedTop`/`expectedBottom` are the software oracle when exact
+// validation is active and may be null for a pure stage diagnostic run.
+void LogStageSnapshot(
+    const char* backend,
+    u64 emulatedFrame,
+    u64 recordedFrame,
+    u64 rendererSerial,
+    u64 generation,
+    u32 slot,
+    const FrameInput& input,
+    const u32* structured,
+    const u32* actualTop,
+    const u32* actualBottom,
+    const u32* expectedTop,
+    const u32* expectedBottom) noexcept;
+
+void LogPresentedIdentity(
+    const char* backend,
+    u64 emulatedFrame,
+    u64 rendererSerial,
+    u64 generation,
+    u32 slot) noexcept;
 
 static_assert(std::is_trivially_copyable_v<FrameInput>,
     "FrameInput must remain memset-resettable without a stack-sized temporary");

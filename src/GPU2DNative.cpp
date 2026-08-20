@@ -11,6 +11,7 @@
 #include <cstring>
 
 #include "GPU.h"
+#include "Platform.h"
 
 namespace melonDS::GPU2DNative
 {
@@ -42,9 +43,277 @@ bool ExactValidationEnabled() noexcept
             || ExactValidationSavestateReady.load(std::memory_order_acquire));
 }
 
+bool StageDiagnosticsEnabled() noexcept
+{
+    static const bool enabled = [] {
+        const char* value = std::getenv("MELONPRIME_GPU2D_STAGE_DIAGNOSTICS");
+        if (!value || value[0] == '\0')
+            value = std::getenv("MELONPRIME_GPU2D_EXACT_VALIDATE");
+        if (!value || value[0] == '\0')
+            value = std::getenv("MELONPRIME_GPU2D_EXACT");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+}
+
 void NotifySavestateLoaded() noexcept
 {
     ExactValidationSavestateReady.store(true, std::memory_order_release);
+}
+
+u64 HashWords(const u32* words, std::size_t count, u64 seed) noexcept
+{
+    if (!words)
+        return seed;
+
+    u64 hash = seed;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        u32 word = words[i];
+        for (u32 byte = 0; byte < sizeof(word); ++byte)
+        {
+            hash ^= static_cast<u8>(word & 0xFFu);
+            hash *= 1099511628211ull;
+            word >>= 8u;
+        }
+    }
+    return hash;
+}
+
+BlankClass ClassifyNativePixels(const u32* pixels, std::size_t count) noexcept
+{
+    if (!pixels || count == 0)
+        return BlankClass::NonBlank;
+
+    bool allBlack = true;
+    bool allWhite = true;
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const u32 color = pixels[i] & 0x003F3F3Fu;
+        allBlack = allBlack && color == 0u;
+        allWhite = allWhite && color == 0x003F3F3Fu;
+        if (!allBlack && !allWhite)
+            return BlankClass::NonBlank;
+    }
+    return allBlack ? BlankClass::AllBlack
+        : (allWhite ? BlankClass::AllWhite : BlankClass::NonBlank);
+}
+
+const char* BlankClassName(BlankClass value) noexcept
+{
+    switch (value)
+    {
+    case BlankClass::AllBlack: return "ALL_BLACK";
+    case BlankClass::AllWhite: return "ALL_WHITE";
+    default: return "NONBLANK";
+    }
+}
+
+u64 HashStructuredScreen(const u32* structured, u32 screen) noexcept
+{
+    if (!structured || screen >= 2u)
+        return 0u;
+
+    const u32 screenBase = screen * 4u * ScreenPixelCount;
+    u64 hash = 1469598103934665603ull;
+    for (u32 plane = 0; plane < 4u; ++plane)
+    {
+        hash = HashWords(
+            structured + screenBase + plane * ScreenPixelCount,
+            ScreenPixelCount, hash);
+    }
+    return HashWords(
+        structured + StructuredLineMetaBase + screen * ScreenHeight,
+        ScreenHeight, hash);
+}
+
+BlankClass ClassifyStructuredScreen(const u32* structured, u32 screen) noexcept
+{
+    if (!structured || screen >= 2u)
+        return BlankClass::NonBlank;
+
+    const u32 screenBase = screen * 4u * ScreenPixelCount;
+    const u32 belowBase = screenBase;
+    const u32 controlBase = screenBase + 2u * ScreenPixelCount;
+    bool allBlack = true;
+    bool allWhite = true;
+    for (u32 pixel = 0; pixel < ScreenPixelCount; ++pixel)
+    {
+        const u32 control = structured[controlBase + pixel];
+        // A 3D slot is resolved only by Stage B.  Do not call a Stage A
+        // plane that intentionally awaits 3D a false all-black/all-white
+        // frame.
+        if (((control >> 24u) & 0x40u) != 0u)
+            return BlankClass::NonBlank;
+        const u32 color = structured[belowBase + pixel] & 0x003F3F3Fu;
+        allBlack = allBlack && color == 0u;
+        allWhite = allWhite && color == 0x003F3F3Fu;
+        if (!allBlack && !allWhite)
+            return BlankClass::NonBlank;
+    }
+    return allBlack ? BlankClass::AllBlack
+        : (allWhite ? BlankClass::AllWhite : BlankClass::NonBlank);
+}
+
+namespace
+{
+
+void LogBlankState(
+    const char* backend,
+    const char* stage,
+    u64 emulatedFrame,
+    u64 recordedFrame,
+    u64 rendererSerial,
+    u64 generation,
+    u32 slot,
+    const FrameInput& input,
+    u32 screen,
+    BlankClass actual,
+    BlankClass expected) noexcept
+{
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DStage] blank_state backend=%s stage=%s emulated=%llu recorded=%llu "
+        "renderer_serial=%llu generation=%llu slot=%u ScreenSwap=%u ScreensEnabled=%u "
+        "physical_screen=%u actual=%s expected=%s\n",
+        backend, stage,
+        static_cast<unsigned long long>(emulatedFrame),
+        static_cast<unsigned long long>(recordedFrame),
+        static_cast<unsigned long long>(rendererSerial),
+        static_cast<unsigned long long>(generation), slot,
+        input.ScreenSwap, input.ScreensEnabled, screen,
+        BlankClassName(actual), BlankClassName(expected));
+
+    for (u32 line : {0u, 96u, 191u})
+    {
+        const u32 engine = input.ScreenSource[screen * ScreenHeight + line] & 1u;
+        const LineState& state = input.Lines[engine * ScreenHeight + line];
+        const u32 displayMode = (state.DispCnt >> 16u) & 0x3u;
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[GPU2DStage] blank_line backend=%s stage=%s physical_screen=%u line=%u "
+            "ScreenSource=%u engine=%u DispCnt=0x%08X display_mode=%u "
+            "UnitEnabled=%u ForcedBlank=%u LayerEnable=0x%08X OBJEnable=0x%08X "
+            "MasterBrightness=%u LCDVRAMMap=0x%08X CaptureEnable=%u CaptureCnt=0x%08X\n",
+            backend, stage, screen, line,
+            input.ScreenSource[screen * ScreenHeight + line], engine,
+            state.DispCnt, displayMode, state.UnitEnabled, state.ForcedBlank,
+            state.LayerEnable, state.OBJEnable, state.MasterBrightness,
+            state.LCDVRAMMap, state.CaptureEnable, state.CaptureCnt);
+    }
+}
+
+void LogStageLine(
+    const char* backend,
+    const char* stage,
+    u64 emulatedFrame,
+    u64 recordedFrame,
+    u64 rendererSerial,
+    u64 generation,
+    u32 slot,
+    u32 screenSwap,
+    u32 screensEnabled,
+    u64 topHash,
+    u64 bottomHash,
+    BlankClass top,
+    BlankClass bottom) noexcept
+{
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DStage] backend=%s stage=%s emulated=%llu recorded=%llu "
+        "renderer_serial=%llu generation=%llu slot=%u "
+        "ScreenSwap=%u ScreensEnabled=%u "
+        "logical_top_hash=%016llX logical_bottom_hash=%016llX "
+        "top=%s bottom=%s\n",
+        backend, stage,
+        static_cast<unsigned long long>(emulatedFrame),
+        static_cast<unsigned long long>(recordedFrame),
+        static_cast<unsigned long long>(rendererSerial),
+        static_cast<unsigned long long>(generation), slot, screenSwap,
+        screensEnabled,
+        static_cast<unsigned long long>(topHash),
+        static_cast<unsigned long long>(bottomHash),
+        BlankClassName(top), BlankClassName(bottom));
+}
+
+} // namespace
+
+void LogStageSnapshot(
+    const char* backend,
+    u64 emulatedFrame,
+    u64 recordedFrame,
+    u64 rendererSerial,
+    u64 generation,
+    u32 slot,
+    const FrameInput& input,
+    const u32* structured,
+    const u32* actualTop,
+    const u32* actualBottom,
+    const u32* expectedTop,
+    const u32* expectedBottom) noexcept
+{
+    if (!StageDiagnosticsEnabled())
+        return;
+
+    if (structured)
+    {
+        const BlankClass top = ClassifyStructuredScreen(structured, 0u);
+        const BlankClass bottom = ClassifyStructuredScreen(structured, 1u);
+        LogStageLine(
+            backend, "A", emulatedFrame, recordedFrame, rendererSerial,
+            generation, slot, input.ScreenSwap, input.ScreensEnabled,
+            HashStructuredScreen(structured, 0u),
+            HashStructuredScreen(structured, 1u), top, bottom);
+        if (top != BlankClass::NonBlank)
+            LogBlankState(backend, "A", emulatedFrame, recordedFrame, rendererSerial,
+                generation, slot, input, 0u, top,
+                expectedTop ? ClassifyNativePixels(expectedTop, ScreenPixelCount)
+                    : BlankClass::NonBlank);
+        if (bottom != BlankClass::NonBlank)
+            LogBlankState(backend, "A", emulatedFrame, recordedFrame, rendererSerial,
+                generation, slot, input, 1u, bottom,
+                expectedBottom ? ClassifyNativePixels(expectedBottom, ScreenPixelCount)
+                    : BlankClass::NonBlank);
+    }
+
+    if (actualTop && actualBottom)
+    {
+        const BlankClass top = ClassifyNativePixels(actualTop, ScreenPixelCount);
+        const BlankClass bottom = ClassifyNativePixels(actualBottom, ScreenPixelCount);
+        LogStageLine(
+            backend, "B", emulatedFrame, recordedFrame, rendererSerial,
+            generation, slot, input.ScreenSwap, input.ScreensEnabled,
+            HashWords(actualTop, ScreenPixelCount),
+            HashWords(actualBottom, ScreenPixelCount), top, bottom);
+        if (top != BlankClass::NonBlank)
+            LogBlankState(backend, "B", emulatedFrame, recordedFrame, rendererSerial,
+                generation, slot, input, 0u, top,
+                expectedTop ? ClassifyNativePixels(expectedTop, ScreenPixelCount)
+                    : BlankClass::NonBlank);
+        if (bottom != BlankClass::NonBlank)
+            LogBlankState(backend, "B", emulatedFrame, recordedFrame, rendererSerial,
+                generation, slot, input, 1u, bottom,
+                expectedBottom ? ClassifyNativePixels(expectedBottom, ScreenPixelCount)
+                    : BlankClass::NonBlank);
+    }
+}
+
+void LogPresentedIdentity(
+    const char* backend,
+    u64 emulatedFrame,
+    u64 rendererSerial,
+    u64 generation,
+    u32 slot) noexcept
+{
+    if (!StageDiagnosticsEnabled())
+        return;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DStage] backend=%s stage=C emulated=%llu "
+        "presented_renderer_serial=%llu presented_generation=%llu presented_slot=%u\n",
+        backend, static_cast<unsigned long long>(emulatedFrame),
+        static_cast<unsigned long long>(rendererSerial),
+        static_cast<unsigned long long>(generation), slot);
 }
 
 namespace
