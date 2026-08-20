@@ -181,8 +181,11 @@ void SeedSharedState(GPU& gpu)
 void RunRecorder(FrameRecorder& recorder, GPU& gpu)
 {
     recorder.BeginFrame(1u);
+    recorder.CaptureSpriteLatchForLine(0u);
     for (u32 line = 0; line < ScreenHeight; ++line)
     {
+        if (line != 0u)
+            recorder.CaptureSpriteLatchForLine(line);
         recorder.CaptureMemoryForLine(line);
         recorder.CaptureLine(0u, gpu.GPU2D_A, line, gpu.ScreenSwap);
         recorder.CaptureLine(1u, gpu.GPU2D_B, line, gpu.ScreenSwap);
@@ -242,6 +245,12 @@ u32 TimelineValue(const FrameInput& input, u32 line, u32 block)
         static_cast<std::size_t>(line) * TimelineBlockCount + block];
 }
 
+u32 SpriteTimelineValue(const FrameInput& input, u32 line, u32 block)
+{
+    return input.SpriteTimelineIndex[
+        static_cast<std::size_t>(line) * SpriteTimelineBlockCount + block];
+}
+
 bool RunRecorderTimeline()
 {
     const auto nds = std::make_unique<NDS>();
@@ -250,6 +259,7 @@ bool RunRecorderTimeline()
 
     const auto recorder = std::make_unique<FrameRecorder>(gpu);
     recorder->BeginFrame(1u);
+    recorder->CaptureSpriteLatchForLine(0u);
     recorder->CaptureMemoryForLine(0u);
     recorder->CaptureLine(0u, gpu.GPU2D_A, 0u, gpu.ScreenSwap);
     recorder->CaptureLine(1u, gpu.GPU2D_B, 0u, gpu.ScreenSwap);
@@ -262,11 +272,14 @@ bool RunRecorderTimeline()
             gpu.Palette[37u] = 0xD6u;
         if (line == 128u)
             gpu.OAM[513u] = 0xE7u;
+        if (line == 64u)
+            gpu.VRAMMap_LCDC = 1u << 2u;
         // FIFO is sampled for every line. Writing immediately before the
         // line latch models a line-by-line FIFO pattern without touching the
         // renderer's destructive dirty ownership.
         gpu.DispFIFOBuffer[7u] = static_cast<u16>(0x1000u + line);
 
+        recorder->CaptureSpriteLatchForLine(line);
         recorder->CaptureMemoryForLine(line);
         recorder->CaptureLine(0u, gpu.GPU2D_A, line, gpu.ScreenSwap);
         recorder->CaptureLine(1u, gpu.GPU2D_B, line, gpu.ScreenSwap);
@@ -302,6 +315,22 @@ bool RunRecorderTimeline()
     passed &= Require(
         input.TimelinePayload[(oamVersion - 1u) * DirtyBlockBytes + 1u] == 0xE7u,
         "OAM delta payload was not captured");
+    const u32 spriteOAMBlock = 1u;
+    const u32 spriteOAMVersion = SpriteTimelineValue(input, 128u, spriteOAMBlock);
+    passed &= Require(
+        SpriteTimelineValue(input, 127u, spriteOAMBlock) == 0u
+            && spriteOAMVersion == oamVersion,
+        "private OBJ/OAM timeline did not latch at the DrawSprites boundary");
+    const u32 spriteOBJBlock = SpriteTimelineOAMBlocks;
+    passed &= Require(
+        SpriteTimelineValue(input, 49u, spriteOBJBlock) == 0u
+            && SpriteTimelineValue(input, 50u, spriteOBJBlock) != 0u,
+        "private OBJ VRAM timeline did not follow the one-line-ahead latch");
+
+    passed &= Require(
+        input.Lines[63u].LCDVRAMMap != input.Lines[64u].LCDVRAMMap
+            && input.Lines[64u].LCDVRAMMap == (1u << 2u),
+        "LCDC VRAM mapping was not captured per visible line");
 
     const u32 fifoVersion = TimelineValue(input, 190u, TimelineFIFOBaseBlock);
     const std::size_t fifoPayload =
@@ -315,6 +344,76 @@ bool RunRecorderTimeline()
     return passed;
 }
 
+bool RunHighChurnTimeline()
+{
+    const auto nds = std::make_unique<NDS>();
+    GPU& gpu = nds->GPU;
+    SeedSharedState(gpu);
+
+    // Exercise every mapped class with a DMA-like bitmap flip. The workload
+    // emits tens of thousands of changed-block observations in one frame,
+    // but it intentionally alternates between two immutable block contents.
+    // A write-event counter would overflow here; content deduplication must
+    // keep the dense line index lossless and valid.
+    for (u32 bank = 0; bank < 9u; ++bank)
+        std::memset(gpu.VRAM[bank], 0, gpu.VRAMMask[bank] + 1u);
+    std::memset(gpu.Palette, 0, sizeof(gpu.Palette));
+    std::memset(gpu.OAM, 0, sizeof(gpu.OAM));
+    std::memset(gpu.DispFIFOBuffer, 0, sizeof(gpu.DispFIFOBuffer));
+    for (u32 i = 0; i < 32u; ++i)
+        gpu.VRAMMap_ABG[i] = 1u << 0u;
+    for (u32 i = 0; i < 16u; ++i)
+        gpu.VRAMMap_AOBJ[i] = 1u << 0u;
+    for (u32 i = 0; i < 8u; ++i)
+    {
+        gpu.VRAMMap_BBG[i] = 1u << 0u;
+        gpu.VRAMMap_BOBJ[i] = 1u << 0u;
+    }
+    for (u32 i = 0; i < 4u; ++i)
+    {
+        gpu.VRAMMap_ABGExtPal[i] = 1u << 0u;
+        gpu.VRAMMap_BBGExtPal[i] = 1u << 0u;
+    }
+    gpu.VRAMMap_AOBJExtPal = 1u << 0u;
+    gpu.VRAMMap_BOBJExtPal = 1u << 0u;
+
+    const auto recorder = std::make_unique<FrameRecorder>(gpu);
+    recorder->BeginFrame(1u);
+    recorder->CaptureSpriteLatchForLine(0u);
+    recorder->CaptureMemoryForLine(0u);
+    recorder->CaptureLine(0u, gpu.GPU2D_A, 0u, gpu.ScreenSwap);
+    recorder->CaptureLine(1u, gpu.GPU2D_B, 0u, gpu.ScreenSwap);
+    for (u32 line = 1u; line < ScreenHeight; ++line)
+    {
+        if (line < 8u)
+        {
+            const u8 value = (line & 1u) != 0u ? 0x5Au : 0xA5u;
+            for (u32 bank = 0; bank < 9u; ++bank)
+                std::memset(gpu.VRAM[bank], value, gpu.VRAMMask[bank] + 1u);
+        }
+        recorder->CaptureSpriteLatchForLine(line);
+        recorder->CaptureMemoryForLine(line);
+        recorder->CaptureLine(0u, gpu.GPU2D_A, line, gpu.ScreenSwap);
+        recorder->CaptureLine(1u, gpu.GPU2D_B, line, gpu.ScreenSwap);
+    }
+    recorder->FinalizeMemory();
+
+    const FrameInput& input = recorder->GetFrame();
+    bool passed = Require(recorder->IsValid(),
+        "high-churn timeline was rejected despite content deduplication");
+    passed &= Require(input.TimelineOverflow == 0u,
+        "high-churn bitmap/DMA workload set TimelineOverflow");
+    passed &= Require(input.TimelineDeltaCount < MaxMemoryDeltas,
+        "content-deduplicated timeline consumed the entire payload budget");
+    const u32 first = TimelineValue(input, 1u, TimelineEngineBaseBlock);
+    const u32 second = TimelineValue(input, 2u, TimelineEngineBaseBlock);
+    const u32 third = TimelineValue(input, 3u, TimelineEngineBaseBlock);
+    passed &= Require(first != 0u && second != 0u && first != second
+            && third == first,
+        "repeated high-churn block contents did not reuse immutable versions");
+    return passed;
+}
+
 } // namespace
 
 namespace melonDS::Testing
@@ -323,7 +422,7 @@ namespace melonDS::Testing
 int RunGPU2DNativeRecorderPurity()
 {
     const bool passed = RunRecorderPurity() && RunMultiConsumerOrder()
-        && RunRecorderTimeline();
+        && RunRecorderTimeline() && RunHighChurnTimeline();
     std::fprintf(stdout, "%s: GPU2D native recorder purity\n",
         passed ? "PASS" : "FAIL");
     std::fflush(stdout);

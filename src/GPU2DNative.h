@@ -15,6 +15,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 #include "types.h"
 
@@ -97,7 +98,15 @@ struct LineState
     // software renderer uses it before BG/OBJ evaluation, while display modes
     // 2/3 are still sourced by the outer display circuit.
     u32 UnitEnabled = 0;
-    std::array<u32, 2> Padding{};
+    // VRAMCNT/LCDC routing is latched per visible line.  It must not be read
+    // from the frame header when Display Mode 2 or capture crosses a
+    // mid-frame VRAM remap.
+    u32 LCDVRAMMap = 0;
+    // DrawSprites(line) prepares the OBJ line consumed by the next
+    // DrawScanline.  This bit selects the private OBJ/OAM latch timeline for
+    // the line; palette and OBJ extended-palette reads remain on the normal
+    // current-line timeline, matching InterleaveSprites().
+    u32 SpriteLatchValid = 0;
 };
 
 static_assert(sizeof(LineState) == 68u * sizeof(u32),
@@ -134,7 +143,13 @@ struct FrameGeneration
 
 inline constexpr u32 DirtyBlockBytes = 512u;
 inline constexpr u32 MaxDirtyRanges = 8192u;
+// TimelinePayload stores unique 512-byte contents, not one copy per write
+// event.  The open-addressing table is deliberately larger than the payload
+// so a full valid payload still has an empty insertion slot.
 inline constexpr u32 MaxMemoryDeltas = 8192u;
+inline constexpr u32 TimelineHashTableSize = MaxMemoryDeltas * 2u;
+static_assert((TimelineHashTableSize & (TimelineHashTableSize - 1u)) == 0u,
+    "timeline hash table must be a power of two");
 
 // Memory is resolved at the beginning of each visible line.  A line carries
 // the latest version of every 512-byte block; version zero means the frame
@@ -161,6 +176,16 @@ inline constexpr u32 TimelineBlockCount = TimelineLCDVRAMBaseBlock + TimelineLCD
 inline constexpr u32 PackedTimelineIndexWords = TimelineBlockCount * ScreenHeight;
 inline constexpr u32 PackedTimelinePayloadWords =
     MaxMemoryDeltas * (DirtyBlockBytes / sizeof(u32));
+// OBJ/OAM are prepared one HBlank before the scanline that consumes them.
+// Keep a compact second timeline for just those memory classes instead of
+// shifting palette visibility, which the software renderer resolves on the
+// current line in InterleaveSprites().
+inline constexpr u32 SpriteTimelineOAMBlocks = TimelineOAMBlocks;
+inline constexpr u32 SpriteTimelineEngineOBJBlocks = TimelineEngineOBJBlocks;
+inline constexpr u32 SpriteTimelineBlockCount = SpriteTimelineOAMBlocks
+    + 2u * SpriteTimelineEngineOBJBlocks;
+inline constexpr u32 PackedSpriteTimelineIndexWords =
+    SpriteTimelineBlockCount * ScreenHeight;
 
 struct DirtyRange
 {
@@ -202,13 +227,21 @@ struct FrameInput
     FrameGeneration Generation{};
     std::array<u32, PackedTimelineIndexWords> TimelineIndex{};
     std::array<u8, MaxMemoryDeltas * DirtyBlockBytes> TimelinePayload{};
+    std::array<u32, PackedSpriteTimelineIndexWords> SpriteTimelineIndex{};
     u32 TimelineDeltaCount = 0;
     u32 TimelineOverflow = 0;
+    // Host-only hash-consing metadata. It is intentionally excluded from the
+    // packed ABI; shader-visible indices still point at ordinary full blocks.
+    std::array<u64, TimelineHashTableSize> TimelineHashKeys{};
+    std::array<u32, TimelineHashTableSize> TimelineHashVersions{};
     // Byte ranges in the serialized frame that changed since the previous
     // frame. They are metadata only and are not part of PackedFrameWords.
     std::array<DirtyRange, MaxDirtyRanges> DirtyRanges{};
     u32 DirtyRangeCount = 0;
 };
+
+static_assert(std::is_trivially_copyable_v<FrameInput>,
+    "FrameInput must remain memset-resettable without a stack-sized temporary");
 
 // Fixed serialization layout consumed by both native shader backends.  The
 // byte arrays are copied verbatim into u32 words; shaders perform the byte
@@ -237,7 +270,10 @@ inline constexpr u32 PackedLCDVRAMBase = PackedFIFOBase + PackedFIFOWords;
 inline constexpr u32 PackedRouteBase = PackedLCDVRAMBase + PackedLCDVRAMWords;
 inline constexpr u32 PackedTimelineBase = PackedRouteBase + PackedRouteWords;
 inline constexpr u32 PackedTimelinePayloadBase = PackedTimelineBase + PackedTimelineIndexWords;
-inline constexpr u32 PackedFrameWords = PackedTimelinePayloadBase + PackedTimelinePayloadWords;
+inline constexpr u32 PackedSpriteTimelineBase = PackedTimelinePayloadBase
+    + PackedTimelinePayloadWords;
+inline constexpr u32 PackedFrameWords = PackedSpriteTimelineBase
+    + PackedSpriteTimelineIndexWords;
 
 static_assert(PackedLineWords == 68u, "native line serialization drift");
 
@@ -316,6 +352,9 @@ public:
         u32 line,
         bool screenSwap) noexcept;
     void CaptureMemoryForLine(u32 line) noexcept;
+    // Called from the renderer's DrawSprites hook at the hardware latch
+    // point, after DrawScanline(line) and before DrawScanline(line+1).
+    void CaptureSpriteLatchForLine(u32 line) noexcept;
     void FinalizeMemory() noexcept;
 
     [[nodiscard]] const FrameInput& GetFrame() const noexcept { return Input; }
@@ -334,6 +373,11 @@ private:
     std::array<u8, 4 * 128 * 1024> CurrentLCDVRAM{};
     std::array<u32, TimelineBlockCount> CurrentTimelineVersion{};
     bool MemoryBaselineReady = false;
+    std::array<bool, ScreenHeight> SpriteLatchSeen{};
+    std::array<u8, 256u * 1024u> PendingEngineAOBJ{};
+    std::array<u8, 128u * 1024u> PendingEngineBOBJ{};
+    std::array<u8, 2u * 1024u> PendingOAM{};
+    bool PendingSpriteLatchReady = false;
 
     void SnapshotEngine(u32 engine) noexcept;
     void CaptureMappedMemoryForLine(
@@ -351,6 +395,8 @@ private:
         u32 size,
         u32 blockBase) noexcept;
     void FillTimelineLine(u32 line) noexcept;
+    void FillSpriteTimelineLine(u32 line) noexcept;
+    void ApplyPendingSpriteLatch() noexcept;
 };
 
 } // namespace GPU2DNative

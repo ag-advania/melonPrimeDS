@@ -30,14 +30,18 @@ bool RunPackVectors()
     input->Generation.Frame = 0x1122334455667788ull;
     input->Generation.ContentGeneration = 0x8877665544332211ull;
     input->CaptureCnt = 0xA5A5A5A5u;
+    input->LCDVRAMMap = 1u << 2u;
     input->Engine[0].BGSize = 0x80000u;
     input->Engine[1].OBJSize = 0x20000u;
     input->Lines[192u + 17u].DispCnt = 0x12345678u;
     input->Lines[192u + 17u].UnitEnabled = 1u;
+    input->Lines[192u + 17u].LCDVRAMMap = 1u << 3u;
+    input->Lines[192u + 17u].SpriteLatchValid = 1u;
     input->ScreenSource[191u] = 1u;
     input->Palette[37u] = 0x5Au;
     input->OAM[513u] = 0xC3u;
     input->LCDVRAM[0x1234u] = 0xE7u;
+    input->SpriteTimelineIndex[17u * SpriteTimelineBlockCount + 7u] = 0xABCDEF01u;
 
     std::vector<u32> packed(PackedFrameWords, 0u);
     bool passed = true;
@@ -49,12 +53,21 @@ bool RunPackVectors()
         "frame generation is not serialized little-endian");
     passed &= Require(packed[10] == input->CaptureCnt,
         "global capture state is not serialized");
+    passed &= Require(packed[14] == input->LCDVRAMMap,
+        "frame LCDC mapping is not serialized");
     passed &= Require(
         packed[PackedHeaderWords + (192u + 17u) * PackedLineWords] == 0x12345678u,
         "engine-B line state offset drifted");
     passed &= Require(
         packed[PackedHeaderWords + (192u + 17u) * PackedLineWords + 65u] == 1u,
         "engine-enable state is not serialized");
+    passed &= Require(
+        packed[PackedHeaderWords + (192u + 17u) * PackedLineWords + 66u]
+            == (1u << 3u),
+        "per-line LCDC mapping is not serialized");
+    passed &= Require(
+        packed[PackedHeaderWords + (192u + 17u) * PackedLineWords + 67u] == 1u,
+        "sprite latch validity is not serialized");
     passed &= Require(
         ((packed[PackedPaletteBase + 37u / 4u] >> ((37u & 3u) * 8u)) & 0xFFu)
             == 0x5Au,
@@ -63,6 +76,10 @@ bool RunPackVectors()
         ((packed[PackedLCDVRAMBase + 0x1234u / 4u]
             >> ((0x1234u & 3u) * 8u)) & 0xFFu) == 0xE7u,
         "LCD VRAM byte mirror is not packed verbatim");
+    passed &= Require(
+        packed[PackedSpriteTimelineBase + 17u * SpriteTimelineBlockCount + 7u]
+            == 0xABCDEF01u,
+        "private OBJ/OAM timeline index is not packed");
     passed &= Require(!PackFrame(*input, packed.data(), PackedFrameWords - 1u),
         "PackFrame accepted a short destination");
     return passed;

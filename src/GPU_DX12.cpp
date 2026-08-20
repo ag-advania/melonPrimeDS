@@ -51,6 +51,21 @@ DX12Renderer::~DX12Renderer()
     IntelXeLL.Shutdown();
 }
 
+void DX12Renderer::AllocCapture(u32 bank, u32 start, u32 len)
+{
+    SoftRenderer::AllocCapture(bank, start, len);
+}
+
+void DX12Renderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
+{
+    SoftRenderer::SyncVRAMCapture(bank, start, len, complete);
+}
+
+void DX12Renderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
+{
+    SoftRenderer::InvalidateVRAMCapture(bank, start, len);
+}
+
 bool DX12Renderer::Init()
 {
     if (!Rend3D || !Rend3D->Init())

@@ -3588,7 +3588,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+                DivRoundUp(2u * static_cast<u32>(ScaleFactor), 8u), 1u);
             BufferBarrier(cmd, &nativeCapture, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -3618,7 +3619,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+                DivRoundUp(2u * static_cast<u32>(ScaleFactor), 8u), 1u);
         }
         VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount,
             GPU2DNative::ScreenHeight);

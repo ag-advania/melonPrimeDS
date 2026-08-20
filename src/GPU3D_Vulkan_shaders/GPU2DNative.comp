@@ -80,6 +80,12 @@ const uint kTimelineIndexBase = kRouteBase + 2u * 192u;
 const uint kTimelinePayloadBase = kTimelineIndexBase
     + kTimelineBlockCount * 192u;
 const uint kTimelinePayloadStride = 512u / 4u;
+const uint kSpriteTimelineOAMBlocks = 4u;
+const uint kSpriteTimelineEngineOBJBlocks = 512u;
+const uint kSpriteTimelineBlockCount = kSpriteTimelineOAMBlocks
+    + 2u * kSpriteTimelineEngineOBJBlocks;
+const uint kSpriteTimelineIndexBase = kTimelinePayloadBase
+    + 8192u * kTimelinePayloadStride;
 
 // LineState word offsets.
 const uint kDispCnt = 0u;
@@ -117,6 +123,8 @@ const uint kWinRegs = 59u;
 const uint kWinMask = 60u;
 const uint kWinPos = 61u;
 const uint kUnitEnabled = 65u;
+const uint kLCDVRAMMap = 66u;
+const uint kSpriteLatchValid = 67u;
 
 uint LineWord(uint engine, uint line, uint word)
 {
@@ -135,6 +143,32 @@ uint TimelineVersion(uint block)
         return 0u;
     return NativeGPU2DInput[
         kTimelineIndexBase + line * kTimelineBlockCount + block];
+}
+
+uint SpriteTimelineVersion(uint engine, uint line, uint block)
+{
+    if (line >= 192u || LineWord(engine, line, kSpriteLatchValid) == 0u)
+        return TimelineVersion(block);
+
+    uint spriteBlock = 0u;
+    if (block >= kTimelineOAMBaseBlock
+        && block < kTimelineOAMBaseBlock + kTimelineOAMBlocks)
+    {
+        spriteBlock = block - kTimelineOAMBaseBlock;
+    }
+    else
+    {
+        uint objBase = kTimelineEngineBaseBlock
+            + engine * kTimelineEngineBlocks + kTimelineEngineBGBlocks;
+        if (block < objBase || block >= objBase + kTimelineEngineOBJBlocks)
+            return TimelineVersion(block);
+        spriteBlock = kSpriteTimelineOAMBlocks
+            + engine * kSpriteTimelineEngineOBJBlocks + (block - objBase);
+    }
+    if (spriteBlock >= kSpriteTimelineBlockCount)
+        return TimelineVersion(block);
+    return NativeGPU2DInput[kSpriteTimelineIndexBase
+        + line * kSpriteTimelineBlockCount + spriteBlock];
 }
 
 uint MemoryByte(
@@ -161,6 +195,40 @@ uint Memory16(uint base, uint size, uint address, uint timelineBlockBase)
         | (MemoryByte(base, size, address + 1u, timelineBlockBase) << 8u);
 }
 
+uint SpriteMemoryByte(
+    uint engine,
+    uint line,
+    uint base,
+    uint size,
+    uint address,
+    uint timelineBlockBase)
+{
+    if (size == 0u)
+        return 0u;
+    uint offset = address & (size - 1u);
+    uint version = SpriteTimelineVersion(
+        engine, line, timelineBlockBase + offset / 512u);
+    uint word = version == 0u
+        ? NativeGPU2DInput[base + (offset >> 2u)]
+        : NativeGPU2DInput[
+            kTimelinePayloadBase + (version - 1u) * kTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFu;
+}
+
+uint SpriteMemory16(
+    uint engine,
+    uint line,
+    uint base,
+    uint size,
+    uint address,
+    uint timelineBlockBase)
+{
+    return SpriteMemoryByte(engine, line, base, size, address, timelineBlockBase)
+        | (SpriteMemoryByte(engine, line, base, size, address + 1u,
+            timelineBlockBase) << 8u);
+}
+
 uint BGSize(uint engine) { return NativeGPU2DInput[16u + engine * 4u]; }
 uint OBJSize(uint engine) { return NativeGPU2DInput[17u + engine * 4u]; }
 uint BGExtSize(uint engine) { return NativeGPU2DInput[18u + engine * 4u]; }
@@ -180,18 +248,20 @@ uint BG16(uint engine, uint address)
         kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks);
 }
 
-uint OBJByte(uint engine, uint address)
+uint OBJByte(uint engine, uint line, uint address)
 {
-    return MemoryByte(
-        kEngineBase + engine * kEngineWords + kBGWords, OBJSize(engine), address,
+    return SpriteMemoryByte(
+        engine, line, kEngineBase + engine * kEngineWords + kBGWords,
+        OBJSize(engine), address,
         kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
             + kTimelineEngineBGBlocks);
 }
 
-uint OBJ16(uint engine, uint address)
+uint OBJ16(uint engine, uint line, uint address)
 {
-    return Memory16(
-        kEngineBase + engine * kEngineWords + kBGWords, OBJSize(engine), address,
+    return SpriteMemory16(
+        engine, line, kEngineBase + engine * kEngineWords + kBGWords,
+        OBJSize(engine), address,
         kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
             + kTimelineEngineBGBlocks);
 }
@@ -223,11 +293,11 @@ uint Palette16(uint engine, uint byteAddress)
         kTimelinePaletteBaseBlock + engine * 2u);
 }
 
-uint OAM16(uint engine, uint byteAddress)
+uint OAM16(uint engine, uint line, uint byteAddress)
 {
     uint base = kOAMBase + (engine * 0x400u) / 4u;
-    return Memory16(
-        base, 0x400u, byteAddress,
+    return SpriteMemory16(
+        engine, line, base, 0x400u, byteAddress,
         kTimelineOAMBaseBlock + engine * 2u);
 }
 
@@ -646,9 +716,9 @@ Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
     uint bestPriority = 4u;
     for (uint sprite = 0u; sprite < 128u; ++sprite)
     {
-        uint a0 = OAM16(engine, sprite * 8u + 0u);
-        uint a1 = OAM16(engine, sprite * 8u + 2u);
-        uint a2 = OAM16(engine, sprite * 8u + 4u);
+        uint a0 = OAM16(engine, line, sprite * 8u + 0u);
+        uint a1 = OAM16(engine, line, sprite * 8u + 2u);
+        uint a2 = OAM16(engine, line, sprite * 8u + 4u);
         uint spriteType = (a0 >> 8u) & 3u;
         if (spriteType == 2u)
             continue;
@@ -697,10 +767,10 @@ Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
         if (rotScale)
         {
             uint rot = (a1 >> 9u) & 0x1Fu;
-            matrixA = int(OAM16(engine, rot * 32u + 6u));
-            matrixB = int(OAM16(engine, rot * 32u + 14u));
-            matrixC = int(OAM16(engine, rot * 32u + 22u));
-            matrixD = int(OAM16(engine, rot * 32u + 30u));
+            matrixA = int(OAM16(engine, line, rot * 32u + 6u));
+            matrixB = int(OAM16(engine, line, rot * 32u + 14u));
+            matrixC = int(OAM16(engine, line, rot * 32u + 22u));
+            matrixD = int(OAM16(engine, line, rot * 32u + 30u));
             if ((matrixA & 0x8000) != 0) matrixA -= 0x10000;
             if ((matrixB & 0x8000) != 0) matrixB -= 0x10000;
             if ((matrixC & 0x8000) != 0) matrixC -= 0x10000;
@@ -757,7 +827,8 @@ Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
                 address = ((tile & 0x0Fu) << 4u) + ((tile & 0x3F0u) << 7u);
                 stride = 256u;
             }
-            color = OBJ16(engine, address + uint(sy) * stride + uint(sx) * 2u);
+            color = OBJ16(engine, line,
+                address + uint(sy) * stride + uint(sx) * 2u);
             opaque = (color & 0x8000u) != 0u;
             color &= 0x7FFFu;
             flag = 0xC0u | (alpha + 1u);
@@ -784,7 +855,7 @@ Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
                     + uint((sy & 7) * 8)
                     + uint((sx >> 3) * 64)
                     + uint(sx & 7);
-                color = OBJByte(engine, address);
+                color = OBJByte(engine, line, address);
                 opaque = color != 0u;
                 if (opaque && (dispCnt & (1u << 31u)) != 0u)
                 {
@@ -801,7 +872,7 @@ Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
                     + uint((sy & 7) * 4)
                     + uint((sx >> 3) * 32)
                     + uint((sx & 7) >> 1);
-                uint packed = OBJByte(engine, address);
+                uint packed = OBJByte(engine, line, address);
                 color = (sx & 1) != 0 ? packed >> 4u : packed & 0xFu;
                 opaque = color != 0u;
                 if (opaque)
@@ -983,7 +1054,7 @@ uint DisplayPixel(uint engine, uint line, int x, uint outputX, uint outputY)
     if (mode == 2u && engine == 0u)
     {
         uint bank = (dispCnt >> 18u) & 3u;
-        uint map = NativeGPU2DInput[14u];
+        uint map = LineWord(engine, line, kLCDVRAMMap);
         if ((map & (1u << bank)) == 0u)
             return 0u;
         return ApplyMasterNative(
@@ -1026,6 +1097,8 @@ uint CaptureSourceB(uint line, uint x, uint captureCnt)
 
     uint dispCnt = LineWord(0u, line, kDispCnt);
     uint bank = (dispCnt >> 18u) & 3u;
+    if ((LineWord(0u, line, kLCDVRAMMap) & (1u << bank)) == 0u)
+        return 0u;
     uint address = line * 512u + x * 2u;
     if (((dispCnt >> 16u) & 3u) != 2u)
         address += ((captureCnt >> 26u) & 3u) << 14u;
@@ -1084,7 +1157,7 @@ void WriteNativeCapturePair(uint line, uint x, uint outputX)
     if (line >= height || x >= width)
         return;
     uint destinationBank = (captureCnt >> 16u) & 3u;
-    if ((NativeGPU2DInput[14u] & (1u << destinationBank)) == 0u)
+    if ((LineWord(0u, line, kLCDVRAMMap) & (1u << destinationBank)) == 0u)
         return;
 
     uint firstA = CaptureSourceA(line, x, outputX);
@@ -1126,10 +1199,12 @@ void main()
     uint scaledY;
     if (linePass)
     {
-        if (id.y >= 2u)
+        uint scaledScreens = 2u * uint(ScaleFactor);
+        if (id.y >= scaledScreens)
             return;
-        screen = id.y;
-        scaledY = uint(max(pc.CaptureYOffset, 0)) * uint(ScaleFactor);
+        screen = id.y / uint(ScaleFactor);
+        uint subY = id.y % uint(ScaleFactor);
+        scaledY = uint(max(pc.CaptureYOffset, 0)) * uint(ScaleFactor) + subY;
     }
     else
     {

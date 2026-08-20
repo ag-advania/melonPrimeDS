@@ -29,6 +29,14 @@ bool ExactValidationEnabled() noexcept
 
 namespace
 {
+void ClearFrameInput(FrameInput& input) noexcept
+{
+    // FrameInput is intentionally a trivially-copyable ABI aggregate. Avoid
+    // `Input = {}` here: its multi-megabyte temporary can exceed the Windows
+    // thread stack before the recorder has even started a frame.
+    std::memset(&input, 0, sizeof(input));
+}
+
 void MarkDirtyRange(FrameInput& input, u32 offset, u32 size) noexcept
 {
     if (size == 0u)
@@ -238,9 +246,61 @@ void CopyMappedVRAMBlocks(
     }
 }
 
+u64 HashTimelineBlock(const u8* source) noexcept
+{
+    // FNV-1a is sufficient here because the hash is only a lookup hint; every
+    // hit is verified with a full memcmp before an existing version is reused.
+    u64 hash = 1469598103934665603ull;
+    for (u32 i = 0; i < DirtyBlockBytes; ++i)
+    {
+        hash ^= source[i];
+        hash *= 1099511628211ull;
+    }
+    return hash == 0u ? 1u : hash;
+}
+
 u32 AppendTimelineDelta(FrameInput& input, const u8* source) noexcept
 {
-    if (!source || input.TimelineDeltaCount >= MaxMemoryDeltas)
+    if (!source)
+    {
+        input.TimelineOverflow = 1u;
+        return 0u;
+    }
+
+    const u64 hash = HashTimelineBlock(source);
+    constexpr u32 hashMask = TimelineHashTableSize - 1u;
+    u32 slot = static_cast<u32>(hash) & hashMask;
+    u32 emptySlot = TimelineHashTableSize;
+    for (u32 probe = 0; probe < TimelineHashTableSize; ++probe)
+    {
+        const u64 storedHash = input.TimelineHashKeys[slot];
+        if (storedHash == 0u)
+        {
+            emptySlot = slot;
+            break;
+        }
+        if (storedHash == hash)
+        {
+            const u32 version = input.TimelineHashVersions[slot];
+            if (version != 0u
+                && std::memcmp(
+                    input.TimelinePayload.data()
+                        + static_cast<std::size_t>(version - 1u) * DirtyBlockBytes,
+                    source,
+                    DirtyBlockBytes)
+                    == 0)
+            {
+                // A high-churn DMA/remap can expose the same block contents
+                // many times. Reusing the immutable payload keeps the dense
+                // per-line index lossless without consuming one delta per
+                // observation.
+                return version;
+            }
+        }
+        slot = (slot + 1u) & hashMask;
+    }
+
+    if (input.TimelineDeltaCount >= MaxMemoryDeltas)
     {
         input.TimelineOverflow = 1u;
         return 0u;
@@ -257,6 +317,11 @@ u32 AppendTimelineDelta(FrameInput& input, const u8* source) noexcept
         PackedTimelinePayloadBase * sizeof(u32)
             + (version - 1u) * DirtyBlockBytes,
         DirtyBlockBytes);
+    if (emptySlot != TimelineHashTableSize)
+    {
+        input.TimelineHashKeys[emptySlot] = hash;
+        input.TimelineHashVersions[emptySlot] = version;
+    }
     return version;
 }
 
@@ -339,7 +404,7 @@ FrameRecorder::FrameRecorder(const melonDS::GPU& gpu) noexcept
 
 void FrameRecorder::Reset() noexcept
 {
-    Input = {};
+    ClearFrameInput(Input);
     Valid = false;
     LineSeen.fill(false);
     EngineLineCount[0] = 0;
@@ -352,6 +417,11 @@ void FrameRecorder::Reset() noexcept
     CurrentLCDVRAM.fill(0u);
     CurrentTimelineVersion.fill(0u);
     MemoryBaselineReady = false;
+    SpriteLatchSeen.fill(false);
+    PendingEngineAOBJ.fill(0u);
+    PendingEngineBOBJ.fill(0u);
+    PendingOAM.fill(0u);
+    PendingSpriteLatchReady = false;
 }
 
 void FrameRecorder::BeginFrame(u64 frame) noexcept
@@ -359,13 +429,14 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     const FrameGeneration previousGeneration = Input.Generation;
     const bool hadPreviousFrame = Valid;
     if (!Valid)
-        Input = {};
+        ClearFrameInput(Input);
     else
     {
         // Retain the coherent memory mirrors so changed blocks can be copied
         // into both the CPU frame and the backend's device-resident mirror.
         std::fill(Input.Lines.begin(), Input.Lines.end(), LineState{});
         std::fill(Input.ScreenSource.begin(), Input.ScreenSource.end(), 0u);
+        std::fill(Input.SpriteTimelineIndex.begin(), Input.SpriteTimelineIndex.end(), 0u);
         Input.DirtyRangeCount = 0u;
     }
     Input.Generation.Frame = frame;
@@ -397,9 +468,12 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     Input.TimelineDeltaCount = 0u;
     Input.TimelineOverflow = 0u;
     std::fill(Input.TimelineIndex.begin(), Input.TimelineIndex.end(), 0u);
+    std::fill(Input.TimelineHashKeys.begin(), Input.TimelineHashKeys.end(), 0u);
+    std::fill(Input.TimelineHashVersions.begin(), Input.TimelineHashVersions.end(), 0u);
     MemoryBaselineReady = false;
     CurrentTimelineVersion.fill(0u);
     LineSeen.fill(false);
+    SpriteLatchSeen.fill(false);
     EngineLineCount[0] = 0;
     EngineLineCount[1] = 0;
     Valid = false;
@@ -516,7 +590,128 @@ void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
     }
 
     if (line < ScreenHeight)
+    {
         FillTimelineLine(line);
+        if (line == 0u)
+        {
+            if (PendingSpriteLatchReady)
+                ApplyPendingSpriteLatch();
+            else
+            {
+                // A renderer reset or a first frame can legitimately arrive
+                // without the preceding VCOUNT 262 hook. In that case the
+                // current line-0 memory is the only available latch and is
+                // already represented by the frame-start versions.
+                SpriteLatchSeen[0] = true;
+                FillSpriteTimelineLine(0u);
+            }
+        }
+    }
+}
+
+void FrameRecorder::CaptureSpriteLatchForLine(u32 line) noexcept
+{
+    if (line >= ScreenHeight)
+        return;
+    if (!MemoryBaselineReady)
+        CaptureMemoryForLine(0u);
+
+    // This is deliberately the only place where the OBJ/OAM preparation
+    // snapshot is taken. GPU::StartHBlank calls DrawSprites(line+1) after
+    // DrawScanline(line), matching the hardware one-line-ahead latch. The
+    // palette and OBJ extended palette remain on the ordinary line timeline;
+    // SoftRenderer2D::InterleaveSprites reads those during DrawScanline.
+    CaptureMappedMemoryForLine(
+        0u, 1u, CurrentEngine[0].OBJVRAM.data(), CurrentEngine[0].OBJSize,
+        GPU.VRAMMap_AOBJ, 16u, 16u * 1024u,
+        TimelineEngineBaseBlock + TimelineEngineBGBlocks);
+    CaptureMappedMemoryForLine(
+        1u, 1u, CurrentEngine[1].OBJVRAM.data(), CurrentEngine[1].OBJSize,
+        GPU.VRAMMap_BOBJ, 8u, 16u * 1024u,
+        TimelineEngineBaseBlock + TimelineEngineBlocks + TimelineEngineBGBlocks);
+    CaptureDirectMemoryForLine(
+        GPU.OAM, CurrentOAM.data(), static_cast<u32>(CurrentOAM.size()),
+        TimelineOAMBaseBlock);
+    FillSpriteTimelineLine(line);
+    SpriteLatchSeen[line] = true;
+
+    if (line == 0u)
+    {
+        // VCOUNT 262 prepares line 0 for the next frame. Keep raw mapped
+        // bytes so BeginFrame can rebuild a timeline row after it snapshots
+        // the new frame's ordinary line-0 memory.
+        std::memcpy(PendingEngineAOBJ.data(), CurrentEngine[0].OBJVRAM.data(),
+            PendingEngineAOBJ.size());
+        std::memcpy(PendingEngineBOBJ.data(), CurrentEngine[1].OBJVRAM.data(),
+            PendingEngineBOBJ.size());
+        std::memcpy(PendingOAM.data(), CurrentOAM.data(), PendingOAM.size());
+        PendingSpriteLatchReady = true;
+    }
+}
+
+void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
+{
+    if (line >= ScreenHeight)
+        return;
+
+    u32* destination = Input.SpriteTimelineIndex.data()
+        + static_cast<std::size_t>(line) * SpriteTimelineBlockCount;
+    for (u32 block = 0; block < SpriteTimelineOAMBlocks; ++block)
+    {
+        destination[block] = CurrentTimelineVersion[TimelineOAMBaseBlock + block];
+    }
+    for (u32 engine = 0; engine < 2u; ++engine)
+    {
+        const u32 sourceBase = TimelineEngineBaseBlock
+            + engine * TimelineEngineBlocks + TimelineEngineBGBlocks;
+        const u32 destinationBase = SpriteTimelineOAMBlocks
+            + engine * SpriteTimelineEngineOBJBlocks;
+        for (u32 block = 0; block < SpriteTimelineEngineOBJBlocks; ++block)
+        {
+            destination[destinationBase + block] =
+                CurrentTimelineVersion[sourceBase + block];
+        }
+    }
+    MarkDirtyRange(
+        Input,
+        PackedSpriteTimelineBase * sizeof(u32)
+            + line * SpriteTimelineBlockCount * sizeof(u32),
+        SpriteTimelineBlockCount * sizeof(u32));
+}
+
+void FrameRecorder::ApplyPendingSpriteLatch() noexcept
+{
+    if (!PendingSpriteLatchReady)
+        return;
+
+    auto apply = [&](u8* current, const u8* pending, u32 size, u32 blockBase) {
+        std::array<u8, DirtyBlockBytes> block{};
+        for (u32 offset = 0; offset < size; offset += DirtyBlockBytes)
+        {
+            const u32 blockSize = std::min(DirtyBlockBytes, size - offset);
+            block.fill(0u);
+            std::memcpy(block.data(), pending + offset, blockSize);
+            if (std::memcmp(current + offset, block.data(), blockSize) == 0)
+                continue;
+            const u32 version = AppendTimelineDelta(Input, block.data());
+            if (version == 0u)
+                continue;
+            std::memcpy(current + offset, block.data(), blockSize);
+            CurrentTimelineVersion[blockBase + offset / DirtyBlockBytes] = version;
+        }
+    };
+
+    apply(CurrentEngine[0].OBJVRAM.data(), PendingEngineAOBJ.data(),
+        static_cast<u32>(PendingEngineAOBJ.size()),
+        TimelineEngineBaseBlock + TimelineEngineBGBlocks);
+    apply(CurrentEngine[1].OBJVRAM.data(), PendingEngineBOBJ.data(),
+        static_cast<u32>(PendingEngineBOBJ.size()),
+        TimelineEngineBaseBlock + TimelineEngineBlocks + TimelineEngineBGBlocks);
+    apply(CurrentOAM.data(), PendingOAM.data(), static_cast<u32>(PendingOAM.size()),
+        TimelineOAMBaseBlock);
+    SpriteLatchSeen[0] = true;
+    FillSpriteTimelineLine(0u);
+    PendingSpriteLatchReady = false;
 }
 
 void FrameRecorder::CaptureMappedMemoryForLine(
@@ -598,6 +793,8 @@ void FrameRecorder::CaptureLine(
     state.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
     state.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
     state.ScreenSwap = screenSwap ? 1u : 0u;
+    state.LCDVRAMMap = GPU.VRAMMap_LCDC;
+    state.SpriteLatchValid = SpriteLatchSeen[line] ? 1u : 0u;
     if (engine == 0u)
         Input.CaptureEnable |= state.CaptureEnable;
 

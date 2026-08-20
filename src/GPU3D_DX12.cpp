@@ -3309,7 +3309,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             SetDispatchConstants(list, constants);
             list->SetPipelineState(PipelineGPU2DNative.Get());
             list->Dispatch(
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+                DivRoundUp(2u * static_cast<u32>(ScaleFactor), 8u), 1u);
             InsertUavBarrier(list, BlendStateBuffer.Get());
 
             constants.Pad = 4u; // capture-only, one logical line
@@ -3331,7 +3332,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 | (exactValidation ? 2u : 0u) | 8u; // native one-line pass
             SetDispatchConstants(list, constants);
             list->Dispatch(
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u), 1u, 1u);
+                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
+                DivRoundUp(2u * static_cast<u32>(ScaleFactor), 8u), 1u);
         }
         DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount,
             GPU2DNative::ScreenHeight);

@@ -147,13 +147,24 @@ void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 
 void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
 {
+    (void)complete;
+    if (NativeGPU2DProducerForFrame)
+    {
+        // CaptureNativeDisplayLine materializes the core-visible VRAM mirror
+        // at the same HBlank as the native capture dispatch. There is no
+        // mandatory GPU readback and no stale inherited no-op: CPU/DMA reads
+        // see the exact bytes already written by the semantic mirror, while
+        // the native backend keeps its GPU capture state for presentation and
+        // subsequent line feedback.
+        (void)bank;
+        (void)start;
+        (void)len;
+        return;
+    }
     (void)bank;
     (void)start;
     (void)len;
-    (void)complete;
-    // Native VRAM is already updated line-by-line by this renderer. A read-only
-    // synchronization must not discard the high-resolution sidecar; OpenGL's
-    // SyncVRAMCapture likewise keeps its capture texture after downscaling.
+    // The ordinary software renderer has already materialized capture VRAM.
 }
 
 void SoftRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
@@ -239,7 +250,6 @@ void SoftRenderer::DrawScanline(u32 line)
         ++EmulatedFrameSerial;
         const bool nativeGPU2DReady = CanUseNativeGPU2DForFrame();
         const bool exactValidation = GPU2DNative::ExactValidationEnabled();
-        NativeGPU2DFrame.Reset();
         SoftwareScreenFrame.fill(0u);
         NativeGPU2DProducerForFrame = nativeGPU2DReady
             && !exactValidation;
@@ -247,6 +257,8 @@ void SoftRenderer::DrawScanline(u32 line)
             && (NativeGPU2DProducerForFrame || exactValidation);
         if (RecordNativeGPU2DFrameForFrame)
             NativeGPU2DFrame.BeginFrame(EmulatedFrameSerial);
+        else
+            NativeGPU2DFrame.Reset();
 
         // Savestate restore can leave the software 2D renderer's per-line OBJ
         // cache without the preceding VBlank (VCOUNT 262) that normally
@@ -265,6 +277,7 @@ void SoftRenderer::DrawScanline(u32 line)
         NativeGPU2DFrame.CaptureMemoryForLine(nativeLine);
         NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, nativeLine, GPU.ScreenSwap);
         NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, nativeLine, GPU.ScreenSwap);
+        CaptureNativeDisplayLine(nativeLine);
         if (nativeLine == GPU2DNative::ScreenHeight - 1u)
         {
             NativeGPU2DFrame.FinalizeMemory();
@@ -528,9 +541,43 @@ void SoftRenderer::DrawScanline(u32 line)
 void SoftRenderer::DrawSprites(u32 line)
 {
     if (NativeGPU2DProducerForFrame)
+    {
+        NativeGPU2DFrame.CaptureSpriteLatchForLine(line);
+        // Keep the private software OBJ preparation cache alive for the
+        // capture-only semantic mirror. Native visible output never consumes
+        // these lines; this is only the same one-HBlank-ahead latch that
+        // DoCapture's source-A evaluator needs when the core reads an active
+        // capture destination before VBlank.
+        Rend2D_A->DrawSprites(line);
+        Rend2D_B->DrawSprites(line);
         return;
+    }
     Rend2D_A->DrawSprites(line);
     Rend2D_B->DrawSprites(line);
+}
+
+void SoftRenderer::CaptureNativeDisplayLine(u32 line)
+{
+    if (!GPU.CaptureEnable || line >= GPU2DNative::ScreenHeight)
+        return;
+
+    const u32 captureMode = (GPU.CaptureCnt >> 29u) & 0x3u;
+    // Source-B-only capture never evaluates engine A or 3D. Avoid touching
+    // the software 2D source evaluator in that case.
+    if (captureMode != 1u)
+    {
+        const bool source3D = (GPU.CaptureCnt & (1u << 24u)) != 0u;
+        const bool engineAUses3D = (GPU.GPU2D_A.DispCnt & (1u << 3u)) != 0u;
+        if (source3D || engineAUses3D)
+            Output3D = Rend3D->GetLine(static_cast<int>(line));
+        Rend2D_A->DrawScanline(line);
+    }
+
+    // DoCapture writes GPU.VRAM and VRAMDirty exactly as the standalone
+    // software renderer does. The native Vulkan/DX12 capture state remains the
+    // presentation/GPU feedback owner; this CPU mirror exists only to satisfy
+    // the emulation core's read/write/savestate ownership at active HBlank.
+    DoCapture(line);
 }
 
 void SoftRenderer::DrawScanlineA(u32 line, u32* dst)

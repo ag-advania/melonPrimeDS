@@ -48,6 +48,24 @@ VulkanRenderer::VulkanRenderer(melonDS::NDS& nds)
 
 VulkanRenderer::~VulkanRenderer() = default;
 
+void VulkanRenderer::AllocCapture(u32 bank, u32 start, u32 len)
+{
+    // The shared SoftRenderer owns the backend-neutral semantic mirror. Keep
+    // the Vulkan frontend as an explicit owner of the Renderer contract so a
+    // future GPU-only capture path cannot silently inherit a no-op.
+    SoftRenderer::AllocCapture(bank, start, len);
+}
+
+void VulkanRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
+{
+    SoftRenderer::SyncVRAMCapture(bank, start, len, complete);
+}
+
+void VulkanRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
+{
+    SoftRenderer::InvalidateVRAMCapture(bank, start, len);
+}
+
 bool VulkanRenderer::Init()
 {
     if (!Rend3D || !Rend3D->Init())

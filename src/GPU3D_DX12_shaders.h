@@ -2282,6 +2282,12 @@ static const uint NativeTimelineIndexBase = NativeRouteBase + 2u * 192u;
 static const uint NativeTimelinePayloadBase = NativeTimelineIndexBase
     + NativeTimelineBlockCount * 192u;
 static const uint NativeTimelinePayloadStride = 512u / 4u;
+static const uint NativeSpriteTimelineOAMBlocks = 4u;
+static const uint NativeSpriteTimelineEngineOBJBlocks = 512u;
+static const uint NativeSpriteTimelineBlockCount = NativeSpriteTimelineOAMBlocks
+    + 2u * NativeSpriteTimelineEngineOBJBlocks;
+static const uint NativeSpriteTimelineIndexBase = NativeTimelinePayloadBase
+    + 8192u * NativeTimelinePayloadStride;
 
 static const uint NativeDispCnt = 0u;
 static const uint NativeLayerEnable = 1u;
@@ -2298,6 +2304,8 @@ static const uint NativeWinRegs = 59u;
 static const uint NativeWinMask = 60u;
 static const uint NativeWinPos = 61u;
 static const uint NativeUnitEnabled = 65u;
+static const uint NativeLCDVRAMMap = 66u;
+static const uint NativeSpriteLatchValid = 67u;
 static const uint NativeBGMosaic = 42u;
 static const uint NativeOBJMosaic = 44u;
 static const uint NativeBGMosaicLine = 46u;
@@ -2325,6 +2333,30 @@ uint NativeTimelineVersion(uint block)
     return ResultValue[
         NativeTimelineIndexBase + line * NativeTimelineBlockCount + block];
 }
+uint NativeSpriteTimelineVersion(uint engine, uint line, uint block)
+{
+    if (line >= 192u || NativeLine(engine, line, NativeSpriteLatchValid) == 0u)
+        return NativeTimelineVersion(block);
+    uint spriteBlock = 0u;
+    if (block >= NativeTimelineOAMBaseBlock
+        && block < NativeTimelineOAMBaseBlock + NativeTimelineOAMBlocks)
+    {
+        spriteBlock = block - NativeTimelineOAMBaseBlock;
+    }
+    else
+    {
+        uint objBase = NativeTimelineEngineBaseBlock
+            + engine * NativeTimelineEngineBlocks + NativeTimelineEngineBGBlocks;
+        if (block < objBase || block >= objBase + NativeTimelineEngineOBJBlocks)
+            return NativeTimelineVersion(block);
+        spriteBlock = NativeSpriteTimelineOAMBlocks
+            + engine * NativeSpriteTimelineEngineOBJBlocks + (block - objBase);
+    }
+    if (spriteBlock >= NativeSpriteTimelineBlockCount)
+        return NativeTimelineVersion(block);
+    return ResultValue[NativeSpriteTimelineIndexBase
+        + line * NativeSpriteTimelineBlockCount + spriteBlock];
+}
 uint NativeByte(uint base, uint size, uint address, uint timelineBlockBase)
 {
     uint offset = 0u;
@@ -2346,6 +2378,31 @@ uint Native16(uint base, uint size, uint address, uint timelineBlockBase)
     return NativeByte(base, size, address, timelineBlockBase)
         | (NativeByte(base, size, address + 1u, timelineBlockBase) << 8u);
 }
+uint NativeSpriteByte(uint engine, uint line, uint base, uint size,
+    uint address, uint timelineBlockBase)
+{
+    uint offset = 0u;
+    uint word = 0u;
+    if (size != 0u)
+    {
+        offset = address & (size - 1u);
+        uint version = NativeSpriteTimelineVersion(
+            engine, line, timelineBlockBase + offset / 512u);
+        word = version == 0u
+            ? ResultValue[base + (offset >> 2u)]
+            : ResultValue[NativeTimelinePayloadBase
+                + (version - 1u) * NativeTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
+    }
+    return (word >> ((offset & 3u) * 8u)) & 0xFFu;
+}
+uint NativeSprite16(uint engine, uint line, uint base, uint size,
+    uint address, uint timelineBlockBase)
+{
+    return NativeSpriteByte(engine, line, base, size, address, timelineBlockBase)
+        | (NativeSpriteByte(engine, line, base, size, address + 1u,
+            timelineBlockBase) << 8u);
+}
 uint NativeBGSize(uint engine) { return ResultValue[16u + engine * 4u]; }
 uint NativeOBJSize(uint engine) { return ResultValue[17u + engine * 4u]; }
 uint NativeBGExtSize(uint engine) { return ResultValue[18u + engine * 4u]; }
@@ -2362,16 +2419,18 @@ uint NativeBG16(uint engine, uint address)
         NativeBGSize(engine), address,
         NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks);
 }
-uint NativeOBJ8(uint engine, uint address)
+uint NativeOBJ8(uint engine, uint line, uint address)
 {
-    return NativeByte(NativeEngineBase + engine * NativeEngineWords + 131072u,
+    return NativeSpriteByte(engine, line,
+        NativeEngineBase + engine * NativeEngineWords + 131072u,
         NativeOBJSize(engine), address,
         NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks
             + NativeTimelineEngineBGBlocks);
 }
-uint NativeOBJ16(uint engine, uint address)
+uint NativeOBJ16(uint engine, uint line, uint address)
 {
-    return Native16(NativeEngineBase + engine * NativeEngineWords + 131072u,
+    return NativeSprite16(engine, line,
+        NativeEngineBase + engine * NativeEngineWords + 131072u,
         NativeOBJSize(engine), address,
         NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks
             + NativeTimelineEngineBGBlocks);
@@ -2397,10 +2456,10 @@ uint NativePalette16(uint engine, uint address)
         NativePaletteBase + (engine == 0u ? 0u : 256u), 0x400u, address,
         NativeTimelinePaletteBaseBlock + engine * 2u);
 }
-uint NativeOAM16(uint engine, uint address)
+uint NativeOAM16(uint engine, uint line, uint address)
 {
-    return Native16(
-        NativeOamBase + engine * 256u, 0x400u, address,
+    return NativeSprite16(
+        engine, line, NativeOamBase + engine * 256u, 0x400u, address,
         NativeTimelineOAMBaseBlock + engine * 2u);
 }
 uint NativeFIFO16(uint index)
@@ -2728,7 +2787,7 @@ NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly)
     uint best=4u;
     for(uint sprite=0u;sprite<128u;sprite++)
     {
-        uint a0=NativeOAM16(engine,sprite*8u),a1=NativeOAM16(engine,sprite*8u+2u),a2=NativeOAM16(engine,sprite*8u+4u);
+        uint a0=NativeOAM16(engine,line,sprite*8u),a1=NativeOAM16(engine,line,sprite*8u+2u),a2=NativeOAM16(engine,line,sprite*8u+4u);
         uint type=(a0>>8u)&3u;if(type==2u)continue;bool isWindow=((a0>>10u)&3u)==2u;
         if((windowOnly && !isWindow)||(!windowOnly && isWindow))continue;
         uint size=(a0>>14u)|((a1>>12u)&0xCu);int w=NativeSpriteWidth(size),h=NativeSpriteHeight(size);
@@ -2739,7 +2798,7 @@ NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly)
         int lx=x-max(xpos,0);if(xpos<0)lx=x;if(lx<0||lx>=bw)continue;
         int sx=0,sy=0;if(rotate)
         {
-            uint rot=(a1>>9u)&0x1Fu;int ma=(int)NativeOAM16(engine,rot*32u+6u),mb=(int)NativeOAM16(engine,rot*32u+14u),mc=(int)NativeOAM16(engine,rot*32u+22u),md=(int)NativeOAM16(engine,rot*32u+30u);
+            uint rot=(a1>>9u)&0x1Fu;int ma=(int)NativeOAM16(engine,line,rot*32u+6u),mb=(int)NativeOAM16(engine,line,rot*32u+14u),mc=(int)NativeOAM16(engine,line,rot*32u+22u),md=(int)NativeOAM16(engine,line,rot*32u+30u);
             if((ma&0x8000)!=0)ma-=0x10000;if((mb&0x8000)!=0)mb-=0x10000;if((mc&0x8000)!=0)mc-=0x10000;if((md&0x8000)!=0)md-=0x10000;
             int cx=bw>>1,cy=bh>>1,rx=(lx+max(-xpos,0)-cx)*ma+(ypos-cy)*mb+(w<<7),ry=(lx+max(-xpos,0)-cx)*mc+(ypos-cy)*md+(h<<7);
             if(rx<0||ry<0||rx>=(w<<8)||ry>=(h<<8))continue;sx=rx>>8;sy=ry>>8;
@@ -2753,7 +2812,7 @@ NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly)
             if((disp&0x40u)!=0u){if((disp&0x20u)!=0u)continue;address=tile<<(7u+((disp>>22u)&1u));stride=(uint)w*2u;}
             else if((disp&0x20u)!=0u){address=((tile&0x1Fu)<<4u)+((tile&0x3E0u)<<7u);stride=512u;}
             else {address=((tile&0x0Fu)<<4u)+((tile&0x3F0u)<<7u);stride=256u;}
-            color=NativeOBJ16(engine,address+(uint)sy*stride+(uint)sx*2u);opaque=(color&0x8000u)!=0u;color&=0x7FFFu;flag=0xC0u+alpha+1u;
+            color=NativeOBJ16(engine,line,address+(uint)sy*stride+(uint)sx*2u);opaque=(color&0x8000u)!=0u;color&=0x7FFFu;flag=0xC0u+alpha+1u;
         }
         else
         {
@@ -2762,13 +2821,13 @@ NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly)
             else yFactor=0x20u;yFactor<<=5u;address<<=5u;
             if((a0&(1u<<13u))!=0u)
             {
-                address+=(uint)((sy>>3)*int(yFactor))+(uint)((sy&7)*8)+(uint)((sx>>3)*64)+(uint)(sx&7);color=NativeOBJ8(engine,address);opaque=color!=0u;
+                address+=(uint)((sy>>3)*int(yFactor))+(uint)((sy&7)*8)+(uint)((sx>>3)*64)+(uint)(sx&7);color=NativeOBJ8(engine,line,address);opaque=color!=0u;
                 if(opaque&&(disp&(1u<<31u))!=0u)color=NativeOBJExt16(engine,((a2&0xF000u)>>4u)+color*2u);else if(opaque)color=NativePalette16(engine,(engine==0u?0x200u:0x600u)+color*2u);
                 flag=mode==1u?0x80u:0x10u;
             }
             else
             {
-                address+=(uint)((sy>>3)*int(yFactor))+(uint)((sy&7)*4)+(uint)((sx>>3)*32)+((uint(sx)&7u)>>1u);uint packed=NativeOBJ8(engine,address);color=(uint(sx)&1u)!=0u?packed>>4u:packed&0xFu;opaque=color!=0u;
+                address+=(uint)((sy>>3)*int(yFactor))+(uint)((sy&7)*4)+(uint)((sx>>3)*32)+((uint(sx)&7u)>>1u);uint packed=NativeOBJ8(engine,line,address);color=(uint(sx)&1u)!=0u?packed>>4u:packed&0xFu;opaque=color!=0u;
                 if(opaque)color=NativePalette16(engine,(engine==0u?0x200u:0x600u)+((a2>>12u)&0xFu)*32u+color*2u);flag=mode==1u?0x80u:0x10u;
             }
         }
@@ -2831,7 +2890,7 @@ uint NativeDisplay(uint engine,uint line,int x,uint ox,uint oy)
     if(mode==0u)result=NativePack(63u,63u,63u,0u);
     else if(mode==1u&&NativeLine(engine,line,NativeUnitEnabled)==0u)result=engine==0u?NativePack(0u,0u,0u,0u):NativePack(63u,63u,63u,0u);
     else if(mode==1u&&NativeLine(engine,line,NativeForcedBlank)!=0u)result=NativePack(63u,63u,63u,0u);
-    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((ResultValue[14u]&(1u<<bank))!=0u)result=NativeMaster(NativeVRAMColor(NativeLCD16(bank,line*512u+(uint)x*2u)),NativeLine(engine,line,NativeMasterBrightness));}
+    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((NativeLine(engine,line,NativeLCDVRAMMap)&(1u<<bank))!=0u)result=NativeMaster(NativeVRAMColor(NativeLCD16(bank,line*512u+(uint)x*2u)),NativeLine(engine,line,NativeMasterBrightness));}
     else if(mode==3u&&engine==0u)result=NativeMaster(NativeVRAMColor(NativeFIFO16((uint)x)),NativeLine(engine,line,NativeMasterBrightness));
     else result=NativeMaster(NativeComposite(engine,line,x,ox,oy),NativeLine(engine,line,NativeMasterBrightness));
     return result;
@@ -2852,6 +2911,7 @@ uint NativeCaptureSourceB(uint line,uint x,uint cnt)
 {
     if((cnt&(1u<<25u))!=0u)return NativeFIFO16(x);
     uint disp=NativeLine(0u,line,NativeDispCnt),bank=(disp>>18u)&3u;
+    if((NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<bank))==0u)return 0u;
     uint address=line*512u+x*2u;
     if(((disp>>16u)&3u)!=2u)address+=((cnt>>26u)&3u)<<14u;
     return NativeLCD16(bank,address);
@@ -2883,7 +2943,7 @@ void NativeWriteCapturePair(uint line,uint x,uint ox)
     uint cnt=NativeLine(0u,line,56u);if(cnt==0u||NativeLine(0u,line,55u)==0u)return;
     uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
     if(line>=height||x>=width)return;
-    uint bank=(cnt>>16u)&3u;if((ResultValue[14u]&(1u<<bank))==0u)return;
+    uint bank=(cnt>>16u)&3u;if((NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<bank))==0u)return;
     uint a=NativeCaptureSourceA(line,x,ox),b=NativeCaptureSourceB(line,x,cnt),first=NativeCaptureComposite(a,b,cnt),second=0u;
     if(x+1u<width)
     {
@@ -2912,9 +2972,10 @@ void main(uint3 id : SV_DispatchThreadID)
     uint screen,scaledY;
     if(linePass)
     {
-        if(id.y>=2u)return;
-        screen=id.y;
-        scaledY=InterpSpanCount*ScaleFactor;
+        uint scaledScreens=2u*ScaleFactor;
+        if(id.y>=scaledScreens)return;
+        screen=id.y/ScaleFactor;
+        scaledY=InterpSpanCount*ScaleFactor+(id.y%ScaleFactor);
     }
     else
     {

@@ -275,6 +275,10 @@ bool PackFrame(const FrameInput& input, u32* destination, std::size_t wordCount)
         destination + PackedTimelinePayloadBase,
         input.TimelinePayload.data(),
         input.TimelinePayload.size());
+    std::memcpy(
+        destination + PackedSpriteTimelineBase,
+        input.SpriteTimelineIndex.data(),
+        static_cast<std::size_t>(PackedSpriteTimelineIndexWords) * sizeof(u32));
     return true;
 }
 
