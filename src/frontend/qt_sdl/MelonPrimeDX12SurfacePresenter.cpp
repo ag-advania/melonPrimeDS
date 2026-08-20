@@ -131,7 +131,11 @@ DX12SurfacePresenter::~DX12SurfacePresenter()
     Shutdown();
 }
 
-bool DX12SurfacePresenter::Init(HWND window)
+bool DX12SurfacePresenter::Init(
+    HWND window,
+    std::uint64_t surfaceGeneration,
+    std::uint32_t initialWidth,
+    std::uint32_t initialHeight)
 {
     Shutdown();
     if (!window)
@@ -149,6 +153,7 @@ bool DX12SurfacePresenter::Init(HWND window)
     }
 
     Window = window;
+    SurfaceGeneration = surfaceGeneration;
     if (!Commands.Init(Context->GetDevice(), Context->GetQueue())
         || !Descriptors.Init(Context->GetDevice(), kDescriptorHeapCount, true)
         || !Descriptors.Allocate(
@@ -161,10 +166,15 @@ bool DX12SurfacePresenter::Init(HWND window)
         return false;
     }
 
-    RECT client{};
-    GetClientRect(Window, &client);
-    const std::uint32_t width = std::max<LONG>(1, client.right - client.left);
-    const std::uint32_t height = std::max<LONG>(1, client.bottom - client.top);
+    std::uint32_t width = initialWidth;
+    std::uint32_t height = initialHeight;
+    if (width == 0 || height == 0)
+    {
+        RECT client{};
+        GetClientRect(Window, &client);
+        width = std::max<LONG>(1, client.right - client.left);
+        height = std::max<LONG>(1, client.bottom - client.top);
+    }
     if (!CreateSwapchain(width, height))
     {
         Shutdown();
@@ -252,6 +262,7 @@ void DX12SurfacePresenter::Shutdown() noexcept
     FirstPresentLogged = false;
     PresentWaitStateLogged = false;
     LastPresentWaitEnabled = true;
+    LastBeginBackpressure = false;
     PresentModeLogged = false;
     LastPresentVsync = false;
     PresentResultLogged = false;
@@ -260,6 +271,8 @@ void DX12SurfacePresenter::Shutdown() noexcept
     PerfRecordStart = {};
 #endif
     Window = nullptr;
+    SurfaceGeneration = 0;
+    SwapchainGeneration = 0;
     if (Context)
     {
         Context->Release();
@@ -446,6 +459,9 @@ bool DX12SurfacePresenter::CreateSwapchain(std::uint32_t width, std::uint32_t he
     if (FAILED(hr))
         return Fail("IDXGISwapChain3", hr);
 
+    if (!ApplySdrColorSpace())
+        return false;
+
     factory->MakeWindowAssociation(Window, DXGI_MWA_NO_ALT_ENTER);
     hr = Swapchain->SetMaximumFrameLatency(1);
     if (FAILED(hr))
@@ -459,6 +475,17 @@ bool DX12SurfacePresenter::CreateSwapchain(std::uint32_t width, std::uint32_t he
 
     Width = width;
     Height = height;
+    ++SwapchainGeneration;
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Info,
+        "DX12 swapchain recreated surfaceGeneration=%llu hwnd=%p "
+        "swapchainGeneration=%llu extent=%ux%u format=DXGI_FORMAT_B8G8R8A8_UNORM "
+        "colorSpace=DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709\n",
+        static_cast<unsigned long long>(SurfaceGeneration),
+        static_cast<void*>(Window),
+        static_cast<unsigned long long>(SwapchainGeneration),
+        Width,
+        Height);
     melonDS::DX12Perf::SetCounter(
         melonDS::DX12Perf::Counter::DX12BackBufferCount, kBufferCount);
     melonDS::DX12Perf::SetCounter(
@@ -504,11 +531,50 @@ bool DX12SurfacePresenter::Resize(std::uint32_t width, std::uint32_t height)
     if (FAILED(hr))
         return Fail("IDXGISwapChain::ResizeBuffers", hr);
 
+    if (!ApplySdrColorSpace())
+        return false;
+
     Width = width;
     Height = height;
+    ++SwapchainGeneration;
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Info,
+        "DX12 swapchain resized surfaceGeneration=%llu hwnd=%p "
+        "swapchainGeneration=%llu extent=%ux%u format=DXGI_FORMAT_B8G8R8A8_UNORM "
+        "colorSpace=DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709\n",
+        static_cast<unsigned long long>(SurfaceGeneration),
+        static_cast<void*>(Window),
+        static_cast<unsigned long long>(SwapchainGeneration),
+        Width,
+        Height);
     CloseFrameLatencyWaitable();
     FrameLatencyWaitable = Swapchain->GetFrameLatencyWaitableObject();
     return FrameLatencyWaitable && AcquireBackBuffers();
+}
+
+
+bool DX12SurfacePresenter::ApplySdrColorSpace()
+{
+    if (!Swapchain)
+    {
+        Error = "DXGI SDR color-space setup has no swapchain";
+        return false;
+    }
+
+    constexpr DXGI_COLOR_SPACE_TYPE colorSpace =
+        DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    UINT support = 0;
+    HRESULT hr = Swapchain->CheckColorSpaceSupport(colorSpace, &support);
+    if (FAILED(hr)
+        || (support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT) == 0)
+    {
+        return Fail("IDXGISwapChain3::CheckColorSpaceSupport(SDR)",
+            FAILED(hr) ? hr : DXGI_ERROR_UNSUPPORTED);
+    }
+    hr = Swapchain->SetColorSpace1(colorSpace);
+    if (FAILED(hr))
+        return Fail("IDXGISwapChain3::SetColorSpace1(SDR)", hr);
+    return true;
 }
 
 
@@ -810,6 +876,7 @@ bool DX12SurfacePresenter::BeginFrame(
     std::uint32_t height,
     bool waitForPresentSlot)
 {
+    LastBeginBackpressure = false;
     if (!Initialized || FrameOpen || width == 0 || height == 0)
         return false;
     if (!PresentWaitStateLogged || LastPresentWaitEnabled != waitForPresentSlot)
@@ -828,7 +895,13 @@ bool DX12SurfacePresenter::BeginFrame(
             melonDS::DX12Perf::CpuMetric::PresentSlotWait);
         const auto waitStart = std::chrono::steady_clock::now();
         if (!WaitForPresentSlot())
+        {
+            // A saturated DXGI frame-latency slot is presenter backpressure,
+            // not a renderer/runtime failure. The caller keeps the last good
+            // native frame and retries on the next emulated frame.
+            LastBeginBackpressure = true;
             return false;
+        }
         const auto waitNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::steady_clock::now() - waitStart).count();
         melonDS::DX12Perf::AddCounter(

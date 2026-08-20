@@ -492,7 +492,6 @@ bool VulkanPresenter::Init(QWidget* surfaceWidget)
 }
 
 
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter snapshot entry point, not input dispatch
 bool VulkanPresenter::Init(const VulkanSurface::NativeWindowSnapshot& snapshot)
 {
     if (Initialized)
@@ -503,9 +502,10 @@ bool VulkanPresenter::Init(const VulkanSurface::NativeWindowSnapshot& snapshot)
     Error.clear();
     SurfaceWidget = nullptr;
     SurfaceGeneration = snapshot.Generation;
+    SurfaceNativeHandle = static_cast<std::uintptr_t>(snapshot.WindowId);
 
     if (!snapshot.IsValid())
-        return Fail("the Linux Vulkan presenter was given no valid native surface snapshot");
+        return Fail("the Vulkan presenter was given no valid native surface snapshot");
 
     if (!AcquireContext())
         return false;
@@ -540,13 +540,13 @@ bool VulkanPresenter::Init(const VulkanSurface::NativeWindowSnapshot& snapshot)
     Initialized = true;
     Platform::Log(
         Platform::LogLevel::Info,
-        "[Vulkan][LinuxWSI] swapchain ready extent=%ux%u generation=%llu\n",
+        "[Vulkan] snapshot presenter ready extent=%ux%u generation=%llu native=%p\n",
         SwapchainExtent.width,
         SwapchainExtent.height,
-        static_cast<unsigned long long>(SurfaceGeneration));
+        static_cast<unsigned long long>(SurfaceGeneration),
+        reinterpret_cast<void*>(SurfaceNativeHandle));
     return true;
 }
-#endif
 
 
 bool VulkanPresenter::AcquireContext()
@@ -589,7 +589,6 @@ bool VulkanPresenter::CreateSurface(QWidget* widget)
 }
 
 
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter WSI creation, not input dispatch
 bool VulkanPresenter::CreateSurface(const VulkanSurface::NativeWindowSnapshot& snapshot)
 {
     Surface = VulkanSurface::Create(
@@ -601,14 +600,13 @@ bool VulkanPresenter::CreateSurface(const VulkanSurface::NativeWindowSnapshot& s
     {
         if (Surface.FailureResult == VK_ERROR_SURFACE_LOST_KHR)
             return RequestSurfaceRebind(
-                "vkCreateLinuxSurfaceKHR", Surface.FailureResult);
+                "vkCreatePlatformSurface", Surface.FailureResult);
         return Fail(Surface.Failure.empty()
-            ? std::string("the Linux platform Vulkan surface could not be created")
+            ? std::string("the platform Vulkan surface could not be created")
             : Surface.Failure);
     }
     return true;
 }
-#endif
 
 
 bool VulkanPresenter::CreateDeviceObjects()
@@ -1076,8 +1074,10 @@ bool VulkanPresenter::ChooseSurfaceFormat(
     }
     formats.resize(count);
 
-    // Never assume: the format list is queried and matched, with two explicit
-    // preferences and a documented fallback.
+    // Never assume: the direct compositor is an SDR BGRA/RGBA UNORM producer.
+    // Accepting an arbitrary first format silently applies an unknown transfer
+    // function (or HDR encoding) to DS display-space pixels, which is the
+    // source-level colour corruption seen during some fullscreen transitions.
     //
     // BGRA/RGBA *UNORM* rather than *SRGB* on purpose. The composed frame is
     // already in the DS's display space, exactly as the software, OpenGL and
@@ -1103,13 +1103,10 @@ bool VulkanPresenter::ChooseSurfaceFormat(
         }
     }
 
-    out = formats.front();
-    Platform::Log(
-        Platform::LogLevel::Warn,
-        "[Vulkan] presenter: no 8-bit UNORM surface format offered; using format=%d colorSpace=%d\n",
-        static_cast<int>(out.format),
-        static_cast<int>(out.colorSpace));
-    return true;
+    reason = "the Vulkan surface offers no explicit SDR 8-bit UNORM + sRGB format";
+    if (failureResult)
+        *failureResult = VK_ERROR_FORMAT_NOT_SUPPORTED;
+    return false;
 }
 
 
@@ -1432,8 +1429,10 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // means the pacer grows the queue once after the first full event.
     PresentPacer.OnSwapchainCreated(Swapchain, presentMode, imageCount);
 
-    const bool formatChanged = (SurfaceFormat.format != format.format);
+    const bool formatChanged = (SurfaceFormat.format != format.format)
+        || (SurfaceFormat.colorSpace != format.colorSpace);
     SurfaceFormat = format;
+    ++SwapchainGeneration;
 
     if (RenderPass == VK_NULL_HANDLE || formatChanged)
     {
@@ -1467,6 +1466,25 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     if (res != VK_SUCCESS && res != VK_INCOMPLETE)
         return Fail("vkGetSwapchainImagesKHR", res);
     SwapchainImages.resize(realImageCount);
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan] swapchain recreated fullscreen=%d surfaceGeneration=%llu native=%p "
+        "swapchainGeneration=%llu old=%p new=%p extent=%ux%u format=%d colorspace=%d "
+        "presentMode=%s imageCount=%u compositeAlpha=%d\n",
+        WindowFullscreen.load(std::memory_order_acquire) ? 1 : 0,
+        static_cast<unsigned long long>(SurfaceGeneration),
+        reinterpret_cast<void*>(SurfaceNativeHandle),
+        static_cast<unsigned long long>(SwapchainGeneration),
+        reinterpret_cast<void*>(oldSwapchain),
+        reinterpret_cast<void*>(Swapchain),
+        extent.width,
+        extent.height,
+        static_cast<int>(format.format),
+        static_cast<int>(format.colorSpace),
+        PresentModeName(presentMode),
+        realImageCount,
+        static_cast<int>(compositeAlpha));
 
     SwapchainImageAcquireObserved.assign(realImageCount, false);
     DistinctSwapchainImagesAcquiredSinceRecreate = 0;
@@ -3404,9 +3422,9 @@ void VulkanPresenter::Shutdown() noexcept
     SurfaceRebindRequested = false;
     FirstPresentLogged = false;
     SkipNextPresentationForLatencyBudget = false;
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter generation teardown, not input dispatch
     SurfaceGeneration = 0;
-#endif
+    SurfaceNativeHandle = 0;
+    SwapchainGeneration = 0;
 }
 
 } // namespace MelonPrime

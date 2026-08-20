@@ -209,6 +209,7 @@ void VulkanRenderer::VBlank()
     // disagree with.
     auto* vulkan = GetVulkanRenderer3D();
     bool nativeComposed = false;
+    GPU2DComposeResult nativeComposeResult = GPU2DComposeResult::Unavailable;
     const bool nativeProducer = UsesNativeGPU2DProducerForFrame();
     const bool exactValidation = GPU2DNative::ExactValidationEnabled();
     if (vulkan && HasNativeGPU2DFrameForCurrentEmulatedFrame())
@@ -220,6 +221,7 @@ void VulkanRenderer::VBlank()
             !GPU.GPU3D.AbortFrame && vulkan->HasFinalFBContent(),
             exactValidation ? GetSoftwareScreenFrame(0u) : nullptr,
             exactValidation ? GetSoftwareScreenFrame(1u) : nullptr);
+        nativeComposeResult = vulkan->GetLastComposeResult();
         if (nativeComposed)
         {
             if (!NativeGPU2DAnnounced)
@@ -229,7 +231,8 @@ void VulkanRenderer::VBlank()
                 NativeGPU2DAnnounced = true;
             }
         }
-        else
+        else if (!nativeProducer
+            || nativeComposeResult == GPU2DComposeResult::Fatal)
         {
             RecordGPU2DRuntimeNativeUnavailableFallback();
             VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFallbackFrames);
@@ -251,6 +254,16 @@ void VulkanRenderer::VBlank()
 
     if (nativeProducer && !nativeComposed)
     {
+        if (nativeComposeResult == GPU2DComposeResult::Backpressure
+            || nativeComposeResult == GPU2DComposeResult::Unavailable)
+        {
+            // Keep the last published native frame. A full renderer-output
+            // ring or a still-compiling pipeline is not a correctness/runtime
+            // failure and must not trigger a Software hybrid frame.
+            if (VBlankObserverFn)
+                VBlankObserverFn(VBlankObserverData);
+            return;
+        }
         // No CPU structured 2D frame exists when native ownership was latched.
         // Refuse to publish a stale or mixed-generation output instead of
         // silently falling back to a buffer that was not rendered this frame.
@@ -271,7 +284,9 @@ void VulkanRenderer::VBlank()
             VBlankObserverFn(VBlankObserverData);
         return;
     }
-    if (exactValidation && vulkan && !nativeComposed)
+    if (exactValidation && vulkan && !nativeComposed
+        && nativeComposeResult != GPU2DComposeResult::Backpressure
+        && nativeComposeResult != GPU2DComposeResult::Unavailable)
     {
         vulkan->FailNativeGPU2DExact(
             "native GPU2D exact gate rejected a fallback or unavailable frame");
@@ -288,6 +303,13 @@ void VulkanRenderer::VBlank()
         Platform::Log(Platform::LogLevel::Warn,
             "Vulkan renderer gpu2d=Software fallback=1 reason=native frame unavailable\n");
         NativeGPU2DFallbackAnnounced = true;
+    }
+
+    if (nativeComposeResult == GPU2DComposeResult::Backpressure)
+    {
+        if (VBlankObserverFn)
+            VBlankObserverFn(VBlankObserverData);
+        return;
     }
 
     StructuredVulkanFrameView view{};

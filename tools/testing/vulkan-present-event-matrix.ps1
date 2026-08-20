@@ -46,6 +46,7 @@ param(
     [int]$Policy = 2,
     [string]$Tag = "event-matrix",
     [int]$WarmupSeconds = 18,
+    [ValidateRange(1, 1000)][int]$FullscreenCycles = 8,
     [switch]$ValidateSync,
     [string]$OutDir = $env:TEMP
 )
@@ -172,13 +173,13 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
 
     if ($Phase -eq 'all' -or $Phase -eq 'fullscreen') {
         Add-Type -AssemblyName System.Windows.Forms
-        for ($i = 0; $i -lt 8; $i++) {
+        for ($i = 0; $i -lt $FullscreenCycles; $i++) {
             [void][MpWin]::SetForegroundWindow($h)
             Start-Sleep -Milliseconds 250
             [System.Windows.Forms.SendKeys]::SendWait('{F11}')
             Start-Sleep -Milliseconds 700
         }
-        Write-Host "fullscreen toggle x8"
+        Write-Host "fullscreen toggle x$FullscreenCycles"
     }
 
     if ($Phase -eq 'idle') {

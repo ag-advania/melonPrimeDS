@@ -125,6 +125,10 @@ public:
     [[nodiscard]] RendererOutput GetComposedOutput() const;
     [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasContent; }
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
+    [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
+    {
+        return LastComposeResult;
+    }
     // Materialize only the requested LCDC capture blocks when the emulation
     // core actually reads them.  The normal native frame path keeps this
     // mirror device-local and never calls this method.
@@ -551,6 +555,7 @@ private:
     int ShaderStepIdx = 0;
     bool RuntimeFailed = false;
     std::string RuntimeFailureReason;
+    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
     bool Initialized = false;
     // FinalFB is recreated on every resolution change and starts UNDEFINED;
     // the placeholder and clear-bitmap images are created once for the whole

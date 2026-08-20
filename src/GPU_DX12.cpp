@@ -204,6 +204,7 @@ void DX12Renderer::VBlank()
 {
     auto* dx12 = GetDX12Renderer3D();
     bool nativeComposed = false;
+    GPU2DComposeResult nativeComposeResult = GPU2DComposeResult::Unavailable;
     const bool nativeProducer = UsesNativeGPU2DProducerForFrame();
     const bool exactValidation = GPU2DNative::ExactValidationEnabled();
     if (dx12 && HasNativeGPU2DFrameForCurrentEmulatedFrame())
@@ -215,6 +216,7 @@ void DX12Renderer::VBlank()
             !GPU.GPU3D.AbortFrame && dx12->HasFinalFBContent(),
             exactValidation ? GetSoftwareScreenFrame(0u) : nullptr,
             exactValidation ? GetSoftwareScreenFrame(1u) : nullptr);
+        nativeComposeResult = dx12->GetLastComposeResult();
         if (nativeComposed)
         {
             if (!NativeGPU2DAnnounced)
@@ -224,7 +226,8 @@ void DX12Renderer::VBlank()
                 NativeGPU2DAnnounced = true;
             }
         }
-        else
+        else if (!nativeProducer
+            || nativeComposeResult == GPU2DComposeResult::Fatal)
         {
             RecordGPU2DRuntimeNativeUnavailableFallback();
             DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFallbackFrames);
@@ -245,6 +248,13 @@ void DX12Renderer::VBlank()
     }
     if (nativeProducer && !nativeComposed)
     {
+        if (nativeComposeResult == GPU2DComposeResult::Backpressure
+            || nativeComposeResult == GPU2DComposeResult::Unavailable)
+        {
+            IntelXeLL.MarkRenderSubmitEnd();
+            NvidiaReflex.MarkRenderSubmitEnd();
+            return;
+        }
         // Native ownership means no CPU structured frame was produced for this
         // generation. Do not present a previous frame or silently switch to
         // Software after a native submission/drop failure.
@@ -264,7 +274,9 @@ void DX12Renderer::VBlank()
         NvidiaReflex.MarkRenderSubmitEnd();
         return;
     }
-    if (exactValidation && dx12 && !nativeComposed)
+    if (exactValidation && dx12 && !nativeComposed
+        && nativeComposeResult != GPU2DComposeResult::Backpressure
+        && nativeComposeResult != GPU2DComposeResult::Unavailable)
     {
         dx12->FailNativeGPU2DExact(
             "native GPU2D exact gate rejected a fallback or unavailable frame");
@@ -281,6 +293,12 @@ void DX12Renderer::VBlank()
         Platform::Log(Platform::LogLevel::Warn,
             "DX12 renderer gpu2d=Software fallback=1 reason=native frame unavailable\n");
         NativeGPU2DFallbackAnnounced = true;
+    }
+    if (nativeComposeResult == GPU2DComposeResult::Backpressure)
+    {
+        IntelXeLL.MarkRenderSubmitEnd();
+        NvidiaReflex.MarkRenderSubmitEnd();
+        return;
     }
     StructuredVulkanFrameView view{};
     if (!nativeComposed && (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid))

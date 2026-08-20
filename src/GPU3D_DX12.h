@@ -98,6 +98,10 @@ public:
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
     [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
+    [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
+    {
+        return LastComposeResult;
+    }
     // Materialize only the requested LCDC capture blocks when the emulation
     // core actually reads them.  The normal native frame path keeps this
     // mirror device-local and never calls this method.
@@ -496,6 +500,7 @@ private:
     int ShaderStepIdx = 0;
     bool RuntimeFailed = false;
     std::string RuntimeFailureReason;
+    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
 
     // Cached for the frame so every dispatch does not re-create descriptors.
     D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};

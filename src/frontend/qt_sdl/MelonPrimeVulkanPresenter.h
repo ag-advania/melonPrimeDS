@@ -98,12 +98,10 @@ public:
     // first swapchain. Presenter/emulation thread for all platforms.
     bool Init(QWidget* surfaceWidget);
 
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter snapshot API, not input dispatch
-    // Linux presenter-thread entry point. No QWidget or QPA accessor is read;
-    // all native handles and the requested physical size come from the GUI
+    // Presenter-thread entry point. No QWidget or QPA accessor is read; all
+    // native handles and the requested physical size come from the GUI
     // thread's post-lifecycle snapshot.
     bool Init(const VulkanSurface::NativeWindowSnapshot& snapshot);
-#endif
 
     // Waits for the device to go idle and destroys everything, including the
     // surface and the instance reference. Safe to call more than once.
@@ -357,9 +355,7 @@ private:
 
     bool AcquireContext();
     bool CreateSurface(QWidget* widget);
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter surface binding, not input dispatch
     bool CreateSurface(const VulkanSurface::NativeWindowSnapshot& snapshot);
-#endif
     bool CreateDeviceObjects();
     bool CreateRenderPass();
     bool CreatePipelines();
@@ -407,9 +403,8 @@ private:
 
     QWidget* SurfaceWidget = nullptr;
     VulkanSurface::Surface Surface;
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter generation state, not input dispatch
     std::uint64_t SurfaceGeneration = 0;
-#endif
+    std::uintptr_t SurfaceNativeHandle = 0;
 
     melonDS::VulkanDevice Device;
     melonDS::Vk::FrameRing Frames;
@@ -443,6 +438,9 @@ private:
     bool LastBeginLatencySkip = false;
 
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
+    // Monotonic presenter-owned identity for diagnostics and retained-output
+    // invalidation. It changes only after a successful swapchain creation.
+    std::uint64_t SwapchainGeneration = 0;
     VkSurfaceFormatKHR SurfaceFormat{};
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     VkExtent2D SwapchainExtent{0, 0};

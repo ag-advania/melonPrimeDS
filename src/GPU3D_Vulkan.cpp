@@ -515,6 +515,7 @@ void VulkanRenderer3D::SetRuntimeFailure(std::string reason)
         Device.ReportDeviceLost("3D renderer runtime failure");
 
     RuntimeFailed = true;
+    LastComposeResult = GPU2DComposeResult::Fatal;
     RuntimeFailureReason = reason.empty() ? "unspecified Vulkan renderer failure" : std::move(reason);
     Platform::Log(Platform::LogLevel::Error,
         "[Vulkan] runtime failure: %s\n", RuntimeFailureReason.c_str());
@@ -2986,7 +2987,13 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     u64 generation,
     const StructuredComposition::GenerationState& contentGeneration)
 {
-    if (RuntimeFailed || !Initialized || ScaleFactor <= 0)
+    LastComposeResult = GPU2DComposeResult::Unavailable;
+    if (RuntimeFailed)
+    {
+        LastComposeResult = GPU2DComposeResult::Fatal;
+        return false;
+    }
+    if (!Initialized || ScaleFactor <= 0)
         return false;
     if (ShaderStepIdx < ShaderStepCount)
         return false;       // pipelines are still being compiled
@@ -2995,7 +3002,10 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     // one twice would repeat a whole composition dispatch for a result that
     // cannot have changed.
     if (ComposedOutputValid && ComposedGeneration == generation)
+    {
+        LastComposeResult = GPU2DComposeResult::Success;
         return true;
+    }
 
     if (Pipelines[VulkanShaders::Pipeline_Compositor] == VK_NULL_HANDLE
         || Pipelines[VulkanShaders::Pipeline_CaptureSidecar] == VK_NULL_HANDLE
@@ -3028,6 +3038,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         // is preferable to blocking VBlank on presentation; the previously
         // published frame remains valid and is reused.
         VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
 
@@ -3041,6 +3052,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     if (!frame)
     {
         VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
     VkCommandBuffer cmd = frame->CommandBuffer;
@@ -3466,6 +3478,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
     }
+    LastComposeResult = GPU2DComposeResult::Success;
     return true;
 }
 
@@ -3488,13 +3501,19 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     const u32* expectedTop,
     const u32* expectedBottom)
 {
+    LastComposeResult = GPU2DComposeResult::Unavailable;
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
         return false;
     }
-    if (RuntimeFailed || !Initialized || ScaleFactor <= 0)
+    if (RuntimeFailed)
+    {
+        LastComposeResult = GPU2DComposeResult::Fatal;
+        return false;
+    }
+    if (!Initialized || ScaleFactor <= 0)
         return false;
     if (ShaderStepIdx < ShaderStepCount)
         return false;
@@ -3510,6 +3529,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     if (ComposedOutput->Slots[nextSlot].PresenterRefs.load(std::memory_order_acquire) != 0)
     {
         VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
 
@@ -3519,6 +3539,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     if (!frame)
     {
         VulkanPerf::AddCounter(VulkanPerf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
     VkCommandBuffer cmd = frame->CommandBuffer;
@@ -3950,6 +3971,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
     }
+    LastComposeResult = GPU2DComposeResult::Success;
     return true;
 }
 

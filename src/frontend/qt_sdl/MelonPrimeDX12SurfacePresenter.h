@@ -61,7 +61,11 @@ public:
     DX12SurfacePresenter(const DX12SurfacePresenter&) = delete;
     DX12SurfacePresenter& operator=(const DX12SurfacePresenter&) = delete;
 
-    bool Init(HWND window);
+    bool Init(
+        HWND window,
+        std::uint64_t surfaceGeneration = 0,
+        std::uint32_t initialWidth = 0,
+        std::uint32_t initialHeight = 0);
     void Shutdown() noexcept;
 
     // Renderer-transition boundary. Wait for both presenter submissions and
@@ -118,6 +122,18 @@ public:
 
     [[nodiscard]] bool IsInitialized() const noexcept { return Initialized; }
     [[nodiscard]] const std::string& LastError() const noexcept { return Error; }
+    [[nodiscard]] bool LastBeginWasBackpressure() const noexcept
+    {
+        return LastBeginBackpressure;
+    }
+    [[nodiscard]] std::uint64_t GetSurfaceGeneration() const noexcept
+    {
+        return SurfaceGeneration;
+    }
+    [[nodiscard]] std::uint64_t GetSwapchainGeneration() const noexcept
+    {
+        return SwapchainGeneration;
+    }
     [[nodiscard]] std::uint32_t GetWidth() const noexcept { return Width; }
     [[nodiscard]] std::uint32_t GetHeight() const noexcept { return Height; }
     [[nodiscard]] bool HasLayerContent(Layer layer) const noexcept
@@ -174,6 +190,7 @@ private:
         std::uint64_t resourceGeneration) const noexcept;
     bool ResolveLayerSrv(Layer layer, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
     bool WaitForPresentSlot();
+    bool ApplySdrColorSpace();
     bool AllocateLayerSrv(Layer layer, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
     D3D12_CPU_DESCRIPTOR_HANDLE PersistentCpuAt(std::uint32_t index) const noexcept;
     D3D12_GPU_DESCRIPTOR_HANDLE PersistentGpuAt(std::uint32_t index) const noexcept;
@@ -183,6 +200,8 @@ private:
 
     melonDS::DX12Context* Context = nullptr;
     HWND Window = nullptr;
+    std::uint64_t SurfaceGeneration = 0;
+    std::uint64_t SwapchainGeneration = 0;
     melonDS::DX12CommandContext Commands;
     melonDS::DX12DescriptorRing Descriptors;
     // The compositor has a three-slot output ring and each direct texture is a
@@ -227,6 +246,7 @@ private:
     bool FirstPresentLogged = false;
     bool PresentWaitStateLogged = false;
     bool LastPresentWaitEnabled = true;
+    bool LastBeginBackpressure = false;
     bool PresentModeLogged = false;
     bool LastPresentVsync = false;
     bool PresentResultLogged = false;

@@ -32,6 +32,17 @@ namespace melonDS
 {
 class GPU;
 
+// Result classification for a native GPU2D/compositor publication attempt.
+// Backpressure is expected while a presenter owns every ring slot and must
+// never be promoted to a renderer/runtime failure.
+enum class GPU2DComposeResult : u8
+{
+    Success,
+    Backpressure,
+    Unavailable,
+    Fatal,
+};
+
 struct Vertex
 {
     s32 Position[4];

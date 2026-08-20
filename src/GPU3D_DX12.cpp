@@ -1113,6 +1113,7 @@ void DX12Renderer3D::SetRuntimeFailure(std::string reason)
         return;
 
     RuntimeFailed = true;
+    LastComposeResult = GPU2DComposeResult::Fatal;
     RuntimeFailureReason = reason.empty() ? "unspecified DX12 renderer failure" : std::move(reason);
     Platform::Log(
         Platform::LogLevel::Error,
@@ -2845,10 +2846,19 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     u64 generation,
     const StructuredComposition::GenerationState& contentGeneration)
 {
-    if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
+    LastComposeResult = GPU2DComposeResult::Unavailable;
+    if (RuntimeFailed)
+    {
+        LastComposeResult = GPU2DComposeResult::Fatal;
+        return false;
+    }
+    if (ShaderStepIdx < ShaderStepCount)
         return false;
     if (ComposedOutputValid && ComposedGeneration == generation)
+    {
+        LastComposeResult = GPU2DComposeResult::Success;
         return true;
+    }
     const std::shared_ptr<OutputState> state = ComposedOutput;
     if (!Context || !PipelineCaptureSidecar || !PipelineCompositor
         || !state || !FinalFBBuffer || !CaptureSidecarBuffer)
@@ -2882,6 +2892,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         // Presentation is still reading this slot. Reusing the last published
         // frame is preferable to blocking the emulation thread.
         DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
     ID3D12GraphicsCommandList* list = slot.Commands.TryBegin();
@@ -2890,6 +2901,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         // The GPU has not retired this ring slot after three frames. Keep the
         // previous output and let the emulator continue without a fence wait.
         DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
     RecordDX12GpuMetric(
@@ -3241,6 +3253,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
     }
+    LastComposeResult = GPU2DComposeResult::Success;
     return true;
 }
 
@@ -3261,13 +3274,19 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const u32* expectedTop,
     const u32* expectedBottom)
 {
+    LastComposeResult = GPU2DComposeResult::Unavailable;
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
         return false;
     }
-    if (RuntimeFailed || ShaderStepIdx < ShaderStepCount)
+    if (RuntimeFailed)
+    {
+        LastComposeResult = GPU2DComposeResult::Fatal;
+        return false;
+    }
+    if (ShaderStepIdx < ShaderStepCount)
         return false;
     const std::shared_ptr<OutputState> state = ComposedOutput;
     if (!Context || !PipelineGPU2DNative || !PipelineCompositor
@@ -3287,12 +3306,14 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     if (slot.PresenterRefs.load(std::memory_order_acquire) != 0)
     {
         DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
     ID3D12GraphicsCommandList* list = slot.Commands.TryBegin();
     if (!list)
     {
         DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
+        LastComposeResult = GPU2DComposeResult::Backpressure;
         return false;
     }
     RecordDX12GpuMetric(
@@ -3645,6 +3666,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     slot.NativeUploadInitialized = true;
     slot.UploadedNativeGeneration = input.Generation;
     NativeCaptureStateInitialized = true;
+    LastComposeResult = GPU2DComposeResult::Success;
     return true;
 }
 

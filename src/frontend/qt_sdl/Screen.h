@@ -38,6 +38,7 @@
 #include "glad/glad.h"
 #include "ScreenLayout.h"
 #include "duckstation/gl/context.h"
+#include "MelonPrimePresentationSnapshot.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudConfigOnScreenEdit.h"
@@ -568,9 +569,13 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    bool event(QEvent* event) override;
 
 private:
     void setupScreenLayout() override;
+    void handleDX12SurfaceHostLifecycleGuiThread(
+        QEvent::Type eventType, bool aboutToDestroy);
+    void publishDX12SurfaceSnapshotGuiThread();
     void prepareForRendererTransition();
     void requestNativeSurfaceVisible(bool visible);
     void reportRuntimeFailure(const char* reason);
@@ -662,6 +667,8 @@ private:
     // from the emulation thread, and macOS CoreAnimation state must only be
     // touched from the GUI thread.
     void refreshNativeSurfaceGuiThread();
+    void publishNativeSurfaceSnapshotGuiThread();
+    void handleNativeSurfaceHostLifecycleGuiThread(QEvent::Type eventType, bool aboutToDestroy);
     void setNativeSurfaceVisibleGuiThread(bool visible);
 #if defined(__linux__)
     // A short lifecycle state/lease handshake surrounds only the decision to
@@ -695,7 +702,12 @@ private:
     // Renders the Custom HUD into Overlay[0] and reports its dirty rect.
     // False when the HUD is not visible this frame, in which case the stale
     // overlay texture must not be drawn. Emulation thread.
-    bool renderHudOverlay(EmuThread* emuThread, QImage* bottomScreen, QRect& outDirty);
+    bool renderHudOverlay(
+        EmuThread* emuThread,
+        QImage* bottomScreen,
+        int logicalWidth,
+        int logicalHeight,
+        QRect& outDirty);
 #endif
 
     struct VulkanState;

@@ -53,6 +53,25 @@ Surface Create(
     return surface;
 }
 
+Surface Create(
+    VkInstance instance,
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr,
+    const NativeWindowSnapshot& snapshot)
+{
+    (void)instance;
+    (void)getInstanceProcAddr;
+    (void)snapshot;
+
+    Surface surface;
+    surface.Backend = "none";
+    surface.Failure =
+        "this platform has no Vulkan window-system integration in melonPrimeDS; "
+        "the published native surface snapshot cannot be converted to a VkSurfaceKHR";
+
+    Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", surface.Failure.c_str());
+    return surface;
+}
+
 
 void UpdateGeometry(const Surface& surface, QWidget* widget)
 {

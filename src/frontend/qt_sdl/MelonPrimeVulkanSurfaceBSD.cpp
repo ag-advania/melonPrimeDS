@@ -242,6 +242,113 @@ Surface Create(
 }
 
 
+Surface Create(
+    VkInstance instance,
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr,
+    const NativeWindowSnapshot& snapshot)
+{
+    Surface surface;
+
+    if (snapshot.Platform != "xcb")
+    {
+        surface.Backend = "unsupported";
+        surface.Failure =
+            "BSD Vulkan WSI: the published native platform is not xcb";
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", surface.Failure.c_str());
+        return surface;
+    }
+    if (instance == VK_NULL_HANDLE || !getInstanceProcAddr)
+    {
+        surface.Failure = "internal error: no Vulkan instance or instance resolver";
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", surface.Failure.c_str());
+        return surface;
+    }
+    if (snapshot.WindowId == 0 || (!snapshot.XcbConnection && !snapshot.XlibDisplay))
+    {
+        surface.Failure =
+            "the published BSD X11 snapshot has no native window or display handle";
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", surface.Failure.c_str());
+        return surface;
+    }
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
+    surface = UnsupportedQtVersion();
+    Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", surface.Failure.c_str());
+    return surface;
+#else
+    const auto createXcb = reinterpret_cast<PFN_CreateXcbSurface>(
+        getInstanceProcAddr(instance, "vkCreateXcbSurfaceKHR"));
+    std::string xcbFailure;
+    if (createXcb && snapshot.XcbConnection)
+    {
+        surface.Backend = "VK_KHR_xcb_surface";
+        XcbSurfaceCreateInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
+        info.connection = snapshot.XcbConnection;
+        info.window = static_cast<std::uint32_t>(snapshot.WindowId);
+
+        const VkResult result = createXcb(instance, &info, nullptr, &surface.Handle);
+        if (result == VK_SUCCESS)
+        {
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[Vulkan] BSD presentation surface created from snapshot backend=%s generation=%llu window=%llu\n",
+                surface.Backend.c_str(),
+                static_cast<unsigned long long>(snapshot.Generation),
+                snapshot.WindowId);
+            return surface;
+        }
+        surface.Handle = VK_NULL_HANDLE;
+        xcbFailure = "vkCreateXcbSurfaceKHR failed: " + melonDS::Vk::FormatResult(result);
+    }
+    else if (!createXcb)
+        xcbFailure = "vkCreateXcbSurfaceKHR is unavailable";
+    else
+        xcbFailure = "the published snapshot has no XCB connection";
+
+    const auto createXlib = reinterpret_cast<PFN_CreateXlibSurface>(
+        getInstanceProcAddr(instance, "vkCreateXlibSurfaceKHR"));
+    if (!createXlib)
+    {
+        surface.Backend = "VK_KHR_xlib_surface";
+        surface.Failure = xcbFailure + "; vkCreateXlibSurfaceKHR is also unavailable";
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", surface.Failure.c_str());
+        return surface;
+    }
+    if (!snapshot.XlibDisplay)
+    {
+        surface.Backend = "VK_KHR_xlib_surface";
+        surface.Failure = xcbFailure + "; the published snapshot has no Xlib Display*";
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", surface.Failure.c_str());
+        return surface;
+    }
+
+    surface.Backend = "VK_KHR_xlib_surface";
+    XlibSurfaceCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR;
+    info.display = snapshot.XlibDisplay;
+    info.window = static_cast<unsigned long>(snapshot.WindowId);
+    const VkResult result = createXlib(instance, &info, nullptr, &surface.Handle);
+    if (result != VK_SUCCESS)
+    {
+        surface.Handle = VK_NULL_HANDLE;
+        surface.Failure = xcbFailure + "; vkCreateXlibSurfaceKHR failed: "
+            + melonDS::Vk::FormatResult(result);
+        Platform::Log(Platform::LogLevel::Error, "[Vulkan] %s\n", surface.Failure.c_str());
+        return surface;
+    }
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan] BSD presentation surface created from snapshot backend=%s generation=%llu window=%llu\n",
+        surface.Backend.c_str(),
+        static_cast<unsigned long long>(snapshot.Generation),
+        snapshot.WindowId);
+    return surface;
+#endif
+}
+
+
 void UpdateGeometry(const Surface& surface, QWidget* widget)
 {
     // X11 owns the surface extent and the presenter recreates the swapchain
