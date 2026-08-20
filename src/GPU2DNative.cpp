@@ -19,6 +19,53 @@ namespace melonDS::GPU2DNative
 namespace
 {
 std::atomic<bool> ExactValidationSavestateReady{false};
+std::atomic<u64> NextRendererEpoch{1};
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+std::atomic<u32>& ForcedPresentationStallRemaining() noexcept
+{
+    static std::atomic<u32> remaining = [] {
+        const char* value = std::getenv(
+            "MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES");
+        if (!value || value[0] == '\0')
+            return 0u;
+        char* end = nullptr;
+        const unsigned long parsed = std::strtoul(value, &end, 10);
+        if (end == value || *end != '\0')
+            return 0u;
+        return static_cast<u32>(std::min(parsed, 600ul));
+    }();
+    return remaining;
+}
+#endif
+}
+
+bool ConsumeForcedPresentationStallFrame() noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    std::atomic<u32>& remaining = ForcedPresentationStallRemaining();
+    u32 current = remaining.load(std::memory_order_relaxed);
+    while (current != 0u
+        && !remaining.compare_exchange_weak(
+            current, current - 1u,
+            std::memory_order_acq_rel, std::memory_order_relaxed))
+    {
+    }
+    return current != 0u;
+#else
+    return false;
+#endif
+}
+
+u64 AllocateRendererEpoch() noexcept
+{
+    u64 epoch = NextRendererEpoch.fetch_add(1u, std::memory_order_relaxed);
+    if (epoch != 0u)
+        return epoch;
+    // The wraparound path is practically unreachable, but zero is reserved
+    // as the uninitialized identity in the frontend visibility state.
+    epoch = NextRendererEpoch.fetch_add(1u, std::memory_order_relaxed);
+    return epoch == 0u ? 1u : epoch;
 }
 
 bool ExactValidationEnabled() noexcept
@@ -340,17 +387,27 @@ void LogSemanticIdentity(
     u64 emulatedFrame,
     u64 captureGeneration,
     u64 epoch,
-    bool published) noexcept
+    bool published,
+    bool forcedPresentationStall,
+    bool mirrorFullResync,
+    u32 publishedSlot) noexcept
 {
     if (!StageDiagnosticsEnabled())
         return;
     Platform::Log(
         Platform::LogLevel::Info,
         "[GPU2DStage] backend=%s stage=semantic emulated=%llu "
-        "capture_generation=%llu semantic_epoch=%llu publication=%s\n",
+        "capture_generation=%llu mirror_last_semantic_frame=%llu "
+        "mirror_capture_generation=%llu semantic_epoch=%llu publication=%s "
+        "presentation_stall=%s mirror_full_resync=%u published_slot=%u\n",
         backend, static_cast<unsigned long long>(emulatedFrame),
         static_cast<unsigned long long>(captureGeneration),
-        static_cast<unsigned long long>(epoch), published ? "visible" : "semantic_only");
+        static_cast<unsigned long long>(emulatedFrame),
+        static_cast<unsigned long long>(captureGeneration),
+        static_cast<unsigned long long>(epoch),
+        published ? "visible" : "semantic_only",
+        forcedPresentationStall ? "forced" : "none",
+        mirrorFullResync ? 1u : 0u, publishedSlot);
 }
 
 namespace

@@ -45,6 +45,7 @@ param(
     [switch]$SkipDiagnosticStartupSavestate,
     [ValidateRange(0,600)] [int]$CaptureFrames = 0,
     [ValidateRange(1,1000)] [int]$CaptureIntervalMs = 33,
+    [ValidateRange(0,600)] [int]$PresentationStallFrames = 0,
     [int]$WarmupSeconds = 15,
     [int]$MeasuredSeconds = 20,
     [int]$GraceSeconds = 15
@@ -263,6 +264,7 @@ $oldFrameDumpTrigger = $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE
 $oldExactGPU2DValidation = $env:MELONPRIME_GPU2D_EXACT_VALIDATE
 $oldGPU2DStageDiagnostics = $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS
 $oldGPU2DStageDirect = $env:MELONPRIME_GPU2D_STAGE_DIRECT
+$oldGPU2DPresentationStall = $env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES
 $proc = $null
 $window = [IntPtr]::Zero
 $configRestored = -not $hadConfig
@@ -446,6 +448,7 @@ try {
         'hud=' + $Hud + [Environment]::NewLine +
         'exact_gpu2d_validation=' + $ExactGPU2DValidation.IsPresent + [Environment]::NewLine +
         'direct_gpu2d_diagnostics=' + $DirectGPU2DDiagnostics.IsPresent + [Environment]::NewLine +
+        'presentation_stall_frames=' + $PresentationStallFrames + [Environment]::NewLine +
         'action=' + $Action + [Environment]::NewLine +
         'action_seed=' + $ActionSeed + [Environment]::NewLine +
         'action_order=' + $actionOrder + [Environment]::NewLine
@@ -475,6 +478,11 @@ try {
         $env:MELONPRIME_GPU2D_STAGE_DIRECT = '1'
     } else {
         Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIRECT -ErrorAction SilentlyContinue
+    }
+    if ($PresentationStallFrames -gt 0) {
+        $env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES = [string]$PresentationStallFrames
+    } else {
+        Remove-Item Env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES -ErrorAction SilentlyContinue
     }
 
     $processStart = Record-Phase 'process_start'
@@ -531,6 +539,7 @@ finally {
     if ($null -eq $oldExactGPU2DValidation) { Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_EXACT_VALIDATE = $oldExactGPU2DValidation }
     if ($null -eq $oldGPU2DStageDiagnostics) { Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS = $oldGPU2DStageDiagnostics }
     if ($null -eq $oldGPU2DStageDirect) { Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIRECT -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_STAGE_DIRECT = $oldGPU2DStageDirect }
+    if ($null -eq $oldGPU2DPresentationStall) { Remove-Item Env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES = $oldGPU2DPresentationStall }
 }
 
 $exitCode = -1
@@ -581,6 +590,9 @@ $nativeGPU2DFallbackMax = if ($nativeGPU2DFallbackValues.Count -gt 0) {
 $fallbackLineMax = if ($fallbackLineValues.Count -gt 0) {
     ($fallbackLineValues | Measure-Object -Maximum).Maximum
 } else { 0 }
+$semanticLines = @($allLog | Select-String -Pattern '\[GPU2DStage\].*stage=semantic' -ErrorAction SilentlyContinue)
+$semanticOnlyLines = @($semanticLines | Where-Object { $_.Line -match 'publication=semantic_only' })
+$forcedPresentationStallLines = @($semanticLines | Where-Object { $_.Line -match 'presentation_stall=forced' })
 $stateMarker = if ($null -ne $statePath) { @($allLog | Select-String -SimpleMatch "[SavestateDiff] path=$statePath loaded=1" -ErrorAction SilentlyContinue).Count } else { 0 }
 $stateActionMarker = if ($null -ne $savestateSlotPathForApp) { @($allLog | Select-String -SimpleMatch "[PhysicalAB] savestate_action_loaded=1 path=$savestateSlotPathForApp" -ErrorAction SilentlyContinue).Count } else { 0 }
 $hudOffMarker = if ($Hud -eq 'Off') { @($allLog | Select-String -SimpleMatch '[SavestateDiff] customHudForcedOff=1' -ErrorAction SilentlyContinue).Count } else { 0 }
@@ -626,6 +638,7 @@ $manifestObject = [ordered]@{
         exact_gpu2d_validation = [bool]$ExactGPU2DValidation
         stage_diagnostics = [bool]$ExactGPU2DValidation
         direct_gpu2d_diagnostics = [bool]$DirectGPU2DDiagnostics
+        presentation_stall_frames = $PresentationStallFrames
         action = $Action
         action_seed = $ActionSeed
         action_order = $actionSequence
@@ -706,6 +719,16 @@ $manifestObject = [ordered]@{
         native_gpu2d_mismatch_max = $nativeGPU2DMismatchMax
         native_gpu2d_fallback_frames_max = $nativeGPU2DFallbackMax
         fallback_lines_max = $fallbackLineMax
+        semantic_frame_rows = $semanticLines.Count
+        semantic_only_rows = $semanticOnlyLines.Count
+        forced_presentation_stall_rows = $forcedPresentationStallLines.Count
+        presentation_stall_validation = if ($PresentationStallFrames -eq 0) {
+            'NOT_REQUESTED'
+        } elseif ($forcedPresentationStallLines.Count -ge $PresentationStallFrames) {
+            'PASS'
+        } else {
+            'FAIL'
+        }
     }
 }
 [IO.File]::WriteAllText($runManifest, ($manifestObject | ConvertTo-Json -Depth 12), $utf8)
@@ -721,6 +744,7 @@ hud=$Hud
 exact_gpu2d_validation=$($ExactGPU2DValidation.IsPresent.ToString().ToLowerInvariant())
 stage_diagnostics=$($ExactGPU2DValidation.IsPresent.ToString().ToLowerInvariant())
 direct_gpu2d_diagnostics=$($DirectGPU2DDiagnostics.IsPresent.ToString().ToLowerInvariant())
+presentation_stall_frames=$PresentationStallFrames
 action=$Action
 action_seed=$ActionSeed
 action_order=$actionOrder
@@ -746,6 +770,10 @@ native_gpu2d_exact_failure_marker_count=$($nativeGPU2DExactFailureMarkers.Count)
 native_gpu2d_mismatch_max=$nativeGPU2DMismatchMax
 native_gpu2d_fallback_frames_max=$nativeGPU2DFallbackMax
 fallback_lines_max=$fallbackLineMax
+semantic_frame_rows=$($semanticLines.Count)
+semantic_only_rows=$($semanticOnlyLines.Count)
+forced_presentation_stall_rows=$($forcedPresentationStallLines.Count)
+presentation_stall_validation=$(if ($PresentationStallFrames -eq 0) { 'NOT_REQUESTED' } elseif ($forcedPresentationStallLines.Count -ge $PresentationStallFrames) { 'PASS' } else { 'FAIL' })
 expected_source_head=$ExpectedSourceHead
 expected_source_sha=$ExpectedSourceHead
 actual_binary_source_head=$actualSourceHead
@@ -802,6 +830,9 @@ Write-Host "native exact fail  : $($nativeGPU2DExactFailureMarkers.Count)"
 Write-Host "native mismatches  : $nativeGPU2DMismatchMax"
 Write-Host "native fallbacks   : $nativeGPU2DFallbackMax"
 Write-Host "fallback lines     : $fallbackLineMax"
+Write-Host "semantic rows      : $($semanticLines.Count)"
+Write-Host "semantic-only rows : $($semanticOnlyLines.Count)"
+Write-Host "forced stall rows  : $($forcedPresentationStallLines.Count)"
 if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMarkers.Count -ne 0 -or
     $nativeGPU2DExactFailureMarkers.Count -ne 0 -or
     $nativeGPU2DMismatchMax -ne 0 -or $nativeGPU2DFallbackMax -ne 0 -or $fallbackLineMax -ne 0 -or
@@ -809,7 +840,8 @@ if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMar
     ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($Hud -eq 'Off' -and $null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($frameRows -lt 1 -and -not $AllowUnverifiedBinary) -or
-    ($Renderer -eq 'Vulkan' -and $captureRows -lt 1 -and $windowCaptureRows -lt 1)) {
+    ($Renderer -eq 'Vulkan' -and $captureRows -lt 1 -and $windowCaptureRows -lt 1) -or
+    ($PresentationStallFrames -gt 0 -and $forcedPresentationStallLines.Count -lt $PresentationStallFrames)) {
     $badMarkers | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
     exit 1
 }

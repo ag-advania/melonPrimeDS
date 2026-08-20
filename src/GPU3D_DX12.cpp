@@ -3465,7 +3465,15 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     }
     OutputState::Slot* outputSlot = slotIndex < kCompositorFramesInFlight
         ? &state->Slots[slotIndex] : nullptr;
-    const bool presentationAvailable = outputSlot != nullptr;
+    bool presentationAvailable = outputSlot != nullptr;
+    const bool forcedPresentationStall = presentationAvailable
+        && GPU2DNative::ConsumeForcedPresentationStallFrame();
+    if (forcedPresentationStall)
+    {
+        outputSlot = nullptr;
+        slotIndex = kCompositorFramesInFlight;
+        presentationAvailable = false;
+    }
     // Presentation backpressure is allowed to drop a visible frame, but must
     // never drop DS display-capture semantics. The persistent LCDC capture
     // mirror is emulated hardware state, not a presentation cache.
@@ -3984,7 +3992,9 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFrames);
     GPU2DNative::LogSemanticIdentity(
         "DX12", input.Generation.Frame, input.Generation.CaptureGeneration,
-        CurrentEpoch, outputSlot != nullptr);
+        CurrentEpoch, outputSlot != nullptr, forcedPresentationStall,
+        mirrorNeedsFullCopy,
+        outputSlot != nullptr ? slotIndex : kCompositorFramesInFlight);
     if (!outputSlot)
     {
         LastComposeResult = GPU2DComposeResult::SemanticOnly;

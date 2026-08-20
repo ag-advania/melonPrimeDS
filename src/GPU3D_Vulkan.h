@@ -600,7 +600,7 @@ private:
     u64 ComposedGeneration = 0;
     u64 PublishedOutputGeneration = 0;
     bool NativeCaptureStateInitialized = false;
-    u64 CurrentEpoch = 1;
+    u64 CurrentEpoch = GPU2DNative::AllocateRendererEpoch();
     u64 LastSemanticFrame = 0;
     u64 LastSemanticCaptureGeneration = 0;
     u64 LastSemanticEpoch = 0;

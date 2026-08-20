@@ -386,7 +386,7 @@ struct ScreenPanelVulkan::VulkanState
     bool vsyncApplied = true;
     // A native surface stays visible during transient producer backpressure,
     // but startup must never expose the Software 2D + placeholder 3D hybrid.
-    bool nativeFramePublished = false;
+    MelonPrime::NativeVisibilityState nativeVisibility;
 
     // Presentation stall watchdog. Emulation thread only, hence plain members.
     //
@@ -1467,7 +1467,7 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
     vulkan->presenter.Quiesce();
     invalidateScreenRetention();
     vulkan->presenter.InvalidateDirectDescriptorCache();
-    vulkan->nativeFramePublished = false;
+    vulkan->nativeVisibility.Reset();
     for (RendererOutputLease& lease : vulkan->frameLeases)
         lease.ReleaseNow();
 
@@ -1599,7 +1599,7 @@ void ScreenPanelVulkan::noteFrameStalled(const char* reason)
 }
 
 
-void ScreenPanelVulkan::noteFramePresented()
+void ScreenPanelVulkan::noteFramePresented(melonDS::u64 epoch, melonDS::u64 serial)
 {
     if (!vulkan)
         return;
@@ -1614,7 +1614,7 @@ void ScreenPanelVulkan::noteFramePresented()
     vulkan->stallReason = nullptr;
     vulkan->stallFrames = 0;
     vulkan->stallReported = false;
-    vulkan->nativeFramePublished = true;
+    vulkan->nativeVisibility.Accept(epoch, serial);
 }
 
 
@@ -1761,7 +1761,7 @@ void ScreenPanelVulkan::drawScreenFrame()
         vulkan->presenterSurfaceIdentityGeneration = 0;
         vulkan->presenterSurfaceGeometryRevision = 0;
         vulkan->presenterSurfaceHandle = 0;
-        vulkan->nativeFramePublished = false;
+        vulkan->nativeVisibility.Reset();
     }
 
     if (!vulkan->presenter.IsInitialized()
@@ -1826,7 +1826,7 @@ void ScreenPanelVulkan::drawScreenFrame()
         // paired with a 3D placeholder because the native pipeline is still
         // compiling. Keep the Qt black/splash surface until the first complete
         // native frame instead of making that hybrid visible.
-        if (!vulkan->nativeFramePublished)
+        if (!vulkan->nativeVisibility.FirstCompleteFrameVisible)
         {
             requestNativeSurfaceVisible(false);
             QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
@@ -2350,7 +2350,7 @@ void ScreenPanelVulkan::drawScreenFrame()
         return;
     }
 
-    noteFramePresented();
+    noteFramePresented(gpuFrame->Epoch, gpuFrame->Serial);
 
     // Linux has already requested visibility before presenter binding because
     // Wayland requires a mapped/exposed native surface. Other platforms keep

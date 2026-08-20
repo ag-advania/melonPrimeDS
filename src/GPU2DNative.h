@@ -60,6 +60,17 @@ inline constexpr u32 CaptureStartLineNone = 0xFFu;
 // instead of silently replacing it with the composed-buffer path.
 [[nodiscard]] bool DirectOutputDiagnosticsEnabled() noexcept;
 
+// Developer-only presentation backpressure injection. This consumes one
+// available presentation publication slot without delaying semantic GPU2D
+// execution, allowing the persistent LCDC mirror to be validated while the
+// visible frame is intentionally retained. Shipping builds always return
+// false; this is never a frame limiter or a sleep-based timing mechanism.
+[[nodiscard]] bool ConsumeForcedPresentationStallFrame() noexcept;
+
+// Renderer instances use a process-wide epoch allocator so a renderer/backend
+// transition cannot accidentally reuse an older presentation identity.
+[[nodiscard]] u64 AllocateRendererEpoch() noexcept;
+
 enum class BlankClass : u8
 {
     NonBlank = 0,
@@ -364,7 +375,10 @@ void LogSemanticIdentity(
     u64 emulatedFrame,
     u64 captureGeneration,
     u64 epoch,
-    bool published) noexcept;
+    bool published,
+    bool forcedPresentationStall,
+    bool mirrorFullResync,
+    u32 publishedSlot) noexcept;
 
 static_assert(std::is_trivially_copyable_v<FrameInput>,
     "FrameInput must remain memset-resettable without a stack-sized temporary");

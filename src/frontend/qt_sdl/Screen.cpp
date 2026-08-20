@@ -1880,7 +1880,7 @@ struct ScreenPanelDX12::DX12State
     std::atomic_bool hudLivePreviewPresentation{false};
     bool initialized = false;
     bool runtimeFailureReported = false;
-    bool nativeFramePublished = false;
+    MelonPrime::NativeVisibilityState nativeVisibility;
 };
 
 ScreenPanelDX12::ScreenPanelDX12(QWidget* parent)
@@ -1940,7 +1940,7 @@ void ScreenPanelDX12::prepareForRendererTransition()
     dx12->presenter.Quiesce();
     dx12->presenter.InvalidateDirectDescriptorCache();
     dx12->frameLease.ReleaseNow();
-    dx12->nativeFramePublished = false;
+    dx12->nativeVisibility.Reset();
 }
 
 void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance)
@@ -1991,7 +1991,7 @@ bool ScreenPanelDX12::initDX12()
         dx12->presenterSurfaceIdentityGeneration = snapshot.IdentityGeneration;
         dx12->presenterSurfaceGeometryRevision = snapshot.GeometryRevision;
         dx12->presenterSurfaceHandle = snapshot.NativeHandle;
-        dx12->nativeFramePublished = false;
+        dx12->nativeVisibility.Reset();
     }
     return dx12->initialized;
 }
@@ -2251,7 +2251,7 @@ void ScreenPanelDX12::drawScreen()
         dx12->presenterSurfaceIdentityGeneration = 0;
         dx12->presenterSurfaceGeometryRevision = 0;
         dx12->presenterSurfaceHandle = 0;
-        dx12->nativeFramePublished = false;
+        dx12->nativeVisibility.Reset();
     }
 
     if (!dx12->presenter.IsInitialized())
@@ -2299,7 +2299,7 @@ void ScreenPanelDX12::drawScreen()
         // placeholder-3D hybrid. It is never allowed to become visible; keep
         // the last native frame once one exists, otherwise leave the Qt
         // splash/black path active until a complete GPU frame is published.
-        if (!dx12->nativeFramePublished)
+        if (!dx12->nativeVisibility.FirstCompleteFrameVisible)
         {
             requestNativeSurfaceVisible(false);
             QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
@@ -2665,7 +2665,8 @@ void ScreenPanelDX12::drawScreen()
     }
 
     requestNativeSurfaceVisible(true);
-    dx12->nativeFramePublished = true;
+    if (gpuFrame)
+        dx12->nativeVisibility.Accept(gpuFrame->Epoch, gpuFrame->Serial);
 }
 
 void ScreenPanelDX12::paintEvent(QPaintEvent* event)

@@ -36,6 +36,7 @@ def main() -> int:
         "vulkan_screen": root / "src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp",
         "dx12_presenter": root / "src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.h",
         "dx12_screen": root / "src/frontend/qt_sdl/Screen.cpp",
+        "screen_header": root / "src/frontend/qt_sdl/Screen.h",
         "gpu_stage_metrics": root / "src/GpuStageMetrics.h",
         "vulkan_sync": root / "src/VulkanSync.cpp",
         "dx12_context": root / "src/DX12Context.cpp",
@@ -125,6 +126,21 @@ def main() -> int:
             "DX12 presentation serial/epoch rejection", failures)
         require(text["dx12_screen"], "SetPresentedFrameIdentity",
             "DX12 presentation identity admission", failures)
+        require(text["screen_header"], "NativeVisibilityState",
+            "native visibility identity state", failures)
+        require(text["screen_header"], "FirstCompleteFrameVisible",
+            "native first-complete visibility gate", failures)
+        require(text["screen_header"], "LastAcceptedSerial",
+            "native accepted serial state", failures)
+        require(text["native_header"], "AllocateRendererEpoch",
+            "process-wide renderer epoch allocator", failures)
+        require(text["native_recorder"], "ConsumeForcedPresentationStallFrame",
+            "developer presentation stall hook", failures)
+        for label in ("vulkan_renderer", "dx12_renderer"):
+            require(text[label], "forcedPresentationStall",
+                f"{label} forced stall evidence", failures)
+            require(text[label], "mirrorNeedsFullCopy",
+                f"{label} persistent mirror resync", failures)
 
         require(text["vulkan_frontend"], "stale_generation_reject", "Vulkan stale diagnostic", failures)
         require(text["dx12_frontend"], "stale_generation_reject", "DX12 stale diagnostic", failures)
@@ -209,6 +225,8 @@ def main() -> int:
             "frame_limit =",
             "[ValidateRange(0,600)] [int]$CaptureFrames",
             "[ValidateRange(1,1000)] [int]$CaptureIntervalMs",
+            "[ValidateRange(0,600)] [int]$PresentationStallFrames",
+            "MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES",
             "Capture-ContinuousDisplay",
             "window_capture_frames",
         ):

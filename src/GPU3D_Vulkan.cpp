@@ -207,7 +207,9 @@ struct VulkanRenderer3D::OutputState
                 return false;
             if (!slot.StructuredInput.Create(Device,
                     StructuredInputBytes,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                        | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                        | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
                     "MelonPrime Vulkan structured input slot"))
                 return false;
@@ -856,7 +858,9 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
     // boundary is observationally identical to one unbounded pass.
     if (!BlendStateBuffer.Create(Device,
             (screenPixels + NativeCaptureWords + NativeObjRawWords) * sizeof(u32),
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                | VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
             "MelonPrime Vulkan depth-blend continuation state"))
         return false;
@@ -3670,7 +3674,15 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         ? &ComposedOutput->Slots[nextSlot] : nullptr;
     OutputState::SemanticSlot& semanticSlot =
         ComposedOutput->SemanticSlots[frameIndex % ComposedOutput->SemanticSlots.size()];
-    const bool presentationAvailable = outputSlot != nullptr;
+    bool presentationAvailable = outputSlot != nullptr;
+    const bool forcedPresentationStall = presentationAvailable
+        && GPU2DNative::ConsumeForcedPresentationStallFrame();
+    if (forcedPresentationStall)
+    {
+        outputSlot = nullptr;
+        nextSlot = CompositorFramesInFlight;
+        presentationAvailable = false;
+    }
     // Presentation backpressure is allowed to drop a visible frame, but must
     // never drop DS display-capture semantics. The persistent LCDC capture
     // mirror is emulated hardware state, not a presentation cache.
@@ -4293,7 +4305,9 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFrames);
     GPU2DNative::LogSemanticIdentity(
         "Vulkan", input.Generation.Frame, input.Generation.CaptureGeneration,
-        CurrentEpoch, outputSlot != nullptr);
+        CurrentEpoch, outputSlot != nullptr, forcedPresentationStall,
+        mirrorNeedsFullCopy,
+        outputSlot != nullptr ? nextSlot : CompositorFramesInFlight);
     if (!outputSlot)
     {
         LastComposeResult = GPU2DComposeResult::SemanticOnly;
