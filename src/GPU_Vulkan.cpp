@@ -255,6 +255,7 @@ void VulkanRenderer::VBlank()
     if (nativeProducer && !nativeComposed)
     {
         if (nativeComposeResult == GPU2DComposeResult::Backpressure
+            || nativeComposeResult == GPU2DComposeResult::SemanticOnly
             || nativeComposeResult == GPU2DComposeResult::Unavailable)
         {
             // Keep the last published native frame. A full renderer-output
@@ -286,6 +287,7 @@ void VulkanRenderer::VBlank()
     }
     if (exactValidation && vulkan && !nativeComposed
         && nativeComposeResult != GPU2DComposeResult::Backpressure
+        && nativeComposeResult != GPU2DComposeResult::SemanticOnly
         && nativeComposeResult != GPU2DComposeResult::Unavailable)
     {
         vulkan->FailNativeGPU2DExact(
@@ -305,7 +307,8 @@ void VulkanRenderer::VBlank()
         NativeGPU2DFallbackAnnounced = true;
     }
 
-    if (nativeComposeResult == GPU2DComposeResult::Backpressure)
+    if (nativeComposeResult == GPU2DComposeResult::Backpressure
+        || nativeComposeResult == GPU2DComposeResult::SemanticOnly)
     {
         if (VBlankObserverFn)
             VBlankObserverFn(VBlankObserverData);

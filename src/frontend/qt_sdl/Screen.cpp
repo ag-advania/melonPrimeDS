@@ -2327,6 +2327,9 @@ void ScreenPanelDX12::drawScreen()
     const u32 physicalWidth = std::max(1u, publishedSurface.PhysicalWidth);
     const u32 physicalHeight = std::max(1u, publishedSurface.PhysicalHeight);
     const bool waitForPresentSlot = !renderer || !renderer->ShouldBypassPresentWait();
+    dx12->presenter.SetPresentedFrameIdentity(gpuFrame->Serial, gpuFrame->Epoch);
+    if (!dx12->presenter.IsPresentedFrameIdentityMonotonic())
+        return;
     if (gpuFrame && gpuFrame->HasDirectSampledOutput())
         dx12->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
     if (!dx12->presenter.BeginFrame(

@@ -3141,6 +3141,15 @@ void NativeWriteStructuredLogicalPixel(uint screen,uint line,uint x,uint engine)
     }
     if(mode==1u)
     {
+        // Regular display mode still obeys the DS per-line unit/blank state;
+        // these are display semantics rather than an empty layer list.
+        if(NativeLine(engine,line,NativeUnitEnabled)==0u||NativeLine(engine,line,NativeForcedBlank)!=0u)
+        {
+            uint color=NativeDisplay(screen,engine,line,(int)x,x,line);
+            NativeWriteStructuredPixel(screen,line,x,color,0u,NativeStructuredControlPlain2D<<24u,0u);
+            if(x==0u)NativeWriteStructuredLineMeta(screen,line,0u);
+            return;
+        }
         NativeCompositeLayers layers=NativeCompositeAt(screen,engine,line,(int)x,x,line,true);
         uint val1=NativeStructuredWord(layers.First),val2=NativeStructuredWord(layers.Second);
         uint plane0=layers.Color,plane1=0u,controlAlpha=NativeStructuredControlPlain2D;

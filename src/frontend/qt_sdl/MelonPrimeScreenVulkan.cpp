@@ -1854,6 +1854,15 @@ void ScreenPanelVulkan::drawScreenFrame()
 #endif
 
     const bool directSampledFrame = gpuFrame && gpuFrame->HasDirectSampledOutput();
+    if (gpuFrame)
+    {
+        vulkan->presenter.SetPresentedFrameIdentity(gpuFrame->Serial, gpuFrame->Epoch);
+        if (!vulkan->presenter.IsPresentedFrameIdentityMonotonic())
+        {
+            noteFrameIdle();
+            return;
+        }
+    }
     bool sameRendererFrame = false;
     if (gpuFrame)
     {
@@ -2319,7 +2328,6 @@ void ScreenPanelVulkan::drawScreenFrame()
             false);
     }
 
-    vulkan->presenter.SetPresentedFrameSerial(gpuFrame ? gpuFrame->Serial : 0u);
     if (!vulkan->presenter.EndFrame())
     {
         if (vulkan->presenter.NeedsSurfaceRebind())

@@ -274,6 +274,10 @@ void DX12SurfacePresenter::Shutdown() noexcept
     LastPresentVsync = false;
     PresentResultLogged = false;
     LastPresentResult = S_OK;
+    PendingPresentedFrameSerial = 0;
+    PendingPresentedFrameEpoch = 0;
+    LastPresentedFrameSerial = 0;
+    LastPresentedFrameEpoch = 0;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     PerfRecordStart = {};
 #endif
@@ -1392,6 +1396,17 @@ bool DX12SurfacePresenter::Present(bool vsync)
         return true;
     if (FAILED(hr))
         return Fail("IDXGISwapChain::Present", hr);
+    if (PendingPresentedFrameSerial != 0
+        && IsPresentedFrameIdentityMonotonic())
+    {
+        if (PendingPresentedFrameEpoch > LastPresentedFrameEpoch
+            || (PendingPresentedFrameEpoch == LastPresentedFrameEpoch
+                && PendingPresentedFrameSerial > LastPresentedFrameSerial))
+        {
+            LastPresentedFrameSerial = PendingPresentedFrameSerial;
+            LastPresentedFrameEpoch = PendingPresentedFrameEpoch;
+        }
+    }
     if (!FirstPresentLogged)
     {
         FirstPresentLogged = true;

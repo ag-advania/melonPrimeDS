@@ -196,6 +196,7 @@ public:
 
     [[nodiscard]] ID3D12GraphicsCommandList* GetList() const noexcept { return List.Get(); }
     [[nodiscard]] bool IsRecording() const noexcept { return Recording; }
+    [[nodiscard]] bool IsIdle() const noexcept;
 
     // Closes and submits the open list, then signals the fence. No-op when
     // nothing is being recorded.

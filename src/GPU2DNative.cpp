@@ -319,6 +319,7 @@ void LogPresentedIdentity(
     u64 emulatedFrame,
     u64 rendererSerial,
     u64 generation,
+    u64 epoch,
     u32 slot) noexcept
 {
     if (!StageDiagnosticsEnabled())
@@ -326,10 +327,30 @@ void LogPresentedIdentity(
     Platform::Log(
         Platform::LogLevel::Info,
         "[GPU2DStage] backend=%s stage=C emulated=%llu "
-        "presented_renderer_serial=%llu presented_generation=%llu presented_slot=%u\n",
+        "presented_renderer_serial=%llu presented_generation=%llu "
+        "presented_epoch=%llu presented_slot=%u\n",
         backend, static_cast<unsigned long long>(emulatedFrame),
         static_cast<unsigned long long>(rendererSerial),
-        static_cast<unsigned long long>(generation), slot);
+        static_cast<unsigned long long>(generation),
+        static_cast<unsigned long long>(epoch), slot);
+}
+
+void LogSemanticIdentity(
+    const char* backend,
+    u64 emulatedFrame,
+    u64 captureGeneration,
+    u64 epoch,
+    bool published) noexcept
+{
+    if (!StageDiagnosticsEnabled())
+        return;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DStage] backend=%s stage=semantic emulated=%llu "
+        "capture_generation=%llu semantic_epoch=%llu publication=%s\n",
+        backend, static_cast<unsigned long long>(emulatedFrame),
+        static_cast<unsigned long long>(captureGeneration),
+        static_cast<unsigned long long>(epoch), published ? "visible" : "semantic_only");
 }
 
 namespace

@@ -162,6 +162,7 @@ $frameDumpTrigger = if ($null -ne $statePath) {
 }
 foreach ($path in @($csv, $frameCsv, $buildInfoStdout, $buildInfoStderr, $stdout, $stderr, $telemetryLog, $harness,
         $metadata, $metadataJson, $runManifest, $screenshot, $frameDumpTrigger)) {
+    if ([string]::IsNullOrWhiteSpace([string]$path)) { continue }
     if (Test-Path -LiteralPath $path) { throw "Refusing to overwrite artifact: $path" }
 }
 if ($null -ne $windowCaptureDirectory -and
@@ -541,6 +542,13 @@ $captureRows = 0
 if (Test-Path -LiteralPath $csv) { $captureRows = [Math]::Max(0, (@(Get-Content -LiteralPath $csv).Count - 1)) }
 $frameRows = 0
 if (Test-Path -LiteralPath $frameCsv) { $frameRows = [Math]::Max(0, (@(Get-Content -LiteralPath $frameCsv).Count - 1)) }
+$windowCaptureRows = 0
+if ($null -ne $windowCaptureDirectory -and
+    (Test-Path -LiteralPath $windowCaptureDirectory -PathType Container)) {
+    $windowCaptureRows = @(
+        Get-ChildItem -LiteralPath $windowCaptureDirectory -Filter '*.png' -File
+    ).Count
+}
 $allLog = @()
 foreach ($path in @($stdout, $stderr)) { if (Test-Path -LiteralPath $path) { $allLog += Get-Content -LiteralPath $path -ErrorAction SilentlyContinue } }
 [IO.File]::WriteAllText($telemetryLog, [string]::Join([Environment]::NewLine, [string[]]$allLog), $utf8)
@@ -692,6 +700,7 @@ $manifestObject = [ordered]@{
         direct_gpu2d_diagnostics_requested = [bool]$DirectGPU2DDiagnostics
         capture_rows = $captureRows
         frame_rows = $frameRows
+        window_capture_rows = $windowCaptureRows
         bad_marker_count = $badMarkers.Count
         native_gpu2d_exact_failure_marker_count = $nativeGPU2DExactFailureMarkers.Count
         native_gpu2d_mismatch_max = $nativeGPU2DMismatchMax
@@ -731,6 +740,7 @@ gpu2d_frame_dump_trigger_exists=$(if ($null -ne $frameDumpTrigger) { Test-Path -
 custom_hud_off_marker=$hudOffMarker
 capture_rows=$captureRows
 frame_rows=$frameRows
+window_capture_rows=$windowCaptureRows
 bad_marker_count=$($badMarkers.Count)
 native_gpu2d_exact_failure_marker_count=$($nativeGPU2DExactFailureMarkers.Count)
 native_gpu2d_mismatch_max=$nativeGPU2DMismatchMax
@@ -785,6 +795,7 @@ Write-Host "state marker       : $stateMarker"
 Write-Host "state action       : $stateActionMarker"
 Write-Host "capture rows       : $captureRows"
 Write-Host "frame rows         : $frameRows"
+Write-Host "window captures    : $windowCaptureRows"
 Write-Host "provenance         : $(if ($provenanceVerified) { 'PASS' } else { 'UNVERIFIED' })"
 Write-Host "bad markers        : $($badMarkers.Count)"
 Write-Host "native exact fail  : $($nativeGPU2DExactFailureMarkers.Count)"
@@ -798,7 +809,7 @@ if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMar
     ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($Hud -eq 'Off' -and $null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($frameRows -lt 1 -and -not $AllowUnverifiedBinary) -or
-    ($Renderer -eq 'Vulkan' -and $captureRows -lt 1)) {
+    ($Renderer -eq 'Vulkan' -and $captureRows -lt 1 -and $windowCaptureRows -lt 1)) {
     $badMarkers | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
     exit 1
 }

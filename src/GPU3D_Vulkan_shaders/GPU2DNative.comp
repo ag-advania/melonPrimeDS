@@ -1497,6 +1497,19 @@ void WriteStructuredLogicalPixel(uint screen, uint line, uint x, uint engine)
 
     if (displayMode == kStructuredDisplayRegular)
     {
+        // Regular display mode still obeys the DS per-line unit/blank state.
+        // Do not route these cases through the layer compositor: a disabled
+        // unit and ForcedBlank are display semantics, not an empty layer list.
+        if (LineWord(engine, line, kUnitEnabled) == 0u
+            || LineWord(engine, line, kForcedBlank) != 0u)
+        {
+            const uint color = DisplayPixel(screen, engine, line, int(x), x, line);
+            WriteStructuredPixel(screen, line, x, color, 0u,
+                kStructuredControlPlain2D << 24u, 0u);
+            if (x == 0u)
+                WriteStructuredLineMeta(screen, line, kStructuredDisplayOff);
+            return;
+        }
         CompositeLayers layers = Composite2DLayers(
             screen, engine, line, int(x), x, line, true);
         uint val1 = StructuredPixelWord(layers.First);

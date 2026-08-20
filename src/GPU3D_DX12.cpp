@@ -166,6 +166,21 @@ bool CreateUavDescriptorTable(
 
 struct DX12Renderer3D::OutputState
 {
+    struct SemanticSlot
+    {
+        DX12CommandContext Commands;
+        DX12DescriptorRing Descriptors;
+        DX12::ComPtr<ID3D12Resource> NativeStaging;
+        DX12::ComPtr<ID3D12Resource> NativeInput;
+        DX12::ComPtr<ID3D12Resource> StructuredInput;
+        DX12::ComPtr<ID3D12Resource> Composed;
+        DX12::ComPtr<ID3D12Resource> NativeReadback;
+        DX12::ComPtr<ID3D12Resource> StructuredReadback;
+        u32* NativeMapped = nullptr;
+        GPU2DNative::FrameGeneration UploadedNativeGeneration{};
+        bool NativeUploadInitialized = false;
+    };
+
     struct Slot
     {
         DX12CommandContext Commands;
@@ -185,6 +200,7 @@ struct DX12Renderer3D::OutputState
         bool StructuredUploadInitialized = false;
         bool NativeUploadInitialized = false;
         bool DirectTextureInShaderResource = false;
+        int PresentationSemanticSlot = -1;
         DX12PresentedFrame Frame;
         std::atomic<u32> PresenterRefs{0};
     };
@@ -209,11 +225,25 @@ struct DX12Renderer3D::OutputState
             slot.Descriptors.Shutdown();
             slot.Commands.Shutdown();
         }
+        for (SemanticSlot& slot : SemanticSlots)
+        {
+            slot.Commands.WaitIdle();
+            if (slot.NativeStaging && slot.NativeMapped)
+            {
+                D3D12_RANGE noWrite{0, 0};
+                slot.NativeStaging->Unmap(0, &noWrite);
+                slot.NativeMapped = nullptr;
+            }
+            slot.Descriptors.Shutdown();
+            slot.Commands.Shutdown();
+        }
         if (OwnsContextReference && Context)
             Context->Release();
     }
 
-    bool Create(DX12Context& context, u32 width, u32 height, u64 resourceGeneration)
+    bool Create(
+        DX12Context& context, u32 width, u32 height,
+        u64 resourceGeneration, u64 epoch)
     {
         if (!context.Acquire())
             return false;
@@ -307,6 +337,55 @@ struct DX12Renderer3D::OutputState
 
         }
 
+        for (SemanticSlot& slot : SemanticSlots)
+        {
+            if (!slot.Commands.Init(device, context.GetQueue())
+                || !slot.Descriptors.Init(device, kUavTableSize * 2u, true))
+                return false;
+            slot.NativeInput = context.CreateBuffer(
+                kNativeGPU2DInputBytes, D3D12_HEAP_TYPE_DEFAULT,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                L"MelonPrime DX12 native GPU2D semantic input slot");
+            slot.NativeStaging = context.CreateBuffer(
+                kNativeGPU2DInputBytes, D3D12_HEAP_TYPE_UPLOAD,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                D3D12_RESOURCE_FLAG_NONE,
+                L"MelonPrime DX12 native GPU2D semantic staging slot");
+            slot.StructuredInput = context.CreateBuffer(
+                inputBytes, D3D12_HEAP_TYPE_DEFAULT,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                L"MelonPrime DX12 native GPU2D semantic structured slot");
+            slot.Composed = context.CreateBuffer(
+                screenBytes * 2u, D3D12_HEAP_TYPE_DEFAULT,
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                L"MelonPrime DX12 native GPU2D semantic composed slot");
+            slot.NativeReadback = context.CreateBuffer(
+                screenBytes * 2u, D3D12_HEAP_TYPE_READBACK,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_FLAG_NONE,
+                L"MelonPrime DX12 native GPU2D semantic exact readback slot");
+            if (GPU2DNative::StageDiagnosticsEnabled())
+            {
+                slot.StructuredReadback = context.CreateBuffer(
+                    inputBytes, D3D12_HEAP_TYPE_READBACK,
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    D3D12_RESOURCE_FLAG_NONE,
+                    L"MelonPrime DX12 native GPU2D semantic Stage A readback slot");
+            }
+            if (!slot.NativeInput || !slot.NativeStaging || !slot.StructuredInput
+                || !slot.Composed || !slot.NativeReadback
+                || (GPU2DNative::StageDiagnosticsEnabled() && !slot.StructuredReadback))
+                return false;
+            D3D12_RANGE noRead{0, 0};
+            if (FAILED(slot.NativeStaging->Map(
+                    0, &noRead, reinterpret_cast<void**>(&slot.NativeMapped)))
+                || !slot.NativeMapped)
+                return false;
+        }
+
         if (DirectTextureEnabled)
         {
             for (Slot& slot : Slots)
@@ -344,7 +423,9 @@ struct DX12Renderer3D::OutputState
             slot.Frame.BottomOffset = screenBytes;
             slot.Frame.Width = width;
             slot.Frame.Height = height;
+            slot.Frame.Epoch = epoch;
             slot.Frame.ResourceGeneration = ResourceGeneration;
+            slot.Frame.DirectContentValid = false;
         }
         return true;
     }
@@ -353,6 +434,7 @@ struct DX12Renderer3D::OutputState
     bool OwnsContextReference = false;
     bool DirectTextureEnabled = false;
     std::array<Slot, kCompositorFramesInFlight> Slots;
+    std::array<SemanticSlot, kCompositorFramesInFlight> SemanticSlots;
     std::mutex Mutex;
     int PublishedSlot = -1;
     u32 NextSlot = 0;
@@ -422,6 +504,12 @@ bool DX12Renderer3D::Init()
             device, kUavTableSize * kCompositorFramesInFlight, false))
         return false;
     if (!NativeUavDescriptors.Init(
+            device, kUavTableSize * kCompositorFramesInFlight, false))
+        return false;
+    if (!SemanticCompositorUavDescriptors.Init(
+            device, kUavTableSize * kCompositorFramesInFlight, false))
+        return false;
+    if (!SemanticNativeUavDescriptors.Init(
             device, kUavTableSize * kCompositorFramesInFlight, false))
         return false;
     if (!CaptureDescriptors.Init(device, kUavTableSize, true))
@@ -497,6 +585,8 @@ void DX12Renderer3D::Stop()
     FrameUavDescriptors.Shutdown();
     CompositorUavDescriptors.Shutdown();
     NativeUavDescriptors.Shutdown();
+    SemanticCompositorUavDescriptors.Shutdown();
+    SemanticNativeUavDescriptors.Shutdown();
     CaptureDescriptors.Shutdown();
     Uploads.Shutdown();
     Commands.Shutdown();
@@ -510,6 +600,9 @@ void DX12Renderer3D::Stop()
     ComposedGeneration = 0;
     PublishedOutputGeneration = 0;
     NativeCaptureStateInitialized = false;
+    LastSemanticFrame = 0;
+    LastSemanticCaptureGeneration = 0;
+    LastSemanticEpoch = 0;
 }
 
 void DX12Renderer3D::Reset()
@@ -527,6 +620,10 @@ void DX12Renderer3D::Reset()
     ComposedGeneration = 0;
     PublishedOutputGeneration = 0;
     NativeCaptureStateInitialized = false;
+    ++CurrentEpoch;
+    LastSemanticFrame = 0;
+    LastSemanticCaptureGeneration = 0;
+    LastSemanticEpoch = 0;
     ColorBuffer.fill(0);
     if (ComposedOutput)
     {
@@ -537,6 +634,14 @@ void DX12Renderer3D::Reset()
             slot.UploadedContentGeneration = {};
             slot.UploadedNativeGeneration = {};
             slot.StructuredUploadInitialized = false;
+            slot.NativeUploadInitialized = false;
+            slot.Frame.DirectContentValid = false;
+            slot.Frame.Epoch = CurrentEpoch;
+            slot.PresentationSemanticSlot = -1;
+        }
+        for (OutputState::SemanticSlot& slot : ComposedOutput->SemanticSlots)
+        {
+            slot.UploadedNativeGeneration = {};
             slot.NativeUploadInitialized = false;
         }
     }
@@ -835,6 +940,9 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     CaptureSidecarBuffer.Reset();
     ComposedOutput.reset();
     NativeCaptureStateInitialized = false;
+    LastSemanticFrame = 0;
+    LastSemanticCaptureGeneration = 0;
+    LastSemanticEpoch = 0;
     TileBuffers[0].Reset();
     TileBuffers[1].Reset();
     TileBuffers[2].Reset();
@@ -850,9 +958,13 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     FrameUavDescriptors.Reset();
     CompositorUavDescriptors.Reset();
     NativeUavDescriptors.Reset();
+    SemanticCompositorUavDescriptors.Reset();
+    SemanticNativeUavDescriptors.Reset();
     FrameUavCpu = {};
     CompositorUavCpu.fill({});
     NativeUavCpu.fill({});
+    SemanticCompositorUavCpu.fill({});
+    SemanticNativeUavCpu.fill({});
     ComposedOutputValid = false;
     ComposedGeneration = 0;
     PublishedOutputGeneration = 0;
@@ -861,6 +973,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
 
 bool DX12Renderer3D::CreateScaleDependentResources()
 {
+    ++CurrentEpoch;
     ReleaseScaleDependentResources();
 
     // Query live DXGI budget only at the scale-resource boundary. The full
@@ -920,7 +1033,7 @@ bool DX12Renderer3D::CreateScaleDependentResources()
     ComposedOutput = std::make_shared<OutputState>();
     if (!ComposedOutput->Create(
             *Context, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight),
-            NextOutputResourceGeneration++))
+            NextOutputResourceGeneration++, CurrentEpoch))
         return false;
 
     // The tile heuristic (tiles * 16) is what the OpenGL renderer uses, but at
@@ -3263,6 +3376,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         std::lock_guard<std::mutex> lock(state->Mutex);
         slot.Frame.Serial = state->NextSerial++;
         slot.Frame.Generation = generation;
+        slot.Frame.DirectContentValid = slot.DirectTexture.Get() != nullptr;
         state->PublishedSlot = static_cast<int>(slotIndex);
         ComposedGeneration = generation;
         PublishedOutputGeneration = generation;
@@ -3313,8 +3427,17 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         return false;
     }
 
+    const u32 semanticIndex = static_cast<u32>(
+        input.Generation.Frame % kCompositorFramesInFlight);
+    OutputState::SemanticSlot& semanticSlot = state->SemanticSlots[semanticIndex];
+    ID3D12GraphicsCommandList* list = semanticSlot.Commands.Begin();
+    if (!list)
+    {
+        SetRuntimeFailure("native GPU2D semantic command admission failed");
+        return false;
+    }
+
     u32 slotIndex = kCompositorFramesInFlight;
-    ID3D12GraphicsCommandList* list = nullptr;
     {
         std::lock_guard<std::mutex> lock(state->Mutex);
         const u32 preferred = state->NextSlot;
@@ -3323,53 +3446,84 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             const u32 candidate = (preferred + offset) % kCompositorFramesInFlight;
             OutputState::Slot& candidateSlot = state->Slots[candidate];
             if (static_cast<int>(candidate) == state->PublishedSlot
-                || candidateSlot.PresenterRefs.load(std::memory_order_acquire) != 0)
+                || candidateSlot.PresenterRefs.load(std::memory_order_acquire) != 0
+                || !candidateSlot.Commands.IsIdle())
             {
                 continue;
             }
-            list = candidateSlot.Commands.TryBegin();
-            if (!list)
+            if (candidateSlot.PresentationSemanticSlot >= 0
+                && candidateSlot.PresentationSemanticSlot != static_cast<int>(semanticIndex)
+                && !state->SemanticSlots[static_cast<u32>(
+                    candidateSlot.PresentationSemanticSlot)].Commands.IsIdle())
+            {
                 continue;
+            }
             slotIndex = candidate;
             state->NextSlot = (candidate + 1u) % kCompositorFramesInFlight;
             break;
         }
     }
-    if (slotIndex == kCompositorFramesInFlight || !list)
-    {
-        DX12Perf::AddCounter(DX12Perf::Counter::CompositorDropCount);
-        LastComposeResult = GPU2DComposeResult::Backpressure;
-        return false;
-    }
-    OutputState::Slot& slot = state->Slots[slotIndex];
+    OutputState::Slot* outputSlot = slotIndex < kCompositorFramesInFlight
+        ? &state->Slots[slotIndex] : nullptr;
+    const bool presentationAvailable = outputSlot != nullptr;
+    // Presentation backpressure is allowed to drop a visible frame, but must
+    // never drop DS display-capture semantics. The persistent LCDC capture
+    // mirror is emulated hardware state, not a presentation cache.
+    auto& nativeStaging = outputSlot
+        ? outputSlot->NativeStaging : semanticSlot.NativeStaging;
+    auto& nativeInput = outputSlot
+        ? outputSlot->NativeInput : semanticSlot.NativeInput;
+    auto& structuredInput = outputSlot
+        ? outputSlot->StructuredInput : semanticSlot.StructuredInput;
+    auto& composedOutput = outputSlot
+        ? outputSlot->Composed : semanticSlot.Composed;
+    auto& nativeReadback = outputSlot
+        ? outputSlot->NativeReadback : semanticSlot.NativeReadback;
+    auto& structuredReadback = outputSlot
+        ? outputSlot->StructuredReadback : semanticSlot.StructuredReadback;
+    u32*& nativeMapped = outputSlot
+        ? outputSlot->NativeMapped : semanticSlot.NativeMapped;
+    auto& uploadedNativeGeneration = outputSlot
+        ? outputSlot->UploadedNativeGeneration : semanticSlot.UploadedNativeGeneration;
+    bool& nativeUploadInitialized = outputSlot
+        ? outputSlot->NativeUploadInitialized : semanticSlot.NativeUploadInitialized;
+    const u32 descriptorIndex = outputSlot ? slotIndex : semanticIndex;
     u64 rendererSerial = 0;
+    if (outputSlot)
     {
         std::lock_guard<std::mutex> lock(state->Mutex);
         rendererSerial = state->NextSerial;
     }
     RecordDX12GpuMetric(
-        slot.Commands, GpuMetric::NativeGPU2DLogical,
+        semanticSlot.Commands, GpuMetric::NativeGPU2DLogical,
         DX12Perf::Counter::NativeGPU2DLogicalGpuTimeNs);
     RecordDX12GpuMetric(
-        slot.Commands, GpuMetric::NativeGPU2DCapture,
+        semanticSlot.Commands, GpuMetric::NativeGPU2DCapture,
         DX12Perf::Counter::NativeGPU2DCaptureGpuTimeNs);
     RecordDX12GpuMetric(
-        slot.Commands, GpuMetric::NativeGPU2DResolve,
+        semanticSlot.Commands, GpuMetric::NativeGPU2DResolve,
         DX12Perf::Counter::NativeGPU2DResolveGpuTimeNs);
     RecordDX12GpuMetric(
-        slot.Commands, GpuMetric::NativeGPU2DRaw,
+        semanticSlot.Commands, GpuMetric::NativeGPU2DRaw,
         DX12Perf::Counter::NativeGPU2DObjRawGpuNs);
     RecordDX12GpuMetric(
-        slot.Commands, GpuMetric::NativeGPU2DResolve,
+        semanticSlot.Commands, GpuMetric::NativeGPU2DResolve,
         DX12Perf::Counter::CompositorGpuTimeNs);
 
+    const bool semanticFrameContiguous = LastSemanticEpoch == CurrentEpoch
+        && LastSemanticFrame != 0
+        && input.Generation.Frame == LastSemanticFrame + 1;
+    const bool semanticCaptureGenerationRegressed = LastSemanticEpoch == CurrentEpoch
+        && LastSemanticCaptureGeneration != 0
+        && input.Generation.CaptureGeneration < LastSemanticCaptureGeneration;
+    const bool fullNativeUpload = !nativeUploadInitialized
+        || !semanticFrameContiguous
+        || semanticCaptureGenerationRegressed;
     const GPU2DNative::UploadPlan uploadPlan = GPU2DNative::BuildUploadPlan(
-        input, slot.UploadedNativeGeneration,
-        !slot.NativeUploadInitialized);
-    const bool fullNativeUpload = !slot.NativeUploadInitialized;
+        input, uploadedNativeGeneration, fullNativeUpload);
     const u64 packStartNs = static_cast<u64>(std::chrono::duration_cast<
         std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
-    u32* staging = slot.NativeMapped;
+    u32* staging = nativeMapped;
     bool packedNativeInput = staging != nullptr;
     if (packedNativeInput)
     {
@@ -3380,7 +3534,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     }
     if (!packedNativeInput)
     {
-        slot.Commands.Submit();
+        semanticSlot.Commands.Submit();
         SetRuntimeFailure("the native GPU2D input staging upload failed");
         return false;
     }
@@ -3416,15 +3570,15 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DOAMUploadBytes,
         uploadPlan.OAMBytes);
 
-    slot.Descriptors.Reset();
+    semanticSlot.Descriptors.Reset();
     BoundSrvTexture = nullptr;
     BoundSrvTable = {};
     ResetFrameSrvCache();
-    if (slot.NativeUploadInitialized)
+    if (nativeUploadInitialized)
     {
         TransitionBuffer(
             list,
-            slot.NativeInput.Get(),
+            nativeInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             D3D12_RESOURCE_STATE_COPY_DEST);
     }
@@ -3432,12 +3586,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     {
         const GPU2DNative::DirtyRange& range = uploadPlan.Ranges[i];
         list->CopyBufferRegion(
-            slot.NativeInput.Get(), range.Offset,
-            slot.NativeStaging.Get(), range.Offset, range.Size);
+            nativeInput.Get(), range.Offset,
+            nativeStaging.Get(), range.Offset, range.Size);
     }
     TransitionBuffer(
         list,
-        slot.NativeInput.Get(),
+        nativeInput.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
@@ -3454,11 +3608,15 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const u32 lcdEnd = GPU2DNative::PackedRouteBase * sizeof(u32);
     const u64 captureBase = (static_cast<u64>(ScreenWidth)
         * static_cast<u64>(ScreenHeight)) * sizeof(u32);
-    if (!NativeCaptureStateInitialized)
+    const bool mirrorNeedsFullCopy = !NativeCaptureStateInitialized
+        || LastSemanticEpoch != CurrentEpoch
+        || !semanticFrameContiguous
+        || semanticCaptureGenerationRegressed;
+    if (mirrorNeedsFullCopy)
     {
         list->CopyBufferRegion(
             BlendStateBuffer.Get(), captureBase,
-            slot.NativeStaging.Get(), lcdBegin,
+            nativeStaging.Get(), lcdBegin,
             static_cast<u64>(input.LCDVRAM.size()));
     }
     else
@@ -3472,7 +3630,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 continue;
             list->CopyBufferRegion(
                 BlendStateBuffer.Get(), captureBase + (begin - lcdBegin),
-                slot.NativeStaging.Get(), begin, end - begin);
+                nativeStaging.Get(), begin, end - begin);
         }
     }
     TransitionBuffer(
@@ -3481,14 +3639,15 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-    if (slot.DirectTexture && slot.DirectTextureInShaderResource)
+    if (outputSlot && outputSlot->DirectTexture
+        && outputSlot->DirectTextureInShaderResource)
     {
         TransitionBuffer(
             list,
-            slot.DirectTexture.Get(),
+            outputSlot->DirectTexture.Get(),
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        slot.DirectTextureInShaderResource = false;
+        outputSlot->DirectTextureInShaderResource = false;
     }
 
     InsertUavBarrier(list, FinalFBBuffer.Get());
@@ -3499,22 +3658,23 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     // frame while filling the first fourteen compositor planes.
     TransitionBuffer(
         list,
-        slot.StructuredInput.Get(),
+        structuredInput.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-    ID3D12DescriptorHeap* heaps[] = { slot.Descriptors.GetHeap() };
+    ID3D12DescriptorHeap* heaps[] = { semanticSlot.Descriptors.GetHeap() };
     list->SetDescriptorHeaps(1, heaps);
     list->SetComputeRootSignature(RootSignature.Get());
     if (!BindCompositionUavTable(
-            list, slot.Descriptors, NativeUavCpu[slotIndex]))
+            list, semanticSlot.Descriptors,
+            outputSlot ? NativeUavCpu[slotIndex] : SemanticNativeUavCpu[semanticIndex]))
     {
         TransitionBuffer(
             list,
-            slot.StructuredInput.Get(),
+            structuredInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             D3D12_RESOURCE_STATE_COPY_DEST);
-        slot.Commands.Submit();
+        semanticSlot.Commands.Submit();
         SetRuntimeFailure("could not bind the native logical GPU2D descriptor table");
         return false;
     }
@@ -3522,11 +3682,11 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     DispatchUniform constants = MakeDispatchUniform();
     constants.TexWidth = finalFBValid ? 1u : 0u;
     constants.Pad = 16u;
-    slot.Commands.WriteTimestamp(
+    semanticSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DLogical, false));
     if (input.CaptureEnable != 0u)
     {
-        slot.Commands.WriteTimestamp(
+        semanticSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, false));
         if (!PipelineGPU2DNativeCapture)
         {
@@ -3561,7 +3721,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             InsertUavBarrier(list, CaptureSidecarBuffer.Get());
             DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 3u);
         }
-        slot.Commands.WriteTimestamp(
+        semanticSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, true));
     }
     else
@@ -3570,10 +3730,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         constants.InterpSpanCount = 0u;
         constants.Pad = 32u;
         SetDispatchConstants(list, constants);
-        slot.Commands.WriteTimestamp(
+        semanticSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, false));
         list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
-        slot.Commands.WriteTimestamp(
+        semanticSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, true));
         InsertUavBarrier(list, BlendStateBuffer.Get());
 
@@ -3582,10 +3742,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
         DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 2u);
     }
-    slot.Commands.WriteTimestamp(
+    semanticSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DLogical, true));
 
-    InsertUavBarrier(list, slot.StructuredInput.Get());
+    InsertUavBarrier(list, structuredInput.Get());
     InsertUavBarrier(list, CaptureSidecarBuffer.Get());
     if (stageDiagnostics)
     {
@@ -3594,31 +3754,33 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         // or touches this readback resource.
         TransitionBuffer(
             list,
-            slot.StructuredInput.Get(),
+            structuredInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             D3D12_RESOURCE_STATE_COPY_SOURCE);
         list->CopyBufferRegion(
-            slot.StructuredReadback.Get(), 0,
-            slot.StructuredInput.Get(), 0,
+            structuredReadback.Get(), 0,
+            structuredInput.Get(), 0,
             static_cast<u64>(kCompositionInputDwords) * sizeof(u32));
         TransitionBuffer(
             list,
-            slot.StructuredInput.Get(),
+            structuredInput.Get(),
             D3D12_RESOURCE_STATE_COPY_SOURCE,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
-    const bool compositorDirectOutput = slot.DirectTexture
+    const bool compositorDirectOutput = outputSlot && outputSlot->DirectTexture
         && (!diagnosticReadback
             || (GPU2DNative::DirectOutputDiagnosticsEnabled() && ScaleFactor == 1));
     if (!BindCompositionUavTable(
-            list, slot.Descriptors, CompositorUavCpu[slotIndex]))
+            list, semanticSlot.Descriptors,
+            outputSlot ? CompositorUavCpu[slotIndex]
+                       : SemanticCompositorUavCpu[semanticIndex]))
     {
         TransitionBuffer(
             list,
-            slot.StructuredInput.Get(),
+            structuredInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             D3D12_RESOURCE_STATE_COPY_DEST);
-        slot.Commands.Submit();
+        semanticSlot.Commands.Submit();
         SetRuntimeFailure("could not bind the structured compositor descriptor table");
         return false;
     }
@@ -3626,12 +3788,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     constants.Pad = compositorDirectOutput ? 1u : 0u;
     SetDispatchConstants(list, constants);
     list->SetPipelineState(PipelineCompositor.Get());
-    slot.Commands.WriteTimestamp(
+    semanticSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DResolve, false));
     list->Dispatch(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u), 1u);
-    slot.Commands.WriteTimestamp(
+    semanticSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DResolve, true));
 
     const bool directOutputReadback = compositorDirectOutput
@@ -3639,12 +3801,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         && GPU2DNative::DirectOutputDiagnosticsEnabled();
     if (compositorDirectOutput)
     {
-        InsertUavBarrier(list, slot.DirectTexture.Get());
+        InsertUavBarrier(list, outputSlot->DirectTexture.Get());
         if (directOutputReadback)
         {
             TransitionBuffer(
                 list,
-                slot.DirectTexture.Get(),
+                outputSlot->DirectTexture.Get(),
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                 D3D12_RESOURCE_STATE_COPY_SOURCE);
             const UINT rowPitch = static_cast<UINT>(
@@ -3655,7 +3817,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             for (UINT screen = 0; screen < 2u; ++screen)
             {
                 D3D12_TEXTURE_COPY_LOCATION destination{};
-                destination.pResource = slot.NativeReadback.Get();
+                destination.pResource = nativeReadback.Get();
                 destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
                 destination.PlacedFootprint.Offset = screenBytes * screen;
                 destination.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
@@ -3665,14 +3827,14 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 destination.PlacedFootprint.Footprint.RowPitch = rowPitch;
 
                 D3D12_TEXTURE_COPY_LOCATION source{};
-                source.pResource = slot.DirectTexture.Get();
+                source.pResource = outputSlot->DirectTexture.Get();
                 source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
                 source.SubresourceIndex = screen;
                 list->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
             }
             TransitionBuffer(
                 list,
-                slot.DirectTexture.Get(),
+                outputSlot->DirectTexture.Get(),
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
                 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         }
@@ -3680,44 +3842,44 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         {
             TransitionBuffer(
                 list,
-                slot.DirectTexture.Get(),
+                outputSlot->DirectTexture.Get(),
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
                 D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
         }
-        slot.DirectTextureInShaderResource = true;
+        outputSlot->DirectTextureInShaderResource = true;
         DX12Perf::AddCounter(DX12Perf::Counter::DirectCompositorImageFrames);
     }
     else
     {
-        InsertUavBarrier(list, slot.Composed.Get());
+        InsertUavBarrier(list, composedOutput.Get());
         DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
     }
 
     if (diagnosticReadback && !directOutputReadback)
     {
-        InsertUavBarrier(list, slot.Composed.Get());
+        InsertUavBarrier(list, composedOutput.Get());
         TransitionBuffer(
             list,
-            slot.Composed.Get(),
+            composedOutput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             D3D12_RESOURCE_STATE_COPY_SOURCE);
         list->CopyBufferRegion(
-            slot.NativeReadback.Get(), 0,
-            slot.Composed.Get(), 0,
+            nativeReadback.Get(), 0,
+            composedOutput.Get(), 0,
             kNativeGPU2DOutputBytes);
         TransitionBuffer(
             list,
-            slot.Composed.Get(),
+            composedOutput.Get(),
             D3D12_RESOURCE_STATE_COPY_SOURCE,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
     TransitionBuffer(
         list,
-        slot.StructuredInput.Get(),
+        structuredInput.Get(),
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         D3D12_RESOURCE_STATE_COPY_DEST);
 
-    if (!slot.Commands.Submit())
+    if (!semanticSlot.Commands.Submit())
     {
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
@@ -3725,10 +3887,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 
     if (diagnosticReadback)
     {
-        slot.Commands.WaitIdle();
+        semanticSlot.Commands.WaitIdle();
         D3D12_RANGE readRange{0, static_cast<SIZE_T>(kNativeGPU2DOutputBytes)};
         void* mapped = nullptr;
-        if (FAILED(slot.NativeReadback->Map(0, &readRange, &mapped)) || !mapped)
+        if (FAILED(nativeReadback->Map(0, &readRange, &mapped)) || !mapped)
         {
             SetRuntimeFailure("native GPU2D exact readback mapping failed");
             return false;
@@ -3747,7 +3909,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 | (((blue >> 2u) & 0x3Fu) << 16u);
         }
         D3D12_RANGE noWrite{0, 0};
-        slot.NativeReadback->Unmap(0, &noWrite);
+        nativeReadback->Unmap(0, &noWrite);
         DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DReadbackCount);
         DX12Perf::AddCounter(
             DX12Perf::Counter::NativeGPU2DReadbackBytes, kNativeGPU2DOutputBytes);
@@ -3757,7 +3919,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             const D3D12_RANGE structuredReadRange{
                 0, static_cast<SIZE_T>(kCompositionInputDwords * sizeof(u32))};
             void* structuredMapped = nullptr;
-            if (FAILED(slot.StructuredReadback->Map(
+            if (FAILED(structuredReadback->Map(
                     0, &structuredReadRange, &structuredMapped)) || !structuredMapped)
             {
                 SetRuntimeFailure("native GPU2D Stage A readback mapping failed");
@@ -3765,13 +3927,13 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             }
             GPU2DNative::LogStageSnapshot(
                 "DX12", input.Generation.Frame, input.Generation.Frame,
-                rendererSerial, generation, slotIndex, input,
+                rendererSerial, generation, descriptorIndex, input,
                 static_cast<const u32*>(structuredMapped),
                 actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
                 directOutputReadback ? "direct_image" : "composed_buffer",
                 expectedTop, expectedBottom);
             const D3D12_RANGE noStructuredWrite{0, 0};
-            slot.StructuredReadback->Unmap(0, &noStructuredWrite);
+            structuredReadback->Unmap(0, &noStructuredWrite);
         }
 
         if (exactValidation)
@@ -3813,11 +3975,29 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         }
     }
 
+    nativeUploadInitialized = true;
+    uploadedNativeGeneration = input.Generation;
+    NativeCaptureStateInitialized = true;
+    LastSemanticFrame = input.Generation.Frame;
+    LastSemanticCaptureGeneration = input.Generation.CaptureGeneration;
+    LastSemanticEpoch = CurrentEpoch;
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFrames);
+    GPU2DNative::LogSemanticIdentity(
+        "DX12", input.Generation.Frame, input.Generation.CaptureGeneration,
+        CurrentEpoch, outputSlot != nullptr);
+    if (!outputSlot)
+    {
+        LastComposeResult = GPU2DComposeResult::SemanticOnly;
+        return false;
+    }
     {
         std::lock_guard<std::mutex> lock(state->Mutex);
-        slot.Frame.Serial = rendererSerial;
+        outputSlot->Frame.Serial = rendererSerial;
         ++state->NextSerial;
-        slot.Frame.Generation = generation;
+        outputSlot->Frame.Generation = generation;
+        outputSlot->Frame.Epoch = CurrentEpoch;
+        outputSlot->Frame.DirectContentValid = compositorDirectOutput;
+        outputSlot->PresentationSemanticSlot = static_cast<int>(semanticIndex);
         state->PublishedSlot = static_cast<int>(slotIndex);
         ComposedGeneration = generation;
         PublishedOutputGeneration = generation;
@@ -3826,13 +4006,9 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     if (stageDiagnostics)
     {
         GPU2DNative::LogPresentedIdentity(
-            "DX12", input.Generation.Frame, slot.Frame.Serial,
-            generation, slotIndex);
+            "DX12", input.Generation.Frame, outputSlot->Frame.Serial,
+            generation, outputSlot->Frame.Epoch, slotIndex);
     }
-    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFrames);
-    slot.NativeUploadInitialized = true;
-    slot.UploadedNativeGeneration = input.Generation;
-    NativeCaptureStateInitialized = true;
     LastComposeResult = GPU2DComposeResult::Success;
     return true;
 }
@@ -3887,14 +4063,24 @@ bool DX12Renderer3D::BuildCompositorUavDescriptors()
 
     CompositorUavDescriptors.Reset();
     NativeUavDescriptors.Reset();
+    SemanticCompositorUavDescriptors.Reset();
+    SemanticNativeUavDescriptors.Reset();
     D3D12_CPU_DESCRIPTOR_HANDLE base{};
     D3D12_CPU_DESCRIPTOR_HANDLE nativeBase{};
+    D3D12_CPU_DESCRIPTOR_HANDLE semanticBase{};
+    D3D12_CPU_DESCRIPTOR_HANDLE semanticNativeBase{};
     D3D12_GPU_DESCRIPTOR_HANDLE ignored{};
     if (!CompositorUavDescriptors.Allocate(
             kUavTableSize * kCompositorFramesInFlight, base, ignored))
         return false;
     if (!NativeUavDescriptors.Allocate(
             kUavTableSize * kCompositorFramesInFlight, nativeBase, ignored))
+        return false;
+    if (!SemanticCompositorUavDescriptors.Allocate(
+            kUavTableSize * kCompositorFramesInFlight, semanticBase, ignored))
+        return false;
+    if (!SemanticNativeUavDescriptors.Allocate(
+            kUavTableSize * kCompositorFramesInFlight, semanticNativeBase, ignored))
         return false;
 
     const u32 pixels = static_cast<u32>(ScreenWidth) * static_cast<u32>(ScreenHeight);
@@ -3909,6 +4095,8 @@ bool DX12Renderer3D::BuildCompositorUavDescriptors()
     const u32 increment = CompositorUavDescriptors.GetIncrement();
     CompositorUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
     NativeUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
+    SemanticCompositorUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
+    SemanticNativeUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
 
     for (u32 slotIndex = 0; slotIndex < kCompositorFramesInFlight; ++slotIndex)
     {
@@ -3971,6 +4159,69 @@ bool DX12Renderer3D::BuildCompositorUavDescriptors()
         {
             return false;
         }
+
+        const OutputState::SemanticSlot& semantic = state->SemanticSlots[slotIndex];
+        const u32 semanticIncrement = SemanticCompositorUavDescriptors.GetIncrement();
+        SemanticCompositorUavCpu[slotIndex] = {
+            semanticBase.ptr + static_cast<SIZE_T>(slotIndex) * kUavTableSize
+                * semanticIncrement };
+        const UavDescriptorEntry semanticCompositorEntries[kUavTableSize] = {
+            { semantic.StructuredInput.Get(), kCompositionInputDwords, 4, false },
+            { FinalFBBuffer.Get(), pixels, 4, false },
+            { TileBuffers[0].Get(), tileElements, 4, false },
+            { TileBuffers[1].Get(), tileElements, 4, false },
+            { TileBuffers[2].Get(), tileElements, 4, false },
+            { BinResultBuffer.Get(), binResultDwords, 4, true },
+            { WorkDescBuffer.Get(), static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
+            { XSpanSetupBuffer.Get(), static_cast<u32>(MaxYSpanIndices), sizeof(SpanSetupX), false },
+            { semantic.Composed.Get(), pixels * 2u, 4, false },
+            { CaptureSidecarBuffer.Get(),
+                8u * 256u * 256u * static_cast<u32>(ScaleFactor)
+                    * static_cast<u32>(ScaleFactor), 4, false },
+            { BlendStateBuffer.Get(), pixels + static_cast<u32>(kNativeCaptureWords)
+                + kNativeObjRawWords, 4, false },
+            { ResultWinnerBuffer.Get(), resultWinnerElements, 4, false },
+            { IndirectArgsBuffer.Get(),
+                static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
+            { DirectOutputDummy.Get(), 0, 0, false, true,
+                DXGI_FORMAT_R8G8B8A8_UNORM, 2 },
+        };
+        if (!CreateUavDescriptorTable(
+                Context->GetDevice(), semanticIncrement,
+                SemanticCompositorUavCpu[slotIndex],
+                semanticCompositorEntries, kUavTableSize))
+            return false;
+
+        const u32 semanticNativeIncrement = SemanticNativeUavDescriptors.GetIncrement();
+        SemanticNativeUavCpu[slotIndex] = {
+            semanticNativeBase.ptr + static_cast<SIZE_T>(slotIndex) * kUavTableSize
+                * semanticNativeIncrement };
+        const UavDescriptorEntry semanticNativeEntries[kUavTableSize] = {
+            { semantic.NativeInput.Get(), static_cast<u32>(kNativeGPU2DInputBytes / 4u), 4, false },
+            { FinalFBBuffer.Get(), pixels, 4, false },
+            { TileBuffers[0].Get(), tileElements, 4, false },
+            { TileBuffers[1].Get(), tileElements, 4, false },
+            { TileBuffers[2].Get(), tileElements, 4, false },
+            { BinResultBuffer.Get(), binResultDwords, 4, true },
+            { WorkDescBuffer.Get(), static_cast<u32>(MaxWorkTiles) * 2u, 8, false },
+            { XSpanSetupBuffer.Get(), static_cast<u32>(MaxYSpanIndices), sizeof(SpanSetupX), false },
+            { semantic.StructuredInput.Get(), kCompositionInputDwords, 4, false },
+            { CaptureSidecarBuffer.Get(),
+                8u * 256u * 256u * static_cast<u32>(ScaleFactor)
+                    * static_cast<u32>(ScaleFactor), 4, false },
+            { BlendStateBuffer.Get(), pixels + static_cast<u32>(kNativeCaptureWords)
+                + kNativeObjRawWords, 4, false },
+            { ResultWinnerBuffer.Get(), resultWinnerElements, 4, false },
+            { IndirectArgsBuffer.Get(),
+                static_cast<u32>(sizeof(BinResultHeader) / sizeof(u32)), 4, true },
+            { DirectOutputDummy.Get(), 0, 0, false, true,
+                DXGI_FORMAT_R8G8B8A8_UNORM, 2 },
+        };
+        if (!CreateUavDescriptorTable(
+                Context->GetDevice(), semanticNativeIncrement,
+                SemanticNativeUavCpu[slotIndex], semanticNativeEntries,
+                kUavTableSize))
+            return false;
     }
     return true;
 }
@@ -4031,7 +4282,8 @@ RendererOutput DX12Renderer3D::GetComposedOutput() const
         return {};
     const DX12PresentedFrame& frame = state->Slots[state->PublishedSlot].Frame;
     return RendererOutput::DX12Buffer(
-        const_cast<DX12PresentedFrame*>(&frame), frame.Width, frame.Height, frame.Serial);
+        const_cast<DX12PresentedFrame*>(&frame), frame.Width, frame.Height,
+        frame.Serial, frame.Epoch);
 }
 
 RendererOutputLease DX12Renderer3D::AcquireComposedOutputLease()
@@ -4048,7 +4300,8 @@ RendererOutputLease DX12Renderer3D::AcquireComposedOutputLease()
     slot.PresenterRefs.fetch_add(1, std::memory_order_relaxed);
     GPU2DNative::LogPresentedIdentity(
         "DX12", slot.Frame.Generation, slot.Frame.Serial,
-        slot.Frame.Generation, static_cast<u32>(state->PublishedSlot));
+        slot.Frame.Generation, slot.Frame.Epoch,
+        static_cast<u32>(state->PublishedSlot));
     auto release = +[](void* opaque) {
         auto* leasedSlot = static_cast<OutputState::Slot*>(opaque);
         const u32 previous = leasedSlot->PresenterRefs.fetch_sub(1, std::memory_order_release);
@@ -4056,7 +4309,8 @@ RendererOutputLease DX12Renderer3D::AcquireComposedOutputLease()
     };
     return RendererOutputLease(
         RendererOutput::DX12Buffer(
-            &slot.Frame, slot.Frame.Width, slot.Frame.Height, slot.Frame.Serial),
+            &slot.Frame, slot.Frame.Width, slot.Frame.Height,
+            slot.Frame.Serial, slot.Frame.Epoch),
         &slot,
         release,
         state);

@@ -30,6 +30,12 @@ def main() -> int:
         "dx12_frontend": root / "src/GPU_DX12.cpp",
         "vulkan_renderer": root / "src/GPU3D_Vulkan.cpp",
         "dx12_renderer": root / "src/GPU3D_DX12.cpp",
+        "vulkan_frame": root / "src/VulkanPresentedFrame.h",
+        "dx12_frame": root / "src/DX12PresentedFrame.h",
+        "vulkan_presenter": root / "src/frontend/qt_sdl/MelonPrimeVulkanPresenter.h",
+        "vulkan_screen": root / "src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp",
+        "dx12_presenter": root / "src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.h",
+        "dx12_screen": root / "src/frontend/qt_sdl/Screen.cpp",
         "gpu_stage_metrics": root / "src/GpuStageMetrics.h",
         "vulkan_sync": root / "src/VulkanSync.cpp",
         "dx12_context": root / "src/DX12Context.cpp",
@@ -86,6 +92,39 @@ def main() -> int:
                 f"{label} logical full-frame dispatch", failures)
             require(text[label], "static_cast<u32>(ScaleFactor), 1u)",
                 f"{label} capture line dispatch", failures)
+            require(text[label], "LastSemanticFrame", f"{label} semantic frame identity", failures)
+            require(text[label], "LastSemanticCaptureGeneration",
+                f"{label} semantic capture identity", failures)
+            require(text[label], "semanticCaptureGenerationRegressed",
+                f"{label} capture-generation regression recovery", failures)
+            require(text[label], "LastSemanticEpoch", f"{label} semantic epoch", failures)
+            require(text[label], "NativeCaptureStateInitialized",
+                f"{label} persistent LCDC mirror ownership", failures)
+            require(text[label], "Presentation backpressure is allowed to drop a visible frame",
+                f"{label} semantic/presentation separation", failures)
+
+        vulkan_native = text["vulkan_renderer"].split(
+            "bool VulkanRenderer3D::ComposeNativeGPU2D(", 1)[1]
+        if "TryBeginFrame" in vulkan_native.split(
+            "bool VulkanRenderer3D::CanComposeNativeGPU2D", 1
+        )[0]:
+            failures.append("Vulkan native GPU2D: presentation TryBeginFrame still gates semantics")
+        require(vulkan_native, "ComposeFrames.BeginFrame()",
+            "Vulkan native semantic command admission", failures)
+        require(text["dx12_renderer"], "semanticSlot.Commands.Begin()",
+            "DX12 native semantic command admission", failures)
+
+        for label in ("vulkan_frame", "dx12_frame"):
+            require(text[label], "Epoch", f"{label} frame epoch", failures)
+            require(text[label], "DirectContentValid", f"{label} direct-content validity", failures)
+        require(text["vulkan_presenter"], "IsPresentedFrameIdentityMonotonic",
+            "Vulkan presentation serial/epoch rejection", failures)
+        require(text["vulkan_screen"], "SetPresentedFrameIdentity",
+            "Vulkan presentation identity admission", failures)
+        require(text["dx12_presenter"], "IsPresentedFrameIdentityMonotonic",
+            "DX12 presentation serial/epoch rejection", failures)
+        require(text["dx12_screen"], "SetPresentedFrameIdentity",
+            "DX12 presentation identity admission", failures)
 
         require(text["vulkan_frontend"], "stale_generation_reject", "Vulkan stale diagnostic", failures)
         require(text["dx12_frontend"], "stale_generation_reject", "DX12 stale diagnostic", failures)
@@ -119,6 +158,8 @@ def main() -> int:
                 f"{label} scanline OBJ preparation",
                 failures,
             )
+            require(text[label], "ForcedBlank", f"{label} Stage A blank semantics", failures)
+            require(text[label], "UnitEnabled", f"{label} Stage A unit semantics", failures)
         require(text["vulkan_shader"], "local_size_x = 128, local_size_y = 1",
             "Vulkan scanline workgroup", failures)
         require(text["dx12_shader"], "[numthreads(128, 1, 1)]",

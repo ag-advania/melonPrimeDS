@@ -974,6 +974,12 @@ ID3D12GraphicsCommandList* DX12CommandContext::TryBegin()
     return ResetList();
 }
 
+bool DX12CommandContext::IsIdle() const noexcept
+{
+    return !Recording
+        && (!Fence || SubmittedValue == 0 || Fence->GetCompletedValue() >= SubmittedValue);
+}
+
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 
 void DX12CommandContext::RefreshTimestampFrequencyIfDue() noexcept

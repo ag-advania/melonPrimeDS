@@ -356,7 +356,15 @@ void LogPresentedIdentity(
     u64 emulatedFrame,
     u64 rendererSerial,
     u64 generation,
+    u64 epoch,
     u32 slot) noexcept;
+
+void LogSemanticIdentity(
+    const char* backend,
+    u64 emulatedFrame,
+    u64 captureGeneration,
+    u64 epoch,
+    bool published) noexcept;
 
 static_assert(std::is_trivially_copyable_v<FrameInput>,
     "FrameInput must remain memset-resettable without a stack-sized temporary");

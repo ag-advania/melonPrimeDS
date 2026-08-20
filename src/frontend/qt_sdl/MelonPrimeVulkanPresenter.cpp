@@ -2906,14 +2906,18 @@ bool VulkanPresenter::EndFrame()
             : VulkanPerf::Counter::VulkanPresentSkipCount);
     if (presentAccepted && PendingPresentedFrameSerial != 0u)
     {
-        if (LastPresentedFrameSerial != 0u
-            && PendingPresentedFrameSerial < LastPresentedFrameSerial)
+        if (!IsPresentedFrameIdentityMonotonic())
         {
             VulkanPerf::AddCounter(
                 VulkanPerf::Counter::VulkanPresentedSerialRegressionCount);
         }
-        if (PendingPresentedFrameSerial > LastPresentedFrameSerial)
+        if (PendingPresentedFrameEpoch > LastPresentedFrameEpoch
+            || (PendingPresentedFrameEpoch == LastPresentedFrameEpoch
+                && PendingPresentedFrameSerial > LastPresentedFrameSerial))
+        {
             LastPresentedFrameSerial = PendingPresentedFrameSerial;
+            LastPresentedFrameEpoch = PendingPresentedFrameEpoch;
+        }
     }
     const u64 logicalFrameId = LowLatencyFrameIndex;
     const u64 logicalFramesSinceLastAcceptedPresent =
@@ -3475,7 +3479,9 @@ void VulkanPresenter::Shutdown() noexcept
     SurfaceRebindRequested = false;
     FirstPresentLogged = false;
     PendingPresentedFrameSerial = 0;
+    PendingPresentedFrameEpoch = 0;
     LastPresentedFrameSerial = 0;
+    LastPresentedFrameEpoch = 0;
     SkipNextPresentationForLatencyBudget = false;
     SurfaceGeneration = 0;
     SurfaceNativeHandle = 0;

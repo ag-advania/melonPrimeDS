@@ -38,6 +38,10 @@ class GPU;
 enum class GPU2DComposeResult : u8
 {
     Success,
+    // The emulation-semantic GPU2D phase completed, but no presentation slot
+    // was available.  This is a valid native frame outcome: the last
+    // published image remains visible while DS display-capture state advances.
+    SemanticOnly,
     Backpressure,
     Unavailable,
     Fatal,

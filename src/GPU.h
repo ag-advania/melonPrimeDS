@@ -82,6 +82,7 @@ struct RendererOutput
     || defined(MELONPRIME_ENABLE_METAL) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     u64 FrameSerial = 0;
+    u64 FrameEpoch = 0;
 #endif
 
     static RendererOutput CpuBgra(void* top, void* bottom, u32 width = 256, u32 height = 192) noexcept
@@ -105,7 +106,8 @@ struct RendererOutput
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     static RendererOutput VulkanBuffer(
-        void* frame, u32 width, u32 height, u64 frameSerial = 0) noexcept
+        void* frame, u32 width, u32 height, u64 frameSerial = 0,
+        u64 frameEpoch = 0) noexcept
     {
         RendererOutput output;
         output.Kind = RendererOutputKind::VulkanBuffer;
@@ -113,13 +115,15 @@ struct RendererOutput
         output.Width = width;
         output.Height = height;
         output.FrameSerial = frameSerial;
+        output.FrameEpoch = frameEpoch;
         return output;
     }
 #endif
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     static RendererOutput DX12Buffer(
-        void* frame, u32 width, u32 height, u64 frameSerial = 0) noexcept
+        void* frame, u32 width, u32 height, u64 frameSerial = 0,
+        u64 frameEpoch = 0) noexcept
     {
         RendererOutput output;
         output.Kind = RendererOutputKind::DX12Buffer;
@@ -127,6 +131,7 @@ struct RendererOutput
         output.Width = width;
         output.Height = height;
         output.FrameSerial = frameSerial;
+        output.FrameEpoch = frameEpoch;
         return output;
     }
 #endif

@@ -521,6 +521,10 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> NativeUavCpu{};
+    DX12DescriptorRing SemanticCompositorUavDescriptors;
+    DX12DescriptorRing SemanticNativeUavDescriptors;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> SemanticCompositorUavCpu{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> SemanticNativeUavCpu{};
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;
@@ -530,6 +534,10 @@ private:
     u64 PublishedOutputGeneration = 0;
     bool ComposedOutputValid = false;
     bool NativeCaptureStateInitialized = false;
+    u64 CurrentEpoch = 1;
+    u64 LastSemanticFrame = 0;
+    u64 LastSemanticCaptureGeneration = 0;
+    u64 LastSemanticEpoch = 0;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely
     // cache descriptors by resource lifetime rather than content generation.

@@ -38,11 +38,16 @@ struct DX12PresentedFrame
     // renderer recreates the compositor output resources.
     u64 Serial = 0;
     u64 Generation = 0;
+    u64 Epoch = 0;
     u64 ResourceGeneration = 0;
+    // The texture is allocated for the slot even when developer readback
+    // selects the fallback composed buffer.  Do not advertise stale direct
+    // contents merely because the handle is non-null.
+    bool DirectContentValid = false;
 
     [[nodiscard]] bool HasDirectSampledOutput() const noexcept
     {
-        return DirectTexture != nullptr;
+        return DirectContentValid && DirectTexture != nullptr;
     }
 };
 

@@ -146,12 +146,26 @@ public:
     {
         WindowFullscreen.store(fullscreen, std::memory_order_release);
     }
-    // The screen panel supplies the renderer-owned serial immediately before
-    // EndFrame. The presenter uses it to detect backwards presentation order
-    // without logging every accepted frame.
-    void SetPresentedFrameSerial(melonDS::u64 serial) noexcept
+    // The screen panel supplies the renderer-owned identity before presenter
+    // admission. A newer epoch may restart the serial sequence; within one
+    // epoch, serials must never move backwards.
+    void SetPresentedFrameIdentity(melonDS::u64 serial, melonDS::u64 epoch) noexcept
     {
         PendingPresentedFrameSerial = serial;
+        PendingPresentedFrameEpoch = epoch;
+    }
+    void SetPresentedFrameSerial(melonDS::u64 serial) noexcept
+    {
+        SetPresentedFrameIdentity(serial, 0);
+    }
+    [[nodiscard]] bool IsPresentedFrameIdentityMonotonic() const noexcept
+    {
+        if (PendingPresentedFrameSerial == 0)
+            return true;
+        return PendingPresentedFrameEpoch > LastPresentedFrameEpoch
+            || (PendingPresentedFrameEpoch == LastPresentedFrameEpoch
+                && (LastPresentedFrameSerial == 0
+                    || PendingPresentedFrameSerial >= LastPresentedFrameSerial));
     }
 
     // Either thread. A changed value marks the swapchain out of date, because
@@ -435,7 +449,9 @@ private:
     // synchronization or frame admission.
     melonDS::u64 LastAcceptedLogicalFrameId = 0;
     melonDS::u64 PendingPresentedFrameSerial = 0;
+    melonDS::u64 PendingPresentedFrameEpoch = 0;
     melonDS::u64 LastPresentedFrameSerial = 0;
+    melonDS::u64 LastPresentedFrameEpoch = 0;
     // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
     // logs a transition once instead of every frame.
     int LoggedReflexMode = -1;

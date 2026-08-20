@@ -77,6 +77,24 @@ public:
         std::uint32_t width,
         std::uint32_t height,
         bool waitForPresentSlot = true);
+    // The screen panel supplies the renderer-owned identity before presenter
+    // admission. A newer epoch may restart the serial sequence; within one
+    // epoch, serials must never move backwards.
+    void SetPresentedFrameIdentity(
+        std::uint64_t serial, std::uint64_t epoch) noexcept
+    {
+        PendingPresentedFrameSerial = serial;
+        PendingPresentedFrameEpoch = epoch;
+    }
+    [[nodiscard]] bool IsPresentedFrameIdentityMonotonic() const noexcept
+    {
+        if (PendingPresentedFrameSerial == 0)
+            return true;
+        return PendingPresentedFrameEpoch > LastPresentedFrameEpoch
+            || (PendingPresentedFrameEpoch == LastPresentedFrameEpoch
+                && (LastPresentedFrameSerial == 0
+                    || PendingPresentedFrameSerial >= LastPresentedFrameSerial));
+    }
     // Must run after acquiring the renderer output lease and before BeginFrame
     // opens the presenter command list. Resource-generation changes are the
     // only cold path allowed to quiesce the shared queue for descriptor reuse.
@@ -251,6 +269,10 @@ private:
     bool LastPresentVsync = false;
     bool PresentResultLogged = false;
     HRESULT LastPresentResult = S_OK;
+    std::uint64_t PendingPresentedFrameSerial = 0;
+    std::uint64_t PendingPresentedFrameEpoch = 0;
+    std::uint64_t LastPresentedFrameSerial = 0;
+    std::uint64_t LastPresentedFrameEpoch = 0;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     std::chrono::steady_clock::time_point PerfRecordStart{};
 #endif

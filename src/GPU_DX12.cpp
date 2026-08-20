@@ -249,6 +249,7 @@ void DX12Renderer::VBlank()
     if (nativeProducer && !nativeComposed)
     {
         if (nativeComposeResult == GPU2DComposeResult::Backpressure
+            || nativeComposeResult == GPU2DComposeResult::SemanticOnly
             || nativeComposeResult == GPU2DComposeResult::Unavailable)
         {
             IntelXeLL.MarkRenderSubmitEnd();
@@ -276,6 +277,7 @@ void DX12Renderer::VBlank()
     }
     if (exactValidation && dx12 && !nativeComposed
         && nativeComposeResult != GPU2DComposeResult::Backpressure
+        && nativeComposeResult != GPU2DComposeResult::SemanticOnly
         && nativeComposeResult != GPU2DComposeResult::Unavailable)
     {
         dx12->FailNativeGPU2DExact(
@@ -294,7 +296,8 @@ void DX12Renderer::VBlank()
             "DX12 renderer gpu2d=Software fallback=1 reason=native frame unavailable\n");
         NativeGPU2DFallbackAnnounced = true;
     }
-    if (nativeComposeResult == GPU2DComposeResult::Backpressure)
+    if (nativeComposeResult == GPU2DComposeResult::Backpressure
+        || nativeComposeResult == GPU2DComposeResult::SemanticOnly)
     {
         IntelXeLL.MarkRenderSubmitEnd();
         NvidiaReflex.MarkRenderSubmitEnd();
