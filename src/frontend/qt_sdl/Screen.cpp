@@ -1861,11 +1861,18 @@ struct ScreenPanelDX12::DX12State
     MelonPrime::NativeSurfaceSnapshotStore surfaceSnapshot;
     // GUI-thread-only identity publication state.
     std::uintptr_t guiSurfaceHandle = 0;
-    std::uint64_t guiSurfaceGeneration = 0;
+    std::uint64_t guiSurfaceIdentityGeneration = 0;
+    std::uint64_t guiSurfaceGeometryRevision = 0;
+    std::uint32_t guiSurfaceLastLogicalWidth = 0;
+    std::uint32_t guiSurfaceLastLogicalHeight = 0;
+    std::uint32_t guiSurfaceLastPhysicalWidth = 0;
+    std::uint32_t guiSurfaceLastPhysicalHeight = 0;
+    bool guiSurfaceLastFullscreen = false;
+    bool guiSurfaceGeometryInitialized = false;
     bool guiSurfaceIdentityDirty = true;
-    std::uint64_t presenterSurfaceGeneration = 0;
+    std::uint64_t presenterSurfaceIdentityGeneration = 0;
+    std::uint64_t presenterSurfaceGeometryRevision = 0;
     std::uintptr_t presenterSurfaceHandle = 0;
-    std::atomic_bool surfaceHandleDirty{true};
     // Set by the GUI thread while the Custom HUD on-screen editor owns the
     // panel, read by the emulation thread's paused draw pass. The live settings
     // preview shares this presentation exception without entering edit mode.
@@ -1967,7 +1974,7 @@ bool ScreenPanelDX12::initDX12()
     const HWND window = reinterpret_cast<HWND>(snapshot.NativeHandle);
     dx12->initialized = dx12->presenter.Init(
         window,
-        snapshot.Generation,
+        snapshot.IdentityGeneration,
         snapshot.PhysicalWidth,
         snapshot.PhysicalHeight);
     if (!dx12->initialized)
@@ -1979,9 +1986,11 @@ bool ScreenPanelDX12::initDX12()
     }
     if (dx12->initialized)
     {
-        dx12->presenterSurfaceGeneration = snapshot.Generation;
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::DX12PresenterReinitCount);
+        dx12->presenterSurfaceIdentityGeneration = snapshot.IdentityGeneration;
+        dx12->presenterSurfaceGeometryRevision = snapshot.GeometryRevision;
         dx12->presenterSurfaceHandle = snapshot.NativeHandle;
-        dx12->surfaceHandleDirty.store(false, std::memory_order_release);
         dx12->nativeFramePublished = false;
     }
     return dx12->initialized;
@@ -2016,31 +2025,54 @@ void ScreenPanelDX12::publishDX12SurfaceSnapshotGuiThread()
         return;
 
     const std::uintptr_t handle = static_cast<std::uintptr_t>(dx12->surface->winId());
-    if (dx12->guiSurfaceGeneration == 0
+    const bool identityChanged = dx12->guiSurfaceIdentityGeneration == 0
         || dx12->guiSurfaceHandle != handle
-        || dx12->guiSurfaceIdentityDirty)
+        || dx12->guiSurfaceIdentityDirty;
+    if (identityChanged)
     {
         dx12->guiSurfaceHandle = handle;
-        ++dx12->guiSurfaceGeneration;
+        ++dx12->guiSurfaceIdentityGeneration;
         dx12->guiSurfaceIdentityDirty = false;
-        dx12->surfaceHandleDirty.store(true, std::memory_order_release);
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::DX12NativeIdentityGenerationChangeCount);
     }
 
     const int logicalWidth = std::max(1, width());
     const int logicalHeight = std::max(1, height());
     const qreal dpr = devicePixelRatioF();
+    const std::uint32_t physicalWidth = static_cast<std::uint32_t>(
+        std::max(1, qRound(logicalWidth * dpr)));
+    const std::uint32_t physicalHeight = static_cast<std::uint32_t>(
+        std::max(1, qRound(logicalHeight * dpr)));
+    const bool fullscreen = window() && window()->isFullScreen();
+    if (!dx12->guiSurfaceGeometryInitialized
+        || dx12->guiSurfaceLastLogicalWidth != static_cast<std::uint32_t>(logicalWidth)
+        || dx12->guiSurfaceLastLogicalHeight != static_cast<std::uint32_t>(logicalHeight)
+        || dx12->guiSurfaceLastPhysicalWidth != physicalWidth
+        || dx12->guiSurfaceLastPhysicalHeight != physicalHeight
+        || dx12->guiSurfaceLastFullscreen != fullscreen)
+    {
+        dx12->guiSurfaceGeometryInitialized = true;
+        dx12->guiSurfaceLastLogicalWidth = static_cast<std::uint32_t>(logicalWidth);
+        dx12->guiSurfaceLastLogicalHeight = static_cast<std::uint32_t>(logicalHeight);
+        dx12->guiSurfaceLastPhysicalWidth = physicalWidth;
+        dx12->guiSurfaceLastPhysicalHeight = physicalHeight;
+        dx12->guiSurfaceLastFullscreen = fullscreen;
+        ++dx12->guiSurfaceGeometryRevision;
+    }
     MelonPrime::NativeSurfaceSnapshot snapshot;
     snapshot.NativeHandle = handle;
-    snapshot.Generation = dx12->guiSurfaceGeneration;
+    snapshot.IdentityGeneration = dx12->guiSurfaceIdentityGeneration;
+    snapshot.GeometryRevision = dx12->guiSurfaceGeometryRevision;
     snapshot.LogicalWidth = static_cast<std::uint32_t>(logicalWidth);
     snapshot.LogicalHeight = static_cast<std::uint32_t>(logicalHeight);
-    snapshot.PhysicalWidth = static_cast<std::uint32_t>(
-        std::max(1, qRound(logicalWidth * dpr)));
-    snapshot.PhysicalHeight = static_cast<std::uint32_t>(
-        std::max(1, qRound(logicalHeight * dpr)));
-    snapshot.Fullscreen = window() && window()->isFullScreen();
+    snapshot.PhysicalWidth = physicalWidth;
+    snapshot.PhysicalHeight = physicalHeight;
+    snapshot.Fullscreen = fullscreen;
     snapshot.Valid = handle != 0 && dx12->surface->windowHandle() != nullptr;
     dx12->surfaceSnapshot.Publish(snapshot);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::DX12SurfaceSnapshotPublishCount);
 }
 
 void ScreenPanelDX12::handleDX12SurfaceHostLifecycleGuiThread(
@@ -2050,13 +2082,21 @@ void ScreenPanelDX12::handleDX12SurfaceHostLifecycleGuiThread(
     if (!dx12)
         return;
 
-    dx12->surfaceHandleDirty.store(true, std::memory_order_release);
-    dx12->guiSurfaceIdentityDirty = true;
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::DX12SurfaceEventCount);
+
+    if (aboutToDestroy || eventType == QEvent::PlatformSurface)
+        dx12->guiSurfaceIdentityDirty = true;
     if (aboutToDestroy)
     {
         MelonPrime::NativeSurfaceSnapshot invalid;
-        invalid.Generation = ++dx12->guiSurfaceGeneration;
+        invalid.IdentityGeneration = ++dx12->guiSurfaceIdentityGeneration;
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::DX12NativeIdentityGenerationChangeCount);
+        invalid.GeometryRevision = dx12->guiSurfaceGeometryRevision;
         dx12->surfaceSnapshot.Publish(invalid);
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::DX12SurfaceSnapshotPublishCount);
         return;
     }
 
@@ -2074,8 +2114,6 @@ bool ScreenPanelDX12::event(QEvent* event)
         case QEvent::PlatformSurface:
         case QEvent::WindowStateChange:
         case QEvent::Show:
-            dx12->guiSurfaceIdentityDirty = true;
-            dx12->surfaceHandleDirty.store(true, std::memory_order_release);
             QMetaObject::invokeMethod(
                 this,
                 [this]() { publishDX12SurfaceSnapshotGuiThread(); },
@@ -2199,8 +2237,7 @@ void ScreenPanelDX12::drawScreen()
 
     const bool surfaceIdentityChanged =
         dx12->presenter.IsInitialized()
-        && (dx12->surfaceHandleDirty.load(std::memory_order_acquire)
-            || dx12->presenterSurfaceGeneration != publishedSurface.Generation
+        && (dx12->presenterSurfaceIdentityGeneration != publishedSurface.IdentityGeneration
             || dx12->presenterSurfaceHandle != publishedSurface.NativeHandle);
     if (surfaceIdentityChanged)
     {
@@ -2211,7 +2248,8 @@ void ScreenPanelDX12::drawScreen()
         dx12->presenter.InvalidateDirectDescriptorCache();
         dx12->frameLease.ReleaseNow();
         dx12->presenter.Shutdown();
-        dx12->presenterSurfaceGeneration = 0;
+        dx12->presenterSurfaceIdentityGeneration = 0;
+        dx12->presenterSurfaceGeometryRevision = 0;
         dx12->presenterSurfaceHandle = 0;
         dx12->nativeFramePublished = false;
     }
@@ -2221,16 +2259,16 @@ void ScreenPanelDX12::drawScreen()
         const HWND window = reinterpret_cast<HWND>(publishedSurface.NativeHandle);
         if (!dx12->presenter.Init(
                 window,
-                publishedSurface.Generation,
+                publishedSurface.IdentityGeneration,
                 publishedSurface.PhysicalWidth,
                 publishedSurface.PhysicalHeight))
         {
             reportRuntimeFailure(dx12->presenter.LastError().c_str());
             return;
         }
-        dx12->presenterSurfaceGeneration = publishedSurface.Generation;
+        dx12->presenterSurfaceIdentityGeneration = publishedSurface.IdentityGeneration;
+        dx12->presenterSurfaceGeometryRevision = publishedSurface.GeometryRevision;
         dx12->presenterSurfaceHandle = publishedSurface.NativeHandle;
-        dx12->surfaceHandleDirty.store(false, std::memory_order_release);
     }
 
     auto* nds = emuInstance->getNDS();

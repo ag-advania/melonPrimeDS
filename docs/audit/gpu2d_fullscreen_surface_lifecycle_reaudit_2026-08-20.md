@@ -185,3 +185,78 @@ that was launched; it is not evidence against the current source option parser.
 These limitations do not weaken the completed Software F1/F2/F3/F4/F5/F8
 agreement or the 100-cycle fullscreen validation result; they delimit the
 platform and cold-boot claims that remain open.
+
+## Follow-up root-fix verification (2026-08-20)
+
+The follow-up implementation addressed the remaining P1 surfaces instead of
+only extending the old toggle counter:
+
+- Native surface identity and geometry are separate. Same-HWND fullscreen,
+  DPI, and resize changes now publish a geometry revision and rebuild the
+  swapchain without presenter identity teardown. The non-Linux
+  `WindowStateChange` path publishes the post-`QWidget::event()` snapshot
+  synchronously, so the emulation thread cannot rebuild once against the
+  previous fullscreen value.
+- Vulkan and DX12 now use sparse/deduplicated GPU2D timeline rows with a
+  partial upload plan. Vulkan flushes only dirty mapped ranges; DX12 copies
+  only the corresponding ranges. OBJ window collection is one 128-sprite
+  scan, and OBJ mosaic resolves read a once-per-logical-pixel raw OBJ plane
+  instead of rescanning OAM for every mosaic sample.
+- Surface, swapchain, present, and renderer-serial counters are emitted in
+  the Vulkan/DX12 telemetry paths. The event-matrix harness now measures
+  actual `swapchain recreated fullscreen=...` states, per-frame FPS, and
+  presented-serial regressions. Its child CSV path is absolute and its F11
+  input is posted directly to the target window.
+
+### Final build and contract evidence
+
+The existing MinGW Release/Developer build completed successfully after the
+root fix (the final incremental pass rebuilt the executable and ran 18/18
+registered tests; the preceding full pass completed 159/159). The dedicated
+contract executable reported `PASS: GPU2D native contract vectors`. Static
+checks also passed:
+
+- native GPU2D temporal/identity/capture/provenance audit;
+- Vulkan source-sync and 114-variant / 608 scale-specialized validation;
+- DX12 117-variant shader audit;
+- physical A/B provenance contract and telemetry zero-overhead contract;
+- `git diff --check` and PowerShell event-matrix parse.
+
+### USA Rev 1 Software exact differential matrix
+
+ROM and states:
+`C:\DSMPH\melonPrimeDS\all roms\allRoms\0367 - Metroid Prime - Hunters (USA) (Rev 1).nds`
+with `.ml1`, `.ml2`, `.ml3`, `.ml4`, `.ml5`, and `.ml8`.
+
+| Backend | F1 | F2 | F3 | F4 | F5 | F8 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Vulkan | 0 mismatches | 0 mismatches | 0 mismatches | 0 mismatches | 0 mismatches | 0 mismatches |
+| DX12 | 0 mismatches | 0 mismatches | 0 mismatches | 0 mismatches | 0 mismatches | 0 mismatches |
+
+All 12 runs had process exit 0, configuration restore PASS, state action 1,
+native exact failure 0, native fallback 0, and fallback-line count 0. This is
+the final dirty-source build's Software canonical differential; it is not a
+claim of an independently reproduced historical raw-dump hash.
+
+### Final fullscreen/VSync A/B evidence
+
+The final current executable was driven with the USA Rev 1 ROM through the
+updated event matrix, without `-ValidateSync` because this Release/Developer
+binary does not prove the Vulkan Synchronization Validation layer. The layer
+claim is therefore NOT RUN; the runtime state, telemetry, and device-loss
+claims below are separate:
+
+| Case | Actual states | Rebuilds | Same-state | FPS p50/p95/p99 | Serial regressions | Device lost |
+| --- | --- | ---: | ---: | --- | ---: | ---: |
+| VSync ON / FIFO | fullscreen 65, windowed 62, transitions 100/100 | 127 | 26 | 59296.15 / 141061.63 / 264866.78 | 0 | 0 |
+| VSync OFF / IMMEDIATE | fullscreen 69, windowed 60, transitions 100/100 | 129 | 28 | 60083.52 / 275013.89 / 307830.60 | 0 | 0 |
+
+Both runs restored the configuration byte-for-byte and reported config
+integrity PASS. Artifacts:
+
+- `build/gpu2d-validation-20260820-post-syncorder-fullscreen-100-vsync-final/`
+- `build/gpu2d-validation-20260820-post-syncorder-fullscreen-100-novsync-retry2/`
+
+The current build uses dirty-source provenance (`--build-info-json` reports
+`git_dirty=true`); the exact source-head and executable hashes remain in each
+physical A/B run manifest.

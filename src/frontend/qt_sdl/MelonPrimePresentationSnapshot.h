@@ -19,8 +19,11 @@ namespace MelonPrime
 
 // Plain data published by a QWidget-owning GUI thread and consumed by the
 // emulation/presenter thread. NativeHandle is the child surface's identity
-// (HWND on Windows, WId/NSView where applicable); Generation is the identity
-// even when the window system reuses the numeric handle.
+// (HWND on Windows, WId/NSView where applicable). IdentityGeneration is the
+// native-surface identity even when the window system reuses the numeric
+// handle. GeometryRevision is deliberately separate: a resize, DPI change, or
+// fullscreen transition must not make the presenter destroy and recreate the
+// native surface.
 struct NativeSurfaceSnapshot
 {
     std::uintptr_t NativeHandle = 0;
@@ -29,7 +32,8 @@ struct NativeSurfaceSnapshot
     // adapter owns a richer native-surface lifecycle contract.
     std::uintptr_t XcbConnection = 0;
     std::uintptr_t XlibDisplay = 0;
-    std::uint64_t Generation = 0;
+    std::uint64_t IdentityGeneration = 0;
+    std::uint64_t GeometryRevision = 0;
     std::uint32_t LogicalWidth = 0;
     std::uint32_t LogicalHeight = 0;
     std::uint32_t PhysicalWidth = 0;
@@ -52,7 +56,8 @@ public:
         NativeHandle.store(snapshot.NativeHandle, std::memory_order_relaxed);
         XcbConnection.store(snapshot.XcbConnection, std::memory_order_relaxed);
         XlibDisplay.store(snapshot.XlibDisplay, std::memory_order_relaxed);
-        Generation.store(snapshot.Generation, std::memory_order_relaxed);
+        IdentityGeneration.store(snapshot.IdentityGeneration, std::memory_order_relaxed);
+        GeometryRevision.store(snapshot.GeometryRevision, std::memory_order_relaxed);
         LogicalWidth.store(snapshot.LogicalWidth, std::memory_order_relaxed);
         LogicalHeight.store(snapshot.LogicalHeight, std::memory_order_relaxed);
         PhysicalWidth.store(snapshot.PhysicalWidth, std::memory_order_relaxed);
@@ -74,7 +79,8 @@ public:
             candidate.NativeHandle = NativeHandle.load(std::memory_order_relaxed);
             candidate.XcbConnection = XcbConnection.load(std::memory_order_relaxed);
             candidate.XlibDisplay = XlibDisplay.load(std::memory_order_relaxed);
-            candidate.Generation = Generation.load(std::memory_order_relaxed);
+            candidate.IdentityGeneration = IdentityGeneration.load(std::memory_order_relaxed);
+            candidate.GeometryRevision = GeometryRevision.load(std::memory_order_relaxed);
             candidate.LogicalWidth = LogicalWidth.load(std::memory_order_relaxed);
             candidate.LogicalHeight = LogicalHeight.load(std::memory_order_relaxed);
             candidate.PhysicalWidth = PhysicalWidth.load(std::memory_order_relaxed);
@@ -97,7 +103,8 @@ private:
     std::atomic<std::uintptr_t> NativeHandle{0};
     std::atomic<std::uintptr_t> XcbConnection{0};
     std::atomic<std::uintptr_t> XlibDisplay{0};
-    std::atomic<std::uint64_t> Generation{0};
+    std::atomic<std::uint64_t> IdentityGeneration{0};
+    std::atomic<std::uint64_t> GeometryRevision{0};
     std::atomic<std::uint32_t> LogicalWidth{0};
     std::atomic<std::uint32_t> LogicalHeight{0};
     std::atomic<std::uint32_t> PhysicalWidth{0};

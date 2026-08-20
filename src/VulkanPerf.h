@@ -181,6 +181,16 @@ enum class Counter : u32
     CaptureCPU2DNs,
     CompositorGpuTimeNs,
     PresentWaitNs,
+    VulkanSurfaceEventCount,
+    VulkanSurfaceSnapshotPublishCount,
+    VulkanNativeIdentityGenerationChangeCount,
+    VulkanSurfaceRebindCount,
+    VulkanSwapchainDirtySetCount,
+    VulkanSwapchainRecreateCount,
+    VulkanSwapchainWaitIdleNs,
+    VulkanPresentSuccessCount,
+    VulkanPresentSkipCount,
+    VulkanPresentedSerialRegressionCount,
     Count,
 };
 
@@ -617,6 +627,25 @@ inline void MaybeReport()
          count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
          count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
 
+    std::fprintf(stderr,
+        "[VulkanPerf] surface surface_event_count=%llu "
+        "snapshot_publish_count=%llu identity_generation_change_count=%llu "
+        "surface_rebind_count=%llu swapchain_dirty_set_count=%llu "
+        "swapchain_recreate_count=%llu swapchain_wait_idle_ns=%llu "
+        "acquire_wait_ns=%llu present_wait_ns=%llu present_success_count=%llu "
+        "present_skip_count=%llu presented_serial_regression_count=%llu\n",
+        count(Counter::VulkanSurfaceEventCount),
+        count(Counter::VulkanSurfaceSnapshotPublishCount),
+        count(Counter::VulkanNativeIdentityGenerationChangeCount),
+        count(Counter::VulkanSurfaceRebindCount),
+        count(Counter::VulkanSwapchainDirtySetCount),
+        count(Counter::VulkanSwapchainRecreateCount),
+        count(Counter::VulkanSwapchainWaitIdleNs),
+        count(Counter::VulkanAcquireWaitNs), count(Counter::PresentWaitNs),
+        count(Counter::VulkanPresentSuccessCount),
+        count(Counter::VulkanPresentSkipCount),
+        count(Counter::VulkanPresentedSerialRegressionCount));
+
     const unsigned long long swapchainImageCount =
         count(Counter::VulkanSwapchainImageCount);
     const unsigned long long presenterFramesInFlight =
@@ -869,6 +898,16 @@ enum class Counter : u32
     CaptureCPU2DNs,
     CompositorGpuTimeNs,
     PresentWaitNs,
+    VulkanSurfaceEventCount,
+    VulkanSurfaceSnapshotPublishCount,
+    VulkanNativeIdentityGenerationChangeCount,
+    VulkanSurfaceRebindCount,
+    VulkanSwapchainDirtySetCount,
+    VulkanSwapchainRecreateCount,
+    VulkanSwapchainWaitIdleNs,
+    VulkanPresentSuccessCount,
+    VulkanPresentSkipCount,
+    VulkanPresentedSerialRegressionCount,
     Count,
 };
 inline constexpr bool IsCompiledIn() noexcept { return false; }

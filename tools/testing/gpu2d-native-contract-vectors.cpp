@@ -41,13 +41,15 @@ bool RunPackVectors()
     input->Palette[37u] = 0x5Au;
     input->OAM[513u] = 0xC3u;
     input->LCDVRAM[0x1234u] = 0xE7u;
-    input->SpriteTimelineIndex[17u * SpriteTimelineBlockCount + 7u] = 0xABCDEF01u;
+    input->SpriteTimelineRowIds[17u] = 0u;
+    input->SpriteTimelineRowCount = 1u;
+    input->SpriteTimelineRows[7u] = 0xABCDEF01u;
 
     std::vector<u32> packed(PackedFrameWords, 0u);
     bool passed = true;
     passed &= Require(PackFrame(*input, packed.data(), packed.size()),
         "PackFrame rejected a correctly sized destination");
-    passed &= Require(packed[0] == 0x32445047u && packed[1] == 1u,
+    passed &= Require(packed[0] == 0x32445047u && packed[1] == 2u,
         "native frame header magic/version drifted");
     passed &= Require(packed[2] == 0x55667788u && packed[3] == 0x11223344u,
         "frame generation is not serialized little-endian");
@@ -77,9 +79,9 @@ bool RunPackVectors()
             >> ((0x1234u & 3u) * 8u)) & 0xFFu) == 0xE7u,
         "LCD VRAM byte mirror is not packed verbatim");
     passed &= Require(
-        packed[PackedSpriteTimelineBase + 17u * SpriteTimelineBlockCount + 7u]
+        packed[PackedSpriteTimelineRowsBase + 7u]
             == 0xABCDEF01u,
-        "private OBJ/OAM timeline index is not packed");
+        "private OBJ/OAM timeline row is not packed");
     passed &= Require(!PackFrame(*input, packed.data(), PackedFrameWords - 1u),
         "PackFrame accepted a short destination");
     return passed;
@@ -144,6 +146,35 @@ bool RunUploadPlanVectors()
             && staleContent.OAMBytes == (PackedFIFOBase - PackedOAMBase) * sizeof(u32)
             && staleContent.FIFOBytes == (PackedLCDVRAMBase - PackedFIFOBase) * sizeof(u32),
         "a reused slot did not refresh the complete shared content mirror");
+
+    auto partialInput = std::make_unique<FrameInput>();
+    partialInput->CaptureCnt = 0xCAFEBABEu;
+    partialInput->Palette[0] = 0x5Au;
+    partialInput->DirtyRangeCount = 2u;
+    partialInput->DirtyRanges[0] = {0u, PackedHeaderWords * sizeof(u32)};
+    partialInput->DirtyRanges[1] = {PackedPaletteBase * sizeof(u32), sizeof(u32)};
+    const UploadPlan partialPackPlan = BuildUploadPlan(*partialInput, false);
+    std::vector<u32> partialDestination(
+        PackedFrameWords, 0xA5A5A5A5u);
+    passed &= Require(
+        PackFrameRanges(
+            *partialInput,
+            partialDestination.data(),
+            partialDestination.size(),
+            partialPackPlan),
+        "partial frame pack rejected a valid upload plan");
+    passed &= Require(
+        partialDestination[0] == 0x32445047u
+            && partialDestination[1] == 2u
+            && partialDestination[10] == partialInput->CaptureCnt,
+        "partial frame pack did not update the requested header range");
+    passed &= Require(
+        ((partialDestination[PackedPaletteBase] & 0xFFu) == 0x5Au),
+        "partial frame pack did not update the requested palette range");
+    passed &= Require(
+        partialDestination[PackedHeaderWords] == 0xA5A5A5A5u
+            && partialDestination[PackedPaletteBase + 1u] == 0xA5A5A5A5u,
+        "partial frame pack overwrote bytes outside the upload plan");
     return passed;
 }
 

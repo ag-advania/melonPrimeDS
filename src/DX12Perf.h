@@ -161,6 +161,14 @@ enum class Counter : u32
     CaptureCPU2DNs,
     CompositorGpuTimeNs,
     PresentWaitNs,
+    DX12SurfaceEventCount,
+    DX12SurfaceSnapshotPublishCount,
+    DX12NativeIdentityGenerationChangeCount,
+    DX12PresenterReinitCount,
+    DX12ResizeBuffersCount,
+    DX12ResizeWaitIdleNs,
+    DX12PresentSuccessCount,
+    DX12PresentSkipCount,
     Count,
 };
 
@@ -534,6 +542,21 @@ inline void MaybeReport()
          count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
          count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
 
+    std::fprintf(stderr,
+        "[DX12Perf] surface surface_event_count=%llu "
+        "snapshot_publish_count=%llu identity_generation_change_count=%llu "
+        "presenter_reinit_count=%llu resize_buffers_count=%llu "
+        "resize_wait_idle_ns=%llu present_wait_ns=%llu "
+        "present_success_count=%llu present_skip_count=%llu\n",
+        count(Counter::DX12SurfaceEventCount),
+        count(Counter::DX12SurfaceSnapshotPublishCount),
+        count(Counter::DX12NativeIdentityGenerationChangeCount),
+        count(Counter::DX12PresenterReinitCount),
+        count(Counter::DX12ResizeBuffersCount),
+        count(Counter::DX12ResizeWaitIdleNs), count(Counter::PresentWaitNs),
+        count(Counter::DX12PresentSuccessCount),
+        count(Counter::DX12PresentSkipCount));
+
     const unsigned long long vsyncEnabled = count(Counter::DX12VsyncEnabled);
     const unsigned long long presentMode = count(Counter::DX12PresentMode);
     const unsigned long long pacingAuthority =
@@ -654,7 +677,11 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
       NativeGPU2DCaptureGpuTimeNs, NativeGPU2DResolveGpuTimeNs,
       RecorderBlocksScanned, RecorderBytesScanned, RecorderBlocksCopied,
       RecorderBytesCopied, CaptureCPU2DLines, CaptureCPU2DNs,
-      CompositorGpuTimeNs, PresentWaitNs, Count };
+      CompositorGpuTimeNs, PresentWaitNs,
+      DX12SurfaceEventCount, DX12SurfaceSnapshotPublishCount,
+      DX12NativeIdentityGenerationChangeCount, DX12PresenterReinitCount,
+      DX12ResizeBuffersCount, DX12ResizeWaitIdleNs,
+      DX12PresentSuccessCount, DX12PresentSkipCount, Count };
 inline constexpr bool IsCompiledIn() noexcept { return false; }
 inline constexpr bool IsEnabled() noexcept { return false; }
 inline constexpr void SetScale(u32) noexcept {}

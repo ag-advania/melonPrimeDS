@@ -136,13 +136,22 @@ public:
 
     // GUI thread. Coalesced: the swapchain is not rebuilt here, only marked
     // out of date, so a resize drag costs one rebuild at the next frame
-    // boundary instead of one per event.
-    void NotifySurfaceChanged() noexcept { SwapchainDirty.store(true, std::memory_order_release); }
+    // boundary instead of one per event. A non-zero geometry revision is an
+    // edge trigger; repeated publication of the same snapshot cannot create
+    // another dirty event.
+    void NotifySurfaceChanged(std::uint64_t geometryRevision = 0) noexcept;
     // Published by the GUI thread for truthful swapchain diagnostics. The
     // presenter never reads QWidget state from its emulation-thread path.
     void SetWindowFullscreen(bool fullscreen) noexcept
     {
         WindowFullscreen.store(fullscreen, std::memory_order_release);
+    }
+    // The screen panel supplies the renderer-owned serial immediately before
+    // EndFrame. The presenter uses it to detect backwards presentation order
+    // without logging every accepted frame.
+    void SetPresentedFrameSerial(melonDS::u64 serial) noexcept
+    {
+        PendingPresentedFrameSerial = serial;
     }
 
     // Either thread. A changed value marks the swapchain out of date, because
@@ -425,6 +434,8 @@ private:
     // frames since that accepted present; it never participates in
     // synchronization or frame admission.
     melonDS::u64 LastAcceptedLogicalFrameId = 0;
+    melonDS::u64 PendingPresentedFrameSerial = 0;
+    melonDS::u64 LastPresentedFrameSerial = 0;
     // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
     // logs a transition once instead of every frame.
     int LoggedReflexMode = -1;
@@ -517,6 +528,7 @@ private:
     std::array<LayerTexture, static_cast<std::size_t>(Layer::Count)> Layers;
 
     std::atomic_bool SwapchainDirty{false};
+    std::atomic<std::uint64_t> PendingGeometryRevision{0};
     std::atomic_bool WindowFullscreen{false};
     std::atomic_bool VSyncRequested{true};
     bool VSyncApplied = true;

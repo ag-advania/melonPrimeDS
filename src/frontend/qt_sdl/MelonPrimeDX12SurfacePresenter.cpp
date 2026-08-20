@@ -200,7 +200,14 @@ void DX12SurfacePresenter::Quiesce() noexcept
     // resource identity and the renderer output lease is released immediately
     // after this hook returns. This is a transition-only wait, never a frame
     // path wait.
-    if (!Commands.WaitQueueIdle())
+    const auto waitIdleStart = std::chrono::steady_clock::now();
+    const bool queueIdle = Commands.WaitQueueIdle();
+    const auto waitIdleNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - waitIdleStart).count();
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::DX12ResizeWaitIdleNs,
+        static_cast<std::uint64_t>(waitIdleNs > 0 ? waitIdleNs : 0));
+    if (!queueIdle)
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Warn,
@@ -530,6 +537,8 @@ bool DX12SurfacePresenter::Resize(std::uint32_t width, std::uint32_t height)
         kBufferCount, width, height, DXGI_FORMAT_B8G8R8A8_UNORM, SwapchainFlags);
     if (FAILED(hr))
         return Fail("IDXGISwapChain::ResizeBuffers", hr);
+    melonDS::DX12Perf::AddCounter(
+        melonDS::DX12Perf::Counter::DX12ResizeBuffersCount);
 
     if (!ApplySdrColorSpace())
         return false;
@@ -1331,7 +1340,11 @@ bool DX12SurfacePresenter::EndFrame()
 bool DX12SurfacePresenter::Present(bool vsync)
 {
     if (!Initialized || !FrameReady || !Swapchain)
+    {
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::DX12PresentSkipCount);
         return false;
+    }
 
     const UINT syncInterval = vsync ? 1u : 0u;
     const UINT flags = !vsync && TearingSupported ? DXGI_PRESENT_ALLOW_TEARING : 0u;
@@ -1359,6 +1372,10 @@ bool DX12SurfacePresenter::Present(bool vsync)
     }
     const HRESULT hr = Swapchain->Present(syncInterval, flags);
     FrameReady = false;
+    melonDS::DX12Perf::AddCounter(
+        SUCCEEDED(hr)
+            ? melonDS::DX12Perf::Counter::DX12PresentSuccessCount
+            : melonDS::DX12Perf::Counter::DX12PresentSkipCount);
     if (!PresentResultLogged || LastPresentResult != hr)
     {
         PresentResultLogged = true;

@@ -321,6 +321,7 @@ u32 AppendTimelineDelta(FrameInput& input, const u8* source) noexcept
                 // many times. Reusing the immutable payload keeps the dense
                 // per-line index lossless without consuming one delta per
                 // observation.
+                ++input.TimelineMutationSerial;
                 return version;
             }
         }
@@ -349,6 +350,7 @@ u32 AppendTimelineDelta(FrameInput& input, const u8* source) noexcept
         input.TimelineHashKeys[emptySlot] = hash;
         input.TimelineHashVersions[emptySlot] = version;
     }
+    ++input.TimelineMutationSerial;
     return version;
 }
 
@@ -551,6 +553,8 @@ void FrameRecorder::Reset() noexcept
     CurrentDisplayFIFO.fill(0u);
     CurrentLCDVRAM.fill(0u);
     CurrentTimelineVersion.fill(0u);
+    LastTimelineMutationSerial = 0u;
+    LastSpriteTimelineMutationSerial = 0u;
     MemoryBaselineReady = false;
     SpriteLatchSeen.fill(false);
     PendingEngineAOBJ.fill(0u);
@@ -575,7 +579,8 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         // into both the CPU frame and the backend's device-resident mirror.
         std::fill(Input.Lines.begin(), Input.Lines.end(), LineState{});
         std::fill(Input.ScreenSource.begin(), Input.ScreenSource.end(), 0u);
-        std::fill(Input.SpriteTimelineIndex.begin(), Input.SpriteTimelineIndex.end(), 0u);
+        std::fill(Input.TimelineRowIds.begin(), Input.TimelineRowIds.end(), 0xFFFFFFFFu);
+        std::fill(Input.SpriteTimelineRowIds.begin(), Input.SpriteTimelineRowIds.end(), 0xFFFFFFFFu);
         Input.DirtyRangeCount = 0u;
     }
     Input.Generation.Frame = frame;
@@ -606,11 +611,17 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         PackedRouteWords * sizeof(u32));
     Input.TimelineDeltaCount = 0u;
     Input.TimelineOverflow = 0u;
-    std::fill(Input.TimelineIndex.begin(), Input.TimelineIndex.end(), 0u);
+    std::fill(Input.TimelineRowIds.begin(), Input.TimelineRowIds.end(), 0xFFFFFFFFu);
+    std::fill(Input.SpriteTimelineRowIds.begin(), Input.SpriteTimelineRowIds.end(), 0xFFFFFFFFu);
     std::fill(Input.TimelineHashKeys.begin(), Input.TimelineHashKeys.end(), 0u);
     std::fill(Input.TimelineHashVersions.begin(), Input.TimelineHashVersions.end(), 0u);
     MemoryBaselineReady = false;
     CurrentTimelineVersion.fill(0u);
+    Input.TimelineRowCount = 0u;
+    Input.SpriteTimelineRowCount = 0u;
+    Input.TimelineMutationSerial = 0u;
+    LastTimelineMutationSerial = 0u;
+    LastSpriteTimelineMutationSerial = 0u;
     LastJournalSequence = GPU.GetGPU2DWriteJournalSequence();
     LineSeen.fill(false);
     SpriteLatchSeen.fill(false);
@@ -937,29 +948,93 @@ void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
     if (line >= ScreenHeight)
         return;
 
-    u32* destination = Input.SpriteTimelineIndex.data()
-        + static_cast<std::size_t>(line) * SpriteTimelineBlockCount;
-    for (u32 block = 0; block < SpriteTimelineOAMBlocks; ++block)
+    constexpr u32 invalidRow = 0xFFFFFFFFu;
+    const u32 oldRow = Input.SpriteTimelineRowIds[line];
+    u32 row = invalidRow;
+    bool newRow = false;
+    if (line != 0u
+        && Input.TimelineMutationSerial == LastSpriteTimelineMutationSerial
+        && Input.SpriteTimelineRowIds[line - 1u] != invalidRow)
     {
-        destination[block] = CurrentTimelineVersion[TimelineOAMBaseBlock + block];
+        row = Input.SpriteTimelineRowIds[line - 1u];
     }
-    for (u32 engine = 0; engine < 2u; ++engine)
+    else
     {
-        const u32 sourceBase = TimelineEngineBaseBlock
-            + engine * TimelineEngineBlocks + TimelineEngineBGBlocks;
-        const u32 destinationBase = SpriteTimelineOAMBlocks
-            + engine * SpriteTimelineEngineOBJBlocks;
-        for (u32 block = 0; block < SpriteTimelineEngineOBJBlocks; ++block)
+        auto rowMatches = [&](u32 candidate) {
+            const u32* destination = Input.SpriteTimelineRows.data()
+                + static_cast<std::size_t>(candidate) * SpriteTimelineBlockCount;
+            for (u32 block = 0; block < SpriteTimelineOAMBlocks; ++block)
+            {
+                if (destination[block]
+                    != CurrentTimelineVersion[TimelineOAMBaseBlock + block])
+                    return false;
+            }
+            for (u32 engine = 0; engine < 2u; ++engine)
+            {
+                const u32 sourceBase = TimelineEngineBaseBlock
+                    + engine * TimelineEngineBlocks + TimelineEngineBGBlocks;
+                const u32 destinationBase = SpriteTimelineOAMBlocks
+                    + engine * SpriteTimelineEngineOBJBlocks;
+                for (u32 block = 0; block < SpriteTimelineEngineOBJBlocks; ++block)
+                {
+                    if (destination[destinationBase + block]
+                        != CurrentTimelineVersion[sourceBase + block])
+                        return false;
+                }
+            }
+            return true;
+        };
+        for (u32 candidate = 0; candidate < Input.SpriteTimelineRowCount; ++candidate)
         {
-            destination[destinationBase + block] =
-                CurrentTimelineVersion[sourceBase + block];
+            if (rowMatches(candidate))
+            {
+                row = candidate;
+                break;
+            }
+        }
+        if (row == invalidRow)
+        {
+            if (Input.SpriteTimelineRowCount >= ScreenHeight)
+            {
+                Input.TimelineOverflow = 1u;
+                row = oldRow == invalidRow ? 0u : oldRow;
+            }
+            else
+            {
+                row = Input.SpriteTimelineRowCount++;
+                u32* destination = Input.SpriteTimelineRows.data()
+                    + static_cast<std::size_t>(row) * SpriteTimelineBlockCount;
+                for (u32 block = 0; block < SpriteTimelineOAMBlocks; ++block)
+                    destination[block] = CurrentTimelineVersion[TimelineOAMBaseBlock + block];
+                for (u32 engine = 0; engine < 2u; ++engine)
+                {
+                    const u32 sourceBase = TimelineEngineBaseBlock
+                        + engine * TimelineEngineBlocks + TimelineEngineBGBlocks;
+                    const u32 destinationBase = SpriteTimelineOAMBlocks
+                        + engine * SpriteTimelineEngineOBJBlocks;
+                    for (u32 block = 0; block < SpriteTimelineEngineOBJBlocks; ++block)
+                        destination[destinationBase + block] =
+                            CurrentTimelineVersion[sourceBase + block];
+                }
+                MarkDirtyRange(
+                    Input,
+                    PackedSpriteTimelineRowsBase * sizeof(u32)
+                        + row * SpriteTimelineBlockCount * sizeof(u32),
+                    SpriteTimelineBlockCount * sizeof(u32));
+                newRow = true;
+            }
         }
     }
-    MarkDirtyRange(
-        Input,
-        PackedSpriteTimelineBase * sizeof(u32)
-            + line * SpriteTimelineBlockCount * sizeof(u32),
-        SpriteTimelineBlockCount * sizeof(u32));
+    Input.SpriteTimelineRowIds[line] = row;
+    if (oldRow != row)
+    {
+        MarkDirtyRange(
+            Input,
+            PackedSpriteTimelineBase * sizeof(u32) + line * sizeof(u32),
+            sizeof(u32));
+    }
+    LastSpriteTimelineMutationSerial = Input.TimelineMutationSerial;
+    (void)newRow;
 }
 
 void FrameRecorder::ApplyPendingSpriteLatch() noexcept
@@ -1076,17 +1151,63 @@ void FrameRecorder::FillTimelineLine(u32 line) noexcept
 {
     if (line >= ScreenHeight)
         return;
-    u32* destination = Input.TimelineIndex.data()
-        + static_cast<std::size_t>(line) * TimelineBlockCount;
-    std::memcpy(
-        destination,
-        CurrentTimelineVersion.data(),
-        TimelineBlockCount * sizeof(u32));
-    MarkDirtyRange(
-        Input,
-        PackedTimelineBase * sizeof(u32)
-            + line * TimelineBlockCount * sizeof(u32),
-        TimelineBlockCount * sizeof(u32));
+
+    constexpr u32 invalidRow = 0xFFFFFFFFu;
+    const u32 oldRow = Input.TimelineRowIds[line];
+    u32 row = invalidRow;
+    if (line != 0u
+        && Input.TimelineMutationSerial == LastTimelineMutationSerial
+        && Input.TimelineRowIds[line - 1u] != invalidRow)
+    {
+        row = Input.TimelineRowIds[line - 1u];
+    }
+    else
+    {
+        for (u32 candidate = 0; candidate < Input.TimelineRowCount; ++candidate)
+        {
+            const u32* source = Input.TimelineRows.data()
+                + static_cast<std::size_t>(candidate) * TimelineBlockCount;
+            if (std::memcmp(
+                    source,
+                    CurrentTimelineVersion.data(),
+                    TimelineBlockCount * sizeof(u32)) == 0)
+            {
+                row = candidate;
+                break;
+            }
+        }
+        if (row == invalidRow)
+        {
+            if (Input.TimelineRowCount >= ScreenHeight)
+            {
+                Input.TimelineOverflow = 1u;
+                row = oldRow == invalidRow ? 0u : oldRow;
+            }
+            else
+            {
+                row = Input.TimelineRowCount++;
+                std::memcpy(
+                    Input.TimelineRows.data()
+                        + static_cast<std::size_t>(row) * TimelineBlockCount,
+                    CurrentTimelineVersion.data(),
+                    TimelineBlockCount * sizeof(u32));
+                MarkDirtyRange(
+                    Input,
+                    PackedTimelineRowsBase * sizeof(u32)
+                        + row * TimelineBlockCount * sizeof(u32),
+                    TimelineBlockCount * sizeof(u32));
+            }
+        }
+    }
+    Input.TimelineRowIds[line] = row;
+    if (oldRow != row)
+    {
+        MarkDirtyRange(
+            Input,
+            PackedTimelineBase * sizeof(u32) + line * sizeof(u32),
+            sizeof(u32));
+    }
+    LastTimelineMutationSerial = Input.TimelineMutationSerial;
 }
 
 void FrameRecorder::CaptureLine(

@@ -42,7 +42,9 @@ def main() -> int:
         require(text["native_header"], "TimelineBlockCount", "timeline ABI", failures)
         require(text["native_header"], "TimelineDeltaCount", "timeline ABI", failures)
         require(text["native_header"], "TimelineHashTableSize", "deduplicated timeline ABI", failures)
-        require(text["native_header"], "SpriteTimelineIndex", "private sprite timeline ABI", failures)
+        require(text["native_header"], "TimelineRowIds", "sparse timeline ABI", failures)
+        require(text["native_header"], "SpriteTimelineRowIds", "private sparse sprite timeline ABI", failures)
+        require(text["native_header"], "PackFrameRanges", "partial pack ABI", failures)
         require(text["native_recorder"], "CaptureMemoryForLine", "temporal recorder", failures)
         require(text["native_recorder"], "AppendTimelineDelta", "temporal recorder", failures)
         require(text["native_recorder"], "HashTimelineBlock", "deduplicated timeline", failures)
@@ -77,6 +79,7 @@ def main() -> int:
         for label in ("vulkan_shader", "dx12_shader"):
             require(text[label], "TimelineVersion", f"{label} temporal shader", failures)
             require(text[label], "SpriteTimelineVersion", f"{label} OBJ/OAM latch shader", failures)
+            require(text[label], "RowId", f"{label} sparse timeline shader", failures)
             require(text[label], "LCDVRAMMap", f"{label} per-line LCDC shader", failures)
             require(text[label], "linePass", f"{label} line shader pass", failures)
             require(text[label], "scaledScreens", f"{label} high-resolution line shader", failures)

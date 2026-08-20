@@ -168,11 +168,11 @@ inline constexpr u32 TimelineHashTableSize = MaxMemoryDeltas * 2u;
 static_assert((TimelineHashTableSize & (TimelineHashTableSize - 1u)) == 0u,
     "timeline hash table must be a power of two");
 
-// Memory is resolved at the beginning of each visible line.  A line carries
-// the latest version of every 512-byte block; version zero means the frame
-// start snapshot and non-zero versions index TimelinePayload.  The dense
-// index is deliberately shared by Vulkan and DX12 so neither backend can
-// accidentally turn a mid-frame write into a frame-end snapshot.
+// Memory is resolved at the beginning of each visible line. A row ID points at
+// an immutable row in the per-frame table; version zero means the frame-start
+// snapshot and non-zero versions index TimelinePayload. Consecutive lines that
+// see no memory mutation reuse the same row ID, so a steady frame no longer
+// materializes a 192 x 4265 CPU matrix.
 inline constexpr u32 TimelineEngineBGBlocks = (512u * 1024u) / DirtyBlockBytes;
 inline constexpr u32 TimelineEngineOBJBlocks = (256u * 1024u) / DirtyBlockBytes;
 inline constexpr u32 TimelineEngineBGExtBlocks = (32u * 1024u) / DirtyBlockBytes;
@@ -190,7 +190,8 @@ inline constexpr u32 TimelineOAMBaseBlock = TimelinePaletteBaseBlock + TimelineP
 inline constexpr u32 TimelineFIFOBaseBlock = TimelineOAMBaseBlock + TimelineOAMBlocks;
 inline constexpr u32 TimelineLCDVRAMBaseBlock = TimelineFIFOBaseBlock + TimelineFIFOBlocks;
 inline constexpr u32 TimelineBlockCount = TimelineLCDVRAMBaseBlock + TimelineLCDVRAMBlocks;
-inline constexpr u32 PackedTimelineIndexWords = TimelineBlockCount * ScreenHeight;
+inline constexpr u32 PackedTimelineRowIdWords = ScreenHeight;
+inline constexpr u32 PackedTimelineRowsWords = TimelineBlockCount * ScreenHeight;
 inline constexpr u32 PackedTimelinePayloadWords =
     MaxMemoryDeltas * (DirtyBlockBytes / sizeof(u32));
 // OBJ/OAM are prepared one HBlank before the scanline that consumes them.
@@ -201,7 +202,8 @@ inline constexpr u32 SpriteTimelineOAMBlocks = TimelineOAMBlocks;
 inline constexpr u32 SpriteTimelineEngineOBJBlocks = TimelineEngineOBJBlocks;
 inline constexpr u32 SpriteTimelineBlockCount = SpriteTimelineOAMBlocks
     + 2u * SpriteTimelineEngineOBJBlocks;
-inline constexpr u32 PackedSpriteTimelineIndexWords =
+inline constexpr u32 PackedSpriteTimelineRowIdWords = ScreenHeight;
+inline constexpr u32 PackedSpriteTimelineRowsWords =
     SpriteTimelineBlockCount * ScreenHeight;
 
 struct DirtyRange
@@ -255,11 +257,18 @@ struct FrameInput
     u32 LCDVRAMMap = 0;
     std::array<u8, 4 * 128 * 1024> LCDVRAM{};
     FrameGeneration Generation{};
-    std::array<u32, PackedTimelineIndexWords> TimelineIndex{};
+    std::array<u32, PackedTimelineRowIdWords> TimelineRowIds{};
+    std::array<u32, PackedTimelineRowsWords> TimelineRows{};
     std::array<u8, MaxMemoryDeltas * DirtyBlockBytes> TimelinePayload{};
-    std::array<u32, PackedSpriteTimelineIndexWords> SpriteTimelineIndex{};
+    std::array<u32, PackedSpriteTimelineRowIdWords> SpriteTimelineRowIds{};
+    std::array<u32, PackedSpriteTimelineRowsWords> SpriteTimelineRows{};
     u32 TimelineDeltaCount = 0;
     u32 TimelineOverflow = 0;
+    u32 TimelineRowCount = 0;
+    u32 SpriteTimelineRowCount = 0;
+    // Host-only mutation sequence. It lets the recorder reuse the previous
+    // row without comparing 4265 versions for every unchanged line.
+    u32 TimelineMutationSerial = 0;
     // Host-only hash-consing metadata. It is intentionally excluded from the
     // packed ABI; shader-visible indices still point at ordinary full blocks.
     std::array<u64, TimelineHashTableSize> TimelineHashKeys{};
@@ -300,11 +309,15 @@ inline constexpr u32 PackedFIFOBase = PackedOAMBase + PackedOAMWords;
 inline constexpr u32 PackedLCDVRAMBase = PackedFIFOBase + PackedFIFOWords;
 inline constexpr u32 PackedRouteBase = PackedLCDVRAMBase + PackedLCDVRAMWords;
 inline constexpr u32 PackedTimelineBase = PackedRouteBase + PackedRouteWords;
-inline constexpr u32 PackedTimelinePayloadBase = PackedTimelineBase + PackedTimelineIndexWords;
+inline constexpr u32 PackedTimelineRowsBase = PackedTimelineBase + PackedTimelineRowIdWords;
+inline constexpr u32 PackedTimelinePayloadBase = PackedTimelineRowsBase
+    + PackedTimelineRowsWords;
 inline constexpr u32 PackedSpriteTimelineBase = PackedTimelinePayloadBase
     + PackedTimelinePayloadWords;
-inline constexpr u32 PackedFrameWords = PackedSpriteTimelineBase
-    + PackedSpriteTimelineIndexWords;
+inline constexpr u32 PackedSpriteTimelineRowsBase = PackedSpriteTimelineBase
+    + PackedSpriteTimelineRowIdWords;
+inline constexpr u32 PackedFrameWords = PackedSpriteTimelineRowsBase
+    + PackedSpriteTimelineRowsWords;
 
 static_assert(PackedLineWords == 68u, "native line serialization drift");
 
@@ -317,6 +330,15 @@ static_assert(PackedLineWords == 68u, "native line serialization drift");
 // state/memory pack operation; it never converts pixels or runs the software
 // renderer.
 bool PackFrame(const FrameInput& input, u32* destination, std::size_t wordCount) noexcept;
+
+// Writes only the serialized byte ranges selected by BuildUploadPlan. The
+// destination is an already resident slot; unchanged bytes are intentionally
+// left untouched so a normal frame does not repack or upload the full ABI.
+bool PackFrameRanges(
+    const FrameInput& input,
+    u32* destination,
+    std::size_t wordCount,
+    const UploadPlan& plan) noexcept;
 
 // Builds non-overlapping serialized upload ranges. The first use of a device
 // slot must pass fullUpload=true; subsequent uses can copy only the ranges
@@ -404,6 +426,8 @@ private:
     std::array<u16, 256> CurrentDisplayFIFO{};
     std::array<u8, 4 * 128 * 1024> CurrentLCDVRAM{};
     std::array<u32, TimelineBlockCount> CurrentTimelineVersion{};
+    u32 LastTimelineMutationSerial = 0;
+    u32 LastSpriteTimelineMutationSerial = 0;
     bool MemoryBaselineReady = false;
     std::array<bool, ScreenHeight> SpriteLatchSeen{};
     std::array<u8, 256u * 1024u> PendingEngineAOBJ{};

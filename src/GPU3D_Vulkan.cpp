@@ -126,6 +126,10 @@ constexpr VkDeviceSize NativeGPU2DOutputBytes =
     static_cast<VkDeviceSize>(GPU2DNative::ScreenPixelCount) * 2u * sizeof(u32);
 constexpr VkDeviceSize NativeCaptureWords = (4u * 128u * 1024u) / sizeof(u32);
 constexpr VkDeviceSize NativeCaptureBytes = 4u * 128u * 1024u;
+// One packed Pixel word plus one metadata word for both logical screens.
+// This scratch tail is consumed by the native OBJ raw pass and keeps the
+// mosaic resolve from re-scanning OAM for every pixel in a mosaic span.
+constexpr u32 NativeObjRawWords = 2u * 256u * 192u * 2u;
 constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
 } // namespace
@@ -767,7 +771,7 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
     // shadow stencil and the previous-shadow-mask flag between batches so a
     // boundary is observationally identical to one unbounded pass.
     if (!BlendStateBuffer.Create(Device,
-            (screenPixels + NativeCaptureWords) * sizeof(u32),
+            (screenPixels + NativeCaptureWords + NativeObjRawWords) * sizeof(u32),
             VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
             "MelonPrime Vulkan depth-blend continuation state"))
@@ -3566,10 +3570,29 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     const GPU2DNative::UploadPlan uploadPlan = GPU2DNative::BuildUploadPlan(
         input, outputSlot.UploadedNativeGeneration,
         !outputSlot.NativeUploadInitialized);
+    const bool fullNativeUpload = !outputSlot.NativeUploadInitialized;
     u32* staging = static_cast<u32*>(outputSlot.NativeStaging.GetMappedPointer());
-    if (!staging
-        || !GPU2DNative::PackFrame(input, staging, GPU2DNative::PackedFrameWords)
-        || !outputSlot.NativeStaging.FlushRange(0, NativeGPU2DInputBytes))
+    bool packedNativeInput = staging != nullptr;
+    if (packedNativeInput)
+    {
+        packedNativeInput = fullNativeUpload
+            ? GPU2DNative::PackFrame(input, staging, GPU2DNative::PackedFrameWords)
+            : GPU2DNative::PackFrameRanges(
+                input, staging, GPU2DNative::PackedFrameWords, uploadPlan);
+    }
+    if (packedNativeInput)
+    {
+        for (u32 i = 0; i < uploadPlan.Count; ++i)
+        {
+            const GPU2DNative::DirtyRange& range = uploadPlan.Ranges[i];
+            if (!outputSlot.NativeStaging.FlushRange(range.Offset, range.Size))
+            {
+                packedNativeInput = false;
+                break;
+            }
+        }
+    }
+    if (!packedNativeInput)
     {
         ComposeFrames.SubmitFrame(Device.GetMainQueue());
         SetRuntimeFailure("the native GPU2D input staging upload failed");
@@ -3588,7 +3611,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     VulkanPerf::AddCounter(VulkanPerf::Counter::CaptureCPU2DNs,
         input.Recorder.CaptureCPU2DNs);
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DInputPackBytes,
-        static_cast<u64>(GPU2DNative::PackedFrameBytes()));
+        uploadPlan.TotalBytes);
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DVRAMUploadBytes,
         uploadPlan.EngineMemoryBytes + uploadPlan.FIFOBytes
             + uploadPlan.LCDVRAMBytes);
@@ -3727,6 +3750,17 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         for (u32 line = 0; line < GPU2DNative::ScreenHeight; ++line)
         {
             push.CaptureYOffset = static_cast<s32>(line);
+            push.Padding = 32u | 8u; // raw OBJ plane, two logical screens
+            fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
+                VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
+            fns.CmdDispatch(cmd,
+                DivRoundUp(256u, 8u), 1u, 1u);
+            BufferBarrier(cmd, &nativeCapture, 1,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
             push.Padding = 16u | 8u; // two logical screens, one line
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
@@ -3754,7 +3788,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-            VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 2u);
+            VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 3u);
         }
         ComposeFrames.WriteTimestamp(
             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
@@ -3763,11 +3797,21 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     else
     {
         push.CaptureYOffset = 0;
+        push.Padding = 32u;
+        fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
+            VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
+        fns.CmdDispatch(cmd, DivRoundUp(256u, 8u), DivRoundUp(384u, 8u), 1u);
+        BufferBarrier(cmd, &nativeCapture, 1,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+
         push.Padding = 16u;
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
             VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
         fns.CmdDispatch(cmd, DivRoundUp(256u, 8u), DivRoundUp(384u, 8u), 1u);
-        VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 1u);
+        VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 2u);
     }
     ComposeFrames.WriteTimestamp(
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,

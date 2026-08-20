@@ -241,14 +241,19 @@ bool RunMultiConsumerOrder()
 
 u32 TimelineValue(const FrameInput& input, u32 line, u32 block)
 {
-    return input.TimelineIndex[
-        static_cast<std::size_t>(line) * TimelineBlockCount + block];
+    const u32 row = input.TimelineRowIds[line];
+    return row < input.TimelineRowCount
+        ? input.TimelineRows[static_cast<std::size_t>(row) * TimelineBlockCount + block]
+        : 0u;
 }
 
 u32 SpriteTimelineValue(const FrameInput& input, u32 line, u32 block)
 {
-    return input.SpriteTimelineIndex[
-        static_cast<std::size_t>(line) * SpriteTimelineBlockCount + block];
+    const u32 row = input.SpriteTimelineRowIds[line];
+    return row < input.SpriteTimelineRowCount
+        ? input.SpriteTimelineRows[
+            static_cast<std::size_t>(row) * SpriteTimelineBlockCount + block]
+        : 0u;
 }
 
 bool RunRecorderTimeline()

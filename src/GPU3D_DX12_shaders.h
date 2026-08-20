@@ -2278,16 +2278,21 @@ static const uint NativeTimelineLCDVRAMBaseBlock = NativeTimelineFIFOBaseBlock
     + NativeTimelineFIFOBlocks;
 static const uint NativeTimelineBlockCount = NativeTimelineLCDVRAMBaseBlock
     + NativeTimelineLCDVRAMBlocks;
-static const uint NativeTimelineIndexBase = NativeRouteBase + 2u * 192u;
-static const uint NativeTimelinePayloadBase = NativeTimelineIndexBase
+static const uint NativeTimelineRowIdBase = NativeRouteBase + 2u * 192u;
+static const uint NativeTimelineRowsBase = NativeTimelineRowIdBase + 192u;
+static const uint NativeTimelinePayloadBase = NativeTimelineRowsBase
     + NativeTimelineBlockCount * 192u;
 static const uint NativeTimelinePayloadStride = 512u / 4u;
 static const uint NativeSpriteTimelineOAMBlocks = 4u;
 static const uint NativeSpriteTimelineEngineOBJBlocks = 512u;
 static const uint NativeSpriteTimelineBlockCount = NativeSpriteTimelineOAMBlocks
     + 2u * NativeSpriteTimelineEngineOBJBlocks;
-static const uint NativeSpriteTimelineIndexBase = NativeTimelinePayloadBase
+static const uint NativeSpriteTimelineRowIdBase = NativeTimelinePayloadBase
     + 8192u * NativeTimelinePayloadStride;
+static const uint NativeSpriteTimelineRowsBase = NativeSpriteTimelineRowIdBase + 192u;
+static const uint NativeCaptureWords = 131072u;
+static const uint NativeObjRawWordsPerPixel = 2u;
+static const uint NativeObjRawScreenWords = 256u * 192u * NativeObjRawWordsPerPixel;
 
 static const uint NativeDispCnt = 0u;
 static const uint NativeLayerEnable = 1u;
@@ -2330,8 +2335,11 @@ uint NativeTimelineVersion(uint block)
     uint line = InterpSpanCount;
     if (line >= 192u || block >= NativeTimelineBlockCount)
         return 0u;
+    uint row = ResultValue[NativeTimelineRowIdBase + line];
+    if (row >= 192u)
+        return 0u;
     return ResultValue[
-        NativeTimelineIndexBase + line * NativeTimelineBlockCount + block];
+        NativeTimelineRowsBase + row * NativeTimelineBlockCount + block];
 }
 uint NativeSpriteTimelineVersion(uint engine, uint line, uint block)
 {
@@ -2354,8 +2362,11 @@ uint NativeSpriteTimelineVersion(uint engine, uint line, uint block)
     }
     if (spriteBlock >= NativeSpriteTimelineBlockCount)
         return NativeTimelineVersion(block);
-    return ResultValue[NativeSpriteTimelineIndexBase
-        + line * NativeSpriteTimelineBlockCount + spriteBlock];
+    uint row = ResultValue[NativeSpriteTimelineRowIdBase + line];
+    if (row >= 192u)
+        return 0u;
+    return ResultValue[NativeSpriteTimelineRowsBase
+        + row * NativeSpriteTimelineBlockCount + spriteBlock];
 }
 uint NativeByte(uint base, uint size, uint address, uint timelineBlockBase)
 {
@@ -2523,6 +2534,33 @@ NativePixel NativeEmpty()
     NativePixel p;
     p.Color=0u;p.Flag=0u;p.Priority=4u;p.Present=0u;p.Mosaic=0u;
     return p;
+}
+uint NativeObjRawIndex(uint screen,uint line,uint x,uint word)
+{
+    return FramebufferStride + NativeCaptureWords
+        + screen * NativeObjRawScreenWords
+        + (line * 256u + x) * NativeObjRawWordsPerPixel + word;
+}
+void NativeStoreObjRaw(
+    uint screen,uint line,uint x,NativePixel pixel,NativePixel windowSelected)
+{
+    BlendContinuationState[NativeObjRawIndex(screen,line,x,0u)]=pixel.Color;
+    BlendContinuationState[NativeObjRawIndex(screen,line,x,1u)]=
+        (pixel.Priority&7u)|((pixel.Present&1u)<<3u)
+        |((pixel.Mosaic&1u)<<4u)|((windowSelected.Present&1u)<<5u)
+        |((windowSelected.Priority&7u)<<6u);
+}
+NativePixel NativeLoadObjRaw(
+    uint screen,uint line,uint x,out NativePixel windowSelected)
+{
+    NativePixel pixel=NativeEmpty();
+    uint color=BlendContinuationState[NativeObjRawIndex(screen,line,x,0u)];
+    uint meta=BlendContinuationState[NativeObjRawIndex(screen,line,x,1u)];
+    pixel.Color=color;pixel.Flag=color>>24u;pixel.Priority=meta&7u;
+    pixel.Present=(meta>>3u)&1u;pixel.Mosaic=(meta>>4u)&1u;
+    windowSelected=NativeEmpty();windowSelected.Priority=(meta>>6u)&7u;
+    windowSelected.Present=(meta>>5u)&1u;
+    return pixel;
 }
 NativePixel NativeBackdrop(uint engine)
 {
@@ -2789,16 +2827,16 @@ NativePixel NativeBG(uint engine,uint line,uint bg,int x,uint ox,uint oy,bool lo
     return NativeBGText(engine,line,bg,x);
 }
 
-NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly)
+NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly,bool collectWindow,out NativePixel windowSelected)
 {
-    NativePixel selected=NativeEmpty();
+    NativePixel selected=NativeEmpty();windowSelected=NativeEmpty();
     if(NativeLine(engine,line,NativeOBJEnable)==0u)return selected;
     uint best=4u;
     for(uint sprite=0u;sprite<128u;sprite++)
     {
         uint a0=NativeOAM16(engine,line,sprite*8u),a1=NativeOAM16(engine,line,sprite*8u+2u),a2=NativeOAM16(engine,line,sprite*8u+4u);
         uint type=(a0>>8u)&3u;if(type==2u)continue;bool isWindow=((a0>>10u)&3u)==2u;
-        if((windowOnly && !isWindow)||(!windowOnly && isWindow))continue;
+        if((windowOnly && !isWindow)||(!windowOnly && isWindow && !collectWindow))continue;
         uint size=(a0>>14u)|((a1>>12u)&0xCu);int w=NativeSpriteWidth(size),h=NativeSpriteHeight(size);
         int bw=w,bh=h;bool rotate=(type&1u)!=0u;if(type==3u){bw<<=1;bh<<=1;}
         int y=(int)line-(int)(a0&0xFFu);if(((uint)y&0xFFu)>=(uint)bh)continue;
@@ -2841,21 +2879,22 @@ NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly)
             }
         }
         if(!opaque)continue;
-        if(windowOnly){selected.Present=1u;selected.Priority=(a2>>10u)&3u;return selected;}
+        if(isWindow){if(windowOnly){selected.Present=1u;selected.Priority=(a2>>10u)&3u;return selected;}if(collectWindow){windowSelected.Present=1u;windowSelected.Priority=(a2>>10u)&3u;}continue;}
         uint priority=(a2>>10u)&3u;
         if(selected.Present==0u||priority<best){selected.Color=NativeBGR555(color,flag);selected.Flag=flag;selected.Priority=priority;selected.Present=1u;selected.Mosaic=(a0&(1u<<12u))!=0u?1u:0u;best=priority;}
     }
     return selected;
 }
 
-NativePixel NativeOBJ(uint engine,uint line,int x)
+NativePixel NativeOBJ(uint screen,uint engine,uint line,int x,bool collectWindow,out NativePixel windowSelected)
 {
-    uint width=NativeLine(engine,line,NativeOBJMosaic);if(width==0u)return NativeOBJRaw(engine,line,x,false);
+    uint width=NativeLine(engine,line,NativeOBJMosaic);windowSelected=NativeEmpty();
+    if(width==0u)return NativeLoadObjRaw(screen,line,(uint)x,windowSelected);
     int mosaicSpan=(int)(width+1u),remainder=x;
     while(remainder>=mosaicSpan)remainder-=mosaicSpan;
     int begin=x-remainder;
     NativePixel latch=NativeEmpty(),selected=NativeEmpty();
-    for(int current=begin;current<=x;current++){NativePixel raw=NativeOBJRaw(engine,line,current,false);uint off=(uint)(current-begin);bool take=off==0u||raw.Mosaic==0u||latch.Mosaic==0u||raw.Priority<latch.Priority;if(take)latch=raw;selected=latch;}
+    for(int current=begin;current<=x;current++){NativePixel currentWindow=NativeEmpty(),raw=NativeLoadObjRaw(screen,line,(uint)current,currentWindow);if(current==x)windowSelected=currentWindow;uint off=(uint)(current-begin);bool take=off==0u||raw.Mosaic==0u||latch.Mosaic==0u||raw.Priority<latch.Priority;if(take)latch=raw;selected=latch;}
     return selected;
 }
 
@@ -2882,20 +2921,22 @@ uint NativeStructuredWord(NativePixel pixel)
     if((pixel.Flag&0x40u)!=0u&&(pixel.Flag&0x80u)==0u)return (pixel.Color&0x00FFFFFFu)|0x40000000u;
     return pixel.Color;
 }
-NativeCompositeLayers NativeCompositeAt(uint engine,uint line,int x,uint ox,uint oy,bool logical)
+NativeCompositeLayers NativeCompositeAt(uint screen,uint engine,uint line,int x,uint ox,uint oy,bool logical)
 {
     NativeCompositeLayers result;
     result.First=NativeBackdrop(engine);result.Second=NativeEmpty();result.Effect=0u;
     result.Eva=NativeLine(engine,line,NativeEVA);result.Evb=NativeLine(engine,line,NativeEVB);
     result.Color=result.First.Color;
-    uint objWindow=NativeOBJRaw(engine,line,x,true).Present;
-    uint window=NativeWindow(engine,line,x,objWindow);
     uint enableObj=NativeLine(engine,line,NativeLayerEnable)&(1u<<4u);
     enableObj&=NativeLine(engine,line,NativeOBJEnable)!=0u?0x10u:0u;
+    uint dispCnt=NativeLine(engine,line,NativeDispCnt);
+    bool collectObjWindow=enableObj!=0u&&(dispCnt&(1u<<15u))!=0u;
     NativePixel bgPixels[4];
     for(uint bg=0u;bg<4u;bg++)bgPixels[bg]=NativeBG(engine,line,bg,x,ox,oy,logical);
-    NativePixel objPixel=NativeEmpty();
-    if(enableObj!=0u)objPixel=NativeOBJ(engine,line,x);
+    NativePixel objWindowPixel=NativeEmpty(),objPixel=NativeEmpty();
+    if(enableObj!=0u)objPixel=NativeOBJ(screen,engine,line,x,collectObjWindow,objWindowPixel);
+    uint objWindow=collectObjWindow?objWindowPixel.Present:0u;
+    uint window=NativeWindow(engine,line,x,objWindow);
     for(int priority=3;priority>=0;priority--)
     {
         for(int bg=3;bg>=0;bg--)
@@ -2927,9 +2968,9 @@ NativeCompositeLayers NativeCompositeAt(uint engine,uint line,int x,uint ox,uint
     else if(result.Effect==4u)result.Color=NativeBlend5(result.First.Color,result.Second.Color);
     return result;
 }
-uint NativeComposite(uint engine,uint line,int x,uint ox,uint oy)
+uint NativeComposite(uint screen,uint engine,uint line,int x,uint ox,uint oy)
 {
-    return NativeCompositeAt(engine,line,x,ox,oy,false).Color;
+    return NativeCompositeAt(screen,engine,line,x,ox,oy,false).Color;
 }
 uint NativeMaster(uint c,uint b)
 {
@@ -2938,7 +2979,7 @@ uint NativeMaster(uint c,uint b)
     else if(mode==2u)result=NativePack(NativeColorR(c)-((NativeColorR(c)*f+15u)>>4u),NativeColorG(c)-((NativeColorG(c)*f+15u)>>4u),NativeColorB(c)-((NativeColorB(c)*f+15u)>>4u),0u);
     return result;
 }
-uint NativeDisplay(uint engine,uint line,int x,uint ox,uint oy)
+uint NativeDisplay(uint screen,uint engine,uint line,int x,uint ox,uint oy)
 {
     uint disp=NativeLine(engine,line,NativeDispCnt),mode=(disp>>16u)&(engine==0u?3u:1u),result=0u;
     if(mode==0u)result=NativePack(63u,63u,63u,0u);
@@ -2946,7 +2987,7 @@ uint NativeDisplay(uint engine,uint line,int x,uint ox,uint oy)
     else if(mode==1u&&NativeLine(engine,line,NativeForcedBlank)!=0u)result=NativePack(63u,63u,63u,0u);
     else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((NativeLine(engine,line,NativeLCDVRAMMap)&(1u<<bank))!=0u)result=NativeMaster(NativeVRAMColor(NativeLCD16(bank,line*512u+(uint)x*2u)),NativeLine(engine,line,NativeMasterBrightness));}
     else if(mode==3u&&engine==0u)result=NativeMaster(NativeVRAMColor(NativeFIFO16((uint)x)),NativeLine(engine,line,NativeMasterBrightness));
-    else result=NativeMaster(NativeComposite(engine,line,x,ox,oy),NativeLine(engine,line,NativeMasterBrightness));
+    else result=NativeMaster(NativeComposite(screen,engine,line,x,ox,oy),NativeLine(engine,line,NativeMasterBrightness));
     return result;
 }
 
@@ -2990,7 +3031,7 @@ uint NativeCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
         if(sx>=0&&sx<(int)ScreenWidth)return NativeFinalFB((uint)sx,line*ScaleFactor+sampleY);
         return 0u;
     }
-    return NativeComposite(0u,line,(int)x,ox,line*ScaleFactor+sampleY);
+    return NativeComposite(0u,0u,line,(int)x,ox,line*ScaleFactor+sampleY);
 }
 uint NativeCaptureRawToColor6(uint color)
 {
@@ -3076,7 +3117,7 @@ void NativeWriteStructuredLogicalPixel(uint screen,uint line,uint x,uint engine)
     }
     if(mode==1u)
     {
-        NativeCompositeLayers layers=NativeCompositeAt(engine,line,(int)x,x,line,true);
+        NativeCompositeLayers layers=NativeCompositeAt(screen,engine,line,(int)x,x,line,true);
         uint val1=NativeStructuredWord(layers.First),val2=NativeStructuredWord(layers.Second);
         uint plane0=layers.Color,plane1=0u,controlAlpha=NativeStructuredControlPlain2D;
         uint a1=val1>>24u,a2=val2>>24u;
@@ -3096,8 +3137,16 @@ void NativeWriteStructuredLogicalPixel(uint screen,uint line,uint x,uint engine)
         if(x==0u)NativeWriteStructuredLineMeta(screen,line,(1u<<16u)|((brightness>>14u)<<8u)|(brightness&0x1Fu)|(renderX<<23u));
         return;
     }
-    NativeWriteStructuredPixel(screen,line,x,NativeDisplay(engine,line,(int)x,x,line),0u,NativeStructuredControlPlain2D<<24u,NativeCaptureReference(engine,line,x));
+    NativeWriteStructuredPixel(screen,line,x,NativeDisplay(screen,engine,line,(int)x,x,line),0u,NativeStructuredControlPlain2D<<24u,NativeCaptureReference(engine,line,x));
     if(x==0u)NativeWriteStructuredLineMeta(screen,line,0u);
+}
+void NativeWriteObjRawPixel(uint screen,uint line,uint x,uint engine)
+{
+    uint layer=NativeLine(engine,line,NativeLayerEnable),disp=NativeLine(engine,line,NativeDispCnt);
+    bool enabled=(layer&(1u<<4u))!=0u&&NativeLine(engine,line,NativeOBJEnable)!=0u;
+    bool collect=enabled&&(disp&(1u<<15u))!=0u&&(disp&0xE000u)!=0u;
+    NativePixel window=NativeEmpty(),raw=NativeOBJRaw(engine,line,(int)x,false,collect,window);
+    NativeStoreObjRaw(screen,line,x,raw,window);
 }
 
 #ifdef GPU2DNativeCapture
@@ -3112,6 +3161,16 @@ void main(uint3 id : SV_DispatchThreadID)
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
+    if((DispatchPad&32u)!=0u)
+    {
+        bool logicalLine=(DispatchPad&8u)!=0u;
+        if(id.x>=256u||(logicalLine?id.y>=2u:id.y>=384u))return;
+        uint screen=logicalLine?id.y:id.y/192u;
+        uint line=logicalLine?InterpSpanCount:id.y%192u;
+        uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
+        NativeWriteObjRawPixel(screen,line,id.x,engine);
+        return;
+    }
     if((DispatchPad&16u)!=0u)
     {
         bool logicalLine=(DispatchPad&8u)!=0u;
@@ -3139,7 +3198,7 @@ void main(uint3 id : SV_DispatchThreadID)
     }
     uint x=id.x/ScaleFactor,line=scaledY/ScaleFactor;
     uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
-    uint color=ResultValue[13u]==0u?0u:NativeDisplay(engine,line,(int)x,id.x,scaledY);
+    uint color=ResultValue[13u]==0u?0u:NativeDisplay(screen,engine,line,(int)x,id.x,scaledY);
     uint bgra8=NativeBGRA8(color);
     bool directOutput=(DispatchPad&1u)!=0u;
     bool exactOutput=(DispatchPad&2u)!=0u;

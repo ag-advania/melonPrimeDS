@@ -85,16 +85,22 @@ const uint kTimelineOAMBaseBlock = kTimelinePaletteBaseBlock + kTimelinePaletteB
 const uint kTimelineFIFOBaseBlock = kTimelineOAMBaseBlock + kTimelineOAMBlocks;
 const uint kTimelineLCDVRAMBaseBlock = kTimelineFIFOBaseBlock + kTimelineFIFOBlocks;
 const uint kTimelineBlockCount = kTimelineLCDVRAMBaseBlock + kTimelineLCDVRAMBlocks;
-const uint kTimelineIndexBase = kRouteBase + 2u * 192u;
-const uint kTimelinePayloadBase = kTimelineIndexBase
+const uint kTimelineRowIdBase = kRouteBase + 2u * 192u;
+const uint kTimelineRowsBase = kTimelineRowIdBase + 192u;
+const uint kTimelinePayloadBase = kTimelineRowsBase
     + kTimelineBlockCount * 192u;
 const uint kTimelinePayloadStride = 512u / 4u;
 const uint kSpriteTimelineOAMBlocks = 4u;
 const uint kSpriteTimelineEngineOBJBlocks = 512u;
 const uint kSpriteTimelineBlockCount = kSpriteTimelineOAMBlocks
     + 2u * kSpriteTimelineEngineOBJBlocks;
-const uint kSpriteTimelineIndexBase = kTimelinePayloadBase
+const uint kSpriteTimelineRowIdBase = kTimelinePayloadBase
     + 8192u * kTimelinePayloadStride;
+const uint kSpriteTimelineRowsBase = kSpriteTimelineRowIdBase + 192u;
+const uint kNativeCaptureWords = 131072u;
+const uint kNativeObjRawWordsPerPixel = 2u;
+const uint kNativeObjRawScreenWords = 256u * 192u * kNativeObjRawWordsPerPixel;
+const uint kNativeObjRawBase = uint(FramebufferStride) + kNativeCaptureWords;
 
 // Stage A writes the backend-neutral structured composition contract.  Keep
 // this layout identical to PresentationBuffers.glsl and
@@ -169,8 +175,11 @@ uint TimelineVersion(uint block)
     uint line = uint(max(pc.CaptureYOffset, 0));
     if (line >= 192u || block >= kTimelineBlockCount)
         return 0u;
+    uint row = NativeGPU2DInput[kTimelineRowIdBase + line];
+    if (row >= 192u)
+        return 0u;
     return NativeGPU2DInput[
-        kTimelineIndexBase + line * kTimelineBlockCount + block];
+        kTimelineRowsBase + row * kTimelineBlockCount + block];
 }
 
 uint SpriteTimelineVersion(uint engine, uint line, uint block)
@@ -196,8 +205,11 @@ uint SpriteTimelineVersion(uint engine, uint line, uint block)
     }
     if (spriteBlock >= kSpriteTimelineBlockCount)
         return TimelineVersion(block);
-    return NativeGPU2DInput[kSpriteTimelineIndexBase
-        + line * kSpriteTimelineBlockCount + spriteBlock];
+    uint row = NativeGPU2DInput[kSpriteTimelineRowIdBase + line];
+    if (row >= 192u)
+        return 0u;
+    return NativeGPU2DInput[kSpriteTimelineRowsBase
+        + row * kSpriteTimelineBlockCount + spriteBlock];
 }
 
 uint MemoryByte(
@@ -392,6 +404,43 @@ Pixel EmptyPixel()
     p.Present = 0u;
     p.Mosaic = 0u;
     return p;
+}
+
+uint NativeObjRawIndex(uint screen, uint line, uint x, uint word)
+{
+    return kNativeObjRawBase
+        + screen * kNativeObjRawScreenWords
+        + (line * 256u + x) * kNativeObjRawWordsPerPixel
+        + word;
+}
+
+void StoreNativeObjRaw(
+    uint screen, uint line, uint x, Pixel pixel, Pixel windowSelected)
+{
+    NativeCaptureState[NativeObjRawIndex(screen, line, x, 0u)] = pixel.Color;
+    NativeCaptureState[NativeObjRawIndex(screen, line, x, 1u)] =
+        (pixel.Priority & 7u)
+        | ((pixel.Present & 1u) << 3u)
+        | ((pixel.Mosaic & 1u) << 4u)
+        | ((windowSelected.Present & 1u) << 5u)
+        | ((windowSelected.Priority & 7u) << 6u);
+}
+
+Pixel LoadNativeObjRaw(
+    uint screen, uint line, uint x, out Pixel windowSelected)
+{
+    Pixel pixel = EmptyPixel();
+    uint color = NativeCaptureState[NativeObjRawIndex(screen, line, x, 0u)];
+    uint meta = NativeCaptureState[NativeObjRawIndex(screen, line, x, 1u)];
+    pixel.Color = color;
+    pixel.Flag = color >> 24u;
+    pixel.Priority = meta & 7u;
+    pixel.Present = (meta >> 3u) & 1u;
+    pixel.Mosaic = (meta >> 4u) & 1u;
+    windowSelected = EmptyPixel();
+    windowSelected.Priority = (meta >> 6u) & 7u;
+    windowSelected.Present = (meta >> 5u) & 1u;
+    return pixel;
 }
 
 Pixel BackdropPixel(uint engine)
@@ -748,9 +797,12 @@ Pixel BGPixel(
     return BGText(engine, line, bg, x);
 }
 
-Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
+Pixel ObjRawPixel(
+    uint engine, uint line, int x, bool windowOnly, bool collectWindow,
+    out Pixel windowSelected)
 {
     Pixel selected = EmptyPixel();
+    windowSelected = EmptyPixel();
     if (LineWord(engine, line, kOBJEnable) == 0u)
         return selected;
     uint bestPriority = 4u;
@@ -763,7 +815,9 @@ Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
         if (spriteType == 2u)
             continue;
         bool isWindow = ((a0 >> 10u) & 3u) == 2u;
-        if (windowOnly != isWindow)
+        if (windowOnly && !isWindow)
+            continue;
+        if (!windowOnly && isWindow && !collectWindow)
             continue;
         uint sizeParam = (a0 >> 14u) | ((a1 >> 12u) & 0xCu);
         int width = SpriteWidth(sizeParam);
@@ -924,11 +978,20 @@ Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
         }
         if (!opaque)
             continue;
-        if (windowOnly)
+        if (isWindow)
         {
-            selected.Present = 1u;
-            selected.Priority = (a2 >> 10u) & 3u;
-            return selected;
+            if (windowOnly)
+            {
+                selected.Present = 1u;
+                selected.Priority = (a2 >> 10u) & 3u;
+                return selected;
+            }
+            if (collectWindow)
+            {
+                windowSelected.Present = 1u;
+                windowSelected.Priority = (a2 >> 10u) & 3u;
+            }
+            continue;
         }
         uint priority = (a2 >> 10u) & 3u;
         if (selected.Present == 0u || priority < bestPriority)
@@ -946,25 +1009,34 @@ Pixel ObjRawPixel(uint engine, uint line, int x, bool windowOnly)
     return selected;
 }
 
-Pixel ObjPixel(uint engine, uint line, int x)
+Pixel ObjPixel(
+    uint screen, uint engine, uint line, int x,
+    bool collectWindow, out Pixel windowSelected)
 {
     uint mosaicWidth = LineWord(engine, line, kOBJMosaic + 0u);
     Pixel selected = EmptyPixel();
+    windowSelected = EmptyPixel();
     if (mosaicWidth == 0u)
-        return ObjRawPixel(engine, line, x, false);
+    {
+        return LoadNativeObjRaw(screen, line, uint(x), windowSelected);
+    }
 
     int begin = x - (x % int(mosaicWidth + 1u));
     Pixel latch = EmptyPixel();
     for (int current = begin; current <= x; ++current)
     {
-        Pixel raw = ObjRawPixel(engine, line, current, false);
+        Pixel sampleWindow = EmptyPixel();
+        Pixel samplePixel = LoadNativeObjRaw(
+            screen, line, uint(current), sampleWindow);
+        if (current == x)
+            windowSelected = sampleWindow;
         uint offset = uint(current - begin);
         bool take = offset == 0u
-            || raw.Mosaic == 0u
+            || samplePixel.Mosaic == 0u
             || latch.Mosaic == 0u
-            || raw.Priority < latch.Priority;
+            || samplePixel.Priority < latch.Priority;
         if (take)
-            latch = raw;
+            latch = samplePixel;
         selected = latch;
     }
     return selected;
@@ -1012,7 +1084,8 @@ uint StructuredPixelWord(Pixel pixel)
 }
 
 CompositeLayers Composite2DLayers(
-    uint engine, uint line, int x, uint outputX, uint outputY, bool logical)
+    uint screen, uint engine, uint line, int x,
+    uint outputX, uint outputY, bool logical)
 {
     CompositeLayers result;
     result.First = BackdropPixel(engine);
@@ -1022,10 +1095,11 @@ CompositeLayers Composite2DLayers(
     result.Evb = LineWord(engine, line, kEVB);
     result.Color = result.First.Color;
 
-    uint objWindow = ObjRawPixel(engine, line, x, true).Present;
-    uint window = WindowSelect(engine, line, x, objWindow);
     uint enableOBJ = LineWord(engine, line, kLayerEnable) & (1u << 4u);
     enableOBJ &= LineWord(engine, line, kOBJEnable) != 0u ? 0x10u : 0u;
+    const uint dispCnt = LineWord(engine, line, kDispCnt);
+    const bool collectOBJWindow = enableOBJ != 0u
+        && (dispCnt & (1u << 15u)) != 0u;
 
     // BG and OBJ are semantic fetches. Evaluate them once per logical pixel;
     // the priority loop only selects from these cached values. This is the
@@ -1034,8 +1108,12 @@ CompositeLayers Composite2DLayers(
     Pixel bgPixels[4];
     for (uint bg = 0u; bg < 4u; ++bg)
         bgPixels[bg] = BGPixel(engine, line, bg, x, outputX, outputY, logical);
+    Pixel objWindowPixel = EmptyPixel();
     Pixel objPixel = enableOBJ != 0u
-        ? ObjPixel(engine, line, x) : EmptyPixel();
+        ? ObjPixel(screen, engine, line, x, collectOBJWindow, objWindowPixel)
+        : EmptyPixel();
+    uint objWindow = collectOBJWindow ? objWindowPixel.Present : 0u;
+    uint window = WindowSelect(engine, line, x, objWindow);
 
     for (int priority = 3; priority >= 0; --priority)
     {
@@ -1106,9 +1184,12 @@ CompositeLayers Composite2DLayers(
     return result;
 }
 
-uint Composite2D(uint engine, uint line, int x, uint outputX, uint outputY)
+uint Composite2D(
+    uint screen, uint engine, uint line, int x,
+    uint outputX, uint outputY)
 {
-    return Composite2DLayers(engine, line, x, outputX, outputY, false).Color;
+    return Composite2DLayers(
+        screen, engine, line, x, outputX, outputY, false).Color;
 }
 
 uint ApplyMasterNative(uint color, uint brightness)
@@ -1122,7 +1203,9 @@ uint ApplyMasterNative(uint color, uint brightness)
     return color;
 }
 
-uint DisplayPixel(uint engine, uint line, int x, uint outputX, uint outputY)
+uint DisplayPixel(
+    uint screen, uint engine, uint line, int x,
+    uint outputX, uint outputY)
 {
     uint dispCnt = LineWord(engine, line, kDispCnt);
     uint mode = engine == 0u ? (dispCnt >> 16u) & 3u : (dispCnt >> 16u) & 1u;
@@ -1149,7 +1232,7 @@ uint DisplayPixel(uint engine, uint line, int x, uint outputX, uint outputY)
             ConvertVRAMDisplay(FIFO16(uint(x))),
             LineWord(engine, line, kMasterBrightness));
     return ApplyMasterNative(
-        Composite2D(engine, line, x, outputX, outputY),
+        Composite2D(screen, engine, line, x, outputX, outputY),
         LineWord(engine, line, kMasterBrightness));
 }
 
@@ -1225,7 +1308,7 @@ uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
                 sx, int(line * uint(ScaleFactor) + sampleY)));
         return 0u;
     }
-    return Composite2D(0u, line, int(x), outputX,
+    return Composite2D(0u, 0u, line, int(x), outputX,
         line * uint(ScaleFactor) + sampleY);
 }
 
@@ -1361,7 +1444,7 @@ void WriteStructuredLogicalPixel(uint screen, uint line, uint x, uint engine)
     if (displayMode == kStructuredDisplayRegular)
     {
         CompositeLayers layers = Composite2DLayers(
-            engine, line, int(x), x, line, true);
+            screen, engine, line, int(x), x, line, true);
         uint val1 = StructuredPixelWord(layers.First);
         uint val2 = StructuredPixelWord(layers.Second);
         uint plane0 = layers.Color;
@@ -1407,7 +1490,7 @@ void WriteStructuredLogicalPixel(uint screen, uint line, uint x, uint engine)
 
     // Display modes 0/2/3 are already final native display pixels. Mark them
     // as display-mode-off so Stage B does not apply master brightness twice.
-    uint color = DisplayPixel(engine, line, int(x), x, line);
+    uint color = DisplayPixel(screen, engine, line, int(x), x, line);
     uint captureReference = NativeCaptureReference(engine, line, x);
     WriteStructuredPixel(screen, line, x, color, 0u,
         kStructuredControlPlain2D << 24u, captureReference);
@@ -1415,9 +1498,37 @@ void WriteStructuredLogicalPixel(uint screen, uint line, uint x, uint engine)
         WriteStructuredLineMeta(screen, line, kStructuredDisplayOff);
 }
 
+void WriteNativeObjRawPixel(
+    uint screen, uint line, uint x, uint engine)
+{
+    uint layerEnable = LineWord(engine, line, kLayerEnable);
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    bool objEnabled = (layerEnable & (1u << 4u)) != 0u
+        && LineWord(engine, line, kOBJEnable) != 0u;
+    bool collectWindow = objEnabled && (dispCnt & (1u << 15u)) != 0u
+        && (dispCnt & 0xE000u) != 0u;
+    Pixel windowSelected = EmptyPixel();
+    Pixel raw = ObjRawPixel(
+        engine, line, int(x), false, collectWindow, windowSelected);
+    StoreNativeObjRaw(screen, line, x, raw, windowSelected);
+}
+
 void main()
 {
     uvec2 id = gl_GlobalInvocationID.xy;
+    const bool objRawPass = (pc._pad & 32u) != 0u;
+    if (objRawPass)
+    {
+        const bool logicalLine = (pc._pad & 8u) != 0u;
+        if (id.x >= 256u || (logicalLine ? id.y >= 2u : id.y >= 384u))
+            return;
+        uint screen = logicalLine ? id.y : id.y / 192u;
+        uint line = logicalLine
+            ? uint(max(pc.CaptureYOffset, 0)) : id.y % 192u;
+        uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
+        WriteNativeObjRawPixel(screen, line, id.x, engine);
+        return;
+    }
     const bool capturePass = (pc._pad & 4u) != 0u;
     if (capturePass)
     {
@@ -1468,7 +1579,7 @@ void main()
     uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
     uint color = NativeGPU2DInput[13u] == 0u
         ? 0u
-        : DisplayPixel(engine, line, int(x), id.x, scaledY);
+        : DisplayPixel(screen, engine, line, int(x), id.x, scaledY);
 
     uint bgra8 = ToBgra8Native(color);
     const bool directOutput = (pc._pad & 1u) != 0u;

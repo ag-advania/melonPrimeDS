@@ -47,6 +47,7 @@ param(
     [string]$Tag = "event-matrix",
     [int]$WarmupSeconds = 18,
     [ValidateRange(1, 1000)][int]$FullscreenCycles = 8,
+    [ValidateRange(100, 5000)][int]$FullscreenDelayMilliseconds = 1800,
     [switch]$ValidateSync,
     [string]$OutDir = $env:TEMP
 )
@@ -55,11 +56,19 @@ $ErrorActionPreference = 'Stop'
 
 if (-not (Test-Path $BuildDir)) { throw "build directory not found: $BuildDir" }
 if (-not (Test-Path $Rom)) { throw "ROM not found: $Rom" }
+$null = New-Item -ItemType Directory -Force -Path $OutDir
+$outRoot = (Resolve-Path -LiteralPath $OutDir).Path
 $dir = (Resolve-Path $BuildDir).Path
 $exe = Join-Path $dir 'melonPrimeDS.exe'
 if (-not (Test-Path $exe)) { throw "melonPrimeDS.exe not found in $dir" }
-$out = Join-Path $OutDir "vk-$Tag.out.log"
-$err = Join-Path $OutDir "vk-$Tag.err.log"
+$out = Join-Path $outRoot "vk-$Tag.out.log"
+$err = Join-Path $outRoot "vk-$Tag.err.log"
+$frameCsv = Join-Path $outRoot "vk-$Tag.frames.csv"
+foreach ($artifact in @($out, $err, $frameCsv)) {
+    if (Test-Path -LiteralPath $artifact) {
+        throw "Refusing to overwrite artifact: $artifact"
+    }
+}
 $portableDir = Join-Path $dir 'portable'
 $configRoot = if (Test-Path -LiteralPath $portableDir -PathType Container) {
     $portableDir
@@ -82,11 +91,19 @@ $originalLayerSettings = if ($hadLayerSettings) {
 }
 $configRestored = $false
 $layerSettingsRestored = -not $ValidateSync
+$oldPerf = $env:MELONPRIME_PERF
+$oldRunId = $env:MELONPRIME_LATENCY_RUN_ID
+$oldFrameCsv = $env:MELONPRIME_PERF_CSV
+$measurementStartTicks = 0L
+$measurementEndTicks = 0L
 
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
+public struct MpRect {
+  public int Left, Top, Right, Bottom;
+}
 public class MpWin {
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr p);
   public delegate bool EnumWindowsProc(IntPtr h, IntPtr p);
@@ -96,6 +113,25 @@ public class MpWin {
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out MpRect rect);
+  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+  [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+  [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+  public const uint KeyUp = 0x0002;
+  public static void TapF11(IntPtr h) {
+    const uint KeyDownMessage = 0x0100;
+    const uint KeyUpMessage = 0x0101;
+    IntPtr scanDown = (IntPtr)0x00570001;
+    IntPtr scanUp = (IntPtr)unchecked((int)0xC0570001);
+    if (PostMessage(h, KeyDownMessage, (IntPtr)0x7A, scanDown)) {
+      System.Threading.Thread.Sleep(50);
+      PostMessage(h, KeyUpMessage, (IntPtr)0x7A, scanUp);
+      return;
+    }
+    keybd_event(0x7A, 0, 0, UIntPtr.Zero);
+    System.Threading.Thread.Sleep(50);
+    keybd_event(0x7A, 0, KeyUp, UIntPtr.Zero);
+  }
   public static IntPtr Find(uint pid) {
     IntPtr found = IntPtr.Zero;
     EnumWindows(delegate(IntPtr h, IntPtr p) {
@@ -126,6 +162,18 @@ Emu.DirectBoot = true
 Emu.ExternalBIOSEnable = false
 "@
 $proc = $null
+function Get-WindowFullscreenState {
+    $rect = [MpRect]::new()
+    if (-not [MpWin]::GetWindowRect($h, [ref]$rect)) { return $null }
+    $width = $rect.Right - $rect.Left
+    $height = $rect.Bottom - $rect.Top
+    $screenWidth = [MpWin]::GetSystemMetrics(0)
+    $screenHeight = [MpWin]::GetSystemMetrics(1)
+    if ($width -ge ($screenWidth - 4) -and $height -ge ($screenHeight - 4)) {
+        return 1
+    }
+    return 0
+}
 try {
     Set-Content -LiteralPath $configPath -Value $cfg -NoNewline
 
@@ -139,6 +187,9 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
         Set-Content -LiteralPath $layerSettings -Value $syncCfg -NoNewline -Encoding ASCII
     }
 
+    $env:MELONPRIME_PERF = '1'
+    $env:MELONPRIME_LATENCY_RUN_ID = $Tag
+    $env:MELONPRIME_PERF_CSV = $frameCsv
     $proc = Start-Process -FilePath $exe -ArgumentList "`"$Rom`"" -WorkingDirectory $dir `
             -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
 
@@ -148,6 +199,7 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
 
     $h = [MpWin]::Find([uint32]$proc.Id)
     if ($h -eq [IntPtr]::Zero) { throw "could not find the melonPrimeDS window" }
+    $measurementStartTicks = [Diagnostics.Stopwatch]::GetTimestamp()
 
     if ($Phase -eq 'all' -or $Phase -eq 'resize') {
         $sizes = @(@(900,700),@(1280,800),@(640,480),@(1024,768),@(1600,900),@(800,600),@(1440,900),@(720,540))
@@ -172,12 +224,35 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
     }
 
     if ($Phase -eq 'all' -or $Phase -eq 'fullscreen') {
-        Add-Type -AssemblyName System.Windows.Forms
+        $observedFullscreenState = Get-WindowFullscreenState
+        if ($null -eq $observedFullscreenState) {
+            throw 'could not observe the initial window fullscreen state'
+        }
         for ($i = 0; $i -lt $FullscreenCycles; $i++) {
-            [void][MpWin]::SetForegroundWindow($h)
-            Start-Sleep -Milliseconds 250
-            [System.Windows.Forms.SendKeys]::SendWait('{F11}')
-            Start-Sleep -Milliseconds 700
+            $targetFullscreenState = if ($observedFullscreenState -eq 0) { 1 } else { 0 }
+            $observedTarget = $false
+            for ($attempt = 0; $attempt -lt 3 -and -not $observedTarget; $attempt++) {
+                [void][MpWin]::SetForegroundWindow($h)
+                Start-Sleep -Milliseconds 250
+                [MpWin]::TapF11($h)
+                $stateDeadline = [Diagnostics.Stopwatch]::GetTimestamp() +
+                    [Diagnostics.Stopwatch]::Frequency * 8
+                while ([Diagnostics.Stopwatch]::GetTimestamp() -lt $stateDeadline) {
+                    $candidateState = Get-WindowFullscreenState
+                    if ($candidateState -eq $targetFullscreenState) {
+                        $observedFullscreenState = $candidateState
+                        $observedTarget = $true
+                        break
+                    }
+                    Start-Sleep -Milliseconds 100
+                }
+            }
+            if (-not $observedTarget) {
+                throw "fullscreen cycle $($i + 1) did not observe state $targetFullscreenState"
+            }
+            if ($FullscreenDelayMilliseconds -gt 100) {
+                Start-Sleep -Milliseconds ($FullscreenDelayMilliseconds - 100)
+            }
         }
         Write-Host "fullscreen toggle x$FullscreenCycles"
     }
@@ -188,6 +263,7 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
     }
 
     Start-Sleep -Seconds 3
+    $measurementEndTicks = [Diagnostics.Stopwatch]::GetTimestamp()
 }
 finally {
     if ($null -ne $proc -and -not $proc.HasExited) {
@@ -214,11 +290,100 @@ finally {
         Remove-Item -LiteralPath $configPath -Force
         $configRestored = -not (Test-Path -LiteralPath $configPath)
     }
+    if ($null -eq $oldPerf) { Remove-Item Env:MELONPRIME_PERF -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PERF = $oldPerf }
+    if ($null -eq $oldRunId) { Remove-Item Env:MELONPRIME_LATENCY_RUN_ID -ErrorAction SilentlyContinue } else { $env:MELONPRIME_LATENCY_RUN_ID = $oldRunId }
+    if ($null -eq $oldFrameCsv) { Remove-Item Env:MELONPRIME_PERF_CSV -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PERF_CSV = $oldFrameCsv }
 }
 
 $logPaths = @($out, $err) | Where-Object { Test-Path -LiteralPath $_ }
 $log = @(Get-Content -LiteralPath $logPaths -ErrorAction SilentlyContinue)
-$recreations = @($log | Select-String -SimpleMatch 'swapchain ready').Count
+$recreationMatches = @(
+    foreach ($line in $log) {
+        $match = [regex]::Match($line, 'swapchain recreated fullscreen=(?<state>[01])')
+        if ($match.Success) {
+            [pscustomobject]@{
+                State = [int]$match.Groups['state'].Value
+                Line = $line
+            }
+        }
+    }
+)
+$recreations = $recreationMatches.Count
+$actualFullscreenCount = @($recreationMatches | Where-Object State -eq 1).Count
+$actualWindowedCount = @($recreationMatches | Where-Object State -eq 0).Count
+$actualFullscreenTransitions = 0
+$sameStateRecreateCount = 0
+$previousFullscreenState = $null
+foreach ($recreation in $recreationMatches) {
+    if ($null -ne $previousFullscreenState) {
+        if ($recreation.State -ne $previousFullscreenState) {
+            ++$actualFullscreenTransitions
+        } else {
+            ++$sameStateRecreateCount
+        }
+    }
+    $previousFullscreenState = $recreation.State
+}
+$expectedFullscreenTransitions = if ($Phase -in @('fullscreen', 'all')) {
+    $FullscreenCycles
+} else { 0 }
+$expectedFinalFullscreenState = if (($FullscreenCycles % 2) -eq 1) { 1 } else { 0 }
+$actualFinalFullscreenState = if ($recreationMatches.Count -gt 0) {
+    $recreationMatches[-1].State
+} else { -1 }
+
+function Get-PercentileValue {
+    param(
+        [double[]]$Values,
+        [double]$Percentile
+    )
+    if ($null -eq $Values -or $Values.Count -eq 0) { return 0.0 }
+    $sorted = [double[]]@($Values | Sort-Object)
+    $position = ($sorted.Count - 1) * $Percentile
+    $lower = [int][Math]::Floor($position)
+    $upper = [int][Math]::Ceiling($position)
+    if ($lower -eq $upper) { return $sorted[$lower] }
+    return $sorted[$lower] + ($sorted[$upper] - $sorted[$lower]) * ($position - $lower)
+}
+
+$fpsSamples = [System.Collections.Generic.List[double]]::new()
+$frameTimeSamples = [System.Collections.Generic.List[double]]::new()
+if (Test-Path -LiteralPath $frameCsv) {
+    foreach ($row in @(Import-Csv -LiteralPath $frameCsv)) {
+        [Int64]$endTicks = 0
+        [double]$frameTimeUs = 0
+        if (-not [Int64]::TryParse([string]$row.frame_end_ticks, [ref]$endTicks)) { continue }
+        if (-not [double]::TryParse(
+                [string]$row.frame_time_us,
+                [Globalization.NumberStyles]::Float,
+                [Globalization.CultureInfo]::InvariantCulture,
+                [ref]$frameTimeUs)) { continue }
+        if ($measurementStartTicks -gt 0 -and $measurementEndTicks -gt $measurementStartTicks -and
+            ($endTicks -lt $measurementStartTicks -or $endTicks -gt $measurementEndTicks)) {
+            continue
+        }
+        if ($frameTimeUs -le 0) { continue }
+        $frameTimeSamples.Add($frameTimeUs)
+        $fpsSamples.Add(1000000.0 / $frameTimeUs)
+    }
+}
+$fpsP50 = Get-PercentileValue ([double[]]$fpsSamples) 0.50
+$fpsP95 = Get-PercentileValue ([double[]]$fpsSamples) 0.95
+$fpsP99 = Get-PercentileValue ([double[]]$fpsSamples) 0.99
+$frameTimeP50 = Get-PercentileValue ([double[]]$frameTimeSamples) 0.50
+$frameTimeP95 = Get-PercentileValue ([double[]]$frameTimeSamples) 0.95
+$frameTimeP99 = Get-PercentileValue ([double[]]$frameTimeSamples) 0.99
+$presentedSerialRegressionCount = 0
+$presentedSerialTelemetryLines = 0
+foreach ($line in $log) {
+    $match = [regex]::Match($line, 'presented_serial_regression_count=(?<count>\d+)')
+    if ($match.Success) {
+        ++$presentedSerialTelemetryLines
+        $presentedSerialRegressionCount = [Math]::Max(
+            $presentedSerialRegressionCount,
+            [int]$match.Groups['count'].Value)
+    }
+}
 $vuids = @(
     $log | Select-String -Pattern 'VUID-[A-Za-z0-9-]+' -AllMatches |
         ForEach-Object { $_.Matches | ForEach-Object { $_.Value } }
@@ -280,6 +445,9 @@ foreach ($line in $log) {
 }
 
 $configMismatch = @()
+if ($fpsSamples.Count -eq 0) {
+    $configMismatch += 'per-frame FPS telemetry missing from the measurement window'
+}
 if (-not $configRestored) {
     $configMismatch += 'test melonDS.toml was not restored byte-for-byte'
 }
@@ -332,6 +500,23 @@ if ($presentStates.Count -eq 0) {
         $configMismatch += "VSync/present mode expected=$expectedVsync actual=$($lastPresent.Requested)/$($lastPresent.Mode)"
     }
 }
+if ($expectedFullscreenTransitions -gt 0) {
+    if ($actualFullscreenTransitions -ne $expectedFullscreenTransitions) {
+        $configMismatch += "fullscreen state transitions expected=$expectedFullscreenTransitions actual=$actualFullscreenTransitions"
+    }
+    if ($actualFullscreenCount -eq 0 -or $actualWindowedCount -eq 0) {
+        $configMismatch += "fullscreen/windowed swapchain states expected both actual=fullscreen:$actualFullscreenCount windowed:$actualWindowedCount"
+    }
+    if ($actualFinalFullscreenState -ne $expectedFinalFullscreenState) {
+        $configMismatch += "final fullscreen state expected=$expectedFinalFullscreenState actual=$actualFinalFullscreenState"
+    }
+}
+if ($presentedSerialRegressionCount -ne 0) {
+    $configMismatch += "presented renderer serial regressed count=$presentedSerialRegressionCount"
+}
+if ($presentedSerialTelemetryLines -eq 0) {
+    $configMismatch += 'presented renderer serial telemetry missing from VulkanPerf surface report'
+}
 
 Write-Host ""
 Write-Host "log            : $out"
@@ -342,6 +527,12 @@ if ($ValidateSync) {
     Write-Host "layer restore  : $(if ($layerSettingsRestored) { 'PASS' } else { 'FAIL' })"
 }
 Write-Host "swapchain rebuilds: $recreations"
+Write-Host "swapchain recreated states: fullscreen=$actualFullscreenCount windowed=$actualWindowedCount"
+Write-Host "fullscreen transitions: $actualFullscreenTransitions expected=$expectedFullscreenTransitions"
+Write-Host "same-state recreates: $sameStateRecreateCount"
+Write-Host ("FPS p50/p95/p99   : {0:N2}/{1:N2}/{2:N2} (n={3})" -f $fpsP50, $fpsP95, $fpsP99, $fpsSamples.Count)
+Write-Host ("frame ms p50/p95/p99: {0:N3}/{1:N3}/{2:N3}" -f ($frameTimeP50 / 1000.0), ($frameTimeP95 / 1000.0), ($frameTimeP99 / 1000.0))
+Write-Host "presented serial regressions: $presentedSerialRegressionCount"
 Write-Host "device lost       : $deviceLost"
 if ($policyStates.Count -gt 0 -and $reflexStates.Count -gt 0 -and $presentStates.Count -gt 0) {
     $lastReflex = $reflexStates[-1]
