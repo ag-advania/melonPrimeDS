@@ -56,6 +56,15 @@ bool StageDiagnosticsEnabled() noexcept
     return enabled;
 }
 
+bool DirectOutputDiagnosticsEnabled() noexcept
+{
+    static const bool enabled = [] {
+        const char* value = std::getenv("MELONPRIME_GPU2D_STAGE_DIRECT");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+}
+
 void NotifySavestateLoaded() noexcept
 {
     ExactValidationSavestateReady.store(true, std::memory_order_release);
@@ -168,6 +177,7 @@ void LogBlankState(
     u32 slot,
     const FrameInput& input,
     u32 screen,
+    const char* source,
     BlankClass actual,
     BlankClass expected) noexcept
 {
@@ -175,13 +185,13 @@ void LogBlankState(
         Platform::LogLevel::Info,
         "[GPU2DStage] blank_state backend=%s stage=%s emulated=%llu recorded=%llu "
         "renderer_serial=%llu generation=%llu slot=%u ScreenSwap=%u ScreensEnabled=%u "
-        "physical_screen=%u actual=%s expected=%s\n",
+        "physical_screen=%u source=%s actual=%s expected=%s\n",
         backend, stage,
         static_cast<unsigned long long>(emulatedFrame),
         static_cast<unsigned long long>(recordedFrame),
         static_cast<unsigned long long>(rendererSerial),
         static_cast<unsigned long long>(generation), slot,
-        input.ScreenSwap, input.ScreensEnabled, screen,
+        input.ScreenSwap, input.ScreensEnabled, screen, source,
         BlankClassName(actual), BlankClassName(expected));
 
     for (u32 line : {0u, 96u, 191u})
@@ -213,6 +223,7 @@ void LogStageLine(
     u32 slot,
     u32 screenSwap,
     u32 screensEnabled,
+    const char* source,
     u64 topHash,
     u64 bottomHash,
     BlankClass top,
@@ -222,16 +233,18 @@ void LogStageLine(
         Platform::LogLevel::Info,
         "[GPU2DStage] backend=%s stage=%s emulated=%llu recorded=%llu "
         "renderer_serial=%llu generation=%llu slot=%u "
-        "ScreenSwap=%u ScreensEnabled=%u "
-        "logical_top_hash=%016llX logical_bottom_hash=%016llX "
+        "ScreenSwap=%u ScreensEnabled=%u source=%s "
+        "%s_top_hash=%016llX %s_bottom_hash=%016llX "
         "top=%s bottom=%s\n",
         backend, stage,
         static_cast<unsigned long long>(emulatedFrame),
         static_cast<unsigned long long>(recordedFrame),
         static_cast<unsigned long long>(rendererSerial),
         static_cast<unsigned long long>(generation), slot, screenSwap,
-        screensEnabled,
+        screensEnabled, source,
+        stage[0] == 'A' ? "logical" : "resolved",
         static_cast<unsigned long long>(topHash),
+        stage[0] == 'A' ? "logical" : "resolved",
         static_cast<unsigned long long>(bottomHash),
         BlankClassName(top), BlankClassName(bottom));
 }
@@ -249,6 +262,7 @@ void LogStageSnapshot(
     const u32* structured,
     const u32* actualTop,
     const u32* actualBottom,
+    const char* resolvedSource,
     const u32* expectedTop,
     const u32* expectedBottom) noexcept
 {
@@ -262,16 +276,17 @@ void LogStageSnapshot(
         LogStageLine(
             backend, "A", emulatedFrame, recordedFrame, rendererSerial,
             generation, slot, input.ScreenSwap, input.ScreensEnabled,
+            "structured",
             HashStructuredScreen(structured, 0u),
             HashStructuredScreen(structured, 1u), top, bottom);
         if (top != BlankClass::NonBlank)
             LogBlankState(backend, "A", emulatedFrame, recordedFrame, rendererSerial,
-                generation, slot, input, 0u, top,
+                generation, slot, input, 0u, "structured", top,
                 expectedTop ? ClassifyNativePixels(expectedTop, ScreenPixelCount)
                     : BlankClass::NonBlank);
         if (bottom != BlankClass::NonBlank)
             LogBlankState(backend, "A", emulatedFrame, recordedFrame, rendererSerial,
-                generation, slot, input, 1u, bottom,
+                generation, slot, input, 1u, "structured", bottom,
                 expectedBottom ? ClassifyNativePixels(expectedBottom, ScreenPixelCount)
                     : BlankClass::NonBlank);
     }
@@ -283,16 +298,17 @@ void LogStageSnapshot(
         LogStageLine(
             backend, "B", emulatedFrame, recordedFrame, rendererSerial,
             generation, slot, input.ScreenSwap, input.ScreensEnabled,
+            resolvedSource,
             HashWords(actualTop, ScreenPixelCount),
             HashWords(actualBottom, ScreenPixelCount), top, bottom);
         if (top != BlankClass::NonBlank)
             LogBlankState(backend, "B", emulatedFrame, recordedFrame, rendererSerial,
-                generation, slot, input, 0u, top,
+                generation, slot, input, 0u, resolvedSource, top,
                 expectedTop ? ClassifyNativePixels(expectedTop, ScreenPixelCount)
                     : BlankClass::NonBlank);
         if (bottom != BlankClass::NonBlank)
             LogBlankState(backend, "B", emulatedFrame, recordedFrame, rendererSerial,
-                generation, slot, input, 1u, bottom,
+                generation, slot, input, 1u, resolvedSource, bottom,
                 expectedBottom ? ClassifyNativePixels(expectedBottom, ScreenPixelCount)
                     : BlankClass::NonBlank);
     }

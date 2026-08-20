@@ -3607,7 +3607,9 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             D3D12_RESOURCE_STATE_COPY_SOURCE,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
-    const bool compositorDirectOutput = slot.DirectTexture && !diagnosticReadback;
+    const bool compositorDirectOutput = slot.DirectTexture
+        && (!diagnosticReadback
+            || (GPU2DNative::DirectOutputDiagnosticsEnabled() && ScaleFactor == 1));
     if (!BindCompositionUavTable(
             list, slot.Descriptors, CompositorUavCpu[slotIndex]))
     {
@@ -3632,14 +3634,56 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     slot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DResolve, true));
 
+    const bool directOutputReadback = compositorDirectOutput
+        && diagnosticReadback
+        && GPU2DNative::DirectOutputDiagnosticsEnabled();
     if (compositorDirectOutput)
     {
         InsertUavBarrier(list, slot.DirectTexture.Get());
-        TransitionBuffer(
-            list,
-            slot.DirectTexture.Get(),
-            D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        if (directOutputReadback)
+        {
+            TransitionBuffer(
+                list,
+                slot.DirectTexture.Get(),
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_STATE_COPY_SOURCE);
+            const UINT rowPitch = static_cast<UINT>(
+                AlignUp(static_cast<u64>(ScreenWidth) * sizeof(u32),
+                    D3D12_TEXTURE_DATA_PITCH_ALIGNMENT));
+            const u64 screenBytes = static_cast<u64>(rowPitch)
+                * static_cast<u64>(ScreenHeight);
+            for (UINT screen = 0; screen < 2u; ++screen)
+            {
+                D3D12_TEXTURE_COPY_LOCATION destination{};
+                destination.pResource = slot.NativeReadback.Get();
+                destination.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+                destination.PlacedFootprint.Offset = screenBytes * screen;
+                destination.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+                destination.PlacedFootprint.Footprint.Width = static_cast<UINT>(ScreenWidth);
+                destination.PlacedFootprint.Footprint.Height = static_cast<UINT>(ScreenHeight);
+                destination.PlacedFootprint.Footprint.Depth = 1;
+                destination.PlacedFootprint.Footprint.RowPitch = rowPitch;
+
+                D3D12_TEXTURE_COPY_LOCATION source{};
+                source.pResource = slot.DirectTexture.Get();
+                source.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                source.SubresourceIndex = screen;
+                list->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
+            }
+            TransitionBuffer(
+                list,
+                slot.DirectTexture.Get(),
+                D3D12_RESOURCE_STATE_COPY_SOURCE,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        }
+        else
+        {
+            TransitionBuffer(
+                list,
+                slot.DirectTexture.Get(),
+                D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+        }
         slot.DirectTextureInShaderResource = true;
         DX12Perf::AddCounter(DX12Perf::Counter::DirectCompositorImageFrames);
     }
@@ -3649,7 +3693,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
     }
 
-    if (diagnosticReadback)
+    if (diagnosticReadback && !directOutputReadback)
     {
         InsertUavBarrier(list, slot.Composed.Get());
         TransitionBuffer(
@@ -3695,9 +3739,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         {
             u32 bgra8 = 0;
             std::memcpy(&bgra8, source + static_cast<size_t>(i) * sizeof(u32), sizeof(u32));
-            actual[i] = (((bgra8 >> 16u) & 0xFFu) >> 2u)
-                | ((((bgra8 >> 8u) & 0xFFu) >> 2u) << 8u)
-                | (((bgra8 & 0xFFu) >> 2u) << 16u);
+            const u32 red = directOutputReadback ? (bgra8 & 0xFFu) : (bgra8 >> 16u);
+            const u32 green = (bgra8 >> 8u) & 0xFFu;
+            const u32 blue = directOutputReadback ? (bgra8 >> 16u) : (bgra8 & 0xFFu);
+            actual[i] = ((red & 0xFFu) >> 2u)
+                | (((green >> 2u) & 0x3Fu) << 8u)
+                | (((blue >> 2u) & 0x3Fu) << 16u);
         }
         D3D12_RANGE noWrite{0, 0};
         slot.NativeReadback->Unmap(0, &noWrite);
@@ -3721,6 +3768,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 rendererSerial, generation, slotIndex, input,
                 static_cast<const u32*>(structuredMapped),
                 actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
+                directOutputReadback ? "direct_image" : "composed_buffer",
                 expectedTop, expectedBottom);
             const D3D12_RANGE noStructuredWrite{0, 0};
             slot.StructuredReadback->Unmap(0, &noStructuredWrite);

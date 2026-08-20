@@ -3749,7 +3749,9 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
 
     const bool directImageOutput = outputSlot.DirectImageTop.IsValid()
         && outputSlot.DirectImageBottom.IsValid();
-    const bool compositorDirectOutput = directImageOutput && !diagnosticReadback;
+    const bool compositorDirectOutput = directImageOutput
+        && (!diagnosticReadback
+            || (GPU2DNative::DirectOutputDiagnosticsEnabled() && ScaleFactor == 1));
     if (compositorDirectOutput)
     {
         const auto beginDirectWrite = [&](Vk::Image& image) {
@@ -3949,6 +3951,9 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DResolve, true));
 
+    const bool directOutputReadback = compositorDirectOutput
+        && diagnosticReadback
+        && GPU2DNative::DirectOutputDiagnosticsEnabled();
     if (compositorDirectOutput)
     {
         const auto finishDirectRead = [&](Vk::Image& image) {
@@ -3960,8 +3965,52 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT);
         };
-        finishDirectRead(outputSlot.DirectImageTop);
-        finishDirectRead(outputSlot.DirectImageBottom);
+        if (directOutputReadback)
+        {
+            const auto copyDirectImage = [&](Vk::Image& image, VkDeviceSize offset) {
+                image.RecordLayoutTransition(
+                    cmd,
+                    VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_ACCESS_SHADER_WRITE_BIT,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_ACCESS_TRANSFER_READ_BIT);
+                VkBufferImageCopy copy{};
+                copy.bufferOffset = offset;
+                copy.bufferRowLength = 0;
+                copy.bufferImageHeight = 0;
+                copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+                copy.imageSubresource.mipLevel = 0;
+                copy.imageSubresource.baseArrayLayer = 0;
+                copy.imageSubresource.layerCount = 1;
+                copy.imageExtent = {
+                    static_cast<u32>(ScreenWidth),
+                    static_cast<u32>(ScreenHeight), 1u};
+                fns.CmdCopyImageToBuffer(
+                    cmd, image.GetHandle(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                    outputSlot.NativeReadback.GetHandle(), 1, &copy);
+                image.RecordLayoutTransition(
+                    cmd,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK_ACCESS_TRANSFER_READ_BIT,
+                    VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_SHADER_READ_BIT);
+            };
+            const VkDeviceSize screenBytes = static_cast<VkDeviceSize>(ScreenWidth)
+                * static_cast<VkDeviceSize>(ScreenHeight) * sizeof(u32);
+            copyDirectImage(outputSlot.DirectImageTop, 0);
+            copyDirectImage(outputSlot.DirectImageBottom, screenBytes);
+            const VkBuffer readback = outputSlot.NativeReadback.GetHandle();
+            BufferBarrier(cmd, &readback, 1,
+                VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
+                VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
+        }
+        else
+        {
+            finishDirectRead(outputSlot.DirectImageTop);
+            finishDirectRead(outputSlot.DirectImageBottom);
+        }
         VulkanPerf::AddCounter(VulkanPerf::Counter::DirectCompositorImageFrames);
     }
     else
@@ -3969,7 +4018,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         VulkanPerf::AddCounter(VulkanPerf::Counter::FallbackCompositorBufferFrames);
     }
 
-    if (diagnosticReadback)
+    if (diagnosticReadback && !directOutputReadback)
     {
         const VkBuffer composed = outputSlot.Composed.GetHandle();
         BufferBarrier(cmd, &composed, 1,
@@ -4033,9 +4082,12 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         {
             u32 bgra8 = 0;
             std::memcpy(&bgra8, source + static_cast<size_t>(i) * sizeof(u32), sizeof(u32));
-            actual[i] = (((bgra8 >> 16u) & 0xFFu) >> 2u)
-                | ((((bgra8 >> 8u) & 0xFFu) >> 2u) << 8u)
-                | (((bgra8 & 0xFFu) >> 2u) << 16u);
+            const u32 red = directOutputReadback ? (bgra8 & 0xFFu) : (bgra8 >> 16u);
+            const u32 green = (bgra8 >> 8u) & 0xFFu;
+            const u32 blue = directOutputReadback ? (bgra8 >> 16u) : (bgra8 & 0xFFu);
+            actual[i] = ((red & 0xFFu) >> 2u)
+                | (((green >> 2u) & 0x3Fu) << 8u)
+                | (((blue >> 2u) & 0x3Fu) << 16u);
         }
         const u32* structured = nullptr;
         if (stageDiagnostics)
@@ -4056,6 +4108,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 "Vulkan", input.Generation.Frame, input.Generation.Frame,
                 rendererSerial, generation, nextSlot, input, structured,
                 actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
+                directOutputReadback ? "direct_image" : "composed_buffer",
                 expectedTop, expectedBottom);
         }
 

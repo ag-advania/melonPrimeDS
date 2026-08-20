@@ -55,6 +55,10 @@ inline constexpr u32 CaptureStartLineNone = 0xFFu;
 // attributed to the producer, compositor, or presenter without changing
 // normal frame ownership.
 [[nodiscard]] bool StageDiagnosticsEnabled() noexcept;
+// Developer-only A/B switch.  When enabled together with StageDiagnostics,
+// Stage B keeps the production direct-image path and reads those images back
+// instead of silently replacing it with the composed-buffer path.
+[[nodiscard]] bool DirectOutputDiagnosticsEnabled() noexcept;
 
 enum class BlankClass : u8
 {
@@ -343,6 +347,7 @@ void LogStageSnapshot(
     const u32* structured,
     const u32* actualTop,
     const u32* actualBottom,
+    const char* resolvedSource,
     const u32* expectedTop,
     const u32* expectedBottom) noexcept;
 
