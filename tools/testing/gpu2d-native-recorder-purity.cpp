@@ -272,17 +272,21 @@ bool RunRecorderTimeline()
     for (u32 line = 1u; line < ScreenHeight; ++line)
     {
         if (line == 50u)
-            gpu.VRAM[0][0x10] = 0xC1u;
+            gpu.WriteVRAM_ABG<u8>(0x10u, 0xC1u);
         if (line == 96u)
-            gpu.Palette[37u] = 0xD6u;
+            gpu.WritePalette<u8>(37u, 0xD6u);
         if (line == 128u)
-            gpu.OAM[513u] = 0xE7u;
+            gpu.WriteOAM<u8>(513u, 0xE7u);
         if (line == 64u)
+        {
             gpu.VRAMMap_LCDC = 1u << 2u;
+            gpu.RecordGPU2DWrite(GPU2DWriteKind::Mapping, 0u, 0u);
+        }
         // FIFO is sampled for every line. Writing immediately before the
         // line latch models a line-by-line FIFO pattern without touching the
         // renderer's destructive dirty ownership.
         gpu.DispFIFOBuffer[7u] = static_cast<u16>(0x1000u + line);
+        gpu.RecordGPU2DWrite(GPU2DWriteKind::FIFO, 0u, 0u);
 
         recorder->CaptureSpriteLatchForLine(line);
         recorder->CaptureMemoryForLine(line);
@@ -349,6 +353,16 @@ bool RunRecorderTimeline()
     return passed;
 }
 
+void RecordVRAMWriteRange(GPU& gpu, u32 bank)
+{
+    const u32 blockCount = (gpu.VRAMMask[bank] + 1u) / DirtyBlockBytes;
+    for (u32 block = 0u; block < blockCount; ++block)
+    {
+        gpu.VRAMDirty[bank][block] = true;
+        gpu.RecordGPU2DWrite(GPU2DWriteKind::VRAM, bank, block);
+    }
+}
+
 bool RunHighChurnTimeline()
 {
     const auto nds = std::make_unique<NDS>();
@@ -394,7 +408,10 @@ bool RunHighChurnTimeline()
         {
             const u8 value = (line & 1u) != 0u ? 0x5Au : 0xA5u;
             for (u32 bank = 0; bank < 9u; ++bank)
+            {
                 std::memset(gpu.VRAM[bank], value, gpu.VRAMMask[bank] + 1u);
+                RecordVRAMWriteRange(gpu, bank);
+            }
         }
         recorder->CaptureSpriteLatchForLine(line);
         recorder->CaptureMemoryForLine(line);

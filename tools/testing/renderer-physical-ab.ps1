@@ -28,6 +28,7 @@ param(
     [ValidateSet(1, 4, 16)]
     [int]$Scale = 4,
     [switch]$NoVSync,
+    [switch]$NoFrameLimit,
     [ValidateSet('Off', 'Reflex', 'ReflexBoost', 'AntiLag2', 'XeLL')]
     [string]$LowLatency = 'Off',
     [ValidateSet('steady-state', 'weapon-switch', 'projectile-burst',
@@ -40,6 +41,8 @@ param(
     [switch]$AllowUnverifiedBinary,
     [switch]$RequireCleanProvenance,
     [switch]$SkipDiagnosticStartupSavestate,
+    [ValidateRange(0,600)] [int]$CaptureFrames = 0,
+    [ValidateRange(1,1000)] [int]$CaptureIntervalMs = 33,
     [int]$WarmupSeconds = 15,
     [int]$MeasuredSeconds = 20,
     [int]$GraceSeconds = 15
@@ -48,6 +51,9 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($WarmupSeconds -lt 1 -or $MeasuredSeconds -lt 1 -or $GraceSeconds -lt 0) {
     throw 'WarmupSeconds and MeasuredSeconds must be positive; GraceSeconds must not be negative.'
+}
+if ($CaptureFrames -gt 0 -and $CaptureIntervalMs -lt 1) {
+    throw 'CaptureIntervalMs must be positive when CaptureFrames is enabled.'
 }
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -127,6 +133,7 @@ $antiLag = if ($LowLatency -eq 'AntiLag2') { 'true' } else { 'false' }
 $xellEnabled = if ($LowLatency -eq 'XeLL') { 'true' } else { 'false' }
 $xellPolicy = if ($LowLatency -eq 'XeLL') { 4 } else { 0 }
 $vsyncName = if ($NoVSync) { 'off' } else { 'on' }
+$frameLimitName = if ($NoFrameLimit) { 'off' } else { 'on' }
 $portableDir = Join-Path $build 'portable'
 $configRoot = if (Test-Path -LiteralPath $portableDir -PathType Container) { $portableDir } else { $build }
 $configPath = Join-Path $configRoot 'melonDS.toml'
@@ -143,6 +150,9 @@ $metadata = Join-Path $out "$RunId.metadata.txt"
 $metadataJson = Join-Path $out "$RunId.metadata.json"
 $runManifest = Join-Path $out "$RunId.run-manifest.json"
 $screenshot = Join-Path $out "$RunId.display.png"
+$windowCaptureDirectory = if ($CaptureFrames -gt 0) {
+    Join-Path $out "$RunId.window"
+} else { $null }
 $frameDumpTrigger = if ($null -ne $statePath) {
     Join-Path $out "$RunId.gpu2d-frame.trigger"
 } else {
@@ -151,6 +161,10 @@ $frameDumpTrigger = if ($null -ne $statePath) {
 foreach ($path in @($csv, $frameCsv, $buildInfoStdout, $buildInfoStderr, $stdout, $stderr, $telemetryLog, $harness,
         $metadata, $metadataJson, $runManifest, $screenshot, $frameDumpTrigger)) {
     if (Test-Path -LiteralPath $path) { throw "Refusing to overwrite artifact: $path" }
+}
+if ($null -ne $windowCaptureDirectory -and
+    (Test-Path -LiteralPath $windowCaptureDirectory)) {
+    throw "Refusing to overwrite artifact directory: $windowCaptureDirectory"
 }
 
 # A GUI-subsystem executable does not always inherit PowerShell's stdout
@@ -261,7 +275,7 @@ $cfg = @"
 Screen.UseGL = $useGL
 Screen.VSync = $(if ($NoVSync) { 'false' } else { 'true' })
 Screen.VSyncInterval = 1
-LimitFPS = true
+LimitFPS = $(if ($NoFrameLimit) { 'false' } else { 'true' })
 TargetFPS = 60.0
 3D.Vulkan.PresentPacingPolicy = 0
 3D.DX12.NvidiaReflexMode = $reflexMode
@@ -317,6 +331,10 @@ function Send-Key([string]$keys) {
 }
 
 function Capture-Display {
+    return Capture-DisplayToPath $screenshot
+}
+
+function Capture-DisplayToPath([string]$path) {
     $rect = [MpRendererPerfRect]::new()
     if (-not [MpRendererPerfWin]::GetWindowRect($window, [ref]$rect)) { return $false }
     $width = $rect.Right - $rect.Left
@@ -327,9 +345,31 @@ function Capture-Display {
     $dc = $graphics.GetHdc()
     try { [void][MpRendererPerfWin]::PrintWindow($window, $dc, 2) }
     finally { $graphics.ReleaseHdc($dc); $graphics.Dispose() }
-    $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bitmap.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
     $bitmap.Dispose()
     return $true
+}
+
+function Capture-ContinuousDisplay {
+    if ($CaptureFrames -le 0) { return }
+    New-Item -ItemType Directory -Force -Path $windowCaptureDirectory | Out-Null
+    [void](Record-Phase 'window_capture_start')
+    $captureStart = [Diagnostics.Stopwatch]::GetTimestamp()
+    for ($index = 0; $index -lt $CaptureFrames -and $null -ne $proc -and -not $proc.HasExited; $index++) {
+        $path = Join-Path $windowCaptureDirectory ('window-{0:D3}.png' -f $index)
+        $captured = Capture-DisplayToPath $path
+        Add-Content -LiteralPath $harness -Value (
+            "window_capture index=$index success=$captured path=$path monotonic_ticks=$([Diagnostics.Stopwatch]::GetTimestamp())")
+        $targetTicks = $captureStart + [Int64](($index + 1) * $CaptureIntervalMs * $stopwatchFrequency / 1000.0)
+        do {
+            $remainingTicks = $targetTicks - [Diagnostics.Stopwatch]::GetTimestamp()
+            if ($remainingTicks -le 0) { break }
+            $remainingMs = [Math]::Max(1, [Math]::Min(25,
+                [Math]::Ceiling(1000.0 * $remainingTicks / $stopwatchFrequency)))
+            Start-Sleep -Milliseconds $remainingMs
+        } while ($true)
+    }
+    [void](Record-Phase 'window_capture_end')
 }
 
 function Run-Action([string]$name) {
@@ -395,6 +435,7 @@ try {
     $header = 'renderer=' + $Renderer + [Environment]::NewLine +
         'scale=' + $Scale + [Environment]::NewLine +
         'vsync=' + $vsyncName + [Environment]::NewLine +
+        'frame_limit=' + $frameLimitName + [Environment]::NewLine +
         'low_latency=' + $LowLatency + [Environment]::NewLine +
         'hud=' + $Hud + [Environment]::NewLine +
         'action=' + $Action + [Environment]::NewLine +
@@ -431,6 +472,7 @@ try {
     [void](Record-Phase 'warmup_end')
     [void](Record-Phase 'measurement_start')
     foreach ($name in $actionSequence) { Run-Action $name }
+    Capture-ContinuousDisplay
     Start-Sleep -Seconds $MeasuredSeconds
     [void](Record-Phase 'measurement_end')
     if ($GraceSeconds -gt 0) {
@@ -548,6 +590,7 @@ $manifestObject = [ordered]@{
         renderer_id = $rendererId
         scale = $Scale
         vsync = $vsyncName
+        frame_limit = $frameLimitName
         low_latency = $LowLatency
         hud = $Hud
         action = $Action
@@ -558,6 +601,8 @@ $manifestObject = [ordered]@{
         warmup_seconds = $WarmupSeconds
         measured_seconds = $MeasuredSeconds
         grace_seconds = $GraceSeconds
+        window_capture_frames = $CaptureFrames
+        window_capture_interval_ms = if ($CaptureFrames -gt 0) { $CaptureIntervalMs } else { $null }
     }
     fixture = [ordered]@{
         rom = $romPath
@@ -606,6 +651,7 @@ $manifestObject = [ordered]@{
         harness = $harness
         metadata = $metadata
         display_capture = $screenshot
+        window_capture_directory = $windowCaptureDirectory
         gpu2d_frame_dump_trigger = $frameDumpTrigger
     }
     validation = [ordered]@{
@@ -632,6 +678,7 @@ renderer=$Renderer
 renderer_id=$rendererId
 scale=$Scale
 vsync=$vsyncName
+frame_limit=$frameLimitName
 low_latency=$LowLatency
 hud=$Hud
 action=$Action
@@ -699,6 +746,7 @@ Write-Host "run_id             : $RunId"
 Write-Host "renderer           : $Renderer"
 Write-Host "scale              : $Scale"
 Write-Host "vsync              : $vsyncName"
+Write-Host "frame limit        : $frameLimitName"
 Write-Host "low latency        : $LowLatency"
 Write-Host "process exit       : $exitCode"
 Write-Host "config restore     : $(if ($configRestored) { 'PASS' } else { 'FAIL' })"

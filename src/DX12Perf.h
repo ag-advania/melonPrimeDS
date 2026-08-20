@@ -153,12 +153,17 @@ enum class Counter : u32
     NativeGPU2DLogicalGpuTimeNs,
     NativeGPU2DCaptureGpuTimeNs,
     NativeGPU2DResolveGpuTimeNs,
+    NativeGPU2DObjRawGpuNs,
     RecorderBlocksScanned,
     RecorderBytesScanned,
     RecorderBlocksCopied,
     RecorderBytesCopied,
     CaptureCPU2DLines,
     CaptureCPU2DNs,
+    GPU2DRecorderNs,
+    TimelineRowDedupNs,
+    SpriteTimelineRowDedupNs,
+    NativeGPU2DPackNs,
     CompositorGpuTimeNs,
     PresentWaitNs,
     DX12SurfaceEventCount,
@@ -472,10 +477,13 @@ inline void MaybeReport()
         "native_readback_wait_ns=%llu screen_copy_B=%llu screen_copy_gpu_ns=%llu "
          "direct_image_frames=%llu fallback_buffer_frames=%llu hud_upload_B=%llu hud_recreates=%llu "
          "native_gpu2d_logical_ns=%llu native_gpu2d_capture_ns=%llu "
-         "native_gpu2d_resolve_ns=%llu recorder_blocks_scanned=%llu "
+         "native_gpu2d_resolve_ns=%llu native_gpu2d_obj_raw_ns=%llu "
+         "recorder_blocks_scanned=%llu "
          "recorder_bytes_scanned=%llu recorder_blocks_copied=%llu "
          "recorder_bytes_copied=%llu capture_cpu_2d_lines=%llu "
-         "capture_cpu_2d_ns=%llu compositor_gpu_ns=%llu present_wait_ns=%llu\n",
+         "capture_cpu_2d_ns=%llu gpu2d_recorder_ns=%llu "
+         "timeline_row_dedup_ns=%llu sprite_timeline_row_dedup_ns=%llu "
+         "native_gpu2d_pack_ns=%llu compositor_gpu_ns=%llu present_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::IdenticalFrames),
@@ -537,10 +545,32 @@ inline void MaybeReport()
          count(Counter::NativeGPU2DLogicalGpuTimeNs),
          count(Counter::NativeGPU2DCaptureGpuTimeNs),
          count(Counter::NativeGPU2DResolveGpuTimeNs),
+         count(Counter::NativeGPU2DObjRawGpuNs),
          count(Counter::RecorderBlocksScanned), count(Counter::RecorderBytesScanned),
          count(Counter::RecorderBlocksCopied), count(Counter::RecorderBytesCopied),
          count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
+         count(Counter::GPU2DRecorderNs), count(Counter::TimelineRowDedupNs),
+         count(Counter::SpriteTimelineRowDedupNs), count(Counter::NativeGPU2DPackNs),
          count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
+
+    const double reportSeconds = std::chrono::duration<double>(
+        now - state.LastReport).count();
+    std::fprintf(stderr,
+        "[DX12Perf] rate interval_s=%.3f emulated_fps=%.3f "
+        "compose_fps=%.3f presented_fps=%.3f "
+        "native_gpu2d_raw_ms=%.3f native_gpu2d_logical_ms=%.3f "
+        "timeline_cpu_ms=%.3f sprite_timeline_cpu_ms=%.3f "
+        "native_gpu2d_pack_ms=%.3f\n",
+        reportSeconds,
+        reportSeconds > 0.0 ? count(Counter::Frames) / reportSeconds : 0.0,
+        reportSeconds > 0.0 ? count(Counter::NativeGPU2DFrames) / reportSeconds : 0.0,
+        reportSeconds > 0.0
+            ? count(Counter::DX12PresentSuccessCount) / reportSeconds : 0.0,
+        static_cast<double>(count(Counter::NativeGPU2DObjRawGpuNs)) / 1000000.0,
+        static_cast<double>(count(Counter::NativeGPU2DLogicalGpuTimeNs)) / 1000000.0,
+        static_cast<double>(count(Counter::TimelineRowDedupNs)) / 1000000.0,
+        static_cast<double>(count(Counter::SpriteTimelineRowDedupNs)) / 1000000.0,
+        static_cast<double>(count(Counter::NativeGPU2DPackNs)) / 1000000.0);
 
     std::fprintf(stderr,
         "[DX12Perf] surface surface_event_count=%llu "
@@ -675,8 +705,11 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
       DX12VendorPacingAuthority, DX12ReflexMode, DX12BackBufferCount,
       DX12PresenterLogicalDepth, NativeGPU2DLogicalGpuTimeNs,
       NativeGPU2DCaptureGpuTimeNs, NativeGPU2DResolveGpuTimeNs,
+      NativeGPU2DObjRawGpuNs,
       RecorderBlocksScanned, RecorderBytesScanned, RecorderBlocksCopied,
       RecorderBytesCopied, CaptureCPU2DLines, CaptureCPU2DNs,
+      GPU2DRecorderNs, TimelineRowDedupNs, SpriteTimelineRowDedupNs,
+      NativeGPU2DPackNs,
       CompositorGpuTimeNs, PresentWaitNs,
       DX12SurfaceEventCount, DX12SurfaceSnapshotPublishCount,
       DX12NativeIdentityGenerationChangeCount, DX12PresenterReinitCount,

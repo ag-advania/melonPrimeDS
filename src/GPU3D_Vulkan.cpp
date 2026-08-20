@@ -3564,6 +3564,9 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         ComposeFrames, GpuMetric::NativeGPU2DResolve,
         VulkanPerf::Counter::NativeGPU2DResolveGpuTimeNs);
     RecordVulkanGpuMetric(
+        ComposeFrames, GpuMetric::NativeGPU2DRaw,
+        VulkanPerf::Counter::NativeGPU2DObjRawGpuNs);
+    RecordVulkanGpuMetric(
         ComposeFrames, GpuMetric::NativeGPU2DResolve,
         VulkanPerf::Counter::CompositorGpuTimeNs);
 
@@ -3571,6 +3574,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         input, outputSlot.UploadedNativeGeneration,
         !outputSlot.NativeUploadInitialized);
     const bool fullNativeUpload = !outputSlot.NativeUploadInitialized;
+    const u64 packStartNs = static_cast<u64>(std::chrono::duration_cast<
+        std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
     u32* staging = static_cast<u32*>(outputSlot.NativeStaging.GetMappedPointer());
     bool packedNativeInput = staging != nullptr;
     if (packedNativeInput)
@@ -3598,6 +3603,10 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("the native GPU2D input staging upload failed");
         return false;
     }
+    const u64 packEndNs = static_cast<u64>(std::chrono::duration_cast<
+        std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DPackNs,
+        packEndNs - packStartNs);
     VulkanPerf::AddCounter(VulkanPerf::Counter::RecorderBlocksScanned,
         input.Recorder.BlocksScanned);
     VulkanPerf::AddCounter(VulkanPerf::Counter::RecorderBytesScanned,
@@ -3610,6 +3619,12 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         input.Recorder.CaptureCPU2DLines);
     VulkanPerf::AddCounter(VulkanPerf::Counter::CaptureCPU2DNs,
         input.Recorder.CaptureCPU2DNs);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::GPU2DRecorderNs,
+        input.Recorder.GPU2DRecorderNs);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::TimelineRowDedupNs,
+        input.Recorder.TimelineRowDedupNs);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::SpriteTimelineRowDedupNs,
+        input.Recorder.SpriteTimelineRowDedupNs);
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DInputPackBytes,
         uploadPlan.TotalBytes);
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DVRAMUploadBytes,
@@ -3754,7 +3769,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
-                DivRoundUp(256u, 8u), 1u, 1u);
+                DivRoundUp(256u, 128u), 2u, 1u);
             BufferBarrier(cmd, &nativeCapture, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -3765,7 +3780,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
-                DivRoundUp(256u, 8u), 1u, 1u);
+                DivRoundUp(256u, 128u), 2u, 1u);
             BufferBarrier(cmd, &nativeCapture, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -3776,8 +3791,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
-                DivRoundUp(static_cast<u32>(ScaleFactor), 8u), 1u);
+                DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
+                static_cast<u32>(ScaleFactor), 1u);
             BufferBarrier(cmd, &nativeCapture, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -3800,7 +3815,13 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         push.Padding = 32u;
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
             VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
-        fns.CmdDispatch(cmd, DivRoundUp(256u, 8u), DivRoundUp(384u, 8u), 1u);
+        ComposeFrames.WriteTimestamp(
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, false));
+        fns.CmdDispatch(cmd, DivRoundUp(256u, 128u), 384u, 1u);
+        ComposeFrames.WriteTimestamp(
+            VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+            GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, true));
         BufferBarrier(cmd, &nativeCapture, 1,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -3810,7 +3831,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         push.Padding = 16u;
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
             VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
-        fns.CmdDispatch(cmd, DivRoundUp(256u, 8u), DivRoundUp(384u, 8u), 1u);
+        fns.CmdDispatch(cmd, DivRoundUp(256u, 128u), 384u, 1u);
         VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 2u);
     }
     ComposeFrames.WriteTimestamp(

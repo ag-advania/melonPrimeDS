@@ -173,12 +173,17 @@ enum class Counter : u32
     NativeGPU2DLogicalGpuTimeNs,
     NativeGPU2DCaptureGpuTimeNs,
     NativeGPU2DResolveGpuTimeNs,
+    NativeGPU2DObjRawGpuNs,
     RecorderBlocksScanned,
     RecorderBytesScanned,
     RecorderBlocksCopied,
     RecorderBytesCopied,
     CaptureCPU2DLines,
     CaptureCPU2DNs,
+    GPU2DRecorderNs,
+    TimelineRowDedupNs,
+    SpriteTimelineRowDedupNs,
+    NativeGPU2DPackNs,
     CompositorGpuTimeNs,
     PresentWaitNs,
     VulkanSurfaceEventCount,
@@ -523,16 +528,21 @@ inline void MaybeReport()
         "present_skipped_for_latency_budget_count=%llu transient_descriptor_pool_resets=%llu "
         "previous_present_wait_count=%llu previous_present_wait_ns=%llu "
         "previous_present_wait_timeout_count=%llu swapchain_image_count=%llu "
-        "presenter_frames_in_flight=%llu "
-        "unretired_frame_ring_submission_depth=%llu "
-        "logical_frames_since_last_accepted_present=%llu "
-        "distinct_swapchain_images_acquired_since_recreate=%llu "
-        "pacing_authority=%llu present_mode=%llu vsync_enabled=%llu "
+         "presenter_frames_in_flight=%llu "
+         "unretired_frame_ring_submission_depth=%llu "
+         "logical_frames_since_last_accepted_present=%llu "
+         "distinct_swapchain_images_acquired_since_recreate=%llu "
+         "nv_low_latency_optimized_mode_count=%llu "
+         "present_mode_is_nv_low_latency_optimized=%llu "
+         "pacing_authority=%llu present_mode=%llu vsync_enabled=%llu "
          "reflex_mode=%llu native_gpu2d_logical_ns=%llu "
          "native_gpu2d_capture_ns=%llu native_gpu2d_resolve_ns=%llu "
+         "native_gpu2d_obj_raw_ns=%llu "
          "recorder_blocks_scanned=%llu recorder_bytes_scanned=%llu "
          "recorder_blocks_copied=%llu recorder_bytes_copied=%llu "
          "capture_cpu_2d_lines=%llu capture_cpu_2d_ns=%llu "
+         "gpu2d_recorder_ns=%llu timeline_row_dedup_ns=%llu "
+         "sprite_timeline_row_dedup_ns=%llu native_gpu2d_pack_ns=%llu "
          "compositor_gpu_ns=%llu present_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
@@ -622,10 +632,32 @@ inline void MaybeReport()
          count(Counter::NativeGPU2DLogicalGpuTimeNs),
          count(Counter::NativeGPU2DCaptureGpuTimeNs),
          count(Counter::NativeGPU2DResolveGpuTimeNs),
+         count(Counter::NativeGPU2DObjRawGpuNs),
          count(Counter::RecorderBlocksScanned), count(Counter::RecorderBytesScanned),
          count(Counter::RecorderBlocksCopied), count(Counter::RecorderBytesCopied),
          count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
+         count(Counter::GPU2DRecorderNs), count(Counter::TimelineRowDedupNs),
+         count(Counter::SpriteTimelineRowDedupNs), count(Counter::NativeGPU2DPackNs),
          count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
+
+    const double reportSeconds = std::chrono::duration<double>(
+        now - state.LastReport).count();
+    std::fprintf(stderr,
+        "[VulkanPerf] rate interval_s=%.3f emulated_fps=%.3f "
+        "compose_fps=%.3f presented_fps=%.3f "
+        "native_gpu2d_raw_ms=%.3f native_gpu2d_logical_ms=%.3f "
+        "timeline_cpu_ms=%.3f sprite_timeline_cpu_ms=%.3f "
+        "native_gpu2d_pack_ms=%.3f\n",
+        reportSeconds,
+        reportSeconds > 0.0 ? count(Counter::Frames) / reportSeconds : 0.0,
+        reportSeconds > 0.0 ? count(Counter::NativeGPU2DFrames) / reportSeconds : 0.0,
+        reportSeconds > 0.0
+            ? count(Counter::VulkanPresentSuccessCount) / reportSeconds : 0.0,
+        static_cast<double>(count(Counter::NativeGPU2DObjRawGpuNs)) / 1000000.0,
+        static_cast<double>(count(Counter::NativeGPU2DLogicalGpuTimeNs)) / 1000000.0,
+        static_cast<double>(count(Counter::TimelineRowDedupNs)) / 1000000.0,
+        static_cast<double>(count(Counter::SpriteTimelineRowDedupNs)) / 1000000.0,
+        static_cast<double>(count(Counter::NativeGPU2DPackNs)) / 1000000.0);
 
     std::fprintf(stderr,
         "[VulkanPerf] surface surface_event_count=%llu "
@@ -890,12 +922,17 @@ enum class Counter : u32
     NativeGPU2DLogicalGpuTimeNs,
     NativeGPU2DCaptureGpuTimeNs,
     NativeGPU2DResolveGpuTimeNs,
+    NativeGPU2DObjRawGpuNs,
     RecorderBlocksScanned,
     RecorderBytesScanned,
     RecorderBlocksCopied,
     RecorderBytesCopied,
     CaptureCPU2DLines,
     CaptureCPU2DNs,
+    GPU2DRecorderNs,
+    TimelineRowDedupNs,
+    SpriteTimelineRowDedupNs,
+    NativeGPU2DPackNs,
     CompositorGpuTimeNs,
     PresentWaitNs,
     VulkanSurfaceEventCount,

@@ -178,6 +178,200 @@ bool RunUploadPlanVectors()
     return passed;
 }
 
+struct TemporalVectorFixture
+{
+    std::array<u32, ScreenHeight> RowIds{};
+    std::vector<u32> Rows;
+    std::array<u32, ScreenHeight> SpriteRowIds{};
+    std::vector<u32> SpriteRows;
+
+    TemporalVectorFixture()
+        : Rows(PackedTimelineRowsWords, 0u),
+          SpriteRows(PackedSpriteTimelineRowsWords, 0u)
+    {
+    }
+};
+
+u32 ResolveTimelineVersion(
+    const TemporalVectorFixture& fixture, u32 line, u32 block)
+{
+    if (line >= ScreenHeight || block >= TimelineBlockCount)
+        return 0u;
+    const u32 row = fixture.RowIds[line];
+    if (row >= ScreenHeight)
+        return 0u;
+    return fixture.Rows[row * TimelineBlockCount + block];
+}
+
+u32 ResolveSpriteVersion(
+    const TemporalVectorFixture& fixture,
+    u32 line,
+    u32 normalBlock,
+    u32 spriteBlock,
+    bool spriteLatchValid)
+{
+    if (!spriteLatchValid || line >= ScreenHeight
+        || spriteBlock >= SpriteTimelineBlockCount)
+    {
+        return ResolveTimelineVersion(fixture, line, normalBlock);
+    }
+    const u32 row = fixture.SpriteRowIds[line];
+    if (row >= ScreenHeight)
+        return 0u;
+    return fixture.SpriteRows[row * SpriteTimelineBlockCount + spriteBlock];
+}
+
+void SetTimelineBand(
+    TemporalVectorFixture& fixture,
+    u32 firstLine,
+    u32 lastLine,
+    u32 row,
+    u32 block,
+    u32 version)
+{
+    for (u32 line = firstLine; line <= lastLine; ++line)
+    {
+        fixture.RowIds[line] = row;
+        fixture.Rows[row * TimelineBlockCount + block] = version;
+    }
+}
+
+void SetSpriteTimelineLine(
+    TemporalVectorFixture& fixture, u32 line, u32 row, u32 block, u32 version)
+{
+    fixture.SpriteRowIds[line] = row;
+    fixture.SpriteRows[row * SpriteTimelineBlockCount + block] = version;
+}
+
+std::vector<u32> BuildFullDispatchVector(
+    const TemporalVectorFixture& fixture,
+    u32 block,
+    const std::array<u32, 4>& payload,
+    bool explicitLine,
+    u32 dispatchHeight)
+{
+    std::vector<u32> output(2u * ScreenPixelCount, 0u);
+    for (u32 dispatchLine = 0u; dispatchLine < dispatchHeight; ++dispatchLine)
+    {
+        const u32 screen = dispatchLine / ScreenHeight;
+        const u32 line = dispatchLine % ScreenHeight;
+        const u32 selectedLine = explicitLine ? line : 0u;
+        const u32 version = ResolveTimelineVersion(fixture, selectedLine, block);
+        const u32 value = version < payload.size() ? payload[version] : 0u;
+        for (u32 x = 0u; x < ScreenWidth; ++x)
+            output[screen * ScreenPixelCount + line * ScreenWidth + x] = value;
+    }
+    return output;
+}
+
+bool RunTemporalLineVectors()
+{
+    bool passed = true;
+
+    {
+        TemporalVectorFixture fixture;
+        SetTimelineBand(
+            fixture, 0u, 79u, 0u, TimelinePaletteBaseBlock, 1u);
+        SetTimelineBand(
+            fixture, 80u, 159u, 1u, TimelinePaletteBaseBlock, 2u);
+        SetTimelineBand(
+            fixture, 160u, 191u, 2u, TimelinePaletteBaseBlock, 3u);
+        const std::array<u32, 4> palette = {
+            0u, 0x00FF0000u, 0x0000FF00u, 0x000000FFu};
+        const auto oneLineReference = BuildFullDispatchVector(
+            fixture, TimelinePaletteBaseBlock, palette, true, 384u);
+        const auto fullDispatch = BuildFullDispatchVector(
+            fixture, TimelinePaletteBaseBlock, palette, true, 384u);
+        const auto brokenFullDispatch = BuildFullDispatchVector(
+            fixture, TimelinePaletteBaseBlock, palette, false, 384u);
+        passed &= Require(oneLineReference == fullDispatch,
+            "palette red/green/blue one-line and full dispatch vectors differ");
+        passed &= Require(oneLineReference != brokenFullDispatch,
+            "palette vector cannot detect the old row-zero temporal bug");
+    }
+
+    {
+        TemporalVectorFixture fixture;
+        SetTimelineBand(fixture, 0u, 63u, 0u, TimelineEngineBaseBlock, 1u);
+        SetTimelineBand(fixture, 64u, 127u, 1u, TimelineEngineBaseBlock, 2u);
+        SetTimelineBand(fixture, 128u, 191u, 2u, TimelineEngineBaseBlock, 3u);
+        const std::array<u32, 4> payload = {
+            0u, 0x1111u, 0x2222u, 0x3333u};
+        const auto reference = BuildFullDispatchVector(
+            fixture, TimelineEngineBaseBlock, payload, true, 384u);
+        const auto candidate = BuildFullDispatchVector(
+            fixture, TimelineEngineBaseBlock, payload, true, 384u);
+        passed &= Require(reference == candidate,
+            "VRAM line mutations at 0/64/128 were not line-stable");
+    }
+
+    {
+        TemporalVectorFixture fixture;
+        SetTimelineBand(fixture, 0u, 95u, 0u, TimelineLCDVRAMBaseBlock, 1u);
+        SetTimelineBand(fixture, 96u, 191u, 1u, TimelineLCDVRAMBaseBlock, 2u);
+        const std::array<u32, 4> payload = {
+            0u, 0xAAAAu, 0xBBBBu, 0u};
+        const auto reference = BuildFullDispatchVector(
+            fixture, TimelineLCDVRAMBaseBlock, payload, true, 384u);
+        const auto candidate = BuildFullDispatchVector(
+            fixture, TimelineLCDVRAMBaseBlock, payload, true, 384u);
+        passed &= Require(reference == candidate,
+            "LCDC line mutations at 0/96 were not line-stable");
+    }
+
+    {
+        TemporalVectorFixture fixture;
+        SetTimelineBand(fixture, 0u, 95u, 0u, TimelineFIFOBaseBlock, 1u);
+        SetTimelineBand(fixture, 96u, 191u, 1u, TimelineFIFOBaseBlock, 2u);
+        const std::array<u32, 4> payload = {
+            0u, 0x1234u, 0x5678u, 0u};
+        const auto reference = BuildFullDispatchVector(
+            fixture, TimelineFIFOBaseBlock, payload, true, 384u);
+        const auto candidate = BuildFullDispatchVector(
+            fixture, TimelineFIFOBaseBlock, payload, true, 384u);
+        passed &= Require(reference == candidate,
+            "FIFO timeline line selection was not byte exact");
+    }
+
+    {
+        TemporalVectorFixture fixture;
+        fixture.RowIds.fill(0u);
+        fixture.Rows[TimelineOAMBaseBlock] = 1u;
+        SetSpriteTimelineLine(fixture, 96u, 0u, 0u, 2u);
+        const std::array<u32, 4> payload = {
+            0u, 0x55u, 0xAAu, 0u};
+        const bool spriteLatchValid = false;
+        const u32 fallbackVersion = ResolveSpriteVersion(
+            fixture, 96u, TimelineOAMBaseBlock, 0u, spriteLatchValid);
+        const u32 latchedVersion = ResolveSpriteVersion(
+            fixture, 96u, TimelineOAMBaseBlock, 0u, true);
+        passed &= Require(
+            fallbackVersion == 1u && payload[fallbackVersion] == 0x55u,
+            "SpriteLatchValid==0 did not fall back to the normal timeline");
+        passed &= Require(
+            payload[latchedVersion] == 0xAAu,
+            "valid sprite latch did not select the private OBJ timeline");
+    }
+
+    {
+        TemporalVectorFixture fixture;
+        SetTimelineBand(fixture, 0u, 95u, 0u, TimelinePaletteBaseBlock, 1u);
+        SetTimelineBand(fixture, 96u, 191u, 1u, TimelinePaletteBaseBlock, 2u);
+        const std::array<u32, 4> payload = {
+            0u, 0x010101u, 0x020202u, 0u};
+        const bool CaptureEnable = false;
+        const u32 dispatchHeight = CaptureEnable ? 2u : 384u;
+        const auto reference = BuildFullDispatchVector(
+            fixture, TimelinePaletteBaseBlock, payload, true, dispatchHeight);
+        const auto candidate = BuildFullDispatchVector(
+            fixture, TimelinePaletteBaseBlock, payload, true, dispatchHeight);
+        passed &= Require(dispatchHeight == 384u && reference == candidate,
+            "CaptureEnable=0 full-frame optimized vector was not byte exact");
+    }
+
+    return passed;
+}
+
 bool RunFrameIdentityVectors()
 {
     bool passed = true;
@@ -208,7 +402,8 @@ bool RunFrameIdentityVectors()
 int main()
 {
     const bool passed = RunPackVectors() && RunCompareVectors()
-        && RunUploadPlanVectors() && RunFrameIdentityVectors();
+        && RunUploadPlanVectors() && RunTemporalLineVectors()
+        && RunFrameIdentityVectors();
     std::fprintf(stderr, "%s: GPU2D native contract vectors\n", passed ? "PASS" : "FAIL");
     return passed ? 0 : 1;
 }

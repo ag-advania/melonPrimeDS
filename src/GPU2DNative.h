@@ -223,6 +223,10 @@ struct RecorderMetrics
     u64 BytesCopied = 0;
     u64 CaptureCPU2DLines = 0;
     u64 CaptureCPU2DNs = 0;
+    u64 GPU2DRecorderNs = 0;
+    u64 TimelineRowDedupNs = 0;
+    u64 SpriteTimelineRowDedupNs = 0;
+    u64 NativeGPU2DPackNs = 0;
 };
 
 struct UploadPlan
@@ -273,6 +277,13 @@ struct FrameInput
     // packed ABI; shader-visible indices still point at ordinary full blocks.
     std::array<u64, TimelineHashTableSize> TimelineHashKeys{};
     std::array<u32, TimelineHashTableSize> TimelineHashVersions{};
+    // Row hashes use a separate namespace from payload-block hashes. A row
+    // hit is always verified with a full memcmp, so collisions cannot alter
+    // the shader-visible timeline.
+    std::array<u64, TimelineHashTableSize> TimelineRowHashKeys{};
+    std::array<u32, TimelineHashTableSize> TimelineRowHashRows{};
+    std::array<u64, TimelineHashTableSize> SpriteTimelineRowHashKeys{};
+    std::array<u32, TimelineHashTableSize> SpriteTimelineRowHashRows{};
     // Byte ranges in the serialized frame that changed since the previous
     // frame. They are metadata only and are not part of PackedFrameWords.
     std::array<DirtyRange, MaxDirtyRanges> DirtyRanges{};
@@ -436,6 +447,7 @@ private:
     bool PendingSpriteLatchReady = false;
     u32 LastJournalSequence = 0u;
     std::array<GPU2DWriteJournalEntry, GPU2DWriteJournalCapacity> JournalScratch{};
+    u64 RecorderStartNs = 0u;
     u32 CaptureStartLine = CaptureStartLineNone;
     u32 CaptureStateCnt = 0u;
     bool CaptureStateEnabled = false;

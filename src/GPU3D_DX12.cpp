@@ -3330,6 +3330,9 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         slot.Commands, GpuMetric::NativeGPU2DResolve,
         DX12Perf::Counter::NativeGPU2DResolveGpuTimeNs);
     RecordDX12GpuMetric(
+        slot.Commands, GpuMetric::NativeGPU2DRaw,
+        DX12Perf::Counter::NativeGPU2DObjRawGpuNs);
+    RecordDX12GpuMetric(
         slot.Commands, GpuMetric::NativeGPU2DResolve,
         DX12Perf::Counter::CompositorGpuTimeNs);
 
@@ -3337,6 +3340,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         input, slot.UploadedNativeGeneration,
         !slot.NativeUploadInitialized);
     const bool fullNativeUpload = !slot.NativeUploadInitialized;
+    const u64 packStartNs = static_cast<u64>(std::chrono::duration_cast<
+        std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
     u32* staging = slot.NativeMapped;
     bool packedNativeInput = staging != nullptr;
     if (packedNativeInput)
@@ -3352,6 +3357,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("the native GPU2D input staging upload failed");
         return false;
     }
+    const u64 packEndNs = static_cast<u64>(std::chrono::duration_cast<
+        std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+    DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DPackNs,
+        packEndNs - packStartNs);
     DX12Perf::AddCounter(DX12Perf::Counter::RecorderBlocksScanned,
         input.Recorder.BlocksScanned);
     DX12Perf::AddCounter(DX12Perf::Counter::RecorderBytesScanned,
@@ -3364,6 +3373,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         input.Recorder.CaptureCPU2DLines);
     DX12Perf::AddCounter(DX12Perf::Counter::CaptureCPU2DNs,
         input.Recorder.CaptureCPU2DNs);
+    DX12Perf::AddCounter(DX12Perf::Counter::GPU2DRecorderNs,
+        input.Recorder.GPU2DRecorderNs);
+    DX12Perf::AddCounter(DX12Perf::Counter::TimelineRowDedupNs,
+        input.Recorder.TimelineRowDedupNs);
+    DX12Perf::AddCounter(DX12Perf::Counter::SpriteTimelineRowDedupNs,
+        input.Recorder.SpriteTimelineRowDedupNs);
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DInputPackBytes,
         uploadPlan.TotalBytes);
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DVRAMUploadBytes,
@@ -3500,21 +3515,21 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             constants.Pad = 32u | 8u; // native raw OBJ plane, two logical screens
             SetDispatchConstants(list, constants);
             list->SetPipelineState(PipelineGPU2DNative.Get());
-            list->Dispatch(DivRoundUp(256u, 8u), 1u, 1u);
+            list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
             InsertUavBarrier(list, BlendStateBuffer.Get());
 
             constants.Pad = 16u | 8u; // native logical one-line pass
             SetDispatchConstants(list, constants);
             list->SetPipelineState(PipelineGPU2DNative.Get());
-            list->Dispatch(DivRoundUp(256u, 8u), 1u, 1u);
+            list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
             InsertUavBarrier(list, BlendStateBuffer.Get());
 
             constants.Pad = 4u; // capture-only, one logical line
             SetDispatchConstants(list, constants);
             list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
             list->Dispatch(
-                DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
-                DivRoundUp(static_cast<u32>(ScaleFactor), 8u), 1u);
+                DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
+                static_cast<u32>(ScaleFactor), 1u);
             InsertUavBarrier(list, BlendStateBuffer.Get());
             InsertUavBarrier(list, CaptureSidecarBuffer.Get());
             DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 3u);
@@ -3528,12 +3543,16 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         constants.InterpSpanCount = 0u;
         constants.Pad = 32u;
         SetDispatchConstants(list, constants);
-        list->Dispatch(DivRoundUp(256u, 8u), DivRoundUp(384u, 8u), 1u);
+        slot.Commands.WriteTimestamp(
+            GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, false));
+        list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
+        slot.Commands.WriteTimestamp(
+            GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, true));
         InsertUavBarrier(list, BlendStateBuffer.Get());
 
         constants.Pad = 16u;
         SetDispatchConstants(list, constants);
-        list->Dispatch(DivRoundUp(256u, 8u), DivRoundUp(384u, 8u), 1u);
+        list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
         DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 2u);
     }
     slot.Commands.WriteTimestamp(

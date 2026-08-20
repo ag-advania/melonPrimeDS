@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
 
@@ -77,6 +78,12 @@ void MarkDirtyRange(FrameInput& input, u32 offset, u32 size) noexcept
         return;
     }
     input.DirtyRanges[input.DirtyRangeCount++] = {offset, size};
+}
+
+u64 NowNanoseconds() noexcept
+{
+    return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
 void CopyChangedBlocks(
@@ -282,6 +289,21 @@ u64 HashTimelineBlock(const u8* source) noexcept
     {
         hash ^= source[i];
         hash *= 1099511628211ull;
+    }
+    return hash == 0u ? 1u : hash;
+}
+
+u64 HashTimelineWords(const u32* source, u32 wordCount) noexcept
+{
+    u64 hash = 1469598103934665603ull;
+    for (u32 i = 0; i < wordCount; ++i)
+    {
+        const u32 word = source[i];
+        for (u32 byte = 0; byte < sizeof(word); ++byte)
+        {
+            hash ^= (word >> (byte * 8u)) & 0xFFu;
+            hash *= 1099511628211ull;
+        }
     }
     return hash == 0u ? 1u : hash;
 }
@@ -546,8 +568,11 @@ void FrameRecorder::Reset() noexcept
     LineSeen.fill(false);
     EngineLineCount[0] = 0;
     EngineLineCount[1] = 0;
-    CurrentEngine[0] = {};
-    CurrentEngine[1] = {};
+    // MemorySnapshot contains the full private BG/OBJ mirrors. Value-assigning
+    // either element materializes an ~800 KiB temporary on the Windows thread
+    // stack, which makes the developer purity command overflow before the
+    // recorder runs. The aggregate is trivially copyable, so clear it in place.
+    std::memset(CurrentEngine, 0, sizeof(CurrentEngine));
     CurrentPalette.fill(0u);
     CurrentOAM.fill(0u);
     CurrentDisplayFIFO.fill(0u);
@@ -565,6 +590,7 @@ void FrameRecorder::Reset() noexcept
     CaptureStartLine = CaptureStartLineNone;
     CaptureStateCnt = 0u;
     CaptureStateEnabled = false;
+    RecorderStartNs = 0u;
 }
 
 void FrameRecorder::BeginFrame(u64 frame) noexcept
@@ -583,6 +609,7 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         std::fill(Input.SpriteTimelineRowIds.begin(), Input.SpriteTimelineRowIds.end(), 0xFFFFFFFFu);
         Input.DirtyRangeCount = 0u;
     }
+    Input.Recorder = {};
     Input.Generation.Frame = frame;
     if (hadPreviousFrame)
     {
@@ -615,6 +642,12 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     std::fill(Input.SpriteTimelineRowIds.begin(), Input.SpriteTimelineRowIds.end(), 0xFFFFFFFFu);
     std::fill(Input.TimelineHashKeys.begin(), Input.TimelineHashKeys.end(), 0u);
     std::fill(Input.TimelineHashVersions.begin(), Input.TimelineHashVersions.end(), 0u);
+    std::fill(Input.TimelineRowHashKeys.begin(), Input.TimelineRowHashKeys.end(), 0u);
+    std::fill(Input.TimelineRowHashRows.begin(), Input.TimelineRowHashRows.end(), 0xFFFFFFFFu);
+    std::fill(Input.SpriteTimelineRowHashKeys.begin(),
+        Input.SpriteTimelineRowHashKeys.end(), 0u);
+    std::fill(Input.SpriteTimelineRowHashRows.begin(),
+        Input.SpriteTimelineRowHashRows.end(), 0xFFFFFFFFu);
     MemoryBaselineReady = false;
     CurrentTimelineVersion.fill(0u);
     Input.TimelineRowCount = 0u;
@@ -631,6 +664,7 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     CaptureStartLine = CaptureStartLineNone;
     CaptureStateCnt = 0u;
     CaptureStateEnabled = false;
+    RecorderStartNs = NowNanoseconds();
 }
 
 void FrameRecorder::CaptureAllMappedMemoryForLine() noexcept
@@ -948,10 +982,13 @@ void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
     if (line >= ScreenHeight)
         return;
 
+    const u64 dedupStartNs = NowNanoseconds();
     constexpr u32 invalidRow = 0xFFFFFFFFu;
     const u32 oldRow = Input.SpriteTimelineRowIds[line];
     u32 row = invalidRow;
-    bool newRow = false;
+    u64 rowHash = 0u;
+    u32 emptyHashSlot = TimelineHashTableSize;
+    bool hashMatched = false;
     if (line != 0u
         && Input.TimelineMutationSerial == LastSpriteTimelineMutationSerial
         && Input.SpriteTimelineRowIds[line - 1u] != invalidRow)
@@ -960,37 +997,49 @@ void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
     }
     else
     {
-        auto rowMatches = [&](u32 candidate) {
-            const u32* destination = Input.SpriteTimelineRows.data()
-                + static_cast<std::size_t>(candidate) * SpriteTimelineBlockCount;
-            for (u32 block = 0; block < SpriteTimelineOAMBlocks; ++block)
-            {
-                if (destination[block]
-                    != CurrentTimelineVersion[TimelineOAMBaseBlock + block])
-                    return false;
-            }
-            for (u32 engine = 0; engine < 2u; ++engine)
-            {
-                const u32 sourceBase = TimelineEngineBaseBlock
-                    + engine * TimelineEngineBlocks + TimelineEngineBGBlocks;
-                const u32 destinationBase = SpriteTimelineOAMBlocks
-                    + engine * SpriteTimelineEngineOBJBlocks;
-                for (u32 block = 0; block < SpriteTimelineEngineOBJBlocks; ++block)
-                {
-                    if (destination[destinationBase + block]
-                        != CurrentTimelineVersion[sourceBase + block])
-                        return false;
-                }
-            }
-            return true;
-        };
-        for (u32 candidate = 0; candidate < Input.SpriteTimelineRowCount; ++candidate)
+        std::array<u32, SpriteTimelineBlockCount> current{};
+        for (u32 block = 0; block < SpriteTimelineOAMBlocks; ++block)
+            current[block] = CurrentTimelineVersion[TimelineOAMBaseBlock + block];
+        for (u32 engine = 0; engine < 2u; ++engine)
         {
-            if (rowMatches(candidate))
+            const u32 sourceBase = TimelineEngineBaseBlock
+                + engine * TimelineEngineBlocks + TimelineEngineBGBlocks;
+            const u32 destinationBase = SpriteTimelineOAMBlocks
+                + engine * SpriteTimelineEngineOBJBlocks;
+            for (u32 block = 0; block < SpriteTimelineEngineOBJBlocks; ++block)
             {
-                row = candidate;
+                current[destinationBase + block] =
+                    CurrentTimelineVersion[sourceBase + block];
+            }
+        }
+
+        rowHash = HashTimelineWords(current.data(), SpriteTimelineBlockCount);
+        constexpr u32 hashMask = TimelineHashTableSize - 1u;
+        u32 slot = static_cast<u32>(rowHash) & hashMask;
+        for (u32 probe = 0; probe < TimelineHashTableSize; ++probe)
+        {
+            const u64 storedHash = Input.SpriteTimelineRowHashKeys[slot];
+            if (storedHash == 0u)
+            {
+                emptyHashSlot = slot;
                 break;
             }
+            if (storedHash == rowHash)
+            {
+                const u32 candidate = Input.SpriteTimelineRowHashRows[slot];
+                if (candidate < Input.SpriteTimelineRowCount
+                    && std::memcmp(
+                        Input.SpriteTimelineRows.data()
+                            + static_cast<std::size_t>(candidate) * SpriteTimelineBlockCount,
+                        current.data(),
+                        SpriteTimelineBlockCount * sizeof(u32)) == 0)
+                {
+                    row = candidate;
+                    hashMatched = true;
+                    break;
+                }
+            }
+            slot = (slot + 1u) & hashMask;
         }
         if (row == invalidRow)
         {
@@ -1004,25 +1053,20 @@ void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
                 row = Input.SpriteTimelineRowCount++;
                 u32* destination = Input.SpriteTimelineRows.data()
                     + static_cast<std::size_t>(row) * SpriteTimelineBlockCount;
-                for (u32 block = 0; block < SpriteTimelineOAMBlocks; ++block)
-                    destination[block] = CurrentTimelineVersion[TimelineOAMBaseBlock + block];
-                for (u32 engine = 0; engine < 2u; ++engine)
-                {
-                    const u32 sourceBase = TimelineEngineBaseBlock
-                        + engine * TimelineEngineBlocks + TimelineEngineBGBlocks;
-                    const u32 destinationBase = SpriteTimelineOAMBlocks
-                        + engine * SpriteTimelineEngineOBJBlocks;
-                    for (u32 block = 0; block < SpriteTimelineEngineOBJBlocks; ++block)
-                        destination[destinationBase + block] =
-                            CurrentTimelineVersion[sourceBase + block];
-                }
+                std::memcpy(
+                    destination, current.data(), SpriteTimelineBlockCount * sizeof(u32));
                 MarkDirtyRange(
                     Input,
                     PackedSpriteTimelineRowsBase * sizeof(u32)
                         + row * SpriteTimelineBlockCount * sizeof(u32),
                     SpriteTimelineBlockCount * sizeof(u32));
-                newRow = true;
             }
+        }
+        if (!hashMatched && row != invalidRow
+            && emptyHashSlot != TimelineHashTableSize)
+        {
+            Input.SpriteTimelineRowHashKeys[emptyHashSlot] = rowHash;
+            Input.SpriteTimelineRowHashRows[emptyHashSlot] = row;
         }
     }
     Input.SpriteTimelineRowIds[line] = row;
@@ -1034,7 +1078,7 @@ void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
             sizeof(u32));
     }
     LastSpriteTimelineMutationSerial = Input.TimelineMutationSerial;
-    (void)newRow;
+    Input.Recorder.SpriteTimelineRowDedupNs += NowNanoseconds() - dedupStartNs;
 }
 
 void FrameRecorder::ApplyPendingSpriteLatch() noexcept
@@ -1152,9 +1196,13 @@ void FrameRecorder::FillTimelineLine(u32 line) noexcept
     if (line >= ScreenHeight)
         return;
 
+    const u64 dedupStartNs = NowNanoseconds();
     constexpr u32 invalidRow = 0xFFFFFFFFu;
     const u32 oldRow = Input.TimelineRowIds[line];
     u32 row = invalidRow;
+    u64 rowHash = 0u;
+    u32 emptyHashSlot = TimelineHashTableSize;
+    bool hashMatched = false;
     if (line != 0u
         && Input.TimelineMutationSerial == LastTimelineMutationSerial
         && Input.TimelineRowIds[line - 1u] != invalidRow)
@@ -1163,18 +1211,33 @@ void FrameRecorder::FillTimelineLine(u32 line) noexcept
     }
     else
     {
-        for (u32 candidate = 0; candidate < Input.TimelineRowCount; ++candidate)
+        rowHash = HashTimelineWords(CurrentTimelineVersion.data(), TimelineBlockCount);
+        constexpr u32 hashMask = TimelineHashTableSize - 1u;
+        u32 slot = static_cast<u32>(rowHash) & hashMask;
+        for (u32 probe = 0; probe < TimelineHashTableSize; ++probe)
         {
-            const u32* source = Input.TimelineRows.data()
-                + static_cast<std::size_t>(candidate) * TimelineBlockCount;
-            if (std::memcmp(
-                    source,
-                    CurrentTimelineVersion.data(),
-                    TimelineBlockCount * sizeof(u32)) == 0)
+            const u64 storedHash = Input.TimelineRowHashKeys[slot];
+            if (storedHash == 0u)
             {
-                row = candidate;
+                emptyHashSlot = slot;
                 break;
             }
+            if (storedHash == rowHash)
+            {
+                const u32 candidate = Input.TimelineRowHashRows[slot];
+                if (candidate < Input.TimelineRowCount
+                    && std::memcmp(
+                        Input.TimelineRows.data()
+                            + static_cast<std::size_t>(candidate) * TimelineBlockCount,
+                        CurrentTimelineVersion.data(),
+                        TimelineBlockCount * sizeof(u32)) == 0)
+                {
+                    row = candidate;
+                    hashMatched = true;
+                    break;
+                }
+            }
+            slot = (slot + 1u) & hashMask;
         }
         if (row == invalidRow)
         {
@@ -1198,6 +1261,12 @@ void FrameRecorder::FillTimelineLine(u32 line) noexcept
                     TimelineBlockCount * sizeof(u32));
             }
         }
+        if (!hashMatched && row != invalidRow
+            && emptyHashSlot != TimelineHashTableSize)
+        {
+            Input.TimelineRowHashKeys[emptyHashSlot] = rowHash;
+            Input.TimelineRowHashRows[emptyHashSlot] = row;
+        }
     }
     Input.TimelineRowIds[line] = row;
     if (oldRow != row)
@@ -1208,6 +1277,7 @@ void FrameRecorder::FillTimelineLine(u32 line) noexcept
             sizeof(u32));
     }
     LastTimelineMutationSerial = Input.TimelineMutationSerial;
+    Input.Recorder.TimelineRowDedupNs += NowNanoseconds() - dedupStartNs;
 }
 
 void FrameRecorder::CaptureLine(
@@ -1313,6 +1383,11 @@ void FrameRecorder::SnapshotEngine(u32 engine) noexcept
 
 void FrameRecorder::FinalizeMemory() noexcept
 {
+    if (RecorderStartNs != 0u)
+    {
+        Input.Recorder.GPU2DRecorderNs += NowNanoseconds() - RecorderStartNs;
+        RecorderStartNs = 0u;
+    }
     if (EngineLineCount[0] != ScreenHeight || EngineLineCount[1] != ScreenHeight)
         return;
     if (!MemoryBaselineReady)

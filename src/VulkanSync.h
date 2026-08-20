@@ -28,6 +28,7 @@
 #include "VulkanDevice.h"
 #include "VulkanLoader.h"
 #include "VulkanPresenterFrameBudget.h"
+#include "GpuStageMetrics.h"
 
 namespace melonDS::Vk
 {
@@ -209,6 +210,8 @@ struct FrameContext
     bool TimestampResultsAvailable = false;
     bool TimestampQueriesReset = false;
     bool TimestampQueriesWritten = false;
+    u32 TimestampWrittenMask = 0;
+    u32 LastTimestampWrittenMask = 0;
 #endif
 };
 

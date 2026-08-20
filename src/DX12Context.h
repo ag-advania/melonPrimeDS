@@ -31,6 +31,7 @@
 
 #include "DX12Common.h"
 #include "DX12MemoryAdmission.h"
+#include "GpuStageMetrics.h"
 
 namespace melonDS
 {
@@ -174,7 +175,7 @@ class DX12CommandContext
 {
 public:
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
-    static constexpr u32 TimestampQueryCount = 10;
+    static constexpr u32 TimestampQueryCount = GpuMetricQueryCount;
 #endif
 
     bool Init(ID3D12Device* device, ID3D12CommandQueue* queue);
@@ -256,8 +257,8 @@ private:
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     u64 TimestampFrequency = 0;
     std::chrono::steady_clock::time_point LastTimestampFrequencyRefresh{};
-    u16 TimestampWrittenMask = 0;
-    u16 LastTimestampWrittenMask = 0;
+    u32 TimestampWrittenMask = 0;
+    u32 LastTimestampWrittenMask = 0;
     mutable std::array<u64, TimestampQueryCount> TimestampSnapshotValues{};
     mutable bool TimestampSnapshotValid = false;
     bool TimestampQueriesEnabled = false;

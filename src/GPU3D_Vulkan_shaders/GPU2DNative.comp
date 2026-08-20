@@ -14,7 +14,10 @@
 #include "Common.glsl"
 #include "Presentation.glsl"
 
-layout (local_size_x = 8, local_size_y = 8) in;
+// One workgroup covers half a logical scanline.  128 is the Vulkan minimum
+// for maxComputeWorkGroupInvocations, so the raw OBJ path remains portable;
+// two groups cover x=0..255 while each group shares one decoded OAM/list.
+layout (local_size_x = 128, local_size_y = 1) in;
 
 layout (std430, set = 0, binding = 12) readonly buffer NativeGPU2DInputBuffer
 {
@@ -46,6 +49,11 @@ layout (std430, set = 0, binding = 15) buffer NativeCaptureBuffer
 
 layout (set = 0, binding = 17, rgba8) writeonly uniform image2D NativeDirectOutputTop;
 layout (set = 0, binding = 18, rgba8) writeonly uniform image2D NativeDirectOutputBottom;
+
+shared uint NativeOAMCache[512];
+shared uint NativeActiveSprites[128];
+shared uint NativeActiveFlags[128];
+shared uint NativeActiveCount;
 
 // The C++ serializer in GPU2DNative.h is intentionally fixed-width.  Keep the
 // offsets here literal and audit-friendly; a drift is a shader ABI break.
@@ -170,9 +178,8 @@ uint EngineWord(uint engine, uint section, uint word)
     return NativeGPU2DInput[kEngineBase + engine * kEngineWords + section + word];
 }
 
-uint TimelineVersion(uint block)
+uint TimelineVersion(uint line, uint block)
 {
-    uint line = uint(max(pc.CaptureYOffset, 0));
     if (line >= 192u || block >= kTimelineBlockCount)
         return 0u;
     uint row = NativeGPU2DInput[kTimelineRowIdBase + line];
@@ -186,7 +193,7 @@ uint SpriteTimelineVersion(uint engine, uint line, uint block)
 {
     if (line >= 192u
         || (LineWord(engine, line, kSpriteLatchValid) & 1u) == 0u)
-        return TimelineVersion(block);
+        return TimelineVersion(line, block);
 
     uint spriteBlock = 0u;
     if (block >= kTimelineOAMBaseBlock
@@ -199,12 +206,12 @@ uint SpriteTimelineVersion(uint engine, uint line, uint block)
         uint objBase = kTimelineEngineBaseBlock
             + engine * kTimelineEngineBlocks + kTimelineEngineBGBlocks;
         if (block < objBase || block >= objBase + kTimelineEngineOBJBlocks)
-            return TimelineVersion(block);
+            return TimelineVersion(line, block);
         spriteBlock = kSpriteTimelineOAMBlocks
             + engine * kSpriteTimelineEngineOBJBlocks + (block - objBase);
     }
     if (spriteBlock >= kSpriteTimelineBlockCount)
-        return TimelineVersion(block);
+        return TimelineVersion(line, block);
     uint row = NativeGPU2DInput[kSpriteTimelineRowIdBase + line];
     if (row >= 192u)
         return 0u;
@@ -213,6 +220,7 @@ uint SpriteTimelineVersion(uint engine, uint line, uint block)
 }
 
 uint MemoryByte(
+    uint line,
     uint base,
     uint size,
     uint address,
@@ -221,7 +229,7 @@ uint MemoryByte(
     if (size == 0u)
         return 0u;
     uint offset = address & (size - 1u);
-    uint version = TimelineVersion(timelineBlockBase + offset / 512u);
+    uint version = TimelineVersion(line, timelineBlockBase + offset / 512u);
     uint word = version == 0u
         ? NativeGPU2DInput[base + (offset >> 2u)]
         : NativeGPU2DInput[
@@ -230,10 +238,11 @@ uint MemoryByte(
     return (word >> ((offset & 3u) * 8u)) & 0xFFu;
 }
 
-uint Memory16(uint base, uint size, uint address, uint timelineBlockBase)
+uint Memory16(
+    uint line, uint base, uint size, uint address, uint timelineBlockBase)
 {
-    return MemoryByte(base, size, address, timelineBlockBase)
-        | (MemoryByte(base, size, address + 1u, timelineBlockBase) << 8u);
+    return MemoryByte(line, base, size, address, timelineBlockBase)
+        | (MemoryByte(line, base, size, address + 1u, timelineBlockBase) << 8u);
 }
 
 uint SpriteMemoryByte(
@@ -275,16 +284,18 @@ uint OBJSize(uint engine) { return NativeGPU2DInput[17u + engine * 4u]; }
 uint BGExtSize(uint engine) { return NativeGPU2DInput[18u + engine * 4u]; }
 uint OBJExtSize(uint engine) { return NativeGPU2DInput[19u + engine * 4u]; }
 
-uint BGByte(uint engine, uint address)
+uint BGByte(uint engine, uint line, uint address)
 {
     return MemoryByte(
+        line,
         kEngineBase + engine * kEngineWords, BGSize(engine), address,
         kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks);
 }
 
-uint BG16(uint engine, uint address)
+uint BG16(uint engine, uint line, uint address)
 {
     return Memory16(
+        line,
         kEngineBase + engine * kEngineWords, BGSize(engine), address,
         kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks);
 }
@@ -307,18 +318,20 @@ uint OBJ16(uint engine, uint line, uint address)
             + kTimelineEngineBGBlocks);
 }
 
-uint BGExt16(uint engine, uint address)
+uint BGExt16(uint engine, uint line, uint address)
 {
     return Memory16(
+        line,
         kEngineBase + engine * kEngineWords + kBGWords + kOBJWords,
         BGExtSize(engine), address,
         kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
             + kTimelineEngineBGBlocks + kTimelineEngineOBJBlocks);
 }
 
-uint OBJExt16(uint engine, uint address)
+uint OBJExt16(uint engine, uint line, uint address)
 {
     return Memory16(
+        line,
         kEngineBase + engine * kEngineWords + kBGWords + kOBJWords + kBGExtWords,
         OBJExtSize(engine), address,
         kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
@@ -326,10 +339,11 @@ uint OBJExt16(uint engine, uint address)
             + kTimelineEngineBGExtBlocks);
 }
 
-uint Palette16(uint engine, uint byteAddress)
+uint Palette16(uint engine, uint line, uint byteAddress)
 {
     uint base = kPaletteBase + (engine == 0u ? 0u : 0x400u) / 4u;
     return Memory16(
+        line,
         base, 0x400u, byteAddress,
         kTimelinePaletteBaseBlock + engine * 2u);
 }
@@ -342,10 +356,15 @@ uint OAM16(uint engine, uint line, uint byteAddress)
         kTimelineOAMBaseBlock + engine * 2u);
 }
 
-uint FIFO16(uint index)
+uint CachedOAM16(uint byteAddress)
+{
+    return NativeOAMCache[(byteAddress & 0x3FFu) >> 1u];
+}
+
+uint FIFO16(uint line, uint index)
 {
     uint offset = (index & 0xFFu) * 2u;
-    uint version = TimelineVersion(kTimelineFIFOBaseBlock);
+    uint version = TimelineVersion(line, kTimelineFIFOBaseBlock);
     uint word = version == 0u
         ? NativeGPU2DInput[kFIFOBase + (offset >> 2u)]
         : NativeGPU2DInput[
@@ -354,10 +373,11 @@ uint FIFO16(uint index)
     return (word >> ((offset & 2u) * 8u)) & 0xFFFFu;
 }
 
-uint LCD16(uint bank, uint byteAddress)
+uint LCD16(uint line, uint bank, uint byteAddress)
 {
     uint offset = byteAddress & 0x1FFFFu;
     uint version = TimelineVersion(
+        line,
         kTimelineLCDVRAMBaseBlock + bank * 256u + offset / 512u);
     uint word = version == 0u
         ? NativeCaptureState[uint(FramebufferStride) + bank * 32768u
@@ -443,10 +463,10 @@ Pixel LoadNativeObjRaw(
     return pixel;
 }
 
-Pixel BackdropPixel(uint engine)
+Pixel BackdropPixel(uint engine, uint line)
 {
     Pixel p = EmptyPixel();
-    p.Color = ConvertBGR555(Palette16(engine, 0u), 0x20u);
+    p.Color = ConvertBGR555(Palette16(engine, line, 0u), 0x20u);
     p.Flag = 0x20u;
     p.Present = 1u;
     p.Priority = 4u;
@@ -465,6 +485,35 @@ int SpriteHeight(uint value)
     const int table[16] = int[16](8, 8, 16, 8, 16, 8, 32, 8,
         32, 16, 32, 8, 64, 32, 64, 8);
     return table[value & 15u];
+}
+
+bool NativeSpriteActiveForLine(uint line, uint sprite, bool collectWindow)
+{
+    uint a0 = CachedOAM16(sprite * 8u);
+    uint a1 = CachedOAM16(sprite * 8u + 2u);
+    uint spriteType = (a0 >> 8u) & 3u;
+    if (spriteType == 2u)
+        return false;
+    bool isWindow = ((a0 >> 10u) & 3u) == 2u;
+    if (isWindow && !collectWindow)
+        return false;
+    uint sizeParam = (a0 >> 14u) | ((a1 >> 12u) & 0xCu);
+    int width = SpriteWidth(sizeParam);
+    int height = SpriteHeight(sizeParam);
+    int boundWidth = width;
+    int boundHeight = height;
+    if (spriteType == 3u)
+    {
+        boundWidth <<= 1;
+        boundHeight <<= 1;
+    }
+    int y = int(line) - int(a0 & 0xFFu);
+    if ((uint(y) & 0xFFu) >= uint(boundHeight))
+        return false;
+    int xpos = (int(a1 << 23u)) >> 23;
+    if (xpos <= -boundWidth || xpos >= 256)
+        return false;
+    return true;
 }
 
 uint WindowSelect(uint engine, uint line, int x, uint objWindow)
@@ -512,10 +561,11 @@ uint BGPalette(uint engine, uint line, uint bg, uint palette, uint index)
         uint slot = bg;
         if (bg < 2u && (bgcnt & (1u << 13u)) != 0u)
             slot += 2u;
-        return BGExt16(engine, (slot * 4096u) + palette * 512u + index * 2u);
+        return BGExt16(engine, line,
+            (slot * 4096u) + palette * 512u + index * 2u);
     }
     uint base = engine == 0u ? 0u : 0x400u;
-    return Palette16(engine, base + palette * 32u + index * 2u);
+    return Palette16(engine, line, base + palette * 32u + index * 2u);
 }
 
 Pixel BGText(uint engine, uint line, uint bg, int x)
@@ -556,7 +606,7 @@ Pixel BGText(uint engine, uint line, uint bg, int x)
     }
     uint wide = (bgcnt & (1u << 14u)) != 0u ? 0x100u : 0u;
     mapOffset += ((xoff & 0xF8u) >> 2u) + ((xoff & wide) << 3u);
-    uint map = BG16(engine, mapOffset);
+    uint map = BG16(engine, line, mapOffset);
     uint tileX = (map & (1u << 10u)) != 0u ? 7u - (xoff & 7u) : xoff & 7u;
     uint tileY = (map & (1u << 11u)) != 0u ? 7u - (yoff & 7u) : yoff & 7u;
     uint tileOffset;
@@ -565,7 +615,7 @@ Pixel BGText(uint engine, uint line, uint bg, int x)
     if ((bgcnt & (1u << 7u)) != 0u)
     {
         tileOffset = tileBase + (map & 0x3FFu) * 64u + tileY * 8u + tileX;
-        index = BGByte(engine, tileOffset);
+        index = BGByte(engine, line, tileOffset);
         palette = (LineWord(engine, line, kDispCnt) & (1u << 30u)) != 0u
             ? map >> 12u : 0u;
         p.Present = index == 0u ? 0u : 1u;
@@ -573,7 +623,7 @@ Pixel BGText(uint engine, uint line, uint bg, int x)
     else
     {
         tileOffset = tileBase + (map & 0x3FFu) * 32u + tileY * 4u + (tileX >> 1u);
-        uint packed = BGByte(engine, tileOffset);
+        uint packed = BGByte(engine, line, tileOffset);
         index = (tileX & 1u) != 0u ? packed >> 4u : packed & 0xFu;
         palette = map >> 12u;
         p.Present = index == 0u ? 0u : 1u;
@@ -616,11 +666,12 @@ Pixel BGAffine(uint engine, uint line, uint bg, int x, bool large)
         uint mapBase = (bgcnt & 0x1F00u) << 6u;
         uint address = mapBase + ((uint(fy) & ym) >> 8u) * (1u << shifts[sizeParam])
             + ((uint(fx) & xm) >> 8u);
-        uint index = BGByte(engine, address);
+        uint index = BGByte(engine, line, address);
         if (index != 0u)
         {
             p.Color = ConvertBGR555(
-                Palette16(engine, engine == 0u ? index * 2u : 0x400u + index * 2u),
+                Palette16(engine, line,
+                    engine == 0u ? index * 2u : 0x400u + index * 2u),
                 1u << bg);
             p.Present = 1u;
         }
@@ -644,14 +695,15 @@ Pixel BGAffine(uint engine, uint line, uint bg, int x, bool large)
         : 0u;
     tileBase += (bgcnt & 0x003Cu) << 12u;
     mapBase += (bgcnt & 0x1F00u) << 3u;
-    uint map = BG16(engine,
+    uint map = BG16(engine, line,
         mapBase + ((((uint(fy) & coordMask) >> 11u) << yShift)
         + ((uint(fx) & coordMask) >> 11u)) * 2u);
     uint tileX = (uint(fx) >> 8u) & 7u;
     uint tileY = (uint(fy) >> 8u) & 7u;
     if ((map & (1u << 10u)) != 0u) tileX = 7u - tileX;
     if ((map & (1u << 11u)) != 0u) tileY = 7u - tileY;
-    uint index = BGByte(engine, tileBase + (map & 0x3FFu) * 64u + tileY * 8u + tileX);
+    uint index = BGByte(engine, line,
+        tileBase + (map & 0x3FFu) * 64u + tileY * 8u + tileX);
     if (index != 0u)
     {
         p.Color = ConvertBGR555(BGPalette(engine, line, bg, 0u, index), 1u << bg);
@@ -700,7 +752,7 @@ Pixel BGExtended(uint engine, uint line, uint bg, int x)
             + ((uint(fx) & xMask) >> 8u));
         if ((bgcnt & (1u << 2u)) != 0u)
         {
-            uint color = BG16(engine, address * 2u);
+            uint color = BG16(engine, line, address * 2u);
             if ((color & 0x8000u) != 0u)
             {
                 p.Color = ConvertBGR555(color & 0x7FFFu, 1u << bg);
@@ -709,7 +761,7 @@ Pixel BGExtended(uint engine, uint line, uint bg, int x)
         }
         else
         {
-            uint color = BGByte(engine, address);
+            uint color = BGByte(engine, line, address);
             if (color != 0u)
             {
                 p.Color = ConvertBGR555(BGPalette(engine, line, bg, 0u, color), 1u << bg);
@@ -721,7 +773,7 @@ Pixel BGExtended(uint engine, uint line, uint bg, int x)
     {
         uint coordMask = uint[4](0x07800u, 0x0F800u, 0x1F800u, 0x3F800u)[sizeParam];
         uint mapShift = uint[4](7u, 8u, 9u, 10u)[sizeParam] - 3u;
-        uint map = BG16(engine,
+        uint map = BG16(engine, line,
             ((bgcnt & 0x1F00u) << 3u)
             + ((((uint(fy) & coordMask) >> 11u) << mapShift)
             + ((uint(fx) & coordMask) >> 11u)) * 2u);
@@ -729,7 +781,7 @@ Pixel BGExtended(uint engine, uint line, uint bg, int x)
         uint tileY = (uint(fy) >> 8u) & 7u;
         if ((map & (1u << 10u)) != 0u) tileX = 7u - tileX;
         if ((map & (1u << 11u)) != 0u) tileY = 7u - tileY;
-        uint color = BGByte(engine,
+        uint color = BGByte(engine, line,
             ((bgcnt & 0x003Cu) << 12u) + (map & 0x3FFu) * 64u
             + tileY * 8u + tileX);
         if (color != 0u)
@@ -806,11 +858,12 @@ Pixel ObjRawPixel(
     if (LineWord(engine, line, kOBJEnable) == 0u)
         return selected;
     uint bestPriority = 4u;
-    for (uint sprite = 0u; sprite < 128u; ++sprite)
+    for (uint activeIndex = 0u; activeIndex < NativeActiveCount; ++activeIndex)
     {
-        uint a0 = OAM16(engine, line, sprite * 8u + 0u);
-        uint a1 = OAM16(engine, line, sprite * 8u + 2u);
-        uint a2 = OAM16(engine, line, sprite * 8u + 4u);
+        uint sprite = NativeActiveSprites[activeIndex];
+        uint a0 = CachedOAM16(sprite * 8u + 0u);
+        uint a1 = CachedOAM16(sprite * 8u + 2u);
+        uint a2 = CachedOAM16(sprite * 8u + 4u);
         uint spriteType = (a0 >> 8u) & 3u;
         if (spriteType == 2u)
             continue;
@@ -861,10 +914,10 @@ Pixel ObjRawPixel(
         if (rotScale)
         {
             uint rot = (a1 >> 9u) & 0x1Fu;
-            matrixA = int(OAM16(engine, line, rot * 32u + 6u));
-            matrixB = int(OAM16(engine, line, rot * 32u + 14u));
-            matrixC = int(OAM16(engine, line, rot * 32u + 22u));
-            matrixD = int(OAM16(engine, line, rot * 32u + 30u));
+            matrixA = int(CachedOAM16(rot * 32u + 6u));
+            matrixB = int(CachedOAM16(rot * 32u + 14u));
+            matrixC = int(CachedOAM16(rot * 32u + 22u));
+            matrixD = int(CachedOAM16(rot * 32u + 30u));
             if ((matrixA & 0x8000) != 0) matrixA -= 0x10000;
             if ((matrixB & 0x8000) != 0) matrixB -= 0x10000;
             if ((matrixC & 0x8000) != 0) matrixC -= 0x10000;
@@ -953,11 +1006,12 @@ Pixel ObjRawPixel(
                 opaque = color != 0u;
                 if (opaque && (dispCnt & (1u << 31u)) != 0u)
                 {
-                    color = OBJExt16(engine,
+                    color = OBJExt16(engine, line,
                         ((a2 & 0xF000u) >> 4u) + color * 2u);
                 }
                 else if (opaque)
-                    color = Palette16(engine, (engine == 0u ? 0x200u : 0x600u) + color * 2u);
+                    color = Palette16(engine, line,
+                        (engine == 0u ? 0x200u : 0x600u) + color * 2u);
                 flag = mode == 1u ? 0x80u : 0x10u;
             }
             else
@@ -970,7 +1024,7 @@ Pixel ObjRawPixel(
                 color = (sx & 1) != 0 ? packed >> 4u : packed & 0xFu;
                 opaque = color != 0u;
                 if (opaque)
-                    color = Palette16(engine,
+                    color = Palette16(engine, line,
                         (engine == 0u ? 0x200u : 0x600u)
                         + ((a2 >> 12u) & 0xFu) * 32u + color * 2u);
                 flag = mode == 1u ? 0x80u : 0x10u;
@@ -1088,7 +1142,7 @@ CompositeLayers Composite2DLayers(
     uint outputX, uint outputY, bool logical)
 {
     CompositeLayers result;
-    result.First = BackdropPixel(engine);
+    result.First = BackdropPixel(engine, line);
     result.Second = EmptyPixel();
     result.Effect = 0u;
     result.Eva = LineWord(engine, line, kEVA);
@@ -1224,12 +1278,12 @@ uint DisplayPixel(
         if ((map & (1u << bank)) == 0u)
             return 0u;
         return ApplyMasterNative(
-            ConvertVRAMDisplay(LCD16(bank, line * 512u + uint(x) * 2u)),
+            ConvertVRAMDisplay(LCD16(line, bank, line * 512u + uint(x) * 2u)),
             LineWord(engine, line, kMasterBrightness));
     }
     if (mode == 3u && engine == 0u)
         return ApplyMasterNative(
-            ConvertVRAMDisplay(FIFO16(uint(x))),
+            ConvertVRAMDisplay(FIFO16(line, uint(x))),
             LineWord(engine, line, kMasterBrightness));
     return ApplyMasterNative(
         Composite2D(screen, engine, line, x, outputX, outputY),
@@ -1259,7 +1313,7 @@ uint CaptureRawFromColor6(uint color)
 uint CaptureSourceB(uint line, uint x, uint captureCnt)
 {
     if ((captureCnt & (1u << 25u)) != 0u)
-        return FIFO16(x);
+        return FIFO16(line, x);
 
     uint dispCnt = LineWord(0u, line, kDispCnt);
     uint bank = (dispCnt >> 18u) & 3u;
@@ -1268,7 +1322,7 @@ uint CaptureSourceB(uint line, uint x, uint captureCnt)
     uint address = line * 512u + x * 2u;
     if (((dispCnt >> 16u) & 3u) != 2u)
         address += ((captureCnt >> 26u) & 3u) << 14u;
-    return LCD16(bank, address);
+    return LCD16(line, bank, address);
 }
 
 uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
@@ -1513,6 +1567,29 @@ void WriteNativeObjRawPixel(
     StoreNativeObjRaw(screen, line, x, raw, windowSelected);
 }
 
+void PrepareNativeObjRawLine(
+    uint engine, uint line, bool collectWindow, uint lane)
+{
+    for (uint word = lane; word < 512u; word += 128u)
+        NativeOAMCache[word] = OAM16(engine, line, word * 2u);
+    barrier();
+
+    NativeActiveFlags[lane] = NativeSpriteActiveForLine(
+        line, lane, collectWindow) ? 1u : 0u;
+    barrier();
+
+    if (lane == 0u)
+    {
+        NativeActiveCount = 0u;
+        for (uint sprite = 0u; sprite < 128u; ++sprite)
+        {
+            if (NativeActiveFlags[sprite] != 0u)
+                NativeActiveSprites[NativeActiveCount++] = sprite;
+        }
+    }
+    barrier();
+}
+
 void main()
 {
     uvec2 id = gl_GlobalInvocationID.xy;
@@ -1526,6 +1603,14 @@ void main()
         uint line = logicalLine
             ? uint(max(pc.CaptureYOffset, 0)) : id.y % 192u;
         uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
+        uint layerEnable = LineWord(engine, line, kLayerEnable);
+        uint dispCnt = LineWord(engine, line, kDispCnt);
+        bool objEnabled = (layerEnable & (1u << 4u)) != 0u
+            && LineWord(engine, line, kOBJEnable) != 0u;
+        bool collectWindow = objEnabled && (dispCnt & (1u << 15u)) != 0u
+            && (dispCnt & 0xE000u) != 0u;
+        PrepareNativeObjRawLine(
+            engine, line, collectWindow, gl_LocalInvocationID.x);
         WriteNativeObjRawPixel(screen, line, id.x, engine);
         return;
     }

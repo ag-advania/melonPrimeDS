@@ -17,6 +17,7 @@ namespace melonDS
 enum class GpuMetric : u32
 {
     Raster = 0,
+    NativeGPU2DRaw,
     NativeGPU2DLogical,
     NativeGPU2DCapture,
     NativeGPU2DResolve,
@@ -31,6 +32,11 @@ constexpr u32 GpuMetricQueryIndex(GpuMetric metric, bool end) noexcept
 {
     return static_cast<u32>(metric) * 2u + (end ? 1u : 0u);
 }
+
+// Every metric owns a start/end query pair. Keep the backend query pools in
+// lockstep with this enum so adding a stage cannot silently truncate later
+// metrics or make their query indices overlap an unrelated backend field.
+constexpr u32 GpuMetricQueryCount = static_cast<u32>(GpuMetric::Count) * 2u;
 
 } // namespace melonDS
 
