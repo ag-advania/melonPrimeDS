@@ -406,6 +406,12 @@ public:
     void SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept;
     const Renderer& GetRenderer() const noexcept { return *Rend; }
     Renderer& GetRenderer() noexcept { return *Rend; }
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    // Developer-only proof hook. It materializes one native-owned capture
+    // block through the normal renderer authority path; shipping code has no
+    // mapped-capture CPU readback entry point.
+    void MaterializeVRAMCaptureBlockForGPU2DProof(u32 block);
+#endif
 
     // return value for GetFramebuffers:
     // true -> pointers to RAM framebuffers are returned via the parameters

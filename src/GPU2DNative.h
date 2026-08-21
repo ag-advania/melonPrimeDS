@@ -311,6 +311,21 @@ inline constexpr u32 PackedSpriteTimelineRowIdWords = ScreenHeight;
 inline constexpr u32 PackedSpriteTimelineRowsWords =
     SpriteTimelineBlockCount * ScreenHeight;
 
+// A-D capture ownership is resolved at the 16 KiB logical mapping
+// granularity used by VRAMCNT. The native shader uses these rows to restore
+// GPU-resident capture bytes after the CPU flatten has deliberately omitted
+// stale native-owned bytes. BG and OBJ keep separate current-line/latch
+// timelines because DrawSprites(line) prepares the OBJ line consumed by the
+// following scanline.
+inline constexpr u32 NativeCaptureBGMappingStride = 32u + 8u;
+inline constexpr u32 NativeCaptureOBJMappingStride = 16u + 8u;
+inline constexpr u32 NativeCaptureBGMappingWords =
+    ScreenHeight * NativeCaptureBGMappingStride;
+inline constexpr u32 NativeCaptureOBJMappingWords =
+    ScreenHeight * NativeCaptureOBJMappingStride;
+inline constexpr u32 NativeCaptureSpriteOBJMappingWords =
+    ScreenHeight * NativeCaptureOBJMappingStride;
+
 struct DirtyRange
 {
     u32 Offset = 0;
@@ -332,7 +347,35 @@ struct RecorderMetrics
     u64 TimelineRowDedupNs = 0;
     u64 SpriteTimelineRowDedupNs = 0;
     u64 NativeGPU2DPackNs = 0;
+    // A valid shipping frame must keep this at zero: native-owned A-D
+    // capture bytes are resolved in the GPU shader overlay, never by a host
+    // VRAM read. Developer proof materialization intentionally increments it.
+    u64 NativeOwnedMappedCpuRead = 0;
+    u64 NativeOwnedMappedCpuMaterialized = 0;
 };
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+inline constexpr u32 MaxMappedCaptureViolations = 128u;
+
+struct MappedCaptureViolation
+{
+    u64 Frame = 0;
+    u32 Line = CaptureStartLineNone;
+    u32 Engine = 0;
+    u32 Section = 0;
+    u32 LogicalAddress = 0;
+    u32 MappingIndex = 0;
+    u32 Bank = 0;
+    u32 PhysicalAddress = 0;
+    u32 PhysicalBlock = 0;
+    CaptureOwner Owner = CaptureOwner::None;
+    u64 OwnerSemanticFrame = 0;
+    u64 OwnerCaptureGeneration = 0;
+    u64 CpuHash = 0;
+    u64 NativeHash = 0;
+    u32 Materialized = 0;
+};
+#endif
 
 // Developer-only, host-side evidence for the address units used by a native
 // Display Capture command. This is deliberately not part of the packed shader
@@ -400,6 +443,7 @@ struct UploadPlan
     u64 FIFOBytes = 0;
     u64 LCDVRAMBytes = 0;
     u64 TimelineBytes = 0;
+    u64 MappedCaptureBytes = 0;
 };
 
 struct FrameInput
@@ -432,6 +476,10 @@ struct FrameInput
     std::array<u8, MaxMemoryDeltas * DirtyBlockBytes> TimelinePayload{};
     std::array<u32, PackedSpriteTimelineRowIdWords> SpriteTimelineRowIds{};
     std::array<u32, PackedSpriteTimelineRowsWords> SpriteTimelineRows{};
+    std::array<u32, NativeCaptureBGMappingWords> NativeCaptureBGMapping{};
+    std::array<u32, NativeCaptureOBJMappingWords> NativeCaptureOBJMapping{};
+    std::array<u32, NativeCaptureSpriteOBJMappingWords>
+        NativeCaptureSpriteOBJMapping{};
     u32 TimelineDeltaCount = 0;
     u32 TimelineOverflow = 0;
     u32 TimelineRowCount = 0;
@@ -455,6 +503,12 @@ struct FrameInput
     std::array<DirtyRange, MaxDirtyRanges> DirtyRanges{};
     u32 DirtyRangeCount = 0;
     RecorderMetrics Recorder{};
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    std::array<MappedCaptureViolation, MaxMappedCaptureViolations>
+        MappedCaptureViolations{};
+    u32 MappedCaptureViolationCount = 0;
+    u32 MappedCaptureViolationOverflow = 0;
+#endif
 };
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -555,8 +609,15 @@ inline constexpr u32 PackedSpriteTimelineBase = PackedTimelinePayloadBase
     + PackedTimelinePayloadWords;
 inline constexpr u32 PackedSpriteTimelineRowsBase = PackedSpriteTimelineBase
     + PackedSpriteTimelineRowIdWords;
-inline constexpr u32 PackedFrameWords = PackedSpriteTimelineRowsBase
-    + PackedSpriteTimelineRowsWords;
+inline constexpr u32 PackedNativeCaptureBGMappingBase =
+    PackedSpriteTimelineRowsBase + PackedSpriteTimelineRowsWords;
+inline constexpr u32 PackedNativeCaptureOBJMappingBase =
+    PackedNativeCaptureBGMappingBase + NativeCaptureBGMappingWords;
+inline constexpr u32 PackedNativeCaptureSpriteOBJMappingBase =
+    PackedNativeCaptureOBJMappingBase + NativeCaptureOBJMappingWords;
+inline constexpr u32 PackedFrameWords =
+    PackedNativeCaptureSpriteOBJMappingBase
+    + NativeCaptureSpriteOBJMappingWords;
 
 static_assert(PackedLineWords == 68u, "native line serialization drift");
 
@@ -689,16 +750,18 @@ private:
     u32 CaptureAddressLogCount = 0u;
     u32 CaptureAddressLogOverflow = 0u;
 
-    void SnapshotEngine(u32 engine) noexcept;
-    void CaptureAllMappedMemoryForLine() noexcept;
+    void SnapshotEngine(u32 engine, u32 line) noexcept;
+    void CaptureAllMappedMemoryForLine(u32 line) noexcept;
     void CaptureCoherentLCDVRAMForLine() noexcept;
-    void CaptureJournalWritesForLine() noexcept;
+    void CaptureJournalWritesForLine(u32 line) noexcept;
     void RecordCaptureAddressLine(u32 line, u32 captureCnt) noexcept;
     void BeginCaptureAddressDiagnostic(u32 line, u32 captureCnt) noexcept;
     void FinalizeCaptureAddressDiagnostics() noexcept;
+    void FinalizeMappedCaptureDiagnostics() noexcept;
     void RefreshCaptureProvenance() noexcept;
     void MarkInputCaptureBlockCpuCoherent(u32 bank, u32 physicalBlock) noexcept;
     void CaptureMappedPhysicalBlock(
+        u32 line,
         u32 engine,
         u32 section,
         u8* current,
@@ -716,6 +779,7 @@ private:
         u32 blockBase,
         u32 block) noexcept;
     void CaptureMappedMemoryForLine(
+        u32 line,
         u32 engine,
         u32 section,
         u8* current,
@@ -732,6 +796,11 @@ private:
     void FillTimelineLine(u32 line) noexcept;
     void FillSpriteTimelineLine(u32 line) noexcept;
     void ApplyPendingSpriteLatch() noexcept;
+    void CaptureNativeMappingForLine(u32 line, bool spriteLatch) noexcept;
+    void ApplyPendingNativeSpriteMapping() noexcept;
+
+    std::array<u32, NativeCaptureOBJMappingStride>
+        PendingNativeCaptureSpriteOBJMapping{};
 };
 
 } // namespace GPU2DNative

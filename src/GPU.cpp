@@ -2076,6 +2076,13 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     }
 }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+void GPU::MaterializeVRAMCaptureBlockForGPU2DProof(u32 block)
+{
+    SyncVRAMCaptureBlock(block, false);
+}
+#endif
+
 bool GPU::SyncAllVRAMCaptures(CaptureAuthorityTransitionReason reason)
 {
     if (!Rend)

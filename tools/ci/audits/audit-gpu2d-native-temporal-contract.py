@@ -103,6 +103,18 @@ def main() -> int:
         require(text["native_header"], "TimelineHashTableSize", "deduplicated timeline ABI", failures)
         require(text["native_header"], "TimelineRowIds", "sparse timeline ABI", failures)
         require(text["native_header"], "SpriteTimelineRowIds", "private sparse sprite timeline ABI", failures)
+        for needle in (
+            "NativeCaptureBGMapping",
+            "NativeCaptureOBJMapping",
+            "NativeCaptureSpriteOBJMapping",
+            "PackedNativeCaptureBGMappingBase",
+            "PackedNativeCaptureOBJMappingBase",
+            "PackedNativeCaptureSpriteOBJMappingBase",
+            "MappedCaptureBytes",
+            "MappedCaptureViolation",
+        ):
+            require(text["native_header"], needle,
+                "GPU-resident mapped capture overlay ABI", failures)
         require(text["native_header"], "PackFrameRanges", "partial pack ABI", failures)
         require(text["native_recorder"], "CaptureMemoryForLine", "temporal recorder", failures)
         require(text["native_recorder"], "CaptureCaptureStateForLine", "capture write-boundary recorder", failures)
@@ -126,6 +138,16 @@ def main() -> int:
         if "&& !GPU.CaptureEnable" in text["soft_renderer"]:
             failures.append("soft renderer: CaptureEnable still disables native GPU2D ownership")
         require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
+        for needle in (
+            "CaptureNativeMappingForLine",
+            "NativeOwnedMappedCpuRead",
+            "NativeOwnedMappedCpuMaterialized",
+            "MELONPRIME_GPU2D_PROOF_MATERIALIZE_MAPPED_CAPTURE",
+            "FinalizeMappedCaptureDiagnostics",
+            "MaterializeVRAMCaptureBlockForGPU2DProof",
+        ):
+            require(text["native_recorder"], needle,
+                "mapped capture stale-read tripwire", failures)
         require(text["native_recorder"], "LCDVRAMProvenance", "native recorder capture provenance", failures)
         require(text["native_recorder"], "CaptureCoherentLCDVRAMForLine", "native recorder coherent capture path", failures)
         require(text["native_recorder"], "A byte difference between CPU VRAM", "event-driven authority comment", failures)
@@ -350,6 +372,16 @@ def main() -> int:
                 failures,
             )
             require(text[label], "0x1FFFFu", f"{label} LCDC byte wrap", failures)
+            for helper in (
+                "NativeCaptureByte",
+                "NativeCaptureMappingMask",
+                "NativeCaptureOBJMappingBase",
+                "NativeCaptureSpriteOBJMappingBase",
+                "NativeCaptureOverlayByte",
+                "useSpriteLatch",
+            ):
+                require(text[label], helper,
+                    f"{label} GPU-resident mapped capture overlay", failures)
         require(text["vulkan_shader"], "local_size_x = 128, local_size_y = 1",
             "Vulkan scanline workgroup", failures)
         require(text["dx12_shader"], "[numthreads(128, 1, 1)]",
@@ -463,6 +495,8 @@ def main() -> int:
             "capture ownership vectors", failures)
         require(text["native_contract_test"], "RunCaptureFeedbackVectors",
             "same-bank/display-mode2 vectors", failures)
+        require(text["native_contract_test"], "RunMappedCaptureOverlayVectors",
+            "mapped capture stale-poison/remap/latch vectors", failures)
         for needle in (
             "RunCaptureAddressVectors",
             "CaptureOffsetHalfwords",
@@ -481,6 +515,16 @@ def main() -> int:
         ):
             require(text["native_contract_test"], needle,
                 "capture address matrix/bank-wrap vectors", failures)
+        for needle in (
+            "poisoned CPU VRAM",
+            "overlapping native capture banks",
+            "mid-frame mapped-capture owner transition",
+            "OBJ current/latch mapping",
+            "scale-invariant",
+            "MappedCaptureBytes",
+        ):
+            require(text["native_contract_test"], needle,
+                "mapped capture overlay regression vectors", failures)
         for needle in (
             "CaptureSyncResult::Failed",
             "flagsBeforeFailure",

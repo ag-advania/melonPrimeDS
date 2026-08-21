@@ -279,7 +279,7 @@ bool RunPackVectors()
     bool passed = true;
     passed &= Require(PackFrame(*input, packed.data(), packed.size()),
         "PackFrame rejected a correctly sized destination");
-    passed &= Require(packed[0] == 0x32445047u && packed[1] == 2u,
+    passed &= Require(packed[0] == 0x32445047u && packed[1] == 3u,
         "native frame header magic/version drifted");
     passed &= Require(packed[2] == 0x55667788u && packed[3] == 0x11223344u,
         "frame generation is not serialized little-endian");
@@ -319,8 +319,172 @@ bool RunPackVectors()
         packed[PackedSpriteTimelineRowsBase + 7u]
             == 0xABCDEF01u,
         "private OBJ/OAM timeline row is not packed");
+    input->NativeCaptureBGMapping[3u * NativeCaptureBGMappingStride + 32u + 7u]
+        = 1u << 2u;
+    input->NativeCaptureOBJMapping[17u * NativeCaptureOBJMappingStride + 16u + 3u]
+        = 1u << 1u;
+    input->NativeCaptureSpriteOBJMapping[
+        17u * NativeCaptureOBJMappingStride + 16u + 3u] = 1u << 3u;
+    passed &= Require(
+        PackFrame(*input, packed.data(), packed.size()),
+        "PackFrame rejected mapped-capture metadata");
+    passed &= Require(
+        packed[PackedNativeCaptureBGMappingBase
+            + 3u * NativeCaptureBGMappingStride + 32u + 7u] == (1u << 2u),
+        "BG current-line capture owner row was not packed");
+    passed &= Require(
+        packed[PackedNativeCaptureOBJMappingBase
+            + 17u * NativeCaptureOBJMappingStride + 16u + 3u] == (1u << 1u),
+        "OBJ current-line capture owner row was not packed");
+    passed &= Require(
+        packed[PackedNativeCaptureSpriteOBJMappingBase
+            + 17u * NativeCaptureOBJMappingStride + 16u + 3u] == (1u << 3u),
+        "OBJ latch capture owner row was not packed");
     passed &= Require(!PackFrame(*input, packed.data(), PackedFrameWords - 1u),
         "PackFrame accepted a short destination");
+    return passed;
+}
+
+struct MappedCaptureOverlayModel
+{
+    std::array<std::array<u32, NativeCaptureBGMappingStride>, ScreenHeight>
+        BG{};
+    std::array<std::array<u32, NativeCaptureOBJMappingStride>, ScreenHeight>
+        OBJ{};
+    std::array<std::array<u32, NativeCaptureOBJMappingStride>, ScreenHeight>
+        SpriteOBJ{};
+    std::array<u32, ScreenHeight> BGMappedBanks{};
+    std::array<u32, ScreenHeight> OBJMappedBanks{};
+    std::array<u32, ScreenHeight> SpriteOBJMappedBanks{};
+    std::array<std::array<u8, LCDCBankBytes>, CapturePhysicalBanks> Cpu{};
+    std::array<std::array<u8, LCDCBankBytes>, CapturePhysicalBanks> Native{};
+
+    [[nodiscard]] u32 OwnerMask(
+        u32 engine,
+        u32 line,
+        u32 address,
+        u32 size,
+        bool obj,
+        bool spriteLatch) const
+    {
+        if (line >= ScreenHeight || size == 0u)
+            return 0u;
+        const u32 offset = address & (size - 1u);
+        const u32 mappingIndex = offset / (16u * 1024u);
+        const u32 mappingCount = obj
+            ? (engine == 0u ? 16u : 8u)
+            : (engine == 0u ? 32u : 8u);
+        if (mappingIndex >= mappingCount)
+            return 0u;
+        if (!obj)
+        {
+            return BG[line][(engine == 0u ? 0u : 32u) + mappingIndex];
+        }
+        const auto& row = spriteLatch ? SpriteOBJ[line] : OBJ[line];
+        return row[(engine == 0u ? 0u : 16u) + mappingIndex];
+    }
+
+    [[nodiscard]] u8 Resolve(
+        u32 engine,
+        u32 line,
+        u32 address,
+        u32 size,
+        bool obj,
+        bool spriteLatch) const
+    {
+        const u32 offset = address & (size - 1u);
+        const u32 ownerMask = OwnerMask(
+            engine, line, address, size, obj, spriteLatch);
+        const u32 mappedBankMask = !obj
+            ? BGMappedBanks[line]
+            : (spriteLatch ? SpriteOBJMappedBanks[line] : OBJMappedBanks[line]);
+        u8 cpuFlatten = 0u;
+        u8 nativeOverlay = 0u;
+        for (u32 bank = 0u; bank < CapturePhysicalBanks; ++bank)
+        {
+            if ((mappedBankMask & (1u << bank)) == 0u)
+                continue;
+            if ((ownerMask & (1u << bank)) != 0u)
+                nativeOverlay |= Native[bank][offset & LCDCBankByteMask];
+            else
+                cpuFlatten |= Cpu[bank][offset & LCDCBankByteMask];
+        }
+        return cpuFlatten | nativeOverlay;
+    }
+};
+
+bool RunMappedCaptureOverlayVectors()
+{
+    bool passed = true;
+    MappedCaptureOverlayModel model;
+    constexpr u32 address = 0x1234u;
+    constexpr u32 size = 256u * 1024u;
+    const u32 offset = address & (size - 1u);
+
+    // A native-owned block must win over a deliberately poisoned CPU mirror.
+    model.BG[0u][0u] = 1u << 0u;
+    model.BGMappedBanks[0u] = 1u << 0u;
+    model.Cpu[0u][offset & LCDCBankByteMask] = 0xF0u;
+    model.Native[0u][offset & LCDCBankByteMask] = 0x03u;
+    passed &= Require(
+        model.Resolve(0u, 0u, address, size, false, false) == 0x03u,
+        "native-owned mapped BG read replayed poisoned CPU VRAM");
+
+    // Two native banks mapped to one logical page are Nintendo's OR-visible
+    // overlap case. The overlay must preserve both native contributions.
+    model.BG[32u][0u] = (1u << 0u) | (1u << 1u);
+    model.BGMappedBanks[32u] = (1u << 0u) | (1u << 1u);
+    model.Cpu[1u][offset & LCDCBankByteMask] = 0xF0u;
+    model.Native[1u][offset & LCDCBankByteMask] = 0x0Cu;
+    passed &= Require(
+        model.Resolve(0u, 32u, address, size, false, false) == 0x0Fu,
+        "overlapping native capture banks were not OR-composed");
+
+    // Mid-frame remapping is line-local: the same logical BG address resolves
+    // through the row captured at each line boundary.
+    model.BG[64u][0u] = 1u << 0u;
+    model.BG[65u][0u] = 1u << 1u;
+    model.BGMappedBanks[64u] = 1u << 0u;
+    model.BGMappedBanks[65u] = 1u << 1u;
+    passed &= Require(
+        model.Resolve(0u, 64u, address, size, false, false) == 0x03u
+            && model.Resolve(0u, 65u, address, size, false, false) == 0x0Cu,
+        "mid-frame mapped-capture owner transition was not line-local");
+
+    // OBJ has a current-line mapping and an independent one-line-ahead latch
+    // mapping. A valid latch selects the latter; its absence selects current.
+    model.OBJ[80u][0u] = 1u << 0u;
+    model.SpriteOBJ[80u][0u] = 1u << 2u;
+    model.OBJMappedBanks[80u] = 1u << 0u;
+    model.SpriteOBJMappedBanks[80u] = 1u << 2u;
+    model.Cpu[2u][offset & LCDCBankByteMask] = 0xA0u;
+    model.Native[2u][offset & LCDCBankByteMask] = 0x05u;
+    passed &= Require(
+        model.Resolve(0u, 80u, address, size, true, false) == 0x03u
+            && model.Resolve(0u, 80u, address, size, true, true) == 0x05u,
+        "OBJ current/latch mapping selection drifted");
+
+    // Exercise stale-poison, line split, overlap, and all required scales over
+    // the long state-load horizon without making presentation scale part of
+    // the logical mapping decision.
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+    {
+        model.BG[line][0u] = (line < 64u || line >= 128u)
+            ? (1u << 0u) : (1u << 1u);
+        model.BGMappedBanks[line] = model.BG[line][0u];
+    }
+    for (u32 frame = 0u; frame < 600u; ++frame)
+    {
+        for (const u32 scale : {1u, 4u, 16u})
+        {
+            (void)scale;
+            const u32 line = frame % ScreenHeight;
+            const u32 expected = (line < 64u || line >= 128u) ? 0x03u : 0x0Cu;
+            passed &= Require(
+                model.Resolve(0u, line, address, size, false, false) == expected,
+                "600-frame mapped-capture owner sequence was not scale-invariant");
+        }
+    }
     return passed;
 }
 
@@ -367,6 +531,15 @@ bool RunUploadPlanVectors()
             && partial.PaletteBytes == 64u,
         "partial upload plan category accounting drifted");
 
+    input->DirtyRanges[3] = {
+        PackedNativeCaptureOBJMappingBase * sizeof(u32), sizeof(u32)};
+    input->DirtyRangeCount = 4u;
+    const UploadPlan mapped = BuildUploadPlan(*input, false);
+    passed &= Require(
+        mapped.MappedCaptureBytes == sizeof(u32)
+            && mapped.TotalBytes == 596u,
+        "mapped-capture metadata was not classified as its own upload category");
+
     const UploadPlan full = BuildUploadPlan(*input, true);
     passed &= Require(full.Count == 1u
             && full.TotalBytes == PackedFrameBytes(),
@@ -402,7 +575,7 @@ bool RunUploadPlanVectors()
         "partial frame pack rejected a valid upload plan");
     passed &= Require(
         partialDestination[0] == 0x32445047u
-            && partialDestination[1] == 2u
+            && partialDestination[1] == 3u
             && partialDestination[10] == partialInput->CaptureCnt,
         "partial frame pack did not update the requested header range");
     passed &= Require(
@@ -972,7 +1145,8 @@ bool RunCaptureFeedbackVectors()
 int main()
 {
     const bool passed = RunCaptureAddressVectors()
-        && RunPackVectors() && RunCompareVectors()
+        && RunPackVectors() && RunMappedCaptureOverlayVectors()
+        && RunCompareVectors()
         && RunUploadPlanVectors() && RunTemporalLineVectors()
         && RunFrameIdentityVectors() && RunCaptureOwnershipVectors()
         && RunCaptureFeedbackVectors();

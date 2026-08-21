@@ -664,30 +664,183 @@ bool HasDirtyOverlap(const FrameInput& input, u32 begin, u32 end) noexcept
     return false;
 }
 
+struct MappedReadContext
+{
+    FrameInput* Input = nullptr;
+    u32 Line = 0u;
+    u32 Engine = 0u;
+    u32 Section = 0u;
+};
+
+bool IsCaptureMappedSection(u32 section) noexcept
+{
+    // Sections 0/1 are BG/OBJ logical VRAM. Extended palettes have no
+    // native capture overlay in this ABI and therefore remain ordinary CPU
+    // mirrors.
+    return section == 0u || section == 1u;
+}
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+bool ProofMaterializeMappedCaptureEnabled() noexcept
+{
+    static const bool enabled = [] {
+        const char* value = std::getenv(
+            "MELONPRIME_GPU2D_PROOF_MATERIALIZE_MAPPED_CAPTURE");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+}
+
+u64 HashPhysicalCaptureBlock(
+    const melonDS::GPU& gpu, u32 bank, u32 physicalBlock) noexcept
+{
+    if (bank >= CapturePhysicalBanks
+        || physicalBlock >= CapturePhysicalBlocksPerBank)
+    {
+        return 0u;
+    }
+
+    u64 hash = 1469598103934665603ull;
+    const u8* source = gpu.VRAM[bank]
+        + static_cast<std::size_t>(physicalBlock) * CapturePhysicalBlockBytes;
+    for (u32 byte = 0u; byte < CapturePhysicalBlockBytes; ++byte)
+    {
+        hash ^= source[byte];
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+void RecordMappedCaptureViolation(
+    FrameInput& input,
+    const MappedReadContext& context,
+    const melonDS::GPU& gpu,
+    u32 logicalAddress,
+    u32 mappingIndex,
+    u32 bank,
+    u32 physicalAddress,
+    u32 physicalBlock,
+    const CaptureBlockProvenance& owner,
+    bool materialized) noexcept
+{
+    for (u32 index = 0u; index < input.MappedCaptureViolationCount; ++index)
+    {
+        const MappedCaptureViolation& current =
+            input.MappedCaptureViolations[index];
+        if (current.Line == context.Line
+            && current.Engine == context.Engine
+            && current.Section == context.Section
+            && current.LogicalAddress == logicalAddress
+            && current.MappingIndex == mappingIndex
+            && current.Bank == bank
+            && current.PhysicalBlock == physicalBlock
+            && current.Materialized == (materialized ? 1u : 0u))
+        {
+            return;
+        }
+    }
+
+    if (input.MappedCaptureViolationCount >= MaxMappedCaptureViolations)
+    {
+        input.MappedCaptureViolationOverflow = 1u;
+        return;
+    }
+
+    MappedCaptureViolation& violation =
+        input.MappedCaptureViolations[input.MappedCaptureViolationCount++];
+    violation.Frame = input.Generation.Frame;
+    violation.Line = context.Line;
+    violation.Engine = context.Engine;
+    violation.Section = context.Section;
+    violation.LogicalAddress = logicalAddress;
+    violation.MappingIndex = mappingIndex;
+    violation.Bank = bank;
+    violation.PhysicalAddress = physicalAddress;
+    violation.PhysicalBlock = physicalBlock;
+    violation.Owner = owner.Owner;
+    violation.OwnerSemanticFrame = owner.SemanticFrame;
+    violation.OwnerCaptureGeneration = owner.CaptureGeneration;
+    violation.CpuHash = HashPhysicalCaptureBlock(gpu, bank, physicalBlock);
+    violation.NativeHash = 0u;
+    violation.Materialized = materialized ? 1u : 0u;
+}
+#endif
+
 template <u32 MappingBytes>
 u64 ReadMappedWord(
+    const MappedReadContext& context,
     const melonDS::GPU& gpu,
     const u32* mappings,
     u32 mappingCount,
     u32 address) noexcept
 {
-    const u32 mappingIndex = address / MappingBytes;
-    if (mappingIndex >= mappingCount)
-        return 0;
-
-    const u32 bankMask = mappings[mappingIndex];
     u64 value = 0;
-    for (u32 bank = 0; bank < 9u; ++bank)
+    const Renderer& renderer = gpu.GetRenderer();
+    for (u32 byteOffset = 0u; byteOffset < sizeof(u64); ++byteOffset)
     {
-        if ((bankMask & (1u << bank)) == 0u)
+        const u32 logicalAddress = address + byteOffset;
+        const u32 mappingIndex = logicalAddress / MappingBytes;
+        if (mappingIndex >= mappingCount)
             continue;
 
-        u64 bankValue = 0;
-        std::memcpy(
-            &bankValue,
-            gpu.VRAM[bank] + (address & gpu.VRAMMask[bank]),
-            sizeof(bankValue));
-        value |= bankValue;
+        const u32 bankMask = mappings[mappingIndex];
+        u8 result = 0u;
+        for (u32 bank = 0u; bank < 9u; ++bank)
+        {
+            if ((bankMask & (1u << bank)) == 0u)
+                continue;
+
+            const u32 physicalAddress = logicalAddress & gpu.VRAMMask[bank];
+            const u32 physicalBlock = physicalAddress / CapturePhysicalBlockBytes;
+            bool skipCpuRead = false;
+            if (bank < CapturePhysicalBanks
+                && IsCaptureMappedSection(context.Section))
+            {
+                const CaptureBlockProvenance& owner =
+                    renderer.GetCaptureBlockProvenance(bank, physicalBlock);
+                if (IsNativeCaptureOwner(owner.Owner))
+                {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+                    bool materialized = false;
+                    if (ProofMaterializeMappedCaptureEnabled())
+                    {
+                        ++context.Input->Recorder.NativeOwnedMappedCpuRead;
+                        const_cast<melonDS::GPU&>(gpu)
+                            .MaterializeVRAMCaptureBlockForGPU2DProof(
+                                (bank << 2u) | physicalBlock);
+                        const CaptureBlockProvenance& after =
+                            gpu.GetRenderer().GetCaptureBlockProvenance(
+                                bank, physicalBlock);
+                        materialized = !IsNativeCaptureOwner(after.Owner);
+                        if (materialized)
+                        {
+                            ++context.Input->Recorder
+                                .NativeOwnedMappedCpuMaterialized;
+                        }
+                        RecordMappedCaptureViolation(
+                            *context.Input, context, gpu, logicalAddress,
+                            mappingIndex, bank, physicalAddress, physicalBlock,
+                            owner, materialized);
+                        skipCpuRead = !materialized;
+                    }
+                    else
+                    {
+                        // Normal shipping/developer execution never reads
+                        // stale CPU VRAM for a native-owned capture. The
+                        // shader's native mirror overlay supplies this bank.
+                        skipCpuRead = true;
+                    }
+#else
+                    // Native capture is GPU-resident in shipping builds.
+                    // Never turn it into a host readback just to flatten BG/OBJ.
+                    skipCpuRead = true;
+#endif
+                }
+            }
+            if (!skipCpuRead)
+                result |= gpu.VRAM[bank][physicalAddress];
+        }
+        value |= static_cast<u64>(result) << (byteOffset * 8u);
     }
     return value;
 }
@@ -700,7 +853,8 @@ void CopyMappedVRAMBlocks(
     const u32* mappings,
     u32 mappingCount,
     const melonDS::GPU& gpu,
-    u32 packedOffset) noexcept
+    u32 packedOffset,
+    const MappedReadContext& context) noexcept
 {
     std::array<u8, DirtyBlockBytes> source{};
     for (u32 offset = 0; offset < size; offset += DirtyBlockBytes)
@@ -710,7 +864,7 @@ void CopyMappedVRAMBlocks(
         for (u32 blockOffset = 0; blockOffset < blockSize; blockOffset += sizeof(u64))
         {
             const u64 value = ReadMappedWord<MappingBytes>(
-                gpu, mappings, mappingCount, offset + blockOffset);
+                context, gpu, mappings, mappingCount, offset + blockOffset);
             std::memcpy(source.data() + blockOffset, &value, sizeof(value));
         }
 
@@ -830,7 +984,8 @@ void CaptureMappedMemoryBlocks(
     const u32* mappings,
     u32 mappingCount,
     const melonDS::GPU& gpu,
-    u32 blockBase) noexcept
+    u32 blockBase,
+    const MappedReadContext& context) noexcept
 {
     std::array<u8, DirtyBlockBytes> source{};
     for (u32 offset = 0; offset < size; offset += DirtyBlockBytes)
@@ -840,7 +995,7 @@ void CaptureMappedMemoryBlocks(
         for (u32 blockOffset = 0; blockOffset < blockSize; blockOffset += sizeof(u64))
         {
             const u64 value = ReadMappedWord<MappingBytes>(
-                gpu, mappings, mappingCount, offset + blockOffset);
+                context, gpu, mappings, mappingCount, offset + blockOffset);
             std::memcpy(source.data() + blockOffset, &value, sizeof(value));
         }
 
@@ -876,7 +1031,8 @@ void CaptureMappedPhysicalMemoryBlock(
     const melonDS::GPU& gpu,
     u32 blockBase,
     u32 bank,
-    u32 physicalBlock) noexcept
+    u32 physicalBlock,
+    const MappedReadContext& context) noexcept
 {
     if (!current || !mappings || bank >= 9u)
         return;
@@ -908,7 +1064,8 @@ void CaptureMappedPhysicalMemoryBlock(
         for (u32 blockOffset = 0; blockOffset < DirtyBlockBytes; blockOffset += sizeof(u64))
         {
             const u64 value = ReadMappedWord<MappingBytes>(
-                gpu, mappings, mappingCount, offset + relative + blockOffset);
+                context, gpu, mappings, mappingCount,
+                offset + relative + blockOffset);
             std::memcpy(source.data() + blockOffset, &value, sizeof(value));
         }
 
@@ -1030,6 +1187,7 @@ void FrameRecorder::Reset() noexcept
     PendingEngineAOBJ.fill(0u);
     PendingEngineBOBJ.fill(0u);
     PendingOAM.fill(0u);
+    PendingNativeCaptureSpriteOBJMapping.fill(0u);
     PendingSpriteLatchReady = false;
     LastJournalSequence = 0u;
     CaptureStartLine = CaptureStartLineNone;
@@ -1057,6 +1215,15 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         std::fill(Input.SpriteTimelineRowIds.begin(), Input.SpriteTimelineRowIds.end(), 0xFFFFFFFFu);
         Input.DirtyRangeCount = 0u;
     }
+    // Mapping ownership is a per-frame view. Do not leave a previous frame's
+    // native-owner rows in a compositor slot while the new frame is being
+    // captured; the rows are rewritten at their line/latch boundaries.
+    std::fill(Input.NativeCaptureBGMapping.begin(),
+        Input.NativeCaptureBGMapping.end(), 0u);
+    std::fill(Input.NativeCaptureOBJMapping.begin(),
+        Input.NativeCaptureOBJMapping.end(), 0u);
+    std::fill(Input.NativeCaptureSpriteOBJMapping.begin(),
+        Input.NativeCaptureSpriteOBJMapping.end(), 0u);
     Input.Recorder = {};
     Input.Generation.Frame = frame;
     if (hadPreviousFrame)
@@ -1085,6 +1252,15 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         PackedLinesWords * sizeof(u32));
     MarkDirtyRange(Input, PackedRouteBase * sizeof(u32),
         PackedRouteWords * sizeof(u32));
+    MarkDirtyRange(
+        Input, PackedNativeCaptureBGMappingBase * sizeof(u32),
+        NativeCaptureBGMappingWords * sizeof(u32));
+    MarkDirtyRange(
+        Input, PackedNativeCaptureOBJMappingBase * sizeof(u32),
+        NativeCaptureOBJMappingWords * sizeof(u32));
+    MarkDirtyRange(
+        Input, PackedNativeCaptureSpriteOBJMappingBase * sizeof(u32),
+        NativeCaptureSpriteOBJMappingWords * sizeof(u32));
     Input.TimelineDeltaCount = 0u;
     Input.TimelineOverflow = 0u;
     std::fill(Input.TimelineRowIds.begin(), Input.TimelineRowIds.end(), 0xFFFFFFFFu);
@@ -1155,23 +1331,156 @@ void FrameRecorder::MarkInputCaptureBlockCpuCoherent(
     provenance.Owner = CaptureOwner::CpuCoherent;
 }
 
-void FrameRecorder::CaptureAllMappedMemoryForLine() noexcept
+void FrameRecorder::CaptureNativeMappingForLine(
+    u32 line, bool spriteLatch) noexcept
+{
+    if (line >= ScreenHeight)
+        return;
+
+    const Renderer& renderer = GPU.GetRenderer();
+    const auto nativeMaskForEntry = [&](const u32* mappings, u32 count) {
+        std::array<u32, NativeCaptureBGMappingStride> result{};
+        const u32 limitedCount = std::min<u32>(
+            count, static_cast<u32>(result.size()));
+        for (u32 mappingIndex = 0u; mappingIndex < limitedCount; ++mappingIndex)
+        {
+            const u32 bankMask = mappings[mappingIndex];
+            u32 nativeMask = 0u;
+            const u32 logicalAddress = mappingIndex * 16u * 1024u;
+            for (u32 bank = 0u; bank < CapturePhysicalBanks; ++bank)
+            {
+                if ((bankMask & (1u << bank)) == 0u)
+                    continue;
+                const u32 physicalAddress =
+                    logicalAddress & GPU.VRAMMask[bank];
+                const u32 physicalBlock =
+                    physicalAddress / CapturePhysicalBlockBytes;
+                if (IsNativeCaptureOwner(
+                        renderer.GetCaptureBlockProvenance(
+                            bank, physicalBlock).Owner))
+                {
+                    nativeMask |= 1u << bank;
+                }
+            }
+            result[mappingIndex] = nativeMask;
+        }
+        return result;
+    };
+
+    const u32* bgMappings[2] = {GPU.VRAMMap_ABG, GPU.VRAMMap_BBG};
+    const u32 bgCounts[2] = {32u, 8u};
+    const u32* objMappings[2] = {GPU.VRAMMap_AOBJ, GPU.VRAMMap_BOBJ};
+    const u32 objCounts[2] = {16u, 8u};
+
+    if (!spriteLatch)
+    {
+        const u32 bgBase = line * NativeCaptureBGMappingStride;
+        u32* bgRow = Input.NativeCaptureBGMapping.data() + bgBase;
+        for (u32 engine = 0u; engine < 2u; ++engine)
+        {
+            const auto masks = nativeMaskForEntry(
+                bgMappings[engine], bgCounts[engine]);
+            const u32 offset = engine == 0u ? 0u : 32u;
+            const u32 count = bgCounts[engine];
+            if (std::memcmp(bgRow + offset, masks.data(), count * sizeof(u32)) != 0)
+            {
+                std::memcpy(bgRow + offset, masks.data(), count * sizeof(u32));
+                MarkDirtyRange(
+                    Input,
+                    (PackedNativeCaptureBGMappingBase
+                        + line * NativeCaptureBGMappingStride + offset)
+                        * sizeof(u32),
+                    count * sizeof(u32));
+            }
+        }
+
+        const u32 objBase = line * NativeCaptureOBJMappingStride;
+        u32* objRow = Input.NativeCaptureOBJMapping.data() + objBase;
+        for (u32 engine = 0u; engine < 2u; ++engine)
+        {
+            const auto masks = nativeMaskForEntry(
+                objMappings[engine], objCounts[engine]);
+            const u32 offset = engine == 0u ? 0u : 16u;
+            const u32 count = objCounts[engine];
+            if (std::memcmp(objRow + offset, masks.data(), count * sizeof(u32)) != 0)
+            {
+                std::memcpy(objRow + offset, masks.data(), count * sizeof(u32));
+                MarkDirtyRange(
+                    Input,
+                    (PackedNativeCaptureOBJMappingBase
+                        + line * NativeCaptureOBJMappingStride + offset)
+                        * sizeof(u32),
+                    count * sizeof(u32));
+            }
+        }
+        return;
+    }
+
+    u32* spriteRow = Input.NativeCaptureSpriteOBJMapping.data()
+        + line * NativeCaptureOBJMappingStride;
+    for (u32 engine = 0u; engine < 2u; ++engine)
+    {
+        const auto masks = nativeMaskForEntry(
+            objMappings[engine], objCounts[engine]);
+        const u32 offset = engine == 0u ? 0u : 16u;
+        const u32 count = objCounts[engine];
+        if (std::memcmp(spriteRow + offset, masks.data(), count * sizeof(u32)) != 0)
+        {
+            std::memcpy(spriteRow + offset, masks.data(), count * sizeof(u32));
+            MarkDirtyRange(
+                Input,
+                (PackedNativeCaptureSpriteOBJMappingBase
+                    + line * NativeCaptureOBJMappingStride + offset)
+                    * sizeof(u32),
+                count * sizeof(u32));
+        }
+    }
+    if (line == 0u)
+    {
+        std::memcpy(
+            PendingNativeCaptureSpriteOBJMapping.data(),
+            spriteRow,
+            PendingNativeCaptureSpriteOBJMapping.size() * sizeof(u32));
+    }
+}
+
+void FrameRecorder::ApplyPendingNativeSpriteMapping() noexcept
+{
+    u32* destination = Input.NativeCaptureSpriteOBJMapping.data();
+    if (std::memcmp(
+            destination,
+            PendingNativeCaptureSpriteOBJMapping.data(),
+            PendingNativeCaptureSpriteOBJMapping.size() * sizeof(u32)) == 0)
+    {
+        return;
+    }
+    std::memcpy(
+        destination,
+        PendingNativeCaptureSpriteOBJMapping.data(),
+        PendingNativeCaptureSpriteOBJMapping.size() * sizeof(u32));
+    MarkDirtyRange(
+        Input,
+        PackedNativeCaptureSpriteOBJMappingBase * sizeof(u32),
+        PendingNativeCaptureSpriteOBJMapping.size() * sizeof(u32));
+}
+
+void FrameRecorder::CaptureAllMappedMemoryForLine(u32 line) noexcept
 {
     CaptureMappedMemoryForLine(
-        0u, 0u, CurrentEngine[0].BGVRAM.data(), CurrentEngine[0].BGSize,
+        line, 0u, 0u, CurrentEngine[0].BGVRAM.data(), CurrentEngine[0].BGSize,
         GPU.VRAMMap_ABG, 32u, 16u * 1024u,
         TimelineEngineBaseBlock + 0u);
     CaptureMappedMemoryForLine(
-        0u, 1u, CurrentEngine[0].OBJVRAM.data(), CurrentEngine[0].OBJSize,
+        line, 0u, 1u, CurrentEngine[0].OBJVRAM.data(), CurrentEngine[0].OBJSize,
         GPU.VRAMMap_AOBJ, 16u, 16u * 1024u,
         TimelineEngineBaseBlock + TimelineEngineBGBlocks);
     CaptureMappedMemoryForLine(
-        0u, 2u, CurrentEngine[0].BGExtendedPalette.data(),
+        line, 0u, 2u, CurrentEngine[0].BGExtendedPalette.data(),
         CurrentEngine[0].BGExtendedPaletteSize, GPU.VRAMMap_ABGExtPal, 4u,
         8u * 1024u,
         TimelineEngineBaseBlock + TimelineEngineBGBlocks + TimelineEngineOBJBlocks);
     CaptureMappedMemoryForLine(
-        0u, 3u, CurrentEngine[0].OBJExtendedPalette.data(),
+        line, 0u, 3u, CurrentEngine[0].OBJExtendedPalette.data(),
         CurrentEngine[0].OBJExtendedPaletteSize, &GPU.VRAMMap_AOBJExtPal, 1u,
         8u * 1024u,
         TimelineEngineBaseBlock + TimelineEngineBGBlocks + TimelineEngineOBJBlocks
@@ -1179,19 +1488,19 @@ void FrameRecorder::CaptureAllMappedMemoryForLine() noexcept
 
     const u32 engine1Base = TimelineEngineBaseBlock + TimelineEngineBlocks;
     CaptureMappedMemoryForLine(
-        1u, 0u, CurrentEngine[1].BGVRAM.data(), CurrentEngine[1].BGSize,
+        line, 1u, 0u, CurrentEngine[1].BGVRAM.data(), CurrentEngine[1].BGSize,
         GPU.VRAMMap_BBG, 8u, 16u * 1024u, engine1Base + 0u);
     CaptureMappedMemoryForLine(
-        1u, 1u, CurrentEngine[1].OBJVRAM.data(), CurrentEngine[1].OBJSize,
+        line, 1u, 1u, CurrentEngine[1].OBJVRAM.data(), CurrentEngine[1].OBJSize,
         GPU.VRAMMap_BOBJ, 8u, 16u * 1024u,
         engine1Base + TimelineEngineBGBlocks);
     CaptureMappedMemoryForLine(
-        1u, 2u, CurrentEngine[1].BGExtendedPalette.data(),
+        line, 1u, 2u, CurrentEngine[1].BGExtendedPalette.data(),
         CurrentEngine[1].BGExtendedPaletteSize, GPU.VRAMMap_BBGExtPal, 4u,
         8u * 1024u,
         engine1Base + TimelineEngineBGBlocks + TimelineEngineOBJBlocks);
     CaptureMappedMemoryForLine(
-        1u, 3u, CurrentEngine[1].OBJExtendedPalette.data(),
+        line, 1u, 3u, CurrentEngine[1].OBJExtendedPalette.data(),
         CurrentEngine[1].OBJExtendedPaletteSize, &GPU.VRAMMap_BOBJExtPal, 1u,
         8u * 1024u,
         engine1Base + TimelineEngineBGBlocks + TimelineEngineOBJBlocks
@@ -1237,7 +1546,7 @@ void FrameRecorder::CaptureCoherentLCDVRAMForLine() noexcept
     }
 }
 
-void FrameRecorder::CaptureJournalWritesForLine() noexcept
+void FrameRecorder::CaptureJournalWritesForLine(u32 line) noexcept
 {
     bool overflow = false;
     const u32 count = GPU.ReadGPU2DWriteJournal(
@@ -1250,7 +1559,7 @@ void FrameRecorder::CaptureJournalWritesForLine() noexcept
         // A bounded ring can lose the exact list under a DMA burst. Preserve
         // correctness with one exceptional full private refresh; shared dirty
         // ownership is still untouched.
-        CaptureAllMappedMemoryForLine();
+        CaptureAllMappedMemoryForLine(line);
         LastJournalSequence = GPU.GetGPU2DWriteJournalSequence();
         return;
     }
@@ -1270,7 +1579,7 @@ void FrameRecorder::CaptureJournalWritesForLine() noexcept
         // Remapping changes the logical view without changing physical bytes.
         // Rebuild the private view once for this boundary, then process no
         // individual events from the same batch a second time.
-        CaptureAllMappedMemoryForLine();
+        CaptureAllMappedMemoryForLine(line);
         LastJournalSequence = GPU.GetGPU2DWriteJournalSequence();
         return;
     }
@@ -1283,22 +1592,22 @@ void FrameRecorder::CaptureJournalWritesForLine() noexcept
         case GPU2DWriteKind::VRAM:
         case GPU2DWriteKind::CaptureSync:
             CaptureMappedPhysicalBlock(
-                0u, 0u, CurrentEngine[0].BGVRAM.data(), CurrentEngine[0].BGSize,
+                line, 0u, 0u, CurrentEngine[0].BGVRAM.data(), CurrentEngine[0].BGSize,
                 GPU.VRAMMap_ABG, 32u, 16u * 1024u,
                 TimelineEngineBaseBlock, entry.Bank, entry.Block);
             CaptureMappedPhysicalBlock(
-                0u, 1u, CurrentEngine[0].OBJVRAM.data(), CurrentEngine[0].OBJSize,
+                line, 0u, 1u, CurrentEngine[0].OBJVRAM.data(), CurrentEngine[0].OBJSize,
                 GPU.VRAMMap_AOBJ, 16u, 16u * 1024u,
                 TimelineEngineBaseBlock + TimelineEngineBGBlocks,
                 entry.Bank, entry.Block);
             CaptureMappedPhysicalBlock(
-                0u, 2u, CurrentEngine[0].BGExtendedPalette.data(),
+                line, 0u, 2u, CurrentEngine[0].BGExtendedPalette.data(),
                 CurrentEngine[0].BGExtendedPaletteSize, GPU.VRAMMap_ABGExtPal, 4u,
                 8u * 1024u,
                 TimelineEngineBaseBlock + TimelineEngineBGBlocks + TimelineEngineOBJBlocks,
                 entry.Bank, entry.Block);
             CaptureMappedPhysicalBlock(
-                0u, 3u, CurrentEngine[0].OBJExtendedPalette.data(),
+                line, 0u, 3u, CurrentEngine[0].OBJExtendedPalette.data(),
                 CurrentEngine[0].OBJExtendedPaletteSize, &GPU.VRAMMap_AOBJExtPal, 1u,
                 8u * 1024u,
                 TimelineEngineBaseBlock + TimelineEngineBGBlocks + TimelineEngineOBJBlocks
@@ -1308,22 +1617,22 @@ void FrameRecorder::CaptureJournalWritesForLine() noexcept
             {
                 const u32 engine1Base = TimelineEngineBaseBlock + TimelineEngineBlocks;
                 CaptureMappedPhysicalBlock(
-                    1u, 0u, CurrentEngine[1].BGVRAM.data(), CurrentEngine[1].BGSize,
+                    line, 1u, 0u, CurrentEngine[1].BGVRAM.data(), CurrentEngine[1].BGSize,
                     GPU.VRAMMap_BBG, 8u, 16u * 1024u,
                     engine1Base, entry.Bank, entry.Block);
                 CaptureMappedPhysicalBlock(
-                    1u, 1u, CurrentEngine[1].OBJVRAM.data(), CurrentEngine[1].OBJSize,
+                    line, 1u, 1u, CurrentEngine[1].OBJVRAM.data(), CurrentEngine[1].OBJSize,
                     GPU.VRAMMap_BOBJ, 8u, 16u * 1024u,
                     engine1Base + TimelineEngineBGBlocks,
                     entry.Bank, entry.Block);
                 CaptureMappedPhysicalBlock(
-                    1u, 2u, CurrentEngine[1].BGExtendedPalette.data(),
+                    line, 1u, 2u, CurrentEngine[1].BGExtendedPalette.data(),
                     CurrentEngine[1].BGExtendedPaletteSize, GPU.VRAMMap_BBGExtPal, 4u,
                     8u * 1024u,
                     engine1Base + TimelineEngineBGBlocks + TimelineEngineOBJBlocks,
                     entry.Bank, entry.Block);
                 CaptureMappedPhysicalBlock(
-                    1u, 3u, CurrentEngine[1].OBJExtendedPalette.data(),
+                    line, 1u, 3u, CurrentEngine[1].OBJExtendedPalette.data(),
                     CurrentEngine[1].OBJExtendedPaletteSize, &GPU.VRAMMap_BOBJExtPal, 1u,
                     8u * 1024u,
                     engine1Base + TimelineEngineBGBlocks + TimelineEngineOBJBlocks
@@ -1402,8 +1711,8 @@ void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
     {
         // The baseline is captured before line 0 is evaluated. This is the
         // only full snapshot; every later line carries only changed blocks.
-        SnapshotEngine(0u);
-        SnapshotEngine(1u);
+        SnapshotEngine(0u, line);
+        SnapshotEngine(1u, line);
         CopyChangedBlocks(
             Input, Input.Palette.data(), GPU.Palette,
             static_cast<u32>(Input.Palette.size()), PackedPaletteBase * sizeof(u32));
@@ -1440,9 +1749,10 @@ void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
     }
     else
     {
-        CaptureJournalWritesForLine();
+        CaptureJournalWritesForLine(line);
     }
 
+    CaptureNativeMappingForLine(line, false);
     if (line < ScreenHeight)
     {
         FillTimelineLine(line);
@@ -1458,6 +1768,7 @@ void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
                 // already represented by the frame-start versions.
                 SpriteLatchSeen[0] = true;
                 FillSpriteTimelineLine(0u);
+                CaptureNativeMappingForLine(0u, true);
             }
         }
     }
@@ -1482,7 +1793,8 @@ void FrameRecorder::CaptureSpriteLatchForLine(u32 line) noexcept
     // write journal makes this boundary cheap when the source memory is
     // unchanged; the palette and OBJ extended palette remain on the ordinary
     // line timeline.
-    CaptureJournalWritesForLine();
+    CaptureJournalWritesForLine(line);
+    CaptureNativeMappingForLine(line, true);
     FillSpriteTimelineLine(line);
     SpriteLatchSeen[line] = true;
 
@@ -1636,10 +1948,12 @@ void FrameRecorder::ApplyPendingSpriteLatch() noexcept
         TimelineOAMBaseBlock);
     SpriteLatchSeen[0] = true;
     FillSpriteTimelineLine(0u);
+    ApplyPendingNativeSpriteMapping();
     PendingSpriteLatchReady = false;
 }
 
 void FrameRecorder::CaptureMappedMemoryForLine(
+    u32 line,
     u32 engine,
     u32 section,
     u8* current,
@@ -1649,23 +1963,23 @@ void FrameRecorder::CaptureMappedMemoryForLine(
     u32 mappingBytes,
     u32 blockBase) noexcept
 {
-    (void)engine;
-    (void)section;
+    const MappedReadContext context{&Input, line, engine, section};
     if (mappingBytes == 16u * 1024u)
     {
         CaptureMappedMemoryBlocks<16u * 1024u>(
             Input, CurrentTimelineVersion, current, size, mappings, mappingCount,
-            GPU, blockBase);
+            GPU, blockBase, context);
     }
     else
     {
         CaptureMappedMemoryBlocks<8u * 1024u>(
             Input, CurrentTimelineVersion, current, size, mappings, mappingCount,
-            GPU, blockBase);
+            GPU, blockBase, context);
     }
 }
 
 void FrameRecorder::CaptureMappedPhysicalBlock(
+    u32 line,
     u32 engine,
     u32 section,
     u8* current,
@@ -1677,19 +1991,18 @@ void FrameRecorder::CaptureMappedPhysicalBlock(
     u32 bank,
     u32 physicalBlock) noexcept
 {
-    (void)engine;
-    (void)section;
+    const MappedReadContext context{&Input, line, engine, section};
     if (mappingBytes == 16u * 1024u)
     {
         CaptureMappedPhysicalMemoryBlock<16u * 1024u>(
             Input, CurrentTimelineVersion, current, size, mappings, mappingCount,
-            GPU, blockBase, bank, physicalBlock);
+            GPU, blockBase, bank, physicalBlock, context);
     }
     else
     {
         CaptureMappedPhysicalMemoryBlock<8u * 1024u>(
             Input, CurrentTimelineVersion, current, size, mappings, mappingCount,
-            GPU, blockBase, bank, physicalBlock);
+            GPU, blockBase, bank, physicalBlock, context);
     }
 }
 
@@ -2079,7 +2392,43 @@ void FrameRecorder::FinalizeCaptureAddressDiagnostics() noexcept
 #endif
 }
 
-void FrameRecorder::SnapshotEngine(u32 engine) noexcept
+void FrameRecorder::FinalizeMappedCaptureDiagnostics() noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (u32 index = 0u; index < Input.MappedCaptureViolationCount; ++index)
+    {
+        const MappedCaptureViolation& violation =
+            Input.MappedCaptureViolations[index];
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "[GPU2DMappedCaptureViolation] frame=%llu line=%u engine=%u "
+            "section=%s logicalAddress=0x%X mappingIndex=%u bank=%u "
+            "physicalAddress=0x%X physicalBlock=%u owner=%s "
+            "ownerSemanticFrame=%llu ownerCaptureGeneration=%llu "
+            "cpuHash=0x%llX nativeHash=0x%llX materialized=%u\n",
+            static_cast<unsigned long long>(violation.Frame), violation.Line,
+            violation.Engine, violation.Section == 0u ? "BG" : "OBJ",
+            violation.LogicalAddress, violation.MappingIndex, violation.Bank,
+            violation.PhysicalAddress, violation.PhysicalBlock,
+            CaptureOwnerName(violation.Owner),
+            static_cast<unsigned long long>(violation.OwnerSemanticFrame),
+            static_cast<unsigned long long>(violation.OwnerCaptureGeneration),
+            static_cast<unsigned long long>(violation.CpuHash),
+            static_cast<unsigned long long>(violation.NativeHash),
+            violation.Materialized);
+    }
+    if (Input.MappedCaptureViolationOverflow != 0u)
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "[GPU2DMappedCaptureViolation] frame=%llu diagnosticOverflow=%u\n",
+            static_cast<unsigned long long>(Input.Generation.Frame),
+            Input.MappedCaptureViolationOverflow);
+    }
+#endif
+}
+
+void FrameRecorder::SnapshotEngine(u32 engine, u32 line) noexcept
 {
     if (engine >= 2u)
         return;
@@ -2103,23 +2452,28 @@ void FrameRecorder::SnapshotEngine(u32 engine) noexcept
     destination.BGExtendedPaletteSize = 32u * 1024u;
     destination.OBJExtendedPaletteSize = 8u * 1024u;
     const u32 engineBase = PackedEngineBase + engine * PackedEngineWords;
+    const MappedReadContext bgContext{&Input, line, engine, 0u};
+    const MappedReadContext objContext{&Input, line, engine, 1u};
+    const MappedReadContext bgExtContext{&Input, line, engine, 2u};
+    const MappedReadContext objExtContext{&Input, line, engine, 3u};
     CopyMappedVRAMBlocks<16u * 1024u>(
         Input, destination.BGVRAM.data(), destination.BGSize,
         bgMappings, bgMappingCount, GPU,
-        engineBase * sizeof(u32));
+        engineBase * sizeof(u32), bgContext);
     CopyMappedVRAMBlocks<16u * 1024u>(
         Input, destination.OBJVRAM.data(), destination.OBJSize,
         objMappings, objMappingCount, GPU,
-        (engineBase + PackedBGWords) * sizeof(u32));
+        (engineBase + PackedBGWords) * sizeof(u32), objContext);
     CopyMappedVRAMBlocks<8u * 1024u>(
         Input, destination.BGExtendedPalette.data(),
         destination.BGExtendedPaletteSize, bgExtMappings, bgExtMappingCount,
-        GPU, (engineBase + PackedBGWords + PackedOBJWords) * sizeof(u32));
+        GPU, (engineBase + PackedBGWords + PackedOBJWords) * sizeof(u32),
+        bgExtContext);
     CopyMappedVRAMBlocks<8u * 1024u>(
         Input, destination.OBJExtendedPalette.data(),
         destination.OBJExtendedPaletteSize, objExtMappings, 1u, GPU,
         (engineBase + PackedBGWords + PackedOBJWords
-            + PackedBGExtendedPaletteWords) * sizeof(u32));
+            + PackedBGExtendedPaletteWords) * sizeof(u32), objExtContext);
 }
 
 void FrameRecorder::FinalizeMemory() noexcept
@@ -2130,6 +2484,7 @@ void FrameRecorder::FinalizeMemory() noexcept
         RecorderStartNs = 0u;
     }
     FinalizeCaptureAddressDiagnostics();
+    FinalizeMappedCaptureDiagnostics();
     if (EngineLineCount[0] != ScreenHeight || EngineLineCount[1] != ScreenHeight)
         return;
     if (!MemoryBaselineReady)

@@ -2290,6 +2290,14 @@ static const uint NativeSpriteTimelineBlockCount = NativeSpriteTimelineOAMBlocks
 static const uint NativeSpriteTimelineRowIdBase = NativeTimelinePayloadBase
     + 8192u * NativeTimelinePayloadStride;
 static const uint NativeSpriteTimelineRowsBase = NativeSpriteTimelineRowIdBase + 192u;
+static const uint NativeCaptureBGMappingBase = NativeSpriteTimelineRowsBase
+    + NativeSpriteTimelineBlockCount * 192u;
+static const uint NativeCaptureOBJMappingBase = NativeCaptureBGMappingBase
+    + 192u * (32u + 8u);
+static const uint NativeCaptureSpriteOBJMappingBase = NativeCaptureOBJMappingBase
+    + 192u * (16u + 8u);
+static const uint NativeCaptureBGMappingStride = 32u + 8u;
+static const uint NativeCaptureOBJMappingStride = 16u + 8u;
 static const uint NativeCaptureWords = 131072u;
 static const uint NativeObjRawWordsPerPixel = 2u;
 static const uint NativeObjRawScreenWords = 256u * 192u * NativeObjRawWordsPerPixel;
@@ -2415,25 +2423,115 @@ uint NativeSprite16(uint engine, uint line, uint base, uint size,
         | (NativeSpriteByte(engine, line, base, size, address + 1u,
             timelineBlockBase) << 8u);
 }
+
+uint NativeCaptureByte(uint bank, uint physicalAddress)
+{
+    uint offset = physicalAddress & 0x1FFFFu;
+    uint word = BlendContinuationState[FramebufferStride + bank * 32768u
+        + (offset >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFu;
+}
+
+uint NativeCaptureMappingMask(
+    uint engine, uint line, uint address, uint size,
+    bool obj, bool spriteLatch)
+{
+    if (line >= 192u || size == 0u)
+        return 0u;
+    uint offset = address & (size - 1u);
+    uint mappingIndex = offset >> 14u;
+    uint mappingCount = obj
+        ? (engine == 0u ? 16u : 8u)
+        : (engine == 0u ? 32u : 8u);
+    if (mappingIndex >= mappingCount)
+        return 0u;
+    uint base = NativeCaptureBGMappingBase;
+    uint stride = NativeCaptureBGMappingStride;
+    uint engineOffset = engine == 0u ? 0u : 32u;
+    if (obj)
+    {
+        base = spriteLatch
+            ? NativeCaptureSpriteOBJMappingBase
+            : NativeCaptureOBJMappingBase;
+        stride = NativeCaptureOBJMappingStride;
+        engineOffset = engine == 0u ? 0u : 16u;
+    }
+    return ResultValue[base + line * stride + engineOffset + mappingIndex];
+}
+
+uint NativeCaptureOverlayByte(
+    uint engine, uint line, uint size, uint address,
+    bool obj, bool spriteLatch)
+{
+    uint ownerMask = NativeCaptureMappingMask(
+        engine, line, address, size, obj, spriteLatch);
+    uint offset = size == 0u ? 0u : address & (size - 1u);
+    uint result = 0u;
+    for (uint bank = 0u; bank < 4u; ++bank)
+    {
+        if ((ownerMask & (1u << bank)) != 0u)
+            result |= NativeCaptureByte(bank, offset);
+    }
+    return result;
+}
+
+uint NativeMappedByte(
+    uint engine, uint line, uint base, uint size, uint address,
+    uint timelineBlockBase)
+{
+    return NativeByte(line, base, size, address, timelineBlockBase)
+        | NativeCaptureOverlayByte(engine, line, size, address, false, false);
+}
+
+uint NativeMapped16(
+    uint engine, uint line, uint base, uint size, uint address,
+    uint timelineBlockBase)
+{
+    return NativeMappedByte(engine, line, base, size, address,
+        timelineBlockBase)
+        | (NativeMappedByte(engine, line, base, size, address + 1u,
+            timelineBlockBase) << 8u);
+}
+
+uint NativeMappedSpriteByte(
+    uint engine, uint line, uint base, uint size, uint address,
+    uint timelineBlockBase)
+{
+    const bool useSpriteLatch =
+        (NativeLine(engine, line, NativeSpriteLatchValid) & 1u) != 0u;
+    return NativeSpriteByte(engine, line, base, size, address, timelineBlockBase)
+        | NativeCaptureOverlayByte(
+            engine, line, size, address, true, useSpriteLatch);
+}
+
+uint NativeMappedSprite16(
+    uint engine, uint line, uint base, uint size, uint address,
+    uint timelineBlockBase)
+{
+    return NativeMappedSpriteByte(engine, line, base, size, address,
+        timelineBlockBase)
+        | (NativeMappedSpriteByte(engine, line, base, size, address + 1u,
+            timelineBlockBase) << 8u);
+}
 uint NativeBGSize(uint engine) { return ResultValue[16u + engine * 4u]; }
 uint NativeOBJSize(uint engine) { return ResultValue[17u + engine * 4u]; }
 uint NativeBGExtSize(uint engine) { return ResultValue[18u + engine * 4u]; }
 uint NativeOBJExtSize(uint engine) { return ResultValue[19u + engine * 4u]; }
 uint NativeBG8(uint engine,uint line,uint address)
 {
-    return NativeByte(line,NativeEngineBase + engine * NativeEngineWords,
+    return NativeMappedByte(engine,line,NativeEngineBase + engine * NativeEngineWords,
         NativeBGSize(engine), address,
         NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks);
 }
 uint NativeBG16(uint engine,uint line,uint address)
 {
-    return Native16(line,NativeEngineBase + engine * NativeEngineWords,
+    return NativeMapped16(engine,line,NativeEngineBase + engine * NativeEngineWords,
         NativeBGSize(engine), address,
         NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks);
 }
 uint NativeOBJ8(uint engine, uint line, uint address)
 {
-    return NativeSpriteByte(engine, line,
+    return NativeMappedSpriteByte(engine, line,
         NativeEngineBase + engine * NativeEngineWords + 131072u,
         NativeOBJSize(engine), address,
         NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks
@@ -2441,7 +2539,7 @@ uint NativeOBJ8(uint engine, uint line, uint address)
 }
 uint NativeOBJ16(uint engine, uint line, uint address)
 {
-    return NativeSprite16(engine, line,
+    return NativeMappedSprite16(engine, line,
         NativeEngineBase + engine * NativeEngineWords + 131072u,
         NativeOBJSize(engine), address,
         NativeTimelineEngineBaseBlock + engine * NativeTimelineEngineBlocks

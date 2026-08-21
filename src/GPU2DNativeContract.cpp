@@ -35,8 +35,13 @@ void AddClassifiedBytes(UploadPlan& plan, u32 offset, u32 size) noexcept
         plan.FIFOBytes);
     addOverlap(PackedLCDVRAMBase * sizeof(u32), PackedRouteBase * sizeof(u32),
         plan.LCDVRAMBytes);
-    addOverlap(PackedTimelineBase * sizeof(u32), PackedFrameWords * sizeof(u32),
+    addOverlap(
+        PackedTimelineBase * sizeof(u32),
+        PackedNativeCaptureBGMappingBase * sizeof(u32),
         plan.TimelineBytes);
+    addOverlap(
+        PackedNativeCaptureBGMappingBase * sizeof(u32),
+        PackedFrameWords * sizeof(u32), plan.MappedCaptureBytes);
 }
 
 void AddRange(UploadPlan& plan, DirtyRange range) noexcept
@@ -86,6 +91,7 @@ void ClassifyRanges(UploadPlan& plan) noexcept
     plan.OAMBytes = 0;
     plan.FIFOBytes = 0;
     plan.LCDVRAMBytes = 0;
+    plan.MappedCaptureBytes = 0;
     for (u32 i = 0; i < plan.Count; ++i)
         AddClassifiedBytes(plan, plan.Ranges[i].Offset, plan.Ranges[i].Size);
 }
@@ -238,7 +244,7 @@ bool PackFrameRanges(
 
     std::array<u32, PackedHeaderWords> header{};
     header[0] = 0x32445047u; // "GPU2"
-    header[1] = 2u;
+    header[1] = 3u;
     const auto storeU64 = [&](u32 word, u64 value) {
         header[word] = static_cast<u32>(value);
         header[word + 1u] = static_cast<u32>(value >> 32u);
@@ -322,6 +328,18 @@ bool PackFrameRanges(
         input.SpriteTimelineRows.data(),
         static_cast<std::size_t>(input.SpriteTimelineRowCount) * SpriteTimelineBlockCount
             * sizeof(u32), plan);
+    CopySegmentForRanges(
+        destinationBytes, PackedNativeCaptureBGMappingBase * sizeof(u32),
+        input.NativeCaptureBGMapping.data(),
+        input.NativeCaptureBGMapping.size() * sizeof(u32), plan);
+    CopySegmentForRanges(
+        destinationBytes, PackedNativeCaptureOBJMappingBase * sizeof(u32),
+        input.NativeCaptureOBJMapping.data(),
+        input.NativeCaptureOBJMapping.size() * sizeof(u32), plan);
+    CopySegmentForRanges(
+        destinationBytes, PackedNativeCaptureSpriteOBJMappingBase * sizeof(u32),
+        input.NativeCaptureSpriteOBJMapping.data(),
+        input.NativeCaptureSpriteOBJMapping.size() * sizeof(u32), plan);
     return true;
 }
 
