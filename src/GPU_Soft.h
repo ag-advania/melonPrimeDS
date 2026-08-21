@@ -66,7 +66,11 @@ public:
     void AllocCapture(u32 bank, u32 start, u32 len) override;
     CaptureSyncResult SyncVRAMCapture(
         u32 bank, u32 start, u32 len, bool complete) override;
-    void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) override;
+    void InvalidateVRAMCapture(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason) override;
 
     // Publish physical LCDC blocks only after the native semantic command has
     // been submitted successfully. The owner deliberately survives the

@@ -17,6 +17,11 @@ def require_regex(text: str, pattern: str, label: str, failures: list[str]) -> N
         failures.append(f"{label}: missing /{pattern}/")
 
 
+def forbid(text: str, needle: str, label: str, failures: list[str]) -> None:
+    if needle in text:
+        failures.append(f"{label}: forbidden {needle!r}")
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[3]
     files = {
@@ -63,6 +68,9 @@ def main() -> int:
             "CapturePhysicalBlockBytes",
             "CaptureDirtyBlocksPerPhysicalBlock",
             "RecordGPU2DCaptureSync",
+            "CaptureAuthorityTransitionReason",
+            "IsAllowedNativeToCpuTransition",
+            "CaptureAuthorityDiagnostics",
         ):
             require(text["gpu_header"], needle, "core capture ownership contract", failures)
         for needle in (
@@ -71,9 +79,16 @@ def main() -> int:
             "ResetCaptureProvenance",
             "flagsMarkedSynced",
             "flagsCleared",
-            "SyncAllVRAMCaptures()",
+            "SyncAllVRAMCaptures(CaptureAuthorityTransitionReason reason)",
+            "capture_owner_transition",
         ):
             require(text["gpu_core"], needle, "core capture synchronization contract", failures)
+        for needle in (
+            "NativeToCpuReasonCaptureAllocated",
+            "NativeToCpuReasonFrameBegin",
+            "NativeToCpuReasonByteDifference",
+        ):
+            require(text["gpu_header"], needle, "capture authority diagnostics", failures)
 
         require(text["native_header"], "IsCurrentFrame", "frame identity", failures)
         require(text["native_header"], "TimelineBlockCount", "timeline ABI", failures)
@@ -103,13 +118,29 @@ def main() -> int:
         require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
         require(text["native_recorder"], "LCDVRAMProvenance", "native recorder capture provenance", failures)
         require(text["native_recorder"], "CaptureCoherentLCDVRAMForLine", "native recorder coherent capture path", failures)
-        require(text["native_header"], "ReconcileNativeCaptureCpuDifferences", "stale CPU replay reconciliation API", failures)
-        require(text["native_recorder"], "stale_cpu_replay_detected", "stale CPU replay diagnostic", failures)
-        require(text["native_header"], "MarkCaptureAllocationCpuCoherent", "same-frame capture allocation provenance", failures)
-        require(text["native_recorder"], "MarkCaptureAllocationCpuCoherent", "same-frame capture allocation provenance", failures)
-        require(text["soft_renderer"], "NativeGPU2DFrame.MarkCaptureAllocationCpuCoherent", "same-frame capture allocation hand-off", failures)
-        require(text["soft_renderer"], "staleCaptureBlocks", "stale CPU replay ownership hand-off", failures)
-        require(text["soft_renderer"], "MarkCaptureCpuCoherent(bank, physicalBlock, 1u)", "stale CPU replay ownership hand-off", failures)
+        require(text["native_recorder"], "A byte difference between CPU VRAM", "event-driven authority comment", failures)
+        require(text["soft_renderer"], "Allocating a Display Capture destination does not make CPU VRAM coherent", "allocation authority comment", failures)
+        require(text["soft_renderer"], "CaptureAuthorityTransitionReason reason", "reasoned invalidation", failures)
+        require(text["soft_renderer"], "MarkCaptureCpuCoherent(bank, start, len, reason)", "reasoned CPU authority", failures)
+        for label in ("gpu_header", "gpu_core", "native_header", "native_recorder", "soft_renderer"):
+            for forbidden in (
+                "ReconcileNativeCaptureCpuDifferences",
+                "MarkCaptureAllocationCpuCoherent",
+                "stale_cpu_replay_detected",
+                "staleCaptureBlocks",
+            ):
+                forbid(text[label], forbidden, f"{label} authority hardening", failures)
+        soft_alloc_start = text["soft_renderer"].find("void SoftRenderer::AllocCapture(")
+        soft_alloc_end = text["soft_renderer"].find("CaptureSyncResult SoftRenderer::SyncVRAMCapture(", soft_alloc_start)
+        if soft_alloc_start < 0 or soft_alloc_end < 0:
+            failures.append("soft renderer: could not isolate AllocCapture authority boundary")
+        else:
+            forbid(
+                text["soft_renderer"][soft_alloc_start:soft_alloc_end],
+                "MarkCaptureCpuCoherent",
+                "soft renderer allocation authority boundary",
+                failures,
+            )
         require(text["native_recorder"], "GPU2DWriteKind::CaptureSync", "native recorder capture-sync journal", failures)
         require(text["native_header"], "LCDVRAMProvenance", "host-only capture provenance", failures)
         if "CaptureNativeDisplayLine" in text["soft_renderer"]:

@@ -100,7 +100,9 @@ CaptureSyncResult VulkanRenderer::SyncVRAMCapture(
             for (u32 subblock = 0; subblock < 64u; ++subblock)
                 GPU.VRAMDirty[bank][block * 64u + subblock] = true;
         }
-        MarkCaptureCpuCoherent(bank, start, len);
+        MarkCaptureCpuCoherent(
+            bank, start, len,
+            CaptureAuthorityTransitionReason::NativeReadbackMaterialized);
         GPU.RecordGPU2DCaptureSync(bank, start, len);
         return CaptureSyncResult::Synchronized;
     }
@@ -111,9 +113,13 @@ CaptureSyncResult VulkanRenderer::SyncVRAMCapture(
     return SoftRenderer::SyncVRAMCapture(bank, start, len, complete);
 }
 
-void VulkanRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
+void VulkanRenderer::InvalidateVRAMCapture(
+    u32 bank,
+    u32 start,
+    u32 len,
+    CaptureAuthorityTransitionReason reason)
 {
-    SoftRenderer::InvalidateVRAMCapture(bank, start, len);
+    SoftRenderer::InvalidateVRAMCapture(bank, start, len, reason);
 }
 
 NativeCaptureStateIdentity VulkanRenderer::GetNativeCaptureStateIdentity() const noexcept

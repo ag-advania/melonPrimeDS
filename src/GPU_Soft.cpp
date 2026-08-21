@@ -68,7 +68,7 @@ void SoftRenderer::Reset()
     SoftwareLogicalFrame.fill(0);
     SoftwareScreenFrame.fill(0);
     NativeGPU2DFrame.Reset();
-    ResetCaptureProvenance();
+    ResetCaptureProvenance(CaptureAuthorityTransitionReason::RendererReset);
     NativeGPU2DProducerForFrame = false;
     RecordNativeGPU2DFrameForFrame = false;
     EmulatedFrameSerial = 0;
@@ -137,16 +137,13 @@ void SoftRenderer::Stop()
 
 void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 {
-    // A new capture supersedes any native owner for these physical blocks.
-    // Until the next native semantic submission, the existing CPU VRAM bytes
-    // are the coherent same-bank source for an in-progress capture.
-    MarkCaptureCpuCoherent(bank, start, len);
-    NativeGPU2DFrame.MarkCaptureAllocationCpuCoherent(bank, start, len);
-    // Claiming a destination is not an invalidation. The old pixels are still
-    // the source for same-bank Display Capture until each new pixel is written;
-    // OpenGL preserves them in CaptureVRAMTex for the same reason. GPU.cpp calls
-    // InvalidateVRAMCapture explicitly when a capture is actually retired or
-    // CPU/DMA writes make emulated VRAM authoritative.
+    (void)bank;
+    (void)start;
+    (void)len;
+    // Allocating a Display Capture destination does not make CPU VRAM coherent.
+    // It does not retire an existing native capture owner. The old
+    // destination pixels remain semantically live until they are actually
+    // overwritten or explicitly materialized/invalidated.
 }
 
 CaptureSyncResult SoftRenderer::SyncVRAMCapture(
@@ -163,9 +160,13 @@ CaptureSyncResult SoftRenderer::SyncVRAMCapture(
     return CaptureSyncResult::AlreadyCoherent;
 }
 
-void SoftRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
+void SoftRenderer::InvalidateVRAMCapture(
+    u32 bank,
+    u32 start,
+    u32 len,
+    CaptureAuthorityTransitionReason reason)
 {
-    MarkCaptureCpuCoherent(bank, start, len);
+    MarkCaptureCpuCoherent(bank, start, len, reason);
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     InvalidateStructuredCaptureBlocks(bank, start, len);
 #else
@@ -289,27 +290,6 @@ void SoftRenderer::DrawScanline(u32 line)
         if (RecordNativeGPU2DFrameForFrame)
         {
             NativeGPU2DFrame.BeginFrame(EmulatedFrameSerial);
-            const u16 staleCaptureBlocks =
-                NativeGPU2DFrame.ReconcileNativeCaptureCpuDifferences();
-            for (u32 bank = 0; bank < CapturePhysicalBanks; ++bank)
-            {
-                for (u32 physicalBlock = 0;
-                    physicalBlock < CapturePhysicalBlocksPerBank;
-                    ++physicalBlock)
-                {
-                    const u32 bit =
-                        bank * CapturePhysicalBlocksPerBank
-                        + physicalBlock;
-                    if ((staleCaptureBlocks & (1u << bit)) != 0u)
-                    {
-                        // The recorder has copied the newer CPU-visible block
-                        // into its private input. Keep renderer provenance in
-                        // lockstep so a subsequent sync cannot read back the
-                        // older native capture over that CPU/state-load data.
-                        MarkCaptureCpuCoherent(bank, physicalBlock, 1u);
-                    }
-                }
-            }
         }
         else
             NativeGPU2DFrame.Reset();

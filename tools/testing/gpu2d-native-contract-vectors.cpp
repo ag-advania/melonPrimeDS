@@ -408,6 +408,12 @@ struct CaptureOwnershipModel
     u64 LastNativeCaptureCompletionValue = 0;
     bool PresentationSubmitted = false;
     bool PresentationStallObserved = false;
+    u32 ActiveCaptureBank = 0;
+    u32 ActiveCaptureStart = 0;
+    u32 ActiveCaptureLen = 0;
+    bool ActiveCapture = false;
+    u32 CpuCaptureVersion = 0;
+    u32 RecorderCaptureVersion = 0;
 
     u64 SubmitSemantic(u64 localContextFence)
     {
@@ -447,17 +453,36 @@ struct CaptureOwnershipModel
         RecorderBlocks = Blocks;
     }
 
-    void MarkCaptureAllocationCpuCoherent(u32 bank, u32 start, u32 len)
+    void BeginCaptureAllocation(u32 bank, u32 start, u32 len)
     {
-        const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
-        for (u32 i = 0u; i < blockCount; ++i)
+        ActiveCaptureBank = bank;
+        ActiveCaptureStart = start;
+        ActiveCaptureLen = len;
+        ActiveCapture = true;
+    }
+
+    bool ObserveCpuByteDifference(u32 bank, u32 block) const
+    {
+        const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+        return IsNativeCaptureOwner(Blocks[index].Owner)
+            && CpuCaptureVersion != RecorderCaptureVersion;
+    }
+
+    bool TransitionToCpu(
+        u32 bank,
+        u32 block,
+        CaptureAuthorityTransitionReason reason)
+    {
+        const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+        if (IsNativeCaptureOwner(Blocks[index].Owner)
+            && !IsAllowedNativeToCpuTransition(reason))
         {
-            const u32 index = bank * CapturePhysicalBlocksPerBank
-                + ((start + i) & (CapturePhysicalBlocksPerBank - 1u));
-            Blocks[index] = {};
-            Blocks[index].Owner = CaptureOwner::CpuCoherent;
-            RecorderBlocks[index] = Blocks[index];
+            return false;
         }
+        Blocks[index] = {};
+        Blocks[index].Owner = CaptureOwner::CpuCoherent;
+        RecorderBlocks[index] = Blocks[index];
+        return true;
     }
 
     CaptureSyncResult SelectSyncSource(
@@ -503,20 +528,44 @@ bool RunCaptureOwnershipVectors()
     model.PublishNative(
         CaptureOwner::NativeVulkan, 7u, 100u, 41u, 9001u, 2u, 1u);
 
-    // BeginFrame snapshots the prior native owner. A same-frame capture
-    // allocation must update both the renderer owner and that recorder copy,
-    // otherwise the coherent CPU destination is still filtered from upload.
+    // BeginFrame snapshots the prior native owner. Allocating the same
+    // destination must not update either copy: the old native pixels remain
+    // semantically live until a real write or readback event occurs.
     model.RefreshRecorderProvenance();
-    model.MarkCaptureAllocationCpuCoherent(2u, 1u, 1u);
+    model.BeginCaptureAllocation(2u, 1u, 0u);
     passed &= Require(
         model.Blocks[2u * CapturePhysicalBlocksPerBank + 1u].Owner
-            == CaptureOwner::CpuCoherent
+            == CaptureOwner::NativeVulkan
             && model.RecorderBlocks[
                 2u * CapturePhysicalBlocksPerBank + 1u].Owner
+                == CaptureOwner::NativeVulkan
+            && model.ActiveCapture
+            && model.ActiveCaptureBank == 2u
+            && model.ActiveCaptureStart == 1u,
+        "same-geometry capture allocation discarded native provenance");
+
+    model.CpuCaptureVersion = 2u;
+    model.RecorderCaptureVersion = 1u;
+    passed &= Require(
+        model.ObserveCpuByteDifference(2u, 1u)
+            && model.Blocks[2u * CapturePhysicalBlocksPerBank + 1u].Owner
+                == CaptureOwner::NativeVulkan,
+        "CPU/native byte difference was treated as an authority transition");
+
+    passed &= Require(
+        model.TransitionToCpu(
+            2u, 1u, CaptureAuthorityTransitionReason::CpuWrite)
+            && model.Blocks[2u * CapturePhysicalBlocksPerBank + 1u].Owner
                 == CaptureOwner::CpuCoherent,
-        "same-frame capture allocation left stale native recorder provenance");
+        "real CPU write did not perform an event-driven authority transition");
     model.PublishNative(
         CaptureOwner::NativeVulkan, 7u, 100u, 41u, 9001u, 2u, 1u);
+    passed &= Require(
+        !model.TransitionToCpu(
+            2u, 1u, CaptureAuthorityTransitionReason::NativeSemanticWrite)
+            && model.Blocks[2u * CapturePhysicalBlocksPerBank + 1u].Owner
+                == CaptureOwner::NativeVulkan,
+        "native semantic write was incorrectly accepted as native-to-CPU");
 
     bool flagsMarkedSynced = false;
     const u16 flagsBeforeFailure = 0xE001u;

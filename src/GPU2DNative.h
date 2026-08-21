@@ -505,12 +505,6 @@ public:
 
     void Reset() noexcept;
     void BeginFrame(u64 frame) noexcept;
-    // A native capture owner may outlive this recorder, while the software
-    // exact oracle or a state restore can materialize newer CPU-visible bytes
-    // before the next recorder starts. Reconcile only the private FrameInput
-    // here; the renderer applies the returned physical-block mask to its
-    // ownership table at the frame boundary.
-    [[nodiscard]] u16 ReconcileNativeCaptureCpuDifferences() noexcept;
     void CaptureLine(
         u32 engine,
         const melonDS::GPU2D& gpu2D,
@@ -522,12 +516,6 @@ public:
     // point, after DrawScanline(line) and before DrawScanline(line+1).
     void CaptureSpriteLatchForLine(u32 line) noexcept;
     void FinalizeMemory() noexcept;
-    // GPU::CheckCaptureStart can allocate a destination after BeginFrame has
-    // copied the renderer's physical-block provenance. Refresh that snapshot
-    // at the ownership hand-off so a newly allocated CPU-coherent destination
-    // is uploaded instead of being filtered as the prior native capture.
-    void MarkCaptureAllocationCpuCoherent(
-        u32 bank, u32 start, u32 len) noexcept;
 
     [[nodiscard]] const FrameInput& GetFrame() const noexcept { return Input; }
     [[nodiscard]] bool IsValid() const noexcept { return Valid; }

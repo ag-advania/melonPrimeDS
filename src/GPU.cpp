@@ -77,6 +77,12 @@ u64 HashCaptureVRAM(const GPU& gpu, u32 bank, u32 start, u32 len) noexcept
     }
     return hash;
 }
+
+u64 CaptureAuthorityEmulatedFrame(const Renderer& renderer) noexcept
+{
+    const auto* soft = dynamic_cast<const SoftRenderer*>(&renderer);
+    return soft ? soft->GetEmulatedFrameSerial() : 0u;
+}
 }
 
 const CaptureBlockProvenance& Renderer::GetCaptureBlockProvenance(
@@ -120,7 +126,11 @@ bool Renderer::GetCaptureProvenanceForRange(
     return true;
 }
 
-void Renderer::MarkCaptureCpuCoherent(u32 bank, u32 start, u32 len) noexcept
+void Renderer::MarkCaptureCpuCoherent(
+    u32 bank,
+    u32 start,
+    u32 len,
+    CaptureAuthorityTransitionReason reason) noexcept
 {
     if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
         return;
@@ -131,6 +141,50 @@ void Renderer::MarkCaptureCpuCoherent(u32 bank, u32 start, u32 len) noexcept
         CaptureBlockProvenance& provenance = CaptureProvenance[
             bank * CapturePhysicalBlocksPerBank
                 + ((start + i) & (CapturePhysicalBlocksPerBank - 1u))];
+
+        const CaptureOwner oldOwner = provenance.Owner;
+        if (IsNativeCaptureOwner(oldOwner)
+            && !IsAllowedNativeToCpuTransition(reason))
+        {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            Platform::Log(
+                Platform::LogLevel::Error,
+                "[GPU2DCaptureOwnership] event=invalid_native_to_cpu_transition "
+                "bank=%u block=%u oldOwner=%s newOwner=CpuCoherent reason=%s\n",
+                bank,
+                (start + i) & (CapturePhysicalBlocksPerBank - 1u),
+                CaptureOwnerName(oldOwner),
+                CaptureAuthorityTransitionReasonName(reason));
+#endif
+            // Never discard a native mirror because a caller supplied an
+            // authority reason that is not allowed to materialize CPU VRAM.
+            continue;
+        }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+        const u64 cpuHash = HashCaptureVRAM(GPU, bank, block, 1u);
+        const u64 nativeHash =
+            reason == CaptureAuthorityTransitionReason::NativeReadbackMaterialized
+            ? cpuHash : 0u;
+        if (oldOwner != CaptureOwner::CpuCoherent)
+        {
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[GPU2DCaptureOwnership] event=capture_owner_transition "
+                "bank=%u block=%u oldOwner=%s newOwner=CpuCoherent reason=%s "
+                "emuFrame=%llu semanticFrame=%llu captureGeneration=%llu "
+                "epoch=%llu cpuHash=0x%llx nativeHash=0x%llx\n",
+                bank, block, CaptureOwnerName(oldOwner),
+                CaptureAuthorityTransitionReasonName(reason),
+                static_cast<unsigned long long>(CaptureAuthorityEmulatedFrame(*this)),
+                static_cast<unsigned long long>(provenance.SemanticFrame),
+                static_cast<unsigned long long>(provenance.CaptureGeneration),
+                static_cast<unsigned long long>(provenance.Epoch),
+                static_cast<unsigned long long>(cpuHash),
+                static_cast<unsigned long long>(nativeHash));
+        }
+#endif
         provenance = {};
         provenance.Owner = CaptureOwner::CpuCoherent;
     }
@@ -141,7 +195,8 @@ void Renderer::PublishNativeCaptureBlock(
     const NativeCaptureStateIdentity& identity,
     u32 bank,
     u32 start,
-    u32 len) noexcept
+    u32 len,
+    CaptureAuthorityTransitionReason reason) noexcept
 {
     if (!IsNativeCaptureOwner(owner)
         || !identity.Valid
@@ -159,6 +214,31 @@ void Renderer::PublishNativeCaptureBlock(
         CaptureBlockProvenance& provenance = CaptureProvenance[
             bank * CapturePhysicalBlocksPerBank
                 + ((start + i) & (CapturePhysicalBlocksPerBank - 1u))];
+        const CaptureOwner oldOwner = provenance.Owner;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+        const u64 cpuHash = HashCaptureVRAM(GPU, bank, block, 1u);
+        if (oldOwner != owner
+            || provenance.Epoch != identity.Epoch
+            || provenance.SemanticFrame != identity.SemanticFrame
+            || provenance.CaptureGeneration != identity.CaptureGeneration
+            || provenance.CompletionValue != identity.CompletionValue)
+        {
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[GPU2DCaptureOwnership] event=capture_owner_transition "
+                "bank=%u block=%u oldOwner=%s newOwner=%s reason=%s "
+                "emuFrame=%llu semanticFrame=%llu captureGeneration=%llu "
+                "epoch=%llu cpuHash=0x%llx nativeHash=0x0\n",
+                bank, block, CaptureOwnerName(oldOwner), CaptureOwnerName(owner),
+                CaptureAuthorityTransitionReasonName(reason),
+                static_cast<unsigned long long>(CaptureAuthorityEmulatedFrame(*this)),
+                static_cast<unsigned long long>(identity.SemanticFrame),
+                static_cast<unsigned long long>(identity.CaptureGeneration),
+                static_cast<unsigned long long>(identity.Epoch),
+                static_cast<unsigned long long>(cpuHash));
+        }
+#endif
         provenance.Owner = owner;
         provenance.Epoch = identity.Epoch;
         provenance.SemanticFrame = identity.SemanticFrame;
@@ -167,8 +247,35 @@ void Renderer::PublishNativeCaptureBlock(
     }
 }
 
-void Renderer::ResetCaptureProvenance() noexcept
+void Renderer::ResetCaptureProvenance(
+    CaptureAuthorityTransitionReason reason) noexcept
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (u32 bank = 0; bank < CapturePhysicalBanks; ++bank)
+    {
+        for (u32 block = 0; block < CapturePhysicalBlocksPerBank; ++block)
+        {
+            const CaptureBlockProvenance& provenance =
+                CaptureProvenance[bank * CapturePhysicalBlocksPerBank + block];
+            if (provenance.Owner == CaptureOwner::None)
+                continue;
+            const u64 cpuHash = HashCaptureVRAM(GPU, bank, block, 1u);
+            Platform::Log(
+                Platform::LogLevel::Info,
+                "[GPU2DCaptureOwnership] event=capture_owner_transition "
+                "bank=%u block=%u oldOwner=%s newOwner=None reason=%s "
+                "emuFrame=%llu semanticFrame=%llu captureGeneration=%llu "
+                "epoch=%llu cpuHash=0x%llx nativeHash=0x0\n",
+                bank, block, CaptureOwnerName(provenance.Owner),
+                CaptureAuthorityTransitionReasonName(reason),
+                static_cast<unsigned long long>(CaptureAuthorityEmulatedFrame(*this)),
+                static_cast<unsigned long long>(provenance.SemanticFrame),
+                static_cast<unsigned long long>(provenance.CaptureGeneration),
+                static_cast<unsigned long long>(provenance.Epoch),
+                static_cast<unsigned long long>(cpuHash));
+        }
+    }
+#endif
     CaptureProvenance.fill({});
 }
 
@@ -334,7 +441,8 @@ void GPU::DoSavestate(Savestate* file) noexcept
     bool capturesSynchronized = true;
     if (file->Saving)
     {
-        capturesSynchronized = SyncAllVRAMCaptures();
+        capturesSynchronized = SyncAllVRAMCaptures(
+            CaptureAuthorityTransitionReason::SavestateSave);
     }
 
     // Renderer capture synchronization is ownership-sensitive and may fail.
@@ -443,14 +551,16 @@ void GPU::DoSavestate(Savestate* file) noexcept
         // Native mirrors belong to the pre-load renderer epoch. The loaded
         // CPU VRAM is the only authoritative copy until a new semantic native
         // submission publishes fresh provenance.
-        Rend->ResetCaptureProvenance();
+        Rend->ResetCaptureProvenance(
+            CaptureAuthorityTransitionReason::SavestateLoad);
     }
 }
 
 
 void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
 {
-    if (!SyncAllVRAMCaptures())
+    if (!SyncAllVRAMCaptures(
+            CaptureAuthorityTransitionReason::RendererSwitch))
     {
         Platform::Log(
             Platform::LogLevel::Error,
@@ -1860,7 +1970,9 @@ void GPU::CheckCaptureStart()
             // VRAM and permanently discard the native mirror.
             return;
         }
-        Rend->InvalidateVRAMCapture(dstbank, oldstart, oldsize);
+        Rend->InvalidateVRAMCapture(
+            dstbank, oldstart, oldsize,
+            CaptureAuthorityTransitionReason::CaptureRetired);
         VRAMCBFlagsClear(dstbank, oldstart);
     }
 
@@ -1907,7 +2019,9 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
             const CaptureBlockProvenance owner =
                 Rend->GetCaptureBlockProvenance(bank, start);
             const u64 cpuVRAMHash = HashCaptureVRAM(*this, bank, start, len);
-            Rend->InvalidateVRAMCapture(bank, start, len);
+            Rend->InvalidateVRAMCapture(
+                bank, start, len,
+                CaptureAuthorityTransitionReason::CpuWrite);
             VRAMCBFlagsClear(bank, start);
             LogCaptureSync(
                 bank, start, len, flags, owner, cpuVRAMHash, 0u, cpuVRAMHash,
@@ -1939,7 +2053,9 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     {
         // if this block was written to by the CPU, invalidate the entire capture
         // the renderer will need to use the emulated VRAM contents
-        Rend->InvalidateVRAMCapture(bank, start, len);
+        Rend->InvalidateVRAMCapture(
+            bank, start, len,
+            CaptureAuthorityTransitionReason::CpuWrite);
         VRAMCBFlagsClear(bank, start);
         LogCaptureSync(
             bank, start, len, flags, owner, cpuVRAMHashBefore,
@@ -1949,7 +2065,9 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     else
     {
         // if this block was simply read by the CPU, we just need to mark it as synced
-        Rend->MarkCaptureCpuCoherent(bank, start, len);
+        Rend->MarkCaptureCpuCoherent(
+            bank, start, len,
+            CaptureAuthorityTransitionReason::NativeReadbackMaterialized);
         VRAMCBFlagsOr(bank, start, CBFlag_Synced);
         LogCaptureSync(
             bank, start, len, flags, owner, cpuVRAMHashBefore,
@@ -1958,7 +2076,7 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     }
 }
 
-bool GPU::SyncAllVRAMCaptures()
+bool GPU::SyncAllVRAMCaptures(CaptureAuthorityTransitionReason reason)
 {
     if (!Rend)
         return true;
@@ -1992,7 +2110,7 @@ bool GPU::SyncAllVRAMCaptures()
                 cpuVRAMHashAfterSync, result, false, false);
             continue;
         }
-        Rend->InvalidateVRAMCapture(bank, start, len);
+        Rend->InvalidateVRAMCapture(bank, start, len, reason);
         VRAMCBFlagsClear(bank, start);
         LogCaptureSync(
             bank, start, len, flags, owner, cpuVRAMHashBefore,

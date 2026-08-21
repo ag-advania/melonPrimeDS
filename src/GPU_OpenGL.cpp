@@ -870,7 +870,6 @@ void GLRenderer::DoCapture(int ystart, int yend)
 
 void GLRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 {
-    MarkCaptureCpuCoherent(bank, start, len);
     auto rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
     rend2D->LayerConfigDirty = true;
     rend2D->SpriteConfigDirty = true;
@@ -951,7 +950,9 @@ CaptureSyncResult GLRenderer::SyncVRAMCapture(
             pos &= 3;
         }
     }
-    MarkCaptureCpuCoherent(bank, start, len);
+    MarkCaptureCpuCoherent(
+        bank, start, len,
+        CaptureAuthorityTransitionReason::NativeReadbackMaterialized);
     return CaptureSyncResult::Synchronized;
 }
 

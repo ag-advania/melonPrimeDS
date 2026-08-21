@@ -279,6 +279,77 @@ enum class CaptureSyncResult : u8
     Failed,
 };
 
+// Capture authority changes are event-driven.  In particular, allocation,
+// frame rollover, presentation pressure, and a byte comparison are not
+// evidence that CPU VRAM is newer than a native capture mirror.
+enum class CaptureAuthorityTransitionReason : u8
+{
+    NativeSemanticWrite = 0,
+    NativeReadbackMaterialized,
+    CpuWrite,
+    CaptureRetired,
+    SavestateLoad,
+    SavestateSave,
+    RendererReset,
+    RendererSwitch,
+    SessionReset,
+};
+
+[[nodiscard]] constexpr bool IsAllowedNativeToCpuTransition(
+    CaptureAuthorityTransitionReason reason) noexcept
+{
+    switch (reason)
+    {
+    case CaptureAuthorityTransitionReason::NativeReadbackMaterialized:
+    case CaptureAuthorityTransitionReason::CpuWrite:
+    case CaptureAuthorityTransitionReason::CaptureRetired:
+    case CaptureAuthorityTransitionReason::SavestateLoad:
+    case CaptureAuthorityTransitionReason::SavestateSave:
+    case CaptureAuthorityTransitionReason::RendererReset:
+    case CaptureAuthorityTransitionReason::RendererSwitch:
+    case CaptureAuthorityTransitionReason::SessionReset:
+        return true;
+    case CaptureAuthorityTransitionReason::NativeSemanticWrite:
+        return false;
+    }
+    return false;
+}
+
+[[nodiscard]] constexpr const char* CaptureAuthorityTransitionReasonName(
+    CaptureAuthorityTransitionReason reason) noexcept
+{
+    switch (reason)
+    {
+    case CaptureAuthorityTransitionReason::NativeSemanticWrite:
+        return "NativeSemanticWrite";
+    case CaptureAuthorityTransitionReason::NativeReadbackMaterialized:
+        return "NativeReadbackMaterialized";
+    case CaptureAuthorityTransitionReason::CpuWrite:
+        return "CpuWrite";
+    case CaptureAuthorityTransitionReason::CaptureRetired:
+        return "CaptureRetired";
+    case CaptureAuthorityTransitionReason::SavestateLoad:
+        return "SavestateLoad";
+    case CaptureAuthorityTransitionReason::SavestateSave:
+        return "SavestateSave";
+    case CaptureAuthorityTransitionReason::RendererReset:
+        return "RendererReset";
+    case CaptureAuthorityTransitionReason::RendererSwitch:
+        return "RendererSwitch";
+    case CaptureAuthorityTransitionReason::SessionReset:
+        return "SessionReset";
+    }
+    return "Unknown";
+}
+
+struct CaptureAuthorityDiagnostics
+{
+    u64 NativeToCpuReasonCaptureAllocated = 0;
+    u64 NativeToCpuReasonFrameBegin = 0;
+    u64 NativeToCpuReasonByteDifference = 0;
+    u64 NativeOwnedHostReupload = 0;
+};
+
 [[nodiscard]] constexpr const char* CaptureSyncResultName(
     CaptureSyncResult result) noexcept
 {
@@ -1199,7 +1270,8 @@ private:
     void CheckCaptureStart();
     void CheckCaptureEnd();
     void SyncVRAMCaptureBlock(u32 block, bool write);
-    bool SyncAllVRAMCaptures();
+    bool SyncAllVRAMCaptures(
+        CaptureAuthorityTransitionReason reason);
     void LogCaptureSync(
         u32 bank,
         u32 start,
@@ -1274,7 +1346,7 @@ class Renderer
 public:
     explicit Renderer(melonDS::GPU& gpu) : GPU(gpu), BackBuffer(0)
     {
-        ResetCaptureProvenance();
+        ResetCaptureProvenance(CaptureAuthorityTransitionReason::SessionReset);
     }
     virtual ~Renderer() {}
     virtual bool Init() = 0;
@@ -1304,9 +1376,13 @@ public:
     // fall through to the SoftRenderer no-op sync path.
     virtual CaptureSyncResult SyncVRAMCapture(
         u32 bank, u32 start, u32 len, bool complete) = 0;
-    virtual void InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
+    virtual void InvalidateVRAMCapture(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason)
     {
-        MarkCaptureCpuCoherent(bank, start, len);
+        MarkCaptureCpuCoherent(bank, start, len, reason);
     }
 
     [[nodiscard]] const CaptureBlockProvenance& GetCaptureBlockProvenance(
@@ -1320,14 +1396,27 @@ public:
         u32 start,
         u32 len,
         CaptureBlockProvenance& representative) const noexcept;
-    void MarkCaptureCpuCoherent(u32 bank, u32 start, u32 len) noexcept;
+    void MarkCaptureCpuCoherent(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason) noexcept;
     void PublishNativeCaptureBlock(
         CaptureOwner owner,
         const NativeCaptureStateIdentity& identity,
         u32 bank,
         u32 start,
-        u32 len) noexcept;
-    void ResetCaptureProvenance() noexcept;
+        u32 len,
+        CaptureAuthorityTransitionReason reason =
+            CaptureAuthorityTransitionReason::NativeSemanticWrite) noexcept;
+    void ResetCaptureProvenance(
+        CaptureAuthorityTransitionReason reason) noexcept;
+
+    [[nodiscard]] const CaptureAuthorityDiagnostics&
+    GetCaptureAuthorityDiagnostics() const noexcept
+    {
+        return CaptureAuthorityStats;
+    }
 
     [[nodiscard]] virtual NativeCaptureStateIdentity
     GetNativeCaptureStateIdentity() const noexcept
@@ -1381,6 +1470,7 @@ protected:
 
     std::array<CaptureBlockProvenance, CapturePhysicalBlockCount>
         CaptureProvenance{};
+    CaptureAuthorityDiagnostics CaptureAuthorityStats{};
 
     std::unique_ptr<Renderer2D> Rend2D_A;
     std::unique_ptr<Renderer2D> Rend2D_B;

@@ -820,7 +820,6 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
 
 void MetalRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 {
-    MarkCaptureCpuCoherent(bank, start, len);
     if (!CaptureState || !CaptureState->Ready ||
         bank >= 4 || start >= 4)
     {
@@ -1130,7 +1129,9 @@ CaptureSyncResult MetalRenderer::SyncVRAMCapture(
             "bank=%u start=%u size=%u\n",
             bank, start, len);
     }
-    MarkCaptureCpuCoherent(bank, start, len);
+    MarkCaptureCpuCoherent(
+        bank, start, len,
+        CaptureAuthorityTransitionReason::NativeReadbackMaterialized);
     return CaptureSyncResult::Synchronized;
 }
 
