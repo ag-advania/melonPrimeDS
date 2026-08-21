@@ -24,6 +24,234 @@ bool Require(bool condition, const char* message)
     return false;
 }
 
+u32 SoftwareCaptureByteAddress(
+    u32 offsetCode, u32 width, u32 line, u32 x)
+{
+    const u32 halfword = WrapLCDCHalfword(
+        CaptureOffsetHalfwords(offsetCode) + line * width + x);
+    return halfword << 1u;
+}
+
+u32 NativeCaptureByteAddress(
+    u32 offsetCode, u32 width, u32 line, u32 x)
+{
+    return WrapLCDCByte(
+        CaptureOffsetBytes(offsetCode)
+        + line * width * 2u + x * 2u);
+}
+
+u32 SoftwareSourceBByteAddress(u32 offsetCode, u32 line, u32 x)
+{
+    const u32 halfword = WrapLCDCHalfword(
+        line * 256u + x + CaptureOffsetHalfwords(offsetCode));
+    return halfword << 1u;
+}
+
+u32 NativeSourceBByteAddress(u32 offsetCode, u32 line, u32 x)
+{
+    return WrapLCDCByte(
+        line * 512u + x * 2u + CaptureOffsetBytes(offsetCode));
+}
+
+u32 SoftwareCaptureBlockMask(u32 offsetCode, u32 sizeCode)
+{
+    const u32 width = CaptureWidthForSize(sizeCode);
+    const u32 height = CaptureHeightForSize(sizeCode);
+    u32 mask = 0u;
+    for (u32 line = 0u; line < height; ++line)
+    {
+        for (u32 x = 0u; x < width; x += 2u)
+        {
+            const u32 byteAddress = SoftwareCaptureByteAddress(
+                offsetCode, width, line, x);
+            mask |= 1u << (byteAddress / CapturePhysicalBlockBytes);
+        }
+    }
+    return mask;
+}
+
+u32 NativeCaptureBlockMask(u32 offsetCode, u32 sizeCode)
+{
+    const u32 width = CaptureWidthForSize(sizeCode);
+    const u32 height = CaptureHeightForSize(sizeCode);
+    u32 mask = 0u;
+    for (u32 line = 0u; line < height; ++line)
+    {
+        for (u32 x = 0u; x < width; x += 2u)
+        {
+            const u32 byteAddress = NativeCaptureByteAddress(
+                offsetCode, width, line, x);
+            mask |= 1u << (byteAddress / CapturePhysicalBlockBytes);
+        }
+    }
+    return mask;
+}
+
+void SimulateNativeCompactCapture(
+    std::vector<u8>& mirror,
+    u32 bank,
+    u32 offsetCode,
+    u32 sizeCode)
+{
+    const u32 width = CaptureWidthForSize(sizeCode);
+    const u32 height = CaptureHeightForSize(sizeCode);
+    const std::size_t bankBase = static_cast<std::size_t>(bank)
+        * LCDCBankBytes;
+    for (u32 line = 0u; line < height; ++line)
+    {
+        for (u32 x = 0u; x < width; x += 2u)
+        {
+            const u32 address = NativeCaptureByteAddress(
+                offsetCode, width, line, x);
+            mirror[bankBase + address] = 0x3Cu;
+            mirror[bankBase + address + 1u] = 0xC3u;
+            mirror[bankBase + address + 2u] = 0x3Cu;
+            mirror[bankBase + address + 3u] = 0xC3u;
+        }
+    }
+}
+
+bool RunCaptureAddressVectors()
+{
+    bool passed = true;
+
+    const std::array<u32, 4> expectedStartBytes = {
+        0x00000u, 0x08000u, 0x10000u, 0x18000u};
+    for (u32 offset = 0u; offset < 4u; ++offset)
+    {
+        passed &= Require(
+            CaptureOffsetBytes(offset) == expectedStartBytes[offset],
+            "capture destination offset did not convert halfwords to bytes");
+    }
+
+    // Exercise every size/offset pair and several edge pixels. The software
+    // expression is intentionally kept independent from the native byte
+    // expression so a unit regression cannot make both sides pass together.
+    for (u32 size = 0u; size < 4u; ++size)
+    {
+        const u32 width = CaptureWidthForSize(size);
+        const u32 height = CaptureHeightForSize(size);
+        const u32 expectedBytes = width * height * 2u;
+        passed &= Require(
+            expectedBytes == (size == 0u ? 0x8000u
+                : size == 1u ? 0x8000u
+                : size == 2u ? 0x10000u : 0x18000u),
+            "capture size code has an unexpected byte length");
+
+        const std::array<u32, 4> lines = {
+            0u, height / 2u, height - 1u, height > 1u ? height - 2u : 0u};
+        const std::array<u32, 4> xs = {
+            0u, 1u, width / 2u, width - 1u};
+        for (u32 offset = 0u; offset < 4u; ++offset)
+        {
+            const u32 softwareMask = SoftwareCaptureBlockMask(offset, size);
+            const u32 nativeMask = NativeCaptureBlockMask(offset, size);
+            passed &= Require(
+                softwareMask == nativeMask,
+                "software/native capture block masks differ");
+            for (const u32 line : lines)
+            {
+                for (const u32 x : xs)
+                {
+                    passed &= Require(
+                        SoftwareCaptureByteAddress(offset, width, line, x)
+                            == NativeCaptureByteAddress(offset, width, line, x),
+                        "software/native capture byte address differs");
+                }
+            }
+        }
+    }
+
+    // Source-B is a separate byte-address context. Use one unique BGR555
+    // value per 32 KiB band so offset 0 alone cannot hide a bad conversion.
+    const std::array<u16, 4> sourcePatterns = {
+        0x001Fu, 0x03E0u, 0x7C00u, 0x7FFFu};
+    for (u32 offset = 0u; offset < 4u; ++offset)
+    {
+        for (const u32 line : {0u, 63u, 127u, 191u})
+        {
+            for (const u32 x : {0u, 5u, 127u, 255u})
+            {
+                const u32 software = SoftwareSourceBByteAddress(offset, line, x);
+                const u32 native = NativeSourceBByteAddress(offset, line, x);
+                passed &= Require(
+                    software == native,
+                    "software/native source-B byte address differs");
+                passed &= Require(
+                    sourcePatterns[software / CapturePhysicalBlockBytes]
+                        == sourcePatterns[native / CapturePhysicalBlockBytes],
+                    "source-B offset selected different LCDC pattern band");
+
+                // Display mode 2 ignores source-B's offset and reads the
+                // destination LCDC address directly after capture.
+                const u32 mode2Software = WrapLCDCByte(line * 512u + x * 2u);
+                const u32 mode2Native = WrapLCDCByte(line * 512u + x * 2u);
+                passed &= Require(
+                    mode2Software == mode2Native,
+                    "display mode 2 source address is not scale-independent");
+            }
+        }
+    }
+
+    // Offset 3 / size 3 is the crossing case: it must wrap inside one 128 KiB
+    // bank and never touch a neighboring bank or the guard scratch region.
+    constexpr u32 targetBank = 1u;
+    std::vector<u8> mirror(CapturePhysicalBanks * LCDCBankBytes, 0xA5u);
+    const std::vector<u8> before = mirror;
+    std::vector<u8> scratch(2u * LCDCBankBytes, 0x5Au);
+    const std::vector<u8> scratchBefore = scratch;
+    SimulateNativeCompactCapture(mirror, targetBank, 3u, 3u);
+    u32 bankWrapMismatches = 0u;
+    u32 firstBankWrapMismatch = 0xFFFFFFFFu;
+    for (u32 bank = 0u; bank < CapturePhysicalBanks; ++bank)
+    {
+        for (u32 byte = 0u; byte < LCDCBankBytes; ++byte)
+        {
+            const bool target = bank == targetBank;
+            const bool shouldChange = target
+                && (byte >= 0x18000u || byte < 0x10000u);
+            const std::size_t index = static_cast<std::size_t>(bank)
+                * LCDCBankBytes + byte;
+            if ((mirror[index] != before[index]) != shouldChange)
+            {
+                ++bankWrapMismatches;
+                if (firstBankWrapMismatch == 0xFFFFFFFFu)
+                    firstBankWrapMismatch = bank * LCDCBankBytes + byte;
+            }
+        }
+    }
+    passed &= Require(
+        bankWrapMismatches == 0u,
+        "capture bank-wrap or neighboring-bank sentinel mismatch");
+    if (bankWrapMismatches != 0u)
+    {
+        std::fprintf(
+            stderr,
+            "bank-wrap mismatches=%u firstPhysicalIndex=0x%X\n",
+            bankWrapMismatches, firstBankWrapMismatch);
+    }
+    passed &= Require(
+        scratch == scratchBefore,
+        "capture bank-wrap changed the guard scratch region");
+
+    // The address contract is independent of presentation scale. Include a
+    // 600-frame logical sequence so a presentation-frame or stale-hash shortcut
+    // cannot satisfy this vector accidentally.
+    const u32 referenceMask = NativeCaptureBlockMask(3u, 3u);
+    for (u32 emulatedFrame = 0u; emulatedFrame < 600u; ++emulatedFrame)
+    {
+        for (const u32 scale : {1u, 4u, 16u})
+        {
+            (void)scale;
+            passed &= Require(
+                NativeCaptureBlockMask(3u, 3u) == referenceMask,
+                "capture address changed with presentation scale");
+        }
+    }
+
+    return passed;
+}
+
 bool RunPackVectors()
 {
     auto input = std::make_unique<FrameInput>();
@@ -743,7 +971,8 @@ bool RunCaptureFeedbackVectors()
 
 int main()
 {
-    const bool passed = RunPackVectors() && RunCompareVectors()
+    const bool passed = RunCaptureAddressVectors()
+        && RunPackVectors() && RunCompareVectors()
         && RunUploadPlanVectors() && RunTemporalLineVectors()
         && RunFrameIdentityVectors() && RunCaptureOwnershipVectors()
         && RunCaptureFeedbackVectors();

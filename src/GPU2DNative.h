@@ -33,6 +33,44 @@ inline constexpr u32 ScreenWidth = 256;
 inline constexpr u32 ScreenHeight = 192;
 inline constexpr u32 ScreenPixelCount = ScreenWidth * ScreenHeight;
 
+// DISPCAPCNT destination/source-B offsets are DS halfword addresses. Native
+// compact LCDC mirrors and source-B fetches, however, use byte addresses.
+// Keep the conversion and the two independent LCDC wrap domains named so a
+// future shader change cannot silently mix the units again.
+inline constexpr u32 LCDCBankBytes = 128u * 1024u;
+inline constexpr u32 LCDCBankByteMask = LCDCBankBytes - 1u;
+
+[[nodiscard]] constexpr u32 CaptureOffsetHalfwords(u32 code) noexcept
+{
+    return (code & 3u) << 14u;
+}
+
+[[nodiscard]] constexpr u32 CaptureOffsetBytes(u32 code) noexcept
+{
+    return CaptureOffsetHalfwords(code) << 1u;
+}
+
+[[nodiscard]] constexpr u32 WrapLCDCHalfword(u32 address) noexcept
+{
+    return address & 0xFFFFu;
+}
+
+[[nodiscard]] constexpr u32 WrapLCDCByte(u32 address) noexcept
+{
+    return address & LCDCBankByteMask;
+}
+
+[[nodiscard]] constexpr u32 CaptureWidthForSize(u32 sizeCode) noexcept
+{
+    return (sizeCode & 3u) == 0u ? 128u : 256u;
+}
+
+[[nodiscard]] constexpr u32 CaptureHeightForSize(u32 sizeCode) noexcept
+{
+    const u32 normalized = sizeCode & 3u;
+    return normalized == 0u ? 128u : 64u * normalized;
+}
+
 // SpriteLatchValid is the last word in LineState and is consumed by the
 // native shader's OBJ timeline selector.  Its low bit remains the original
 // latch flag; the high byte carries the start line of the current display
@@ -44,6 +82,7 @@ inline constexpr u32 CaptureStartLineShift = 8u;
 inline constexpr u32 CaptureStartLineMask = 0xFFu;
 inline constexpr u32 CaptureStartLineNone = 0xFFu;
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 // Developer-only Gate B switch. The normal renderer never waits for a
 // compositor readback; setting MELONPRIME_GPU2D_EXACT_VALIDATE=1 (or the
 // shorter MELONPRIME_GPU2D_EXACT=1) enables exact native-output validation.
@@ -66,11 +105,34 @@ inline constexpr u32 CaptureStartLineNone = 0xFFu;
 // visible frame is intentionally retained. Shipping builds always return
 // false; this is never a frame limiter or a sleep-based timing mechanism.
 [[nodiscard]] bool ConsumeForcedPresentationStallFrame() noexcept;
+#else
+// Shipping builds contain no exact/stage/readback diagnostic switches.
+[[nodiscard]] inline constexpr bool ExactValidationEnabled() noexcept
+{
+    return false;
+}
+
+[[nodiscard]] inline constexpr bool StageDiagnosticsEnabled() noexcept
+{
+    return false;
+}
+
+[[nodiscard]] inline constexpr bool DirectOutputDiagnosticsEnabled() noexcept
+{
+    return false;
+}
+
+[[nodiscard]] inline constexpr bool ConsumeForcedPresentationStallFrame() noexcept
+{
+    return false;
+}
+#endif
 
 // Renderer instances use a process-wide epoch allocator so a renderer/backend
 // transition cannot accidentally reuse an older presentation identity.
 [[nodiscard]] u64 AllocateRendererEpoch() noexcept;
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 enum class BlankClass : u8
 {
     NonBlank = 0,
@@ -91,6 +153,11 @@ enum class BlankClass : u8
 // frames. Do not compare those transition frames against a later savestate;
 // arm exact validation at the same lifecycle boundary as the UI state load.
 void NotifySavestateLoaded() noexcept;
+#else
+// State-load notification is only meaningful to the developer-only exact
+// validation gate. Keep the lifecycle call site harmless in shipping.
+inline void NotifySavestateLoaded() noexcept {}
+#endif
 
 [[nodiscard]] constexpr bool IsCurrentFrame(
     u64 emulatedFrame,
@@ -267,6 +334,36 @@ struct RecorderMetrics
     u64 NativeGPU2DPackNs = 0;
 };
 
+// Developer-only, host-side evidence for the address units used by a native
+// Display Capture command. This is deliberately not part of the packed shader
+// ABI; it is emitted once per observed command at frame finalization.
+struct CaptureAddressDiagnostic
+{
+    u64 Frame = 0;
+    u32 Line = CaptureStartLineNone;
+    u32 CaptureCnt = 0;
+    u32 Bank = 0;
+    u32 SizeCode = 0;
+    u32 DstOffsetCode = 0;
+    u32 DstHalfwordBase = 0;
+    u32 DstByteBase = 0;
+    u32 SourceBOffsetCode = 0;
+    u32 FirstByte = 0xFFFFFFFFu;
+    u32 LastByte = 0;
+    u32 WrapCount = 0;
+    u32 ExpectedBlockMask = 0;
+    u32 ActualBlockMask = 0;
+    u32 DestinationAddressMismatch = 0;
+    u32 SourceBAddressMismatch = 0;
+    u32 OutsideBank = 0;
+    u32 NeighborBankCorruption = 0;
+    u32 ProvenanceExpectedFirstByte = 0;
+    u32 ProvenanceAddressMismatch = 0;
+    u32 LastTrackedLine = CaptureStartLineNone;
+};
+
+inline constexpr u32 MaxCaptureAddressDiagnostics = 16u;
+
 // Developer-only accounting for the persistent native LCDC capture mirror.
 // Native-owned blocks are expected to be skipped by the host upload planner;
 // the reupload counter is a fail-closed tripwire immediately before the copy
@@ -277,10 +374,20 @@ struct NativeCaptureHostCopyDiagnostics
     u64 NativeOwnedHostReupload = 0;
 };
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 void RecordNativeOwnedCaptureCopySkipped() noexcept;
 void RecordNativeOwnedHostReupload() noexcept;
 [[nodiscard]] NativeCaptureHostCopyDiagnostics
 GetNativeCaptureHostCopyDiagnostics() noexcept;
+#else
+inline void RecordNativeOwnedCaptureCopySkipped() noexcept {}
+inline void RecordNativeOwnedHostReupload() noexcept {}
+[[nodiscard]] inline NativeCaptureHostCopyDiagnostics
+GetNativeCaptureHostCopyDiagnostics() noexcept
+{
+    return {};
+}
+#endif
 
 struct UploadPlan
 {
@@ -350,6 +457,7 @@ struct FrameInput
     RecorderMetrics Recorder{};
 };
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 // Structured Stage A layout shared by the Vulkan and DX12 diagnostic
 // readbacks.  The hash covers the four per-screen planes and that screen's
 // line metadata; it does not include capture-only source planes.
@@ -400,6 +508,16 @@ void LogSemanticIdentity(
     bool forcedPresentationStall,
     bool mirrorFullResync,
     u32 publishedSlot) noexcept;
+#else
+// Shipping builds do not allocate/read back or log the diagnostic stages.
+inline void LogStageSnapshot(
+    const char*, u64, u64, u64, u64, u32, const FrameInput&, const u32*,
+    const u32*, const u32*, const char*, const u32*, const u32*) noexcept {}
+inline void LogPresentedIdentity(
+    const char*, u64, u64, u64, u64, u32) noexcept {}
+inline void LogSemanticIdentity(
+    const char*, u64, u64, u64, bool, bool, bool, u32) noexcept {}
+#endif
 
 static_assert(std::is_trivially_copyable_v<FrameInput>,
     "FrameInput must remain memset-resettable without a stack-sized temporary");
@@ -566,10 +684,18 @@ private:
     u32 CaptureStateCnt = 0u;
     bool CaptureStateEnabled = false;
 
+    std::array<CaptureAddressDiagnostic, MaxCaptureAddressDiagnostics>
+        CaptureAddressLog{};
+    u32 CaptureAddressLogCount = 0u;
+    u32 CaptureAddressLogOverflow = 0u;
+
     void SnapshotEngine(u32 engine) noexcept;
     void CaptureAllMappedMemoryForLine() noexcept;
     void CaptureCoherentLCDVRAMForLine() noexcept;
     void CaptureJournalWritesForLine() noexcept;
+    void RecordCaptureAddressLine(u32 line, u32 captureCnt) noexcept;
+    void BeginCaptureAddressDiagnostic(u32 line, u32 captureCnt) noexcept;
+    void FinalizeCaptureAddressDiagnostics() noexcept;
     void RefreshCaptureProvenance() noexcept;
     void MarkInputCaptureBlockCpuCoherent(u32 bank, u32 physicalBlock) noexcept;
     void CaptureMappedPhysicalBlock(

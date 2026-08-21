@@ -1,4 +1,4 @@
-﻿/*
+/*
     Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
@@ -361,6 +361,7 @@ static int melonPrimePrintBuildInfoJson()
         "\"git_dirty\":%s,\"build_provider\":%s,\"build_type\":%s,"
         "\"renderer_perf_telemetry\":%s,\"vulkan_latency_capture\":%s,"
         "\"gpu_memory_telemetry\":%s,\"developer_features\":%s,"
+        "\"vulkan_backend\":%s,\"dx12_backend\":%s,"
         "\"melonDS_version\":%s}\n",
         melonPrimeJsonString(MELONPRIMEDS_GIT_SHA).c_str(),
         melonPrimeJsonString(MELONPRIMEDS_GIT_BRANCH).c_str(),
@@ -371,6 +372,8 @@ static int melonPrimePrintBuildInfoJson()
         MELONPRIMEDS_BUILD_VULKAN_LATENCY_CAPTURE ? "true" : "false",
         MELONPRIMEDS_BUILD_GPU_MEMORY_TELEMETRY ? "true" : "false",
         MELONPRIMEDS_BUILD_DEVELOPER_FEATURES ? "true" : "false",
+        MELONPRIMEDS_BUILD_VULKAN ? "true" : "false",
+        MELONPRIMEDS_BUILD_DX12 ? "true" : "false",
         melonPrimeJsonString(MELONDS_VERSION).c_str());
     return 0;
 }

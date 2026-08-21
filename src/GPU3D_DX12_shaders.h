@@ -2493,9 +2493,25 @@ uint NativeFIFO16(uint line,uint index)
             + ((offset & 511u) >> 2u)];
     return (word >> ((offset & 2u) * 8u)) & 0xFFFFu;
 }
+uint CaptureOffsetHalfwords(uint code)
+{
+    return (code & 3u) << 14u;
+}
+uint CaptureOffsetBytes(uint code)
+{
+    return CaptureOffsetHalfwords(code) << 1u;
+}
+uint WrapLCDCHalfword(uint address)
+{
+    return address & 0xFFFFu;
+}
+uint WrapLCDCByte(uint address)
+{
+    return address & 0x1FFFFu;
+}
 uint NativeLCD16(uint line,uint bank,uint address)
 {
-    uint offset = address & 0x1FFFFu;
+    uint offset = WrapLCDCByte(address);
     uint version = NativeTimelineVersion(
         line,
         NativeTimelineLCDVRAMBaseBlock + bank * 256u + offset / 512u);
@@ -3034,7 +3050,10 @@ uint NativeCaptureSourceB(uint line,uint x,uint cnt)
     uint disp=NativeLine(0u,line,NativeDispCnt),bank=(disp>>18u)&3u;
     if((NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<bank))==0u)return 0u;
     uint address=line*512u+x*2u;
-    if(((disp>>16u)&3u)!=2u)address+=((cnt>>26u)&3u)<<14u;
+    if(((disp>>16u)&3u)!=2u)
+        address=WrapLCDCByte(address+CaptureOffsetBytes((cnt>>26u)&3u));
+    else
+        address=WrapLCDCByte(address);
     return NativeLCD16(line,bank,address);
 }
 uint NativeCaptureComposite(uint a,uint b,uint cnt)
@@ -3076,8 +3095,9 @@ uint NativeCaptureReference(uint engine,uint line,uint x)
     uint destinationBank=(cnt>>16u)&3u;
     if(displayBank!=destinationBank
         ||(NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<displayBank))==0u)return 0u;
-    uint displayAddress=(line*256u+x)&0xFFFFu;
-    uint destinationAddress=((cnt>>18u)&3u)<<14u;
+    uint displayAddress=WrapLCDCHalfword(line*256u+x);
+    uint destinationAddress=WrapLCDCHalfword(
+        CaptureOffsetHalfwords((cnt>>18u)&3u));
     uint relative=(displayAddress-destinationAddress)&0xFFFFu;
     uint captureLine=relative/width;
     if(captureLine<captureStart||captureLine>=line||captureLine>=height)return 0u;
@@ -3093,7 +3113,8 @@ void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
     uint bank=(cnt>>16u)&3u;if((NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<bank))==0u)return;
     uint a=NativeCaptureSourceA(line,x,ox,sampleY),b=NativeCaptureSourceB(line,x,cnt);
     uint first=NativeCaptureComposite(a,b,cnt);
-    uint address=((((cnt>>18u)&3u)<<14u)+line*width+x)&0xFFFFu;
+    uint address=WrapLCDCHalfword(
+        CaptureOffsetHalfwords((cnt>>18u)&3u)+line*width+x);
     uint version=ResultValue[2u]&1u,spp=ScaleFactor*ScaleFactor;
     uint cell=((version*4u+bank)*65536u)+address;
     uint sample=sampleY*ScaleFactor+(ox%ScaleFactor);
@@ -3107,7 +3128,8 @@ void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
             b=NativeCaptureSourceB(line,x+1u,cnt);
             second=NativeCaptureComposite(a,b,cnt);
         }
-        uint byteAddress=(((cnt>>18u)&3u)<<14u)+line*width*2u+x*2u;
+        uint byteAddress=WrapLCDCByte(
+            CaptureOffsetBytes((cnt>>18u)&3u)+line*width*2u+x*2u);
         BlendContinuationState[FramebufferStride+bank*32768u+(byteAddress>>2u)]=first|(second<<16u);
     }
 }

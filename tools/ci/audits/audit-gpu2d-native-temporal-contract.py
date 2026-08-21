@@ -22,6 +22,11 @@ def forbid(text: str, needle: str, label: str, failures: list[str]) -> None:
         failures.append(f"{label}: forbidden {needle!r}")
 
 
+def forbid_regex(text: str, pattern: str, label: str, failures: list[str]) -> None:
+    if re.search(pattern, text, re.MULTILINE | re.DOTALL) is not None:
+        failures.append(f"{label}: forbidden /{pattern}/")
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[3]
     files = {
@@ -126,8 +131,30 @@ def main() -> int:
         require(text["native_recorder"], "A byte difference between CPU VRAM", "event-driven authority comment", failures)
         require(text["native_header"], "NativeCaptureHostCopyDiagnostics",
             "native host-copy diagnostics", failures)
+        for needle in (
+            "CaptureOffsetHalfwords",
+            "CaptureOffsetBytes",
+            "WrapLCDCHalfword",
+            "WrapLCDCByte",
+            "CaptureAddressDiagnostic",
+            "MaxCaptureAddressDiagnostics",
+        ):
+            require(text["native_header"], needle,
+                "capture address unit contract", failures)
         require(text["native_recorder"], "RecordNativeOwnedCaptureCopySkipped",
             "native host-copy skip accounting", failures)
+        for needle in (
+            "BeginCaptureAddressDiagnostic",
+            "RecordCaptureAddressLine",
+            "FinalizeCaptureAddressDiagnostics",
+            "GPU2DCaptureAddress",
+            "destinationAddressMismatch",
+            "sourceBAddressMismatch",
+            "neighborBankCorruption",
+            "provenanceExpectedFirstByte",
+        ):
+            require(text["native_recorder"], needle,
+                "capture address diagnostics", failures)
         require(text["soft_renderer"], "Allocating a Display Capture destination does not make CPU VRAM coherent", "allocation authority comment", failures)
         require(text["soft_renderer"], "CaptureAuthorityTransitionReason reason", "reasoned invalidation", failures)
         require(text["soft_renderer"], "MarkCaptureCpuCoherent(bank, start, len, reason)", "reasoned CPU authority", failures)
@@ -308,6 +335,21 @@ def main() -> int:
             )
             require(text[label], "ForcedBlank", f"{label} Stage A blank semantics", failures)
             require(text[label], "UnitEnabled", f"{label} Stage A unit semantics", failures)
+            for helper in (
+                "CaptureOffsetHalfwords",
+                "CaptureOffsetBytes",
+                "WrapLCDCHalfword",
+                "WrapLCDCByte",
+            ):
+                require(text[label], helper, f"{label} capture address helper", failures)
+            forbid_regex(
+                text[label],
+                r"\(\s*\(\s*(?:captureCnt|cnt)\s*>>\s*"
+                r"(?:18u|26u)\s*\)\s*&\s*3u\s*\)\s*<<\s*14u",
+                f"{label} byte-address capture unit audit",
+                failures,
+            )
+            require(text[label], "0x1FFFFu", f"{label} LCDC byte wrap", failures)
         require(text["vulkan_shader"], "local_size_x = 128, local_size_y = 1",
             "Vulkan scanline workgroup", failures)
         require(text["dx12_shader"], "[numthreads(128, 1, 1)]",
@@ -351,6 +393,48 @@ def main() -> int:
             failures,
         )
 
+        vulkan_source_b = text["vulkan_shader"].split(
+            "uint CaptureSourceB", 1)[1].split("uint CaptureCompositeRaw", 1)[0]
+        vulkan_reference = text["vulkan_shader"].split(
+            "uint NativeCaptureReference", 1)[1].split(
+                "void WriteNativeCaptureSample", 1)[0]
+        vulkan_writer = text["vulkan_shader"].split(
+            "void WriteNativeCaptureSample", 1)[1].split(
+                "void WriteStructuredPixel", 1)[0]
+        dx12_source_b = text["dx12_shader"].split(
+            "uint NativeCaptureSourceB", 1)[1].split(
+                "uint NativeCaptureComposite", 1)[0]
+        dx12_reference = text["dx12_shader"].split(
+            "uint NativeCaptureReference", 1)[1].split(
+                "void NativeWriteCaptureSample", 1)[0]
+        dx12_writer = text["dx12_shader"].split(
+            "void NativeWriteCaptureSample", 1)[1].split(
+                "static const uint NativeStructuredPlaneStride", 1)[0]
+        for label, body in (
+            ("Vulkan source-B", vulkan_source_b),
+            ("DX12 source-B", dx12_source_b),
+        ):
+            require(body, "CaptureOffsetBytes", f"{label} byte offset helper", failures)
+            require(body, "WrapLCDCByte", f"{label} byte wrap helper", failures)
+        for label, body in (
+            ("Vulkan reference", vulkan_reference),
+            ("DX12 reference", dx12_reference),
+        ):
+            require(body, "CaptureOffsetHalfwords", f"{label} halfword helper", failures)
+            forbid(body, "CaptureOffsetBytes", f"{label} halfword unit audit", failures)
+        for label, body in (
+            ("Vulkan compact writer", vulkan_writer),
+            ("DX12 compact writer", dx12_writer),
+        ):
+            require(body, "CaptureOffsetBytes", f"{label} byte offset helper", failures)
+            require(body, "WrapLCDCByte", f"{label} byte wrap helper", failures)
+            forbid_regex(
+                body,
+                r"(?:captureCnt|cnt)\s*>>\s*18u[\s\S]{0,80}<<\s*14u",
+                f"{label} direct halfword offset in byte writer",
+                failures,
+            )
+
         require(text["opengl_renderer"], "DumpFrameForValidation", "OpenGL pixel gate", failures)
         require(text["opengl_renderer"], "glReadPixels(0, 0, 256, 192", "OpenGL pixel gate", failures)
         require(text["opengl_renderer"], "ScaleFactor != 1", "OpenGL scale gate", failures)
@@ -379,6 +463,24 @@ def main() -> int:
             "capture ownership vectors", failures)
         require(text["native_contract_test"], "RunCaptureFeedbackVectors",
             "same-bank/display-mode2 vectors", failures)
+        for needle in (
+            "RunCaptureAddressVectors",
+            "CaptureOffsetHalfwords",
+            "CaptureOffsetBytes",
+            "WrapLCDCHalfword",
+            "WrapLCDCByte",
+            "SoftwareCaptureBlockMask",
+            "NativeCaptureBlockMask",
+            "sourcePatterns",
+            "targetBank",
+            "scratchBefore",
+            "0x18000u",
+            "0x10000u",
+            "600u",
+            "display mode 2",
+        ):
+            require(text["native_contract_test"], needle,
+                "capture address matrix/bank-wrap vectors", failures)
         for needle in (
             "CaptureSyncResult::Failed",
             "flagsBeforeFailure",

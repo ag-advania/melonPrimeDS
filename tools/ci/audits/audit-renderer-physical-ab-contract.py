@@ -78,6 +78,8 @@ def main() -> int:
             "git_sha",
             "--build-info-json",
             "MELONPRIMEDS_BUILD_RENDERER_PERF_TELEMETRY",
+            "vulkan_backend",
+            "dx12_backend",
         ):
             require(main_source, needle, "binary build-info CLI", failures)
         for needle in (
@@ -85,6 +87,8 @@ def main() -> int:
             "MELONPRIMEDS_GIT_DIRTY",
             "MELONPRIMEDS_BUILD_TYPE",
             "MELONPRIMEDS_BUILD_VULKAN_LATENCY_CAPTURE",
+            "MELONPRIMEDS_BUILD_VULKAN",
+            "MELONPRIMEDS_BUILD_DX12",
         ):
             require(build_info, needle, "build-info macro contract", failures)
 

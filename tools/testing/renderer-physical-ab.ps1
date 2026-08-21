@@ -41,6 +41,7 @@ param(
     [switch]$AllowUnverifiedBinary,
     [switch]$RequireCleanProvenance,
     [switch]$ExactGPU2DValidation,
+    [switch]$StageDiagnosticsOnly,
     [switch]$DirectGPU2DDiagnostics,
     [switch]$SkipDiagnosticStartupSavestate,
     [ValidateRange(0,600)] [int]$CaptureFrames = 0,
@@ -57,6 +58,9 @@ if ($WarmupSeconds -lt 1 -or $MeasuredSeconds -lt 1 -or $GraceSeconds -lt 0) {
 }
 if ($CaptureFrames -gt 0 -and $CaptureIntervalMs -lt 1) {
     throw 'CaptureIntervalMs must be positive when CaptureFrames is enabled.'
+}
+if ($ExactGPU2DValidation -and $StageDiagnosticsOnly) {
+    throw 'ExactGPU2DValidation and StageDiagnosticsOnly are mutually exclusive.'
 }
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -198,6 +202,15 @@ if ($null -eq $buildInfo) { [void]$provenanceFailures.Add('binary build-info JSO
 if ($actualSourceHead -eq 'unknown') { [void]$provenanceFailures.Add('binary git_sha is unknown') }
 if ($actualSourceHead -ne $ExpectedSourceHead) {
     [void]$provenanceFailures.Add("binary git_sha=$actualSourceHead expected=$ExpectedSourceHead")
+}
+$backendInfoField = if ($Renderer -eq 'Vulkan') { 'vulkan_backend' } elseif ($Renderer -eq 'DX12') { 'dx12_backend' } else { $null }
+if ($null -ne $backendInfoField -and $null -ne $buildInfo) {
+    $hasBackendInfo = $buildInfo.PSObject.Properties.Name -contains $backendInfoField
+    if ($hasBackendInfo -and -not [bool]$buildInfo.$backendInfoField) {
+        [void]$provenanceFailures.Add("binary $backendInfoField=false; requested renderer=$Renderer")
+    } elseif (-not $hasBackendInfo -and -not $AllowUnverifiedBinary) {
+        [void]$provenanceFailures.Add("binary build-info field $backendInfoField is missing")
+    }
 }
 if ($checkoutSourceHead -ne $ExpectedSourceHead) {
     [void]$provenanceFailures.Add("checkout HEAD=$checkoutSourceHead expected=$ExpectedSourceHead")
@@ -447,6 +460,7 @@ try {
         'low_latency=' + $LowLatency + [Environment]::NewLine +
         'hud=' + $Hud + [Environment]::NewLine +
         'exact_gpu2d_validation=' + $ExactGPU2DValidation.IsPresent + [Environment]::NewLine +
+        'stage_diagnostics_only=' + $StageDiagnosticsOnly.IsPresent + [Environment]::NewLine +
         'direct_gpu2d_diagnostics=' + $DirectGPU2DDiagnostics.IsPresent + [Environment]::NewLine +
         'presentation_stall_frames=' + $PresentationStallFrames + [Environment]::NewLine +
         'action=' + $Action + [Environment]::NewLine +
@@ -469,6 +483,9 @@ try {
     if ($null -ne $frameDumpTrigger) { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $frameDumpTrigger } else { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue }
     if ($ExactGPU2DValidation) {
         $env:MELONPRIME_GPU2D_EXACT_VALIDATE = '1'
+        $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS = '1'
+    } elseif ($StageDiagnosticsOnly) {
+        Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue
         $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS = '1'
     } else {
         Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue
@@ -563,6 +580,30 @@ foreach ($path in @($stdout, $stderr)) { if (Test-Path -LiteralPath $path) { $al
 [IO.File]::WriteAllText($telemetryLog, [string]::Join([Environment]::NewLine, [string[]]$allLog), $utf8)
 $badMarkers = @($allLog | Select-String -Pattern 'VUID-|SYNC-HAZARD|DEVICE_LOST|GPU failure|command submission failed|Renderer fatal' -ErrorAction SilentlyContinue)
 $nativeGPU2DExactFailureMarkers = @($allLog | Select-String -Pattern 'native GPU2D exact (?:differential )?mismatch|native GPU2D exact gate rejected' -ErrorAction SilentlyContinue)
+$stateActionLogIndex = -1
+if ($null -ne $savestateSlotPathForApp) {
+    for ($index = 0; $index -lt $allLog.Count; $index++) {
+        if ($allLog[$index].Contains("[PhysicalAB] savestate_action_loaded=1 path=$savestateSlotPathForApp")) {
+            $stateActionLogIndex = $index
+            break
+        }
+    }
+}
+$stageValidationStartIndex = if ($null -eq $statePath) {
+    0
+} elseif ($stateActionLogIndex -ge 0) {
+    $stateActionLogIndex + 1
+} else {
+    $allLog.Count
+}
+$unexpectedBlankLines = @()
+if ($ExactGPU2DValidation -or $StageDiagnosticsOnly) {
+    for ($index = $stageValidationStartIndex; $index -lt $allLog.Count; $index++) {
+        if ($allLog[$index] -match '\[GPU2DStage\] blank_state .*actual=(?:ALL_BLACK|ALL_WHITE) expected=NONBLANK') {
+            $unexpectedBlankLines += $allLog[$index]
+        }
+    }
+}
 $nativeGPU2DMismatchValues = @(
     foreach ($line in $allLog) {
         $match = [regex]::Match($line, 'native_gpu2d_mismatches=(\d+)')
@@ -601,6 +642,8 @@ $buildGates = [ordered]@{
     build_type = if ($null -ne $buildInfo) { $buildInfo.build_type } else { $null }
     renderer_perf_telemetry = if ($null -ne $buildInfo) { $buildInfo.renderer_perf_telemetry } else { $null }
     vulkan_latency_capture = if ($null -ne $buildInfo) { $buildInfo.vulkan_latency_capture } else { $null }
+    vulkan_backend = if ($null -ne $buildInfo) { $buildInfo.vulkan_backend } else { $null }
+    dx12_backend = if ($null -ne $buildInfo) { $buildInfo.dx12_backend } else { $null }
     gpu_memory_telemetry = if ($null -ne $buildInfo) { $buildInfo.gpu_memory_telemetry } else { $null }
     developer_features = if ($null -ne $buildInfo) { $buildInfo.developer_features } else { $null }
     git_dirty = if ($null -ne $buildInfo) { $buildInfo.git_dirty } else { $null }
@@ -636,7 +679,8 @@ $manifestObject = [ordered]@{
         low_latency = $LowLatency
         hud = $Hud
         exact_gpu2d_validation = [bool]$ExactGPU2DValidation
-        stage_diagnostics = [bool]$ExactGPU2DValidation
+        stage_diagnostics = [bool]($ExactGPU2DValidation -or $StageDiagnosticsOnly)
+        stage_diagnostics_only = [bool]$StageDiagnosticsOnly
         direct_gpu2d_diagnostics = [bool]$DirectGPU2DDiagnostics
         presentation_stall_frames = $PresentationStallFrames
         action = $Action
@@ -709,7 +753,8 @@ $manifestObject = [ordered]@{
         gpu2d_frame_dump_trigger_exists = if ($null -ne $frameDumpTrigger) { Test-Path -LiteralPath $frameDumpTrigger } else { $false }
         custom_hud_off_marker = $hudOffMarker
         exact_gpu2d_validation_requested = [bool]$ExactGPU2DValidation
-        stage_diagnostics_requested = [bool]$ExactGPU2DValidation
+        stage_diagnostics_requested = [bool]($ExactGPU2DValidation -or $StageDiagnosticsOnly)
+        stage_diagnostics_only_requested = [bool]$StageDiagnosticsOnly
         direct_gpu2d_diagnostics_requested = [bool]$DirectGPU2DDiagnostics
         capture_rows = $captureRows
         frame_rows = $frameRows
@@ -719,6 +764,7 @@ $manifestObject = [ordered]@{
         native_gpu2d_mismatch_max = $nativeGPU2DMismatchMax
         native_gpu2d_fallback_frames_max = $nativeGPU2DFallbackMax
         fallback_lines_max = $fallbackLineMax
+        unexpected_blank_marker_count = $unexpectedBlankLines.Count
         semantic_frame_rows = $semanticLines.Count
         semantic_only_rows = $semanticOnlyLines.Count
         forced_presentation_stall_rows = $forcedPresentationStallLines.Count
@@ -742,7 +788,8 @@ frame_limit=$frameLimitName
 low_latency=$LowLatency
 hud=$Hud
 exact_gpu2d_validation=$($ExactGPU2DValidation.IsPresent.ToString().ToLowerInvariant())
-stage_diagnostics=$($ExactGPU2DValidation.IsPresent.ToString().ToLowerInvariant())
+stage_diagnostics=$((($ExactGPU2DValidation -or $StageDiagnosticsOnly).ToString().ToLowerInvariant()))
+stage_diagnostics_only=$($StageDiagnosticsOnly.IsPresent.ToString().ToLowerInvariant())
 direct_gpu2d_diagnostics=$($DirectGPU2DDiagnostics.IsPresent.ToString().ToLowerInvariant())
 presentation_stall_frames=$PresentationStallFrames
 action=$Action
@@ -770,6 +817,7 @@ native_gpu2d_exact_failure_marker_count=$($nativeGPU2DExactFailureMarkers.Count)
 native_gpu2d_mismatch_max=$nativeGPU2DMismatchMax
 native_gpu2d_fallback_frames_max=$nativeGPU2DFallbackMax
 fallback_lines_max=$fallbackLineMax
+unexpected_blank_marker_count=$($unexpectedBlankLines.Count)
 semantic_frame_rows=$($semanticLines.Count)
 semantic_only_rows=$($semanticOnlyLines.Count)
 forced_presentation_stall_rows=$($forcedPresentationStallLines.Count)
@@ -792,6 +840,8 @@ renderer_perf_telemetry=$($buildInfo.renderer_perf_telemetry)
 vulkan_latency_capture=$($buildInfo.vulkan_latency_capture)
 gpu_memory_telemetry=$($buildInfo.gpu_memory_telemetry)
 developer_features=$($buildInfo.developer_features)
+vulkan_backend=$($buildInfo.vulkan_backend)
+dx12_backend=$($buildInfo.dx12_backend)
 binary_git_dirty=$($buildInfo.git_dirty)
 checkout_git_dirty=$($checkoutGitDirty.ToString().ToLowerInvariant())
 checkout_branch=$checkoutBranch
@@ -830,12 +880,14 @@ Write-Host "native exact fail  : $($nativeGPU2DExactFailureMarkers.Count)"
 Write-Host "native mismatches  : $nativeGPU2DMismatchMax"
 Write-Host "native fallbacks   : $nativeGPU2DFallbackMax"
 Write-Host "fallback lines     : $fallbackLineMax"
+Write-Host "unexpected blanks  : $($unexpectedBlankLines.Count)"
 Write-Host "semantic rows      : $($semanticLines.Count)"
 Write-Host "semantic-only rows : $($semanticOnlyLines.Count)"
 Write-Host "forced stall rows  : $($forcedPresentationStallLines.Count)"
 if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMarkers.Count -ne 0 -or
     $nativeGPU2DExactFailureMarkers.Count -ne 0 -or
     $nativeGPU2DMismatchMax -ne 0 -or $nativeGPU2DFallbackMax -ne 0 -or $fallbackLineMax -ne 0 -or
+    $unexpectedBlankLines.Count -ne 0 -or
     ($null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $stateMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($Hud -eq 'Off' -and $null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or

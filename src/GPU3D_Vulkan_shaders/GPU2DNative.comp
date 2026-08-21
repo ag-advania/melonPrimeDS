@@ -373,9 +373,29 @@ uint FIFO16(uint line, uint index)
     return (word >> ((offset & 2u) * 8u)) & 0xFFFFu;
 }
 
+uint CaptureOffsetHalfwords(uint code)
+{
+    return (code & 3u) << 14u;
+}
+
+uint CaptureOffsetBytes(uint code)
+{
+    return CaptureOffsetHalfwords(code) << 1u;
+}
+
+uint WrapLCDCHalfword(uint address)
+{
+    return address & 0xFFFFu;
+}
+
+uint WrapLCDCByte(uint address)
+{
+    return address & 0x1FFFFu;
+}
+
 uint LCD16(uint line, uint bank, uint byteAddress)
 {
-    uint offset = byteAddress & 0x1FFFFu;
+    uint offset = WrapLCDCByte(byteAddress);
     uint version = TimelineVersion(
         line,
         kTimelineLCDVRAMBaseBlock + bank * 256u + offset / 512u);
@@ -1321,7 +1341,14 @@ uint CaptureSourceB(uint line, uint x, uint captureCnt)
         return 0u;
     uint address = line * 512u + x * 2u;
     if (((dispCnt >> 16u) & 3u) != 2u)
-        address += ((captureCnt >> 26u) & 3u) << 14u;
+    {
+        address = WrapLCDCByte(
+            address + CaptureOffsetBytes((captureCnt >> 26u) & 3u));
+    }
+    else
+    {
+        address = WrapLCDCByte(address);
+    }
     return LCD16(line, bank, address);
 }
 
@@ -1398,8 +1425,9 @@ uint NativeCaptureReference(uint engine, uint line, uint x)
     // Both values are DS word addresses.  The modulo preserves the LCDC
     // 64-KiB bank wrap, while the line bound prevents the current capture line
     // from reading its own not-yet-committed write.
-    uint displayAddress = (line * 256u + x) & 0xFFFFu;
-    uint destinationAddress = ((captureCnt >> 18u) & 3u) << 14u;
+    uint displayAddress = WrapLCDCHalfword(line * 256u + x);
+    uint destinationAddress = WrapLCDCHalfword(
+        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
     uint relative = (displayAddress - destinationAddress) & 0xFFFFu;
     uint captureLine = relative / width;
     if (captureLine < captureStart || captureLine >= line || captureLine >= height)
@@ -1430,8 +1458,9 @@ void WriteNativeCaptureSample(
     uint firstB = CaptureSourceB(line, x, captureCnt);
     uint first = CaptureCompositeRaw(firstA, firstB, captureCnt);
 
-    uint address = ((((captureCnt >> 18u) & 3u) << 14u)
-        + line * width + x) & 0xFFFFu;
+    uint address = WrapLCDCHalfword(
+        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u)
+        + line * width + x);
     uint version = NativeGPU2DInput[2u] & 1u;
     uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
     uint cell = ((version * 4u + destinationBank) * 65536u) + address;
@@ -1453,8 +1482,9 @@ void WriteNativeCaptureSample(
             second = CaptureCompositeRaw(secondA, secondB, captureCnt);
         }
 
-        uint byteAddress = (((captureCnt >> 18u) & 3u) << 14u)
-            + line * width * 2u + x * 2u;
+        uint byteAddress = WrapLCDCByte(
+            CaptureOffsetBytes((captureCnt >> 18u) & 3u)
+            + line * width * 2u + x * 2u);
         NativeCaptureState[uint(FramebufferStride) + destinationBank * 32768u
             + (byteAddress >> 2u)] = first | (second << 16u);
     }

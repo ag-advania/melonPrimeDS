@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -18,10 +19,35 @@ namespace melonDS::GPU2DNative
 
 namespace
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 std::atomic<bool> ExactValidationSavestateReady{false};
+#endif
 std::atomic<u64> NextRendererEpoch{1};
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 std::atomic<u64> NativeOwnedBlocksSkipped{0};
 std::atomic<u64> NativeOwnedHostReupload{0};
+#endif
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+u32 CaptureAddressBlockMask(
+    u32 offsetCode, u32 sizeCode, u32 firstLine) noexcept
+{
+    const u32 width = CaptureWidthForSize(sizeCode);
+    const u32 height = CaptureHeightForSize(sizeCode);
+    u32 mask = 0u;
+    for (u32 line = firstLine; line < height; ++line)
+    {
+        for (u32 x = 0u; x < width; x += 2u)
+        {
+            const u32 address = WrapLCDCByte(
+                CaptureOffsetBytes(offsetCode)
+                + line * width * 2u + x * 2u);
+            mask |= 1u << (address / CapturePhysicalBlockBytes);
+        }
+    }
+    return mask;
+}
+#endif
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 std::atomic<u32>& ForcedPresentationStallRemaining() noexcept
@@ -42,6 +68,7 @@ std::atomic<u32>& ForcedPresentationStallRemaining() noexcept
 #endif
 }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 void RecordNativeOwnedCaptureCopySkipped() noexcept
 {
     NativeOwnedBlocksSkipped.fetch_add(1u, std::memory_order_relaxed);
@@ -59,10 +86,11 @@ NativeCaptureHostCopyDiagnostics GetNativeCaptureHostCopyDiagnostics() noexcept
         NativeOwnedHostReupload.load(std::memory_order_relaxed),
     };
 }
+#endif
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 bool ConsumeForcedPresentationStallFrame() noexcept
 {
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     std::atomic<u32>& remaining = ForcedPresentationStallRemaining();
     u32 current = remaining.load(std::memory_order_relaxed);
     while (current != 0u
@@ -72,10 +100,8 @@ bool ConsumeForcedPresentationStallFrame() noexcept
     {
     }
     return current != 0u;
-#else
-    return false;
-#endif
 }
+#endif
 
 u64 AllocateRendererEpoch() noexcept
 {
@@ -88,6 +114,7 @@ u64 AllocateRendererEpoch() noexcept
     return epoch == 0u ? 1u : epoch;
 }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 bool ExactValidationEnabled() noexcept
 {
     static const bool enabled = [] {
@@ -429,6 +456,7 @@ void LogSemanticIdentity(
         forcedPresentationStall ? "forced" : "none",
         mirrorFullResync ? 1u : 0u, publishedSlot);
 }
+#endif
 
 namespace
 {
@@ -1007,6 +1035,9 @@ void FrameRecorder::Reset() noexcept
     CaptureStartLine = CaptureStartLineNone;
     CaptureStateCnt = 0u;
     CaptureStateEnabled = false;
+    CaptureAddressLogCount = 0u;
+    CaptureAddressLogOverflow = 0u;
+    CaptureAddressLog.fill(CaptureAddressDiagnostic{});
     RecorderStartNs = 0u;
 }
 
@@ -1082,6 +1113,9 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     CaptureStartLine = CaptureStartLineNone;
     CaptureStateCnt = 0u;
     CaptureStateEnabled = false;
+    CaptureAddressLogCount = 0u;
+    CaptureAddressLogOverflow = 0u;
+    CaptureAddressLog.fill(CaptureAddressDiagnostic{});
     RecorderStartNs = NowNanoseconds();
 }
 
@@ -1800,10 +1834,12 @@ void FrameRecorder::CaptureLine(
     {
         const bool captureEnabled = GPU.CaptureEnable;
         const u32 captureCnt = GPU.CaptureCnt;
-        if (captureEnabled
-            && (!CaptureStateEnabled || CaptureStateCnt != captureCnt))
+        const bool captureStarted = captureEnabled
+            && (!CaptureStateEnabled || CaptureStateCnt != captureCnt);
+        if (captureStarted)
         {
             CaptureStartLine = line;
+            BeginCaptureAddressDiagnostic(line, captureCnt);
         }
         else if (!captureEnabled && CaptureStartLine == CaptureStartLineNone)
         {
@@ -1813,11 +1849,15 @@ void FrameRecorder::CaptureLine(
         }
         CaptureStateEnabled = captureEnabled;
         CaptureStateCnt = captureCnt;
+        if (captureEnabled)
+            RecordCaptureAddressLine(line, captureCnt);
     }
     state.SpriteLatchValid = (SpriteLatchSeen[line] ? SpriteLatchValidMask : 0u)
         | ((CaptureStartLine & CaptureStartLineMask) << CaptureStartLineShift);
     if (engine == 0u)
+    {
         Input.CaptureEnable |= state.CaptureEnable;
+    }
 
     // This is the emulation-time LCD assignment.  Present-time POWCNT1 is not
     // authoritative when a title changes routing within a frame.
@@ -1838,15 +1878,17 @@ void FrameRecorder::CaptureCaptureStateForLine(u32 line) noexcept
     LineState& state = Input.Lines[line];
     const bool captureEnabled = GPU.CaptureEnable;
     const u32 captureCnt = GPU.CaptureCnt;
+    const bool captureStarted = captureEnabled
+        && (!CaptureStateEnabled || CaptureStateCnt != captureCnt);
     state.CaptureCnt = captureCnt;
     state.CaptureEnable = captureEnabled ? 1u : 0u;
     state.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
     state.LCDVRAMMap = GPU.VRAMMap_LCDC;
 
-    if (captureEnabled
-        && (!CaptureStateEnabled || CaptureStateCnt != captureCnt))
+    if (captureStarted)
     {
         CaptureStartLine = line;
+        BeginCaptureAddressDiagnostic(line, captureCnt);
     }
     else if (!captureEnabled && CaptureStartLine == CaptureStartLineNone)
     {
@@ -1857,11 +1899,184 @@ void FrameRecorder::CaptureCaptureStateForLine(u32 line) noexcept
     state.SpriteLatchValid = (SpriteLatchSeen[line] ? SpriteLatchValidMask : 0u)
         | ((CaptureStartLine & CaptureStartLineMask) << CaptureStartLineShift);
     Input.CaptureEnable |= state.CaptureEnable;
+    if (captureEnabled)
+        RecordCaptureAddressLine(line, captureCnt);
 
     // BeginFrame() already marks the complete packed header and line-state
     // ranges dirty before this late line-boundary sample. Do not add a new
     // per-line upload range here: this helper is an oracle-side state refresh,
     // not a request for an additional native upload.
+}
+
+void FrameRecorder::BeginCaptureAddressDiagnostic(
+    u32 line, u32 captureCnt) noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (CaptureAddressLogCount >= MaxCaptureAddressDiagnostics)
+    {
+        ++CaptureAddressLogOverflow;
+        return;
+    }
+
+    CaptureAddressDiagnostic& diagnostic =
+        CaptureAddressLog[CaptureAddressLogCount++];
+    diagnostic = {};
+    diagnostic.Frame = Input.Generation.Frame;
+    diagnostic.Line = line;
+    diagnostic.CaptureCnt = captureCnt;
+    diagnostic.Bank = (captureCnt >> 16u) & 3u;
+    diagnostic.SizeCode = (captureCnt >> 20u) & 3u;
+    diagnostic.DstOffsetCode = (captureCnt >> 18u) & 3u;
+    diagnostic.DstHalfwordBase = CaptureOffsetHalfwords(
+        diagnostic.DstOffsetCode);
+    diagnostic.DstByteBase = CaptureOffsetBytes(diagnostic.DstOffsetCode);
+    diagnostic.SourceBOffsetCode = (captureCnt >> 26u) & 3u;
+    diagnostic.ExpectedBlockMask = CaptureAddressBlockMask(
+        diagnostic.DstOffsetCode, diagnostic.SizeCode, line);
+    diagnostic.ProvenanceExpectedFirstByte =
+        (diagnostic.DstByteBase / CapturePhysicalBlockBytes)
+        * CapturePhysicalBlockBytes;
+#else
+    (void)line;
+    (void)captureCnt;
+#endif
+}
+
+void FrameRecorder::RecordCaptureAddressLine(
+    u32 line, u32 captureCnt) noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (line >= ScreenHeight || !GPU.CaptureEnable)
+        return;
+
+    const u32 bank = (captureCnt >> 16u) & 3u;
+    const u32 sizeCode = (captureCnt >> 20u) & 3u;
+    const u32 offsetCode = (captureCnt >> 18u) & 3u;
+    if (CaptureAddressLogCount == 0u
+        || CaptureAddressLog[CaptureAddressLogCount - 1u].Frame
+            != Input.Generation.Frame
+        || CaptureAddressLog[CaptureAddressLogCount - 1u].CaptureCnt
+            != captureCnt)
+    {
+        BeginCaptureAddressDiagnostic(line, captureCnt);
+    }
+    if (CaptureAddressLogCount == 0u)
+        return;
+
+    CaptureAddressDiagnostic& diagnostic =
+        CaptureAddressLog[CaptureAddressLogCount - 1u];
+    if (diagnostic.Frame != Input.Generation.Frame
+        || diagnostic.CaptureCnt != captureCnt)
+    {
+        return;
+    }
+    if (diagnostic.LastTrackedLine == line)
+        return;
+    diagnostic.LastTrackedLine = line;
+
+    const u32 width = CaptureWidthForSize(sizeCode);
+    const u32 height = CaptureHeightForSize(sizeCode);
+    if (line >= height)
+        return;
+
+    const u32 rawLineAddress = CaptureOffsetBytes(offsetCode)
+        + line * width * 2u;
+    const u32 rawLastAddress = rawLineAddress + width * 2u - 2u;
+    diagnostic.WrapCount = rawLastAddress / LCDCBankBytes;
+    for (u32 x = 0u; x < width; x += 2u)
+    {
+        const u32 byteAddress = WrapLCDCByte(
+            rawLineAddress + x * 2u);
+        const u32 lastByteAddress = byteAddress + 1u;
+        if (byteAddress > LCDCBankByteMask
+            || lastByteAddress > LCDCBankByteMask)
+        {
+            ++diagnostic.OutsideBank;
+            continue;
+        }
+        if (diagnostic.FirstByte == 0xFFFFFFFFu)
+            diagnostic.FirstByte = byteAddress;
+        diagnostic.LastByte = lastByteAddress;
+        diagnostic.ActualBlockMask |= 1u << (
+            byteAddress / CapturePhysicalBlockBytes);
+
+        for (const u32 sourceX : {0u, 255u})
+        {
+            const u32 softwareSource = WrapLCDCHalfword(
+                line * 256u + sourceX
+                + CaptureOffsetHalfwords(diagnostic.SourceBOffsetCode))
+                << 1u;
+            const u32 nativeSource = WrapLCDCByte(
+                line * 512u + sourceX * 2u
+                + CaptureOffsetBytes(diagnostic.SourceBOffsetCode));
+            if (softwareSource != nativeSource)
+                diagnostic.SourceBAddressMismatch = 1u;
+        }
+    }
+
+    if (bank >= CapturePhysicalBanks)
+        diagnostic.NeighborBankCorruption = 1u;
+#else
+    (void)line;
+    (void)captureCnt;
+#endif
+}
+
+void FrameRecorder::FinalizeCaptureAddressDiagnostics() noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    for (u32 index = 0u; index < CaptureAddressLogCount; ++index)
+    {
+        CaptureAddressDiagnostic& diagnostic = CaptureAddressLog[index];
+        diagnostic.DestinationAddressMismatch =
+            diagnostic.ExpectedBlockMask != diagnostic.ActualBlockMask
+            || diagnostic.FirstByte > LCDCBankByteMask
+            || diagnostic.LastByte > LCDCBankByteMask;
+        diagnostic.NeighborBankCorruption |= diagnostic.OutsideBank != 0u;
+
+        const u32 firstBlock = diagnostic.DstByteBase
+            / CapturePhysicalBlockBytes;
+        const CaptureBlockProvenance& owner = GPU.GetRenderer()
+            .GetCaptureBlockProvenance(diagnostic.Bank, firstBlock);
+        diagnostic.ProvenanceAddressMismatch =
+            IsNativeCaptureOwner(owner.Owner)
+            && diagnostic.DstByteBase
+                != diagnostic.ProvenanceExpectedFirstByte;
+        if (diagnostic.ProvenanceAddressMismatch != 0u)
+            assert(diagnostic.ProvenanceAddressMismatch == 0u);
+
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[GPU2DCaptureAddress] frame=%llu line=%u CaptureCnt=0x%08X "
+            "bank=%u size=%u dstOffsetCode=%u dstHalfwordBase=0x%04X "
+            "dstByteBase=0x%05X sourceBOffsetCode=%u firstByte=0x%05X "
+            "lastByte=0x%05X wrapCount=%u expectedBlocks=0x%X "
+            "actualBlocks=0x%X destinationAddressMismatch=%u "
+            "sourceBAddressMismatch=%u outsideBank=%u "
+            "neighborBankCorruption=%u provenanceOwner=%s "
+            "provenanceExpectedFirstByte=0x%05X provenanceAddressMismatch=%u\n",
+            static_cast<unsigned long long>(diagnostic.Frame),
+            diagnostic.Line, diagnostic.CaptureCnt, diagnostic.Bank,
+            diagnostic.SizeCode, diagnostic.DstOffsetCode,
+            diagnostic.DstHalfwordBase, diagnostic.DstByteBase,
+            diagnostic.SourceBOffsetCode, diagnostic.FirstByte,
+            diagnostic.LastByte, diagnostic.WrapCount,
+            diagnostic.ExpectedBlockMask, diagnostic.ActualBlockMask,
+            diagnostic.DestinationAddressMismatch,
+            diagnostic.SourceBAddressMismatch, diagnostic.OutsideBank,
+            diagnostic.NeighborBankCorruption, CaptureOwnerName(owner.Owner),
+            diagnostic.ProvenanceExpectedFirstByte,
+            diagnostic.ProvenanceAddressMismatch);
+    }
+    if (CaptureAddressLogOverflow != 0u)
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "[GPU2DCaptureAddress] frame=%llu diagnosticOverflow=%u\n",
+            static_cast<unsigned long long>(Input.Generation.Frame),
+            CaptureAddressLogOverflow);
+    }
+#endif
 }
 
 void FrameRecorder::SnapshotEngine(u32 engine) noexcept
@@ -1914,6 +2129,7 @@ void FrameRecorder::FinalizeMemory() noexcept
         Input.Recorder.GPU2DRecorderNs += NowNanoseconds() - RecorderStartNs;
         RecorderStartNs = 0u;
     }
+    FinalizeCaptureAddressDiagnostics();
     if (EngineLineCount[0] != ScreenHeight || EngineLineCount[1] != ScreenHeight)
         return;
     if (!MemoryBaselineReady)

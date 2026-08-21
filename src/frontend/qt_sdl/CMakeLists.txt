@@ -533,6 +533,14 @@ set(_mp_developer_gate 0)
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     set(_mp_developer_gate 1)
 endif()
+set(_mp_vulkan_backend_gate 0)
+if (MELONPRIME_VULKAN_ACTIVE)
+    set(_mp_vulkan_backend_gate 1)
+endif()
+set(_mp_dx12_backend_gate 0)
+if (MELONPRIME_DX12_ACTIVE)
+    set(_mp_dx12_backend_gate 1)
+endif()
 target_compile_definitions(melonDS PRIVATE
     MELONPRIMEDS_GIT_SHA="${_mp_git_sha}"
     MELONPRIMEDS_GIT_BRANCH="${_mp_git_branch}"
@@ -542,7 +550,9 @@ target_compile_definitions(melonDS PRIVATE
     MELONPRIMEDS_BUILD_RENDERER_PERF_TELEMETRY=${_mp_renderer_perf_gate}
     MELONPRIMEDS_BUILD_VULKAN_LATENCY_CAPTURE=${_mp_vulkan_latency_gate}
     MELONPRIMEDS_BUILD_GPU_MEMORY_TELEMETRY=${_mp_gpu_memory_gate}
-    MELONPRIMEDS_BUILD_DEVELOPER_FEATURES=${_mp_developer_gate})
+    MELONPRIMEDS_BUILD_DEVELOPER_FEATURES=${_mp_developer_gate}
+    MELONPRIMEDS_BUILD_VULKAN=${_mp_vulkan_backend_gate}
+    MELONPRIMEDS_BUILD_DX12=${_mp_dx12_backend_gate})
 
 if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     target_compile_definitions(core PRIVATE
