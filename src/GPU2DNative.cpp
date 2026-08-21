@@ -358,6 +358,90 @@ void LogBlankState(
             state.DispCnt, displayMode, state.UnitEnabled, state.ForcedBlank,
             state.LayerEnable, state.OBJEnable, state.MasterBrightness,
             state.LCDVRAMMap, state.CaptureEnable, state.CaptureCnt);
+
+        const auto hashBytes = [](const u8* bytes, std::size_t count) {
+            u64 hash = 1469598103934665603ull;
+            if (!bytes)
+                return hash;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                hash ^= bytes[i];
+                hash *= 1099511628211ull;
+            }
+            return hash;
+        };
+        const u32 bgOffset = engine == 0u ? 0u : 32u;
+        const u32 objOffset = engine == 0u ? 0u : 16u;
+        const u32 bgBase = line * NativeCaptureBGMappingStride + bgOffset;
+        const u32 objBase = line * NativeCaptureOBJMappingStride + objOffset;
+        const u32 bgCount = engine == 0u ? 32u : 8u;
+        const u32 objCount = engine == 0u ? 16u : 8u;
+        const u32 bg0 = bgCount > 0u
+            ? input.NativeCaptureBGMapping[bgBase] : 0u;
+        const u32 bg1 = bgCount > 1u
+            ? input.NativeCaptureBGMapping[bgBase + 1u] : 0u;
+        const u32 bg2 = bgCount > 2u
+            ? input.NativeCaptureBGMapping[bgBase + 2u] : 0u;
+        const u32 bg3 = bgCount > 3u
+            ? input.NativeCaptureBGMapping[bgBase + 3u] : 0u;
+        const u32 obj0 = objCount > 0u
+            ? input.NativeCaptureOBJMapping[objBase] : 0u;
+        const u32 obj1 = objCount > 1u
+            ? input.NativeCaptureOBJMapping[objBase + 1u] : 0u;
+        const u32 obj2 = objCount > 2u
+            ? input.NativeCaptureOBJMapping[objBase + 2u] : 0u;
+        const u32 obj3 = objCount > 3u
+            ? input.NativeCaptureOBJMapping[objBase + 3u] : 0u;
+        const MemorySnapshot& memory = input.Engine[engine];
+        const u64 bgHash = hashBytes(
+            memory.BGVRAM.data(), std::min<std::size_t>(memory.BGSize, 1024u));
+        const u64 objHash = hashBytes(
+            memory.OBJVRAM.data(), std::min<std::size_t>(memory.OBJSize, 1024u));
+        const u64 bank2Hash = hashBytes(
+            input.LCDVRAM.data() + 2u * 128u * 1024u, 1024u);
+        const u64 bank3Hash = hashBytes(
+            input.LCDVRAM.data() + 3u * 128u * 1024u, 1024u);
+        u16 lcd2Word0 = 0u;
+        u16 lcd2Word1 = 0u;
+        u16 lcd2Word2 = 0u;
+        u16 lcd2Word3 = 0u;
+        u16 lcd3Word0 = 0u;
+        u16 lcd3Word1 = 0u;
+        u16 lcd3Word2 = 0u;
+        u16 lcd3Word3 = 0u;
+        std::memcpy(&lcd2Word0, input.LCDVRAM.data() + 2u * 128u * 1024u + 0u, sizeof(u16));
+        std::memcpy(&lcd2Word1, input.LCDVRAM.data() + 2u * 128u * 1024u + 2u, sizeof(u16));
+        std::memcpy(&lcd2Word2, input.LCDVRAM.data() + 2u * 128u * 1024u + 4u, sizeof(u16));
+        std::memcpy(&lcd2Word3, input.LCDVRAM.data() + 2u * 128u * 1024u + 6u, sizeof(u16));
+        std::memcpy(&lcd3Word0, input.LCDVRAM.data() + 3u * 128u * 1024u + 0u, sizeof(u16));
+        std::memcpy(&lcd3Word1, input.LCDVRAM.data() + 3u * 128u * 1024u + 2u, sizeof(u16));
+        std::memcpy(&lcd3Word2, input.LCDVRAM.data() + 3u * 128u * 1024u + 4u, sizeof(u16));
+        std::memcpy(&lcd3Word3, input.LCDVRAM.data() + 3u * 128u * 1024u + 6u, sizeof(u16));
+        const CaptureBlockProvenance& bank2Owner =
+            input.LCDVRAMProvenance[2u * CapturePhysicalBlocksPerBank];
+        const CaptureBlockProvenance& bank3Owner =
+            input.LCDVRAMProvenance[3u * CapturePhysicalBlocksPerBank];
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[GPU2DStage] mapped_debug backend=%s stage=%s emulated=%llu "
+            "screen=%u line=%u engine=%u BGSize=%u OBJSize=%u "
+            "bgMask=%08X,%08X,%08X,%08X objMask=%08X,%08X,%08X,%08X "
+            "bgHash=%016llX objHash=%016llX "
+            "lcd2Hash=%016llX lcd2_words=%04X,%04X,%04X,%04X "
+            "lcd3Hash=%016llX lcd3_words=%04X,%04X,%04X,%04X "
+            "lcd2Owner=%s lcd3Owner=%s\n",
+            backend, stage,
+            static_cast<unsigned long long>(emulatedFrame), screen, line, engine,
+            memory.BGSize, memory.OBJSize,
+            bg0, bg1, bg2, bg3, obj0, obj1, obj2, obj3,
+            static_cast<unsigned long long>(bgHash),
+            static_cast<unsigned long long>(objHash),
+            static_cast<unsigned long long>(bank2Hash),
+            lcd2Word0, lcd2Word1, lcd2Word2, lcd2Word3,
+            static_cast<unsigned long long>(bank3Hash),
+            lcd3Word0, lcd3Word1, lcd3Word2, lcd3Word3,
+            CaptureOwnerName(bank2Owner.Owner),
+            CaptureOwnerName(bank3Owner.Owner));
     }
 }
 

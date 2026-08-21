@@ -4391,6 +4391,70 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     LastSemanticFrame = input.Generation.Frame;
     LastSemanticCaptureGeneration = input.Generation.CaptureGeneration;
     LastSemanticEpoch = CurrentEpoch;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const char* captureDebug = std::getenv(
+            "MELONPRIME_GPU2D_CAPTURE_DEBUG_READBACK");
+        captureDebug && captureDebug[0] == '1' && captureDebug[1] == '\0')
+    {
+        std::array<u8, 3u * 32u * 1024u> captureBytes{};
+        CaptureBlockProvenance expected{};
+        expected.Owner = CaptureOwner::NativeVulkan;
+        expected.Epoch = CurrentEpoch;
+        expected.SemanticFrame = LastSemanticFrame;
+        expected.CaptureGeneration = LastSemanticCaptureGeneration;
+        expected.CompletionValue = LastNativeCaptureCompletionValue;
+        const auto hashBytes = [](const u8* bytes, std::size_t count) {
+            u64 hash = 1469598103934665603ull;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                hash ^= bytes[i];
+                hash *= 1099511628211ull;
+            }
+            return hash;
+        };
+        const bool bank2Ok = ReadNativeCapture(
+            2u, 0u, 3u, expected, captureBytes.data());
+        const u64 bank2Hash = bank2Ok
+            ? hashBytes(captureBytes.data(), 1024u) : 0u;
+        const bool bank3Ok = ReadNativeCapture(
+            3u, 0u, 3u, expected, captureBytes.data());
+        const u64 bank3Hash = bank3Ok
+            ? hashBytes(captureBytes.data(), 1024u) : 0u;
+        u16 bank2Word0 = 0u;
+        u16 bank2Word1 = 0u;
+        u16 bank2Word2 = 0u;
+        u16 bank2Word3 = 0u;
+        u16 bank3Word0 = 0u;
+        u16 bank3Word1 = 0u;
+        u16 bank3Word2 = 0u;
+        u16 bank3Word3 = 0u;
+        if (bank2Ok)
+        {
+            std::memcpy(&bank2Word0, captureBytes.data() + 0u, sizeof(u16));
+            std::memcpy(&bank2Word1, captureBytes.data() + 2u, sizeof(u16));
+            std::memcpy(&bank2Word2, captureBytes.data() + 4u, sizeof(u16));
+            std::memcpy(&bank2Word3, captureBytes.data() + 6u, sizeof(u16));
+        }
+        if (bank3Ok)
+        {
+            std::memcpy(&bank3Word0, captureBytes.data() + 0u, sizeof(u16));
+            std::memcpy(&bank3Word1, captureBytes.data() + 2u, sizeof(u16));
+            std::memcpy(&bank3Word2, captureBytes.data() + 4u, sizeof(u16));
+            std::memcpy(&bank3Word3, captureBytes.data() + 6u, sizeof(u16));
+        }
+        Platform::Log(Platform::LogLevel::Info,
+            "[GPU2DCaptureDebug] backend=Vulkan frame=%llu "
+            "bank2_ok=%u bank2_hash=%016llX bank2_words=%04X,%04X,%04X,%04X "
+            "bank3_ok=%u bank3_hash=%016llX bank3_words=%04X,%04X,%04X,%04X\n",
+            static_cast<unsigned long long>(LastSemanticFrame),
+            bank2Ok ? 1u : 0u,
+            static_cast<unsigned long long>(bank2Hash),
+            bank2Word0, bank2Word1, bank2Word2, bank2Word3,
+            bank3Ok ? 1u : 0u,
+            static_cast<unsigned long long>(bank3Hash),
+            bank3Word0, bank3Word1, bank3Word2, bank3Word3);
+    }
+#endif
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFrames);
     GPU2DNative::LogSemanticIdentity(
         "Vulkan", input.Generation.Frame, input.Generation.CaptureGeneration,
