@@ -544,6 +544,7 @@ void VulkanRenderer3D::Stop()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
     ComposedOutput.reset();
     Initialized = false;
@@ -576,6 +577,7 @@ void VulkanRenderer3D::Reset()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
     ColorBuffer.fill(0);
     if (ComposedOutput)
@@ -899,6 +901,7 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
     CaptureSidecarBuffer.Destroy();
     FinalFB.Destroy();
@@ -4007,8 +4010,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-            push.Padding = 16u | 8u
-                | (stageDiagnostics ? 64u : 0u); // two logical screens, one line
+            push.Padding = 16u | 8u; // two logical screens, one line
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
@@ -4060,7 +4062,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-        push.Padding = 16u | (stageDiagnostics ? 64u : 0u);
+        push.Padding = 16u;
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
             VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
         fns.CmdDispatch(cmd, DivRoundUp(256u, 128u), 384u, 1u);
@@ -4241,10 +4243,13 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
-    // This is the fence/timeline identity for the semantic submission that
-    // produced the persistent LCDC capture mirror. Capture readback waits on
-    // its own demand-driven command, but validates against this provenance.
-    LastNativeCaptureCompletionValue = ComposeFrames.GetLastSubmittedFrameNumber();
+    // Keep capture provenance independent of presentation frame-ring reuse.
+    // Readback is ordered after this submission on the same queue; the
+    // renderer-global serial is the identity validated by cross-frame sync.
+    ++NativeSemanticSubmissionSerial;
+    if (NativeSemanticSubmissionSerial == 0u)
+        NativeSemanticSubmissionSerial = 1u;
+    LastNativeCaptureCompletionValue = NativeSemanticSubmissionSerial;
     if (outputSlot)
         outputSlot->LastSubmittedFrame = submittedNativeFrame;
 

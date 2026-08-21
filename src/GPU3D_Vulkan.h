@@ -610,6 +610,8 @@ private:
     u64 LastSemanticFrame = 0;
     u64 LastSemanticCaptureGeneration = 0;
     u64 LastSemanticEpoch = 0;
+    // Capture provenance is independent of presentation frame-ring reuse.
+    u64 NativeSemanticSubmissionSerial = 0;
     u64 LastNativeCaptureCompletionValue = 0;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely

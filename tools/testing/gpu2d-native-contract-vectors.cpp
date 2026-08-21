@@ -404,8 +404,29 @@ struct CaptureOwnershipModel
     u16 CaptureFlags = 0;
     u64 EmulatedFrameSerial = 0;
     u64 RecordedNativeFrameSerial = 0;
+    u64 NativeSemanticSubmissionSerial = 0;
+    u64 LastNativeCaptureCompletionValue = 0;
     bool PresentationSubmitted = false;
     bool PresentationStallObserved = false;
+
+    u64 SubmitSemantic(u64 localContextFence)
+    {
+        // DX12 semantic slots have independent local fences.  The provenance
+        // key must remain monotonic even when a later slot reports a smaller
+        // local fence value.
+        (void)localContextFence;
+        ++NativeSemanticSubmissionSerial;
+        if (NativeSemanticSubmissionSerial == 0u)
+            NativeSemanticSubmissionSerial = 1u;
+        LastNativeCaptureCompletionValue = NativeSemanticSubmissionSerial;
+        return LastNativeCaptureCompletionValue;
+    }
+
+    bool AcceptsNativeReadback(u64 completionValue) const
+    {
+        return completionValue != 0u
+            && completionValue <= LastNativeCaptureCompletionValue;
+    }
 
     void PublishNative(
         CaptureOwner owner,
@@ -469,6 +490,13 @@ bool RunCaptureOwnershipVectors()
 {
     bool passed = true;
     CaptureOwnershipModel model;
+    const u64 firstSemanticSerial = model.SubmitSemantic(28u);
+    const u64 secondSemanticSerial = model.SubmitSemantic(27u);
+    passed &= Require(
+        firstSemanticSerial == 1u && secondSemanticSerial == 2u
+            && secondSemanticSerial > firstSemanticSerial
+            && model.AcceptsNativeReadback(firstSemanticSerial),
+        "per-slot local fences were incorrectly used as global capture provenance");
     model.EmulatedFrameSerial = 101u;
     model.RecordedNativeFrameSerial = 100u;
     model.PresentationSubmitted = false;

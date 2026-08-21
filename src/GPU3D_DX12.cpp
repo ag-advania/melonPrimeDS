@@ -604,6 +604,7 @@ void DX12Renderer3D::Stop()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
 }
 
@@ -626,6 +627,7 @@ void DX12Renderer3D::Reset()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
     ColorBuffer.fill(0);
     if (ComposedOutput)
@@ -946,6 +948,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
     TileBuffers[0].Reset();
     TileBuffers[1].Reset();
@@ -3762,10 +3765,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 
     DispatchUniform constants = MakeDispatchUniform();
     constants.TexWidth = finalFBValid ? 1u : 0u;
-    // Developer Stage A diagnostics reserve bit 64 for one mode-2 capture
-    // probe. It is intentionally absent from production dispatches so the
-    // structured composition contract remains unchanged outside diagnostics.
-    constants.Pad = 16u | (stageDiagnostics ? 64u : 0u);
+    constants.Pad = 16u;
     semanticSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DLogical, false));
     if (input.CaptureEnable != 0u)
@@ -3789,8 +3789,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
             InsertUavBarrier(list, BlendStateBuffer.Get());
 
-            constants.Pad = 16u | 8u
-                | (stageDiagnostics ? 64u : 0u); // native logical one-line pass
+            constants.Pad = 16u | 8u; // native logical one-line pass
             SetDispatchConstants(list, constants);
             list->SetPipelineState(PipelineGPU2DNative.Get());
             list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
@@ -3822,7 +3821,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, true));
         InsertUavBarrier(list, BlendStateBuffer.Get());
 
-        constants.Pad = 16u | (stageDiagnostics ? 64u : 0u);
+        constants.Pad = 16u;
         SetDispatchConstants(list, constants);
         list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
         DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 2u);
@@ -3969,10 +3968,14 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
-    // This fence value identifies the semantic submission that produced the
-    // persistent LCDC capture mirror. ReadNativeCapture validates against this
-    // specific submission rather than the current FrameRecorder identity.
-    LastNativeCaptureCompletionValue = semanticSlot.Commands.GetSubmittedValue();
+    // Each semantic slot owns a separate DX12 command context and local fence.
+    // Its fence values are therefore not comparable across slots.  The
+    // renderer-global serial is the provenance identity; direct queue ordering
+    // guarantees that a later scoped capture copy observes this submission.
+    ++NativeSemanticSubmissionSerial;
+    if (NativeSemanticSubmissionSerial == 0u)
+        NativeSemanticSubmissionSerial = 1u;
+    LastNativeCaptureCompletionValue = NativeSemanticSubmissionSerial;
 
     if (diagnosticReadback)
     {
@@ -4058,37 +4061,6 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                         expectedTop[8u * GPU2DNative::ScreenWidth],
                         expectedBottom[8u * GPU2DNative::ScreenWidth], state.CaptureCnt);
 
-                    if (stageDiagnostics)
-                    {
-                        const D3D12_RANGE structuredReadRange{
-                            0, static_cast<SIZE_T>(kCompositionInputDwords * sizeof(u32))};
-                        void* structuredMapped = nullptr;
-                        if (SUCCEEDED(structuredReadback->Map(
-                                0, &structuredReadRange, &structuredMapped))
-                            && structuredMapped)
-                        {
-                            const u32 pixel = sample.Y * GPU2DNative::ScreenWidth
-                                + sample.X;
-                            const u32 screenBase = sample.Screen * 4u
-                                * GPU2DNative::ScreenPixelCount;
-                            const u32* structured =
-                                static_cast<const u32*>(structuredMapped);
-                            Platform::Log(Platform::LogLevel::Info,
-                                "DX12 GPU2D StageA probe screen=%u(%u,%u) "
-                                "below=0x%08X above=0x%08X control=0x%08X "
-                                "captureReference=0x%08X lineMeta=0x%08X\n",
-                                sample.Screen, sample.X, sample.Y,
-                                structured[screenBase + pixel],
-                                structured[screenBase + GPU2DNative::ScreenPixelCount + pixel],
-                                structured[screenBase + 2u * GPU2DNative::ScreenPixelCount + pixel],
-                                structured[screenBase + 3u * GPU2DNative::ScreenPixelCount + pixel],
-                                structured[GPU2DNative::StructuredLineMetaBase
-                                    + sample.Screen * GPU2DNative::ScreenHeight
-                                    + sample.Y]);
-                            const D3D12_RANGE noStructuredWrite{0, 0};
-                            structuredReadback->Unmap(0, &noStructuredWrite);
-                        }
-                    }
                 }
                 SetRuntimeFailure("native GPU2D exact differential mismatch");
                 return false;

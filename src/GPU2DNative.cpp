@@ -1065,6 +1065,79 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     RecorderStartNs = NowNanoseconds();
 }
 
+u16 FrameRecorder::ReconcileNativeCaptureCpuDifferences() noexcept
+{
+    u16 staleBlockMask = 0u;
+    const Renderer& renderer = GPU.GetRenderer();
+    const char* backend = renderer.GetCaptureBackendName();
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    // Exact validation intentionally runs the Software oracle beside the
+    // native producer. Its DoCapture writes the same emulated CPU-visible
+    // bytes after the native semantic submission; classify that expected
+    // materialization separately from an untracked CPU/state-load replay.
+    const bool softwareOracleMaterialization = ExactValidationEnabled();
+#endif
+
+    for (u32 bank = 0; bank < CapturePhysicalBanks; ++bank)
+    {
+        for (u32 physicalBlock = 0;
+            physicalBlock < CapturePhysicalBlocksPerBank;
+            ++physicalBlock)
+        {
+            const u32 provenanceIndex =
+                bank * CapturePhysicalBlocksPerBank + physicalBlock;
+            const CaptureBlockProvenance& provenance =
+                Input.LCDVRAMProvenance[provenanceIndex];
+            if (!IsNativeCaptureOwner(provenance.Owner))
+                continue;
+            const CaptureBlockProvenance nativeProvenance = provenance;
+
+            const u32 offset = physicalBlock * CapturePhysicalBlockBytes;
+            const u8* cpuSource = GPU.VRAM[bank] + offset;
+            u8* recorderMirror = Input.LCDVRAM.data()
+                + static_cast<std::size_t>(bank) * 128u * 1024u + offset;
+            if (std::memcmp(cpuSource, recorderMirror, CapturePhysicalBlockBytes) == 0)
+                continue;
+
+            // GPU.VRAM is the CPU-visible authority once it differs from the
+            // retained recorder mirror. Do not read back the native owner in
+            // this case: that would overwrite a newer CPU/state-load write
+            // with the older GPU capture and recreate the replay loop.
+            std::memcpy(recorderMirror, cpuSource, CapturePhysicalBlockBytes);
+            Input.LCDVRAMProvenance[provenanceIndex] = {};
+            Input.LCDVRAMProvenance[provenanceIndex].Owner = CaptureOwner::CpuCoherent;
+            MarkDirtyRange(
+                Input,
+                PackedLCDVRAMBase * sizeof(u32)
+                    + bank * 128u * 1024u + offset,
+                CapturePhysicalBlockBytes);
+            staleBlockMask |= static_cast<u16>(1u << provenanceIndex);
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            Platform::Log(
+                softwareOracleMaterialization
+                    ? Platform::LogLevel::Info : Platform::LogLevel::Warn,
+                "[GPU2DCaptureOwnership] event=%s backend=%s bank=%u "
+                "block=%u owner=%s ownerEpoch=%llu "
+                "ownerSemanticFrame=%llu ownerCaptureGeneration=%llu "
+                "ownerCompletionValue=%llu action=%s\n",
+                softwareOracleMaterialization
+                    ? "oracle_cpu_materialization" : "stale_cpu_replay_detected",
+                backend ? backend : "Unknown", bank, physicalBlock,
+                CaptureOwnerName(nativeProvenance.Owner),
+                static_cast<unsigned long long>(nativeProvenance.Epoch),
+                static_cast<unsigned long long>(nativeProvenance.SemanticFrame),
+                static_cast<unsigned long long>(nativeProvenance.CaptureGeneration),
+                static_cast<unsigned long long>(nativeProvenance.CompletionValue),
+                softwareOracleMaterialization
+                    ? "oracle_materialize" : "cpu_reconcile");
+#endif
+        }
+    }
+
+    return staleBlockMask;
+}
+
 void FrameRecorder::RefreshCaptureProvenance() noexcept
 {
     const Renderer& renderer = GPU.GetRenderer();

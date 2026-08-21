@@ -1779,7 +1779,7 @@ void GPU::LogCaptureSync(
         static_cast<unsigned long long>(semantic.Epoch),
         static_cast<unsigned long long>(semantic.SemanticFrame),
         static_cast<unsigned long long>(semantic.CaptureGeneration),
-        static_cast<unsigned long long>(semantic.Epoch),
+        static_cast<unsigned long long>(semantic.Valid ? semantic.Epoch : 0u),
         bank, start, len, flags,
         CaptureOwnerName(owner.Owner),
         static_cast<unsigned long long>(owner.Epoch),

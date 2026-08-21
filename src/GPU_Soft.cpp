@@ -287,7 +287,30 @@ void SoftRenderer::DrawScanline(u32 line)
         RecordNativeGPU2DFrameForFrame = nativeGPU2DReady
             && (NativeGPU2DProducerForFrame || exactValidation);
         if (RecordNativeGPU2DFrameForFrame)
+        {
             NativeGPU2DFrame.BeginFrame(EmulatedFrameSerial);
+            const u16 staleCaptureBlocks =
+                NativeGPU2DFrame.ReconcileNativeCaptureCpuDifferences();
+            for (u32 bank = 0; bank < CapturePhysicalBanks; ++bank)
+            {
+                for (u32 physicalBlock = 0;
+                    physicalBlock < CapturePhysicalBlocksPerBank;
+                    ++physicalBlock)
+                {
+                    const u32 bit =
+                        bank * CapturePhysicalBlocksPerBank
+                        + physicalBlock;
+                    if ((staleCaptureBlocks & (1u << bit)) != 0u)
+                    {
+                        // The recorder has copied the newer CPU-visible block
+                        // into its private input. Keep renderer provenance in
+                        // lockstep so a subsequent sync cannot read back the
+                        // older native capture over that CPU/state-load data.
+                        MarkCaptureCpuCoherent(bank, physicalBlock, 1u);
+                    }
+                }
+            }
+        }
         else
             NativeGPU2DFrame.Reset();
 

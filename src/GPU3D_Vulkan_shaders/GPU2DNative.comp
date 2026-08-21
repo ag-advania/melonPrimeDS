@@ -1559,22 +1559,6 @@ void WriteStructuredLogicalPixel(uint screen, uint line, uint x, uint engine)
     // as display-mode-off so Stage B does not apply master brightness twice.
     uint color = DisplayPixel(screen, engine, line, int(x), x, line);
     uint captureReference = NativeCaptureReference(engine, line, x);
-    if ((pc._pad & 64u) != 0u && engine == 0u && displayMode == 2u)
-    {
-        uint bank = (dispCnt >> 18u) & 3u;
-        uint sourceA = CaptureSourceA(line, x, x, 0u);
-        uint sourceB = CaptureSourceB(
-            line, x, LineWord(0u, line, kCaptureCnt));
-        uint captureWord = CaptureCompositeRaw(
-            sourceA, sourceB, LineWord(0u, line, kCaptureCnt));
-        uint displayWord = LCD16(line, bank, line * 512u + x * 2u);
-        // Diagnostic-only payload: control carries sourceA, above carries the
-        // raw capture word, and reference carries the raw display word.
-        WriteStructuredPixel(screen, line, x, color, captureWord,
-            (kStructuredControlPlain2D << 24u) | (sourceA & 0x00FFFFFFu),
-            displayWord);
-        return;
-    }
     WriteStructuredPixel(screen, line, x, color, 0u,
         kStructuredControlPlain2D << 24u, captureReference);
     if (x == 0u)

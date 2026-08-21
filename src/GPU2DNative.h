@@ -505,6 +505,12 @@ public:
 
     void Reset() noexcept;
     void BeginFrame(u64 frame) noexcept;
+    // A native capture owner may outlive this recorder, while the software
+    // exact oracle or a state restore can materialize newer CPU-visible bytes
+    // before the next recorder starts. Reconcile only the private FrameInput
+    // here; the renderer applies the returned physical-block mask to its
+    // ownership table at the frame boundary.
+    [[nodiscard]] u16 ReconcileNativeCaptureCpuDifferences() noexcept;
     void CaptureLine(
         u32 engine,
         const melonDS::GPU2D& gpu2D,

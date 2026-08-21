@@ -103,9 +103,13 @@ def main() -> int:
         require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
         require(text["native_recorder"], "LCDVRAMProvenance", "native recorder capture provenance", failures)
         require(text["native_recorder"], "CaptureCoherentLCDVRAMForLine", "native recorder coherent capture path", failures)
+        require(text["native_header"], "ReconcileNativeCaptureCpuDifferences", "stale CPU replay reconciliation API", failures)
+        require(text["native_recorder"], "stale_cpu_replay_detected", "stale CPU replay diagnostic", failures)
         require(text["native_header"], "MarkCaptureAllocationCpuCoherent", "same-frame capture allocation provenance", failures)
         require(text["native_recorder"], "MarkCaptureAllocationCpuCoherent", "same-frame capture allocation provenance", failures)
         require(text["soft_renderer"], "NativeGPU2DFrame.MarkCaptureAllocationCpuCoherent", "same-frame capture allocation hand-off", failures)
+        require(text["soft_renderer"], "staleCaptureBlocks", "stale CPU replay ownership hand-off", failures)
+        require(text["soft_renderer"], "MarkCaptureCpuCoherent(bank, physicalBlock, 1u)", "stale CPU replay ownership hand-off", failures)
         require(text["native_recorder"], "GPU2DWriteKind::CaptureSync", "native recorder capture-sync journal", failures)
         require(text["native_header"], "LCDVRAMProvenance", "host-only capture provenance", failures)
         if "CaptureNativeDisplayLine" in text["soft_renderer"]:
@@ -206,6 +210,7 @@ def main() -> int:
             require(text[label], "expected.Owner", f"{label} expected capture identity", failures)
             require(text[label], "expected.CaptureGeneration", f"{label} capture generation validation", failures)
             require(text[label], "expected.CompletionValue", f"{label} completion validation", failures)
+            require(text[label], "NativeSemanticSubmissionSerial", f"{label} global semantic submission identity", failures)
             require(text[label], "LastNativeCaptureCompletionValue", f"{label} completion provenance", failures)
             require(text[label], "input.LCDVRAMProvenance", f"{label} mirror ownership filter", failures)
             require(
@@ -216,6 +221,8 @@ def main() -> int:
             )
             if label == "dx12_renderer":
                 require(text[label], "WaitForSubmittedValue", "DX12 scoped capture fence", failures)
+                if "LastNativeCaptureCompletionValue = semanticSlot.Commands.GetSubmittedValue()" in text[label]:
+                    failures.append("DX12 native capture provenance: local semantic-slot fence remains the identity")
                 readback_start = text[label].find("DX12Renderer3D::ReadNativeCapture(")
                 if readback_start >= 0:
                     readback_body = text[label][readback_start:]
@@ -223,6 +230,8 @@ def main() -> int:
                         "NativeCaptureStateIdentity DX12Renderer3D::GetNativeCaptureStateIdentity(", 1
                     )[0]:
                         failures.append("DX12 native capture readback: queue/device idle wait remains")
+            elif "LastNativeCaptureCompletionValue = ComposeFrames.GetLastSubmittedFrameNumber()" in text[label]:
+                failures.append("Vulkan native capture provenance: presentation frame-ring value remains the identity")
 
         for label in ("vulkan_shader", "dx12_shader"):
             require(text[label], "TimelineVersion", f"{label} temporal shader", failures)
