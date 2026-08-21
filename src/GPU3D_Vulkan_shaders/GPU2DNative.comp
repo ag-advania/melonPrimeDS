@@ -131,6 +131,9 @@ const uint kStructuredControlHas3D = 0x40u;
 const uint kStructuredControlAbove = 0x80u;
 const uint kStructuredControlOpaqueBlackBelow = 0x20u;
 const uint kStructuredCompositionBlend4 = 1u;
+const uint kStructuredCompositionBrightnessUp = 2u;
+const uint kStructuredCompositionBrightnessDown = 3u;
+const uint kStructuredCompositionBlend5 = 4u;
 const uint kStructuredCompositionPlain2D = 7u;
 const uint kStructuredDisplayRegular = 1u;
 const uint kStructuredDisplayOff = 0u;
@@ -1471,6 +1474,89 @@ uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
         | (min(b, 31u) << 10u) | (a << 15u);
 }
 
+uint LoadNativeCaptureSidecar(uint reference, uint withinX, uint withinY)
+{
+    uint address = reference & 0xFFFFu;
+    uint bank = (reference >> 28u) & 3u;
+    uint version = (reference >> 30u) & 1u;
+    uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    return NativeCaptureSidecar[
+        cell * samplesPerPixel + withinY * uint(ScaleFactor) + withinX];
+}
+
+uint StructuredCaptureSourceA(
+    uint line, uint x, uint outputX, uint sampleY)
+{
+    // Source A is engine A, while structured planes are stored in LCD screen
+    // order. Follow the recorded route instead of assuming screen 0.
+    uint captureScreen = 0u;
+    for (uint screen = 0u; screen < 2u; ++screen)
+    {
+        if ((NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u) == 0u)
+        {
+            captureScreen = screen;
+            break;
+        }
+    }
+
+    uint nativeIndex = line * 256u + x;
+    uint base = captureScreen * 4u * kStructuredPlaneStride;
+    uint below = NativeGPU2DOutput[base + nativeIndex];
+    uint above = NativeGPU2DOutput[
+        base + kStructuredPlaneStride + nativeIndex];
+    uint control = NativeGPU2DOutput[
+        base + 2u * kStructuredPlaneStride + nativeIndex];
+    uint captureReference = NativeGPU2DOutput[
+        base + 3u * kStructuredPlaneStride + nativeIndex];
+    uint controlFlags = control >> 24u;
+    uint color = below;
+    if ((controlFlags & kStructuredControlHas3D) == 0u)
+        return color;
+
+    uint lineMeta = NativeGPU2DOutput[
+        kStructuredLineMetaBase + captureScreen * 192u + line];
+    uint pixel3D = 0u;
+    if ((captureReference & 0x80000000u) != 0u)
+    {
+        pixel3D = LoadNativeCaptureSidecar(
+            captureReference, outputX % uint(ScaleFactor), sampleY);
+    }
+    else if (pc.TexWidth != 0u)
+    {
+        uint renderX = (lineMeta >> 23u) & 0x1FFu;
+        int sourceX = (renderX & 0x100u) != 0u
+            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
+            : int(outputX) + int(renderX * uint(ScaleFactor));
+        if (sourceX >= 0 && sourceX < ScreenWidth)
+        {
+            pixel3D = LoadFinalFB(ivec2(
+                sourceX, int(line * uint(ScaleFactor) + sampleY)));
+        }
+    }
+
+    // Match PrepareStructuredCaptureLine(): transparent FinalFB exposes the
+    // structured below plane instead of becoming opaque black in capture.
+    if (((pixel3D >> 24u) & 0x1Fu) == 0u)
+        return color;
+
+    uint eva = (control >> 8u) & 0x1Fu;
+    uint evb = (control >> 16u) & 0x1Fu;
+    uint compositionMode = controlFlags & 0xFu;
+    if (compositionMode == kStructuredCompositionBlend4
+        && (controlFlags & kStructuredControlAbove) != 0u)
+    {
+        return Blend4Native(above, pixel3D, eva, evb);
+    }
+    if (compositionMode == kStructuredCompositionBrightnessUp)
+        return BrightnessUp(pixel3D, eva, 8u);
+    if (compositionMode == kStructuredCompositionBrightnessDown)
+        return BrightnessDown(pixel3D, eva, 7u);
+    if (compositionMode == kStructuredCompositionBlend5)
+        return Blend5Native(pixel3D, below);
+    return pixel3D;
+}
+
 uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
 {
     uint captureCnt = LineWord(0u, line, kCaptureCnt);
@@ -1485,8 +1571,7 @@ uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
                 sx, int(line * uint(ScaleFactor) + sampleY)));
         return 0u;
     }
-    return Composite2D(0u, 0u, line, int(x), outputX,
-        line * uint(ScaleFactor) + sampleY);
+    return StructuredCaptureSourceA(line, x, outputX, sampleY);
 }
 
 uint CaptureRawToColor6(uint color)

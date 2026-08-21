@@ -4010,6 +4010,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         ComposeFrames.WriteTimestamp(
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, false));
+        const VkBuffer structuredCaptureBuffer = structuredOutputBuffer.GetHandle();
         for (u32 line = 0; line < GPU2DNative::ScreenHeight; ++line)
         {
             push.CaptureYOffset = static_cast<s32>(line);
@@ -4018,6 +4019,15 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
                 DivRoundUp(256u, 128u), 2u, 1u);
+            // CaptureSourceA reads the structured plane written by the
+            // immediately preceding logical dispatch. The native capture
+            // mirror barrier alone does not make this separate buffer
+            // dependency visible to Vulkan.
+            BufferBarrier(cmd, &structuredCaptureBuffer, 1,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_WRITE_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT);
             BufferBarrier(cmd, &nativeCapture, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -4051,6 +4061,11 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+            BufferBarrier(cmd, &structuredCaptureBuffer, 1,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_READ_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_ACCESS_SHADER_WRITE_BIT);
             VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 3u);
         }
         ComposeFrames.WriteTimestamp(
@@ -4327,6 +4342,31 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
                 directOutputReadback ? "direct_image" : "composed_buffer",
                 expectedTop, expectedBottom);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            if (const char* captureDebug = std::getenv(
+                    "MELONPRIME_GPU2D_CAPTURE_DEBUG_READBACK");
+                captureDebug && captureDebug[0] == '1' && captureDebug[1] == '\0')
+            {
+                constexpr u32 structuredPlaneStride = 256u * 192u;
+                constexpr u32 structuredLineMetaBase = 14u * structuredPlaneStride;
+                for (u32 screen = 0u; screen < 2u; ++screen)
+                {
+                    const u32 base = screen * 4u * structuredPlaneStride;
+                    Platform::Log(
+                        Platform::LogLevel::Info,
+                        "[GPU2DStructuredDebug] backend=Vulkan frame=%llu "
+                        "screen=%u below0=%08X above0=%08X control0=%08X "
+                        "reference0=%08X lineMeta0=%08X route0=%u\n",
+                        static_cast<unsigned long long>(input.Generation.Frame),
+                        screen, structured[base],
+                        structured[base + structuredPlaneStride],
+                        structured[base + 2u * structuredPlaneStride],
+                        structured[base + 3u * structuredPlaneStride],
+                        structured[structuredLineMetaBase + screen * 192u],
+                        input.ScreenSource[screen * GPU2DNative::ScreenHeight] & 1u);
+                }
+            }
+#endif
         }
 
         if (exactValidation)

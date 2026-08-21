@@ -938,7 +938,12 @@ u64 ReadMappedWord(
             if (bank < CapturePhysicalBanks
                 && IsCaptureMappedSection(context.Section))
             {
-                const CaptureBlockProvenance& owner =
+                // Copy the provenance before the developer proof path can
+                // materialize the block. The renderer's successful readback
+                // transition mutates its live owner in place; diagnostics
+                // must retain the owner that authorized the attempted CPU
+                // read, not report the post-materialization state.
+                const CaptureBlockProvenance owner =
                     renderer.GetCaptureBlockProvenance(bank, physicalBlock);
                 if (IsNativeCaptureOwner(owner.Owner))
                 {

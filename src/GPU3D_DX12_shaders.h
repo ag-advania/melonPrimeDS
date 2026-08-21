@@ -3142,6 +3142,66 @@ uint NativeCaptureRaw(uint c)
     uint r=NativeColorR(c)>>1u,g=NativeColorG(c)>>1u,b=NativeColorB(c)>>1u;
     return r|(g<<5u)|(b<<10u)|(((c>>24u)!=0u)?0x8000u:0u);
 }
+static const uint NativeStructuredPlaneStride=256u*192u;
+static const uint NativeStructuredLineMetaBase=14u*NativeStructuredPlaneStride;
+static const uint NativeStructuredControlHas3D=0x40u;
+static const uint NativeStructuredControlAbove=0x80u;
+static const uint NativeStructuredCompositionBlend4=1u;
+static const uint NativeStructuredCompositionBrightnessUp=2u;
+static const uint NativeStructuredCompositionBrightnessDown=3u;
+static const uint NativeStructuredCompositionBlend5=4u;
+uint NativeLoadCaptureSidecar(uint reference,uint withinX,uint withinY)
+{
+    uint address=reference&0xFFFFu,bank=(reference>>28u)&3u,version=(reference>>30u)&1u;
+    uint samplesPerPixel=ScaleFactor*ScaleFactor;
+    uint cell=((version*4u+bank)*65536u)+address;
+    return CaptureSidecarBuffer[cell*samplesPerPixel+withinY*ScaleFactor+withinX];
+}
+uint NativeStructuredCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
+{
+    // Source A is engine A. Structured planes are stored in LCD screen order,
+    // so follow the recorded route instead of assuming screen 0.
+    uint captureScreen=0u;
+    for(uint screen=0u;screen<2u;screen++)
+    {
+        if((ResultValue[NativeRouteBase+screen*192u+line]&1u)==0u)
+        {
+            captureScreen=screen;
+            break;
+        }
+    }
+    uint nativeIndex=line*256u+x,base=captureScreen*4u*NativeStructuredPlaneStride;
+    uint below=ResolveOut[base+nativeIndex];
+    uint above=ResolveOut[base+NativeStructuredPlaneStride+nativeIndex];
+    uint control=ResolveOut[base+2u*NativeStructuredPlaneStride+nativeIndex];
+    uint reference=ResolveOut[base+3u*NativeStructuredPlaneStride+nativeIndex];
+    uint flags=control>>24u,result=below;
+    if((flags&NativeStructuredControlHas3D)==0u)return result;
+
+    uint lineMeta=ResolveOut[NativeStructuredLineMetaBase+captureScreen*192u+line];
+    uint pixel3D=0u;
+    if((reference&0x80000000u)!=0u)
+        pixel3D=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,sampleY);
+    else if(TexWidth!=0u)
+    {
+        uint xpos=(lineMeta>>23u)&0x1FFu;
+        int sx=(xpos&0x100u)!=0u
+            ?(int)ox-(int)((512u-xpos)*ScaleFactor)
+            :(int)ox+(int)(xpos*ScaleFactor);
+        if(sx>=0&&sx<(int)ScreenWidth)
+            pixel3D=NativeFinalFB((uint)sx,line*ScaleFactor+sampleY);
+    }
+    if(((pixel3D>>24u)&0x1Fu)==0u)return result;
+    uint eva=(control>>8u)&0x1Fu,evb=(control>>16u)&0x1Fu,mode=flags&0xFu;
+    if(mode==NativeStructuredCompositionBlend4&&(flags&NativeStructuredControlAbove)!=0u)
+        return NativeBlend4(above,pixel3D,eva,evb);
+    if(mode==NativeStructuredCompositionBrightnessUp)
+        return NativePack(NativeColorR(pixel3D)+(((63u-NativeColorR(pixel3D))*eva+8u)>>4u),NativeColorG(pixel3D)+(((63u-NativeColorG(pixel3D))*eva+8u)>>4u),NativeColorB(pixel3D)+(((63u-NativeColorB(pixel3D))*eva+8u)>>4u),0xFFu);
+    if(mode==NativeStructuredCompositionBrightnessDown)
+        return NativePack(NativeColorR(pixel3D)-((NativeColorR(pixel3D)*eva+7u)>>4u),NativeColorG(pixel3D)-((NativeColorG(pixel3D)*eva+7u)>>4u),NativeColorB(pixel3D)-((NativeColorB(pixel3D)*eva+7u)>>4u),0xFFu);
+    if(mode==NativeStructuredCompositionBlend5)return NativeBlend5(pixel3D,below);
+    return pixel3D;
+}
 uint NativeCaptureSourceB(uint line,uint x,uint cnt)
 {
     if((cnt&(1u<<25u))!=0u)return NativeFIFO16(line,x);
@@ -3174,7 +3234,7 @@ uint NativeCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
         if(sx>=0&&sx<(int)ScreenWidth)return NativeFinalFB((uint)sx,line*ScaleFactor+sampleY);
         return 0u;
     }
-    return NativeComposite(0u,0u,line,(int)x,ox,line*ScaleFactor+sampleY);
+    return NativeStructuredCaptureSourceA(line,x,ox,sampleY);
 }
 uint NativeCaptureRawToColor6(uint color)
 {
@@ -3232,11 +3292,7 @@ void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
     }
 }
 
-static const uint NativeStructuredPlaneStride=256u*192u;
-static const uint NativeStructuredLineMetaBase=14u*NativeStructuredPlaneStride;
 static const uint NativeStructuredControlPlain2D=0x87u;
-static const uint NativeStructuredControlHas3D=0x40u;
-static const uint NativeStructuredControlAbove=0x80u;
 static const uint NativeStructuredControlOpaqueBlackBelow=0x20u;
 
 void NativeWriteStructuredPixel(uint screen,uint line,uint x,uint below,uint above,uint control,uint reference)

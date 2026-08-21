@@ -3801,6 +3801,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             SetDispatchConstants(list, constants);
             list->SetPipelineState(PipelineGPU2DNative.Get());
             list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
+            // CaptureSourceA reads the structured plane produced by this
+            // logical dispatch; order that UAV dependency independently of
+            // the persistent capture mirror.
+            InsertUavBarrier(list, structuredInput.Get());
             InsertUavBarrier(list, BlendStateBuffer.Get());
 
             constants.Pad = 16u | 8u; // native logical one-line pass
@@ -3817,6 +3821,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 static_cast<u32>(ScaleFactor), 1u);
             InsertUavBarrier(list, BlendStateBuffer.Get());
             InsertUavBarrier(list, CaptureSidecarBuffer.Get());
+            InsertUavBarrier(list, structuredInput.Get());
             DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 3u);
         }
         semanticSlot.Commands.WriteTimestamp(
