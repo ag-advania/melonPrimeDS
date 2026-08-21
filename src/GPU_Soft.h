@@ -136,7 +136,7 @@ public:
     {
         return NativeGPU2DRecordedFrameSerial;
     }
-    [[nodiscard]] bool UsesNativeGPU2DProducerForFrame() const noexcept
+    [[nodiscard]] bool UsesNativeGPU2DProducerForFrame() const noexcept override
     {
         return NativeGPU2DProducerForFrame;
     }

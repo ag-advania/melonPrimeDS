@@ -1433,6 +1433,14 @@ public:
     {
         return "Unknown";
     }
+    // FrameRecorder needs to distinguish a native GPU2D producer from the
+    // exact-validation oracle.  The latter still composes a native frame but
+    // deliberately keeps Software as the producer, so a current-frame capture
+    // write must not be advertised as a native owner in that mode.
+    [[nodiscard]] virtual bool UsesNativeGPU2DProducerForFrame() const noexcept
+    {
+        return false;
+    }
 #ifdef MELONPRIME_DS
     // Backend-neutral lookup for a retained high-resolution display-capture
     // pixel. The emulated VRAM remains authoritative; a zero result means the

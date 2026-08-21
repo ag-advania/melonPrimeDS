@@ -331,6 +331,12 @@ void SoftRenderer::DrawScanline(u32 line)
         NativeGPU2DFrame.CaptureMemoryForLine(nativeLine);
         NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, nativeLine, GPU.ScreenSwap);
         NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, nativeLine, GPU.ScreenSwap);
+        // The native producer does not execute the Software DoCapture path,
+        // but it must observe the same late DISPCAPCNT/LCDC state boundary.
+        // Software records this after both logical engines have rendered the
+        // line; keep the native line-state timeline identical before it is
+        // uploaded to Vulkan/DX12.
+        NativeGPU2DFrame.CaptureCaptureStateForLine(nativeLine);
         if (nativeLine == GPU2DNative::ScreenHeight - 1u)
         {
             NativeGPU2DFrame.FinalizeMemory();

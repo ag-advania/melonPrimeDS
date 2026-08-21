@@ -49,6 +49,60 @@ u32 CaptureAddressBlockMask(
 }
 #endif
 
+// A native capture write is retired into the persistent mirror only after the
+// semantic submission completes.  During the current frame, however, the
+// native shader writes one LCDC line before the next logical line is
+// evaluated.  Provenance therefore cannot describe the current-frame bytes
+// early enough for FrameRecorder: the renderer has not published that owner
+// yet.  Reconstruct the small write-ahead mask from the already recorded line
+// states so both the host flatten and the shader overlay use the same temporal
+// boundary.
+[[nodiscard]] std::array<u8, CapturePhysicalBanks>
+NativeCaptureBlocksWrittenBeforeLine(
+    const melonDS::GPU& gpu,
+    const FrameInput& input,
+    u32 line) noexcept
+{
+    std::array<u8, CapturePhysicalBanks> written{};
+    if (line == 0u
+        || !gpu.GetRenderer().UsesNativeGPU2DProducerForFrame())
+    {
+        return written;
+    }
+
+    const u32 endLine = std::min(line, ScreenHeight);
+    for (u32 captureLine = 0u; captureLine < endLine; ++captureLine)
+    {
+        const LineState& state = input.Lines[captureLine];
+        if (state.CaptureEnable == 0u)
+            continue;
+
+        const u32 bank = (state.CaptureCnt >> 16u) & 3u;
+        if (bank >= CapturePhysicalBanks
+            || (state.LCDVRAMMap & (1u << bank)) == 0u)
+        {
+            continue;
+        }
+
+        const u32 sizeCode = (state.CaptureCnt >> 20u) & 3u;
+        const u32 width = CaptureWidthForSize(sizeCode);
+        const u32 height = CaptureHeightForSize(sizeCode);
+        if (captureLine >= height)
+            continue;
+
+        const u32 first = WrapLCDCByte(
+            CaptureOffsetBytes((state.CaptureCnt >> 18u) & 3u)
+            + captureLine * width * 2u);
+        const u32 lastUnwrapped = first + width * 2u - 1u;
+        const u32 last = WrapLCDCByte(lastUnwrapped);
+        written[bank] |= static_cast<u8>(
+            1u << (first / CapturePhysicalBlockBytes));
+        written[bank] |= static_cast<u8>(
+            1u << (last / CapturePhysicalBlockBytes));
+    }
+    return written;
+}
+
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 std::atomic<u32>& ForcedPresentationStallRemaining() noexcept
 {
@@ -776,6 +830,10 @@ u64 ReadMappedWord(
 {
     u64 value = 0;
     const Renderer& renderer = gpu.GetRenderer();
+    const std::array<u8, CapturePhysicalBanks> currentNativeBlocks =
+        context.Input
+        ? NativeCaptureBlocksWrittenBeforeLine(gpu, *context.Input, context.Line)
+        : std::array<u8, CapturePhysicalBanks>{};
     for (u32 byteOffset = 0u; byteOffset < sizeof(u64); ++byteOffset)
     {
         const u32 logicalAddress = address + byteOffset;
@@ -835,6 +893,15 @@ u64 ReadMappedWord(
                     // Never turn it into a host readback just to flatten BG/OBJ.
                     skipCpuRead = true;
 #endif
+                }
+                else if ((currentNativeBlocks[bank]
+                    & (1u << physicalBlock)) != 0u)
+                {
+                    // The current native semantic frame has already written
+                    // this physical block, but provenance publication is a
+                    // post-submit event. Do not flatten stale CPU VRAM into
+                    // the line that will consume the GPU-resident write.
+                    skipCpuRead = true;
                 }
             }
             if (!skipCpuRead)
@@ -1338,6 +1405,8 @@ void FrameRecorder::CaptureNativeMappingForLine(
         return;
 
     const Renderer& renderer = GPU.GetRenderer();
+    const std::array<u8, CapturePhysicalBanks> currentNativeBlocks =
+        NativeCaptureBlocksWrittenBeforeLine(GPU, Input, line);
     const auto nativeMaskForEntry = [&](const u32* mappings, u32 count) {
         std::array<u32, NativeCaptureBGMappingStride> result{};
         const u32 limitedCount = std::min<u32>(
@@ -1357,7 +1426,9 @@ void FrameRecorder::CaptureNativeMappingForLine(
                     physicalAddress / CapturePhysicalBlockBytes;
                 if (IsNativeCaptureOwner(
                         renderer.GetCaptureBlockProvenance(
-                            bank, physicalBlock).Owner))
+                            bank, physicalBlock).Owner)
+                    || (currentNativeBlocks[bank]
+                        & (1u << physicalBlock)) != 0u)
                 {
                     nativeMask |= 1u << bank;
                 }
@@ -2170,6 +2241,12 @@ void FrameRecorder::CaptureLine(
     if (engine == 0u)
     {
         Input.CaptureEnable |= state.CaptureEnable;
+        // CaptureMemoryForLine() runs before CaptureLine(), so it cannot see a
+        // new command or LCDC remap latched at this line boundary. Re-evaluate
+        // the mapping after the line state has been recorded; the helper only
+        // includes writes from earlier lines, matching the native shader's
+        // render-then-capture ordering.
+        CaptureNativeMappingForLine(line, false);
     }
 
     // This is the emulation-time LCD assignment.  Present-time POWCNT1 is not
@@ -2214,6 +2291,12 @@ void FrameRecorder::CaptureCaptureStateForLine(u32 line) noexcept
     Input.CaptureEnable |= state.CaptureEnable;
     if (captureEnabled)
         RecordCaptureAddressLine(line, captureCnt);
+
+    // A late DISPCAPCNT/LCDC change is the same temporal boundary as the
+    // ordinary CaptureLine() path. Keep the current-frame write-ahead owner
+    // timeline in sync even though the native producer does not execute the
+    // CPU DoCapture() body.
+    CaptureNativeMappingForLine(line, false);
 
     // BeginFrame() already marks the complete packed header and line-state
     // ranges dirty before this late line-boundary sample. Do not add a new
