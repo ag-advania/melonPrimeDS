@@ -113,6 +113,8 @@ const uint kNativeCaptureSpriteOBJMappingBase = kNativeCaptureOBJMappingBase
     + 192u * (16u + 8u);
 const uint kNativeCaptureBGMappingStride = 32u + 8u;
 const uint kNativeCaptureOBJMappingStride = 16u + 8u;
+const uint kNativeCaptureBankMask = 0x0Fu;
+const uint kNativeCaptureOverlayPresent = 0x10u;
 const uint kNativeCaptureWords = 131072u;
 const uint kNativeObjRawWordsPerPixel = 2u;
 const uint kNativeObjRawScreenWords = 256u * 192u * kNativeObjRawWordsPerPixel;
@@ -329,14 +331,20 @@ uint NativeCaptureOverlayByte(
     uint engine, uint line, uint size, uint address,
     bool obj, bool spriteLatch)
 {
-    uint ownerMask = NativeCaptureMappingMask(
+    if (NativeGPU2DInput[15u] == 0u)
+        return 0u;
+    uint mappingValue = NativeCaptureMappingMask(
         engine, line, address, size, obj, spriteLatch);
+    if ((mappingValue & kNativeCaptureOverlayPresent) == 0u)
+        return 0u;
+    uint ownerMask = mappingValue & kNativeCaptureBankMask;
     uint offset = size == 0u ? 0u : address & (size - 1u);
     uint result = 0u;
-    for (uint bank = 0u; bank < 4u; ++bank)
+    while (ownerMask != 0u)
     {
-        if ((ownerMask & (1u << bank)) != 0u)
-            result |= NativeCaptureByte(bank, offset);
+        uint bank = uint(findLSB(ownerMask));
+        ownerMask &= ownerMask - 1u;
+        result |= NativeCaptureByte(bank, offset);
     }
     return result;
 }
@@ -345,6 +353,8 @@ uint MappedByte(
     uint engine, uint line, uint base, uint size, uint address,
     uint timelineBlockBase)
 {
+    if (NativeGPU2DInput[15u] == 0u)
+        return MemoryByte(line, base, size, address, timelineBlockBase);
     return MemoryByte(line, base, size, address, timelineBlockBase)
         | NativeCaptureOverlayByte(engine, line, size, address, false, false);
 }
@@ -364,6 +374,8 @@ uint MappedSpriteByte(
 {
     const bool useSpriteLatch =
         (LineWord(engine, line, kSpriteLatchValid) & 1u) != 0u;
+    if (NativeGPU2DInput[15u] == 0u)
+        return SpriteMemoryByte(engine, line, base, size, address, timelineBlockBase);
     return SpriteMemoryByte(engine, line, base, size, address, timelineBlockBase)
         | NativeCaptureOverlayByte(
             engine, line, size, address, true, useSpriteLatch);

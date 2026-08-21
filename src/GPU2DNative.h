@@ -325,6 +325,11 @@ inline constexpr u32 NativeCaptureOBJMappingWords =
     ScreenHeight * NativeCaptureOBJMappingStride;
 inline constexpr u32 NativeCaptureSpriteOBJMappingWords =
     ScreenHeight * NativeCaptureOBJMappingStride;
+// Native capture ownership uses only the low four bits of a mapping entry.
+// Bit 4 is a per-line/engine summary flag so shaders can skip the mapping
+// lookup and bank loop entirely when that row has no GPU-owned bytes.
+inline constexpr u32 NativeCaptureBankMask = 0x0Fu;
+inline constexpr u32 NativeCaptureOverlayPresent = 1u << 4u;
 
 struct DirtyRange
 {
@@ -347,6 +352,20 @@ struct RecorderMetrics
     u64 TimelineRowDedupNs = 0;
     u64 SpriteTimelineRowDedupNs = 0;
     u64 NativeGPU2DPackNs = 0;
+    u64 MappedReadWordCalls = 0;
+    u64 MappedReadFastPathCalls = 0;
+    u64 MappedReadSlowPathCalls = 0;
+    u64 NativeCaptureHistoryScanLines = 0;
+    u64 NativeMappingBuildCalls = 0;
+    u64 NativeMappingRowsUploaded = 0;
+    u64 NativeMappingBytesUploaded = 0;
+    // These are row-level shader routing decisions, not per-pixel samples:
+    // they prove that ordinary rows take the zero-overlay branch without
+    // adding an atomic counter to the shader hot path.
+    u64 BGOverlayFastPath = 0;
+    u64 BGOverlaySlowPath = 0;
+    u64 OBJOverlayFastPath = 0;
+    u64 OBJOverlaySlowPath = 0;
     // A valid shipping frame must keep this at zero: native-owned A-D
     // capture bytes are resolved in the GPU shader overlay, never by a host
     // VRAM read. Developer proof materialization intentionally increments it.
@@ -460,6 +479,9 @@ struct FrameInput
     std::array<u16, 256> DisplayFIFO{};
     u32 CaptureCnt = 0;
     u32 CaptureEnable = 0;
+    // Packed header word 15. This lets the shader bypass all native capture
+    // mapping work on ordinary frames whose BG/OBJ rows have no overlay.
+    u32 NativeCaptureOverlayAny = 0;
     u32 ScreenSwap = 0;
     u32 ScreensEnabled = 0;
     u32 LCDVRAMMap = 0;
@@ -745,6 +767,22 @@ private:
     u32 CaptureStateCnt = 0u;
     bool CaptureStateEnabled = false;
 
+    // Native Display Capture writes one LCDC line ahead of the line that can
+    // consume it. Keep that boundary incrementally instead of rebuilding it
+    // by scanning all preceding LineState records for every mapped read.
+    std::array<u8, CapturePhysicalBanks> NativeCaptureWrittenBlocks{};
+
+    // CaptureNativeMappingForLine can be reached from the memory snapshot,
+    // line-state, and late capture-state hooks. Cache the source mapping and
+    // write-ahead inputs so unchanged calls are O(1) no-ops while preserving
+    // a rebuild when a mid-frame remap or ownership boundary changes.
+    std::array<std::array<u32, 64>, 2> NativeCaptureMappingSources{};
+    std::array<std::array<u8, CapturePhysicalBanks>, 2>
+        NativeCaptureMappingWrittenBlocks{};
+    std::array<u32, 2> NativeCaptureMappingLines{
+        ScreenHeight, ScreenHeight};
+    std::array<bool, 2> NativeCaptureMappingBuilt{false, false};
+
     std::array<CaptureAddressDiagnostic, MaxCaptureAddressDiagnostics>
         CaptureAddressLog{};
     u32 CaptureAddressLogCount = 0u;
@@ -797,6 +835,7 @@ private:
     void FillSpriteTimelineLine(u32 line) noexcept;
     void ApplyPendingSpriteLatch() noexcept;
     void CaptureNativeMappingForLine(u32 line, bool spriteLatch) noexcept;
+    void CommitNativeCaptureWriteAheadForLine(u32 line) noexcept;
     void ApplyPendingNativeSpriteMapping() noexcept;
 
     std::array<u32, NativeCaptureOBJMappingStride>

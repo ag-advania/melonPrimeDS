@@ -3796,6 +3796,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         // semantic stage remains 256x2 even at 4x/8x/16x.
         for (u32 lineNumber = 0; lineNumber < GPU2DNative::ScreenHeight; ++lineNumber)
         {
+            const bool captureLineActive =
+                input.Lines[lineNumber].CaptureEnable != 0u;
             constants.InterpSpanCount = lineNumber;
             constants.Pad = 32u | 8u; // native raw OBJ plane, two logical screens
             SetDispatchConstants(list, constants);
@@ -3805,7 +3807,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             // logical dispatch; order that UAV dependency independently of
             // the persistent capture mirror.
             InsertUavBarrier(list, structuredInput.Get());
-            InsertUavBarrier(list, BlendStateBuffer.Get());
+            if (captureLineActive)
+                InsertUavBarrier(list, BlendStateBuffer.Get());
 
             constants.Pad = 16u | 8u; // native logical one-line pass
             SetDispatchConstants(list, constants);
@@ -3813,16 +3816,23 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
             InsertUavBarrier(list, BlendStateBuffer.Get());
 
-            constants.Pad = 4u; // capture-only, one logical line
-            SetDispatchConstants(list, constants);
-            list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
-            list->Dispatch(
-                DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
-                static_cast<u32>(ScaleFactor), 1u);
-            InsertUavBarrier(list, BlendStateBuffer.Get());
-            InsertUavBarrier(list, CaptureSidecarBuffer.Get());
-            InsertUavBarrier(list, structuredInput.Get());
-            DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 3u);
+            if (captureLineActive)
+            {
+                constants.Pad = 4u; // capture-only, one logical line
+                SetDispatchConstants(list, constants);
+                list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+                list->Dispatch(
+                    DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
+                    static_cast<u32>(ScaleFactor), 1u);
+                InsertUavBarrier(list, BlendStateBuffer.Get());
+                InsertUavBarrier(list, CaptureSidecarBuffer.Get());
+                InsertUavBarrier(list, structuredInput.Get());
+                DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 3u);
+            }
+            else
+            {
+                DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount, 2u);
+            }
         }
         semanticSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, true));

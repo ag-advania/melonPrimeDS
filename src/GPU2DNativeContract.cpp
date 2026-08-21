@@ -258,6 +258,7 @@ bool PackFrameRanges(
     header[12] = input.ScreenSwap;
     header[13] = input.ScreensEnabled;
     header[14] = input.LCDVRAMMap;
+    header[15] = input.NativeCaptureOverlayAny;
     header[16] = input.Engine[0].BGSize;
     header[17] = input.Engine[0].OBJSize;
     header[18] = input.Engine[0].BGExtendedPaletteSize;
