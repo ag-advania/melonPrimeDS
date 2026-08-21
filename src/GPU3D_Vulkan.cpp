@@ -4007,7 +4007,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-            push.Padding = 16u | 8u; // two logical screens, one line
+            push.Padding = 16u | 8u
+                | (stageDiagnostics ? 64u : 0u); // two logical screens, one line
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
@@ -4059,7 +4060,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
             VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-        push.Padding = 16u;
+        push.Padding = 16u | (stageDiagnostics ? 64u : 0u);
         fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
             VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
         fns.CmdDispatch(cmd, DivRoundUp(256u, 128u), 384u, 1u);

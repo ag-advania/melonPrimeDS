@@ -3170,7 +3170,23 @@ void NativeWriteStructuredLogicalPixel(uint screen,uint line,uint x,uint engine)
         if(x==0u)NativeWriteStructuredLineMeta(screen,line,(1u<<16u)|((brightness>>14u)<<8u)|(brightness&0x1Fu)|(renderX<<23u));
         return;
     }
-    NativeWriteStructuredPixel(screen,line,x,NativeDisplay(screen,engine,line,(int)x,x,line),0u,NativeStructuredControlPlain2D<<24u,NativeCaptureReference(engine,line,x));
+    uint color=NativeDisplay(screen,engine,line,(int)x,x,line);
+    uint reference=NativeCaptureReference(engine,line,x);
+    if(engine==0u&&mode==2u)
+    {
+        uint bank=(disp>>18u)&3u;
+        uint sourceA=NativeCaptureSourceA(line,x,x,0u);
+        uint sourceB=NativeCaptureSourceB(line,x,NativeLine(0u,line,55u));
+        uint captureWord=NativeCaptureComposite(
+            sourceA,sourceB,NativeLine(0u,line,55u));
+        uint displayWord=NativeLCD16(line,bank,line*512u+(uint)x*2u);
+        // Diagnostic-only payload: control carries sourceA, above carries the
+        // raw capture word, and reference carries the raw display word.
+        NativeWriteStructuredPixel(screen,line,x,color,captureWord,
+            (NativeStructuredControlPlain2D<<24u)|(sourceA&0x00FFFFFFu),displayWord);
+        return;
+    }
+    NativeWriteStructuredPixel(screen,line,x,color,0u,NativeStructuredControlPlain2D<<24u,reference);
     if(x==0u)NativeWriteStructuredLineMeta(screen,line,0u);
 }
 void NativeWriteObjRawPixel(uint screen,uint line,uint x,uint engine)

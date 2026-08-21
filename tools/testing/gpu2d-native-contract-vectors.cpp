@@ -400,6 +400,7 @@ bool RunFrameIdentityVectors()
 struct CaptureOwnershipModel
 {
     std::array<CaptureBlockProvenance, CapturePhysicalBlockCount> Blocks{};
+    std::array<CaptureBlockProvenance, CapturePhysicalBlockCount> RecorderBlocks{};
     u16 CaptureFlags = 0;
     u64 EmulatedFrameSerial = 0;
     u64 RecordedNativeFrameSerial = 0;
@@ -418,6 +419,24 @@ struct CaptureOwnershipModel
         const u32 index = bank * CapturePhysicalBlocksPerBank + block;
         Blocks[index] = {
             owner, epoch, semanticFrame, captureGeneration, completionValue};
+    }
+
+    void RefreshRecorderProvenance()
+    {
+        RecorderBlocks = Blocks;
+    }
+
+    void MarkCaptureAllocationCpuCoherent(u32 bank, u32 start, u32 len)
+    {
+        const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+        for (u32 i = 0u; i < blockCount; ++i)
+        {
+            const u32 index = bank * CapturePhysicalBlocksPerBank
+                + ((start + i) & (CapturePhysicalBlocksPerBank - 1u));
+            Blocks[index] = {};
+            Blocks[index].Owner = CaptureOwner::CpuCoherent;
+            RecorderBlocks[index] = Blocks[index];
+        }
     }
 
     CaptureSyncResult SelectSyncSource(
@@ -453,6 +472,21 @@ bool RunCaptureOwnershipVectors()
     model.EmulatedFrameSerial = 101u;
     model.RecordedNativeFrameSerial = 100u;
     model.PresentationSubmitted = false;
+    model.PublishNative(
+        CaptureOwner::NativeVulkan, 7u, 100u, 41u, 9001u, 2u, 1u);
+
+    // BeginFrame snapshots the prior native owner. A same-frame capture
+    // allocation must update both the renderer owner and that recorder copy,
+    // otherwise the coherent CPU destination is still filtered from upload.
+    model.RefreshRecorderProvenance();
+    model.MarkCaptureAllocationCpuCoherent(2u, 1u, 1u);
+    passed &= Require(
+        model.Blocks[2u * CapturePhysicalBlocksPerBank + 1u].Owner
+            == CaptureOwner::CpuCoherent
+            && model.RecorderBlocks[
+                2u * CapturePhysicalBlocksPerBank + 1u].Owner
+                == CaptureOwner::CpuCoherent,
+        "same-frame capture allocation left stale native recorder provenance");
     model.PublishNative(
         CaptureOwner::NativeVulkan, 7u, 100u, 41u, 9001u, 2u, 1u);
 

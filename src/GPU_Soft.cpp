@@ -141,6 +141,7 @@ void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
     // Until the next native semantic submission, the existing CPU VRAM bytes
     // are the coherent same-bank source for an in-progress capture.
     MarkCaptureCpuCoherent(bank, start, len);
+    NativeGPU2DFrame.MarkCaptureAllocationCpuCoherent(bank, start, len);
     // Claiming a destination is not an invalidation. The old pixels are still
     // the source for same-bank Display Capture until each new pixel is written;
     // OpenGL preserves them in CaptureVRAMTex for the same reason. GPU.cpp calls

@@ -103,6 +103,9 @@ def main() -> int:
         require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
         require(text["native_recorder"], "LCDVRAMProvenance", "native recorder capture provenance", failures)
         require(text["native_recorder"], "CaptureCoherentLCDVRAMForLine", "native recorder coherent capture path", failures)
+        require(text["native_header"], "MarkCaptureAllocationCpuCoherent", "same-frame capture allocation provenance", failures)
+        require(text["native_recorder"], "MarkCaptureAllocationCpuCoherent", "same-frame capture allocation provenance", failures)
+        require(text["soft_renderer"], "NativeGPU2DFrame.MarkCaptureAllocationCpuCoherent", "same-frame capture allocation hand-off", failures)
         require(text["native_recorder"], "GPU2DWriteKind::CaptureSync", "native recorder capture-sync journal", failures)
         require(text["native_header"], "LCDVRAMProvenance", "host-only capture provenance", failures)
         if "CaptureNativeDisplayLine" in text["soft_renderer"]:

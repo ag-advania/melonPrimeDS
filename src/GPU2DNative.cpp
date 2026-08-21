@@ -1097,6 +1097,25 @@ void FrameRecorder::MarkInputCaptureBlockCpuCoherent(
     provenance.Owner = CaptureOwner::CpuCoherent;
 }
 
+void FrameRecorder::MarkCaptureAllocationCpuCoherent(
+    u32 bank,
+    u32 start,
+    u32 len) noexcept
+{
+    if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
+        return;
+
+    // CaptureCnt encodes the destination as one to three physical 32 KiB
+    // blocks. Keep this range calculation identical to the renderer-level
+    // provenance update in Renderer::MarkCaptureCpuCoherent.
+    const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+    for (u32 i = 0; i < blockCount; ++i)
+    {
+        MarkInputCaptureBlockCpuCoherent(
+            bank, (start + i) & (CapturePhysicalBlocksPerBank - 1u));
+    }
+}
+
 void FrameRecorder::CaptureAllMappedMemoryForLine() noexcept
 {
     CaptureMappedMemoryForLine(
