@@ -870,6 +870,7 @@ void GLRenderer::DoCapture(int ystart, int yend)
 
 void GLRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 {
+    MarkCaptureCpuCoherent(bank, start, len);
     auto rend2D = dynamic_cast<GLRenderer2D*>(Rend2D_A.get());
     rend2D->LayerConfigDirty = true;
     rend2D->SpriteConfigDirty = true;
@@ -902,8 +903,11 @@ void GLRenderer::DownscaleCapture(int width, int height, int layer)
     glDrawArrays(GL_TRIANGLES, 0, 2*3);
 }
 
-void GLRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
+CaptureSyncResult GLRenderer::SyncVRAMCapture(
+    u32 bank, u32 start, u32 len, bool complete)
 {
+    if (bank >= 4u || start >= 4u || len > 3u)
+        return CaptureSyncResult::Failed;
     if (!complete)
         Log(LogLevel::Error, "GPU_OpenGL: !!! READING VRAM AS IT IS BEING CAPTURED TO\n");
 
@@ -947,6 +951,8 @@ void GLRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
             pos &= 3;
         }
     }
+    MarkCaptureCpuCoherent(bank, start, len);
+    return CaptureSyncResult::Synchronized;
 }
 
 

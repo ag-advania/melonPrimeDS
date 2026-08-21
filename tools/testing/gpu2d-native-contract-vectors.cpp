@@ -397,13 +397,137 @@ bool RunFrameIdentityVectors()
     return passed;
 }
 
+struct CaptureOwnershipModel
+{
+    std::array<CaptureBlockProvenance, CapturePhysicalBlockCount> Blocks{};
+    u16 CaptureFlags = 0;
+    u64 EmulatedFrameSerial = 0;
+    u64 RecordedNativeFrameSerial = 0;
+    bool PresentationSubmitted = false;
+    bool PresentationStallObserved = false;
+
+    void PublishNative(
+        CaptureOwner owner,
+        u64 epoch,
+        u64 semanticFrame,
+        u64 captureGeneration,
+        u64 completionValue,
+        u32 bank,
+        u32 block)
+    {
+        const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+        Blocks[index] = {
+            owner, epoch, semanticFrame, captureGeneration, completionValue};
+    }
+
+    CaptureSyncResult SelectSyncSource(
+        u32 bank,
+        u32 block,
+        bool forceFailure,
+        bool& flagsMarkedSynced)
+    {
+        const CaptureBlockProvenance owner = Blocks[
+            bank * CapturePhysicalBlocksPerBank + block];
+        flagsMarkedSynced = false;
+
+        // This is the regression boundary: the owner remains native even
+        // when the next emulated frame has started before its recorder has
+        // finalized. Presentation state is intentionally irrelevant.
+        if (IsNativeCaptureOwner(owner.Owner))
+        {
+            if (forceFailure)
+                return CaptureSyncResult::Failed;
+            flagsMarkedSynced = true;
+            return CaptureSyncResult::Synchronized;
+        }
+
+        flagsMarkedSynced = true;
+        return CaptureSyncResult::AlreadyCoherent;
+    }
+};
+
+bool RunCaptureOwnershipVectors()
+{
+    bool passed = true;
+    CaptureOwnershipModel model;
+    model.EmulatedFrameSerial = 101u;
+    model.RecordedNativeFrameSerial = 100u;
+    model.PresentationSubmitted = false;
+    model.PublishNative(
+        CaptureOwner::NativeVulkan, 7u, 100u, 41u, 9001u, 2u, 1u);
+
+    bool flagsMarkedSynced = false;
+    const u16 flagsBeforeFailure = 0xE001u;
+    model.CaptureFlags = flagsBeforeFailure;
+    const CaptureSyncResult failed = model.SelectSyncSource(
+        2u, 1u, true, flagsMarkedSynced);
+    passed &= Require(
+        failed == CaptureSyncResult::Failed
+            && !flagsMarkedSynced
+            && model.CaptureFlags == flagsBeforeFailure
+            && model.Blocks[2u * CapturePhysicalBlocksPerBank + 1u].Owner
+                == CaptureOwner::NativeVulkan,
+        "failed native capture sync changed flags or discarded the owner");
+
+    const CaptureSyncResult immediate = model.SelectSyncSource(
+        2u, 1u, false, flagsMarkedSynced);
+    passed &= Require(
+        immediate == CaptureSyncResult::Synchronized && flagsMarkedSynced,
+        "cross-frame native capture did not select the retained native owner");
+    passed &= Require(
+        !GPU2DNative::IsCurrentFrame(
+            model.EmulatedFrameSerial,
+            model.RecordedNativeFrameSerial,
+            model.Blocks[2u * CapturePhysicalBlocksPerBank + 1u].SemanticFrame),
+        "cross-frame vector accidentally depended on current FrameRecorder identity");
+
+    // A presentation stall must not revoke semantic ownership. Exercise the
+    // same hand-off repeatedly so a ping-ponging capture destination cannot
+    // resurrect an older CPU mirror after hundreds of frame rollovers.
+    for (u32 iteration = 0u; iteration < 1200u; ++iteration)
+    {
+        const u32 bank = iteration % CapturePhysicalBanks;
+        const u32 block = (iteration / CapturePhysicalBanks)
+            % CapturePhysicalBlocksPerBank;
+        const CaptureOwner owner = CaptureOwner::NativeVulkan;
+        model.PublishNative(
+            owner,
+            7u,
+            100u + iteration,
+            41u + iteration,
+            9001u + iteration,
+            bank,
+            block);
+        model.EmulatedFrameSerial = 101u + iteration;
+        model.RecordedNativeFrameSerial = 100u + iteration;
+        model.PresentationSubmitted = (iteration % 5u) != 0u;
+        if (!model.PresentationSubmitted)
+            model.PresentationStallObserved = true;
+        const CaptureSyncResult result = model.SelectSyncSource(
+            bank, block, false, flagsMarkedSynced);
+        const CaptureBlockProvenance& published = model.Blocks[
+            bank * CapturePhysicalBlocksPerBank + block];
+        passed &= Require(
+            result == CaptureSyncResult::Synchronized
+                && flagsMarkedSynced
+                && published.Owner == owner
+                && published.SemanticFrame == 100u + iteration,
+            "600+ ping-pong iterations lost native capture provenance");
+    }
+
+    passed &= Require(
+        model.PresentationStallObserved,
+        "presentation stall model was not exercised");
+    return passed;
+}
+
 } // namespace
 
 int main()
 {
     const bool passed = RunPackVectors() && RunCompareVectors()
         && RunUploadPlanVectors() && RunTemporalLineVectors()
-        && RunFrameIdentityVectors();
+        && RunFrameIdentityVectors() && RunCaptureOwnershipVectors();
     std::fprintf(stderr, "%s: GPU2D native contract vectors\n", passed ? "PASS" : "FAIL");
     return passed ? 0 : 1;
 }

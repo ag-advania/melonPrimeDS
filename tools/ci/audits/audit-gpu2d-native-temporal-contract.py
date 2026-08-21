@@ -20,6 +20,8 @@ def require_regex(text: str, pattern: str, label: str, failures: list[str]) -> N
 def main() -> int:
     root = Path(__file__).resolve().parents[3]
     files = {
+        "gpu_header": root / "src/GPU.h",
+        "gpu_core": root / "src/GPU.cpp",
         "native_header": root / "src/GPU2DNative.h",
         "native_recorder": root / "src/GPU2DNative.cpp",
         "native_contract_test": root / "tools/testing/gpu2d-native-contract-vectors.cpp",
@@ -54,6 +56,25 @@ def main() -> int:
             text[label] = path.read_text(encoding="utf-8")
 
     if not failures:
+        for needle in (
+            "CaptureSyncResult",
+            "CaptureBlockProvenance",
+            "NativeCaptureStateIdentity",
+            "CapturePhysicalBlockBytes",
+            "CaptureDirtyBlocksPerPhysicalBlock",
+            "RecordGPU2DCaptureSync",
+        ):
+            require(text["gpu_header"], needle, "core capture ownership contract", failures)
+        for needle in (
+            "GetCaptureProvenanceForRange",
+            "PublishNativeCaptureBlock",
+            "ResetCaptureProvenance",
+            "flagsMarkedSynced",
+            "flagsCleared",
+            "SyncAllVRAMCaptures()",
+        ):
+            require(text["gpu_core"], needle, "core capture synchronization contract", failures)
+
         require(text["native_header"], "IsCurrentFrame", "frame identity", failures)
         require(text["native_header"], "TimelineBlockCount", "timeline ABI", failures)
         require(text["native_header"], "TimelineDeltaCount", "timeline ABI", failures)
@@ -80,6 +101,10 @@ def main() -> int:
         if "&& !GPU.CaptureEnable" in text["soft_renderer"]:
             failures.append("soft renderer: CaptureEnable still disables native GPU2D ownership")
         require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
+        require(text["native_recorder"], "LCDVRAMProvenance", "native recorder capture provenance", failures)
+        require(text["native_recorder"], "CaptureCoherentLCDVRAMForLine", "native recorder coherent capture path", failures)
+        require(text["native_recorder"], "GPU2DWriteKind::CaptureSync", "native recorder capture-sync journal", failures)
+        require(text["native_header"], "LCDVRAMProvenance", "host-only capture provenance", failures)
         if "CaptureNativeDisplayLine" in text["soft_renderer"]:
             failures.append("soft renderer: per-line CPU native capture mirror still present")
 
@@ -146,6 +171,55 @@ def main() -> int:
         require(text["dx12_frontend"], "stale_generation_reject", "DX12 stale diagnostic", failures)
         require(text["vulkan_frontend"], "SyncVRAMCapture", "Vulkan capture ownership", failures)
         require(text["dx12_frontend"], "SyncVRAMCapture", "DX12 capture ownership", failures)
+        for label in ("vulkan_frontend", "dx12_frontend"):
+            require(text[label], "GetCaptureProvenanceForRange", f"{label} provenance lookup", failures)
+            require(text[label], "ReadNativeCapture", f"{label} demand-driven readback", failures)
+            require(text[label], "RecordGPU2DCaptureSync", f"{label} readback journal", failures)
+            sync_marker = "VulkanRenderer::SyncVRAMCapture(" \
+                if label == "vulkan_frontend" else "DX12Renderer::SyncVRAMCapture("
+            sync_start = text[label].find(sync_marker)
+            sync_end = text[label].find("::InvalidateVRAMCapture(", sync_start)
+            if sync_start < 0 or sync_end < 0:
+                failures.append(f"{label}: could not isolate capture sync method")
+            else:
+                sync_body = text[label][sync_start:sync_end]
+                if "HasNativeGPU2DFrameForCurrentEmulatedFrame" in sync_body:
+                    failures.append(
+                        f"{label}: current FrameRecorder identity still gates capture authority")
+                require(
+                    sync_body,
+                    "IsNativeCaptureOwner",
+                    f"{label} native-owner branch",
+                    failures,
+                )
+                require(
+                    sync_body,
+                    "SoftRenderer::SyncVRAMCapture",
+                    f"{label} CPU-coherent branch",
+                    failures,
+                )
+
+        for label in ("vulkan_renderer", "dx12_renderer"):
+            require(text[label], "expected.Owner", f"{label} expected capture identity", failures)
+            require(text[label], "expected.CaptureGeneration", f"{label} capture generation validation", failures)
+            require(text[label], "expected.CompletionValue", f"{label} completion validation", failures)
+            require(text[label], "LastNativeCaptureCompletionValue", f"{label} completion provenance", failures)
+            require(text[label], "input.LCDVRAMProvenance", f"{label} mirror ownership filter", failures)
+            require(
+                text[label],
+                "MELONPRIME_TEST_GPU2D_CAPTURE_READBACK_FAIL",
+                f"{label} fail-closed readback hook",
+                failures,
+            )
+            if label == "dx12_renderer":
+                require(text[label], "WaitForSubmittedValue", "DX12 scoped capture fence", failures)
+                readback_start = text[label].find("DX12Renderer3D::ReadNativeCapture(")
+                if readback_start >= 0:
+                    readback_body = text[label][readback_start:]
+                    if "CaptureCommands.WaitIdle()" in readback_body.split(
+                        "NativeCaptureStateIdentity DX12Renderer3D::GetNativeCaptureStateIdentity(", 1
+                    )[0]:
+                        failures.append("DX12 native capture readback: queue/device idle wait remains")
 
         for label in ("vulkan_shader", "dx12_shader"):
             require(text[label], "TimelineVersion", f"{label} temporal shader", failures)
@@ -234,6 +308,16 @@ def main() -> int:
 
         require(text["native_contract_test"], "RunTemporalLineVectors",
             "synthetic temporal vectors", failures)
+        require(text["native_contract_test"], "RunCaptureOwnershipVectors",
+            "capture ownership vectors", failures)
+        for needle in (
+            "CaptureSyncResult::Failed",
+            "flagsBeforeFailure",
+            "1200u",
+            "PresentationStallObserved",
+            "cross-frame native capture",
+        ):
+            require(text["native_contract_test"], needle, "capture ownership regression vectors", failures)
 
         for name in (
             "startup_pipeline_fallback",

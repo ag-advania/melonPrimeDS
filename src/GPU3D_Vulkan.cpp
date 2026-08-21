@@ -25,6 +25,7 @@
 #include <atomic>
 #include <cassert>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <mutex>
@@ -543,6 +544,7 @@ void VulkanRenderer3D::Stop()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    LastNativeCaptureCompletionValue = 0;
     ComposedOutput.reset();
     Initialized = false;
 }
@@ -574,6 +576,7 @@ void VulkanRenderer3D::Reset()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    LastNativeCaptureCompletionValue = 0;
     ColorBuffer.fill(0);
     if (ComposedOutput)
     {
@@ -896,6 +899,7 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    LastNativeCaptureCompletionValue = 0;
     CaptureSidecarBuffer.Destroy();
     FinalFB.Destroy();
     SetupIndicesBuffer.Destroy();
@@ -2995,14 +2999,39 @@ void VulkanRenderer3D::EnsureFrameReadback()
 }
 
 bool VulkanRenderer3D::ReadNativeCapture(
-    u32 bank, u32 start, u32 len, u8* destination)
+    u32 bank,
+    u32 start,
+    u32 len,
+    const CaptureBlockProvenance& expected,
+    u8* destination)
 {
-    if (bank >= 4u || start >= 4u || !destination
-        || !NativeCaptureStateInitialized || !BlendStateBuffer.IsValid()
-        || !NativeCaptureReadback.IsValid())
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const char* forcedFailure = std::getenv(
+            "MELONPRIME_TEST_GPU2D_CAPTURE_READBACK_FAIL");
+        forcedFailure && forcedFailure[0] == '1')
     {
         return false;
     }
+#endif
+    if (bank >= 4u || start >= 4u || !destination
+        || !NativeCaptureStateInitialized || !BlendStateBuffer.IsValid()
+        || !NativeCaptureReadback.IsValid()
+        || expected.Owner != CaptureOwner::NativeVulkan
+        || expected.Epoch != CurrentEpoch
+        || expected.Epoch != LastSemanticEpoch
+        || expected.SemanticFrame == 0u
+        || expected.SemanticFrame > LastSemanticFrame
+        || expected.CaptureGeneration == 0u
+        || expected.CaptureGeneration > LastSemanticCaptureGeneration
+        || expected.CompletionValue == 0u
+        || expected.CompletionValue > LastNativeCaptureCompletionValue)
+    {
+        return false;
+    }
+
+    // The current emulated frame may still be recording its 192 lines. The
+    // expected block identity, not FrameRecorder finalization, is the
+    // authority for this readback.
 
     // CaptureFrames is also used by the demand-driven 3D readback. Retire
     // that optional submission before reusing its one command-buffer slot.
@@ -3072,6 +3101,22 @@ bool VulkanRenderer3D::ReadNativeCapture(
             static_cast<std::size_t>(blockBytes));
     }
     return true;
+}
+
+NativeCaptureStateIdentity VulkanRenderer3D::GetNativeCaptureStateIdentity(
+    CaptureOwner owner) const noexcept
+{
+    NativeCaptureStateIdentity identity{};
+    identity.Valid = NativeCaptureStateInitialized
+        && LastSemanticEpoch == CurrentEpoch
+        && LastSemanticFrame != 0u
+        && LastNativeCaptureCompletionValue != 0u;
+    identity.Owner = owner;
+    identity.Epoch = CurrentEpoch;
+    identity.SemanticFrame = LastSemanticFrame;
+    identity.CaptureGeneration = LastSemanticCaptureGeneration;
+    identity.CompletionValue = LastNativeCaptureCompletionValue;
+    return identity;
 }
 
 bool VulkanRenderer3D::ComposeStructuredOutput(
@@ -3829,15 +3874,40 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         || LastSemanticEpoch != CurrentEpoch
         || !semanticFrameContiguous
         || semanticCaptureGenerationRegressed;
+    const auto copyCoherentCaptureRange = [&](u32 requestedBegin, u32 requestedEnd) {
+        if (requestedEnd <= requestedBegin)
+            return;
+        for (u32 physicalIndex = 0;
+            physicalIndex < CapturePhysicalBlockCount;
+            ++physicalIndex)
+        {
+            const u32 blockBegin = lcdBegin
+                + physicalIndex * CapturePhysicalBlockBytes;
+            const u32 blockEnd = blockBegin + CapturePhysicalBlockBytes;
+            const u32 begin = std::max(requestedBegin, blockBegin);
+            const u32 end = std::min(requestedEnd, blockEnd);
+            if (end <= begin)
+                continue;
+
+            if (IsNativeCaptureOwner(input.LCDVRAMProvenance[
+                    physicalIndex].Owner))
+            {
+                // A native-owned block survives the FrameRecorder rollover;
+                // copying its old CPU bytes would erase the GPU capture
+                // mirror before the next semantic dispatch consumes it.
+                continue;
+            }
+
+            VkBufferCopy captureCopy{};
+            captureCopy.srcOffset = begin;
+            captureCopy.dstOffset = captureBase + (begin - lcdBegin);
+            captureCopy.size = end - begin;
+            fns.CmdCopyBuffer(cmd, nativeStaging.GetHandle(),
+                BlendStateBuffer.GetHandle(), 1, &captureCopy);
+        }
+    };
     if (mirrorNeedsFullCopy)
-    {
-        VkBufferCopy captureCopy{};
-        captureCopy.srcOffset = lcdBegin;
-        captureCopy.dstOffset = captureBase;
-        captureCopy.size = static_cast<VkDeviceSize>(input.LCDVRAM.size());
-        fns.CmdCopyBuffer(cmd, nativeStaging.GetHandle(),
-            BlendStateBuffer.GetHandle(), 1, &captureCopy);
-    }
+        copyCoherentCaptureRange(lcdBegin, lcdEnd);
     else
     {
         for (u32 i = 0; i < input.DirtyRangeCount; ++i)
@@ -3847,12 +3917,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             const u32 end = std::min(range.Offset + range.Size, lcdEnd);
             if (end <= begin)
                 continue;
-            VkBufferCopy captureCopy{};
-            captureCopy.srcOffset = begin;
-            captureCopy.dstOffset = captureBase + (begin - lcdBegin);
-            captureCopy.size = end - begin;
-            fns.CmdCopyBuffer(cmd, nativeStaging.GetHandle(),
-                BlendStateBuffer.GetHandle(), 1, &captureCopy);
+            copyCoherentCaptureRange(begin, end);
         }
     }
     BufferBarrier(cmd, &nativeCapture, 1,
@@ -4175,6 +4240,10 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
+    // This is the fence/timeline identity for the semantic submission that
+    // produced the persistent LCDC capture mirror. Capture readback waits on
+    // its own demand-driven command, but validates against this provenance.
+    LastNativeCaptureCompletionValue = ComposeFrames.GetLastSubmittedFrameNumber();
     if (outputSlot)
         outputSlot->LastSubmittedFrame = submittedNativeFrame;
 

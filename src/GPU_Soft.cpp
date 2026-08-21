@@ -68,6 +68,7 @@ void SoftRenderer::Reset()
     SoftwareLogicalFrame.fill(0);
     SoftwareScreenFrame.fill(0);
     NativeGPU2DFrame.Reset();
+    ResetCaptureProvenance();
     NativeGPU2DProducerForFrame = false;
     RecordNativeGPU2DFrameForFrame = false;
     EmulatedFrameSerial = 0;
@@ -136,9 +137,10 @@ void SoftRenderer::Stop()
 
 void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 {
-    (void)bank;
-    (void)start;
-    (void)len;
+    // A new capture supersedes any native owner for these physical blocks.
+    // Until the next native semantic submission, the existing CPU VRAM bytes
+    // are the coherent same-bank source for an in-progress capture.
+    MarkCaptureCpuCoherent(bank, start, len);
     // Claiming a destination is not an invalidation. The old pixels are still
     // the source for same-bank Display Capture until each new pixel is written;
     // OpenGL preserves them in CaptureVRAMTex for the same reason. GPU.cpp calls
@@ -146,7 +148,8 @@ void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
     // CPU/DMA writes make emulated VRAM authoritative.
 }
 
-void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
+CaptureSyncResult SoftRenderer::SyncVRAMCapture(
+    u32 bank, u32 start, u32 len, bool complete)
 {
     (void)complete;
     // Native backends keep capture state in their GPU-side mirror. The normal
@@ -156,10 +159,12 @@ void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
     (void)bank;
     (void)start;
     (void)len;
+    return CaptureSyncResult::AlreadyCoherent;
 }
 
 void SoftRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
 {
+    MarkCaptureCpuCoherent(bank, start, len);
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     InvalidateStructuredCaptureBlocks(bank, start, len);
 #else
@@ -167,6 +172,40 @@ void SoftRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
     (void)start;
     (void)len;
 #endif
+}
+
+void SoftRenderer::PublishNativeCaptureProvenance(
+    CaptureOwner owner,
+    const GPU2DNative::FrameInput& input,
+    const NativeCaptureStateIdentity& identity) noexcept
+{
+    if (!IsNativeCaptureOwner(owner) || !identity.Valid)
+        return;
+
+    std::array<bool, CapturePhysicalBlockCount> published{};
+    for (u32 line = 0; line < GPU2DNative::ScreenHeight; ++line)
+    {
+        const GPU2DNative::LineState& state = input.Lines[line];
+        if (state.CaptureEnable == 0u)
+            continue;
+
+        const u32 bank = (state.CaptureCnt >> 16u) & 0x3u;
+        if ((state.LCDVRAMMap & (1u << bank)) == 0u)
+            continue;
+
+        const u32 start = (state.CaptureCnt >> 18u) & 0x3u;
+        const u32 size = (state.CaptureCnt >> 20u) & 0x3u;
+        const u32 blockCount = size == 0u ? 1u : std::min<u32>(size, 3u);
+        for (u32 i = 0; i < blockCount; ++i)
+        {
+            const u32 block = (start + i) & 0x3u;
+            const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+            if (published[index])
+                continue;
+            published[index] = true;
+            PublishNativeCaptureBlock(owner, identity, bank, block, 1u);
+        }
+    }
 }
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)

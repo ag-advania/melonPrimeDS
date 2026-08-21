@@ -56,31 +56,72 @@ void VulkanRenderer::AllocCapture(u32 bank, u32 start, u32 len)
     SoftRenderer::AllocCapture(bank, start, len);
 }
 
-void VulkanRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
+CaptureSyncResult VulkanRenderer::SyncVRAMCapture(
+    u32 bank, u32 start, u32 len, bool complete)
 {
-    if (HasNativeGPU2DFrameForCurrentEmulatedFrame())
+    (void)complete;
+    CaptureBlockProvenance provenance{};
+    if (!GetCaptureProvenanceForRange(bank, start, len, provenance))
     {
-        auto* vulkan = GetVulkanRenderer3D();
-        if (vulkan && vulkan->ReadNativeCapture(bank, start, len, GPU.VRAM[bank]))
-        {
-            const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
-            for (u32 i = 0; i < blockCount; ++i)
-            {
-                const u32 block = (start + i) & 3u;
-                for (u32 subblock = 0; subblock < 64u; ++subblock)
-                    GPU.VRAMDirty[bank][block * 64u + subblock] = true;
-            }
-            return;
-        }
-        if (vulkan)
-            vulkan->FailNativeGPU2DExact("native Vulkan GPU2D capture readback failed");
+        if (auto* vulkan = GetVulkanRenderer3D())
+            vulkan->FailNativeGPU2DExact(
+                "native Vulkan GPU2D capture provenance range is inconsistent");
+        return CaptureSyncResult::Failed;
     }
-    SoftRenderer::SyncVRAMCapture(bank, start, len, complete);
+
+    if (IsNativeCaptureOwner(provenance.Owner))
+    {
+        // Display Capture ownership outlives the FrameRecorder that produced
+        // it. This source decision intentionally does not inspect whether the
+        // current emulated frame has finalized its native recorder.
+        if (provenance.Owner != CaptureOwner::NativeVulkan)
+        {
+            if (auto* vulkan = GetVulkanRenderer3D())
+                vulkan->FailNativeGPU2DExact(
+                    "native Vulkan GPU2D capture owner belongs to another backend");
+            return CaptureSyncResult::Failed;
+        }
+
+        auto* vulkan = GetVulkanRenderer3D();
+        if (!vulkan
+            || !vulkan->ReadNativeCapture(
+                bank, start, len, provenance, GPU.VRAM[bank]))
+        {
+            if (vulkan)
+                vulkan->FailNativeGPU2DExact(
+                    "native Vulkan GPU2D capture readback failed");
+            return CaptureSyncResult::Failed;
+        }
+
+        const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+        for (u32 i = 0; i < blockCount; ++i)
+        {
+            const u32 block = (start + i) & 3u;
+            for (u32 subblock = 0; subblock < 64u; ++subblock)
+                GPU.VRAMDirty[bank][block * 64u + subblock] = true;
+        }
+        MarkCaptureCpuCoherent(bank, start, len);
+        GPU.RecordGPU2DCaptureSync(bank, start, len);
+        return CaptureSyncResult::Synchronized;
+    }
+
+    // None/CpuCoherent means the CPU mirror is authoritative. The software
+    // hook is a no-op by design; it is not a correctness fallback for a
+    // native-owned block.
+    return SoftRenderer::SyncVRAMCapture(bank, start, len, complete);
 }
 
 void VulkanRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
 {
     SoftRenderer::InvalidateVRAMCapture(bank, start, len);
+}
+
+NativeCaptureStateIdentity VulkanRenderer::GetNativeCaptureStateIdentity() const noexcept
+{
+    const auto* vulkan = GetVulkanRenderer3D();
+    return vulkan
+        ? vulkan->GetNativeCaptureStateIdentity(CaptureOwner::NativeVulkan)
+        : NativeCaptureStateIdentity{};
 }
 
 bool VulkanRenderer::Init()
@@ -222,6 +263,18 @@ void VulkanRenderer::VBlank()
             exactValidation ? GetSoftwareScreenFrame(0u) : nullptr,
             exactValidation ? GetSoftwareScreenFrame(1u) : nullptr);
         nativeComposeResult = vulkan->GetLastComposeResult();
+        if (nativeComposeResult == GPU2DComposeResult::Success
+            || nativeComposeResult == GPU2DComposeResult::SemanticOnly)
+        {
+            // Publish physical capture ownership after semantic submission,
+            // even when presentation backpressure retained the old visible
+            // frame. The next frame may request a read before its recorder is
+            // finalized, and must still select this native mirror.
+            PublishNativeCaptureProvenance(
+                CaptureOwner::NativeVulkan,
+                nativeFrame,
+                GetNativeCaptureStateIdentity());
+        }
         if (nativeComposed)
         {
             if (!NativeGPU2DAnnounced)

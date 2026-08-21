@@ -106,7 +106,13 @@ public:
     // core actually reads them.  The normal native frame path keeps this
     // mirror device-local and never calls this method.
     bool ReadNativeCapture(
-        u32 bank, u32 start, u32 len, u8* destination);
+        u32 bank,
+        u32 start,
+        u32 len,
+        const CaptureBlockProvenance& expected,
+        u8* destination);
+    [[nodiscard]] NativeCaptureStateIdentity GetNativeCaptureStateIdentity(
+        CaptureOwner owner) const noexcept;
     [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
     {
         return PublishedOutputGeneration;
@@ -538,6 +544,7 @@ private:
     u64 LastSemanticFrame = 0;
     u64 LastSemanticCaptureGeneration = 0;
     u64 LastSemanticEpoch = 0;
+    u64 LastNativeCaptureCompletionValue = 0;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely
     // cache descriptors by resource lifetime rather than content generation.

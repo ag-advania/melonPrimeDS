@@ -49,6 +49,129 @@ enum
     CBFlag_Synced       = (1<<13), // this block has been synced back to emulated VRAM
 };
 
+namespace
+{
+u32 CaptureBlockCountForLength(u32 len) noexcept
+{
+    return len == 0u ? 1u : std::min<u32>(len, 3u);
+}
+
+u64 HashCaptureVRAM(const GPU& gpu, u32 bank, u32 start, u32 len) noexcept
+{
+    if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
+        return 0u;
+
+    constexpr u32 BlockBytes = CapturePhysicalBlockBytes;
+    const u32 blockCount = CaptureBlockCountForLength(len);
+    const u8* source = gpu.VRAM[bank];
+    u64 hash = 1469598103934665603ull;
+    for (u32 i = 0; i < blockCount; ++i)
+    {
+        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+        const u8* blockSource = source + static_cast<std::size_t>(block) * BlockBytes;
+        for (u32 byte = 0; byte < BlockBytes; ++byte)
+        {
+            hash ^= blockSource[byte];
+            hash *= 1099511628211ull;
+        }
+    }
+    return hash;
+}
+}
+
+const CaptureBlockProvenance& Renderer::GetCaptureBlockProvenance(
+    u32 bank, u32 block) const noexcept
+{
+    static const CaptureBlockProvenance Invalid{};
+    if (bank >= CapturePhysicalBanks || block >= CapturePhysicalBlocksPerBank)
+        return Invalid;
+    return CaptureProvenance[bank * CapturePhysicalBlocksPerBank + block];
+}
+
+bool Renderer::GetCaptureProvenanceForRange(
+    u32 bank,
+    u32 start,
+    u32 len,
+    CaptureBlockProvenance& representative) const noexcept
+{
+    representative = {};
+    if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
+        return false;
+
+    const u32 blockCount = CaptureBlockCountForLength(len);
+    representative = GetCaptureBlockProvenance(bank, start);
+    const bool native = IsNativeCaptureOwner(representative.Owner);
+    for (u32 i = 1; i < blockCount; ++i)
+    {
+        const CaptureBlockProvenance& current = GetCaptureBlockProvenance(
+            bank, (start + i) & (CapturePhysicalBlocksPerBank - 1u));
+        if (IsNativeCaptureOwner(current.Owner) != native)
+            return false;
+        if (native && (
+                current.Owner != representative.Owner
+                || current.Epoch != representative.Epoch
+                || current.SemanticFrame != representative.SemanticFrame
+                || current.CaptureGeneration != representative.CaptureGeneration
+                || current.CompletionValue != representative.CompletionValue))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void Renderer::MarkCaptureCpuCoherent(u32 bank, u32 start, u32 len) noexcept
+{
+    if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
+        return;
+
+    const u32 blockCount = CaptureBlockCountForLength(len);
+    for (u32 i = 0; i < blockCount; ++i)
+    {
+        CaptureBlockProvenance& provenance = CaptureProvenance[
+            bank * CapturePhysicalBlocksPerBank
+                + ((start + i) & (CapturePhysicalBlocksPerBank - 1u))];
+        provenance = {};
+        provenance.Owner = CaptureOwner::CpuCoherent;
+    }
+}
+
+void Renderer::PublishNativeCaptureBlock(
+    CaptureOwner owner,
+    const NativeCaptureStateIdentity& identity,
+    u32 bank,
+    u32 start,
+    u32 len) noexcept
+{
+    if (!IsNativeCaptureOwner(owner)
+        || !identity.Valid
+        || (identity.Owner != CaptureOwner::None
+            && identity.Owner != owner)
+        || bank >= CapturePhysicalBanks
+        || start >= CapturePhysicalBlocksPerBank)
+    {
+        return;
+    }
+
+    const u32 blockCount = CaptureBlockCountForLength(len);
+    for (u32 i = 0; i < blockCount; ++i)
+    {
+        CaptureBlockProvenance& provenance = CaptureProvenance[
+            bank * CapturePhysicalBlocksPerBank
+                + ((start + i) & (CapturePhysicalBlocksPerBank - 1u))];
+        provenance.Owner = owner;
+        provenance.Epoch = identity.Epoch;
+        provenance.SemanticFrame = identity.SemanticFrame;
+        provenance.CaptureGeneration = identity.CaptureGeneration;
+        provenance.CompletionValue = identity.CompletionValue;
+    }
+}
+
+void Renderer::ResetCaptureProvenance() noexcept
+{
+    CaptureProvenance.fill({});
+}
+
 
 /*
     VRAM invalidation tracking
@@ -208,12 +331,18 @@ void GPU::DoSavestate(Savestate* file) noexcept
 
     Rend->PreSavestate();
 
+    bool capturesSynchronized = true;
     if (file->Saving)
     {
-        SyncAllVRAMCaptures();
+        capturesSynchronized = SyncAllVRAMCaptures();
     }
 
-    memset(VRAMCaptureBlockFlags, 0, sizeof(VRAMCaptureBlockFlags));
+    // Renderer capture synchronization is ownership-sensitive and may fail.
+    // Capture flags may be marked synced or cleared only after the current
+    // authoritative source has been materialized successfully. Keep them on
+    // a save failure instead of silently promoting stale CPU VRAM.
+    if (!file->Saving || capturesSynchronized)
+        memset(VRAMCaptureBlockFlags, 0, sizeof(VRAMCaptureBlockFlags));
 
     file->VarBool(&ScreensEnabled);
     file->VarBool(&ScreenSwap);
@@ -309,12 +438,26 @@ void GPU::DoSavestate(Savestate* file) noexcept
     }
 
     Rend->PostSavestate();
+    if (!file->Saving)
+    {
+        // Native mirrors belong to the pre-load renderer epoch. The loaded
+        // CPU VRAM is the only authoritative copy until a new semantic native
+        // submission publishes fresh provenance.
+        Rend->ResetCaptureProvenance();
+    }
 }
 
 
 void GPU::SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept
 {
-    SyncAllVRAMCaptures();
+    if (!SyncAllVRAMCaptures())
+    {
+        Platform::Log(
+            Platform::LogLevel::Error,
+            "Renderer transition refused: display-capture synchronization failed; "
+            "native capture ownership remains active\n");
+        return;
+    }
 
     bool good = false;
     if (renderer)
@@ -1589,6 +1732,82 @@ void GPU::VRAMCBFlagsOr(u32 bank, u32 block, u16 val)
     }
 }
 
+void GPU::LogCaptureSync(
+    u32 bank,
+    u32 start,
+    u32 len,
+    u16 flags,
+    const CaptureBlockProvenance& owner,
+    u64 cpuVRAMHashBefore,
+    u64 nativeCaptureHash,
+    u64 cpuVRAMHashAfter,
+    CaptureSyncResult result,
+    bool flagsMarkedSynced,
+    bool flagsCleared) const noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const auto* soft = dynamic_cast<const SoftRenderer*>(Rend.get());
+    const u64 emulatedFrame = soft ? soft->GetEmulatedFrameSerial() : 0u;
+    const u64 recordedFrame = soft ? soft->GetRecordedNativeFrameSerial() : 0u;
+    const bool hasCurrentNativeFrame = soft
+        && soft->HasNativeGPU2DFrameForCurrentEmulatedFrame();
+    const NativeCaptureStateIdentity semantic = Rend
+        ? Rend->GetNativeCaptureStateIdentity()
+        : NativeCaptureStateIdentity{};
+    const char* backend = Rend ? Rend->GetCaptureBackendName() : "None";
+    const char* source = IsNativeCaptureOwner(owner.Owner)
+        ? (owner.Owner == CaptureOwner::NativeVulkan
+            ? "VulkanNativeCaptureState" : "DX12NativeCaptureState")
+        : "CpuCoherent";
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DCaptureSync] backend=%s EmulatedFrameSerial=%llu "
+        "NativeGPU2DRecordedFrameSerial=%llu HasCurrentNativeFrame=%u "
+        "rendererEpoch=%llu LastSemanticFrame=%llu "
+        "LastSemanticCaptureGeneration=%llu LastSemanticEpoch=%llu "
+        "bank=%u start=%u len=%u VRAMCBFlags=0x%04X "
+        "captureOwner=%s ownerEpoch=%llu ownerSemanticFrame=%llu "
+        "ownerCaptureGeneration=%llu ownerCompletionValue=%llu "
+        "cpuVRAMHashBefore=%016llX nativeCaptureHash=%016llX "
+        "cpuVRAMHashAfter=%016llX syncSource=%s syncResult=%s "
+        "flagsMarkedSynced=%u flagsCleared=%u\n",
+        backend,
+        static_cast<unsigned long long>(emulatedFrame),
+        static_cast<unsigned long long>(recordedFrame),
+        hasCurrentNativeFrame ? 1u : 0u,
+        static_cast<unsigned long long>(semantic.Epoch),
+        static_cast<unsigned long long>(semantic.SemanticFrame),
+        static_cast<unsigned long long>(semantic.CaptureGeneration),
+        static_cast<unsigned long long>(semantic.Epoch),
+        bank, start, len, flags,
+        CaptureOwnerName(owner.Owner),
+        static_cast<unsigned long long>(owner.Epoch),
+        static_cast<unsigned long long>(owner.SemanticFrame),
+        static_cast<unsigned long long>(owner.CaptureGeneration),
+        static_cast<unsigned long long>(owner.CompletionValue),
+        static_cast<unsigned long long>(cpuVRAMHashBefore),
+        static_cast<unsigned long long>(nativeCaptureHash),
+        static_cast<unsigned long long>(cpuVRAMHashAfter),
+        source,
+        CaptureSyncResultName(result),
+        flagsMarkedSynced ? 1u : 0u,
+        flagsCleared ? 1u : 0u);
+#else
+    (void)bank;
+    (void)start;
+    (void)len;
+    (void)flags;
+    (void)owner;
+    (void)cpuVRAMHashBefore;
+    (void)nativeCaptureHash;
+    (void)cpuVRAMHashAfter;
+    (void)result;
+    (void)flagsMarkedSynced;
+    (void)flagsCleared;
+#endif
+}
+
 void GPU::CheckCaptureStart()
 {
     u32 dstbank = (CaptureCnt >> 16) & 0x3;
@@ -1618,7 +1837,29 @@ void GPU::CheckCaptureStart()
         // we have an old capture here, and it was at a different offset/size
         // sync it and invalidate it
 
-        Rend->SyncVRAMCapture(dstbank, oldstart, oldsize, (oldflags & CBFlag_Complete));
+        const u64 cpuVRAMHashBefore = HashCaptureVRAM(
+            *this, dstbank, oldstart, oldsize);
+        CaptureBlockProvenance owner{};
+        const bool provenanceValid = Rend->GetCaptureProvenanceForRange(
+            dstbank, oldstart, oldsize, owner);
+        const CaptureSyncResult result = provenanceValid
+            ? Rend->SyncVRAMCapture(
+                dstbank, oldstart, oldsize, (oldflags & CBFlag_Complete))
+            : CaptureSyncResult::Failed;
+        const u64 cpuVRAMHashAfterSync = HashCaptureVRAM(
+            *this, dstbank, oldstart, oldsize);
+        LogCaptureSync(
+            dstbank, oldstart, oldsize, oldflags, owner,
+            cpuVRAMHashBefore,
+            result == CaptureSyncResult::Synchronized ? cpuVRAMHashAfterSync : 0u,
+            cpuVRAMHashAfterSync, result, false, false);
+        if (result == CaptureSyncResult::Failed)
+        {
+            // Do not retire an old capture while its authoritative source is
+            // unavailable. Otherwise the next capture would inherit stale CPU
+            // VRAM and permanently discard the native mirror.
+            return;
+        }
         Rend->InvalidateVRAMCapture(dstbank, oldstart, oldsize);
         VRAMCBFlagsClear(dstbank, oldstart);
     }
@@ -1663,13 +1904,36 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     {
         if (write)
         {
+            const CaptureBlockProvenance owner =
+                Rend->GetCaptureBlockProvenance(bank, start);
+            const u64 cpuVRAMHash = HashCaptureVRAM(*this, bank, start, len);
             Rend->InvalidateVRAMCapture(bank, start, len);
             VRAMCBFlagsClear(bank, start);
+            LogCaptureSync(
+                bank, start, len, flags, owner, cpuVRAMHash, 0u, cpuVRAMHash,
+                CaptureSyncResult::AlreadyCoherent, false, true);
         }
         return;
     }
 
-    Rend->SyncVRAMCapture(bank, start, len, (flags & CBFlag_Complete));
+    const u64 cpuVRAMHashBefore = HashCaptureVRAM(*this, bank, start, len);
+    CaptureBlockProvenance owner{};
+    const bool provenanceValid = Rend->GetCaptureProvenanceForRange(
+        bank, start, len, owner);
+    const CaptureSyncResult result = provenanceValid
+        ? Rend->SyncVRAMCapture(bank, start, len, (flags & CBFlag_Complete))
+        : CaptureSyncResult::Failed;
+    const u64 cpuVRAMHashAfterSync = HashCaptureVRAM(*this, bank, start, len);
+    if (result == CaptureSyncResult::Failed)
+    {
+        LogCaptureSync(
+            bank, start, len, flags, owner, cpuVRAMHashBefore, 0u,
+            cpuVRAMHashAfterSync, result, false, false);
+        // A failed native readback must leave both CPU authority and the
+        // capture flags untouched. Never turn stale CPU VRAM into a synced
+        // result merely because the renderer hook was called.
+        return;
+    }
 
     if (write)
     {
@@ -1677,16 +1941,29 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
         // the renderer will need to use the emulated VRAM contents
         Rend->InvalidateVRAMCapture(bank, start, len);
         VRAMCBFlagsClear(bank, start);
+        LogCaptureSync(
+            bank, start, len, flags, owner, cpuVRAMHashBefore,
+            result == CaptureSyncResult::Synchronized ? cpuVRAMHashAfterSync : 0u,
+            HashCaptureVRAM(*this, bank, start, len), result, false, true);
     }
     else
     {
         // if this block was simply read by the CPU, we just need to mark it as synced
+        Rend->MarkCaptureCpuCoherent(bank, start, len);
         VRAMCBFlagsOr(bank, start, CBFlag_Synced);
+        LogCaptureSync(
+            bank, start, len, flags, owner, cpuVRAMHashBefore,
+            result == CaptureSyncResult::Synchronized ? cpuVRAMHashAfterSync : 0u,
+            HashCaptureVRAM(*this, bank, start, len), result, true, false);
     }
 }
 
-void GPU::SyncAllVRAMCaptures()
+bool GPU::SyncAllVRAMCaptures()
 {
+    if (!Rend)
+        return true;
+
+    bool allSynchronized = true;
     for (u32 b = 0; b < 16; b++)
     {
         u16 flags = VRAMCaptureBlockFlags[b];
@@ -1699,10 +1976,30 @@ void GPU::SyncAllVRAMCaptures()
         u32 start = flags & 0x3;
         u32 len = (flags >> 6) & 0x3;
 
-        Rend->SyncVRAMCapture(bank, start, len, (flags & CBFlag_Complete));
+        const u64 cpuVRAMHashBefore = HashCaptureVRAM(*this, bank, start, len);
+        CaptureBlockProvenance owner{};
+        const bool provenanceValid = Rend->GetCaptureProvenanceForRange(
+            bank, start, len, owner);
+        const CaptureSyncResult result = provenanceValid
+            ? Rend->SyncVRAMCapture(bank, start, len, (flags & CBFlag_Complete))
+            : CaptureSyncResult::Failed;
+        const u64 cpuVRAMHashAfterSync = HashCaptureVRAM(*this, bank, start, len);
+        if (result == CaptureSyncResult::Failed)
+        {
+            allSynchronized = false;
+            LogCaptureSync(
+                bank, start, len, flags, owner, cpuVRAMHashBefore, 0u,
+                cpuVRAMHashAfterSync, result, false, false);
+            continue;
+        }
         Rend->InvalidateVRAMCapture(bank, start, len);
         VRAMCBFlagsClear(bank, start);
+        LogCaptureSync(
+            bank, start, len, flags, owner, cpuVRAMHashBefore,
+            result == CaptureSyncResult::Synchronized ? cpuVRAMHashAfterSync : 0u,
+            HashCaptureVRAM(*this, bank, start, len), result, false, true);
     }
+    return allSynchronized;
 }
 
 int GPU::GetCaptureBlock_LCDC(u32 offset)

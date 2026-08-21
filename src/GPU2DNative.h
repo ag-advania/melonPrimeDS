@@ -298,6 +298,12 @@ struct FrameInput
     u32 ScreensEnabled = 0;
     u32 LCDVRAMMap = 0;
     std::array<u8, 4 * 128 * 1024> LCDVRAM{};
+    // Host-only authority metadata for the persistent LCDC mirror. This is
+    // deliberately outside PackedFrame: native Vulkan/DX12 capture writes
+    // remain GPU-resident, and the composer must not replay a stale CPU
+    // snapshot over a block whose owner outlived the FrameRecorder.
+    std::array<CaptureBlockProvenance, CapturePhysicalBlockCount>
+        LCDVRAMProvenance{};
     FrameGeneration Generation{};
     std::array<u32, PackedTimelineRowIdWords> TimelineRowIds{};
     std::array<u32, PackedTimelineRowsWords> TimelineRows{};
@@ -543,7 +549,10 @@ private:
 
     void SnapshotEngine(u32 engine) noexcept;
     void CaptureAllMappedMemoryForLine() noexcept;
+    void CaptureCoherentLCDVRAMForLine() noexcept;
     void CaptureJournalWritesForLine() noexcept;
+    void RefreshCaptureProvenance() noexcept;
+    void MarkInputCaptureBlockCpuCoherent(u32 bank, u32 physicalBlock) noexcept;
     void CaptureMappedPhysicalBlock(
         u32 engine,
         u32 section,

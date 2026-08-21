@@ -56,31 +56,72 @@ void DX12Renderer::AllocCapture(u32 bank, u32 start, u32 len)
     SoftRenderer::AllocCapture(bank, start, len);
 }
 
-void DX12Renderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
+CaptureSyncResult DX12Renderer::SyncVRAMCapture(
+    u32 bank, u32 start, u32 len, bool complete)
 {
-    if (HasNativeGPU2DFrameForCurrentEmulatedFrame())
+    (void)complete;
+    CaptureBlockProvenance provenance{};
+    if (!GetCaptureProvenanceForRange(bank, start, len, provenance))
     {
-        auto* dx12 = GetDX12Renderer3D();
-        if (dx12 && dx12->ReadNativeCapture(bank, start, len, GPU.VRAM[bank]))
-        {
-            const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
-            for (u32 i = 0; i < blockCount; ++i)
-            {
-                const u32 block = (start + i) & 3u;
-                for (u32 subblock = 0; subblock < 64u; ++subblock)
-                    GPU.VRAMDirty[bank][block * 64u + subblock] = true;
-            }
-            return;
-        }
-        if (dx12)
-            dx12->FailNativeGPU2DExact("native DX12 GPU2D capture readback failed");
+        if (auto* dx12 = GetDX12Renderer3D())
+            dx12->FailNativeGPU2DExact(
+                "native DX12 GPU2D capture provenance range is inconsistent");
+        return CaptureSyncResult::Failed;
     }
-    SoftRenderer::SyncVRAMCapture(bank, start, len, complete);
+
+    if (IsNativeCaptureOwner(provenance.Owner))
+    {
+        // Display Capture ownership outlives the FrameRecorder that produced
+        // it. This source decision intentionally does not inspect whether the
+        // current emulated frame has finalized its native recorder.
+        if (provenance.Owner != CaptureOwner::NativeDX12)
+        {
+            if (auto* dx12 = GetDX12Renderer3D())
+                dx12->FailNativeGPU2DExact(
+                    "native DX12 GPU2D capture owner belongs to another backend");
+            return CaptureSyncResult::Failed;
+        }
+
+        auto* dx12 = GetDX12Renderer3D();
+        if (!dx12
+            || !dx12->ReadNativeCapture(
+                bank, start, len, provenance, GPU.VRAM[bank]))
+        {
+            if (dx12)
+                dx12->FailNativeGPU2DExact(
+                    "native DX12 GPU2D capture readback failed");
+            return CaptureSyncResult::Failed;
+        }
+
+        const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+        for (u32 i = 0; i < blockCount; ++i)
+        {
+            const u32 block = (start + i) & 3u;
+            for (u32 subblock = 0; subblock < 64u; ++subblock)
+                GPU.VRAMDirty[bank][block * 64u + subblock] = true;
+        }
+        MarkCaptureCpuCoherent(bank, start, len);
+        GPU.RecordGPU2DCaptureSync(bank, start, len);
+        return CaptureSyncResult::Synchronized;
+    }
+
+    // None/CpuCoherent means the CPU mirror is authoritative. The software
+    // hook is a no-op by design; it is not a correctness fallback for a
+    // native-owned block.
+    return SoftRenderer::SyncVRAMCapture(bank, start, len, complete);
 }
 
 void DX12Renderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
 {
     SoftRenderer::InvalidateVRAMCapture(bank, start, len);
+}
+
+NativeCaptureStateIdentity DX12Renderer::GetNativeCaptureStateIdentity() const noexcept
+{
+    const auto* dx12 = GetDX12Renderer3D();
+    return dx12
+        ? dx12->GetNativeCaptureStateIdentity(CaptureOwner::NativeDX12)
+        : NativeCaptureStateIdentity{};
 }
 
 bool DX12Renderer::Init()
@@ -217,6 +258,18 @@ void DX12Renderer::VBlank()
             exactValidation ? GetSoftwareScreenFrame(0u) : nullptr,
             exactValidation ? GetSoftwareScreenFrame(1u) : nullptr);
         nativeComposeResult = dx12->GetLastComposeResult();
+        if (nativeComposeResult == GPU2DComposeResult::Success
+            || nativeComposeResult == GPU2DComposeResult::SemanticOnly)
+        {
+            // Publish physical capture ownership after semantic submission,
+            // even when presentation backpressure retained the old visible
+            // frame. The next frame may request a read before its recorder is
+            // finalized, and must still select this native mirror.
+            PublishNativeCaptureProvenance(
+                CaptureOwner::NativeDX12,
+                nativeFrame,
+                GetNativeCaptureStateIdentity());
+        }
         if (nativeComposed)
         {
             if (!NativeGPU2DAnnounced)

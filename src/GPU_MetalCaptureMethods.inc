@@ -820,6 +820,7 @@ bool MetalRenderer::EncodeMetalDisplayCapture(
 
 void MetalRenderer::AllocCapture(u32 bank, u32 start, u32 len)
 {
+    MarkCaptureCpuCoherent(bank, start, len);
     if (!CaptureState || !CaptureState->Ready ||
         bank >= 4 || start >= 4)
     {
@@ -966,7 +967,7 @@ bool MetalRenderer::UploadCpuCompletedCaptures()
     return true;
 }
 
-void MetalRenderer::SyncVRAMCapture(
+CaptureSyncResult MetalRenderer::SyncVRAMCapture(
     u32 bank,
     u32 start,
     u32 len,
@@ -975,13 +976,13 @@ void MetalRenderer::SyncVRAMCapture(
     if (!CaptureState || !CaptureState->Ready ||
         bank >= 4 || start >= 4)
     {
-        return;
+        return CaptureSyncResult::Failed;
     }
 
     const int metadataLayer = static_cast<int>((bank << 2) | start);
     const auto meta = CaptureState->Meta[metadataLayer];
     if (!meta.Valid || meta.Size != static_cast<int>(len))
-        return;
+        return CaptureSyncResult::Failed;
 
     if (!complete)
     {
@@ -1006,7 +1007,7 @@ void MetalRenderer::SyncVRAMCapture(
     id<MTLComputeCommandEncoder> encoder =
         command ? [command computeCommandEncoder] : nil;
     if (!command || !encoder)
-        return;
+        return CaptureSyncResult::Failed;
 
     [encoder setComputePipelineState:CaptureState->ReadbackPipeline];
     [encoder setBytes:&config length:sizeof(config) atIndex:0];
@@ -1026,7 +1027,7 @@ void MetalRenderer::SyncVRAMCapture(
     [command commit];
     [command waitUntilCompleted];
     if (command.status != MTLCommandBufferStatusCompleted)
-        return;
+        return CaptureSyncResult::Failed;
 
     const uint16_t* pixels = static_cast<const uint16_t*>(
         [CaptureState->ReadbackBuffer contents]);
@@ -1129,6 +1130,8 @@ void MetalRenderer::SyncVRAMCapture(
             "bank=%u start=%u size=%u\n",
             bank, start, len);
     }
+    MarkCaptureCpuCoherent(bank, start, len);
+    return CaptureSyncResult::Synchronized;
 }
 
 bool MetalRenderer::MetalCaptureReady() const

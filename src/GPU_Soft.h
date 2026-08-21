@@ -64,8 +64,22 @@ public:
     void VBlankEnd() override {};
 
     void AllocCapture(u32 bank, u32 start, u32 len) override;
-    void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
+    CaptureSyncResult SyncVRAMCapture(
+        u32 bank, u32 start, u32 len, bool complete) override;
     void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) override;
+
+    // Publish physical LCDC blocks only after the native semantic command has
+    // been submitted successfully. The owner deliberately survives the
+    // current FrameRecorder's rollover into the next emulated frame.
+    void PublishNativeCaptureProvenance(
+        CaptureOwner owner,
+        const GPU2DNative::FrameInput& input,
+        const NativeCaptureStateIdentity& identity) noexcept;
+
+    [[nodiscard]] const char* GetCaptureBackendName() const noexcept override
+    {
+        return "Software";
+    }
 
     bool GetFramebuffers(void** top, void** bottom) override;
 

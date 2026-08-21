@@ -921,7 +921,7 @@ bool DX12CommandContext::WaitForFence(u64 value, bool recordRasterBegin)
 
 void DX12CommandContext::WaitIdle()
 {
-    WaitForFence(SubmittedValue);
+    (void)WaitForSubmittedValue();
 }
 
 bool DX12CommandContext::WaitQueueIdle()

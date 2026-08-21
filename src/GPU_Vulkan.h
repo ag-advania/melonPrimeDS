@@ -56,8 +56,15 @@ public:
     RendererOutput GetOutput() override;
     RendererOutputLease AcquireOutputLease() override;
     void AllocCapture(u32 bank, u32 start, u32 len) override;
-    void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
+    CaptureSyncResult SyncVRAMCapture(
+        u32 bank, u32 start, u32 len, bool complete) override;
     void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) override;
+    [[nodiscard]] NativeCaptureStateIdentity
+    GetNativeCaptureStateIdentity() const noexcept override;
+    [[nodiscard]] const char* GetCaptureBackendName() const noexcept override
+    {
+        return "Vulkan";
+    }
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;

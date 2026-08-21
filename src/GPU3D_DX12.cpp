@@ -27,6 +27,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <mutex>
@@ -603,6 +604,7 @@ void DX12Renderer3D::Stop()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    LastNativeCaptureCompletionValue = 0;
 }
 
 void DX12Renderer3D::Reset()
@@ -624,6 +626,7 @@ void DX12Renderer3D::Reset()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    LastNativeCaptureCompletionValue = 0;
     ColorBuffer.fill(0);
     if (ComposedOutput)
     {
@@ -943,6 +946,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
+    LastNativeCaptureCompletionValue = 0;
     TileBuffers[0].Reset();
     TileBuffers[1].Reset();
     TileBuffers[2].Reset();
@@ -2797,7 +2801,8 @@ bool DX12Renderer3D::RecordNativeResolveAndReadback()
 
     // Retire only the previous lazy-capture submission before recycling its
     // command allocator and descriptor table. This is not a queue-wide idle.
-    CaptureCommands.WaitIdle();
+    if (!CaptureCommands.WaitForSubmittedValue())
+        return false;
 
     ID3D12GraphicsCommandList* list = CaptureCommands.TryBegin();
     if (!list)
@@ -2870,7 +2875,12 @@ void DX12Renderer3D::EnsureFrameReadback()
 #endif
     {
         DX12Perf::ScopedCpuTimer waitTimer(DX12Perf::CpuMetric::CaptureWait);
-        CaptureCommands.WaitIdle();
+        if (!CaptureCommands.WaitForSubmittedValue())
+        {
+            SetRuntimeFailure("the demand-driven capture readback did not complete in time");
+            FrameInFlight = false;
+            return;
+        }
     }
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     DX12Perf::RecordNativeReadbackWait(static_cast<u64>(
@@ -2900,14 +2910,39 @@ void DX12Renderer3D::EnsureFrameReadback()
 }
 
 bool DX12Renderer3D::ReadNativeCapture(
-    u32 bank, u32 start, u32 len, u8* destination)
+    u32 bank,
+    u32 start,
+    u32 len,
+    const CaptureBlockProvenance& expected,
+    u8* destination)
 {
-    if (bank >= 4u || start >= 4u || !destination
-        || !NativeCaptureStateInitialized || !BlendStateBuffer
-        || !NativeCaptureReadback)
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (const char* forcedFailure = std::getenv(
+            "MELONPRIME_TEST_GPU2D_CAPTURE_READBACK_FAIL");
+        forcedFailure && forcedFailure[0] == '1')
     {
         return false;
     }
+#endif
+    if (bank >= 4u || start >= 4u || !destination
+        || !NativeCaptureStateInitialized || !BlendStateBuffer
+        || !NativeCaptureReadback
+        || expected.Owner != CaptureOwner::NativeDX12
+        || expected.Epoch != CurrentEpoch
+        || expected.Epoch != LastSemanticEpoch
+        || expected.SemanticFrame == 0u
+        || expected.SemanticFrame > LastSemanticFrame
+        || expected.CaptureGeneration == 0u
+        || expected.CaptureGeneration > LastSemanticCaptureGeneration
+        || expected.CompletionValue == 0u
+        || expected.CompletionValue > LastNativeCaptureCompletionValue)
+    {
+        return false;
+    }
+
+    // The current emulated frame may still be recording its 192 lines. The
+    // expected block identity, not FrameRecorder finalization, is the
+    // authority for this readback.
 
     // CaptureCommands is also used by the demand-driven 3D readback. Retire
     // that optional submission before recycling its command allocator.
@@ -2919,7 +2954,6 @@ bool DX12Renderer3D::ReadNativeCapture(
     const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
     const u64 blockBytes = 32ull * 1024ull;
     const u64 totalBytes = static_cast<u64>(blockCount) * blockBytes;
-    CaptureCommands.WaitIdle();
     ID3D12GraphicsCommandList* list = CaptureCommands.Begin();
     if (!list)
         return false;
@@ -2946,7 +2980,8 @@ bool DX12Renderer3D::ReadNativeCapture(
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     if (!CaptureCommands.Submit())
         return false;
-    CaptureCommands.WaitIdle();
+    if (!CaptureCommands.WaitForSubmittedValue())
+        return false;
 
     D3D12_RANGE readRange{0, static_cast<SIZE_T>(totalBytes)};
     void* mapped = nullptr;
@@ -2964,6 +2999,22 @@ bool DX12Renderer3D::ReadNativeCapture(
     D3D12_RANGE noWrite{0, 0};
     NativeCaptureReadback->Unmap(0, &noWrite);
     return true;
+}
+
+NativeCaptureStateIdentity DX12Renderer3D::GetNativeCaptureStateIdentity(
+    CaptureOwner owner) const noexcept
+{
+    NativeCaptureStateIdentity identity{};
+    identity.Valid = NativeCaptureStateInitialized
+        && LastSemanticEpoch == CurrentEpoch
+        && LastSemanticFrame != 0u
+        && LastNativeCaptureCompletionValue != 0u;
+    identity.Owner = owner;
+    identity.Epoch = CurrentEpoch;
+    identity.SemanticFrame = LastSemanticFrame;
+    identity.CaptureGeneration = LastSemanticCaptureGeneration;
+    identity.CompletionValue = LastNativeCaptureCompletionValue;
+    return identity;
 }
 
 bool DX12Renderer3D::ComposeStructuredOutput(
@@ -3620,13 +3671,37 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         || LastSemanticEpoch != CurrentEpoch
         || !semanticFrameContiguous
         || semanticCaptureGenerationRegressed;
+    const auto copyCoherentCaptureRange = [&](u32 requestedBegin, u32 requestedEnd) {
+        if (requestedEnd <= requestedBegin)
+            return;
+        for (u32 physicalIndex = 0;
+            physicalIndex < CapturePhysicalBlockCount;
+            ++physicalIndex)
+        {
+            const u32 blockBegin = lcdBegin
+                + physicalIndex * CapturePhysicalBlockBytes;
+            const u32 blockEnd = blockBegin + CapturePhysicalBlockBytes;
+            const u32 begin = std::max(requestedBegin, blockBegin);
+            const u32 end = std::min(requestedEnd, blockEnd);
+            if (end <= begin)
+                continue;
+
+            if (IsNativeCaptureOwner(input.LCDVRAMProvenance[
+                    physicalIndex].Owner))
+            {
+                // A native-owned block survives the FrameRecorder rollover;
+                // copying its old CPU bytes would erase the GPU capture
+                // mirror before the next semantic dispatch consumes it.
+                continue;
+            }
+
+            list->CopyBufferRegion(
+                BlendStateBuffer.Get(), captureBase + (begin - lcdBegin),
+                nativeStaging.Get(), begin, end - begin);
+        }
+    };
     if (mirrorNeedsFullCopy)
-    {
-        list->CopyBufferRegion(
-            BlendStateBuffer.Get(), captureBase,
-            nativeStaging.Get(), lcdBegin,
-            static_cast<u64>(input.LCDVRAM.size()));
-    }
+        copyCoherentCaptureRange(lcdBegin, lcdEnd);
     else
     {
         for (u32 i = 0; i < input.DirtyRangeCount; ++i)
@@ -3636,9 +3711,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             const u32 end = std::min(range.Offset + range.Size, lcdEnd);
             if (end <= begin)
                 continue;
-            list->CopyBufferRegion(
-                BlendStateBuffer.Get(), captureBase + (begin - lcdBegin),
-                nativeStaging.Get(), begin, end - begin);
+            copyCoherentCaptureRange(begin, end);
         }
     }
     TransitionBuffer(
@@ -3892,6 +3965,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
+    // This fence value identifies the semantic submission that produced the
+    // persistent LCDC capture mirror. ReadNativeCapture validates against this
+    // specific submission rather than the current FrameRecorder identity.
+    LastNativeCaptureCompletionValue = semanticSlot.Commands.GetSubmittedValue();
 
     if (diagnosticReadback)
     {

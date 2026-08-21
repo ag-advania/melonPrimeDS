@@ -48,7 +48,12 @@ public:
     void VBlankEnd() override;
 
     void AllocCapture(u32 bank, u32 start, u32 len) override;
-    void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
+    CaptureSyncResult SyncVRAMCapture(
+        u32 bank, u32 start, u32 len, bool complete) override;
+    [[nodiscard]] const char* GetCaptureBackendName() const noexcept override
+    {
+        return "OpenGL";
+    }
 
     bool GetFramebuffers(void** top, void** bottom) override;
 

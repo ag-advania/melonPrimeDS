@@ -43,6 +43,12 @@ enum class GPU2DWriteKind : u16
     OAM = 3,
     FIFO = 4,
     Mapping = 5,
+    // A native Display Capture readback changed the CPU-visible physical
+    // block.  This is deliberately a journal event rather than a destructive
+    // dirty-bit operation so the next native FrameRecorder observes the
+    // materialized bytes without stealing ownership from the ordinary VRAM
+    // consumers.
+    CaptureSync = 6,
 };
 
 struct GPU2DWriteJournalEntry
@@ -219,7 +225,80 @@ struct RendererOutputLease
 };
 #endif
 
+// Display Capture ownership is tracked at the same physical granularity as
+// GPU::VRAMCaptureBlockFlags: four 32 KiB blocks in each LCDC bank A..D.
+// It intentionally outlives the FrameRecorder that produced a semantic frame.
+enum class CaptureOwner : u8
+{
+    None = 0,
+    CpuCoherent,
+    NativeVulkan,
+    NativeDX12,
+};
+
+[[nodiscard]] constexpr bool IsNativeCaptureOwner(CaptureOwner owner) noexcept
+{
+    return owner == CaptureOwner::NativeVulkan
+        || owner == CaptureOwner::NativeDX12;
+}
+
+[[nodiscard]] constexpr const char* CaptureOwnerName(CaptureOwner owner) noexcept
+{
+    switch (owner)
+    {
+    case CaptureOwner::CpuCoherent: return "CpuCoherent";
+    case CaptureOwner::NativeVulkan: return "NativeVulkan";
+    case CaptureOwner::NativeDX12: return "NativeDX12";
+    default: return "None";
+    }
+}
+
+struct CaptureBlockProvenance
+{
+    CaptureOwner Owner = CaptureOwner::None;
+    u64 Epoch = 0;
+    u64 SemanticFrame = 0;
+    u64 CaptureGeneration = 0;
+    u64 CompletionValue = 0;
+};
+
+struct NativeCaptureStateIdentity
+{
+    bool Valid = false;
+    CaptureOwner Owner = CaptureOwner::None;
+    u64 Epoch = 0;
+    u64 SemanticFrame = 0;
+    u64 CaptureGeneration = 0;
+    u64 CompletionValue = 0;
+};
+
+enum class CaptureSyncResult : u8
+{
+    Synchronized = 0,
+    AlreadyCoherent,
+    Failed,
+};
+
+[[nodiscard]] constexpr const char* CaptureSyncResultName(
+    CaptureSyncResult result) noexcept
+{
+    switch (result)
+    {
+    case CaptureSyncResult::Synchronized: return "Synchronized";
+    case CaptureSyncResult::AlreadyCoherent: return "AlreadyCoherent";
+    default: return "Failed";
+    }
+}
+
+inline constexpr u32 CapturePhysicalBanks = 4u;
+inline constexpr u32 CapturePhysicalBlocksPerBank = 4u;
+inline constexpr u32 CapturePhysicalBlockCount =
+    CapturePhysicalBanks * CapturePhysicalBlocksPerBank;
+
 static constexpr u32 VRAMDirtyGranularity = 512;
+inline constexpr u32 CapturePhysicalBlockBytes = 32u * 1024u;
+inline constexpr u32 CaptureDirtyBlocksPerPhysicalBlock =
+    CapturePhysicalBlockBytes / VRAMDirtyGranularity;
 class GPU;
 
 template <u32 Size, u32 MappingGranularity>
@@ -830,6 +909,36 @@ public:
         };
     }
 
+    // Publish a native readback as an ordinary non-destructive journal event.
+    // FrameRecorder consumes this event just like a CPU/DMA VRAM write, so a
+    // readback that lands after frame N+1's baseline cannot be silently
+    // omitted from the next native input snapshot.
+    void RecordGPU2DCaptureSync(u32 bank, u32 start, u32 len) noexcept
+    {
+        if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
+            return;
+        const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+        for (u32 i = 0; i < blockCount; ++i)
+        {
+            const u32 physicalBlock =
+                (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+            // Journal blocks are 512-byte VRAM dirty blocks, while capture
+            // ownership is tracked at 32 KiB. Publish every dirty sub-block
+            // so FrameRecorder can repair all mapped views after native
+            // readback, not just the first 2 KiB of the capture block.
+            for (u32 subblock = 0;
+                subblock < CaptureDirtyBlocksPerPhysicalBlock;
+                ++subblock)
+            {
+                RecordGPU2DWrite(
+                    GPU2DWriteKind::CaptureSync,
+                    bank,
+                    physicalBlock * CaptureDirtyBlocksPerPhysicalBlock
+                        + subblock);
+            }
+        }
+    }
+
     [[nodiscard]] u32 GetGPU2DWriteJournalSequence() const noexcept
     {
         return GPU2DWriteJournalSequence;
@@ -1090,7 +1199,19 @@ private:
     void CheckCaptureStart();
     void CheckCaptureEnd();
     void SyncVRAMCaptureBlock(u32 block, bool write);
-    void SyncAllVRAMCaptures();
+    bool SyncAllVRAMCaptures();
+    void LogCaptureSync(
+        u32 bank,
+        u32 start,
+        u32 len,
+        u16 flags,
+        const CaptureBlockProvenance& owner,
+        u64 cpuVRAMHashBefore,
+        u64 nativeCaptureHash,
+        u64 cpuVRAMHashAfter,
+        CaptureSyncResult result,
+        bool flagsMarkedSynced,
+        bool flagsCleared) const noexcept;
     void GetCaptureInfo(int* info, u16** cbf, int len);
 
     void SetDispStatIRQ(int cpu, int num);
@@ -1151,7 +1272,10 @@ struct RendererSettings
 class Renderer
 {
 public:
-    explicit Renderer(melonDS::GPU& gpu) : GPU(gpu), BackBuffer(0) {}
+    explicit Renderer(melonDS::GPU& gpu) : GPU(gpu), BackBuffer(0)
+    {
+        ResetCaptureProvenance();
+    }
     virtual ~Renderer() {}
     virtual bool Init() = 0;
     virtual void Reset() = 0;
@@ -1173,8 +1297,47 @@ public:
     virtual void VBlankEnd() = 0;
 
     virtual void AllocCapture(u32 bank, u32 start, u32 len) = 0;
-    virtual void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) = 0;
-    virtual void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) {}
+    // Display Capture ownership outlives the FrameRecorder that produced it.
+    // SyncVRAMCapture must select the authoritative source from capture
+    // provenance, not from whether the current emulated frame has already
+    // finalized a native GPU2D recorder. A native-owned capture must never
+    // fall through to the SoftRenderer no-op sync path.
+    virtual CaptureSyncResult SyncVRAMCapture(
+        u32 bank, u32 start, u32 len, bool complete) = 0;
+    virtual void InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
+    {
+        MarkCaptureCpuCoherent(bank, start, len);
+    }
+
+    [[nodiscard]] const CaptureBlockProvenance& GetCaptureBlockProvenance(
+        u32 bank, u32 block) const noexcept;
+    // Returns false when a requested capture range mixes native/CPU owners or
+    // contains native blocks from different identities. A range with no
+    // native owner is considered CPU-coherent even if its non-native metadata
+    // differs, because no GPU mirror is authoritative for that request.
+    [[nodiscard]] bool GetCaptureProvenanceForRange(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureBlockProvenance& representative) const noexcept;
+    void MarkCaptureCpuCoherent(u32 bank, u32 start, u32 len) noexcept;
+    void PublishNativeCaptureBlock(
+        CaptureOwner owner,
+        const NativeCaptureStateIdentity& identity,
+        u32 bank,
+        u32 start,
+        u32 len) noexcept;
+    void ResetCaptureProvenance() noexcept;
+
+    [[nodiscard]] virtual NativeCaptureStateIdentity
+    GetNativeCaptureStateIdentity() const noexcept
+    {
+        return {};
+    }
+    [[nodiscard]] virtual const char* GetCaptureBackendName() const noexcept
+    {
+        return "Unknown";
+    }
 #ifdef MELONPRIME_DS
     // Backend-neutral lookup for a retained high-resolution display-capture
     // pixel. The emulated VRAM remains authoritative; a zero result means the
@@ -1215,6 +1378,9 @@ protected:
     melonDS::GPU& GPU;
 
     int BackBuffer;
+
+    std::array<CaptureBlockProvenance, CapturePhysicalBlockCount>
+        CaptureProvenance{};
 
     std::unique_ptr<Renderer2D> Rend2D_A;
     std::unique_ptr<Renderer2D> Rend2D_B;

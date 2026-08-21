@@ -472,6 +472,40 @@ void CopyChangedBlocks(
     }
 }
 
+void CopyCoherentLCDVRAMBlocks(
+    FrameInput& input,
+    u32 bank,
+    u8* destination,
+    const u8* source) noexcept
+{
+    if (bank >= CapturePhysicalBanks || !destination || !source)
+        return;
+
+    for (u32 physicalBlock = 0;
+        physicalBlock < CapturePhysicalBlocksPerBank;
+        ++physicalBlock)
+    {
+        const CaptureBlockProvenance& provenance = input.LCDVRAMProvenance[
+            bank * CapturePhysicalBlocksPerBank + physicalBlock];
+        if (IsNativeCaptureOwner(provenance.Owner))
+        {
+            // The persistent native mirror is authoritative for this
+            // physical block. Copying CPU VRAM here would replay the stale
+            // pre-capture snapshot over it on a frame rollover/resync.
+            continue;
+        }
+
+        const u32 offset = physicalBlock * CapturePhysicalBlockBytes;
+        CopyChangedBlocks(
+            input,
+            destination + offset,
+            source + offset,
+            CapturePhysicalBlockBytes,
+            PackedLCDVRAMBase * sizeof(u32)
+                + bank * 128u * 1024u + offset);
+    }
+}
+
 void CopyLineState(LineState& destination, const GPU2D& source, u32 renderXPos) noexcept
 {
     destination = {};
@@ -994,6 +1028,7 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     Input.ScreenSwap = GPU.ScreenSwap ? 1u : 0u;
     Input.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
     Input.LCDVRAMMap = GPU.VRAMMap_LCDC;
+    RefreshCaptureProvenance();
     MarkDirtyRange(Input, 0u, PackedHeaderWords * sizeof(u32));
     MarkDirtyRange(Input, PackedHeaderWords * sizeof(u32),
         PackedLinesWords * sizeof(u32));
@@ -1028,6 +1063,38 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     CaptureStateCnt = 0u;
     CaptureStateEnabled = false;
     RecorderStartNs = NowNanoseconds();
+}
+
+void FrameRecorder::RefreshCaptureProvenance() noexcept
+{
+    const Renderer& renderer = GPU.GetRenderer();
+    for (u32 bank = 0; bank < CapturePhysicalBanks; ++bank)
+    {
+        for (u32 physicalBlock = 0;
+            physicalBlock < CapturePhysicalBlocksPerBank;
+            ++physicalBlock)
+        {
+            Input.LCDVRAMProvenance[
+                bank * CapturePhysicalBlocksPerBank + physicalBlock] =
+                renderer.GetCaptureBlockProvenance(bank, physicalBlock);
+        }
+    }
+}
+
+void FrameRecorder::MarkInputCaptureBlockCpuCoherent(
+    u32 bank,
+    u32 physicalBlock) noexcept
+{
+    if (bank >= CapturePhysicalBanks
+        || physicalBlock >= CapturePhysicalBlocksPerBank)
+    {
+        return;
+    }
+
+    CaptureBlockProvenance& provenance = Input.LCDVRAMProvenance[
+        bank * CapturePhysicalBlocksPerBank + physicalBlock];
+    provenance = {};
+    provenance.Owner = CaptureOwner::CpuCoherent;
 }
 
 void FrameRecorder::CaptureAllMappedMemoryForLine() noexcept
@@ -1083,14 +1150,32 @@ void FrameRecorder::CaptureAllMappedMemoryForLine() noexcept
         reinterpret_cast<u8*>(CurrentDisplayFIFO.data()),
         static_cast<u32>(CurrentDisplayFIFO.size() * sizeof(u16)),
         TimelineFIFOBaseBlock);
-    for (u32 bank = 0; bank < 4u; ++bank)
+    CaptureCoherentLCDVRAMForLine();
+}
+
+void FrameRecorder::CaptureCoherentLCDVRAMForLine() noexcept
+{
+    for (u32 bank = 0; bank < CapturePhysicalBanks; ++bank)
     {
-        CaptureDirectMemoryForLine(
-            GPU.VRAM[bank],
-            CurrentLCDVRAM.data()
-                + static_cast<std::size_t>(bank) * 128u * 1024u,
-            128u * 1024u,
-            TimelineLCDVRAMBaseBlock + bank * (128u * 1024u / DirtyBlockBytes));
+        for (u32 physicalBlock = 0;
+            physicalBlock < CapturePhysicalBlocksPerBank;
+            ++physicalBlock)
+        {
+            const CaptureBlockProvenance& provenance = Input.LCDVRAMProvenance[
+                bank * CapturePhysicalBlocksPerBank + physicalBlock];
+            if (IsNativeCaptureOwner(provenance.Owner))
+                continue;
+
+            const u32 offset = physicalBlock * CapturePhysicalBlockBytes;
+            CaptureDirectMemoryForLine(
+                GPU.VRAM[bank] + offset,
+                CurrentLCDVRAM.data()
+                    + static_cast<std::size_t>(bank) * 128u * 1024u + offset,
+                CapturePhysicalBlockBytes,
+                TimelineLCDVRAMBaseBlock
+                    + bank * (128u * 1024u / DirtyBlockBytes)
+                    + physicalBlock * CaptureDirtyBlocksPerPhysicalBlock);
+        }
     }
 }
 
@@ -1138,6 +1223,7 @@ void FrameRecorder::CaptureJournalWritesForLine() noexcept
         switch (static_cast<GPU2DWriteKind>(entry.Kind))
         {
         case GPU2DWriteKind::VRAM:
+        case GPU2DWriteKind::CaptureSync:
             CaptureMappedPhysicalBlock(
                 0u, 0u, CurrentEngine[0].BGVRAM.data(), CurrentEngine[0].BGSize,
                 GPU.VRAMMap_ABG, 32u, 16u * 1024u,
@@ -1197,6 +1283,9 @@ void FrameRecorder::CaptureJournalWritesForLine() noexcept
                     TimelineLCDVRAMBaseBlock
                         + entry.Bank * (128u * 1024u / DirtyBlockBytes),
                     entry.Block);
+                MarkInputCaptureBlockCpuCoherent(
+                    entry.Bank,
+                    entry.Block / CaptureDirtyBlocksPerPhysicalBlock);
             }
             break;
 
@@ -1254,16 +1343,14 @@ void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
             reinterpret_cast<const u8*>(GPU.DispFIFOBuffer),
             static_cast<u32>(Input.DisplayFIFO.size() * sizeof(u16)),
             PackedFIFOBase * sizeof(u32));
-        for (u32 bank = 0; bank < 4u; ++bank)
+        for (u32 bank = 0; bank < CapturePhysicalBanks; ++bank)
         {
-            CopyChangedBlocks(
+            CopyCoherentLCDVRAMBlocks(
                 Input,
-                Input.LCDVRAM.data()
-                    + static_cast<std::size_t>(bank) * 128u * 1024u,
-                GPU.VRAM[bank],
-                128u * 1024u,
-                PackedLCDVRAMBase * sizeof(u32)
-                    + bank * 128u * 1024u);
+                bank,
+                Input.LCDVRAM.data() +
+                    static_cast<std::size_t>(bank) * 128u * 1024u,
+                GPU.VRAM[bank]);
         }
 
         CurrentEngine[0] = Input.Engine[0];
