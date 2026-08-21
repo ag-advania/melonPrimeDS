@@ -1102,7 +1102,7 @@ uint Blend4Native(uint first, uint second, uint eva, uint evb)
         ((Color6R(first) * eva) + Color6R(second) * evb + 8u) >> 4u,
         ((Color6G(first) * eva) + Color6G(second) * evb + 8u) >> 4u,
         ((Color6B(first) * eva) + Color6B(second) * evb + 8u) >> 4u,
-        0u);
+        0xFFu);
 }
 
 uint Blend5Native(uint first, uint second)
@@ -1113,7 +1113,7 @@ uint Blend5Native(uint first, uint second)
         ((Color6R(first) * eva) + Color6R(second) * evb + 0x10u) >> 5u,
         ((Color6G(first) * eva) + Color6G(second) * evb + 0x10u) >> 5u,
         ((Color6B(first) * eva) + Color6B(second) * evb + 0x10u) >> 5u,
-        0u);
+        0xFFu);
 }
 
 struct CompositeLayers

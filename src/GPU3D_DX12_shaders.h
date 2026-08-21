@@ -2321,6 +2321,8 @@ static const uint NativeEVB = 51u;
 static const uint NativeEVY = 52u;
 static const uint NativeMasterBrightness = 53u;
 static const uint NativeRenderXPos = 54u;
+static const uint NativeCaptureCnt = 55u;
+static const uint NativeCaptureEnable = 56u;
 
 uint NativeLine(uint engine, uint scanline, uint field)
 {
@@ -2924,12 +2926,12 @@ NativePixel NativeOBJ(uint screen,uint engine,uint line,int x,bool collectWindow
 
 uint NativeBlend4(uint a,uint b,uint eva,uint evb)
 {
-    return NativePack((NativeColorR(a)*eva+NativeColorR(b)*evb+8u)>>4u,(NativeColorG(a)*eva+NativeColorG(b)*evb+8u)>>4u,(NativeColorB(a)*eva+NativeColorB(b)*evb+8u)>>4u,0u);
+    return NativePack((NativeColorR(a)*eva+NativeColorR(b)*evb+8u)>>4u,(NativeColorG(a)*eva+NativeColorG(b)*evb+8u)>>4u,(NativeColorB(a)*eva+NativeColorB(b)*evb+8u)>>4u,0xFFu);
 }
 uint NativeBlend5(uint a,uint b)
 {
     uint eva=((a>>24u)&0x1Fu)+1u,evb=32u-eva;
-    return NativePack((NativeColorR(a)*eva+NativeColorR(b)*evb+16u)>>5u,(NativeColorG(a)*eva+NativeColorG(b)*evb+16u)>>5u,(NativeColorB(a)*eva+NativeColorB(b)*evb+16u)>>5u,0u);
+    return NativePack((NativeColorR(a)*eva+NativeColorR(b)*evb+16u)>>5u,(NativeColorG(a)*eva+NativeColorG(b)*evb+16u)>>5u,(NativeColorB(a)*eva+NativeColorB(b)*evb+16u)>>5u,0xFFu);
 }
 struct NativeCompositeLayers
 {
@@ -2987,8 +2989,8 @@ NativeCompositeLayers NativeCompositeAt(uint screen,uint engine,uint line,int x,
     }
     result.Color=result.First.Color;
     if(result.Effect==1u)result.Color=NativeBlend4(result.First.Color,result.Second.Color,result.Eva,result.Evb);
-    else if(result.Effect==2u)result.Color=NativePack(NativeColorR(result.First.Color)+(((63u-NativeColorR(result.First.Color))*result.Eva+8u)>>4u),NativeColorG(result.First.Color)+(((63u-NativeColorG(result.First.Color))*result.Eva+8u)>>4u),NativeColorB(result.First.Color)+(((63u-NativeColorB(result.First.Color))*result.Eva+8u)>>4u),0u);
-    else if(result.Effect==3u)result.Color=NativePack(NativeColorR(result.First.Color)-((NativeColorR(result.First.Color)*result.Eva+7u)>>4u),NativeColorG(result.First.Color)-((NativeColorG(result.First.Color)*result.Eva+7u)>>4u),NativeColorB(result.First.Color)-((NativeColorB(result.First.Color)*result.Eva+7u)>>4u),0u);
+    else if(result.Effect==2u)result.Color=NativePack(NativeColorR(result.First.Color)+(((63u-NativeColorR(result.First.Color))*result.Eva+8u)>>4u),NativeColorG(result.First.Color)+(((63u-NativeColorG(result.First.Color))*result.Eva+8u)>>4u),NativeColorB(result.First.Color)+(((63u-NativeColorB(result.First.Color))*result.Eva+8u)>>4u),0xFFu);
+    else if(result.Effect==3u)result.Color=NativePack(NativeColorR(result.First.Color)-((NativeColorR(result.First.Color)*result.Eva+7u)>>4u),NativeColorG(result.First.Color)-((NativeColorG(result.First.Color)*result.Eva+7u)>>4u),NativeColorB(result.First.Color)-((NativeColorB(result.First.Color)*result.Eva+7u)>>4u),0xFFu);
     else if(result.Effect==4u)result.Color=NativeBlend5(result.First.Color,result.Second.Color);
     return result;
 }
@@ -2999,8 +3001,8 @@ uint NativeComposite(uint screen,uint engine,uint line,int x,uint ox,uint oy)
 uint NativeMaster(uint c,uint b)
 {
     uint mode=b>>14u,f=min(b&0x1Fu,16u),result=c;
-    if(mode==1u)result=NativePack(NativeColorR(c)+(((63u-NativeColorR(c))*f)>>4u),NativeColorG(c)+(((63u-NativeColorG(c))*f)>>4u),NativeColorB(c)+(((63u-NativeColorB(c))*f)>>4u),0u);
-    else if(mode==2u)result=NativePack(NativeColorR(c)-((NativeColorR(c)*f+15u)>>4u),NativeColorG(c)-((NativeColorG(c)*f+15u)>>4u),NativeColorB(c)-((NativeColorB(c)*f+15u)>>4u),0u);
+    if(mode==1u)result=NativePack(NativeColorR(c)+(((63u-NativeColorR(c))*f)>>4u),NativeColorG(c)+(((63u-NativeColorG(c))*f)>>4u),NativeColorB(c)+(((63u-NativeColorB(c))*f)>>4u),0xFFu);
+    else if(mode==2u)result=NativePack(NativeColorR(c)-((NativeColorR(c)*f+15u)>>4u),NativeColorG(c)-((NativeColorG(c)*f+15u)>>4u),NativeColorB(c)-((NativeColorB(c)*f+15u)>>4u),0xFFu);
     return result;
 }
 uint NativeDisplay(uint screen,uint engine,uint line,int x,uint ox,uint oy)
@@ -3047,7 +3049,7 @@ uint NativeCaptureComposite(uint a,uint b,uint cnt)
 }
 uint NativeCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
 {
-    uint cnt=NativeLine(0u,line,55u);
+    uint cnt=NativeLine(0u,line,NativeCaptureCnt);
     if((cnt&(1u<<24u))!=0u&&TexWidth!=0u)
     {
         uint rx=NativeLine(0u,line,NativeRenderXPos)&0x1FFu;
@@ -3068,7 +3070,7 @@ uint NativeCaptureReference(uint engine,uint line,uint x)
     uint packedLatch=NativeLine(0u,line,NativeSpriteLatchValid);
     uint captureStart=(packedLatch>>8u)&0xFFu;
     if(captureStart==0xFFu||line<=captureStart)return 0u;
-    uint cnt=NativeLine(0u,line,55u);
+    uint cnt=NativeLine(0u,line,NativeCaptureCnt);
     uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
     uint displayBank=(NativeLine(0u,line,NativeDispCnt)>>18u)&3u;
     uint destinationBank=(cnt>>16u)&3u;
@@ -3084,7 +3086,8 @@ uint NativeCaptureReference(uint engine,uint line,uint x)
 }
 void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
 {
-    uint cnt=NativeLine(0u,line,56u);if(cnt==0u||NativeLine(0u,line,55u)==0u)return;
+    uint cnt=NativeLine(0u,line,NativeCaptureCnt);
+    if(cnt==0u||NativeLine(0u,line,NativeCaptureEnable)==0u)return;
     uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
     if(line>=height||x>=width)return;
     uint bank=(cnt>>16u)&3u;if((NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<bank))==0u)return;

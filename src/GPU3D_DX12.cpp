@@ -3689,14 +3689,28 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             if (end <= begin)
                 continue;
 
-            if (IsNativeCaptureOwner(input.LCDVRAMProvenance[
-                    physicalIndex].Owner))
+            const bool nativeOwner = IsNativeCaptureOwner(
+                input.LCDVRAMProvenance[physicalIndex].Owner);
+            if (nativeOwner)
             {
                 // A native-owned block survives the FrameRecorder rollover;
                 // copying its old CPU bytes would erase the GPU capture
                 // mirror before the next semantic dispatch consumes it.
+                GPU2DNative::RecordNativeOwnedCaptureCopySkipped();
                 continue;
             }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            // Keep this assertion adjacent to the actual host upload. Any
+            // future refactor that lets a native-owned block reach this point
+            // would replay stale CPU VRAM into the persistent capture mirror.
+            assert(!nativeOwner);
+            if (nativeOwner)
+            {
+                GPU2DNative::RecordNativeOwnedHostReupload();
+                continue;
+            }
+#endif
 
             list->CopyBufferRegion(
                 BlendStateBuffer.Get(), captureBase + (begin - lcdBegin),

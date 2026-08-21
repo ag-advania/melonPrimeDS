@@ -133,6 +133,26 @@ void SoftRenderer::Stop()
     SoftwareScreenFrame.fill(0);
     NativeGPU2DProducerForFrame = false;
     RecordNativeGPU2DFrameForFrame = false;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const CaptureAuthorityDiagnostics& authority =
+        GetCaptureAuthorityDiagnostics();
+    const GPU2DNative::NativeCaptureHostCopyDiagnostics hostCopy =
+        GPU2DNative::GetNativeCaptureHostCopyDiagnostics();
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DCaptureAuthorityCounters] backend=%s "
+        "NativeToCpuReasonCaptureAllocated=%llu "
+        "NativeToCpuReasonFrameBegin=%llu "
+        "NativeToCpuReasonByteDifference=%llu "
+        "NativeOwnedHostReupload=%llu "
+        "NativeOwnedBlocksSkipped=%llu\n",
+        GetCaptureBackendName(),
+        static_cast<unsigned long long>(authority.NativeToCpuReasonCaptureAllocated),
+        static_cast<unsigned long long>(authority.NativeToCpuReasonFrameBegin),
+        static_cast<unsigned long long>(authority.NativeToCpuReasonByteDifference),
+        static_cast<unsigned long long>(hostCopy.NativeOwnedHostReupload),
+        static_cast<unsigned long long>(hostCopy.NativeOwnedBlocksSkipped));
+#endif
 }
 
 void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
@@ -443,6 +463,8 @@ void SoftRenderer::DrawScanline(u32 line)
                 SnapshotStructuredVramDisplayLine(screenA, outputLine, line);
         }
 
+        if (RecordNativeGPU2DFrameForFrame)
+            NativeGPU2DFrame.CaptureCaptureStateForLine(line);
         if (GPU.CaptureEnable)
         {
             const u32 captureMode = (GPU.CaptureCnt >> 29) & 0x3u;
@@ -470,6 +492,8 @@ void SoftRenderer::DrawScanline(u32 line)
             DoCapture(line);
         }
 #else
+        if (RecordNativeGPU2DFrameForFrame)
+            NativeGPU2DFrame.CaptureCaptureStateForLine(line);
         if (GPU.CaptureEnable)
             DoCapture(line);
 #endif

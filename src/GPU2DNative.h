@@ -267,6 +267,21 @@ struct RecorderMetrics
     u64 NativeGPU2DPackNs = 0;
 };
 
+// Developer-only accounting for the persistent native LCDC capture mirror.
+// Native-owned blocks are expected to be skipped by the host upload planner;
+// the reupload counter is a fail-closed tripwire immediately before the copy
+// call, and must remain zero in a valid frame stream.
+struct NativeCaptureHostCopyDiagnostics
+{
+    u64 NativeOwnedBlocksSkipped = 0;
+    u64 NativeOwnedHostReupload = 0;
+};
+
+void RecordNativeOwnedCaptureCopySkipped() noexcept;
+void RecordNativeOwnedHostReupload() noexcept;
+[[nodiscard]] NativeCaptureHostCopyDiagnostics
+GetNativeCaptureHostCopyDiagnostics() noexcept;
+
 struct UploadPlan
 {
     std::array<DirtyRange, MaxDirtyRanges> Ranges{};
@@ -510,6 +525,10 @@ public:
         const melonDS::GPU2D& gpu2D,
         u32 line,
         bool screenSwap) noexcept;
+    // Capture control registers can change after the line-start snapshot and
+    // before the hardware capture write. Refresh engine-A state at that
+    // boundary so Native observes the same state as Software.
+    void CaptureCaptureStateForLine(u32 line) noexcept;
     void CaptureMemoryForLine(u32 line) noexcept;
     void RecordSoftwareCaptureLine(u64 nanoseconds) noexcept;
     // Called from the renderer's DrawSprites hook at the hardware latch

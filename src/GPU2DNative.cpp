@@ -20,6 +20,8 @@ namespace
 {
 std::atomic<bool> ExactValidationSavestateReady{false};
 std::atomic<u64> NextRendererEpoch{1};
+std::atomic<u64> NativeOwnedBlocksSkipped{0};
+std::atomic<u64> NativeOwnedHostReupload{0};
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 std::atomic<u32>& ForcedPresentationStallRemaining() noexcept
@@ -38,6 +40,24 @@ std::atomic<u32>& ForcedPresentationStallRemaining() noexcept
     return remaining;
 }
 #endif
+}
+
+void RecordNativeOwnedCaptureCopySkipped() noexcept
+{
+    NativeOwnedBlocksSkipped.fetch_add(1u, std::memory_order_relaxed);
+}
+
+void RecordNativeOwnedHostReupload() noexcept
+{
+    NativeOwnedHostReupload.fetch_add(1u, std::memory_order_relaxed);
+}
+
+NativeCaptureHostCopyDiagnostics GetNativeCaptureHostCopyDiagnostics() noexcept
+{
+    return {
+        NativeOwnedBlocksSkipped.load(std::memory_order_relaxed),
+        NativeOwnedHostReupload.load(std::memory_order_relaxed),
+    };
 }
 
 bool ConsumeForcedPresentationStallFrame() noexcept
@@ -1287,9 +1307,24 @@ void FrameRecorder::CaptureJournalWritesForLine() noexcept
                     TimelineLCDVRAMBaseBlock
                         + entry.Bank * (128u * 1024u / DirtyBlockBytes),
                     entry.Block);
-                MarkInputCaptureBlockCpuCoherent(
-                    entry.Bank,
-                    entry.Block / CaptureDirtyBlocksPerPhysicalBlock);
+                const u32 physicalBlock =
+                    entry.Block / CaptureDirtyBlocksPerPhysicalBlock;
+                const CaptureBlockProvenance rendererProvenance =
+                    GPU.GetRenderer().GetCaptureBlockProvenance(
+                        entry.Bank, physicalBlock);
+                const bool softwareOracleWrite =
+                    ExactValidationEnabled()
+                    && IsNativeCaptureOwner(rendererProvenance.Owner);
+                if (!softwareOracleWrite)
+                {
+                    MarkInputCaptureBlockCpuCoherent(
+                        entry.Bank, physicalBlock);
+                }
+                // Exact validation runs the Software renderer as an oracle.
+                // Its Display Capture writes are observational data for the
+                // frame timeline, not an emulated CPU/DMA authority event.
+                // Keep the native renderer owner intact so the persistent
+                // native mirror is never reuploaded from the oracle snapshot.
             }
             break;
 
@@ -1790,6 +1825,43 @@ void FrameRecorder::CaptureLine(
     const u32 screenB = screenA ^ 1u;
     Input.ScreenSource[screenA * ScreenHeight + line] = 0u;
     Input.ScreenSource[screenB * ScreenHeight + line] = 1u;
+}
+
+void FrameRecorder::CaptureCaptureStateForLine(u32 line) noexcept
+{
+    if (line >= ScreenHeight || !LineSeen[line])
+        return;
+
+    // CaptureLine() runs at line start, but DISPCAPCNT can be written by an
+    // emulated register event later in the same line. The native capture
+    // shader must sample the state at the actual capture write boundary.
+    LineState& state = Input.Lines[line];
+    const bool captureEnabled = GPU.CaptureEnable;
+    const u32 captureCnt = GPU.CaptureCnt;
+    state.CaptureCnt = captureCnt;
+    state.CaptureEnable = captureEnabled ? 1u : 0u;
+    state.ScreensEnabled = GPU.ScreensEnabled ? 1u : 0u;
+    state.LCDVRAMMap = GPU.VRAMMap_LCDC;
+
+    if (captureEnabled
+        && (!CaptureStateEnabled || CaptureStateCnt != captureCnt))
+    {
+        CaptureStartLine = line;
+    }
+    else if (!captureEnabled && CaptureStartLine == CaptureStartLineNone)
+    {
+        CaptureStartLine = CaptureStartLineNone;
+    }
+    CaptureStateEnabled = captureEnabled;
+    CaptureStateCnt = captureCnt;
+    state.SpriteLatchValid = (SpriteLatchSeen[line] ? SpriteLatchValidMask : 0u)
+        | ((CaptureStartLine & CaptureStartLineMask) << CaptureStartLineShift);
+    Input.CaptureEnable |= state.CaptureEnable;
+
+    // BeginFrame() already marks the complete packed header and line-state
+    // ranges dirty before this late line-boundary sample. Do not add a new
+    // per-line upload range here: this helper is an oracle-side state refresh,
+    // not a request for an additional native upload.
 }
 
 void FrameRecorder::SnapshotEngine(u32 engine) noexcept

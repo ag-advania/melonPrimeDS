@@ -89,6 +89,8 @@ def main() -> int:
             "NativeToCpuReasonByteDifference",
         ):
             require(text["gpu_header"], needle, "capture authority diagnostics", failures)
+        require(text["soft_renderer"], "GPU2DCaptureAuthorityCounters",
+            "capture authority runtime counters", failures)
 
         require(text["native_header"], "IsCurrentFrame", "frame identity", failures)
         require(text["native_header"], "TimelineBlockCount", "timeline ABI", failures)
@@ -98,6 +100,7 @@ def main() -> int:
         require(text["native_header"], "SpriteTimelineRowIds", "private sparse sprite timeline ABI", failures)
         require(text["native_header"], "PackFrameRanges", "partial pack ABI", failures)
         require(text["native_recorder"], "CaptureMemoryForLine", "temporal recorder", failures)
+        require(text["native_recorder"], "CaptureCaptureStateForLine", "capture write-boundary recorder", failures)
         require(text["native_recorder"], "AppendTimelineDelta", "temporal recorder", failures)
         require(text["native_recorder"], "HashTimelineBlock", "deduplicated timeline", failures)
         require(text["native_recorder"], "HashTimelineWords", "deduplicated timeline rows", failures)
@@ -113,12 +116,18 @@ def main() -> int:
         require(text["native_purity_test"], "TimelineOverflow == 0u", "high-churn overflow stress", failures)
         require(text["soft_renderer"], "NativeGPU2DFrame.Reset()", "stale rejection", failures)
         require(text["soft_renderer"], "NativeGPU2DRecordedFrameSerial", "recorded identity", failures)
+        require(text["soft_renderer"], "NativeGPU2DFrame.CaptureCaptureStateForLine(line)",
+            "capture write-boundary sampling", failures)
         if "&& !GPU.CaptureEnable" in text["soft_renderer"]:
             failures.append("soft renderer: CaptureEnable still disables native GPU2D ownership")
         require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
         require(text["native_recorder"], "LCDVRAMProvenance", "native recorder capture provenance", failures)
         require(text["native_recorder"], "CaptureCoherentLCDVRAMForLine", "native recorder coherent capture path", failures)
         require(text["native_recorder"], "A byte difference between CPU VRAM", "event-driven authority comment", failures)
+        require(text["native_header"], "NativeCaptureHostCopyDiagnostics",
+            "native host-copy diagnostics", failures)
+        require(text["native_recorder"], "RecordNativeOwnedCaptureCopySkipped",
+            "native host-copy skip accounting", failures)
         require(text["soft_renderer"], "Allocating a Display Capture destination does not make CPU VRAM coherent", "allocation authority comment", failures)
         require(text["soft_renderer"], "CaptureAuthorityTransitionReason reason", "reasoned invalidation", failures)
         require(text["soft_renderer"], "MarkCaptureCpuCoherent(bank, start, len, reason)", "reasoned CPU authority", failures)
@@ -166,6 +175,12 @@ def main() -> int:
                 f"{label} persistent LCDC mirror ownership", failures)
             require(text[label], "Presentation backpressure is allowed to drop a visible frame",
                 f"{label} semantic/presentation separation", failures)
+            require(text[label], "RecordNativeOwnedCaptureCopySkipped",
+                f"{label} native host-copy skip accounting", failures)
+            require(text[label], "RecordNativeOwnedHostReupload",
+                f"{label} native host-copy fail-closed counter", failures)
+            require(text[label], "assert(!nativeOwner)",
+                f"{label} native host-copy assertion", failures)
 
         vulkan_native = text["vulkan_renderer"].split(
             "bool VulkanRenderer3D::ComposeNativeGPU2D(", 1)[1]
@@ -326,6 +341,15 @@ def main() -> int:
         require(text["dx12_shader"], "NativeCaptureSourceA", "DX12 capture feedback", failures)
         require(text["vulkan_shader"], "NativeCaptureReference", "Vulkan capture reference", failures)
         require(text["dx12_shader"], "NativeCaptureReference", "DX12 capture reference", failures)
+        require(text["dx12_shader"], "NativeCaptureCnt = 55u", "DX12 capture count ABI", failures)
+        require(text["dx12_shader"], "NativeCaptureEnable = 56u", "DX12 capture enable ABI", failures)
+        require_regex(
+            text["dx12_shader"],
+            r"uint cnt=NativeLine\(0u,line,NativeCaptureCnt\);\s*"
+            r"if\(cnt==0u\|\|NativeLine\(0u,line,NativeCaptureEnable\)==0u\)return;",
+            "DX12 capture control word order",
+            failures,
+        )
 
         require(text["opengl_renderer"], "DumpFrameForValidation", "OpenGL pixel gate", failures)
         require(text["opengl_renderer"], "glReadPixels(0, 0, 256, 192", "OpenGL pixel gate", failures)
@@ -353,12 +377,17 @@ def main() -> int:
             "synthetic temporal vectors", failures)
         require(text["native_contract_test"], "RunCaptureOwnershipVectors",
             "capture ownership vectors", failures)
+        require(text["native_contract_test"], "RunCaptureFeedbackVectors",
+            "same-bank/display-mode2 vectors", failures)
         for needle in (
             "CaptureSyncResult::Failed",
             "flagsBeforeFailure",
             "1200u",
             "PresentationStallObserved",
             "cross-frame native capture",
+            "same-bank capture allocation",
+            "display mode 2",
+            "600u",
         ):
             require(text["native_contract_test"], needle, "capture ownership regression vectors", failures)
 

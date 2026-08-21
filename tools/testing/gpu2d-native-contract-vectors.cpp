@@ -34,6 +34,8 @@ bool RunPackVectors()
     input->Engine[0].BGSize = 0x80000u;
     input->Engine[1].OBJSize = 0x20000u;
     input->Lines[192u + 17u].DispCnt = 0x12345678u;
+    input->Lines[192u + 17u].CaptureCnt = 0x00320010u;
+    input->Lines[192u + 17u].CaptureEnable = 1u;
     input->Lines[192u + 17u].UnitEnabled = 1u;
     input->Lines[192u + 17u].LCDVRAMMap = 1u << 3u;
     input->Lines[192u + 17u].SpriteLatchValid = 1u;
@@ -70,6 +72,13 @@ bool RunPackVectors()
     passed &= Require(
         packed[PackedHeaderWords + (192u + 17u) * PackedLineWords + 67u] == 1u,
         "sprite latch validity is not serialized");
+    passed &= Require(
+        packed[PackedHeaderWords + (192u + 17u) * PackedLineWords + 55u]
+            == 0x00320010u,
+        "line capture count moved away from the canonical word 55");
+    passed &= Require(
+        packed[PackedHeaderWords + (192u + 17u) * PackedLineWords + 56u] == 1u,
+        "line capture enable moved away from the canonical word 56");
     passed &= Require(
         ((packed[PackedPaletteBase + 37u / 4u] >> ((37u & 3u) * 8u)) & 0xFFu)
             == 0x5Au,
@@ -632,13 +641,112 @@ bool RunCaptureOwnershipVectors()
     return passed;
 }
 
+struct CaptureFeedbackModel
+{
+    std::array<CaptureOwner, CapturePhysicalBlockCount> Owner{};
+    std::array<std::array<u64, ScreenHeight>, CapturePhysicalBlockCount>
+        NativeLines{};
+    std::array<std::array<u64, ScreenHeight>, CapturePhysicalBlockCount>
+        CpuLines{};
+    u32 DisplayMode = 0;
+
+    void PublishNative(CaptureOwner owner, u32 bank, u32 block, u64 seed)
+    {
+        const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+        Owner[index] = owner;
+        for (u32 line = 0; line < ScreenHeight; ++line)
+            NativeLines[index][line] = seed + line;
+    }
+
+    void BeginCaptureAllocation(u32 bank, u32 block)
+    {
+        // Allocation announces the destination only. It must not clear the
+        // native line history because a same-bank source can consume it
+        // before the corresponding line is overwritten.
+        (void)bank;
+        (void)block;
+    }
+
+    void WriteCaptureLine(u32 bank, u32 block, u32 line, u64 value)
+    {
+        NativeLines[bank * CapturePhysicalBlocksPerBank + block][line] = value;
+    }
+
+    [[nodiscard]] u64 ReadCaptureSource(u32 bank, u32 block, u32 line) const
+    {
+        const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+        return IsNativeCaptureOwner(Owner[index])
+            ? NativeLines[index][line]
+            : CpuLines[index][line];
+    }
+
+    [[nodiscard]] u64 ComposeDisplayMode2(u32 bank, u32 block, u32 line) const
+    {
+        return DisplayMode == 2u ? ReadCaptureSource(bank, block, line) : 0u;
+    }
+};
+
+bool RunCaptureFeedbackVectors()
+{
+    bool passed = true;
+    for (const CaptureOwner owner : {CaptureOwner::NativeVulkan, CaptureOwner::NativeDX12})
+    {
+        CaptureFeedbackModel model;
+        constexpr u32 bank = 1u;
+        constexpr u32 block = 0u;
+        constexpr u64 seed = 0x50000000ull;
+        model.PublishNative(owner, bank, block, seed);
+        for (u32 line = 0; line < ScreenHeight; ++line)
+            model.CpuLines[bank * CapturePhysicalBlocksPerBank + block][line]
+                = 0xDEAD0000ull + line;
+
+        model.BeginCaptureAllocation(bank, block);
+        passed &= Require(
+            model.Owner[bank * CapturePhysicalBlocksPerBank + block] == owner
+                && model.ReadCaptureSource(bank, block, 64u) == seed + 64u,
+            "same-bank capture allocation replayed the stale CPU mirror");
+
+        // Capture writes are line-granular. A line already written in the
+        // current capture changes, while an unread line still comes from the
+        // retained native mirror.
+        model.WriteCaptureLine(bank, block, 0u, 0xABCDEF00ull);
+        passed &= Require(
+            model.ReadCaptureSource(bank, block, 0u) == 0xABCDEF00ull
+                && model.ReadCaptureSource(bank, block, 64u) == seed + 64u,
+            "same-bank source feedback lost the persistent native line history");
+
+        model.DisplayMode = 2u;
+        passed &= Require(
+            model.ComposeDisplayMode2(bank, block, 64u) == seed + 64u,
+            "display mode 2 did not consume the persistent native capture mirror");
+
+        for (u32 frame = 0u; frame < 600u; ++frame)
+        {
+            const u32 frameBank = frame % CapturePhysicalBanks;
+            const u32 frameBlock = (frame / CapturePhysicalBanks)
+                % CapturePhysicalBlocksPerBank;
+            const u64 frameSeed = seed + 0x1000ull * frame;
+            model.PublishNative(owner, frameBank, frameBlock, frameSeed);
+            model.BeginCaptureAllocation(frameBank, frameBlock);
+            const u32 feedbackLine = (frame * 13u) % ScreenHeight;
+            passed &= Require(
+                model.ComposeDisplayMode2(
+                    frameBank, frameBlock, feedbackLine)
+                    == frameSeed + feedbackLine,
+                "600-frame same-bank/display-mode2 feedback lost native ownership");
+        }
+    }
+    return passed;
+}
+
 } // namespace
 
 int main()
 {
     const bool passed = RunPackVectors() && RunCompareVectors()
         && RunUploadPlanVectors() && RunTemporalLineVectors()
-        && RunFrameIdentityVectors() && RunCaptureOwnershipVectors();
+        && RunFrameIdentityVectors() && RunCaptureOwnershipVectors()
+        && RunCaptureFeedbackVectors();
     std::fprintf(stderr, "%s: GPU2D native contract vectors\n", passed ? "PASS" : "FAIL");
     return passed ? 0 : 1;
 }
