@@ -1520,16 +1520,17 @@ uint DisplayPixel(
         uint reference = NativeCaptureReference(engine, line, uint(x));
         if ((reference & 0x80000000u) != 0u)
         {
-            uint highRes = LoadNativeCaptureSidecar(
-                reference,
-                outputX % uint(ScaleFactor),
-                outputY % uint(ScaleFactor));
-            // VRAM display ignores LCDC bit 15.  Require the retained
-            // sidecar sample to agree with the current native RGB555 word
-            // before allowing it to replace the compact fallback.
-            if ((CaptureRawFromColor6(highRes) & 0x7FFFu)
-                == (compact & 0x7FFFu))
+            uint canonical = CaptureRawFromColor6(
+                LoadNativeCaptureSidecar(reference, 0u, 0u));
+            // VRAM display ignores LCDC bit 15. Admit the retained sidecar
+            // only when its canonical sample agrees with the current native
+            // RGB555 word, then preserve the requested subpixel sample.
+            if ((canonical & 0x7FFFu) == (compact & 0x7FFFu))
             {
+                uint highRes = LoadNativeCaptureSidecar(
+                    reference,
+                    outputX % uint(ScaleFactor),
+                    outputY % uint(ScaleFactor));
                 color = PackColor6(
                     Color6R(highRes), Color6G(highRes), Color6B(highRes), 0u);
             }
@@ -1619,13 +1620,18 @@ uint CaptureSourceB(
         line, bank, address, captureCnt);
     if (reference != 0u)
     {
-        uint highRes = LoadNativeCaptureSidecar(
-            reference,
-            outputX % uint(ScaleFactor),
-            sampleY);
-        uint quantized = CaptureRawFromColor6(highRes);
-        if (quantized == compact)
-            return quantized;
+        // Admit the retained sidecar using its canonical sample, then return
+        // the actual subpixel sample. Quantizing that same sample back to
+        // LCD16 made this branch an algebraic no-op.
+        uint canonical = CaptureRawFromColor6(
+            LoadNativeCaptureSidecar(reference, 0u, 0u));
+        if (canonical == compact)
+        {
+            return CaptureRawFromColor6(LoadNativeCaptureSidecar(
+                reference,
+                outputX % uint(ScaleFactor),
+                sampleY));
+        }
     }
     return compact;
 }
@@ -1763,30 +1769,36 @@ StructuredPixelState CompositeSourceAExact(
         bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
         bool val2Is3D = (alpha2 & 0x40u) != 0u && (alpha2 & 0x80u) == 0u;
         uint controlAlpha = kStructuredControlPlain2D;
-        if (val1Is3D)
+        const bool val1IsCapture =
+            (layers.First.CaptureReference & 0x80000000u) != 0u;
+        const bool val2IsCapture =
+            (layers.Second.CaptureReference & 0x80000000u) != 0u;
+        if (val1Is3D || val1IsCapture)
         {
             plane0 = val2;
             controlAlpha = kStructuredControlHas3D
                 | (layers.Effect & 0x0Fu);
+            if (val1IsCapture)
+                result.CaptureReference = layers.First.CaptureReference;
             if ((plane0 & 0x00FFFFFFu) == 0u && (plane0 >> 24u) != 0u)
                 controlAlpha |= kStructuredControlOpaqueBlackBelow;
         }
-        else if (val2Is3D && layers.Effect == kStructuredCompositionBlend4)
+        else if (val2Is3D || val2IsCapture)
         {
-            plane0 = 0u;
-            plane1 = val1;
-            controlAlpha = kStructuredControlHas3D
-                | kStructuredControlAbove | kStructuredCompositionBlend4;
-            if ((plane1 & 0x00FFFFFFu) == 0u && (plane1 >> 24u) != 0u)
-                controlAlpha |= kStructuredControlOpaqueBlackBelow;
+            if (layers.Effect == kStructuredCompositionBlend4)
+            {
+                plane0 = 0u;
+                plane1 = val1;
+                controlAlpha = kStructuredControlHas3D
+                    | kStructuredControlAbove | kStructuredCompositionBlend4;
+                if (val2IsCapture)
+                    result.CaptureReference = layers.Second.CaptureReference;
+                if ((plane1 & 0x00FFFFFFu) == 0u && (plane1 >> 24u) != 0u)
+                    controlAlpha |= kStructuredControlOpaqueBlackBelow;
+            }
         }
         result.Below = plane0;
         result.Above = plane1;
-        if (!val1Is3D && !val2Is3D && layers.Effect == 0u
-            && (layers.First.CaptureReference & 0x80000000u) != 0u)
-        {
-            result.CaptureReference = layers.First.CaptureReference;
-        }
         result.Control = (controlAlpha << 24u)
             | ((layers.Evb & 0xFFu) << 16u)
             | ((layers.Eva & 0xFFu) << 8u);

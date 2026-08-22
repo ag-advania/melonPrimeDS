@@ -233,6 +233,18 @@ def main() -> int:
                 "high-resolution capture provenance contract", failures)
         require(text["soft_renderer"], "InvalidateHighResCaptureState",
             "software savestate sidecar invalidation", failures)
+        require(text["gpu_header"], "RebuildAfterSavestateLoad",
+            "VCOUNT-aware savestate recovery hook", failures)
+        require(text["gpu_core"], "Rend->RebuildAfterSavestateLoad(VCount)",
+            "VCOUNT-aware savestate recovery dispatch", failures)
+        require(text["soft_renderer"], "ResetDerivedState(bool sessionReset)",
+            "session/reset state split", failures)
+        require(text["soft_renderer"], "SavestateLoadVCount",
+            "developer savestate recovery telemetry", failures)
+        require(text["soft_renderer"], "RebuiltOBJLine",
+            "developer OBJ recovery telemetry", failures)
+        require(text["soft_renderer"], "vcount < GPU2DNative::ScreenHeight",
+            "visible-line OBJ recovery gate", failures)
         if "CaptureNativeDisplayLine" in text["soft_renderer"]:
             failures.append("soft renderer: per-line CPU native capture mirror still present")
 
@@ -498,6 +510,12 @@ def main() -> int:
         ):
             require(body, "CaptureOffsetBytes", f"{label} byte offset helper", failures)
             require(body, "WrapLCDCByte", f"{label} byte wrap helper", failures)
+            require(body, "canonical", f"{label} canonical sidecar admission", failures)
+            require(body, "LoadNativeCaptureSidecar(reference, 0u, 0u)"
+                if label == "Vulkan source-B"
+                else "NativeLoadCaptureSidecar(reference,0u,0u)",
+                f"{label} canonical sidecar sample", failures)
+            forbid(body, "quantized", f"{label} subpixel no-op regression", failures)
         for label, body in (
             ("Vulkan reference", vulkan_reference),
             ("DX12 reference", dx12_reference),
@@ -544,6 +562,9 @@ def main() -> int:
 
         require(text["native_contract_test"], "RunTemporalLineVectors",
             "synthetic temporal vectors", failures)
+        require(text["native_contract_test"],
+            "RunSourceBSubpixelAndSavestateVectors",
+            "Source-B subpixel and VCOUNT recovery vectors", failures)
         require(text["native_contract_test"], "RunCaptureOwnershipVectors",
             "capture ownership vectors", failures)
         require(text["native_contract_test"], "RunCaptureFeedbackVectors",

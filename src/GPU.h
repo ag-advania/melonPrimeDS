@@ -1361,6 +1361,11 @@ public:
 
     virtual void PreSavestate() {}
     virtual void PostSavestate() {}
+    // Rebuild renderer-private scanline state after the serialized GPU state
+    // has been restored. This is intentionally separate from Reset(): a
+    // savestate may resume in the middle of the visible region, where the
+    // first OBJ line must be prepared for the restored VCOUNT.
+    virtual void RebuildAfterSavestateLoad(u32 vcount) { (void)vcount; }
     virtual void InvalidateHighResCaptureState(
         HighResCaptureInvalidationReason reason) noexcept
     {

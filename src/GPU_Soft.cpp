@@ -60,6 +60,11 @@ SoftRenderer::~SoftRenderer()
 
 void SoftRenderer::Reset()
 {
+    ResetDerivedState(true);
+}
+
+void SoftRenderer::ResetDerivedState(bool sessionReset) noexcept
+{
     const size_t len = 256 * 192 * sizeof(u32);
     memset(Framebuffer[0][0], 0, len);
     memset(Framebuffer[0][1], 0, len);
@@ -68,17 +73,28 @@ void SoftRenderer::Reset()
     SoftwareLogicalFrame.fill(0);
     SoftwareScreenFrame.fill(0);
     NativeGPU2DFrame.Reset();
-    ResetCaptureProvenance(CaptureAuthorityTransitionReason::RendererReset);
+    if (sessionReset)
+    {
+        ResetCaptureProvenance(CaptureAuthorityTransitionReason::RendererReset);
+        EmulatedFrameSerial = 0;
+    }
+    else
+    {
+        // A loaded state starts a new renderer epoch. Never let the recorder
+        // from the pre-load frame satisfy the native compose gate.
+        ++EmulatedFrameSerial;
+    }
     NativeGPU2DProducerForFrame = false;
     RecordNativeGPU2DFrameForFrame = false;
-    EmulatedFrameSerial = 0;
     NativeGPU2DRecordedFrameSerial = 0;
     GPU2DFallbacks = {};
 
     Rend2D_A->Reset();
     Rend2D_B->Reset();
     Rend3D->InvalidateHighResCaptureState(
-        HighResCaptureInvalidationReason::RendererReset);
+        sessionReset
+            ? HighResCaptureInvalidationReason::RendererReset
+            : HighResCaptureInvalidationReason::SavestateLoad);
     Rend3D->Reset();
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     StructuredEnginePlanes.fill(0);
@@ -108,7 +124,10 @@ void SoftRenderer::Reset()
     StructuredScreenRouteCopyNanoseconds = 0;
     StructuredRegularLines = 0;
     StructuredFallbackLines = 0;
-    StructuredFrameGeneration = 0;
+    if (sessionReset)
+        StructuredFrameGeneration = 0;
+    else
+        ++StructuredFrameGeneration;
     StructuredContentGeneration = {};
     StructuredPendingPlaneDirtyMask = 0;
     StructuredPendingLineMetaDirtyMask = 0;
@@ -116,6 +135,38 @@ void SoftRenderer::Reset()
     StructuredEngineChangedMask[0] = 0;
     StructuredEngineChangedMask[1] = 0;
     StructuredPerfBackendForFrame = StructuredPerfBackend::None;
+#endif
+}
+
+void SoftRenderer::RebuildAfterSavestateLoad(u32 vcount)
+{
+    ResetDerivedState(false);
+
+    // The DS renderer prepares OBJ one scanline ahead. A state loaded in the
+    // visible region therefore needs the restored line's sprite cache before
+    // GPU::StartHBlank() invokes DrawScanline(vcount). VCOUNT 262 remains the
+    // normal line-0 preparation point for states loaded during VBlank.
+    const bool rebuiltOBJLine = vcount < GPU2DNative::ScreenHeight;
+    if (rebuiltOBJLine)
+    {
+        Rend2D_A->DrawSprites(vcount);
+        Rend2D_B->DrawSprites(vcount);
+    }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DSavestateRecovery] SavestateLoadVCount=%u "
+        "EmulatedFrameSerial=%llu NativeProducerForFrame=%u "
+        "CaptureEnable=%u CaptureCnt=0x%08X ScreenSwap=%u "
+        "RebuiltOBJLine=%u\n",
+        static_cast<unsigned>(vcount),
+        static_cast<unsigned long long>(EmulatedFrameSerial),
+        NativeGPU2DProducerForFrame ? 1u : 0u,
+        GPU.CaptureEnable ? 1u : 0u,
+        static_cast<unsigned>(GPU.CaptureCnt),
+        GPU.ScreenSwap ? 1u : 0u,
+        rebuiltOBJLine ? 1u : 0u);
 #endif
 }
 

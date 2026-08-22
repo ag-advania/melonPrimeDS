@@ -3210,7 +3210,7 @@ uint NativeDisplay(uint screen,uint engine,uint line,int x,uint ox,uint oy)
     if(mode==0u)result=NativePack(63u,63u,63u,0u);
     else if(mode==1u&&NativeLine(engine,line,NativeUnitEnabled)==0u)result=engine==0u?NativePack(0u,0u,0u,0u):NativePack(63u,63u,63u,0u);
     else if(mode==1u&&NativeLine(engine,line,NativeForcedBlank)!=0u)result=NativePack(63u,63u,63u,0u);
-    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((NativeLine(engine,line,NativeLCDVRAMMap)&(1u<<bank))!=0u){uint compact=NativeLCD16(line,bank,line*512u+(uint)x*2u),color=NativeVRAMColor(compact),reference=NativeCaptureReference(engine,line,(uint)x);if((reference&0x80000000u)!=0u){uint highRes=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,oy%ScaleFactor);if((NativeCaptureRaw(highRes)&0x7FFFu)==(compact&0x7FFFu))color=NativePack(NativeColorR(highRes),NativeColorG(highRes),NativeColorB(highRes),0u);}result=NativeMaster(color,NativeLine(engine,line,NativeMasterBrightness));}}
+    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((NativeLine(engine,line,NativeLCDVRAMMap)&(1u<<bank))!=0u){uint compact=NativeLCD16(line,bank,line*512u+(uint)x*2u),color=NativeVRAMColor(compact),reference=NativeCaptureReference(engine,line,(uint)x);if((reference&0x80000000u)!=0u){uint canonical=NativeCaptureRaw(NativeLoadCaptureSidecar(reference,0u,0u));if((canonical&0x7FFFu)==(compact&0x7FFFu)){uint highRes=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,oy%ScaleFactor);color=NativePack(NativeColorR(highRes),NativeColorG(highRes),NativeColorB(highRes),0u);}}result=NativeMaster(color,NativeLine(engine,line,NativeMasterBrightness));}}
     else if(mode==3u&&engine==0u)result=NativeMaster(NativeVRAMColor(NativeFIFO16(line,(uint)x)),NativeLine(engine,line,NativeMasterBrightness));
     else result=NativeMaster(NativeComposite(screen,engine,line,x,ox,oy),NativeLine(engine,line,NativeMasterBrightness));
     return result;
@@ -3306,26 +3306,30 @@ NativeStructuredPixelState NativeCompositeSourceAExact(
         bool v1=(a1&0x40u)!=0u&&(a1&0x80u)==0u;
         bool v2=(a2&0x40u)!=0u&&(a2&0x80u)==0u;
         uint controlAlpha=NativeStructuredControlPlain2D;
-        if(v1)
+        bool c1=(layers.First.CaptureReference&0x80000000u)!=0u;
+        bool c2=(layers.Second.CaptureReference&0x80000000u)!=0u;
+        if(v1||c1)
         {
             plane0=val2;
             controlAlpha=NativeStructuredControlHas3D|(layers.Effect&0x0Fu);
+            if(c1)result.CaptureReference=layers.First.CaptureReference;
             if((plane0&0x00FFFFFFu)==0u&&(plane0>>24u)!=0u)
                 controlAlpha|=NativeStructuredControlOpaqueBlackBelow;
         }
-        else if(v2&&layers.Effect==NativeStructuredCompositionBlend4)
+        else if(v2||c2)
         {
-            plane0=0u;plane1=val1;
-            controlAlpha=NativeStructuredControlHas3D
-                |NativeStructuredControlAbove|NativeStructuredCompositionBlend4;
-            if((plane1&0x00FFFFFFu)==0u&&(plane1>>24u)!=0u)
-                controlAlpha|=NativeStructuredControlOpaqueBlackBelow;
+            if(layers.Effect==NativeStructuredCompositionBlend4)
+            {
+                plane0=0u;plane1=val1;
+                controlAlpha=NativeStructuredControlHas3D
+                    |NativeStructuredControlAbove|NativeStructuredCompositionBlend4;
+                if(c2)result.CaptureReference=layers.Second.CaptureReference;
+                if((plane1&0x00FFFFFFu)==0u&&(plane1>>24u)!=0u)
+                    controlAlpha|=NativeStructuredControlOpaqueBlackBelow;
+            }
         }
         result.Below=plane0;
         result.Above=plane1;
-        if(!v1&&!v2&&layers.Effect==0u
-            &&(layers.First.CaptureReference&0x80000000u)!=0u)
-            result.CaptureReference=layers.First.CaptureReference;
         result.Control=(controlAlpha<<24u)
             |((layers.Evb&0xFFu)<<16u)|((layers.Eva&0xFFu)<<8u);
         result.LineMeta=(1u<<16u)|((brightness>>14u)<<8u)
@@ -3434,9 +3438,14 @@ uint NativeCaptureSourceB(uint line,uint x,uint cnt,uint ox,uint sampleY)
     uint reference=NativeCaptureReferenceForSourceB(line,bank,address,cnt);
     if(reference!=0u)
     {
-        uint highRes=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,sampleY);
-        uint quantized=NativeCaptureRaw(highRes);
-        if(quantized==compact)return quantized;
+        // Admit the retained sidecar using its canonical sample, then return
+        // the actual subpixel sample. Quantizing that same sample back to
+        // LCD16 made this branch an algebraic no-op.
+        uint canonical=NativeCaptureRaw(
+            NativeLoadCaptureSidecar(reference,0u,0u));
+        if(canonical==compact)
+            return NativeCaptureRaw(NativeLoadCaptureSidecar(
+                reference,ox%ScaleFactor,sampleY));
     }
     return compact;
 }

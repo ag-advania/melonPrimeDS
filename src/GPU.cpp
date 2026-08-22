@@ -558,6 +558,7 @@ void GPU::DoSavestate(Savestate* file) noexcept
             CaptureAuthorityTransitionReason::SavestateLoad);
         Rend->InvalidateHighResCaptureState(
             HighResCaptureInvalidationReason::SavestateLoad);
+        Rend->RebuildAfterSavestateLoad(VCount);
     }
 }
 

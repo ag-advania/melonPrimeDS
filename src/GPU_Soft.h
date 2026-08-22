@@ -54,6 +54,7 @@ public:
 
     void PreSavestate() override;
     void PostSavestate() override;
+    void RebuildAfterSavestateLoad(u32 vcount) override;
     void InvalidateHighResCaptureState(
         HighResCaptureInvalidationReason reason) noexcept override;
 
@@ -225,6 +226,8 @@ public:
 private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;
+
+    void ResetDerivedState(bool sessionReset) noexcept;
 
     u32* Framebuffer[2][2];
 

@@ -253,6 +253,108 @@ bool RunCaptureAddressVectors()
     return passed;
 }
 
+u32 CaptureRawFromColor6ForTest(u32 color)
+{
+    return ((color >> 1u) & 0x1Fu)
+        | (((color >> 9u) & 0x1Fu) << 5u)
+        | (((color >> 17u) & 0x1Fu) << 10u)
+        | (((color >> 24u) != 0u ? 1u : 0u) << 15u);
+}
+
+u32 Color6FromCaptureRawForTest(u32 raw)
+{
+    return ((raw & 0x1Fu) << 1u)
+        | (((raw >> 5u) & 0x1Fu) << 9u)
+        | (((raw >> 10u) & 0x1Fu) << 17u)
+        | (((raw >> 15u) & 1u) != 0u ? 0x1Fu << 24u : 0u);
+}
+
+u32 TrustedSourceBSampleForTest(
+    u32 compact, const std::array<u32, 4u>& sidecar, u32 sample)
+{
+    if (CaptureRawFromColor6ForTest(sidecar[0]) != compact)
+        return compact;
+    return CaptureRawFromColor6ForTest(sidecar[sample & 3u]);
+}
+
+bool RunSourceBSubpixelAndSavestateVectors()
+{
+    bool passed = true;
+    const u32 compact = 0x801Fu;
+    const std::array<u32, 4u> sidecar = {
+        Color6FromCaptureRawForTest(compact),
+        Color6FromCaptureRawForTest(0x83E0u),
+        Color6FromCaptureRawForTest(0xFC00u),
+        Color6FromCaptureRawForTest(0x001Fu),
+    };
+
+    passed &= Require(
+        TrustedSourceBSampleForTest(compact, sidecar, 1u) == 0x83E0u,
+        "Source-B trusted sidecar did not preserve the requested subpixel");
+    passed &= Require(
+        TrustedSourceBSampleForTest(compact, sidecar, 2u)
+            != TrustedSourceBSampleForTest(compact, sidecar, 1u),
+        "Source-B output did not depend on the subpixel coordinate");
+
+    const std::array<u32, 4u> staleSidecar = {
+        Color6FromCaptureRawForTest(0x03E0u), sidecar[1], sidecar[2], sidecar[3]};
+    for (u32 sample = 0u; sample < 4u; ++sample)
+    {
+        passed &= Require(
+            TrustedSourceBSampleForTest(compact, staleSidecar, sample) == compact,
+            "stale Source-B canonical reference was not rejected");
+    }
+
+    constexpr u32 kControlHas3D = 0x40u;
+    constexpr u32 kControlAbove = 0x80u;
+    constexpr u32 kBlend4 = 1u;
+    constexpr u32 kBrightnessUp = 2u;
+    constexpr u32 kBrightnessDown = 3u;
+    constexpr u32 kBlend5 = 4u;
+    const std::array<u32, 5u> effectModes = {
+        0u, kBlend4, kBrightnessUp, kBrightnessDown, kBlend5};
+    for (const u32 scale : {1u, 2u, 4u, 8u, 16u})
+    {
+        (void)scale;
+        for (const u32 effect : effectModes)
+        {
+            // First-layer capture follows the same deferred slot contract as
+            // first-layer 3D: below is the second word, the effect stays in
+            // the control word, and the sidecar reference is retained.
+            const u32 firstControl = kControlHas3D | effect;
+            passed &= Require(
+                (firstControl & kControlHas3D) != 0u,
+                "capture effect matrix lost the deferred 3D slot");
+            passed &= Require(
+                effect == (firstControl & 0x0Fu),
+                "capture effect matrix changed its composition mode");
+        }
+
+        const u32 secondControl = kControlHas3D | kControlAbove | kBlend4;
+        passed &= Require(
+            (secondControl & (kControlHas3D | kControlAbove))
+                == (kControlHas3D | kControlAbove),
+            "second-layer capture Blend4 did not retain the above-plane contract");
+    }
+
+    // GPU::StartHBlank draws the restored line first, then prepares the next
+    // line. The recovery hook must seed exactly the visible VCOUNT line and
+    // must not manufacture a sprite line during VBlank.
+    for (const u32 vcount : {0u, 1u, 32u, 64u, 96u, 128u, 191u})
+    {
+        passed &= Require(
+            vcount < ScreenHeight,
+            "visible savestate VCOUNT was not admitted to OBJ recovery");
+    }
+    for (const u32 vcount : {192u, 215u, 262u})
+    {
+        passed &= Require(
+            vcount >= ScreenHeight,
+            "VBlank savestate VCOUNT incorrectly seeded a visible OBJ line");
+    }
+    return passed;
+}
+
 bool RunPackVectors()
 {
     auto input = std::make_unique<FrameInput>();
@@ -1306,6 +1408,7 @@ bool RunCaptureFeedbackVectors()
 int main()
 {
     const bool passed = RunCaptureAddressVectors()
+        && RunSourceBSubpixelAndSavestateVectors()
         && RunPackVectors() && RunMappedCaptureOverlayVectors()
         && RunCompareVectors()
         && RunUploadPlanVectors() && RunTemporalLineVectors()

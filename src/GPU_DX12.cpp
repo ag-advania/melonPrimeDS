@@ -192,8 +192,9 @@ void DX12Renderer::PostSavestate()
 {
     // OpenGL resets all renderer-private state after savestate I/O. Do the
     // same here: FinalFB, the high-resolution capture sidecar and structured
-    // 2D capture references are derived caches, not serialized DS state.
-    SoftRenderer::Reset();
+    // 2D capture references are derived caches, not serialized DS state. They
+    // are reset by RebuildAfterSavestateLoad(), after GPU.cpp invalidates
+    // restored capture authority and before the next scanline executes.
     if (DifferentialReference)
     {
         DifferentialReference->Reset();

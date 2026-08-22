@@ -187,9 +187,11 @@ void VulkanRenderer::PostSavestate()
     // Match GLRenderer's savestate lifecycle. Renderer-private images,
     // high-resolution capture sidecars and structured 2D provenance are not
     // serialized, so none of them may survive across a loaded GPU state (or a
-    // save that synchronized native VRAM captures). VulkanRenderer3D::Reset()
-    // retires in-flight texture-cache resources without a device-wide idle.
-    SoftRenderer::Reset();
+    // save that synchronized native VRAM captures). Derived caches are reset
+    // by RebuildAfterSavestateLoad(), after GPU.cpp has invalidated restored
+    // capture authority and before the next scanline executes. The Vulkan
+    // 3D reset there retires in-flight texture-cache resources without a
+    // device-wide idle.
     if (DifferentialReference)
     {
         DifferentialReference->Reset();
