@@ -2469,13 +2469,15 @@ uint NativeCaptureOverlayByte(
     uint engine, uint line, uint size, uint address,
     bool obj, bool spriteLatch)
 {
+    // Word 15 is the non-zero frame summary. Mapping rows contain only the
+    // owning-bank mask for each entry; bit 4 is only the row[0] summary.
     if (ResultValue[15u] == 0u)
         return 0u;
-    uint mappingValue = NativeCaptureMappingMask(
-        engine, line, address, size, obj, spriteLatch);
-    if ((mappingValue & NativeCaptureOverlayPresent) == 0u)
+    uint ownerMask = NativeCaptureMappingMask(
+        engine, line, address, size, obj, spriteLatch)
+        & NativeCaptureBankMask;
+    if (ownerMask == 0u)
         return 0u;
-    uint ownerMask = mappingValue & NativeCaptureBankMask;
     uint offset = size == 0u ? 0u : address & (size - 1u);
     uint result = 0u;
     while (ownerMask != 0u)
@@ -3283,18 +3285,25 @@ uint NativeStructuredCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
             break;
         }
     }
-    uint engine=ResultValue[NativeRouteBase+captureScreen*192u+line]&1u;
-    NativeStructuredPixelState semantic=NativeCompositeSourceAExact(
-        captureScreen,line,x,engine);
-    uint flags=semantic.Control>>24u,result=semantic.Below;
+    // Stage A is the only semantic producer. Capture runs at the scaled
+    // resolution and consumes immutable logical planes instead of re-running
+    // BG/OBJ composition for every high-resolution sample.
+    uint nativeIndex=line*256u+x,base=captureScreen*4u*NativeStructuredPlaneStride;
+    uint below=ResolveOut[base+nativeIndex];
+    uint above=ResolveOut[base+NativeStructuredPlaneStride+nativeIndex];
+    uint control=ResolveOut[base+2u*NativeStructuredPlaneStride+nativeIndex];
+    uint reference=ResolveOut[base+3u*NativeStructuredPlaneStride+nativeIndex];
+    uint flags=control>>24u,result=below;
     if((flags&NativeStructuredControlHas3D)==0u)return result;
+    uint lineMeta=ResolveOut[
+        NativeStructuredLineMetaBase+captureScreen*192u+line];
     uint pixel3D=0u;
-    if((semantic.CaptureReference&0x80000000u)!=0u)
+    if((reference&0x80000000u)!=0u)
         pixel3D=NativeLoadCaptureSidecar(
-            semantic.CaptureReference,ox%ScaleFactor,sampleY);
+            reference,ox%ScaleFactor,sampleY);
     else if(TexWidth!=0u)
     {
-        uint xpos=(semantic.LineMeta>>23u)&0x1FFu;
+        uint xpos=(lineMeta>>23u)&0x1FFu;
         int sx=(xpos&0x100u)!=0u
             ?(int)ox-(int)((512u-xpos)*ScaleFactor)
             :(int)ox+(int)(xpos*ScaleFactor);
@@ -3302,18 +3311,18 @@ uint NativeStructuredCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
             pixel3D=NativeFinalFB((uint)sx,line*ScaleFactor+sampleY);
     }
     if(((pixel3D>>24u)&0x1Fu)==0u)return result;
-    uint eva=(semantic.Control>>8u)&0x1Fu;
-    uint evb=(semantic.Control>>16u)&0x1Fu;
+    uint eva=(control>>8u)&0x1Fu;
+    uint evb=(control>>16u)&0x1Fu;
     uint mode=flags&0xFu;
     if(mode==NativeStructuredCompositionBlend4
         &&(flags&NativeStructuredControlAbove)!=0u)
-        return NativeBlend4(semantic.Above,pixel3D,eva,evb);
+        return NativeBlend4(above,pixel3D,eva,evb);
     if(mode==NativeStructuredCompositionBrightnessUp)
         return NativePack(NativeColorR(pixel3D)+(((63u-NativeColorR(pixel3D))*eva+8u)>>4u),NativeColorG(pixel3D)+(((63u-NativeColorG(pixel3D))*eva+8u)>>4u),NativeColorB(pixel3D)+(((63u-NativeColorB(pixel3D))*eva+8u)>>4u),0xFFu);
     if(mode==NativeStructuredCompositionBrightnessDown)
         return NativePack(NativeColorR(pixel3D)-((NativeColorR(pixel3D)*eva+7u)>>4u),NativeColorG(pixel3D)-((NativeColorG(pixel3D)*eva+7u)>>4u),NativeColorB(pixel3D)-((NativeColorB(pixel3D)*eva+7u)>>4u),0xFFu);
     if(mode==NativeStructuredCompositionBlend5)
-        return NativeBlend5(pixel3D,semantic.Below);
+        return NativeBlend5(pixel3D,below);
     return pixel3D;
 }
 uint NativeCaptureSourceB(uint line,uint x,uint cnt)

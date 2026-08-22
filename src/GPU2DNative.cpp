@@ -1459,6 +1459,8 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         Input.Generation.ContentGeneration = previousGeneration.ContentGeneration;
         Input.Generation.VRAMGeneration = previousGeneration.VRAMGeneration;
         Input.Generation.CaptureGeneration = previousGeneration.CaptureGeneration;
+        Input.Generation.NativeCaptureMappingGeneration =
+            previousGeneration.NativeCaptureMappingGeneration;
     }
     else
     {
@@ -1468,6 +1470,7 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         Input.Generation.ContentGeneration = 1u;
         Input.Generation.VRAMGeneration = 1u;
         Input.Generation.CaptureGeneration = 1u;
+        Input.Generation.NativeCaptureMappingGeneration = 1u;
     }
     Input.CaptureCnt = GPU.CaptureCnt;
     Input.CaptureEnable = GPU.CaptureEnable ? 1u : 0u;
@@ -1589,6 +1592,22 @@ void FrameRecorder::CaptureNativeMappingForLine(
     ++Input.Recorder.NativeMappingBuildCalls;
 
     const Renderer& renderer = GPU.GetRenderer();
+    const auto noteNativeCaptureOverlay = [&](u32 mappingValue) {
+        if ((mappingValue & (NativeCaptureBankMask
+                | NativeCaptureOverlayPresent)) == 0u
+            || Input.NativeCaptureOverlayAny != 0u)
+        {
+            return;
+        }
+
+        Input.NativeCaptureOverlayAny = 1u;
+        // BeginFrame() dirties the initial zero value before scanline
+        // mapping is built.  The first native-owned mapping can appear later
+        // in the frame, so the packed header must be dirtied at the same
+        // temporal boundary or a reused GPU slot will retain header[15] == 0
+        // and bypass the otherwise valid per-entry ownership masks.
+        MarkDirtyRange(Input, 15u * sizeof(u32), sizeof(u32));
+    };
     const auto nativeMaskForEntry = [&](const u32* mappings, u32 count) {
         std::array<u32, NativeCaptureBGMappingStride> result{};
         const u32 limitedCount = std::min<u32>(
@@ -1624,18 +1643,20 @@ void FrameRecorder::CaptureNativeMappingForLine(
         return result;
     };
 
+    bool mappingChanged = false;
     const auto writeMappingRow = [&](u32* destination,
                                      u32 count,
                                      const u32* mappings,
                                      u32 packedOffset) {
         const auto masks = nativeMaskForEntry(mappings, count);
         if (std::memcmp(destination, masks.data(), count * sizeof(u32)) == 0)
-            return;
+            return false;
         std::memcpy(destination, masks.data(), count * sizeof(u32));
         ++Input.Recorder.NativeMappingRowsUploaded;
         Input.Recorder.NativeMappingBytesUploaded += count * sizeof(u32);
         MarkDirtyRange(
             Input, packedOffset * sizeof(u32), count * sizeof(u32));
+        return true;
     };
 
     const u32* bgMappings[2] = {GPU.VRAMMap_ABG, GPU.VRAMMap_BBG};
@@ -1650,36 +1671,35 @@ void FrameRecorder::CaptureNativeMappingForLine(
         for (u32 engine = 0u; engine < 2u; ++engine)
         {
             const u32 offset = engine == 0u ? 0u : 32u;
-            writeMappingRow(
+            mappingChanged = writeMappingRow(
                 bgRow + offset, bgCounts[engine], bgMappings[engine],
                 PackedNativeCaptureBGMappingBase
-                    + line * NativeCaptureBGMappingStride + offset);
-            if ((bgRow[offset] & NativeCaptureBankMask) != 0u)
-                Input.NativeCaptureOverlayAny = 1u;
-            if ((bgRow[offset] & NativeCaptureOverlayPresent) != 0u)
-                Input.NativeCaptureOverlayAny = 1u;
+                    + line * NativeCaptureBGMappingStride + offset)
+                || mappingChanged;
+            noteNativeCaptureOverlay(bgRow[offset]);
             if ((bgRow[offset] & NativeCaptureOverlayPresent) != 0u)
                 ++Input.Recorder.BGOverlaySlowPath;
             else
                 ++Input.Recorder.BGOverlayFastPath;
         }
-
         const u32 objBase = line * NativeCaptureOBJMappingStride;
         u32* objRow = Input.NativeCaptureOBJMapping.data() + objBase;
         for (u32 engine = 0u; engine < 2u; ++engine)
         {
             const u32 offset = engine == 0u ? 0u : 16u;
-            writeMappingRow(
+            mappingChanged = writeMappingRow(
                 objRow + offset, objCounts[engine], objMappings[engine],
                 PackedNativeCaptureOBJMappingBase
-                    + line * NativeCaptureOBJMappingStride + offset);
-            if ((objRow[offset] & NativeCaptureOverlayPresent) != 0u)
-                Input.NativeCaptureOverlayAny = 1u;
+                    + line * NativeCaptureOBJMappingStride + offset)
+                || mappingChanged;
+            noteNativeCaptureOverlay(objRow[offset]);
             if ((objRow[offset] & NativeCaptureOverlayPresent) != 0u)
                 ++Input.Recorder.OBJOverlaySlowPath;
             else
                 ++Input.Recorder.OBJOverlayFastPath;
         }
+        if (mappingChanged)
+            ++Input.Generation.NativeCaptureMappingGeneration;
         return;
     }
 
@@ -1688,12 +1708,12 @@ void FrameRecorder::CaptureNativeMappingForLine(
     for (u32 engine = 0u; engine < 2u; ++engine)
     {
         const u32 offset = engine == 0u ? 0u : 16u;
-        writeMappingRow(
+        mappingChanged = writeMappingRow(
             spriteRow + offset, objCounts[engine], objMappings[engine],
             PackedNativeCaptureSpriteOBJMappingBase
-                + line * NativeCaptureOBJMappingStride + offset);
-        if ((spriteRow[offset] & NativeCaptureOverlayPresent) != 0u)
-            Input.NativeCaptureOverlayAny = 1u;
+                + line * NativeCaptureOBJMappingStride + offset)
+            || mappingChanged;
+        noteNativeCaptureOverlay(spriteRow[offset]);
         if ((spriteRow[offset] & NativeCaptureOverlayPresent) != 0u)
             ++Input.Recorder.OBJOverlaySlowPath;
         else
@@ -1706,6 +1726,8 @@ void FrameRecorder::CaptureNativeMappingForLine(
             spriteRow,
             PendingNativeCaptureSpriteOBJMapping.size() * sizeof(u32));
     }
+    if (mappingChanged)
+        ++Input.Generation.NativeCaptureMappingGeneration;
 }
 
 void FrameRecorder::CommitNativeCaptureWriteAheadForLine(u32 line) noexcept

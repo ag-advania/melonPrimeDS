@@ -261,6 +261,12 @@ struct FrameGeneration
     u64 ContentGeneration = 0; // palette, OAM, and display FIFO
     u64 VRAMGeneration = 0;    // BG/OBJ VRAM and extended palettes
     u64 CaptureGeneration = 0; // LCDC VRAM mirror
+    // Native capture mapping rows are packed in the frame input but are
+    // maintained independently from the VRAM/content mirrors.  A compositor
+    // ring slot must refresh them when it missed the frame in which a mapping
+    // row changed, even if the current frame's row is byte-identical to the
+    // previous frame.
+    u64 NativeCaptureMappingGeneration = 0;
 };
 
 inline constexpr u32 DirtyBlockBytes = 512u;

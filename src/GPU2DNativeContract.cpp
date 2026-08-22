@@ -165,6 +165,13 @@ UploadPlan BuildUploadPlan(
             PackedLCDVRAMBase * sizeof(u32),
             (PackedRouteBase - PackedLCDVRAMBase) * sizeof(u32)});
     }
+    if (uploadedGeneration.NativeCaptureMappingGeneration
+        != input.Generation.NativeCaptureMappingGeneration)
+    {
+        AddRange(plan, {
+            PackedNativeCaptureBGMappingBase * sizeof(u32),
+            (PackedFrameWords - PackedNativeCaptureBGMappingBase) * sizeof(u32)});
+    }
     ClassifyRanges(plan);
     return plan;
 }

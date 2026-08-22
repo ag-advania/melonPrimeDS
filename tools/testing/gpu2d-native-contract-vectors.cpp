@@ -557,6 +557,15 @@ bool RunUploadPlanVectors()
             && staleContent.FIFOBytes == (PackedLCDVRAMBase - PackedFIFOBase) * sizeof(u32),
         "a reused slot did not refresh the complete shared content mirror");
 
+    input->DirtyRangeCount = 0u;
+    input->Generation.NativeCaptureMappingGeneration = 9u;
+    laggingSlot.NativeCaptureMappingGeneration = 8u;
+    const UploadPlan staleMapping = BuildUploadPlan(*input, laggingSlot, false);
+    passed &= Require(
+        staleMapping.MappedCaptureBytes
+            == (PackedFrameWords - PackedNativeCaptureBGMappingBase) * sizeof(u32),
+        "a reused slot did not refresh the complete native capture mapping mirror");
+
     auto partialInput = std::make_unique<FrameInput>();
     partialInput->CaptureCnt = 0xCAFEBABEu;
     partialInput->Palette[0] = 0x5Au;

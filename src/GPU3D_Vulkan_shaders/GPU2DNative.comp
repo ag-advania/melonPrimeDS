@@ -331,13 +331,15 @@ uint NativeCaptureOverlayByte(
     uint engine, uint line, uint size, uint address,
     bool obj, bool spriteLatch)
 {
+    // Word 15 is the non-zero frame summary. Mapping rows contain only the
+    // owning-bank mask for each entry; bit 4 is only the row[0] summary.
     if (NativeGPU2DInput[15u] == 0u)
         return 0u;
-    uint mappingValue = NativeCaptureMappingMask(
-        engine, line, address, size, obj, spriteLatch);
-    if ((mappingValue & kNativeCaptureOverlayPresent) == 0u)
+    uint ownerMask = NativeCaptureMappingMask(
+        engine, line, address, size, obj, spriteLatch)
+        & kNativeCaptureBankMask;
+    if (ownerMask == 0u)
         return 0u;
-    uint ownerMask = mappingValue & kNativeCaptureBankMask;
     uint offset = size == 0u ? 0u : address & (size - 1u);
     uint result = 0u;
     while (ownerMask != 0u)
@@ -1648,25 +1650,35 @@ uint StructuredCaptureSourceA(
             break;
         }
     }
-    uint engine = NativeGPU2DInput[
-        kRouteBase + captureScreen * 192u + line] & 1u;
-    StructuredPixelState semantic = CompositeSourceAExact(
-        captureScreen, line, x, engine);
-    uint controlFlags = semantic.Control >> 24u;
-    uint color = semantic.Below;
+    // Stage A is the only semantic producer. Capture runs at the scaled
+    // resolution and consumes immutable logical planes instead of re-running
+    // BG/OBJ composition for every high-resolution sample.
+    uint nativeIndex = line * 256u + x;
+    uint base = captureScreen * 4u * kStructuredPlaneStride;
+    uint below = NativeGPU2DOutput[base + nativeIndex];
+    uint above = NativeGPU2DOutput[
+        base + kStructuredPlaneStride + nativeIndex];
+    uint control = NativeGPU2DOutput[
+        base + 2u * kStructuredPlaneStride + nativeIndex];
+    uint captureReference = NativeGPU2DOutput[
+        base + 3u * kStructuredPlaneStride + nativeIndex];
+    uint controlFlags = control >> 24u;
+    uint color = below;
     if ((controlFlags & kStructuredControlHas3D) == 0u)
         return color;
 
     uint pixel3D = 0u;
-    if ((semantic.CaptureReference & 0x80000000u) != 0u)
+    uint lineMeta = NativeGPU2DOutput[
+        kStructuredLineMetaBase + captureScreen * 192u + line];
+    if ((captureReference & 0x80000000u) != 0u)
     {
         pixel3D = LoadNativeCaptureSidecar(
-            semantic.CaptureReference,
+            captureReference,
             outputX % uint(ScaleFactor), sampleY);
     }
     else if (pc.TexWidth != 0u)
     {
-        uint renderX = (semantic.LineMeta >> 23u) & 0x1FFu;
+        uint renderX = (lineMeta >> 23u) & 0x1FFu;
         int sourceX = (renderX & 0x100u) != 0u
             ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
             : int(outputX) + int(renderX * uint(ScaleFactor));
@@ -1682,20 +1694,20 @@ uint StructuredCaptureSourceA(
     if (((pixel3D >> 24u) & 0x1Fu) == 0u)
         return color;
 
-    uint eva = (semantic.Control >> 8u) & 0x1Fu;
-    uint evb = (semantic.Control >> 16u) & 0x1Fu;
+    uint eva = (control >> 8u) & 0x1Fu;
+    uint evb = (control >> 16u) & 0x1Fu;
     uint compositionMode = controlFlags & 0xFu;
     if (compositionMode == kStructuredCompositionBlend4
         && (controlFlags & kStructuredControlAbove) != 0u)
     {
-        return Blend4Native(semantic.Above, pixel3D, eva, evb);
+        return Blend4Native(above, pixel3D, eva, evb);
     }
     if (compositionMode == kStructuredCompositionBrightnessUp)
         return BrightnessUp(pixel3D, eva, 8u);
     if (compositionMode == kStructuredCompositionBrightnessDown)
         return BrightnessDown(pixel3D, eva, 7u);
     if (compositionMode == kStructuredCompositionBlend5)
-        return Blend5Native(pixel3D, semantic.Below);
+        return Blend5Native(pixel3D, below);
     return pixel3D;
 }
 

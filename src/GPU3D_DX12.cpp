@@ -3856,6 +3856,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             if (captureLineActive)
             {
                 ++activeCaptureLines;
+                // Logical Stage A writes the immutable planes and reads the
+                // raw OBJ latch. Batch both UAV dependencies before the
+                // scaled capture pass consumes them.
+                ID3D12Resource* logicalOutputs[2] = {
+                    structuredInput.Get(), BlendStateBuffer.Get()};
+                InsertUavBarriers(list, logicalOutputs, 2u);
                 constants.Pad = 4u; // capture-only, one logical line
                 SetDispatchConstants(list, constants);
                 list->SetPipelineState(PipelineGPU2DNativeCapture.Get());

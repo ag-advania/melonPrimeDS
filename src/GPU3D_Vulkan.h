@@ -444,6 +444,14 @@ private:
         const VkBuffer* buffers, u32 count,
         VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
         VkPipelineStageFlags dstStage, VkAccessFlags dstAccess) const;
+    void BufferBarrier(
+        VkCommandBuffer cmd,
+        const VkBuffer* buffers,
+        const VkAccessFlags* srcAccess,
+        const VkAccessFlags* dstAccess,
+        u32 count,
+        VkPipelineStageFlags srcStage,
+        VkPipelineStageFlags dstStage) const;
 
     // CPU-side span setup, transcribed from the OpenGL compute renderer.
     void SetupAttrs(SpanSetupY* span, Polygon* poly, int from, int to) const;

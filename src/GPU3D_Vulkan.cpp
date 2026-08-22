@@ -1858,7 +1858,28 @@ void VulkanRenderer3D::BufferBarrier(
     VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
     VkPipelineStageFlags dstStage, VkAccessFlags dstAccess) const
 {
-    if (count == 0)
+    VkAccessFlags srcAccesses[8]{};
+    VkAccessFlags dstAccesses[8]{};
+    const u32 limitedCount = std::min<u32>(count, 8u);
+    for (u32 i = 0; i < limitedCount; ++i)
+    {
+        srcAccesses[i] = srcAccess;
+        dstAccesses[i] = dstAccess;
+    }
+    BufferBarrier(cmd, buffers, srcAccesses, dstAccesses, limitedCount,
+        srcStage, dstStage);
+}
+
+void VulkanRenderer3D::BufferBarrier(
+    VkCommandBuffer cmd,
+    const VkBuffer* buffers,
+    const VkAccessFlags* srcAccess,
+    const VkAccessFlags* dstAccess,
+    u32 count,
+    VkPipelineStageFlags srcStage,
+    VkPipelineStageFlags dstStage) const
+{
+    if (count == 0 || !buffers || !srcAccess || !dstAccess)
         return;
 
     VkBufferMemoryBarrier barriers[8]{};
@@ -1867,8 +1888,8 @@ void VulkanRenderer3D::BufferBarrier(
     for (u32 i = 0; i < count; i++)
     {
         barriers[i].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-        barriers[i].srcAccessMask = srcAccess;
-        barriers[i].dstAccessMask = dstAccess;
+        barriers[i].srcAccessMask = srcAccess[i];
+        barriers[i].dstAccessMask = dstAccess[i];
         // Single queue family throughout: the device was created with one
         // universal queue wherever possible, so no ownership transfer is
         // needed and both indices stay IGNORED.
@@ -3887,6 +3908,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     // line order below, without a mandatory CPU readback.
     const VkBuffer nativeCapture = BlendStateBuffer.GetHandle();
     const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
+    const VkBuffer structuredOutput = structuredOutputBuffer.GetHandle();
     BufferBarrier(cmd, &nativeCapture, 1,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
@@ -4060,6 +4082,22 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             if (captureLineActive)
             {
                 ++activeCaptureLines;
+                // Logical Stage A writes the immutable planes and reads the
+                // raw OBJ latch. Make both dependencies visible before the
+                // scaled capture pass consumes them. Keep these two resources
+                // in one pipeline barrier despite their different access
+                // masks.
+                const VkBuffer logicalOutputs[2] = {
+                    structuredOutput, nativeCapture};
+                const VkAccessFlags logicalSrcAccess[2] = {
+                    VK_ACCESS_SHADER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT};
+                const VkAccessFlags logicalDstAccess[2] = {
+                    VK_ACCESS_SHADER_READ_BIT,
+                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT};
+                BufferBarrier(cmd, logicalOutputs, logicalSrcAccess,
+                    logicalDstAccess, 2,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
                 push.Padding = 4u; // capture-only, one logical line
                 fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                     VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
@@ -4128,7 +4166,6 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     // compositor. This barrier is the only dependency between the two stages
     // in the normal path; capture adds the line-order barriers above for its
     // persistent LCDC mirror.
-    const VkBuffer structuredOutput = structuredOutputBuffer.GetHandle();
     BufferBarrier(cmd, &structuredOutput, 1,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -4364,31 +4401,6 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
                 directOutputReadback ? "direct_image" : "composed_buffer",
                 expectedTop, expectedBottom);
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-            if (const char* captureDebug = std::getenv(
-                    "MELONPRIME_GPU2D_CAPTURE_DEBUG_READBACK");
-                captureDebug && captureDebug[0] == '1' && captureDebug[1] == '\0')
-            {
-                constexpr u32 structuredPlaneStride = 256u * 192u;
-                constexpr u32 structuredLineMetaBase = 14u * structuredPlaneStride;
-                for (u32 screen = 0u; screen < 2u; ++screen)
-                {
-                    const u32 base = screen * 4u * structuredPlaneStride;
-                    Platform::Log(
-                        Platform::LogLevel::Info,
-                        "[GPU2DStructuredDebug] backend=Vulkan frame=%llu "
-                        "screen=%u below0=%08X above0=%08X control0=%08X "
-                        "reference0=%08X lineMeta0=%08X route0=%u\n",
-                        static_cast<unsigned long long>(input.Generation.Frame),
-                        screen, structured[base],
-                        structured[base + structuredPlaneStride],
-                        structured[base + 2u * structuredPlaneStride],
-                        structured[base + 3u * structuredPlaneStride],
-                        structured[structuredLineMetaBase + screen * 192u],
-                        input.ScreenSource[screen * GPU2DNative::ScreenHeight] & 1u);
-                }
-            }
-#endif
         }
 
         if (exactValidation)
@@ -4453,70 +4465,6 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     LastSemanticFrame = input.Generation.Frame;
     LastSemanticCaptureGeneration = input.Generation.CaptureGeneration;
     LastSemanticEpoch = CurrentEpoch;
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    if (const char* captureDebug = std::getenv(
-            "MELONPRIME_GPU2D_CAPTURE_DEBUG_READBACK");
-        captureDebug && captureDebug[0] == '1' && captureDebug[1] == '\0')
-    {
-        std::array<u8, 3u * 32u * 1024u> captureBytes{};
-        CaptureBlockProvenance expected{};
-        expected.Owner = CaptureOwner::NativeVulkan;
-        expected.Epoch = CurrentEpoch;
-        expected.SemanticFrame = LastSemanticFrame;
-        expected.CaptureGeneration = LastSemanticCaptureGeneration;
-        expected.CompletionValue = LastNativeCaptureCompletionValue;
-        const auto hashBytes = [](const u8* bytes, std::size_t count) {
-            u64 hash = 1469598103934665603ull;
-            for (std::size_t i = 0; i < count; ++i)
-            {
-                hash ^= bytes[i];
-                hash *= 1099511628211ull;
-            }
-            return hash;
-        };
-        const bool bank2Ok = ReadNativeCapture(
-            2u, 0u, 3u, expected, captureBytes.data());
-        const u64 bank2Hash = bank2Ok
-            ? hashBytes(captureBytes.data(), 1024u) : 0u;
-        const bool bank3Ok = ReadNativeCapture(
-            3u, 0u, 3u, expected, captureBytes.data());
-        const u64 bank3Hash = bank3Ok
-            ? hashBytes(captureBytes.data(), 1024u) : 0u;
-        u16 bank2Word0 = 0u;
-        u16 bank2Word1 = 0u;
-        u16 bank2Word2 = 0u;
-        u16 bank2Word3 = 0u;
-        u16 bank3Word0 = 0u;
-        u16 bank3Word1 = 0u;
-        u16 bank3Word2 = 0u;
-        u16 bank3Word3 = 0u;
-        if (bank2Ok)
-        {
-            std::memcpy(&bank2Word0, captureBytes.data() + 0u, sizeof(u16));
-            std::memcpy(&bank2Word1, captureBytes.data() + 2u, sizeof(u16));
-            std::memcpy(&bank2Word2, captureBytes.data() + 4u, sizeof(u16));
-            std::memcpy(&bank2Word3, captureBytes.data() + 6u, sizeof(u16));
-        }
-        if (bank3Ok)
-        {
-            std::memcpy(&bank3Word0, captureBytes.data() + 0u, sizeof(u16));
-            std::memcpy(&bank3Word1, captureBytes.data() + 2u, sizeof(u16));
-            std::memcpy(&bank3Word2, captureBytes.data() + 4u, sizeof(u16));
-            std::memcpy(&bank3Word3, captureBytes.data() + 6u, sizeof(u16));
-        }
-        Platform::Log(Platform::LogLevel::Info,
-            "[GPU2DCaptureDebug] backend=Vulkan frame=%llu "
-            "bank2_ok=%u bank2_hash=%016llX bank2_words=%04X,%04X,%04X,%04X "
-            "bank3_ok=%u bank3_hash=%016llX bank3_words=%04X,%04X,%04X,%04X\n",
-            static_cast<unsigned long long>(LastSemanticFrame),
-            bank2Ok ? 1u : 0u,
-            static_cast<unsigned long long>(bank2Hash),
-            bank2Word0, bank2Word1, bank2Word2, bank2Word3,
-            bank3Ok ? 1u : 0u,
-            static_cast<unsigned long long>(bank3Hash),
-            bank3Word0, bank3Word1, bank3Word2, bank3Word3);
-    }
-#endif
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFrames);
     GPU2DNative::LogSemanticIdentity(
         "Vulkan", input.Generation.Frame, input.Generation.CaptureGeneration,
