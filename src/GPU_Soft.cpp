@@ -66,10 +66,21 @@ void SoftRenderer::Reset()
 void SoftRenderer::ResetDerivedState(bool sessionReset) noexcept
 {
     const size_t len = 256 * 192 * sizeof(u32);
-    memset(Framebuffer[0][0], 0, len);
-    memset(Framebuffer[0][1], 0, len);
-    memset(Framebuffer[1][0], 0, len);
-    memset(Framebuffer[1][1], 0, len);
+    if (sessionReset)
+    {
+        memset(Framebuffer[0][0], 0, len);
+        memset(Framebuffer[0][1], 0, len);
+        memset(Framebuffer[1][0], 0, len);
+        memset(Framebuffer[1][1], 0, len);
+    }
+    else
+    {
+        // BackBuffer is the in-progress destination. Preserve the opposite
+        // buffer: it is the last complete software presentation surface and
+        // must remain available while the loaded frame is discontinuous.
+        memset(Framebuffer[BackBuffer][0], 0, len);
+        memset(Framebuffer[BackBuffer][1], 0, len);
+    }
     SoftwareLogicalFrame.fill(0);
     SoftwareScreenFrame.fill(0);
     NativeGPU2DFrame.Reset();
@@ -77,12 +88,20 @@ void SoftRenderer::ResetDerivedState(bool sessionReset) noexcept
     {
         ResetCaptureProvenance(CaptureAuthorityTransitionReason::RendererReset);
         EmulatedFrameSerial = 0;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        ResumeFrameDiscontinuous = false;
+        RendererFrameEpoch = 0;
+#endif
     }
     else
     {
         // A loaded state starts a new renderer epoch. Never let the recorder
         // from the pre-load frame satisfy the native compose gate.
         ++EmulatedFrameSerial;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        ResumeFrameDiscontinuous = true;
+        ++RendererFrameEpoch;
+#endif
     }
     NativeGPU2DProducerForFrame = false;
     RecordNativeGPU2DFrameForFrame = false;
@@ -95,7 +114,10 @@ void SoftRenderer::ResetDerivedState(bool sessionReset) noexcept
         sessionReset
             ? HighResCaptureInvalidationReason::RendererReset
             : HighResCaptureInvalidationReason::SavestateLoad);
-    Rend3D->Reset();
+    if (sessionReset)
+        Rend3D->Reset();
+    else
+        Rend3D->ResetAfterSavestateLoad();
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     StructuredEnginePlanes.fill(0);
     StructuredScreenPlanes.fill(0);
@@ -114,6 +136,10 @@ void SoftRenderer::ResetDerivedState(bool sessionReset) noexcept
     StructuredCaptureCommands.fill(0);
     std::fill_n(Structured3DPlaceholderLine, 256, StructuredComposition::k3DPlaceholderPixel);
     std::fill_n(StructuredCaptureCompositeLine, 256, 0u);
+    StructuredScreenCoverage[0].Reset();
+    StructuredScreenCoverage[1].Reset();
+    StructuredEngineCoverage[0].Reset();
+    StructuredEngineCoverage[1].Reset();
     StructuredFrameValid = false;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
@@ -135,12 +161,17 @@ void SoftRenderer::ResetDerivedState(bool sessionReset) noexcept
     StructuredEngineChangedMask[0] = 0;
     StructuredEngineChangedMask[1] = 0;
     StructuredPerfBackendForFrame = StructuredPerfBackend::None;
+    StructuredLastOutputLine = 0;
+    StructuredLastVCount = 0;
 #endif
 }
 
 void SoftRenderer::RebuildAfterSavestateLoad(u32 vcount)
 {
     ResetDerivedState(false);
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    ResumeFrameDiscontinuous = true;
+#endif
 
     // The DS renderer prepares OBJ one scanline ahead. A state loaded in the
     // visible region therefore needs the restored line's sprite cache before
@@ -382,6 +413,9 @@ void SoftRenderer::DrawScanline(u32 line)
     if (GPU.VCount == 0u)
     {
         ++EmulatedFrameSerial;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        ResumeFrameDiscontinuous = false;
+#endif
         const bool nativeGPU2DReady = CanUseNativeGPU2DForFrame();
         const bool exactValidation = GPU2DNative::ExactValidationEnabled();
         SoftwareScreenFrame.fill(0u);
@@ -429,16 +463,16 @@ void SoftRenderer::DrawScanline(u32 line)
     }
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-    if (outputLine == 0u)
+    if (GPU.VCount == 0u)
     {
         StructuredPerfBackendForFrame = UseStructuredVulkan2D() && Rend3D != nullptr
             ? Rend3D->GetStructured2DPerfBackend()
             : StructuredPerfBackend::None;
     }
-    const bool measureStructured2D = outputLine < 192u
+    const bool measureStructured2D = GPU.VCount < 192u
         && StructuredPerfBackendForFrame != StructuredPerfBackend::None;
     bool structuredVramDisplaySnapshotted = false;
-    if (measureStructured2D && outputLine == 0u)
+    if (measureStructured2D && GPU.VCount == 0u)
         BeginStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
     u32 *dstA, *dstB;
@@ -456,6 +490,10 @@ void SoftRenderer::DrawScanline(u32 line)
 
     // the position used for drawing operations is based on VCOUNT
     line = GPU.VCount;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    StructuredLastOutputLine = outputLine;
+    StructuredLastVCount = line;
+#endif
     if (line < 192)
     {
         if (RecordNativeGPU2DFrameForFrame)
@@ -468,7 +506,7 @@ void SoftRenderer::DrawScanline(u32 line)
         // retrieve 3D output
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const bool structuredVulkan2D = UseStructuredVulkan2D();
-        if (structuredVulkan2D && outputLine == 0u)
+        if (structuredVulkan2D && GPU.VCount == 0u)
         {
             ++StructuredFrameGeneration;
             StructuredFrameValid = false;
@@ -548,7 +586,7 @@ void SoftRenderer::DrawScanline(u32 line)
         {
             const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
             structuredVramDisplaySnapshotted =
-                SnapshotStructuredVramDisplayLine(screenA, outputLine, line);
+                SnapshotStructuredVramDisplayLine(screenA, line, line);
         }
 
         if (RecordNativeGPU2DFrameForFrame)
@@ -644,9 +682,9 @@ void SoftRenderer::DrawScanline(u32 line)
         const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
         BuildStructuredScreenLine(
-            0, screenA, outputLine, dstA, line >= 192u,
+            0, screenA, line, dstA, line >= 192u,
             structuredVramDisplaySnapshotted);
-        BuildStructuredScreenLine(1, screenB, outputLine, dstB, line >= 192u);
+        BuildStructuredScreenLine(1, screenB, line, dstB, line >= 192u);
 #endif
         // expand the color from 6-bit to 8-bit
         ExpandColor(dstA);
@@ -663,24 +701,34 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
-        BuildStructuredScreenLine(0, screenA, outputLine, dstA, true);
-        BuildStructuredScreenLine(1, screenB, outputLine, dstB, true);
+        BuildStructuredScreenLine(0, screenA, line, dstA, true);
+        BuildStructuredScreenLine(1, screenB, line, dstB, true);
 #endif
     }
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-    if (UseStructuredVulkan2D() && outputLine == 191u)
+    if (UseStructuredVulkan2D() && line == 191u)
         FinalizeStructuredCaptureFrame();
-    if (UseStructuredVulkan2D() && outputLine == 191u)
+    if (UseStructuredVulkan2D() && line == 191u)
         FlushStructuredGeneration();
-    if (measureStructured2D && outputLine == 191u)
+    if (UseStructuredVulkan2D() && line == 191u)
+    {
+        const bool coverageComplete = StructuredCoverageComplete();
+        const bool legacyABPublication = ResumeFrameDiscontinuous
+            && !GPU2DNative::DropDiscontinuousSavestateFrameEnabled();
+        StructuredFrameValid = coverageComplete
+            || legacyABPublication;
+        if (StructuredFrameValid)
+            StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
+    }
+    if (measureStructured2D && line == 191u)
         EndStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
-        if (RecordNativeGPU2DFrameForFrame && outputLine == 191u)
-        {
-            NativeGPU2DFrame.FinalizeMemory();
-            if (NativeGPU2DFrame.IsValid())
-                NativeGPU2DRecordedFrameSerial = EmulatedFrameSerial;
-        }
+    if (RecordNativeGPU2DFrameForFrame && line == 191u)
+    {
+        NativeGPU2DFrame.FinalizeMemory();
+        if (NativeGPU2DFrame.IsValid())
+            NativeGPU2DRecordedFrameSerial = EmulatedFrameSerial;
+    }
 }
 
 void SoftRenderer::DrawSprites(u32 line)
@@ -1399,6 +1447,9 @@ void SoftRenderer::BuildStructuredScreenLine(
     if (!UseStructuredVulkan2D() || engine >= 2u || screen >= 2u || line >= 192u || output == nullptr)
         return;
 
+    StructuredScreenCoverage[screen].Mark(line);
+    StructuredEngineCoverage[engine].Mark(line);
+
     // A VRAM-display line is captured before DoCapture() mutates the bank.
     // Keep those pixels and their old-generation references intact, but defer
     // frame publication until after this scanline's capture command exists.
@@ -1406,11 +1457,6 @@ void SoftRenderer::BuildStructuredScreenLine(
     {
         StoreStructuredScreenSource(screen, line, Contract::kScreenSourceFallback);
         ++StructuredFallbackLines;
-        if (line == 191u)
-        {
-            StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
-            StructuredFrameValid = true;
-        }
         return;
     }
 
@@ -1481,11 +1527,6 @@ void SoftRenderer::BuildStructuredScreenLine(
         lineMetaDestination = lineMeta;
         MarkStructuredLineMetaDirty(screen);
     }
-    if (line == 191u)
-    {
-        StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
-        StructuredFrameValid = true;
-    }
 }
 
 void SoftRenderer::FinalizeStructuredCaptureFrame()
@@ -1519,7 +1560,7 @@ void SoftRenderer::FinalizeStructuredCaptureFrame()
 bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept
 {
     view = {};
-    if (!UseStructuredVulkan2D() || !StructuredFrameValid)
+    if (!UseStructuredVulkan2D())
         return false;
     for (std::size_t screen = 0; screen < 2u; ++screen)
     {
@@ -1546,7 +1587,14 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
     view.CaptureSourceBReference = StructuredCaptureSourceBReference.data();
     view.CaptureCommands = StructuredCaptureCommands.data();
     view.NativeMenuHeld = StructuredFrameNativeMenuHeld;
-    view.Valid = true;
+    view.Valid = StructuredFrameValid;
+    view.CompleteCoverage = StructuredCoverageComplete();
+    view.ResumeFrameDiscontinuous = ResumeFrameDiscontinuous;
+    view.RendererEpoch = RendererFrameEpoch;
+    view.ScreenCoverage[0] = StructuredScreenCoverage[0].Count();
+    view.ScreenCoverage[1] = StructuredScreenCoverage[1].Count();
+    view.EngineCoverage[0] = StructuredEngineCoverage[0].Count();
+    view.EngineCoverage[1] = StructuredEngineCoverage[1].Count();
     view.ScreenRouteCopyBytes = StructuredScreenRouteCopyBytes;
     view.ScreenRouteCopyNanoseconds = StructuredScreenRouteCopyNanoseconds;
     view.StructuredRegularLines = StructuredRegularLines;
@@ -1554,6 +1602,37 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
     view.Generation = StructuredFrameGeneration;
     view.ContentGeneration = StructuredContentGeneration;
     return true;
+}
+
+void SoftRenderer::LogGPU2DFrameCoverage(
+    bool published,
+    const char* publicationSource) const noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const bool nativeValid = NativeGPU2DRecordedFrameSerial == EmulatedFrameSerial
+        && NativeGPU2DFrame.IsValid();
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DFrameCoverage] epoch=%llu savestateResume=%u "
+        "outputLine=%u vcount=%u screen0Coverage=%u screen1Coverage=%u "
+        "engine0Coverage=%u engine1Coverage=%u structuredValid=%u "
+        "nativeValid=%u published=%u publicationSource=%s\n",
+        static_cast<unsigned long long>(RendererFrameEpoch),
+        ResumeFrameDiscontinuous ? 1u : 0u,
+        static_cast<unsigned>(StructuredLastOutputLine),
+        static_cast<unsigned>(StructuredLastVCount),
+        static_cast<unsigned>(StructuredScreenCoverage[0].Count()),
+        static_cast<unsigned>(StructuredScreenCoverage[1].Count()),
+        static_cast<unsigned>(StructuredEngineCoverage[0].Count()),
+        static_cast<unsigned>(StructuredEngineCoverage[1].Count()),
+        StructuredFrameValid ? 1u : 0u,
+        nativeValid ? 1u : 0u,
+        published ? 1u : 0u,
+        publicationSource != nullptr ? publicationSource : "unknown");
+#else
+    (void)published;
+    (void)publicationSource;
+#endif
 }
 #endif
 

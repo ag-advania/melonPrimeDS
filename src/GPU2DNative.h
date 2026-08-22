@@ -32,6 +32,50 @@ namespace GPU2DNative
 inline constexpr u32 ScreenWidth = 256;
 inline constexpr u32 ScreenHeight = 192;
 inline constexpr u32 ScreenPixelCount = ScreenWidth * ScreenHeight;
+inline constexpr u32 CoverageWordCount = (ScreenHeight + 63u) / 64u;
+
+[[nodiscard]] constexpr u32 RepresentativeSubpixel(u32 scale) noexcept
+{
+    return scale >> 1u;
+}
+
+struct LineCoverage
+{
+    std::array<u64, CoverageWordCount> Words{};
+
+    void Reset() noexcept
+    {
+        Words.fill(0u);
+    }
+
+    void Mark(u32 line) noexcept
+    {
+        if (line >= ScreenHeight)
+            return;
+        Words[line >> 6u] |= 1ull << (line & 63u);
+    }
+
+    [[nodiscard]] bool Complete() const noexcept
+    {
+        constexpr u64 finalWordMask = (ScreenHeight & 63u) == 0u
+            ? ~0ull
+            : ((1ull << (ScreenHeight & 63u)) - 1ull);
+        return Words[0] == ~0ull
+            && Words[1] == ~0ull
+            && Words[2] == finalWordMask;
+    }
+
+    [[nodiscard]] u32 Count() const noexcept
+    {
+        u32 count = 0u;
+        for (u32 line = 0u; line < ScreenHeight; ++line)
+        {
+            if ((Words[line >> 6u] & (1ull << (line & 63u))) != 0u)
+                ++count;
+        }
+        return count;
+    }
+};
 
 // DISPCAPCNT destination/source-B offsets are DS halfword addresses. Native
 // compact LCDC mirrors and source-B fetches, however, use byte addresses.
@@ -108,6 +152,11 @@ inline constexpr u32 CaptureStartLineNone = 0xFFu;
 // instead of silently replacing it with the composed-buffer path.
 [[nodiscard]] bool DirectOutputDiagnosticsEnabled() noexcept;
 
+// Developer-only A/B switch for the savestate timeline discontinuity gate.
+// The safe behavior is enabled by default; setting this to 0 deliberately
+// restores the legacy partial-frame publication for comparison runs.
+[[nodiscard]] bool DropDiscontinuousSavestateFrameEnabled() noexcept;
+
 // Developer-only presentation backpressure injection. This consumes one
 // available presentation publication slot without delaying semantic GPU2D
 // execution, allowing the persistent LCDC mirror to be validated while the
@@ -129,6 +178,11 @@ inline constexpr u32 CaptureStartLineNone = 0xFFu;
 [[nodiscard]] inline constexpr bool DirectOutputDiagnosticsEnabled() noexcept
 {
     return false;
+}
+
+[[nodiscard]] inline constexpr bool DropDiscontinuousSavestateFrameEnabled() noexcept
+{
+    return true;
 }
 
 [[nodiscard]] inline constexpr bool ConsumeForcedPresentationStallFrame() noexcept

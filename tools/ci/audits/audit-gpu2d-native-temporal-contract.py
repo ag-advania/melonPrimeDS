@@ -52,6 +52,7 @@ def main() -> int:
     files = {
         "gpu_header": root / "src/GPU.h",
         "gpu_core": root / "src/GPU.cpp",
+        "gpu3d_header": root / "src/GPU3D.h",
         "native_header": root / "src/GPU2DNative.h",
         "native_recorder": root / "src/GPU2DNative.cpp",
         "native_contract_test": root / "tools/testing/gpu2d-native-contract-vectors.cpp",
@@ -160,6 +161,7 @@ def main() -> int:
         require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
         for needle in (
             "CaptureNativeMappingForLine",
+            "NativeCaptureWrittenMaskForRead",
             "NativeOwnedMappedCpuRead",
             "NativeOwnedMappedCpuMaterialized",
             "MELONPRIME_GPU2D_PROOF_MATERIALIZE_MAPPED_CAPTURE",
@@ -245,6 +247,37 @@ def main() -> int:
             "developer OBJ recovery telemetry", failures)
         require(text["soft_renderer"], "vcount < GPU2DNative::ScreenHeight",
             "visible-line OBJ recovery gate", failures)
+        require(text["native_header"], "LineCoverage",
+            "structured frame discontinuity coverage type", failures)
+        for needle in (
+            "StructuredScreenCoverage",
+            "StructuredEngineCoverage",
+            "StructuredCoverageComplete",
+            "ResumeFrameDiscontinuous",
+            "RendererFrameEpoch",
+            "GPU2DFrameCoverage",
+            "ResetAfterSavestateLoad",
+        ):
+            require(text["soft_renderer"], needle,
+                "structured frame discontinuity contract", failures)
+        require(text["gpu3d_header"], "ResetAfterSavestateLoad",
+            "3D presentation-preserving savestate reset", failures)
+        require(text["native_header"], "RepresentativeSubpixel",
+            "shared representative subpixel contract", failures)
+        require(text["native_recorder"],
+            "MELONPRIME_GPU2D_DROP_DISCONTINUOUS_SAVESTATE_FRAME",
+            "savestate discontinuity A/B switch", failures)
+        require(text["vulkan_frontend"], "view.CompleteCoverage",
+            "Vulkan incomplete structured-frame defense", failures)
+        require(text["dx12_frontend"], "view.CompleteCoverage",
+            "DX12 incomplete structured-frame defense", failures)
+        forbid_regex(
+            text["soft_renderer"],
+            r"if\s*\(line\s*==\s*191u\)[\s\S]{0,240}"
+            r"StructuredFrameValid\s*=\s*true",
+            "line191-only structured publication shortcut",
+            failures,
+        )
         if "CaptureNativeDisplayLine" in text["soft_renderer"]:
             failures.append("soft renderer: per-line CPU native capture mirror still present")
 
@@ -511,10 +544,8 @@ def main() -> int:
             require(body, "CaptureOffsetBytes", f"{label} byte offset helper", failures)
             require(body, "WrapLCDCByte", f"{label} byte wrap helper", failures)
             require(body, "canonical", f"{label} canonical sidecar admission", failures)
-            require(body, "LoadNativeCaptureSidecar(reference, 0u, 0u)"
-                if label == "Vulkan source-B"
-                else "NativeLoadCaptureSidecar(reference,0u,0u)",
-                f"{label} canonical sidecar sample", failures)
+            require(body, "RepresentativeSubpixel",
+                f"{label} centre representative sample", failures)
             forbid(body, "quantized", f"{label} subpixel no-op regression", failures)
         for label, body in (
             ("Vulkan reference", vulkan_reference),
@@ -528,6 +559,14 @@ def main() -> int:
         ):
             require(body, "CaptureOffsetBytes", f"{label} byte offset helper", failures)
             require(body, "WrapLCDCByte", f"{label} byte wrap helper", failures)
+            require(body, "RepresentativeSubpixel",
+                f"{label} centre representative sample", failures)
+            require_regex(
+                body,
+                r"sampleY\s*==\s*(?:representative|NativeRepresentativeSubpixel\(\))",
+                f"{label} centre compact write gate",
+                failures,
+            )
             forbid_regex(
                 body,
                 r"(?:captureCnt|cnt)\s*>>\s*18u[\s\S]{0,80}<<\s*14u",
@@ -565,6 +604,9 @@ def main() -> int:
         require(text["native_contract_test"],
             "RunSourceBSubpixelAndSavestateVectors",
             "Source-B subpixel and VCOUNT recovery vectors", failures)
+        require(text["native_contract_test"],
+            "RunFrameCoverageAndRepresentativeVectors",
+            "frame coverage and representative-centre vectors", failures)
         require(text["native_contract_test"], "RunCaptureOwnershipVectors",
             "capture ownership vectors", failures)
         require(text["native_contract_test"], "RunCaptureFeedbackVectors",

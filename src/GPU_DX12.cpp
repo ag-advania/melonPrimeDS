@@ -250,6 +250,18 @@ void DX12Renderer::Start3DRendering()
 
 void DX12Renderer::VBlank()
 {
+    struct CoverageLogScope
+    {
+        SoftRenderer* Renderer;
+        bool Published = false;
+        const char* Source = "retained_last_complete";
+
+        ~CoverageLogScope()
+        {
+            Renderer->LogGPU2DFrameCoverage(Published, Source);
+        }
+    } coverage{this};
+
     auto* dx12 = GetDX12Renderer3D();
     bool nativeComposed = false;
     GPU2DComposeResult nativeComposeResult = GPU2DComposeResult::Unavailable;
@@ -279,6 +291,8 @@ void DX12Renderer::VBlank()
         }
         if (nativeComposed)
         {
+            coverage.Published = true;
+            coverage.Source = "native";
             if (!NativeGPU2DAnnounced)
             {
                 Platform::Log(Platform::LogLevel::Info,
@@ -364,7 +378,11 @@ void DX12Renderer::VBlank()
         return;
     }
     StructuredVulkanFrameView view{};
-    if (!nativeComposed && (!dx12 || !GetStructuredVulkanFrame(view) || !view.Valid))
+    if (!nativeComposed && (!dx12 || !GetStructuredVulkanFrame(view)
+        || !view.Valid
+        || (!view.CompleteCoverage
+            && (GPU2DNative::DropDiscontinuousSavestateFrameEnabled()
+                || !view.ResumeFrameDiscontinuous))))
     {
         IntelXeLL.MarkRenderSubmitEnd();
         NvidiaReflex.MarkRenderSubmitEnd();
@@ -401,6 +419,11 @@ void DX12Renderer::VBlank()
     const bool composed = dx12->ComposeStructuredOutput(
         planes, lineMeta, view.CaptureCommands, view.ScreenRouting, view.Generation,
         view.ContentGeneration);
+    if (composed)
+    {
+        coverage.Published = true;
+        coverage.Source = "structured";
+    }
     RecordGPU2DStructuredFallback();
     DX12Perf::AddCounter(
         DX12Perf::Counter::StructuredScreenRouteCopyBytes,

@@ -610,6 +610,18 @@ void DX12Renderer3D::Stop()
 
 void DX12Renderer3D::Reset()
 {
+    ResetInternal(false);
+}
+
+void DX12Renderer3D::ResetAfterSavestateLoad()
+{
+    ResetInternal(true);
+    InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::SavestateLoad);
+}
+
+void DX12Renderer3D::ResetInternal(bool preservePresentation)
+{
     Commands.WaitIdle();
     CaptureCommands.WaitIdle();
     Texcache.Reset();
@@ -619,9 +631,6 @@ void DX12Renderer3D::Reset()
     FrameReadbackValid = false;
     NativeReadbackSubmitted = false;
     FinalFBHasValidFrame = false;
-    ComposedOutputValid = false;
-    ComposedGeneration = 0;
-    PublishedOutputGeneration = 0;
     NativeCaptureStateInitialized = false;
     ++CurrentEpoch;
     InvalidateHighResCaptureState(
@@ -632,12 +641,34 @@ void DX12Renderer3D::Reset()
     NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
     ColorBuffer.fill(0);
+    bool keepPublishedOutput = false;
+    int publishedSlot = -1;
     if (ComposedOutput)
     {
         std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
-        ComposedOutput->PublishedSlot = -1;
-        for (OutputState::Slot& slot : ComposedOutput->Slots)
+        publishedSlot = ComposedOutput->PublishedSlot;
+        keepPublishedOutput = preservePresentation
+            && ComposedOutputValid
+            && publishedSlot >= 0
+            && static_cast<std::size_t>(publishedSlot) < ComposedOutput->Slots.size();
+        if (!keepPublishedOutput)
         {
+            ComposedOutput->PublishedSlot = -1;
+            ComposedOutputValid = false;
+            ComposedGeneration = 0;
+            PublishedOutputGeneration = 0;
+        }
+        else
+            ComposedOutputValid = true;
+        for (std::size_t slotIndex = 0; slotIndex < ComposedOutput->Slots.size(); ++slotIndex)
+        {
+            if (keepPublishedOutput && static_cast<int>(slotIndex) == publishedSlot)
+            {
+                // Keep the last complete presentation surface alive. The
+                // unpublished ring slots are rebuilt for the next full frame.
+                continue;
+            }
+            OutputState::Slot& slot = ComposedOutput->Slots[slotIndex];
             slot.UploadedContentGeneration = {};
             slot.UploadedNativeGeneration = {};
             slot.StructuredUploadInitialized = false;
@@ -651,6 +682,12 @@ void DX12Renderer3D::Reset()
             slot.UploadedNativeGeneration = {};
             slot.NativeUploadInitialized = false;
         }
+    }
+    if (!keepPublishedOutput && !ComposedOutput)
+    {
+        ComposedOutputValid = false;
+        ComposedGeneration = 0;
+        PublishedOutputGeneration = 0;
     }
 }
 

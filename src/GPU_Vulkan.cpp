@@ -243,6 +243,18 @@ void VulkanRenderer::Start3DRendering()
 
 void VulkanRenderer::VBlank()
 {
+    struct CoverageLogScope
+    {
+        SoftRenderer* Renderer;
+        bool Published = false;
+        const char* Source = "retained_last_complete";
+
+        ~CoverageLogScope()
+        {
+            Renderer->LogGPU2DFrameCoverage(Published, Source);
+        }
+    } coverage{this};
+
     // The one point in the DS frame where this frame's structured 2D planes and
     // this frame's 3D image both exist: the software engines have finished all
     // 192 scanlines, and RenderFrame() submitted the 3D work at the start of the
@@ -285,6 +297,8 @@ void VulkanRenderer::VBlank()
         }
         if (nativeComposed)
         {
+            coverage.Published = true;
+            coverage.Source = "native";
             if (!NativeGPU2DAnnounced)
             {
                 Platform::Log(Platform::LogLevel::Info,
@@ -377,7 +391,11 @@ void VulkanRenderer::VBlank()
     }
 
     StructuredVulkanFrameView view{};
-    if (!nativeComposed && vulkan && GetStructuredVulkanFrame(view) && view.Valid)
+    if (!nativeComposed && vulkan && GetStructuredVulkanFrame(view)
+        && view.Valid
+        && (view.CompleteCoverage
+            || (!GPU2DNative::DropDiscontinuousSavestateFrameEnabled()
+                && view.ResumeFrameDiscontinuous)))
     {
         RecordGPU2DStructuredFallback();
         const std::array<const u32*, 14> planes = {
@@ -424,6 +442,11 @@ void VulkanRenderer::VBlank()
             && vulkan->GetScaleFactor() == 1
             && !GPU.GPU3D.AbortFrame)
             DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "Vulkan");
+        if (composed)
+        {
+            coverage.Published = true;
+            coverage.Source = "structured";
+        }
     }
 
     // MELONPRIME_VULKAN_PRESENT_HOOK_V1

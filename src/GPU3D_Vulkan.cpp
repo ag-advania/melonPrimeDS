@@ -552,6 +552,18 @@ void VulkanRenderer3D::Stop()
 
 void VulkanRenderer3D::Reset()
 {
+    ResetInternal(false);
+}
+
+void VulkanRenderer3D::ResetAfterSavestateLoad()
+{
+    ResetInternal(true);
+    InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::SavestateLoad);
+}
+
+void VulkanRenderer3D::ResetInternal(bool preservePresentation)
+{
     if (!Initialized)
         return;
 
@@ -569,9 +581,6 @@ void VulkanRenderer3D::Reset()
     // it, but nothing has re-rendered it either, so the compositor must go back
     // to treating it as "no 3D" until the next RenderFrame() lands.
     FinalFBHasContent = false;
-    ComposedOutputValid = false;
-    ComposedGeneration = 0;
-    PublishedOutputGeneration = 0;
     NativeCaptureStateInitialized = false;
     ++CurrentEpoch;
     InvalidateHighResCaptureState(
@@ -582,10 +591,35 @@ void VulkanRenderer3D::Reset()
     NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
     ColorBuffer.fill(0);
+    bool keepPublishedOutput = false;
+    int publishedSlot = -1;
     if (ComposedOutput)
     {
-        for (OutputState::Slot& slot : ComposedOutput->Slots)
+        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
+        publishedSlot = ComposedOutput->PublishedSlot;
+        keepPublishedOutput = preservePresentation
+            && ComposedOutputValid
+            && publishedSlot >= 0
+            && static_cast<std::size_t>(publishedSlot) < ComposedOutput->Slots.size();
+        if (!keepPublishedOutput)
         {
+            ComposedOutput->PublishedSlot = -1;
+            ComposedOutputValid = false;
+            ComposedGeneration = 0;
+            PublishedOutputGeneration = 0;
+        }
+        else
+            ComposedOutputValid = true;
+        for (std::size_t slotIndex = 0; slotIndex < ComposedOutput->Slots.size(); ++slotIndex)
+        {
+            if (keepPublishedOutput && static_cast<int>(slotIndex) == publishedSlot)
+            {
+                // This slot is the last complete presentation surface. Keep
+                // its resource identity and frame metadata; only unpublished
+                // ring slots are reset for the next complete frame.
+                continue;
+            }
+            OutputState::Slot& slot = ComposedOutput->Slots[slotIndex];
             slot.UploadedContentGeneration = {};
             slot.UploadedNativeGeneration = {};
             slot.StructuredUploadInitialized = false;
@@ -598,6 +632,12 @@ void VulkanRenderer3D::Reset()
             slot.UploadedNativeGeneration = {};
             slot.NativeUploadInitialized = false;
         }
+    }
+    if (!keepPublishedOutput && !ComposedOutput)
+    {
+        ComposedOutputValid = false;
+        ComposedGeneration = 0;
+        PublishedOutputGeneration = 0;
     }
 }
 

@@ -361,6 +361,9 @@ public:
     Renderer3D& operator=(const Renderer3D&) = delete;
     virtual bool Init() { return true; }
     virtual void Reset() = 0;
+    // Clear renderer-private in-progress state after a savestate while keeping
+    // the last completed presentation surface available to the frontend.
+    virtual void ResetAfterSavestateLoad() { Reset(); }
     virtual void InvalidateHighResCaptureState(
         HighResCaptureInvalidationReason) noexcept {}
 

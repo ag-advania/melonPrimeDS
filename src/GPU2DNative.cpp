@@ -159,6 +159,21 @@ bool DirectOutputDiagnosticsEnabled() noexcept
     return enabled;
 }
 
+bool DropDiscontinuousSavestateFrameEnabled() noexcept
+{
+    static const bool enabled = [] {
+        const char* value = std::getenv(
+            "MELONPRIME_GPU2D_DROP_DISCONTINUOUS_SAVESTATE_FRAME");
+        if (!value || value[0] == '\0')
+            return true;
+        if (value[0] == '0' && value[1] == '\0')
+            return false;
+        return value[0] == '1' || value[0] == 'y' || value[0] == 'Y'
+            || value[0] == 't' || value[0] == 'T';
+    }();
+    return enabled;
+}
+
 void NotifySavestateLoaded() noexcept
 {
     ExactValidationSavestateReady.store(true, std::memory_order_release);
@@ -815,6 +830,37 @@ u32 NativeCaptureMaskForRead(
     return row[mappingIndex] & NativeCaptureBankMask;
 }
 
+u32 NativeCaptureWrittenMaskForRead(
+    const MappedReadContext& context,
+    const melonDS::GPU& gpu,
+    u32 mappedBankMask,
+    u32 address) noexcept
+{
+    if (!context.Input || !context.NativeMappingReady
+        || !IsCaptureMappedSection(context.Section))
+    {
+        return 0u;
+    }
+
+    u32 writtenMask = 0u;
+    u32 captureBanks = mappedBankMask
+        & ((1u << CapturePhysicalBanks) - 1u);
+    while (captureBanks != 0u)
+    {
+        const u32 bank = static_cast<u32>(__builtin_ctz(captureBanks));
+        captureBanks &= captureBanks - 1u;
+        const u32 physicalAddress = address & gpu.VRAMMask[bank];
+        const u32 physicalBlock =
+            physicalAddress / CapturePhysicalBlockBytes;
+        if ((context.NativeCaptureWrittenBlocks[bank]
+                & (1u << physicalBlock)) != 0u)
+        {
+            writtenMask |= 1u << bank;
+        }
+    }
+    return writtenMask;
+}
+
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 bool ProofMaterializeMappedCaptureEnabled() noexcept
 {
@@ -1015,17 +1061,31 @@ u64 ReadMappedWord(
     const bool singleMapping = mappingIndex < mappingCount
         && mappingOffset + sizeof(u64) <= MappingBytes
         && mappings != nullptr;
+    const u32 mappedBankMask = singleMapping
+        ? mappings[mappingIndex] & 0x1FFu : 0u;
+    // Mapping rows describe the line-time owner seen by the GPU shader, while
+    // late frame snapshots can run after more capture lines have been written.
+    // Include that write-ahead state before deciding whether an aligned 64-bit
+    // host load is safe.  Otherwise the fast path flattens stale CPU VRAM over
+    // a GPU-resident capture block even though the reference byte path rejects
+    // it, producing the alternating-bank corruption seen after savestate load.
+    const u32 nativeMask = singleMapping
+        ? NativeCaptureMaskForRead(context, mappingIndex)
+            | NativeCaptureWrittenMaskForRead(
+                context, gpu, mappedBankMask, address)
+        : 0u;
 
     // A normal frame has no native-owned mapping at all. Keep this path to
     // the pre-capture shape: one mapping lookup, one active-bank bit scan,
     // and one 64-bit load per bank. In particular, do not perform the
     // ownership mask lookup or the physical-boundary probe on every word.
     if (!proofMaterialize && singleMapping
-        && (!context.Input || context.Input->NativeCaptureOverlayAny == 0u))
+        && (!context.Input || context.Input->NativeCaptureOverlayAny == 0u)
+        && nativeMask == 0u)
     {
         if (context.Input)
             ++context.Input->Recorder.MappedReadFastPathCalls;
-        u32 bankMask = mappings[mappingIndex] & 0x1FFu;
+        u32 bankMask = mappedBankMask;
         u64 value = 0u;
         while (bankMask != 0u)
         {
@@ -1044,7 +1104,7 @@ u64 ReadMappedWord(
     const bool physicalReadFits = [&] {
         if (!singleMapping)
             return false;
-        const u32 bankMask = mappings[mappingIndex] & 0x1FFu;
+        const u32 bankMask = mappedBankMask;
         for (u32 bank = 0u; bank < 9u; ++bank)
         {
             if ((bankMask & (1u << bank)) == 0u)
@@ -1076,8 +1136,8 @@ u64 ReadMappedWord(
     if (context.Input)
         ++context.Input->Recorder.MappedReadFastPathCalls;
 
-    u32 bankMask = mappings[mappingIndex] & 0x1FFu;
-    bankMask &= ~NativeCaptureMaskForRead(context, mappingIndex);
+    u32 bankMask = mappedBankMask;
+    bankMask &= ~nativeMask;
     u64 value = 0u;
     while (bankMask != 0u)
     {

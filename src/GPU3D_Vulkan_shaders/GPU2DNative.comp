@@ -556,6 +556,13 @@ uint CaptureRawFromColor6(uint color)
     return r | (g << 5u) | (b << 10u) | a;
 }
 
+uint RepresentativeSubpixel()
+{
+    // Match Resolve.comp and OpenGL CaptureDownscaleFS: use the native output
+    // pixel centre before converting the compact capture to RGBA5551.
+    return uint(ScaleFactor) >> 1u;
+}
+
 uint LoadNativeCaptureSidecar(uint reference, uint withinX, uint withinY)
 {
     uint address = reference & 0xFFFFu;
@@ -602,7 +609,9 @@ uint NativeCaptureReferenceForMappedAddress(
     uint reference = NativeCaptureCommittedReference(bank, physicalAddress);
     if (reference == 0u)
         return 0u;
-    if (CaptureRawFromColor6(LoadNativeCaptureSidecar(reference, 0u, 0u))
+    uint representative = RepresentativeSubpixel();
+    if (CaptureRawFromColor6(LoadNativeCaptureSidecar(
+            reference, representative, representative))
         != (nativeColor & 0xFFFFu))
         return 0u;
     return reference;
@@ -1520,8 +1529,10 @@ uint DisplayPixel(
         uint reference = NativeCaptureReference(engine, line, uint(x));
         if ((reference & 0x80000000u) != 0u)
         {
+            uint representative = RepresentativeSubpixel();
             uint canonical = CaptureRawFromColor6(
-                LoadNativeCaptureSidecar(reference, 0u, 0u));
+                LoadNativeCaptureSidecar(
+                    reference, representative, representative));
             // VRAM display ignores LCDC bit 15. Admit the retained sidecar
             // only when its canonical sample agrees with the current native
             // RGB555 word, then preserve the requested subpixel sample.
@@ -1623,8 +1634,9 @@ uint CaptureSourceB(
         // Admit the retained sidecar using its canonical sample, then return
         // the actual subpixel sample. Quantizing that same sample back to
         // LCD16 made this branch an algebraic no-op.
-        uint canonical = CaptureRawFromColor6(
-            LoadNativeCaptureSidecar(reference, 0u, 0u));
+        uint representative = RepresentativeSubpixel();
+        uint canonical = CaptureRawFromColor6(LoadNativeCaptureSidecar(
+            reference, representative, representative));
         if (canonical == compact)
         {
             return CaptureRawFromColor6(LoadNativeCaptureSidecar(
@@ -1966,15 +1978,19 @@ void WriteNativeCaptureSample(
     // The compact LCDC mirror remains the authoritative source for a later
     // CPU readback.  One invocation owns each pair, so no two shader lanes
     // race on the packed 32-bit word.
-    if (sampleY == 0u && (outputX % uint(ScaleFactor)) == 0u && (x & 1u) == 0u)
+    uint representative = RepresentativeSubpixel();
+    if (sampleY == representative
+        && (outputX % uint(ScaleFactor)) == representative
+        && (x & 1u) == 0u)
     {
         uint second = 0u;
         if (x + 1u < width)
         {
             uint secondA = CaptureSourceA(
-                line, x + 1u, outputX + uint(ScaleFactor), 0u);
+                line, x + 1u, outputX + uint(ScaleFactor), representative);
             uint secondB = CaptureSourceB(
-                line, x + 1u, captureCnt, outputX + uint(ScaleFactor), 0u);
+                line, x + 1u, captureCnt,
+                outputX + uint(ScaleFactor), representative);
             second = CaptureCompositeRaw(secondA, secondB, captureCnt);
         }
 

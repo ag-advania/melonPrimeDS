@@ -1,6 +1,6 @@
 {
   "generator": "tools/vulkan/compile-shaders.py",
-  "sourceSetSha256": "b62eb321d1e54fc34c337a503bdb12ab2badd8419514100f64c927af35d5676b",
+  "sourceSetSha256": "a6fc8071bee89e34e657cbb79b401c6867f443d24333e81b74d1b139b5df05ab",
   "targetEnv": "vulkan1.1",
   "entryPoint": "main",
   "pipelineCount": 38,
@@ -126,7 +126,7 @@
     }
   ],
   "uniqueModules": 114,
-  "totalSpirvBytes": 3577052,
+  "totalSpirvBytes": 3578744,
   "generatedFiles": [
     "GPU3D_Vulkan_ShaderBlobs.h",
     "GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp",
@@ -927,8 +927,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 37,
-      "words": 47498,
-      "sha256": "5025bf31dfd51a801bf38e12316618309a5bb05e77dbb9ae6db77aeb5d21b5d0"
+      "words": 47639,
+      "sha256": "5b39f70382eab84b39bae119fdbc42f5f0999196705a633a21b65f0068ca8be9"
     },
     {
       "pipeline": 0,
@@ -1709,8 +1709,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 75,
-      "words": 47502,
-      "sha256": "4055ae4ace66af432cddb53dea1aeb2e1e583f4c93263cd9a3d893d08b519980"
+      "words": 47643,
+      "sha256": "696c47192491be0526022d9054d0293a5921b586a6fab75a8919ca4da9c6a9d3"
     },
     {
       "pipeline": 0,
@@ -2491,8 +2491,8 @@
         "ClearCoarseBinMaskLocalSize": 48
       },
       "blob": 113,
-      "words": 47498,
-      "sha256": "23c6a0927b9f7ea31adc7c16c77c26ffdbf26bf156cd95d2713ee6b7cf26cdcb"
+      "words": 47639,
+      "sha256": "b6c37fdd2770da768d74c6273409ddc4256bbca056e1917cf1602eaed07b9f3f"
     }
   ]
 }

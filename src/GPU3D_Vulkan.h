@@ -68,6 +68,7 @@ public:
 
     bool Init() override;
     void Reset() override;
+    void ResetAfterSavestateLoad() override;
     void InvalidateHighResCaptureState(
         HighResCaptureInvalidationReason reason) noexcept override;
 
@@ -173,6 +174,8 @@ public:
     void ShaderCompileStep(int& current, int& count) override;
 
 private:
+    void ResetInternal(bool preservePresentation);
+
     explicit VulkanRenderer3D(melonDS::GPU3D& gpu3D);
 
     static constexpr int MaxRenderPolygons = 2048;

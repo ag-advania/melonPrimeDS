@@ -202,6 +202,11 @@ public:
         StructuredComposition::ScreenRoutingView ScreenRouting{};
         bool NativeMenuHeld = false;
         bool Valid = false;
+        bool CompleteCoverage = false;
+        bool ResumeFrameDiscontinuous = false;
+        u64 RendererEpoch = 0;
+        u32 ScreenCoverage[2]{};
+        u32 EngineCoverage[2]{};
         u64 ScreenRouteCopyBytes = 0;
         u64 ScreenRouteCopyNanoseconds = 0;
         u32 StructuredRegularLines = 0;
@@ -211,6 +216,9 @@ public:
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
+    void LogGPU2DFrameCoverage(
+        bool published,
+        const char* publicationSource) const noexcept;
     [[nodiscard]] StructuredPerfBackend GetStructured2DPerfBackendForFrame() const noexcept
     {
         return StructuredPerfBackendForFrame;
@@ -263,7 +271,10 @@ private:
     std::array<u32, 192u * StructuredComposition::kCaptureCommandWords> StructuredCaptureCommands{};
     alignas(8) u32 Structured3DPlaceholderLine[256]{};
     alignas(8) u32 StructuredCaptureCompositeLine[256]{};
+    GPU2DNative::LineCoverage StructuredScreenCoverage[2]{};
+    GPU2DNative::LineCoverage StructuredEngineCoverage[2]{};
     bool StructuredFrameValid = false;
+    bool ResumeFrameDiscontinuous = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     bool StructuredCapture3DValid = false;
@@ -274,12 +285,23 @@ private:
     u32 StructuredRegularLines = 0;
     u32 StructuredFallbackLines = 0;
     u64 StructuredFrameGeneration = 0;
+    u64 RendererFrameEpoch = 0;
+    u32 StructuredLastOutputLine = 0;
+    u32 StructuredLastVCount = 0;
     StructuredComposition::GenerationState StructuredContentGeneration{};
     u16 StructuredPendingPlaneDirtyMask = 0;
     u8 StructuredPendingLineMetaDirtyMask = 0;
     bool StructuredPendingCaptureCommandsDirty = false;
     u8 StructuredEngineChangedMask[2] = { 0, 0 };
     StructuredPerfBackend StructuredPerfBackendForFrame = StructuredPerfBackend::None;
+
+    [[nodiscard]] bool StructuredCoverageComplete() const noexcept
+    {
+        return StructuredScreenCoverage[0].Complete()
+            && StructuredScreenCoverage[1].Complete()
+            && StructuredEngineCoverage[0].Complete()
+            && StructuredEngineCoverage[1].Complete();
+    }
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
     inline void MarkStructuredPlaneDirty(u32 plane) noexcept

@@ -2674,6 +2674,10 @@ uint NativeCaptureRaw(uint c)
     uint r=NativeColorR(c)>>1u,g=NativeColorG(c)>>1u,b=NativeColorB(c)>>1u;
     return r|(g<<5u)|(b<<10u)|(((c>>24u)!=0u)?0x8000u:0u);
 }
+uint NativeRepresentativeSubpixel()
+{
+    return ScaleFactor>>1u;
+}
 uint NativeLoadCaptureSidecar(uint reference,uint withinX,uint withinY)
 {
     uint address=reference&0xFFFFu,bank=(reference>>28u)&3u,version=(reference>>30u)&1u;
@@ -2705,7 +2709,9 @@ uint NativeCaptureReferenceForMappedAddress(
     uint physicalAddress=((address&(size-1u))>>1u)&0xFFFFu;
     uint reference=NativeCaptureCommittedReference(bank,physicalAddress);
     if(reference==0u)return 0u;
-    if(NativeCaptureRaw(NativeLoadCaptureSidecar(reference,0u,0u))
+    uint representative=NativeRepresentativeSubpixel();
+    if(NativeCaptureRaw(NativeLoadCaptureSidecar(
+            reference,representative,representative))
         !=(nativeColor&0xFFFFu))return 0u;
     return reference;
 }
@@ -3210,7 +3216,7 @@ uint NativeDisplay(uint screen,uint engine,uint line,int x,uint ox,uint oy)
     if(mode==0u)result=NativePack(63u,63u,63u,0u);
     else if(mode==1u&&NativeLine(engine,line,NativeUnitEnabled)==0u)result=engine==0u?NativePack(0u,0u,0u,0u):NativePack(63u,63u,63u,0u);
     else if(mode==1u&&NativeLine(engine,line,NativeForcedBlank)!=0u)result=NativePack(63u,63u,63u,0u);
-    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((NativeLine(engine,line,NativeLCDVRAMMap)&(1u<<bank))!=0u){uint compact=NativeLCD16(line,bank,line*512u+(uint)x*2u),color=NativeVRAMColor(compact),reference=NativeCaptureReference(engine,line,(uint)x);if((reference&0x80000000u)!=0u){uint canonical=NativeCaptureRaw(NativeLoadCaptureSidecar(reference,0u,0u));if((canonical&0x7FFFu)==(compact&0x7FFFu)){uint highRes=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,oy%ScaleFactor);color=NativePack(NativeColorR(highRes),NativeColorG(highRes),NativeColorB(highRes),0u);}}result=NativeMaster(color,NativeLine(engine,line,NativeMasterBrightness));}}
+    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((NativeLine(engine,line,NativeLCDVRAMMap)&(1u<<bank))!=0u){uint compact=NativeLCD16(line,bank,line*512u+(uint)x*2u),color=NativeVRAMColor(compact),reference=NativeCaptureReference(engine,line,(uint)x);if((reference&0x80000000u)!=0u){uint representative=NativeRepresentativeSubpixel(),canonical=NativeCaptureRaw(NativeLoadCaptureSidecar(reference,representative,representative));if((canonical&0x7FFFu)==(compact&0x7FFFu)){uint highRes=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,oy%ScaleFactor);color=NativePack(NativeColorR(highRes),NativeColorG(highRes),NativeColorB(highRes),0u);}}result=NativeMaster(color,NativeLine(engine,line,NativeMasterBrightness));}}
     else if(mode==3u&&engine==0u)result=NativeMaster(NativeVRAMColor(NativeFIFO16(line,(uint)x)),NativeLine(engine,line,NativeMasterBrightness));
     else result=NativeMaster(NativeComposite(screen,engine,line,x,ox,oy),NativeLine(engine,line,NativeMasterBrightness));
     return result;
@@ -3441,8 +3447,9 @@ uint NativeCaptureSourceB(uint line,uint x,uint cnt,uint ox,uint sampleY)
         // Admit the retained sidecar using its canonical sample, then return
         // the actual subpixel sample. Quantizing that same sample back to
         // LCD16 made this branch an algebraic no-op.
-        uint canonical=NativeCaptureRaw(
-            NativeLoadCaptureSidecar(reference,0u,0u));
+        uint representative=NativeRepresentativeSubpixel();
+        uint canonical=NativeCaptureRaw(NativeLoadCaptureSidecar(
+            reference,representative,representative));
         if(canonical==compact)
             return NativeCaptureRaw(NativeLoadCaptureSidecar(
                 reference,ox%ScaleFactor,sampleY));
@@ -3495,13 +3502,14 @@ void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
     uint cell=((version*4u+bank)*65536u)+address;
     uint sample=sampleY*ScaleFactor+(ox%ScaleFactor);
     CaptureSidecarBuffer[cell*spp+sample]=NativeCaptureRawToColor6(first);
-    if(sampleY==0u&&(ox%ScaleFactor)==0u&&(x&1u)==0u)
+    uint representative=NativeRepresentativeSubpixel();
+    if(sampleY==representative&&(ox%ScaleFactor)==representative&&(x&1u)==0u)
     {
         uint second=0u;
         if(x+1u<width)
         {
-            a=NativeCaptureSourceA(line,x+1u,ox+ScaleFactor,0u);
-            b=NativeCaptureSourceB(line,x+1u,cnt,ox+ScaleFactor,0u);
+            a=NativeCaptureSourceA(line,x+1u,ox+ScaleFactor,representative);
+            b=NativeCaptureSourceB(line,x+1u,cnt,ox+ScaleFactor,representative);
             second=NativeCaptureComposite(a,b,cnt);
         }
         uint byteAddress=WrapLCDCByte(

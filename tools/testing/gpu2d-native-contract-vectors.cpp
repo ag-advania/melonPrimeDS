@@ -270,39 +270,52 @@ u32 Color6FromCaptureRawForTest(u32 raw)
 }
 
 u32 TrustedSourceBSampleForTest(
-    u32 compact, const std::array<u32, 4u>& sidecar, u32 sample)
+    u32 compact,
+    const std::array<u32, 256u>& sidecar,
+    u32 scale,
+    u32 sampleX,
+    u32 sampleY)
 {
-    if (CaptureRawFromColor6ForTest(sidecar[0]) != compact)
+    const u32 representative = GPU2DNative::RepresentativeSubpixel(scale);
+    const std::size_t canonicalIndex =
+        static_cast<std::size_t>(representative) * scale + representative;
+    if (CaptureRawFromColor6ForTest(sidecar[canonicalIndex]) != compact)
         return compact;
-    return CaptureRawFromColor6ForTest(sidecar[sample & 3u]);
+    const std::size_t sampleIndex =
+        static_cast<std::size_t>(sampleY % scale) * scale + (sampleX % scale);
+    return CaptureRawFromColor6ForTest(sidecar[sampleIndex]);
 }
 
 bool RunSourceBSubpixelAndSavestateVectors()
 {
     bool passed = true;
     const u32 compact = 0x801Fu;
-    const std::array<u32, 4u> sidecar = {
-        Color6FromCaptureRawForTest(compact),
-        Color6FromCaptureRawForTest(0x83E0u),
-        Color6FromCaptureRawForTest(0xFC00u),
-        Color6FromCaptureRawForTest(0x001Fu),
-    };
+    constexpr u32 scale = 4u;
+    std::array<u32, 256u> sidecar{};
+    sidecar[2u * scale + 2u] = Color6FromCaptureRawForTest(compact);
+    sidecar[1u * scale + 2u] = Color6FromCaptureRawForTest(0x83E0u);
+    sidecar[2u * scale + 1u] = Color6FromCaptureRawForTest(0xFC00u);
+    sidecar[3u * scale + 3u] = Color6FromCaptureRawForTest(0x001Fu);
 
     passed &= Require(
-        TrustedSourceBSampleForTest(compact, sidecar, 1u) == 0x83E0u,
+        TrustedSourceBSampleForTest(compact, sidecar, scale, 2u, 1u) == 0x83E0u,
         "Source-B trusted sidecar did not preserve the requested subpixel");
     passed &= Require(
-        TrustedSourceBSampleForTest(compact, sidecar, 2u)
-            != TrustedSourceBSampleForTest(compact, sidecar, 1u),
+        TrustedSourceBSampleForTest(compact, sidecar, scale, 1u, 2u)
+            != TrustedSourceBSampleForTest(compact, sidecar, scale, 2u, 1u),
         "Source-B output did not depend on the subpixel coordinate");
 
-    const std::array<u32, 4u> staleSidecar = {
-        Color6FromCaptureRawForTest(0x03E0u), sidecar[1], sidecar[2], sidecar[3]};
-    for (u32 sample = 0u; sample < 4u; ++sample)
+    auto staleSidecar = sidecar;
+    staleSidecar[2u * scale + 2u] = Color6FromCaptureRawForTest(0x03E0u);
+    for (u32 sampleY = 0u; sampleY < scale; ++sampleY)
     {
-        passed &= Require(
-            TrustedSourceBSampleForTest(compact, staleSidecar, sample) == compact,
-            "stale Source-B canonical reference was not rejected");
+        for (u32 sampleX = 0u; sampleX < scale; ++sampleX)
+        {
+            passed &= Require(
+                TrustedSourceBSampleForTest(
+                    compact, staleSidecar, scale, sampleX, sampleY) == compact,
+                "stale Source-B canonical reference was not rejected");
+        }
     }
 
     constexpr u32 kControlHas3D = 0x40u;
@@ -352,6 +365,123 @@ bool RunSourceBSubpixelAndSavestateVectors()
             vcount >= ScreenHeight,
             "VBlank savestate VCOUNT incorrectly seeded a visible OBJ line");
     }
+    return passed;
+}
+
+bool RunFrameCoverageAndRepresentativeVectors()
+{
+    bool passed = true;
+
+    for (const u32 scale : {1u, 2u, 4u, 8u, 16u})
+    {
+        const u32 representative = GPU2DNative::RepresentativeSubpixel(scale);
+        std::array<u32, 256u * 256u> highRes{};
+        highRes[0u] = Color6FromCaptureRawForTest(0x001Fu);
+        highRes[static_cast<std::size_t>(representative) * 256u + representative]
+            = Color6FromCaptureRawForTest(0x03E0u);
+        const u32 compact = CaptureRawFromColor6ForTest(
+            highRes[static_cast<std::size_t>(representative) * 256u + representative]);
+        passed &= Require(
+            compact == 0x03E0u,
+            "native compact capture did not use the Resolve representative centre");
+    }
+
+    auto markRange = [](GPU2DNative::LineCoverage& coverage, u32 firstLine) {
+        for (u32 line = firstLine; line < GPU2DNative::ScreenHeight; ++line)
+            coverage.Mark(line);
+    };
+    auto completeStructuredFrame = [](GPU2DNative::LineCoverage (&screen)[2],
+                                      GPU2DNative::LineCoverage (&engine)[2]) {
+        for (u32 line = 0u; line < GPU2DNative::ScreenHeight; ++line)
+        {
+            screen[0].Mark(line);
+            screen[1].Mark(line);
+            engine[0].Mark(line);
+            engine[1].Mark(line);
+        }
+    };
+    auto complete = [](const GPU2DNative::LineCoverage (&screen)[2],
+                       const GPU2DNative::LineCoverage (&engine)[2]) {
+        return screen[0].Complete() && screen[1].Complete()
+            && engine[0].Complete() && engine[1].Complete();
+    };
+
+    // VCount=0 can rebuild a complete post-load frame; every other visible
+    // resume begins with a missing prefix and must not compose at VBlank.
+    for (const u32 vcount : {0u, 1u, 32u, 64u, 96u, 128u, 191u})
+    {
+        GPU2DNative::LineCoverage screen[2]{};
+        GPU2DNative::LineCoverage engine[2]{};
+        markRange(screen[0], vcount);
+        markRange(screen[1], vcount);
+        markRange(engine[0], vcount);
+        markRange(engine[1], vcount);
+        const bool valid = complete(screen, engine);
+        passed &= Require(
+            valid == (vcount == 0u),
+            "savestate VCount coverage gate admitted an incomplete Scale1 frame");
+        const u32 composeCalls = valid ? 1u : 0u;
+        passed &= Require(
+            composeCalls == (vcount == 0u ? 1u : 0u),
+            "partial VBlank attempted a structured composition");
+    }
+
+    // line 191 alone and a one-row hole are both invalid; 192/192 is the only
+    // complete publication contract. A magenta poison in a missing row must
+    // never reach the visible surface because publication remains zero.
+    GPU2DNative::LineCoverage line191Only[2]{};
+    GPU2DNative::LineCoverage line191Engine[2]{};
+    for (u32 screen = 0u; screen < 2u; ++screen)
+    {
+        line191Only[screen].Mark(191u);
+        line191Engine[screen].Mark(191u);
+    }
+    passed &= Require(
+        !complete(line191Only, line191Engine),
+        "line191-only fixture became a valid structured frame");
+
+    GPU2DNative::LineCoverage oneRowMissing[2]{};
+    GPU2DNative::LineCoverage oneRowMissingEngine[2]{};
+    completeStructuredFrame(oneRowMissing, oneRowMissingEngine);
+    oneRowMissing[0].Words[95u >> 6u] &= ~(1ull << (95u & 63u));
+    oneRowMissingEngine[0].Words[95u >> 6u] &= ~(1ull << (95u & 63u));
+    passed &= Require(
+        !complete(oneRowMissing, oneRowMissingEngine),
+        "one-row-missing fixture became a valid structured frame");
+
+    GPU2DNative::LineCoverage allRows[2]{};
+    GPU2DNative::LineCoverage allRowsEngine[2]{};
+    completeStructuredFrame(allRows, allRowsEngine);
+    passed &= Require(
+        complete(allRows, allRowsEngine),
+        "192/192 structured coverage did not publish");
+
+    u32 lastCompleteSurface = 0x1234u;
+    const u32 poison = 0x00FF00FFu;
+    const bool partialPublished = false;
+    if (partialPublished)
+        lastCompleteSurface = poison;
+    passed &= Require(
+        lastCompleteSurface != poison,
+        "missing-row poison leaked into the retained presentation surface");
+
+    // Capture semantics continue for the resumed visible suffix even though
+    // presentation is held. The next full physical frame replaces the held
+    // surface exactly once.
+    constexpr u32 resumedVCount = 96u;
+    u32 captureWrites = 0u;
+    for (u32 line = resumedVCount; line < GPU2DNative::ScreenHeight; ++line)
+        ++captureWrites;
+    passed &= Require(
+        captureWrites == GPU2DNative::ScreenHeight - resumedVCount,
+        "Display Capture continuation stopped with presentation suppression");
+    u32 publishCount = 0u;
+    if (complete(allRows, allRowsEngine))
+        ++publishCount;
+    passed &= Require(
+        publishCount == 1u,
+        "next complete physical frame did not replace the retained surface");
+
     return passed;
 }
 
@@ -461,6 +591,7 @@ struct MappedCaptureOverlayModel
     std::array<u32, ScreenHeight> SpriteOBJMappedBanks{};
     std::array<std::array<u8, LCDCBankBytes>, CapturePhysicalBanks> Cpu{};
     std::array<std::array<u8, LCDCBankBytes>, CapturePhysicalBanks> Native{};
+    std::array<u8, CapturePhysicalBanks> WrittenBlocks{};
 
     [[nodiscard]] u32 OwnerMask(
         u32 engine,
@@ -514,6 +645,42 @@ struct MappedCaptureOverlayModel
         }
         return cpuFlatten | nativeOverlay;
     }
+
+    [[nodiscard]] u8 HostFlatten(
+        u32 engine,
+        u32 line,
+        u32 address,
+        u32 size,
+        bool obj,
+        bool spriteLatch) const
+    {
+        const u32 offset = address & (size - 1u);
+        u32 nativeMask = OwnerMask(
+            engine, line, address, size, obj, spriteLatch);
+        const u32 mappedBankMask = !obj
+            ? BGMappedBanks[line]
+            : (spriteLatch ? SpriteOBJMappedBanks[line] : OBJMappedBanks[line]);
+        for (u32 bank = 0u; bank < CapturePhysicalBanks; ++bank)
+        {
+            if ((mappedBankMask & (1u << bank)) == 0u)
+                continue;
+            const u32 physicalBlock =
+                (offset & LCDCBankByteMask) / CapturePhysicalBlockBytes;
+            if ((WrittenBlocks[bank] & (1u << physicalBlock)) != 0u)
+                nativeMask |= 1u << bank;
+        }
+
+        u8 cpuFlatten = 0u;
+        for (u32 bank = 0u; bank < CapturePhysicalBanks; ++bank)
+        {
+            if ((mappedBankMask & (1u << bank)) != 0u
+                && (nativeMask & (1u << bank)) == 0u)
+            {
+                cpuFlatten |= Cpu[bank][offset & LCDCBankByteMask];
+            }
+        }
+        return cpuFlatten;
+    }
 };
 
 bool RunMappedCaptureOverlayVectors()
@@ -566,6 +733,18 @@ bool RunMappedCaptureOverlayVectors()
         model.Resolve(0u, 80u, address, size, true, false) == 0x03u
             && model.Resolve(0u, 80u, address, size, true, true) == 0x05u,
         "OBJ current/latch mapping selection drifted");
+
+    // A late host snapshot can observe the current frame's completed capture
+    // before the line-time owner row is rebuilt. The fast 64-bit flatten must
+    // still reject stale CPU VRAM using the write-ahead block mask.
+    model.BG[96u][0u] = 0u;
+    model.BGMappedBanks[96u] = 1u << 2u;
+    model.Cpu[2u][offset & LCDCBankByteMask] = 0xF0u;
+    model.WrittenBlocks[2u] = static_cast<u8>(
+        1u << ((offset & LCDCBankByteMask) / CapturePhysicalBlockBytes));
+    passed &= Require(
+        model.HostFlatten(0u, 96u, address, size, false, false) == 0u,
+        "late fast mapped read flattened stale CPU capture bytes");
 
     // Exercise stale-poison, line split, overlap, and all required scales over
     // the long state-load horizon without making presentation scale part of
@@ -1409,6 +1588,7 @@ int main()
 {
     const bool passed = RunCaptureAddressVectors()
         && RunSourceBSubpixelAndSavestateVectors()
+        && RunFrameCoverageAndRepresentativeVectors()
         && RunPackVectors() && RunMappedCaptureOverlayVectors()
         && RunCompareVectors()
         && RunUploadPlanVectors() && RunTemporalLineVectors()
