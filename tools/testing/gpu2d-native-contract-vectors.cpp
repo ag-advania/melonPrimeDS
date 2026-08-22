@@ -54,6 +54,83 @@ u32 NativeSourceBByteAddress(u32 offsetCode, u32 line, u32 x)
         line * 512u + x * 2u + CaptureOffsetBytes(offsetCode));
 }
 
+bool RunMappedBlockFlattenVectors()
+{
+    constexpr u32 blockBytes = 512u;
+    const std::array<u32, 9> bankSizes = {
+        128u * 1024u, 128u * 1024u, 128u * 1024u, 128u * 1024u,
+        64u * 1024u, 16u * 1024u, 16u * 1024u, 32u * 1024u,
+        16u * 1024u};
+    std::array<std::vector<u8>, 9> banks;
+    for (u32 bank = 0u; bank < banks.size(); ++bank)
+    {
+        banks[bank].resize(bankSizes[bank]);
+        for (u32 address = 0u; address < bankSizes[bank]; ++address)
+        {
+            banks[bank][address] = static_cast<u8>(
+                (address * 29u + bank * 47u + (address >> 9u)) & 0xFFu);
+        }
+    }
+
+    const std::array<u32, 7> logicalOffsets = {
+        0x00000u, 0x03E00u, 0x07E00u, 0x0FE00u,
+        0x17E00u, 0x1FE00u, 0x3FE00u};
+    std::array<u8, blockBytes> reference{};
+    std::array<u8, blockBytes> flattened{};
+    for (const u32 mappingBytes : {8u * 1024u, 16u * 1024u})
+    {
+        for (const u32 logicalOffset : logicalOffsets)
+        {
+            if (logicalOffset % mappingBytes + blockBytes > mappingBytes)
+                continue;
+            for (u32 bankMask = 0u; bankMask < (1u << banks.size()); ++bankMask)
+            {
+                reference.fill(0u);
+                flattened.fill(0u);
+                for (u32 byte = 0u; byte < blockBytes; ++byte)
+                {
+                    for (u32 bank = 0u; bank < banks.size(); ++bank)
+                    {
+                        if ((bankMask & (1u << bank)) != 0u)
+                        {
+                            reference[byte] |= banks[bank][
+                                (logicalOffset + byte) & (bankSizes[bank] - 1u)];
+                        }
+                    }
+                }
+
+                u32 remaining = bankMask;
+                if (remaining != 0u)
+                {
+                    const u32 firstBank = static_cast<u32>(__builtin_ctz(remaining));
+                    remaining &= remaining - 1u;
+                    for (u32 byte = 0u; byte < blockBytes; ++byte)
+                    {
+                        flattened[byte] = banks[firstBank][
+                            (logicalOffset + byte) & (bankSizes[firstBank] - 1u)];
+                    }
+                    while (remaining != 0u)
+                    {
+                        const u32 bank = static_cast<u32>(__builtin_ctz(remaining));
+                        remaining &= remaining - 1u;
+                        for (u32 byte = 0u; byte < blockBytes; ++byte)
+                        {
+                            flattened[byte] |= banks[bank][
+                                (logicalOffset + byte) & (bankSizes[bank] - 1u)];
+                        }
+                    }
+                }
+                if (flattened != reference)
+                {
+                    return Require(false,
+                        "block mapped-VRAM flatten differs from byte reference");
+                }
+            }
+        }
+    }
+    return true;
+}
+
 u32 SoftwareCaptureBlockMask(u32 offsetCode, u32 sizeCode)
 {
     const u32 width = CaptureWidthForSize(sizeCode);
@@ -1587,6 +1664,7 @@ bool RunCaptureFeedbackVectors()
 int main()
 {
     const bool passed = RunCaptureAddressVectors()
+        && RunMappedBlockFlattenVectors()
         && RunSourceBSubpixelAndSavestateVectors()
         && RunFrameCoverageAndRepresentativeVectors()
         && RunPackVectors() && RunMappedCaptureOverlayVectors()

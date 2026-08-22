@@ -162,6 +162,9 @@ def main() -> int:
         for needle in (
             "CaptureNativeMappingForLine",
             "NativeCaptureWrittenMaskForRead",
+            "NativeCaptureWrittenBankMask",
+            "directBlock",
+            "Most DS mappings have exactly one owner",
             "NativeOwnedMappedCpuRead",
             "NativeOwnedMappedCpuMaterialized",
             "MELONPRIME_GPU2D_PROOF_MATERIALIZE_MAPPED_CAPTURE",
@@ -170,6 +173,8 @@ def main() -> int:
         ):
             require(text["native_recorder"], needle,
                 "mapped capture stale-read tripwire", failures)
+        require(text["native_contract_test"], "RunMappedBlockFlattenVectors",
+            "mapped block flatten equivalence vectors", failures)
         require(text["native_recorder"], "LCDVRAMProvenance", "native recorder capture provenance", failures)
         require(text["native_recorder"], "CaptureCoherentLCDVRAMForLine", "native recorder coherent capture path", failures)
         require(text["native_recorder"], "A byte difference between CPU VRAM", "event-driven authority comment", failures)
@@ -592,6 +597,7 @@ def main() -> int:
             "[ValidateRange(0,600)] [int]$PresentationStallFrames",
             "MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES",
             "Capture-ContinuousDisplay",
+            "Background-window scheduling",
             "window_capture_frames",
             "FinalComposedTopHash",
             "FinalComposedBottomHash",
