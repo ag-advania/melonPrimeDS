@@ -35,7 +35,7 @@ namespace
 // Strict presenter pacing supplies its own frame-budget timeout instead.
 constexpr u64 DefaultFenceTimeoutNanoseconds = 1000ull * 1000ull * 1000ull;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
-constexpr u32 TimestampQueryCount = 10;
+constexpr u32 TimestampQueryCount = GpuMetricQueryCount;
 #endif
 
 } // namespace
@@ -471,6 +471,8 @@ void FrameRing::DestroyFrames()
         frame.TimestampResultsAvailable = false;
         frame.TimestampQueriesReset = false;
         frame.TimestampQueriesWritten = false;
+        frame.TimestampWrittenMask = 0;
+        frame.LastTimestampWrittenMask = 0;
 #endif
     }
 }
@@ -509,10 +511,12 @@ void FrameRing::WriteTimestamp(VkPipelineStageFlagBits stage, u32 queryIndex) no
             0, TimestampQueryCount);
         frame.TimestampQueriesReset = true;
         frame.TimestampResultsAvailable = false;
+        frame.TimestampWrittenMask = 0;
     }
     Device->Fns().CmdWriteTimestamp(
         frame.CommandBuffer, stage, frame.TimestampQueryPool, queryIndex);
     frame.TimestampQueriesWritten = true;
+    frame.TimestampWrittenMask |= (1u << queryIndex);
 }
 
 bool FrameRing::ReadCurrentFrameTimestamps(
@@ -527,6 +531,12 @@ bool FrameRing::ReadCurrentFrameTimestamps(
     const FrameContext& frame = Frames[CurrentIndex];
     if (!frame.TimestampQueriesEnabled || !frame.TimestampResultsAvailable)
         return false;
+    if ((frame.LastTimestampWrittenMask & (1u << firstQuery)) == 0
+        || (queryCount > 1
+            && (frame.LastTimestampWrittenMask & (1u << (firstQuery + 1u))) == 0))
+    {
+        return false;
+    }
     const VkResult result = Device->Fns().GetQueryPoolResults(
         Device->GetHandle(), frame.TimestampQueryPool,
         firstQuery, queryCount, sizeof(u64) * queryCount, values,
@@ -797,8 +807,10 @@ bool FrameRing::SubmitFrame(
         // older use. A written query pool becomes readable after this fence
         // signals and before the next recording emits its deferred reset.
         frame.TimestampResultsAvailable = frame.TimestampQueriesWritten;
+        frame.LastTimestampWrittenMask = frame.TimestampWrittenMask;
         frame.TimestampQueriesReset = false;
         frame.TimestampQueriesWritten = false;
+        frame.TimestampWrittenMask = 0;
     }
 #endif
     LastSubmittedIndex = CurrentIndex;

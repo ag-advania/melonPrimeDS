@@ -147,7 +147,7 @@ namespace
 {
 
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
-constexpr u32 kTimestampQueryCount = 10;
+constexpr u32 kTimestampQueryCount = GpuMetricQueryCount;
 constexpr auto kTimestampFrequencyRefreshInterval = std::chrono::seconds(1);
 #endif
 
@@ -921,7 +921,7 @@ bool DX12CommandContext::WaitForFence(u64 value, bool recordRasterBegin)
 
 void DX12CommandContext::WaitIdle()
 {
-    WaitForFence(SubmittedValue);
+    (void)WaitForSubmittedValue();
 }
 
 bool DX12CommandContext::WaitQueueIdle()
@@ -974,6 +974,12 @@ ID3D12GraphicsCommandList* DX12CommandContext::TryBegin()
     return ResetList();
 }
 
+bool DX12CommandContext::IsIdle() const noexcept
+{
+    return !Recording
+        && (!Fence || SubmittedValue == 0 || Fence->GetCompletedValue() >= SubmittedValue);
+}
+
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 
 void DX12CommandContext::RefreshTimestampFrequencyIfDue() noexcept
@@ -1023,8 +1029,7 @@ void DX12CommandContext::WriteTimestamp(u32 queryIndex) noexcept
         return;
     List->EndQuery(
         TimestampQueryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, queryIndex);
-    TimestampWrittenMask = static_cast<u16>(
-        TimestampWrittenMask | (static_cast<u16>(1u) << queryIndex));
+    TimestampWrittenMask |= (1u << queryIndex);
 }
 
 bool DX12CommandContext::ReadTimestampSnapshot() const noexcept
@@ -1057,8 +1062,8 @@ u64 DX12CommandContext::ReadTimestampSpanNanoseconds(
     if (!TimestampQueriesEnabled || TimestampFrequency == 0
         || startQuery >= kTimestampQueryCount || endQuery >= kTimestampQueryCount
         || startQuery > endQuery
-        || (LastTimestampWrittenMask & (static_cast<u16>(1u) << startQuery)) == 0
-        || (LastTimestampWrittenMask & (static_cast<u16>(1u) << endQuery)) == 0)
+        || (LastTimestampWrittenMask & (1u << startQuery)) == 0
+        || (LastTimestampWrittenMask & (1u << endQuery)) == 0)
     {
         return 0;
     }
@@ -1098,7 +1103,7 @@ bool DX12CommandContext::Submit()
         u32 lastQuery = 0;
         for (u32 queryIndex = 0; queryIndex < kTimestampQueryCount; ++queryIndex)
         {
-            if ((TimestampWrittenMask & (static_cast<u16>(1u) << queryIndex)) == 0)
+            if ((TimestampWrittenMask & (1u << queryIndex)) == 0)
                 continue;
             firstQuery = std::min(firstQuery, queryIndex);
             lastQuery = std::max(lastQuery, queryIndex);

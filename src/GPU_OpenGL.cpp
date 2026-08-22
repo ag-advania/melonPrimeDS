@@ -17,8 +17,12 @@
 */
 
 #include <string.h>
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+#include <vector>
+#endif
 #include "NDS.h"
 #include "GPU_OpenGL.h"
+#include "GPU2DFrameDump.h"
 
 namespace melonDS
 {
@@ -622,9 +626,43 @@ void GLRenderer::VBlank()
     if (GPU.CaptureEnable)
         DoCapture(LastCapLine, 192);
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    DumpFrameForValidation();
+#endif
+
     LastLine = 0;
     LastCapLine = 0;
 }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+void GLRenderer::DumpFrameForValidation()
+{
+    if (ScaleFactor != 1)
+        return;
+
+    constexpr size_t PixelCount = 256u * 192u;
+    std::vector<u8> readback(PixelCount * 4u);
+    std::vector<u32> top(PixelCount);
+    std::vector<u32> bottom(PixelCount);
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, FPOutputFB[BackBuffer]);
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    for (int screen = 0; screen < 2; ++screen)
+    {
+        glReadBuffer(GL_COLOR_ATTACHMENT0 + screen);
+        glReadPixels(0, 0, 256, 192, GL_RGBA, GL_UNSIGNED_BYTE, readback.data());
+        u32* destination = screen == 0 ? top.data() : bottom.data();
+        for (size_t i = 0; i < PixelCount; ++i)
+        {
+            const u8* pixel = &readback[i * 4u];
+            destination[i] = (static_cast<u32>(pixel[0]) << 16u)
+                | (static_cast<u32>(pixel[1]) << 8u)
+                | static_cast<u32>(pixel[2]);
+        }
+    }
+    DumpGPU2DFrame(top.data(), bottom.data());
+}
+#endif
 
 void GLRenderer::VBlankEnd()
 {
@@ -864,8 +902,11 @@ void GLRenderer::DownscaleCapture(int width, int height, int layer)
     glDrawArrays(GL_TRIANGLES, 0, 2*3);
 }
 
-void GLRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
+CaptureSyncResult GLRenderer::SyncVRAMCapture(
+    u32 bank, u32 start, u32 len, bool complete)
 {
+    if (bank >= 4u || start >= 4u || len > 3u)
+        return CaptureSyncResult::Failed;
     if (!complete)
         Log(LogLevel::Error, "GPU_OpenGL: !!! READING VRAM AS IT IS BEING CAPTURED TO\n");
 
@@ -909,6 +950,10 @@ void GLRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
             pos &= 3;
         }
     }
+    MarkCaptureCpuCoherent(
+        bank, start, len,
+        CaptureAuthorityTransitionReason::NativeReadbackMaterialized);
+    return CaptureSyncResult::Synchronized;
 }
 
 

@@ -34,11 +34,15 @@ public:
     void VBlank() override;
     void VBlankEnd() override;
     void AllocCapture(u32 bank, u32 start, u32 len) override;
-    void SyncVRAMCapture(
+    CaptureSyncResult SyncVRAMCapture(
         u32 bank,
         u32 start,
         u32 len,
         bool complete) override;
+    [[nodiscard]] const char* GetCaptureBackendName() const noexcept override
+    {
+        return "Metal";
+    }
     void SwapBuffers() override;
     RendererOutput GetOutput() override;
     RendererOutputLease AcquireOutputLease() override;

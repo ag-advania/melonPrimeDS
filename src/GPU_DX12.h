@@ -57,6 +57,20 @@ public:
     void VBlank() override;
     RendererOutput GetOutput() override;
     RendererOutputLease AcquireOutputLease() override;
+    void AllocCapture(u32 bank, u32 start, u32 len) override;
+    CaptureSyncResult SyncVRAMCapture(
+        u32 bank, u32 start, u32 len, bool complete) override;
+    void InvalidateVRAMCapture(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason) override;
+    [[nodiscard]] NativeCaptureStateIdentity
+    GetNativeCaptureStateIdentity() const noexcept override;
+    [[nodiscard]] const char* GetCaptureBackendName() const noexcept override
+    {
+        return "DX12";
+    }
 
     void BeginReflexFrame(melonDS::u64 logicalFrameId);
     void BeginAmdAntiLag2Frame();
@@ -96,6 +110,8 @@ public:
     [[nodiscard]] const DX12Renderer3D* GetDX12Renderer3D() const noexcept;
 
 private:
+    [[nodiscard]] bool CanUseNativeGPU2DForFrame() const noexcept override;
+
     std::unique_ptr<Renderer3D> DifferentialReference;
     RasterDifferential::State DifferentialState;
     DX12AmdAntiLag2 AmdAntiLag2;
@@ -106,6 +122,9 @@ private:
     DX12LowLatencyPacingDecision LastLoggedPacingDecision{};
     bool PacingDecisionLogged = false;
     DX12NvidiaReflex NvidiaReflex;
+    bool NativeGPU2DAnnounced = false;
+    bool NativeGPU2DFallbackAnnounced = false;
+    bool NativeGPU2DStartupFallbackAnnounced = false;
 
     void LogLowLatencyPacingStateIfChanged();
 };

@@ -19,6 +19,9 @@
 #include "NDS.h"
 #include "GPU_Soft.h"
 #include "GPU_ColorOp.h"
+#include <chrono>
+#include <cstring>
+#include "GPU2DFrameDump.h"
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
 #include "MelonPrimeStructuredComposition.h"
 #endif
@@ -33,7 +36,7 @@ namespace Contract = StructuredComposition;
 #endif
 
 SoftRenderer::SoftRenderer(melonDS::NDS& nds)
-    : Renderer(nds.GPU)
+    : Renderer(nds.GPU), NativeGPU2DFrame(nds.GPU)
 {
     const size_t len = 256 * 192;
     Framebuffer[0][0] = new u32[len];
@@ -57,15 +60,64 @@ SoftRenderer::~SoftRenderer()
 
 void SoftRenderer::Reset()
 {
+    ResetDerivedState(true);
+}
+
+void SoftRenderer::ResetDerivedState(bool sessionReset) noexcept
+{
     const size_t len = 256 * 192 * sizeof(u32);
-    memset(Framebuffer[0][0], 0, len);
-    memset(Framebuffer[0][1], 0, len);
-    memset(Framebuffer[1][0], 0, len);
-    memset(Framebuffer[1][1], 0, len);
+    if (sessionReset)
+    {
+        memset(Framebuffer[0][0], 0, len);
+        memset(Framebuffer[0][1], 0, len);
+        memset(Framebuffer[1][0], 0, len);
+        memset(Framebuffer[1][1], 0, len);
+    }
+    else
+    {
+        // BackBuffer is the in-progress destination. Preserve the opposite
+        // buffer: it is the last complete software presentation surface and
+        // must remain available while the loaded frame is discontinuous.
+        memset(Framebuffer[BackBuffer][0], 0, len);
+        memset(Framebuffer[BackBuffer][1], 0, len);
+    }
+    SoftwareLogicalFrame.fill(0);
+    SoftwareScreenFrame.fill(0);
+    NativeGPU2DFrame.Reset();
+    if (sessionReset)
+    {
+        ResetCaptureProvenance(CaptureAuthorityTransitionReason::RendererReset);
+        EmulatedFrameSerial = 0;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        ResumeFrameDiscontinuous = false;
+        RendererFrameEpoch = 0;
+#endif
+    }
+    else
+    {
+        // A loaded state starts a new renderer epoch. Never let the recorder
+        // from the pre-load frame satisfy the native compose gate.
+        ++EmulatedFrameSerial;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        ResumeFrameDiscontinuous = true;
+        ++RendererFrameEpoch;
+#endif
+    }
+    NativeGPU2DProducerForFrame = false;
+    RecordNativeGPU2DFrameForFrame = false;
+    NativeGPU2DRecordedFrameSerial = 0;
+    GPU2DFallbacks = {};
 
     Rend2D_A->Reset();
     Rend2D_B->Reset();
-    Rend3D->Reset();
+    Rend3D->InvalidateHighResCaptureState(
+        sessionReset
+            ? HighResCaptureInvalidationReason::RendererReset
+            : HighResCaptureInvalidationReason::SavestateLoad);
+    if (sessionReset)
+        Rend3D->Reset();
+    else
+        Rend3D->ResetAfterSavestateLoad();
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     StructuredEnginePlanes.fill(0);
     StructuredScreenPlanes.fill(0);
@@ -84,6 +136,10 @@ void SoftRenderer::Reset()
     StructuredCaptureCommands.fill(0);
     std::fill_n(Structured3DPlaceholderLine, 256, StructuredComposition::k3DPlaceholderPixel);
     std::fill_n(StructuredCaptureCompositeLine, 256, 0u);
+    StructuredScreenCoverage[0].Reset();
+    StructuredScreenCoverage[1].Reset();
+    StructuredEngineCoverage[0].Reset();
+    StructuredEngineCoverage[1].Reset();
     StructuredFrameValid = false;
     StructuredCaptureCompositeLineValid = false;
     StructuredCapturePreparedThisFrame = false;
@@ -94,7 +150,10 @@ void SoftRenderer::Reset()
     StructuredScreenRouteCopyNanoseconds = 0;
     StructuredRegularLines = 0;
     StructuredFallbackLines = 0;
-    StructuredFrameGeneration = 0;
+    if (sessionReset)
+        StructuredFrameGeneration = 0;
+    else
+        ++StructuredFrameGeneration;
     StructuredContentGeneration = {};
     StructuredPendingPlaneDirtyMask = 0;
     StructuredPendingLineMetaDirtyMask = 0;
@@ -102,7 +161,49 @@ void SoftRenderer::Reset()
     StructuredEngineChangedMask[0] = 0;
     StructuredEngineChangedMask[1] = 0;
     StructuredPerfBackendForFrame = StructuredPerfBackend::None;
+    StructuredLastOutputLine = 0;
+    StructuredLastVCount = 0;
 #endif
+}
+
+void SoftRenderer::RebuildAfterSavestateLoad(u32 vcount)
+{
+    ResetDerivedState(false);
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    ResumeFrameDiscontinuous = true;
+#endif
+
+    // The DS renderer prepares OBJ one scanline ahead. A state loaded in the
+    // visible region therefore needs the restored line's sprite cache before
+    // GPU::StartHBlank() invokes DrawScanline(vcount). VCOUNT 262 remains the
+    // normal line-0 preparation point for states loaded during VBlank.
+    const bool rebuiltOBJLine = vcount < GPU2DNative::ScreenHeight;
+    if (rebuiltOBJLine)
+    {
+        Rend2D_A->DrawSprites(vcount);
+        Rend2D_B->DrawSprites(vcount);
+    }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DSavestateRecovery] SavestateLoadVCount=%u "
+        "EmulatedFrameSerial=%llu NativeProducerForFrame=%u "
+        "CaptureEnable=%u CaptureCnt=0x%08X ScreenSwap=%u "
+        "RebuiltOBJLine=%u\n",
+        static_cast<unsigned>(vcount),
+        static_cast<unsigned long long>(EmulatedFrameSerial),
+        NativeGPU2DProducerForFrame ? 1u : 0u,
+        GPU.CaptureEnable ? 1u : 0u,
+        static_cast<unsigned>(GPU.CaptureCnt),
+        GPU.ScreenSwap ? 1u : 0u,
+        rebuiltOBJLine ? 1u : 0u);
+#endif
+}
+
+void SoftRenderer::VBlank()
+{
+    DumpGPU2DFrame(Framebuffer[BackBuffer][0], Framebuffer[BackBuffer][1]);
 }
 
 void SoftRenderer::Stop()
@@ -113,6 +214,29 @@ void SoftRenderer::Stop()
     memset(Framebuffer[0][1], 0, len);
     memset(Framebuffer[1][0], 0, len);
     memset(Framebuffer[1][1], 0, len);
+    SoftwareScreenFrame.fill(0);
+    NativeGPU2DProducerForFrame = false;
+    RecordNativeGPU2DFrameForFrame = false;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const CaptureAuthorityDiagnostics& authority =
+        GetCaptureAuthorityDiagnostics();
+    const GPU2DNative::NativeCaptureHostCopyDiagnostics hostCopy =
+        GPU2DNative::GetNativeCaptureHostCopyDiagnostics();
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DCaptureAuthorityCounters] backend=%s "
+        "NativeToCpuReasonCaptureAllocated=%llu "
+        "NativeToCpuReasonFrameBegin=%llu "
+        "NativeToCpuReasonByteDifference=%llu "
+        "NativeOwnedHostReupload=%llu "
+        "NativeOwnedBlocksSkipped=%llu\n",
+        GetCaptureBackendName(),
+        static_cast<unsigned long long>(authority.NativeToCpuReasonCaptureAllocated),
+        static_cast<unsigned long long>(authority.NativeToCpuReasonFrameBegin),
+        static_cast<unsigned long long>(authority.NativeToCpuReasonByteDifference),
+        static_cast<unsigned long long>(hostCopy.NativeOwnedHostReupload),
+        static_cast<unsigned long long>(hostCopy.NativeOwnedBlocksSkipped));
+#endif
 }
 
 void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
@@ -120,26 +244,33 @@ void SoftRenderer::AllocCapture(u32 bank, u32 start, u32 len)
     (void)bank;
     (void)start;
     (void)len;
-    // Claiming a destination is not an invalidation. The old pixels are still
-    // the source for same-bank Display Capture until each new pixel is written;
-    // OpenGL preserves them in CaptureVRAMTex for the same reason. GPU.cpp calls
-    // InvalidateVRAMCapture explicitly when a capture is actually retired or
-    // CPU/DMA writes make emulated VRAM authoritative.
+    // Allocating a Display Capture destination does not make CPU VRAM coherent.
+    // It does not retire an existing native capture owner. The old
+    // destination pixels remain semantically live until they are actually
+    // overwritten or explicitly materialized/invalidated.
 }
 
-void SoftRenderer::SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete)
+CaptureSyncResult SoftRenderer::SyncVRAMCapture(
+    u32 bank, u32 start, u32 len, bool complete)
 {
+    (void)complete;
+    // Native backends keep capture state in their GPU-side mirror. The normal
+    // path must not replay the software 2D rasterizer at every HBlank; a
+    // backend may override this hook to materialize the requested capture
+    // range when the emulation core actually accesses it.
     (void)bank;
     (void)start;
     (void)len;
-    (void)complete;
-    // Native VRAM is already updated line-by-line by this renderer. A read-only
-    // synchronization must not discard the high-resolution sidecar; OpenGL's
-    // SyncVRAMCapture likewise keeps its capture texture after downscaling.
+    return CaptureSyncResult::AlreadyCoherent;
 }
 
-void SoftRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
+void SoftRenderer::InvalidateVRAMCapture(
+    u32 bank,
+    u32 start,
+    u32 len,
+    CaptureAuthorityTransitionReason reason)
 {
+    MarkCaptureCpuCoherent(bank, start, len, reason);
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     InvalidateStructuredCaptureBlocks(bank, start, len);
 #else
@@ -147,6 +278,40 @@ void SoftRenderer::InvalidateVRAMCapture(u32 bank, u32 start, u32 len)
     (void)start;
     (void)len;
 #endif
+}
+
+void SoftRenderer::PublishNativeCaptureProvenance(
+    CaptureOwner owner,
+    const GPU2DNative::FrameInput& input,
+    const NativeCaptureStateIdentity& identity) noexcept
+{
+    if (!IsNativeCaptureOwner(owner) || !identity.Valid)
+        return;
+
+    std::array<bool, CapturePhysicalBlockCount> published{};
+    for (u32 line = 0; line < GPU2DNative::ScreenHeight; ++line)
+    {
+        const GPU2DNative::LineState& state = input.Lines[line];
+        if (state.CaptureEnable == 0u)
+            continue;
+
+        const u32 bank = (state.CaptureCnt >> 16u) & 0x3u;
+        if ((state.LCDVRAMMap & (1u << bank)) == 0u)
+            continue;
+
+        const u32 start = (state.CaptureCnt >> 18u) & 0x3u;
+        const u32 size = (state.CaptureCnt >> 20u) & 0x3u;
+        const u32 blockCount = size == 0u ? 1u : std::min<u32>(size, 3u);
+        for (u32 i = 0; i < blockCount; ++i)
+        {
+            const u32 block = (start + i) & 0x3u;
+            const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+            if (published[index])
+                continue;
+            published[index] = true;
+            PublishNativeCaptureBlock(owner, identity, bank, block, 1u);
+        }
+    }
 }
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
@@ -201,6 +366,35 @@ void SoftRenderer::PostSavestate()
         rend3d->EnableRenderThread();
 }
 
+void SoftRenderer::InvalidateHighResCaptureState(
+    HighResCaptureInvalidationReason reason) noexcept
+{
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    // Structured capture references are the software producer's equivalent
+    // of the GPU sidecar.  A savestate restores native VRAM, not these
+    // renderer-private pixels, so no pre-load reference may survive the
+    // lifecycle boundary.  The arrays are metadata/compact mirrors, not the
+    // high-resolution allocation itself; this remains O(16) at the GPU
+    // boundary and avoids a full-resolution clear.
+    StructuredCaptureLineValid.fill(0);
+    StructuredCapturePixelValid.fill(0);
+    StructuredCapturePixelVersion.fill(0);
+    StructuredCaptureBankVersion.fill(0);
+    StructuredCaptureBankWrittenThisFrame.fill(0);
+    StructuredCaptureCommandWrittenThisFrame.fill(0);
+    StructuredCaptureSourceBReference.fill(0);
+    StructuredCaptureCommands.fill(0);
+    StructuredFrameValid = false;
+    StructuredCaptureCompositeLineValid = false;
+    StructuredCapturePreparedThisFrame = false;
+    StructuredCapture3DValid = false;
+#else
+    (void)reason;
+#endif
+    if (Rend3D)
+        Rend3D->InvalidateHighResCaptureState(reason);
+}
+
 
 void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 {
@@ -211,18 +405,74 @@ void SoftRenderer::SetRenderSettings(RendererSettings& settings)
 
 void SoftRenderer::DrawScanline(u32 line)
 {
-#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     const u32 outputLine = line;
-    if (outputLine == 0u)
+
+    // Latch the producer choice once per emulated frame and invalidate the
+    // previous recorder before making the choice. A frame without a complete
+    // recorder must never be allowed to reuse the prior frame's native output.
+    if (GPU.VCount == 0u)
+    {
+        ++EmulatedFrameSerial;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+        ResumeFrameDiscontinuous = false;
+#endif
+        const bool nativeGPU2DReady = CanUseNativeGPU2DForFrame();
+        const bool exactValidation = GPU2DNative::ExactValidationEnabled();
+        SoftwareScreenFrame.fill(0u);
+        NativeGPU2DProducerForFrame = nativeGPU2DReady
+            && !exactValidation;
+        RecordNativeGPU2DFrameForFrame = nativeGPU2DReady
+            && (NativeGPU2DProducerForFrame || exactValidation);
+        if (RecordNativeGPU2DFrameForFrame)
+        {
+            NativeGPU2DFrame.BeginFrame(EmulatedFrameSerial);
+        }
+        else
+            NativeGPU2DFrame.Reset();
+
+        // Savestate restore can leave the software 2D renderer's per-line OBJ
+        // cache without the preceding VBlank (VCOUNT 262) that normally
+        // prepares line 0. Rebuild it only for the exact native GPU2D oracle:
+        // standalone Software remains an independent baseline path, while a
+        // native producer does not consume this CPU-side cache at all.
+        if (exactValidation && !NativeGPU2DProducerForFrame)
+        {
+            Rend2D_A->DrawSprites(0u);
+            Rend2D_B->DrawSprites(0u);
+        }
+    }
+    if (NativeGPU2DProducerForFrame && GPU.VCount < GPU2DNative::ScreenHeight)
+    {
+        const u32 nativeLine = GPU.VCount;
+        NativeGPU2DFrame.CaptureMemoryForLine(nativeLine);
+        NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, nativeLine, GPU.ScreenSwap);
+        NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, nativeLine, GPU.ScreenSwap);
+        // The native producer does not execute the Software DoCapture path,
+        // but it must observe the same late DISPCAPCNT/LCDC state boundary.
+        // Software records this after both logical engines have rendered the
+        // line; keep the native line-state timeline identical before it is
+        // uploaded to Vulkan/DX12.
+        NativeGPU2DFrame.CaptureCaptureStateForLine(nativeLine);
+        if (nativeLine == GPU2DNative::ScreenHeight - 1u)
+        {
+            NativeGPU2DFrame.FinalizeMemory();
+            if (NativeGPU2DFrame.IsValid())
+                NativeGPU2DRecordedFrameSerial = EmulatedFrameSerial;
+        }
+        return;
+    }
+
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    if (GPU.VCount == 0u)
     {
         StructuredPerfBackendForFrame = UseStructuredVulkan2D() && Rend3D != nullptr
             ? Rend3D->GetStructured2DPerfBackend()
             : StructuredPerfBackend::None;
     }
-    const bool measureStructured2D = outputLine < 192u
+    const bool measureStructured2D = GPU.VCount < 192u
         && StructuredPerfBackendForFrame != StructuredPerfBackend::None;
     bool structuredVramDisplaySnapshotted = false;
-    if (measureStructured2D && outputLine == 0u)
+    if (measureStructured2D && GPU.VCount == 0u)
         BeginStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
     u32 *dstA, *dstB;
@@ -240,12 +490,23 @@ void SoftRenderer::DrawScanline(u32 line)
 
     // the position used for drawing operations is based on VCOUNT
     line = GPU.VCount;
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    StructuredLastOutputLine = outputLine;
+    StructuredLastVCount = line;
+#endif
     if (line < 192)
     {
+        if (RecordNativeGPU2DFrameForFrame)
+        {
+            NativeGPU2DFrame.CaptureMemoryForLine(line);
+            NativeGPU2DFrame.CaptureLine(0u, GPU.GPU2D_A, line, GPU.ScreenSwap);
+            NativeGPU2DFrame.CaptureLine(1u, GPU.GPU2D_B, line, GPU.ScreenSwap);
+        }
+
         // retrieve 3D output
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const bool structuredVulkan2D = UseStructuredVulkan2D();
-        if (structuredVulkan2D && outputLine == 0u)
+        if (structuredVulkan2D && GPU.VCount == 0u)
         {
             ++StructuredFrameGeneration;
             StructuredFrameValid = false;
@@ -280,7 +541,16 @@ void SoftRenderer::DrawScanline(u32 line)
                 StructuredCapturePreparedThisFrame = true;
             }
         }
-        Output3D = structuredVulkan2D ? Structured3DPlaceholderLine : Rend3D->GetLine(line);
+        // Structured native composition owns the 3D image in normal frames and
+        // therefore uses a transparent placeholder here to avoid a CPU 3D
+        // readback. The exact differential gate is different: its Software
+        // oracle must include the real 3D layer, otherwise a native compositor
+        // that correctly samples FinalFB is compared against an artificial
+        // transparent frame.
+        const bool exactNativeGPU2D = GPU2DNative::ExactValidationEnabled();
+        Output3D = structuredVulkan2D && !exactNativeGPU2D
+            ? Structured3DPlaceholderLine
+            : Rend3D->GetLine(line);
 #else
         Output3D = Rend3D->GetLine(line);
 #endif
@@ -288,6 +558,23 @@ void SoftRenderer::DrawScanline(u32 line)
         // draw BG/OBJ layers
         Rend2D_A->DrawScanline(line);
         Rend2D_B->DrawScanline(line);
+
+        // Preserve the exact native logical words before DrawScanlineA/B
+        // applies display mode and master brightness.  Native Vulkan/DX12
+        // GPU2D validation compares against this array, never against a
+        // scaled presenter image or a screenshot.
+        std::memcpy(
+            SoftwareLogicalFrame.data()
+                + static_cast<std::size_t>(0u) * GPU2DNative::ScreenPixelCount
+                + static_cast<std::size_t>(line) * GPU2DNative::ScreenWidth,
+            Output2D[0],
+            GPU2DNative::ScreenWidth * sizeof(u32));
+        std::memcpy(
+            SoftwareLogicalFrame.data()
+                + static_cast<std::size_t>(1u) * GPU2DNative::ScreenPixelCount
+                + static_cast<std::size_t>(line) * GPU2DNative::ScreenWidth,
+            Output2D[1],
+            GPU2DNative::ScreenWidth * sizeof(u32));
 
         // draw the final screen output
         DrawScanlineA(line, dstA);
@@ -299,9 +586,11 @@ void SoftRenderer::DrawScanline(u32 line)
         {
             const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
             structuredVramDisplaySnapshotted =
-                SnapshotStructuredVramDisplayLine(screenA, outputLine, line);
+                SnapshotStructuredVramDisplayLine(screenA, line, line);
         }
 
+        if (RecordNativeGPU2DFrameForFrame)
+            NativeGPU2DFrame.CaptureCaptureStateForLine(line);
         if (GPU.CaptureEnable)
         {
             const u32 captureMode = (GPU.CaptureCnt >> 29) & 0x3u;
@@ -329,9 +618,49 @@ void SoftRenderer::DrawScanline(u32 line)
             DoCapture(line);
         }
 #else
+        if (RecordNativeGPU2DFrameForFrame)
+            NativeGPU2DFrame.CaptureCaptureStateForLine(line);
         if (GPU.CaptureEnable)
             DoCapture(line);
 #endif
+
+        // Gate B oracle: keep the final software LCD result in canonical
+        // 6-bit form. Native Vulkan/DX12 never consume these pixels; they
+        // evaluate their own display path from the recorded state/mirrors.
+        // The native compositor's y coordinate is the emulated VCOUNT line,
+        // not the scheduler argument used as the destination framebuffer row.
+        // They normally match, but a savestate can resume between those two
+        // clocks. Keying the exact oracle by outputLine then leaves a visible
+        // first row unrecorded while the native recorder correctly has VCOUNT
+        // line 0. Keep the oracle in the same line domain as FrameInput.
+        if (line < GPU2DNative::ScreenHeight)
+        {
+            const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
+            const u32 screenB = screenA ^ 1u;
+            u32* finalA = SoftwareScreenFrame.data()
+                + static_cast<std::size_t>(screenA)
+                    * GPU2DNative::ScreenPixelCount
+                + static_cast<std::size_t>(line)
+                    * GPU2DNative::ScreenWidth;
+            u32* finalB = SoftwareScreenFrame.data()
+                + static_cast<std::size_t>(screenB)
+                    * GPU2DNative::ScreenPixelCount
+                + static_cast<std::size_t>(line)
+                    * GPU2DNative::ScreenWidth;
+            if (GPU.ScreensEnabled)
+            {
+                for (u32 x = 0; x < GPU2DNative::ScreenWidth; ++x)
+                {
+                    finalA[x] = dstA[x] & 0x003F3F3Fu;
+                    finalB[x] = dstB[x] & 0x003F3F3Fu;
+                }
+            }
+            else
+            {
+                std::fill_n(finalA, GPU2DNative::ScreenWidth, 0u);
+                std::fill_n(finalB, GPU2DNative::ScreenWidth, 0u);
+            }
+        }
     }
     else
     {
@@ -353,9 +682,9 @@ void SoftRenderer::DrawScanline(u32 line)
         const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
         BuildStructuredScreenLine(
-            0, screenA, outputLine, dstA, line >= 192u,
+            0, screenA, line, dstA, line >= 192u,
             structuredVramDisplaySnapshotted);
-        BuildStructuredScreenLine(1, screenB, outputLine, dstB, line >= 192u);
+        BuildStructuredScreenLine(1, screenB, line, dstB, line >= 192u);
 #endif
         // expand the color from 6-bit to 8-bit
         ExpandColor(dstA);
@@ -372,22 +701,49 @@ void SoftRenderer::DrawScanline(u32 line)
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
         const u32 screenA = GPU.ScreenSwap ? 0u : 1u;
         const u32 screenB = screenA ^ 1u;
-        BuildStructuredScreenLine(0, screenA, outputLine, dstA, true);
-        BuildStructuredScreenLine(1, screenB, outputLine, dstB, true);
+        BuildStructuredScreenLine(0, screenA, line, dstA, true);
+        BuildStructuredScreenLine(1, screenB, line, dstB, true);
 #endif
     }
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-    if (UseStructuredVulkan2D() && outputLine == 191u)
+    if (UseStructuredVulkan2D() && line == 191u)
         FinalizeStructuredCaptureFrame();
-    if (UseStructuredVulkan2D() && outputLine == 191u)
+    if (UseStructuredVulkan2D() && line == 191u)
         FlushStructuredGeneration();
-    if (measureStructured2D && outputLine == 191u)
+    if (UseStructuredVulkan2D() && line == 191u)
+    {
+        const bool coverageComplete = StructuredCoverageComplete();
+        const bool legacyABPublication = ResumeFrameDiscontinuous
+            && !GPU2DNative::DropDiscontinuousSavestateFrameEnabled();
+        StructuredFrameValid = coverageComplete
+            || legacyABPublication;
+        if (StructuredFrameValid)
+            StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
+    }
+    if (measureStructured2D && line == 191u)
         EndStructured2DPerfFrame(StructuredPerfBackendForFrame);
 #endif
+    if (RecordNativeGPU2DFrameForFrame && line == 191u)
+    {
+        NativeGPU2DFrame.FinalizeMemory();
+        if (NativeGPU2DFrame.IsValid())
+            NativeGPU2DRecordedFrameSerial = EmulatedFrameSerial;
+    }
 }
 
 void SoftRenderer::DrawSprites(u32 line)
 {
+    if (NativeGPU2DProducerForFrame)
+    {
+        NativeGPU2DFrame.CaptureSpriteLatchForLine(line);
+        return;
+    }
+    // Exact differential validation keeps the software renderer as the
+    // oracle, but the native shader must still receive the same one-line-ahead
+    // OBJ/OAM latch timeline. Record that boundary before rendering the CPU
+    // line; the ordinary software path remains the actual producer here.
+    if (RecordNativeGPU2DFrameForFrame)
+        NativeGPU2DFrame.CaptureSpriteLatchForLine(line);
     Rend2D_A->DrawSprites(line);
     Rend2D_B->DrawSprites(line);
 }
@@ -502,6 +858,10 @@ void SoftRenderer::DoCapture(u32 line)
     if (!(GPU.VRAMMap_LCDC & (1<<dstvram)))
         return;
 
+    const auto captureCpuStart = RecordNativeGPU2DFrameForFrame
+        ? std::chrono::steady_clock::now()
+        : std::chrono::steady_clock::time_point{};
+
     u16* dst = (u16*)GPU.VRAM[dstvram];
     u32 dstaddr = (((captureCnt >> 18) & 0x3) << 14) + (line * width);
     dst += (dstaddr & 0xFFFF);
@@ -555,6 +915,9 @@ void SoftRenderer::DoCapture(u32 line)
 
     static_assert(VRAMDirtyGranularity == 512);
     GPU.VRAMDirty[dstvram][(dstaddr * 2) / VRAMDirtyGranularity] = true;
+    GPU.RecordGPU2DWrite(
+        GPU2DWriteKind::VRAM, dstvram,
+        (dstaddr * 2u) / VRAMDirtyGranularity);
 
     switch ((captureCnt >> 29) & 0x3)
     {
@@ -662,6 +1025,14 @@ void SoftRenderer::DoCapture(u32 line)
             dst);
     }
 #endif
+
+    if (RecordNativeGPU2DFrameForFrame)
+    {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - captureCpuStart).count();
+        NativeGPU2DFrame.RecordSoftwareCaptureLine(
+            static_cast<u64>(elapsed > 0 ? elapsed : 0));
+    }
 }
 
 void SoftRenderer::ApplyMasterBrightness(u16 regval, u32* dst)
@@ -1076,6 +1447,9 @@ void SoftRenderer::BuildStructuredScreenLine(
     if (!UseStructuredVulkan2D() || engine >= 2u || screen >= 2u || line >= 192u || output == nullptr)
         return;
 
+    StructuredScreenCoverage[screen].Mark(line);
+    StructuredEngineCoverage[engine].Mark(line);
+
     // A VRAM-display line is captured before DoCapture() mutates the bank.
     // Keep those pixels and their old-generation references intact, but defer
     // frame publication until after this scanline's capture command exists.
@@ -1083,11 +1457,6 @@ void SoftRenderer::BuildStructuredScreenLine(
     {
         StoreStructuredScreenSource(screen, line, Contract::kScreenSourceFallback);
         ++StructuredFallbackLines;
-        if (line == 191u)
-        {
-            StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
-            StructuredFrameValid = true;
-        }
         return;
     }
 
@@ -1158,11 +1527,6 @@ void SoftRenderer::BuildStructuredScreenLine(
         lineMetaDestination = lineMeta;
         MarkStructuredLineMetaDirty(screen);
     }
-    if (line == 191u)
-    {
-        StructuredFrameNativeMenuHeld = NativeMenuHeldForFrame;
-        StructuredFrameValid = true;
-    }
 }
 
 void SoftRenderer::FinalizeStructuredCaptureFrame()
@@ -1196,7 +1560,7 @@ void SoftRenderer::FinalizeStructuredCaptureFrame()
 bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept
 {
     view = {};
-    if (!UseStructuredVulkan2D() || !StructuredFrameValid)
+    if (!UseStructuredVulkan2D())
         return false;
     for (std::size_t screen = 0; screen < 2u; ++screen)
     {
@@ -1223,7 +1587,14 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
     view.CaptureSourceBReference = StructuredCaptureSourceBReference.data();
     view.CaptureCommands = StructuredCaptureCommands.data();
     view.NativeMenuHeld = StructuredFrameNativeMenuHeld;
-    view.Valid = true;
+    view.Valid = StructuredFrameValid;
+    view.CompleteCoverage = StructuredCoverageComplete();
+    view.ResumeFrameDiscontinuous = ResumeFrameDiscontinuous;
+    view.RendererEpoch = RendererFrameEpoch;
+    view.ScreenCoverage[0] = StructuredScreenCoverage[0].Count();
+    view.ScreenCoverage[1] = StructuredScreenCoverage[1].Count();
+    view.EngineCoverage[0] = StructuredEngineCoverage[0].Count();
+    view.EngineCoverage[1] = StructuredEngineCoverage[1].Count();
     view.ScreenRouteCopyBytes = StructuredScreenRouteCopyBytes;
     view.ScreenRouteCopyNanoseconds = StructuredScreenRouteCopyNanoseconds;
     view.StructuredRegularLines = StructuredRegularLines;
@@ -1231,6 +1602,37 @@ bool SoftRenderer::GetStructuredVulkanFrame(StructuredVulkanFrameView& view) con
     view.Generation = StructuredFrameGeneration;
     view.ContentGeneration = StructuredContentGeneration;
     return true;
+}
+
+void SoftRenderer::LogGPU2DFrameCoverage(
+    bool published,
+    const char* publicationSource) const noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const bool nativeValid = NativeGPU2DRecordedFrameSerial == EmulatedFrameSerial
+        && NativeGPU2DFrame.IsValid();
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DFrameCoverage] epoch=%llu savestateResume=%u "
+        "outputLine=%u vcount=%u screen0Coverage=%u screen1Coverage=%u "
+        "engine0Coverage=%u engine1Coverage=%u structuredValid=%u "
+        "nativeValid=%u published=%u publicationSource=%s\n",
+        static_cast<unsigned long long>(RendererFrameEpoch),
+        ResumeFrameDiscontinuous ? 1u : 0u,
+        static_cast<unsigned>(StructuredLastOutputLine),
+        static_cast<unsigned>(StructuredLastVCount),
+        static_cast<unsigned>(StructuredScreenCoverage[0].Count()),
+        static_cast<unsigned>(StructuredScreenCoverage[1].Count()),
+        static_cast<unsigned>(StructuredEngineCoverage[0].Count()),
+        static_cast<unsigned>(StructuredEngineCoverage[1].Count()),
+        StructuredFrameValid ? 1u : 0u,
+        nativeValid ? 1u : 0u,
+        published ? 1u : 0u,
+        publicationSource != nullptr ? publicationSource : "unknown");
+#else
+    (void)published;
+    (void)publicationSource;
+#endif
 }
 #endif
 

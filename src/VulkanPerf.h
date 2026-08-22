@@ -80,6 +80,16 @@ enum class Counter : u32
     StructuredRegularLines,
     StructuredFallbackLines,
     StructuredRouteRuns,
+    NativeGPU2DFrames,
+    NativeGPU2DInputPackBytes,
+    NativeGPU2DVRAMUploadBytes,
+    NativeGPU2DPaletteUploadBytes,
+    NativeGPU2DOAMUploadBytes,
+    NativeGPU2DDispatchCount,
+    NativeGPU2DFallbackFrames,
+    NativeGPU2DReadbackBytes,
+    NativeGPU2DReadbackCount,
+    NativeGPU2DMismatchCount,
     HudUploadBytes,
     TextureUploadBytes,
     TextureMaterializeCount,
@@ -110,6 +120,10 @@ enum class Counter : u32
     PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
+    // Every compositor drop is a non-blocking backpressure admission failure;
+    // keep the explicit semantic alias for audit/report consumers without
+    // allocating a second counter or double-counting the event.
+    CompositorBackpressureCount = CompositorDropCount,
     CaptureValidLineCount,
     CaptureIndependentLineCount,
     CaptureLegacyOrderedLineCount,
@@ -160,6 +174,45 @@ enum class Counter : u32
     VulkanPresentMode,
     VulkanVsyncEnabled,
     VulkanReflexMode,
+    NativeGPU2DLogicalGpuTimeNs,
+    NativeGPU2DCaptureGpuTimeNs,
+    NativeGPU2DResolveGpuTimeNs,
+    NativeGPU2DObjRawGpuNs,
+    RecorderBlocksScanned,
+    RecorderBytesScanned,
+    RecorderBlocksCopied,
+    RecorderBytesCopied,
+    CaptureCPU2DLines,
+    CaptureCPU2DNs,
+    GPU2DRecorderNs,
+    TimelineRowDedupNs,
+    SpriteTimelineRowDedupNs,
+    NativeGPU2DPackNs,
+    MappedReadWordCalls,
+    MappedReadFastPathCalls,
+    MappedReadSlowPathCalls,
+    NativeCaptureHistoryScanLines,
+    NativeMappingBuildCalls,
+    NativeMappingRowsUploaded,
+    NativeMappingBytesUploaded,
+    BGOverlayFastPath,
+    BGOverlaySlowPath,
+    OBJOverlayFastPath,
+    OBJOverlaySlowPath,
+    NativeGPU2DCaptureDispatchCount,
+    NativeGPU2DCaptureBarrierCount,
+    CompositorGpuTimeNs,
+    PresentWaitNs,
+    VulkanSurfaceEventCount,
+    VulkanSurfaceSnapshotPublishCount,
+    VulkanNativeIdentityGenerationChangeCount,
+    VulkanSurfaceRebindCount,
+    VulkanSwapchainDirtySetCount,
+    VulkanSwapchainRecreateCount,
+    VulkanSwapchainWaitIdleNs,
+    VulkanPresentSuccessCount,
+    VulkanPresentSkipCount,
+    VulkanPresentedSerialRegressionCount,
     Count,
 };
 
@@ -451,7 +504,12 @@ inline void MaybeReport()
         "setup_indices=%llu structured_pack_B=%llu structured_input_packed_B=%llu "
         "structured_input_uploaded_B=%llu structured_input_regions=%llu structured_input_full=%llu "
         "structured_input_partial=%llu route_copy_B=%llu route_copy_ns=%llu "
-        "regular_lines=%llu fallback_lines=%llu route_runs=%llu hud_upload_B=%llu texture_upload_B=%llu "
+        "regular_lines=%llu fallback_lines=%llu route_runs=%llu "
+        "native_gpu2d_frames=%llu native_gpu2d_input_pack_B=%llu native_gpu2d_vram_B=%llu "
+        "native_gpu2d_palette_B=%llu native_gpu2d_oam_B=%llu native_gpu2d_dispatches=%llu "
+        "native_gpu2d_fallback_frames=%llu native_gpu2d_readback_B=%llu "
+        "native_gpu2d_readbacks=%llu native_gpu2d_mismatches=%llu "
+        "hud_upload_B=%llu texture_upload_B=%llu "
         "texture_materialize_count=%llu "
         "texture_materialize_pre_fence_fail_count=%llu "
         "texture_materialize_retry_after_retire_count=%llu "
@@ -469,7 +527,7 @@ inline void MaybeReport()
         "presenter_descriptor_cache_hits=%llu presenter_descriptor_cache_misses=%llu "
         "presenter_descriptor_cache_invalidates=%llu presenter_descriptor_fallbacks=%llu "
         "presenter_descriptor_persistent_creates=%llu "
-        "compositor_descriptor_updates=%llu compose_drops=%llu "
+        "compositor_descriptor_updates=%llu compose_drops=%llu backpressure_count=%llu "
         "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
         "raster_gpu_ns=%llu structured_compositor_gpu_ns=%llu presenter_render_pass_gpu_ns=%llu "
@@ -487,12 +545,28 @@ inline void MaybeReport()
         "present_skipped_for_latency_budget_count=%llu transient_descriptor_pool_resets=%llu "
         "previous_present_wait_count=%llu previous_present_wait_ns=%llu "
         "previous_present_wait_timeout_count=%llu swapchain_image_count=%llu "
-        "presenter_frames_in_flight=%llu "
-        "unretired_frame_ring_submission_depth=%llu "
-        "logical_frames_since_last_accepted_present=%llu "
-        "distinct_swapchain_images_acquired_since_recreate=%llu "
-        "pacing_authority=%llu present_mode=%llu vsync_enabled=%llu "
-        "reflex_mode=%llu\n",
+         "presenter_frames_in_flight=%llu "
+         "unretired_frame_ring_submission_depth=%llu "
+         "logical_frames_since_last_accepted_present=%llu "
+         "distinct_swapchain_images_acquired_since_recreate=%llu "
+         "nv_low_latency_optimized_mode_count=%llu "
+         "present_mode_is_nv_low_latency_optimized=%llu "
+         "pacing_authority=%llu present_mode=%llu vsync_enabled=%llu "
+         "reflex_mode=%llu native_gpu2d_logical_ns=%llu "
+         "native_gpu2d_capture_ns=%llu native_gpu2d_resolve_ns=%llu "
+         "native_gpu2d_obj_raw_ns=%llu "
+         "recorder_blocks_scanned=%llu recorder_bytes_scanned=%llu "
+         "recorder_blocks_copied=%llu recorder_bytes_copied=%llu "
+         "capture_cpu_2d_lines=%llu capture_cpu_2d_ns=%llu "
+         "gpu2d_recorder_ns=%llu timeline_row_dedup_ns=%llu "
+         "sprite_timeline_row_dedup_ns=%llu native_gpu2d_pack_ns=%llu "
+         "mapped_read_word_calls=%llu mapped_read_fast_path_calls=%llu "
+         "mapped_read_slow_path_calls=%llu native_capture_history_scan_lines=%llu "
+         "native_mapping_build_calls=%llu native_mapping_rows_uploaded=%llu "
+         "native_mapping_bytes_uploaded=%llu bg_overlay_fast_path=%llu "
+         "bg_overlay_slow_path=%llu obj_overlay_fast_path=%llu "
+         "obj_overlay_slow_path=%llu capture_dispatches=%llu "
+         "capture_barrier_calls=%llu compositor_gpu_ns=%llu present_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::Polygons), count(Counter::Variants),
@@ -506,6 +580,12 @@ inline void MaybeReport()
         count(Counter::StructuredScreenRouteCopyNanoseconds),
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
         count(Counter::StructuredRouteRuns),
+        count(Counter::NativeGPU2DFrames), count(Counter::NativeGPU2DInputPackBytes),
+        count(Counter::NativeGPU2DVRAMUploadBytes),
+        count(Counter::NativeGPU2DPaletteUploadBytes), count(Counter::NativeGPU2DOAMUploadBytes),
+        count(Counter::NativeGPU2DDispatchCount), count(Counter::NativeGPU2DFallbackFrames),
+        count(Counter::NativeGPU2DReadbackBytes), count(Counter::NativeGPU2DReadbackCount),
+        count(Counter::NativeGPU2DMismatchCount),
         count(Counter::HudUploadBytes), count(Counter::TextureUploadBytes),
         count(Counter::TextureMaterializeCount),
         count(Counter::TextureMaterializePreFenceFailCount),
@@ -530,6 +610,7 @@ inline void MaybeReport()
         count(Counter::PresenterDescriptorFallbackCount),
         count(Counter::PresenterDescriptorPersistentCreateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
+        count(Counter::CompositorBackpressureCount),
         count(Counter::CaptureValidLineCount), count(Counter::CaptureIndependentLineCount),
         count(Counter::CaptureLegacyOrderedLineCount),
         count(Counter::CaptureSidecarDispatchCount), count(Counter::CaptureSidecarBarrierCount),
@@ -570,8 +651,63 @@ inline void MaybeReport()
         count(Counter::VulkanNvLowLatencyOptimizedModeCount),
         count(Counter::VulkanPresentModeIsNvLowLatencyOptimized),
         count(Counter::VulkanPacingAuthority),
-        count(Counter::VulkanPresentMode), count(Counter::VulkanVsyncEnabled),
-        count(Counter::VulkanReflexMode));
+         count(Counter::VulkanPresentMode), count(Counter::VulkanVsyncEnabled),
+         count(Counter::VulkanReflexMode),
+         count(Counter::NativeGPU2DLogicalGpuTimeNs),
+         count(Counter::NativeGPU2DCaptureGpuTimeNs),
+         count(Counter::NativeGPU2DResolveGpuTimeNs),
+         count(Counter::NativeGPU2DObjRawGpuNs),
+         count(Counter::RecorderBlocksScanned), count(Counter::RecorderBytesScanned),
+         count(Counter::RecorderBlocksCopied), count(Counter::RecorderBytesCopied),
+         count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
+         count(Counter::GPU2DRecorderNs), count(Counter::TimelineRowDedupNs),
+         count(Counter::SpriteTimelineRowDedupNs), count(Counter::NativeGPU2DPackNs),
+         count(Counter::MappedReadWordCalls), count(Counter::MappedReadFastPathCalls),
+         count(Counter::MappedReadSlowPathCalls), count(Counter::NativeCaptureHistoryScanLines),
+         count(Counter::NativeMappingBuildCalls), count(Counter::NativeMappingRowsUploaded),
+         count(Counter::NativeMappingBytesUploaded), count(Counter::BGOverlayFastPath),
+         count(Counter::BGOverlaySlowPath), count(Counter::OBJOverlayFastPath),
+         count(Counter::OBJOverlaySlowPath), count(Counter::NativeGPU2DCaptureDispatchCount),
+         count(Counter::NativeGPU2DCaptureBarrierCount),
+         count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
+
+    const double reportSeconds = std::chrono::duration<double>(
+        now - state.LastReport).count();
+    std::fprintf(stderr,
+        "[VulkanPerf] rate interval_s=%.3f emulated_fps=%.3f "
+        "compose_fps=%.3f presented_fps=%.3f "
+        "native_gpu2d_raw_ms=%.3f native_gpu2d_logical_ms=%.3f "
+        "timeline_cpu_ms=%.3f sprite_timeline_cpu_ms=%.3f "
+        "native_gpu2d_pack_ms=%.3f\n",
+        reportSeconds,
+        reportSeconds > 0.0 ? count(Counter::Frames) / reportSeconds : 0.0,
+        reportSeconds > 0.0 ? count(Counter::NativeGPU2DFrames) / reportSeconds : 0.0,
+        reportSeconds > 0.0
+            ? count(Counter::VulkanPresentSuccessCount) / reportSeconds : 0.0,
+        static_cast<double>(count(Counter::NativeGPU2DObjRawGpuNs)) / 1000000.0,
+        static_cast<double>(count(Counter::NativeGPU2DLogicalGpuTimeNs)) / 1000000.0,
+        static_cast<double>(count(Counter::TimelineRowDedupNs)) / 1000000.0,
+        static_cast<double>(count(Counter::SpriteTimelineRowDedupNs)) / 1000000.0,
+        static_cast<double>(count(Counter::NativeGPU2DPackNs)) / 1000000.0);
+
+    std::fprintf(stderr,
+        "[VulkanPerf] surface surface_event_count=%llu "
+        "snapshot_publish_count=%llu identity_generation_change_count=%llu "
+        "surface_rebind_count=%llu swapchain_dirty_set_count=%llu "
+        "swapchain_recreate_count=%llu swapchain_wait_idle_ns=%llu "
+        "acquire_wait_ns=%llu present_wait_ns=%llu present_success_count=%llu "
+        "present_skip_count=%llu presented_serial_regression_count=%llu\n",
+        count(Counter::VulkanSurfaceEventCount),
+        count(Counter::VulkanSurfaceSnapshotPublishCount),
+        count(Counter::VulkanNativeIdentityGenerationChangeCount),
+        count(Counter::VulkanSurfaceRebindCount),
+        count(Counter::VulkanSwapchainDirtySetCount),
+        count(Counter::VulkanSwapchainRecreateCount),
+        count(Counter::VulkanSwapchainWaitIdleNs),
+        count(Counter::VulkanAcquireWaitNs), count(Counter::PresentWaitNs),
+        count(Counter::VulkanPresentSuccessCount),
+        count(Counter::VulkanPresentSkipCount),
+        count(Counter::VulkanPresentedSerialRegressionCount));
 
     const unsigned long long swapchainImageCount =
         count(Counter::VulkanSwapchainImageCount);
@@ -724,6 +860,16 @@ enum class Counter : u32
     StructuredRegularLines,
     StructuredFallbackLines,
     StructuredRouteRuns,
+    NativeGPU2DFrames,
+    NativeGPU2DInputPackBytes,
+    NativeGPU2DVRAMUploadBytes,
+    NativeGPU2DPaletteUploadBytes,
+    NativeGPU2DOAMUploadBytes,
+    NativeGPU2DDispatchCount,
+    NativeGPU2DFallbackFrames,
+    NativeGPU2DReadbackBytes,
+    NativeGPU2DReadbackCount,
+    NativeGPU2DMismatchCount,
     HudUploadBytes,
     TextureUploadBytes,
     TextureMaterializeCount,
@@ -754,6 +900,7 @@ enum class Counter : u32
     PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
+    CompositorBackpressureCount = CompositorDropCount,
     CaptureValidLineCount,
     CaptureIndependentLineCount,
     CaptureLegacyOrderedLineCount,
@@ -804,6 +951,45 @@ enum class Counter : u32
     VulkanPresentMode,
     VulkanVsyncEnabled,
     VulkanReflexMode,
+    NativeGPU2DLogicalGpuTimeNs,
+    NativeGPU2DCaptureGpuTimeNs,
+    NativeGPU2DResolveGpuTimeNs,
+    NativeGPU2DObjRawGpuNs,
+    RecorderBlocksScanned,
+    RecorderBytesScanned,
+    RecorderBlocksCopied,
+    RecorderBytesCopied,
+    CaptureCPU2DLines,
+    CaptureCPU2DNs,
+    GPU2DRecorderNs,
+    TimelineRowDedupNs,
+    SpriteTimelineRowDedupNs,
+    NativeGPU2DPackNs,
+    MappedReadWordCalls,
+    MappedReadFastPathCalls,
+    MappedReadSlowPathCalls,
+    NativeCaptureHistoryScanLines,
+    NativeMappingBuildCalls,
+    NativeMappingRowsUploaded,
+    NativeMappingBytesUploaded,
+    BGOverlayFastPath,
+    BGOverlaySlowPath,
+    OBJOverlayFastPath,
+    OBJOverlaySlowPath,
+    NativeGPU2DCaptureDispatchCount,
+    NativeGPU2DCaptureBarrierCount,
+    CompositorGpuTimeNs,
+    PresentWaitNs,
+    VulkanSurfaceEventCount,
+    VulkanSurfaceSnapshotPublishCount,
+    VulkanNativeIdentityGenerationChangeCount,
+    VulkanSurfaceRebindCount,
+    VulkanSwapchainDirtySetCount,
+    VulkanSwapchainRecreateCount,
+    VulkanSwapchainWaitIdleNs,
+    VulkanPresentSuccessCount,
+    VulkanPresentSkipCount,
+    VulkanPresentedSerialRegressionCount,
     Count,
 };
 inline constexpr bool IsCompiledIn() noexcept { return false; }

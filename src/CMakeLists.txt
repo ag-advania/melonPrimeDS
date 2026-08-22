@@ -35,7 +35,11 @@ add_library(core STATIC
     GBACartMotionPak.cpp
     GPU.cpp
     GPU_Soft.cpp
+    GPU2DFrameDump.cpp
+    GPU2DFrameDump.h
     GPU2D.cpp
+    GPU2DNative.cpp
+    GPU2DNativeContract.cpp
     GPU2D_Soft.cpp
     GPU3D.cpp
     GPU3D_Soft.cpp

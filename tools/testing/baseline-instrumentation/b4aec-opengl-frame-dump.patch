@@ -1,0 +1,142 @@
+diff --git a/src/GPU_OpenGL.cpp b/src/GPU_OpenGL.cpp
+index 48533694e..4193f1273 100644
+--- a/src/GPU_OpenGL.cpp
++++ b/src/GPU_OpenGL.cpp
+@@ -17,6 +17,11 @@
+ */
+ 
+ #include <string.h>
++#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++#include <cstdio>
++#include <cstdlib>
++#include <vector>
++#endif
+ #include "NDS.h"
+ #include "GPU_OpenGL.h"
+ 
+@@ -622,10 +627,111 @@ void GLRenderer::VBlank()
+     if (GPU.CaptureEnable)
+         DoCapture(LastCapLine, 192);
+ 
++#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++    DumpFrameForValidation();
++#endif
++
+     LastLine = 0;
+     LastCapLine = 0;
+ }
+ 
++#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++void GLRenderer::DumpFrameForValidation()
++{
++    if (ScaleFactor != 1)
++        return;
++
++    constexpr u32 PixelCount = 256u * 192u;
++    struct Header
++    {
++        char Magic[8];
++        u32 Version;
++        u32 Frame;
++        u32 Width;
++        u32 Height;
++        u64 TopHash;
++        u64 BottomHash;
++    };
++    auto hashFrame = [](const std::vector<u32>& pixels) {
++        u64 hash = 1469598103934665603ull;
++        for (u32 value : pixels)
++        {
++            for (u32 byte = 0; byte < sizeof(value); ++byte)
++            {
++                hash ^= static_cast<u8>(value);
++                hash *= 1099511628211ull;
++                value >>= 8u;
++            }
++        }
++        return hash;
++    };
++
++    static bool initialized = false;
++    static std::FILE* output = nullptr;
++    static u32 frame = 0;
++    if (!initialized)
++    {
++        initialized = true;
++        const char* path = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP");
++        if (path && path[0] != '\0')
++            output = std::fopen(path, "wb");
++    }
++    if (!output)
++        return;
++    const char* trigger = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE");
++    if (trigger && trigger[0] != '\0')
++    {
++        std::FILE* marker = std::fopen(trigger, "rb");
++        if (!marker)
++            return;
++        std::fclose(marker);
++    }
++    u32 limit = 1u;
++    if (const char* value = std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_LIMIT"))
++    {
++        const unsigned long parsed = std::strtoul(value, nullptr, 10);
++        if (parsed != 0ul)
++            limit = static_cast<u32>(parsed);
++    }
++    if (frame >= limit)
++        return;
++
++    std::vector<u8> readback(PixelCount * 4u);
++    std::vector<u32> top(PixelCount);
++    std::vector<u32> bottom(PixelCount);
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, FPOutputFB[BackBuffer]);
++    glPixelStorei(GL_PACK_ALIGNMENT, 1);
++    for (int screen = 0; screen < 2; ++screen)
++    {
++        glReadBuffer(GL_COLOR_ATTACHMENT0 + screen);
++        glReadPixels(0, 0, 256, 192, GL_RGBA, GL_UNSIGNED_BYTE, readback.data());
++        std::vector<u32>& destination = screen == 0 ? top : bottom;
++        for (u32 i = 0; i < PixelCount; ++i)
++        {
++            const u8* pixel = &readback[i * 4u];
++            destination[i] = static_cast<u32>(pixel[0] >> 2u)
++                | (static_cast<u32>(pixel[1] >> 2u) << 8u)
++                | (static_cast<u32>(pixel[2] >> 2u) << 16u);
++        }
++    }
++
++    const Header header = {
++        {'M', 'P', '2', 'D', 'D', 'U', 'M', 'P'},
++        1u,
++        frame,
++        256u,
++        192u,
++        hashFrame(top),
++        hashFrame(bottom),
++    };
++    std::fwrite(&header, sizeof(header), 1, output);
++    std::fwrite(top.data(), top.size() * sizeof(u32), 1, output);
++    std::fwrite(bottom.data(), bottom.size() * sizeof(u32), 1, output);
++    std::fflush(output);
++    ++frame;
++}
++#endif
++
+ void GLRenderer::VBlankEnd()
+ {
+     AuxUsageMask = 0;
+diff --git a/src/GPU_OpenGL.h b/src/GPU_OpenGL.h
+index 7c561309b..122683993 100644
+--- a/src/GPU_OpenGL.h
++++ b/src/GPU_OpenGL.h
+@@ -148,6 +148,9 @@ private:
+     void RenderScreen(int ystart, int yend);
+     void DoCapture(int ystart, int yend);
+     void DownscaleCapture(int width, int height, int layer);
++#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++    void DumpFrameForValidation();
++#endif
+ };
+ 
+ }

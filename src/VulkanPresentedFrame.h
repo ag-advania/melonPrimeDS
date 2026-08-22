@@ -41,11 +41,18 @@ struct VulkanPresentedFrame
     // renderer recreates the compositor output resources.
     u64 Serial = 0;
     u64 Generation = 0;
+    u64 Epoch = 0;
     u64 ResourceGeneration = 0;
+    // Handles describe allocated storage; this bit describes whether the
+    // current published frame actually wrote that storage.  Diagnostic
+    // readback may deliberately use the composed-buffer path while the
+    // direct images remain allocated.
+    bool DirectContentValid = false;
 
     [[nodiscard]] bool HasDirectSampledOutput() const noexcept
     {
-        return DirectImageTop != VK_NULL_HANDLE
+        return DirectContentValid
+            && DirectImageTop != VK_NULL_HANDLE
             && DirectImageViewTop != VK_NULL_HANDLE
             && DirectImageBottom != VK_NULL_HANDLE
             && DirectImageViewBottom != VK_NULL_HANDLE;

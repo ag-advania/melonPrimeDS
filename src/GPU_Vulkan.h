@@ -55,6 +55,20 @@ public:
     void VBlank() override;
     RendererOutput GetOutput() override;
     RendererOutputLease AcquireOutputLease() override;
+    void AllocCapture(u32 bank, u32 start, u32 len) override;
+    CaptureSyncResult SyncVRAMCapture(
+        u32 bank, u32 start, u32 len, bool complete) override;
+    void InvalidateVRAMCapture(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason) override;
+    [[nodiscard]] NativeCaptureStateIdentity
+    GetNativeCaptureStateIdentity() const noexcept override;
+    [[nodiscard]] const char* GetCaptureBackendName() const noexcept override
+    {
+        return "Vulkan";
+    }
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;
@@ -95,10 +109,15 @@ public:
     }
 
 private:
+    [[nodiscard]] bool CanUseNativeGPU2DForFrame() const noexcept override;
+
     std::unique_ptr<Renderer3D> DifferentialReference;
     RasterDifferential::State DifferentialState;
     int NvidiaReflexMode = 0;
     bool AmdAntiLag2Enabled = false;
+    bool NativeGPU2DAnnounced = false;
+    bool NativeGPU2DFallbackAnnounced = false;
+    bool NativeGPU2DStartupFallbackAnnounced = false;
 
     VBlankObserver VBlankObserverFn = nullptr;
     void* VBlankObserverData = nullptr;

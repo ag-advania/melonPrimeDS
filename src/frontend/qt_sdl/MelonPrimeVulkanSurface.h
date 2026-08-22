@@ -91,14 +91,14 @@ Surface Create(
     PFN_vkGetInstanceProcAddr getInstanceProcAddr,
     QWidget* widget);
 
-#if defined(__linux__)  // scatter-budget-exempt: Linux snapshot-based WSI API, not input dispatch
-// Linux presenter-thread entry point. The snapshot must have been captured by
-// the GUI-thread native host after its latest lifecycle boundary.
+// Presenter-thread entry point. The snapshot must have been captured by the
+// GUI-thread native host after its latest lifecycle boundary. The same
+// contract is used on Windows/macOS so a rebind never calls QWidget/QPA APIs
+// from the emulation thread.
 Surface Create(
     VkInstance instance,
     PFN_vkGetInstanceProcAddr getInstanceProcAddr,
     const NativeWindowSnapshot& snapshot);
-#endif
 
 // Destroys the VkSurfaceKHR and any platform layer, and clears `surface`.
 // Callers must have made sure no swapchain still references it.

@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "GPU3D.h"
+#include "GPU2DNative.h"
 #include "GPU3D_FixedVariantIndex.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "DX12Context.h"
@@ -57,6 +58,9 @@ public:
 
     bool Init() override;
     void Reset() override;
+    void ResetAfterSavestateLoad() override;
+    void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason reason) noexcept override;
 
     // Releases every GPU-visible object while the emulator core is still alive.
     void Stop();
@@ -84,20 +88,53 @@ public:
         const StructuredComposition::ScreenRoutingView& screenRouting,
         u64 generation,
         const StructuredComposition::GenerationState& contentGeneration);
+    bool ComposeNativeGPU2D(
+        const GPU2DNative::FrameInput& input,
+        u64 generation,
+        bool finalFBValid,
+        const u32* expectedTop = nullptr,
+        const u32* expectedBottom = nullptr);
     [[nodiscard]] RendererOutput GetComposedOutput() const;
+    [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasValidFrame; }
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
     [[nodiscard]] u32 GetComposedWidth() const noexcept { return static_cast<u32>(ScreenWidth); }
     [[nodiscard]] u32 GetComposedHeight() const noexcept { return static_cast<u32>(ScreenHeight); }
     [[nodiscard]] bool HasRuntimeFailure() const noexcept { return RuntimeFailed; }
+    [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
+    [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
+    {
+        return LastComposeResult;
+    }
+    // Materialize only the requested LCDC capture blocks when the emulation
+    // core actually reads them.  The normal native frame path keeps this
+    // mirror device-local and never calls this method.
+    bool ReadNativeCapture(
+        u32 bank,
+        u32 start,
+        u32 len,
+        const CaptureBlockProvenance& expected,
+        u8* destination);
+    [[nodiscard]] NativeCaptureStateIdentity GetNativeCaptureStateIdentity(
+        CaptureOwner owner) const noexcept;
+    [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
+    {
+        return PublishedOutputGeneration;
+    }
     [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept
     {
         return RuntimeFailureReason;
+    }
+    void FailNativeGPU2DExact(const char* reason)
+    {
+        SetRuntimeFailure(reason ? std::string(reason) : std::string("native GPU2D exact validation failed"));
     }
 
     bool NeedsShaderCompile() override { return !RuntimeFailed && ShaderStepIdx < ShaderStepCount; }
     void ShaderCompileStep(int& current, int& count) override;
 
 private:
+    void ResetInternal(bool preservePresentation);
+
     explicit DX12Renderer3D(melonDS::GPU3D& gpu3D);
 
     static constexpr int MaxRenderPolygons = 2048;
@@ -308,6 +345,8 @@ private:
         ShaderStep_CaptureSidecar,
         ShaderStep_Compositor,
         ShaderStep_CorrectCoverage,
+        ShaderStep_GPU2DNative,
+        ShaderStep_GPU2DNativeCapture,
         ShaderStepCount,
     };
 
@@ -332,6 +371,10 @@ private:
     [[nodiscard]] DispatchUniform MakeDispatchUniform() const noexcept;
     void SetDispatchConstants(ID3D12GraphicsCommandList* list, const DispatchUniform& constants);
     void InsertUavBarrier(ID3D12GraphicsCommandList* list, ID3D12Resource* resource);
+    void InsertUavBarriers(
+        ID3D12GraphicsCommandList* list,
+        ID3D12Resource* const* resources,
+        u32 count);
     void TransitionBuffer(
         ID3D12GraphicsCommandList* list,
         ID3D12Resource* resource,
@@ -376,6 +419,7 @@ private:
     DX12DescriptorRing StaticSrvDescriptors;
     DX12DescriptorRing FrameUavDescriptors;
     DX12DescriptorRing CompositorUavDescriptors;
+    DX12DescriptorRing NativeUavDescriptors;
     // One shader-visible table for the lazy Resolve submission. It is reset
     // only after CaptureCommands has retired its prior submission.
     DX12DescriptorRing CaptureDescriptors;
@@ -399,6 +443,8 @@ private:
     DX12::ComPtr<ID3D12PipelineState> PipelineCaptureSidecar;
     DX12::ComPtr<ID3D12PipelineState> PipelineCompositor;
     DX12::ComPtr<ID3D12PipelineState> PipelineCorrectCoverage;
+    DX12::ComPtr<ID3D12PipelineState> PipelineGPU2DNative;
+    DX12::ComPtr<ID3D12PipelineState> PipelineGPU2DNativeCapture;
 
     // GPU-side buffers.
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each
@@ -407,6 +453,7 @@ private:
     DX12::ComPtr<ID3D12Resource> CaptureSidecarBuffer;
     DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192
     DX12::ComPtr<ID3D12Resource> ReadbackBuffer;
+    DX12::ComPtr<ID3D12Resource> NativeCaptureReadback;
     DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles
     DX12::ComPtr<ID3D12Resource> BinResultBuffer;
     DX12::ComPtr<ID3D12Resource> WorkDescBuffer;
@@ -468,6 +515,7 @@ private:
     int ShaderStepIdx = 0;
     bool RuntimeFailed = false;
     std::string RuntimeFailureReason;
+    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
 
     // Cached for the frame so every dispatch does not re-create descriptors.
     D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};
@@ -487,13 +535,29 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
     D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> NativeUavCpu{};
+    DX12DescriptorRing SemanticCompositorUavDescriptors;
+    DX12DescriptorRing SemanticNativeUavDescriptors;
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> SemanticCompositorUavCpu{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> SemanticNativeUavCpu{};
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;
     bool NativeReadbackSubmitted = false;
     bool FinalFBHasValidFrame = false;
     u64 ComposedGeneration = 0;
+    u64 PublishedOutputGeneration = 0;
     bool ComposedOutputValid = false;
+    bool NativeCaptureStateInitialized = false;
+    u64 CurrentEpoch = GPU2DNative::AllocateRendererEpoch();
+    u64 LastSemanticFrame = 0;
+    u64 LastSemanticCaptureGeneration = 0;
+    u64 LastSemanticEpoch = 0;
+    // Each semantic slot has a local DX12 fence.  It is not comparable
+    // across slots, so capture provenance uses this renderer-global serial.
+    u64 NativeSemanticSubmissionSerial = 0;
+    u64 LastNativeCaptureCompletionValue = 0;
+    GPU2DNative::HighResCaptureProvenanceTracker HighResCaptureProvenance;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely
     // cache descriptors by resource lifetime rather than content generation.

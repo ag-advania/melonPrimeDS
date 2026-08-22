@@ -53,6 +53,12 @@
 #ifndef MELONPRIMEDS_BUILD_DEVELOPER_FEATURES
 #define MELONPRIMEDS_BUILD_DEVELOPER_FEATURES 0
 #endif
+#ifndef MELONPRIMEDS_BUILD_VULKAN
+#define MELONPRIMEDS_BUILD_VULKAN 0
+#endif
+#ifndef MELONPRIMEDS_BUILD_DX12
+#define MELONPRIMEDS_BUILD_DX12 0
+#endif
 
 // App title pieces (plain string literals, usable in literal concatenation).
 // The full title is assembled as:

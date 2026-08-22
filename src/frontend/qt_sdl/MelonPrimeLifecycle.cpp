@@ -8,6 +8,9 @@
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeArm9Hook.h"
 #include "MelonPrimeInstanceDiagnostics.h"
+#ifdef MELONPRIME_DS
+#include "GPU2DNative.h"
+#endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudRender.h"
@@ -266,6 +269,9 @@ namespace MelonPrime {
 
     void MelonPrimeCore::OnSavestateLoaded()
     {
+#ifdef MELONPRIME_DS
+        melonDS::GPU2DNative::NotifySavestateLoaded();
+#endif
         // A savestate can land anywhere, including mid-match: the pre-match
         // full black this window keys off may already be in the past. Re-arm
         // the bootstrap so the next frame classifies the loaded state.

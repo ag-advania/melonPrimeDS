@@ -32,6 +32,36 @@ namespace melonDS
 {
 class GPU;
 
+// Result classification for a native GPU2D/compositor publication attempt.
+// Backpressure is expected while a presenter owns every ring slot and must
+// never be promoted to a renderer/runtime failure.
+enum class GPU2DComposeResult : u8
+{
+    Success,
+    // The emulation-semantic GPU2D phase completed, but no presentation slot
+    // was available.  This is a valid native frame outcome: the last
+    // published image remains visible while DS display-capture state advances.
+    SemanticOnly,
+    Backpressure,
+    Unavailable,
+    Fatal,
+};
+
+// High-resolution display-capture pixels live in a renderer-private sidecar
+// and are deliberately not part of a savestate.  The producer must invalidate
+// only that sidecar's provenance when the emulated/native lifetime changes;
+// clearing the large GPU allocation would turn a state-load fix into a frame
+// stall.
+enum class HighResCaptureInvalidationReason : u8
+{
+    SavestateLoad = 0,
+    RendererReset,
+    RendererSwitch,
+    ScaleChange,
+    SessionReset,
+    DeviceReset,
+};
+
 struct Vertex
 {
     s32 Position[4];
@@ -331,6 +361,11 @@ public:
     Renderer3D& operator=(const Renderer3D&) = delete;
     virtual bool Init() { return true; }
     virtual void Reset() = 0;
+    // Clear renderer-private in-progress state after a savestate while keeping
+    // the last completed presentation surface available to the frontend.
+    virtual void ResetAfterSavestateLoad() { Reset(); }
+    virtual void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason) noexcept {}
 
     virtual void RenderFrame() = 0;
     virtual void FinishRendering() {}
