@@ -279,7 +279,7 @@ bool RunPackVectors()
     bool passed = true;
     passed &= Require(PackFrame(*input, packed.data(), packed.size()),
         "PackFrame rejected a correctly sized destination");
-    passed &= Require(packed[0] == 0x32445047u && packed[1] == 3u,
+    passed &= Require(packed[0] == 0x32445047u && packed[1] == 4u,
         "native frame header magic/version drifted");
     passed &= Require(packed[2] == 0x55667788u && packed[3] == 0x11223344u,
         "frame generation is not serialized little-endian");
@@ -525,7 +525,9 @@ bool RunUploadPlanVectors()
     input->DirtyRanges[2] = {PackedPaletteBase * sizeof(u32), 64u};
 
     const UploadPlan partial = BuildUploadPlan(*input, false);
-    bool passed = Require(partial.Count == 3u && partial.TotalBytes == 592u,
+    const u32 provenanceBytes = HighResCaptureProvenanceWords * sizeof(u32);
+    bool passed = Require(partial.Count == 4u
+            && partial.TotalBytes == 592u + provenanceBytes,
         "partial upload plan did not preserve dirty ranges");
     passed &= Require(partial.EngineMemoryBytes == 512u
             && partial.PaletteBytes == 64u,
@@ -536,8 +538,8 @@ bool RunUploadPlanVectors()
     input->DirtyRangeCount = 4u;
     const UploadPlan mapped = BuildUploadPlan(*input, false);
     passed &= Require(
-        mapped.MappedCaptureBytes == sizeof(u32)
-            && mapped.TotalBytes == 596u,
+        mapped.MappedCaptureBytes == sizeof(u32) + provenanceBytes
+            && mapped.TotalBytes == 596u + provenanceBytes,
         "mapped-capture metadata was not classified as its own upload category");
 
     const UploadPlan full = BuildUploadPlan(*input, true);
@@ -584,7 +586,7 @@ bool RunUploadPlanVectors()
         "partial frame pack rejected a valid upload plan");
     passed &= Require(
         partialDestination[0] == 0x32445047u
-            && partialDestination[1] == 3u
+            && partialDestination[1] == 4u
             && partialDestination[10] == partialInput->CaptureCnt,
         "partial frame pack did not update the requested header range");
     passed &= Require(
@@ -594,6 +596,90 @@ bool RunUploadPlanVectors()
         partialDestination[PackedHeaderWords] == 0xA5A5A5A5u
             && partialDestination[PackedPaletteBase + 1u] == 0xA5A5A5A5u,
         "partial frame pack overwrote bytes outside the upload plan");
+    return passed;
+}
+
+bool RunHighResCaptureProvenanceVectors()
+{
+    auto input = std::make_unique<FrameInput>();
+    input->Generation.Frame = 1u;
+    input->Generation.CaptureGeneration = 11u;
+    constexpr u32 bank = 2u;
+    constexpr u32 block = 3u;
+    input->Lines[0].CaptureCnt = (bank << 16u) | (3u << 18u);
+    input->Lines[0].CaptureEnable = 1u;
+    input->Lines[0].LCDVRAMMap = 1u << bank;
+
+    const HighResCaptureBlockMask mask = ComputeCaptureWriteBlockMask(*input);
+    bool passed = Require(
+        mask[bank] == (1u << block),
+        "capture provenance block mask did not follow the latched destination");
+
+    HighResCaptureProvenanceTracker tracker;
+    tracker.Invalidate(7u, 4u);
+    tracker.BeginFrame(*input, 7u, 4u);
+    const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+    const auto& pending = tracker.States()[index];
+    passed &= Require(
+        (pending.ValidAndVersion & HighResCapturePendingWriteBit) != 0u
+            && (pending.ValidAndVersion & HighResCaptureValidBit) == 0u,
+        "state-load invalidation still admitted an old sidecar version");
+    passed &= Require(
+        pending.EpochTag == 7u && pending.CaptureGenerationLo == 11u
+            && pending.ScaleFactor == 4u,
+        "capture provenance did not carry epoch/generation/scale tags");
+
+    std::vector<u32> packed(PackedFrameWords, 0u);
+    passed &= Require(
+        PackHighResCaptureProvenance(
+            packed.data(), packed.size(), tracker.States()),
+        "capture provenance table did not pack into the common ABI");
+    const u32 tableBase = PackedHighResCaptureProvenanceBase
+        + index * HighResCaptureProvenanceWordsPerBlock;
+    passed &= Require(
+        packed[tableBase] == pending.ValidAndVersion
+            && packed[tableBase + 1u] == pending.EpochTag
+            && packed[tableBase + 2u] == pending.CaptureGenerationLo
+            && packed[tableBase + 3u] == pending.ScaleFactor,
+        "packed capture provenance fields drifted");
+
+    tracker.CommitFrame();
+    const u32 committed = tracker.States()[index].ValidAndVersion;
+    passed &= Require(
+        (committed & HighResCaptureValidBit) != 0u
+            && (committed & HighResCapturePendingWriteBit) == 0u,
+        "capture write did not commit a readable sidecar version");
+    const u32 firstVersion = committed & HighResCaptureVersionBit;
+
+    // A second write toggles only because a real capture write is pending;
+    // frame parity and a frame with no write cannot change this state.
+    input->Generation.Frame = 2u;
+    input->Generation.CaptureGeneration = 12u;
+    tracker.BeginFrame(*input, 7u, 4u);
+    const u32 secondPending = tracker.States()[index].ValidAndVersion;
+    const u32 secondWriteVersion = (secondPending & HighResCaptureVersionBit) == 0u
+        ? HighResCaptureVersionBit : 0u;
+    passed &= Require(
+        (secondPending & HighResCapturePendingWriteBit) != 0u
+            && secondWriteVersion != firstVersion,
+        "actual capture write did not select the alternate sidecar version");
+    tracker.AbortFrame();
+    passed &= Require(
+        tracker.States()[index].ValidAndVersion == committed,
+        "aborted capture submission changed committed sidecar provenance");
+
+    input->Lines[0].CaptureEnable = 0u;
+    input->Generation.Frame = 3u;
+    tracker.BeginFrame(*input, 7u, 4u);
+    passed &= Require(
+        tracker.States()[index].ValidAndVersion == committed,
+        "frame rollover changed sidecar version without a capture write");
+
+    tracker.Invalidate(8u, 4u);
+    passed &= Require(
+        (tracker.States()[index].ValidAndVersion & HighResCaptureValidBit) == 0u
+            && tracker.States()[index].EpochTag == 8u,
+        "renderer epoch invalidation did not reject the pre-load sidecar");
     return passed;
 }
 
@@ -1158,7 +1244,8 @@ int main()
         && RunCompareVectors()
         && RunUploadPlanVectors() && RunTemporalLineVectors()
         && RunFrameIdentityVectors() && RunCaptureOwnershipVectors()
-        && RunCaptureFeedbackVectors();
+        && RunCaptureFeedbackVectors()
+        && RunHighResCaptureProvenanceVectors();
     std::fprintf(stderr, "%s: GPU2D native contract vectors\n", passed ? "PASS" : "FAIL");
     return passed ? 0 : 1;
 }

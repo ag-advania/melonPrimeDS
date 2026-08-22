@@ -2300,6 +2300,12 @@ static const uint NativeCaptureOBJMappingBase = NativeCaptureBGMappingBase
     + 192u * (32u + 8u);
 static const uint NativeCaptureSpriteOBJMappingBase = NativeCaptureOBJMappingBase
     + 192u * (16u + 8u);
+static const uint NativeHighResCaptureProvenanceBase =
+    NativeCaptureSpriteOBJMappingBase + 192u * (16u + 8u);
+static const uint NativeHighResCaptureProvenanceStride = 4u;
+static const uint NativeHighResCaptureValidBit = 1u;
+static const uint NativeHighResCaptureVersionBit = 2u;
+static const uint NativeHighResCapturePendingWriteBit = 4u;
 static const uint NativeCaptureBGMappingStride = 32u + 8u;
 static const uint NativeCaptureOBJMappingStride = 16u + 8u;
 static const uint NativeCaptureBankMask = 0x0Fu;
@@ -3177,6 +3183,12 @@ uint NativeLoadCaptureSidecar(uint reference,uint withinX,uint withinY)
     uint cell=((version*4u+bank)*65536u)+address;
     return CaptureSidecarBuffer[cell*samplesPerPixel+withinY*ScaleFactor+withinX];
 }
+uint NativeHighResCaptureState(uint bank,uint address)
+{
+    uint block=(address>>14u)&3u;
+    return ResultValue[NativeHighResCaptureProvenanceBase
+        +(bank*4u+block)*NativeHighResCaptureProvenanceStride];
+}
 uint NativeCaptureReference(uint engine,uint line,uint x)
 {
     if(engine!=0u)return 0u;
@@ -3195,7 +3207,14 @@ uint NativeCaptureReference(uint engine,uint line,uint x)
     uint relative=(displayAddress-destinationAddress)&0xFFFFu;
     uint captureLine=relative/width;
     if(captureLine<captureStart||captureLine>=line||captureLine>=height)return 0u;
-    uint version=ResultValue[2u]&1u;
+    uint state=NativeHighResCaptureState(displayBank,displayAddress);
+    bool pendingWrite=(state&NativeHighResCapturePendingWriteBit)!=0u;
+    bool committed=(state&NativeHighResCaptureValidBit)!=0u;
+    if(!pendingWrite&&!committed)return 0u;
+    // Capture writes the next sidecar version while the current frame's
+    // display feedback reads the version for the completed capture lines.
+    uint version=(state&NativeHighResCaptureVersionBit)!=0u?1u:0u;
+    if(pendingWrite)version^=1u;
     return 0x80000000u|(version<<30u)|(displayBank<<28u)|displayAddress;
 }
 struct NativeStructuredPixelState
@@ -3375,7 +3394,11 @@ void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
     uint first=NativeCaptureComposite(a,b,cnt);
     uint address=WrapLCDCHalfword(
         CaptureOffsetHalfwords((cnt>>18u)&3u)+line*width+x);
-    uint version=ResultValue[2u]&1u,spp=ScaleFactor*ScaleFactor;
+    uint provenance=NativeHighResCaptureState(bank,address);
+    if((provenance&NativeHighResCapturePendingWriteBit)==0u)return;
+    uint version=(provenance&NativeHighResCaptureVersionBit)!=0u?1u:0u;
+    version^=1u;
+    uint spp=ScaleFactor*ScaleFactor;
     uint cell=((version*4u+bank)*65536u)+address;
     uint sample=sampleY*ScaleFactor+(ox%ScaleFactor);
     CaptureSidecarBuffer[cell*spp+sample]=NativeCaptureRawToColor6(first);

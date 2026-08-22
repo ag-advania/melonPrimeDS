@@ -556,6 +556,8 @@ void GPU::DoSavestate(Savestate* file) noexcept
         // submission publishes fresh provenance.
         Rend->ResetCaptureProvenance(
             CaptureAuthorityTransitionReason::SavestateLoad);
+        Rend->InvalidateHighResCaptureState(
+            HighResCaptureInvalidationReason::SavestateLoad);
     }
 }
 

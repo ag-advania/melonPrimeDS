@@ -111,6 +111,12 @@ const uint kNativeCaptureOBJMappingBase = kNativeCaptureBGMappingBase
     + 192u * (32u + 8u);
 const uint kNativeCaptureSpriteOBJMappingBase = kNativeCaptureOBJMappingBase
     + 192u * (16u + 8u);
+const uint kHighResCaptureProvenanceBase = kNativeCaptureSpriteOBJMappingBase
+    + 192u * (16u + 8u);
+const uint kHighResCaptureProvenanceStride = 4u;
+const uint kHighResCaptureValidBit = 1u;
+const uint kHighResCaptureVersionBit = 2u;
+const uint kHighResCapturePendingWriteBit = 4u;
 const uint kNativeCaptureBGMappingStride = 32u + 8u;
 const uint kNativeCaptureOBJMappingStride = 16u + 8u;
 const uint kNativeCaptureBankMask = 0x0Fu;
@@ -1499,6 +1505,13 @@ uint LoadNativeCaptureSidecar(uint reference, uint withinX, uint withinY)
         cell * samplesPerPixel + withinY * uint(ScaleFactor) + withinX];
 }
 
+uint NativeHighResCaptureState(uint bank, uint address)
+{
+    uint block = (address >> 14u) & 3u;
+    return NativeGPU2DInput[kHighResCaptureProvenanceBase
+        + (bank * 4u + block) * kHighResCaptureProvenanceStride];
+}
+
 uint NativeCaptureReference(uint engine, uint line, uint x)
 {
     if (engine != 0u)
@@ -1530,7 +1543,18 @@ uint NativeCaptureReference(uint engine, uint line, uint x)
     if (captureLine < captureStart || captureLine >= line || captureLine >= height)
         return 0u;
 
-    uint version = NativeGPU2DInput[2u] & 1u;
+    uint state = NativeHighResCaptureState(displayBank, displayAddress);
+    bool pendingWrite = (state & kHighResCapturePendingWriteBit) != 0u;
+    bool committed = (state & kHighResCaptureValidBit) != 0u;
+    if (!pendingWrite && !committed)
+        return 0u;
+    // A capture writes the next sidecar version while this frame's display
+    // feedback reads the version produced for the already-completed capture
+    // lines.  The block-level pending bit makes same-bank read-before-write
+    // explicit and removes frame-parity ownership from the shader.
+    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
+    if (pendingWrite)
+        version ^= 1u;
     return 0x80000000u | (version << 30u) | (displayBank << 28u)
         | displayAddress;
 }
@@ -1760,7 +1784,12 @@ void WriteNativeCaptureSample(
     uint address = WrapLCDCHalfword(
         CaptureOffsetHalfwords((captureCnt >> 18u) & 3u)
         + line * width + x);
-    uint version = NativeGPU2DInput[2u] & 1u;
+    uint provenance = NativeHighResCaptureState(
+        destinationBank, address);
+    if ((provenance & kHighResCapturePendingWriteBit) == 0u)
+        return;
+    uint version = (provenance & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
+    version ^= 1u;
     uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
     uint cell = ((version * 4u + destinationBank) * 65536u) + address;
     uint sampleIndex = sampleY * uint(ScaleFactor) + (outputX % uint(ScaleFactor));

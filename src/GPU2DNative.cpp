@@ -208,6 +208,7 @@ const char* BlankClassName(BlankClass value) noexcept
     {
     case BlankClass::AllBlack: return "ALL_BLACK";
     case BlankClass::AllWhite: return "ALL_WHITE";
+    case BlankClass::Unknown: return "UNKNOWN";
     default: return "NONBLANK";
     }
 }
@@ -461,12 +462,12 @@ void LogStageSnapshot(
             LogBlankState(backend, "A", emulatedFrame, recordedFrame, rendererSerial,
                 generation, slot, input, 0u, "structured", top,
                 expectedTop ? ClassifyNativePixels(expectedTop, ScreenPixelCount)
-                    : BlankClass::NonBlank);
+                    : BlankClass::Unknown);
         if (bottom != BlankClass::NonBlank)
             LogBlankState(backend, "A", emulatedFrame, recordedFrame, rendererSerial,
                 generation, slot, input, 1u, "structured", bottom,
                 expectedBottom ? ClassifyNativePixels(expectedBottom, ScreenPixelCount)
-                    : BlankClass::NonBlank);
+                    : BlankClass::Unknown);
     }
 
     if (actualTop && actualBottom)
@@ -483,12 +484,12 @@ void LogStageSnapshot(
             LogBlankState(backend, "B", emulatedFrame, recordedFrame, rendererSerial,
                 generation, slot, input, 0u, resolvedSource, top,
                 expectedTop ? ClassifyNativePixels(expectedTop, ScreenPixelCount)
-                    : BlankClass::NonBlank);
+                    : BlankClass::Unknown);
         if (bottom != BlankClass::NonBlank)
             LogBlankState(backend, "B", emulatedFrame, recordedFrame, rendererSerial,
                 generation, slot, input, 1u, resolvedSource, bottom,
                 expectedBottom ? ClassifyNativePixels(expectedBottom, ScreenPixelCount)
-                    : BlankClass::NonBlank);
+                    : BlankClass::Unknown);
     }
 }
 

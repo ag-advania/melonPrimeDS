@@ -574,6 +574,8 @@ void VulkanRenderer3D::Reset()
     PublishedOutputGeneration = 0;
     NativeCaptureStateInitialized = false;
     ++CurrentEpoch;
+    InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::RendererReset);
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
@@ -597,6 +599,15 @@ void VulkanRenderer3D::Reset()
             slot.NativeUploadInitialized = false;
         }
     }
+}
+
+void VulkanRenderer3D::InvalidateHighResCaptureState(
+    HighResCaptureInvalidationReason reason) noexcept
+{
+    (void)reason;
+    HighResCaptureProvenance.Invalidate(
+        CurrentEpoch,
+        ScaleFactor > 0 ? static_cast<u32>(ScaleFactor) : 0u);
 }
 
 void VulkanRenderer3D::SetRuntimeFailure(std::string reason)
@@ -728,6 +739,8 @@ bool VulkanRenderer3D::CreateFixedResources()
 bool VulkanRenderer3D::CreateScaleDependentResources()
 {
     ++CurrentEpoch;
+    InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::ScaleChange);
     ReleaseScaleDependentResources();
 
     // Re-query the optional live budget at the recreation boundary. This is
@@ -896,6 +909,8 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
 {
     // Called from SetRenderSettings() after a WaitIdle and from Stop(), so
     // immediate destruction is safe: nothing in flight can reference these.
+    InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::DeviceReset);
     ComposedOutput.reset();
     NativeCaptureStateInitialized = false;
     LastSemanticFrame = 0;
@@ -3791,6 +3806,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         ComposeFrames, GpuMetric::NativeGPU2DResolve,
         VulkanPerf::Counter::CompositorGpuTimeNs);
 
+    HighResCaptureProvenance.BeginFrame(
+        input, CurrentEpoch, static_cast<u32>(ScaleFactor));
     const bool semanticFrameContiguous = LastSemanticEpoch == CurrentEpoch
         && LastSemanticFrame != 0
         && input.Generation.Frame == LastSemanticFrame + 1;
@@ -3812,6 +3829,12 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
             ? GPU2DNative::PackFrame(input, staging, GPU2DNative::PackedFrameWords)
             : GPU2DNative::PackFrameRanges(
                 input, staging, GPU2DNative::PackedFrameWords, uploadPlan);
+    }
+    if (packedNativeInput)
+    {
+        packedNativeInput = GPU2DNative::PackHighResCaptureProvenance(
+            staging, GPU2DNative::PackedFrameWords,
+            HighResCaptureProvenance.States());
     }
     if (packedNativeInput)
     {
@@ -4331,6 +4354,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
+    HighResCaptureProvenance.CommitFrame();
     // Keep capture provenance independent of presentation frame-ring reuse.
     // Readback is ordered after this submission on the same queue; the
     // renderer-global serial is the identity validated by cross-frame sync.

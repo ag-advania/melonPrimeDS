@@ -221,6 +221,17 @@ def main() -> int:
             )
         require(text["native_recorder"], "GPU2DWriteKind::CaptureSync", "native recorder capture-sync journal", failures)
         require(text["native_header"], "LCDVRAMProvenance", "host-only capture provenance", failures)
+        for needle in (
+            "HighResCaptureProvenanceState",
+            "HighResCaptureProvenanceTracker",
+            "ComputeCaptureWriteBlockMask",
+            "PackedHighResCaptureProvenanceBase",
+            "HighResCapturePendingWriteBit",
+        ):
+            require(text["native_header"], needle,
+                "high-resolution capture provenance contract", failures)
+        require(text["soft_renderer"], "InvalidateHighResCaptureState",
+            "software savestate sidecar invalidation", failures)
         if "CaptureNativeDisplayLine" in text["soft_renderer"]:
             failures.append("soft renderer: per-line CPU native capture mirror still present")
 
@@ -250,6 +261,12 @@ def main() -> int:
                 f"{label} native host-copy fail-closed counter", failures)
             require(text[label], "assert(!nativeOwner)",
                 f"{label} native host-copy assertion", failures)
+            require(text[label], "HighResCaptureProvenance.BeginFrame",
+                f"{label} high-resolution capture provenance admission", failures)
+            require(text[label], "HighResCaptureProvenance.CommitFrame",
+                f"{label} high-resolution capture provenance commit", failures)
+            require(text[label], "InvalidateHighResCaptureState",
+                f"{label} explicit sidecar invalidation", failures)
 
         vulkan_native = text["vulkan_renderer"].split(
             "bool VulkanRenderer3D::ComposeNativeGPU2D(", 1)[1]
@@ -435,6 +452,15 @@ def main() -> int:
         require(text["dx12_shader"], "NativeCaptureSourceA", "DX12 capture feedback", failures)
         require(text["vulkan_shader"], "NativeCaptureReference", "Vulkan capture reference", failures)
         require(text["dx12_shader"], "NativeCaptureReference", "DX12 capture reference", failures)
+        for label in ("vulkan_shader", "dx12_shader"):
+            require(text[label], "HighResCaptureState", f"{label} sidecar provenance table", failures)
+            require(text[label], "PendingWrite", f"{label} same-bank write version", failures)
+            forbid_regex(
+                text[label],
+                r"(?:NativeGPU2DInput\[2u\]\s*&\s*1u|ResultValue\[2u\]\s*&\s*1u)",
+                f"{label} frame-parity sidecar ownership",
+                failures,
+            )
         require(text["dx12_shader"], "NativeCaptureCnt = 55u", "DX12 capture count ABI", failures)
         require(text["dx12_shader"], "NativeCaptureEnable = 56u", "DX12 capture enable ABI", failures)
         require_regex(
@@ -518,6 +544,8 @@ def main() -> int:
             "capture ownership vectors", failures)
         require(text["native_contract_test"], "RunCaptureFeedbackVectors",
             "same-bank/display-mode2 vectors", failures)
+        require(text["native_contract_test"], "RunHighResCaptureProvenanceVectors",
+            "high-resolution sidecar provenance vectors", failures)
         require(text["native_contract_test"], "RunMappedCaptureOverlayVectors",
             "mapped capture stale-poison/remap/latch vectors", failures)
         for needle in (

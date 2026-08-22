@@ -25,7 +25,7 @@ param(
     [string]$ExpectedSourceHead,
     [Parameter(Mandatory = $true)]
     [string]$OutputDir,
-    [ValidateSet(1, 4, 16)]
+    [ValidateSet(1, 2, 4, 8, 16)]
     [int]$Scale = 4,
     [switch]$NoVSync,
     [switch]$NoFrameLimit,
@@ -351,6 +351,17 @@ function Send-Key([string]$keys) {
     Start-Sleep -Milliseconds 150
 }
 
+function Send-SavestateSlotKey([int]$slot) {
+    if ($slot -lt 1 -or $slot -gt 8) { throw "savestate slot must be 1..8: $slot" }
+    Focus-RendererWindow
+    # SendKeys is not reliable for the middle F-key range on this host: F2
+    # can be consumed by the desktop/input layer while F1/F3 still reach Qt.
+    # Use the same Win32 virtual-key path as the manual UI harness so every
+    # requested production QAction receives a real F-key event.
+    [MpRendererPerfWin]::HoldKey([byte](0x6F + $slot), 120)
+    Start-Sleep -Milliseconds 150
+}
+
 function Capture-Display {
     return Capture-DisplayToPath $screenshot
 }
@@ -425,7 +436,7 @@ function Run-Action([string]$name) {
                 # staged ROM makes the requested .mlN the actual slot path,
                 # so the action is a real post-start load rather than the
                 # developer-only startup diagnostic hook.
-                Send-Key "{F$SavestateSlot}"
+                Send-SavestateSlotKey $SavestateSlot
                 Add-Content -LiteralPath $harness -Value "savestate-load=F$SavestateSlot fixture=$savestateSlotPath"
                 Start-Sleep -Seconds 3
             }

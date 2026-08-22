@@ -68,6 +68,8 @@ public:
 
     bool Init() override;
     void Reset() override;
+    void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason reason) noexcept override;
 
     // Releases every GPU-visible object while the emulator core is still alive.
     void Stop();
@@ -621,6 +623,7 @@ private:
     // Capture provenance is independent of presentation frame-ring reuse.
     u64 NativeSemanticSubmissionSerial = 0;
     u64 LastNativeCaptureCompletionValue = 0;
+    GPU2DNative::HighResCaptureProvenanceTracker HighResCaptureProvenance;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely
     // cache descriptors by resource lifetime rather than content generation.

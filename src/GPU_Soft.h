@@ -54,6 +54,8 @@ public:
 
     void PreSavestate() override;
     void PostSavestate() override;
+    void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason reason) noexcept override;
 
     void SetRenderSettings(RendererSettings& settings) override;
 

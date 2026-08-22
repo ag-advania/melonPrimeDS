@@ -624,6 +624,8 @@ void DX12Renderer3D::Reset()
     PublishedOutputGeneration = 0;
     NativeCaptureStateInitialized = false;
     ++CurrentEpoch;
+    InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::RendererReset);
     LastSemanticFrame = 0;
     LastSemanticCaptureGeneration = 0;
     LastSemanticEpoch = 0;
@@ -650,6 +652,15 @@ void DX12Renderer3D::Reset()
             slot.NativeUploadInitialized = false;
         }
     }
+}
+
+void DX12Renderer3D::InvalidateHighResCaptureState(
+    HighResCaptureInvalidationReason reason) noexcept
+{
+    (void)reason;
+    HighResCaptureProvenance.Invalidate(
+        CurrentEpoch,
+        ScaleFactor > 0 ? static_cast<u32>(ScaleFactor) : 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -939,6 +950,8 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
         SetupIndicesStagingPtr = nullptr;
     }
 
+    InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::DeviceReset);
     ResultBuffer.Reset();
     ResultWinnerBuffer.Reset();
     FinalFBBuffer.Reset();
@@ -981,6 +994,8 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
 bool DX12Renderer3D::CreateScaleDependentResources()
 {
     ++CurrentEpoch;
+    InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::ScaleChange);
     ReleaseScaleDependentResources();
 
     // Query live DXGI budget only at the scale-resource boundary. The full
@@ -3590,6 +3605,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         semanticSlot.Commands, GpuMetric::NativeGPU2DResolve,
         DX12Perf::Counter::CompositorGpuTimeNs);
 
+    HighResCaptureProvenance.BeginFrame(
+        input, CurrentEpoch, static_cast<u32>(ScaleFactor));
     const bool semanticFrameContiguous = LastSemanticEpoch == CurrentEpoch
         && LastSemanticFrame != 0
         && input.Generation.Frame == LastSemanticFrame + 1;
@@ -3611,6 +3628,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             ? GPU2DNative::PackFrame(input, staging, GPU2DNative::PackedFrameWords)
             : GPU2DNative::PackFrameRanges(
                 input, staging, GPU2DNative::PackedFrameWords, uploadPlan);
+    }
+    if (packedNativeInput)
+    {
+        packedNativeInput = GPU2DNative::PackHighResCaptureProvenance(
+            staging, GPU2DNative::PackedFrameWords,
+            HighResCaptureProvenance.States());
     }
     if (!packedNativeInput)
     {
@@ -4051,6 +4074,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
+    HighResCaptureProvenance.CommitFrame();
     // Each semantic slot owns a separate DX12 command context and local fence.
     // Its fence values are therefore not comparable across slots.  The
     // renderer-global serial is the provenance identity; direct queue ordering

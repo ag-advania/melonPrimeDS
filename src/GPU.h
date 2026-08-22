@@ -1361,6 +1361,12 @@ public:
 
     virtual void PreSavestate() {}
     virtual void PostSavestate() {}
+    virtual void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason reason) noexcept
+    {
+        if (Rend3D)
+            Rend3D->InvalidateHighResCaptureState(reason);
+    }
 
     virtual void SetRenderSettings(RendererSettings& settings) = 0;
 

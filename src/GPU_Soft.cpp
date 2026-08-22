@@ -77,6 +77,8 @@ void SoftRenderer::Reset()
 
     Rend2D_A->Reset();
     Rend2D_B->Reset();
+    Rend3D->InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason::RendererReset);
     Rend3D->Reset();
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     StructuredEnginePlanes.fill(0);
@@ -280,6 +282,35 @@ void SoftRenderer::PostSavestate()
     auto rend3d = dynamic_cast<SoftRenderer3D*>(Rend3D.get());
     if (rend3d->IsThreaded())
         rend3d->EnableRenderThread();
+}
+
+void SoftRenderer::InvalidateHighResCaptureState(
+    HighResCaptureInvalidationReason reason) noexcept
+{
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    // Structured capture references are the software producer's equivalent
+    // of the GPU sidecar.  A savestate restores native VRAM, not these
+    // renderer-private pixels, so no pre-load reference may survive the
+    // lifecycle boundary.  The arrays are metadata/compact mirrors, not the
+    // high-resolution allocation itself; this remains O(16) at the GPU
+    // boundary and avoids a full-resolution clear.
+    StructuredCaptureLineValid.fill(0);
+    StructuredCapturePixelValid.fill(0);
+    StructuredCapturePixelVersion.fill(0);
+    StructuredCaptureBankVersion.fill(0);
+    StructuredCaptureBankWrittenThisFrame.fill(0);
+    StructuredCaptureCommandWrittenThisFrame.fill(0);
+    StructuredCaptureSourceBReference.fill(0);
+    StructuredCaptureCommands.fill(0);
+    StructuredFrameValid = false;
+    StructuredCaptureCompositeLineValid = false;
+    StructuredCapturePreparedThisFrame = false;
+    StructuredCapture3DValid = false;
+#else
+    (void)reason;
+#endif
+    if (Rend3D)
+        Rend3D->InvalidateHighResCaptureState(reason);
 }
 
 

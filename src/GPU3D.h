@@ -47,6 +47,21 @@ enum class GPU2DComposeResult : u8
     Fatal,
 };
 
+// High-resolution display-capture pixels live in a renderer-private sidecar
+// and are deliberately not part of a savestate.  The producer must invalidate
+// only that sidecar's provenance when the emulated/native lifetime changes;
+// clearing the large GPU allocation would turn a state-load fix into a frame
+// stall.
+enum class HighResCaptureInvalidationReason : u8
+{
+    SavestateLoad = 0,
+    RendererReset,
+    RendererSwitch,
+    ScaleChange,
+    SessionReset,
+    DeviceReset,
+};
+
 struct Vertex
 {
     s32 Position[4];
@@ -346,6 +361,8 @@ public:
     Renderer3D& operator=(const Renderer3D&) = delete;
     virtual bool Init() { return true; }
     virtual void Reset() = 0;
+    virtual void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason) noexcept {}
 
     virtual void RenderFrame() = 0;
     virtual void FinishRendering() {}

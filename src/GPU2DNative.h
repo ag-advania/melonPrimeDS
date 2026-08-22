@@ -138,6 +138,10 @@ enum class BlankClass : u8
     NonBlank = 0,
     AllBlack,
     AllWhite,
+    // No Software oracle was supplied for this diagnostic snapshot. This is
+    // distinct from NonBlank so stage-only high-resolution runs do not turn
+    // an intentionally unavailable comparison into a false failure.
+    Unknown,
 };
 
 [[nodiscard]] u64 HashWords(
@@ -539,6 +543,80 @@ struct FrameInput
 #endif
 };
 
+// High-resolution display-capture provenance is a separate renderer-private
+// state machine. Native LCDC VRAM is restored by savestates; the high-res
+// sidecar is intentionally not. The packed table therefore carries only the
+// small per-physical-block admission state needed by the shader. The old
+// sidecar pixels remain allocated and are never trusted while Valid is clear.
+struct HighResCaptureProvenanceState
+{
+    // bit 0: a committed sidecar version is readable
+    // bit 1: committed sidecar version (0/1)
+    // bit 2: this semantic frame writes the physical block
+    u32 ValidAndVersion = 0;
+    u32 EpochTag = 0;
+    u32 CaptureGenerationLo = 0;
+    u32 ScaleFactor = 0;
+};
+
+inline constexpr u32 HighResCaptureValidBit = 1u << 0u;
+inline constexpr u32 HighResCaptureVersionBit = 1u << 1u;
+inline constexpr u32 HighResCapturePendingWriteBit = 1u << 2u;
+inline constexpr u32 HighResCaptureProvenanceWordsPerBlock = 4u;
+inline constexpr u32 HighResCaptureProvenanceWords =
+    CapturePhysicalBlockCount * HighResCaptureProvenanceWordsPerBlock;
+using HighResCaptureProvenanceTable =
+    std::array<HighResCaptureProvenanceState, CapturePhysicalBlockCount>;
+using HighResCaptureBlockMask = std::array<u8, CapturePhysicalBanks>;
+
+// Computes the physical 32 KiB LCDC blocks written by the native capture
+// shader in this semantic frame. It consumes the same latched per-line
+// registers as the shader; presentation scale never changes the result.
+[[nodiscard]] HighResCaptureBlockMask ComputeCaptureWriteBlockMask(
+    const FrameInput& input) noexcept;
+
+// Appends the fixed four-word/block table to the common packed GPU2D input.
+// This is separate from PackFrameRanges because the table belongs to the
+// backend's renderer-private lifetime tracker, not to emulated state.
+bool PackHighResCaptureProvenance(
+    u32* destination,
+    std::size_t wordCount,
+    const HighResCaptureProvenanceTable& table) noexcept;
+
+// Host-side state machine shared by Vulkan and DX12. BeginFrame exposes a
+// pending write version to the current shader dispatch; CommitFrame makes that
+// version the next frame's readable version only after submission succeeds.
+// This is the same-bank read-before-write rule without a second full sidecar.
+class HighResCaptureProvenanceTracker
+{
+public:
+    void Invalidate(u64 epoch, u32 scaleFactor) noexcept;
+    void BeginFrame(
+        const FrameInput& input,
+        u64 epoch,
+        u32 scaleFactor) noexcept;
+    void CommitFrame() noexcept;
+    void AbortFrame() noexcept;
+
+    [[nodiscard]] const HighResCaptureProvenanceTable& States() const noexcept
+    {
+        return Entries;
+    }
+
+    [[nodiscard]] const std::array<u64, CapturePhysicalBlockCount>&
+    SemanticFrames() const noexcept
+    {
+        return LastSemanticFrame;
+    }
+
+private:
+    HighResCaptureProvenanceTable Entries{};
+    std::array<u64, CapturePhysicalBlockCount> LastSemanticFrame{};
+    std::array<u8, CapturePhysicalBlockCount> Pending{};
+    u64 Epoch = 0;
+    u32 ScaleFactor = 0;
+};
+
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 // Structured Stage A layout shared by the Vulkan and DX12 diagnostic
 // readbacks.  The hash covers the four per-screen planes and that screen's
@@ -643,9 +721,11 @@ inline constexpr u32 PackedNativeCaptureOBJMappingBase =
     PackedNativeCaptureBGMappingBase + NativeCaptureBGMappingWords;
 inline constexpr u32 PackedNativeCaptureSpriteOBJMappingBase =
     PackedNativeCaptureOBJMappingBase + NativeCaptureOBJMappingWords;
-inline constexpr u32 PackedFrameWords =
+inline constexpr u32 PackedHighResCaptureProvenanceBase =
     PackedNativeCaptureSpriteOBJMappingBase
     + NativeCaptureSpriteOBJMappingWords;
+inline constexpr u32 PackedFrameWords =
+    PackedHighResCaptureProvenanceBase + HighResCaptureProvenanceWords;
 
 static_assert(PackedLineWords == 68u, "native line serialization drift");
 

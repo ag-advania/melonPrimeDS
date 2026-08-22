@@ -12,6 +12,9 @@ namespace melonDS::GPU2DNative
 
 namespace
 {
+constexpr u32 CapturePhysicalBlockHalfwords =
+    CapturePhysicalBlockBytes / sizeof(u16);
+
 void AddClassifiedBytes(UploadPlan& plan, u32 offset, u32 size) noexcept
 {
     if (size == 0u)
@@ -172,8 +175,140 @@ UploadPlan BuildUploadPlan(
             PackedNativeCaptureBGMappingBase * sizeof(u32),
             (PackedFrameWords - PackedNativeCaptureBGMappingBase) * sizeof(u32)});
     }
+    // Provenance changes on an actual capture write even when none of the
+    // emulated-state generations changed. Keep the fixed 16-entry table in
+    // every partial upload so a reused GPU slot cannot retain a prior epoch's
+    // pending/valid bits.
+    AddRange(plan, {
+        PackedHighResCaptureProvenanceBase * sizeof(u32),
+        HighResCaptureProvenanceWords * sizeof(u32)});
     ClassifyRanges(plan);
     return plan;
+}
+
+HighResCaptureBlockMask ComputeCaptureWriteBlockMask(
+    const FrameInput& input) noexcept
+{
+    HighResCaptureBlockMask result{};
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+    {
+        const LineState& state = input.Lines[line];
+        if (state.CaptureEnable == 0u)
+            continue;
+
+        const u32 captureCnt = state.CaptureCnt;
+        const u32 destinationBank = (captureCnt >> 16u) & 3u;
+        if ((state.LCDVRAMMap & (1u << destinationBank)) == 0u)
+            continue;
+
+        const u32 sizeCode = (captureCnt >> 20u) & 3u;
+        const u32 width = CaptureWidthForSize(sizeCode);
+        const u32 height = CaptureHeightForSize(sizeCode);
+        if (line >= height)
+            continue;
+
+        const u32 first = WrapLCDCHalfword(
+            CaptureOffsetHalfwords((captureCnt >> 18u) & 3u)
+            + line * width);
+        const u32 last = WrapLCDCHalfword(first + width - 1u);
+        result[destinationBank] |= static_cast<u8>(
+            (1u << (first / CapturePhysicalBlockHalfwords))
+            | (1u << (last / CapturePhysicalBlockHalfwords)));
+    }
+    return result;
+}
+
+bool PackHighResCaptureProvenance(
+    u32* destination,
+    std::size_t wordCount,
+    const HighResCaptureProvenanceTable& table) noexcept
+{
+    if (!destination || wordCount < PackedFrameWords)
+        return false;
+
+    for (u32 index = 0u; index < CapturePhysicalBlockCount; ++index)
+    {
+        const u32 base = PackedHighResCaptureProvenanceBase
+            + index * HighResCaptureProvenanceWordsPerBlock;
+        const HighResCaptureProvenanceState& state = table[index];
+        destination[base + 0u] = state.ValidAndVersion;
+        destination[base + 1u] = state.EpochTag;
+        destination[base + 2u] = state.CaptureGenerationLo;
+        destination[base + 3u] = state.ScaleFactor;
+    }
+    return true;
+}
+
+void HighResCaptureProvenanceTracker::Invalidate(
+    u64 epoch, u32 scaleFactor) noexcept
+{
+    Entries.fill({});
+    LastSemanticFrame.fill(0u);
+    Pending.fill(0u);
+    Epoch = epoch;
+    ScaleFactor = scaleFactor;
+    for (HighResCaptureProvenanceState& state : Entries)
+    {
+        state.EpochTag = static_cast<u32>(epoch);
+        state.ScaleFactor = scaleFactor;
+    }
+}
+
+void HighResCaptureProvenanceTracker::BeginFrame(
+    const FrameInput& input,
+    u64 epoch,
+    u32 scaleFactor) noexcept
+{
+    AbortFrame();
+    if (Epoch != epoch || ScaleFactor != scaleFactor)
+        Invalidate(epoch, scaleFactor);
+
+    const HighResCaptureBlockMask writes = ComputeCaptureWriteBlockMask(input);
+    for (u32 bank = 0u; bank < CapturePhysicalBanks; ++bank)
+    {
+        for (u32 block = 0u; block < CapturePhysicalBlocksPerBank; ++block)
+        {
+            if ((writes[bank] & (1u << block)) == 0u)
+                continue;
+
+            const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+            HighResCaptureProvenanceState& state = Entries[index];
+            state.ValidAndVersion |= HighResCapturePendingWriteBit;
+            state.EpochTag = static_cast<u32>(epoch);
+            state.CaptureGenerationLo = static_cast<u32>(
+                input.Generation.CaptureGeneration);
+            state.ScaleFactor = scaleFactor;
+            Pending[index] = 1u;
+            LastSemanticFrame[index] = input.Generation.Frame;
+        }
+    }
+}
+
+void HighResCaptureProvenanceTracker::CommitFrame() noexcept
+{
+    for (u32 index = 0u; index < CapturePhysicalBlockCount; ++index)
+    {
+        if (Pending[index] == 0u)
+            continue;
+
+        HighResCaptureProvenanceState& state = Entries[index];
+        const u32 nextVersion = (state.ValidAndVersion
+            & HighResCaptureVersionBit) == 0u
+            ? HighResCaptureVersionBit : 0u;
+        state.ValidAndVersion = HighResCaptureValidBit | nextVersion;
+        Pending[index] = 0u;
+    }
+}
+
+void HighResCaptureProvenanceTracker::AbortFrame() noexcept
+{
+    for (u32 index = 0u; index < CapturePhysicalBlockCount; ++index)
+    {
+        if (Pending[index] == 0u)
+            continue;
+        Entries[index].ValidAndVersion &= ~HighResCapturePendingWriteBit;
+        Pending[index] = 0u;
+    }
 }
 
 CompareResult CompareExact(
@@ -251,7 +386,7 @@ bool PackFrameRanges(
 
     std::array<u32, PackedHeaderWords> header{};
     header[0] = 0x32445047u; // "GPU2"
-    header[1] = 3u;
+    header[1] = 4u;
     const auto storeU64 = [&](u32 word, u64 value) {
         header[word] = static_cast<u32>(value);
         header[word + 1u] = static_cast<u32>(value >> 32u);
