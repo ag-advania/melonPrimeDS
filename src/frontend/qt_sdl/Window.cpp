@@ -2230,13 +2230,29 @@ void MainWindow::onLoadState()
         else          emuInstance->osdAddMessage(0, "State loaded from file");
 
         const char* physicalABState = std::getenv("MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH");
+        QString loadedPhysicalABPath = filename;
+        loadedPhysicalABPath.replace('\\', '/');
+        QString expectedPhysicalABPath = physicalABState ?
+            QString::fromLocal8Bit(physicalABState) : QString();
+        expectedPhysicalABPath.replace('\\', '/');
         if (physicalABState && *physicalABState &&
-            filename.toStdString() == physicalABState)
+            loadedPhysicalABPath.compare(expectedPhysicalABPath, Qt::CaseInsensitive) == 0)
         {
             Platform::Log(Platform::LogLevel::Info,
                 "[PhysicalAB] savestate_action_loaded=1 path=%s\n",
                 physicalABState);
         }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        const char* gpu2dDumpTrigger =
+            std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE");
+        if (gpu2dDumpTrigger && gpu2dDumpTrigger[0] != '\0')
+        {
+            std::FILE* marker = std::fopen(gpu2dDumpTrigger, "wb");
+            if (marker)
+                std::fclose(marker);
+        }
+#endif
 
         actUndoStateLoad->setEnabled(true);
     }

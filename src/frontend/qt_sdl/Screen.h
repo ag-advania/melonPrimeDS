@@ -38,6 +38,7 @@
 #include "glad/glad.h"
 #include "ScreenLayout.h"
 #include "duckstation/gl/context.h"
+#include "MelonPrimePresentationSnapshot.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudConfigOnScreenEdit.h"
@@ -159,6 +160,30 @@ static inline HudVisualFrameKey MelonPrimeHud_MakeVisualFrameKey(
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
 class MelonPrimeCore;
+
+// Native presentation visibility is an identity, not a boolean latch. A
+// renderer/backend transition must hide the retained surface until a complete
+// frame from the new epoch has actually been presented.
+struct NativeVisibilityState {
+    std::uint64_t Epoch = 0;
+    std::uint64_t LastAcceptedSerial = 0;
+    bool FirstCompleteFrameVisible = false;
+
+    void Reset() noexcept
+    {
+        Epoch = 0;
+        LastAcceptedSerial = 0;
+        FirstCompleteFrameVisible = false;
+    }
+
+    void Accept(std::uint64_t epoch, std::uint64_t serial) noexcept
+    {
+        Epoch = epoch;
+        LastAcceptedSerial = serial;
+        FirstCompleteFrameVisible = true;
+    }
+};
+
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
 class WaylandPointerLock; // MELONPRIME_WAYLAND_POINTER_LOCK_V1
 #endif
@@ -568,9 +593,13 @@ public:
 protected:
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    bool event(QEvent* event) override;
 
 private:
     void setupScreenLayout() override;
+    void handleDX12SurfaceHostLifecycleGuiThread(
+        QEvent::Type eventType, bool aboutToDestroy);
+    void publishDX12SurfaceSnapshotGuiThread();
     void prepareForRendererTransition();
     void requestNativeSurfaceVisible(bool visible);
     void reportRuntimeFailure(const char* reason);
@@ -643,7 +672,7 @@ private:
     // kPresentationStallFrames consecutive frames. Emulation thread.
     void noteFrameIdle();
     void noteFrameStalled(const char* reason);
-    void noteFramePresented();
+    void noteFramePresented(melonDS::u64 epoch, melonDS::u64 serial);
 
     // Composes one emulated frame. Driven from VulkanRenderer's VBlank hook,
     // on the emulation thread, because that is the only point where this
@@ -662,6 +691,8 @@ private:
     // from the emulation thread, and macOS CoreAnimation state must only be
     // touched from the GUI thread.
     void refreshNativeSurfaceGuiThread();
+    void publishNativeSurfaceSnapshotGuiThread();
+    void handleNativeSurfaceHostLifecycleGuiThread(QEvent::Type eventType, bool aboutToDestroy);
     void setNativeSurfaceVisibleGuiThread(bool visible);
 #if defined(__linux__)
     // A short lifecycle state/lease handshake surrounds only the decision to
@@ -695,7 +726,12 @@ private:
     // Renders the Custom HUD into Overlay[0] and reports its dirty rect.
     // False when the HUD is not visible this frame, in which case the stale
     // overlay texture must not be drawn. Emulation thread.
-    bool renderHudOverlay(EmuThread* emuThread, QImage* bottomScreen, QRect& outDirty);
+    bool renderHudOverlay(
+        EmuThread* emuThread,
+        QImage* bottomScreen,
+        int logicalWidth,
+        int logicalHeight,
+        QRect& outDirty);
 #endif
 
     struct VulkanState;

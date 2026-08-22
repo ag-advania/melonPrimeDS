@@ -1,0 +1,16 @@
+diff --git a/src/frontend/qt_sdl/Window.cpp b/src/frontend/qt_sdl/Window.cpp
+index 9a6c35518..e1cc3ba86 100755
+--- a/src/frontend/qt_sdl/Window.cpp
++++ b/src/frontend/qt_sdl/Window.cpp
+@@ -2231,0 +2232,11 @@ void MainWindow::onLoadState()
++#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
++        const char* gpu2dDumpTrigger =
++            std::getenv("MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE");
++        if (gpu2dDumpTrigger && gpu2dDumpTrigger[0] != '\0')
++        {
++            std::FILE* marker = std::fopen(gpu2dDumpTrigger, "wb");
++            if (marker)
++                std::fclose(marker);
++        }
++#endif
++

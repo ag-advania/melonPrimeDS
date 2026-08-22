@@ -1,0 +1,2167 @@
+/*
+    MelonPrimeDS native Vulkan GPU2D.
+
+    This is deliberately a logical-pixel compute path.  The input is the
+    backend-neutral GPU2DNative packed state; registers, VRAM, palette and OAM
+    are inputs, while BG/OBJ fetch, windows, priority, effects, display mode
+    and screen routing are evaluated by the shader.  No software-rendered
+    pixel plane is consumed here.
+*/
+
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "Common.glsl"
+#include "Presentation.glsl"
+
+// One workgroup covers half a logical scanline.  128 is the Vulkan minimum
+// for maxComputeWorkGroupInvocations, so the raw OBJ path remains portable;
+// two groups cover x=0..255 while each group shares one decoded OAM/list.
+layout (local_size_x = 128, local_size_y = 1) in;
+
+layout (std430, set = 0, binding = 12) readonly buffer NativeGPU2DInputBuffer
+{
+    uint NativeGPU2DInput[];
+};
+
+layout (std430, set = 0, binding = 13) buffer NativeGPU2DOutputBuffer
+{
+    uint NativeGPU2DOutput[];
+};
+
+// CaptureReference points into the shared high-resolution sidecar consumed by
+// the existing compositor.  Native capture writes the same bank/version cell
+// layout as the structured software producer, so Stage B does not need a
+// backend-specific capture path.
+layout (std430, set = 0, binding = 14) buffer NativeCaptureSidecarBuffer
+{
+    uint NativeCaptureSidecar[];
+};
+
+// The first FramebufferStride words are owned by the 3D blend continuation
+// state. The tail is a persistent four-bank LCDC capture mirror. Keeping the
+// mirror on the device lets display mode 2 consume completed captures without
+// a CPU pixel readback.
+layout (std430, set = 0, binding = 15) buffer NativeCaptureBuffer
+{
+    uint NativeCaptureState[];
+};
+
+layout (set = 0, binding = 17, rgba8) writeonly uniform image2D NativeDirectOutputTop;
+layout (set = 0, binding = 18, rgba8) writeonly uniform image2D NativeDirectOutputBottom;
+
+shared uint NativeOAMCache[512];
+shared uint NativeActiveSprites[128];
+shared uint NativeActiveFlags[128];
+shared uint NativeActiveCount;
+
+// The C++ serializer in GPU2DNative.h is intentionally fixed-width.  Keep the
+// offsets here literal and audit-friendly; a drift is a shader ABI break.
+const uint kHeaderWords = 32u;
+const uint kLineWords = 68u;
+const uint kLineCount = 384u;
+const uint kLinesWords = kLineWords * kLineCount;
+const uint kBGWords = 131072u;
+const uint kOBJWords = 65536u;
+const uint kBGExtWords = 8192u;
+const uint kOBJExtWords = 2048u;
+const uint kEngineWords = kBGWords + kOBJWords + kBGExtWords + kOBJExtWords;
+const uint kEngineBase = kHeaderWords + kLinesWords;
+const uint kPaletteWords = 512u;
+const uint kOAMWords = 512u;
+const uint kFIFOWords = 256u;
+const uint kLCDVRAMWords = 131072u;
+const uint kPaletteBase = kEngineBase + 2u * kEngineWords;
+const uint kOAMBase = kPaletteBase + kPaletteWords;
+const uint kFIFOBase = kOAMBase + kOAMWords;
+const uint kLCDVRAMBase = kFIFOBase + kFIFOWords;
+const uint kRouteBase = kLCDVRAMBase + kLCDVRAMWords;
+const uint kTimelineEngineBGBlocks = 1024u;
+const uint kTimelineEngineOBJBlocks = 512u;
+const uint kTimelineEngineBGExtBlocks = 64u;
+const uint kTimelineEngineOBJExtBlocks = 16u;
+const uint kTimelineEngineBlocks = kTimelineEngineBGBlocks
+    + kTimelineEngineOBJBlocks + kTimelineEngineBGExtBlocks
+    + kTimelineEngineOBJExtBlocks;
+const uint kTimelinePaletteBlocks = 4u;
+const uint kTimelineOAMBlocks = 4u;
+const uint kTimelineFIFOBlocks = 1u;
+const uint kTimelineLCDVRAMBlocks = 1024u;
+const uint kTimelineEngineBaseBlock = 0u;
+const uint kTimelinePaletteBaseBlock = 2u * kTimelineEngineBlocks;
+const uint kTimelineOAMBaseBlock = kTimelinePaletteBaseBlock + kTimelinePaletteBlocks;
+const uint kTimelineFIFOBaseBlock = kTimelineOAMBaseBlock + kTimelineOAMBlocks;
+const uint kTimelineLCDVRAMBaseBlock = kTimelineFIFOBaseBlock + kTimelineFIFOBlocks;
+const uint kTimelineBlockCount = kTimelineLCDVRAMBaseBlock + kTimelineLCDVRAMBlocks;
+const uint kTimelineRowIdBase = kRouteBase + 2u * 192u;
+const uint kTimelineRowsBase = kTimelineRowIdBase + 192u;
+const uint kTimelinePayloadBase = kTimelineRowsBase
+    + kTimelineBlockCount * 192u;
+const uint kTimelinePayloadStride = 512u / 4u;
+const uint kSpriteTimelineOAMBlocks = 4u;
+const uint kSpriteTimelineEngineOBJBlocks = 512u;
+const uint kSpriteTimelineBlockCount = kSpriteTimelineOAMBlocks
+    + 2u * kSpriteTimelineEngineOBJBlocks;
+const uint kSpriteTimelineRowIdBase = kTimelinePayloadBase
+    + 8192u * kTimelinePayloadStride;
+const uint kSpriteTimelineRowsBase = kSpriteTimelineRowIdBase + 192u;
+const uint kNativeCaptureBGMappingBase = kSpriteTimelineRowsBase
+    + kSpriteTimelineBlockCount * 192u;
+const uint kNativeCaptureOBJMappingBase = kNativeCaptureBGMappingBase
+    + 192u * (32u + 8u);
+const uint kNativeCaptureSpriteOBJMappingBase = kNativeCaptureOBJMappingBase
+    + 192u * (16u + 8u);
+const uint kHighResCaptureProvenanceBase = kNativeCaptureSpriteOBJMappingBase
+    + 192u * (16u + 8u);
+const uint kHighResCaptureProvenanceStride = 4u;
+const uint kHighResCaptureSegmentHalfwords = 128u;
+const uint kHighResCaptureSegmentsPerBank = 512u;
+const uint kHighResCaptureValidBit = 1u;
+const uint kHighResCaptureVersionBit = 2u;
+const uint kHighResCapturePendingWriteBit = 4u;
+const uint kNativeCaptureBGMappingStride = 32u + 8u;
+const uint kNativeCaptureOBJMappingStride = 16u + 8u;
+const uint kNativeCaptureBankMask = 0x0Fu;
+const uint kNativeCaptureOverlayPresent = 0x10u;
+const uint kNativeCaptureWords = 131072u;
+const uint kNativeObjRawWordsPerPixel = 3u;
+const uint kNativeObjRawScreenWords = 256u * 192u * kNativeObjRawWordsPerPixel;
+const uint kNativeObjRawBase = uint(FramebufferStride) + kNativeCaptureWords;
+
+// Stage A writes the backend-neutral structured composition contract.  Keep
+// this layout identical to PresentationBuffers.glsl and
+// MelonPrimeStructuredComposition.h; Stage B is the existing high-resolution
+// compositor and must never have to rediscover 2D semantics.
+const uint kStructuredPixelCount = 256u * 192u;
+const uint kStructuredPlaneStride = kStructuredPixelCount;
+const uint kStructuredLineMetaBase = 14u * kStructuredPlaneStride;
+const uint kStructuredCaptureCommandBase = kStructuredLineMetaBase + 384u;
+const uint kStructuredControlPlain2D = 0x87u;
+const uint kStructuredControlHas3D = 0x40u;
+const uint kStructuredControlAbove = 0x80u;
+const uint kStructuredControlOpaqueBlackBelow = 0x20u;
+const uint kStructuredCompositionBlend4 = 1u;
+const uint kStructuredCompositionBrightnessUp = 2u;
+const uint kStructuredCompositionBrightnessDown = 3u;
+const uint kStructuredCompositionBlend5 = 4u;
+const uint kStructuredCompositionPlain2D = 7u;
+const uint kStructuredDisplayRegular = 1u;
+const uint kStructuredDisplayOff = 0u;
+const uint kStructuredDisplayVram = 2u;
+const uint kStructuredDisplayFifo = 3u;
+
+// LineState word offsets.
+const uint kDispCnt = 0u;
+const uint kLayerEnable = 1u;
+const uint kOBJEnable = 2u;
+const uint kForcedBlank = 3u;
+const uint kBGCnt = 4u;
+const uint kBGXPos = 8u;
+const uint kBGYPos = 12u;
+const uint kBGXRef = 16u;
+const uint kBGYRef = 18u;
+const uint kRotA = 20u;
+const uint kRotB = 22u;
+const uint kRotC = 24u;
+const uint kRotD = 26u;
+const uint kWin0Active = 40u;
+const uint kWin1Active = 41u;
+const uint kWin0Coords = 28u;
+const uint kWin1Coords = 32u;
+const uint kBGMosaic = 42u;
+const uint kOBJMosaic = 44u;
+const uint kBGMosaicLine = 46u;
+const uint kOBJMosaicLine = 47u;
+const uint kBlendCnt = 48u;
+const uint kEVA = 50u;
+const uint kEVB = 51u;
+const uint kEVY = 52u;
+const uint kMasterBrightness = 53u;
+const uint kRenderXPos = 54u;
+const uint kCaptureCnt = 55u;
+const uint kCaptureEnable = 56u;
+const uint kScreensEnabled = 57u;
+const uint kScreenSwap = 58u;
+const uint kWinRegs = 59u;
+const uint kWinMask = 60u;
+const uint kWinPos = 61u;
+const uint kUnitEnabled = 65u;
+const uint kLCDVRAMMap = 66u;
+const uint kSpriteLatchValid = 67u;
+
+uint LineWord(uint engine, uint line, uint word)
+{
+    return NativeGPU2DInput[kHeaderWords + (engine * 192u + line) * kLineWords + word];
+}
+
+uint EngineWord(uint engine, uint section, uint word)
+{
+    return NativeGPU2DInput[kEngineBase + engine * kEngineWords + section + word];
+}
+
+uint TimelineVersion(uint line, uint block)
+{
+    if (line >= 192u || block >= kTimelineBlockCount)
+        return 0u;
+    uint row = NativeGPU2DInput[kTimelineRowIdBase + line];
+    if (row >= 192u)
+        return 0u;
+    return NativeGPU2DInput[
+        kTimelineRowsBase + row * kTimelineBlockCount + block];
+}
+
+uint SpriteTimelineVersion(uint engine, uint line, uint block)
+{
+    if (line >= 192u
+        || (LineWord(engine, line, kSpriteLatchValid) & 1u) == 0u)
+        return TimelineVersion(line, block);
+
+    uint spriteBlock = 0u;
+    if (block >= kTimelineOAMBaseBlock
+        && block < kTimelineOAMBaseBlock + kTimelineOAMBlocks)
+    {
+        spriteBlock = block - kTimelineOAMBaseBlock;
+    }
+    else
+    {
+        uint objBase = kTimelineEngineBaseBlock
+            + engine * kTimelineEngineBlocks + kTimelineEngineBGBlocks;
+        if (block < objBase || block >= objBase + kTimelineEngineOBJBlocks)
+            return TimelineVersion(line, block);
+        spriteBlock = kSpriteTimelineOAMBlocks
+            + engine * kSpriteTimelineEngineOBJBlocks + (block - objBase);
+    }
+    if (spriteBlock >= kSpriteTimelineBlockCount)
+        return TimelineVersion(line, block);
+    uint row = NativeGPU2DInput[kSpriteTimelineRowIdBase + line];
+    if (row >= 192u)
+        return 0u;
+    return NativeGPU2DInput[kSpriteTimelineRowsBase
+        + row * kSpriteTimelineBlockCount + spriteBlock];
+}
+
+uint MemoryByte(
+    uint line,
+    uint base,
+    uint size,
+    uint address,
+    uint timelineBlockBase)
+{
+    if (size == 0u)
+        return 0u;
+    uint offset = address & (size - 1u);
+    uint version = TimelineVersion(line, timelineBlockBase + offset / 512u);
+    uint word = version == 0u
+        ? NativeGPU2DInput[base + (offset >> 2u)]
+        : NativeGPU2DInput[
+            kTimelinePayloadBase + (version - 1u) * kTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFu;
+}
+
+uint Memory16(
+    uint line, uint base, uint size, uint address, uint timelineBlockBase)
+{
+    return MemoryByte(line, base, size, address, timelineBlockBase)
+        | (MemoryByte(line, base, size, address + 1u, timelineBlockBase) << 8u);
+}
+
+uint SpriteMemoryByte(
+    uint engine,
+    uint line,
+    uint base,
+    uint size,
+    uint address,
+    uint timelineBlockBase)
+{
+    if (size == 0u)
+        return 0u;
+    uint offset = address & (size - 1u);
+    uint version = SpriteTimelineVersion(
+        engine, line, timelineBlockBase + offset / 512u);
+    uint word = version == 0u
+        ? NativeGPU2DInput[base + (offset >> 2u)]
+        : NativeGPU2DInput[
+            kTimelinePayloadBase + (version - 1u) * kTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFu;
+}
+
+uint SpriteMemory16(
+    uint engine,
+    uint line,
+    uint base,
+    uint size,
+    uint address,
+    uint timelineBlockBase)
+{
+    return SpriteMemoryByte(engine, line, base, size, address, timelineBlockBase)
+        | (SpriteMemoryByte(engine, line, base, size, address + 1u,
+            timelineBlockBase) << 8u);
+}
+
+uint NativeCaptureByte(uint bank, uint physicalAddress)
+{
+    uint offset = physicalAddress & 0x1FFFFu;
+    uint word = NativeCaptureState[uint(FramebufferStride) + bank * 32768u
+        + (offset >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFu;
+}
+
+uint NativeCaptureMappingMask(
+    uint engine, uint line, uint address, uint size,
+    bool obj, bool spriteLatch)
+{
+    if (line >= 192u || size == 0u)
+        return 0u;
+    uint offset = address & (size - 1u);
+    uint mappingIndex = offset >> 14u;
+    uint mappingCount = obj
+        ? (engine == 0u ? 16u : 8u)
+        : (engine == 0u ? 32u : 8u);
+    if (mappingIndex >= mappingCount)
+        return 0u;
+    uint base = kNativeCaptureBGMappingBase;
+    uint stride = kNativeCaptureBGMappingStride;
+    uint engineOffset = engine == 0u ? 0u : 32u;
+    if (obj)
+    {
+        base = spriteLatch
+            ? kNativeCaptureSpriteOBJMappingBase
+            : kNativeCaptureOBJMappingBase;
+        stride = kNativeCaptureOBJMappingStride;
+        engineOffset = engine == 0u ? 0u : 16u;
+    }
+    return NativeGPU2DInput[base + line * stride + engineOffset + mappingIndex];
+}
+
+uint NativeCaptureOverlayByte(
+    uint engine, uint line, uint size, uint address,
+    bool obj, bool spriteLatch)
+{
+    // Word 15 is the non-zero frame summary. Mapping rows contain only the
+    // owning-bank mask for each entry; bit 4 is only the row[0] summary.
+    if (NativeGPU2DInput[15u] == 0u)
+        return 0u;
+    uint ownerMask = NativeCaptureMappingMask(
+        engine, line, address, size, obj, spriteLatch)
+        & kNativeCaptureBankMask;
+    if (ownerMask == 0u)
+        return 0u;
+    uint offset = size == 0u ? 0u : address & (size - 1u);
+    uint result = 0u;
+    while (ownerMask != 0u)
+    {
+        uint bank = uint(findLSB(ownerMask));
+        ownerMask &= ownerMask - 1u;
+        result |= NativeCaptureByte(bank, offset);
+    }
+    return result;
+}
+
+uint MappedByte(
+    uint engine, uint line, uint base, uint size, uint address,
+    uint timelineBlockBase)
+{
+    if (NativeGPU2DInput[15u] == 0u)
+        return MemoryByte(line, base, size, address, timelineBlockBase);
+    return MemoryByte(line, base, size, address, timelineBlockBase)
+        | NativeCaptureOverlayByte(engine, line, size, address, false, false);
+}
+
+uint Mapped16(
+    uint engine, uint line, uint base, uint size, uint address,
+    uint timelineBlockBase)
+{
+    return MappedByte(engine, line, base, size, address, timelineBlockBase)
+        | (MappedByte(engine, line, base, size, address + 1u,
+            timelineBlockBase) << 8u);
+}
+
+uint MappedSpriteByte(
+    uint engine, uint line, uint base, uint size, uint address,
+    uint timelineBlockBase)
+{
+    const bool useSpriteLatch =
+        (LineWord(engine, line, kSpriteLatchValid) & 1u) != 0u;
+    if (NativeGPU2DInput[15u] == 0u)
+        return SpriteMemoryByte(engine, line, base, size, address, timelineBlockBase);
+    return SpriteMemoryByte(engine, line, base, size, address, timelineBlockBase)
+        | NativeCaptureOverlayByte(
+            engine, line, size, address, true, useSpriteLatch);
+}
+
+uint MappedSprite16(
+    uint engine, uint line, uint base, uint size, uint address,
+    uint timelineBlockBase)
+{
+    return MappedSpriteByte(engine, line, base, size, address, timelineBlockBase)
+        | (MappedSpriteByte(engine, line, base, size, address + 1u,
+            timelineBlockBase) << 8u);
+}
+
+uint BGSize(uint engine) { return NativeGPU2DInput[16u + engine * 4u]; }
+uint OBJSize(uint engine) { return NativeGPU2DInput[17u + engine * 4u]; }
+uint BGExtSize(uint engine) { return NativeGPU2DInput[18u + engine * 4u]; }
+uint OBJExtSize(uint engine) { return NativeGPU2DInput[19u + engine * 4u]; }
+
+uint BGByte(uint engine, uint line, uint address)
+{
+    return MappedByte(
+        engine, line,
+        kEngineBase + engine * kEngineWords, BGSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks);
+}
+
+uint BG16(uint engine, uint line, uint address)
+{
+    return Mapped16(
+        engine, line,
+        kEngineBase + engine * kEngineWords, BGSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks);
+}
+
+uint OBJByte(uint engine, uint line, uint address)
+{
+    return MappedSpriteByte(
+        engine, line, kEngineBase + engine * kEngineWords + kBGWords,
+        OBJSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
+            + kTimelineEngineBGBlocks);
+}
+
+uint OBJ16(uint engine, uint line, uint address)
+{
+    return MappedSprite16(
+        engine, line, kEngineBase + engine * kEngineWords + kBGWords,
+        OBJSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
+            + kTimelineEngineBGBlocks);
+}
+
+uint BGExt16(uint engine, uint line, uint address)
+{
+    return Memory16(
+        line,
+        kEngineBase + engine * kEngineWords + kBGWords + kOBJWords,
+        BGExtSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
+            + kTimelineEngineBGBlocks + kTimelineEngineOBJBlocks);
+}
+
+uint OBJExt16(uint engine, uint line, uint address)
+{
+    return Memory16(
+        line,
+        kEngineBase + engine * kEngineWords + kBGWords + kOBJWords + kBGExtWords,
+        OBJExtSize(engine), address,
+        kTimelineEngineBaseBlock + engine * kTimelineEngineBlocks
+            + kTimelineEngineBGBlocks + kTimelineEngineOBJBlocks
+            + kTimelineEngineBGExtBlocks);
+}
+
+uint Palette16(uint engine, uint line, uint byteAddress)
+{
+    uint base = kPaletteBase + (engine == 0u ? 0u : 0x400u) / 4u;
+    return Memory16(
+        line,
+        base, 0x400u, byteAddress,
+        kTimelinePaletteBaseBlock + engine * 2u);
+}
+
+uint OAM16(uint engine, uint line, uint byteAddress)
+{
+    uint base = kOAMBase + (engine * 0x400u) / 4u;
+    return SpriteMemory16(
+        engine, line, base, 0x400u, byteAddress,
+        kTimelineOAMBaseBlock + engine * 2u);
+}
+
+uint CachedOAM16(uint byteAddress)
+{
+    return NativeOAMCache[(byteAddress & 0x3FFu) >> 1u];
+}
+
+uint FIFO16(uint line, uint index)
+{
+    uint offset = (index & 0xFFu) * 2u;
+    uint version = TimelineVersion(line, kTimelineFIFOBaseBlock);
+    uint word = version == 0u
+        ? NativeGPU2DInput[kFIFOBase + (offset >> 2u)]
+        : NativeGPU2DInput[
+            kTimelinePayloadBase + (version - 1u) * kTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 2u) * 8u)) & 0xFFFFu;
+}
+
+uint CaptureOffsetHalfwords(uint code)
+{
+    return (code & 3u) << 14u;
+}
+
+uint CaptureOffsetBytes(uint code)
+{
+    return CaptureOffsetHalfwords(code) << 1u;
+}
+
+uint WrapLCDCHalfword(uint address)
+{
+    return address & 0xFFFFu;
+}
+
+uint WrapLCDCByte(uint address)
+{
+    return address & 0x1FFFFu;
+}
+
+uint LCD16(uint line, uint bank, uint byteAddress)
+{
+    uint offset = WrapLCDCByte(byteAddress);
+    uint version = TimelineVersion(
+        line,
+        kTimelineLCDVRAMBaseBlock + bank * 256u + offset / 512u);
+    uint word = version == 0u
+        ? NativeCaptureState[uint(FramebufferStride) + bank * 32768u
+            + (offset >> 2u)]
+        : NativeGPU2DInput[
+            kTimelinePayloadBase + (version - 1u) * kTimelinePayloadStride
+                + ((offset & 511u) >> 2u)];
+    return (word >> ((offset & 3u) * 8u)) & 0xFFFFu;
+}
+
+uint ConvertBGR555(uint color, uint flag)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        ((color >> 4u) & 0x3Eu) | ((color >> 15u) & 1u),
+        (color >> 9u) & 0x3Eu,
+        flag);
+}
+
+uint ConvertVRAMDisplay(uint color)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        (color >> 4u) & 0x3Eu,
+        (color >> 9u) & 0x3Eu,
+        0u);
+}
+
+uint CaptureRawFromColor6(uint color)
+{
+    uint r = Color6R(color) >> 1u;
+    uint g = Color6G(color) >> 1u;
+    uint b = Color6B(color) >> 1u;
+    uint a = ((color >> 24u) != 0u) ? 0x8000u : 0u;
+    return r | (g << 5u) | (b << 10u) | a;
+}
+
+uint RepresentativeSubpixel()
+{
+    // Match Resolve.comp and OpenGL CaptureDownscaleFS: use the native output
+    // pixel centre before converting the compact capture to RGBA5551.
+    return uint(ScaleFactor) >> 1u;
+}
+
+uint LoadNativeCaptureSidecar(uint reference, uint withinX, uint withinY)
+{
+    uint address = reference & 0xFFFFu;
+    uint bank = (reference >> 28u) & 3u;
+    uint version = (reference >> 30u) & 1u;
+    uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    return NativeCaptureSidecar[
+        cell * samplesPerPixel + withinY * uint(ScaleFactor) + withinX];
+}
+
+uint NativeHighResCaptureState(uint bank, uint address)
+{
+    uint segment = (address >> 7u) & 0x1FFu;
+    return NativeGPU2DInput[kHighResCaptureProvenanceBase
+        + (bank * kHighResCaptureSegmentsPerBank + segment)
+            * kHighResCaptureProvenanceStride];
+}
+
+uint NativeCaptureCommittedReference(uint bank, uint address)
+{
+    uint state = NativeHighResCaptureState(bank, address);
+    if ((state & kHighResCaptureValidBit) == 0u)
+        return 0u;
+    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
+    return 0x80000000u | (version << 30u) | (bank << 28u)
+        | (address & 0xFFFFu);
+}
+
+// Direct-color bitmap BG/OBJ references are admitted only when the mapped
+// address has one physical owner and the retained sidecar sample quantizes
+// back to the native RGBA5551 word. Indexed/tiled layers never call this.
+uint NativeCaptureReferenceForMappedAddress(
+    uint engine, uint line, uint size, uint address,
+    bool obj, bool spriteLatch, uint nativeColor)
+{
+    uint owners = NativeCaptureMappingMask(
+        engine, line, address, size, obj, spriteLatch)
+        & kNativeCaptureBankMask;
+    if (owners == 0u || (owners & (owners - 1u)) != 0u)
+        return 0u;
+    uint bank = uint(findLSB(owners));
+    uint physicalAddress = ((address & (size - 1u)) >> 1u) & 0xFFFFu;
+    uint reference = NativeCaptureCommittedReference(bank, physicalAddress);
+    if (reference == 0u)
+        return 0u;
+    uint representative = RepresentativeSubpixel();
+    if (CaptureRawFromColor6(LoadNativeCaptureSidecar(
+            reference, representative, representative))
+        != (nativeColor & 0xFFFFu))
+        return 0u;
+    return reference;
+}
+
+struct Pixel
+{
+    uint Color;
+    uint Flag;
+    uint Priority;
+    uint Present;
+    uint Mosaic;
+    uint CaptureReference;
+};
+
+Pixel EmptyPixel()
+{
+    Pixel p;
+    p.Color = 0u;
+    p.Flag = 0u;
+    p.Priority = 4u;
+    p.Present = 0u;
+    p.Mosaic = 0u;
+    p.CaptureReference = 0u;
+    return p;
+}
+
+uint NativeObjRawIndex(uint screen, uint line, uint x, uint word)
+{
+    return kNativeObjRawBase
+        + screen * kNativeObjRawScreenWords
+        + (line * 256u + x) * kNativeObjRawWordsPerPixel
+        + word;
+}
+
+void StoreNativeObjRaw(
+    uint screen, uint line, uint x, Pixel pixel, Pixel windowSelected)
+{
+    NativeCaptureState[NativeObjRawIndex(screen, line, x, 0u)] = pixel.Color;
+    NativeCaptureState[NativeObjRawIndex(screen, line, x, 1u)] =
+        (pixel.Priority & 7u)
+        | ((pixel.Present & 1u) << 3u)
+        | ((pixel.Mosaic & 1u) << 4u)
+        | ((windowSelected.Present & 1u) << 5u)
+        | ((windowSelected.Priority & 7u) << 6u);
+    NativeCaptureState[NativeObjRawIndex(screen, line, x, 2u)] =
+        pixel.CaptureReference;
+}
+
+Pixel LoadNativeObjRaw(
+    uint screen, uint line, uint x, out Pixel windowSelected)
+{
+    Pixel pixel = EmptyPixel();
+    uint color = NativeCaptureState[NativeObjRawIndex(screen, line, x, 0u)];
+    uint meta = NativeCaptureState[NativeObjRawIndex(screen, line, x, 1u)];
+    pixel.CaptureReference = NativeCaptureState[
+        NativeObjRawIndex(screen, line, x, 2u)];
+    pixel.Color = color;
+    pixel.Flag = color >> 24u;
+    pixel.Priority = meta & 7u;
+    pixel.Present = (meta >> 3u) & 1u;
+    pixel.Mosaic = (meta >> 4u) & 1u;
+    windowSelected = EmptyPixel();
+    windowSelected.Priority = (meta >> 6u) & 7u;
+    windowSelected.Present = (meta >> 5u) & 1u;
+    return pixel;
+}
+
+Pixel BackdropPixel(uint engine, uint line)
+{
+    Pixel p = EmptyPixel();
+    p.Color = ConvertBGR555(Palette16(engine, line, 0u), 0x20u);
+    p.Flag = 0x20u;
+    p.Present = 1u;
+    p.Priority = 4u;
+    return p;
+}
+
+int SpriteWidth(uint value)
+{
+    const int table[16] = int[16](8, 16, 8, 8, 16, 32, 8, 8,
+        32, 32, 16, 8, 64, 64, 32, 8);
+    return table[value & 15u];
+}
+
+int SpriteHeight(uint value)
+{
+    const int table[16] = int[16](8, 8, 16, 8, 16, 8, 32, 8,
+        32, 16, 32, 8, 64, 32, 64, 8);
+    return table[value & 15u];
+}
+
+bool NativeSpriteActiveForLine(uint line, uint sprite, bool collectWindow)
+{
+    uint a0 = CachedOAM16(sprite * 8u);
+    uint a1 = CachedOAM16(sprite * 8u + 2u);
+    uint spriteType = (a0 >> 8u) & 3u;
+    if (spriteType == 2u)
+        return false;
+    bool isWindow = ((a0 >> 10u) & 3u) == 2u;
+    if (isWindow && !collectWindow)
+        return false;
+    uint sizeParam = (a0 >> 14u) | ((a1 >> 12u) & 0xCu);
+    int width = SpriteWidth(sizeParam);
+    int height = SpriteHeight(sizeParam);
+    int boundWidth = width;
+    int boundHeight = height;
+    if (spriteType == 3u)
+    {
+        boundWidth <<= 1;
+        boundHeight <<= 1;
+    }
+    int y = int(line) - int(a0 & 0xFFu);
+    if ((uint(y) & 0xFFu) >= uint(boundHeight))
+        return false;
+    int xpos = (int(a1 << 23u)) >> 23;
+    if (xpos <= -boundWidth || xpos >= 256)
+        return false;
+    return true;
+}
+
+uint WindowSelect(uint engine, uint line, int x, uint objWindow)
+{
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    if ((dispCnt & 0xE000u) == 0u)
+        return 0x3Fu;
+
+    uint winRegs = LineWord(engine, line, kWinRegs);
+    uint win0Left = LineWord(engine, line, kWin0Coords + 0u);
+    uint win0Right = LineWord(engine, line, kWin0Coords + 1u);
+    uint win1Left = LineWord(engine, line, kWin1Coords + 0u);
+    uint win1Right = LineWord(engine, line, kWin1Coords + 1u);
+    uint win0Active = LineWord(engine, line, kWin0Active);
+    uint win1Active = LineWord(engine, line, kWin1Active);
+    // CalculateWindowMask() applies outside -> OBJ -> WIN1 -> WIN0.  The
+    // software renderer mutates the horizontal latch while walking x; this
+    // equivalent interval test is read-only and handles wrapping windows.
+    bool inside0 = (win0Active & 1u) != 0u
+        && win0Left != win0Right
+        && (win0Left < win0Right
+            ? (x >= int(win0Left) && x < int(win0Right))
+            : (x >= int(win0Left) || x < int(win0Right)));
+    bool inside1 = (win1Active & 1u) != 0u
+        && win1Left != win1Right
+        && (win1Left < win1Right
+            ? (x >= int(win1Left) && x < int(win1Right))
+            : (x >= int(win1Left) || x < int(win1Right)));
+
+    uint selected = winRegs;
+    if (objWindow != 0u && (dispCnt & (1u << 15u)) != 0u)
+        selected = winRegs >> 8u;
+    if (inside1)
+        selected = winRegs >> 16u;
+    if (inside0)
+        selected = winRegs >> 24u;
+    return selected & 0x3Fu;
+}
+
+uint BGPalette(uint engine, uint line, uint bg, uint palette, uint index)
+{
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    if ((LineWord(engine, line, kDispCnt) & (1u << 30u)) != 0u)
+    {
+        uint slot = bg;
+        if (bg < 2u && (bgcnt & (1u << 13u)) != 0u)
+            slot += 2u;
+        return BGExt16(engine, line,
+            (slot * 4096u) + palette * 512u + index * 2u);
+    }
+    uint base = engine == 0u ? 0u : 0x400u;
+    return Palette16(engine, line, base + palette * 32u + index * 2u);
+}
+
+Pixel BGText(uint engine, uint line, uint bg, int x)
+{
+    Pixel p = EmptyPixel();
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    uint xoff = LineWord(engine, line, kBGXPos + bg);
+    uint yoff = LineWord(engine, line, kBGYPos + bg);
+    uint mosaic = LineWord(engine, line, kBGMosaic + 0u);
+    if ((bgcnt & (1u << 6u)) != 0u)
+    {
+        yoff += LineWord(engine, line, kBGMosaicLine);
+        if (mosaic != 0u)
+            xoff += uint(x) - (uint(x) % (mosaic + 1u));
+    }
+    else
+    {
+        yoff += line;
+        xoff += uint(x);
+    }
+
+    uint tileBase = engine == 0u
+        ? ((dispCnt >> 24u) & 7u) << 16u
+        : 0u;
+    uint mapBase = engine == 0u
+        ? ((dispCnt >> 27u) & 7u) << 16u
+        : 0u;
+    tileBase += (bgcnt & 0x003Cu) << 12u;
+    mapBase += (bgcnt & 0x1F00u) << 3u;
+
+    uint mapOffset = mapBase + ((yoff & 0xF8u) << 3u);
+    if ((bgcnt & (1u << 15u)) != 0u)
+    {
+        mapOffset = mapBase + ((yoff & 0x1F8u) << 3u);
+        if ((bgcnt & (1u << 14u)) != 0u)
+            mapOffset += (yoff & 0x100u) << 3u;
+    }
+    uint wide = (bgcnt & (1u << 14u)) != 0u ? 0x100u : 0u;
+    mapOffset += ((xoff & 0xF8u) >> 2u) + ((xoff & wide) << 3u);
+    uint map = BG16(engine, line, mapOffset);
+    uint tileX = (map & (1u << 10u)) != 0u ? 7u - (xoff & 7u) : xoff & 7u;
+    uint tileY = (map & (1u << 11u)) != 0u ? 7u - (yoff & 7u) : yoff & 7u;
+    uint tileOffset;
+    uint index;
+    uint palette;
+    if ((bgcnt & (1u << 7u)) != 0u)
+    {
+        tileOffset = tileBase + (map & 0x3FFu) * 64u + tileY * 8u + tileX;
+        index = BGByte(engine, line, tileOffset);
+        palette = (LineWord(engine, line, kDispCnt) & (1u << 30u)) != 0u
+            ? map >> 12u : 0u;
+        p.Present = index == 0u ? 0u : 1u;
+    }
+    else
+    {
+        tileOffset = tileBase + (map & 0x3FFu) * 32u + tileY * 4u + (tileX >> 1u);
+        uint packed = BGByte(engine, line, tileOffset);
+        index = (tileX & 1u) != 0u ? packed >> 4u : packed & 0xFu;
+        palette = map >> 12u;
+        p.Present = index == 0u ? 0u : 1u;
+    }
+    if (p.Present != 0u)
+        p.Color = ConvertBGR555(BGPalette(engine, line, bg, palette, index), 1u << bg);
+    p.Flag = 1u << bg;
+    p.Priority = bgcnt & 3u;
+    return p;
+}
+
+Pixel BGAffine(uint engine, uint line, uint bg, int x, bool large)
+{
+    Pixel p = EmptyPixel();
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    int fx = int(LineWord(engine, line, kBGXRef + (bg - 2u)))
+        + x * int(LineWord(engine, line, kRotA + (bg - 2u)));
+    int fy = int(LineWord(engine, line, kBGYRef + (bg - 2u)))
+        + x * int(LineWord(engine, line, kRotC + (bg - 2u)));
+    uint mosaic = LineWord(engine, line, kBGMosaic + 0u);
+    if ((bgcnt & (1u << 6u)) != 0u && mosaic != 0u)
+    {
+        uint offset = uint(x) % (mosaic + 1u);
+        fx -= int(offset) * int(LineWord(engine, line, kRotA + (bg - 2u)));
+        fy -= int(offset) * int(LineWord(engine, line, kRotC + (bg - 2u)));
+    }
+
+    uint sizeParam = (bgcnt >> 14u) & 3u;
+    uint coordMask;
+    uint yShift;
+    if (large)
+    {
+        const uint xMasks[4] = uint[4](0x1FFFFu, 0x3FFFFu, 0x1FFFFu, 0x1FFFFu);
+        const uint yMasks[4] = uint[4](0x3FFFFu, 0x1FFFFu, 0x0FFFFu, 0x1FFFFu);
+        const uint shifts[4] = uint[4](9u, 10u, 9u, 9u);
+        uint xm = xMasks[sizeParam];
+        uint ym = yMasks[sizeParam];
+        if ((uint(fx) & ~xm) != 0u || (uint(fy) & ~ym) != 0u)
+            return p;
+        uint mapBase = (bgcnt & 0x1F00u) << 6u;
+        uint address = mapBase + ((uint(fy) & ym) >> 8u) * (1u << shifts[sizeParam])
+            + ((uint(fx) & xm) >> 8u);
+        uint index = BGByte(engine, line, address);
+        if (index != 0u)
+        {
+            p.Color = ConvertBGR555(
+                Palette16(engine, line,
+                    engine == 0u ? index * 2u : 0x400u + index * 2u),
+                1u << bg);
+            p.Present = 1u;
+        }
+        p.Flag = 1u << bg;
+        p.Priority = bgcnt & 3u;
+        return p;
+    }
+
+    const uint coordMasks[4] = uint[4](0x07800u, 0x0F800u, 0x1F800u, 0x3F800u);
+    const uint shifts[4] = uint[4](7u, 8u, 9u, 10u);
+    coordMask = coordMasks[sizeParam];
+    yShift = shifts[sizeParam] - 3u;
+    uint overflow = (bgcnt & (1u << 13u)) != 0u ? 0u : ~(coordMask | 0x7FFu);
+    if ((uint(fx) & overflow) != 0u || (uint(fy) & overflow) != 0u)
+        return p;
+    uint tileBase = engine == 0u
+        ? ((LineWord(engine, line, kDispCnt) >> 24u) & 7u) << 16u
+        : 0u;
+    uint mapBase = engine == 0u
+        ? ((LineWord(engine, line, kDispCnt) >> 27u) & 7u) << 16u
+        : 0u;
+    tileBase += (bgcnt & 0x003Cu) << 12u;
+    mapBase += (bgcnt & 0x1F00u) << 3u;
+    uint map = BG16(engine, line,
+        mapBase + ((((uint(fy) & coordMask) >> 11u) << yShift)
+        + ((uint(fx) & coordMask) >> 11u)) * 2u);
+    uint tileX = (uint(fx) >> 8u) & 7u;
+    uint tileY = (uint(fy) >> 8u) & 7u;
+    if ((map & (1u << 10u)) != 0u) tileX = 7u - tileX;
+    if ((map & (1u << 11u)) != 0u) tileY = 7u - tileY;
+    uint index = BGByte(engine, line,
+        tileBase + (map & 0x3FFu) * 64u + tileY * 8u + tileX);
+    if (index != 0u)
+    {
+        p.Color = ConvertBGR555(BGPalette(engine, line, bg, 0u, index), 1u << bg);
+        p.Present = 1u;
+    }
+    p.Flag = 1u << bg;
+    p.Priority = bgcnt & 3u;
+    return p;
+}
+
+Pixel BGExtended(uint engine, uint line, uint bg, int x)
+{
+    Pixel p = EmptyPixel();
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    int fx = int(LineWord(engine, line, kBGXRef + (bg - 2u)))
+        + x * int(LineWord(engine, line, kRotA + (bg - 2u)));
+    int fy = int(LineWord(engine, line, kBGYRef + (bg - 2u)))
+        + x * int(LineWord(engine, line, kRotC + (bg - 2u)));
+    uint mosaic = LineWord(engine, line, kBGMosaic + 0u);
+    if ((bgcnt & (1u << 6u)) != 0u && mosaic != 0u)
+    {
+        uint offset = uint(x) % (mosaic + 1u);
+        fx -= int(offset) * int(LineWord(engine, line, kRotA + (bg - 2u)));
+        fy -= int(offset) * int(LineWord(engine, line, kRotC + (bg - 2u)));
+    }
+    uint sizeParam = (bgcnt >> 14u) & 3u;
+    uint xMask;
+    uint yMask;
+    uint yShift;
+    const uint xMasks[4] = uint[4](0x07FFFu, 0x0FFFFu, 0x1FFFFu, 0x1FFFFu);
+    const uint yMasks[4] = uint[4](0x07FFFu, 0x0FFFFu, 0x0FFFFu, 0x1FFFFu);
+    const uint shifts[4] = uint[4](7u, 8u, 9u, 9u);
+    xMask = xMasks[sizeParam];
+    yMask = yMasks[sizeParam];
+    yShift = shifts[sizeParam];
+    uint overflowX = (bgcnt & (1u << 13u)) != 0u ? 0u : ~xMask;
+    uint overflowY = (bgcnt & (1u << 13u)) != 0u ? 0u : ~yMask;
+    if ((uint(fx) & overflowX) != 0u || (uint(fy) & overflowY) != 0u)
+        return p;
+
+    uint mapBase = (bgcnt & 0x1F00u) << 6u;
+    if ((bgcnt & (1u << 7u)) != 0u)
+    {
+        uint address = mapBase
+            + ((((uint(fy) & yMask) >> 8u) << yShift)
+            + ((uint(fx) & xMask) >> 8u));
+        if ((bgcnt & (1u << 2u)) != 0u)
+        {
+            uint color = BG16(engine, line, address * 2u);
+            if ((color & 0x8000u) != 0u)
+            {
+                p.Color = ConvertBGR555(color & 0x7FFFu, 1u << bg);
+                p.Present = 1u;
+                p.CaptureReference = NativeCaptureReferenceForMappedAddress(
+                    engine, line, BGSize(engine), address * 2u,
+                    false, false, color);
+            }
+        }
+        else
+        {
+            uint color = BGByte(engine, line, address);
+            if (color != 0u)
+            {
+                p.Color = ConvertBGR555(BGPalette(engine, line, bg, 0u, color), 1u << bg);
+                p.Present = 1u;
+            }
+        }
+    }
+    else
+    {
+        uint coordMask = uint[4](0x07800u, 0x0F800u, 0x1F800u, 0x3F800u)[sizeParam];
+        uint mapShift = uint[4](7u, 8u, 9u, 10u)[sizeParam] - 3u;
+        uint map = BG16(engine, line,
+            ((bgcnt & 0x1F00u) << 3u)
+            + ((((uint(fy) & coordMask) >> 11u) << mapShift)
+            + ((uint(fx) & coordMask) >> 11u)) * 2u);
+        uint tileX = (uint(fx) >> 8u) & 7u;
+        uint tileY = (uint(fy) >> 8u) & 7u;
+        if ((map & (1u << 10u)) != 0u) tileX = 7u - tileX;
+        if ((map & (1u << 11u)) != 0u) tileY = 7u - tileY;
+        uint color = BGByte(engine, line,
+            ((bgcnt & 0x003Cu) << 12u) + (map & 0x3FFu) * 64u
+            + tileY * 8u + tileX);
+        if (color != 0u)
+        {
+            p.Color = ConvertBGR555(BGPalette(engine, line, bg, map >> 12u, color), 1u << bg);
+            p.Present = 1u;
+        }
+    }
+    p.Flag = 1u << bg;
+    p.Priority = bgcnt & 3u;
+    return p;
+}
+
+Pixel BGPixel(
+    uint engine, uint line, uint bg, int x, uint outputX, uint outputY, bool logical)
+{
+    Pixel p = EmptyPixel();
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    uint bgcnt = LineWord(engine, line, kBGCnt + bg);
+    uint mode = dispCnt & 7u;
+    if ((LineWord(engine, line, kLayerEnable) & (1u << bg)) == 0u)
+        return p;
+    if (engine == 0u && bg == 0u && (dispCnt & 8u) != 0u)
+    {
+        if (!logical && (outputX >= uint(ScreenWidth) || outputY >= uint(ScreenHeight)))
+            return p;
+        if (logical)
+        {
+            // Stage A records the 3D layer slot, not a high-resolution sample.
+            // Stage B supplies the actual FinalFB pixel at every scaled sample.
+            p.Color = 0x40000000u;
+            p.Flag = 0x40u;
+            p.Priority = bgcnt & 3u;
+            p.Present = 1u;
+            return p;
+        }
+        uint renderX = LineWord(engine, line, kRenderXPos) & 0x1FFu;
+        int sourceX = (renderX & 0x100u) != 0u
+            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
+            : int(outputX) + int(renderX * uint(ScaleFactor));
+        if (pc.TexWidth == 0u || sourceX < 0 || sourceX >= ScreenWidth)
+            return p;
+        p.Color = LoadFinalFB(ivec2(sourceX, int(outputY)));
+        p.Flag = 0x40u;
+        p.Priority = bgcnt & 3u;
+        p.Present = ((p.Color >> 24u) & 0x1Fu) != 0u ? 1u : 0u;
+        return p;
+    }
+
+    // BG0/BG1 are always text except for the documented mode-6/7 omissions.
+    if (mode == 6u && bg != 2u)
+        return p;
+    if (mode == 7u && bg >= 2u)
+        return p;
+    if (bg == 0u || bg == 1u || (mode == 0u) || (mode == 3u && bg == 2u))
+        return BGText(engine, line, bg, x);
+    if (mode == 6u && bg == 2u)
+        return BGAffine(engine, line, bg, x, true);
+    if ((mode == 1u && bg == 2u) || (mode == 2u && bg == 2u)
+        || (mode == 1u && bg == 3u) || (mode == 2u && bg == 3u)
+        || (mode == 4u && bg == 2u))
+        return BGAffine(engine, line, bg, x, false);
+    if ((mode >= 3u && bg >= 2u) || mode == 5u)
+        return BGExtended(engine, line, bg, x);
+    return BGText(engine, line, bg, x);
+}
+
+Pixel ObjRawPixel(
+    uint engine, uint line, int x, bool windowOnly, bool collectWindow,
+    out Pixel windowSelected)
+{
+    Pixel selected = EmptyPixel();
+    windowSelected = EmptyPixel();
+    if (LineWord(engine, line, kOBJEnable) == 0u)
+        return selected;
+    uint bestPriority = 4u;
+    for (uint activeIndex = 0u; activeIndex < NativeActiveCount; ++activeIndex)
+    {
+        uint sprite = NativeActiveSprites[activeIndex];
+        uint a0 = CachedOAM16(sprite * 8u + 0u);
+        uint a1 = CachedOAM16(sprite * 8u + 2u);
+        uint a2 = CachedOAM16(sprite * 8u + 4u);
+        uint spriteType = (a0 >> 8u) & 3u;
+        if (spriteType == 2u)
+            continue;
+        bool isWindow = ((a0 >> 10u) & 3u) == 2u;
+        if (windowOnly && !isWindow)
+            continue;
+        if (!windowOnly && isWindow && !collectWindow)
+            continue;
+        uint sizeParam = (a0 >> 14u) | ((a1 >> 12u) & 0xCu);
+        int width = SpriteWidth(sizeParam);
+        int height = SpriteHeight(sizeParam);
+        int boundWidth = width;
+        int boundHeight = height;
+        bool rotScale = (spriteType & 1u) != 0u;
+        if (spriteType == 3u)
+        {
+            boundWidth <<= 1;
+            boundHeight <<= 1;
+        }
+        int y = int(line) - int(a0 & 0xFFu);
+        if ((uint(y) & 0xFFu) >= uint(boundHeight))
+            continue;
+        int xpos = (int(a1 << 23u)) >> 23;
+        if (xpos <= -boundWidth || xpos >= 256)
+            continue;
+        int ypos;
+        if ((a0 & (1u << 12u)) != 0u && !isWindow)
+        {
+            ypos = int((LineWord(engine, line, kOBJMosaicLine) - (a0 & 0xFFu)) & 0xFFu);
+            if (ypos >= boundHeight)
+                ypos = 0;
+        }
+        else
+            ypos = y & 0xFF;
+
+        int localX = x - max(xpos, 0);
+        if (xpos < 0)
+            localX = x;
+        if (localX < 0 || localX >= boundWidth)
+            continue;
+
+        int sx = 0;
+        int sy = 0;
+        int matrixA = 0;
+        int matrixB = 0;
+        int matrixC = 0;
+        int matrixD = 0;
+        if (rotScale)
+        {
+            uint rot = (a1 >> 9u) & 0x1Fu;
+            matrixA = int(CachedOAM16(rot * 32u + 6u));
+            matrixB = int(CachedOAM16(rot * 32u + 14u));
+            matrixC = int(CachedOAM16(rot * 32u + 22u));
+            matrixD = int(CachedOAM16(rot * 32u + 30u));
+            if ((matrixA & 0x8000) != 0) matrixA -= 0x10000;
+            if ((matrixB & 0x8000) != 0) matrixB -= 0x10000;
+            if ((matrixC & 0x8000) != 0) matrixC -= 0x10000;
+            if ((matrixD & 0x8000) != 0) matrixD -= 0x10000;
+            int centerX = boundWidth >> 1;
+            int centerY = boundHeight >> 1;
+            int sourceX = localX + max(-xpos, 0);
+            int rx = (sourceX - centerX) * matrixA
+                + (ypos - centerY) * matrixB + (width << 7);
+            int ry = (sourceX - centerX) * matrixC
+                + (ypos - centerY) * matrixD + (height << 7);
+            if (rx < 0 || ry < 0 || rx >= (width << 8) || ry >= (height << 8))
+                continue;
+            sx = rx >> 8;
+            sy = ry >> 8;
+        }
+        else
+        {
+            sx = localX;
+            sy = ypos;
+            if ((a1 & (1u << 13u)) != 0u)
+                sy = height - 1 - sy;
+            if ((a1 & (1u << 12u)) != 0u)
+                sx = width - 1 - sx;
+        }
+
+        uint mode = (a0 >> 10u) & 3u;
+        uint tile = a2 & 0x3FFu;
+        uint color = 0u;
+        uint nativeColor = 0u;
+        uint nativeAddress = 0u;
+        uint flag = 0u;
+        bool opaque = false;
+        if (mode == 3u)
+        {
+            uint alpha = (a2 >> 12u) & 0xFu;
+            if (alpha == 0u)
+                continue;
+            uint address;
+            uint stride;
+            uint dispCnt = LineWord(engine, line, kDispCnt);
+            if ((dispCnt & 0x40u) != 0u)
+            {
+                if ((dispCnt & 0x20u) != 0u)
+                    continue;
+                address = tile << (7u + ((dispCnt >> 22u) & 1u));
+                stride = uint(width * 2);
+            }
+            else if ((dispCnt & 0x20u) != 0u)
+            {
+                address = ((tile & 0x1Fu) << 4u) + ((tile & 0x3E0u) << 7u);
+                stride = 512u;
+            }
+            else
+            {
+                address = ((tile & 0x0Fu) << 4u) + ((tile & 0x3F0u) << 7u);
+                stride = 256u;
+            }
+            nativeAddress = address + uint(sy) * stride + uint(sx) * 2u;
+            color = OBJ16(engine, line, nativeAddress);
+            nativeColor = color;
+            opaque = (color & 0x8000u) != 0u;
+            color &= 0x7FFFu;
+            flag = 0xC0u | (alpha + 1u);
+        }
+        else
+        {
+            uint dispCnt = LineWord(engine, line, kDispCnt);
+            uint address = tile;
+            uint yTileFactor;
+            if ((dispCnt & (1u << 4u)) != 0u)
+            {
+                address <<= (dispCnt >> 20u) & 3u;
+                yTileFactor = uint(width >> 3);
+                if ((a0 & (1u << 13u)) != 0u)
+                    yTileFactor <<= 1u;
+            }
+            else
+                yTileFactor = 0x20u;
+            yTileFactor <<= 5u;
+            address <<= 5u;
+            if ((a0 & (1u << 13u)) != 0u)
+            {
+                address += uint((sy >> 3) * int(yTileFactor))
+                    + uint((sy & 7) * 8)
+                    + uint((sx >> 3) * 64)
+                    + uint(sx & 7);
+                color = OBJByte(engine, line, address);
+                opaque = color != 0u;
+                if (opaque && (dispCnt & (1u << 31u)) != 0u)
+                {
+                    color = OBJExt16(engine, line,
+                        ((a2 & 0xF000u) >> 4u) + color * 2u);
+                }
+                else if (opaque)
+                    color = Palette16(engine, line,
+                        (engine == 0u ? 0x200u : 0x600u) + color * 2u);
+                flag = mode == 1u ? 0x80u : 0x10u;
+            }
+            else
+            {
+                address += uint((sy >> 3) * int(yTileFactor))
+                    + uint((sy & 7) * 4)
+                    + uint((sx >> 3) * 32)
+                    + uint((sx & 7) >> 1);
+                uint packed = OBJByte(engine, line, address);
+                color = (sx & 1) != 0 ? packed >> 4u : packed & 0xFu;
+                opaque = color != 0u;
+                if (opaque)
+                    color = Palette16(engine, line,
+                        (engine == 0u ? 0x200u : 0x600u)
+                        + ((a2 >> 12u) & 0xFu) * 32u + color * 2u);
+                flag = mode == 1u ? 0x80u : 0x10u;
+            }
+        }
+        if (!opaque)
+            continue;
+        if (isWindow)
+        {
+            if (windowOnly)
+            {
+                selected.Present = 1u;
+                selected.Priority = (a2 >> 10u) & 3u;
+                return selected;
+            }
+            if (collectWindow)
+            {
+                windowSelected.Present = 1u;
+                windowSelected.Priority = (a2 >> 10u) & 3u;
+            }
+            continue;
+        }
+        uint priority = (a2 >> 10u) & 3u;
+        if (selected.Present == 0u || priority < bestPriority)
+        {
+            selected.Color = mode == 3u
+                ? ConvertBGR555(color, flag)
+                : ConvertBGR555(color, flag);
+            selected.Flag = flag;
+            selected.Priority = priority;
+            selected.Present = 1u;
+            selected.Mosaic = ((a0 & (1u << 12u)) != 0u) ? 1u : 0u;
+            if (mode == 3u)
+            {
+                selected.CaptureReference =
+                    NativeCaptureReferenceForMappedAddress(
+                        engine, line, OBJSize(engine),
+                        nativeAddress,
+                        true,
+                        (LineWord(engine, line, kSpriteLatchValid) & 1u) != 0u,
+                        nativeColor);
+            }
+            bestPriority = priority;
+        }
+    }
+    return selected;
+}
+
+Pixel ObjPixel(
+    uint screen, uint engine, uint line, int x,
+    bool collectWindow, out Pixel windowSelected)
+{
+    uint mosaicWidth = LineWord(engine, line, kOBJMosaic + 0u);
+    Pixel selected = EmptyPixel();
+    windowSelected = EmptyPixel();
+    if (mosaicWidth == 0u)
+    {
+        return LoadNativeObjRaw(screen, line, uint(x), windowSelected);
+    }
+
+    int begin = x - (x % int(mosaicWidth + 1u));
+    Pixel latch = EmptyPixel();
+    for (int current = begin; current <= x; ++current)
+    {
+        Pixel sampleWindow = EmptyPixel();
+        Pixel samplePixel = LoadNativeObjRaw(
+            screen, line, uint(current), sampleWindow);
+        if (current == x)
+            windowSelected = sampleWindow;
+        uint offset = uint(current - begin);
+        bool take = offset == 0u
+            || samplePixel.Mosaic == 0u
+            || latch.Mosaic == 0u
+            || samplePixel.Priority < latch.Priority;
+        if (take)
+            latch = samplePixel;
+        selected = latch;
+    }
+    return selected;
+}
+
+uint Blend4Native(uint first, uint second, uint eva, uint evb)
+{
+    return PackColor6(
+        ((Color6R(first) * eva) + Color6R(second) * evb + 8u) >> 4u,
+        ((Color6G(first) * eva) + Color6G(second) * evb + 8u) >> 4u,
+        ((Color6B(first) * eva) + Color6B(second) * evb + 8u) >> 4u,
+        0xFFu);
+}
+
+uint Blend5Native(uint first, uint second)
+{
+    uint eva = ((first >> 24u) & 0x1Fu) + 1u;
+    uint evb = 32u - eva;
+    return PackColor6(
+        ((Color6R(first) * eva) + Color6R(second) * evb + 0x10u) >> 5u,
+        ((Color6G(first) * eva) + Color6G(second) * evb + 0x10u) >> 5u,
+        ((Color6B(first) * eva) + Color6B(second) * evb + 0x10u) >> 5u,
+        0xFFu);
+}
+
+struct CompositeLayers
+{
+    Pixel First;
+    Pixel Second;
+    uint Effect;
+    uint Eva;
+    uint Evb;
+    uint Color;
+};
+
+uint StructuredPixelWord(Pixel pixel)
+{
+    // BG0's 3D pixel carries the real FinalFB alpha in Color, but the
+    // structured contract needs the software renderer's explicit 0x40 layer
+    // marker. All ordinary BG/OBJ words already carry their layer flag in the
+    // high byte of Color.
+    if ((pixel.Flag & 0x40u) != 0u && (pixel.Flag & 0x80u) == 0u)
+        return (pixel.Color & 0x00FFFFFFu) | 0x40000000u;
+    return pixel.Color;
+}
+
+CompositeLayers Composite2DLayers(
+    uint screen, uint engine, uint line, int x,
+    uint outputX, uint outputY, bool logical)
+{
+    CompositeLayers result;
+    result.First = BackdropPixel(engine, line);
+    result.Second = EmptyPixel();
+    result.Effect = 0u;
+    result.Eva = LineWord(engine, line, kEVA);
+    result.Evb = LineWord(engine, line, kEVB);
+    result.Color = result.First.Color;
+
+    uint enableOBJ = LineWord(engine, line, kLayerEnable) & (1u << 4u);
+    enableOBJ &= LineWord(engine, line, kOBJEnable) != 0u ? 0x10u : 0u;
+    const uint dispCnt = LineWord(engine, line, kDispCnt);
+    const bool collectOBJWindow = enableOBJ != 0u
+        && (dispCnt & (1u << 15u)) != 0u;
+
+    // BG and OBJ are semantic fetches. Evaluate them once per logical pixel;
+    // the priority loop only selects from these cached values. This is the
+    // critical invariant for both the logical Stage A and the legacy direct
+    // path.
+    Pixel bgPixels[4];
+    for (uint bg = 0u; bg < 4u; ++bg)
+        bgPixels[bg] = BGPixel(engine, line, bg, x, outputX, outputY, logical);
+    Pixel objWindowPixel = EmptyPixel();
+    Pixel objPixel = enableOBJ != 0u
+        ? ObjPixel(screen, engine, line, x, collectOBJWindow, objWindowPixel)
+        : EmptyPixel();
+    uint objWindow = collectOBJWindow ? objWindowPixel.Present : 0u;
+    uint window = WindowSelect(engine, line, x, objWindow);
+
+    for (int priority = 3; priority >= 0; --priority)
+    {
+        for (int bg = 3; bg >= 0; --bg)
+        {
+            Pixel current = bgPixels[uint(bg)];
+            if (current.Present != 0u && int(current.Priority) == priority
+                && (window & (1u << uint(bg))) != 0u)
+            {
+                result.Second = result.First;
+                result.First = current;
+            }
+        }
+        if (enableOBJ != 0u)
+        {
+            Pixel current = objPixel;
+            if (current.Present != 0u && int(current.Priority) == priority
+                && (window & (1u << 4u)) != 0u)
+            {
+                result.Second = result.First;
+                result.First = current;
+            }
+        }
+    }
+
+    uint flag1 = result.First.Flag;
+    uint flag2 = result.Second.Flag;
+    uint target2 = (flag2 & 0x80u) != 0u ? 0x1000u
+        : ((flag2 & 0x40u) != 0u ? 0x0100u : flag2 << 8u);
+    uint blendCnt = LineWord(engine, line, kBlendCnt);
+    if ((flag1 & 0x80u) != 0u && (blendCnt & target2) != 0u)
+    {
+        result.Effect = 1u;
+        if ((flag1 & 0x40u) != 0u)
+        {
+            result.Eva = flag1 & 0x1Fu;
+            result.Evb = 16u - result.Eva;
+        }
+    }
+    else if ((flag1 & 0x40u) != 0u && (blendCnt & target2) != 0u)
+    {
+        result.Effect = 4u;
+    }
+    else
+    {
+        uint sourceMask = (flag1 & 0x80u) != 0u ? 0x10u
+            : ((flag1 & 0x40u) != 0u ? 0x01u : flag1);
+        if ((blendCnt & sourceMask) != 0u && (window & (1u << 5u)) != 0u)
+        {
+            result.Effect = (blendCnt >> 6u) & 3u;
+            if (result.Effect == 1u && (blendCnt & target2) == 0u)
+                result.Effect = 0u;
+        }
+        if (result.Effect == 2u || result.Effect == 3u)
+            result.Eva = min(LineWord(engine, line, kEVY), 16u);
+    }
+
+    result.Color = result.First.Color;
+    if (result.Effect == 1u)
+        result.Color = Blend4Native(result.First.Color, result.Second.Color,
+            result.Eva, result.Evb);
+    else if (result.Effect == 2u)
+        result.Color = BrightnessUp(result.First.Color, result.Eva, 8u);
+    else if (result.Effect == 3u)
+        result.Color = BrightnessDown(result.First.Color, result.Eva, 7u);
+    else if (result.Effect == 4u)
+        result.Color = Blend5Native(result.First.Color, result.Second.Color);
+    return result;
+}
+
+uint Composite2D(
+    uint screen, uint engine, uint line, int x,
+    uint outputX, uint outputY)
+{
+    CompositeLayers layers = Composite2DLayers(
+        screen, engine, line, x, outputX, outputY, false);
+    if (layers.Effect == 0u
+        && (layers.First.CaptureReference & 0x80000000u) != 0u)
+    {
+        return LoadNativeCaptureSidecar(
+            layers.First.CaptureReference,
+            outputX % uint(ScaleFactor),
+            outputY % uint(ScaleFactor));
+    }
+    return layers.Color;
+}
+
+uint ApplyMasterNative(uint color, uint brightness)
+{
+    uint mode = brightness >> 14u;
+    uint factor = min(brightness & 0x1Fu, 16u);
+    if (mode == 1u)
+        return BrightnessUp(color, factor, 0u);
+    if (mode == 2u)
+        return BrightnessDown(color, factor, 15u);
+    return color;
+}
+
+// GLSL requires a declaration before DisplayPixel uses the shared capture
+// reference resolver, whose full definition lives with the structured-path
+// helpers below.
+uint NativeCaptureReference(uint engine,uint line,uint x);
+
+uint DisplayPixel(
+    uint screen, uint engine, uint line, int x,
+    uint outputX, uint outputY)
+{
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    uint mode = engine == 0u ? (dispCnt >> 16u) & 3u : (dispCnt >> 16u) & 1u;
+    if (mode == 0u)
+        return PackColor6(63u, 63u, 63u, 0u);
+    if (mode == 1u && LineWord(engine, line, kUnitEnabled) == 0u)
+        return engine == 0u
+            ? PackColor6(0u, 0u, 0u, 0u)
+            : PackColor6(63u, 63u, 63u, 0u);
+    if (mode == 1u && LineWord(engine, line, kForcedBlank) != 0u)
+        return PackColor6(63u, 63u, 63u, 0u);
+    if (mode == 2u && engine == 0u)
+    {
+        uint bank = (dispCnt >> 18u) & 3u;
+        uint map = LineWord(engine, line, kLCDVRAMMap);
+        if ((map & (1u << bank)) == 0u)
+            return 0u;
+        uint compact = LCD16(line, bank, line * 512u + uint(x) * 2u);
+        uint color = ConvertVRAMDisplay(compact);
+        uint reference = NativeCaptureReference(engine, line, uint(x));
+        if ((reference & 0x80000000u) != 0u)
+        {
+            uint representative = RepresentativeSubpixel();
+            uint canonical = CaptureRawFromColor6(
+                LoadNativeCaptureSidecar(
+                    reference, representative, representative));
+            // VRAM display ignores LCDC bit 15. Admit the retained sidecar
+            // only when its canonical sample agrees with the current native
+            // RGB555 word, then preserve the requested subpixel sample.
+            if ((canonical & 0x7FFFu) == (compact & 0x7FFFu))
+            {
+                uint highRes = LoadNativeCaptureSidecar(
+                    reference,
+                    outputX % uint(ScaleFactor),
+                    outputY % uint(ScaleFactor));
+                color = PackColor6(
+                    Color6R(highRes), Color6G(highRes), Color6B(highRes), 0u);
+            }
+        }
+        return ApplyMasterNative(
+            color, LineWord(engine, line, kMasterBrightness));
+    }
+    if (mode == 3u && engine == 0u)
+        return ApplyMasterNative(
+            ConvertVRAMDisplay(FIFO16(line, uint(x))),
+            LineWord(engine, line, kMasterBrightness));
+    return ApplyMasterNative(
+        Composite2D(screen, engine, line, x, outputX, outputY),
+        LineWord(engine, line, kMasterBrightness));
+}
+
+uint ToBgra8Native(uint color)
+{
+    uint r = Color6R(color);
+    uint g = Color6G(color);
+    uint b = Color6B(color);
+    return ((b << 2u) | (b >> 4u))
+        | (((g << 2u) | (g >> 4u)) << 8u)
+        | (((r << 2u) | (r >> 4u)) << 16u)
+        | 0xFF000000u;
+}
+
+uint NativeCaptureReferenceForSourceB(
+    uint line, uint bank, uint address, uint captureCnt)
+{
+    uint halfwordAddress = (address >> 1u) & 0xFFFFu;
+    uint state = NativeHighResCaptureState(bank, halfwordAddress);
+    bool pendingWrite = (state & kHighResCapturePendingWriteBit) != 0u;
+    bool committed = (state & kHighResCaptureValidBit) != 0u;
+    if (!pendingWrite && !committed)
+        return 0u;
+
+    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
+    if (pendingWrite)
+    {
+        uint sizeCode = (captureCnt >> 20u) & 3u;
+        uint width = sizeCode == 0u ? 128u : 256u;
+        uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
+        uint destinationBank = (captureCnt >> 16u) & 3u;
+        uint packedLatch = LineWord(0u, line, kSpriteLatchValid);
+        uint captureStart = (packedLatch >> 8u) & 0xFFu;
+        uint destinationAddress = WrapLCDCHalfword(
+            CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
+        uint relative = (halfwordAddress - destinationAddress) & 0xFFFFu;
+        uint captureLine = relative / width;
+        const bool wasWrittenEarlier = bank == destinationBank
+            && captureStart != 0xFFu
+            && captureLine >= captureStart
+            && captureLine < line
+            && captureLine < height;
+        if (wasWrittenEarlier)
+            version ^= 1u;
+        else if (!committed)
+            return 0u;
+    }
+    return 0x80000000u | (version << 30u) | (bank << 28u)
+        | halfwordAddress;
+}
+
+uint CaptureSourceB(
+    uint line, uint x, uint captureCnt, uint outputX, uint sampleY)
+{
+    if ((captureCnt & (1u << 25u)) != 0u)
+        return FIFO16(line, x);
+
+    uint dispCnt = LineWord(0u, line, kDispCnt);
+    uint bank = (dispCnt >> 18u) & 3u;
+    if ((LineWord(0u, line, kLCDVRAMMap) & (1u << bank)) == 0u)
+        return 0u;
+    uint address = line * 512u + x * 2u;
+    if (((dispCnt >> 16u) & 3u) != 2u)
+    {
+        address = WrapLCDCByte(
+            address + CaptureOffsetBytes((captureCnt >> 26u) & 3u));
+    }
+    else
+    {
+        address = WrapLCDCByte(address);
+    }
+    uint compact = LCD16(line, bank, address);
+    uint reference = NativeCaptureReferenceForSourceB(
+        line, bank, address, captureCnt);
+    if (reference != 0u)
+    {
+        // Admit the retained sidecar using its canonical sample, then return
+        // the actual subpixel sample. Quantizing that same sample back to
+        // LCD16 made this branch an algebraic no-op.
+        uint representative = RepresentativeSubpixel();
+        uint canonical = CaptureRawFromColor6(LoadNativeCaptureSidecar(
+            reference, representative, representative));
+        if (canonical == compact)
+        {
+            return CaptureRawFromColor6(LoadNativeCaptureSidecar(
+                reference,
+                outputX % uint(ScaleFactor),
+                sampleY));
+        }
+    }
+    return compact;
+}
+
+uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
+{
+    uint mode = (captureCnt >> 29u) & 3u;
+    if (mode == 0u)
+        return CaptureRawFromColor6(sourceA);
+    if (mode == 1u)
+        return sourceB;
+
+    uint eva = min(captureCnt & 0x1Fu, 16u);
+    uint evb = min((captureCnt >> 8u) & 0x1Fu, 16u);
+    uint aA = ((sourceA >> 24u) != 0u) ? 1u : 0u;
+    uint aB = (sourceB >> 15u) & 1u;
+    uint r = ((Color6R(sourceA) >> 1u) * aA * eva
+        + (sourceB & 0x1Fu) * aB * evb + 8u) >> 4u;
+    uint g = ((Color6G(sourceA) >> 1u) * aA * eva
+        + ((sourceB >> 5u) & 0x1Fu) * aB * evb + 8u) >> 4u;
+    uint b = ((Color6B(sourceA) >> 1u) * aA * eva
+        + ((sourceB >> 10u) & 0x1Fu) * aB * evb + 8u) >> 4u;
+    uint a = (eva > 0u ? aA : 0u) | (evb > 0u ? aB : 0u);
+    return min(r, 31u) | (min(g, 31u) << 5u)
+        | (min(b, 31u) << 10u) | (a << 15u);
+}
+
+uint NativeCaptureReference(uint engine, uint line, uint x)
+{
+    if (engine != 0u)
+        return 0u;
+
+    uint packedLatch = LineWord(0u, line, kSpriteLatchValid);
+    uint captureStart = (packedLatch >> 8u) & 0xFFu;
+    if (captureStart == 0xFFu || line <= captureStart)
+        return 0u;
+
+    uint captureCnt = LineWord(0u, line, kCaptureCnt);
+    uint sizeCode = (captureCnt >> 20u) & 3u;
+    uint width = sizeCode == 0u ? 128u : 256u;
+    uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
+    uint displayBank = (LineWord(0u, line, kDispCnt) >> 18u) & 3u;
+    uint destinationBank = (captureCnt >> 16u) & 3u;
+    if (displayBank != destinationBank
+        || (LineWord(0u, line, kLCDVRAMMap) & (1u << displayBank)) == 0u)
+        return 0u;
+
+    // Both values are DS word addresses.  The modulo preserves the LCDC
+    // 64-KiB bank wrap, while the line bound prevents the current capture line
+    // from reading its own not-yet-committed write.
+    uint displayAddress = WrapLCDCHalfword(line * 256u + x);
+    uint destinationAddress = WrapLCDCHalfword(
+        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
+    uint relative = (displayAddress - destinationAddress) & 0xFFFFu;
+    uint captureLine = relative / width;
+    if (captureLine < captureStart || captureLine >= line || captureLine >= height)
+        return 0u;
+
+    uint state = NativeHighResCaptureState(displayBank, displayAddress);
+    bool pendingWrite = (state & kHighResCapturePendingWriteBit) != 0u;
+    bool committed = (state & kHighResCaptureValidBit) != 0u;
+    if (!pendingWrite && !committed)
+        return 0u;
+    // A capture writes the next sidecar version while this frame's display
+    // feedback reads the version produced for the already-completed capture
+    // lines. The segment-level pending bit makes same-bank read-before-write
+    // explicit without promoting neighbouring pixels in a physical block.
+    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
+    if (pendingWrite)
+        version ^= 1u;
+    return 0x80000000u | (version << 30u) | (displayBank << 28u)
+        | displayAddress;
+}
+
+struct StructuredPixelState
+{
+    uint Below;
+    uint Above;
+    uint Control;
+    uint CaptureReference;
+    uint LineMeta;
+};
+
+StructuredPixelState EmptyStructuredPixelState()
+{
+    StructuredPixelState result;
+    result.Below = 0u;
+    result.Above = 0u;
+    result.Control = kStructuredControlPlain2D << 24u;
+    result.CaptureReference = 0u;
+    result.LineMeta = 0u;
+    return result;
+}
+
+// This is the single Source-A semantic function.  Stage A stores its result
+// in StructuredOutput, while capture evaluates the same value directly before
+// writing the LCDC mirror.  Keeping the layer/effect decision here removes a
+// structured-buffer read/write round trip from every capture line without
+// allowing the two paths to drift semantically.
+StructuredPixelState CompositeSourceAExact(
+    uint screen, uint line, uint x, uint engine)
+{
+    StructuredPixelState result = EmptyStructuredPixelState();
+    const uint dispCnt = LineWord(engine, line, kDispCnt);
+    const uint displayMode = engine == 0u
+        ? (dispCnt >> 16u) & 3u : (dispCnt >> 16u) & 1u;
+    const uint masterBrightness = LineWord(engine, line, kMasterBrightness);
+    const uint renderX = LineWord(engine, line, kRenderXPos) & 0x1FFu;
+
+    if (NativeGPU2DInput[13u] == 0u)
+        return result;
+
+    if (displayMode == kStructuredDisplayRegular)
+    {
+        // Regular display mode still obeys the DS per-line unit/blank state.
+        // Do not route these cases through the layer compositor: a disabled
+        // unit and ForcedBlank are display semantics, not an empty layer list.
+        if (LineWord(engine, line, kUnitEnabled) == 0u
+            || LineWord(engine, line, kForcedBlank) != 0u)
+        {
+            result.Below = DisplayPixel(
+                screen, engine, line, int(x), x, line);
+            result.LineMeta = kStructuredDisplayOff;
+            return result;
+        }
+
+        CompositeLayers layers = Composite2DLayers(
+            screen, engine, line, int(x), x, line, true);
+        uint val1 = StructuredPixelWord(layers.First);
+        uint val2 = StructuredPixelWord(layers.Second);
+        uint plane0 = layers.Color;
+        uint plane1 = 0u;
+        uint alpha1 = val1 >> 24u;
+        uint alpha2 = val2 >> 24u;
+        bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
+        bool val2Is3D = (alpha2 & 0x40u) != 0u && (alpha2 & 0x80u) == 0u;
+        uint controlAlpha = kStructuredControlPlain2D;
+        const bool val1IsCapture =
+            (layers.First.CaptureReference & 0x80000000u) != 0u;
+        const bool val2IsCapture =
+            (layers.Second.CaptureReference & 0x80000000u) != 0u;
+        if (val1Is3D || val1IsCapture)
+        {
+            plane0 = val2;
+            controlAlpha = kStructuredControlHas3D
+                | (layers.Effect & 0x0Fu);
+            if (val1IsCapture)
+                result.CaptureReference = layers.First.CaptureReference;
+            if ((plane0 & 0x00FFFFFFu) == 0u && (plane0 >> 24u) != 0u)
+                controlAlpha |= kStructuredControlOpaqueBlackBelow;
+        }
+        else if (val2Is3D || val2IsCapture)
+        {
+            if (layers.Effect == kStructuredCompositionBlend4)
+            {
+                plane0 = 0u;
+                plane1 = val1;
+                controlAlpha = kStructuredControlHas3D
+                    | kStructuredControlAbove | kStructuredCompositionBlend4;
+                if (val2IsCapture)
+                    result.CaptureReference = layers.Second.CaptureReference;
+                if ((plane1 & 0x00FFFFFFu) == 0u && (plane1 >> 24u) != 0u)
+                    controlAlpha |= kStructuredControlOpaqueBlackBelow;
+            }
+        }
+        result.Below = plane0;
+        result.Above = plane1;
+        result.Control = (controlAlpha << 24u)
+            | ((layers.Evb & 0xFFu) << 16u)
+            | ((layers.Eva & 0xFFu) << 8u);
+        result.LineMeta = kStructuredDisplayRegular << 16u
+            | ((masterBrightness >> 14u) << 8u)
+            | (masterBrightness & 0x1Fu)
+            | (renderX << 23u);
+        return result;
+    }
+
+    // Display modes 0/2/3 are already final native display pixels. Mark them
+    // as display-mode-off so Stage B does not apply master brightness twice.
+    result.Below = DisplayPixel(
+        screen, engine, line, int(x), x, line);
+    result.CaptureReference = NativeCaptureReference(engine, line, x);
+    result.LineMeta = kStructuredDisplayOff;
+    return result;
+}
+
+uint StructuredCaptureSourceA(
+    uint line, uint x, uint outputX, uint sampleY)
+{
+    // Source A is engine A, while the structured contract is stored in LCD
+    // screen order. Follow the recorded route instead of assuming screen 0.
+    uint captureScreen = 0u;
+    for (uint screen = 0u; screen < 2u; ++screen)
+    {
+        if ((NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u) == 0u)
+        {
+            captureScreen = screen;
+            break;
+        }
+    }
+    // Stage A is the only semantic producer. Capture runs at the scaled
+    // resolution and consumes immutable logical planes instead of re-running
+    // BG/OBJ composition for every high-resolution sample.
+    uint nativeIndex = line * 256u + x;
+    uint base = captureScreen * 4u * kStructuredPlaneStride;
+    uint below = NativeGPU2DOutput[base + nativeIndex];
+    uint above = NativeGPU2DOutput[
+        base + kStructuredPlaneStride + nativeIndex];
+    uint control = NativeGPU2DOutput[
+        base + 2u * kStructuredPlaneStride + nativeIndex];
+    uint captureReference = NativeGPU2DOutput[
+        base + 3u * kStructuredPlaneStride + nativeIndex];
+    uint controlFlags = control >> 24u;
+    uint color = below;
+    if ((controlFlags & kStructuredControlHas3D) == 0u)
+    {
+        if ((captureReference & 0x80000000u) != 0u)
+        {
+            return LoadNativeCaptureSidecar(
+                captureReference,
+                outputX % uint(ScaleFactor), sampleY);
+        }
+        return color;
+    }
+
+    uint pixel3D = 0u;
+    uint lineMeta = NativeGPU2DOutput[
+        kStructuredLineMetaBase + captureScreen * 192u + line];
+    if ((captureReference & 0x80000000u) != 0u)
+    {
+        pixel3D = LoadNativeCaptureSidecar(
+            captureReference,
+            outputX % uint(ScaleFactor), sampleY);
+    }
+    else if (pc.TexWidth != 0u)
+    {
+        uint renderX = (lineMeta >> 23u) & 0x1FFu;
+        int sourceX = (renderX & 0x100u) != 0u
+            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
+            : int(outputX) + int(renderX * uint(ScaleFactor));
+        if (sourceX >= 0 && sourceX < ScreenWidth)
+        {
+            pixel3D = LoadFinalFB(ivec2(
+                sourceX, int(line * uint(ScaleFactor) + sampleY)));
+        }
+    }
+
+    // Match PrepareStructuredCaptureLine(): transparent FinalFB exposes the
+    // structured below plane instead of becoming opaque black in capture.
+    if (((pixel3D >> 24u) & 0x1Fu) == 0u)
+        return color;
+
+    uint eva = (control >> 8u) & 0x1Fu;
+    uint evb = (control >> 16u) & 0x1Fu;
+    uint compositionMode = controlFlags & 0xFu;
+    if (compositionMode == kStructuredCompositionBlend4
+        && (controlFlags & kStructuredControlAbove) != 0u)
+    {
+        return Blend4Native(above, pixel3D, eva, evb);
+    }
+    if (compositionMode == kStructuredCompositionBrightnessUp)
+        return BrightnessUp(pixel3D, eva, 8u);
+    if (compositionMode == kStructuredCompositionBrightnessDown)
+        return BrightnessDown(pixel3D, eva, 7u);
+    if (compositionMode == kStructuredCompositionBlend5)
+        return Blend5Native(pixel3D, below);
+    return pixel3D;
+}
+
+uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
+{
+    uint captureCnt = LineWord(0u, line, kCaptureCnt);
+    if ((captureCnt & (1u << 24u)) != 0u && pc.TexWidth != 0u)
+    {
+        uint renderX = LineWord(0u, line, kRenderXPos) & 0x1FFu;
+        int sx = (renderX & 0x100u) != 0u
+            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
+            : int(outputX) + int(renderX * uint(ScaleFactor));
+        if (sx >= 0 && sx < ScreenWidth)
+            return LoadFinalFB(ivec2(
+                sx, int(line * uint(ScaleFactor) + sampleY)));
+        return 0u;
+    }
+    return StructuredCaptureSourceA(line, x, outputX, sampleY);
+}
+
+uint CaptureRawToColor6(uint color)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        ((color >> 5u) & 0x1Fu) << 1u,
+        ((color >> 10u) & 0x1Fu) << 1u,
+        ((color >> 15u) & 1u) != 0u ? 31u : 0u);
+}
+
+void WriteNativeCaptureSample(
+    uint line, uint x, uint outputX, uint sampleY)
+{
+    uint captureCnt = LineWord(0u, line, kCaptureCnt);
+    if (LineWord(0u, line, kCaptureEnable) == 0u)
+        return;
+
+    uint sizeCode = (captureCnt >> 20u) & 3u;
+    uint width = sizeCode == 0u ? 128u : 256u;
+    uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
+    if (line >= height || x >= width)
+        return;
+    uint destinationBank = (captureCnt >> 16u) & 3u;
+    if ((LineWord(0u, line, kLCDVRAMMap) & (1u << destinationBank)) == 0u)
+        return;
+
+    uint firstA = CaptureSourceA(line, x, outputX, sampleY);
+    uint firstB = CaptureSourceB(
+        line, x, captureCnt, outputX, sampleY);
+    uint first = CaptureCompositeRaw(firstA, firstB, captureCnt);
+
+    uint address = WrapLCDCHalfword(
+        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u)
+        + line * width + x);
+    uint provenance = NativeHighResCaptureState(
+        destinationBank, address);
+    if ((provenance & kHighResCapturePendingWriteBit) == 0u)
+        return;
+    uint version = (provenance & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
+    version ^= 1u;
+    uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
+    uint cell = ((version * 4u + destinationBank) * 65536u) + address;
+    uint sampleIndex = sampleY * uint(ScaleFactor) + (outputX % uint(ScaleFactor));
+    NativeCaptureSidecar[cell * samplesPerPixel + sampleIndex] =
+        CaptureRawToColor6(first);
+
+    // The compact LCDC mirror remains the authoritative source for a later
+    // CPU readback.  One invocation owns each pair, so no two shader lanes
+    // race on the packed 32-bit word.
+    uint representative = RepresentativeSubpixel();
+    if (sampleY == representative
+        && (outputX % uint(ScaleFactor)) == representative
+        && (x & 1u) == 0u)
+    {
+        uint second = 0u;
+        if (x + 1u < width)
+        {
+            uint secondA = CaptureSourceA(
+                line, x + 1u, outputX + uint(ScaleFactor), representative);
+            uint secondB = CaptureSourceB(
+                line, x + 1u, captureCnt,
+                outputX + uint(ScaleFactor), representative);
+            second = CaptureCompositeRaw(secondA, secondB, captureCnt);
+        }
+
+        uint byteAddress = WrapLCDCByte(
+            CaptureOffsetBytes((captureCnt >> 18u) & 3u)
+            + line * width * 2u + x * 2u);
+        NativeCaptureState[uint(FramebufferStride) + destinationBank * 32768u
+            + (byteAddress >> 2u)] = first | (second << 16u);
+    }
+}
+
+void WriteStructuredPixel(
+    uint screen, uint line, uint x, uint below, uint above,
+    uint control, uint captureReference)
+{
+    uint pixel = line * 256u + x;
+    uint base = screen * 4u * kStructuredPlaneStride;
+    NativeGPU2DOutput[base + pixel] = below;
+    NativeGPU2DOutput[base + kStructuredPlaneStride + pixel] = above;
+    NativeGPU2DOutput[base + 2u * kStructuredPlaneStride + pixel] = control;
+    NativeGPU2DOutput[base + 3u * kStructuredPlaneStride + pixel] = captureReference;
+}
+
+void WriteStructuredLineMeta(uint screen, uint line, uint meta)
+{
+    NativeGPU2DOutput[kStructuredLineMetaBase + screen * 192u + line] = meta;
+}
+
+void WriteStructuredLogicalPixel(uint screen, uint line, uint x, uint engine)
+{
+    StructuredPixelState semantic = CompositeSourceAExact(
+        screen, line, x, engine);
+    WriteStructuredPixel(
+        screen, line, x, semantic.Below, semantic.Above,
+        semantic.Control, semantic.CaptureReference);
+    if (x == 0u)
+        WriteStructuredLineMeta(screen, line, semantic.LineMeta);
+}
+
+void WriteNativeObjRawPixel(
+    uint screen, uint line, uint x, uint engine)
+{
+    uint layerEnable = LineWord(engine, line, kLayerEnable);
+    uint dispCnt = LineWord(engine, line, kDispCnt);
+    bool objEnabled = (layerEnable & (1u << 4u)) != 0u
+        && LineWord(engine, line, kOBJEnable) != 0u;
+    bool collectWindow = objEnabled && (dispCnt & (1u << 15u)) != 0u
+        && (dispCnt & 0xE000u) != 0u;
+    Pixel windowSelected = EmptyPixel();
+    Pixel raw = ObjRawPixel(
+        engine, line, int(x), false, collectWindow, windowSelected);
+    StoreNativeObjRaw(screen, line, x, raw, windowSelected);
+}
+
+void PrepareNativeObjRawLine(
+    uint engine, uint line, bool collectWindow, uint lane)
+{
+    for (uint word = lane; word < 512u; word += 128u)
+        NativeOAMCache[word] = OAM16(engine, line, word * 2u);
+    barrier();
+
+    NativeActiveFlags[lane] = NativeSpriteActiveForLine(
+        line, lane, collectWindow) ? 1u : 0u;
+    barrier();
+
+    if (lane == 0u)
+    {
+        NativeActiveCount = 0u;
+        for (uint sprite = 0u; sprite < 128u; ++sprite)
+        {
+            if (NativeActiveFlags[sprite] != 0u)
+                NativeActiveSprites[NativeActiveCount++] = sprite;
+        }
+    }
+    barrier();
+}
+
+void main()
+{
+    uvec2 id = gl_GlobalInvocationID.xy;
+    const bool objRawPass = (pc._pad & 32u) != 0u;
+    if (objRawPass)
+    {
+        const bool logicalLine = (pc._pad & 8u) != 0u;
+        if (id.x >= 256u || (logicalLine ? id.y >= 2u : id.y >= 384u))
+            return;
+        uint screen = logicalLine ? id.y : id.y / 192u;
+        uint line = logicalLine
+            ? uint(max(pc.CaptureYOffset, 0)) : id.y % 192u;
+        uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
+        uint layerEnable = LineWord(engine, line, kLayerEnable);
+        uint dispCnt = LineWord(engine, line, kDispCnt);
+        bool objEnabled = (layerEnable & (1u << 4u)) != 0u
+            && LineWord(engine, line, kOBJEnable) != 0u;
+        bool collectWindow = objEnabled && (dispCnt & (1u << 15u)) != 0u
+            && (dispCnt & 0xE000u) != 0u;
+        PrepareNativeObjRawLine(
+            engine, line, collectWindow, gl_LocalInvocationID.x);
+        WriteNativeObjRawPixel(screen, line, id.x, engine);
+        return;
+    }
+    const bool capturePass = (pc._pad & 4u) != 0u;
+    if (capturePass)
+    {
+        if (id.x >= uint(ScreenWidth) || id.y >= uint(ScaleFactor))
+            return;
+        uint x = id.x / uint(ScaleFactor);
+        WriteNativeCaptureSample(
+            uint(max(pc.CaptureYOffset, 0)), x, id.x, id.y);
+        return;
+    }
+
+    const bool logicalStage = (pc._pad & 16u) != 0u;
+    if (logicalStage)
+    {
+        const bool logicalLine = (pc._pad & 8u) != 0u;
+        if (id.x >= 256u || (logicalLine ? id.y >= 2u : id.y >= 384u))
+            return;
+        uint screen = logicalLine ? id.y : id.y / 192u;
+        uint line = logicalLine
+            ? uint(max(pc.CaptureYOffset, 0)) : id.y % 192u;
+        uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
+        WriteStructuredLogicalPixel(screen, line, id.x, engine);
+        return;
+    }
+
+    if (id.x >= uint(ScreenWidth) || id.y >= uint(ScreenHeight) * 2u)
+        return;
+
+    const bool linePass = (pc._pad & 8u) != 0u;
+    uint screen;
+    uint scaledY;
+    if (linePass)
+    {
+        uint scaledScreens = 2u * uint(ScaleFactor);
+        if (id.y >= scaledScreens)
+            return;
+        screen = id.y / uint(ScaleFactor);
+        uint subY = id.y % uint(ScaleFactor);
+        scaledY = uint(max(pc.CaptureYOffset, 0)) * uint(ScaleFactor) + subY;
+    }
+    else
+    {
+        screen = id.y / uint(ScreenHeight);
+        scaledY = id.y - screen * uint(ScreenHeight);
+    }
+    uint x = id.x / uint(ScaleFactor);
+    uint line = scaledY / uint(ScaleFactor);
+    uint engine = NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u;
+    uint color = NativeGPU2DInput[13u] == 0u
+        ? 0u
+        : DisplayPixel(screen, engine, line, int(x), id.x, scaledY);
+
+    uint bgra8 = ToBgra8Native(color);
+    const bool directOutput = (pc._pad & 1u) != 0u;
+    const bool exactOutput = (pc._pad & 2u) != 0u;
+    if (directOutput)
+    {
+        vec4 rgba8 = vec4(
+            float((bgra8 >> 16u) & 0xFFu) / 255.0,
+            float((bgra8 >> 8u) & 0xFFu) / 255.0,
+            float(bgra8 & 0xFFu) / 255.0,
+            float((bgra8 >> 24u) & 0xFFu) / 255.0);
+        if (screen == 0u)
+            imageStore(NativeDirectOutputTop, ivec2(id.x, scaledY), rgba8);
+        else
+            imageStore(NativeDirectOutputBottom, ivec2(id.x, scaledY), rgba8);
+    }
+    if (exactOutput || !directOutput)
+    {
+        NativeGPU2DOutput[screen * uint(FramebufferStride)
+            + scaledY * uint(ScreenWidth) + id.x] = bgra8;
+    }
+}

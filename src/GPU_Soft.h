@@ -20,6 +20,7 @@
 #define GPU_SOFT_H
 
 #include "GPU.h"
+#include "GPU2DNative.h"
 #include "GPU2D_Soft.h"
 #include "GPU3D_Soft.h"
 
@@ -36,6 +37,15 @@ namespace melonDS
 class SoftRenderer : public Renderer
 {
 public:
+    struct GPU2DFallbackCounters
+    {
+        u64 startup_pipeline_fallback = 0;
+        u64 runtime_native_unavailable_fallback = 0;
+        u64 capture_software_fallback = 0;
+        u64 stale_generation_reject = 0;
+        u64 structured_fallback = 0;
+    };
+
     explicit SoftRenderer(melonDS::NDS& nds);
     ~SoftRenderer() override;
     bool Init() override { return true; }
@@ -44,22 +54,133 @@ public:
 
     void PreSavestate() override;
     void PostSavestate() override;
+    void RebuildAfterSavestateLoad(u32 vcount) override;
+    void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason reason) noexcept override;
 
     void SetRenderSettings(RendererSettings& settings) override;
 
     void DrawScanline(u32 line) override;
     void DrawSprites(u32 line) override;
 
-    void VBlank() override {};
+    void VBlank() override;
     void VBlankEnd() override {};
 
     void AllocCapture(u32 bank, u32 start, u32 len) override;
-    void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) override;
-    void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) override;
+    CaptureSyncResult SyncVRAMCapture(
+        u32 bank, u32 start, u32 len, bool complete) override;
+    void InvalidateVRAMCapture(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason) override;
+
+    // Publish physical LCDC blocks only after the native semantic command has
+    // been submitted successfully. The owner deliberately survives the
+    // current FrameRecorder's rollover into the next emulated frame.
+    void PublishNativeCaptureProvenance(
+        CaptureOwner owner,
+        const GPU2DNative::FrameInput& input,
+        const NativeCaptureStateIdentity& identity) noexcept;
+
+    [[nodiscard]] const char* GetCaptureBackendName() const noexcept override
+    {
+        return "Software";
+    }
 
     bool GetFramebuffers(void** top, void** bottom) override;
 
+    // Native GPU2D validation consumes the same native logical words that the
+    // software engine produced before display-mode/master-brightness handling.
+    // This is intentionally not a Qt/presenter image and is never used as a
+    // hidden fallback for Vulkan or DX12 output.
+    [[nodiscard]] const u32* GetSoftwareLogicalFrame(u32 engine) const noexcept
+    {
+        if (engine >= 2u)
+            return nullptr;
+        return SoftwareLogicalFrame.data()
+            + static_cast<std::size_t>(engine)
+                * GPU2DNative::ScreenPixelCount;
+    }
+
+    // Final LCD pixels after display mode, routing, master brightness, and
+    // the screens-enabled gate. Values are canonical r6g6b6 words and are
+    // used only as the exact differential oracle for a native backend.
+    [[nodiscard]] const u32* GetSoftwareScreenFrame(u32 screen) const noexcept
+    {
+        if (screen >= 2u)
+            return nullptr;
+        return SoftwareScreenFrame.data()
+            + static_cast<std::size_t>(screen)
+                * GPU2DNative::ScreenPixelCount;
+    }
+
+    [[nodiscard]] const GPU2DNative::FrameInput& GetNativeGPU2DFrame() const noexcept
+    {
+        return NativeGPU2DFrame.GetFrame();
+    }
+    [[nodiscard]] bool HasNativeGPU2DFrame() const noexcept
+    {
+        return NativeGPU2DFrame.IsValid();
+    }
+    [[nodiscard]] bool HasNativeGPU2DFrameForCurrentEmulatedFrame() const noexcept
+    {
+        return NativeGPU2DFrame.IsValid()
+            && GPU2DNative::IsCurrentFrame(
+                EmulatedFrameSerial,
+                NativeGPU2DRecordedFrameSerial,
+                NativeGPU2DFrame.GetFrame().Generation.Frame);
+    }
+    [[nodiscard]] u64 GetEmulatedFrameSerial() const noexcept
+    {
+        return EmulatedFrameSerial;
+    }
+    [[nodiscard]] u64 GetRecordedNativeFrameSerial() const noexcept
+    {
+        return NativeGPU2DRecordedFrameSerial;
+    }
+    [[nodiscard]] bool UsesNativeGPU2DProducerForFrame() const noexcept override
+    {
+        return NativeGPU2DProducerForFrame;
+    }
+    [[nodiscard]] const GPU2DFallbackCounters& GetGPU2DFallbackCounters() const noexcept
+    {
+        return GPU2DFallbacks;
+    }
+    void ResetGPU2DFallbackCounters() noexcept
+    {
+        GPU2DFallbacks = {};
+    }
+    void RecordGPU2DStartupPipelineFallback() noexcept
+    {
+        ++GPU2DFallbacks.startup_pipeline_fallback;
+    }
+    void RecordGPU2DRuntimeNativeUnavailableFallback() noexcept
+    {
+        ++GPU2DFallbacks.runtime_native_unavailable_fallback;
+    }
+    void RecordGPU2DCaptureSoftwareFallback() noexcept
+    {
+        ++GPU2DFallbacks.capture_software_fallback;
+    }
+    void RecordGPU2DStaleGenerationReject() noexcept
+    {
+        ++GPU2DFallbacks.stale_generation_reject;
+    }
+    void RecordGPU2DStructuredFallback() noexcept
+    {
+        ++GPU2DFallbacks.structured_fallback;
+    }
+
 protected:
+    // Vulkan/DX12 override this only when their native GPU2D pipeline is
+    // already usable for the next frame.  The default keeps Software and
+    // other SoftRenderer-derived backends on their existing raster path.
+    [[nodiscard]] virtual bool CanUseNativeGPU2DForFrame() const noexcept
+    {
+        return false;
+    }
+
     [[nodiscard]] const u32* GetSoftwareCaptureSourceLine(bool source3D) const noexcept
     {
         return source3D ? Output3D : Output2D[0];
@@ -81,6 +202,11 @@ public:
         StructuredComposition::ScreenRoutingView ScreenRouting{};
         bool NativeMenuHeld = false;
         bool Valid = false;
+        bool CompleteCoverage = false;
+        bool ResumeFrameDiscontinuous = false;
+        u64 RendererEpoch = 0;
+        u32 ScreenCoverage[2]{};
+        u32 EngineCoverage[2]{};
         u64 ScreenRouteCopyBytes = 0;
         u64 ScreenRouteCopyNanoseconds = 0;
         u32 StructuredRegularLines = 0;
@@ -90,6 +216,9 @@ public:
     };
 
     [[nodiscard]] bool GetStructuredVulkanFrame(StructuredVulkanFrameView& view) const noexcept;
+    void LogGPU2DFrameCoverage(
+        bool published,
+        const char* publicationSource) const noexcept;
     [[nodiscard]] StructuredPerfBackend GetStructured2DPerfBackendForFrame() const noexcept
     {
         return StructuredPerfBackendForFrame;
@@ -106,10 +235,20 @@ private:
     friend class SoftRenderer2D;
     friend class SoftRenderer3D;
 
+    void ResetDerivedState(bool sessionReset) noexcept;
+
     u32* Framebuffer[2][2];
 
     u32* Output3D;
     alignas(8) u32 Output2D[2][256];
+    std::array<u32, 2u * GPU2DNative::ScreenPixelCount> SoftwareLogicalFrame{};
+    std::array<u32, 2u * GPU2DNative::ScreenPixelCount> SoftwareScreenFrame{};
+    GPU2DNative::FrameRecorder NativeGPU2DFrame;
+    bool NativeGPU2DProducerForFrame = false;
+    bool RecordNativeGPU2DFrameForFrame = false;
+    u64 EmulatedFrameSerial = 0;
+    u64 NativeGPU2DRecordedFrameSerial = 0;
+    GPU2DFallbackCounters GPU2DFallbacks{};
 
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     static constexpr std::size_t StructuredPixelCount = 256u * 192u;
@@ -132,7 +271,10 @@ private:
     std::array<u32, 192u * StructuredComposition::kCaptureCommandWords> StructuredCaptureCommands{};
     alignas(8) u32 Structured3DPlaceholderLine[256]{};
     alignas(8) u32 StructuredCaptureCompositeLine[256]{};
+    GPU2DNative::LineCoverage StructuredScreenCoverage[2]{};
+    GPU2DNative::LineCoverage StructuredEngineCoverage[2]{};
     bool StructuredFrameValid = false;
+    bool ResumeFrameDiscontinuous = false;
     bool StructuredCaptureCompositeLineValid = false;
     bool StructuredCapturePreparedThisFrame = false;
     bool StructuredCapture3DValid = false;
@@ -143,12 +285,23 @@ private:
     u32 StructuredRegularLines = 0;
     u32 StructuredFallbackLines = 0;
     u64 StructuredFrameGeneration = 0;
+    u64 RendererFrameEpoch = 0;
+    u32 StructuredLastOutputLine = 0;
+    u32 StructuredLastVCount = 0;
     StructuredComposition::GenerationState StructuredContentGeneration{};
     u16 StructuredPendingPlaneDirtyMask = 0;
     u8 StructuredPendingLineMetaDirtyMask = 0;
     bool StructuredPendingCaptureCommandsDirty = false;
     u8 StructuredEngineChangedMask[2] = { 0, 0 };
     StructuredPerfBackend StructuredPerfBackendForFrame = StructuredPerfBackend::None;
+
+    [[nodiscard]] bool StructuredCoverageComplete() const noexcept
+    {
+        return StructuredScreenCoverage[0].Complete()
+            && StructuredScreenCoverage[1].Complete()
+            && StructuredEngineCoverage[0].Complete()
+            && StructuredEngineCoverage[1].Complete();
+    }
 
     [[nodiscard]] bool UseStructuredVulkan2D() const noexcept;
     inline void MarkStructuredPlaneDirty(u32 plane) noexcept

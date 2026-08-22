@@ -31,6 +31,7 @@
 
 #include "DX12Common.h"
 #include "DX12MemoryAdmission.h"
+#include "GpuStageMetrics.h"
 
 namespace melonDS
 {
@@ -174,7 +175,7 @@ class DX12CommandContext
 {
 public:
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
-    static constexpr u32 TimestampQueryCount = 10;
+    static constexpr u32 TimestampQueryCount = GpuMetricQueryCount;
 #endif
 
     bool Init(ID3D12Device* device, ID3D12CommandQueue* queue);
@@ -195,13 +196,27 @@ public:
 
     [[nodiscard]] ID3D12GraphicsCommandList* GetList() const noexcept { return List.Get(); }
     [[nodiscard]] bool IsRecording() const noexcept { return Recording; }
+    [[nodiscard]] bool IsIdle() const noexcept;
 
     // Closes and submits the open list, then signals the fence. No-op when
     // nothing is being recorded.
     bool Submit();
 
+    // Monotonic fence value of the most recent submitted list. Renderer
+    // semantic capture provenance uses this to validate demand-driven
+    // readback against the submission that produced the mirror.
+    [[nodiscard]] u64 GetSubmittedValue() const noexcept
+    {
+        return SubmittedValue;
+    }
+
     // Blocks until the last submitted list retired.
     void WaitIdle();
+
+    // Blocks only on this context's most recently submitted fence. This is
+    // the scoped completion wait used by demand-driven native capture
+    // materialization; it never inserts a queue-wide/device-idle fence.
+    [[nodiscard]] bool WaitForSubmittedValue() { return WaitForFence(SubmittedValue); }
 
     // Inserts a fresh fence into the shared command queue and waits for it.
     // Unlike WaitIdle(), this also covers work queued after this context's
@@ -256,8 +271,8 @@ private:
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     u64 TimestampFrequency = 0;
     std::chrono::steady_clock::time_point LastTimestampFrequencyRefresh{};
-    u16 TimestampWrittenMask = 0;
-    u16 LastTimestampWrittenMask = 0;
+    u32 TimestampWrittenMask = 0;
+    u32 LastTimestampWrittenMask = 0;
     mutable std::array<u64, TimestampQueryCount> TimestampSnapshotValues{};
     mutable bool TimestampSnapshotValid = false;
     bool TimestampQueriesEnabled = false;

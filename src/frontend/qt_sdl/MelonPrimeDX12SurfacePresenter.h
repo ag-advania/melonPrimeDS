@@ -61,7 +61,11 @@ public:
     DX12SurfacePresenter(const DX12SurfacePresenter&) = delete;
     DX12SurfacePresenter& operator=(const DX12SurfacePresenter&) = delete;
 
-    bool Init(HWND window);
+    bool Init(
+        HWND window,
+        std::uint64_t surfaceGeneration = 0,
+        std::uint32_t initialWidth = 0,
+        std::uint32_t initialHeight = 0);
     void Shutdown() noexcept;
 
     // Renderer-transition boundary. Wait for both presenter submissions and
@@ -73,6 +77,24 @@ public:
         std::uint32_t width,
         std::uint32_t height,
         bool waitForPresentSlot = true);
+    // The screen panel supplies the renderer-owned identity before presenter
+    // admission. A newer epoch may restart the serial sequence; within one
+    // epoch, serials must never move backwards.
+    void SetPresentedFrameIdentity(
+        std::uint64_t serial, std::uint64_t epoch) noexcept
+    {
+        PendingPresentedFrameSerial = serial;
+        PendingPresentedFrameEpoch = epoch;
+    }
+    [[nodiscard]] bool IsPresentedFrameIdentityMonotonic() const noexcept
+    {
+        if (PendingPresentedFrameSerial == 0)
+            return true;
+        return PendingPresentedFrameEpoch > LastPresentedFrameEpoch
+            || (PendingPresentedFrameEpoch == LastPresentedFrameEpoch
+                && (LastPresentedFrameSerial == 0
+                    || PendingPresentedFrameSerial >= LastPresentedFrameSerial));
+    }
     // Must run after acquiring the renderer output lease and before BeginFrame
     // opens the presenter command list. Resource-generation changes are the
     // only cold path allowed to quiesce the shared queue for descriptor reuse.
@@ -118,6 +140,18 @@ public:
 
     [[nodiscard]] bool IsInitialized() const noexcept { return Initialized; }
     [[nodiscard]] const std::string& LastError() const noexcept { return Error; }
+    [[nodiscard]] bool LastBeginWasBackpressure() const noexcept
+    {
+        return LastBeginBackpressure;
+    }
+    [[nodiscard]] std::uint64_t GetSurfaceGeneration() const noexcept
+    {
+        return SurfaceGeneration;
+    }
+    [[nodiscard]] std::uint64_t GetSwapchainGeneration() const noexcept
+    {
+        return SwapchainGeneration;
+    }
     [[nodiscard]] std::uint32_t GetWidth() const noexcept { return Width; }
     [[nodiscard]] std::uint32_t GetHeight() const noexcept { return Height; }
     [[nodiscard]] bool HasLayerContent(Layer layer) const noexcept
@@ -174,6 +208,7 @@ private:
         std::uint64_t resourceGeneration) const noexcept;
     bool ResolveLayerSrv(Layer layer, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
     bool WaitForPresentSlot();
+    bool ApplySdrColorSpace();
     bool AllocateLayerSrv(Layer layer, D3D12_GPU_DESCRIPTOR_HANDLE& gpu);
     D3D12_CPU_DESCRIPTOR_HANDLE PersistentCpuAt(std::uint32_t index) const noexcept;
     D3D12_GPU_DESCRIPTOR_HANDLE PersistentGpuAt(std::uint32_t index) const noexcept;
@@ -183,6 +218,8 @@ private:
 
     melonDS::DX12Context* Context = nullptr;
     HWND Window = nullptr;
+    std::uint64_t SurfaceGeneration = 0;
+    std::uint64_t SwapchainGeneration = 0;
     melonDS::DX12CommandContext Commands;
     melonDS::DX12DescriptorRing Descriptors;
     // The compositor has a three-slot output ring and each direct texture is a
@@ -227,10 +264,15 @@ private:
     bool FirstPresentLogged = false;
     bool PresentWaitStateLogged = false;
     bool LastPresentWaitEnabled = true;
+    bool LastBeginBackpressure = false;
     bool PresentModeLogged = false;
     bool LastPresentVsync = false;
     bool PresentResultLogged = false;
     HRESULT LastPresentResult = S_OK;
+    std::uint64_t PendingPresentedFrameSerial = 0;
+    std::uint64_t PendingPresentedFrameEpoch = 0;
+    std::uint64_t LastPresentedFrameSerial = 0;
+    std::uint64_t LastPresentedFrameEpoch = 0;
 #if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     std::chrono::steady_clock::time_point PerfRecordStart{};
 #endif

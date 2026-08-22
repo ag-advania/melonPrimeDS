@@ -13,6 +13,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -122,6 +123,33 @@ const char* LayerDebugName(VulkanPresenter::Layer layer) noexcept
 VulkanPresenter::~VulkanPresenter()
 {
     Shutdown();
+}
+
+void VulkanPresenter::NotifySurfaceChanged(std::uint64_t geometryRevision) noexcept
+{
+    if (geometryRevision != 0)
+    {
+        std::uint64_t published = PendingGeometryRevision.load(
+            std::memory_order_acquire);
+        for (;;)
+        {
+            if (published >= geometryRevision)
+                return;
+            if (PendingGeometryRevision.compare_exchange_weak(
+                    published,
+                    geometryRevision,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire))
+                break;
+        }
+    }
+
+    const bool wasDirty = SwapchainDirty.exchange(true, std::memory_order_acq_rel);
+    if (!wasDirty)
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanSwapchainDirtySetCount);
+    }
 }
 
 void VulkanPresenter::ClearRetainedDirectBinding(LayerTexture& texture) noexcept
@@ -430,7 +458,7 @@ void VulkanPresenter::SetVSync(bool enabled) noexcept
     {
         // The present mode is immutable once a swapchain exists, so a VSync
         // toggle is a swapchain recreation like any other.
-        SwapchainDirty.store(true, std::memory_order_release);
+        NotifySurfaceChanged();
     }
 }
 
@@ -492,7 +520,6 @@ bool VulkanPresenter::Init(QWidget* surfaceWidget)
 }
 
 
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter snapshot entry point, not input dispatch
 bool VulkanPresenter::Init(const VulkanSurface::NativeWindowSnapshot& snapshot)
 {
     if (Initialized)
@@ -503,9 +530,10 @@ bool VulkanPresenter::Init(const VulkanSurface::NativeWindowSnapshot& snapshot)
     Error.clear();
     SurfaceWidget = nullptr;
     SurfaceGeneration = snapshot.Generation;
+    SurfaceNativeHandle = static_cast<std::uintptr_t>(snapshot.WindowId);
 
     if (!snapshot.IsValid())
-        return Fail("the Linux Vulkan presenter was given no valid native surface snapshot");
+        return Fail("the Vulkan presenter was given no valid native surface snapshot");
 
     if (!AcquireContext())
         return false;
@@ -540,13 +568,13 @@ bool VulkanPresenter::Init(const VulkanSurface::NativeWindowSnapshot& snapshot)
     Initialized = true;
     Platform::Log(
         Platform::LogLevel::Info,
-        "[Vulkan][LinuxWSI] swapchain ready extent=%ux%u generation=%llu\n",
+        "[Vulkan] snapshot presenter ready extent=%ux%u generation=%llu native=%p\n",
         SwapchainExtent.width,
         SwapchainExtent.height,
-        static_cast<unsigned long long>(SurfaceGeneration));
+        static_cast<unsigned long long>(SurfaceGeneration),
+        reinterpret_cast<void*>(SurfaceNativeHandle));
     return true;
 }
-#endif
 
 
 bool VulkanPresenter::AcquireContext()
@@ -589,7 +617,6 @@ bool VulkanPresenter::CreateSurface(QWidget* widget)
 }
 
 
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter WSI creation, not input dispatch
 bool VulkanPresenter::CreateSurface(const VulkanSurface::NativeWindowSnapshot& snapshot)
 {
     Surface = VulkanSurface::Create(
@@ -601,14 +628,13 @@ bool VulkanPresenter::CreateSurface(const VulkanSurface::NativeWindowSnapshot& s
     {
         if (Surface.FailureResult == VK_ERROR_SURFACE_LOST_KHR)
             return RequestSurfaceRebind(
-                "vkCreateLinuxSurfaceKHR", Surface.FailureResult);
+                "vkCreatePlatformSurface", Surface.FailureResult);
         return Fail(Surface.Failure.empty()
-            ? std::string("the Linux platform Vulkan surface could not be created")
+            ? std::string("the platform Vulkan surface could not be created")
             : Surface.Failure);
     }
     return true;
 }
-#endif
 
 
 bool VulkanPresenter::CreateDeviceObjects()
@@ -1076,8 +1102,10 @@ bool VulkanPresenter::ChooseSurfaceFormat(
     }
     formats.resize(count);
 
-    // Never assume: the format list is queried and matched, with two explicit
-    // preferences and a documented fallback.
+    // Never assume: the direct compositor is an SDR BGRA/RGBA UNORM producer.
+    // Accepting an arbitrary first format silently applies an unknown transfer
+    // function (or HDR encoding) to DS display-space pixels, which is the
+    // source-level colour corruption seen during some fullscreen transitions.
     //
     // BGRA/RGBA *UNORM* rather than *SRGB* on purpose. The composed frame is
     // already in the DS's display space, exactly as the software, OpenGL and
@@ -1103,13 +1131,10 @@ bool VulkanPresenter::ChooseSurfaceFormat(
         }
     }
 
-    out = formats.front();
-    Platform::Log(
-        Platform::LogLevel::Warn,
-        "[Vulkan] presenter: no 8-bit UNORM surface format offered; using format=%d colorSpace=%d\n",
-        static_cast<int>(out.format),
-        static_cast<int>(out.colorSpace));
-    return true;
+    reason = "the Vulkan surface offers no explicit SDR 8-bit UNORM + sRGB format";
+    if (failureResult)
+        *failureResult = VK_ERROR_FORMAT_NOT_SUPPORTED;
+    return false;
 }
 
 
@@ -1211,7 +1236,7 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
         // Minimized. A zero-extent swapchain is invalid, so no swapchain is
         // created and the frame is skipped; the dirty flag is put back so the
         // next frame retries once the window is restored.
-        SwapchainDirty.store(true, std::memory_order_release);
+        NotifySurfaceChanged();
         return false;
     }
 
@@ -1335,7 +1360,12 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // never per frame. Resize events are coalesced into the SwapchainDirty flag
     // precisely so a resize drag lands here once per frame boundary and not
     // once per event.
+    const auto waitIdleStart = std::chrono::steady_clock::now();
     Frames.WaitIdle();
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::VulkanSwapchainWaitIdleNs,
+        static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - waitIdleStart).count()));
     DestroySwapchainObjects(true);
     UseSplitQueueExclusiveExperiment = sharingPlan.UseOwnershipTransfer();
 
@@ -1432,8 +1462,10 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // means the pacer grows the queue once after the first full event.
     PresentPacer.OnSwapchainCreated(Swapchain, presentMode, imageCount);
 
-    const bool formatChanged = (SurfaceFormat.format != format.format);
+    const bool formatChanged = (SurfaceFormat.format != format.format)
+        || (SurfaceFormat.colorSpace != format.colorSpace);
     SurfaceFormat = format;
+    ++SwapchainGeneration;
 
     if (RenderPass == VK_NULL_HANDLE || formatChanged)
     {
@@ -1467,6 +1499,28 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     if (res != VK_SUCCESS && res != VK_INCOMPLETE)
         return Fail("vkGetSwapchainImagesKHR", res);
     SwapchainImages.resize(realImageCount);
+
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::VulkanSwapchainRecreateCount);
+
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan] swapchain recreated fullscreen=%d surfaceGeneration=%llu native=%p "
+        "swapchainGeneration=%llu old=%p new=%p extent=%ux%u format=%d colorspace=%d "
+        "presentMode=%s imageCount=%u compositeAlpha=%d\n",
+        WindowFullscreen.load(std::memory_order_acquire) ? 1 : 0,
+        static_cast<unsigned long long>(SurfaceGeneration),
+        reinterpret_cast<void*>(SurfaceNativeHandle),
+        static_cast<unsigned long long>(SwapchainGeneration),
+        reinterpret_cast<void*>(oldSwapchain),
+        reinterpret_cast<void*>(Swapchain),
+        extent.width,
+        extent.height,
+        static_cast<int>(format.format),
+        static_cast<int>(format.colorSpace),
+        PresentModeName(presentMode),
+        realImageCount,
+        static_cast<int>(compositeAlpha));
 
     SwapchainImageAcquireObserved.assign(realImageCount, false);
     DistinctSwapchainImagesAcquiredSinceRecreate = 0;
@@ -1933,6 +1987,8 @@ bool VulkanPresenter::BeginFrame(
         // the screen caller so it does not report a normal presentation stall
         // or trigger surface/failure recovery.
         LastBeginLatencySkip = true;
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanPresentSkipCount);
         return false;
     }
 
@@ -2001,6 +2057,8 @@ bool VulkanPresenter::BeginFrame(
             VulkanPerf::Counter::VulkanPresenterFrameFenceWaitCount);
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::VulkanPresenterFrameFenceWaitNs, waitNs);
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::PresentWaitNs, waitNs);
     }
 #endif
     if (!frame)
@@ -2132,7 +2190,7 @@ bool VulkanPresenter::BeginFrame(
         // open command buffer is closed with an empty, dependency-free
         // submission. That keeps the ring's fence and frame numbering
         // consistent instead of leaving a slot recording forever.
-        SwapchainDirty.store(true, std::memory_order_release);
+        NotifySurfaceChanged();
         Frames.SubmitFrame(Device.GetMainQueue());
         CurrentCommandBuffer = VK_NULL_HANDLE;
         return false;
@@ -2141,7 +2199,7 @@ bool VulkanPresenter::BeginFrame(
     {
         // The image IS acquired and the semaphore IS signalled: this frame is
         // presented normally and the swapchain is rebuilt for the next one.
-        SwapchainDirty.store(true, std::memory_order_release);
+        NotifySurfaceChanged();
     }
     else if (res == VK_TIMEOUT || res == VK_NOT_READY)
     {
@@ -2842,6 +2900,25 @@ bool VulkanPresenter::EndFrame()
     PresentPacer.NotifyPresentResult(res, genericPresentMetadata);
 
     const bool presentAccepted = res == VK_SUCCESS || res == VK_SUBOPTIMAL_KHR;
+    VulkanPerf::AddCounter(
+        presentAccepted
+            ? VulkanPerf::Counter::VulkanPresentSuccessCount
+            : VulkanPerf::Counter::VulkanPresentSkipCount);
+    if (presentAccepted && PendingPresentedFrameSerial != 0u)
+    {
+        if (!IsPresentedFrameIdentityMonotonic())
+        {
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::VulkanPresentedSerialRegressionCount);
+        }
+        if (PendingPresentedFrameEpoch > LastPresentedFrameEpoch
+            || (PendingPresentedFrameEpoch == LastPresentedFrameEpoch
+                && PendingPresentedFrameSerial > LastPresentedFrameSerial))
+        {
+            LastPresentedFrameSerial = PendingPresentedFrameSerial;
+            LastPresentedFrameEpoch = PendingPresentedFrameEpoch;
+        }
+    }
     const u64 logicalFrameId = LowLatencyFrameIndex;
     const u64 logicalFramesSinceLastAcceptedPresent =
         logicalFrameId > LastAcceptedLogicalFrameId
@@ -2905,7 +2982,7 @@ bool VulkanPresenter::EndFrame()
         // Neither is an error: the frame reached the presentation engine (or
         // was correctly rejected because the surface changed size), and the
         // swapchain is rebuilt before the next one.
-        SwapchainDirty.store(true, std::memory_order_release);
+        NotifySurfaceChanged();
         VulkanPerf::AddCounter(VulkanPerf::Counter::Frames);
         VulkanPerf::MaybeReport();
         return true;
@@ -2985,7 +3062,7 @@ void VulkanPresenter::BeginLowLatencyFrame(
     const melonDS::VulkanPacerBeginAction pacerAction =
         melonDS::VulkanPacerActionFor(pacerResult);
     if (pacerAction.RebuildSwapchain)
-        SwapchainDirty.store(true, std::memory_order_release);
+        NotifySurfaceChanged();
     if (pacerAction.FailRenderer)
     {
         // Device and surface loss are not stale-swapchain events. Route each
@@ -3039,6 +3116,8 @@ void VulkanPresenter::BeginLowLatencyFrame(
                 VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitCount);
             VulkanPerf::AddCounter(
                 VulkanPerf::Counter::VulkanPresenterLatestSubmissionWaitNs, waitNs);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::PresentWaitNs, waitNs);
         }
 #endif
         if (waitResult == melonDS::Vk::FrameWaitResult::Timeout)
@@ -3399,10 +3478,16 @@ void VulkanPresenter::Shutdown() noexcept
     Initialized = false;
     SurfaceRebindRequested = false;
     FirstPresentLogged = false;
+    PendingPresentedFrameSerial = 0;
+    PendingPresentedFrameEpoch = 0;
+    LastPresentedFrameSerial = 0;
+    LastPresentedFrameEpoch = 0;
     SkipNextPresentationForLatencyBudget = false;
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter generation teardown, not input dispatch
     SurfaceGeneration = 0;
-#endif
+    SurfaceNativeHandle = 0;
+    SwapchainGeneration = 0;
+    SwapchainDirty.store(false, std::memory_order_release);
+    PendingGeometryRevision.store(0, std::memory_order_release);
 }
 
 } // namespace MelonPrime

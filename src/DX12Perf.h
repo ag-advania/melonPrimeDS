@@ -84,6 +84,16 @@ enum class Counter : u32
     StructuredRegularLines,
     StructuredFallbackLines,
     StructuredRouteRuns,
+    NativeGPU2DFrames,
+    NativeGPU2DInputPackBytes,
+    NativeGPU2DVRAMUploadBytes,
+    NativeGPU2DPaletteUploadBytes,
+    NativeGPU2DOAMUploadBytes,
+    NativeGPU2DDispatchCount,
+    NativeGPU2DFallbackFrames,
+    NativeGPU2DReadbackBytes,
+    NativeGPU2DReadbackCount,
+    NativeGPU2DMismatchCount,
     TextureUploadBytes,
     TextureMaterializeCount,
     TextureMaterializePreFenceFailCount,
@@ -113,6 +123,10 @@ enum class Counter : u32
     PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
     CompositorDropCount,
+    // A compositor drop is the renderer's backpressure admission event.  The
+    // alias preserves one authoritative counter while exposing the contract's
+    // name to diagnostics and audits.
+    CompositorBackpressureCount = CompositorDropCount,
     CaptureReadCount,
     CaptureValidLineCount,
     CaptureIndependentLineCount,
@@ -140,6 +154,43 @@ enum class Counter : u32
     DX12ReflexMode,
     DX12BackBufferCount,
     DX12PresenterLogicalDepth,
+    NativeGPU2DLogicalGpuTimeNs,
+    NativeGPU2DCaptureGpuTimeNs,
+    NativeGPU2DResolveGpuTimeNs,
+    NativeGPU2DObjRawGpuNs,
+    RecorderBlocksScanned,
+    RecorderBytesScanned,
+    RecorderBlocksCopied,
+    RecorderBytesCopied,
+    CaptureCPU2DLines,
+    CaptureCPU2DNs,
+    GPU2DRecorderNs,
+    TimelineRowDedupNs,
+    SpriteTimelineRowDedupNs,
+    NativeGPU2DPackNs,
+    MappedReadWordCalls,
+    MappedReadFastPathCalls,
+    MappedReadSlowPathCalls,
+    NativeCaptureHistoryScanLines,
+    NativeMappingBuildCalls,
+    NativeMappingRowsUploaded,
+    NativeMappingBytesUploaded,
+    BGOverlayFastPath,
+    BGOverlaySlowPath,
+    OBJOverlayFastPath,
+    OBJOverlaySlowPath,
+    NativeGPU2DCaptureDispatchCount,
+    NativeGPU2DCaptureBarrierCount,
+    CompositorGpuTimeNs,
+    PresentWaitNs,
+    DX12SurfaceEventCount,
+    DX12SurfaceSnapshotPublishCount,
+    DX12NativeIdentityGenerationChangeCount,
+    DX12PresenterReinitCount,
+    DX12ResizeBuffersCount,
+    DX12ResizeWaitIdleNs,
+    DX12PresentSuccessCount,
+    DX12PresentSkipCount,
     Count,
 };
 
@@ -415,6 +466,10 @@ inline void MaybeReport()
         "structured_input_regions=%llu structured_input_full=%llu structured_input_partial=%llu "
         "route_copy_B=%llu route_copy_ns=%llu regular_lines=%llu fallback_lines=%llu "
         "route_runs=%llu "
+        "native_gpu2d_frames=%llu native_gpu2d_input_pack_B=%llu native_gpu2d_vram_B=%llu "
+        "native_gpu2d_palette_B=%llu native_gpu2d_oam_B=%llu native_gpu2d_dispatches=%llu "
+        "native_gpu2d_fallback_frames=%llu native_gpu2d_readback_B=%llu "
+        "native_gpu2d_readbacks=%llu native_gpu2d_mismatches=%llu "
         "texture_upload_B=%llu texture_materialize_count=%llu "
         "texture_materialize_pre_fence_fail_count=%llu "
         "texture_materialize_retry_after_retire_count=%llu "
@@ -431,13 +486,28 @@ inline void MaybeReport()
         "presenter_descriptor_updates=%llu presenter_descriptor_cache_hits=%llu "
         "presenter_descriptor_cache_misses=%llu presenter_descriptor_cache_invalidates=%llu "
         "presenter_descriptor_fallbacks=%llu presenter_descriptor_persistent_creates=%llu "
-        "compositor_descriptor_updates=%llu compose_drops=%llu capture_reads=%llu "
+        "compositor_descriptor_updates=%llu compose_drops=%llu backpressure_count=%llu capture_reads=%llu "
         "capture_valid_lines=%llu capture_independent_lines=%llu capture_legacy_lines=%llu "
         "capture_sidecar_dispatches=%llu capture_sidecar_barriers=%llu capture_sidecar_gpu_ns=%llu "
         "raster_gpu_ns=%llu structured_compositor_gpu_ns=%llu presenter_render_pass_gpu_ns=%llu "
         "total_queue_gpu_span_ns=%llu native_resolves=%llu native_readback_copy_B=%llu native_readback_demands=%llu "
         "native_readback_wait_ns=%llu screen_copy_B=%llu screen_copy_gpu_ns=%llu "
-        "direct_image_frames=%llu fallback_buffer_frames=%llu hud_upload_B=%llu hud_recreates=%llu\n",
+         "direct_image_frames=%llu fallback_buffer_frames=%llu hud_upload_B=%llu hud_recreates=%llu "
+         "native_gpu2d_logical_ns=%llu native_gpu2d_capture_ns=%llu "
+         "native_gpu2d_resolve_ns=%llu native_gpu2d_obj_raw_ns=%llu "
+         "recorder_blocks_scanned=%llu "
+         "recorder_bytes_scanned=%llu recorder_blocks_copied=%llu "
+         "recorder_bytes_copied=%llu capture_cpu_2d_lines=%llu "
+         "capture_cpu_2d_ns=%llu gpu2d_recorder_ns=%llu "
+         "timeline_row_dedup_ns=%llu sprite_timeline_row_dedup_ns=%llu "
+         "native_gpu2d_pack_ns=%llu mapped_read_word_calls=%llu "
+         "mapped_read_fast_path_calls=%llu mapped_read_slow_path_calls=%llu "
+         "native_capture_history_scan_lines=%llu native_mapping_build_calls=%llu "
+         "native_mapping_rows_uploaded=%llu native_mapping_bytes_uploaded=%llu "
+         "bg_overlay_fast_path=%llu bg_overlay_slow_path=%llu "
+         "obj_overlay_fast_path=%llu obj_overlay_slow_path=%llu "
+         "capture_dispatches=%llu capture_barrier_calls=%llu "
+         "compositor_gpu_ns=%llu present_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::IdenticalFrames),
@@ -454,7 +524,12 @@ inline void MaybeReport()
         count(Counter::StructuredScreenRouteCopyBytes),
         count(Counter::StructuredScreenRouteCopyNanoseconds),
         count(Counter::StructuredRegularLines), count(Counter::StructuredFallbackLines),
-        count(Counter::StructuredRouteRuns), count(Counter::TextureUploadBytes),
+        count(Counter::StructuredRouteRuns), count(Counter::NativeGPU2DFrames),
+        count(Counter::NativeGPU2DInputPackBytes), count(Counter::NativeGPU2DVRAMUploadBytes),
+        count(Counter::NativeGPU2DPaletteUploadBytes), count(Counter::NativeGPU2DOAMUploadBytes),
+        count(Counter::NativeGPU2DDispatchCount), count(Counter::NativeGPU2DFallbackFrames),
+        count(Counter::NativeGPU2DReadbackBytes), count(Counter::NativeGPU2DReadbackCount),
+        count(Counter::NativeGPU2DMismatchCount), count(Counter::TextureUploadBytes),
         count(Counter::TextureMaterializeCount),
         count(Counter::TextureMaterializePreFenceFailCount),
         count(Counter::TextureMaterializeRetryAfterRetireCount),
@@ -478,6 +553,7 @@ inline void MaybeReport()
         count(Counter::PresenterDescriptorFallbackCount),
         count(Counter::PresenterDescriptorPersistentCreateCount),
         count(Counter::CompositorDescriptorUpdateCount), count(Counter::CompositorDropCount),
+        count(Counter::CompositorBackpressureCount),
         count(Counter::CaptureReadCount),
         count(Counter::CaptureValidLineCount), count(Counter::CaptureIndependentLineCount),
         count(Counter::CaptureLegacyOrderedLineCount),
@@ -490,7 +566,58 @@ inline void MaybeReport()
         count(Counter::NativeReadbackWaitNs), count(Counter::PresentedScreenCopyBytes),
         count(Counter::PresentedScreenCopyGpuTimeNs),
         count(Counter::DirectCompositorImageFrames), count(Counter::FallbackCompositorBufferFrames),
-        count(Counter::HudUploadBytes), count(Counter::HudTextureRecreateCount));
+         count(Counter::HudUploadBytes), count(Counter::HudTextureRecreateCount),
+         count(Counter::NativeGPU2DLogicalGpuTimeNs),
+         count(Counter::NativeGPU2DCaptureGpuTimeNs),
+         count(Counter::NativeGPU2DResolveGpuTimeNs),
+         count(Counter::NativeGPU2DObjRawGpuNs),
+         count(Counter::RecorderBlocksScanned), count(Counter::RecorderBytesScanned),
+         count(Counter::RecorderBlocksCopied), count(Counter::RecorderBytesCopied),
+         count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
+         count(Counter::GPU2DRecorderNs), count(Counter::TimelineRowDedupNs),
+         count(Counter::SpriteTimelineRowDedupNs), count(Counter::NativeGPU2DPackNs),
+         count(Counter::MappedReadWordCalls), count(Counter::MappedReadFastPathCalls),
+         count(Counter::MappedReadSlowPathCalls), count(Counter::NativeCaptureHistoryScanLines),
+         count(Counter::NativeMappingBuildCalls), count(Counter::NativeMappingRowsUploaded),
+         count(Counter::NativeMappingBytesUploaded), count(Counter::BGOverlayFastPath),
+         count(Counter::BGOverlaySlowPath), count(Counter::OBJOverlayFastPath),
+         count(Counter::OBJOverlaySlowPath), count(Counter::NativeGPU2DCaptureDispatchCount),
+         count(Counter::NativeGPU2DCaptureBarrierCount),
+         count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
+
+    const double reportSeconds = std::chrono::duration<double>(
+        now - state.LastReport).count();
+    std::fprintf(stderr,
+        "[DX12Perf] rate interval_s=%.3f emulated_fps=%.3f "
+        "compose_fps=%.3f presented_fps=%.3f "
+        "native_gpu2d_raw_ms=%.3f native_gpu2d_logical_ms=%.3f "
+        "timeline_cpu_ms=%.3f sprite_timeline_cpu_ms=%.3f "
+        "native_gpu2d_pack_ms=%.3f\n",
+        reportSeconds,
+        reportSeconds > 0.0 ? count(Counter::Frames) / reportSeconds : 0.0,
+        reportSeconds > 0.0 ? count(Counter::NativeGPU2DFrames) / reportSeconds : 0.0,
+        reportSeconds > 0.0
+            ? count(Counter::DX12PresentSuccessCount) / reportSeconds : 0.0,
+        static_cast<double>(count(Counter::NativeGPU2DObjRawGpuNs)) / 1000000.0,
+        static_cast<double>(count(Counter::NativeGPU2DLogicalGpuTimeNs)) / 1000000.0,
+        static_cast<double>(count(Counter::TimelineRowDedupNs)) / 1000000.0,
+        static_cast<double>(count(Counter::SpriteTimelineRowDedupNs)) / 1000000.0,
+        static_cast<double>(count(Counter::NativeGPU2DPackNs)) / 1000000.0);
+
+    std::fprintf(stderr,
+        "[DX12Perf] surface surface_event_count=%llu "
+        "snapshot_publish_count=%llu identity_generation_change_count=%llu "
+        "presenter_reinit_count=%llu resize_buffers_count=%llu "
+        "resize_wait_idle_ns=%llu present_wait_ns=%llu "
+        "present_success_count=%llu present_skip_count=%llu\n",
+        count(Counter::DX12SurfaceEventCount),
+        count(Counter::DX12SurfaceSnapshotPublishCount),
+        count(Counter::DX12NativeIdentityGenerationChangeCount),
+        count(Counter::DX12PresenterReinitCount),
+        count(Counter::DX12ResizeBuffersCount),
+        count(Counter::DX12ResizeWaitIdleNs), count(Counter::PresentWaitNs),
+        count(Counter::DX12PresentSuccessCount),
+        count(Counter::DX12PresentSkipCount));
 
     const unsigned long long vsyncEnabled = count(Counter::DX12VsyncEnabled);
     const unsigned long long presentMode = count(Counter::DX12PresentMode);
@@ -582,7 +709,10 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     StructuredInputFullUploadCount, StructuredInputPartialUploadCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
-    StructuredRouteRuns, TextureUploadBytes, TextureMaterializeCount,
+    StructuredRouteRuns, NativeGPU2DFrames, NativeGPU2DInputPackBytes,
+    NativeGPU2DVRAMUploadBytes, NativeGPU2DPaletteUploadBytes, NativeGPU2DOAMUploadBytes,
+    NativeGPU2DDispatchCount, NativeGPU2DFallbackFrames, NativeGPU2DReadbackBytes,
+    NativeGPU2DReadbackCount, NativeGPU2DMismatchCount, TextureUploadBytes, TextureMaterializeCount,
     TextureMaterializePreFenceFailCount, TextureMaterializeRetryAfterRetireCount,
     TextureMaterializeRetrySuccessCount, TextureMaterializeRetryFailCount,
     TextureMaterializeFailureReason, TexturePendingUploadBytes, TexturePendingUploadCount,
@@ -594,7 +724,7 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     PresenterDescriptorCacheMissCount, PresenterDescriptorCacheInvalidateCount,
     PresenterDescriptorFallbackCount, PresenterDescriptorPersistentCreateCount,
     CompositorDescriptorUpdateCount,
-    CompositorDropCount, CaptureReadCount,
+    CompositorDropCount, CompositorBackpressureCount = CompositorDropCount, CaptureReadCount,
     CaptureValidLineCount, CaptureIndependentLineCount, CaptureLegacyOrderedLineCount,
     CaptureSidecarDispatchCount, CaptureSidecarBarrierCount, CaptureSidecarGpuTimeNs,
     RasterGpuTimeNs, StructuredCompositorGpuTimeNs, PresenterRenderPassGpuTimeNs,
@@ -604,8 +734,25 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     PresentedScreenCopyBytes, PresentedScreenCopyGpuTimeNs,
     DirectCompositorImageFrames, FallbackCompositorBufferFrames,
      HudUploadBytes, HudTextureRecreateCount, DX12VsyncEnabled, DX12PresentMode,
-     DX12VendorPacingAuthority, DX12ReflexMode, DX12BackBufferCount,
-     DX12PresenterLogicalDepth, Count };
+      DX12VendorPacingAuthority, DX12ReflexMode, DX12BackBufferCount,
+      DX12PresenterLogicalDepth, NativeGPU2DLogicalGpuTimeNs,
+      NativeGPU2DCaptureGpuTimeNs, NativeGPU2DResolveGpuTimeNs,
+      NativeGPU2DObjRawGpuNs,
+      RecorderBlocksScanned, RecorderBytesScanned, RecorderBlocksCopied,
+      RecorderBytesCopied, CaptureCPU2DLines, CaptureCPU2DNs,
+      GPU2DRecorderNs, TimelineRowDedupNs, SpriteTimelineRowDedupNs,
+      NativeGPU2DPackNs,
+      MappedReadWordCalls, MappedReadFastPathCalls, MappedReadSlowPathCalls,
+      NativeCaptureHistoryScanLines, NativeMappingBuildCalls,
+      NativeMappingRowsUploaded, NativeMappingBytesUploaded,
+      BGOverlayFastPath, BGOverlaySlowPath, OBJOverlayFastPath,
+      OBJOverlaySlowPath, NativeGPU2DCaptureDispatchCount,
+      NativeGPU2DCaptureBarrierCount,
+      CompositorGpuTimeNs, PresentWaitNs,
+      DX12SurfaceEventCount, DX12SurfaceSnapshotPublishCount,
+      DX12NativeIdentityGenerationChangeCount, DX12PresenterReinitCount,
+      DX12ResizeBuffersCount, DX12ResizeWaitIdleNs,
+      DX12PresentSuccessCount, DX12PresentSkipCount, Count };
 inline constexpr bool IsCompiledIn() noexcept { return false; }
 inline constexpr bool IsEnabled() noexcept { return false; }
 inline constexpr void SetScale(u32) noexcept {}

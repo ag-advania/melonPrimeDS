@@ -129,6 +129,8 @@ def variants() -> list[tuple[str, str, list[str]]]:
     out.append(("CaptureSidecar", "CaptureSidecar", ["CaptureSidecar"]))
     out.append(("Compositor", "Compositor", ["Compositor"]))
     out.append(("CorrectCoverage", "CorrectCoverage", ["CorrectCoverage"]))
+    out.append(("GPU2DNative", "GPU2DNative", ["GPU2DNative"]))
+    out.append(("GPU2DNativeCapture", "GPU2DNative", ["GPU2DNative", "GPU2DNativeCapture"]))
     return out
 
 

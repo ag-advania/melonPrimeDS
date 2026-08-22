@@ -19,6 +19,8 @@
 #ifndef GPU_H
 #define GPU_H
 
+#include <algorithm>
+#include <array>
 #include <memory>
 
 #include "GPU2D.h"
@@ -29,6 +31,35 @@ namespace melonDS
 {
 class GPU3D;
 class ARMJIT;
+
+// Non-destructive producer journal for the native GPU2D recorder. The legacy
+// VRAMDirty/PaletteDirty/OAMDirty fields remain owned by their existing
+// consumers; this journal is an independent observer feed and is never
+// consumed or cleared by a renderer.
+enum class GPU2DWriteKind : u16
+{
+    VRAM = 1,
+    Palette = 2,
+    OAM = 3,
+    FIFO = 4,
+    Mapping = 5,
+    // A native Display Capture readback changed the CPU-visible physical
+    // block.  This is deliberately a journal event rather than a destructive
+    // dirty-bit operation so the next native FrameRecorder observes the
+    // materialized bytes without stealing ownership from the ordinary VRAM
+    // consumers.
+    CaptureSync = 6,
+};
+
+struct GPU2DWriteJournalEntry
+{
+    u32 Sequence = 0;
+    u16 Kind = 0;
+    u16 Bank = 0;
+    u32 Block = 0;
+};
+
+inline constexpr u32 GPU2DWriteJournalCapacity = 16384u;
 
 enum class RendererOutputKind
 {
@@ -57,6 +88,7 @@ struct RendererOutput
     || defined(MELONPRIME_ENABLE_METAL) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     u64 FrameSerial = 0;
+    u64 FrameEpoch = 0;
 #endif
 
     static RendererOutput CpuBgra(void* top, void* bottom, u32 width = 256, u32 height = 192) noexcept
@@ -80,7 +112,8 @@ struct RendererOutput
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
     static RendererOutput VulkanBuffer(
-        void* frame, u32 width, u32 height, u64 frameSerial = 0) noexcept
+        void* frame, u32 width, u32 height, u64 frameSerial = 0,
+        u64 frameEpoch = 0) noexcept
     {
         RendererOutput output;
         output.Kind = RendererOutputKind::VulkanBuffer;
@@ -88,13 +121,15 @@ struct RendererOutput
         output.Width = width;
         output.Height = height;
         output.FrameSerial = frameSerial;
+        output.FrameEpoch = frameEpoch;
         return output;
     }
 #endif
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     static RendererOutput DX12Buffer(
-        void* frame, u32 width, u32 height, u64 frameSerial = 0) noexcept
+        void* frame, u32 width, u32 height, u64 frameSerial = 0,
+        u64 frameEpoch = 0) noexcept
     {
         RendererOutput output;
         output.Kind = RendererOutputKind::DX12Buffer;
@@ -102,6 +137,7 @@ struct RendererOutput
         output.Width = width;
         output.Height = height;
         output.FrameSerial = frameSerial;
+        output.FrameEpoch = frameEpoch;
         return output;
     }
 #endif
@@ -189,7 +225,151 @@ struct RendererOutputLease
 };
 #endif
 
+// Display Capture ownership is tracked at the same physical granularity as
+// GPU::VRAMCaptureBlockFlags: four 32 KiB blocks in each LCDC bank A..D.
+// It intentionally outlives the FrameRecorder that produced a semantic frame.
+enum class CaptureOwner : u8
+{
+    None = 0,
+    CpuCoherent,
+    NativeVulkan,
+    NativeDX12,
+};
+
+[[nodiscard]] constexpr bool IsNativeCaptureOwner(CaptureOwner owner) noexcept
+{
+    return owner == CaptureOwner::NativeVulkan
+        || owner == CaptureOwner::NativeDX12;
+}
+
+[[nodiscard]] constexpr const char* CaptureOwnerName(CaptureOwner owner) noexcept
+{
+    switch (owner)
+    {
+    case CaptureOwner::CpuCoherent: return "CpuCoherent";
+    case CaptureOwner::NativeVulkan: return "NativeVulkan";
+    case CaptureOwner::NativeDX12: return "NativeDX12";
+    default: return "None";
+    }
+}
+
+struct CaptureBlockProvenance
+{
+    CaptureOwner Owner = CaptureOwner::None;
+    u64 Epoch = 0;
+    u64 SemanticFrame = 0;
+    u64 CaptureGeneration = 0;
+    u64 CompletionValue = 0;
+};
+
+struct NativeCaptureStateIdentity
+{
+    bool Valid = false;
+    CaptureOwner Owner = CaptureOwner::None;
+    u64 Epoch = 0;
+    u64 SemanticFrame = 0;
+    u64 CaptureGeneration = 0;
+    u64 CompletionValue = 0;
+};
+
+enum class CaptureSyncResult : u8
+{
+    Synchronized = 0,
+    AlreadyCoherent,
+    Failed,
+};
+
+// Capture authority changes are event-driven.  In particular, allocation,
+// frame rollover, presentation pressure, and a byte comparison are not
+// evidence that CPU VRAM is newer than a native capture mirror.
+enum class CaptureAuthorityTransitionReason : u8
+{
+    NativeSemanticWrite = 0,
+    NativeReadbackMaterialized,
+    CpuWrite,
+    CaptureRetired,
+    SavestateLoad,
+    SavestateSave,
+    RendererReset,
+    RendererSwitch,
+    SessionReset,
+};
+
+[[nodiscard]] constexpr bool IsAllowedNativeToCpuTransition(
+    CaptureAuthorityTransitionReason reason) noexcept
+{
+    switch (reason)
+    {
+    case CaptureAuthorityTransitionReason::NativeReadbackMaterialized:
+    case CaptureAuthorityTransitionReason::CpuWrite:
+    case CaptureAuthorityTransitionReason::CaptureRetired:
+    case CaptureAuthorityTransitionReason::SavestateLoad:
+    case CaptureAuthorityTransitionReason::SavestateSave:
+    case CaptureAuthorityTransitionReason::RendererReset:
+    case CaptureAuthorityTransitionReason::RendererSwitch:
+    case CaptureAuthorityTransitionReason::SessionReset:
+        return true;
+    case CaptureAuthorityTransitionReason::NativeSemanticWrite:
+        return false;
+    }
+    return false;
+}
+
+[[nodiscard]] constexpr const char* CaptureAuthorityTransitionReasonName(
+    CaptureAuthorityTransitionReason reason) noexcept
+{
+    switch (reason)
+    {
+    case CaptureAuthorityTransitionReason::NativeSemanticWrite:
+        return "NativeSemanticWrite";
+    case CaptureAuthorityTransitionReason::NativeReadbackMaterialized:
+        return "NativeReadbackMaterialized";
+    case CaptureAuthorityTransitionReason::CpuWrite:
+        return "CpuWrite";
+    case CaptureAuthorityTransitionReason::CaptureRetired:
+        return "CaptureRetired";
+    case CaptureAuthorityTransitionReason::SavestateLoad:
+        return "SavestateLoad";
+    case CaptureAuthorityTransitionReason::SavestateSave:
+        return "SavestateSave";
+    case CaptureAuthorityTransitionReason::RendererReset:
+        return "RendererReset";
+    case CaptureAuthorityTransitionReason::RendererSwitch:
+        return "RendererSwitch";
+    case CaptureAuthorityTransitionReason::SessionReset:
+        return "SessionReset";
+    }
+    return "Unknown";
+}
+
+struct CaptureAuthorityDiagnostics
+{
+    u64 NativeToCpuReasonCaptureAllocated = 0;
+    u64 NativeToCpuReasonFrameBegin = 0;
+    u64 NativeToCpuReasonByteDifference = 0;
+    u64 NativeOwnedHostReupload = 0;
+};
+
+[[nodiscard]] constexpr const char* CaptureSyncResultName(
+    CaptureSyncResult result) noexcept
+{
+    switch (result)
+    {
+    case CaptureSyncResult::Synchronized: return "Synchronized";
+    case CaptureSyncResult::AlreadyCoherent: return "AlreadyCoherent";
+    default: return "Failed";
+    }
+}
+
+inline constexpr u32 CapturePhysicalBanks = 4u;
+inline constexpr u32 CapturePhysicalBlocksPerBank = 4u;
+inline constexpr u32 CapturePhysicalBlockCount =
+    CapturePhysicalBanks * CapturePhysicalBlocksPerBank;
+
 static constexpr u32 VRAMDirtyGranularity = 512;
+inline constexpr u32 CapturePhysicalBlockBytes = 32u * 1024u;
+inline constexpr u32 CaptureDirtyBlocksPerPhysicalBlock =
+    CapturePhysicalBlockBytes / VRAMDirtyGranularity;
 class GPU;
 
 template <u32 Size, u32 MappingGranularity>
@@ -226,6 +406,12 @@ public:
     void SetRenderer(std::unique_ptr<Renderer>&& renderer) noexcept;
     const Renderer& GetRenderer() const noexcept { return *Rend; }
     Renderer& GetRenderer() noexcept { return *Rend; }
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    // Developer-only proof hook. It materializes one native-owned capture
+    // block through the normal renderer authority path; shipping code has no
+    // mapped-capture CPU readback entry point.
+    void MaterializeVRAMCaptureBlockForGPU2DProof(u32 block);
+#endif
 
     // return value for GetFramebuffers:
     // true -> pointers to RAM framebuffers are returned via the parameters
@@ -447,6 +633,8 @@ public:
         {
             *(T*)&VRAM[bank][addr] = val;
             VRAMDirty[bank][addr / VRAMDirtyGranularity] = true;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, static_cast<u32>(bank),
+                addr / VRAMDirtyGranularity);
         }
     }
 
@@ -480,36 +668,50 @@ public:
         {
             VRAMDirty[0][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_A[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 0u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<1))
         {
             VRAMDirty[1][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_B[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 1u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<2))
         {
             VRAMDirty[2][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_C[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 2u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<3))
         {
             VRAMDirty[3][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_D[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 3u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<4))
         {
             VRAMDirty[4][(addr & 0xFFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_E[addr & 0xFFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 4u,
+                (addr & 0xFFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<5))
         {
             VRAMDirty[5][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_F[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 5u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<6))
         {
             VRAMDirty[6][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_G[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 6u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
     }
 
@@ -541,26 +743,36 @@ public:
         {
             VRAMDirty[0][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_A[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 0u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<1))
         {
             VRAMDirty[1][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_B[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 1u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<4))
         {
             VRAMDirty[4][(addr & 0xFFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_E[addr & 0xFFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 4u,
+                (addr & 0xFFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<5))
         {
             VRAMDirty[5][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_F[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 5u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<6))
         {
             VRAMDirty[6][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_G[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 6u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
     }
 
@@ -590,16 +802,22 @@ public:
         {
             VRAMDirty[2][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_C[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 2u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<7))
         {
             VRAMDirty[7][(addr & 0x7FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_H[addr & 0x7FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 7u,
+                (addr & 0x7FFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<8))
         {
             VRAMDirty[8][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_I[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 8u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
     }
 
@@ -628,11 +846,15 @@ public:
         {
             VRAMDirty[3][(addr & 0x1FFFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_D[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 3u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
         }
         if (mask & (1<<8))
         {
             VRAMDirty[8][(addr & 0x3FFF) / VRAMDirtyGranularity] = true;
             *(T*)&VRAM_I[addr & 0x3FFF] = val;
+            RecordGPU2DWrite(GPU2DWriteKind::VRAM, 8u,
+                (addr & 0x3FFF) / VRAMDirtyGranularity);
         }
     }
 
@@ -653,8 +875,20 @@ public:
     {
         u32 mask = VRAMMap_ARM7[(addr >> 17) & 0x1];
 
-        if (mask & (1<<2)) *(T*)&VRAM_C[addr & 0x1FFFF] = val;
-        if (mask & (1<<3)) *(T*)&VRAM_D[addr & 0x1FFFF] = val;
+        if (mask & (1<<2))
+        {
+            *(T*)&VRAM_C[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(
+                GPU2DWriteKind::VRAM, 2u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
+        }
+        if (mask & (1<<3))
+        {
+            *(T*)&VRAM_D[addr & 0x1FFFF] = val;
+            RecordGPU2DWrite(
+                GPU2DWriteKind::VRAM, 3u,
+                (addr & 0x1FFFF) / VRAMDirtyGranularity);
+        }
     }
 
 
@@ -720,6 +954,8 @@ public:
             PaletteDirty |= 1 << (addr / VRAMDirtyGranularity);
         else
             PaletteDirty |= 0x10 << (addr / VRAMDirtyGranularity);
+        RecordGPU2DWrite(
+            GPU2DWriteKind::Palette, 0u, addr / VRAMDirtyGranularity);
     }
 
     template<typename T>
@@ -735,6 +971,88 @@ public:
 
         *(T*)&OAM[addr] = val;
         OAMDirty |= 1 << (addr / 1024);
+        RecordGPU2DWrite(
+            GPU2DWriteKind::OAM, 0u, addr / VRAMDirtyGranularity);
+    }
+
+    void RecordGPU2DWrite(GPU2DWriteKind kind, u32 bank, u32 block) noexcept
+    {
+        const u32 sequence = ++GPU2DWriteJournalSequence;
+        GPU2DWriteJournal[sequence % GPU2DWriteJournalCapacity] = {
+            sequence,
+            static_cast<u16>(kind),
+            static_cast<u16>(bank),
+            block,
+        };
+    }
+
+    // Publish a native readback as an ordinary non-destructive journal event.
+    // FrameRecorder consumes this event just like a CPU/DMA VRAM write, so a
+    // readback that lands after frame N+1's baseline cannot be silently
+    // omitted from the next native input snapshot.
+    void RecordGPU2DCaptureSync(u32 bank, u32 start, u32 len) noexcept
+    {
+        if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
+            return;
+        const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+        for (u32 i = 0; i < blockCount; ++i)
+        {
+            const u32 physicalBlock =
+                (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+            // Journal blocks are 512-byte VRAM dirty blocks, while capture
+            // ownership is tracked at 32 KiB. Publish every dirty sub-block
+            // so FrameRecorder can repair all mapped views after native
+            // readback, not just the first 2 KiB of the capture block.
+            for (u32 subblock = 0;
+                subblock < CaptureDirtyBlocksPerPhysicalBlock;
+                ++subblock)
+            {
+                RecordGPU2DWrite(
+                    GPU2DWriteKind::CaptureSync,
+                    bank,
+                    physicalBlock * CaptureDirtyBlocksPerPhysicalBlock
+                        + subblock);
+            }
+        }
+    }
+
+    [[nodiscard]] u32 GetGPU2DWriteJournalSequence() const noexcept
+    {
+        return GPU2DWriteJournalSequence;
+    }
+
+    // Returns entries strictly after `afterSequence`. If the fixed ring
+    // wrapped before the caller consumed it, `overflow` is set and the caller
+    // must take a one-time baseline snapshot. No dirty bit or journal entry is
+    // cleared here.
+    u32 ReadGPU2DWriteJournal(
+        u32 afterSequence,
+        GPU2DWriteJournalEntry* destination,
+        u32 capacity,
+        bool& overflow) const noexcept
+    {
+        overflow = false;
+        if (!destination || capacity == 0u
+            || afterSequence >= GPU2DWriteJournalSequence)
+            return 0u;
+
+        const u32 first = afterSequence + 1u;
+        const u32 oldest = GPU2DWriteJournalSequence >= GPU2DWriteJournalCapacity
+            ? GPU2DWriteJournalSequence - GPU2DWriteJournalCapacity + 1u
+            : 1u;
+        u32 begin = first;
+        if (begin < oldest)
+        {
+            begin = oldest;
+            overflow = true;
+        }
+        const u32 count = std::min(
+            GPU2DWriteJournalSequence - begin + 1u, capacity);
+        for (u32 i = 0; i < count; ++i)
+            destination[i] = GPU2DWriteJournal[(begin + i) % GPU2DWriteJournalCapacity];
+        if (count < GPU2DWriteJournalSequence - begin + 1u)
+            overflow = true;
+        return count;
     }
 
     template <typename T>
@@ -869,6 +1187,10 @@ public:
     u32 OAMDirty = 0;
     u32 PaletteDirty = 0;
 
+    std::array<GPU2DWriteJournalEntry, GPU2DWriteJournalCapacity>
+        GPU2DWriteJournal{};
+    u32 GPU2DWriteJournalSequence = 0;
+
 private:
     void ResetVRAMCache() noexcept;
 
@@ -954,7 +1276,20 @@ private:
     void CheckCaptureStart();
     void CheckCaptureEnd();
     void SyncVRAMCaptureBlock(u32 block, bool write);
-    void SyncAllVRAMCaptures();
+    bool SyncAllVRAMCaptures(
+        CaptureAuthorityTransitionReason reason);
+    void LogCaptureSync(
+        u32 bank,
+        u32 start,
+        u32 len,
+        u16 flags,
+        const CaptureBlockProvenance& owner,
+        u64 cpuVRAMHashBefore,
+        u64 nativeCaptureHash,
+        u64 cpuVRAMHashAfter,
+        CaptureSyncResult result,
+        bool flagsMarkedSynced,
+        bool flagsCleared) const noexcept;
     void GetCaptureInfo(int* info, u16** cbf, int len);
 
     void SetDispStatIRQ(int cpu, int num);
@@ -1015,7 +1350,10 @@ struct RendererSettings
 class Renderer
 {
 public:
-    explicit Renderer(melonDS::GPU& gpu) : GPU(gpu), BackBuffer(0) {}
+    explicit Renderer(melonDS::GPU& gpu) : GPU(gpu), BackBuffer(0)
+    {
+        ResetCaptureProvenance(CaptureAuthorityTransitionReason::SessionReset);
+    }
     virtual ~Renderer() {}
     virtual bool Init() = 0;
     virtual void Reset() = 0;
@@ -1023,6 +1361,17 @@ public:
 
     virtual void PreSavestate() {}
     virtual void PostSavestate() {}
+    // Rebuild renderer-private scanline state after the serialized GPU state
+    // has been restored. This is intentionally separate from Reset(): a
+    // savestate may resume in the middle of the visible region, where the
+    // first OBJ line must be prepared for the restored VCOUNT.
+    virtual void RebuildAfterSavestateLoad(u32 vcount) { (void)vcount; }
+    virtual void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason reason) noexcept
+    {
+        if (Rend3D)
+            Rend3D->InvalidateHighResCaptureState(reason);
+    }
 
     virtual void SetRenderSettings(RendererSettings& settings) = 0;
 
@@ -1037,8 +1386,80 @@ public:
     virtual void VBlankEnd() = 0;
 
     virtual void AllocCapture(u32 bank, u32 start, u32 len) = 0;
-    virtual void SyncVRAMCapture(u32 bank, u32 start, u32 len, bool complete) = 0;
-    virtual void InvalidateVRAMCapture(u32 bank, u32 start, u32 len) {}
+    // Display Capture ownership outlives the FrameRecorder that produced it.
+    // SyncVRAMCapture must select the authoritative source from capture
+    // provenance, not from whether the current emulated frame has already
+    // finalized a native GPU2D recorder. A native-owned capture must never
+    // fall through to the SoftRenderer no-op sync path.
+    virtual CaptureSyncResult SyncVRAMCapture(
+        u32 bank, u32 start, u32 len, bool complete) = 0;
+    virtual void InvalidateVRAMCapture(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason)
+    {
+        MarkCaptureCpuCoherent(bank, start, len, reason);
+    }
+
+    [[nodiscard]] const CaptureBlockProvenance& GetCaptureBlockProvenance(
+        u32 bank, u32 block) const noexcept;
+    // Monotonic event serial for the retained native/CPU ownership map. GPU2D
+    // frame recording uses it to invalidate its per-line mapping summary only
+    // when authority actually changes, without rescanning all provenance in
+    // the mapped-memory hot loop.
+    [[nodiscard]] u64 GetCaptureProvenanceSerial() const noexcept
+    {
+        return CaptureProvenanceSerial;
+    }
+    // Returns false when a requested capture range mixes native/CPU owners or
+    // contains native blocks from different identities. A range with no
+    // native owner is considered CPU-coherent even if its non-native metadata
+    // differs, because no GPU mirror is authoritative for that request.
+    [[nodiscard]] bool GetCaptureProvenanceForRange(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureBlockProvenance& representative) const noexcept;
+    void MarkCaptureCpuCoherent(
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason) noexcept;
+    void PublishNativeCaptureBlock(
+        CaptureOwner owner,
+        const NativeCaptureStateIdentity& identity,
+        u32 bank,
+        u32 start,
+        u32 len,
+        CaptureAuthorityTransitionReason reason =
+            CaptureAuthorityTransitionReason::NativeSemanticWrite) noexcept;
+    void ResetCaptureProvenance(
+        CaptureAuthorityTransitionReason reason) noexcept;
+
+    [[nodiscard]] const CaptureAuthorityDiagnostics&
+    GetCaptureAuthorityDiagnostics() const noexcept
+    {
+        return CaptureAuthorityStats;
+    }
+
+    [[nodiscard]] virtual NativeCaptureStateIdentity
+    GetNativeCaptureStateIdentity() const noexcept
+    {
+        return {};
+    }
+    [[nodiscard]] virtual const char* GetCaptureBackendName() const noexcept
+    {
+        return "Unknown";
+    }
+    // FrameRecorder needs to distinguish a native GPU2D producer from the
+    // exact-validation oracle.  The latter still composes a native frame but
+    // deliberately keeps Software as the producer, so a current-frame capture
+    // write must not be advertised as a native owner in that mode.
+    [[nodiscard]] virtual bool UsesNativeGPU2DProducerForFrame() const noexcept
+    {
+        return false;
+    }
 #ifdef MELONPRIME_DS
     // Backend-neutral lookup for a retained high-resolution display-capture
     // pixel. The emulated VRAM remains authoritative; a zero result means the
@@ -1079,6 +1500,11 @@ protected:
     melonDS::GPU& GPU;
 
     int BackBuffer;
+
+    std::array<CaptureBlockProvenance, CapturePhysicalBlockCount>
+        CaptureProvenance{};
+    u64 CaptureProvenanceSerial = 1u;
+    CaptureAuthorityDiagnostics CaptureAuthorityStats{};
 
     std::unique_ptr<Renderer2D> Rend2D_A;
     std::unique_ptr<Renderer2D> Rend2D_B;

@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "GPU3D.h"
+#include "GPU2DNative.h"
 #include "GPU3D_FixedVariantIndex.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "GPU3D_TexcacheVulkan.h"
@@ -67,6 +68,9 @@ public:
 
     bool Init() override;
     void Reset() override;
+    void ResetAfterSavestateLoad() override;
+    void InvalidateHighResCaptureState(
+        HighResCaptureInvalidationReason reason) noexcept override;
 
     // Releases every GPU-visible object while the emulator core is still alive.
     void Stop();
@@ -106,11 +110,43 @@ public:
         u64 generation,
         const StructuredComposition::GenerationState& contentGeneration);
 
+    // Native GPU2D input is packed from registers and VRAM snapshots. The
+    // shader evaluates BG/OBJ/windows/effects and writes the same two-screen
+    // presentation contract as the structured compositor, without consuming
+    // software-rendered pixel planes.
+    bool ComposeNativeGPU2D(
+        const GPU2DNative::FrameInput& input,
+        u64 generation,
+        bool finalFBValid,
+        const u32* expectedTop = nullptr,
+        const u32* expectedBottom = nullptr);
+
     // Legacy CPU accessor. Vulkan presentation is GPU-native and therefore
     // returns nullptr here; callers use AcquireComposedOutputLease().
     [[nodiscard]] const u32* GetComposedScreen(u32 screen) const noexcept;
     [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
     [[nodiscard]] RendererOutput GetComposedOutput() const;
+    [[nodiscard]] bool HasFinalFBContent() const noexcept { return FinalFBHasContent; }
+    [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
+    [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
+    {
+        return LastComposeResult;
+    }
+    // Materialize only the requested LCDC capture blocks when the emulation
+    // core actually reads them.  The normal native frame path keeps this
+    // mirror device-local and never calls this method.
+    bool ReadNativeCapture(
+        u32 bank,
+        u32 start,
+        u32 len,
+        const CaptureBlockProvenance& expected,
+        u8* destination);
+    [[nodiscard]] NativeCaptureStateIdentity GetNativeCaptureStateIdentity(
+        CaptureOwner owner) const noexcept;
+    [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
+    {
+        return PublishedOutputGeneration;
+    }
 
     // Internal resolution, not 256x192. This is the mechanism by which high
     // resolution survives to present: the display path never sees a
@@ -123,6 +159,10 @@ public:
     {
         return RuntimeFailureReason;
     }
+    void FailNativeGPU2DExact(const char* reason)
+    {
+        SetRuntimeFailure(reason ? std::string(reason) : std::string("native GPU2D exact validation failed"));
+    }
 
     // The frontend compiles pipelines incrementally so ROM startup does not
     // stall. Nothing is created before SetRenderSettings() has supplied the
@@ -134,6 +174,8 @@ public:
     void ShaderCompileStep(int& current, int& count) override;
 
 private:
+    void ResetInternal(bool preservePresentation);
+
     explicit VulkanRenderer3D(melonDS::GPU3D& gpu3D);
 
     static constexpr int MaxRenderPolygons = 2048;
@@ -168,14 +210,14 @@ private:
     static constexpr u32 CompositorFramesInFlight = 3;
     static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
 
-    // Two set-0 allocations per frame slot. They differ only in what binding 13
-    // points at -- the native capture buffer for the rasterizer's Resolve stage,
-    // the two-screen composed buffer for the compositor -- but the compositor
-    // records into a separate command buffer, so it cannot share the set the
-    // rasterizer's submission may still be reading.
+    // Three set-0 allocations per frame slot. The native logical Stage A writes
+    // the structured contract into binding 13, while the final Stage B writes
+    // the two-screen composed buffer. Keeping them separate also prevents a
+    // descriptor update for Stage B from changing a set still used by Stage A.
     static constexpr u32 RasterizerSetSlot = 0;
     static constexpr u32 CompositorSetSlot = 1;
-    static constexpr u32 RasterizerSetsPerFrame = 2;
+    static constexpr u32 NativeLogicalSetSlot = 2;
+    static constexpr u32 RasterizerSetsPerFrame = 3;
 
     // -----------------------------------------------------------------------
     // GPU-visible struct layouts.
@@ -407,6 +449,14 @@ private:
         const VkBuffer* buffers, u32 count,
         VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
         VkPipelineStageFlags dstStage, VkAccessFlags dstAccess) const;
+    void BufferBarrier(
+        VkCommandBuffer cmd,
+        const VkBuffer* buffers,
+        const VkAccessFlags* srcAccess,
+        const VkAccessFlags* dstAccess,
+        u32 count,
+        VkPipelineStageFlags srcStage,
+        VkPipelineStageFlags dstStage) const;
 
     // CPU-side span setup, transcribed from the OpenGL compute renderer.
     void SetupAttrs(SpanSetupY* span, Polygon* poly, int from, int to) const;
@@ -463,6 +513,7 @@ private:
     // semantics have to stay DS-native even while presentation does not.
     Vk::Buffer NativeResolveBuffer;
     Vk::ReadbackBuffer NativeReadback;
+    Vk::ReadbackBuffer NativeCaptureReadback;
     VkDeviceSize MetaUniformStride = 0;
 
     // The structured 2D frame, staged once per VBlank and copied into device
@@ -523,6 +574,7 @@ private:
     int ShaderStepIdx = 0;
     bool RuntimeFailed = false;
     std::string RuntimeFailureReason;
+    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
     bool Initialized = false;
     // FinalFB is recreated on every resolution change and starts UNDEFINED;
     // the placeholder and clear-bitmap images are created once for the whole
@@ -565,6 +617,16 @@ private:
     // slot until its copy command retires.
     bool ComposedOutputValid = false;
     u64 ComposedGeneration = 0;
+    u64 PublishedOutputGeneration = 0;
+    bool NativeCaptureStateInitialized = false;
+    u64 CurrentEpoch = GPU2DNative::AllocateRendererEpoch();
+    u64 LastSemanticFrame = 0;
+    u64 LastSemanticCaptureGeneration = 0;
+    u64 LastSemanticEpoch = 0;
+    // Capture provenance is independent of presentation frame-ring reuse.
+    u64 NativeSemanticSubmissionSerial = 0;
+    u64 LastNativeCaptureCompletionValue = 0;
+    GPU2DNative::HighResCaptureProvenanceTracker HighResCaptureProvenance;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely
     // cache descriptors by resource lifetime rather than content generation.

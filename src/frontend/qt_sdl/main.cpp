@@ -1,4 +1,4 @@
-﻿/*
+/*
     Copyright 2016-2025 melonDS team
 
     This file is part of melonDS.
@@ -72,6 +72,9 @@
 #include "Net.h"
 
 #include "CLI.h"
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+#include "../../../tools/testing/gpu2d-native-recorder-purity.h"
+#endif
 
 #include "Net_PCap.h"
 #include "Net_Slirp.h"
@@ -358,6 +361,7 @@ static int melonPrimePrintBuildInfoJson()
         "\"git_dirty\":%s,\"build_provider\":%s,\"build_type\":%s,"
         "\"renderer_perf_telemetry\":%s,\"vulkan_latency_capture\":%s,"
         "\"gpu_memory_telemetry\":%s,\"developer_features\":%s,"
+        "\"vulkan_backend\":%s,\"dx12_backend\":%s,"
         "\"melonDS_version\":%s}\n",
         melonPrimeJsonString(MELONPRIMEDS_GIT_SHA).c_str(),
         melonPrimeJsonString(MELONPRIMEDS_GIT_BRANCH).c_str(),
@@ -368,6 +372,8 @@ static int melonPrimePrintBuildInfoJson()
         MELONPRIMEDS_BUILD_VULKAN_LATENCY_CAPTURE ? "true" : "false",
         MELONPRIMEDS_BUILD_GPU_MEMORY_TELEMETRY ? "true" : "false",
         MELONPRIMEDS_BUILD_DEVELOPER_FEATURES ? "true" : "false",
+        MELONPRIMEDS_BUILD_VULKAN ? "true" : "false",
+        MELONPRIMEDS_BUILD_DX12 ? "true" : "false",
         melonPrimeJsonString(MELONDS_VERSION).c_str());
     return 0;
 }
@@ -427,12 +433,23 @@ int main(int argc, char** argv)
     std::signal(SIGTERM, signalHandler);
 #endif
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const bool runGPU2DRecorderPurity =
+        melonPrimeHasCommandLineOption(argc, argv, "--gpu2d-recorder-purity")
+        || std::getenv("MELONPRIME_GPU2D_RECORDER_PURITY");
+#endif
+
     // The physical A/B harness invokes this before opening Qt or an emulation
     // window. It is intentionally a tiny machine-readable contract: the
     // harness hashes the executable separately and compares this embedded SHA
     // with its required checkout head before launching the real run.
     if (melonPrimeHasCommandLineOption(argc, argv, "--build-info-json"))
         return melonPrimePrintBuildInfoJson();
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (runGPU2DRecorderPurity)
+        return Testing::RunGPU2DNativeRecorderPurity();
+#endif
 
 #ifdef MELONPRIME_DS
     printf(MELONPRIMEDS_TITLE_PREFIX "%s" MELONPRIMEDS_TITLE_SUFFIX "\n", MelonPrime::kBuildStamp);

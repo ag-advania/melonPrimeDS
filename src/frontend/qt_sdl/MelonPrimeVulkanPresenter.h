@@ -98,12 +98,10 @@ public:
     // first swapchain. Presenter/emulation thread for all platforms.
     bool Init(QWidget* surfaceWidget);
 
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter snapshot API, not input dispatch
-    // Linux presenter-thread entry point. No QWidget or QPA accessor is read;
-    // all native handles and the requested physical size come from the GUI
+    // Presenter-thread entry point. No QWidget or QPA accessor is read; all
+    // native handles and the requested physical size come from the GUI
     // thread's post-lifecycle snapshot.
     bool Init(const VulkanSurface::NativeWindowSnapshot& snapshot);
-#endif
 
     // Waits for the device to go idle and destroys everything, including the
     // surface and the instance reference. Safe to call more than once.
@@ -138,13 +136,36 @@ public:
 
     // GUI thread. Coalesced: the swapchain is not rebuilt here, only marked
     // out of date, so a resize drag costs one rebuild at the next frame
-    // boundary instead of one per event.
-    void NotifySurfaceChanged() noexcept { SwapchainDirty.store(true, std::memory_order_release); }
+    // boundary instead of one per event. A non-zero geometry revision is an
+    // edge trigger; repeated publication of the same snapshot cannot create
+    // another dirty event.
+    void NotifySurfaceChanged(std::uint64_t geometryRevision = 0) noexcept;
     // Published by the GUI thread for truthful swapchain diagnostics. The
     // presenter never reads QWidget state from its emulation-thread path.
     void SetWindowFullscreen(bool fullscreen) noexcept
     {
         WindowFullscreen.store(fullscreen, std::memory_order_release);
+    }
+    // The screen panel supplies the renderer-owned identity before presenter
+    // admission. A newer epoch may restart the serial sequence; within one
+    // epoch, serials must never move backwards.
+    void SetPresentedFrameIdentity(melonDS::u64 serial, melonDS::u64 epoch) noexcept
+    {
+        PendingPresentedFrameSerial = serial;
+        PendingPresentedFrameEpoch = epoch;
+    }
+    void SetPresentedFrameSerial(melonDS::u64 serial) noexcept
+    {
+        SetPresentedFrameIdentity(serial, 0);
+    }
+    [[nodiscard]] bool IsPresentedFrameIdentityMonotonic() const noexcept
+    {
+        if (PendingPresentedFrameSerial == 0)
+            return true;
+        return PendingPresentedFrameEpoch > LastPresentedFrameEpoch
+            || (PendingPresentedFrameEpoch == LastPresentedFrameEpoch
+                && (LastPresentedFrameSerial == 0
+                    || PendingPresentedFrameSerial >= LastPresentedFrameSerial));
     }
 
     // Either thread. A changed value marks the swapchain out of date, because
@@ -357,9 +378,7 @@ private:
 
     bool AcquireContext();
     bool CreateSurface(QWidget* widget);
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter surface binding, not input dispatch
     bool CreateSurface(const VulkanSurface::NativeWindowSnapshot& snapshot);
-#endif
     bool CreateDeviceObjects();
     bool CreateRenderPass();
     bool CreatePipelines();
@@ -407,9 +426,8 @@ private:
 
     QWidget* SurfaceWidget = nullptr;
     VulkanSurface::Surface Surface;
-#if defined(__linux__)  // scatter-budget-exempt: Linux presenter generation state, not input dispatch
     std::uint64_t SurfaceGeneration = 0;
-#endif
+    std::uintptr_t SurfaceNativeHandle = 0;
 
     melonDS::VulkanDevice Device;
     melonDS::Vk::FrameRing Frames;
@@ -430,6 +448,10 @@ private:
     // frames since that accepted present; it never participates in
     // synchronization or frame admission.
     melonDS::u64 LastAcceptedLogicalFrameId = 0;
+    melonDS::u64 PendingPresentedFrameSerial = 0;
+    melonDS::u64 PendingPresentedFrameEpoch = 0;
+    melonDS::u64 LastPresentedFrameSerial = 0;
+    melonDS::u64 LastPresentedFrameEpoch = 0;
     // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
     // logs a transition once instead of every frame.
     int LoggedReflexMode = -1;
@@ -443,6 +465,9 @@ private:
     bool LastBeginLatencySkip = false;
 
     VkSwapchainKHR Swapchain = VK_NULL_HANDLE;
+    // Monotonic presenter-owned identity for diagnostics and retained-output
+    // invalidation. It changes only after a successful swapchain creation.
+    std::uint64_t SwapchainGeneration = 0;
     VkSurfaceFormatKHR SurfaceFormat{};
     VkPresentModeKHR PresentMode = VK_PRESENT_MODE_FIFO_KHR;
     VkExtent2D SwapchainExtent{0, 0};
@@ -519,6 +544,7 @@ private:
     std::array<LayerTexture, static_cast<std::size_t>(Layer::Count)> Layers;
 
     std::atomic_bool SwapchainDirty{false};
+    std::atomic<std::uint64_t> PendingGeometryRevision{0};
     std::atomic_bool WindowFullscreen{false};
     std::atomic_bool VSyncRequested{true};
     bool VSyncApplied = true;

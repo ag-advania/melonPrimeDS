@@ -168,6 +168,84 @@ Surface Create(
 }
 
 
+Surface Create(
+    VkInstance instance,
+    PFN_vkGetInstanceProcAddr getInstanceProcAddr,
+    const NativeWindowSnapshot& snapshot)
+{
+    Surface surface;
+    surface.Backend = "VK_EXT_metal_surface";
+
+    if (instance == VK_NULL_HANDLE || !getInstanceProcAddr)
+    {
+        surface.Failure = "internal error: no Vulkan instance or instance procedure resolver";
+        return surface;
+    }
+    if (!snapshot.IsValid() || snapshot.WindowId == 0)
+    {
+        surface.Failure = "the Vulkan native-surface snapshot has no NSView";
+        return surface;
+    }
+
+    const auto create = reinterpret_cast<PFN_CreateMetalSurface>(
+        getInstanceProcAddr(instance, "vkCreateMetalSurfaceEXT"));
+    if (!create)
+    {
+        surface.Failure =
+            "the Vulkan runtime does not provide vkCreateMetalSurfaceEXT "
+            "(VK_EXT_metal_surface is missing; MoltenVK is required on macOS)";
+        return surface;
+    }
+
+    NSView* view = (__bridge NSView*)reinterpret_cast<void*>(
+        static_cast<std::uintptr_t>(snapshot.WindowId));
+    if (!view)
+    {
+        surface.Failure = "the Vulkan native-surface snapshot has no NSView";
+        return surface;
+    }
+
+    id<MTLDevice> metalDevice = MTLCreateSystemDefaultDevice();
+    if (!metalDevice)
+    {
+        surface.Failure = "no Metal device is available; MoltenVK cannot present";
+        return surface;
+    }
+
+    CAMetalLayer* layer = [CAMetalLayer layer];
+    layer.device = metalDevice;
+    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    layer.framebufferOnly = YES;
+    layer.needsDisplayOnBoundsChange = YES;
+    layer.presentsWithTransaction = NO;
+    layer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+    view.wantsLayer = YES;
+    view.layer = layer;
+    SyncLayerGeometry(layer, view);
+
+    MetalSurfaceCreateInfo info{};
+    info.sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+    info.pLayer = (__bridge const void*)layer;
+
+    const VkResult result = create(instance, &info, nullptr, &surface.Handle);
+    if (result != VK_SUCCESS)
+    {
+        surface.Handle = VK_NULL_HANDLE;
+        surface.FailureResult = result;
+        surface.Failure = "vkCreateMetalSurfaceEXT failed: " + melonDS::Vk::FormatResult(result);
+        return surface;
+    }
+
+    surface.PlatformLayer = (__bridge void*)layer;
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[Vulkan] presentation surface created from snapshot backend=%s generation=%llu\n",
+        surface.Backend.c_str(),
+        static_cast<unsigned long long>(snapshot.Generation));
+    return surface;
+}
+
+
 void UpdateGeometry(const Surface& surface, QWidget* widget)
 {
     if (!surface.PlatformLayer || !widget)

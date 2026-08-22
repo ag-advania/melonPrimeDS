@@ -10,11 +10,13 @@
 #>
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Vulkan', 'DX12', 'OpenGLCompute')]
+    [ValidateSet('Software', 'OpenGLClassic', 'OpenGLCompute', 'Vulkan', 'DX12')]
     [string]$Renderer,
     [Parameter(Mandatory = $true)]
     [string]$Rom,
     [string]$Savestate = '',
+    [ValidateRange(0, 8)]
+    [int]$SavestateSlot = 0,
     [string]$BuildDir = 'build\rebuild-mingw-x86_64',
     [Parameter(Mandatory = $true)]
     [string]$RunId,
@@ -23,9 +25,10 @@ param(
     [string]$ExpectedSourceHead,
     [Parameter(Mandatory = $true)]
     [string]$OutputDir,
-    [ValidateSet(1, 4, 16)]
+    [ValidateSet(1, 2, 4, 8, 16)]
     [int]$Scale = 4,
     [switch]$NoVSync,
+    [switch]$NoFrameLimit,
     [ValidateSet('Off', 'Reflex', 'ReflexBoost', 'AntiLag2', 'XeLL')]
     [string]$LowLatency = 'Off',
     [ValidateSet('steady-state', 'weapon-switch', 'projectile-burst',
@@ -36,6 +39,14 @@ param(
     [ValidateSet('On', 'Off')]
     [string]$Hud = 'On',
     [switch]$AllowUnverifiedBinary,
+    [switch]$RequireCleanProvenance,
+    [switch]$ExactGPU2DValidation,
+    [switch]$StageDiagnosticsOnly,
+    [switch]$DirectGPU2DDiagnostics,
+    [switch]$SkipDiagnosticStartupSavestate,
+    [ValidateRange(0,600)] [int]$CaptureFrames = 0,
+    [ValidateRange(1,1000)] [int]$CaptureIntervalMs = 33,
+    [ValidateRange(0,600)] [int]$PresentationStallFrames = 0,
     [int]$WarmupSeconds = 15,
     [int]$MeasuredSeconds = 20,
     [int]$GraceSeconds = 15
@@ -44,6 +55,12 @@ param(
 $ErrorActionPreference = 'Stop'
 if ($WarmupSeconds -lt 1 -or $MeasuredSeconds -lt 1 -or $GraceSeconds -lt 0) {
     throw 'WarmupSeconds and MeasuredSeconds must be positive; GraceSeconds must not be negative.'
+}
+if ($CaptureFrames -gt 0 -and $CaptureIntervalMs -lt 1) {
+    throw 'CaptureIntervalMs must be positive when CaptureFrames is enabled.'
+}
+if ($ExactGPU2DValidation -and $StageDiagnosticsOnly) {
+    throw 'ExactGPU2DValidation and StageDiagnosticsOnly are mutually exclusive.'
 }
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -91,18 +108,29 @@ $out = (Resolve-Path (New-Item -ItemType Directory -Force -Path $OutputDir)).Pat
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Executable not found: $exe" }
 
 $ExpectedSourceHead = $ExpectedSourceHead.ToLowerInvariant()
-$checkoutSourceHead = (git -C "$repo" rev-parse HEAD).Trim().ToLowerInvariant()
+$checkoutSourceHead = ([string](git -C "$repo" rev-parse HEAD 2>$null)).Trim().ToLowerInvariant()
+# Detached HEAD is the required clean-provenance mode. symbolic-ref emits no
+# output in that mode, so normalize the empty command result before Trim
+# instead of dereferencing a null expression under Windows PowerShell 5.1.
+$checkoutBranchOutput = @(git -C "$repo" symbolic-ref --quiet --short HEAD 2>$null)
+$checkoutBranch = if ($checkoutBranchOutput.Count -eq 0) {
+    ''
+} else {
+    ([string]::Join([Environment]::NewLine, [string[]]$checkoutBranchOutput)).Trim()
+}
 $checkoutStatus = @(git -C "$repo" status --porcelain --untracked-files=all)
 $checkoutGitDirty = $checkoutStatus.Count -gt 0
 $executableSha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
 $romSha256 = (Get-FileHash -LiteralPath $romPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
 $rendererId = switch ($Renderer) {
+    'Software' { 0 }
+    'OpenGLClassic' { 1 }
     'OpenGLCompute' { 2 }
     'Vulkan' { 3 }
     'DX12' { 4 }
 }
-$useGL = if ($Renderer -eq 'OpenGLCompute') { 'true' } else { 'false' }
+$useGL = if ($Renderer -in @('OpenGLClassic', 'OpenGLCompute')) { 'true' } else { 'false' }
 $reflexMode = switch ($LowLatency) {
     'Reflex' { 1 }
     'ReflexBoost' { 2 }
@@ -112,6 +140,7 @@ $antiLag = if ($LowLatency -eq 'AntiLag2') { 'true' } else { 'false' }
 $xellEnabled = if ($LowLatency -eq 'XeLL') { 'true' } else { 'false' }
 $xellPolicy = if ($LowLatency -eq 'XeLL') { 4 } else { 0 }
 $vsyncName = if ($NoVSync) { 'off' } else { 'on' }
+$frameLimitName = if ($NoFrameLimit) { 'off' } else { 'on' }
 $portableDir = Join-Path $build 'portable'
 $configRoot = if (Test-Path -LiteralPath $portableDir -PathType Container) { $portableDir } else { $build }
 $configPath = Join-Path $configRoot 'melonDS.toml'
@@ -128,18 +157,39 @@ $metadata = Join-Path $out "$RunId.metadata.txt"
 $metadataJson = Join-Path $out "$RunId.metadata.json"
 $runManifest = Join-Path $out "$RunId.run-manifest.json"
 $screenshot = Join-Path $out "$RunId.display.png"
+$windowCaptureDirectory = if ($CaptureFrames -gt 0) {
+    Join-Path $out "$RunId.window"
+} else { $null }
+$frameDumpTrigger = if ($null -ne $statePath) {
+    Join-Path $out "$RunId.gpu2d-frame.trigger"
+} else {
+    $null
+}
 foreach ($path in @($csv, $frameCsv, $buildInfoStdout, $buildInfoStderr, $stdout, $stderr, $telemetryLog, $harness,
-        $metadata, $metadataJson, $runManifest, $screenshot)) {
+        $metadata, $metadataJson, $runManifest, $screenshot, $frameDumpTrigger)) {
+    if ([string]::IsNullOrWhiteSpace([string]$path)) { continue }
     if (Test-Path -LiteralPath $path) { throw "Refusing to overwrite artifact: $path" }
+}
+if ($null -ne $windowCaptureDirectory -and
+    (Test-Path -LiteralPath $windowCaptureDirectory)) {
+    throw "Refusing to overwrite artifact directory: $windowCaptureDirectory"
 }
 
 # A GUI-subsystem executable does not always inherit PowerShell's stdout
 # handle. Start the tiny build-info query with redirected files so provenance
-# verification works both from a terminal and from a non-console host.
-$buildInfoProcess = Start-Process -FilePath $exe -ArgumentList '--build-info-json' -WorkingDirectory $build -Wait -PassThru -RedirectStandardOutput $buildInfoStdout -RedirectStandardError $buildInfoStderr
-$buildInfoProcess.Refresh()
-$buildInfoExitCode = [int]$buildInfoProcess.ExitCode
-$buildInfoOutput = if (Test-Path -LiteralPath $buildInfoStdout) { Get-Content -LiteralPath $buildInfoStdout } else { @() }
+# verification works both from a terminal and from a non-console host. The
+# independent baseline predates this developer-only option; in that one
+# explicitly unverified mode, do not launch it as though --build-info-json
+# were a ROM path.
+$buildInfoProcess = $null
+$buildInfoExitCode = -1
+$buildInfoOutput = @()
+if (-not $AllowUnverifiedBinary -or $RequireCleanProvenance) {
+    $buildInfoProcess = Start-Process -FilePath $exe -ArgumentList '--build-info-json' -WorkingDirectory $build -Wait -PassThru -RedirectStandardOutput $buildInfoStdout -RedirectStandardError $buildInfoStderr
+    $buildInfoProcess.Refresh()
+    $buildInfoExitCode = [int]$buildInfoProcess.ExitCode
+    $buildInfoOutput = if (Test-Path -LiteralPath $buildInfoStdout) { Get-Content -LiteralPath $buildInfoStdout } else { @() }
+}
 $buildInfoText = [string]::Join([Environment]::NewLine, [string[]]$buildInfoOutput).Trim()
 $buildInfo = $null
 try { $buildInfo = $buildInfoText | ConvertFrom-Json -ErrorAction Stop } catch { }
@@ -153,10 +203,32 @@ if ($actualSourceHead -eq 'unknown') { [void]$provenanceFailures.Add('binary git
 if ($actualSourceHead -ne $ExpectedSourceHead) {
     [void]$provenanceFailures.Add("binary git_sha=$actualSourceHead expected=$ExpectedSourceHead")
 }
+$backendInfoField = if ($Renderer -eq 'Vulkan') { 'vulkan_backend' } elseif ($Renderer -eq 'DX12') { 'dx12_backend' } else { $null }
+if ($null -ne $backendInfoField -and $null -ne $buildInfo) {
+    $hasBackendInfo = $buildInfo.PSObject.Properties.Name -contains $backendInfoField
+    if ($hasBackendInfo -and -not [bool]$buildInfo.$backendInfoField) {
+        [void]$provenanceFailures.Add("binary $backendInfoField=false; requested renderer=$Renderer")
+    } elseif (-not $hasBackendInfo -and -not $AllowUnverifiedBinary) {
+        [void]$provenanceFailures.Add("binary build-info field $backendInfoField is missing")
+    }
+}
 if ($checkoutSourceHead -ne $ExpectedSourceHead) {
     [void]$provenanceFailures.Add("checkout HEAD=$checkoutSourceHead expected=$ExpectedSourceHead")
 }
-if ($provenanceFailures.Count -gt 0 -and -not $AllowUnverifiedBinary) {
+if ($RequireCleanProvenance) {
+    if ($checkoutBranch) {
+        [void]$provenanceFailures.Add("checkout is attached to branch=$checkoutBranch; final acceptance requires detached HEAD")
+    }
+    if ($checkoutGitDirty) {
+        [void]$provenanceFailures.Add('checkout is dirty; final acceptance requires no tracked or untracked changes')
+    }
+    $hasGitDirtyField = $null -ne $buildInfo -and ($buildInfo.PSObject.Properties.Name -contains 'git_dirty')
+    if (-not $hasGitDirtyField -or $buildInfo.git_dirty -ne $false) {
+        $binaryDirtyValue = if ($hasGitDirtyField) { [string]$buildInfo.git_dirty } else { 'missing' }
+        [void]$provenanceFailures.Add("binary git_dirty=$binaryDirtyValue; final acceptance requires false")
+    }
+}
+if ($provenanceFailures.Count -gt 0 -and (-not $AllowUnverifiedBinary -or $RequireCleanProvenance)) {
     throw "Binary provenance verification failed before process launch: $([string]::Join('; ', $provenanceFailures))"
 }
 $provenanceVerified = $provenanceFailures.Count -eq 0
@@ -164,13 +236,25 @@ $provenanceVerified = $provenanceFailures.Count -eq 0
 $savestateFixtureDir = $null
 $savestateSlotPath = $null
 $savestateSlotPathForApp = $null
+$launchRomPath = $romPath
 if ($null -ne $statePath) {
+    if ($SavestateSlot -eq 0) {
+        $slotMatch = [regex]::Match(
+            $statePath, '\.ml([1-8])$', [Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $SavestateSlot = if ($slotMatch.Success) { [int]$slotMatch.Groups[1].Value } else { 1 }
+    }
     $savestateFixtureDir = Join-Path $out "$RunId.savestate-fixture"
     if (Test-Path -LiteralPath $savestateFixtureDir) {
         throw "Refusing to overwrite savestate fixture directory: $savestateFixtureDir"
     }
     New-Item -ItemType Directory -Force -Path $savestateFixtureDir | Out-Null
-    $savestateLeaf = ([IO.Path]::GetFileNameWithoutExtension($romPath) + '.ml1')
+    # Stage the ROM alongside the requested state. EmuInstance resolves
+    # QAction F-key slots relative to the loaded ROM, so a state copied to a
+    # separate directory is only a real post-start slot load when the ROM is
+    # staged there too. This also keeps the run from touching the user's .sav.
+    $launchRomPath = Join-Path $savestateFixtureDir ([IO.Path]::GetFileName($romPath))
+    Copy-Item -LiteralPath $romPath -Destination $launchRomPath
+    $savestateLeaf = ([IO.Path]::GetFileNameWithoutExtension($romPath) + ".ml$SavestateSlot")
     $savestateSlotPath = Join-Path $savestateFixtureDir $savestateLeaf
     # EmuInstance::getAssetPath() emits forward slashes on Windows. Keep the
     # action marker comparison in the same spelling as the production path.
@@ -189,6 +273,11 @@ $oldFrameCsv = $env:MELONPRIME_PERF_CSV
 $oldState = $env:MELONPRIME_TEST_SAVESTATE
 $oldHud = $env:MELONPRIME_TEST_CUSTOM_HUD_OFF
 $oldPhysicalState = $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH
+$oldFrameDumpTrigger = $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE
+$oldExactGPU2DValidation = $env:MELONPRIME_GPU2D_EXACT_VALIDATE
+$oldGPU2DStageDiagnostics = $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS
+$oldGPU2DStageDirect = $env:MELONPRIME_GPU2D_STAGE_DIRECT
+$oldGPU2DPresentationStall = $env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES
 $proc = $null
 $window = [IntPtr]::Zero
 $configRestored = -not $hadConfig
@@ -207,7 +296,7 @@ $cfg = @"
 Screen.UseGL = $useGL
 Screen.VSync = $(if ($NoVSync) { 'false' } else { 'true' })
 Screen.VSyncInterval = 1
-LimitFPS = true
+LimitFPS = $(if ($NoFrameLimit) { 'false' } else { 'true' })
 TargetFPS = 60.0
 3D.Vulkan.PresentPacingPolicy = 0
 3D.DX12.NvidiaReflexMode = $reflexMode
@@ -262,7 +351,22 @@ function Send-Key([string]$keys) {
     Start-Sleep -Milliseconds 150
 }
 
+function Send-SavestateSlotKey([int]$slot) {
+    if ($slot -lt 1 -or $slot -gt 8) { throw "savestate slot must be 1..8: $slot" }
+    Focus-RendererWindow
+    # SendKeys is not reliable for the middle F-key range on this host: F2
+    # can be consumed by the desktop/input layer while F1/F3 still reach Qt.
+    # Use the same Win32 virtual-key path as the manual UI harness so every
+    # requested production QAction receives a real F-key event.
+    [MpRendererPerfWin]::HoldKey([byte](0x6F + $slot), 120)
+    Start-Sleep -Milliseconds 150
+}
+
 function Capture-Display {
+    return Capture-DisplayToPath $screenshot
+}
+
+function Capture-DisplayToPath([string]$path) {
     $rect = [MpRendererPerfRect]::new()
     if (-not [MpRendererPerfWin]::GetWindowRect($window, [ref]$rect)) { return $false }
     $width = $rect.Right - $rect.Left
@@ -273,9 +377,31 @@ function Capture-Display {
     $dc = $graphics.GetHdc()
     try { [void][MpRendererPerfWin]::PrintWindow($window, $dc, 2) }
     finally { $graphics.ReleaseHdc($dc); $graphics.Dispose() }
-    $bitmap.Save($screenshot, [System.Drawing.Imaging.ImageFormat]::Png)
+    $bitmap.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
     $bitmap.Dispose()
     return $true
+}
+
+function Capture-ContinuousDisplay {
+    if ($CaptureFrames -le 0) { return }
+    New-Item -ItemType Directory -Force -Path $windowCaptureDirectory | Out-Null
+    [void](Record-Phase 'window_capture_start')
+    $captureStart = [Diagnostics.Stopwatch]::GetTimestamp()
+    for ($index = 0; $index -lt $CaptureFrames -and $null -ne $proc -and -not $proc.HasExited; $index++) {
+        $path = Join-Path $windowCaptureDirectory ('window-{0:D3}.png' -f $index)
+        $captured = Capture-DisplayToPath $path
+        Add-Content -LiteralPath $harness -Value (
+            "window_capture index=$index success=$captured path=$path monotonic_ticks=$([Diagnostics.Stopwatch]::GetTimestamp())")
+        $targetTicks = $captureStart + [Int64](($index + 1) * $CaptureIntervalMs * $stopwatchFrequency / 1000.0)
+        do {
+            $remainingTicks = $targetTicks - [Diagnostics.Stopwatch]::GetTimestamp()
+            if ($remainingTicks -le 0) { break }
+            $remainingMs = [Math]::Max(1, [Math]::Min(25,
+                [Math]::Ceiling(1000.0 * $remainingTicks / $stopwatchFrequency)))
+            Start-Sleep -Milliseconds $remainingMs
+        } while ($true)
+    }
+    [void](Record-Phase 'window_capture_end')
 }
 
 function Run-Action([string]$name) {
@@ -306,12 +432,12 @@ function Run-Action([string]$name) {
             if ($null -eq $statePath) {
                 Add-Content -LiteralPath $harness -Value 'savestate-load=NOT_REQUESTED'
             } else {
-                # F1 is the production Load state 1 QAction shortcut. The
-                # fixture is named exactly as EmuInstance::getSavestateName(1)
-                # expects, so this is a real post-start load, not the old
-                # startup-only diagnostic hook.
-                Send-Key '{F1}'
-                Add-Content -LiteralPath $harness -Value "savestate-load=F1 fixture=$savestateSlotPath"
+                # This is the production Load state QAction shortcut. The
+                # staged ROM makes the requested .mlN the actual slot path,
+                # so the action is a real post-start load rather than the
+                # developer-only startup diagnostic hook.
+                Send-SavestateSlotKey $SavestateSlot
+                Add-Content -LiteralPath $harness -Value "savestate-load=F$SavestateSlot fixture=$savestateSlotPath"
                 Start-Sleep -Seconds 3
             }
         }
@@ -341,8 +467,13 @@ try {
     $header = 'renderer=' + $Renderer + [Environment]::NewLine +
         'scale=' + $Scale + [Environment]::NewLine +
         'vsync=' + $vsyncName + [Environment]::NewLine +
+        'frame_limit=' + $frameLimitName + [Environment]::NewLine +
         'low_latency=' + $LowLatency + [Environment]::NewLine +
         'hud=' + $Hud + [Environment]::NewLine +
+        'exact_gpu2d_validation=' + $ExactGPU2DValidation.IsPresent + [Environment]::NewLine +
+        'stage_diagnostics_only=' + $StageDiagnosticsOnly.IsPresent + [Environment]::NewLine +
+        'direct_gpu2d_diagnostics=' + $DirectGPU2DDiagnostics.IsPresent + [Environment]::NewLine +
+        'presentation_stall_frames=' + $PresentationStallFrames + [Environment]::NewLine +
         'action=' + $Action + [Environment]::NewLine +
         'action_seed=' + $ActionSeed + [Environment]::NewLine +
         'action_order=' + $actionOrder + [Environment]::NewLine
@@ -357,12 +488,33 @@ try {
         Remove-Item Env:MELONPRIME_LATENCY_CSV -ErrorAction SilentlyContinue
     }
     $env:MELONPRIME_PERF = '1'
-    if ($null -ne $statePath) { $env:MELONPRIME_TEST_SAVESTATE = $statePath } else { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue }
+    if ($null -ne $statePath -and -not $SkipDiagnosticStartupSavestate) { $env:MELONPRIME_TEST_SAVESTATE = $statePath } else { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue }
     if ($Hud -eq 'Off') { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = '1' } else { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue }
     if ($null -ne $savestateSlotPathForApp) { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $savestateSlotPathForApp } else { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue }
+    if ($null -ne $frameDumpTrigger) { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $frameDumpTrigger } else { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue }
+    if ($ExactGPU2DValidation) {
+        $env:MELONPRIME_GPU2D_EXACT_VALIDATE = '1'
+        $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS = '1'
+    } elseif ($StageDiagnosticsOnly) {
+        Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue
+        $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS = '1'
+    } else {
+        Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue
+        Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS -ErrorAction SilentlyContinue
+    }
+    if ($DirectGPU2DDiagnostics) {
+        $env:MELONPRIME_GPU2D_STAGE_DIRECT = '1'
+    } else {
+        Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIRECT -ErrorAction SilentlyContinue
+    }
+    if ($PresentationStallFrames -gt 0) {
+        $env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES = [string]$PresentationStallFrames
+    } else {
+        Remove-Item Env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES -ErrorAction SilentlyContinue
+    }
 
     $processStart = Record-Phase 'process_start'
-    $proc = Start-Process -FilePath $exe -ArgumentList ('"' + $romPath + '"') -WorkingDirectory $build -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+    $proc = Start-Process -FilePath $exe -ArgumentList ('"' + $launchRomPath + '"') -WorkingDirectory $build -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     $processStart['process_id'] = $proc.Id
     $deadline = [DateTime]::UtcNow.AddSeconds(30)
     do {
@@ -376,6 +528,7 @@ try {
     [void](Record-Phase 'warmup_end')
     [void](Record-Phase 'measurement_start')
     foreach ($name in $actionSequence) { Run-Action $name }
+    Capture-ContinuousDisplay
     Start-Sleep -Seconds $MeasuredSeconds
     [void](Record-Phase 'measurement_end')
     if ($GraceSeconds -gt 0) {
@@ -410,6 +563,11 @@ finally {
     if ($null -eq $oldState) { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_SAVESTATE = $oldState }
     if ($null -eq $oldHud) { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = $oldHud }
     if ($null -eq $oldPhysicalState) { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $oldPhysicalState }
+    if ($null -eq $oldFrameDumpTrigger) { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $oldFrameDumpTrigger }
+    if ($null -eq $oldExactGPU2DValidation) { Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_EXACT_VALIDATE = $oldExactGPU2DValidation }
+    if ($null -eq $oldGPU2DStageDiagnostics) { Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS = $oldGPU2DStageDiagnostics }
+    if ($null -eq $oldGPU2DStageDirect) { Remove-Item Env:MELONPRIME_GPU2D_STAGE_DIRECT -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_STAGE_DIRECT = $oldGPU2DStageDirect }
+    if ($null -eq $oldGPU2DPresentationStall) { Remove-Item Env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES = $oldGPU2DPresentationStall }
 }
 
 $exitCode = -1
@@ -421,10 +579,83 @@ $captureRows = 0
 if (Test-Path -LiteralPath $csv) { $captureRows = [Math]::Max(0, (@(Get-Content -LiteralPath $csv).Count - 1)) }
 $frameRows = 0
 if (Test-Path -LiteralPath $frameCsv) { $frameRows = [Math]::Max(0, (@(Get-Content -LiteralPath $frameCsv).Count - 1)) }
+$windowCaptureRows = 0
+if ($null -ne $windowCaptureDirectory -and
+    (Test-Path -LiteralPath $windowCaptureDirectory -PathType Container)) {
+    $windowCaptureRows = @(
+        Get-ChildItem -LiteralPath $windowCaptureDirectory -Filter '*.png' -File
+    ).Count
+}
 $allLog = @()
 foreach ($path in @($stdout, $stderr)) { if (Test-Path -LiteralPath $path) { $allLog += Get-Content -LiteralPath $path -ErrorAction SilentlyContinue } }
 [IO.File]::WriteAllText($telemetryLog, [string]::Join([Environment]::NewLine, [string[]]$allLog), $utf8)
 $badMarkers = @($allLog | Select-String -Pattern 'VUID-|SYNC-HAZARD|DEVICE_LOST|GPU failure|command submission failed|Renderer fatal' -ErrorAction SilentlyContinue)
+$nativeGPU2DExactFailureMarkers = @($allLog | Select-String -Pattern 'native GPU2D exact (?:differential )?mismatch|native GPU2D exact gate rejected' -ErrorAction SilentlyContinue)
+$stateActionLogIndex = -1
+if ($null -ne $savestateSlotPathForApp) {
+    for ($index = 0; $index -lt $allLog.Count; $index++) {
+        if ($allLog[$index].Contains("[PhysicalAB] savestate_action_loaded=1 path=$savestateSlotPathForApp")) {
+            $stateActionLogIndex = $index
+            break
+        }
+    }
+}
+$stageValidationStartIndex = if ($null -eq $statePath) {
+    0
+} elseif ($stateActionLogIndex -ge 0) {
+    $stateActionLogIndex + 1
+} else {
+    $allLog.Count
+}
+$unexpectedBlankLines = @()
+if ($ExactGPU2DValidation -or $StageDiagnosticsOnly) {
+    for ($index = $stageValidationStartIndex; $index -lt $allLog.Count; $index++) {
+        if ($allLog[$index] -match '\[GPU2DStage\] blank_state .*actual=(?:ALL_BLACK|ALL_WHITE) expected=NONBLANK') {
+            $unexpectedBlankLines += $allLog[$index]
+        }
+    }
+}
+$nativeGPU2DMismatchValues = @(
+    foreach ($line in $allLog) {
+        $match = [regex]::Match($line, 'native_gpu2d_mismatches=(\d+)')
+        if ($match.Success) { [Int64]$match.Groups[1].Value }
+    }
+)
+$nativeGPU2DFallbackValues = @(
+    foreach ($line in $allLog) {
+        $match = [regex]::Match($line, 'native_gpu2d_fallback_frames=(\d+)')
+        if ($match.Success) { [Int64]$match.Groups[1].Value }
+    }
+)
+$fallbackLineValues = @(
+    foreach ($line in $allLog) {
+        $match = [regex]::Match($line, 'fallback_lines=(\d+)')
+        if ($match.Success) { [Int64]$match.Groups[1].Value }
+    }
+)
+$nativeGPU2DMismatchMax = if ($nativeGPU2DMismatchValues.Count -gt 0) {
+    ($nativeGPU2DMismatchValues | Measure-Object -Maximum).Maximum
+} else { 0 }
+$nativeGPU2DFallbackMax = if ($nativeGPU2DFallbackValues.Count -gt 0) {
+    ($nativeGPU2DFallbackValues | Measure-Object -Maximum).Maximum
+} else { 0 }
+$fallbackLineMax = if ($fallbackLineValues.Count -gt 0) {
+    ($fallbackLineValues | Measure-Object -Maximum).Maximum
+} else { 0 }
+$semanticLines = @($allLog | Select-String -Pattern '\[GPU2DStage\].*stage=semantic' -ErrorAction SilentlyContinue)
+$semanticOnlyLines = @($semanticLines | Where-Object { $_.Line -match 'publication=semantic_only' })
+$forcedPresentationStallLines = @($semanticLines | Where-Object { $_.Line -match 'presentation_stall=forced' })
+$finalComposedLines = @($allLog | Select-String -Pattern '\[GPU2DStage\].*FinalComposedTopHash=[0-9A-Fa-f]{16}.*FinalComposedBottomHash=[0-9A-Fa-f]{16}' -ErrorAction SilentlyContinue)
+$finalComposedAfterStateLines = @()
+if ($stageValidationStartIndex -lt $allLog.Count) {
+    $finalComposedAfterStateLines = @(
+        for ($index = $stageValidationStartIndex; $index -lt $allLog.Count; $index++) {
+            if ($allLog[$index] -match '\[GPU2DStage\].*FinalComposedTopHash=[0-9A-Fa-f]{16}.*FinalComposedBottomHash=[0-9A-Fa-f]{16}') {
+                $allLog[$index]
+            }
+        }
+    )
+}
 $stateMarker = if ($null -ne $statePath) { @($allLog | Select-String -SimpleMatch "[SavestateDiff] path=$statePath loaded=1" -ErrorAction SilentlyContinue).Count } else { 0 }
 $stateActionMarker = if ($null -ne $savestateSlotPathForApp) { @($allLog | Select-String -SimpleMatch "[PhysicalAB] savestate_action_loaded=1 path=$savestateSlotPathForApp" -ErrorAction SilentlyContinue).Count } else { 0 }
 $hudOffMarker = if ($Hud -eq 'Off') { @($allLog | Select-String -SimpleMatch '[SavestateDiff] customHudForcedOff=1' -ErrorAction SilentlyContinue).Count } else { 0 }
@@ -433,6 +664,8 @@ $buildGates = [ordered]@{
     build_type = if ($null -ne $buildInfo) { $buildInfo.build_type } else { $null }
     renderer_perf_telemetry = if ($null -ne $buildInfo) { $buildInfo.renderer_perf_telemetry } else { $null }
     vulkan_latency_capture = if ($null -ne $buildInfo) { $buildInfo.vulkan_latency_capture } else { $null }
+    vulkan_backend = if ($null -ne $buildInfo) { $buildInfo.vulkan_backend } else { $null }
+    dx12_backend = if ($null -ne $buildInfo) { $buildInfo.dx12_backend } else { $null }
     gpu_memory_telemetry = if ($null -ne $buildInfo) { $buildInfo.gpu_memory_telemetry } else { $null }
     developer_features = if ($null -ne $buildInfo) { $buildInfo.developer_features } else { $null }
     git_dirty = if ($null -ne $buildInfo) { $buildInfo.git_dirty } else { $null }
@@ -464,22 +697,34 @@ $manifestObject = [ordered]@{
         renderer_id = $rendererId
         scale = $Scale
         vsync = $vsyncName
+        frame_limit = $frameLimitName
         low_latency = $LowLatency
         hud = $Hud
+        exact_gpu2d_validation = [bool]$ExactGPU2DValidation
+        stage_diagnostics = [bool]($ExactGPU2DValidation -or $StageDiagnosticsOnly)
+        stage_diagnostics_only = [bool]$StageDiagnosticsOnly
+        direct_gpu2d_diagnostics = [bool]$DirectGPU2DDiagnostics
+        presentation_stall_frames = $PresentationStallFrames
         action = $Action
         action_seed = $ActionSeed
         action_order = $actionSequence
+        diagnostic_startup_savestate = -not $SkipDiagnosticStartupSavestate
+        savestate_slot = if ($null -ne $statePath) { $SavestateSlot } else { $null }
         warmup_seconds = $WarmupSeconds
         measured_seconds = $MeasuredSeconds
         grace_seconds = $GraceSeconds
+        window_capture_frames = $CaptureFrames
+        window_capture_interval_ms = if ($CaptureFrames -gt 0) { $CaptureIntervalMs } else { $null }
     }
     fixture = [ordered]@{
         rom = $romPath
+        launch_rom = $launchRomPath
         rom_sha256 = $romSha256
         savestate = if ($null -ne $statePath) { $statePath } else { $null }
         savestate_sha256 = if ($null -ne $statePath) { (Get-FileHash -LiteralPath $statePath -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+        savestate_slot = if ($null -ne $statePath) { $SavestateSlot } else { $null }
         savestate_fixture = $savestateSlotPath
-        procedure_version = 'physical-ab-2026-08-19-v2'
+        procedure_version = 'physical-ab-2026-08-19-v3'
         required_scenes = @('steady-state match', 'weapon switch', 'projectile/effect burst', 'room/map transition', 'scoreboard open/close', 'display capture', 'renderer Reset immediately', 'savestate load immediately', 'Custom HUD OFF', 'Custom HUD ON')
     }
     provenance = [ordered]@{
@@ -494,10 +739,12 @@ $manifestObject = [ordered]@{
         build_info_exit_code = $buildInfoExitCode
         provenance_verified = $provenanceVerified
         allow_unverified_binary = [bool]$AllowUnverifiedBinary
+        require_clean_provenance = [bool]$RequireCleanProvenance
         verification_failures = @($provenanceFailures)
         checkout_git_dirty = $checkoutGitDirty
+        checkout_branch = $checkoutBranch
         checkout_git_status_lines = $checkoutStatus
-        git_dirty_policy = 'record_only; benchmark source SHA and binary SHA must still match'
+        git_dirty_policy = if ($RequireCleanProvenance) { 'required false for checkout and binary' } else { 'record_only; benchmark source SHA and binary SHA must still match' }
         binary_build_info = $buildInfoJson
         build_gates = $buildGates
     }
@@ -516,6 +763,8 @@ $manifestObject = [ordered]@{
         harness = $harness
         metadata = $metadata
         display_capture = $screenshot
+        window_capture_directory = $windowCaptureDirectory
+        gpu2d_frame_dump_trigger = $frameDumpTrigger
     }
     validation = [ordered]@{
         config_restore = if ($configRestored) { 'PASS' } else { 'FAIL' }
@@ -523,10 +772,34 @@ $manifestObject = [ordered]@{
         process_exit_code = $exitCode
         savestate_startup_marker = $stateMarker
         savestate_action_marker = $stateActionMarker
+        gpu2d_frame_dump_trigger_exists = if ($null -ne $frameDumpTrigger) { Test-Path -LiteralPath $frameDumpTrigger } else { $false }
         custom_hud_off_marker = $hudOffMarker
+        exact_gpu2d_validation_requested = [bool]$ExactGPU2DValidation
+        stage_diagnostics_requested = [bool]($ExactGPU2DValidation -or $StageDiagnosticsOnly)
+        stage_diagnostics_only_requested = [bool]$StageDiagnosticsOnly
+        direct_gpu2d_diagnostics_requested = [bool]$DirectGPU2DDiagnostics
         capture_rows = $captureRows
         frame_rows = $frameRows
+        window_capture_rows = $windowCaptureRows
         bad_marker_count = $badMarkers.Count
+        native_gpu2d_exact_failure_marker_count = $nativeGPU2DExactFailureMarkers.Count
+        native_gpu2d_mismatch_max = $nativeGPU2DMismatchMax
+        native_gpu2d_fallback_frames_max = $nativeGPU2DFallbackMax
+        fallback_lines_max = $fallbackLineMax
+        unexpected_blank_marker_count = $unexpectedBlankLines.Count
+        semantic_frame_rows = $semanticLines.Count
+        semantic_only_rows = $semanticOnlyLines.Count
+        forced_presentation_stall_rows = $forcedPresentationStallLines.Count
+        final_composed_hash_rows = $finalComposedLines.Count
+        final_composed_hash_rows_after_state = $finalComposedAfterStateLines.Count
+        final_composed_hashes_available = $finalComposedLines.Count -gt 0
+        presentation_stall_validation = if ($PresentationStallFrames -eq 0) {
+            'NOT_REQUESTED'
+        } elseif ($forcedPresentationStallLines.Count -ge $PresentationStallFrames) {
+            'PASS'
+        } else {
+            'FAIL'
+        }
     }
 }
 [IO.File]::WriteAllText($runManifest, ($manifestObject | ConvertTo-Json -Depth 12), $utf8)
@@ -536,11 +809,18 @@ renderer=$Renderer
 renderer_id=$rendererId
 scale=$Scale
 vsync=$vsyncName
+frame_limit=$frameLimitName
 low_latency=$LowLatency
 hud=$Hud
+exact_gpu2d_validation=$($ExactGPU2DValidation.IsPresent.ToString().ToLowerInvariant())
+stage_diagnostics=$((($ExactGPU2DValidation -or $StageDiagnosticsOnly).ToString().ToLowerInvariant()))
+stage_diagnostics_only=$($StageDiagnosticsOnly.IsPresent.ToString().ToLowerInvariant())
+direct_gpu2d_diagnostics=$($DirectGPU2DDiagnostics.IsPresent.ToString().ToLowerInvariant())
+presentation_stall_frames=$PresentationStallFrames
 action=$Action
 action_seed=$ActionSeed
 action_order=$actionOrder
+diagnostic_startup_savestate=$(-not $SkipDiagnosticStartupSavestate)
 warmup_seconds=$WarmupSeconds
 measured_seconds=$MeasuredSeconds
 grace_seconds=$GraceSeconds
@@ -548,12 +828,25 @@ process_exit_code=$exitCode
 config_restore=$(if ($configRestored) { 'PASS' } else { 'FAIL' })
 layer_settings_restore=$(if ($layerRestored) { 'PASS' } else { 'FAIL' })
 savestate=$(if ($null -ne $statePath) { $statePath } else { 'NONE' })
+savestate_slot=$(if ($null -ne $statePath) { $SavestateSlot } else { 'NONE' })
 savestate_loaded_marker=$stateMarker
 savestate_action_loaded_marker=$stateActionMarker
+gpu2d_frame_dump_trigger=$frameDumpTrigger
+gpu2d_frame_dump_trigger_exists=$(if ($null -ne $frameDumpTrigger) { Test-Path -LiteralPath $frameDumpTrigger } else { $false })
 custom_hud_off_marker=$hudOffMarker
 capture_rows=$captureRows
 frame_rows=$frameRows
+window_capture_rows=$windowCaptureRows
 bad_marker_count=$($badMarkers.Count)
+native_gpu2d_exact_failure_marker_count=$($nativeGPU2DExactFailureMarkers.Count)
+native_gpu2d_mismatch_max=$nativeGPU2DMismatchMax
+native_gpu2d_fallback_frames_max=$nativeGPU2DFallbackMax
+fallback_lines_max=$fallbackLineMax
+unexpected_blank_marker_count=$($unexpectedBlankLines.Count)
+semantic_frame_rows=$($semanticLines.Count)
+semantic_only_rows=$($semanticOnlyLines.Count)
+forced_presentation_stall_rows=$($forcedPresentationStallLines.Count)
+presentation_stall_validation=$(if ($PresentationStallFrames -eq 0) { 'NOT_REQUESTED' } elseif ($forcedPresentationStallLines.Count -ge $PresentationStallFrames) { 'PASS' } else { 'FAIL' })
 expected_source_head=$ExpectedSourceHead
 expected_source_sha=$ExpectedSourceHead
 actual_binary_source_head=$actualSourceHead
@@ -566,14 +859,18 @@ rom_sha256=$romSha256
 build_info_exit_code=$buildInfoExitCode
 provenance_verified=$($provenanceVerified.ToString().ToLowerInvariant())
 allow_unverified_binary=$($AllowUnverifiedBinary.IsPresent.ToString().ToLowerInvariant())
+require_clean_provenance=$($RequireCleanProvenance.IsPresent.ToString().ToLowerInvariant())
 build_type=$($buildInfo.build_type)
 renderer_perf_telemetry=$($buildInfo.renderer_perf_telemetry)
 vulkan_latency_capture=$($buildInfo.vulkan_latency_capture)
 gpu_memory_telemetry=$($buildInfo.gpu_memory_telemetry)
 developer_features=$($buildInfo.developer_features)
+vulkan_backend=$($buildInfo.vulkan_backend)
+dx12_backend=$($buildInfo.dx12_backend)
 binary_git_dirty=$($buildInfo.git_dirty)
 checkout_git_dirty=$($checkoutGitDirty.ToString().ToLowerInvariant())
-git_dirty_policy=record_only; benchmark source SHA and binary SHA must still match
+checkout_branch=$checkoutBranch
+git_dirty_policy=$(if ($RequireCleanProvenance) { 'required false for checkout and binary' } else { 'record_only; benchmark source SHA and binary SHA must still match' })
 executable=$exe
 csv=$csv
 per_frame_csv=$frameCsv
@@ -593,6 +890,7 @@ Write-Host "run_id             : $RunId"
 Write-Host "renderer           : $Renderer"
 Write-Host "scale              : $Scale"
 Write-Host "vsync              : $vsyncName"
+Write-Host "frame limit        : $frameLimitName"
 Write-Host "low latency        : $LowLatency"
 Write-Host "process exit       : $exitCode"
 Write-Host "config restore     : $(if ($configRestored) { 'PASS' } else { 'FAIL' })"
@@ -600,14 +898,27 @@ Write-Host "state marker       : $stateMarker"
 Write-Host "state action       : $stateActionMarker"
 Write-Host "capture rows       : $captureRows"
 Write-Host "frame rows         : $frameRows"
+Write-Host "window captures    : $windowCaptureRows"
 Write-Host "provenance         : $(if ($provenanceVerified) { 'PASS' } else { 'UNVERIFIED' })"
 Write-Host "bad markers        : $($badMarkers.Count)"
+Write-Host "native exact fail  : $($nativeGPU2DExactFailureMarkers.Count)"
+Write-Host "native mismatches  : $nativeGPU2DMismatchMax"
+Write-Host "native fallbacks   : $nativeGPU2DFallbackMax"
+Write-Host "fallback lines     : $fallbackLineMax"
+Write-Host "unexpected blanks  : $($unexpectedBlankLines.Count)"
+Write-Host "semantic rows      : $($semanticLines.Count)"
+Write-Host "semantic-only rows : $($semanticOnlyLines.Count)"
+Write-Host "forced stall rows  : $($forcedPresentationStallLines.Count)"
 if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMarkers.Count -ne 0 -or
-    ($null -ne $statePath -and $stateMarker -eq 0) -or
-    ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0) -or
-    ($Hud -eq 'Off' -and $hudOffMarker -eq 0) -or
-    $frameRows -lt 1 -or
-    ($Renderer -eq 'Vulkan' -and $captureRows -lt 1)) {
+    $nativeGPU2DExactFailureMarkers.Count -ne 0 -or
+    $nativeGPU2DMismatchMax -ne 0 -or $nativeGPU2DFallbackMax -ne 0 -or $fallbackLineMax -ne 0 -or
+    $unexpectedBlankLines.Count -ne 0 -or
+    ($null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $stateMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
+    ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
+    ($Hud -eq 'Off' -and $null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
+    ($frameRows -lt 1 -and -not $AllowUnverifiedBinary) -or
+    ($Renderer -eq 'Vulkan' -and $captureRows -lt 1 -and $windowCaptureRows -lt 1) -or
+    ($PresentationStallFrames -gt 0 -and $forcedPresentationStallLines.Count -lt $PresentationStallFrames)) {
     $badMarkers | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
     exit 1
 }

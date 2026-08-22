@@ -114,6 +114,12 @@ add_executable(melonprime_raster_edge_vectors EXCLUDE_FROM_ALL
 target_include_directories(melonprime_raster_edge_vectors PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src")
 
+add_executable(melonprime_gpu2d_native_contract_vectors EXCLUDE_FROM_ALL
+    tools/testing/gpu2d-native-contract-vectors.cpp)
+target_include_directories(melonprime_gpu2d_native_contract_vectors PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(melonprime_gpu2d_native_contract_vectors PRIVATE core)
+
 if (BUILD_QT_SDL)
     add_subdirectory(src/frontend/qt_sdl)
 endif()
