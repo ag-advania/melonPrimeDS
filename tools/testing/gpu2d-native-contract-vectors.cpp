@@ -54,6 +54,100 @@ u32 NativeSourceBByteAddress(u32 offsetCode, u32 line, u32 x)
         line * 512u + x * 2u + CaptureOffsetBytes(offsetCode));
 }
 
+bool RunMappedBlockFlattenVectors()
+{
+    constexpr u32 blockBytes = 512u;
+    const std::array<u32, 9> bankSizes = {
+        128u * 1024u, 128u * 1024u, 128u * 1024u, 128u * 1024u,
+        64u * 1024u, 16u * 1024u, 16u * 1024u, 32u * 1024u,
+        16u * 1024u};
+    std::array<std::vector<u8>, 9> banks;
+    for (u32 bank = 0u; bank < banks.size(); ++bank)
+    {
+        banks[bank].resize(bankSizes[bank]);
+        for (u32 address = 0u; address < bankSizes[bank]; ++address)
+        {
+            banks[bank][address] = static_cast<u8>(
+                (address * 29u + bank * 47u + (address >> 9u)) & 0xFFu);
+        }
+    }
+
+    const std::array<u32, 7> logicalOffsets = {
+        0x00000u, 0x03E00u, 0x07E00u, 0x0FE00u,
+        0x17E00u, 0x1FE00u, 0x3FE00u};
+    std::array<u8, blockBytes> reference{};
+    std::array<u8, blockBytes> flattened{};
+    for (const u32 mappingBytes : {8u * 1024u, 16u * 1024u})
+    {
+        for (const u32 logicalOffset : logicalOffsets)
+        {
+            if (logicalOffset % mappingBytes + blockBytes > mappingBytes)
+                continue;
+            for (u32 bankMask = 0u; bankMask < (1u << banks.size()); ++bankMask)
+            {
+                reference.fill(0u);
+                flattened.fill(0u);
+                for (u32 byte = 0u; byte < blockBytes; ++byte)
+                {
+                    for (u32 bank = 0u; bank < banks.size(); ++bank)
+                    {
+                        if ((bankMask & (1u << bank)) != 0u)
+                        {
+                            reference[byte] |= banks[bank][
+                                (logicalOffset + byte) & (bankSizes[bank] - 1u)];
+                        }
+                    }
+                }
+
+                u32 remaining = bankMask;
+                if (remaining != 0u)
+                {
+                    const u32 firstBank = static_cast<u32>(__builtin_ctz(remaining));
+                    remaining &= remaining - 1u;
+                    for (u32 byte = 0u; byte < blockBytes; ++byte)
+                    {
+                        flattened[byte] = banks[firstBank][
+                            (logicalOffset + byte) & (bankSizes[firstBank] - 1u)];
+                    }
+                    while (remaining != 0u)
+                    {
+                        const u32 bank = static_cast<u32>(__builtin_ctz(remaining));
+                        remaining &= remaining - 1u;
+                        for (u32 byte = 0u; byte < blockBytes; ++byte)
+                        {
+                            flattened[byte] |= banks[bank][
+                                (logicalOffset + byte) & (bankSizes[bank] - 1u)];
+                        }
+                    }
+                }
+                if (flattened != reference)
+                {
+                    return Require(false,
+                        "block mapped-VRAM flatten differs from byte reference");
+                }
+            }
+        }
+    }
+
+    // The shader's recorded row and the host snapshot do not share a temporal
+    // boundary. A CPU/DMA write can supersede the recorded native owner before
+    // the fast 64-bit read executes, so live authority must select CPU bytes.
+    constexpr u32 mappedBankMask = 1u << 2u;
+    constexpr u32 recordedRowNativeMask = 1u << 2u;
+    constexpr u32 liveNativeMask = 0u;
+    constexpr u32 currentFrameWrittenMask = 0u;
+    const u32 legacyCpuMask = mappedBankMask & ~recordedRowNativeMask;
+    const u32 liveAuthorityCpuMask = mappedBankMask
+        & ~(liveNativeMask | currentFrameWrittenMask);
+    if (!Require(legacyCpuMask == 0u
+            && liveAuthorityCpuMask == mappedBankMask,
+            "fast mapped read reused a shader-row owner after CPU authority"))
+    {
+        return false;
+    }
+    return true;
+}
+
 u32 SoftwareCaptureBlockMask(u32 offsetCode, u32 sizeCode)
 {
     const u32 width = CaptureWidthForSize(sizeCode);
@@ -593,6 +687,31 @@ struct MappedCaptureOverlayModel
     std::array<std::array<u8, LCDCBankBytes>, CapturePhysicalBanks> Native{};
     std::array<u8, CapturePhysicalBanks> WrittenBlocks{};
 
+    [[nodiscard]] const u32* MappingRow(
+        u32 engine,
+        u32 line,
+        bool obj,
+        bool spriteLatch) const
+    {
+        if (line >= ScreenHeight)
+            return nullptr;
+        if (!obj)
+            return BG[line].data() + (engine == 0u ? 0u : 32u);
+        const auto& rows = spriteLatch ? SpriteOBJ : OBJ;
+        return rows[line].data() + (engine == 0u ? 0u : 16u);
+    }
+
+    [[nodiscard]] bool RowHasOverlay(
+        u32 engine,
+        u32 line,
+        bool obj,
+        bool spriteLatch) const
+    {
+        const u32* row = MappingRow(engine, line, obj, spriteLatch);
+        return row != nullptr
+            && (row[0] & NativeCaptureOverlayPresent) != 0u;
+    }
+
     [[nodiscard]] u32 OwnerMask(
         u32 engine,
         u32 line,
@@ -601,7 +720,7 @@ struct MappedCaptureOverlayModel
         bool obj,
         bool spriteLatch) const
     {
-        if (line >= ScreenHeight || size == 0u)
+        if (size == 0u || !RowHasOverlay(engine, line, obj, spriteLatch))
             return 0u;
         const u32 offset = address & (size - 1u);
         const u32 mappingIndex = offset / (16u * 1024u);
@@ -610,12 +729,8 @@ struct MappedCaptureOverlayModel
             : (engine == 0u ? 32u : 8u);
         if (mappingIndex >= mappingCount)
             return 0u;
-        if (!obj)
-        {
-            return BG[line][(engine == 0u ? 0u : 32u) + mappingIndex];
-        }
-        const auto& row = spriteLatch ? SpriteOBJ[line] : OBJ[line];
-        return row[(engine == 0u ? 0u : 16u) + mappingIndex];
+        const u32* row = MappingRow(engine, line, obj, spriteLatch);
+        return row[mappingIndex] & NativeCaptureBankMask;
     }
 
     [[nodiscard]] u8 Resolve(
@@ -687,12 +802,13 @@ bool RunMappedCaptureOverlayVectors()
 {
     bool passed = true;
     MappedCaptureOverlayModel model;
+    constexpr u32 rowSummary = NativeCaptureOverlayPresent;
     constexpr u32 address = 0x1234u;
     constexpr u32 size = 256u * 1024u;
     const u32 offset = address & (size - 1u);
 
     // A native-owned block must win over a deliberately poisoned CPU mirror.
-    model.BG[0u][0u] = 1u << 0u;
+    model.BG[0u][0u] = rowSummary | (1u << 0u);
     model.BGMappedBanks[0u] = 1u << 0u;
     model.Cpu[0u][offset & LCDCBankByteMask] = 0xF0u;
     model.Native[0u][offset & LCDCBankByteMask] = 0x03u;
@@ -702,7 +818,7 @@ bool RunMappedCaptureOverlayVectors()
 
     // Two native banks mapped to one logical page are Nintendo's OR-visible
     // overlap case. The overlay must preserve both native contributions.
-    model.BG[32u][0u] = (1u << 0u) | (1u << 1u);
+    model.BG[32u][0u] = rowSummary | (1u << 0u) | (1u << 1u);
     model.BGMappedBanks[32u] = (1u << 0u) | (1u << 1u);
     model.Cpu[1u][offset & LCDCBankByteMask] = 0xF0u;
     model.Native[1u][offset & LCDCBankByteMask] = 0x0Cu;
@@ -712,8 +828,8 @@ bool RunMappedCaptureOverlayVectors()
 
     // Mid-frame remapping is line-local: the same logical BG address resolves
     // through the row captured at each line boundary.
-    model.BG[64u][0u] = 1u << 0u;
-    model.BG[65u][0u] = 1u << 1u;
+    model.BG[64u][0u] = rowSummary | (1u << 0u);
+    model.BG[65u][0u] = rowSummary | (1u << 1u);
     model.BGMappedBanks[64u] = 1u << 0u;
     model.BGMappedBanks[65u] = 1u << 1u;
     passed &= Require(
@@ -723,8 +839,8 @@ bool RunMappedCaptureOverlayVectors()
 
     // OBJ has a current-line mapping and an independent one-line-ahead latch
     // mapping. A valid latch selects the latter; its absence selects current.
-    model.OBJ[80u][0u] = 1u << 0u;
-    model.SpriteOBJ[80u][0u] = 1u << 2u;
+    model.OBJ[80u][0u] = rowSummary | (1u << 0u);
+    model.SpriteOBJ[80u][0u] = rowSummary | (1u << 2u);
     model.OBJMappedBanks[80u] = 1u << 0u;
     model.SpriteOBJMappedBanks[80u] = 1u << 2u;
     model.Cpu[2u][offset & LCDCBankByteMask] = 0xA0u;
@@ -733,6 +849,27 @@ bool RunMappedCaptureOverlayVectors()
         model.Resolve(0u, 80u, address, size, true, false) == 0x03u
             && model.Resolve(0u, 80u, address, size, true, true) == 0x05u,
         "OBJ current/latch mapping selection drifted");
+
+    // The row-valid bit lives only in entry zero. A nonzero mapped page must
+    // use that summary while taking bank ownership from its addressed entry.
+    constexpr u32 nonzeroPageAddress = 2u * 16u * 1024u + 0x1234u;
+    const u32 nonzeroPageOffset = nonzeroPageAddress & (size - 1u);
+    model.BG[112u][0u] = rowSummary;
+    model.BG[112u][2u] = 1u << 2u;
+    model.BGMappedBanks[112u] = 1u << 2u;
+    model.Cpu[2u][nonzeroPageOffset & LCDCBankByteMask] = 0xA0u;
+    model.Native[2u][nonzeroPageOffset & LCDCBankByteMask] = 0x05u;
+    passed &= Require(
+        model.Resolve(0u, 112u, nonzeroPageAddress, size, false, false) == 0x05u,
+        "nonzero mapped page ignored the entry-zero overlay summary");
+
+    // Conversely, stale bank bits in a nonzero entry are not authoritative
+    // once the row summary has been cleared during a display transition.
+    model.BG[113u][2u] = 1u << 2u;
+    model.BGMappedBanks[113u] = 1u << 2u;
+    passed &= Require(
+        model.Resolve(0u, 113u, nonzeroPageAddress, size, false, false) == 0xA0u,
+        "cleared row summary replayed stale nonzero-page native ownership");
 
     // A late host snapshot can observe the current frame's completed capture
     // before the line-time owner row is rebuilt. The fast 64-bit flatten must
@@ -751,9 +888,10 @@ bool RunMappedCaptureOverlayVectors()
     // the logical mapping decision.
     for (u32 line = 0u; line < ScreenHeight; ++line)
     {
-        model.BG[line][0u] = (line < 64u || line >= 128u)
+        const u32 owner = (line < 64u || line >= 128u)
             ? (1u << 0u) : (1u << 1u);
-        model.BGMappedBanks[line] = model.BG[line][0u];
+        model.BG[line][0u] = rowSummary | owner;
+        model.BGMappedBanks[line] = owner;
     }
     for (u32 frame = 0u; frame < 600u; ++frame)
     {
@@ -1587,6 +1725,7 @@ bool RunCaptureFeedbackVectors()
 int main()
 {
     const bool passed = RunCaptureAddressVectors()
+        && RunMappedBlockFlattenVectors()
         && RunSourceBSubpixelAndSavestateVectors()
         && RunFrameCoverageAndRepresentativeVectors()
         && RunPackVectors() && RunMappedCaptureOverlayVectors()

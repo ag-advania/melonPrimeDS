@@ -162,6 +162,9 @@ def main() -> int:
         for needle in (
             "CaptureNativeMappingForLine",
             "NativeCaptureWrittenMaskForRead",
+            "NativeCaptureWrittenBankMask",
+            "directBlock",
+            "Most DS mappings have exactly one owner",
             "NativeOwnedMappedCpuRead",
             "NativeOwnedMappedCpuMaterialized",
             "MELONPRIME_GPU2D_PROOF_MATERIALIZE_MAPPED_CAPTURE",
@@ -170,6 +173,21 @@ def main() -> int:
         ):
             require(text["native_recorder"], needle,
                 "mapped capture stale-read tripwire", failures)
+        require(text["native_contract_test"], "RunMappedBlockFlattenVectors",
+            "mapped block flatten equivalence vectors", failures)
+        require(text["native_contract_test"],
+            "fast mapped read reused a shader-row owner after CPU authority",
+            "live-authority fast mapped-read vector", failures)
+        fast_owner = extract_function_body(
+            text["native_recorder"], "u32 NativeCaptureMaskForRead(")
+        require(fast_owner, "GetCaptureBlockProvenance(",
+            "fast mapped read live renderer authority", failures)
+        require(fast_owner, "IsNativeCaptureOwner(",
+            "fast mapped read native authority classifier", failures)
+        forbid(fast_owner, "NativeCaptureBGMapping",
+            "fast mapped read cannot reuse shader BG row authority", failures)
+        forbid(fast_owner, "NativeCaptureOBJMapping",
+            "fast mapped read cannot reuse shader OBJ row authority", failures)
         require(text["native_recorder"], "LCDVRAMProvenance", "native recorder capture provenance", failures)
         require(text["native_recorder"], "CaptureCoherentLCDVRAMForLine", "native recorder coherent capture path", failures)
         require(text["native_recorder"], "A byte difference between CPU VRAM", "event-driven authority comment", failures)
@@ -457,7 +475,10 @@ def main() -> int:
             require(text[label], "0x1FFFFu", f"{label} LCDC byte wrap", failures)
             for helper in (
                 "NativeCaptureByte",
+                "NativeCaptureMappingRowBase",
+                "NativeCaptureMappingRowHasOverlay",
                 "NativeCaptureMappingMask",
+                "NativeCaptureMappingOwnerMask",
                 "NativeCaptureOBJMappingBase",
                 "NativeCaptureSpriteOBJMappingBase",
                 "NativeCaptureOverlayByte",
@@ -465,6 +486,42 @@ def main() -> int:
             ):
                 require(text[label], helper,
                     f"{label} GPU-resident mapped capture overlay", failures)
+            row_summary = extract_function_body(
+                text[label], "bool NativeCaptureMappingRowHasOverlay(")
+            owner_mask = extract_function_body(
+                text[label], "uint NativeCaptureMappingOwnerMask(")
+            mapping_mask = extract_function_body(
+                text[label], "uint NativeCaptureMappingMask(")
+            overlay_constant = (
+                "NativeCaptureOverlayPresent"
+                if label == "dx12_shader"
+                else "kNativeCaptureOverlayPresent"
+            )
+            bank_constant = (
+                "NativeCaptureBankMask"
+                if label == "dx12_shader"
+                else "kNativeCaptureBankMask"
+            )
+            require(row_summary, "NativeCaptureMappingRowBase(",
+                f"{label} entry-zero row summary address", failures)
+            require(row_summary, overlay_constant,
+                f"{label} entry-zero row summary validity", failures)
+            require(owner_mask, "NativeCaptureMappingRowHasOverlay(",
+                f"{label} mapped owner row validity", failures)
+            require(owner_mask, "NativeCaptureMappingMask(",
+                f"{label} addressed mapped owner entry", failures)
+            require(owner_mask, bank_constant,
+                f"{label} mapped owner bank mask", failures)
+            forbid(mapping_mask, overlay_constant,
+                f"{label} current entry cannot own row summary", failures)
+        require(text["native_contract_test"],
+            "nonzero mapped page ignored the entry-zero overlay summary",
+            "nonzero mapped-page summary vector", failures)
+        require(text["native_contract_test"],
+            "cleared row summary replayed stale nonzero-page native ownership",
+            "cleared mapped-row summary vector", failures)
+        require(text["native_header"], "NativeCaptureOverlayAnyMask",
+            "native frame overlay summary ABI", failures)
         require(text["vulkan_shader"], "local_size_x = 128, local_size_y = 1",
             "Vulkan scanline workgroup", failures)
         require(text["dx12_shader"], "[numthreads(128, 1, 1)]",
@@ -592,6 +649,7 @@ def main() -> int:
             "[ValidateRange(0,600)] [int]$PresentationStallFrames",
             "MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES",
             "Capture-ContinuousDisplay",
+            "Background-window scheduling",
             "window_capture_frames",
             "FinalComposedTopHash",
             "FinalComposedBottomHash",
