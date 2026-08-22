@@ -123,6 +123,7 @@ const uint kNativeCaptureBGMappingStride = 32u + 8u;
 const uint kNativeCaptureOBJMappingStride = 16u + 8u;
 const uint kNativeCaptureBankMask = 0x0Fu;
 const uint kNativeCaptureOverlayPresent = 0x10u;
+const uint kNativeCaptureOverlayAnyMask = 0x01u;
 const uint kNativeCaptureWords = 131072u;
 const uint kNativeObjRawWordsPerPixel = 3u;
 const uint kNativeObjRawScreenWords = 256u * 192u * kNativeObjRawWordsPerPixel;
@@ -308,6 +309,32 @@ uint NativeCaptureByte(uint bank, uint physicalAddress)
     return (word >> ((offset & 3u) * 8u)) & 0xFFu;
 }
 
+uint NativeCaptureMappingRowBase(
+    uint engine, uint line, bool obj, bool spriteLatch)
+{
+    uint base = kNativeCaptureBGMappingBase;
+    uint stride = kNativeCaptureBGMappingStride;
+    uint engineOffset = engine == 0u ? 0u : 32u;
+    if (obj)
+    {
+        base = spriteLatch
+            ? kNativeCaptureSpriteOBJMappingBase
+            : kNativeCaptureOBJMappingBase;
+        stride = kNativeCaptureOBJMappingStride;
+        engineOffset = engine == 0u ? 0u : 16u;
+    }
+    return base + line * stride + engineOffset;
+}
+
+bool NativeCaptureMappingRowHasOverlay(
+    uint engine, uint line, bool obj, bool spriteLatch)
+{
+    if (line >= 192u)
+        return false;
+    return (NativeGPU2DInput[NativeCaptureMappingRowBase(
+        engine, line, obj, spriteLatch)] & kNativeCaptureOverlayPresent) != 0u;
+}
+
 uint NativeCaptureMappingMask(
     uint engine, uint line, uint address, uint size,
     bool obj, bool spriteLatch)
@@ -321,31 +348,31 @@ uint NativeCaptureMappingMask(
         : (engine == 0u ? 32u : 8u);
     if (mappingIndex >= mappingCount)
         return 0u;
-    uint base = kNativeCaptureBGMappingBase;
-    uint stride = kNativeCaptureBGMappingStride;
-    uint engineOffset = engine == 0u ? 0u : 32u;
-    if (obj)
-    {
-        base = spriteLatch
-            ? kNativeCaptureSpriteOBJMappingBase
-            : kNativeCaptureOBJMappingBase;
-        stride = kNativeCaptureOBJMappingStride;
-        engineOffset = engine == 0u ? 0u : 16u;
-    }
-    return NativeGPU2DInput[base + line * stride + engineOffset + mappingIndex];
+    return NativeGPU2DInput[NativeCaptureMappingRowBase(
+        engine, line, obj, spriteLatch) + mappingIndex];
+}
+
+uint NativeCaptureMappingOwnerMask(
+    uint engine, uint line, uint address, uint size,
+    bool obj, bool spriteLatch)
+{
+    if (!NativeCaptureMappingRowHasOverlay(engine, line, obj, spriteLatch))
+        return 0u;
+    return NativeCaptureMappingMask(
+        engine, line, address, size, obj, spriteLatch)
+        & kNativeCaptureBankMask;
 }
 
 uint NativeCaptureOverlayByte(
     uint engine, uint line, uint size, uint address,
     bool obj, bool spriteLatch)
 {
-    // Word 15 is the non-zero frame summary. Mapping rows contain only the
-    // owning-bank mask for each entry; bit 4 is only the row[0] summary.
-    if (NativeGPU2DInput[15u] == 0u)
+    // Word 15 is the frame summary. The row[0] summary owns validity while
+    // the addressed entry owns the physical-bank mask.
+    if ((NativeGPU2DInput[15u] & kNativeCaptureOverlayAnyMask) == 0u)
         return 0u;
-    uint ownerMask = NativeCaptureMappingMask(
-        engine, line, address, size, obj, spriteLatch)
-        & kNativeCaptureBankMask;
+    uint ownerMask = NativeCaptureMappingOwnerMask(
+        engine, line, address, size, obj, spriteLatch);
     if (ownerMask == 0u)
         return 0u;
     uint offset = size == 0u ? 0u : address & (size - 1u);
@@ -599,9 +626,8 @@ uint NativeCaptureReferenceForMappedAddress(
     uint engine, uint line, uint size, uint address,
     bool obj, bool spriteLatch, uint nativeColor)
 {
-    uint owners = NativeCaptureMappingMask(
-        engine, line, address, size, obj, spriteLatch)
-        & kNativeCaptureBankMask;
+    uint owners = NativeCaptureMappingOwnerMask(
+        engine, line, address, size, obj, spriteLatch);
     if (owners == 0u || (owners & (owners - 1u)) != 0u)
         return 0u;
     uint bank = uint(findLSB(owners));

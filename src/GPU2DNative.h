@@ -403,6 +403,7 @@ inline constexpr u32 NativeCaptureSpriteOBJMappingWords =
 // lookup and bank loop entirely when that row has no GPU-owned bytes.
 inline constexpr u32 NativeCaptureBankMask = 0x0Fu;
 inline constexpr u32 NativeCaptureOverlayPresent = 1u << 4u;
+inline constexpr u32 NativeCaptureOverlayAnyMask = 1u;
 
 struct DirtyRange
 {

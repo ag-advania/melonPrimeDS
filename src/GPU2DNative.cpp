@@ -789,7 +789,20 @@ struct MappedReadContext
     u32 Section = 0u;
     bool NativeMappingReady = false;
     std::array<u8, CapturePhysicalBanks> NativeCaptureWrittenBlocks{};
+    u32 NativeCaptureWrittenBankMask = 0u;
 };
+
+u32 CaptureWrittenBankMask(
+    const std::array<u8, CapturePhysicalBanks>& writtenBlocks) noexcept
+{
+    u32 bankMask = 0u;
+    for (u32 bank = 0u; bank < CapturePhysicalBanks; ++bank)
+    {
+        if (writtenBlocks[bank] != 0u)
+            bankMask |= 1u << bank;
+    }
+    return bankMask;
+}
 
 bool IsCaptureMappedSection(u32 section) noexcept
 {
@@ -800,7 +813,10 @@ bool IsCaptureMappedSection(u32 section) noexcept
 }
 
 u32 NativeCaptureMaskForRead(
-    const MappedReadContext& context, u32 mappingIndex) noexcept
+    const MappedReadContext& context,
+    const melonDS::GPU& gpu,
+    u32 mappedBankMask,
+    u32 address) noexcept
 {
     if (!context.Input || !context.NativeMappingReady
         || !IsCaptureMappedSection(context.Section)
@@ -809,25 +825,24 @@ u32 NativeCaptureMaskForRead(
         return 0u;
     }
 
-    if (context.Section == 0u)
+    u32 nativeMask = 0u;
+    u32 captureBanks = mappedBankMask
+        & ((1u << CapturePhysicalBanks) - 1u);
+    while (captureBanks != 0u)
     {
-        const u32 count = context.Engine == 0u ? 32u : 8u;
-        if (mappingIndex >= count)
-            return 0u;
-        const u32 engineOffset = context.Engine == 0u ? 0u : 32u;
-        return context.Input->NativeCaptureBGMapping[
-            context.Line * NativeCaptureBGMappingStride
-                + engineOffset + mappingIndex]
-            & NativeCaptureBankMask;
+        const u32 bank = static_cast<u32>(__builtin_ctz(captureBanks));
+        captureBanks &= captureBanks - 1u;
+        const u32 physicalAddress = address & gpu.VRAMMask[bank];
+        const u32 physicalBlock =
+            physicalAddress / CapturePhysicalBlockBytes;
+        if (IsNativeCaptureOwner(
+                gpu.GetRenderer().GetCaptureBlockProvenance(
+                    bank, physicalBlock).Owner))
+        {
+            nativeMask |= 1u << bank;
+        }
     }
-
-    const u32 count = context.Engine == 0u ? 16u : 8u;
-    if (mappingIndex >= count)
-        return 0u;
-    const u32 engineOffset = context.Engine == 0u ? 0u : 16u;
-    const u32* row = context.Input->NativeCaptureOBJMapping.data()
-        + context.Line * NativeCaptureOBJMappingStride + engineOffset;
-    return row[mappingIndex] & NativeCaptureBankMask;
+    return nativeMask;
 }
 
 u32 NativeCaptureWrittenMaskForRead(
@@ -837,6 +852,7 @@ u32 NativeCaptureWrittenMaskForRead(
     u32 address) noexcept
 {
     if (!context.Input || !context.NativeMappingReady
+        || context.NativeCaptureWrittenBankMask == 0u
         || !IsCaptureMappedSection(context.Section))
     {
         return 0u;
@@ -1063,25 +1079,17 @@ u64 ReadMappedWord(
         && mappings != nullptr;
     const u32 mappedBankMask = singleMapping
         ? mappings[mappingIndex] & 0x1FFu : 0u;
-    // Mapping rows describe the line-time owner seen by the GPU shader, while
-    // late frame snapshots can run after more capture lines have been written.
-    // Include that write-ahead state before deciding whether an aligned 64-bit
-    // host load is safe.  Otherwise the fast path flattens stale CPU VRAM over
-    // a GPU-resident capture block even though the reference byte path rejects
-    // it, producing the alternating-bank corruption seen after savestate load.
-    const u32 nativeMask = singleMapping
-        ? NativeCaptureMaskForRead(context, mappingIndex)
-            | NativeCaptureWrittenMaskForRead(
-                context, gpu, mappedBankMask, address)
-        : 0u;
 
-    // A normal frame has no native-owned mapping at all. Keep this path to
-    // the pre-capture shape: one mapping lookup, one active-bank bit scan,
-    // and one 64-bit load per bank. In particular, do not perform the
-    // ownership mask lookup or the physical-boundary probe on every word.
+    // Capture-disabled frames are the overwhelmingly common case and perform
+    // more than one hundred thousand mapped words at 1x.  Preserve the direct
+    // flatten shape unless either the line-time mapping or the current-frame
+    // write-ahead state can contain a native GPU owner.  The bank summary is
+    // computed once per snapshot context, not once per word.
     if (!proofMaterialize && singleMapping
-        && (!context.Input || context.Input->NativeCaptureOverlayAny == 0u)
-        && nativeMask == 0u)
+        && (!context.Input
+            || ((context.Input->NativeCaptureOverlayAny
+                    & NativeCaptureOverlayAnyMask) == 0u
+                && context.NativeCaptureWrittenBankMask == 0u)))
     {
         if (context.Input)
             ++context.Input->Recorder.MappedReadFastPathCalls;
@@ -1100,6 +1108,16 @@ u64 ReadMappedWord(
         }
         return value;
     }
+
+    // The shader mapping row is sampled at a different temporal boundary from
+    // this host snapshot. Resolve the fast read from the live renderer owner
+    // plus current-frame write-ahead state, exactly like ReadMappedWordSlow,
+    // rather than replaying a row owner that a later CPU/DMA write superseded.
+    const u32 nativeMask = singleMapping
+        ? NativeCaptureMaskForRead(context, gpu, mappedBankMask, address)
+            | NativeCaptureWrittenMaskForRead(
+                context, gpu, mappedBankMask, address)
+        : 0u;
 
     const bool physicalReadFits = [&] {
         if (!singleMapping)
@@ -1165,23 +1183,106 @@ void CopyMappedVRAMBlocks(
     u32 packedOffset,
     const MappedReadContext& context) noexcept
 {
+    const bool noNativeCapture = !context.Input
+        || ((context.Input->NativeCaptureOverlayAny
+                & NativeCaptureOverlayAnyMask) == 0u
+            && context.NativeCaptureWrittenBankMask == 0u);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const bool directFlatten = !ProofMaterializeMappedCaptureEnabled()
+        && noNativeCapture;
+#else
+    const bool directFlatten = noNativeCapture;
+#endif
+    static constexpr std::array<u8, DirtyBlockBytes> zeroBlock{};
     std::array<u8, DirtyBlockBytes> source{};
     for (u32 offset = 0; offset < size; offset += DirtyBlockBytes)
     {
         const u32 blockSize = std::min(DirtyBlockBytes, size - offset);
-        source.fill(0);
-        for (u32 blockOffset = 0; blockOffset < blockSize; blockOffset += sizeof(u64))
+        const u8* flattened = source.data();
+        const u32 mappingIndex = offset / MappingBytes;
+        const bool directBlock = directFlatten && mappings
+            && mappingIndex < mappingCount
+            && offset % MappingBytes + blockSize <= MappingBytes;
+        if (directBlock)
         {
-            const u64 value = ReadMappedWord<MappingBytes>(
-                context, gpu, mappings, mappingCount, offset + blockOffset);
-            std::memcpy(source.data() + blockOffset, &value, sizeof(value));
+            // Dirty blocks and all physical VRAM banks are 512-byte aligned,
+            // so a block cannot straddle a physical wrap boundary. Flatten a
+            // complete block here instead of repeating mapping lookup and bank
+            // selection for each of its 64 words. This is byte-for-byte the
+            // same OR operation as ReadMappedWord's capture-free fast path.
+            const u32 wordCount = blockSize / sizeof(u64);
+            input.Recorder.MappedReadWordCalls += wordCount;
+            input.Recorder.MappedReadFastPathCalls += wordCount;
+            u32 bankMask = mappings[mappingIndex] & 0x1FFu;
+            if (bankMask == 0u)
+            {
+                flattened = zeroBlock.data();
+            }
+            else
+            {
+                const u32 firstBank = static_cast<u32>(__builtin_ctz(bankMask));
+                bankMask &= bankMask - 1u;
+                const u8* firstBankSource = gpu.VRAM[firstBank]
+                    + (offset & gpu.VRAMMask[firstBank]);
+                if (bankMask == 0u)
+                {
+                    // Most DS mappings have exactly one owner. Compare the
+                    // persistent snapshot directly with that bank and copy
+                    // only on change, avoiding a throwaway 512-byte staging
+                    // copy for the common unchanged block.
+                    flattened = firstBankSource;
+                }
+                else
+                {
+                    std::memcpy(source.data(), firstBankSource, blockSize);
+                }
+                while (bankMask != 0u)
+                {
+                    const u32 bank = static_cast<u32>(__builtin_ctz(bankMask));
+                    bankMask &= bankMask - 1u;
+                    const u8* bankSource = gpu.VRAM[bank]
+                        + (offset & gpu.VRAMMask[bank]);
+                    for (u32 blockOffset = 0u;
+                        blockOffset < blockSize;
+                        blockOffset += sizeof(u64))
+                    {
+                        u64 destinationWord = 0u;
+                        u64 bankWord = 0u;
+                        std::memcpy(
+                            &destinationWord,
+                            source.data() + blockOffset,
+                            sizeof(destinationWord));
+                        std::memcpy(
+                            &bankWord,
+                            bankSource + blockOffset,
+                            sizeof(bankWord));
+                        destinationWord |= bankWord;
+                        std::memcpy(
+                            source.data() + blockOffset,
+                            &destinationWord,
+                            sizeof(destinationWord));
+                    }
+                }
+            }
+        }
+        else
+        {
+            source.fill(0u);
+            for (u32 blockOffset = 0;
+                blockOffset < blockSize;
+                blockOffset += sizeof(u64))
+            {
+                const u64 value = ReadMappedWord<MappingBytes>(
+                    context, gpu, mappings, mappingCount, offset + blockOffset);
+                std::memcpy(source.data() + blockOffset, &value, sizeof(value));
+            }
         }
 
         ++input.Recorder.BlocksScanned;
         input.Recorder.BytesScanned += blockSize;
-        if (std::memcmp(destination + offset, source.data(), blockSize) == 0)
+        if (std::memcmp(destination + offset, flattened, blockSize) == 0)
             continue;
-        std::memcpy(destination + offset, source.data(), blockSize);
+        std::memcpy(destination + offset, flattened, blockSize);
         ++input.Recorder.BlocksCopied;
         input.Recorder.BytesCopied += blockSize;
         MarkDirtyRange(input, packedOffset + offset, blockSize);
@@ -1673,12 +1774,13 @@ void FrameRecorder::CaptureNativeMappingForLine(
     const auto noteNativeCaptureOverlay = [&](u32 mappingValue) {
         if ((mappingValue & (NativeCaptureBankMask
                 | NativeCaptureOverlayPresent)) == 0u
-            || Input.NativeCaptureOverlayAny != 0u)
+            || (Input.NativeCaptureOverlayAny
+                & NativeCaptureOverlayAnyMask) != 0u)
         {
             return;
         }
 
-        Input.NativeCaptureOverlayAny = 1u;
+        Input.NativeCaptureOverlayAny |= NativeCaptureOverlayAnyMask;
         // BeginFrame() dirties the initial zero value before scanline
         // mapping is built.  The first native-owned mapping can appear later
         // in the frame, so the packed header must be dirtied at the same
@@ -2367,7 +2469,8 @@ void FrameRecorder::CaptureMappedMemoryForLine(
     u32 blockBase) noexcept
 {
     const MappedReadContext context{
-        &Input, line, engine, section, true, NativeCaptureWrittenBlocks};
+        &Input, line, engine, section, true, NativeCaptureWrittenBlocks,
+        CaptureWrittenBankMask(NativeCaptureWrittenBlocks)};
     if (mappingBytes == 16u * 1024u)
     {
         CaptureMappedMemoryBlocks<16u * 1024u>(
@@ -2396,7 +2499,8 @@ void FrameRecorder::CaptureMappedPhysicalBlock(
     u32 physicalBlock) noexcept
 {
     const MappedReadContext context{
-        &Input, line, engine, section, true, NativeCaptureWrittenBlocks};
+        &Input, line, engine, section, true, NativeCaptureWrittenBlocks,
+        CaptureWrittenBankMask(NativeCaptureWrittenBlocks)};
     if (mappingBytes == 16u * 1024u)
     {
         CaptureMappedPhysicalMemoryBlock<16u * 1024u>(
@@ -2870,14 +2974,20 @@ void FrameRecorder::SnapshotEngine(u32 engine, u32 line) noexcept
     destination.BGExtendedPaletteSize = 32u * 1024u;
     destination.OBJExtendedPaletteSize = 8u * 1024u;
     const u32 engineBase = PackedEngineBase + engine * PackedEngineWords;
+    const u32 nativeCaptureWrittenBankMask =
+        CaptureWrittenBankMask(NativeCaptureWrittenBlocks);
     const MappedReadContext bgContext{
-        &Input, line, engine, 0u, true, NativeCaptureWrittenBlocks};
+        &Input, line, engine, 0u, true, NativeCaptureWrittenBlocks,
+        nativeCaptureWrittenBankMask};
     const MappedReadContext objContext{
-        &Input, line, engine, 1u, true, NativeCaptureWrittenBlocks};
+        &Input, line, engine, 1u, true, NativeCaptureWrittenBlocks,
+        nativeCaptureWrittenBankMask};
     const MappedReadContext bgExtContext{
-        &Input, line, engine, 2u, true, NativeCaptureWrittenBlocks};
+        &Input, line, engine, 2u, true, NativeCaptureWrittenBlocks,
+        nativeCaptureWrittenBankMask};
     const MappedReadContext objExtContext{
-        &Input, line, engine, 3u, true, NativeCaptureWrittenBlocks};
+        &Input, line, engine, 3u, true, NativeCaptureWrittenBlocks,
+        nativeCaptureWrittenBankMask};
     CopyMappedVRAMBlocks<16u * 1024u>(
         Input, destination.BGVRAM.data(), destination.BGSize,
         bgMappings, bgMappingCount, GPU,
