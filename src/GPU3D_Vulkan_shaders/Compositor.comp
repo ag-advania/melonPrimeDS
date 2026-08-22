@@ -150,8 +150,9 @@ void main()
     // VRAM display presents captured RGB directly. Its RGBA5551 alpha bit is
     // capture provenance rather than a visibility test, so this path must not
     // use the ordinary 3D-slot transparent-pixel fallback.
-    if (displayMode == kDisplayModeVram
-        && (captureReference & 0x80000000u) != 0u)
+    if ((captureReference & 0x80000000u) != 0u
+        && (displayMode == kDisplayModeVram
+            || (controlFlags & kControlHas3DSlot) == 0u))
     {
         color = LoadCaptureSidecar(
             captureReference,

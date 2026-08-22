@@ -114,6 +114,8 @@ const uint kNativeCaptureSpriteOBJMappingBase = kNativeCaptureOBJMappingBase
 const uint kHighResCaptureProvenanceBase = kNativeCaptureSpriteOBJMappingBase
     + 192u * (16u + 8u);
 const uint kHighResCaptureProvenanceStride = 4u;
+const uint kHighResCaptureSegmentHalfwords = 128u;
+const uint kHighResCaptureSegmentsPerBank = 512u;
 const uint kHighResCaptureValidBit = 1u;
 const uint kHighResCaptureVersionBit = 2u;
 const uint kHighResCapturePendingWriteBit = 4u;
@@ -122,7 +124,7 @@ const uint kNativeCaptureOBJMappingStride = 16u + 8u;
 const uint kNativeCaptureBankMask = 0x0Fu;
 const uint kNativeCaptureOverlayPresent = 0x10u;
 const uint kNativeCaptureWords = 131072u;
-const uint kNativeObjRawWordsPerPixel = 2u;
+const uint kNativeObjRawWordsPerPixel = 3u;
 const uint kNativeObjRawScreenWords = 256u * 192u * kNativeObjRawWordsPerPixel;
 const uint kNativeObjRawBase = uint(FramebufferStride) + kNativeCaptureWords;
 
@@ -545,6 +547,67 @@ uint ConvertVRAMDisplay(uint color)
         0u);
 }
 
+uint CaptureRawFromColor6(uint color)
+{
+    uint r = Color6R(color) >> 1u;
+    uint g = Color6G(color) >> 1u;
+    uint b = Color6B(color) >> 1u;
+    uint a = ((color >> 24u) != 0u) ? 0x8000u : 0u;
+    return r | (g << 5u) | (b << 10u) | a;
+}
+
+uint LoadNativeCaptureSidecar(uint reference, uint withinX, uint withinY)
+{
+    uint address = reference & 0xFFFFu;
+    uint bank = (reference >> 28u) & 3u;
+    uint version = (reference >> 30u) & 1u;
+    uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
+    uint cell = ((version * 4u + bank) * 65536u) + address;
+    return NativeCaptureSidecar[
+        cell * samplesPerPixel + withinY * uint(ScaleFactor) + withinX];
+}
+
+uint NativeHighResCaptureState(uint bank, uint address)
+{
+    uint segment = (address >> 7u) & 0x1FFu;
+    return NativeGPU2DInput[kHighResCaptureProvenanceBase
+        + (bank * kHighResCaptureSegmentsPerBank + segment)
+            * kHighResCaptureProvenanceStride];
+}
+
+uint NativeCaptureCommittedReference(uint bank, uint address)
+{
+    uint state = NativeHighResCaptureState(bank, address);
+    if ((state & kHighResCaptureValidBit) == 0u)
+        return 0u;
+    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
+    return 0x80000000u | (version << 30u) | (bank << 28u)
+        | (address & 0xFFFFu);
+}
+
+// Direct-color bitmap BG/OBJ references are admitted only when the mapped
+// address has one physical owner and the retained sidecar sample quantizes
+// back to the native RGBA5551 word. Indexed/tiled layers never call this.
+uint NativeCaptureReferenceForMappedAddress(
+    uint engine, uint line, uint size, uint address,
+    bool obj, bool spriteLatch, uint nativeColor)
+{
+    uint owners = NativeCaptureMappingMask(
+        engine, line, address, size, obj, spriteLatch)
+        & kNativeCaptureBankMask;
+    if (owners == 0u || (owners & (owners - 1u)) != 0u)
+        return 0u;
+    uint bank = uint(findLSB(owners));
+    uint physicalAddress = ((address & (size - 1u)) >> 1u) & 0xFFFFu;
+    uint reference = NativeCaptureCommittedReference(bank, physicalAddress);
+    if (reference == 0u)
+        return 0u;
+    if (CaptureRawFromColor6(LoadNativeCaptureSidecar(reference, 0u, 0u))
+        != (nativeColor & 0xFFFFu))
+        return 0u;
+    return reference;
+}
+
 struct Pixel
 {
     uint Color;
@@ -552,6 +615,7 @@ struct Pixel
     uint Priority;
     uint Present;
     uint Mosaic;
+    uint CaptureReference;
 };
 
 Pixel EmptyPixel()
@@ -562,6 +626,7 @@ Pixel EmptyPixel()
     p.Priority = 4u;
     p.Present = 0u;
     p.Mosaic = 0u;
+    p.CaptureReference = 0u;
     return p;
 }
 
@@ -583,6 +648,8 @@ void StoreNativeObjRaw(
         | ((pixel.Mosaic & 1u) << 4u)
         | ((windowSelected.Present & 1u) << 5u)
         | ((windowSelected.Priority & 7u) << 6u);
+    NativeCaptureState[NativeObjRawIndex(screen, line, x, 2u)] =
+        pixel.CaptureReference;
 }
 
 Pixel LoadNativeObjRaw(
@@ -591,6 +658,8 @@ Pixel LoadNativeObjRaw(
     Pixel pixel = EmptyPixel();
     uint color = NativeCaptureState[NativeObjRawIndex(screen, line, x, 0u)];
     uint meta = NativeCaptureState[NativeObjRawIndex(screen, line, x, 1u)];
+    pixel.CaptureReference = NativeCaptureState[
+        NativeObjRawIndex(screen, line, x, 2u)];
     pixel.Color = color;
     pixel.Flag = color >> 24u;
     pixel.Priority = meta & 7u;
@@ -896,6 +965,9 @@ Pixel BGExtended(uint engine, uint line, uint bg, int x)
             {
                 p.Color = ConvertBGR555(color & 0x7FFFu, 1u << bg);
                 p.Present = 1u;
+                p.CaptureReference = NativeCaptureReferenceForMappedAddress(
+                    engine, line, BGSize(engine), address * 2u,
+                    false, false, color);
             }
         }
         else
@@ -1086,6 +1158,8 @@ Pixel ObjRawPixel(
         uint mode = (a0 >> 10u) & 3u;
         uint tile = a2 & 0x3FFu;
         uint color = 0u;
+        uint nativeColor = 0u;
+        uint nativeAddress = 0u;
         uint flag = 0u;
         bool opaque = false;
         if (mode == 3u)
@@ -1113,8 +1187,9 @@ Pixel ObjRawPixel(
                 address = ((tile & 0x0Fu) << 4u) + ((tile & 0x3F0u) << 7u);
                 stride = 256u;
             }
-            color = OBJ16(engine, line,
-                address + uint(sy) * stride + uint(sx) * 2u);
+            nativeAddress = address + uint(sy) * stride + uint(sx) * 2u;
+            color = OBJ16(engine, line, nativeAddress);
+            nativeColor = color;
             opaque = (color & 0x8000u) != 0u;
             color &= 0x7FFFu;
             flag = 0xC0u | (alpha + 1u);
@@ -1196,6 +1271,16 @@ Pixel ObjRawPixel(
             selected.Priority = priority;
             selected.Present = 1u;
             selected.Mosaic = ((a0 & (1u << 12u)) != 0u) ? 1u : 0u;
+            if (mode == 3u)
+            {
+                selected.CaptureReference =
+                    NativeCaptureReferenceForMappedAddress(
+                        engine, line, OBJSize(engine),
+                        nativeAddress,
+                        true,
+                        (LineWord(engine, line, kSpriteLatchValid) & 1u) != 0u,
+                        nativeColor);
+            }
             bestPriority = priority;
         }
     }
@@ -1381,8 +1466,17 @@ uint Composite2D(
     uint screen, uint engine, uint line, int x,
     uint outputX, uint outputY)
 {
-    return Composite2DLayers(
-        screen, engine, line, x, outputX, outputY, false).Color;
+    CompositeLayers layers = Composite2DLayers(
+        screen, engine, line, x, outputX, outputY, false);
+    if (layers.Effect == 0u
+        && (layers.First.CaptureReference & 0x80000000u) != 0u)
+    {
+        return LoadNativeCaptureSidecar(
+            layers.First.CaptureReference,
+            outputX % uint(ScaleFactor),
+            outputY % uint(ScaleFactor));
+    }
+    return layers.Color;
 }
 
 uint ApplyMasterNative(uint color, uint brightness)
@@ -1395,6 +1489,11 @@ uint ApplyMasterNative(uint color, uint brightness)
         return BrightnessDown(color, factor, 15u);
     return color;
 }
+
+// GLSL requires a declaration before DisplayPixel uses the shared capture
+// reference resolver, whose full definition lives with the structured-path
+// helpers below.
+uint NativeCaptureReference(uint engine,uint line,uint x);
 
 uint DisplayPixel(
     uint screen, uint engine, uint line, int x,
@@ -1416,9 +1515,27 @@ uint DisplayPixel(
         uint map = LineWord(engine, line, kLCDVRAMMap);
         if ((map & (1u << bank)) == 0u)
             return 0u;
+        uint compact = LCD16(line, bank, line * 512u + uint(x) * 2u);
+        uint color = ConvertVRAMDisplay(compact);
+        uint reference = NativeCaptureReference(engine, line, uint(x));
+        if ((reference & 0x80000000u) != 0u)
+        {
+            uint highRes = LoadNativeCaptureSidecar(
+                reference,
+                outputX % uint(ScaleFactor),
+                outputY % uint(ScaleFactor));
+            // VRAM display ignores LCDC bit 15.  Require the retained
+            // sidecar sample to agree with the current native RGB555 word
+            // before allowing it to replace the compact fallback.
+            if ((CaptureRawFromColor6(highRes) & 0x7FFFu)
+                == (compact & 0x7FFFu))
+            {
+                color = PackColor6(
+                    Color6R(highRes), Color6G(highRes), Color6B(highRes), 0u);
+            }
+        }
         return ApplyMasterNative(
-            ConvertVRAMDisplay(LCD16(line, bank, line * 512u + uint(x) * 2u)),
-            LineWord(engine, line, kMasterBrightness));
+            color, LineWord(engine, line, kMasterBrightness));
     }
     if (mode == 3u && engine == 0u)
         return ApplyMasterNative(
@@ -1440,16 +1557,45 @@ uint ToBgra8Native(uint color)
         | 0xFF000000u;
 }
 
-uint CaptureRawFromColor6(uint color)
+uint NativeCaptureReferenceForSourceB(
+    uint line, uint bank, uint address, uint captureCnt)
 {
-    uint r = Color6R(color) >> 1u;
-    uint g = Color6G(color) >> 1u;
-    uint b = Color6B(color) >> 1u;
-    uint a = ((color >> 24u) != 0u) ? 0x8000u : 0u;
-    return r | (g << 5u) | (b << 10u) | a;
+    uint halfwordAddress = (address >> 1u) & 0xFFFFu;
+    uint state = NativeHighResCaptureState(bank, halfwordAddress);
+    bool pendingWrite = (state & kHighResCapturePendingWriteBit) != 0u;
+    bool committed = (state & kHighResCaptureValidBit) != 0u;
+    if (!pendingWrite && !committed)
+        return 0u;
+
+    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
+    if (pendingWrite)
+    {
+        uint sizeCode = (captureCnt >> 20u) & 3u;
+        uint width = sizeCode == 0u ? 128u : 256u;
+        uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
+        uint destinationBank = (captureCnt >> 16u) & 3u;
+        uint packedLatch = LineWord(0u, line, kSpriteLatchValid);
+        uint captureStart = (packedLatch >> 8u) & 0xFFu;
+        uint destinationAddress = WrapLCDCHalfword(
+            CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
+        uint relative = (halfwordAddress - destinationAddress) & 0xFFFFu;
+        uint captureLine = relative / width;
+        const bool wasWrittenEarlier = bank == destinationBank
+            && captureStart != 0xFFu
+            && captureLine >= captureStart
+            && captureLine < line
+            && captureLine < height;
+        if (wasWrittenEarlier)
+            version ^= 1u;
+        else if (!committed)
+            return 0u;
+    }
+    return 0x80000000u | (version << 30u) | (bank << 28u)
+        | halfwordAddress;
 }
 
-uint CaptureSourceB(uint line, uint x, uint captureCnt)
+uint CaptureSourceB(
+    uint line, uint x, uint captureCnt, uint outputX, uint sampleY)
 {
     if ((captureCnt & (1u << 25u)) != 0u)
         return FIFO16(line, x);
@@ -1468,7 +1614,20 @@ uint CaptureSourceB(uint line, uint x, uint captureCnt)
     {
         address = WrapLCDCByte(address);
     }
-    return LCD16(line, bank, address);
+    uint compact = LCD16(line, bank, address);
+    uint reference = NativeCaptureReferenceForSourceB(
+        line, bank, address, captureCnt);
+    if (reference != 0u)
+    {
+        uint highRes = LoadNativeCaptureSidecar(
+            reference,
+            outputX % uint(ScaleFactor),
+            sampleY);
+        uint quantized = CaptureRawFromColor6(highRes);
+        if (quantized == compact)
+            return quantized;
+    }
+    return compact;
 }
 
 uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
@@ -1492,24 +1651,6 @@ uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
     uint a = (eva > 0u ? aA : 0u) | (evb > 0u ? aB : 0u);
     return min(r, 31u) | (min(g, 31u) << 5u)
         | (min(b, 31u) << 10u) | (a << 15u);
-}
-
-uint LoadNativeCaptureSidecar(uint reference, uint withinX, uint withinY)
-{
-    uint address = reference & 0xFFFFu;
-    uint bank = (reference >> 28u) & 3u;
-    uint version = (reference >> 30u) & 1u;
-    uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
-    uint cell = ((version * 4u + bank) * 65536u) + address;
-    return NativeCaptureSidecar[
-        cell * samplesPerPixel + withinY * uint(ScaleFactor) + withinX];
-}
-
-uint NativeHighResCaptureState(uint bank, uint address)
-{
-    uint block = (address >> 14u) & 3u;
-    return NativeGPU2DInput[kHighResCaptureProvenanceBase
-        + (bank * 4u + block) * kHighResCaptureProvenanceStride];
 }
 
 uint NativeCaptureReference(uint engine, uint line, uint x)
@@ -1550,8 +1691,8 @@ uint NativeCaptureReference(uint engine, uint line, uint x)
         return 0u;
     // A capture writes the next sidecar version while this frame's display
     // feedback reads the version produced for the already-completed capture
-    // lines.  The block-level pending bit makes same-bank read-before-write
-    // explicit and removes frame-parity ownership from the shader.
+    // lines. The segment-level pending bit makes same-bank read-before-write
+    // explicit without promoting neighbouring pixels in a physical block.
     uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
     if (pendingWrite)
         version ^= 1u;
@@ -1641,6 +1782,11 @@ StructuredPixelState CompositeSourceAExact(
         }
         result.Below = plane0;
         result.Above = plane1;
+        if (!val1Is3D && !val2Is3D && layers.Effect == 0u
+            && (layers.First.CaptureReference & 0x80000000u) != 0u)
+        {
+            result.CaptureReference = layers.First.CaptureReference;
+        }
         result.Control = (controlAlpha << 24u)
             | ((layers.Evb & 0xFFu) << 16u)
             | ((layers.Eva & 0xFFu) << 8u);
@@ -1689,7 +1835,15 @@ uint StructuredCaptureSourceA(
     uint controlFlags = control >> 24u;
     uint color = below;
     if ((controlFlags & kStructuredControlHas3D) == 0u)
+    {
+        if ((captureReference & 0x80000000u) != 0u)
+        {
+            return LoadNativeCaptureSidecar(
+                captureReference,
+                outputX % uint(ScaleFactor), sampleY);
+        }
         return color;
+    }
 
     uint pixel3D = 0u;
     uint lineMeta = NativeGPU2DOutput[
@@ -1778,7 +1932,8 @@ void WriteNativeCaptureSample(
         return;
 
     uint firstA = CaptureSourceA(line, x, outputX, sampleY);
-    uint firstB = CaptureSourceB(line, x, captureCnt);
+    uint firstB = CaptureSourceB(
+        line, x, captureCnt, outputX, sampleY);
     uint first = CaptureCompositeRaw(firstA, firstB, captureCnt);
 
     uint address = WrapLCDCHalfword(
@@ -1806,7 +1961,8 @@ void WriteNativeCaptureSample(
         {
             uint secondA = CaptureSourceA(
                 line, x + 1u, outputX + uint(ScaleFactor), 0u);
-            uint secondB = CaptureSourceB(line, x + 1u, captureCnt);
+            uint secondB = CaptureSourceB(
+                line, x + 1u, captureCnt, outputX + uint(ScaleFactor), 0u);
             second = CaptureCompositeRaw(secondA, secondB, captureCnt);
         }
 

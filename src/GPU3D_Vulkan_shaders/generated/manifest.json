@@ -1,6 +1,6 @@
 {
   "generator": "tools/vulkan/compile-shaders.py",
-  "sourceSetSha256": "84aeac30b26accb6c07a98c0a851bebd5432ad3d9e728e90af141c79104c0688",
+  "sourceSetSha256": "8c33a94f0282e1f023a3060e8495ee3570a63e2f940b10efb4f537e379da29c0",
   "targetEnv": "vulkan1.1",
   "entryPoint": "main",
   "pipelineCount": 38,
@@ -126,7 +126,7 @@
     }
   ],
   "uniqueModules": 114,
-  "totalSpirvBytes": 3536612,
+  "totalSpirvBytes": 3575636,
   "generatedFiles": [
     "GPU3D_Vulkan_ShaderBlobs.h",
     "GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp",
@@ -870,8 +870,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 34,
-      "words": 6436,
-      "sha256": "169f9ced092253358c4f76494240aebb13ba7ae65d10e35562a4a46c16597948"
+      "words": 6515,
+      "sha256": "d9114455b718cc1e4eb49eae8ac2189cb027059b4de86802010771ef9c0d601e"
     },
     {
       "pipeline": 35,
@@ -889,8 +889,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 35,
-      "words": 5428,
-      "sha256": "cc01da0730f27928785cd2dcf3f70e33c288fb4be19ff7d84c942762ad96acf6"
+      "words": 5466,
+      "sha256": "b00338d6496b3d07beccecab0ca104e93826be9600a2f2875b76fc491ed9bbb5"
     },
     {
       "pipeline": 36,
@@ -927,8 +927,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 37,
-      "words": 44245,
-      "sha256": "ee687099d9fd9ce35ac017b280a62885cd6e61690c95c1610911d2cd7a11c2fd"
+      "words": 47380,
+      "sha256": "9e31e20f91256fab069fb032577aceb5b5219c477af3ca08c5bf147ab9ec85da"
     },
     {
       "pipeline": 0,
@@ -1652,8 +1652,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 72,
-      "words": 6436,
-      "sha256": "f761fec4d4f26945ba18a04faa1e70b7a55e36a39694a54aa29cd26c1d4ce97c"
+      "words": 6515,
+      "sha256": "97b227c02e1c0e6a0dbded6e307c1424511578bc7fec8dc23342a79cff7b073a"
     },
     {
       "pipeline": 35,
@@ -1671,8 +1671,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 73,
-      "words": 5428,
-      "sha256": "3383cb74a095894862b7d3c80abf69c8616d600c42165032c2d681d9560ae12a"
+      "words": 5466,
+      "sha256": "3d62749be1de16199811bb7c3aea0eaf7605c8ac75c2c38548551c2ce4454316"
     },
     {
       "pipeline": 36,
@@ -1709,8 +1709,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 75,
-      "words": 44249,
-      "sha256": "be98288d1d22b9eb112977792ffe4e04f4d4402179494caf4db86c65591fc549"
+      "words": 47384,
+      "sha256": "12a849d2d456aa702559bb7a387020d2492f837cc2ccda2cd41d5fdffa542cfe"
     },
     {
       "pipeline": 0,
@@ -2434,8 +2434,8 @@
         "ClearCoarseBinMaskLocalSize": 48
       },
       "blob": 110,
-      "words": 6436,
-      "sha256": "7a6aa1b1844ed96759c8fff3f7425eeeaa2fba35fbfab3e58094e9cf2815568f"
+      "words": 6515,
+      "sha256": "54056e6bb0830545fc2eee097479fc880705e278b4e0dd8281b128a56293e686"
     },
     {
       "pipeline": 35,
@@ -2453,8 +2453,8 @@
         "ClearCoarseBinMaskLocalSize": 48
       },
       "blob": 111,
-      "words": 5428,
-      "sha256": "8799461d6b3de0566bf036e235f17743db00b11cab42bcec3e543cea3fb550f8"
+      "words": 5466,
+      "sha256": "9ea8857662cf26a9421ba4b374f282cb9462b0c47009e28edc7096d58931b938"
     },
     {
       "pipeline": 36,
@@ -2491,8 +2491,8 @@
         "ClearCoarseBinMaskLocalSize": 48
       },
       "blob": 113,
-      "words": 44245,
-      "sha256": "c31b364f5c6e5e4e9da1c53d63bc8ba6f34cbf5df9090df7ecab786476e2e5d1"
+      "words": 47380,
+      "sha256": "3858dcc072496c3a1b3acac4f0591c1068b1cac661dbd89c9f1a588f2aef36c3"
     }
   ]
 }

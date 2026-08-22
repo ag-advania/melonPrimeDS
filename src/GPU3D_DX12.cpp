@@ -65,7 +65,7 @@ constexpr u64 kNativeCaptureBytes = 4ull * 128ull * 1024ull;
 // One packed Pixel word plus one metadata word for both logical screens.
 // This scratch tail is consumed by the native OBJ raw pass and keeps the
 // mosaic resolve from re-scanning OAM for every pixel in a mosaic span.
-constexpr u32 kNativeObjRawWords = 2u * 256u * 192u * 2u;
+constexpr u32 kNativeObjRawWords = 3u * 256u * 192u * 2u;
 constexpr u32 kCompositionInputDwords = std::max<u32>(
     kStructuredCompositionInputDwords, GPU2DNative::PackedFrameWords);
 constexpr u32 kCompositorFramesInFlight = 3;

@@ -645,6 +645,17 @@ $fallbackLineMax = if ($fallbackLineValues.Count -gt 0) {
 $semanticLines = @($allLog | Select-String -Pattern '\[GPU2DStage\].*stage=semantic' -ErrorAction SilentlyContinue)
 $semanticOnlyLines = @($semanticLines | Where-Object { $_.Line -match 'publication=semantic_only' })
 $forcedPresentationStallLines = @($semanticLines | Where-Object { $_.Line -match 'presentation_stall=forced' })
+$finalComposedLines = @($allLog | Select-String -Pattern '\[GPU2DStage\].*FinalComposedTopHash=[0-9A-Fa-f]{16}.*FinalComposedBottomHash=[0-9A-Fa-f]{16}' -ErrorAction SilentlyContinue)
+$finalComposedAfterStateLines = @()
+if ($stageValidationStartIndex -lt $allLog.Count) {
+    $finalComposedAfterStateLines = @(
+        for ($index = $stageValidationStartIndex; $index -lt $allLog.Count; $index++) {
+            if ($allLog[$index] -match '\[GPU2DStage\].*FinalComposedTopHash=[0-9A-Fa-f]{16}.*FinalComposedBottomHash=[0-9A-Fa-f]{16}') {
+                $allLog[$index]
+            }
+        }
+    )
+}
 $stateMarker = if ($null -ne $statePath) { @($allLog | Select-String -SimpleMatch "[SavestateDiff] path=$statePath loaded=1" -ErrorAction SilentlyContinue).Count } else { 0 }
 $stateActionMarker = if ($null -ne $savestateSlotPathForApp) { @($allLog | Select-String -SimpleMatch "[PhysicalAB] savestate_action_loaded=1 path=$savestateSlotPathForApp" -ErrorAction SilentlyContinue).Count } else { 0 }
 $hudOffMarker = if ($Hud -eq 'Off') { @($allLog | Select-String -SimpleMatch '[SavestateDiff] customHudForcedOff=1' -ErrorAction SilentlyContinue).Count } else { 0 }
@@ -779,6 +790,9 @@ $manifestObject = [ordered]@{
         semantic_frame_rows = $semanticLines.Count
         semantic_only_rows = $semanticOnlyLines.Count
         forced_presentation_stall_rows = $forcedPresentationStallLines.Count
+        final_composed_hash_rows = $finalComposedLines.Count
+        final_composed_hash_rows_after_state = $finalComposedAfterStateLines.Count
+        final_composed_hashes_available = $finalComposedLines.Count -gt 0
         presentation_stall_validation = if ($PresentationStallFrames -eq 0) {
             'NOT_REQUESTED'
         } elseif ($forcedPresentationStallLines.Count -ge $PresentationStallFrames) {

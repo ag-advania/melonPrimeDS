@@ -224,7 +224,8 @@ def main() -> int:
         for needle in (
             "HighResCaptureProvenanceState",
             "HighResCaptureProvenanceTracker",
-            "ComputeCaptureWriteBlockMask",
+            "ComputeCaptureWriteSegmentMask",
+            "HighResCaptureSegmentHalfwords",
             "PackedHighResCaptureProvenanceBase",
             "HighResCapturePendingWriteBit",
         ):
@@ -535,6 +536,9 @@ def main() -> int:
             "MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES",
             "Capture-ContinuousDisplay",
             "window_capture_frames",
+            "FinalComposedTopHash",
+            "FinalComposedBottomHash",
+            "final_composed_hash_rows_after_state",
         ):
             require(text["physical_runner"], needle, "clean provenance gate", failures)
 

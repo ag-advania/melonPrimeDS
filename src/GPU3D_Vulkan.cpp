@@ -130,7 +130,7 @@ constexpr VkDeviceSize NativeCaptureBytes = 4u * 128u * 1024u;
 // One packed Pixel word plus one metadata word for both logical screens.
 // This scratch tail is consumed by the native OBJ raw pass and keeps the
 // mosaic resolve from re-scanning OAM for every pixel in a mosaic span.
-constexpr u32 NativeObjRawWords = 2u * 256u * 192u * 2u;
+constexpr u32 NativeObjRawWords = 3u * 256u * 192u * 2u;
 constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
 } // namespace

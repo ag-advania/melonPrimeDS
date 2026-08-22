@@ -12,9 +12,6 @@ namespace melonDS::GPU2DNative
 
 namespace
 {
-constexpr u32 CapturePhysicalBlockHalfwords =
-    CapturePhysicalBlockBytes / sizeof(u16);
-
 void AddClassifiedBytes(UploadPlan& plan, u32 offset, u32 size) noexcept
 {
     if (size == 0u)
@@ -176,7 +173,7 @@ UploadPlan BuildUploadPlan(
             (PackedFrameWords - PackedNativeCaptureBGMappingBase) * sizeof(u32)});
     }
     // Provenance changes on an actual capture write even when none of the
-    // emulated-state generations changed. Keep the fixed 16-entry table in
+    // emulated-state generations changed. Keep the fixed segment table in
     // every partial upload so a reused GPU slot cannot retain a prior epoch's
     // pending/valid bits.
     AddRange(plan, {
@@ -186,10 +183,10 @@ UploadPlan BuildUploadPlan(
     return plan;
 }
 
-HighResCaptureBlockMask ComputeCaptureWriteBlockMask(
+HighResCaptureSegmentMask ComputeCaptureWriteSegmentMask(
     const FrameInput& input) noexcept
 {
-    HighResCaptureBlockMask result{};
+    HighResCaptureSegmentMask result{};
     for (u32 line = 0u; line < ScreenHeight; ++line)
     {
         const LineState& state = input.Lines[line];
@@ -210,10 +207,12 @@ HighResCaptureBlockMask ComputeCaptureWriteBlockMask(
         const u32 first = WrapLCDCHalfword(
             CaptureOffsetHalfwords((captureCnt >> 18u) & 3u)
             + line * width);
-        const u32 last = WrapLCDCHalfword(first + width - 1u);
-        result[destinationBank] |= static_cast<u8>(
-            (1u << (first / CapturePhysicalBlockHalfwords))
-            | (1u << (last / CapturePhysicalBlockHalfwords)));
+        for (u32 x = 0u; x < width; x += HighResCaptureSegmentHalfwords)
+        {
+            const u32 address = WrapLCDCHalfword(first + x);
+            const u32 segment = address / HighResCaptureSegmentHalfwords;
+            result[destinationBank * HighResCaptureSegmentsPerBank + segment] = 1u;
+        }
     }
     return result;
 }
@@ -226,10 +225,10 @@ bool PackHighResCaptureProvenance(
     if (!destination || wordCount < PackedFrameWords)
         return false;
 
-    for (u32 index = 0u; index < CapturePhysicalBlockCount; ++index)
+    for (u32 index = 0u; index < HighResCaptureSegmentCount; ++index)
     {
         const u32 base = PackedHighResCaptureProvenanceBase
-            + index * HighResCaptureProvenanceWordsPerBlock;
+            + index * HighResCaptureProvenanceWordsPerSegment;
         const HighResCaptureProvenanceState& state = table[index];
         destination[base + 0u] = state.ValidAndVersion;
         destination[base + 1u] = state.EpochTag;
@@ -263,30 +262,26 @@ void HighResCaptureProvenanceTracker::BeginFrame(
     if (Epoch != epoch || ScaleFactor != scaleFactor)
         Invalidate(epoch, scaleFactor);
 
-    const HighResCaptureBlockMask writes = ComputeCaptureWriteBlockMask(input);
-    for (u32 bank = 0u; bank < CapturePhysicalBanks; ++bank)
+    const HighResCaptureSegmentMask writes = ComputeCaptureWriteSegmentMask(input);
+    for (u32 index = 0u; index < HighResCaptureSegmentCount; ++index)
     {
-        for (u32 block = 0u; block < CapturePhysicalBlocksPerBank; ++block)
-        {
-            if ((writes[bank] & (1u << block)) == 0u)
-                continue;
+        if (writes[index] == 0u)
+            continue;
 
-            const u32 index = bank * CapturePhysicalBlocksPerBank + block;
-            HighResCaptureProvenanceState& state = Entries[index];
-            state.ValidAndVersion |= HighResCapturePendingWriteBit;
-            state.EpochTag = static_cast<u32>(epoch);
-            state.CaptureGenerationLo = static_cast<u32>(
-                input.Generation.CaptureGeneration);
-            state.ScaleFactor = scaleFactor;
-            Pending[index] = 1u;
-            LastSemanticFrame[index] = input.Generation.Frame;
-        }
+        HighResCaptureProvenanceState& state = Entries[index];
+        state.ValidAndVersion |= HighResCapturePendingWriteBit;
+        state.EpochTag = static_cast<u32>(epoch);
+        state.CaptureGenerationLo = static_cast<u32>(
+            input.Generation.CaptureGeneration);
+        state.ScaleFactor = scaleFactor;
+        Pending[index] = 1u;
+        LastSemanticFrame[index] = input.Generation.Frame;
     }
 }
 
 void HighResCaptureProvenanceTracker::CommitFrame() noexcept
 {
-    for (u32 index = 0u; index < CapturePhysicalBlockCount; ++index)
+    for (u32 index = 0u; index < HighResCaptureSegmentCount; ++index)
     {
         if (Pending[index] == 0u)
             continue;
@@ -302,7 +297,7 @@ void HighResCaptureProvenanceTracker::CommitFrame() noexcept
 
 void HighResCaptureProvenanceTracker::AbortFrame() noexcept
 {
-    for (u32 index = 0u; index < CapturePhysicalBlockCount; ++index)
+    for (u32 index = 0u; index < HighResCaptureSegmentCount; ++index)
     {
         if (Pending[index] == 0u)
             continue;
@@ -386,7 +381,7 @@ bool PackFrameRanges(
 
     std::array<u32, PackedHeaderWords> header{};
     header[0] = 0x32445047u; // "GPU2"
-    header[1] = 4u;
+    header[1] = 5u;
     const auto storeU64 = [&](u32 word, u64 value) {
         header[word] = static_cast<u32>(value);
         header[word + 1u] = static_cast<u32>(value >> 32u);

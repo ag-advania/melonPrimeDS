@@ -4,6 +4,7 @@
 */
 
 #include <array>
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <vector>
@@ -279,7 +280,7 @@ bool RunPackVectors()
     bool passed = true;
     passed &= Require(PackFrame(*input, packed.data(), packed.size()),
         "PackFrame rejected a correctly sized destination");
-    passed &= Require(packed[0] == 0x32445047u && packed[1] == 4u,
+    passed &= Require(packed[0] == 0x32445047u && packed[1] == 5u,
         "native frame header magic/version drifted");
     passed &= Require(packed[2] == 0x55667788u && packed[3] == 0x11223344u,
         "frame generation is not serialized little-endian");
@@ -586,7 +587,7 @@ bool RunUploadPlanVectors()
         "partial frame pack rejected a valid upload plan");
     passed &= Require(
         partialDestination[0] == 0x32445047u
-            && partialDestination[1] == 4u
+            && partialDestination[1] == 5u
             && partialDestination[10] == partialInput->CaptureCnt,
         "partial frame pack did not update the requested header range");
     passed &= Require(
@@ -605,20 +606,25 @@ bool RunHighResCaptureProvenanceVectors()
     input->Generation.Frame = 1u;
     input->Generation.CaptureGeneration = 11u;
     constexpr u32 bank = 2u;
-    constexpr u32 block = 3u;
+    constexpr u32 segment = 3u * (CapturePhysicalBlockBytes / sizeof(u16))
+        / HighResCaptureSegmentHalfwords;
     input->Lines[0].CaptureCnt = (bank << 16u) | (3u << 18u);
     input->Lines[0].CaptureEnable = 1u;
     input->Lines[0].LCDVRAMMap = 1u << bank;
 
-    const HighResCaptureBlockMask mask = ComputeCaptureWriteBlockMask(*input);
+    const HighResCaptureSegmentMask mask = ComputeCaptureWriteSegmentMask(*input);
     bool passed = Require(
-        mask[bank] == (1u << block),
-        "capture provenance block mask did not follow the latched destination");
+        mask[bank * HighResCaptureSegmentsPerBank + segment] != 0u
+            && std::count(
+                mask.begin() + bank * HighResCaptureSegmentsPerBank,
+                mask.begin() + (bank + 1u) * HighResCaptureSegmentsPerBank,
+                static_cast<u8>(1u)) == 1,
+        "capture provenance segment mask did not follow the latched destination");
 
     HighResCaptureProvenanceTracker tracker;
     tracker.Invalidate(7u, 4u);
     tracker.BeginFrame(*input, 7u, 4u);
-    const u32 index = bank * CapturePhysicalBlocksPerBank + block;
+    const u32 index = bank * HighResCaptureSegmentsPerBank + segment;
     const auto& pending = tracker.States()[index];
     passed &= Require(
         (pending.ValidAndVersion & HighResCapturePendingWriteBit) != 0u
@@ -635,7 +641,7 @@ bool RunHighResCaptureProvenanceVectors()
             packed.data(), packed.size(), tracker.States()),
         "capture provenance table did not pack into the common ABI");
     const u32 tableBase = PackedHighResCaptureProvenanceBase
-        + index * HighResCaptureProvenanceWordsPerBlock;
+        + index * HighResCaptureProvenanceWordsPerSegment;
     passed &= Require(
         packed[tableBase] == pending.ValidAndVersion
             && packed[tableBase + 1u] == pending.EpochTag
@@ -680,6 +686,66 @@ bool RunHighResCaptureProvenanceVectors()
         (tracker.States()[index].ValidAndVersion & HighResCaptureValidBit) == 0u
             && tracker.States()[index].EpochTag == 8u,
         "renderer epoch invalidation did not reject the pre-load sidecar");
+
+    // Partial-block poison vector: a 128-pixel line writes only one segment.
+    // The neighbouring segment is intentionally treated as stale poison and
+    // must remain invalid after state-load invalidation and commit.
+    constexpr u32 firstSegment = bank * HighResCaptureSegmentsPerBank;
+    constexpr u32 neighbourSegment = firstSegment + 1u;
+    std::array<std::array<u16, 2>, 2> poison{{
+        {{0x801Fu, 0x801Fu}}, // version 0: magenta
+        {{0x83E0u, 0x83E0u}}, // version 1: cyan
+    }};
+    input->Lines[0].CaptureCnt = bank << 16u;
+    input->Lines[0].CaptureEnable = 1u;
+    input->Lines[0].LCDVRAMMap = 1u << bank;
+    input->Lines[1].CaptureCnt = bank << 16u;
+    input->Lines[1].LCDVRAMMap = 1u << bank;
+    input->Generation.Frame = 4u;
+    tracker.Invalidate(9u, 4u);
+    tracker.BeginFrame(*input, 9u, 4u);
+    tracker.CommitFrame();
+    const auto resolvePoison = [&](u32 index, u16 compact) {
+        const u32 state = tracker.States()[index].ValidAndVersion;
+        if ((state & HighResCaptureValidBit) == 0u)
+            return compact;
+        const u32 version = (state & HighResCaptureVersionBit) != 0u ? 1u : 0u;
+        return poison[version][0u];
+    };
+    passed &= Require(
+        (tracker.States()[firstSegment].ValidAndVersion & HighResCaptureValidBit) != 0u
+            && (tracker.States()[neighbourSegment].ValidAndVersion
+                & HighResCaptureValidBit) == 0u,
+        "partial capture promoted an untouched neighbour segment to valid");
+    passed &= Require(
+        resolvePoison(neighbourSegment, 0x1234u) == 0x1234u,
+        "invalid partial-capture address exposed stale sidecar poison");
+
+    // Mixed-version vector inside one former 32 KiB block: retain an older
+    // valid segment while committing a new segment, then require a resolver to
+    // use per-segment metadata rather than the physical-block version.
+    tracker.Invalidate(10u, 4u);
+    input->Lines[0].CaptureEnable = 0u;
+    input->Lines[1].CaptureEnable = 1u;
+    input->Generation.Frame = 5u;
+    tracker.BeginFrame(*input, 9u, 4u);
+    tracker.CommitFrame(); // segment 1 -> version 1
+    input->Generation.Frame = 6u;
+    tracker.BeginFrame(*input, 9u, 4u);
+    tracker.CommitFrame(); // segment 1 -> version 0
+    input->Lines[0].CaptureEnable = 1u;
+    input->Lines[1].CaptureEnable = 0u;
+    input->Generation.Frame = 7u;
+    tracker.BeginFrame(*input, 9u, 4u);
+    tracker.CommitFrame(); // segment 0 -> version 1
+    const u32 firstCommitted = tracker.States()[firstSegment].ValidAndVersion;
+    const u32 secondCommitted = tracker.States()[neighbourSegment].ValidAndVersion;
+    passed &= Require(
+        (firstCommitted & HighResCaptureValidBit) != 0u
+            && (secondCommitted & HighResCaptureValidBit) != 0u
+            && (firstCommitted & HighResCaptureVersionBit)
+                != (secondCommitted & HighResCaptureVersionBit),
+        "mixed-version capture segments collapsed to one physical-block version");
     return passed;
 }
 

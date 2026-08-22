@@ -39,6 +39,15 @@ inline constexpr u32 ScreenPixelCount = ScreenWidth * ScreenHeight;
 // future shader change cannot silently mix the units again.
 inline constexpr u32 LCDCBankBytes = 128u * 1024u;
 inline constexpr u32 LCDCBankByteMask = LCDCBankBytes - 1u;
+// Native display-capture writes are 128 or 256 halfwords wide and every
+// DISPCAPCNT destination offset is 128-halfword aligned. A 128-halfword
+// segment therefore describes the smallest complete write unit without
+// promoting an untouched part of a 32 KiB physical block to a new version.
+inline constexpr u32 HighResCaptureSegmentHalfwords = 128u;
+inline constexpr u32 HighResCaptureSegmentsPerBank =
+    (LCDCBankBytes / sizeof(u16)) / HighResCaptureSegmentHalfwords;
+inline constexpr u32 HighResCaptureSegmentCount =
+    CapturePhysicalBanks * HighResCaptureSegmentsPerBank;
 
 [[nodiscard]] constexpr u32 CaptureOffsetHalfwords(u32 code) noexcept
 {
@@ -545,9 +554,9 @@ struct FrameInput
 
 // High-resolution display-capture provenance is a separate renderer-private
 // state machine. Native LCDC VRAM is restored by savestates; the high-res
-// sidecar is intentionally not. The packed table therefore carries only the
-// small per-physical-block admission state needed by the shader. The old
-// sidecar pixels remain allocated and are never trusted while Valid is clear.
+// sidecar is intentionally not. The table is indexed by 128 native-pixel
+// segments, not by 32 KiB physical blocks: a one-line/128-pixel capture must
+// never make the other pixels in that block readable from a stale sidecar.
 struct HighResCaptureProvenanceState
 {
     // bit 0: a committed sidecar version is readable
@@ -562,17 +571,30 @@ struct HighResCaptureProvenanceState
 inline constexpr u32 HighResCaptureValidBit = 1u << 0u;
 inline constexpr u32 HighResCaptureVersionBit = 1u << 1u;
 inline constexpr u32 HighResCapturePendingWriteBit = 1u << 2u;
-inline constexpr u32 HighResCaptureProvenanceWordsPerBlock = 4u;
+inline constexpr u32 HighResCaptureProvenanceWordsPerSegment = 4u;
+// Kept as a source-compatibility alias for older diagnostics; the value is
+// now explicitly the per-segment stride.
+inline constexpr u32 HighResCaptureProvenanceWordsPerBlock =
+    HighResCaptureProvenanceWordsPerSegment;
 inline constexpr u32 HighResCaptureProvenanceWords =
-    CapturePhysicalBlockCount * HighResCaptureProvenanceWordsPerBlock;
+    HighResCaptureSegmentCount * HighResCaptureProvenanceWordsPerSegment;
 using HighResCaptureProvenanceTable =
-    std::array<HighResCaptureProvenanceState, CapturePhysicalBlockCount>;
-using HighResCaptureBlockMask = std::array<u8, CapturePhysicalBanks>;
+    std::array<HighResCaptureProvenanceState, HighResCaptureSegmentCount>;
+using HighResCaptureSegmentMask = std::array<u8, HighResCaptureSegmentCount>;
 
-// Computes the physical 32 KiB LCDC blocks written by the native capture
-// shader in this semantic frame. It consumes the same latched per-line
-// registers as the shader; presentation scale never changes the result.
-[[nodiscard]] HighResCaptureBlockMask ComputeCaptureWriteBlockMask(
+static_assert(CaptureWidthForSize(0u) == HighResCaptureSegmentHalfwords);
+static_assert(CaptureWidthForSize(1u) == 2u * HighResCaptureSegmentHalfwords);
+static_assert(CaptureOffsetHalfwords(0u) % HighResCaptureSegmentHalfwords == 0u);
+static_assert(CaptureOffsetHalfwords(1u) % HighResCaptureSegmentHalfwords == 0u);
+static_assert(CaptureOffsetHalfwords(2u) % HighResCaptureSegmentHalfwords == 0u);
+static_assert(CaptureOffsetHalfwords(3u) % HighResCaptureSegmentHalfwords == 0u);
+static_assert((ScreenHeight * CaptureWidthForSize(3u))
+    % HighResCaptureSegmentHalfwords == 0u);
+
+// Computes the 128-halfword segments written by the native capture shader in
+// this semantic frame. It consumes the same latched per-line registers as the
+// shader; presentation scale never changes the result.
+[[nodiscard]] HighResCaptureSegmentMask ComputeCaptureWriteSegmentMask(
     const FrameInput& input) noexcept;
 
 // Appends the fixed four-word/block table to the common packed GPU2D input.
@@ -584,8 +606,8 @@ bool PackHighResCaptureProvenance(
     const HighResCaptureProvenanceTable& table) noexcept;
 
 // Host-side state machine shared by Vulkan and DX12. BeginFrame exposes a
-// pending write version to the current shader dispatch; CommitFrame makes that
-// version the next frame's readable version only after submission succeeds.
+// pending write version for only the segments actually written by this frame;
+// CommitFrame makes those versions readable only after submission succeeds.
 // This is the same-bank read-before-write rule without a second full sidecar.
 class HighResCaptureProvenanceTracker
 {
@@ -603,7 +625,7 @@ public:
         return Entries;
     }
 
-    [[nodiscard]] const std::array<u64, CapturePhysicalBlockCount>&
+    [[nodiscard]] const std::array<u64, HighResCaptureSegmentCount>&
     SemanticFrames() const noexcept
     {
         return LastSemanticFrame;
@@ -611,8 +633,8 @@ public:
 
 private:
     HighResCaptureProvenanceTable Entries{};
-    std::array<u64, CapturePhysicalBlockCount> LastSemanticFrame{};
-    std::array<u8, CapturePhysicalBlockCount> Pending{};
+    std::array<u64, HighResCaptureSegmentCount> LastSemanticFrame{};
+    std::array<u8, HighResCaptureSegmentCount> Pending{};
     u64 Epoch = 0;
     u32 ScaleFactor = 0;
 };

@@ -480,6 +480,23 @@ void LogStageSnapshot(
             resolvedSource,
             HashWords(actualTop, ScreenPixelCount),
             HashWords(actualBottom, ScreenPixelCount), top, bottom);
+        // Stage B is the developer readback of the actual native output that
+        // the presenter consumes: either the composed buffer or the direct
+        // output image. Keep an explicit final-composition marker separate
+        // from the older resolved_* names so a Stage A logical hash cannot be
+        // mistaken for proof of the presented image.
+        Platform::Log(
+            Platform::LogLevel::Info,
+            "[GPU2DStage] backend=%s FinalComposedTopHash=%016llX "
+            "FinalComposedBottomHash=%016llX source=%s "
+            "emulated=%llu generation=%llu renderer_serial=%llu\n",
+            backend,
+            static_cast<unsigned long long>(HashWords(actualTop, ScreenPixelCount)),
+            static_cast<unsigned long long>(HashWords(actualBottom, ScreenPixelCount)),
+            resolvedSource,
+            static_cast<unsigned long long>(emulatedFrame),
+            static_cast<unsigned long long>(generation),
+            static_cast<unsigned long long>(rendererSerial));
         if (top != BlankClass::NonBlank)
             LogBlankState(backend, "B", emulatedFrame, recordedFrame, rendererSerial,
                 generation, slot, input, 0u, resolvedSource, top,
