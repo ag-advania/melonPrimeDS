@@ -813,7 +813,10 @@ bool IsCaptureMappedSection(u32 section) noexcept
 }
 
 u32 NativeCaptureMaskForRead(
-    const MappedReadContext& context, u32 mappingIndex) noexcept
+    const MappedReadContext& context,
+    const melonDS::GPU& gpu,
+    u32 mappedBankMask,
+    u32 address) noexcept
 {
     if (!context.Input || !context.NativeMappingReady
         || !IsCaptureMappedSection(context.Section)
@@ -822,25 +825,24 @@ u32 NativeCaptureMaskForRead(
         return 0u;
     }
 
-    if (context.Section == 0u)
+    u32 nativeMask = 0u;
+    u32 captureBanks = mappedBankMask
+        & ((1u << CapturePhysicalBanks) - 1u);
+    while (captureBanks != 0u)
     {
-        const u32 count = context.Engine == 0u ? 32u : 8u;
-        if (mappingIndex >= count)
-            return 0u;
-        const u32 engineOffset = context.Engine == 0u ? 0u : 32u;
-        return context.Input->NativeCaptureBGMapping[
-            context.Line * NativeCaptureBGMappingStride
-                + engineOffset + mappingIndex]
-            & NativeCaptureBankMask;
+        const u32 bank = static_cast<u32>(__builtin_ctz(captureBanks));
+        captureBanks &= captureBanks - 1u;
+        const u32 physicalAddress = address & gpu.VRAMMask[bank];
+        const u32 physicalBlock =
+            physicalAddress / CapturePhysicalBlockBytes;
+        if (IsNativeCaptureOwner(
+                gpu.GetRenderer().GetCaptureBlockProvenance(
+                    bank, physicalBlock).Owner))
+        {
+            nativeMask |= 1u << bank;
+        }
     }
-
-    const u32 count = context.Engine == 0u ? 16u : 8u;
-    if (mappingIndex >= count)
-        return 0u;
-    const u32 engineOffset = context.Engine == 0u ? 0u : 16u;
-    const u32* row = context.Input->NativeCaptureOBJMapping.data()
-        + context.Line * NativeCaptureOBJMappingStride + engineOffset;
-    return row[mappingIndex] & NativeCaptureBankMask;
+    return nativeMask;
 }
 
 u32 NativeCaptureWrittenMaskForRead(
@@ -1085,7 +1087,8 @@ u64 ReadMappedWord(
     // computed once per snapshot context, not once per word.
     if (!proofMaterialize && singleMapping
         && (!context.Input
-            || (context.Input->NativeCaptureOverlayAny == 0u
+            || ((context.Input->NativeCaptureOverlayAny
+                    & NativeCaptureOverlayAnyMask) == 0u
                 && context.NativeCaptureWrittenBankMask == 0u)))
     {
         if (context.Input)
@@ -1106,14 +1109,12 @@ u64 ReadMappedWord(
         return value;
     }
 
-    // Mapping rows describe the line-time owner seen by the GPU shader, while
-    // late frame snapshots can run after more capture lines have been written.
-    // Include that write-ahead state before deciding whether an aligned 64-bit
-    // host load is safe.  Otherwise the fast path flattens stale CPU VRAM over
-    // a GPU-resident capture block even though the reference byte path rejects
-    // it, producing the alternating-bank corruption seen after savestate load.
+    // The shader mapping row is sampled at a different temporal boundary from
+    // this host snapshot. Resolve the fast read from the live renderer owner
+    // plus current-frame write-ahead state, exactly like ReadMappedWordSlow,
+    // rather than replaying a row owner that a later CPU/DMA write superseded.
     const u32 nativeMask = singleMapping
-        ? NativeCaptureMaskForRead(context, mappingIndex)
+        ? NativeCaptureMaskForRead(context, gpu, mappedBankMask, address)
             | NativeCaptureWrittenMaskForRead(
                 context, gpu, mappedBankMask, address)
         : 0u;
@@ -1182,15 +1183,15 @@ void CopyMappedVRAMBlocks(
     u32 packedOffset,
     const MappedReadContext& context) noexcept
 {
+    const bool noNativeCapture = !context.Input
+        || ((context.Input->NativeCaptureOverlayAny
+                & NativeCaptureOverlayAnyMask) == 0u
+            && context.NativeCaptureWrittenBankMask == 0u);
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const bool directFlatten = !ProofMaterializeMappedCaptureEnabled()
-        && (!context.Input
-            || (context.Input->NativeCaptureOverlayAny == 0u
-                && context.NativeCaptureWrittenBankMask == 0u));
+        && noNativeCapture;
 #else
-    const bool directFlatten = !context.Input
-        || (context.Input->NativeCaptureOverlayAny == 0u
-            && context.NativeCaptureWrittenBankMask == 0u);
+    const bool directFlatten = noNativeCapture;
 #endif
     static constexpr std::array<u8, DirtyBlockBytes> zeroBlock{};
     std::array<u8, DirtyBlockBytes> source{};
@@ -1773,12 +1774,13 @@ void FrameRecorder::CaptureNativeMappingForLine(
     const auto noteNativeCaptureOverlay = [&](u32 mappingValue) {
         if ((mappingValue & (NativeCaptureBankMask
                 | NativeCaptureOverlayPresent)) == 0u
-            || Input.NativeCaptureOverlayAny != 0u)
+            || (Input.NativeCaptureOverlayAny
+                & NativeCaptureOverlayAnyMask) != 0u)
         {
             return;
         }
 
-        Input.NativeCaptureOverlayAny = 1u;
+        Input.NativeCaptureOverlayAny |= NativeCaptureOverlayAnyMask;
         // BeginFrame() dirties the initial zero value before scanline
         // mapping is built.  The first native-owned mapping can appear later
         // in the frame, so the packed header must be dirtied at the same

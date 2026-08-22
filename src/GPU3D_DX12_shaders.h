@@ -2315,6 +2315,7 @@ static const uint NativeCaptureBGMappingStride = 32u + 8u;
 static const uint NativeCaptureOBJMappingStride = 16u + 8u;
 static const uint NativeCaptureBankMask = 0x0Fu;
 static const uint NativeCaptureOverlayPresent = 0x10u;
+static const uint NativeCaptureOverlayAnyMask = 0x01u;
 static const uint NativeCaptureWords = 131072u;
 static const uint NativeObjRawWordsPerPixel = 3u;
 static const uint NativeObjRawScreenWords = 256u * 192u * NativeObjRawWordsPerPixel;
@@ -2449,6 +2450,32 @@ uint NativeCaptureByte(uint bank, uint physicalAddress)
     return (word >> ((offset & 3u) * 8u)) & 0xFFu;
 }
 
+uint NativeCaptureMappingRowBase(
+    uint engine, uint line, bool obj, bool spriteLatch)
+{
+    uint base = NativeCaptureBGMappingBase;
+    uint stride = NativeCaptureBGMappingStride;
+    uint engineOffset = engine == 0u ? 0u : 32u;
+    if (obj)
+    {
+        base = spriteLatch
+            ? NativeCaptureSpriteOBJMappingBase
+            : NativeCaptureOBJMappingBase;
+        stride = NativeCaptureOBJMappingStride;
+        engineOffset = engine == 0u ? 0u : 16u;
+    }
+    return base + line * stride + engineOffset;
+}
+
+bool NativeCaptureMappingRowHasOverlay(
+    uint engine, uint line, bool obj, bool spriteLatch)
+{
+    if (line >= 192u)
+        return false;
+    return (ResultValue[NativeCaptureMappingRowBase(
+        engine, line, obj, spriteLatch)] & NativeCaptureOverlayPresent) != 0u;
+}
+
 uint NativeCaptureMappingMask(
     uint engine, uint line, uint address, uint size,
     bool obj, bool spriteLatch)
@@ -2462,31 +2489,31 @@ uint NativeCaptureMappingMask(
         : (engine == 0u ? 32u : 8u);
     if (mappingIndex >= mappingCount)
         return 0u;
-    uint base = NativeCaptureBGMappingBase;
-    uint stride = NativeCaptureBGMappingStride;
-    uint engineOffset = engine == 0u ? 0u : 32u;
-    if (obj)
-    {
-        base = spriteLatch
-            ? NativeCaptureSpriteOBJMappingBase
-            : NativeCaptureOBJMappingBase;
-        stride = NativeCaptureOBJMappingStride;
-        engineOffset = engine == 0u ? 0u : 16u;
-    }
-    return ResultValue[base + line * stride + engineOffset + mappingIndex];
+    return ResultValue[NativeCaptureMappingRowBase(
+        engine, line, obj, spriteLatch) + mappingIndex];
+}
+
+uint NativeCaptureMappingOwnerMask(
+    uint engine, uint line, uint address, uint size,
+    bool obj, bool spriteLatch)
+{
+    if (!NativeCaptureMappingRowHasOverlay(engine, line, obj, spriteLatch))
+        return 0u;
+    return NativeCaptureMappingMask(
+        engine, line, address, size, obj, spriteLatch)
+        & NativeCaptureBankMask;
 }
 
 uint NativeCaptureOverlayByte(
     uint engine, uint line, uint size, uint address,
     bool obj, bool spriteLatch)
 {
-    // Word 15 is the non-zero frame summary. Mapping rows contain only the
-    // owning-bank mask for each entry; bit 4 is only the row[0] summary.
-    if (ResultValue[15u] == 0u)
+    // Word 15 is the frame summary. The row[0] summary owns validity while
+    // the addressed entry owns the physical-bank mask.
+    if ((ResultValue[15u] & NativeCaptureOverlayAnyMask) == 0u)
         return 0u;
-    uint ownerMask = NativeCaptureMappingMask(
-        engine, line, address, size, obj, spriteLatch)
-        & NativeCaptureBankMask;
+    uint ownerMask = NativeCaptureMappingOwnerMask(
+        engine, line, address, size, obj, spriteLatch);
     if (ownerMask == 0u)
         return 0u;
     uint offset = size == 0u ? 0u : address & (size - 1u);
@@ -2702,8 +2729,8 @@ uint NativeCaptureCommittedReference(uint bank,uint address)
 uint NativeCaptureReferenceForMappedAddress(
     uint engine,uint line,uint size,uint address,bool obj,bool spriteLatch,uint nativeColor)
 {
-    uint owners=NativeCaptureMappingMask(engine,line,address,size,obj,spriteLatch)
-        & NativeCaptureBankMask;
+    uint owners=NativeCaptureMappingOwnerMask(
+        engine,line,address,size,obj,spriteLatch);
     if(owners==0u||(owners&(owners-1u))!=0u)return 0u;
     uint bank=firstbitlow(owners);
     uint physicalAddress=((address&(size-1u))>>1u)&0xFFFFu;

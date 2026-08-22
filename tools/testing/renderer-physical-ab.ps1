@@ -44,6 +44,7 @@ param(
     [switch]$StageDiagnosticsOnly,
     [switch]$DirectGPU2DDiagnostics,
     [switch]$SkipDiagnosticStartupSavestate,
+    [switch]$CaptureBeforeWarmup,
     [ValidateRange(0,600)] [int]$CaptureFrames = 0,
     [ValidateRange(1,1000)] [int]$CaptureIntervalMs = 33,
     [ValidateRange(0,600)] [int]$PresentationStallFrames = 0,
@@ -530,11 +531,16 @@ try {
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
     if ($window -eq [IntPtr]::Zero) { throw 'renderer window did not appear' }
+    if ($CaptureBeforeWarmup) {
+        Capture-ContinuousDisplay
+    }
     Start-Sleep -Seconds $WarmupSeconds
     [void](Record-Phase 'warmup_end')
     [void](Record-Phase 'measurement_start')
     foreach ($name in $actionSequence) { Run-Action $name }
-    Capture-ContinuousDisplay
+    if (-not $CaptureBeforeWarmup) {
+        Capture-ContinuousDisplay
+    }
     Start-Sleep -Seconds $MeasuredSeconds
     [void](Record-Phase 'measurement_end')
     if ($GraceSeconds -gt 0) {
@@ -715,6 +721,7 @@ $manifestObject = [ordered]@{
         action_seed = $ActionSeed
         action_order = $actionSequence
         diagnostic_startup_savestate = -not $SkipDiagnosticStartupSavestate
+        capture_before_warmup = [bool]$CaptureBeforeWarmup
         savestate_slot = if ($null -ne $statePath) { $SavestateSlot } else { $null }
         warmup_seconds = $WarmupSeconds
         measured_seconds = $MeasuredSeconds
@@ -827,6 +834,7 @@ action=$Action
 action_seed=$ActionSeed
 action_order=$actionOrder
 diagnostic_startup_savestate=$(-not $SkipDiagnosticStartupSavestate)
+capture_before_warmup=$($CaptureBeforeWarmup.IsPresent.ToString().ToLowerInvariant())
 warmup_seconds=$WarmupSeconds
 measured_seconds=$MeasuredSeconds
 grace_seconds=$GraceSeconds
