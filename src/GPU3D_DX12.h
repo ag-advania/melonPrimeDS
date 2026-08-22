@@ -366,6 +366,10 @@ private:
     [[nodiscard]] DispatchUniform MakeDispatchUniform() const noexcept;
     void SetDispatchConstants(ID3D12GraphicsCommandList* list, const DispatchUniform& constants);
     void InsertUavBarrier(ID3D12GraphicsCommandList* list, ID3D12Resource* resource);
+    void InsertUavBarriers(
+        ID3D12GraphicsCommandList* list,
+        ID3D12Resource* const* resources,
+        u32 count);
     void TransitionBuffer(
         ID3D12GraphicsCommandList* list,
         ID3D12Resource* resource,

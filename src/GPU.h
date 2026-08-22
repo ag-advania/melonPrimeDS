@@ -1393,6 +1393,14 @@ public:
 
     [[nodiscard]] const CaptureBlockProvenance& GetCaptureBlockProvenance(
         u32 bank, u32 block) const noexcept;
+    // Monotonic event serial for the retained native/CPU ownership map. GPU2D
+    // frame recording uses it to invalidate its per-line mapping summary only
+    // when authority actually changes, without rescanning all provenance in
+    // the mapped-memory hot loop.
+    [[nodiscard]] u64 GetCaptureProvenanceSerial() const noexcept
+    {
+        return CaptureProvenanceSerial;
+    }
     // Returns false when a requested capture range mixes native/CPU owners or
     // contains native blocks from different identities. A range with no
     // native owner is considered CPU-coherent even if its non-native metadata
@@ -1484,6 +1492,7 @@ protected:
 
     std::array<CaptureBlockProvenance, CapturePhysicalBlockCount>
         CaptureProvenance{};
+    u64 CaptureProvenanceSerial = 1u;
     CaptureAuthorityDiagnostics CaptureAuthorityStats{};
 
     std::unique_ptr<Renderer2D> Rend2D_A;

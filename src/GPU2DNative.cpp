@@ -997,6 +997,32 @@ u64 ReadMappedWord(
     const bool singleMapping = mappingIndex < mappingCount
         && mappingOffset + sizeof(u64) <= MappingBytes
         && mappings != nullptr;
+
+    // A normal frame has no native-owned mapping at all. Keep this path to
+    // the pre-capture shape: one mapping lookup, one active-bank bit scan,
+    // and one 64-bit load per bank. In particular, do not perform the
+    // ownership mask lookup or the physical-boundary probe on every word.
+    if (!proofMaterialize && singleMapping
+        && (!context.Input || context.Input->NativeCaptureOverlayAny == 0u))
+    {
+        if (context.Input)
+            ++context.Input->Recorder.MappedReadFastPathCalls;
+        u32 bankMask = mappings[mappingIndex] & 0x1FFu;
+        u64 value = 0u;
+        while (bankMask != 0u)
+        {
+            const u32 bank = static_cast<u32>(__builtin_ctz(bankMask));
+            bankMask &= bankMask - 1u;
+            u64 bankValue = 0u;
+            std::memcpy(
+                &bankValue,
+                gpu.VRAM[bank] + (address & gpu.VRAMMask[bank]),
+                sizeof(bankValue));
+            value |= bankValue;
+        }
+        return value;
+    }
+
     const bool physicalReadFits = [&] {
         if (!singleMapping)
             return false;
@@ -1390,6 +1416,7 @@ void FrameRecorder::Reset() noexcept
     NativeCaptureMappingLines.fill(ScreenHeight);
     NativeCaptureMappingSources = {};
     NativeCaptureMappingWrittenBlocks = {};
+    NativeCaptureMappingProvenanceSerial = {};
     LastTimelineMutationSerial = 0u;
     LastSpriteTimelineMutationSerial = 0u;
     MemoryBaselineReady = false;
@@ -1472,6 +1499,7 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     NativeCaptureMappingLines.fill(ScreenHeight);
     NativeCaptureMappingSources = {};
     NativeCaptureMappingWrittenBlocks = {};
+    NativeCaptureMappingProvenanceSerial = {};
     CurrentTimelineVersion.fill(0u);
     Input.TimelineRowCount = 0u;
     Input.SpriteTimelineRowCount = 0u;
@@ -1545,7 +1573,9 @@ void FrameRecorder::CaptureNativeMappingForLine(
         && NativeCaptureMappingLines[mode] == line
         && NativeCaptureMappingSources[mode] == source
         && NativeCaptureMappingWrittenBlocks[mode]
-            == NativeCaptureWrittenBlocks)
+            == NativeCaptureWrittenBlocks
+        && NativeCaptureMappingProvenanceSerial[mode]
+            == GPU.GetRenderer().GetCaptureProvenanceSerial())
     {
         return;
     }
@@ -1554,6 +1584,8 @@ void FrameRecorder::CaptureNativeMappingForLine(
     NativeCaptureMappingLines[mode] = line;
     NativeCaptureMappingSources[mode] = source;
     NativeCaptureMappingWrittenBlocks[mode] = NativeCaptureWrittenBlocks;
+    NativeCaptureMappingProvenanceSerial[mode] =
+        GPU.GetRenderer().GetCaptureProvenanceSerial();
     ++Input.Recorder.NativeMappingBuildCalls;
 
     const Renderer& renderer = GPU.GetRenderer();

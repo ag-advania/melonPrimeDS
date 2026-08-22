@@ -27,6 +27,26 @@ def forbid_regex(text: str, pattern: str, label: str, failures: list[str]) -> No
         failures.append(f"{label}: forbidden /{pattern}/")
 
 
+def extract_function_body(text: str, signature: str) -> str:
+    """Return one definition body, ignoring any earlier forward declaration."""
+    start = text.find(signature)
+    if start < 0:
+        return ""
+    opening = text.find("{", start + len(signature))
+    if opening < 0:
+        return ""
+    depth = 0
+    for index in range(opening, len(text)):
+        char = text[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[opening + 1:index]
+    return ""
+
+
 def main() -> int:
     root = Path(__file__).resolve().parents[3]
     files = {
@@ -427,18 +447,21 @@ def main() -> int:
 
         vulkan_source_b = text["vulkan_shader"].split(
             "uint CaptureSourceB", 1)[1].split("uint CaptureCompositeRaw", 1)[0]
-        vulkan_reference = text["vulkan_shader"].split(
-            "uint NativeCaptureReference", 1)[1].split(
-                "void WriteNativeCaptureSample", 1)[0]
+        # The shaders may carry a forward declaration for the shared
+        # Source-A semantic function. Extract the balanced function body so
+        # the halfword-unit slice does not absorb unrelated helpers.
+        vulkan_reference = extract_function_body(
+            text["vulkan_shader"],
+            "uint NativeCaptureReference(uint engine, uint line, uint x)")
         vulkan_writer = text["vulkan_shader"].split(
             "void WriteNativeCaptureSample", 1)[1].split(
                 "void WriteStructuredPixel", 1)[0]
         dx12_source_b = text["dx12_shader"].split(
             "uint NativeCaptureSourceB", 1)[1].split(
                 "uint NativeCaptureComposite", 1)[0]
-        dx12_reference = text["dx12_shader"].split(
-            "uint NativeCaptureReference", 1)[1].split(
-                "void NativeWriteCaptureSample", 1)[0]
+        dx12_reference = extract_function_body(
+            text["dx12_shader"],
+            "uint NativeCaptureReference(uint engine,uint line,uint x)")
         dx12_writer = text["dx12_shader"].split(
             "void NativeWriteCaptureSample", 1)[1].split(
                 "static const uint NativeStructuredPlaneStride", 1)[0]

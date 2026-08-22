@@ -779,6 +779,7 @@ private:
     std::array<std::array<u32, 64>, 2> NativeCaptureMappingSources{};
     std::array<std::array<u8, CapturePhysicalBanks>, 2>
         NativeCaptureMappingWrittenBlocks{};
+    std::array<u64, 2> NativeCaptureMappingProvenanceSerial{};
     std::array<u32, 2> NativeCaptureMappingLines{
         ScreenHeight, ScreenHeight};
     std::array<bool, 2> NativeCaptureMappingBuilt{false, false};

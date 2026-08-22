@@ -560,7 +560,13 @@ inline void MaybeReport()
          "capture_cpu_2d_lines=%llu capture_cpu_2d_ns=%llu "
          "gpu2d_recorder_ns=%llu timeline_row_dedup_ns=%llu "
          "sprite_timeline_row_dedup_ns=%llu native_gpu2d_pack_ns=%llu "
-         "compositor_gpu_ns=%llu present_wait_ns=%llu\n",
+         "mapped_read_word_calls=%llu mapped_read_fast_path_calls=%llu "
+         "mapped_read_slow_path_calls=%llu native_capture_history_scan_lines=%llu "
+         "native_mapping_build_calls=%llu native_mapping_rows_uploaded=%llu "
+         "native_mapping_bytes_uploaded=%llu bg_overlay_fast_path=%llu "
+         "bg_overlay_slow_path=%llu obj_overlay_fast_path=%llu "
+         "obj_overlay_slow_path=%llu capture_dispatches=%llu "
+         "capture_barrier_calls=%llu compositor_gpu_ns=%llu present_wait_ns=%llu\n",
         state.Scale, count(Counter::Frames), count(Counter::RasterBeginWaitNs),
         count(Counter::RasterBeginWaitCount), count(Counter::RasterBeginNoWaitCount),
         count(Counter::RasterBeginFenceTimeoutCount), count(Counter::Polygons), count(Counter::Variants),
@@ -656,6 +662,13 @@ inline void MaybeReport()
          count(Counter::CaptureCPU2DLines), count(Counter::CaptureCPU2DNs),
          count(Counter::GPU2DRecorderNs), count(Counter::TimelineRowDedupNs),
          count(Counter::SpriteTimelineRowDedupNs), count(Counter::NativeGPU2DPackNs),
+         count(Counter::MappedReadWordCalls), count(Counter::MappedReadFastPathCalls),
+         count(Counter::MappedReadSlowPathCalls), count(Counter::NativeCaptureHistoryScanLines),
+         count(Counter::NativeMappingBuildCalls), count(Counter::NativeMappingRowsUploaded),
+         count(Counter::NativeMappingBytesUploaded), count(Counter::BGOverlayFastPath),
+         count(Counter::BGOverlaySlowPath), count(Counter::OBJOverlayFastPath),
+         count(Counter::OBJOverlaySlowPath), count(Counter::NativeGPU2DCaptureDispatchCount),
+         count(Counter::NativeGPU2DCaptureBarrierCount),
          count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
 
     const double reportSeconds = std::chrono::duration<double>(

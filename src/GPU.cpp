@@ -188,6 +188,7 @@ void Renderer::MarkCaptureCpuCoherent(
         provenance = {};
         provenance.Owner = CaptureOwner::CpuCoherent;
     }
+    ++CaptureProvenanceSerial;
 }
 
 void Renderer::PublishNativeCaptureBlock(
@@ -245,6 +246,7 @@ void Renderer::PublishNativeCaptureBlock(
         provenance.CaptureGeneration = identity.CaptureGeneration;
         provenance.CompletionValue = identity.CompletionValue;
     }
+    ++CaptureProvenanceSerial;
 }
 
 void Renderer::ResetCaptureProvenance(
@@ -277,6 +279,7 @@ void Renderer::ResetCaptureProvenance(
     }
 #endif
     CaptureProvenance.fill({});
+    ++CaptureProvenanceSerial;
 }
 
 

@@ -2248,6 +2248,10 @@ void main(uint3 id : SV_DispatchThreadID)
 inline const std::string GPU2DNative = R"(
 #define line nativeScanline
 #pragma warning(disable: 4000)
+// The shared Source-A semantic function is intentionally present in both
+// logical and capture pipelines. fxc's X4714 estimate is conservative for
+// this required wave-local compositor and is tracked by the runtime FPS gate.
+#pragma warning(disable: 4714)
 static const uint NativeHeaderWords = 32u;
 static const uint NativeLineWords = 68u;
 static const uint NativeEngineWords = 131072u + 65536u + 8192u + 2048u;
@@ -3162,6 +3166,8 @@ static const uint NativeStructuredCompositionBlend4=1u;
 static const uint NativeStructuredCompositionBrightnessUp=2u;
 static const uint NativeStructuredCompositionBrightnessDown=3u;
 static const uint NativeStructuredCompositionBlend5=4u;
+static const uint NativeStructuredControlPlain2D=0x87u;
+static const uint NativeStructuredControlOpaqueBlackBelow=0x20u;
 uint NativeLoadCaptureSidecar(uint reference,uint withinX,uint withinY)
 {
     uint address=reference&0xFFFFu,bank=(reference>>28u)&3u,version=(reference>>30u)&1u;
@@ -3169,6 +3175,101 @@ uint NativeLoadCaptureSidecar(uint reference,uint withinX,uint withinY)
     uint cell=((version*4u+bank)*65536u)+address;
     return CaptureSidecarBuffer[cell*samplesPerPixel+withinY*ScaleFactor+withinX];
 }
+uint NativeCaptureReference(uint engine,uint line,uint x)
+{
+    if(engine!=0u)return 0u;
+    uint packedLatch=NativeLine(0u,line,NativeSpriteLatchValid);
+    uint captureStart=(packedLatch>>8u)&0xFFu;
+    if(captureStart==0xFFu||line<=captureStart)return 0u;
+    uint cnt=NativeLine(0u,line,NativeCaptureCnt);
+    uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
+    uint displayBank=(NativeLine(0u,line,NativeDispCnt)>>18u)&3u;
+    uint destinationBank=(cnt>>16u)&3u;
+    if(displayBank!=destinationBank
+        ||(NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<displayBank))==0u)return 0u;
+    uint displayAddress=WrapLCDCHalfword(line*256u+x);
+    uint destinationAddress=WrapLCDCHalfword(
+        CaptureOffsetHalfwords((cnt>>18u)&3u));
+    uint relative=(displayAddress-destinationAddress)&0xFFFFu;
+    uint captureLine=relative/width;
+    if(captureLine<captureStart||captureLine>=line||captureLine>=height)return 0u;
+    uint version=ResultValue[2u]&1u;
+    return 0x80000000u|(version<<30u)|(displayBank<<28u)|displayAddress;
+}
+struct NativeStructuredPixelState
+{
+    uint Below;
+    uint Above;
+    uint Control;
+    uint CaptureReference;
+    uint LineMeta;
+};
+NativeStructuredPixelState NativeEmptyStructuredPixelState()
+{
+    NativeStructuredPixelState result;
+    result.Below=0u;
+    result.Above=0u;
+    result.Control=NativeStructuredControlPlain2D<<24u;
+    result.CaptureReference=0u;
+    result.LineMeta=0u;
+    return result;
+}
+// Shared Source-A semantic function. Logical Stage A writes its returned
+// planes, while capture evaluates the same value directly and avoids reading
+// the structured UAV between line dispatches.
+NativeStructuredPixelState NativeCompositeSourceAExact(
+    uint screen,uint line,uint x,uint engine)
+{
+    NativeStructuredPixelState result=NativeEmptyStructuredPixelState();
+    uint disp=NativeLine(engine,line,NativeDispCnt);
+    uint mode=(disp>>16u)&(engine==0u?3u:1u);
+    uint brightness=NativeLine(engine,line,NativeMasterBrightness);
+    uint renderX=NativeLine(engine,line,NativeRenderXPos)&0x1FFu;
+    if(ResultValue[13u]==0u)return result;
+    if(mode==1u)
+    {
+        if(NativeLine(engine,line,NativeUnitEnabled)==0u
+            ||NativeLine(engine,line,NativeForcedBlank)!=0u)
+        {
+            result.Below=NativeDisplay(screen,engine,line,(int)x,x,line);
+            return result;
+        }
+        NativeCompositeLayers layers=NativeCompositeAt(
+            screen,engine,line,(int)x,x,line,true);
+        uint val1=NativeStructuredWord(layers.First),val2=NativeStructuredWord(layers.Second);
+        uint plane0=layers.Color,plane1=0u;
+        uint a1=val1>>24u,a2=val2>>24u;
+        bool v1=(a1&0x40u)!=0u&&(a1&0x80u)==0u;
+        bool v2=(a2&0x40u)!=0u&&(a2&0x80u)==0u;
+        uint controlAlpha=NativeStructuredControlPlain2D;
+        if(v1)
+        {
+            plane0=val2;
+            controlAlpha=NativeStructuredControlHas3D|(layers.Effect&0x0Fu);
+            if((plane0&0x00FFFFFFu)==0u&&(plane0>>24u)!=0u)
+                controlAlpha|=NativeStructuredControlOpaqueBlackBelow;
+        }
+        else if(v2&&layers.Effect==NativeStructuredCompositionBlend4)
+        {
+            plane0=0u;plane1=val1;
+            controlAlpha=NativeStructuredControlHas3D
+                |NativeStructuredControlAbove|NativeStructuredCompositionBlend4;
+            if((plane1&0x00FFFFFFu)==0u&&(plane1>>24u)!=0u)
+                controlAlpha|=NativeStructuredControlOpaqueBlackBelow;
+        }
+        result.Below=plane0;
+        result.Above=plane1;
+        result.Control=(controlAlpha<<24u)
+            |((layers.Evb&0xFFu)<<16u)|((layers.Eva&0xFFu)<<8u);
+        result.LineMeta=(1u<<16u)|((brightness>>14u)<<8u)
+            |(brightness&0x1Fu)|(renderX<<23u);
+        return result;
+    }
+    result.Below=NativeDisplay(screen,engine,line,(int)x,x,line);
+    result.CaptureReference=NativeCaptureReference(engine,line,x);
+    return result;
+}
+
 uint NativeStructuredCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
 {
     // Source A is engine A. Structured planes are stored in LCD screen order,
@@ -3182,21 +3283,18 @@ uint NativeStructuredCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
             break;
         }
     }
-    uint nativeIndex=line*256u+x,base=captureScreen*4u*NativeStructuredPlaneStride;
-    uint below=ResolveOut[base+nativeIndex];
-    uint above=ResolveOut[base+NativeStructuredPlaneStride+nativeIndex];
-    uint control=ResolveOut[base+2u*NativeStructuredPlaneStride+nativeIndex];
-    uint reference=ResolveOut[base+3u*NativeStructuredPlaneStride+nativeIndex];
-    uint flags=control>>24u,result=below;
+    uint engine=ResultValue[NativeRouteBase+captureScreen*192u+line]&1u;
+    NativeStructuredPixelState semantic=NativeCompositeSourceAExact(
+        captureScreen,line,x,engine);
+    uint flags=semantic.Control>>24u,result=semantic.Below;
     if((flags&NativeStructuredControlHas3D)==0u)return result;
-
-    uint lineMeta=ResolveOut[NativeStructuredLineMetaBase+captureScreen*192u+line];
     uint pixel3D=0u;
-    if((reference&0x80000000u)!=0u)
-        pixel3D=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,sampleY);
+    if((semantic.CaptureReference&0x80000000u)!=0u)
+        pixel3D=NativeLoadCaptureSidecar(
+            semantic.CaptureReference,ox%ScaleFactor,sampleY);
     else if(TexWidth!=0u)
     {
-        uint xpos=(lineMeta>>23u)&0x1FFu;
+        uint xpos=(semantic.LineMeta>>23u)&0x1FFu;
         int sx=(xpos&0x100u)!=0u
             ?(int)ox-(int)((512u-xpos)*ScaleFactor)
             :(int)ox+(int)(xpos*ScaleFactor);
@@ -3204,14 +3302,18 @@ uint NativeStructuredCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
             pixel3D=NativeFinalFB((uint)sx,line*ScaleFactor+sampleY);
     }
     if(((pixel3D>>24u)&0x1Fu)==0u)return result;
-    uint eva=(control>>8u)&0x1Fu,evb=(control>>16u)&0x1Fu,mode=flags&0xFu;
-    if(mode==NativeStructuredCompositionBlend4&&(flags&NativeStructuredControlAbove)!=0u)
-        return NativeBlend4(above,pixel3D,eva,evb);
+    uint eva=(semantic.Control>>8u)&0x1Fu;
+    uint evb=(semantic.Control>>16u)&0x1Fu;
+    uint mode=flags&0xFu;
+    if(mode==NativeStructuredCompositionBlend4
+        &&(flags&NativeStructuredControlAbove)!=0u)
+        return NativeBlend4(semantic.Above,pixel3D,eva,evb);
     if(mode==NativeStructuredCompositionBrightnessUp)
         return NativePack(NativeColorR(pixel3D)+(((63u-NativeColorR(pixel3D))*eva+8u)>>4u),NativeColorG(pixel3D)+(((63u-NativeColorG(pixel3D))*eva+8u)>>4u),NativeColorB(pixel3D)+(((63u-NativeColorB(pixel3D))*eva+8u)>>4u),0xFFu);
     if(mode==NativeStructuredCompositionBrightnessDown)
         return NativePack(NativeColorR(pixel3D)-((NativeColorR(pixel3D)*eva+7u)>>4u),NativeColorG(pixel3D)-((NativeColorG(pixel3D)*eva+7u)>>4u),NativeColorB(pixel3D)-((NativeColorB(pixel3D)*eva+7u)>>4u),0xFFu);
-    if(mode==NativeStructuredCompositionBlend5)return NativeBlend5(pixel3D,below);
+    if(mode==NativeStructuredCompositionBlend5)
+        return NativeBlend5(pixel3D,semantic.Below);
     return pixel3D;
 }
 uint NativeCaptureSourceB(uint line,uint x,uint cnt)
@@ -3253,27 +3355,6 @@ uint NativeCaptureRawToColor6(uint color)
     return NativePack((color&31u)<<1u,((color>>5u)&31u)<<1u,
         ((color>>10u)&31u)<<1u,((color>>15u)&1u)!=0u?31u:0u);
 }
-uint NativeCaptureReference(uint engine,uint line,uint x)
-{
-    if(engine!=0u)return 0u;
-    uint packedLatch=NativeLine(0u,line,NativeSpriteLatchValid);
-    uint captureStart=(packedLatch>>8u)&0xFFu;
-    if(captureStart==0xFFu||line<=captureStart)return 0u;
-    uint cnt=NativeLine(0u,line,NativeCaptureCnt);
-    uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
-    uint displayBank=(NativeLine(0u,line,NativeDispCnt)>>18u)&3u;
-    uint destinationBank=(cnt>>16u)&3u;
-    if(displayBank!=destinationBank
-        ||(NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<displayBank))==0u)return 0u;
-    uint displayAddress=WrapLCDCHalfword(line*256u+x);
-    uint destinationAddress=WrapLCDCHalfword(
-        CaptureOffsetHalfwords((cnt>>18u)&3u));
-    uint relative=(displayAddress-destinationAddress)&0xFFFFu;
-    uint captureLine=relative/width;
-    if(captureLine<captureStart||captureLine>=line||captureLine>=height)return 0u;
-    uint version=ResultValue[2u]&1u;
-    return 0x80000000u|(version<<30u)|(displayBank<<28u)|displayAddress;
-}
 void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
 {
     uint cnt=NativeLine(0u,line,NativeCaptureCnt);
@@ -3304,9 +3385,6 @@ void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
     }
 }
 
-static const uint NativeStructuredControlPlain2D=0x87u;
-static const uint NativeStructuredControlOpaqueBlackBelow=0x20u;
-
 void NativeWriteStructuredPixel(uint screen,uint line,uint x,uint below,uint above,uint control,uint reference)
 {
     uint pixel=line*256u+x,base=screen*4u*NativeStructuredPlaneStride;
@@ -3321,48 +3399,11 @@ void NativeWriteStructuredLineMeta(uint screen,uint line,uint meta)
 }
 void NativeWriteStructuredLogicalPixel(uint screen,uint line,uint x,uint engine)
 {
-    uint disp=NativeLine(engine,line,NativeDispCnt),mode=(disp>>16u)&(engine==0u?3u:1u);
-    uint brightness=NativeLine(engine,line,NativeMasterBrightness);
-    uint renderX=NativeLine(engine,line,NativeRenderXPos)&0x1FFu;
-    if(ResultValue[13u]==0u)
-    {
-        NativeWriteStructuredPixel(screen,line,x,0u,0u,NativeStructuredControlPlain2D<<24u,0u);
-        if(x==0u)NativeWriteStructuredLineMeta(screen,line,0u);
-        return;
-    }
-    if(mode==1u)
-    {
-        // Regular display mode still obeys the DS per-line unit/blank state;
-        // these are display semantics rather than an empty layer list.
-        if(NativeLine(engine,line,NativeUnitEnabled)==0u||NativeLine(engine,line,NativeForcedBlank)!=0u)
-        {
-            uint color=NativeDisplay(screen,engine,line,(int)x,x,line);
-            NativeWriteStructuredPixel(screen,line,x,color,0u,NativeStructuredControlPlain2D<<24u,0u);
-            if(x==0u)NativeWriteStructuredLineMeta(screen,line,0u);
-            return;
-        }
-        NativeCompositeLayers layers=NativeCompositeAt(screen,engine,line,(int)x,x,line,true);
-        uint val1=NativeStructuredWord(layers.First),val2=NativeStructuredWord(layers.Second);
-        uint plane0=layers.Color,plane1=0u,controlAlpha=NativeStructuredControlPlain2D;
-        uint a1=val1>>24u,a2=val2>>24u;
-        bool v1=(a1&0x40u)!=0u&&(a1&0x80u)==0u,v2=(a2&0x40u)!=0u&&(a2&0x80u)==0u;
-        if(v1)
-        {
-            plane0=val2;controlAlpha=NativeStructuredControlHas3D|(layers.Effect&0x0Fu);
-            if((plane0&0x00FFFFFFu)==0u&&(plane0>>24u)!=0u)controlAlpha|=NativeStructuredControlOpaqueBlackBelow;
-        }
-        else if(v2&&layers.Effect==1u)
-        {
-            plane0=0u;plane1=val1;controlAlpha=NativeStructuredControlHas3D|NativeStructuredControlAbove|1u;
-            if((plane1&0x00FFFFFFu)==0u&&(plane1>>24u)!=0u)controlAlpha|=NativeStructuredControlOpaqueBlackBelow;
-        }
-        uint control=(controlAlpha<<24u)|((layers.Evb&0xFFu)<<16u)|((layers.Eva&0xFFu)<<8u);
-        NativeWriteStructuredPixel(screen,line,x,plane0,plane1,control,0u);
-        if(x==0u)NativeWriteStructuredLineMeta(screen,line,(1u<<16u)|((brightness>>14u)<<8u)|(brightness&0x1Fu)|(renderX<<23u));
-        return;
-    }
-    NativeWriteStructuredPixel(screen,line,x,NativeDisplay(screen,engine,line,(int)x,x,line),0u,NativeStructuredControlPlain2D<<24u,NativeCaptureReference(engine,line,x));
-    if(x==0u)NativeWriteStructuredLineMeta(screen,line,0u);
+    NativeStructuredPixelState semantic=NativeCompositeSourceAExact(
+        screen,line,x,engine);
+    NativeWriteStructuredPixel(screen,line,x,semantic.Below,semantic.Above,
+        semantic.Control,semantic.CaptureReference);
+    if(x==0u)NativeWriteStructuredLineMeta(screen,line,semantic.LineMeta);
 }
 void NativeWriteObjRawPixel(uint screen,uint line,uint x,uint engine)
 {

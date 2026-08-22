@@ -1497,104 +1497,6 @@ uint LoadNativeCaptureSidecar(uint reference, uint withinX, uint withinY)
         cell * samplesPerPixel + withinY * uint(ScaleFactor) + withinX];
 }
 
-uint StructuredCaptureSourceA(
-    uint line, uint x, uint outputX, uint sampleY)
-{
-    // Source A is engine A, while structured planes are stored in LCD screen
-    // order. Follow the recorded route instead of assuming screen 0.
-    uint captureScreen = 0u;
-    for (uint screen = 0u; screen < 2u; ++screen)
-    {
-        if ((NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u) == 0u)
-        {
-            captureScreen = screen;
-            break;
-        }
-    }
-
-    uint nativeIndex = line * 256u + x;
-    uint base = captureScreen * 4u * kStructuredPlaneStride;
-    uint below = NativeGPU2DOutput[base + nativeIndex];
-    uint above = NativeGPU2DOutput[
-        base + kStructuredPlaneStride + nativeIndex];
-    uint control = NativeGPU2DOutput[
-        base + 2u * kStructuredPlaneStride + nativeIndex];
-    uint captureReference = NativeGPU2DOutput[
-        base + 3u * kStructuredPlaneStride + nativeIndex];
-    uint controlFlags = control >> 24u;
-    uint color = below;
-    if ((controlFlags & kStructuredControlHas3D) == 0u)
-        return color;
-
-    uint lineMeta = NativeGPU2DOutput[
-        kStructuredLineMetaBase + captureScreen * 192u + line];
-    uint pixel3D = 0u;
-    if ((captureReference & 0x80000000u) != 0u)
-    {
-        pixel3D = LoadNativeCaptureSidecar(
-            captureReference, outputX % uint(ScaleFactor), sampleY);
-    }
-    else if (pc.TexWidth != 0u)
-    {
-        uint renderX = (lineMeta >> 23u) & 0x1FFu;
-        int sourceX = (renderX & 0x100u) != 0u
-            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
-            : int(outputX) + int(renderX * uint(ScaleFactor));
-        if (sourceX >= 0 && sourceX < ScreenWidth)
-        {
-            pixel3D = LoadFinalFB(ivec2(
-                sourceX, int(line * uint(ScaleFactor) + sampleY)));
-        }
-    }
-
-    // Match PrepareStructuredCaptureLine(): transparent FinalFB exposes the
-    // structured below plane instead of becoming opaque black in capture.
-    if (((pixel3D >> 24u) & 0x1Fu) == 0u)
-        return color;
-
-    uint eva = (control >> 8u) & 0x1Fu;
-    uint evb = (control >> 16u) & 0x1Fu;
-    uint compositionMode = controlFlags & 0xFu;
-    if (compositionMode == kStructuredCompositionBlend4
-        && (controlFlags & kStructuredControlAbove) != 0u)
-    {
-        return Blend4Native(above, pixel3D, eva, evb);
-    }
-    if (compositionMode == kStructuredCompositionBrightnessUp)
-        return BrightnessUp(pixel3D, eva, 8u);
-    if (compositionMode == kStructuredCompositionBrightnessDown)
-        return BrightnessDown(pixel3D, eva, 7u);
-    if (compositionMode == kStructuredCompositionBlend5)
-        return Blend5Native(pixel3D, below);
-    return pixel3D;
-}
-
-uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
-{
-    uint captureCnt = LineWord(0u, line, kCaptureCnt);
-    if ((captureCnt & (1u << 24u)) != 0u && pc.TexWidth != 0u)
-    {
-        uint renderX = LineWord(0u, line, kRenderXPos) & 0x1FFu;
-        int sx = (renderX & 0x100u) != 0u
-            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
-            : int(outputX) + int(renderX * uint(ScaleFactor));
-        if (sx >= 0 && sx < ScreenWidth)
-            return LoadFinalFB(ivec2(
-                sx, int(line * uint(ScaleFactor) + sampleY)));
-        return 0u;
-    }
-    return StructuredCaptureSourceA(line, x, outputX, sampleY);
-}
-
-uint CaptureRawToColor6(uint color)
-{
-    return PackColor6(
-        (color & 0x1Fu) << 1u,
-        ((color >> 5u) & 0x1Fu) << 1u,
-        ((color >> 10u) & 0x1Fu) << 1u,
-        ((color >> 15u) & 1u) != 0u ? 31u : 0u);
-}
-
 uint NativeCaptureReference(uint engine, uint line, uint x)
 {
     if (engine != 0u)
@@ -1629,6 +1531,198 @@ uint NativeCaptureReference(uint engine, uint line, uint x)
     uint version = NativeGPU2DInput[2u] & 1u;
     return 0x80000000u | (version << 30u) | (displayBank << 28u)
         | displayAddress;
+}
+
+struct StructuredPixelState
+{
+    uint Below;
+    uint Above;
+    uint Control;
+    uint CaptureReference;
+    uint LineMeta;
+};
+
+StructuredPixelState EmptyStructuredPixelState()
+{
+    StructuredPixelState result;
+    result.Below = 0u;
+    result.Above = 0u;
+    result.Control = kStructuredControlPlain2D << 24u;
+    result.CaptureReference = 0u;
+    result.LineMeta = 0u;
+    return result;
+}
+
+// This is the single Source-A semantic function.  Stage A stores its result
+// in StructuredOutput, while capture evaluates the same value directly before
+// writing the LCDC mirror.  Keeping the layer/effect decision here removes a
+// structured-buffer read/write round trip from every capture line without
+// allowing the two paths to drift semantically.
+StructuredPixelState CompositeSourceAExact(
+    uint screen, uint line, uint x, uint engine)
+{
+    StructuredPixelState result = EmptyStructuredPixelState();
+    const uint dispCnt = LineWord(engine, line, kDispCnt);
+    const uint displayMode = engine == 0u
+        ? (dispCnt >> 16u) & 3u : (dispCnt >> 16u) & 1u;
+    const uint masterBrightness = LineWord(engine, line, kMasterBrightness);
+    const uint renderX = LineWord(engine, line, kRenderXPos) & 0x1FFu;
+
+    if (NativeGPU2DInput[13u] == 0u)
+        return result;
+
+    if (displayMode == kStructuredDisplayRegular)
+    {
+        // Regular display mode still obeys the DS per-line unit/blank state.
+        // Do not route these cases through the layer compositor: a disabled
+        // unit and ForcedBlank are display semantics, not an empty layer list.
+        if (LineWord(engine, line, kUnitEnabled) == 0u
+            || LineWord(engine, line, kForcedBlank) != 0u)
+        {
+            result.Below = DisplayPixel(
+                screen, engine, line, int(x), x, line);
+            result.LineMeta = kStructuredDisplayOff;
+            return result;
+        }
+
+        CompositeLayers layers = Composite2DLayers(
+            screen, engine, line, int(x), x, line, true);
+        uint val1 = StructuredPixelWord(layers.First);
+        uint val2 = StructuredPixelWord(layers.Second);
+        uint plane0 = layers.Color;
+        uint plane1 = 0u;
+        uint alpha1 = val1 >> 24u;
+        uint alpha2 = val2 >> 24u;
+        bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
+        bool val2Is3D = (alpha2 & 0x40u) != 0u && (alpha2 & 0x80u) == 0u;
+        uint controlAlpha = kStructuredControlPlain2D;
+        if (val1Is3D)
+        {
+            plane0 = val2;
+            controlAlpha = kStructuredControlHas3D
+                | (layers.Effect & 0x0Fu);
+            if ((plane0 & 0x00FFFFFFu) == 0u && (plane0 >> 24u) != 0u)
+                controlAlpha |= kStructuredControlOpaqueBlackBelow;
+        }
+        else if (val2Is3D && layers.Effect == kStructuredCompositionBlend4)
+        {
+            plane0 = 0u;
+            plane1 = val1;
+            controlAlpha = kStructuredControlHas3D
+                | kStructuredControlAbove | kStructuredCompositionBlend4;
+            if ((plane1 & 0x00FFFFFFu) == 0u && (plane1 >> 24u) != 0u)
+                controlAlpha |= kStructuredControlOpaqueBlackBelow;
+        }
+        result.Below = plane0;
+        result.Above = plane1;
+        result.Control = (controlAlpha << 24u)
+            | ((layers.Evb & 0xFFu) << 16u)
+            | ((layers.Eva & 0xFFu) << 8u);
+        result.LineMeta = kStructuredDisplayRegular << 16u
+            | ((masterBrightness >> 14u) << 8u)
+            | (masterBrightness & 0x1Fu)
+            | (renderX << 23u);
+        return result;
+    }
+
+    // Display modes 0/2/3 are already final native display pixels. Mark them
+    // as display-mode-off so Stage B does not apply master brightness twice.
+    result.Below = DisplayPixel(
+        screen, engine, line, int(x), x, line);
+    result.CaptureReference = NativeCaptureReference(engine, line, x);
+    result.LineMeta = kStructuredDisplayOff;
+    return result;
+}
+
+uint StructuredCaptureSourceA(
+    uint line, uint x, uint outputX, uint sampleY)
+{
+    // Source A is engine A, while the structured contract is stored in LCD
+    // screen order. Follow the recorded route instead of assuming screen 0.
+    uint captureScreen = 0u;
+    for (uint screen = 0u; screen < 2u; ++screen)
+    {
+        if ((NativeGPU2DInput[kRouteBase + screen * 192u + line] & 1u) == 0u)
+        {
+            captureScreen = screen;
+            break;
+        }
+    }
+    uint engine = NativeGPU2DInput[
+        kRouteBase + captureScreen * 192u + line] & 1u;
+    StructuredPixelState semantic = CompositeSourceAExact(
+        captureScreen, line, x, engine);
+    uint controlFlags = semantic.Control >> 24u;
+    uint color = semantic.Below;
+    if ((controlFlags & kStructuredControlHas3D) == 0u)
+        return color;
+
+    uint pixel3D = 0u;
+    if ((semantic.CaptureReference & 0x80000000u) != 0u)
+    {
+        pixel3D = LoadNativeCaptureSidecar(
+            semantic.CaptureReference,
+            outputX % uint(ScaleFactor), sampleY);
+    }
+    else if (pc.TexWidth != 0u)
+    {
+        uint renderX = (semantic.LineMeta >> 23u) & 0x1FFu;
+        int sourceX = (renderX & 0x100u) != 0u
+            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
+            : int(outputX) + int(renderX * uint(ScaleFactor));
+        if (sourceX >= 0 && sourceX < ScreenWidth)
+        {
+            pixel3D = LoadFinalFB(ivec2(
+                sourceX, int(line * uint(ScaleFactor) + sampleY)));
+        }
+    }
+
+    // Match PrepareStructuredCaptureLine(): transparent FinalFB exposes the
+    // structured below plane instead of becoming opaque black in capture.
+    if (((pixel3D >> 24u) & 0x1Fu) == 0u)
+        return color;
+
+    uint eva = (semantic.Control >> 8u) & 0x1Fu;
+    uint evb = (semantic.Control >> 16u) & 0x1Fu;
+    uint compositionMode = controlFlags & 0xFu;
+    if (compositionMode == kStructuredCompositionBlend4
+        && (controlFlags & kStructuredControlAbove) != 0u)
+    {
+        return Blend4Native(semantic.Above, pixel3D, eva, evb);
+    }
+    if (compositionMode == kStructuredCompositionBrightnessUp)
+        return BrightnessUp(pixel3D, eva, 8u);
+    if (compositionMode == kStructuredCompositionBrightnessDown)
+        return BrightnessDown(pixel3D, eva, 7u);
+    if (compositionMode == kStructuredCompositionBlend5)
+        return Blend5Native(pixel3D, semantic.Below);
+    return pixel3D;
+}
+
+uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
+{
+    uint captureCnt = LineWord(0u, line, kCaptureCnt);
+    if ((captureCnt & (1u << 24u)) != 0u && pc.TexWidth != 0u)
+    {
+        uint renderX = LineWord(0u, line, kRenderXPos) & 0x1FFu;
+        int sx = (renderX & 0x100u) != 0u
+            ? int(outputX) - int((512u - renderX) * uint(ScaleFactor))
+            : int(outputX) + int(renderX * uint(ScaleFactor));
+        if (sx >= 0 && sx < ScreenWidth)
+            return LoadFinalFB(ivec2(
+                sx, int(line * uint(ScaleFactor) + sampleY)));
+        return 0u;
+    }
+    return StructuredCaptureSourceA(line, x, outputX, sampleY);
+}
+
+uint CaptureRawToColor6(uint color)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        ((color >> 5u) & 0x1Fu) << 1u,
+        ((color >> 10u) & 0x1Fu) << 1u,
+        ((color >> 15u) & 1u) != 0u ? 31u : 0u);
 }
 
 void WriteNativeCaptureSample(
@@ -1702,90 +1796,13 @@ void WriteStructuredLineMeta(uint screen, uint line, uint meta)
 
 void WriteStructuredLogicalPixel(uint screen, uint line, uint x, uint engine)
 {
-    const uint pixel = line * 256u + x;
-    const uint dispCnt = LineWord(engine, line, kDispCnt);
-    const uint displayMode = engine == 0u
-        ? (dispCnt >> 16u) & 3u : (dispCnt >> 16u) & 1u;
-    const uint masterBrightness = LineWord(engine, line, kMasterBrightness);
-    const uint renderX = LineWord(engine, line, kRenderXPos) & 0x1FFu;
-
-    if (NativeGPU2DInput[13u] == 0u)
-    {
-        WriteStructuredPixel(screen, line, x, 0u, 0u,
-            kStructuredControlPlain2D << 24u, 0u);
-        if (x == 0u)
-            WriteStructuredLineMeta(screen, line, kStructuredDisplayOff);
-        return;
-    }
-
-    if (displayMode == kStructuredDisplayRegular)
-    {
-        // Regular display mode still obeys the DS per-line unit/blank state.
-        // Do not route these cases through the layer compositor: a disabled
-        // unit and ForcedBlank are display semantics, not an empty layer list.
-        if (LineWord(engine, line, kUnitEnabled) == 0u
-            || LineWord(engine, line, kForcedBlank) != 0u)
-        {
-            const uint color = DisplayPixel(screen, engine, line, int(x), x, line);
-            WriteStructuredPixel(screen, line, x, color, 0u,
-                kStructuredControlPlain2D << 24u, 0u);
-            if (x == 0u)
-                WriteStructuredLineMeta(screen, line, kStructuredDisplayOff);
-            return;
-        }
-        CompositeLayers layers = Composite2DLayers(
-            screen, engine, line, int(x), x, line, true);
-        uint val1 = StructuredPixelWord(layers.First);
-        uint val2 = StructuredPixelWord(layers.Second);
-        uint plane0 = layers.Color;
-        uint plane1 = 0u;
-        uint captureReference = 0u;
-        uint alpha1 = val1 >> 24u;
-        uint alpha2 = val2 >> 24u;
-        bool val1Is3D = (alpha1 & 0x40u) != 0u && (alpha1 & 0x80u) == 0u;
-        bool val2Is3D = (alpha2 & 0x40u) != 0u && (alpha2 & 0x80u) == 0u;
-        uint controlAlpha = kStructuredControlPlain2D;
-        if (val1Is3D)
-        {
-            plane0 = val2;
-            controlAlpha = kStructuredControlHas3D
-                | (layers.Effect & 0x0Fu);
-            if ((plane0 & 0x00FFFFFFu) == 0u && (plane0 >> 24u) != 0u)
-                controlAlpha |= kStructuredControlOpaqueBlackBelow;
-        }
-        else if (val2Is3D && layers.Effect == kStructuredCompositionBlend4)
-        {
-            plane0 = 0u;
-            plane1 = val1;
-            controlAlpha = kStructuredControlHas3D
-                | kStructuredControlAbove | kStructuredCompositionBlend4;
-            if ((plane1 & 0x00FFFFFFu) == 0u && (plane1 >> 24u) != 0u)
-                controlAlpha |= kStructuredControlOpaqueBlackBelow;
-        }
-        uint control = (controlAlpha << 24u)
-            | ((layers.Evb & 0xFFu) << 16u)
-            | ((layers.Eva & 0xFFu) << 8u);
-        WriteStructuredPixel(screen, line, x, plane0, plane1,
-            control, captureReference);
-        if (x == 0u)
-        {
-            uint meta = kStructuredDisplayRegular << 16u
-                | ((masterBrightness >> 14u) << 8u)
-                | ((masterBrightness & 0x1Fu))
-                | (renderX << 23u);
-            WriteStructuredLineMeta(screen, line, meta);
-        }
-        return;
-    }
-
-    // Display modes 0/2/3 are already final native display pixels. Mark them
-    // as display-mode-off so Stage B does not apply master brightness twice.
-    uint color = DisplayPixel(screen, engine, line, int(x), x, line);
-    uint captureReference = NativeCaptureReference(engine, line, x);
-    WriteStructuredPixel(screen, line, x, color, 0u,
-        kStructuredControlPlain2D << 24u, captureReference);
+    StructuredPixelState semantic = CompositeSourceAExact(
+        screen, line, x, engine);
+    WriteStructuredPixel(
+        screen, line, x, semantic.Below, semantic.Above,
+        semantic.Control, semantic.CaptureReference);
     if (x == 0u)
-        WriteStructuredLineMeta(screen, line, kStructuredDisplayOff);
+        WriteStructuredLineMeta(screen, line, semantic.LineMeta);
 }
 
 void WriteNativeObjRawPixel(

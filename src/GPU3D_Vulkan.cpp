@@ -3841,6 +3841,28 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         uploadPlan.PaletteBytes);
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DOAMUploadBytes,
         uploadPlan.OAMBytes);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::MappedReadWordCalls,
+        input.Recorder.MappedReadWordCalls);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::MappedReadFastPathCalls,
+        input.Recorder.MappedReadFastPathCalls);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::MappedReadSlowPathCalls,
+        input.Recorder.MappedReadSlowPathCalls);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::NativeCaptureHistoryScanLines,
+        input.Recorder.NativeCaptureHistoryScanLines);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::NativeMappingBuildCalls,
+        input.Recorder.NativeMappingBuildCalls);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::NativeMappingRowsUploaded,
+        input.Recorder.NativeMappingRowsUploaded);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::NativeMappingBytesUploaded,
+        input.Recorder.NativeMappingBytesUploaded);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::BGOverlayFastPath,
+        input.Recorder.BGOverlayFastPath);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::BGOverlaySlowPath,
+        input.Recorder.BGOverlaySlowPath);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::OBJOverlayFastPath,
+        input.Recorder.OBJOverlayFastPath);
+    VulkanPerf::AddCounter(VulkanPerf::Counter::OBJOverlaySlowPath,
+        input.Recorder.OBJOverlaySlowPath);
 
     for (u32 i = 0; i < uploadPlan.Count; ++i)
     {
@@ -4010,7 +4032,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         ComposeFrames.WriteTimestamp(
             VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, false));
-        const VkBuffer structuredCaptureBuffer = structuredOutputBuffer.GetHandle();
+        u32 activeCaptureLines = 0u;
         for (u32 line = 0; line < GPU2DNative::ScreenHeight; ++line)
         {
             const bool captureLineActive =
@@ -4021,64 +4043,52 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
                 DivRoundUp(256u, 128u), 2u, 1u);
-            // CaptureSourceA reads the structured plane written by the
-            // immediately preceding logical dispatch. The native capture
-            // mirror barrier alone does not make this separate buffer
-            // dependency visible to Vulkan.
-            BufferBarrier(cmd, &structuredCaptureBuffer, 1,
+            // The raw pass populates the device-resident OBJ latch consumed
+            // by the logical pass. This dependency is required even when the
+            // capture command is inactive for this line.
+            BufferBarrier(cmd, &nativeCapture, 1,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_WRITE_BIT,
                 VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK_ACCESS_SHADER_READ_BIT);
-            if (captureLineActive)
-            {
-                BufferBarrier(cmd, &nativeCapture, 1,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-            }
 
             push.Padding = 16u | 8u; // two logical screens, one line
             fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                 VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
             fns.CmdDispatch(cmd,
                 DivRoundUp(256u, 128u), 2u, 1u);
-            BufferBarrier(cmd, &nativeCapture, 1,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-
             if (captureLineActive)
             {
+                ++activeCaptureLines;
                 push.Padding = 4u; // capture-only, one logical line
                 fns.CmdPushConstants(cmd, Layouts.GetPipelineLayout(),
                     VK_SHADER_STAGE_COMPUTE_BIT, 0, Vk::PushConstantSize, &push);
                 fns.CmdDispatch(cmd,
                     DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
                     static_cast<u32>(ScaleFactor), 1u);
-                BufferBarrier(cmd, &nativeCapture, 1,
+                const VkBuffer captureOutputs[2] = {
+                    nativeCapture, captureSidecar};
+                BufferBarrier(cmd, captureOutputs, 2,
                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                     VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-                BufferBarrier(cmd, &captureSidecar, 1,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-                BufferBarrier(cmd, &structuredCaptureBuffer, 1,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_ACCESS_SHADER_READ_BIT,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_ACCESS_SHADER_WRITE_BIT);
+                VulkanPerf::AddCounter(
+                    VulkanPerf::Counter::NativeGPU2DCaptureDispatchCount);
                 VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 3u);
             }
             else
             {
                 VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DDispatchCount, 2u);
             }
+        }
+        // The sidecar is consumed only after the complete Stage A sequence;
+        // one boundary is sufficient for all active capture lines.
+        if (activeCaptureLines != 0u)
+        {
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::NativeGPU2DCaptureBarrierCount,
+                static_cast<u64>(activeCaptureLines) + 1u);
         }
         ComposeFrames.WriteTimestamp(
             VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
