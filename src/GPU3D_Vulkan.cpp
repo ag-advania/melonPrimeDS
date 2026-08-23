@@ -3198,6 +3198,24 @@ NativeCaptureStateIdentity VulkanRenderer3D::GetNativeCaptureStateIdentity(
     return identity;
 }
 
+void VulkanRenderer3D::InvalidateHighResCaptureRange(
+    u32 bank,
+    u32 start,
+    u32 len,
+    GPU2DNative::HighResCaptureFallbackReason reason) noexcept
+{
+    const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+    for (u32 i = 0u; i < blockCount; ++i)
+    {
+        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+        HighResCaptureProvenance.InvalidatePhysicalRange(
+            bank,
+            block * CapturePhysicalBlockBytes,
+            CapturePhysicalBlockBytes,
+            reason);
+    }
+}
+
 bool VulkanRenderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 14>& planes,
     const std::array<const u32*, 2>& lineMeta,
@@ -3743,6 +3761,10 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
     const bool stageDiagnostics = GPU2DNative::StageDiagnosticsEnabled();
     const bool diagnosticReadback = exactValidation || stageDiagnostics;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    std::unique_ptr<GPU2DNative::HighResCaptureProvenanceTable>
+        diagnosticCaptureProvenance;
+#endif
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
@@ -3846,8 +3868,20 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         ComposeFrames, GpuMetric::NativeGPU2DResolve,
         VulkanPerf::Counter::CompositorGpuTimeNs);
 
+    u64 pendingCompletionValue = NativeSemanticSubmissionSerial + 1u;
+    if (pendingCompletionValue == 0u)
+        pendingCompletionValue = 1u;
+    const NativeCaptureStateIdentity pendingCaptureIdentity{
+        true,
+        CaptureOwner::NativeVulkan,
+        CurrentEpoch,
+        input.Generation.Frame,
+        input.Generation.CaptureGeneration,
+        pendingCompletionValue,
+    };
     HighResCaptureProvenance.BeginFrame(
-        input, CurrentEpoch, static_cast<u32>(ScaleFactor));
+        input, pendingCaptureIdentity, static_cast<u32>(ScaleFactor));
+    HighResCaptureProvenance.LogPostGapTrace("Vulkan", input);
     const bool semanticFrameContiguous = LastSemanticEpoch == CurrentEpoch
         && LastSemanticFrame != 0
         && input.Generation.Frame == LastSemanticFrame + 1;
@@ -3874,7 +3908,15 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     {
         packedNativeInput = GPU2DNative::PackHighResCaptureProvenance(
             staging, GPU2DNative::PackedFrameWords,
-            HighResCaptureProvenance.States());
+            HighResCaptureProvenance.States(), input, pendingCompletionValue);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (packedNativeInput && stageDiagnostics)
+        {
+            diagnosticCaptureProvenance = std::make_unique<
+                GPU2DNative::HighResCaptureProvenanceTable>(
+                    HighResCaptureProvenance.States());
+        }
+#endif
     }
     if (packedNativeInput)
     {
@@ -3890,6 +3932,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     }
     if (!packedNativeInput)
     {
+        HighResCaptureProvenance.AbortFrame();
         ComposeFrames.SubmitFrame(Device.GetMainQueue());
         SetRuntimeFailure("the native GPU2D input staging upload failed");
         return false;
@@ -4391,17 +4434,16 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     const u64 submittedNativeFrame = ComposeFrames.GetCurrentRecordingFrameNumber();
     if (!ComposeFrames.SubmitFrame(Device.GetMainQueue()))
     {
+        HighResCaptureProvenance.AbortFrame();
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
-    HighResCaptureProvenance.CommitFrame();
     // Keep capture provenance independent of presentation frame-ring reuse.
     // Readback is ordered after this submission on the same queue; the
     // renderer-global serial is the identity validated by cross-frame sync.
-    ++NativeSemanticSubmissionSerial;
-    if (NativeSemanticSubmissionSerial == 0u)
-        NativeSemanticSubmissionSerial = 1u;
-    LastNativeCaptureCompletionValue = NativeSemanticSubmissionSerial;
+    NativeSemanticSubmissionSerial = pendingCompletionValue;
+    LastNativeCaptureCompletionValue = pendingCompletionValue;
+    HighResCaptureProvenance.CommitFrame(pendingCaptureIdentity);
     if (outputSlot)
         outputSlot->LastSubmittedFrame = submittedNativeFrame;
 
@@ -4465,6 +4507,15 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
                 actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
                 directOutputReadback ? "direct_image" : "composed_buffer",
                 expectedTop, expectedBottom);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            if (diagnosticCaptureProvenance)
+            {
+                GPU2DNative::LogVRAMDisplaySidecarDecisions(
+                    "Vulkan", input.Generation.Frame,
+                    static_cast<u32>(ScaleFactor), input,
+                    *diagnosticCaptureProvenance, structured);
+            }
+#endif
         }
 
         if (exactValidation)

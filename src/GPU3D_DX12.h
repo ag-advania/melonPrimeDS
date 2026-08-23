@@ -116,6 +116,11 @@ public:
         u8* destination);
     [[nodiscard]] NativeCaptureStateIdentity GetNativeCaptureStateIdentity(
         CaptureOwner owner) const noexcept;
+    void InvalidateHighResCaptureRange(
+        u32 bank,
+        u32 start,
+        u32 len,
+        GPU2DNative::HighResCaptureFallbackReason reason) noexcept;
     [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
     {
         return PublishedOutputGeneration;
