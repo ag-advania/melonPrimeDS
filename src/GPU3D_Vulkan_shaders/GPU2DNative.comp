@@ -114,7 +114,7 @@ const uint kNativeCaptureSpriteOBJMappingBase = kNativeCaptureOBJMappingBase
     + 192u * (16u + 8u);
 const uint kHighResCaptureProvenanceBase = kNativeCaptureSpriteOBJMappingBase
     + 192u * (16u + 8u);
-const uint kHighResCaptureProvenanceStride = 8u;
+const uint kHighResCaptureProvenanceStride = 7u;
 const uint kHighResCaptureSegmentHalfwords = 128u;
 const uint kHighResCaptureSegmentsPerBank = 512u;
 const uint kHighResCaptureValidBit = 1u;
@@ -1709,13 +1709,6 @@ uint ToBgra8Native(uint color)
         | 0xFF000000u;
 }
 
-uint NativeCaptureReferenceForSourceB(
-    uint line, uint bank, uint address, uint captureCnt)
-{
-    return NativeCaptureReferenceForPhysicalAddress(
-        line, bank, address, captureCnt);
-}
-
 uint CaptureSourceB(
     uint line, uint x, uint captureCnt, uint outputX, uint sampleY)
 {
@@ -1737,7 +1730,7 @@ uint CaptureSourceB(
         address = WrapLCDCByte(address);
     }
     uint compact = LCD16(line, bank, address);
-    uint reference = NativeCaptureReferenceForSourceB(
+    uint reference = NativeCaptureReferenceForPhysicalAddress(
         line, bank, address, captureCnt);
     if (reference != 0u)
     {

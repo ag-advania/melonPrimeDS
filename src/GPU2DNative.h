@@ -634,7 +634,6 @@ struct HighResCaptureProvenanceState
     // bit 2: this semantic frame writes the physical block
     u32 ValidAndVersion = 0;
     NativeCaptureStateIdentity CommittedIdentity{};
-    NativeCaptureStateIdentity CompactIdentity{};
     NativeCaptureStateIdentity PendingIdentity{};
     HighResCaptureFallbackReason LastInvalidationReason =
         HighResCaptureFallbackReason::InvalidProvenance;
@@ -645,28 +644,29 @@ inline constexpr u32 HighResCaptureVersionBit = 1u << 1u;
 inline constexpr u32 HighResCapturePendingWriteBit = 1u << 2u;
 // Shader ABI per segment:
 // flags, committed completion lo/hi, pending completion lo/hi,
-// compact completion lo/hi, last invalidation reason.
-inline constexpr u32 HighResCaptureProvenanceWordsPerSegment = 8u;
+// compact completion lo/hi. Host-only invalidation diagnostics are not part
+// of the production GPU upload contract.
+inline constexpr u32 HighResCaptureProvenanceWordsPerSegment = 7u;
 // Kept as a source-compatibility alias for older diagnostics; the value is
 // now explicitly the per-segment stride.
 inline constexpr u32 HighResCaptureProvenanceWordsPerBlock =
     HighResCaptureProvenanceWordsPerSegment;
 inline constexpr u32 HighResCaptureProvenanceWords =
     HighResCaptureSegmentCount * HighResCaptureProvenanceWordsPerSegment;
-inline constexpr u32 PackedFrameAbiVersion = 6u;
+inline constexpr u32 PackedFrameAbiVersion = 7u;
 using HighResCaptureProvenanceTable =
     std::array<HighResCaptureProvenanceState, HighResCaptureSegmentCount>;
 using HighResCaptureSegmentMask = std::array<u8, HighResCaptureSegmentCount>;
 
 [[nodiscard]] constexpr bool IsHighResCaptureCommittedIdentityValid(
-    const HighResCaptureProvenanceState& state) noexcept
+    const HighResCaptureProvenanceState& state,
+    u64 currentCompactCompletionValue) noexcept
 {
     return (state.ValidAndVersion & HighResCaptureValidBit) != 0u
         && state.CommittedIdentity.Valid
-        && state.CompactIdentity.Valid
         && state.CommittedIdentity.CompletionValue != 0u
         && state.CommittedIdentity.CompletionValue
-            == state.CompactIdentity.CompletionValue;
+            == currentCompactCompletionValue;
 }
 
 enum class HighResCaptureReferenceVersion : u32
@@ -783,37 +783,17 @@ public:
         u32 firstByte,
         u32 byteCount,
         HighResCaptureFallbackReason reason) noexcept;
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    void LogPostGapTrace(const char* backend, const FrameInput& input) noexcept;
-#else
-    void LogPostGapTrace(const char*, const FrameInput&) noexcept {}
-#endif
 
     [[nodiscard]] const HighResCaptureProvenanceTable& States() const noexcept
     {
         return Entries;
     }
 
-    [[nodiscard]] const std::array<u64, HighResCaptureSegmentCount>&
-    SemanticFrames() const noexcept
-    {
-        return LastSemanticFrame;
-    }
-
 private:
     HighResCaptureProvenanceTable Entries{};
-    std::array<u64, HighResCaptureSegmentCount> LastSemanticFrame{};
     std::array<u8, HighResCaptureSegmentCount> Pending{};
     u64 Epoch = 0;
     u32 ScaleFactor = 0;
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    u32 DiagnosticGapFrames = 0;
-    u32 DiagnosticLastGapFrames = 0;
-    u32 DiagnosticPostGapFrames = 0;
-    bool DiagnosticSawCaptureWrite = false;
-    std::array<u64, static_cast<u32>(HighResCaptureFallbackReason::Count)>
-        DiagnosticFallbackCounts{};
-#endif
 };
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -850,18 +830,6 @@ void LogStageSnapshot(
     const u32* expectedTop,
     const u32* expectedBottom) noexcept;
 
-// Classify the VRAM-display CaptureReference plane without adding shader
-// atomics or production readbacks. The caller supplies the provenance table
-// as it existed when this semantic frame was packed, before CommitFrame turns
-// pending versions into the next committed baseline.
-void LogVRAMDisplaySidecarDecisions(
-    const char* backend,
-    u64 emulatedFrame,
-    u32 scaleFactor,
-    const FrameInput& input,
-    const HighResCaptureProvenanceTable& provenance,
-    const u32* structured) noexcept;
-
 void LogPresentedIdentity(
     const char* backend,
     u64 emulatedFrame,
@@ -884,9 +852,6 @@ void LogSemanticIdentity(
 inline void LogStageSnapshot(
     const char*, u64, u64, u64, u64, u32, const FrameInput&, const u32*,
     const u32*, const u32*, const char*, const u32*, const u32*) noexcept {}
-inline void LogVRAMDisplaySidecarDecisions(
-    const char*, u64, u32, const FrameInput&,
-    const HighResCaptureProvenanceTable&, const u32*) noexcept {}
 inline void LogPresentedIdentity(
     const char*, u64, u64, u64, u64, u32) noexcept {}
 inline void LogSemanticIdentity(
