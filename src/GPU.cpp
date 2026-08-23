@@ -56,6 +56,7 @@ u32 CaptureBlockCountForLength(u32 len) noexcept
     return len == 0u ? 1u : std::min<u32>(len, 3u);
 }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 u64 HashCaptureVRAM(const GPU& gpu, u32 bank, u32 start, u32 len) noexcept
 {
     if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
@@ -77,6 +78,7 @@ u64 HashCaptureVRAM(const GPU& gpu, u32 bank, u32 start, u32 len) noexcept
     }
     return hash;
 }
+#endif
 
 u64 CaptureAuthorityEmulatedFrame(const Renderer& renderer) noexcept
 {
@@ -426,13 +428,6 @@ void GPU::Reset() noexcept
     memset(VRAMPtr_BOBJ, 0, sizeof(VRAMPtr_BOBJ));
 
     memset(VRAMCaptureBlockFlags, 0, sizeof(VRAMCaptureBlockFlags));
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    CaptureDiagnosticGapFrames = 0u;
-    CaptureDiagnosticLastGapFrames = 0u;
-    CaptureDiagnosticPostGapFrames = 0u;
-    CaptureDiagnosticFrame = 0u;
-    CaptureDiagnosticSawWrite = false;
-#endif
 
     memset(VRAMCBF_ABG, 0, sizeof(VRAMCBF_ABG));
     memset(VRAMCBF_AOBJ, 0, sizeof(VRAMCBF_AOBJ));
@@ -572,13 +567,6 @@ void GPU::DoSavestate(Savestate* file) noexcept
     Rend->PostSavestate();
     if (!file->Saving)
     {
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-        CaptureDiagnosticGapFrames = 0u;
-        CaptureDiagnosticLastGapFrames = 0u;
-        CaptureDiagnosticPostGapFrames = 0u;
-        CaptureDiagnosticFrame = 0u;
-        CaptureDiagnosticSawWrite = false;
-#endif
         // Native mirrors belong to the pre-load renderer epoch. The loaded
         // CPU VRAM is the only authoritative copy until a new semantic native
         // submission publishes fresh provenance.
@@ -1619,10 +1607,6 @@ void GPU::StartScanline(u32 line) noexcept
 
         Rend->VBlank();
 
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-        LogCaptureGapLifecycle();
-#endif
-
         if (CaptureEnable)
         {
             CaptureCnt &= ~(1<<31);
@@ -1659,50 +1643,6 @@ void GPU::StartScanline(u32 line) noexcept
 
     NDS.ScheduleEvent(Event_LCD, true, HBLANK_CYCLES, LCD_StartHBlank, line);
 }
-
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-void GPU::LogCaptureGapLifecycle() noexcept
-{
-    ++CaptureDiagnosticFrame;
-    if (!CaptureEnable)
-    {
-        if (CaptureDiagnosticSawWrite
-            && CaptureDiagnosticGapFrames != 0xFFFFFFFFu)
-        {
-            ++CaptureDiagnosticGapFrames;
-        }
-        return;
-    }
-
-    if (CaptureDiagnosticSawWrite && CaptureDiagnosticGapFrames != 0u)
-    {
-        CaptureDiagnosticLastGapFrames = CaptureDiagnosticGapFrames;
-        CaptureDiagnosticPostGapFrames = 4u;
-    }
-    CaptureDiagnosticSawWrite = true;
-    CaptureDiagnosticGapFrames = 0u;
-    if (CaptureDiagnosticPostGapFrames == 0u)
-        return;
-    --CaptureDiagnosticPostGapFrames;
-
-    const u16* c = &VRAMCaptureBlockFlags[2u << 2u];
-    const u16* d = &VRAMCaptureBlockFlags[3u << 2u];
-    Platform::Log(
-        Platform::LogLevel::Info,
-        "[GPU2DCaptureGap] backend=%s event=post_gap frame=%llu gapFrames=%u "
-        "CaptureEnable=1 CaptureCnt=0x%08X "
-        "flagsC=%04X,%04X,%04X,%04X flagsD=%04X,%04X,%04X,%04X "
-        "traceRemaining=%u\n",
-        Rend ? Rend->GetCaptureBackendName() : "None",
-        static_cast<unsigned long long>(CaptureDiagnosticFrame),
-        CaptureDiagnosticLastGapFrames,
-        CaptureCnt,
-        c[0], c[1], c[2], c[3],
-        d[0], d[1], d[2], d[3],
-        CaptureDiagnosticPostGapFrames);
-}
-#endif
-
 
 void GPU::Restart3DFrame() noexcept
 {
@@ -1925,6 +1865,7 @@ void GPU::VRAMCBFlagsOr(u32 bank, u32 block, u16 val)
     }
 }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 void GPU::LogCaptureSync(
     u32 bank,
     u32 start,
@@ -1938,7 +1879,6 @@ void GPU::LogCaptureSync(
     bool flagsMarkedSynced,
     bool flagsCleared) const noexcept
 {
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const auto* soft = dynamic_cast<const SoftRenderer*>(Rend.get());
     const u64 emulatedFrame = soft ? soft->GetEmulatedFrameSerial() : 0u;
     const u64 recordedFrame = soft ? soft->GetRecordedNativeFrameSerial() : 0u;
@@ -1986,20 +1926,8 @@ void GPU::LogCaptureSync(
         CaptureSyncResultName(result),
         flagsMarkedSynced ? 1u : 0u,
         flagsCleared ? 1u : 0u);
-#else
-    (void)bank;
-    (void)start;
-    (void)len;
-    (void)flags;
-    (void)owner;
-    (void)cpuVRAMHashBefore;
-    (void)nativeCaptureHash;
-    (void)cpuVRAMHashAfter;
-    (void)result;
-    (void)flagsMarkedSynced;
-    (void)flagsCleared;
-#endif
 }
+#endif
 
 void GPU::CheckCaptureStart()
 {
@@ -2030,8 +1958,10 @@ void GPU::CheckCaptureStart()
         // we have an old capture here, and it was at a different offset/size
         // sync it and invalidate it
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         const u64 cpuVRAMHashBefore = HashCaptureVRAM(
             *this, dstbank, oldstart, oldsize);
+#endif
         CaptureBlockProvenance owner{};
         const bool provenanceValid = Rend->GetCaptureProvenanceForRange(
             dstbank, oldstart, oldsize, owner);
@@ -2039,6 +1969,7 @@ void GPU::CheckCaptureStart()
             ? Rend->SyncVRAMCapture(
                 dstbank, oldstart, oldsize, (oldflags & CBFlag_Complete))
             : CaptureSyncResult::Failed;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         const u64 cpuVRAMHashAfterSync = HashCaptureVRAM(
             *this, dstbank, oldstart, oldsize);
         LogCaptureSync(
@@ -2046,6 +1977,7 @@ void GPU::CheckCaptureStart()
             cpuVRAMHashBefore,
             result == CaptureSyncResult::Synchronized ? cpuVRAMHashAfterSync : 0u,
             cpuVRAMHashAfterSync, result, false, false);
+#endif
         if (result == CaptureSyncResult::Failed)
         {
             // Do not retire an old capture while its authoritative source is
@@ -2112,33 +2044,43 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
     {
         if (write)
         {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
             const CaptureBlockProvenance owner =
                 Rend->GetCaptureBlockProvenance(bank, start);
             const u64 cpuVRAMHash = HashCaptureVRAM(*this, bank, start, len);
+#endif
             Rend->InvalidateVRAMCapture(
                 bank, physicalBlock, 1u,
                 CaptureAuthorityTransitionReason::CpuWrite);
             VRAMCBFlagsClear(bank, start);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
             LogCaptureSync(
                 bank, start, len, flags, owner, cpuVRAMHash, 0u, cpuVRAMHash,
                 CaptureSyncResult::AlreadyCoherent, false, true);
+#endif
         }
         return;
     }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 cpuVRAMHashBefore = HashCaptureVRAM(*this, bank, start, len);
+#endif
     CaptureBlockProvenance owner{};
     const bool provenanceValid = Rend->GetCaptureProvenanceForRange(
         bank, start, len, owner);
     const CaptureSyncResult result = provenanceValid
         ? Rend->SyncVRAMCapture(bank, start, len, (flags & CBFlag_Complete))
         : CaptureSyncResult::Failed;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 cpuVRAMHashAfterSync = HashCaptureVRAM(*this, bank, start, len);
+#endif
     if (result == CaptureSyncResult::Failed)
     {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         LogCaptureSync(
             bank, start, len, flags, owner, cpuVRAMHashBefore, 0u,
             cpuVRAMHashAfterSync, result, false, false);
+#endif
         // A failed native readback must leave both CPU authority and the
         // capture flags untouched. Never turn stale CPU VRAM into a synced
         // result merely because the renderer hook was called.
@@ -2154,10 +2096,12 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
             bank, physicalBlock, 1u,
             CaptureAuthorityTransitionReason::CpuWrite);
         VRAMCBFlagsClear(bank, start);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         LogCaptureSync(
             bank, start, len, flags, owner, cpuVRAMHashBefore,
             result == CaptureSyncResult::Synchronized ? cpuVRAMHashAfterSync : 0u,
             HashCaptureVRAM(*this, bank, start, len), result, false, true);
+#endif
     }
     else
     {
@@ -2166,10 +2110,12 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
             bank, start, len,
             CaptureAuthorityTransitionReason::NativeReadbackMaterialized);
         VRAMCBFlagsOr(bank, start, CBFlag_Synced);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         LogCaptureSync(
             bank, start, len, flags, owner, cpuVRAMHashBefore,
             result == CaptureSyncResult::Synchronized ? cpuVRAMHashAfterSync : 0u,
             HashCaptureVRAM(*this, bank, start, len), result, true, false);
+#endif
     }
 }
 
@@ -2198,28 +2144,36 @@ bool GPU::SyncAllVRAMCaptures(CaptureAuthorityTransitionReason reason)
         u32 start = flags & 0x3;
         u32 len = (flags >> 6) & 0x3;
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         const u64 cpuVRAMHashBefore = HashCaptureVRAM(*this, bank, start, len);
+#endif
         CaptureBlockProvenance owner{};
         const bool provenanceValid = Rend->GetCaptureProvenanceForRange(
             bank, start, len, owner);
         const CaptureSyncResult result = provenanceValid
             ? Rend->SyncVRAMCapture(bank, start, len, (flags & CBFlag_Complete))
             : CaptureSyncResult::Failed;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         const u64 cpuVRAMHashAfterSync = HashCaptureVRAM(*this, bank, start, len);
+#endif
         if (result == CaptureSyncResult::Failed)
         {
             allSynchronized = false;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
             LogCaptureSync(
                 bank, start, len, flags, owner, cpuVRAMHashBefore, 0u,
                 cpuVRAMHashAfterSync, result, false, false);
+#endif
             continue;
         }
         Rend->InvalidateVRAMCapture(bank, start, len, reason);
         VRAMCBFlagsClear(bank, start);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         LogCaptureSync(
             bank, start, len, flags, owner, cpuVRAMHashBefore,
             result == CaptureSyncResult::Synchronized ? cpuVRAMHashAfterSync : 0u,
             HashCaptureVRAM(*this, bank, start, len), result, false, true);
+#endif
     }
     return allSynchronized;
 }

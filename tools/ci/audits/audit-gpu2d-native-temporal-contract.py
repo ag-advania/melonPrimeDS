@@ -55,6 +55,7 @@ def main() -> int:
         "gpu3d_header": root / "src/GPU3D.h",
         "native_header": root / "src/GPU2DNative.h",
         "native_recorder": root / "src/GPU2DNative.cpp",
+        "native_contract": root / "src/GPU2DNativeContract.cpp",
         "native_contract_test": root / "tools/testing/gpu2d-native-contract-vectors.cpp",
         "native_purity_test": root / "tools/testing/gpu2d-native-recorder-purity.cpp",
         "soft_renderer": root / "src/GPU_Soft.cpp",
@@ -664,23 +665,47 @@ def main() -> int:
             require(body, "canonical", f"{label} representative guard", failures)
             forbid(body, "captureStart", f"{label} active-capture gate", failures)
             forbid(body, "destinationBank", f"{label} current-destination gate", failures)
-        for needle in (
-            "LogVRAMDisplaySidecarDecisions",
-            "[GPU2DVRAMDisplaySidecar]",
-            "persistentUsed=",
-            "captureInactiveCommitted=",
-            "oppositeBankCommitted=",
-            "representativeMismatch=",
-            "pendingOld=",
-            "pendingNew=",
-        ):
-            require(text["native_recorder"], needle,
-                "VRAM-display developer fallback diagnostics", failures)
-        for renderer in ("vulkan_renderer", "dx12_renderer"):
-            require(text[renderer], "diagnosticCaptureProvenance",
-                f"{renderer} pre-commit diagnostic snapshot", failures)
-            require(text[renderer], "LogVRAMDisplaySidecarDecisions",
-                f"{renderer} VRAM-display diagnostic call", failures)
+        require(text["native_header"],
+            "HighResCaptureProvenanceWordsPerSegment = 7u",
+            "trimmed capture provenance GPU ABI", failures)
+        require(text["native_header"], "PackedFrameAbiVersion = 7u",
+            "capture provenance ABI version", failures)
+        require(text["vulkan_shader"],
+            "kHighResCaptureProvenanceStride = 7u",
+            "Vulkan capture provenance ABI stride", failures)
+        require(text["dx12_shader"],
+            "NativeHighResCaptureProvenanceStride = 7u",
+            "DX12 capture provenance ABI stride", failures)
+        forbid(text["native_contract"], "destination[base + 7u]",
+            "removed invalidation-reason GPU ABI word", failures)
+        for label in ("native_header", "native_recorder", "native_contract_test"):
+            forbid(text[label], "CompactIdentity",
+                f"{label} duplicate host compact identity", failures)
+        for label in ("native_header", "native_recorder"):
+            forbid(text[label], "LastSemanticFrame[index]",
+                f"{label} dead per-segment semantic frame", failures)
+            forbid(text[label], "SemanticFrames()",
+                f"{label} dead semantic frame accessor", failures)
+        for label in ("vulkan_shader", "dx12_shader"):
+            forbid(text[label], "NativeCaptureReferenceForSourceB",
+                f"{label} redundant Source-B resolver wrapper", failures)
+        for label in ("native_header", "native_recorder", "gpu_header", "gpu_core"):
+            forbid(text[label], "LogPostGapTrace",
+                f"{label} resolved capture-gap trace", failures)
+            forbid(text[label], "LogCaptureGapLifecycle",
+                f"{label} resolved core capture-gap trace", failures)
+        for label in ("vulkan_renderer", "dx12_renderer"):
+            forbid(text[label], "diagnosticCaptureProvenance",
+                f"{label} resolved F1 diagnostic heap copy", failures)
+            forbid(text[label], "LogVRAMDisplaySidecarDecisions",
+                f"{label} resolved F1 classification", failures)
+        require_regex(
+            text["gpu_core"],
+            r"#if defined\(MELONPRIME_ENABLE_DEVELOPER_FEATURES\)\s+"
+            r"u64 HashCaptureVRAM\(",
+            "developer-only capture VRAM hash",
+            failures,
+        )
         for label, body in (
             ("Vulkan compact writer", vulkan_writer),
             ("DX12 compact writer", dx12_writer),

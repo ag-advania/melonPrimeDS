@@ -1290,6 +1290,7 @@ private:
     void SyncVRAMCaptureBlock(u32 block, bool write);
     bool SyncAllVRAMCaptures(
         CaptureAuthorityTransitionReason reason);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     void LogCaptureSync(
         u32 bank,
         u32 start,
@@ -1302,8 +1303,6 @@ private:
         CaptureSyncResult result,
         bool flagsMarkedSynced,
         bool flagsCleared) const noexcept;
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    void LogCaptureGapLifecycle() noexcept;
 #endif
     void GetCaptureInfo(int* info, u16** cbf, int len);
 
@@ -1322,14 +1321,6 @@ private:
     std::unique_ptr<Renderer> Rend = nullptr;
 
     u16 VRAMCaptureBlockFlags[16];
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    u32 CaptureDiagnosticGapFrames = 0;
-    u32 CaptureDiagnosticLastGapFrames = 0;
-    u32 CaptureDiagnosticPostGapFrames = 0;
-    u64 CaptureDiagnosticFrame = 0;
-    bool CaptureDiagnosticSawWrite = false;
-#endif
-
     u16* VRAMCBF_ABG[0x20] {};
     u16* VRAMCBF_AOBJ[0x10] {};
     u16* VRAMCBF_BBG[0x8] {};
