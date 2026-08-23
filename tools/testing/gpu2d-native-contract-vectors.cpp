@@ -1077,7 +1077,7 @@ bool RunHighResCaptureProvenanceVectors()
     const u32 firstVersion = committed & HighResCaptureVersionBit;
 
     // A second write toggles only because a real capture write is pending;
-    // frame parity and a frame with no write cannot change this state.
+    // frame parity alone cannot change this state.
     input->Generation.Frame = 2u;
     input->Generation.CaptureGeneration = 12u;
     tracker.BeginFrame(*input, 7u, 4u);
@@ -1097,8 +1097,21 @@ bool RunHighResCaptureProvenanceVectors()
     input->Generation.Frame = 3u;
     tracker.BeginFrame(*input, 7u, 4u);
     passed &= Require(
-        tracker.States()[index].ValidAndVersion == committed,
-        "frame rollover changed sidecar version without a capture write");
+        (tracker.States()[index].ValidAndVersion
+            & HighResCaptureValidBit) == 0u,
+        "capture-sequence break retained stale high-res sidecar history");
+
+    input->Lines[0].CaptureEnable = 1u;
+    input->Generation.Frame = 4u;
+    input->Generation.CaptureGeneration = 13u;
+    tracker.BeginFrame(*input, 7u, 4u);
+    passed &= Require(
+        (tracker.States()[index].ValidAndVersion
+            & HighResCapturePendingWriteBit) != 0u
+            && (tracker.States()[index].ValidAndVersion
+                & HighResCaptureValidBit) == 0u,
+        "capture restart admitted a pre-break committed sidecar version");
+    tracker.AbortFrame();
 
     tracker.Invalidate(8u, 4u);
     passed &= Require(

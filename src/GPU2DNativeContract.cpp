@@ -246,6 +246,7 @@ void HighResCaptureProvenanceTracker::Invalidate(
     Pending.fill(0u);
     Epoch = epoch;
     ScaleFactor = scaleFactor;
+    CaptureSequenceActive = false;
     for (HighResCaptureProvenanceState& state : Entries)
     {
         state.EpochTag = static_cast<u32>(epoch);
@@ -263,6 +264,22 @@ void HighResCaptureProvenanceTracker::BeginFrame(
         Invalidate(epoch, scaleFactor);
 
     const HighResCaptureSegmentMask writes = ComputeCaptureWriteSegmentMask(input);
+    const bool hasCaptureWrite = std::any_of(
+        writes.begin(), writes.end(), [](u8 value) { return value != 0u; });
+    if (!hasCaptureWrite)
+    {
+        // The compact LCDC capture mirror is persistent emulated state, but
+        // high-resolution subpixels are an enhancement sidecar. Once capture
+        // stops, C/D may later be remapped and ping-ponged before a new write.
+        // Retaining two different old sidecar images across that gap makes a
+        // native-identical Software frame alternate at Scale>1. Retire only
+        // the sidecar at the capture-sequence boundary; native ownership and
+        // compact VRAM remain untouched and authoritative.
+        if (CaptureSequenceActive)
+            Invalidate(epoch, scaleFactor);
+        return;
+    }
+    CaptureSequenceActive = true;
     for (u32 index = 0u; index < HighResCaptureSegmentCount; ++index)
     {
         if (writes[index] == 0u)

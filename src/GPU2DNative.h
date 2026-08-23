@@ -609,9 +609,13 @@ struct FrameInput
 
 // High-resolution display-capture provenance is a separate renderer-private
 // state machine. Native LCDC VRAM is restored by savestates; the high-res
-// sidecar is intentionally not. The table is indexed by 128 native-pixel
-// segments, not by 32 KiB physical blocks: a one-line/128-pixel capture must
-// never make the other pixels in that block readable from a stale sidecar.
+// sidecar is intentionally not emulated state. A capture-sequence break
+// retires the sidecar while retaining the compact LCDC mirror: otherwise two
+// old ping-pong banks that are identical at native precision can expose
+// different subpixel history when they are mapped again before capture
+// resumes. The table is indexed by 128 native-pixel segments, not by 32 KiB
+// physical blocks: a one-line/128-pixel capture must never make the other
+// pixels in that block readable from a stale sidecar.
 struct HighResCaptureProvenanceState
 {
     // bit 0: a committed sidecar version is readable
@@ -692,6 +696,7 @@ private:
     std::array<u8, HighResCaptureSegmentCount> Pending{};
     u64 Epoch = 0;
     u32 ScaleFactor = 0;
+    bool CaptureSequenceActive = false;
 };
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
