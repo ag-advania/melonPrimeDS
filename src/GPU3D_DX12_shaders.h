@@ -2312,7 +2312,7 @@ static const uint NativeCaptureSpriteOBJMappingBase = NativeCaptureOBJMappingBas
     + 192u * (16u + 8u);
 static const uint NativeHighResCaptureProvenanceBase =
     NativeCaptureSpriteOBJMappingBase + 192u * (16u + 8u);
-static const uint NativeHighResCaptureProvenanceStride = 8u;
+static const uint NativeHighResCaptureProvenanceStride = 7u;
 static const uint NativeHighResCaptureSegmentHalfwords = 128u;
 static const uint NativeHighResCaptureSegmentsPerBank = 512u;
 static const uint NativeHighResCaptureValidBit = 1u;
@@ -3499,11 +3499,6 @@ uint NativeStructuredCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
         return NativeBlend5(pixel3D,below);
     return pixel3D;
 }
-uint NativeCaptureReferenceForSourceB(
-    uint line,uint bank,uint address,uint cnt)
-{
-    return NativeCaptureReferenceForPhysicalAddress(line,bank,address,cnt);
-}
 uint NativeCaptureSourceB(uint line,uint x,uint cnt,uint ox,uint sampleY)
 {
     if((cnt&(1u<<25u))!=0u)return NativeCaptureColor6(NativeFIFO16(line,x));
@@ -3515,7 +3510,7 @@ uint NativeCaptureSourceB(uint line,uint x,uint cnt,uint ox,uint sampleY)
     else
         address=WrapLCDCByte(address);
     uint compact=NativeLCD16(line,bank,address);
-    uint reference=NativeCaptureReferenceForSourceB(line,bank,address,cnt);
+    uint reference=NativeCaptureReferenceForPhysicalAddress(line,bank,address,cnt);
     if(reference!=0u)
     {
         // Admit the retained sidecar using its canonical sample, then return

@@ -1213,7 +1213,8 @@ bool RunHighResCaptureProvenanceVectors()
     tracker.CommitFrame(firstIdentity);
     const u32 committed = tracker.States()[index].ValidAndVersion;
     passed &= Require(
-        IsHighResCaptureCommittedIdentityValid(tracker.States()[index])
+        IsHighResCaptureCommittedIdentityValid(
+            tracker.States()[index], firstIdentity.CompletionValue)
             && (committed & HighResCapturePendingWriteBit) == 0u
             && tracker.States()[index].CommittedIdentity.CompletionValue
                 == firstIdentity.CompletionValue,
@@ -1302,7 +1303,7 @@ bool RunHighResCaptureProvenanceVectors()
             (gapTracker.States()[index].ValidAndVersion
                 & HighResCapturePendingWriteBit) != 0u
                 && IsHighResCaptureCommittedIdentityValid(
-                    gapTracker.States()[dIndex])
+                    gapTracker.States()[dIndex], dBeforeGap.CompletionValue)
                 && gapTracker.States()[dIndex]
                     .CommittedIdentity.CompletionValue
                     == dBeforeGap.CompletionValue,
@@ -1314,7 +1315,8 @@ bool RunHighResCaptureProvenanceVectors()
             20u, 701u + gapLength, 4000u + gapLength);
         gapTracker.BeginFrame(*input, dResume, 4u);
         passed &= Require(
-            IsHighResCaptureCommittedIdentityValid(gapTracker.States()[index])
+            IsHighResCaptureCommittedIdentityValid(
+                gapTracker.States()[index], cResume.CompletionValue)
                 && gapTracker.States()[index]
                     .CommittedIdentity.CompletionValue
                     == cResume.CompletionValue
@@ -1336,15 +1338,15 @@ bool RunHighResCaptureProvenanceVectors()
 
     // Equal compact representatives are not proof of identity. A different
     // compact completion token must fail closed even if pixels alias at 5-bit.
-    HighResCaptureProvenanceState aliased = tracker.States()[index];
-    aliased.CompactIdentity.CompletionValue += 1u;
     passed &= Require(
-        !IsHighResCaptureCommittedIdentityValid(aliased),
+        !IsHighResCaptureCommittedIdentityValid(
+            tracker.States()[index], firstIdentity.CompletionValue + 1u),
         "compact pixel alias admitted a sidecar with different identity");
 
     tracker.Invalidate(8u, 4u);
     passed &= Require(
-        !IsHighResCaptureCommittedIdentityValid(tracker.States()[index])
+        !IsHighResCaptureCommittedIdentityValid(
+            tracker.States()[index], firstIdentity.CompletionValue)
             && tracker.States()[index].LastInvalidationReason
                 == HighResCaptureFallbackReason::ResourceReset,
         "renderer epoch invalidation did not reject the pre-load sidecar");
@@ -1371,16 +1373,17 @@ bool RunHighResCaptureProvenanceVectors()
         bank, 0u, CapturePhysicalBlockBytes,
         HighResCaptureFallbackReason::CpuWriteInvalidated);
     passed &= Require(
-        !IsHighResCaptureCommittedIdentityValid(tracker.States()[firstSegment])
+        !IsHighResCaptureCommittedIdentityValid(
+            tracker.States()[firstSegment], wideIdentity.CompletionValue)
             && IsHighResCaptureCommittedIdentityValid(
-                tracker.States()[secondBlockSegment]),
+                tracker.States()[secondBlockSegment], wideIdentity.CompletionValue),
         "selective CPU write invalidation retired an unrelated physical block");
     tracker.InvalidatePhysicalRange(
         bank, CapturePhysicalBlockBytes, CapturePhysicalBlockBytes,
         HighResCaptureFallbackReason::CaptureRetired);
     passed &= Require(
         !IsHighResCaptureCommittedIdentityValid(
-            tracker.States()[secondBlockSegment])
+            tracker.States()[secondBlockSegment], wideIdentity.CompletionValue)
             && tracker.States()[secondBlockSegment].LastInvalidationReason
                 == HighResCaptureFallbackReason::CaptureRetired,
         "capture layout replacement did not retire the replaced block identity");
@@ -1406,7 +1409,8 @@ bool RunHighResCaptureProvenanceVectors()
 
     tracker.Invalidate(10u, 8u);
     passed &= Require(
-        !IsHighResCaptureCommittedIdentityValid(tracker.States()[index]),
+        !IsHighResCaptureCommittedIdentityValid(
+            tracker.States()[index], versionB.CompletionValue),
         "scale-dependent sidecar recreation retained old provenance");
     return passed;
 }

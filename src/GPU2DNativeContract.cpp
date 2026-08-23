@@ -254,7 +254,6 @@ bool PackHighResCaptureProvenance(
             state.PendingIdentity.CompletionValue >> 32u);
         destination[base + 5u] = static_cast<u32>(compact.CompletionValue);
         destination[base + 6u] = static_cast<u32>(compact.CompletionValue >> 32u);
-        destination[base + 7u] = static_cast<u32>(state.LastInvalidationReason);
     }
     destination[32u] = static_cast<u32>(pendingCompletionValue);
     destination[33u] = static_cast<u32>(pendingCompletionValue >> 32u);
@@ -265,17 +264,9 @@ void HighResCaptureProvenanceTracker::Invalidate(
     u64 epoch, u32 scaleFactor) noexcept
 {
     Entries.fill({});
-    LastSemanticFrame.fill(0u);
     Pending.fill(0u);
     Epoch = epoch;
     ScaleFactor = scaleFactor;
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    DiagnosticGapFrames = 0u;
-    DiagnosticLastGapFrames = 0u;
-    DiagnosticPostGapFrames = 0u;
-    DiagnosticSawCaptureWrite = false;
-    DiagnosticFallbackCounts.fill(0u);
-#endif
     for (HighResCaptureProvenanceState& state : Entries)
     {
         state.LastInvalidationReason = HighResCaptureFallbackReason::ResourceReset;
@@ -294,13 +285,7 @@ void HighResCaptureProvenanceTracker::BeginFrame(
     // Capture OFF is the common gap path and must remain O(1): it changes no
     // compact content and therefore cannot change any sidecar entry.
     if (input.CaptureEnable == 0u)
-    {
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-        if (DiagnosticSawCaptureWrite && DiagnosticGapFrames != 0xFFFFFFFFu)
-            ++DiagnosticGapFrames;
-#endif
         return;
-    }
 
     const HighResCaptureSegmentMask writes = ComputeCaptureWriteSegmentMask(input);
     const bool hasCaptureWrite = std::any_of(
@@ -308,22 +293,7 @@ void HighResCaptureProvenanceTracker::BeginFrame(
     // A no-write frame is a strict no-op. Display Capture OFF does not alter
     // physical LCDC VRAM, so time or frame count cannot retire its sidecar.
     if (!hasCaptureWrite)
-    {
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-        if (DiagnosticSawCaptureWrite && DiagnosticGapFrames != 0xFFFFFFFFu)
-            ++DiagnosticGapFrames;
-#endif
         return;
-    }
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    if (DiagnosticSawCaptureWrite && DiagnosticGapFrames != 0u)
-    {
-        DiagnosticLastGapFrames = DiagnosticGapFrames;
-        DiagnosticPostGapFrames = 4u;
-    }
-    DiagnosticSawCaptureWrite = true;
-    DiagnosticGapFrames = 0u;
-#endif
     for (u32 index = 0u; index < HighResCaptureSegmentCount; ++index)
     {
         if (writes[index] == 0u)
@@ -333,7 +303,6 @@ void HighResCaptureProvenanceTracker::BeginFrame(
         state.ValidAndVersion |= HighResCapturePendingWriteBit;
         state.PendingIdentity = pendingIdentity;
         Pending[index] = 1u;
-        LastSemanticFrame[index] = input.Generation.Frame;
     }
 }
 
@@ -365,7 +334,6 @@ void HighResCaptureProvenanceTracker::CommitFrame(
             ? HighResCaptureVersionBit : 0u;
         state.ValidAndVersion = HighResCaptureValidBit | nextVersion;
         state.CommittedIdentity = committedIdentity;
-        state.CompactIdentity = committedIdentity;
         state.PendingIdentity = {};
         state.LastInvalidationReason = HighResCaptureFallbackReason::None;
         Pending[index] = 0u;
@@ -406,83 +374,9 @@ void HighResCaptureProvenanceTracker::InvalidatePhysicalRange(
         const u32 index = bank * HighResCaptureSegmentsPerBank + segment;
         Entries[index] = {};
         Entries[index].LastInvalidationReason = reason;
-        LastSemanticFrame[index] = 0u;
         Pending[index] = 0u;
     }
 }
-
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-void HighResCaptureProvenanceTracker::LogPostGapTrace(
-    const char* backend,
-    const FrameInput& input) noexcept
-{
-    if (DiagnosticPostGapFrames == 0u)
-        return;
-    --DiagnosticPostGapFrames;
-
-    const HighResCaptureSegmentMask writes = ComputeCaptureWriteSegmentMask(input);
-    for (u32 index = 0u; index < HighResCaptureSegmentCount; ++index)
-    {
-        if (writes[index] == 0u)
-            continue;
-        const u32 bank = index / HighResCaptureSegmentsPerBank;
-        if (bank < 2u)
-            continue;
-
-        const HighResCaptureProvenanceState& state = Entries[index];
-        const u32 segment = index % HighResCaptureSegmentsPerBank;
-        const u32 physicalBlock = (segment * HighResCaptureSegmentHalfwords
-            * sizeof(u16)) / CapturePhysicalBlockBytes;
-        const CaptureBlockProvenance& compact = input.LCDVRAMProvenance[
-            bank * CapturePhysicalBlocksPerBank + physicalBlock];
-        HighResCaptureFallbackReason fallback = HighResCaptureFallbackReason::None;
-        if ((state.ValidAndVersion & HighResCaptureValidBit) == 0u)
-            fallback = state.LastInvalidationReason;
-        else if (state.CommittedIdentity.CompletionValue == 0u
-            || state.CommittedIdentity.CompletionValue
-                != compact.CompletionValue)
-            fallback = HighResCaptureFallbackReason::IdentityMismatch;
-        if (fallback != HighResCaptureFallbackReason::None)
-            ++DiagnosticFallbackCounts[static_cast<u32>(fallback)];
-
-        Platform::Log(
-            Platform::LogLevel::Info,
-            "[GPU2DHighResCapture] backend=%s event=post_gap frame=%llu "
-            "gapFrames=%u captureEnable=%u captureCnt=0x%08x bank=%u segment=%u "
-            "compactOwner=%s compactEpoch=%llu compactCaptureGeneration=%llu "
-            "compactCompletion=%llu sidecarValid=%u sidecarVersion=%u "
-            "sidecarIdentity=%llu pendingCompletion=%llu selectedReference=%u "
-            "pendingWritable=%u "
-            "fallbackReason=%u fallbackCount=%llu traceRemaining=%u\n",
-            backend ? backend : "Unknown",
-            static_cast<unsigned long long>(input.Generation.Frame),
-            DiagnosticLastGapFrames,
-            input.CaptureEnable,
-            input.CaptureCnt,
-            bank,
-            index % HighResCaptureSegmentsPerBank,
-            CaptureOwnerName(compact.Owner),
-            static_cast<unsigned long long>(compact.Epoch),
-            static_cast<unsigned long long>(compact.CaptureGeneration),
-            static_cast<unsigned long long>(
-                compact.CompletionValue),
-            (state.ValidAndVersion & HighResCaptureValidBit) != 0u ? 1u : 0u,
-            (state.ValidAndVersion & HighResCaptureVersionBit) != 0u ? 1u : 0u,
-            static_cast<unsigned long long>(
-                state.CommittedIdentity.CompletionValue),
-            static_cast<unsigned long long>(
-                state.PendingIdentity.CompletionValue),
-            fallback == HighResCaptureFallbackReason::None ? 1u : 0u,
-            (state.ValidAndVersion & HighResCapturePendingWriteBit) != 0u
-                ? 1u : 0u,
-            static_cast<u32>(fallback),
-            static_cast<unsigned long long>(
-                DiagnosticFallbackCounts[static_cast<u32>(fallback)]),
-            DiagnosticPostGapFrames);
-        return;
-    }
-}
-#endif
 
 CompareResult CompareExact(
     const u32* expectedTop,
