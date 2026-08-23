@@ -607,39 +607,67 @@ struct FrameInput
 #endif
 };
 
-// High-resolution display-capture provenance is a separate renderer-private
-// state machine. Native LCDC VRAM is restored by savestates; the high-res
-// sidecar is intentionally not emulated state. A capture-sequence break
-// retires the sidecar while retaining the compact LCDC mirror: otherwise two
-// old ping-pong banks that are identical at native precision can expose
-// different subpixel history when they are mapped again before capture
-// resumes. The table is indexed by 128 native-pixel segments, not by 32 KiB
+// High-resolution display-capture provenance is a renderer-private derived
+// cache of the persistent compact LCDC capture mirror. Capture stopping does
+// not change either image. A sidecar segment remains readable until the
+// corresponding compact content identity changes or renderer-private storage
+// is reset. The table is indexed by 128 native-pixel segments, not by 32 KiB
 // physical blocks: a one-line/128-pixel capture must never make the other
 // pixels in that block readable from a stale sidecar.
+enum class HighResCaptureFallbackReason : u32
+{
+    None = 0,
+    InvalidProvenance,
+    IdentityMismatch,
+    ResourceReset,
+    CpuWriteInvalidated,
+    CaptureRetired,
+    NoSidecarStorage,
+    RepresentativeCompactMismatch,
+    Count,
+};
+
 struct HighResCaptureProvenanceState
 {
     // bit 0: a committed sidecar version is readable
     // bit 1: committed sidecar version (0/1)
     // bit 2: this semantic frame writes the physical block
     u32 ValidAndVersion = 0;
-    u32 EpochTag = 0;
-    u32 CaptureGenerationLo = 0;
-    u32 ScaleFactor = 0;
+    NativeCaptureStateIdentity CommittedIdentity{};
+    NativeCaptureStateIdentity CompactIdentity{};
+    NativeCaptureStateIdentity PendingIdentity{};
+    HighResCaptureFallbackReason LastInvalidationReason =
+        HighResCaptureFallbackReason::InvalidProvenance;
 };
 
 inline constexpr u32 HighResCaptureValidBit = 1u << 0u;
 inline constexpr u32 HighResCaptureVersionBit = 1u << 1u;
 inline constexpr u32 HighResCapturePendingWriteBit = 1u << 2u;
-inline constexpr u32 HighResCaptureProvenanceWordsPerSegment = 4u;
+// Shader ABI per segment:
+// flags, committed completion lo/hi, pending completion lo/hi,
+// compact completion lo/hi, last invalidation reason.
+inline constexpr u32 HighResCaptureProvenanceWordsPerSegment = 8u;
 // Kept as a source-compatibility alias for older diagnostics; the value is
 // now explicitly the per-segment stride.
 inline constexpr u32 HighResCaptureProvenanceWordsPerBlock =
     HighResCaptureProvenanceWordsPerSegment;
 inline constexpr u32 HighResCaptureProvenanceWords =
     HighResCaptureSegmentCount * HighResCaptureProvenanceWordsPerSegment;
+inline constexpr u32 PackedFrameAbiVersion = 6u;
 using HighResCaptureProvenanceTable =
     std::array<HighResCaptureProvenanceState, HighResCaptureSegmentCount>;
 using HighResCaptureSegmentMask = std::array<u8, HighResCaptureSegmentCount>;
+
+[[nodiscard]] constexpr bool IsHighResCaptureCommittedIdentityValid(
+    const HighResCaptureProvenanceState& state) noexcept
+{
+    return (state.ValidAndVersion & HighResCaptureValidBit) != 0u
+        && state.CommittedIdentity.Valid
+        && state.CompactIdentity.Valid
+        && state.CommittedIdentity.CompletionValue != 0u
+        && state.CommittedIdentity.CompletionValue
+            == state.CompactIdentity.CompletionValue;
+}
 
 static_assert(CaptureWidthForSize(0u) == HighResCaptureSegmentHalfwords);
 static_assert(CaptureWidthForSize(1u) == 2u * HighResCaptureSegmentHalfwords);
@@ -656,13 +684,15 @@ static_assert((ScreenHeight * CaptureWidthForSize(3u))
 [[nodiscard]] HighResCaptureSegmentMask ComputeCaptureWriteSegmentMask(
     const FrameInput& input) noexcept;
 
-// Appends the fixed four-word/block table to the common packed GPU2D input.
+// Appends the fixed per-segment identity table to the common packed GPU2D input.
 // This is separate from PackFrameRanges because the table belongs to the
 // backend's renderer-private lifetime tracker, not to emulated state.
 bool PackHighResCaptureProvenance(
     u32* destination,
     std::size_t wordCount,
-    const HighResCaptureProvenanceTable& table) noexcept;
+    const HighResCaptureProvenanceTable& table,
+    const FrameInput& input,
+    u64 pendingCompletionValue) noexcept;
 
 // Host-side state machine shared by Vulkan and DX12. BeginFrame exposes a
 // pending write version for only the segments actually written by this frame;
@@ -674,10 +704,20 @@ public:
     void Invalidate(u64 epoch, u32 scaleFactor) noexcept;
     void BeginFrame(
         const FrameInput& input,
-        u64 epoch,
+        const NativeCaptureStateIdentity& pendingIdentity,
         u32 scaleFactor) noexcept;
-    void CommitFrame() noexcept;
+    void CommitFrame(const NativeCaptureStateIdentity& committedIdentity) noexcept;
     void AbortFrame() noexcept;
+    void InvalidatePhysicalRange(
+        u32 bank,
+        u32 firstByte,
+        u32 byteCount,
+        HighResCaptureFallbackReason reason) noexcept;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    void LogPostGapTrace(const char* backend, const FrameInput& input) noexcept;
+#else
+    void LogPostGapTrace(const char*, const FrameInput&) noexcept {}
+#endif
 
     [[nodiscard]] const HighResCaptureProvenanceTable& States() const noexcept
     {
@@ -696,7 +736,14 @@ private:
     std::array<u8, HighResCaptureSegmentCount> Pending{};
     u64 Epoch = 0;
     u32 ScaleFactor = 0;
-    bool CaptureSequenceActive = false;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    u32 DiagnosticGapFrames = 0;
+    u32 DiagnosticLastGapFrames = 0;
+    u32 DiagnosticPostGapFrames = 0;
+    bool DiagnosticSawCaptureWrite = false;
+    std::array<u64, static_cast<u32>(HighResCaptureFallbackReason::Count)>
+        DiagnosticFallbackCounts{};
+#endif
 };
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -767,7 +814,10 @@ static_assert(std::is_trivially_copyable_v<FrameInput>,
 // Fixed serialization layout consumed by both native shader backends.  The
 // byte arrays are copied verbatim into u32 words; shaders perform the byte
 // and BGR555 reads, so no host-side pixel generation is hidden in the packer.
-inline constexpr u32 PackedHeaderWords = 32;
+// Words 32..33 carry the renderer-global completion identity for the semantic
+// submission currently being recorded. The first 32 words retain their prior
+// meanings so the ABI extension is explicit and append-only.
+inline constexpr u32 PackedHeaderWords = 34;
 inline constexpr u32 PackedLineWords = sizeof(LineState) / sizeof(u32);
 inline constexpr u32 PackedLineCount = 2 * ScreenHeight;
 inline constexpr u32 PackedLinesWords = PackedLineWords * PackedLineCount;

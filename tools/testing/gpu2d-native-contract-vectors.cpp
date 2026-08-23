@@ -10,6 +10,16 @@
 #include <vector>
 
 #include "GPU2DNative.h"
+#include "Platform.h"
+
+namespace melonDS::Platform
+{
+// The standalone contract vector links the developer diagnostic code from
+// core, but not the Qt frontend's logger implementation.
+void Log(LogLevel, const char*, ...)
+{
+}
+} // namespace melonDS::Platform
 
 namespace
 {
@@ -606,7 +616,8 @@ bool RunPackVectors()
     bool passed = true;
     passed &= Require(PackFrame(*input, packed.data(), packed.size()),
         "PackFrame rejected a correctly sized destination");
-    passed &= Require(packed[0] == 0x32445047u && packed[1] == 5u,
+    passed &= Require(
+        packed[0] == 0x32445047u && packed[1] == PackedFrameAbiVersion,
         "native frame header magic/version drifted");
     passed &= Require(packed[2] == 0x55667788u && packed[3] == 0x11223344u,
         "frame generation is not serialized little-endian");
@@ -1006,7 +1017,7 @@ bool RunUploadPlanVectors()
         "partial frame pack rejected a valid upload plan");
     passed &= Require(
         partialDestination[0] == 0x32445047u
-            && partialDestination[1] == 5u
+            && partialDestination[1] == PackedFrameAbiVersion
             && partialDestination[10] == partialInput->CaptureCnt,
         "partial frame pack did not update the requested header range");
     passed &= Require(
@@ -1022,18 +1033,29 @@ bool RunUploadPlanVectors()
 bool RunHighResCaptureProvenanceVectors()
 {
     auto input = std::make_unique<FrameInput>();
-    input->Generation.Frame = 1u;
-    input->Generation.CaptureGeneration = 11u;
     constexpr u32 bank = 2u;
-    constexpr u32 segment = 3u * (CapturePhysicalBlockBytes / sizeof(u16))
-        / HighResCaptureSegmentHalfwords;
-    input->Lines[0].CaptureCnt = (bank << 16u) | (3u << 18u);
+    constexpr u32 segment = 0u;
+    constexpr u32 index = bank * HighResCaptureSegmentsPerBank + segment;
+    const auto identity = [](u64 epoch, u64 frame, u64 completion) {
+        return NativeCaptureStateIdentity{
+            true, CaptureOwner::NativeVulkan, epoch, frame, frame, completion};
+    };
+    const auto setSingleSegmentWrite = [&](u64 frame, bool enabled) {
+        *input = {};
+        input->Generation.Frame = frame;
+        input->Generation.CaptureGeneration = frame;
+        input->CaptureEnable = enabled ? 1u : 0u;
+        input->Lines[0].CaptureCnt = bank << 16u;
+        input->Lines[0].CaptureEnable = enabled ? 1u : 0u;
+        input->Lines[0].LCDVRAMMap = 1u << bank;
+    };
+
+    setSingleSegmentWrite(1u, true);
     input->Lines[0].CaptureEnable = 1u;
-    input->Lines[0].LCDVRAMMap = 1u << bank;
 
     const HighResCaptureSegmentMask mask = ComputeCaptureWriteSegmentMask(*input);
     bool passed = Require(
-        mask[bank * HighResCaptureSegmentsPerBank + segment] != 0u
+        mask[index] != 0u
             && std::count(
                 mask.begin() + bank * HighResCaptureSegmentsPerBank,
                 mask.begin() + (bank + 1u) * HighResCaptureSegmentsPerBank,
@@ -1042,45 +1064,44 @@ bool RunHighResCaptureProvenanceVectors()
 
     HighResCaptureProvenanceTracker tracker;
     tracker.Invalidate(7u, 4u);
-    tracker.BeginFrame(*input, 7u, 4u);
-    const u32 index = bank * HighResCaptureSegmentsPerBank + segment;
+    const NativeCaptureStateIdentity firstIdentity = identity(7u, 1u, 0x100000001ull);
+    tracker.BeginFrame(*input, firstIdentity, 4u);
     const auto& pending = tracker.States()[index];
     passed &= Require(
         (pending.ValidAndVersion & HighResCapturePendingWriteBit) != 0u
-            && (pending.ValidAndVersion & HighResCaptureValidBit) == 0u,
-        "state-load invalidation still admitted an old sidecar version");
-    passed &= Require(
-        pending.EpochTag == 7u && pending.CaptureGenerationLo == 11u
-            && pending.ScaleFactor == 4u,
-        "capture provenance did not carry epoch/generation/scale tags");
+            && pending.PendingIdentity.CompletionValue
+                == firstIdentity.CompletionValue,
+        "capture write did not carry its pending semantic identity");
 
     std::vector<u32> packed(PackedFrameWords, 0u);
     passed &= Require(
         PackHighResCaptureProvenance(
-            packed.data(), packed.size(), tracker.States()),
+            packed.data(), packed.size(), tracker.States(), *input,
+            firstIdentity.CompletionValue),
         "capture provenance table did not pack into the common ABI");
     const u32 tableBase = PackedHighResCaptureProvenanceBase
         + index * HighResCaptureProvenanceWordsPerSegment;
     passed &= Require(
         packed[tableBase] == pending.ValidAndVersion
-            && packed[tableBase + 1u] == pending.EpochTag
-            && packed[tableBase + 2u] == pending.CaptureGenerationLo
-            && packed[tableBase + 3u] == pending.ScaleFactor,
-        "packed capture provenance fields drifted");
+            && packed[tableBase + 3u] == 1u
+            && packed[tableBase + 4u] == 1u
+            && packed[32u] == 1u
+            && packed[33u] == 1u,
+        "packed 64-bit pending identity drifted from the shared ABI");
 
-    tracker.CommitFrame();
+    tracker.CommitFrame(firstIdentity);
     const u32 committed = tracker.States()[index].ValidAndVersion;
     passed &= Require(
-        (committed & HighResCaptureValidBit) != 0u
-            && (committed & HighResCapturePendingWriteBit) == 0u,
-        "capture write did not commit a readable sidecar version");
+        IsHighResCaptureCommittedIdentityValid(tracker.States()[index])
+            && (committed & HighResCapturePendingWriteBit) == 0u
+            && tracker.States()[index].CommittedIdentity.CompletionValue
+                == firstIdentity.CompletionValue,
+        "capture write did not atomically commit sidecar and compact identity");
     const u32 firstVersion = committed & HighResCaptureVersionBit;
 
-    // A second write toggles only because a real capture write is pending;
-    // frame parity alone cannot change this state.
-    input->Generation.Frame = 2u;
-    input->Generation.CaptureGeneration = 12u;
-    tracker.BeginFrame(*input, 7u, 4u);
+    setSingleSegmentWrite(2u, true);
+    const NativeCaptureStateIdentity secondIdentity = identity(7u, 2u, 0x200000002ull);
+    tracker.BeginFrame(*input, secondIdentity, 4u);
     const u32 secondPending = tracker.States()[index].ValidAndVersion;
     const u32 secondWriteVersion = (secondPending & HighResCaptureVersionBit) == 0u
         ? HighResCaptureVersionBit : 0u;
@@ -1090,94 +1111,182 @@ bool RunHighResCaptureProvenanceVectors()
         "actual capture write did not select the alternate sidecar version");
     tracker.AbortFrame();
     passed &= Require(
-        tracker.States()[index].ValidAndVersion == committed,
+        tracker.States()[index].ValidAndVersion == committed
+            && tracker.States()[index].CommittedIdentity.CompletionValue
+                == firstIdentity.CompletionValue,
         "aborted capture submission changed committed sidecar provenance");
 
-    input->Lines[0].CaptureEnable = 0u;
-    input->Generation.Frame = 3u;
-    tracker.BeginFrame(*input, 7u, 4u);
-    passed &= Require(
-        (tracker.States()[index].ValidAndVersion
-            & HighResCaptureValidBit) == 0u,
-        "capture-sequence break retained stale high-res sidecar history");
+    // Full F1 model: D then C 256x192 commits, a variable no-write gap, then
+    // C/D resume. Every non-written bank must retain its committed identity.
+    const auto setFullCaptureWrite = [&](u32 destinationBank, u64 frame) {
+        *input = {};
+        input->Generation.Frame = frame;
+        input->Generation.CaptureGeneration = frame;
+        input->CaptureEnable = 1u;
+        for (u32 line = 0u; line < ScreenHeight; ++line)
+        {
+            input->Lines[line].CaptureCnt = (destinationBank << 16u)
+                | (3u << 20u);
+            input->Lines[line].CaptureEnable = 1u;
+            input->Lines[line].LCDVRAMMap = 1u << destinationBank;
+        }
+    };
+    HighResCaptureProvenanceTracker gapBase;
+    gapBase.Invalidate(20u, 4u);
+    setFullCaptureWrite(3u, 10u);
+    const NativeCaptureStateIdentity dBeforeGap = identity(20u, 10u, 1010u);
+    gapBase.BeginFrame(*input, dBeforeGap, 4u);
+    gapBase.CommitFrame(dBeforeGap);
+    setFullCaptureWrite(2u, 11u);
+    const NativeCaptureStateIdentity cBeforeGap = identity(20u, 11u, 1011u);
+    gapBase.BeginFrame(*input, cBeforeGap, 4u);
+    gapBase.CommitFrame(cBeforeGap);
+    const HighResCaptureProvenanceTable preGap = gapBase.States();
 
-    input->Lines[0].CaptureEnable = 1u;
-    input->Generation.Frame = 4u;
-    input->Generation.CaptureGeneration = 13u;
-    tracker.BeginFrame(*input, 7u, 4u);
+    for (const u32 gapLength : {1u, 2u, 74u, 600u})
+    {
+        HighResCaptureProvenanceTracker gapTracker = gapBase;
+        for (u32 gapFrame = 0u; gapFrame < gapLength; ++gapFrame)
+        {
+            setSingleSegmentWrite(12u + gapFrame, false);
+            const NativeCaptureStateIdentity gapIdentity = identity(
+                20u, 12u + gapFrame, 2000u + gapFrame);
+            gapTracker.BeginFrame(*input, gapIdentity, 4u);
+            gapTracker.CommitFrame(gapIdentity);
+        }
+        bool gapPreserved = true;
+        for (u32 destinationBank : {2u, 3u})
+        {
+            for (u32 segmentIndex = 0u; segmentIndex < 384u; ++segmentIndex)
+            {
+                const u32 stateIndex = destinationBank
+                    * HighResCaptureSegmentsPerBank + segmentIndex;
+                gapPreserved &= gapTracker.States()[stateIndex].ValidAndVersion
+                        == preGap[stateIndex].ValidAndVersion
+                    && gapTracker.States()[stateIndex]
+                        .CommittedIdentity.CompletionValue
+                        == preGap[stateIndex].CommittedIdentity.CompletionValue;
+            }
+        }
+        passed &= Require(
+            gapPreserved,
+            "full C/D capture identity changed during a no-write gap");
+
+        setFullCaptureWrite(2u, 700u + gapLength);
+        const NativeCaptureStateIdentity cResume = identity(
+            20u, 700u + gapLength, 3000u + gapLength);
+        gapTracker.BeginFrame(*input, cResume, 4u);
+        const u32 dIndex = 3u * HighResCaptureSegmentsPerBank;
+        passed &= Require(
+            (gapTracker.States()[index].ValidAndVersion
+                & HighResCapturePendingWriteBit) != 0u
+                && IsHighResCaptureCommittedIdentityValid(
+                    gapTracker.States()[dIndex])
+                && gapTracker.States()[dIndex]
+                    .CommittedIdentity.CompletionValue
+                    == dBeforeGap.CompletionValue,
+            "C resume did not preserve D committed reference");
+        gapTracker.CommitFrame(cResume);
+
+        setFullCaptureWrite(3u, 701u + gapLength);
+        const NativeCaptureStateIdentity dResume = identity(
+            20u, 701u + gapLength, 4000u + gapLength);
+        gapTracker.BeginFrame(*input, dResume, 4u);
+        passed &= Require(
+            IsHighResCaptureCommittedIdentityValid(gapTracker.States()[index])
+                && gapTracker.States()[index]
+                    .CommittedIdentity.CompletionValue
+                    == cResume.CompletionValue
+                && (gapTracker.States()[dIndex].ValidAndVersion
+                    & HighResCapturePendingWriteBit) != 0u,
+            "D resume did not preserve newly committed C reference");
+        gapTracker.CommitFrame(dResume);
+    }
+
+    // Materialized CPU readback is content-preserving and therefore causes no
+    // tracker mutation. This snapshot models the explicit no-op event.
+    const HighResCaptureProvenanceState beforeMaterialize = tracker.States()[index];
+    const HighResCaptureProvenanceState afterMaterialize = tracker.States()[index];
     passed &= Require(
-        (tracker.States()[index].ValidAndVersion
-            & HighResCapturePendingWriteBit) != 0u
-            && (tracker.States()[index].ValidAndVersion
-                & HighResCaptureValidBit) == 0u,
-        "capture restart admitted a pre-break committed sidecar version");
-    tracker.AbortFrame();
+        afterMaterialize.ValidAndVersion == beforeMaterialize.ValidAndVersion
+            && afterMaterialize.CommittedIdentity.CompletionValue
+                == beforeMaterialize.CommittedIdentity.CompletionValue,
+        "content-preserving materialization retired sidecar identity");
+
+    // Equal compact representatives are not proof of identity. A different
+    // compact completion token must fail closed even if pixels alias at 5-bit.
+    HighResCaptureProvenanceState aliased = tracker.States()[index];
+    aliased.CompactIdentity.CompletionValue += 1u;
+    passed &= Require(
+        !IsHighResCaptureCommittedIdentityValid(aliased),
+        "compact pixel alias admitted a sidecar with different identity");
 
     tracker.Invalidate(8u, 4u);
     passed &= Require(
-        (tracker.States()[index].ValidAndVersion & HighResCaptureValidBit) == 0u
-            && tracker.States()[index].EpochTag == 8u,
+        !IsHighResCaptureCommittedIdentityValid(tracker.States()[index])
+            && tracker.States()[index].LastInvalidationReason
+                == HighResCaptureFallbackReason::ResourceReset,
         "renderer epoch invalidation did not reject the pre-load sidecar");
 
-    // Partial-block poison vector: a 128-pixel line writes only one segment.
-    // The neighbouring segment is intentionally treated as stale poison and
-    // must remain invalid after state-load invalidation and commit.
+    // Commit two segments in different 32 KiB physical blocks, then invalidate
+    // only the first block as an actual CPU/DMA write would.
     constexpr u32 firstSegment = bank * HighResCaptureSegmentsPerBank;
-    constexpr u32 neighbourSegment = firstSegment + 1u;
-    std::array<std::array<u16, 2>, 2> poison{{
-        {{0x801Fu, 0x801Fu}}, // version 0: magenta
-        {{0x83E0u, 0x83E0u}}, // version 1: cyan
-    }};
-    input->Lines[0].CaptureCnt = bank << 16u;
+    constexpr u32 secondBlockSegment = firstSegment
+        + CapturePhysicalBlockBytes / sizeof(u16)
+            / HighResCaptureSegmentHalfwords;
+    *input = {};
+    input->Generation.Frame = 700u;
+    input->Generation.CaptureGeneration = 700u;
+    input->CaptureEnable = 1u;
+    input->Lines[0].CaptureCnt = (bank << 16u) | (2u << 20u);
     input->Lines[0].CaptureEnable = 1u;
     input->Lines[0].LCDVRAMMap = 1u << bank;
-    input->Lines[1].CaptureCnt = bank << 16u;
-    input->Lines[1].LCDVRAMMap = 1u << bank;
-    input->Generation.Frame = 4u;
+    input->Lines[64] = input->Lines[0];
     tracker.Invalidate(9u, 4u);
-    tracker.BeginFrame(*input, 9u, 4u);
-    tracker.CommitFrame();
-    const auto resolvePoison = [&](u32 index, u16 compact) {
-        const u32 state = tracker.States()[index].ValidAndVersion;
-        if ((state & HighResCaptureValidBit) == 0u)
-            return compact;
-        const u32 version = (state & HighResCaptureVersionBit) != 0u ? 1u : 0u;
-        return poison[version][0u];
-    };
+    const NativeCaptureStateIdentity wideIdentity = identity(9u, 700u, 700u);
+    tracker.BeginFrame(*input, wideIdentity, 4u);
+    tracker.CommitFrame(wideIdentity);
+    tracker.InvalidatePhysicalRange(
+        bank, 0u, CapturePhysicalBlockBytes,
+        HighResCaptureFallbackReason::CpuWriteInvalidated);
     passed &= Require(
-        (tracker.States()[firstSegment].ValidAndVersion & HighResCaptureValidBit) != 0u
-            && (tracker.States()[neighbourSegment].ValidAndVersion
-                & HighResCaptureValidBit) == 0u,
-        "partial capture promoted an untouched neighbour segment to valid");
+        !IsHighResCaptureCommittedIdentityValid(tracker.States()[firstSegment])
+            && IsHighResCaptureCommittedIdentityValid(
+                tracker.States()[secondBlockSegment]),
+        "selective CPU write invalidation retired an unrelated physical block");
+    tracker.InvalidatePhysicalRange(
+        bank, CapturePhysicalBlockBytes, CapturePhysicalBlockBytes,
+        HighResCaptureFallbackReason::CaptureRetired);
     passed &= Require(
-        resolvePoison(neighbourSegment, 0x1234u) == 0x1234u,
-        "invalid partial-capture address exposed stale sidecar poison");
+        !IsHighResCaptureCommittedIdentityValid(
+            tracker.States()[secondBlockSegment])
+            && tracker.States()[secondBlockSegment].LastInvalidationReason
+                == HighResCaptureFallbackReason::CaptureRetired,
+        "capture layout replacement did not retire the replaced block identity");
 
-    // Mixed-version vector inside one former 32 KiB block: retain an older
-    // valid segment while committing a new segment, then require a resolver to
-    // use per-segment metadata rather than the physical-block version.
+    // Two-version feedback: repeated writes toggle only the written segment;
+    // an aborted pending submission keeps the committed version and identity.
     tracker.Invalidate(10u, 4u);
-    input->Lines[0].CaptureEnable = 0u;
-    input->Lines[1].CaptureEnable = 1u;
-    input->Generation.Frame = 5u;
-    tracker.BeginFrame(*input, 9u, 4u);
-    tracker.CommitFrame(); // segment 1 -> version 1
-    input->Generation.Frame = 6u;
-    tracker.BeginFrame(*input, 9u, 4u);
-    tracker.CommitFrame(); // segment 1 -> version 0
-    input->Lines[0].CaptureEnable = 1u;
-    input->Lines[1].CaptureEnable = 0u;
-    input->Generation.Frame = 7u;
-    tracker.BeginFrame(*input, 9u, 4u);
-    tracker.CommitFrame(); // segment 0 -> version 1
-    const u32 firstCommitted = tracker.States()[firstSegment].ValidAndVersion;
-    const u32 secondCommitted = tracker.States()[neighbourSegment].ValidAndVersion;
+    setSingleSegmentWrite(800u, true);
+    const NativeCaptureStateIdentity versionA = identity(10u, 800u, 800u);
+    tracker.BeginFrame(*input, versionA, 4u);
+    tracker.CommitFrame(versionA);
+    const u32 versionOne = tracker.States()[index].ValidAndVersion;
+    setSingleSegmentWrite(801u, true);
+    const NativeCaptureStateIdentity versionB = identity(10u, 801u, 801u);
+    tracker.BeginFrame(*input, versionB, 4u);
+    tracker.CommitFrame(versionB);
+    const u32 versionTwo = tracker.States()[index].ValidAndVersion;
     passed &= Require(
-        (firstCommitted & HighResCaptureValidBit) != 0u
-            && (secondCommitted & HighResCaptureValidBit) != 0u
-            && (firstCommitted & HighResCaptureVersionBit)
-                != (secondCommitted & HighResCaptureVersionBit),
-        "mixed-version capture segments collapsed to one physical-block version");
+        (versionOne & HighResCaptureVersionBit)
+            != (versionTwo & HighResCaptureVersionBit)
+            && tracker.States()[index].CommittedIdentity.CompletionValue == 801u,
+        "two-version feedback did not advance with committed semantic identity");
+
+    tracker.Invalidate(10u, 8u);
+    passed &= Require(
+        !IsHighResCaptureCommittedIdentityValid(tracker.States()[index]),
+        "scale-dependent sidecar recreation retained old provenance");
     return passed;
 }
 

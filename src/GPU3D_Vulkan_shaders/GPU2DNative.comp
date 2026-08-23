@@ -57,7 +57,8 @@ shared uint NativeActiveCount;
 
 // The C++ serializer in GPU2DNative.h is intentionally fixed-width.  Keep the
 // offsets here literal and audit-friendly; a drift is a shader ABI break.
-const uint kHeaderWords = 32u;
+const uint kHeaderWords = 34u;
+const uint kPendingCompletionLoWord = 32u;
 const uint kLineWords = 68u;
 const uint kLineCount = 384u;
 const uint kLinesWords = kLineWords * kLineCount;
@@ -113,7 +114,7 @@ const uint kNativeCaptureSpriteOBJMappingBase = kNativeCaptureOBJMappingBase
     + 192u * (16u + 8u);
 const uint kHighResCaptureProvenanceBase = kNativeCaptureSpriteOBJMappingBase
     + 192u * (16u + 8u);
-const uint kHighResCaptureProvenanceStride = 4u;
+const uint kHighResCaptureProvenanceStride = 8u;
 const uint kHighResCaptureSegmentHalfwords = 128u;
 const uint kHighResCaptureSegmentsPerBank = 512u;
 const uint kHighResCaptureValidBit = 1u;
@@ -628,10 +629,45 @@ uint NativeHighResCaptureState(uint bank, uint address)
             * kHighResCaptureProvenanceStride];
 }
 
+uint NativeHighResCaptureStateBase(uint bank, uint address)
+{
+    uint segment = (address >> 7u) & 0x1FFu;
+    return kHighResCaptureProvenanceBase
+        + (bank * kHighResCaptureSegmentsPerBank + segment)
+            * kHighResCaptureProvenanceStride;
+}
+
+bool NativeHighResCaptureCommittedValid(uint bank, uint address)
+{
+    uint base = NativeHighResCaptureStateBase(bank, address);
+    uint state = NativeGPU2DInput[base];
+    uvec2 sidecarIdentity = uvec2(
+        NativeGPU2DInput[base + 1u], NativeGPU2DInput[base + 2u]);
+    uvec2 compactIdentity = uvec2(
+        NativeGPU2DInput[base + 5u], NativeGPU2DInput[base + 6u]);
+    return (state & kHighResCaptureValidBit) != 0u
+        && any(notEqual(sidecarIdentity, uvec2(0u)))
+        && all(equal(sidecarIdentity, compactIdentity));
+}
+
+bool NativeHighResCapturePendingValid(uint bank, uint address)
+{
+    uint base = NativeHighResCaptureStateBase(bank, address);
+    uint state = NativeGPU2DInput[base];
+    uvec2 segmentIdentity = uvec2(
+        NativeGPU2DInput[base + 3u], NativeGPU2DInput[base + 4u]);
+    uvec2 submissionIdentity = uvec2(
+        NativeGPU2DInput[kPendingCompletionLoWord],
+        NativeGPU2DInput[kPendingCompletionLoWord + 1u]);
+    return (state & kHighResCapturePendingWriteBit) != 0u
+        && any(notEqual(segmentIdentity, uvec2(0u)))
+        && all(equal(segmentIdentity, submissionIdentity));
+}
+
 uint NativeCaptureCommittedReference(uint bank, uint address)
 {
     uint state = NativeHighResCaptureState(bank, address);
-    if ((state & kHighResCaptureValidBit) == 0u)
+    if (!NativeHighResCaptureCommittedValid(bank, address))
         return 0u;
     uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
     return 0x80000000u | (version << 30u) | (bank << 28u)
@@ -1619,8 +1655,8 @@ uint NativeCaptureReferenceForSourceB(
 {
     uint halfwordAddress = (address >> 1u) & 0xFFFFu;
     uint state = NativeHighResCaptureState(bank, halfwordAddress);
-    bool pendingWrite = (state & kHighResCapturePendingWriteBit) != 0u;
-    bool committed = (state & kHighResCaptureValidBit) != 0u;
+    bool pendingWrite = NativeHighResCapturePendingValid(bank, halfwordAddress);
+    bool committed = NativeHighResCaptureCommittedValid(bank, halfwordAddress);
     if (!pendingWrite && !committed)
         return 0u;
 
@@ -1748,9 +1784,9 @@ uint NativeCaptureReference(uint engine, uint line, uint x)
         return 0u;
 
     uint state = NativeHighResCaptureState(displayBank, displayAddress);
-    bool pendingWrite = (state & kHighResCapturePendingWriteBit) != 0u;
-    bool committed = (state & kHighResCaptureValidBit) != 0u;
-    if (!pendingWrite && !committed)
+    bool pendingWrite = NativeHighResCapturePendingValid(
+        displayBank, displayAddress);
+    if (!pendingWrite)
         return 0u;
     // A capture writes the next sidecar version while this frame's display
     // feedback reads the version produced for the already-completed capture
@@ -2001,7 +2037,7 @@ void WriteNativeCaptureSample(
         + line * width + x);
     uint provenance = NativeHighResCaptureState(
         destinationBank, address);
-    if ((provenance & kHighResCapturePendingWriteBit) == 0u)
+    if (!NativeHighResCapturePendingValid(destinationBank, address))
         return;
     uint version = (provenance & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
     version ^= 1u;

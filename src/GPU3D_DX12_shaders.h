@@ -2261,7 +2261,8 @@ inline const std::string GPU2DNative = R"(
 // logical and capture pipelines. fxc's X4714 estimate is conservative for
 // this required wave-local compositor and is tracked by the runtime FPS gate.
 #pragma warning(disable: 4714)
-static const uint NativeHeaderWords = 32u;
+static const uint NativeHeaderWords = 34u;
+static const uint NativePendingCompletionLoWord = 32u;
 static const uint NativeLineWords = 68u;
 static const uint NativeEngineWords = 131072u + 65536u + 8192u + 2048u;
 static const uint NativeEngineBase = NativeHeaderWords + NativeLineWords * 384u;
@@ -2311,7 +2312,7 @@ static const uint NativeCaptureSpriteOBJMappingBase = NativeCaptureOBJMappingBas
     + 192u * (16u + 8u);
 static const uint NativeHighResCaptureProvenanceBase =
     NativeCaptureSpriteOBJMappingBase + 192u * (16u + 8u);
-static const uint NativeHighResCaptureProvenanceStride = 4u;
+static const uint NativeHighResCaptureProvenanceStride = 8u;
 static const uint NativeHighResCaptureSegmentHalfwords = 128u;
 static const uint NativeHighResCaptureSegmentsPerBank = 512u;
 static const uint NativeHighResCaptureValidBit = 1u;
@@ -2735,10 +2736,39 @@ uint NativeHighResCaptureState(uint bank,uint address)
         +(bank*NativeHighResCaptureSegmentsPerBank+segment)
             *NativeHighResCaptureProvenanceStride];
 }
+uint NativeHighResCaptureStateBase(uint bank,uint address)
+{
+    uint segment=(address>>7u)&0x1FFu;
+    return NativeHighResCaptureProvenanceBase
+        +(bank*NativeHighResCaptureSegmentsPerBank+segment)
+            *NativeHighResCaptureProvenanceStride;
+}
+bool NativeHighResCaptureCommittedValid(uint bank,uint address)
+{
+    uint base=NativeHighResCaptureStateBase(bank,address);
+    uint state=ResultValue[base];
+    uint2 sidecarIdentity=uint2(ResultValue[base+1u],ResultValue[base+2u]);
+    uint2 compactIdentity=uint2(ResultValue[base+5u],ResultValue[base+6u]);
+    return (state&NativeHighResCaptureValidBit)!=0u
+        &&any(sidecarIdentity!=uint2(0u,0u))
+        &&all(sidecarIdentity==compactIdentity);
+}
+bool NativeHighResCapturePendingValid(uint bank,uint address)
+{
+    uint base=NativeHighResCaptureStateBase(bank,address);
+    uint state=ResultValue[base];
+    uint2 segmentIdentity=uint2(ResultValue[base+3u],ResultValue[base+4u]);
+    uint2 submissionIdentity=uint2(
+        ResultValue[NativePendingCompletionLoWord],
+        ResultValue[NativePendingCompletionLoWord+1u]);
+    return (state&NativeHighResCapturePendingWriteBit)!=0u
+        &&any(segmentIdentity!=uint2(0u,0u))
+        &&all(segmentIdentity==submissionIdentity);
+}
 uint NativeCaptureCommittedReference(uint bank,uint address)
 {
     uint state=NativeHighResCaptureState(bank,address);
-    if((state&NativeHighResCaptureValidBit)==0u)return 0u;
+    if(!NativeHighResCaptureCommittedValid(bank,address))return 0u;
     uint version=(state&NativeHighResCaptureVersionBit)!=0u?1u:0u;
     return 0x80000000u|(version<<30u)|(bank<<28u)|(address&0xFFFFu);
 }
@@ -3300,9 +3330,8 @@ uint NativeCaptureReference(uint engine,uint line,uint x)
     uint captureLine=relative/width;
     if(captureLine<captureStart||captureLine>=line||captureLine>=height)return 0u;
     uint state=NativeHighResCaptureState(displayBank,displayAddress);
-    bool pendingWrite=(state&NativeHighResCapturePendingWriteBit)!=0u;
-    bool committed=(state&NativeHighResCaptureValidBit)!=0u;
-    if(!pendingWrite&&!committed)return 0u;
+    bool pendingWrite=NativeHighResCapturePendingValid(displayBank,displayAddress);
+    if(!pendingWrite)return 0u;
     // Capture writes the next sidecar version while the current frame's
     // display feedback reads the version for the completed capture lines.
     uint version=(state&NativeHighResCaptureVersionBit)!=0u?1u:0u;
@@ -3453,8 +3482,8 @@ uint NativeCaptureReferenceForSourceB(
 {
     uint halfwordAddress=(address>>1u)&0xFFFFu;
     uint state=NativeHighResCaptureState(bank,halfwordAddress);
-    bool pending=(state&NativeHighResCapturePendingWriteBit)!=0u;
-    bool committed=(state&NativeHighResCaptureValidBit)!=0u;
+    bool pending=NativeHighResCapturePendingValid(bank,halfwordAddress);
+    bool committed=NativeHighResCaptureCommittedValid(bank,halfwordAddress);
     if(!pending&&!committed)return 0u;
     uint version=(state&NativeHighResCaptureVersionBit)!=0u?1u:0u;
     if(pending)
@@ -3532,7 +3561,7 @@ void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
     uint address=WrapLCDCHalfword(
         CaptureOffsetHalfwords((cnt>>18u)&3u)+line*width+x);
     uint provenance=NativeHighResCaptureState(bank,address);
-    if((provenance&NativeHighResCapturePendingWriteBit)==0u)return;
+    if(!NativeHighResCapturePendingValid(bank,address))return;
     uint version=(provenance&NativeHighResCaptureVersionBit)!=0u?1u:0u;
     version^=1u;
     uint spp=ScaleFactor*ScaleFactor;

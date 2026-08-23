@@ -119,6 +119,20 @@ void VulkanRenderer::InvalidateVRAMCapture(
     u32 len,
     CaptureAuthorityTransitionReason reason)
 {
+    if (reason == CaptureAuthorityTransitionReason::CpuWrite
+        || reason == CaptureAuthorityTransitionReason::CaptureRetired)
+    {
+        if (auto* vulkan = GetVulkanRenderer3D())
+        {
+            vulkan->InvalidateHighResCaptureRange(
+                bank,
+                start,
+                len,
+                reason == CaptureAuthorityTransitionReason::CpuWrite
+                    ? GPU2DNative::HighResCaptureFallbackReason::CpuWriteInvalidated
+                    : GPU2DNative::HighResCaptureFallbackReason::CaptureRetired);
+        }
+    }
     SoftRenderer::InvalidateVRAMCapture(bank, start, len, reason);
 }
 

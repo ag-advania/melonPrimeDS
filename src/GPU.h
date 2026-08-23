@@ -859,13 +859,22 @@ public:
     }
 
     template<typename T>
-    T ReadVRAM_ARM7(u32 addr) const noexcept
+    T ReadVRAM_ARM7(u32 addr) noexcept
     {
         T ret = 0;
         u32 mask = VRAMMap_ARM7[(addr >> 17) & 0x1];
+        const u32 physicalBlock = (addr & 0x1FFFFu) >> 15u;
 
-        if (mask & (1<<2)) ret |= *(T*)&VRAM_C[addr & 0x1FFFF];
-        if (mask & (1<<3)) ret |= *(T*)&VRAM_D[addr & 0x1FFFF];
+        if (mask & (1<<2))
+        {
+            SyncVRAMCaptureBlock((2u << 2u) | physicalBlock, false);
+            ret |= *(T*)&VRAM_C[addr & 0x1FFFF];
+        }
+        if (mask & (1<<3))
+        {
+            SyncVRAMCaptureBlock((3u << 2u) | physicalBlock, false);
+            ret |= *(T*)&VRAM_D[addr & 0x1FFFF];
+        }
 
         return ret;
     }
@@ -874,9 +883,11 @@ public:
     void WriteVRAM_ARM7(u32 addr, T val)
     {
         u32 mask = VRAMMap_ARM7[(addr >> 17) & 0x1];
+        const u32 physicalBlock = (addr & 0x1FFFFu) >> 15u;
 
         if (mask & (1<<2))
         {
+            SyncVRAMCaptureBlock((2u << 2u) | physicalBlock, true);
             *(T*)&VRAM_C[addr & 0x1FFFF] = val;
             RecordGPU2DWrite(
                 GPU2DWriteKind::VRAM, 2u,
@@ -884,6 +895,7 @@ public:
         }
         if (mask & (1<<3))
         {
+            SyncVRAMCaptureBlock((3u << 2u) | physicalBlock, true);
             *(T*)&VRAM_D[addr & 0x1FFFF] = val;
             RecordGPU2DWrite(
                 GPU2DWriteKind::VRAM, 3u,
@@ -1290,6 +1302,9 @@ private:
         CaptureSyncResult result,
         bool flagsMarkedSynced,
         bool flagsCleared) const noexcept;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    void LogCaptureGapLifecycle() noexcept;
+#endif
     void GetCaptureInfo(int* info, u16** cbf, int len);
 
     void SetDispStatIRQ(int cpu, int num);
@@ -1307,6 +1322,13 @@ private:
     std::unique_ptr<Renderer> Rend = nullptr;
 
     u16 VRAMCaptureBlockFlags[16];
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    u32 CaptureDiagnosticGapFrames = 0;
+    u32 CaptureDiagnosticLastGapFrames = 0;
+    u32 CaptureDiagnosticPostGapFrames = 0;
+    u64 CaptureDiagnosticFrame = 0;
+    bool CaptureDiagnosticSawWrite = false;
+#endif
 
     u16* VRAMCBF_ABG[0x20] {};
     u16* VRAMCBF_AOBJ[0x10] {};

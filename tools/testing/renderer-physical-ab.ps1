@@ -25,7 +25,7 @@ param(
     [string]$ExpectedSourceHead,
     [Parameter(Mandatory = $true)]
     [string]$OutputDir,
-    [ValidateSet(1, 2, 4, 8, 16)]
+    [ValidateSet(1, 2, 3, 4, 8, 16)]
     [int]$Scale = 4,
     [switch]$NoVSync,
     [switch]$NoFrameLimit,

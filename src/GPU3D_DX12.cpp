@@ -3090,6 +3090,24 @@ NativeCaptureStateIdentity DX12Renderer3D::GetNativeCaptureStateIdentity(
     return identity;
 }
 
+void DX12Renderer3D::InvalidateHighResCaptureRange(
+    u32 bank,
+    u32 start,
+    u32 len,
+    GPU2DNative::HighResCaptureFallbackReason reason) noexcept
+{
+    const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
+    for (u32 i = 0u; i < blockCount; ++i)
+    {
+        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+        HighResCaptureProvenance.InvalidatePhysicalRange(
+            bank,
+            block * CapturePhysicalBlockBytes,
+            CapturePhysicalBlockBytes,
+            reason);
+    }
+}
+
 bool DX12Renderer3D::ComposeStructuredOutput(
     const std::array<const u32*, 14>& planes,
     const std::array<const u32*, 2>& lineMeta,
@@ -3642,8 +3660,20 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         semanticSlot.Commands, GpuMetric::NativeGPU2DResolve,
         DX12Perf::Counter::CompositorGpuTimeNs);
 
+    u64 pendingCompletionValue = NativeSemanticSubmissionSerial + 1u;
+    if (pendingCompletionValue == 0u)
+        pendingCompletionValue = 1u;
+    const NativeCaptureStateIdentity pendingCaptureIdentity{
+        true,
+        CaptureOwner::NativeDX12,
+        CurrentEpoch,
+        input.Generation.Frame,
+        input.Generation.CaptureGeneration,
+        pendingCompletionValue,
+    };
     HighResCaptureProvenance.BeginFrame(
-        input, CurrentEpoch, static_cast<u32>(ScaleFactor));
+        input, pendingCaptureIdentity, static_cast<u32>(ScaleFactor));
+    HighResCaptureProvenance.LogPostGapTrace("DX12", input);
     const bool semanticFrameContiguous = LastSemanticEpoch == CurrentEpoch
         && LastSemanticFrame != 0
         && input.Generation.Frame == LastSemanticFrame + 1;
@@ -3670,10 +3700,11 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     {
         packedNativeInput = GPU2DNative::PackHighResCaptureProvenance(
             staging, GPU2DNative::PackedFrameWords,
-            HighResCaptureProvenance.States());
+            HighResCaptureProvenance.States(), input, pendingCompletionValue);
     }
     if (!packedNativeInput)
     {
+        HighResCaptureProvenance.AbortFrame();
         semanticSlot.Commands.Submit();
         SetRuntimeFailure("the native GPU2D input staging upload failed");
         return false;
@@ -4108,18 +4139,17 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 
     if (!semanticSlot.Commands.Submit())
     {
+        HighResCaptureProvenance.AbortFrame();
         SetRuntimeFailure("native GPU2D command submission failed");
         return false;
     }
-    HighResCaptureProvenance.CommitFrame();
     // Each semantic slot owns a separate DX12 command context and local fence.
     // Its fence values are therefore not comparable across slots.  The
     // renderer-global serial is the provenance identity; direct queue ordering
     // guarantees that a later scoped capture copy observes this submission.
-    ++NativeSemanticSubmissionSerial;
-    if (NativeSemanticSubmissionSerial == 0u)
-        NativeSemanticSubmissionSerial = 1u;
-    LastNativeCaptureCompletionValue = NativeSemanticSubmissionSerial;
+    NativeSemanticSubmissionSerial = pendingCompletionValue;
+    LastNativeCaptureCompletionValue = pendingCompletionValue;
+    HighResCaptureProvenance.CommitFrame(pendingCaptureIdentity);
 
     if (diagnosticReadback)
     {
