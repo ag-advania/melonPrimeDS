@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile every committed MelonPrime DX12 HLSL geometry variant with fxc.exe.
+"""Compile every committed MelonPrime DX12 HLSL geometry variant.
 
 The compute renderer creates pipelines from committed DXBC. A syntax error or
 stale generated blob would otherwise surface as a black screen only after the
@@ -7,8 +7,14 @@ generated source reached a D3D12 GPU. This script assembles exactly the sources
 tools/dx12/compile-shaders.py commits -- same `#define` prologue, Common block
 and per-variant defines -- and validates every module with the Windows SDK.
 
+The generated set intentionally uses DXC for the heavily branched native
+GPU2D shaders and FXC for the remaining Shader Model 5.1 modules. The audit
+must use the same compiler split or it can spend tens of minutes in FXC on a
+module that is never generated through that path.
+
 Usage:
-    python tools/ci/audits/check-dx12-shaders.py [--scales 1,5,9] [--fxc PATH]
+    python tools/ci/audits/check-dx12-shaders.py [--scales 1,5,9]
+                                                     [--fxc PATH] [--dxc PATH]
 
 Exits non-zero if any variant fails to compile or emits an HLSL warning. Runtime
 shader warnings otherwise flood the emulator log and can conceal undefined
@@ -48,6 +54,21 @@ def find_fxc() -> str | None:
     )
     candidates += sorted(
         glob.glob(r"C:\Program Files\Windows Kits\10\bin\*\x64\fxc.exe"),
+        reverse=True,
+    )
+    for path in candidates:
+        if os.path.isfile(path):
+            return path
+    return None
+
+
+def find_dxc() -> str | None:
+    candidates = sorted(
+        glob.glob(r"C:\Program Files (x86)\Windows Kits\10\bin\*\x64\dxc.exe"),
+        reverse=True,
+    )
+    candidates += sorted(
+        glob.glob(r"C:\Program Files\Windows Kits\10\bin\*\x64\dxc.exe"),
         reverse=True,
     )
     for path in candidates:
@@ -145,6 +166,7 @@ def main() -> int:
     parser.add_argument("--scales", default="1,5,9",
                         help="comma-separated internal resolution scales to validate")
     parser.add_argument("--fxc", default=None, help="path to fxc.exe")
+    parser.add_argument("--dxc", default=None, help="path to dxc.exe")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -152,6 +174,10 @@ def main() -> int:
     if not fxc:
         print("SKIP: fxc.exe was not found (install the Windows 10/11 SDK to run this audit)")
         return 0
+    dxc = args.dxc or find_dxc()
+    if not dxc:
+        print("FAIL: dxc.exe was not found (required for GPU2DNative)")
+        return 1
 
     shaders = parse_shaders(SHADER_HEADER)
     scales = [int(part) for part in args.scales.split(",") if part.strip()]
@@ -170,12 +196,18 @@ def main() -> int:
                 with open(source_path, "w", encoding="utf-8") as handle:
                     handle.write(build_source(shaders, geo, body_key, defines))
 
-                result = subprocess.run(
-                    [fxc, "/nologo", "/T", "cs_5_1", "/E", "main", "/O3",
-                     "/Ges", "/Fo", output_path, source_path],
-                    capture_output=True,
-                    text=True,
-                )
+                if body_key == "GPU2DNative":
+                    command = [
+                        dxc, "-T", "cs_6_0", "-E", "main", "-O3", "-Ges",
+                        "-Wno-shift-op-parentheses", "-Fo", output_path,
+                        source_path,
+                    ]
+                else:
+                    command = [
+                        fxc, "/nologo", "/T", "cs_5_1", "/E", "main", "/O3",
+                        "/Ges", "/Fo", output_path, source_path,
+                    ]
+                result = subprocess.run(command, capture_output=True, text=True)
                 compiled += 1
                 diagnostics = "\n".join(
                     part.strip() for part in (result.stdout, result.stderr) if part.strip()
@@ -185,7 +217,9 @@ def main() -> int:
                     failures += 1
                     print(f"[FAIL] scale={scale} {name}")
                     print(diagnostics)
-                elif re.search(r"\bwarning\s+X\d+", diagnostics, re.IGNORECASE):
+                elif body_key != "GPU2DNative" and re.search(
+                    r"\bwarning\s+X\d+", diagnostics, re.IGNORECASE
+                ):
                     warnings += 1
                     print(f"[WARN] scale={scale} {name}")
                     print(diagnostics)

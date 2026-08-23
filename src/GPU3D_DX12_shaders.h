@@ -3214,6 +3214,11 @@ NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly,bool collec
 NativePixel NativeOBJ(uint screen,uint engine,uint line,int x,bool collectWindow,out NativePixel windowSelected)
 {
     uint width=NativeLine(engine,line,NativeOBJMosaic);windowSelected=NativeEmpty();
+    // DispatchPad bit 6 is set only after the host proves OBJ mosaic is off
+    // for both routed engines.  Resolve the current OBJ sample directly from
+    // the workgroup OAM cache so no global raw-plane dispatch is required.
+    if((DispatchPad&64u)!=0u)
+        return NativeOBJRaw(engine,line,x,false,collectWindow,windowSelected);
     if(width==0u)return NativeLoadObjRaw(screen,line,(uint)x,windowSelected);
     int mosaicSpan=(int)(width+1u),remainder=x;
     while(remainder>=mosaicSpan)remainder-=mosaicSpan;
@@ -3635,9 +3640,13 @@ void NativePrepareObjRawLine(uint engine,uint line,bool collectWindow,uint lane)
 [numthreads(128, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID)
 {
-    if(id.x>=ScreenWidth||id.y>=ScaleFactor)return;
+    bool batchedLines=(DispatchPad&128u)!=0u;
+    uint dispatchHeight=ScaleFactor*(batchedLines?192u:1u);
+    if(id.x>=ScreenWidth||id.y>=dispatchHeight)return;
     uint x=id.x/ScaleFactor;
-    NativeWriteCaptureSample(InterpSpanCount,x,id.x,id.y);
+    uint captureLine=batchedLines?id.y/ScaleFactor:InterpSpanCount;
+    uint sampleY=batchedLines?id.y%ScaleFactor:id.y;
+    NativeWriteCaptureSample(captureLine,x,id.x,sampleY);
 }
 #else
 [numthreads(128, 1, 1)]
@@ -3654,6 +3663,11 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupThreadId : SV_GroupThreadID
         bool collect=enabled&&(disp&(1u<<15u))!=0u&&(disp&0xE000u)!=0u;
         NativePrepareObjRawLine(engine,line,collect,groupThreadId.x);
         if(id.x>=256u||(logicalLine?id.y>=2u:id.y>=384u))return;
+        if((DispatchPad&64u)!=0u)
+        {
+            NativeWriteStructuredLogicalPixel(screen,line,id.x,engine);
+            return;
+        }
         NativeWriteObjRawPixel(screen,line,id.x,engine);
         return;
     }

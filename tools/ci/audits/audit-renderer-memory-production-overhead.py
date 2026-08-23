@@ -71,6 +71,8 @@ def audit_binary(path: Path, failures: list[str]) -> None:
         b"[Vulkan] memory telemetry boundary=",
         b"[Vulkan] memory telemetry heap=",
         b"buckets=1M:",
+        b"[RendererStartup]",
+        b"[RendererStartupSummary]",
     ):
         require(marker not in data,
                 f"shipping binary contains detailed memory telemetry marker {marker!r}",
@@ -187,6 +189,46 @@ def main() -> int:
 
     dx12_renderer = read("src/GPU3D_DX12.cpp")
     vulkan_renderer = read("src/GPU3D_Vulkan.cpp")
+    for name, renderer in (("DX12", dx12_renderer), ("Vulkan", vulkan_renderer)):
+        require("struct ComposeWorkSlot" in renderer,
+                f"{name} must separate command-ring work from presentation slots",
+                failures)
+        require("std::array<ComposeWorkSlot" in renderer,
+                f"{name} must own exactly the work-slot ring resources",
+                failures)
+        require("if (outputSlot || diagnosticReadback)" in renderer,
+                f"{name} must skip discarded Stage B presentation work",
+                failures)
+        require("EnsureDiagnosticResources" in renderer,
+                f"{name} must lazily create native diagnostic readback resources",
+                failures)
+        require("native_readbacks=0" in renderer,
+                f"{name} startup resource evidence must report zero native readbacks",
+                failures)
+        slot_match = re.search(
+            r"struct Slot\s*\{(?P<body>.*?)\n\s*\};", renderer, re.DOTALL)
+        require(slot_match is not None,
+                f"{name} presentation Slot declaration must be auditable", failures)
+        if slot_match:
+            slot_body = slot_match.group("body")
+            for token in ("NativeStaging", "NativeInput", "NativeReadback",
+                          "NativeMapped", "UploadedNativeGeneration"):
+                require(token not in slot_body,
+                        f"{name} presentation Slot must not own {token}", failures)
+
+    for token in ("ID3D12PipelineLibrary", "LoadComputePipeline",
+                  "StorePipeline", "Serialize(", "AdapterLuid",
+                  "RootSignatureHash", "ShaderBlobHash"):
+        require(token in dx12_renderer or token == "ID3D12PipelineLibrary",
+                f"DX12 persistent pipeline cache must retain {token}", failures)
+    dx12_header = read("src/GPU3D_DX12.h")
+    require("ID3D12PipelineLibrary" in dx12_header,
+            "DX12 renderer must own a pipeline library", failures)
+    for renderer, name in ((dx12_renderer, "DX12"), (vulkan_renderer, "Vulkan")):
+        require("MELONPRIME_ENABLE_DEVELOPER_FEATURES" in renderer
+                and "MELONPRIME_RENDERER_STARTUP_PROFILE" in renderer,
+                f"{name} startup profiler must be developer-only and opt-in",
+                failures)
     try:
         dx12_frame = function_body(dx12_renderer, "void DX12Renderer3D::RenderFrame(")
         vulkan_frame = function_body(vulkan_renderer, "void VulkanRenderer3D::RenderFrame(")

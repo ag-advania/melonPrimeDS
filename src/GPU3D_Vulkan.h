@@ -504,6 +504,14 @@ private:
 
     VkPipelineCache PipelineCache = VK_NULL_HANDLE;
     std::array<VkPipeline, ShaderStepCount> Pipelines{};
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    u64 StartupBeginNs = 0;
+    u64 StartupFixedNs = 0;
+    u64 StartupScaleNs = 0;
+    u64 StartupOutputStateNs = 0;
+    u64 StartupPipelineNs = 0;
+    bool StartupPipelineCacheLoaded = false;
+#endif
 
     // Fixed-size resources, independent of the internal resolution.
     Vk::Buffer MetaUniformBuffer;           // FramesInFlight slices

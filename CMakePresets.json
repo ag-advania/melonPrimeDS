@@ -71,6 +71,9 @@
       "binaryDir": "${sourceDir}/build/release-mingw-shipping-x86_64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_FLAGS_RELEASE": "-O3 -DNDEBUG",
+        "CMAKE_CXX_FLAGS_RELEASE": "-O3 -DNDEBUG",
+        "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
         "ENABLE_LTO_RELEASE": {
           "type": "BOOL",
           "value": "OFF"

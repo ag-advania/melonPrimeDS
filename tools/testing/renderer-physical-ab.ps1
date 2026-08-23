@@ -48,6 +48,7 @@ param(
     [ValidateRange(1, 4)] [int]$CaptureWindowScale = 1,
     [ValidateRange(0,600)] [int]$CaptureFrames = 0,
     [ValidateRange(1,1000)] [int]$CaptureIntervalMs = 33,
+    [switch]$SampleWindowTitlesOnly,
     [ValidateRange(0,600)] [int]$PresentationStallFrames = 0,
     [int]$WarmupSeconds = 15,
     [int]$MeasuredSeconds = 20,
@@ -60,6 +61,9 @@ if ($WarmupSeconds -lt 1 -or $MeasuredSeconds -lt 1 -or $GraceSeconds -lt 0) {
 }
 if ($CaptureFrames -gt 0 -and $CaptureIntervalMs -lt 1) {
     throw 'CaptureIntervalMs must be positive when CaptureFrames is enabled.'
+}
+if ($SampleWindowTitlesOnly -and $CaptureFrames -le 0) {
+    throw 'SampleWindowTitlesOnly requires CaptureFrames.'
 }
 if ($ExactGPU2DValidation -and $StageDiagnosticsOnly) {
     throw 'ExactGPU2DValidation and StageDiagnosticsOnly are mutually exclusive.'
@@ -77,6 +81,7 @@ public static class MpRendererPerfWin {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint pid);
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int x, int y, int width, int height, bool repaint);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out MpRendererPerfRect rect);
@@ -97,6 +102,13 @@ public static class MpRendererPerfWin {
       return true;
     }, IntPtr.Zero);
     return found;
+  }
+  public static string Title(IntPtr hWnd) {
+    int length = GetWindowTextLength(hWnd);
+    if (length <= 0) return "";
+    var text = new System.Text.StringBuilder(length + 1);
+    GetWindowText(hWnd, text, text.Capacity);
+    return text.ToString();
   }
   public static void HoldKey(byte key, int milliseconds) {
     keybd_event(key, 0, 0, UIntPtr.Zero);
@@ -409,9 +421,15 @@ function Capture-ContinuousDisplay {
     $captureStart = [Diagnostics.Stopwatch]::GetTimestamp()
     for ($index = 0; $index -lt $CaptureFrames -and $null -ne $proc -and -not $proc.HasExited; $index++) {
         $path = Join-Path $windowCaptureDirectory ('window-{0:D3}.png' -f $index)
-        $captured = Capture-DisplayToPath $path
+        $captured = if ($SampleWindowTitlesOnly) { $false } else { Capture-DisplayToPath $path }
+        $window = if ($null -ne $proc -and -not $proc.HasExited) {
+            [MpRendererPerfWin]::Find([uint32]$proc.Id)
+        } else { [IntPtr]::Zero }
+        $windowTitle = if ($window -ne [IntPtr]::Zero) {
+            [MpRendererPerfWin]::Title($window).Replace("`r", ' ').Replace("`n", ' ')
+        } else { '' }
         Add-Content -LiteralPath $harness -Value (
-            "window_capture index=$index success=$captured path=$path monotonic_ticks=$([Diagnostics.Stopwatch]::GetTimestamp())")
+            "window_capture index=$index mode=$(if ($SampleWindowTitlesOnly) { 'title_only' } else { 'image' }) success=$captured title=$windowTitle path=$path monotonic_ticks=$([Diagnostics.Stopwatch]::GetTimestamp())")
         $targetTicks = $captureStart + [Int64](($index + 1) * $CaptureIntervalMs * $stopwatchFrequency / 1000.0)
         do {
             $remainingTicks = $targetTicks - [Diagnostics.Stopwatch]::GetTimestamp()
@@ -767,6 +785,7 @@ $manifestObject = [ordered]@{
         grace_seconds = $GraceSeconds
         window_capture_frames = $CaptureFrames
         window_capture_interval_ms = if ($CaptureFrames -gt 0) { $CaptureIntervalMs } else { $null }
+        sample_window_titles_only = [bool]$SampleWindowTitlesOnly
     }
     fixture = [ordered]@{
         rom = $romPath
@@ -971,7 +990,7 @@ if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMar
     ($Action -in @('savestate-load', 'all') -and $null -ne $statePath -and $stateActionMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($Hud -eq 'Off' -and $null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($frameRows -lt 1 -and -not $AllowUnverifiedBinary) -or
-    ($Renderer -eq 'Vulkan' -and $captureRows -lt 1 -and $windowCaptureRows -lt 1) -or
+    ($Renderer -eq 'Vulkan' -and $captureRows -lt 1 -and $windowCaptureRows -lt 1 -and -not $SampleWindowTitlesOnly) -or
     ($PresentationStallFrames -gt 0 -and $forcedPresentationStallLines.Count -lt $PresentationStallFrames)) {
     $badMarkers | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
     exit 1

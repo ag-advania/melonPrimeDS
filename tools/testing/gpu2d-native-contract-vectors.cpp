@@ -1151,6 +1151,128 @@ bool RunUploadPlanVectors()
     return passed;
 }
 
+bool RunWorkSlotSemanticContinuityVectors()
+{
+    FrameGeneration input{};
+    input.Frame = 103u;
+    input.CaptureGeneration = 77u;
+
+    // A three-slot ring revisits a slot last uploaded by frame 100. That is a
+    // slot-local upload history gap, not a renderer-global semantic gap.
+    FrameGeneration workSlotUpload{};
+    workSlotUpload.Frame = 100u;
+    const UploadDecision threeSlot = DetermineUploadDecision(
+        true, 9u, 9u, 102u, 76u, input);
+    bool passed = Require(
+        threeSlot.SemanticFrameContiguous
+            && !threeSlot.CaptureGenerationRegressed
+            && !threeSlot.RequiresFullUpload()
+            && workSlotUpload.Frame == 100u,
+        "three-slot work reuse was misclassified as a semantic frame gap");
+
+    // Presentation can drop N+1 while semantic capture still commits. N+2
+    // must therefore remain contiguous and use the reused slot's partial plan.
+    FrameGeneration afterPresentationStall = input;
+    afterPresentationStall.Frame = 104u;
+    afterPresentationStall.CaptureGeneration = 78u;
+    const UploadDecision postStall = DetermineUploadDecision(
+        true, 9u, 9u, 103u, 77u, afterPresentationStall);
+    passed &= Require(
+        postStall.SemanticFrameContiguous && !postStall.RequiresFullUpload(),
+        "semantic-only presentation stall poisoned the next upload decision");
+
+    const UploadDecision firstUse = DetermineUploadDecision(
+        false, 9u, 9u, 103u, 77u, afterPresentationStall);
+    passed &= Require(firstUse.Reason == FullUploadReason::FirstUse,
+        "first work-slot use did not request a full upload");
+
+    const UploadDecision epochChange = DetermineUploadDecision(
+        true, 10u, 9u, 103u, 77u, afterPresentationStall);
+    passed &= Require(epochChange.Reason == FullUploadReason::EpochChange,
+        "epoch discontinuity did not request a full upload");
+
+    FrameGeneration gap = afterPresentationStall;
+    gap.Frame = 106u;
+    const UploadDecision frameGap = DetermineUploadDecision(
+        true, 9u, 9u, 103u, 77u, gap);
+    passed &= Require(frameGap.Reason == FullUploadReason::SemanticFrameGap,
+        "semantic frame discontinuity did not request a full upload");
+
+    FrameGeneration regression = afterPresentationStall;
+    regression.CaptureGeneration = 76u;
+    const UploadDecision captureRegression = DetermineUploadDecision(
+        true, 9u, 9u, 103u, 77u, regression);
+    passed &= Require(
+        captureRegression.SemanticFrameContiguous
+            && captureRegression.Reason
+                == FullUploadReason::CaptureGenerationRegression,
+        "capture generation regression did not request a full upload");
+    return passed;
+}
+
+bool RunObjRawLogicalFusionVectors()
+{
+    auto input = std::make_unique<FrameInput>();
+    bool passed = Require(
+        CanFuseObjRawLogicalLine(*input, 0u)
+            && CanFuseObjRawLogicalFrame(*input),
+        "mosaic-free frame did not enable OBJ raw/logical fusion");
+
+    input->Lines[0].OBJMosaicSize[0] = 3u;
+    passed &= Require(
+        !CanFuseObjRawLogicalLine(*input, 0u)
+            && !CanFuseObjRawLogicalFrame(*input),
+        "engine A OBJ mosaic did not disable raw/logical fusion");
+
+    input->Lines[0].OBJMosaicSize[0] = 0u;
+    input->ScreenSource[ScreenHeight + 7u] = 1u;
+    input->Lines[ScreenHeight + 7u].OBJMosaicSize[0] = 1u;
+    passed &= Require(
+        !CanFuseObjRawLogicalLine(*input, 7u)
+            && CanFuseObjRawLogicalLine(*input, 6u),
+        "routed engine B OBJ mosaic fusion guard was not line-local");
+    return passed;
+}
+
+bool RunIndependentCaptureBatchVectors()
+{
+    auto input = std::make_unique<FrameInput>();
+    constexpr u32 direct3DCopy = 0x80000000u | (1u << 24u) | (3u << 20u);
+    input->CaptureEnable = 1u;
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+    {
+        input->Lines[line].CaptureEnable = 1u;
+        input->Lines[line].CaptureCnt = direct3DCopy;
+        input->Lines[line].LCDVRAMMap = 1u;
+    }
+
+    bool passed = Require(
+        CanBatchIndependentCaptureFrame(*input, true),
+        "stable direct-3D copy capture was not batchable");
+    passed &= Require(
+        !CanBatchIndependentCaptureFrame(*input, false),
+        "missing 3D framebuffer did not disable capture batching");
+
+    input->Lines[40].CaptureCnt = direct3DCopy | (1u << 29u);
+    passed &= Require(
+        !CanBatchIndependentCaptureFrame(*input, true),
+        "blended/source-B capture incorrectly entered direct-3D batching");
+    input->Lines[40].CaptureCnt = direct3DCopy ^ (1u << 16u);
+    passed &= Require(
+        !CanBatchIndependentCaptureFrame(*input, true),
+        "mid-frame capture descriptor change incorrectly entered batching");
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+        input->Lines[line].CaptureCnt = direct3DCopy & ~(1u << 24u);
+    passed &= Require(
+        CanBatchIndependentCaptureFrame(*input, true),
+        "independent GPU2D Source A capture was not batchable");
+    input->Lines[80].LCDVRAMMap = 0u;
+    passed &= Require(
+        !CanBatchIndependentCaptureFrame(*input, true),
+        "mid-frame destination remap incorrectly entered capture batching");
+    return passed;
+}
+
 bool RunHighResCaptureProvenanceVectors()
 {
     auto input = std::make_unique<FrameInput>();
@@ -1379,6 +1501,13 @@ bool RunHighResCaptureProvenanceVectors()
                 tracker.States()[secondBlockSegment], wideIdentity.CompletionValue),
         "selective CPU write invalidation retired an unrelated physical block");
     tracker.InvalidatePhysicalRange(
+        bank, 0u, CapturePhysicalBlockBytes,
+        HighResCaptureFallbackReason::CaptureRetired);
+    passed &= Require(
+        tracker.States()[firstSegment].LastInvalidationReason
+            == HighResCaptureFallbackReason::CpuWriteInvalidated,
+        "repeated full-block invalidation did not remain an O(1) no-op");
+    tracker.InvalidatePhysicalRange(
         bank, CapturePhysicalBlockBytes, CapturePhysicalBlockBytes,
         HighResCaptureFallbackReason::CaptureRetired);
     passed &= Require(
@@ -1387,6 +1516,28 @@ bool RunHighResCaptureProvenanceVectors()
             && tracker.States()[secondBlockSegment].LastInvalidationReason
                 == HighResCaptureFallbackReason::CaptureRetired,
         "capture layout replacement did not retire the replaced block identity");
+
+    // A later native write must re-arm the block-level summary so the next
+    // overlapping CPU write retires the newly committed identity.
+    *input = {};
+    input->Generation.Frame = 701u;
+    input->Generation.CaptureGeneration = 701u;
+    input->CaptureEnable = 1u;
+    input->Lines[0].CaptureCnt = (bank << 16u);
+    input->Lines[0].CaptureEnable = 1u;
+    input->Lines[0].LCDVRAMMap = 1u << bank;
+    const NativeCaptureStateIdentity rearmedIdentity = identity(9u, 701u, 701u);
+    tracker.BeginFrame(*input, rearmedIdentity, 4u);
+    tracker.CommitFrame(rearmedIdentity);
+    tracker.InvalidatePhysicalRange(
+        bank, 0u, CapturePhysicalBlockBytes,
+        HighResCaptureFallbackReason::CaptureRetired);
+    passed &= Require(
+        !IsHighResCaptureCommittedIdentityValid(
+            tracker.States()[firstSegment], rearmedIdentity.CompletionValue)
+            && tracker.States()[firstSegment].LastInvalidationReason
+                == HighResCaptureFallbackReason::CaptureRetired,
+        "new native capture did not re-arm full-block invalidation");
 
     // Two-version feedback: repeated writes toggle only the written segment;
     // an aborted pending submission keeps the committed version and identity.
@@ -2043,7 +2194,10 @@ int main()
         && RunFrameCoverageAndRepresentativeVectors()
         && RunPackVectors() && RunMappedCaptureOverlayVectors()
         && RunCompareVectors()
-        && RunUploadPlanVectors() && RunTemporalLineVectors()
+        && RunUploadPlanVectors() && RunWorkSlotSemanticContinuityVectors()
+        && RunObjRawLogicalFusionVectors()
+        && RunIndependentCaptureBatchVectors()
+        && RunTemporalLineVectors()
         && RunFrameIdentityVectors() && RunCaptureOwnershipVectors()
         && RunCaptureFeedbackVectors()
         && RunHighResolutionCapturePrecisionVectors()
