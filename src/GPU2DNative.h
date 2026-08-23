@@ -336,6 +336,60 @@ struct FrameGeneration
     u64 NativeCaptureMappingGeneration = 0;
 };
 
+// Full uploads are a slot-initialization/discontinuity recovery mechanism.
+// Presentation availability and the age of a reused work slot are
+// intentionally absent: semantic continuity belongs to the renderer, while
+// UploadedNativeGeneration belongs to the individual work slot.
+enum class FullUploadReason : u32
+{
+    None = 0,
+    FirstUse,
+    EpochChange,
+    SemanticFrameGap,
+    CaptureGenerationRegression,
+};
+
+struct UploadDecision
+{
+    bool SemanticFrameContiguous = false;
+    bool CaptureGenerationRegressed = false;
+    FullUploadReason Reason = FullUploadReason::None;
+
+    [[nodiscard]] constexpr bool RequiresFullUpload() const noexcept
+    {
+        return Reason != FullUploadReason::None;
+    }
+};
+
+[[nodiscard]] constexpr UploadDecision DetermineUploadDecision(
+    bool workSlotInitialized,
+    u64 currentEpoch,
+    u64 lastSemanticEpoch,
+    u64 lastSemanticFrame,
+    u64 lastSemanticCaptureGeneration,
+    const FrameGeneration& inputGeneration) noexcept
+{
+    const bool sameEpoch = lastSemanticEpoch == currentEpoch;
+    const bool contiguous = sameEpoch
+        && lastSemanticFrame != 0u
+        && inputGeneration.Frame == lastSemanticFrame + 1u;
+    const bool captureRegressed = sameEpoch
+        && lastSemanticCaptureGeneration != 0u
+        && inputGeneration.CaptureGeneration < lastSemanticCaptureGeneration;
+
+    FullUploadReason reason = FullUploadReason::None;
+    if (!workSlotInitialized)
+        reason = FullUploadReason::FirstUse;
+    else if (!sameEpoch)
+        reason = FullUploadReason::EpochChange;
+    else if (!contiguous)
+        reason = FullUploadReason::SemanticFrameGap;
+    else if (captureRegressed)
+        reason = FullUploadReason::CaptureGenerationRegression;
+
+    return {contiguous, captureRegressed, reason};
+}
+
 inline constexpr u32 DirtyBlockBytes = 512u;
 inline constexpr u32 MaxDirtyRanges = 8192u;
 // TimelinePayload stores unique 512-byte contents, not one copy per write
@@ -607,6 +661,83 @@ struct FrameInput
 #endif
 };
 
+// The native compositor normally materializes an OBJ raw plane before the
+// logical pass because OBJ mosaic can read pixels to the left of the current
+// 128-thread workgroup.  When both routed engines have mosaic disabled, each
+// logical pixel depends only on its own OBJ sample and the two passes can be
+// fused without changing the software renderer's scanline contract.
+[[nodiscard]] inline bool CanFuseObjRawLogicalLine(
+    const FrameInput& input, u32 line) noexcept
+{
+    if (line >= ScreenHeight)
+        return false;
+
+    for (u32 screen = 0u; screen < 2u; ++screen)
+    {
+        const u32 engine = input.ScreenSource[screen * ScreenHeight + line] & 1u;
+        if (input.Lines[engine * ScreenHeight + line].OBJMosaicSize[0] != 0u)
+            return false;
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool CanFuseObjRawLogicalFrame(
+    const FrameInput& input) noexcept
+{
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+    {
+        if (!CanFuseObjRawLogicalLine(input, line))
+            return false;
+    }
+    return true;
+}
+
+// A stable copy-only capture whose destination bank remains in LCDC mode for
+// every visible line cannot feed its own writes back through BG/OBJ later in
+// the frame.  Stage A may therefore finish all logical lines first, followed
+// by one batched capture dispatch.  Source A may be GPU2D or 3D; the latter
+// additionally requires a valid final framebuffer.
+[[nodiscard]] inline bool CanBatchIndependentCaptureFrame(
+    const FrameInput& input, bool finalFramebufferValid) noexcept
+{
+    if (input.CaptureEnable == 0u)
+        return false;
+
+    u32 stableCaptureCnt = 0u;
+    bool foundActiveLine = false;
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+    {
+        const LineState& state = input.Lines[line];
+        if (state.CaptureEnable == 0u)
+            continue;
+
+        const u32 captureCnt = state.CaptureCnt;
+        const u32 captureMode = (captureCnt >> 29u) & 3u;
+        const bool sourceAIs3D = (captureCnt & (1u << 24u)) != 0u;
+        if (captureMode != 0u || (sourceAIs3D && !finalFramebufferValid))
+            return false;
+        if (foundActiveLine && captureCnt != stableCaptureCnt)
+            return false;
+
+        const u32 height = CaptureHeightForSize((captureCnt >> 20u) & 3u);
+        if (line >= height)
+            return false;
+        stableCaptureCnt = captureCnt;
+        foundActiveLine = true;
+    }
+    if (!foundActiveLine)
+        return false;
+
+    const u32 destinationBank = (stableCaptureCnt >> 16u) & 3u;
+    const u32 destinationMask = 1u << destinationBank;
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+    {
+        if ((input.Lines[line].LCDVRAMMap & destinationMask) == 0u)
+            return false;
+    }
+    return true;
+}
+
 // High-resolution display-capture provenance is a renderer-private derived
 // cache of the persistent compact LCDC capture mirror. Capture stopping does
 // not change either image. A sidecar segment remains readable until the
@@ -792,6 +923,12 @@ public:
 private:
     HighResCaptureProvenanceTable Entries{};
     std::array<u8, HighResCaptureSegmentCount> Pending{};
+    // CPU/DMA video uploads often rewrite the same 32 KiB VRAM block tens of
+    // thousands of times.  Once every sidecar segment in that block has been
+    // invalidated, repeating the full 128-segment clear cannot change the
+    // authority result.  This conservative summary is set whenever a pending
+    // capture write appears and cleared only by a full-block invalidation.
+    std::array<u8, CapturePhysicalBlockCount> PhysicalBlockMayBeActive{};
     u64 Epoch = 0;
     u32 ScaleFactor = 0;
 };

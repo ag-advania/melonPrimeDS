@@ -471,6 +471,8 @@ bool DX12Context::CreateDevice()
     }
     Profile.VendorId = desc.VendorId;
     Profile.DeviceId = desc.DeviceId;
+    Profile.AdapterLuid = static_cast<u64>(static_cast<u32>(desc.AdapterLuid.LowPart))
+        | (static_cast<u64>(static_cast<u32>(desc.AdapterLuid.HighPart)) << 32u);
     LARGE_INTEGER driverVersion{};
     if (SUCCEEDED(Adapter->CheckInterfaceSupport(__uuidof(IDXGIDevice), &driverVersion)))
         Profile.DriverVersion = static_cast<u64>(driverVersion.QuadPart);

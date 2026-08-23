@@ -137,6 +137,7 @@ void Renderer::MarkCaptureCpuCoherent(
     if (bank >= CapturePhysicalBanks || start >= CapturePhysicalBlocksPerBank)
         return;
 
+    bool provenanceChanged = false;
     const u32 blockCount = CaptureBlockCountForLength(len);
     for (u32 i = 0; i < blockCount; ++i)
     {
@@ -191,6 +192,8 @@ void Renderer::MarkCaptureCpuCoherent(
             reason == CaptureAuthorityTransitionReason::NativeReadbackMaterialized
             || reason == CaptureAuthorityTransitionReason::SavestateSave;
         const CaptureBlockProvenance retained = provenance;
+        const bool alreadyCpuCoherent =
+            provenance.Owner == CaptureOwner::CpuCoherent;
         provenance = {};
         provenance.Owner = CaptureOwner::CpuCoherent;
         if (contentPreserved)
@@ -203,8 +206,14 @@ void Renderer::MarkCaptureCpuCoherent(
             provenance.CaptureGeneration = retained.CaptureGeneration;
             provenance.CompletionValue = retained.CompletionValue;
         }
+        provenanceChanged |= !alreadyCpuCoherent
+            || provenance.Epoch != retained.Epoch
+            || provenance.SemanticFrame != retained.SemanticFrame
+            || provenance.CaptureGeneration != retained.CaptureGeneration
+            || provenance.CompletionValue != retained.CompletionValue;
     }
-    ++CaptureProvenanceSerial;
+    if (provenanceChanged)
+        ++CaptureProvenanceSerial;
 }
 
 void Renderer::PublishNativeCaptureBlock(

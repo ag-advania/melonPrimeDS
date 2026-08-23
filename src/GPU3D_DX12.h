@@ -356,12 +356,17 @@ private:
     };
 
     bool CreateRootSignature();
+    void CreatePipelineLibrary();
+    void SavePipelineLibrary() noexcept;
+    void LoadCachedPsoBlobs();
+    void SaveCachedPsoBlobs() noexcept;
     bool CreateCommandSignature();
     bool CreateFixedResources();
     bool CreateScaleDependentResources();
     bool BuildStaticSrvDescriptors();
     bool BuildFrameUavDescriptors();
     bool BuildCompositorUavDescriptors();
+    bool BuildWorkDiagnosticCompositorUavDescriptor(u32 workIndex);
     void ReleaseScaleDependentResources();
     void ReleasePipelines();
 
@@ -424,7 +429,8 @@ private:
     DX12DescriptorRing StaticSrvDescriptors;
     DX12DescriptorRing FrameUavDescriptors;
     DX12DescriptorRing CompositorUavDescriptors;
-    DX12DescriptorRing NativeUavDescriptors;
+    DX12DescriptorRing WorkCompositorUavDescriptors;
+    DX12DescriptorRing WorkNativeUavDescriptors;
     // One shader-visible table for the lazy Resolve submission. It is reset
     // only after CaptureCommands has retired its prior submission.
     DX12DescriptorRing CaptureDescriptors;
@@ -434,6 +440,22 @@ private:
 
     DX12::ComPtr<ID3D12RootSignature> RootSignature;
     DX12::ComPtr<ID3D12CommandSignature> DispatchSignature;
+    DX12::ComPtr<ID3D12PipelineLibrary> PipelineLibrary;
+    u64 RootSignatureHash = 0;
+    u64 ShaderBlobHash = 0;
+    bool PipelineLibraryDirty = false;
+    bool PipelineLibraryLoaded = false;
+    std::array<std::vector<u8>, ShaderStepCount * 3> CachedPsoBlobs{};
+    bool CachedPsoBlobsDirty = false;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    u64 StartupBeginNs = 0;
+    u64 StartupFixedNs = 0;
+    u64 StartupScaleNs = 0;
+    u64 StartupOutputStateNs = 0;
+    u64 StartupPipelineNs = 0;
+    u32 StartupPipelineCacheHits = 0;
+    u32 StartupPipelineCacheMisses = 0;
+#endif
 
     DX12::ComPtr<ID3D12PipelineState> PipelineClearCoarseBinMask;
     DX12::ComPtr<ID3D12PipelineState> PipelineClearIndirectWorkCount;
@@ -540,11 +562,10 @@ private:
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
     D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> NativeUavCpu{};
-    DX12DescriptorRing SemanticCompositorUavDescriptors;
-    DX12DescriptorRing SemanticNativeUavDescriptors;
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> SemanticCompositorUavCpu{};
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> SemanticNativeUavCpu{};
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> WorkNativeUavCpu{};
+    // Each work slot can target any of the three presentation slots, plus
+    // one lazily-created diagnostic scratch output.
+    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 12> WorkCompositorUavCpu{};
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;

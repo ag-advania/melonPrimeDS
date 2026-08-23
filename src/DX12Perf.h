@@ -86,6 +86,20 @@ enum class Counter : u32
     StructuredRouteRuns,
     NativeGPU2DFrames,
     NativeGPU2DInputPackBytes,
+    NativeGPU2DFullUploadFrames,
+    NativeGPU2DFullUploadBytes,
+    NativeGPU2DPartialUploadFrames,
+    NativeGPU2DPartialUploadBytes,
+    NativeGPU2DPresentationBackpressureFrames,
+    NativeGPU2DSemanticOnlyFrames,
+    NativeGPU2DWorkSlotFenceWaitCount,
+    NativeGPU2DWorkSlotFenceWaitNs,
+    NativeGPU2DDiagnosticReadbackCreateCount,
+    NativeGPU2DFallbackComposedCreateCount,
+    NativeGPU2DFullUploadFirstUseCount,
+    NativeGPU2DFullUploadEpochChangeCount,
+    NativeGPU2DFullUploadSemanticFrameGapCount,
+    NativeGPU2DFullUploadCaptureRegressionCount,
     NativeGPU2DVRAMUploadBytes,
     NativeGPU2DPaletteUploadBytes,
     NativeGPU2DOAMUploadBytes,
@@ -585,6 +599,29 @@ inline void MaybeReport()
          count(Counter::NativeGPU2DCaptureBarrierCount),
          count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
 
+    std::fprintf(stderr,
+        "[DX12Perf] native_upload full_frames=%llu full_B=%llu "
+        "partial_frames=%llu partial_B=%llu presentation_backpressure=%llu "
+        "semantic_only=%llu work_slot_fence_wait_count=%llu "
+        "work_slot_fence_wait_ns=%llu diagnostic_readback_creates=%llu "
+        "fallback_composed_creates=%llu reason_first_use=%llu "
+        "reason_epoch_change=%llu reason_semantic_frame_gap=%llu "
+        "reason_capture_generation_regression=%llu\n",
+        count(Counter::NativeGPU2DFullUploadFrames),
+        count(Counter::NativeGPU2DFullUploadBytes),
+        count(Counter::NativeGPU2DPartialUploadFrames),
+        count(Counter::NativeGPU2DPartialUploadBytes),
+        count(Counter::NativeGPU2DPresentationBackpressureFrames),
+        count(Counter::NativeGPU2DSemanticOnlyFrames),
+        count(Counter::NativeGPU2DWorkSlotFenceWaitCount),
+        count(Counter::NativeGPU2DWorkSlotFenceWaitNs),
+        count(Counter::NativeGPU2DDiagnosticReadbackCreateCount),
+        count(Counter::NativeGPU2DFallbackComposedCreateCount),
+        count(Counter::NativeGPU2DFullUploadFirstUseCount),
+        count(Counter::NativeGPU2DFullUploadEpochChangeCount),
+        count(Counter::NativeGPU2DFullUploadSemanticFrameGapCount),
+        count(Counter::NativeGPU2DFullUploadCaptureRegressionCount));
+
     const double reportSeconds = std::chrono::duration<double>(
         now - state.LastReport).count();
     std::fprintf(stderr,
@@ -710,6 +747,15 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     StructuredScreenRouteCopyBytes,
     StructuredScreenRouteCopyNanoseconds, StructuredRegularLines, StructuredFallbackLines,
     StructuredRouteRuns, NativeGPU2DFrames, NativeGPU2DInputPackBytes,
+    NativeGPU2DFullUploadFrames, NativeGPU2DFullUploadBytes,
+    NativeGPU2DPartialUploadFrames, NativeGPU2DPartialUploadBytes,
+    NativeGPU2DPresentationBackpressureFrames, NativeGPU2DSemanticOnlyFrames,
+    NativeGPU2DWorkSlotFenceWaitCount, NativeGPU2DWorkSlotFenceWaitNs,
+    NativeGPU2DDiagnosticReadbackCreateCount,
+    NativeGPU2DFallbackComposedCreateCount,
+    NativeGPU2DFullUploadFirstUseCount, NativeGPU2DFullUploadEpochChangeCount,
+    NativeGPU2DFullUploadSemanticFrameGapCount,
+    NativeGPU2DFullUploadCaptureRegressionCount,
     NativeGPU2DVRAMUploadBytes, NativeGPU2DPaletteUploadBytes, NativeGPU2DOAMUploadBytes,
     NativeGPU2DDispatchCount, NativeGPU2DFallbackFrames, NativeGPU2DReadbackBytes,
     NativeGPU2DReadbackCount, NativeGPU2DMismatchCount, TextureUploadBytes, TextureMaterializeCount,

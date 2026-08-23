@@ -265,6 +265,7 @@ void HighResCaptureProvenanceTracker::Invalidate(
 {
     Entries.fill({});
     Pending.fill(0u);
+    PhysicalBlockMayBeActive.fill(0u);
     Epoch = epoch;
     ScaleFactor = scaleFactor;
     for (HighResCaptureProvenanceState& state : Entries)
@@ -303,6 +304,14 @@ void HighResCaptureProvenanceTracker::BeginFrame(
         state.ValidAndVersion |= HighResCapturePendingWriteBit;
         state.PendingIdentity = pendingIdentity;
         Pending[index] = 1u;
+        constexpr u32 SegmentsPerPhysicalBlock =
+            CapturePhysicalBlockBytes
+            / (HighResCaptureSegmentHalfwords * sizeof(u16));
+        const u32 bank = index / HighResCaptureSegmentsPerBank;
+        const u32 segment = index % HighResCaptureSegmentsPerBank;
+        PhysicalBlockMayBeActive[
+            bank * CapturePhysicalBlocksPerBank
+                + segment / SegmentsPerPhysicalBlock] = 1u;
     }
 }
 
@@ -369,6 +378,17 @@ void HighResCaptureProvenanceTracker::InvalidatePhysicalRange(
         return;
     const u32 firstSegment = begin / SegmentBytes;
     const u32 lastSegment = (end - 1u) / SegmentBytes;
+    const bool fullPhysicalBlock =
+        (begin % CapturePhysicalBlockBytes) == 0u
+        && end - begin == CapturePhysicalBlockBytes;
+    const u32 physicalBlock = begin / CapturePhysicalBlockBytes;
+    const u32 physicalIndex =
+        bank * CapturePhysicalBlocksPerBank + physicalBlock;
+    if (fullPhysicalBlock
+        && PhysicalBlockMayBeActive[physicalIndex] == 0u)
+    {
+        return;
+    }
     for (u32 segment = firstSegment; segment <= lastSegment; ++segment)
     {
         const u32 index = bank * HighResCaptureSegmentsPerBank + segment;
@@ -376,6 +396,8 @@ void HighResCaptureProvenanceTracker::InvalidatePhysicalRange(
         Entries[index].LastInvalidationReason = reason;
         Pending[index] = 0u;
     }
+    if (fullPhysicalBlock)
+        PhysicalBlockMayBeActive[physicalIndex] = 0u;
 }
 
 CompareResult CompareExact(

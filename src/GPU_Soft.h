@@ -262,6 +262,9 @@ private:
     std::array<u8, 4u * StructuredCaptureLineCount> StructuredCaptureLineValid{};
     std::array<u8, 4u * StructuredCapturePixelCount> StructuredCapturePixelValid{};
     std::array<u8, 4u * StructuredCapturePixelCount> StructuredCapturePixelVersion{};
+    // A physical block whose validity has already been retired needs no
+    // repeated 16 KiB validity clear for every halfword of a movie upload.
+    std::array<u8, CapturePhysicalBlockCount> StructuredCaptureBlockMayBeValid{};
     std::array<u8, 4u> StructuredCaptureBankVersion{};
     std::array<u8, 4u> StructuredCaptureBankWrittenThisFrame{};
     std::array<u8, 192u> StructuredCaptureCommandWrittenThisFrame{};

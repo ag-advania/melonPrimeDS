@@ -2747,6 +2747,9 @@ void FrameRecorder::BeginCaptureAddressDiagnostic(
     u32 line, u32 captureCnt) noexcept
 {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (!StageDiagnosticsEnabled())
+        return;
+
     if (CaptureAddressLogCount >= MaxCaptureAddressDiagnostics)
     {
         ++CaptureAddressLogOverflow;
@@ -2781,6 +2784,9 @@ void FrameRecorder::RecordCaptureAddressLine(
     u32 line, u32 captureCnt) noexcept
 {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (!StageDiagnosticsEnabled())
+        return;
+
     if (line >= ScreenHeight || !GPU.CaptureEnable)
         return;
 
@@ -2860,6 +2866,9 @@ void FrameRecorder::RecordCaptureAddressLine(
 void FrameRecorder::FinalizeCaptureAddressDiagnostics() noexcept
 {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (!StageDiagnosticsEnabled())
+        return;
+
     for (u32 index = 0u; index < CaptureAddressLogCount; ++index)
     {
         CaptureAddressDiagnostic& diagnostic = CaptureAddressLog[index];

@@ -2154,11 +2154,20 @@ void main()
     const bool capturePass = (pc._pad & 4u) != 0u;
     if (capturePass)
     {
-        if (id.x >= uint(ScreenWidth) || id.y >= uint(ScaleFactor))
+        const bool batchedLines = (pc._pad & 128u) != 0u;
+        const uint dispatchHeight = uint(ScaleFactor)
+            * (batchedLines ? 192u : 1u);
+        if (id.x >= uint(ScreenWidth) || id.y >= dispatchHeight)
             return;
         uint x = id.x / uint(ScaleFactor);
+        uint line = batchedLines
+            ? id.y / uint(ScaleFactor)
+            : uint(max(pc.CaptureYOffset, 0));
+        uint sampleY = batchedLines
+            ? id.y % uint(ScaleFactor)
+            : id.y;
         WriteNativeCaptureSample(
-            uint(max(pc.CaptureYOffset, 0)), x, id.x, id.y);
+            line, x, id.x, sampleY);
         return;
     }
 

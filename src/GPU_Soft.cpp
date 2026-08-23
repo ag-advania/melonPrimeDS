@@ -127,6 +127,7 @@ void SoftRenderer::ResetDerivedState(bool sessionReset) noexcept
     StructuredCaptureLineValid.fill(0);
     StructuredCapturePixelValid.fill(0);
     StructuredCapturePixelVersion.fill(0);
+    StructuredCaptureBlockMayBeValid.fill(0);
     StructuredCaptureBankVersion.fill(0);
     StructuredCaptureBankWrittenThisFrame.fill(0);
     StructuredCaptureCommandWrittenThisFrame.fill(0);
@@ -324,11 +325,14 @@ void SoftRenderer::InvalidateStructuredCaptureBlocks(u32 bank, u32 start, u32 le
     // it counts 64-line blocks, matching GLRenderer's own interpretation.
     const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
     const std::size_t bankLineBase = static_cast<std::size_t>(bank) * StructuredCaptureLineCount;
-    const std::size_t bankPlaneBase =
-        static_cast<std::size_t>(bank) * 3u * StructuredCapturePixelCount;
     for (u32 blockOffset = 0; blockOffset < blockCount; ++blockOffset)
     {
         const u32 block = (start + blockOffset) & 0x3u;
+        const std::size_t physicalIndex =
+            static_cast<std::size_t>(bank) * CapturePhysicalBlocksPerBank + block;
+        if (StructuredCaptureBlockMayBeValid[physicalIndex] == 0u)
+            continue;
+        StructuredCaptureBlockMayBeValid[physicalIndex] = 0u;
         const std::size_t firstLine = static_cast<std::size_t>(block) * 64u;
         std::fill_n(StructuredCaptureLineValid.data() + bankLineBase + firstLine, 64u, 0u);
         const std::size_t bankPixelBase = static_cast<std::size_t>(bank) * StructuredCapturePixelCount;
@@ -337,16 +341,9 @@ void SoftRenderer::InvalidateStructuredCaptureBlocks(u32 bank, u32 start, u32 le
             StructuredCapturePixelValid.data() + bankPixelBase + firstPixelInBank,
             64u * 256u,
             0u);
-
-        const std::size_t firstPixel = firstLine * 256u;
-        for (std::size_t plane = 0; plane < 3u; ++plane)
-        {
-            std::fill_n(
-                StructuredCapturePlanes.data()
-                    + bankPlaneBase + plane * StructuredCapturePixelCount + firstPixel,
-                64u * 256u,
-                0u);
-        }
+        // Plane words are guarded by StructuredCapturePixelValid at every
+        // consumer.  Clearing the validity is the authority transition;
+        // zeroing three large payload planes is redundant.
     }
 }
 #endif
@@ -378,6 +375,7 @@ void SoftRenderer::InvalidateHighResCaptureState(
     // boundary and avoids a full-resolution clear.
     StructuredCaptureLineValid.fill(0);
     StructuredCapturePixelValid.fill(0);
+    StructuredCaptureBlockMayBeValid.fill(0);
     StructuredCapturePixelVersion.fill(0);
     StructuredCaptureBankVersion.fill(0);
     StructuredCaptureBankWrittenThisFrame.fill(0);
@@ -1293,6 +1291,11 @@ void SoftRenderer::StoreStructuredCaptureLine(
             + destinationIndex;
         StructuredCapturePixelValid[stateIndex] = 1u;
         StructuredCapturePixelVersion[stateIndex] = static_cast<u8>(version);
+        const u32 physicalBlock = captureAddress
+            / (CapturePhysicalBlockBytes / sizeof(u16));
+        StructuredCaptureBlockMayBeValid[
+            destinationBank * CapturePhysicalBlocksPerBank
+                + physicalBlock] = 1u;
     }
 
     if (copyWidth != 0u)
@@ -1609,6 +1612,8 @@ void SoftRenderer::LogGPU2DFrameCoverage(
     const char* publicationSource) const noexcept
 {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (!GPU2DNative::StageDiagnosticsEnabled())
+        return;
     const bool nativeValid = NativeGPU2DRecordedFrameSerial == EmulatedFrameSerial
         && NativeGPU2DFrame.IsValid();
     Platform::Log(
