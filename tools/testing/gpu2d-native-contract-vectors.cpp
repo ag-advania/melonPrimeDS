@@ -1720,6 +1720,71 @@ bool RunCaptureFeedbackVectors()
     return passed;
 }
 
+bool RunHighResolutionCapturePrecisionVectors()
+{
+    const auto packColor6 = [](u32 r, u32 g, u32 b, u32 a) {
+        return (r & 0x3Fu) | ((g & 0x3Fu) << 8u)
+            | ((b & 0x3Fu) << 16u) | (a << 24u);
+    };
+    const auto rawFromColor6 = [](u32 color) {
+        return ((color & 0x3Fu) >> 1u)
+            | ((((color >> 8u) & 0x3Fu) >> 1u) << 5u)
+            | ((((color >> 16u) & 0x3Fu) >> 1u) << 10u)
+            | ((color >> 24u) != 0u ? 0x8000u : 0u);
+    };
+    const auto color6FromRaw = [&](u32 color) {
+        return packColor6(
+            (color & 0x1Fu) << 1u,
+            ((color >> 5u) & 0x1Fu) << 1u,
+            ((color >> 10u) & 0x1Fu) << 1u,
+            ((color >> 15u) & 1u) != 0u ? 31u : 0u);
+    };
+    const auto sidecarColor = [&](u32 color) {
+        return packColor6(
+            color & 0x3Fu,
+            (color >> 8u) & 0x3Fu,
+            (color >> 16u) & 0x3Fu,
+            (color >> 24u) != 0u ? 31u : 0u);
+    };
+
+    bool passed = true;
+    const u32 sourceA = packColor6(61u, 33u, 17u, 0xFFu);
+    const u32 retainedSourceB = packColor6(27u, 45u, 59u, 31u);
+
+    // OpenGL keeps the source precision in its high-resolution capture
+    // texture. Only the compact VRAM mirror drops to RGB555. Vulkan/DX12 must
+    // make the same split or live/captured frame alternation visibly toggles
+    // every odd six-bit color channel.
+    passed &= Require(
+        sidecarColor(sourceA) == packColor6(61u, 33u, 17u, 31u),
+        "source-A-only high-resolution capture lost the sixth RGB bit");
+    passed &= Require(
+        sidecarColor(retainedSourceB) == retainedSourceB,
+        "source-B-only retained capture lost the sixth RGB bit");
+    passed &= Require(
+        color6FromRaw(rawFromColor6(sourceA))
+            == packColor6(60u, 32u, 16u, 31u),
+        "compact RGBA5551 capture did not retain the native quantization");
+    passed &= Require(
+        sidecarColor(sourceA) != color6FromRaw(rawFromColor6(sourceA)),
+        "high-resolution and compact capture representations collapsed");
+    passed &= Require(
+        sidecarColor(color6FromRaw(rawFromColor6(sourceA)))
+            == packColor6(60u, 32u, 16u, 31u),
+        "1x sidecar did not retain exact compact capture semantics");
+
+    // Blended display capture is specified in five-bit space by the OpenGL
+    // oracle. Its high-resolution result therefore remains even-valued while
+    // copy-only modes preserve their source precision.
+    const u32 blendedRaw = 0x8000u | 29u | (11u << 5u) | (23u << 10u);
+    const u32 blendedHighRes = sidecarColor(color6FromRaw(blendedRaw));
+    passed &= Require(
+        (blendedHighRes & 0x010101u) == 0u
+            && rawFromColor6(blendedHighRes) == blendedRaw,
+        "blended high-resolution capture escaped RGB555 semantics");
+    return passed;
+}
+
 } // namespace
 
 int main()
@@ -1733,6 +1798,7 @@ int main()
         && RunUploadPlanVectors() && RunTemporalLineVectors()
         && RunFrameIdentityVectors() && RunCaptureOwnershipVectors()
         && RunCaptureFeedbackVectors()
+        && RunHighResolutionCapturePrecisionVectors()
         && RunHighResCaptureProvenanceVectors();
     std::fprintf(stderr, "%s: GPU2D native contract vectors\n", passed ? "PASS" : "FAIL");
     return passed ? 0 : 1;

@@ -583,6 +583,25 @@ uint CaptureRawFromColor6(uint color)
     return r | (g << 5u) | (b << 10u) | a;
 }
 
+uint CaptureColor6FromRaw(uint color)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        ((color >> 5u) & 0x1Fu) << 1u,
+        ((color >> 10u) & 0x1Fu) << 1u,
+        ((color >> 15u) & 1u) != 0u ? 31u : 0u);
+}
+
+uint CaptureSidecarColor(uint color)
+{
+    // The sidecar is the high-resolution presentation copy, not the compact
+    // RGBA5551 VRAM mirror. Preserve all six RGB bits exactly as OpenGL's
+    // capture texture does; only canonicalize alpha for sidecar consumers.
+    return PackColor6(
+        Color6R(color), Color6G(color), Color6B(color),
+        (color >> 24u) != 0u ? 31u : 0u);
+}
+
 uint RepresentativeSubpixel()
 {
     // Match Resolve.comp and OpenGL CaptureDownscaleFS: use the native output
@@ -1636,7 +1655,7 @@ uint CaptureSourceB(
     uint line, uint x, uint captureCnt, uint outputX, uint sampleY)
 {
     if ((captureCnt & (1u << 25u)) != 0u)
-        return FIFO16(line, x);
+        return CaptureColor6FromRaw(FIFO16(line, x));
 
     uint dispCnt = LineWord(0u, line, kDispCnt);
     uint bank = (dispCnt >> 18u) & 3u;
@@ -1665,13 +1684,13 @@ uint CaptureSourceB(
             reference, representative, representative));
         if (canonical == compact)
         {
-            return CaptureRawFromColor6(LoadNativeCaptureSidecar(
+            return LoadNativeCaptureSidecar(
                 reference,
                 outputX % uint(ScaleFactor),
-                sampleY));
+                sampleY);
         }
     }
-    return compact;
+    return CaptureColor6FromRaw(compact);
 }
 
 uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
@@ -1680,18 +1699,18 @@ uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
     if (mode == 0u)
         return CaptureRawFromColor6(sourceA);
     if (mode == 1u)
-        return sourceB;
+        return CaptureRawFromColor6(sourceB);
 
     uint eva = min(captureCnt & 0x1Fu, 16u);
     uint evb = min((captureCnt >> 8u) & 0x1Fu, 16u);
     uint aA = ((sourceA >> 24u) != 0u) ? 1u : 0u;
-    uint aB = (sourceB >> 15u) & 1u;
+    uint aB = ((sourceB >> 24u) != 0u) ? 1u : 0u;
     uint r = ((Color6R(sourceA) >> 1u) * aA * eva
-        + (sourceB & 0x1Fu) * aB * evb + 8u) >> 4u;
+        + (Color6R(sourceB) >> 1u) * aB * evb + 8u) >> 4u;
     uint g = ((Color6G(sourceA) >> 1u) * aA * eva
-        + ((sourceB >> 5u) & 0x1Fu) * aB * evb + 8u) >> 4u;
+        + (Color6G(sourceB) >> 1u) * aB * evb + 8u) >> 4u;
     uint b = ((Color6B(sourceA) >> 1u) * aA * eva
-        + ((sourceB >> 10u) & 0x1Fu) * aB * evb + 8u) >> 4u;
+        + (Color6B(sourceB) >> 1u) * aB * evb + 8u) >> 4u;
     uint a = (eva > 0u ? aA : 0u) | (evb > 0u ? aB : 0u);
     return min(r, 31u) | (min(g, 31u) << 5u)
         | (min(b, 31u) << 10u) | (a << 15u);
@@ -1956,15 +1975,6 @@ uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
     return StructuredCaptureSourceA(line, x, outputX, sampleY);
 }
 
-uint CaptureRawToColor6(uint color)
-{
-    return PackColor6(
-        (color & 0x1Fu) << 1u,
-        ((color >> 5u) & 0x1Fu) << 1u,
-        ((color >> 10u) & 0x1Fu) << 1u,
-        ((color >> 15u) & 1u) != 0u ? 31u : 0u);
-}
-
 void WriteNativeCaptureSample(
     uint line, uint x, uint outputX, uint sampleY)
 {
@@ -1998,8 +2008,14 @@ void WriteNativeCaptureSample(
     uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
     uint cell = ((version * 4u + destinationBank) * 65536u) + address;
     uint sampleIndex = sampleY * uint(ScaleFactor) + (outputX % uint(ScaleFactor));
+    uint mode = (captureCnt >> 29u) & 3u;
+    uint highRes = uint(ScaleFactor) == 1u
+        ? CaptureColor6FromRaw(first)
+        : mode == 0u ? firstA
+        : mode == 1u ? firstB
+        : CaptureColor6FromRaw(first);
     NativeCaptureSidecar[cell * samplesPerPixel + sampleIndex] =
-        CaptureRawToColor6(first);
+        CaptureSidecarColor(highRes);
 
     // The compact LCDC mirror remains the authoritative source for a later
     // CPU readback.  One invocation owns each pair, so no two shader lanes

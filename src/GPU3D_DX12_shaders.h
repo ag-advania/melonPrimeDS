@@ -2004,11 +2004,17 @@ uint CapComposeSourceA(
         result = CapLoad(reference, position % ScaleFactor);
     return result;
 }
-uint CapNormalizeCapturedPixel(uint color)
+uint CapCaptureSidecarColor(uint color)
 {
-    uint r = ((color & 0x3Fu) >> 1u) << 1u;
-    uint g = ((((color >> 8u) & 0x3Fu) >> 1u) << 1u);
-    uint b = ((((color >> 16u) & 0x3Fu) >> 1u) << 1u);
+    uint r = color & 0x3Fu;
+    uint g = (color >> 8u) & 0x3Fu;
+    uint b = (color >> 16u) & 0x3Fu;
+    if (ScaleFactor == 1u)
+    {
+        r = (r >> 1u) << 1u;
+        g = (g >> 1u) << 1u;
+        b = (b >> 1u) << 1u;
+    }
     uint a = (color >> 24u) != 0u ? 31u : 0u;
     return r | (g << 8u) | (b << 16u) | (a << 24u);
 }
@@ -2066,7 +2072,7 @@ void main(uint3 id : SV_DispatchThreadID)
     uint spp = ScaleFactor * ScaleFactor;
     uint cell = ((version * 4u + bank) * 65536u) + address;
     CaptureSidecarBuffer[cell * spp + id.y * ScaleFactor + (id.x % ScaleFactor)] =
-        CapNormalizeCapturedPixel(result);
+        CapCaptureSidecarColor(result);
 }
  )";
 
@@ -2700,6 +2706,16 @@ uint NativeCaptureRaw(uint c)
 {
     uint r=NativeColorR(c)>>1u,g=NativeColorG(c)>>1u,b=NativeColorB(c)>>1u;
     return r|(g<<5u)|(b<<10u)|(((c>>24u)!=0u)?0x8000u:0u);
+}
+uint NativeCaptureColor6(uint c)
+{
+    return NativePack((c&31u)<<1u,((c>>5u)&31u)<<1u,
+        ((c>>10u)&31u)<<1u,((c>>15u)&1u)!=0u?31u:0u);
+}
+uint NativeCaptureSidecarColor(uint c)
+{
+    return NativePack(NativeColorR(c),NativeColorG(c),NativeColorB(c),
+        (c>>24u)!=0u?31u:0u);
 }
 uint NativeRepresentativeSubpixel()
 {
@@ -3459,7 +3475,7 @@ uint NativeCaptureReferenceForSourceB(
 }
 uint NativeCaptureSourceB(uint line,uint x,uint cnt,uint ox,uint sampleY)
 {
-    if((cnt&(1u<<25u))!=0u)return NativeFIFO16(line,x);
+    if((cnt&(1u<<25u))!=0u)return NativeCaptureColor6(NativeFIFO16(line,x));
     uint disp=NativeLine(0u,line,NativeDispCnt),bank=(disp>>18u)&3u;
     if((NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<bank))==0u)return 0u;
     uint address=line*512u+x*2u;
@@ -3478,18 +3494,17 @@ uint NativeCaptureSourceB(uint line,uint x,uint cnt,uint ox,uint sampleY)
         uint canonical=NativeCaptureRaw(NativeLoadCaptureSidecar(
             reference,representative,representative));
         if(canonical==compact)
-            return NativeCaptureRaw(NativeLoadCaptureSidecar(
-                reference,ox%ScaleFactor,sampleY));
+            return NativeLoadCaptureSidecar(reference,ox%ScaleFactor,sampleY);
     }
-    return compact;
+    return NativeCaptureColor6(compact);
 }
 uint NativeCaptureComposite(uint a,uint b,uint cnt)
 {
-    uint mode=(cnt>>29u)&3u;if(mode==0u)return NativeCaptureRaw(a);if(mode==1u)return b;
-    uint eva=min(cnt&0x1Fu,16u),evb=min((cnt>>8u)&0x1Fu,16u),aa=((a>>24u)!=0u)?1u:0u,ab=(b>>15u)&1u;
-    uint r=((NativeColorR(a)>>1u)*aa*eva+(b&0x1Fu)*ab*evb+8u)>>4u;
-    uint g=((NativeColorG(a)>>1u)*aa*eva+((b>>5u)&0x1Fu)*ab*evb+8u)>>4u;
-    uint bl=((NativeColorB(a)>>1u)*aa*eva+((b>>10u)&0x1Fu)*ab*evb+8u)>>4u;
+    uint mode=(cnt>>29u)&3u;if(mode==0u)return NativeCaptureRaw(a);if(mode==1u)return NativeCaptureRaw(b);
+    uint eva=min(cnt&0x1Fu,16u),evb=min((cnt>>8u)&0x1Fu,16u),aa=((a>>24u)!=0u)?1u:0u,ab=((b>>24u)!=0u)?1u:0u;
+    uint r=((NativeColorR(a)>>1u)*aa*eva+(NativeColorR(b)>>1u)*ab*evb+8u)>>4u;
+    uint g=((NativeColorG(a)>>1u)*aa*eva+(NativeColorG(b)>>1u)*ab*evb+8u)>>4u;
+    uint bl=((NativeColorB(a)>>1u)*aa*eva+(NativeColorB(b)>>1u)*ab*evb+8u)>>4u;
     uint al=(eva>0u?aa:0u)|(evb>0u?ab:0u);
     return min(r,31u)|(min(g,31u)<<5u)|(min(bl,31u)<<10u)|(al<<15u);
 }
@@ -3504,11 +3519,6 @@ uint NativeCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
         return 0u;
     }
     return NativeStructuredCaptureSourceA(line,x,ox,sampleY);
-}
-uint NativeCaptureRawToColor6(uint color)
-{
-    return NativePack((color&31u)<<1u,((color>>5u)&31u)<<1u,
-        ((color>>10u)&31u)<<1u,((color>>15u)&1u)!=0u?31u:0u);
 }
 void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
 {
@@ -3528,7 +3538,10 @@ void NativeWriteCaptureSample(uint line,uint x,uint ox,uint sampleY)
     uint spp=ScaleFactor*ScaleFactor;
     uint cell=((version*4u+bank)*65536u)+address;
     uint sample=sampleY*ScaleFactor+(ox%ScaleFactor);
-    CaptureSidecarBuffer[cell*spp+sample]=NativeCaptureRawToColor6(first);
+    uint mode=(cnt>>29u)&3u;
+    uint highRes=ScaleFactor==1u?NativeCaptureColor6(first)
+        :mode==0u?a:mode==1u?b:NativeCaptureColor6(first);
+    CaptureSidecarBuffer[cell*spp+sample]=NativeCaptureSidecarColor(highRes);
     uint representative=NativeRepresentativeSubpixel();
     if(sampleY==representative&&(ox%ScaleFactor)==representative&&(x&1u)==0u)
     {

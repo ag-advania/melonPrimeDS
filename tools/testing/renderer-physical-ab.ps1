@@ -45,6 +45,7 @@ param(
     [switch]$DirectGPU2DDiagnostics,
     [switch]$SkipDiagnosticStartupSavestate,
     [switch]$CaptureBeforeWarmup,
+    [ValidateRange(1, 4)] [int]$CaptureWindowScale = 1,
     [ValidateRange(0,600)] [int]$CaptureFrames = 0,
     [ValidateRange(1,1000)] [int]$CaptureIntervalMs = 33,
     [ValidateRange(0,600)] [int]$PresentationStallFrames = 0,
@@ -77,9 +78,14 @@ public static class MpRendererPerfWin {
   [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern int GetWindowTextLength(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr hWnd, int x, int y, int width, int height, bool repaint);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out MpRendererPerfRect rect);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+  [DllImport("user32.dll", SetLastError = true)] public static extern bool PostMessage(IntPtr hWnd, uint msg, UIntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint mapType);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+  public const uint KeyDownMessage = 0x0100;
+  public const uint KeyUpMessage = 0x0101;
   public const uint KeyUp = 0x0002;
   public static IntPtr Find(uint wantedPid) {
     IntPtr found = IntPtr.Zero;
@@ -96,6 +102,14 @@ public static class MpRendererPerfWin {
     keybd_event(key, 0, 0, UIntPtr.Zero);
     System.Threading.Thread.Sleep(milliseconds);
     keybd_event(key, 0, KeyUp, UIntPtr.Zero);
+  }
+  public static bool PostKey(IntPtr hWnd, byte key, int milliseconds) {
+    uint scan = MapVirtualKey(key, 0);
+    IntPtr down = new IntPtr(1L | ((long)scan << 16));
+    IntPtr up = new IntPtr(1L | ((long)scan << 16) | (1L << 30) | (1L << 31));
+    if (!PostMessage(hWnd, KeyDownMessage, new UIntPtr(key), down)) return false;
+    System.Threading.Thread.Sleep(milliseconds);
+    return PostMessage(hWnd, KeyUpMessage, new UIntPtr(key), up);
   }
 }
 "@
@@ -354,13 +368,18 @@ function Send-Key([string]$keys) {
 
 function Send-SavestateSlotKey([int]$slot) {
     if ($slot -lt 1 -or $slot -gt 8) { throw "savestate slot must be 1..8: $slot" }
+    # A global keybd_event can be redirected if the capture host takes focus
+    # between window discovery and this action. Post the production F-key to
+    # the emulator HWND itself so QAction delivery is deterministic without
+    # stealing focus from the operator or the capture process.
+    # Qt only activates an application shortcut for the active top-level
+    # window. Activate it once, then target the key messages explicitly so a
+    # later focus race cannot redirect them to the capture host.
     Focus-RendererWindow
-    # SendKeys is not reliable for the middle F-key range on this host: F2
-    # can be consumed by the desktop/input layer while F1/F3 still reach Qt.
-    # Use the same Win32 virtual-key path as the manual UI harness so every
-    # requested production QAction receives a real F-key event.
-    [MpRendererPerfWin]::HoldKey([byte](0x6F + $slot), 120)
-    Start-Sleep -Milliseconds 150
+    if (-not [MpRendererPerfWin]::PostKey($window, [byte](0x6F + $slot), 10)) {
+        throw "failed to post savestate F$slot to renderer window"
+    }
+    Start-Sleep -Milliseconds 10
 }
 
 function Capture-Display {
@@ -445,7 +464,12 @@ function Run-Action([string]$name) {
                 # developer-only startup diagnostic hook.
                 Send-SavestateSlotKey $SavestateSlot
                 Add-Content -LiteralPath $harness -Value "savestate-load=F$SavestateSlot fixture=$savestateSlotPath"
-                Start-Sleep -Seconds 3
+                # A temporal window capture must begin at the QAction edge.
+                # Waiting here hid the first three seconds after the load,
+                # including short stale/high-resolution transition frames.
+                if ($CaptureFrames -le 0 -or $Action -ne 'savestate-load') {
+                    Start-Sleep -Seconds 3
+                }
             }
         }
         default { throw "Unsupported action: $name" }
@@ -531,6 +555,20 @@ try {
         Start-Sleep -Milliseconds 250
     } while ([DateTime]::UtcNow -lt $deadline)
     if ($window -eq [IntPtr]::Zero) { throw 'renderer window did not appear' }
+    if ($CaptureWindowScale -gt 1) {
+        # The normal harness window is native-sized (272x448 outer pixels),
+        # which downscales every high-resolution renderer back to 1x before
+        # PrintWindow sees it. Preserve the same frame chrome while enlarging
+        # the two-screen client area so Scale>1 sharpness transitions remain
+        # observable in the physical capture.
+        $windowWidth = 16 + 256 * $CaptureWindowScale
+        $windowHeight = 64 + 384 * $CaptureWindowScale
+        if (-not [MpRendererPerfWin]::MoveWindow(
+                $window, 32, 32, $windowWidth, $windowHeight, $true)) {
+            throw 'failed to resize renderer window for high-resolution capture'
+        }
+        Start-Sleep -Milliseconds 250
+    }
     if ($CaptureBeforeWarmup) {
         Capture-ContinuousDisplay
     }
@@ -722,6 +760,7 @@ $manifestObject = [ordered]@{
         action_order = $actionSequence
         diagnostic_startup_savestate = -not $SkipDiagnosticStartupSavestate
         capture_before_warmup = [bool]$CaptureBeforeWarmup
+        capture_window_scale = $CaptureWindowScale
         savestate_slot = if ($null -ne $statePath) { $SavestateSlot } else { $null }
         warmup_seconds = $WarmupSeconds
         measured_seconds = $MeasuredSeconds
@@ -835,6 +874,7 @@ action_seed=$ActionSeed
 action_order=$actionOrder
 diagnostic_startup_savestate=$(-not $SkipDiagnosticStartupSavestate)
 capture_before_warmup=$($CaptureBeforeWarmup.IsPresent.ToString().ToLowerInvariant())
+capture_window_scale=$CaptureWindowScale
 warmup_seconds=$WarmupSeconds
 measured_seconds=$MeasuredSeconds
 grace_seconds=$GraceSeconds

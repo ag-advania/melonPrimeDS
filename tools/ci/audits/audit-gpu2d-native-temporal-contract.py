@@ -74,6 +74,7 @@ def main() -> int:
         "vulkan_sync": root / "src/VulkanSync.cpp",
         "dx12_context": root / "src/DX12Context.cpp",
         "vulkan_shader": root / "src/GPU3D_Vulkan_shaders/GPU2DNative.comp",
+        "vulkan_sidecar_shader": root / "src/GPU3D_Vulkan_shaders/CaptureSidecar.comp",
         "dx12_shader": root / "src/GPU3D_DX12_shaders.h",
         "opengl_renderer": root / "src/GPU_OpenGL.cpp",
         "physical_runner": root / "tools/testing/renderer-physical-ab.ps1",
@@ -564,6 +565,32 @@ def main() -> int:
                 f"{label} frame-parity sidecar ownership",
                 failures,
             )
+        require(text["vulkan_shader"], "CaptureSidecarColor(highRes)",
+            "Vulkan high-resolution capture precision split", failures)
+        require(text["vulkan_shader"], "mode == 0u ? firstA",
+            "Vulkan source-A-only precision preservation", failures)
+        require(text["vulkan_shader"], "uint(ScaleFactor) == 1u",
+            "Vulkan 1x compact capture precision", failures)
+        require(text["dx12_shader"], "NativeCaptureSidecarColor(highRes)",
+            "DX12 high-resolution capture precision split", failures)
+        require(text["dx12_shader"], "mode==0u?a:mode==1u?b",
+            "DX12 copy-only precision preservation", failures)
+        require(text["dx12_shader"], "ScaleFactor==1u?NativeCaptureColor6(first)",
+            "DX12 1x compact capture precision", failures)
+        require(text["vulkan_sidecar_shader"], "CaptureSidecarColor(result)",
+            "Vulkan structured sidecar precision", failures)
+        for label in ("vulkan_shader", "vulkan_sidecar_shader", "dx12_shader"):
+            forbid(text[label], "NormalizeCapturedPixel",
+                f"{label} sidecar-wide RGB555 quantization", failures)
+        require(text["native_contract_test"],
+            "source-A-only high-resolution capture lost the sixth RGB bit",
+            "source-A capture precision vector", failures)
+        require(text["native_contract_test"],
+            "blended high-resolution capture escaped RGB555 semantics",
+            "blended capture precision vector", failures)
+        require(text["native_contract_test"],
+            "1x sidecar did not retain exact compact capture semantics",
+            "1x compact capture precision vector", failures)
         require(text["dx12_shader"], "NativeCaptureCnt = 55u", "DX12 capture count ABI", failures)
         require(text["dx12_shader"], "NativeCaptureEnable = 56u", "DX12 capture enable ABI", failures)
         require_regex(
