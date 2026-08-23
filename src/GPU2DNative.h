@@ -669,6 +669,76 @@ using HighResCaptureSegmentMask = std::array<u8, HighResCaptureSegmentCount>;
             == state.CompactIdentity.CompletionValue;
 }
 
+enum class HighResCaptureReferenceVersion : u32
+{
+    None = 0,
+    Committed,
+    Pending,
+};
+
+struct HighResCaptureReferenceDecision
+{
+    HighResCaptureReferenceVersion Version =
+        HighResCaptureReferenceVersion::None;
+    u32 SidecarVersion = 0;
+};
+
+// Backend-neutral model of the shader's physical captured-VRAM resolver.
+// A capture stopping, or a capture targeting another ping-pong bank, does not
+// change the retained physical LCDC contents. Current capture timing is used
+// only when a pending write overlaps this address, to choose old committed
+// data before the write and the alternate pending version after the write.
+[[nodiscard]] constexpr HighResCaptureReferenceDecision
+ResolveHighResCaptureReference(
+    bool committedValid,
+    bool pendingValid,
+    u32 committedVersion,
+    u32 line,
+    u32 bank,
+    u32 halfwordAddress,
+    u32 captureCnt,
+    u32 captureStart) noexcept
+{
+    if (!committedValid && !pendingValid)
+        return {};
+
+    const u32 version = committedVersion & 1u;
+    if (!pendingValid)
+    {
+        return {
+            HighResCaptureReferenceVersion::Committed,
+            version,
+        };
+    }
+
+    const u32 sizeCode = (captureCnt >> 20u) & 3u;
+    const u32 width = CaptureWidthForSize(sizeCode);
+    const u32 height = CaptureHeightForSize(sizeCode);
+    const u32 destinationBank = (captureCnt >> 16u) & 3u;
+    const u32 destinationAddress = WrapLCDCHalfword(
+        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
+    const u32 relative = (halfwordAddress - destinationAddress) & 0xFFFFu;
+    const u32 captureLine = relative / width;
+    const bool writtenEarlier = bank == destinationBank
+        && captureStart != CaptureStartLineNone
+        && captureLine >= captureStart
+        && captureLine < line
+        && captureLine < height;
+    if (writtenEarlier)
+    {
+        return {
+            HighResCaptureReferenceVersion::Pending,
+            version ^ 1u,
+        };
+    }
+    if (!committedValid)
+        return {};
+    return {
+        HighResCaptureReferenceVersion::Committed,
+        version,
+    };
+}
+
 static_assert(CaptureWidthForSize(0u) == HighResCaptureSegmentHalfwords);
 static_assert(CaptureWidthForSize(1u) == 2u * HighResCaptureSegmentHalfwords);
 static_assert(CaptureOffsetHalfwords(0u) % HighResCaptureSegmentHalfwords == 0u);
@@ -780,6 +850,18 @@ void LogStageSnapshot(
     const u32* expectedTop,
     const u32* expectedBottom) noexcept;
 
+// Classify the VRAM-display CaptureReference plane without adding shader
+// atomics or production readbacks. The caller supplies the provenance table
+// as it existed when this semantic frame was packed, before CommitFrame turns
+// pending versions into the next committed baseline.
+void LogVRAMDisplaySidecarDecisions(
+    const char* backend,
+    u64 emulatedFrame,
+    u32 scaleFactor,
+    const FrameInput& input,
+    const HighResCaptureProvenanceTable& provenance,
+    const u32* structured) noexcept;
+
 void LogPresentedIdentity(
     const char* backend,
     u64 emulatedFrame,
@@ -802,6 +884,9 @@ void LogSemanticIdentity(
 inline void LogStageSnapshot(
     const char*, u64, u64, u64, u64, u32, const FrameInput&, const u32*,
     const u32*, const u32*, const char*, const u32*, const u32*) noexcept {}
+inline void LogVRAMDisplaySidecarDecisions(
+    const char*, u64, u32, const FrameInput&,
+    const HighResCaptureProvenanceTable&, const u32*) noexcept {}
 inline void LogPresentedIdentity(
     const char*, u64, u64, u64, u64, u32) noexcept {}
 inline void LogSemanticIdentity(

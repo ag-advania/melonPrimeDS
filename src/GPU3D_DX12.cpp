@@ -3549,6 +3549,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const bool exactValidation = expectedTop != nullptr && expectedBottom != nullptr;
     const bool stageDiagnostics = GPU2DNative::StageDiagnosticsEnabled();
     const bool diagnosticReadback = exactValidation || stageDiagnostics;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    std::unique_ptr<GPU2DNative::HighResCaptureProvenanceTable>
+        diagnosticCaptureProvenance;
+#endif
     if (exactValidation && ScaleFactor != 1)
     {
         SetRuntimeFailure("native GPU2D exact validation requires scale=1");
@@ -3701,6 +3705,14 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         packedNativeInput = GPU2DNative::PackHighResCaptureProvenance(
             staging, GPU2DNative::PackedFrameWords,
             HighResCaptureProvenance.States(), input, pendingCompletionValue);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        if (packedNativeInput && stageDiagnostics)
+        {
+            diagnosticCaptureProvenance = std::make_unique<
+                GPU2DNative::HighResCaptureProvenanceTable>(
+                    HighResCaptureProvenance.States());
+        }
+#endif
     }
     if (!packedNativeInput)
     {
@@ -4198,6 +4210,16 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 actual.get(), actual.get() + GPU2DNative::ScreenPixelCount,
                 directOutputReadback ? "direct_image" : "composed_buffer",
                 expectedTop, expectedBottom);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            if (diagnosticCaptureProvenance)
+            {
+                GPU2DNative::LogVRAMDisplaySidecarDecisions(
+                    "DX12", input.Generation.Frame,
+                    static_cast<u32>(ScaleFactor), input,
+                    *diagnosticCaptureProvenance,
+                    static_cast<const u32*>(structuredMapped));
+            }
+#endif
             const D3D12_RANGE noStructuredWrite{0, 0};
             structuredReadback->Unmap(0, &noStructuredWrite);
         }

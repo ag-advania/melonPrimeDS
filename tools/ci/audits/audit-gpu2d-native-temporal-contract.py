@@ -249,6 +249,8 @@ def main() -> int:
             "HighResCaptureSegmentHalfwords",
             "PackedHighResCaptureProvenanceBase",
             "HighResCapturePendingWriteBit",
+            "ResolveHighResCaptureReference",
+            "HighResCaptureReferenceVersion",
         ):
             require(text["native_header"], needle,
                 "high-resolution capture provenance contract", failures)
@@ -554,8 +556,14 @@ def main() -> int:
                 and "WriteNativeCapturePair" not in text["vulkan_shader"]):
             failures.append("Vulkan capture feedback: missing native capture sample writer")
         require(text["dx12_shader"], "NativeCaptureSourceA", "DX12 capture feedback", failures)
-        require(text["vulkan_shader"], "NativeCaptureReference", "Vulkan capture reference", failures)
-        require(text["dx12_shader"], "NativeCaptureReference", "DX12 capture reference", failures)
+        require(text["vulkan_shader"], "NativeCaptureReferenceForPhysicalAddress",
+            "Vulkan physical capture reference", failures)
+        require(text["dx12_shader"], "NativeCaptureReferenceForPhysicalAddress",
+            "DX12 physical capture reference", failures)
+        require(text["vulkan_shader"], "NativeVRAMDisplayCaptureReference",
+            "Vulkan persistent VRAM-display reference", failures)
+        require(text["dx12_shader"], "NativeVRAMDisplayCaptureReference",
+            "DX12 persistent VRAM-display reference", failures)
         for label in ("vulkan_shader", "dx12_shader"):
             require(text[label], "HighResCaptureState", f"{label} sidecar provenance table", failures)
             require(text[label], "PendingWrite", f"{label} same-bank write version", failures)
@@ -608,7 +616,10 @@ def main() -> int:
         # the halfword-unit slice does not absorb unrelated helpers.
         vulkan_reference = extract_function_body(
             text["vulkan_shader"],
-            "uint NativeCaptureReference(uint engine, uint line, uint x)")
+            "uint NativeCaptureReferenceForPhysicalAddress(")
+        vulkan_display_reference = extract_function_body(
+            text["vulkan_shader"],
+            "uint NativeVRAMDisplayCaptureReference(")
         vulkan_writer = text["vulkan_shader"].split(
             "void WriteNativeCaptureSample", 1)[1].split(
                 "void WriteStructuredPixel", 1)[0]
@@ -617,7 +628,10 @@ def main() -> int:
                 "uint NativeCaptureComposite", 1)[0]
         dx12_reference = extract_function_body(
             text["dx12_shader"],
-            "uint NativeCaptureReference(uint engine,uint line,uint x)")
+            "uint NativeCaptureReferenceForPhysicalAddress(")
+        dx12_display_reference = extract_function_body(
+            text["dx12_shader"],
+            "uint NativeVRAMDisplayCaptureReference(")
         dx12_writer = text["dx12_shader"].split(
             "void NativeWriteCaptureSample", 1)[1].split(
                 "static const uint NativeStructuredPlaneStride", 1)[0]
@@ -637,6 +651,36 @@ def main() -> int:
         ):
             require(body, "CaptureOffsetHalfwords", f"{label} halfword helper", failures)
             forbid(body, "CaptureOffsetBytes", f"{label} halfword unit audit", failures)
+            require(body, "committedReference",
+                f"{label} persistent committed baseline", failures)
+            require(body, "writtenEarlier",
+                f"{label} same-frame pending selection", failures)
+        for label, body in (
+            ("Vulkan VRAM display reference", vulkan_display_reference),
+            ("DX12 VRAM display reference", dx12_display_reference),
+        ):
+            require(body, "NativeCaptureReferenceForPhysicalAddress",
+                f"{label} physical resolver", failures)
+            require(body, "canonical", f"{label} representative guard", failures)
+            forbid(body, "captureStart", f"{label} active-capture gate", failures)
+            forbid(body, "destinationBank", f"{label} current-destination gate", failures)
+        for needle in (
+            "LogVRAMDisplaySidecarDecisions",
+            "[GPU2DVRAMDisplaySidecar]",
+            "persistentUsed=",
+            "captureInactiveCommitted=",
+            "oppositeBankCommitted=",
+            "representativeMismatch=",
+            "pendingOld=",
+            "pendingNew=",
+        ):
+            require(text["native_recorder"], needle,
+                "VRAM-display developer fallback diagnostics", failures)
+        for renderer in ("vulkan_renderer", "dx12_renderer"):
+            require(text[renderer], "diagnosticCaptureProvenance",
+                f"{renderer} pre-commit diagnostic snapshot", failures)
+            require(text[renderer], "LogVRAMDisplaySidecarDecisions",
+                f"{renderer} VRAM-display diagnostic call", failures)
         for label, body in (
             ("Vulkan compact writer", vulkan_writer),
             ("DX12 compact writer", dx12_writer),
@@ -698,6 +742,19 @@ def main() -> int:
             "same-bank/display-mode2 vectors", failures)
         require(text["native_contract_test"], "RunHighResCaptureProvenanceVectors",
             "high-resolution sidecar provenance vectors", failures)
+        require(text["native_contract_test"],
+            "RunVRAMDisplaySidecarReferenceVectors",
+            "persistent VRAM-display sidecar vectors", failures)
+        for needle in (
+            "capture OFF discarded a retained VRAM-display sidecar",
+            "display C / capture D fell back from committed sidecar",
+            "display D / capture C fell back from committed sidecar",
+            "same-bank VRAM display did not read old committed data before write",
+            "same-bank VRAM display did not select pending data after write",
+            "VRAM-display sidecar selection changed with presentation scale",
+        ):
+            require(text["native_contract_test"], needle,
+                "VRAM-display physical resolver regression vectors", failures)
         require(text["native_contract_test"], "RunMappedCaptureOverlayVectors",
             "mapped capture stale-poison/remap/latch vectors", failures)
         for needle in (

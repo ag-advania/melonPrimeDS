@@ -674,6 +674,49 @@ uint NativeCaptureCommittedReference(uint bank, uint address)
         | (address & 0xFFFFu);
 }
 
+// Display Capture stopping does not invalidate physical LCDC capture
+// contents. A retained high-resolution sidecar is selected from physical
+// VRAM content identity, not from whether capture is active in this frame.
+// Current CaptureStart/CaptureCnt are consulted only for same-bank
+// read-before-write between the committed and pending sidecar versions. This
+// mirrors GLRenderer's retained CaptureOutput texture semantics: DISPMODE=2
+// may display an older capture while capture is stopped or while the opposite
+// ping-pong bank is being written.
+uint NativeCaptureReferenceForPhysicalAddress(
+    uint line, uint bank, uint byteAddress, uint captureCnt)
+{
+    uint halfwordAddress = (byteAddress >> 1u) & 0xFFFFu;
+    uint committedReference = NativeCaptureCommittedReference(
+        bank, halfwordAddress);
+    bool pendingWrite = NativeHighResCapturePendingValid(
+        bank, halfwordAddress);
+    if (!pendingWrite)
+        return committedReference;
+
+    uint sizeCode = (captureCnt >> 20u) & 3u;
+    uint width = sizeCode == 0u ? 128u : 256u;
+    uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
+    uint destinationBank = (captureCnt >> 16u) & 3u;
+    uint captureStart = (LineWord(0u, line, kSpriteLatchValid) >> 8u) & 0xFFu;
+    uint destinationAddress = WrapLCDCHalfword(
+        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
+    uint relative = (halfwordAddress - destinationAddress) & 0xFFFFu;
+    uint captureLine = relative / width;
+    bool writtenEarlier = bank == destinationBank
+        && captureStart != 0xFFu
+        && captureLine >= captureStart
+        && captureLine < line
+        && captureLine < height;
+    if (!writtenEarlier)
+        return committedReference;
+
+    uint state = NativeHighResCaptureState(bank, halfwordAddress);
+    uint pendingVersion = ((state & kHighResCaptureVersionBit) != 0u ? 1u : 0u)
+        ^ 1u;
+    return 0x80000000u | (pendingVersion << 30u) | (bank << 28u)
+        | halfwordAddress;
+}
+
 // Direct-color bitmap BG/OBJ references are admitted only when the mapped
 // address has one physical owner and the retained sidecar sample quantizes
 // back to the native RGBA5551 word. Indexed/tiled layers never call this.
@@ -1580,10 +1623,35 @@ uint ApplyMasterNative(uint color, uint brightness)
     return color;
 }
 
-// GLSL requires a declaration before DisplayPixel uses the shared capture
-// reference resolver, whose full definition lives with the structured-path
-// helpers below.
-uint NativeCaptureReference(uint engine,uint line,uint x);
+uint NativeVRAMDisplayCaptureReference(
+    uint engine, uint line, uint x, uint compact)
+{
+    if (engine != 0u)
+        return 0u;
+
+    uint dispCnt = LineWord(0u, line, kDispCnt);
+    if (((dispCnt >> 16u) & 3u) != 2u)
+        return 0u;
+
+    uint displayBank = (dispCnt >> 18u) & 3u;
+    if ((LineWord(0u, line, kLCDVRAMMap) & (1u << displayBank)) == 0u)
+        return 0u;
+
+    uint byteAddress = WrapLCDCByte(line * 512u + x * 2u);
+    uint reference = NativeCaptureReferenceForPhysicalAddress(
+        line, displayBank, byteAddress, LineWord(0u, line, kCaptureCnt));
+    if (reference == 0u)
+        return 0u;
+
+    uint representative = RepresentativeSubpixel();
+    uint canonical = CaptureRawFromColor6(LoadNativeCaptureSidecar(
+        reference, representative, representative));
+    // Identity is the primary validity source. This canonical comparison is
+    // a fail-closed corruption guard and also makes a zero structured
+    // CaptureReference diagnostically identify a representative mismatch.
+    return (canonical & 0x7FFFu) == (compact & 0x7FFFu)
+        ? reference : 0u;
+}
 
 uint DisplayPixel(
     uint screen, uint engine, uint line, int x,
@@ -1607,25 +1675,16 @@ uint DisplayPixel(
             return 0u;
         uint compact = LCD16(line, bank, line * 512u + uint(x) * 2u);
         uint color = ConvertVRAMDisplay(compact);
-        uint reference = NativeCaptureReference(engine, line, uint(x));
+        uint reference = NativeVRAMDisplayCaptureReference(
+            engine, line, uint(x), compact);
         if ((reference & 0x80000000u) != 0u)
         {
-            uint representative = RepresentativeSubpixel();
-            uint canonical = CaptureRawFromColor6(
-                LoadNativeCaptureSidecar(
-                    reference, representative, representative));
-            // VRAM display ignores LCDC bit 15. Admit the retained sidecar
-            // only when its canonical sample agrees with the current native
-            // RGB555 word, then preserve the requested subpixel sample.
-            if ((canonical & 0x7FFFu) == (compact & 0x7FFFu))
-            {
-                uint highRes = LoadNativeCaptureSidecar(
-                    reference,
-                    outputX % uint(ScaleFactor),
-                    outputY % uint(ScaleFactor));
-                color = PackColor6(
-                    Color6R(highRes), Color6G(highRes), Color6B(highRes), 0u);
-            }
+            uint highRes = LoadNativeCaptureSidecar(
+                reference,
+                outputX % uint(ScaleFactor),
+                outputY % uint(ScaleFactor));
+            color = PackColor6(
+                Color6R(highRes), Color6G(highRes), Color6B(highRes), 0u);
         }
         return ApplyMasterNative(
             color, LineWord(engine, line, kMasterBrightness));
@@ -1653,38 +1712,8 @@ uint ToBgra8Native(uint color)
 uint NativeCaptureReferenceForSourceB(
     uint line, uint bank, uint address, uint captureCnt)
 {
-    uint halfwordAddress = (address >> 1u) & 0xFFFFu;
-    uint state = NativeHighResCaptureState(bank, halfwordAddress);
-    bool pendingWrite = NativeHighResCapturePendingValid(bank, halfwordAddress);
-    bool committed = NativeHighResCaptureCommittedValid(bank, halfwordAddress);
-    if (!pendingWrite && !committed)
-        return 0u;
-
-    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
-    if (pendingWrite)
-    {
-        uint sizeCode = (captureCnt >> 20u) & 3u;
-        uint width = sizeCode == 0u ? 128u : 256u;
-        uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
-        uint destinationBank = (captureCnt >> 16u) & 3u;
-        uint packedLatch = LineWord(0u, line, kSpriteLatchValid);
-        uint captureStart = (packedLatch >> 8u) & 0xFFu;
-        uint destinationAddress = WrapLCDCHalfword(
-            CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
-        uint relative = (halfwordAddress - destinationAddress) & 0xFFFFu;
-        uint captureLine = relative / width;
-        const bool wasWrittenEarlier = bank == destinationBank
-            && captureStart != 0xFFu
-            && captureLine >= captureStart
-            && captureLine < line
-            && captureLine < height;
-        if (wasWrittenEarlier)
-            version ^= 1u;
-        else if (!committed)
-            return 0u;
-    }
-    return 0x80000000u | (version << 30u) | (bank << 28u)
-        | halfwordAddress;
+    return NativeCaptureReferenceForPhysicalAddress(
+        line, bank, address, captureCnt);
 }
 
 uint CaptureSourceB(
@@ -1750,53 +1779,6 @@ uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
     uint a = (eva > 0u ? aA : 0u) | (evb > 0u ? aB : 0u);
     return min(r, 31u) | (min(g, 31u) << 5u)
         | (min(b, 31u) << 10u) | (a << 15u);
-}
-
-uint NativeCaptureReference(uint engine, uint line, uint x)
-{
-    if (engine != 0u)
-        return 0u;
-
-    uint packedLatch = LineWord(0u, line, kSpriteLatchValid);
-    uint captureStart = (packedLatch >> 8u) & 0xFFu;
-    if (captureStart == 0xFFu || line <= captureStart)
-        return 0u;
-
-    uint captureCnt = LineWord(0u, line, kCaptureCnt);
-    uint sizeCode = (captureCnt >> 20u) & 3u;
-    uint width = sizeCode == 0u ? 128u : 256u;
-    uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
-    uint displayBank = (LineWord(0u, line, kDispCnt) >> 18u) & 3u;
-    uint destinationBank = (captureCnt >> 16u) & 3u;
-    if (displayBank != destinationBank
-        || (LineWord(0u, line, kLCDVRAMMap) & (1u << displayBank)) == 0u)
-        return 0u;
-
-    // Both values are DS word addresses.  The modulo preserves the LCDC
-    // 64-KiB bank wrap, while the line bound prevents the current capture line
-    // from reading its own not-yet-committed write.
-    uint displayAddress = WrapLCDCHalfword(line * 256u + x);
-    uint destinationAddress = WrapLCDCHalfword(
-        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
-    uint relative = (displayAddress - destinationAddress) & 0xFFFFu;
-    uint captureLine = relative / width;
-    if (captureLine < captureStart || captureLine >= line || captureLine >= height)
-        return 0u;
-
-    uint state = NativeHighResCaptureState(displayBank, displayAddress);
-    bool pendingWrite = NativeHighResCapturePendingValid(
-        displayBank, displayAddress);
-    if (!pendingWrite)
-        return 0u;
-    // A capture writes the next sidecar version while this frame's display
-    // feedback reads the version produced for the already-completed capture
-    // lines. The segment-level pending bit makes same-bank read-before-write
-    // explicit without promoting neighbouring pixels in a physical block.
-    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
-    if (pendingWrite)
-        version ^= 1u;
-    return 0x80000000u | (version << 30u) | (displayBank << 28u)
-        | displayAddress;
 }
 
 struct StructuredPixelState
@@ -1906,7 +1888,13 @@ StructuredPixelState CompositeSourceAExact(
     // as display-mode-off so Stage B does not apply master brightness twice.
     result.Below = DisplayPixel(
         screen, engine, line, int(x), x, line);
-    result.CaptureReference = NativeCaptureReference(engine, line, x);
+    if (displayMode == 2u && engine == 0u)
+    {
+        uint bank = (dispCnt >> 18u) & 3u;
+        uint compact = LCD16(line, bank, line * 512u + x * 2u);
+        result.CaptureReference = NativeVRAMDisplayCaptureReference(
+            engine, line, x, compact);
+    }
     result.LineMeta = kStructuredDisplayOff;
     return result;
 }

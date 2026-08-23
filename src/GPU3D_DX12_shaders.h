@@ -2772,6 +2772,32 @@ uint NativeCaptureCommittedReference(uint bank,uint address)
     uint version=(state&NativeHighResCaptureVersionBit)!=0u?1u:0u;
     return 0x80000000u|(version<<30u)|(bank<<28u)|(address&0xFFFFu);
 }
+// Display Capture stopping does not invalidate physical LCDC capture
+// contents. A retained high-resolution sidecar is selected from physical
+// VRAM content identity, not from current-frame capture activity. Capture
+// timing only resolves committed versus pending data for same-bank
+// read-before-write. This matches GLRenderer's retained CaptureOutput texture.
+uint NativeCaptureReferenceForPhysicalAddress(
+    uint line,uint bank,uint byteAddress,uint cnt)
+{
+    uint halfwordAddress=(byteAddress>>1u)&0xFFFFu;
+    uint committedReference=NativeCaptureCommittedReference(bank,halfwordAddress);
+    bool pending=NativeHighResCapturePendingValid(bank,halfwordAddress);
+    if(!pending)return committedReference;
+    uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
+    uint destinationBank=(cnt>>16u)&3u;
+    uint captureStart=(NativeLine(0u,line,NativeSpriteLatchValid)>>8u)&0xFFu;
+    uint destinationAddress=WrapLCDCHalfword(
+        CaptureOffsetHalfwords((cnt>>18u)&3u));
+    uint relative=(halfwordAddress-destinationAddress)&0xFFFFu;
+    uint captureLine=relative/width;
+    bool writtenEarlier=bank==destinationBank&&captureStart!=0xFFu
+        &&captureLine>=captureStart&&captureLine<line&&captureLine<height;
+    if(!writtenEarlier)return committedReference;
+    uint state=NativeHighResCaptureState(bank,halfwordAddress);
+    uint pendingVersion=((state&NativeHighResCaptureVersionBit)!=0u?1u:0u)^1u;
+    return 0x80000000u|(pendingVersion<<30u)|(bank<<28u)|halfwordAddress;
+}
 uint NativeCaptureReferenceForMappedAddress(
     uint engine,uint line,uint size,uint address,bool obj,bool spriteLatch,uint nativeColor)
 {
@@ -3282,14 +3308,31 @@ uint NativeMaster(uint c,uint b)
     else if(mode==2u)result=NativePack(NativeColorR(c)-((NativeColorR(c)*f+15u)>>4u),NativeColorG(c)-((NativeColorG(c)*f+15u)>>4u),NativeColorB(c)-((NativeColorB(c)*f+15u)>>4u),0xFFu);
     return result;
 }
-uint NativeCaptureReference(uint engine, uint line, uint x);
+uint NativeVRAMDisplayCaptureReference(
+    uint engine,uint line,uint x,uint compact)
+{
+    if(engine!=0u)return 0u;
+    uint disp=NativeLine(0u,line,NativeDispCnt);
+    if(((disp>>16u)&3u)!=2u)return 0u;
+    uint displayBank=(disp>>18u)&3u;
+    if((NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<displayBank))==0u)return 0u;
+    uint byteAddress=WrapLCDCByte(line*512u+x*2u);
+    uint reference=NativeCaptureReferenceForPhysicalAddress(
+        line,displayBank,byteAddress,NativeLine(0u,line,NativeCaptureCnt));
+    if(reference==0u)return 0u;
+    uint representative=NativeRepresentativeSubpixel();
+    uint canonical=NativeCaptureRaw(NativeLoadCaptureSidecar(
+        reference,representative,representative));
+    // Identity is authoritative; this remains a fail-closed corruption guard.
+    return (canonical&0x7FFFu)==(compact&0x7FFFu)?reference:0u;
+}
 uint NativeDisplay(uint screen,uint engine,uint line,int x,uint ox,uint oy)
 {
     uint disp=NativeLine(engine,line,NativeDispCnt),mode=(disp>>16u)&(engine==0u?3u:1u),result=0u;
     if(mode==0u)result=NativePack(63u,63u,63u,0u);
     else if(mode==1u&&NativeLine(engine,line,NativeUnitEnabled)==0u)result=engine==0u?NativePack(0u,0u,0u,0u):NativePack(63u,63u,63u,0u);
     else if(mode==1u&&NativeLine(engine,line,NativeForcedBlank)!=0u)result=NativePack(63u,63u,63u,0u);
-    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((NativeLine(engine,line,NativeLCDVRAMMap)&(1u<<bank))!=0u){uint compact=NativeLCD16(line,bank,line*512u+(uint)x*2u),color=NativeVRAMColor(compact),reference=NativeCaptureReference(engine,line,(uint)x);if((reference&0x80000000u)!=0u){uint representative=NativeRepresentativeSubpixel(),canonical=NativeCaptureRaw(NativeLoadCaptureSidecar(reference,representative,representative));if((canonical&0x7FFFu)==(compact&0x7FFFu)){uint highRes=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,oy%ScaleFactor);color=NativePack(NativeColorR(highRes),NativeColorG(highRes),NativeColorB(highRes),0u);}}result=NativeMaster(color,NativeLine(engine,line,NativeMasterBrightness));}}
+    else if(mode==2u&&engine==0u){uint bank=(disp>>18u)&3u;if((NativeLine(engine,line,NativeLCDVRAMMap)&(1u<<bank))!=0u){uint compact=NativeLCD16(line,bank,line*512u+(uint)x*2u),color=NativeVRAMColor(compact),reference=NativeVRAMDisplayCaptureReference(engine,line,(uint)x,compact);if((reference&0x80000000u)!=0u){uint highRes=NativeLoadCaptureSidecar(reference,ox%ScaleFactor,oy%ScaleFactor);color=NativePack(NativeColorR(highRes),NativeColorG(highRes),NativeColorB(highRes),0u);}result=NativeMaster(color,NativeLine(engine,line,NativeMasterBrightness));}}
     else if(mode==3u&&engine==0u)result=NativeMaster(NativeVRAMColor(NativeFIFO16(line,(uint)x)),NativeLine(engine,line,NativeMasterBrightness));
     else result=NativeMaster(NativeComposite(screen,engine,line,x,ox,oy),NativeLine(engine,line,NativeMasterBrightness));
     return result;
@@ -3311,33 +3354,6 @@ static const uint NativeStructuredCompositionBrightnessDown=3u;
 static const uint NativeStructuredCompositionBlend5=4u;
 static const uint NativeStructuredControlPlain2D=0x87u;
 static const uint NativeStructuredControlOpaqueBlackBelow=0x20u;
-uint NativeCaptureReference(uint engine,uint line,uint x)
-{
-    if(engine!=0u)return 0u;
-    uint packedLatch=NativeLine(0u,line,NativeSpriteLatchValid);
-    uint captureStart=(packedLatch>>8u)&0xFFu;
-    if(captureStart==0xFFu||line<=captureStart)return 0u;
-    uint cnt=NativeLine(0u,line,NativeCaptureCnt);
-    uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
-    uint displayBank=(NativeLine(0u,line,NativeDispCnt)>>18u)&3u;
-    uint destinationBank=(cnt>>16u)&3u;
-    if(displayBank!=destinationBank
-        ||(NativeLine(0u,line,NativeLCDVRAMMap)&(1u<<displayBank))==0u)return 0u;
-    uint displayAddress=WrapLCDCHalfword(line*256u+x);
-    uint destinationAddress=WrapLCDCHalfword(
-        CaptureOffsetHalfwords((cnt>>18u)&3u));
-    uint relative=(displayAddress-destinationAddress)&0xFFFFu;
-    uint captureLine=relative/width;
-    if(captureLine<captureStart||captureLine>=line||captureLine>=height)return 0u;
-    uint state=NativeHighResCaptureState(displayBank,displayAddress);
-    bool pendingWrite=NativeHighResCapturePendingValid(displayBank,displayAddress);
-    if(!pendingWrite)return 0u;
-    // Capture writes the next sidecar version while the current frame's
-    // display feedback reads the version for the completed capture lines.
-    uint version=(state&NativeHighResCaptureVersionBit)!=0u?1u:0u;
-    if(pendingWrite)version^=1u;
-    return 0x80000000u|(version<<30u)|(displayBank<<28u)|displayAddress;
-}
 struct NativeStructuredPixelState
 {
     uint Below;
@@ -3415,7 +3431,13 @@ NativeStructuredPixelState NativeCompositeSourceAExact(
         return result;
     }
     result.Below=NativeDisplay(screen,engine,line,(int)x,x,line);
-    result.CaptureReference=NativeCaptureReference(engine,line,x);
+    if(mode==2u&&engine==0u)
+    {
+        uint bank=(disp>>18u)&3u;
+        uint compact=NativeLCD16(line,bank,line*512u+x*2u);
+        result.CaptureReference=NativeVRAMDisplayCaptureReference(
+            engine,line,x,compact);
+    }
     return result;
 }
 
@@ -3480,27 +3502,7 @@ uint NativeStructuredCaptureSourceA(uint line,uint x,uint ox,uint sampleY)
 uint NativeCaptureReferenceForSourceB(
     uint line,uint bank,uint address,uint cnt)
 {
-    uint halfwordAddress=(address>>1u)&0xFFFFu;
-    uint state=NativeHighResCaptureState(bank,halfwordAddress);
-    bool pending=NativeHighResCapturePendingValid(bank,halfwordAddress);
-    bool committed=NativeHighResCaptureCommittedValid(bank,halfwordAddress);
-    if(!pending&&!committed)return 0u;
-    uint version=(state&NativeHighResCaptureVersionBit)!=0u?1u:0u;
-    if(pending)
-    {
-        uint size=(cnt>>20u)&3u,width=size==0u?128u:256u,height=size==0u?128u:64u*size;
-        uint destinationBank=(cnt>>16u)&3u;
-        uint captureStart=(NativeLine(0u,line,NativeSpriteLatchValid)>>8u)&0xFFu;
-        uint destinationAddress=WrapLCDCHalfword(
-            CaptureOffsetHalfwords((cnt>>18u)&3u));
-        uint relative=(halfwordAddress-destinationAddress)&0xFFFFu;
-        uint captureLine=relative/width;
-        bool wasWrittenEarlier=bank==destinationBank&&captureStart!=0xFFu
-            &&captureLine>=captureStart&&captureLine<line&&captureLine<height;
-        if(wasWrittenEarlier)version^=1u;
-        else if(!committed)return 0u;
-    }
-    return 0x80000000u|(version<<30u)|(bank<<28u)|halfwordAddress;
+    return NativeCaptureReferenceForPhysicalAddress(line,bank,address,cnt);
 }
 uint NativeCaptureSourceB(uint line,uint x,uint cnt,uint ox,uint sampleY)
 {

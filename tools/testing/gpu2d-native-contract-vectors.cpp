@@ -472,6 +472,127 @@ bool RunSourceBSubpixelAndSavestateVectors()
     return passed;
 }
 
+bool RunVRAMDisplaySidecarReferenceVectors()
+{
+    bool passed = true;
+    constexpr u32 bankC = 2u;
+    constexpr u32 bankD = 3u;
+    constexpr u32 committedVersion = 1u;
+    constexpr u32 captureStart = 0u;
+    constexpr u32 line = 64u;
+    constexpr u32 addressBeforeWrite = line * 256u;
+    constexpr u32 addressWrittenEarlier = (line - 1u) * 256u;
+    constexpr u32 captureC = (3u << 20u) | (bankC << 16u);
+    constexpr u32 captureD = (3u << 20u) | (bankD << 16u);
+
+    const auto captureOff = ResolveHighResCaptureReference(
+        true, false, committedVersion, line, bankC, addressBeforeWrite,
+        0u, CaptureStartLineNone);
+    passed &= Require(
+        captureOff.Version == HighResCaptureReferenceVersion::Committed
+            && captureOff.SidecarVersion == committedVersion,
+        "capture OFF discarded a retained VRAM-display sidecar");
+
+    // Capture activity in the opposite C/D ping-pong bank is unrelated to the
+    // displayed bank's retained physical contents.
+    const auto displayCCaptureD = ResolveHighResCaptureReference(
+        true, false, committedVersion, line, bankC, addressBeforeWrite,
+        captureD, captureStart);
+    const auto displayDCaptureC = ResolveHighResCaptureReference(
+        true, false, committedVersion, line, bankD, addressBeforeWrite,
+        captureC, captureStart);
+    passed &= Require(
+        displayCCaptureD.Version == HighResCaptureReferenceVersion::Committed,
+        "display C / capture D fell back from committed sidecar");
+    passed &= Require(
+        displayDCaptureC.Version == HighResCaptureReferenceVersion::Committed,
+        "display D / capture C fell back from committed sidecar");
+
+    const auto sameBankBeforeWrite = ResolveHighResCaptureReference(
+        true, true, committedVersion, line, bankC, addressBeforeWrite,
+        captureC, captureStart);
+    const auto sameBankAfterWrite = ResolveHighResCaptureReference(
+        true, true, committedVersion, line, bankC, addressWrittenEarlier,
+        captureC, captureStart);
+    passed &= Require(
+        sameBankBeforeWrite.Version == HighResCaptureReferenceVersion::Committed
+            && sameBankBeforeWrite.SidecarVersion == committedVersion,
+        "same-bank VRAM display did not read old committed data before write");
+    passed &= Require(
+        sameBankAfterWrite.Version == HighResCaptureReferenceVersion::Pending
+            && sameBankAfterWrite.SidecarVersion == (committedVersion ^ 1u),
+        "same-bank VRAM display did not select pending data after write");
+
+    const auto pendingWithoutOldBeforeWrite = ResolveHighResCaptureReference(
+        false, true, committedVersion, line, bankC, addressBeforeWrite,
+        captureC, captureStart);
+    const auto pendingWithoutOldAfterWrite = ResolveHighResCaptureReference(
+        false, true, committedVersion, line, bankC, addressWrittenEarlier,
+        captureC, captureStart);
+    passed &= Require(
+        pendingWithoutOldBeforeWrite.Version
+            == HighResCaptureReferenceVersion::None,
+        "unwritten pending capture exposed sidecar data without an old version");
+    passed &= Require(
+        pendingWithoutOldAfterWrite.Version
+            == HighResCaptureReferenceVersion::Pending,
+        "written pending capture was not exposed without an old version");
+
+    // CPU/DMA invalidation clears committed validity only for the overlapping
+    // segment. A non-overlapping segment and content-preserving materialization
+    // retain the same committed decision.
+    const auto cpuWritten = ResolveHighResCaptureReference(
+        false, false, committedVersion, line, bankC, addressBeforeWrite,
+        0u, CaptureStartLineNone);
+    const auto nonOverlapping = ResolveHighResCaptureReference(
+        true, false, committedVersion, line, bankC, addressBeforeWrite + 128u,
+        0u, CaptureStartLineNone);
+    const auto materialized = ResolveHighResCaptureReference(
+        true, false, committedVersion, line, bankC, addressBeforeWrite,
+        0u, CaptureStartLineNone);
+    passed &= Require(
+        cpuWritten.Version == HighResCaptureReferenceVersion::None,
+        "CPU-written VRAM-display segment retained a stale sidecar reference");
+    passed &= Require(
+        nonOverlapping.Version == HighResCaptureReferenceVersion::Committed,
+        "non-overlapping CPU write retired a VRAM-display sidecar");
+    passed &= Require(
+        materialized.Version == HighResCaptureReferenceVersion::Committed,
+        "content-preserving materialization retired a VRAM-display sidecar");
+
+    for (u32 gapFrame = 0u; gapFrame < 74u; ++gapFrame)
+    {
+        const auto retained = ResolveHighResCaptureReference(
+            true, false, committedVersion, line, bankC, addressBeforeWrite,
+            0u, CaptureStartLineNone);
+        passed &= Require(
+            retained.Version == HighResCaptureReferenceVersion::Committed,
+            "74-frame capture gap changed persistent VRAM-display selection");
+    }
+    for (const u32 scale : {1u, 2u, 3u, 4u})
+    {
+        (void)scale;
+        const auto retained = ResolveHighResCaptureReference(
+            true, false, committedVersion, line, bankC, addressBeforeWrite,
+            captureD, captureStart);
+        passed &= Require(
+            retained.Version == HighResCaptureReferenceVersion::Committed,
+            "VRAM-display sidecar selection changed with presentation scale");
+    }
+
+    // VRAM display ignores bit 15. Keep the representative guard's comparison
+    // aligned with OpenGL's RGB555 downscale/canonicalization rule.
+    constexpr u32 compact = 0x001Fu;
+    constexpr u32 canonical = 0x801Fu;
+    passed &= Require(
+        (compact & 0x7FFFu) == (canonical & 0x7FFFu),
+        "VRAM-display representative guard treated LCDC bit 15 as color");
+    passed &= Require(
+        (compact & 0x7FFFu) != (0x03E0u & 0x7FFFu),
+        "VRAM-display representative mismatch guard admitted different color");
+    return passed;
+}
+
 bool RunFrameCoverageAndRepresentativeVectors()
 {
     bool passed = true;
@@ -1914,6 +2035,7 @@ int main()
     const bool passed = RunCaptureAddressVectors()
         && RunMappedBlockFlattenVectors()
         && RunSourceBSubpixelAndSavestateVectors()
+        && RunVRAMDisplaySidecarReferenceVectors()
         && RunFrameCoverageAndRepresentativeVectors()
         && RunPackVectors() && RunMappedCaptureOverlayVectors()
         && RunCompareVectors()
