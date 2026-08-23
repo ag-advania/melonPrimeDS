@@ -2182,8 +2182,10 @@ void main(uint3 id : SV_DispatchThreadID)
     // VRAM display presents captured RGB directly. Its RGBA5551 alpha bit is
     // capture provenance rather than a visibility test, so this path must not
     // use the ordinary 3D-slot transparent-pixel fallback.
+    bool vramDisplaySidecar=displayMode==2u;
+    bool regularCaptureSidecar=displayMode!=2u&&(controlAlpha&0x40u)==0u;
     if ((captureReference & 0x80000000u) != 0u
-        && (displayMode == 2u || (controlAlpha & 0x40u) == 0u))
+        && ((vramDisplaySidecar&&ScaleFactor>1)||regularCaptureSidecar))
         color = LoadStructuredCapture(
             captureReference, uint2(id.x % ScaleFactor, scaledY % ScaleFactor));
     else if ((controlAlpha & 0x40u) != 0u)
@@ -3442,6 +3444,15 @@ NativeStructuredPixelState NativeCompositeSourceAExact(
         uint compact=NativeLCD16(line,bank,line*512u+x*2u);
         result.CaptureReference=NativeVRAMDisplayCaptureReference(
             engine,line,x,compact);
+        if((result.CaptureReference&0x80000000u)!=0u)
+        {
+            // At 1x the compact BGR555 value is already Software-exact. Above
+            // 1x Stage B replaces it with the precision sidecar and therefore
+            // also needs the deferred master-brightness metadata.
+            result.LineMeta=(mode<<16u)|(renderX<<23u);
+            if(ScaleFactor>1)
+                result.LineMeta|=((brightness>>14u)<<8u)|(brightness&0x1Fu);
+        }
     }
     return result;
 }

@@ -392,6 +392,12 @@ struct UploadDecision
 
 inline constexpr u32 DirtyBlockBytes = 512u;
 inline constexpr u32 MaxDirtyRanges = 8192u;
+// Explicit renderers keep three compositor work slots.  A reused slot can
+// therefore be two semantic frames behind the preceding frame.  Preserve the
+// two completed dirty lists needed to advance that slot without promoting an
+// ordinary generation difference to a full engine-memory upload.
+inline constexpr u32 UploadDirtyHistoryFrames = 2u;
+inline constexpr u32 MaxUploadDirtyHistoryRanges = 1024u;
 // TimelinePayload stores unique 512-byte contents, not one copy per write
 // event.  The open-addressing table is deliberately larger than the payload
 // so a full valid payload still has an empty insertion slot.
@@ -637,6 +643,12 @@ struct FrameInput
     // Host-only mutation sequence. It lets the recorder reuse the previous
     // row without comparing 4265 versions for every unchanged line.
     u32 TimelineMutationSerial = 0;
+    // Host-only incremental row fingerprints. Each changed block replaces one
+    // position/version contribution in O(1), avoiding a 4265-word (and OBJ
+    // subset) rehash at every visible-line boundary. Hash hits are still
+    // verified against the complete row, so this is only a lookup accelerator.
+    u64 CurrentTimelineRowFingerprint = 0;
+    u64 CurrentSpriteTimelineRowFingerprint = 0;
     // Host-only hash-consing metadata. It is intentionally excluded from the
     // packed ABI; shader-visible indices still point at ordinary full blocks.
     std::array<u64, TimelineHashTableSize> TimelineHashKeys{};
@@ -652,6 +664,16 @@ struct FrameInput
     // frame. They are metadata only and are not part of PackedFrameWords.
     std::array<DirtyRange, MaxDirtyRanges> DirtyRanges{};
     u32 DirtyRangeCount = 0;
+    // Host-only completed-frame upload history. Entry zero produced
+    // DirtyHistoryFrames[0], entry one is the frame before it. These ranges
+    // are never serialized into PackedFrame; BuildUploadPlan unions only the
+    // missing frame steps for the selected compositor work slot.
+    std::array<
+        std::array<DirtyRange, MaxUploadDirtyHistoryRanges>,
+        UploadDirtyHistoryFrames> DirtyHistoryRanges{};
+    std::array<u32, UploadDirtyHistoryFrames> DirtyHistoryRangeCounts{};
+    std::array<u64, UploadDirtyHistoryFrames> DirtyHistoryFrames{};
+    std::array<u8, UploadDirtyHistoryFrames> DirtyHistoryOverflow{};
     RecorderMetrics Recorder{};
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     std::array<MappedCaptureViolation, MaxMappedCaptureViolations>
@@ -1079,6 +1101,10 @@ UploadPlan BuildUploadPlan(
     const FrameInput& input,
     const FrameGeneration& uploadedGeneration,
     bool fullUpload) noexcept;
+// Merge nearby sorted ranges when an explicit backend's per-copy command cost
+// exceeds the cost of uploading the small unchanged gaps between them. The
+// packed input remains authoritative for every added byte.
+void CoalesceUploadPlan(UploadPlan& plan, u32 maxGapBytes) noexcept;
 
 struct Mismatch
 {
@@ -1157,6 +1183,15 @@ private:
     std::array<u16, 256> CurrentDisplayFIFO{};
     std::array<u8, 4 * 128 * 1024> CurrentLCDVRAM{};
     std::array<u32, TimelineBlockCount> CurrentTimelineVersion{};
+    std::array<u32, 32> CurrentMapABG{};
+    std::array<u32, 16> CurrentMapAOBJ{};
+    std::array<u32, 8> CurrentMapBBG{};
+    std::array<u32, 8> CurrentMapBOBJ{};
+    std::array<u32, 4> CurrentMapABGExtPal{};
+    std::array<u32, 4> CurrentMapBBGExtPal{};
+    u32 CurrentMapAOBJExtPal = 0u;
+    u32 CurrentMapBOBJExtPal = 0u;
+    bool CurrentMappingsReady = false;
     u32 LastTimelineMutationSerial = 0;
     u32 LastSpriteTimelineMutationSerial = 0;
     bool MemoryBaselineReady = false;
@@ -1195,6 +1230,9 @@ private:
     u32 CaptureAddressLogOverflow = 0u;
 
     void SnapshotEngine(u32 engine, u32 line) noexcept;
+    void CommitCurrentMemoryBaseline() noexcept;
+    void RememberCurrentMappings() noexcept;
+    void CaptureMappingChangesForLine(u32 line) noexcept;
     void CaptureAllMappedMemoryForLine(u32 line) noexcept;
     void CaptureCoherentLCDVRAMForLine() noexcept;
     void CaptureJournalWritesForLine(u32 line) noexcept;

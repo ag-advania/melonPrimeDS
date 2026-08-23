@@ -1887,8 +1887,22 @@ StructuredPixelState CompositeSourceAExact(
         uint compact = LCD16(line, bank, line * 512u + x * 2u);
         result.CaptureReference = NativeVRAMDisplayCaptureReference(
             engine, line, x, compact);
+        if ((result.CaptureReference & 0x80000000u) != 0u)
+        {
+            // Preserve mode 2 so Stage B can distinguish a VRAM-display
+            // reference from a regular layer reference. At 1x result.Below
+            // is the Software-exact BGR555 display value and remains final.
+            // Above 1x Stage B substitutes the precision sidecar, so publish
+            // the master-brightness pass that replacement still requires.
+            result.LineMeta = displayMode << 16u
+                | (renderX << 23u);
+            if (ScaleFactor > 1)
+            {
+                result.LineMeta |= ((masterBrightness >> 14u) << 8u)
+                    | (masterBrightness & 0x1Fu);
+            }
+        }
     }
-    result.LineMeta = kStructuredDisplayOff;
     return result;
 }
 
@@ -2149,6 +2163,15 @@ void main()
         PrepareNativeObjRawLine(
             engine, line, collectWindow, gl_LocalInvocationID.x);
         WriteNativeObjRawPixel(screen, line, id.x, engine);
+        // Bit 64 is emitted only when the host proved that OBJ mosaic is off,
+        // so the logical pixel reads the raw OBJ sample written by this same
+        // invocation. Keep the SSBO dependency explicit before consuming it;
+        // mosaic frames remain on the separate raw/logical dispatch path.
+        if ((pc._pad & 64u) != 0u)
+        {
+            memoryBarrierBuffer();
+            WriteStructuredLogicalPixel(screen, line, id.x, engine);
+        }
         return;
     }
     const bool capturePass = (pc._pad & 4u) != 0u;

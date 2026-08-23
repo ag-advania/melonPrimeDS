@@ -13,6 +13,7 @@
 
 #include "GPU.h"
 #include "Platform.h"
+#include "xxhash/xxhash.h"
 
 namespace melonDS::GPU2DNative
 {
@@ -1291,30 +1292,66 @@ void CopyMappedVRAMBlocks(
 
 u64 HashTimelineBlock(const u8* source) noexcept
 {
-    // FNV-1a is sufficient here because the hash is only a lookup hint; every
-    // hit is verified with a full memcmp before an existing version is reused.
-    u64 hash = 1469598103934665603ull;
-    for (u32 i = 0; i < DirtyBlockBytes; ++i)
-    {
-        hash ^= source[i];
-        hash *= 1099511628211ull;
-    }
+    // Video DMA can create hundreds of 512-byte payload candidates per frame.
+    // Use the project's vectorized hash instead of a byte-at-a-time FNV loop;
+    // this remains only a lookup hint and every hit is verified by memcmp.
+    const u64 hash = XXH3_64bits(source, DirtyBlockBytes);
     return hash == 0u ? 1u : hash;
 }
 
-u64 HashTimelineWords(const u32* source, u32 wordCount) noexcept
+u64 MixTimelineVersion(u32 block, u32 version) noexcept
 {
-    u64 hash = 1469598103934665603ull;
-    for (u32 i = 0; i < wordCount; ++i)
+    if (version == 0u)
+        return 0u;
+
+    // SplitMix64's avalanche gives each (position, version) pair an independent
+    // contribution. XOR makes replacing one version O(1); the full-row memcmp
+    // below remains the authority in the unlikely event of a collision.
+    u64 value = (static_cast<u64>(block) << 32u) | version;
+    value += 0x9E3779B97F4A7C15ull;
+    value = (value ^ (value >> 30u)) * 0xBF58476D1CE4E5B9ull;
+    value = (value ^ (value >> 27u)) * 0x94D049BB133111EBull;
+    return value ^ (value >> 31u);
+}
+
+bool IsSpriteTimelineBlock(u32 block) noexcept
+{
+    if (block >= TimelineOAMBaseBlock
+        && block < TimelineOAMBaseBlock + TimelineOAMBlocks)
     {
-        const u32 word = source[i];
-        for (u32 byte = 0; byte < sizeof(word); ++byte)
-        {
-            hash ^= (word >> (byte * 8u)) & 0xFFu;
-            hash *= 1099511628211ull;
-        }
+        return true;
     }
-    return hash == 0u ? 1u : hash;
+    for (u32 engine = 0u; engine < 2u; ++engine)
+    {
+        const u32 begin = TimelineEngineBaseBlock
+            + engine * TimelineEngineBlocks + TimelineEngineBGBlocks;
+        if (block >= begin && block < begin + SpriteTimelineEngineOBJBlocks)
+            return true;
+    }
+    return false;
+}
+
+void SetTimelineVersion(
+    FrameInput& input,
+    std::array<u32, TimelineBlockCount>& currentVersions,
+    u32 block,
+    u32 version) noexcept
+{
+    if (block >= currentVersions.size())
+    {
+        input.TimelineOverflow = 1u;
+        return;
+    }
+    const u32 previous = currentVersions[block];
+    if (previous == version)
+        return;
+
+    const u64 replacement = MixTimelineVersion(block, previous)
+        ^ MixTimelineVersion(block, version);
+    input.CurrentTimelineRowFingerprint ^= replacement;
+    if (IsSpriteTimelineBlock(block))
+        input.CurrentSpriteTimelineRowFingerprint ^= replacement;
+    currentVersions[block] = version;
 }
 
 u32 AppendTimelineDelta(FrameInput& input, const u8* source) noexcept
@@ -1426,7 +1463,60 @@ void CaptureMappedMemoryBlocks(
         std::memcpy(current + offset, source.data(), blockSize);
         ++input.Recorder.BlocksCopied;
         input.Recorder.BytesCopied += blockSize;
-        currentVersions[block] = version;
+        SetTimelineVersion(input, currentVersions, block, version);
+    }
+}
+
+template <u32 MappingBytes>
+void CaptureMappedLogicalRange(
+    FrameInput& input,
+    std::array<u32, TimelineBlockCount>& currentVersions,
+    u8* current,
+    u32 size,
+    const u32* mappings,
+    u32 mappingCount,
+    const melonDS::GPU& gpu,
+    u32 blockBase,
+    u32 mappingIndex,
+    const MappedReadContext& context) noexcept
+{
+    if (!current || !mappings || mappingIndex >= mappingCount)
+        return;
+    const u32 begin = mappingIndex * MappingBytes;
+    if (begin >= size)
+        return;
+    const u32 end = std::min(begin + MappingBytes, size);
+    std::array<u8, DirtyBlockBytes> source{};
+    for (u32 offset = begin; offset < end; offset += DirtyBlockBytes)
+    {
+        source.fill(0u);
+        const u32 blockSize = std::min(DirtyBlockBytes, end - offset);
+        for (u32 blockOffset = 0u;
+            blockOffset < blockSize;
+            blockOffset += sizeof(u64))
+        {
+            const u64 value = ReadMappedWord<MappingBytes>(
+                context, gpu, mappings, mappingCount, offset + blockOffset);
+            std::memcpy(source.data() + blockOffset, &value, sizeof(value));
+        }
+
+        ++input.Recorder.BlocksScanned;
+        input.Recorder.BytesScanned += blockSize;
+        if (std::memcmp(current + offset, source.data(), blockSize) == 0)
+            continue;
+        const u32 block = blockBase + offset / DirtyBlockBytes;
+        if (block >= currentVersions.size())
+        {
+            input.TimelineOverflow = 1u;
+            continue;
+        }
+        const u32 version = AppendTimelineDelta(input, source.data());
+        if (version == 0u)
+            continue;
+        std::memcpy(current + offset, source.data(), blockSize);
+        ++input.Recorder.BlocksCopied;
+        input.Recorder.BytesCopied += blockSize;
+        SetTimelineVersion(input, currentVersions, block, version);
     }
 }
 
@@ -1495,7 +1585,7 @@ void CaptureMappedPhysicalMemoryBlock(
         std::memcpy(current + offset + logicalBlockOffset, source.data(), DirtyBlockBytes);
         ++input.Recorder.BlocksCopied;
         input.Recorder.BytesCopied += DirtyBlockBytes;
-        currentVersions[logicalBlock] = version;
+        SetTimelineVersion(input, currentVersions, logicalBlock, version);
     }
 }
 
@@ -1530,7 +1620,7 @@ void CaptureDirectMemoryBlocks(
         std::memcpy(current + offset, block.data(), blockSize);
         ++input.Recorder.BlocksCopied;
         input.Recorder.BytesCopied += blockSize;
-        currentVersions[blockIndex] = version;
+        SetTimelineVersion(input, currentVersions, blockIndex, version);
     }
 }
 
@@ -1564,7 +1654,7 @@ void CaptureDirectMemoryBlockImpl(
     std::memcpy(current + offset, contents.data(), blockSize);
     ++input.Recorder.BlocksCopied;
     input.Recorder.BytesCopied += blockSize;
-    currentVersions[blockIndex] = version;
+    SetTimelineVersion(input, currentVersions, blockIndex, version);
 }
 }
 
@@ -1590,6 +1680,17 @@ void FrameRecorder::Reset() noexcept
     CurrentDisplayFIFO.fill(0u);
     CurrentLCDVRAM.fill(0u);
     CurrentTimelineVersion.fill(0u);
+    Input.CurrentTimelineRowFingerprint = 0u;
+    Input.CurrentSpriteTimelineRowFingerprint = 0u;
+    CurrentMapABG.fill(0u);
+    CurrentMapAOBJ.fill(0u);
+    CurrentMapBBG.fill(0u);
+    CurrentMapBOBJ.fill(0u);
+    CurrentMapABGExtPal.fill(0u);
+    CurrentMapBBGExtPal.fill(0u);
+    CurrentMapAOBJExtPal = 0u;
+    CurrentMapBOBJExtPal = 0u;
+    CurrentMappingsReady = false;
     NativeCaptureWrittenBlocks.fill(0u);
     NativeCaptureMappingBuilt.fill(false);
     NativeCaptureMappingLines.fill(ScreenHeight);
@@ -1623,6 +1724,36 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         ClearFrameInput(Input);
     else
     {
+        // Preserve the completed dirty lists before opening the new frame.
+        // Native compositor work slots are reused every third frame, so the
+        // current list plus these two predecessors can advance any normally
+        // reused slot entirely by deltas. Copy only live entries; the counts
+        // make stale array tails unreachable.
+        for (u32 history = UploadDirtyHistoryFrames - 1u; history != 0u;
+             --history)
+        {
+            const u32 count = std::min(
+                Input.DirtyHistoryRangeCounts[history - 1u],
+                MaxUploadDirtyHistoryRanges);
+            std::copy_n(
+                Input.DirtyHistoryRanges[history - 1u].begin(), count,
+                Input.DirtyHistoryRanges[history].begin());
+            Input.DirtyHistoryRangeCounts[history] = count;
+            Input.DirtyHistoryFrames[history] =
+                Input.DirtyHistoryFrames[history - 1u];
+            Input.DirtyHistoryOverflow[history] =
+                Input.DirtyHistoryOverflow[history - 1u];
+        }
+        const u32 completedCount = std::min(
+            Input.DirtyRangeCount, MaxUploadDirtyHistoryRanges);
+        std::copy_n(
+            Input.DirtyRanges.begin(), completedCount,
+            Input.DirtyHistoryRanges[0].begin());
+        Input.DirtyHistoryRangeCounts[0] = completedCount;
+        Input.DirtyHistoryFrames[0] = previousGeneration.Frame;
+        Input.DirtyHistoryOverflow[0] =
+            Input.DirtyRangeCount > MaxUploadDirtyHistoryRanges ? 1u : 0u;
+
         // Retain the coherent memory mirrors so changed blocks can be copied
         // into both the CPU frame and the backend's device-resident mirror.
         std::fill(Input.Lines.begin(), Input.Lines.end(), LineState{});
@@ -1675,7 +1806,16 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
         Input.SpriteTimelineRowHashKeys.end(), 0u);
     std::fill(Input.SpriteTimelineRowHashRows.begin(),
         Input.SpriteTimelineRowHashRows.end(), 0xFFFFFFFFu);
-    MemoryBaselineReady = false;
+    if (hadPreviousFrame)
+    {
+        // Input still contains the preceding frame's line-0 baseline while
+        // Current* contains that frame's final coherent view. Commit only
+        // blocks that acquired a timeline version. This makes the final view
+        // the next frame's version-zero baseline without rescanning mapped
+        // VRAM (which is especially expensive for native capture owners).
+        CommitCurrentMemoryBaseline();
+    }
+    MemoryBaselineReady = hadPreviousFrame;
     NativeCaptureWrittenBlocks.fill(0u);
     NativeCaptureMappingBuilt.fill(false);
     NativeCaptureMappingLines.fill(ScreenHeight);
@@ -1683,12 +1823,15 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     NativeCaptureMappingWrittenBlocks = {};
     NativeCaptureMappingProvenanceSerial = {};
     CurrentTimelineVersion.fill(0u);
+    Input.CurrentTimelineRowFingerprint = 0u;
+    Input.CurrentSpriteTimelineRowFingerprint = 0u;
     Input.TimelineRowCount = 0u;
     Input.SpriteTimelineRowCount = 0u;
     Input.TimelineMutationSerial = 0u;
     LastTimelineMutationSerial = 0u;
     LastSpriteTimelineMutationSerial = 0u;
-    LastJournalSequence = GPU.GetGPU2DWriteJournalSequence();
+    if (!hadPreviousFrame)
+        LastJournalSequence = GPU.GetGPU2DWriteJournalSequence();
     LineSeen.fill(false);
     SpriteLatchSeen.fill(false);
     EngineLineCount[0] = 0;
@@ -1701,6 +1844,181 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     CaptureAddressLogOverflow = 0u;
     CaptureAddressLog.fill(CaptureAddressDiagnostic{});
     RecorderStartNs = NowNanoseconds();
+}
+
+void FrameRecorder::CommitCurrentMemoryBaseline() noexcept
+{
+    // CurrentTimelineVersion is the exact sparse set of blocks that diverged
+    // from Input's frame-start baseline. Walk the small version table, then
+    // compare/copy only those blocks. Calls stay in packed ABI order so dirty
+    // ranges remain naturally coalescible.
+    const auto commit = [&](u8* destination,
+                            const u8* current,
+                            u32 size,
+                            u32 timelineBase,
+                            u32 packedOffset) {
+        if (!destination || !current || size == 0u)
+            return;
+        for (u32 offset = 0u; offset < size; offset += DirtyBlockBytes)
+        {
+            const u32 block = timelineBase + offset / DirtyBlockBytes;
+            if (CurrentTimelineVersion[block] == 0u)
+                continue;
+            const u32 blockSize = std::min(DirtyBlockBytes, size - offset);
+            ++Input.Recorder.BlocksScanned;
+            Input.Recorder.BytesScanned += blockSize;
+            if (std::memcmp(
+                    destination + offset, current + offset, blockSize) == 0)
+            {
+                continue;
+            }
+            std::memcpy(destination + offset, current + offset, blockSize);
+            ++Input.Recorder.BlocksCopied;
+            Input.Recorder.BytesCopied += blockSize;
+            MarkDirtyRange(Input, packedOffset + offset, blockSize);
+        }
+    };
+
+    for (u32 engine = 0u; engine < 2u; ++engine)
+    {
+        const u32 timelineBase = TimelineEngineBaseBlock
+            + engine * TimelineEngineBlocks;
+        const u32 packedBase = (PackedEngineBase
+            + engine * PackedEngineWords) * sizeof(u32);
+        commit(Input.Engine[engine].BGVRAM.data(),
+            CurrentEngine[engine].BGVRAM.data(),
+            CurrentEngine[engine].BGSize,
+            timelineBase,
+            packedBase);
+        commit(Input.Engine[engine].OBJVRAM.data(),
+            CurrentEngine[engine].OBJVRAM.data(),
+            CurrentEngine[engine].OBJSize,
+            timelineBase + TimelineEngineBGBlocks,
+            packedBase + PackedBGWords * sizeof(u32));
+        commit(Input.Engine[engine].BGExtendedPalette.data(),
+            CurrentEngine[engine].BGExtendedPalette.data(),
+            CurrentEngine[engine].BGExtendedPaletteSize,
+            timelineBase + TimelineEngineBGBlocks + TimelineEngineOBJBlocks,
+            packedBase
+                + (PackedBGWords + PackedOBJWords) * sizeof(u32));
+        commit(Input.Engine[engine].OBJExtendedPalette.data(),
+            CurrentEngine[engine].OBJExtendedPalette.data(),
+            CurrentEngine[engine].OBJExtendedPaletteSize,
+            timelineBase + TimelineEngineBGBlocks + TimelineEngineOBJBlocks
+                + TimelineEngineBGExtBlocks,
+            packedBase
+                + (PackedBGWords + PackedOBJWords
+                    + PackedBGExtendedPaletteWords) * sizeof(u32));
+    }
+    commit(Input.Palette.data(), CurrentPalette.data(),
+        static_cast<u32>(CurrentPalette.size()), TimelinePaletteBaseBlock,
+        PackedPaletteBase * sizeof(u32));
+    commit(Input.OAM.data(), CurrentOAM.data(),
+        static_cast<u32>(CurrentOAM.size()), TimelineOAMBaseBlock,
+        PackedOAMBase * sizeof(u32));
+    commit(reinterpret_cast<u8*>(Input.DisplayFIFO.data()),
+        reinterpret_cast<const u8*>(CurrentDisplayFIFO.data()),
+        static_cast<u32>(CurrentDisplayFIFO.size() * sizeof(u16)),
+        TimelineFIFOBaseBlock, PackedFIFOBase * sizeof(u32));
+    commit(Input.LCDVRAM.data(), CurrentLCDVRAM.data(),
+        static_cast<u32>(CurrentLCDVRAM.size()), TimelineLCDVRAMBaseBlock,
+        PackedLCDVRAMBase * sizeof(u32));
+}
+
+void FrameRecorder::RememberCurrentMappings() noexcept
+{
+    std::copy_n(GPU.VRAMMap_ABG, CurrentMapABG.size(), CurrentMapABG.begin());
+    std::copy_n(GPU.VRAMMap_AOBJ, CurrentMapAOBJ.size(), CurrentMapAOBJ.begin());
+    std::copy_n(GPU.VRAMMap_BBG, CurrentMapBBG.size(), CurrentMapBBG.begin());
+    std::copy_n(GPU.VRAMMap_BOBJ, CurrentMapBOBJ.size(), CurrentMapBOBJ.begin());
+    std::copy_n(GPU.VRAMMap_ABGExtPal,
+        CurrentMapABGExtPal.size(), CurrentMapABGExtPal.begin());
+    std::copy_n(GPU.VRAMMap_BBGExtPal,
+        CurrentMapBBGExtPal.size(), CurrentMapBBGExtPal.begin());
+    CurrentMapAOBJExtPal = GPU.VRAMMap_AOBJExtPal;
+    CurrentMapBOBJExtPal = GPU.VRAMMap_BOBJExtPal;
+    CurrentMappingsReady = true;
+}
+
+void FrameRecorder::CaptureMappingChangesForLine(u32 line) noexcept
+{
+    if (!CurrentMappingsReady)
+    {
+        CaptureAllMappedMemoryForLine(line);
+        RememberCurrentMappings();
+        return;
+    }
+
+    const u32 nativeCaptureWrittenBankMask =
+        CaptureWrittenBankMask(NativeCaptureWrittenBlocks);
+    const auto refresh = [&](u32 engine,
+                             u32 section,
+                             u8* current,
+                             u32 size,
+                             const u32* mappings,
+                             u32 mappingCount,
+                             u32 mappingBytes,
+                             u32 blockBase,
+                             u32* remembered) {
+        const MappedReadContext context{
+            &Input, line, engine, section, true, NativeCaptureWrittenBlocks,
+            nativeCaptureWrittenBankMask};
+        for (u32 index = 0u; index < mappingCount; ++index)
+        {
+            if (remembered[index] == mappings[index])
+                continue;
+            if (mappingBytes == 16u * 1024u)
+            {
+                CaptureMappedLogicalRange<16u * 1024u>(
+                    Input, CurrentTimelineVersion, current, size, mappings,
+                    mappingCount, GPU, blockBase, index, context);
+            }
+            else
+            {
+                CaptureMappedLogicalRange<8u * 1024u>(
+                    Input, CurrentTimelineVersion, current, size, mappings,
+                    mappingCount, GPU, blockBase, index, context);
+            }
+            remembered[index] = mappings[index];
+        }
+    };
+
+    refresh(0u, 0u, CurrentEngine[0].BGVRAM.data(), CurrentEngine[0].BGSize,
+        GPU.VRAMMap_ABG, static_cast<u32>(CurrentMapABG.size()), 16u * 1024u,
+        TimelineEngineBaseBlock, CurrentMapABG.data());
+    refresh(0u, 1u, CurrentEngine[0].OBJVRAM.data(), CurrentEngine[0].OBJSize,
+        GPU.VRAMMap_AOBJ, static_cast<u32>(CurrentMapAOBJ.size()), 16u * 1024u,
+        TimelineEngineBaseBlock + TimelineEngineBGBlocks,
+        CurrentMapAOBJ.data());
+    refresh(0u, 2u, CurrentEngine[0].BGExtendedPalette.data(),
+        CurrentEngine[0].BGExtendedPaletteSize, GPU.VRAMMap_ABGExtPal,
+        static_cast<u32>(CurrentMapABGExtPal.size()), 8u * 1024u,
+        TimelineEngineBaseBlock + TimelineEngineBGBlocks
+            + TimelineEngineOBJBlocks,
+        CurrentMapABGExtPal.data());
+    refresh(0u, 3u, CurrentEngine[0].OBJExtendedPalette.data(),
+        CurrentEngine[0].OBJExtendedPaletteSize, &GPU.VRAMMap_AOBJExtPal, 1u,
+        8u * 1024u, TimelineEngineBaseBlock + TimelineEngineBGBlocks
+            + TimelineEngineOBJBlocks + TimelineEngineBGExtBlocks,
+        &CurrentMapAOBJExtPal);
+
+    const u32 engine1Base = TimelineEngineBaseBlock + TimelineEngineBlocks;
+    refresh(1u, 0u, CurrentEngine[1].BGVRAM.data(), CurrentEngine[1].BGSize,
+        GPU.VRAMMap_BBG, static_cast<u32>(CurrentMapBBG.size()), 16u * 1024u,
+        engine1Base, CurrentMapBBG.data());
+    refresh(1u, 1u, CurrentEngine[1].OBJVRAM.data(), CurrentEngine[1].OBJSize,
+        GPU.VRAMMap_BOBJ, static_cast<u32>(CurrentMapBOBJ.size()), 16u * 1024u,
+        engine1Base + TimelineEngineBGBlocks, CurrentMapBOBJ.data());
+    refresh(1u, 2u, CurrentEngine[1].BGExtendedPalette.data(),
+        CurrentEngine[1].BGExtendedPaletteSize, GPU.VRAMMap_BBGExtPal,
+        static_cast<u32>(CurrentMapBBGExtPal.size()), 8u * 1024u,
+        engine1Base + TimelineEngineBGBlocks + TimelineEngineOBJBlocks,
+        CurrentMapBBGExtPal.data());
+    refresh(1u, 3u, CurrentEngine[1].OBJExtendedPalette.data(),
+        CurrentEngine[1].OBJExtendedPaletteSize, &GPU.VRAMMap_BOBJExtPal, 1u,
+        8u * 1024u, engine1Base + TimelineEngineBGBlocks
+            + TimelineEngineOBJBlocks + TimelineEngineBGExtBlocks,
+        &CurrentMapBOBJExtPal);
 }
 
 void FrameRecorder::RefreshCaptureProvenance() noexcept
@@ -1963,6 +2281,14 @@ void FrameRecorder::ApplyPendingNativeSpriteMapping() noexcept
         Input,
         PackedNativeCaptureSpriteOBJMappingBase * sizeof(u32),
         PendingNativeCaptureSpriteOBJMapping.size() * sizeof(u32));
+    // The line-0 OBJ mapping is latched at VCOUNT 262 and applied after the
+    // next frame has opened.  It is persistent packed state, not merely a
+    // current-frame dirty byte range: every backend work slot that still owns
+    // the preceding generation must refresh its mapping table.  Without this
+    // generation edge, a three-slot DX12/Vulkan staging ring can retain the
+    // pre-latch owner mask indefinitely once the two-frame dirty journal has
+    // rolled over.
+    ++Input.Generation.NativeCaptureMappingGeneration;
 }
 
 void FrameRecorder::CaptureAllMappedMemoryForLine(u32 line) noexcept
@@ -2061,6 +2387,7 @@ void FrameRecorder::CaptureJournalWritesForLine(u32 line) noexcept
         // correctness with one exceptional full private refresh; shared dirty
         // ownership is still untouched.
         CaptureAllMappedMemoryForLine(line);
+        RememberCurrentMappings();
         LastJournalSequence = GPU.GetGPU2DWriteJournalSequence();
         return;
     }
@@ -2078,18 +2405,70 @@ void FrameRecorder::CaptureJournalWritesForLine(u32 line) noexcept
     if (mappingChanged)
     {
         // Remapping changes the logical view without changing physical bytes.
-        // Rebuild the private view once for this boundary, then process no
-        // individual events from the same batch a second time.
+        // Refresh only logical mapping ranges whose effective bank mask
+        // changed. Texture/LCDC-only changes then cost no flattened scan,
+        // while ABG/OBJ changes retain exact line-boundary contents.
         CaptureNativeMappingForLine(line, false);
-        CaptureAllMappedMemoryForLine(line);
-        LastJournalSequence = GPU.GetGPU2DWriteJournalSequence();
-        return;
+        CaptureMappingChangesForLine(line);
     }
+
+    // The write journal records CPU/DMA store granularity, while GPU2D
+    // observes memory only at this line/latch boundary. A video DMA can write
+    // the same 512-byte block hundreds of times before that boundary. Resolve
+    // each final block once; the set is local to this call, so writes remain
+    // ordered across scanlines and sprite latch boundaries.
+    constexpr u32 maxVRAMBlocksPerBank =
+        (128u * 1024u) / DirtyBlockBytes;
+    constexpr u32 seenWordsPerBank = maxVRAMBlocksPerBank / 64u;
+    std::array<std::array<u64, seenWordsPerBank>, 9> seenVRAM{};
+    u64 seenPalette = 0u;
+    u64 seenOAM = 0u;
+    u64 seenFIFO = 0u;
 
     for (u32 i = 0; i < count; ++i)
     {
         const GPU2DWriteJournalEntry& entry = JournalScratch[i];
-        switch (static_cast<GPU2DWriteKind>(entry.Kind))
+        const GPU2DWriteKind kind =
+            static_cast<GPU2DWriteKind>(entry.Kind);
+        const auto firstDirectBlock = [&](u64& seen) {
+            if (entry.Block >= 64u)
+                return true;
+            const u64 mask = 1ull << entry.Block;
+            if ((seen & mask) != 0u)
+                return false;
+            seen |= mask;
+            return true;
+        };
+        if (kind == GPU2DWriteKind::VRAM
+            || kind == GPU2DWriteKind::CaptureSync)
+        {
+            if (entry.Bank < seenVRAM.size()
+                && entry.Block < maxVRAMBlocksPerBank)
+            {
+                u64& seen = seenVRAM[entry.Bank][entry.Block / 64u];
+                const u64 mask = 1ull << (entry.Block % 64u);
+                if ((seen & mask) != 0u)
+                    continue;
+                seen |= mask;
+            }
+        }
+        else if (kind == GPU2DWriteKind::Palette
+            && !firstDirectBlock(seenPalette))
+        {
+            continue;
+        }
+        else if (kind == GPU2DWriteKind::OAM
+            && !firstDirectBlock(seenOAM))
+        {
+            continue;
+        }
+        else if (kind == GPU2DWriteKind::FIFO
+            && !firstDirectBlock(seenFIFO))
+        {
+            continue;
+        }
+
+        switch (kind)
         {
         case GPU2DWriteKind::VRAM:
         case GPU2DWriteKind::CaptureSync:
@@ -2213,10 +2592,11 @@ void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
     // Establish it before the frame-start snapshot or journal delta is read.
     CaptureNativeMappingForLine(line, false);
 
-    if (!MemoryBaselineReady || line == 0u)
+    if (!MemoryBaselineReady)
     {
-        // The baseline is captured before line 0 is evaluated. This is the
-        // only full snapshot; every later line carries only changed blocks.
+        // First frame/reset/savestate recovery captures a full line-0
+        // baseline. Normal consecutive frames inherit the preceding final
+        // view in BeginFrame and consume only journaled writes below.
         SnapshotEngine(0u, line);
         SnapshotEngine(1u, line);
         CopyChangedBlocks(
@@ -2250,11 +2630,16 @@ void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
             CurrentDisplayFIFO.size() * sizeof(u16));
         std::memcpy(CurrentLCDVRAM.data(), Input.LCDVRAM.data(), CurrentLCDVRAM.size());
         CurrentTimelineVersion.fill(0u);
+        Input.CurrentTimelineRowFingerprint = 0u;
+        Input.CurrentSpriteTimelineRowFingerprint = 0u;
+        RememberCurrentMappings();
         MemoryBaselineReady = true;
         LastJournalSequence = GPU.GetGPU2DWriteJournalSequence();
     }
     else
     {
+        // Includes line 0: LastJournalSequence deliberately spans the frame
+        // boundary so VBlank writes cannot disappear between baselines.
         CaptureJournalWritesForLine(line);
     }
 
@@ -2353,7 +2738,9 @@ void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
             }
         }
 
-        rowHash = HashTimelineWords(current.data(), SpriteTimelineBlockCount);
+        rowHash = Input.CurrentSpriteTimelineRowFingerprint;
+        if (rowHash == 0u)
+            rowHash = 1u;
         constexpr u32 hashMask = TimelineHashTableSize - 1u;
         u32 slot = static_cast<u32>(rowHash) & hashMask;
         for (u32 probe = 0; probe < TimelineHashTableSize; ++probe)
@@ -2439,7 +2826,8 @@ void FrameRecorder::ApplyPendingSpriteLatch() noexcept
             if (version == 0u)
                 continue;
             std::memcpy(current + offset, block.data(), blockSize);
-            CurrentTimelineVersion[blockBase + offset / DirtyBlockBytes] = version;
+            SetTimelineVersion(Input, CurrentTimelineVersion,
+                blockBase + offset / DirtyBlockBytes, version);
         }
     };
 
@@ -2556,7 +2944,9 @@ void FrameRecorder::FillTimelineLine(u32 line) noexcept
     }
     else
     {
-        rowHash = HashTimelineWords(CurrentTimelineVersion.data(), TimelineBlockCount);
+        rowHash = Input.CurrentTimelineRowFingerprint;
+        if (rowHash == 0u)
+            rowHash = 1u;
         constexpr u32 hashMask = TimelineHashTableSize - 1u;
         u32 slot = static_cast<u32>(rowHash) & hashMask;
         for (u32 probe = 0; probe < TimelineHashTableSize; ++probe)

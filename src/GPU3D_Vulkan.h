@@ -198,20 +198,12 @@ private:
     static constexpr int ShaderStepCount =
         static_cast<int>(VulkanShaders::Pipeline_Count);
 
-    // Frames the CPU may run ahead of the GPU *for this renderer*.
-    //
-    // One, and that is a correctness requirement rather than a tuning choice.
-    // The compute rasterizer works out of a single shared set of intermediate
-    // buffers -- XSpanSetups, the three tile buffers, BinResult, WorkDescs,
-    // ResultBuffer and FinalFB. A second in-flight frame would write those
-    // while the previous frame still read them (a WAR/WAW race), and giving
-    // each frame its own copy is not an option: the tile buffers alone are
-    // three quarters of a gigabyte at 16x.
-    //
-    // This costs nothing in practice. The wait happens at the *start* of frame
-    // N for frame N-1, and a whole DS frame of software 2D work has run on the
-    // emulation thread in between, so CPU and GPU still overlap.
-    static constexpr u32 RendererFramesInFlight = 1;
+    // Two CPU recording slots let the emulation thread record/submit frame N+1
+    // while frame N is still executing. The GPU raster scratch remains one
+    // shared copy; RecordSharedScratchReuseBarrier() makes its same-queue
+    // cross-frame reuse explicit. Two slots are the low-latency limit: more
+    // would add input latency without removing another CPU/GPU dependency.
+    static constexpr u32 RendererFramesInFlight = 2;
     static constexpr u32 CompositorFramesInFlight = 3;
     static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
 
@@ -462,6 +454,7 @@ private:
         u32 count,
         VkPipelineStageFlags srcStage,
         VkPipelineStageFlags dstStage) const;
+    void RecordSharedScratchReuseBarrier(VkCommandBuffer cmd) const;
 
     // CPU-side span setup, transcribed from the OpenGL compute renderer.
     void SetupAttrs(SpanSetupY* span, Polygon* poly, int from, int to) const;
@@ -496,7 +489,9 @@ private:
     Vk::FrameRing ComposeFrames;
     Vk::DescriptorLayouts Layouts;
     Vk::DescriptorPool Descriptors;
-    Vk::StagingRing FrameStaging;
+    // CPU-written upload memory is slot-local and is only reset after the
+    // matching raster fence retires. GPU scratch is intentionally not copied.
+    std::array<Vk::StagingRing, RendererFramesInFlight> FrameStaging;
 
     VulkanTextureHeap TextureHeap;
     VulkanSamplerCache Samplers;

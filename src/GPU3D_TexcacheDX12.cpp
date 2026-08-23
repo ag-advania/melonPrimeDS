@@ -70,6 +70,21 @@ void DX12TextureHeap::Init(DX12Context* context, DX12CommandContext* commands, D
     PendingUploads.reserve(kInitialPendingUploadCapacity);
 }
 
+void DX12TextureHeap::SetFrameResources(
+    DX12CommandContext* commands, DX12UploadRing* uploads, u32 frameSlot) noexcept
+{
+    Commands = commands;
+    Uploads = uploads;
+    ActiveFrameSlot = frameSlot & 1u;
+    // Preserve resources retired during the upcoming CPU preparation. Only
+    // the prefix inherited from this slot's previous submission is eligible
+    // for release after Begin() waits its fence.
+    GraveyardRetirePrefix[ActiveFrameSlot] =
+        Graveyards[ActiveFrameSlot].size();
+    SpillRetirePrefix[ActiveFrameSlot] =
+        SpillUploadSlots[ActiveFrameSlot].size();
+}
+
 void DX12TextureHeap::Shutdown()
 {
     Entries.clear();
@@ -78,8 +93,12 @@ void DX12TextureHeap::Shutdown()
     PendingBarriers.clear();
     PendingUploads.clear();
     PendingUploadCount = 0;
-    Graveyard.clear();
-    SpillUploads.clear();
+    for (auto& resources : Graveyards)
+        resources.clear();
+    for (auto& resources : SpillUploadSlots)
+        resources.clear();
+    GraveyardRetirePrefix = { 0, 0 };
+    SpillRetirePrefix = { 0, 0 };
     Context = nullptr;
     Commands = nullptr;
     Uploads = nullptr;
@@ -444,7 +463,7 @@ bool DX12TextureHeap::RecordUpload(
     {
         D3D12_RANGE written{0, static_cast<SIZE_T>(totalBytes)};
         spillUpload->Unmap(0, &written);
-        SpillUploads.push_back(std::move(spillUpload));
+        SpillUploadSlots[ActiveFrameSlot].push_back(std::move(spillUpload));
     }
 
     if (entry.State != D3D12_RESOURCE_STATE_COPY_DEST)
@@ -539,7 +558,7 @@ void DX12TextureHeap::Destroy(u32 handle)
     // resource can be freed only through the existing graveyard path because
     // the previous submission may still reference it.
     if (entry.PhysicalReady && entry.Resource)
-        Graveyard.push_back(std::move(entry.Resource));
+        Graveyards[ActiveFrameSlot].push_back(std::move(entry.Resource));
 
     entry = Entry{};
     FreeSlots.push_back(handle - 1);
@@ -569,8 +588,20 @@ void DX12TextureHeap::Destroy(u32 handle)
 
 void DX12TextureHeap::CollectGarbage()
 {
-    Graveyard.clear();
-    SpillUploads.clear();
+    // The selected raster slot has just passed its reuse fence. Other slots
+    // may still be executing and must retain their resource lifetimes. Keep
+    // resources queued during CPU preparation for this new frame: those are
+    // protected by the fence that will be signalled when this slot submits.
+    auto retirePrefix = [](auto& resources, std::size_t count) {
+        count = std::min(count, resources.size());
+        resources.erase(resources.begin(), resources.begin() + count);
+    };
+    retirePrefix(
+        Graveyards[ActiveFrameSlot], GraveyardRetirePrefix[ActiveFrameSlot]);
+    retirePrefix(
+        SpillUploadSlots[ActiveFrameSlot], SpillRetirePrefix[ActiveFrameSlot]);
+    GraveyardRetirePrefix[ActiveFrameSlot] = 0;
+    SpillRetirePrefix[ActiveFrameSlot] = 0;
 }
 
 } // namespace melonDS

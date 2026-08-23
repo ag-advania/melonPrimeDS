@@ -21,6 +21,7 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -58,6 +59,11 @@ public:
     };
 
     void Init(DX12Context* context, DX12CommandContext* commands, DX12UploadRing* uploads);
+    // Selects the CPU upload/command slot for the emulated frame. The caller
+    // changes this before CPU preparation and calls CollectGarbage() only
+    // after that slot's command fence has retired.
+    void SetFrameResources(
+        DX12CommandContext* commands, DX12UploadRing* uploads, u32 frameSlot) noexcept;
     void Shutdown();
 
     // CPU-side cache misses reserve an opaque identity only. The resource is
@@ -148,10 +154,13 @@ private:
     // high-watermarks stay allocated for reuse instead of churning each frame.
     std::vector<PendingUpload> PendingUploads;
     u32 PendingUploadCount = 0;
-    std::vector<DX12::ComPtr<ID3D12Resource>> Graveyard;
-    // Oversized/overflow uploads stay alive until the next frame's Begin()
-    // retires this command list. This avoids a synchronous mid-frame flush.
-    std::vector<DX12::ComPtr<ID3D12Resource>> SpillUploads;
+    // Oversized/overflow uploads stay alive until the selected frame slot's
+    // Begin() retires its prior submission.
+    std::array<std::vector<DX12::ComPtr<ID3D12Resource>>, 2> Graveyards;
+    std::array<std::vector<DX12::ComPtr<ID3D12Resource>>, 2> SpillUploadSlots;
+    std::array<std::size_t, 2> GraveyardRetirePrefix = { 0, 0 };
+    std::array<std::size_t, 2> SpillRetirePrefix = { 0, 0 };
+    u32 ActiveFrameSlot = 0;
     bool CreationFailed = false;
     bool UploadFailed = false;
     bool RetryableCreationFailure = false;

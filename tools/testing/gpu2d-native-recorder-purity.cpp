@@ -353,6 +353,79 @@ bool RunRecorderTimeline()
     return passed;
 }
 
+bool RunCrossFrameJournalBaseline()
+{
+    const auto nds = std::make_unique<NDS>();
+    GPU& gpu = nds->GPU;
+    SeedSharedState(gpu);
+    const auto recorder = std::make_unique<FrameRecorder>(gpu);
+
+    recorder->BeginFrame(1u);
+    recorder->CaptureSpriteLatchForLine(0u);
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+    {
+        if (line != 0u)
+            recorder->CaptureSpriteLatchForLine(line);
+        if (line == 50u)
+        {
+            gpu.WriteVRAM_ABG<u8>(0x10u, 0xC1u);
+            gpu.WritePalette<u8>(37u, 0xD6u);
+        }
+        recorder->CaptureMemoryForLine(line);
+        recorder->CaptureLine(0u, gpu.GPU2D_A, line, gpu.ScreenSwap);
+        recorder->CaptureLine(1u, gpu.GPU2D_B, line, gpu.ScreenSwap);
+    }
+    recorder->FinalizeMemory();
+    bool passed = Require(recorder->IsValid(),
+        "cross-frame source frame was not valid");
+
+    // This write lands after the preceding visible frame. BeginFrame must
+    // retain the journal cursor so line 0 observes it without rebuilding the
+    // full mapped mirror.
+    for (u32 write = 0u; write < 64u; ++write)
+        gpu.WriteVRAM_ABG<u8>(0x220u, static_cast<u8>(0xA3u + write));
+    gpu.VRAM[2u][16u * 1024u] = 0xE3u;
+    gpu.VRAMMap_ABG[1u] = 1u << 2u;
+    gpu.RecordGPU2DWrite(GPU2DWriteKind::Mapping, 2u, 0u);
+    recorder->BeginFrame(2u);
+    recorder->CaptureSpriteLatchForLine(0u);
+    for (u32 line = 0u; line < ScreenHeight; ++line)
+    {
+        if (line != 0u)
+            recorder->CaptureSpriteLatchForLine(line);
+        recorder->CaptureMemoryForLine(line);
+        recorder->CaptureLine(0u, gpu.GPU2D_A, line, gpu.ScreenSwap);
+        recorder->CaptureLine(1u, gpu.GPU2D_B, line, gpu.ScreenSwap);
+    }
+    recorder->FinalizeMemory();
+
+    const FrameInput& input = recorder->GetFrame();
+    passed &= Require(recorder->IsValid(),
+        "cross-frame destination frame was not valid");
+    passed &= Require(input.Engine[0].BGVRAM[0x10u] == 0xC1u
+            && input.Palette[37u] == 0xD6u,
+        "preceding final memory did not become the next frame baseline");
+    const u32 vblankBlock = TimelineEngineBaseBlock
+        + 0x220u / DirtyBlockBytes;
+    const u32 vblankVersion = TimelineValue(input, 0u, vblankBlock);
+    passed &= Require(vblankVersion != 0u
+            && input.TimelinePayload[
+                static_cast<std::size_t>(vblankVersion - 1u)
+                    * DirtyBlockBytes + 0x20u] == 0xE2u,
+        "frame-boundary journal write was not visible on line zero");
+    const u32 remappedBlock = TimelineEngineBaseBlock
+        + (16u * 1024u) / DirtyBlockBytes;
+    const u32 remappedVersion = TimelineValue(input, 0u, remappedBlock);
+    passed &= Require(remappedVersion != 0u
+            && input.TimelinePayload[
+                static_cast<std::size_t>(remappedVersion - 1u)
+                    * DirtyBlockBytes] == 0xE3u,
+        "changed logical mapping range was not refreshed on line zero");
+    passed &= Require(input.Recorder.BytesScanned < 100u * DirtyBlockBytes,
+        "steady cross-frame baseline unexpectedly rescanned mapped VRAM");
+    return passed;
+}
+
 void RecordVRAMWriteRange(GPU& gpu, u32 bank)
 {
     const u32 blockCount = (gpu.VRAMMask[bank] + 1u) / DirtyBlockBytes;
@@ -444,7 +517,8 @@ namespace melonDS::Testing
 int RunGPU2DNativeRecorderPurity()
 {
     const bool passed = RunRecorderPurity() && RunMultiConsumerOrder()
-        && RunRecorderTimeline() && RunHighChurnTimeline();
+        && RunRecorderTimeline() && RunCrossFrameJournalBaseline()
+        && RunHighChurnTimeline();
     std::fprintf(stdout, "%s: GPU2D native recorder purity\n",
         passed ? "PASS" : "FAIL");
     std::fflush(stdout);
