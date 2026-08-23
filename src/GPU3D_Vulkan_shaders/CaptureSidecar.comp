@@ -72,15 +72,19 @@ uint ComposeSourceA(
     return slot;
 }
 
-uint NormalizeCapturedPixel(uint color)
+uint CaptureSidecarColor(uint color)
 {
-    // Display Capture writes RGBA5551. Preserve its exact loss of one RGB bit
-    // and expand the alpha bit to the 5-bit alpha consumed by the 3D texture
-    // path. Software 2D pixels carry flags in the rest of their alpha byte, so
-    // testing the whole byte here is intentional and matches DoCapture().
-    uint r = ((color & 0x3Fu) >> 1u) << 1u;
-    uint g = ((((color >> 8u) & 0x3Fu) >> 1u) << 1u);
-    uint b = ((((color >> 16u) & 0x3Fu) >> 1u) << 1u);
+    // Keep the high-resolution presentation copy at the source precision.
+    // The separate compact mirror owns the DS RGBA5551 conversion.
+    uint r = color & 0x3Fu;
+    uint g = (color >> 8u) & 0x3Fu;
+    uint b = (color >> 16u) & 0x3Fu;
+    if (uint(ScaleFactor) == 1u)
+    {
+        r = (r >> 1u) << 1u;
+        g = (g >> 1u) << 1u;
+        b = (b >> 1u) << 1u;
+    }
     uint a = (color >> 24u) != 0u ? 31u : 0u;
     return r | (g << 8u) | (b << 16u) | (a << 24u);
 }
@@ -154,5 +158,5 @@ void main()
     uint sampleIndex = id.y * uint(ScaleFactor)
         + (id.x % uint(ScaleFactor));
     CaptureSidecarPixels[cell * samplesPerPixel + sampleIndex] =
-        NormalizeCapturedPixel(result);
+        CaptureSidecarColor(result);
 }

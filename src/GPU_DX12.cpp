@@ -119,6 +119,20 @@ void DX12Renderer::InvalidateVRAMCapture(
     u32 len,
     CaptureAuthorityTransitionReason reason)
 {
+    if (reason == CaptureAuthorityTransitionReason::CpuWrite
+        || reason == CaptureAuthorityTransitionReason::CaptureRetired)
+    {
+        if (auto* dx12 = GetDX12Renderer3D())
+        {
+            dx12->InvalidateHighResCaptureRange(
+                bank,
+                start,
+                len,
+                reason == CaptureAuthorityTransitionReason::CpuWrite
+                    ? GPU2DNative::HighResCaptureFallbackReason::CpuWriteInvalidated
+                    : GPU2DNative::HighResCaptureFallbackReason::CaptureRetired);
+        }
+    }
     SoftRenderer::InvalidateVRAMCapture(bank, start, len, reason);
 }
 

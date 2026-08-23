@@ -57,7 +57,8 @@ shared uint NativeActiveCount;
 
 // The C++ serializer in GPU2DNative.h is intentionally fixed-width.  Keep the
 // offsets here literal and audit-friendly; a drift is a shader ABI break.
-const uint kHeaderWords = 32u;
+const uint kHeaderWords = 34u;
+const uint kPendingCompletionLoWord = 32u;
 const uint kLineWords = 68u;
 const uint kLineCount = 384u;
 const uint kLinesWords = kLineWords * kLineCount;
@@ -113,7 +114,7 @@ const uint kNativeCaptureSpriteOBJMappingBase = kNativeCaptureOBJMappingBase
     + 192u * (16u + 8u);
 const uint kHighResCaptureProvenanceBase = kNativeCaptureSpriteOBJMappingBase
     + 192u * (16u + 8u);
-const uint kHighResCaptureProvenanceStride = 4u;
+const uint kHighResCaptureProvenanceStride = 8u;
 const uint kHighResCaptureSegmentHalfwords = 128u;
 const uint kHighResCaptureSegmentsPerBank = 512u;
 const uint kHighResCaptureValidBit = 1u;
@@ -583,6 +584,25 @@ uint CaptureRawFromColor6(uint color)
     return r | (g << 5u) | (b << 10u) | a;
 }
 
+uint CaptureColor6FromRaw(uint color)
+{
+    return PackColor6(
+        (color & 0x1Fu) << 1u,
+        ((color >> 5u) & 0x1Fu) << 1u,
+        ((color >> 10u) & 0x1Fu) << 1u,
+        ((color >> 15u) & 1u) != 0u ? 31u : 0u);
+}
+
+uint CaptureSidecarColor(uint color)
+{
+    // The sidecar is the high-resolution presentation copy, not the compact
+    // RGBA5551 VRAM mirror. Preserve all six RGB bits exactly as OpenGL's
+    // capture texture does; only canonicalize alpha for sidecar consumers.
+    return PackColor6(
+        Color6R(color), Color6G(color), Color6B(color),
+        (color >> 24u) != 0u ? 31u : 0u);
+}
+
 uint RepresentativeSubpixel()
 {
     // Match Resolve.comp and OpenGL CaptureDownscaleFS: use the native output
@@ -609,14 +629,92 @@ uint NativeHighResCaptureState(uint bank, uint address)
             * kHighResCaptureProvenanceStride];
 }
 
+uint NativeHighResCaptureStateBase(uint bank, uint address)
+{
+    uint segment = (address >> 7u) & 0x1FFu;
+    return kHighResCaptureProvenanceBase
+        + (bank * kHighResCaptureSegmentsPerBank + segment)
+            * kHighResCaptureProvenanceStride;
+}
+
+bool NativeHighResCaptureCommittedValid(uint bank, uint address)
+{
+    uint base = NativeHighResCaptureStateBase(bank, address);
+    uint state = NativeGPU2DInput[base];
+    uvec2 sidecarIdentity = uvec2(
+        NativeGPU2DInput[base + 1u], NativeGPU2DInput[base + 2u]);
+    uvec2 compactIdentity = uvec2(
+        NativeGPU2DInput[base + 5u], NativeGPU2DInput[base + 6u]);
+    return (state & kHighResCaptureValidBit) != 0u
+        && any(notEqual(sidecarIdentity, uvec2(0u)))
+        && all(equal(sidecarIdentity, compactIdentity));
+}
+
+bool NativeHighResCapturePendingValid(uint bank, uint address)
+{
+    uint base = NativeHighResCaptureStateBase(bank, address);
+    uint state = NativeGPU2DInput[base];
+    uvec2 segmentIdentity = uvec2(
+        NativeGPU2DInput[base + 3u], NativeGPU2DInput[base + 4u]);
+    uvec2 submissionIdentity = uvec2(
+        NativeGPU2DInput[kPendingCompletionLoWord],
+        NativeGPU2DInput[kPendingCompletionLoWord + 1u]);
+    return (state & kHighResCapturePendingWriteBit) != 0u
+        && any(notEqual(segmentIdentity, uvec2(0u)))
+        && all(equal(segmentIdentity, submissionIdentity));
+}
+
 uint NativeCaptureCommittedReference(uint bank, uint address)
 {
     uint state = NativeHighResCaptureState(bank, address);
-    if ((state & kHighResCaptureValidBit) == 0u)
+    if (!NativeHighResCaptureCommittedValid(bank, address))
         return 0u;
     uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
     return 0x80000000u | (version << 30u) | (bank << 28u)
         | (address & 0xFFFFu);
+}
+
+// Display Capture stopping does not invalidate physical LCDC capture
+// contents. A retained high-resolution sidecar is selected from physical
+// VRAM content identity, not from whether capture is active in this frame.
+// Current CaptureStart/CaptureCnt are consulted only for same-bank
+// read-before-write between the committed and pending sidecar versions. This
+// mirrors GLRenderer's retained CaptureOutput texture semantics: DISPMODE=2
+// may display an older capture while capture is stopped or while the opposite
+// ping-pong bank is being written.
+uint NativeCaptureReferenceForPhysicalAddress(
+    uint line, uint bank, uint byteAddress, uint captureCnt)
+{
+    uint halfwordAddress = (byteAddress >> 1u) & 0xFFFFu;
+    uint committedReference = NativeCaptureCommittedReference(
+        bank, halfwordAddress);
+    bool pendingWrite = NativeHighResCapturePendingValid(
+        bank, halfwordAddress);
+    if (!pendingWrite)
+        return committedReference;
+
+    uint sizeCode = (captureCnt >> 20u) & 3u;
+    uint width = sizeCode == 0u ? 128u : 256u;
+    uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
+    uint destinationBank = (captureCnt >> 16u) & 3u;
+    uint captureStart = (LineWord(0u, line, kSpriteLatchValid) >> 8u) & 0xFFu;
+    uint destinationAddress = WrapLCDCHalfword(
+        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
+    uint relative = (halfwordAddress - destinationAddress) & 0xFFFFu;
+    uint captureLine = relative / width;
+    bool writtenEarlier = bank == destinationBank
+        && captureStart != 0xFFu
+        && captureLine >= captureStart
+        && captureLine < line
+        && captureLine < height;
+    if (!writtenEarlier)
+        return committedReference;
+
+    uint state = NativeHighResCaptureState(bank, halfwordAddress);
+    uint pendingVersion = ((state & kHighResCaptureVersionBit) != 0u ? 1u : 0u)
+        ^ 1u;
+    return 0x80000000u | (pendingVersion << 30u) | (bank << 28u)
+        | halfwordAddress;
 }
 
 // Direct-color bitmap BG/OBJ references are admitted only when the mapped
@@ -1525,10 +1623,35 @@ uint ApplyMasterNative(uint color, uint brightness)
     return color;
 }
 
-// GLSL requires a declaration before DisplayPixel uses the shared capture
-// reference resolver, whose full definition lives with the structured-path
-// helpers below.
-uint NativeCaptureReference(uint engine,uint line,uint x);
+uint NativeVRAMDisplayCaptureReference(
+    uint engine, uint line, uint x, uint compact)
+{
+    if (engine != 0u)
+        return 0u;
+
+    uint dispCnt = LineWord(0u, line, kDispCnt);
+    if (((dispCnt >> 16u) & 3u) != 2u)
+        return 0u;
+
+    uint displayBank = (dispCnt >> 18u) & 3u;
+    if ((LineWord(0u, line, kLCDVRAMMap) & (1u << displayBank)) == 0u)
+        return 0u;
+
+    uint byteAddress = WrapLCDCByte(line * 512u + x * 2u);
+    uint reference = NativeCaptureReferenceForPhysicalAddress(
+        line, displayBank, byteAddress, LineWord(0u, line, kCaptureCnt));
+    if (reference == 0u)
+        return 0u;
+
+    uint representative = RepresentativeSubpixel();
+    uint canonical = CaptureRawFromColor6(LoadNativeCaptureSidecar(
+        reference, representative, representative));
+    // Identity is the primary validity source. This canonical comparison is
+    // a fail-closed corruption guard and also makes a zero structured
+    // CaptureReference diagnostically identify a representative mismatch.
+    return (canonical & 0x7FFFu) == (compact & 0x7FFFu)
+        ? reference : 0u;
+}
 
 uint DisplayPixel(
     uint screen, uint engine, uint line, int x,
@@ -1552,25 +1675,16 @@ uint DisplayPixel(
             return 0u;
         uint compact = LCD16(line, bank, line * 512u + uint(x) * 2u);
         uint color = ConvertVRAMDisplay(compact);
-        uint reference = NativeCaptureReference(engine, line, uint(x));
+        uint reference = NativeVRAMDisplayCaptureReference(
+            engine, line, uint(x), compact);
         if ((reference & 0x80000000u) != 0u)
         {
-            uint representative = RepresentativeSubpixel();
-            uint canonical = CaptureRawFromColor6(
-                LoadNativeCaptureSidecar(
-                    reference, representative, representative));
-            // VRAM display ignores LCDC bit 15. Admit the retained sidecar
-            // only when its canonical sample agrees with the current native
-            // RGB555 word, then preserve the requested subpixel sample.
-            if ((canonical & 0x7FFFu) == (compact & 0x7FFFu))
-            {
-                uint highRes = LoadNativeCaptureSidecar(
-                    reference,
-                    outputX % uint(ScaleFactor),
-                    outputY % uint(ScaleFactor));
-                color = PackColor6(
-                    Color6R(highRes), Color6G(highRes), Color6B(highRes), 0u);
-            }
+            uint highRes = LoadNativeCaptureSidecar(
+                reference,
+                outputX % uint(ScaleFactor),
+                outputY % uint(ScaleFactor));
+            color = PackColor6(
+                Color6R(highRes), Color6G(highRes), Color6B(highRes), 0u);
         }
         return ApplyMasterNative(
             color, LineWord(engine, line, kMasterBrightness));
@@ -1598,45 +1712,15 @@ uint ToBgra8Native(uint color)
 uint NativeCaptureReferenceForSourceB(
     uint line, uint bank, uint address, uint captureCnt)
 {
-    uint halfwordAddress = (address >> 1u) & 0xFFFFu;
-    uint state = NativeHighResCaptureState(bank, halfwordAddress);
-    bool pendingWrite = (state & kHighResCapturePendingWriteBit) != 0u;
-    bool committed = (state & kHighResCaptureValidBit) != 0u;
-    if (!pendingWrite && !committed)
-        return 0u;
-
-    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
-    if (pendingWrite)
-    {
-        uint sizeCode = (captureCnt >> 20u) & 3u;
-        uint width = sizeCode == 0u ? 128u : 256u;
-        uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
-        uint destinationBank = (captureCnt >> 16u) & 3u;
-        uint packedLatch = LineWord(0u, line, kSpriteLatchValid);
-        uint captureStart = (packedLatch >> 8u) & 0xFFu;
-        uint destinationAddress = WrapLCDCHalfword(
-            CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
-        uint relative = (halfwordAddress - destinationAddress) & 0xFFFFu;
-        uint captureLine = relative / width;
-        const bool wasWrittenEarlier = bank == destinationBank
-            && captureStart != 0xFFu
-            && captureLine >= captureStart
-            && captureLine < line
-            && captureLine < height;
-        if (wasWrittenEarlier)
-            version ^= 1u;
-        else if (!committed)
-            return 0u;
-    }
-    return 0x80000000u | (version << 30u) | (bank << 28u)
-        | halfwordAddress;
+    return NativeCaptureReferenceForPhysicalAddress(
+        line, bank, address, captureCnt);
 }
 
 uint CaptureSourceB(
     uint line, uint x, uint captureCnt, uint outputX, uint sampleY)
 {
     if ((captureCnt & (1u << 25u)) != 0u)
-        return FIFO16(line, x);
+        return CaptureColor6FromRaw(FIFO16(line, x));
 
     uint dispCnt = LineWord(0u, line, kDispCnt);
     uint bank = (dispCnt >> 18u) & 3u;
@@ -1665,13 +1749,13 @@ uint CaptureSourceB(
             reference, representative, representative));
         if (canonical == compact)
         {
-            return CaptureRawFromColor6(LoadNativeCaptureSidecar(
+            return LoadNativeCaptureSidecar(
                 reference,
                 outputX % uint(ScaleFactor),
-                sampleY));
+                sampleY);
         }
     }
-    return compact;
+    return CaptureColor6FromRaw(compact);
 }
 
 uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
@@ -1680,68 +1764,21 @@ uint CaptureCompositeRaw(uint sourceA, uint sourceB, uint captureCnt)
     if (mode == 0u)
         return CaptureRawFromColor6(sourceA);
     if (mode == 1u)
-        return sourceB;
+        return CaptureRawFromColor6(sourceB);
 
     uint eva = min(captureCnt & 0x1Fu, 16u);
     uint evb = min((captureCnt >> 8u) & 0x1Fu, 16u);
     uint aA = ((sourceA >> 24u) != 0u) ? 1u : 0u;
-    uint aB = (sourceB >> 15u) & 1u;
+    uint aB = ((sourceB >> 24u) != 0u) ? 1u : 0u;
     uint r = ((Color6R(sourceA) >> 1u) * aA * eva
-        + (sourceB & 0x1Fu) * aB * evb + 8u) >> 4u;
+        + (Color6R(sourceB) >> 1u) * aB * evb + 8u) >> 4u;
     uint g = ((Color6G(sourceA) >> 1u) * aA * eva
-        + ((sourceB >> 5u) & 0x1Fu) * aB * evb + 8u) >> 4u;
+        + (Color6G(sourceB) >> 1u) * aB * evb + 8u) >> 4u;
     uint b = ((Color6B(sourceA) >> 1u) * aA * eva
-        + ((sourceB >> 10u) & 0x1Fu) * aB * evb + 8u) >> 4u;
+        + (Color6B(sourceB) >> 1u) * aB * evb + 8u) >> 4u;
     uint a = (eva > 0u ? aA : 0u) | (evb > 0u ? aB : 0u);
     return min(r, 31u) | (min(g, 31u) << 5u)
         | (min(b, 31u) << 10u) | (a << 15u);
-}
-
-uint NativeCaptureReference(uint engine, uint line, uint x)
-{
-    if (engine != 0u)
-        return 0u;
-
-    uint packedLatch = LineWord(0u, line, kSpriteLatchValid);
-    uint captureStart = (packedLatch >> 8u) & 0xFFu;
-    if (captureStart == 0xFFu || line <= captureStart)
-        return 0u;
-
-    uint captureCnt = LineWord(0u, line, kCaptureCnt);
-    uint sizeCode = (captureCnt >> 20u) & 3u;
-    uint width = sizeCode == 0u ? 128u : 256u;
-    uint height = sizeCode == 0u ? 128u : 64u * sizeCode;
-    uint displayBank = (LineWord(0u, line, kDispCnt) >> 18u) & 3u;
-    uint destinationBank = (captureCnt >> 16u) & 3u;
-    if (displayBank != destinationBank
-        || (LineWord(0u, line, kLCDVRAMMap) & (1u << displayBank)) == 0u)
-        return 0u;
-
-    // Both values are DS word addresses.  The modulo preserves the LCDC
-    // 64-KiB bank wrap, while the line bound prevents the current capture line
-    // from reading its own not-yet-committed write.
-    uint displayAddress = WrapLCDCHalfword(line * 256u + x);
-    uint destinationAddress = WrapLCDCHalfword(
-        CaptureOffsetHalfwords((captureCnt >> 18u) & 3u));
-    uint relative = (displayAddress - destinationAddress) & 0xFFFFu;
-    uint captureLine = relative / width;
-    if (captureLine < captureStart || captureLine >= line || captureLine >= height)
-        return 0u;
-
-    uint state = NativeHighResCaptureState(displayBank, displayAddress);
-    bool pendingWrite = (state & kHighResCapturePendingWriteBit) != 0u;
-    bool committed = (state & kHighResCaptureValidBit) != 0u;
-    if (!pendingWrite && !committed)
-        return 0u;
-    // A capture writes the next sidecar version while this frame's display
-    // feedback reads the version produced for the already-completed capture
-    // lines. The segment-level pending bit makes same-bank read-before-write
-    // explicit without promoting neighbouring pixels in a physical block.
-    uint version = (state & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
-    if (pendingWrite)
-        version ^= 1u;
-    return 0x80000000u | (version << 30u) | (displayBank << 28u)
-        | displayAddress;
 }
 
 struct StructuredPixelState
@@ -1851,7 +1888,13 @@ StructuredPixelState CompositeSourceAExact(
     // as display-mode-off so Stage B does not apply master brightness twice.
     result.Below = DisplayPixel(
         screen, engine, line, int(x), x, line);
-    result.CaptureReference = NativeCaptureReference(engine, line, x);
+    if (displayMode == 2u && engine == 0u)
+    {
+        uint bank = (dispCnt >> 18u) & 3u;
+        uint compact = LCD16(line, bank, line * 512u + x * 2u);
+        result.CaptureReference = NativeVRAMDisplayCaptureReference(
+            engine, line, x, compact);
+    }
     result.LineMeta = kStructuredDisplayOff;
     return result;
 }
@@ -1956,15 +1999,6 @@ uint CaptureSourceA(uint line, uint x, uint outputX, uint sampleY)
     return StructuredCaptureSourceA(line, x, outputX, sampleY);
 }
 
-uint CaptureRawToColor6(uint color)
-{
-    return PackColor6(
-        (color & 0x1Fu) << 1u,
-        ((color >> 5u) & 0x1Fu) << 1u,
-        ((color >> 10u) & 0x1Fu) << 1u,
-        ((color >> 15u) & 1u) != 0u ? 31u : 0u);
-}
-
 void WriteNativeCaptureSample(
     uint line, uint x, uint outputX, uint sampleY)
 {
@@ -1991,15 +2025,21 @@ void WriteNativeCaptureSample(
         + line * width + x);
     uint provenance = NativeHighResCaptureState(
         destinationBank, address);
-    if ((provenance & kHighResCapturePendingWriteBit) == 0u)
+    if (!NativeHighResCapturePendingValid(destinationBank, address))
         return;
     uint version = (provenance & kHighResCaptureVersionBit) != 0u ? 1u : 0u;
     version ^= 1u;
     uint samplesPerPixel = uint(ScaleFactor) * uint(ScaleFactor);
     uint cell = ((version * 4u + destinationBank) * 65536u) + address;
     uint sampleIndex = sampleY * uint(ScaleFactor) + (outputX % uint(ScaleFactor));
+    uint mode = (captureCnt >> 29u) & 3u;
+    uint highRes = uint(ScaleFactor) == 1u
+        ? CaptureColor6FromRaw(first)
+        : mode == 0u ? firstA
+        : mode == 1u ? firstB
+        : CaptureColor6FromRaw(first);
     NativeCaptureSidecar[cell * samplesPerPixel + sampleIndex] =
-        CaptureRawToColor6(first);
+        CaptureSidecarColor(highRes);
 
     // The compact LCDC mirror remains the authoritative source for a later
     // CPU readback.  One invocation owns each pair, so no two shader lanes

@@ -185,8 +185,22 @@ void Renderer::MarkCaptureCpuCoherent(
                 static_cast<unsigned long long>(nativeHash));
         }
 #endif
+        const bool contentPreserved =
+            reason == CaptureAuthorityTransitionReason::NativeReadbackMaterialized
+            || reason == CaptureAuthorityTransitionReason::SavestateSave;
+        const CaptureBlockProvenance retained = provenance;
         provenance = {};
         provenance.Owner = CaptureOwner::CpuCoherent;
+        if (contentPreserved)
+        {
+            // Materialization changes authority, not content. Retain the
+            // semantic identity so a high-resolution derived sidecar remains
+            // admissible until an actual overlapping write or lifecycle reset.
+            provenance.Epoch = retained.Epoch;
+            provenance.SemanticFrame = retained.SemanticFrame;
+            provenance.CaptureGeneration = retained.CaptureGeneration;
+            provenance.CompletionValue = retained.CompletionValue;
+        }
     }
     ++CaptureProvenanceSerial;
 }
@@ -412,6 +426,13 @@ void GPU::Reset() noexcept
     memset(VRAMPtr_BOBJ, 0, sizeof(VRAMPtr_BOBJ));
 
     memset(VRAMCaptureBlockFlags, 0, sizeof(VRAMCaptureBlockFlags));
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    CaptureDiagnosticGapFrames = 0u;
+    CaptureDiagnosticLastGapFrames = 0u;
+    CaptureDiagnosticPostGapFrames = 0u;
+    CaptureDiagnosticFrame = 0u;
+    CaptureDiagnosticSawWrite = false;
+#endif
 
     memset(VRAMCBF_ABG, 0, sizeof(VRAMCBF_ABG));
     memset(VRAMCBF_AOBJ, 0, sizeof(VRAMCBF_AOBJ));
@@ -551,6 +572,13 @@ void GPU::DoSavestate(Savestate* file) noexcept
     Rend->PostSavestate();
     if (!file->Saving)
     {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        CaptureDiagnosticGapFrames = 0u;
+        CaptureDiagnosticLastGapFrames = 0u;
+        CaptureDiagnosticPostGapFrames = 0u;
+        CaptureDiagnosticFrame = 0u;
+        CaptureDiagnosticSawWrite = false;
+#endif
         // Native mirrors belong to the pre-load renderer epoch. The loaded
         // CPU VRAM is the only authoritative copy until a new semantic native
         // submission publishes fresh provenance.
@@ -1019,7 +1047,9 @@ void GPU::MapVRAM_CD(u32 bank, u8 cnt) noexcept
         }
     }
 
-    // TODO sync capture blocks if we get mapped to ARM7?
+    // Mapping alone does not change capture content. ARM7 reads/writes pass
+    // through ReadVRAM_ARM7/WriteVRAM_ARM7, which materialize or invalidate
+    // the exact physical capture block on the actual access.
     RecordGPU2DWrite(GPU2DWriteKind::Mapping, bank, 0u);
 }
 
@@ -1589,6 +1619,10 @@ void GPU::StartScanline(u32 line) noexcept
 
         Rend->VBlank();
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        LogCaptureGapLifecycle();
+#endif
+
         if (CaptureEnable)
         {
             CaptureCnt &= ~(1<<31);
@@ -1625,6 +1659,49 @@ void GPU::StartScanline(u32 line) noexcept
 
     NDS.ScheduleEvent(Event_LCD, true, HBLANK_CYCLES, LCD_StartHBlank, line);
 }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+void GPU::LogCaptureGapLifecycle() noexcept
+{
+    ++CaptureDiagnosticFrame;
+    if (!CaptureEnable)
+    {
+        if (CaptureDiagnosticSawWrite
+            && CaptureDiagnosticGapFrames != 0xFFFFFFFFu)
+        {
+            ++CaptureDiagnosticGapFrames;
+        }
+        return;
+    }
+
+    if (CaptureDiagnosticSawWrite && CaptureDiagnosticGapFrames != 0u)
+    {
+        CaptureDiagnosticLastGapFrames = CaptureDiagnosticGapFrames;
+        CaptureDiagnosticPostGapFrames = 4u;
+    }
+    CaptureDiagnosticSawWrite = true;
+    CaptureDiagnosticGapFrames = 0u;
+    if (CaptureDiagnosticPostGapFrames == 0u)
+        return;
+    --CaptureDiagnosticPostGapFrames;
+
+    const u16* c = &VRAMCaptureBlockFlags[2u << 2u];
+    const u16* d = &VRAMCaptureBlockFlags[3u << 2u];
+    Platform::Log(
+        Platform::LogLevel::Info,
+        "[GPU2DCaptureGap] backend=%s event=post_gap frame=%llu gapFrames=%u "
+        "CaptureEnable=1 CaptureCnt=0x%08X "
+        "flagsC=%04X,%04X,%04X,%04X flagsD=%04X,%04X,%04X,%04X "
+        "traceRemaining=%u\n",
+        Rend ? Rend->GetCaptureBackendName() : "None",
+        static_cast<unsigned long long>(CaptureDiagnosticFrame),
+        CaptureDiagnosticLastGapFrames,
+        CaptureCnt,
+        c[0], c[1], c[2], c[3],
+        d[0], d[1], d[2], d[3],
+        CaptureDiagnosticPostGapFrames);
+}
+#endif
 
 
 void GPU::Restart3DFrame() noexcept
@@ -2010,11 +2087,24 @@ void GPU::CheckCaptureEnd()
 
 void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
 {
+    const u32 bank = block >> 2;
+    const u32 physicalBlock = block & 0x3u;
     u16 flags = VRAMCaptureBlockFlags[block];
-    if (!(flags & CBFlag_IsCapture)) return;
+    if (!(flags & CBFlag_IsCapture))
+    {
+        // A prior full-range materialization can retire the capture flag while
+        // preserving per-segment sidecar identity. Every later actual write
+        // must still invalidate exactly the touched physical block.
+        if (write && Rend)
+        {
+            Rend->InvalidateVRAMCapture(
+                bank, physicalBlock, 1u,
+                CaptureAuthorityTransitionReason::CpuWrite);
+        }
+        return;
+    }
 
     // sync the capture which contains this block
-    u32 bank = block >> 2;
     u32 start = flags & 0x3;
     u32 len = (flags >> 6) & 0x3;
 
@@ -2026,7 +2116,7 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
                 Rend->GetCaptureBlockProvenance(bank, start);
             const u64 cpuVRAMHash = HashCaptureVRAM(*this, bank, start, len);
             Rend->InvalidateVRAMCapture(
-                bank, start, len,
+                bank, physicalBlock, 1u,
                 CaptureAuthorityTransitionReason::CpuWrite);
             VRAMCBFlagsClear(bank, start);
             LogCaptureSync(
@@ -2057,10 +2147,11 @@ void GPU::SyncVRAMCaptureBlock(u32 block, bool write)
 
     if (write)
     {
-        // if this block was written to by the CPU, invalidate the entire capture
-        // the renderer will need to use the emulated VRAM contents
+        // The scoped readback materialized the full compact capture, but only
+        // this physical block is about to change. Preserve unrelated sidecar
+        // segments and invalidate the exact write target.
         Rend->InvalidateVRAMCapture(
-            bank, start, len,
+            bank, physicalBlock, 1u,
             CaptureAuthorityTransitionReason::CpuWrite);
         VRAMCBFlagsClear(bank, start);
         LogCaptureSync(
