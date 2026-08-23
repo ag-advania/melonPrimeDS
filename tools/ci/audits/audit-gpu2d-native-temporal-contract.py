@@ -344,8 +344,13 @@ def main() -> int:
             failures.append("Vulkan native GPU2D: presentation TryBeginFrame still gates semantics")
         require(vulkan_native, "ComposeFrames.BeginFrame()",
             "Vulkan native semantic command admission", failures)
-        require(text["dx12_renderer"], "semanticSlot.Commands.Begin()",
+        require(text["dx12_renderer"], "workSlot.Commands.Begin()",
             "DX12 native semantic command admission", failures)
+        for label in ("vulkan_renderer", "dx12_renderer"):
+            require(text[label], "struct ComposeWorkSlot",
+                f"{label} command-ring work ownership", failures)
+            require(text[label], "if (outputSlot || diagnosticReadback)",
+                f"{label} semantic-only Stage B suppression", failures)
 
         for label in ("vulkan_frame", "dx12_frame"):
             require(text[label], "Epoch", f"{label} frame epoch", failures)
@@ -765,6 +770,33 @@ def main() -> int:
             "capture ownership vectors", failures)
         require(text["native_contract_test"], "RunCaptureFeedbackVectors",
             "same-bank/display-mode2 vectors", failures)
+        require(text["native_header"], "CanBatchIndependentCaptureFrame",
+            "feedback-safe capture batching classifier", failures)
+        for needle in (
+            "captureMode != 0u",
+            "captureCnt != stableCaptureCnt",
+            "line >= height",
+            "input.Lines[line].LCDVRAMMap & destinationMask",
+        ):
+            require(text["native_header"], needle,
+                "feedback-safe capture batching guard", failures)
+        require(text["native_contract_test"], "RunIndependentCaptureBatchVectors",
+            "capture batching safety vectors", failures)
+        for needle in (
+            "blended/source-B capture incorrectly entered direct-3D batching",
+            "mid-frame capture descriptor change incorrectly entered batching",
+            "mid-frame destination remap incorrectly entered capture batching",
+        ):
+            require(text["native_contract_test"], needle,
+                "capture batching fallback vectors", failures)
+        for label in ("vulkan_renderer", "dx12_renderer"):
+            require(text[label],
+                "GPU2DNative::CanBatchIndependentCaptureFrame(input, finalFBValid)",
+                f"{label} feedback-safe capture batching gate", failures)
+        require(text["vulkan_shader"], "pc._pad & 128u",
+            "Vulkan batched capture shader mode", failures)
+        require(text["dx12_shader"], "DispatchPad&128u",
+            "DX12 batched capture shader mode", failures)
         require(text["native_contract_test"], "RunHighResCaptureProvenanceVectors",
             "high-resolution sidecar provenance vectors", failures)
         require(text["native_contract_test"],

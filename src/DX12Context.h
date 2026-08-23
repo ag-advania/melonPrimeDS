@@ -47,6 +47,7 @@ public:
         std::string AdapterName;
         u32 VendorId = 0;
         u32 DeviceId = 0;
+        u64 AdapterLuid = 0;
         u64 DriverVersion = 0;
         u64 DedicatedVideoMemory = 0;
         DX12::MemoryAdmissionSnapshot MemoryAdmission;
