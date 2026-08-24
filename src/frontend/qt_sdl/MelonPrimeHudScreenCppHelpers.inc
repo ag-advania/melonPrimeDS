@@ -25,7 +25,11 @@ static void MelonPrimeHud_PositionEditPanel(
     // activating the layout so WrapLongRows can make the final height honest.
     panel->setMinimumWidth(0);
     panel->setMaximumWidth(usableWidth);
-    const int naturalWidth = std::max(panel->sizeHint().width(), panel->minimumSizeHint().width());
+    // The natural hint is measured before the form's vertical scrollbar exists,
+    // so reserve its width here; otherwise the scrollbar takes it back out of
+    // the form the moment the content scrolls.
+    const int naturalWidth = std::max(panel->sizeHint().width(), panel->minimumSizeHint().width())
+        + MelonPrime::HudEditorForm::ReservedVerticalScrollBarWidth(*panel);
     const int desiredWidth = naturalWidth > MelonPrime::HudEditorPanelGeometry::kPreferredWidth
         ? naturalWidth
         : MelonPrime::HudEditorPanelGeometry::kPreferredWidth;
@@ -34,21 +38,7 @@ static void MelonPrimeHud_PositionEditPanel(
         panel->resize(panelW, panel->height());
     if (panel->layout())
         panel->layout()->activate();
-    auto constrainLabelsToViewport = [&]() {
-        if (auto* scroll = panel->findChild<QScrollArea*>())
-        {
-            const int viewportWidth = scroll->viewport()->width() > 0
-                ? scroll->viewport()->width()
-                : panelW;
-            MelonPrime::HudEditorForm::ConstrainWrappedFormLabels(*panel, viewportWidth);
-        }
-    };
-    constrainLabelsToViewport();
-    if (panel->layout())
-        panel->layout()->activate();
-    constrainLabelsToViewport();
-    if (panel->layout())
-        panel->layout()->activate();
+    MelonPrime::HudEditorForm::ConstrainPanelWidth(*panel, panelW, 2);
     if (adjustSize)
     {
         panel->adjustSize();
@@ -56,9 +46,7 @@ static void MelonPrimeHud_PositionEditPanel(
             panel->resize(panelW, panel->height());
         if (panel->layout())
             panel->layout()->activate();
-        constrainLabelsToViewport();
-        if (panel->layout())
-            panel->layout()->activate();
+        MelonPrime::HudEditorForm::ConstrainPanelWidth(*panel, panelW, 1);
     }
 
     const int maxH = std::max(120, bounds.height()
