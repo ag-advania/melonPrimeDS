@@ -426,7 +426,7 @@ private:
         DX12DescriptorRing& descriptors,
         D3D12_CPU_DESCRIPTOR_HANDLE canonicalCpu);
     bool BindStaticSrvTable(ID3D12GraphicsCommandList* list);
-    bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
+    bool BindSrvTable(ID3D12GraphicsCommandList* list, u32 textureHandle);
     void ResetFrameSrvCache() noexcept;
 
     // CPU-side span setup, ported verbatim from the OpenGL compute renderer.
@@ -574,6 +574,9 @@ private:
         "SRV cache capacity must be a power of two");
     std::array<FrameSrvCacheEntry, FrameSrvCacheCapacity> FrameSrvTables{};
     u32 FrameSrvCacheEpoch = 1;
+    static constexpr u32 PersistentTextureDescriptorCount = 4096;
+    std::array<std::array<u64, PersistentTextureDescriptorCount>,
+        RasterFramesInFlight> PersistentTextureDescriptorKeys{};
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
     D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};

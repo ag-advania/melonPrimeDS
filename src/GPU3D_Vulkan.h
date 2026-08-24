@@ -422,6 +422,8 @@ private:
 
     bool CreatePipelineCache();
     void SavePipelineCache();
+    [[nodiscard]] u32 NativeGPU2DWorkgroupWidth() const noexcept;
+    [[nodiscard]] u32 NativeGPU2DPipelineIndex() const noexcept;
     bool BuildPipeline(u32 pipelineIndex);
 
     // --- per-frame ---------------------------------------------------------
@@ -435,7 +437,9 @@ private:
         u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput,
         VkImageView directOutputTop = VK_NULL_HANDLE,
         VkImageView directOutputBottom = VK_NULL_HANDLE);
-    VkDescriptorSet AcquireTextureSet(u32 frameIndex, VkImageView textureView, VkSampler sampler);
+    VkDescriptorSet AcquireTextureSet(
+        u32 frameIndex, u64 textureIdentity,
+        VkImageView textureView, VkSampler sampler);
     void FillMetaUniform(MetaUniform& meta, u32 numVariants, u32 numPolygons) const;
 
     // Records a compute->compute dependency over `buffers`. Kept explicit
@@ -594,10 +598,10 @@ private:
     u32 TextureSetCursor = 0;
     struct TextureSetCacheEntry
     {
-        VkImageView View = VK_NULL_HANDLE;
+        u64 TextureIdentity = 0;
         VkSampler Sampler = VK_NULL_HANDLE;
         VkDescriptorSet Set = VK_NULL_HANDLE;
-        u32 Epoch = 0;
+        bool Valid = false;
     };
     static constexpr u32 TextureSetCacheCapacity = 4096;
     static_assert((TextureSetCacheCapacity & (TextureSetCacheCapacity - 1)) == 0,
@@ -605,10 +609,25 @@ private:
     static_assert(TextureSetCacheCapacity > MaxVariants + 1,
         "texture-set cache must retain an empty probe terminator");
     std::array<TextureSetCacheEntry, TextureSetCacheCapacity> TextureSetCache{};
-    u32 TextureSetCacheEpoch = 1;
-    VkImageView BoundTextureView = VK_NULL_HANDLE;
+    static constexpr u32 PersistentTextureSetCapacity = 1024;
+    u32 PersistentTextureSetCursor = 0;
+    u64 BoundTextureIdentity = ~0ull;
     VkSampler BoundSampler = VK_NULL_HANDLE;
     VkDescriptorSet BoundTextureSet = VK_NULL_HANDLE;
+
+    struct RasterizerDescriptorBinding
+    {
+        VkBuffer PresentationOutput = VK_NULL_HANDLE;
+        VkBuffer StructuredInput = VK_NULL_HANDLE;
+        VkImageView DirectOutputTop = VK_NULL_HANDLE;
+        VkImageView DirectOutputBottom = VK_NULL_HANDLE;
+        u64 ResourceGeneration = 0;
+        bool Valid = false;
+    };
+    std::array<RasterizerDescriptorBinding,
+        DescriptorFramesInFlight * RasterizerSetsPerFrame>
+        RasterizerDescriptorBindings{};
+    u64 RasterizerDescriptorResourceGeneration = 1;
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;

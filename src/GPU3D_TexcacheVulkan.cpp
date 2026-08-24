@@ -41,6 +41,7 @@ constexpr VkFormat TexcacheFormat = VK_FORMAT_R8G8B8A8_UINT;
 constexpr VkDeviceSize TexelBytes = 4;
 constexpr u32 kInitialPendingUploadCapacity = 64;
 constexpr u32 kInitialPendingCreateCapacity = 64;
+constexpr VkDeviceSize kTextureArenaBlockBytes = 32ull * 1024ull * 1024ull;
 
 TextureMaterializeFailureReason ClassifyVulkanTextureCreationFailure(
     VkResult result) noexcept
@@ -56,6 +57,122 @@ TextureMaterializeFailureReason ClassifyVulkanTextureCreationFailure(
 }
 
 } // namespace
+
+bool VulkanTextureHeap::AllocateArenaRange(
+    const VkMemoryRequirements& requirements, u32 memoryTypeIndex,
+    u32& blockIndex, VkDeviceSize& offset)
+{
+    const auto alignUp = [](VkDeviceSize value, VkDeviceSize alignment) {
+        return (value + alignment - 1u) & ~(alignment - 1u);
+    };
+    const auto tryBlock = [&](MemoryBlock& block, u32 index) {
+        if (block.MemoryTypeIndex != memoryTypeIndex)
+            return false;
+        for (std::size_t i = 0; i < block.Free.size(); ++i)
+        {
+            FreeRange& range = block.Free[i];
+            const VkDeviceSize aligned = alignUp(range.Offset, requirements.alignment);
+            if (aligned < range.Offset
+                || aligned + requirements.size > range.Offset + range.Size)
+                continue;
+            const VkDeviceSize before = aligned - range.Offset;
+            const VkDeviceSize after =
+                range.Offset + range.Size - aligned - requirements.size;
+            const VkDeviceSize oldOffset = range.Offset;
+            if (before != 0 && after != 0)
+            {
+                range = {oldOffset, before};
+                block.Free.insert(block.Free.begin() + i + 1,
+                    FreeRange{aligned + requirements.size, after});
+            }
+            else if (before != 0)
+                range = {oldOffset, before};
+            else if (after != 0)
+                range = {aligned + requirements.size, after};
+            else
+                block.Free.erase(block.Free.begin() + i);
+            blockIndex = index;
+            offset = aligned;
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::TextureArenaSuballocCount);
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::TextureArenaBytesUsed,
+                requirements.size);
+            return true;
+        }
+        return false;
+    };
+
+    for (u32 i = 0; i < MemoryBlocks.size(); ++i)
+    {
+        if (tryBlock(MemoryBlocks[i], i))
+            return true;
+    }
+
+    const VkPhysicalDeviceMemoryProperties& properties =
+        Device->GetMemoryProperties();
+    const u32 heapIndex = properties.memoryTypes[memoryTypeIndex].heapIndex;
+    const VkDeviceSize heapBytes = properties.memoryHeaps[heapIndex].size;
+    const VkDeviceSize policyBytes = heapBytes < (512ull * 1024ull * 1024ull)
+        ? 16ull * 1024ull * 1024ull : kTextureArenaBlockBytes;
+    const VkDeviceSize blockBytes = alignUp(
+        std::max(policyBytes, requirements.size), requirements.alignment);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = blockBytes;
+    allocInfo.memoryTypeIndex = memoryTypeIndex;
+    MemoryBlock block{};
+    const VkResult result = Device->Fns().AllocateMemory(
+        Device->GetHandle(), &allocInfo, nullptr, &block.Memory);
+    if (!MELONPRIME_VK_CHECK("vkAllocateMemory (texcache arena)", result))
+        return false;
+    block.Size = blockBytes;
+    block.MemoryTypeIndex = memoryTypeIndex;
+    block.Free.push_back({0u, blockBytes});
+    MemoryBlocks.push_back(std::move(block));
+    VulkanPerf::SetCounter(
+        VulkanPerf::Counter::TextureArenaBlockCount,
+        MemoryBlocks.size());
+    VulkanPerf::AddCounter(
+        VulkanPerf::Counter::TextureArenaBytesReserved, blockBytes);
+    return tryBlock(MemoryBlocks.back(), static_cast<u32>(MemoryBlocks.size() - 1u));
+}
+
+void VulkanTextureHeap::FreeArenaRange(const RetiredRange& retired)
+{
+    if (retired.Block >= MemoryBlocks.size() || retired.Size == 0)
+        return;
+    auto& free = MemoryBlocks[retired.Block].Free;
+    free.push_back({retired.Offset, retired.Size});
+    std::sort(free.begin(), free.end(), [](const FreeRange& a, const FreeRange& b) {
+        return a.Offset < b.Offset;
+    });
+    std::size_t write = 0;
+    for (const FreeRange& range : free)
+    {
+        if (write != 0 && free[write - 1].Offset + free[write - 1].Size == range.Offset)
+            free[write - 1].Size += range.Size;
+        else
+            free[write++] = range;
+    }
+    free.resize(write);
+}
+
+void VulkanTextureHeap::CollectRetiredRanges()
+{
+    if (!Frames || RetiredRanges.empty())
+        return;
+    const u64 completed = Frames->GetCompletedFrame();
+    std::size_t write = 0;
+    for (const RetiredRange& range : RetiredRanges)
+    {
+        if (range.RetireFrame <= completed)
+            FreeArenaRange(range);
+        else
+            RetiredRanges[write++] = range;
+    }
+    RetiredRanges.resize(write);
+}
 
 
 // ---------------------------------------------------------------------------
@@ -200,6 +317,11 @@ void VulkanTextureHeap::Shutdown()
                 fns.FreeMemory(handle, entry.Memory, nullptr);
             entry = Entry{};
         }
+        for (MemoryBlock& block : MemoryBlocks)
+        {
+            if (block.Memory != VK_NULL_HANDLE)
+                fns.FreeMemory(handle, block.Memory, nullptr);
+        }
     }
 
     Entries.clear();
@@ -207,6 +329,8 @@ void VulkanTextureHeap::Shutdown()
     PendingCreateSlots.clear();
     PendingBarriers.clear();
     PendingUploads.clear();
+    MemoryBlocks.clear();
+    RetiredRanges.clear();
     PendingUploadCount = 0;
     FrameCommandBuffer = VK_NULL_HANDLE;
     FrameStaging = nullptr;
@@ -220,6 +344,7 @@ void VulkanTextureHeap::Shutdown()
 
 void VulkanTextureHeap::BeginFrame(VkCommandBuffer cmd, Vk::StagingRing* staging) noexcept
 {
+    CollectRetiredRanges();
     FrameCommandBuffer = cmd;
     FrameStaging = staging;
     PendingBarriers.clear();
@@ -239,6 +364,9 @@ u32 VulkanTextureHeap::Reserve(u32 width, u32 height, u32 layers)
     entry.Layers = layers;
     entry.InUse = true;
     entry.PendingCreate = true;
+    entry.Identity = NextIdentity++;
+    if (NextIdentity == 0)
+        NextIdentity = 1;
 
     u32 slot;
     if (!FreeSlots.empty())
@@ -342,26 +470,54 @@ TextureMaterializeResult VulkanTextureHeap::MaterializePendingCreates()
                 TextureMaterializeFailureReason::InvalidMemoryType);
         }
 
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = requirements.size;
-        allocInfo.memoryTypeIndex = typeIndex;
-
-        const VkResult allocateResult = fns.AllocateMemory(
-            handle, &allocInfo, nullptr, &entry.Memory);
-        if (!MELONPRIME_VK_CHECK("vkAllocateMemory (texcache array)", allocateResult))
+        VkDeviceMemory bindMemory = VK_NULL_HANDLE;
+        VkDeviceSize bindOffset = 0u;
+        const bool useDedicated = requirements.size > kTextureArenaBlockBytes / 2u;
+        if (!useDedicated)
         {
-            fns.DestroyImage(handle, entry.Image, nullptr);
-            entry.Image = VK_NULL_HANDLE;
-            return HandleMaterializeFailure(
-                ClassifyVulkanTextureCreationFailure(allocateResult));
+            if (!AllocateArenaRange(
+                    requirements, typeIndex, entry.ArenaBlock, entry.ArenaOffset))
+            {
+                fns.DestroyImage(handle, entry.Image, nullptr);
+                entry.Image = VK_NULL_HANDLE;
+                return HandleMaterializeFailure(
+                    TextureMaterializeFailureReason::OutOfMemory);
+            }
+            entry.ArenaSize = requirements.size;
+            bindMemory = MemoryBlocks[entry.ArenaBlock].Memory;
+            bindOffset = entry.ArenaOffset;
+        }
+        else
+        {
+            VkMemoryAllocateInfo allocInfo{};
+            allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+            allocInfo.allocationSize = requirements.size;
+            allocInfo.memoryTypeIndex = typeIndex;
+            const VkResult allocateResult = fns.AllocateMemory(
+                handle, &allocInfo, nullptr, &entry.Memory);
+            if (!MELONPRIME_VK_CHECK(
+                    "vkAllocateMemory (texcache dedicated)", allocateResult))
+            {
+                fns.DestroyImage(handle, entry.Image, nullptr);
+                entry.Image = VK_NULL_HANDLE;
+                return HandleMaterializeFailure(
+                    ClassifyVulkanTextureCreationFailure(allocateResult));
+            }
+            entry.DedicatedMemory = true;
+            VulkanPerf::AddCounter(
+                VulkanPerf::Counter::TextureArenaDedicatedCount);
+            bindMemory = entry.Memory;
         }
 
         const VkResult bindResult = fns.BindImageMemory(
-            handle, entry.Image, entry.Memory, 0);
+            handle, entry.Image, bindMemory, bindOffset);
         if (!MELONPRIME_VK_CHECK("vkBindImageMemory (texcache array)", bindResult))
         {
-            fns.FreeMemory(handle, entry.Memory, nullptr);
+            if (entry.DedicatedMemory)
+                fns.FreeMemory(handle, entry.Memory, nullptr);
+            else
+                FreeArenaRange({entry.ArenaBlock, entry.ArenaOffset,
+                    entry.ArenaSize, 0u});
             fns.DestroyImage(handle, entry.Image, nullptr);
             entry.Memory = VK_NULL_HANDLE;
             entry.Image = VK_NULL_HANDLE;
@@ -387,7 +543,11 @@ TextureMaterializeResult VulkanTextureHeap::MaterializePendingCreates()
             handle, &viewInfo, nullptr, &entry.View);
         if (!MELONPRIME_VK_CHECK("vkCreateImageView (texcache array)", createViewResult))
         {
-            fns.FreeMemory(handle, entry.Memory, nullptr);
+            if (entry.DedicatedMemory)
+                fns.FreeMemory(handle, entry.Memory, nullptr);
+            else
+                FreeArenaRange({entry.ArenaBlock, entry.ArenaOffset,
+                    entry.ArenaSize, 0u});
             fns.DestroyImage(handle, entry.Image, nullptr);
             entry.Memory = VK_NULL_HANDLE;
             entry.Image = VK_NULL_HANDLE;
@@ -895,7 +1055,11 @@ void VulkanTextureHeap::RetireEntry(Entry& entry)
         Vk::DeferredDestroyQueue& queue = Frames->GetDestroyQueue();
         queue.Enqueue(Vk::DeferredObject::ImageView, entry.View, frame);
         queue.Enqueue(Vk::DeferredObject::Image, entry.Image, frame);
-        queue.Enqueue(Vk::DeferredObject::DeviceMemory, entry.Memory, frame);
+        if (entry.DedicatedMemory)
+            queue.Enqueue(Vk::DeferredObject::DeviceMemory, entry.Memory, frame);
+        else
+            RetiredRanges.push_back({entry.ArenaBlock, entry.ArenaOffset,
+                entry.ArenaSize, frame});
     }
     else if (Device && Device->IsValid())
     {
@@ -903,7 +1067,11 @@ void VulkanTextureHeap::RetireEntry(Entry& entry)
         VkDevice handle = Device->GetHandle();
         if (entry.View != VK_NULL_HANDLE) fns.DestroyImageView(handle, entry.View, nullptr);
         if (entry.Image != VK_NULL_HANDLE) fns.DestroyImage(handle, entry.Image, nullptr);
-        if (entry.Memory != VK_NULL_HANDLE) fns.FreeMemory(handle, entry.Memory, nullptr);
+        if (entry.DedicatedMemory && entry.Memory != VK_NULL_HANDLE)
+            fns.FreeMemory(handle, entry.Memory, nullptr);
+        else
+            FreeArenaRange({entry.ArenaBlock, entry.ArenaOffset,
+                entry.ArenaSize, 0u});
     }
 
     entry = Entry{};

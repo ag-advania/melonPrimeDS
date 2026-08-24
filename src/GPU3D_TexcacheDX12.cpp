@@ -36,6 +36,7 @@ constexpr u64 kRowPitchAlignment = D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;      // 2
 constexpr u64 kPlacementAlignment = D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT; // 512
 constexpr u32 kInitialPendingUploadCapacity = 64;
 constexpr u32 kInitialPendingCreateCapacity = 64;
+constexpr u64 kTextureArenaBlockBytes = 32ull * 1024ull * 1024ull;
 
 TextureMaterializeFailureReason ClassifyDx12TextureCreationFailure(HRESULT result) noexcept
 {
@@ -56,6 +57,90 @@ constexpr u64 AlignUp(u64 value, u64 alignment) noexcept
 }
 }
 
+bool DX12TextureHeap::AllocateArenaRange(
+    u64 size, u64 alignment, u32& blockIndex, u64& offset)
+{
+    const auto tryBlock = [&](ArenaBlock& block, u32 index) {
+        for (std::size_t i = 0; i < block.Free.size(); ++i)
+        {
+            FreeRange& range = block.Free[i];
+            const u64 aligned = AlignUp(range.Offset, alignment);
+            if (aligned < range.Offset || aligned + size > range.Offset + range.Size)
+                continue;
+            const u64 before = aligned - range.Offset;
+            const u64 after = range.Offset + range.Size - aligned - size;
+            const u64 oldOffset = range.Offset;
+            if (before != 0 && after != 0)
+            {
+                range = {oldOffset, before};
+                block.Free.insert(block.Free.begin() + i + 1,
+                    FreeRange{aligned + size, after});
+            }
+            else if (before != 0)
+                range = {oldOffset, before};
+            else if (after != 0)
+                range = {aligned + size, after};
+            else
+                block.Free.erase(block.Free.begin() + i);
+            blockIndex = index;
+            offset = aligned;
+            DX12Perf::AddCounter(DX12Perf::Counter::TextureArenaSuballocCount);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::TextureArenaBytesUsed, size);
+            return true;
+        }
+        return false;
+    };
+
+    for (u32 i = 0; i < ArenaBlocks.size(); ++i)
+    {
+        if (tryBlock(ArenaBlocks[i], i))
+            return true;
+    }
+
+    const u64 blockBytes = AlignUp(std::max(kTextureArenaBlockBytes, size), alignment);
+    D3D12_HEAP_DESC heapDesc{};
+    heapDesc.SizeInBytes = blockBytes;
+    heapDesc.Alignment = 0;
+    heapDesc.Properties.Type = D3D12_HEAP_TYPE_DEFAULT;
+    heapDesc.Properties.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heapDesc.Properties.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heapDesc.Flags = D3D12_HEAP_FLAG_ALLOW_ONLY_NON_RT_DS_TEXTURES;
+    ArenaBlock block{};
+    const HRESULT hr = Context->GetDevice()->CreateHeap(
+        &heapDesc, IID_PPV_ARGS(block.Heap.ReleaseAndGetAddressOf()));
+    if (FAILED(hr))
+        return false;
+    block.Heap->SetName(L"MelonPrime DX12 texture arena");
+    block.Size = blockBytes;
+    block.Free.push_back({0u, blockBytes});
+    ArenaBlocks.push_back(std::move(block));
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::TextureArenaBlockCount, ArenaBlocks.size());
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::TextureArenaBytesReserved, blockBytes);
+    return tryBlock(ArenaBlocks.back(), static_cast<u32>(ArenaBlocks.size() - 1u));
+}
+
+void DX12TextureHeap::FreeArenaRange(const RetiredAllocation& allocation)
+{
+    if (allocation.Block >= ArenaBlocks.size() || allocation.Size == 0)
+        return;
+    auto& free = ArenaBlocks[allocation.Block].Free;
+    free.push_back({allocation.Offset, allocation.Size});
+    std::sort(free.begin(), free.end(), [](const FreeRange& a, const FreeRange& b) {
+        return a.Offset < b.Offset;
+    });
+    std::size_t write = 0;
+    for (const FreeRange& range : free)
+    {
+        if (write != 0 && free[write - 1].Offset + free[write - 1].Size == range.Offset)
+            free[write - 1].Size += range.Size;
+        else
+            free[write++] = range;
+    }
+    free.resize(write);
+}
 void DX12TextureHeap::Init(DX12Context* context, DX12CommandContext* commands, DX12UploadRing* uploads)
 {
     Context = context;
@@ -83,6 +168,8 @@ void DX12TextureHeap::SetFrameResources(
         Graveyards[ActiveFrameSlot].size();
     SpillRetirePrefix[ActiveFrameSlot] =
         SpillUploadSlots[ActiveFrameSlot].size();
+    RetiredAllocationPrefix[ActiveFrameSlot] =
+        RetiredAllocations[ActiveFrameSlot].size();
 }
 
 void DX12TextureHeap::Shutdown()
@@ -97,8 +184,12 @@ void DX12TextureHeap::Shutdown()
         resources.clear();
     for (auto& resources : SpillUploadSlots)
         resources.clear();
+    for (auto& allocations : RetiredAllocations)
+        allocations.clear();
+    ArenaBlocks.clear();
     GraveyardRetirePrefix = { 0, 0 };
     SpillRetirePrefix = { 0, 0 };
+    RetiredAllocationPrefix = { 0, 0 };
     Context = nullptr;
     Commands = nullptr;
     Uploads = nullptr;
@@ -120,6 +211,9 @@ u32 DX12TextureHeap::Reserve(u32 width, u32 height, u32 layers)
     entry.Width = width;
     entry.Height = height;
     entry.Layers = layers;
+    entry.Generation = NextGeneration++;
+    if (NextGeneration == 0u)
+        NextGeneration = 1u;
     entry.State = D3D12_RESOURCE_STATE_COMMON;
     entry.InUse = true;
     entry.PendingCreate = true;
@@ -182,16 +276,61 @@ TextureMaterializeResult DX12TextureHeap::MaterializePendingCreates()
 
         DX12Perf::ScopedCpuTimer createTimer(
             DX12Perf::CpuMetric::TextureResourceCreate);
+        D3D12_RESOURCE_DESC resourceDesc{};
+        resourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        resourceDesc.Alignment = 0;
+        resourceDesc.Width = entry.Width;
+        resourceDesc.Height = entry.Height;
+        resourceDesc.DepthOrArraySize = static_cast<UINT16>(entry.Layers);
+        resourceDesc.MipLevels = 1;
+        resourceDesc.Format = DXGI_FORMAT_R8G8B8A8_UINT;
+        resourceDesc.SampleDesc.Count = 1;
+        resourceDesc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+        resourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+        const D3D12_RESOURCE_ALLOCATION_INFO allocation =
+            Context->GetDevice()->GetResourceAllocationInfo(
+                0u, 1u, &resourceDesc);
+
         HRESULT createResult = E_FAIL;
-        auto resource = Context->CreateTexture2D(
-            DXGI_FORMAT_R8G8B8A8_UINT,
-            entry.Width,
-            entry.Height,
-            entry.Layers,
-            D3D12_RESOURCE_FLAG_NONE,
-            D3D12_RESOURCE_STATE_COPY_DEST,
-            L"MelonPrime DX12 texcache array",
-            &createResult);
+        DX12::ComPtr<ID3D12Resource> resource;
+        u32 arenaBlock = ~0u;
+        u64 arenaOffset = 0u;
+        if (allocation.SizeInBytes != ~0ull
+            && AllocateArenaRange(
+                allocation.SizeInBytes, allocation.Alignment,
+                arenaBlock, arenaOffset))
+        {
+            createResult = Context->GetDevice()->CreatePlacedResource(
+                ArenaBlocks[arenaBlock].Heap.Get(), arenaOffset,
+                &resourceDesc, D3D12_RESOURCE_STATE_COPY_DEST,
+                nullptr, IID_PPV_ARGS(resource.ReleaseAndGetAddressOf()));
+            if (SUCCEEDED(createResult))
+            {
+                entry.ArenaBlock = arenaBlock;
+                entry.ArenaOffset = arenaOffset;
+                entry.ArenaSize = allocation.SizeInBytes;
+                entry.NeedsAliasingBarrier = true;
+            }
+            else
+            {
+                FreeArenaRange({arenaBlock, arenaOffset, allocation.SizeInBytes});
+            }
+        }
+        if (!resource)
+        {
+            resource = Context->CreateTexture2D(
+                DXGI_FORMAT_R8G8B8A8_UINT,
+                entry.Width,
+                entry.Height,
+                entry.Layers,
+                D3D12_RESOURCE_FLAG_NONE,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                L"MelonPrime DX12 texcache array fallback",
+                &createResult);
+            entry.CommittedFallback = true;
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::TextureArenaDedicatedCount);
+        }
         if (!resource)
         {
             Platform::Log(
@@ -204,6 +343,7 @@ TextureMaterializeResult DX12TextureHeap::MaterializePendingCreates()
         }
 
         entry.Resource = std::move(resource);
+        entry.Resource->SetName(L"MelonPrime DX12 texcache array");
         entry.State = D3D12_RESOURCE_STATE_COPY_DEST;
         entry.PhysicalReady = true;
         entry.PendingCreate = false;
@@ -410,6 +550,16 @@ bool DX12TextureHeap::RecordUpload(
     if (!list || !Commands->IsRecording())
         return false;
 
+    if (entry.NeedsAliasingBarrier)
+    {
+        D3D12_RESOURCE_BARRIER aliasing{};
+        aliasing.Type = D3D12_RESOURCE_BARRIER_TYPE_ALIASING;
+        aliasing.Aliasing.pResourceBefore = nullptr;
+        aliasing.Aliasing.pResourceAfter = entry.Resource.Get();
+        list->ResourceBarrier(1u, &aliasing);
+        entry.NeedsAliasingBarrier = false;
+    }
+
     const u64 srcRowBytes = static_cast<u64>(width) * 4u;
     const u64 dstRowPitch = AlignUp(srcRowBytes, kRowPitchAlignment);
     const u64 totalBytes = dstRowPitch * height;
@@ -558,7 +708,12 @@ void DX12TextureHeap::Destroy(u32 handle)
     // resource can be freed only through the existing graveyard path because
     // the previous submission may still reference it.
     if (entry.PhysicalReady && entry.Resource)
-        Graveyards[ActiveFrameSlot].push_back(std::move(entry.Resource));
+    Graveyards[ActiveFrameSlot].push_back(std::move(entry.Resource));
+    if (!entry.CommittedFallback && entry.ArenaBlock != ~0u)
+    {
+        RetiredAllocations[ActiveFrameSlot].push_back({
+            entry.ArenaBlock, entry.ArenaOffset, entry.ArenaSize});
+    }
 
     entry = Entry{};
     FreeSlots.push_back(handle - 1);
@@ -600,8 +755,17 @@ void DX12TextureHeap::CollectGarbage()
         Graveyards[ActiveFrameSlot], GraveyardRetirePrefix[ActiveFrameSlot]);
     retirePrefix(
         SpillUploadSlots[ActiveFrameSlot], SpillRetirePrefix[ActiveFrameSlot]);
+    const std::size_t allocationCount = std::min(
+        RetiredAllocationPrefix[ActiveFrameSlot],
+        RetiredAllocations[ActiveFrameSlot].size());
+    for (std::size_t i = 0; i < allocationCount; ++i)
+        FreeArenaRange(RetiredAllocations[ActiveFrameSlot][i]);
+    RetiredAllocations[ActiveFrameSlot].erase(
+        RetiredAllocations[ActiveFrameSlot].begin(),
+        RetiredAllocations[ActiveFrameSlot].begin() + allocationCount);
     GraveyardRetirePrefix[ActiveFrameSlot] = 0;
     SpillRetirePrefix[ActiveFrameSlot] = 0;
+    RetiredAllocationPrefix[ActiveFrameSlot] = 0;
 }
 
 } // namespace melonDS

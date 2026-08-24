@@ -609,11 +609,41 @@ void MarkDirtyRange(FrameInput& input, u32 offset, u32 size) noexcept
     input.DirtyRanges[input.DirtyRangeCount++] = {offset, size};
 }
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 u64 NowNanoseconds() noexcept
 {
     return static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
+#endif
+
+class ScopedRecorderTimer
+{
+public:
+    explicit ScopedRecorderTimer(u64& destination) noexcept
+        : Destination(destination)
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+        , Start(NowNanoseconds())
+#endif
+    {
+    }
+
+    ~ScopedRecorderTimer()
+    {
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+        Destination += NowNanoseconds() - Start;
+#endif
+    }
+
+    ScopedRecorderTimer(const ScopedRecorderTimer&) = delete;
+    ScopedRecorderTimer& operator=(const ScopedRecorderTimer&) = delete;
+
+private:
+    u64& Destination;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    u64 Start = 0u;
+#endif
+};
 
 void CopyChangedBlocks(
     FrameInput& input,
@@ -1713,11 +1743,13 @@ void FrameRecorder::Reset() noexcept
     CaptureAddressLogCount = 0u;
     CaptureAddressLogOverflow = 0u;
     CaptureAddressLog.fill(CaptureAddressDiagnostic{});
-    RecorderStartNs = 0u;
 }
 
 void FrameRecorder::BeginFrame(u64 frame) noexcept
 {
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    const u64 recorderStartNs = NowNanoseconds();
+#endif
     const FrameGeneration previousGeneration = Input.Generation;
     const bool hadPreviousFrame = Valid;
     if (!Valid)
@@ -1756,8 +1788,10 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
 
         // Retain the coherent memory mirrors so changed blocks can be copied
         // into both the CPU frame and the backend's device-resident mirror.
-        std::fill(Input.Lines.begin(), Input.Lines.end(), LineState{});
-        std::fill(Input.ScreenSource.begin(), Input.ScreenSource.end(), 0u);
+        // Line state and routing are retained across frames. CaptureLine()
+        // publishes an upload range only when the exact 68-word state changes;
+        // clearing them here would turn the retained renderer back into a
+        // full-frame upload path before the backend can reuse unchanged rows.
         std::fill(Input.TimelineRowIds.begin(), Input.TimelineRowIds.end(), 0xFFFFFFFFu);
         std::fill(Input.SpriteTimelineRowIds.begin(), Input.SpriteTimelineRowIds.end(), 0xFFFFFFFFu);
         Input.DirtyRangeCount = 0u;
@@ -1790,10 +1824,13 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     Input.LCDVRAMMap = GPU.VRAMMap_LCDC;
     RefreshCaptureProvenance();
     MarkDirtyRange(Input, 0u, PackedHeaderWords * sizeof(u32));
-    MarkDirtyRange(Input, PackedHeaderWords * sizeof(u32),
-        PackedLinesWords * sizeof(u32));
-    MarkDirtyRange(Input, PackedRouteBase * sizeof(u32),
-        PackedRouteWords * sizeof(u32));
+    if (!hadPreviousFrame)
+    {
+        MarkDirtyRange(Input, PackedHeaderWords * sizeof(u32),
+            PackedLinesWords * sizeof(u32));
+        MarkDirtyRange(Input, PackedRouteBase * sizeof(u32),
+            PackedRouteWords * sizeof(u32));
+    }
     Input.TimelineDeltaCount = 0u;
     Input.TimelineOverflow = 0u;
     std::fill(Input.TimelineRowIds.begin(), Input.TimelineRowIds.end(), 0xFFFFFFFFu);
@@ -1843,7 +1880,9 @@ void FrameRecorder::BeginFrame(u64 frame) noexcept
     CaptureAddressLogCount = 0u;
     CaptureAddressLogOverflow = 0u;
     CaptureAddressLog.fill(CaptureAddressDiagnostic{});
-    RecorderStartNs = NowNanoseconds();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    Input.Recorder.GPU2DRecorderNs += NowNanoseconds() - recorderStartNs;
+#endif
 }
 
 void FrameRecorder::CommitCurrentMemoryBaseline() noexcept
@@ -2028,15 +2067,19 @@ void FrameRecorder::RefreshCaptureProvenance() noexcept
     // legitimately be newer than CPU VRAM. Authority changes are event-driven,
     // never inferred from memcmp.
     const Renderer& renderer = GPU.GetRenderer();
+    NativeCaptureAuthorityPresent = false;
+    CaptureProvenanceSerialAtRefresh = renderer.GetCaptureProvenanceSerial();
     for (u32 bank = 0; bank < CapturePhysicalBanks; ++bank)
     {
         for (u32 physicalBlock = 0;
             physicalBlock < CapturePhysicalBlocksPerBank;
             ++physicalBlock)
         {
-            Input.LCDVRAMProvenance[
-                bank * CapturePhysicalBlocksPerBank + physicalBlock] =
-                renderer.GetCaptureBlockProvenance(bank, physicalBlock);
+            CaptureBlockProvenance& destination = Input.LCDVRAMProvenance[
+                bank * CapturePhysicalBlocksPerBank + physicalBlock];
+            destination = renderer.GetCaptureBlockProvenance(bank, physicalBlock);
+            NativeCaptureAuthorityPresent = NativeCaptureAuthorityPresent
+                || IsNativeCaptureOwner(destination.Owner);
         }
     }
 }
@@ -2062,6 +2105,20 @@ void FrameRecorder::CaptureNativeMappingForLine(
 {
     if (line >= ScreenHeight)
         return;
+
+    // All mapping rows are ownership masks. If the frame began with no native
+    // owner, no earlier capture line has created one, and the renderer's
+    // authority serial has not changed, the exact row is the retained zero
+    // row. Avoid rebuilding 384 BG/OBJ rows in ordinary 3D gameplay.
+    const bool wroteNativeCapture = std::any_of(
+        NativeCaptureWrittenBlocks.begin(), NativeCaptureWrittenBlocks.end(),
+        [](u8 blocks) { return blocks != 0u; });
+    if (!NativeCaptureAuthorityPresent && !wroteNativeCapture
+        && GPU.GetRenderer().GetCaptureProvenanceSerial()
+            == CaptureProvenanceSerialAtRefresh)
+    {
+        return;
+    }
 
     const u32 mode = spriteLatch ? 1u : 0u;
     std::array<u32, 64> source{};
@@ -2585,6 +2642,7 @@ void FrameRecorder::CaptureJournalWritesForLine(u32 line) noexcept
 
 void FrameRecorder::CaptureMemoryForLine(u32 line) noexcept
 {
+    ScopedRecorderTimer recorderTimer(Input.Recorder.GPU2DRecorderNs);
     if (line >= ScreenHeight)
         return;
 
@@ -2672,6 +2730,7 @@ void FrameRecorder::RecordSoftwareCaptureLine(u64 nanoseconds) noexcept
 
 void FrameRecorder::CaptureSpriteLatchForLine(u32 line) noexcept
 {
+    ScopedRecorderTimer recorderTimer(Input.Recorder.GPU2DRecorderNs);
     if (line >= ScreenHeight)
         return;
     if (!MemoryBaselineReady)
@@ -2707,7 +2766,9 @@ void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
     if (line >= ScreenHeight)
         return;
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const u64 dedupStartNs = NowNanoseconds();
+#endif
     constexpr u32 invalidRow = 0xFFFFFFFFu;
     const u32 oldRow = Input.SpriteTimelineRowIds[line];
     u32 row = invalidRow;
@@ -2805,7 +2866,9 @@ void FrameRecorder::FillSpriteTimelineLine(u32 line) noexcept
             sizeof(u32));
     }
     LastSpriteTimelineMutationSerial = Input.TimelineMutationSerial;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     Input.Recorder.SpriteTimelineRowDedupNs += NowNanoseconds() - dedupStartNs;
+#endif
 }
 
 void FrameRecorder::ApplyPendingSpriteLatch() noexcept
@@ -2929,7 +2992,9 @@ void FrameRecorder::FillTimelineLine(u32 line) noexcept
     if (line >= ScreenHeight)
         return;
 
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const u64 dedupStartNs = NowNanoseconds();
+#endif
     constexpr u32 invalidRow = 0xFFFFFFFFu;
     const u32 oldRow = Input.TimelineRowIds[line];
     u32 row = invalidRow;
@@ -3012,7 +3077,9 @@ void FrameRecorder::FillTimelineLine(u32 line) noexcept
             sizeof(u32));
     }
     LastTimelineMutationSerial = Input.TimelineMutationSerial;
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     Input.Recorder.TimelineRowDedupNs += NowNanoseconds() - dedupStartNs;
+#endif
 }
 
 void FrameRecorder::CaptureLine(
@@ -3021,6 +3088,7 @@ void FrameRecorder::CaptureLine(
     u32 line,
     bool screenSwap) noexcept
 {
+    ScopedRecorderTimer recorderTimer(Input.Recorder.GPU2DRecorderNs);
     if (engine >= 2u || line >= ScreenHeight)
         return;
 
@@ -3030,11 +3098,12 @@ void FrameRecorder::CaptureLine(
         LineSeen[lineIndex] = true;
         ++EngineLineCount[engine];
     }
+    LineState& state = Input.Lines[engine * ScreenHeight + line];
+    const LineState previousState = state;
     CopyLineState(
-        Input.Lines[engine * ScreenHeight + line],
+        state,
         gpu2D,
         GPU.GPU3D.GetRenderXPos());
-    LineState& state = Input.Lines[engine * ScreenHeight + line];
     state.UnitEnabled = gpu2D.Enabled ? 1u : 0u;
     state.MasterBrightness = engine == 0u ? GPU.MasterBrightnessA : GPU.MasterBrightnessB;
     state.CaptureCnt = GPU.CaptureCnt;
@@ -3081,12 +3150,32 @@ void FrameRecorder::CaptureLine(
     // authoritative when a title changes routing within a frame.
     const u32 screenA = screenSwap ? 0u : 1u;
     const u32 screenB = screenA ^ 1u;
-    Input.ScreenSource[screenA * ScreenHeight + line] = 0u;
-    Input.ScreenSource[screenB * ScreenHeight + line] = 1u;
+    const auto publishRoute = [&](u32 screen, u32 source) {
+        const u32 routeIndex = screen * ScreenHeight + line;
+        if (Input.ScreenSource[routeIndex] == source)
+            return;
+        Input.ScreenSource[routeIndex] = source;
+        MarkDirtyRange(
+            Input,
+            (PackedRouteBase + routeIndex) * sizeof(u32),
+            sizeof(u32));
+    };
+    publishRoute(screenA, 0u);
+    publishRoute(screenB, 1u);
+
+    if (std::memcmp(&previousState, &state, sizeof(LineState)) != 0)
+    {
+        MarkDirtyRange(
+            Input,
+            (PackedHeaderWords
+                + static_cast<u32>(lineIndex) * PackedLineWords) * sizeof(u32),
+            sizeof(LineState));
+    }
 }
 
 void FrameRecorder::CaptureCaptureStateForLine(u32 line) noexcept
 {
+    ScopedRecorderTimer recorderTimer(Input.Recorder.GPU2DRecorderNs);
     if (line >= ScreenHeight || !LineSeen[line])
         return;
 
@@ -3094,6 +3183,7 @@ void FrameRecorder::CaptureCaptureStateForLine(u32 line) noexcept
     // emulated register event later in the same line. The native capture
     // shader must sample the state at the actual capture write boundary.
     LineState& state = Input.Lines[line];
+    const LineState previousState = state;
     const bool captureEnabled = GPU.CaptureEnable;
     const u32 captureCnt = GPU.CaptureCnt;
     const bool captureStarted = captureEnabled
@@ -3127,10 +3217,13 @@ void FrameRecorder::CaptureCaptureStateForLine(u32 line) noexcept
     CaptureNativeMappingForLine(line, false);
     CommitNativeCaptureWriteAheadForLine(line);
 
-    // BeginFrame() already marks the complete packed header and line-state
-    // ranges dirty before this late line-boundary sample. Do not add a new
-    // per-line upload range here: this helper is an oracle-side state refresh,
-    // not a request for an additional native upload.
+    if (std::memcmp(&previousState, &state, sizeof(LineState)) != 0)
+    {
+        MarkDirtyRange(
+            Input,
+            (PackedHeaderWords + line * PackedLineWords) * sizeof(u32),
+            sizeof(LineState));
+    }
 }
 
 void FrameRecorder::BeginCaptureAddressDiagnostic(
@@ -3409,11 +3502,7 @@ void FrameRecorder::SnapshotEngine(u32 engine, u32 line) noexcept
 
 void FrameRecorder::FinalizeMemory() noexcept
 {
-    if (RecorderStartNs != 0u)
-    {
-        Input.Recorder.GPU2DRecorderNs += NowNanoseconds() - RecorderStartNs;
-        RecorderStartNs = 0u;
-    }
+    ScopedRecorderTimer recorderTimer(Input.Recorder.GPU2DRecorderNs);
     FinalizeCaptureAddressDiagnostics();
     FinalizeMappedCaptureDiagnostics();
     if (EngineLineCount[0] != ScreenHeight || EngineLineCount[1] != ScreenHeight)

@@ -273,6 +273,7 @@ struct DX12Renderer3D::OutputState
         u32* StructuredReadbackMapped = nullptr;
         u32* NativeMapped = nullptr;
         GPU2DNative::FrameGeneration UploadedNativeGeneration{};
+        GPU2DNative::SemanticLineCache SemanticLines{};
         bool NativeUploadInitialized = false;
 
         bool EnsureDiagnosticResources(
@@ -821,6 +822,7 @@ void DX12Renderer3D::ResetInternal(bool preservePresentation)
         for (OutputState::ComposeWorkSlot& slot : ComposedOutput->WorkSlots)
         {
             slot.UploadedNativeGeneration = {};
+            slot.SemanticLines.Reset();
             slot.NativeUploadInitialized = false;
         }
     }
@@ -2333,11 +2335,62 @@ bool DX12Renderer3D::WaitForQueueIdle()
     return ActiveRasterFrame().Commands.WaitQueueIdle();
 }
 
-bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture)
+bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, u32 textureHandle)
 {
     DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
+    const DX12TextureHeap::Entry* textureEntry =
+        TextureHeap.Lookup(textureHandle);
+    ID3D12Resource* texture = textureEntry
+        ? textureEntry->Resource.Get() : DummyTexture.Get();
     if (!texture)
-        texture = DummyTexture.Get();
+        return false;
+
+    if (textureHandle < PersistentTextureDescriptorCount)
+    {
+        const u64 key = textureEntry
+            ? (static_cast<u64>(textureEntry->Generation) << 32u)
+                | textureHandle
+            : 1u;
+        u64& cachedKey =
+            PersistentTextureDescriptorKeys[CurrentRasterFrameIndex][textureHandle];
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu =
+            ActiveRasterFrame().Descriptors.GetCpu(textureHandle);
+        D3D12_GPU_DESCRIPTOR_HANDLE gpu =
+            ActiveRasterFrame().Descriptors.GetGpu(textureHandle);
+        if (!cpu.ptr || !gpu.ptr)
+            return false;
+        if (cachedKey != key)
+        {
+            D3D12_RESOURCE_DESC texDesc = texture->GetDesc();
+            D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+            desc.Format = DXGI_FORMAT_R8G8B8A8_UINT;
+            desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+            desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            desc.Texture2DArray.MostDetailedMip = 0;
+            desc.Texture2DArray.MipLevels = 1;
+            desc.Texture2DArray.FirstArraySlice = 0;
+            desc.Texture2DArray.ArraySize = texDesc.DepthOrArraySize;
+            desc.Texture2DArray.PlaneSlice = 0;
+            desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+            Context->GetDevice()->CreateShaderResourceView(texture, &desc, cpu);
+            cachedKey = key;
+            DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCreateCount);
+            DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::PersistentDescriptorCreateCount);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::PersistentDescriptorMissCount);
+        }
+        else
+        {
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::PersistentDescriptorHitCount);
+        }
+        BoundSrvTexture = texture;
+        BoundSrvTable = gpu;
+        list->SetComputeRootDescriptorTable(kRootParamTextureSrvTable, gpu);
+        return true;
+    }
 
     if (texture == BoundSrvTexture && BoundSrvTable.ptr != 0)
     {
@@ -2921,6 +2974,9 @@ u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
     if (numPolygons == 0)
     {
         PolygonBatches[0] = { 0, 0 };
+        DX12Perf::AddCounter(DX12Perf::Counter::PolygonBatchCount);
+        DX12Perf::SetCounter(
+            DX12Perf::Counter::PolygonBatchCapacity, MaxWorkTiles);
         return 1;
     }
 
@@ -2929,6 +2985,7 @@ u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
     u32 count = 0;
     u32 batchCount = 0;
     u64 batchTiles = 0;
+    u64 maxBatchTiles = 0;
 
     for (u32 i = 0; i < numPolygons; ++i)
     {
@@ -2949,6 +3006,7 @@ u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
 
         if (count != 0 && batchTiles + polygonTiles > capacity)
         {
+            maxBatchTiles = std::max(maxBatchTiles, batchTiles);
             PolygonBatches[batchCount++] = { first, count };
             first = i;
             count = 0;
@@ -2961,7 +3019,17 @@ u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
     }
 
     if (count != 0)
+    {
+        maxBatchTiles = std::max(maxBatchTiles, batchTiles);
         PolygonBatches[batchCount++] = { first, count };
+    }
+    DX12Perf::AddCounter(DX12Perf::Counter::PolygonBatchCount, batchCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::PolygonBatchSplitCount,
+        batchCount > 0u ? batchCount - 1u : 0u);
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::PolygonBatchMaxTiles, maxBatchTiles);
+    DX12Perf::SetCounter(DX12Perf::Counter::PolygonBatchCapacity, capacity);
     return batchCount;
 }
 
@@ -3014,8 +3082,15 @@ void DX12Renderer3D::RenderFrame()
             return;
         }
         ClearBitmapDirty |= texcacheClearBitmapDirty;
+        // A dirty clear-image mirror only affects rendering while the clear
+        // image itself is enabled. Keep the dirty bits latched while disabled
+        // so a later enable uploads the exact current contents, but do not let
+        // that dormant work permanently defeat exact identical-frame reuse.
+        const bool clearBitmapRefreshRequired =
+            (GPU3D.RenderDispCnt & (1u << 14u)) != 0u
+            && ClearBitmapDirty != 0u;
         if (!textureCacheChanged && GPU3D.RenderFrameIdentical
-            && FinalFBHasValidFrame && ClearBitmapDirty == 0)
+            && FinalFBHasValidFrame && !clearBitmapRefreshRequired)
         {
             DX12Perf::AddCounter(DX12Perf::Counter::IdenticalFrames);
             DX12Perf::MaybeReport();
@@ -3057,7 +3132,7 @@ void DX12Renderer3D::RenderFrame()
     // texture after Begin(): the begin has retired the prior frame and the
     // reset below releases this heap's deferred resources before one retry.
     auto resetFrameResources = [&] {
-        rasterFrame.Descriptors.Reset();
+        rasterFrame.Descriptors.Reset(PersistentTextureDescriptorCount);
         rasterFrame.Uploads.Reset();
         TextureHeap.CollectGarbage();
         BoundSrvTexture = nullptr;
@@ -3160,7 +3235,7 @@ void DX12Renderer3D::RenderFrame()
     }
 
     if (!BindFrameUavTable(list) || !BindStaticSrvTable(list) ||
-        !BindSrvTable(list, nullptr))
+        !BindSrvTable(list, 0u))
     {
         rasterFrame.Commands.Submit();
         SetRuntimeFailure("could not bind the frame descriptor tables");
@@ -3305,7 +3380,7 @@ void DX12Renderer3D::RenderFrame()
                     descriptorsValid = false;
                     break;
                 }
-                if (!BindSrvTable(list, texture ? texture->Resource.Get() : nullptr))
+                if (!BindSrvTable(list, variant.Texture))
                 {
                     descriptorsValid = false;
                     break;
@@ -4120,9 +4195,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const u32 workIndex = static_cast<u32>(
         input.Generation.Frame % kCompositorFramesInFlight);
     OutputState::ComposeWorkSlot& workSlot = state->WorkSlots[workIndex];
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const bool workSlotFencePending = !workSlot.Commands.IsIdle();
     const auto workSlotWaitStart = std::chrono::steady_clock::now();
+#endif
     ID3D12GraphicsCommandList* list = workSlot.Commands.Begin();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const auto workSlotWaitEnd = std::chrono::steady_clock::now();
     if (workSlotFencePending)
     {
@@ -4133,6 +4211,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                 workSlotWaitEnd - workSlotWaitStart).count()));
     }
+#endif
     if (!list)
     {
         SetRuntimeFailure("native GPU2D semantic command admission failed");
@@ -4271,6 +4350,24 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const bool semanticCaptureGenerationRegressed =
         uploadDecision.CaptureGenerationRegressed;
     const bool fullNativeUpload = uploadDecision.RequiresFullUpload();
+    const GPU2DNative::SemanticLinePlan semanticLinePlan =
+        GPU2DNative::BuildSemanticLinePlan(
+            input, workSlot.SemanticLines,
+            fullNativeUpload || input.CaptureEnable != 0u);
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::NativeGPU2DWorkgroupWidth, 256u);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeGPU2DSemanticRowsDirty,
+        semanticLinePlan.DirtyRows);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeGPU2DSemanticRowsReused,
+        semanticLinePlan.ReusedRows);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeGPU2DSemanticRunCount,
+        semanticLinePlan.RunCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeGPU2DObjPrepareGroups,
+        semanticLinePlan.DirtyRows);
     const GPU2DNative::UploadPlan uploadPlan = GPU2DNative::BuildUploadPlan(
         input, uploadedNativeGeneration, fullNativeUpload);
     DX12Perf::AddCounter(
@@ -4303,8 +4400,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     case GPU2DNative::FullUploadReason::None:
         break;
     }
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const u64 packStartNs = static_cast<u64>(std::chrono::duration_cast<
         std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+#endif
     u32* staging = nativeMapped;
     bool packedNativeInput = staging != nullptr;
     if (packedNativeInput)
@@ -4327,10 +4426,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("the native GPU2D input staging upload failed");
         return false;
     }
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const u64 packEndNs = static_cast<u64>(std::chrono::duration_cast<
         std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DPackNs,
         packEndNs - packStartNs);
+#endif
     DX12Perf::AddCounter(DX12Perf::Counter::RecorderBlocksScanned,
         input.Recorder.BlocksScanned);
     DX12Perf::AddCounter(DX12Perf::Counter::RecorderBytesScanned,
@@ -4543,6 +4644,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             GPU2DNative::CanBatchIndependentCaptureFrame(input, finalFBValid);
         if (batchIndependentCapture)
         {
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DCaptureRunCount);
             // The destination remains LCDC-only for the full frame, so it
             // cannot feed its own writes back through BG/OBJ. Submit all
             // logical lines before one frame-wide capture dispatch.
@@ -4553,13 +4656,13 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             constants.Pad = 32u
                 | (fuseObjRawLogical ? (16u | 64u) : 0u);
             SetDispatchConstants(list, constants);
-            list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
+            list->Dispatch(1u, 384u, 1u);
             if (!fuseObjRawLogical)
             {
                 InsertUavBarrier(list, BlendStateBuffer.Get());
                 constants.Pad = 16u;
                 SetDispatchConstants(list, constants);
-                list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
+                list->Dispatch(1u, 384u, 1u);
             }
 
             InsertUavBarrier(list, structuredInput.Get());
@@ -4568,7 +4671,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             SetDispatchConstants(list, constants);
             list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
             list->Dispatch(
-                DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
+                DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
                 GPU2DNative::ScreenHeight * static_cast<u32>(ScaleFactor), 1u);
             ID3D12Resource* captureOutputs[2] = {
                 BlendStateBuffer.Get(), CaptureSidecarBuffer.Get()};
@@ -4582,97 +4685,151 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         }
         else
         {
-        // Capture is an intra-frame feedback loop: render and commit one
-        // logical line before the capture line is evaluated. The expensive
-        // semantic stage remains 256x2 even at 4x/8x/16x.
-        u32 activeCaptureLines = 0u;
-        for (u32 lineNumber = 0; lineNumber < GPU2DNative::ScreenHeight; ++lineNumber)
-        {
-            const bool captureLineActive =
-                input.Lines[lineNumber].CaptureEnable != 0u;
-            const bool fuseObjRawLogical =
-                GPU2DNative::CanFuseObjRawLogicalLine(input, lineNumber);
-            constants.InterpSpanCount = lineNumber;
-            constants.Pad = 32u | 8u
-                | (fuseObjRawLogical ? (16u | 64u) : 0u);
-            SetDispatchConstants(list, constants);
-            list->SetPipelineState(PipelineGPU2DNative.Get());
-            list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
-            if (!fuseObjRawLogical)
+            const GPU2DNative::CaptureRunPlan capturePlan =
+                GPU2DNative::BuildCaptureRunPlan(input, finalFBValid);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DCaptureRunCount,
+                capturePlan.RunCount);
+            u64 dispatchCount = 0u;
+            u64 captureDispatchCount = 0u;
+            u64 captureBarrierCount = 0u;
+            for (u32 runIndex = 0u; runIndex < capturePlan.RunCount; ++runIndex)
             {
-                // OBJ mosaic may cross the 128-thread workgroup boundary.
-                // Keep the materialized raw plane only for those lines.
-                InsertUavBarrier(list, BlendStateBuffer.Get());
+                const GPU2DNative::CaptureLineRun& run =
+                    capturePlan.Runs[runIndex];
+                const bool fuseObjRawLogical =
+                    GPU2DNative::CanFuseObjRawCaptureRun(input, run);
+                if (run.Independent)
+                {
+                    list->SetPipelineState(PipelineGPU2DNative.Get());
+                    for (u32 screen = 0u; screen < 2u; ++screen)
+                    {
+                        constants.InterpSpanCount =
+                            screen * GPU2DNative::ScreenHeight + run.LineBase;
+                        constants.Pad = 32u | 256u
+                            | (fuseObjRawLogical ? (16u | 64u) : 0u);
+                        SetDispatchConstants(list, constants);
+                        list->Dispatch(1u, run.LineCount, 1u);
+                        ++dispatchCount;
+                    }
+                    if (!fuseObjRawLogical)
+                    {
+                        InsertUavBarrier(list, BlendStateBuffer.Get());
+                        ++captureBarrierCount;
+                        for (u32 screen = 0u; screen < 2u; ++screen)
+                        {
+                            constants.InterpSpanCount =
+                                screen * GPU2DNative::ScreenHeight + run.LineBase;
+                            constants.Pad = 16u | 256u;
+                            SetDispatchConstants(list, constants);
+                            list->Dispatch(1u, run.LineCount, 1u);
+                            ++dispatchCount;
+                        }
+                    }
 
-                constants.Pad = 16u | 8u; // native logical one-line pass
+                    ID3D12Resource* logicalOutputs[2] = {
+                        structuredInput.Get(), BlendStateBuffer.Get()};
+                    InsertUavBarriers(list, logicalOutputs, 2u);
+                    ++captureBarrierCount;
+                    constants.InterpSpanCount = run.LineBase;
+                    constants.Pad = 4u | 128u | 512u;
+                    SetDispatchConstants(list, constants);
+                    list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+                    list->Dispatch(
+                        DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
+                        run.LineCount * static_cast<u32>(ScaleFactor), 1u);
+                    ++dispatchCount;
+                    ++captureDispatchCount;
+                    ID3D12Resource* captureOutputs[2] = {
+                        BlendStateBuffer.Get(), CaptureSidecarBuffer.Get()};
+                    InsertUavBarriers(list, captureOutputs, 2u);
+                    ++captureBarrierCount;
+                    continue;
+                }
+
+                const u32 lineNumber = run.LineBase;
+                const bool captureLineActive =
+                    GPU2DNative::IsEffectiveCaptureLine(input, lineNumber);
+                constants.InterpSpanCount = lineNumber;
+                constants.Pad = 32u | 8u
+                    | (fuseObjRawLogical ? (16u | 64u) : 0u);
                 SetDispatchConstants(list, constants);
                 list->SetPipelineState(PipelineGPU2DNative.Get());
-                list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
+                list->Dispatch(1u, 2u, 1u);
+                ++dispatchCount;
+                if (!fuseObjRawLogical)
+                {
+                    InsertUavBarrier(list, BlendStateBuffer.Get());
+                    ++captureBarrierCount;
+                    constants.Pad = 16u | 8u;
+                    SetDispatchConstants(list, constants);
+                    list->Dispatch(1u, 2u, 1u);
+                    ++dispatchCount;
+                }
+                if (captureLineActive)
+                {
+                    ID3D12Resource* logicalOutputs[2] = {
+                        structuredInput.Get(), BlendStateBuffer.Get()};
+                    InsertUavBarriers(list, logicalOutputs, 2u);
+                    ++captureBarrierCount;
+                    constants.Pad = 4u;
+                    SetDispatchConstants(list, constants);
+                    list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+                    list->Dispatch(
+                        DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
+                        static_cast<u32>(ScaleFactor), 1u);
+                    ++dispatchCount;
+                    ++captureDispatchCount;
+                    ID3D12Resource* captureOutputs[2] = {
+                        BlendStateBuffer.Get(), CaptureSidecarBuffer.Get()};
+                    InsertUavBarriers(list, captureOutputs, 2u);
+                    ++captureBarrierCount;
+                }
             }
-            if (captureLineActive)
-            {
-                ++activeCaptureLines;
-                // Logical Stage A writes the immutable planes and reads the
-                // raw OBJ latch. Batch both UAV dependencies before the
-                // scaled capture pass consumes them.
-                ID3D12Resource* logicalOutputs[2] = {
-                    structuredInput.Get(), BlendStateBuffer.Get()};
-                InsertUavBarriers(list, logicalOutputs, 2u);
-                constants.Pad = 4u; // capture-only, one logical line
-                SetDispatchConstants(list, constants);
-                list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
-                list->Dispatch(
-                    DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
-                    static_cast<u32>(ScaleFactor), 1u);
-                ID3D12Resource* captureOutputs[2] = {
-                    BlendStateBuffer.Get(), CaptureSidecarBuffer.Get()};
-                InsertUavBarriers(list, captureOutputs, 2u);
-                DX12Perf::AddCounter(
-                    DX12Perf::Counter::NativeGPU2DCaptureDispatchCount);
-                DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount,
-                    fuseObjRawLogical ? 2u : 3u);
-            }
-            else
-            {
-                DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount,
-                    fuseObjRawLogical ? 1u : 2u);
-            }
-        }
-        // The sidecar is consumed only after the complete Stage A sequence;
-        // one boundary is sufficient for all active capture lines.
-        if (activeCaptureLines != 0u)
-        {
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DDispatchCount, dispatchCount);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DCaptureDispatchCount,
+                captureDispatchCount);
             DX12Perf::AddCounter(
                 DX12Perf::Counter::NativeGPU2DCaptureBarrierCount,
-                static_cast<u64>(activeCaptureLines) + 1u);
-        }
+                captureBarrierCount);
         }
         workSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, true));
     }
     else
     {
-        const bool fuseObjRawLogical =
-            GPU2DNative::CanFuseObjRawLogicalFrame(input);
         list->SetPipelineState(PipelineGPU2DNative.Get());
-        constants.InterpSpanCount = 0u;
-        constants.Pad = 32u | (fuseObjRawLogical ? (16u | 64u) : 0u);
-        SetDispatchConstants(list, constants);
         workSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, false));
-        list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
+        u64 dispatchCount = 0u;
+        for (u32 runIndex = 0u;
+            runIndex < semanticLinePlan.RunCount; ++runIndex)
+        {
+            const GPU2DNative::SemanticLineRun& run =
+                semanticLinePlan.Runs[runIndex];
+            const bool fuseObjRawLogical =
+                GPU2DNative::CanFuseObjRawLogicalRun(input, run);
+            constants.InterpSpanCount = run.RowBase;
+            constants.Pad = 32u | 256u
+                | (fuseObjRawLogical ? (16u | 64u) : 0u);
+            SetDispatchConstants(list, constants);
+            list->Dispatch(1u, run.RowCount, 1u);
+            ++dispatchCount;
+            if (!fuseObjRawLogical)
+            {
+                InsertUavBarrier(list, BlendStateBuffer.Get());
+                constants.Pad = 16u | 256u;
+                SetDispatchConstants(list, constants);
+                list->Dispatch(1u, run.RowCount, 1u);
+                ++dispatchCount;
+            }
+        }
         workSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, true));
-        if (!fuseObjRawLogical)
-        {
-            InsertUavBarrier(list, BlendStateBuffer.Get());
-
-            constants.Pad = 16u;
-            SetDispatchConstants(list, constants);
-            list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
-        }
-        DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount,
-            fuseObjRawLogical ? 1u : 2u);
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::NativeGPU2DDispatchCount, dispatchCount);
     }
     workSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DLogical, true));

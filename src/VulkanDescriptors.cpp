@@ -339,6 +339,16 @@ VkDescriptorSet DescriptorPool::GetTextureSet(u32 frameIndex, u32 slot) const no
     return TextureSets[index];
 }
 
+VkDescriptorSet DescriptorPool::GetPersistentTextureSet(u32 slot) const noexcept
+{
+    if (slot >= Sizing.PersistentTextureSets)
+        return VK_NULL_HANDLE;
+    const size_t index = static_cast<size_t>(Sizing.FrameTextureSets()) + slot;
+    if (index >= TextureSets.size())
+        return VK_NULL_HANDLE;
+    return TextureSets[index];
+}
+
 
 // ---------------------------------------------------------------------------
 // DescriptorWriter

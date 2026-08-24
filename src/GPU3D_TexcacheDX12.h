@@ -50,6 +50,12 @@ public:
         u32 Width = 0;
         u32 Height = 0;
         u32 Layers = 0;
+        u32 Generation = 0;
+        u32 ArenaBlock = ~0u;
+        u64 ArenaOffset = 0;
+        u64 ArenaSize = 0;
+        bool CommittedFallback = false;
+        bool NeedsAliasingBarrier = false;
         // Tracked so uploads and shader reads insert the right barrier without
         // transitioning every array every frame.
         D3D12_RESOURCE_STATES State = D3D12_RESOURCE_STATE_COMMON;
@@ -120,6 +126,19 @@ public:
     }
 
 private:
+    struct FreeRange { u64 Offset = 0; u64 Size = 0; };
+    struct ArenaBlock
+    {
+        DX12::ComPtr<ID3D12Heap> Heap;
+        u64 Size = 0;
+        std::vector<FreeRange> Free;
+    };
+    struct RetiredAllocation
+    {
+        u32 Block = ~0u;
+        u64 Offset = 0;
+        u64 Size = 0;
+    };
     struct PendingUpload
     {
         u32 Handle = 0;
@@ -140,6 +159,9 @@ private:
     bool RecordUpload(u32 handle, u32 width, u32 height, u32 layer, const void* data);
     PendingUpload* AcquirePendingUpload(
         u32 handle, u32 width, u32 height, u32 layer, std::size_t words) noexcept;
+    bool AllocateArenaRange(
+        u64 size, u64 alignment, u32& block, u64& offset);
+    void FreeArenaRange(const RetiredAllocation& allocation);
 
     DX12Context* Context = nullptr;
     DX12CommandContext* Commands = nullptr;
@@ -150,15 +172,19 @@ private:
     // Only newly reserved logical entries are visited by materialization.
     std::vector<u32> PendingCreateSlots;
     std::vector<u32> PendingBarriers;
+    std::vector<ArenaBlock> ArenaBlocks;
     // The active prefix is drained by count; backing objects and decoded-word
     // high-watermarks stay allocated for reuse instead of churning each frame.
     std::vector<PendingUpload> PendingUploads;
     u32 PendingUploadCount = 0;
+    u32 NextGeneration = 1;
     // Oversized/overflow uploads stay alive until the selected frame slot's
     // Begin() retires its prior submission.
     std::array<std::vector<DX12::ComPtr<ID3D12Resource>>, 2> Graveyards;
+    std::array<std::vector<RetiredAllocation>, 2> RetiredAllocations;
     std::array<std::vector<DX12::ComPtr<ID3D12Resource>>, 2> SpillUploadSlots;
     std::array<std::size_t, 2> GraveyardRetirePrefix = { 0, 0 };
+    std::array<std::size_t, 2> RetiredAllocationPrefix = { 0, 0 };
     std::array<std::size_t, 2> SpillRetirePrefix = { 0, 0 };
     u32 ActiveFrameSlot = 0;
     bool CreationFailed = false;

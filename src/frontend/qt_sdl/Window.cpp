@@ -23,6 +23,9 @@
 #include <string.h>
 
 #include <optional>
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+#include <chrono>
+#endif
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -88,6 +91,9 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimeVideoBackend.h"
+#if defined(MELONPRIME_ENABLE_VULKAN)
+#include "VulkanPerf.h"
+#endif
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
 #include "MelonPrimeRendererSwitchStress.h"
 #endif
@@ -1470,7 +1476,16 @@ void MainWindow::beginVulkanLowLatencyFrame(
     melonDS::u64 targetFrameIntervalNs,
     melonDS::u64 logicalFrameId)
 {
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    const std::chrono::steady_clock::time_point panelLockStart =
+        std::chrono::steady_clock::now();
+#endif
     QMutexLocker panelLock(&screenPanelLock);
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
+    melonDS::VulkanPerf::AddDuration(
+        melonDS::VulkanPerf::CpuMetric::LowLatencyPanelLockWait,
+        panelLockStart);
+#endif
     if (panel)
     {
         panel->beginVulkanLowLatencyFrame(

@@ -21,7 +21,10 @@
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
+#include <condition_variable>
+#include <mutex>
 #include <string>
+#include <thread>
 
 #include "VulkanCommon.h"
 #include "VulkanDevice.h"
@@ -84,8 +87,9 @@ enum class VulkanNvidiaReflexMode : int
 // ---------
 // Initialize()/Shutdown()/SetSwapchain() run on whichever thread owns the
 // swapchain's lifetime, and every marker call runs on the presenting thread.
-// The two never overlap: the presenter recreates its swapchain from inside its
-// own BeginFrame(). Nothing here is internally synchronised.
+// The Off-mode sleep worker is the sole exception: it owns only the blocking
+// sleep/wait pair and publishes completion through the mutex/CV below. Every
+// swapchain/mode/lifetime transition drains that work before changing handles.
 //
 // Failure policy
 // --------------
@@ -156,7 +160,8 @@ public:
     //
     // Per emulated frame, in this order:
     //
-    //   BeginFrame()            latency sleep, before any input is read
+    //   BeginFrame()            synchronous latency sleep for On/OnBoost;
+    //                           adopt/queue overlapped WSI pacing for Off
     //   MarkInputSample()       immediately before the first input read
     //   MarkSimulationStart()   emulation begins
     //   MarkSimulationEnd()     emulation returned
@@ -209,11 +214,16 @@ public:
     // Records that this frame reached vkQueuePresentKHR. vkLatencySleepNV is
     // specified to be called once between presents, so a frame the presenter
     // skipped must not consume another sleep.
-    void NotifyPresented() noexcept { PresentedSinceSleep = true; }
+    void NotifyPresented() noexcept;
 
 private:
     bool CreateSleepSemaphore();
     bool ApplySleepMode();
+    bool StartOffModeSleepWorker();
+    void StopOffModeSleepWorker() noexcept;
+    void OffModeSleepWorkerMain() noexcept;
+    bool QueueOffModeSleep();
+    bool CompleteOffModeSleep();
     void SetMarker(VkLatencyMarkerNV marker);
     void DisableForRuntimeFailure(const char* operation, VkResult result);
     void Disable(std::string reason) noexcept;
@@ -239,6 +249,25 @@ private:
     bool RenderSubmitOpen = false;
     bool PresentOpen = false;
     bool PresentedSinceSleep = true;
+
+    // NVIDIA's sleep operation can spend about a millisecond inside the driver
+    // on some Windows systems even with minimumIntervalUs=0. In Off mode a
+    // persistent worker overlaps that WSI pacing with emulation/rendering and
+    // the presenting thread joins it immediately before Present. On/OnBoost
+    // retain the latency-first synchronous path required by those modes.
+    bool AsyncOffModeSleepEnabled = false;
+    std::thread OffModeSleepThread;
+    std::mutex OffModeSleepMutex;
+    std::condition_variable OffModeSleepCv;
+    bool OffModeSleepStop = false;
+    bool OffModeSleepRequest = false;
+    bool OffModeSleepRunning = false;
+    bool OffModeSleepReady = false;
+    bool OffModeSleepPrimedForNextFrame = false;
+    VkSwapchainKHR OffModeSleepSwapchain = VK_NULL_HANDLE;
+    u64 OffModeSleepValue = 0;
+    VkResult OffModeSleepCallResult = VK_SUCCESS;
+    VkResult OffModeSleepWaitResult = VK_SUCCESS;
 };
 
 } // namespace melonDS
