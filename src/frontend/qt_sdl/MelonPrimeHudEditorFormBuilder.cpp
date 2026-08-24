@@ -380,6 +380,14 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
     hlay->addWidget(off, 0);
     hlay->addWidget(btn, 0);
 
+    // QFormLayout's ExpandingFieldsGrow column-width distribution can still
+    // hand this row 1px less than its own minimumSizeHint on non-native
+    // chrome even after the spacing trim above (verified against real BSD
+    // CI: 0px margin clipped the swatch by 1px, +2px overshot the panel's
+    // right edge by 3px). +1px split the difference cleanly there.
+    if (!nativeChrome)
+        container->setMinimumWidth(container->minimumSizeHint().width() + 1);
+
     std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
     QObject::connect(on, &QRadioButton::toggled, &ctx.signalReceiver, [ctx, btn, kE](bool checked) {
         if (ctx.populating || !checked) return;
