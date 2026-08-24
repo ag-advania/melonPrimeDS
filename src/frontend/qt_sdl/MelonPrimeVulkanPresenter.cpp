@@ -73,6 +73,18 @@ bool PresenterTwoImageSwapchainExperimentEnabled() noexcept
     return EnvironmentEquals("MELONPRIME_VULKAN_SWAPCHAIN_IMAGE_COUNT", "2");
 }
 
+// Developer A/B only. VkSwapchainLatencyCreateInfoNV::latencyModeEnable is
+// normally chained whenever VK_NV_low_latency2 is present, so the user can
+// toggle Reflex at runtime without recreating the swapchain. That also leaves
+// NVIDIA's low-latency presentation path armed in every mode, which is a
+// candidate explanation for vkLatencySleepNV blocking ~one refresh period when
+// the frame rate is uncapped. This switch takes it back out so the two can be
+// measured apart; it must not become a shipping default without evidence.
+bool PresenterDisableSwapchainLatencyModeExperiment() noexcept
+{
+    return EnvironmentEquals("MELONPRIME_VULKAN_DISABLE_SWAPCHAIN_LATENCY_MODE", "1");
+}
+
 bool SplitQueueExclusiveExperimentRequested() noexcept
 {
     return EnvironmentEquals("MELONPRIME_VULKAN_SPLIT_QUEUE_EXCLUSIVE", "1");
@@ -1426,7 +1438,8 @@ bool VulkanPresenter::RecreateSwapchain(u32 requestedWidth, u32 requestedHeight)
     // so toggling the setting at runtime does not force a swapchain rebuild.
     // The struct must outlive the vkCreateSwapchainKHR call, hence this scope.
     VkSwapchainLatencyCreateInfoNV latencyInfo{};
-    if (Reflex.WantsSwapchainLatencyMode())
+    if (Reflex.WantsSwapchainLatencyMode()
+        && !PresenterDisableSwapchainLatencyModeExperiment())
     {
         latencyInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV;
         latencyInfo.latencyModeEnable = VK_TRUE;

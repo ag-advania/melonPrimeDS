@@ -31,9 +31,12 @@ def main() -> int:
 
     # T01/T02: the generic path must request visibility only after a successful
     # EndFrame. The failure block must never expose an unpresented child.
+    # noteFramePresented() gained epoch/serial parameters in 184539e63 (stall
+    # capture-preservation tracking), so match any argument list rather than
+    # the empty parens this regex originally shipped with.
     end_frame = re.search(
         r"if \(!vulkan->presenter\.EndFrame\(\)\)(?P<failure>.*?)"
-        r"\n\s*noteFramePresented\(\);\s*"
+        r"\n\s*noteFramePresented\([^)]*\);\s*"
         r"(?P<comments>(?://[^\n]*\n\s*)*)"
         r"requestNativeSurfaceVisible\(true\);",
         draw,

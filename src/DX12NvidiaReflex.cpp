@@ -43,6 +43,7 @@
 #include <mutex>
 #include <string>
 
+#include "DX12Perf.h"
 #include "Platform.h"
 
 namespace melonDS
@@ -95,13 +96,54 @@ struct NvLatencyMarkerParams
     NvU8 reserved[56];
 };
 
+// NVAPI hands back a fixed 64-entry ring, oldest first, with unused entries
+// left zeroed. There is no count field: an entry is complete when frameID is
+// non-zero.
+struct NvLatencyFrameReport
+{
+    NvU64 frameID;
+    NvU64 inputSampleTime;
+    NvU64 simStartTime;
+    NvU64 simEndTime;
+    NvU64 renderSubmitStartTime;
+    NvU64 renderSubmitEndTime;
+    NvU64 presentStartTime;
+    NvU64 presentEndTime;
+    NvU64 driverStartTime;
+    NvU64 driverEndTime;
+    NvU64 osRenderQueueStartTime;
+    NvU64 osRenderQueueEndTime;
+    NvU64 gpuRenderStartTime;
+    NvU64 gpuRenderEndTime;
+    NvU32 gpuActiveRenderTimeUs; // gpuRenderStart..End excluding idles between
+    NvU32 gpuFrameTimeUs;        // delta between consecutive gpuRenderEndTime
+    NvU64 cameraConstructedTime;
+    NvU32 crossAdapterCopyTimeUs;
+    NvU32 aiFrameTimeUs;
+    NvU8 rsvd[104];
+};
+
+struct NvLatencyResultParams
+{
+    NvU32 version;
+    NvLatencyFrameReport frameReport[64];
+    NvU8 rsvd[32];
+};
+
 static_assert(sizeof(NvSetSleepModeParams) == 44);
 static_assert(sizeof(NvGetSleepStatusParams) == 136);
 static_assert(sizeof(NvLatencyMarkerParams) == 88);
+// The version word is sizeof-derived, so a layout slip would silently produce
+// a version NVAPI rejects rather than a struct it misreads. Pin both anyway:
+// these are the sizes NVIDIA's header produces, and the driver validates
+// `version` before touching the buffer.
+static_assert(sizeof(NvLatencyFrameReport) == 240);
+static_assert(sizeof(NvLatencyResultParams) == 15400);
 
 constexpr NvU32 NvSetSleepModeParamsVersion = MakeNvApiVersion(sizeof(NvSetSleepModeParams), 1);
 constexpr NvU32 NvGetSleepStatusParamsVersion = MakeNvApiVersion(sizeof(NvGetSleepStatusParams), 1);
 constexpr NvU32 NvLatencyMarkerParamsVersion = MakeNvApiVersion(sizeof(NvLatencyMarkerParams), 1);
+constexpr NvU32 NvLatencyResultParamsVersion = MakeNvApiVersion(sizeof(NvLatencyResultParams), 1);
 
 class NvApiLoader
 {
@@ -113,6 +155,7 @@ public:
     using SetSleepModeFn = NvStatus (__cdecl*)(IUnknown*, NvSetSleepModeParams*);
     using SleepFn = NvStatus (__cdecl*)(IUnknown*);
     using SetLatencyMarkerFn = NvStatus (__cdecl*)(IUnknown*, NvLatencyMarkerParams*);
+    using GetLatencyFn = NvStatus (__cdecl*)(IUnknown*, NvLatencyResultParams*);
 
     static NvApiLoader& Get()
     {
@@ -140,6 +183,9 @@ public:
     SetSleepModeFn SetSleepMode = nullptr;
     SleepFn Sleep = nullptr;
     SetLatencyMarkerFn SetLatencyMarker = nullptr;
+    // Diagnostic only, and deliberately absent from the required-function check
+    // below: a driver without latency reporting still runs Reflex correctly.
+    GetLatencyFn GetLatency = nullptr;
     std::string FailureReason;
 
 private:
@@ -177,6 +223,7 @@ private:
         SetSleepMode = Resolve<SetSleepModeFn>(query, 0xAC1CA9E0);
         Sleep = Resolve<SleepFn>(query, 0x852CD1D2);
         SetLatencyMarker = Resolve<SetLatencyMarkerFn>(query, 0xD9984C05);
+        GetLatency = Resolve<GetLatencyFn>(query, 0x1A587F9C);
         if (!Initialize || !GetSleepStatus || !SetSleepMode || !Sleep || !SetLatencyMarker)
         {
             FailureReason = "the NVIDIA driver does not expose the required Reflex functions";
@@ -265,6 +312,8 @@ void DX12NvidiaReflex::Shutdown() noexcept
 {
     FinishFrame();
     Device = nullptr;
+    LatencyReportFailureLogged = false;
+    LatencyReportStatus = DX12NvidiaReflexLatencyReportStatus::NotQueried;
     Available = false;
     ModeApplied = false;
     FrameOpen = false;
@@ -321,7 +370,15 @@ void DX12NvidiaReflex::BeginFrame(u64 logicalFrameId)
         FinishFrame();
 
     auto& nvapi = NvApiLoader::Get();
-    const NvStatus sleepStatus = nvapi.Sleep(Device);
+    // The DX12 counterpart of Vulkan's reflex_latency_sleep_us. Reflex is
+    // supposed to block here only when the CPU is running ahead of the GPU, so
+    // this number is what makes "Reflex On costs nothing" checkable instead of
+    // merely plausible.
+    NvStatus sleepStatus = NvApiOk;
+    {
+        DX12Perf::ScopedCpuTimer timer(DX12Perf::CpuMetric::ReflexSleep);
+        sleepStatus = nvapi.Sleep(Device);
+    }
     if (sleepStatus != NvApiOk)
     {
         DisableForRuntimeFailure("Sleep", sleepStatus);
@@ -418,6 +475,97 @@ void DX12NvidiaReflex::FinishFrame()
     SimulationOpen = false;
     RenderSubmitOpen = false;
     PresentOpen = false;
+}
+
+const char* DX12NvidiaReflexLatencyReportStatusName(
+    DX12NvidiaReflexLatencyReportStatus status) noexcept
+{
+    switch (status)
+    {
+    case DX12NvidiaReflexLatencyReportStatus::Unsupported:      return "unsupported";
+    case DX12NvidiaReflexLatencyReportStatus::QueryFailed:      return "query-failed";
+    case DX12NvidiaReflexLatencyReportStatus::NoCompleteFrames: return "no-complete-frames";
+    case DX12NvidiaReflexLatencyReportStatus::Available:        return "available";
+    case DX12NvidiaReflexLatencyReportStatus::NotQueried:       break;
+    }
+    return "not-queried";
+}
+
+u32 DX12NvidiaReflex::QueryTimings(DX12NvidiaReflexFrameReport* out, u32 maxCount)
+{
+    LatencyReportStatus = DX12NvidiaReflexLatencyReportStatus::NotQueried;
+
+    if (!out || maxCount == 0 || !Available || !Device)
+        return 0;
+
+    auto& nvapi = NvApiLoader::Get();
+    if (!nvapi.GetLatency)
+    {
+        // The driver never handed back NvAPI_D3D_GetLatency. Reflex itself is
+        // unaffected; only the proof that it is correlating frames is lost.
+        LatencyReportStatus = DX12NvidiaReflexLatencyReportStatus::Unsupported;
+        return 0;
+    }
+
+    NvLatencyResultParams params{};
+    params.version = NvLatencyResultParamsVersion;
+
+    const NvStatus status = nvapi.GetLatency(Device, &params);
+    if (status != NvApiOk)
+    {
+        // Diagnostic only. A driver that will not report latency must not take
+        // Reflex down with it, so this never calls DisableForRuntimeFailure().
+        // Logged once: the query runs periodically and would otherwise repeat.
+        LatencyReportStatus = DX12NvidiaReflexLatencyReportStatus::QueryFailed;
+        if (!LatencyReportFailureLogged)
+        {
+            LatencyReportFailureLogged = true;
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "NVIDIA Reflex latency reporting unavailable: %s\n",
+                nvapi.DescribeStatus(status).c_str());
+        }
+        return 0;
+    }
+
+    // Oldest first in the driver's ring, newest last in the output, matching
+    // VulkanNvidiaReflex::QueryTimings(). When more frames are complete than
+    // the caller asked for, the oldest kept entry is dropped so the newest
+    // always survive -- those are the ones a diagnostic wants.
+    u32 written = 0;
+    for (const NvLatencyFrameReport& r : params.frameReport)
+    {
+        if (r.frameID == 0)
+            continue;
+
+        if (written == maxCount)
+        {
+            for (u32 i = 1; i < maxCount; i++)
+                out[i - 1] = out[i];
+            written--;
+        }
+
+        DX12NvidiaReflexFrameReport& entry = out[written++];
+        entry.FrameId = r.frameID;
+        entry.InputSampleTimeUs = r.inputSampleTime;
+        entry.SimStartTimeUs = r.simStartTime;
+        entry.SimEndTimeUs = r.simEndTime;
+        entry.RenderSubmitStartTimeUs = r.renderSubmitStartTime;
+        entry.RenderSubmitEndTimeUs = r.renderSubmitEndTime;
+        entry.PresentStartTimeUs = r.presentStartTime;
+        entry.PresentEndTimeUs = r.presentEndTime;
+        entry.GpuRenderStartTimeUs = r.gpuRenderStartTime;
+        entry.GpuRenderEndTimeUs = r.gpuRenderEndTime;
+        entry.GpuActiveRenderTimeUs = r.gpuActiveRenderTimeUs;
+        entry.GpuFrameTimeUs = r.gpuFrameTimeUs;
+    }
+
+    // "Nothing returned" is only evidence about the driver when the query
+    // itself succeeded, which is what separates these two.
+    LatencyReportStatus = (written != 0)
+        ? DX12NvidiaReflexLatencyReportStatus::Available
+        : DX12NvidiaReflexLatencyReportStatus::NoCompleteFrames;
+    return written;
 }
 
 bool DX12NvidiaReflex::SendMarker(Marker marker)

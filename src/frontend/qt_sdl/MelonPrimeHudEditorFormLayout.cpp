@@ -4,9 +4,21 @@
 #include <QLabel>
 #include <QScrollArea>
 #include <QSizePolicy>
+#include <QStyle>
 #include <QWidget>
 
 namespace MelonPrime::HudEditorForm {
+
+bool UsesNativeWindowsChrome(const QWidget& widget)
+{
+    const QStyle* style = widget.style();
+    if (!style)
+        return false;
+    const QString name = style->objectName();
+    return name.compare(QStringLiteral("windowsvista"), Qt::CaseInsensitive) == 0
+        || name.compare(QStringLiteral("windows11"), Qt::CaseInsensitive) == 0
+        || name.compare(QStringLiteral("windows"), Qt::CaseInsensitive) == 0;
+}
 
 void ConfigureWrappedFormLabel(QLabel& label)
 {

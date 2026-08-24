@@ -1538,6 +1538,30 @@ void TestVulkanReflexSleepWaitContract()
         "a non-success Reflex sleep wait must use the runtime failure fallback");
 }
 
+void TestVulkanReflexSleepGenerationOwnership()
+{
+    // Steady state: the sleep issued after present N is stamped N+1, so the
+    // frame that is still open (generation N) must not join it. This is the
+    // exact mistake that regressed the Off path to ~330 FPS once, and the On
+    // path now depends on the same rule.
+    Require(!VulkanReflexSleepIsOwnedByFrame(true, 8, 7),
+        "a sleep issued for the next frame must not be joined by the current one");
+    Require(VulkanReflexSleepIsOwnedByFrame(true, 8, 8),
+        "a frame must join the sleep issued for it");
+
+    // A frame that never opened (non-increasing logical ID, presenter skip)
+    // does not advance the generation, so its sleep has to stay drainable by
+    // the next frame that does open rather than leaking the worker slot.
+    Require(VulkanReflexSleepIsOwnedByFrame(true, 8, 9),
+        "a stale sleep must remain drainable by a later frame");
+
+    // Nothing pending is never ownership, whatever the generations say.
+    Require(!VulkanReflexSleepIsOwnedByFrame(false, 8, 8),
+        "an absent sleep must never be reported as owned");
+    Require(!VulkanReflexSleepIsOwnedByFrame(false, 0, 0),
+        "the cold-start state must not claim ownership of a sleep");
+}
+
 } // namespace
 
 int main()
@@ -1571,6 +1595,7 @@ int main()
     TestNonFifoKeepsWaitButNotTarget();
     TestEffectiveLowLatencyAuthority();
     TestVulkanReflexSleepWaitContract();
+    TestVulkanReflexSleepGenerationOwnership();
 
     TestRelativeFallbackWhenSurfaceLacksAbsolute();
     TestAbsolutePreferredOverRelative();

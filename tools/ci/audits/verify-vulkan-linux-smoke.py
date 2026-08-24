@@ -111,8 +111,15 @@ def main() -> int:
         r"\[Vulkan\]\[LinuxWSI\] VkSurfaceKHR created "
         r"backend=VK_KHR_(?:xcb|xlib)_surface generation=(?P<generation>\d+)\b"
     )
+    # e82c9a267 ("Fix fullscreen native surface lifecycle") dropped the
+    # __linux__ guard around VulkanPresenter::Init(NativeWindowSnapshot&) so
+    # the same snapshot-based init path serves every platform, and renamed
+    # its log line from the Linux-tagged "[Vulkan][LinuxWSI] swapchain
+    # ready ..." to the now-generic "[Vulkan] snapshot presenter ready ...".
+    # It is still the same milestone at the same point in the lifecycle
+    # (right before "presenter bind"), just no longer Linux-exclusive.
     swapchain_pattern = re.compile(
-        r"\[Vulkan\]\[LinuxWSI\] swapchain ready .*"
+        r"\[Vulkan\] snapshot presenter ready .*"
         r"generation=(?P<generation>\d+)\b"
     )
     bind_pattern = re.compile(
