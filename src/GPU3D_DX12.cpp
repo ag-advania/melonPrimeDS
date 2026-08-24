@@ -273,6 +273,7 @@ struct DX12Renderer3D::OutputState
         u32* StructuredReadbackMapped = nullptr;
         u32* NativeMapped = nullptr;
         GPU2DNative::FrameGeneration UploadedNativeGeneration{};
+        GPU2DNative::SemanticLineCache SemanticLines{};
         bool NativeUploadInitialized = false;
 
         bool EnsureDiagnosticResources(
@@ -596,13 +597,14 @@ bool DX12Renderer3D::Init()
 
     ID3D12Device* device = Context->GetDevice();
 
-    if (!Commands.Init(device, Context->GetQueue()))
-        return false;
+    for (RasterFrameSlot& frame : RasterFrames)
+    {
+        if (!frame.Commands.Init(device, Context->GetQueue())
+            || !frame.Uploads.Init(*Context, kUploadRingBytes)
+            || !frame.Descriptors.Init(device, kDescriptorCount, true))
+            return false;
+    }
     if (!CaptureCommands.Init(device, Context->GetQueue()))
-        return false;
-    if (!Uploads.Init(*Context, kUploadRingBytes))
-        return false;
-    if (!Descriptors.Init(device, kDescriptorCount, true))
         return false;
     if (!StaticSrvDescriptors.Init(device, kStaticSrvCount, false))
         return false;
@@ -633,7 +635,12 @@ bool DX12Renderer3D::Init()
     if (!CreateCommandSignature())
         return false;
 
-    TextureHeap.Init(Context, &Commands, &Uploads);
+    CurrentRasterFrameIndex = 0;
+    NextRasterFrameIndex = 0;
+    TextureHeap.Init(
+        Context, &RasterFrames[0].Commands, &RasterFrames[0].Uploads);
+    TextureHeap.SetFrameResources(
+        &RasterFrames[0].Commands, &RasterFrames[0].Uploads, 0);
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 fixedStartNs = RendererStartupNowNs();
@@ -656,7 +663,8 @@ bool DX12Renderer3D::Init()
 
 void DX12Renderer3D::Stop()
 {
-    Commands.WaitIdle();
+    for (RasterFrameSlot& frame : RasterFrames)
+        frame.Commands.WaitIdle();
     CaptureCommands.WaitIdle();
 
     Texcache.Reset();
@@ -671,25 +679,29 @@ void DX12Renderer3D::Stop()
     ReleasePipelines();
 
     const D3D12_RANGE noWrite{ 0, 0 };
-    if (RenderPolygonStaging && RenderPolygonStagingPtr)
-        RenderPolygonStaging->Unmap(0, &noWrite);
-    if (YSpanSetupStaging && YSpanSetupStagingPtr)
-        YSpanSetupStaging->Unmap(0, &noWrite);
-    if (MetaUniformUpload && MetaUniformUploadPtr)
-        MetaUniformUpload->Unmap(0, &noWrite);
-    for (int slot = 0; slot < 2; ++slot)
+    for (RasterFrameSlot& frame : RasterFrames)
     {
-        if (ClearBitmapUpload[slot] && ClearBitmapUploadPtr[slot])
-            ClearBitmapUpload[slot]->Unmap(0, &noWrite);
-        ClearBitmapUploadPtr[slot] = nullptr;
-        ClearBitmapUpload[slot].Reset();
+        if (frame.RenderPolygonStaging && frame.RenderPolygonStagingPtr)
+            frame.RenderPolygonStaging->Unmap(0, &noWrite);
+        if (frame.YSpanSetupStaging && frame.YSpanSetupStagingPtr)
+            frame.YSpanSetupStaging->Unmap(0, &noWrite);
+        if (frame.MetaUniformUpload && frame.MetaUniformUploadPtr)
+            frame.MetaUniformUpload->Unmap(0, &noWrite);
+        for (u32 bitmap = 0; bitmap < 2; ++bitmap)
+        {
+            if (frame.ClearBitmapUpload[bitmap] && frame.ClearBitmapUploadPtr[bitmap])
+                frame.ClearBitmapUpload[bitmap]->Unmap(0, &noWrite);
+            frame.ClearBitmapUploadPtr[bitmap] = nullptr;
+            frame.ClearBitmapUpload[bitmap].Reset();
+        }
+        frame.RenderPolygonStagingPtr = nullptr;
+        frame.YSpanSetupStagingPtr = nullptr;
+        frame.MetaUniformUploadPtr = nullptr;
+        frame.RenderPolygonStaging.Reset();
+        frame.YSpanSetupStaging.Reset();
+        frame.SetupIndicesStaging.Reset();
+        frame.MetaUniformUpload.Reset();
     }
-    RenderPolygonStagingPtr = nullptr;
-    YSpanSetupStagingPtr = nullptr;
-    MetaUniformUploadPtr = nullptr;
-    RenderPolygonStaging.Reset();
-    YSpanSetupStaging.Reset();
-    MetaUniformUpload.Reset();
     RenderPolygonBuffer.Reset();
     YSpanSetupBuffer.Reset();
 
@@ -706,15 +718,18 @@ void DX12Renderer3D::Stop()
     PipelineLibrary.Reset();
     RootSignature.Reset();
 
-    Descriptors.Shutdown();
     StaticSrvDescriptors.Shutdown();
     FrameUavDescriptors.Shutdown();
     CompositorUavDescriptors.Shutdown();
     WorkCompositorUavDescriptors.Shutdown();
     WorkNativeUavDescriptors.Shutdown();
     CaptureDescriptors.Shutdown();
-    Uploads.Shutdown();
-    Commands.Shutdown();
+    for (RasterFrameSlot& frame : RasterFrames)
+    {
+        frame.Descriptors.Shutdown();
+        frame.Uploads.Shutdown();
+        frame.Commands.Shutdown();
+    }
     CaptureCommands.Shutdown();
 
     FrameInFlight = false;
@@ -746,10 +761,15 @@ void DX12Renderer3D::ResetAfterSavestateLoad()
 
 void DX12Renderer3D::ResetInternal(bool preservePresentation)
 {
-    Commands.WaitIdle();
+    for (RasterFrameSlot& frame : RasterFrames)
+        frame.Commands.WaitIdle();
     CaptureCommands.WaitIdle();
     Texcache.Reset();
     TextureHeap.CollectGarbage();
+    CurrentRasterFrameIndex = 0;
+    NextRasterFrameIndex = 0;
+    TextureHeap.SetFrameResources(
+        &RasterFrames[0].Commands, &RasterFrames[0].Uploads, 0);
     ClearBitmapDirty = 0x3;
     FrameInFlight = false;
     FrameReadbackValid = false;
@@ -802,6 +822,7 @@ void DX12Renderer3D::ResetInternal(bool preservePresentation)
         for (OutputState::ComposeWorkSlot& slot : ComposedOutput->WorkSlots)
         {
             slot.UploadedNativeGeneration = {};
+            slot.SemanticLines.Reset();
             slot.NativeUploadInitialized = false;
         }
     }
@@ -1177,32 +1198,42 @@ bool DX12Renderer3D::CreateFixedResources()
         if (!ClearBitmapTex[i])
             return false;
 
-        ClearBitmapUpload[i] = Context->CreateBuffer(
-            clearBitmapBytes,
+    }
+
+    for (u32 frameIndex = 0; frameIndex < RasterFramesInFlight; ++frameIndex)
+    {
+        RasterFrameSlot& frame = RasterFrames[frameIndex];
+        for (u32 bitmap = 0; bitmap < 2; ++bitmap)
+        {
+            frame.ClearBitmapUpload[bitmap] = Context->CreateBuffer(
+                clearBitmapBytes,
+                D3D12_HEAP_TYPE_UPLOAD,
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                D3D12_RESOURCE_FLAG_NONE,
+                bitmap == 0
+                    ? L"MelonPrime DX12 per-frame clear bitmap color upload"
+                    : L"MelonPrime DX12 per-frame clear bitmap depth upload");
+            if (!frame.ClearBitmapUpload[bitmap]
+                || FAILED(frame.ClearBitmapUpload[bitmap]->Map(
+                    0, &noRead,
+                    reinterpret_cast<void**>(&frame.ClearBitmapUploadPtr[bitmap])))
+                || !frame.ClearBitmapUploadPtr[bitmap])
+                return false;
+        }
+
+        frame.MetaUniformUpload = Context->CreateBuffer(
+            AlignUp(sizeof(MetaUniform), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
             D3D12_HEAP_TYPE_UPLOAD,
             D3D12_RESOURCE_STATE_GENERIC_READ,
             D3D12_RESOURCE_FLAG_NONE,
-            i == 0
-                ? L"MelonPrime DX12 clear bitmap color upload"
-                : L"MelonPrime DX12 clear bitmap depth upload");
-        if (!ClearBitmapUpload[i]
-            || FAILED(ClearBitmapUpload[i]->Map(
-                0, &noRead, reinterpret_cast<void**>(&ClearBitmapUploadPtr[i])))
-            || !ClearBitmapUploadPtr[i])
+            L"MelonPrime DX12 per-frame uniform upload");
+        if (!frame.MetaUniformUpload
+            || FAILED(frame.MetaUniformUpload->Map(
+                0, &noRead,
+                reinterpret_cast<void**>(&frame.MetaUniformUploadPtr)))
+            || !frame.MetaUniformUploadPtr)
             return false;
     }
-
-    MetaUniformUpload = Context->CreateBuffer(
-        AlignUp(sizeof(MetaUniform), D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT),
-        D3D12_HEAP_TYPE_UPLOAD,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        D3D12_RESOURCE_FLAG_NONE,
-        L"MelonPrime DX12 frame uniform upload");
-    if (!MetaUniformUpload
-        || FAILED(MetaUniformUpload->Map(
-            0, &noRead, reinterpret_cast<void**>(&MetaUniformUploadPtr)))
-        || !MetaUniformUploadPtr)
-        return false;
 
     // Bound at t5 whenever a variant has no texture, so the descriptor table
     // never contains an undefined entry.
@@ -1270,34 +1301,41 @@ bool DX12Renderer3D::CreateFixedResources()
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
         D3D12_RESOURCE_FLAG_NONE,
         L"MelonPrime DX12 polygons");
-    RenderPolygonStaging = Context->CreateBuffer(
-        sizeof(RenderPolygon) * 2048ull,
-        D3D12_HEAP_TYPE_UPLOAD,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        D3D12_RESOURCE_FLAG_NONE,
-        L"MelonPrime DX12 polygon staging");
     YSpanSetupBuffer = Context->CreateBuffer(
         sizeof(SpanSetupY) * static_cast<u64>(MaxYSpanSetups),
         D3D12_HEAP_TYPE_DEFAULT,
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
         D3D12_RESOURCE_FLAG_NONE,
         L"MelonPrime DX12 y-spans");
-    YSpanSetupStaging = Context->CreateBuffer(
-        sizeof(SpanSetupY) * static_cast<u64>(MaxYSpanSetups),
-        D3D12_HEAP_TYPE_UPLOAD,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        D3D12_RESOURCE_FLAG_NONE,
-        L"MelonPrime DX12 y-span staging");
-    if (!RenderPolygonBuffer || !RenderPolygonStaging || !YSpanSetupBuffer || !YSpanSetupStaging)
+    if (!RenderPolygonBuffer || !YSpanSetupBuffer)
         return false;
 
-    void* mapped = nullptr;
-    if (FAILED(RenderPolygonStaging->Map(0, &noRead, &mapped)))
-        return false;
-    RenderPolygonStagingPtr = static_cast<u8*>(mapped);
-    if (FAILED(YSpanSetupStaging->Map(0, &noRead, &mapped)))
-        return false;
-    YSpanSetupStagingPtr = static_cast<u8*>(mapped);
+    for (u32 frameIndex = 0; frameIndex < RasterFramesInFlight; ++frameIndex)
+    {
+        RasterFrameSlot& frame = RasterFrames[frameIndex];
+        frame.RenderPolygonStaging = Context->CreateBuffer(
+            sizeof(RenderPolygon) * 2048ull,
+            D3D12_HEAP_TYPE_UPLOAD,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            D3D12_RESOURCE_FLAG_NONE,
+            L"MelonPrime DX12 per-frame polygon staging");
+        frame.YSpanSetupStaging = Context->CreateBuffer(
+            sizeof(SpanSetupY) * static_cast<u64>(MaxYSpanSetups),
+            D3D12_HEAP_TYPE_UPLOAD,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            D3D12_RESOURCE_FLAG_NONE,
+            L"MelonPrime DX12 per-frame y-span staging");
+        if (!frame.RenderPolygonStaging || !frame.YSpanSetupStaging)
+            return false;
+
+        void* mapped = nullptr;
+        if (FAILED(frame.RenderPolygonStaging->Map(0, &noRead, &mapped)))
+            return false;
+        frame.RenderPolygonStagingPtr = static_cast<u8*>(mapped);
+        if (FAILED(frame.YSpanSetupStaging->Map(0, &noRead, &mapped)))
+            return false;
+        frame.YSpanSetupStagingPtr = static_cast<u8*>(mapped);
+    }
     return true;
 }
 
@@ -1322,11 +1360,15 @@ void DX12Renderer3D::ReleasePipelines()
 
 void DX12Renderer3D::ReleaseScaleDependentResources()
 {
-    if (SetupIndicesStaging && SetupIndicesStagingPtr)
+    for (RasterFrameSlot& frame : RasterFrames)
     {
-        D3D12_RANGE written{ 0, 0 };
-        SetupIndicesStaging->Unmap(0, &written);
-        SetupIndicesStagingPtr = nullptr;
+        if (frame.SetupIndicesStaging && frame.SetupIndicesStagingPtr)
+        {
+            D3D12_RANGE written{ 0, 0 };
+            frame.SetupIndicesStaging->Unmap(0, &written);
+            frame.SetupIndicesStagingPtr = nullptr;
+        }
+        frame.SetupIndicesStaging.Reset();
     }
 
     InvalidateHighResCaptureState(
@@ -1349,7 +1391,6 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     BlendStateBuffer.Reset();
     XSpanSetupBuffer.Reset();
     SetupIndicesBuffer.Reset();
-    SetupIndicesStaging.Reset();
     // Sized from the tile counts, so it is scale-dependent too. Clearing it
     // here is what makes RenderFrame()'s null check catch a partially failed
     // reallocation instead of running against a stale buffer.
@@ -1550,20 +1591,27 @@ bool DX12Renderer3D::CreateScaleDependentResources()
         D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE,
         D3D12_RESOURCE_FLAG_NONE,
         L"MelonPrime DX12 span indices");
-    SetupIndicesStaging = Context->CreateBuffer(
-        sizeof(SetupIndices) * static_cast<u64>(MaxYSpanIndices),
-        D3D12_HEAP_TYPE_UPLOAD,
-        D3D12_RESOURCE_STATE_GENERIC_READ,
-        D3D12_RESOURCE_FLAG_NONE,
-        L"MelonPrime DX12 span index staging");
-    if (!SetupIndicesBuffer || !SetupIndicesStaging)
+    if (!SetupIndicesBuffer)
         return false;
 
     D3D12_RANGE noRead{ 0, 0 };
-    void* mapped = nullptr;
-    if (FAILED(SetupIndicesStaging->Map(0, &noRead, &mapped)))
-        return false;
-    SetupIndicesStagingPtr = static_cast<u8*>(mapped);
+    for (u32 frameIndex = 0; frameIndex < RasterFramesInFlight; ++frameIndex)
+    {
+        RasterFrameSlot& frame = RasterFrames[frameIndex];
+        frame.SetupIndicesStaging = Context->CreateBuffer(
+            sizeof(SetupIndices) * static_cast<u64>(MaxYSpanIndices),
+            D3D12_HEAP_TYPE_UPLOAD,
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            D3D12_RESOURCE_FLAG_NONE,
+            L"MelonPrime DX12 per-frame span index staging");
+        if (!frame.SetupIndicesStaging)
+            return false;
+
+        void* mapped = nullptr;
+        if (FAILED(frame.SetupIndicesStaging->Map(0, &noRead, &mapped)))
+            return false;
+        frame.SetupIndicesStagingPtr = static_cast<u8*>(mapped);
+    }
 
     const bool descriptorsBuilt = BuildStaticSrvDescriptors()
         && BuildFrameUavDescriptors()
@@ -1586,7 +1634,8 @@ void DX12Renderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
         return;
     }
 
-    Commands.WaitIdle();
+    for (RasterFrameSlot& frame : RasterFrames)
+        frame.Commands.WaitIdle();
     CaptureCommands.WaitIdle();
 
     const int previousTileSize = TileSize;
@@ -1971,7 +2020,8 @@ void DX12Renderer3D::UpdateClearBitmap()
     if (!(GPU3D.RenderDispCnt & (1 << 14)))
         return;
 
-    ID3D12GraphicsCommandList* list = Commands.GetList();
+    RasterFrameSlot& frame = ActiveRasterFrame();
+    ID3D12GraphicsCommandList* list = frame.Commands.GetList();
     if (!list)
         return;
 
@@ -2010,11 +2060,12 @@ void DX12Renderer3D::UpdateClearBitmap()
         constexpr u64 rowPitch = 256ull * 4ull; // already 256-byte aligned
         constexpr u64 totalBytes = rowPitch * 256ull;
 
-        if (!ClearBitmapUpload[slot] || !ClearBitmapUploadPtr[slot])
+        if (!frame.ClearBitmapUpload[slot] || !frame.ClearBitmapUploadPtr[slot])
             continue;
 
         std::memcpy(
-            ClearBitmapUploadPtr[slot], ClearBitmap[slot].get(), static_cast<size_t>(totalBytes));
+            frame.ClearBitmapUploadPtr[slot], ClearBitmap[slot].get(),
+            static_cast<size_t>(totalBytes));
 
         if (!ClearBitmapTexInCopyDest[slot])
         {
@@ -2028,7 +2079,7 @@ void DX12Renderer3D::UpdateClearBitmap()
         dst.SubresourceIndex = 0;
 
         D3D12_TEXTURE_COPY_LOCATION src{};
-        src.pResource = ClearBitmapUpload[slot].Get();
+        src.pResource = frame.ClearBitmapUpload[slot].Get();
         src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
         src.PlacedFootprint.Offset = 0;
         src.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R32_UINT;
@@ -2100,12 +2151,13 @@ bool DX12Renderer3D::UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numV
         meta.FogColor = fogR | (fogG << 8) | (fogB << 16) | (fogA << 24);
     }
 
-    if (!MetaUniformUpload || !MetaUniformUploadPtr)
+    RasterFrameSlot& frame = ActiveRasterFrame();
+    if (!frame.MetaUniformUpload || !frame.MetaUniformUploadPtr)
         return false;
 
-    std::memcpy(MetaUniformUploadPtr, &meta, sizeof(meta));
+    std::memcpy(frame.MetaUniformUploadPtr, &meta, sizeof(meta));
     list->SetComputeRootConstantBufferView(
-        kRootParamMetaCbv, MetaUniformUpload->GetGPUVirtualAddress());
+        kRootParamMetaCbv, frame.MetaUniformUpload->GetGPUVirtualAddress());
     return true;
 }
 
@@ -2162,6 +2214,32 @@ void DX12Renderer3D::InsertUavBarriers(
     list->ResourceBarrier(count, barriers);
 }
 
+void DX12Renderer3D::InsertRasterScratchReuseBarriers(
+    ID3D12GraphicsCommandList* list)
+{
+    // The two command allocators decouple CPU recording from GPU completion,
+    // while these large UAVs intentionally remain single-copy. Direct-queue
+    // order serializes frame N before frame N+1; resource-scoped UAV barriers
+    // make the cross-list visibility dependency explicit without a CPU fence.
+    ID3D12Resource* group0[] = {
+        TileBuffers[0].Get(), TileBuffers[1].Get(),
+        TileBuffers[2].Get(), ResultBuffer.Get(),
+    };
+    InsertUavBarriers(list, group0, static_cast<u32>(std::size(group0)));
+
+    ID3D12Resource* group1[] = {
+        ResultWinnerBuffer.Get(), BinResultBuffer.Get(),
+        WorkDescBuffer.Get(), BlendStateBuffer.Get(),
+    };
+    InsertUavBarriers(list, group1, static_cast<u32>(std::size(group1)));
+
+    ID3D12Resource* group2[] = {
+        XSpanSetupBuffer.Get(), IndirectArgsBuffer.Get(),
+        FinalFBBuffer.Get(), CaptureSidecarBuffer.Get(),
+    };
+    InsertUavBarriers(list, group2, static_cast<u32>(std::size(group2)));
+}
+
 void DX12Renderer3D::TransitionBuffer(
     ID3D12GraphicsCommandList* list,
     ID3D12Resource* resource,
@@ -2183,7 +2261,7 @@ bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
     DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
-    if (!Descriptors.Allocate(kUavTableSize, cpu, gpu))
+    if (!ActiveRasterFrame().Descriptors.Allocate(kUavTableSize, cpu, gpu))
         return false;
 
     if (!FrameUavCpu.ptr)
@@ -2236,7 +2314,7 @@ bool DX12Renderer3D::BindStaticSrvTable(ID3D12GraphicsCommandList* list)
     DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
-    if (!Descriptors.Allocate(kStaticSrvCount, cpu, gpu))
+    if (!ActiveRasterFrame().Descriptors.Allocate(kStaticSrvCount, cpu, gpu))
         return false;
 
     Context->GetDevice()->CopyDescriptorsSimple(
@@ -2252,14 +2330,67 @@ bool DX12Renderer3D::BindStaticSrvTable(ID3D12GraphicsCommandList* list)
 
 bool DX12Renderer3D::WaitForQueueIdle()
 {
-    return Commands.WaitQueueIdle();
+    // The queue is shared, so placing the idle fence through the last raster
+    // context covers every earlier raster/compositor/presenter submission.
+    return ActiveRasterFrame().Commands.WaitQueueIdle();
 }
 
-bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture)
+bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, u32 textureHandle)
 {
     DX12Perf::ScopedCpuTimer descriptorTimer(DX12Perf::CpuMetric::DescriptorUpdate);
+    const DX12TextureHeap::Entry* textureEntry =
+        TextureHeap.Lookup(textureHandle);
+    ID3D12Resource* texture = textureEntry
+        ? textureEntry->Resource.Get() : DummyTexture.Get();
     if (!texture)
-        texture = DummyTexture.Get();
+        return false;
+
+    if (textureHandle < PersistentTextureDescriptorCount)
+    {
+        const u64 key = textureEntry
+            ? (static_cast<u64>(textureEntry->Generation) << 32u)
+                | textureHandle
+            : 1u;
+        u64& cachedKey =
+            PersistentTextureDescriptorKeys[CurrentRasterFrameIndex][textureHandle];
+        D3D12_CPU_DESCRIPTOR_HANDLE cpu =
+            ActiveRasterFrame().Descriptors.GetCpu(textureHandle);
+        D3D12_GPU_DESCRIPTOR_HANDLE gpu =
+            ActiveRasterFrame().Descriptors.GetGpu(textureHandle);
+        if (!cpu.ptr || !gpu.ptr)
+            return false;
+        if (cachedKey != key)
+        {
+            D3D12_RESOURCE_DESC texDesc = texture->GetDesc();
+            D3D12_SHADER_RESOURCE_VIEW_DESC desc{};
+            desc.Format = DXGI_FORMAT_R8G8B8A8_UINT;
+            desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+            desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+            desc.Texture2DArray.MostDetailedMip = 0;
+            desc.Texture2DArray.MipLevels = 1;
+            desc.Texture2DArray.FirstArraySlice = 0;
+            desc.Texture2DArray.ArraySize = texDesc.DepthOrArraySize;
+            desc.Texture2DArray.PlaneSlice = 0;
+            desc.Texture2DArray.ResourceMinLODClamp = 0.0f;
+            Context->GetDevice()->CreateShaderResourceView(texture, &desc, cpu);
+            cachedKey = key;
+            DX12Perf::AddCounter(DX12Perf::Counter::DescriptorCreateCount);
+            DX12Perf::AddCounter(DX12Perf::Counter::DescriptorWriteCount);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::PersistentDescriptorCreateCount);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::PersistentDescriptorMissCount);
+        }
+        else
+        {
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::PersistentDescriptorHitCount);
+        }
+        BoundSrvTexture = texture;
+        BoundSrvTable = gpu;
+        list->SetComputeRootDescriptorTable(kRootParamTextureSrvTable, gpu);
+        return true;
+    }
 
     if (texture == BoundSrvTexture && BoundSrvTable.ptr != 0)
     {
@@ -2294,7 +2425,7 @@ bool DX12Renderer3D::BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resourc
 
     D3D12_CPU_DESCRIPTOR_HANDLE cpu{};
     D3D12_GPU_DESCRIPTOR_HANDLE gpu{};
-    if (!Descriptors.Allocate(kTextureSrvCount, cpu, gpu))
+    if (!ActiveRasterFrame().Descriptors.Allocate(kTextureSrvCount, cpu, gpu))
         return false;
 
     ID3D12Device* device = Context->GetDevice();
@@ -2843,6 +2974,9 @@ u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
     if (numPolygons == 0)
     {
         PolygonBatches[0] = { 0, 0 };
+        DX12Perf::AddCounter(DX12Perf::Counter::PolygonBatchCount);
+        DX12Perf::SetCounter(
+            DX12Perf::Counter::PolygonBatchCapacity, MaxWorkTiles);
         return 1;
     }
 
@@ -2851,6 +2985,7 @@ u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
     u32 count = 0;
     u32 batchCount = 0;
     u64 batchTiles = 0;
+    u64 maxBatchTiles = 0;
 
     for (u32 i = 0; i < numPolygons; ++i)
     {
@@ -2871,6 +3006,7 @@ u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
 
         if (count != 0 && batchTiles + polygonTiles > capacity)
         {
+            maxBatchTiles = std::max(maxBatchTiles, batchTiles);
             PolygonBatches[batchCount++] = { first, count };
             first = i;
             count = 0;
@@ -2883,7 +3019,17 @@ u32 DX12Renderer3D::BuildPolygonBatches(u32 numPolygons)
     }
 
     if (count != 0)
+    {
+        maxBatchTiles = std::max(maxBatchTiles, batchTiles);
         PolygonBatches[batchCount++] = { first, count };
+    }
+    DX12Perf::AddCounter(DX12Perf::Counter::PolygonBatchCount, batchCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::PolygonBatchSplitCount,
+        batchCount > 0u ? batchCount - 1u : 0u);
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::PolygonBatchMaxTiles, maxBatchTiles);
+    DX12Perf::SetCounter(DX12Perf::Counter::PolygonBatchCapacity, capacity);
     return batchCount;
 }
 
@@ -2905,6 +3051,14 @@ void DX12Renderer3D::RenderFrame()
     }
     if (ShaderStepIdx < ShaderStepCount)
         return; // pipelines are still being compiled
+
+    // Select the CPU-owned slot before texture preparation so cache evictions
+    // and decoded uploads inherit the same fence lifetime as this frame.
+    CurrentRasterFrameIndex = NextRasterFrameIndex;
+    RasterFrameSlot& rasterFrame = ActiveRasterFrame();
+    TextureHeap.SetFrameResources(
+        &rasterFrame.Commands, &rasterFrame.Uploads,
+        CurrentRasterFrameIndex);
 
     DX12Perf::SetScale(static_cast<u32>(ScaleFactor));
     DX12Perf::AddCounter(DX12Perf::Counter::Frames);
@@ -2928,8 +3082,15 @@ void DX12Renderer3D::RenderFrame()
             return;
         }
         ClearBitmapDirty |= texcacheClearBitmapDirty;
+        // A dirty clear-image mirror only affects rendering while the clear
+        // image itself is enabled. Keep the dirty bits latched while disabled
+        // so a later enable uploads the exact current contents, but do not let
+        // that dormant work permanently defeat exact identical-frame reuse.
+        const bool clearBitmapRefreshRequired =
+            (GPU3D.RenderDispCnt & (1u << 14u)) != 0u
+            && ClearBitmapDirty != 0u;
         if (!textureCacheChanged && GPU3D.RenderFrameIdentical
-            && FinalFBHasValidFrame && ClearBitmapDirty == 0)
+            && FinalFBHasValidFrame && !clearBitmapRefreshRequired)
         {
             DX12Perf::AddCounter(DX12Perf::Counter::IdenticalFrames);
             DX12Perf::MaybeReport();
@@ -2960,7 +3121,7 @@ void DX12Renderer3D::RenderFrame()
     }
 
     ID3D12GraphicsCommandList* list = nullptr;
-    list = Commands.Begin(true);
+    list = rasterFrame.Commands.Begin(true);
     if (!list)
     {
         SetRuntimeFailure("could not begin a frame command list");
@@ -2971,8 +3132,8 @@ void DX12Renderer3D::RenderFrame()
     // texture after Begin(): the begin has retired the prior frame and the
     // reset below releases this heap's deferred resources before one retry.
     auto resetFrameResources = [&] {
-        Descriptors.Reset();
-        Uploads.Reset();
+        rasterFrame.Descriptors.Reset(PersistentTextureDescriptorCount);
+        rasterFrame.Uploads.Reset();
         TextureHeap.CollectGarbage();
         BoundSrvTexture = nullptr;
         BoundSrvTable = {};
@@ -2987,7 +3148,7 @@ void DX12Renderer3D::RenderFrame()
         if (TextureHeap.MaterializePendingCreates() != TextureMaterializeResult::Ready)
         {
             DX12Perf::AddCounter(DX12Perf::Counter::TextureMaterializeRetryFailCount);
-            Commands.Submit();
+            rasterFrame.Commands.Submit();
             SetRuntimeFailure("could not materialize a DX12 texture resource after frame retirement");
             return;
         }
@@ -2996,14 +3157,16 @@ void DX12Renderer3D::RenderFrame()
 
     DX12Perf::ScopedCpuTimer rasterRecordTimer(DX12Perf::CpuMetric::RasterRecordSubmit);
     RecordDX12GpuMetric(
-        Commands, GpuMetric::Raster, DX12Perf::Counter::RasterGpuTimeNs);
-    Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, false));
+        rasterFrame.Commands, GpuMetric::Raster, DX12Perf::Counter::RasterGpuTimeNs);
+    rasterFrame.Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, false));
+
+    InsertRasterScratchReuseBarriers(list);
 
     UpdateClearBitmap();
     TextureHeap.RecordPendingUploads();
     if (TextureHeap.HadFailure())
     {
-        Commands.Submit();
+        rasterFrame.Commands.Submit();
         SetRuntimeFailure(TextureHeap.HadCreationFailure()
             ? "could not materialize a DX12 texture resource"
             : "could not allocate or map a texture spill upload");
@@ -3015,14 +3178,14 @@ void DX12Renderer3D::RenderFrame()
 
     // Texture-cache setup can use retained spill uploads if the main upload
     // ring fills, while continuing to record this same command list.
-    list = Commands.GetList();
+    list = rasterFrame.Commands.GetList();
     if (!list)
     {
         SetRuntimeFailure("frame command list was lost during texture upload");
         return;
     }
 
-    ID3D12DescriptorHeap* heaps[] = { Descriptors.GetHeap() };
+    ID3D12DescriptorHeap* heaps[] = { rasterFrame.Descriptors.GetHeap() };
     list->SetDescriptorHeaps(1, heaps);
     list->SetComputeRootSignature(RootSignature.Get());
 
@@ -3033,9 +3196,12 @@ void DX12Renderer3D::RenderFrame()
             + sizeof(RenderPolygon) * static_cast<u64>(numPolygons);
         {
             DX12Perf::ScopedCpuTimer copyTimer(DX12Perf::CpuMetric::SpanStagingCopy);
-            std::memcpy(YSpanSetupStagingPtr, YSpanSetups.get(), sizeof(SpanSetupY) * numYSpans);
-            std::memcpy(SetupIndicesStagingPtr, YSpanIndices.data(), sizeof(SetupIndices) * numSetupIndices);
-            std::memcpy(RenderPolygonStagingPtr, RenderPolygons.get(), sizeof(RenderPolygon) * numPolygons);
+            std::memcpy(rasterFrame.YSpanSetupStagingPtr, YSpanSetups.get(),
+                sizeof(SpanSetupY) * numYSpans);
+            std::memcpy(rasterFrame.SetupIndicesStagingPtr, YSpanIndices.data(),
+                sizeof(SetupIndices) * numSetupIndices);
+            std::memcpy(rasterFrame.RenderPolygonStagingPtr, RenderPolygons.get(),
+                sizeof(RenderPolygon) * numPolygons);
         }
         DX12Perf::AddCounter(DX12Perf::Counter::SpanUploadBytes, spanBytes);
 
@@ -3046,11 +3212,11 @@ void DX12Renderer3D::RenderFrame()
         TransitionBuffer(list, RenderPolygonBuffer.Get(),
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
 
-        list->CopyBufferRegion(YSpanSetupBuffer.Get(), 0, YSpanSetupStaging.Get(), 0,
+        list->CopyBufferRegion(YSpanSetupBuffer.Get(), 0, rasterFrame.YSpanSetupStaging.Get(), 0,
             sizeof(SpanSetupY) * numYSpans);
-        list->CopyBufferRegion(SetupIndicesBuffer.Get(), 0, SetupIndicesStaging.Get(), 0,
+        list->CopyBufferRegion(SetupIndicesBuffer.Get(), 0, rasterFrame.SetupIndicesStaging.Get(), 0,
             sizeof(SetupIndices) * numSetupIndices);
-        list->CopyBufferRegion(RenderPolygonBuffer.Get(), 0, RenderPolygonStaging.Get(), 0,
+        list->CopyBufferRegion(RenderPolygonBuffer.Get(), 0, rasterFrame.RenderPolygonStaging.Get(), 0,
             sizeof(RenderPolygon) * numPolygons);
 
         TransitionBuffer(list, YSpanSetupBuffer.Get(),
@@ -3063,15 +3229,15 @@ void DX12Renderer3D::RenderFrame()
 
     if (!UploadMetaUniform(list, numVariants, numPolygons))
     {
-        Commands.Submit();
+        rasterFrame.Commands.Submit();
         SetRuntimeFailure("could not upload the frame uniform block");
         return;
     }
 
     if (!BindFrameUavTable(list) || !BindStaticSrvTable(list) ||
-        !BindSrvTable(list, nullptr))
+        !BindSrvTable(list, 0u))
     {
-        Commands.Submit();
+        rasterFrame.Commands.Submit();
         SetRuntimeFailure("could not bind the frame descriptor tables");
         return;
     }
@@ -3214,7 +3380,7 @@ void DX12Renderer3D::RenderFrame()
                     descriptorsValid = false;
                     break;
                 }
-                if (!BindSrvTable(list, texture ? texture->Resource.Get() : nullptr))
+                if (!BindSrvTable(list, variant.Texture))
                 {
                     descriptorsValid = false;
                     break;
@@ -3239,7 +3405,7 @@ void DX12Renderer3D::RenderFrame()
             }
             if (!descriptorsValid)
             {
-                Commands.Submit();
+                rasterFrame.Commands.Submit();
                 SetRuntimeFailure("the shader-visible descriptor heap was exhausted");
                 return;
             }
@@ -3304,14 +3470,16 @@ void DX12Renderer3D::RenderFrame()
     bool submitted = false;
     {
         DX12Perf::ScopedCpuTimer submitTimer(DX12Perf::CpuMetric::QueueSubmit);
-        Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, true));
-        submitted = Commands.Submit();
+        rasterFrame.Commands.WriteTimestamp(GpuMetricQueryIndex(GpuMetric::Raster, true));
+        submitted = rasterFrame.Commands.Submit();
     }
     if (submitted)
     {
         FrameInFlight = true;
         FrameReadbackValid = false;
         FinalFBHasValidFrame = true;
+        NextRasterFrameIndex =
+            (CurrentRasterFrameIndex + 1u) % RasterFramesInFlight;
     }
     else
     {
@@ -4027,9 +4195,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const u32 workIndex = static_cast<u32>(
         input.Generation.Frame % kCompositorFramesInFlight);
     OutputState::ComposeWorkSlot& workSlot = state->WorkSlots[workIndex];
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const bool workSlotFencePending = !workSlot.Commands.IsIdle();
     const auto workSlotWaitStart = std::chrono::steady_clock::now();
+#endif
     ID3D12GraphicsCommandList* list = workSlot.Commands.Begin();
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const auto workSlotWaitEnd = std::chrono::steady_clock::now();
     if (workSlotFencePending)
     {
@@ -4040,6 +4211,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                 workSlotWaitEnd - workSlotWaitStart).count()));
     }
+#endif
     if (!list)
     {
         SetRuntimeFailure("native GPU2D semantic command admission failed");
@@ -4178,6 +4350,24 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     const bool semanticCaptureGenerationRegressed =
         uploadDecision.CaptureGenerationRegressed;
     const bool fullNativeUpload = uploadDecision.RequiresFullUpload();
+    const GPU2DNative::SemanticLinePlan semanticLinePlan =
+        GPU2DNative::BuildSemanticLinePlan(
+            input, workSlot.SemanticLines,
+            fullNativeUpload || input.CaptureEnable != 0u);
+    DX12Perf::SetCounter(
+        DX12Perf::Counter::NativeGPU2DWorkgroupWidth, 256u);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeGPU2DSemanticRowsDirty,
+        semanticLinePlan.DirtyRows);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeGPU2DSemanticRowsReused,
+        semanticLinePlan.ReusedRows);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeGPU2DSemanticRunCount,
+        semanticLinePlan.RunCount);
+    DX12Perf::AddCounter(
+        DX12Perf::Counter::NativeGPU2DObjPrepareGroups,
+        semanticLinePlan.DirtyRows);
     const GPU2DNative::UploadPlan uploadPlan = GPU2DNative::BuildUploadPlan(
         input, uploadedNativeGeneration, fullNativeUpload);
     DX12Perf::AddCounter(
@@ -4210,8 +4400,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     case GPU2DNative::FullUploadReason::None:
         break;
     }
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const u64 packStartNs = static_cast<u64>(std::chrono::duration_cast<
         std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+#endif
     u32* staging = nativeMapped;
     bool packedNativeInput = staging != nullptr;
     if (packedNativeInput)
@@ -4234,10 +4426,12 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         SetRuntimeFailure("the native GPU2D input staging upload failed");
         return false;
     }
+#if defined(MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
     const u64 packEndNs = static_cast<u64>(std::chrono::duration_cast<
         std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
     DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DPackNs,
         packEndNs - packStartNs);
+#endif
     DX12Perf::AddCounter(DX12Perf::Counter::RecorderBlocksScanned,
         input.Recorder.BlocksScanned);
     DX12Perf::AddCounter(DX12Perf::Counter::RecorderBytesScanned,
@@ -4450,6 +4644,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             GPU2DNative::CanBatchIndependentCaptureFrame(input, finalFBValid);
         if (batchIndependentCapture)
         {
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DCaptureRunCount);
             // The destination remains LCDC-only for the full frame, so it
             // cannot feed its own writes back through BG/OBJ. Submit all
             // logical lines before one frame-wide capture dispatch.
@@ -4460,13 +4656,13 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             constants.Pad = 32u
                 | (fuseObjRawLogical ? (16u | 64u) : 0u);
             SetDispatchConstants(list, constants);
-            list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
+            list->Dispatch(1u, 384u, 1u);
             if (!fuseObjRawLogical)
             {
                 InsertUavBarrier(list, BlendStateBuffer.Get());
                 constants.Pad = 16u;
                 SetDispatchConstants(list, constants);
-                list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
+                list->Dispatch(1u, 384u, 1u);
             }
 
             InsertUavBarrier(list, structuredInput.Get());
@@ -4475,7 +4671,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             SetDispatchConstants(list, constants);
             list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
             list->Dispatch(
-                DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
+                DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
                 GPU2DNative::ScreenHeight * static_cast<u32>(ScaleFactor), 1u);
             ID3D12Resource* captureOutputs[2] = {
                 BlendStateBuffer.Get(), CaptureSidecarBuffer.Get()};
@@ -4489,97 +4685,151 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         }
         else
         {
-        // Capture is an intra-frame feedback loop: render and commit one
-        // logical line before the capture line is evaluated. The expensive
-        // semantic stage remains 256x2 even at 4x/8x/16x.
-        u32 activeCaptureLines = 0u;
-        for (u32 lineNumber = 0; lineNumber < GPU2DNative::ScreenHeight; ++lineNumber)
-        {
-            const bool captureLineActive =
-                input.Lines[lineNumber].CaptureEnable != 0u;
-            const bool fuseObjRawLogical =
-                GPU2DNative::CanFuseObjRawLogicalLine(input, lineNumber);
-            constants.InterpSpanCount = lineNumber;
-            constants.Pad = 32u | 8u
-                | (fuseObjRawLogical ? (16u | 64u) : 0u);
-            SetDispatchConstants(list, constants);
-            list->SetPipelineState(PipelineGPU2DNative.Get());
-            list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
-            if (!fuseObjRawLogical)
+            const GPU2DNative::CaptureRunPlan capturePlan =
+                GPU2DNative::BuildCaptureRunPlan(input, finalFBValid);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DCaptureRunCount,
+                capturePlan.RunCount);
+            u64 dispatchCount = 0u;
+            u64 captureDispatchCount = 0u;
+            u64 captureBarrierCount = 0u;
+            for (u32 runIndex = 0u; runIndex < capturePlan.RunCount; ++runIndex)
             {
-                // OBJ mosaic may cross the 128-thread workgroup boundary.
-                // Keep the materialized raw plane only for those lines.
-                InsertUavBarrier(list, BlendStateBuffer.Get());
+                const GPU2DNative::CaptureLineRun& run =
+                    capturePlan.Runs[runIndex];
+                const bool fuseObjRawLogical =
+                    GPU2DNative::CanFuseObjRawCaptureRun(input, run);
+                if (run.Independent)
+                {
+                    list->SetPipelineState(PipelineGPU2DNative.Get());
+                    for (u32 screen = 0u; screen < 2u; ++screen)
+                    {
+                        constants.InterpSpanCount =
+                            screen * GPU2DNative::ScreenHeight + run.LineBase;
+                        constants.Pad = 32u | 256u
+                            | (fuseObjRawLogical ? (16u | 64u) : 0u);
+                        SetDispatchConstants(list, constants);
+                        list->Dispatch(1u, run.LineCount, 1u);
+                        ++dispatchCount;
+                    }
+                    if (!fuseObjRawLogical)
+                    {
+                        InsertUavBarrier(list, BlendStateBuffer.Get());
+                        ++captureBarrierCount;
+                        for (u32 screen = 0u; screen < 2u; ++screen)
+                        {
+                            constants.InterpSpanCount =
+                                screen * GPU2DNative::ScreenHeight + run.LineBase;
+                            constants.Pad = 16u | 256u;
+                            SetDispatchConstants(list, constants);
+                            list->Dispatch(1u, run.LineCount, 1u);
+                            ++dispatchCount;
+                        }
+                    }
 
-                constants.Pad = 16u | 8u; // native logical one-line pass
+                    ID3D12Resource* logicalOutputs[2] = {
+                        structuredInput.Get(), BlendStateBuffer.Get()};
+                    InsertUavBarriers(list, logicalOutputs, 2u);
+                    ++captureBarrierCount;
+                    constants.InterpSpanCount = run.LineBase;
+                    constants.Pad = 4u | 128u | 512u;
+                    SetDispatchConstants(list, constants);
+                    list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+                    list->Dispatch(
+                        DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
+                        run.LineCount * static_cast<u32>(ScaleFactor), 1u);
+                    ++dispatchCount;
+                    ++captureDispatchCount;
+                    ID3D12Resource* captureOutputs[2] = {
+                        BlendStateBuffer.Get(), CaptureSidecarBuffer.Get()};
+                    InsertUavBarriers(list, captureOutputs, 2u);
+                    ++captureBarrierCount;
+                    continue;
+                }
+
+                const u32 lineNumber = run.LineBase;
+                const bool captureLineActive =
+                    GPU2DNative::IsEffectiveCaptureLine(input, lineNumber);
+                constants.InterpSpanCount = lineNumber;
+                constants.Pad = 32u | 8u
+                    | (fuseObjRawLogical ? (16u | 64u) : 0u);
                 SetDispatchConstants(list, constants);
                 list->SetPipelineState(PipelineGPU2DNative.Get());
-                list->Dispatch(DivRoundUp(256u, 128u), 2u, 1u);
+                list->Dispatch(1u, 2u, 1u);
+                ++dispatchCount;
+                if (!fuseObjRawLogical)
+                {
+                    InsertUavBarrier(list, BlendStateBuffer.Get());
+                    ++captureBarrierCount;
+                    constants.Pad = 16u | 8u;
+                    SetDispatchConstants(list, constants);
+                    list->Dispatch(1u, 2u, 1u);
+                    ++dispatchCount;
+                }
+                if (captureLineActive)
+                {
+                    ID3D12Resource* logicalOutputs[2] = {
+                        structuredInput.Get(), BlendStateBuffer.Get()};
+                    InsertUavBarriers(list, logicalOutputs, 2u);
+                    ++captureBarrierCount;
+                    constants.Pad = 4u;
+                    SetDispatchConstants(list, constants);
+                    list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+                    list->Dispatch(
+                        DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
+                        static_cast<u32>(ScaleFactor), 1u);
+                    ++dispatchCount;
+                    ++captureDispatchCount;
+                    ID3D12Resource* captureOutputs[2] = {
+                        BlendStateBuffer.Get(), CaptureSidecarBuffer.Get()};
+                    InsertUavBarriers(list, captureOutputs, 2u);
+                    ++captureBarrierCount;
+                }
             }
-            if (captureLineActive)
-            {
-                ++activeCaptureLines;
-                // Logical Stage A writes the immutable planes and reads the
-                // raw OBJ latch. Batch both UAV dependencies before the
-                // scaled capture pass consumes them.
-                ID3D12Resource* logicalOutputs[2] = {
-                    structuredInput.Get(), BlendStateBuffer.Get()};
-                InsertUavBarriers(list, logicalOutputs, 2u);
-                constants.Pad = 4u; // capture-only, one logical line
-                SetDispatchConstants(list, constants);
-                list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
-                list->Dispatch(
-                    DivRoundUp(static_cast<u32>(ScreenWidth), 128u),
-                    static_cast<u32>(ScaleFactor), 1u);
-                ID3D12Resource* captureOutputs[2] = {
-                    BlendStateBuffer.Get(), CaptureSidecarBuffer.Get()};
-                InsertUavBarriers(list, captureOutputs, 2u);
-                DX12Perf::AddCounter(
-                    DX12Perf::Counter::NativeGPU2DCaptureDispatchCount);
-                DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount,
-                    fuseObjRawLogical ? 2u : 3u);
-            }
-            else
-            {
-                DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount,
-                    fuseObjRawLogical ? 1u : 2u);
-            }
-        }
-        // The sidecar is consumed only after the complete Stage A sequence;
-        // one boundary is sufficient for all active capture lines.
-        if (activeCaptureLines != 0u)
-        {
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DDispatchCount, dispatchCount);
+            DX12Perf::AddCounter(
+                DX12Perf::Counter::NativeGPU2DCaptureDispatchCount,
+                captureDispatchCount);
             DX12Perf::AddCounter(
                 DX12Perf::Counter::NativeGPU2DCaptureBarrierCount,
-                static_cast<u64>(activeCaptureLines) + 1u);
-        }
+                captureBarrierCount);
         }
         workSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, true));
     }
     else
     {
-        const bool fuseObjRawLogical =
-            GPU2DNative::CanFuseObjRawLogicalFrame(input);
         list->SetPipelineState(PipelineGPU2DNative.Get());
-        constants.InterpSpanCount = 0u;
-        constants.Pad = 32u | (fuseObjRawLogical ? (16u | 64u) : 0u);
-        SetDispatchConstants(list, constants);
         workSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, false));
-        list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
+        u64 dispatchCount = 0u;
+        for (u32 runIndex = 0u;
+            runIndex < semanticLinePlan.RunCount; ++runIndex)
+        {
+            const GPU2DNative::SemanticLineRun& run =
+                semanticLinePlan.Runs[runIndex];
+            const bool fuseObjRawLogical =
+                GPU2DNative::CanFuseObjRawLogicalRun(input, run);
+            constants.InterpSpanCount = run.RowBase;
+            constants.Pad = 32u | 256u
+                | (fuseObjRawLogical ? (16u | 64u) : 0u);
+            SetDispatchConstants(list, constants);
+            list->Dispatch(1u, run.RowCount, 1u);
+            ++dispatchCount;
+            if (!fuseObjRawLogical)
+            {
+                InsertUavBarrier(list, BlendStateBuffer.Get());
+                constants.Pad = 16u | 256u;
+                SetDispatchConstants(list, constants);
+                list->Dispatch(1u, run.RowCount, 1u);
+                ++dispatchCount;
+            }
+        }
         workSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, true));
-        if (!fuseObjRawLogical)
-        {
-            InsertUavBarrier(list, BlendStateBuffer.Get());
-
-            constants.Pad = 16u;
-            SetDispatchConstants(list, constants);
-            list->Dispatch(DivRoundUp(256u, 128u), 384u, 1u);
-        }
-        DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DDispatchCount,
-            fuseObjRawLogical ? 1u : 2u);
+        DX12Perf::AddCounter(
+            DX12Perf::Counter::NativeGPU2DDispatchCount, dispatchCount);
     }
     workSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DLogical, true));

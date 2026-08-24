@@ -2182,8 +2182,10 @@ void main(uint3 id : SV_DispatchThreadID)
     // VRAM display presents captured RGB directly. Its RGBA5551 alpha bit is
     // capture provenance rather than a visibility test, so this path must not
     // use the ordinary 3D-slot transparent-pixel fallback.
+    bool vramDisplaySidecar=displayMode==2u;
+    bool regularCaptureSidecar=displayMode!=2u&&(controlAlpha&0x40u)==0u;
     if ((captureReference & 0x80000000u) != 0u
-        && (displayMode == 2u || (controlAlpha & 0x40u) == 0u))
+        && ((vramDisplaySidecar&&ScaleFactor>1)||regularCaptureSidecar))
         color = LoadStructuredCapture(
             captureReference, uint2(id.x % ScaleFactor, scaledY % ScaleFactor));
     else if ((controlAlpha & 0x40u) != 0u)
@@ -2357,9 +2359,52 @@ static const uint NativeRenderXPos = 54u;
 static const uint NativeCaptureCnt = 55u;
 static const uint NativeCaptureEnable = 56u;
 
+groupshared uint NativeLineCache[2 * 68];
+groupshared uint NativeRouteCache[2];
+groupshared uint NativeTimelineRowCache;
+groupshared uint NativeSpriteTimelineRowCache;
+groupshared uint NativeMappingSummaryCache[6];
+
+void NativePrepareLineContext(uint scanline, uint lane)
+{
+    if (lane < 2u * NativeLineWords)
+    {
+        uint engine = lane / NativeLineWords;
+        uint field = lane - engine * NativeLineWords;
+        NativeLineCache[lane] = ResultValue[
+            NativeHeaderWords + (engine * 192u + scanline)
+                * NativeLineWords + field];
+    }
+    if (lane < 2u)
+        NativeRouteCache[lane] = ResultValue[
+            NativeRouteBase + lane * 192u + scanline];
+    if (lane == 0u)
+    {
+        NativeTimelineRowCache = ResultValue[NativeTimelineRowIdBase + scanline];
+        NativeSpriteTimelineRowCache = ResultValue[
+            NativeSpriteTimelineRowIdBase + scanline];
+    }
+    if (lane < 6u)
+    {
+        uint engine = lane & 1u;
+        uint kind = lane >> 1u;
+        uint base = kind == 0u ? NativeCaptureBGMappingBase
+            : kind == 1u ? NativeCaptureOBJMappingBase
+            : NativeCaptureSpriteOBJMappingBase;
+        uint stride = kind == 0u
+            ? NativeCaptureBGMappingStride : NativeCaptureOBJMappingStride;
+        uint engineOffset = kind == 0u
+            ? (engine == 0u ? 0u : 32u)
+            : (engine == 0u ? 0u : 16u);
+        NativeMappingSummaryCache[lane] = ResultValue[
+            base + scanline * stride + engineOffset];
+    }
+    GroupMemoryBarrierWithGroupSync();
+}
+
 uint NativeLine(uint engine, uint scanline, uint field)
 {
-    return ResultValue[NativeHeaderWords + (engine * 192u + scanline) * NativeLineWords + field];
+    return NativeLineCache[engine * NativeLineWords + field];
 }
 uint NativeEngine(uint engine, uint section, uint word)
 {
@@ -2369,7 +2414,7 @@ uint NativeTimelineVersion(uint line,uint block)
 {
     if (line >= 192u || block >= NativeTimelineBlockCount)
         return 0u;
-    uint row = ResultValue[NativeTimelineRowIdBase + line];
+    uint row = NativeTimelineRowCache;
     if (row >= 192u)
         return 0u;
     return ResultValue[
@@ -2396,7 +2441,7 @@ uint NativeSpriteTimelineVersion(uint engine, uint line, uint block)
     }
     if (spriteBlock >= NativeSpriteTimelineBlockCount)
         return NativeTimelineVersion(line,block);
-    uint row = ResultValue[NativeSpriteTimelineRowIdBase + line];
+    uint row = NativeSpriteTimelineRowCache;
     if (row >= 192u)
         return 0u;
     return ResultValue[NativeSpriteTimelineRowsBase
@@ -2420,8 +2465,21 @@ uint NativeByte(uint line,uint base,uint size,uint address,uint timelineBlockBas
 }
 uint Native16(uint line,uint base,uint size,uint address,uint timelineBlockBase)
 {
-    return NativeByte(line,base,size,address,timelineBlockBase)
-        | (NativeByte(line,base,size,address+1u,timelineBlockBase) << 8u);
+    if(size==0u)return 0u;
+    uint offset=address&(size-1u);
+    if((offset&511u)==511u||offset+1u>=size)
+        return NativeByte(line,base,size,address,timelineBlockBase)
+            |(NativeByte(line,base,size,address+1u,timelineBlockBase)<<8u);
+    uint version=NativeTimelineVersion(line,timelineBlockBase+offset/512u);
+    uint payload=NativeTimelinePayloadBase
+        +(version-1u)*NativeTimelinePayloadStride;
+    uint first=version==0u?ResultValue[base+(offset>>2u)]
+        :ResultValue[payload+((offset&511u)>>2u)];
+    uint shift=(offset&3u)*8u;
+    if(shift<=16u)return(first>>shift)&0xFFFFu;
+    uint second=version==0u?ResultValue[base+((offset+1u)>>2u)]
+        :ResultValue[payload+(((offset+1u)&511u)>>2u)];
+    return((first>>24u)&0xFFu)|((second&0xFFu)<<8u);
 }
 uint NativeSpriteByte(uint engine, uint line, uint base, uint size,
     uint address, uint timelineBlockBase)
@@ -2444,9 +2502,23 @@ uint NativeSpriteByte(uint engine, uint line, uint base, uint size,
 uint NativeSprite16(uint engine, uint line, uint base, uint size,
     uint address, uint timelineBlockBase)
 {
-    return NativeSpriteByte(engine, line, base, size, address, timelineBlockBase)
-        | (NativeSpriteByte(engine, line, base, size, address + 1u,
-            timelineBlockBase) << 8u);
+    if(size==0u)return 0u;
+    uint offset=address&(size-1u);
+    if((offset&511u)==511u||offset+1u>=size)
+        return NativeSpriteByte(engine,line,base,size,address,timelineBlockBase)
+            |(NativeSpriteByte(engine,line,base,size,address+1u,
+                timelineBlockBase)<<8u);
+    uint version=NativeSpriteTimelineVersion(
+        engine,line,timelineBlockBase+offset/512u);
+    uint payload=NativeTimelinePayloadBase
+        +(version-1u)*NativeTimelinePayloadStride;
+    uint first=version==0u?ResultValue[base+(offset>>2u)]
+        :ResultValue[payload+((offset&511u)>>2u)];
+    uint shift=(offset&3u)*8u;
+    if(shift<=16u)return(first>>shift)&0xFFFFu;
+    uint second=version==0u?ResultValue[base+((offset+1u)>>2u)]
+        :ResultValue[payload+(((offset+1u)&511u)>>2u)];
+    return((first>>24u)&0xFFu)|((second&0xFFu)<<8u);
 }
 
 uint NativeCaptureByte(uint bank, uint physicalAddress)
@@ -2479,8 +2551,9 @@ bool NativeCaptureMappingRowHasOverlay(
 {
     if (line >= 192u)
         return false;
-    return (ResultValue[NativeCaptureMappingRowBase(
-        engine, line, obj, spriteLatch)] & NativeCaptureOverlayPresent) != 0u;
+    uint kind=!obj?0u:spriteLatch?2u:1u;
+    return (NativeMappingSummaryCache[kind*2u+engine]
+        & NativeCaptureOverlayPresent) != 0u;
 }
 
 uint NativeCaptureMappingMask(
@@ -2548,10 +2621,12 @@ uint NativeMapped16(
     uint engine, uint line, uint base, uint size, uint address,
     uint timelineBlockBase)
 {
-    return NativeMappedByte(engine, line, base, size, address,
-        timelineBlockBase)
-        | (NativeMappedByte(engine, line, base, size, address + 1u,
-            timelineBlockBase) << 8u);
+    uint result=Native16(line,base,size,address,timelineBlockBase);
+    if(ResultValue[15u]==0u)return result;
+    return result
+        |NativeCaptureOverlayByte(engine,line,size,address,false,false)
+        |(NativeCaptureOverlayByte(
+            engine,line,size,address+1u,false,false)<<8u);
 }
 
 uint NativeMappedSpriteByte(
@@ -2571,10 +2646,16 @@ uint NativeMappedSprite16(
     uint engine, uint line, uint base, uint size, uint address,
     uint timelineBlockBase)
 {
-    return NativeMappedSpriteByte(engine, line, base, size, address,
-        timelineBlockBase)
-        | (NativeMappedSpriteByte(engine, line, base, size, address + 1u,
-            timelineBlockBase) << 8u);
+    uint result=NativeSprite16(
+        engine,line,base,size,address,timelineBlockBase);
+    if(ResultValue[15u]==0u)return result;
+    bool useSpriteLatch=
+        (NativeLine(engine,line,NativeSpriteLatchValid)&1u)!=0u;
+    return result
+        |NativeCaptureOverlayByte(
+            engine,line,size,address,true,useSpriteLatch)
+        |(NativeCaptureOverlayByte(
+            engine,line,size,address+1u,true,useSpriteLatch)<<8u);
 }
 uint NativeBGSize(uint engine) { return ResultValue[16u + engine * 4u]; }
 uint NativeOBJSize(uint engine) { return ResultValue[17u + engine * 4u]; }
@@ -2639,6 +2720,8 @@ groupshared uint NativeOAMCache[512];
 groupshared uint NativeActiveSprites[128];
 groupshared uint NativeActiveFlags[128];
 groupshared uint NativeActiveCount;
+groupshared uint NativeTileActiveSprites[8 * 128];
+groupshared uint NativeTileActiveCounts[8];
 uint NativeCachedOAM16(uint address)
 {
     return NativeOAMCache[(address & 0x3FFu) >> 1u];
@@ -3155,9 +3238,11 @@ NativePixel NativeOBJRaw(uint engine,uint line,int x,bool windowOnly,bool collec
     NativePixel selected=NativeEmpty();windowSelected=NativeEmpty();
     if(NativeLine(engine,line,NativeOBJEnable)==0u)return selected;
     uint best=4u;
-    for(uint activeIndex=0u;activeIndex<NativeActiveCount;activeIndex++)
+    uint xTile=(uint)x>>5u;
+    uint tileCount=NativeTileActiveCounts[xTile];
+    for(uint activeIndex=0u;activeIndex<tileCount;activeIndex++)
     {
-        uint sprite=NativeActiveSprites[activeIndex];
+        uint sprite=NativeTileActiveSprites[xTile*128u+activeIndex];
         uint a0=NativeCachedOAM16(sprite*8u),a1=NativeCachedOAM16(sprite*8u+2u),a2=NativeCachedOAM16(sprite*8u+4u);
         uint type=(a0>>8u)&3u;if(type==2u)continue;bool isWindow=((a0>>10u)&3u)==2u;
         if((windowOnly && !isWindow)||(!windowOnly && isWindow && !collectWindow))continue;
@@ -3442,6 +3527,15 @@ NativeStructuredPixelState NativeCompositeSourceAExact(
         uint compact=NativeLCD16(line,bank,line*512u+x*2u);
         result.CaptureReference=NativeVRAMDisplayCaptureReference(
             engine,line,x,compact);
+        if((result.CaptureReference&0x80000000u)!=0u)
+        {
+            // At 1x the compact BGR555 value is already Software-exact. Above
+            // 1x Stage B replaces it with the precision sidecar and therefore
+            // also needs the deferred master-brightness metadata.
+            result.LineMeta=(mode<<16u)|(renderX<<23u);
+            if(ScaleFactor>1)
+                result.LineMeta|=((brightness>>14u)<<8u)|(brightness&0x1Fu);
+        }
     }
     return result;
 }
@@ -3619,50 +3713,77 @@ void NativeWriteObjRawPixel(uint screen,uint line,uint x,uint engine)
 }
 void NativePrepareObjRawLine(uint engine,uint line,bool collectWindow,uint lane)
 {
-    for(uint word=lane;word<512u;word+=128u)
+    for(uint word=lane;word<512u;word+=256u)
         NativeOAMCache[word]=NativeOAM16(engine,line,word*2u);
     GroupMemoryBarrierWithGroupSync();
-    NativeActiveFlags[lane]=NativeSpriteActiveForLine(line,lane,collectWindow)?1u:0u;
+    if(lane<128u)
+        NativeActiveFlags[lane]=NativeSpriteActiveForLine(
+            line,lane,collectWindow)?1u:0u;
     GroupMemoryBarrierWithGroupSync();
     if(lane==0u)
     {
         NativeActiveCount=0u;
+        for(uint tile=0u;tile<8u;tile++)NativeTileActiveCounts[tile]=0u;
         for(uint sprite=0u;sprite<128u;sprite++)
         {
             if(NativeActiveFlags[sprite]!=0u)
+            {
                 NativeActiveSprites[NativeActiveCount++]=sprite;
+                uint a0=NativeCachedOAM16(sprite*8u);
+                uint a1=NativeCachedOAM16(sprite*8u+2u);
+                uint size=(a0>>14u)|((a1>>12u)&0xCu);
+                int boundWidth=NativeSpriteWidth(size);
+                if(((a0>>8u)&3u)==3u)boundWidth<<=1;
+                int xpos=((int)(a1<<23u))>>23;
+                int firstX=max(xpos,0);
+                int endX=xpos<0?boundWidth:xpos+boundWidth;
+                endX=min(endX,256);
+                if(firstX<endX)
+                {
+                    uint firstTile=(uint)firstX>>5u;
+                    uint lastTile=(uint)(endX-1)>>5u;
+                    for(uint tile=firstTile;tile<=lastTile;tile++)
+                    {
+                        uint count=NativeTileActiveCounts[tile];
+                        NativeTileActiveSprites[tile*128u+count]=sprite;
+                        NativeTileActiveCounts[tile]=count+1u;
+                    }
+                }
+            }
         }
     }
     GroupMemoryBarrierWithGroupSync();
 }
 
 #ifdef GPU2DNativeCapture
-[numthreads(128, 1, 1)]
-void main(uint3 id : SV_DispatchThreadID)
+[numthreads(256, 1, 1)]
+void main(uint3 id : SV_DispatchThreadID, uint3 groupThreadId : SV_GroupThreadID)
 {
     bool batchedLines=(DispatchPad&128u)!=0u;
-    uint dispatchHeight=ScaleFactor*(batchedLines?192u:1u);
-    if(id.x>=ScreenWidth||id.y>=dispatchHeight)return;
     uint x=id.x/ScaleFactor;
     uint captureLine=batchedLines?id.y/ScaleFactor:InterpSpanCount;
+    if(batchedLines&&(DispatchPad&512u)!=0u)captureLine+=InterpSpanCount;
     uint sampleY=batchedLines?id.y%ScaleFactor:id.y;
+    NativePrepareLineContext(captureLine,groupThreadId.x);
     NativeWriteCaptureSample(captureLine,x,id.x,sampleY);
 }
 #else
-[numthreads(128, 1, 1)]
+[numthreads(256, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID, uint3 groupThreadId : SV_GroupThreadID)
 {
     if((DispatchPad&32u)!=0u)
     {
         bool logicalLine=(DispatchPad&8u)!=0u;
-        uint screen=logicalLine?id.y:id.y/192u;
-        uint line=logicalLine?InterpSpanCount:id.y%192u;
-        uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
+        bool rowRun=(DispatchPad&256u)!=0u;
+        uint row=rowRun?InterpSpanCount+id.y:id.y;
+        uint screen=logicalLine?id.y:row/192u;
+        uint line=logicalLine?InterpSpanCount:row%192u;
+        NativePrepareLineContext(line,groupThreadId.x);
+        uint engine=NativeRouteCache[screen]&1u;
         uint layer=NativeLine(engine,line,NativeLayerEnable),disp=NativeLine(engine,line,NativeDispCnt);
         bool enabled=(layer&(1u<<4u))!=0u&&NativeLine(engine,line,NativeOBJEnable)!=0u;
         bool collect=enabled&&(disp&(1u<<15u))!=0u&&(disp&0xE000u)!=0u;
         NativePrepareObjRawLine(engine,line,collect,groupThreadId.x);
-        if(id.x>=256u||(logicalLine?id.y>=2u:id.y>=384u))return;
         if((DispatchPad&64u)!=0u)
         {
             NativeWriteStructuredLogicalPixel(screen,line,id.x,engine);
@@ -3674,14 +3795,15 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupThreadId : SV_GroupThreadID
     if((DispatchPad&16u)!=0u)
     {
         bool logicalLine=(DispatchPad&8u)!=0u;
-        if(id.x>=256u||(logicalLine?id.y>=2u:id.y>=384u))return;
-        uint screen=logicalLine?id.y:id.y/192u;
-        uint line=logicalLine?InterpSpanCount:id.y%192u;
-        uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
+        bool rowRun=(DispatchPad&256u)!=0u;
+        uint row=rowRun?InterpSpanCount+id.y:id.y;
+        uint screen=logicalLine?id.y:row/192u;
+        uint line=logicalLine?InterpSpanCount:row%192u;
+        NativePrepareLineContext(line,groupThreadId.x);
+        uint engine=NativeRouteCache[screen]&1u;
         NativeWriteStructuredLogicalPixel(screen,line,id.x,engine);
         return;
     }
-    if(id.x>=ScreenWidth||id.y>=ScreenHeight*2u)return;
     bool linePass=(DispatchPad&8u)!=0u;
     uint screen,scaledY;
     if(linePass)
@@ -3697,7 +3819,8 @@ void main(uint3 id : SV_DispatchThreadID, uint3 groupThreadId : SV_GroupThreadID
         scaledY=id.y-screen*ScreenHeight;
     }
     uint x=id.x/ScaleFactor,line=scaledY/ScaleFactor;
-    uint engine=ResultValue[NativeRouteBase+screen*192u+line]&1u;
+    NativePrepareLineContext(line,groupThreadId.x);
+    uint engine=NativeRouteCache[screen]&1u;
     uint color=ResultValue[13u]==0u?0u:NativeDisplay(screen,engine,line,(int)x,id.x,scaledY);
     uint bgra8=NativeBGRA8(color);
     bool directOutput=(DispatchPad&1u)!=0u;

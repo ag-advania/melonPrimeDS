@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Audit the explicit DX12/Vulkan raster preparation/reuse-wait contract.
 
-The explicit renderers intentionally keep one scale-dependent raster resource
-set.  Correctness therefore requires the CPU-only polygon/texture plan and
-independent host-side texture resource creation to run before the single-slot
-reuse wait, while uploads and command recording remain after the fence retires.
-Texture arrays retain their logical handle during CPU preparation, and
-physical resources are materialized from a pending-slot worklist before the
-frame-local resources are reused.  This is a source contract, not a
-performance claim.
+The explicit renderers keep one scale-dependent GPU scratch set, but use two
+CPU-owned recording slots. Correctness therefore requires slot-local command,
+descriptor, upload, and staging resources plus explicit same-queue dependencies
+for the shared GPU scratch. CPU-only polygon/texture preparation and independent
+host-side texture resource creation run before the selected slot's reuse wait;
+uploads and command recording remain after that fence retires. This is a source
+contract, not a performance claim.
 """
 
 from __future__ import annotations
@@ -69,6 +68,7 @@ def main() -> int:
     vulkan_sync_header = read("src/VulkanSync.h")
     vulkan_sync = read("src/VulkanSync.cpp")
     vulkan_header = read("src/GPU3D_Vulkan.h")
+    dx12_header = read("src/GPU3D_DX12.h")
     soft_header = read("src/GPU_Soft.h")
     soft_source = read("src/GPU_Soft.cpp")
     dx12_perf = read("src/DX12Perf.h")
@@ -105,9 +105,9 @@ def main() -> int:
         (
             "DX12",
             dx12_frame,
-            "Commands.Begin(true)",
+            "rasterFrame.Commands.Begin(true)",
             "TextureHeap.RecordPendingUploads()",
-            "Commands.Submit()",
+            "rasterFrame.Commands.Submit()",
         ),
         (
             "Vulkan",
@@ -182,9 +182,107 @@ def main() -> int:
         )
 
     require(
-        "RendererFramesInFlight = 1" in vulkan_header
-        and "RendererFramesInFlight = 2" not in vulkan_header,
-        "Vulkan rasterizer must keep the single scale-dependent resource slot",
+        "RendererFramesInFlight = 2" in vulkan_header
+        and "RendererFramesInFlight = 1" not in vulkan_header
+        and "std::array<Vk::StagingRing, RendererFramesInFlight> FrameStaging" in vulkan_header,
+        "Vulkan rasterizer must use exactly two CPU recording/staging slots",
+        failures,
+    )
+    require(
+        "RasterFramesInFlight = 2" in dx12_header
+        and "std::array<RasterFrameSlot, RasterFramesInFlight> RasterFrames" in dx12_header,
+        "DX12 rasterizer must use exactly two CPU recording slots",
+        failures,
+    )
+    raster_slot_start = dx12_header.find("struct RasterFrameSlot")
+    raster_slot_end = dx12_header.find("\n    };", raster_slot_start)
+    raster_slot = (
+        dx12_header[raster_slot_start:raster_slot_end]
+        if raster_slot_start >= 0 and raster_slot_end >= 0
+        else ""
+    )
+    require(
+        all(
+            token in raster_slot
+            for token in (
+                "DX12CommandContext Commands",
+                "DX12UploadRing Uploads",
+                "DX12DescriptorRing Descriptors",
+                "YSpanSetupStaging",
+                "SetupIndicesStaging",
+                "RenderPolygonStaging",
+                "ClearBitmapUpload",
+                "MetaUniformUpload",
+            )
+        ),
+        "DX12 command, descriptor, upload, and mapped staging resources must be slot-local",
+        failures,
+    )
+    require(
+        all(
+            token not in raster_slot
+            for token in (
+                "TileBuffers",
+                "ResultBuffer",
+                "BinResultBuffer",
+                "WorkDescBuffer",
+                "BlendStateBuffer",
+                "FinalFBBuffer",
+                "CaptureSidecarBuffer",
+            )
+        ),
+        "DX12 large GPU scratch must remain single-copy outside the CPU slot ring",
+        failures,
+    )
+    try:
+        vulkan_scratch_barrier = function_body(
+            vulkan_source,
+            "void VulkanRenderer3D::RecordSharedScratchReuseBarrier(",
+        )
+        dx12_scratch_barrier = function_body(
+            dx12_source,
+            "void DX12Renderer3D::InsertRasterScratchReuseBarriers(",
+        )
+    except ValueError as error:
+        failures.append(str(error))
+        vulkan_scratch_barrier = dx12_scratch_barrier = ""
+    require(
+        "RecordSharedScratchReuseBarrier(cmd);" in vulkan_frame
+        and "VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT" in vulkan_scratch_barrier
+        and "VK_PIPELINE_STAGE_TRANSFER_BIT" in vulkan_scratch_barrier
+        and "VK_ACCESS_TRANSFER_WRITE_BIT" in vulkan_scratch_barrier
+        and "VK_PIPELINE_STAGE_ALL_COMMANDS_BIT" not in vulkan_scratch_barrier,
+        "Vulkan shared compute scratch and geometry overwrite must have scoped GPU-side dependencies",
+        failures,
+    )
+    require(
+        "InsertRasterScratchReuseBarriers(list);" in dx12_frame
+        and "D3D12_RESOURCE_BARRIER_TYPE_UAV" in dx12_source
+        and "TileBuffers" in dx12_scratch_barrier
+        and "FinalFBBuffer" in dx12_scratch_barrier,
+        "DX12 shared GPU scratch must have resource-scoped cross-list UAV barriers",
+        failures,
+    )
+    require_order(
+        dx12_frame,
+        "TextureHeap.SetFrameResources(",
+        "Texcache.Update(",
+        "DX12 slot-local texture lifetime selection",
+        failures,
+    )
+    require_order(
+        dx12_frame,
+        "rasterFrame.Commands.Begin(true)",
+        "TextureHeap.CollectGarbage()",
+        "DX12 texture retirement after slot fence",
+        failures,
+    )
+    require(
+        "GraveyardRetirePrefix" in dx12_texcache_header
+        and "SpillRetirePrefix" in dx12_texcache_header
+        and "Graveyards[ActiveFrameSlot]" in dx12_texcache_source
+        and "SpillUploadSlots[ActiveFrameSlot]" in dx12_texcache_source,
+        "DX12 texture and spill lifetimes must retire only the selected slot's pre-prepare prefix",
         failures,
     )
     require(

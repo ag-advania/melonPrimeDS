@@ -205,6 +205,24 @@ enum class Counter : u32
     DX12ResizeWaitIdleNs,
     DX12PresentSuccessCount,
     DX12PresentSkipCount,
+    NativeGPU2DWorkgroupWidth,
+    NativeGPU2DObjPrepareGroups,
+    NativeGPU2DSemanticRowsDirty,
+    NativeGPU2DSemanticRowsReused,
+    NativeGPU2DSemanticRunCount,
+    NativeGPU2DCaptureRunCount,
+    TextureArenaBlockCount,
+    TextureArenaSuballocCount,
+    TextureArenaDedicatedCount,
+    TextureArenaBytesReserved,
+    TextureArenaBytesUsed,
+    PersistentDescriptorCreateCount,
+    PersistentDescriptorHitCount,
+    PersistentDescriptorMissCount,
+    PolygonBatchCount,
+    PolygonBatchSplitCount,
+    PolygonBatchMaxTiles,
+    PolygonBatchCapacity,
     Count,
 };
 
@@ -622,6 +640,35 @@ inline void MaybeReport()
         count(Counter::NativeGPU2DFullUploadSemanticFrameGapCount),
         count(Counter::NativeGPU2DFullUploadCaptureRegressionCount));
 
+    std::fprintf(stderr,
+        "[DX12Perf] optimization native_gpu2d_workgroup_width=%llu "
+        "native_gpu2d_obj_prepare_groups=%llu semantic_rows_dirty=%llu "
+        "semantic_rows_reused=%llu semantic_runs=%llu capture_runs=%llu "
+        "texture_arena_blocks=%llu texture_arena_suballocs=%llu "
+        "texture_arena_committed_fallbacks=%llu texture_arena_reserved_B=%llu "
+        "texture_arena_used_B=%llu persistent_descriptor_creates=%llu "
+        "persistent_descriptor_hits=%llu persistent_descriptor_misses=%llu "
+        "polygon_batch_count=%llu polygon_batch_split_count=%llu "
+        "polygon_batch_max_tiles=%llu polygon_batch_capacity=%llu\n",
+        count(Counter::NativeGPU2DWorkgroupWidth),
+        count(Counter::NativeGPU2DObjPrepareGroups),
+        count(Counter::NativeGPU2DSemanticRowsDirty),
+        count(Counter::NativeGPU2DSemanticRowsReused),
+        count(Counter::NativeGPU2DSemanticRunCount),
+        count(Counter::NativeGPU2DCaptureRunCount),
+        count(Counter::TextureArenaBlockCount),
+        count(Counter::TextureArenaSuballocCount),
+        count(Counter::TextureArenaDedicatedCount),
+        count(Counter::TextureArenaBytesReserved),
+        count(Counter::TextureArenaBytesUsed),
+        count(Counter::PersistentDescriptorCreateCount),
+        count(Counter::PersistentDescriptorHitCount),
+        count(Counter::PersistentDescriptorMissCount),
+        count(Counter::PolygonBatchCount),
+        count(Counter::PolygonBatchSplitCount),
+        count(Counter::PolygonBatchMaxTiles),
+        count(Counter::PolygonBatchCapacity));
+
     const double reportSeconds = std::chrono::duration<double>(
         now - state.LastReport).count();
     std::fprintf(stderr,
@@ -798,7 +845,16 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
       DX12SurfaceEventCount, DX12SurfaceSnapshotPublishCount,
       DX12NativeIdentityGenerationChangeCount, DX12PresenterReinitCount,
       DX12ResizeBuffersCount, DX12ResizeWaitIdleNs,
-      DX12PresentSuccessCount, DX12PresentSkipCount, Count };
+      DX12PresentSuccessCount, DX12PresentSkipCount,
+      NativeGPU2DWorkgroupWidth, NativeGPU2DObjPrepareGroups,
+      NativeGPU2DSemanticRowsDirty, NativeGPU2DSemanticRowsReused,
+      NativeGPU2DSemanticRunCount, NativeGPU2DCaptureRunCount,
+      TextureArenaBlockCount, TextureArenaSuballocCount,
+      TextureArenaDedicatedCount, TextureArenaBytesReserved,
+      TextureArenaBytesUsed, PersistentDescriptorCreateCount,
+      PersistentDescriptorHitCount, PersistentDescriptorMissCount,
+      PolygonBatchCount, PolygonBatchSplitCount, PolygonBatchMaxTiles,
+      PolygonBatchCapacity, Count };
 inline constexpr bool IsCompiledIn() noexcept { return false; }
 inline constexpr bool IsEnabled() noexcept { return false; }
 inline constexpr void SetScale(u32) noexcept {}

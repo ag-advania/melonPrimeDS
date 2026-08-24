@@ -1085,6 +1085,20 @@ bool RunUploadPlanVectors()
             && partial.PaletteBytes == 64u,
         "partial upload plan category accounting drifted");
 
+    UploadPlan coalesced{};
+    coalesced.Count = 3u;
+    coalesced.Ranges[0] = {100u, 16u};
+    coalesced.Ranges[1] = {120u, 8u};
+    coalesced.Ranges[2] = {5000u, 32u};
+    CoalesceUploadPlan(coalesced, 8u);
+    passed &= Require(coalesced.Count == 2u
+            && coalesced.Ranges[0].Offset == 100u
+            && coalesced.Ranges[0].Size == 28u
+            && coalesced.Ranges[1].Offset == 5000u
+            && coalesced.Ranges[1].Size == 32u
+            && coalesced.TotalBytes == 60u,
+        "nearby upload ranges were not coalesced with exact coverage");
+
     input->DirtyRanges[3] = {
         PackedNativeCaptureOBJMappingBase * sizeof(u32), sizeof(u32)};
     input->DirtyRangeCount = 4u;
@@ -1119,6 +1133,55 @@ bool RunUploadPlanVectors()
         staleMapping.MappedCaptureBytes
             == (PackedFrameWords - PackedNativeCaptureBGMappingBase) * sizeof(u32),
         "a reused slot did not refresh the complete native capture mapping mirror");
+
+    input->Generation.Frame = 23u;
+    laggingSlot.Frame = 20u;
+    input->DirtyHistoryFrames[0] = 22u;
+    input->DirtyHistoryFrames[1] = 21u;
+    input->DirtyHistoryRangeCounts[0] = 0u;
+    input->DirtyHistoryRangeCounts[1] = 0u;
+    const UploadPlan staleMappingAcrossFrames =
+        BuildUploadPlan(*input, laggingSlot, false);
+    passed &= Require(
+        staleMappingAcrossFrames.MappedCaptureBytes
+            == (PackedFrameWords - PackedNativeCaptureBGMappingBase) * sizeof(u32),
+        "cross-frame mapping generation edge did not refresh a reused slot");
+
+    auto historyInput = std::make_unique<FrameInput>();
+    historyInput->Generation.Frame = 13u;
+    historyInput->Generation.ContentGeneration = 4u;
+    historyInput->Generation.VRAMGeneration = 4u;
+    historyInput->DirtyRangeCount = 1u;
+    historyInput->DirtyRanges[0] = {0u, sizeof(u32)};
+    historyInput->DirtyHistoryFrames[0] = 12u;
+    historyInput->DirtyHistoryRangeCounts[0] = 2u;
+    historyInput->DirtyHistoryRanges[0][0] = {
+        PackedPaletteBase * sizeof(u32), sizeof(u32)};
+    historyInput->DirtyHistoryRanges[0][1] = {
+        PackedHeaderWords * sizeof(u32) + 32u, sizeof(u32)};
+    historyInput->DirtyHistoryFrames[1] = 11u;
+    historyInput->DirtyHistoryRangeCounts[1] = 1u;
+    historyInput->DirtyHistoryRanges[1][0] = {
+        PackedEngineBase * sizeof(u32), 512u};
+    FrameGeneration threeFrameOldSlot{};
+    threeFrameOldSlot.Frame = 10u;
+    threeFrameOldSlot.ContentGeneration = 1u;
+    threeFrameOldSlot.VRAMGeneration = 1u;
+    const UploadPlan historical = BuildUploadPlan(
+        *historyInput, threeFrameOldSlot, false);
+    passed &= Require(
+        historical.TotalBytes == 524u + provenanceBytes
+            && historical.EngineMemoryBytes == 512u
+            && historical.PaletteBytes == sizeof(u32),
+        "three-frame compositor reuse omitted serialized dirty history");
+
+    historyInput->DirtyHistoryOverflow[1] = 1u;
+    const UploadPlan missingHistory = BuildUploadPlan(
+        *historyInput, threeFrameOldSlot, false);
+    passed &= Require(
+        missingHistory.Count == 1u
+            && missingHistory.TotalBytes == PackedFrameBytes(),
+        "missing compositor dirty history did not fail closed to a full upload");
 
     auto partialInput = std::make_unique<FrameInput>();
     partialInput->CaptureCnt = 0xCAFEBABEu;
