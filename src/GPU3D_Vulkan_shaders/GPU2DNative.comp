@@ -2297,13 +2297,25 @@ void main()
         PrepareNativeObjRawLine(
             engine, line, collectWindow, gl_LocalInvocationID.x);
         WriteNativeObjRawPixel(screen, line, id.x, engine);
-        // Bit 64 is emitted only when the host proved that OBJ mosaic is off,
-        // so the logical pixel reads the raw OBJ sample written by this same
-        // invocation. Keep the SSBO dependency explicit before consuming it;
-        // mosaic frames remain on the separate raw/logical dispatch path.
+        // Bit 64 is emitted only when the host proved that OBJ mosaic is off.
+        // With mosaic off ObjPixel() reads back exactly the x this invocation
+        // just wrote, so the dependency is invocation-private and program
+        // order alone orders it -- no memory barrier is required. Mosaic is
+        // the only case that samples a neighbour's x, and those frames stay on
+        // the separate raw/logical dispatch path, where the dispatch boundary
+        // provides the ordering.
+        //
+        // A memoryBarrierBuffer() stood here and was redundant for the reason
+        // above. It also broke macOS outright: MoltenVK lowers it to an AIR
+        // builtin that Metal does not define on every driver, so the whole
+        // GPU2DNative pipeline failed to compile with
+        // VK_ERROR_INITIALIZATION_FAILED ("AIR builtin function was called but
+        // no definition was found"). The renderer then fell back to Software
+        // 2D, which produces no native frame, and the startup gate in
+        // ScreenPanelVulkan keeps the surface hidden until the first native
+        // frame -- a permanently black screen.
         if ((pc._pad & 64u) != 0u)
         {
-            memoryBarrierBuffer();
             WriteStructuredLogicalPixel(screen, line, id.x, engine);
         }
         return;
