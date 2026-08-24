@@ -126,6 +126,18 @@ CMAKE_ARGS=(
     -DMELONPRIME_ENABLE_VULKAN=ON
     -DMELONPRIME_FORCE_DISABLE_VULKAN=OFF
 )
+if [[ "$DEV_FEATURES" == "OFF" ]]; then
+    # Distribution build. Every diagnostic gate is re-applied as OFF on each
+    # configure: these default to OFF, but a tree that was once configured as
+    # a developer or measurement build keeps the ON value in its CMake cache,
+    # and a shipping binary must not inherit instrumentation that way.
+    CMAKE_ARGS+=(
+        -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF
+        -DMELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=OFF
+        -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF
+    )
+    log "Diagnostic gates: renderer telemetry / GPU memory telemetry / Vulkan latency capture all OFF"
+fi
 if [[ "$BUNDLE_MOLTENVK" -eq 1 ]]; then
     CMAKE_ARGS+=(
         -DMELONPRIME_BUNDLE_MOLTENVK=ON
