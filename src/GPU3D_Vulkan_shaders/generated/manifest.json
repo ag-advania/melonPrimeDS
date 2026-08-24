@@ -1,6 +1,6 @@
 {
   "generator": "tools/vulkan/compile-shaders.py",
-  "sourceSetSha256": "fb3e54039d0ce6894b0a6a1b533df65422e16136d394141c78a52ee492fc219b",
+  "sourceSetSha256": "f5559105338da94b8f2fc350d1e076f9630112792a6f01938c3177ecfdb0b232",
   "targetEnv": "vulkan1.1",
   "entryPoint": "main",
   "pipelineCount": 39,
@@ -126,7 +126,7 @@
     }
   ],
   "uniqueModules": 117,
-  "totalSpirvBytes": 4263900,
+  "totalSpirvBytes": 4263732,
   "generatedFiles": [
     "GPU3D_Vulkan_ShaderBlobs.h",
     "GPU3D_Vulkan_ShaderBlobs_BinCombined.cpp",
@@ -927,8 +927,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 37,
-      "words": 52276,
-      "sha256": "d11fb8f3d2e5b4f3817a59d6b103d3a5d3d96034a077e8f5b8d934a9945ca7e8"
+      "words": 52269,
+      "sha256": "0c452bd45f99b344d30906b5ac3e44d80363be065289961eef65892f42026a92"
     },
     {
       "pipeline": 38,
@@ -947,8 +947,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 38,
-      "words": 52276,
-      "sha256": "b26991739bd500ad6eae7f6a9461afef687c4ad57fffaa5171cef9bef822e04b"
+      "words": 52269,
+      "sha256": "cf816afc437f29c1e7f07f49100a962cb0060bd3713eb2cee1b90d6c66c2c096"
     },
     {
       "pipeline": 0,
@@ -1729,8 +1729,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 76,
-      "words": 52280,
-      "sha256": "8e9f8e7366d78f2300250b74e16377b0f044d91fe7551a9bdee11f540d2c4514"
+      "words": 52273,
+      "sha256": "a18cb34d3e0ccae6f9491a04ed7f2041e9a3b337a8039dcd8e3b777fd77785a1"
     },
     {
       "pipeline": 38,
@@ -1749,8 +1749,8 @@
         "ClearCoarseBinMaskLocalSize": 64
       },
       "blob": 77,
-      "words": 52280,
-      "sha256": "2333bd46c599f8b25a9cbf41f86420cfd1fd890e9b76f5f2e0b3ac5fd6c8c4db"
+      "words": 52273,
+      "sha256": "18c182028a1c76ae2bd706f437d4fd9d362fd5fc342a88c8846284df80d33765"
     },
     {
       "pipeline": 0,
@@ -2531,8 +2531,8 @@
         "ClearCoarseBinMaskLocalSize": 48
       },
       "blob": 115,
-      "words": 52276,
-      "sha256": "dfb6ef00f62f4478dbd15515760fb536b940fece0e1a3f2f3c5cbf2e31091de9"
+      "words": 52269,
+      "sha256": "a915487fc048dbafa079d99b5706fec8055e4c354bf2d2537d82aac314deec5c"
     },
     {
       "pipeline": 38,
@@ -2551,8 +2551,8 @@
         "ClearCoarseBinMaskLocalSize": 48
       },
       "blob": 116,
-      "words": 52276,
-      "sha256": "e82208551fb8c746427128de62a9999fec726c61c1184b208aba58e23b86c4c7"
+      "words": 52269,
+      "sha256": "e29c983170cb3951ef66751c037fe570f8f17da0372507de31d360d60ae7b620"
     }
   ]
 }
