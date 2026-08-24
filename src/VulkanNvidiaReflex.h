@@ -50,6 +50,22 @@ constexpr VulkanReflexSleepWaitAction ClassifyVulkanReflexSleepWaitResult(
         : VulkanReflexSleepWaitAction::DisableForRuntimeFailure;
 }
 
+// A queued pacing sleep belongs to exactly one frame generation: the frame it
+// was issued for. The sleep for frame N+1 is issued right after frame N's
+// present, so while frame N finishes there is legitimately an unjoined sleep in
+// flight that frame N must not touch. Joining "whatever is pending" is what
+// serialises the whole pacing wait back onto the CPU hot path.
+//
+// `pendingGeneration <= frameGeneration` rather than `==` because a frame that
+// is rejected before it opens (non-increasing logical ID, presenter admission
+// skip) never advances to consume its sleep; the next frame that does open
+// still owns it and must drain it rather than leak it.
+[[nodiscard]] constexpr bool VulkanReflexSleepIsOwnedByFrame(
+    bool pendingValid, u64 pendingGeneration, u64 frameGeneration) noexcept
+{
+    return pendingValid && pendingGeneration <= frameGeneration;
+}
+
 // Mode values are the *config* values, shared with the DX12 backend so one
 // setting means the same thing on both. DX12NvidiaReflexMode has the identical
 // Off/On/OnBoost triple; keeping the numbers equal is what lets
@@ -87,9 +103,15 @@ enum class VulkanNvidiaReflexMode : int
 // ---------
 // Initialize()/Shutdown()/SetSwapchain() run on whichever thread owns the
 // swapchain's lifetime, and every marker call runs on the presenting thread.
-// The Off-mode sleep worker is the sole exception: it owns only the blocking
-// sleep/wait pair and publishes completion through the mutex/CV below. Every
-// swapchain/mode/lifetime transition drains that work before changing handles.
+// The pacing sleep worker is the sole exception: it owns only the blocking
+// vkLatencySleepNV/vkWaitSemaphores pair and publishes completion through the
+// mutex/CV below. Every swapchain/mode/lifetime transition drains that work
+// before changing handles.
+//
+// vk.xml marks none of vkLatencySleepNV, vkSetLatencyMarkerNV,
+// vkSetLatencySleepModeNV or vkGetLatencyTimingsNV as externally synchronised
+// on `swapchain`, so the worker sleeping while the presenting thread emits
+// markers for the same swapchain is within the extension's contract.
 //
 // Failure policy
 // --------------
@@ -160,8 +182,10 @@ public:
     //
     // Per emulated frame, in this order:
     //
-    //   BeginFrame()            synchronous latency sleep for On/OnBoost;
-    //                           adopt/queue overlapped WSI pacing for Off
+    //   BeginFrame()            Off adopts the pacing sleep issued after the
+    //                           previous present and leaves it overlapped
+    //                           until the present boundary; On/OnBoost issue
+    //                           and wait inline, before input
     //   MarkInputSample()       immediately before the first input read
     //   MarkSimulationStart()   emulation begins
     //   MarkSimulationEnd()     emulation returned
@@ -219,11 +243,17 @@ public:
 private:
     bool CreateSleepSemaphore();
     bool ApplySleepMode();
-    bool StartOffModeSleepWorker();
-    void StopOffModeSleepWorker() noexcept;
-    void OffModeSleepWorkerMain() noexcept;
-    bool QueueOffModeSleep();
-    bool CompleteOffModeSleep();
+    bool StartAsyncSleepWorker();
+    void StopAsyncSleepWorker() noexcept;
+    void AsyncSleepWorkerMain() noexcept;
+    bool QueueAsyncSleep(u64 ownerGeneration);
+    bool CompleteAsyncSleep();
+    void DiscardPendingSleepOwnership() noexcept;
+    [[nodiscard]] bool PendingSleepBelongsToThisFrame() const noexcept
+    {
+        return VulkanReflexSleepIsOwnedByFrame(
+            PendingSleepValid, PendingSleepGeneration, FrameGeneration);
+    }
     void SetMarker(VkLatencyMarkerNV marker);
     void DisableForRuntimeFailure(const char* operation, VkResult result);
     void Disable(std::string reason) noexcept;
@@ -250,24 +280,39 @@ private:
     bool PresentOpen = false;
     bool PresentedSinceSleep = true;
 
-    // NVIDIA's sleep operation can spend about a millisecond inside the driver
-    // on some Windows systems even with minimumIntervalUs=0. In Off mode a
-    // persistent worker overlaps that WSI pacing with emulation/rendering and
-    // the presenting thread joins it immediately before Present. On/OnBoost
-    // retain the latency-first synchronous path required by those modes.
-    bool AsyncOffModeSleepEnabled = false;
-    std::thread OffModeSleepThread;
-    std::mutex OffModeSleepMutex;
-    std::condition_variable OffModeSleepCv;
-    bool OffModeSleepStop = false;
-    bool OffModeSleepRequest = false;
-    bool OffModeSleepRunning = false;
-    bool OffModeSleepReady = false;
-    bool OffModeSleepPrimedForNextFrame = false;
-    VkSwapchainKHR OffModeSleepSwapchain = VK_NULL_HANDLE;
-    u64 OffModeSleepValue = 0;
-    VkResult OffModeSleepCallResult = VK_SUCCESS;
-    VkResult OffModeSleepWaitResult = VK_SUCCESS;
+    // vkLatencySleepNV blocks inside the driver: measured p50 1798 us with
+    // pacing off and p50 1247 us with pacing on, while the semaphore wait that
+    // follows it is p50 2 us. Off hides that block on a persistent worker,
+    // overlapping it with the whole emulated frame and joining immediately
+    // before Present, which brings its hot-path cost to p50 191 us.
+    //
+    // On/OnBoost cannot use the worker: their wait must complete before input
+    // sampling, so the only thing available to overlap is the presenter
+    // cleanup between present and the next BeginFrame -- tens of microseconds.
+    // Preissuing for them was measured on 2026-08-24 and rejected (p50 1247 us
+    // -> 1240 us, FPS ~337 -> ~332). Their block is the pacing itself and is
+    // not a defect to schedule around.
+    bool AsyncSleepEnabled = false;
+    std::thread AsyncSleepThread;
+    std::mutex AsyncSleepMutex;
+    std::condition_variable AsyncSleepCv;
+    bool AsyncSleepStop = false;
+    bool AsyncSleepRequest = false;
+    bool AsyncSleepRunning = false;
+    bool AsyncSleepReady = false;
+    VkSwapchainKHR AsyncSleepSwapchain = VK_NULL_HANDLE;
+    u64 AsyncSleepValue = 0;
+    VkResult AsyncSleepCallResult = VK_SUCCESS;
+    VkResult AsyncSleepWaitResult = VK_SUCCESS;
+
+    // Pacing-sleep ownership. FrameGeneration counts frames this object has
+    // actually opened -- it is not FrameId, which is the emulation thread's
+    // logical ID and may jump. A sleep issued after present N is stamped with
+    // the generation of the frame allowed to consume it, and nothing else may
+    // join it. See VulkanReflexSleepIsOwnedByFrame().
+    u64 FrameGeneration = 0;
+    u64 PendingSleepGeneration = 0;
+    bool PendingSleepValid = false;
 };
 
 } // namespace melonDS

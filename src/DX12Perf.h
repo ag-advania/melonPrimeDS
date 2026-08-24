@@ -54,6 +54,7 @@ enum class CpuMetric : u32
     HudUpload,
     PresentRecord,
     QueueSubmit,
+    ReflexSleep,
     Count,
 };
 
@@ -258,6 +259,7 @@ inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Cou
     "hud_upload",
     "present_record",
     "queue_submit",
+    "reflex_sleep_us",
 };
 
 using Clock = std::chrono::steady_clock;
@@ -783,7 +785,8 @@ enum class CpuMetric : u32 { RasterBeginWait, RasterCpuPrepare, RasterReuseWait,
     TexturePendingCpuCopy, TextureResourceCreate, TexturePendingStorageGrow,
     SpanStagingCopy,
     DescriptorUpdate, ComposePack, ComposeRecord, CaptureWait, CaptureMapCopy,
-    PresentSlotWait, PresentBeginWait, HudPatchCopy, HudUpload, PresentRecord, QueueSubmit, Count };
+    PresentSlotWait, PresentBeginWait, HudPatchCopy, HudUpload, PresentRecord, QueueSubmit,
+    ReflexSleep, Count };
 enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
     RasterBeginNoWaitCount, RasterBeginFenceTimeoutCount, IdenticalFrames,
     DX12IndirectArgsCopyBytes, DX12IndirectArgsCopyCount, DX12IndirectArgsDirectWriteCount,

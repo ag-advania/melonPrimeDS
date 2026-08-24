@@ -230,8 +230,17 @@ def main() -> int:
            "Vulkan per-frame descriptor allocation", failures)
     require(vk_header, "TextureSetCacheCapacity = 4096",
             "Vulkan fixed descriptor cache", failures)
-    require(vk_cpp, "TextureSetCacheEpoch++",
-            "Vulkan epoch descriptor cache reset", failures)
+    # f4ec32dda's per-frame epoch reset (TextureSetCacheEpoch++) was replaced
+    # by b8a5d35e1 with a bounded persistent-slot cache: the first
+    # PersistentTextureSetCapacity distinct textures get a permanently
+    # dedicated descriptor set (never recycled, so it never needs a reset),
+    # and textures beyond that cap fall back to the per-frame ring allocator
+    # uncached. Ratchet the bound that replaced the epoch, not the epoch
+    # itself.
+    require(vk_header, "PersistentTextureSetCapacity = 1024",
+            "Vulkan bounded persistent descriptor cache", failures)
+    require(vk_cpp, "PersistentTextureSetCursor < PersistentTextureSetCapacity",
+            "Vulkan persistent-cache admission bound", failures)
     forbid(dx_cpp, "std::vector<PolygonBatch> polygonBatches",
            "DX12 per-frame polygon-batch allocation", failures)
     forbid(dx_header, "std::unordered_map<ID3D12Resource*",

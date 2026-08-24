@@ -196,7 +196,7 @@ jobs:
           PY
           cat "$log"
           grep -F '[Vulkan] instance created' "$log"
-          grep -F '[Vulkan] presentation surface created backend=VK_EXT_metal_surface' "$log"
+          grep -E '\[Vulkan\] presentation surface created( from snapshot)? backend=VK_EXT_metal_surface' "$log"
           grep -F '[Vulkan] presentation: requested-vsync=off' "$log"
           grep -F '[Vulkan] presenter ready:' "$log"
           ! grep -E 'VUID-|SYNC-HAZARD|DEVICE_LOST|\[Vulkan\] runtime failure' "$log"
@@ -296,7 +296,7 @@ jobs:
           PY
           cat "$log"
           if grep -F '[Vulkan] renderer requested=Vulkan presenter actual=Vulkan' "$log" \
-            && grep -F '[Vulkan] presentation surface created backend=VK_EXT_metal_surface' "$log" \
+            && grep -E '\[Vulkan\] presentation surface created( from snapshot)? backend=VK_EXT_metal_surface' "$log" \
             && grep -F '[Vulkan] presentation: requested-vsync=off' "$log" \
             && grep -F '[Vulkan] presenter ready:' "$log" \
             && ! grep -E 'VUID-|SYNC-HAZARD|DEVICE_LOST|\[Vulkan\] runtime failure' "$log"; then

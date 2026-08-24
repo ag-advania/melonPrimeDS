@@ -150,7 +150,7 @@ MelonPrime::VulkanSurface::NativeWindowSnapshot MakeVulkanSnapshot(
     snapshot.Valid = source.Valid;
 #if defined(_WIN32)
     snapshot.Platform = "windows";
-#elif defined(__APPLE__)
+#elif defined(__APPLE__)  // scatter-budget-exempt: WSI snapshot platform label, not input dispatch
     snapshot.Platform = "cocoa";
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
     snapshot.Platform = "xcb";
@@ -800,7 +800,7 @@ void ScreenPanelVulkan::publishNativeSurfaceSnapshotGuiThread()
     if (!vulkan || !vulkan->surface)
         return;
 
-#if defined(__linux__)
+#if defined(__linux__)  // scatter-budget-exempt: Linux surface snapshot authority deferred to VulkanSurfaceHostLinux, not input dispatch
     // VulkanSurfaceHostLinux owns the richer X11/Wayland snapshot and its
     // lifecycle lease. Do not create a second authority here.
     return;
@@ -933,7 +933,7 @@ void ScreenPanelVulkan::refreshNativeSurfaceGuiThread()
         window() && window()->isFullScreen(), std::memory_order_release);
     vulkan->presenter.NotifySurfaceChanged();
 #else
-#if defined(__APPLE__)
+#if defined(__APPLE__)  // scatter-budget-exempt: macOS presentation-layer geometry sync, not input dispatch
     // macOS is the only platform where the presentation layer has a size of its
     // own; it remains a GUI-thread-only geometry update.
     if (vulkan->presenter.IsInitialized())
@@ -1176,7 +1176,7 @@ void ScreenPanelVulkan::resizeEvent(QResizeEvent* event)
         // Coalesced, not immediate. Rebuilding here would mean one swapchain
         // per resize event during a window drag, and the GUI thread must not
         // destroy a swapchain the emulation thread may be presenting from.
-#if defined(__linux__)
+#if defined(__linux__)  // scatter-budget-exempt: Linux resize publication companion, not input dispatch
         vulkan->presenter.NotifySurfaceChanged();
 #endif
     }
@@ -1197,7 +1197,7 @@ bool ScreenPanelVulkan::event(QEvent* event)
             // publishes its generation after QWidget::event(). The panel must
             // never destroy a presenter from this GUI callback.
             (void)surfaceEvent;
-#if !defined(__linux__)
+#if !defined(__linux__)  // scatter-budget-exempt: non-Linux identity-authority note, not input dispatch
             // The native child publishes a lifecycle identity after its own
             // QWidget::event(); this parent event is not an identity authority.
 #endif
@@ -1220,7 +1220,7 @@ bool ScreenPanelVulkan::event(QEvent* event)
             // never rebuilds against a pre-transition snapshot.
             refreshSurfaceAfterBase = true;
 #endif
-#if defined(__linux__)
+#if defined(__linux__)  // scatter-budget-exempt: Linux native-surface refresh dispatch, not input dispatch
             QMetaObject::invokeMethod(
                 this, [this]() { refreshNativeSurfaceGuiThread(); }, Qt::QueuedConnection);
 #endif
@@ -1232,7 +1232,7 @@ bool ScreenPanelVulkan::event(QEvent* event)
     }
 
     const bool handled = ScreenPanel::event(event);
-#if !defined(__linux__)
+#if !defined(__linux__)  // scatter-budget-exempt: non-Linux fullscreen refresh authority, not input dispatch
     if (refreshSurfaceAfterBase)
         refreshNativeSurfaceGuiThread();
 #endif

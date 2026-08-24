@@ -1024,8 +1024,12 @@ def main() -> int:
             function_body(
                 vulkan_presenter,
                 # Both anchors are unique in this file, so the window is exactly
-                # the present span and its immediate bookkeeping.
-                "std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex());",
+                # the present span and its immediate bookkeeping. b8a5d35e1
+                # switched the lock to std::defer_lock so the wait itself could
+                # be timed (PresentQueueLockWait) separately from the present
+                # span; the mutex is still acquired, still before every marker
+                # below, and still released at the same queueLock.unlock().
+                "std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex(), std::defer_lock);",
                 "if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)",
             ),
             [
@@ -1034,7 +1038,8 @@ def main() -> int:
                 # measured present. unique_lock with an explicit unlock is what
                 # makes that boundary checkable here rather than implied by a
                 # closing brace.
-                "queueLock(Device.GetQueueMutex());",
+                "queueLock(Device.GetQueueMutex(), std::defer_lock);",
+                "queueLock.lock();",
                 # AMD PRESENT must be associated with the queue operation
                 # after queue ownership is acquired, not behind contention.
                 "AntiLag.EndFrame(LowLatencyFrameIndex);",
@@ -1740,6 +1745,61 @@ def main() -> int:
             )
         ),
         "Vulkan Reflex sleep timeout must close and disable the frame instead of counting timeout as success",
+        failures,
+    )
+
+    # The Off path overlaps its pacing sleep with a whole emulated frame, which
+    # is worth ~195 FPS. Generation ownership is what makes that safe: the sleep
+    # issued after present N belongs to frame N+1, and the still-open frame N
+    # must not join it. Joining "whatever is pending" regressed Off to ~330 FPS
+    # once already.
+    #
+    # On/OnBoost deliberately keep the inline issue-and-wait. Preissuing for
+    # them was measured on 2026-08-24 and rejected: the driver blocks inside
+    # vkLatencySleepNV (p50 1247 us), not in the semaphore wait (p50 2 us), and
+    # a wait that must finish before input has only presenter cleanup to hide
+    # behind. See docs/audit/vulkan_reflex_on_preissue_ab_2026-08-24.md.
+    reflex_notify = function_body(
+        vulkan,
+        "void VulkanNvidiaReflex::NotifyPresented() noexcept",
+        "void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)",
+    )
+    require(
+        "QueueAsyncSleep(FrameGeneration + 1)" in reflex_notify
+        and "Mode == VulkanNvidiaReflexMode::Off" in reflex_notify,
+        "Vulkan Reflex must preissue the next Off-mode pacing sleep after an accepted present, stamped for the next generation",
+        failures,
+    )
+    require(
+        "VulkanReflexSleepIsOwnedByFrame" in vulkan_reflex_header
+        and "PendingSleepGeneration" in vulkan_reflex_header
+        and "u64 FrameGeneration = 0;" in vulkan_reflex_header
+        and "TestVulkanReflexSleepGenerationOwnership" in vulkan_timing_tests,
+        "Vulkan Reflex pacing sleeps must be generation-owned and the ownership rule must be tested",
+        failures,
+    )
+    require(
+        ordered(
+            reflex_begin,
+            [
+                "++FrameGeneration;",
+                "if (PendingSleepBelongsToThisFrame())",
+                "return;",
+                "if (!PresentedSinceSleep)",
+            ],
+        ),
+        "Vulkan Reflex must advance the frame generation before adopting a preissued pacing sleep",
+        failures,
+    )
+    reflex_finish = function_body(
+        vulkan,
+        "void VulkanNvidiaReflex::FinishFrame()",
+        "u32 VulkanNvidiaReflex::QueryTimings(",
+    )
+    require(
+        "if (PendingSleepBelongsToThisFrame())" in reflex_finish
+        and "CompleteAsyncSleep();" in reflex_finish,
+        "Vulkan Reflex FinishFrame must join only a sleep the current frame owns",
         failures,
     )
 

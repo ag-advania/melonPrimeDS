@@ -136,6 +136,26 @@ and Present End are emitted immediately around the real
 renderer. GPU layout/HUD/OSD composition is submitted before Present Start, so
 NVIDIA receives an accurate native presentation boundary.
 
+`DX12NvidiaReflex::QueryTimings()` reads the driver's own latency reports back
+through `NvAPI_D3D_GetLatency` (interface id `0x1A587F9C`, resolved at runtime
+and optional). This is the DX12 counterpart of `vkGetLatencyTimingsNV`, and the
+only observable proof that the markers and the Sleep call were correlated by the
+driver into one frame: every marker entry point returns void, so without it an
+inert integration is indistinguishable from a working one. Developer builds log
+the newest report every 600 frames. `DX12NvidiaReflexLatencyReportStatus`
+distinguishes a missing entry point from a rejected query and from a
+successful-but-empty ring, because only the last of those says anything about
+the driver.
+
+Measured on 2026-08-24, DX12 Reflex is engaged and correct: the driver returns
+frame reports whose `frameID` matches the logical frame ids the markers carried.
+It costs nothing because `gpuActiveRenderTimeUs` is ~34 us against a
+`gpuFrameTimeUs` of ~1804 us -- the GPU is busy about 2% of the frame, no render
+queue accumulates, and the correct sleep is zero. `NvAPI_D3D_Sleep` measures
+p50 1.2 us (`reflex_sleep_us`), against p50 1247 us for `vkLatencySleepNV` under
+the same workload. Details:
+`docs/audit/dx12_reflex_latency_verification_2026-08-24.md`.
+
 Vulkan presents through `MelonPrimeVulkanSurfacePresenter`, so its Present
 markers and Present ID cover the real native swapchain submission and present.
 Reflex state belongs to each presenter/emulator instance; no process-global

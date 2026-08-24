@@ -122,11 +122,17 @@ private:
     DX12LowLatencyPacingDecision LastLoggedPacingDecision{};
     bool PacingDecisionLogged = false;
     DX12NvidiaReflex NvidiaReflex;
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    int ReflexLatencyTimingCountdown = 0;
+#endif
     bool NativeGPU2DAnnounced = false;
     bool NativeGPU2DFallbackAnnounced = false;
     bool NativeGPU2DStartupFallbackAnnounced = false;
 
     void LogLowLatencyPacingStateIfChanged();
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    void ReportReflexLatencyTimings();
+#endif
 };
 
 } // namespace melonDS
