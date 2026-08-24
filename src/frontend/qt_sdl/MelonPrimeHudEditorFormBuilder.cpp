@@ -359,7 +359,7 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
     auto* hlay = new QHBoxLayout(container);
     hlay->setContentsMargins(0, 0, 0, 0);
     const bool nativeChrome = UsesNativeWindowsChrome(*container);
-    hlay->setSpacing(nativeChrome ? 4 : 2);
+    hlay->setSpacing(nativeChrome ? 4 : 0);
 
     auto* on = new QRadioButton(QStringLiteral("ON"), container);
     auto* off = new QRadioButton(QStringLiteral("OFF"), container);
@@ -380,13 +380,17 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
     hlay->addWidget(off, 0);
     hlay->addWidget(btn, 0);
 
-    // QFormLayout's ExpandingFieldsGrow column-width distribution can still
-    // hand this row 1px less than its own minimumSizeHint on non-native
-    // chrome even after the spacing trim above (verified against real BSD
-    // CI: 0px margin clipped the swatch by 1px, +2px overshot the panel's
-    // right edge by 3px). +1px split the difference cleanly there.
+    // Real BSD CI showed the row's own content need (184px at 2px spacing)
+    // can exceed the width QFormLayout actually leaves for this column by
+    // exactly 1px, regardless of how the margin is tuned -- padding the
+    // container's minimum only moves which edge clips. Relying on the
+    // container's implicit minimumSizeHint (no explicit call) also measured
+    // 1px under its own natural sum on that same CI. An explicit
+    // setMinimumWidth() call is delivered verbatim instead, so zeroing the
+    // spacing here (dropping the natural sum to 180px) and setting it
+    // explicitly is what actually buys back the margin.
     if (!nativeChrome)
-        container->setMinimumWidth(container->minimumSizeHint().width() + 1);
+        container->setMinimumWidth(container->minimumSizeHint().width());
 
     std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
     QObject::connect(on, &QRadioButton::toggled, &ctx.signalReceiver, [ctx, btn, kE](bool checked) {

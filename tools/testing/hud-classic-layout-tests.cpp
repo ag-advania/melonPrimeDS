@@ -190,7 +190,7 @@ public:
         auto* layout = new QHBoxLayout(field);
         layout->setContentsMargins(0, 0, 0, 0);
         const bool nativeChrome = MelonPrime::HudEditorForm::UsesNativeWindowsChrome(*field);
-        layout->setSpacing(nativeChrome ? 4 : 2);
+        layout->setSpacing(nativeChrome ? 4 : 0);
         auto* on = new QRadioButton(QStringLiteral("ON"), field);
         auto* off = new QRadioButton(QStringLiteral("OFF"), field);
         on->setMinimumWidth(kRadioOnWidth);
@@ -199,7 +199,7 @@ public:
         layout->addWidget(off, 0);
         layout->addWidget(addColorButton(field), 0);
         if (!nativeChrome)
-            field->setMinimumWidth(field->minimumSizeHint().width() + 1);
+            field->setMinimumWidth(field->minimumSizeHint().width());
         addRow(labelText, field);
     }
 
