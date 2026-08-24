@@ -1024,8 +1024,12 @@ def main() -> int:
             function_body(
                 vulkan_presenter,
                 # Both anchors are unique in this file, so the window is exactly
-                # the present span and its immediate bookkeeping.
-                "std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex());",
+                # the present span and its immediate bookkeeping. b8a5d35e1
+                # switched the lock to std::defer_lock so the wait itself could
+                # be timed (PresentQueueLockWait) separately from the present
+                # span; the mutex is still acquired, still before every marker
+                # below, and still released at the same queueLock.unlock().
+                "std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex(), std::defer_lock);",
                 "if (res == VK_ERROR_OUT_OF_DATE_KHR || res == VK_SUBOPTIMAL_KHR)",
             ),
             [
@@ -1034,7 +1038,8 @@ def main() -> int:
                 # measured present. unique_lock with an explicit unlock is what
                 # makes that boundary checkable here rather than implied by a
                 # closing brace.
-                "queueLock(Device.GetQueueMutex());",
+                "queueLock(Device.GetQueueMutex(), std::defer_lock);",
+                "queueLock.lock();",
                 # AMD PRESENT must be associated with the queue operation
                 # after queue ownership is acquired, not behind contention.
                 "AntiLag.EndFrame(LowLatencyFrameIndex);",
