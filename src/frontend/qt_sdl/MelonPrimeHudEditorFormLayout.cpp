@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <QLabel>
+#include <QLayout>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSizePolicy>
 #include <QStyle>
 #include <QWidget>
@@ -66,6 +68,50 @@ void ConstrainWrappedFormLabels(QWidget& root, int maximumWidth)
             if (widget->width() > targetWidth)
                 widget->resize(targetWidth, widget->height());
         }
+    }
+}
+
+int ReservedVerticalScrollBarWidth(const QWidget& root)
+{
+    const QScrollArea* scroll = root.findChild<QScrollArea*>();
+    if (!scroll)
+        return 0;
+    const Qt::ScrollBarPolicy policy = scroll->verticalScrollBarPolicy();
+    // AlwaysOff never takes width; AlwaysOn is already inside sizeHint().
+    if (policy != Qt::ScrollBarAsNeeded)
+        return 0;
+    const QScrollBar* bar = scroll->verticalScrollBar();
+    if (!bar)
+        return 0;
+    return std::max(0, bar->sizeHint().width());
+}
+
+void ConstrainPanelWidth(QWidget& root, int targetWidth, int passes)
+{
+    const int width = targetWidth > 0 ? targetWidth : 1;
+    QScrollArea* scroll = root.findChild<QScrollArea*>();
+    for (int pass = 0; pass < passes; ++pass)
+    {
+        // The viewport can still be wider than the target while the panel is
+        // pinned open by a latched minimum. Bounding the labels against that
+        // transient width would keep them too wide to ever let the panel back
+        // down, so the target width always wins.
+        int constrainWidth = width;
+        if (scroll)
+        {
+            const int viewportWidth = scroll->viewport()->width();
+            if (viewportWidth > 0)
+                constrainWidth = std::min(width, viewportWidth);
+        }
+        ConstrainWrappedFormLabels(root, constrainWidth);
+
+        root.setMinimumWidth(0);
+        if (QLayout* layout = root.layout())
+            layout->activate();
+        if (root.width() != width)
+            root.resize(width, root.height());
+        if (QLayout* layout = root.layout())
+            layout->activate();
     }
 }
 

@@ -248,12 +248,19 @@ struct CaseSpec
     bool requireWideContent;
 };
 
-bool inside(const QRect& child, const QRect& parent)
+// QFormLayout hands its label and field columns out with integer rounding, so
+// when the viewport lands on exactly the form's minimum width a column can end
+// up a single pixel past the content rect. That one pixel mirrors the slack
+// already granted below for WrapLongRows row-height rounding and for the
+// scroll-area width comparison; anything wider clips a control for real.
+constexpr int kColumnRoundingSlack = 1;
+
+bool inside(const QRect& child, const QRect& parent, int slack = 0)
 {
-    return child.left() >= parent.left()
-        && child.top() >= parent.top()
-        && child.right() <= parent.right()
-        && child.bottom() <= parent.bottom();
+    return child.left() >= parent.left() - slack
+        && child.top() >= parent.top() - slack
+        && child.right() <= parent.right() + slack
+        && child.bottom() <= parent.bottom() + slack;
 }
 
 std::string rectText(const QRect& rect)
@@ -267,8 +274,11 @@ bool checkFixture(ClassicLayoutFixture& fixture, const CaseSpec& spec,
 {
     fixture.root.adjustSize();
     fixture.form->activate();
+    // Mirror MelonPrimeHud_PositionEditPanel: the natural hint is measured
+    // before the vertical scrollbar exists, so the panel has to reserve it.
     const int naturalWidth = std::max(fixture.root.sizeHint().width(),
-                                      fixture.root.minimumSizeHint().width());
+                                      fixture.root.minimumSizeHint().width())
+        + MelonPrime::HudEditorForm::ReservedVerticalScrollBarWidth(fixture.root);
     const int finalWidth = MelonPrime::HudEditorPanelGeometry::FinalWidth(
         spec.windowWidth, naturalWidth);
     const int usableWidth = MelonPrime::HudEditorPanelGeometry::UsableWidth(
@@ -282,11 +292,14 @@ bool checkFixture(ClassicLayoutFixture& fixture, const CaseSpec& spec,
     QApplication::processEvents();
     for (int pass = 0; pass < 3; ++pass)
     {
-        const int viewportWidth = fixture.scroll->viewport()->width();
-        MelonPrime::HudEditorForm::ConstrainWrappedFormLabels(
-            fixture.root, viewportWidth > 0 ? viewportWidth : finalWidth);
+        MelonPrime::HudEditorForm::ConstrainPanelWidth(fixture.root, finalWidth, 1);
         fixture.form->activate();
         QApplication::processEvents();
+        if (fixture.root.width() != finalWidth)
+        {
+            fixture.root.resize(finalWidth, spec.windowHeight);
+            QApplication::processEvents();
+        }
     }
 
     const QRect innerRect = fixture.inner->rect();
@@ -319,8 +332,8 @@ bool checkFixture(ClassicLayoutFixture& fixture, const CaseSpec& spec,
                 + " fieldRect=" + (row.field ? rectText(row.field->geometry()) : "<null>");
             return false;
         }
-        if (!inside(row.label->geometry(), innerRect)
-            || !inside(row.field->geometry(), innerRect))
+        if (!inside(row.label->geometry(), innerRect, kColumnRoundingSlack)
+            || !inside(row.field->geometry(), innerRect, kColumnRoundingSlack))
         {
             failure = "label or field leaves the form viewport label="
                 + row.label->text().toStdString() + " labelRect="
