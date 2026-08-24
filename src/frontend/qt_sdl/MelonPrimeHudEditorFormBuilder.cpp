@@ -380,11 +380,6 @@ void AddColorOverlayRow(WidgetFactoryContext& ctx,
     hlay->addWidget(off, 0);
     hlay->addWidget(btn, 0);
 
-    // See AddBoolRadioRow: same non-native chrome rounding margin, this row
-    // just has a third (color swatch) widget riding the same boundary.
-    if (!nativeChrome)
-        container->setMinimumWidth(container->minimumSizeHint().width() + 2);
-
     std::string kE(enableKey), kR(keyR), kG(keyG), kB(keyB);
     QObject::connect(on, &QRadioButton::toggled, &ctx.signalReceiver, [ctx, btn, kE](bool checked) {
         if (ctx.populating || !checked) return;

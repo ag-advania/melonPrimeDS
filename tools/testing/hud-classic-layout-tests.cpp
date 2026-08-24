@@ -198,8 +198,6 @@ public:
         layout->addWidget(on, 0);
         layout->addWidget(off, 0);
         layout->addWidget(addColorButton(field), 0);
-        if (!nativeChrome)
-            field->setMinimumWidth(field->minimumSizeHint().width() + 2);
         addRow(labelText, field);
     }
 
