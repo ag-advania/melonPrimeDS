@@ -623,7 +623,68 @@ void DX12Renderer::EndIntelXeLLPresent()
 void DX12Renderer::FinishReflexFrame()
 {
     NvidiaReflex.FinishFrame();
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    ReportReflexLatencyTimings();
+#endif
 }
+
+
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+void DX12Renderer::ReportReflexLatencyTimings()
+{
+    if (!NvidiaReflex.IsAvailable())
+        return;
+
+    // Every 600th frame, matching VulkanPresenter::ReportLatencyTimings(), so a
+    // long session leaves a readable handful of lines instead of a wall of
+    // them. Developer builds only: this exists to prove the markers and the
+    // Sleep call are landing, which is not something a shipping user needs.
+    if (++ReflexLatencyTimingCountdown < 600)
+        return;
+    ReflexLatencyTimingCountdown = 0;
+
+    DX12NvidiaReflexFrameReport reports[8]{};
+    const melonDS::u32 count = NvidiaReflex.QueryTimings(reports, 8);
+    if (count == 0)
+    {
+        // Not cosmetic. Reflex On costing nothing on this backend is only
+        // believable if the driver is correlating frames; an empty report under
+        // an active mode says the opposite.
+        Platform::Log(Platform::LogLevel::Info,
+            "NVIDIA Reflex timings: none (reason=%s mode=%d active=%d)\n",
+            DX12NvidiaReflexLatencyReportStatusName(
+                NvidiaReflex.GetLatencyReportStatus()),
+            static_cast<int>(NvidiaReflex.GetMode()),
+            NvidiaReflex.IsActive() ? 1 : 0);
+        return;
+    }
+
+    // A non-zero frameID matching the ids the markers carried, together with
+    // non-zero sim/submit/present stamps, is the end-to-end evidence that
+    // NvAPI_D3D_SetLatencyMarker and NvAPI_D3D_Sleep were correlated by the
+    // driver into one frame.
+    const DX12NvidiaReflexFrameReport& r = reports[count - 1];
+    Platform::Log(Platform::LogLevel::Info,
+        "NVIDIA Reflex timings: mode=%d active=%d reports=%u frameID=%llu sim=%llu..%llu "
+        "renderSubmit=%llu..%llu present=%llu..%llu gpuRender=%llu..%llu inputSample=%llu "
+        "gpuActiveRenderUs=%u gpuFrameUs=%u\n",
+        static_cast<int>(NvidiaReflex.GetMode()),
+        NvidiaReflex.IsActive() ? 1 : 0,
+        static_cast<unsigned>(count),
+        static_cast<unsigned long long>(r.FrameId),
+        static_cast<unsigned long long>(r.SimStartTimeUs),
+        static_cast<unsigned long long>(r.SimEndTimeUs),
+        static_cast<unsigned long long>(r.RenderSubmitStartTimeUs),
+        static_cast<unsigned long long>(r.RenderSubmitEndTimeUs),
+        static_cast<unsigned long long>(r.PresentStartTimeUs),
+        static_cast<unsigned long long>(r.PresentEndTimeUs),
+        static_cast<unsigned long long>(r.GpuRenderStartTimeUs),
+        static_cast<unsigned long long>(r.GpuRenderEndTimeUs),
+        static_cast<unsigned long long>(r.InputSampleTimeUs),
+        static_cast<unsigned>(r.GpuActiveRenderTimeUs),
+        static_cast<unsigned>(r.GpuFrameTimeUs));
+}
+#endif
 
 void DX12Renderer::FinishIntelXeLLFrame()
 {

@@ -73,7 +73,9 @@ bool VulkanNvidiaReflex::Initialize(VulkanDevice& device)
     AppliedMode = VulkanNvidiaReflexMode::Off;
     ModeApplied = false;
     FrameId = 0;
+    FrameGeneration = 0;
     PresentedSinceSleep = true;
+    DiscardPendingSleepOwnership();
 
     // VulkanDevice already decided this at vkCreateDevice time and recorded
     // why. Repeating the reason verbatim keeps one explanation in the log
@@ -100,8 +102,8 @@ bool VulkanNvidiaReflex::Initialize(VulkanDevice& device)
     if (!CreateSleepSemaphore())
         return false;
 
-    AsyncOffModeSleepEnabled = true;
-    if (!StartOffModeSleepWorker())
+    AsyncSleepEnabled = true;
+    if (!StartAsyncSleepWorker())
         return false;
 
     Available = true;
@@ -143,9 +145,9 @@ bool VulkanNvidiaReflex::CreateSleepSemaphore()
 
 void VulkanNvidiaReflex::Shutdown() noexcept
 {
-    CompleteOffModeSleep();
-    OffModeSleepPrimedForNextFrame = false;
-    StopOffModeSleepWorker();
+    CompleteAsyncSleep();
+    DiscardPendingSleepOwnership();
+    StopAsyncSleepWorker();
 
     // The swapchain is dropped first: leaving pacing enabled on a swapchain the
     // caller is about to destroy would leave the driver holding a stale handle.
@@ -175,11 +177,12 @@ void VulkanNvidiaReflex::Shutdown() noexcept
     RenderSubmitOpen = false;
     PresentOpen = false;
     FrameId = 0;
+    FrameGeneration = 0;
     SleepValue = 0;
     Mode = VulkanNvidiaReflexMode::Off;
     AppliedMode = VulkanNvidiaReflexMode::Off;
     PresentedSinceSleep = true;
-    AsyncOffModeSleepEnabled = false;
+    AsyncSleepEnabled = false;
 }
 
 
@@ -214,8 +217,8 @@ void VulkanNvidiaReflex::SetSwapchain(VkSwapchainKHR swapchain)
     if (Swapchain == swapchain)
         return;
 
-    CompleteOffModeSleep();
-    OffModeSleepPrimedForNextFrame = false;
+    CompleteAsyncSleep();
+    DiscardPendingSleepOwnership();
 
     Swapchain = swapchain;
 
@@ -242,8 +245,8 @@ void VulkanNvidiaReflex::SetMode(VulkanNvidiaReflexMode mode)
     if (Mode == mode && ModeApplied)
         return;
 
-    CompleteOffModeSleep();
-    OffModeSleepPrimedForNextFrame = false;
+    CompleteAsyncSleep();
+    DiscardPendingSleepOwnership();
 
     Mode = mode;
     if (!Available || Swapchain == VK_NULL_HANDLE)
@@ -305,17 +308,17 @@ bool VulkanNvidiaReflex::ApplySleepMode()
 // Frame path
 // ---------------------------------------------------------------------------
 
-bool VulkanNvidiaReflex::StartOffModeSleepWorker()
+bool VulkanNvidiaReflex::StartAsyncSleepWorker()
 {
     try
     {
-        OffModeSleepStop = false;
-        OffModeSleepThread = std::thread(&VulkanNvidiaReflex::OffModeSleepWorkerMain, this);
+        AsyncSleepStop = false;
+        AsyncSleepThread = std::thread(&VulkanNvidiaReflex::AsyncSleepWorkerMain, this);
     }
     catch (...)
     {
-        AsyncOffModeSleepEnabled = false;
-        Disable("the asynchronous Reflex Off-mode worker could not be started");
+        AsyncSleepEnabled = false;
+        Disable("the asynchronous Reflex pacing worker could not be started");
         return false;
     }
 
@@ -325,44 +328,44 @@ bool VulkanNvidiaReflex::StartOffModeSleepWorker()
 }
 
 
-void VulkanNvidiaReflex::StopOffModeSleepWorker() noexcept
+void VulkanNvidiaReflex::StopAsyncSleepWorker() noexcept
 {
-    if (!OffModeSleepThread.joinable())
+    if (!AsyncSleepThread.joinable())
         return;
 
     {
-        std::lock_guard<std::mutex> lock(OffModeSleepMutex);
-        OffModeSleepStop = true;
+        std::lock_guard<std::mutex> lock(AsyncSleepMutex);
+        AsyncSleepStop = true;
     }
-    OffModeSleepCv.notify_all();
-    OffModeSleepThread.join();
+    AsyncSleepCv.notify_all();
+    AsyncSleepThread.join();
 
-    OffModeSleepStop = false;
-    OffModeSleepRequest = false;
-    OffModeSleepRunning = false;
-    OffModeSleepReady = false;
-    OffModeSleepPrimedForNextFrame = false;
+    AsyncSleepStop = false;
+    AsyncSleepRequest = false;
+    AsyncSleepRunning = false;
+    AsyncSleepReady = false;
+    DiscardPendingSleepOwnership();
 }
 
 
-void VulkanNvidiaReflex::OffModeSleepWorkerMain() noexcept
+void VulkanNvidiaReflex::AsyncSleepWorkerMain() noexcept
 {
     for (;;)
     {
         VkSwapchainKHR swapchain = VK_NULL_HANDLE;
         u64 value = 0;
         {
-            std::unique_lock<std::mutex> lock(OffModeSleepMutex);
-            OffModeSleepCv.wait(lock, [this]() {
-                return OffModeSleepStop || OffModeSleepRequest;
+            std::unique_lock<std::mutex> lock(AsyncSleepMutex);
+            AsyncSleepCv.wait(lock, [this]() {
+                return AsyncSleepStop || AsyncSleepRequest;
             });
-            if (OffModeSleepStop)
+            if (AsyncSleepStop)
                 return;
 
-            swapchain = OffModeSleepSwapchain;
-            value = OffModeSleepValue;
-            OffModeSleepRequest = false;
-            OffModeSleepRunning = true;
+            swapchain = AsyncSleepSwapchain;
+            value = AsyncSleepValue;
+            AsyncSleepRequest = false;
+            AsyncSleepRunning = true;
         }
 
         VkLatencySleepInfoNV sleep{};
@@ -393,59 +396,91 @@ void VulkanNvidiaReflex::OffModeSleepWorkerMain() noexcept
         }
 
         {
-            std::lock_guard<std::mutex> lock(OffModeSleepMutex);
-            OffModeSleepCallResult = sleepResult;
-            OffModeSleepWaitResult = waitResult;
-            OffModeSleepRunning = false;
-            OffModeSleepReady = true;
+            std::lock_guard<std::mutex> lock(AsyncSleepMutex);
+            AsyncSleepCallResult = sleepResult;
+            AsyncSleepWaitResult = waitResult;
+            AsyncSleepRunning = false;
+            AsyncSleepReady = true;
         }
-        OffModeSleepCv.notify_all();
+        AsyncSleepCv.notify_all();
     }
 }
 
 
-bool VulkanNvidiaReflex::QueueOffModeSleep()
+// `ownerGeneration` is the frame generation permitted to join this sleep, and
+// nothing else may. Issuing after a present stamps FrameGeneration + 1; the
+// cold-start path inside BeginFrame stamps the generation it just opened.
+bool VulkanNvidiaReflex::QueueAsyncSleep(u64 ownerGeneration)
 {
-    std::lock_guard<std::mutex> lock(OffModeSleepMutex);
-    if (!OffModeSleepThread.joinable() || OffModeSleepRequest
-        || OffModeSleepRunning || OffModeSleepReady)
     {
-        return false;
+        std::lock_guard<std::mutex> lock(AsyncSleepMutex);
+        if (!AsyncSleepThread.joinable() || AsyncSleepRequest
+            || AsyncSleepRunning || AsyncSleepReady)
+        {
+            return false;
+        }
+
+        AsyncSleepSwapchain = Swapchain;
+        AsyncSleepValue = ++SleepValue;
+        AsyncSleepRequest = true;
+        PresentedSinceSleep = false;
+        AsyncSleepCv.notify_one();
     }
 
-    OffModeSleepSwapchain = Swapchain;
-    OffModeSleepValue = ++SleepValue;
-    OffModeSleepRequest = true;
-    PresentedSinceSleep = false;
-    OffModeSleepCv.notify_one();
+    PendingSleepValid = true;
+    PendingSleepGeneration = ownerGeneration;
     return true;
 }
 
 
-bool VulkanNvidiaReflex::CompleteOffModeSleep()
+void VulkanNvidiaReflex::DiscardPendingSleepOwnership() noexcept
 {
-    if (!OffModeSleepThread.joinable())
+    PendingSleepValid = false;
+    PendingSleepGeneration = 0;
+}
+
+
+bool VulkanNvidiaReflex::CompleteAsyncSleep()
+{
+    if (!AsyncSleepThread.joinable())
+    {
+        DiscardPendingSleepOwnership();
         return true;
+    }
 
     VkResult sleepResult = VK_SUCCESS;
     VkResult waitResult = VK_SUCCESS;
     u64 value = 0;
     {
-        std::unique_lock<std::mutex> lock(OffModeSleepMutex);
-        if (!OffModeSleepRequest && !OffModeSleepRunning && !OffModeSleepReady)
+        std::unique_lock<std::mutex> lock(AsyncSleepMutex);
+        if (!AsyncSleepRequest && !AsyncSleepRunning && !AsyncSleepReady)
+        {
+            DiscardPendingSleepOwnership();
             return true;
-        OffModeSleepCv.wait(lock, [this]() { return OffModeSleepReady; });
-        sleepResult = OffModeSleepCallResult;
-        waitResult = OffModeSleepWaitResult;
-        value = OffModeSleepValue;
-        OffModeSleepReady = false;
+        }
+        // Measured apart from ReflexLatencySleep/ReflexSleepWait on purpose:
+        // those two are the driver cost the worker absorbed, this one is what
+        // actually reaches the CPU hot path. A near-zero join with a ~1ms
+        // worker wait is the whole point of issuing the request early.
+        {
+            VulkanPerf::ScopedCpuTimer timer(VulkanPerf::CpuMetric::ReflexSleepJoin);
+            AsyncSleepCv.wait(lock, [this]() { return AsyncSleepReady; });
+        }
+        sleepResult = AsyncSleepCallResult;
+        waitResult = AsyncSleepWaitResult;
+        value = AsyncSleepValue;
+        AsyncSleepReady = false;
     }
+
+    // Consumed either way: a failed sleep must not stay adoptable by a later
+    // frame, and a successful one has just been joined by its owner.
+    DiscardPendingSleepOwnership();
 
     if (sleepResult != VK_SUCCESS)
     {
         if (SleepValue == value)
             --SleepValue;
-        DisableForRuntimeFailure("vkLatencySleepNV(async Off mode)", sleepResult);
+        DisableForRuntimeFailure("vkLatencySleepNV(async pacing)", sleepResult);
         FrameOpen = false;
         return false;
     }
@@ -453,7 +488,7 @@ bool VulkanNvidiaReflex::CompleteOffModeSleep()
         == VulkanReflexSleepWaitAction::DisableForRuntimeFailure)
     {
         DisableForRuntimeFailure(
-            "vkWaitSemaphores(Reflex async Off-mode sleep)", waitResult);
+            "vkWaitSemaphores(Reflex async pacing sleep)", waitResult);
         PresentedSinceSleep = true;
         FrameOpen = false;
         return false;
@@ -469,13 +504,31 @@ void VulkanNvidiaReflex::NotifyPresented() noexcept
     // The previous present is now accepted and its PRESENT_END marker has
     // already been emitted. Start the next Off-mode WSI pacing operation at
     // this earliest legal point so presenter cleanup and the entire next game
-    // frame can overlap the driver-side wait. If the worker is unexpectedly
-    // busy, leave PresentedSinceSleep set: BeginFrame will retry safely rather
-    // than consuming a second sleep between the same pair of presents.
-    if (AsyncOffModeSleepEnabled && Mode == VulkanNvidiaReflexMode::Off
+    // frame can overlap the driver-side wait. The request is stamped for the
+    // *next* generation, so the frame that is still open cannot join it;
+    // FinishFrame() checks that ownership.
+    //
+    // On/OnBoost deliberately do NOT preissue here. Measured on 2026-08-24
+    // (F7, 2x, VSync off, frame limit off): the blocking lives inside
+    // vkLatencySleepNV itself (p50 1247 us) and not in the semaphore wait
+    // (p50 2 us), so there is no semaphore to let mature. Off can hide that
+    // block behind a whole emulated frame and its join falls to p50 191 us,
+    // but On/OnBoost must complete the wait before input sampling and so can
+    // only overlap the few tens of microseconds of presenter cleanup between
+    // present and the next BeginFrame. Preissuing for them moved p50 1247 us
+    // to p50 1240 us and left FPS unchanged at ~332 against ~337, so it was
+    // not adopted: it buys nothing and moves a vendor pacing call off the
+    // thread NVIDIA's integration model expects it on.
+    //
+    // If the worker is unexpectedly busy the request is simply not made and
+    // any sleep already in flight keeps the generation it was stamped with, so
+    // its owner still drains it. PresentedSinceSleep stays set, and BeginFrame
+    // falls back to issuing the sleep itself rather than skipping pacing or
+    // spending a second sleep between the same pair of presents.
+    if (AsyncSleepEnabled && Mode == VulkanNvidiaReflexMode::Off
         && IsFramePathAvailable())
     {
-        OffModeSleepPrimedForNextFrame = QueueOffModeSleep();
+        QueueAsyncSleep(FrameGeneration + 1);
     }
 }
 
@@ -489,11 +542,6 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
 
     if (FrameOpen)
         FinishFrame();
-
-    // A sleep queued immediately after the preceding accepted present now
-    // belongs to this frame. FinishFrame must drain it only if this frame exits
-    // without reaching MarkPresentStart().
-    OffModeSleepPrimedForNextFrame = false;
 
     // Reflex frame IDs represent logical emulated/game frames. They are not
     // presenter callbacks, swapchain image indices, or frame-ring slots. A
@@ -515,6 +563,21 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
     RenderSubmitOpen = false;
     PresentOpen = false;
 
+    // The generation advances only once the frame is really open, and only
+    // after the FinishFrame() above has closed the previous one. That ordering
+    // is what stops the previous frame from joining the sleep that was issued
+    // for this one.
+    ++FrameGeneration;
+
+    // Off adopts the sleep issued after the previous present and keeps it
+    // overlapped with this whole game frame, joining it at the present
+    // boundary (MarkPresentStart). That policy is worth about 195 FPS on this
+    // workload. On/OnBoost never have a sleep to adopt -- see NotifyPresented()
+    // for the measurement that rejected preissuing for them -- so they fall
+    // through to the inline issue-and-wait below.
+    if (PendingSleepBelongsToThisFrame())
+        return;
+
     // vkLatencySleepNV is specified to be called exactly once between presents.
     // The presenter legitimately skips frames (minimised window, swapchain not
     // ready, no ROM), so a second sleep with no present in between would break
@@ -523,16 +586,20 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
     if (!PresentedSinceSleep)
         return;
 
-    if (AsyncOffModeSleepEnabled && Mode == VulkanNvidiaReflexMode::Off)
+    if (AsyncSleepEnabled && Mode == VulkanNvidiaReflexMode::Off)
     {
-        if (!QueueOffModeSleep())
+        if (!QueueAsyncSleep(FrameGeneration))
         {
-            Disable("the asynchronous Reflex Off-mode pacing request overlapped another request");
+            Disable("the asynchronous Reflex pacing request overlapped another request");
             FrameOpen = false;
         }
         return;
     }
 
+    // On/OnBoost every frame, plus any Off frame with no preissued sleep to
+    // adopt (cold start, swapchain recreate, mode change, or a present that
+    // never reached NotifyPresented()). The pacing wait completes here, before
+    // input sampling, which is the position Reflex's contract constrains.
     const Vk::DeviceDispatch& fns = Device->Fns();
 
     VkLatencySleepInfoNV sleep{};
@@ -555,11 +622,11 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
         return;
     }
 
-    // The API contract separates sleep request issue from the semaphore wait.
-    // This synchronous On/OnBoost path deliberately blocks the presenting
-    // thread until the driver says the low-latency frame should start. Some
-    // drivers also spend measurable time inside vkLatencySleepNV itself; the
-    // Off path above overlaps both operations on its persistent worker.
+    // The API contract separates sleep request issue from the semaphore wait,
+    // but on this driver the block is in vkLatencySleepNV above (p50 1247 us
+    // with pacing on) and this wait is nearly free (p50 2 us). It is kept
+    // because the semaphore is the specified completion signal, not because it
+    // is where the time goes.
     VkSemaphoreWaitInfoKHR wait{};
     wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO_KHR;
     wait.semaphoreCount = 1;
@@ -681,7 +748,10 @@ void VulkanNvidiaReflex::MarkPresentStart()
 {
     if (!FrameOpen || PresentOpen)
         return;
-    if (!CompleteOffModeSleep())
+    // Off's join point. On/OnBoost already joined in BeginFrame, so this is a
+    // no-op for them; the ownership check keeps it from ever reaching past
+    // this frame's own sleep.
+    if (PendingSleepBelongsToThisFrame() && !CompleteAsyncSleep())
         return;
     MarkRenderSubmitEnd();
     MarkSimulationEnd();
@@ -700,8 +770,12 @@ void VulkanNvidiaReflex::MarkPresentEnd()
 
 void VulkanNvidiaReflex::FinishFrame()
 {
-    if (!OffModeSleepPrimedForNextFrame)
-        CompleteOffModeSleep();
+    // Drain only a sleep this frame owns. The sleep queued after this frame's
+    // present belongs to the next frame, and joining it here would put the full
+    // pacing wait back on the CPU hot path -- exactly the regression this
+    // generation stamp exists to prevent.
+    if (PendingSleepBelongsToThisFrame())
+        CompleteAsyncSleep();
     // Defensive closure covers a presenter admission skip or a renderer
     // transition. It never invents a present: the present markers are only
     // closed when MarkPresentStart() already bracketed QueuePresentKHR.

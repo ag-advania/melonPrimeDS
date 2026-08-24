@@ -391,13 +391,38 @@ paint events.
 also requires `VK_KHR_present_id` and timeline semaphores. It enables latency
 mode on each swapchain, associates the final graphics submission and
 `vkQueuePresentKHR` with the same monotonically increasing Present ID, and
-publishes Input Sample / Simulation / Render Submit / Present markers. The
-emulation thread calls `vkLatencySleepNV` followed by a host wait on the
-extension's timeline semaphore once per frame, immediately before late input
-polling. Input Sample is placed immediately before the first input read;
-Simulation Start follows `RunFrameHook()` and `SetKeyMask()`. The helper rejects
-duplicate or reversed Input Sample / Simulation markers. Minimum interval is
-always zero, so Reflex never adds a frame-rate cap.
+publishes Input Sample / Simulation / Render Submit / Present markers. Input
+Sample is placed immediately before the first input read; Simulation Start
+follows `RunFrameHook()` and `SetKeyMask()`. The helper rejects duplicate or
+reversed Input Sample / Simulation markers. Minimum interval is always zero, so
+Reflex never adds a frame-rate cap.
+
+`vkLatencySleepNV` blocks inside the driver rather than returning immediately:
+measured p50 1798 us with pacing off and p50 1247 us with pacing on, while the
+`vkWaitSemaphores` that follows it is p50 2 us. Where that block is paid is
+mode-dependent:
+
+- **Off** issues the sleep on a persistent worker thread immediately after the
+  previous accepted present and joins it just before `vkQueuePresentKHR`, so the
+  whole emulated frame overlaps the driver-side block. Its hot-path cost falls
+  to p50 191 us.
+- **On / On+Boost** issue and wait inline in `BeginFrame`, before input
+  sampling, because Reflex exists to place input directly after the pacing wait
+  returns. Their block cannot be overlapped: the only work available before
+  input is the presenter cleanup between present and the next frame. That
+  ~1.25 ms is the pacing itself, not overhead to schedule around -- preissuing
+  for these modes was measured and rejected on 2026-08-24
+  (`docs/audit/vulkan_reflex_on_preissue_ab_2026-08-24.md`).
+
+Each queued sleep is stamped with the frame generation allowed to consume it.
+The frame that is still open when the next frame's sleep is issued must not join
+it: doing so serialises the full block back onto the CPU hot path and regressed
+the Off path to ~330 FPS before generation ownership was introduced.
+`vkGetLatencyTimingsNV` reporting, the marker set, and Present ID correlation
+are unchanged by the placement. Cold start, swapchain recreation, mode changes
+and any Off frame with no preissued sleep to adopt fall back to the same inline
+issue-and-wait, so correctness never depends on the request having been made
+early.
 
 **AMD Anti-Lag 2** uses the native `VK_AMD_anti_lag` device extension and its
 `antiLag` feature. Every emulated frame gets one monotonically increasing frame
