@@ -37,6 +37,11 @@ enum class Section : uint8_t {
     RunFrame,
     Draw,
     DeferredDrain,
+    FrameSetup,
+    VulkanBegin,
+    PreRun,
+    PostDrawBookkeeping,
+    UncappedYield,
     Count
 };
 
@@ -375,14 +380,18 @@ inline void MaybeReport1Hz()
 
     fprintf(stderr,
         "[MelonPrimePerf] frame_ms p50=%.3f p95=%.3f p99=%.3f max=%.3f n=%u | "
-        "sec_avg_ms sleep=%.3f spin=%.3f input=%.3f run=%.3f draw=%.3f drain=%.3f | "
+        "sec_avg_ms sleep=%.3f spin=%.3f setup=%.3f vkbegin=%.3f input=%.3f prerun=%.3f run=%.3f draw=%.3f drain=%.3f book=%.3f yield=%.3f | "
         "input_src raw=%llu mac=%llu linux=%llu panel=%llu qcur=%llu (tot=%llu) | "
         "warp=%llu oog_patch=%llu osd_apply=%llu osd_write=%llu | "
         "hud_dirty_px=%llu gl_up_B=%llu dr3_skip=%llu hud_render_us=%.1f\n",
         p50, p95, p99, frameMax, n,
         secAvg(Section::LimiterSleep), secAvg(Section::LimiterSpin),
-        secAvg(Section::Input), secAvg(Section::RunFrame),
+        secAvg(Section::FrameSetup), secAvg(Section::VulkanBegin),
+        secAvg(Section::Input),
+        secAvg(Section::PreRun), secAvg(Section::RunFrame),
         secAvg(Section::Draw), secAvg(Section::DeferredDrain),
+        secAvg(Section::PostDrawBookkeeping),
+        secAvg(Section::UncappedYield),
         static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::WinRaw)]),
         static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::MacRaw)]),
         static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::LinuxRaw)]),
@@ -910,6 +919,11 @@ enum class Section : uint8_t {
     RunFrame,
     Draw,
     DeferredDrain,
+    FrameSetup,
+    VulkanBegin,
+    PreRun,
+    PostDrawBookkeeping,
+    UncappedYield,
     Count
 };
 enum class HudPhase : uint8_t {

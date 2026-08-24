@@ -55,6 +55,24 @@ enum class CpuMetric : u32
     PresentImageFence,
     HudUpload,
     QueueSubmit,
+    PresentQueueLockWait,
+    PresentQueueSection,
+    LowLatencyPanelLockWait,
+    LowLatencyPresenterBegin,
+    LowLatencyPreferenceUpdate,
+    LowLatencyPacerBegin,
+    LowLatencyReflexBegin,
+    LowLatencyAntiLagBegin,
+    ReflexSetSleepMode,
+    ReflexLatencySleep,
+    ReflexSleepWait,
+    ReflexMarkerInputSample,
+    ReflexMarkerSimulationStart,
+    ReflexMarkerSimulationEnd,
+    ReflexMarkerRenderSubmitStart,
+    ReflexMarkerRenderSubmitEnd,
+    ReflexMarkerPresentStart,
+    ReflexMarkerPresentEnd,
     Count,
 };
 
@@ -227,6 +245,28 @@ enum class Counter : u32
     VulkanPresentSuccessCount,
     VulkanPresentSkipCount,
     VulkanPresentedSerialRegressionCount,
+    NativeGPU2DWorkgroupWidth,
+    NativeGPU2DObjPrepareGroups,
+    NativeGPU2DSemanticRowsDirty,
+    NativeGPU2DSemanticRowsReused,
+    NativeGPU2DSemanticRunCount,
+    NativeGPU2DCaptureRunCount,
+    TextureArenaBlockCount,
+    TextureArenaSuballocCount,
+    TextureArenaDedicatedCount,
+    TextureArenaBytesReserved,
+    TextureArenaBytesUsed,
+    PersistentDescriptorCreateCount,
+    PersistentDescriptorHitCount,
+    PersistentDescriptorMissCount,
+    PolygonBatchCount,
+    PolygonBatchSplitCount,
+    PolygonBatchMaxTiles,
+    PolygonBatchCapacity,
+    RasterCrossFrameBarrierCount,
+    RasterCaptureSidecarBarrierCount,
+    RasterDuplicateBarrierAvoidedCount,
+    RasterIdenticalBarrierSkippedCount,
     Count,
 };
 
@@ -258,6 +298,24 @@ inline constexpr std::array<const char*, static_cast<std::size_t>(CpuMetric::Cou
     "present_image_fence_us",
     "hud_upload",
     "queue_submit",
+    "present_queue_lock_wait_us",
+    "present_queue_section_us",
+    "low_latency_panel_lock_wait_us",
+    "low_latency_presenter_begin_us",
+    "low_latency_preference_update_us",
+    "low_latency_pacer_begin_us",
+    "low_latency_reflex_begin_us",
+    "low_latency_antilag_begin_us",
+    "reflex_set_sleep_mode_us",
+    "reflex_latency_sleep_us",
+    "reflex_sleep_wait_us",
+    "reflex_marker_input_sample_us",
+    "reflex_marker_simulation_start_us",
+    "reflex_marker_simulation_end_us",
+    "reflex_marker_render_submit_start_us",
+    "reflex_marker_render_submit_end_us",
+    "reflex_marker_present_start_us",
+    "reflex_marker_present_end_us",
 };
 
 using Clock = std::chrono::steady_clock;
@@ -684,6 +742,14 @@ inline void MaybeReport()
          count(Counter::OBJOverlaySlowPath), count(Counter::NativeGPU2DCaptureDispatchCount),
          count(Counter::NativeGPU2DCaptureBarrierCount),
          count(Counter::CompositorGpuTimeNs), count(Counter::PresentWaitNs));
+    std::fprintf(stderr,
+        "[VulkanPerf] barriers scale=%u raster_cross_frame=%llu "
+        "raster_capture_sidecar=%llu raster_duplicate_avoided=%llu "
+        "raster_identical_skipped=%llu\n",
+        state.Scale, count(Counter::RasterCrossFrameBarrierCount),
+        count(Counter::RasterCaptureSidecarBarrierCount),
+        count(Counter::RasterDuplicateBarrierAvoidedCount),
+        count(Counter::RasterIdenticalBarrierSkippedCount));
 
     std::fprintf(stderr,
         "[VulkanPerf] native_upload full_frames=%llu full_B=%llu "
@@ -707,6 +773,35 @@ inline void MaybeReport()
         count(Counter::NativeGPU2DFullUploadEpochChangeCount),
         count(Counter::NativeGPU2DFullUploadSemanticFrameGapCount),
         count(Counter::NativeGPU2DFullUploadCaptureRegressionCount));
+
+    std::fprintf(stderr,
+        "[VulkanPerf] optimization native_gpu2d_workgroup_width=%llu "
+        "native_gpu2d_obj_prepare_groups=%llu semantic_rows_dirty=%llu "
+        "semantic_rows_reused=%llu semantic_runs=%llu capture_runs=%llu "
+        "texture_arena_blocks=%llu texture_arena_suballocs=%llu "
+        "texture_arena_dedicated=%llu texture_arena_reserved_B=%llu "
+        "texture_arena_used_B=%llu persistent_descriptor_creates=%llu "
+        "persistent_descriptor_hits=%llu persistent_descriptor_misses=%llu "
+        "polygon_batch_count=%llu polygon_batch_split_count=%llu "
+        "polygon_batch_max_tiles=%llu polygon_batch_capacity=%llu\n",
+        count(Counter::NativeGPU2DWorkgroupWidth),
+        count(Counter::NativeGPU2DObjPrepareGroups),
+        count(Counter::NativeGPU2DSemanticRowsDirty),
+        count(Counter::NativeGPU2DSemanticRowsReused),
+        count(Counter::NativeGPU2DSemanticRunCount),
+        count(Counter::NativeGPU2DCaptureRunCount),
+        count(Counter::TextureArenaBlockCount),
+        count(Counter::TextureArenaSuballocCount),
+        count(Counter::TextureArenaDedicatedCount),
+        count(Counter::TextureArenaBytesReserved),
+        count(Counter::TextureArenaBytesUsed),
+        count(Counter::PersistentDescriptorCreateCount),
+        count(Counter::PersistentDescriptorHitCount),
+        count(Counter::PersistentDescriptorMissCount),
+        count(Counter::PolygonBatchCount),
+        count(Counter::PolygonBatchSplitCount),
+        count(Counter::PolygonBatchMaxTiles),
+        count(Counter::PolygonBatchCapacity));
 
     const double reportSeconds = std::chrono::duration<double>(
         now - state.LastReport).count();
@@ -873,6 +968,24 @@ enum class CpuMetric : u32
     PresentImageFence,
     HudUpload,
     QueueSubmit,
+    PresentQueueLockWait,
+    PresentQueueSection,
+    LowLatencyPanelLockWait,
+    LowLatencyPresenterBegin,
+    LowLatencyPreferenceUpdate,
+    LowLatencyPacerBegin,
+    LowLatencyReflexBegin,
+    LowLatencyAntiLagBegin,
+    ReflexSetSleepMode,
+    ReflexLatencySleep,
+    ReflexSleepWait,
+    ReflexMarkerInputSample,
+    ReflexMarkerSimulationStart,
+    ReflexMarkerSimulationEnd,
+    ReflexMarkerRenderSubmitStart,
+    ReflexMarkerRenderSubmitEnd,
+    ReflexMarkerPresentStart,
+    ReflexMarkerPresentEnd,
     Count,
 };
 enum class Counter : u32
@@ -1041,6 +1154,28 @@ enum class Counter : u32
     VulkanPresentSuccessCount,
     VulkanPresentSkipCount,
     VulkanPresentedSerialRegressionCount,
+    NativeGPU2DWorkgroupWidth,
+    NativeGPU2DObjPrepareGroups,
+    NativeGPU2DSemanticRowsDirty,
+    NativeGPU2DSemanticRowsReused,
+    NativeGPU2DSemanticRunCount,
+    NativeGPU2DCaptureRunCount,
+    TextureArenaBlockCount,
+    TextureArenaSuballocCount,
+    TextureArenaDedicatedCount,
+    TextureArenaBytesReserved,
+    TextureArenaBytesUsed,
+    PersistentDescriptorCreateCount,
+    PersistentDescriptorHitCount,
+    PersistentDescriptorMissCount,
+    PolygonBatchCount,
+    PolygonBatchSplitCount,
+    PolygonBatchMaxTiles,
+    PolygonBatchCapacity,
+    RasterCrossFrameBarrierCount,
+    RasterCaptureSidecarBarrierCount,
+    RasterDuplicateBarrierAvoidedCount,
+    RasterIdenticalBarrierSkippedCount,
     Count,
 };
 inline constexpr bool IsCompiledIn() noexcept { return false; }

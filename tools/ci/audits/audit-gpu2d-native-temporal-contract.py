@@ -143,7 +143,12 @@ def main() -> int:
         require(text["native_recorder"], "CaptureCaptureStateForLine", "capture write-boundary recorder", failures)
         require(text["native_recorder"], "AppendTimelineDelta", "temporal recorder", failures)
         require(text["native_recorder"], "HashTimelineBlock", "deduplicated timeline", failures)
-        require(text["native_recorder"], "HashTimelineWords", "deduplicated timeline rows", failures)
+        require(text["native_recorder"], "MixTimelineVersion", "incremental timeline row fingerprint", failures)
+        require(text["native_recorder"], "SetTimelineVersion", "incremental timeline row fingerprint", failures)
+        require(text["native_header"], "CurrentTimelineRowFingerprint",
+            "incremental timeline row fingerprint ABI", failures)
+        require(text["native_header"], "CurrentSpriteTimelineRowFingerprint",
+            "incremental sprite timeline row fingerprint ABI", failures)
         require(text["native_recorder"], "TimelineRowHashKeys", "deduplicated timeline rows", failures)
         require(text["native_recorder"], "SpriteTimelineRowHashKeys", "deduplicated sprite rows", failures)
         require(text["native_recorder"], "CaptureSpriteLatchForLine", "OBJ/OAM latch timeline", failures)
@@ -153,6 +158,8 @@ def main() -> int:
         require(text["vulkan_sync"], "LastTimestampWrittenMask", "Vulkan timestamp validity", failures)
         require(text["dx12_context"], "GpuMetricQueryCount", "DX12 timestamp query ABI", failures)
         require(text["native_purity_test"], "RunHighChurnTimeline", "high-churn overflow stress", failures)
+        require(text["native_purity_test"], "RunCrossFrameJournalBaseline",
+            "cross-frame journal baseline vector", failures)
         require(text["native_purity_test"], "TimelineOverflow == 0u", "high-churn overflow stress", failures)
         require(text["soft_renderer"], "NativeGPU2DFrame.Reset()", "stale rejection", failures)
         require(text["soft_renderer"], "NativeGPU2DRecordedFrameSerial", "recorded identity", failures)
@@ -161,6 +168,24 @@ def main() -> int:
         if "&& !GPU.CaptureEnable" in text["soft_renderer"]:
             failures.append("soft renderer: CaptureEnable still disables native GPU2D ownership")
         require(text["native_recorder"], "CaptureJournalWritesForLine", "native recorder journal", failures)
+        for needle in (
+            "CommitCurrentMemoryBaseline",
+            "MemoryBaselineReady = hadPreviousFrame",
+            "if (!hadPreviousFrame)",
+            "LastJournalSequence = GPU.GetGPU2DWriteJournalSequence()",
+            "Includes line 0: LastJournalSequence deliberately spans the frame",
+            "CaptureMappingChangesForLine",
+            "CaptureMappedLogicalRange",
+            "seenVRAM",
+        ):
+            require(text["native_recorder"], needle,
+                "cross-frame journal baseline", failures)
+        capture_memory = extract_function_body(
+            text["native_recorder"], "void FrameRecorder::CaptureMemoryForLine(")
+        require(capture_memory, "if (!MemoryBaselineReady)",
+            "first-use full memory baseline", failures)
+        forbid(capture_memory, "|| line == 0u",
+            "line zero must reuse cross-frame journal baseline", failures)
         for needle in (
             "CaptureNativeMappingForLine",
             "NativeCaptureWrittenMaskForRead",

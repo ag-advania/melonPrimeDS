@@ -936,12 +936,24 @@ VulkanPacerBeginResult VulkanPresentPacer::BeginFrame(
             return google;
     }
 
-    // Telemetry-only is the safe default: collect periodic timing reports even
-    // though no behavioural wait owns pacing. Draining also feeds the
-    // scheduling baseline and carries the property/domain change counters.
-    const VulkanPacerBeginResult extTiming = ReportPastTiming();
-    if (extTiming != VulkanPacerBeginResult::Continue)
-        return extTiming;
+    // vkGetPastPresentationTimingEXT is a synchronous driver query. When the
+    // emulator is uncapped (or vendor pacing owns the frame), the resolver
+    // cannot attach EXT timing metadata, so polling an empty results queue on
+    // every frame is pure overhead. Keep draining any already accepted timed
+    // presents and recovery work, then stay out of the driver until generic
+    // normal-speed pacing can consume the results again. Properties/domain
+    // changes are refreshed on that first eligible frame before a new target is
+    // attached, so skipping empty uncapped polls does not relax correctness.
+    const bool genericTimingEligible =
+        normalSpeed && !reflexActive && !antiLagActive;
+    const bool extTimingDrainRequired =
+        OutstandingTimedPresents != 0 || TimingQueueRecoveryPending;
+    if (genericTimingEligible || extTimingDrainRequired)
+    {
+        const VulkanPacerBeginResult extTiming = ReportPastTiming();
+        if (extTiming != VulkanPacerBeginResult::Continue)
+            return extTiming;
+    }
 
     // Retry timing properties after their documented VK_NOT_READY bootstrap,
     // and retry a bounded time-domain enumeration only after VK_INCOMPLETE.

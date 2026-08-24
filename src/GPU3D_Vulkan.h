@@ -198,20 +198,12 @@ private:
     static constexpr int ShaderStepCount =
         static_cast<int>(VulkanShaders::Pipeline_Count);
 
-    // Frames the CPU may run ahead of the GPU *for this renderer*.
-    //
-    // One, and that is a correctness requirement rather than a tuning choice.
-    // The compute rasterizer works out of a single shared set of intermediate
-    // buffers -- XSpanSetups, the three tile buffers, BinResult, WorkDescs,
-    // ResultBuffer and FinalFB. A second in-flight frame would write those
-    // while the previous frame still read them (a WAR/WAW race), and giving
-    // each frame its own copy is not an option: the tile buffers alone are
-    // three quarters of a gigabyte at 16x.
-    //
-    // This costs nothing in practice. The wait happens at the *start* of frame
-    // N for frame N-1, and a whole DS frame of software 2D work has run on the
-    // emulation thread in between, so CPU and GPU still overlap.
-    static constexpr u32 RendererFramesInFlight = 1;
+    // Two CPU recording slots let the emulation thread record/submit frame N+1
+    // while frame N is still executing. The GPU raster scratch remains one
+    // shared copy; RecordSharedScratchReuseBarrier() makes its same-queue
+    // cross-frame reuse explicit. Two slots are the low-latency limit: more
+    // would add input latency without removing another CPU/GPU dependency.
+    static constexpr u32 RendererFramesInFlight = 2;
     static constexpr u32 CompositorFramesInFlight = 3;
     static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
 
@@ -430,6 +422,8 @@ private:
 
     bool CreatePipelineCache();
     void SavePipelineCache();
+    [[nodiscard]] u32 NativeGPU2DWorkgroupWidth() const noexcept;
+    [[nodiscard]] u32 NativeGPU2DPipelineIndex() const noexcept;
     bool BuildPipeline(u32 pipelineIndex);
 
     // --- per-frame ---------------------------------------------------------
@@ -443,7 +437,9 @@ private:
         u32 frameIndex, u32 slot, VkBuffer presentationOutput, VkBuffer structuredInput,
         VkImageView directOutputTop = VK_NULL_HANDLE,
         VkImageView directOutputBottom = VK_NULL_HANDLE);
-    VkDescriptorSet AcquireTextureSet(u32 frameIndex, VkImageView textureView, VkSampler sampler);
+    VkDescriptorSet AcquireTextureSet(
+        u32 frameIndex, u64 textureIdentity,
+        VkImageView textureView, VkSampler sampler);
     void FillMetaUniform(MetaUniform& meta, u32 numVariants, u32 numPolygons) const;
 
     // Records a compute->compute dependency over `buffers`. Kept explicit
@@ -462,6 +458,7 @@ private:
         u32 count,
         VkPipelineStageFlags srcStage,
         VkPipelineStageFlags dstStage) const;
+    void RecordSharedScratchReuseBarrier(VkCommandBuffer cmd) const;
 
     // CPU-side span setup, transcribed from the OpenGL compute renderer.
     void SetupAttrs(SpanSetupY* span, Polygon* poly, int from, int to) const;
@@ -496,7 +493,9 @@ private:
     Vk::FrameRing ComposeFrames;
     Vk::DescriptorLayouts Layouts;
     Vk::DescriptorPool Descriptors;
-    Vk::StagingRing FrameStaging;
+    // CPU-written upload memory is slot-local and is only reset after the
+    // matching raster fence retires. GPU scratch is intentionally not copied.
+    std::array<Vk::StagingRing, RendererFramesInFlight> FrameStaging;
 
     VulkanTextureHeap TextureHeap;
     VulkanSamplerCache Samplers;
@@ -599,10 +598,10 @@ private:
     u32 TextureSetCursor = 0;
     struct TextureSetCacheEntry
     {
-        VkImageView View = VK_NULL_HANDLE;
+        u64 TextureIdentity = 0;
         VkSampler Sampler = VK_NULL_HANDLE;
         VkDescriptorSet Set = VK_NULL_HANDLE;
-        u32 Epoch = 0;
+        bool Valid = false;
     };
     static constexpr u32 TextureSetCacheCapacity = 4096;
     static_assert((TextureSetCacheCapacity & (TextureSetCacheCapacity - 1)) == 0,
@@ -610,10 +609,25 @@ private:
     static_assert(TextureSetCacheCapacity > MaxVariants + 1,
         "texture-set cache must retain an empty probe terminator");
     std::array<TextureSetCacheEntry, TextureSetCacheCapacity> TextureSetCache{};
-    u32 TextureSetCacheEpoch = 1;
-    VkImageView BoundTextureView = VK_NULL_HANDLE;
+    static constexpr u32 PersistentTextureSetCapacity = 1024;
+    u32 PersistentTextureSetCursor = 0;
+    u64 BoundTextureIdentity = ~0ull;
     VkSampler BoundSampler = VK_NULL_HANDLE;
     VkDescriptorSet BoundTextureSet = VK_NULL_HANDLE;
+
+    struct RasterizerDescriptorBinding
+    {
+        VkBuffer PresentationOutput = VK_NULL_HANDLE;
+        VkBuffer StructuredInput = VK_NULL_HANDLE;
+        VkImageView DirectOutputTop = VK_NULL_HANDLE;
+        VkImageView DirectOutputBottom = VK_NULL_HANDLE;
+        u64 ResourceGeneration = 0;
+        bool Valid = false;
+    };
+    std::array<RasterizerDescriptorBinding,
+        DescriptorFramesInFlight * RasterizerSetsPerFrame>
+        RasterizerDescriptorBindings{};
+    u64 RasterizerDescriptorResourceGeneration = 1;
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;

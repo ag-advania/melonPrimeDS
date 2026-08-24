@@ -15,6 +15,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 #include "GPU.h"
@@ -392,6 +393,12 @@ struct UploadDecision
 
 inline constexpr u32 DirtyBlockBytes = 512u;
 inline constexpr u32 MaxDirtyRanges = 8192u;
+// Explicit renderers keep three compositor work slots.  A reused slot can
+// therefore be two semantic frames behind the preceding frame.  Preserve the
+// two completed dirty lists needed to advance that slot without promoting an
+// ordinary generation difference to a full engine-memory upload.
+inline constexpr u32 UploadDirtyHistoryFrames = 2u;
+inline constexpr u32 MaxUploadDirtyHistoryRanges = 1024u;
 // TimelinePayload stores unique 512-byte contents, not one copy per write
 // event.  The open-addressing table is deliberately larger than the payload
 // so a full valid payload still has an empty insertion slot.
@@ -637,6 +644,12 @@ struct FrameInput
     // Host-only mutation sequence. It lets the recorder reuse the previous
     // row without comparing 4265 versions for every unchanged line.
     u32 TimelineMutationSerial = 0;
+    // Host-only incremental row fingerprints. Each changed block replaces one
+    // position/version contribution in O(1), avoiding a 4265-word (and OBJ
+    // subset) rehash at every visible-line boundary. Hash hits are still
+    // verified against the complete row, so this is only a lookup accelerator.
+    u64 CurrentTimelineRowFingerprint = 0;
+    u64 CurrentSpriteTimelineRowFingerprint = 0;
     // Host-only hash-consing metadata. It is intentionally excluded from the
     // packed ABI; shader-visible indices still point at ordinary full blocks.
     std::array<u64, TimelineHashTableSize> TimelineHashKeys{};
@@ -652,6 +665,16 @@ struct FrameInput
     // frame. They are metadata only and are not part of PackedFrameWords.
     std::array<DirtyRange, MaxDirtyRanges> DirtyRanges{};
     u32 DirtyRangeCount = 0;
+    // Host-only completed-frame upload history. Entry zero produced
+    // DirtyHistoryFrames[0], entry one is the frame before it. These ranges
+    // are never serialized into PackedFrame; BuildUploadPlan unions only the
+    // missing frame steps for the selected compositor work slot.
+    std::array<
+        std::array<DirtyRange, MaxUploadDirtyHistoryRanges>,
+        UploadDirtyHistoryFrames> DirtyHistoryRanges{};
+    std::array<u32, UploadDirtyHistoryFrames> DirtyHistoryRangeCounts{};
+    std::array<u64, UploadDirtyHistoryFrames> DirtyHistoryFrames{};
+    std::array<u8, UploadDirtyHistoryFrames> DirtyHistoryOverflow{};
     RecorderMetrics Recorder{};
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     std::array<MappedCaptureViolation, MaxMappedCaptureViolations>
@@ -660,6 +683,109 @@ struct FrameInput
     u32 MappedCaptureViolationOverflow = 0;
 #endif
 };
+
+struct SemanticLineCacheEntry
+{
+    LineState State{};
+    u64 ContentGeneration = 0;
+    u64 VRAMGeneration = 0;
+    u64 CaptureGeneration = 0;
+    u64 MappingGeneration = 0;
+    u32 NativeCaptureOverlayAny = 0;
+    u8 ScreenSource = 0;
+    bool Valid = false;
+};
+
+[[nodiscard]] inline bool CanFuseObjRawLogicalLine(
+    const FrameInput& input, u32 line) noexcept;
+
+struct SemanticLineCache
+{
+    std::array<SemanticLineCacheEntry, 2u * ScreenHeight> Rows{};
+
+    void Reset() noexcept
+    {
+        for (SemanticLineCacheEntry& row : Rows)
+            row.Valid = false;
+    }
+};
+
+struct SemanticLineRun
+{
+    u32 RowBase = 0;
+    u32 RowCount = 0;
+};
+
+struct SemanticLinePlan
+{
+    std::array<SemanticLineRun, 2u * ScreenHeight> Runs{};
+    u32 RunCount = 0;
+    u32 DirtyRows = 0;
+    u32 ReusedRows = 0;
+};
+
+[[nodiscard]] inline SemanticLinePlan BuildSemanticLinePlan(
+    const FrameInput& input, SemanticLineCache& cache,
+    bool forceAll) noexcept
+{
+    SemanticLinePlan plan{};
+    bool inRun = false;
+    for (u32 row = 0u; row < 2u * ScreenHeight; ++row)
+    {
+        const u32 line = row % ScreenHeight;
+        const u8 source = input.ScreenSource[row] & 1u;
+        const LineState& state = input.Lines[source * ScreenHeight + line];
+        SemanticLineCacheEntry& previous = cache.Rows[row];
+        const bool unchanged = !forceAll && previous.Valid
+            && previous.ScreenSource == source
+            && previous.ContentGeneration == input.Generation.ContentGeneration
+            && previous.VRAMGeneration == input.Generation.VRAMGeneration
+            && previous.CaptureGeneration == input.Generation.CaptureGeneration
+            && previous.MappingGeneration
+                == input.Generation.NativeCaptureMappingGeneration
+            && previous.NativeCaptureOverlayAny == input.NativeCaptureOverlayAny
+            && std::memcmp(&previous.State, &state, sizeof(LineState)) == 0;
+
+        if (!unchanged)
+        {
+            if (!inRun)
+            {
+                plan.Runs[plan.RunCount++] = {row, 0u};
+                inRun = true;
+            }
+            ++plan.Runs[plan.RunCount - 1u].RowCount;
+            ++plan.DirtyRows;
+        }
+        else
+        {
+            inRun = false;
+            ++plan.ReusedRows;
+        }
+
+        previous.State = state;
+        previous.ContentGeneration = input.Generation.ContentGeneration;
+        previous.VRAMGeneration = input.Generation.VRAMGeneration;
+        previous.CaptureGeneration = input.Generation.CaptureGeneration;
+        previous.MappingGeneration =
+            input.Generation.NativeCaptureMappingGeneration;
+        previous.NativeCaptureOverlayAny = input.NativeCaptureOverlayAny;
+        previous.ScreenSource = source;
+        previous.Valid = true;
+    }
+    return plan;
+}
+
+[[nodiscard]] inline bool CanFuseObjRawLogicalRun(
+    const FrameInput& input, const SemanticLineRun& run) noexcept
+{
+    for (u32 offset = 0u; offset < run.RowCount; ++offset)
+    {
+        const u32 line = (run.RowBase + offset) % ScreenHeight;
+        if (!CanFuseObjRawLogicalLine(input, line))
+            return false;
+    }
+    return true;
+}
 
 // The native compositor normally materializes an OBJ raw plane before the
 // logical pass because OBJ mosaic can read pixels to the left of the current
@@ -736,6 +862,94 @@ struct FrameInput
             return false;
     }
     return true;
+}
+
+struct CaptureLineRun
+{
+    u32 LineBase = 0;
+    u32 LineCount = 0;
+    bool Independent = false;
+};
+
+struct CaptureRunPlan
+{
+    std::array<CaptureLineRun, ScreenHeight> Runs{};
+    u32 RunCount = 0;
+};
+
+[[nodiscard]] inline bool CanFuseObjRawCaptureRun(
+    const FrameInput& input, const CaptureLineRun& run) noexcept
+{
+    if (run.LineBase >= ScreenHeight
+        || run.LineCount > ScreenHeight - run.LineBase)
+    {
+        return false;
+    }
+    for (u32 line = run.LineBase; line < run.LineBase + run.LineCount; ++line)
+    {
+        if (!CanFuseObjRawLogicalLine(input, line))
+            return false;
+    }
+    return true;
+}
+
+[[nodiscard]] inline bool IsEffectiveCaptureLine(
+    const FrameInput& input, u32 line) noexcept
+{
+    if (line >= ScreenHeight || input.Lines[line].CaptureEnable == 0u)
+        return false;
+    const u32 size = (input.Lines[line].CaptureCnt >> 20u) & 3u;
+    return line < CaptureHeightForSize(size);
+}
+
+[[nodiscard]] inline CaptureRunPlan BuildCaptureRunPlan(
+    const FrameInput& input, bool finalFramebufferValid) noexcept
+{
+    CaptureRunPlan plan{};
+    u32 line = 0u;
+    while (line < ScreenHeight)
+    {
+        const LineState& first = input.Lines[line];
+        const u32 firstCnt = first.CaptureCnt;
+        const u32 firstBank = (firstCnt >> 16u) & 3u;
+        const bool firstEffective = IsEffectiveCaptureLine(input, line);
+        const bool firstSourceAValid = (firstCnt & (1u << 24u)) == 0u
+            || finalFramebufferValid;
+        const bool firstIndependent = firstEffective
+            && ((firstCnt >> 29u) & 3u) == 0u
+            && firstSourceAValid
+            && (first.LCDVRAMMap & (1u << firstBank)) != 0u;
+
+        CaptureLineRun run{line, 1u, false};
+        if (firstIndependent)
+        {
+            run.Independent = true;
+            u32 pendingDestinationMask = 1u << firstBank;
+            while (line + run.LineCount < ScreenHeight)
+            {
+                const u32 candidateLine = line + run.LineCount;
+                const LineState& candidate = input.Lines[candidateLine];
+                const u32 cnt = candidate.CaptureCnt;
+                const u32 bank = (cnt >> 16u) & 3u;
+                const bool sourceAValid = (cnt & (1u << 24u)) == 0u
+                    || finalFramebufferValid;
+                if (!IsEffectiveCaptureLine(input, candidateLine)
+                    || ((cnt >> 29u) & 3u) != 0u
+                    || !sourceAValid
+                    || (candidate.LCDVRAMMap & pendingDestinationMask)
+                        != pendingDestinationMask
+                    || (candidate.LCDVRAMMap & (1u << bank)) == 0u)
+                {
+                    break;
+                }
+                pendingDestinationMask |= 1u << bank;
+                ++run.LineCount;
+            }
+        }
+        plan.Runs[plan.RunCount++] = run;
+        line += run.LineCount;
+    }
+    return plan;
 }
 
 // High-resolution display-capture provenance is a renderer-private derived
@@ -1079,6 +1293,10 @@ UploadPlan BuildUploadPlan(
     const FrameInput& input,
     const FrameGeneration& uploadedGeneration,
     bool fullUpload) noexcept;
+// Merge nearby sorted ranges when an explicit backend's per-copy command cost
+// exceeds the cost of uploading the small unchanged gaps between them. The
+// packed input remains authoritative for every added byte.
+void CoalesceUploadPlan(UploadPlan& plan, u32 maxGapBytes) noexcept;
 
 struct Mismatch
 {
@@ -1157,6 +1375,15 @@ private:
     std::array<u16, 256> CurrentDisplayFIFO{};
     std::array<u8, 4 * 128 * 1024> CurrentLCDVRAM{};
     std::array<u32, TimelineBlockCount> CurrentTimelineVersion{};
+    std::array<u32, 32> CurrentMapABG{};
+    std::array<u32, 16> CurrentMapAOBJ{};
+    std::array<u32, 8> CurrentMapBBG{};
+    std::array<u32, 8> CurrentMapBOBJ{};
+    std::array<u32, 4> CurrentMapABGExtPal{};
+    std::array<u32, 4> CurrentMapBBGExtPal{};
+    u32 CurrentMapAOBJExtPal = 0u;
+    u32 CurrentMapBOBJExtPal = 0u;
+    bool CurrentMappingsReady = false;
     u32 LastTimelineMutationSerial = 0;
     u32 LastSpriteTimelineMutationSerial = 0;
     bool MemoryBaselineReady = false;
@@ -1167,7 +1394,6 @@ private:
     bool PendingSpriteLatchReady = false;
     u32 LastJournalSequence = 0u;
     std::array<GPU2DWriteJournalEntry, GPU2DWriteJournalCapacity> JournalScratch{};
-    u64 RecorderStartNs = 0u;
     u32 CaptureStartLine = CaptureStartLineNone;
     u32 CaptureStateCnt = 0u;
     bool CaptureStateEnabled = false;
@@ -1188,6 +1414,11 @@ private:
     std::array<u32, 2> NativeCaptureMappingLines{
         ScreenHeight, ScreenHeight};
     std::array<bool, 2> NativeCaptureMappingBuilt{false, false};
+    // Fast rejection for ordinary gameplay frames. Mapping rows only encode
+    // native-owned LCDC blocks; when none existed at frame start and no native
+    // capture has written ahead in this frame, every row is provably zero.
+    bool NativeCaptureAuthorityPresent = false;
+    u64 CaptureProvenanceSerialAtRefresh = 0;
 
     std::array<CaptureAddressDiagnostic, MaxCaptureAddressDiagnostics>
         CaptureAddressLog{};
@@ -1195,6 +1426,9 @@ private:
     u32 CaptureAddressLogOverflow = 0u;
 
     void SnapshotEngine(u32 engine, u32 line) noexcept;
+    void CommitCurrentMemoryBaseline() noexcept;
+    void RememberCurrentMappings() noexcept;
+    void CaptureMappingChangesForLine(u32 line) noexcept;
     void CaptureAllMappedMemoryForLine(u32 line) noexcept;
     void CaptureCoherentLCDVRAMForLine() noexcept;
     void CaptureJournalWritesForLine(u32 line) noexcept;

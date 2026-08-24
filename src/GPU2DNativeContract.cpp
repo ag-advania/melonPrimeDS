@@ -52,49 +52,68 @@ void AddRange(UploadPlan& plan, DirtyRange range) noexcept
 {
     if (range.Size == 0u)
         return;
-
-    u64 begin = range.Offset;
-    u64 end = begin + range.Size;
-    for (u32 i = 0; i < plan.Count;)
+    const u32 fullBytes = static_cast<u32>(PackedFrameBytes());
+    if (plan.Count == 1u && plan.Ranges[0].Offset == 0u
+        && plan.Ranges[0].Size == fullBytes)
     {
-        const u64 existingBegin = plan.Ranges[i].Offset;
-        const u64 existingEnd = existingBegin + plan.Ranges[i].Size;
-        if (end < existingBegin || begin > existingEnd)
-        {
-            ++i;
-            continue;
-        }
-
-        begin = std::min(begin, existingBegin);
-        end = std::max(end, existingEnd);
-        for (u32 j = i + 1u; j < plan.Count; ++j)
-            plan.Ranges[j - 1u] = plan.Ranges[j];
-        --plan.Count;
-    }
-
-    if (plan.Count >= MaxDirtyRanges)
         return;
-
-    u32 insertion = plan.Count;
-    while (insertion != 0u
-        && plan.Ranges[insertion - 1u].Offset > static_cast<u32>(begin))
-    {
-        plan.Ranges[insertion] = plan.Ranges[insertion - 1u];
-        --insertion;
     }
-    plan.Ranges[insertion] = {
-        static_cast<u32>(begin), static_cast<u32>(end - begin)};
-    ++plan.Count;
+    if (plan.Count >= MaxDirtyRanges)
+    {
+        // A pathological current+history union must never silently omit data.
+        // Fail closed to one full packed upload instead.
+        plan.Count = 1u;
+        plan.Ranges[0] = {0u, fullBytes};
+        return;
+    }
+    // Dirty journals are not globally ordered (timeline row and payload writes
+    // interleave), so incremental insertion/merging becomes O(n^2). Append in
+    // O(1); ClassifyRanges performs one sort and linear coalesce per frame.
+    plan.Ranges[plan.Count++] = range;
+}
+
+void AddHistoricalRange(UploadPlan& plan, DirtyRange range) noexcept
+{
+    // A three-slot compositor can miss a line/header/route transition that
+    // happened one or two frames ago and then remained unchanged. History is
+    // only a byte-range selector: PackFrameRanges writes the current frame's
+    // value for that range, never the historical bytes. Keep every serialized
+    // range so a reused slot converges to the complete current input.
+    AddRange(plan, range);
 }
 
 void ClassifyRanges(UploadPlan& plan) noexcept
 {
+    if (plan.Count > 1u)
+    {
+        std::sort(plan.Ranges.begin(), plan.Ranges.begin() + plan.Count,
+            [](const DirtyRange& left, const DirtyRange& right) {
+                return left.Offset < right.Offset;
+            });
+        u32 output = 0u;
+        for (u32 input = 1u; input < plan.Count; ++input)
+        {
+            DirtyRange& current = plan.Ranges[output];
+            const DirtyRange& next = plan.Ranges[input];
+            const u64 currentEnd = static_cast<u64>(current.Offset) + current.Size;
+            const u64 nextEnd = static_cast<u64>(next.Offset) + next.Size;
+            if (static_cast<u64>(next.Offset) <= currentEnd)
+            {
+                current.Size = static_cast<u32>(
+                    std::max(currentEnd, nextEnd) - current.Offset);
+                continue;
+            }
+            plan.Ranges[++output] = next;
+        }
+        plan.Count = output + 1u;
+    }
     plan.TotalBytes = 0;
     plan.EngineMemoryBytes = 0;
     plan.PaletteBytes = 0;
     plan.OAMBytes = 0;
     plan.FIFOBytes = 0;
     plan.LCDVRAMBytes = 0;
+    plan.TimelineBytes = 0;
     plan.MappedCaptureBytes = 0;
     for (u32 i = 0; i < plan.Count; ++i)
         AddClassifiedBytes(plan, plan.Ranges[i].Offset, plan.Ranges[i].Size);
@@ -151,24 +170,78 @@ UploadPlan BuildUploadPlan(
     for (u32 i = 0; i < count; ++i)
         AddRange(plan, input.DirtyRanges[i]);
 
-    if (uploadedGeneration.VRAMGeneration != input.Generation.VRAMGeneration)
+    // A compositor work slot normally returns after three semantic frames.
+    // Replay the completed dirty lists for every frame that slot missed. This
+    // is both more precise and more complete than refreshing only broad memory
+    // categories: persistent line/header/mapping changes are covered too. If
+    // the requested history is unavailable (discontinuity, overflow, or a
+    // backend with a deeper ring), fail closed to one full packed-frame upload.
+    bool historyCovered = uploadedGeneration.Frame == input.Generation.Frame;
+    if (uploadedGeneration.Frame < input.Generation.Frame)
+    {
+        const u64 frameGap = input.Generation.Frame - uploadedGeneration.Frame;
+        historyCovered = frameGap <= UploadDirtyHistoryFrames + 1u;
+        for (u64 targetFrame = uploadedGeneration.Frame + 1u;
+             historyCovered && targetFrame < input.Generation.Frame;
+             ++targetFrame)
+        {
+            bool found = false;
+            for (u32 history = 0u; history < UploadDirtyHistoryFrames; ++history)
+            {
+                if (input.DirtyHistoryFrames[history] != targetFrame)
+                    continue;
+                if (input.DirtyHistoryOverflow[history] != 0u)
+                    break;
+                const u32 historyCount = std::min(
+                    input.DirtyHistoryRangeCounts[history],
+                    MaxUploadDirtyHistoryRanges);
+                for (u32 i = 0u; i < historyCount; ++i)
+                    AddHistoricalRange(
+                        plan, input.DirtyHistoryRanges[history][i]);
+                found = true;
+                break;
+            }
+            historyCovered = found;
+        }
+    }
+    if (!historyCovered)
+    {
+        plan = {};
+        AddRange(plan, {0u, static_cast<u32>(PackedFrameBytes())});
+        ClassifyRanges(plan);
+        return plan;
+    }
+
+    // Equal-frame generation differences cannot be reconstructed from a frame
+    // transition history (for example, an isolated contract caller replacing
+    // a slot identity). Retain the conservative category refresh for that
+    // case. Covered forward transitions already contain the exact deltas.
+    if (uploadedGeneration.Frame == input.Generation.Frame
+        && uploadedGeneration.VRAMGeneration != input.Generation.VRAMGeneration)
     {
         AddRange(plan, {
             PackedEngineBase * sizeof(u32),
             (PackedPaletteBase - PackedEngineBase) * sizeof(u32)});
     }
-    if (uploadedGeneration.ContentGeneration != input.Generation.ContentGeneration)
+    if (uploadedGeneration.Frame == input.Generation.Frame
+        && uploadedGeneration.ContentGeneration != input.Generation.ContentGeneration)
     {
         AddRange(plan, {
             PackedPaletteBase * sizeof(u32),
             (PackedLCDVRAMBase - PackedPaletteBase) * sizeof(u32)});
     }
-    if (uploadedGeneration.CaptureGeneration != input.Generation.CaptureGeneration)
+    if (uploadedGeneration.Frame == input.Generation.Frame
+        && uploadedGeneration.CaptureGeneration != input.Generation.CaptureGeneration)
     {
         AddRange(plan, {
             PackedLCDVRAMBase * sizeof(u32),
             (PackedRouteBase - PackedLCDVRAMBase) * sizeof(u32)});
     }
+    // Native capture mapping is only ~66 KiB and includes the VCOUNT-262
+    // line-0 OBJ latch.  Keep its generation as a cross-frame safety net in
+    // addition to exact dirty history: a work slot that missed a latch edge
+    // must converge even after that edge has rolled out of the two-frame
+    // journal.  The large memory categories above remain history-driven.
     if (uploadedGeneration.NativeCaptureMappingGeneration
         != input.Generation.NativeCaptureMappingGeneration)
     {
@@ -185,6 +258,30 @@ UploadPlan BuildUploadPlan(
         HighResCaptureProvenanceWords * sizeof(u32)});
     ClassifyRanges(plan);
     return plan;
+}
+
+void CoalesceUploadPlan(UploadPlan& plan, u32 maxGapBytes) noexcept
+{
+    if (plan.Count < 2u || maxGapBytes == 0u)
+        return;
+
+    u32 output = 0u;
+    for (u32 input = 1u; input < plan.Count; ++input)
+    {
+        DirtyRange& current = plan.Ranges[output];
+        const DirtyRange& next = plan.Ranges[input];
+        const u64 currentEnd = static_cast<u64>(current.Offset) + current.Size;
+        const u64 nextEnd = static_cast<u64>(next.Offset) + next.Size;
+        if (static_cast<u64>(next.Offset) <= currentEnd + maxGapBytes)
+        {
+            current.Size = static_cast<u32>(
+                std::max(currentEnd, nextEnd) - current.Offset);
+            continue;
+        }
+        plan.Ranges[++output] = next;
+    }
+    plan.Count = output + 1u;
+    ClassifyRanges(plan);
 }
 
 HighResCaptureSegmentMask ComputeCaptureWriteSegmentMask(

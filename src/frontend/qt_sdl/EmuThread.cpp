@@ -339,6 +339,7 @@ void EmuThread::run()
     auto frameAdvanceOnce = [&]() {
 #ifdef MELONPRIME_DS
         MelonPrimePerf::FrameBegin();
+        MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::FrameSetup);
         // The emulation thread is the single owner of the logical game-frame
         // ID. A skipped present leaves a gap; a retry never allocates another
         // ID for the same emulated frame.
@@ -515,12 +516,16 @@ void EmuThread::run()
             const melonDS::u64 targetFrameIntervalNs = roundedIntervalNs > 0
                 ? static_cast<melonDS::u64>(roundedIntervalNs)
                 : 0;
+            MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::FrameSetup);
+            MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::VulkanBegin);
             emuInstance->beginVulkanLowLatencyFrame(
                 vulkanLowLatencyRenderer->GetNvidiaReflexMode(),
                 vulkanLowLatencyRenderer->GetAmdAntiLag2Enabled(),
                 vulkanNormalSpeed,
                 targetFrameIntervalNs,
                 logicalFrameId);
+            MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::VulkanBegin);
+            MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::FrameSetup);
         }
 #endif
 
@@ -534,6 +539,7 @@ void EmuThread::run()
         // joyHotkeyMask and inputMask. Edge detection is untouched.
         //
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
+        MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::FrameSetup);
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Input);
         MelonPrimePerf::MarkInputSample();
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
@@ -616,6 +622,7 @@ void EmuThread::run()
 #endif
         }
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Input);
+        MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::PreRun);
 #endif
 
         if (useOpenGL)
@@ -666,6 +673,7 @@ void EmuThread::run()
 #endif // MELONPRIME_DS
 
 #ifdef MELONPRIME_DS
+        MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::PreRun);
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::RunFrame);
         MelonPrimePerf::MarkRunFrameBegin();
 #endif
@@ -759,6 +767,7 @@ void EmuThread::run()
         // Completely removed from the input→RunFrame latency path.
         melonPrime->DeferredDrainInput();
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::DeferredDrain);
+        MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::PostDrawBookkeeping);
 #endif
 
 #ifdef MELONCAP
@@ -855,6 +864,7 @@ void EmuThread::run()
         if (frametimeStep < 0.001) frametimeStep = 0.001;
 
 #ifdef MELONPRIME_DS
+        MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::PostDrawBookkeeping);
         // P-13: Store frametimeStep for next frame's early limiter.
         // The limiter at the top of this lambda uses this value.
         storedFrametimeStep = frametimeStep;
@@ -900,14 +910,17 @@ void EmuThread::run()
 #endif
 
 #ifdef MELONPRIME_DS
-        MelonPrimePerf::FrameEnd();
-
         // An unrestricted emulation loop can otherwise consume an entire
         // core continuously and delay Qt/WM_INPUT delivery long enough to
         // look like controls have stopped responding. Sleep(0) only yields
         // the current time slice; it does not add a fixed frame delay.
         if (!limitFPS)
+        {
+            MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::UncappedYield);
             SDL_Delay(0);
+            MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::UncappedYield);
+        }
+        MelonPrimePerf::FrameEnd();
 #endif
 
         nframes++;

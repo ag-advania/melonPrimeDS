@@ -157,6 +157,20 @@ public:
 
     [[nodiscard]] ID3D12DescriptorHeap* GetHeap() const noexcept { return Heap.Get(); }
     [[nodiscard]] u32 GetIncrement() const noexcept { return Increment; }
+    [[nodiscard]] D3D12_CPU_DESCRIPTOR_HANDLE GetCpu(u32 index) const noexcept
+    {
+        return index < Capacity
+            ? D3D12_CPU_DESCRIPTOR_HANDLE{
+                CpuStart.ptr + static_cast<SIZE_T>(index) * Increment}
+            : D3D12_CPU_DESCRIPTOR_HANDLE{};
+    }
+    [[nodiscard]] D3D12_GPU_DESCRIPTOR_HANDLE GetGpu(u32 index) const noexcept
+    {
+        return ShaderVisible && index < Capacity
+            ? D3D12_GPU_DESCRIPTOR_HANDLE{
+                GpuStart.ptr + static_cast<UINT64>(index) * Increment}
+            : D3D12_GPU_DESCRIPTOR_HANDLE{};
+    }
 
 private:
     DX12::ComPtr<ID3D12DescriptorHeap> Heap;

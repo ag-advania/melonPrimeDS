@@ -148,6 +148,32 @@ private:
     static constexpr int BinStride = 2048 / 32;
     static constexpr int CoarseBinStride = BinStride / 32;
     static constexpr int CoarseTileCountX = 8;
+    // Only CPU-owned recording resources are ringed. The large UAV scratch
+    // remains shared and is serialized by same-queue UAV barriers, avoiding a
+    // second copy of the 16x tile/result footprint and extra input latency.
+    static constexpr u32 RasterFramesInFlight = 2;
+
+    struct RasterFrameSlot
+    {
+        DX12CommandContext Commands;
+        DX12UploadRing Uploads;
+        DX12DescriptorRing Descriptors;
+        DX12::ComPtr<ID3D12Resource> YSpanSetupStaging;
+        DX12::ComPtr<ID3D12Resource> SetupIndicesStaging;
+        DX12::ComPtr<ID3D12Resource> RenderPolygonStaging;
+        u8* YSpanSetupStagingPtr = nullptr;
+        u8* SetupIndicesStagingPtr = nullptr;
+        u8* RenderPolygonStagingPtr = nullptr;
+        std::array<DX12::ComPtr<ID3D12Resource>, 2> ClearBitmapUpload;
+        std::array<u8*, 2> ClearBitmapUploadPtr = { nullptr, nullptr };
+        DX12::ComPtr<ID3D12Resource> MetaUniformUpload;
+        u8* MetaUniformUploadPtr = nullptr;
+    };
+
+    [[nodiscard]] RasterFrameSlot& ActiveRasterFrame() noexcept
+    {
+        return RasterFrames[CurrentRasterFrameIndex];
+    }
 
     // Layout must stay byte-identical to the HLSL BinResult offsets in
     // GPU3D_DX12_shaders.h.
@@ -385,6 +411,7 @@ private:
         ID3D12GraphicsCommandList* list,
         ID3D12Resource* const* resources,
         u32 count);
+    void InsertRasterScratchReuseBarriers(ID3D12GraphicsCommandList* list);
     void TransitionBuffer(
         ID3D12GraphicsCommandList* list,
         ID3D12Resource* resource,
@@ -399,7 +426,7 @@ private:
         DX12DescriptorRing& descriptors,
         D3D12_CPU_DESCRIPTOR_HANDLE canonicalCpu);
     bool BindStaticSrvTable(ID3D12GraphicsCommandList* list);
-    bool BindSrvTable(ID3D12GraphicsCommandList* list, ID3D12Resource* texture);
+    bool BindSrvTable(ID3D12GraphicsCommandList* list, u32 textureHandle);
     void ResetFrameSrvCache() noexcept;
 
     // CPU-side span setup, ported verbatim from the OpenGL compute renderer.
@@ -418,10 +445,10 @@ private:
     void EnsureFrameReadback();
 
     DX12Context* Context = nullptr;
-    DX12CommandContext Commands;
+    std::array<RasterFrameSlot, RasterFramesInFlight> RasterFrames;
+    u32 CurrentRasterFrameIndex = 0;
+    u32 NextRasterFrameIndex = 0;
     DX12CommandContext CaptureCommands;
-    DX12UploadRing Uploads;
-    DX12DescriptorRing Descriptors;
     // Descriptor lifetime classification:
     // A: fixed renderer resources use FrameUavDescriptors and StaticSrvDescriptors.
     // B: each compositor slot owns one canonical UAV block in CompositorUavDescriptors.
@@ -491,19 +518,7 @@ private:
     DX12::ComPtr<ID3D12Resource> RenderPolygonBuffer;
     DX12::ComPtr<ID3D12Resource> IndirectArgsBuffer;
 
-    // Persistently mapped staging for the three per-frame CPU uploads.
-    DX12::ComPtr<ID3D12Resource> YSpanSetupStaging;
-    DX12::ComPtr<ID3D12Resource> SetupIndicesStaging;
-    DX12::ComPtr<ID3D12Resource> RenderPolygonStaging;
-    u8* YSpanSetupStagingPtr = nullptr;
-    u8* SetupIndicesStagingPtr = nullptr;
-    u8* RenderPolygonStagingPtr = nullptr;
-
     DX12::ComPtr<ID3D12Resource> ClearBitmapTex[2];
-    DX12::ComPtr<ID3D12Resource> ClearBitmapUpload[2];
-    u8* ClearBitmapUploadPtr[2] = { nullptr, nullptr };
-    DX12::ComPtr<ID3D12Resource> MetaUniformUpload;
-    u8* MetaUniformUploadPtr = nullptr;
     DX12::ComPtr<ID3D12Resource> DummyTexture;
     DX12::ComPtr<ID3D12Resource> DirectOutputDummy;
 
@@ -559,6 +574,9 @@ private:
         "SRV cache capacity must be a power of two");
     std::array<FrameSrvCacheEntry, FrameSrvCacheCapacity> FrameSrvTables{};
     u32 FrameSrvCacheEpoch = 1;
+    static constexpr u32 PersistentTextureDescriptorCount = 4096;
+    std::array<std::array<u64, PersistentTextureDescriptorCount>,
+        RasterFramesInFlight> PersistentTextureDescriptorKeys{};
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
     D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};

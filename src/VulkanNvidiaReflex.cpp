@@ -23,6 +23,7 @@
 #include <utility>
 
 #include "Platform.h"
+#include "VulkanPerf.h"
 
 namespace melonDS
 {
@@ -99,6 +100,10 @@ bool VulkanNvidiaReflex::Initialize(VulkanDevice& device)
     if (!CreateSleepSemaphore())
         return false;
 
+    AsyncOffModeSleepEnabled = true;
+    if (!StartOffModeSleepWorker())
+        return false;
+
     Available = true;
     UnavailableReason.clear();
     return true;
@@ -138,6 +143,10 @@ bool VulkanNvidiaReflex::CreateSleepSemaphore()
 
 void VulkanNvidiaReflex::Shutdown() noexcept
 {
+    CompleteOffModeSleep();
+    OffModeSleepPrimedForNextFrame = false;
+    StopOffModeSleepWorker();
+
     // The swapchain is dropped first: leaving pacing enabled on a swapchain the
     // caller is about to destroy would leave the driver holding a stale handle.
     if (Available && Swapchain != VK_NULL_HANDLE && Mode != VulkanNvidiaReflexMode::Off)
@@ -170,6 +179,7 @@ void VulkanNvidiaReflex::Shutdown() noexcept
     Mode = VulkanNvidiaReflexMode::Off;
     AppliedMode = VulkanNvidiaReflexMode::Off;
     PresentedSinceSleep = true;
+    AsyncOffModeSleepEnabled = false;
 }
 
 
@@ -204,6 +214,9 @@ void VulkanNvidiaReflex::SetSwapchain(VkSwapchainKHR swapchain)
     if (Swapchain == swapchain)
         return;
 
+    CompleteOffModeSleep();
+    OffModeSleepPrimedForNextFrame = false;
+
     Swapchain = swapchain;
 
     // Sleep mode is per swapchain and does not survive recreation, so a resize
@@ -228,6 +241,9 @@ void VulkanNvidiaReflex::SetMode(VulkanNvidiaReflexMode mode)
 {
     if (Mode == mode && ModeApplied)
         return;
+
+    CompleteOffModeSleep();
+    OffModeSleepPrimedForNextFrame = false;
 
     Mode = mode;
     if (!Available || Swapchain == VK_NULL_HANDLE)
@@ -256,8 +272,12 @@ bool VulkanNvidiaReflex::ApplySleepMode()
     // second limiter here would fight both.
     info.minimumIntervalUs = 0;
 
-    const VkResult res = Device->Fns().SetLatencySleepModeNV(
-        Device->GetHandle(), Swapchain, &info);
+    VkResult res = VK_SUCCESS;
+    {
+        VulkanPerf::ScopedCpuTimer timer(VulkanPerf::CpuMetric::ReflexSetSleepMode);
+        res = Device->Fns().SetLatencySleepModeNV(
+            Device->GetHandle(), Swapchain, &info);
+    }
     if (res != VK_SUCCESS)
     {
         DisableForRuntimeFailure("vkSetLatencySleepModeNV", res);
@@ -271,10 +291,11 @@ bool VulkanNvidiaReflex::ApplySleepMode()
     if (changed)
     {
         Log(LogLevel::Info,
-            "[Vulkan] NVIDIA Reflex mode=%s lowLatencyMode=%s lowLatencyBoost=%s\n",
+            "[Vulkan] NVIDIA Reflex mode=%s lowLatencyMode=%s lowLatencyBoost=%s minimumIntervalUs=%u\n",
             VulkanNvidiaReflexModeName(Mode),
             info.lowLatencyMode ? "true" : "false",
-            info.lowLatencyBoost ? "true" : "false");
+            info.lowLatencyBoost ? "true" : "false",
+            info.minimumIntervalUs);
     }
     return true;
 }
@@ -283,6 +304,180 @@ bool VulkanNvidiaReflex::ApplySleepMode()
 // ---------------------------------------------------------------------------
 // Frame path
 // ---------------------------------------------------------------------------
+
+bool VulkanNvidiaReflex::StartOffModeSleepWorker()
+{
+    try
+    {
+        OffModeSleepStop = false;
+        OffModeSleepThread = std::thread(&VulkanNvidiaReflex::OffModeSleepWorkerMain, this);
+    }
+    catch (...)
+    {
+        AsyncOffModeSleepEnabled = false;
+        Disable("the asynchronous Reflex Off-mode worker could not be started");
+        return false;
+    }
+
+    Log(LogLevel::Info,
+        "[Vulkan] asynchronous Reflex Off-mode WSI pacing enabled\n");
+    return true;
+}
+
+
+void VulkanNvidiaReflex::StopOffModeSleepWorker() noexcept
+{
+    if (!OffModeSleepThread.joinable())
+        return;
+
+    {
+        std::lock_guard<std::mutex> lock(OffModeSleepMutex);
+        OffModeSleepStop = true;
+    }
+    OffModeSleepCv.notify_all();
+    OffModeSleepThread.join();
+
+    OffModeSleepStop = false;
+    OffModeSleepRequest = false;
+    OffModeSleepRunning = false;
+    OffModeSleepReady = false;
+    OffModeSleepPrimedForNextFrame = false;
+}
+
+
+void VulkanNvidiaReflex::OffModeSleepWorkerMain() noexcept
+{
+    for (;;)
+    {
+        VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+        u64 value = 0;
+        {
+            std::unique_lock<std::mutex> lock(OffModeSleepMutex);
+            OffModeSleepCv.wait(lock, [this]() {
+                return OffModeSleepStop || OffModeSleepRequest;
+            });
+            if (OffModeSleepStop)
+                return;
+
+            swapchain = OffModeSleepSwapchain;
+            value = OffModeSleepValue;
+            OffModeSleepRequest = false;
+            OffModeSleepRunning = true;
+        }
+
+        VkLatencySleepInfoNV sleep{};
+        sleep.sType = VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV;
+        sleep.signalSemaphore = SleepSemaphore;
+        sleep.value = value;
+
+        VkResult sleepResult = VK_SUCCESS;
+        {
+            VulkanPerf::ScopedCpuTimer timer(VulkanPerf::CpuMetric::ReflexLatencySleep);
+            sleepResult = Device->Fns().LatencySleepNV(
+                Device->GetHandle(), swapchain, &sleep);
+        }
+
+        VkResult waitResult = VK_SUCCESS;
+        if (sleepResult == VK_SUCCESS)
+        {
+            VkSemaphoreWaitInfoKHR wait{};
+            wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO_KHR;
+            wait.semaphoreCount = 1;
+            wait.pSemaphores = &SleepSemaphore;
+            wait.pValues = &sleep.value;
+            {
+                VulkanPerf::ScopedCpuTimer timer(VulkanPerf::CpuMetric::ReflexSleepWait);
+                waitResult = Device->Fns().WaitSemaphoresKHR(
+                    Device->GetHandle(), &wait, 1000ull * 1000ull * 1000ull);
+            }
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(OffModeSleepMutex);
+            OffModeSleepCallResult = sleepResult;
+            OffModeSleepWaitResult = waitResult;
+            OffModeSleepRunning = false;
+            OffModeSleepReady = true;
+        }
+        OffModeSleepCv.notify_all();
+    }
+}
+
+
+bool VulkanNvidiaReflex::QueueOffModeSleep()
+{
+    std::lock_guard<std::mutex> lock(OffModeSleepMutex);
+    if (!OffModeSleepThread.joinable() || OffModeSleepRequest
+        || OffModeSleepRunning || OffModeSleepReady)
+    {
+        return false;
+    }
+
+    OffModeSleepSwapchain = Swapchain;
+    OffModeSleepValue = ++SleepValue;
+    OffModeSleepRequest = true;
+    PresentedSinceSleep = false;
+    OffModeSleepCv.notify_one();
+    return true;
+}
+
+
+bool VulkanNvidiaReflex::CompleteOffModeSleep()
+{
+    if (!OffModeSleepThread.joinable())
+        return true;
+
+    VkResult sleepResult = VK_SUCCESS;
+    VkResult waitResult = VK_SUCCESS;
+    u64 value = 0;
+    {
+        std::unique_lock<std::mutex> lock(OffModeSleepMutex);
+        if (!OffModeSleepRequest && !OffModeSleepRunning && !OffModeSleepReady)
+            return true;
+        OffModeSleepCv.wait(lock, [this]() { return OffModeSleepReady; });
+        sleepResult = OffModeSleepCallResult;
+        waitResult = OffModeSleepWaitResult;
+        value = OffModeSleepValue;
+        OffModeSleepReady = false;
+    }
+
+    if (sleepResult != VK_SUCCESS)
+    {
+        if (SleepValue == value)
+            --SleepValue;
+        DisableForRuntimeFailure("vkLatencySleepNV(async Off mode)", sleepResult);
+        FrameOpen = false;
+        return false;
+    }
+    if (ClassifyVulkanReflexSleepWaitResult(waitResult)
+        == VulkanReflexSleepWaitAction::DisableForRuntimeFailure)
+    {
+        DisableForRuntimeFailure(
+            "vkWaitSemaphores(Reflex async Off-mode sleep)", waitResult);
+        PresentedSinceSleep = true;
+        FrameOpen = false;
+        return false;
+    }
+    return true;
+}
+
+
+void VulkanNvidiaReflex::NotifyPresented() noexcept
+{
+    PresentedSinceSleep = true;
+
+    // The previous present is now accepted and its PRESENT_END marker has
+    // already been emitted. Start the next Off-mode WSI pacing operation at
+    // this earliest legal point so presenter cleanup and the entire next game
+    // frame can overlap the driver-side wait. If the worker is unexpectedly
+    // busy, leave PresentedSinceSleep set: BeginFrame will retry safely rather
+    // than consuming a second sleep between the same pair of presents.
+    if (AsyncOffModeSleepEnabled && Mode == VulkanNvidiaReflexMode::Off
+        && IsFramePathAvailable())
+    {
+        OffModeSleepPrimedForNextFrame = QueueOffModeSleep();
+    }
+}
 
 void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
 {
@@ -294,6 +489,11 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
 
     if (FrameOpen)
         FinishFrame();
+
+    // A sleep queued immediately after the preceding accepted present now
+    // belongs to this frame. FinishFrame must drain it only if this frame exits
+    // without reaching MarkPresentStart().
+    OffModeSleepPrimedForNextFrame = false;
 
     // Reflex frame IDs represent logical emulated/game frames. They are not
     // presenter callbacks, swapchain image indices, or frame-ring slots. A
@@ -323,6 +523,16 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
     if (!PresentedSinceSleep)
         return;
 
+    if (AsyncOffModeSleepEnabled && Mode == VulkanNvidiaReflexMode::Off)
+    {
+        if (!QueueOffModeSleep())
+        {
+            Disable("the asynchronous Reflex Off-mode pacing request overlapped another request");
+            FrameOpen = false;
+        }
+        return;
+    }
+
     const Vk::DeviceDispatch& fns = Device->Fns();
 
     VkLatencySleepInfoNV sleep{};
@@ -330,7 +540,11 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
     sleep.signalSemaphore = SleepSemaphore;
     sleep.value = ++SleepValue;
 
-    VkResult res = fns.LatencySleepNV(Device->GetHandle(), Swapchain, &sleep);
+    VkResult res = VK_SUCCESS;
+    {
+        VulkanPerf::ScopedCpuTimer timer(VulkanPerf::CpuMetric::ReflexLatencySleep);
+        res = fns.LatencySleepNV(Device->GetHandle(), Swapchain, &sleep);
+    }
     if (res != VK_SUCCESS)
     {
         // Roll the value back: the driver did not accept the request, so
@@ -341,10 +555,11 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
         return;
     }
 
-    // vkLatencySleepNV returns immediately; the actual pacing delay is this
-    // host wait. It is deliberately NOT a device idle -- it blocks only this
-    // thread until the driver says the frame should start, which is the entire
-    // point of the extension.
+    // The API contract separates sleep request issue from the semaphore wait.
+    // This synchronous On/OnBoost path deliberately blocks the presenting
+    // thread until the driver says the low-latency frame should start. Some
+    // drivers also spend measurable time inside vkLatencySleepNV itself; the
+    // Off path above overlaps both operations on its persistent worker.
     VkSemaphoreWaitInfoKHR wait{};
     wait.sType = VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO_KHR;
     wait.semaphoreCount = 1;
@@ -353,7 +568,11 @@ void VulkanNvidiaReflex::BeginFrame(u64 logicalFrameId)
 
     // One second is far beyond any legitimate pacing delay; it exists so a
     // driver bug degrades into a dropped frame instead of a hung emulator.
-    res = fns.WaitSemaphoresKHR(Device->GetHandle(), &wait, 1000ull * 1000ull * 1000ull);
+    {
+        VulkanPerf::ScopedCpuTimer timer(VulkanPerf::CpuMetric::ReflexSleepWait);
+        res = fns.WaitSemaphoresKHR(
+            Device->GetHandle(), &wait, 1000ull * 1000ull * 1000ull);
+    }
     if (ClassifyVulkanReflexSleepWaitResult(res)
         == VulkanReflexSleepWaitAction::DisableForRuntimeFailure)
     {
@@ -380,8 +599,35 @@ void VulkanNvidiaReflex::SetMarker(VkLatencyMarkerNV marker)
     info.presentID = FrameId;
     info.marker = marker;
 
+    VulkanPerf::CpuMetric metric = VulkanPerf::CpuMetric::ReflexMarkerInputSample;
+    switch (marker)
+    {
+    case VK_LATENCY_MARKER_SIMULATION_START_NV:
+        metric = VulkanPerf::CpuMetric::ReflexMarkerSimulationStart;
+        break;
+    case VK_LATENCY_MARKER_SIMULATION_END_NV:
+        metric = VulkanPerf::CpuMetric::ReflexMarkerSimulationEnd;
+        break;
+    case VK_LATENCY_MARKER_RENDERSUBMIT_START_NV:
+        metric = VulkanPerf::CpuMetric::ReflexMarkerRenderSubmitStart;
+        break;
+    case VK_LATENCY_MARKER_RENDERSUBMIT_END_NV:
+        metric = VulkanPerf::CpuMetric::ReflexMarkerRenderSubmitEnd;
+        break;
+    case VK_LATENCY_MARKER_PRESENT_START_NV:
+        metric = VulkanPerf::CpuMetric::ReflexMarkerPresentStart;
+        break;
+    case VK_LATENCY_MARKER_PRESENT_END_NV:
+        metric = VulkanPerf::CpuMetric::ReflexMarkerPresentEnd;
+        break;
+    case VK_LATENCY_MARKER_INPUT_SAMPLE_NV:
+    default:
+        break;
+    }
+
     // vkSetLatencyMarkerNV returns void: there is no result to check and no
     // failure path to handle here.
+    VulkanPerf::ScopedCpuTimer timer(metric);
     Device->Fns().SetLatencyMarkerNV(Device->GetHandle(), Swapchain, &info);
 }
 
@@ -435,6 +681,8 @@ void VulkanNvidiaReflex::MarkPresentStart()
 {
     if (!FrameOpen || PresentOpen)
         return;
+    if (!CompleteOffModeSleep())
+        return;
     MarkRenderSubmitEnd();
     MarkSimulationEnd();
     SetMarker(VK_LATENCY_MARKER_PRESENT_START_NV);
@@ -452,6 +700,8 @@ void VulkanNvidiaReflex::MarkPresentEnd()
 
 void VulkanNvidiaReflex::FinishFrame()
 {
+    if (!OffModeSleepPrimedForNextFrame)
+        CompleteOffModeSleep();
     // Defensive closure covers a presenter admission skip or a renderer
     // transition. It never invents a present: the present markers are only
     // closed when MarkPresentStart() already bracketed QueuePresentKHR.

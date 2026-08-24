@@ -2851,7 +2851,14 @@ bool VulkanPresenter::EndFrame()
     // audit can check, not something implied by a closing brace.
     VkResult res = VK_SUCCESS;
     {
-        std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex());
+        std::unique_lock<std::mutex> queueLock(Device.GetQueueMutex(), std::defer_lock);
+        {
+            VulkanPerf::ScopedCpuTimer queueLockTimer(
+                VulkanPerf::CpuMetric::PresentQueueLockWait);
+            queueLock.lock();
+        }
+        VulkanPerf::ScopedCpuTimer presentQueueTimer(
+            VulkanPerf::CpuMetric::PresentQueueSection);
 
         if (UseSplitQueueExclusiveExperiment)
         {
@@ -3042,6 +3049,8 @@ void VulkanPresenter::BeginLowLatencyFrame(
     u64 targetFrameIntervalNs,
     u64 logicalFrameId)
 {
+    VulkanPerf::ScopedCpuTimer lowLatencyBeginTimer(
+        VulkanPerf::CpuMetric::LowLatencyPresenterBegin);
     if (!Initialized || Failed || !Device.IsValid())
         return;
 
@@ -3050,15 +3059,24 @@ void VulkanPresenter::BeginLowLatencyFrame(
     // steady state while still making a settings-dialog change take effect on
     // the very next frame -- without recreating the device or the swapchain,
     // neither of which a mid-session setting change should force.
-    SetLowLatencyPreferences(reflexMode, antiLag2Enabled);
+    {
+        VulkanPerf::ScopedCpuTimer timer(
+            VulkanPerf::CpuMetric::LowLatencyPreferenceUpdate);
+        SetLowLatencyPreferences(reflexMode, antiLag2Enabled);
+    }
 
     // Exactly one optional late-wait authority is selected. The generic wait is
     // never layered over Reflex or Anti-Lag, and it runs here before every
     // fresh input read. The host frame limiter is a separate responsibility and
     // still owns the emulation rate: presentation scheduling decides when a
     // finished frame is shown, not how fast the DS runs.
-    const melonDS::VulkanPacerBeginResult pacerResult = PresentPacer.BeginFrame(
-        Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs);
+    melonDS::VulkanPacerBeginResult pacerResult;
+    {
+        VulkanPerf::ScopedCpuTimer timer(
+            VulkanPerf::CpuMetric::LowLatencyPacerBegin);
+        pacerResult = PresentPacer.BeginFrame(
+            Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs);
+    }
     const melonDS::VulkanPacerBeginAction pacerAction =
         melonDS::VulkanPacerActionFor(pacerResult);
     if (pacerAction.RebuildSwapchain)
@@ -3144,11 +3162,16 @@ void VulkanPresenter::BeginLowLatencyFrame(
         }
     }
 
-    // vkLatencySleepNV lives in here, and it must run before any input is read
-    // -- that delay is the entire mechanism. SIMULATION_START is deliberately
-    // NOT emitted here: it belongs after the sleep and after input sampling,
-    // which is MarkLowLatencySimulationStart().
-    Reflex.BeginFrame(logicalFrameId);
+    // On/OnBoost perform vkLatencySleepNV synchronously here before input. Off
+    // adopts the operation already issued after the previous present and lets
+    // it overlap this frame until the present boundary. SIMULATION_START is
+    // deliberately NOT emitted here: it belongs after input sampling, which
+    // is MarkLowLatencySimulationStart().
+    {
+        VulkanPerf::ScopedCpuTimer timer(
+            VulkanPerf::CpuMetric::LowLatencyReflexBegin);
+        Reflex.BeginFrame(logicalFrameId);
+    }
 
     // Anti-Lag and Reflex describe the same logical emulated frame. The ID is
     // owned by EmuThread, so turning either feature off does not create a
@@ -3161,7 +3184,11 @@ void VulkanPresenter::BeginLowLatencyFrame(
     // application reads input -- the same point the Reflex sleep just returned
     // from. Its PRESENT partner is issued in EndFrame(), just before
     // vkQueuePresentKHR, with this same index.
-    AntiLag.BeginFrame(LowLatencyFrameIndex);
+    {
+        VulkanPerf::ScopedCpuTimer timer(
+            VulkanPerf::CpuMetric::LowLatencyAntiLagBegin);
+        AntiLag.BeginFrame(LowLatencyFrameIndex);
+    }
 
     LogLowLatencyStateIfChanged();
 

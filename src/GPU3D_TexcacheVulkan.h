@@ -108,6 +108,10 @@ public:
     {
         VkImage Image = VK_NULL_HANDLE;
         VkDeviceMemory Memory = VK_NULL_HANDLE;
+        u32 ArenaBlock = ~0u;
+        VkDeviceSize ArenaOffset = 0;
+        VkDeviceSize ArenaSize = 0;
+        bool DedicatedMemory = false;
         VkImageView View = VK_NULL_HANDLE;
         u32 Width = 0;
         u32 Height = 0;
@@ -118,6 +122,10 @@ public:
         bool InUse = false;
         bool PhysicalReady = false;
         bool PendingCreate = false;
+        // Monotonic logical-resource identity. Vulkan object handles may be
+        // recycled after savestate/Texcache reset, so they are not safe cache
+        // keys for descriptors that outlive a frame.
+        u64 Identity = 0;
     };
 
     VulkanTextureHeap() = default;
@@ -186,6 +194,21 @@ public:
     }
 
 private:
+    struct FreeRange { VkDeviceSize Offset = 0; VkDeviceSize Size = 0; };
+    struct MemoryBlock
+    {
+        VkDeviceMemory Memory = VK_NULL_HANDLE;
+        VkDeviceSize Size = 0;
+        u32 MemoryTypeIndex = 0;
+        std::vector<FreeRange> Free;
+    };
+    struct RetiredRange
+    {
+        u32 Block = ~0u;
+        VkDeviceSize Offset = 0;
+        VkDeviceSize Size = 0;
+        u64 RetireFrame = 0;
+    };
     struct PendingUpload
     {
         u32 Handle = 0;
@@ -212,6 +235,11 @@ private:
         u32 handle, u32 width, u32 height, u32 layer, std::size_t words) noexcept;
 
     void RetireEntry(Entry& entry);
+    bool AllocateArenaRange(
+        const VkMemoryRequirements& requirements, u32 memoryTypeIndex,
+        u32& block, VkDeviceSize& offset);
+    void FreeArenaRange(const RetiredRange& range);
+    void CollectRetiredRanges();
 
     const VulkanDevice* Device = nullptr;
     Vk::FrameRing* Frames = nullptr;
@@ -224,6 +252,8 @@ private:
     // Only newly reserved logical entries are visited by materialization.
     std::vector<u32> PendingCreateSlots;
     std::vector<u32> PendingBarriers;
+    std::vector<MemoryBlock> MemoryBlocks;
+    std::vector<RetiredRange> RetiredRanges;
     // The active prefix is drained by count; backing objects and decoded-word
     // high-watermarks stay allocated for reuse instead of churning each frame.
     std::vector<PendingUpload> PendingUploads;
@@ -232,6 +262,7 @@ private:
     bool UploadFailed = false;
     bool RetryableCreationFailure = false;
     bool MaterializeRetryAttempted = false;
+    u64 NextIdentity = 1;
 };
 
 

@@ -270,8 +270,14 @@ struct DescriptorPoolSizing
     // yet. Sized by the caller from the renderer's worst-case texture count.
     u32 TextureSetsPerFrame = 0;
 
+    // Immutable texture sets owned for the renderer lifetime. These are never
+    // rewritten; if the cache fills, the caller falls back to the fenced
+    // per-frame sets above.
+    u32 PersistentTextureSets = 0;
+
     [[nodiscard]] u32 TotalRasterizerSets() const noexcept { return FramesInFlight * RasterizerSetsPerFrame; }
-    [[nodiscard]] u32 TotalTextureSets() const noexcept { return FramesInFlight * TextureSetsPerFrame; }
+    [[nodiscard]] u32 FrameTextureSets() const noexcept { return FramesInFlight * TextureSetsPerFrame; }
+    [[nodiscard]] u32 TotalTextureSets() const noexcept { return FrameTextureSets() + PersistentTextureSets; }
     [[nodiscard]] u32 TotalSets() const noexcept { return TotalRasterizerSets() + TotalTextureSets(); }
     [[nodiscard]] bool IsValid() const noexcept
     {
@@ -308,6 +314,8 @@ public:
 
     // Set 1 number `slot` for `frameIndex`. Valid for slot < TextureSetsPerFrame.
     [[nodiscard]] VkDescriptorSet GetTextureSet(u32 frameIndex, u32 slot) const noexcept;
+
+    [[nodiscard]] VkDescriptorSet GetPersistentTextureSet(u32 slot) const noexcept;
 
     [[nodiscard]] const DescriptorPoolSizing& GetSizing() const noexcept { return Sizing; }
 
