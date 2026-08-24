@@ -576,7 +576,14 @@ DX12Renderer3D::~DX12Renderer3D()
 
     if (Context)
     {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        const u64 releaseStartNs = RendererStartupNowNs();
+#endif
         Context->Release();
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        LogRendererStartupStage("DX12", "shutdown_device_release",
+            RendererStartupNowNs() - releaseStartNs);
+#endif
         Context = nullptr;
     }
 }
@@ -663,20 +670,36 @@ bool DX12Renderer3D::Init()
 
 void DX12Renderer3D::Stop()
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const u64 stopStartNs = RendererStartupNowNs();
+    u64 stopStageNs = stopStartNs;
+    const auto stopStage = [&](const char* stage) {
+        const u64 now = RendererStartupNowNs();
+        LogRendererStartupStage("DX12", stage, now - stopStageNs);
+        stopStageNs = now;
+    };
+#else
+    const auto stopStage = [](const char*) {};
+#endif
     for (RasterFrameSlot& frame : RasterFrames)
         frame.Commands.WaitIdle();
     CaptureCommands.WaitIdle();
+    stopStage("shutdown_wait_idle");
 
     Texcache.Reset();
     TextureHeap.CollectGarbage();
     TextureHeap.Shutdown();
+    stopStage("shutdown_texture_heap");
 
     // OutputState owns independent work/presentation command contexts. Retire
     // them before serializing the pipeline library so no cached PSO is still
     // referenced by an in-flight command list while the driver snapshots it.
     ReleaseScaleDependentResources();
+    stopStage("shutdown_scale_resources");
     SavePipelineLibrary();
+    stopStage("shutdown_pipeline_cache_save");
     ReleasePipelines();
+    stopStage("shutdown_pipelines");
 
     const D3D12_RANGE noWrite{ 0, 0 };
     for (RasterFrameSlot& frame : RasterFrames)
@@ -745,6 +768,11 @@ void DX12Renderer3D::Stop()
     LastSemanticEpoch = 0;
     NativeSemanticSubmissionSerial = 0;
     LastNativeCaptureCompletionValue = 0;
+    stopStage("shutdown_resources");
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    LogRendererStartupStage("DX12", "shutdown_total",
+        RendererStartupNowNs() - stopStartNs);
+#endif
 }
 
 void DX12Renderer3D::Reset()
@@ -1801,8 +1829,16 @@ bool DX12Renderer3D::BuildPipeline(
         && SUCCEEDED(PipelineLibrary->StorePipeline(cacheKey, pipeline.Get())))
         PipelineLibraryDirty = true;
 
+    // Only re-read the driver blob when this PSO was not built from the one we
+    // already hold. GetCachedBlob() makes the driver serialise the pipeline
+    // again, and doing that for every variant on every renderer construction
+    // is a per-switch cost with nothing to show for it: a blob the driver just
+    // accepted is by definition still the current one for this device and
+    // driver version. A rejected blob was cleared above and takes the miss
+    // path, which does refresh the payload.
     DX12::ComPtr<ID3DBlob> createdBlob;
-    if (SUCCEEDED(pipeline->GetCachedBlob(createdBlob.ReleaseAndGetAddressOf()))
+    if (!cachedBlobUsed
+        && SUCCEEDED(pipeline->GetCachedBlob(createdBlob.ReleaseAndGetAddressOf()))
         && createdBlob && createdBlob->GetBufferSize() <= UINT32_MAX)
     {
         const u8* begin = static_cast<const u8*>(createdBlob->GetBufferPointer());

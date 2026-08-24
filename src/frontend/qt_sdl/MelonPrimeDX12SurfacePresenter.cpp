@@ -11,6 +11,8 @@
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
 #include "MelonPrimeDX12SurfacePresenter.h"
+
+#include "MelonPrimeRendererTransitionProfile.h"
 #include "DX12GpuTimestamp.h"
 #include "DX12Perf.h"
 
@@ -145,11 +147,17 @@ bool DX12SurfacePresenter::Init(
     }
 
     Context = &melonDS::DX12Context::Get();
-    if (!Context->Acquire())
     {
-        Error = Context->GetFailureReason();
-        Context = nullptr;
-        return false;
+        // First acquisition after a backend switch creates the D3D12 device,
+        // which is the single largest piece of a Vulkan->DX12 transition.
+        MelonPrime::RendererTransitionProfile::ScopedPhase phase(
+            "dx12-context-acquire");
+        if (!Context->Acquire())
+        {
+            Error = Context->GetFailureReason();
+            Context = nullptr;
+            return false;
+        }
     }
 
     Window = window;

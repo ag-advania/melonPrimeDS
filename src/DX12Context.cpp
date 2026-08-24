@@ -202,10 +202,11 @@ void DX12Context::Release()
         DestroyDevice();
 }
 
-bool DX12Context::PickAdapter(
+bool DX12Context::PickAdapterAndCreateDevice(
     IDXGIFactory6* factory,
     DX12::ComPtr<IDXGIAdapter1>& outAdapter,
-    DXGI_ADAPTER_DESC1& outDesc) const
+    DXGI_ADAPTER_DESC1& outDesc,
+    DX12::ComPtr<ID3D12Device>& outDevice) const
 {
     const auto& entry = DX12::LoadEntryPoints();
 
@@ -231,14 +232,22 @@ bool DX12Context::PickAdapter(
         if ((desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) != 0)
             continue;
 
-        // Probe without creating: D3D12CreateDevice with a null out-pointer
-        // only reports whether the adapter supports the feature level.
+        // Create rather than probe. D3D12CreateDevice with a null out-pointer
+        // answers the same question, but it also spins the driver up and tears
+        // it back down, and the accepted adapter then pays for that a second
+        // time on the real call. Renderer switching makes that a per-switch
+        // cost, so the successful creation is the probe: a failure here is
+        // exactly the rejection the probe used to report, and the loop moves
+        // on to the next adapter.
+        DX12::ComPtr<ID3D12Device> device;
         if (FAILED(entry.D3D12CreateDevice(
-                adapter.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr)))
+                adapter.Get(), D3D_FEATURE_LEVEL_11_0,
+                IID_PPV_ARGS(device.ReleaseAndGetAddressOf()))))
             continue;
 
         outAdapter = adapter;
         outDesc = desc;
+        outDevice = std::move(device);
         return true;
     }
 
@@ -416,20 +425,9 @@ bool DX12Context::CreateDevice()
     }
 
     DXGI_ADAPTER_DESC1 desc{};
-    if (!PickAdapter(Factory.Get(), Adapter, desc))
+    if (!PickAdapterAndCreateDevice(Factory.Get(), Adapter, desc, Device))
     {
         FailureReason = "no Direct3D 12 feature level 11_0 adapter was found";
-        return false;
-    }
-
-    hr = entry.D3D12CreateDevice(
-        Adapter.Get(),
-        D3D_FEATURE_LEVEL_11_0,
-        IID_PPV_ARGS(Device.ReleaseAndGetAddressOf()));
-    if (FAILED(hr))
-    {
-        DX12::Fail("D3D12CreateDevice", hr);
-        FailureReason = "Direct3D 12 device creation failed";
         return false;
     }
 

@@ -36,6 +36,7 @@
 #ifdef MELONPRIME_DS
 #include "MelonPrimeDef.h"
 #include "MelonPrimeVideoBackend.h"
+#include "MelonPrimeRendererTransitionProfile.h"
 #include "MelonPrimeLocalization.h"
 #if defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"
@@ -831,8 +832,16 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
     // the new backend here would itself run the selected backend's probe.
     emit updateVideoSettings(true);
 
-    setEnabled();
-    setVsyncControlEnable(UsesGL());
+    {
+        // setEnabled() re-probes the newly selected backend. That probe builds
+        // and destroys a native device of its own, so it is part of what the
+        // user feels when switching from the dialog even though it is not part
+        // of the transition proper.
+        MelonPrime::RendererTransitionProfile::ScopedPhase phase(
+            "dialog-post-switch-refresh");
+        setEnabled();
+        setVsyncControlEnable(UsesGL());
+    }
 #else
     bool old_gl = UsesGL();
 

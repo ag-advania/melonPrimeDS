@@ -5,6 +5,7 @@ Long-form implementation boundaries and runtime design. These documents are load
 - [Project context](project-context.md)
 - [Repository architecture](repository.md)
 - [Performance architecture](performance.md)
+- [Runtime renderer transition](renderer-transition.md)
 - [SRP and performance contract](srp-performance-contract.md)
 - [Aim and platform input](input/aim-input.md)
 - [Gameplay runtime](gameplay/runtime.md)

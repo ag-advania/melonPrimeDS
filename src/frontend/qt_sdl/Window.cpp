@@ -91,6 +91,7 @@
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimeVideoBackend.h"
+#include "MelonPrimeRendererTransitionProfile.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "VulkanPerf.h"
 #endif
@@ -3158,8 +3159,15 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
     bool hadOGL = hasOGL;
     if (glchange)
     {
+#ifdef MELONPRIME_DS
+        // Phase timing for the whole switch. Opened before the pause so the
+        // total covers everything the user perceives as the hitch.
+        MelonPrime::RendererTransitionProfile::Begin(
+            emuInstance->getGlobalConfig().GetInt("3D.Renderer"));
+#endif
         emuThread->emuPause();
 #ifdef MELONPRIME_DS
+        MelonPrime::RendererTransitionProfile::Mark("gui-pause");
         const auto prepareRenderers = [&]()
         {
             emuThread->prepareVideoBackendTransition();
@@ -3185,13 +3193,16 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
             // current on the emulation thread. Deinitialize that context before
             // the GUI thread deletes the panel that owns it.
             prepareRenderers();
+            MelonPrime::RendererTransitionProfile::Mark("emu-release-old-renderer");
             emuThread->deinitContext(windowID);
             for (auto child : childwins)
             {
                 auto thread = child->getEmuInstance()->getEmuThread();
                 thread->deinitContext(child->windowID);
             }
+            MelonPrime::RendererTransitionProfile::Mark("gui-deinit-gl");
             destroyPanels();
+            MelonPrime::RendererTransitionProfile::Mark("gui-destroy-panels");
         }
         else
         {
@@ -3199,7 +3210,9 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
             // presenter but refer to renderer-owned images/device state. Drop
             // every presenter first, then replace the renderer synchronously.
             destroyPanels();
+            MelonPrime::RendererTransitionProfile::Mark("gui-destroy-panels");
             prepareRenderers();
+            MelonPrime::RendererTransitionProfile::Mark("emu-release-old-renderer");
         }
 
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -3209,6 +3222,7 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
         // adapters. Otherwise D3D12 can see only Microsoft Basic Render Driver
         // and appear to work at single-digit FPS.
         VulkanDevice::ReleaseRetainedDeviceForBackendTransition();
+        MelonPrime::RendererTransitionProfile::Mark("vk-release-retained-device");
 #endif
 #else
         if (hadOGL)
@@ -3227,6 +3241,9 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
         {
             child->createScreenPanel();
         }
+#ifdef MELONPRIME_DS
+        MelonPrime::RendererTransitionProfile::Mark("gui-create-panels");
+#endif
     }
 
     emuThread->updateVideoSettings();
@@ -3249,12 +3266,18 @@ void MainWindow::onUpdateVideoSettings(bool glchange)
                 auto thread = child->getEmuInstance()->getEmuThread();
                 thread->initContext(child->windowID);
             }
+#ifdef MELONPRIME_DS
+            MelonPrime::RendererTransitionProfile::Mark("gui-init-gl");
+#endif
         }
     }
 
     if (glchange)
     {
         emuThread->emuUnpause();
+#ifdef MELONPRIME_DS
+        MelonPrime::RendererTransitionProfile::Mark("gui-unpause");
+#endif
     }
 }
 

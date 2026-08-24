@@ -514,6 +514,17 @@ bool VulkanRenderer3D::Init()
 
 void VulkanRenderer3D::Stop()
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const u64 stopStartNs = RendererStartupNowNs();
+    u64 stopStageNs = stopStartNs;
+    const auto stopStage = [&](const char* stage) {
+        const u64 now = RendererStartupNowNs();
+        LogRendererStartupStage("Vulkan", stage, now - stopStageNs);
+        stopStageNs = now;
+    };
+#else
+    const auto stopStage = [](const char*) {};
+#endif
     if (Device.IsValid())
     {
         // Permitted WaitIdle site: teardown. Every destroy below assumes no
@@ -521,14 +532,18 @@ void VulkanRenderer3D::Stop()
         Frames.WaitIdle();
         CaptureFrames.WaitIdle();
         ComposeFrames.WaitIdle();
+        stopStage("shutdown_wait_idle");
 
         SavePipelineCache();
+        stopStage("shutdown_pipeline_cache_save");
 
         // Retires the cached texture images through the deferred queue, which
         // Frames.Destroy() then drains -- so this has to happen first.
         Texcache.Reset();
+        stopStage("shutdown_texcache");
 
         ReleasePipelines();
+        stopStage("shutdown_pipelines");
 
         if (PipelineCache != VK_NULL_HANDLE)
         {
@@ -558,10 +573,13 @@ void VulkanRenderer3D::Stop()
 
     TextureHeap.Shutdown();
 
+    stopStage("shutdown_resources");
+
     ComposeFrames.Destroy();
     CaptureFrames.Destroy();
     Frames.Destroy();
     Device.Destroy();
+    stopStage("shutdown_device_destroy");
 
     FrameInFlight = false;
     FrameReadbackValid = false;
@@ -579,6 +597,10 @@ void VulkanRenderer3D::Stop()
     LastNativeCaptureCompletionValue = 0;
     ComposedOutput.reset();
     Initialized = false;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    LogRendererStartupStage("Vulkan", "shutdown_total",
+        RendererStartupNowNs() - stopStartNs);
+#endif
 }
 
 void VulkanRenderer3D::Reset()
@@ -1216,6 +1238,7 @@ bool VulkanRenderer3D::CreatePipelineCache()
     info.pInitialData = payload.empty() ? nullptr : payload.data();
 
     VkResult res = fns.CreatePipelineCache(Device.GetHandle(), &info, nullptr, &PipelineCache);
+    PipelineCacheLoadedBytes = res == VK_SUCCESS ? payload.size() : 0;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     StartupPipelineCacheLoaded = res == VK_SUCCESS && !payload.empty();
 #endif
@@ -1229,6 +1252,7 @@ bool VulkanRenderer3D::CreatePipelineCache()
         info.initialDataSize = 0;
         info.pInitialData = nullptr;
         res = fns.CreatePipelineCache(Device.GetHandle(), &info, nullptr, &PipelineCache);
+        PipelineCacheLoadedBytes = 0;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         StartupPipelineCacheLoaded = false;
 #endif
@@ -1256,6 +1280,15 @@ void VulkanRenderer3D::SavePipelineCache()
     size_t size = 0;
     if (fns.GetPipelineCacheData(Device.GetHandle(), PipelineCache, &size, nullptr) != VK_SUCCESS
         || size == 0)
+        return;
+
+    // Teardown runs on every renderer switch, and the payload is around a
+    // megabyte. When the driver produced exactly what was loaded from disk,
+    // nothing was added this session and rewriting the file is pure transition
+    // latency. The size query above is the cheap half of the readback; only
+    // the copy and the write are skipped. This mirrors the DX12 backend's
+    // dirty-flag guard around its own cache files.
+    if (size == PipelineCacheLoadedBytes)
         return;
 
     std::vector<u8> payload(size);

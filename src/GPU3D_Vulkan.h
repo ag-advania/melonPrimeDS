@@ -22,6 +22,7 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <array>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -502,6 +503,10 @@ private:
     TexcacheVulkan Texcache;
 
     VkPipelineCache PipelineCache = VK_NULL_HANDLE;
+    // Bytes of the payload the pipeline cache was created from. SavePipelineCache()
+    // compares the driver's current payload size against it and skips rewriting an
+    // unchanged file, so a renderer switch does not pay for a redundant ~1 MB write.
+    std::size_t PipelineCacheLoadedBytes = 0;
     std::array<VkPipeline, ShaderStepCount> Pipelines{};
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     u64 StartupBeginNs = 0;

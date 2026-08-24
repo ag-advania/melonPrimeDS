@@ -4,6 +4,7 @@
 #include "MelonPrime.h"
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimeVideoBackend.h"
+#include "MelonPrimeRendererTransitionProfile.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "Screen.h"
 #endif

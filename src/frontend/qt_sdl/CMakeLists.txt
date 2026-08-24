@@ -97,6 +97,7 @@ set(SOURCES_QT_SDL
     MelonPrimeInstanceDiagnostics.cpp
     MelonPrimeRuntimeConfig.cpp
     MelonPrimeVideoBackend.cpp
+    MelonPrimeRendererTransitionProfile.cpp
     MelonPrimeScreenCursorPolicy.cpp
     MelonPrimeHudEditorFormLayout.cpp
     MelonPrimeHudEditorFormBuilder.cpp

@@ -135,8 +135,11 @@ bool VulkanContext::Acquire(bool needPresentation)
     {
         // CreateInstance already filled FailureReason. Close the loader again
         // so a later retry (e.g. after the user installs a driver) starts from
-        // a clean state instead of reusing a half-initialized one.
+        // a clean state instead of reusing a half-initialized one. Only this
+        // path unloads it: a successful instance that is later destroyed keeps
+        // the module resident (see DestroyInstance).
         DestroyInstance();
+        Loader.Close();
         return false;
     }
 
@@ -439,7 +442,18 @@ void VulkanContext::DestroyInstance()
     PortabilityEnumeration = false;
     RefCount = 0;
 
-    Loader.Close();
+    // The loader library deliberately stays resident. Unloading it here made
+    // every renderer switch away from Vulkan pay for a full ICD rediscovery
+    // (loader DLL, driver manifests, driver DLL static init) the next time
+    // Vulkan came back, which is pure repeated work: with no instance alive
+    // the module owns no device, queue or adapter, so nothing about the
+    // backend-transition device-conflict rule depends on unloading it.
+    // Repeated load/unload of a Vulkan ICD is also a known source of driver
+    // instability. Library::Open() is idempotent, so the next Acquire()
+    // reuses the module and its global dispatch table.
+    //
+    // The module is still released by ~Library at process teardown on the
+    // platforms where VulkanContext itself is destroyed.
 }
 
 

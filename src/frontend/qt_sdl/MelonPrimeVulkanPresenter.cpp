@@ -10,6 +10,8 @@
 
 #include "MelonPrimeVulkanPresenter.h"
 
+#include "MelonPrimeRendererTransitionProfile.h"
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <algorithm>
@@ -596,6 +598,8 @@ bool VulkanPresenter::AcquireContext()
     // Presentation is mandatory here, unlike the settings-dialog probe: without
     // the surface instance extensions there is nothing to create a swapchain
     // from.
+    MelonPrime::RendererTransitionProfile::ScopedPhase acquirePhase(
+        "vk-instance-acquire");
     if (!Context->Acquire(true))
     {
         Context = nullptr;
@@ -656,11 +660,15 @@ bool VulkanPresenter::CreateDeviceObjects()
     // first point where the present queue family is known. Re-selecting is
     // cheap: no logical device has been created from the previous selection.
     const bool sharedDeviceExists = melonDS::VulkanDevice::HasSharedDevice(*Context);
-    if (!sharedDeviceExists && !Context->SelectPhysicalDevice(Surface.Handle))
     {
-        return Fail(Context->GetFailureReason().empty()
-            ? std::string("no Vulkan device can present to this window")
-            : Context->GetFailureReason());
+        MelonPrime::RendererTransitionProfile::ScopedPhase phase(
+            "vk-select-physical-device");
+        if (!sharedDeviceExists && !Context->SelectPhysicalDevice(Surface.Handle))
+        {
+            return Fail(Context->GetFailureReason().empty()
+                ? std::string("no Vulkan device can present to this window")
+                : Context->GetFailureReason());
+        }
     }
 
     // Both vendor low-latency extensions are asked for unconditionally rather
@@ -677,8 +685,15 @@ bool VulkanPresenter::CreateDeviceObjects()
     lowLatency.AmdAntiLag = true;
     lowLatency.GenericPresentTiming = true;
 
-    if (!Device.Create(*Context, "Vulkan presenter", lowLatency))
-        return Fail(Device.GetFailureReason());
+    {
+        // Creates the logical device on the first client after a switch. This
+        // and the instance acquire above are the bulk of a DX12->Vulkan
+        // transition's presenter cost.
+        MelonPrime::RendererTransitionProfile::ScopedPhase phase(
+            "vk-device-create");
+        if (!Device.Create(*Context, "Vulkan presenter", lowLatency))
+            return Fail(Device.GetFailureReason());
+    }
 
     if (sharedDeviceExists && !Device.ResolvePresentSupport(Surface.Handle))
         return Fail(Device.GetFailureReason());

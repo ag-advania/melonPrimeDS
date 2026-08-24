@@ -333,6 +333,13 @@ void EmuThread::run()
 
         videoSettingsDirty = false;
         emuInstance->renderLock.unlock();
+#ifdef MELONPRIME_DS
+        // The GUI thread hands the switch over here: it can only pause, swap
+        // panels and unpause; the new renderer is built on this thread, on the
+        // first frame after the unpause. Closing the transition here is what
+        // makes total_ms cover the whole user-visible hitch.
+        MelonPrime::RendererTransitionProfile::End();
+#endif
     };
 
     // --- Frame Advance (lambda so MelonPrime can call it externally) ---
@@ -1151,7 +1158,23 @@ void EmuThread::run()
 #endif
             changeWindowTitle(melontitle);
 
+#ifdef MELONPRIME_DS
+            // Paused, this loop only refreshes the window title and repaints,
+            // so a coarse idle period is right -- but it is also the only
+            // place that picks up messages, and every GUI-thread call that
+            // blocks on this thread waits out whatever is left of it. A
+            // renderer switch sends two such messages (prepare-transition and
+            // unpause), so a flat sleep added up to ~150 ms of pure latency
+            // per switch. Waiting on the queue keeps the same idle period and
+            // answers a message the moment it arrives.
+            {
+                QMutexLocker messageWait(&msgMutex);
+                if (msgQueue.empty())
+                    msgQueueNotEmpty.wait(&msgMutex, 75);
+            }
+#else
             SDL_Delay(75);
+#endif
 
             emuInstance->drawScreen();
         }
@@ -1706,6 +1729,12 @@ void EmuThread::enableCheats(bool enable)
 
 void EmuThread::updateRenderer()
 {
+#ifdef MELONPRIME_DS
+    // Separates "the GUI thread is waiting for this thread to pick the work
+    // up" from the renderer swap itself. Without it the handoff latency lands
+    // in the swap's phase and makes the swap look more expensive than it is.
+    MelonPrime::RendererTransitionProfile::Mark("emu-transition-handoff");
+#endif
     auto nds = emuInstance->nds;
 
     auto& cfg = emuInstance->getGlobalConfig();
@@ -1817,6 +1846,7 @@ void EmuThread::updateRenderer()
             "Renderer transition complete previous=%d actual=%d\n",
             previousVideoRenderer,
             videoRenderer);
+        MelonPrime::RendererTransitionProfile::Mark("emu-construct-renderer");
 #endif
     }
     lastVideoRenderer = videoRenderer;

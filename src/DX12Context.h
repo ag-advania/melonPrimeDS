@@ -117,7 +117,13 @@ private:
 
     bool CreateDevice();
     void DestroyDevice();
-    bool PickAdapter(IDXGIFactory6* factory, DX12::ComPtr<IDXGIAdapter1>& outAdapter, DXGI_ADAPTER_DESC1& outDesc) const;
+    // Picks the adapter by creating the device on it. Creation is the probe:
+    // a separate feature-level check would initialize the same driver twice.
+    bool PickAdapterAndCreateDevice(
+        IDXGIFactory6* factory,
+        DX12::ComPtr<IDXGIAdapter1>& outAdapter,
+        DXGI_ADAPTER_DESC1& outDesc,
+        DX12::ComPtr<ID3D12Device>& outDevice) const;
     void QueryShaderModel();
 
     mutable std::mutex Mutex;

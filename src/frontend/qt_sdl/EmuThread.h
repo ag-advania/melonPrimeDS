@@ -223,6 +223,13 @@ private:
     // On 99%+ of frames with no messages, avoids the uncontended mutex
     // lock/unlock entirely (~20-50 cyc/frame).
     std::atomic<bool> msgPending{false};
+
+    // Wakes the paused run loop as soon as a message is queued. Paused, the
+    // loop only has to refresh the window title and repaint, so it used to
+    // sleep a flat 75 ms -- but every GUI thread call that blocks on the
+    // emulation thread (a renderer switch sends two) then waited out that
+    // sleep. Signalled by sendMessage() after the enqueue.
+    QWaitCondition msgQueueNotEmpty;
 #endif
 
     EmuInstance* emuInstance;
