@@ -97,13 +97,16 @@ public:
         auto* field = new QWidget(inner);
         auto* layout = new QHBoxLayout(field);
         layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(6);
+        const bool nativeChrome = MelonPrime::HudEditorForm::UsesNativeWindowsChrome(*field);
+        layout->setSpacing(nativeChrome ? 6 : 3);
         auto* on = new QRadioButton(QStringLiteral("ON"), field);
         auto* off = new QRadioButton(QStringLiteral("OFF"), field);
         on->setMinimumWidth(kRadioOnWidth);
         off->setMinimumWidth(kRadioOffWidth);
         layout->addWidget(on, 0);
         layout->addWidget(off, 0);
+        if (!nativeChrome)
+            field->setMinimumWidth(field->minimumSizeHint().width() + 2);
         addRow(labelText, field);
     }
 
@@ -173,7 +176,7 @@ public:
         auto* field = new QWidget(inner);
         auto* layout = new QHBoxLayout(field);
         layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(2);
+        layout->setSpacing(MelonPrime::HudEditorForm::UsesNativeWindowsChrome(*field) ? 2 : 1);
         auto* combo = new QComboBox(field);
         combo->addItems({QStringLiteral("Overall"), QStringLiteral("Custom")});
         layout->addWidget(combo, 1);
@@ -186,7 +189,8 @@ public:
         auto* field = new QWidget(inner);
         auto* layout = new QHBoxLayout(field);
         layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(4);
+        const bool nativeChrome = MelonPrime::HudEditorForm::UsesNativeWindowsChrome(*field);
+        layout->setSpacing(nativeChrome ? 4 : 2);
         auto* on = new QRadioButton(QStringLiteral("ON"), field);
         auto* off = new QRadioButton(QStringLiteral("OFF"), field);
         on->setMinimumWidth(kRadioOnWidth);
@@ -194,6 +198,8 @@ public:
         layout->addWidget(on, 0);
         layout->addWidget(off, 0);
         layout->addWidget(addColorButton(field), 0);
+        if (!nativeChrome)
+            field->setMinimumWidth(field->minimumSizeHint().width() + 2);
         addRow(labelText, field);
     }
 

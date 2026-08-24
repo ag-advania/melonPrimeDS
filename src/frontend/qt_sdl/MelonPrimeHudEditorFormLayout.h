@@ -20,4 +20,13 @@ QLabel* CreateTranslatedFormLabel(QFormLayout& form, const QString& text);
 // minimum-size hint into hidden horizontal overflow inside QScrollArea.
 void ConstrainWrappedFormLabels(QWidget& root, int maximumWidth);
 
+// True when the widget is rendered with Qt's native Windows style
+// (windowsvista/windows11). This editor's fixed-pixel row budgets (radio
+// pair + color swatch, etc.) were sized with zero slack against that one
+// style's chrome. Fusion, the native macOS style, and the offscreen
+// fallback used on Linux/BSD all render a few px wider, so composite-row
+// builders use this to add a small safety margin outside native Windows
+// chrome instead of shrinking every platform to the tightest case.
+bool UsesNativeWindowsChrome(const QWidget& widget);
+
 } // namespace MelonPrime::HudEditorForm
