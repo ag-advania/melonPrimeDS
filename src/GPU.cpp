@@ -165,13 +165,19 @@ void Renderer::MarkCaptureCpuCoherent(
         }
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
-        const u64 cpuHash = HashCaptureVRAM(GPU, bank, block, 1u);
-        const u64 nativeHash =
-            reason == CaptureAuthorityTransitionReason::NativeReadbackMaterialized
-            ? cpuHash : 0u;
+        // HashCaptureVRAM() walks a whole 32 KiB capture block one byte at a
+        // time, and this runs once per emulated VRAM write. Hashing before
+        // the transition test made every developer build pay that walk on the
+        // writes that log nothing, which is nearly all of them: a VRAM-heavy
+        // scene such as the MPH opening movie fell to about 1 fps. Only the
+        // logged transition needs the hash, so it is computed there.
         if (oldOwner != CaptureOwner::CpuCoherent)
         {
+            const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+            const u64 cpuHash = HashCaptureVRAM(GPU, bank, block, 1u);
+            const u64 nativeHash =
+                reason == CaptureAuthorityTransitionReason::NativeReadbackMaterialized
+                ? cpuHash : 0u;
             Platform::Log(
                 Platform::LogLevel::Info,
                 "[GPU2DCaptureOwnership] event=capture_owner_transition "
@@ -242,14 +248,17 @@ void Renderer::PublishNativeCaptureBlock(
                 + ((start + i) & (CapturePhysicalBlocksPerBank - 1u))];
         const CaptureOwner oldOwner = provenance.Owner;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
-        const u64 cpuHash = HashCaptureVRAM(GPU, bank, block, 1u);
+        // Same rule as MarkCaptureCpuCoherent(): the 32 KiB byte-wise hash is
+        // only needed by the transition that is actually logged, and this
+        // loop is on the per-VRAM-write path.
         if (oldOwner != owner
             || provenance.Epoch != identity.Epoch
             || provenance.SemanticFrame != identity.SemanticFrame
             || provenance.CaptureGeneration != identity.CaptureGeneration
             || provenance.CompletionValue != identity.CompletionValue)
         {
+            const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+            const u64 cpuHash = HashCaptureVRAM(GPU, bank, block, 1u);
             Platform::Log(
                 Platform::LogLevel::Info,
                 "[GPU2DCaptureOwnership] event=capture_owner_transition "
