@@ -69,6 +69,40 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         return QRectF(panelX, panelY, layout.panelW, layout.panelH);
     }
 
+    // Enemy Target reproduces the runtime layout from a deterministic preview
+    // snapshot, so the selection box always matches what the panel will draw.
+    if (idx == 15) {
+        CachedHudConfig layoutConfig = s_cache;
+        auto& et = layoutConfig.enemyTarget;
+        et.scale = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetScale), 10, 800) / 100.0f;
+        et.textScalePct = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetTextScale), 10, 800);
+        et.rowSpacing = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetRowSpacing), 0, 16);
+        et.nameShow = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetNameShow);
+        et.hunterIconShow = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetHunterIconShow);
+        et.hunterIconHeight = std::clamp(
+            cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetHunterIconHeight), 0, 48);
+        et.hpMode = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetHpMode), 0, 3);
+        et.hpNumberShow = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetHpNumberShow);
+        et.barLength = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetBarLength), 8, 192);
+        et.barHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetBarHeight), 1, 20);
+        et.scoreShow = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetScoreShow);
+        layoutConfig.textScalePct = cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale);
+        if (!s_cache.valid) {
+            layoutConfig.scaleText = 1.0f;
+            layoutConfig.scaleIcons = 1.0f;
+        }
+        EnsureEnemyTargetAssetsLoaded(et, layoutConfig.scaleIcons
+                                              * EnemyTargetUserScale(layoutConfig));
+        QFont font;
+        BuildEnemyTargetFont(layoutConfig, hs, font);
+        const QFontMetrics fm(font);
+        const EnemyTargetSnapshot preview = MakeEnemyTargetPreviewSnapshot();
+        EnemyTargetLayout layout = BuildEnemyTargetLayout(preview, layoutConfig, hs, fm);
+        PlaceEnemyTargetLayout(layout, static_cast<float>(fx),
+                               static_cast<float>(fy), anchor);
+        return QRectF(layout.panelX, layout.panelY, layout.panelW, layout.panelH);
+    }
+
     // ── Radar (idx=11) — must come before gauge branch (radar reuses lengthKey for square resize) ──
     if (idx == 11) {
         if (s_cache.valid)
@@ -503,6 +537,9 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
                                  std::min(c.scaleIcons, c.scaleScoreboard)
                                      * ScoreboardUserScale(c));
     DrawScoreboard(p, MakeScoreboardPreviewSnapshot(), c, hudScale, 0);
+    EnsureEnemyTargetAssetsLoaded(c.enemyTarget,
+                                  c.scaleIcons * EnemyTargetUserScale(c));
+    DrawEnemyTarget(p, MakeEnemyTargetPreviewSnapshot(), c, hudScale);
 }
 
 // ── Guard to prevent re-entrant QColorDialog ────────────────────────────────
@@ -942,6 +979,10 @@ static void DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, 
                                              * ScoreboardUserScale(s_cache));
             DrawScoreboard(p, MakeScoreboardPreviewSnapshot(), s_cache,
                            s_editHudScale, 0);
+        } else if (i == 15) {
+            EnsureEnemyTargetAssetsLoaded(s_cache.enemyTarget,
+                                          s_cache.scaleIcons * EnemyTargetUserScale(s_cache));
+            DrawEnemyTarget(p, MakeEnemyTargetPreviewSnapshot(), s_cache, s_editHudScale);
         } else {
             QColor tc(255, 255, 255);
             if (d.colorRKey)

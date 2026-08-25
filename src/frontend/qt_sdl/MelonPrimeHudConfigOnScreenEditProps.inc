@@ -216,6 +216,29 @@ static const HudEditPropDesc kPropsScoreboard[] = {
     {"Rank", EditPropType::Bool, MP_HUD_PROP_KEY_HudScoreboardRankShow, 0, 0, 0, nullptr, nullptr, nullptr},
 };
 
+static const HudEditPropDesc kPropsEnemyTarget[] = {
+    {"Scale %", EditPropType::Int, MP_HUD_PROP_KEY_HudEnemyTargetScale, 10, 800, 1, nullptr, nullptr, nullptr},
+    {"Text Scale %", EditPropType::Int, MP_HUD_PROP_KEY_HudEnemyTargetTextScale, 10, 800, 1, nullptr, nullptr, nullptr},
+    {"Row Spacing", EditPropType::Int, MP_HUD_PROP_KEY_HudEnemyTargetRowSpacing, 0, 16, 1, nullptr, nullptr, nullptr},
+    {"Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudEnemyTargetOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Name", EditPropType::Bool, MP_HUD_PROP_KEY_HudEnemyTargetNameShow, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Team Color", EditPropType::Bool, MP_HUD_PROP_KEY_HudEnemyTargetTeamColor, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Hunter Icon", EditPropType::Bool, MP_HUD_PROP_KEY_HudEnemyTargetHunterIconShow, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Hunter Icon Height", EditPropType::Int, MP_HUD_PROP_KEY_HudEnemyTargetHunterIconHeight, 0, 48, 1, nullptr, nullptr, nullptr},
+    {"HP Mode", EditPropType::Enum, MP_HUD_PROP_KEY_HudEnemyTargetHpMode, 0, 3, 1, kEnumEnemyTargetHpMode, nullptr, nullptr},
+    {"HP Number", EditPropType::Bool, MP_HUD_PROP_KEY_HudEnemyTargetHpNumberShow, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Bar Length", EditPropType::Int, MP_HUD_PROP_KEY_HudEnemyTargetBarLength, 8, 192, 1, nullptr, nullptr, nullptr},
+    {"Bar Height", EditPropType::Int, MP_HUD_PROP_KEY_HudEnemyTargetBarHeight, 1, 20, 1, nullptr, nullptr, nullptr},
+    {"HP Color", EditPropType::Color, MP_HUD_PROP_KEY_HudEnemyTargetHpColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudEnemyTargetHpColorG, MP_HUD_PROP_KEY_HudEnemyTargetHpColorB, nullptr},
+    {"HP Back Color", EditPropType::Color, MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorG, MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorB, nullptr},
+    {"Score", EditPropType::Bool, MP_HUD_PROP_KEY_HudEnemyTargetScoreShow, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Score Color", EditPropType::Color, MP_HUD_PROP_KEY_HudEnemyTargetScoreColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudEnemyTargetScoreColorG, MP_HUD_PROP_KEY_HudEnemyTargetScoreColorB, nullptr},
+    {"Outline", EditPropType::Bool, MP_HUD_PROP_KEY_HudEnemyTargetOutline, 0, 0, 0, nullptr, nullptr, nullptr},
+    {"Outline Color", EditPropType::Color, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorG, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorB, nullptr},
+    {"Outline Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudEnemyTargetOutlineOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
+    {"Outline Thick.", EditPropType::Int, MP_HUD_PROP_KEY_HudEnemyTargetOutlineThickness, 1, 10, 1, nullptr, nullptr, nullptr},
+};
+
 static constexpr int kCrosshairNormalCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairNormal);
 static constexpr int kCrosshairZoomCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairZoom);
 static constexpr int kCrosshairInnerCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairInner);
@@ -341,6 +364,14 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         MP_HUD_PROP_KEY_HudScoreboardShow,
         MP_HUD_PROP_KEY_HudScoreboardTextColorR, MP_HUD_PROP_KEY_HudScoreboardTextColorG, MP_HUD_PROP_KEY_HudScoreboardTextColorB,
         kPropsScoreboard, HUD_EDIT_PROP_COUNT(kPropsScoreboard)
+    },
+    {
+        "Enemy\nTarget",
+        MP_HUD_PROP_KEY_HudEnemyTargetAnchor, MP_HUD_PROP_KEY_HudEnemyTargetX, MP_HUD_PROP_KEY_HudEnemyTargetY,
+        nullptr, nullptr, nullptr, nullptr,
+        MP_HUD_PROP_KEY_HudEnemyTargetShow,
+        MP_HUD_PROP_KEY_HudEnemyTargetColorR, MP_HUD_PROP_KEY_HudEnemyTargetColorG, MP_HUD_PROP_KEY_HudEnemyTargetColorB,
+        kPropsEnemyTarget, HUD_EDIT_PROP_COUNT(kPropsEnemyTarget)
     },
 };
 

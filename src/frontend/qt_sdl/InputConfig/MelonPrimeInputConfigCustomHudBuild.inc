@@ -378,6 +378,23 @@
             });
             break;
         }
+        case HWType::EnemyTargetHpMode: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Segmented"));
+            combo->addItem(QStringLiteral("Single Bar"));
+            combo->addItem(QStringLiteral("Number Only"));
+            combo->addItem(QStringLiteral("Off"));
+            combo->setCurrentIndex(std::clamp(instcfg.GetInt(p.cfgKey), 0, 3));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::HorizVert: {
             auto* combo = new QComboBox(parent);
             combo->setObjectName(objName);
@@ -733,6 +750,7 @@
             case 3: preview = new MatchStatusPreviewWidget(emuInstance, mainBody); break;
             case 4: preview = new RadarPreviewWidget(emuInstance, mainBody); break;
             case 5: preview = new ScoreboardPreviewWidget(emuInstance, mainBody); break;
+            case 6: preview = new EnemyTargetPreviewWidget(emuInstance, mainBody); break;
             }
             if (preview) {
                 hbox->addWidget(preview, 0);
@@ -741,6 +759,42 @@
         }
 
         vlay->insertWidget(insertPos++, mainBody);
+    }
+
+    // ── Enemy Target depends on the Show Enemy HP Meter Online fix ─────────
+    // MPH suppresses the last-hit target state on Nintendo WFC unless that fix
+    // is enabled, so the whole section is greyed out while it is off. The note
+    // row is an HWType::Label and is never registered in m_hudWidgets, so it
+    // stays readable and explains why the rest is disabled.
+    if (ui->cbMetroidShowEnemyHpMeterOnline) {
+        auto applyEnemyTargetDependency = [this](bool available) {
+            for (const HudWidgetProp& p : kSecEnemyTarget) {
+                if (!p.cfgKey || !*p.cfgKey)
+                    continue;
+                const auto it = m_hudWidgets.find(std::string(p.cfgKey));
+                if (it == m_hudWidgets.end())
+                    continue;
+                // Walk up to the widget the QFormLayout actually holds: Int
+                // rows wrap slider+spinbox in a QHBoxLayout, and Color3 rows
+                // nest an RGB row inside a preset-combo container.
+                QWidget* row = it->second;
+                while (QWidget* parentWidget = row->parentWidget()) {
+                    if (qobject_cast<QFormLayout*>(parentWidget->layout()))
+                        break;
+                    row = parentWidget;
+                }
+                row->setEnabled(available);
+                if (QWidget* parentWidget = row->parentWidget())
+                    if (auto* form = qobject_cast<QFormLayout*>(parentWidget->layout()))
+                        if (QWidget* labelWidget = form->labelForField(row))
+                            labelWidget->setEnabled(available);
+            }
+        };
+        applyEnemyTargetDependency(ui->cbMetroidShowEnemyHpMeterOnline->isChecked());
+        connect(ui->cbMetroidShowEnemyHpMeterOnline, &QCheckBox::toggled, this,
+                [applyEnemyTargetDependency](bool checked) {
+                    applyEnemyTargetDependency(checked);
+                });
     }
 
     // ── PosMode3 grayout: disable irrelevant rows when Position Mode changes ──

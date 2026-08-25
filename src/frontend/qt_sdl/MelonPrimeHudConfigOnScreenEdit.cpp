@@ -362,7 +362,8 @@ void MelonPrimeHudConfigOnScreenEdit::populateFromRowTable(
 static const char* kElementNames[] = {
     "HP", "HP Gauge", "Weapon/Ammo", "Weapon Icon", "Ammo Gauge",
     "Match Status", "Rank", "Time Left", "Time Limit",
-    "Bomb Left", "Bomb Icon", "Radar", "Weapon Inventory", "Crosshair", "Scoreboard"
+    "Bomb Left", "Bomb Icon", "Radar", "Weapon Inventory", "Crosshair", "Scoreboard",
+    "Enemy Target"
 };
 
 void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
@@ -371,7 +372,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
     clearForm();
     m_currentElem = idx;
 
-    if (idx < 0 || idx >= 15) {
+    if (idx < 0 || idx >= 16) {
         hide();
         m_populating = false;
         return;
@@ -395,6 +396,7 @@ void MelonPrimeHudConfigOnScreenEdit::populateForElement(int idx)
     case 12: populateWeaponInventory(); break;
     case 13: populateForCrosshair(); return; // already clears/sets m_populating internally
     case 14: populateScoreboard(); break;
+    case 15: populateEnemyTarget(); break;
     }
 
     // NOTE: do not call show() here — the caller (Screen.cpp callback)
@@ -502,6 +504,11 @@ void MelonPrimeHudConfigOnScreenEdit::populateRadar()
 void MelonPrimeHudConfigOnScreenEdit::populateScoreboard()
 {
     populateFromRowTable(kRowsScoreboard, MP_SIDE_ROW_COUNT(kRowsScoreboard));
+}
+
+void MelonPrimeHudConfigOnScreenEdit::populateEnemyTarget()
+{
+    populateFromRowTable(kRowsEnemyTarget, MP_SIDE_ROW_COUNT(kRowsEnemyTarget));
 }
 
 #endif // MELONPRIME_CUSTOM_HUD

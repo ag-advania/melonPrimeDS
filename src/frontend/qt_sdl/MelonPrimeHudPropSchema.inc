@@ -629,6 +629,41 @@
 #define MP_HUD_PROP_KEY_HudScoreboardOutlineColorB "Metroid.Visual.HudScoreboardOutlineColorB"
 #define MP_HUD_PROP_KEY_HudScoreboardOutlineThickness "Metroid.Visual.HudScoreboardOutlineThickness"
 #define MP_HUD_PROP_KEY_HudScoreboardOutlineOpacity "Metroid.Visual.HudScoreboardOutlineOpacity"
+#define MP_HUD_PROP_KEY_HudEnemyTargetAnchor "Metroid.Visual.HudEnemyTargetAnchor"
+#define MP_HUD_PROP_KEY_HudEnemyTargetX "Metroid.Visual.HudEnemyTargetX"
+#define MP_HUD_PROP_KEY_HudEnemyTargetY "Metroid.Visual.HudEnemyTargetY"
+#define MP_HUD_PROP_KEY_HudEnemyTargetScale "Metroid.Visual.HudEnemyTargetScale"
+#define MP_HUD_PROP_KEY_HudEnemyTargetTextScale "Metroid.Visual.HudEnemyTargetTextScale"
+#define MP_HUD_PROP_KEY_HudEnemyTargetRowSpacing "Metroid.Visual.HudEnemyTargetRowSpacing"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHunterIconHeight "Metroid.Visual.HudEnemyTargetHunterIconHeight"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHpMode "Metroid.Visual.HudEnemyTargetHpMode"
+#define MP_HUD_PROP_KEY_HudEnemyTargetBarLength "Metroid.Visual.HudEnemyTargetBarLength"
+#define MP_HUD_PROP_KEY_HudEnemyTargetBarHeight "Metroid.Visual.HudEnemyTargetBarHeight"
+#define MP_HUD_PROP_KEY_HudEnemyTargetColorR "Metroid.Visual.HudEnemyTargetColorR"
+#define MP_HUD_PROP_KEY_HudEnemyTargetColorG "Metroid.Visual.HudEnemyTargetColorG"
+#define MP_HUD_PROP_KEY_HudEnemyTargetColorB "Metroid.Visual.HudEnemyTargetColorB"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHpColorR "Metroid.Visual.HudEnemyTargetHpColorR"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHpColorG "Metroid.Visual.HudEnemyTargetHpColorG"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHpColorB "Metroid.Visual.HudEnemyTargetHpColorB"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorR "Metroid.Visual.HudEnemyTargetHpBackColorR"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorG "Metroid.Visual.HudEnemyTargetHpBackColorG"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorB "Metroid.Visual.HudEnemyTargetHpBackColorB"
+#define MP_HUD_PROP_KEY_HudEnemyTargetScoreColorR "Metroid.Visual.HudEnemyTargetScoreColorR"
+#define MP_HUD_PROP_KEY_HudEnemyTargetScoreColorG "Metroid.Visual.HudEnemyTargetScoreColorG"
+#define MP_HUD_PROP_KEY_HudEnemyTargetScoreColorB "Metroid.Visual.HudEnemyTargetScoreColorB"
+#define MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorR "Metroid.Visual.HudEnemyTargetOutlineColorR"
+#define MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorG "Metroid.Visual.HudEnemyTargetOutlineColorG"
+#define MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorB "Metroid.Visual.HudEnemyTargetOutlineColorB"
+#define MP_HUD_PROP_KEY_HudEnemyTargetOutlineThickness "Metroid.Visual.HudEnemyTargetOutlineThickness"
+#define MP_HUD_PROP_KEY_HudEnemyTargetShow "Metroid.Visual.HudEnemyTargetShow"
+#define MP_HUD_PROP_KEY_HudEnemyTargetNameShow "Metroid.Visual.HudEnemyTargetNameShow"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHunterIconShow "Metroid.Visual.HudEnemyTargetHunterIconShow"
+#define MP_HUD_PROP_KEY_HudEnemyTargetHpNumberShow "Metroid.Visual.HudEnemyTargetHpNumberShow"
+#define MP_HUD_PROP_KEY_HudEnemyTargetScoreShow "Metroid.Visual.HudEnemyTargetScoreShow"
+#define MP_HUD_PROP_KEY_HudEnemyTargetTeamColor "Metroid.Visual.HudEnemyTargetTeamColor"
+#define MP_HUD_PROP_KEY_HudEnemyTargetOutline "Metroid.Visual.HudEnemyTargetOutline"
+#define MP_HUD_PROP_KEY_HudEnemyTargetOpacity "Metroid.Visual.HudEnemyTargetOpacity"
+#define MP_HUD_PROP_KEY_HudEnemyTargetOutlineOpacity "Metroid.Visual.HudEnemyTargetOutlineOpacity"
 
 // X(identifier, key, cfgType, defaultExpr, uiMin, uiMax, uiStep, label, uiKind, surfaceMask, flags)
 #define MP_HUD_PROP_ROW_HudFontMode(X) X(HudFontMode, MP_HUD_PROP_KEY_HudFontMode, Int, 0, 0, 2, 1, "Font Source", "FontMode", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1245,6 +1280,41 @@
 #define MP_HUD_PROP_ROW_HudScoreboardOutlineColorB(X) X(HudScoreboardOutlineColorB, MP_HUD_PROP_KEY_HudScoreboardOutlineColorB, Int, 0, 0, 255, 1, "Outline Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardOutlineThickness(X) X(HudScoreboardOutlineThickness, MP_HUD_PROP_KEY_HudScoreboardOutlineThickness, Int, 1, 1, 10, 1, "Outline Thickness", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X) X(HudScoreboardOutlineOpacity, MP_HUD_PROP_KEY_HudScoreboardOutlineOpacity, Double, 0.75, 0, 100, 5, "Outline Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetAnchor(X) X(HudEnemyTargetAnchor, MP_HUD_PROP_KEY_HudEnemyTargetAnchor, Int, 1, 0, 8, 1, "Anchor", "Anchor9", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetX(X) X(HudEnemyTargetX, MP_HUD_PROP_KEY_HudEnemyTargetX, Int, 0, -256, 256, 1, "Offset X", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetY(X) X(HudEnemyTargetY, MP_HUD_PROP_KEY_HudEnemyTargetY, Int, 52, -256, 256, 1, "Offset Y", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetScale(X) X(HudEnemyTargetScale, MP_HUD_PROP_KEY_HudEnemyTargetScale, Int, 48, 10, 800, 1, "Scale %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetTextScale(X) X(HudEnemyTargetTextScale, MP_HUD_PROP_KEY_HudEnemyTargetTextScale, Int, 100, 10, 800, 1, "Text Scale %", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetRowSpacing(X) X(HudEnemyTargetRowSpacing, MP_HUD_PROP_KEY_HudEnemyTargetRowSpacing, Int, 2, 0, 16, 1, "Row Spacing", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHunterIconHeight(X) X(HudEnemyTargetHunterIconHeight, MP_HUD_PROP_KEY_HudEnemyTargetHunterIconHeight, Int, 16, 0, 48, 1, "Hunter Icon Height", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHpMode(X) X(HudEnemyTargetHpMode, MP_HUD_PROP_KEY_HudEnemyTargetHpMode, Int, 0, 0, 3, 1, "HP Mode", "ComboBox", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetBarLength(X) X(HudEnemyTargetBarLength, MP_HUD_PROP_KEY_HudEnemyTargetBarLength, Int, 72, 8, 192, 1, "Bar Length", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetBarHeight(X) X(HudEnemyTargetBarHeight, MP_HUD_PROP_KEY_HudEnemyTargetBarHeight, Int, 3, 1, 20, 1, "Bar Height", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetColorR(X) X(HudEnemyTargetColorR, MP_HUD_PROP_KEY_HudEnemyTargetColorR, Int, 255, 0, 255, 1, "Name Color R", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetColorG(X) X(HudEnemyTargetColorG, MP_HUD_PROP_KEY_HudEnemyTargetColorG, Int, 255, 0, 255, 1, "Name Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetColorB(X) X(HudEnemyTargetColorB, MP_HUD_PROP_KEY_HudEnemyTargetColorB, Int, 255, 0, 255, 1, "Name Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHpColorR(X) X(HudEnemyTargetHpColorR, MP_HUD_PROP_KEY_HudEnemyTargetHpColorR, Int, 0, 0, 255, 1, "HP Color R", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHpColorG(X) X(HudEnemyTargetHpColorG, MP_HUD_PROP_KEY_HudEnemyTargetHpColorG, Int, 248, 0, 255, 1, "HP Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHpColorB(X) X(HudEnemyTargetHpColorB, MP_HUD_PROP_KEY_HudEnemyTargetHpColorB, Int, 120, 0, 255, 1, "HP Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorR(X) X(HudEnemyTargetHpBackColorR, MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorR, Int, 0, 0, 255, 1, "HP Back Color R", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorG(X) X(HudEnemyTargetHpBackColorG, MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorG, Int, 48, 0, 255, 1, "HP Back Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorB(X) X(HudEnemyTargetHpBackColorB, MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorB, Int, 24, 0, 255, 1, "HP Back Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetScoreColorR(X) X(HudEnemyTargetScoreColorR, MP_HUD_PROP_KEY_HudEnemyTargetScoreColorR, Int, 255, 0, 255, 1, "Score Color R", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetScoreColorG(X) X(HudEnemyTargetScoreColorG, MP_HUD_PROP_KEY_HudEnemyTargetScoreColorG, Int, 216, 0, 255, 1, "Score Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetScoreColorB(X) X(HudEnemyTargetScoreColorB, MP_HUD_PROP_KEY_HudEnemyTargetScoreColorB, Int, 64, 0, 255, 1, "Score Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorR(X) X(HudEnemyTargetOutlineColorR, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorR, Int, 0, 0, 255, 1, "Outline Color R", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorG(X) X(HudEnemyTargetOutlineColorG, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorG, Int, 0, 0, 255, 1, "Outline Color G", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorB(X) X(HudEnemyTargetOutlineColorB, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorB, Int, 0, 0, 255, 1, "Outline Color B", "Color3", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetOutlineThickness(X) X(HudEnemyTargetOutlineThickness, MP_HUD_PROP_KEY_HudEnemyTargetOutlineThickness, Int, 1, 1, 10, 1, "Outline Thickness", "Int", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetShow(X) X(HudEnemyTargetShow, MP_HUD_PROP_KEY_HudEnemyTargetShow, Bool, true, 0, 0, 0, "Show", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetNameShow(X) X(HudEnemyTargetNameShow, MP_HUD_PROP_KEY_HudEnemyTargetNameShow, Bool, true, 0, 0, 0, "Name", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHunterIconShow(X) X(HudEnemyTargetHunterIconShow, MP_HUD_PROP_KEY_HudEnemyTargetHunterIconShow, Bool, true, 0, 0, 0, "Hunter Icon", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetHpNumberShow(X) X(HudEnemyTargetHpNumberShow, MP_HUD_PROP_KEY_HudEnemyTargetHpNumberShow, Bool, false, 0, 0, 0, "HP Number", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetScoreShow(X) X(HudEnemyTargetScoreShow, MP_HUD_PROP_KEY_HudEnemyTargetScoreShow, Bool, true, 0, 0, 0, "Score", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetTeamColor(X) X(HudEnemyTargetTeamColor, MP_HUD_PROP_KEY_HudEnemyTargetTeamColor, Bool, true, 0, 0, 0, "Team Color", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetOutline(X) X(HudEnemyTargetOutline, MP_HUD_PROP_KEY_HudEnemyTargetOutline, Bool, true, 0, 0, 0, "Outline", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetOpacity(X) X(HudEnemyTargetOpacity, MP_HUD_PROP_KEY_HudEnemyTargetOpacity, Double, 1.0, 0, 100, 5, "Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X) X(HudEnemyTargetOutlineOpacity, MP_HUD_PROP_KEY_HudEnemyTargetOutlineOpacity, Double, 1.0, 0, 100, 5, "Outline Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 
 // Schema views reference row macros so each key literal has a single owner.
 #define MP_HUD_PROP_SCHEMA(X) \
@@ -1861,7 +1931,42 @@
     MP_HUD_PROP_ROW_HudScoreboardOutlineColorG(X) \
     MP_HUD_PROP_ROW_HudScoreboardOutlineColorB(X) \
     MP_HUD_PROP_ROW_HudScoreboardOutlineThickness(X) \
-    MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X)
+    MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetAnchor(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetX(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetY(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScale(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetTextScale(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetRowSpacing(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHunterIconHeight(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpMode(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetBarLength(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetBarHeight(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScoreColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScoreColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScoreColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineThickness(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetNameShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHunterIconShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpNumberShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScoreShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetTeamColor(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutline(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOpacity(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X)
 
 // Type-filtered views preserve the Config.cpp DefaultList<T> ownership.
 #define MP_HUD_PROP_SCHEMA_INT(X) \
@@ -2331,7 +2436,33 @@
     MP_HUD_PROP_ROW_HudScoreboardOutlineColorR(X) \
     MP_HUD_PROP_ROW_HudScoreboardOutlineColorG(X) \
     MP_HUD_PROP_ROW_HudScoreboardOutlineColorB(X) \
-    MP_HUD_PROP_ROW_HudScoreboardOutlineThickness(X)
+    MP_HUD_PROP_ROW_HudScoreboardOutlineThickness(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetAnchor(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetX(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetY(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScale(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetTextScale(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetRowSpacing(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHunterIconHeight(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpMode(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetBarLength(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetBarHeight(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpBackColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScoreColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScoreColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScoreColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorR(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorG(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineColorB(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineThickness(X)
 
 #define MP_HUD_PROP_SCHEMA_BOOL(X) \
     MP_HUD_PROP_ROW_CrosshairZoomScopeCenterDot(X) \
@@ -2428,7 +2559,14 @@
     MP_HUD_PROP_ROW_HudWeaponInventoryHighlightEnable(X) \
     MP_HUD_PROP_ROW_HudScoreboardShow(X) \
     MP_HUD_PROP_ROW_HudScoreboardRankShow(X) \
-    MP_HUD_PROP_ROW_HudScoreboardOutline(X)
+    MP_HUD_PROP_ROW_HudScoreboardOutline(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetNameShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHunterIconShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetHpNumberShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetScoreShow(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetTeamColor(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutline(X)
 
 #define MP_HUD_PROP_SCHEMA_STRING(X) \
     MP_HUD_PROP_ROW_HudFontFamily(X) \
@@ -2484,6 +2622,8 @@
     MP_HUD_PROP_ROW_BtmOverlayOpacity(X) \
     MP_HUD_PROP_ROW_HudScoreboardOpacity(X) \
     MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X) \
-    MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X)
+    MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOpacity(X) \
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X)
 
 #endif // MELONPRIME_HUD_PROP_SCHEMA_INC

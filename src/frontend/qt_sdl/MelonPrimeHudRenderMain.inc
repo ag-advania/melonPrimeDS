@@ -4,7 +4,7 @@
 // =========================================================================
 //  P-7 forward declarations (full definitions follow CustomHud_Render)
 // =========================================================================
-static constexpr int kEditElemCount   = 15; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair, 14 = Scoreboard
+static constexpr int kEditElemCount   = 16; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair, 14 = Scoreboard, 15 = Enemy Target
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX);
 static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer);
 
@@ -124,6 +124,17 @@ HOT_FUNCTION QRect CustomHud_Render(
                                          std::min(c.scaleIcons, c.scaleScoreboard)
                                              * ScoreboardUserScale(c));
             DrawScoreboard(topPaint, scoreboard, c, hudScale, playerPosition);
+        }
+    }
+
+    // Enemy Target: the ROM only publishes targetSlot/timer for ~2s after a
+    // local hit, so most frames stop at the snapshot's early return.
+    if (c.enemyTarget.show) {
+        EnemyTargetSnapshot enemyTarget{};
+        if (ReadHudRuntimeEnemyTargetSnapshot(rom, st, enemyTarget)) {
+            EnsureEnemyTargetAssetsLoaded(c.enemyTarget,
+                                          c.scaleIcons * EnemyTargetUserScale(c));
+            DrawEnemyTarget(topPaint, enemyTarget, c, hudScale);
         }
     }
 

@@ -1030,6 +1030,347 @@ static ScoreboardSnapshot MakeScoreboardPreviewSnapshot()
 }
 
 // =========================================================================
+//  Enemy Target HUD — the opponent the local player last damaged.
+//
+//  The panel is laid out top-down as: name, HP meter(s), score. A hunter
+//  portrait sits to the left of that column. Layout is a pure function of the
+//  snapshot + config + fonts so edit mode can reproduce the exact selection
+//  box without drawing, exactly like the scoreboard.
+// =========================================================================
+struct EnemyTargetLayout {
+    float panelX = 0.0f, panelY = 0.0f;
+    float panelW = 1.0f, panelH = 1.0f;
+    float portraitX = 0.0f, portraitY = 0.0f, portraitW = 0.0f, portraitH = 0.0f;
+    float textX = 0.0f;
+    float textW = 1.0f;
+    float nameY = 0.0f;
+    float bar1Y = 0.0f, bar2Y = 0.0f;
+    float barLen = 0.0f, barH = 0.0f;
+    float numberX = 0.0f, numberY = 0.0f;
+    float scoreY = 0.0f;
+    float lineH = 1.0f;
+    bool hasPortrait = false;
+    bool hasName = false;
+    bool hasBar1 = false, hasBar2 = false;
+    bool hasNumber = false;
+    bool hasScore = false;
+    QString numberText;
+    QString scoreText;
+};
+
+static float EnemyTargetUserScale(const CachedHudConfig& c)
+{
+    return std::clamp(c.enemyTarget.scale, 0.1f, 8.0f);
+}
+
+static float EnemyTargetTextDrawScale(const CachedHudConfig& c, float hudScale)
+{
+    // Same shape as ScoreboardTextDrawScale: shared resolution-aware auto scale
+    // plus the global Text Scale % offset, then this element's own multiplier.
+    const float sharedTextScale = (c.scaleText * 100.0f + (c.textScalePct - 100)) / 100.0f;
+    const float elementTextScale = std::clamp(c.enemyTarget.textScalePct, 10, 800) / 100.0f;
+    const float requested = sharedTextScale * elementTextScale;
+    const float logical = hudScale > 0.0f ? requested / hudScale : requested;
+    return logical * EnemyTargetUserScale(c);
+}
+
+static void BuildEnemyTargetFont(const CachedHudConfig& c, float hudScale, QFont& font)
+{
+    font = s_frameFont;
+    const int px = std::max(1, static_cast<int>(std::lround(
+        s_frameFpx * std::max(0.1f, EnemyTargetTextDrawScale(c, hudScale)))));
+    font.setPixelSize(px);
+}
+
+static void EnsureEnemyTargetFontCache(const CachedHudConfig& c, float hudScale)
+{
+    auto& cache = HudFrameState().enemyTargetFont;
+    if (cache.valid
+        && cache.configEpoch == s_cacheEpoch
+        && cache.baseFontGeneration == s_textCacheGen
+        && cache.baseFontPx == s_frameFpx
+        && cache.hudScale == hudScale) {
+        return;
+    }
+    BuildEnemyTargetFont(c, hudScale, cache.font);
+    cache.fm = QFontMetrics(cache.font);
+    cache.configEpoch = s_cacheEpoch;
+    cache.baseFontGeneration = s_textCacheGen;
+    cache.baseFontPx = s_frameFpx;
+    cache.hudScale = hudScale;
+    cache.valid = true;
+}
+
+// Native Energy Tank granularity: the first meter fills to 100, the second
+// shows the remainder. MphRead's DrawOpponent draws the same two 72px bars.
+static constexpr int kEnemyTargetEnergyTank = 100;
+
+static QString FormatEnemyTargetHpNumber(const EnemyTargetSnapshot& s)
+{
+    return QStringLiteral("%1/%2").arg(s.hp).arg(s.maxHp);
+}
+
+static QString FormatEnemyTargetScore(const EnemyTargetSnapshot& s)
+{
+    const ScoreboardVisualValue value =
+        MakeScoreboardVisualValue(s.rawValue, s.valueIsTime, s.gameMode);
+    const ScoreboardVisualValue goal =
+        MakeScoreboardVisualValue(s.rawGoal, s.valueIsTime, s.gameMode);
+    const QString valueText = FormatScoreboardVisualValue(value);
+    // A zero/absent goal means the mode has no target to count towards; show
+    // the bare value instead of an "x / 0" that reads as a bug.
+    if (!goal.valid || (!goal.isMax && goal.value <= 0))
+        return valueText;
+    return QStringLiteral("%1 / %2").arg(valueText, FormatScoreboardVisualValue(goal));
+}
+
+static const QColor& ResolveEnemyTargetNameColor(const CachedHudConfig& c,
+                                                 const EnemyTargetSnapshot& s)
+{
+    if (c.enemyTarget.teamColor && s.teams && s.teamIndex <= 1)
+        return ResolveScoreboardTeamColor(c, s.teamIndex);
+    return c.enemyTarget.nameColor;
+}
+
+static EnemyTargetLayout BuildEnemyTargetLayout(const EnemyTargetSnapshot& s,
+                                                const CachedHudConfig& c,
+                                                float hudScale,
+                                                const QFontMetrics& fm)
+{
+    EnemyTargetLayout layout;
+    const auto& et = c.enemyTarget;
+    const float userScale = EnemyTargetUserScale(c);
+    const float invHudScale = hudScale > 0.0f ? 1.0f / hudScale : 1.0f;
+    const float spacing = static_cast<float>(et.rowSpacing) * userScale;
+
+    layout.lineH = static_cast<float>(fm.height());
+    layout.hasName = et.nameShow;
+    layout.hasScore = et.scoreShow;
+    // Mode 3 is "Off"; mode 2 is numeric-only, so it draws no bar. The second
+    // bar only appears in segmented mode and only once the first tank is full.
+    layout.hasBar1 = et.hpMode == 0 || et.hpMode == 1;
+    layout.hasBar2 = et.hpMode == 0;
+    layout.hasNumber = et.hpNumberShow || et.hpMode == 2;
+
+    layout.barLen = static_cast<float>(et.barLength) * userScale;
+    layout.barH = static_cast<float>(et.barHeight) * userScale;
+
+    const QImage* portrait = (et.hunterIconShow && s.hunterId < 7)
+        ? &s_enemyTargetHunterIcons[s.hunterId] : nullptr;
+    if (portrait && !portrait->isNull()) {
+        layout.hasPortrait = true;
+        layout.portraitW = portrait->width() * invHudScale;
+        layout.portraitH = portrait->height() * invHudScale;
+    }
+
+    // Stack the text column: name, bar 1, bar 2, number, score.
+    float columnH = 0.0f;
+    auto addRow = [&](float rowHeight) {
+        if (columnH > 0.0f)
+            columnH += spacing;
+        const float top = columnH;
+        columnH += rowHeight;
+        return top;
+    };
+    if (layout.hasName)   layout.nameY = addRow(layout.lineH);
+    if (layout.hasBar1)   layout.bar1Y = addRow(layout.barH);
+    if (layout.hasBar2)   layout.bar2Y = addRow(layout.barH);
+    if (layout.hasNumber) layout.numberY = addRow(layout.lineH);
+    if (layout.hasScore)  layout.scoreY = addRow(layout.lineH);
+    if (columnH <= 0.0f)
+        columnH = layout.lineH;
+
+    // Only reserve the bar width when a bar is actually drawn, so Number Only
+    // and Off do not leave the panel padded out to the bar length.
+    float columnW = layout.hasBar1 ? layout.barLen : 0.0f;
+    if (layout.hasName)
+        columnW = std::max(columnW, static_cast<float>(fm.horizontalAdvance(s.displayName)));
+    if (layout.hasNumber) {
+        layout.numberText = FormatEnemyTargetHpNumber(s);
+        columnW = std::max(columnW,
+            static_cast<float>(fm.horizontalAdvance(layout.numberText)));
+    }
+    if (layout.hasScore) {
+        layout.scoreText = FormatEnemyTargetScore(s);
+        columnW = std::max(columnW,
+            static_cast<float>(fm.horizontalAdvance(layout.scoreText)));
+    }
+    columnW = std::max(columnW, 1.0f);
+
+    const float gap = layout.hasPortrait ? std::max(1.0f, spacing) : 0.0f;
+    layout.panelW = layout.portraitW + gap + columnW;
+    layout.panelH = std::max(columnH, layout.portraitH);
+    layout.textW = columnW;
+    return layout;
+}
+
+// Positions the layout at the element's anchored origin. Split from
+// BuildEnemyTargetLayout so edit mode can reuse the same placement math.
+static void PlaceEnemyTargetLayout(EnemyTargetLayout& layout,
+                                   float originX, float originY, int anchor)
+{
+    const int safeAnchor = std::clamp(anchor, 0, 8);
+    float x = originX;
+    float y = originY;
+    HudGeometry::ApplyRectAnchorF(x, y, layout.panelW, layout.panelH,
+                                  safeAnchor % 3, safeAnchor / 3);
+    layout.panelX = x;
+    layout.panelY = y;
+    layout.portraitX = x;
+    // Centre the portrait against the text column rather than top-aligning it,
+    // so a tall portrait next to a short column does not look detached.
+    layout.portraitY = y + (layout.panelH - layout.portraitH) * 0.5f;
+    // panelW = portraitW + gap + textW, so this lands just past the portrait.
+    layout.textX = x + layout.panelW - layout.textW;
+    layout.numberX = layout.textX;
+    layout.nameY += y;
+    layout.bar1Y += y;
+    layout.bar2Y += y;
+    layout.numberY += y;
+    layout.scoreY += y;
+}
+
+static void DrawEnemyTargetText(QPainter* p, const QString& text,
+                                float x, float y, float lineH,
+                                const QColor& color, const QFont& font,
+                                const QFontMetrics& fm,
+                                const HudOutlineConfig& outline, float hudScale)
+{
+    if (text.isEmpty())
+        return;
+    const QRectF rect(x, y, std::max(1.0, static_cast<double>(fm.horizontalAdvance(text))), lineH);
+    const float outlineRadius = outline.enable && outline.opacity > 0.0f
+        ? static_cast<float>(std::max(1, outline.thickness)) / std::max(0.001f, hudScale)
+        : 0.0f;
+    if (outlineRadius > 0.0f) {
+        QPainterPath path;
+        path.addText(QPointF(0.0f, 0.0f), font, text);
+        QColor outlineColor = outline.color;
+        outlineColor.setAlphaF(std::clamp(outline.opacity, 0.0f, 1.0f));
+        QPen outlinePen(outlineColor, outlineRadius * 2.0);
+        outlinePen.setJoinStyle(Qt::RoundJoin);
+        p->save();
+        p->setPen(outlinePen);
+        p->setBrush(Qt::NoBrush);
+        p->translate(rect.left(), rect.top() + (rect.height() - fm.height()) * 0.5 + fm.ascent());
+        p->drawPath(path);
+        p->restore();
+    }
+    p->setPen(color);
+    p->setBrush(Qt::NoBrush);
+    p->setFont(font);
+    p->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, text);
+    AccumDirtyDs(p, outlineRadius > 0.0f
+        ? rect.adjusted(-outlineRadius, -outlineRadius, outlineRadius, outlineRadius)
+        : rect);
+}
+
+static void DrawEnemyTargetBar(QPainter* p, float x, float y, float len, float h,
+                               float ratio, const QColor& fill, const QColor& back,
+                               const HudOutlineConfig& outline, float hudScale)
+{
+    ratio = std::clamp(ratio, 0.0f, 1.0f);
+    const float expand = outline.enable && outline.opacity > 0.0f
+        ? static_cast<float>(std::max(1, outline.thickness)) / std::max(0.001f, hudScale)
+        : 0.0f;
+    if (expand > 0.0f) {
+        QColor outlineColor = outline.color;
+        outlineColor.setAlphaF(std::clamp(outline.opacity, 0.0f, 1.0f));
+        p->fillRect(QRectF(x - expand, y - expand,
+                           len + expand * 2.0f, h + expand * 2.0f), outlineColor);
+    }
+    p->fillRect(QRectF(x, y, len, h), back);
+    if (ratio > 0.0f)
+        p->fillRect(QRectF(x, y, len * ratio, h), fill);
+    AccumDirtyDs(p, QRectF(x - expand, y - expand,
+                           len + expand * 2.0f, h + expand * 2.0f));
+}
+
+static void DrawEnemyTarget(QPainter* p, const EnemyTargetSnapshot& s,
+                            const CachedHudConfig& c, float hudScale)
+{
+    const auto& et = c.enemyTarget;
+    if (!p || !s.visible || !et.show || et.opacity <= 0.0f)
+        return;
+
+    EnsureEnemyTargetFontCache(c, hudScale);
+    const auto& fontCache = HudFrameState().enemyTargetFont;
+    const QFont& font = fontCache.font;
+    const QFontMetrics& fm = fontCache.fm;
+    const HudOutlineConfig& outline = EffOL(c, et.outline);
+
+    EnemyTargetLayout layout = BuildEnemyTargetLayout(s, c, hudScale, fm);
+    PlaceEnemyTargetLayout(layout, static_cast<float>(et.x),
+                           static_cast<float>(et.y), et.anchor);
+
+    p->save();
+    p->setOpacity(et.opacity);
+    // Hunter portraits are pixel art; keep the scale NEAREST like the scoreboard.
+    p->setRenderHint(QPainter::SmoothPixmapTransform, false);
+
+    if (layout.hasPortrait) {
+        const QImage& portrait = s_enemyTargetHunterIcons[s.hunterId];
+        const QRectF dst(layout.portraitX, layout.portraitY,
+                         layout.portraitW, layout.portraitH);
+        p->drawImage(dst, portrait);
+        AccumDirtyDs(p, dst);
+    }
+
+    if (layout.hasName) {
+        DrawEnemyTargetText(p, s.displayName, layout.textX, layout.nameY,
+                            layout.lineH, ResolveEnemyTargetNameColor(c, s),
+                            font, fm, outline, hudScale);
+    }
+
+    if (layout.hasBar1) {
+        // Segmented: bar 1 is the first Energy Tank, bar 2 the remainder.
+        // Single Bar: one meter across the whole of maxHp.
+        const float first = et.hpMode == 0
+            ? std::min<float>(s.hp, kEnemyTargetEnergyTank) / static_cast<float>(kEnemyTargetEnergyTank)
+            : (s.maxHp > 0 ? static_cast<float>(s.hp) / static_cast<float>(s.maxHp) : 0.0f);
+        DrawEnemyTargetBar(p, layout.textX, layout.bar1Y, layout.barLen, layout.barH,
+                           first, et.hpColor, et.hpBackColor, outline, hudScale);
+    }
+    if (layout.hasBar2) {
+        const int remaining = std::max(0, static_cast<int>(s.hp) - kEnemyTargetEnergyTank);
+        const int secondMax = std::max(1, static_cast<int>(s.maxHp) - kEnemyTargetEnergyTank);
+        DrawEnemyTargetBar(p, layout.textX, layout.bar2Y, layout.barLen, layout.barH,
+                           static_cast<float>(remaining) / static_cast<float>(secondMax),
+                           et.hpColor, et.hpBackColor, outline, hudScale);
+    }
+    if (layout.hasNumber) {
+        DrawEnemyTargetText(p, layout.numberText, layout.numberX, layout.numberY,
+                            layout.lineH, et.hpColor, font, fm, outline, hudScale);
+    }
+    if (layout.hasScore) {
+        DrawEnemyTargetText(p, layout.scoreText, layout.textX, layout.scoreY,
+                            layout.lineH, et.scoreColor, font, fm, outline, hudScale);
+    }
+    p->restore();
+}
+
+// Deterministic sample used by edit mode and the settings-dialog preview so
+// both show the panel without a running match.
+static EnemyTargetSnapshot MakeEnemyTargetPreviewSnapshot()
+{
+    EnemyTargetSnapshot preview{};
+    preview.visible = true;
+    preview.slot = 1;
+    preview.timer = 60;
+    preview.hunterId = 2;
+    preview.teamIndex = 1;
+    preview.gameMode = static_cast<uint8_t>(ScoreboardGameMode::Battle);
+    preview.teams = false;
+    preview.displayName = QStringLiteral("Player 2");
+    preview.hp = 145;
+    preview.maxHp = 199;
+    preview.rawValue = 4;
+    preview.rawGoal = 7;
+    preview.valueIsTime = false;
+    return preview;
+}
+
+// =========================================================================
 //  P-5: DrawHP — stack-buffer text, reads CachedHudConfig directly
 // =========================================================================
 static inline void DrawHP(QPainter* p, uint16_t hp, uint16_t maxHP,

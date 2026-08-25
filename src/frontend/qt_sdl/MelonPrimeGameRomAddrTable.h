@@ -104,7 +104,9 @@ namespace MelonPrime {
     X(ADDR, maxAmmoMissile,           MaxAmmoMissile,            0x020DC726u, 0x020DC6E6u, 0x020DA866u, 0x020DB0E6u, 0x020DB106u, 0x020DB186u, 0x020D3F32u) /* player struct relative (+0xF30) */ \
     X(ADDR, baseBomb,                 BaseBomb,                  0x020DCB10u, 0x020DCAD0u, 0x020DAC50u, 0x020DB4D0u, 0x020DB4F0u, 0x020DB570u, 0x020D431Cu) /* u32 00000X00: bits[11:8]=bombs available (alt-form only); player struct relative (+0xF30) */ \
     X(ADDR, matchRank,                MatchRank,                 0x020E9C8Cu, 0x020E9C4Cu, 0x020E7B4Cu, 0x020E860Cu, 0x020E862Cu, 0x020E86ACu, 0x020E1448u) /* u32 ZZYYXXVV: byte0=P1..byte3=P4 rank (0=1st 1=2nd 2=3rd 3=4th/absent) */ \
-    X(ADDR, timeLeft,                 TimeLeft,                  0x020E6B68u, 0x020E6B28u, 0x020E4A3Cu, 0x020E5504u, 0x020E5524u, 0x020E55A4u, 0x020DE350u) /* u32 remaining time; time limit setting = battleSettings+4: 0000XXYZ XX=minutes*4 (battle) or *A (other); wifi adds +0x20 */
+    X(ADDR, timeLeft,                 TimeLeft,                  0x020E6B68u, 0x020E6B28u, 0x020E4A3Cu, 0x020E5504u, 0x020E5524u, 0x020E55A4u, 0x020DE350u) /* u32 remaining time; time limit setting = battleSettings+4: 0000XXYZ XX=minutes*4 (battle) or *A (other); wifi adds +0x20 */ \
+    X(ADDR, enemyTargetTimer,         EnemyTargetTimer,          0x020E0574u, 0x020E0534u, 0x020DE6B8u, 0x020DEF38u, 0x020DEF58u, 0x020DEFD8u, 0x020D7D2Eu) /* s16; HUD event 0x3D sets 60 on a local hit, the ROM decrements it and clears the slot at 0. Read-only: never decrement it here */ \
+    X(ADDR, enemyTargetSlot,          EnemyTargetSlot,           0x020E0584u, 0x020E0544u, 0x020DE6B4u, 0x020DEF34u, 0x020DEF54u, 0x020DEFD4u, 0x020D7D30u) /* s16 victim slot of the opponent the local player last damaged; -1 = none. See docs/features/hud/custom-hud-enemy-target.md */
 
     // In-game aspect ratio scaling patch addresses (expanded under #ifdef MELONPRIME_DS)
 #define MP_ROM_FIELDS_DS_SCALE(X) \
