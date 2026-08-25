@@ -1037,27 +1037,6 @@ static ScoreboardSnapshot MakeScoreboardPreviewSnapshot()
 //  snapshot + config + fonts so edit mode can reproduce the exact selection
 //  box without drawing, exactly like the scoreboard.
 // =========================================================================
-struct EnemyTargetLayout {
-    float panelX = 0.0f, panelY = 0.0f;
-    float panelW = 1.0f, panelH = 1.0f;
-    float portraitX = 0.0f, portraitY = 0.0f, portraitW = 0.0f, portraitH = 0.0f;
-    float textX = 0.0f;
-    float textW = 1.0f;
-    float nameY = 0.0f;
-    float bar1Y = 0.0f, bar2Y = 0.0f;
-    float barLen = 0.0f, barH = 0.0f;
-    float numberX = 0.0f, numberY = 0.0f;
-    float scoreY = 0.0f;
-    float lineH = 1.0f;
-    bool hasPortrait = false;
-    bool hasName = false;
-    bool hasBar1 = false, hasBar2 = false;
-    bool hasNumber = false;
-    bool hasScore = false;
-    QString numberText;
-    QString scoreText;
-};
-
 static float EnemyTargetUserScale(const CachedHudConfig& c)
 {
     return std::clamp(c.enemyTarget.scale, 0.1f, 8.0f);
@@ -1183,17 +1162,19 @@ static EnemyTargetLayout BuildEnemyTargetLayout(const EnemyTargetSnapshot& s,
     // Only reserve the bar width when a bar is actually drawn, so Number Only
     // and Off do not leave the panel padded out to the bar length.
     float columnW = layout.hasBar1 ? layout.barLen : 0.0f;
-    if (layout.hasName)
-        columnW = std::max(columnW, static_cast<float>(fm.horizontalAdvance(s.displayName)));
+    if (layout.hasName) {
+        layout.nameAdvance = static_cast<float>(fm.horizontalAdvance(s.displayName));
+        columnW = std::max(columnW, layout.nameAdvance);
+    }
     if (layout.hasNumber) {
         layout.numberText = FormatEnemyTargetHpNumber(s);
-        columnW = std::max(columnW,
-            static_cast<float>(fm.horizontalAdvance(layout.numberText)));
+        layout.numberAdvance = static_cast<float>(fm.horizontalAdvance(layout.numberText));
+        columnW = std::max(columnW, layout.numberAdvance);
     }
     if (layout.hasScore) {
         layout.scoreText = FormatEnemyTargetScore(s);
-        columnW = std::max(columnW,
-            static_cast<float>(fm.horizontalAdvance(layout.scoreText)));
+        layout.scoreAdvance = static_cast<float>(fm.horizontalAdvance(layout.scoreText));
+        columnW = std::max(columnW, layout.scoreAdvance);
     }
     columnW = std::max(columnW, 1.0f);
 
@@ -1230,21 +1211,88 @@ static void PlaceEnemyTargetLayout(EnemyTargetLayout& layout,
     layout.scoreY += y;
 }
 
-static void DrawEnemyTargetText(QPainter* p, const QString& text,
-                                float x, float y, float lineH,
-                                const QColor& color, const QFont& font,
-                                const QFontMetrics& fm,
-                                const HudOutlineConfig& outline, float hudScale)
+static bool EnemyTargetPlanMatches(const EnemyTargetRenderPlan& plan,
+                                   const EnemyTargetPlanKey& key,
+                                   const CachedHudConfig& c,
+                                   float hudScale)
 {
-    if (text.isEmpty())
+    // stretchX is tracked separately from configEpoch because a window resize
+    // re-runs RecomputeAnchorPositions() without bumping the epoch.
+    return plan.valid
+        && plan.configEpoch == s_cacheEpoch
+        && plan.textCacheGeneration == s_textCacheGen
+        && plan.frameFontPx == s_frameFpx
+        && plan.hudScale == hudScale
+        && plan.stretchX == c.lastStretchX
+        && plan.key == key;
+}
+
+// Outline paths are built here, once per plan, and stroked at draw time. The
+// path depends only on (text, font), so it survives HP ticks that leave the
+// string alone.
+static void BuildEnemyTargetPlanText(EnemyTargetPlanText& cell,
+                                     const QString& text, float advance,
+                                     bool enabled, bool outlineEnabled,
+                                     const QFont& font)
+{
+    cell.text = text;
+    cell.advance = advance;
+    cell.enabled = enabled && !text.isEmpty();
+    cell.outlinePath = QPainterPath();
+    cell.outlinePathPrepared = false;
+    if (cell.enabled && outlineEnabled) {
+        cell.outlinePath.addText(QPointF(0.0f, 0.0f), font, text);
+        cell.outlinePathPrepared = true;
+    }
+}
+
+static EnemyTargetRenderPlan BuildEnemyTargetRenderPlan(
+    const EnemyTargetSnapshot& s,
+    const EnemyTargetPlanKey& key,
+    const CachedHudConfig& c,
+    float hudScale,
+    const QFont& font,
+    const QFontMetrics& fm)
+{
+    const auto& et = c.enemyTarget;
+    EnemyTargetRenderPlan plan;
+    plan.valid = true;
+    plan.configEpoch = s_cacheEpoch;
+    plan.textCacheGeneration = s_textCacheGen;
+    plan.frameFontPx = s_frameFpx;
+    plan.hudScale = hudScale;
+    plan.stretchX = c.lastStretchX;
+    plan.key = key;
+    plan.layout = BuildEnemyTargetLayout(s, c, hudScale, fm);
+    PlaceEnemyTargetLayout(plan.layout, static_cast<float>(et.x),
+                           static_cast<float>(et.y), et.anchor);
+    plan.nameColor = ResolveEnemyTargetNameColor(c, s);
+
+    const HudOutlineConfig& outline = EffOL(c, et.outline);
+    const bool outlineEnabled = outline.enable && outline.opacity > 0.0f;
+    const EnemyTargetLayout& layout = plan.layout;
+    BuildEnemyTargetPlanText(plan.name, s.displayName, layout.nameAdvance,
+                             layout.hasName, outlineEnabled, font);
+    BuildEnemyTargetPlanText(plan.number, layout.numberText, layout.numberAdvance,
+                             layout.hasNumber, outlineEnabled, font);
+    BuildEnemyTargetPlanText(plan.score, layout.scoreText, layout.scoreAdvance,
+                             layout.hasScore, outlineEnabled, font);
+    return plan;
+}
+
+static void DrawEnemyTargetPlanText(QPainter* p, const EnemyTargetPlanText& cell,
+                                    float x, float y, float lineH,
+                                    const QColor& color, const QFont& font,
+                                    const QFontMetrics& fm,
+                                    const HudOutlineConfig& outline, float hudScale)
+{
+    if (!cell.enabled)
         return;
-    const QRectF rect(x, y, std::max(1.0, static_cast<double>(fm.horizontalAdvance(text))), lineH);
+    const QRectF rect(x, y, std::max(1.0f, cell.advance), lineH);
     const float outlineRadius = outline.enable && outline.opacity > 0.0f
         ? static_cast<float>(std::max(1, outline.thickness)) / std::max(0.001f, hudScale)
         : 0.0f;
-    if (outlineRadius > 0.0f) {
-        QPainterPath path;
-        path.addText(QPointF(0.0f, 0.0f), font, text);
+    if (outlineRadius > 0.0f && cell.outlinePathPrepared) {
         QColor outlineColor = outline.color;
         outlineColor.setAlphaF(std::clamp(outline.opacity, 0.0f, 1.0f));
         QPen outlinePen(outlineColor, outlineRadius * 2.0);
@@ -1253,13 +1301,13 @@ static void DrawEnemyTargetText(QPainter* p, const QString& text,
         p->setPen(outlinePen);
         p->setBrush(Qt::NoBrush);
         p->translate(rect.left(), rect.top() + (rect.height() - fm.height()) * 0.5 + fm.ascent());
-        p->drawPath(path);
+        p->drawPath(cell.outlinePath);
         p->restore();
     }
     p->setPen(color);
     p->setBrush(Qt::NoBrush);
     p->setFont(font);
-    p->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, text);
+    p->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, cell.text);
     AccumDirtyDs(p, outlineRadius > 0.0f
         ? rect.adjusted(-outlineRadius, -outlineRadius, outlineRadius, outlineRadius)
         : rect);
@@ -1294,14 +1342,21 @@ static void DrawEnemyTarget(QPainter* p, const EnemyTargetSnapshot& s,
         return;
 
     EnsureEnemyTargetFontCache(c, hudScale);
-    const auto& fontCache = HudFrameState().enemyTargetFont;
+    auto& hudFrame = HudFrameState();
+    const auto& fontCache = hudFrame.enemyTargetFont;
     const QFont& font = fontCache.font;
     const QFontMetrics& fm = fontCache.fm;
     const HudOutlineConfig& outline = EffOL(c, et.outline);
 
-    EnemyTargetLayout layout = BuildEnemyTargetLayout(s, c, hudScale, fm);
-    PlaceEnemyTargetLayout(layout, static_cast<float>(et.x),
-                           static_cast<float>(et.y), et.anchor);
+    // Reuse the whole plan -- geometry, strings, and glyph outline paths --
+    // unless something that changes the drawn result changed.
+    const EnemyTargetPlanKey key = MakeEnemyTargetPlanKey(s);
+    if (!EnemyTargetPlanMatches(hudFrame.enemyTargetPlan, key, c, hudScale)) {
+        hudFrame.enemyTargetPlan =
+            BuildEnemyTargetRenderPlan(s, key, c, hudScale, font, fm);
+    }
+    const EnemyTargetRenderPlan& plan = hudFrame.enemyTargetPlan;
+    const EnemyTargetLayout& layout = plan.layout;
 
     p->save();
     p->setOpacity(et.opacity);
@@ -1316,11 +1371,8 @@ static void DrawEnemyTarget(QPainter* p, const EnemyTargetSnapshot& s,
         AccumDirtyDs(p, dst);
     }
 
-    if (layout.hasName) {
-        DrawEnemyTargetText(p, s.displayName, layout.textX, layout.nameY,
-                            layout.lineH, ResolveEnemyTargetNameColor(c, s),
-                            font, fm, outline, hudScale);
-    }
+    DrawEnemyTargetPlanText(p, plan.name, layout.textX, layout.nameY,
+                            layout.lineH, plan.nameColor, font, fm, outline, hudScale);
 
     if (layout.hasBar1) {
         // Segmented: bar 1 is the first Energy Tank, bar 2 the remainder.
@@ -1338,14 +1390,10 @@ static void DrawEnemyTarget(QPainter* p, const EnemyTargetSnapshot& s,
                            static_cast<float>(remaining) / static_cast<float>(secondMax),
                            et.hpColor, et.hpBackColor, outline, hudScale);
     }
-    if (layout.hasNumber) {
-        DrawEnemyTargetText(p, layout.numberText, layout.numberX, layout.numberY,
+    DrawEnemyTargetPlanText(p, plan.number, layout.numberX, layout.numberY,
                             layout.lineH, et.hpColor, font, fm, outline, hudScale);
-    }
-    if (layout.hasScore) {
-        DrawEnemyTargetText(p, layout.scoreText, layout.textX, layout.scoreY,
+    DrawEnemyTargetPlanText(p, plan.score, layout.textX, layout.scoreY,
                             layout.lineH, et.scoreColor, font, fm, outline, hudScale);
-    }
     p->restore();
 }
 

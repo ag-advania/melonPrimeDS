@@ -537,10 +537,125 @@ struct HudRuntimeFrameCache {
     struct EnemyTargetSnapshot enemyTarget;
 };
 
+struct EnemyTargetLayout {
+    float panelX = 0.0f, panelY = 0.0f;
+    float panelW = 1.0f, panelH = 1.0f;
+    float portraitX = 0.0f, portraitY = 0.0f, portraitW = 0.0f, portraitH = 0.0f;
+    float textX = 0.0f;
+    float textW = 1.0f;
+    float nameY = 0.0f;
+    float bar1Y = 0.0f, bar2Y = 0.0f;
+    float barLen = 0.0f, barH = 0.0f;
+    float numberX = 0.0f, numberY = 0.0f;
+    float scoreY = 0.0f;
+    float lineH = 1.0f;
+    bool hasPortrait = false;
+    bool hasName = false;
+    bool hasBar1 = false, hasBar2 = false;
+    bool hasNumber = false;
+    bool hasScore = false;
+    QString numberText;
+    QString scoreText;
+    // Measured once while sizing the column; the draw pass reuses these
+    // instead of asking QFontMetrics again for the same strings.
+    float nameAdvance = 0.0f;
+    float numberAdvance = 0.0f;
+    float scoreAdvance = 0.0f;
+};
+
+// =========================================================================
+//  Enemy Target render plan
+//
+//  The panel is only up for ~2s after a hit, but that window lands in the
+//  middle of a firefight, so it is exactly where a per-frame hitch is least
+//  affordable. Everything that survives a frame is cached here and rebuilt
+//  only when something that changes the drawn result changes:
+//
+//    - QPainterPath::addText() is glyph-outline extraction; it is the single
+//      most expensive call in this path and outlines are on by default.
+//    - QFontMetrics::horizontalAdvance() shapes the string.
+//    - The HP/score strings allocate.
+//
+//  Within the window the target slot, name, hunter, and goal are fixed and HP
+//  only moves when damage lands, so the overwhelming majority of frames reuse
+//  the plan whole and issue nothing but draw calls.
+// =========================================================================
+struct EnemyTargetPlanKey {
+    uint8_t slot = 0xFF;
+    uint8_t hunterId = 0xFF;
+    uint8_t teamIndex = 0xFF;
+    uint8_t gameMode = 0;
+    bool teams = false;
+    QString displayName;
+    uint16_t hp = 0;
+    uint16_t maxHp = 0;
+    int32_t rawValue = 0;
+    int32_t rawGoal = 0;
+    bool valueIsTime = false;
+
+    bool operator==(const EnemyTargetPlanKey& other) const noexcept
+    {
+        return slot == other.slot
+            && hunterId == other.hunterId
+            && teamIndex == other.teamIndex
+            && gameMode == other.gameMode
+            && teams == other.teams
+            && hp == other.hp
+            && maxHp == other.maxHp
+            && rawValue == other.rawValue
+            && rawGoal == other.rawGoal
+            && valueIsTime == other.valueIsTime
+            && displayName == other.displayName;
+    }
+};
+
+// Deliberately excludes EnemyTargetSnapshot::timer: it ticks every frame and
+// changes nothing that is drawn, so keying on it would defeat the cache.
+static EnemyTargetPlanKey MakeEnemyTargetPlanKey(const EnemyTargetSnapshot& s)
+{
+    EnemyTargetPlanKey key;
+    key.slot = s.slot;
+    key.hunterId = s.hunterId;
+    key.teamIndex = s.teamIndex;
+    key.gameMode = s.gameMode;
+    key.teams = s.teams;
+    key.displayName = s.displayName;
+    key.hp = s.hp;
+    key.maxHp = s.maxHp;
+    key.rawValue = s.rawValue;
+    key.rawGoal = s.rawGoal;
+    key.valueIsTime = s.valueIsTime;
+    return key;
+}
+
+struct EnemyTargetPlanText {
+    QString text;
+    QPainterPath outlinePath;
+    bool outlinePathPrepared = false;
+    float advance = 0.0f;
+    bool enabled = false;
+};
+
+struct EnemyTargetRenderPlan {
+    bool valid = false;
+    uint32_t configEpoch = 0;
+    int textCacheGeneration = 0;
+    int frameFontPx = 0;
+    float hudScale = 0.0f;
+    float stretchX = 0.0f;
+    EnemyTargetPlanKey key;
+    EnemyTargetLayout layout;
+    EnemyTargetPlanText name;
+    EnemyTargetPlanText number;
+    EnemyTargetPlanText score;
+    QColor nameColor;
+};
+
 struct HudFrameOwnedState {
     HudRuntimeFrameCache frame;
     ScoreboardMatchCache scoreboardMatch;
     ScoreboardRenderPlan scoreboardPlan;
+    EnemyTargetRenderPlan enemyTargetPlan;
     struct ScoreboardFontCache {
         QFont boardFont;
         QFont rankFont;
