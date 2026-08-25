@@ -438,26 +438,30 @@ could not run here (see below):
 Metroid Prime Hunters (USA Rev 1) and a savestate, then reads the backend's own
 log markers. NVIDIA GeForce RTX 5070 Ti, Windows, developer build.
 
-| Run | Result |
-|---|---|
-| Vulkan 1x | PASS |
-| Vulkan 4x | PASS |
-| DX12 1x | PASS |
-| DX12 4x | PASS |
-| Vulkan 1x, 180 injected SemanticOnly frames | PASS |
-| DX12 1x, 180 injected SemanticOnly frames | PASS |
-| Vulkan <-> Software, 6 switches | PASS |
-| DX12 <-> Software, 6 switches | PASS |
-| DX12 <-> Vulkan, 8 switches | PASS |
-| Vulkan -> DX12 as the first DX12 probe | **FAIL — pre-existing, see below** |
+| Run | Vulkan | DX12 |
+|---|---|---|
+| 1x / 2x / 4x / 8x / 16x | PASS | PASS |
+| VSync ON | PASS | PASS |
+| 180 injected SemanticOnly frames | PASS | PASS |
+| GPU2D exact-validation gate ON | PASS | PASS |
+| Reflex On / On+Boost | PASS | PASS |
+| AMD Anti-Lag 2 requested (no AMD GPU) | PASS | PASS |
+| Intel XeLL requested, IntelRecommended policy (no Intel GPU) | — | PASS |
+| Vulkan present pacing policy 4 | PASS | — |
+| Injected runtime failure (init stage) | PASS | — |
+| Injected capture-readback failure | PASS | — |
+| <-> Software, 6 switches | PASS | PASS |
+| DX12 <-> Vulkan, 8 switches | PASS | PASS |
+| Vulkan -> DX12 as the first DX12 probe | **FAIL — pre-existing, see below** | |
 
 Each run checks that the requested renderer initialised and stayed initialised,
 that the savestate loaded, that the **native GPU2D path actually composed**
 (`gpu2d=<backend> gpu3d=<backend> fallback=0`), and that nothing fell back to
 Software or latched a runtime failure.
 
-The last two rows are the interesting ones. `MELONPRIME_TEST_GPU2D_PRESENTATION
-_STALL_FRAMES` forces the compositor to report `SemanticOnly`, which is exactly
+The SemanticOnly rows are the load-bearing ones.
+`MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES` forces the compositor to
+report `SemanticOnly`, which is exactly
 the case `GPU2DFramePolicy::IsRetainedFrameResult()` governs: the last visible
 frame must be retained and capture ownership kept, never degraded into a
 Software hybrid frame. Both backends held, then resumed native composition —
@@ -469,6 +473,64 @@ The switch rows drive the production settings-dialog path
 replaces the 3D renderer -- so they exercise output-lease invalidation, ring
 recreation, pipeline-repository teardown, capture-bridge release and
 latency-controller shutdown, which is most of what this refactor moved.
+
+### What the exact-validation run proves
+
+`MELONPRIME_GPU2D_EXACT_VALIDATE=1` makes the compositor validate its native
+GPU2D output against the software reference every frame and latch
+`FailNativeGPU2DExact()` on any disagreement. The gate engaged — 15,013
+`[GPU2DStage]` records on Vulkan, 13,520 on DX12 — and neither backend
+rejected a frame.
+
+The same run also checks Display Capture address agreement, which is the path
+`CaptureProvenanceState` and the capture bridges own:
+
+```
+2264 destinationAddressMismatch=0      (Vulkan)
+2264 provenanceAddressMismatch=0
+2264 sourceBAddressMismatch=0
+2016 destinationAddressMismatch=0      (DX12)
+```
+
+Zero mismatches on either backend. That is per-frame correctness evidence for
+the 2D and capture paths, produced by the emulator's own comparison rather
+than by a screenshot diff. It is not a substitute for per-frame comparison of
+the *3D* image, which remains uncovered.
+
+### The failure branches, exercised
+
+Two injection hooks reach branches the publication policy owns, and both
+degrade the way they are supposed to:
+
+- `MELONPRIME_TEST_FORCE_VULKAN_RUNTIME_FAILURE=1` faults at initialization,
+  so there is no renderer to disable. The frontend swaps to Software before
+  the first frame: `Renderer fallback requested=Vulkan actual=Software
+  stage=3D-renderer-init`.
+- `MELONPRIME_TEST_GPU2D_CAPTURE_READBACK_FAIL=1` faults mid-session. Native
+  capture readback is demand-driven, so it needs a renderer transition to be
+  reached at all — run together with the switch driver it produces
+  `[Vulkan] runtime failure: native Vulkan GPU2D capture readback failed`
+  followed by repeated `gpu2d=Software fallback=1 disabled=1`, with the app
+  still running.
+
+That second one is `GPU2DFramePolicy::Outcome::ReportRuntimeFailure` firing on
+hardware, reached through `CaptureProvenanceState` and the Vulkan capture
+bridge. Both degradation shapes are accepted by the runner, because requiring
+only one would fail a correct degradation for taking the other route — which
+is what the first run did before the expectation was corrected.
+
+### Vendor low-latency, confirmed live
+
+The Reflex runs report `authority=NvidiaReflex ... frameLatencyWaitBypass=1`,
+which is the pacing decision travelling from config through
+`DX12LowLatencyController` to the presenter's own frame-latency-wait choice —
+the path this refactor rewired, previously mediated by `Screen.cpp`.
+
+On Vulkan, `actual=active` in the Reflex line comes from
+`VulkanLatencyController::LogVendorState()`. And with XeLL requested on an
+NVIDIA adapter, `xellPolicy=IntelRecommended xellRequested=1 xellActual=0`
+shows the policy propagating through `ApplySettings()` while the vendor
+session correctly declines.
 
 ### A pre-existing defect this uncovered
 
@@ -518,10 +580,13 @@ covered:
 - The §14 rows that need GUI interaction: live resolution change, fullscreen,
   resize, minimize/restore. The runner drives configuration and the switch
   driver, neither of which can resize a window.
-- The structured fallback path and stale-generation rejection. Both need an
-  injection hook that does not exist yet; the exact-validation run shows
-  neither fired during normal play, which is the correct outcome but not a
-  test of the paths themselves.
+- The structured fallback composition path and stale-generation rejection.
+  Neither has an injection hook -- there is no environment switch that turns
+  the native GPU2D producer off while leaving a valid structured frame, which
+  is what those branches need. The `[GPU2DFallbackCounters]` line would at
+  least report how often they were taken, but it is emitted from
+  `Renderer::Stop()` and does not reach the captured pipe at process exit, even
+  when the window is closed gracefully rather than killed.
 - Per-frame comparison of the **3D** image. The exact-validation gate covers
   the 2D compositor and capture addresses; confirming 3D visual identity needs
   120fps per-frame comparison, because averaging or spot-checking hides
