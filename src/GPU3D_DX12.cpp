@@ -564,14 +564,8 @@ bool DX12Renderer3D::Init()
         return false;
     if (!FrameUavDescriptors.Init(device, kUavTableSize, false))
         return false;
-    if (!CompositorUavDescriptors.Init(
-            device, kUavTableSize * kCompositorFramesInFlight, false))
-        return false;
-    if (!WorkNativeUavDescriptors.Init(
-            device, kUavTableSize * kCompositorFramesInFlight, false))
-        return false;
-    if (!WorkCompositorUavDescriptors.Init(
-            device, kUavTableSize * kCompositorFramesInFlight * 4u, false))
+    if (!Gpu2D.CreateDescriptors(
+            device, kUavTableSize, kCompositorFramesInFlight))
         return false;
     if (!DemandReadbackDescriptors.Init(device, kUavTableSize, true))
         return false;
@@ -676,9 +670,7 @@ void DX12Renderer3D::Stop()
 
     StaticSrvDescriptors.Shutdown();
     FrameUavDescriptors.Shutdown();
-    CompositorUavDescriptors.Shutdown();
-    WorkCompositorUavDescriptors.Shutdown();
-    WorkNativeUavDescriptors.Shutdown();
+    Gpu2D.ShutdownDescriptors();
     DemandReadbackDescriptors.Shutdown();
     for (RasterFrameSlot& frame : RasterFrames)
     {
@@ -958,10 +950,7 @@ void DX12Renderer3D::ReleasePipelines()
     for (auto& pso : PipelineFinalPass) pso.Reset();
     PipelineResolve.Reset();
     PipelineCaptureSidecar.Reset();
-    PipelineCompositor.Reset();
-    PipelineCorrectCoverage.Reset();
-    PipelineGPU2DNative.Reset();
-    PipelineGPU2DNativeCapture.Reset();
+    Gpu2D.ReleasePipelines();
 }
 
 void DX12Renderer3D::ReleaseScaleDependentResources()
@@ -997,13 +986,13 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     // reallocation instead of running against a stale buffer.
     BinResultBuffer.Reset();
     FrameUavDescriptors.Reset();
-    CompositorUavDescriptors.Reset();
-    WorkCompositorUavDescriptors.Reset();
-    WorkNativeUavDescriptors.Reset();
+    Gpu2D.OutputUav.Reset();
+    Gpu2D.WorkOutputUav.Reset();
+    Gpu2D.WorkNativeUav.Reset();
     FrameUavCpu = {};
-    CompositorUavCpu.fill({});
-    WorkCompositorUavCpu.fill({});
-    WorkNativeUavCpu.fill({});
+    Gpu2D.OutputUavCpu.fill({});
+    Gpu2D.WorkOutputUavCpu.fill({});
+    Gpu2D.WorkNativeUavCpu.fill({});
     ComposedOutputValid = false;
     ComposedGeneration = 0;
     PublishedOutputGeneration = 0;
@@ -1521,28 +1510,28 @@ void DX12Renderer3D::ShaderCompileStep(int& current, int& count)
 
     if (step == ShaderStep_Compositor)
     {
-        build(PipelineCompositor, DX12Shaders::Compositor,
+        build(Gpu2D.Compositor, DX12Shaders::Compositor,
             { "Compositor" }, "DX12Compositor");
         return;
     }
 
     if (step == ShaderStep_CorrectCoverage)
     {
-        build(PipelineCorrectCoverage, DX12Shaders::CorrectCoverage,
+        build(Gpu2D.CorrectCoverage, DX12Shaders::CorrectCoverage,
             { "CorrectCoverage" }, "DX12CorrectCoverage");
         return;
     }
 
     if (step == ShaderStep_GPU2DNative)
     {
-        build(PipelineGPU2DNative, DX12Shaders::GPU2DNative,
+        build(Gpu2D.Native, DX12Shaders::GPU2DNative,
             { "GPU2DNative" }, "DX12GPU2DNative");
         return;
     }
 
     if (step == ShaderStep_GPU2DNativeCapture)
     {
-        build(PipelineGPU2DNativeCapture, DX12Shaders::GPU2DNative,
+        build(Gpu2D.NativeCapture, DX12Shaders::GPU2DNative,
             { "GPU2DNative", "GPU2DNativeCapture" }, "DX12GPU2DNativeCapture");
         return;
     }
@@ -2985,7 +2974,7 @@ void DX12Renderer3D::RenderFrame()
             constants.TexWidth = batch.PolygonCount;
             constants.TexHeight = static_cast<u32>(numSetupIndices);
             SetDispatchConstants(list, constants);
-            list->SetPipelineState(PipelineCorrectCoverage.Get());
+            list->SetPipelineState(Gpu2D.CorrectCoverage.Get());
             list->Dispatch(DivRoundUp(static_cast<u32>(numSetupIndices), 64), 1, 1);
             InsertUavBarrier(list, ResultBuffer.Get());
         }
@@ -3227,7 +3216,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         return true;
     }
     const std::shared_ptr<OutputState> state = ComposedOutput;
-    if (!Context || !PipelineCaptureSidecar || !PipelineCompositor
+    if (!Context || !PipelineCaptureSidecar || !Gpu2D.Compositor
         || !state || !FinalFBBuffer || !Capture.GetSidecarBuffer())
     {
         SetRuntimeFailure("required compositor resources are unavailable");
@@ -3430,7 +3419,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     list->SetDescriptorHeaps(1, heaps);
     list->SetComputeRootSignature(PipelineRepo.GetRootSignature());
     if (!BindCompositionUavTable(
-            list, slot.Descriptors, CompositorUavCpu[slotIndex]))
+            list, slot.Descriptors, Gpu2D.OutputUavCpu[slotIndex]))
     {
         TransitionBuffer(
             list,
@@ -3513,7 +3502,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     constants.TexHeight = 0u;
     constants.Pad = slot.DirectTexture ? 1u : 0u;
     SetDispatchConstants(list, constants);
-    list->SetPipelineState(PipelineCompositor.Get());
+    list->SetPipelineState(Gpu2D.Compositor.Get());
     list->Dispatch(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
         DivRoundUp(static_cast<u32>(ScreenHeight) * 2u, 8u),
@@ -3589,7 +3578,7 @@ bool DX12Renderer3D::CanComposeNativeGPU2D() const noexcept
     return !RuntimeFailed
         && ShaderStepIdx >= ShaderStepCount
         && Context
-        && PipelineGPU2DNative
+        && Gpu2D.Native
         && ComposedOutput
         && FinalFBBuffer;
 }
@@ -3618,7 +3607,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     if (ShaderStepIdx < ShaderStepCount)
         return false;
     const std::shared_ptr<OutputState> state = ComposedOutput;
-    if (!Context || !PipelineGPU2DNative || !PipelineCompositor
+    if (!Context || !Gpu2D.Native || !Gpu2D.Compositor
         || !state || !FinalFBBuffer)
     {
         SetRuntimeFailure("required native GPU2D resources are unavailable");
@@ -4055,7 +4044,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     list->SetDescriptorHeaps(1, heaps);
     list->SetComputeRootSignature(PipelineRepo.GetRootSignature());
     if (!BindCompositionUavTable(
-            list, workSlot.Descriptors, WorkNativeUavCpu[workIndex]))
+            list, workSlot.Descriptors, Gpu2D.WorkNativeUavCpu[workIndex]))
     {
         TransitionBuffer(
             list,
@@ -4076,7 +4065,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     {
         workSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DCapture, false));
-        if (!PipelineGPU2DNativeCapture)
+        if (!Gpu2D.NativeCapture)
         {
             SetRuntimeFailure("native GPU2D capture pipeline is unavailable");
             return false;
@@ -4092,7 +4081,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             // logical lines before one frame-wide capture dispatch.
             const bool fuseObjRawLogical =
                 GPU2DNative::CanFuseObjRawLogicalFrame(input);
-            list->SetPipelineState(PipelineGPU2DNative.Get());
+            list->SetPipelineState(Gpu2D.Native.Get());
             constants.InterpSpanCount = 0u;
             constants.Pad = 32u
                 | (fuseObjRawLogical ? (16u | 64u) : 0u);
@@ -4110,7 +4099,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 
             constants.Pad = 4u | 128u;
             SetDispatchConstants(list, constants);
-            list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+            list->SetPipelineState(Gpu2D.NativeCapture.Get());
             list->Dispatch(
                 DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
                 GPU2DNative::ScreenHeight * static_cast<u32>(ScaleFactor), 1u);
@@ -4142,7 +4131,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                     GPU2DNative::CanFuseObjRawCaptureRun(input, run);
                 if (run.Independent)
                 {
-                    list->SetPipelineState(PipelineGPU2DNative.Get());
+                    list->SetPipelineState(Gpu2D.Native.Get());
                     for (u32 screen = 0u; screen < 2u; ++screen)
                     {
                         constants.InterpSpanCount =
@@ -4175,7 +4164,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                     constants.InterpSpanCount = run.LineBase;
                     constants.Pad = 4u | 128u | 512u;
                     SetDispatchConstants(list, constants);
-                    list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+                    list->SetPipelineState(Gpu2D.NativeCapture.Get());
                     list->Dispatch(
                         DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
                         run.LineCount * static_cast<u32>(ScaleFactor), 1u);
@@ -4195,7 +4184,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 constants.Pad = 32u | 8u
                     | (fuseObjRawLogical ? (16u | 64u) : 0u);
                 SetDispatchConstants(list, constants);
-                list->SetPipelineState(PipelineGPU2DNative.Get());
+                list->SetPipelineState(Gpu2D.Native.Get());
                 list->Dispatch(1u, 2u, 1u);
                 ++dispatchCount;
                 if (!fuseObjRawLogical)
@@ -4215,7 +4204,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                     ++captureBarrierCount;
                     constants.Pad = 4u;
                     SetDispatchConstants(list, constants);
-                    list->SetPipelineState(PipelineGPU2DNativeCapture.Get());
+                    list->SetPipelineState(Gpu2D.NativeCapture.Get());
                     list->Dispatch(
                         DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
                         static_cast<u32>(ScaleFactor), 1u);
@@ -4241,7 +4230,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     }
     else
     {
-        list->SetPipelineState(PipelineGPU2DNative.Get());
+        list->SetPipelineState(Gpu2D.Native.Get());
         workSlot.Commands.WriteTimestamp(
             GpuMetricQueryIndex(GpuMetric::NativeGPU2DRaw, false));
         u64 dispatchCount = 0u;
@@ -4312,7 +4301,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             || (GPU2DNative::DirectOutputDiagnosticsEnabled() && ScaleFactor == 1));
     if (!BindCompositionUavTable(
             list, workSlot.Descriptors,
-            WorkCompositorUavCpu[workIndex * 4u
+            Gpu2D.WorkOutputUavCpu[workIndex * 4u
                 + (outputSlot ? slotIndex : 3u)]))
     {
         TransitionBuffer(
@@ -4327,7 +4316,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     constants.InterpSpanCount = 0u;
     constants.Pad = compositorDirectOutput ? 1u : 0u;
     SetDispatchConstants(list, constants);
-    list->SetPipelineState(PipelineCompositor.Get());
+    list->SetPipelineState(Gpu2D.Compositor.Get());
     workSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DResolve, false));
     list->Dispatch(
@@ -4633,21 +4622,21 @@ bool DX12Renderer3D::BuildCompositorUavDescriptors()
     if (!state)
         return false;
 
-    CompositorUavDescriptors.Reset();
-    WorkCompositorUavDescriptors.Reset();
-    WorkNativeUavDescriptors.Reset();
+    Gpu2D.OutputUav.Reset();
+    Gpu2D.WorkOutputUav.Reset();
+    Gpu2D.WorkNativeUav.Reset();
     D3D12_CPU_DESCRIPTOR_HANDLE base{};
     D3D12_CPU_DESCRIPTOR_HANDLE workCompositorBase{};
     D3D12_CPU_DESCRIPTOR_HANDLE workNativeBase{};
     D3D12_GPU_DESCRIPTOR_HANDLE ignored{};
-    if (!CompositorUavDescriptors.Allocate(
+    if (!Gpu2D.OutputUav.Allocate(
             kUavTableSize * kCompositorFramesInFlight, base, ignored))
         return false;
-    if (!WorkCompositorUavDescriptors.Allocate(
+    if (!Gpu2D.WorkOutputUav.Allocate(
             kUavTableSize * kCompositorFramesInFlight * 4u,
             workCompositorBase, ignored))
         return false;
-    if (!WorkNativeUavDescriptors.Allocate(
+    if (!Gpu2D.WorkNativeUav.Allocate(
             kUavTableSize * kCompositorFramesInFlight, workNativeBase, ignored))
         return false;
 
@@ -4660,10 +4649,10 @@ bool DX12Renderer3D::BuildCompositorUavDescriptors()
             + static_cast<u64>(TilesPerLine) * TileLines * CoarseBinStride * 4ull
             + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull
             + static_cast<u64>(TilesPerLine) * TileLines * BinStride * 4ull) / 4ull);
-    const u32 increment = CompositorUavDescriptors.GetIncrement();
-    CompositorUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
-    WorkCompositorUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
-    WorkNativeUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
+    const u32 increment = Gpu2D.OutputUav.GetIncrement();
+    Gpu2D.OutputUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
+    Gpu2D.WorkOutputUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
+    Gpu2D.WorkNativeUavCpu.fill(D3D12_CPU_DESCRIPTOR_HANDLE{});
 
     const auto buildCompositorTable = [&](D3D12_CPU_DESCRIPTOR_HANDLE destination,
         ID3D12Resource* structured, ID3D12Resource* composed,
@@ -4733,35 +4722,35 @@ bool DX12Renderer3D::BuildCompositorUavDescriptors()
 
     for (u32 slotIndex = 0; slotIndex < kCompositorFramesInFlight; ++slotIndex)
     {
-        CompositorUavCpu[slotIndex] = {
+        Gpu2D.OutputUavCpu[slotIndex] = {
             base.ptr + static_cast<SIZE_T>(slotIndex) * kUavTableSize * increment };
         const OutputState::Slot& slot = state->Slots[slotIndex];
-        if (!buildCompositorTable(CompositorUavCpu[slotIndex],
+        if (!buildCompositorTable(Gpu2D.OutputUavCpu[slotIndex],
                 slot.StructuredInput.Get(), slot.Composed.Get(),
                 slot.DirectTexture.Get()))
             return false;
 
         const OutputState::ComposeWorkSlot& work = state->WorkSlots[slotIndex];
-        WorkNativeUavCpu[slotIndex] = {
+        Gpu2D.WorkNativeUavCpu[slotIndex] = {
             workNativeBase.ptr + static_cast<SIZE_T>(slotIndex)
                 * kUavTableSize * increment };
-        if (!buildNativeTable(WorkNativeUavCpu[slotIndex], work))
+        if (!buildNativeTable(Gpu2D.WorkNativeUavCpu[slotIndex], work))
             return false;
 
         for (u32 outputIndex = 0; outputIndex < kCompositorFramesInFlight; ++outputIndex)
         {
             const u32 tableIndex = slotIndex * 4u + outputIndex;
-            WorkCompositorUavCpu[tableIndex] = {
+            Gpu2D.WorkOutputUavCpu[tableIndex] = {
                 workCompositorBase.ptr + static_cast<SIZE_T>(tableIndex)
                     * kUavTableSize * increment };
             const OutputState::Slot& output = state->Slots[outputIndex];
-            if (!buildCompositorTable(WorkCompositorUavCpu[tableIndex],
+            if (!buildCompositorTable(Gpu2D.WorkOutputUavCpu[tableIndex],
                     work.StructuredInput.Get(), output.Composed.Get(),
                     output.DirectTexture.Get()))
                 return false;
         }
         const u32 diagnosticTableIndex = slotIndex * 4u + 3u;
-        WorkCompositorUavCpu[diagnosticTableIndex] = {
+        Gpu2D.WorkOutputUavCpu[diagnosticTableIndex] = {
             workCompositorBase.ptr + static_cast<SIZE_T>(diagnosticTableIndex)
                 * kUavTableSize * increment };
     }
@@ -4810,8 +4799,8 @@ bool DX12Renderer3D::BuildWorkDiagnosticCompositorUavDescriptor(u32 workIndex)
     entries[DX12UavSlot::DirectOutput] =
         {DirectOutputDummy.Get(), 0, 0, false, true, DXGI_FORMAT_R8G8B8A8_UNORM, 2};
     return CreateUavDescriptorTable(
-        Context->GetDevice(), WorkCompositorUavDescriptors.GetIncrement(),
-        WorkCompositorUavCpu[workIndex * 4u + 3u], entries, kUavTableSize);
+        Context->GetDevice(), Gpu2D.WorkOutputUav.GetIncrement(),
+        Gpu2D.WorkOutputUavCpu[workIndex * 4u + 3u], entries, kUavTableSize);
 }
 
 bool DX12Renderer3D::BuildStaticSrvDescriptors()

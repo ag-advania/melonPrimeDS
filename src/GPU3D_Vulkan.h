@@ -36,6 +36,7 @@
 #include "VulkanCommon.h"
 #include "VulkanDescriptors.h"
 #include "VulkanCaptureBridge.h"
+#include "VulkanGpu2DComposer.h"
 #include "VulkanPipelineCache.h"
 #include "VulkanDevice.h"
 #include "VulkanMemory.h"
@@ -207,7 +208,8 @@ private:
     // cross-frame reuse explicit. Two slots are the low-latency limit: more
     // would add input latency without removing another CPU/GPU dependency.
     static constexpr u32 RendererFramesInFlight = 2;
-    static constexpr u32 CompositorFramesInFlight = 3;
+    static constexpr u32 CompositorFramesInFlight =
+        VulkanGpu2DComposer::FramesInFlight;
     static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
 
     // Three set-0 allocations per frame slot. The native logical Stage A writes
@@ -575,8 +577,7 @@ private:
     // Compositor output: the two screens stacked, BGRA8, at the *internal*
     // resolution. Resolution-dependent, so it is created and destroyed with the
     // rest of the scale-sized set.
-    struct OutputState;
-    std::shared_ptr<OutputState> ComposedOutput;
+    std::shared_ptr<VulkanGpu2DComposer> ComposedOutput;
 
     // --- CPU-side scratch, mirroring the OpenGL compute renderer -----------
     std::array<Variant, MaxVariants> Variants{};

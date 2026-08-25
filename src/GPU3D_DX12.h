@@ -33,6 +33,7 @@
 #include "MelonPrimeStructuredComposition.h"
 #include "DX12Context.h"
 #include "DX12CaptureBridge.h"
+#include "DX12Gpu2DComposer.h"
 #include "DX12PipelineRepository.h"
 #include "GPU3D_TexcacheDX12.h"
 
@@ -468,13 +469,10 @@ private:
     DX12CommandContext DemandReadbackCommands;
     // Descriptor lifetime classification:
     // A: fixed renderer resources use FrameUavDescriptors and StaticSrvDescriptors.
-    // B: each compositor slot owns one canonical UAV block in CompositorUavDescriptors.
+    // B: each compositor slot owns one canonical UAV block in Gpu2D.OutputUav.
     // C: texture SRVs remain frame-local because the texture cache is dynamic.
     DX12DescriptorRing StaticSrvDescriptors;
     DX12DescriptorRing FrameUavDescriptors;
-    DX12DescriptorRing CompositorUavDescriptors;
-    DX12DescriptorRing WorkCompositorUavDescriptors;
-    DX12DescriptorRing WorkNativeUavDescriptors;
     // One shader-visible table for the lazy Resolve submission. It is reset
     // only after DemandReadbackCommands has retired its prior submission.
     DX12DescriptorRing DemandReadbackDescriptors;
@@ -508,10 +506,10 @@ private:
     std::array<DX12::ComPtr<ID3D12PipelineState>, 8> PipelineFinalPass;
     DX12::ComPtr<ID3D12PipelineState> PipelineResolve;
     DX12::ComPtr<ID3D12PipelineState> PipelineCaptureSidecar;
-    DX12::ComPtr<ID3D12PipelineState> PipelineCompositor;
-    DX12::ComPtr<ID3D12PipelineState> PipelineCorrectCoverage;
-    DX12::ComPtr<ID3D12PipelineState> PipelineGPU2DNative;
-    DX12::ComPtr<ID3D12PipelineState> PipelineGPU2DNativeCapture;
+    // The GPU2D compositor's own pipelines and descriptor rings. A separate
+    // responsibility from 3D rasterization, and the one the audit graded FAIL
+    // for living in here.
+    DX12Gpu2DComposer Gpu2D;
 
     // GPU-side buffers.
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each
@@ -595,11 +593,8 @@ private:
         RasterFramesInFlight> PersistentTextureDescriptorKeys{};
     D3D12_CPU_DESCRIPTOR_HANDLE StaticSrvCpu{};
     D3D12_CPU_DESCRIPTOR_HANDLE FrameUavCpu{};
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> CompositorUavCpu{};
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> WorkNativeUavCpu{};
     // Each work slot can target any of the three presentation slots, plus
     // one lazily-created diagnostic scratch output.
-    std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 12> WorkCompositorUavCpu{};
 
     bool FrameInFlight = false;
     bool FrameReadbackValid = false;

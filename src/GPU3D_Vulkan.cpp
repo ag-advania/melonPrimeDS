@@ -21,6 +21,7 @@
 #include "StructuredUploadPlan.h"
 
 #include "RendererOutputRing.h"
+#include "VulkanGpu2DComposer.h"
 #include "VulkanGpuTimestamp.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -120,227 +121,17 @@ constexpr int UseTextureKinds[5] = {
 // matter what the internal resolution is.
 constexpr VkDeviceSize NativeResolveBytes = 256ull * 192ull * 4ull;
 
-// The structured 2D frame the software renderer publishes, as the compositor
-// consumes it: fourteen 256x192 planes (four per screen, four capture-source
-// planes and two source-B planes), followed by two 192-entry line-metadata
-// arrays and 192 four-word capture commands. The layout is mirrored by
-// PresentationBuffers.glsl and StructuredComposition's plane numbering.
-constexpr u32 StructuredPixelCount = 256u * 192u;
-constexpr u32 StructuredPlaneCount = 14u;
-constexpr u32 StructuredLineMetaCount = 2u * 192u;
-constexpr u32 StructuredCaptureCommandCount = 192u * 4u;
-constexpr u32 StructuredInputWords =
-    StructuredPlaneCount * StructuredPixelCount
-    + StructuredLineMetaCount
-    + StructuredCaptureCommandCount;
-constexpr VkDeviceSize StructuredInputBytes =
-    static_cast<VkDeviceSize>(StructuredInputWords) * sizeof(u32);
-constexpr VkDeviceSize NativeGPU2DInputBytes =
-    static_cast<VkDeviceSize>(GPU2DNative::PackedFrameBytes());
-constexpr VkDeviceSize NativeGPU2DOutputBytes =
-    static_cast<VkDeviceSize>(GPU2DNative::ScreenPixelCount) * 2u * sizeof(u32);
 constexpr VkDeviceSize NativeCaptureWords = (4u * 128u * 1024u) / sizeof(u32);
 constexpr VkDeviceSize NativeCaptureBytes = 4u * 128u * 1024u;
 // One packed Pixel word plus one metadata word for both logical screens.
 // This scratch tail is consumed by the native OBJ raw pass and keeps the
 // mosaic resolve from re-scanning OAM for every pixel in a mosaic span.
 constexpr u32 NativeObjRawWords = 3u * 256u * 192u * 2u;
-constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
+
+// The compositor's own buffer layout, unqualified for the packing code below.
+using namespace VulkanGpu2D;
 
 } // namespace
-
-struct VulkanRenderer3D::OutputState
-{
-    struct Slot
-    {
-        Vk::Buffer StructuredStaging;
-        Vk::Buffer StructuredInput;
-        Vk::Buffer Composed;
-        Vk::Image DirectImageTop;
-        Vk::Image DirectImageBottom;
-        StructuredComposition::GenerationState UploadedContentGeneration{};
-        bool StructuredUploadInitialized = false;
-        u64 LastSubmittedFrame = 0;
-        VulkanPresentedFrame Frame;
-    };
-
-    // Stage A/capture resources belong to the blocking command ring, not to
-    // presentation.  A semantic frame therefore uses exactly one work set
-    // whether or not a visible slot can be published.
-    struct ComposeWorkSlot
-    {
-        Vk::Buffer NativeStaging;
-        Vk::Buffer NativeInput;
-        Vk::Buffer StructuredInput;
-        // Developer-only resources are created on first diagnostic use.
-        Vk::Buffer DiagnosticComposed;
-        Vk::ReadbackBuffer NativeReadback;
-        Vk::ReadbackBuffer StructuredReadback;
-        GPU2DNative::FrameGeneration UploadedNativeGeneration{};
-        GPU2DNative::SemanticLineCache SemanticLines{};
-        bool NativeUploadInitialized = false;
-
-        bool EnsureDiagnosticResources(
-            const VulkanDevice& device,
-            VkDeviceSize outputBytes,
-            bool needDiagnosticComposed,
-            bool needStructuredReadback)
-        {
-            if (needDiagnosticComposed && !DiagnosticComposed.IsValid()
-                && !DiagnosticComposed.Create(device, outputBytes,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-                    "MelonPrime Vulkan diagnostic composed output"))
-                return false;
-            if (!NativeReadback.IsValid()
-                && !NativeReadback.Create(device, outputBytes,
-                    "MelonPrime Vulkan native GPU2D diagnostic readback"))
-                return false;
-            if (needStructuredReadback && !StructuredReadback.IsValid()
-                && !StructuredReadback.Create(device, StructuredInputBytes,
-                    "MelonPrime Vulkan GPU2D Stage A diagnostic readback"))
-                return false;
-            return true;
-        }
-    };
-
-    bool Create(
-        const VulkanDevice& device, u32 width, u32 height,
-        u64 resourceGeneration, u64 epoch)
-    {
-        Device = device;
-        ResourceGeneration = resourceGeneration;
-        const VkDeviceSize screenBytes =
-            static_cast<VkDeviceSize>(width) * height * sizeof(u32);
-
-        VkFormatProperties directProperties{};
-        Device.InstanceFns().GetPhysicalDeviceFormatProperties(
-            Device.GetPhysicalDevice(), DirectCompositorFormat, &directProperties);
-        DirectImageEnabled =
-            (directProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0
-            && (directProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0;
-        if (!DirectImageEnabled)
-        {
-            Platform::Log(
-                Platform::LogLevel::Warn,
-                "[Vulkan] compositor direct image disabled: RGBA8 lacks storage or sampled support\n");
-        }
-
-        for (u32 i = 0; i < Slots.size(); ++i)
-        {
-            Slot& slot = Slots[i];
-            if (!slot.StructuredStaging.Create(Device,
-                    StructuredInputBytes,
-                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                    "MelonPrime Vulkan structured staging slot"))
-                return false;
-            if (!slot.StructuredStaging.Map())
-                return false;
-            if (!slot.StructuredInput.Create(Device,
-                    StructuredInputBytes,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-                        | VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                        | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-                    "MelonPrime Vulkan structured input slot"))
-                return false;
-            if (!slot.Composed.Create(Device,
-                    screenBytes * 2u,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-                    "MelonPrime Vulkan composed output slot"))
-                return false;
-        }
-
-        if (DirectImageEnabled)
-        {
-            for (Slot& slot : Slots)
-            {
-                Vk::Image::CreateInfo directInfo{};
-                directInfo.Format = DirectCompositorFormat;
-                directInfo.Width = width;
-                directInfo.Height = height;
-                directInfo.Usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-                directInfo.ViewType = VK_IMAGE_VIEW_TYPE_2D;
-                directInfo.DebugName = "MelonPrime Vulkan direct compositor output";
-                if (!slot.DirectImageTop.Create(Device, directInfo)
-                    || !slot.DirectImageBottom.Create(Device, directInfo))
-                {
-                    DirectImageEnabled = false;
-                    break;
-                }
-            }
-        }
-        if (!DirectImageEnabled)
-        {
-            for (Slot& slot : Slots)
-            {
-                slot.DirectImageTop.Destroy();
-                slot.DirectImageBottom.Destroy();
-            }
-        }
-
-        for (Slot& slot : Slots)
-        {
-            slot.Frame.Buffer = slot.Composed.GetHandle();
-            slot.Frame.DirectImageTop = DirectImageEnabled
-                ? slot.DirectImageTop.GetHandle() : VK_NULL_HANDLE;
-            slot.Frame.DirectImageViewTop = DirectImageEnabled
-                ? slot.DirectImageTop.GetView() : VK_NULL_HANDLE;
-            slot.Frame.DirectImageBottom = DirectImageEnabled
-                ? slot.DirectImageBottom.GetHandle() : VK_NULL_HANDLE;
-            slot.Frame.DirectImageViewBottom = DirectImageEnabled
-                ? slot.DirectImageBottom.GetView() : VK_NULL_HANDLE;
-            slot.Frame.TopOffset = 0;
-            slot.Frame.BottomOffset = screenBytes;
-            slot.Frame.Width = width;
-            slot.Frame.Height = height;
-            slot.Frame.Epoch = epoch;
-            slot.Frame.ResourceGeneration = ResourceGeneration;
-            slot.Frame.DirectContentValid = false;
-        }
-
-        for (u32 i = 0; i < WorkSlots.size(); ++i)
-        {
-            ComposeWorkSlot& slot = WorkSlots[i];
-            if (!slot.NativeStaging.Create(Device,
-                    NativeGPU2DInputBytes,
-                    VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                    "MelonPrime Vulkan native GPU2D work staging slot"))
-                return false;
-            if (!slot.NativeStaging.Map())
-                return false;
-            if (!slot.NativeInput.Create(Device,
-                    NativeGPU2DInputBytes,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-                    "MelonPrime Vulkan native GPU2D work input slot"))
-                return false;
-            if (!slot.StructuredInput.Create(Device,
-                    StructuredInputBytes,
-                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-                    "MelonPrime Vulkan native GPU2D work structured slot"))
-                return false;
-        }
-        return true;
-    }
-
-    VulkanDevice Device;
-    std::array<Slot, CompositorFramesInFlight> Slots;
-    std::array<ComposeWorkSlot, CompositorFramesInFlight> WorkSlots;
-    bool DirectImageEnabled = false;
-    // Published slot, serial sequence and the per-slot presenter refcounts.
-    // Backend-neutral: the DX12 compositor runs the same ring protocol
-    // against the same class.
-    RendererOutputRing Ring{CompositorFramesInFlight};
-    u64 ResourceGeneration = 0;
-};
-
 
 // ---------------------------------------------------------------------------
 // Construction / lifetime
@@ -620,13 +411,13 @@ void VulkanRenderer3D::ResetInternal(bool preservePresentation)
                 // ring slots are reset for the next complete frame.
                 continue;
             }
-            OutputState::Slot& slot = ComposedOutput->Slots[slotIndex];
+            VulkanGpu2DComposer::Slot& slot = ComposedOutput->Slots[slotIndex];
             slot.UploadedContentGeneration = {};
             slot.StructuredUploadInitialized = false;
             slot.Frame.DirectContentValid = false;
             slot.Frame.Epoch = Provenance.GetEpoch();
         }
-        for (OutputState::ComposeWorkSlot& slot : ComposedOutput->WorkSlots)
+        for (VulkanGpu2DComposer::ComposeWorkSlot& slot : ComposedOutput->WorkSlots)
         {
             slot.UploadedNativeGeneration = {};
             slot.SemanticLines.Reset();
@@ -895,7 +686,7 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 outputStateStartNs = RendererStartupNowNs();
 #endif
-    auto output = std::make_shared<OutputState>();
+    auto output = std::make_shared<VulkanGpu2DComposer>();
     if (!output->Create(
             Device, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight),
             NextOutputResourceGeneration++, Provenance.GetEpoch()))
@@ -3312,7 +3103,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         // that needs Vulkan -- whether the slot's last submission has retired.
         struct SlotReadiness
         {
-            OutputState* State;
+            VulkanGpu2DComposer* State;
             u64 CompletedFrame;
         } readiness{ComposedOutput.get(), ComposeFrames.GetCompletedFrame()};
         const auto slotReady = +[](void* userData, u32 candidate) -> bool {
@@ -3335,7 +3126,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         return false;
     }
 
-    OutputState::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
+    VulkanGpu2DComposer::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
 
     // Acquire the compositor ring slot before touching its mapped staging
     // buffer.  The slot's previous submission has been checked against the
@@ -3785,7 +3576,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         // that needs Vulkan -- whether the slot's last submission has retired.
         struct SlotReadiness
         {
-            OutputState* State;
+            VulkanGpu2DComposer* State;
             u64 CompletedFrame;
         } readiness{ComposedOutput.get(), ComposeFrames.GetCompletedFrame()};
         const auto slotReady = +[](void* userData, u32 candidate) -> bool {
@@ -3800,9 +3591,9 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         if (candidate != RendererOutputRing::InvalidSlot)
             nextSlot = candidate;
     }
-    OutputState::Slot* outputSlot = nextSlot < CompositorFramesInFlight
+    VulkanGpu2DComposer::Slot* outputSlot = nextSlot < CompositorFramesInFlight
         ? &ComposedOutput->Slots[nextSlot] : nullptr;
-    OutputState::ComposeWorkSlot& workSlot =
+    VulkanGpu2DComposer::ComposeWorkSlot& workSlot =
         ComposedOutput->WorkSlots[frameIndex % ComposedOutput->WorkSlots.size()];
     bool presentationAvailable = outputSlot != nullptr;
     const bool forcedPresentationStall = presentationAvailable
@@ -4826,7 +4617,7 @@ const u32* VulkanRenderer3D::GetComposedScreen(u32 screen) const noexcept
 
 RendererOutput VulkanRenderer3D::GetComposedOutput() const
 {
-    const std::shared_ptr<OutputState> state = ComposedOutput;
+    const std::shared_ptr<VulkanGpu2DComposer> state = ComposedOutput;
     if (!state || !ComposedOutputValid)
         return {};
 
@@ -4842,7 +4633,7 @@ RendererOutput VulkanRenderer3D::GetComposedOutput() const
 
 RendererOutputLease VulkanRenderer3D::AcquireComposedOutputLease()
 {
-    const std::shared_ptr<OutputState> state = ComposedOutput;
+    const std::shared_ptr<VulkanGpu2DComposer> state = ComposedOutput;
     if (!state || !ComposedOutputValid)
         return {};
 
@@ -4851,7 +4642,7 @@ RendererOutputLease VulkanRenderer3D::AcquireComposedOutputLease()
     if (slotIndex < 0)
         return {};
 
-    OutputState::Slot& slot = state->Slots[slotIndex];
+    VulkanGpu2DComposer::Slot& slot = state->Slots[slotIndex];
     auto* leaseCounter = state->Ring.AcquireLease(static_cast<u32>(slotIndex));
     GPU2DNative::LogPresentedIdentity(
         "Vulkan", slot.Frame.Generation, slot.Frame.Serial,

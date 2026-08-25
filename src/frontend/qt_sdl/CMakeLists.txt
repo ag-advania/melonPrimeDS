@@ -712,6 +712,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanMemory.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDescriptors.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanCaptureBridge.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanGpu2DComposer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPipelineCache.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanSync.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanNvidiaReflex.cpp
@@ -1099,6 +1100,7 @@ if (MELONPRIME_DX12_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12LowLatencyController.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12NvidiaReflex.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12CaptureBridge.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12Gpu2DComposer.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12PipelineRepository.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheDX12.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_DX12.cpp
