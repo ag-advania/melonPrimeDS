@@ -3,6 +3,7 @@
 - [Full refactor V7](refactoring/melonprime-full-refactor-plan-v7.md)
 - [MelonPrime-owned-code-only plan](refactoring/melonprime-owned-code-only-plan.md)
 - [Localization refactor](localization/localization-refactor-plan.md)
+- [Vulkan/DX12 SRP refactor](rendering/vulkan-dx12-srp-refactor.md)
 - [Metal backend](rendering/metal/backend-plan.md)
 - [Metal compute shader Phase 7 execution](rendering/metal/compute-shader-phase7-execution.md)
 

@@ -17,6 +17,10 @@
 */
 
 #include "GPU3D_Vulkan.h"
+
+#include "StructuredUploadPlan.h"
+
+#include "RendererOutputRing.h"
 #include "VulkanGpuTimestamp.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -64,25 +68,6 @@ constexpr VkDeviceSize TextureUploadBudget = 8ull * 1024 * 1024;
 constexpr u32 ClearBitmapDimension = 256;
 constexpr VkDeviceSize ClearBitmapBytes =
     static_cast<VkDeviceSize>(ClearBitmapDimension) * ClearBitmapDimension * 4;
-
-// On-disk pipeline cache framing. The Vulkan specification only allows
-// pInitialData that came out of vkGetPipelineCacheData, so the payload is
-// gated on an exact match of the device identity and the driver's own
-// pipelineCacheUUID rather than handed to the driver and hoped for.
-constexpr u32 PipelineCacheMagic = 0x4356504Du;     // 'MPVC'
-constexpr u32 PipelineCacheVersion = 1;
-constexpr const char* PipelineCacheFileName = "melonPrimeDS_vulkan_pipeline_cache.bin";
-
-struct PipelineCacheFileHeader
-{
-    u32 Magic;
-    u32 Version;
-    u32 VendorId;
-    u32 DeviceId;
-    u32 DriverVersion;
-    u32 PayloadBytes;
-    u8 CacheUUID[VK_UUID_SIZE];
-};
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 bool RendererStartupProfileEnabled() noexcept
@@ -177,7 +162,6 @@ struct VulkanRenderer3D::OutputState
         bool StructuredUploadInitialized = false;
         u64 LastSubmittedFrame = 0;
         VulkanPresentedFrame Frame;
-        std::atomic<u32> PresenterRefs{0};
     };
 
     // Stage A/capture resources belong to the blocking command ring, not to
@@ -350,9 +334,10 @@ struct VulkanRenderer3D::OutputState
     std::array<Slot, CompositorFramesInFlight> Slots;
     std::array<ComposeWorkSlot, CompositorFramesInFlight> WorkSlots;
     bool DirectImageEnabled = false;
-    std::mutex Mutex;
-    int PublishedSlot = -1;
-    u64 NextSerial = 1;
+    // Published slot, serial sequence and the per-slot presenter refcounts.
+    // Backend-neutral: the DX12 compositor runs the same ring protocol
+    // against the same class.
+    RendererOutputRing Ring{CompositorFramesInFlight};
     u64 ResourceGeneration = 0;
 };
 
@@ -451,7 +436,7 @@ bool VulkanRenderer3D::Init()
     if (!Frames.Create(Device, Device.GetMainQueueFamily(), RendererFramesInFlight))
         return false;
 
-    if (!CaptureFrames.Create(Device, Device.GetMainQueueFamily(), 1))
+    if (!DemandReadbackFrames.Create(Device, Device.GetMainQueueFamily(), 1))
         return false;
 
     // Same queue family, separate command pool / command buffer / fence. Both
@@ -485,9 +470,9 @@ bool VulkanRenderer3D::Init()
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 pipelineCacheStartNs = RendererStartupNowNs();
 #endif
-    if (!CreatePipelineCache())
-        return false;
+    PipelineCache.Create(Device);
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    StartupPipelineCacheLoaded = PipelineCache.WasLoadedFromDisk();
     LogRendererStartupStage("Vulkan", "pipeline_cache",
         RendererStartupNowNs() - pipelineCacheStartNs,
         StartupPipelineCacheLoaded ? "cache=loaded" : "cache=empty");
@@ -519,10 +504,10 @@ void VulkanRenderer3D::Stop()
         // Permitted WaitIdle site: teardown. Every destroy below assumes no
         // command buffer still references the object.
         Frames.WaitIdle();
-        CaptureFrames.WaitIdle();
+        DemandReadbackFrames.WaitIdle();
         ComposeFrames.WaitIdle();
 
-        SavePipelineCache();
+        PipelineCache.Save(Device);
 
         // Retires the cached texture images through the deferred queue, which
         // Frames.Destroy() then drains -- so this has to happen first.
@@ -530,17 +515,13 @@ void VulkanRenderer3D::Stop()
 
         ReleasePipelines();
 
-        if (PipelineCache != VK_NULL_HANDLE)
-        {
-            Device.Fns().DestroyPipelineCache(Device.GetHandle(), PipelineCache, nullptr);
-            PipelineCache = VK_NULL_HANDLE;
-        }
+        PipelineCache.Destroy(Device);
     }
 
     ReleaseScaleDependentResources();
 
     NativeReadback.Destroy();
-    NativeCaptureReadback.Destroy();
+    Capture.ReleaseReadback();
     NativeResolveBuffer.Destroy();
     DummyCaptureImage.Destroy();
     DummyTextureImage.Destroy();
@@ -559,7 +540,7 @@ void VulkanRenderer3D::Stop()
     TextureHeap.Shutdown();
 
     ComposeFrames.Destroy();
-    CaptureFrames.Destroy();
+    DemandReadbackFrames.Destroy();
     Frames.Destroy();
     Device.Destroy();
 
@@ -571,12 +552,7 @@ void VulkanRenderer3D::Stop()
     ComposedOutputValid = false;
     ComposedGeneration = 0;
     PublishedOutputGeneration = 0;
-    NativeCaptureStateInitialized = false;
-    LastSemanticFrame = 0;
-    LastSemanticCaptureGeneration = 0;
-    LastSemanticEpoch = 0;
-    NativeSemanticSubmissionSerial = 0;
-    LastNativeCaptureCompletionValue = 0;
+    Provenance.ResetSemanticState();
     ComposedOutput.reset();
     Initialized = false;
 }
@@ -612,29 +588,23 @@ void VulkanRenderer3D::ResetInternal(bool preservePresentation)
     // it, but nothing has re-rendered it either, so the compositor must go back
     // to treating it as "no 3D" until the next RenderFrame() lands.
     FinalFBHasContent = false;
-    NativeCaptureStateInitialized = false;
-    ++CurrentEpoch;
+    Provenance.BeginNewEpoch();
     InvalidateHighResCaptureState(
         HighResCaptureInvalidationReason::RendererReset);
-    LastSemanticFrame = 0;
-    LastSemanticCaptureGeneration = 0;
-    LastSemanticEpoch = 0;
-    NativeSemanticSubmissionSerial = 0;
-    LastNativeCaptureCompletionValue = 0;
     ColorBuffer.fill(0);
     bool keepPublishedOutput = false;
     int publishedSlot = -1;
     if (ComposedOutput)
     {
-        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
-        publishedSlot = ComposedOutput->PublishedSlot;
+        const auto lock = ComposedOutput->Ring.LockPublication();
+        publishedSlot = ComposedOutput->Ring.GetPublishedSlot();
         keepPublishedOutput = preservePresentation
             && ComposedOutputValid
             && publishedSlot >= 0
             && static_cast<std::size_t>(publishedSlot) < ComposedOutput->Slots.size();
         if (!keepPublishedOutput)
         {
-            ComposedOutput->PublishedSlot = -1;
+            ComposedOutput->Ring.Unpublish();
             ComposedOutputValid = false;
             ComposedGeneration = 0;
             PublishedOutputGeneration = 0;
@@ -654,7 +624,7 @@ void VulkanRenderer3D::ResetInternal(bool preservePresentation)
             slot.UploadedContentGeneration = {};
             slot.StructuredUploadInitialized = false;
             slot.Frame.DirectContentValid = false;
-            slot.Frame.Epoch = CurrentEpoch;
+            slot.Frame.Epoch = Provenance.GetEpoch();
         }
         for (OutputState::ComposeWorkSlot& slot : ComposedOutput->WorkSlots)
         {
@@ -676,7 +646,7 @@ void VulkanRenderer3D::InvalidateHighResCaptureState(
 {
     (void)reason;
     HighResCaptureProvenance.Invalidate(
-        CurrentEpoch,
+        Provenance.GetEpoch(),
         ScaleFactor > 0 ? static_cast<u32>(ScaleFactor) : 0u);
 }
 
@@ -799,8 +769,7 @@ bool VulkanRenderer3D::CreateFixedResources()
 
     if (!NativeReadback.Create(Device, NativeResolveBytes, "MelonPrime Vulkan native readback"))
         return false;
-    if (!NativeCaptureReadback.Create(
-            Device, NativeCaptureBytes, "MelonPrime Vulkan native capture readback"))
+    if (!Capture.CreateReadback(Device, NativeCaptureBytes))
         return false;
 
     return true;
@@ -811,7 +780,7 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 scaleStartNs = RendererStartupNowNs();
 #endif
-    ++CurrentEpoch;
+    Provenance.BeginNewEpoch();
     InvalidateHighResCaptureState(
         HighResCaptureInvalidationReason::ScaleChange);
     ReleaseScaleDependentResources();
@@ -929,7 +898,7 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
     auto output = std::make_shared<OutputState>();
     if (!output->Create(
             Device, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight),
-            NextOutputResourceGeneration++, CurrentEpoch))
+            NextOutputResourceGeneration++, Provenance.GetEpoch()))
         return false;
     ComposedOutput = std::move(output);
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -940,16 +909,12 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
     ComposedOutputValid = false;
     ComposedGeneration = 0;
     PublishedOutputGeneration = 0;
-    NativeCaptureStateInitialized = false;
+    Provenance.InvalidateMirror();
 
     const VkDeviceSize captureSidecarBytes = static_cast<VkDeviceSize>(8u)
         * 256u * 256u * static_cast<u32>(ScaleFactor) * static_cast<u32>(ScaleFactor)
         * sizeof(u32);
-    if (!CaptureSidecarBuffer.Create(Device,
-            captureSidecarBytes,
-            VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0,
-            "MelonPrime Vulkan high-resolution capture sidecar"))
+    if (!Capture.CreateSidecar(Device, captureSidecarBytes))
         return false;
 
     // DepthBlend is run once per bounded polygon batch. Preserve the two-bit
@@ -1003,13 +968,8 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
     ++RasterizerDescriptorResourceGeneration;
     RasterizerDescriptorBindings.fill(RasterizerDescriptorBinding{});
     ComposedOutput.reset();
-    NativeCaptureStateInitialized = false;
-    LastSemanticFrame = 0;
-    LastSemanticCaptureGeneration = 0;
-    LastSemanticEpoch = 0;
-    NativeSemanticSubmissionSerial = 0;
-    LastNativeCaptureCompletionValue = 0;
-    CaptureSidecarBuffer.Destroy();
+    Provenance.ResetSemanticState();
+    Capture.ReleaseSidecar();
     FinalFB.Destroy();
     SetupIndicesBuffer.Destroy();
     XSpanSetupBuffer.Destroy();
@@ -1090,7 +1050,7 @@ void VulkanRenderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
     // no command buffer still references them. Both rings, because the
     // compositor references FinalFB and its own output buffer.
     Frames.WaitIdle();
-    CaptureFrames.WaitIdle();
+    DemandReadbackFrames.WaitIdle();
     ComposeFrames.WaitIdle();
 
     ScaleFactor = scale;
@@ -1181,109 +1141,6 @@ void VulkanRenderer3D::SetRenderSettings(int scale, bool hiresCoordinates)
 // Pipelines
 // ---------------------------------------------------------------------------
 
-bool VulkanRenderer3D::CreatePipelineCache()
-{
-    const Vk::DeviceDispatch& fns = Device.Fns();
-    const VkPhysicalDeviceProperties& properties = Device.GetProfile().Properties;
-
-    std::vector<u8> payload;
-
-    if (Platform::FileHandle* file = Platform::OpenLocalFile(PipelineCacheFileName, Platform::FileMode::Read))
-    {
-        PipelineCacheFileHeader header{};
-        const bool headerRead =
-            Platform::FileRead(&header, sizeof(header), 1, file) == 1
-            && header.Magic == PipelineCacheMagic
-            && header.Version == PipelineCacheVersion
-            && header.VendorId == properties.vendorID
-            && header.DeviceId == properties.deviceID
-            && header.DriverVersion == properties.driverVersion
-            && std::memcmp(header.CacheUUID, properties.pipelineCacheUUID, VK_UUID_SIZE) == 0;
-
-        if (headerRead && header.PayloadBytes > 0
-            && Platform::FileLength(file) == sizeof(header) + header.PayloadBytes)
-        {
-            payload.resize(header.PayloadBytes);
-            if (Platform::FileRead(payload.data(), header.PayloadBytes, 1, file) != 1)
-                payload.clear();
-        }
-        Platform::CloseFile(file);
-    }
-
-    VkPipelineCacheCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
-    info.initialDataSize = payload.size();
-    info.pInitialData = payload.empty() ? nullptr : payload.data();
-
-    VkResult res = fns.CreatePipelineCache(Device.GetHandle(), &info, nullptr, &PipelineCache);
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-    StartupPipelineCacheLoaded = res == VK_SUCCESS && !payload.empty();
-#endif
-    if (res != VK_SUCCESS && !payload.empty())
-    {
-        // A driver is allowed to reject data it does not recognise. Losing the
-        // cache only costs compile time, so retry empty rather than fail.
-        Platform::Log(Platform::LogLevel::Warn,
-            "[Vulkan] the stored pipeline cache was rejected (%s); starting empty\n",
-            Vk::FormatResult(res).c_str());
-        info.initialDataSize = 0;
-        info.pInitialData = nullptr;
-        res = fns.CreatePipelineCache(Device.GetHandle(), &info, nullptr, &PipelineCache);
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
-        StartupPipelineCacheLoaded = false;
-#endif
-    }
-
-    if (!MELONPRIME_VK_CHECK("vkCreatePipelineCache", res))
-    {
-        PipelineCache = VK_NULL_HANDLE;
-        // Pipeline creation accepts VK_NULL_HANDLE for the cache, so this is
-        // recoverable; report it and continue uncached.
-        Platform::Log(Platform::LogLevel::Warn,
-            "[Vulkan] continuing without a pipeline cache\n");
-    }
-
-    return true;
-}
-
-void VulkanRenderer3D::SavePipelineCache()
-{
-    if (PipelineCache == VK_NULL_HANDLE || !Device.IsValid())
-        return;
-
-    const Vk::DeviceDispatch& fns = Device.Fns();
-
-    size_t size = 0;
-    if (fns.GetPipelineCacheData(Device.GetHandle(), PipelineCache, &size, nullptr) != VK_SUCCESS
-        || size == 0)
-        return;
-
-    std::vector<u8> payload(size);
-    if (fns.GetPipelineCacheData(Device.GetHandle(), PipelineCache, &size, payload.data()) != VK_SUCCESS)
-        return;
-    payload.resize(size);
-
-    Platform::FileHandle* file =
-        Platform::OpenLocalFile(PipelineCacheFileName, Platform::FileMode::Write);
-    if (!file)
-        return;
-
-    const VkPhysicalDeviceProperties& properties = Device.GetProfile().Properties;
-
-    PipelineCacheFileHeader header{};
-    header.Magic = PipelineCacheMagic;
-    header.Version = PipelineCacheVersion;
-    header.VendorId = properties.vendorID;
-    header.DeviceId = properties.deviceID;
-    header.DriverVersion = properties.driverVersion;
-    header.PayloadBytes = static_cast<u32>(payload.size());
-    std::memcpy(header.CacheUUID, properties.pipelineCacheUUID, VK_UUID_SIZE);
-
-    Platform::FileWrite(&header, sizeof(header), 1, file);
-    Platform::FileWrite(payload.data(), payload.size(), 1, file);
-    Platform::CloseFile(file);
-}
-
 bool VulkanRenderer3D::BuildPipeline(u32 pipelineIndex)
 {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -1355,7 +1212,7 @@ bool VulkanRenderer3D::BuildPipeline(u32 pipelineIndex)
 
     VkPipeline pipeline = VK_NULL_HANDLE;
     const VkResult res = fns.CreateComputePipelines(
-        device, PipelineCache, 1, &pipelineInfo, nullptr, &pipeline);
+        device, PipelineCache.GetHandle(), 1, &pipelineInfo, nullptr, &pipeline);
 
     // The module is only needed while the pipeline is being created; the
     // pipeline keeps whatever it needs from it.
@@ -2113,7 +1970,7 @@ void VulkanRenderer3D::RecordSharedScratchReuseBarrier(VkCommandBuffer cmd) cons
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
         VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
 
-    // CaptureSidecarBuffer is not general raster scratch.  It is written by
+    // The capture sidecar is not general raster scratch.  It is written by
     // the structured GPU2D submission and read only by capture-derived raster
     // texture variants.  Synchronize it at that first use instead of coupling
     // every raster frame to the previous compositor submission.
@@ -2357,7 +2214,7 @@ bool VulkanRenderer3D::WriteRasterizerDescriptorSet(
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::PresentationOut),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, presentationOutput, 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::CaptureSidecar),
-            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, CaptureSidecarBuffer.GetHandle(), 0, VK_WHOLE_SIZE)
+            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, Capture.GetSidecarHandle(), 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::BlendState),
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, BlendStateBuffer.GetHandle(), 0, VK_WHOLE_SIZE)
         && writer.WriteBuffer(set, static_cast<u32>(Vk::RasterizerBinding::ResultWinner),
@@ -2708,7 +2565,7 @@ void VulkanRenderer3D::RenderFrame()
     // F7 raster frames carry no unnecessary GPU2D-to-raster dependency.
     if (rasterReadsCaptureSidecar)
     {
-        const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
+        const VkBuffer captureSidecar = Capture.GetSidecarHandle();
         BufferBarrier(cmd, &captureSidecar, 1,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_WRITE_BIT,
             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_ACCESS_SHADER_READ_BIT);
@@ -3177,14 +3034,14 @@ void VulkanRenderer3D::RenderFrame()
 
 bool VulkanRenderer3D::RecordNativeResolveAndReadback()
 {
-    if (!CaptureFrames.IsValid() || !FinalFB.IsValid()
+    if (!DemandReadbackFrames.IsValid() || !FinalFB.IsValid()
         || NativeResolveBuffer.GetHandle() == VK_NULL_HANDLE
         || NativeReadback.GetHandle() == VK_NULL_HANDLE
         || Pipelines[VulkanShaders::Pipeline_Resolve] == VK_NULL_HANDLE)
         return false;
 
     const Vk::DeviceDispatch& fns = Device.Fns();
-    Vk::FrameContext* frame = CaptureFrames.BeginFrame();
+    Vk::FrameContext* frame = DemandReadbackFrames.BeginFrame();
     if (!frame)
         return false;
 
@@ -3192,7 +3049,7 @@ bool VulkanRenderer3D::RecordNativeResolveAndReadback()
         Descriptors.GetRasterizerSet(Frames.GetFrameIndex(), RasterizerSetSlot);
     if (rasterizerSet == VK_NULL_HANDLE)
     {
-        CaptureFrames.SubmitFrame(Device.GetMainQueue());
+        DemandReadbackFrames.SubmitFrame(Device.GetMainQueue());
         return false;
     }
 
@@ -3228,7 +3085,7 @@ bool VulkanRenderer3D::RecordNativeResolveAndReadback()
         VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
         VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
 
-    if (!CaptureFrames.SubmitFrame(Device.GetMainQueue()))
+    if (!DemandReadbackFrames.SubmitFrame(Device.GetMainQueue()))
         return false;
 
     PendingCaptureFence = frame->InFlightFence;
@@ -3316,17 +3173,9 @@ bool VulkanRenderer3D::ReadNativeCapture(
     }
 #endif
     if (bank >= 4u || start >= 4u || !destination
-        || !NativeCaptureStateInitialized || !BlendStateBuffer.IsValid()
-        || !NativeCaptureReadback.IsValid()
-        || expected.Owner != CaptureOwner::NativeVulkan
-        || expected.Epoch != CurrentEpoch
-        || expected.Epoch != LastSemanticEpoch
-        || expected.SemanticFrame == 0u
-        || expected.SemanticFrame > LastSemanticFrame
-        || expected.CaptureGeneration == 0u
-        || expected.CaptureGeneration > LastSemanticCaptureGeneration
-        || expected.CompletionValue == 0u
-        || expected.CompletionValue > LastNativeCaptureCompletionValue)
+        || !BlendStateBuffer.IsValid()
+        || !Capture.HasReadbackBuffer()
+        || !Provenance.AcceptsBlock(expected, CaptureOwner::NativeVulkan))
     {
         return false;
     }
@@ -3335,90 +3184,32 @@ bool VulkanRenderer3D::ReadNativeCapture(
     // expected block identity, not FrameRecorder finalization, is the
     // authority for this readback.
 
-    // CaptureFrames is also used by the demand-driven 3D readback. Retire
-    // that optional submission before reusing its one command-buffer slot.
+    // The 3D resolve shares this ring. Retire its optional submission before
+    // reusing the single command-buffer slot.
     if (NativeReadbackSubmitted && !FrameReadbackValid)
         EnsureFrameReadback();
     if (RuntimeFailed)
         return false;
 
-    const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
-    const VkDeviceSize blockBytes = 32u * 1024u;
-    const VkDeviceSize totalBytes = static_cast<VkDeviceSize>(blockCount) * blockBytes;
-    const Vk::DeviceDispatch& fns = Device.Fns();
-    Vk::FrameContext* frame = CaptureFrames.BeginFrame();
-    if (!frame)
-        return false;
-
-    VkCommandBuffer cmd = frame->CommandBuffer;
-    const VkBuffer nativeCapture = BlendStateBuffer.GetHandle();
-    BufferBarrier(cmd, &nativeCapture, 1,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT);
-
+    // The capture region lives past the 3D framebuffer in the same buffer.
     const VkDeviceSize captureBase =
         static_cast<VkDeviceSize>(ScreenWidth) * static_cast<VkDeviceSize>(ScreenHeight)
         * sizeof(u32);
-    for (u32 i = 0; i < blockCount; ++i)
-    {
-        VkBufferCopy copy{};
-        copy.srcOffset = captureBase
-            + static_cast<VkDeviceSize>(bank) * 128u * 1024u
-            + static_cast<VkDeviceSize>((start + i) & 3u) * blockBytes;
-        copy.dstOffset = static_cast<VkDeviceSize>(i) * blockBytes;
-        copy.size = blockBytes;
-        fns.CmdCopyBuffer(cmd,
-            BlendStateBuffer.GetHandle(), NativeCaptureReadback.GetHandle(), 1, &copy);
-    }
-
-    const VkBuffer readback = NativeCaptureReadback.GetHandle();
-    BufferBarrier(cmd, &readback, 1,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_WRITE_BIT,
-        VK_PIPELINE_STAGE_HOST_BIT, VK_ACCESS_HOST_READ_BIT);
-    BufferBarrier(cmd, &nativeCapture, 1,
-        VK_PIPELINE_STAGE_TRANSFER_BIT, VK_ACCESS_TRANSFER_READ_BIT,
-        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
-
-    if (!CaptureFrames.SubmitFrame(Device.GetMainQueue()))
-        return false;
-    const VkResult waitResult = fns.WaitForFences(
-        Device.GetHandle(), 1, &frame->InFlightFence, VK_TRUE,
-        1000000000ull);
-    if (waitResult != VK_SUCCESS)
-        return false;
-    if (!NativeCaptureReadback.Invalidate(0, totalBytes))
-        return false;
-    const u8* source = NativeCaptureReadback.GetData();
-    if (!source)
-        return false;
-
-    for (u32 i = 0; i < blockCount; ++i)
-    {
-        const u32 block = (start + i) & 3u;
-        std::memcpy(
-            destination + static_cast<std::size_t>(block) * blockBytes,
-            source + static_cast<std::size_t>(i) * blockBytes,
-            static_cast<std::size_t>(blockBytes));
-    }
-    return true;
+    return Capture.ReadBlocks(
+        Device,
+        DemandReadbackFrames,
+        BlendStateBuffer.GetHandle(),
+        captureBase,
+        bank,
+        start,
+        len,
+        destination);
 }
 
 NativeCaptureStateIdentity VulkanRenderer3D::GetNativeCaptureStateIdentity(
     CaptureOwner owner) const noexcept
 {
-    NativeCaptureStateIdentity identity{};
-    identity.Valid = NativeCaptureStateInitialized
-        && LastSemanticEpoch == CurrentEpoch
-        && LastSemanticFrame != 0u
-        && LastNativeCaptureCompletionValue != 0u;
-    identity.Owner = owner;
-    identity.Epoch = CurrentEpoch;
-    identity.SemanticFrame = LastSemanticFrame;
-    identity.CaptureGeneration = LastSemanticCaptureGeneration;
-    identity.CompletionValue = LastNativeCaptureCompletionValue;
-    return identity;
+    return Provenance.GetIdentity(owner);
 }
 
 void VulkanRenderer3D::InvalidateHighResCaptureRange(
@@ -3427,16 +3218,8 @@ void VulkanRenderer3D::InvalidateHighResCaptureRange(
     u32 len,
     GPU2DNative::HighResCaptureFallbackReason reason) noexcept
 {
-    const u32 blockCount = len == 0u ? 1u : std::min<u32>(len, 3u);
-    for (u32 i = 0u; i < blockCount; ++i)
-    {
-        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
-        HighResCaptureProvenance.InvalidatePhysicalRange(
-            bank,
-            block * CapturePhysicalBlockBytes,
-            CapturePhysicalBlockBytes,
-            reason);
-    }
+    GPU2DNative::InvalidateHighResCaptureBlocks(
+        HighResCaptureProvenance, bank, start, len, reason);
 }
 
 bool VulkanRenderer3D::ComposeStructuredOutput(
@@ -3525,21 +3308,24 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         // unpublished slot whose previous GPU submission has retired.  The
         // command ring has already passed its non-blocking readiness probe,
         // so this remains a drop-only path when all resources are occupied.
-        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
-        const u64 completedFrame = ComposeFrames.GetCompletedFrame();
-        for (u32 offset = 0; offset < CompositorFramesInFlight; ++offset)
+        // The ring answers "published or leased"; this answers the only half
+        // that needs Vulkan -- whether the slot's last submission has retired.
+        struct SlotReadiness
         {
-            const u32 candidate = (frameIndex + offset) % CompositorFramesInFlight;
-            OutputState::Slot& slot = ComposedOutput->Slots[candidate];
-            if (static_cast<int>(candidate) == ComposedOutput->PublishedSlot
-                || slot.PresenterRefs.load(std::memory_order_acquire) != 0
-                || slot.LastSubmittedFrame > completedFrame)
-            {
-                continue;
-            }
+            OutputState* State;
+            u64 CompletedFrame;
+        } readiness{ComposedOutput.get(), ComposeFrames.GetCompletedFrame()};
+        const auto slotReady = +[](void* userData, u32 candidate) -> bool {
+            auto* ctx = static_cast<SlotReadiness*>(userData);
+            return ctx->State->Slots[candidate].LastSubmittedFrame
+                <= ctx->CompletedFrame;
+        };
+
+        const auto lock = ComposedOutput->Ring.LockPublication();
+        const u32 candidate = ComposedOutput->Ring.FindFreeSlot(
+            frameIndex % CompositorFramesInFlight, slotReady, &readiness);
+        if (candidate != RendererOutputRing::InvalidSlot)
             nextSlot = candidate;
-            break;
-        }
     }
     if (nextSlot == CompositorFramesInFlight)
     {
@@ -3568,77 +3354,34 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
         GpuMetricQueryIndex(GpuMetric::StructuredCompositor, false));
 
-    constexpr u32 logicalUnitCount =
-        StructuredComposition::kStructuredInputPlaneCount
-        + StructuredComposition::kStructuredInputLineMetaCount + 1u;
-    struct UploadRange
-    {
-        VkDeviceSize Offset = 0;
-        VkDeviceSize Size = 0;
-    };
+    // Which units changed, and which byte runs that collapses into, is a
+    // content-generation question rather than a Vulkan one, so both backends
+    // ask the same function.
+    constexpr u32 logicalUnitCount = StructuredComposition::UploadUnitCount;
     const VkDeviceSize planeBytes =
         static_cast<VkDeviceSize>(StructuredPixelCount) * sizeof(u32);
     const VkDeviceSize lineMetaBytes = 192u * sizeof(u32);
     const VkDeviceSize captureCommandBytes =
         StructuredCaptureCommandCount * sizeof(u32);
-    std::array<VkDeviceSize, logicalUnitCount> unitOffsets{};
-    std::array<VkDeviceSize, logicalUnitCount> unitSizes{};
-    for (u32 unit = 0; unit < StructuredPlaneCount; ++unit)
-    {
-        unitOffsets[unit] = static_cast<VkDeviceSize>(unit) * planeBytes;
-        unitSizes[unit] = planeBytes;
-    }
-    unitOffsets[14u] = static_cast<VkDeviceSize>(StructuredPlaneCount) * planeBytes;
-    unitOffsets[15u] = unitOffsets[14u] + lineMetaBytes;
-    unitOffsets[16u] = unitOffsets[15u] + lineMetaBytes;
-    unitSizes[14u] = lineMetaBytes;
-    unitSizes[15u] = lineMetaBytes;
-    unitSizes[16u] = captureCommandBytes;
-
-    std::array<bool, logicalUnitCount> dirty{};
+    const StructuredComposition::StructuredUploadPlan structuredUpload =
+        StructuredComposition::BuildStructuredUploadPlan(
+            contentGeneration,
+            outputSlot.UploadedContentGeneration,
+            outputSlot.StructuredUploadInitialized,
+            planeBytes,
+            lineMetaBytes,
+            captureCommandBytes);
+    // Retained for the upload-shape counters below: a slot that had never
+    // been written is a different event from one whose planes all changed.
     const bool fullUpload = !outputSlot.StructuredUploadInitialized;
-    for (u32 plane = 0; plane < StructuredPlaneCount; ++plane)
-    {
-        dirty[plane] = fullUpload
-            || contentGeneration.Plane[plane]
-                != outputSlot.UploadedContentGeneration.Plane[plane];
-    }
-    dirty[14u] = fullUpload
-        || contentGeneration.LineMeta[0]
-            != outputSlot.UploadedContentGeneration.LineMeta[0];
-    dirty[15u] = fullUpload
-        || contentGeneration.LineMeta[1]
-            != outputSlot.UploadedContentGeneration.LineMeta[1];
-    const bool captureClassificationDirty = fullUpload
-        || contentGeneration.CaptureCommands
-            != outputSlot.UploadedContentGeneration.CaptureCommands
-        || contentGeneration.Plane[3u]
-            != outputSlot.UploadedContentGeneration.Plane[3u]
-        || contentGeneration.Plane[7u]
-            != outputSlot.UploadedContentGeneration.Plane[7u]
-        || contentGeneration.Plane[13u]
-            != outputSlot.UploadedContentGeneration.Plane[13u];
-    dirty[16u] = captureClassificationDirty;
-
-    std::array<UploadRange, logicalUnitCount> ranges{};
-    std::size_t rangeCount = 0;
-    for (u32 unit = 0; unit < logicalUnitCount; ++unit)
-    {
-        if (!dirty[unit])
-            continue;
-        const VkDeviceSize offset = unitOffsets[unit];
-        const VkDeviceSize size = unitSizes[unit];
-        if (rangeCount != 0
-            && ranges[rangeCount - 1].Offset + ranges[rangeCount - 1].Size == offset)
-        {
-            ranges[rangeCount - 1].Size += size;
-        }
-        else
-        {
-            ranges[rangeCount++] = {offset, size};
-        }
-    }
-    const bool uploadRequired = rangeCount != 0;
+    const auto& dirty = structuredUpload.Dirty;
+    const auto& unitOffsets = structuredUpload.UnitOffsets;
+    const auto& unitSizes = structuredUpload.UnitSizes;
+    const auto& ranges = structuredUpload.Ranges;
+    const std::size_t rangeCount = structuredUpload.RangeCount;
+    const bool captureClassificationDirty =
+        dirty[StructuredComposition::CaptureCommandUnit];
+    const bool uploadRequired = structuredUpload.Required();
     VkDeviceSize packedBytes = 0;
     u32 routeRuns = 0;
     std::array<bool, 2> routeRunsCounted{};
@@ -3816,7 +3559,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         GpuMetricQueryIndex(GpuMetric::CaptureSidecar, false));
     fns.CmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE,
         Pipelines[VulkanShaders::Pipeline_CaptureSidecar]);
-    const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
+    const VkBuffer captureSidecar = Capture.GetSidecarHandle();
     u32 sidecarDispatchCount = 0;
     u32 sidecarBarrierCount = 0;
     for (u32 captureLine = 0; captureLine < 192u;)
@@ -3949,7 +3692,8 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
             VulkanPerf::Counter::StructuredInputBytesUploaded,
             static_cast<u64>(std::accumulate(
                 ranges.begin(), ranges.begin() + rangeCount, VkDeviceSize{0},
-                [](VkDeviceSize total, const UploadRange& range) {
+                [](VkDeviceSize total,
+                   const StructuredComposition::StructuredUploadRange& range) {
                     return total + range.Size;
                 })));
         VulkanPerf::AddCounter(
@@ -3964,11 +3708,10 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
     outputSlot.StructuredUploadInitialized = true;
 
     {
-        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
-        outputSlot.Frame.Serial = ComposedOutput->NextSerial++;
+        const auto lock = ComposedOutput->Ring.LockPublication();
+        outputSlot.Frame.Serial = ComposedOutput->Ring.PublishNext(nextSlot);
         outputSlot.Frame.Generation = generation;
         outputSlot.Frame.DirectContentValid = directImageOutput;
-        ComposedOutput->PublishedSlot = static_cast<int>(nextSlot);
         ComposedGeneration = generation;
         PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
@@ -4038,21 +3781,24 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     const u32 frameIndex = ComposeFrames.GetFrameIndex();
     u32 nextSlot = CompositorFramesInFlight;
     {
-        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
-        const u64 completedFrame = ComposeFrames.GetCompletedFrame();
-        for (u32 offset = 0; offset < CompositorFramesInFlight; ++offset)
+        // The ring answers "published or leased"; this answers the only half
+        // that needs Vulkan -- whether the slot's last submission has retired.
+        struct SlotReadiness
         {
-            const u32 candidate = (frameIndex + offset) % CompositorFramesInFlight;
-            OutputState::Slot& slot = ComposedOutput->Slots[candidate];
-            if (static_cast<int>(candidate) == ComposedOutput->PublishedSlot
-                || slot.PresenterRefs.load(std::memory_order_acquire) != 0
-                || slot.LastSubmittedFrame > completedFrame)
-            {
-                continue;
-            }
+            OutputState* State;
+            u64 CompletedFrame;
+        } readiness{ComposedOutput.get(), ComposeFrames.GetCompletedFrame()};
+        const auto slotReady = +[](void* userData, u32 candidate) -> bool {
+            auto* ctx = static_cast<SlotReadiness*>(userData);
+            return ctx->State->Slots[candidate].LastSubmittedFrame
+                <= ctx->CompletedFrame;
+        };
+
+        const auto lock = ComposedOutput->Ring.LockPublication();
+        const u32 candidate = ComposedOutput->Ring.FindFreeSlot(
+            frameIndex % CompositorFramesInFlight, slotReady, &readiness);
+        if (candidate != RendererOutputRing::InvalidSlot)
             nextSlot = candidate;
-            break;
-        }
     }
     OutputState::Slot* outputSlot = nextSlot < CompositorFramesInFlight
         ? &ComposedOutput->Slots[nextSlot] : nullptr;
@@ -4102,8 +3848,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     u64 rendererSerial = 0;
     if (outputSlot)
     {
-        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
-        rendererSerial = ComposedOutput->NextSerial;
+        const auto lock = ComposedOutput->Ring.LockPublication();
+        rendererSerial = ComposedOutput->Ring.PeekNextSerial();
     }
     RecordVulkanGpuMetric(
         ComposeFrames, GpuMetric::NativeGPU2DLogical,
@@ -4121,13 +3867,13 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         ComposeFrames, GpuMetric::NativeGPU2DResolve,
         VulkanPerf::Counter::CompositorGpuTimeNs);
 
-    u64 pendingCompletionValue = NativeSemanticSubmissionSerial + 1u;
+    u64 pendingCompletionValue = Provenance.PeekNextSubmissionSerial();
     if (pendingCompletionValue == 0u)
         pendingCompletionValue = 1u;
     const NativeCaptureStateIdentity pendingCaptureIdentity{
         true,
         CaptureOwner::NativeVulkan,
-        CurrentEpoch,
+        Provenance.GetEpoch(),
         input.Generation.Frame,
         input.Generation.CaptureGeneration,
         pendingCompletionValue,
@@ -4136,8 +3882,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         input, pendingCaptureIdentity, static_cast<u32>(ScaleFactor));
     const GPU2DNative::UploadDecision uploadDecision =
         GPU2DNative::DetermineUploadDecision(
-            nativeUploadInitialized, CurrentEpoch, LastSemanticEpoch,
-            LastSemanticFrame, LastSemanticCaptureGeneration,
+            nativeUploadInitialized, Provenance.GetEpoch(), Provenance.GetSemanticEpoch(),
+            Provenance.GetSemanticFrame(), Provenance.GetSemanticCaptureGeneration(),
             input.Generation);
     const bool semanticFrameContiguous =
         uploadDecision.SemanticFrameContiguous;
@@ -4317,7 +4063,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     // BlendStateBuffer. Native capture commands then update that tail in
     // line order below, without a mandatory CPU readback.
     const VkBuffer nativeCapture = BlendStateBuffer.GetHandle();
-    const VkBuffer captureSidecar = CaptureSidecarBuffer.GetHandle();
+    const VkBuffer captureSidecar = Capture.GetSidecarHandle();
     const VkBuffer structuredOutput = structuredOutputBuffer.GetHandle();
     BufferBarrier(cmd, &nativeCapture, 1,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -4327,8 +4073,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     const u32 lcdEnd = GPU2DNative::PackedRouteBase * sizeof(u32);
     const VkDeviceSize captureBase = static_cast<VkDeviceSize>(ScreenWidth)
         * static_cast<VkDeviceSize>(ScreenHeight) * sizeof(u32);
-    const bool mirrorNeedsFullCopy = !NativeCaptureStateInitialized
-        || LastSemanticEpoch != CurrentEpoch
+    const bool mirrorNeedsFullCopy = Provenance.MirrorNeedsFullCopy()
         || !semanticFrameContiguous
         || semanticCaptureGenerationRegressed;
     const auto copyCoherentCaptureRange = [&](u32 requestedBegin, u32 requestedEnd) {
@@ -4909,8 +4654,8 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
     // Keep capture provenance independent of presentation frame-ring reuse.
     // Readback is ordered after this submission on the same queue; the
     // renderer-global serial is the identity validated by cross-frame sync.
-    NativeSemanticSubmissionSerial = pendingCompletionValue;
-    LastNativeCaptureCompletionValue = pendingCompletionValue;
+    Provenance.CommitSubmissionSerial(pendingCompletionValue);
+    Provenance.SetCompletionValue(pendingCompletionValue);
     HighResCaptureProvenance.CommitFrame(pendingCaptureIdentity);
     if (outputSlot)
         outputSlot->LastSubmittedFrame = submittedNativeFrame;
@@ -5035,14 +4780,12 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
 
     nativeUploadInitialized = true;
     uploadedNativeGeneration = input.Generation;
-    NativeCaptureStateInitialized = true;
-    LastSemanticFrame = input.Generation.Frame;
-    LastSemanticCaptureGeneration = input.Generation.CaptureGeneration;
-    LastSemanticEpoch = CurrentEpoch;
+    Provenance.RecordSemanticSubmission(
+        input.Generation.Frame, input.Generation.CaptureGeneration);
     VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFrames);
     GPU2DNative::LogSemanticIdentity(
         "Vulkan", input.Generation.Frame, input.Generation.CaptureGeneration,
-        CurrentEpoch, outputSlot != nullptr, forcedPresentationStall,
+        Provenance.GetEpoch(), outputSlot != nullptr, forcedPresentationStall,
         mirrorNeedsFullCopy,
         outputSlot != nullptr ? nextSlot : CompositorFramesInFlight);
     if (!outputSlot)
@@ -5055,13 +4798,12 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         return false;
     }
     {
-        std::lock_guard<std::mutex> lock(ComposedOutput->Mutex);
+        const auto lock = ComposedOutput->Ring.LockPublication();
         outputSlot->Frame.Serial = rendererSerial;
-        ++ComposedOutput->NextSerial;
         outputSlot->Frame.Generation = generation;
-        outputSlot->Frame.Epoch = CurrentEpoch;
+        outputSlot->Frame.Epoch = Provenance.GetEpoch();
         outputSlot->Frame.DirectContentValid = compositorDirectOutput;
-        ComposedOutput->PublishedSlot = static_cast<int>(nextSlot);
+        ComposedOutput->Ring.PublishReserved(nextSlot);
         ComposedGeneration = generation;
         PublishedOutputGeneration = generation;
         ComposedOutputValid = true;
@@ -5088,10 +4830,11 @@ RendererOutput VulkanRenderer3D::GetComposedOutput() const
     if (!state || !ComposedOutputValid)
         return {};
 
-    std::lock_guard<std::mutex> lock(state->Mutex);
-    if (state->PublishedSlot < 0)
+    const auto lock = state->Ring.LockPublication();
+    if (state->Ring.GetPublishedSlot() < 0)
         return {};
-    const VulkanPresentedFrame& frame = state->Slots[state->PublishedSlot].Frame;
+    const VulkanPresentedFrame& frame =
+        state->Slots[state->Ring.GetPublishedSlot()].Frame;
     return RendererOutput::VulkanBuffer(
         const_cast<VulkanPresentedFrame*>(&frame), frame.Width, frame.Height,
         frame.Serial, frame.Epoch);
@@ -5103,29 +4846,23 @@ RendererOutputLease VulkanRenderer3D::AcquireComposedOutputLease()
     if (!state || !ComposedOutputValid)
         return {};
 
-    std::lock_guard<std::mutex> lock(state->Mutex);
-    if (state->PublishedSlot < 0)
+    const auto lock = state->Ring.LockPublication();
+    const int slotIndex = state->Ring.GetPublishedSlot();
+    if (slotIndex < 0)
         return {};
 
-    const int slotIndex = state->PublishedSlot;
     OutputState::Slot& slot = state->Slots[slotIndex];
-    slot.PresenterRefs.fetch_add(1, std::memory_order_relaxed);
+    auto* leaseCounter = state->Ring.AcquireLease(static_cast<u32>(slotIndex));
     GPU2DNative::LogPresentedIdentity(
         "Vulkan", slot.Frame.Generation, slot.Frame.Serial,
         slot.Frame.Generation, slot.Frame.Epoch, static_cast<u32>(slotIndex));
-
-    auto release = +[](void* opaque) {
-        auto* leasedSlot = static_cast<OutputState::Slot*>(opaque);
-        const u32 previous = leasedSlot->PresenterRefs.fetch_sub(1, std::memory_order_release);
-        assert(previous > 0);
-    };
 
     return RendererOutputLease(
         RendererOutput::VulkanBuffer(
             &slot.Frame, slot.Frame.Width, slot.Frame.Height,
             slot.Frame.Serial, slot.Frame.Epoch),
-        &slot,
-        release,
+        leaseCounter,
+        &RendererOutputRing::LeaseCounter::Release,
         state);
 }
 

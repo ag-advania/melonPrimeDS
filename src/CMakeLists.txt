@@ -35,6 +35,8 @@ add_library(core STATIC
     GBACartMotionPak.cpp
     GPU.cpp
     GPU_Soft.cpp
+    CaptureProvenanceState.cpp
+    CaptureProvenanceState.h
     GPU2DFrameDump.cpp
     GPU2DFrameDump.h
     GPU2D.cpp
@@ -49,6 +51,8 @@ add_library(core STATIC
     NDS.cpp
     NDSCart.cpp
     Platform.h
+    RendererOutputRing.cpp
+    RendererOutputRing.h
     ROMList.h
     ROMList.cpp
     FreeBIOS.h

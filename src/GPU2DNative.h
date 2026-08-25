@@ -1147,6 +1147,28 @@ private:
     u32 ScaleFactor = 0;
 };
 
+// Invalidates the sidecar for a DS capture block range, mapping block indices
+// to the physical byte ranges the tracker works in. Both native backends
+// invalidate the same way; only the tracker instance differs.
+inline void InvalidateHighResCaptureBlocks(
+    HighResCaptureProvenanceTracker& tracker,
+    u32 bank,
+    u32 start,
+    u32 len,
+    HighResCaptureFallbackReason reason) noexcept
+{
+    const u32 blockCount = len == 0u ? 1u : (len < 3u ? len : 3u);
+    for (u32 i = 0u; i < blockCount; ++i)
+    {
+        const u32 block = (start + i) & (CapturePhysicalBlocksPerBank - 1u);
+        tracker.InvalidatePhysicalRange(
+            bank,
+            block * CapturePhysicalBlockBytes,
+            CapturePhysicalBlockBytes,
+            reason);
+    }
+}
+
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
 // Structured Stage A layout shared by the Vulkan and DX12 diagnostic
 // readbacks.  The hash covers the four per-screen planes and that screen's

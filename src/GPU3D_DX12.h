@@ -27,10 +27,13 @@
 #include <vector>
 
 #include "GPU3D.h"
+#include "CaptureProvenanceState.h"
 #include "GPU2DNative.h"
 #include "GPU3D_FixedVariantIndex.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "DX12Context.h"
+#include "DX12CaptureBridge.h"
+#include "DX12PipelineRepository.h"
 #include "GPU3D_TexcacheDX12.h"
 
 namespace melonDS
@@ -381,12 +384,6 @@ private:
         ShaderStepCount,
     };
 
-    bool CreateRootSignature();
-    void CreatePipelineLibrary();
-    void SavePipelineLibrary() noexcept;
-    void LoadCachedPsoBlobs();
-    void SaveCachedPsoBlobs() noexcept;
-    bool CreateCommandSignature();
     bool CreateFixedResources();
     bool CreateScaleDependentResources();
     bool BuildStaticSrvDescriptors();
@@ -448,7 +445,27 @@ private:
     std::array<RasterFrameSlot, RasterFramesInFlight> RasterFrames;
     u32 CurrentRasterFrameIndex = 0;
     u32 NextRasterFrameIndex = 0;
-    DX12CommandContext CaptureCommands;
+    // --- demand-driven readback -------------------------------------------
+    //
+    // Not capture-only, despite the name it used to carry. Two different
+    // responsibilities share this context, and they have to:
+    //
+    //   RecordNativeResolveAndReadback()  resolves FinalFB for GetLine(),
+    //                                     which is a rasterizer concern
+    //   ReadNativeCapture()               copies native VRAM capture blocks
+    //                                     out, which is a capture concern
+    //
+    // They serialize against each other through it: ReadNativeCapture()
+    // retires a pending 3D readback before reusing the allocator, and both
+    // wait on the same submitted fence value. Giving them separate contexts
+    // would remove that ordering, which is a GPU submission behaviour change
+    // and is out of scope for a responsibility refactor.
+    //
+    // Ownership therefore stays with the renderer facade rather than moving
+    // into a capture component: this is low-level infrastructure shared by two
+    // feature components, and a component owning it would make the other one
+    // reach sideways into it.
+    DX12CommandContext DemandReadbackCommands;
     // Descriptor lifetime classification:
     // A: fixed renderer resources use FrameUavDescriptors and StaticSrvDescriptors.
     // B: each compositor slot owns one canonical UAV block in CompositorUavDescriptors.
@@ -459,21 +476,17 @@ private:
     DX12DescriptorRing WorkCompositorUavDescriptors;
     DX12DescriptorRing WorkNativeUavDescriptors;
     // One shader-visible table for the lazy Resolve submission. It is reset
-    // only after CaptureCommands has retired its prior submission.
-    DX12DescriptorRing CaptureDescriptors;
+    // only after DemandReadbackCommands has retired its prior submission.
+    DX12DescriptorRing DemandReadbackDescriptors;
     DX12TextureHeap TextureHeap;
 
     TexcacheDX12 Texcache;
 
-    DX12::ComPtr<ID3D12RootSignature> RootSignature;
-    DX12::ComPtr<ID3D12CommandSignature> DispatchSignature;
-    DX12::ComPtr<ID3D12PipelineLibrary> PipelineLibrary;
-    u64 RootSignatureHash = 0;
-    u64 ShaderBlobHash = 0;
-    bool PipelineLibraryDirty = false;
-    bool PipelineLibraryLoaded = false;
-    std::array<std::vector<u8>, ShaderStepCount * 3> CachedPsoBlobs{};
-    bool CachedPsoBlobsDirty = false;
+    // Root signature, indirect dispatch signature, pipeline library and the
+    // per-PSO blob cache, with their on-disk validation headers. Owned by its
+    // own module: none of that changes for the same reason the rasterizer
+    // does. This class asks for a pipeline and is told where it came from.
+    DX12PipelineRepository PipelineRepo;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     u64 StartupBeginNs = 0;
     u64 StartupFixedNs = 0;
@@ -504,10 +517,13 @@ private:
     DX12::ComPtr<ID3D12Resource> ResultBuffer;      // color/depth/attr, 2 layers each
     DX12::ComPtr<ID3D12Resource> ResultWinnerBuffer; // winning polygon, 2 layers
     DX12::ComPtr<ID3D12Resource> FinalFBBuffer;     // packed r6g6b6a5 at internal res
-    DX12::ComPtr<ID3D12Resource> CaptureSidecarBuffer;
+    // Physical owner of native Display Capture: the high-resolution sidecar
+    // the compositor writes, the readback buffer a demanded block lands in,
+    // and the copy that fetches it. The semantic half -- whether a recorded
+    // block may still be served at all -- is Provenance above.
+    DX12CaptureBridge Capture;
     DX12::ComPtr<ID3D12Resource> ResolveBuffer;     // packed r6g6b6a5 at 256x192
     DX12::ComPtr<ID3D12Resource> ReadbackBuffer;
-    DX12::ComPtr<ID3D12Resource> NativeCaptureReadback;
     DX12::ComPtr<ID3D12Resource> TileBuffers[3];    // color / depth / attr tiles
     DX12::ComPtr<ID3D12Resource> BinResultBuffer;
     DX12::ComPtr<ID3D12Resource> WorkDescBuffer;
@@ -592,15 +608,15 @@ private:
     u64 ComposedGeneration = 0;
     u64 PublishedOutputGeneration = 0;
     bool ComposedOutputValid = false;
-    bool NativeCaptureStateInitialized = false;
-    u64 CurrentEpoch = GPU2DNative::AllocateRendererEpoch();
-    u64 LastSemanticFrame = 0;
-    u64 LastSemanticCaptureGeneration = 0;
-    u64 LastSemanticEpoch = 0;
-    // Each semantic slot has a local DX12 fence.  It is not comparable
-    // across slots, so capture provenance uses this renderer-global serial.
-    u64 NativeSemanticSubmissionSerial = 0;
-    u64 LastNativeCaptureCompletionValue = 0;
+    // Semantic owner of native Display Capture provenance: the epoch, the last
+    // recorded semantic frame, the submission serial and the completion value,
+    // plus the high-resolution sidecar tracker. Backend-neutral, because none
+    // of it is a GPU question -- only the copy this renderer issues to satisfy
+    // a read is. The other backend uses the same class.
+    CaptureProvenanceState Provenance{GPU2DNative::AllocateRendererEpoch()};
+    // The high-resolution sidecar is renderer-private, is never serialized,
+    // and is invalidated per physical block rather than per frame, so it is
+    // not part of the semantic mirror above.
     GPU2DNative::HighResCaptureProvenanceTracker HighResCaptureProvenance;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely
