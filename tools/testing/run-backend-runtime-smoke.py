@@ -64,6 +64,7 @@ def run_backend(
     switch_stress: str,
     switch_iterations: int,
     env_extra: dict[str, str],
+    expect_degrade: bool,
 ) -> tuple[list[str], str]:
     """Returns (failures, captured output)."""
     label = BACKEND_LABEL[backend]
@@ -101,25 +102,53 @@ def run_backend(
     try:
         output, _ = process.communicate(timeout=seconds)
     except subprocess.TimeoutExpired:
-        process.terminate()
+        # Ask the window to close rather than killing the process. Only a
+        # graceful exit runs Renderer::Stop(), which is what emits the GPU2D
+        # fallback counters -- the record of which publication paths the run
+        # actually took. TerminateProcess would throw that evidence away.
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         try:
-            output, _ = process.communicate(timeout=20)
+            output, _ = process.communicate(timeout=25)
         except subprocess.TimeoutExpired:
             process.kill()
             output, _ = process.communicate()
 
     failures: list[str] = []
 
-    if f"{label} renderer init succeeded" not in output:
-        failures.append(f"{label} renderer initialization was not observed")
-    if f"Renderer fallback requested={label} actual=Software" in output:
-        failures.append(f"{label} fell back to Software")
-    if f"{label} renderer init failed" in output:
-        failures.append(f"{label} renderer init reported a failure")
-    if f"{label} renderer gpu2d=Software fallback=1 disabled=1" in output:
-        failures.append(f"{label} latched a runtime failure and disabled itself")
-    if "command submission failed" in output:
-        failures.append("a command submission failure was observed")
+    if not expect_degrade:
+        if f"{label} renderer init succeeded" not in output:
+            failures.append(f"{label} renderer initialization was not observed")
+        if f"Renderer fallback requested={label} actual=Software" in output:
+            failures.append(f"{label} fell back to Software")
+        if f"{label} renderer init failed" in output:
+            failures.append(f"{label} renderer init reported a failure")
+    disabled_marker = f"{label} renderer gpu2d=Software fallback=1 disabled=1"
+    init_fallback = f"Renderer fallback requested={label} actual=Software"
+    if expect_degrade:
+        # Injected-failure runs assert the opposite: the backend must notice,
+        # say so, and hand presentation back cleanly rather than crash, hang or
+        # keep showing a frame it can no longer vouch for.
+        #
+        # There are two legitimate shapes depending on when the fault lands. A
+        # fault at initialization never produces a renderer to disable, so the
+        # frontend swaps to Software before the first frame; a fault mid-frame
+        # disables the live renderer and degrades from there. Requiring only
+        # one of them would fail a correct degradation for taking the other
+        # route.
+        if disabled_marker not in output and init_fallback not in output:
+            failures.append(
+                f"{label} did not report the injected failure")
+        if "Renderer transition complete" not in output:
+            failures.append(
+                f"{label} reported the failure but never handed over")
+    else:
+        if disabled_marker in output:
+            failures.append(
+                f"{label} latched a runtime failure and disabled itself")
+        if "command submission failed" in output:
+            failures.append("a command submission failure was observed")
 
     if state is not None:
         marker = f"[SavestateDiff] path={state.resolve()} loaded=1"
@@ -129,7 +158,7 @@ def run_backend(
     # The native GPU2D path announces itself exactly once when it first
     # composes. Its absence means every frame took the structured or Software
     # route, which is a real regression even when nothing errored.
-    if f"{label} renderer gpu2d={label} gpu3d={label} fallback=0" not in output:
+    if not expect_degrade             and f"{label} renderer gpu2d={label} gpu3d={label} fallback=0" not in output:
         failures.append(f"the native GPU2D path never composed on {label}")
 
     if switch_stress:
@@ -187,6 +216,10 @@ def main() -> int:
         default=Path("build/release-mingw-x86_64/portable/melonDS.toml"))
     parser.add_argument("--state", type=Path)
     parser.add_argument("--seconds", type=float, default=25.0)
+    parser.add_argument(
+        "--expect-degrade", action="store_true",
+        help="the run injects a failure; require a clean reported degradation "
+             "instead of a healthy frame path")
     parser.add_argument(
         "--env", action="append", default=[], metavar="NAME=VALUE",
         help="extra environment variable for the child; repeatable")
@@ -272,7 +305,8 @@ def main() -> int:
         failures, output = run_backend(
             backend, workdir / app.name, args.rom, args.state,
             args.seconds, workdir, args.stall_frames,
-            args.switch_stress, args.switch_iterations, env_extra)
+            args.switch_stress, args.switch_iterations, env_extra,
+            args.expect_degrade)
         (args.out / f"{run_id}.log").write_text(output, encoding="utf-8")
         overall[run_id] = failures
 
