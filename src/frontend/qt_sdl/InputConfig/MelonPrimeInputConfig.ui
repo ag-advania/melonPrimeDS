@@ -286,6 +286,23 @@ Replaced with byte-indexed bitset matching JP1.1 / US1.1 / EU1.1 / KR1.0 behavio
 											</widget>
 										</item>
 										<item>
+											<widget class="QCheckBox" name="cbMetroidFixWifiReconnect">
+												<property name="text">
+													<string>Wi-Fi Reconnect Fix (Error 52200 on same-session reconnect)</string>
+												</property>
+											</widget>
+										</item>
+										<item>
+											<widget class="QLabel" name="lblMetroidFixWifiReconnectDesc">
+												<property name="text">
+													<string>Fixes Error 52200 when connecting to Nintendo WFC / Wiimmfi a second time without restarting the emulator. The game checks the C runtime error code after parsing a number but never clears it first, so a range error left by the previous connection attempt makes the next connection test fail. Restoring that value to its boot-fresh state as soon as the access point association succeeds is enough to fix it. Genuine connection failures are still reported, and local wireless is unaffected. (All ROM versions)</string>
+												</property>
+												<property name="wordWrap">
+													<bool>true</bool>
+												</property>
+											</widget>
+										</item>
+										<item>
 											<widget class="QCheckBox" name="cbMetroidFixShadowFreeze">
 												<property name="text">
 													<string>Shadow Freeze Fix (Ice Wave full 3D angle check)</string>

@@ -2480,4 +2480,37 @@ const u8* Wifi::GetBSSID() const
     return (u8*)&IOPORT(W_BSSID0);
 }
 
+#ifdef MELONPRIME_DS
+// MelonPrimeDS: Metroid Prime Hunters same-session WFC/Wiimmfi reconnect fix.
+//
+// MPH's DWC connection test calls its atoi() wrapper (really strtol(s, NULL, 10)) and then
+// inspects the CRT `errno` global without having cleared it first. strtol() legitimately
+// stores ERANGE (34) when an input overflows 32 bits, and that word then keeps its value
+// for the rest of the boot. The first connection succeeds, but every later attempt in the
+// same session sees the stale ERANGE, treats the parse as failed, and reports Error 52200.
+//
+// A successful AP association is the start of a new connection attempt, so that is where
+// the word is put back to its boot-fresh 0. Deliberately not "clear only when the value
+// is 34": anything left in it is stale by this point, and reproducing boot state exactly
+// is what the MPH Recomp fix does. Clearing per frame instead would destroy legitimate
+// CRT error state, and clearing after the DWC parse would be too late.
+void Wifi::OnClientAssociated()
+{
+    const u32 addr = MphReconnectErrnoAddr;
+    if (addr == 0)
+        return;
+
+    const u32 stale = NDS.ARM9Read32(addr);
+    if (stale == 0)
+        return;
+
+    NDS.ARM9Write32(addr, 0);
+
+    Log(LogLevel::Debug,
+        "wifi: MPH reconnect fix cleared stale CRT errno @ %08X (was %u)\n",
+        addr,
+        stale);
+}
+#endif
+
 }

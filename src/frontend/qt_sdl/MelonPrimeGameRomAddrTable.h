@@ -129,6 +129,18 @@ namespace MelonPrime {
     X(DATA, hookPlayerUpdateActiveCallExpected, HookPlayerUpdateActiveCallExpected, 0xEB000206u, 0xEB000206u, 0xEB000206u, 0xEB000206u, 0xEB000206u, 0xEB000206u, 0xEBFFFCDEu) \
     X(ADDR, hookPlayerUpdateActiveAfter,    HookPlayerUpdateActiveAfter,    0x020263E0u, 0x020263E0u, 0x02026404u, 0x02026404u, 0x020263FCu, 0x02026404u, 0x0200CF20u)
 
+    // Wi-Fi reconnect (Error 52200) fix — guest CRT `errno` word.
+    // (expanded under #ifdef MELONPRIME_DS)
+    // MPH's DWC connection test reads `errno` after its atoi() wrapper without clearing it
+    // first. That wrapper is strtol(s, NULL, 10), which correctly stores ERANGE (34 = 0x22)
+    // on 32-bit overflow, and the value then survives for the rest of the boot. A second
+    // same-session WFC / Wiimmfi connection therefore reads the stale ERANGE and fails with
+    // Error 52200. These are the words each version's ERANGE store targets; the fix zeroes
+    // the configured one on successful virtual-AP association.
+    // See docs/features/gameplay/wifi-reconnect-52200.md.
+#define MP_ROM_FIELDS_DS_WIFI(X) \
+    X(ADDR, crtErrno,                 CrtErrno,                  0x0210432Cu, 0x021042ECu, 0x021021ECu, 0x02102CACu, 0x02102CCCu, 0x02102D4Cu, 0x020FBFC0u)
+
     // =========================================================================
     //  OSD Color Patch — literal pool addresses (expanded under #ifdef MELONPRIME_DS)
     //  Each OsdLiteral_* address holds a 32-bit value 0x0000CCCC (BGR555 color).
@@ -199,6 +211,9 @@ namespace MelonPrime {
     MP_ROM_FIELDS_DS_HOOK_SHARED(MP_ROM_EMIT_LIST)
 #endif
 #ifdef MELONPRIME_DS
+    MP_ROM_FIELDS_DS_WIFI(MP_ROM_EMIT_LIST)
+#endif
+#ifdef MELONPRIME_DS
     MP_ROM_LISTS_DS_OSD(MP_ROM_EMIT_LIST)
 
     // ── OSD color patch revert: original ARM values from ROM dump ──
@@ -251,6 +266,7 @@ namespace MelonPrime {
     MP_ROM_FIELDS_DS_SCALE(MP_ROM_CHECK_RANGE)
     MP_ROM_FIELDS_DS_BATTLE(MP_ROM_CHECK_RANGE)
     MP_ROM_FIELDS_DS_HOOK_SHARED(MP_ROM_CHECK_RANGE)
+    MP_ROM_FIELDS_DS_WIFI(MP_ROM_CHECK_RANGE)
     MP_ROM_LISTS_DS_OSD(MP_ROM_CHECK_RANGE)
     MP_ROM_FIELDS_AIM(MP_ROM_CHECK_RANGE)
 
@@ -277,6 +293,9 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         MP_ROM_FIELDS_DS_HOOK_SHARED(MP_ROM_EMIT_FIELD)
 #endif
+#ifdef MELONPRIME_DS
+        MP_ROM_FIELDS_DS_WIFI(MP_ROM_EMIT_FIELD)
+#endif
         MP_ROM_FIELDS_AIM(MP_ROM_EMIT_FIELD)
     };
 
@@ -300,6 +319,9 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
             MP_ROM_FIELDS_DS_HOOK_SHARED(MP_ROM_EMIT_INIT)
+#endif
+#ifdef MELONPRIME_DS
+            MP_ROM_FIELDS_DS_WIFI(MP_ROM_EMIT_INIT)
 #endif
             MP_ROM_FIELDS_AIM(MP_ROM_EMIT_INIT)
         };
@@ -337,6 +359,7 @@ namespace MelonPrime {
 #undef MP_ROM_FIELDS_DS_SCALE
 #undef MP_ROM_FIELDS_DS_BATTLE
 #undef MP_ROM_FIELDS_DS_HOOK_SHARED
+#undef MP_ROM_FIELDS_DS_WIFI
 #undef MP_ROM_LISTS_DS_OSD
 #undef MP_ROM_FIELDS_AIM
 
