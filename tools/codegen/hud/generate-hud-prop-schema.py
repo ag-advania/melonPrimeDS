@@ -793,6 +793,16 @@ def osd_dialog_sections() -> list[DialogSection]:
 
 
 def parse_dialog_sections(ident_to_key: dict[str, str]) -> list[DialogSection]:
+    # NOTE: a brand-new row (any type) is matched against the existing generated
+    # file by (label, widget_type, cfg_key, cfg_key_g, cfg_key_b) identity and,
+    # if no match is found, is APPENDED to the end of the section -- it does not
+    # get inserted at its position in the source file. Label rows have no
+    # cfg_key at all, so they can never be matched/replaced by key: editing a
+    # Label's text produces a second row (old text stays, new text is appended)
+    # instead of updating it in place. After changing or repositioning a Label
+    # row, hand-edit the stale entry out of the generated
+    # MelonPrimeInputConfigHudDialogProps.inc yourself, then re-run this script
+    # and confirm it produces no further diff (idempotent) before committing.
     source_text = strip_comments(read(DIALOG_CPP))
     legacy_sections = parse_dialog_sections_from_legacy(source_text)
     if legacy_sections:
