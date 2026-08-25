@@ -8,11 +8,11 @@ Settings: **HUD ENEMY TARGET** section in the Custom HUD dialog, and element **E
 the in-game layout editor. Keys are `Metroid.Visual.HudEnemyTarget*`; `HudEnemyTargetShow`
 defaults to `true`.
 
-The dialog section is greyed out while **Show Enemy HP Meter Online**
-(`Metroid.GameFeature.ShowEnemyHpMeterOnline`, under GAME FEATURE IMPROVEMENTS) is off, with a
-note row explaining the dependency. See [Nintendo WFC](#nintendo-wfc) for why. The in-game
-layout editor deliberately does **not** gate the element: that fix cannot be toggled from the
-in-game overlay, so disabling it there would be a dead end.
+The dialog section opens with a note row pointing at **Show Enemy HP Meter Online**
+(`Metroid.GameFeature.ShowEnemyHpMeterOnline`, under GAME FEATURE IMPROVEMENTS), which online
+play additionally needs — see [Nintendo WFC](#nintendo-wfc). It is a wrapped `HWType::Label`
+row, not a tooltip, so it is readable without hovering. Nothing is disabled when that fix is
+off: the dependency is online-only and the panel works in Local Wireless regardless.
 
 Native and Custom HUD render independently, and both are allowed to be visible at once — this
 feature does not suppress the native Enemy Target HUD.

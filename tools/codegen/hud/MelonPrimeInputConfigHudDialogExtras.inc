@@ -35,7 +35,7 @@ static const HudWidgetProp kSecScoreboard[] = {
 // Generator-only dialog source surface for the Enemy Target HUD.
 // This file is parsed by generate-hud-prop-schema.py and is not compiled.
 static const HudWidgetProp kSecEnemyTarget[] = {
-    {"Requires Show Enemy HP Meter Online, under GAME FEATURE IMPROVEMENTS. Metroid Prime Hunters does not produce the last-hit target information on Nintendo WFC / Wiimmfi unless that fix is enabled, so these settings stay disabled until you turn it on.", HWType::Label, "", 0, 0, 0, nullptr, nullptr},
+    {"Online play also needs Show Enemy HP Meter Online, under GAME FEATURE IMPROVEMENTS. Metroid Prime Hunters does not produce the last-hit target information on Nintendo WFC / Wiimmfi unless that fix is enabled. Local Wireless works without it.", HWType::Label, "", 0, 0, 0, nullptr, nullptr},
     {"Show", HWType::Bool, MP_HUD_PROP_KEY_HudEnemyTargetShow, 0, 0, 0, nullptr, nullptr},
     {"Anchor", HWType::Anchor9, MP_HUD_PROP_KEY_HudEnemyTargetAnchor, 0, 8, 1, nullptr, nullptr},
     {"Offset X", HWType::Int, MP_HUD_PROP_KEY_HudEnemyTargetX, -256, 256, 1, nullptr, nullptr},
