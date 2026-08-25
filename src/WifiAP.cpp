@@ -140,6 +140,13 @@ int WifiAP::HandleManagementFrame(const u8* data, int len)
             }
 
             ClientStatus = 2;
+#ifdef MELONPRIME_DS
+            // MelonPrimeDS: association succeeded, so a new connection attempt begins
+            // here. Let Wifi sanitise the per-ROM guest CRT errno word before the
+            // association response reaches the guest. Rejected requests return above,
+            // so this only ever fires on a real association.
+            Client->OnClientAssociated();
+#endif
             Log(LogLevel::Debug, "wifiAP: client associated\n");
 
             PWRITE_16(p, 0x0010);

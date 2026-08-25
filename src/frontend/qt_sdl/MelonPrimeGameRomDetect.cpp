@@ -5,6 +5,7 @@
 #include "MelonPrimeGameRomAddrTable.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimePatchLifecycle.h"
+#include "MelonPrimeWifiReconnectFix.h"
 #endif
 
 #include <array>
@@ -71,6 +72,11 @@ namespace MelonPrime {
     COLD_FUNCTION void MelonPrimeCore::DetectRomAndSetAddresses()
     {
         m_zoomAimCanZoomCache = {};
+#ifdef MELONPRIME_DS
+        // Detection restarts here, so drop any address published for a previously
+        // loaded ROM before the early-out paths below can leave it in place.
+        WifiReconnectFix_Publish(emuInstance->getNDS(), localCfg, nullptr);
+#endif
         RomGroup    group;
         const char* osdName;
         bool        isVariant = false;  // true => matched by header fallback, not checksum
@@ -95,6 +101,12 @@ namespace MelonPrime {
 
         // Copy the full address set for this ROM variant
         m_currentRom = *getRomAddrsPtr(group);
+
+#ifdef MELONPRIME_DS
+        // Same-session WFC / Wiimmfi reconnect fix: hand the Wifi component this
+        // version's guest CRT errno word (or 0 when the option is off).
+        WifiReconnectFix_Publish(emuInstance->getNDS(), localCfg, &m_currentRom);
+#endif
 
         // --- Initialize hot addresses from base values ---
         auto& hot = m_addrHot;

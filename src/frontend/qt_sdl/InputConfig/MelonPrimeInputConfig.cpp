@@ -470,6 +470,10 @@ void MelonPrimeInputConfig::buildSettingBindings()
         { C::MorphBoostSwipeDistance, K::SpinInt, m_spinMetroidMorphBoostMouseSensitivity }, // 45
         { C::MorphBoostSwipeEnabled, K::CheckBoolInverted, m_cbMetroidDisableMorphBoostSwipe }, // 46 MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
         { C::MorphBoostCustomRawThreshold, K::CheckBool, m_cbMetroidMorphBoostCustomRawThreshold }, // 47
+        // Appended so every historical binding index stays put. This checkbox has no
+        // slots and nothing cross-reads it, so its load position is not observable; it
+        // is loaded with the other bug fixes in segment 3a.
+        { C::WifiReconnect,  K::CheckBool,        ui->cbMetroidFixWifiReconnect },       // 48
     };
 }
 
@@ -797,6 +801,9 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
 
     // Segment 3a [23,26): bug fixes (before the developer-only tooltip block).
     loadBindingsRange(instcfg, 23, 26);
+    // Segment 3a-tail [48,49): Wi-Fi reconnect fix, appended to the binding table
+    // (see buildSettingBindings) but loaded here with the rest of the bug fixes.
+    loadBindingsRange(instcfg, 48, 49);
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
         ui->cbMetroidEnableNativeAimPostFoldWrite->setToolTip("Developer-only option enabled in this build.");
         ui->cbMetroidEnableNativeAimRegisterInjection->setToolTip("Developer-only option enabled in this build.");
