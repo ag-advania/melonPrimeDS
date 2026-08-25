@@ -684,22 +684,29 @@ against the base commit rather than by timing.
 | frames-in-flight unchanged | DX12 compositor 3, Vulkan compositor 3, Vulkan renderer 2, `FramesInFlight` 3 / 2 — all identical to the base |
 | no readback added to a visible path | `CaptureBridge::ReadBlocks` is reachable only from `ReadNativeCapture`, itself reachable only from `SyncVRAMCapture` — the demand-driven path, as before |
 
-### Build — 3 of 7
+### Build — 4 of 7
 
 | Item | Status |
 |---|---|
-| Vulkan build gate | **static only** — guards and CMake placement checked, gate build not run |
-| DX12 build gate | **static only**, same |
+| Vulkan build gate | **met** — `MELONPRIME_FORCE_DISABLE_VULKAN=ON` configures ("Vulkan backend: disabled") and builds |
+| DX12 build gate | **met** — `MELONPRIME_FORCE_DISABLE_DX12=ON` configures ("DirectX 12 backend: disabled") and builds |
 | Windows | **met** |
-| Linux Vulkan | not run |
-| BSD Vulkan build | not run |
-| macOS Vulkan / MoltenVK | not run |
-| developer flags OFF, release-equivalent | not run |
+| Linux Vulkan | not run — no such machine here |
+| BSD Vulkan build | not run — same |
+| macOS Vulkan / MoltenVK | not run — same |
+| developer flags OFF, release-equivalent | **met** — configured with `MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF` and built |
 
-The four unrun rows need a fresh build tree, and a fresh tree runs a vcpkg
-manifest install that fails here with "both %LOCALAPPDATA% and %APPDATA% were
-unreadable". Only the provisioned `build/release-mingw-x86_64` tree builds in
-this environment.
+The gate builds were the ones previously written off as impossible. They are
+not: the vcpkg failure ("both %LOCALAPPDATA% and %APPDATA% were unreadable")
+only affects a *fresh* tree, because only a fresh tree runs the manifest
+install. Reconfiguring the already-provisioned
+`build/release-mingw-x86_64` tree with the gate flags reuses the existing
+`vcpkg_installed` and builds fine. Each gate was built in turn and the tree was
+then restored to the developer configuration and rebuilt; the cache now reads
+`MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON` with both force-disable flags `OFF`,
+and the full build with all suites passes.
+
+The three remaining rows need Linux, BSD and macOS hosts.
 
 ### Runtime — 8 of 8
 
@@ -716,9 +723,18 @@ this environment.
 
 ### Summary
 
-27 of 33 met, 2 partial, 4 unrun for an environment reason. The two partials
-and the six open items are the same ones: the GPU2D composer split, 3D visual
-parity, and the non-Windows / gate builds.
+30 of 33 met, 2 partial, 3 unrun. What remains is:
+
+- **`Gpu2DComposer` separation** (Architecture, and the last of Phase 2). The
+  fourteen-slot UAV table overloads three of its slots by dispatch kind, so
+  splitting needs separate tables and recompiled shaders — a descriptor
+  strategy change, which §11.3 rules out folding in here.
+- **3D visual parity** (Correctness, partial). The exact-validation gate covers
+  the 2D compositor and the capture addresses; the 3D image needs 120fps
+  per-frame comparison.
+- **Linux, BSD and macOS builds**, which need those hosts.
+
+Everything else in §15 is met with evidence recorded above.
 
 ## Phase 2 — not started, and why
 
