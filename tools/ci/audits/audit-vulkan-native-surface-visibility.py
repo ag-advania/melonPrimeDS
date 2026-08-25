@@ -30,27 +30,48 @@ def main() -> int:
     draw = source[draw_start:draw_end]
 
     # T01/T02: the generic path must request visibility only after a successful
-    # EndFrame. The failure block must never expose an unpresented child.
-    # noteFramePresented() gained epoch/serial parameters in 184539e63 (stall
-    # capture-preservation tracking), so match any argument list rather than
-    # the empty parens this regex originally shipped with.
-    end_frame = re.search(
-        r"if \(!vulkan->presenter\.EndFrame\(\)\)(?P<failure>.*?)"
-        r"\n\s*noteFramePresented\([^)]*\);\s*"
-        r"(?P<comments>(?://[^\n]*\n\s*)*)"
-        r"requestNativeSurfaceVisible\(true\);",
-        draw,
-        re.DOTALL,
+    # EndFrame. The failure block must never expose an unpresented child. Keep
+    # the success-path markers separate: the presented frame can be GPU-backed
+    # or software-backed, and those cases use different bookkeeping calls.
+    end_frame_marker = "if (!vulkan->presenter.EndFrame())"
+    presented_marker = "if (gpuFrame)"
+    show_marker = "requestNativeSurfaceVisible(true);"
+    end_frame_start = draw.find(end_frame_marker)
+    presented_start = draw.find(
+        presented_marker,
+        end_frame_start + len(end_frame_marker) if end_frame_start >= 0 else 0,
+    )
+    show_start = draw.find(
+        show_marker,
+        presented_start + len(presented_marker) if presented_start >= 0 else 0,
+    )
+    end_frame_contract = (
+        end_frame_start >= 0
+        and presented_start > end_frame_start
+        and show_start > presented_start
     )
     require(
-        end_frame is not None,
+        end_frame_contract,
         "successful EndFrame must be followed by the common native-child show request",
         failures,
     )
-    if end_frame is not None:
+    if end_frame_contract:
+        end_frame_failure = draw[end_frame_start:presented_start]
+        successful_present = draw[presented_start:show_start]
         require(
-            "requestNativeSurfaceVisible(true)" not in end_frame.group("failure"),
+            "return;" in end_frame_failure,
+            "EndFrame failure path must return before the success path",
+            failures,
+        )
+        require(
+            show_marker not in end_frame_failure,
             "EndFrame failure path must not request native-child visibility",
+            failures,
+        )
+        require(
+            "noteFramePresented(" in successful_present
+            and "noteFramePresentedWithoutIdentity();" in successful_present,
+            "successful EndFrame path must acknowledge both GPU and software frames",
             failures,
         )
 
