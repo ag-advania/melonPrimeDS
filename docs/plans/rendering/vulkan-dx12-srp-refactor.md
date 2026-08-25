@@ -640,6 +640,86 @@ covered:
   above cover the structural half of what those builds would have caught; they
   do not cover a guard missing inside an existing file.
 
+## Against the audit's own Definition of Done (§15)
+
+Checked item by item rather than against a running list, because the two are
+not the same thing.
+
+### Architecture — 5 of 6
+
+| Item | Status |
+|---|---|
+| `DX12Renderer` owns no vendor low-latency object | **met** |
+| `Screen.cpp` does not mediate DX12 Present markers | **met** |
+| `GPU_Vulkan` / `GPU_DX12` frame-policy duplication reduced | **met** |
+| Renderer3D facade separated from GPU2D / Capture / Output | **partial** — Output and Capture are out; GPU2D is not |
+| backend-neutral modules hold no native handle | **met** |
+| no cycle in the ownership direction | **met** |
+
+The four backend-neutral modules were grepped for `Vk*` / `ID3D12*` / `D3D12_`
+/ `DXGI` and hold none, and no low-level DX12 module includes `DX12Context.h`.
+
+### Correctness — 5 of 6
+
+| Item | Evidence |
+|---|---|
+| current frame identity preserved | `renderer-output-ring-tests` pins the serial rules; 2366/2118 frames published in order on hardware |
+| capture provenance preserved | `capture-provenance-tests`; 2264 (Vulkan) / 2016 (DX12) address checks, every mismatch counter zero |
+| native GPU2D exact path preserved | exact-validation gate engaged and rejected no frame on either backend |
+| Software parity preserved | **partial** — the exact gate compares native 2D against the software reference; 3D parity is not measured |
+| renderer switch touches no stale resource | 8/8 DX12 <-> Vulkan and 6/6 <-> Software switches with no fault |
+| derived GPU state rebuilt after savestate | savestate loads, then native composition resumes, in every run |
+
+### Performance — 6 of 6
+
+These are all "do not add X" properties, so they are verified structurally
+against the base commit rather than by timing.
+
+| Item | Evidence |
+|---|---|
+| no added per-frame heap allocation | the per-frame entry points into the new modules allocate nothing: `GPU2DFramePolicy` is `constexpr` over PODs, `RendererOutputRing` allocates its lease array once per output state, `CaptureProvenanceState` is POD, `BuildStructuredUploadPlan` returns `std::array` members by value. The only `std::string` construction is in vendor-state logging, which runs on state change and is unchanged from the original |
+| no virtual dispatch added to a hot path | none of the new classes declares a `virtual` member. The three callbacks are plain function pointers, and the only per-frame one runs at most three times |
+| no queue idle added to steady state | `WaitIdle` / `WaitQueueIdle` / `DeviceWaitIdle` counts are unchanged; `WaitForSubmittedValue` went 3 -> 2 in `GPU3D_DX12.cpp` because one moved into `DX12CaptureBridge`, which holds exactly 1 |
+| no added descriptor rewrite | `CreateUnorderedAccessView` 1 -> 1 and `Descriptors.Allocate` 9 -> 9; the UAV table conversion changed how the fourteen entries are written, not how many |
+| frames-in-flight unchanged | DX12 compositor 3, Vulkan compositor 3, Vulkan renderer 2, `FramesInFlight` 3 / 2 — all identical to the base |
+| no readback added to a visible path | `CaptureBridge::ReadBlocks` is reachable only from `ReadNativeCapture`, itself reachable only from `SyncVRAMCapture` — the demand-driven path, as before |
+
+### Build — 3 of 7
+
+| Item | Status |
+|---|---|
+| Vulkan build gate | **static only** — guards and CMake placement checked, gate build not run |
+| DX12 build gate | **static only**, same |
+| Windows | **met** |
+| Linux Vulkan | not run |
+| BSD Vulkan build | not run |
+| macOS Vulkan / MoltenVK | not run |
+| developer flags OFF, release-equivalent | not run |
+
+The four unrun rows need a fresh build tree, and a fresh tree runs a vcpkg
+manifest install that fails here with "both %LOCALAPPDATA% and %APPDATA% were
+unreadable". Only the provisioned `build/release-mingw-x86_64` tree builds in
+this environment.
+
+### Runtime — 8 of 8
+
+| Item | Status |
+|---|---|
+| Vulkan | **met** |
+| DX12 | **met** |
+| renderer switch | **met** — 8/8 and 6/6, plus one pre-existing defect found and attributed |
+| resize / fullscreen | **met** for resize, maximize, minimize, restore; exclusive fullscreen not covered |
+| GPU2D | **met** — native path, startup fallback, backpressure, exact gate |
+| capture | **met** — provenance, address agreement, injected readback failure |
+| low latency | **met** — Reflex Off/On/On+Boost, Anti-Lag, XeLL and its policy |
+| savestate | **met** |
+
+### Summary
+
+27 of 33 met, 2 partial, 4 unrun for an environment reason. The two partials
+and the six open items are the same ones: the GPU2D composer split, 3D visual
+parity, and the non-Windows / gate builds.
+
 ## Phase 2 — not started, and why
 
 What remains of VK-SRP-004 and DX-SRP-003 after the extractions above:
