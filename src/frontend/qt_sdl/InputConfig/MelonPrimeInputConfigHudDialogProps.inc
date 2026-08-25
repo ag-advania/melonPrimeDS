@@ -536,6 +536,7 @@ static const HudWidgetProp kSecScoreboard[] = {
 };
 
 static const HudWidgetProp kSecEnemyTarget[] = {
+    { "Online play also needs Show Enemy HP Meter Online, under GAME FEATURE IMPROVEMENTS. Metroid Prime Hunters does not produce the last-hit target information on Nintendo WFC / Wiimmfi unless that fix is enabled. Local Wireless works without it.", HWType::Label, "", 0, 0, 0, nullptr, nullptr },
     { "Show", HWType::Bool, MP_HUD_PROP_KEY_HudEnemyTargetShow, 0, 0, 0, nullptr, nullptr },
     { "Anchor", HWType::Anchor9, MP_HUD_PROP_KEY_HudEnemyTargetAnchor, 0, 8, 1, nullptr, nullptr },
     { "Offset X", HWType::Int, MP_HUD_PROP_KEY_HudEnemyTargetX, -256, 256, 1, nullptr, nullptr },
@@ -561,8 +562,6 @@ static const HudWidgetProp kSecEnemyTarget[] = {
     { "Outline Color", HWType::Color3, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorR, 0, 255, 1, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorG, MP_HUD_PROP_KEY_HudEnemyTargetOutlineColorB },
     { "Outline Opacity", HWType::Opacity, MP_HUD_PROP_KEY_HudEnemyTargetOutlineOpacity, 0, 100, 5, nullptr, nullptr },
     { "Outline Thickness", HWType::Int, MP_HUD_PROP_KEY_HudEnemyTargetOutlineThickness, 1, 10, 1, nullptr, nullptr },
-    { "Requires Show Enemy HP Meter Online, under GAME FEATURE IMPROVEMENTS. Metroid Prime Hunters does not produce the last-hit target information on Nintendo WFC / Wiimmfi unless that fix is enabled, so these settings stay disabled until you turn it on.", HWType::Label, "", 0, 0, 0, nullptr, nullptr },
-    { "Online play also needs Show Enemy HP Meter Online, under GAME FEATURE IMPROVEMENTS. Metroid Prime Hunters does not produce the last-hit target information on Nintendo WFC / Wiimmfi unless that fix is enabled. Local Wireless works without it.", HWType::Label, "", 0, 0, 0, nullptr, nullptr },
 };
 
 #define MELONPRIME_OSD_COLOR_EMIT_DIALOG_PROPS
