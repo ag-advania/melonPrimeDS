@@ -30,17 +30,23 @@ BACKEND_LABEL = {"vulkan": "Vulkan", "dx12": "DX12"}
 
 
 def write_config(
-    source: Path, destination: Path, renderer_id: int, scale: int
+    source: Path,
+    destination: Path,
+    renderer_id: int,
+    scale: int,
+    overrides: dict[str, str],
 ) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     text = source.read_text(encoding="utf-8", errors="replace")
-    for key, value in (
+    settings: list[tuple[str, object]] = [
         ("3D.Renderer", renderer_id),
         # Shared by every hardware backend, not just GL.
         ("3D.GL.ScaleFactor", scale),
-    ):
+    ]
+    settings.extend(overrides.items())
+    for key, value in settings:
         text, count = re.subn(
-            rf"^{re.escape(key)} = \d+$", f"{key} = {value}", text,
+            rf"^{re.escape(key)} = .*$", f"{key} = {value}", text,
             count=1, flags=re.M)
         if count != 1:
             raise SystemExit(f"could not set {key} in {source}")
@@ -55,6 +61,8 @@ def run_backend(
     seconds: float,
     workdir: Path,
     stall_frames: int,
+    switch_stress: str,
+    switch_iterations: int,
 ) -> tuple[list[str], str]:
     """Returns (failures, captured output)."""
     label = BACKEND_LABEL[backend]
@@ -67,6 +75,14 @@ def run_backend(
         # capture ownership, never degrade to a Software hybrid frame.
         environment["MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES"] = str(
             stall_frames)
+    if switch_stress:
+        # Drives the production settings-dialog path that destroys the screen
+        # panel and replaces the 3D renderer, which is what exercises output
+        # lease invalidation, ring recreation and every component teardown the
+        # refactor moved.
+        environment["MELONPRIME_RENDERER_SWITCH_STRESS"] = switch_stress
+        environment["MELONPRIME_RENDERER_SWITCH_STRESS_ITERATIONS"] = str(
+            switch_iterations)
     if state is not None:
         environment["MELONPRIME_TEST_SAVESTATE"] = str(state.resolve())
         environment["MELONPRIME_TEST_SAVESTATE_UNPAUSE"] = "1"
@@ -114,6 +130,20 @@ def run_backend(
     if f"{label} renderer gpu2d={label} gpu3d={label} fallback=0" not in output:
         failures.append(f"the native GPU2D path never composed on {label}")
 
+    if switch_stress:
+        armed = re.search(r"\[switch-stress\] armed: (\d+) switches", output)
+        if not armed:
+            failures.append("the renderer-switch stress driver never armed")
+        else:
+            performed = re.findall(r"\[switch-stress\] switch (\d+)/(\d+)", output)
+            if not performed:
+                failures.append("no renderer switch was performed")
+            elif int(performed[-1][0]) < int(armed.group(1)):
+                failures.append(
+                    f"only {performed[-1][0]} of {armed.group(1)} switches ran")
+        if "[switch-stress] onUpdateVideoSettings could not be invoked" in output:
+            failures.append("a renderer switch could not be invoked")
+
     if stall_frames:
         # Backpressure and SemanticOnly are legitimate outcomes, not failures.
         # A fallback line under injected stall means the retained-result
@@ -156,6 +186,13 @@ def main() -> int:
     parser.add_argument("--state", type=Path)
     parser.add_argument("--seconds", type=float, default=25.0)
     parser.add_argument(
+        "--switch-stress", default="",
+        help="comma-separated 3D.Renderer ids to cycle through, e.g. 3,4")
+    parser.add_argument("--switch-iterations", type=int, default=6)
+    parser.add_argument(
+        "--set", action="append", default=[], metavar="KEY=VALUE",
+        help="override a melonDS.toml key; repeatable")
+    parser.add_argument(
         "--stall-frames", type=int, default=0,
         help="inject N SemanticOnly compositor frames to exercise the "
              "retained-frame publication policy")
@@ -186,6 +223,12 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
 
     scales = [int(v) for v in args.scales.split(",") if v.strip()]
+    overrides: dict[str, str] = {}
+    for item in args.set:
+        if "=" not in item:
+            parser.error(f"--set needs KEY=VALUE, got {item!r}")
+        key, value = item.split("=", 1)
+        overrides[key.strip()] = value.strip()
 
     overall: dict[str, list[str]] = {}
     for backend in backends:
@@ -195,6 +238,10 @@ def main() -> int:
         run_id = f"{backend}-x{scale}"
         if args.stall_frames:
             run_id += f"-stall{args.stall_frames}"
+        if args.switch_stress:
+            run_id += "-switch" + args.switch_stress.replace(",", "")
+        for key, value in overrides.items():
+            run_id += f"-{key.split('.')[-1]}{value}"
         workdir = (args.out / run_id).resolve()
         if workdir.exists():
             shutil.rmtree(workdir)
@@ -204,20 +251,22 @@ def main() -> int:
             shutil.copy2(sibling, workdir / sibling.name)
         write_config(
             args.config, workdir / "portable" / "melonDS.toml",
-            RENDERER_IDS[backend], scale)
+            RENDERER_IDS[backend], scale, overrides)
 
         print(f"=== {BACKEND_LABEL[backend]} @ {scale}x:"
               f" running {args.seconds:.0f}s ===", flush=True)
         failures, output = run_backend(
             backend, workdir / app.name, args.rom, args.state,
-            args.seconds, workdir, args.stall_frames)
+            args.seconds, workdir, args.stall_frames,
+            args.switch_stress, args.switch_iterations)
         (args.out / f"{run_id}.log").write_text(output, encoding="utf-8")
         overall[run_id] = failures
 
         for line in output.splitlines():
             if re.search(
                 r"renderer init|gpu2d=|GPU2DFallbackCounters|SavestateDiff|"
-                r"runtime failure|Renderer fallback|low-latency", line):
+                r"runtime failure|Renderer fallback|low-latency|switch-stress",
+                line):
                 print("   " + line.strip(), flush=True)
 
     print()

@@ -446,6 +446,10 @@ log markers. NVIDIA GeForce RTX 5070 Ti, Windows, developer build.
 | DX12 4x | PASS |
 | Vulkan 1x, 180 injected SemanticOnly frames | PASS |
 | DX12 1x, 180 injected SemanticOnly frames | PASS |
+| Vulkan <-> Software, 6 switches | PASS |
+| DX12 <-> Software, 6 switches | PASS |
+| DX12 <-> Vulkan, 8 switches | PASS |
+| Vulkan -> DX12 as the first DX12 probe | **FAIL — pre-existing, see below** |
 
 Each run checks that the requested renderer initialised and stayed initialised,
 that the savestate loaded, that the **native GPU2D path actually composed**
@@ -460,6 +464,46 @@ Software hybrid frame. Both backends held, then resumed native composition —
 so the extracted policy is confirmed on hardware, not just against its
 transcription.
 
+The switch rows drive the production settings-dialog path
+(`MainWindow::onUpdateVideoSettings`), which destroys the screen panel and
+replaces the 3D renderer -- so they exercise output-lease invalidation, ring
+recreation, pipeline-repository teardown, capture-bridge release and
+latency-controller shutdown, which is most of what this refactor moved.
+
+### A pre-existing defect this uncovered
+
+Starting in Vulkan and switching to DX12 **for the first time** fails:
+
+```
+MelonPrime DX12 probe: available=0 reason=no Direct3D 12 feature level 11_0 adapter was found
+[Vulkan] presenter: vkQueuePresentKHR failed: VK_ERROR_DEVICE_LOST (-4)
+Renderer transition begin previous=3 requested=0        <- degraded to Software
+```
+
+The DX12 adapter probe is a once-per-process cached call. When it first runs
+while a Vulkan device is live, `EnumAdapterByGpuPreference` /
+`D3D12CreateDevice` find no feature-level-11_0 adapter, DX12 is recorded as
+unavailable for the rest of the session, and the app silently drops to
+Software. The live Vulkan device is lost in the same moment.
+
+**Not caused by this refactor.** A pre-refactor binary (2026-08-15) reproduces
+the identical `available=0 ... no Direct3D 12 feature level 11_0 adapter was
+found` line and the same fall back to Software.
+
+It is also not the switching path: with the probe already positive from
+startup, the same build performs 8/8 DX12 <-> Vulkan switches cleanly, and
+Vulkan <-> Software and DX12 <-> Software both pass 6/6.
+
+This matches a known invariant recorded during the 2026-08-25 renderer-switch
+optimization: *the Vulkan device release in transition step 4 exists so D3D12
+can enumerate adapters, and must not be skipped for speed.* The feature-check
+probe does not go through that transition path, so nothing releases the Vulkan
+device before it enumerates.
+
+Fixing it means either running the probe before any Vulkan device exists, or
+releasing the Vulkan device around it. That is a renderer-transition change,
+not an SRP one, so it is reported rather than folded in here.
+
 The 4x rows exercise the resolution-dependent resources the refactor touched:
 the capture sidecar's sizing, the output ring's recreation, and the pipeline
 rebuild.
@@ -471,8 +515,7 @@ confirmed live as well.
 **Not verified.** Everything below is still open and must not be reported as
 covered:
 
-- The rest of the §14 matrix: renderer switching (Vulkan <-> DX12 <-> Software),
-  live resolution change, 8x/16x, VSync on, fullscreen and resize,
+- The rest of the §14 matrix: live resolution change, 8x/16x, VSync on, fullscreen and resize,
   minimize/restore, HUD/OSD layers, the structured fallback path, stale
   generation rejection, and the DX12 low-latency modes (Reflex On / On+Boost,
   Anti-Lag 2, XeLL and its pacing policies). The smoke runner above covers the
