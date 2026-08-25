@@ -2293,11 +2293,19 @@ void ScreenPanelDX12::drawScreen()
         cpuTop = static_cast<const u32*>(output.Top);
         cpuBottom = static_cast<const u32*>(output.Bottom);
     }
-    if (!gpuFrame)
+    // Two different things publish CpuBgra here, and only the live renderer
+    // tells them apart:
+    //
+    //  - No DX12Renderer at all ("3D.ForceSoftwareOutsideMatch" swapped the
+    //    renderer to Software while this panel keeps owning the swapchain).
+    //    The software renderer flattens its own 3D layer, so this frame is a
+    //    complete picture and belongs on screen through the CPU upload path.
+    //  - A live DX12Renderer whose pipeline is not ready yet. That output is a
+    //    Software-2D plus placeholder-3D hybrid and must never become visible.
+    const bool softwarePresentation = !renderer && cpuTop && cpuBottom;
+    if (!gpuFrame && !softwarePresentation)
     {
-        // The native renderer's pre-pipeline output is a Software-2D plus
-        // placeholder-3D hybrid. It is never allowed to become visible; keep
-        // the last native frame once one exists, otherwise leave the Qt
+        // Keep the last native frame once one exists, otherwise leave the Qt
         // splash/black path active until a complete GPU frame is published.
         if (!dx12->nativeVisibility.FirstCompleteFrameVisible)
         {
@@ -2306,7 +2314,7 @@ void ScreenPanelDX12::drawScreen()
         }
         return;
     }
-    if ((!gpuFrame && (!cpuTop || !cpuBottom)) || sourceWidth == 0 || sourceHeight == 0)
+    if (sourceWidth == 0 || sourceHeight == 0)
         return;
 
     float matrices[kMaxScreenTransforms][6]{};
@@ -2327,7 +2335,13 @@ void ScreenPanelDX12::drawScreen()
     const u32 physicalWidth = std::max(1u, publishedSurface.PhysicalWidth);
     const u32 physicalHeight = std::max(1u, publishedSurface.PhysicalHeight);
     const bool waitForPresentSlot = !renderer || !renderer->ShouldBypassPresentWait();
-    dx12->presenter.SetPresentedFrameIdentity(gpuFrame->Serial, gpuFrame->Epoch);
+    // A software CPU frame has no renderer frame identity. Publishing a zero
+    // serial is how the presenter is told so: it skips the monotonic gate for
+    // this frame and leaves the last accepted GPU identity untouched, so the
+    // renderer that resumes at match start is still compared against its own
+    // predecessor rather than against this interlude.
+    dx12->presenter.SetPresentedFrameIdentity(
+        gpuFrame ? gpuFrame->Serial : 0, gpuFrame ? gpuFrame->Epoch : 0);
     if (!dx12->presenter.IsPresentedFrameIdentityMonotonic())
         return;
     if (gpuFrame && gpuFrame->HasDirectSampledOutput())
@@ -2667,6 +2681,8 @@ void ScreenPanelDX12::drawScreen()
     requestNativeSurfaceVisible(true);
     if (gpuFrame)
         dx12->nativeVisibility.Accept(gpuFrame->Epoch, gpuFrame->Serial);
+    else
+        dx12->nativeVisibility.AcceptWithoutIdentity();
 }
 
 void ScreenPanelDX12::paintEvent(QPaintEvent* event)

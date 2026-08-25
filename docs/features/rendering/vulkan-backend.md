@@ -77,6 +77,22 @@ must keep composing, so `setHudEditModeActive()` latches
 the Vulkan panel also drops its modal-pause freeze overlay in that state. See
 [`dx12-backend.md`](dx12-backend.md) for the shared reasoning.
 
+### Presenting software-renderer frames
+
+`3D.ForceSoftwareOutsideMatch` swaps the 3D renderer to `SoftRenderer` while
+this panel keeps owning the surface and swapchain — `prepareForRendererTransition()`
+quiesces GPU work and drops renderer-owned leases but deliberately keeps the
+`VkSurfaceKHR`/`VkSwapchainKHR` pair alive. `drawScreenFrame()` then presents
+the software renderer's `CpuBgra` output through `VulkanPresenter::UploadLayer()`.
+
+A live `VulkanRenderer` publishing `CpuBgra` means something else entirely (the
+startup hybrid: Software 2D plus a 3D placeholder, still compiling pipelines),
+and stays hidden. The `dynamic_cast<VulkanRenderer*>` result is the
+discriminator between the two. See
+[`dx12-backend.md`](dx12-backend.md#presenting-software-renderer-frames) for the
+full contract, including the frame-identity and native-visibility handling; the
+Vulkan panel mirrors it exactly.
+
 ## GPU3D_Compute stage mapping
 
 Stages correspond one-for-one with `src/GPU3D_Compute.cpp` /
