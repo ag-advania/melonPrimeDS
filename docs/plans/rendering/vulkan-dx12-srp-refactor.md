@@ -640,6 +640,63 @@ covered:
   above cover the structural half of what those builds would have caught; they
   do not cover a guard missing inside an existing file.
 
+## Against the audit's component matrix (§8)
+
+§8 grades twenty components per backend, which is finer than §15's checklist
+and grades different things. Ratings below are the audit's own vocabulary; a
+cell only moves where the change is real.
+
+| Component | Vulkan (audit → now) | DX12 (audit → now) |
+|---|---|---|
+| Build gate | PASS → PASS | PASS → PASS |
+| Backend selection | PASS → PASS | PASS → PASS |
+| Runtime loader | PASS → PASS | **PARTIAL → PASS** |
+| Instance / factory bootstrap | PASS → PASS | PASS → PASS |
+| Device owner | PARTIAL PASS → PARTIAL PASS | **PARTIAL → PARTIAL PASS** |
+| Memory allocator / resource wrapper | PASS → PASS | **FAIL/PARTIAL → PASS** |
+| Memory admission | PASS/PARTIAL → PASS/PARTIAL | PASS/PARTIAL → PASS/PARTIAL |
+| Descriptor management | PASS → PASS | **PARTIAL → PASS** |
+| Command / fence infrastructure | PASS → PASS | **PARTIAL PASS → PASS** |
+| Texture cache | PASS → PASS | PASS → PASS |
+| 3D raster responsibility | **FAIL → PARTIAL** | **FAIL → PARTIAL** |
+| GPU2D compositor | FAIL → FAIL | FAIL → FAIL |
+| Capture bridge | **FAIL → PASS** | **FAIL → PASS** |
+| Output publisher | **FAIL → PARTIAL** | **FAIL → PARTIAL** |
+| Pipeline repository | **PARTIAL → PASS** | **FAIL/PARTIAL → PASS** |
+| Presenter | PARTIAL PASS → PARTIAL PASS (smaller) | PARTIAL PASS → PARTIAL PASS |
+| Present pacing | PASS/PARTIAL → PASS | **FAIL placement → PASS** |
+| Low-latency pure policy | PASS → PASS | PASS → PASS |
+| Surface lifecycle | PASS → PASS | PARTIAL → PARTIAL |
+| Telemetry separation | PASS → PASS | PASS/PARTIAL → PASS/PARTIAL |
+
+Where the reasoning is not obvious:
+
+- **Device owner, DX12 → PARTIAL PASS.** The audit's complaint was that
+  `DX12Context` was "wider" than `VulkanDevice`: loader, shader compiler,
+  resource factory and memory budget on top of device ownership. Three of the
+  four are out. What remains — device ownership plus a memory-admission
+  gateway — is the same shape `VulkanDevice` has, which the audit rated
+  PARTIAL PASS. The two backends now sit in the same cell.
+- **3D raster responsibility → PARTIAL, both.** The FAIL was for owning GPU2D,
+  capture, output and resources on top of raster. Capture, the output ring and
+  the pipeline repository are out; GPU2D composition is not, so this is not a
+  PASS.
+- **Output publisher → PARTIAL, both.** `RendererOutputRing` owns the ring,
+  the lease and the serial sequence. Content generation and resource
+  generation still live with the renderer's output state, so the component is
+  not whole yet.
+- **Presenter, Vulkan → still PARTIAL PASS.** The audit's grade was "coherent
+  as final presentation, but large". `VulkanLatencyController` removed the
+  vendor state machine, so it is smaller, but swapchain, layers and pacing are
+  still one class — the same grade, honestly earned rather than upgraded.
+- **Present pacing, DX12 → PASS.** This was the audit's only outright
+  "FAIL placement": vendor orchestration living on the renderer. The markers
+  now fire from the presenter, around the real `IDXGISwapChain::Present`.
+
+Net: 8 cells improved, 1 unchanged FAIL per backend (the GPU2D compositor),
+and no cell regressed. Every remaining non-PASS is either the GPU2D split
+(§11.3-blocked) or a component the audit itself rated LOW priority.
+
 ## Against the audit's own Definition of Done (§15)
 
 Checked item by item rather than against a running list, because the two are
