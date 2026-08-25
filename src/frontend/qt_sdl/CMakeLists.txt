@@ -744,6 +744,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceCommon.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceLifecycle.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenterTimeout.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanLatencyController.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeScreenVulkan.cpp)
 

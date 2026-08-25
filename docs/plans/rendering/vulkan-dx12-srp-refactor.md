@@ -22,7 +22,7 @@ re-derive it.
 | BOTH-SRP-002 | `GPU_Vulkan` / `GPU_DX12` policy duplication | MEDIUM | **Done** |
 | BOTH-SRP-003 | DX12 / backend-neutral test seams | — | **Partly done** |
 | Phase 3 #8 | Pipeline repository, both backends | — | **Done** |
-| VK-SRP-005 | `VulkanPresenter` latency controller | MEDIUM-LOW | **Not started** |
+| VK-SRP-005 | `VulkanPresenter` latency controller | MEDIUM-LOW | **Done** |
 | DX-SRP-004 | `DX12SurfacePresenter` swapchain/layer split | LOW | Not needed yet |
 | VK-SRP-002 | `VulkanDevice` budget/diagnostics | LOW | Not started |
 
@@ -356,6 +356,43 @@ descriptor tables are unchanged and no barrier moved.
 
 Both `ReadNativeCapture()` implementations are now a guard, a shared-context
 retire, and one delegated call.
+
+## VK-SRP-005 — the Vulkan vendor latency state machine
+
+`src/frontend/qt_sdl/MelonPrimeVulkanLatencyController.{h,cpp}`.
+
+The audit rated the Vulkan placement of Reflex / Anti-Lag *better* than the
+DX12 one it replaced: the markers already sit around the real
+`vkQueueSubmit` / `vkQueuePresentKHR`, which is where they have to be. Its
+complaint was size — the presenter had absorbed the vendor state machine on
+top of everything else.
+
+`VulkanLatencyController` now owns both vendor sessions, the logical frame
+index they share, and the log-on-change latch. The presenter dropped four
+members and two logging functions, and `MelonPrimeVulkanPresenter.cpp` went
+from 3,535 to 3,057 lines.
+
+Two things stayed behind, and the header says why:
+
+- **`VulkanPresentPacer`** participates in swapchain *construction* — surface
+  capability queries, `VkSwapchainCreateInfoKHR` flags, NV low-latency
+  present-mode selection. It belongs with the object that builds swapchains.
+- **`VulkanPresentLatencyCapture`** is an A/B measurement instrument spanning
+  both the vendor markers and the pacer, so it cannot sit on either side
+  alone.
+
+`BeginLowLatencyFrame()` also stayed on the presenter. It is orchestration,
+not vendor state: it consults the pacer, may rebuild the swapchain, may fail
+the renderer, and waits on the presenter's own frame ring. What it now calls
+into the controller for is exactly the vendor half —
+`ApplyPreferences`, `BeginReflexSleep`, `BeginAntiLagInput`.
+
+One sequence became a named operation rather than five loose calls:
+`PrepareForTeardown()`. Anti-Lag applies state on its next `BeginFrame`, so
+handing the driver an "off" state requires an End/Begin pair afterwards —
+which reads as redundant until you know that. Doing it after the device drain
+instead left NVIDIA's driver holding active low-latency state when switching
+away from Vulkan mid-game, so the ordering is load-bearing.
 
 ## Verification performed
 
