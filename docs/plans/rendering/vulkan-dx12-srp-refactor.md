@@ -625,9 +625,22 @@ covered:
   `Renderer::Stop()` and does not reach the captured pipe at process exit, even
   when the window is closed gracefully rather than killed.
 - Per-frame comparison of the **3D** image. The exact-validation gate covers
-  the 2D compositor and capture addresses; confirming 3D visual identity needs
-  120fps per-frame comparison, because averaging or spot-checking hides
-  alternating-frame bugs.
+  the 2D compositor and the capture addresses, not the 3D raster.
+
+  The repository already has the harness for this —
+  `tools/testing/run-vulkan-raster-diff.py`, which runs the software rasterizer
+  as an oracle alongside the native one and reports `[RasterDiff] ...
+  mismatchedPixels=N` per frame. **It cannot currently run.** The comparison
+  call sits inside the structured-composition branch of `VBlank()` on both
+  backends, and that branch never executes, for the reason measured above:
+  native GPU2D always composes, so the structured path is never taken. A run
+  against this build reports "no Vulkan RasterDiff frames were reported".
+
+  Pre-existing: the call site is in the same place at the base commit
+  (`93a5705d5`), so the harness has been unreachable independently of this
+  refactor. Making 3D parity measurable means moving the comparison to a point
+  the native path also reaches — a change to the differential harness, not to
+  the components this audit is about.
 - Linux / macOS / BSD builds. In particular the new
   `melonprime_gpu2d_frame_policy_tests` target builds on every platform and has
   only been compiled with MinGW g++ 14.2.
@@ -789,7 +802,9 @@ The three remaining rows need Linux, BSD and macOS hosts.
 - **3D visual parity** (Correctness, partial). The exact-validation gate covers
   the 2D compositor and the capture addresses; the 3D image needs 120fps
   per-frame comparison.
-- **Linux, BSD and macOS builds**, which need those hosts.
+- **Linux, BSD and macOS builds**, which need those hosts. `tools/linux-vm/`
+  exists but is a VirtualBox harness driven from a macOS host, so it does not
+  help from Windows.
 
 Everything else in §15 is met with evidence recorded above.
 
