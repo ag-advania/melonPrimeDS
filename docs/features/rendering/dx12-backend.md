@@ -90,6 +90,35 @@ reason (it additionally drops its modal-pause freeze overlay, which DX12 does
 not have). The software and OpenGL panels gate on `emuIsActive()` instead and
 keep drawing on their own.
 
+### Presenting software-renderer frames
+
+`3D.ForceSoftwareOutsideMatch` ("Use software renderer outside matches") swaps
+the *3D renderer* to `SoftRenderer` between the pre-match and post-match
+blackouts, but leaves the *presentation backend* alone: `3D.Renderer` still says
+DX12, so `ResolvePresentationBackend()` still returns DX12 and this panel keeps
+owning the swapchain. `EmuThread::run()`'s `applyPendingVideoSettings` block
+deliberately forces only `videoRenderer`, never `videoBackend`.
+
+The panel therefore has to present two shapes of frame, and both arrive as
+`RendererOutputKind::CpuBgra`. The **live renderer** is what tells them apart:
+
+* `dynamic_cast<DX12Renderer*>` is null — the software renderer genuinely owns
+  output. It flattens its own 3D layer (`UseStructuredVulkan2D()` is false
+  without a structured-metadata 3D renderer), so the frame is a complete
+  picture and goes on screen through `UploadLayer()`, the presenter's CPU path.
+* `dynamic_cast<DX12Renderer*>` is non-null — a native renderer is live but its
+  pipeline is not ready, so its output is a Software-2D plus placeholder-3D
+  hybrid. That one must never become visible; the panel keeps the last native
+  frame, or the Qt splash if there is none yet.
+
+A CPU frame carries no renderer frame identity, so the panel publishes serial 0
+(`SetPresentedFrameIdentity`), which skips the monotonic gate for that frame and
+leaves the last accepted GPU epoch/serial untouched — the native renderer that
+resumes at match start is still compared against its own predecessor.
+`NativeVisibilityState::AcceptWithoutIdentity()` marks the surface visible on
+the same terms. `ScreenPanelVulkan::drawScreenFrame()` implements the identical
+rule against `VulkanRenderer`.
+
 ## NVIDIA Reflex Low Latency
 
 On a supported NVIDIA GPU, the video settings dialog exposes the standard

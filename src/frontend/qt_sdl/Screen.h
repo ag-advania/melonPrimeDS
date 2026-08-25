@@ -182,6 +182,16 @@ struct NativeVisibilityState {
         LastAcceptedSerial = serial;
         FirstCompleteFrameVisible = true;
     }
+
+    // A CPU frame published by the plain software renderer -- the
+    // "3D.ForceSoftwareOutsideMatch" path -- is a complete picture, so it makes
+    // the native surface legitimately visible. It carries no renderer frame
+    // identity, so the epoch/serial fields keep the last native values instead
+    // of being reset to zero.
+    void AcceptWithoutIdentity() noexcept
+    {
+        FirstCompleteFrameVisible = true;
+    }
 };
 
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
@@ -673,6 +683,11 @@ private:
     void noteFrameIdle();
     void noteFrameStalled(const char* reason);
     void noteFramePresented(melonDS::u64 epoch, melonDS::u64 serial);
+    // Same bookkeeping for a frame that carries no renderer frame identity:
+    // the plain software renderer's CPU output, presented through this panel
+    // while "3D.ForceSoftwareOutsideMatch" holds the match window open.
+    void noteFramePresentedWithoutIdentity();
+    void clearPresentationStall();
 
     // Composes one emulated frame. Driven from VulkanRenderer's VBlank hook,
     // on the emulation thread, because that is the only point where this

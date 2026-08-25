@@ -118,6 +118,7 @@ namespace MelonPrime {
         inline constexpr const char* SectionHudRadarOutline                 = "Metroid.UI.SectionHudRadarOutline";
         inline constexpr const char* SectionHudRadarSettings                = "Metroid.UI.SectionHudRadarSettings";
         inline constexpr const char* SectionHudScoreboard                   = "Metroid.UI.SectionHudScoreboard";
+        inline constexpr const char* SectionHudEnemyTarget                  = "Metroid.UI.SectionHudEnemyTarget";
         inline constexpr const char* SectionHudRank                         = "Metroid.UI.SectionHudRank";
         inline constexpr const char* SectionHudRankOutline                  = "Metroid.UI.SectionHudRankOutline";
         inline constexpr const char* SectionHudRankTime                     = "Metroid.UI.SectionHudRankTime";

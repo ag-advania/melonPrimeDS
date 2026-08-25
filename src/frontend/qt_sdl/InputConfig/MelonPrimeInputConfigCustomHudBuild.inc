@@ -378,6 +378,23 @@
             });
             break;
         }
+        case HWType::EnemyTargetHpMode: {
+            auto* combo = new QComboBox(parent);
+            combo->setObjectName(objName);
+            combo->addItem(QStringLiteral("Segmented"));
+            combo->addItem(QStringLiteral("Single Bar"));
+            combo->addItem(QStringLiteral("Number Only"));
+            combo->addItem(QStringLiteral("Off"));
+            combo->setCurrentIndex(std::clamp(instcfg.GetInt(p.cfgKey), 0, 3));
+            form->addRow(QString::fromUtf8(p.label), combo);
+            m_hudWidgets[p.cfgKey] = combo;
+            connect(combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, key = std::string(p.cfgKey)](int val) {
+                if (!m_applyPreviewEnabled) return;
+                emuInstance->getLocalConfig().SetInt(key, val);
+                invalidateHudAndRefreshPreviews();
+            });
+            break;
+        }
         case HWType::HorizVert: {
             auto* combo = new QComboBox(parent);
             combo->setObjectName(objName);
@@ -733,6 +750,7 @@
             case 3: preview = new MatchStatusPreviewWidget(emuInstance, mainBody); break;
             case 4: preview = new RadarPreviewWidget(emuInstance, mainBody); break;
             case 5: preview = new ScoreboardPreviewWidget(emuInstance, mainBody); break;
+            case 6: preview = new EnemyTargetPreviewWidget(emuInstance, mainBody); break;
             }
             if (preview) {
                 hbox->addWidget(preview, 0);

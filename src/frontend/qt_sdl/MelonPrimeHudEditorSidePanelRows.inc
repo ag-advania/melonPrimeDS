@@ -441,6 +441,43 @@ static const Row kRowsScoreboard[] = {
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB),
 };
 
+static const Row kRowsEnemyTarget[] = {
+    RowBuiltins(MP_HUD_PROP_KEY_HudEnemyTargetShow,
+        MP_HUD_PROP_KEY_HudEnemyTargetColorR,
+        MP_HUD_PROP_KEY_HudEnemyTargetColorG,
+        MP_HUD_PROP_KEY_HudEnemyTargetColorB,
+        MP_HUD_PROP_KEY_HudEnemyTargetAnchor),
+    RowOffset(MP_HUD_PROP_KEY_HudEnemyTargetX, MP_HUD_PROP_KEY_HudEnemyTargetY,
+        -256, 256, "Offset X", "Offset Y"),
+    RowSpin("Scale %", MP_HUD_PROP_KEY_HudEnemyTargetScale, 10, 800),
+    RowSpin("Text Scale %", MP_HUD_PROP_KEY_HudEnemyTargetTextScale, 10, 800),
+    RowSpin("Row Spacing", MP_HUD_PROP_KEY_HudEnemyTargetRowSpacing, 0, 16),
+    RowOpacity("Opacity", MP_HUD_PROP_KEY_HudEnemyTargetOpacity),
+    RowBool("Name", MP_HUD_PROP_KEY_HudEnemyTargetNameShow),
+    RowBool("Team Color", MP_HUD_PROP_KEY_HudEnemyTargetTeamColor),
+    RowBool("Hunter Icon", MP_HUD_PROP_KEY_HudEnemyTargetHunterIconShow),
+    RowSpin("Hunter Icon Height", MP_HUD_PROP_KEY_HudEnemyTargetHunterIconHeight, 0, 48),
+    RowCombo("HP Mode", MP_HUD_PROP_KEY_HudEnemyTargetHpMode,
+        {"Segmented", "Single Bar", "Number Only", "Off"}),
+    RowBool("HP Number", MP_HUD_PROP_KEY_HudEnemyTargetHpNumberShow),
+    RowSpin("Bar Length", MP_HUD_PROP_KEY_HudEnemyTargetBarLength, 8, 192),
+    RowSpin("Bar Height", MP_HUD_PROP_KEY_HudEnemyTargetBarHeight, 1, 20),
+    RowColor("HP Color",
+        MP_HUD_PROP_KEY_HudEnemyTargetHpColorR,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpColorG,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpColorB),
+    RowColor("HP Back Color",
+        MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorR,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorG,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorB),
+    RowBool("Score", MP_HUD_PROP_KEY_HudEnemyTargetScoreShow),
+    RowColor("Score Color",
+        MP_HUD_PROP_KEY_HudEnemyTargetScoreColorR,
+        MP_HUD_PROP_KEY_HudEnemyTargetScoreColorG,
+        MP_HUD_PROP_KEY_HudEnemyTargetScoreColorB),
+    RowOutline("Outline", MP_OUTLINE_KEYS(HudEnemyTarget)),
+};
+
 // Crosshair's flat row body (no composites). populateForCrosshair() keeps
 // its own surrounding lifecycle (m_currentElem = -2, title, m_populating)
 // and calls populateFromRowTable(kRowsCrosshair, ...) for this body.
