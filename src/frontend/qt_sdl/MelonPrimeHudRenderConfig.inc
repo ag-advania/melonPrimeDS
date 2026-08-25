@@ -213,6 +213,27 @@ struct ScoreboardHudConfig {
     QColor textColor, headerColor, localPlayerColor, teamRowColor;
     QColor backgroundColor;
 };
+// Enemy Target HUD: the opponent the local player last damaged. HP display
+// mode 0 reproduces the native two-segment Energy Tank meter, 1 collapses it
+// to one bar, 2 is numeric only, 3 hides the meter entirely.
+struct EnemyTargetHudConfig {
+    bool show;
+    int x, y;                       // final DS-space position
+    int anchor, ofsX, ofsY;         // raw anchor + offsets
+    float scale;
+    int textScalePct;
+    int rowSpacing;
+    float opacity;
+    bool nameShow, teamColor;
+    bool hunterIconShow;
+    int hunterIconHeight;
+    int hpMode;
+    bool hpNumberShow;
+    int barLength, barHeight;
+    bool scoreShow;
+    QColor nameColor, hpColor, hpBackColor, scoreColor;
+    HudOutlineConfig outline;
+};
 struct CachedHudConfig {
     HpHudConfig hp;
     WeaponHudConfig weapon;
@@ -223,6 +244,7 @@ struct CachedHudConfig {
     RankTimeHudConfig rankTime;
     RadarOverlayConfig radar;
     ScoreboardHudConfig scoreboard;
+    EnemyTargetHudConfig enemyTarget;
     HudOutlineConfig globalOutline; // when enable=true, overrides all per-element outlines
     int textScalePct; // text visual scale in percent (100 = 1x, bitmap always rendered at 6px)
     float textDrawScale; // P-14: pre-computed combined text scale (auto + user offset) / hudScale
@@ -262,6 +284,8 @@ struct CustomHudConfigState {
     int bombIconHeight = 0;
     bool bombTintCacheValid = false;
     QImage scoreboardHunterIcons[7];
+    QImage enemyTargetHunterIcons[7];
+    int enemyTargetHunterIconHeight = 0;
     QImage scoreboardStars[5];
     int scoreboardHunterIconHeight = 0;
     int scoreboardStarsHeight = 0;
@@ -423,6 +447,8 @@ std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
 #define s_bombIconHeight (ActiveHudConfigState().bombIconHeight)
 #define s_bombTintCacheValid (ActiveHudConfigState().bombTintCacheValid)
 #define s_scoreboardHunterIcons (ActiveHudConfigState().scoreboardHunterIcons)
+#define s_enemyTargetHunterIcons (ActiveHudConfigState().enemyTargetHunterIcons)
+#define s_enemyTargetHunterIconHeight (ActiveHudConfigState().enemyTargetHunterIconHeight)
 #define s_scoreboardStars (ActiveHudConfigState().scoreboardStars)
 #define s_scoreboardHunterIconHeight (ActiveHudConfigState().scoreboardHunterIconHeight)
 #define s_scoreboardStarsHeight (ActiveHudConfigState().scoreboardStarsHeight)
@@ -1206,6 +1232,47 @@ static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table&
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB);
 }
+static void LoadEnemyTargetConfig(EnemyTargetHudConfig& enemyTarget, Config::Table& cfg)
+{
+    enemyTarget.show = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetShow);
+    enemyTarget.anchor = cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetAnchor);
+    enemyTarget.ofsX = cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetX);
+    enemyTarget.ofsY = cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetY);
+    enemyTarget.scale = static_cast<float>(std::clamp(
+        cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetScale), 10, 800)) / 100.0f;
+    enemyTarget.textScalePct = std::clamp(
+        cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetTextScale), 10, 800);
+    enemyTarget.rowSpacing = std::clamp(
+        cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetRowSpacing), 0, 16);
+    enemyTarget.opacity = static_cast<float>(std::clamp(
+        cfg.GetDouble(MP_HUD_PROP_KEY_HudEnemyTargetOpacity), 0.0, 1.0));
+    enemyTarget.nameShow = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetNameShow);
+    enemyTarget.teamColor = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetTeamColor);
+    enemyTarget.hunterIconShow = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetHunterIconShow);
+    enemyTarget.hunterIconHeight = std::clamp(
+        cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetHunterIconHeight), 0, 48);
+    enemyTarget.hpMode = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetHpMode), 0, 3);
+    enemyTarget.hpNumberShow = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetHpNumberShow);
+    enemyTarget.barLength = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetBarLength), 8, 192);
+    enemyTarget.barHeight = std::clamp(cfg.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetBarHeight), 1, 20);
+    enemyTarget.scoreShow = cfg.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetScoreShow);
+    enemyTarget.nameColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudEnemyTargetColorR,
+        MP_HUD_PROP_KEY_HudEnemyTargetColorG,
+        MP_HUD_PROP_KEY_HudEnemyTargetColorB);
+    enemyTarget.hpColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpColorR,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpColorG,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpColorB);
+    enemyTarget.hpBackColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorR,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorG,
+        MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorB);
+    enemyTarget.scoreColor = ReadRgbColor(cfg,
+        MP_HUD_PROP_KEY_HudEnemyTargetScoreColorR,
+        MP_HUD_PROP_KEY_HudEnemyTargetScoreColorG,
+        MP_HUD_PROP_KEY_HudEnemyTargetScoreColorB);
+}
 // Recompute all final X/Y positions from stored anchor + offset + topStretchX.
 // Called when config is refreshed or when topStretchX changes (window resize).
 static void RecomputeAnchorPositions(float topStretchX)
@@ -1261,6 +1328,8 @@ static void RecomputeAnchorPositions(float topStretchX)
     // whole panel rather than its unmeasured text origin.
     ApplyAnchor(c.scoreboard.anchor, c.scoreboard.ofsX, c.scoreboard.ofsY,
                 c.scoreboard.x, c.scoreboard.y, sx);
+    ApplyAnchor(c.enemyTarget.anchor, c.enemyTarget.ofsX, c.enemyTarget.ofsY,
+                c.enemyTarget.x, c.enemyTarget.y, sx);
 }
 
 static uint16_t LoadNoHudMaskFromConfig(Config::Table& cfg)
@@ -1297,6 +1366,7 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     LoadRankTimeConfig(c.rankTime, cfg);
     LoadRadarOverlayConfig(c.radar, cfg);
     LoadScoreboardConfig(c.scoreboard, cfg);
+    LoadEnemyTargetConfig(c.enemyTarget, cfg);
     // Per-element outlines
 #define MP_HUD_OUTLINE_KEYS(prefix) \
     MP_HUD_PROP_KEY_##prefix##Outline, \
@@ -1332,6 +1402,7 @@ static void RefreshCachedConfig(Config::Table& cfg, float topStretchX = 1.0f, fl
     loadOL(c.radar.outline,        MP_HUD_OUTLINE_KEYS(BtmOverlay));
     loadOL(c.radar.frameOutline,   MP_HUD_OUTLINE_KEYS(BtmOverlayFrame));
     loadOL(c.scoreboard.outline,   MP_HUD_OUTLINE_KEYS(HudScoreboard));
+    loadOL(c.enemyTarget.outline,  MP_HUD_OUTLINE_KEYS(HudEnemyTarget));
 #undef MP_HUD_OUTLINE_KEYS
     c.textScalePct        = std::max(100, cfg.GetInt(MP_HUD_PROP_KEY_HudTextScale));
     const bool autoScaleEnable = cfg.GetBool(MP_HUD_PROP_KEY_HudAutoScaleEnable);

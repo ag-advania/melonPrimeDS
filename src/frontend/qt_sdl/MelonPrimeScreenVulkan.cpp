@@ -1452,8 +1452,10 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
 
     // Drop the borrowed composed-frame pointers *before* the renderer that owns
     // them is destroyed, and take the observer back off it. After this the panel
-    // presents black (or the splash) until a new renderer publishes a frame,
-    // which is correct: there is no frame to show.
+    // has no native frame to show. What it presents next depends on which
+    // renderer takes over: another native one publishes GPU frames again, while
+    // the software renderer ("3D.ForceSoftwareOutsideMatch") publishes complete
+    // CPU frames that drawScreenFrame() uploads through the presenter.
     if (detachRendererObserver && vulkan->hookedRenderer)
     {
         vulkan->hookedRenderer->SetVBlankObserver(nullptr, nullptr);
@@ -1599,7 +1601,7 @@ void ScreenPanelVulkan::noteFrameStalled(const char* reason)
 }
 
 
-void ScreenPanelVulkan::noteFramePresented(melonDS::u64 epoch, melonDS::u64 serial)
+void ScreenPanelVulkan::clearPresentationStall()
 {
     if (!vulkan)
         return;
@@ -1614,7 +1616,26 @@ void ScreenPanelVulkan::noteFramePresented(melonDS::u64 epoch, melonDS::u64 seri
     vulkan->stallReason = nullptr;
     vulkan->stallFrames = 0;
     vulkan->stallReported = false;
+}
+
+
+void ScreenPanelVulkan::noteFramePresented(melonDS::u64 epoch, melonDS::u64 serial)
+{
+    if (!vulkan)
+        return;
+
+    clearPresentationStall();
     vulkan->nativeVisibility.Accept(epoch, serial);
+}
+
+
+void ScreenPanelVulkan::noteFramePresentedWithoutIdentity()
+{
+    if (!vulkan)
+        return;
+
+    clearPresentationStall();
+    vulkan->nativeVisibility.AcceptWithoutIdentity();
 }
 
 
@@ -1820,7 +1841,18 @@ void ScreenPanelVulkan::drawScreenFrame()
         sourceHeight = rendererOutput.Height;
     }
 
-    if (!gpuFrame)
+    // Two different things publish CpuBgra here, and only the live renderer
+    // tells them apart:
+    //
+    //  - No VulkanRenderer at all ("3D.ForceSoftwareOutsideMatch" swapped the
+    //    renderer to Software while this panel keeps owning the swapchain).
+    //    The software renderer flattens its own 3D layer, so this frame is a
+    //    complete picture and belongs on screen through the CPU upload path.
+    //  - A live VulkanRenderer whose pipeline is not ready yet. That output is
+    //    a Software-2D plus placeholder-3D hybrid and must never be shown.
+    const bool softwarePresentation = !vulkanRenderer
+        && topPixels && bottomPixels && sourceWidth > 0 && sourceHeight > 0;
+    if (!gpuFrame && !softwarePresentation)
     {
         // Vulkan/DX12 startup fallback is a hybrid frame: Software 2D is
         // paired with a 3D placeholder because the native pipeline is still
@@ -1862,6 +1894,14 @@ void ScreenPanelVulkan::drawScreenFrame()
             noteFrameIdle();
             return;
         }
+    }
+    else
+    {
+        // A software CPU frame carries no renderer frame identity. Serial 0 is
+        // how the presenter is told so: it leaves the last accepted GPU
+        // epoch/serial untouched, so the renderer that resumes at match start
+        // is still compared against its own predecessor, not this interlude.
+        vulkan->presenter.SetPresentedFrameIdentity(0, 0);
     }
     bool sameRendererFrame = false;
     if (gpuFrame)
@@ -2350,7 +2390,10 @@ void ScreenPanelVulkan::drawScreenFrame()
         return;
     }
 
-    noteFramePresented(gpuFrame->Epoch, gpuFrame->Serial);
+    if (gpuFrame)
+        noteFramePresented(gpuFrame->Epoch, gpuFrame->Serial);
+    else
+        noteFramePresentedWithoutIdentity();
 
     // Linux has already requested visibility before presenter binding because
     // Wayland requires a mapped/exposed native surface. Other platforms keep

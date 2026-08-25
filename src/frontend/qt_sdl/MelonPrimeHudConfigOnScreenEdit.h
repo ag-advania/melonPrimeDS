@@ -107,6 +107,7 @@ private:
     void populateWeaponInventory();
     void populateRadar();
     void populateScoreboard();
+    void populateEnemyTarget();
 };
 
 #endif // MELONPRIME_CUSTOM_HUD

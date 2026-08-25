@@ -15,6 +15,7 @@ enum class HWType { Bool, Int, Float, String, Anchor9, Align3, Color3, HorizVert
                     FontWeight,    // combo index 0..8 -> Thin..Black
                     ZoomTransitionStyle, // 0..12 crosshair zoom transition presets
                     DotShape,      // 0=Square, 1=Circle (center-dot shape)
+                    EnemyTargetHpMode, // 0=Segmented, 1=Single Bar, 2=Number Only, 3=Off
                   };
 
 struct HudWidgetProp {
@@ -42,7 +43,7 @@ struct HudMainSec {
     int directPropCount;
     const HudSubSec* subs;
     int subCount;
-    int previewKind; // 0=None, 1=Crosshair, 2=HpAmmo, 3=MatchStatus, 4=Radar, 5=Scoreboard
+    int previewKind; // 0=None, 1=Crosshair, 2=HpAmmo, 3=MatchStatus, 4=Radar, 5=Scoreboard, 6=EnemyTarget
 };
 
 #include "../MelonPrimeHudPropSchema.inc"
@@ -168,6 +169,8 @@ static const HudMainSec kHudMainSections[] = {
       nullptr, 0, kSubsMatchStatus, static_cast<int>(sizeof(kSubsMatchStatus)/sizeof(kSubsMatchStatus[0])), /*preview*/ 3 },
     { "HUD SCOREBOARD",     MelonPrime::CfgKey::SectionHudScoreboard,
       _P(kSecScoreboard), nullptr, 0, /*preview*/ 5 },
+    { "HUD ENEMY TARGET",   MelonPrime::CfgKey::SectionHudEnemyTarget,
+      _P(kSecEnemyTarget), nullptr, 0, /*preview*/ 6 },
     { "HUD RADAR",         MelonPrime::CfgKey::SectionHudRadar,
       nullptr, 0, kSubsRadar, static_cast<int>(sizeof(kSubsRadar)/sizeof(kSubsRadar[0])), /*preview*/ 4 },
     { "IN-GAME OSD COLOR", MelonPrime::CfgKey::SectionOsdColor,

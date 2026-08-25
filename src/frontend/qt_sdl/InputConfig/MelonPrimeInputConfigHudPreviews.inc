@@ -489,6 +489,151 @@ protected:
     }
 };
 
+// Settings-dialog preview for the Enemy Target panel. Derives from the
+// scoreboard preview only to reuse its raster loader; the two keep separate
+// icon caches so their different heights do not thrash one another.
+class EnemyTargetPreviewWidget : public ScoreboardPreviewWidget
+{
+public:
+    using ScoreboardPreviewWidget::ScoreboardPreviewWidget;
+
+protected:
+    static const QImage& targetHunterIcon(int index, int height)
+    {
+        static QImage icons[7];
+        static int cachedHeight = -1;
+        if (cachedHeight != height) {
+            static const char* const paths[7] = {
+                ":/mph-scoreboard-hunter-0", ":/mph-scoreboard-hunter-1",
+                ":/mph-scoreboard-hunter-2", ":/mph-scoreboard-hunter-3",
+                ":/mph-scoreboard-hunter-4", ":/mph-scoreboard-hunter-5",
+                ":/mph-scoreboard-hunter-6",
+            };
+            for (int i = 0; i < 7; ++i)
+                icons[i] = loadRasterToHeight(paths[i], height);
+            cachedHeight = height;
+        }
+        return icons[qBound(0, index, 6)];
+    }
+
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter p(this);
+        const QRect r = rect();
+        drawBackground(p, r);
+
+        auto& c = cfg();
+        if (!c.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetShow)) {
+            p.setPen(QColor(130, 130, 150));
+            p.drawText(r, Qt::AlignCenter, MelonPrime::UiText::Tr("Enemy Target OFF"));
+            return;
+        }
+
+        setupDsTransform(p);
+        p.setRenderHint(QPainter::SmoothPixmapTransform, false);
+
+        const float scale = qBound(
+            0.1f, c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetScale) / 100.0f, 8.0f);
+        const float textScale = qBound(
+            0.1f, c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetTextScale) / 100.0f, 8.0f);
+        QFont font = previewHudFont(c, MP_HUD_PROP_KEY_HudAutoScaleCapText);
+        font.setPixelSize(qMax(1, qRound(font.pixelSize() * textScale * scale)));
+        p.setFont(font);
+        const QFontMetrics fm(font);
+
+        const int spacing = qRound(
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetRowSpacing), 16) * scale);
+        const int barLen = qRound(
+            qBound(8, c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetBarLength), 192) * scale);
+        const int barH = qRound(
+            qBound(1, c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetBarHeight), 20) * scale);
+        const int hpMode = qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetHpMode), 3);
+        const bool nameShow = c.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetNameShow);
+        const bool scoreShow = c.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetScoreShow);
+        const bool numberShow =
+            c.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetHpNumberShow) || hpMode == 2;
+        const bool iconShow = c.GetBool(MP_HUD_PROP_KEY_HudEnemyTargetHunterIconShow);
+        const int iconH = qRound(
+            qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetHunterIconHeight), 48) * scale);
+
+        // Same sample values as MakeEnemyTargetPreviewSnapshot() so the dialog
+        // preview and the in-game editor show the same panel.
+        const QString name = QStringLiteral("Player 2");
+        const QString number = QStringLiteral("145/199");
+        const QString score = QStringLiteral("4 / 7");
+
+        const int lineH = fm.height();
+        int columnH = 0;
+        auto addRow = [&](int h) {
+            if (columnH > 0) columnH += spacing;
+            const int top = columnH;
+            columnH += h;
+            return top;
+        };
+        const int nameY   = nameShow ? addRow(lineH) : 0;
+        const int bar1Y   = (hpMode == 0 || hpMode == 1) ? addRow(barH) : 0;
+        const int bar2Y   = (hpMode == 0) ? addRow(barH) : 0;
+        const int numberY = numberShow ? addRow(lineH) : 0;
+        const int scoreY  = scoreShow ? addRow(lineH) : 0;
+        if (columnH <= 0) columnH = lineH;
+
+        int columnW = (hpMode == 0 || hpMode == 1) ? barLen : 0;
+        if (nameShow)   columnW = qMax(columnW, fm.horizontalAdvance(name));
+        if (numberShow) columnW = qMax(columnW, fm.horizontalAdvance(number));
+        if (scoreShow)  columnW = qMax(columnW, fm.horizontalAdvance(score));
+        columnW = qMax(columnW, 1);
+
+        const QImage& icon = iconShow ? targetHunterIcon(2, iconH) : QImage();
+        const int iconW = icon.isNull() ? 0 : icon.width();
+        const int gap = icon.isNull() ? 0 : qMax(1, spacing);
+        const int panelW = iconW + gap + columnW;
+        const int panelH = qMax(columnH, icon.isNull() ? 0 : icon.height());
+
+        const QPoint origin = dsPos(c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetAnchor),
+                                    c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetX),
+                                    c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetY));
+        float px = origin.x(), py = origin.y();
+        const int anchor = qBound(0, c.GetInt(MP_HUD_PROP_KEY_HudEnemyTargetAnchor), 8);
+        MelonPrime::HudGeometry::ApplyRectAnchorF(px, py, panelW, panelH,
+                                                  anchor % 3, anchor / 3);
+        const int textX = qRound(px) + panelW - columnW;
+
+        p.setOpacity(qBound(0.0, c.GetDouble(MP_HUD_PROP_KEY_HudEnemyTargetOpacity), 1.0));
+        if (!icon.isNull()) {
+            p.drawImage(QRect(qRound(px), qRound(py + (panelH - icon.height()) * 0.5f),
+                              icon.width(), icon.height()), icon);
+        }
+        const QColor nameColor = readColor(MP_HUD_PROP_KEY_HudEnemyTargetColorR,
+                                           MP_HUD_PROP_KEY_HudEnemyTargetColorG,
+                                           MP_HUD_PROP_KEY_HudEnemyTargetColorB);
+        const QColor hpColor = readColor(MP_HUD_PROP_KEY_HudEnemyTargetHpColorR,
+                                         MP_HUD_PROP_KEY_HudEnemyTargetHpColorG,
+                                         MP_HUD_PROP_KEY_HudEnemyTargetHpColorB);
+        const QColor hpBack = readColor(MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorR,
+                                        MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorG,
+                                        MP_HUD_PROP_KEY_HudEnemyTargetHpBackColorB);
+        const QColor scoreColor = readColor(MP_HUD_PROP_KEY_HudEnemyTargetScoreColorR,
+                                            MP_HUD_PROP_KEY_HudEnemyTargetScoreColorG,
+                                            MP_HUD_PROP_KEY_HudEnemyTargetScoreColorB);
+        const auto drawLine = [&](const QString& text, int y, const QColor& color) {
+            p.setPen(color);
+            p.drawText(QRect(textX, qRound(py) + y, columnW, lineH),
+                       Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, text);
+        };
+        const auto drawBar = [&](int y, float ratio) {
+            p.fillRect(QRect(textX, qRound(py) + y, barLen, barH), hpBack);
+            p.fillRect(QRect(textX, qRound(py) + y, qRound(barLen * ratio), barH), hpColor);
+        };
+        if (nameShow)         drawLine(name, nameY, nameColor);
+        if (hpMode == 0)      drawBar(bar1Y, 1.0f);
+        else if (hpMode == 1) drawBar(bar1Y, 145.0f / 199.0f);
+        if (hpMode == 0)      drawBar(bar2Y, 45.0f / 99.0f);
+        if (numberShow)       drawLine(number, numberY, hpColor);
+        if (scoreShow)        drawLine(score, scoreY, scoreColor);
+        p.setOpacity(1.0);
+    }
+};
+
 class CrosshairPreviewWidget : public HudPreviewWidget
 {
 public:

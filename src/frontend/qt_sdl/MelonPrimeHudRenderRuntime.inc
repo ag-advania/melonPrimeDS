@@ -368,6 +368,33 @@ struct ScoreboardVisualValue {
     }
 };
 
+// Enemy Target HUD: "the opponent the local player last damaged".
+//
+// The ROM already owns this state -- HUD event 0x3D stores the victim slot and
+// a 60-tick timer on a local hit, and a separate ROM routine decrements the
+// timer and restores slot = -1 at zero. Custom HUD reads that pair and nothing
+// else: it must never infer the target from HP deltas or the crosshair, and
+// must never run its own countdown. Everything else (name, hunter, HP, score)
+// is read live from the target's player struct and the match runtime while the
+// panel is up, so damage taken during those two seconds is reflected.
+struct EnemyTargetSnapshot {
+    bool visible = false;
+    uint8_t slot = 0xFF;
+    int16_t timer = 0;
+    uint8_t hunterId = 0xFF;
+    uint8_t teamIndex = 0xFF;
+    uint8_t gameMode = 0;
+    bool teams = false;
+    QString displayName;
+    uint16_t hp = 0;
+    uint16_t maxHp = 0;
+    // Raw runtime values; MelonPrimeHudRenderDraw.inc turns them into a
+    // ScoreboardVisualValue with the same MAX/tick rules as the scoreboard.
+    int32_t rawValue = 0;
+    int32_t rawGoal = 0;
+    bool valueIsTime = false;
+};
+
 struct ScoreboardStructureKey {
     uint32_t matchSerial = 0;
     uint8_t gameMode = 0;
@@ -506,6 +533,8 @@ struct HudRuntimeFrameCache {
     bool scoreboardValid = false;
     uint32_t scoreboardMatchSerial = 0;
     struct ScoreboardSnapshot scoreboard;
+    bool enemyTargetValid = false;
+    struct EnemyTargetSnapshot enemyTarget;
 };
 
 struct HudFrameOwnedState {
@@ -523,6 +552,15 @@ struct HudFrameOwnedState {
         float hudScale = 0.0f;
         bool valid = false;
     } scoreboardFont;
+    struct EnemyTargetFontCache {
+        QFont font;
+        QFontMetrics fm{QFont{}};
+        uint32_t configEpoch = 0;
+        int baseFontGeneration = 0;
+        int baseFontPx = 0;
+        float hudScale = 0.0f;
+        bool valid = false;
+    } enemyTargetFont;
     TextMeasureCache curText{}, sepText{}, goalText{};
     TextBitmapCache curBitmap{}, sepBitmap{}, goalBitmap{}, labelBitmap{};
     TextBitmapCache curOutline{}, sepOutline{}, goalOutline{}, labelOutline{};
@@ -570,6 +608,12 @@ static constexpr uint32_t kScoreboardResultSlotsOffset = 0x258;
 static constexpr uint32_t kScoreboardPlayerTeamIndexOffset = 0x4AD;
 static constexpr uint32_t kScoreboardPlayerActiveOffset = 0x84C;
 static constexpr uint8_t kScoreboardPlayerActiveBit = 0x20;
+
+// Match-goal fields the scoreboard never needed: the Enemy Target panel shows
+// the target's progress as value/goal, so it reads the goal straight from the
+// match runtime block instead of deriving one.
+static constexpr uint32_t kScoreboardPointGoalOffset = 0x014;
+static constexpr uint32_t kScoreboardTimeGoalOffset = 0x020;
 
 static inline uint32_t ScoreboardRuntimeBase(const RomAddresses& rom)
 {
@@ -824,6 +868,119 @@ static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
     return true;
 }
 
+// Survival counts down lives; Defender/Prime Hunter count up held time. Every
+// other mode scores in points. Kept separate from ResolveScoreboardMetric(),
+// which answers a different question (which two scoreboard columns to show).
+static inline bool EnemyTargetModeShowsLives(uint8_t gameMode)
+{
+    return gameMode == static_cast<uint8_t>(ScoreboardGameMode::Survival)
+        || gameMode == static_cast<uint8_t>(ScoreboardGameMode::SurvivalTeams);
+}
+
+static inline bool EnemyTargetModeUsesTime(uint8_t gameMode)
+{
+    return gameMode == static_cast<uint8_t>(ScoreboardGameMode::Defender)
+        || gameMode == static_cast<uint8_t>(ScoreboardGameMode::DefenderTeams)
+        || gameMode == static_cast<uint8_t>(ScoreboardGameMode::PrimeHunter);
+}
+
+// Enemy Target snapshot.
+//
+// Deliberately NOT derived from HP deltas, the crosshair, or a Custom-HUD-side
+// countdown: the ROM's own targetSlot/targetTimer pair is the source of truth,
+// and it is only read here. Vanilla suppresses the state generation entirely on
+// Nintendo WFC, so online play additionally needs the existing
+// ShowEnemyHpMeterOnline patch -- Custom HUD does not second-guess that gate.
+//
+// The per-match roster cache already holds the decoded name, hunter, and team
+// for all four slots, so the only per-frame RAM reads are the target pair, the
+// live HP pair, and the mode value/goal.
+static bool ReadHudRuntimeEnemyTargetSnapshot(const RomAddresses& rom,
+                                              const HudRuntimeState& st,
+                                              EnemyTargetSnapshot& out)
+{
+    if (!s_hudRuntimeFrameCache.baseValid || !st.ram
+        || !HudRuntimeFrameCacheMatches(st))
+        return false;
+    if (s_hudRuntimeFrameCache.enemyTargetValid) {
+        out = s_hudRuntimeFrameCache.enemyTarget;
+        return out.visible;
+    }
+
+    const melonDS::u8* ram = st.ram;
+    EnemyTargetSnapshot snapshot{};
+    // Cache the miss too: a frame with no target must not re-read RAM on a
+    // repeated paint of the same emulated frame.
+    s_hudRuntimeFrameCache.enemyTargetValid = true;
+    s_hudRuntimeFrameCache.enemyTarget = snapshot;
+
+    // Adventure has no opponents; the panel follows the scoreboard's exclusion.
+    if (st.isAdventure)
+        return false;
+
+    const int16_t slot = static_cast<int16_t>(Read16(ram, rom.enemyTargetSlot));
+    const int16_t timer = static_cast<int16_t>(Read16(ram, rom.enemyTargetTimer));
+    if (slot < 0 || slot >= 4 || timer <= 0)
+        return false;
+
+    if (!EnsureScoreboardMatchCache(rom, st))
+        return false;
+    const auto& match = s_scoreboardMatchCache;
+    const auto& player = match.playersBySlot[slot];
+    if (!player.active)
+        return false;
+
+    snapshot.visible = true;
+    snapshot.slot = static_cast<uint8_t>(slot);
+    snapshot.timer = timer;
+    snapshot.hunterId = player.hunterId;
+    snapshot.teamIndex = player.teamIndex;
+    snapshot.displayName = player.displayName;
+    snapshot.gameMode = match.gameMode;
+    snapshot.teams = match.teams;
+
+    const uint32_t playerBase = rom.playerStructStart
+                              + static_cast<uint32_t>(slot) * Consts::PLAYER_STRUCT_SIZE;
+    snapshot.hp = Read16(ram, playerBase + 0xDAu);
+    snapshot.maxHp = Read16(ram, playerBase + 0xDCu);
+
+    const uint32_t runtimeBase = ScoreboardRuntimeBase(rom);
+    const bool teamValue = snapshot.teams && snapshot.teamIndex <= 1;
+    const uint32_t slotOffset = static_cast<uint32_t>(slot) * sizeof(uint32_t);
+    const uint32_t teamOffset = static_cast<uint32_t>(
+        snapshot.teamIndex <= 1 ? snapshot.teamIndex : 0) * sizeof(uint32_t);
+
+    if (EnemyTargetModeShowsLives(snapshot.gameMode)) {
+        // Survival shows lives left, which the runtime stores as a goal minus
+        // the accumulated team deaths rather than as a counter of its own.
+        const int32_t goal = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardPointGoalOffset);
+        const int32_t deaths = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardTeamDeathsOffset + teamOffset);
+        snapshot.rawValue = std::max<int32_t>(0, goal - deaths);
+        snapshot.rawGoal = goal;
+    } else if (EnemyTargetModeUsesTime(snapshot.gameMode)) {
+        snapshot.valueIsTime = true;
+        snapshot.rawValue = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardPlayerTimeOffset + slotOffset);
+        snapshot.rawGoal = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardTimeGoalOffset);
+    } else {
+        // Team modes score as a team, so the panel shows the target's team
+        // aggregate rather than their personal points.
+        const uint32_t pointsBase = teamValue
+            ? runtimeBase + kScoreboardTeamPointsOffset + teamOffset
+            : runtimeBase + kScoreboardPlayerPointsOffset + slotOffset;
+        snapshot.rawValue = ReadScoreboardS32(ram, pointsBase);
+        snapshot.rawGoal = ReadScoreboardS32(
+            ram, runtimeBase + kScoreboardPointGoalOffset);
+    }
+
+    out = snapshot;
+    s_hudRuntimeFrameCache.enemyTarget = snapshot;
+    return true;
+}
+
 static inline bool HudRuntimeFrameCacheMatches(melonDS::NDS* nds,
                                                melonDS::u8* ram,
                                                uint32_t gameFrame,
@@ -977,6 +1134,8 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     s_hudRuntimeFrameCache.timeLimitMinutesValid = false;
     s_hudRuntimeFrameCache.scoreboardValid = false;
     s_hudRuntimeFrameCache.scoreboard = {};
+    s_hudRuntimeFrameCache.enemyTargetValid = false;
+    s_hudRuntimeFrameCache.enemyTarget = {};
     s_hudRuntimeFrameCache.state = out;
     return true;
 }
@@ -1679,6 +1838,8 @@ void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
     s_hudRuntimeFrameCache.scoreboardValid = false;
     s_hudRuntimeFrameCache.scoreboardMatchSerial = 0;
     s_hudRuntimeFrameCache.scoreboard = {};
+    s_hudRuntimeFrameCache.enemyTargetValid = false;
+    s_hudRuntimeFrameCache.enemyTarget = {};
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
     ResetCrosshairZoomDisplay(0.0f);

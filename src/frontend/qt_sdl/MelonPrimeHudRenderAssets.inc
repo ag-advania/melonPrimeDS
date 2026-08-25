@@ -67,6 +67,27 @@ static void EnsureScoreboardAssetsLoaded(const ScoreboardHudConfig& scoreboard,
     }
 }
 
+// The Enemy Target panel reuses the scoreboard hunter portrait artwork but
+// rasterises it at its own configured height, so it keeps a separate set.
+static void EnsureEnemyTargetAssetsLoaded(const EnemyTargetHudConfig& enemyTarget,
+                                          float iconScale)
+{
+    const int hunterH = enemyTarget.hunterIconHeight > 0
+        ? std::max(1, static_cast<int>(std::lround(enemyTarget.hunterIconHeight * iconScale)))
+        : 0;
+    if (s_enemyTargetHunterIconHeight == hunterH)
+        return;
+    static const char* kHunterPaths[7] = {
+        ":/mph-scoreboard-hunter-0", ":/mph-scoreboard-hunter-1",
+        ":/mph-scoreboard-hunter-2", ":/mph-scoreboard-hunter-3",
+        ":/mph-scoreboard-hunter-4", ":/mph-scoreboard-hunter-5",
+        ":/mph-scoreboard-hunter-6",
+    };
+    for (int i = 0; i < 7; ++i)
+        s_enemyTargetHunterIcons[i] = loadRasterToHeight(kHunterPaths[i], hunterH);
+    s_enemyTargetHunterIconHeight = hunterH;
+}
+
 static const QImage& GetBombIconForDraw(int bombs, bool useOverlay, const QColor& overlayColor)
 {
     const int idx = (bombs >= 0 && bombs <= 3) ? bombs : 0;
