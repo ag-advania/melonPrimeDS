@@ -63,7 +63,10 @@ constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
 } // namespace VulkanGpu2D
 
-// The GPU2D compositor's own GPU resources on the Vulkan backend.
+// The GPU2D compositor's own GPU resources on the Vulkan backend: its
+// resolution-dependent resource set, recreated whenever the internal
+// resolution changes and held by shared_ptr so a lease the presenter still
+// holds keeps its resources alive across that recreation.
 //
 // The compositor turns the software engines' structured 2D planes -- or the
 // native GPU2D producer's packed frame -- into the composed screens the
@@ -83,7 +86,7 @@ constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 // against resources this class owns.
 //
 // Members are public because this is a resource owner, not an abstraction.
-class VulkanGpu2DComposer
+class VulkanGpu2DOutput
 {
 public:
     // Three presentation slots and three work slots. One more than the

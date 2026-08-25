@@ -27,7 +27,7 @@ namespace melonDS
 
 using namespace VulkanGpu2D;
 
-bool VulkanGpu2DComposer::ComposeWorkSlot::EnsureDiagnosticResources(
+bool VulkanGpu2DOutput::ComposeWorkSlot::EnsureDiagnosticResources(
     const VulkanDevice& device,
     VkDeviceSize outputBytes,
     bool needDiagnosticComposed,
@@ -50,7 +50,7 @@ bool VulkanGpu2DComposer::ComposeWorkSlot::EnsureDiagnosticResources(
     return true;
 }
 
-bool VulkanGpu2DComposer::Create(
+bool VulkanGpu2DOutput::Create(
     const VulkanDevice& device, u32 width, u32 height,
     u64 resourceGeneration, u64 epoch)
 {

@@ -209,7 +209,7 @@ private:
     // would add input latency without removing another CPU/GPU dependency.
     static constexpr u32 RendererFramesInFlight = 2;
     static constexpr u32 CompositorFramesInFlight =
-        VulkanGpu2DComposer::FramesInFlight;
+        VulkanGpu2DOutput::FramesInFlight;
     static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
 
     // Three set-0 allocations per frame slot. The native logical Stage A writes
@@ -553,10 +553,6 @@ private:
     Vk::ReadbackBuffer NativeReadback;
     VkDeviceSize MetaUniformStride = 0;
 
-    // The structured 2D frame, staged once per VBlank and copied into device
-    // memory for the compositor. Native-resolution and therefore fixed size:
-    // the software 2D engines always work at 256x192, whatever the 3D internal
-    // resolution is.
     // Resolution-dependent resources.
     Vk::Buffer XSpanSetupBuffer;
     Vk::Buffer SetupIndicesBuffer;          // + texel buffer view
@@ -574,10 +570,11 @@ private:
     // -- is Provenance.
     VulkanCaptureBridge Capture;
 
-    // Compositor output: the two screens stacked, BGRA8, at the *internal*
-    // resolution. Resolution-dependent, so it is created and destroyed with the
-    // rest of the scale-sized set.
-    std::shared_ptr<VulkanGpu2DComposer> ComposedOutput;
+    // The GPU2D compositor's resources: its presentation slots, work slots and
+    // publication ring. Resolution-dependent, so it is created and destroyed
+    // with the rest of the scale-sized set. Held by shared_ptr because a
+    // presenter lease can outlive a renderer transition.
+    std::shared_ptr<VulkanGpu2DOutput> ComposedOutput;
 
     // --- CPU-side scratch, mirroring the OpenGL compute renderer -----------
     std::array<Variant, MaxVariants> Variants{};

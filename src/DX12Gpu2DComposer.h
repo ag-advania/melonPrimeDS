@@ -21,13 +21,43 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#include <algorithm>
 #include <array>
 
 #include "DX12Common.h"
+#include "DX12CommandContext.h"
 #include "DX12DescriptorRing.h"
+#include "DX12PresentedFrame.h"
+#include "GPU2DNative.h"
+#include "MelonPrimeStructuredComposition.h"
+#include "RendererOutputRing.h"
 
 namespace melonDS
 {
+
+class DX12Context;
+
+// Buffer layout the GPU2D compositor consumes. Declared here rather than in
+// the renderer's translation unit because these sizes describe the
+// compositor's own resources; the renderer only needs them where it packs
+// data for it.
+namespace DX12Gpu2D
+{
+
+constexpr u32 kStructuredPixelCount = 256u * 192u;
+constexpr u32 kStructuredCompositionInputDwords =
+    (kStructuredPixelCount * 14u) + (192u * 2u) + (192u * 4u);
+constexpr u64 kNativeGPU2DInputBytes = GPU2DNative::PackedFrameBytes();
+// One input resource serves both compose paths, so it is sized for whichever
+// of the two frame layouts is larger.
+constexpr u32 kCompositionInputDwords = std::max<u32>(
+    kStructuredCompositionInputDwords, GPU2DNative::PackedFrameWords);
+constexpr u32 kCompositorFramesInFlight = 3;
+static_assert(kNativeGPU2DInputBytes
+        <= static_cast<u64>(kCompositionInputDwords) * sizeof(u32),
+    "native GPU2D input must fit the compositor input resource");
+
+} // namespace DX12Gpu2D
 
 // The GPU2D compositor's own GPU objects on the DX12 backend.
 //
@@ -87,6 +117,81 @@ public:
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> OutputUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> WorkNativeUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 12> WorkOutputUavCpu{};
+};
+
+// The compositor's resolution-dependent resource set: the presentation slots
+// it composes into, the work slots Stage A and capture record against, and the
+// ring that publishes a finished slot to the presenter.
+//
+// Separate from DX12Gpu2DComposer because the lifetimes differ. The pipelines
+// and descriptor rings above are created once with the renderer; everything
+// here is recreated whenever the internal resolution changes, and is held by
+// shared_ptr so a lease the presenter still holds keeps its resources alive
+// across that recreation.
+class DX12Gpu2DOutput
+{
+public:
+    struct ComposeWorkSlot
+    {
+        DX12CommandContext Commands;
+        DX12DescriptorRing Descriptors;
+        DX12::ComPtr<ID3D12Resource> NativeStaging;
+        DX12::ComPtr<ID3D12Resource> NativeInput;
+        DX12::ComPtr<ID3D12Resource> StructuredInput;
+        // Developer-only resources are allocated on first diagnostic use.
+        DX12::ComPtr<ID3D12Resource> DiagnosticComposed;
+        DX12::ComPtr<ID3D12Resource> NativeReadback;
+        DX12::ComPtr<ID3D12Resource> StructuredReadback;
+        u8* NativeReadbackMapped = nullptr;
+        u32* StructuredReadbackMapped = nullptr;
+        u32* NativeMapped = nullptr;
+        GPU2DNative::FrameGeneration UploadedNativeGeneration{};
+        GPU2DNative::SemanticLineCache SemanticLines{};
+        bool NativeUploadInitialized = false;
+
+        bool EnsureDiagnosticResources(
+            DX12Context& context,
+            u64 outputBytes,
+            u64 structuredBytes,
+            bool needDiagnosticComposed,
+            bool needStructuredReadback);
+    };
+
+    struct Slot
+    {
+        DX12CommandContext Commands;
+        DX12DescriptorRing Descriptors;
+        DX12::ComPtr<ID3D12Resource> StructuredStaging;
+        DX12::ComPtr<ID3D12Resource> StructuredInput;
+        DX12::ComPtr<ID3D12Resource> Composed;
+        DX12::ComPtr<ID3D12Resource> DirectTexture;
+        u32* StructuredMapped = nullptr;
+        StructuredComposition::GenerationState UploadedContentGeneration{};
+        bool StructuredUploadInitialized = false;
+        bool DirectTextureInShaderResource = false;
+        int PresentationWorkSlot = -1;
+        DX12PresentedFrame Frame;
+    };
+
+    ~DX12Gpu2DOutput();
+
+    // uavTableSize comes from the root-signature layout, which the renderer
+    // owns: a slot's shader-visible ring has to match the table the shaders
+    // were compiled against.
+    bool Create(
+        DX12Context& context, u32 width, u32 height, u32 uavTableSize,
+        u64 resourceGeneration, u64 epoch);
+
+    DX12Context* Context = nullptr;
+    bool OwnsContextReference = false;
+    bool DirectTextureEnabled = false;
+    std::array<Slot, DX12Gpu2D::kCompositorFramesInFlight> Slots;
+    std::array<ComposeWorkSlot, DX12Gpu2D::kCompositorFramesInFlight> WorkSlots;
+    // Published slot, serial sequence, round-robin cursor and the per-slot
+    // presenter refcounts. Backend-neutral: the Vulkan compositor runs the
+    // same ring protocol against the same class.
+    RendererOutputRing Ring{DX12Gpu2D::kCompositorFramesInFlight};
+    u64 ResourceGeneration = 0;
 };
 
 } // namespace melonDS

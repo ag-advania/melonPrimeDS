@@ -618,8 +618,9 @@ private:
     // cache descriptors by resource lifetime rather than content generation.
     u64 NextOutputResourceGeneration = 1;
 
-    struct OutputState;
-    std::shared_ptr<OutputState> ComposedOutput;
+    // The compositor's resolution-dependent resource set. shared_ptr because a
+    // presenter lease can outlive a resolution change.
+    std::shared_ptr<DX12Gpu2DOutput> ComposedOutput;
 
     alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
     alignas(8) u32 ScrolledLine[256]{};

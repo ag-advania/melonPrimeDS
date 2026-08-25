@@ -411,13 +411,13 @@ void VulkanRenderer3D::ResetInternal(bool preservePresentation)
                 // ring slots are reset for the next complete frame.
                 continue;
             }
-            VulkanGpu2DComposer::Slot& slot = ComposedOutput->Slots[slotIndex];
+            VulkanGpu2DOutput::Slot& slot = ComposedOutput->Slots[slotIndex];
             slot.UploadedContentGeneration = {};
             slot.StructuredUploadInitialized = false;
             slot.Frame.DirectContentValid = false;
             slot.Frame.Epoch = Provenance.GetEpoch();
         }
-        for (VulkanGpu2DComposer::ComposeWorkSlot& slot : ComposedOutput->WorkSlots)
+        for (VulkanGpu2DOutput::ComposeWorkSlot& slot : ComposedOutput->WorkSlots)
         {
             slot.UploadedNativeGeneration = {};
             slot.SemanticLines.Reset();
@@ -686,7 +686,7 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 outputStateStartNs = RendererStartupNowNs();
 #endif
-    auto output = std::make_shared<VulkanGpu2DComposer>();
+    auto output = std::make_shared<VulkanGpu2DOutput>();
     if (!output->Create(
             Device, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight),
             NextOutputResourceGeneration++, Provenance.GetEpoch()))
@@ -3103,7 +3103,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         // that needs Vulkan -- whether the slot's last submission has retired.
         struct SlotReadiness
         {
-            VulkanGpu2DComposer* State;
+            VulkanGpu2DOutput* State;
             u64 CompletedFrame;
         } readiness{ComposedOutput.get(), ComposeFrames.GetCompletedFrame()};
         const auto slotReady = +[](void* userData, u32 candidate) -> bool {
@@ -3126,7 +3126,7 @@ bool VulkanRenderer3D::ComposeStructuredOutput(
         return false;
     }
 
-    VulkanGpu2DComposer::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
+    VulkanGpu2DOutput::Slot& outputSlot = ComposedOutput->Slots[nextSlot];
 
     // Acquire the compositor ring slot before touching its mapped staging
     // buffer.  The slot's previous submission has been checked against the
@@ -3576,7 +3576,7 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         // that needs Vulkan -- whether the slot's last submission has retired.
         struct SlotReadiness
         {
-            VulkanGpu2DComposer* State;
+            VulkanGpu2DOutput* State;
             u64 CompletedFrame;
         } readiness{ComposedOutput.get(), ComposeFrames.GetCompletedFrame()};
         const auto slotReady = +[](void* userData, u32 candidate) -> bool {
@@ -3591,9 +3591,9 @@ bool VulkanRenderer3D::ComposeNativeGPU2D(
         if (candidate != RendererOutputRing::InvalidSlot)
             nextSlot = candidate;
     }
-    VulkanGpu2DComposer::Slot* outputSlot = nextSlot < CompositorFramesInFlight
+    VulkanGpu2DOutput::Slot* outputSlot = nextSlot < CompositorFramesInFlight
         ? &ComposedOutput->Slots[nextSlot] : nullptr;
-    VulkanGpu2DComposer::ComposeWorkSlot& workSlot =
+    VulkanGpu2DOutput::ComposeWorkSlot& workSlot =
         ComposedOutput->WorkSlots[frameIndex % ComposedOutput->WorkSlots.size()];
     bool presentationAvailable = outputSlot != nullptr;
     const bool forcedPresentationStall = presentationAvailable
@@ -4617,7 +4617,7 @@ const u32* VulkanRenderer3D::GetComposedScreen(u32 screen) const noexcept
 
 RendererOutput VulkanRenderer3D::GetComposedOutput() const
 {
-    const std::shared_ptr<VulkanGpu2DComposer> state = ComposedOutput;
+    const std::shared_ptr<VulkanGpu2DOutput> state = ComposedOutput;
     if (!state || !ComposedOutputValid)
         return {};
 
@@ -4633,7 +4633,7 @@ RendererOutput VulkanRenderer3D::GetComposedOutput() const
 
 RendererOutputLease VulkanRenderer3D::AcquireComposedOutputLease()
 {
-    const std::shared_ptr<VulkanGpu2DComposer> state = ComposedOutput;
+    const std::shared_ptr<VulkanGpu2DOutput> state = ComposedOutput;
     if (!state || !ComposedOutputValid)
         return {};
 
@@ -4642,7 +4642,7 @@ RendererOutputLease VulkanRenderer3D::AcquireComposedOutputLease()
     if (slotIndex < 0)
         return {};
 
-    VulkanGpu2DComposer::Slot& slot = state->Slots[slotIndex];
+    VulkanGpu2DOutput::Slot& slot = state->Slots[slotIndex];
     auto* leaseCounter = state->Ring.AcquireLease(static_cast<u32>(slotIndex));
     GPU2DNative::LogPresentedIdentity(
         "Vulkan", slot.Frame.Generation, slot.Frame.Serial,
