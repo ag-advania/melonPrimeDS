@@ -432,13 +432,55 @@ could not run here (see below):
 - The four backend-neutral modules carry no backend guard and include no
   backend header, which is what lets them compile in every configuration.
 
+### Runtime, on hardware
+
+`tools/testing/run-backend-runtime-smoke.py`. Drives the real binary against
+Metroid Prime Hunters (USA Rev 1) and a savestate, then reads the backend's own
+log markers. NVIDIA GeForce RTX 5070 Ti, Windows, developer build.
+
+| Run | Result |
+|---|---|
+| Vulkan 1x | PASS |
+| Vulkan 4x | PASS |
+| DX12 1x | PASS |
+| DX12 4x | PASS |
+| Vulkan 1x, 180 injected SemanticOnly frames | PASS |
+| DX12 1x, 180 injected SemanticOnly frames | PASS |
+
+Each run checks that the requested renderer initialised and stayed initialised,
+that the savestate loaded, that the **native GPU2D path actually composed**
+(`gpu2d=<backend> gpu3d=<backend> fallback=0`), and that nothing fell back to
+Software or latched a runtime failure.
+
+The last two rows are the interesting ones. `MELONPRIME_TEST_GPU2D_PRESENTATION
+_STALL_FRAMES` forces the compositor to report `SemanticOnly`, which is exactly
+the case `GPU2DFramePolicy::IsRetainedFrameResult()` governs: the last visible
+frame must be retained and capture ownership kept, never degraded into a
+Software hybrid frame. Both backends held, then resumed native composition —
+so the extracted policy is confirmed on hardware, not just against its
+transcription.
+
+The 4x rows exercise the resolution-dependent resources the refactor touched:
+the capture sidecar's sizing, the output ring's recreation, and the pipeline
+rebuild.
+
+The `DX12 low-latency pacing` and `[Vulkan] low-latency:` lines in the logs are
+emitted by the two extracted controllers, so their reporting paths are
+confirmed live as well.
+
 **Not verified.** Everything below is still open and must not be reported as
 covered:
 
-- Runtime behaviour on real hardware. No ROM session was run: nothing in the
-  audit's §14 matrix (renderer switching, 1x–16x, GPU2D native/structured/
-  backpressure paths, display capture, presentation, DX12 low-latency markers)
-  has been exercised.
+- The rest of the §14 matrix: renderer switching (Vulkan <-> DX12 <-> Software),
+  live resolution change, 8x/16x, VSync on, fullscreen and resize,
+  minimize/restore, HUD/OSD layers, the structured fallback path, stale
+  generation rejection, and the DX12 low-latency modes (Reflex On / On+Boost,
+  Anti-Lag 2, XeLL and its pacing policies). The smoke runner above covers the
+  startup and steady-state slice; these need either GUI interaction or
+  additional injection hooks.
+- Image content. The runner reads log markers, not pixels. Confirming visual
+  identity needs per-frame comparison at 120fps -- averaging or spot-checking
+  hides alternating-frame bugs.
 - Linux / macOS / BSD builds. In particular the new
   `melonprime_gpu2d_frame_policy_tests` target builds on every platform and has
   only been compiled with MinGW g++ 14.2.
