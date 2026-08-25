@@ -132,6 +132,55 @@ That word is a bitset of several states; never write 0/1 over the whole word.
 | `MelonPrimeHudEditorSidePanelRows.inc` | side-panel rows |
 | `InputConfig/MelonPrimeInputConfigHudPreviews.inc` | settings-dialog preview |
 
+## Guest RAM reads
+
+The whole path is gated on `HudEnemyTargetShow`, sits after the regular HUD's hide/adventure
+early returns, and caches per emulated frame (the "no target" answer included), so a repeated
+paint of the same frame re-reads nothing.
+
+| State | Reads per emulated frame |
+| --- | ---: |
+| No recent hit (most of a match) | 1 — the timer |
+| Panel visible (~2s after a hit) | 6 — timer, slot, HP, max HP, mode value, mode goal |
+| Edit mode / dialog preview | 0 — both use a fixed preview snapshot |
+
+The timer is read *before* the slot and short-circuits on it. The ROM writes and clears the pair
+together, so the timer alone settles whether there is anything to show, which halves the
+steady-state cost. The slot is still range-checked after reading, because it indexes an array.
+
+Name, hunter, and team come from the per-match scoreboard roster cache, which is zero-read on a
+hit and repopulates only when the match serial changes. That cache decodes all four players even
+though this panel needs one; specialising it was rejected deliberately — it would duplicate a
+cache to save work that happens once per match, not once per frame.
+
+## Render plan
+
+The panel is only up for ~2s after a hit, but that window lands mid-firefight, where a per-frame
+hitch is least affordable. `EnemyTargetRenderPlan` caches everything that survives a frame and
+rebuilds only when something that changes the drawn result changes.
+
+Cached: the placed layout, the formatted HP/score strings, each row's measured advance, and the
+`QPainterPath` glyph outlines. Rebuild key: config epoch, font generation, base font px,
+`hudScale`, `stretchX` (a resize re-runs `RecomputeAnchorPositions()` without bumping the epoch),
+plus the content — slot, hunter, team, mode, name, HP, and the mode value/goal.
+
+`EnemyTargetSnapshot::timer` is deliberately **not** in the key: it ticks every frame and changes
+nothing that is drawn, so keying on it would defeat the cache entirely. Within the window the
+slot, name, hunter, and goal are fixed and HP only moves when damage lands, so the overwhelming
+majority of frames reuse the plan whole and issue nothing but draw calls.
+
+Measured on the developer machine (MinGW Release, median of 5 x 20000 iterations, isolated
+benchmark of exactly the work the plan removes — three `QPainterPath::addText()` calls, six
+`QFontMetrics::horizontalAdvance()` calls, and the two string formats):
+
+| Path | Per frame |
+| --- | ---: |
+| rebuilt every frame (pre-plan) | 37.879 us |
+| plan cache hit | 0.005 us |
+
+`QPainterPath::addText()` dominates that figure; it is glyph-outline extraction, and outlines are
+on by default. End-to-end in-game frame-time impact is not measured here.
+
 ## Rules this implementation follows
 
 - The target is never inferred from HP deltas or the crosshair.
