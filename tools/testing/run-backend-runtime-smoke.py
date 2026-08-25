@@ -21,12 +21,67 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 # 3D.Renderer values on a Windows build with OpenGL, Vulkan and DX12 enabled.
 RENDERER_IDS = {"vulkan": 3, "dx12": 4}
 
 BACKEND_LABEL = {"vulkan": "Vulkan", "dx12": "DX12"}
+
+
+def drive_window(pid: int, delay: float) -> None:
+    """Resize, maximize, minimize and restore the app's own window.
+
+    The §14 presentation rows are the ones no configuration switch reaches: a
+    swapchain has to be told the surface changed, and only the window manager
+    can tell it that. Driving the real window is the only way to exercise
+    swapchain recreation, and it is what a user does by dragging a corner.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    EnumWindows = user32.EnumWindows
+    EnumWindows.argtypes = [
+        ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM),
+        wintypes.LPARAM]
+
+    target: list[int] = []
+
+    def visit(hwnd, _lparam):
+        owner = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd):
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length > 0:
+                target.append(hwnd)
+                return False
+        return True
+
+    time.sleep(delay)
+    EnumWindows(ctypes.WINFUNCTYPE(
+        wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)(visit), 0)
+    if not target:
+        print("   [window] no window found; presentation rows not driven",
+              flush=True)
+        return
+    hwnd = target[0]
+
+    SW_MAXIMIZE, SW_RESTORE, SW_MINIMIZE = 3, 9, 6
+    for label, action in (
+        ("resize 720x540", lambda: user32.MoveWindow(hwnd, 80, 80, 720, 540, True)),
+        ("resize 420x760", lambda: user32.MoveWindow(hwnd, 80, 80, 420, 760, True)),
+        ("maximize", lambda: user32.ShowWindow(hwnd, SW_MAXIMIZE)),
+        ("restore", lambda: user32.ShowWindow(hwnd, SW_RESTORE)),
+        ("minimize", lambda: user32.ShowWindow(hwnd, SW_MINIMIZE)),
+        ("restore", lambda: user32.ShowWindow(hwnd, SW_RESTORE)),
+        ("resize 640x480", lambda: user32.MoveWindow(hwnd, 80, 80, 640, 480, True)),
+    ):
+        print(f"   [window] {label}", flush=True)
+        action()
+        time.sleep(1.6)
 
 
 def write_config(
@@ -65,6 +120,7 @@ def run_backend(
     switch_iterations: int,
     env_extra: dict[str, str],
     expect_degrade: bool,
+    window_actions: bool,
 ) -> tuple[list[str], str]:
     """Returns (failures, captured output)."""
     label = BACKEND_LABEL[backend]
@@ -99,6 +155,10 @@ def run_backend(
         errors="replace",
         env=environment,
     )
+    if window_actions:
+        threading.Thread(
+            target=drive_window, args=(process.pid, 8.0), daemon=True).start()
+
     try:
         output, _ = process.communicate(timeout=seconds)
     except subprocess.TimeoutExpired:
@@ -217,6 +277,9 @@ def main() -> int:
     parser.add_argument("--state", type=Path)
     parser.add_argument("--seconds", type=float, default=25.0)
     parser.add_argument(
+        "--window-actions", action="store_true",
+        help="resize, maximize, minimize and restore the app window mid-run")
+    parser.add_argument(
         "--expect-degrade", action="store_true",
         help="the run injects a failure; require a clean reported degradation "
              "instead of a healthy frame path")
@@ -283,6 +346,8 @@ def main() -> int:
         run_id = f"{backend}-x{scale}"
         if args.stall_frames:
             run_id += f"-stall{args.stall_frames}"
+        if args.window_actions:
+            run_id += "-window"
         if args.switch_stress:
             run_id += "-switch" + args.switch_stress.replace(",", "")
         for key, value in overrides.items():
@@ -306,7 +371,7 @@ def main() -> int:
             backend, workdir / app.name, args.rom, args.state,
             args.seconds, workdir, args.stall_frames,
             args.switch_stress, args.switch_iterations, env_extra,
-            args.expect_degrade)
+            args.expect_degrade, args.window_actions)
         (args.out / f"{run_id}.log").write_text(output, encoding="utf-8")
         overall[run_id] = failures
 

@@ -450,6 +450,7 @@ log markers. NVIDIA GeForce RTX 5070 Ti, Windows, developer build.
 | Vulkan present pacing policy 4 | PASS | — |
 | Injected runtime failure (init stage) | PASS | — |
 | Injected capture-readback failure | PASS | — |
+| Resize / maximize / minimize / restore | PASS | PASS |
 | <-> Software, 6 switches | PASS | PASS |
 | DX12 <-> Vulkan, 8 switches | PASS | PASS |
 | Vulkan -> DX12 as the first DX12 probe | **FAIL — pre-existing, see below** | |
@@ -496,6 +497,38 @@ Zero mismatches on either backend. That is per-frame correctness evidence for
 the 2D and capture paths, produced by the emulator's own comparison rather
 than by a screenshot diff. It is not a substitute for per-frame comparison of
 the *3D* image, which remains uncovered.
+
+### Presentation, driven through the real window
+
+Configuration cannot tell a swapchain the surface changed; only the window
+manager can. The runner therefore drives the app's own window through user32 —
+two resizes, maximize, restore, minimize, restore, resize — and the Vulkan
+presenter recreates its swapchain at each one:
+
+```
+extent=256x384 -> 704x476 -> 404x696 -> 2560x1344 -> 404x696 -> 624x416
+```
+
+Both backends survive the sequence, including the minimize/restore pair where
+the surface extent goes to zero and back.
+
+### Structured fallback is unreachable in normal operation
+
+Worth stating as a measurement rather than an assumption. With stage
+diagnostics on, every published frame reports its source:
+
+```
+2366 publicationSource=native      (Vulkan)
+2118 publicationSource=native      (DX12)
+```
+
+100% native, zero structured, zero retained. The reason is in
+`CanComposeNativeGPU2D()`: it requires `ShaderStepIdx >= ShaderStepCount`, and
+the emulator does not run frames until pipeline compilation finishes — so the
+window in which native is unavailable never contains an emulated frame. The
+structured composition path is a genuine fallback for conditions that do not
+arise on these two backends in normal play, which is why exercising it needs
+an injection hook that does not exist.
 
 ### The failure branches, exercised
 
@@ -577,9 +610,13 @@ confirmed live as well.
 **Not verified.** Everything below is still open and must not be reported as
 covered:
 
-- The §14 rows that need GUI interaction: live resolution change, fullscreen,
-  resize, minimize/restore. The runner drives configuration and the switch
-  driver, neither of which can resize a window.
+- Live resolution change. The switch driver re-applies video settings but only
+  ever changes the renderer id; nothing re-reads the scale factor mid-session,
+  so the resolution rows are covered per-process rather than as a live
+  transition.
+- True exclusive fullscreen. Maximize exercises the same surface-change path
+  and is covered above; a borderless or exclusive fullscreen mode change is
+  not.
 - The structured fallback composition path and stale-generation rejection.
   Neither has an injection hook -- there is no environment switch that turns
   the native GPU2D producer off while leaving a valid structured frame, which
