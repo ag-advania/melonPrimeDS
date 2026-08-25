@@ -10,6 +10,7 @@
 #include "MelonPrimeInstanceDiagnostics.h"
 #ifdef MELONPRIME_DS
 #include "GPU2DNative.h"
+#include "MelonPrimeWifiReconnectFix.h"
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -386,6 +387,13 @@ namespace MelonPrime {
             this,
             m_flags.test(StateFlags::BIT_ROM_DETECTED),
             m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE));
+
+        // Toggling the reconnect fix takes effect from the next AP association; there
+        // is nothing to undo, since the fix only ever restores a boot-fresh value.
+        WifiReconnectFix_Publish(
+            emuInstance->getNDS(),
+            localCfg,
+            m_flags.test(StateFlags::BIT_ROM_DETECTED) ? &m_currentRom : nullptr);
 #endif
     }
 

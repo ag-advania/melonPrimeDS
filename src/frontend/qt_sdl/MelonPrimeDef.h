@@ -154,6 +154,7 @@ namespace MelonPrime {
         // Phase 5b — keys driven by the non-HUD settings binding table.
         // Storage names are byte-identical to the original literals (TOML compat).
         inline constexpr const char* WifiBitset                       = "Metroid.BugFix.WifiBitset";
+        inline constexpr const char* WifiReconnect                    = "Metroid.BugFix.WifiReconnect";
         inline constexpr const char* FixNoxusBladePersistence         = "Metroid.BugFix.FixNoxusBladePersistence";
         inline constexpr const char* UseFirmwareLanguage             = "Metroid.BugFix.UseFirmwareLanguage";
         inline constexpr const char* ShowHeadshotOnline             = "Metroid.GameFeature.ShowHeadshotOnline";

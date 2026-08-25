@@ -272,6 +272,7 @@ namespace Config
         /* MelonPrimeDS Visual bool defaults are generated from MelonPrimeHudPropSchema.inc. */
         MP_HUD_PROP_SCHEMA_BOOL(MP_HUD_DEFAULT_ENTRY)
         {"Instance*.Metroid.BugFix.WifiBitset",        true},
+        {"Instance*.Metroid.BugFix.WifiReconnect",     true},
         {"Instance*.Metroid.BugFix.FixShadowFreeze",   false},
         {"Instance*.Metroid.BugFix.FixNoxusBladePersistence", false},
         {"Instance*.Metroid.BugFix.UseFirmwareLanguage", false},

@@ -173,8 +173,25 @@ public:
     const u8* GetMAC() const;
     const u8* GetBSSID() const;
 
+#ifdef MELONPRIME_DS
+    // MelonPrimeDS: Metroid Prime Hunters same-session WFC/Wiimmfi reconnect fix.
+    // The frontend resolves the guest CRT `errno` word for the detected MPH ROM version
+    // and publishes it here; 0 disables the fix (non-MPH ROM, unknown version, or the
+    // user setting turned off). This is host configuration derived from the loaded ROM,
+    // not emulated hardware state, so it is deliberately not part of DoSavestate().
+    void SetMphReconnectErrnoAddress(u32 addr) noexcept { MphReconnectErrnoAddr = addr; }
+
+    // Called by WifiAP the moment a station association succeeds. Restores the
+    // configured guest word to its boot-fresh 0 so the next DWC connection test cannot
+    // read an ERANGE left behind by the previous connection attempt.
+    void OnClientAssociated();
+#endif
+
 private:
     melonDS::NDS& NDS;
+#ifdef MELONPRIME_DS
+    u32 MphReconnectErrnoAddr = 0;
+#endif
     u8 RAM[0x2000];
     u16 IO[0x1000>>1];
 
