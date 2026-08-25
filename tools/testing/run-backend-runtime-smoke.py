@@ -63,12 +63,14 @@ def run_backend(
     stall_frames: int,
     switch_stress: str,
     switch_iterations: int,
+    env_extra: dict[str, str],
 ) -> tuple[list[str], str]:
     """Returns (failures, captured output)."""
     label = BACKEND_LABEL[backend]
 
     environment = os.environ.copy()
     environment["MELONPRIME_TEST_SOFTWARE_OPENGL_DISPLAY_OFF"] = "1"
+    environment.update(env_extra)
     if stall_frames:
         # Forces the compositor to report SemanticOnly for this many frames.
         # The publication policy must retain the last visible frame and keep
@@ -186,6 +188,9 @@ def main() -> int:
     parser.add_argument("--state", type=Path)
     parser.add_argument("--seconds", type=float, default=25.0)
     parser.add_argument(
+        "--env", action="append", default=[], metavar="NAME=VALUE",
+        help="extra environment variable for the child; repeatable")
+    parser.add_argument(
         "--switch-stress", default="",
         help="comma-separated 3D.Renderer ids to cycle through, e.g. 3,4")
     parser.add_argument("--switch-iterations", type=int, default=6)
@@ -223,6 +228,13 @@ def main() -> int:
     args.out.mkdir(parents=True, exist_ok=True)
 
     scales = [int(v) for v in args.scales.split(",") if v.strip()]
+    env_extra: dict[str, str] = {}
+    for item in args.env:
+        if "=" not in item:
+            parser.error(f"--env needs NAME=VALUE, got {item!r}")
+        name, value = item.split("=", 1)
+        env_extra[name.strip()] = value.strip()
+
     overrides: dict[str, str] = {}
     for item in args.set:
         if "=" not in item:
@@ -242,6 +254,8 @@ def main() -> int:
             run_id += "-switch" + args.switch_stress.replace(",", "")
         for key, value in overrides.items():
             run_id += f"-{key.split('.')[-1]}{value}"
+        for name in env_extra:
+            run_id += "-" + name.rsplit("_", 1)[-1].lower()
         workdir = (args.out / run_id).resolve()
         if workdir.exists():
             shutil.rmtree(workdir)
@@ -258,7 +272,7 @@ def main() -> int:
         failures, output = run_backend(
             backend, workdir / app.name, args.rom, args.state,
             args.seconds, workdir, args.stall_frames,
-            args.switch_stress, args.switch_iterations)
+            args.switch_stress, args.switch_iterations, env_extra)
         (args.out / f"{run_id}.log").write_text(output, encoding="utf-8")
         overall[run_id] = failures
 

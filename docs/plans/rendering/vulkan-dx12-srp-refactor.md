@@ -515,15 +515,17 @@ confirmed live as well.
 **Not verified.** Everything below is still open and must not be reported as
 covered:
 
-- The rest of the §14 matrix: live resolution change, 8x/16x, VSync on, fullscreen and resize,
-  minimize/restore, HUD/OSD layers, the structured fallback path, stale
-  generation rejection, and the DX12 low-latency modes (Reflex On / On+Boost,
-  Anti-Lag 2, XeLL and its pacing policies). The smoke runner above covers the
-  startup and steady-state slice; these need either GUI interaction or
-  additional injection hooks.
-- Image content. The runner reads log markers, not pixels. Confirming visual
-  identity needs per-frame comparison at 120fps -- averaging or spot-checking
-  hides alternating-frame bugs.
+- The §14 rows that need GUI interaction: live resolution change, fullscreen,
+  resize, minimize/restore. The runner drives configuration and the switch
+  driver, neither of which can resize a window.
+- The structured fallback path and stale-generation rejection. Both need an
+  injection hook that does not exist yet; the exact-validation run shows
+  neither fired during normal play, which is the correct outcome but not a
+  test of the paths themselves.
+- Per-frame comparison of the **3D** image. The exact-validation gate covers
+  the 2D compositor and capture addresses; confirming 3D visual identity needs
+  120fps per-frame comparison, because averaging or spot-checking hides
+  alternating-frame bugs.
 - Linux / macOS / BSD builds. In particular the new
   `melonprime_gpu2d_frame_policy_tests` target builds on every platform and has
   only been compiled with MinGW g++ 14.2.
