@@ -1033,9 +1033,17 @@ static bool ReadHudRuntimeEnemyTargetSnapshot(const RomAddresses& rom,
     if (st.isAdventure)
         return false;
 
-    const int16_t slot = static_cast<int16_t>(Read16(ram, rom.enemyTargetSlot));
+    // The ROM writes and clears this pair together -- event 0x3D sets both, the
+    // timer update clears the slot at zero -- so the timer alone settles whether
+    // there is anything to show. Testing it before reading the slot keeps the
+    // steady-state frame (no recent hit, which is most of a match) down to a
+    // single RAM read. The slot is still range-checked below: it indexes an
+    // array, so it is validated rather than trusted.
     const int16_t timer = static_cast<int16_t>(Read16(ram, rom.enemyTargetTimer));
-    if (slot < 0 || slot >= 4 || timer <= 0)
+    if (timer <= 0)
+        return false;
+    const int16_t slot = static_cast<int16_t>(Read16(ram, rom.enemyTargetSlot));
+    if (slot < 0 || slot >= 4)
         return false;
 
     if (!EnsureScoreboardMatchCache(rom, st))
