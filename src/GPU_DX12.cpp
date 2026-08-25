@@ -329,6 +329,12 @@ void DX12Renderer::VBlank()
     {
         coverage.Published = true;
         coverage.Source = "native";
+        // The 3D oracle runs on this path too. It compares the two Renderer3D
+        // outputs, which is independent of the 2D composition that just
+        // happened, and native composition is the only path a normal session
+        // takes -- so leaving it to the structured branch meant the harness
+        // never saw a frame.
+        CompareRasterDifferentialFrame();
     }
     if (decision.AnnounceNativeSuccess && !NativeGPU2DAnnounced)
     {
@@ -427,22 +433,8 @@ void DX12Renderer::VBlank()
     DX12Perf::AddCounter(
         DX12Perf::Counter::StructuredFallbackLines,
         view.StructuredFallbackLines);
-    if (composed && DifferentialReference && dx12->GetScaleFactor() == 1)
-    {
-        const bool exact = DifferentialState.CompareFrame(
-            *Rend3D, *DifferentialReference, "DX12");
-        if (!exact)
-        {
-            Platform::Log(
-                Platform::LogLevel::Error,
-                "[RasterDiffState] backend=DX12 dispCnt=%08X polygons=%u "
-                "clear1=%08X clear2=%08X\n",
-                GPU.GPU3D.RenderDispCnt,
-                GPU.GPU3D.RenderNumPolygons,
-                GPU.GPU3D.RenderClearAttr1,
-                GPU.GPU3D.RenderClearAttr2);
-        }
-    }
+    if (composed)
+        CompareRasterDifferentialFrame();
 }
 
 RendererOutput DX12Renderer::GetOutput()
@@ -525,6 +517,27 @@ DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() noexcept
 const DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() const noexcept
 {
     return dynamic_cast<const DX12Renderer3D*>(Rend3D.get());
+}
+
+void DX12Renderer::CompareRasterDifferentialFrame()
+{
+    auto* dx12 = GetDX12Renderer3D();
+    if (!DifferentialReference || !dx12)
+        return;
+    // The oracle renders at native resolution, so a scaled frame has nothing
+    // to compare against.
+    if (dx12->GetScaleFactor() != 1)
+        return;
+    if (DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "DX12"))
+        return;
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "[RasterDiffState] backend=DX12 dispCnt=%08X polygons=%u "
+        "clear1=%08X clear2=%08X\n",
+        GPU.GPU3D.RenderDispCnt,
+        GPU.GPU3D.RenderNumPolygons,
+        GPU.GPU3D.RenderClearAttr1,
+        GPU.GPU3D.RenderClearAttr2);
 }
 
 bool DX12Renderer::CanUseNativeGPU2DForFrame() const noexcept

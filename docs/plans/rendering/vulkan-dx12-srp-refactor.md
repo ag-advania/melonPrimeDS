@@ -530,6 +530,31 @@ structured composition path is a genuine fallback for conditions that do not
 arise on these two backends in normal play, which is why exercising it needs
 an injection hook that does not exist.
 
+### 3D output is bit-identical to the software rasterizer
+
+`tools/testing/run-vulkan-raster-diff.py` runs the software rasterizer as an
+oracle beside the native one and hashes both 256x192 outputs every frame.
+
+```
+PASS: Vulkan 1x native 3D output exactly matched Software (6389 raster frames)
+[RasterDiff] backend=DX12 frame=7122 ... mismatchedPixels=0
+             candidateHash=257D7461079C62ED referenceHash=257D7461079C62ED
+```
+
+Zero mismatched pixels across 6389 frames on Vulkan and 7122 on DX12, with
+`nonZeroPixels=49152` throughout — every pixel of every frame carries content,
+so this is a comparison of real images rather than of two blank buffers.
+
+Getting there needed one fix. The comparison call sat inside the
+structured-composition branch of `VBlank()` on both backends, and that branch
+never runs, for the reason measured above. So the harness had never observed a
+frame: it reported "no Vulkan RasterDiff frames were reported" against this
+build and, being in the same place at the base commit, against every build
+before it. `CompareRasterDifferentialFrame()` is now called from the native
+path as well — it compares the two `Renderer3D` outputs, which is independent
+of which 2D path composed. The harness's exit-code check also treated a
+Windows kill as a crash, which failed every run on this host.
+
 ### The failure branches, exercised
 
 Two injection hooks reach branches the publication policy owns, and both
@@ -624,23 +649,6 @@ covered:
   least report how often they were taken, but it is emitted from
   `Renderer::Stop()` and does not reach the captured pipe at process exit, even
   when the window is closed gracefully rather than killed.
-- Per-frame comparison of the **3D** image. The exact-validation gate covers
-  the 2D compositor and the capture addresses, not the 3D raster.
-
-  The repository already has the harness for this —
-  `tools/testing/run-vulkan-raster-diff.py`, which runs the software rasterizer
-  as an oracle alongside the native one and reports `[RasterDiff] ...
-  mismatchedPixels=N` per frame. **It cannot currently run.** The comparison
-  call sits inside the structured-composition branch of `VBlank()` on both
-  backends, and that branch never executes, for the reason measured above:
-  native GPU2D always composes, so the structured path is never taken. A run
-  against this build reports "no Vulkan RasterDiff frames were reported".
-
-  Pre-existing: the call site is in the same place at the base commit
-  (`93a5705d5`), so the harness has been unreachable independently of this
-  refactor. Making 3D parity measurable means moving the comparison to a point
-  the native path also reaches — a change to the differential harness, not to
-  the components this audit is about.
 - Linux / macOS / BSD builds. In particular the new
   `melonprime_gpu2d_frame_policy_tests` target builds on every platform and has
   only been compiled with MinGW g++ 14.2.
@@ -729,14 +737,14 @@ not the same thing.
 The four backend-neutral modules were grepped for `Vk*` / `ID3D12*` / `D3D12_`
 / `DXGI` and hold none, and no low-level DX12 module includes `DX12Context.h`.
 
-### Correctness — 5 of 6
+### Correctness — 6 of 6
 
 | Item | Evidence |
 |---|---|
 | current frame identity preserved | `renderer-output-ring-tests` pins the serial rules; 2366/2118 frames published in order on hardware |
 | capture provenance preserved | `capture-provenance-tests`; 2264 (Vulkan) / 2016 (DX12) address checks, every mismatch counter zero |
 | native GPU2D exact path preserved | exact-validation gate engaged and rejected no frame on either backend |
-| Software parity preserved | **partial** — the exact gate compares native 2D against the software reference; 3D parity is not measured |
+| Software parity preserved | **met** — 2D via the exact gate, 3D via the raster differential: 6389 (Vulkan) and 7122 (DX12) consecutive frames bit-identical to the software rasterizer |
 | renderer switch touches no stale resource | 8/8 DX12 <-> Vulkan and 6/6 <-> Software switches with no fault |
 | derived GPU state rebuilt after savestate | savestate loads, then native composition resumes, in every run |
 
@@ -793,15 +801,12 @@ The three remaining rows need Linux, BSD and macOS hosts.
 
 ### Summary
 
-30 of 33 met, 2 partial, 3 unrun. What remains is:
+31 of 33 met, 1 partial, 3 unrun (Linux, BSD and macOS builds). What remains is:
 
 - **`Gpu2DComposer` separation** (Architecture, and the last of Phase 2). The
   fourteen-slot UAV table overloads three of its slots by dispatch kind, so
   splitting needs separate tables and recompiled shaders — a descriptor
   strategy change, which §11.3 rules out folding in here.
-- **3D visual parity** (Correctness, partial). The exact-validation gate covers
-  the 2D compositor and the capture addresses; the 3D image needs 120fps
-  per-frame comparison.
 - **Linux, BSD and macOS builds**, which need those hosts. `tools/linux-vm/`
   exists but is a VirtualBox harness driven from a macOS host, so it does not
   help from Windows.

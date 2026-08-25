@@ -86,6 +86,10 @@ public:
 private:
     [[nodiscard]] bool CanUseNativeGPU2DForFrame() const noexcept override;
 
+    // Developer-only 3D oracle comparison. Called from both publication paths
+    // because it compares the 3D renderers, not the composed 2D frame.
+    void CompareRasterDifferentialFrame();
+
     // The controller asks for a queue-idle window before an Intel XeLL sleep
     // transition. Passing it as a hook keeps the dependency pointing the right
     // way: the controller never learns what a Renderer3D is.

@@ -345,6 +345,12 @@ void VulkanRenderer::VBlank()
     {
         coverage.Published = true;
         coverage.Source = "native";
+        // The 3D oracle runs on this path too. It compares the two Renderer3D
+        // outputs, which is independent of the 2D composition that just
+        // happened, and native composition is the only path a normal session
+        // takes -- so leaving it to the structured branch meant the harness
+        // never saw a frame.
+        CompareRasterDifferentialFrame();
     }
     if (decision.AnnounceNativeSuccess && !NativeGPU2DAnnounced)
     {
@@ -439,11 +445,8 @@ void VulkanRenderer::VBlank()
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::StructuredFallbackLines,
             view.StructuredFallbackLines);
-        if (composed
-            && DifferentialReference
-            && vulkan->GetScaleFactor() == 1
-            && !GPU.GPU3D.AbortFrame)
-            DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "Vulkan");
+        if (composed)
+            CompareRasterDifferentialFrame();
         if (composed)
         {
             coverage.Published = true;
@@ -533,6 +536,18 @@ VulkanRenderer3D* VulkanRenderer::GetVulkanRenderer3D() noexcept
 const VulkanRenderer3D* VulkanRenderer::GetVulkanRenderer3D() const noexcept
 {
     return dynamic_cast<const VulkanRenderer3D*>(Rend3D.get());
+}
+
+void VulkanRenderer::CompareRasterDifferentialFrame()
+{
+    auto* vulkan = GetVulkanRenderer3D();
+    if (!DifferentialReference || !vulkan)
+        return;
+    // The oracle renders at native resolution, so a scaled frame has nothing
+    // to compare against; AbortFrame means the 3D image was never produced.
+    if (vulkan->GetScaleFactor() != 1 || GPU.GPU3D.AbortFrame)
+        return;
+    DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "Vulkan");
 }
 
 bool VulkanRenderer::CanUseNativeGPU2DForFrame() const noexcept
