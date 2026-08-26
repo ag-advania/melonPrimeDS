@@ -63,9 +63,6 @@ void ARM9Hook_Uninstall(
     MelonPrimeCore* core,
     EmuInstance* osdEmu = nullptr);
 
-// Calls ResetPatchState for every registered hook.
-void ARM9Hook_ResetPatchState();
-
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS

@@ -28,7 +28,6 @@ void SetMatchHooksActive(melonDS::NDS* nds,
 void ResetPatchAndHookBookkeeping(MelonPrimeCore* core)
 {
     Patches_ResetAll(core->PatchState());
-    ARM9Hook_ResetPatchState();
 }
 
 void RestoreStopPatches(melonDS::NDS* nds,
@@ -126,9 +125,9 @@ void ReconcileAfterSavestateLoad(melonDS::NDS* nds,
     Patches_ResetAll(core->PatchState());
 
     // LowLatencyAim uses NDS::SetARM9InstructionHook, not an ARM9 RAM opcode patch.
-    // Re-registering after a savestate reconciles the active address set and JIT
-    // trampolines with the loaded timeline.
-    ARM9Hook_ResetPatchState();
+    // ARM9Hook_Uninstall already clears the per-instance address set and JIT
+    // trampoline ownership; the next lifecycle edge rebuilds it from the loaded
+    // timeline and the Core's resolved activation plan.
 }
 
 void ApplyOutOfGameFrame(melonDS::NDS* nds,

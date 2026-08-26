@@ -98,7 +98,8 @@ processes, so the per-process singleton assumption holds.
 
 - the per-frame `OsdColor_ApplyOnce` re-apply in `RunFrameHook`'s `isInGame` branch (pattern B —
   game-state-dependent re-evaluation; the registry covers only its game-join apply + leave restore)
-- ARM9 instruction hooks — `ARM9Hook_Install/Uninstall/ResetPatchState` is its own registry
+- ARM9 instruction hooks — `ARM9Hook_Install/Uninstall` is its own registry; dispatch entries
+  and the selected ROM group are owned by `MelonPrimeArm9HookState` per Core
 - Custom HUD patch state (`CustomHud_*`) — HUD-owned lifecycle
 - `NoDoubleTapJump` — transient, wraps weapon-switch frames in `MelonPrimeGameWeapon.cpp`
 - `NoHud` — driven by the Custom HUD render path
@@ -472,12 +473,11 @@ Owns the single hook slot and fans out to all registered MelonPrime hooks.
   requires `mode==0x0E && flow==0` before polling `flow!=0` so stale post-match `flow` does not
   unregister on the same frame as join (see
   [battle-flow-state.md](battle-flow-state.md)).
-- `ARM9Hook_Uninstall(nds, osdEmu)` and `ARM9Hook_ResetPatchState()` — wired into **all three**
-  reset blocks, dispatched manually alongside the registry's `Patches_ResetAll()` in those blocks
-  (`ARM9Hook_Uninstall` before the registry restore/reset, `ARM9Hook_ResetPatchState` after; see §3).
-  Developer OSD: posts `ARM9 hooks: unregistered` when MelonPrime still had a registered hook set
-  (`s_dispatchCount > 0`) or the NDS hook slot was active — including after `emuInstance->reset()`
-  clears the NDS slot before `OnEmuStart` runs.
+- `ARM9Hook_Uninstall(nds, core, osdEmu)` — wired into **all three** reset blocks before the
+  registry restore/reset. It clears the Core-owned dispatch entries and the NDS hook slot, so
+  there is no process-global ARM9 reset step. Developer OSD posts `ARM9 hooks: unregistered`
+  when the instance still had a registered hook set or the NDS hook slot was active — including
+  after `emuInstance->reset()` clears the NDS slot before `OnEmuStart` runs.
 - Developer builds (`MELONPRIME_ENABLE_DEVELOPER_FEATURES`): match hook install/clear posts
   `osdAddMessage` — `ARM9 hooks: registered (N PCs)` / `ARM9 hooks: unregistered` (only on
   actual hook attach/detach, not on redundant `SetMatchHooksActive(false)` no-ops).
@@ -498,14 +498,16 @@ Each instruction-hook module provides:
 
 - `uint32_t Foo_GetAddresses(uint8_t romGroupIndex, uint32_t* out, uint32_t maxCount)` — fills the
   ROM-specific hook PCs, returns the count.
-- a handler: side-effect `Foo_DispatchCheck(nds, arm9ExecAddr, regs)` **or** redirecting
-  `bool Foo_DispatchCheckAndRedirect(nds, arm9ExecAddr, regs, u32& redirectExecAddr)`.
+- a handler: side-effect `Foo_DispatchCheck(nds, romGroupIndex, arm9ExecAddr, regs)` **or**
+  redirecting `bool Foo_DispatchCheckAndRedirect(nds, romGroupIndex, arm9ExecAddr, regs,
+  u32& redirectExecAddr)`.
 - The dispatcher only invokes a handler at that hook's own registered PCs, so re-deriving / re-matching
   the PC inside the handler is redundant — a single-site side-effect handler can ignore
   `arm9ExecAddr` (e.g. `(void)arm9ExecAddr;`); multi-site handlers still use it to select behavior.
-- Modules with their own config/ROM cache add `Foo_SetState` / `Foo_ClearState` /
-  `Foo_ResetPatchState` (e.g. `MelonPrimePatchFixNoxusBladePersistence`,
-  `MelonPrimePatchShadowFreezeRuntimeHook`), driven by `ARM9Hook_Install/Uninstall/ResetPatchState`.
+- Standalone modules such as `MelonPrimePatchFixNoxusBladePersistence` and
+  `MelonPrimePatchShadowFreezeRuntimeHook` are stateless. The dispatcher supplies the
+  per-Core `romGroupIndex` and its mask supplies the feature gate; modules must not add a
+  process-global config/ROM cache or a `SetState`/`ClearState`/`ResetPatchState` API.
 
 ### Shared hook-site tables
 

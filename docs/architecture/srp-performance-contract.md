@@ -147,8 +147,10 @@ aim-smoothing wired at game join, and Rule C2 keeps the fast-forward writer in
 `EmuThread.cpp`.
 
 The per-instance HUD owner slots are typed `std::unique_ptr` members of
-`CustomHudConfigState`. `MelonPrimeHudRender.cpp` constructs all four owners in
-the cold config-state constructor; frame/text/editor accessors only dereference
+`CustomHudConfigState`. `MelonPrimeHudRender.cpp` constructs the three concrete
+owners (battle, frame, and text-cache) in the cold config-state constructor;
+editor fields remain directly owned by `CustomHudConfigState` until a future
+phase introduces a concrete editor owner. Frame/text accessors only dereference
 those already-live owners. The top-level `MelonPrimeCore::m_hudConfigState`
 `std::shared_ptr` remains the instance lifetime boundary and is not part of the
 frame path. Rule G hard-fails if an internal HUD fragment reintroduces erased
@@ -164,8 +166,12 @@ getter call.
 ARM9 hook module activation follows the same cold-boundary rule. Runtime config
 is resolved into `Arm9HookActivationPlan` by
 `ApplyRuntimeConfigSnapshot`; `ARM9Hook_Install` consumes only that plan and
-the ROM scope. Rule I hard-fails if the installer regains direct config/key
-interpretation. The ARM9 dispatcher remains a cached, address-gated fast path.
+the ROM scope. The dispatcher stores only the ROM group in the per-Core
+`MelonPrimeArm9HookState` and passes it to the stateless Shadow Freeze/Noxus
+modules; their handlers do not own a process-global activation context. Rules I
+and J hard-fail if the installer regains direct config/key interpretation or a
+module-local config/ROM cache. The ARM9 dispatcher remains a cached,
+address-gated fast path.
 
 ## QColorDialog rule
 

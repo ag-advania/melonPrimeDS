@@ -367,7 +367,7 @@ foreach ($signature in @(
 
 # --- Rule G: HUD owner slots stay typed and cold-owned ---------------------
 #
-# Runtime/frame/text/editor state is per CustomHudConfigState. Type erasure or
+# Runtime/frame/text state is per CustomHudConfigState. Type erasure or
 # lazy make_shared in these slots puts refcount/heap work back on the render
 # path and makes ownership invisible to the compiler. The top-level
 # m_hudConfigState shared_ptr remains the explicit Core lifetime boundary; this
@@ -377,7 +377,7 @@ $hudOwnerSources = @(Get-ChildItem -LiteralPath $qtSdl -File |
 $hudOwnerForbiddenPatterns = @(
     'std::shared_ptr\s*<\s*void\s*>',
     'std::static_pointer_cast\s*<',
-    'std::make_shared\s*<\s*(?:HudBattleOwnedState|HudFrameOwnedState|HudElementTextCacheState|HudEditorOwnedState)'
+    'std::make_shared\s*<\s*(?:HudBattleOwnedState|HudFrameOwnedState|HudElementTextCacheState)'
 )
 foreach ($source in $hudOwnerSources) {
     foreach ($pattern in $hudOwnerForbiddenPatterns) {
@@ -391,8 +391,7 @@ $hudOwnerSlotPath = Join-Path $qtSdl 'MelonPrimeHudRenderConfig.inc'
 foreach ($slot in @(
     @{ Type = 'HudBattleOwnedState'; Name = 'runtimeState' },
     @{ Type = 'HudFrameOwnedState'; Name = 'frameState' },
-    @{ Type = 'HudElementTextCacheState'; Name = 'textCacheState' },
-    @{ Type = 'HudEditorOwnedState'; Name = 'editorState' })) {
+    @{ Type = 'HudElementTextCacheState'; Name = 'textCacheState' })) {
     $slotPattern = "std::unique_ptr\s*<\s*$($slot.Type)\s*>\s+$($slot.Name)\s*;"
     if ((Get-CodeMatchLines $slotPattern $hudOwnerSlotPath).Count -eq 0) {
         Add-Error ("CustomHudConfigState must keep a typed unique_ptr slot for " +
@@ -401,11 +400,67 @@ foreach ($slot in @(
 }
 $hudOwnerFactoryPath = Join-Path $qtSdl 'MelonPrimeHudRender.cpp'
 foreach ($typeName in @('HudBattleOwnedState', 'HudFrameOwnedState',
-                         'HudElementTextCacheState', 'HudEditorOwnedState')) {
+                         'HudElementTextCacheState')) {
     if ((Get-CodeMatchLines "std::make_unique\s*<\s*$typeName\s*>" $hudOwnerFactoryPath).Count -eq 0) {
         Add-Error ("CustomHudConfigState cold construction must initialize " +
             "$typeName with std::make_unique")
     }
+}
+
+# --- Rule J: standalone ARM9 modules stay stateless and config-free ---------
+#
+# Runtime feature policy is resolved into Arm9HookActivationPlan before the
+# match hook is installed. The dispatcher mask gates the handler and the
+# per-Core ARM9HookState supplies romGroupIndex; a module must not reintroduce
+# a process-global activation context or a second Config interpreter.
+$arm9RuntimeModules = @(
+    (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.cpp'),
+    (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.h'),
+    (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.cpp'),
+    (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.h')
+)
+$arm9ModuleForbiddenPatterns = @(
+    '#include\s+"Config\.h"',
+    '#include\s+"MelonPrimeDef\.h"',
+    '\bConfig::Table\b',
+    '\bCfgKey::',
+    '\bGet(?:Bool|Int|Double|String)\s*\('
+)
+foreach ($modulePath in $arm9RuntimeModules) {
+    if (-not (Test-Path -LiteralPath $modulePath)) {
+        Add-Error "ARM9 runtime module is missing: $modulePath"
+        continue
+    }
+    foreach ($pattern in $arm9ModuleForbiddenPatterns) {
+        foreach ($line in (Get-CodeMatchLines $pattern $modulePath)) {
+            Add-Error ("Shadow/Noxus runtime modules must not reinterpret config; " +
+                "forbidden ${pattern}: $line")
+        }
+    }
+}
+
+$arm9RomGroupNames = @('JP1_0', 'JP1_1', 'US1_0', 'US1_1', 'EU1_0', 'EU1_1', 'KR1_0')
+foreach ($modulePath in @(
+    (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.cpp'),
+    (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.cpp'))) {
+    foreach ($romGroupName in $arm9RomGroupNames) {
+        if ((Get-CodeMatchLines "kHooks_$romGroupName" $modulePath).Count -eq 0) {
+            Add-Error ("ARM9 runtime module is missing the $romGroupName hook table: " +
+                "$modulePath")
+        }
+    }
+    if ((Get-CodeMatchLines 'RomGroup::COUNT' $modulePath).Count -eq 0) {
+        Add-Error "ARM9 runtime module must assert RomGroup::COUNT coverage: $modulePath"
+    }
+}
+
+$arm9StatePath = Join-Path $qtSdl 'MelonPrime.h'
+if ((Get-CodeMatchLines 'uint8_t\s+romGroupIndex\s*=\s*0xFFu' $arm9StatePath).Count -eq 0) {
+    Add-Error 'MelonPrimeArm9HookState must own an invalid-by-default romGroupIndex'
+}
+$arm9HookPath = Join-Path $qtSdl 'MelonPrimeArm9Hook.cpp'
+if ((Get-CodeMatchLines 'const\s+uint8_t\s+romGroupIndex\s*=\s*hookState\.romGroupIndex' $arm9HookPath).Count -eq 0) {
+    Add-Error 'DispatcherCallback must load romGroupIndex from the per-Core ARM9HookState'
 }
 
 # Neither may the render header pull the split headers back in and re-export

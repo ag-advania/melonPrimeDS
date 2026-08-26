@@ -1,8 +1,6 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
-#include "Config.h"
-#include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "NDS.h"
 
@@ -289,15 +287,8 @@ static const IceWaveDecisionHook* FindHook(uint8_t romGroupIndex, uint32_t arm9E
     return FindHookIn(hooks.Hooks, hooks.Count, arm9ExecAddr);
 }
 
-// File-static hook registration state (no context struct needed).
-static const IceWaveDecisionHook* s_activeHooks = nullptr;
-static std::size_t s_activeHookCount = 0;
-
-// The activation plan supplies this immutable-for-the-active-hook-set gate at
-// the cold install edge. The dispatcher never consults Config::Table.
-static bool s_enabledCached = false;
-
-// Core hook logic shared by both the callback and the public direct entry point.
+// Core hook logic used by the shared dispatcher. The feature gate is the
+// per-Core dispatch mask; ROM selection is supplied explicitly by the caller.
 static bool ApplyHookForDecision(
     melonDS::NDS* nds,
     const IceWaveDecisionHook* hook,
@@ -356,90 +347,23 @@ uint32_t ShadowFreezeRuntimeHook_GetAddresses(
     return count;
 }
 
-void ShadowFreezeRuntimeHook_SetState(bool enabled, uint8_t romGroupIndex)
-{
-    if (romGroupIndex < sizeof(kRomHooks) / sizeof(kRomHooks[0]))
-    {
-        s_activeHooks = kRomHooks[romGroupIndex].Hooks;
-        s_activeHookCount = kRomHooks[romGroupIndex].Count;
-    }
-    else
-    {
-        s_activeHooks = nullptr;
-        s_activeHookCount = 0;
-    }
-
-    s_enabledCached = enabled;
-}
-
-void ShadowFreezeRuntimeHook_ClearState()
-{
-    s_activeHooks = nullptr;
-    s_activeHookCount = 0;
-    s_enabledCached = false;
-}
-
 bool ShadowFreezeRuntimeHook_DispatchCheckAndRedirect(
     melonDS::NDS* nds,
-    uint32_t arm9ExecAddr,
-    const uint32_t regs[16],
-    uint32_t& redirectExecAddr)
-{
-    redirectExecAddr = 0;
-    if (!s_enabledCached)
-        return false;
-
-    return ApplyHookForDecision(
-        nds,
-        FindHookIn(s_activeHooks, s_activeHookCount, arm9ExecAddr),
-        regs,
-        redirectExecAddr);
-}
-
-bool ShadowFreezeRuntimeHook_CheckAndRedirect(
-    melonDS::NDS* nds,
-    Config::Table& cfg,
     uint8_t romGroupIndex,
     uint32_t arm9ExecAddr,
     const uint32_t regs[16],
     uint32_t& redirectExecAddr)
 {
     redirectExecAddr = 0;
-
     if (!nds || !regs)
         return false;
 
-    if (!cfg.GetBool(MelonPrime::CfgKey::FixShadowFreeze))
-        return false;
-
-    return ApplyHook(nds, romGroupIndex, arm9ExecAddr, regs, redirectExecAddr);
-}
-
-bool ShadowFreezeRuntimeHook_CheckAndRedirectFromPipelinedR15(
-    melonDS::NDS* nds,
-    Config::Table& cfg,
-    uint8_t romGroupIndex,
-    const uint32_t regs[16],
-    uint32_t& redirectExecAddr)
-{
-    if (!regs)
-        return false;
-
-    const uint32_t arm9ExecAddr = regs[15] - 8u;
-    return ShadowFreezeRuntimeHook_CheckAndRedirect(
+    return ApplyHook(
         nds,
-        cfg,
         romGroupIndex,
         arm9ExecAddr,
         regs,
         redirectExecAddr);
-}
-
-void ShadowFreezeRuntimeHook_ResetPatchState()
-{
-    s_activeHooks = nullptr;
-    s_activeHookCount = 0;
-    s_enabledCached = false;
 }
 
 } // namespace MelonPrime

@@ -6,7 +6,6 @@
 #include <cstdint>
 
 namespace melonDS { class NDS; }
-namespace Config { class Table; }
 
 namespace MelonPrime {
 
@@ -23,35 +22,15 @@ uint32_t ShadowFreezeRuntimeHook_GetAddresses(
     uint32_t* out,
     uint32_t maxCount);
 
-void ShadowFreezeRuntimeHook_SetState(bool enabled, uint8_t romGroupIndex);
-void ShadowFreezeRuntimeHook_ClearState();
-
 // Fast dispatch path called from the shared ARM9 HookCallback.
-// Uses cached config state.  Returns true and sets redirectExecAddr when redirecting.
+// The dispatcher mask supplies the feature gate; romGroupIndex comes from the
+// per-Core ARM9HookState. Returns true and sets redirectExecAddr when redirecting.
 bool ShadowFreezeRuntimeHook_DispatchCheckAndRedirect(
     melonDS::NDS* nds,
-    uint32_t arm9ExecAddr,
-    const uint32_t regs[16],
-    uint32_t& redirectExecAddr);
-
-// Direct check for callers that hold an explicit Config::Table reference.
-// Pass the real instruction address currently about to execute, not pipelined R15.
-bool ShadowFreezeRuntimeHook_CheckAndRedirect(
-    melonDS::NDS* nds,
-    Config::Table& cfg,
     uint8_t romGroupIndex,
     uint32_t arm9ExecAddr,
     const uint32_t regs[16],
     uint32_t& redirectExecAddr);
-
-bool ShadowFreezeRuntimeHook_CheckAndRedirectFromPipelinedR15(
-    melonDS::NDS* nds,
-    Config::Table& cfg,
-    uint8_t romGroupIndex,
-    const uint32_t regs[16],
-    uint32_t& redirectExecAddr);
-
-void ShadowFreezeRuntimeHook_ResetPatchState();
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS

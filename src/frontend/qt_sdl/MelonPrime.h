@@ -47,6 +47,7 @@ namespace MelonPrime {
         uint32_t count = 0;
         uint32_t lastAddress = 0;
         uint16_t lastMask = 0;
+        uint8_t romGroupIndex = 0xFFu;
     };
 #endif
 

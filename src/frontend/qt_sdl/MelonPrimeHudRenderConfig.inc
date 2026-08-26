@@ -270,10 +270,6 @@ struct CachedHudConfig {
 struct HudBattleOwnedState;
 struct HudFrameOwnedState;
 struct HudElementTextCacheState;
-// The editor currently keeps its interactive values in the config state
-// itself. Keep a typed cold-lifetime slot ready for editor-owned state without
-// reintroducing a type-erased owner into the render path.
-struct HudEditorOwnedState {};
 
 struct CustomHudConfigState {
     CustomHudConfigState();
@@ -414,7 +410,6 @@ struct CustomHudConfigState {
     std::unique_ptr<HudBattleOwnedState> runtimeState;
     std::unique_ptr<HudFrameOwnedState> frameState;
     std::unique_ptr<HudElementTextCacheState> textCacheState;
-    std::unique_ptr<HudEditorOwnedState> editorState;
 };
 
 static thread_local CustomHudConfigState* g_activeHudConfigState = nullptr;

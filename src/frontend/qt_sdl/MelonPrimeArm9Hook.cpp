@@ -48,6 +48,7 @@ static void ClearDispatchEntries(MelonPrimeArm9HookState& state) noexcept
     state.count = 0;
     state.lastAddress = 0;
     state.lastMask = 0;
+    state.romGroupIndex = 0xFFu;
     for (auto& entry : state.entries)
         entry = {};
 }
@@ -113,9 +114,11 @@ static bool DispatcherCallback(
     // we get here core is by construction non-null. Skip the per-handler null
     // checks that the previous design carried.
     auto* const core = static_cast<MelonPrimeCore*>(userdata);
-    const uint16_t mask = FindDispatchMask(core->Arm9HookState(), arm9ExecAddr);
+    auto& hookState = core->Arm9HookState();
+    const uint16_t mask = FindDispatchMask(hookState, arm9ExecAddr);
     if (UNLIKELY(mask == 0))
         return false;
+    const uint8_t romGroupIndex = hookState.romGroupIndex;
 
     if ((mask & Dispatch_NativeAimDelta) != 0)
     {
@@ -147,7 +150,7 @@ static bool DispatcherCallback(
 
     // Side-effect hook: runs regardless of whether a redirect follows.
     if ((mask & Dispatch_NoxusBlade) != 0)
-        FixNoxusBladePersistence_DispatchCheck(nds, arm9ExecAddr, regs);
+        FixNoxusBladePersistence_DispatchCheck(nds, romGroupIndex, arm9ExecAddr, regs);
 
     // Redirect hooks: may change execution address.
     if ((mask & Dispatch_TransformGate) != 0)
@@ -167,7 +170,7 @@ static bool DispatcherCallback(
     if ((mask & Dispatch_ShadowFreeze) != 0)
     {
         return ShadowFreezeRuntimeHook_DispatchCheckAndRedirect(
-            nds, arm9ExecAddr, regs, redirectExecAddr);
+            nds, romGroupIndex, arm9ExecAddr, regs, redirectExecAddr);
     }
 
     return false;
@@ -230,16 +233,10 @@ void ARM9Hook_Install(
     ClearDispatchEntries(state);
 
     if (!nds)
-    {
-        ShadowFreezeRuntimeHook_ClearState();
-        FixNoxusBladePersistence_ClearState();
         return;
-    }
 
     if ((activeScope & ARM9HookScope_InMatch) == 0)
     {
-        ShadowFreezeRuntimeHook_ClearState();
-        FixNoxusBladePersistence_ClearState();
         if (HasInstalledInstructionHook(nds))
         {
             nds->ClearARM9InstructionHook();
@@ -249,6 +246,11 @@ void ARM9Hook_Install(
         }
         return;
     }
+
+    // This is the only ROM selection state used by the standalone ARM9
+    // modules. It belongs to the Core carried by this NDS callback, so two
+    // EmuInstance objects cannot overwrite each other's active ROM group.
+    state.romGroupIndex = romGroupIndex;
 
     uint32_t moduleAddresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};
     uint32_t moduleCount = 0;
@@ -260,16 +262,9 @@ void ARM9Hook_Install(
 
     // Register only hooks that can actually run for the current config. Each
     // registered ARM9 PC becomes a JIT trampoline call site, so leaving disabled
-    // features registered is visible in the in-game hot path.
-    if (plan.shadowFreeze)
-        ShadowFreezeRuntimeHook_SetState(true, romGroupIndex);
-    else
-        ShadowFreezeRuntimeHook_ClearState();
-
-    if (plan.noxusBladePersistence)
-        FixNoxusBladePersistence_SetState(true, romGroupIndex);
-    else
-        FixNoxusBladePersistence_ClearState();
+    // features registered is visible in the in-game hot path. The standalone
+    // Shadow/Noxus modules are stateless; their ROM group is read from the
+    // per-Core state in DispatcherCallback.
 
     if (plan.nativeAimHookMode == 1)
     {
@@ -434,20 +429,12 @@ void ARM9Hook_Uninstall(
         state.count > 0 || HasInstalledInstructionHook(nds);
 #endif
     ClearDispatchEntries(state);
-    ShadowFreezeRuntimeHook_ClearState();
-    FixNoxusBladePersistence_ClearState();
     if (nds)
         nds->ClearARM9InstructionHook();
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     if (osdEmu && hadHooks)
         DevOsdHookUnregistered(osdEmu);
 #endif
-}
-
-void ARM9Hook_ResetPatchState()
-{
-    ShadowFreezeRuntimeHook_ResetPatchState();
-    FixNoxusBladePersistence_ResetPatchState();
 }
 
 } // namespace MelonPrime

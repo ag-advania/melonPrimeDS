@@ -34,18 +34,14 @@ uint32_t FixNoxusBladePersistence_GetAddresses(
     uint32_t* out,
     uint32_t maxCount);
 
-// Called by the shared dispatcher Install/Uninstall to manage per-file state.
-void FixNoxusBladePersistence_SetState(bool enabled, uint8_t romGroupIndex);
-void FixNoxusBladePersistence_ClearState();
-
 // Fast dispatch path called from the shared ARM9 HookCallback.
-// Uses cached config state.  Side-effect only — never redirects execution.
+// The dispatcher mask supplies the feature gate; romGroupIndex comes from the
+// per-Core ARM9HookState. Side-effect only — never redirects execution.
 void FixNoxusBladePersistence_DispatchCheck(
     melonDS::NDS* nds,
+    uint8_t romGroupIndex,
     uint32_t arm9ExecAddr,
     const uint32_t regs[16]);
-
-void FixNoxusBladePersistence_ResetPatchState();
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS

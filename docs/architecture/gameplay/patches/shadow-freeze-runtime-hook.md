@@ -53,37 +53,21 @@ config Metroid.BugFix.FixShadowFreeze == true
 
 ## Integration image
 
-ARM9 の命令実行直前に呼ぶ。
+ARM9 の命令実行直前には、個別moduleを直接呼ばず、共有dispatcherを経由する。
+`Arm9HookActivationPlan`が機能有効化を保持し、dispatcherがそのCoreの
+`romGroupIndex`をstateless moduleへ渡すため、module側でConfigを再解釈しない。
 
 ```cpp
 uint32_t redirectExecAddr = 0;
 
-if (MelonPrime::ShadowFreezeRuntimeHook_CheckAndRedirect(
+if (MelonPrime::ShadowFreezeRuntimeHook_DispatchCheckAndRedirect(
         nds,
-        config,
         romGroupIndex,
         arm9ExecAddr,
         regs,
         redirectExecAddr))
 {
     // この命令を通常実行せず、既存の hit/miss branch 先へ飛ばす。
-    SetArm9ExecuteAddress(redirectExecAddr);
-    return;
-}
-```
-
-`regs[15]` が ARM pipeline 済みの R15 しか取れない場所では、こちらを使う。
-
-```cpp
-uint32_t redirectExecAddr = 0;
-
-if (MelonPrime::ShadowFreezeRuntimeHook_CheckAndRedirectFromPipelinedR15(
-        nds,
-        config,
-        romGroupIndex,
-        regs,
-        redirectExecAddr))
-{
     SetArm9ExecuteAddress(redirectExecAddr);
     return;
 }

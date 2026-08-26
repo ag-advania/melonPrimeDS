@@ -63,11 +63,12 @@ Use this as the reference when changing runtime Custom HUD rendering, caching, t
 ### 2026-08-27 low-overhead SRP closure
 
 The current tree keeps the top-level `MelonPrimeCore::m_hudConfigState` as a
-`std::shared_ptr` lifetime boundary, but the four internal HUD owner slots are typed
-`std::unique_ptr` members: battle state, frame state, text-cache state, and editor state.
-`CustomHudConfigState` constructs them together on the cold path; the frame/battle accessors
-only dereference already-live typed owners, with no erased shared ownership, cast, or lazy
-allocation in the render path.
+`std::shared_ptr` lifetime boundary, while the three concrete internal HUD owner slots are typed
+`std::unique_ptr` members: battle state, frame state, and text-cache state. Editor fields remain
+directly owned by `CustomHudConfigState` until a concrete editor owner is introduced.
+`CustomHudConfigState` constructs the three owners together on the cold path; the frame/battle
+accessors only dereference already-live typed owners, with no erased shared ownership, cast, or
+lazy allocation in the render path.
 
 Screen refreshes `m_hudEnabled` when the HUD config epoch changes and passes that
 epoch-coherent snapshot into `CustomHud_Render()`. The render body does not reread the live

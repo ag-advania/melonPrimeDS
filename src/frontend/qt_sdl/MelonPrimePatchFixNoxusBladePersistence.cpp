@@ -1,8 +1,6 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
-#include "Config.h"
-#include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "NDS.h"
 
@@ -96,6 +94,17 @@ static const DeathCleanupHook* FindHook(
     }
 }
 
+static const DeathCleanupHook* FindHook(
+    uint8_t romGroupIndex,
+    uint32_t arm9ExecAddr)
+{
+    if (romGroupIndex >= sizeof(kRomHooks) / sizeof(kRomHooks[0]))
+        return nullptr;
+
+    const RomDeathCleanupHooks& hooks = kRomHooks[romGroupIndex];
+    return FindHook(hooks.Hooks, hooks.Count, arm9ExecAddr);
+}
+
 static bool ApplyHookInternal(
     melonDS::NDS* nds,
     uint32_t arm9ExecAddr,
@@ -119,14 +128,6 @@ static bool ApplyHookInternal(
     return true;
 }
 
-// File-static hook state — set/cleared by the shared dispatcher.
-static const DeathCleanupHook* s_activeHooks = nullptr;
-static std::size_t s_activeHookCount = 0;
-
-// The activation plan supplies this gate at the cold install edge. The
-// dispatcher never consults Config::Table.
-static bool s_enabledCached = false;
-
 } // anonymous namespace
 
 uint32_t FixNoxusBladePersistence_GetAddresses(
@@ -142,49 +143,20 @@ uint32_t FixNoxusBladePersistence_GetAddresses(
     return count;
 }
 
-void FixNoxusBladePersistence_SetState(bool enabled, uint8_t romGroupIndex)
-{
-    if (romGroupIndex < sizeof(kRomHooks) / sizeof(kRomHooks[0]))
-    {
-        s_activeHooks = kRomHooks[romGroupIndex].Hooks;
-        s_activeHookCount = kRomHooks[romGroupIndex].Count;
-    }
-    else
-    {
-        s_activeHooks = nullptr;
-        s_activeHookCount = 0;
-    }
-
-    s_enabledCached = enabled;
-}
-
-void FixNoxusBladePersistence_ClearState()
-{
-    s_activeHooks = nullptr;
-    s_activeHookCount = 0;
-    s_enabledCached = false;
-}
-
 void FixNoxusBladePersistence_DispatchCheck(
     melonDS::NDS* nds,
+    uint8_t romGroupIndex,
     uint32_t arm9ExecAddr,
     const uint32_t regs[16])
 {
-    if (!s_enabledCached)
+    if (!nds || !regs)
         return;
 
     ApplyHookInternal(
         nds,
         arm9ExecAddr,
-        FindHook(s_activeHooks, s_activeHookCount, arm9ExecAddr),
+        FindHook(romGroupIndex, arm9ExecAddr),
         regs);
-}
-
-void FixNoxusBladePersistence_ResetPatchState()
-{
-    s_activeHooks = nullptr;
-    s_activeHookCount = 0;
-    s_enabledCached = false;
 }
 
 } // namespace MelonPrime

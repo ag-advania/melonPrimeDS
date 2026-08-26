@@ -65,8 +65,9 @@ Every cache needs a clear invalidation owner:
   frame, lazily caches optional element values such as ammo, owned weapons,
   bombs, match status, rank, and time only when those elements are drawn, and
   reuses the same frame cache for scoreboard and Enemy Target snapshots.
-- `CustomHudConfigState` constructs its typed battle/frame/text/editor owner slots once on the
-  cold path; `HudFrameState()` and `HudBattleState()` only dereference those owners during
+- `CustomHudConfigState` constructs its typed battle/frame/text owner slots once on the cold
+  path; editor fields remain directly owned by the config state until a concrete editor owner is
+  introduced. `HudFrameState()` and `HudBattleState()` only dereference those owners during
   rendering.
 - `CustomHud_Render()` consumes the Screen-owned, config-epoch-coherent HUD enable snapshot;
   HUD enable interpretation stays outside the steady-state render path. ARM9 hook activation
