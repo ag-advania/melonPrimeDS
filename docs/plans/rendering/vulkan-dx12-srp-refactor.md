@@ -1221,6 +1221,12 @@ before the run ended. That is the harness's clock, not the renderer -- worth
 recording because "a scale that fails" and "a scale that needs longer" look
 identical in a PASS/FAIL line.
 
+### Platform CI
+
+Re-confirmed on the ownership-closure tree: Ubuntu (x86_64, aarch64), macOS
+(x86_64, arm64, universal) and BSD (FreeBSD, NetBSD, OpenBSD) all green,
+first attempt.
+
 ### This is the end of splitting
 
 No further Vulkan/DX12 SRP split happens without one of: an independent reason
