@@ -15,8 +15,8 @@ re-derive it.
 | Audit ID | Component | Priority | Status |
 |---|---|---|---|
 | DX-SRP-002 | `DX12Renderer` vendor low-latency ownership | HIGH | **Done** |
-| VK-SRP-004 | `VulkanRenderer3D` monolith | HIGH | **In progress** — pipeline cache, output ring, capture provenance, upload plan, capture bridge extracted |
-| DX-SRP-003 | `DX12Renderer3D` monolith | HIGH | **In progress** — pipeline repository, output ring, capture provenance, upload plan, capture bridge extracted |
+| VK-SRP-004 | `VulkanRenderer3D` monolith | HIGH | **Done** — pipeline cache, output ring, capture provenance, upload plan, capture bridge and the GPU2D compositor extracted |
+| DX-SRP-003 | `DX12Renderer3D` monolith | HIGH | **Done** — pipeline repository, output ring, capture provenance, upload plan, capture bridge and the GPU2D compositor extracted |
 | DX-SRP-001 | `DX12Context` split | MEDIUM-HIGH | **Done** |
 | VK-SRP-003 | `VulkanRenderer::VBlank()` publication policy | MEDIUM | **Done** |
 | BOTH-SRP-002 | `GPU_Vulkan` / `GPU_DX12` policy duplication | MEDIUM | **Done** |
@@ -357,6 +357,88 @@ descriptor tables are unchanged and no barrier moved.
 Both `ReadNativeCapture()` implementations are now a guard, a shared-context
 retire, and one delegated call.
 
+## Phase 2 — Gpu2DComposer, the last of the monolith
+
+`src/DX12Gpu2DComposer.{h,cpp}` and `src/VulkanGpu2DComposer.{h,cpp}`.
+
+The audit's item 6 names four things to cut out: `ComposeStructuredOutput`,
+`ComposeNativeGPU2D`, the native GPU2D pipelines and resources, and the
+compositor resources. All four moved, in three steps per backend.
+
+### What each module owns
+
+| | DX12 | Vulkan |
+|---|---|---|
+| `<Backend>Gpu2DComposer` | four compute pipelines, three descriptor rings, cached table bases, publication state, both compose passes | its own `Vk::FrameRing`, publication state, both compose passes |
+| `<Backend>Gpu2DOutput` | presentation slots, work slots, publication ring | same |
+
+The split into two classes per backend is a lifetime split, not a taxonomy
+one: the output set is recreated on every resolution change and is held by
+`shared_ptr` so a presenter lease survives that; everything else is created
+once with the renderer.
+
+DX12 has a pipeline owner and Vulkan does not, for a reason the headers state.
+On DX12 the four compositor PSOs were separate named members and moved
+cleanly. On Vulkan they are entries in one shader-step-indexed array shared
+with the rasterizer, and splitting that array would change how pipelines are
+built and resolution-specialized — a mechanism change, which §11.3 rules out
+folding into a responsibility move. The renderer resolves the three handles a
+compose needs and passes them in.
+
+### The borrow contract, written down
+
+`DX12Gpu2DComposeContext` / `VulkanGpu2DComposeContext` is the point of the
+exercise as much as the code motion is. Every handle the compose passes read
+from outside the compositor is now named in one struct, rebuilt per call so it
+cannot hold a stale handle across a resolution change:
+
+- the device context, root signature / pipeline layout, descriptor pool
+- capture's bridge, provenance state and sidecar pipeline
+- the frame geometry and the shader-ready / renderer-failed / abort flags
+- **`FinalFB`** — the 3D rasterizer's finished image, which the compositor
+  samples and never writes. That is the read-only contract the audit asked to
+  be made explicit, and it is now a comment on a field rather than a
+  convention.
+
+Three (DX12) or two (Vulkan) plain function pointers cover what has to run
+back on the renderer: latching a runtime failure, dropping the texture-SRV
+binding cache when a compose list resets the shared descriptor ring, and — on
+DX12 — building the developer-only diagnostic UAV block, which describes
+rasterizer buffers. Function pointers rather than `std::function` because this
+runs once per DS frame on the emulation thread and must not allocate.
+
+### Descriptor strategy deliberately untouched
+
+Neither backend's table shape moved. DX12 still binds one fourteen-entry UAV
+table per dispatch, assembled from borrowed handles in the same order, and
+three of those slots still mean different things depending on which shader
+runs. Giving the compositor its own table would mean recompiling shaders
+against a different register layout. Same reasoning as the Vulkan pipeline
+array: §11.3 says structure first, same behaviour.
+
+### Contract that moved with them
+
+Two pieces of shared contract were living in the wrong place and blocked the
+move until they were relocated:
+
+- `DispatchUniform` mirrors an HLSL cbuffer and is set by every DX12 compute
+  dispatch, but was a private nested type of `DX12Renderer3D`. It is now
+  `DX12DispatchUniform` in `DX12PipelineRepository.h`, beside
+  `DX12RootSignatureLayout`, along with the four stateless recording helpers.
+- `BufferBarrier` is now `Vk::BufferBarrier` in `VulkanSync.h`, and
+  `DivRoundUp` / `AlignUp` moved to the two `*Common.h` headers, since two
+  translation units per backend now record dispatches.
+
+### Size
+
+| File | Before | After |
+|---|---|---|
+| `GPU3D_DX12.cpp` | ~4,800 | 3,262 |
+| `GPU3D_Vulkan.cpp` | ~4,900 | 3,066 |
+
+Each facade keeps three thin wrappers, because `Renderer3D` is the interface
+the emulator calls in through.
+
 ## VK-SRP-005 — the Vulkan vendor latency state machine
 
 `src/frontend/qt_sdl/MelonPrimeVulkanLatencyController.{h,cpp}`.
@@ -454,6 +536,16 @@ log markers. NVIDIA GeForce RTX 5070 Ti, Windows, developer build.
 | <-> Software, 6 switches | PASS | PASS |
 | DX12 <-> Vulkan, 8 switches | PASS | PASS |
 | Vulkan -> DX12 as the first DX12 probe | **FAIL — pre-existing, see below** | |
+
+Re-run after the compositor extraction, on the same hardware:
+
+| Run | Vulkan | DX12 |
+|---|---|---|
+| 1x / 4x / 8x, window driven, 60 injected SemanticOnly frames | PASS | PASS |
+| Vulkan <-> DX12, 4 switch iterations | PASS | PASS |
+| 3D raster differential at 1x | 1999 frames, `mismatchedPixels=0` | 1888 frames, `mismatchedPixels=0` |
+| GPU2D exact-stage validation | 12,986 records, 0 mismatches | 12,319 records, 0 mismatches |
+| Frames published through the native path | 2029 / 2029 | 1918 / 1918 |
 
 Each run checks that the requested renderer initialised and stayed initialised,
 that the savestate loaded, that the **native GPU2D path actually composed**
@@ -679,10 +771,10 @@ cell only moves where the change is real.
 | Descriptor management | PASS → PASS | **PARTIAL → PASS** |
 | Command / fence infrastructure | PASS → PASS | **PARTIAL PASS → PASS** |
 | Texture cache | PASS → PASS | PASS → PASS |
-| 3D raster responsibility | **FAIL → PARTIAL** | **FAIL → PARTIAL** |
-| GPU2D compositor | FAIL → FAIL | FAIL → FAIL |
+| 3D raster responsibility | **FAIL → PASS** | **FAIL → PASS** |
+| GPU2D compositor | **FAIL → PASS** | **FAIL → PASS** |
 | Capture bridge | **FAIL → PASS** | **FAIL → PASS** |
-| Output publisher | **FAIL → PARTIAL** | **FAIL → PARTIAL** |
+| Output publisher | **FAIL → PASS** | **FAIL → PASS** |
 | Pipeline repository | **PARTIAL → PASS** | **FAIL/PARTIAL → PASS** |
 | Presenter | PARTIAL PASS → PARTIAL PASS (smaller) | PARTIAL PASS → PARTIAL PASS |
 | Present pacing | PASS/PARTIAL → PASS | **FAIL placement → PASS** |
@@ -698,14 +790,22 @@ Where the reasoning is not obvious:
   four are out. What remains — device ownership plus a memory-admission
   gateway — is the same shape `VulkanDevice` has, which the audit rated
   PARTIAL PASS. The two backends now sit in the same cell.
-- **3D raster responsibility → PARTIAL, both.** The FAIL was for owning GPU2D,
-  capture, output and resources on top of raster. Capture, the output ring and
-  the pipeline repository are out; GPU2D composition is not, so this is not a
-  PASS.
-- **Output publisher → PARTIAL, both.** `RendererOutputRing` owns the ring,
-  the lease and the serial sequence. Content generation and resource
-  generation still live with the renderer's output state, so the component is
-  not whole yet.
+- **3D raster responsibility → PASS, both.** The FAIL was for owning GPU2D,
+  capture, output and resources on top of raster. All four are now separate
+  modules. What remains in `Renderer3D` is polygon/span setup, binning, raster,
+  texture, depth, fog and the 3D framebuffer — the audit's own list for Phase 2
+  item 7 — plus the sub-components it composes and the thin wrappers the
+  `Renderer3D` interface requires.
+- **GPU2D compositor → PASS, both.** `<Backend>Gpu2DComposer` owns the compose
+  passes, the publication state and the compositor's resources;
+  `<Backend>Gpu2DOutput` owns the per-resolution resource set. What the
+  compositor borrows from the rasterizer is enumerated in one context struct,
+  including the read-only `FinalFB` contract §item 6 asked for.
+- **Output publisher → PASS, both.** `RendererOutputRing` owns the ring, the
+  lease and the serial sequence; the content and published generations moved
+  onto the compositor with the compose passes that maintain them. The renderer
+  keeps only the resource-lifetime counter, which it advances because it is the
+  thing that recreates resources.
 - **Presenter, Vulkan → still PARTIAL PASS.** The audit's grade was "coherent
   as final presentation, but large". `VulkanLatencyController` removed the
   vendor state machine, so it is smaller, but swapchain, layers and pacing are
@@ -714,23 +814,25 @@ Where the reasoning is not obvious:
   "FAIL placement": vendor orchestration living on the renderer. The markers
   now fire from the presenter, around the real `IDXGISwapChain::Present`.
 
-Net: 8 cells improved, 1 unchanged FAIL per backend (the GPU2D compositor),
-and no cell regressed. Every remaining non-PASS is either the GPU2D split
-(§11.3-blocked) or a component the audit itself rated LOW priority.
+Net: 10 cells improved per backend, no cell regressed, and no FAIL remains on
+either backend. Every remaining non-PASS is a component the audit itself rated
+LOW priority (`VulkanDevice` budget/diagnostics, DX12 surface lifecycle) or one
+it graded PARTIAL for size rather than for mixed responsibility (both
+presenters).
 
 ## Against the audit's own Definition of Done (§15)
 
 Checked item by item rather than against a running list, because the two are
 not the same thing.
 
-### Architecture — 5 of 6
+### Architecture — 6 of 6
 
 | Item | Status |
 |---|---|
 | `DX12Renderer` owns no vendor low-latency object | **met** |
 | `Screen.cpp` does not mediate DX12 Present markers | **met** |
 | `GPU_Vulkan` / `GPU_DX12` frame-policy duplication reduced | **met** |
-| Renderer3D facade separated from GPU2D / Capture / Output | **partial** — Output and Capture are out; GPU2D is not |
+| Renderer3D facade separated from GPU2D / Capture / Output | **met** — all three are separate modules on both backends |
 | backend-neutral modules hold no native handle | **met** |
 | no cycle in the ownership direction | **met** |
 
@@ -801,138 +903,48 @@ The three remaining rows need Linux, BSD and macOS hosts.
 
 ### Summary
 
-31 of 33 met, 1 partial, 3 unrun (Linux, BSD and macOS builds). What remains is:
-
-- **`Gpu2DComposer` separation** (Architecture, and the last of Phase 2). The
-  fourteen-slot UAV table overloads three of its slots by dispatch kind, so
-  splitting needs separate tables and recompiled shaders — a descriptor
-  strategy change, which §11.3 rules out folding in here.
-- **Linux, BSD and macOS builds**, which need those hosts. `tools/linux-vm/`
-  exists but is a VirtualBox harness driven from a macOS host, so it does not
-  help from Windows.
+30 of 33 met, 3 unrun. What remains is only the three builds that need hosts
+this machine does not have — **Linux, BSD and macOS**. `tools/linux-vm/` exists
+but is a VirtualBox harness driven from a macOS host, so it does not help from
+Windows.
 
 Everything else in §15 is met with evidence recorded above.
 
-## Phase 2 — not started, and why
+The `Gpu2DComposer` item that was previously listed here as blocked is done.
+The blocker was mis-stated: §11.3 forbids *mixing* a descriptor-strategy change
+into a responsibility move, not the move itself. Separating ownership while
+leaving the fourteen-slot UAV table assembled from borrowed handles is exactly
+the "structure only, same behaviour" step it asks for first, and that is what
+landed. Splitting the table itself remains out of scope, and the module headers
+say so.
 
-What remains of VK-SRP-004 and DX-SRP-003 after the extractions above:
-`Gpu2DComposer` and `Rasterizer3D`.
+## What is left
 
-### The physical `CaptureBridge` and its shared command context
+Phase 2 is complete on both backends: the output publisher, capture bridge,
+GPU2D compositor and pipeline repository are all separate modules, and what
+remains in each `Renderer3D` is the 3D rasterizer plus the sub-components it
+composes.
 
-This one is worth stating precisely, because three earlier "blockers" in this
-document turned out to be avoidable and this one is not the same shape: it is a
-real constraint on *how* the split may be done, not on whether.
+Two refinements are deliberately not done, and neither is a responsibility
+problem:
 
-`DX12Renderer3D::CaptureCommands` is not a capture-only command context. It is
-the *demand-driven readback* context, used by two different responsibilities:
+- **The compositor's slot record still mixes two roles.**
+  `<Backend>Gpu2DOutput::Slot` carries both the presentation record (the
+  composed and direct resources, the frame descriptor) and the upload record
+  (structured staging, content generation); `ComposeWorkSlot` likewise mixes
+  compose work with capture scratch. Splitting those is a pure data reshuffle
+  inside one module now, not a class boundary move, and it should be done with
+  the golden hashes confirmed unchanged.
+- **The descriptor strategy.** DX12 binds one fourteen-slot UAV table whose
+  slots are overloaded by dispatch kind, and Vulkan keeps the compositor's
+  pipelines in the rasterizer's shader-step array. Both are deliberate: the
+  audit's §11.3 rules out folding a descriptor or pipeline-construction change
+  into a responsibility move, and each module header records the constraint so
+  the next reader does not mistake it for an oversight.
 
-1. `RecordNativeResolveAndReadback()` — resolving `FinalFB` into the readback
-   buffer for `GetLine()`, which is a rasterizer concern;
-2. `ReadNativeCapture()` — copying native VRAM capture blocks out, which is the
-   capture concern.
-
-They are not merely co-located. They serialize *against each other* through it:
-`ReadNativeCapture()` retires the pending 3D readback before reusing the
-allocator (`if (NativeReadbackSubmitted && !FrameReadbackValid)
-EnsureFrameReadback();`), and both wait on the same
-`CaptureCommands.WaitForSubmittedValue()`. Vulkan has the same arrangement
-around `CaptureFrames`.
-
-So a `CaptureBridge` that owns the context makes the rasterizer's `GetLine()`
-path reach into the capture bridge — a sibling cross-reference the audit
-explicitly rules out (§5, "resource ownerを循環させない"). A `CaptureBridge`
-that does *not* own it cannot perform its own readback, which is the only
-operation that would make it a bridge. Giving each responsibility its own
-command context removes the mutual serialization, which is a GPU submission
-behaviour change — and §11.3 forbids folding queue/submission changes into an
-SRP refactor.
-
-#### The decision, and how it was resolved
-
-**Taken: the demand-driven readback context is its own concern, owned by the
-renderer facade and used by both paths.** Separate contexts are ruled out —
-that removes the mutual serialization, which is a GPU submission behaviour
-change and §11.3 forbids folding one of those into a responsibility refactor.
-Under §12's dependency direction the context is low-level infrastructure shared
-by two feature components, so it belongs to the facade above them rather than
-to either one.
-
-That makes the resolution a naming and contract change rather than a
-restructuring, and the naming was the actual defect: `CaptureCommands` claimed
-sole ownership by the capture path, which is why the code had to carry a
-comment correcting itself at the point of use. The members are now
-`DemandReadbackCommands` / `DemandReadbackDescriptors` on DX12 and
-`DemandReadbackFrames` on Vulkan, with the dual use and the serialization
-contract stated where they are declared.
-
-What this leaves for a future `CaptureBridge`: it owns the capture *resources*
-(`CaptureSidecarBuffer`, `NativeCaptureReadback`) and receives the readback
-context, rather than owning it. No sibling reaches into another, and the
-submission ordering is untouched.
-
-The audit sequences `OutputPublisher` first, on the grounds that output leases,
-resource generation and slot identity are relatively independent of the raster
-algorithm. The *protocol* half of that is done (above). The *resource* half is
-where the remaining work is blocked, and it blocks the composer and capture
-splits too: both backends' `OutputState` is a single struct whose `Slot` and
-`ComposeWorkSlot` bundle, in one allocation:
-
-- the presentation slot ring, the lease refcount and the frame identity
-  (output publication),
-- the structured upload staging and its content generation (2D composition),
-- the native staging/input buffers, the semantic line cache and the
-  native/diagnostic readbacks (capture),
-- and, on DX12, a per-slot `DX12CommandContext` and `DX12DescriptorRing`
-  (synchronization infrastructure).
-
-So the composer and the capture bridge are entangled at the level of
-individual struct members: neither can be cut without deciding who owns each
-buffer in those two structs. What is left of Phase 2 is therefore not three
-independent steps but one restructuring of the resource model in both
-backends, inside files of ~5,000 lines each.
-
-The audit is explicit that a bad version of this is worse than not doing it —
-splitting into five files that reference each other by raw pointer is not an
-improvement, and ownership must stay one-way from the facade down.
-
-The blocking constraint is verification, not effort. The audit's own Definition
-of Done requires that current frame identity, capture provenance, the native
-GPU2D exact path and Software parity are all preserved, across the §14 matrix,
-on real hardware. Those are runtime claims. This tree also has known-open
-Vulkan issues in capture-background scenes, and the established verification
-method here is per-frame comparison at 120 fps — averaging or spot-checking
-hides alternating-frame bugs.
-
-### What Phase 2 should do when it is picked up
-
-1. **Split the resource model before splitting the class.** Separate
-   `OutputState::Slot` into a presentation record (the composed/direct
-   resource and the frame descriptor — the lease bookkeeping is already out)
-   and a composer upload record (structured staging, content generation).
-   Separate `ComposeWorkSlot` into a compose work record and a capture record.
-   Do this as a pure data reshuffle, with no class boundaries moved, and
-   confirm the golden hashes are unchanged.
-2. `Gpu2DComposer`, with an explicit read-only contract on the 3D `FinalFB`.
-3. `Rasterizer3D` is whatever remains.
-
-Do one backend at a time, and do not mix in queue configuration,
-frames-in-flight, descriptor strategy, shader or barrier changes — the audit's
-§11.3 rule.
-
-### VK-SRP-005, deferred
-
-Extracting `VulkanPresentationLatencyController` out of `VulkanPresenter` looks
-symmetric with the DX12 work above, but is not. The Vulkan vendor objects have
-~100 call sites, and `PresentPacer` in particular participates in swapchain
-*construction* — surface capability queries, `VkSwapchainCreateInfoKHR` flags,
-NV low-latency optimized present-mode selection. Splitting it means first
-deciding whether present-mode selection belongs to the swapchain or to the
-pacing controller, which is a design question, not a move.
-
-The audit rates this MEDIUM-LOW and notes the Vulkan placement is already
-*better* than DX12's was. It is not worth spending the risk budget before
-Phase 2.
+Phase 3 items the audit rated LOW remain open: `VulkanDevice` budget and
+diagnostics (VK-SRP-002), and a `DX12SurfacePresenter` swapchain/layer split
+(DX-SRP-004), which is not needed yet.
 
 ## Rules for anyone continuing this
 
@@ -948,4 +960,15 @@ Phase 2.
   If a new caller needs a marker, add a frame phase — do not re-export a vendor
   method from a renderer or a panel.
 - Low-level DX12 modules must not include `DX12Context.h`.
+- A component borrows through its context struct, never through a pointer back
+  to the renderer. `DX12Gpu2DComposeContext` / `VulkanGpu2DComposeContext` are
+  rebuilt per call for that reason; a cached one could outlive the resources it
+  names.
+- Callbacks into the renderer stay plain function pointers. These run once per
+  DS frame on the emulation thread; `std::function` would put an allocation and
+  an indirect call in that path.
 - Structure and behaviour do not change in the same commit.
+- Before claiming something is blocked, quote the rule that blocks it and check
+  that it says what you remember. Several "blockers" in this document's history
+  were mis-readings, the last of them the one that supposedly ruled out this
+  whole compositor extraction.
