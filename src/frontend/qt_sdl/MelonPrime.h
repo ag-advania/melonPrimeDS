@@ -195,9 +195,10 @@ namespace MelonPrime {
     //
     // Public surface: lifecycle control (Initialize/RunFrameHook/OnEmu*),
     // ARM9 instruction-hook module contracts (MELONPRIME_DS), narrow
-    // accessors, and a handful of directly-mutated public runtime flags
-    // (isCursorMode/isFocused/etc. -- read/written by Screen.cpp,
-    // InputConfig, and EmuThread).
+    // accessors, and the narrow setters EmuThread uses for runtime state
+    // it owns (SetFastForwardState). Emulation runtime flags themselves
+    // are private: GUI reads take MelonPrimeUiSnapshot through
+    // ThreadBridge(), and GUI writes go through its mailbox.
     //
     // Private surface: cache-optimized member layout (see the banner at
     // "Cache-optimized member layout" below), inline hot-path helpers, and
@@ -391,11 +392,33 @@ namespace MelonPrime {
         [[nodiscard]] const MelonPrimeThreadBridge& ThreadBridge() const noexcept { return m_threadBridge; }
 
         // EmuThread-owned runtime state. GUI consumers use ThreadBridge().
+        //
+        // Private on purpose: the emulation thread is the only writer.
+        //   GUI read    -> MelonPrimeUiSnapshot via ThreadBridge().ReadForGui()
+        //   GUI write   -> the existing ThreadBridge mailbox
+        //                  (RequestCursorModeFromGui / ConsumeCursorModeForEmu)
+        //   config write-> ApplyRuntimeConfigSnapshot, the sole writer of
+        //                  screenSyncMode and isStylusMode
+        //   EmuThread   -> SetFastForwardState() below, the only narrow setter
+        //
+        // Declaration order is deliberately untouched -- these five stay exactly
+        // where they were in the member layout; only their access changed. Do not
+        // answer a new external need with a public runtime-config getter; see
+        // docs/architecture/srp-performance-contract.md.
+    private:
         bool isCursorMode = true;
         bool isStylusMode = false;
         bool m_snapTapMode = false;     // Cached from BIT_SNAP_TAP; avoids bitmask test in hot path
         bool isFastForward = false;     // Set by EmuThread; Screen Sync skips when true
         int  screenSyncMode = 0;       // 0=Off, 1=glFinish, 2=DwmFlush
+
+    public:
+        // EmuThread-only runtime write. Fast-forward/slow-motion is decided on
+        // the emulation thread and mirrored into the UI snapshot from there; a
+        // plain store, so this is the same codegen as the direct field write it
+        // replaces. Never add allocation, logging, config lookup, an atomic, or
+        // virtual dispatch here.
+        FORCE_INLINE void SetFastForwardState(bool active) noexcept { isFastForward = active; }
 
         void NotifyLayoutChange();  // P-3: impl in .cpp (needs complete EmuInstance type)
 
