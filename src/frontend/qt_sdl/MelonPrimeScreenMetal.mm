@@ -1243,6 +1243,7 @@ void ScreenPanelMetal::drawScreen()
                             &ensureOverlayPainter(), nullptr,
                             &m->uiOverlay, nullptr,
                             mp->IsInGame(),
+                            m_hudEnabled,
                             m_hudTopMatrixValid ? m_topStretchX : 1.0f,
                             m_hudScale,
                             (m_hudScale != 0.0f) ? (m_hudOriginX / m_hudScale) : 0.0f,

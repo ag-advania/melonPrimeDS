@@ -267,7 +267,18 @@ struct CachedHudConfig {
     bool valid;
 };
 
+struct HudBattleOwnedState;
+struct HudFrameOwnedState;
+struct HudElementTextCacheState;
+// The editor currently keeps its interactive values in the config state
+// itself. Keep a typed cold-lifetime slot ready for editor-owned state without
+// reintroducing a type-erased owner into the render path.
+struct HudEditorOwnedState {};
+
 struct CustomHudConfigState {
+    CustomHudConfigState();
+    ~CustomHudConfigState();
+
     CachedHudConfig cache = { .valid = false };
     uint32_t cacheEpoch = 1;
     uint32_t visualGeneration = 1;
@@ -400,10 +411,10 @@ struct CustomHudConfigState {
     int radarSrcBufW = -1;
     int radarSrcBufH = -1;
 
-    std::shared_ptr<void> runtimeState;
-    std::shared_ptr<void> frameState;
-    std::shared_ptr<void> textCacheState;
-    std::shared_ptr<void> editorState;
+    std::unique_ptr<HudBattleOwnedState> runtimeState;
+    std::unique_ptr<HudFrameOwnedState> frameState;
+    std::unique_ptr<HudElementTextCacheState> textCacheState;
+    std::unique_ptr<HudEditorOwnedState> editorState;
 };
 
 static thread_local CustomHudConfigState* g_activeHudConfigState = nullptr;
@@ -426,11 +437,6 @@ static CustomHudConfigState& ActiveHudConfigState()
 {
     Q_ASSERT(g_activeHudConfigState);
     return *g_activeHudConfigState;
-}
-
-std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
-{
-    return std::make_shared<CustomHudConfigState>();
 }
 
 #define s_cache (ActiveHudConfigState().cache)

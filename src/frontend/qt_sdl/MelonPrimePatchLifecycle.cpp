@@ -13,14 +13,12 @@ namespace {
 
 void SetMatchHooksActive(melonDS::NDS* nds,
                          EmuInstance* emu,
-                         Config::Table& cfg,
                          const RomAddresses& rom,
                          MelonPrimeCore* core,
                          bool active)
 {
     ARM9Hook_SetMatchHooksActive(
         nds,
-        cfg,
         rom.romGroupIndex,
         core,
         active,
@@ -112,7 +110,7 @@ void ReapplyForConfigReload(melonDS::NDS* nds,
     if (!romDetected || !battleRuntimeMode)
         return;
 
-    SetMatchHooksActive(nds, emu, cfg, rom, core, true);
+    SetMatchHooksActive(nds, emu, rom, core, true);
     ApplyRegistryPatches(PatchSite_ConfigReload, nds, emu, cfg, rom, core);
 }
 
@@ -149,7 +147,7 @@ void RestoreOnMatchEnd(melonDS::NDS* nds,
                        MelonPrimeCore* core)
 {
     RestoreLeavePatches(nds, emu, cfg, rom, core);
-    SetMatchHooksActive(nds, emu, cfg, rom, core, false);
+    SetMatchHooksActive(nds, emu, rom, core, false);
 }
 
 void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
@@ -160,7 +158,7 @@ void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
                                bool nativeWeaponSwitchEnabled)
 {
     ApplyRegistryPatches(PatchSite_BattleRuntime, nds, emu, cfg, rom, core);
-    SetMatchHooksActive(nds, emu, cfg, rom, core, true);
+    SetMatchHooksActive(nds, emu, rom, core, true);
     if (nativeWeaponSwitchEnabled)
         (void)MelonPrimeCore::WeaponSwitchHook_IsSiteValid(nds, rom.romGroupIndex);
 }
@@ -171,7 +169,8 @@ void DeactivateHooksOnLeaveInGame(melonDS::NDS* nds,
                                   const RomAddresses& rom,
                                   MelonPrimeCore* core)
 {
-    SetMatchHooksActive(nds, emu, cfg, rom, core, false);
+    (void)cfg;
+    SetMatchHooksActive(nds, emu, rom, core, false);
 }
 
 void DeactivateHooksForRomDetect(melonDS::NDS* nds,
@@ -180,7 +179,8 @@ void DeactivateHooksForRomDetect(melonDS::NDS* nds,
                                  const RomAddresses& rom,
                                  MelonPrimeCore* core)
 {
-    SetMatchHooksActive(nds, emu, cfg, rom, core, false);
+    (void)cfg;
+    SetMatchHooksActive(nds, emu, rom, core, false);
     // A ROM can be opened/re-detected without a full MelonPrimeCore restart.
     // Drop all patch bookkeeping so a same-region ROM cannot inherit the
     // previous ROM's "already applied" cache.

@@ -220,9 +220,9 @@ static void DevOsdHookUnregistered(EmuInstance* emu) noexcept
 
 void ARM9Hook_Install(
     melonDS::NDS* nds,
-    Config::Table& cfg,
     uint8_t romGroupIndex,
     MelonPrimeCore* core,
+    const Arm9HookActivationPlan& plan,
     uint8_t activeScope,
     EmuInstance* osdEmu)
 {
@@ -258,78 +258,41 @@ void ARM9Hook_Install(
             AddDispatchAddress(state, moduleAddresses[i], mask);
     };
 
-    int nativeAimHookMode = cfg.GetInt(CfgKey::NativeAimHookMode);
-#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    nativeAimHookMode = 0;
-#endif
-    if (!cfg.GetBool(CfgKey::DisableMphAimSmoothing))
-        nativeAimHookMode = 0;
-
     // Register only hooks that can actually run for the current config. Each
     // registered ARM9 PC becomes a JIT trampoline call site, so leaving disabled
     // features registered is visible in the in-game hot path.
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    const bool enableImmediateOverlay = cfg.GetBool(CfgKey::ImmediateInputEdgeOverlay);
-    const bool enableNativeZoomToggle =
-        cfg.GetInt(CfgKey::ZoomInputMethod) == ZoomInputMethod::NewNativeToggle;
-    const bool enableNativeBipedFire =
-        cfg.GetInt(CfgKey::BipedFireMethod) != BipedFireMethod::LegacyInput;
-#else
-    constexpr bool enableImmediateOverlay = false;
-    constexpr bool enableNativeZoomToggle = false;
-    constexpr bool enableNativeBipedFire = false;
-#endif
-    const bool enableNoxusBlade =
-        cfg.GetBool(MelonPrime::CfgKey::FixNoxusBladePersistence);
-    const bool enableShadowFreeze = cfg.GetBool(CfgKey::FixShadowFreeze);
-    const bool enableTransformGate = cfg.GetBool(CfgKey::DirectAltFormTransform);
-    const bool enableWeaponSwitch =
-        cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
-    int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
-    if (lowLatencyAimMode == LowLatencyAimMode::Off
-        && cfg.GetBool(CfgKey::InstantAimFollow))
-        lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
-#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    if (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow)
-        lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
-#endif
-    const bool enableLowLatencyAim =
-        cfg.GetBool(CfgKey::DisableMphAimSmoothing)
-        && !cfg.GetBool(CfgKey::StylusMode)
-        && (lowLatencyAimMode == LowLatencyAimMode::ImmediateSync
-            || lowLatencyAimMode == LowLatencyAimMode::MoonLikeAim);
-
-    if (enableShadowFreeze)
-        ShadowFreezeRuntimeHook_SetState(&cfg, romGroupIndex);
+    if (plan.shadowFreeze)
+        ShadowFreezeRuntimeHook_SetState(true, romGroupIndex);
     else
         ShadowFreezeRuntimeHook_ClearState();
 
-    if (enableNoxusBlade)
-        FixNoxusBladePersistence_SetState(&cfg, romGroupIndex);
+    if (plan.noxusBladePersistence)
+        FixNoxusBladePersistence_SetState(true, romGroupIndex);
     else
         FixNoxusBladePersistence_ClearState();
 
-    if (nativeAimHookMode == 1)
+    if (plan.nativeAimHookMode == 1)
     {
         moduleCount = MelonPrimeCore::NativeAimDeltaHookRegisterInjection_GetAddresses(
             romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
         addModuleAddresses(Dispatch_NativeAimDelta);
     }
-    else if (nativeAimHookMode == 2)
+    else if (plan.nativeAimHookMode == 2)
     {
         moduleCount = MelonPrimeCore::NativeAimDeltaHookPostFoldWrite_GetAddresses(
             romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
         addModuleAddresses(Dispatch_NativeAimDelta);
     }
 
-    if (enableLowLatencyAim)
+    if (plan.lowLatencyAimMode == LowLatencyAimMode::ImmediateSync
+        || plan.lowLatencyAimMode == LowLatencyAimMode::MoonLikeAim)
     {
         moduleCount = MelonPrimeCore::LowLatencyAimHook_GetAddresses(
             romGroupIndex, moduleAddresses, melonDS::NDS::ARM9InstructionHookMaxAddresses);
         addModuleAddresses(Dispatch_LowLatencyAim);
     }
 
-    if (enableShadowFreeze)
+    if (plan.shadowFreeze)
     {
         moduleCount = ShadowFreezeRuntimeHook_GetAddresses(
             romGroupIndex,
@@ -338,7 +301,7 @@ void ARM9Hook_Install(
         addModuleAddresses(Dispatch_ShadowFreeze);
     }
 
-    if (enableNoxusBlade)
+    if (plan.noxusBladePersistence)
     {
         moduleCount = FixNoxusBladePersistence_GetAddresses(
             romGroupIndex,
@@ -347,7 +310,7 @@ void ARM9Hook_Install(
         addModuleAddresses(Dispatch_NoxusBlade);
     }
 
-    if (enableImmediateOverlay)
+    if (plan.immediateInputEdgeOverlay)
     {
         moduleCount = MelonPrimeCore::ImmediateInputEdgeOverlay_GetAddresses(
             romGroupIndex,
@@ -356,7 +319,7 @@ void ARM9Hook_Install(
         addModuleAddresses(Dispatch_ImmediateInputEdgeOverlay);
     }
 
-    if (enableNativeZoomToggle)
+    if (plan.nativeZoomToggle)
     {
         moduleCount = MelonPrimeCore::NativeZoomToggleHook_GetAddresses(
             romGroupIndex,
@@ -365,7 +328,7 @@ void ARM9Hook_Install(
         addModuleAddresses(Dispatch_NativeZoomToggle);
     }
 
-    if (enableNativeBipedFire)
+    if (plan.nativeBipedFire)
     {
         moduleCount = MelonPrimeCore::NativeBipedFireHook_GetAddresses(
             romGroupIndex,
@@ -374,7 +337,7 @@ void ARM9Hook_Install(
         addModuleAddresses(Dispatch_NativeBipedFire);
     }
 
-    if (enableTransformGate)
+    if (plan.directAltFormTransform)
     {
         moduleCount = MelonPrimeCore::TransformGateHook_GetAddresses(
             romGroupIndex,
@@ -383,7 +346,7 @@ void ARM9Hook_Install(
         addModuleAddresses(Dispatch_TransformGate);
     }
 
-    if (enableWeaponSwitch)
+    if (plan.nativeWeaponSwitch)
     {
         moduleCount = MelonPrimeCore::WeaponSwitchHook_GetAddresses(
             romGroupIndex,
@@ -444,7 +407,6 @@ void ARM9Hook_Install(
 
 void ARM9Hook_SetMatchHooksActive(
     melonDS::NDS* nds,
-    Config::Table& cfg,
     uint8_t romGroupIndex,
     MelonPrimeCore* core,
     bool active,
@@ -452,9 +414,9 @@ void ARM9Hook_SetMatchHooksActive(
 {
     ARM9Hook_Install(
         nds,
-        cfg,
         romGroupIndex,
         core,
+        core->GetArm9HookActivationPlan(),
         active ? ARM9HookScope_InMatch : 0,
         osdEmu);
 }

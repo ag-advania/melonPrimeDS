@@ -75,6 +75,8 @@ struct RuntimeConfigSnapshot {
 
 #ifdef MELONPRIME_DS
     bool nativeWeaponSwitch = false;
+    bool fixShadowFreeze = false;
+    bool fixNoxusBladePersistence = false;
 #endif
 
     int screenSyncMode = 0;

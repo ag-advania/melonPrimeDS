@@ -2608,6 +2608,7 @@ bool ScreenPanelVulkan::renderHudOverlay(
             &painter, nullptr,
             &Overlay[0], radarSource,
             mp->IsInGame(),
+            m_hudEnabled,
             m_topStretchX, m_hudScale,
             m_hudOriginX / m_hudScale, m_hudOriginY / m_hudScale);
         if (hudRenderStart)

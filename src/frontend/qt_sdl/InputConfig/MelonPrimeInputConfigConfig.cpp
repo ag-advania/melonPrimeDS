@@ -226,8 +226,6 @@ void MelonPrimeInputConfig::saveConfig()
 
     // P-3: Invalidate cached config so next frame re-reads all values
 #ifdef MELONPRIME_DS
-    MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
-    MelonPrime::FixNoxusBladePersistence_NotifyConfigChanged();
     if (auto* thread = emuInstance->getEmuThread()) {
         if (auto* core = thread->GetMelonPrimeCore())
         {

@@ -7,7 +7,6 @@
 #include "NDS.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -291,16 +290,12 @@ static const IceWaveDecisionHook* FindHook(uint8_t romGroupIndex, uint32_t arm9E
 }
 
 // File-static hook registration state (no context struct needed).
-static Config::Table* s_cfg = nullptr;
 static const IceWaveDecisionHook* s_activeHooks = nullptr;
 static std::size_t s_activeHookCount = 0;
 
-// Config generation cache: avoids a GetBool map lookup on every hook invocation.
-// s_configGen is written by the GUI thread (NotifyConfigChanged) and read by the
-// emu thread (HookCallback).  Atomic acquire/release is sufficient.
-static std::atomic<uint32_t> s_configGen{1};
-static uint32_t s_configGenSeen = 0;  // emu thread only
-static bool s_enabledCached = false;  // emu thread only
+// The activation plan supplies this immutable-for-the-active-hook-set gate at
+// the cold install edge. The dispatcher never consults Config::Table.
+static bool s_enabledCached = false;
 
 // Core hook logic shared by both the callback and the public direct entry point.
 static bool ApplyHookForDecision(
@@ -361,10 +356,8 @@ uint32_t ShadowFreezeRuntimeHook_GetAddresses(
     return count;
 }
 
-void ShadowFreezeRuntimeHook_SetState(Config::Table* cfg, uint8_t romGroupIndex)
+void ShadowFreezeRuntimeHook_SetState(bool enabled, uint8_t romGroupIndex)
 {
-    s_cfg           = cfg;
-
     if (romGroupIndex < sizeof(kRomHooks) / sizeof(kRomHooks[0]))
     {
         s_activeHooks = kRomHooks[romGroupIndex].Hooks;
@@ -376,14 +369,11 @@ void ShadowFreezeRuntimeHook_SetState(Config::Table* cfg, uint8_t romGroupIndex)
         s_activeHookCount = 0;
     }
 
-    const uint32_t gen = s_configGen.load(std::memory_order_acquire);
-    s_enabledCached = cfg && cfg->GetBool(MelonPrime::CfgKey::FixShadowFreeze);
-    s_configGenSeen = gen;
+    s_enabledCached = enabled;
 }
 
 void ShadowFreezeRuntimeHook_ClearState()
 {
-    s_cfg           = nullptr;
     s_activeHooks = nullptr;
     s_activeHookCount = 0;
     s_enabledCached = false;
@@ -396,15 +386,6 @@ bool ShadowFreezeRuntimeHook_DispatchCheckAndRedirect(
     uint32_t& redirectExecAddr)
 {
     redirectExecAddr = 0;
-    if (!s_cfg)
-        return false;
-
-    const uint32_t gen = s_configGen.load(std::memory_order_acquire);
-    if (s_configGenSeen != gen)
-    {
-        s_enabledCached = s_cfg->GetBool(MelonPrime::CfgKey::FixShadowFreeze);
-        s_configGenSeen = gen;
-    }
     if (!s_enabledCached)
         return false;
 
@@ -456,16 +437,9 @@ bool ShadowFreezeRuntimeHook_CheckAndRedirectFromPipelinedR15(
 
 void ShadowFreezeRuntimeHook_ResetPatchState()
 {
-    s_cfg = nullptr;
     s_activeHooks = nullptr;
     s_activeHookCount = 0;
-    s_configGenSeen = 0;
     s_enabledCached = false;
-}
-
-void ShadowFreezeRuntimeHook_NotifyConfigChanged()
-{
-    s_configGen.fetch_add(1, std::memory_order_release);
 }
 
 } // namespace MelonPrime

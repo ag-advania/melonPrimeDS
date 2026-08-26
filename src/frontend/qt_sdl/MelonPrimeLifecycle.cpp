@@ -109,6 +109,24 @@ namespace MelonPrime {
         m_enableNativeWeaponSwitch = s.nativeWeaponSwitch;
         if (!m_enableNativeWeaponSwitch)
             m_weaponSwitchPending.Clear();
+
+        // Resolve the complete ARM9 activation policy once at the cold config
+        // boundary. ARM9Hook_Install consumes this plan to select modules and
+        // address masks; it never re-reads or reinterprets Config::Table.
+        m_arm9HookActivationPlan.nativeAimHookMode =
+            s.disableMphAimSmoothing ? s.nativeAimHookMode : 0;
+        m_arm9HookActivationPlan.lowLatencyAimMode =
+            s.stylusMode ? LowLatencyAimMode::Off : s.lowLatencyAimMode;
+        m_arm9HookActivationPlan.immediateInputEdgeOverlay =
+            s.immediateInputEdgeOverlay;
+        m_arm9HookActivationPlan.nativeZoomToggle = s.nativeZoomToggle;
+        m_arm9HookActivationPlan.nativeBipedFire = s.nativeBipedFire;
+        m_arm9HookActivationPlan.directAltFormTransform =
+            s.directAltFormTransform;
+        m_arm9HookActivationPlan.nativeWeaponSwitch = s.nativeWeaponSwitch;
+        m_arm9HookActivationPlan.shadowFreeze = s.fixShadowFreeze;
+        m_arm9HookActivationPlan.noxusBladePersistence =
+            s.fixNoxusBladePersistence;
 #endif
 
         screenSyncMode = s.screenSyncMode;

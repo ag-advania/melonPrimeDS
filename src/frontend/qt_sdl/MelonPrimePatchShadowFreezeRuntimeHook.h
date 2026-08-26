@@ -5,8 +5,8 @@
 
 #include <cstdint>
 
-namespace Config { class Table; }
 namespace melonDS { class NDS; }
+namespace Config { class Table; }
 
 namespace MelonPrime {
 
@@ -23,7 +23,7 @@ uint32_t ShadowFreezeRuntimeHook_GetAddresses(
     uint32_t* out,
     uint32_t maxCount);
 
-void ShadowFreezeRuntimeHook_SetState(Config::Table* cfg, uint8_t romGroupIndex);
+void ShadowFreezeRuntimeHook_SetState(bool enabled, uint8_t romGroupIndex);
 void ShadowFreezeRuntimeHook_ClearState();
 
 // Fast dispatch path called from the shared ARM9 HookCallback.
@@ -52,8 +52,6 @@ bool ShadowFreezeRuntimeHook_CheckAndRedirectFromPipelinedR15(
     uint32_t& redirectExecAddr);
 
 void ShadowFreezeRuntimeHook_ResetPatchState();
-void ShadowFreezeRuntimeHook_NotifyConfigChanged();
-
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS

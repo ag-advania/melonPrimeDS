@@ -461,12 +461,9 @@ struct HudElementTextCacheState {
     TextBitmapCache ammoOutline{};
 };
 
-static HudElementTextCacheState& HudElementTextCaches()
+static FORCE_INLINE HudElementTextCacheState& HudElementTextCaches() noexcept
 {
-    auto& slot = ActiveHudConfigState().textCacheState;
-    if (!slot)
-        slot = std::make_shared<HudElementTextCacheState>();
-    return *std::static_pointer_cast<HudElementTextCacheState>(slot);
+    return *ActiveHudConfigState().textCacheState;
 }
 
 // textDrawScale: visual scale applied when drawing (textScalePct/100). Returned
@@ -729,4 +726,3 @@ static inline void DrawImageOutlined(QPainter* p,
     p->drawImage(dst, icon);
     p->setOpacity(1.0f);
 }
-

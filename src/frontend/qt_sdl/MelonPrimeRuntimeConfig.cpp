@@ -120,6 +120,9 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 #ifdef MELONPRIME_DS
     s.nativeWeaponSwitch =
         cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
+    s.fixShadowFreeze = cfg.GetBool(CfgKey::FixShadowFreeze);
+    s.fixNoxusBladePersistence =
+        cfg.GetBool(CfgKey::FixNoxusBladePersistence);
 #endif
 
     s.screenSyncMode = NormalizeScreenSyncMode(cfg.GetInt(CfgKey::ScreenSyncMode));

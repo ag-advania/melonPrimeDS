@@ -19,6 +19,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     QPainter* topPaint, QPainter* btmPaint,
     QImage* topBuffer, QImage* btmBuffer,
     bool isInGame,
+    bool hudEnabledSnapshot,
     float topStretchX, float hudScale,
     float hudOriginXds, float hudOriginYds)
 {
@@ -59,11 +60,11 @@ HOT_FUNCTION QRect CustomHud_Render(
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return QRect();
 
-    // Defensive: caller (Screen.cpp) gates on the epoch-cached m_hudEnabled,
-    // which can be stale right after the user toggles the setting. Re-check
-    // the live config so we never apply NoHudPatch / write hudToggle while
-    // CustomHUD is actually disabled.
-    if (!CustomHud_IsEnabled(localCfg)) {
+    // Screen.cpp refreshed the authoritative enabled decision at the config
+    // epoch boundary and used the same snapshot for visibility/restore. Keep
+    // the render decision coherent with that boundary; NoHud restore was
+    // already handled by the caller before entering this function.
+    if (UNLIKELY(!hudEnabledSnapshot)) {
         CustomHud_RestoreNativeHudState(rom, st);
         return QRect();
     }

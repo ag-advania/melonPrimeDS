@@ -365,6 +365,49 @@ foreach ($signature in @(
     }
 }
 
+# --- Rule G: HUD owner slots stay typed and cold-owned ---------------------
+#
+# Runtime/frame/text/editor state is per CustomHudConfigState. Type erasure or
+# lazy make_shared in these slots puts refcount/heap work back on the render
+# path and makes ownership invisible to the compiler. The top-level
+# m_hudConfigState shared_ptr remains the explicit Core lifetime boundary; this
+# rule only covers the internal owner slots and their accessors.
+$hudOwnerSources = @(Get-ChildItem -LiteralPath $qtSdl -File |
+    Where-Object { $_.Name -like 'MelonPrimeHud*.inc' -or $_.Name -like 'MelonPrimeHud*.h' })
+$hudOwnerForbiddenPatterns = @(
+    'std::shared_ptr\s*<\s*void\s*>',
+    'std::static_pointer_cast\s*<',
+    'std::make_shared\s*<\s*(?:HudBattleOwnedState|HudFrameOwnedState|HudElementTextCacheState|HudEditorOwnedState)'
+)
+foreach ($source in $hudOwnerSources) {
+    foreach ($pattern in $hudOwnerForbiddenPatterns) {
+        foreach ($line in (Get-CodeMatchLines $pattern $source.FullName)) {
+            Add-Error ("Custom HUD owner slots must use typed cold ownership; " +
+                "forbidden ${pattern}: $line")
+        }
+    }
+}
+$hudOwnerSlotPath = Join-Path $qtSdl 'MelonPrimeHudRenderConfig.inc'
+foreach ($slot in @(
+    @{ Type = 'HudBattleOwnedState'; Name = 'runtimeState' },
+    @{ Type = 'HudFrameOwnedState'; Name = 'frameState' },
+    @{ Type = 'HudElementTextCacheState'; Name = 'textCacheState' },
+    @{ Type = 'HudEditorOwnedState'; Name = 'editorState' })) {
+    $slotPattern = "std::unique_ptr\s*<\s*$($slot.Type)\s*>\s+$($slot.Name)\s*;"
+    if ((Get-CodeMatchLines $slotPattern $hudOwnerSlotPath).Count -eq 0) {
+        Add-Error ("CustomHudConfigState must keep a typed unique_ptr slot for " +
+            "$($slot.Name) ($($slot.Type))")
+    }
+}
+$hudOwnerFactoryPath = Join-Path $qtSdl 'MelonPrimeHudRender.cpp'
+foreach ($typeName in @('HudBattleOwnedState', 'HudFrameOwnedState',
+                         'HudElementTextCacheState', 'HudEditorOwnedState')) {
+    if ((Get-CodeMatchLines "std::make_unique\s*<\s*$typeName\s*>" $hudOwnerFactoryPath).Count -eq 0) {
+        Add-Error ("CustomHudConfigState cold construction must initialize " +
+            "$typeName with std::make_unique")
+    }
+}
+
 # Neither may the render header pull the split headers back in and re-export
 # them, which would restore the include coupling this split removed.
 foreach ($line in (Get-MatchLines '#include\s+"MelonPrimeHud(Edit|PatchLifecycle|Radar|Runtime|PresentationState|GoldenHarness)\.h"' $hudRenderHeader)) {
@@ -460,6 +503,71 @@ function Get-FunctionBody {
     return $body
 }
 
+# --- Rule H: CustomHud_Render consumes the screen snapshot ----------------
+#
+# Screen.cpp refreshes m_hudEnabled once per HUD config epoch and uses that
+# same value for visibility/restore and the render call. A live Config::Table
+# lookup here would make those decisions disagree on a toggle edge.
+$hudRenderMainPath = Join-Path $qtSdl 'MelonPrimeHudRenderMain.inc'
+$hudRenderMainLines = [System.IO.File]::ReadAllLines($hudRenderMainPath)
+$hudRenderStartIndex = -1
+for ($i = 0; $i -lt $hudRenderMainLines.Length; $i++) {
+    if ($hudRenderMainLines[$i] -match '^\s*(?:HOT_FUNCTION\s+)?QRect\s+CustomHud_Render\s*\(') {
+        $hudRenderStartIndex = $i
+        break
+    }
+}
+if ($hudRenderStartIndex -lt 0) {
+    Add-Error 'CustomHud_Render() definition was not found for the HUD enabled-snapshot check'
+} else {
+    $hudRenderBody = @(Get-FunctionBody -Lines $hudRenderMainLines -StartIndex $hudRenderStartIndex)
+    foreach ($entry in $hudRenderBody) {
+        $code = $entry.Text -replace '//.*$', ''
+        if ($code -match 'CustomHud_IsEnabled\s*\(') {
+            Add-Error ("CustomHud_Render must consume hudEnabledSnapshot, not " +
+                "CustomHud_IsEnabled(): $($hudRenderMainPath):$($entry.Line):$($entry.Text.Trim())")
+        }
+        if ($code -match '\bGet(?:Bool|Int|Double|String)\s*\(') {
+            Add-Error ("CustomHud_Render must not perform a live Config::Table lookup: " +
+                "$($hudRenderMainPath):$($entry.Line):$($entry.Text.Trim())")
+        }
+    }
+}
+
+# --- Rule I: ARM9 install consumes only the resolved activation plan --------
+#
+# RuntimeConfigSnapshot owns config interpretation. ARM9Hook_Install is the
+# cold installer and may collect addresses and set module state, but it must
+# not grow a second Config::Table/key interpreter.
+$arm9HookPath = Join-Path $qtSdl 'MelonPrimeArm9Hook.cpp'
+$arm9HookLines = [System.IO.File]::ReadAllLines($arm9HookPath)
+$arm9InstallStartIndex = -1
+for ($i = 0; $i -lt $arm9HookLines.Length; $i++) {
+    if ($arm9HookLines[$i] -match '^\s*void\s+ARM9Hook_Install\s*\(') {
+        $arm9InstallStartIndex = $i
+        break
+    }
+}
+if ($arm9InstallStartIndex -lt 0) {
+    Add-Error 'ARM9Hook_Install() definition was not found for the activation-plan check'
+} else {
+    $arm9SignatureEndIndex = [Math]::Min(
+        $arm9HookLines.Length - 1, $arm9InstallStartIndex + 12)
+    $arm9Signature = $arm9HookLines[$arm9InstallStartIndex..$arm9SignatureEndIndex] -join "`n"
+    if ($arm9Signature -notmatch 'const\s+Arm9HookActivationPlan\s*&\s*plan') {
+        Add-Error 'ARM9Hook_Install() must consume const Arm9HookActivationPlan& plan'
+    }
+
+    $arm9InstallBody = @(Get-FunctionBody -Lines $arm9HookLines -StartIndex $arm9InstallStartIndex)
+    foreach ($entry in $arm9InstallBody) {
+        $code = $entry.Text -replace '//.*$', ''
+        if ($code -match 'Config::Table|CfgKey::|\bGet(?:Bool|Int|Double|String)\s*\(') {
+            Add-Error ('ARM9Hook_Install must not reinterpret runtime config; ' +
+                "${arm9HookPath}:$($entry.Line):$($entry.Text.Trim())")
+        }
+    }
+}
+
 # --- Rule A2: aim smoothing remains wired at game join ---------------------
 #
 # Rule A proves the patch vocabulary left GameSettings and that the patch
@@ -503,7 +611,7 @@ $hotPaths = @(
     @{ File = 'MelonPrimeArm9Hook.cpp';       Signature = '^\s*static\s+bool\s+DispatcherCallback\s*\(' },
     @{ File = 'MelonPrimeHudRenderMain.inc';  Signature = 'QRect\s+CustomHud_Render\s*\(' }
 )
-$hotPathCosts = 'Config::Table|\bGetBool\s*\(|\bGetInt\s*\(|\bGetDouble\s*\(|std::function|\bvirtual\b|dynamic_cast|QMetaObject|std::make_shared|std::make_unique|QString\s*\(|\bmutex\b'
+$hotPathCosts = 'Config::Table|\bGetBool\s*\(|\bGetInt\s*\(|\bGetDouble\s*\(|std::function|\bvirtual\b|dynamic_cast|QMetaObject|std::make_shared|std::make_unique|QString\s*\(|\bmutex\b|std::shared_ptr|std::static_pointer_cast|QMutexLocker|std::lock_guard|std::unique_lock|\bnew\b|std::string'
 $hotPathNotes = New-Object System.Collections.Generic.List[string]
 foreach ($hot in $hotPaths) {
     $hotFile = Join-Path $qtSdl $hot.File

@@ -25,6 +25,7 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "MelonPrimeBattleFlowState.h"
 #include "MelonPrimeZoomState.h"
 #ifdef MELONPRIME_DS
+#include "MelonPrimeArm9Hook.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchState.h"
 #endif
@@ -277,6 +278,10 @@ namespace MelonPrime {
         [[nodiscard]] MelonPrimeArm9HookState& Arm9HookState() noexcept
         {
             return m_arm9HookState;
+        }
+        [[nodiscard]] const Arm9HookActivationPlan& GetArm9HookActivationPlan() const noexcept
+        {
+            return m_arm9HookActivationPlan;
         }
         [[nodiscard]] MelonPrimePatchState& PatchState() noexcept
         {
@@ -752,6 +757,7 @@ namespace MelonPrime {
         ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
 #ifdef MELONPRIME_DS
         MelonPrimeArm9HookState m_arm9HookState{};
+        Arm9HookActivationPlan m_arm9HookActivationPlan{};
         MelonPrimePatchState m_patchState{};
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD

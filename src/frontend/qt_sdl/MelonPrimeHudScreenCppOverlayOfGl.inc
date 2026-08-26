@@ -76,7 +76,7 @@
                     // Per-frame painter (must end before GL upload reads image bits)
                     curDirty = MelonPrimeHud_RenderTopOverlay(
                         emuInstance, instcfg, mp,
-                        Overlay[0], overlayFont,
+                        Overlay[0], overlayFont, m_hudEnabled,
                         topStretchX, hudScale,
                         m_hudOriginX, m_hudOriginY);
                     uploadRect = previousDirty.united(curDirty);

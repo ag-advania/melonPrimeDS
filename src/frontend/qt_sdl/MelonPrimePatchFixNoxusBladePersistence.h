@@ -5,7 +5,6 @@
 
 #include <cstdint>
 
-namespace Config { class Table; }
 namespace melonDS { class NDS; }
 
 namespace MelonPrime {
@@ -36,7 +35,7 @@ uint32_t FixNoxusBladePersistence_GetAddresses(
     uint32_t maxCount);
 
 // Called by the shared dispatcher Install/Uninstall to manage per-file state.
-void FixNoxusBladePersistence_SetState(Config::Table* cfg, uint8_t romGroupIndex);
+void FixNoxusBladePersistence_SetState(bool enabled, uint8_t romGroupIndex);
 void FixNoxusBladePersistence_ClearState();
 
 // Fast dispatch path called from the shared ARM9 HookCallback.
@@ -47,8 +46,6 @@ void FixNoxusBladePersistence_DispatchCheck(
     const uint32_t regs[16]);
 
 void FixNoxusBladePersistence_ResetPatchState();
-void FixNoxusBladePersistence_NotifyConfigChanged();
-
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS

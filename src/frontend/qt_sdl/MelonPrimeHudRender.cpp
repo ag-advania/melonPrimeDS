@@ -92,6 +92,25 @@ static constexpr int kRadarArtSize = 76;
 // =========================================================================
 #include "MelonPrimeHudConfigOnScreenUnity.inc"
 
+// CustomHudConfigState owns its runtime/frame/text/editor sub-states through
+// typed unique_ptrs. Define the special members only after the unity fragments
+// have completed every pointed-to type, so ordinary construction remains safe
+// for both the core-owned state and the stack state used by the golden harness.
+CustomHudConfigState::CustomHudConfigState()
+    : runtimeState(std::make_unique<HudBattleOwnedState>())
+    , frameState(std::make_unique<HudFrameOwnedState>())
+    , textCacheState(std::make_unique<HudElementTextCacheState>())
+    , editorState(std::make_unique<HudEditorOwnedState>())
+{
+}
+
+CustomHudConfigState::~CustomHudConfigState() = default;
+
+std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
+{
+    return std::make_shared<CustomHudConfigState>();
+}
+
 // Developer-only golden hash harness.
 #include "MelonPrimeHudGoldenHarness.inc"
 

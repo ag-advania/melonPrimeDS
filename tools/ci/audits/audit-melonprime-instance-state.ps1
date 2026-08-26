@@ -44,9 +44,11 @@ foreach ($group in $groups) {
     }
 }
 
-# Phase 0 captures the unsafe pre-refactor state. Later phases lower this
-# ratchet; adding another file-static mutable symbol is always a regression.
-$baseline = 22
+# The typed ARM9 activation state migration removed the cached module config
+# globals from the two runtime hook implementations. The remaining process
+# globals are the intentional baseline for this phase; adding another one is a
+# regression.
+$baseline = 16
 if ($findings.Count -gt $baseline) {
     Write-Error "Mutable-state finding count increased: $($findings.Count) > baseline $baseline"
 }
