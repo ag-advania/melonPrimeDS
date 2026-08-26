@@ -120,6 +120,8 @@ def run_backend(
     switch_iterations: int,
     env_extra: dict[str, str],
     expect_degrade: bool,
+    expect_recovery: bool,
+    expect_unsupported: bool,
     window_actions: bool,
 ) -> tuple[list[str], str]:
     """Returns (failures, captured output)."""
@@ -177,7 +179,65 @@ def run_backend(
 
     failures: list[str] = []
 
-    if not expect_degrade:
+    if expect_unsupported:
+        # The backend is not installed on this machine. Passive eligibility
+        # alone must reject it, so no amount of explicit re-requesting may
+        # provoke a device probe: a probe that cannot succeed is pure cost, and
+        # on this backend it is also what took a live VkDevice down once.
+        probes = len(re.findall(r"MelonPrime DX12 probe:", output))
+        if probes:
+            failures.append(
+                f"{label} ran {probes} device probe(s) for a backend the "
+                "platform check already rejected")
+        if "explicit retry: cleared latched runtime failure" in output:
+            failures.append(
+                "an explicit retry cleared a latch on a hard-unsupported "
+                "backend")
+        renderer_id = RENDERER_IDS[backend]
+        activated = re.search(
+            r"Renderer transition complete previous=\d+ actual="
+            + str(renderer_id),
+            output)
+        if activated:
+            failures.append(
+                f"{label} was activated even though the platform check "
+                "rejected it")
+        if "[switch-stress] armed" in output and \
+                "[DX12][Transition] origin=user" not in output:
+            failures.append(
+                "the explicit requests never reached the production path")
+
+    if expect_recovery:
+        # Degrade *then* come back, which is the shape neither of the other two
+        # modes can express. The injected fault must be reported, an explicit
+        # user request must clear the latch, and the backend must actually
+        # reach the renderer again in the same process -- no restart.
+        if f"Renderer fallback requested={label} actual=Software" not in output:
+            failures.append(
+                f"{label} never reported the injected initialization failure")
+        if "explicit retry: cleared latched runtime failure" not in output:
+            failures.append(
+                "the explicit retry never cleared the latched runtime failure")
+        renderer_id = RENDERER_IDS[backend]
+        recovered = re.search(
+            r"Renderer transition complete previous=\d+ actual="
+            + str(renderer_id),
+            output)
+        if not recovered:
+            failures.append(
+                f"{label} never recovered after the explicit retry")
+        if f"{label} renderer init succeeded" not in output:
+            failures.append(
+                f"{label} recovered the transition but never initialized")
+        # A retry that runs without being asked is the failure mode the whole
+        # contract exists to prevent.
+        resets = output.count("explicit retry: cleared latched runtime failure")
+        if resets > 1:
+            failures.append(
+                f"the latch was cleared {resets} times; an automatic retry loop "
+                "is the one thing this must not do")
+
+    if not (expect_degrade or expect_recovery or expect_unsupported):
         if f"{label} renderer init succeeded" not in output:
             failures.append(f"{label} renderer initialization was not observed")
         if f"Renderer fallback requested={label} actual=Software" in output:
@@ -203,7 +263,7 @@ def run_backend(
         if "Renderer transition complete" not in output:
             failures.append(
                 f"{label} reported the failure but never handed over")
-    else:
+    elif not (expect_recovery or expect_unsupported):
         if disabled_marker in output:
             failures.append(
                 f"{label} latched a runtime failure and disabled itself")
@@ -218,7 +278,7 @@ def run_backend(
     # The native GPU2D path announces itself exactly once when it first
     # composes. Its absence means every frame took the structured or Software
     # route, which is a real regression even when nothing errored.
-    if not expect_degrade             and f"{label} renderer gpu2d={label} gpu3d={label} fallback=0" not in output:
+    if not (expect_degrade or expect_recovery or expect_unsupported)             and f"{label} renderer gpu2d={label} gpu3d={label} fallback=0" not in output:
         failures.append(f"the native GPU2D path never composed on {label}")
 
     if switch_stress:
@@ -279,6 +339,14 @@ def main() -> int:
     parser.add_argument(
         "--window-actions", action="store_true",
         help="resize, maximize, minimize and restore the app window mid-run")
+    parser.add_argument(
+        "--expect-unsupported", action="store_true",
+        help="the backend is injected as unavailable at the platform level; "
+             "require that no device probe is ever attempted")
+    parser.add_argument(
+        "--expect-recovery", action="store_true",
+        help="the run injects a renderer-init failure and then explicitly "
+             "re-requests the backend; require same-process recovery")
     parser.add_argument(
         "--expect-degrade", action="store_true",
         help="the run injects a failure; require a clean reported degradation "
@@ -371,7 +439,8 @@ def main() -> int:
             backend, workdir / app.name, args.rom, args.state,
             args.seconds, workdir, args.stall_frames,
             args.switch_stress, args.switch_iterations, env_extra,
-            args.expect_degrade, args.window_actions)
+            args.expect_degrade, args.expect_recovery,
+            args.expect_unsupported, args.window_actions)
         (args.out / f"{run_id}.log").write_text(output, encoding="utf-8")
         overall[run_id] = failures
 

@@ -2,6 +2,7 @@
 
 #include "MelonPrimeVideoBackend.h"
 #include "EmuInstance.h" // renderer3D_* enum
+#include "Platform.h"
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 #include "MelonPrimeVulkanFeatureCheck.h"
@@ -122,6 +123,46 @@ int NormalizeRendererForPlatform(int requested)
     default:
         return renderer3D_Software;
     }
+}
+
+bool NotifyRendererRequest(int renderer, RendererRequestOrigin origin)
+{
+    if (origin != RendererRequestOrigin::User)
+        return false;
+
+    bool cleared = false;
+    switch (renderer)
+    {
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    case renderer3D_Vulkan:
+        // Vulkan's probe is passive -- it creates no logical device -- so its
+        // reset is cheap and has always been safe to run on an explicit
+        // request. Kept here so both backends answer the same question in the
+        // same place.
+        MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
+        cleared = true;
+        break;
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    case renderer3D_DX12:
+        cleared = MelonPrime::DX12FeatureCheck::RequestExplicitRetry();
+        break;
+#endif
+    default:
+        break;
+    }
+
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (renderer == renderer3D_DX12)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Info,
+            "[DX12][Transition] origin=user retryReset=%d admission=%s\n",
+            cleared ? 1 : 0,
+            MelonPrime::DX12FeatureCheck::AdmissionStateName());
+    }
+#endif
+    return cleared;
 }
 
 bool RendererOwnsNativeGpuDevice(int renderer)

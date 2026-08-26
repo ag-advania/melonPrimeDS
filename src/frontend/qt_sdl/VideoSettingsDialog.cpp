@@ -636,7 +636,11 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
         "Native DirectX 12 renderer. Internal-resolution scaling is applied to the composed screen output.");
     if (oldRenderer == renderer3D_DX12)
     {
-        MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
+        // Refreshing the dialog is not a request to use DX12, so it must not
+        // clear a latched failure -- doing so would silently re-enable the
+        // radio button for a backend that just failed, with no user action.
+        // Probe() returns the cached answer when there is a durable one, so
+        // this reads state rather than re-running a device probe.
         const auto& dx12Probe = MelonPrime::DX12FeatureCheck::Probe();
         rb3DDX12->setEnabled(dx12Probe.Available);
         rb3DDX12->setToolTip(MelonPrime::UiText::Tr(
@@ -814,14 +818,14 @@ void VideoSettingsDialog::onChange3DRenderer(int renderer)
 {
 #ifdef MELONPRIME_DS
     auto& cfg = emuInstance->getGlobalConfig();
-#if defined(MELONPRIME_ENABLE_VULKAN)
-    if (renderer == renderer3D_Vulkan)
-        MelonPrime::VulkanFeatureCheck::ResetProbeForRetry();
-#endif
-#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-    if (renderer == renderer3D_DX12)
-        MelonPrime::DX12FeatureCheck::ResetProbeForRetry();
-#endif
+    // This slot fires on a click, including a click on the button that is
+    // already checked -- which is exactly how a user retries a backend that
+    // failed. Announcing the request here is what lets a latched DX12
+    // runtime failure clear and recover in the same process; an automatic
+    // fallback reaches the transition by a different route and never gets
+    // here, so it cannot loop.
+    MelonPrime::VideoBackend::NotifyRendererRequest(
+        renderer, MelonPrime::VideoBackend::RendererRequestOrigin::User);
     cfg.SetInt("3D.Renderer", renderer);
 
     // The direct signal performs the synchronous backend transition. Keep all

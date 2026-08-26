@@ -15,6 +15,33 @@ namespace MelonPrime::VideoBackend {
     // from that same out-of-range clamp).
     int NormalizeRendererForPlatform(int requested);
 
+    // Where a renderer request came from. Only a request the user made may
+    // clear a latched runtime failure; an automatic one must not, or a backend
+    // that fails turns into a fail/reset/retry loop.
+    enum class RendererRequestOrigin
+    {
+        // The user picked this renderer: a settings-dialog click, or a
+        // developer tool driving the same production path.
+        User,
+        // Startup normalization, an automatic fallback, or internal renderer
+        // reconciliation. Never clears a latch.
+        Automatic,
+    };
+
+    // Announce a renderer request before the config is written and before the
+    // transition runs.
+    //
+    // For a User request this clears a latched renderer-initialization failure
+    // on the requested backend, which is what makes recovery possible in the
+    // same process: without it, one failed DX12 transition leaves DX12
+    // unavailable until the emulator is restarted. A hard-unsupported answer is
+    // left alone -- clicking does not install a runtime.
+    //
+    // For an Automatic request it does nothing at all, deliberately.
+    //
+    // Returns whether a latch was cleared, for the transition log.
+    bool NotifyRendererRequest(int renderer, RendererRequestOrigin origin);
+
     // Whether this (already-normalized) renderer value owns a native GPU device
     // for its lifetime -- Vulkan's VkDevice, DX12's ID3D12Device, Metal's
     // MTLDevice. Two such backends must never be creating or holding a device
