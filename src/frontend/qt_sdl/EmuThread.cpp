@@ -1779,6 +1779,7 @@ void EmuThread::updateRenderer()
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         case renderer3D_DX12:
+        {
             Platform::Log(
                 Platform::LogLevel::Info,
                 "Renderer selection requested=DX12 presentation=high-resolution-composed");
@@ -1788,7 +1789,33 @@ void EmuThread::updateRenderer()
             // API's live device (REAUDIT-P1-001). Renderer normalization asked
             // the passive question; this is the answer that decides.
             MelonPrime::DX12FeatureCheck::ProbeRuntimeAdmission();
-            nds->SetRenderer(std::make_unique<DX12Renderer>(*nds));
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+            // Developer-only failure seam, mirroring the Vulkan one above. It
+            // substitutes Software once so the production dynamic_cast below
+            // takes the same fallback path a broken D3D12 driver would
+            // produce. The audit's transition DoD asks for a target
+            // initialization failure that degrades cleanly, and this is how
+            // that is exercised without a machine where DX12 is genuinely
+            // broken.
+            static bool injectedDX12Failure = false;
+            const char* forceDX12Failure =
+                std::getenv("MELONPRIME_TEST_FORCE_DX12_RUNTIME_FAILURE");
+            const bool injectDX12Failure =
+                !injectedDX12Failure && forceDX12Failure &&
+                forceDX12Failure[0] != '\0' && forceDX12Failure[0] != '0';
+            if (injectDX12Failure)
+            {
+                injectedDX12Failure = true;
+                Platform::Log(
+                    Platform::LogLevel::Error,
+                    "[fallback-test] forced DX12 runtime failure injection count=1\n");
+                nds->SetRenderer(std::make_unique<SoftRenderer>(*nds));
+            }
+            else
+#endif
+            {
+                nds->SetRenderer(std::make_unique<DX12Renderer>(*nds));
+            }
             if (dynamic_cast<DX12Renderer*>(&nds->GetRenderer()) == nullptr)
             {
                 MelonPrime::DX12FeatureCheck::ReportRuntimeFailure(
@@ -1803,6 +1830,7 @@ void EmuThread::updateRenderer()
                 emit rendererRuntimeFallback();
             }
             break;
+        }
 #endif
         default: __builtin_unreachable();
         }
