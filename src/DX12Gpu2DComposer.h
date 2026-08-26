@@ -115,15 +115,25 @@ static_assert(kNativeGPU2DInputBytes
 
 } // namespace DX12Gpu2D
 
-// The GPU2D compositor's own GPU objects on the DX12 backend.
+// The GPU2D compositor on the DX12 backend.
 //
-// The compositor turns the software engines' 2D planes -- or the native GPU2D
-// producer's packed frame -- into the composed screens the presenter shows. It
-// is a different responsibility from 3D rasterization, and the audit graded it
-// FAIL on both backends for living inside Renderer3D.
+// It turns the software engines' 2D planes -- or the native GPU2D producer's
+// packed frame -- into the composed screens the presenter shows, and it owns
+// that whole responsibility: recording the compose command lists, submitting
+// them, and publishing the finished slot. The audit graded this FAIL on both
+// backends for living inside Renderer3D; it does not any more, and it must not
+// move back.
 //
-// This owns what is unambiguously the compositor's: its four compute
-// pipelines, and the three descriptor rings that back its dispatches.
+// Owned here: the four compute pipelines, the three descriptor rings that back
+// its dispatches, the resource set (DX12Gpu2DOutput below) and the publication
+// state the renderer reads when it decides whether a VBlank needs a new
+// compose.
+//
+// Borrowed, never owned, and enumerated in DX12Gpu2DComposeContext: the device
+// context, the root signature, capture's bridge and provenance, and read-only
+// handles such as FinalFB. Owning a resource and borrowing a handle are
+// different things; the context struct is where the second kind is written
+// down, so neither gets mistaken for the other.
 //
 // What it does **not** do is take a descriptor table of its own. Every compute
 // dispatch in this backend binds one fourteen-entry UAV table whose slots are
