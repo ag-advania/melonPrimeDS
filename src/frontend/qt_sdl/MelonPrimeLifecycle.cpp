@@ -14,7 +14,7 @@
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudPatchLifecycle.h"
 #endif
 #if defined(MELONPRIME_CUSTOM_HUD) || defined(MELONPRIME_DS)
 #include "MelonPrimePatch.h"

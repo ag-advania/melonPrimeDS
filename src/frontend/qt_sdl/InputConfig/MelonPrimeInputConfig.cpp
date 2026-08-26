@@ -50,7 +50,7 @@
 #include "MelonPrimeLocalization.h"
 #include "toml/toml.hpp"
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudEdit.h"
 #endif
 
 #if QT_VERSION >= QT_VERSION_CHECK(6, 7, 0)
@@ -69,9 +69,6 @@
 #include "VideoSettingsDialog.h"
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
 #include "../MelonPrimeMetalFeatureCheck.h"
-#endif
-#ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudRender.h"
 #endif
 
 using namespace melonDS;

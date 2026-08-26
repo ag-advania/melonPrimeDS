@@ -1,6 +1,13 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
 #include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudRuntime.h"
+#include "MelonPrimeHudRadar.h"
+#include "MelonPrimeHudPatchLifecycle.h"
+#include "MelonPrimeHudPresentationState.h"
+#include "MelonPrimeHudEdit.h"
+#include "MelonPrimeHudGoldenHarness.h"
 #include "MelonPrimePatchNoHud.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
@@ -60,7 +67,17 @@ static constexpr int kRadarArtSize = 76;
 // Asset, icon, radar-frame, text, and outline caches/helpers.
 #include "MelonPrimeHudRenderAssets.inc"
 
-// Battle/match state, frame runtime helpers, hide rules, and NoHUD patching.
+// Render-plan types, painter transform, and text/layout caches.  This remains
+// before sampling because the neutral frame aggregate includes plan types.
+#include "MelonPrimeHudRenderPlan.inc"
+
+// Game-mode semantics, match cache, and NDS RAM -> snapshot sampling.  This
+// fragment includes the presentation-text and state-ownership children at the
+// points where their dependent types are complete.
+#include "MelonPrimeHudRuntimeSample.inc"
+
+// Ordered wrapper for runtime drawing, policy, radar preprocessing, patch
+// lifecycle, and generation state child fragments.
 #include "MelonPrimeHudRenderRuntime.inc"
 
 // Primitive and element drawing: gauges, HP, weapons, inventory, crosshair.
