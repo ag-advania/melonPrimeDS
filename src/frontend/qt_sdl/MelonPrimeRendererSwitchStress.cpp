@@ -61,6 +61,19 @@ enum class CycleKind
     Scale,
 };
 
+// What an Apply actually did.
+//
+// The distinction matters because a scheduled step and a performed change are
+// not the same thing, and the harness used to count the first while claiming
+// the second: a cycle over "4,4" logged every step and changed nothing. NoOp
+// and Failed are kept apart so a test can require the absence of both.
+enum class ApplyResult
+{
+    Applied,
+    NoOp,
+    Failed,
+};
+
 RequestOrigin OriginFromEnvironment()
 {
     const QByteArray raw = qgetenv("MELONPRIME_RENDERER_SWITCH_STRESS_ORIGIN");
@@ -142,11 +155,22 @@ private:
             // Put the user's setting back, through the same path, so the
             // session ends on the configuration it started with rather than
             // wherever the cycle happened to stop.
-            Log(LogLevel::Info,
-                "[switch-stress] complete: %d/%d switches performed, restoring %s %d\n",
-                Done, Total,
-                Kind == CycleKind::Scale ? "scale" : "renderer",
-                OriginalRenderer);
+            if (Kind == CycleKind::Scale)
+            {
+                // Counted from what each Apply reported, not from what was
+                // scheduled. This line is what the harness reads.
+                Log(LogLevel::Info,
+                    "[scale-stress] complete: requested=%d applied=%d noop=%d "
+                    "failed=%d, restoring scale %d\n",
+                    Done, Applied, NoOp, Failed, OriginalRenderer);
+            }
+            else
+            {
+                Log(LogLevel::Info,
+                    "[switch-stress] complete: %d/%d switches performed, "
+                    "restoring renderer %d\n",
+                    Done, Total, OriginalRenderer);
+            }
             Apply(OriginalRenderer);
             Log(LogLevel::Info, "[switch-stress] finished\n");
             return;
@@ -154,6 +178,20 @@ private:
 
         const int next = Sequence[static_cast<std::size_t>(Done) % Sequence.size()];
         Done++;
+        if (Kind == CycleKind::Scale)
+        {
+            // The request line is deliberately not evidence of a change. The
+            // result line the Apply emits is.
+            Log(LogLevel::Info,
+                "[scale-stress] request %d/%d -> %dx\n", Done, Total, next);
+            switch (ApplyScale(next))
+            {
+            case ApplyResult::Applied: Applied++; break;
+            case ApplyResult::NoOp:    NoOp++;    break;
+            case ApplyResult::Failed:  Failed++;  break;
+            }
+            return;
+        }
         Log(LogLevel::Info,
             "[switch-stress] switch %d/%d -> renderer %d\n", Done, Total, next);
         Apply(next);
@@ -173,11 +211,17 @@ private:
     // dialog's resolution combo reaches. glchange is false: presentation is not
     // rebuilt, only the renderer's scale-dependent resources are, which is
     // exactly the ReleaseOutput -> RecreateOutput pair worth stressing.
-    void ApplyScale(int scale)
+    ApplyResult ApplyScale(int scale)
     {
         Config::Table cfg = Config::GetGlobalTable();
-        if (cfg.GetInt("3D.GL.ScaleFactor") == scale)
-            return;
+        const int previous = cfg.GetInt("3D.GL.ScaleFactor");
+        if (previous == scale)
+        {
+            Log(LogLevel::Info,
+                "[scale-stress] no-op %d/%d: %dx already active\n",
+                Done, Total, scale);
+            return ApplyResult::NoOp;
+        }
 
         cfg.SetInt("3D.GL.ScaleFactor", scale);
         if (!QMetaObject::invokeMethod(
@@ -185,9 +229,17 @@ private:
                 Q_ARG(bool, false)))
         {
             Log(LogLevel::Error,
-                "[switch-stress] onUpdateVideoSettings could not be invoked; stopping\n");
+                "[scale-stress] invoke-failed %d/%d: onUpdateVideoSettings could "
+                "not be invoked; stopping\n",
+                Done, Total);
             Timer->stop();
+            return ApplyResult::Failed;
         }
+
+        Log(LogLevel::Info,
+            "[scale-stress] applied %d/%d: %dx -> %dx\n",
+            Done, Total, previous, scale);
+        return ApplyResult::Applied;
     }
 
     void ApplyRenderer(int renderer)
@@ -245,6 +297,9 @@ private:
     int Iterations = 0;
     int Total = 0;
     int Done = 0;
+    int Applied = 0;
+    int NoOp = 0;
+    int Failed = 0;
     int OriginalRenderer = 0;
 };
 
