@@ -18,7 +18,7 @@ function Get-MatchLines([string]$pattern, [string]$path) {
 
     if (Test-Path -Path $path -PathType Container) {
         $files = Get-ChildItem -Path $path -Recurse -File -Include `
-            '*.cpp','*.h','*.hpp','*.inc','*.ps1'
+            '*.cpp','*.h','*.hpp','*.inc','*.mm','*.c','*.m','*.ps1'
     } else {
         $files = @(Get-Item -Path $path)
     }
@@ -32,6 +32,18 @@ function Get-MatchLines([string]$pattern, [string]$path) {
     }
 
     return @($matches)
+}
+
+function Get-CodeMatchLines([string]$pattern, [string]$path) {
+    # Same as Get-MatchLines, minus whole-line comments. A doc comment naming an
+    # API is not a declaration, so counting it would let a rule pass on prose,
+    # and it is not a violation either, so banning it would fire on the comment
+    # that explains where the API went. Strip trailing comments as well so an
+    # inline note cannot satisfy a wiring rule.
+    return @(Get-MatchLines $pattern $path | Where-Object {
+        $text = ($_ -split ':', 3)[2] -replace '//.*$', ''
+        $text -notmatch '^\s*(//|\*|/\*)' -and $text.Trim().Length -gt 0
+    })
 }
 
 $screen = Join-Path $qtSdl "Screen.cpp"
@@ -192,7 +204,7 @@ foreach ($settingsFile in @($gameSettings, $gameSettingsHeader)) {
 # And the patch module has to actually exist, so the rule above cannot be
 # satisfied by deleting the feature.
 $aimSmoothingHeader = Join-Path $qtSdl "MelonPrimePatchAimSmoothing.h"
-if ((Get-MatchLines '^\s*void\s+AimSmoothing_ApplyOrRestore\s*\(' $aimSmoothingHeader).Count -eq 0) {
+if ((Get-CodeMatchLines '^\s*void\s+AimSmoothing_ApplyOrRestore\s*\(' $aimSmoothingHeader).Count -eq 0) {
     Add-Error ("AimSmoothing_ApplyOrRestore() is not declared in " +
         "src/frontend/qt_sdl/MelonPrimePatchAimSmoothing.h")
 }
@@ -209,8 +221,9 @@ $hudRenderHeader = Join-Path $qtSdl "MelonPrimeHudRender.h"
 # of the group is still declared, which lets the other members quietly move back
 # into the render header.
 $hudApiOwners = [ordered]@{
+    'MelonPrimeHudPresentationState.h' = @('CustomHud_IsEditMode')
     'MelonPrimeHudEdit.h' = @(
-        'CustomHud_EnterEditMode', 'CustomHud_ExitEditMode', 'CustomHud_IsEditMode',
+        'CustomHud_EnterEditMode', 'CustomHud_ExitEditMode',
         'CustomHud_GetOnScreenEditStyle', 'CustomHud_IsCrosshairElement',
         'CustomHud_UpdateEditContext', 'CustomHud_EditMousePress',
         'CustomHud_EditMouseMove', 'CustomHud_EditMouseRelease',
@@ -236,21 +249,80 @@ foreach ($owner in $hudApiOwners.Keys) {
     }
     foreach ($api in $hudApiOwners[$owner]) {
         $pattern = "\b$api\s*\("
-        foreach ($line in (Get-MatchLines $pattern $hudRenderHeader)) {
+        foreach ($line in (Get-CodeMatchLines $pattern $hudRenderHeader)) {
             Add-Error ("MelonPrimeHudRender.h is the render entry point; " +
                 "$api belongs in ${owner}: $line")
         }
         # The other half: the owner must actually declare it, so the ban above
         # cannot be satisfied by deleting the API instead of moving it.
-        if ((Get-MatchLines $pattern $ownerPath).Count -eq 0) {
+        if ((Get-CodeMatchLines $pattern $ownerPath).Count -eq 0) {
             Add-Error "$owner no longer declares $api"
         }
     }
 }
 
+# One declaration, not two: MelonPrimeHudEdit.h includes the presentation header
+# instead of repeating the query, so a consumer cannot pick the heavy header up
+# by accident and still satisfy Rule B.
+$hudEditHeader = Join-Path $qtSdl "MelonPrimeHudEdit.h"
+foreach ($line in (Get-CodeMatchLines '\bCustomHud_IsEditMode\s*\(' $hudEditHeader)) {
+    Add-Error ("CustomHud_IsEditMode is declared by MelonPrimeHudPresentationState.h; " +
+        "MelonPrimeHudEdit.h includes that header rather than redeclaring it: $line")
+}
+if ((Get-MatchLines '#include\s+"MelonPrimeHudPresentationState\.h"' $hudEditHeader).Count -eq 0) {
+    Add-Error ("MelonPrimeHudEdit.h must include MelonPrimeHudPresentationState.h so " +
+        "its consumers still see CustomHud_IsEditMode")
+}
+
+# --- Rule B2: renderer front-ends stay off the editor header ----------------
+#
+# MelonPrimeHudEdit.h carries <QMouseEvent> and <functional> for mouse routing
+# and the selection callback. A presenter only ever asks whether edit mode is
+# open, which MelonPrimeHudPresentationState.h answers without Qt event types.
+# This also catches a future presenter reaching for real editor API.
+$presenterSources = @(
+    (Join-Path $qtSdl "MelonPrimeScreenVulkan.cpp"),
+    (Join-Path $qtSdl "MelonPrimeScreenMetal.mm")
+)
+foreach ($presenter in $presenterSources) {
+    if (-not (Test-Path -LiteralPath $presenter)) { continue }
+    $relative = [System.IO.Path]::GetRelativePath($repoRoot, $presenter) -replace '\\', '/'
+    foreach ($line in (Get-MatchLines '#include\s+"MelonPrimeHudEdit\.h"' $presenter)) {
+        Add-Error ("renderer front-ends must not take the editor header; " +
+            "CustomHud_IsEditMode lives in MelonPrimeHudPresentationState.h: $line")
+    }
+    # And they must still be asking the question, so the ban cannot be satisfied
+    # by dropping the edit-mode gate that keeps the editor overlay visible.
+    if ((Get-CodeMatchLines '\bCustomHud_IsEditMode\s*\(' $presenter).Count -eq 0) {
+        Add-Error ("${relative} no longer consults CustomHud_IsEditMode; the " +
+            "editor overlay gate is gone")
+    }
+}
+
+# --- Rule E: sampling stays free of presentation-owned types ----------------
+#
+# RuntimeSample is the RAM/game-semantics side of the split.  Its single frame
+# allocation is aggregated by a neutral child fragment, so moving the owner did
+# not change allocation count while keeping render-plan and Qt presentation
+# types out of this source fragment.
+$hudRuntimeSample = Join-Path $qtSdl "MelonPrimeHudRuntimeSample.inc"
+$runtimeSampleForbiddenTypes = @(
+    'QFont', 'QFontMetrics', 'QPainter', 'QPainterPath',
+    'TextBitmapCache', 'TextMeasureCache',
+    'ScoreboardRenderPlan', 'EnemyTargetRenderPlan',
+    'MatchStatusStringCache', 'RankStringCache', 'TimeStringCache'
+)
+foreach ($typeName in $runtimeSampleForbiddenTypes) {
+    foreach ($line in (Get-MatchLines "\b$typeName\b" $hudRuntimeSample)) {
+        Add-Error ("MelonPrimeHudRuntimeSample.inc must not own or mention " +
+            "presentation type ${typeName}; move it to the appropriate unity " +
+            "fragment: $line")
+    }
+}
+
 # Neither may the render header pull the split headers back in and re-export
 # them, which would restore the include coupling this split removed.
-foreach ($line in (Get-MatchLines '#include\s+"MelonPrimeHud(Edit|PatchLifecycle|Radar|Runtime|GoldenHarness)\.h"' $hudRenderHeader)) {
+foreach ($line in (Get-MatchLines '#include\s+"MelonPrimeHud(Edit|PatchLifecycle|Radar|Runtime|PresentationState|GoldenHarness)\.h"' $hudRenderHeader)) {
     Add-Error ("MelonPrimeHudRender.h must not re-export the split HUD headers; " +
         "consumers include what they call: $line")
 }
@@ -300,6 +372,26 @@ if (-not $sawPrivateField) {
         "checking anything")
 }
 
+# --- Rule C2: fast-forward has one emulation-thread writer -----------------
+#
+# SetFastForwardState is intentionally a narrow public setter because EmuThread
+# owns the decision.  Keep the call-site contract explicit: the declaration and
+# definition do not match this receiver form, and exactly one source call must
+# remain in EmuThread.cpp.
+$sourceRoot = Join-Path $repoRoot "src"
+$fastForwardCalls = @(Get-CodeMatchLines '->SetFastForwardState\s*\(|\.SetFastForwardState\s*\(' $sourceRoot)
+if ($fastForwardCalls.Count -ne 1) {
+    Add-Error ("SetFastForwardState must have exactly one source call in " +
+        "the emulation thread; found $($fastForwardCalls.Count): " +
+        ($fastForwardCalls -join '; '))
+}
+foreach ($line in $fastForwardCalls) {
+    if ($line -notmatch 'src/frontend/qt_sdl/EmuThread\.cpp:') {
+        Add-Error ("SetFastForwardState is an EmuThread-only writer; unexpected " +
+            "call site: $line")
+    }
+}
+
 # --- Rule D: hot-path cost review (manual, never a hard fail) ---------------
 #
 # The contract bans new abstraction cost in these bodies. A grep cannot tell a
@@ -321,6 +413,41 @@ function Get-FunctionBody {
         if ($started -and $depth -le 0) { break }
     }
     return $body
+}
+
+# --- Rule A2: aim smoothing remains wired at game join ---------------------
+#
+# Rule A proves the patch vocabulary left GameSettings and that the patch
+# declaration exists.  This companion rule keeps the behavior-critical call
+# in the cold HandleGameJoinInit body and keeps the implementation in the
+# target executable's source list.
+$melonPrimeCore = Join-Path $qtSdl "MelonPrime.cpp"
+$melonPrimeCoreLines = [System.IO.File]::ReadAllLines($melonPrimeCore)
+$joinStartIndex = -1
+for ($i = 0; $i -lt $melonPrimeCoreLines.Length; $i++) {
+    if ($melonPrimeCoreLines[$i] -match '^\s*(?:COLD_FUNCTION\s+)?void\s+MelonPrimeCore::HandleGameJoinInit\s*\(') {
+        $joinStartIndex = $i
+        break
+    }
+}
+if ($joinStartIndex -lt 0) {
+    Add-Error "MelonPrimeCore::HandleGameJoinInit() definition was not found for the aim-smoothing wiring check"
+} else {
+    $joinBody = @(Get-FunctionBody -Lines $melonPrimeCoreLines -StartIndex $joinStartIndex)
+    $aimSmoothingCalls = @($joinBody | Where-Object {
+        $code = $_.Text -replace '//.*$', ''
+        $code -match '\bAimSmoothing_ApplyOrRestore\s*\('
+    })
+    if ($aimSmoothingCalls.Count -ne 1) {
+        Add-Error ("HandleGameJoinInit() must call AimSmoothing_ApplyOrRestore() " +
+            "exactly once; found $($aimSmoothingCalls.Count): " +
+            (($aimSmoothingCalls | ForEach-Object { "line $($_.Line): $($_.Text.Trim())" }) -join '; '))
+    }
+}
+
+$qtSdlCmake = Join-Path $qtSdl "CMakeLists.txt"
+if ((Get-CodeMatchLines '^\s*MelonPrimePatchAimSmoothing\.cpp\s*$' $qtSdlCmake).Count -eq 0) {
+    Add-Error "MelonPrimePatchAimSmoothing.cpp is missing from src/frontend/qt_sdl/CMakeLists.txt"
 }
 
 $hotPaths = @(

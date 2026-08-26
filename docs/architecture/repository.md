@@ -348,9 +348,17 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - Runtime HUD code rooted at `MelonPrimeHudRender.cpp` and split into `.inc` fragments:
   - `MelonPrimeHudRenderAssets.inc` - assets, icon/radar/text/outline caches
   - `MelonPrimeHudRenderConfig.inc` - cached config structs/loaders and anchor recomputation
-  - `MelonPrimeHudRenderPlan.inc` - render-plan types, painter transform, layout/text/outline caches (included before the sampling fragment: `HudFrameOwnedState` aggregates both halves)
-  - `MelonPrimeHudRuntimeSample.inc` - game-mode/goal semantics, match cache, NDS RAM to snapshot sampling
-  - `MelonPrimeHudRenderRuntime.inc` - runtime-sourced draw helpers, hide rules, radar colour keying, NoHUD patch/cache lifecycle
+  - `MelonPrimeHudRenderPlan.inc` - render-plan types, painter transform, layout/text/outline caches (included before sampling so plan types are complete for the neutral frame aggregate)
+  - `MelonPrimeHudRuntimeSample.inc` - game-mode/goal semantics, match cache, NDS RAM to snapshot sampling; includes its dependent text and ownership children
+  - `MelonPrimeHudPresentationText.inc` - resolved-value display formatting and bounded text caches, nested under `MelonPrimeHudRuntimeSample.inc`
+  - `MelonPrimeHudBattleOwnedState.inc` - per-instance battle-state lifetime/restore-edge storage, nested under `MelonPrimeHudRuntimeSample.inc`
+  - `MelonPrimeHudFrameOwnedState.inc` - the single per-instance frame-state aggregate, nested under `MelonPrimeHudRuntimeSample.inc`
+  - `MelonPrimeHudRenderRuntime.inc` - ordered wrapper for runtime draw, policy, radar, patch, and epoch fragments
+  - `MelonPrimeHudRuntimeDraw.inc` - runtime-sourced HUD drawing, nested under `MelonPrimeHudRenderRuntime.inc`
+  - `MelonPrimeHudRuntimePolicy.inc` - Custom HUD enablement and visibility policy, nested under `MelonPrimeHudRenderRuntime.inc`
+  - `MelonPrimeHudRadarRuntime.inc` - CPU radar color-key preprocessing, nested under `MelonPrimeHudRenderRuntime.inc`
+  - `MelonPrimeHudPatchRuntime.inc` - native HUD patch lifecycle, nested under `MelonPrimeHudRenderRuntime.inc`
+  - `MelonPrimeHudStateEpoch.inc` - config/visual generation entry points, nested under `MelonPrimeHudRenderRuntime.inc`
   - `MelonPrimeHudRenderDraw.inc` - HUD element drawing
   - `MelonPrimeHudRenderCrosshairFx.inc` - nested draw helper included only by `MelonPrimeHudRenderDraw.inc`
   - `MelonPrimeHudRenderMain.inc` - `CustomHud_Render`, radar overlay, edit-mode forward state

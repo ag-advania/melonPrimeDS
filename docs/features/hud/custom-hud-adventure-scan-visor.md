@@ -67,10 +67,10 @@ already handled by `isMapOrUserActionPaused`.
 ## Code
 
 - Address row: `MelonPrimeGameRomAddrTable.h`, `MP_ROM_FIELDS_HUD`
-- Read + per-frame cache: `MelonPrimeHudRenderRuntime.inc`
+- Read + per-frame cache: `MelonPrimeHudRuntimeSample.inc`
   (`ReadHudRuntimeAdventurePauseState`, alongside the camera-scene flag)
 - Visibility predicate: `ShouldDrawCustomHudCrosshair()` in
-  `MelonPrimeHudRenderRuntime.inc`, the single place the crosshair's
+- `MelonPrimeHudRuntimePolicy.inc`, the single place the crosshair's
   draw/skip decision is made; `CustomHud_Render` consults it once per frame
   and the existing dirty-rect clear path handles the frame it turns off
 

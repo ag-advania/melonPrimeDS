@@ -9,11 +9,10 @@
 //  runtime reads.  It changes when the game's own meaning changes: score
 //  rules, ROM addresses, mode encodings.
 //
-//  Qt layout and text shaping are the other responsibility and live in
-//  MelonPrimeHudRenderPlan.inc, which is included before this fragment.
-//  Per-instance state ownership is unchanged: HudBattleOwnedState and
-//  HudFrameOwnedState remain the single slots reached through
-//  ActiveHudConfigState().
+//  Qt layout, text presentation, and per-instance aggregate ownership are
+//  supplied by the adjacent unity fragments at the type-dependency points
+//  below.  This fragment remains the RAM-facing sampling and game-semantics
+//  owner.
 // =========================================================================
 
 // =========================================================================
@@ -122,18 +121,6 @@ static int LookupGoal(uint8_t mode, uint8_t xx)
     }
 }
 
-static void FormatTime(char* buf, int bufSize, int seconds)
-{
-    int m = seconds / 60;
-    int s = seconds % 60;
-    std::snprintf(buf, bufSize, "%d:%02d", m, s);
-}
-
-static void FormatMinuteTime(char* buf, int bufSize, int minutes)
-{
-    std::snprintf(buf, bufSize, "%d:00", std::max(0, minutes));
-}
-
 // =========================================================================
 //  Battle match cache — read once at match join, reused every frame
 // =========================================================================
@@ -149,21 +136,7 @@ struct BattleMatchState {
     uint32_t scoreboardMatchSerial = 0;
 };
 
-struct HudBattleOwnedState {
-    BattleMatchState battle = { .valid = false };
-    bool patchForceRestorePending = true;
-};
-
-static HudBattleOwnedState& HudBattleState()
-{
-    auto& slot = ActiveHudConfigState().runtimeState;
-    if (!slot)
-        slot = std::make_shared<HudBattleOwnedState>();
-    return *std::static_pointer_cast<HudBattleOwnedState>(slot);
-}
-
-#define s_battleState (HudBattleState().battle)
-#define s_hudPatchForceRestorePending (HudBattleState().patchForceRestorePending)
+#include "MelonPrimeHudBattleOwnedState.inc"
 
 static void BumpCustomHudVisualGeneration()
 {
@@ -226,48 +199,10 @@ void CustomHud_OnMatchJoin(CustomHudConfigState& hudConfig, melonDS::u8* ram, co
 
     b.valid = true;
 }
-static const char* ResolveMatchStatusLabel(uint8_t mode, const MatchStatusHudConfig& c)
-{
-    switch (mode) {
-    case MODE_BATTLE:
-    case MODE_NODES: return c.matchStatusLabelPoints;
-    case MODE_BOUNTY:
-    case MODE_CAPTURE: return c.matchStatusLabelOctoliths;
-    case MODE_SURVIVAL: return c.matchStatusLabelLives;
-    case MODE_DEFENDER: return c.matchStatusLabelRingTime;
-    case MODE_PRIME_HUNTER: return c.matchStatusLabelPrimeTime;
-    default: return "";
-    }
-}
 struct MatchStatusResolvedState { uint8_t mode, xx; int currentValue, goalValue; bool isTimeMode; };
-struct MatchStatusStringCache { uint32_t configEpoch; uint8_t mode, xx; int currentValue, goalValue; bool hasGoal, isTimeMode, valid; char curBuf[24], sepBuf[4], goalBuf[24]; };
-struct RankStringCache { uint32_t configEpoch; uint8_t rankByte; bool showOrdinal, valid; char buf[64]; };
-struct TimeStringCache { uint32_t configEpoch; int value; bool valid; char buf[16]; };
-static inline void UpdateMatchStatusStrings(MatchStatusStringCache& cache, const MatchStatusResolvedState& state)
-{
-    const bool hasGoal = state.isTimeMode || state.goalValue > 0;
-    if (cache.valid && cache.configEpoch == s_cacheEpoch && cache.currentValue == state.currentValue && cache.goalValue == state.goalValue && cache.isTimeMode == state.isTimeMode && cache.mode == state.mode && cache.xx == state.xx && cache.hasGoal == hasGoal) return;
-    cache.currentValue = state.currentValue; cache.goalValue = state.goalValue; cache.isTimeMode = state.isTimeMode; cache.mode = state.mode; cache.xx = state.xx; cache.hasGoal = hasGoal; cache.configEpoch = s_cacheEpoch;
-    if (state.isTimeMode) { FormatTime(cache.curBuf, sizeof(cache.curBuf), state.currentValue); FormatTime(cache.goalBuf, sizeof(cache.goalBuf), state.goalValue); std::strncpy(cache.sepBuf, "/", sizeof(cache.sepBuf)); cache.sepBuf[sizeof(cache.sepBuf)-1]='\0'; }
-    else if (state.goalValue > 0) { std::snprintf(cache.curBuf, sizeof(cache.curBuf), "%d", state.currentValue); std::snprintf(cache.goalBuf, sizeof(cache.goalBuf), "%d", state.goalValue); std::strncpy(cache.sepBuf, " / ", sizeof(cache.sepBuf)); cache.sepBuf[sizeof(cache.sepBuf)-1]='\0'; }
-    else { std::snprintf(cache.curBuf, sizeof(cache.curBuf), "%d (XX=0x%02X)", state.currentValue, state.xx); cache.goalBuf[0]='\0'; cache.sepBuf[0]='\0'; }
-    cache.valid = true;
-}
-static inline const char* UpdateRankString(RankStringCache& cache, uint8_t rankByte, bool showOrdinal, const RankTimeHudConfig& c)
-{
-    if (!cache.valid || cache.configEpoch != s_cacheEpoch || cache.rankByte != rankByte || cache.showOrdinal != showOrdinal) {
-        static const char* kOrdinals[4] = { "st", "nd", "rd", "th" };
-        if (showOrdinal) std::snprintf(cache.buf, sizeof(cache.buf), "%s%u%s%s", c.rankPrefix, rankByte + 1u, kOrdinals[rankByte], c.rankSuffix);
-        else std::snprintf(cache.buf, sizeof(cache.buf), "%s%u%s", c.rankPrefix, rankByte + 1u, c.rankSuffix);
-        cache.rankByte = rankByte; cache.showOrdinal = showOrdinal; cache.configEpoch = s_cacheEpoch; cache.valid = true;
-    }
-    return cache.buf;
-}
-static inline const char* UpdateTimeString(TimeStringCache& cache, int value, bool minutesOnly)
-{
-    if (!cache.valid || cache.configEpoch != s_cacheEpoch || cache.value != value) { if (minutesOnly) FormatMinuteTime(cache.buf, sizeof(cache.buf), value); else FormatTime(cache.buf, sizeof(cache.buf), value); cache.value = value; cache.configEpoch = s_cacheEpoch; cache.valid = true; }
-    return cache.buf;
-}
+
+#include "MelonPrimeHudPresentationText.inc"
+
 static bool ComputeMatchStatusState(melonDS::u8* ram, const RomAddresses& rom, uint8_t playerPos, MatchStatusResolvedState& outState)
 {
     const BattleMatchState* match = s_battleState.valid ? &s_battleState : nullptr; uint8_t mode = match ? match->mode : Read8(ram, rom.battleMode); if (mode < MODE_BATTLE || mode > MODE_SURVIVAL) return false;
@@ -456,58 +391,7 @@ static EnemyTargetPlanKey MakeEnemyTargetPlanKey(const EnemyTargetSnapshot& s)
     return key;
 }
 
-struct HudFrameOwnedState {
-    HudRuntimeFrameCache frame;
-    ScoreboardMatchCache scoreboardMatch;
-    ScoreboardRenderPlan scoreboardPlan;
-    EnemyTargetRenderPlan enemyTargetPlan;
-    struct ScoreboardFontCache {
-        QFont boardFont;
-        QFont rankFont;
-        QFontMetrics boardFm{QFont{}};
-        QFontMetrics rankFm{QFont{}};
-        uint32_t configEpoch = 0;
-        int baseFontGeneration = 0;
-        int baseFontPx = 0;
-        float hudScale = 0.0f;
-        bool valid = false;
-    } scoreboardFont;
-    struct EnemyTargetFontCache {
-        QFont font;
-        QFontMetrics fm{QFont{}};
-        uint32_t configEpoch = 0;
-        int baseFontGeneration = 0;
-        int baseFontPx = 0;
-        float hudScale = 0.0f;
-        bool valid = false;
-    } enemyTargetFont;
-    TextMeasureCache curText{}, sepText{}, goalText{};
-    TextBitmapCache curBitmap{}, sepBitmap{}, goalBitmap{}, labelBitmap{};
-    TextBitmapCache curOutline{}, sepOutline{}, goalOutline{}, labelOutline{};
-    MatchStatusStringCache matchString{};
-    TextBitmapCache bombBitmap{}, bombOutline{};
-    TextMeasureCache bombMeasure{};
-    RankStringCache rankString{};
-    TextBitmapCache rankBitmap{}, rankOutline{};
-    TextMeasureCache rankMeasure{};
-    TimeStringCache timeLeftString{};
-    TextBitmapCache timeLeftBitmap{}, timeLeftOutline{};
-    TextMeasureCache timeLeftMeasure{};
-    TimeStringCache timeLimitString{};
-    TextBitmapCache timeLimitBitmap{}, timeLimitOutline{};
-    TextMeasureCache timeLimitMeasure{};
-};
-
-static HudFrameOwnedState& HudFrameState()
-{
-    auto& slot = ActiveHudConfigState().frameState;
-    if (!slot)
-        slot = std::make_shared<HudFrameOwnedState>();
-    return *std::static_pointer_cast<HudFrameOwnedState>(slot);
-}
-
-#define s_hudRuntimeFrameCache (HudFrameState().frame)
-#define s_scoreboardMatchCache (HudFrameState().scoreboardMatch)
+#include "MelonPrimeHudFrameOwnedState.inc"
 
 static constexpr uint32_t kScoreboardGameModeOffset = 0x000;
 static constexpr uint32_t kScoreboardActivePlayersOffset = 0x007;

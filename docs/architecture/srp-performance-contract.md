@@ -15,13 +15,23 @@ Contract for the MelonPrime SRP refactor v3 immediate plan. Audited by
 | `PatchLifecycleGateway` | Lifecycle patch apply/restore | RunFrameHook per-frame patches, Custom HUD patch state |
 | `MelonPrimeHudRender.h` | Custom HUD render entry, HUD font resolution | Editor, patch lifecycle, radar preprocessing, runtime queries, developer harness |
 | `MelonPrimeHudConfigState.h` | Per-instance HUD state handle, config-cache epoch | Qt widget/event types |
+| `MelonPrimeHudPresentationState.h` | Lightweight host presentation-state queries used by renderer front-ends | Editor event routing, drawing, patch lifecycle |
 | `MelonPrimeHudRuntime.h` | Gameplay visibility, visual generation, match join | Drawing, editor, patching |
 | `MelonPrimeHudRadar.h` | Radar colour-key source preparation | Radar drawing, HUD layout |
 | `MelonPrimeHudPatchLifecycle.h` | Native HUD patch apply/restore/reset/reconcile | Rendering, editor |
 | `MelonPrimeHudEdit.h` | On-screen editor session, mouse routing, selection | Rendering, patch internals |
 | `MelonPrimeHudGoldenHarness.h` | Developer-only golden hash harness | Anything reachable in a release build |
-| `MelonPrimeHudRuntimeSample.inc` | NDS RAM to bounded snapshot, game-mode semantics, match cache | Qt layout, font metrics, glyph outlines |
+| `MelonPrimeHudRuntimeSample.inc` | NDS RAM to bounded snapshot, game-mode semantics, match cache | Presentation text, Qt layout/font types, glyph outlines, ownership aggregation |
+| `MelonPrimeHudPresentationText.inc` | Resolved runtime values to bounded display strings and text-cache updates | NDS RAM reads, painter/drawing policy |
+| `MelonPrimeHudBattleOwnedState.inc` | Per-instance battle-state slot and restore-edge storage | RAM sampling, patch operations |
+| `MelonPrimeHudFrameOwnedState.inc` | Single per-instance `frameState` aggregate and cache lifetime | Sampling policy, drawing policy, extra allocations |
 | `MelonPrimeHudRenderPlan.inc` | Snapshot to draw-ready plan, layout/text/outline caches, painter transform | Emulated memory reads, game-mode meaning |
+| `MelonPrimeHudRenderRuntime.inc` | Ordered unity wrapper for runtime child fragments | Feature implementation and additional state |
+| `MelonPrimeHudRuntimeDraw.inc` | Runtime-sourced HUD draw helpers | RAM sampling, visibility policy, patch lifecycle |
+| `MelonPrimeHudRuntimePolicy.inc` | Custom HUD enablement, gameplay visibility, crosshair policy | Drawing, radar preprocessing, patch lifecycle |
+| `MelonPrimeHudRadarRuntime.inc` | CPU radar color-key preprocessing and source-radius helper | HUD layout, native patch lifecycle |
+| `MelonPrimeHudPatchRuntime.inc` | Native HUD patch apply/restore/reset/reconcile implementation | Drawing and radar processing |
+| `MelonPrimeHudStateEpoch.inc` | Config-cache and visual-generation entry points | RAM sampling, drawing, patch operations |
 | `MelonPrimePatchAimSmoothing` | Aim smoothing ARM9 instruction patch and its preconditions | Game setting RAM writes, patch scheduling |
 | `MelonPrimeGameSettings` | MPH setting RAM writes | ARM9 instruction patching |
 
@@ -120,15 +130,20 @@ internals. `MelonPrimeHudRender.h` must not re-export the other headers.
 
 This is an API boundary, not a link boundary. Every declaration is still defined
 by the single `MelonPrimeHudRender.cpp` unity translation unit, and the unity
-fragments (`MelonPrimeHudRuntimeSample.inc`, `MelonPrimeHudRenderPlan.inc`,
-`MelonPrimeHudRenderRuntime.inc`) are one logical split of one TU. Include order
-is load-bearing: the plan fragment comes first because `HudFrameOwnedState`
-aggregates the plan caches and the sampling caches and needs the plan types
-complete.
+fragments (`MelonPrimeHudRenderPlan.inc`, `MelonPrimeHudRuntimeSample.inc`,
+`MelonPrimeHudRenderRuntime.inc` and its children) are one logical split of one
+TU. Include order is load-bearing: the plan fragment comes first; the sampling
+fragment then defines the game-facing types and includes presentation text,
+battle ownership, and frame ownership at the points where their dependent
+types are complete. The runtime wrapper expands its children in the historical
+draw, policy, radar, patch, and epoch order.
 
 Enforced by `audit-melonprime-srp-performance.ps1` Rule B, per function rather
 than per group, with the matching requirement that the owner header still
-declares what it owns.
+declares what it owns. Rule B2 keeps Vulkan and Metal presenters off the heavy
+editor header, Rule E keeps presentation types out of the sampling fragment,
+Rule A2 keeps aim-smoothing wired at game join, and Rule C2 keeps the
+fast-forward writer in `EmuThread.cpp`.
 
 ## QColorDialog rule
 
@@ -159,7 +174,8 @@ GUI/Emu communication boundary. The five declarations must also stay where they
 are in the member layout -- cache-line grouping is load-bearing, so only the
 access specifier changed. Enforced by `audit-melonprime-srp-performance.ps1`
 Rule C, which tracks the access specifier through the class body rather than
-searching for the field name.
+searching for the field name. Rule C2 separately checks that the narrow
+`SetFastForwardState()` writer has exactly one call site, in `EmuThread.cpp`.
 
 ## Never mix (same PR)
 

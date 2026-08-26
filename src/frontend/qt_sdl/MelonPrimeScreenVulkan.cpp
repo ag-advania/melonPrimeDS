@@ -92,7 +92,7 @@
 #include "MelonPrimeHudRuntime.h"
 #include "MelonPrimeHudRadar.h"
 #include "MelonPrimeHudPatchLifecycle.h"
-#include "MelonPrimeHudEdit.h"
+#include "MelonPrimeHudPresentationState.h"
 // Canonical Custom HUD config keys. Included rather than mirrored as string
 // literals, per the config-key ownership rule; this translation unit is
 // registered in tools/ci/audits/check-inc-ownership.ps1's multi-parent map

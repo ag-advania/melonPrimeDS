@@ -123,7 +123,7 @@ That word is a bitset of several states; never write 0/1 over the whole word.
 | File | Role |
 | --- | --- |
 | `MelonPrimeGameRomAddrTable.h` | `enemyTargetTimer` / `enemyTargetSlot` rows |
-| `MelonPrimeHudRenderRuntime.inc` | `EnemyTargetSnapshot`, snapshot reader, frame-cache slot |
+| `MelonPrimeHudRuntimeSample.inc` | `EnemyTargetSnapshot`, snapshot reader; `MelonPrimeHudFrameOwnedState.inc` retains the frame-cache slot |
 | `MelonPrimeHudRenderConfig.inc` | `EnemyTargetHudConfig`, `LoadEnemyTargetConfig()` |
 | `MelonPrimeHudRenderAssets.inc` | `EnsureEnemyTargetAssetsLoaded()` (own portrait raster set) |
 | `MelonPrimeHudRenderDraw.inc` | layout, draw, preview snapshot |

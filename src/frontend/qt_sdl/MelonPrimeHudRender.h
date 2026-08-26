@@ -11,6 +11,7 @@
 //  only takes on what it actually calls:
 //
 //    MelonPrimeHudConfigState.h    per-instance state, config cache epoch
+//    MelonPrimeHudPresentationState.h lightweight host presentation queries
 //    MelonPrimeHudRuntime.h        gameplay visibility, visual generation
 //    MelonPrimeHudRadar.h          radar colour-key source preparation
 //    MelonPrimeHudPatchLifecycle.h native HUD patch apply/restore/reset
