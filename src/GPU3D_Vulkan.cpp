@@ -337,11 +337,8 @@ void VulkanRenderer3D::Stop()
     NativeReadbackSubmitted = false;
     PendingCaptureFence = VK_NULL_HANDLE;
     FinalFBHasContent = false;
-    Gpu2D.ComposedOutputValid = false;
-    Gpu2D.ComposedGeneration = 0;
-    Gpu2D.PublishedOutputGeneration = 0;
+    Gpu2D.ReleaseOutput();
     Provenance.ResetSemanticState();
-    Gpu2D.Output.reset();
     Initialized = false;
 }
 
@@ -380,53 +377,11 @@ void VulkanRenderer3D::ResetInternal(bool preservePresentation)
     InvalidateHighResCaptureState(
         HighResCaptureInvalidationReason::RendererReset);
     ColorBuffer.fill(0);
-    bool keepPublishedOutput = false;
-    int publishedSlot = -1;
-    if (Gpu2D.Output)
-    {
-        const auto lock = Gpu2D.Output->Ring.LockPublication();
-        publishedSlot = Gpu2D.Output->Ring.GetPublishedSlot();
-        keepPublishedOutput = preservePresentation
-            && Gpu2D.ComposedOutputValid
-            && publishedSlot >= 0
-            && static_cast<std::size_t>(publishedSlot) < Gpu2D.Output->Slots.size();
-        if (!keepPublishedOutput)
-        {
-            Gpu2D.Output->Ring.Unpublish();
-            Gpu2D.ComposedOutputValid = false;
-            Gpu2D.ComposedGeneration = 0;
-            Gpu2D.PublishedOutputGeneration = 0;
-        }
-        else
-            Gpu2D.ComposedOutputValid = true;
-        for (std::size_t slotIndex = 0; slotIndex < Gpu2D.Output->Slots.size(); ++slotIndex)
-        {
-            if (keepPublishedOutput && static_cast<int>(slotIndex) == publishedSlot)
-            {
-                // This slot is the last complete presentation surface. Keep
-                // its resource identity and frame metadata; only unpublished
-                // ring slots are reset for the next complete frame.
-                continue;
-            }
-            VulkanGpu2DOutput::Slot& slot = Gpu2D.Output->Slots[slotIndex];
-            slot.UploadedContentGeneration = {};
-            slot.StructuredUploadInitialized = false;
-            slot.Frame.DirectContentValid = false;
-            slot.Frame.Epoch = Provenance.GetEpoch();
-        }
-        for (VulkanGpu2DOutput::ComposeWorkSlot& slot : Gpu2D.Output->WorkSlots)
-        {
-            slot.UploadedNativeGeneration = {};
-            slot.SemanticLines.Reset();
-            slot.NativeUploadInitialized = false;
-        }
-    }
-    if (!keepPublishedOutput && !Gpu2D.Output)
-    {
-        Gpu2D.ComposedOutputValid = false;
-        Gpu2D.ComposedGeneration = 0;
-        Gpu2D.PublishedOutputGeneration = 0;
-    }
+    // The publication state, the ring and the slots are the compositor's. The
+    // renderer says which epoch this reset belongs to and whether the last
+    // complete surface is to survive it; what that means for each slot is not
+    // its business.
+    Gpu2D.ResetForRendererEpoch(Provenance.GetEpoch(), preservePresentation);
 }
 
 void VulkanRenderer3D::InvalidateHighResCaptureState(
@@ -448,7 +403,7 @@ void VulkanRenderer3D::SetRuntimeFailure(std::string reason)
         Device.ReportDeviceLost("3D renderer runtime failure");
 
     RuntimeFailed = true;
-    Gpu2D.LastComposeResult = GPU2DComposeResult::Fatal;
+    Gpu2D.MarkFatal();
     RuntimeFailureReason = reason.empty() ? "unspecified Vulkan renderer failure" : std::move(reason);
     Platform::Log(Platform::LogLevel::Error,
         "[Vulkan] runtime failure: %s\n", RuntimeFailureReason.c_str());
@@ -683,20 +638,15 @@ bool VulkanRenderer3D::CreateScaleDependentResources()
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 outputStateStartNs = RendererStartupNowNs();
 #endif
-    auto output = std::make_shared<VulkanGpu2DOutput>();
-    if (!output->Create(
+    if (!Gpu2D.RecreateOutput(
             Device, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight),
-            NextOutputResourceGeneration++, Provenance.GetEpoch()))
+            Provenance.GetEpoch()))
         return false;
-    Gpu2D.Output = std::move(output);
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     StartupOutputStateNs = RendererStartupNowNs() - outputStateStartNs;
     LogRendererStartupStage("Vulkan", "gpu2d_output_state",
         StartupOutputStateNs, "native_work_slots=3 native_readbacks=0");
 #endif
-    Gpu2D.ComposedOutputValid = false;
-    Gpu2D.ComposedGeneration = 0;
-    Gpu2D.PublishedOutputGeneration = 0;
     Provenance.InvalidateMirror();
 
     const VkDeviceSize captureSidecarBytes = static_cast<VkDeviceSize>(8u)
@@ -755,7 +705,7 @@ void VulkanRenderer3D::ReleaseScaleDependentResources()
         HighResCaptureInvalidationReason::DeviceReset);
     ++RasterizerDescriptorResourceGeneration;
     RasterizerDescriptorBindings.fill(RasterizerDescriptorBinding{});
-    Gpu2D.Output.reset();
+    Gpu2D.ReleaseOutput();
     Provenance.ResetSemanticState();
     Capture.ReleaseSidecar();
     FinalFB.Destroy();
@@ -1164,7 +1114,7 @@ bool VulkanRenderer3D::CanComposeNativeGPU2D() const noexcept
         && ShaderStepIdx >= ShaderStepCount
         && Pipelines[nativePipeline] != VK_NULL_HANDLE
         && Pipelines[VulkanShaders::Pipeline_Compositor] != VK_NULL_HANDLE
-        && Gpu2D.Output
+        && Gpu2D.HasValidOutput()
         && FinalFB.IsValid();
 }
 
@@ -3048,44 +2998,12 @@ const u32* VulkanRenderer3D::GetComposedScreen(u32 screen) const noexcept
 
 RendererOutput VulkanRenderer3D::GetComposedOutput() const
 {
-    const std::shared_ptr<VulkanGpu2DOutput> state = Gpu2D.Output;
-    if (!state || !Gpu2D.ComposedOutputValid)
-        return {};
-
-    const auto lock = state->Ring.LockPublication();
-    if (state->Ring.GetPublishedSlot() < 0)
-        return {};
-    const VulkanPresentedFrame& frame =
-        state->Slots[state->Ring.GetPublishedSlot()].Frame;
-    return RendererOutput::VulkanBuffer(
-        const_cast<VulkanPresentedFrame*>(&frame), frame.Width, frame.Height,
-        frame.Serial, frame.Epoch);
+    return Gpu2D.GetComposedOutput();
 }
 
 RendererOutputLease VulkanRenderer3D::AcquireComposedOutputLease()
 {
-    const std::shared_ptr<VulkanGpu2DOutput> state = Gpu2D.Output;
-    if (!state || !Gpu2D.ComposedOutputValid)
-        return {};
-
-    const auto lock = state->Ring.LockPublication();
-    const int slotIndex = state->Ring.GetPublishedSlot();
-    if (slotIndex < 0)
-        return {};
-
-    VulkanGpu2DOutput::Slot& slot = state->Slots[slotIndex];
-    auto* leaseCounter = state->Ring.AcquireLease(static_cast<u32>(slotIndex));
-    GPU2DNative::LogPresentedIdentity(
-        "Vulkan", slot.Frame.Generation, slot.Frame.Serial,
-        slot.Frame.Generation, slot.Frame.Epoch, static_cast<u32>(slotIndex));
-
-    return RendererOutputLease(
-        RendererOutput::VulkanBuffer(
-            &slot.Frame, slot.Frame.Width, slot.Frame.Height,
-            slot.Frame.Serial, slot.Frame.Epoch),
-        leaseCounter,
-        &RendererOutputRing::LeaseCounter::Release,
-        state);
+    return Gpu2D.AcquireComposedOutputLease();
 }
 
 u32* VulkanRenderer3D::GetLine(int line)

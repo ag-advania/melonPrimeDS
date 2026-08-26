@@ -1719,6 +1719,168 @@ bool DX12Gpu2DComposer::ComposeNativeGPU2D(
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Output resource lifecycle
+//
+// These were the renderer's. Moving them is the whole point of this pass: the
+// compositor already declared itself the owner of the output resource set and
+// of publication state, and a declared owner that does not create, release or
+// reset its own state is only half an owner.
+// ---------------------------------------------------------------------------
+
+bool DX12Gpu2DComposer::RecreateOutput(
+    DX12Context& context, u32 width, u32 height, u32 uavTableSize, u64 epoch)
+{
+    // Build the candidate first and adopt it only once Create() has fully
+    // succeeded. The renderer used to publish the shared_ptr and then call
+    // Create() through it, which left a half-initialized set reachable as the
+    // active Output on the failure path -- the presenter and the compose path
+    // both read it without asking whether it finished being built.
+    auto candidate = std::make_shared<DX12Gpu2DOutput>();
+    if (!candidate->Create(
+            context, width, height, uavTableSize,
+            NextOutputResourceGeneration, epoch))
+        return false;
+
+    NextOutputResourceGeneration++;
+    Output = std::move(candidate);
+
+    // A new resource set has published nothing yet.
+    ComposedOutputValid = false;
+    ComposedGeneration = 0;
+    PublishedOutputGeneration = 0;
+    return true;
+}
+
+void DX12Gpu2DComposer::ReleaseOutput() noexcept
+{
+    // Detach, do not destroy. A RendererOutputLease captured its own
+    // shared_ptr to this set, so a presenter still reading the old resources
+    // across a resolution change keeps them alive until it releases.
+    Output.reset();
+
+    // The descriptor contents described the set that just went away. Rewinding
+    // the rings forgets that; it does not end the heaps, which are sized from
+    // the root-signature layout and outlive any one resolution.
+    OutputUav.Reset();
+    WorkOutputUav.Reset();
+    WorkNativeUav.Reset();
+    OutputUavCpu.fill({});
+    WorkOutputUavCpu.fill({});
+    WorkNativeUavCpu.fill({});
+
+    // The publication state described the set that just went away.
+    ComposedOutputValid = false;
+    ComposedGeneration = 0;
+    PublishedOutputGeneration = 0;
+
+    // NextOutputResourceGeneration deliberately survives: it is a lifetime
+    // identity, and reusing a number would let a presenter mistake a new set
+    // for one it had already cached descriptors against.
+}
+
+void DX12Gpu2DComposer::ResetForRendererEpoch(
+    u64 epoch, bool preservePresentation) noexcept
+{
+    bool keepPublishedOutput = false;
+    int publishedSlot = -1;
+    if (Output)
+    {
+        const auto lock = Output->Ring.LockPublication();
+        publishedSlot = Output->Ring.GetPublishedSlot();
+        keepPublishedOutput = preservePresentation
+            && ComposedOutputValid
+            && publishedSlot >= 0
+            && static_cast<std::size_t>(publishedSlot) < Output->Slots.size();
+        if (!keepPublishedOutput)
+        {
+            Output->Ring.Unpublish();
+            ComposedOutputValid = false;
+            ComposedGeneration = 0;
+            PublishedOutputGeneration = 0;
+        }
+        else
+            ComposedOutputValid = true;
+        for (std::size_t slotIndex = 0; slotIndex < Output->Slots.size(); ++slotIndex)
+        {
+            if (keepPublishedOutput && static_cast<int>(slotIndex) == publishedSlot)
+            {
+                // Keep the last complete presentation surface alive. The
+                // unpublished ring slots are rebuilt for the next full frame.
+                continue;
+            }
+            DX12Gpu2DOutput::Slot& slot = Output->Slots[slotIndex];
+            slot.UploadedContentGeneration = {};
+            slot.StructuredUploadInitialized = false;
+            slot.Frame.DirectContentValid = false;
+            slot.Frame.Epoch = epoch;
+            slot.PresentationWorkSlot = -1;
+        }
+        for (DX12Gpu2DOutput::ComposeWorkSlot& slot : Output->WorkSlots)
+        {
+            slot.UploadedNativeGeneration = {};
+            slot.SemanticLines.Reset();
+            slot.NativeUploadInitialized = false;
+        }
+    }
+    if (!keepPublishedOutput && !Output)
+    {
+        ComposedOutputValid = false;
+        ComposedGeneration = 0;
+        PublishedOutputGeneration = 0;
+    }
+}
+
+void DX12Gpu2DComposer::MarkFatal() noexcept
+{
+    LastComposeResult = GPU2DComposeResult::Fatal;
+}
+
+RendererOutput DX12Gpu2DComposer::GetComposedOutput() const
+{
+    const std::shared_ptr<DX12Gpu2DOutput> state = Output;
+    if (!state || !ComposedOutputValid)
+        return {};
+
+    const auto lock = state->Ring.LockPublication();
+    const int slotIndex = state->Ring.GetPublishedSlot();
+    if (slotIndex < 0)
+        return {};
+    const DX12PresentedFrame& frame = state->Slots[slotIndex].Frame;
+    return RendererOutput::DX12Buffer(
+        const_cast<DX12PresentedFrame*>(&frame), frame.Width, frame.Height,
+        frame.Serial, frame.Epoch);
+}
+
+RendererOutputLease DX12Gpu2DComposer::AcquireComposedOutputLease()
+{
+    const std::shared_ptr<DX12Gpu2DOutput> state = Output;
+    if (!state || !ComposedOutputValid)
+        return {};
+
+    const auto lock = state->Ring.LockPublication();
+    const int slotIndex = state->Ring.GetPublishedSlot();
+    if (slotIndex < 0)
+        return {};
+
+    DX12Gpu2DOutput::Slot& slot = state->Slots[slotIndex];
+    auto* leaseCounter = state->Ring.AcquireLease(static_cast<u32>(slotIndex));
+    GPU2DNative::LogPresentedIdentity(
+        "DX12", slot.Frame.Generation, slot.Frame.Serial,
+        slot.Frame.Generation, slot.Frame.Epoch, static_cast<u32>(slotIndex));
+
+    // The lease captures `state`, not a raw pointer. That is what keeps a
+    // resource set alive across a resolution change while the presenter is
+    // still reading it.
+    return RendererOutputLease(
+        RendererOutput::DX12Buffer(
+            &slot.Frame, slot.Frame.Width, slot.Frame.Height,
+            slot.Frame.Serial, slot.Frame.Epoch),
+        leaseCounter,
+        &RendererOutputRing::LeaseCounter::Release,
+        state);
+}
+
 } // namespace melonDS
 
 #endif // MELONPRIME_DS && _WIN32 && MELONPRIME_ENABLE_DX12

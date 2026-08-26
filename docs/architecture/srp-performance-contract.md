@@ -14,6 +14,51 @@ Contract for the MelonPrime SRP refactor v3 immediate plan. Audited by
 | `HudEditorFormBuilder` | Shared HUD editor helpers | `QColorDialog` direct calls, `Config::Save` |
 | `PatchLifecycleGateway` | Lifecycle patch apply/restore | RunFrameHook per-frame patches, Custom HUD patch state |
 
+## Rendering backend ownership
+
+One rule decides these rows: **the unit that declares a responsibility is the
+unit that creates, destroys, resets and mutates its state.** A declared owner
+whose state someone else writes is not an owner, and the mismatch is invisible
+until a reset or a lifetime bug makes it visible.
+
+| Unit | Owns | Must not own |
+|---|---|---|
+| `DX12Renderer3D` | DS 3D raster semantics, geometry, raster orchestration, raster resources, subsystem coordination | GPU2D publication lifecycle |
+| `VulkanRenderer3D` | DS 3D raster semantics, geometry, raster orchestration, raster resources, subsystem coordination | GPU2D publication lifecycle |
+| `DX12Gpu2DComposer` | compose behaviour, output resource lifecycle, publication state, output lease source | raster resource ownership, renderer failure reason |
+| `VulkanGpu2DComposer` | compose behaviour, output resource lifecycle, publication state, output lease source | raster resource ownership, renderer failure reason |
+| `DX12Gpu2DOutput` | resolution-lifetime compositor resources | 3D raster policy |
+| `VulkanGpu2DOutput` | resolution-lifetime compositor resources | 3D raster policy |
+| `<Backend>CaptureBridge` | physical capture mechanism | capture validity semantics |
+| `CaptureProvenanceState` | backend-neutral capture validity semantics | native GPU handles |
+| `RendererOutputRing` | backend-neutral publication and lease protocol | native GPU handles |
+| `<Backend>Presenter` | final surface and present | renderer resource lifetime |
+| `DX12LowLatencyController` / `VulkanLatencyController` | vendor low-latency sessions and policy | present-surface ownership |
+
+What that means in practice for the renderer:
+
+```
+Gpu2D.RecreateOutput(...)        not  Gpu2D.Output = make_shared<...>
+Gpu2D.ReleaseOutput()            not  Gpu2D.Output.reset()
+Gpu2D.ResetForRendererEpoch(...) not  walking Ring / Slots / WorkSlots
+Gpu2D.MarkFatal()                not  Gpu2D.LastComposeResult = Fatal
+Gpu2D.GetComposedOutput()        not  reading Output + the published slot
+```
+
+Two deliberate exceptions, both because the descriptor contract really is
+shared and inventing a boundary would describe something that is not there:
+
+- `Gpu2D.Output` stays readable. DX12 assembles one fourteen-entry UAV table
+  out of raster resources and slot resources together, and Vulkan's
+  rasterizer set-0 write binds slot 0's structured input. Reading is fine;
+  every mutation goes through an operation above.
+- A released output rewinds the compositor's descriptor *contents*
+  (`Reset()`), never its heaps (`Shutdown()`). The contents describe one
+  resource set; the heaps are sized from the root-signature layout and
+  outlive every resolution.
+
+Ratcheted by `tools/ci/audits/audit-melonprime-srp-performance.ps1`.
+
 ## Hot path (no new abstraction cost)
 
 These functions must not gain virtual dispatch, `std::function`, heap allocation,
