@@ -1782,6 +1782,12 @@ void EmuThread::updateRenderer()
             Platform::Log(
                 Platform::LogLevel::Info,
                 "Renderer selection requested=DX12 presentation=high-resolution-composed");
+            // Stage B admission, and the only place it is allowed to run: the
+            // outgoing native backend has been released above, so this is the
+            // first moment a D3D12 device can be created without racing another
+            // API's live device (REAUDIT-P1-001). Renderer normalization asked
+            // the passive question; this is the answer that decides.
+            MelonPrime::DX12FeatureCheck::ProbeRuntimeAdmission();
             nds->SetRenderer(std::make_unique<DX12Renderer>(*nds));
             if (dynamic_cast<DX12Renderer*>(&nds->GetRenderer()) == nullptr)
             {
