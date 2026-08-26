@@ -1,8 +1,9 @@
 # MelonPrime 全面リファクタリング計画 V7（Phase 0–6）— SRP完成・残債の完済・検証は最後
 
 **作成日:** 2026-07-09
-**対象ブランチ:** `highres_fonts_v3`（HEAD `c01de360` 時点で実測）
-**ステータス:** 進行中（Phase 0 完了、2026-07-09）
+**作成時対象ブランチ:** `highres_fonts_v3`（初期スナップショット HEAD `c01de360`）
+**現行参照ブランチ:** `develop_hud`（HEAD `94f08caf0`、2026-08-27）
+**ステータス:** Phase 0–5 完了、Phase 6 未着手（現行確認 2026-08-27）
 **前提:** [V1](../../archive/plans/refactoring/melonprime-full-refactor-plan.md) / [V2](../../archive/plans/refactoring/melonprime-full-refactor-plan-v2.md) /
 [V3](../../archive/plans/refactoring/melonprime-full-refactor-plan-v3.md) / [V4](../../archive/plans/refactoring/melonprime-full-refactor-plan-v4.md) /
 [V5](../../archive/plans/refactoring/melonprime-full-refactor-plan-v5.md) / [V6](../../archive/plans/refactoring/melonprime-full-refactor-plan-v6.md) /
@@ -12,6 +13,16 @@
 **最終 Phase（Phase 6）に一括で後回し**とする。各 Phase の DoD は「AI による差分監査 + ローカル監査
 スクリプト green + ローカル macOS ビルド green」で閉じる。ROM 実機・Windows/Linux 実機・CI は
 Phase 6 でまとめて消化する。
+
+2026-08-27 時点の HUD 低オーバーヘッド SRP 追補（型付き owner slot、epoch-coherent HUD
+enable snapshot、`Arm9HookActivationPlan`）は、本計画の初期証跡を上書きせず、
+[SRP performance contract](../../architecture/srp-performance-contract.md) と
+[Custom HUD runtime reference](../../development/hud/custom-hud-runtime.md) に記録する。
+
+なお、下記 Phase 2 の進捗行にある「14要素・178呼び出し」は 2026-07-09 時点の
+サイドパネル検証スナップショットである。その後追加された Scoreboard / Enemy Target
+により、現行のオンスクリーン編集要素は 16 件になっている。現行の一覧と既定アンカーは
+[settings UI and edit mode](../../development/ui/settings-and-edit-mode.md) を参照する。
 
 ---
 

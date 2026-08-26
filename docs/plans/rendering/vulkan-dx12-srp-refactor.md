@@ -10,6 +10,11 @@ landed, what has been verified, and — for the part that has not landed — wha
 the remaining work actually costs, so the next session does not have to
 re-derive it.
 
+Current reference checkout: `develop_hud` at `94f08caf0` (2026-08-27). The
+phase evidence below remains tied to the exact snapshot named by each result;
+runtime, hardware, and remote-CI claims are not inferred from this document's
+source-status table.
+
 ## Status
 
 | Audit ID | Component | Priority | Status |

@@ -244,8 +244,8 @@ the hot-path function bodies themselves. It never hard-fails: grep cannot tell a
 real per-frame `Config` lookup from a mention in a comment, so the output is for
 a human to judge. The warning scan also calls out shared ownership/casts,
 mutex locks, raw `new`, and `std::string` construction so new hot-path cost is
-visible during review; Rules G and H provide the hard failures for the HUD
-ownership and render-snapshot contracts.
+visible during review; Rules G, H, and I provide the hard failures for the HUD
+ownership, render-snapshot, and ARM9 activation-plan contracts.
 
 ```bash
 rg "std::function|virtual|dynamic_cast|QMetaObject|Config::Table|GetBool|GetInt|GetDouble|QString|std::string" \

@@ -2,7 +2,10 @@
 # Dolphin比較監査・修正計画
 
 - 対象リポジトリ: <https://github.com/ag-advania/melonPrimeDS>
-- 対象ブランチ: <https://github.com/ag-advania/melonPrimeDS/tree/highres_fonts_v3>
+- 計画作成時対象ブランチ: <https://github.com/ag-advania/melonPrimeDS/tree/highres_fonts_v3>
+- 現行参照ブランチ: <https://github.com/ag-advania/melonPrimeDS/tree/develop_hud>（HEAD `94f08caf0`、2026-08-27）
+- 本文中の `highres_fonts_v3` blob URL は計画作成時の比較スナップショットを指す。
+- 本文の「現状」「変更案」は計画作成時の監査スナップショットであり、Phase 0–5 の実装済み項目や現行 HUD/SRP の状態を上書きしない。新しい確認は現行参照ブランチと [repository architecture](../../architecture/repository.md) を基準にする。
 - 比較対象: <https://github.com/dolphin-emu/dolphin>
 - 作成日: 2026-07-11
 - 適用方針: **melonDS本体由来の処理は原則変更せず、MelonPrime固有コードだけを修正する**

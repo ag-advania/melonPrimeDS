@@ -35,7 +35,7 @@ After schema changes, run `tools/ci/audits/audit-hud-key-parity.ps1` and
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudTables.inc` | HUD dialog section/descriptor wiring (include fragment) |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudDialogProps.inc` | generated `kSec*` property tables (do not hand-edit) |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigCustomHudBuild.inc` | `setupCustomHudWidgets()` body (include fragment) |
-| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudPreviews.inc` | preview widget classes (`CrosshairPreviewWidget`, `HpAmmoPreviewWidget`, `MatchStatusPreviewWidget`, `RadarPreviewWidget`) |
+| `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigHudPreviews.inc` | preview widget classes (`CrosshairPreviewWidget`, `HpAmmoPreviewWidget`, `MatchStatusPreviewWidget`, `ScoreboardPreviewWidget`, `EnemyTargetPreviewWidget`, `RadarPreviewWidget`) |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigCustomHudCode.inc` | Custom HUD TOML export/import tab (include fragment) |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigPreview.cpp` | live preview rendering, preview apply flow, snapshot/restore |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigInternal.h` | shared UI helpers, presets, color-sync helpers |
@@ -49,7 +49,7 @@ After schema changes, run `tools/ci/audits/audit-hud-key-parity.ps1` and
 | Controls | `tabAddonsMetroid` | Hotkey mappings page 1 |
 | Controls 2 | `tabAddonsMetroid2` | Hotkey mappings page 2 |
 | Settings | `tabMetroid` | Sensitivity, toggles, hunter license, volume, video, screen sync, in-game aspect ratio, and related settings |
-| Custom HUD | `tabCrosshair` | Enable checkbox + Edit HUD Layout button + hierarchical main sections (`kHudMainSections`, currently 9) with nested sub-sections and preview widgets synchronized with in-game edit mode |
+| Custom HUD | `tabCrosshair` | Enable checkbox + Edit HUD Layout button + hierarchical main sections (`kHudMainSections`, currently 11) with nested sub-sections and preview widgets synchronized with in-game edit mode |
 | Custom HUD Input/Output | `tabCustomHudCode` | TOML export/import of all Custom HUD settings (auto-discovers widgets in `tabCrosshair`) |
 
 ### Constructor/setup flow
@@ -104,7 +104,7 @@ Supported widget types:
 - `Align3` (`QComboBox` L/C/R)
 - `Color3` (3 x `QSpinBox` R/G/B + swatch `QPushButton`)
 
-Main sections (`kHudMainSections` in `MelonPrimeInputConfigHudTables.inc`, currently 9):
+Main sections (`kHudMainSections` in `MelonPrimeInputConfigHudTables.inc`, currently 11):
 - `DISABLE DEFAULT HUD` - per-element native HUD hide toggles (no preview)
 - `OUTLINE OVERRIDE` - global outline override settings (no preview)
 - `HUD SCALE` - auto-scale enable, text scale, global + per-category auto-scale caps (no preview)
@@ -112,10 +112,12 @@ Main sections (`kHudMainSections` in `MelonPrimeInputConfigHudTables.inc`, curre
 - `CROSSHAIR` - color/outline/dot/T-style properties + sub: Inner Lines, Outer Lines (`CrosshairPreviewWidget`)
 - `HP / AMMO` - sub: HP Number Position, Ammo Number Position, Weapon Icon, HP Gauge, Ammo Gauge (`HpAmmoPreviewWidget`)
 - `MATCH STATUS HUD` - sub: Score, Rank/Time (nested: Rank, Time Left, Time Limit), Bomb Left, Bomb Icon (`MatchStatusPreviewWidget`)
+- `HUD SCOREBOARD` - scoreboard composite settings (`ScoreboardPreviewWidget`)
+- `HUD ENEMY TARGET` - enemy-target composite settings (`EnemyTargetPreviewWidget`)
 - `HUD RADAR` - all radar settings (`RadarPreviewWidget`)
 - `IN-GAME OSD COLOR` - OSD message/slot colors (rows expand from `MelonPrimeOsdColorSchema.inc`; no preview)
 
-Each main section except text scale displays a preview widget on the right side of its expanded section. Preview widgets read directly from config via `EmuInstance`. Previews automatically refresh whenever widget values change via `invalidateHudAndRefreshPreviews()`.
+Sections with a nonzero preview descriptor display a preview widget on the right side of their expanded section. Configuration-only sections, including `DISABLE DEFAULT HUD`, `OUTLINE OVERRIDE`, `HUD SCALE`, `HUD FONT`, and `IN-GAME OSD COLOR`, have no preview. Preview widgets read directly from config via `EmuInstance`. Previews automatically refresh whenever widget values change via `invalidateHudAndRefreshPreviews()`.
 
 State containers:
 - `m_hudWidgets`: config key -> `QWidget*`
@@ -135,7 +137,7 @@ keys. In-game edit mode triggers pickers from the element properties panel,
 crosshair panel, or the floating `MelonPrimeHudConfigOnScreenEdit` panel.
 
 ### Preview system
-The settings dialog's Custom HUD tab features live preview widgets for each major HUD section except text scale. Preview widgets (`CrosshairPreviewWidget`, `HpAmmoPreviewWidget`, `MatchStatusPreviewWidget`, `RadarPreviewWidget`) read live from config and refresh whenever widget values change. All previews are tracked in `m_hudPreviews` for efficient bulk refresh.
+The settings dialog's Custom HUD tab features live preview widgets for each major HUD section with a preview descriptor. Preview widgets (`CrosshairPreviewWidget`, `HpAmmoPreviewWidget`, `MatchStatusPreviewWidget`, `ScoreboardPreviewWidget`, `EnemyTargetPreviewWidget`, `RadarPreviewWidget`) read live from config and refresh whenever widget values change. All previews are tracked in `m_hudPreviews` for efficient bulk refresh.
 
 Preview refresh is triggered by two paths:
 1. Individual widget signals: each HUD parameter widget's signal handler calls `invalidateHudAndRefreshPreviews()`, which invalidates the runtime HUD config cache and calls `update()` on all preview widgets.
@@ -168,9 +170,9 @@ It currently saves:
 Important side effects in `saveConfig()`:
 - if `Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame` changed, windows schedule `panel->updateClipIfNeeded()` via `QTimer::singleShot`
 - if `Metroid.Visual.InGameTopScreenOnly` changed, windows schedule `onScreenLayoutChanged()` via Qt queued connection
-- `MelonPrime::CustomHud_InvalidateConfigCache()` is called at the end so runtime HUD reads updated values on the next frame
+- `MelonPrime::CustomHud_InvalidateConfigCache(core->HudConfigState())` is called at the end so the per-instance runtime HUD reads updated values on the next frame
 
-HUD settings are saved from both the settings dialog (`saveConfig()`) and the in-game edit mode (`CustomHud_ExitEditMode(true, cfg)` -> `Config::Save()`). Both write the same config keys. When the dialog reopens, `setupCustomHudWidgets()` reads the latest config values, ensuring sync.
+HUD settings are saved from both the settings dialog (`saveConfig()`) and the in-game edit mode (`CustomHud_ExitEditMode(hudConfig, true, cfg)` -> `Config::Save()`). Both write the same config keys. When the dialog reopens, `setupCustomHudWidgets()` reads the latest config values, ensuring sync.
 
 ### Reset/default handlers
 
@@ -197,7 +199,7 @@ These replaced the older `hk_tabAddonsMetroid*` naming.
 ## In-game HUD Edit Mode
 
 ### Overview
-HUD element positioning, crosshair configuration, and text scaling can also be configured through a visual in-game edit mode overlay (entered via `CustomHud_EnterEditMode()`, triggered by the `Edit HUD Layout` button in the settings dialog). This is the modern editor; the settings dialog provides the classic form-based editor. Both write the same config keys.
+HUD element positioning, crosshair configuration, and text scaling can also be configured through a visual in-game edit mode overlay (entered via `CustomHud_EnterEditMode(hudConfig, emu, cfg)`, triggered by the `Edit HUD Layout` button in the settings dialog). This is the modern editor; the settings dialog provides the classic form-based editor. Both write the same config keys.
 
 ### Source location
 The in-game edit mode is a unity-include module rooted at `MelonPrimeHudConfigOnScreenUnity.inc` (included by `MelonPrimeHudRender.cpp`), within the `namespace MelonPrime` block.
@@ -218,15 +220,18 @@ Do not add these `.inc` files to `CMakeLists.txt`; they are included only throug
 ### Public API
 
 ```cpp
-void CustomHud_EnterEditMode(EmuInstance* emu, Config::Table& cfg);
-void CustomHud_ExitEditMode(bool save, Config::Table& cfg);
-bool CustomHud_IsEditMode();
-void CustomHud_EditMousePress(QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
-void CustomHud_EditMouseMove(QPointF pt, Config::Table& cfg);
-void CustomHud_EditMouseRelease(QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
-void CustomHud_EditMouseWheel(QPointF pt, int delta, Config::Table& cfg);
-void CustomHud_SetEditSelectionCallback(std::function<void(int)> cb);
-int  CustomHud_GetSelectedElement();
+void CustomHud_EnterEditMode(CustomHudConfigState& hudConfig, EmuInstance* emu, Config::Table& cfg);
+void CustomHud_ExitEditMode(CustomHudConfigState& hudConfig, bool save, Config::Table& cfg);
+bool CustomHud_IsEditMode(const CustomHudConfigState& hudConfig);
+OnScreenEditStyle CustomHud_GetOnScreenEditStyle(const CustomHudConfigState& hudConfig);
+bool CustomHud_IsCrosshairElement(int elementIndex);
+void CustomHud_UpdateEditContext(CustomHudConfigState& hudConfig, float originX, float originY, float hudScale, float topStretchX);
+void CustomHud_EditMousePress(CustomHudConfigState& hudConfig, QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
+void CustomHud_EditMouseMove(CustomHudConfigState& hudConfig, QPointF pt, Config::Table& cfg);
+void CustomHud_EditMouseRelease(CustomHudConfigState& hudConfig, QPointF pt, Qt::MouseButton btn, Config::Table& cfg);
+void CustomHud_EditMouseWheel(CustomHudConfigState& hudConfig, QPointF pt, int delta, Config::Table& cfg);
+void CustomHud_SetEditSelectionCallback(CustomHudConfigState& hudConfig, std::function<void(int)> cb);
+int  CustomHud_GetSelectedElement(const CustomHudConfigState& hudConfig);
 ```
 
 ### Layout (DS-space coordinates)
@@ -258,8 +263,8 @@ kCrosshairPreviewX   = kCrosshairSidePanelX + kPropPanelW + 2.0f // = 176
 kCrosshairPreviewSize = 64
 ```
 
-### 14 editable HUD elements
-Defined in `kEditElems[kEditElemCount]` (`kEditElemCount = 14`, declared in
+### 16 editable HUD elements
+Defined in `kEditElems[kEditElemCount]` (`kEditElemCount = 16`, declared in
 `MelonPrimeHudRenderMain.inc`; the table itself is generated into
 `MelonPrimeHudConfigOnScreenEditProps.inc`):
 
@@ -279,6 +284,8 @@ Defined in `kEditElems[kEditElemCount]` (`kEditElemCount = 14`, declared in
 | 11 | Radar | 2 (TR) | Radar element (circle preview) |
 | 12 | Weapon Inventory | 8 (BR) | Weapon inventory strip |
 | 13 | Crosshair | — | Aim-following; edited via the crosshair panel, not anchor/offset |
+| 14 | Scoreboard | 3 (ML) | Scoreboard composite preview |
+| 15 | Enemy Target | 1 (TC) | Enemy-target composite preview |
 
 ### Element box live previews
 Instead of text labels, element boxes render live previews:

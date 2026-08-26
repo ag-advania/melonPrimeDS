@@ -1,7 +1,8 @@
 # MelonPrime Metal Backend Plan (Phase 0–10) — macOS Native Metal Renderer
 
 **Created:** 2026-07-09
-**Branch:** `highres_fonts_v3`
+**Planning snapshot branch:** `highres_fonts_v3`
+**Current reference branch:** `develop_hud` (HEAD `94f08caf0`, 2026-08-27)
 **2026-07-10 update:** user-reported flicker + black-3D were audited and root-caused; the fix and the
 remaining Phase 8/9 work are now driven by the dedicated phased plan
 [Flicker/black-3D full-fix plan](../../../archive/plans/rendering/metal/done/metal_flicker_black3d_full_fix_phased_plan.md)
@@ -27,6 +28,10 @@ this repo's planning conventions (see
 [V7 refactor plan](../../refactoring/melonprime-full-refactor-plan-v7.md) for the format this
 follows). Read the source document before starting any phase in §3 below — the summaries here are
 not a substitute for its code sketches.
+
+The phase evidence below remains timestamped to the branch and commit named in each section.
+Use the current reference branch for any new implementation or verification; do not treat the
+original `highres_fonts_v3` snapshot as the current checkout.
 
 **2026-07-10 Phase 0 flicker/black-3D stopgap:** implemented from
 [Flicker/black-3D full-fix plan](../../../archive/plans/rendering/metal/done/metal_flicker_black3d_full_fix_phased_plan.md).

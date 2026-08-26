@@ -328,7 +328,7 @@ AIMBLK_NOT_IN_GAME ビットが立っていない
 MelonPrimePatchImmediateInputEdgeOverlay.inc   本体 (MelonPrimeGameInput.cpp に unity include)
 MelonPrimeInternal.h                           MORPH_SYNTHETIC_BINDING / MORPH_SYNTHETIC_BIT 定数
 MelonPrime.h                                   m_immediateOverlayPrevHeld / m_immediateOverlayPreserveMask / m_enableDirectAltFormTransform
-MelonPrime.cpp                                 ReloadConfigFlags / HandleGameJoinInit binding 書き込み
+MelonPrime.cpp                                 ReloadConfigFlags (snapshot load/apply) / HandleGameJoinInit binding 書き込み
 MelonPrimeInGame.cpp                           HandleRareMorph / HandleMorphBallBoost preserve-mask handoff
 MelonPrimeGameInput.cpp                        .inc の include 場所
 MelonPrimeArm9Hook.cpp                         Dispatch_ImmediateInputEdgeOverlay 登録

@@ -1,7 +1,8 @@
 # MelonPrime Video Quality — macOS Compute Renderer Restriction
 
 **Status:** Implemented 2026-07-09.  
-**Branch:** `highres_fonts_v3`
+**Original implementation branch:** `highres_fonts_v3`
+**Current maintenance branch:** `develop_hud` (current tree through 2026-08-27)
 
 ## Summary
 

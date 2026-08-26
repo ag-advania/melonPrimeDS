@@ -446,9 +446,11 @@ moment the game reaches a code point, or when you need to conditionally redirect
 - **JIT path (default):** the compiler emits the trampoline call **only at addresses that matched at
   compile time** (`ARM9InstructionHookMatches(addr)` in the compile loop), and
   `SetARM9InstructionHook` resets the JIT block cache when the installed address list changes.
-  `ARM9Hook_Install` must avoid calling `SetARM9InstructionHook` when the dispatcher, userdata, and
-  address list already match the currently installed hook set. Non-hooked instructions cost
-  **zero**; each hooked PC pays a `RegCache.Flush` + call when executed.
+  `InstalledDispatcherMatches` compares the dispatcher, userdata, and address list for developer
+  diagnostics, but `ARM9Hook_Install` still reattaches the hook set and writes back every hook PC
+  when the enabled count is nonzero. This is required after match-end `ClearARM9InstructionHook`
+  so rematched JIT blocks pick up the trampoline. Non-hooked instructions cost **zero**; each
+  hooked PC pays a `RegCache.Flush` + call when executed.
 - **Interpreter path:** every instruction runs `ARM9InstructionHookAddressMatches`, a hash-mask
   early-out (`1u << ((addr>>2)&31)`) followed by a short linear scan.
 
@@ -456,13 +458,15 @@ moment the game reaches a code point, or when you need to conditionally redirect
 
 Owns the single hook slot and fans out to all registered MelonPrime hooks.
 
-- `ARM9Hook_SetMatchHooksActive(nds, cfg, romGroupIndex, core, active, osdEmu)` — installs or
+- `ARM9Hook_SetMatchHooksActive(nds, romGroupIndex, core, active, osdEmu)` — installs or
   clears **match-scoped** hooks (`ARM9HookScope_InMatch`). Today every registered hook is
   match-scoped. `true` from `HandleBattleRuntimeEnter`; `false` on match-end and `!isInGame`.
-  `ApplyConfigReload` when `BIT_BATTLE_RUNTIME_MODE`. ROM detect calls `false`. Future out-of-match
-  hooks can use a new `ARM9HookScope` bit.
-- `ARM9Hook_Install(..., activeScope, osdEmu)` — builds the enabled hook PC list for the scope,
-  then **always** calls `SetARM9InstructionHook` when `count > 0` and write-backs every hook PC
+  `ApplyConfigReload` when `BIT_BATTLE_RUNTIME_MODE`. ROM detect calls `false`. The activation
+  booleans come from the core's already-applied `Arm9HookActivationPlan`; this edge does not read
+  or reinterpret `Config::Table` keys. Future out-of-match hooks can use a new scope bit.
+- `ARM9Hook_Install(nds, romGroupIndex, core, plan, activeScope, osdEmu)` — builds the enabled hook
+  PC list from the supplied `Arm9HookActivationPlan` and scope, then **always** calls
+  `SetARM9InstructionHook` when `count > 0` and write-backs every hook PC
   (needed so JIT blocks pick up trampolines after match-end `ClearARM9InstructionHook`; skipping
   `SetARM9InstructionHook` when the address list matches left rematch hooks dead). Match-end latch
   requires `mode==0x0E && flow==0` before polling `flow!=0` so stale post-match `flow` does not
