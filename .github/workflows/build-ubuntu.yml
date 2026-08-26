@@ -210,17 +210,25 @@ jobs:
     - name: Run Vulkan validation profile smoke tests
       if: matrix.arch.name == 'x86_64'
       run: |
-        mkdir -p build-validation/portable
-        printf '3D.Renderer = 3\nScreen.VSync = false\n' > build-validation/portable/melonDS.toml
+        validation_binary="$(pwd)/build-validation/melonPrimeDS"
         for profile in core sync best-practices gpu-av; do
+          # Each timed xvfb-run can finish its asynchronous shutdown after
+          # timeout returns. Give every profile its own executable directory,
+          # portable config and layer-settings file so a late Config::Save from
+          # the previous profile cannot truncate or rewrite this profile's
+          # renderer selection while it is starting.
+          profile_dir="build-validation/vulkan-validation-$profile"
+          mkdir -p "$profile_dir/portable"
+          cp "$validation_binary" "$profile_dir/melonPrimeDS"
+          printf '3D.Renderer = 3\nScreen.VSync = false\n' > "$profile_dir/portable/melonDS.toml"
           python ./tools/testing/vulkan-validation-profile.py \
             --profile "$profile" \
-            --output "build-validation/vk_layer_settings.txt"
+            --output "$profile_dir/vk_layer_settings.txt"
           set +e
-          (cd build-validation && \
+          (cd "$profile_dir" && \
             MELONPRIME_VULKAN_SMOKE=1 SDL_AUDIODRIVER=dummy \
             timeout 30s xvfb-run -a stdbuf -o0 -e0 ./melonPrimeDS \
-            > "vulkan-validation-$profile.log" 2>&1)
+            > "../vulkan-validation-$profile.log" 2>&1)
           status=$?
           set -e
           test "$status" -eq 0 -o "$status" -eq 124
@@ -229,7 +237,7 @@ jobs:
           python ./tools/ci/audits/verify-vulkan-validation-profile.py \
             --profile "$profile" \
             --log "build-validation/vulkan-validation-$profile.log" \
-            --settings build-validation/vk_layer_settings.txt
+            --settings "$profile_dir/vk_layer_settings.txt"
         done
         cp build-validation/vulkan-validation-sync.log build-validation/vulkan-validation.log
 
@@ -239,6 +247,17 @@ jobs:
     - name: Show Vulkan validation logs
       if: always() && matrix.arch.name == 'x86_64'
       run: cat build-validation/vulkan-validation-*.log || true
+
+    - name: Package Vulkan validation logs
+      if: always() && matrix.arch.name == 'x86_64'
+      run: |
+        shopt -s nullglob
+        logs=(build-validation/vulkan-validation-*.log)
+        if ((${#logs[@]} == 0)); then
+          printf 'No Vulkan validation logs were produced.\n' > build-validation/vulkan-validation-no-log.txt
+          logs=(build-validation/vulkan-validation-no-log.txt)
+        fi
+        tar -czf build-validation/vulkan-validation-logs.tar.gz "${logs[@]}"
 
     # This diagnostic artifact is useful evidence, but a transient GitHub
     # artifact-service timeout must not prevent the release binary from being
@@ -252,7 +271,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: vulkan-validation-log-${{ matrix.arch.name }}
-        path: build-validation/vulkan-validation-*.log
+        path: build-validation/vulkan-validation-logs.tar.gz
         archive: false
 
     - name: Wait before retrying Vulkan validation log upload
@@ -266,7 +285,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: vulkan-validation-log-${{ matrix.arch.name }}
-        path: build-validation/vulkan-validation-*.log
+        path: build-validation/vulkan-validation-logs.tar.gz
         archive: false
         overwrite: true
 
@@ -281,7 +300,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: vulkan-validation-log-${{ matrix.arch.name }}
-        path: build-validation/vulkan-validation-*.log
+        path: build-validation/vulkan-validation-logs.tar.gz
         archive: false
         overwrite: true
 
