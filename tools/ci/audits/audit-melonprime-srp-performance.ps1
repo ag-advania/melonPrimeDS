@@ -68,6 +68,80 @@ foreach ($nativeScreen in @($screen, $vulkanScreen)) {
     }
 }
 
+# --- Rendering backend ownership -------------------------------------------
+#
+# The compositor declares itself the owner of the GPU2D output resource set and
+# of publication state. This checks the other half of that claim: that nothing
+# outside it writes them.
+#
+# Mutation only. Reading Gpu2D.Output is legitimate -- DX12 assembles one shared
+# UAV table out of raster and slot resources, and Vulkan's rasterizer set-0
+# write binds slot 0's structured input -- so a read ban would forbid the
+# descriptor contract this backend actually has.
+$rendererSources = @(
+    (Join-Path $repoRoot "src/GPU3D_DX12.cpp"),
+    (Join-Path $repoRoot "src/GPU3D_DX12.h"),
+    (Join-Path $repoRoot "src/GPU3D_Vulkan.cpp"),
+    (Join-Path $repoRoot "src/GPU3D_Vulkan.h")
+)
+
+# Assignment to a publication field, or to Output itself. The trailing
+# character class keeps `==` and `!=` out of it.
+$ownershipMutations = @(
+    'Gpu2D\.ComposedOutputValid\s*=[^=]',
+    'Gpu2D\.ComposedGeneration\s*=[^=]',
+    'Gpu2D\.PublishedOutputGeneration\s*=[^=]',
+    'Gpu2D\.LastComposeResult\s*=[^=]',
+    'Gpu2D\.Output\s*=[^=]',
+    'Gpu2D\.Output\.reset\s*\(',
+    'std::make_shared<DX12Gpu2DOutput>',
+    'std::make_shared<VulkanGpu2DOutput>'
+)
+
+foreach ($rendererSource in $rendererSources) {
+    if (-not (Test-Path -LiteralPath $rendererSource)) { continue }
+    $relative = [System.IO.Path]::GetRelativePath($repoRoot, $rendererSource) -replace '\\', '/'
+    foreach ($pattern in $ownershipMutations) {
+        foreach ($line in (Get-MatchLines $pattern $rendererSource)) {
+            Add-Error ("GPU2D publication state is the compositor's: use a named " +
+                "operation (RecreateOutput / ReleaseOutput / ResetForRendererEpoch / " +
+                "MarkFatal) instead of writing it from ${relative}: $line")
+        }
+    }
+
+    # The output resource generation is the compositor's lifetime identity. It
+    # lived on the renderer once; a reappearance means the counter and the
+    # creation it numbers have drifted apart again.
+    foreach ($line in (Get-MatchLines 'NextOutputResourceGeneration' $rendererSource)) {
+        Add-Error ("output resource generation belongs to the compositor, not " +
+            "${relative}: $line")
+    }
+}
+
+# And the compositor must actually offer those operations, so the check above
+# cannot be satisfied by deleting the call sites.
+$composerHeaders = @(
+    (Join-Path $repoRoot "src/DX12Gpu2DComposer.h"),
+    (Join-Path $repoRoot "src/VulkanGpu2DComposer.h")
+)
+foreach ($composerHeader in $composerHeaders) {
+    if (-not (Test-Path -LiteralPath $composerHeader)) { continue }
+    $relative = [System.IO.Path]::GetRelativePath($repoRoot, $composerHeader) -replace '\\', '/'
+    $text = Get-Content -LiteralPath $composerHeader -Raw
+    foreach ($operation in @(
+        'RecreateOutput', 'ReleaseOutput', 'ResetForRendererEpoch', 'MarkFatal',
+        'GetComposedOutput', 'AcquireComposedOutputLease',
+        'GetPublishedOutputGeneration', 'GetLastComposeResult')) {
+        if ($text -notmatch [regex]::Escape($operation)) {
+            Add-Error "compositor lifecycle operation ${operation}() is missing from ${relative}"
+        }
+    }
+    if ($text -notmatch 'NextOutputResourceGeneration') {
+        Add-Error "the output resource generation counter is missing from ${relative}"
+    }
+}
+
+
 if ($errors.Count -ne 0) {
     foreach ($e in $errors) {
         Write-Error $e

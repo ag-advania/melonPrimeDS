@@ -385,9 +385,7 @@ void DX12Renderer3D::Stop()
     FrameReadbackValid = false;
     NativeReadbackSubmitted = false;
     FinalFBHasValidFrame = false;
-    Gpu2D.ComposedOutputValid = false;
-    Gpu2D.ComposedGeneration = 0;
-    Gpu2D.PublishedOutputGeneration = 0;
+    Gpu2D.ReleaseOutput();
     Provenance.ResetSemanticState();
 }
 
@@ -423,53 +421,11 @@ void DX12Renderer3D::ResetInternal(bool preservePresentation)
     InvalidateHighResCaptureState(
         HighResCaptureInvalidationReason::RendererReset);
     ColorBuffer.fill(0);
-    bool keepPublishedOutput = false;
-    int publishedSlot = -1;
-    if (Gpu2D.Output)
-    {
-        const auto lock = Gpu2D.Output->Ring.LockPublication();
-        publishedSlot = Gpu2D.Output->Ring.GetPublishedSlot();
-        keepPublishedOutput = preservePresentation
-            && Gpu2D.ComposedOutputValid
-            && publishedSlot >= 0
-            && static_cast<std::size_t>(publishedSlot) < Gpu2D.Output->Slots.size();
-        if (!keepPublishedOutput)
-        {
-            Gpu2D.Output->Ring.Unpublish();
-            Gpu2D.ComposedOutputValid = false;
-            Gpu2D.ComposedGeneration = 0;
-            Gpu2D.PublishedOutputGeneration = 0;
-        }
-        else
-            Gpu2D.ComposedOutputValid = true;
-        for (std::size_t slotIndex = 0; slotIndex < Gpu2D.Output->Slots.size(); ++slotIndex)
-        {
-            if (keepPublishedOutput && static_cast<int>(slotIndex) == publishedSlot)
-            {
-                // Keep the last complete presentation surface alive. The
-                // unpublished ring slots are rebuilt for the next full frame.
-                continue;
-            }
-            DX12Gpu2DOutput::Slot& slot = Gpu2D.Output->Slots[slotIndex];
-            slot.UploadedContentGeneration = {};
-            slot.StructuredUploadInitialized = false;
-            slot.Frame.DirectContentValid = false;
-            slot.Frame.Epoch = Provenance.GetEpoch();
-            slot.PresentationWorkSlot = -1;
-        }
-        for (DX12Gpu2DOutput::ComposeWorkSlot& slot : Gpu2D.Output->WorkSlots)
-        {
-            slot.UploadedNativeGeneration = {};
-            slot.SemanticLines.Reset();
-            slot.NativeUploadInitialized = false;
-        }
-    }
-    if (!keepPublishedOutput && !Gpu2D.Output)
-    {
-        Gpu2D.ComposedOutputValid = false;
-        Gpu2D.ComposedGeneration = 0;
-        Gpu2D.PublishedOutputGeneration = 0;
-    }
+    // The publication state, the ring and the slots are the compositor's. The
+    // renderer says which epoch this reset belongs to and whether the last
+    // complete surface is to survive it; what that means for each slot is not
+    // its business.
+    Gpu2D.ResetForRendererEpoch(Provenance.GetEpoch(), preservePresentation);
 }
 
 void DX12Renderer3D::InvalidateHighResCaptureState(
@@ -673,7 +629,7 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     ResultWinnerBuffer.Reset();
     FinalFBBuffer.Reset();
     Capture.ReleaseSidecar();
-    Gpu2D.Output.reset();
+    Gpu2D.ReleaseOutput();
     Provenance.ResetSemanticState();
     TileBuffers[0].Reset();
     TileBuffers[1].Reset();
@@ -686,17 +642,10 @@ void DX12Renderer3D::ReleaseScaleDependentResources()
     // here is what makes RenderFrame()'s null check catch a partially failed
     // reallocation instead of running against a stale buffer.
     BinResultBuffer.Reset();
+    // The compositor's own rings and cached table bases were rewound by
+    // ReleaseOutput() above, together with the resource set they described.
     FrameUavDescriptors.Reset();
-    Gpu2D.OutputUav.Reset();
-    Gpu2D.WorkOutputUav.Reset();
-    Gpu2D.WorkNativeUav.Reset();
     FrameUavCpu = {};
-    Gpu2D.OutputUavCpu.fill({});
-    Gpu2D.WorkOutputUavCpu.fill({});
-    Gpu2D.WorkNativeUavCpu.fill({});
-    Gpu2D.ComposedOutputValid = false;
-    Gpu2D.ComposedGeneration = 0;
-    Gpu2D.PublishedOutputGeneration = 0;
     FinalFBHasValidFrame = false;
 }
 
@@ -764,10 +713,9 @@ bool DX12Renderer3D::CreateScaleDependentResources()
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 outputStateStartNs = RendererStartupNowNs();
 #endif
-    Gpu2D.Output = std::make_shared<DX12Gpu2DOutput>();
-    if (!Gpu2D.Output->Create(
+    if (!Gpu2D.RecreateOutput(
             *Context, static_cast<u32>(ScreenWidth), static_cast<u32>(ScreenHeight),
-            kUavTableSize, NextOutputResourceGeneration++, Provenance.GetEpoch()))
+            kUavTableSize, Provenance.GetEpoch()))
         return false;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     StartupOutputStateNs = RendererStartupNowNs() - outputStateStartNs;
@@ -993,7 +941,7 @@ void DX12Renderer3D::SetRuntimeFailure(std::string reason)
         return;
 
     RuntimeFailed = true;
-    Gpu2D.LastComposeResult = GPU2DComposeResult::Fatal;
+    Gpu2D.MarkFatal();
     RuntimeFailureReason = reason.empty() ? "unspecified DX12 renderer failure" : std::move(reason);
     Platform::Log(
         Platform::LogLevel::Error,
@@ -2940,7 +2888,7 @@ bool DX12Renderer3D::CanComposeNativeGPU2D() const noexcept
         && ShaderStepIdx >= ShaderStepCount
         && Context
         && Gpu2D.Native
-        && Gpu2D.Output
+        && Gpu2D.HasValidOutput()
         && FinalFBBuffer;
 }
 
@@ -3178,43 +3126,12 @@ bool DX12Renderer3D::BuildStaticSrvDescriptors()
 
 RendererOutput DX12Renderer3D::GetComposedOutput() const
 {
-    const std::shared_ptr<DX12Gpu2DOutput> state = Gpu2D.Output;
-    if (!state || !Gpu2D.ComposedOutputValid)
-        return {};
-
-    const auto lock = state->Ring.LockPublication();
-    if (state->Ring.GetPublishedSlot() < 0)
-        return {};
-    const DX12PresentedFrame& frame = state->Slots[state->Ring.GetPublishedSlot()].Frame;
-    return RendererOutput::DX12Buffer(
-        const_cast<DX12PresentedFrame*>(&frame), frame.Width, frame.Height,
-        frame.Serial, frame.Epoch);
+    return Gpu2D.GetComposedOutput();
 }
 
 RendererOutputLease DX12Renderer3D::AcquireComposedOutputLease()
 {
-    const std::shared_ptr<DX12Gpu2DOutput> state = Gpu2D.Output;
-    if (!state || !Gpu2D.ComposedOutputValid)
-        return {};
-
-    const auto lock = state->Ring.LockPublication();
-    const int publishedSlot = state->Ring.GetPublishedSlot();
-    if (publishedSlot < 0)
-        return {};
-
-    DX12Gpu2DOutput::Slot& slot = state->Slots[publishedSlot];
-    auto* leaseCounter = state->Ring.AcquireLease(static_cast<u32>(publishedSlot));
-    GPU2DNative::LogPresentedIdentity(
-        "DX12", slot.Frame.Generation, slot.Frame.Serial,
-        slot.Frame.Generation, slot.Frame.Epoch,
-        static_cast<u32>(publishedSlot));
-    return RendererOutputLease(
-        RendererOutput::DX12Buffer(
-            &slot.Frame, slot.Frame.Width, slot.Frame.Height,
-            slot.Frame.Serial, slot.Frame.Epoch),
-        leaseCounter,
-        &RendererOutputRing::LeaseCounter::Release,
-        state);
+    return Gpu2D.AcquireComposedOutputLease();
 }
 
 u32* DX12Renderer3D::GetLine(int line)

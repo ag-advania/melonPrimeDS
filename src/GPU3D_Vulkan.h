@@ -134,7 +134,7 @@ public:
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
     [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
     {
-        return Gpu2D.LastComposeResult;
+        return Gpu2D.GetLastComposeResult();
     }
     // Materialize only the requested LCDC capture blocks when the emulation
     // core actually reads them.  The normal native frame path keeps this
@@ -154,7 +154,7 @@ public:
         GPU2DNative::HighResCaptureFallbackReason reason) noexcept;
     [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
     {
-        return Gpu2D.PublishedOutputGeneration;
+        return Gpu2D.GetPublishedOutputGeneration();
     }
 
     // Internal resolution, not 256x192. This is the mechanism by which high
@@ -649,11 +649,6 @@ private:
     // and is invalidated per physical block rather than per frame, so it is
     // not part of the semantic mirror above.
     GPU2DNative::HighResCaptureProvenanceTracker HighResCaptureProvenance;
-    // Resource lifetime generation is owned by the renderer and advances only
-    // when a new compositor resource set is created, so presenters can safely
-    // cache descriptors by resource lifetime rather than content generation.
-    u64 NextOutputResourceGeneration = 1;
-
     alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
     alignas(8) u32 ScrolledLine[256]{};
 };

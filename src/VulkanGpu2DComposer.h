@@ -261,6 +261,55 @@ public:
     [[nodiscard]] bool CanComposeNativeGPU2D(
         const VulkanGpu2DComposeContext& ctx) const noexcept;
 
+    // --- output resource lifecycle -----------------------------------------
+    //
+    // The compositor declares itself the owner of the output resource set and
+    // of publication state, so it is the thing that creates, releases and
+    // resets them. The renderer asks for an operation; it does not reach in.
+
+    // Builds a new resource set for `width` x `height` and, only once it is
+    // fully created, makes it the active one. A failed create leaves the
+    // previous set exactly as it was: a half-initialized set must never become
+    // visible to the presenter or to a compose.
+    bool RecreateOutput(
+        const VulkanDevice& device, u32 width, u32 height, u64 epoch);
+
+    // Drops the active resource set and the publication state that described
+    // it. A lease the presenter still holds keeps its own resources alive
+    // through the shared_ptr it captured -- releasing here detaches, it does
+    // not destroy out from under a lease.
+    void ReleaseOutput() noexcept;
+
+    // A renderer reset or savestate load. With preservePresentation the last
+    // complete published surface keeps its resource identity, frame metadata
+    // and serial, and only the unpublished slots are rewound for the next
+    // frame; without it, nothing is published afterwards.
+    void ResetForRendererEpoch(u64 epoch, bool preservePresentation) noexcept;
+
+    // The renderer latched a runtime failure. The compositor cannot produce a
+    // frame any more, and says so in its own vocabulary -- the failure itself,
+    // and its reason, stay the renderer's.
+    void MarkFatal() noexcept;
+
+    [[nodiscard]] bool HasValidOutput() const noexcept
+    {
+        return static_cast<bool>(Output);
+    }
+    [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
+    {
+        return PublishedOutputGeneration;
+    }
+    [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
+    {
+        return LastComposeResult;
+    }
+
+    // The published frame, and a lease on it. Both were the renderer reading
+    // through Output, the ring and the published slot; the compositor owns all
+    // three, so it answers.
+    [[nodiscard]] RendererOutput GetComposedOutput() const;
+    [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
+
     // The compositor records into its own command buffers and fences rather
     // than sharing the rasterizer's. It has to: the structured 2D planes are
     // only complete after all 192 scanlines have been drawn, which is long
@@ -272,15 +321,32 @@ public:
     Vk::FrameRing Frames;
 
     // Recreated per resolution, so it is held by pointer.
+    //
+    // Public because the rasterizer's own set-0 write binds slot 0's structured
+    // input buffer -- the compositor and the rasterizer share one descriptor
+    // set layout, and hiding this behind an accessor pair would describe a
+    // boundary that the descriptor contract does not have. Reading it is
+    // allowed; every mutation of it goes through the operations above.
     std::shared_ptr<VulkanGpu2DOutput> Output;
 
+private:
     // Published only after the compositor submission has been accepted. GPU
     // completion is ordered by the shared queue; the presenter lease owns the
     // slot until its copy command retires.
+    //
+    // Private because these four are the publication state itself. The
+    // renderer used to set them directly, which made the declared owner and
+    // the mutating owner two different things.
     bool ComposedOutputValid = false;
     u64 ComposedGeneration = 0;
     u64 PublishedOutputGeneration = 0;
     GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
+
+    // Lifetime identity of the output resource set, so a presenter can cache
+    // descriptors against a resource generation rather than a content one. It
+    // advances only when a new set is created, and never rewinds -- releasing
+    // a set does not hand its number back.
+    u64 NextOutputResourceGeneration = 1;
 };
 
 } // namespace melonDS

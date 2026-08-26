@@ -1124,6 +1124,110 @@ handles where a compose dispatches three. Small, but this refactor's whole
 point was to write ownership down, and a stale ownership note points the next
 implementer back at Renderer3D.
 
+## Ownership closure, 2026-08-26
+
+The Definition of Done above stays at 33/33. This section adds a stricter
+criterion on top of it, from a review of the landed tree:
+
+> the unit that **declares** a responsibility is the unit that **creates,
+> destroys, resets and mutates** its state.
+
+Both compositors passed the first test and failed the second. They declared
+themselves the owner of the output resource set and of publication state, and
+the renderers did the owning: they built the `shared_ptr`, reset it, wrote the
+four publication fields, walked the ring and every slot on reset, and held the
+resource generation counter. Nothing was visibly broken -- this is a P3
+hardening, not a defect report -- but a declared owner whose state someone else
+writes is half an owner, and the missing half is where a lifetime bug lives.
+
+### What each compositor now offers
+
+| Operation | Replaces |
+|---|---|
+| `RecreateOutput` | `Output = make_shared<...>` |
+| `ReleaseOutput` | `Output.reset()` |
+| `ResetForRendererEpoch` | walking `Ring` / `Slots` / `WorkSlots` in `ResetInternal` |
+| `MarkFatal` | `LastComposeResult = Fatal` |
+| `GetComposedOutput` | reading `Output` plus the published slot |
+| `AcquireComposedOutputLease` | the lock/lookup/lease/log sequence |
+| `HasValidOutput`, `GetPublishedOutputGeneration`, `GetLastComposeResult` | direct field reads |
+
+The four publication fields and `NextOutputResourceGeneration` are private.
+Named operations, not setters: `MarkFatal()` says what happened,
+`SetLastComposeResult(Fatal)` would only say where it was stored.
+
+### Two things deliberately not hidden
+
+`Output` stays readable. DX12 assembles one fourteen-entry UAV table out of
+raster resources and slot resources together, and Vulkan's rasterizer set-0
+write binds slot 0's structured input. Hiding it behind accessors would
+describe a boundary the descriptor contract does not have. Reading is fine;
+every mutation goes through an operation.
+
+`ReleaseOutput` rewinds descriptor **contents** and never **heaps**. The ring
+cursors and cached table bases described one resource set, so they go with it;
+the heaps are sized from the root-signature layout and outlive every
+resolution. `ShutdownDescriptors()` is still the heap-lifetime operation. These
+are two lifetimes, and collapsing them would have destroyed a heap on every
+scale change.
+
+### One real bug found on the way
+
+DX12's create read `Output = make_shared<>(); if (!Output->Create(...))` --
+publishing the pointer first and initializing through it. On the failure path
+that left a half-initialized set reachable as the active `Output`, which both
+the presenter and the compose path read without asking whether it had finished
+being built. Both backends now build a candidate and adopt it only on success,
+which is what Vulkan already did.
+
+### The lease invariant, unchanged
+
+`RendererOutputLease` still captures the `shared_ptr`. A presenter reading an
+old resource set across a resolution change keeps it alive until it releases.
+`ReleaseOutput` detaches; it never destroys under a lease.
+
+### Ratchet
+
+`audit-melonprime-srp-performance.ps1` now hard-fails on assignment to any
+publication field, to `Output`, on `Output.reset()`, on a direct `make_shared`
+of either `Output` type, and on any reappearance of
+`NextOutputResourceGeneration` in a renderer -- and it requires the compositors
+to still offer all eight operations, so the check cannot be satisfied by
+deleting the call sites. Reads of `Gpu2D.Output` stay legal, because forbidding
+them would forbid the shared descriptor table.
+
+It was proved to fire rather than assumed to: each of the seven forbidden
+shapes was injected into `GPU3D_Vulkan.cpp` in turn and rejected, and the
+restored tree passes. An audit nobody has watched fail is a comment.
+
+### Evidence
+
+| | Vulkan | DX12 |
+|---|---|---|
+| scale sweep 1x/4x/5x/8x/9x, savestate + 60 SemanticOnly frames | 5/5 | 5/5 |
+| raster differential at 1x | 2129 frames, 0 mismatches | 2102 frames, 0 mismatches |
+| GPU2D exact-stage validation | 13,766 records, 0 mismatches | 13,603 records, 0 mismatches |
+| frames published through the native path | 2159 / 2159 | 2132 / 2132 |
+| window actions + Vulkan/DX12/Software cycle | 21 transitions, 0 device losses | same run |
+
+The DX12 admission regressions still pass unchanged: A explicit retry recovers,
+B `Automatic` origin stays sticky, C Vulkan -> first DX12 activates, D
+`HardUnsupported` attempts 0 device probes.
+
+One note on the scale sweep: 5x and 9x first failed at 15 seconds with window
+actions, and passed at 40 seconds without them. Those scales compile more
+pipeline variants from a cold cache, and the savestate injection had not landed
+before the run ended. That is the harness's clock, not the renderer -- worth
+recording because "a scale that fails" and "a scale that needs longer" look
+identical in a PASS/FAIL line.
+
+### This is the end of splitting
+
+No further Vulkan/DX12 SRP split happens without one of: an independent reason
+to change, a different lifetime, a real ownership conflict, or an actual
+regression or testability problem. Not file size, not member count, not what
+another API's class diagram looks like.
+
 ## What is left
 
 ### The rest
@@ -1185,6 +1289,11 @@ yet.
   The switch-stress driver skipped requests whose target was already the
   configured renderer, which is exactly the case a post-failure retry is, and
   that silence was read as evidence.
+- The unit that declares a responsibility creates, destroys, resets and mutates
+  its own state. A declared owner whose state someone else writes is half an
+  owner, and the compositors were that for three commits before anyone looked.
+- An audit nobody has watched fail is a comment. Inject each forbidden shape
+  and confirm it is rejected before claiming a ratchet exists.
 - Before claiming something is blocked, quote the rule that blocks it and check
   that it says what you remember. Several "blockers" in this document's history
   were mis-readings, the last of them the one that supposedly ruled out this
