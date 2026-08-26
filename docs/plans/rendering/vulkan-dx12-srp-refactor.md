@@ -905,6 +905,16 @@ The remaining annotations on those runs are pre-existing environment noise
 — a `.gitmodules` submodule warning, Homebrew tap trust, and an
 artifact-upload option in the release step — and none of them gate a job.
 
+Re-confirmed on the tree that closes REAUDIT-P2-002: Ubuntu and BSD green
+first time, macOS green on a re-run of the same commit. The first macOS
+attempt failed in the no-ROM MoltenVK smoke, which waits for presenter
+readiness on a paravirtual GPU inside a VM and timed out before
+`[Vulkan] presenter ready:` appeared. That step is flaky rather than a
+regression, and the reasoning is checkable rather than assumed: every
+source change in that range is inside `_WIN32 && MELONPRIME_ENABLE_DX12`
+or on a path the no-ROM smoke never reaches, and the same commit passed
+unchanged on the retry.
+
 ### Runtime — 8 of 8
 
 | Item | Status |
