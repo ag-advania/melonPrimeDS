@@ -191,13 +191,17 @@ static uint64_t HudGoldenRenderCase(
     const CachedHudConfig& c = s_cache;
     const float tds = c.textDrawScale;
     const float zoomAmount = tc.zoomed ? 1.0f : 0.0f;
+    HudRuntimeState st = {};
+    st.ram = ram.data();
+    st.offP = 0;
+    st.romGroup = rom.romGroupIndex;
     DrawCrosshair(&p, ram.data(), rom, c, tc.hudScale, 1.0f, tc.zoomed ? 120u : 60u, zoomAmount);
     DrawHP(&p, 173, 199, c, tds);
     DrawWeaponAmmo(&p, WeaponId::Missile, 64, 38, 100, 60, c, tds, tc.hudScale);
     DrawWeaponInventory(&p, 0x01FFu, WeaponId::Missile, 64, 38, c, tds, tc.hudScale);
     DrawBombLeft(&p, 3, c, tds, tc.hudScale);
-    DrawMatchStatusHud(&p, ram.data(), rom, 0, false, c);
-    DrawRankAndTime(&p, ram.data(), rom, 0, false, c, tds);
+    DrawMatchStatusHud(&p, rom, 0, false, c, st);
+    DrawRankAndTime(&p, rom, 0, false, c, tds, st);
     DrawBottomScreenOverlay(cfg, &p, &bottom, static_cast<uint8_t>(HunterId::Samus));
     p.end();
 

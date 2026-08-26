@@ -174,8 +174,8 @@ HOT_FUNCTION QRect CustomHud_Render(
     }
 
     // Match Status + Rank & Time HUDs (non-adventure only, visible in all camera modes)
-    DrawMatchStatusHud(topPaint, st.ram, rom, playerPosition, st.isAdventure, c, &st);
-    DrawRankAndTime(topPaint, st.ram, rom, playerPosition, st.isAdventure, c, textDrawScale, &st);
+    DrawMatchStatusHud(topPaint, rom, playerPosition, st.isAdventure, c, st);
+    DrawRankAndTime(topPaint, rom, playerPosition, st.isAdventure, c, textDrawScale, st);
 
     // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
     if (c.radar.radarShow)
@@ -217,7 +217,7 @@ HOT_FUNCTION QRect CustomHud_Render(
         ClearPreviousCrosshairDirty(c.crosshair);
     }
 
-    return CurrentHudDirtyRect(xf);
+return CurrentHudDirtyRect(xf);
 }
 
 // =========================================================================
@@ -370,4 +370,3 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
     topPaint->setRenderHint(QPainter::SmoothPixmapTransform, false);
     topPaint->setOpacity(savedOpacity);
 }
-
