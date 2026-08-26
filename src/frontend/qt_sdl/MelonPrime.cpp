@@ -1,5 +1,6 @@
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameSettings.h"
+#include "MelonPrimePatchAimSmoothing.h"
 #include "EmuInstance.h"
 #include "EmuThread.h"
 #include "NDS.h"
@@ -636,7 +637,7 @@ namespace MelonPrime {
         MelonPrimeGameSettings::ApplyMphSensitivity(
             nds, localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
 
-        MelonPrimeGameSettings::ApplyAimSmoothingPatch(nds, m_currentRom, m_disableMphAimSmoothing);
+        AimSmoothing_ApplyOrRestore(nds, m_currentRom, m_disableMphAimSmoothing);
 
 #ifdef MELONPRIME_DS
         // Game-join patches only (aspect ratio). Battle-runtime patches/hooks wait for mode 0x0E.
