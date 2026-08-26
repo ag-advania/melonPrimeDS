@@ -920,18 +920,15 @@ artifact-upload option in the release step — and none of them gate a job.
 
 ### Summary
 
-**32 met, 1 reopened.**
+**33 of 33 met.**
 
 The 2026-08-26 re-audit reopened two of the Runtime rows -- renderer switch and
-low latency -- and both are closed by REAUDIT-P1-001 and REAUDIT-P2-001 above,
-with the evidence recorded there. The three platform build rows are closed by
-the repository's own CI on `develop_hud`: Ubuntu (x86_64, aarch64), macOS
-(x86_64, arm64, universal) and BSD (FreeBSD, NetBSD, OpenBSD) all green.
-
-The renderer-switch row is reopened again by **REAUDIT-P2-002** below: a DX12
-runtime failure latches sticky, and whether an explicit user re-selection
-actually clears it had never been tested. Until that is demonstrated in a
-running process, this row is not met.
+low latency -- and the push-review of `b71843c65` reopened the first of those a
+second time as REAUDIT-P2-002. All three findings are closed by
+REAUDIT-P1-001, REAUDIT-P2-001 and REAUDIT-P2-002, with the evidence recorded
+with each. The three platform build rows are closed by the repository's own CI
+on `develop_hud`: Ubuntu (x86_64, aarch64), macOS (x86_64, arm64, universal)
+and BSD (FreeBSD, NetBSD, OpenBSD) all green.
 
 The `Gpu2DComposer` item that was previously listed here as blocked is done.
 The blocker was mis-stated: §11.3 forbids *mixing* a descriptor-strategy change
@@ -1050,6 +1047,64 @@ The lesson is the boring one: run the gate the CI runs, not the subset the
 notes list. The full local set is now 15 Python audits, the shader source-sync
 check and 7 PowerShell audits.
 
+### REAUDIT-P2-002 -- explicit retry after a DX12 runtime failure
+
+A DX12 renderer-initialization failure latches the backend unavailable for the
+rest of the process. That is right for the transition that failed. What had
+never been demonstrated is that an explicit user re-selection clears it -- and
+the one piece of evidence offered for it was wrong.
+
+`c664e109c` read a switch-stress result as "later DX12 requests stay on
+Software, which is the sticky runtime-failure latch behaving as designed". The
+latch is real, but that run does not show it:
+`MelonPrimeRendererSwitchStress::Apply()` returned early when the config already
+held the requested renderer, and a DX12 failure leaves `3D.Renderer` set to DX12
+because only the emulation thread's local fell back. The driver never issued
+those requests, so nothing was being latched away. The property was untested,
+not demonstrated.
+
+**Three answers instead of two.** `HardUnsupported` means the runtime is not
+installed and nothing a user does changes that; `RuntimeFailure` means the
+runtime is there but the renderer did not come up. Only the second is
+clearable, and `ReportRuntimeFailure()` will not downgrade the first into it --
+otherwise a renderer failure on a machine with no D3D12 would make a permanent
+answer look retryable.
+
+**One place announces a request.**
+`VideoBackend::NotifyRendererRequest(renderer, origin)`. A `User` origin clears
+a latched `RuntimeFailure`; an `Automatic` origin does nothing, which is what
+keeps a failing backend from becoming a fail/reset/retry loop. It logs the
+origin, whether a latch cleared, and the resulting admission state.
+
+`VideoSettingsDialog::onChange3DRenderer` calls it, and that slot fires on a
+click including a click on the already-checked button -- which is exactly how a
+user retries a backend that failed. The dialog's own refresh no longer resets
+anything: refreshing a dialog is not a request to use a backend, and doing so
+silently re-enabled a radio button for something that had just failed.
+
+`DX12FeatureCheck::ResetProbeForRetry()` is gone. It had no callers left, and an
+unreachable retry API misdirects a reader the same way a stale comment does.
+
+**Making it testable was part of the fix.** The switch-stress driver announces
+through the same production function rather than around it, and in `User`
+origin no longer skips a repeat request. The smoke harness gained two verdict
+shapes it did not have -- `--expect-recovery` (degrade, then come back) and
+`--expect-unsupported` (never probe at all). Neither could be expressed by the
+existing pass/degrade modes, which is part of why this went unnoticed.
+
+| Test | Result |
+|---|---|
+| A: init failure, then explicit re-selection | **PASS** -- latch cleared once, admission re-probed `available=1`, `transition complete actual=4`, same process, no restart |
+| B: same failure, `Automatic` origin | **PASS** -- 0 latch clears, 0 recoveries; the latch holds |
+| C: Vulkan -> first DX12 (P1 regression) | **PASS** -- 4/4 switches reach DX12, 0 device losses |
+| D: hard unsupported, 8 explicit requests | **PASS** -- **0 device probes attempted**, 0 latch clears, DX12 never activated |
+| E: Vulkan/DX12/Software cycle, 19 transitions | **PASS** -- 0 device losses, 0 fallbacks, 1 probe for the whole process |
+
+Test D is the one worth reading twice. On a machine without the runtime, passive
+eligibility alone rejects DX12, so the heavy probe is never attempted no matter
+how many times the user asks. `MELONPRIME_TEST_DX12_FORCE_HARD_UNSUPPORTED`
+models that machine, which one with D3D12 cannot otherwise reach.
+
 ### REAUDIT-P3-001 -- a comment pointing the wrong way
 
 `VulkanGpu2DOutput`'s header still said the renderer records the compose
@@ -1060,34 +1115,6 @@ point was to write ownership down, and a stale ownership note points the next
 implementer back at Renderer3D.
 
 ## What is left
-
-### REAUDIT-P2-002 -- explicit retry after a DX12 runtime failure (OPEN)
-
-`ReportRuntimeFailure()` latches DX12 to unsupported for the rest of the
-process, which is right for the transition that failed. `ResetProbeForRetry()`
-is what clears it, and the question the 2026-08-26 push-review raised is
-whether anything in production actually calls it on an explicit user request.
-
-Two things need to be true and only one of them has been checked:
-
-1. an explicit user DX12 re-selection clears the latch and recovers in the same
-   process, and
-2. an automatic fallback, startup normalization or internal reconciliation
-   never clears it, so a failing backend cannot loop.
-
-There is also a narrower defect visible by inspection: `ResetProbeForRetry()`
-clears *every* cached answer, including a durable "this machine has no D3D12
-runtime". An explicit retry should clear a renderer-initialization failure and
-leave a hard-unsupported answer alone, or every click re-runs a device probe
-that cannot succeed.
-
-A correction to the evidence recorded for `c664e109c`: that commit's message
-read the switch-stress result as "later DX12 requests stay on Software, which
-is the sticky runtime-failure latch behaving as designed". The latch is real,
-but that run does not show it. `MelonPrimeRendererSwitchStress::Apply()` returns
-early when the config already holds the requested renderer, and a DX12 failure
-leaves `3D.Renderer` set to DX12 -- only the emulation thread's local fell back.
-The driver never issued those requests at all.
 
 ### The rest
 
@@ -1140,6 +1167,14 @@ yet.
   DS frame on the emulation thread; `std::function` would put an allocation and
   an indirect call in that path.
 - Structure and behaviour do not change in the same commit.
+- A verdict the test harness cannot express is a verdict that will not be
+  checked.  and  exist because
+  "degrade then come back" and "never probe at all" had no shape in the
+  harness, and a property with no shape is one nobody notices is untested.
+- When a run seems to confirm something, check that it actually exercised it.
+  The switch-stress driver skipped requests whose target was already the
+  configured renderer, which is exactly the case a post-failure retry is, and
+  that silence was read as evidence.
 - Before claiming something is blocked, quote the rule that blocks it and check
   that it says what you remember. Several "blockers" in this document's history
   were mis-readings, the last of them the one that supposedly ruled out this
