@@ -42,7 +42,9 @@ function Get-CodeMatchLines([string]$pattern, [string]$path) {
     # inline note cannot satisfy a wiring rule.
     return @(Get-MatchLines $pattern $path | Where-Object {
         $text = ($_ -split ':', 3)[2] -replace '//.*$', ''
-        $text -notmatch '^\s*(//|\*|/\*)' -and $text.Trim().Length -gt 0
+        $text -notmatch '^\s*(//|\*|/\*)' -and
+            $text.Trim().Length -gt 0 -and
+            $text -match $pattern
     })
 }
 
