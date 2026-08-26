@@ -184,6 +184,17 @@ const char* LoaderFailureReason();
 // Error level, then returns false so call sites can `return DX12::Fail(...)`.
 bool Fail(const char* context, HRESULT hr);
 
+// Small arithmetic shared by every DX12 dispatch and allocation site.
+constexpr u32 DivRoundUp(u32 value, u32 divisor) noexcept
+{
+    return (value + divisor - 1) / divisor;
+}
+
+constexpr u64 AlignUp(u64 value, u64 alignment) noexcept
+{
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
 } // namespace melonDS::DX12
 
 #endif // MELONPRIME_DS && _WIN32 && MELONPRIME_ENABLE_DX12

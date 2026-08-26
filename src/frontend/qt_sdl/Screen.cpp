@@ -2334,7 +2334,6 @@ void ScreenPanelDX12::drawScreen()
     const int logicalHeight = static_cast<int>(std::max(1u, publishedSurface.LogicalHeight));
     const u32 physicalWidth = std::max(1u, publishedSurface.PhysicalWidth);
     const u32 physicalHeight = std::max(1u, publishedSurface.PhysicalHeight);
-    const bool waitForPresentSlot = !renderer || !renderer->ShouldBypassPresentWait();
     // A software CPU frame has no renderer frame identity. Publishing a zero
     // serial is how the presenter is told so: it skips the monotonic gate for
     // this frame and leaves the last accepted GPU identity untouched, so the
@@ -2346,8 +2345,7 @@ void ScreenPanelDX12::drawScreen()
         return;
     if (gpuFrame && gpuFrame->HasDirectSampledOutput())
         dx12->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
-    if (!dx12->presenter.BeginFrame(
-            physicalWidth, physicalHeight, waitForPresentSlot))
+    if (!dx12->presenter.BeginFrame(physicalWidth, physicalHeight))
     {
         if (dx12->presenter.LastBeginWasBackpressure())
             return;
@@ -2659,17 +2657,9 @@ void ScreenPanelDX12::drawScreen()
     }
 
     const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
-    if (renderer)
-    {
-        renderer->BeginReflexPresent();
-        renderer->BeginIntelXeLLPresent();
-    }
+    // The presenter fires the vendor Present markers itself, around the DXGI
+    // call. This panel does not mediate low-latency state.
     const bool presented = dx12->presenter.Present(vsync);
-    if (renderer)
-    {
-        renderer->EndReflexPresent();
-        renderer->EndIntelXeLLPresent();
-    }
 
     if (!presented)
     {

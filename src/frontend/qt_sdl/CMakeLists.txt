@@ -580,6 +580,78 @@ else()
         "MelonPrime GPU memory telemetry: COMPILED OUT")
 endif()
 
+# Backend-neutral structured input upload planning. A unit wrongly considered
+# clean leaves last frame's 2D content on screen with no error anywhere, so the
+# extraction is checked against a transcription of the pre-refactor computation.
+add_executable(melonprime_structured_upload_plan_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/structured-upload-plan-tests.cpp)
+target_include_directories(melonprime_structured_upload_plan_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+target_compile_definitions(melonprime_structured_upload_plan_tests PRIVATE
+    MELONPRIME_DS)
+set_target_properties(melonprime_structured_upload_plan_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_structured_upload_plan_check ALL
+    COMMAND $<TARGET_FILE:melonprime_structured_upload_plan_tests>
+    DEPENDS melonprime_structured_upload_plan_tests
+    COMMENT "Running structured input upload plan tests..."
+    VERBATIM)
+
+# Backend-neutral native Display Capture provenance. A wrong "yes" here hands
+# the emulated program VRAM from the wrong frame rather than crashing, and both
+# backends now share the rule, so it is checked directly.
+add_executable(melonprime_capture_provenance_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/capture-provenance-tests.cpp
+    ${CMAKE_SOURCE_DIR}/src/CaptureProvenanceState.cpp)
+target_include_directories(melonprime_capture_provenance_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+target_compile_definitions(melonprime_capture_provenance_tests PRIVATE
+    MELONPRIME_DS)
+set_target_properties(melonprime_capture_provenance_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_capture_provenance_check ALL
+    COMMAND $<TARGET_FILE:melonprime_capture_provenance_tests>
+    DEPENDS melonprime_capture_provenance_tests
+    COMMENT "Running native capture provenance tests..."
+    VERBATIM)
+
+# Backend-neutral presentation slot ring. Both compositors publish through it,
+# and a mistake in the protocol shows a stale or half-composed frame rather
+# than crashing -- so the rules are checked here, without a GPU.
+add_executable(melonprime_renderer_output_ring_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/renderer-output-ring-tests.cpp
+    ${CMAKE_SOURCE_DIR}/src/RendererOutputRing.cpp)
+target_include_directories(melonprime_renderer_output_ring_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+target_compile_definitions(melonprime_renderer_output_ring_tests PRIVATE
+    MELONPRIME_DS)
+set_target_properties(melonprime_renderer_output_ring_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_renderer_output_ring_check ALL
+    COMMAND $<TARGET_FILE:melonprime_renderer_output_ring_tests>
+    DEPENDS melonprime_renderer_output_ring_tests
+    COMMENT "Running renderer output ring protocol tests..."
+    VERBATIM)
+
+# Backend-neutral GPU2D frame publication policy. Not gated on developer
+# features and not gated on a backend: both the Vulkan and the DX12 renderer
+# run this decision tree on every frame, and the test compares it against a
+# transcription of the pre-extraction inline branches over the full input
+# cross-product.
+add_executable(melonprime_gpu2d_frame_policy_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/gpu2d-frame-policy-tests.cpp)
+target_include_directories(melonprime_gpu2d_frame_policy_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+target_compile_definitions(melonprime_gpu2d_frame_policy_tests PRIVATE
+    MELONPRIME_DS)
+set_target_properties(melonprime_gpu2d_frame_policy_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_gpu2d_frame_policy_check ALL
+    COMMAND $<TARGET_FILE:melonprime_gpu2d_frame_policy_tests>
+    DEPENDS melonprime_gpu2d_frame_policy_tests
+    COMMENT "Running GPU2D frame publication policy tests..."
+    VERBATIM)
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(core PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -639,6 +711,9 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDevice.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanMemory.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanDescriptors.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanCaptureBridge.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanGpu2DComposer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanPipelineCache.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanSync.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanNvidiaReflex.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../VulkanAmdAntiLag.cpp
@@ -670,6 +745,7 @@ if (MELONPRIME_VULKAN_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceCommon.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanSurfaceLifecycle.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenterTimeout.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanLatencyController.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeVulkanPresenter.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeScreenVulkan.cpp)
 
@@ -1012,10 +1088,20 @@ if (MELONPRIME_DX12_ACTIVE)
     endif()
 
     target_sources(core PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12RuntimeLoader.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12Context.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12ShaderCompiler.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12ResourceFactory.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12DescriptorRing.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12CommandContext.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12UploadRing.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12AmdAntiLag2.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12IntelXeLL.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12LowLatencyController.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12NvidiaReflex.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12CaptureBridge.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12Gpu2DComposer.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../../DX12PipelineRepository.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_TexcacheDX12.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU3D_DX12.cpp
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_DX12.cpp)

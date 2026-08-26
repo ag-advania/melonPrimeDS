@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "MelonPrimeVulkanSurface.h"
+#include "MelonPrimeVulkanLatencyController.h"
 #include "VulkanAmdAntiLag.h"
 #include "VulkanCommon.h"
 #include "VulkanDevice.h"
@@ -180,8 +181,7 @@ public:
     // runtime. Screen-panel admission must use this effective authority.
     [[nodiscard]] bool HasEffectiveLowLatencyAuthority() const noexcept
     {
-        return melonDS::VulkanHasEffectiveLowLatencyAuthority(
-            Reflex.IsActive(), AntiLag.IsActive());
+        return Latency.HasEffectiveAuthority();
     }
     void SetGenericPresentPacingPolicy(int policy) noexcept { PresentPacer.SetPolicy(policy); }
     // Physical-pixel size of the current swapchain. Zero before the first
@@ -432,32 +432,18 @@ private:
     melonDS::VulkanDevice Device;
     melonDS::Vk::FrameRing Frames;
 
-    melonDS::VulkanNvidiaReflex Reflex;
-    melonDS::VulkanAmdAntiLag AntiLag;
+    // Both vendor low-latency state machines, the logical frame index they
+    // share, and the log-on-change latch. The pacer stays here because it
+    // participates in swapchain construction.
+    VulkanLatencyController Latency;
     melonDS::VulkanPresentPacer PresentPacer;
     // A/B measurement instrument. Stateless and free unless the build defines
     // MELONPRIME_VULKAN_LATENCY_CAPTURE; it never influences what is presented.
     melonDS::VulkanPresentLatencyCapture LatencyCapture;
-    // Logical game-frame ID handed to Anti-Lag's INPUT/PRESENT pair. It is
-    // allocated once by EmuThread and remains shared across Reflex/Anti-Lag;
-    // when Reflex is unavailable, Anti-Lag still uses the same logical-frame
-    // semantics rather than creating a presenter-local counter.
-    melonDS::u64 LowLatencyFrameIndex = 0;
-    // Last logical emulated frame whose present was accepted by WSI. The
-    // difference from LowLatencyFrameIndex is a diagnostic count of logical
-    // frames since that accepted present; it never participates in
-    // synchronization or frame admission.
-    melonDS::u64 LastAcceptedLogicalFrameId = 0;
     melonDS::u64 PendingPresentedFrameSerial = 0;
     melonDS::u64 PendingPresentedFrameEpoch = 0;
     melonDS::u64 LastPresentedFrameSerial = 0;
     melonDS::u64 LastPresentedFrameEpoch = 0;
-    // Last state LogLowLatencyStateIfChanged() reported, so the per-frame path
-    // logs a transition once instead of every frame.
-    int LoggedReflexMode = -1;
-    bool LoggedReflexActive = false;
-    bool LoggedAntiLagActive = false;
-    bool LowLatencyStateLogged = false;
     // A strict latest-submission fence timeout is a pacing budget miss, not a
     // renderer failure. Consume this at the next frame boundary so the
     // presenter stays alive and retries on the following frame.

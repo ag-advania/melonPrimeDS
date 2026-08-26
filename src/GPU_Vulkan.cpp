@@ -22,6 +22,7 @@
 
 #include <array>
 
+#include "GPU2DFramePolicy.h"
 #include "GPU3D_Vulkan.h"
 #include "NDS.h"
 #include "Platform.h"
@@ -269,6 +270,24 @@ void VulkanRenderer::VBlank()
         }
     } coverage{this};
 
+    // MELONPRIME_VULKAN_PRESENT_HOOK_V1
+    //
+    // Notified on every exit, including the ones that publish nothing: the
+    // panel's snapshot then simply keeps pointing at the previously published
+    // surface, which is still the newest frame that exists. A scope guard
+    // rather than a call before each return, so a future change to the
+    // publication policy cannot silently drop one.
+    struct VBlankObserverScope
+    {
+        VulkanRenderer* Renderer;
+
+        ~VBlankObserverScope()
+        {
+            if (Renderer->VBlankObserverFn)
+                Renderer->VBlankObserverFn(Renderer->VBlankObserverData);
+        }
+    } observerNotify{this};
+
     // The one point in the DS frame where this frame's structured 2D planes and
     // this frame's 3D image both exist: the software engines have finished all
     // 192 scanlines, and RenderFrame() submitted the 3D work at the start of the
@@ -282,134 +301,109 @@ void VulkanRenderer::VBlank()
     // frame into a per-scanline route table. The packer follows that table, so
     // there is nothing left to guess and no previous-frame assignment to
     // disagree with.
+    //
+    // Which of the two candidate frames actually reaches the screen is not a
+    // Vulkan question, so it is not answered here: GPU2DFramePolicy owns that
+    // decision, and DX12 asks it the same question with the same facts.
     auto* vulkan = GetVulkanRenderer3D();
-    bool nativeComposed = false;
-    GPU2DComposeResult nativeComposeResult = GPU2DComposeResult::Unavailable;
-    const bool nativeProducer = UsesNativeGPU2DProducerForFrame();
-    const bool exactValidation = GPU2DNative::ExactValidationEnabled();
-    if (vulkan && HasNativeGPU2DFrameForCurrentEmulatedFrame())
+
+    GPU2DFramePolicy::FrameFacts facts;
+    facts.HasNativeRenderer = vulkan != nullptr;
+    facts.HasNativeFrameForCurrentEmulatedFrame =
+        HasNativeGPU2DFrameForCurrentEmulatedFrame();
+    facts.HasNativeFrame = HasNativeGPU2DFrame();
+    facts.NativeProducer = UsesNativeGPU2DProducerForFrame();
+    facts.ExactValidationEnabled = GPU2DNative::ExactValidationEnabled();
+    facts.CaptureEnabled = GPU.CaptureEnable;
+    facts.FallbackAlreadyAnnounced = NativeGPU2DFallbackAnnounced;
+
+    if (GPU2DFramePolicy::ShouldAttemptNativeCompose(
+            facts.HasNativeRenderer,
+            facts.HasNativeFrameForCurrentEmulatedFrame))
     {
         const GPU2DNative::FrameInput& nativeFrame = GetNativeGPU2DFrame();
-        nativeComposed = vulkan->ComposeNativeGPU2D(
+        facts.NativeComposed = vulkan->ComposeNativeGPU2D(
             nativeFrame,
             nativeFrame.Generation.Frame,
             !GPU.GPU3D.AbortFrame && vulkan->HasFinalFBContent(),
-            exactValidation ? GetSoftwareScreenFrame(0u) : nullptr,
-            exactValidation ? GetSoftwareScreenFrame(1u) : nullptr);
-        nativeComposeResult = vulkan->GetLastComposeResult();
-        if (nativeComposeResult == GPU2DComposeResult::Success
-            || nativeComposeResult == GPU2DComposeResult::SemanticOnly)
+            facts.ExactValidationEnabled ? GetSoftwareScreenFrame(0u) : nullptr,
+            facts.ExactValidationEnabled ? GetSoftwareScreenFrame(1u) : nullptr);
+        facts.ComposeResult = vulkan->GetLastComposeResult();
+        if (GPU2DFramePolicy::ShouldPublishCaptureProvenance(facts.ComposeResult))
         {
-            // Publish physical capture ownership after semantic submission,
-            // even when presentation backpressure retained the old visible
-            // frame. The next frame may request a read before its recorder is
-            // finalized, and must still select this native mirror.
             PublishNativeCaptureProvenance(
                 CaptureOwner::NativeVulkan,
                 nativeFrame,
                 GetNativeCaptureStateIdentity());
         }
-        if (nativeComposed)
-        {
-            coverage.Published = true;
-            coverage.Source = "native";
-            if (!NativeGPU2DAnnounced)
-            {
-                Platform::Log(Platform::LogLevel::Info,
-                    "Vulkan renderer gpu2d=Vulkan gpu3d=Vulkan fallback=0\n");
-                NativeGPU2DAnnounced = true;
-            }
-        }
-        else if (!nativeProducer
-            || nativeComposeResult == GPU2DComposeResult::Fatal)
-        {
-            RecordGPU2DRuntimeNativeUnavailableFallback();
-            VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFallbackFrames);
-            if (!NativeGPU2DFallbackAnnounced)
-            {
-                Platform::Log(Platform::LogLevel::Warn,
-                    "Vulkan renderer gpu2d=Software fallback=1 reason=native dispatch unavailable\n");
-                NativeGPU2DFallbackAnnounced = true;
-            }
-        }
     }
-    else if (vulkan && HasNativeGPU2DFrame())
+    facts.RendererHasRuntimeFailure = vulkan && vulkan->HasRuntimeFailure();
+
+    const GPU2DFramePolicy::Decision decision = GPU2DFramePolicy::Evaluate(facts);
+
+    if (facts.NativeComposed)
+    {
+        coverage.Published = true;
+        coverage.Source = "native";
+        // The 3D oracle runs on this path too. It compares the two Renderer3D
+        // outputs, which is independent of the 2D composition that just
+        // happened, and native composition is the only path a normal session
+        // takes -- so leaving it to the structured branch meant the harness
+        // never saw a frame.
+        CompareRasterDifferentialFrame();
+    }
+    if (decision.AnnounceNativeSuccess && !NativeGPU2DAnnounced)
+    {
+        Platform::Log(Platform::LogLevel::Info,
+            "Vulkan renderer gpu2d=Vulkan gpu3d=Vulkan fallback=0\n");
+        NativeGPU2DAnnounced = true;
+    }
+    if (decision.RecordStaleGenerationReject)
     {
         RecordGPU2DStaleGenerationReject();
         Platform::Log(Platform::LogLevel::Warn,
             "Vulkan renderer gpu2d=Software fallback=1 reason=stale_generation_reject "
             "stale_generation_reject=1\n");
     }
-
-    if (nativeProducer && !nativeComposed)
-    {
-        if (nativeComposeResult == GPU2DComposeResult::Backpressure
-            || nativeComposeResult == GPU2DComposeResult::SemanticOnly
-            || nativeComposeResult == GPU2DComposeResult::Unavailable)
-        {
-            // Keep the last published native frame. A full renderer-output
-            // ring or a still-compiling pipeline is not a correctness/runtime
-            // failure and must not trigger a Software hybrid frame.
-            if (VBlankObserverFn)
-                VBlankObserverFn(VBlankObserverData);
-            return;
-        }
-        // No CPU structured 2D frame exists when native ownership was latched.
-        // Refuse to publish a stale or mixed-generation output instead of
-        // silently falling back to a buffer that was not rendered this frame.
-        if (vulkan && !vulkan->HasRuntimeFailure())
-            vulkan->FailNativeGPU2DExact(
-                "native GPU2D producer could not publish its owned frame");
-        if (VBlankObserverFn)
-            VBlankObserverFn(VBlankObserverData);
-        return;
-    }
-
-    if (vulkan && !nativeComposed && vulkan->HasRuntimeFailure())
-    {
-        Platform::Log(Platform::LogLevel::Error,
-            "Vulkan renderer gpu2d=Software fallback=1 disabled=1 reason=%s\n",
-            vulkan->GetRuntimeFailureReason().c_str());
-        if (VBlankObserverFn)
-            VBlankObserverFn(VBlankObserverData);
-        return;
-    }
-    if (exactValidation && vulkan && !nativeComposed
-        && nativeComposeResult != GPU2DComposeResult::Backpressure
-        && nativeComposeResult != GPU2DComposeResult::SemanticOnly
-        && nativeComposeResult != GPU2DComposeResult::Unavailable)
-    {
-        vulkan->FailNativeGPU2DExact(
-            "native GPU2D exact gate rejected a fallback or unavailable frame");
-        if (VBlankObserverFn)
-            VBlankObserverFn(VBlankObserverData);
-        return;
-    }
-    if (vulkan && !nativeComposed && !NativeGPU2DFallbackAnnounced)
-    {
+    if (decision.RecordRuntimeNativeUnavailableFallback)
         RecordGPU2DRuntimeNativeUnavailableFallback();
-        if (GPU.CaptureEnable && !nativeProducer)
-            RecordGPU2DCaptureSoftwareFallback();
+    if (decision.RecordCaptureSoftwareFallback)
+        RecordGPU2DCaptureSoftwareFallback();
+    if (decision.CountNativeFallbackFrame)
         VulkanPerf::AddCounter(VulkanPerf::Counter::NativeGPU2DFallbackFrames);
+    if (decision.AnnounceFallback != GPU2DFramePolicy::FallbackReason::None)
+    {
         Platform::Log(Platform::LogLevel::Warn,
-            "Vulkan renderer gpu2d=Software fallback=1 reason=native frame unavailable\n");
+            "Vulkan renderer gpu2d=Software fallback=1 reason=%s\n",
+            GPU2DFramePolicy::FallbackReasonText(decision.AnnounceFallback));
         NativeGPU2DFallbackAnnounced = true;
     }
 
-    if (nativeComposeResult == GPU2DComposeResult::Backpressure
-        || nativeComposeResult == GPU2DComposeResult::SemanticOnly)
+    switch (decision.Result)
     {
-        if (VBlankObserverFn)
-            VBlankObserverFn(VBlankObserverData);
+    case GPU2DFramePolicy::Outcome::NativePublished:
+    case GPU2DFramePolicy::Outcome::RetainLastFrame:
         return;
+    case GPU2DFramePolicy::Outcome::FailNativeExact:
+        if (vulkan)
+            vulkan->FailNativeGPU2DExact(decision.FailureReason);
+        return;
+    case GPU2DFramePolicy::Outcome::ReportRuntimeFailure:
+        Platform::Log(Platform::LogLevel::Error,
+            "Vulkan renderer gpu2d=Software fallback=1 disabled=1 reason=%s\n",
+            vulkan->GetRuntimeFailureReason().c_str());
+        return;
+    case GPU2DFramePolicy::Outcome::TryStructuredFallback:
+        break;
     }
 
     StructuredVulkanFrameView view{};
-    if (!nativeComposed && vulkan && GetStructuredVulkanFrame(view)
-        && view.Valid
-        && (view.CompleteCoverage
-            || (!GPU2DNative::DropDiscontinuousSavestateFrameEnabled()
-                && view.ResumeFrameDiscontinuous)))
+    if (vulkan && GetStructuredVulkanFrame(view)
+        && GPU2DFramePolicy::ShouldComposeStructuredFrame(
+            view.Valid,
+            view.CompleteCoverage,
+            view.ResumeFrameDiscontinuous,
+            GPU2DNative::DropDiscontinuousSavestateFrameEnabled()))
     {
         RecordGPU2DStructuredFallback();
         const std::array<const u32*, 14> planes = {
@@ -451,25 +445,14 @@ void VulkanRenderer::VBlank()
         VulkanPerf::AddCounter(
             VulkanPerf::Counter::StructuredFallbackLines,
             view.StructuredFallbackLines);
-        if (composed
-            && DifferentialReference
-            && vulkan->GetScaleFactor() == 1
-            && !GPU.GPU3D.AbortFrame)
-            DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "Vulkan");
+        if (composed)
+            CompareRasterDifferentialFrame();
         if (composed)
         {
             coverage.Published = true;
             coverage.Source = "structured";
         }
     }
-
-    // MELONPRIME_VULKAN_PRESENT_HOOK_V1
-    //
-    // Notified even when nothing was composed this frame: the panel's snapshot
-    // then simply keeps pointing at the previously published surface, which is
-    // still the newest frame that exists.
-    if (VBlankObserverFn)
-        VBlankObserverFn(VBlankObserverData);
 }
 
 RendererOutput VulkanRenderer::GetOutput()
@@ -553,6 +536,18 @@ VulkanRenderer3D* VulkanRenderer::GetVulkanRenderer3D() noexcept
 const VulkanRenderer3D* VulkanRenderer::GetVulkanRenderer3D() const noexcept
 {
     return dynamic_cast<const VulkanRenderer3D*>(Rend3D.get());
+}
+
+void VulkanRenderer::CompareRasterDifferentialFrame()
+{
+    auto* vulkan = GetVulkanRenderer3D();
+    if (!DifferentialReference || !vulkan)
+        return;
+    // The oracle renders at native resolution, so a scaled frame has nothing
+    // to compare against; AbortFrame means the 3D image was never produced.
+    if (vulkan->GetScaleFactor() != 1 || GPU.GPU3D.AbortFrame)
+        return;
+    DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "Vulkan");
 }
 
 bool VulkanRenderer::CanUseNativeGPU2DForFrame() const noexcept

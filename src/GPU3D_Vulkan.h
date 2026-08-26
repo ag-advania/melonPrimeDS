@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "GPU3D.h"
+#include "CaptureProvenanceState.h"
 #include "GPU2DNative.h"
 #include "GPU3D_FixedVariantIndex.h"
 #include "MelonPrimeStructuredComposition.h"
@@ -34,6 +35,9 @@
 #include "GPU3D_Vulkan_ShaderModules.h"
 #include "VulkanCommon.h"
 #include "VulkanDescriptors.h"
+#include "VulkanCaptureBridge.h"
+#include "VulkanGpu2DComposer.h"
+#include "VulkanPipelineCache.h"
 #include "VulkanDevice.h"
 #include "VulkanMemory.h"
 #include "VulkanSync.h"
@@ -130,7 +134,7 @@ public:
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
     [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
     {
-        return LastComposeResult;
+        return Gpu2D.LastComposeResult;
     }
     // Materialize only the requested LCDC capture blocks when the emulation
     // core actually reads them.  The normal native frame path keeps this
@@ -150,7 +154,7 @@ public:
         GPU2DNative::HighResCaptureFallbackReason reason) noexcept;
     [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
     {
-        return PublishedOutputGeneration;
+        return Gpu2D.PublishedOutputGeneration;
     }
 
     // Internal resolution, not 256x192. This is the mechanism by which high
@@ -204,7 +208,8 @@ private:
     // cross-frame reuse explicit. Two slots are the low-latency limit: more
     // would add input latency without removing another CPU/GPU dependency.
     static constexpr u32 RendererFramesInFlight = 2;
-    static constexpr u32 CompositorFramesInFlight = 3;
+    static constexpr u32 CompositorFramesInFlight =
+        VulkanGpu2DOutput::FramesInFlight;
     static constexpr u32 DescriptorFramesInFlight = CompositorFramesInFlight;
 
     // Three set-0 allocations per frame slot. The native logical Stage A writes
@@ -420,9 +425,10 @@ private:
     void ReleasePipelines();
     void SetRuntimeFailure(std::string reason);
 
-    bool CreatePipelineCache();
-    void SavePipelineCache();
     [[nodiscard]] u32 NativeGPU2DWorkgroupWidth() const noexcept;
+    // Builds the borrow set the compositor composes against. Rebuilt per call
+    // so it can never hold a stale handle across a resolution change.
+    [[nodiscard]] VulkanGpu2DComposeContext MakeComposeContext() noexcept;
     [[nodiscard]] u32 NativeGPU2DPipelineIndex() const noexcept;
     bool BuildPipeline(u32 pipelineIndex);
 
@@ -442,22 +448,6 @@ private:
         VkImageView textureView, VkSampler sampler);
     void FillMetaUniform(MetaUniform& meta, u32 numVariants, u32 numPolygons) const;
 
-    // Records a compute->compute dependency over `buffers`. Kept explicit
-    // rather than folded into a global VkMemoryBarrier so every dependency in
-    // the frame names the resource it is about.
-    void BufferBarrier(
-        VkCommandBuffer cmd,
-        const VkBuffer* buffers, u32 count,
-        VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
-        VkPipelineStageFlags dstStage, VkAccessFlags dstAccess) const;
-    void BufferBarrier(
-        VkCommandBuffer cmd,
-        const VkBuffer* buffers,
-        const VkAccessFlags* srcAccess,
-        const VkAccessFlags* dstAccess,
-        u32 count,
-        VkPipelineStageFlags srcStage,
-        VkPipelineStageFlags dstStage) const;
     void RecordSharedScratchReuseBarrier(VkCommandBuffer cmd) const;
 
     // CPU-side span setup, transcribed from the OpenGL compute renderer.
@@ -481,16 +471,29 @@ private:
     // Native capture is demand-driven. A separate one-slot ring lets the
     // first GetLine() append resolve/copy work after the main render and wait
     // on only that capture submission's fence.
-    Vk::FrameRing CaptureFrames;
-    // The compositor records into its own command buffers and fences
-    // rather than sharing the rasterizer's. It has to: the structured 2D planes
-    // are only complete after all 192 scanlines have been drawn, which is long
-    // after RenderFrame() closed and submitted its command buffer, and reusing
-    // the rasterizer's slot would reset the fence GetLine()'s capture readback
-    // is still waiting on. One frame in flight, for the same reason the
-    // rasterizer keeps one. Its three output slots additionally carry their own
-    // structured input, so VBlank can submit without waiting for the prior slot.
-    Vk::FrameRing ComposeFrames;
+    // --- demand-driven readback -------------------------------------------
+    //
+    // Not capture-only, despite the name it used to carry. Two different
+    // responsibilities share this frame ring, and they have to:
+    //
+    //   RecordNativeResolveAndReadback()  resolves FinalFB for GetLine(),
+    //                                     which is a rasterizer concern
+    //   ReadNativeCapture()               copies native VRAM capture blocks
+    //                                     out, which is a capture concern
+    //
+    // They serialize against each other through its single command-buffer
+    // slot. Giving them separate rings would remove that ordering, which is a
+    // GPU submission behaviour change and is out of scope for a responsibility
+    // refactor.
+    //
+    // Ownership therefore stays with the renderer facade rather than moving
+    // into a capture component: this is low-level infrastructure shared by two
+    // feature components, and a component owning it would make the other one
+    // reach sideways into it.
+    Vk::FrameRing DemandReadbackFrames;
+    // The GPU2D compositor: its command ring, its resource set, and the
+    // publication state that goes with them.
+    VulkanGpu2DComposer Gpu2D;
     Vk::DescriptorLayouts Layouts;
     Vk::DescriptorPool Descriptors;
     // CPU-written upload memory is slot-local and is only reset after the
@@ -501,7 +504,11 @@ private:
     VulkanSamplerCache Samplers;
     TexcacheVulkan Texcache;
 
-    VkPipelineCache PipelineCache = VK_NULL_HANDLE;
+    // The VkPipelineCache object and its on-disk payload. Pipeline creation
+    // itself stays here: Vulkan folds the resolution-dependent specialization
+    // constants in at create time, so that call belongs with the geometry
+    // state, unlike the cache framing and device-identity validation.
+    VulkanPipelineCache PipelineCache;
     std::array<VkPipeline, ShaderStepCount> Pipelines{};
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     u64 StartupBeginNs = 0;
@@ -525,13 +532,8 @@ private:
     // semantics have to stay DS-native even while presentation does not.
     Vk::Buffer NativeResolveBuffer;
     Vk::ReadbackBuffer NativeReadback;
-    Vk::ReadbackBuffer NativeCaptureReadback;
     VkDeviceSize MetaUniformStride = 0;
 
-    // The structured 2D frame, staged once per VBlank and copied into device
-    // memory for the compositor. Native-resolution and therefore fixed size:
-    // the software 2D engines always work at 256x192, whatever the 3D internal
-    // resolution is.
     // Resolution-dependent resources.
     Vk::Buffer XSpanSetupBuffer;
     Vk::Buffer SetupIndicesBuffer;          // + texel buffer view
@@ -542,13 +544,13 @@ private:
     Vk::Buffer WorkDescBuffer;
     Vk::Buffer BlendStateBuffer;            // stencil + previous-shadow-mask bit per pixel
     Vk::Image FinalFB;                      // internal-resolution RGBA8 storage image
-    Vk::Buffer CaptureSidecarBuffer;         // 4 banks x 2 versions, internal resolution
+    // Physical owner of native Display Capture: the high-resolution sidecar
+    // the compositor writes (4 banks x 2 versions, internal resolution), the
+    // readback buffer a demanded block lands in, and the copy that fetches it.
+    // The semantic half -- whether a recorded block may still be served at all
+    // -- is Provenance.
+    VulkanCaptureBridge Capture;
 
-    // Compositor output: the two screens stacked, BGRA8, at the *internal*
-    // resolution. Resolution-dependent, so it is created and destroyed with the
-    // rest of the scale-sized set.
-    struct OutputState;
-    std::shared_ptr<OutputState> ComposedOutput;
 
     // --- CPU-side scratch, mirroring the OpenGL compute renderer -----------
     std::array<Variant, MaxVariants> Variants{};
@@ -586,7 +588,6 @@ private:
     int ShaderStepIdx = 0;
     bool RuntimeFailed = false;
     std::string RuntimeFailureReason;
-    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
     bool Initialized = false;
     // FinalFB is recreated on every resolution change and starts UNDEFINED;
     // the placeholder and clear-bitmap images are created once for the whole
@@ -638,21 +639,15 @@ private:
     // must not sample undefined memory and call it 3D.
     bool FinalFBHasContent = false;
 
-    // --- composed output ---------------------------------------------------
-    // Published only after the compositor submission has been accepted. GPU
-    // completion is ordered by the shared queue; the presenter lease owns the
-    // slot until its copy command retires.
-    bool ComposedOutputValid = false;
-    u64 ComposedGeneration = 0;
-    u64 PublishedOutputGeneration = 0;
-    bool NativeCaptureStateInitialized = false;
-    u64 CurrentEpoch = GPU2DNative::AllocateRendererEpoch();
-    u64 LastSemanticFrame = 0;
-    u64 LastSemanticCaptureGeneration = 0;
-    u64 LastSemanticEpoch = 0;
-    // Capture provenance is independent of presentation frame-ring reuse.
-    u64 NativeSemanticSubmissionSerial = 0;
-    u64 LastNativeCaptureCompletionValue = 0;
+    // Semantic owner of native Display Capture provenance: the epoch, the last
+    // recorded semantic frame, the submission serial and the completion value,
+    // plus the high-resolution sidecar tracker. Backend-neutral, because none
+    // of it is a GPU question -- only the copy this renderer issues to satisfy
+    // a read is. The other backend uses the same class.
+    CaptureProvenanceState Provenance{GPU2DNative::AllocateRendererEpoch()};
+    // The high-resolution sidecar is renderer-private, is never serialized,
+    // and is invalidated per physical block rather than per frame, so it is
+    // not part of the semantic mirror above.
     GPU2DNative::HighResCaptureProvenanceTracker HighResCaptureProvenance;
     // Resource lifetime generation is owned by the renderer and advances only
     // when a new compositor resource set is created, so presenters can safely

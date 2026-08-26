@@ -60,6 +60,7 @@
 #include "MelonPrimeVulkanFeatureCheck.h"
 #endif
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+#include "DX12LowLatencyController.h"
 #include "GPU_DX12.h"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimeDX12FeatureCheck.h"
@@ -368,10 +369,12 @@ void EmuThread::run()
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         if (UNLIKELY(handleDX12RuntimeFailure()))
             shadersReady = true;
-        auto* dx12LowLatencyRenderer = dynamic_cast<DX12Renderer*>(
-            &emuInstance->nds->GPU.GetRenderer());
+        // The DX12 low-latency controller is the frame-phase bridge: it owns
+        // the vendor sessions, and it is live exactly while a DX12 backend
+        // session is. The renderer is no longer consulted for any of this.
+        auto* dx12LowLatency = melonDS::DX12LowLatencyController::GetIfActive();
         bool bypassHostLimiter = false;
-        if (dx12LowLatencyRenderer)
+        if (dx12LowLatency)
         {
             const long long roundedIntervalUs = std::llround(storedFrametimeStep * 1000000.0);
             const std::uint32_t minimumIntervalUs = limitFPS
@@ -382,9 +385,9 @@ void EmuThread::run()
                 : 0;
             // This is a discrete transition only: fast-forward/slow-motion
             // update storedFrametimeStep at the end of the preceding frame.
-            dx12LowLatencyRenderer->UpdateIntelXeLLFrameCap(minimumIntervalUs);
+            dx12LowLatency->UpdateFrameCap(minimumIntervalUs);
             bypassHostLimiter = ShouldBypassDX12HostLimiter(
-                dx12LowLatencyRenderer->GetLowLatencyPacingDecision(),
+                dx12LowLatency->GetPacingDecision(),
                 !fastforward && !slowmo);
         }
 #endif
@@ -487,14 +490,10 @@ void EmuThread::run()
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         // Low-latency sleep belongs immediately before late input sampling.
-        // The renderer is cached for the rest of this frame; transitions close
-        // the frame explicitly before destroying it below.
-        if (dx12LowLatencyRenderer)
-        {
-            dx12LowLatencyRenderer->BeginAmdAntiLag2Frame();
-            dx12LowLatencyRenderer->BeginReflexFrame(logicalFrameId);
-            dx12LowLatencyRenderer->BeginIntelXeLLFrame();
-        }
+        // The controller is cached for the rest of this frame; a renderer
+        // transition closes the frame explicitly before tearing it down below.
+        if (dx12LowLatency)
+            dx12LowLatency->BeginFrame(logicalFrameId);
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -546,11 +545,8 @@ void EmuThread::run()
         // Reflex INPUT_SAMPLE marks the point immediately before the first
         // input read. It must precede both SDL's joystick refresh and the raw
         // mouse/keyboard reads in RunFrameHook().
-        if (dx12LowLatencyRenderer)
-        {
-            dx12LowLatencyRenderer->MarkReflexInputSample();
-            dx12LowLatencyRenderer->MarkIntelXeLLInputSample();
-        }
+        if (dx12LowLatency)
+            dx12LowLatency->MarkInputSample();
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
         if (vulkanLowLatencyRenderer)
@@ -592,8 +588,8 @@ void EmuThread::run()
             melonPrime->RunFrameHook();
             emuInstance->nds->SetKeyMask(melonPrime->GetInputMaskFast());
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-            if (dx12LowLatencyRenderer)
-                dx12LowLatencyRenderer->MarkReflexSimulationStart();
+            if (dx12LowLatency)
+                dx12LowLatency->MarkSimulationStart();
 #endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
             if (vulkanLowLatencyRenderer)
@@ -635,14 +631,13 @@ void EmuThread::run()
         if (videoSettingsDirty)
         {
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-            if (dx12LowLatencyRenderer)
+            if (dx12LowLatency)
             {
                 // SetRenderSettings may update Reflex mode or recreate DX12
                 // resources. Close this transition frame first so no D3D12
                 // work escapes the RenderSubmit marker interval.
-                dx12LowLatencyRenderer->FinishReflexFrame();
-                dx12LowLatencyRenderer->FinishIntelXeLLFrame();
-                dx12LowLatencyRenderer = nullptr;
+                dx12LowLatency->FinishFrame();
+                dx12LowLatency = nullptr;
             }
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
@@ -709,11 +704,8 @@ void EmuThread::run()
         }
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        if (dx12LowLatencyRenderer)
-        {
-            dx12LowLatencyRenderer->EndReflexRenderPhase();
-            dx12LowLatencyRenderer->EndIntelXeLLRenderPhase();
-        }
+        if (dx12LowLatency)
+            dx12LowLatency->EndRenderPhase();
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (vulkanLowLatencyRenderer)
@@ -744,11 +736,8 @@ void EmuThread::run()
         emuInstance->drawScreen();
         MelonPrimePerf::MarkPresentEnd();
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-        if (dx12LowLatencyRenderer)
-        {
-            dx12LowLatencyRenderer->FinishReflexFrame();
-            dx12LowLatencyRenderer->FinishIntelXeLLFrame();
-        }
+        if (dx12LowLatency)
+            dx12LowLatency->FinishFrame();
 #endif
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
         if (vulkanLowLatencyRenderer)
