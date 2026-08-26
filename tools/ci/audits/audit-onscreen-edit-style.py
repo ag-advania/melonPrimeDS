@@ -31,7 +31,7 @@ def main() -> int:
     definition = read("src/frontend/qt_sdl/MelonPrimeDef.h")
     config = read("src/frontend/qt_sdl/Config.cpp")
     state = read("src/frontend/qt_sdl/MelonPrimeHudRenderConfig.inc")
-    header = read("src/frontend/qt_sdl/MelonPrimeHudRender.h")
+    editor_header = read("src/frontend/qt_sdl/MelonPrimeHudEdit.h")
     input_source = read("src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenInput.inc")
     draw_source = read("src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenDraw.inc")
     unity_source = read("src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenUnity.inc")
@@ -68,8 +68,8 @@ def main() -> int:
         failures,
     )
     require(
-        "CustomHud_GetOnScreenEditStyle" in header
-        and "CustomHud_IsCrosshairElement" in header,
+        "CustomHud_GetOnScreenEditStyle" in editor_header
+        and "CustomHud_IsCrosshairElement" in editor_header,
         "style/crosshair routing API is missing",
         failures,
     )

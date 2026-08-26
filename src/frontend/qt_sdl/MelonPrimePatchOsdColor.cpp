@@ -4,7 +4,7 @@
 #include "MelonPrimePatchState.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
-#include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
 #include "MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeOsdColorSchema.inc"
 #include "MelonPrimePerfProbe.h"

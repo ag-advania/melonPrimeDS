@@ -77,7 +77,7 @@ pointer/flags pair that disagrees with itself across two reads.
 ## Code
 
 - Address row: `MelonPrimeGameRomAddrTable.h`, `MP_ROM_FIELDS_HUD`
-- Detection + per-frame cache: `MelonPrimeHudRenderRuntime.inc`
+- Detection + per-frame cache: `MelonPrimeHudRuntimeSample.inc`
   (`IsCameraSequenceBlockingInput`, `ReadHudRuntimeAdventurePauseState`)
 - Overlay gate: `MelonPrimeHudRenderMain.inc` (`CustomHud_Render`)
 - Radar gate: `CustomHud_ShouldHideForGameplayState` /

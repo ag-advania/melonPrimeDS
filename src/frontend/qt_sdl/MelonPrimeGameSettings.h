@@ -12,7 +12,6 @@
 namespace melonDS { class NDS; }
 
 namespace MelonPrime {
-    struct RomAddresses;
 
     class MelonPrimeGameSettings
     {
@@ -29,9 +28,6 @@ namespace MelonPrime {
         static bool ApplyUnlockHuntersMaps(melonDS::NDS* nds, Config::Table& cfg,
             melonDS::u32 a1, melonDS::u32 a2, melonDS::u32 a3, melonDS::u32 a4, melonDS::u32 a5);
         static melonDS::u32 CalculatePlayerAddress(melonDS::u32 base, melonDS::u8 pos, int32_t inc);
-
-        // --- Safe Anti-Smoothing Memory Patcher ---
-        static void ApplyAimSmoothingPatch(melonDS::NDS* nds, const RomAddresses& rom, bool enable);
 
     private:
         static uint16_t SensiNumToSensiVal(double sensiNum);

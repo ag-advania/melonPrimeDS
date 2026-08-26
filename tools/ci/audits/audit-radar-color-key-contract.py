@@ -57,7 +57,7 @@ def main() -> int:
         failures,
     )
 
-    cpu = read("src/frontend/qt_sdl/MelonPrimeHudRenderRuntime.inc")
+    cpu = read("src/frontend/qt_sdl/MelonPrimeHudRadarRuntime.inc")
     require(
         cpu,
         "rgb & kRadarPaletteQuantizationMask",

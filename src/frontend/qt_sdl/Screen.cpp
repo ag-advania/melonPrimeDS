@@ -84,6 +84,11 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeConstants.h"
 #include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudRuntime.h"
+#include "MelonPrimeHudRadar.h"
+#include "MelonPrimeHudPatchLifecycle.h"
+#include "MelonPrimeHudEdit.h"
 #include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "InputConfig/InputConfigDialog.h"
 #include <QFontDatabase>

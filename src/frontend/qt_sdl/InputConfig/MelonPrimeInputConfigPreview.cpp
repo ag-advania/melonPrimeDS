@@ -23,7 +23,7 @@
 #include "../MelonPrime.h"
 #include "../EmuThread.h"
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
 #endif
 
 using namespace melonDS;

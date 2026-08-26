@@ -3,7 +3,7 @@
 #include "Config.h"
 #include "MelonPrimeColorDialogPrefs.h"
 #include "MelonPrimeHudEditorFormLayout.h"
-#include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
 #include "MelonPrimeLocalization.h"
 
 #include <QColor>
