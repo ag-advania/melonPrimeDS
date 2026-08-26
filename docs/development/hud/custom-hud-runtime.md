@@ -8,11 +8,19 @@ Use this as the reference when changing runtime Custom HUD rendering, caching, t
 
 | File | Responsibility |
 |------|----------------|
-| `src/frontend/qt_sdl/MelonPrimeHudRender.h` | public API surface |
+| `src/frontend/qt_sdl/MelonPrimeHudRender.h` | render entry points and HUD font resolution |
+| `src/frontend/qt_sdl/MelonPrimeHudConfigState.h` | per-instance HUD state handle and config-cache epoch; the base the other HUD headers sit on |
+| `src/frontend/qt_sdl/MelonPrimeHudRuntime.h` | gameplay visibility, visual generation, match join |
+| `src/frontend/qt_sdl/MelonPrimeHudRadar.h` | radar colour-key source preparation |
+| `src/frontend/qt_sdl/MelonPrimeHudPatchLifecycle.h` | native HUD patch apply/restore/reset/reconcile |
+| `src/frontend/qt_sdl/MelonPrimeHudEdit.h` | on-screen layout editor session, mouse routing, selection |
+| `src/frontend/qt_sdl/MelonPrimeHudGoldenHarness.h` | developer-only golden hash harness declaration |
 | `src/frontend/qt_sdl/MelonPrimeHudRender.cpp` | runtime HUD unity entry point; owns includes, namespace, and ordered `.inc` fragment list |
 | `src/frontend/qt_sdl/MelonPrimeHudRenderAssets.inc` | asset/icon/radar-frame caches, text/outline bitmap caches, shared image/text drawing helpers |
 | `src/frontend/qt_sdl/MelonPrimeHudRenderConfig.inc` | cached HUD config structs, config loaders, anchor recomputation, auto-scale setup |
-| `src/frontend/qt_sdl/MelonPrimeHudRenderRuntime.inc` | battle/match state, frame runtime helpers, static dirty rects, hide rules, NoHUD patching, cache invalidation |
+| `src/frontend/qt_sdl/MelonPrimeHudRenderPlan.inc` | render-plan types, painter transform, font/dirty-rect helpers, layout and text/outline caches |
+| `src/frontend/qt_sdl/MelonPrimeHudRuntimeSample.inc` | game-mode and goal semantics, battle/match state, scoreboard and enemy-target sampling, per-frame RAM reads |
+| `src/frontend/qt_sdl/MelonPrimeHudRenderRuntime.inc` | runtime-sourced draw helpers (match status, bomb, rank/time), hide rules, radar colour keying, NoHUD patching, cache invalidation |
 | `src/frontend/qt_sdl/MelonPrimeHudRenderDraw.inc` | primitive and element drawing: gauges, HP, bomb left, rank/time, weapon/ammo, weapon inventory, scoreboard, enemy target, crosshair |
 | `src/frontend/qt_sdl/MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar frame drawing, `DrawBottomScreenOverlay()` |
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenUnity.inc` | in-game HUD layout editor unity entry point; owns shared edit-mode state/constants and includes the `.inc` fragments below (not in `CMakeLists.txt`) |
@@ -256,7 +264,7 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 - `NoHudPatch_ClampHelmetLayers(nds, romGroup)` clears `hudToggle & 0x0E` (RAM) and main
   `DISPCNT & 0x0E00` (already-reflected register) — BG0/OBJ untouched.
 - Called every frame **before `RunFrame`** from `RunFrameHook` via
-  `CustomHud_ClampHelmetLayersPreFrame(emu, rom, playerPosition)` (`MelonPrimeHudRenderRuntime.inc`).
+  `CustomHud_ClampHelmetLayersPreFrame(emu, rom, playerPosition)` (declared in `MelonPrimeHudPatchLifecycle.h`, defined in `MelonPrimeHudRenderRuntime.inc`).
 - Gating order (hot-path friendly): `NoHudPatch_GetAppliedMask() & NOHUD_HELMET` (static read,
   no config lookup) → base-state reads → skip on start pressed / HP 0 / game over / adventure
   pause (native UI keeps normal layers) → clamp (2 reads, writes only during spawn frames).

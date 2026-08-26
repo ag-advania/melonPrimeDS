@@ -13,6 +13,17 @@ Contract for the MelonPrime SRP refactor v3 immediate plan. Audited by
 | `ScreenCursorPolicy` | Platform cursor clip/warp/capture | Mouse event routing, HUD editor bridge |
 | `HudEditorFormBuilder` | Shared HUD editor helpers | `QColorDialog` direct calls, `Config::Save` |
 | `PatchLifecycleGateway` | Lifecycle patch apply/restore | RunFrameHook per-frame patches, Custom HUD patch state |
+| `MelonPrimeHudRender.h` | Custom HUD render entry, HUD font resolution | Editor, patch lifecycle, radar preprocessing, runtime queries, developer harness |
+| `MelonPrimeHudConfigState.h` | Per-instance HUD state handle, config-cache epoch | Qt widget/event types |
+| `MelonPrimeHudRuntime.h` | Gameplay visibility, visual generation, match join | Drawing, editor, patching |
+| `MelonPrimeHudRadar.h` | Radar colour-key source preparation | Radar drawing, HUD layout |
+| `MelonPrimeHudPatchLifecycle.h` | Native HUD patch apply/restore/reset/reconcile | Rendering, editor |
+| `MelonPrimeHudEdit.h` | On-screen editor session, mouse routing, selection | Rendering, patch internals |
+| `MelonPrimeHudGoldenHarness.h` | Developer-only golden hash harness | Anything reachable in a release build |
+| `MelonPrimeHudRuntimeSample.inc` | NDS RAM to bounded snapshot, game-mode semantics, match cache | Qt layout, font metrics, glyph outlines |
+| `MelonPrimeHudRenderPlan.inc` | Snapshot to draw-ready plan, layout/text/outline caches, painter transform | Emulated memory reads, game-mode meaning |
+| `MelonPrimePatchAimSmoothing` | Aim smoothing ARM9 instruction patch and its preconditions | Game setting RAM writes, patch scheduling |
+| `MelonPrimeGameSettings` | MPH setting RAM writes | ARM9 instruction patching |
 
 ## Rendering backend ownership
 
@@ -100,6 +111,25 @@ Forbidden pattern:
 `Screen.cpp` must not `#include` MelonPrime patch or ARM9 hook internals. Cursor and
 input policy belong in dedicated units; patch lifecycle stays out of Screen.
 
+## Custom HUD API and fragment boundaries
+
+The Custom HUD API is split by responsibility across the headers listed above.
+Consumers include only what they call: a renderer front-end must not pick up the
+editor's Qt event types, and nothing that only draws may see native HUD patch
+internals. `MelonPrimeHudRender.h` must not re-export the other headers.
+
+This is an API boundary, not a link boundary. Every declaration is still defined
+by the single `MelonPrimeHudRender.cpp` unity translation unit, and the unity
+fragments (`MelonPrimeHudRuntimeSample.inc`, `MelonPrimeHudRenderPlan.inc`,
+`MelonPrimeHudRenderRuntime.inc`) are one logical split of one TU. Include order
+is load-bearing: the plan fragment comes first because `HudFrameOwnedState`
+aggregates the plan caches and the sampling caches and needs the plan types
+complete.
+
+Enforced by `audit-melonprime-srp-performance.ps1` Rule B, per function rather
+than per group, with the matching requirement that the owner header still
+declares what it owns.
+
 ## QColorDialog rule
 
 `QColorDialog` usage stays confined to `MelonPrimeColorDialogPrefs.cpp` (enforced by
@@ -109,6 +139,27 @@ input policy belong in dedicated units; patch lifecycle stays out of Screen.
 
 Do not add MelonPrimeCore public getters for runtime config fields. Prefer
 `ApplyRuntimeConfigSnapshot(const RuntimeConfigSnapshot&)` as a private apply path.
+
+## MelonPrimeCore runtime state ownership
+
+`isCursorMode`, `isStylusMode`, `m_snapTapMode`, `isFastForward` and
+`screenSyncMode` are private. The emulation thread owns them:
+
+```text
+GUI read      -> MelonPrimeUiSnapshot via ThreadBridge().ReadForGui()
+GUI write     -> the ThreadBridge mailbox
+                 (RequestCursorModeFromGui / ConsumeCursorModeForEmu)
+config write  -> ApplyRuntimeConfigSnapshot
+EmuThread     -> SetFastForwardState(), the one narrow inline setter
+```
+
+A new external need is not answered with a public getter (see the rule above) or
+a new atomic; it is answered through the ThreadBridge, which stays the single
+GUI/Emu communication boundary. The five declarations must also stay where they
+are in the member layout -- cache-line grouping is load-bearing, so only the
+access specifier changed. Enforced by `audit-melonprime-srp-performance.ps1`
+Rule C, which tracks the access specifier through the class body rather than
+searching for the field name.
 
 ## Never mix (same PR)
 
@@ -149,6 +200,11 @@ Do not reorder without a dedicated review:
 ```
 
 ## Review grep (manual, not CI fail)
+
+`audit-melonprime-srp-performance.ps1` Rule D now prints the same scan, scoped to
+the hot-path function bodies themselves. It never hard-fails: grep cannot tell a
+real per-frame `Config` lookup from a mention in a comment, so the output is for
+a human to judge.
 
 ```bash
 rg "std::function|virtual|dynamic_cast|QMetaObject|Config::Table|GetBool|GetInt|GetDouble|QString|std::string" \
