@@ -49,6 +49,31 @@ using RequestOrigin = VideoBackend::RendererRequestOrigin;
 // settings-dialog click is what this tool stands in for; "automatic" drives the
 // same transitions without announcing a request, for checking that nothing on
 // that path clears a latch.
+// What the cycle varies. Renderer switching tears the backend down and
+// rebuilds it; scale switching keeps the backend and rebuilds only the
+// resolution-dependent resources, which is the path that releases and
+// recreates the compositor's output set while a presenter may still hold a
+// lease on the old one. They exercise different halves of the same lifecycle,
+// so the driver can do either.
+enum class CycleKind
+{
+    Renderer,
+    Scale,
+};
+
+// What an Apply actually did.
+//
+// The distinction matters because a scheduled step and a performed change are
+// not the same thing, and the harness used to count the first while claiming
+// the second: a cycle over "4,4" logged every step and changed nothing. NoOp
+// and Failed are kept apart so a test can require the absence of both.
+enum class ApplyResult
+{
+    Applied,
+    NoOp,
+    Failed,
+};
+
 RequestOrigin OriginFromEnvironment()
 {
     const QByteArray raw = qgetenv("MELONPRIME_RENDERER_SWITCH_STRESS_ORIGIN");
@@ -92,9 +117,10 @@ class Driver : public QObject
 {
 public:
     Driver(MainWindow* window, std::vector<int> sequence, int iterations, int intervalMs,
-           RequestOrigin origin)
+           RequestOrigin origin, CycleKind kind)
         : QObject(window)
         , Window(window)
+        , Kind(kind)
         , Origin(origin)
         , Sequence(std::move(sequence))
         , Iterations(iterations)
@@ -126,12 +152,25 @@ private:
         if (Done >= Total)
         {
             Timer->stop();
-            // Put the user's renderer back, through the same path, so the
+            // Put the user's setting back, through the same path, so the
             // session ends on the configuration it started with rather than
             // wherever the cycle happened to stop.
-            Log(LogLevel::Info,
-                "[switch-stress] complete: %d/%d switches performed, restoring renderer %d\n",
-                Done, Total, OriginalRenderer);
+            if (Kind == CycleKind::Scale)
+            {
+                // Counted from what each Apply reported, not from what was
+                // scheduled. This line is what the harness reads.
+                Log(LogLevel::Info,
+                    "[scale-stress] complete: requested=%d applied=%d noop=%d "
+                    "failed=%d, restoring scale %d\n",
+                    Done, Applied, NoOp, Failed, OriginalRenderer);
+            }
+            else
+            {
+                Log(LogLevel::Info,
+                    "[switch-stress] complete: %d/%d switches performed, "
+                    "restoring renderer %d\n",
+                    Done, Total, OriginalRenderer);
+            }
             Apply(OriginalRenderer);
             Log(LogLevel::Info, "[switch-stress] finished\n");
             return;
@@ -139,12 +178,71 @@ private:
 
         const int next = Sequence[static_cast<std::size_t>(Done) % Sequence.size()];
         Done++;
+        if (Kind == CycleKind::Scale)
+        {
+            // The request line is deliberately not evidence of a change. The
+            // result line the Apply emits is.
+            Log(LogLevel::Info,
+                "[scale-stress] request %d/%d -> %dx\n", Done, Total, next);
+            switch (ApplyScale(next))
+            {
+            case ApplyResult::Applied: Applied++; break;
+            case ApplyResult::NoOp:    NoOp++;    break;
+            case ApplyResult::Failed:  Failed++;  break;
+            }
+            return;
+        }
         Log(LogLevel::Info,
             "[switch-stress] switch %d/%d -> renderer %d\n", Done, Total, next);
         Apply(next);
     }
 
-    void Apply(int renderer)
+    void Apply(int value)
+    {
+        if (Kind == CycleKind::Scale)
+        {
+            ApplyScale(value);
+            return;
+        }
+        ApplyRenderer(value);
+    }
+
+    // A live internal-resolution change, through the same slot the settings
+    // dialog's resolution combo reaches. glchange is false: presentation is not
+    // rebuilt, only the renderer's scale-dependent resources are, which is
+    // exactly the ReleaseOutput -> RecreateOutput pair worth stressing.
+    ApplyResult ApplyScale(int scale)
+    {
+        Config::Table cfg = Config::GetGlobalTable();
+        const int previous = cfg.GetInt("3D.GL.ScaleFactor");
+        if (previous == scale)
+        {
+            Log(LogLevel::Info,
+                "[scale-stress] no-op %d/%d: %dx already active\n",
+                Done, Total, scale);
+            return ApplyResult::NoOp;
+        }
+
+        cfg.SetInt("3D.GL.ScaleFactor", scale);
+        if (!QMetaObject::invokeMethod(
+                Window, "onUpdateVideoSettings", Qt::DirectConnection,
+                Q_ARG(bool, false)))
+        {
+            Log(LogLevel::Error,
+                "[scale-stress] invoke-failed %d/%d: onUpdateVideoSettings could "
+                "not be invoked; stopping\n",
+                Done, Total);
+            Timer->stop();
+            return ApplyResult::Failed;
+        }
+
+        Log(LogLevel::Info,
+            "[scale-stress] applied %d/%d: %dx -> %dx\n",
+            Done, Total, previous, scale);
+        return ApplyResult::Applied;
+    }
+
+    void ApplyRenderer(int renderer)
     {
         Config::Table cfg = Config::GetGlobalTable();
         const int previous = cfg.GetInt("3D.Renderer");
@@ -192,12 +290,16 @@ private:
     }
 
     QPointer<MainWindow> Window;
+    CycleKind Kind = CycleKind::Renderer;
     RequestOrigin Origin = RequestOrigin::User;
     QTimer* Timer = nullptr;
     std::vector<int> Sequence;
     int Iterations = 0;
     int Total = 0;
     int Done = 0;
+    int Applied = 0;
+    int NoOp = 0;
+    int Failed = 0;
     int OriginalRenderer = 0;
 };
 
@@ -215,7 +317,17 @@ void ArmFromEnvironment(MainWindow* window)
     if (window->parentWidget())
         return;
 
-    const QByteArray raw = qgetenv("MELONPRIME_RENDERER_SWITCH_STRESS");
+    // MELONPRIME_RENDERER_SCALE_STRESS cycles internal resolutions instead of
+    // renderers. The interesting values are the ones that cross an allocation
+    // or resource-generation boundary -- 4,5 and 8,9 -- because that is where a
+    // released output set and a newly created one can overlap with a lease the
+    // presenter still holds.
+    CycleKind kind = CycleKind::Renderer;
+    QByteArray raw = qgetenv("MELONPRIME_RENDERER_SCALE_STRESS");
+    if (!raw.isEmpty())
+        kind = CycleKind::Scale;
+    else
+        raw = qgetenv("MELONPRIME_RENDERER_SWITCH_STRESS");
     if (raw.isEmpty())
         return;
 
@@ -228,7 +340,7 @@ void ArmFromEnvironment(MainWindow* window)
         if (!ok)
         {
             Log(LogLevel::Warn,
-                "[switch-stress] ignoring non-numeric renderer id \"%s\"\n",
+                "[switch-stress] ignoring non-numeric value \"%s\"\n",
                 part.trimmed().toUtf8().constData());
             continue;
         }
@@ -238,8 +350,8 @@ void ArmFromEnvironment(MainWindow* window)
     if (sequence.size() < 2)
     {
         Log(LogLevel::Warn,
-            "[switch-stress] MELONPRIME_RENDERER_SWITCH_STRESS needs at least two "
-            "renderer ids (got %zu); not arming\n",
+            "[switch-stress] the cycle needs at least two values (got %zu); "
+            "not arming\n",
             sequence.size());
         return;
     }
@@ -248,14 +360,17 @@ void ArmFromEnvironment(MainWindow* window)
     const int intervalMs = EnvInt("MELONPRIME_RENDERER_SWITCH_STRESS_INTERVAL_MS", 400, 50);
 
     Config::Table cfg = Config::GetGlobalTable();
-    const int original = cfg.GetInt("3D.Renderer");
+    const int original = kind == CycleKind::Scale
+        ? cfg.GetInt("3D.GL.ScaleFactor")
+        : cfg.GetInt("3D.Renderer");
 
     const RequestOrigin origin = OriginFromEnvironment();
-    Log(LogLevel::Info, "[switch-stress] request origin=%s\n",
+    Log(LogLevel::Info, "[switch-stress] cycle=%s request origin=%s\n",
+        kind == CycleKind::Scale ? "scale" : "renderer",
         origin == RequestOrigin::User ? "user" : "automatic");
 
     auto* driver = new Driver(
-        window, std::move(sequence), iterations, intervalMs, origin);
+        window, std::move(sequence), iterations, intervalMs, origin, kind);
     driver->Start(original);
 }
 

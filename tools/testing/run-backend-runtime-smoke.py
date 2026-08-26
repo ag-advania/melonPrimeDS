@@ -108,6 +108,117 @@ def write_config(
     destination.write_text(text, encoding="utf-8")
 
 
+def scale_stress_failures(output: str, scale_stress: str) -> list[str]:
+    """What a --scale-stress run must show to count as a live scale test.
+
+    Split out of run_backend() so it can be exercised against synthetic logs
+    (tools/testing/scale-stress-verdict-tests.py). The first version of this
+    check read the driver's pre-Apply request lines as proof of a change,
+    which let a cycle that changed nothing pass; keeping it callable is what
+    makes that class of mistake testable instead of arguable.
+    """
+    failures: list[str] = []
+    armed = re.search(r"\[switch-stress\] armed: (\d+) switches", output)
+    if not armed:
+        failures.append("the scale stress driver never armed")
+
+    # The driver's own tally is the authority, not the request lines.
+    #
+    # A request is logged before the change is attempted, so counting those
+    # proves only that the timer ticked. Cycling "4,4" from a 4x start
+    # logged every step and changed nothing, and the old check called that
+    # a pass -- a scale test that never changed scale.
+    summary = re.search(
+        r"\[scale-stress\] complete: requested=(\d+) applied=(\d+) "
+        r"noop=(\d+) failed=(\d+)",
+        output)
+    if not summary:
+        failures.append(
+            "the scale stress cycle never reported a completion summary; "
+            "it did not run to completion")
+    else:
+        requested, applied, noop, failed = (
+            int(summary.group(i)) for i in (1, 2, 3, 4))
+        expected = int(armed.group(1)) if armed else 0
+        if expected and requested != expected:
+            failures.append(
+                f"the scale cycle armed {expected} steps but only "
+                f"requested {requested}")
+        if applied == 0:
+            failures.append(
+                "no live scale change was applied; every step was a no-op "
+                "or a failure")
+        if failed:
+            failures.append(
+                f"{failed} live scale change(s) could not be applied")
+        # One no-op is legitimate and only one: the cycle's first element
+        # can equal the scale the run started at, and asking for the scale
+        # you already have changes nothing. A no-op anywhere later means
+        # the sequence stopped alternating, which is the shape that used to
+        # pass while changing nothing.
+        late_noops = [
+            step for step, _total in re.findall(
+                r"\[scale-stress\] no-op (\d+)/(\d+):", output)
+            if step != "1"]
+        if late_noops:
+            failures.append(
+                f"scale step(s) {', '.join(late_noops)} were no-ops after "
+                "the first; the cycle should alternate between distinct "
+                "scales")
+        elif noop > 1:
+            failures.append(
+                f"{noop} scale steps were no-ops; only the first step may "
+                "match the scale the run started at")
+
+    # An invoke failure stops the cycle, so it must be fatal here too.
+    if "[scale-stress] invoke-failed" in output:
+        failures.append(
+            "onUpdateVideoSettings could not be invoked during the scale "
+            "cycle")
+
+    # Every requested scale must actually have been built. A scale that is
+    # silently skipped looks identical to one that succeeded.
+    for scale in [v.strip() for v in scale_stress.split(",") if v.strip()]:
+        marker = f"internal resolution {scale}x"
+        if marker not in output:
+            failures.append(
+                f"scale {scale}x was requested but never built")
+
+    # The output resource identity must advance once per successful
+    # RecreateOutput, and never repeat, because a presenter caches
+    # descriptors against it.
+    #
+    # Per composer instance, though. The counter lives on the compositor, so
+    # a renderer that is torn down and rebuilt gets a fresh one starting at
+    # 1 -- and that is correct: everything that had cached against the old
+    # renderer's sets went away with it. Comparing across instances would
+    # flag a legitimate restart, so the run is split at each renderer init.
+    #
+    # Consecutive, not merely increasing: the counter increments once per
+    # successful recreation, so a gap means a recreation was missed and a
+    # single value means none happened at all.
+    recreated = False
+    segments = re.split(r"renderer init succeeded", output)
+    for segment in segments:
+        generations = [
+            int(v) for v in re.findall(
+                r"resourceGeneration=(\d+)", segment)]
+        if not generations:
+            continue
+        if generations != list(range(generations[0],
+                                     generations[0] + len(generations))):
+            failures.append(
+                "output resource generations were not consecutive within "
+                f"one composer instance: {generations}")
+        if len(generations) >= 2:
+            recreated = True
+    if not recreated:
+        failures.append(
+            "no composer instance recreated its output set; a live scale "
+            "change needs at least two generations in one instance")
+    return failures
+
+
 def run_backend(
     backend: str,
     app: Path,
@@ -117,6 +228,7 @@ def run_backend(
     workdir: Path,
     stall_frames: int,
     switch_stress: str,
+    scale_stress: str,
     switch_iterations: int,
     env_extra: dict[str, str],
     expect_degrade: bool,
@@ -142,6 +254,15 @@ def run_backend(
         # lease invalidation, ring recreation and every component teardown the
         # refactor moved.
         environment["MELONPRIME_RENDERER_SWITCH_STRESS"] = switch_stress
+        environment["MELONPRIME_RENDERER_SWITCH_STRESS_ITERATIONS"] = str(
+            switch_iterations)
+    if scale_stress:
+        # Live internal-resolution changes, through the same slot the settings
+        # dialog's resolution combo reaches. This is the path that releases the
+        # compositor's output resource set and creates a new one while a
+        # presenter may still hold a lease on the old -- the one thing a
+        # separate process per scale cannot exercise.
+        environment["MELONPRIME_RENDERER_SCALE_STRESS"] = scale_stress
         environment["MELONPRIME_RENDERER_SWITCH_STRESS_ITERATIONS"] = str(
             switch_iterations)
     if state is not None:
@@ -281,6 +402,9 @@ def run_backend(
     if not (expect_degrade or expect_recovery or expect_unsupported)             and f"{label} renderer gpu2d={label} gpu3d={label} fallback=0" not in output:
         failures.append(f"the native GPU2D path never composed on {label}")
 
+    if scale_stress:
+        failures.extend(scale_stress_failures(output, scale_stress))
+
     if switch_stress:
         armed = re.search(r"\[switch-stress\] armed: (\d+) switches", output)
         if not armed:
@@ -357,6 +481,10 @@ def main() -> int:
     parser.add_argument(
         "--switch-stress", default="",
         help="comma-separated 3D.Renderer ids to cycle through, e.g. 3,4")
+    parser.add_argument(
+        "--scale-stress", default="",
+        help="comma-separated internal resolutions to cycle live in one "
+             "process, e.g. 4,5 -- exercises output release/recreate")
     parser.add_argument("--switch-iterations", type=int, default=6)
     parser.add_argument(
         "--set", action="append", default=[], metavar="KEY=VALUE",
@@ -388,6 +516,20 @@ def main() -> int:
         if backend not in RENDERER_IDS:
             parser.error(f"unknown backend: {backend}")
 
+    if args.scale_stress:
+        # The point of this mode is a live transition, so a sequence that cannot
+        # produce one is a mistake in the invocation rather than a run to
+        # interpret. "4,4" from a 4x start used to arm, log every step and
+        # change nothing.
+        values = [v.strip() for v in args.scale_stress.split(",") if v.strip()]
+        if len(values) < 2:
+            parser.error(
+                "--scale-stress needs at least two scales to cycle between")
+        if len(set(values)) < 2:
+            parser.error(
+                "--scale-stress needs at least two distinct scales; "
+                f"{args.scale_stress!r} can never change the resolution")
+
     app = args.app.resolve()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -418,6 +560,8 @@ def main() -> int:
             run_id += "-window"
         if args.switch_stress:
             run_id += "-switch" + args.switch_stress.replace(",", "")
+        if args.scale_stress:
+            run_id += "-scalecycle" + args.scale_stress.replace(",", "")
         for key, value in overrides.items():
             run_id += f"-{key.split('.')[-1]}{value}"
         for name in env_extra:
@@ -438,7 +582,8 @@ def main() -> int:
         failures, output = run_backend(
             backend, workdir / app.name, args.rom, args.state,
             args.seconds, workdir, args.stall_frames,
-            args.switch_stress, args.switch_iterations, env_extra,
+            args.switch_stress, args.scale_stress, args.switch_iterations,
+            env_extra,
             args.expect_degrade, args.expect_recovery,
             args.expect_unsupported, args.window_actions)
         (args.out / f"{run_id}.log").write_text(output, encoding="utf-8")

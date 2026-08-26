@@ -83,7 +83,9 @@ constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 // The compositor that drives all of it is VulkanGpu2DComposer below; this class
 // is the resources, not the behaviour.
 //
-// Members are public because this is a resource owner, not an abstraction.
+// Members are public because this class is the resources: the compositor drives
+// them, and the rasterizer's set-0 write reads slot 0's structured input. It
+// holds no publication state of its own to protect.
 class VulkanGpu2DOutput
 {
 public:
@@ -228,7 +230,17 @@ struct VulkanGpu2DComposeContext
 // struct is where the second kind is written down, so neither gets mistaken
 // for the other.
 //
-// Members are public because this is a resource owner, not an abstraction.
+// Access splits along what the shared GPU contracts actually require.
+//
+// Public: the backend mechanism the renderer must reach -- the compositor's own
+// command ring, and the output resource set whose slot 0 structured input the
+// rasterizer's set-0 write binds. Wrapping those in accessor pairs would
+// describe a boundary the descriptor contract does not have.
+//
+// Private: publication state and the resource lifetime identity. Those are the
+// compositor's own answer about what it has published, and they change only
+// through the semantic lifecycle operations below -- which is the difference
+// between declaring ownership and having it.
 class VulkanGpu2DComposer
 {
 public:

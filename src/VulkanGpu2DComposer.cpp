@@ -1815,6 +1815,13 @@ bool VulkanGpu2DComposer::RecreateOutput(
             device, width, height, NextOutputResourceGeneration, epoch))
         return false;
 
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Info,
+        "%s compositor output created %ux%u resourceGeneration=%llu epoch=%llu\n",
+        "Vulkan", width, height,
+        static_cast<unsigned long long>(NextOutputResourceGeneration),
+        static_cast<unsigned long long>(epoch));
+
     NextOutputResourceGeneration++;
     Output = std::move(candidate);
 
