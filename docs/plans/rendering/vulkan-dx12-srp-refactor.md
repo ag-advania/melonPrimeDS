@@ -1168,7 +1168,7 @@ yet.
   an indirect call in that path.
 - Structure and behaviour do not change in the same commit.
 - A verdict the test harness cannot express is a verdict that will not be
-  checked.  and  exist because
+  checked. `--expect-recovery` and `--expect-unsupported` exist because
   "degrade then come back" and "never probe at all" had no shape in the
   harness, and a property with no shape is one nobody notices is untested.
 - When a run seems to confirm something, check that it actually exercised it.
