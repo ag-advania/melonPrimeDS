@@ -21,7 +21,9 @@
 #include "GPU_DX12.h"
 
 #include "DX12Context.h"
+#include "DX12LowLatencyController.h"
 #include "DX12Perf.h"
+#include "GPU2DFramePolicy.h"
 #include "GPU3D_DX12.h"
 #include "NDS.h"
 #include "Platform.h"
@@ -48,7 +50,7 @@ DX12Renderer::~DX12Renderer()
 {
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->WaitForQueueIdle();
-    IntelXeLL.Shutdown();
+    DX12LowLatencyController::Get().Shutdown();
 }
 
 void DX12Renderer::AllocCapture(u32 bank, u32 start, u32 len)
@@ -163,9 +165,9 @@ bool DX12Renderer::Init()
     NativeGPU2DStartupFallbackAnnounced = false;
 
     auto& context = DX12Context::Get();
-    AmdAntiLag2.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
-    IntelXeLL.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
-    NvidiaReflex.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
+    auto& latency = DX12LowLatencyController::Get();
+    latency.SetQueueIdleHook(&DX12Renderer::WaitForQueueIdleHook, this);
+    latency.Initialize(context.GetDevice(), context.GetDeviceProfile().VendorId);
 
     Platform::Log(
         Platform::LogLevel::Info,
@@ -185,12 +187,9 @@ void DX12Renderer::Stop()
         static_cast<unsigned long long>(fallback.capture_software_fallback),
         static_cast<unsigned long long>(fallback.stale_generation_reject),
         static_cast<unsigned long long>(fallback.structured_fallback));
-    FinishIntelXeLLFrame();
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->WaitForQueueIdle();
-    IntelXeLL.Shutdown();
-    AmdAntiLag2.Shutdown();
-    NvidiaReflex.Shutdown();
+    DX12LowLatencyController::Get().Shutdown();
     if (auto* dx12 = GetDX12Renderer3D())
         dx12->Stop();
     SoftRenderer::Stop();
@@ -225,34 +224,29 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
         // is intentionally not part of the DX12 renderer contract.
         dx12->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
     }
-    AmdAntiLag2.SetEnabled(settings.AmdAntiLag2Enabled);
-    IntelXeLLPacingPolicy = DX12IntelXeLLPacingPolicyFromConfig(
-        settings.IntelXeLLPacingPolicy);
-    IntelXeLLRequestedIntervalUs = 0;
-    if (auto* dx12 = GetDX12Renderer3D())
-    {
-        if (!dx12->WaitForQueueIdle())
-        {
-            Platform::Log(
-                Platform::LogLevel::Error,
-                "Intel XeLL state change skipped because the DX12 queue did not become idle\n");
-        }
-        else
-        {
-            IntelXeLL.SetSleepMode(settings.IntelXeLLEnabled, 0);
-        }
-    }
-    NvidiaReflex.SetMode(settings.NvidiaReflexMode);
-    DX12Perf::SetCounter(
-        DX12Perf::Counter::DX12ReflexMode,
-        static_cast<u64>(NvidiaReflex.GetMode()));
-    LogLowLatencyPacingStateIfChanged();
+    // Configuration acquisition only: the values are forwarded to the
+    // low-latency controller, which decides what the hardware can honour.
+    DX12LowLatencyController::Settings lowLatency;
+    lowLatency.NvidiaReflexMode = settings.NvidiaReflexMode;
+    lowLatency.AmdAntiLag2Enabled = settings.AmdAntiLag2Enabled;
+    lowLatency.IntelXeLLEnabled = settings.IntelXeLLEnabled;
+    lowLatency.IntelXeLLPacingPolicy = settings.IntelXeLLPacingPolicy;
+    DX12LowLatencyController::Get().ApplySettings(lowLatency);
+}
+
+bool DX12Renderer::WaitForQueueIdleHook(void* userData) noexcept
+{
+    auto* self = static_cast<DX12Renderer*>(userData);
+    if (!self)
+        return false;
+    auto* dx12 = self->GetDX12Renderer3D();
+    return dx12 && dx12->WaitForQueueIdle();
 }
 
 void DX12Renderer::Start3DRendering()
 {
-    IntelXeLL.MarkRenderSubmitStart();
-    NvidiaReflex.MarkRenderSubmitStart();
+    if (auto* latency = DX12LowLatencyController::GetIfActive())
+        latency->BeginRenderSubmit();
     Renderer::Start3DRendering();
     if (DifferentialReference)
     {
@@ -276,137 +270,125 @@ void DX12Renderer::VBlank()
         }
     } coverage{this};
 
+    // Start3DRendering() opened the render-submit interval; every exit from
+    // this function closes it, including the early returns below. A scope
+    // guard is the only way to keep that true as the publication policy
+    // changes shape.
+    struct RenderSubmitScope
+    {
+        DX12LowLatencyController* Latency;
+
+        ~RenderSubmitScope()
+        {
+            if (Latency)
+                Latency->EndRenderSubmit();
+        }
+    } renderSubmit{DX12LowLatencyController::GetIfActive()};
+
+    // Which of this frame's two candidate images reaches the screen is not a
+    // D3D12 question. GPU2DFramePolicy owns it, and Vulkan asks the same
+    // question with the same facts; only the log tags and perf counters below
+    // are backend-specific.
     auto* dx12 = GetDX12Renderer3D();
-    bool nativeComposed = false;
-    GPU2DComposeResult nativeComposeResult = GPU2DComposeResult::Unavailable;
-    const bool nativeProducer = UsesNativeGPU2DProducerForFrame();
-    const bool exactValidation = GPU2DNative::ExactValidationEnabled();
-    if (dx12 && HasNativeGPU2DFrameForCurrentEmulatedFrame())
+
+    GPU2DFramePolicy::FrameFacts facts;
+    facts.HasNativeRenderer = dx12 != nullptr;
+    facts.HasNativeFrameForCurrentEmulatedFrame =
+        HasNativeGPU2DFrameForCurrentEmulatedFrame();
+    facts.HasNativeFrame = HasNativeGPU2DFrame();
+    facts.NativeProducer = UsesNativeGPU2DProducerForFrame();
+    facts.ExactValidationEnabled = GPU2DNative::ExactValidationEnabled();
+    facts.CaptureEnabled = GPU.CaptureEnable;
+    facts.FallbackAlreadyAnnounced = NativeGPU2DFallbackAnnounced;
+
+    if (GPU2DFramePolicy::ShouldAttemptNativeCompose(
+            facts.HasNativeRenderer,
+            facts.HasNativeFrameForCurrentEmulatedFrame))
     {
         const GPU2DNative::FrameInput& nativeFrame = GetNativeGPU2DFrame();
-        nativeComposed = dx12->ComposeNativeGPU2D(
+        facts.NativeComposed = dx12->ComposeNativeGPU2D(
             nativeFrame,
             nativeFrame.Generation.Frame,
             !GPU.GPU3D.AbortFrame && dx12->HasFinalFBContent(),
-            exactValidation ? GetSoftwareScreenFrame(0u) : nullptr,
-            exactValidation ? GetSoftwareScreenFrame(1u) : nullptr);
-        nativeComposeResult = dx12->GetLastComposeResult();
-        if (nativeComposeResult == GPU2DComposeResult::Success
-            || nativeComposeResult == GPU2DComposeResult::SemanticOnly)
+            facts.ExactValidationEnabled ? GetSoftwareScreenFrame(0u) : nullptr,
+            facts.ExactValidationEnabled ? GetSoftwareScreenFrame(1u) : nullptr);
+        facts.ComposeResult = dx12->GetLastComposeResult();
+        if (GPU2DFramePolicy::ShouldPublishCaptureProvenance(facts.ComposeResult))
         {
-            // Publish physical capture ownership after semantic submission,
-            // even when presentation backpressure retained the old visible
-            // frame. The next frame may request a read before its recorder is
-            // finalized, and must still select this native mirror.
             PublishNativeCaptureProvenance(
                 CaptureOwner::NativeDX12,
                 nativeFrame,
                 GetNativeCaptureStateIdentity());
         }
-        if (nativeComposed)
-        {
-            coverage.Published = true;
-            coverage.Source = "native";
-            if (!NativeGPU2DAnnounced)
-            {
-                Platform::Log(Platform::LogLevel::Info,
-                    "DX12 renderer gpu2d=DX12 gpu3d=DX12 fallback=0\n");
-                NativeGPU2DAnnounced = true;
-            }
-        }
-        else if (!nativeProducer
-            || nativeComposeResult == GPU2DComposeResult::Fatal)
-        {
-            RecordGPU2DRuntimeNativeUnavailableFallback();
-            DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFallbackFrames);
-            if (!NativeGPU2DFallbackAnnounced)
-            {
-                Platform::Log(Platform::LogLevel::Warn,
-                    "DX12 renderer gpu2d=Software fallback=1 reason=native dispatch unavailable\n");
-                NativeGPU2DFallbackAnnounced = true;
-            }
-        }
     }
-    else if (dx12 && HasNativeGPU2DFrame())
+    facts.RendererHasRuntimeFailure = dx12 && dx12->HasRuntimeFailure();
+
+    const GPU2DFramePolicy::Decision decision = GPU2DFramePolicy::Evaluate(facts);
+
+    if (facts.NativeComposed)
+    {
+        coverage.Published = true;
+        coverage.Source = "native";
+        // The 3D oracle runs on this path too. It compares the two Renderer3D
+        // outputs, which is independent of the 2D composition that just
+        // happened, and native composition is the only path a normal session
+        // takes -- so leaving it to the structured branch meant the harness
+        // never saw a frame.
+        CompareRasterDifferentialFrame();
+    }
+    if (decision.AnnounceNativeSuccess && !NativeGPU2DAnnounced)
+    {
+        Platform::Log(Platform::LogLevel::Info,
+            "DX12 renderer gpu2d=DX12 gpu3d=DX12 fallback=0\n");
+        NativeGPU2DAnnounced = true;
+    }
+    if (decision.RecordStaleGenerationReject)
     {
         RecordGPU2DStaleGenerationReject();
         Platform::Log(Platform::LogLevel::Warn,
             "DX12 renderer gpu2d=Software fallback=1 reason=stale_generation_reject "
             "stale_generation_reject=1\n");
     }
-    if (nativeProducer && !nativeComposed)
+    if (decision.RecordRuntimeNativeUnavailableFallback)
+        RecordGPU2DRuntimeNativeUnavailableFallback();
+    if (decision.RecordCaptureSoftwareFallback)
+        RecordGPU2DCaptureSoftwareFallback();
+    if (decision.CountNativeFallbackFrame)
+        DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFallbackFrames);
+    if (decision.AnnounceFallback != GPU2DFramePolicy::FallbackReason::None)
     {
-        if (nativeComposeResult == GPU2DComposeResult::Backpressure
-            || nativeComposeResult == GPU2DComposeResult::SemanticOnly
-            || nativeComposeResult == GPU2DComposeResult::Unavailable)
-        {
-            IntelXeLL.MarkRenderSubmitEnd();
-            NvidiaReflex.MarkRenderSubmitEnd();
-            return;
-        }
-        // Native ownership means no CPU structured frame was produced for this
-        // generation. Do not present a previous frame or silently switch to
-        // Software after a native submission/drop failure.
-        if (dx12 && !dx12->HasRuntimeFailure())
-            dx12->FailNativeGPU2DExact(
-                "native GPU2D producer could not publish its owned frame");
-        IntelXeLL.MarkRenderSubmitEnd();
-        NvidiaReflex.MarkRenderSubmitEnd();
-        return;
+        Platform::Log(Platform::LogLevel::Warn,
+            "DX12 renderer gpu2d=Software fallback=1 reason=%s\n",
+            GPU2DFramePolicy::FallbackReasonText(decision.AnnounceFallback));
+        NativeGPU2DFallbackAnnounced = true;
     }
-    if (dx12 && !nativeComposed && dx12->HasRuntimeFailure())
+
+    switch (decision.Result)
     {
+    case GPU2DFramePolicy::Outcome::NativePublished:
+    case GPU2DFramePolicy::Outcome::RetainLastFrame:
+        return;
+    case GPU2DFramePolicy::Outcome::FailNativeExact:
+        if (dx12)
+            dx12->FailNativeGPU2DExact(decision.FailureReason);
+        return;
+    case GPU2DFramePolicy::Outcome::ReportRuntimeFailure:
         Platform::Log(Platform::LogLevel::Error,
             "DX12 renderer gpu2d=Software fallback=1 disabled=1 reason=%s\n",
             dx12->GetRuntimeFailureReason().c_str());
-        IntelXeLL.MarkRenderSubmitEnd();
-        NvidiaReflex.MarkRenderSubmitEnd();
         return;
-    }
-    if (exactValidation && dx12 && !nativeComposed
-        && nativeComposeResult != GPU2DComposeResult::Backpressure
-        && nativeComposeResult != GPU2DComposeResult::SemanticOnly
-        && nativeComposeResult != GPU2DComposeResult::Unavailable)
-    {
-        dx12->FailNativeGPU2DExact(
-            "native GPU2D exact gate rejected a fallback or unavailable frame");
-        IntelXeLL.MarkRenderSubmitEnd();
-        NvidiaReflex.MarkRenderSubmitEnd();
-        return;
-    }
-    if (dx12 && !nativeComposed && !NativeGPU2DFallbackAnnounced)
-    {
-        RecordGPU2DRuntimeNativeUnavailableFallback();
-        if (GPU.CaptureEnable && !nativeProducer)
-            RecordGPU2DCaptureSoftwareFallback();
-        DX12Perf::AddCounter(DX12Perf::Counter::NativeGPU2DFallbackFrames);
-        Platform::Log(Platform::LogLevel::Warn,
-            "DX12 renderer gpu2d=Software fallback=1 reason=native frame unavailable\n");
-        NativeGPU2DFallbackAnnounced = true;
-    }
-    if (nativeComposeResult == GPU2DComposeResult::Backpressure
-        || nativeComposeResult == GPU2DComposeResult::SemanticOnly)
-    {
-        IntelXeLL.MarkRenderSubmitEnd();
-        NvidiaReflex.MarkRenderSubmitEnd();
-        return;
-    }
-    StructuredVulkanFrameView view{};
-    if (!nativeComposed && (!dx12 || !GetStructuredVulkanFrame(view)
-        || !view.Valid
-        || (!view.CompleteCoverage
-            && (GPU2DNative::DropDiscontinuousSavestateFrameEnabled()
-                || !view.ResumeFrameDiscontinuous))))
-    {
-        IntelXeLL.MarkRenderSubmitEnd();
-        NvidiaReflex.MarkRenderSubmitEnd();
-        return;
+    case GPU2DFramePolicy::Outcome::TryStructuredFallback:
+        break;
     }
 
-    if (nativeComposed)
+    StructuredVulkanFrameView view{};
+    if (!dx12 || !GetStructuredVulkanFrame(view)
+        || !GPU2DFramePolicy::ShouldComposeStructuredFrame(
+            view.Valid,
+            view.CompleteCoverage,
+            view.ResumeFrameDiscontinuous,
+            GPU2DNative::DropDiscontinuousSavestateFrameEnabled()))
     {
-        IntelXeLL.MarkRenderSubmitEnd();
-        NvidiaReflex.MarkRenderSubmitEnd();
         return;
     }
 
@@ -451,24 +433,8 @@ void DX12Renderer::VBlank()
     DX12Perf::AddCounter(
         DX12Perf::Counter::StructuredFallbackLines,
         view.StructuredFallbackLines);
-    if (composed && DifferentialReference && dx12->GetScaleFactor() == 1)
-    {
-        const bool exact = DifferentialState.CompareFrame(
-            *Rend3D, *DifferentialReference, "DX12");
-        if (!exact)
-        {
-            Platform::Log(
-                Platform::LogLevel::Error,
-                "[RasterDiffState] backend=DX12 dispCnt=%08X polygons=%u "
-                "clear1=%08X clear2=%08X\n",
-                GPU.GPU3D.RenderDispCnt,
-                GPU.GPU3D.RenderNumPolygons,
-                GPU.GPU3D.RenderClearAttr1,
-                GPU.GPU3D.RenderClearAttr2);
-        }
-    }
-    IntelXeLL.MarkRenderSubmitEnd();
-    NvidiaReflex.MarkRenderSubmitEnd();
+    if (composed)
+        CompareRasterDifferentialFrame();
 }
 
 RendererOutput DX12Renderer::GetOutput()
@@ -553,221 +519,31 @@ const DX12Renderer3D* DX12Renderer::GetDX12Renderer3D() const noexcept
     return dynamic_cast<const DX12Renderer3D*>(Rend3D.get());
 }
 
+void DX12Renderer::CompareRasterDifferentialFrame()
+{
+    auto* dx12 = GetDX12Renderer3D();
+    if (!DifferentialReference || !dx12)
+        return;
+    // The oracle renders at native resolution, so a scaled frame has nothing
+    // to compare against.
+    if (dx12->GetScaleFactor() != 1)
+        return;
+    if (DifferentialState.CompareFrame(*Rend3D, *DifferentialReference, "DX12"))
+        return;
+    Platform::Log(
+        Platform::LogLevel::Error,
+        "[RasterDiffState] backend=DX12 dispCnt=%08X polygons=%u "
+        "clear1=%08X clear2=%08X\n",
+        GPU.GPU3D.RenderDispCnt,
+        GPU.GPU3D.RenderNumPolygons,
+        GPU.GPU3D.RenderClearAttr1,
+        GPU.GPU3D.RenderClearAttr2);
+}
+
 bool DX12Renderer::CanUseNativeGPU2DForFrame() const noexcept
 {
     const auto* dx12 = GetDX12Renderer3D();
     return dx12 && dx12->CanComposeNativeGPU2D();
-}
-
-void DX12Renderer::BeginReflexFrame(melonDS::u64 logicalFrameId)
-{
-    NvidiaReflex.BeginFrame(logicalFrameId);
-}
-
-void DX12Renderer::BeginAmdAntiLag2Frame()
-{
-    AmdAntiLag2.BeginFrame();
-    LogLowLatencyPacingStateIfChanged();
-}
-
-void DX12Renderer::BeginIntelXeLLFrame()
-{
-    IntelXeLL.BeginFrame();
-}
-
-void DX12Renderer::MarkReflexInputSample()
-{
-    NvidiaReflex.MarkInputSample();
-}
-
-void DX12Renderer::MarkIntelXeLLInputSample()
-{
-    IntelXeLL.MarkInputSample();
-}
-
-void DX12Renderer::MarkReflexSimulationStart()
-{
-    NvidiaReflex.MarkSimulationStart();
-}
-
-void DX12Renderer::EndReflexRenderPhase()
-{
-    NvidiaReflex.EndRenderPhase();
-}
-
-void DX12Renderer::EndIntelXeLLRenderPhase()
-{
-    IntelXeLL.EndRenderPhase();
-}
-
-void DX12Renderer::BeginReflexPresent()
-{
-    NvidiaReflex.MarkPresentStart();
-}
-
-void DX12Renderer::EndReflexPresent()
-{
-    NvidiaReflex.MarkPresentEnd();
-}
-
-void DX12Renderer::BeginIntelXeLLPresent()
-{
-    IntelXeLL.MarkPresentStart();
-}
-
-void DX12Renderer::EndIntelXeLLPresent()
-{
-    IntelXeLL.MarkPresentEnd();
-}
-
-void DX12Renderer::FinishReflexFrame()
-{
-    NvidiaReflex.FinishFrame();
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    ReportReflexLatencyTimings();
-#endif
-}
-
-
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-void DX12Renderer::ReportReflexLatencyTimings()
-{
-    if (!NvidiaReflex.IsAvailable())
-        return;
-
-    // Every 600th frame, matching VulkanPresenter::ReportLatencyTimings(), so a
-    // long session leaves a readable handful of lines instead of a wall of
-    // them. Developer builds only: this exists to prove the markers and the
-    // Sleep call are landing, which is not something a shipping user needs.
-    if (++ReflexLatencyTimingCountdown < 600)
-        return;
-    ReflexLatencyTimingCountdown = 0;
-
-    DX12NvidiaReflexFrameReport reports[8]{};
-    const melonDS::u32 count = NvidiaReflex.QueryTimings(reports, 8);
-    if (count == 0)
-    {
-        // Not cosmetic. Reflex On costing nothing on this backend is only
-        // believable if the driver is correlating frames; an empty report under
-        // an active mode says the opposite.
-        Platform::Log(Platform::LogLevel::Info,
-            "NVIDIA Reflex timings: none (reason=%s mode=%d active=%d)\n",
-            DX12NvidiaReflexLatencyReportStatusName(
-                NvidiaReflex.GetLatencyReportStatus()),
-            static_cast<int>(NvidiaReflex.GetMode()),
-            NvidiaReflex.IsActive() ? 1 : 0);
-        return;
-    }
-
-    // A non-zero frameID matching the ids the markers carried, together with
-    // non-zero sim/submit/present stamps, is the end-to-end evidence that
-    // NvAPI_D3D_SetLatencyMarker and NvAPI_D3D_Sleep were correlated by the
-    // driver into one frame.
-    const DX12NvidiaReflexFrameReport& r = reports[count - 1];
-    Platform::Log(Platform::LogLevel::Info,
-        "NVIDIA Reflex timings: mode=%d active=%d reports=%u frameID=%llu sim=%llu..%llu "
-        "renderSubmit=%llu..%llu present=%llu..%llu gpuRender=%llu..%llu inputSample=%llu "
-        "gpuActiveRenderUs=%u gpuFrameUs=%u\n",
-        static_cast<int>(NvidiaReflex.GetMode()),
-        NvidiaReflex.IsActive() ? 1 : 0,
-        static_cast<unsigned>(count),
-        static_cast<unsigned long long>(r.FrameId),
-        static_cast<unsigned long long>(r.SimStartTimeUs),
-        static_cast<unsigned long long>(r.SimEndTimeUs),
-        static_cast<unsigned long long>(r.RenderSubmitStartTimeUs),
-        static_cast<unsigned long long>(r.RenderSubmitEndTimeUs),
-        static_cast<unsigned long long>(r.PresentStartTimeUs),
-        static_cast<unsigned long long>(r.PresentEndTimeUs),
-        static_cast<unsigned long long>(r.GpuRenderStartTimeUs),
-        static_cast<unsigned long long>(r.GpuRenderEndTimeUs),
-        static_cast<unsigned long long>(r.InputSampleTimeUs),
-        static_cast<unsigned>(r.GpuActiveRenderTimeUs),
-        static_cast<unsigned>(r.GpuFrameTimeUs));
-}
-#endif
-
-void DX12Renderer::FinishIntelXeLLFrame()
-{
-    IntelXeLL.FinishFrame();
-}
-
-void DX12Renderer::UpdateIntelXeLLFrameCap(std::uint32_t minimumIntervalUs)
-{
-    const DX12LowLatencyPacingDecision decision = GetLowLatencyPacingDecision();
-    const std::uint32_t requestedInterval = decision.XeLLOwnsFrameCap
-        ? minimumIntervalUs
-        : 0;
-    if (IntelXeLLRequestedIntervalUs == requestedInterval)
-        return;
-
-    const DX12IntelXeLLStatus status = IntelXeLL.GetStatus();
-    if (!status.ContextCreated || !status.SleepModeApplied)
-        return;
-
-    auto* dx12 = GetDX12Renderer3D();
-    if (!dx12 || !dx12->WaitForQueueIdle())
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "Intel XeLL frame-cap transition skipped because the DX12 queue did not become idle\n");
-        return;
-    }
-
-    if (IntelXeLL.SetSleepMode(status.Requested, requestedInterval))
-    {
-        IntelXeLLRequestedIntervalUs = requestedInterval;
-        LogLowLatencyPacingStateIfChanged();
-    }
-}
-
-DX12LowLatencyPacingDecision DX12Renderer::GetLowLatencyPacingDecision() const noexcept
-{
-    return ResolveDX12LowLatencyPacing(
-        NvidiaReflex.IsActive(),
-        AmdAntiLag2.IsActive(),
-        IntelXeLL.IsActive(),
-        IntelXeLLPacingPolicy);
-}
-
-void DX12Renderer::LogLowLatencyPacingStateIfChanged()
-{
-    const DX12LowLatencyPacingDecision decision = GetLowLatencyPacingDecision();
-    DX12Perf::SetCounter(
-        DX12Perf::Counter::DX12VendorPacingAuthority,
-        static_cast<u64>(decision.Authority));
-    DX12Perf::SetCounter(
-        DX12Perf::Counter::DX12ReflexMode,
-        static_cast<u64>(NvidiaReflex.GetMode()));
-    if (PacingDecisionLogged
-        && decision.Authority == LastLoggedPacingDecision.Authority
-        && decision.BypassHostLimiter == LastLoggedPacingDecision.BypassHostLimiter
-        && decision.BypassPresentWait == LastLoggedPacingDecision.BypassPresentWait
-        && decision.XeLLOwnsFrameCap == LastLoggedPacingDecision.XeLLOwnsFrameCap)
-    {
-        return;
-    }
-
-    LastLoggedPacingDecision = decision;
-    PacingDecisionLogged = true;
-    const DX12IntelXeLLStatus xell = IntelXeLL.GetStatus();
-    const auto& profile = DX12Context::Get().GetDeviceProfile();
-    Platform::Log(
-        Platform::LogLevel::Info,
-        "DX12 low-latency pacing adapter=\"%s\" vendor=%04X device=%04X driver=%016llX "
-        "authority=%s xellPolicy=%s xellRequested=%d xellActual=%d "
-        "minimumIntervalUs=%u hostLimiterBypass=%d frameLatencyWaitBypass=%d "
-        "hardwareValidation=pending\n",
-        profile.AdapterName.c_str(),
-        profile.VendorId,
-        profile.DeviceId,
-        static_cast<unsigned long long>(profile.DriverVersion),
-        DX12LowLatencyPacingAuthorityName(decision.Authority),
-        DX12IntelXeLLPacingPolicyName(IntelXeLLPacingPolicy),
-        xell.Requested ? 1 : 0,
-        xell.ActualEnabled ? 1 : 0,
-        xell.MinimumIntervalUs,
-        decision.BypassHostLimiter ? 1 : 0,
-        decision.BypassPresentWait ? 1 : 0);
 }
 
 } // namespace melonDS

@@ -12,6 +12,7 @@
 
 #include "MelonPrimeDX12SurfacePresenter.h"
 #include "DX12GpuTimestamp.h"
+#include "DX12LowLatencyController.h"
 #include "DX12Perf.h"
 
 #include <algorithm>
@@ -886,12 +887,16 @@ bool DX12SurfacePresenter::WaitForPresentSlot()
 
 bool DX12SurfacePresenter::BeginFrame(
     std::uint32_t width,
-    std::uint32_t height,
-    bool waitForPresentSlot)
+    std::uint32_t height)
 {
     LastBeginBackpressure = false;
     if (!Initialized || FrameOpen || width == 0 || height == 0)
         return false;
+    // No active vendor authority means no vendor-side wait, so the DXGI
+    // frame-latency wait stays the pacing mechanism -- which is also what a
+    // Software frame on this panel gets.
+    const auto* latency = melonDS::DX12LowLatencyController::GetIfActive();
+    const bool waitForPresentSlot = !latency || !latency->ShouldBypassPresentWait();
     if (!PresentWaitStateLogged || LastPresentWaitEnabled != waitForPresentSlot)
     {
         PresentWaitStateLogged = true;
@@ -1343,6 +1348,30 @@ bool DX12SurfacePresenter::EndFrame()
 
 bool DX12SurfacePresenter::Present(bool vsync)
 {
+    // The vendor PresentStart/PresentEnd markers must bracket the real
+    // IDXGISwapChain::Present, which is this function and nothing above it.
+    // A scope guard keeps the pair balanced across every early return,
+    // including the "nothing to present" one below -- the pre-refactor tree
+    // bracketed the call from Screen.cpp and had the same property only by
+    // accident.
+    struct PresentMarkerScope
+    {
+        melonDS::DX12LowLatencyController* Latency;
+
+        explicit PresentMarkerScope(melonDS::DX12LowLatencyController* latency)
+            : Latency(latency)
+        {
+            if (Latency)
+                Latency->BeginPresent();
+        }
+
+        ~PresentMarkerScope()
+        {
+            if (Latency)
+                Latency->EndPresent();
+        }
+    } presentMarkers{melonDS::DX12LowLatencyController::GetIfActive()};
+
     if (!Initialized || !FrameReady || !Swapchain)
     {
         melonDS::DX12Perf::AddCounter(

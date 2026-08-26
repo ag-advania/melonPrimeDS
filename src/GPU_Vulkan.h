@@ -111,6 +111,10 @@ public:
 private:
     [[nodiscard]] bool CanUseNativeGPU2DForFrame() const noexcept override;
 
+    // Developer-only 3D oracle comparison. Called from both publication paths
+    // because it compares the 3D renderers, not the composed 2D frame.
+    void CompareRasterDifferentialFrame();
+
     std::unique_ptr<Renderer3D> DifferentialReference;
     RasterDifferential::State DifferentialState;
     int NvidiaReflexMode = 0;

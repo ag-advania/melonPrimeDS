@@ -23,10 +23,6 @@
 
 #include <string>
 
-#include "DX12AmdAntiLag2.h"
-#include "DX12IntelXeLL.h"
-#include "DX12LowLatencyPacing.h"
-#include "DX12NvidiaReflex.h"
 #include "GPU3D_RasterDifferential.h"
 #include "GPU_Soft.h"
 
@@ -72,34 +68,12 @@ public:
         return "DX12";
     }
 
-    void BeginReflexFrame(melonDS::u64 logicalFrameId);
-    void BeginAmdAntiLag2Frame();
-    void BeginIntelXeLLFrame();
-    void MarkReflexInputSample();
-    void MarkIntelXeLLInputSample();
-    void MarkReflexSimulationStart();
-    void EndReflexRenderPhase();
-    void EndIntelXeLLRenderPhase();
-    void BeginReflexPresent();
-    void EndReflexPresent();
-    void BeginIntelXeLLPresent();
-    void EndIntelXeLLPresent();
-    void FinishReflexFrame();
-    void FinishIntelXeLLFrame();
-    void UpdateIntelXeLLFrameCap(std::uint32_t minimumIntervalUs);
-    [[nodiscard]] bool IsIntelXeLLActive() const noexcept
-    {
-        return IntelXeLL.IsActive();
-    }
-    [[nodiscard]] DX12LowLatencyPacingDecision GetLowLatencyPacingDecision() const noexcept;
-    [[nodiscard]] bool ShouldBypassHostLimiter() const noexcept
-    {
-        return GetLowLatencyPacingDecision().BypassHostLimiter;
-    }
-    [[nodiscard]] bool ShouldBypassPresentWait() const noexcept
-    {
-        return GetLowLatencyPacingDecision().BypassPresentWait;
-    }
+    // Vendor low-latency state lives in DX12LowLatencyController, which the
+    // presenter and the emulation thread reach directly. This renderer is only
+    // one of that controller's event sources -- it reports render-submit
+    // boundaries, because it is what submits -- and it forwards the configured
+    // low-latency settings it receives through RendererSettings. It owns no
+    // vendor object and publishes no Present marker.
 
     bool NeedsShaderCompile() override;
     void ShaderCompileStep(int& current, int& count) override;
@@ -112,27 +86,20 @@ public:
 private:
     [[nodiscard]] bool CanUseNativeGPU2DForFrame() const noexcept override;
 
+    // Developer-only 3D oracle comparison. Called from both publication paths
+    // because it compares the 3D renderers, not the composed 2D frame.
+    void CompareRasterDifferentialFrame();
+
+    // The controller asks for a queue-idle window before an Intel XeLL sleep
+    // transition. Passing it as a hook keeps the dependency pointing the right
+    // way: the controller never learns what a Renderer3D is.
+    static bool WaitForQueueIdleHook(void* userData) noexcept;
+
     std::unique_ptr<Renderer3D> DifferentialReference;
     RasterDifferential::State DifferentialState;
-    DX12AmdAntiLag2 AmdAntiLag2;
-    DX12IntelXeLL IntelXeLL;
-    DX12IntelXeLLPacingPolicy IntelXeLLPacingPolicy =
-        DX12IntelXeLLPacingPolicy::Compatibility;
-    std::uint32_t IntelXeLLRequestedIntervalUs = 0;
-    DX12LowLatencyPacingDecision LastLoggedPacingDecision{};
-    bool PacingDecisionLogged = false;
-    DX12NvidiaReflex NvidiaReflex;
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    int ReflexLatencyTimingCountdown = 0;
-#endif
     bool NativeGPU2DAnnounced = false;
     bool NativeGPU2DFallbackAnnounced = false;
     bool NativeGPU2DStartupFallbackAnnounced = false;
-
-    void LogLowLatencyPacingStateIfChanged();
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    void ReportReflexLatencyTimings();
-#endif
 };
 
 } // namespace melonDS

@@ -73,10 +73,10 @@ public:
     // output leases are released.
     void Quiesce() noexcept;
 
-    bool BeginFrame(
-        std::uint32_t width,
-        std::uint32_t height,
-        bool waitForPresentSlot = true);
+    // The DXGI frame-latency wait is presentation pacing, so the presenter
+    // asks the low-latency controller whether the active vendor authority
+    // already performs an equivalent wait. Callers no longer decide.
+    bool BeginFrame(std::uint32_t width, std::uint32_t height);
     // The screen panel supplies the renderer-owned identity before presenter
     // admission. A newer epoch may restart the serial sequence; within one
     // epoch, serials must never move backwards.
@@ -135,7 +135,8 @@ public:
         std::uint32_t sourceRadius);
     bool EndFrame();
 
-    // Kept separate so Reflex markers bracket the actual DXGI Present call.
+    // Kept separate from EndFrame() so the vendor Present markers this
+    // function fires bracket the DXGI Present alone.
     bool Present(bool vsync);
 
     [[nodiscard]] bool IsInitialized() const noexcept { return Initialized; }

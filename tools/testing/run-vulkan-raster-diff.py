@@ -99,9 +99,11 @@ def main() -> int:
             f"{len(records)} frames ({min(mismatches_per_frame)}-"
             f"{max(mismatches_per_frame)} per frame)"
         )
-    if process.returncode not in (0, -15) and not (
-        stopped_by_runner and process.returncode == -9
-    ):
+    # A runner-initiated kill reports the signal on POSIX and an ordinary
+    # non-zero status on Windows, where there is no signal to report. Treating
+    # the Windows form as a crash failed every run on that host.
+    killed_by_runner = stopped_by_runner and process.returncode in (-9, 1)
+    if process.returncode not in (0, -15) and not killed_by_runner:
         failures.append(f"process exited unexpectedly with status {process.returncode}")
 
     if failures:

@@ -433,6 +433,29 @@ private:
 #endif
 };
 
+// Records a compute->compute dependency over `buffers`. Kept explicit rather
+// than folded into a global VkMemoryBarrier so every dependency in the frame
+// names the resource it is about.
+//
+// Free functions: the rasterizer and the GPU2D compositor both record these
+// against their own command buffers, and neither owns the other.
+void BufferBarrier(
+    const VulkanDevice& device,
+    VkCommandBuffer cmd,
+    const VkBuffer* buffers,
+    const VkAccessFlags* srcAccess,
+    const VkAccessFlags* dstAccess,
+    u32 count,
+    VkPipelineStageFlags srcStage,
+    VkPipelineStageFlags dstStage);
+
+void BufferBarrier(
+    const VulkanDevice& device,
+    VkCommandBuffer cmd,
+    const VkBuffer* buffers, u32 count,
+    VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
+    VkPipelineStageFlags dstStage, VkAccessFlags dstAccess);
+
 } // namespace melonDS::Vk
 
 #endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN
