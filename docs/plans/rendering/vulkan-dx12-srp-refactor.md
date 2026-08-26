@@ -1282,7 +1282,8 @@ identical in a PASS/FAIL line.
 
 Re-confirmed on the ownership-closure tree: Ubuntu (x86_64, aarch64), macOS
 (x86_64, arm64, universal) and BSD (FreeBSD, NetBSD, OpenBSD) all green,
-first attempt.
+first attempt. Green again on the tree that hardens the ownership ratchet and
+the scale-cycle test.
 
 ### This is the end of splitting
 
