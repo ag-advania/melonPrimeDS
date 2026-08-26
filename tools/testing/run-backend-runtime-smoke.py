@@ -117,6 +117,7 @@ def run_backend(
     workdir: Path,
     stall_frames: int,
     switch_stress: str,
+    scale_stress: str,
     switch_iterations: int,
     env_extra: dict[str, str],
     expect_degrade: bool,
@@ -142,6 +143,15 @@ def run_backend(
         # lease invalidation, ring recreation and every component teardown the
         # refactor moved.
         environment["MELONPRIME_RENDERER_SWITCH_STRESS"] = switch_stress
+        environment["MELONPRIME_RENDERER_SWITCH_STRESS_ITERATIONS"] = str(
+            switch_iterations)
+    if scale_stress:
+        # Live internal-resolution changes, through the same slot the settings
+        # dialog's resolution combo reaches. This is the path that releases the
+        # compositor's output resource set and creates a new one while a
+        # presenter may still hold a lease on the old -- the one thing a
+        # separate process per scale cannot exercise.
+        environment["MELONPRIME_RENDERER_SCALE_STRESS"] = scale_stress
         environment["MELONPRIME_RENDERER_SWITCH_STRESS_ITERATIONS"] = str(
             switch_iterations)
     if state is not None:
@@ -281,6 +291,40 @@ def run_backend(
     if not (expect_degrade or expect_recovery or expect_unsupported)             and f"{label} renderer gpu2d={label} gpu3d={label} fallback=0" not in output:
         failures.append(f"the native GPU2D path never composed on {label}")
 
+    if scale_stress:
+        armed = re.search(r"\[switch-stress\] armed: (\d+) switches", output)
+        if not armed:
+            failures.append("the scale stress driver never armed")
+        performed = re.findall(r"\[switch-stress\] switch (\d+)/(\d+)", output)
+        if not performed:
+            failures.append("no live scale change was performed")
+        # Every requested scale must actually have been built. A scale that is
+        # silently skipped looks identical to one that succeeded.
+        for scale in [v.strip() for v in scale_stress.split(",") if v.strip()]:
+            marker = f"internal resolution {scale}x"
+            if marker not in output:
+                failures.append(
+                    f"scale {scale}x was requested but never built")
+        # The output resource identity must move forward across recreations and
+        # never repeat, because a presenter caches descriptors against it.
+        #
+        # Per composer instance, though. The counter lives on the compositor, so
+        # a renderer that is torn down and rebuilt gets a fresh one starting at
+        # 1 -- and that is correct: everything that had cached against the old
+        # renderer's sets went away with it. Comparing across instances would
+        # flag a legitimate restart, so the run is split at each renderer init.
+        segments = re.split(r"renderer init succeeded", output)
+        for segment in segments:
+            generations = [
+                int(v) for v in re.findall(
+                    r"resourceGeneration=(\d+)", segment)]
+            if not generations:
+                continue
+            if generations != sorted(set(generations)):
+                failures.append(
+                    "output resource generations did not advance strictly "
+                    f"within one composer instance: {generations}")
+
     if switch_stress:
         armed = re.search(r"\[switch-stress\] armed: (\d+) switches", output)
         if not armed:
@@ -357,6 +401,10 @@ def main() -> int:
     parser.add_argument(
         "--switch-stress", default="",
         help="comma-separated 3D.Renderer ids to cycle through, e.g. 3,4")
+    parser.add_argument(
+        "--scale-stress", default="",
+        help="comma-separated internal resolutions to cycle live in one "
+             "process, e.g. 4,5 -- exercises output release/recreate")
     parser.add_argument("--switch-iterations", type=int, default=6)
     parser.add_argument(
         "--set", action="append", default=[], metavar="KEY=VALUE",
@@ -418,6 +466,8 @@ def main() -> int:
             run_id += "-window"
         if args.switch_stress:
             run_id += "-switch" + args.switch_stress.replace(",", "")
+        if args.scale_stress:
+            run_id += "-scalecycle" + args.scale_stress.replace(",", "")
         for key, value in overrides.items():
             run_id += f"-{key.split('.')[-1]}{value}"
         for name in env_extra:
@@ -438,7 +488,8 @@ def main() -> int:
         failures, output = run_backend(
             backend, workdir / app.name, args.rom, args.state,
             args.seconds, workdir, args.stall_frames,
-            args.switch_stress, args.switch_iterations, env_extra,
+            args.switch_stress, args.scale_stress, args.switch_iterations,
+            env_extra,
             args.expect_degrade, args.expect_recovery,
             args.expect_unsupported, args.window_actions)
         (args.out / f"{run_id}.log").write_text(output, encoding="utf-8")
