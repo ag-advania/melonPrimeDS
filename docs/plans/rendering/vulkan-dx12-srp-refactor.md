@@ -920,13 +920,18 @@ artifact-upload option in the release step — and none of them gate a job.
 
 ### Summary
 
-**33 of 33 met.**
+**32 met, 1 reopened.**
 
 The 2026-08-26 re-audit reopened two of the Runtime rows -- renderer switch and
-low latency -- and both are now closed by REAUDIT-P1-001 and REAUDIT-P2-001
-above, with the evidence recorded there. The three platform build rows are
-closed by the repository's own CI on `develop_hud`: Ubuntu (x86_64, aarch64),
-macOS (x86_64, arm64, universal) and BSD (FreeBSD, NetBSD, OpenBSD) all green.
+low latency -- and both are closed by REAUDIT-P1-001 and REAUDIT-P2-001 above,
+with the evidence recorded there. The three platform build rows are closed by
+the repository's own CI on `develop_hud`: Ubuntu (x86_64, aarch64), macOS
+(x86_64, arm64, universal) and BSD (FreeBSD, NetBSD, OpenBSD) all green.
+
+The renderer-switch row is reopened again by **REAUDIT-P2-002** below: a DX12
+runtime failure latches sticky, and whether an explicit user re-selection
+actually clears it had never been tested. Until that is demonstrated in a
+running process, this row is not met.
 
 The `Gpu2DComposer` item that was previously listed here as blocked is done.
 The blocker was mis-stated: §11.3 forbids *mixing* a descriptor-strategy change
@@ -1056,8 +1061,37 @@ implementer back at Renderer3D.
 
 ## What is left
 
-Nothing in the audit or its 2026-08-26 re-audit is open. Phase 2 is complete on
-both backends: the output publisher, capture bridge,
+### REAUDIT-P2-002 -- explicit retry after a DX12 runtime failure (OPEN)
+
+`ReportRuntimeFailure()` latches DX12 to unsupported for the rest of the
+process, which is right for the transition that failed. `ResetProbeForRetry()`
+is what clears it, and the question the 2026-08-26 push-review raised is
+whether anything in production actually calls it on an explicit user request.
+
+Two things need to be true and only one of them has been checked:
+
+1. an explicit user DX12 re-selection clears the latch and recovers in the same
+   process, and
+2. an automatic fallback, startup normalization or internal reconciliation
+   never clears it, so a failing backend cannot loop.
+
+There is also a narrower defect visible by inspection: `ResetProbeForRetry()`
+clears *every* cached answer, including a durable "this machine has no D3D12
+runtime". An explicit retry should clear a renderer-initialization failure and
+leave a hard-unsupported answer alone, or every click re-runs a device probe
+that cannot succeed.
+
+A correction to the evidence recorded for `c664e109c`: that commit's message
+read the switch-stress result as "later DX12 requests stay on Software, which
+is the sticky runtime-failure latch behaving as designed". The latch is real,
+but that run does not show it. `MelonPrimeRendererSwitchStress::Apply()` returns
+early when the config already holds the requested renderer, and a DX12 failure
+leaves `3D.Renderer` set to DX12 -- only the emulation thread's local fell back.
+The driver never issued those requests at all.
+
+### The rest
+
+Phase 2 is complete on both backends: the output publisher, capture bridge,
 GPU2D compositor and pipeline repository are all separate modules, and what
 remains in each `Renderer3D` is the 3D rasterizer plus the sub-components it
 composes.
