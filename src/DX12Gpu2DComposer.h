@@ -188,6 +188,64 @@ public:
     [[nodiscard]] bool CanComposeNativeGPU2D(
         const DX12Gpu2DComposeContext& ctx) const noexcept;
 
+    // --- output resource lifecycle -----------------------------------------
+    //
+    // The compositor declares itself the owner of the output resource set and
+    // of publication state, so it is the thing that creates, releases and
+    // resets them. The renderer asks for an operation; it does not reach in.
+
+    // Builds a new resource set for `width` x `height` and, only once it is
+    // fully created, makes it the active one. A failed create leaves the
+    // previous set exactly as it was: a half-initialized set must never become
+    // visible to the presenter or to a compose.
+    bool RecreateOutput(
+        DX12Context& context, u32 width, u32 height, u32 uavTableSize,
+        u64 epoch);
+
+    // Drops the active resource set, the publication state that described it,
+    // and the descriptor *contents* that pointed at it.
+    //
+    // Not the descriptor heaps. Those are sized once from the root-signature
+    // layout and outlive any one resolution; ShutdownDescriptors() is what
+    // ends them. Rewinding a ring is forgetting what it described, which is
+    // what a released output requires; destroying the heap is a different
+    // lifetime with a different owner.
+    //
+    // A lease the presenter still holds keeps its own resources alive through
+    // the shared_ptr it captured -- releasing here detaches, it does not
+    // destroy out from under a lease.
+    void ReleaseOutput() noexcept;
+
+    // A renderer reset or savestate load. With preservePresentation the last
+    // complete published surface keeps its resource identity, frame metadata
+    // and serial, and only the unpublished slots are rewound for the next
+    // frame; without it, nothing is published afterwards.
+    void ResetForRendererEpoch(u64 epoch, bool preservePresentation) noexcept;
+
+    // The renderer latched a runtime failure. The compositor cannot produce a
+    // frame any more, and says so in its own vocabulary -- the failure itself,
+    // and its reason, stay the renderer's.
+    void MarkFatal() noexcept;
+
+    [[nodiscard]] bool HasValidOutput() const noexcept
+    {
+        return static_cast<bool>(Output);
+    }
+    [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
+    {
+        return PublishedOutputGeneration;
+    }
+    [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
+    {
+        return LastComposeResult;
+    }
+
+    // The published frame, and a lease on it. Both were the renderer reading
+    // through Output, the ring and the published slot; the compositor owns all
+    // three, so it answers.
+    [[nodiscard]] RendererOutput GetComposedOutput() const;
+    [[nodiscard]] RendererOutputLease AcquireComposedOutputLease();
+
 private:
     // Copies the canonical UAV block for a slot into its shader-visible ring
     // and binds it. The table shape is the root signature's, not this class's.
@@ -218,18 +276,35 @@ public:
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> WorkNativeUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 12> WorkOutputUavCpu{};
 
-    // --- the resource set and its publication state ------------------------
+    // --- the resource set --------------------------------------------------
     //
     // Recreated on every resolution change, so it is held by pointer while
     // everything above outlives it. Defined below in this header.
+    //
+    // Public because BuildCompositorUavDescriptors() assembles one UAV table
+    // out of raster resources and slot resources together -- that shared table
+    // is the descriptor contract this backend has, and hiding the slots behind
+    // accessors would describe a boundary that does not exist. Reading it is
+    // allowed; every mutation of it goes through the operations above.
     std::shared_ptr<DX12Gpu2DOutput> Output;
+
+private:
     // Content generation of the frame in the published slot, and whether that
-    // slot holds one at all. The renderer reads these when it decides whether
-    // a VBlank needs a new compose.
+    // slot holds one at all.
+    //
+    // Private because these are the publication state itself. The renderer used
+    // to set them directly, which made the declared owner and the mutating
+    // owner two different things.
     u64 ComposedGeneration = 0;
     u64 PublishedOutputGeneration = 0;
     bool ComposedOutputValid = false;
     GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
+
+    // Lifetime identity of the output resource set, so a presenter can cache
+    // descriptors against a resource generation rather than a content one. It
+    // advances only when a new set is created, and never rewinds -- releasing
+    // a set does not hand its number back.
+    u64 NextOutputResourceGeneration = 1;
 };
 
 // The compositor's resolution-dependent resource set: the presentation slots

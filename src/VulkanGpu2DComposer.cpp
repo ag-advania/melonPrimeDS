@@ -1794,6 +1794,157 @@ bool VulkanGpu2DComposer::ComposeNativeGPU2D(
     return true;
 }
 
+// ---------------------------------------------------------------------------
+// Output resource lifecycle
+//
+// These were the renderer's. Moving them is the whole point of this pass: the
+// compositor already declared itself the owner of the output resource set and
+// of publication state, and a declared owner that does not create, release or
+// reset its own state is only half an owner.
+// ---------------------------------------------------------------------------
+
+bool VulkanGpu2DComposer::RecreateOutput(
+    const VulkanDevice& device, u32 width, u32 height, u64 epoch)
+{
+    // Build the candidate first and adopt it only once Create() has fully
+    // succeeded. A partially initialized set must never be reachable as the
+    // active Output: the presenter and the compose path both read it without
+    // asking whether it finished being built.
+    auto candidate = std::make_shared<VulkanGpu2DOutput>();
+    if (!candidate->Create(
+            device, width, height, NextOutputResourceGeneration, epoch))
+        return false;
+
+    NextOutputResourceGeneration++;
+    Output = std::move(candidate);
+
+    // A new resource set has published nothing yet.
+    ComposedOutputValid = false;
+    ComposedGeneration = 0;
+    PublishedOutputGeneration = 0;
+    return true;
+}
+
+void VulkanGpu2DComposer::ReleaseOutput() noexcept
+{
+    // Detach, do not destroy. A RendererOutputLease captured its own
+    // shared_ptr to this set, so a presenter still reading the old resources
+    // across a resolution change keeps them alive until it releases.
+    Output.reset();
+
+    // The publication state described the set that just went away.
+    ComposedOutputValid = false;
+    ComposedGeneration = 0;
+    PublishedOutputGeneration = 0;
+
+    // NextOutputResourceGeneration deliberately survives: it is a lifetime
+    // identity, and reusing a number would let a presenter mistake a new set
+    // for one it had already cached descriptors against.
+}
+
+void VulkanGpu2DComposer::ResetForRendererEpoch(
+    u64 epoch, bool preservePresentation) noexcept
+{
+    bool keepPublishedOutput = false;
+    int publishedSlot = -1;
+    if (Output)
+    {
+        const auto lock = Output->Ring.LockPublication();
+        publishedSlot = Output->Ring.GetPublishedSlot();
+        keepPublishedOutput = preservePresentation
+            && ComposedOutputValid
+            && publishedSlot >= 0
+            && static_cast<std::size_t>(publishedSlot) < Output->Slots.size();
+        if (!keepPublishedOutput)
+        {
+            Output->Ring.Unpublish();
+            ComposedOutputValid = false;
+            ComposedGeneration = 0;
+            PublishedOutputGeneration = 0;
+        }
+        else
+            ComposedOutputValid = true;
+        for (std::size_t slotIndex = 0; slotIndex < Output->Slots.size(); ++slotIndex)
+        {
+            if (keepPublishedOutput && static_cast<int>(slotIndex) == publishedSlot)
+            {
+                // This slot is the last complete presentation surface. Keep
+                // its resource identity and frame metadata; only unpublished
+                // ring slots are reset for the next complete frame.
+                continue;
+            }
+            VulkanGpu2DOutput::Slot& slot = Output->Slots[slotIndex];
+            slot.UploadedContentGeneration = {};
+            slot.StructuredUploadInitialized = false;
+            slot.Frame.DirectContentValid = false;
+            slot.Frame.Epoch = epoch;
+        }
+        for (VulkanGpu2DOutput::ComposeWorkSlot& slot : Output->WorkSlots)
+        {
+            slot.UploadedNativeGeneration = {};
+            slot.SemanticLines.Reset();
+            slot.NativeUploadInitialized = false;
+        }
+    }
+    if (!keepPublishedOutput && !Output)
+    {
+        ComposedOutputValid = false;
+        ComposedGeneration = 0;
+        PublishedOutputGeneration = 0;
+    }
+}
+
+void VulkanGpu2DComposer::MarkFatal() noexcept
+{
+    LastComposeResult = GPU2DComposeResult::Fatal;
+}
+
+RendererOutput VulkanGpu2DComposer::GetComposedOutput() const
+{
+    const std::shared_ptr<VulkanGpu2DOutput> state = Output;
+    if (!state || !ComposedOutputValid)
+        return {};
+
+    const auto lock = state->Ring.LockPublication();
+    if (state->Ring.GetPublishedSlot() < 0)
+        return {};
+    const VulkanPresentedFrame& frame =
+        state->Slots[state->Ring.GetPublishedSlot()].Frame;
+    return RendererOutput::VulkanBuffer(
+        const_cast<VulkanPresentedFrame*>(&frame), frame.Width, frame.Height,
+        frame.Serial, frame.Epoch);
+}
+
+RendererOutputLease VulkanGpu2DComposer::AcquireComposedOutputLease()
+{
+    const std::shared_ptr<VulkanGpu2DOutput> state = Output;
+    if (!state || !ComposedOutputValid)
+        return {};
+
+    const auto lock = state->Ring.LockPublication();
+    const int slotIndex = state->Ring.GetPublishedSlot();
+    if (slotIndex < 0)
+        return {};
+
+    VulkanGpu2DOutput::Slot& slot = state->Slots[slotIndex];
+    auto* leaseCounter = state->Ring.AcquireLease(static_cast<u32>(slotIndex));
+    GPU2DNative::LogPresentedIdentity(
+        "Vulkan", slot.Frame.Generation, slot.Frame.Serial,
+        slot.Frame.Generation, slot.Frame.Epoch, static_cast<u32>(slotIndex));
+
+    // The lease captures `state`, not a raw pointer. That is what keeps a
+    // resource set alive across a resolution change while the presenter is
+    // still reading it.
+    return RendererOutputLease(
+        RendererOutput::VulkanBuffer(
+            &slot.Frame, slot.Frame.Width, slot.Frame.Height,
+            slot.Frame.Serial, slot.Frame.Epoch),
+        leaseCounter,
+        &RendererOutputRing::LeaseCounter::Release,
+        state);
+}
+
+
 } // namespace melonDS
 
 #endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN
