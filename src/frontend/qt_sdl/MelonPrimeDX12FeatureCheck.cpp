@@ -21,13 +21,19 @@ namespace MelonPrime::DX12FeatureCheck
 namespace
 {
 // What the last heavyweight admission attempt established, as opposed to what
-// it happened to observe. Only Unsupported and Admitted are answers about this
-// machine; Unknown means nothing durable has been learned yet.
+// it happened to observe. Unknown means nothing durable has been learned yet;
+// the other three are answers, and they are not interchangeable -- one of them
+// survives an explicit retry and one does not.
 enum class Admission
 {
     Unknown,
     Admitted,
-    Unsupported,
+    // The runtime is not installed, or the platform cannot run it. Permanent:
+    // nothing the user does in this process changes it.
+    HardUnsupported,
+    // The runtime is there, but the renderer failed to initialize against it.
+    // Sticky until the user explicitly asks for DX12 again.
+    RuntimeFailure,
 };
 
 std::mutex gProbeMutex;
@@ -42,6 +48,18 @@ bool gProbed = false;
 // device and cannot conflict with a live backend.
 bool PlatformEligibleLocked()
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    // Developer-only seam for the hard-unsupported regression test. A machine
+    // that has D3D12 cannot reach that state on its own, and "the runtime is
+    // not installed" is exactly what this models: eligibility is the only
+    // thing a missing runtime changes.
+    static const bool forceIneligible = [] {
+        const char* value = std::getenv("MELONPRIME_TEST_DX12_FORCE_HARD_UNSUPPORTED");
+        return value && value[0] != 0 && value[0] != '0';
+    }();
+    if (forceIneligible)
+        return false;
+#endif
     const auto& entry = melonDS::DX12::LoadEntryPoints();
     return entry.IsCoreReady() && entry.IsShaderCompilerReady();
 }
@@ -125,7 +143,9 @@ const Result& ProbeRuntimeAdmission()
         const bool hardUnsupported =
             !injectedTransientFailure && !PlatformEligibleLocked();
         gProbed = hardUnsupported;
-        gAdmission = hardUnsupported ? Admission::Unsupported : Admission::Unknown;
+        gAdmission = hardUnsupported
+            ? Admission::HardUnsupported
+            : Admission::Unknown;
 
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Error,
@@ -184,7 +204,8 @@ bool IsRuntimeAvailable()
     std::scoped_lock lock(gProbeMutex);
     switch (gAdmission)
     {
-    case Admission::Unsupported:
+    case Admission::HardUnsupported:
+    case Admission::RuntimeFailure:
         return false;
     case Admission::Admitted:
         return true;
@@ -192,6 +213,19 @@ bool IsRuntimeAvailable()
         break;
     }
     return PlatformEligibleLocked();
+}
+
+const char* AdmissionStateName()
+{
+    std::scoped_lock lock(gProbeMutex);
+    switch (gAdmission)
+    {
+    case Admission::Admitted:        return "Admitted";
+    case Admission::HardUnsupported: return "HardUnsupported";
+    case Admission::RuntimeFailure:  return "RuntimeFailure";
+    case Admission::Unknown:         break;
+    }
+    return "Unknown";
 }
 
 const std::string& UnavailableReason()
@@ -210,8 +244,13 @@ void ReportRuntimeFailure(std::string reason)
     // settings dialog stops offering DX12 until the user asks again. That is a
     // different thing from a probe that could not run, which is why this is the
     // one failure that does latch.
+    //
+    // A hard-unsupported answer outranks it. If the runtime is not installed at
+    // all, that is what the machine is, and a renderer failure on top of it
+    // must not downgrade the answer to something a retry could clear.
     gProbed = true;
-    gAdmission = Admission::Unsupported;
+    if (gAdmission != Admission::HardUnsupported)
+        gAdmission = Admission::RuntimeFailure;
 
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Error,
@@ -219,12 +258,20 @@ void ReportRuntimeFailure(std::string reason)
         diagnostic.c_str());
 }
 
-void ResetProbeForRetry()
+bool RequestExplicitRetry()
 {
     std::scoped_lock lock(gProbeMutex);
+    if (gAdmission != Admission::RuntimeFailure)
+        return false;
+
     gResult = {};
     gProbed = false;
     gAdmission = Admission::Unknown;
+
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Info,
+        "MelonPrime DX12 explicit retry: cleared latched runtime failure\n");
+    return true;
 }
 
 } // namespace MelonPrime::DX12FeatureCheck

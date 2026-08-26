@@ -40,6 +40,15 @@ void ReportRuntimeFailure(std::string)
     gVulkanRuntimeAvailable = false;
 }
 
+// NotifyRendererRequest() reaches this on an explicit user request. The stub
+// mirrors the production contract: an explicit retry makes the backend
+// selectable again, which is what the sticky-failure case below asserts is
+// *not* reachable without one.
+void ResetProbeForRetry()
+{
+    gVulkanRuntimeAvailable = true;
+}
+
 } // namespace MelonPrime::VulkanFeatureCheck
 
 namespace

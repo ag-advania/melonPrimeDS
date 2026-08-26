@@ -864,16 +864,16 @@ against the base commit rather than by timing.
 | frames-in-flight unchanged | DX12 compositor 3, Vulkan compositor 3, Vulkan renderer 2, `FramesInFlight` 3 / 2 — all identical to the base |
 | no readback added to a visible path | `CaptureBridge::ReadBlocks` is reachable only from `ReadNativeCapture`, itself reachable only from `SyncVRAMCapture` — the demand-driven path, as before |
 
-### Build — 4 of 7
+### Build — 7 of 7
 
 | Item | Status |
 |---|---|
 | Vulkan build gate | **met** — `MELONPRIME_FORCE_DISABLE_VULKAN=ON` configures ("Vulkan backend: disabled") and builds |
 | DX12 build gate | **met** — `MELONPRIME_FORCE_DISABLE_DX12=ON` configures ("DirectX 12 backend: disabled") and builds |
 | Windows | **met** |
-| Linux Vulkan | not run — no such machine here |
-| BSD Vulkan build | not run — same |
-| macOS Vulkan / MoltenVK | not run — same |
+| Linux Vulkan | **met** — Ubuntu workflow green on `develop_hud`, x86_64 and aarch64 |
+| BSD Vulkan build | **met** — BSD workflow green: FreeBSD, NetBSD and OpenBSD, all x86_64 |
+| macOS Vulkan / MoltenVK | **met** — macOS workflow green: x86_64, arm64 and the universal binary |
 | developer flags OFF, release-equivalent | **met** — configured with `MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF` and built |
 
 The gate builds were the ones previously written off as impossible. They are
@@ -886,7 +886,34 @@ then restored to the developer configuration and rebuilt; the cache now reads
 `MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON` with both force-disable flags `OFF`,
 and the full build with all suites passes.
 
-The three remaining rows need Linux, BSD and macOS hosts.
+The three platform rows were closed by running the repository's own CI on
+`develop_hud` (`gh workflow run <workflow>.yml --ref develop_hud --repo
+ag-advania/melonPrimeDS`), which is real host validation on real Linux,
+macOS and BSD machines rather than a cross-compile.
+
+They could not be closed earlier because all three workflows were failing on
+the audit gate before they ever reached a compiler — see the audit gap
+noted above. Once those audits were retargeted, every platform built clean:
+
+| Workflow | Jobs |
+|---|---|
+| Ubuntu | Audits, x86_64, aarch64, artifact assembly |
+| macOS | x86_64, arm64, Intel MoltenVK diagnostic, universal binary |
+| BSD | FreeBSD x86_64, NetBSD x86_64, OpenBSD x86_64, artifact assembly |
+
+The remaining annotations on those runs are pre-existing environment noise
+— a `.gitmodules` submodule warning, Homebrew tap trust, and an
+artifact-upload option in the release step — and none of them gate a job.
+
+Re-confirmed on the tree that closes REAUDIT-P2-002: Ubuntu and BSD green
+first time, macOS green on a re-run of the same commit. The first macOS
+attempt failed in the no-ROM MoltenVK smoke, which waits for presenter
+readiness on a paravirtual GPU inside a VM and timed out before
+`[Vulkan] presenter ready:` appeared. That step is flaky rather than a
+regression, and the reasoning is checkable rather than assumed: every
+source change in that range is inside `_WIN32 && MELONPRIME_ENABLE_DX12`
+or on a path the no-ROM smoke never reaches, and the same commit passed
+unchanged on the retry.
 
 ### Runtime — 8 of 8
 
@@ -903,15 +930,15 @@ The three remaining rows need Linux, BSD and macOS hosts.
 
 ### Summary
 
-30 of 33 met, 3 unrun. The 2026-08-26 re-audit reopened two of the Runtime
-rows -- renderer switch and low latency -- and both are now closed by
-REAUDIT-P1-001 and REAUDIT-P2-001 above, with the evidence recorded there.
-What remains is only the three builds that need hosts this machine does not
-have — **Linux, BSD and macOS**. `tools/linux-vm/` exists
-but is a VirtualBox harness driven from a macOS host, so it does not help from
-Windows.
+**33 of 33 met.**
 
-Everything else in §15 is met with evidence recorded above.
+The 2026-08-26 re-audit reopened two of the Runtime rows -- renderer switch and
+low latency -- and the push-review of `b71843c65` reopened the first of those a
+second time as REAUDIT-P2-002. All three findings are closed by
+REAUDIT-P1-001, REAUDIT-P2-001 and REAUDIT-P2-002, with the evidence recorded
+with each. The three platform build rows are closed by the repository's own CI
+on `develop_hud`: Ubuntu (x86_64, aarch64), macOS (x86_64, arm64, universal)
+and BSD (FreeBSD, NetBSD, OpenBSD) all green.
 
 The `Gpu2DComposer` item that was previously listed here as blocked is done.
 The blocker was mis-stated: §11.3 forbids *mixing* a descriptor-strategy change
@@ -1030,6 +1057,64 @@ The lesson is the boring one: run the gate the CI runs, not the subset the
 notes list. The full local set is now 15 Python audits, the shader source-sync
 check and 7 PowerShell audits.
 
+### REAUDIT-P2-002 -- explicit retry after a DX12 runtime failure
+
+A DX12 renderer-initialization failure latches the backend unavailable for the
+rest of the process. That is right for the transition that failed. What had
+never been demonstrated is that an explicit user re-selection clears it -- and
+the one piece of evidence offered for it was wrong.
+
+`c664e109c` read a switch-stress result as "later DX12 requests stay on
+Software, which is the sticky runtime-failure latch behaving as designed". The
+latch is real, but that run does not show it:
+`MelonPrimeRendererSwitchStress::Apply()` returned early when the config already
+held the requested renderer, and a DX12 failure leaves `3D.Renderer` set to DX12
+because only the emulation thread's local fell back. The driver never issued
+those requests, so nothing was being latched away. The property was untested,
+not demonstrated.
+
+**Three answers instead of two.** `HardUnsupported` means the runtime is not
+installed and nothing a user does changes that; `RuntimeFailure` means the
+runtime is there but the renderer did not come up. Only the second is
+clearable, and `ReportRuntimeFailure()` will not downgrade the first into it --
+otherwise a renderer failure on a machine with no D3D12 would make a permanent
+answer look retryable.
+
+**One place announces a request.**
+`VideoBackend::NotifyRendererRequest(renderer, origin)`. A `User` origin clears
+a latched `RuntimeFailure`; an `Automatic` origin does nothing, which is what
+keeps a failing backend from becoming a fail/reset/retry loop. It logs the
+origin, whether a latch cleared, and the resulting admission state.
+
+`VideoSettingsDialog::onChange3DRenderer` calls it, and that slot fires on a
+click including a click on the already-checked button -- which is exactly how a
+user retries a backend that failed. The dialog's own refresh no longer resets
+anything: refreshing a dialog is not a request to use a backend, and doing so
+silently re-enabled a radio button for something that had just failed.
+
+`DX12FeatureCheck::ResetProbeForRetry()` is gone. It had no callers left, and an
+unreachable retry API misdirects a reader the same way a stale comment does.
+
+**Making it testable was part of the fix.** The switch-stress driver announces
+through the same production function rather than around it, and in `User`
+origin no longer skips a repeat request. The smoke harness gained two verdict
+shapes it did not have -- `--expect-recovery` (degrade, then come back) and
+`--expect-unsupported` (never probe at all). Neither could be expressed by the
+existing pass/degrade modes, which is part of why this went unnoticed.
+
+| Test | Result |
+|---|---|
+| A: init failure, then explicit re-selection | **PASS** -- latch cleared once, admission re-probed `available=1`, `transition complete actual=4`, same process, no restart |
+| B: same failure, `Automatic` origin | **PASS** -- 0 latch clears, 0 recoveries; the latch holds |
+| C: Vulkan -> first DX12 (P1 regression) | **PASS** -- 4/4 switches reach DX12, 0 device losses |
+| D: hard unsupported, 8 explicit requests | **PASS** -- **0 device probes attempted**, 0 latch clears, DX12 never activated |
+| E: Vulkan/DX12/Software cycle, 19 transitions | **PASS** -- 0 device losses, 0 fallbacks, 1 probe for the whole process |
+
+Test D is the one worth reading twice. On a machine without the runtime, passive
+eligibility alone rejects DX12, so the heavy probe is never attempted no matter
+how many times the user asks. `MELONPRIME_TEST_DX12_FORCE_HARD_UNSUPPORTED`
+models that machine, which one with D3D12 cannot otherwise reach.
+
 ### REAUDIT-P3-001 -- a comment pointing the wrong way
 
 `VulkanGpu2DOutput`'s header still said the renderer records the compose
@@ -1040,6 +1125,8 @@ point was to write ownership down, and a stale ownership note points the next
 implementer back at Renderer3D.
 
 ## What is left
+
+### The rest
 
 Phase 2 is complete on both backends: the output publisher, capture bridge,
 GPU2D compositor and pipeline repository are all separate modules, and what
@@ -1063,9 +1150,10 @@ problem:
   into a responsibility move, and each module header records the constraint so
   the next reader does not mistake it for an oversight.
 
-Phase 3 items the audit rated LOW remain open: `VulkanDevice` budget and
-diagnostics (VK-SRP-002), and a `DX12SurfacePresenter` swapchain/layer split
-(DX-SRP-004), which is not needed yet.
+Phase 3 items the audit rated LOW remain open by its own reckoning:
+`VulkanDevice` budget and diagnostics (VK-SRP-002), and a
+`DX12SurfacePresenter` swapchain/layer split (DX-SRP-004), which is not needed
+yet.
 
 ## Rules for anyone continuing this
 
@@ -1089,6 +1177,14 @@ diagnostics (VK-SRP-002), and a `DX12SurfacePresenter` swapchain/layer split
   DS frame on the emulation thread; `std::function` would put an allocation and
   an indirect call in that path.
 - Structure and behaviour do not change in the same commit.
+- A verdict the test harness cannot express is a verdict that will not be
+  checked. `--expect-recovery` and `--expect-unsupported` exist because
+  "degrade then come back" and "never probe at all" had no shape in the
+  harness, and a property with no shape is one nobody notices is untested.
+- When a run seems to confirm something, check that it actually exercised it.
+  The switch-stress driver skipped requests whose target was already the
+  configured renderer, which is exactly the case a post-failure retry is, and
+  that silence was read as evidence.
 - Before claiming something is blocked, quote the rule that blocks it and check
   that it says what you remember. Several "blockers" in this document's history
   were mis-readings, the last of them the one that supposedly ruled out this

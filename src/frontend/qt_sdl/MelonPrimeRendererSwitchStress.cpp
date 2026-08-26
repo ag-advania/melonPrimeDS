@@ -43,6 +43,30 @@ namespace
 
 using melonDS::Platform::Log;
 using melonDS::Platform::LogLevel;
+using RequestOrigin = VideoBackend::RendererRequestOrigin;
+
+// Which kind of request the cycle emulates. "user" is the default because a
+// settings-dialog click is what this tool stands in for; "automatic" drives the
+// same transitions without announcing a request, for checking that nothing on
+// that path clears a latch.
+RequestOrigin OriginFromEnvironment()
+{
+    const QByteArray raw = qgetenv("MELONPRIME_RENDERER_SWITCH_STRESS_ORIGIN");
+    if (raw.isEmpty())
+        return RequestOrigin::User;
+
+    const QString value = QString::fromUtf8(raw).trimmed().toLower();
+    if (value == QStringLiteral("automatic"))
+        return RequestOrigin::Automatic;
+    if (value != QStringLiteral("user"))
+    {
+        Log(LogLevel::Warn,
+            "[switch-stress] MELONPRIME_RENDERER_SWITCH_STRESS_ORIGIN=\"%s\" is not "
+            "\"user\" or \"automatic\"; using user\n",
+            raw.constData());
+    }
+    return RequestOrigin::User;
+}
 
 int EnvInt(const char* name, int fallback, int minimum)
 {
@@ -67,9 +91,11 @@ int EnvInt(const char* name, int fallback, int minimum)
 class Driver : public QObject
 {
 public:
-    Driver(MainWindow* window, std::vector<int> sequence, int iterations, int intervalMs)
+    Driver(MainWindow* window, std::vector<int> sequence, int iterations, int intervalMs,
+           RequestOrigin origin)
         : QObject(window)
         , Window(window)
+        , Origin(origin)
         , Sequence(std::move(sequence))
         , Iterations(iterations)
     {
@@ -122,7 +148,12 @@ private:
     {
         Config::Table cfg = Config::GetGlobalTable();
         const int previous = cfg.GetInt("3D.Renderer");
-        if (previous == renderer)
+        // A user can click the button that is already checked, and after a
+        // failed transition that is exactly how they retry: the config still
+        // names the backend that failed while the emulation thread fell back to
+        // Software. Skipping it in User origin would make that recovery
+        // untestable, which is how it went untested.
+        if (previous == renderer && Origin != RequestOrigin::User)
             return;
 
         // glchange is what tells onUpdateVideoSettings to tear the screen panel
@@ -131,6 +162,13 @@ private:
         // a shortcut around it.
         const bool useGL = cfg.GetBool("Screen.UseGL");
         const auto before = VideoBackend::ResolvePresentationBackend(useGL, previous);
+
+        // The same announcement VideoSettingsDialog::onChange3DRenderer makes,
+        // through the same production function. In User origin this is what
+        // clears a latched runtime failure; in Automatic origin it is a no-op,
+        // which is how the "an automatic path must never clear a latch" half of
+        // the contract gets exercised.
+        VideoBackend::NotifyRendererRequest(renderer, Origin);
 
         cfg.SetInt("3D.Renderer", renderer);
 
@@ -154,6 +192,7 @@ private:
     }
 
     QPointer<MainWindow> Window;
+    RequestOrigin Origin = RequestOrigin::User;
     QTimer* Timer = nullptr;
     std::vector<int> Sequence;
     int Iterations = 0;
@@ -211,7 +250,12 @@ void ArmFromEnvironment(MainWindow* window)
     Config::Table cfg = Config::GetGlobalTable();
     const int original = cfg.GetInt("3D.Renderer");
 
-    auto* driver = new Driver(window, std::move(sequence), iterations, intervalMs);
+    const RequestOrigin origin = OriginFromEnvironment();
+    Log(LogLevel::Info, "[switch-stress] request origin=%s\n",
+        origin == RequestOrigin::User ? "user" : "automatic");
+
+    auto* driver = new Driver(
+        window, std::move(sequence), iterations, intervalMs, origin);
     driver->Start(original);
 }
 
