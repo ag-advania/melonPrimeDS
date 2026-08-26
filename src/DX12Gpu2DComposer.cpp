@@ -1742,6 +1742,13 @@ bool DX12Gpu2DComposer::RecreateOutput(
             NextOutputResourceGeneration, epoch))
         return false;
 
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Info,
+        "%s compositor output created %ux%u resourceGeneration=%llu epoch=%llu\n",
+        "DX12", width, height,
+        static_cast<unsigned long long>(NextOutputResourceGeneration),
+        static_cast<unsigned long long>(epoch));
+
     NextOutputResourceGeneration++;
     Output = std::move(candidate);
 
