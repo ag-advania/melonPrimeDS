@@ -66,7 +66,15 @@ static constexpr int kRadarArtSize = 76;
 // Asset, icon, radar-frame, text, and outline caches/helpers.
 #include "MelonPrimeHudRenderAssets.inc"
 
-// Battle/match state, frame runtime helpers, hide rules, and NoHUD patching.
+// Render-plan types, painter transform, and text/layout caches.
+// Included before the sampling fragment: HudFrameOwnedState aggregates both
+// halves, so the plan types have to be complete first.
+#include "MelonPrimeHudRenderPlan.inc"
+
+// Game-mode semantics, match cache, and NDS RAM -> snapshot sampling.
+#include "MelonPrimeHudRuntimeSample.inc"
+
+// Runtime-sourced draw helpers, hide rules, radar keying, and NoHUD patching.
 #include "MelonPrimeHudRenderRuntime.inc"
 
 // Primitive and element drawing: gauges, HP, weapons, inventory, crosshair.
