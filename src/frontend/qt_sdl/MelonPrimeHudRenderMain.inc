@@ -217,7 +217,7 @@ HOT_FUNCTION QRect CustomHud_Render(
         ClearPreviousCrosshairDirty(c.crosshair);
     }
 
-return CurrentHudDirtyRect(xf);
+    return CurrentHudDirtyRect(xf);
 }
 
 // =========================================================================

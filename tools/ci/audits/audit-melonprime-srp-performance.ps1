@@ -332,7 +332,18 @@ $runtimeDrawForbiddenPatterns = @(
     '\bRead16\s*\(',
     '\bRead32\s*\(',
     '\bComputeMatchStatusState\s*\(',
-    'melonDS::u8\s*\*\s*ram',
+
+    # Any explicit raw MainRAM pointer declaration, regardless of variable name.
+    '(?:const\s+)?melonDS::u8\s*\*\s*\w+',
+
+    # RuntimeDraw receives HudRuntimeState, but must never dereference its raw
+    # RAM member itself. Sampling access stays behind RuntimeSample helpers.
+    '(?:\.|->)\s*ram\b',
+
+    # Do not reacquire emulated MainRAM through NDS either.
+    '\bMainRAM\b',
+
+    # Legacy nullable state fallback is forbidden.
     'const\s+HudRuntimeState\s*\*\s*\w+\s*=\s*nullptr'
 )
 foreach ($pattern in $runtimeDrawForbiddenPatterns) {
