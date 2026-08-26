@@ -1197,9 +1197,29 @@ to still offer all eight operations, so the check cannot be satisfied by
 deleting the call sites. Reads of `Gpu2D.Output` stay legal, because forbidding
 them would forbid the shared descriptor table.
 
-It was proved to fire rather than assumed to: each of the seven forbidden
-shapes was injected into `GPU3D_Vulkan.cpp` in turn and rejected, and the
-restored tree passes. An audit nobody has watched fail is a comment.
+It was proved to fire rather than assumed to: each forbidden shape was injected
+into `GPU3D_Vulkan.cpp` in turn and rejected, and the restored tree passes. An
+audit nobody has watched fail is a comment.
+
+That first version had two holes, found by a push review, and the way it failed
+is worth keeping. Both let a future regression through while the audit stayed
+green:
+
+- **Multiline assignment.** The patterns ended in `[^=]`, which needs one more
+  character on the same line. `Gpu2D.Output =` followed by `candidate;` on the
+  next line matched nothing -- not an obfuscation, just how a formatter breaks a
+  long line. Now `(?!=)`, which matches an `=` at end of line and still rejects
+  `==` and `!=`.
+- **Comment-only presence.** "The compositor must still offer these operations"
+  was a search for the name anywhere in the header, so a comment mentioning
+  `RecreateOutput` satisfied it while the declaration was gone. Now it matches
+  declaration shape, and the generation counter is checked as a member.
+
+The second hole is the sharper lesson: the check was written *to prevent*
+exactly the substitution that satisfied it. Watching an audit fail is necessary
+but not sufficient -- it has to fail for the reason you think. The negative
+suite is now 20 cases, including both multiline bypasses, both comment-only
+bypasses per header, and two equality reads that must stay legal.
 
 ### Evidence
 
@@ -1214,6 +1234,23 @@ restored tree passes. An audit nobody has watched fail is a comment.
 The DX12 admission regressions still pass unchanged: A explicit retry recovers,
 B `Automatic` origin stays sticky, C Vulkan -> first DX12 activates, D
 `HardUnsupported` attempts 0 device probes.
+
+Live scale transitions were added afterwards, because a process per scale never
+releases and recreates an output set inside a living renderer -- the one path
+the ownership move actually changed. Eight live changes per cycle, through the
+same slot the resolution combo reaches:
+
+| Cycle | Vulkan | DX12 |
+|---|---|---|
+| 4 <-> 5 | PASS, generations 1..9 | PASS, generations 1..9 |
+| 8 <-> 9 | PASS, generations 1..9 | PASS, generations 1..9 |
+| 1 <-> 4 | PASS | - |
+
+with no device loss, fallback or runtime failure. The generation check is per
+composer instance: the counter lives on the compositor, so a renderer torn down
+and rebuilt starts a fresh one at 1, and everything that had cached descriptors
+against the old sets went away with it. The first version of that check compared
+across instances and flagged a legitimate restart.
 
 One note on the scale sweep: 5x and 9x first failed at 15 seconds with window
 actions, and passed at 40 seconds without them. Those scales compile more
@@ -1300,7 +1337,13 @@ yet.
   its own state. A declared owner whose state someone else writes is half an
   owner, and the compositors were that for three commits before anyone looked.
 - An audit nobody has watched fail is a comment. Inject each forbidden shape
-  and confirm it is rejected before claiming a ratchet exists.
+  and confirm it is rejected before claiming a ratchet exists -- and check it
+  fails for the reason you think. The ownership ratchet's operation-presence
+  check passed on a comment that merely named the operation, which is the exact
+  substitution it was written to prevent.
+- A textual ratchet must survive ordinary formatting. `[^=]` after an assignment
+  needs another character on the same line, so a wrapped line defeats it; `(?!=)`
+  does not. Write the negative test with the line already broken.
 - Before claiming something is blocked, quote the rule that blocks it and check
   that it says what you remember. Several "blockers" in this document's history
   were mis-readings, the last of them the one that supposedly ruled out this
