@@ -134,7 +134,7 @@ public:
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
     [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
     {
-        return LastComposeResult;
+        return Gpu2D.LastComposeResult;
     }
     // Materialize only the requested LCDC capture blocks when the emulation
     // core actually reads them.  The normal native frame path keeps this
@@ -154,7 +154,7 @@ public:
         GPU2DNative::HighResCaptureFallbackReason reason) noexcept;
     [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
     {
-        return PublishedOutputGeneration;
+        return Gpu2D.PublishedOutputGeneration;
     }
 
     // Internal resolution, not 256x192. This is the mechanism by which high
@@ -426,6 +426,9 @@ private:
     void SetRuntimeFailure(std::string reason);
 
     [[nodiscard]] u32 NativeGPU2DWorkgroupWidth() const noexcept;
+    // Builds the borrow set the compositor composes against. Rebuilt per call
+    // so it can never hold a stale handle across a resolution change.
+    [[nodiscard]] VulkanGpu2DComposeContext MakeComposeContext() noexcept;
     [[nodiscard]] u32 NativeGPU2DPipelineIndex() const noexcept;
     bool BuildPipeline(u32 pipelineIndex);
 
@@ -445,22 +448,6 @@ private:
         VkImageView textureView, VkSampler sampler);
     void FillMetaUniform(MetaUniform& meta, u32 numVariants, u32 numPolygons) const;
 
-    // Records a compute->compute dependency over `buffers`. Kept explicit
-    // rather than folded into a global VkMemoryBarrier so every dependency in
-    // the frame names the resource it is about.
-    void BufferBarrier(
-        VkCommandBuffer cmd,
-        const VkBuffer* buffers, u32 count,
-        VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
-        VkPipelineStageFlags dstStage, VkAccessFlags dstAccess) const;
-    void BufferBarrier(
-        VkCommandBuffer cmd,
-        const VkBuffer* buffers,
-        const VkAccessFlags* srcAccess,
-        const VkAccessFlags* dstAccess,
-        u32 count,
-        VkPipelineStageFlags srcStage,
-        VkPipelineStageFlags dstStage) const;
     void RecordSharedScratchReuseBarrier(VkCommandBuffer cmd) const;
 
     // CPU-side span setup, transcribed from the OpenGL compute renderer.
@@ -504,15 +491,9 @@ private:
     // feature components, and a component owning it would make the other one
     // reach sideways into it.
     Vk::FrameRing DemandReadbackFrames;
-    // The compositor records into its own command buffers and fences
-    // rather than sharing the rasterizer's. It has to: the structured 2D planes
-    // are only complete after all 192 scanlines have been drawn, which is long
-    // after RenderFrame() closed and submitted its command buffer, and reusing
-    // the rasterizer's slot would reset the fence GetLine()'s capture readback
-    // is still waiting on. One frame in flight, for the same reason the
-    // rasterizer keeps one. Its three output slots additionally carry their own
-    // structured input, so VBlank can submit without waiting for the prior slot.
-    Vk::FrameRing ComposeFrames;
+    // The GPU2D compositor: its command ring, its resource set, and the
+    // publication state that goes with them.
+    VulkanGpu2DComposer Gpu2D;
     Vk::DescriptorLayouts Layouts;
     Vk::DescriptorPool Descriptors;
     // CPU-written upload memory is slot-local and is only reset after the
@@ -570,11 +551,6 @@ private:
     // -- is Provenance.
     VulkanCaptureBridge Capture;
 
-    // The GPU2D compositor's resources: its presentation slots, work slots and
-    // publication ring. Resolution-dependent, so it is created and destroyed
-    // with the rest of the scale-sized set. Held by shared_ptr because a
-    // presenter lease can outlive a renderer transition.
-    std::shared_ptr<VulkanGpu2DOutput> ComposedOutput;
 
     // --- CPU-side scratch, mirroring the OpenGL compute renderer -----------
     std::array<Variant, MaxVariants> Variants{};
@@ -612,7 +588,6 @@ private:
     int ShaderStepIdx = 0;
     bool RuntimeFailed = false;
     std::string RuntimeFailureReason;
-    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
     bool Initialized = false;
     // FinalFB is recreated on every resolution change and starts UNDEFINED;
     // the placeholder and clear-bitmap images are created once for the whole
@@ -664,13 +639,6 @@ private:
     // must not sample undefined memory and call it 3D.
     bool FinalFBHasContent = false;
 
-    // --- composed output ---------------------------------------------------
-    // Published only after the compositor submission has been accepted. GPU
-    // completion is ordered by the shared queue; the presenter lease owns the
-    // slot until its copy command retires.
-    bool ComposedOutputValid = false;
-    u64 ComposedGeneration = 0;
-    u64 PublishedOutputGeneration = 0;
     // Semantic owner of native Display Capture provenance: the epoch, the last
     // recorded semantic frame, the submission serial and the completion value,
     // plus the high-resolution sidecar tracker. Backend-neutral, because none

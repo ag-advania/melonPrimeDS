@@ -851,6 +851,60 @@ void FrameRing::WaitIdle()
     }
 }
 
+void BufferBarrier(
+    const VulkanDevice& device,
+    VkCommandBuffer cmd,
+    const VkBuffer* buffers,
+    const VkAccessFlags* srcAccess,
+    const VkAccessFlags* dstAccess,
+    u32 count,
+    VkPipelineStageFlags srcStage,
+    VkPipelineStageFlags dstStage)
+{
+    if (count == 0 || !buffers || !srcAccess || !dstAccess)
+        return;
+
+    VkBufferMemoryBarrier barriers[8]{};
+    if (count > 8) count = 8;
+
+    for (u32 i = 0; i < count; i++)
+    {
+        barriers[i].sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barriers[i].srcAccessMask = srcAccess[i];
+        barriers[i].dstAccessMask = dstAccess[i];
+        // Single queue family throughout: the device was created with one
+        // universal queue wherever possible, so no ownership transfer is
+        // needed and both indices stay IGNORED.
+        barriers[i].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[i].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barriers[i].buffer = buffers[i];
+        barriers[i].offset = 0;
+        barriers[i].size = VK_WHOLE_SIZE;
+    }
+
+    device.Fns().CmdPipelineBarrier(
+        cmd, srcStage, dstStage, 0, 0, nullptr, count, barriers, 0, nullptr);
+}
+
+void BufferBarrier(
+    const VulkanDevice& device,
+    VkCommandBuffer cmd,
+    const VkBuffer* buffers, u32 count,
+    VkPipelineStageFlags srcStage, VkAccessFlags srcAccess,
+    VkPipelineStageFlags dstStage, VkAccessFlags dstAccess)
+{
+    VkAccessFlags srcAccesses[8]{};
+    VkAccessFlags dstAccesses[8]{};
+    const u32 limitedCount = std::min<u32>(count, 8u);
+    for (u32 i = 0; i < limitedCount; ++i)
+    {
+        srcAccesses[i] = srcAccess;
+        dstAccesses[i] = dstAccess;
+    }
+    BufferBarrier(device, cmd, buffers, srcAccesses, dstAccesses, limitedCount,
+        srcStage, dstStage);
+}
+
 } // namespace melonDS::Vk
 
 #endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN

@@ -22,17 +22,23 @@
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
 
 #include <array>
+#include <memory>
 
 #include "GPU2DNative.h"
+#include "GPU3D.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "RendererOutputRing.h"
 #include "VulkanCommon.h"
 #include "VulkanDevice.h"
 #include "VulkanMemory.h"
 #include "VulkanPresentedFrame.h"
+#include "VulkanSync.h"
 
 namespace melonDS
 {
+
+class VulkanCaptureBridge;
+class CaptureProvenanceState;
 
 // Buffer layout the GPU2D compositor consumes. Declared here rather than in the
 // renderer's translation unit because these sizes describe the compositor's own
@@ -143,6 +149,133 @@ public:
     // against the same class.
     RendererOutputRing Ring{FramesInFlight};
     u64 ResourceGeneration = 0;
+};
+
+// The GPU2D compositor on the Vulkan backend.
+//
+// Owns what outlives a resolution change: its own command ring, the resource
+// set above, and the publication state the renderer reads when it decides
+// whether a VBlank needs a new compose.
+//
+// It does not own the compute pipelines. On this backend they are entries in
+// one shader-step-indexed array shared with the rasterizer, and splitting that
+// array would change how pipelines are built and compiled -- a mechanism
+// change, which does not belong in a responsibility move. The renderer hands
+// the four handles in instead.
+//
+// Members are public because this is a resource owner, not an abstraction.
+// Everything the compose passes read from outside the compositor.
+//
+// All of it is borrowed and non-owning, rebuilt by the renderer for each call.
+// Spelling it out is the point: it is the whole contract between the 3D
+// rasterizer and the GPU2D compositor, and FinalFB in particular is read-only
+// here -- the compositor samples the finished 3D image and never writes it.
+//
+// The two callbacks are plain function pointers rather than std::function:
+// this runs once per DS frame on the emulation thread and must not allocate.
+struct VulkanGpu2DComposeContext
+{
+    const VulkanDevice* Device = nullptr;
+    VkPipelineLayout PipelineLayout = VK_NULL_HANDLE;
+    Vk::DescriptorPool* Descriptors = nullptr;
+
+    // The three pipelines a compose dispatches. Looked up by the renderer,
+    // which owns the shader-step-indexed array they live in.
+    VkPipeline Compositor = VK_NULL_HANDLE;
+    VkPipeline CaptureSidecar = VK_NULL_HANDLE;
+    VkPipeline Native = VK_NULL_HANDLE;
+
+    // The 3D rasterizer's finished image, read-only to the compositor. A
+    // pointer rather than a handle because the compose records its layout
+    // transition.
+    Vk::Image* FinalFB = nullptr;
+    // Its tail is the persistent GPU LCDC capture mirror.
+    Vk::Buffer* BlendState = nullptr;
+
+    VulkanCaptureBridge* Capture = nullptr;
+    CaptureProvenanceState* Provenance = nullptr;
+    GPU2DNative::HighResCaptureProvenanceTracker* HighResCapture = nullptr;
+
+    int ScaleFactor = 0;
+    int ScreenWidth = 0;
+    int ScreenHeight = 0;
+    u32 NativeWorkgroupWidth = 0;
+
+    // False until the shader-compile steps have all run.
+    bool ShadersReady = false;
+    // The renderer has already latched a fatal failure; compose must not run.
+    bool RendererFailed = false;
+    // The 3D frame was aborted, so FinalFB holds nothing for this frame.
+    bool AbortFrame = false;
+    bool FinalFBHasContent = false;
+    bool Initialized = false;
+
+    // Latch a runtime failure on the renderer. Same semantics as calling it
+    // directly: first failure wins, it logs, and it marks the compose result
+    // fatal.
+    void (*Fail)(void* user, const char* reason) = nullptr;
+    // Writes one set-0 allocation. The set layout and pool are the
+    // rasterizer's, and slot 0 is bound for its whole command buffer, so the
+    // renderer owns the write.
+    bool (*WriteDescriptorSet)(
+        void* user, u32 frameIndex, u32 slot,
+        VkBuffer presentationOutput, VkBuffer structuredInput,
+        VkImageView directOutputTop, VkImageView directOutputBottom) = nullptr;
+    void* User = nullptr;
+};
+
+class VulkanGpu2DComposer
+{
+public:
+    // Mirrors the renderer's set-0 slot assignment: the native logical Stage A
+    // writes the structured contract, the compositor writes the composed
+    // buffer, and keeping them apart stops a Stage B descriptor update from
+    // changing a set Stage A is still using.
+    static constexpr u32 CompositorSetSlot = 1;
+    static constexpr u32 NativeLogicalSetSlot = 2;
+    static constexpr u32 FramesInFlight = VulkanGpu2DOutput::FramesInFlight;
+
+    // Records and submits one composed frame. Structured takes the software
+    // engines' 2D planes; native takes the GPU2D producer's packed frame and
+    // runs Stage A itself.
+    bool ComposeStructuredOutput(
+        const VulkanGpu2DComposeContext& ctx,
+        const std::array<const u32*, 14>& planes,
+        const std::array<const u32*, 2>& lineMeta,
+        const u32* captureCommands,
+        const StructuredComposition::ScreenRoutingView& screenRouting,
+        u64 generation,
+        const StructuredComposition::GenerationState& contentGeneration);
+    bool ComposeNativeGPU2D(
+        const VulkanGpu2DComposeContext& ctx,
+        const GPU2DNative::FrameInput& input,
+        u64 generation,
+        bool finalFBValid,
+        const u32* expectedTop,
+        const u32* expectedBottom);
+    [[nodiscard]] bool CanComposeNativeGPU2D(
+        const VulkanGpu2DComposeContext& ctx) const noexcept;
+
+    // The compositor records into its own command buffers and fences rather
+    // than sharing the rasterizer's. It has to: the structured 2D planes are
+    // only complete after all 192 scanlines have been drawn, which is long
+    // after RenderFrame() closed and submitted its command buffer, and reusing
+    // the rasterizer's slot would reset the fence GetLine()'s capture readback
+    // is still waiting on. One frame in flight, for the same reason the
+    // rasterizer keeps one. Its three output slots additionally carry their own
+    // structured input, so VBlank can submit without waiting for the prior slot.
+    Vk::FrameRing Frames;
+
+    // Recreated per resolution, so it is held by pointer.
+    std::shared_ptr<VulkanGpu2DOutput> Output;
+
+    // Published only after the compositor submission has been accepted. GPU
+    // completion is ordered by the shared queue; the presenter lease owns the
+    // slot until its copy command retires.
+    bool ComposedOutputValid = false;
+    u64 ComposedGeneration = 0;
+    u64 PublishedOutputGeneration = 0;
+    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
 };
 
 } // namespace melonDS

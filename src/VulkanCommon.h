@@ -199,6 +199,12 @@ std::string FormatVendor(u32 vendorId);
     return (value / alignment) * alignment;
 }
 
+// Small arithmetic shared by every compute dispatch in the backend.
+constexpr u32 DivRoundUp(u32 value, u32 divisor) noexcept
+{
+    return (value + divisor - 1) / divisor;
+}
+
 } // namespace melonDS::Vk
 
 #endif // MELONPRIME_DS && MELONPRIME_ENABLE_VULKAN
