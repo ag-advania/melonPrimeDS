@@ -1252,6 +1252,25 @@ and rebuilt starts a fresh one at 1, and everything that had cached descriptors
 against the old sets went away with it. The first version of that check compared
 across instances and flagged a legitimate restart.
 
+That test then failed its own review, in the way worth recording. It counted
+scheduled steps rather than applied ones, so cycling `4,4` from a 4x start armed
+the driver, logged eight steps, applied nothing, and passed -- a live-scale test
+that never changed scale. The step log was written before the change was
+attempted, `ApplyScale` returned void, and a single `resourceGeneration=1`
+satisfied the generation check.
+
+`ApplyScale` now returns Applied / NoOp / Failed, logs the outcome after the
+fact, and the cycle ends with a tally the harness reads as the authority:
+
+    [scale-stress] complete: requested=8 applied=7 noop=1 failed=0
+
+Real runs now reconcile rather than being asserted: eight requests, one leading
+no-op because the first element equals the starting scale, seven applied, and
+generations 1..9 -- the initial creation plus seven changes plus the restore.
+Ten verdict shapes were checked against the parser, including the ones that must
+still pass: a leading no-op, and a mid-run renderer restart whose generations
+legitimately begin again at 1.
+
 One note on the scale sweep: 5x and 9x first failed at 15 seconds with window
 actions, and passed at 40 seconds without them. Those scales compile more
 pipeline variants from a cold cache, and the savestate injection had not landed
@@ -1344,6 +1363,10 @@ yet.
 - A textual ratchet must survive ordinary formatting. `[^=]` after an assignment
   needs another character on the same line, so a wrapped line defeats it; `(?!=)`
   does not. Write the negative test with the line already broken.
+- A test proves what it counts, not what it is named after. The scale cycle
+  counted scheduled steps and called them applied changes, so a run that
+  changed nothing passed. Count the outcome the operation reports, and make the
+  operation report one.
 - Before claiming something is blocked, quote the rule that blocks it and check
   that it says what you remember. Several "blockers" in this document's history
   were mis-readings, the last of them the one that supposedly ruled out this
