@@ -165,6 +165,204 @@ foreach ($composerHeader in $composerHeaders) {
 }
 
 
+# =============================================================================
+#  MelonPrime SRP ownership ratchets (MP-SRP-001..004)
+#
+#  These are grep ratchets, not a C++ parser. Rules A-C are shaped so a false
+#  positive needs someone to write the banned name in the banned file, so they
+#  hard-fail. Rule D cannot be decided by grep and only prints for review.
+# =============================================================================
+
+# --- Rule A: ARM9 instruction patching left MelonPrimeGameSettings ----------
+#
+# Aim smoothing is an ARM9 instruction patch, not a game setting. It lives in
+# MelonPrimePatchAimSmoothing.cpp with the other patch modules. Game settings
+# still write RAM (ApplyUnlockHuntersMaps and friends), so this bans the patch
+# vocabulary rather than ARM9 writes in general.
+$gameSettings = Join-Path $qtSdl "MelonPrimeGameSettings.cpp"
+$gameSettingsHeader = Join-Path $qtSdl "MelonPrimeGameSettings.h"
+foreach ($settingsFile in @($gameSettings, $gameSettingsHeader)) {
+    if (-not (Test-Path -LiteralPath $settingsFile)) { continue }
+    foreach ($line in (Get-MatchLines 'aimPatch|ApplyAimSmoothingPatch|JUMP_INSTR' $settingsFile)) {
+        Add-Error ("ARM9 instruction patching belongs in a patch module, not in " +
+            "game settings -- see MelonPrimePatchAimSmoothing: $line")
+    }
+}
+
+# And the patch module has to actually exist, so the rule above cannot be
+# satisfied by deleting the feature.
+$aimSmoothingHeader = Join-Path $qtSdl "MelonPrimePatchAimSmoothing.h"
+if ((Get-MatchLines '^\s*void\s+AimSmoothing_ApplyOrRestore\s*\(' $aimSmoothingHeader).Count -eq 0) {
+    Add-Error ("AimSmoothing_ApplyOrRestore() is not declared in " +
+        "src/frontend/qt_sdl/MelonPrimePatchAimSmoothing.h")
+}
+
+# --- Rule B: the Custom HUD render header stays a render header -------------
+#
+# MelonPrimeHudRender.h used to carry the editor, the native HUD patch
+# lifecycle, radar preprocessing and the developer harness as well, which drags
+# Qt event types and patch internals into every renderer front-end. Each group
+# now has its own header; this stops them draining back.
+$hudRenderHeader = Join-Path $qtSdl "MelonPrimeHudRender.h"
+
+# Per function, not per group: a group-wide regex passes as long as one member
+# of the group is still declared, which lets the other members quietly move back
+# into the render header.
+$hudApiOwners = [ordered]@{
+    'MelonPrimeHudEdit.h' = @(
+        'CustomHud_EnterEditMode', 'CustomHud_ExitEditMode', 'CustomHud_IsEditMode',
+        'CustomHud_GetOnScreenEditStyle', 'CustomHud_IsCrosshairElement',
+        'CustomHud_UpdateEditContext', 'CustomHud_EditMousePress',
+        'CustomHud_EditMouseMove', 'CustomHud_EditMouseRelease',
+        'CustomHud_EditMouseWheel', 'CustomHud_SetEditSelectionCallback',
+        'CustomHud_GetSelectedElement')
+    'MelonPrimeHudPatchLifecycle.h' = @(
+        'CustomHud_IsHelmetLayerHideConfigured', 'CustomHud_ClampHelmetLayersPreFrame',
+        'CustomHud_EnsurePatchRestored', 'CustomHud_ResetPatchState',
+        'CustomHud_ReconcilePatchAfterSavestateLoad')
+    'MelonPrimeHudRadar.h' = @(
+        'CustomHud_PrepareRadarColorKeySource', 'CustomHud_ResolveRadarColorKeyRadius')
+    'MelonPrimeHudRuntime.h' = @(
+        'CustomHud_ShouldHideForGameplayState', 'CustomHud_ShouldDrawRadarOverlay',
+        'CustomHud_GetVisualGeneration', 'CustomHud_GetVisualGameFrame',
+        'CustomHud_OnMatchJoin')
+    'MelonPrimeHudGoldenHarness.h' = @('CustomHud_RunGoldenHarness')
+}
+foreach ($owner in $hudApiOwners.Keys) {
+    $ownerPath = Join-Path $qtSdl $owner
+    if (-not (Test-Path -LiteralPath $ownerPath)) {
+        Add-Error "Custom HUD API header $owner is missing"
+        continue
+    }
+    foreach ($api in $hudApiOwners[$owner]) {
+        $pattern = "\b$api\s*\("
+        foreach ($line in (Get-MatchLines $pattern $hudRenderHeader)) {
+            Add-Error ("MelonPrimeHudRender.h is the render entry point; " +
+                "$api belongs in ${owner}: $line")
+        }
+        # The other half: the owner must actually declare it, so the ban above
+        # cannot be satisfied by deleting the API instead of moving it.
+        if ((Get-MatchLines $pattern $ownerPath).Count -eq 0) {
+            Add-Error "$owner no longer declares $api"
+        }
+    }
+}
+
+# Neither may the render header pull the split headers back in and re-export
+# them, which would restore the include coupling this split removed.
+foreach ($line in (Get-MatchLines '#include\s+"MelonPrimeHud(Edit|PatchLifecycle|Radar|Runtime|GoldenHarness)\.h"' $hudRenderHeader)) {
+    Add-Error ("MelonPrimeHudRender.h must not re-export the split HUD headers; " +
+        "consumers include what they call: $line")
+}
+
+# --- Rule C: MelonPrimeCore runtime state stays private ---------------------
+#
+# The emulation thread owns these. A public field lets Screen.cpp, InputConfig
+# or EmuThread mutate emulation state directly and the ThreadBridge stops being
+# the single GUI/Emu boundary. This tracks the access specifier inside the class
+# body, which is what "public" actually means here -- a name search alone would
+# fire on the member's own comment.
+$corePath = Join-Path $qtSdl "MelonPrime.h"
+$ownedRuntimeFields = 'isCursorMode|isStylusMode|m_snapTapMode|isFastForward|screenSyncMode'
+$coreLines = [System.IO.File]::ReadAllLines($corePath)
+$inCore = $false
+$access = 'private'
+$depth = 0
+$sawPrivateField = $false
+for ($i = 0; $i -lt $coreLines.Length; $i++) {
+    $line = $coreLines[$i]
+    if (-not $inCore) {
+        if ($line -match '^\s*class\s+MelonPrimeCore\b') { $inCore = $true; $access = 'private'; $depth = 0 }
+        continue
+    }
+    $opens = ([regex]::Matches($line, '\{')).Count
+    $closes = ([regex]::Matches($line, '\}')).Count
+    $depthBefore = $depth
+    $depth += $opens - $closes
+    if ($depthBefore -gt 0 -and $depth -le 0) { $inCore = $false; continue }
+    if ($line -match '^\s*(public|protected|private)\s*:') { $access = $Matches[1]; continue }
+    # Data member declaration only: "<type> <name> = ...;" or "<type> <name>;".
+    # A method mentioning the name has a '(' before the ';' and is skipped.
+    if ($depth -le 1 -and $line -notmatch '\(' -and
+        $line -match ("^\s*(?:mutable\s+)?(?:bool|int|uint\d+_t|int\d+_t|float|double)\s+($ownedRuntimeFields)\s*(=|;)")) {
+        if ($access -ne 'private') {
+            Add-Error ("MelonPrimeCore runtime state must stay private (the emulation " +
+                "thread owns it; GUI goes through MelonPrimeThreadBridge): " +
+                "src/frontend/qt_sdl/MelonPrime.h:$($i + 1):$($line.Trim())")
+        } else {
+            $sawPrivateField = $true
+        }
+    }
+}
+if (-not $sawPrivateField) {
+    Add-Error ("no private MelonPrimeCore runtime-state field was found in " +
+        "src/frontend/qt_sdl/MelonPrime.h -- the ownership ratchet is not " +
+        "checking anything")
+}
+
+# --- Rule D: hot-path cost review (manual, never a hard fail) ---------------
+#
+# The contract bans new abstraction cost in these bodies. A grep cannot tell a
+# real per-frame Config lookup from a name in a comment, so this prints for a
+# human instead of failing the build.
+function Get-FunctionBody {
+    param([string[]] $Lines, [int] $StartIndex)
+
+    $depth = 0
+    $started = $false
+    $body = New-Object System.Collections.Generic.List[object]
+    for ($i = $StartIndex; $i -lt $Lines.Length; $i++) {
+        # Strip line comments and string literals so their braces do not count.
+        $code = $Lines[$i] -replace '//.*$', '' -replace '"(\\.|[^"\\])*"', '""'
+        $depth += ([regex]::Matches($code, '\{')).Count
+        if ($depth -gt 0) { $started = $true }
+        $depth -= ([regex]::Matches($code, '\}')).Count
+        if ($started) { $body.Add([pscustomobject]@{ Line = $i + 1; Text = $Lines[$i] }) | Out-Null }
+        if ($started -and $depth -le 0) { break }
+    }
+    return $body
+}
+
+$hotPaths = @(
+    @{ File = 'MelonPrime.cpp';               Signature = 'void\s+MelonPrimeCore::RunFrameHook\s*\(' },
+    @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::UpdateInputStateImpl\s*\(' },
+    @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::ProcessMoveAndButtonsFastImpl\s*\(' },
+    @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::ProcessAimInputMouse\s*\(' },
+    @{ File = 'MelonPrimeArm9Hook.cpp';       Signature = '^\s*static\s+bool\s+DispatcherCallback\s*\(' },
+    @{ File = 'MelonPrimeHudRenderMain.inc';  Signature = 'QRect\s+CustomHud_Render\s*\(' }
+)
+$hotPathCosts = 'Config::Table|\bGetBool\s*\(|\bGetInt\s*\(|\bGetDouble\s*\(|std::function|\bvirtual\b|dynamic_cast|QMetaObject|std::make_shared|std::make_unique|QString\s*\(|\bmutex\b'
+$hotPathNotes = New-Object System.Collections.Generic.List[string]
+foreach ($hot in $hotPaths) {
+    $hotFile = Join-Path $qtSdl $hot.File
+    if (-not (Test-Path -LiteralPath $hotFile)) {
+        $hotPathNotes.Add("hot-path file not found (rule needs updating): $($hot.File)") | Out-Null
+        continue
+    }
+    $hotLines = [System.IO.File]::ReadAllLines($hotFile)
+    $startIndex = -1
+    for ($i = 0; $i -lt $hotLines.Length; $i++) {
+        if ($hotLines[$i] -match $hot.Signature -and $hotLines[$i] -notmatch ';\s*$') { $startIndex = $i; break }
+    }
+    if ($startIndex -lt 0) {
+        $hotPathNotes.Add("hot-path definition not found (rule needs updating): $($hot.File) /$($hot.Signature)/") | Out-Null
+        continue
+    }
+    foreach ($entry in (Get-FunctionBody -Lines $hotLines -StartIndex $startIndex)) {
+        $code = $entry.Text -replace '//.*$', ''
+        if ($code -match $hotPathCosts) {
+            $hotPathNotes.Add("$($hot.File):$($entry.Line):$($entry.Text.Trim())") | Out-Null
+        }
+    }
+}
+if ($hotPathNotes.Count -ne 0) {
+    Write-Host ""
+    Write-Host "Hot-path cost review (manual, not a failure) -- confirm each is not a new"
+    Write-Host "per-frame allocation, config lookup, indirect dispatch or lock:"
+    foreach ($note in $hotPathNotes) { Write-Host "  $note" }
+    Write-Host ""
+}
+
 if ($errors.Count -ne 0) {
     foreach ($e in $errors) {
         Write-Error $e
