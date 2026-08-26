@@ -88,12 +88,15 @@ def main() -> int:
     failures: list[str] = []
 
     dx12_context = read("src/DX12Context.cpp")
+    # Resource creation split out of the device owner; the allocation rules
+    # below travel with the factory that performs them.
+    dx12_resource_factory = read("src/DX12ResourceFactory.cpp")
     for signature in (
-        "DX12::ComPtr<ID3D12Resource> DX12Context::CreateBuffer(",
-        "DX12::ComPtr<ID3D12Resource> DX12Context::CreateTexture2D(",
+        "DX12::ComPtr<ID3D12Resource> DX12ResourceFactory::CreateBuffer(",
+        "DX12::ComPtr<ID3D12Resource> DX12ResourceFactory::CreateTexture2D(",
     ):
         try:
-            body = function_body(dx12_context, signature)
+            body = function_body(dx12_resource_factory, signature)
         except ValueError as error:
             failures.append(str(error))
             continue
@@ -107,8 +110,10 @@ def main() -> int:
                 f"{signature} must retain HRESULT failure handling",
                 failures)
 
-    require("GetResourceAllocationInfo" not in dx12_context,
-            "DX12Context.cpp must not reintroduce the unused resource-allocation query",
+    require("GetResourceAllocationInfo" not in dx12_context
+            and "GetResourceAllocationInfo" not in dx12_resource_factory,
+            "DX12 resource creation must not reintroduce the unused "
+            "resource-allocation query",
             failures)
 
     memory_admission = read("src/VulkanMemoryAdmission.h")
@@ -189,7 +194,15 @@ def main() -> int:
 
     dx12_renderer = read("src/GPU3D_DX12.cpp")
     vulkan_renderer = read("src/GPU3D_Vulkan.cpp")
-    for name, renderer in (("DX12", dx12_renderer), ("Vulkan", vulkan_renderer)):
+    # The compositor owns its slot rings now. The split between a
+    # presentation slot and a command-ring work slot is the invariant; the
+    # header is where it is declared and the source is where it is used, so
+    # both are searched together.
+    dx12_gpu2d = (read("src/DX12Gpu2DComposer.h")
+                  + read("src/DX12Gpu2DComposer.cpp"))
+    vulkan_gpu2d = (read("src/VulkanGpu2DComposer.h")
+                    + read("src/VulkanGpu2DComposer.cpp"))
+    for name, renderer in (("DX12", dx12_gpu2d), ("Vulkan", vulkan_gpu2d)):
         require("struct ComposeWorkSlot" in renderer,
                 f"{name} must separate command-ring work from presentation slots",
                 failures)
@@ -202,9 +215,11 @@ def main() -> int:
         require("EnsureDiagnosticResources" in renderer,
                 f"{name} must lazily create native diagnostic readback resources",
                 failures)
+    for name, renderer in (("DX12", dx12_renderer), ("Vulkan", vulkan_renderer)):
         require("native_readbacks=0" in renderer,
                 f"{name} startup resource evidence must report zero native readbacks",
                 failures)
+    for name, renderer in (("DX12", dx12_gpu2d), ("Vulkan", vulkan_gpu2d)):
         slot_match = re.search(
             r"struct Slot\s*\{(?P<body>.*?)\n\s*\};", renderer, re.DOTALL)
         require(slot_match is not None,
@@ -216,14 +231,20 @@ def main() -> int:
                 require(token not in slot_body,
                         f"{name} presentation Slot must not own {token}", failures)
 
-    for token in ("ID3D12PipelineLibrary", "LoadComputePipeline",
-                  "StorePipeline", "Serialize(", "AdapterLuid",
-                  "RootSignatureHash", "ShaderBlobHash"):
-        require(token in dx12_renderer or token == "ID3D12PipelineLibrary",
+    # The pipeline library and its on-disk validation header moved into the
+    # repository that owns pipeline creation. The persistent-cache contract is
+    # unchanged, so it is ratcheted at its new home.
+    dx12_pipeline_repo = read("src/DX12PipelineRepository.cpp")
+    dx12_pipeline_repo_header = read("src/DX12PipelineRepository.h")
+    for token in ("LoadComputePipeline", "StorePipeline", "Serialize(",
+                  "AdapterLuid", "RootSignatureHash", "ShaderBlobHash"):
+        require(token in dx12_pipeline_repo or token in dx12_pipeline_repo_header,
                 f"DX12 persistent pipeline cache must retain {token}", failures)
+    require("ID3D12PipelineLibrary" in dx12_pipeline_repo_header,
+            "DX12 pipeline repository must own a pipeline library", failures)
     dx12_header = read("src/GPU3D_DX12.h")
-    require("ID3D12PipelineLibrary" in dx12_header,
-            "DX12 renderer must own a pipeline library", failures)
+    require("ID3D12PipelineLibrary" not in dx12_header,
+            "DX12 renderer must not take the pipeline library back", failures)
     for renderer, name in ((dx12_renderer, "DX12"), (vulkan_renderer, "Vulkan")):
         require("MELONPRIME_ENABLE_DEVELOPER_FEATURES" in renderer
                 and "MELONPRIME_RENDERER_STARTUP_PROFILE" in renderer,

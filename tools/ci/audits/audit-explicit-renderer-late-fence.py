@@ -65,6 +65,10 @@ def main() -> int:
     dx12_source = read("src/GPU3D_DX12.cpp")
     vulkan_source = read("src/GPU3D_Vulkan.cpp")
     dx12_context = read("src/DX12Context.cpp")
+    # Command lists, allocators and their fence waits split out of the device
+    # owner; the bounded-wait contract travels with them.
+    dx12_command_context = read("src/DX12CommandContext.cpp")
+    dx12_pipeline_repo_header = read("src/DX12PipelineRepository.h")
     vulkan_sync_header = read("src/VulkanSync.h")
     vulkan_sync = read("src/VulkanSync.cpp")
     vulkan_header = read("src/GPU3D_Vulkan.h")
@@ -257,7 +261,9 @@ def main() -> int:
     )
     require(
         "InsertRasterScratchReuseBarriers(list);" in dx12_frame
-        and "D3D12_RESOURCE_BARRIER_TYPE_UAV" in dx12_source
+        # The barrier shapes themselves are contract, not renderer code: they
+        # live beside the root signature every list records against.
+        and "D3D12_RESOURCE_BARRIER_TYPE_UAV" in dx12_pipeline_repo_header
         and "TileBuffers" in dx12_scratch_barrier
         and "FinalFBBuffer" in dx12_scratch_barrier,
         "DX12 shared GPU scratch must have resource-scoped cross-list UAV barriers",
@@ -286,9 +292,9 @@ def main() -> int:
         failures,
     )
     require(
-        "WaitForSingleObject(FenceEvent, INFINITE)" not in dx12_context
-        and "kFenceWaitTimeoutMs" in dx12_context
-        and "GetDeviceRemovedReason" in dx12_context,
+        "WaitForSingleObject(FenceEvent, INFINITE)" not in dx12_command_context
+        and "kFenceWaitTimeoutMs" in dx12_command_context
+        and "GetDeviceRemovedReason" in dx12_command_context,
         "DX12 raster reuse waits must be bounded and check device removal",
         failures,
     )

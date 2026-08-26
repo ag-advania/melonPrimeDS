@@ -15,6 +15,18 @@ namespace MelonPrime::VideoBackend {
     // from that same out-of-range clamp).
     int NormalizeRendererForPlatform(int requested);
 
+    // Whether this (already-normalized) renderer value owns a native GPU device
+    // for its lifetime -- Vulkan's VkDevice, DX12's ID3D12Device, Metal's
+    // MTLDevice. Two such backends must never be creating or holding a device
+    // at the same moment: a D3D12 device creation racing a live VkDevice fails
+    // with an empty adapter enumeration and takes the Vulkan device with it.
+    // The renderer transition uses this to decide when it has to release the
+    // outgoing backend before letting the incoming one touch the GPU.
+    //
+    // Software and the OpenGL renderers are false: they run on the context the
+    // window already owns and create no device of their own.
+    bool RendererOwnsNativeGpuDevice(int renderer);
+
     // Whether the given (already-normalized) `3D.Renderer` value needs an
     // OpenGL context/surface to run. Kept distinct from "is not Software" so a
     // future non-OpenGL backend cannot be mistaken for requiring a GL context.

@@ -206,6 +206,13 @@ enum class Counter : u32
     DX12ResizeWaitIdleNs,
     DX12PresentSuccessCount,
     DX12PresentSkipCount,
+    // Marker truthfulness: the vendor PresentStart/PresentEnd pair must bracket
+    // a real IDXGISwapChain::Present and nothing else, so all three of these
+    // have to stay equal. A Begin without a call means a vendor runtime was
+    // told a present happened when none did.
+    DX12ActualPresentCallCount,
+    DX12PresentMarkerBeginCount,
+    DX12PresentMarkerEndCount,
     NativeGPU2DWorkgroupWidth,
     NativeGPU2DObjPrepareGroups,
     NativeGPU2DSemanticRowsDirty,
@@ -695,7 +702,9 @@ inline void MaybeReport()
         "snapshot_publish_count=%llu identity_generation_change_count=%llu "
         "presenter_reinit_count=%llu resize_buffers_count=%llu "
         "resize_wait_idle_ns=%llu present_wait_ns=%llu "
-        "present_success_count=%llu present_skip_count=%llu\n",
+        "present_success_count=%llu present_skip_count=%llu "
+        "actual_present_calls=%llu present_marker_begin=%llu "
+        "present_marker_end=%llu\n",
         count(Counter::DX12SurfaceEventCount),
         count(Counter::DX12SurfaceSnapshotPublishCount),
         count(Counter::DX12NativeIdentityGenerationChangeCount),
@@ -703,7 +712,10 @@ inline void MaybeReport()
         count(Counter::DX12ResizeBuffersCount),
         count(Counter::DX12ResizeWaitIdleNs), count(Counter::PresentWaitNs),
         count(Counter::DX12PresentSuccessCount),
-        count(Counter::DX12PresentSkipCount));
+        count(Counter::DX12PresentSkipCount),
+        count(Counter::DX12ActualPresentCallCount),
+        count(Counter::DX12PresentMarkerBeginCount),
+        count(Counter::DX12PresentMarkerEndCount));
 
     const unsigned long long vsyncEnabled = count(Counter::DX12VsyncEnabled);
     const unsigned long long presentMode = count(Counter::DX12PresentMode);
@@ -849,6 +861,8 @@ enum class Counter : u32 { Frames, RasterBeginWaitNs, RasterBeginWaitCount,
       DX12NativeIdentityGenerationChangeCount, DX12PresenterReinitCount,
       DX12ResizeBuffersCount, DX12ResizeWaitIdleNs,
       DX12PresentSuccessCount, DX12PresentSkipCount,
+      DX12ActualPresentCallCount, DX12PresentMarkerBeginCount,
+      DX12PresentMarkerEndCount,
       NativeGPU2DWorkgroupWidth, NativeGPU2DObjPrepareGroups,
       NativeGPU2DSemanticRowsDirty, NativeGPU2DSemanticRowsReused,
       NativeGPU2DSemanticRunCount, NativeGPU2DCaptureRunCount,

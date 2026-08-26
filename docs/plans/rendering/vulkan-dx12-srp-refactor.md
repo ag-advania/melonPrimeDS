@@ -903,8 +903,11 @@ The three remaining rows need Linux, BSD and macOS hosts.
 
 ### Summary
 
-30 of 33 met, 3 unrun. What remains is only the three builds that need hosts
-this machine does not have — **Linux, BSD and macOS**. `tools/linux-vm/` exists
+30 of 33 met, 3 unrun. The 2026-08-26 re-audit reopened two of the Runtime
+rows -- renderer switch and low latency -- and both are now closed by
+REAUDIT-P1-001 and REAUDIT-P2-001 above, with the evidence recorded there.
+What remains is only the three builds that need hosts this machine does not
+have — **Linux, BSD and macOS**. `tools/linux-vm/` exists
 but is a VirtualBox harness driven from a macOS host, so it does not help from
 Windows.
 
@@ -917,6 +920,124 @@ leaving the fourteen-slot UAV table assembled from borrowed handles is exactly
 the "structure only, same behaviour" step it asks for first, and that is what
 landed. Splitting the table itself remains out of scope, and the module headers
 say so.
+
+## Re-audit, 2026-08-26: the two reopened runtime items
+
+A second pass over the landed tree accepted the SRP work -- the component
+matrix stays at zero FAIL -- but reopened two runtime Definition-of-Done rows
+that the first pass had not applied strictly enough, and confirmed one stale
+comment. Both runtime items are correctness bugs that the responsibility
+refactor neither caused nor fixed.
+
+### REAUDIT-P1-001 -- the first DX12 probe in a Vulkan process
+
+This was already recorded below as a pre-existing defect. It is now fixed.
+
+The cause was ordering, not capability. `NormalizeRendererForPlatform()` asked
+`DX12FeatureCheck::IsRuntimeAvailable()`, and that call created a real D3D12
+device and probed the vendor low-latency runtimes. Normalization runs at the
+top of a renderer transition, before the outgoing backend is released, so on a
+Vulkan -> DX12 switch it created a D3D12 device while a VkDevice was still
+live. The adapter enumeration came back empty, the answer was cached as
+permanent, and every later DX12 request in that process fell to Software.
+
+Availability is now two stages:
+
+| Stage | What it does | When it may run |
+|---|---|---|
+| `IsPlatformEligible()` | asks the runtime loader whether d3d12, dxgi and the shader compiler resolve -- LoadLibrary/GetProcAddress, nothing else | any time |
+| `ProbeRuntimeAdmission()` | creates the device, picks the adapter, probes the vendor runtimes | only after the outgoing backend is released |
+
+`IsRuntimeAvailable()`, which normalization calls, answers from the cached
+admission result when there is one and from Stage A eligibility otherwise.
+Optimistically, on purpose: a machine with no usable D3D12 device now fails at
+admission, which happens after teardown and degrades cleanly, instead of
+failing at a probe that runs at the worst possible moment.
+
+Transient admission failures are no longer cached. Only a missing runtime is a
+durable answer about a machine; adapter enumeration and device creation can
+fail for reasons that are not about capability, so those leave the cache alone
+and the next attempt re-probes. The probe log says which it was (`durable=0/1`).
+
+The transition also carries the invariant itself: when both the outgoing and
+incoming renderers own a native GPU device, the outgoing one is released before
+the incoming one touches the GPU, and the transition aborts rather than
+continuing if that release is refused. On the current path the panel rebuild
+already drops to Software between the two, so the guard does not fire today --
+it is there so a future change to that rebuild cannot silently restore the
+overlap.
+
+Evidence, RTX 5070 Ti, driving the production settings-dialog switch path:
+
+| Run | Before | After |
+|---|---|---|
+| Vulkan start, first DX12 switch | `available=0 ... no Direct3D 12 feature level 11_0 adapter was found`, then Software for the rest of the process | `available=1 adapter="NVIDIA GeForce RTX 5070 Ti"`, `transition complete actual=4` |
+| Vulkan <-> DX12, 4 iterations | 0 / 4 DX12 switches reached DX12 | 4 / 4 |
+| Software <-> DX12, 3 iterations | PASS | PASS |
+| DX12 <-> Vulkan, 3 iterations | PASS | PASS |
+| `VK_ERROR_DEVICE_LOST` / renderer fallback / runtime failure | present | none |
+
+A developer-only injection
+(`MELONPRIME_TEST_DX12_TRANSIENT_PROBE_FAILURES=N`) covers the caching rule
+directly: the injected failure logs `available=0 durable=0`, DX12 still
+activates, and the next admission re-probes to `available=1`.
+
+### REAUDIT-P2-001 -- Present markers without a Present
+
+`DX12SurfacePresenter::Present()` built its PresentStart/PresentEnd scope guard
+at the top of the function, before the readiness checks. A frame that returned
+early therefore told Reflex and XeLL that a present had started and finished
+when `IDXGISwapChain::Present` was never called. The vendor runtimes model
+display latency from those markers, so a phantom pair is telemetry that is
+simply untrue.
+
+The guard now wraps the API call and nothing else. RAII still closes the pair
+when Present returns an error, which is correct -- the call really was made.
+
+Three developer-only counters make it checkable instead of asserted:
+`DX12ActualPresentCallCount`, `DX12PresentMarkerBeginCount` and
+`DX12PresentMarkerEndCount`. All three were equal in every one of 13 report
+windows across a run with window resize/maximize/minimize/restore and three
+DX12<->Vulkan transitions, and again with Reflex On
+(`authority=NvidiaReflex`, `active=1`, timings reporting a real narrow present
+window).
+
+One honest limit: `present_skip_count` stayed 0 in every run, because
+`Screen.cpp` only calls `Present()` after `EndFrame()` succeeded. The phantom
+pair was latent rather than observed, and forcing the early return is
+indistinguishable from a real presentation failure -- the caller treats it as
+fatal and drops DX12 -- so it cannot be exercised in isolation. What the fix
+buys is a structural guarantee in place of an incidental one: no statement now
+sits between the guard's construction and the Present call.
+
+### A gap the re-audit did not find, and I should have
+
+Five CI audits had been failing since `ee97805fc`, and I had not noticed,
+because I was only running the PowerShell audits named in the working rules
+plus the DX12 shader check. Every "audits pass" claim in the sections above was
+based on that subset, and the Ubuntu, macOS and BSD workflows had all been
+failing on the same checks before they ever reached a compiler -- which is also
+why the platform builds below stayed unverified for longer than they needed to.
+
+None of the five found a broken invariant. They are textual ratchets, and the
+refactor moved the code they pointed at; `audit-low-latency-contract` was still
+expecting `BeginIntelXeLLPresent()` in `Screen.cpp`, which is precisely the
+placement the SRP audit told us to dismantle. Each expectation now asserts the
+same invariant at its new home, and where a responsibility genuinely moved the
+audit also forbids it moving back.
+
+The lesson is the boring one: run the gate the CI runs, not the subset the
+notes list. The full local set is now 15 Python audits, the shader source-sync
+check and 7 PowerShell audits.
+
+### REAUDIT-P3-001 -- a comment pointing the wrong way
+
+`VulkanGpu2DOutput`'s header still said the renderer records the compose
+dispatches, which stopped being true when they moved. Corrected on both
+backends, along with an orphaned doc block and a count that said four pipeline
+handles where a compose dispatches three. Small, but this refactor's whole
+point was to write ownership down, and a stale ownership note points the next
+implementer back at Renderer3D.
 
 ## What is left
 

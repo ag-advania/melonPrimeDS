@@ -76,6 +76,9 @@ def main() -> int:
     dx12_perf = read("src/DX12Perf.h")
     vulkan_perf = read("src/VulkanPerf.h")
     dx12_context_h = read("src/DX12Context.h")
+    # The timestamp query pool travels with the command context that records
+    # into it, so its telemetry-off facade is ratcheted there.
+    dx12_command_context_h = read("src/DX12CommandContext.h")
     dx12_context_cpp = read("src/DX12Context.cpp")
     vulkan_sync_h = read("src/VulkanSync.h")
     vulkan_sync_cpp = read("src/VulkanSync.cpp")
@@ -222,8 +225,8 @@ def main() -> int:
     )
 
     require(
-        "inline constexpr void WriteTimestamp(u32) noexcept {}" in dx12_context_h
-        and "inline constexpr u64 ReadTimestampSpanNanoseconds" in dx12_context_h,
+        "inline constexpr void WriteTimestamp(u32) noexcept {}" in dx12_command_context_h
+        and "inline constexpr u64 ReadTimestampSpanNanoseconds" in dx12_command_context_h,
         "DX12 timestamp methods must have an OFF inline facade",
         failures,
     )

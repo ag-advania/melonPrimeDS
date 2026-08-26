@@ -1349,11 +1349,20 @@ bool DX12SurfacePresenter::EndFrame()
 bool DX12SurfacePresenter::Present(bool vsync)
 {
     // The vendor PresentStart/PresentEnd markers must bracket the real
-    // IDXGISwapChain::Present, which is this function and nothing above it.
-    // A scope guard keeps the pair balanced across every early return,
-    // including the "nothing to present" one below -- the pre-refactor tree
-    // bracketed the call from Screen.cpp and had the same property only by
-    // accident.
+    // IDXGISwapChain::Present and nothing else.
+    //
+    // "Nothing else" is the part that matters and the part this used to get
+    // wrong: the guard was constructed at the top of the function, so a frame
+    // that returned early -- not initialized, no frame ready, no swapchain,
+    // which is what minimize, resize and a renderer transition all produce --
+    // still told Reflex and XeLL that a present had started and finished when
+    // no present had happened at all. The vendor runtimes use those markers to
+    // model display latency, so a phantom pair is telemetry that is simply
+    // untrue.
+    //
+    // The guard is therefore constructed after every readiness check, around
+    // the API call alone. RAII still closes the pair when Present returns an
+    // error, which is correct: the call really was made.
     struct PresentMarkerScope
     {
         melonDS::DX12LowLatencyController* Latency;
@@ -1362,16 +1371,28 @@ bool DX12SurfacePresenter::Present(bool vsync)
             : Latency(latency)
         {
             if (Latency)
+            {
                 Latency->BeginPresent();
+                melonDS::DX12Perf::AddCounter(
+                    melonDS::DX12Perf::Counter::DX12PresentMarkerBeginCount);
+            }
         }
 
         ~PresentMarkerScope()
         {
             if (Latency)
+            {
                 Latency->EndPresent();
+                melonDS::DX12Perf::AddCounter(
+                    melonDS::DX12Perf::Counter::DX12PresentMarkerEndCount);
+            }
         }
-    } presentMarkers{melonDS::DX12LowLatencyController::GetIfActive()};
+    };
 
+    // Screen.cpp only calls this after EndFrame() succeeded, so this return is
+    // not reachable today -- which is exactly why the phantom marker pair went
+    // unnoticed. It stays as the guard it is; what changed is that reaching it
+    // no longer tells a vendor runtime that a present happened.
     if (!Initialized || !FrameReady || !Swapchain)
     {
         melonDS::DX12Perf::AddCounter(
@@ -1403,7 +1424,14 @@ bool DX12SurfacePresenter::Present(bool vsync)
             flags != 0 ? 1 : 0,
             LastPresentWaitEnabled ? 1 : 0);
     }
-    const HRESULT hr = Swapchain->Present(syncInterval, flags);
+    HRESULT hr = E_FAIL;
+    {
+        PresentMarkerScope presentMarkers{
+            melonDS::DX12LowLatencyController::GetIfActive()};
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::DX12ActualPresentCallCount);
+        hr = Swapchain->Present(syncInterval, flags);
+    }
     FrameReady = false;
     melonDS::DX12Perf::AddCounter(
         SUCCEEDED(hr)
