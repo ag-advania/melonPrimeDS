@@ -326,39 +326,6 @@ private:
     };
     static_assert(sizeof(MetaUniform) % 16 == 0, "MetaUniform must stay 16-byte aligned");
 
-    // Root constants, mirroring the HLSL DispatchUniform cbuffer.
-    struct DispatchUniform
-    {
-        u32 CurVariant = 0;
-        u32 TexWidth = 8;
-        u32 TexHeight = 8;
-        u32 TexWrapS = 0;
-        u32 TexWrapT = 0;
-        u32 InterpSpanBase = 0;
-        u32 InterpSpanCount = 0;
-        u32 Pad = 0;
-
-        // Scale-dependent values are root constants because raster and
-        // compositor command lists are recorded independently. Neither list
-        // may rely on a shared, mutable upload-buffer CBV.
-        u32 ScreenWidth = 0;
-        u32 ScreenHeight = 0;
-        u32 ScaleFactor = 0;
-        u32 TilesPerLine = 0;
-
-        u32 TileLines = 0;
-        u32 FramebufferStride = 0;
-        u32 ResultDepthStart = 0;
-        u32 ResultAttrStart = 0;
-
-        u32 BinningMaskStart = 0;
-        u32 BinningWorkOffsetsStart = 0;
-        u32 WorkDescsSortedStart = 0;
-        u32 MaxWorkTiles = 0;
-    };
-    static constexpr u32 DispatchUniformDwords = sizeof(DispatchUniform) / 4;
-    static_assert(DispatchUniformDwords <= 64, "DX12 root constants exceed the API limit");
-
     struct PolygonBatch
     {
         u32 FirstPolygon = 0;
@@ -402,19 +369,8 @@ private:
 
     void UpdateClearBitmap();
     bool UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numVariants, u32 numPolygons);
-    [[nodiscard]] DispatchUniform MakeDispatchUniform() const noexcept;
-    void SetDispatchConstants(ID3D12GraphicsCommandList* list, const DispatchUniform& constants);
-    void InsertUavBarrier(ID3D12GraphicsCommandList* list, ID3D12Resource* resource);
-    void InsertUavBarriers(
-        ID3D12GraphicsCommandList* list,
-        ID3D12Resource* const* resources,
-        u32 count);
+    [[nodiscard]] DX12DispatchUniform MakeDispatchUniform() const noexcept;
     void InsertRasterScratchReuseBarriers(ID3D12GraphicsCommandList* list);
-    void TransitionBuffer(
-        ID3D12GraphicsCommandList* list,
-        ID3D12Resource* resource,
-        D3D12_RESOURCE_STATES before,
-        D3D12_RESOURCE_STATES after);
 
     // The UAV table never changes within a frame; the SRV table only changes
     // when the bound texture array does.

@@ -21,6 +21,7 @@
 
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
+#include <algorithm>
 #include <cstddef>
 #include <vector>
 
@@ -53,6 +54,99 @@ inline constexpr u32 ParamUavTable = 4;
 inline constexpr u32 ParamCount = 5;
 
 } // namespace DX12RootSignatureLayout
+
+// Root constants, mirroring the HLSL DispatchUniform cbuffer.
+//
+// Part of the root-signature contract, so it lives with the layout above
+// rather than inside one of the components that binds it: the rasterizer and
+// the GPU2D compositor record independent command lists and both set these.
+struct DX12DispatchUniform
+{
+    u32 CurVariant = 0;
+    u32 TexWidth = 8;
+    u32 TexHeight = 8;
+    u32 TexWrapS = 0;
+    u32 TexWrapT = 0;
+    u32 InterpSpanBase = 0;
+    u32 InterpSpanCount = 0;
+    u32 Pad = 0;
+
+    // Scale-dependent values are root constants because raster and
+    // compositor command lists are recorded independently. Neither list
+    // may rely on a shared, mutable upload-buffer CBV.
+    u32 ScreenWidth = 0;
+    u32 ScreenHeight = 0;
+    u32 ScaleFactor = 0;
+    u32 TilesPerLine = 0;
+
+    u32 TileLines = 0;
+    u32 FramebufferStride = 0;
+    u32 ResultDepthStart = 0;
+    u32 ResultAttrStart = 0;
+
+    u32 BinningMaskStart = 0;
+    u32 BinningWorkOffsetsStart = 0;
+    u32 WorkDescsSortedStart = 0;
+    u32 MaxWorkTiles = 0;
+};
+inline constexpr u32 DX12DispatchUniformDwords = sizeof(DX12DispatchUniform) / 4;
+static_assert(DX12DispatchUniformDwords <= 64, "DX12 root constants exceed the API limit");
+
+// Command-list recording that is contract, not policy: which root parameter
+// the constants go to, and the two barrier shapes every component records.
+// Free functions because they carry no state -- the rasterizer, the compositor
+// and the capture bridge all record these against their own lists.
+inline void DX12SetDispatchConstants(
+    ID3D12GraphicsCommandList* list, const DX12DispatchUniform& constants)
+{
+    list->SetComputeRoot32BitConstants(
+        DX12RootSignatureLayout::ParamDispatchConstants,
+        DX12DispatchUniformDwords, &constants, 0);
+}
+
+inline void DX12InsertUavBarrier(
+    ID3D12GraphicsCommandList* list, ID3D12Resource* resource)
+{
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    barrier.UAV.pResource = resource;
+    list->ResourceBarrier(1, &barrier);
+}
+
+inline void DX12InsertUavBarriers(
+    ID3D12GraphicsCommandList* list,
+    ID3D12Resource* const* resources,
+    u32 count)
+{
+    if (!resources || count == 0u)
+        return;
+    D3D12_RESOURCE_BARRIER barriers[4]{};
+    count = std::min<u32>(count, 4u);
+    for (u32 index = 0u; index < count; ++index)
+    {
+        barriers[index].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+        barriers[index].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+        barriers[index].UAV.pResource = resources[index];
+    }
+    list->ResourceBarrier(count, barriers);
+}
+
+inline void DX12TransitionBuffer(
+    ID3D12GraphicsCommandList* list,
+    ID3D12Resource* resource,
+    D3D12_RESOURCE_STATES before,
+    D3D12_RESOURCE_STATES after)
+{
+    D3D12_RESOURCE_BARRIER barrier{};
+    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+    barrier.Transition.pResource = resource;
+    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+    barrier.Transition.StateBefore = before;
+    barrier.Transition.StateAfter = after;
+    list->ResourceBarrier(1, &barrier);
+}
 
 // Slot assignment inside that UAV table.
 //

@@ -277,7 +277,7 @@ bool DX12Renderer3D::Init()
         return false;
     if (!DemandReadbackDescriptors.Init(device, kUavTableSize, true))
         return false;
-    if (!PipelineRepo.CreateRootSignature(*Context, DispatchUniformDwords))
+    if (!PipelineRepo.CreateRootSignature(*Context, DX12DispatchUniformDwords))
         return false;
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const u64 pipelineLibraryStartNs = RendererStartupNowNs();
@@ -1303,7 +1303,7 @@ void DX12Renderer3D::UpdateClearBitmap()
 
         if (!ClearBitmapTexInCopyDest[slot])
         {
-            TransitionBuffer(list, ClearBitmapTex[slot].Get(),
+            DX12TransitionBuffer(list, ClearBitmapTex[slot].Get(),
                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
         }
 
@@ -1323,7 +1323,7 @@ void DX12Renderer3D::UpdateClearBitmap()
         src.PlacedFootprint.Footprint.RowPitch = static_cast<UINT>(rowPitch);
 
         list->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-        TransitionBuffer(list, ClearBitmapTex[slot].Get(),
+        DX12TransitionBuffer(list, ClearBitmapTex[slot].Get(),
             D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         ClearBitmapTexInCopyDest[slot] = false;
         ClearBitmapDirty &= static_cast<u8>(~(1u << slot));
@@ -1395,9 +1395,9 @@ bool DX12Renderer3D::UploadMetaUniform(ID3D12GraphicsCommandList* list, u32 numV
     return true;
 }
 
-DX12Renderer3D::DispatchUniform DX12Renderer3D::MakeDispatchUniform() const noexcept
+DX12DispatchUniform DX12Renderer3D::MakeDispatchUniform() const noexcept
 {
-    DispatchUniform constants{};
+    DX12DispatchUniform constants{};
     const u32 framebufferStride = static_cast<u32>(ScreenWidth * ScreenHeight);
     const u32 tileCount = static_cast<u32>(TilesPerLine * TileLines);
     constants.ScreenWidth = static_cast<u32>(ScreenWidth);
@@ -1416,38 +1416,6 @@ DX12Renderer3D::DispatchUniform DX12Renderer3D::MakeDispatchUniform() const noex
     return constants;
 }
 
-void DX12Renderer3D::SetDispatchConstants(ID3D12GraphicsCommandList* list, const DispatchUniform& constants)
-{
-    list->SetComputeRoot32BitConstants(kRootParamDispatchConstants, DispatchUniformDwords, &constants, 0);
-}
-
-void DX12Renderer3D::InsertUavBarrier(ID3D12GraphicsCommandList* list, ID3D12Resource* resource)
-{
-    D3D12_RESOURCE_BARRIER barrier{};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-    barrier.UAV.pResource = resource;
-    list->ResourceBarrier(1, &barrier);
-}
-
-void DX12Renderer3D::InsertUavBarriers(
-    ID3D12GraphicsCommandList* list,
-    ID3D12Resource* const* resources,
-    u32 count)
-{
-    if (!resources || count == 0u)
-        return;
-    D3D12_RESOURCE_BARRIER barriers[4]{};
-    count = std::min<u32>(count, 4u);
-    for (u32 index = 0u; index < count; ++index)
-    {
-        barriers[index].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-        barriers[index].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-        barriers[index].UAV.pResource = resources[index];
-    }
-    list->ResourceBarrier(count, barriers);
-}
-
 void DX12Renderer3D::InsertRasterScratchReuseBarriers(
     ID3D12GraphicsCommandList* list)
 {
@@ -1459,35 +1427,19 @@ void DX12Renderer3D::InsertRasterScratchReuseBarriers(
         TileBuffers[0].Get(), TileBuffers[1].Get(),
         TileBuffers[2].Get(), ResultBuffer.Get(),
     };
-    InsertUavBarriers(list, group0, static_cast<u32>(std::size(group0)));
+    DX12InsertUavBarriers(list, group0, static_cast<u32>(std::size(group0)));
 
     ID3D12Resource* group1[] = {
         ResultWinnerBuffer.Get(), BinResultBuffer.Get(),
         WorkDescBuffer.Get(), BlendStateBuffer.Get(),
     };
-    InsertUavBarriers(list, group1, static_cast<u32>(std::size(group1)));
+    DX12InsertUavBarriers(list, group1, static_cast<u32>(std::size(group1)));
 
     ID3D12Resource* group2[] = {
         XSpanSetupBuffer.Get(), IndirectArgsBuffer.Get(),
         FinalFBBuffer.Get(), Capture.GetSidecarBuffer(),
     };
-    InsertUavBarriers(list, group2, static_cast<u32>(std::size(group2)));
-}
-
-void DX12Renderer3D::TransitionBuffer(
-    ID3D12GraphicsCommandList* list,
-    ID3D12Resource* resource,
-    D3D12_RESOURCE_STATES before,
-    D3D12_RESOURCE_STATES after)
-{
-    D3D12_RESOURCE_BARRIER barrier{};
-    barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-    barrier.Transition.pResource = resource;
-    barrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-    barrier.Transition.StateBefore = before;
-    barrier.Transition.StateAfter = after;
-    list->ResourceBarrier(1, &barrier);
+    DX12InsertUavBarriers(list, group2, static_cast<u32>(std::size(group2)));
 }
 
 bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
@@ -2439,11 +2391,11 @@ void DX12Renderer3D::RenderFrame()
         }
         DX12Perf::AddCounter(DX12Perf::Counter::SpanUploadBytes, spanBytes);
 
-        TransitionBuffer(list, YSpanSetupBuffer.Get(),
+        DX12TransitionBuffer(list, YSpanSetupBuffer.Get(),
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
-        TransitionBuffer(list, SetupIndicesBuffer.Get(),
+        DX12TransitionBuffer(list, SetupIndicesBuffer.Get(),
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
-        TransitionBuffer(list, RenderPolygonBuffer.Get(),
+        DX12TransitionBuffer(list, RenderPolygonBuffer.Get(),
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
 
         list->CopyBufferRegion(YSpanSetupBuffer.Get(), 0, rasterFrame.YSpanSetupStaging.Get(), 0,
@@ -2453,11 +2405,11 @@ void DX12Renderer3D::RenderFrame()
         list->CopyBufferRegion(RenderPolygonBuffer.Get(), 0, rasterFrame.RenderPolygonStaging.Get(), 0,
             sizeof(RenderPolygon) * numPolygons);
 
-        TransitionBuffer(list, YSpanSetupBuffer.Get(),
+        DX12TransitionBuffer(list, YSpanSetupBuffer.Get(),
             D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        TransitionBuffer(list, SetupIndicesBuffer.Get(),
+        DX12TransitionBuffer(list, SetupIndicesBuffer.Get(),
             D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        TransitionBuffer(list, RenderPolygonBuffer.Get(),
+        DX12TransitionBuffer(list, RenderPolygonBuffer.Get(),
             D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
 
@@ -2476,8 +2428,8 @@ void DX12Renderer3D::RenderFrame()
         return;
     }
 
-    DispatchUniform constants = MakeDispatchUniform();
-    SetDispatchConstants(list, constants);
+    DX12DispatchUniform constants = MakeDispatchUniform();
+    DX12SetDispatchConstants(list, constants);
 
     const bool wbuffer = numYSpans > 0 && GPU3D.RenderPolygonRAM[0]->WBuffer;
 
@@ -2491,14 +2443,14 @@ void DX12Renderer3D::RenderFrame()
         list->SetPipelineState(PipelineClearCoarseBinMask.Get());
         list->Dispatch(
             static_cast<UINT>(TilesPerLine * TileLines / ClearCoarseBinMaskLocalSize), 1, 1);
-        InsertUavBarrier(list, BinResultBuffer.Get());
+        DX12InsertUavBarrier(list, BinResultBuffer.Get());
 
         if (batch.PolygonCount > 0)
         {
         // 2. reset the indirect work counts
         list->SetPipelineState(PipelineClearIndirectWorkCount.Get());
         list->Dispatch(DivRoundUp(numVariants, 32), 1, 1);
-        InsertUavBarrier(list, BinResultBuffer.Get());
+        DX12InsertUavBarrier(list, BinResultBuffer.Get());
 
         if (batchIndex == 0)
         {
@@ -2511,32 +2463,32 @@ void DX12Renderer3D::RenderFrame()
                     setupIndexCount - base, kMaxInterpSpansPerDispatch);
                 constants.InterpSpanBase = base;
                 constants.InterpSpanCount = chunkCount;
-                SetDispatchConstants(list, constants);
+                DX12SetDispatchConstants(list, constants);
                 list->Dispatch(
                     DivRoundUp(chunkCount, kInterpSpansThreadsPerGroup), 1, 1);
                 base += chunkCount;
             }
-            InsertUavBarrier(list, XSpanSetupBuffer.Get());
+            DX12InsertUavBarrier(list, XSpanSetupBuffer.Get());
         }
 
         // 4. bin polygons into coarse and fine tiles
         constants = MakeDispatchUniform();
         constants.CurVariant = batch.FirstPolygon;
         constants.TexWidth = batch.PolygonCount;
-        SetDispatchConstants(list, constants);
+        DX12SetDispatchConstants(list, constants);
         list->SetPipelineState(PipelineBinCombined.Get());
         list->Dispatch(
             DivRoundUp(batch.PolygonCount, 32),
             static_cast<UINT>(ScreenWidth / CoarseTileW),
             static_cast<UINT>(ScreenHeight / CoarseTileH));
-        InsertUavBarrier(list, BinResultBuffer.Get());
-        InsertUavBarrier(list, WorkDescBuffer.Get());
+        DX12InsertUavBarrier(list, BinResultBuffer.Get());
+        DX12InsertUavBarrier(list, WorkDescBuffer.Get());
 
         // 5. turn the per-variant counts into dispatch arguments and offsets
         list->SetPipelineState(PipelineCalcOffsets.Get());
         list->Dispatch(DivRoundUp(numVariants, 32), 1, 1);
-        InsertUavBarrier(list, BinResultBuffer.Get());
-        InsertUavBarrier(list, IndirectArgsBuffer.Get());
+        DX12InsertUavBarrier(list, BinResultBuffer.Get());
+        DX12InsertUavBarrier(list, IndirectArgsBuffer.Get());
         DX12Perf::AddCounter(
             DX12Perf::Counter::DX12IndirectArgsDirectWriteCount,
             static_cast<u64>(numVariants) + 1ull);
@@ -2544,7 +2496,7 @@ void DX12Renderer3D::RenderFrame()
         // CalcOffsets writes the same header layout directly into the dedicated
         // indirect-argument UAV. BinResult stays UAV for the following sort and
         // raster passes; only the argument buffer changes state here.
-        TransitionBuffer(list, IndirectArgsBuffer.Get(),
+        DX12TransitionBuffer(list, IndirectArgsBuffer.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
             D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
 
@@ -2553,7 +2505,7 @@ void DX12Renderer3D::RenderFrame()
         list->ExecuteIndirect(
             PipelineRepo.GetDispatchSignature(), 1, IndirectArgsBuffer.Get(),
             offsetof(BinResultHeader, SortWorkWorkCount), nullptr, 0);
-        InsertUavBarrier(list, WorkDescBuffer.Get());
+        DX12InsertUavBarrier(list, WorkDescBuffer.Get());
 
         // 7. rasterise, one indirect dispatch per variant
         {
@@ -2620,7 +2572,7 @@ void DX12Renderer3D::RenderFrame()
                     break;
                 }
 
-                DispatchUniform variantConstants = MakeDispatchUniform();
+                DX12DispatchUniform variantConstants = MakeDispatchUniform();
                 variantConstants.CurVariant = i;
                 variantConstants.TexWidth = variant.Width ? variant.Width : 8;
                 variantConstants.TexHeight = variant.Height ? variant.Height : 8;
@@ -2631,7 +2583,7 @@ void DX12Renderer3D::RenderFrame()
                 variantConstants.InterpSpanBase = variant.CaptureType;
                 variantConstants.InterpSpanCount = static_cast<u32>(variant.CaptureYOffset);
                 variantConstants.Pad = variant.CaptureReference;
-                SetDispatchConstants(list, variantConstants);
+                DX12SetDispatchConstants(list, variantConstants);
 
                 list->ExecuteIndirect(
                     PipelineRepo.GetDispatchSignature(), 1, IndirectArgsBuffer.Get(),
@@ -2645,13 +2597,13 @@ void DX12Renderer3D::RenderFrame()
             }
         }
 
-        TransitionBuffer(list, IndirectArgsBuffer.Get(),
+        DX12TransitionBuffer(list, IndirectArgsBuffer.Get(),
             D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
-        InsertUavBarrier(list, TileBuffers[0].Get());
-        InsertUavBarrier(list, TileBuffers[1].Get());
-        InsertUavBarrier(list, TileBuffers[2].Get());
+        DX12InsertUavBarrier(list, TileBuffers[0].Get());
+        DX12InsertUavBarrier(list, TileBuffers[1].Get());
+        DX12InsertUavBarrier(list, TileBuffers[2].Get());
     }
 
         // 8. Continue from the preceding batch's exact two-layer result and
@@ -2659,16 +2611,16 @@ void DX12Renderer3D::RenderFrame()
         constants = MakeDispatchUniform();
         constants.CurVariant = batch.FirstPolygon;
         constants.TexHeight = batchIndex != 0 ? 1u : 0u;
-        SetDispatchConstants(list, constants);
+        DX12SetDispatchConstants(list, constants);
         list->SetPipelineState(PipelineDepthBlend[wbuffer ? 1 : 0].Get());
         list->Dispatch(
             static_cast<UINT>(ScreenWidth / TileSize),
             static_cast<UINT>(ScreenHeight / TileSize),
             1);
-        InsertUavBarrier(list, ResultBuffer.Get());
-        InsertUavBarrier(list, BlendStateBuffer.Get());
-        InsertUavBarrier(list, TileBuffers[2].Get());
-        InsertUavBarrier(list, ResultWinnerBuffer.Get());
+        DX12InsertUavBarrier(list, ResultBuffer.Get());
+        DX12InsertUavBarrier(list, BlendStateBuffer.Get());
+        DX12InsertUavBarrier(list, TileBuffers[2].Get());
+        DX12InsertUavBarrier(list, ResultWinnerBuffer.Get());
 
         // Software-exact coverage is defined on the native DS raster grid.
         // High-resolution targets retain the separate scaled-raster contract,
@@ -2681,10 +2633,10 @@ void DX12Renderer3D::RenderFrame()
             constants.CurVariant = batch.FirstPolygon;
             constants.TexWidth = batch.PolygonCount;
             constants.TexHeight = static_cast<u32>(numSetupIndices);
-            SetDispatchConstants(list, constants);
+            DX12SetDispatchConstants(list, constants);
             list->SetPipelineState(Gpu2D.CorrectCoverage.Get());
             list->Dispatch(DivRoundUp(static_cast<u32>(numSetupIndices), 64), 1, 1);
-            InsertUavBarrier(list, ResultBuffer.Get());
+            DX12InsertUavBarrier(list, ResultBuffer.Get());
         }
     }
 
@@ -2698,7 +2650,7 @@ void DX12Renderer3D::RenderFrame()
     {
         list->SetPipelineState(PipelineFinalPass[finalPassVariant].Get());
         list->Dispatch(DivRoundUp(static_cast<u32>(ScreenWidth), 32), static_cast<UINT>(ScreenHeight), 1);
-        InsertUavBarrier(list, FinalFBBuffer.Get());
+        DX12InsertUavBarrier(list, FinalFBBuffer.Get());
     }
 
     bool submitted = false;
@@ -2760,21 +2712,21 @@ bool DX12Renderer3D::RecordNativeResolveAndReadback()
     ID3D12DescriptorHeap* heaps[] = { DemandReadbackDescriptors.GetHeap() };
     list->SetDescriptorHeaps(1, heaps);
     list->SetComputeRootSignature(PipelineRepo.GetRootSignature());
-    SetDispatchConstants(list, MakeDispatchUniform());
+    DX12SetDispatchConstants(list, MakeDispatchUniform());
     list->SetComputeRootDescriptorTable(kRootParamUavTable, gpu);
 
     // The main render and compositor use the same direct queue. This UAV
     // barrier makes FinalFB writes visible to the resolve in this later list.
-    InsertUavBarrier(list, FinalFBBuffer.Get());
-    InsertUavBarrier(list, Capture.GetSidecarBuffer());
+    DX12InsertUavBarrier(list, FinalFBBuffer.Get());
+    DX12InsertUavBarrier(list, Capture.GetSidecarBuffer());
     list->SetPipelineState(PipelineResolve.Get());
     list->Dispatch(DivRoundUp(256, 8), DivRoundUp(192, 8), 1);
-    InsertUavBarrier(list, ResolveBuffer.Get());
-    TransitionBuffer(list, ResolveBuffer.Get(),
+    DX12InsertUavBarrier(list, ResolveBuffer.Get());
+    DX12TransitionBuffer(list, ResolveBuffer.Get(),
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
     list->CopyBufferRegion(ReadbackBuffer.Get(), 0, ResolveBuffer.Get(), 0,
         256ull * 192ull * 4ull);
-    TransitionBuffer(list, ResolveBuffer.Get(),
+    DX12TransitionBuffer(list, ResolveBuffer.Get(),
         D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 
     if (!DemandReadbackCommands.Submit())
@@ -3101,7 +3053,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
                 slot.StructuredStaging.Get(), ranges[i].Offset, ranges[i].Size);
         }
     }
-    TransitionBuffer(
+    DX12TransitionBuffer(
         list,
         slot.StructuredInput.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
@@ -3109,7 +3061,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
 
     if (slot.DirectTexture && slot.DirectTextureInShaderResource)
     {
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             slot.DirectTexture.Get(),
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
@@ -3120,8 +3072,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     // The 3D final pass was submitted immediately before this list on the same
     // queue. This cross-list UAV barrier makes those writes visible without a
     // CPU fence wait.
-    InsertUavBarrier(list, FinalFBBuffer.Get());
-    InsertUavBarrier(list, Capture.GetSidecarBuffer());
+    DX12InsertUavBarrier(list, FinalFBBuffer.Get());
+    DX12InsertUavBarrier(list, Capture.GetSidecarBuffer());
 
     ID3D12DescriptorHeap* heaps[] = { slot.Descriptors.GetHeap() };
     list->SetDescriptorHeaps(1, heaps);
@@ -3129,7 +3081,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     if (!BindCompositionUavTable(
             list, slot.Descriptors, Gpu2D.OutputUavCpu[slotIndex]))
     {
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             slot.StructuredInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -3139,7 +3091,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         return false;
     }
 
-    DispatchUniform constants = MakeDispatchUniform();
+    DX12DispatchUniform constants = MakeDispatchUniform();
     // The 3D X scroll now travels per scanline in the structured line
     // metadata, so the compositor no longer needs it as a frame-global value.
     constants.TexWidth = GPU3D.AbortFrame ? 0u : 1u;
@@ -3169,26 +3121,26 @@ bool DX12Renderer3D::ComposeStructuredOutput(
                 && captureAnalysis.Independent[captureLine] != 0u);
             constants.TexHeight = runStart;
             constants.Pad = (slot.DirectTexture ? 1u : 0u) | 2u;
-            SetDispatchConstants(list, constants);
+            DX12SetDispatchConstants(list, constants);
             list->Dispatch(
                 DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
                 DivRoundUp(static_cast<u32>(ScaleFactor), 8u),
                 captureLine - runStart);
             ++sidecarDispatchCount;
-            InsertUavBarrier(list, Capture.GetSidecarBuffer());
+            DX12InsertUavBarrier(list, Capture.GetSidecarBuffer());
             ++sidecarBarrierCount;
             continue;
         }
 
         constants.TexHeight = captureLine;
         constants.Pad = slot.DirectTexture ? 1u : 0u;
-        SetDispatchConstants(list, constants);
+        DX12SetDispatchConstants(list, constants);
         list->Dispatch(
             DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
             DivRoundUp(static_cast<u32>(ScaleFactor), 8u),
             1u);
         ++sidecarDispatchCount;
-        InsertUavBarrier(list, Capture.GetSidecarBuffer());
+        DX12InsertUavBarrier(list, Capture.GetSidecarBuffer());
         ++sidecarBarrierCount;
         ++captureLine;
     }
@@ -3209,7 +3161,7 @@ bool DX12Renderer3D::ComposeStructuredOutput(
 
     constants.TexHeight = 0u;
     constants.Pad = slot.DirectTexture ? 1u : 0u;
-    SetDispatchConstants(list, constants);
+    DX12SetDispatchConstants(list, constants);
     list->SetPipelineState(Gpu2D.Compositor.Get());
     list->Dispatch(
         DivRoundUp(static_cast<u32>(ScreenWidth), 8u),
@@ -3219,8 +3171,8 @@ bool DX12Renderer3D::ComposeStructuredOutput(
         GpuMetricQueryIndex(GpuMetric::StructuredCompositor, true));
     if (slot.DirectTexture)
     {
-        InsertUavBarrier(list, slot.DirectTexture.Get());
-        TransitionBuffer(
+        DX12InsertUavBarrier(list, slot.DirectTexture.Get());
+        DX12TransitionBuffer(
             list,
             slot.DirectTexture.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -3230,10 +3182,10 @@ bool DX12Renderer3D::ComposeStructuredOutput(
     }
     else
     {
-        InsertUavBarrier(list, slot.Composed.Get());
+        DX12InsertUavBarrier(list, slot.Composed.Get());
         DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
     }
-    TransitionBuffer(
+    DX12TransitionBuffer(
         list,
         slot.StructuredInput.Get(),
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -3627,7 +3579,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     ResetFrameSrvCache();
     if (nativeUploadInitialized)
     {
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             nativeInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -3640,7 +3592,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             nativeInput.Get(), range.Offset,
             nativeStaging.Get(), range.Offset, range.Size);
     }
-    TransitionBuffer(
+    DX12TransitionBuffer(
         list,
         nativeInput.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
@@ -3649,8 +3601,8 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     // The tail of BlendStateBuffer is the persistent GPU LCDC capture mirror.
     // Synchronize only changed serialized LCD ranges from the mapped input;
     // native capture commands below update it in scanline order.
-    InsertUavBarrier(list, BlendStateBuffer.Get());
-    TransitionBuffer(
+    DX12InsertUavBarrier(list, BlendStateBuffer.Get());
+    DX12TransitionBuffer(
         list,
         BlendStateBuffer.Get(),
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -3719,7 +3671,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             copyCoherentCaptureRange(begin, end);
         }
     }
-    TransitionBuffer(
+    DX12TransitionBuffer(
         list,
         BlendStateBuffer.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
@@ -3728,7 +3680,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     if (outputSlot && outputSlot->DirectTexture
         && outputSlot->DirectTextureInShaderResource)
     {
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             outputSlot->DirectTexture.Get(),
             D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
@@ -3736,13 +3688,13 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         outputSlot->DirectTextureInShaderResource = false;
     }
 
-    InsertUavBarrier(list, FinalFBBuffer.Get());
-    InsertUavBarrier(list, Capture.GetSidecarBuffer());
+    DX12InsertUavBarrier(list, FinalFBBuffer.Get());
+    DX12InsertUavBarrier(list, Capture.GetSidecarBuffer());
 
     // The logical Stage A owns the structured output resource for this slot.
     // It is kept separate from NativeInput so the shader can read the packed
     // frame while filling the first fourteen compositor planes.
-    TransitionBuffer(
+    DX12TransitionBuffer(
         list,
         structuredInput.Get(),
         D3D12_RESOURCE_STATE_COPY_DEST,
@@ -3754,7 +3706,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     if (!BindCompositionUavTable(
             list, workSlot.Descriptors, Gpu2D.WorkNativeUavCpu[workIndex]))
     {
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             structuredInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -3764,7 +3716,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         return false;
     }
 
-    DispatchUniform constants = MakeDispatchUniform();
+    DX12DispatchUniform constants = MakeDispatchUniform();
     constants.TexWidth = finalFBValid ? 1u : 0u;
     constants.Pad = 16u;
     workSlot.Commands.WriteTimestamp(
@@ -3793,27 +3745,27 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             constants.InterpSpanCount = 0u;
             constants.Pad = 32u
                 | (fuseObjRawLogical ? (16u | 64u) : 0u);
-            SetDispatchConstants(list, constants);
+            DX12SetDispatchConstants(list, constants);
             list->Dispatch(1u, 384u, 1u);
             if (!fuseObjRawLogical)
             {
-                InsertUavBarrier(list, BlendStateBuffer.Get());
+                DX12InsertUavBarrier(list, BlendStateBuffer.Get());
                 constants.Pad = 16u;
-                SetDispatchConstants(list, constants);
+                DX12SetDispatchConstants(list, constants);
                 list->Dispatch(1u, 384u, 1u);
             }
 
-            InsertUavBarrier(list, structuredInput.Get());
+            DX12InsertUavBarrier(list, structuredInput.Get());
 
             constants.Pad = 4u | 128u;
-            SetDispatchConstants(list, constants);
+            DX12SetDispatchConstants(list, constants);
             list->SetPipelineState(Gpu2D.NativeCapture.Get());
             list->Dispatch(
                 DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
                 GPU2DNative::ScreenHeight * static_cast<u32>(ScaleFactor), 1u);
             ID3D12Resource* captureOutputs[2] = {
                 BlendStateBuffer.Get(), Capture.GetSidecarBuffer()};
-            InsertUavBarriers(list, captureOutputs, 2u);
+            DX12InsertUavBarriers(list, captureOutputs, 2u);
             DX12Perf::AddCounter(
                 DX12Perf::Counter::NativeGPU2DCaptureDispatchCount);
             DX12Perf::AddCounter(
@@ -3846,20 +3798,20 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                             screen * GPU2DNative::ScreenHeight + run.LineBase;
                         constants.Pad = 32u | 256u
                             | (fuseObjRawLogical ? (16u | 64u) : 0u);
-                        SetDispatchConstants(list, constants);
+                        DX12SetDispatchConstants(list, constants);
                         list->Dispatch(1u, run.LineCount, 1u);
                         ++dispatchCount;
                     }
                     if (!fuseObjRawLogical)
                     {
-                        InsertUavBarrier(list, BlendStateBuffer.Get());
+                        DX12InsertUavBarrier(list, BlendStateBuffer.Get());
                         ++captureBarrierCount;
                         for (u32 screen = 0u; screen < 2u; ++screen)
                         {
                             constants.InterpSpanCount =
                                 screen * GPU2DNative::ScreenHeight + run.LineBase;
                             constants.Pad = 16u | 256u;
-                            SetDispatchConstants(list, constants);
+                            DX12SetDispatchConstants(list, constants);
                             list->Dispatch(1u, run.LineCount, 1u);
                             ++dispatchCount;
                         }
@@ -3867,11 +3819,11 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
 
                     ID3D12Resource* logicalOutputs[2] = {
                         structuredInput.Get(), BlendStateBuffer.Get()};
-                    InsertUavBarriers(list, logicalOutputs, 2u);
+                    DX12InsertUavBarriers(list, logicalOutputs, 2u);
                     ++captureBarrierCount;
                     constants.InterpSpanCount = run.LineBase;
                     constants.Pad = 4u | 128u | 512u;
-                    SetDispatchConstants(list, constants);
+                    DX12SetDispatchConstants(list, constants);
                     list->SetPipelineState(Gpu2D.NativeCapture.Get());
                     list->Dispatch(
                         DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
@@ -3880,7 +3832,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                     ++captureDispatchCount;
                     ID3D12Resource* captureOutputs[2] = {
                         BlendStateBuffer.Get(), Capture.GetSidecarBuffer()};
-                    InsertUavBarriers(list, captureOutputs, 2u);
+                    DX12InsertUavBarriers(list, captureOutputs, 2u);
                     ++captureBarrierCount;
                     continue;
                 }
@@ -3891,16 +3843,16 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 constants.InterpSpanCount = lineNumber;
                 constants.Pad = 32u | 8u
                     | (fuseObjRawLogical ? (16u | 64u) : 0u);
-                SetDispatchConstants(list, constants);
+                DX12SetDispatchConstants(list, constants);
                 list->SetPipelineState(Gpu2D.Native.Get());
                 list->Dispatch(1u, 2u, 1u);
                 ++dispatchCount;
                 if (!fuseObjRawLogical)
                 {
-                    InsertUavBarrier(list, BlendStateBuffer.Get());
+                    DX12InsertUavBarrier(list, BlendStateBuffer.Get());
                     ++captureBarrierCount;
                     constants.Pad = 16u | 8u;
-                    SetDispatchConstants(list, constants);
+                    DX12SetDispatchConstants(list, constants);
                     list->Dispatch(1u, 2u, 1u);
                     ++dispatchCount;
                 }
@@ -3908,10 +3860,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 {
                     ID3D12Resource* logicalOutputs[2] = {
                         structuredInput.Get(), BlendStateBuffer.Get()};
-                    InsertUavBarriers(list, logicalOutputs, 2u);
+                    DX12InsertUavBarriers(list, logicalOutputs, 2u);
                     ++captureBarrierCount;
                     constants.Pad = 4u;
-                    SetDispatchConstants(list, constants);
+                    DX12SetDispatchConstants(list, constants);
                     list->SetPipelineState(Gpu2D.NativeCapture.Get());
                     list->Dispatch(
                         DivRoundUp(static_cast<u32>(ScreenWidth), 256u),
@@ -3920,7 +3872,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                     ++captureDispatchCount;
                     ID3D12Resource* captureOutputs[2] = {
                         BlendStateBuffer.Get(), Capture.GetSidecarBuffer()};
-                    InsertUavBarriers(list, captureOutputs, 2u);
+                    DX12InsertUavBarriers(list, captureOutputs, 2u);
                     ++captureBarrierCount;
                 }
             }
@@ -3952,14 +3904,14 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             constants.InterpSpanCount = run.RowBase;
             constants.Pad = 32u | 256u
                 | (fuseObjRawLogical ? (16u | 64u) : 0u);
-            SetDispatchConstants(list, constants);
+            DX12SetDispatchConstants(list, constants);
             list->Dispatch(1u, run.RowCount, 1u);
             ++dispatchCount;
             if (!fuseObjRawLogical)
             {
-                InsertUavBarrier(list, BlendStateBuffer.Get());
+                DX12InsertUavBarrier(list, BlendStateBuffer.Get());
                 constants.Pad = 16u | 256u;
-                SetDispatchConstants(list, constants);
+                DX12SetDispatchConstants(list, constants);
                 list->Dispatch(1u, run.RowCount, 1u);
                 ++dispatchCount;
             }
@@ -3972,14 +3924,14 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     workSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DLogical, true));
 
-    InsertUavBarrier(list, structuredInput.Get());
-    InsertUavBarrier(list, Capture.GetSidecarBuffer());
+    DX12InsertUavBarrier(list, structuredInput.Get());
+    DX12InsertUavBarrier(list, Capture.GetSidecarBuffer());
     if (stageDiagnostics)
     {
         // Developer-only Stage A readback.  Keep the structured planes in a
         // UAV state for the compositor after the copy; shipping never creates
         // or touches this readback resource.
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             structuredInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -3988,7 +3940,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             structuredReadback.Get(), 0,
             structuredInput.Get(), 0,
             static_cast<u64>(kCompositionInputDwords) * sizeof(u32));
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             structuredInput.Get(),
             D3D12_RESOURCE_STATE_COPY_SOURCE,
@@ -4012,7 +3964,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             Gpu2D.WorkOutputUavCpu[workIndex * 4u
                 + (outputSlot ? slotIndex : 3u)]))
     {
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             structuredInput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -4023,7 +3975,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     }
     constants.InterpSpanCount = 0u;
     constants.Pad = compositorDirectOutput ? 1u : 0u;
-    SetDispatchConstants(list, constants);
+    DX12SetDispatchConstants(list, constants);
     list->SetPipelineState(Gpu2D.Compositor.Get());
     workSlot.Commands.WriteTimestamp(
         GpuMetricQueryIndex(GpuMetric::NativeGPU2DResolve, false));
@@ -4038,10 +3990,10 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         && GPU2DNative::DirectOutputDiagnosticsEnabled();
     if (compositorDirectOutput)
     {
-        InsertUavBarrier(list, outputSlot->DirectTexture.Get());
+        DX12InsertUavBarrier(list, outputSlot->DirectTexture.Get());
         if (directOutputReadback)
         {
-            TransitionBuffer(
+            DX12TransitionBuffer(
                 list,
                 outputSlot->DirectTexture.Get(),
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -4069,7 +4021,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
                 source.SubresourceIndex = screen;
                 list->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
             }
-            TransitionBuffer(
+            DX12TransitionBuffer(
                 list,
                 outputSlot->DirectTexture.Get(),
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
@@ -4077,7 +4029,7 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
         }
         else
         {
-            TransitionBuffer(
+            DX12TransitionBuffer(
                 list,
                 outputSlot->DirectTexture.Get(),
                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -4088,14 +4040,14 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
     }
     else
     {
-        InsertUavBarrier(list, composedOutput.Get());
+        DX12InsertUavBarrier(list, composedOutput.Get());
         DX12Perf::AddCounter(DX12Perf::Counter::FallbackCompositorBufferFrames);
     }
 
     if (diagnosticReadback && !directOutputReadback)
     {
-        InsertUavBarrier(list, composedOutput.Get());
-        TransitionBuffer(
+        DX12InsertUavBarrier(list, composedOutput.Get());
+        DX12TransitionBuffer(
             list,
             composedOutput.Get(),
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
@@ -4104,14 +4056,14 @@ bool DX12Renderer3D::ComposeNativeGPU2D(
             nativeReadback.Get(), 0,
             composedOutput.Get(), 0,
             composedOutputBytes);
-        TransitionBuffer(
+        DX12TransitionBuffer(
             list,
             composedOutput.Get(),
             D3D12_RESOURCE_STATE_COPY_SOURCE,
             D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     }
     }
-    TransitionBuffer(
+    DX12TransitionBuffer(
         list,
         structuredInput.Get(),
         D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
