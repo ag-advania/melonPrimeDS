@@ -64,18 +64,16 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
     drawText(s_labelBitmapCache, s_labelOlCache, lx, ly);
 }
-static void DrawMatchStatusHud(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
+static void DrawMatchStatusHud(QPainter* p, const RomAddresses& rom,
                                uint8_t playerPos, bool isAdventure,
                                const CachedHudConfig& c,
-                               const HudRuntimeState* st = nullptr)
+                               const HudRuntimeState& st)
 {
     if (!c.matchStatus.matchStatusShow || isAdventure)
         return;
 
     MatchStatusResolvedState state = {};
-    const bool hasState = st
-        ? ReadHudRuntimeMatchStatusState(rom, playerPos, *st, state)
-        : ComputeMatchStatusState(ram, rom, playerPos, state);
+    const bool hasState = ReadHudRuntimeMatchStatusState(rom, playerPos, st, state);
     if (!hasState)
         return;
 
@@ -170,10 +168,10 @@ static void DrawBombLeft(QPainter* p, uint8_t bombs,
 }
 //  Rank & Time HUD
 // =========================================================================
-static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& rom,
+static void DrawRankAndTime(QPainter* p, const RomAddresses& rom,
                             uint8_t playerPos, bool isAdventure,
                             const CachedHudConfig& c, float tds,
-                            const HudRuntimeState* st = nullptr)
+                            const HudRuntimeState& st)
 {
     if (isAdventure)
         return;
@@ -186,9 +184,7 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
         auto& s_rankOutlineCache = HudFrameState().rankOutline;
         auto& s_rankMeasure = HudFrameState().rankMeasure;
 
-        const uint8_t rankByte = st
-            ? ReadHudRuntimeRankByte(rom, playerPos, *st)
-            : static_cast<uint8_t>((Read32(ram, rom.matchRank) >> (playerPos * 8)) & 0xFF);
+        const uint8_t rankByte = ReadHudRuntimeRankByte(rom, playerPos, st);
         if (rankByte <= 3) {
             DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                                   s_rankMeasure, s_rankCache, s_rankOutlineCache,
@@ -204,9 +200,7 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
         auto& s_timeLeftOutlineCache = HudFrameState().timeLeftOutline;
         auto& s_timeLeftMeasure = HudFrameState().timeLeftMeasure;
 
-        const int seconds = st
-            ? ReadHudRuntimeTimeLeftSeconds(rom, *st)
-            : static_cast<int>(Read32(ram, rom.timeLeft)) / 60;
+        const int seconds = ReadHudRuntimeTimeLeftSeconds(rom, st);
         DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                               s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache,
                               UpdateTimeString(s_timeLeftStringCache, seconds, false),
@@ -220,11 +214,7 @@ static void DrawRankAndTime(QPainter* p, melonDS::u8* ram, const RomAddresses& r
         auto& s_timeLimitOutlineCache = HudFrameState().timeLimitOutline;
         auto& s_timeLimitMeasure = HudFrameState().timeLimitMeasure;
 
-        const int goalMinutes = st
-            ? ReadHudRuntimeTimeLimitMinutes(rom, *st)
-            : (s_battleState.valid
-                ? s_battleState.timeLimitMinutes
-                : LookupTimeLimitMin((Read32(ram, rom.battleSettings + 4) >> 8) & 0xFF));
+        const int goalMinutes = ReadHudRuntimeTimeLimitMinutes(rom, st);
         DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                               s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache,
                               UpdateTimeString(s_timeLimitStringCache, goalMinutes, true),

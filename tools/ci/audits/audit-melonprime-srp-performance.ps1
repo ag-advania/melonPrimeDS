@@ -180,9 +180,10 @@ foreach ($composerHeader in $composerHeaders) {
 # =============================================================================
 #  MelonPrime SRP ownership ratchets (MP-SRP-001..004)
 #
-#  These are grep ratchets, not a C++ parser. Rules A-C are shaped so a false
-#  positive needs someone to write the banned name in the banned file, so they
-#  hard-fail. Rule D cannot be decided by grep and only prints for review.
+#  These are grep ratchets, not a C++ parser. Rules A-C, E, and F are shaped so
+#  a false positive needs someone to write the banned name in the banned file,
+#  so they hard-fail. Rule D cannot be decided by grep and only prints for
+#  review.
 # =============================================================================
 
 # --- Rule A: ARM9 instruction patching left MelonPrimeGameSettings ----------
@@ -317,6 +318,48 @@ foreach ($typeName in $runtimeSampleForbiddenTypes) {
         Add-Error ("MelonPrimeHudRuntimeSample.inc must not own or mention " +
             "presentation type ${typeName}; move it to the appropriate unity " +
             "fragment: $line")
+    }
+}
+
+# --- Rule F: runtime drawing never samples emulated RAM --------------------
+#
+# RuntimeDraw receives the already-resolved HudRuntimeState snapshot from
+# CustomHud_Render.  Keep all direct RAM reads and the legacy nullable fallback
+# in RuntimeSample so drawing only chooses how to present resolved values.
+$hudRuntimeDraw = Join-Path $qtSdl "MelonPrimeHudRuntimeDraw.inc"
+$runtimeDrawForbiddenPatterns = @(
+    '\bRead8\s*\(',
+    '\bRead16\s*\(',
+    '\bRead32\s*\(',
+    '\bComputeMatchStatusState\s*\(',
+
+    # Any explicit raw MainRAM pointer declaration, regardless of variable name.
+    '(?:const\s+)?melonDS::u8\s*\*\s*\w+',
+
+    # RuntimeDraw receives HudRuntimeState, but must never dereference its raw
+    # RAM member itself. Sampling access stays behind RuntimeSample helpers.
+    '(?:\.|->)\s*ram\b',
+
+    # Do not reacquire emulated MainRAM through NDS either.
+    '\bMainRAM\b',
+
+    # Legacy nullable state fallback is forbidden.
+    'const\s+HudRuntimeState\s*\*\s*\w+\s*=\s*nullptr'
+)
+foreach ($pattern in $runtimeDrawForbiddenPatterns) {
+    foreach ($line in (Get-CodeMatchLines $pattern $hudRuntimeDraw)) {
+        Add-Error ("MelonPrimeHudRuntimeDraw.inc must delegate RAM sampling to " +
+            "RuntimeSample; forbidden pattern ${pattern}: $line")
+    }
+}
+
+$runtimeDrawText = Get-Content -LiteralPath $hudRuntimeDraw -Raw
+foreach ($signature in @(
+    @{ Name = 'DrawMatchStatusHud'; Pattern = '(?s)static\s+void\s+DrawMatchStatusHud\s*\([^)]*const\s+HudRuntimeState\s*&\s*st\s*\)' },
+    @{ Name = 'DrawRankAndTime'; Pattern = '(?s)static\s+void\s+DrawRankAndTime\s*\([^)]*const\s+HudRuntimeState\s*&\s*st\s*\)' })) {
+    if ($runtimeDrawText -notmatch $signature.Pattern) {
+        Add-Error ("$($signature.Name) must consume the resolved HudRuntimeState " +
+            "by const reference in MelonPrimeHudRuntimeDraw.inc")
     }
 }
 
