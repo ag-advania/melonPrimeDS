@@ -465,14 +465,17 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
     const CachedHudConfig& c = s_cache;
     const RomAddresses&     rom     = s_editRomCopy;
     const GameAddressesHot& addrHot = s_editAddrHotCopy;
-    const uint32_t offP = static_cast<uint32_t>(s_editPlayerPosCopy) * Consts::PLAYER_ADDR_INC;
+    HudRuntimeState st = {};
+    if (!ReadHudRuntimeBaseState(s_editEmu, rom, s_editPlayerPosCopy, st))
+        return;
+    ReadHudRuntimeAdventurePauseState(rom, st);
+    ReadHudRuntimeVisibleState(rom, addrHot, st);
 
-    const uint8_t hunterID = Read8(ram, addrHot.chosenHunter);
-    const bool    isAlt    = Read8(ram, addrHot.isAltForm) == 0x02;
-    const uint8_t viewMode = Read8(ram, rom.baseViewMode + offP);
-    const bool    isFirstPerson = (viewMode == 0x00);
-    const bool    canDrawCrosshair = isFirstPerson && !isAlt;
-    if (canDrawCrosshair && ((Read8(ram, addrHot.jumpFlag) & 0x10) == 0)) {
+    const uint8_t hunterID = st.hunterID;
+    const bool    isAlt = st.isAlt;
+    const bool    isFirstPerson = st.isFirstPerson;
+    const bool    canDrawCrosshair = isFirstPerson && !isAlt && !st.isTrans;
+    if (canDrawCrosshair) {
         const uint32_t gameFrame = nds ? nds->NumFrames : 0;
         float crosshairZoomAmount = 0.0f;
         if (c.crosshair.cachedZoomAffectsVisual) {
@@ -481,48 +484,42 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
             crosshairZoomAmount = ReadCrosshairZoomAmount(ram, rom);
         }
         DrawCrosshair(p, ram, rom, c, hudScale, topStretchX,
-                      gameFrame, crosshairZoomAmount);
+                     gameFrame, crosshairZoomAmount);
     }
 
-    const uint16_t currentHP = Read16(ram, rom.playerHP + offP);
-    const uint16_t maxHP     = Read16(ram, rom.maxHP     + offP);
-    DrawHP(p, currentHP, maxHP, c, tds);
+    DrawHP(p, st.currentHP, st.maxHP, c, tds);
 
     const bool    isBomber = (hunterID == static_cast<uint8_t>(HunterId::Samus) ||
                               hunterID == static_cast<uint8_t>(HunterId::Sylux));
     if (isBomber && isAlt)
-        DrawBombLeft(p,
-                     static_cast<uint8_t>((Read32(ram, rom.baseBomb + offP) >> 8) & 0xF),
-                     c, tds, hudScale);
+        DrawBombLeft(p, ReadHudRuntimeBombCount(rom, st), c, tds, hudScale);
 
-    const bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
-    DrawMatchStatusHud(p, ram, rom, s_editPlayerPosCopy, isAdventure, c);
-    DrawRankAndTime(p, ram, rom, s_editPlayerPosCopy, isAdventure, c, tds);
+    DrawMatchStatusHud(p, rom, s_editPlayerPosCopy, st.isAdventure, c, st);
+    DrawRankAndTime(p, rom, s_editPlayerPosCopy, st.isAdventure, c, tds, st);
 
     // Mirror the normal HUD path so preview mode includes the live radar frame/crop.
     DrawBottomScreenOverlay(cfg, p, btmBuffer, (hunterID <= 6) ? hunterID : 0);
 
     if (isFirstPerson) {
-        const uint8_t  weapon          = Read8(ram, addrHot.currentWeapon);
+        const uint8_t  weapon          = st.currentWeapon;
         const uint8_t  weaponIdx       = (weapon < 9) ? weapon : 0;
         const WeaponInfo& weaponInfo   = kWeaponTable[weaponIdx];
-        const uint16_t maxAmmoSpecial  = Read16(ram, rom.maxAmmoSpecial + offP);
-        const uint16_t maxAmmoMissile  = Read16(ram, rom.maxAmmoMissile + offP);
+        const uint16_t maxAmmoSpecial  = st.maxAmmoSpecial;
+        const uint16_t maxAmmoMissile  = st.maxAmmoMissile;
         uint16_t currentAmmoSpecial = 0;
         uint16_t currentAmmoMissile = 0;
         if (c.weaponInventory.show ||
             (weaponInfo.divisor > 0 && !weaponInfo.isMissile && weaponIdx != WeaponId::OmegaCannon))
-            currentAmmoSpecial = Read16(ram, rom.currentAmmoSpecial + offP);
+            currentAmmoSpecial = ReadHudRuntimeCurrentAmmoSpecial(rom, st);
         if (c.weaponInventory.show || weaponInfo.isMissile)
-            currentAmmoMissile = Read16(ram, rom.currentAmmoMissile + offP);
+            currentAmmoMissile = ReadHudRuntimeCurrentAmmoMissile(rom, st);
 
         DrawWeaponAmmo(p, weapon,
                        currentAmmoSpecial, currentAmmoMissile,
                        maxAmmoSpecial, maxAmmoMissile, c, tds, hudScale);
 
         if (c.weaponInventory.show) {
-            const uint16_t havingWeapons = static_cast<uint16_t>(
-                Read16(ram, addrHot.havingWeapons));
+            const uint16_t havingWeapons = ReadHudRuntimeHavingWeapons(addrHot, st);
             DrawWeaponInventory(p,
                                 havingWeapons, weapon,
                                 currentAmmoSpecial, currentAmmoMissile,

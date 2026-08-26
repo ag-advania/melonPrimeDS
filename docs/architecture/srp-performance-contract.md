@@ -27,7 +27,7 @@ Contract for the MelonPrime SRP refactor v3 immediate plan. Audited by
 | `MelonPrimeHudFrameOwnedState.inc` | Single per-instance `frameState` aggregate and cache lifetime | Sampling policy, drawing policy, extra allocations |
 | `MelonPrimeHudRenderPlan.inc` | Snapshot to draw-ready plan, layout/text/outline caches, painter transform | Emulated memory reads, game-mode meaning |
 | `MelonPrimeHudRenderRuntime.inc` | Ordered unity wrapper for runtime child fragments | Feature implementation and additional state |
-| `MelonPrimeHudRuntimeDraw.inc` | Runtime-sourced HUD draw helpers | RAM sampling, visibility policy, patch lifecycle |
+| `MelonPrimeHudRuntimeDraw.inc` | Runtime-sourced HUD draw helpers consuming `HudRuntimeState` | RAM sampling, visibility policy, patch lifecycle |
 | `MelonPrimeHudRuntimePolicy.inc` | Custom HUD enablement, gameplay visibility, crosshair policy | Drawing, radar preprocessing, patch lifecycle |
 | `MelonPrimeHudRadarRuntime.inc` | CPU radar color-key preprocessing and source-radius helper | HUD layout, native patch lifecycle |
 | `MelonPrimeHudPatchRuntime.inc` | Native HUD patch apply/restore/reset/reconcile implementation | Drawing and radar processing |
@@ -142,8 +142,9 @@ Enforced by `audit-melonprime-srp-performance.ps1` Rule B, per function rather
 than per group, with the matching requirement that the owner header still
 declares what it owns. Rule B2 keeps Vulkan and Metal presenters off the heavy
 editor header, Rule E keeps presentation types out of the sampling fragment,
-Rule A2 keeps aim-smoothing wired at game join, and Rule C2 keeps the
-fast-forward writer in `EmuThread.cpp`.
+Rule F keeps raw RAM reads out of the drawing fragment, Rule A2 keeps
+aim-smoothing wired at game join, and Rule C2 keeps the fast-forward writer in
+`EmuThread.cpp`.
 
 ## QColorDialog rule
 
