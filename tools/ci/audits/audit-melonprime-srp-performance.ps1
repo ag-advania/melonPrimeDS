@@ -85,14 +85,23 @@ $rendererSources = @(
     (Join-Path $repoRoot "src/GPU3D_Vulkan.h")
 )
 
-# Assignment to a publication field, or to Output itself. The trailing
-# character class keeps `==` and `!=` out of it.
+# Assignment to a publication field, or to Output itself.
+#
+# The lookahead is `(?!=)` rather than `[^=]`. A character class needs one more
+# character on the same line, so it misses the assignment an ordinary formatter
+# produces:
+#
+#     Gpu2D.Output =
+#         candidate;
+#
+# The lookahead matches an `=` at end of line too, while still rejecting `==`
+# and `!=`, which are reads and must stay legal.
 $ownershipMutations = @(
-    'Gpu2D\.ComposedOutputValid\s*=[^=]',
-    'Gpu2D\.ComposedGeneration\s*=[^=]',
-    'Gpu2D\.PublishedOutputGeneration\s*=[^=]',
-    'Gpu2D\.LastComposeResult\s*=[^=]',
-    'Gpu2D\.Output\s*=[^=]',
+    'Gpu2D\.ComposedOutputValid\s*=(?!=)',
+    'Gpu2D\.ComposedGeneration\s*=(?!=)',
+    'Gpu2D\.PublishedOutputGeneration\s*=(?!=)',
+    'Gpu2D\.LastComposeResult\s*=(?!=)',
+    'Gpu2D\.Output\s*=(?!=)',
     'Gpu2D\.Output\.reset\s*\(',
     'std::make_shared<DX12Gpu2DOutput>',
     'std::make_shared<VulkanGpu2DOutput>'
@@ -127,17 +136,31 @@ $composerHeaders = @(
 foreach ($composerHeader in $composerHeaders) {
     if (-not (Test-Path -LiteralPath $composerHeader)) { continue }
     $relative = [System.IO.Path]::GetRelativePath($repoRoot, $composerHeader) -replace '\\', '/'
-    $text = Get-Content -LiteralPath $composerHeader -Raw
-    foreach ($operation in @(
-        'RecreateOutput', 'ReleaseOutput', 'ResetForRendererEpoch', 'MarkFatal',
-        'GetComposedOutput', 'AcquireComposedOutputLease',
-        'GetPublishedOutputGeneration', 'GetLastComposeResult')) {
-        if ($text -notmatch [regex]::Escape($operation)) {
-            Add-Error "compositor lifecycle operation ${operation}() is missing from ${relative}"
+    # Declaration shape, not word presence. Checking that the name appears
+    # anywhere in the file passes on a comment that merely mentions it, which
+    # would let someone delete the operation and keep the audit green -- the
+    # exact failure this ratchet exists to prevent. Not a C++ parser: just
+    # enough that a comment alone cannot satisfy it.
+    foreach ($declaration in @(
+        @{ Name = 'RecreateOutput'; Pattern = '^\s*bool\s+RecreateOutput\s*\(' },
+        @{ Name = 'ReleaseOutput'; Pattern = '^\s*void\s+ReleaseOutput\s*\(' },
+        @{ Name = 'ResetForRendererEpoch'; Pattern = '^\s*void\s+ResetForRendererEpoch\s*\(' },
+        @{ Name = 'MarkFatal'; Pattern = '^\s*void\s+MarkFatal\s*\(' },
+        @{ Name = 'HasValidOutput'; Pattern = '^\s*\[\[nodiscard\]\]\s+bool\s+HasValidOutput\s*\(' },
+        @{ Name = 'GetPublishedOutputGeneration'; Pattern = '^\s*\[\[nodiscard\]\]\s+u64\s+GetPublishedOutputGeneration\s*\(' },
+        @{ Name = 'GetLastComposeResult'; Pattern = '^\s*\[\[nodiscard\]\]\s+GPU2DComposeResult\s+GetLastComposeResult\s*\(' },
+        @{ Name = 'GetComposedOutput'; Pattern = '^\s*\[\[nodiscard\]\]\s+RendererOutput\s+GetComposedOutput\s*\(' },
+        @{ Name = 'AcquireComposedOutputLease'; Pattern = '^\s*\[\[nodiscard\]\]\s+RendererOutputLease\s+AcquireComposedOutputLease\s*\(' })) {
+        if ((Get-MatchLines $declaration.Pattern $composerHeader).Count -eq 0) {
+            Add-Error ("compositor lifecycle operation $($declaration.Name)() is not " +
+                "declared in ${relative}")
         }
     }
-    if ($text -notmatch 'NextOutputResourceGeneration') {
-        Add-Error "the output resource generation counter is missing from ${relative}"
+
+    # Same reasoning for the resource generation counter: a member, not a word.
+    if ((Get-MatchLines '^\s*u64\s+NextOutputResourceGeneration\s*=\s*1\s*;' $composerHeader).Count -eq 0) {
+        Add-Error ("the output resource generation counter is not declared in " +
+            "${relative}")
     }
 }
 

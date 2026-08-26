@@ -1054,8 +1054,9 @@ same invariant at its new home, and where a responsibility genuinely moved the
 audit also forbids it moving back.
 
 The lesson is the boring one: run the gate the CI runs, not the subset the
-notes list. The full local set is now 15 Python audits, the shader source-sync
-check and 7 PowerShell audits.
+notes list. Take the list from `.github/workflows/build-ubuntu.yml`, which is
+the authority, rather than from a count written down here -- that count was
+already stale twice, because the gate grows and a number in prose does not.
 
 ### REAUDIT-P2-002 -- explicit retry after a DX12 runtime failure
 

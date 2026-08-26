@@ -146,10 +146,19 @@ static_assert(kNativeGPU2DInputBytes
 // moved. That is the "structure only, identical behaviour" step the audit asks
 // for first.
 //
-// Members are public because this is a resource owner, not an abstraction: the
-// renderer's shared pipeline-build loop writes the pipelines, and the compose
-// recording reads the rings. Wrapping each in a pair of accessors would add
-// noise without adding a boundary.
+// Access splits along what the shared GPU contracts actually require.
+//
+// Public: the backend mechanism the renderer must reach for those contracts --
+// the pipelines its shader-step loop writes, the descriptor rings the compose
+// recording reads, and the output resource set that
+// BuildCompositorUavDescriptors() reads to assemble one shared UAV table.
+// Wrapping those in accessor pairs would describe a boundary the descriptor
+// contract does not have.
+//
+// Private: publication state and the resource lifetime identity. Those are the
+// compositor's own answer about what it has published, and they change only
+// through the semantic lifecycle operations below -- which is the difference
+// between declaring ownership and having it.
 class DX12Gpu2DComposer
 {
 public:
