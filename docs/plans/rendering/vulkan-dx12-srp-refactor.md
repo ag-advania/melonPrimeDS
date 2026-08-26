@@ -1267,9 +1267,14 @@ fact, and the cycle ends with a tally the harness reads as the authority:
 Real runs now reconcile rather than being asserted: eight requests, one leading
 no-op because the first element equals the starting scale, seven applied, and
 generations 1..9 -- the initial creation plus seven changes plus the restore.
-Ten verdict shapes were checked against the parser, including the ones that must
-still pass: a leading no-op, and a mid-run renderer restart whose generations
-legitimately begin again at 1.
+The verdict itself is now a function rather than inline code, pinned by
+`tools/testing/scale-stress-verdict-tests.py` -- 12 synthetic logs covering both
+directions, including the ones that must still pass: a leading no-op, and a
+mid-run renderer restart whose generations legitimately begin again at 1. That
+test was checked against a deliberate regression rather than assumed to work.
+
+Being untestable without a GPU is what let the first version ship believing
+request lines were proof of a change.
 
 One note on the scale sweep: 5x and 9x first failed at 15 seconds with window
 actions, and passed at 40 seconds without them. Those scales compile more
