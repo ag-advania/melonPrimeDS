@@ -53,7 +53,7 @@
 #include "version.h"
 #include "MelonPrimeBuildInfo.h"
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudGoldenHarness.h"
 #endif
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
 #include "MelonPrimeMetalFeatureCheck.h"

@@ -43,6 +43,7 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudRuntime.h"
 #include "MelonPrimeLocalization.h"
 
 // The emulation identity is probed separately from the extended stamp.  New

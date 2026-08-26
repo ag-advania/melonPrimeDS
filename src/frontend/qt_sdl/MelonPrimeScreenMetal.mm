@@ -35,6 +35,10 @@
 #include "EmuThread.h"
 #include "MelonPrime.h"
 #include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudRuntime.h"
+#include "MelonPrimeHudPatchLifecycle.h"
+#include "MelonPrimeHudEdit.h"
 #include "MelonPrimePerfProbe.h"
 
 #include "MelonPrimeMetalFeatureCheck.h"

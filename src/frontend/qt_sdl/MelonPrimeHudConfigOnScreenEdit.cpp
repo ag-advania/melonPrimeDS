@@ -4,7 +4,7 @@
 #include "MelonPrimeHudEditorFormBuilder.h"
 #include "MelonPrimeHudEditorFormLayout.h"
 #include "MelonPrimeHudPropSchema.inc"
-#include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
 #include "MelonPrimeLocalization.h"
 #include "EmuInstance.h"
 #include <QApplication>

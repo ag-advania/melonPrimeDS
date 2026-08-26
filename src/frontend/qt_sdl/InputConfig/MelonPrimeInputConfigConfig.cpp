@@ -19,7 +19,7 @@
 #include "MelonPrimeDef.h"
 #include "../MelonPrimeHudPropSchema.inc"
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
 #endif
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"

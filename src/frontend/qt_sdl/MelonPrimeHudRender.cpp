@@ -1,6 +1,12 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 
 #include "MelonPrimeHudRender.h"
+#include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudRuntime.h"
+#include "MelonPrimeHudRadar.h"
+#include "MelonPrimeHudPatchLifecycle.h"
+#include "MelonPrimeHudEdit.h"
+#include "MelonPrimeHudGoldenHarness.h"
 #include "MelonPrimePatchNoHud.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"
