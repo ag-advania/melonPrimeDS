@@ -864,16 +864,16 @@ against the base commit rather than by timing.
 | frames-in-flight unchanged | DX12 compositor 3, Vulkan compositor 3, Vulkan renderer 2, `FramesInFlight` 3 / 2 — all identical to the base |
 | no readback added to a visible path | `CaptureBridge::ReadBlocks` is reachable only from `ReadNativeCapture`, itself reachable only from `SyncVRAMCapture` — the demand-driven path, as before |
 
-### Build — 4 of 7
+### Build — 7 of 7
 
 | Item | Status |
 |---|---|
 | Vulkan build gate | **met** — `MELONPRIME_FORCE_DISABLE_VULKAN=ON` configures ("Vulkan backend: disabled") and builds |
 | DX12 build gate | **met** — `MELONPRIME_FORCE_DISABLE_DX12=ON` configures ("DirectX 12 backend: disabled") and builds |
 | Windows | **met** |
-| Linux Vulkan | not run — no such machine here |
-| BSD Vulkan build | not run — same |
-| macOS Vulkan / MoltenVK | not run — same |
+| Linux Vulkan | **met** — Ubuntu workflow green on `develop_hud`, x86_64 and aarch64 |
+| BSD Vulkan build | **met** — BSD workflow green: FreeBSD, NetBSD and OpenBSD, all x86_64 |
+| macOS Vulkan / MoltenVK | **met** — macOS workflow green: x86_64, arm64 and the universal binary |
 | developer flags OFF, release-equivalent | **met** — configured with `MELONPRIME_ENABLE_DEVELOPER_FEATURES=OFF` and built |
 
 The gate builds were the ones previously written off as impossible. They are
@@ -886,7 +886,24 @@ then restored to the developer configuration and rebuilt; the cache now reads
 `MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON` with both force-disable flags `OFF`,
 and the full build with all suites passes.
 
-The three remaining rows need Linux, BSD and macOS hosts.
+The three platform rows were closed by running the repository's own CI on
+`develop_hud` (`gh workflow run <workflow>.yml --ref develop_hud --repo
+ag-advania/melonPrimeDS`), which is real host validation on real Linux,
+macOS and BSD machines rather than a cross-compile.
+
+They could not be closed earlier because all three workflows were failing on
+the audit gate before they ever reached a compiler — see the audit gap
+noted above. Once those audits were retargeted, every platform built clean:
+
+| Workflow | Jobs |
+|---|---|
+| Ubuntu | Audits, x86_64, aarch64, artifact assembly |
+| macOS | x86_64, arm64, Intel MoltenVK diagnostic, universal binary |
+| BSD | FreeBSD x86_64, NetBSD x86_64, OpenBSD x86_64, artifact assembly |
+
+The remaining annotations on those runs are pre-existing environment noise
+— a `.gitmodules` submodule warning, Homebrew tap trust, and an
+artifact-upload option in the release step — and none of them gate a job.
 
 ### Runtime — 8 of 8
 
@@ -903,15 +920,13 @@ The three remaining rows need Linux, BSD and macOS hosts.
 
 ### Summary
 
-30 of 33 met, 3 unrun. The 2026-08-26 re-audit reopened two of the Runtime
-rows -- renderer switch and low latency -- and both are now closed by
-REAUDIT-P1-001 and REAUDIT-P2-001 above, with the evidence recorded there.
-What remains is only the three builds that need hosts this machine does not
-have — **Linux, BSD and macOS**. `tools/linux-vm/` exists
-but is a VirtualBox harness driven from a macOS host, so it does not help from
-Windows.
+**33 of 33 met.**
 
-Everything else in §15 is met with evidence recorded above.
+The 2026-08-26 re-audit reopened two of the Runtime rows -- renderer switch and
+low latency -- and both are now closed by REAUDIT-P1-001 and REAUDIT-P2-001
+above, with the evidence recorded there. The three platform build rows are
+closed by the repository's own CI on `develop_hud`: Ubuntu (x86_64, aarch64),
+macOS (x86_64, arm64, universal) and BSD (FreeBSD, NetBSD, OpenBSD) all green.
 
 The `Gpu2DComposer` item that was previously listed here as blocked is done.
 The blocker was mis-stated: §11.3 forbids *mixing* a descriptor-strategy change
@@ -1041,7 +1056,8 @@ implementer back at Renderer3D.
 
 ## What is left
 
-Phase 2 is complete on both backends: the output publisher, capture bridge,
+Nothing in the audit or its 2026-08-26 re-audit is open. Phase 2 is complete on
+both backends: the output publisher, capture bridge,
 GPU2D compositor and pipeline repository are all separate modules, and what
 remains in each `Renderer3D` is the 3D rasterizer plus the sub-components it
 composes.
@@ -1063,9 +1079,10 @@ problem:
   into a responsibility move, and each module header records the constraint so
   the next reader does not mistake it for an oversight.
 
-Phase 3 items the audit rated LOW remain open: `VulkanDevice` budget and
-diagnostics (VK-SRP-002), and a `DX12SurfacePresenter` swapchain/layer split
-(DX-SRP-004), which is not needed yet.
+Phase 3 items the audit rated LOW remain open by its own reckoning:
+`VulkanDevice` budget and diagnostics (VK-SRP-002), and a
+`DX12SurfacePresenter` swapchain/layer split (DX-SRP-004), which is not needed
+yet.
 
 ## Rules for anyone continuing this
 
