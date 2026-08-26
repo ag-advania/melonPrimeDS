@@ -23,12 +23,15 @@
 
 #include <algorithm>
 #include <array>
+#include <memory>
 
 #include "DX12Common.h"
 #include "DX12CommandContext.h"
 #include "DX12DescriptorRing.h"
+#include "DX12PipelineRepository.h"
 #include "DX12PresentedFrame.h"
 #include "GPU2DNative.h"
+#include "GPU3D.h"
 #include "MelonPrimeStructuredComposition.h"
 #include "RendererOutputRing.h"
 
@@ -36,6 +39,59 @@ namespace melonDS
 {
 
 class DX12Context;
+class DX12CaptureBridge;
+class DX12Gpu2DOutput;
+class CaptureProvenanceState;
+
+// Everything the compose passes read from outside the compositor.
+//
+// All of it is borrowed and non-owning, rebuilt by the renderer for each call.
+// Spelling it out is the point: it is the whole contract between the 3D
+// rasterizer and the GPU2D compositor, and FinalFB in particular is read-only
+// here -- the compositor samples the finished 3D image and never writes it.
+//
+// The three callbacks are plain function pointers rather than std::function:
+// this runs once per DS frame on the emulation thread and must not allocate.
+struct DX12Gpu2DComposeContext
+{
+    DX12Context* Context = nullptr;
+    ID3D12RootSignature* RootSignature = nullptr;
+
+    // The 3D rasterizer's finished image, read-only to the compositor.
+    ID3D12Resource* FinalFB = nullptr;
+    // Its tail is the persistent GPU LCDC capture mirror.
+    ID3D12Resource* BlendState = nullptr;
+    // Capture's own sidecar pipeline, dispatched from the compose list so the
+    // sidecar write is ordered against the compose that produced it.
+    ID3D12PipelineState* CaptureSidecar = nullptr;
+
+    DX12CaptureBridge* Capture = nullptr;
+    CaptureProvenanceState* Provenance = nullptr;
+    GPU2DNative::HighResCaptureProvenanceTracker* HighResCapture = nullptr;
+
+    DX12DispatchUniform Dispatch{};
+    int ScaleFactor = 0;
+    int ScreenWidth = 0;
+    int ScreenHeight = 0;
+    // False until the shader-compile steps have all run.
+    bool ShadersReady = false;
+    // The renderer has already latched a fatal failure; compose must not run.
+    bool RendererFailed = false;
+    // The 3D frame was aborted, so FinalFB holds nothing for this frame.
+    bool AbortFrame = false;
+
+    // Latch a runtime failure on the renderer. Same semantics as calling it
+    // directly: first failure wins, it logs, and it marks the compose result
+    // fatal.
+    void (*Fail)(void* user, const char* reason) = nullptr;
+    // The compose lists reset the descriptor ring the rasterizer also binds
+    // texture SRVs from, so its binding cache has to be dropped with them.
+    void (*InvalidateSrvCache)(void* user) = nullptr;
+    // Developer-only diagnostic UAV block. It describes the rasterizer's
+    // buffers, so the renderer builds it.
+    bool (*BuildWorkDiagnosticUav)(void* user, u32 workIndex) = nullptr;
+    void* User = nullptr;
+};
 
 // Buffer layout the GPU2D compositor consumes. Declared here rather than in
 // the renderer's translation unit because these sizes describe the
@@ -99,6 +155,40 @@ public:
     void ShutdownDescriptors() noexcept;
     void ReleasePipelines() noexcept;
 
+    // --- composition -------------------------------------------------------
+    //
+    // Records and submits one composed frame. Structured takes the software
+    // engines' 2D planes; native takes the GPU2D producer's packed frame and
+    // runs Stage A itself.
+    bool ComposeStructuredOutput(
+        const DX12Gpu2DComposeContext& ctx,
+        const std::array<const u32*, 14>& planes,
+        const std::array<const u32*, 2>& lineMeta,
+        const u32* captureCommands,
+        const StructuredComposition::ScreenRoutingView& screenRouting,
+        u64 generation,
+        const StructuredComposition::GenerationState& contentGeneration);
+    bool ComposeNativeGPU2D(
+        const DX12Gpu2DComposeContext& ctx,
+        const GPU2DNative::FrameInput& input,
+        u64 generation,
+        bool finalFBValid,
+        const u32* expectedTop,
+        const u32* expectedBottom);
+    [[nodiscard]] bool CanComposeNativeGPU2D(
+        const DX12Gpu2DComposeContext& ctx) const noexcept;
+
+private:
+    // Copies the canonical UAV block for a slot into its shader-visible ring
+    // and binds it. The table shape is the root signature's, not this class's.
+    bool BindCompositionUavTable(
+        const DX12Gpu2DComposeContext& ctx,
+        ID3D12GraphicsCommandList* list,
+        DX12DescriptorRing& descriptors,
+        D3D12_CPU_DESCRIPTOR_HANDLE canonicalCpu);
+
+public:
+
     // --- pipelines ---------------------------------------------------------
     //
     // Built by the renderer's shader-step loop, which owns the generated blob
@@ -117,6 +207,19 @@ public:
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> OutputUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 3> WorkNativeUavCpu{};
     std::array<D3D12_CPU_DESCRIPTOR_HANDLE, 12> WorkOutputUavCpu{};
+
+    // --- the resource set and its publication state ------------------------
+    //
+    // Recreated on every resolution change, so it is held by pointer while
+    // everything above outlives it. Defined below in this header.
+    std::shared_ptr<DX12Gpu2DOutput> Output;
+    // Content generation of the frame in the published slot, and whether that
+    // slot holds one at all. The renderer reads these when it decides whether
+    // a VBlank needs a new compose.
+    u64 ComposedGeneration = 0;
+    u64 PublishedOutputGeneration = 0;
+    bool ComposedOutputValid = false;
+    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
 };
 
 // The compositor's resolution-dependent resource set: the presentation slots

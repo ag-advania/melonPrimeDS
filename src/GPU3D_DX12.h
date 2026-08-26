@@ -107,7 +107,7 @@ public:
     [[nodiscard]] bool CanComposeNativeGPU2D() const noexcept;
     [[nodiscard]] GPU2DComposeResult GetLastComposeResult() const noexcept
     {
-        return LastComposeResult;
+        return Gpu2D.LastComposeResult;
     }
     // Materialize only the requested LCDC capture blocks when the emulation
     // core actually reads them.  The normal native frame path keeps this
@@ -127,7 +127,7 @@ public:
         GPU2DNative::HighResCaptureFallbackReason reason) noexcept;
     [[nodiscard]] u64 GetPublishedOutputGeneration() const noexcept
     {
-        return PublishedOutputGeneration;
+        return Gpu2D.PublishedOutputGeneration;
     }
     [[nodiscard]] const std::string& GetRuntimeFailureReason() const noexcept
     {
@@ -357,6 +357,9 @@ private:
     bool BuildStaticSrvDescriptors();
     bool BuildFrameUavDescriptors();
     bool BuildCompositorUavDescriptors();
+    // Builds the borrow set the compositor composes against. Rebuilt per call
+    // so it can never hold a stale handle across a resolution change.
+    [[nodiscard]] DX12Gpu2DComposeContext MakeComposeContext() noexcept;
     bool BuildWorkDiagnosticCompositorUavDescriptor(u32 workIndex);
     void ReleaseScaleDependentResources();
     void ReleasePipelines();
@@ -375,10 +378,6 @@ private:
     // The UAV table never changes within a frame; the SRV table only changes
     // when the bound texture array does.
     bool BindFrameUavTable(ID3D12GraphicsCommandList* list);
-    bool BindCompositionUavTable(
-        ID3D12GraphicsCommandList* list,
-        DX12DescriptorRing& descriptors,
-        D3D12_CPU_DESCRIPTOR_HANDLE canonicalCpu);
     bool BindStaticSrvTable(ID3D12GraphicsCommandList* list);
     bool BindSrvTable(ID3D12GraphicsCommandList* list, u32 textureHandle);
     void ResetFrameSrvCache() noexcept;
@@ -527,7 +526,6 @@ private:
     int ShaderStepIdx = 0;
     bool RuntimeFailed = false;
     std::string RuntimeFailureReason;
-    GPU2DComposeResult LastComposeResult = GPU2DComposeResult::Unavailable;
 
     // Cached for the frame so every dispatch does not re-create descriptors.
     D3D12_GPU_DESCRIPTOR_HANDLE FrameUavTable{};
@@ -556,9 +554,6 @@ private:
     bool FrameReadbackValid = false;
     bool NativeReadbackSubmitted = false;
     bool FinalFBHasValidFrame = false;
-    u64 ComposedGeneration = 0;
-    u64 PublishedOutputGeneration = 0;
-    bool ComposedOutputValid = false;
     // Semantic owner of native Display Capture provenance: the epoch, the last
     // recorded semantic frame, the submission serial and the completion value,
     // plus the high-resolution sidecar tracker. Backend-neutral, because none
@@ -574,9 +569,6 @@ private:
     // cache descriptors by resource lifetime rather than content generation.
     u64 NextOutputResourceGeneration = 1;
 
-    // The compositor's resolution-dependent resource set. shared_ptr because a
-    // presenter lease can outlive a resolution change.
-    std::shared_ptr<DX12Gpu2DOutput> ComposedOutput;
 
     alignas(64) std::array<u32, 256 * 192> ColorBuffer{};
     alignas(8) u32 ScrolledLine[256]{};
