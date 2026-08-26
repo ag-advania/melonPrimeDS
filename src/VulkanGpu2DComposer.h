@@ -69,27 +69,19 @@ constexpr VkFormat DirectCompositorFormat = VK_FORMAT_R8G8B8A8_UNORM;
 
 } // namespace VulkanGpu2D
 
-// The GPU2D compositor's own GPU resources on the Vulkan backend: its
-// resolution-dependent resource set, recreated whenever the internal
-// resolution changes and held by shared_ptr so a lease the presenter still
-// holds keeps its resources alive across that recreation.
+// The GPU2D compositor's resolution-dependent resource set on the Vulkan
+// backend: recreated whenever the internal resolution changes, and held by
+// shared_ptr so a lease the presenter still holds keeps its resources alive
+// across that recreation.
 //
-// The compositor turns the software engines' structured 2D planes -- or the
-// native GPU2D producer's packed frame -- into the composed screens the
-// presenter shows. That is a different responsibility from 3D rasterization,
-// and the audit graded it FAIL on both backends for living inside Renderer3D.
+// What lives here is everything the compositor allocates per resolution: the
+// presentation slots with their composed buffers and direct images, and the
+// blocking-ring work slots that Stage A and capture record against. The
+// publication ring that hands a finished slot to the presenter lives here too,
+// because it indexes these slots.
 //
-// What lives here is everything the compositor allocates: the presentation
-// slots and their composed buffers and direct images, the blocking-ring work
-// slots that Stage A and capture use, and the publication ring that hands a
-// finished slot to the presenter.
-//
-// What does *not* live here is the compute pipelines. On this backend they are
-// entries in one shader-step-indexed array shared with the rasterizer, and
-// splitting that array would change how pipelines are built and compiled --
-// a mechanism change, which does not belong in a responsibility move. The
-// renderer therefore still records the compose dispatches; it records them
-// against resources this class owns.
+// The compositor that drives all of it is VulkanGpu2DComposer below; this class
+// is the resources, not the behaviour.
 //
 // Members are public because this is a resource owner, not an abstraction.
 class VulkanGpu2DOutput
@@ -151,19 +143,6 @@ public:
     u64 ResourceGeneration = 0;
 };
 
-// The GPU2D compositor on the Vulkan backend.
-//
-// Owns what outlives a resolution change: its own command ring, the resource
-// set above, and the publication state the renderer reads when it decides
-// whether a VBlank needs a new compose.
-//
-// It does not own the compute pipelines. On this backend they are entries in
-// one shader-step-indexed array shared with the rasterizer, and splitting that
-// array would change how pipelines are built and compiled -- a mechanism
-// change, which does not belong in a responsibility move. The renderer hands
-// the four handles in instead.
-//
-// Members are public because this is a resource owner, not an abstraction.
 // Everything the compose passes read from outside the compositor.
 //
 // All of it is borrowed and non-owning, rebuilt by the renderer for each call.
@@ -224,6 +203,32 @@ struct VulkanGpu2DComposeContext
     void* User = nullptr;
 };
 
+// The GPU2D compositor on the Vulkan backend.
+//
+// It turns the software engines' structured 2D planes -- or the native GPU2D
+// producer's packed frame -- into the composed screens the presenter shows,
+// and it owns that whole responsibility: recording the compose command
+// buffers, submitting them, and publishing the finished slot. The audit graded
+// this FAIL on both backends for living inside Renderer3D; it does not any
+// more, and it must not move back.
+//
+// Owned here: the compositor's own command ring, its resource set
+// (VulkanGpu2DOutput above), and the publication state the renderer reads when
+// it decides whether a VBlank needs a new compose.
+//
+// Borrowed, never owned, and enumerated in VulkanGpu2DComposeContext: the
+// device, the shared descriptor-set layout and pool, the pipeline handles the
+// renderer resolves out of its shader-step-indexed array, and read-only
+// handles such as FinalFB. The pipelines stay in that array because splitting
+// it would change how pipelines are built and resolution-specialized, which is
+// a mechanism change rather than a responsibility move -- so the renderer
+// resolves the three handles a compose dispatches and passes them in.
+//
+// Owning a resource and borrowing a handle are different things; the context
+// struct is where the second kind is written down, so neither gets mistaken
+// for the other.
+//
+// Members are public because this is a resource owner, not an abstraction.
 class VulkanGpu2DComposer
 {
 public:

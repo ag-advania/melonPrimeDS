@@ -107,12 +107,42 @@ int NormalizeRendererForPlatform(int requested)
     case renderer3D_DX12:
         // A config value carried over from a machine with a D3D12 GPU must not
         // reach the renderer factory on one without.
+        //
+        // Passive on purpose. Normalization runs while the outgoing backend
+        // may still own a device, and on Windows a D3D12 device creation
+        // racing a live VkDevice fails outright -- it was this call that turned
+        // the first Vulkan->DX12 switch in a process into a permanent
+        // "no Direct3D 12 adapter" answer. IsRuntimeAvailable() therefore
+        // creates no device; the real admission probe runs at the transition
+        // point, after the old renderer has been destroyed.
         return MelonPrime::DX12FeatureCheck::IsRuntimeAvailable()
             ? requested
             : renderer3D_Software;
 #endif
     default:
         return renderer3D_Software;
+    }
+}
+
+bool RendererOwnsNativeGpuDevice(int renderer)
+{
+    switch (renderer)
+    {
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
+    case renderer3D_Vulkan:
+        return true;
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    case renderer3D_DX12:
+        return true;
+#endif
+#if defined(MELONPRIME_ENABLE_METAL)
+    case renderer3D_Metal:
+    case renderer3D_MetalCompute:
+        return true;
+#endif
+    default:
+        return false;
     }
 }
 

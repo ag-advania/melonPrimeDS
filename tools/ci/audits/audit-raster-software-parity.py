@@ -109,6 +109,10 @@ def main() -> int:
 
     dx_header = read("src/GPU3D_DX12.h")
     dx_cpp = read("src/GPU3D_DX12.cpp")
+    # The root-signature contract moved out of the renderer with the pipeline
+    # repository. Ratchet it where it lives now, not where it used to be.
+    dx_pipeline_header = read("src/DX12PipelineRepository.h")
+    dx_pipeline_cpp = read("src/DX12PipelineRepository.cpp")
     dx_shader = read("src/GPU3D_DX12_shaders.h")
     metal_cpp = read("src/GPU3D_MetalCompute.mm")
     metal_span = read("src/GPU3D_MetalComputeSpanMath.inc")
@@ -249,12 +253,19 @@ def main() -> int:
             "DX12 fixed SRV cache", failures)
     require(dx_cpp, "ResetFrameSrvCache()",
             "DX12 epoch SRV cache reset", failures)
-    require(dx_cpp, "kRootParamStaticSrvTable = 2",
+    require(dx_pipeline_header, "ParamStaticSrvTable = 2",
             "DX12 static SRV root table", failures)
-    require(dx_cpp, "kRootParamTextureSrvTable = 3",
+    require(dx_pipeline_header, "ParamTextureSrvTable = 3",
             "DX12 texture SRV root table", failures)
-    require(dx_cpp, "textureSrvRange.BaseShaderRegister = 5",
+    require(dx_pipeline_cpp, "textureSrvRange.BaseShaderRegister = 5",
             "DX12 texture SRV t5 register", failures)
+    # The renderer must keep binding the same root parameters it always did.
+    # Aliasing them from the layout is what makes the two agree by
+    # construction; a literal reappearing here would mean they can drift.
+    require(dx_cpp, "DX12RootSignatureLayout::ParamStaticSrvTable",
+            "DX12 static SRV root parameter alias", failures)
+    require(dx_cpp, "DX12RootSignatureLayout::ParamTextureSrvTable",
+            "DX12 texture SRV root parameter alias", failures)
     require(dx_cpp, "BindStaticSrvTable(list)",
             "DX12 once-per-frame static SRV bind", failures)
     require(dx_cpp, "Descriptors.Allocate(kTextureSrvCount, cpu, gpu)",
@@ -315,8 +326,19 @@ def main() -> int:
                       f"{name} accelerated-first differential order", failures)
     require(metal_wrapper, "Delegate.RenderReferenceFrame();",
             "Metal coherent-mirror differential reference", failures)
-    require(dx_wrapper, "if (composed && DifferentialReference",
+    # The composed-output differential gate is now a named helper, because it
+    # has to run on the native publication path too -- the branch it used to
+    # live in never executes in a normal session. What is ratcheted is the same
+    # thing: the comparison only happens when there is a reference to compare
+    # against, and only at native resolution.
+    require(dx_wrapper, "void DX12Renderer::CompareRasterDifferentialFrame()",
+            "DX12 composed-output differential entry point", failures)
+    require(dx_wrapper, "if (!DifferentialReference || !dx12)",
             "DX12 composed-output differential gate", failures)
+    require(vk_wrapper, "void VulkanRenderer::CompareRasterDifferentialFrame()",
+            "Vulkan composed-output differential entry point", failures)
+    require(vk_wrapper, "if (!DifferentialReference || !vulkan)",
+            "Vulkan composed-output differential gate", failures)
 
     signed_right_coverage = "max(31 - (xcov >> 5), 0)"
     if dx_shader.count(signed_right_coverage) != 2:

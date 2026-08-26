@@ -109,6 +109,9 @@ def main() -> int:
         "tools/testing/vulkan-present-pacer-dispatch-tests.cpp"
     )
     vulkan_presenter = read("src/frontend/qt_sdl/MelonPrimeVulkanPresenter.cpp")
+    vulkan_latency_controller = read(
+        "src/frontend/qt_sdl/MelonPrimeVulkanLatencyController.h"
+    )
     vulkan_presenter_header = read(
         "src/frontend/qt_sdl/MelonPrimeVulkanPresenter.h"
     )
@@ -128,6 +131,10 @@ def main() -> int:
     vulkan_compat = read("src/VulkanModernPresentCompat.h")
     vulkan_device = read("src/VulkanDevice.cpp")
     dx12_context = read("src/DX12Context.cpp")
+    # Split out of DX12Context by the SRP refactor; the contracts below moved
+    # with the code that owns them.
+    dx12_command_context = read("src/DX12CommandContext.cpp")
+    dx12_controller_header = read("src/DX12LowLatencyController.h")
     vulkan_loader = read("src/VulkanLoader.cpp")
     probe = read("src/VulkanFeatureProbe.cpp")
     amd = read("src/DX12AmdAntiLag2.cpp")
@@ -158,7 +165,10 @@ def main() -> int:
             [
                 "if (UNLIKELY(videoSettingsDirty))",
                 "applyPendingVideoSettings();",
-                "BeginReflexFrame(logicalFrameId);",
+                # DX12LowLatencyController owns the vendor sessions now, so the
+                # emulation thread opens the frame once instead of calling each
+                # vendor path in turn.
+                "dx12LowLatency->BeginFrame(logicalFrameId);",
                 "beginVulkanLowLatencyFrame(",
                 "logicalFrameId);",
             ],
@@ -170,12 +180,11 @@ def main() -> int:
         ordered(
             vulkan_presenter,
             [
-                "SetLowLatencyPreferences(reflexMode, antiLag2Enabled);",
+                "Latency.ApplyPreferences(reflexMode, antiLag2Enabled);",
                 "PresentPacer.BeginFrame(",
-                "Reflex.IsActive(), AntiLag.IsActive(), normalSpeed, targetFrameIntervalNs)",
-                "Reflex.BeginFrame(logicalFrameId);",
-                "LowLatencyFrameIndex = logicalFrameId;",
-                "AntiLag.BeginFrame(LowLatencyFrameIndex);",
+                "Latency.IsReflexActive(), Latency.IsAntiLagActive(), normalSpeed, targetFrameIntervalNs)",
+                "Latency.BeginReflexSleep(logicalFrameId);",
+                "Latency.BeginAntiLagInput(logicalFrameId);",
             ],
         ),
         "Vulkan must select one pacing authority and run generic wait before vendor/input markers",
@@ -207,7 +216,7 @@ def main() -> int:
             emu,
             [
                 "const melonDS::u64 logicalFrameId = ++lowLatencyLogicalFrameId;",
-                "dx12LowLatencyRenderer->BeginReflexFrame(logicalFrameId);",
+                "dx12LowLatency->BeginFrame(logicalFrameId);",
                 "emuInstance->beginVulkanLowLatencyFrame(",
                 "logicalFrameId);",
             ],
@@ -215,6 +224,7 @@ def main() -> int:
         and "lowLatencyLogicalFrameId" in emu_header
         and "emulation thread is the single owner" in emu
         and "void BeginFrame(u64 logicalFrameId);" in dx12_header
+        and "void BeginFrame(u64 logicalFrameId);" in dx12_controller_header
         and "void BeginFrame(u64 logicalFrameId);" in vulkan_reflex_header
         and "AllocateFrameId" not in dx12
         and "NextFrameId" not in dx12
@@ -450,7 +460,9 @@ def main() -> int:
     require(
         "VulkanHasEffectiveLowLatencyAuthority" in vulkan_pacing_policy
         and "HasEffectiveLowLatencyAuthority() const noexcept" in vulkan_presenter_header
-        and "Reflex.IsActive(), AntiLag.IsActive()" in vulkan_presenter_header
+        and "return Latency.HasEffectiveAuthority();" in vulkan_presenter_header
+        and "VulkanHasEffectiveLowLatencyAuthority(" in vulkan_latency_controller
+        and "Reflex.IsActive(), AntiLag.IsActive());" in vulkan_latency_controller
         and "HasEffectiveLowLatencyAuthority()" in vulkan_screen
         and "ShouldBypassPresentWait" not in gpu_vulkan_header
         and "ShouldBypassPresentWait" not in vulkan_screen
@@ -506,8 +518,8 @@ def main() -> int:
                 "Frames.LatestSubmittedFrameHasPendingSubmission()",
                 "VulkanPresenterOneFrameBudgetTimeoutNs(",
                 "Frames.WaitForLatestSubmittedFrame(",
-                "Reflex.BeginFrame(logicalFrameId);",
-                "AntiLag.BeginFrame(",
+                "Latency.BeginReflexSleep(logicalFrameId);",
+                "Latency.BeginAntiLagInput(",
             ],
         )
         and "PresenterFrameDepthFromEnvironment()" in vulkan_presenter
@@ -563,7 +575,9 @@ def main() -> int:
     )
     require(
         all(
-            token in dx12_context
+            # The timestamp query pool travels with the command context that
+            # records into it, so the batching contract is ratcheted there.
+            token in dx12_command_context
             for token in (
                 "TimestampSnapshotValid",
                 "ReadTimestampSnapshot()",
@@ -573,8 +587,8 @@ def main() -> int:
                 "lastQuery",
             )
         )
-        and dx12_context.count("TimestampReadback->Map(") == 1
-        and dx12_context.count("List->ResolveQueryData(") == 1,
+        and dx12_command_context.count("TimestampReadback->Map(") == 1
+        and dx12_command_context.count("List->ResolveQueryData(") == 1,
         "DX12 timestamp telemetry must batch query resolves, cache one readback snapshot, and refresh frequency periodically",
         failures,
     )
@@ -1042,19 +1056,19 @@ def main() -> int:
                 "queueLock.lock();",
                 # AMD PRESENT must be associated with the queue operation
                 # after queue ownership is acquired, not behind contention.
-                "AntiLag.EndFrame(LowLatencyFrameIndex);",
-                "Reflex.MarkPresentStart();",
+                "Latency.EndAntiLagPresent();",
+                "Latency.MarkPresentStart();",
                 "LatencyCapture.MarkPresentStart();",
                 "res = fns.QueuePresentKHR(",
                 "PresentPacer.PrepareRetryWithoutTiming(",
                 "res = fns.QueuePresentKHR(",
                 "LatencyCapture.MarkPresentEnd();",
-                "Reflex.MarkPresentEnd();",
+                "Latency.MarkPresentEnd();",
                 "queueLock.unlock();",
                 # Bookkeeping stays outside the span.
                 "PresentPacer.NotifyPresentResult(",
                 "LatencyCapture.Commit(",
-                "Reflex.NotifyPresented();",
+                "Latency.NotifyPresented();",
             ],
         ),
         "present markers must bracket only QueuePresent, inside the queue lock",
@@ -1585,8 +1599,8 @@ def main() -> int:
         ordered(
             emu,
             [
-                "BeginIntelXeLLFrame();",
-                "MarkIntelXeLLInputSample();",
+                "dx12LowLatency->BeginFrame(logicalFrameId);",
+                "dx12LowLatency->MarkInputSample();",
                 "inputRefreshJoystickState();",
             ],
         ),
@@ -1607,13 +1621,21 @@ def main() -> int:
     )
     require(
         ordered(
-            screen,
+            presenter,
             [
-                "BeginIntelXeLLPresent();",
-                "presenter.Present(vsync)",
-                "EndIntelXeLLPresent();",
+                # The panel no longer mediates vendor markers: the presenter
+                # fires them itself, around the DXGI call and nothing else.
+                # That placement is what REAUDIT-P2-001 fixed, so the ordering
+                # below is also what keeps a phantom marker pair from coming
+                # back.
+                "PresentMarkerScope presentMarkers{",
+                "hr = Swapchain->Present(syncInterval, flags);",
             ],
-        ),
+        )
+        and "Latency->BeginPresent();" in presenter
+        and "Latency->EndPresent();" in presenter
+        and "BeginIntelXeLLPresent" not in screen
+        and "MarkPresentStart" in xell,
         "Intel XeLL PRESENT markers must bracket the DXGI Present call",
         failures,
     )
@@ -1657,12 +1679,12 @@ def main() -> int:
         ordered(
             emu,
             [
-                "BeginReflexFrame(logicalFrameId);",
-                "MarkReflexInputSample();",
+                "dx12LowLatency->BeginFrame(logicalFrameId);",
+                "dx12LowLatency->MarkInputSample();",
                 "inputRefreshJoystickState();",
                 "RunFrameHook();",
                 "SetKeyMask(",
-                "MarkReflexSimulationStart();",
+                "dx12LowLatency->MarkSimulationStart();",
             ],
         ),
         "DX12 Reflex must be Sleep -> Input Sample -> input -> Simulation Start",
@@ -1877,7 +1899,10 @@ def main() -> int:
         and "NvidiaReflex, false, true, false" in pacing
         and "ResolveDX12LowLatencyPacing" in pacing
         and "ShouldBypassDX12HostLimiter" in emu
-        and "ShouldBypassPresentWait" in screen,
+        # The present-wait bypass is now asked of the controller that owns the
+        # vendor sessions, not computed in the screen panel.
+        and "ShouldBypassPresentWait" in dx12_controller_header
+        and "ShouldBypassPresentWait" not in screen,
         "DX12 pacing must avoid duplicate Reflex/DXGI waits while XeLL experiments default to Compatibility",
         failures,
     )
