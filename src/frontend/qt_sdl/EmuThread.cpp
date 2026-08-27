@@ -336,6 +336,7 @@ void EmuThread::run()
         emuInstance->renderLock.unlock();
     };
 
+    // MELONPRIME_EMUTHREAD_FRAME_HOT_PATH_BEGIN
     // --- Frame Advance (lambda so MelonPrime can call it externally) ---
     auto frameAdvanceOnce = [&]() {
 #ifdef MELONPRIME_DS
@@ -497,8 +498,7 @@ void EmuThread::run()
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)
-        auto* vulkanLowLatencyRenderer = dynamic_cast<VulkanRenderer*>(
-            &emuInstance->nds->GPU.GetRenderer());
+        auto* vulkanLowLatencyRenderer = cachedVulkanLowLatencyRenderer;
         if (vulkanLowLatencyRenderer)
         {
             // The frame interval the Vulkan present pacer schedules against is
@@ -690,10 +690,9 @@ void EmuThread::run()
 #ifdef MELONPRIME_DS
             // RunFrameHook + SetKeyMask already done above (P-28).
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
-            if (auto* structuredRenderer = dynamic_cast<SoftRenderer*>(
-                    &emuInstance->nds->GPU.GetRenderer()))
+            if (cachedStructuredSoft2DRenderer)
             {
-                structuredRenderer->SetNativeMenuHeldForFrame(
+                cachedStructuredSoft2DRenderer->SetNativeMenuHeldForFrame(
                     melonPrime->IsMetroidMenuHeld());
             }
 #endif
@@ -969,6 +968,7 @@ void EmuThread::run()
         }
         };
     // --- End of frameAdvanceOnce ---
+    // MELONPRIME_EMUTHREAD_FRAME_HOT_PATH_END
 
 #ifdef MELONPRIME_DS
     melonPrime->SetFrameAdvanceFunc(frameAdvanceOnce);
@@ -1699,6 +1699,17 @@ void EmuThread::updateRenderer()
 
     auto& cfg = emuInstance->getGlobalConfig();
 
+#ifdef MELONPRIME_DS
+    // Invalidate the cache before the renderer transition helper can release
+    // the outgoing object. updateRenderer() is a settings/transition path,
+    // not the steady-state frame loop, so the refresh below can safely use
+    // RTTI once the actual object is settled.
+    cachedStructuredSoft2DRenderer = nullptr;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    cachedVulkanLowLatencyRenderer = nullptr;
+#endif
+#endif
+
 #include "MelonPrimeEmuThreadUpdateRendererBefore.inc"
 
     if (videoRenderer != lastVideoRenderer)
@@ -1877,8 +1888,23 @@ void EmuThread::updateRenderer()
         cfg.GetBool("Screen.VSync"),
         cfg.GetInt("3D.Renderer"),
         videoRenderer);
+    RefreshRendererFrameCache();
 #endif
 }
+
+#ifdef MELONPRIME_DS
+void EmuThread::RefreshRendererFrameCache()
+{
+    auto& renderer = emuInstance->nds->GPU.GetRenderer();
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    cachedVulkanLowLatencyRenderer = dynamic_cast<VulkanRenderer*>(&renderer);
+#endif
+#if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
+    cachedStructuredSoft2DRenderer = dynamic_cast<SoftRenderer*>(&renderer);
+#endif
+    MelonPrimePerf::CountRendererFastCacheRefresh();
+}
+#endif
 
 void EmuThread::compileShaders()
 {

@@ -57,6 +57,12 @@ struct MelonPrimePatchState {
         bool appliedBase = false;
         bool appliedExtra = false;
         bool pendingRestore = false;
+        // A candidate can be visible for several frames while the game is
+        // still copying its matrix/code block into ARM9 RAM. Do not latch
+        // that partial state forever, and do not run the full guard every
+        // frame while a ROM is permanently absent or mismatched.
+        uint8_t validationRetryFrames = 0;
+        uint8_t validationBackoffFrames = 1;
     } expandStageMatrix;
 };
 

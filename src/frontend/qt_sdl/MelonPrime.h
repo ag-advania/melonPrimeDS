@@ -853,7 +853,7 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleGameJoinInit();
         COLD_FUNCTION void HandleBattleRuntimeEnter();
         COLD_FUNCTION void DetectRomAndSetAddresses();
-        COLD_FUNCTION void ReconcileMenuGameSettings();
+        void ReconcileMenuGameSettings();
 
         void ApplyRuntimeAimSensitivity(int sensitivity);
         void RecalcAimFixedPoint();

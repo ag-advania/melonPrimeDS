@@ -2153,8 +2153,14 @@ bool ScreenPanelDX12::event(QEvent* event)
 
 void ScreenPanelDX12::requestNativeSurfaceVisible(bool visible)
 {
-    if (!dx12 || dx12->surfaceVisibleRequested.exchange(visible) == visible)
+    if (!dx12)
         return;
+    if (dx12->surfaceVisibleRequested.load(std::memory_order_relaxed) == visible)
+        return;
+    if (dx12->surfaceVisibleRequested.exchange(
+            visible, std::memory_order_acq_rel) == visible)
+        return;
+    MelonPrimePerf::CountSurfaceVisibilityStateChange();
 
     QMetaObject::invokeMethod(
         this,

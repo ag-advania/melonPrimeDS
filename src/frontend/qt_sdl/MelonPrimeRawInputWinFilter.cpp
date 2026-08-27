@@ -109,6 +109,16 @@ namespace MelonPrime {
 
     bool RawInputWinFilter::UpdateOwner(RawInputSubscription* subscription, bool eligible)
     {
+        // The emulation thread calls this on every frame. Once this
+        // subscription is already active and still owns the process-wide
+        // capture token, no registration or generation state can change, so
+        // avoid taking the recursive mutex on the steady-state path. The
+        // locked path below remains authoritative for focus/owner changes.
+        if (subscription && subscription->owner && eligible
+            && m_activeSubscription.load(std::memory_order_acquire) == subscription
+            && PlatformInputOwnerService::IsOwner(*subscription->owner))
+            return true;
+
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
         if (!subscription)
             return false;

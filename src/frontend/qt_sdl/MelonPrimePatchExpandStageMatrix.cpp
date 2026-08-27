@@ -3,7 +3,12 @@
 #include "MelonPrimePatchExpandStageMatrix.h"
 #include "MelonPrimePatchState.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimePerfProbe.h"
+#include "MelonPrimeStageMatrixValidation.h"
 #include "NDS.h"
+#if defined(MELONPRIME_STAGE_MATRIX_TESTING)
+#include "MelonPrimePatchExpandStageMatrixTesting.h"
+#endif
 
 namespace MelonPrime {
 
@@ -88,38 +93,88 @@ static constexpr uint32_t MatrixAddr(const MatrixVersionInfo& info, const Matrix
 
 // ---- Guard ----
 
-static bool StageMatrixLoadedStrict(melonDS::NDS* nds, const MatrixVersionInfo& info)
+template <typename Memory>
+static bool StageMatrixLoadedStrict(Memory& memory, const MatrixVersionInfo& info)
 {
     // 1. Prelude: 10 fixed u32s at matrixBase - 0x28
     const uint32_t preludeBase = info.matrixBase - 0x28u;
     for (int i = 0; i < 10; ++i) {
-        if (nds->ARM9Read32(preludeBase + static_cast<uint32_t>(i * 4)) != kMatrixPreludeWords[i])
+        if (memory.ARM9Read32(preludeBase + static_cast<uint32_t>(i * 4))
+            != kMatrixPreludeWords[i])
             return false;
     }
     // 2. Prefix: first 32 bytes of matrix
     for (int i = 0; i < 32; ++i) {
-        if (nds->ARM9Read8(info.matrixBase + static_cast<uint32_t>(i)) != kMatrixPrefixSignature[i])
+        if (memory.ARM9Read8(info.matrixBase + static_cast<uint32_t>(i))
+            != kMatrixPrefixSignature[i])
             return false;
     }
     // 3. Function literals and prologues
-    if (nds->ARM9Read32(info.countRecomputeFunc)    != info.expectedCountPrologue)  return false;
-    if (nds->ARM9Read32(info.compatibilityCheckFunc) != info.expectedCheckPrologue) return false;
-    if (nds->ARM9Read32(info.countMatrixLiteralAddr) != info.matrixBase)            return false;
-    if (nds->ARM9Read32(info.checkMatrixLiteralAddr) != info.matrixBase)            return false;
+    if (memory.ARM9Read32(info.countRecomputeFunc) != info.expectedCountPrologue)
+        return false;
+    if (memory.ARM9Read32(info.compatibilityCheckFunc) != info.expectedCheckPrologue)
+        return false;
+    if (memory.ARM9Read32(info.countMatrixLiteralAddr) != info.matrixBase)
+        return false;
+    if (memory.ARM9Read32(info.checkMatrixLiteralAddr) != info.matrixBase)
+        return false;
     return true;
 }
 
+// The first matrix byte is checked by the caller. These five representative
+// words form a cheap readiness signature: a partial ROM copy can expose the
+// expected prefix before its surrounding prelude/code/literals are complete.
+// The full guard remains the only path allowed to authorize writes.
+template <typename Memory>
+static bool StageMatrixReadySignature(Memory& memory, const MatrixVersionInfo& info)
+{
+    const uint32_t preludeBase = info.matrixBase - 0x28u;
+    return memory.ARM9Read32(preludeBase) == kMatrixPreludeWords[0]
+        && memory.ARM9Read32(info.countRecomputeFunc) == info.expectedCountPrologue
+        && memory.ARM9Read32(info.compatibilityCheckFunc) == info.expectedCheckPrologue
+        && memory.ARM9Read32(info.countMatrixLiteralAddr) == info.matrixBase
+        && memory.ARM9Read32(info.checkMatrixLiteralAddr) == info.matrixBase;
+}
+
+struct NdsStageMatrixMemory {
+    melonDS::NDS* nds;
+
+    uint8_t ARM9Read8(uint32_t address) { return nds->ARM9Read8(address); }
+    uint32_t ARM9Read32(uint32_t address) { return nds->ARM9Read32(address); }
+    void ARM9Write8(uint32_t address, uint8_t value) { nds->ARM9Write8(address, value); }
+};
+
+#if defined(MELONPRIME_STAGE_MATRIX_TESTING)
+struct CallbackStageMatrixMemory {
+    StageMatrixTestMemory& memory;
+
+    uint8_t ARM9Read8(uint32_t address)
+    {
+        return memory.read8(memory.context, address);
+    }
+    uint32_t ARM9Read32(uint32_t address)
+    {
+        return memory.read32(memory.context, address);
+    }
+    void ARM9Write8(uint32_t address, uint8_t value)
+    {
+        memory.write8(memory.context, address, value);
+    }
+};
+#endif
+
 // ---- Public API ----
 
-void ExpandStageMatrix_ApplyIfLoaded(
+template <typename Memory>
+static void ExpandStageMatrix_ApplyIfLoadedImpl(
     MelonPrimePatchState& state,
-    melonDS::NDS* nds,
+    Memory& memory,
     bool enabled,
     bool extraEnabled,
     uint8_t romGroupIndex)
 {
     auto& patch = state.expandStageMatrix;
-    if (!nds || romGroupIndex >= 7)
+    if (romGroupIndex >= 7)
         return;
 
     if (patch.romGroupIndex != romGroupIndex) {
@@ -133,7 +188,6 @@ void ExpandStageMatrix_ApplyIfLoaded(
         || patch.appliedExtra != desiredExtra;
     if (desiredChanged)
         patch.pendingRestore = true;
-    const bool mustReconcile = enabled || desiredChanged || patch.pendingRestore;
     if (!enabled && !patch.pendingRestore)
         return;
 
@@ -146,53 +200,53 @@ void ExpandStageMatrix_ApplyIfLoaded(
         status == MelonPrimePatchState::ExpandStageMatrixStatus::Unknown
         || status == MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad;
     if (needsValidation) {
-        // The first matrix byte is outside every patched cell. It is a cheap
-        // load/unload sentinel; the 46-read strict guard runs only when the
-        // sentinel first becomes a candidate or a lifecycle invalidation asks
-        // for a new verification.
-        const bool candidate = nds->ARM9Read8(info.matrixBase)
+        // A delayed load gets a bounded retry cadence. The cooldown is checked
+        // before touching guest RAM, so a permanent mismatch cannot turn into
+        // a full guard on every frame.
+        if (StageMatrixValidation::ConsumeRetryCooldown(patch))
+            return;
+
+        // The first matrix byte is outside every patched cell. It is the
+        // cheap load/unload sentinel; the five-word readiness signature and
+        // 46-read strict guard run only for a live candidate.
+        const bool candidate = memory.ARM9Read8(info.matrixBase)
             == kMatrixPrefixSignature[0];
         if (!candidate) {
-            patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad;
-            patch.candidateSeen = false;
+            StageMatrixValidation::MarkCandidateAbsent(patch);
             return;
         }
-        if (patch.candidateSeen && status
-            == MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad)
-            return;
+
         patch.candidateSeen = true;
-        if (!StageMatrixLoadedStrict(nds, info)) {
-            patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad;
+        if (!StageMatrixReadySignature(memory, info)) {
+            MelonPrimePerf::CountStageMatrixValidationRetry();
+            StageMatrixValidation::MarkValidationRetry(patch);
             return;
         }
-        patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::Verified;
-        patch.pendingRestore = false;
+
+        MelonPrimePerf::CountStageMatrixFullValidation();
+        if (!StageMatrixLoadedStrict(memory, info)) {
+            MelonPrimePerf::CountStageMatrixValidationRetry();
+            StageMatrixValidation::MarkValidationRetry(patch);
+            return;
+        }
+        StageMatrixValidation::MarkVerified(patch);
     } else if (patch.status == MelonPrimePatchState::ExpandStageMatrixStatus::Verified) {
         // Detect a guest matrix unload without paying the full signature cost.
-        if (nds->ARM9Read8(info.matrixBase) != kMatrixPrefixSignature[0]) {
-            patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad;
-            patch.candidateSeen = false;
-            patch.appliedBase = false;
-            patch.appliedExtra = false;
+        if (memory.ARM9Read8(info.matrixBase) != kMatrixPrefixSignature[0]) {
+            StageMatrixValidation::MarkGuestUnloaded(patch);
             return;
         }
     } else {
         return;
     }
 
-    if (!enabled && !mustReconcile) {
-        patch.appliedBase = false;
-        patch.appliedExtra = false;
-        return;
-    }
-
     auto reconcile = [&](const auto& cells, bool desired) {
         for (const auto& cell : cells) {
             const uint32_t address = MatrixAddr(info, cell);
-            const uint8_t current = nds->ARM9Read8(address);
+            const uint8_t current = memory.ARM9Read8(address);
             const uint8_t target = desired ? 0x01u : 0x00u;
             if (current != target)
-                nds->ARM9Write8(address, target);
+                memory.ARM9Write8(address, target);
         }
     };
     reconcile(kBaseCells, enabled);
@@ -202,6 +256,36 @@ void ExpandStageMatrix_ApplyIfLoaded(
     patch.pendingRestore = false;
 }
 
+void ExpandStageMatrix_ApplyIfLoaded(
+    MelonPrimePatchState& state,
+    melonDS::NDS* nds,
+    bool enabled,
+    bool extraEnabled,
+    uint8_t romGroupIndex)
+{
+    if (!nds)
+        return;
+    NdsStageMatrixMemory memory{ nds };
+    ExpandStageMatrix_ApplyIfLoadedImpl(
+        state, memory, enabled, extraEnabled, romGroupIndex);
+}
+
+#if defined(MELONPRIME_STAGE_MATRIX_TESTING)
+void ExpandStageMatrix_ApplyIfLoadedForTesting(
+    MelonPrimePatchState& state,
+    StageMatrixTestMemory& memory,
+    bool enabled,
+    bool extraEnabled,
+    uint8_t romGroupIndex)
+{
+    if (!memory.context || !memory.read8 || !memory.read32 || !memory.write8)
+        return;
+    CallbackStageMatrixMemory callbackMemory{ memory };
+    ExpandStageMatrix_ApplyIfLoadedImpl(
+        state, callbackMemory, enabled, extraEnabled, romGroupIndex);
+}
+#endif
+
 void ExpandStageMatrix_InvalidatePatch(MelonPrimePatchState& state)
 {
     auto& patch = state.expandStageMatrix;
@@ -210,6 +294,7 @@ void ExpandStageMatrix_InvalidatePatch(MelonPrimePatchState& state)
         || patch.appliedBase || patch.appliedExtra;
     patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::Unknown;
     patch.candidateSeen = false;
+    StageMatrixValidation::ResetRetry(patch);
 }
 
 void ExpandStageMatrix_ResetPatchState(MelonPrimePatchState& state)

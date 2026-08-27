@@ -421,7 +421,7 @@ namespace MelonPrime {
         return false;
     }
 
-    COLD_FUNCTION void MelonPrimeCore::ReconcileMenuGameSettings()
+    void MelonPrimeCore::ReconcileMenuGameSettings()
     {
         InputSetBranchless(INPUT_L, !IsPressed(IB_UI_LEFT));
         InputSetBranchless(INPUT_R, !IsPressed(IB_UI_RIGHT));

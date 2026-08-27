@@ -147,9 +147,14 @@ namespace MelonPrime {
 
         ApplyRuntimeConfigSnapshot(snapshot);
 #ifdef MELONPRIME_DS
-        // Firmware language is not a Config::Table value. Resolve it once at
-        // the same cold boundary as the feature flag; the menu reconciler only
-        // compares the cached target against guest RAM afterward.
+        // Firmware language is not a Config::Table value. This is the single
+        // owner of its cached target: Initialize() and config reload/unpause
+        // resolve the currently installed image, while OnEmuStart() runs
+        // after EmuInstance::updateConsole() has installed a replacement
+        // firmware during reset, ROM reopen, or a firmware-profile change.
+        // There is no supported live firmware mutation outside those
+        // emulation-thread boundaries; the menu reconciler only compares the
+        // cached target against guest RAM afterward.
         m_patchState.outOfGamePatches.firmwareLanguageBits =
             UseFirmwareLanguage_ResolveTarget(emuInstance->getNDS());
 #endif

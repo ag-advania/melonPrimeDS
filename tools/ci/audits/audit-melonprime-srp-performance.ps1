@@ -780,6 +780,48 @@ if ((Get-CodeMatchLines '^\s*MelonPrimePatchAimSmoothing\.cpp\s*$' $qtSdlCmake).
     Add-Error "MelonPrimePatchAimSmoothing.cpp is missing from src/frontend/qt_sdl/CMakeLists.txt"
 }
 
+# --- Rule I2: EmuThread frame loop consumes renderer pointer caches ----------
+#
+# Renderer RTTI belongs at the renderer transition boundary. The emulation
+# frame loop is deliberately marked in EmuThread.cpp so this ratchet can reject
+# a future per-frame dynamic_cast while still allowing the one-time refresh
+# helper to inspect the actual live renderer after updateRenderer().
+$emuThreadPath = Join-Path $qtSdl 'EmuThread.cpp'
+$emuThreadSource = [System.IO.File]::ReadAllText($emuThreadPath)
+$frameHotBegin = '// MELONPRIME_EMUTHREAD_FRAME_HOT_PATH_BEGIN'
+$frameHotEnd = '// MELONPRIME_EMUTHREAD_FRAME_HOT_PATH_END'
+$frameHotBeginIndex = $emuThreadSource.IndexOf($frameHotBegin)
+$frameHotEndIndex = $emuThreadSource.IndexOf($frameHotEnd)
+if ($frameHotBeginIndex -lt 0 -or $frameHotEndIndex -le $frameHotBeginIndex) {
+    Add-Error 'EmuThread frame hot-path markers are missing or out of order'
+} else {
+    $frameHotLength = $frameHotEndIndex + $frameHotEnd.Length - $frameHotBeginIndex
+    $frameHotSource = $emuThreadSource.Substring($frameHotBeginIndex, $frameHotLength)
+    if ($frameHotSource -match 'dynamic_cast\s*<\s*(?:VulkanRenderer|SoftRenderer)\s*>') {
+        Add-Error 'EmuThread frame hot path must use cached renderer pointers; RTTI belongs in RefreshRendererFrameCache()'
+    }
+    foreach ($cacheName in @('cachedVulkanLowLatencyRenderer', 'cachedStructuredSoft2DRenderer')) {
+        if ($frameHotSource -notmatch [regex]::Escape($cacheName)) {
+            Add-Error "EmuThread frame hot path no longer consumes $cacheName"
+        }
+    }
+}
+
+$refreshSignature = 'void\s+EmuThread::RefreshRendererFrameCache\s*\('
+if ((Get-CodeMatchLines $refreshSignature $emuThreadPath).Count -eq 0) {
+    Add-Error 'RefreshRendererFrameCache() is missing from EmuThread.cpp'
+}
+$refreshCallToken = 'RefreshRendererFrameCache();'
+$refreshCallIndex = $emuThreadSource.IndexOf($refreshCallToken)
+$rendererBeforeIndex = $emuThreadSource.IndexOf('#include "MelonPrimeEmuThreadUpdateRendererBefore.inc"')
+$cacheClearIndex = $emuThreadSource.IndexOf('cachedStructuredSoft2DRenderer = nullptr;')
+if (($cacheClearIndex -lt 0) -or ($rendererBeforeIndex -lt 0) -or ($cacheClearIndex -gt $rendererBeforeIndex)) {
+    Add-Error 'EmuThread renderer pointer caches must clear before the transition helper'
+}
+if ($refreshCallIndex -lt 0 -or $refreshCallIndex -lt $rendererBeforeIndex) {
+    Add-Error 'RefreshRendererFrameCache() must run after updateRenderer() settles the actual renderer'
+}
+
 $hotPaths = @(
     @{ File = 'MelonPrime.cpp';               Signature = 'void\s+MelonPrimeCore::RunFrameHook\s*\(' },
     @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::UpdateInputStateImpl\s*\(' },

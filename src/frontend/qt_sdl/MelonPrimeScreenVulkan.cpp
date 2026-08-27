@@ -996,8 +996,12 @@ void ScreenPanelVulkan::requestNativeSurfaceVisible(bool visible)
         return;
     // Only a real state change is posted: the emulation thread calls this every
     // frame, and queueing a GUI-thread lambda per frame would be a pure waste.
-    if (vulkan->surfaceVisibleRequested.exchange(visible) == visible)
+    if (vulkan->surfaceVisibleRequested.load(std::memory_order_relaxed) == visible)
         return;
+    if (vulkan->surfaceVisibleRequested.exchange(
+            visible, std::memory_order_acq_rel) == visible)
+        return;
+    MelonPrimePerf::CountSurfaceVisibilityStateChange();
 
     QMetaObject::invokeMethod(
         this,
