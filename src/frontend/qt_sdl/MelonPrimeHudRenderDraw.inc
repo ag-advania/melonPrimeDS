@@ -2579,6 +2579,9 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                     projected,
                     static_cast<int16_t>(Read16(ram, rom.crosshairPosX)),
                     static_cast<int16_t>(Read16(ram, rom.crosshairPosY)));
+            // Developer-only: the reject rate is the one number that says
+            // whether the sampling point is good enough on real hardware.
+            MelonPrimePerf::CountCrosshairProjection(haveProjected);
         }
         if (haveProjected) {
             // A point just past the near plane divides by a tiny clipW, so the

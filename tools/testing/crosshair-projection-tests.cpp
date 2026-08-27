@@ -11,10 +11,12 @@
 
 #include "MelonPrimeHudCrosshairProjection.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace CH = MelonPrime::CrosshairProjection;
@@ -522,10 +524,110 @@ void TestDeadbandWidthIsHonoured()
         "an absurd deadband clamps instead of freezing the crosshair");
 }
 
+
+// -------------------------------------------------------------------------
+//  Cost measurement (--bench)
+//
+//  The projection runs once per emulated game frame, not once per presentation
+//  frame, and the config values behind it are resolved at the cold cache
+//  boundary. This reports what that once-per-frame work actually costs, so the
+//  low-overhead claim is a number rather than an assertion. It is not part of
+//  the check run: it would slow every build down for no verdict.
+// -------------------------------------------------------------------------
+
+int RunBenchmark()
+{
+    constexpr uint32_t kRamMask = 0x3FFFFFu;
+    std::vector<uint8_t> ram(4u * 1024u * 1024u, 0);
+
+    const uint32_t playerBase = 0x1C5D4;
+    const uint32_t matrixBase = 0x1BA30;
+    const uint32_t crosshairX = 0x205C0;
+    const uint32_t crosshairY = 0x205C2;
+
+    auto put32 = [&](uint32_t a, int32_t v) {
+        std::memcpy(&ram[a & kRamMask], &v, 4);
+    };
+    auto get32 = [&](uint32_t a) {
+        uint32_t v; std::memcpy(&v, &ram[a & kRamMask], 4); return v;
+    };
+    auto get16 = [&](uint32_t a) {
+        uint16_t v; std::memcpy(&v, &ram[a & kRamMask], 2); return v;
+    };
+
+    put32(playerBase + CH::kPlayerProjectionSourceOffset + 0, 137);
+    put32(playerBase + CH::kPlayerProjectionSourceOffset + 4, -91);
+    put32(playerBase + CH::kPlayerProjectionSourceOffset + 8, -8192);
+    put32(playerBase + CH::kPlayerViewTransformOffset + 0, kOne);
+    put32(playerBase + CH::kPlayerViewTransformOffset + 16, kOne);
+    put32(playerBase + CH::kPlayerViewTransformOffset + 32, kOne);
+    put32(matrixBase + 0, kOne);
+    put32(matrixBase + 20, kOne);
+    put32(matrixBase + 44, -kOne);
+
+    // Mirrors ReadCrosshairProjectionInput.
+    auto readInput = [&](CH::Input& out) {
+        const uint32_t sourceBase =
+            playerBase + CH::kPlayerProjectionSourceOffset;
+        const uint32_t viewBase = playerBase + CH::kPlayerViewTransformOffset;
+        for (int i = 0; i < CH::kSourceWordCount; ++i)
+            out.source[i] = (int32_t)get32(sourceBase + (uint32_t)i * 4u);
+        for (int i = 0; i < CH::kViewWordCount; ++i)
+            out.view[i] = (int32_t)get32(viewBase + (uint32_t)i * 4u);
+        for (int i = 0; i < CH::kProjectionWordCount; ++i)
+            out.projection[i] = (int32_t)get32(matrixBase + (uint32_t)i * 4u);
+    };
+
+    // Seed the published pair so the gate takes its accepting path, which is
+    // the expensive one.
+    {
+        CH::Input in{};
+        readInput(in);
+        CH::Result r{};
+        if (!CH::Project(in, r)) {
+            std::printf("benchmark fixture does not project\n");
+            return 1;
+        }
+        const int16_t x = CH::NativeScreenX(CH::NdcQ12FromQ32(r.q32X));
+        const int16_t y = CH::NativeScreenY(CH::NdcQ12FromQ32(r.q32Y));
+        std::memcpy(&ram[crosshairX], &x, 2);
+        std::memcpy(&ram[crosshairY], &y, 2);
+    }
+
+    constexpr int kIterations = 2000000;
+    uint64_t sink = 0;
+    int accepted = 0;
+    const auto start = std::chrono::steady_clock::now();
+    for (int i = 0; i < kIterations; ++i) {
+        // Defeat hoisting: the guest state does change every frame in practice.
+        put32(playerBase + CH::kPlayerProjectionSourceOffset, 137 + (i & 3));
+        CH::Input in{};
+        readInput(in);
+        CH::Result r{};
+        const bool ok = CH::Project(in, r)
+            && CH::MatchesNative(r, (int16_t)get16(crosshairX),
+                                 (int16_t)get16(crosshairY));
+        accepted += ok ? 1 : 0;
+        sink += (uint64_t)r.q32X ^ (uint64_t)r.q32Y;
+    }
+    const auto end = std::chrono::steady_clock::now();
+
+    const double ns =
+        std::chrono::duration<double, std::nano>(end - start).count() / kIterations;
+    std::printf("sample + project + native gate: %.1f ns per game frame\n", ns);
+    std::printf("  %.4f%% of a 16.67 ms frame; %d/%d accepted (sink %llu)\n",
+                ns / 16.67e6 * 100.0, accepted, kIterations,
+                (unsigned long long)sink);
+    return 0;
+}
+
 } // namespace
 
-int main()
+int main(int argc, char** argv)
 {
+    if (argc > 1 && std::strcmp(argv[1], "--bench") == 0)
+        return RunBenchmark();
+
     TestBehindNearPlaneIsRejected();
     TestCentreOfScreen();
     TestReconstructsRomNativePosition();

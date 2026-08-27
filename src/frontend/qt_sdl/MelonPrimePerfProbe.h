@@ -143,6 +143,12 @@ struct State {
     uint64_t cntStageMatrixValidationRetries = 0;
     uint64_t cntSurfaceVisibilityStateChanges = 0;
     uint64_t cntRendererFastCacheRefreshes = 0;
+    // Crosshair projection: how often the recomputed centre agreed with the
+    // position the ROM published. A high reject rate means the shared
+    // projection state is being sampled mid-change, and the crosshair is
+    // spending those frames on the quantised fallback.
+    uint64_t cntCrosshairProjectionAccepted = 0;
+    uint64_t cntCrosshairProjectionRejected = 0;
 
     Uint64 lastReportTick = 0;
     uint32_t histTotal[kHistBuckets]{};
@@ -338,6 +344,8 @@ inline void ResetWindowStats()
     st.cntStageMatrixValidationRetries = 0;
     st.cntSurfaceVisibilityStateChanges = 0;
     st.cntRendererFastCacheRefreshes = 0;
+    st.cntCrosshairProjectionAccepted = 0;
+    st.cntCrosshairProjectionRejected = 0;
 }
 
 inline void MaybeReport1Hz()
@@ -422,11 +430,15 @@ inline void MaybeReport1Hz()
         "stage_matrix_full_validation=%llu "
         "stage_matrix_validation_retry=%llu "
         "surface_visibility_state_change=%llu "
-        "renderer_fast_cache_refresh=%llu\n",
+        "renderer_fast_cache_refresh=%llu "
+        "crosshair_projection_accepted=%llu "
+        "crosshair_projection_rejected=%llu\n",
         static_cast<unsigned long long>(st.cntStageMatrixFullValidations),
         static_cast<unsigned long long>(st.cntStageMatrixValidationRetries),
         static_cast<unsigned long long>(st.cntSurfaceVisibilityStateChanges),
-        static_cast<unsigned long long>(st.cntRendererFastCacheRefreshes));
+        static_cast<unsigned long long>(st.cntRendererFastCacheRefreshes),
+        static_cast<unsigned long long>(st.cntCrosshairProjectionAccepted),
+        static_cast<unsigned long long>(st.cntCrosshairProjectionRejected));
 
     fprintf(stderr,
         "[MelonPrimePerf] explicit_latency_us "
@@ -869,6 +881,16 @@ inline void CountSurfaceVisibilityStateChange()
         ++S().cntSurfaceVisibilityStateChanges;
 }
 
+inline void CountCrosshairProjection(bool accepted)
+{
+    if (!S().frameOpen)
+        return;
+    if (accepted)
+        ++S().cntCrosshairProjectionAccepted;
+    else
+        ++S().cntCrosshairProjectionRejected;
+}
+
 inline void CountRendererFastCacheRefresh()
 {
     if (S().frameOpen)
@@ -1012,6 +1034,7 @@ inline void CountHudUploadCall() {}
 inline void CountStageMatrixFullValidation() {}
 inline void CountStageMatrixValidationRetry() {}
 inline void CountSurfaceVisibilityStateChange() {}
+inline void CountCrosshairProjection(bool) {}
 inline void CountRendererFastCacheRefresh() {}
 inline void ShutdownReport() {}
 
