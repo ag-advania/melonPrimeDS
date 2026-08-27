@@ -76,6 +76,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
 
     sB("cCustomHud",       ui->cbMetroidEnableCustomHud);
     sB("cChHighRes",       ui->cbMetroidHudCrosshairHighRes);
+    sB("cChDeadbandOn",    ui->cbMetroidHudCrosshairDeadbandEnable);
     sD("dChDeadband",      ui->dsbMetroidHudCrosshairDeadband);
     sB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
@@ -147,6 +148,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
 
     rB("cCustomHud",       ui->cbMetroidEnableCustomHud);
     rB("cChHighRes",       ui->cbMetroidHudCrosshairHighRes);
+    rB("cChDeadbandOn",    ui->cbMetroidHudCrosshairDeadbandEnable);
     rD("dChDeadband",      ui->dsbMetroidHudCrosshairDeadband);
     rB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
@@ -219,6 +221,11 @@ void MelonPrimeInputConfig::applyVisualPreview()
     if (const QPointer<QCheckBox> chHighRes = ui->cbMetroidHudCrosshairHighRes;
         widgetAlive(chHighRes)) {
         instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes, chHighRes->isChecked());
+    }
+    if (const QPointer<QCheckBox> chDeadbandOn = ui->cbMetroidHudCrosshairDeadbandEnable;
+        widgetAlive(chDeadbandOn)) {
+        instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable,
+                        chDeadbandOn->isChecked());
     }
     if (const QPointer<QDoubleSpinBox> chDeadband = ui->dsbMetroidHudCrosshairDeadband;
         widgetAlive(chDeadband)) {

@@ -101,7 +101,8 @@ struct CrosshairHudConfig {
     // the frame path never asks Config::Table about it.
     bool chHighResPosition;
     // How far the projected centre must move before the drawn pixel follows.
-    double chPositionDeadbandPx;
+    // Disabling keeps the configured width so it can be toggled for comparison.
+    CrosshairProjection::DeadbandSetting chPositionDeadband;
     bool chOutline, chCenterDot, chTStyle;
     int chDotShape;          // 0=Square, 1=Circle
     int chZoomScopeDotShape; // 0=Square, 1=Circle
@@ -1030,7 +1031,9 @@ static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cf
 {
     crosshair.chColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_CrosshairColorR, MP_HUD_PROP_KEY_CrosshairColorG, MP_HUD_PROP_KEY_CrosshairColorB);
     crosshair.chHighResPosition = cfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes);
-    crosshair.chPositionDeadbandPx =
+    crosshair.chPositionDeadband.enabled =
+        cfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable);
+    crosshair.chPositionDeadband.widthPx =
         cfg.GetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband);
     crosshair.chOutline = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairOutline);
     crosshair.chOutlineOpacity = cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairOutlineOpacity);

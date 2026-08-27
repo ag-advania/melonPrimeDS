@@ -222,6 +222,20 @@ struct Result {
 inline constexpr double kDefaultPixelDeadband = 0.25;
 inline constexpr double kMaxPixelDeadband = 2.0;
 
+// The toggle and the width travel together so a caller cannot reach for the
+// width alone and silently lose the toggle. Resolving here also keeps "off"
+// and "zero width" provably the same thing rather than two code paths that
+// could drift.
+struct DeadbandSetting {
+    bool enabled = true;
+    double widthPx = kDefaultPixelDeadband;
+
+    [[nodiscard]] double Resolve() const noexcept
+    {
+        return enabled ? widthPx : 0.0;
+    }
+};
+
 // `sticky` carries the committed pixel across frames. kNoCommittedPixel means
 // there is none yet, so the next call snaps rather than easing out of a stale
 // position; callers reset to it whenever the crosshair leaves the screen.

@@ -1190,6 +1190,9 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 							</item>
 
 							<item>
+								<widget class="QCheckBox" name="cbMetroidHudCrosshairDeadbandEnable"><property name="text"><string>Enable Crosshair Position Deadband (hold the drawn crosshair still until the projected centre has moved far enough; turn this off to make it follow the projection exactly, keeping the width below for comparison)</string></property></widget>
+							</item>
+							<item>
 								<widget class="QLabel" name="labelMetroidHudCrosshairDeadband">
 									<property name="text"><string>Crosshair Position Deadband (output pixels; how far the projected centre must move before the drawn crosshair follows, so sub-pixel noise cannot make it shimmer between neighbouring pixels)</string></property>
 									<property name="wordWrap"><bool>true</bool></property>

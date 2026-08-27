@@ -1150,6 +1150,8 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool(MP_HUD_PROP_KEY_CustomHUD));
     ui->cbMetroidHudCrosshairHighRes->setChecked(
         instcfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes));
+    ui->cbMetroidHudCrosshairDeadbandEnable->setChecked(
+        instcfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable));
     ui->dsbMetroidHudCrosshairDeadband->setValue(
         instcfg.GetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband));
 
@@ -1206,6 +1208,7 @@ void MelonPrimeInputConfig::setupPreviewConnections()
     // --- Global (affects visual preview) ---
     connect(ui->cbMetroidEnableCustomHud, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->cbMetroidHudCrosshairHighRes, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
+    connect(ui->cbMetroidHudCrosshairDeadbandEnable, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->dsbMetroidHudCrosshairDeadband, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double) { applyVisualPreview(); });
     connect(ui->cbMetroidInGameAspectRatio, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->comboMetroidInGameAspectRatioMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
@@ -1446,6 +1449,12 @@ void MelonPrimeInputConfig::on_cbMetroidHudCrosshairHighRes_stateChanged(int sta
 {
     auto& cfg = emuInstance->getLocalConfig();
     cfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes, state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidHudCrosshairDeadbandEnable_stateChanged(int state)
+{
+    auto& cfg = emuInstance->getLocalConfig();
+    cfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable, state != 0);
 }
 
 void MelonPrimeInputConfig::on_dsbMetroidHudCrosshairDeadband_valueChanged(double value)

@@ -175,6 +175,8 @@ void MelonPrimeInputConfig::saveConfig()
     instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
     instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes,
         ui->cbMetroidHudCrosshairHighRes->checkState() == Qt::Checked);
+    instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable,
+        ui->cbMetroidHudCrosshairDeadbandEnable->checkState() == Qt::Checked);
     instcfg.SetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband,
         ui->dsbMetroidHudCrosshairDeadband->value());
     instcfg.SetInt(

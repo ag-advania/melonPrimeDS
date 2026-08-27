@@ -2106,6 +2106,23 @@
         }
     },
     {
+        "Enable Crosshair Position Deadband (hold the drawn crosshair still until the projected centre has moved far enough; turn this off to make it follow the projection exactly, keeping the width below for comparison)",
+        {
+            {MenuLangId::Japanese, "クロスヘア座標のデッドバンドを有効化 (投影された中心が一定以上動くまで描画位置を固定します。オフにすると投影にそのまま追従します。下の幅の値は保持されるので比較できます)"},
+            {MenuLangId::German, "Totzone der Fadenkreuzposition aktivieren (hält das gezeichnete Fadenkreuz ruhig, bis sich die berechnete Mitte weit genug bewegt hat; ausgeschaltet folgt es der Berechnung exakt, die Breite unten bleibt zum Vergleich erhalten)"},
+            {MenuLangId::Spanish, "Activar zona muerta de la posición de la retícula (mantiene la retícula quieta hasta que el centro proyectado se haya movido lo suficiente; al desactivarla sigue la proyección exactamente y se conserva el ancho de abajo para comparar)"},
+            {MenuLangId::French, "Activer la zone morte de la position du réticule (maintient le réticule immobile jusqu'à ce que le centre projeté ait suffisamment bougé ; désactivé, il suit exactement la projection, la largeur ci-dessous étant conservée pour comparaison)"},
+            {MenuLangId::Italian, "Abilita la zona morta della posizione del reticolo (tiene fermo il reticolo finché il centro proiettato non si è spostato abbastanza; disattivandola segue esattamente la proiezione e la larghezza sotto resta per il confronto)"},
+            {MenuLangId::Dutch, "Dode zone van de richtkruispositie inschakelen (houdt het richtkruis stil totdat het geprojecteerde midden ver genoeg is bewogen; uitgeschakeld volgt het de projectie exact, de breedte hieronder blijft behouden ter vergelijking)"},
+            {MenuLangId::Portuguese, "Ativar zona morta da posição da mira (mantém a mira parada até o centro projetado se mover o suficiente; ao desativar, ela segue a projeção exatamente e a largura abaixo é mantida para comparação)"},
+            {MenuLangId::Russian, "Включить мёртвую зону положения прицела (удерживает прицел на месте, пока вычисленный центр не сместится достаточно; при отключении он точно следует за расчётом, а ширина ниже сохраняется для сравнения)"},
+            {MenuLangId::ChineseSimplified, "启用准星坐标死区（在投影中心移动足够距离前保持准星不动；关闭后将完全跟随投影，下方的宽度值会保留以便对比）"},
+            {MenuLangId::ChineseTraditional, "啟用準星座標死區（在投影中心移動足夠距離前保持準星不動；關閉後將完全跟隨投影，下方的寬度值會保留以便比較）"},
+            {MenuLangId::ChineseHongKong, "啟用準星座標死區（在投影中心移動足夠距離前保持準星不動；關閉後將完全跟隨投影，下方的寬度值會保留以便比較）"},
+            {MenuLangId::Korean, "조준선 좌표 데드밴드 활성화 (투영된 중심이 충분히 움직일 때까지 조준선을 고정합니다. 끄면 투영을 그대로 따라갑니다. 아래 폭 값은 비교를 위해 유지됩니다)"},
+        }
+    },
+    {
         "Crosshair Position Deadband (output pixels; how far the projected centre must move before the drawn crosshair follows, so sub-pixel noise cannot make it shimmer between neighbouring pixels)",
         {
             {MenuLangId::Japanese, "クロスヘア座標のデッドバンド (出力ピクセル単位。投影された中心がこの距離だけ動いてから描画位置が追従します。サブピクセルのノイズで隣のピクセルとの間でチラつくのを防ぎます)"},

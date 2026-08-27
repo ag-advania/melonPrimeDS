@@ -2672,7 +2672,11 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     // Deadband the rounding so sub-pixel noise cannot flip the centre between
     // neighbouring pixels; see CommitCrosshairPixel for why that matters now
     // that the centre is projected rather than read from the ROM's cache.
-    const double positionDeadband = c.crosshair.chPositionDeadbandPx;
+    // Disabled resolves to a zero-width band rather than a second code path:
+    // CommitPixel then re-rounds whenever the exact centre leaves the current
+    // pixel, and re-rounding a value already inside it returns that same
+    // pixel, which is plain rounding.
+    const double positionDeadband = c.crosshair.chPositionDeadband.Resolve();
     const int pxCx = CrosshairProjection::CommitPixel(
         xf.m11() * dsCx + xf.m21() * dsCy + xf.dx(),
         positionDeadband, s_chStickyPxCx);

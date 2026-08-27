@@ -491,11 +491,52 @@ void TestMatchesNativeAcceptsAndRejects()
 //  Configurable deadband
 // -------------------------------------------------------------------------
 
+// The toggle and the width are one value so a caller cannot take the width and
+// drop the toggle; Resolve is what the draw site calls.
+void TestDeadbandToggleResolves()
+{
+    CH::DeadbandSetting on{true, 0.75};
+    CH::DeadbandSetting off{false, 0.75};
+    Check(on.Resolve() == 0.75, "enabled resolves to the configured width");
+    Check(off.Resolve() == 0.0, "disabled resolves to a zero-width band");
+    Check(CH::DeadbandSetting{}.enabled, "the deadband defaults to on");
+    Check(CH::DeadbandSetting{}.Resolve() == CH::kDefaultPixelDeadband,
+        "the default resolves to the default width");
+
+    // Turning it off must not disturb the width the user tuned.
+    Check(off.widthPx == 0.75, "disabling preserves the configured width");
+
+    // Off has to behave exactly like a zero width, since that is the claim the
+    // single code path rests on.
+    int viaToggle = CH::kNoCommittedPixel;
+    int viaZero = CH::kNoCommittedPixel;
+    for (int step = 0; step <= 200; ++step) {
+        const double exact = 40.0 + step * 0.053;
+        Check(CH::CommitPixel(exact, off.Resolve(), viaToggle)
+              == CH::CommitPixel(exact, 0.0, viaZero),
+            "disabled must be indistinguishable from a zero width");
+    }
+}
+
 void TestDeadbandWidthIsHonoured()
 {
-    // Zero restores plain rounding, which is what someone who dislikes the
-    // easing would set.
+    // Turning the deadband off passes a zero width rather than taking a second
+    // code path, so "off" has to be plain rounding for every input, not merely
+    // for a sample of them. Sweep it against std::lround directly.
     int sticky = CH::kNoCommittedPixel;
+    for (int step = 0; step <= 400; ++step) {
+        const double exact = 96.0 + step * 0.037;
+        Check(CH::CommitPixel(exact, 0.0, sticky) == (int)std::lround(exact),
+            "a disabled deadband must be exactly plain rounding");
+    }
+    sticky = CH::kNoCommittedPixel;
+    for (int step = 400; step >= 0; --step) {
+        const double exact = -12.0 - step * 0.041;
+        Check(CH::CommitPixel(exact, 0.0, sticky) == (int)std::lround(exact),
+            "a disabled deadband rounds negatives exactly too");
+    }
+
+    sticky = CH::kNoCommittedPixel;
     (void)CH::CommitPixel(100.0, 0.0, sticky);
     Check(CH::CommitPixel(100.6, 0.0, sticky) == 101,
         "a zero deadband must round exactly");
@@ -638,6 +679,7 @@ int main(int argc, char** argv)
     TestDeadbandStillTracksRealMotion();
     TestDeadbandSnapsOnJumpAndReset();
     TestMatchesNativeAcceptsAndRejects();
+    TestDeadbandToggleResolves();
     TestDeadbandWidthIsHonoured();
 
     if (g_failures != 0) {
