@@ -176,6 +176,28 @@ struct Result {
         (static_cast<int64_t>(0x1000 - ndcYQ12) * 96) >> 12);
 }
 
+// The ROM publishes its own projection of this same point as an s16 pair, and
+// the reconstruction above is bit-exact by construction. Agreement is
+// therefore the check that the sampled inputs are the ones the ROM actually
+// used.
+//
+// It is needed because the inputs are live intermediates, not published
+// values: the projection matrix is a shared global that other render passes
+// overwrite, and the source vector and view transform live in a player struct
+// selected by a player index. Custom HUD samples at presentation time, which
+// is not synchronised with the game's crosshair update, so a frame that
+// catches any of those mid-change would otherwise project a point from a
+// different camera -- the crosshair lands somewhere unrelated.
+//
+// Disagreeing costs that frame's sub-pixel precision and nothing else: the
+// caller falls back to the same cache the legacy path read.
+[[nodiscard]] constexpr bool MatchesNative(
+    const Result& result, int16_t nativeX, int16_t nativeY) noexcept
+{
+    return NativeScreenX(NdcQ12FromQ32(result.q32X)) == nativeX
+        && NativeScreenY(NdcQ12FromQ32(result.q32Y)) == nativeY;
+}
+
 // =========================================================================
 //  Sub-pixel deadband.
 //
@@ -194,18 +216,30 @@ struct Result {
 //  A large jump is unaffected -- it lands far outside the band and re-rounds.
 // =========================================================================
 
-inline constexpr double kPixelDeadband = 0.25;
+// Default and clamp range for the configurable deadband. Zero is meaningful:
+// it restores plain rounding for anyone who prefers the crosshair to follow
+// the projected centre exactly.
+inline constexpr double kDefaultPixelDeadband = 0.25;
+inline constexpr double kMaxPixelDeadband = 2.0;
 
 // `sticky` carries the committed pixel across frames. kNoCommittedPixel means
 // there is none yet, so the next call snaps rather than easing out of a stale
 // position; callers reset to it whenever the crosshair leaves the screen.
 inline constexpr int kNoCommittedPixel = INT_MIN;
 
-[[nodiscard]] inline int CommitPixel(double exact, int& sticky) noexcept
+[[nodiscard]] inline int CommitPixel(
+    double exact, double deadband, int& sticky) noexcept
 {
+    // Only the upper clamp does anything. A negative band makes both
+    // comparisons true, so the pixel re-rounds every call -- and re-rounding a
+    // value already within half a pixel returns that same pixel, which is
+    // exactly what a zero band does. An unclamped large band, by contrast,
+    // would freeze the crosshair in place, so that one is load-bearing.
+    const double band =
+        deadband > kMaxPixelDeadband ? kMaxPixelDeadband : deadband;
     if (sticky == kNoCommittedPixel
-        || exact > static_cast<double>(sticky) + 0.5 + kPixelDeadband
-        || exact < static_cast<double>(sticky) - 0.5 - kPixelDeadband) {
+        || exact > static_cast<double>(sticky) + 0.5 + band
+        || exact < static_cast<double>(sticky) - 0.5 - band) {
         sticky = static_cast<int>(std::lround(exact));
     }
     return sticky;

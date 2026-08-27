@@ -119,6 +119,7 @@ private slots:
     void on_cbMetroidUseFirmwareName_stateChanged(int state);
     void on_cbMetroidEnableCustomHud_stateChanged(int state);
     void on_cbMetroidHudCrosshairHighRes_stateChanged(int state);
+    void on_dsbMetroidHudCrosshairDeadband_valueChanged(double value);
     void on_cbMetroidEnableStylusMode_stateChanged(int state);
     void on_cbMetroidDisableMphAimSmoothing_stateChanged(int state);
     void on_cbMetroidExpandStageMatrix_stateChanged(int state);

@@ -391,10 +391,10 @@ void TestDeadbandSuppressesBoundaryDither()
         "the fixture must actually straddle a rounding boundary");
 
     int sticky = CH::kNoCommittedPixel;
-    int committed = CH::CommitPixel(jitter[0], sticky);
+    int committed = CH::CommitPixel(jitter[0], CH::kDefaultPixelDeadband, sticky);
     int flips = 0;
     for (double v : jitter) {
-        const int px = CH::CommitPixel(v, sticky);
+        const int px = CH::CommitPixel(v, CH::kDefaultPixelDeadband, sticky);
         if (px != committed)
             ++flips;
         committed = px;
@@ -407,15 +407,15 @@ void TestDeadbandSuppressesBoundaryDither()
 void TestDeadbandStillTracksRealMotion()
 {
     int sticky = CH::kNoCommittedPixel;
-    int last = CH::CommitPixel(100.0, sticky);
+    int last = CH::CommitPixel(100.0, CH::kDefaultPixelDeadband, sticky);
     Check(last == 100, "the first sample snaps");
 
     int moved = 0;
     for (int step = 1; step <= 60; ++step) {
         const double exact = 100.0 + step * 0.37;
-        const int px = CH::CommitPixel(exact, sticky);
+        const int px = CH::CommitPixel(exact, CH::kDefaultPixelDeadband, sticky);
         // Never allowed to drift further than the band permits.
-        Check(std::fabs(exact - (double)px) <= 0.5 + CH::kPixelDeadband + 1e-9,
+        Check(std::fabs(exact - (double)px) <= 0.5 + CH::kDefaultPixelDeadband + 1e-9,
             "committed pixel must stay inside the deadband of the exact centre");
         if (px != last)
             ++moved;
@@ -427,20 +427,99 @@ void TestDeadbandStillTracksRealMotion()
 void TestDeadbandSnapsOnJumpAndReset()
 {
     int sticky = CH::kNoCommittedPixel;
-    (void)CH::CommitPixel(100.0, sticky);
-    Check(CH::CommitPixel(940.2, sticky) == 940,
+    (void)CH::CommitPixel(100.0, CH::kDefaultPixelDeadband, sticky);
+    Check(CH::CommitPixel(940.2, CH::kDefaultPixelDeadband, sticky) == 940,
         "a large jump must re-round immediately");
 
     // Leaving the screen clears the committed pixel so the next appearance
     // snaps instead of easing out of a stale one.
     sticky = CH::kNoCommittedPixel;
-    Check(CH::CommitPixel(12.7, sticky) == 13, "a fresh appearance snaps");
+    Check(CH::CommitPixel(12.7, CH::kDefaultPixelDeadband, sticky) == 13, "a fresh appearance snaps");
 
     // Negative coordinates occur when the centre is off the left/top edge.
     sticky = CH::kNoCommittedPixel;
-    Check(CH::CommitPixel(-40.4, sticky) == -40, "negative centres snap correctly");
-    Check(CH::CommitPixel(-40.6, sticky) == -40,
+    Check(CH::CommitPixel(-40.4, CH::kDefaultPixelDeadband, sticky) == -40, "negative centres snap correctly");
+    Check(CH::CommitPixel(-40.6, CH::kDefaultPixelDeadband, sticky) == -40,
         "negative centres also get the deadband");
+}
+
+
+// -------------------------------------------------------------------------
+//  Consistency gate
+// -------------------------------------------------------------------------
+
+// The projection inputs are live intermediates sampled at presentation time,
+// so the only thing that proves they are the ones the ROM used is that the
+// result reconstructs to the s16 pair the ROM published. Without this the
+// crosshair lands wherever a stale matrix or the wrong player struct points.
+void TestMatchesNativeAcceptsAndRejects()
+{
+    int accepted = 0;
+    for (int rotated = 0; rotated < 2; ++rotated) {
+        for (int32_t depth = 1; depth <= 12; ++depth) {
+            for (int32_t sx = -600; sx <= 600; sx += 97) {
+                const CH::Input in = MakeInput(
+                    sx, sx / 3, -depth * 271, kOne + depth * 11, rotated != 0);
+                const RomReference expected = ProjectLikeRom(in);
+                CH::Result out{};
+                if (!CH::Project(in, out) || !expected.visible)
+                    continue;
+                if (expected.screenX32 != (int32_t)expected.screenX
+                    || expected.screenY32 != (int32_t)expected.screenY)
+                    continue;
+
+                Check(CH::MatchesNative(out, expected.screenX, expected.screenY),
+                    "consistent inputs must be accepted");
+                // A stale matrix or the wrong player struct shows up as a
+                // position that is simply not the one the ROM published.
+                Check(!CH::MatchesNative(
+                          out, (int16_t)(expected.screenX + 1), expected.screenY),
+                    "a different X must be rejected");
+                Check(!CH::MatchesNative(
+                          out, expected.screenX, (int16_t)(expected.screenY - 1)),
+                    "a different Y must be rejected");
+                ++accepted;
+            }
+        }
+    }
+    Check(accepted > 100, "the gate must be exercised over a useful range");
+}
+
+// -------------------------------------------------------------------------
+//  Configurable deadband
+// -------------------------------------------------------------------------
+
+void TestDeadbandWidthIsHonoured()
+{
+    // Zero restores plain rounding, which is what someone who dislikes the
+    // easing would set.
+    int sticky = CH::kNoCommittedPixel;
+    (void)CH::CommitPixel(100.0, 0.0, sticky);
+    Check(CH::CommitPixel(100.6, 0.0, sticky) == 101,
+        "a zero deadband must round exactly");
+
+    // A wider band tolerates proportionally more jitter.
+    sticky = CH::kNoCommittedPixel;
+    (void)CH::CommitPixel(100.0, 0.9, sticky);
+    Check(CH::CommitPixel(101.3, 0.9, sticky) == 100,
+        "a wide deadband must hold through larger jitter");
+    Check(CH::CommitPixel(101.5, 0.9, sticky) != 100,
+        "a wide deadband must still let go eventually");
+
+    // A hand-edited TOML can carry anything, so out-of-range must be safe.
+    // Negative needs no clamp -- it degenerates to plain rounding, which is
+    // what zero already does -- so assert that equivalence rather than a
+    // clamp that would not be observable.
+    int negative = CH::kNoCommittedPixel;
+    int zero = CH::kNoCommittedPixel;
+    for (double v : {100.0, 100.4, 100.6, 101.9, 99.2, 100.5}) {
+        Check(CH::CommitPixel(v, -5.0, negative) == CH::CommitPixel(v, 0.0, zero),
+            "a negative deadband must behave exactly like zero");
+    }
+    sticky = CH::kNoCommittedPixel;
+    (void)CH::CommitPixel(100.0, 1e9, sticky);
+    Check(CH::CommitPixel(140.0, 1e9, sticky) != 100,
+        "an absurd deadband clamps instead of freezing the crosshair");
 }
 
 } // namespace
@@ -456,6 +535,8 @@ int main()
     TestDeadbandSuppressesBoundaryDither();
     TestDeadbandStillTracksRealMotion();
     TestDeadbandSnapsOnJumpAndReset();
+    TestMatchesNativeAcceptsAndRejects();
+    TestDeadbandWidthIsHonoured();
 
     if (g_failures != 0) {
         std::printf("crosshair-projection-tests: %d FAILURE(S)\n", g_failures);
@@ -463,6 +544,6 @@ int main()
     }
     std::printf(
         "crosshair-projection-tests: clip gate, ROM reconstruction, rounding "
-        "order, signed divide, orientation, sub-pixel deadband PASS\n");
+        "order, signed divide, orientation, deadband, native gate PASS\n");
     return 0;
 }

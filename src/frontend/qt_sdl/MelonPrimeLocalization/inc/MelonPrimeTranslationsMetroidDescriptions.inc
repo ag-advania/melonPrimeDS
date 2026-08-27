@@ -2106,6 +2106,23 @@
         }
     },
     {
+        "Crosshair Position Deadband (output pixels; how far the projected centre must move before the drawn crosshair follows, so sub-pixel noise cannot make it shimmer between neighbouring pixels)",
+        {
+            {MenuLangId::Japanese, "クロスヘア座標のデッドバンド (出力ピクセル単位。投影された中心がこの距離だけ動いてから描画位置が追従します。サブピクセルのノイズで隣のピクセルとの間でチラつくのを防ぎます)"},
+            {MenuLangId::German, "Totzone der Fadenkreuzposition (in Ausgabepixeln; wie weit sich die berechnete Mitte bewegen muss, bevor das gezeichnete Fadenkreuz folgt, damit Subpixel-Rauschen es nicht zwischen benachbarten Pixeln flackern lässt)"},
+            {MenuLangId::Spanish, "Zona muerta de la posición de la retícula (en píxeles de salida; cuánto debe moverse el centro proyectado antes de que la retícula dibujada lo siga, para que el ruido de subpíxel no la haga parpadear entre píxeles vecinos)"},
+            {MenuLangId::French, "Zone morte de la position du réticule (en pixels de sortie ; distance dont le centre projeté doit se déplacer avant que le réticule dessiné ne suive, pour que le bruit sous-pixel ne le fasse pas scintiller entre deux pixels voisins)"},
+            {MenuLangId::Italian, "Zona morta della posizione del reticolo (in pixel di uscita; quanto deve spostarsi il centro proiettato prima che il reticolo disegnato lo segua, così il rumore subpixel non lo fa sfarfallare tra pixel adiacenti)"},
+            {MenuLangId::Dutch, "Dode zone van de richtkruispositie (in uitvoerpixels; hoe ver het geprojecteerde midden moet bewegen voordat het getekende richtkruis volgt, zodat subpixelruis het niet tussen naburige pixels laat flikkeren)"},
+            {MenuLangId::Portuguese, "Zona morta da posição da mira (em pixels de saída; o quanto o centro projetado precisa se mover antes que a mira desenhada acompanhe, para que o ruído de subpixel não a faça tremular entre pixels vizinhos)"},
+            {MenuLangId::Russian, "Мёртвая зона положения прицела (в пикселях вывода; насколько должен сместиться вычисленный центр, прежде чем нарисованный прицел последует за ним, чтобы субпиксельный шум не заставлял его мерцать между соседними пикселями)"},
+            {MenuLangId::ChineseSimplified, "准星坐标死区（输出像素；投影中心需移动多少后绘制的准星才跟随，以免亚像素噪声使其在相邻像素之间闪烁）"},
+            {MenuLangId::ChineseTraditional, "準星座標死區（輸出像素；投影中心需移動多少後繪製的準星才跟隨，以免次像素雜訊使其在相鄰像素之間閃爍）"},
+            {MenuLangId::ChineseHongKong, "準星座標死區（輸出像素；投影中心需移動多少後繪製的準星才跟隨，以免次像素雜訊使其在相鄰像素之間閃爍）"},
+            {MenuLangId::Korean, "조준선 좌표 데드밴드 (출력 픽셀 단위. 투영된 중심이 이만큼 움직여야 그려지는 조준선이 따라갑니다. 서브픽셀 노이즈로 인접 픽셀 사이에서 깜빡이는 것을 막습니다)"},
+        }
+    },
+    {
         "High-Resolution Crosshair Position (Computes the crosshair centre at the output resolution instead of the game's 256x192 pixel grid, so it moves smoothly instead of stepping between pixels)",
         {
             {MenuLangId::Japanese, "クロスヘアの座標を高解像度化 (ゲームの256x192ピクセルグリッドではなく出力解像度で照準の中心を計算し、ピクセル単位でカクつかず滑らかに動くようにします)"},

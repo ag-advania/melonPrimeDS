@@ -1190,6 +1190,21 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 							</item>
 
 							<item>
+								<widget class="QLabel" name="labelMetroidHudCrosshairDeadband">
+									<property name="text"><string>Crosshair Position Deadband (output pixels; how far the projected centre must move before the drawn crosshair follows, so sub-pixel noise cannot make it shimmer between neighbouring pixels)</string></property>
+									<property name="wordWrap"><bool>true</bool></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QDoubleSpinBox" name="dsbMetroidHudCrosshairDeadband">
+									<property name="decimals"><number>2</number></property>
+									<property name="minimum"><double>0.000000000000000</double></property>
+									<property name="maximum"><double>2.000000000000000</double></property>
+									<property name="singleStep"><double>0.050000000000000</double></property>
+								</widget>
+							</item>
+
+							<item>
 								<widget class="QLabel" name="labelMetroidOnScreenEditStyle">
 									<property name="text"><string>On-Screen Edit Style</string></property>
 								</widget>

@@ -2565,7 +2565,20 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         bool haveProjected = false;
         if (c.crosshair.chHighResPosition) {
             ReadCrosshairProjectionInput(ram, rom, offP, projectionInput);
-            haveProjected = CrosshairProjection::Project(projectionInput, projected);
+            haveProjected =
+                CrosshairProjection::Project(projectionInput, projected)
+                // The projection inputs are live intermediates -- a shared
+                // matrix other passes overwrite, and a player struct picked by
+                // index -- sampled at presentation time, which the game does
+                // not synchronise with its own crosshair update. Requiring the
+                // result to reconstruct to the s16 pair the ROM published this
+                // frame is what proves we read the state it actually used.
+                // The ROM stores that pair with strh, so it must be read as
+                // s16; the low byte alone would accept a wrong position.
+                && CrosshairProjection::MatchesNative(
+                    projected,
+                    static_cast<int16_t>(Read16(ram, rom.crosshairPosX)),
+                    static_cast<int16_t>(Read16(ram, rom.crosshairPosY)));
         }
         if (haveProjected) {
             // A point just past the near plane divides by a tiny clipW, so the
@@ -2656,10 +2669,13 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     // Deadband the rounding so sub-pixel noise cannot flip the centre between
     // neighbouring pixels; see CommitCrosshairPixel for why that matters now
     // that the centre is projected rather than read from the ROM's cache.
+    const double positionDeadband = c.crosshair.chPositionDeadbandPx;
     const int pxCx = CrosshairProjection::CommitPixel(
-        xf.m11() * dsCx + xf.m21() * dsCy + xf.dx(), s_chStickyPxCx);
+        xf.m11() * dsCx + xf.m21() * dsCy + xf.dx(),
+        positionDeadband, s_chStickyPxCx);
     const int pxCy = CrosshairProjection::CommitPixel(
-        xf.m12() * dsCx + xf.m22() * dsCy + xf.dy(), s_chStickyPxCy);
+        xf.m12() * dsCx + xf.m22() * dsCy + xf.dy(),
+        positionDeadband, s_chStickyPxCy);
     int glitchOx = 0;
     int glitchOy = 0;
     int scopeGlitchOx = 0;
