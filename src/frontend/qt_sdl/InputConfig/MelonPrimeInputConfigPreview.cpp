@@ -71,6 +71,7 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
     };
 
     sB("cCustomHud",       ui->cbMetroidEnableCustomHud);
+    sB("cChHighRes",       ui->cbMetroidHudCrosshairHighRes);
     sB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     if (widgetAlive(ui->comboMetroidOnScreenEditStyle))
@@ -132,6 +133,7 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
     };
 
     rB("cCustomHud",       ui->cbMetroidEnableCustomHud);
+    rB("cChHighRes",       ui->cbMetroidHudCrosshairHighRes);
     rB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     if (widgetAlive(ui->comboMetroidOnScreenEditStyle)) {
@@ -200,6 +202,10 @@ void MelonPrimeInputConfig::applyVisualPreview()
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
     instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD,              customHud->isChecked());
+    if (const QPointer<QCheckBox> chHighRes = ui->cbMetroidHudCrosshairHighRes;
+        widgetAlive(chHighRes)) {
+        instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes, chHighRes->isChecked());
+    }
     instcfg.SetBool(MP_HUD_PROP_KEY_InGameAspectRatio,      aspectRatio->isChecked());
     instcfg.SetInt (MP_HUD_PROP_KEY_InGameAspectRatioMode,  aspectRatioMode->currentIndex());
     instcfg.SetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame, clipCursor->isChecked());

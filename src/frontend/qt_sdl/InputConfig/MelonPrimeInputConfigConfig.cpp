@@ -173,6 +173,8 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Custom HUD
     instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
+    instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes,
+        ui->cbMetroidHudCrosshairHighRes->checkState() == Qt::Checked);
     instcfg.SetInt(
         MelonPrime::CfgKey::OnScreenEditStyle,
         static_cast<int>(MelonPrime::NormalizeOnScreenEditStyle(

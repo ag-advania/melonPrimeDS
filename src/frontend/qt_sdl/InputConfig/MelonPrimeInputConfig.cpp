@@ -1148,6 +1148,8 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
 {
     // Custom HUD
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool(MP_HUD_PROP_KEY_CustomHUD));
+    ui->cbMetroidHudCrosshairHighRes->setChecked(
+        instcfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes));
 
     // --- Collapsible sections: remember expand/collapse state ---
     auto setupToggle = [&instcfg](QPushButton* btn, QWidget* section, const QString& label, const char* cfgKey) {
@@ -1201,6 +1203,7 @@ void MelonPrimeInputConfig::setupPreviewConnections()
 {
     // --- Global (affects visual preview) ---
     connect(ui->cbMetroidEnableCustomHud, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
+    connect(ui->cbMetroidHudCrosshairHighRes, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->cbMetroidInGameAspectRatio, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->comboMetroidInGameAspectRatioMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
     connect(ui->comboMetroidOnScreenEditStyle, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
@@ -1434,6 +1437,12 @@ void MelonPrimeInputConfig::on_cbMetroidEnableCustomHud_stateChanged(int state)
 {
     auto& cfg = emuInstance->getLocalConfig();
     cfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidHudCrosshairHighRes_stateChanged(int state)
+{
+    auto& cfg = emuInstance->getLocalConfig();
+    cfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes, state != 0);
 }
 
 void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)

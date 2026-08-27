@@ -1184,6 +1184,11 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 								<widget class="QCheckBox" name="cbMetroidEnableCustomHud"><property name="text"><string>Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)</string></property></widget>
 							</item>
 
+							<!-- High-resolution crosshair position -->
+							<item>
+								<widget class="QCheckBox" name="cbMetroidHudCrosshairHighRes"><property name="text"><string>High-Resolution Crosshair Position (Computes the crosshair centre at the output resolution instead of the game's 256x192 pixel grid, so it moves smoothly instead of stepping between pixels)</string></property></widget>
+							</item>
+
 							<item>
 								<widget class="QLabel" name="labelMetroidOnScreenEditStyle">
 									<property name="text"><string>On-Screen Edit Style</string></property>

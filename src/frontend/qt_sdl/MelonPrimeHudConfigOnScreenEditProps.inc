@@ -377,8 +377,9 @@ static const HudEditElemDesc kEditElems[] = {
 
 static_assert(
     sizeof(kEditElems) / sizeof(kEditElems[0]) == kEditElemCount,
-    "kEditElems must describe exactly kEditElemCount On-Screen Edit elements; "
-    "CustomHudConfigState::editRects is sized from the same constant.");
+    "kEditElems must describe exactly kEditElemCount On-Screen Edit "
+    "elements; CustomHudConfigState::editRects is sized from the same "
+    "constant.");
 
 #undef HUD_EDIT_PROP_COUNT
 

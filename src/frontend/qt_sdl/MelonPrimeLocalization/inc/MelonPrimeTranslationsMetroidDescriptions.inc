@@ -2106,6 +2106,23 @@
         }
     },
     {
+        "High-Resolution Crosshair Position (Computes the crosshair centre at the output resolution instead of the game's 256x192 pixel grid, so it moves smoothly instead of stepping between pixels)",
+        {
+            {MenuLangId::Japanese, "クロスヘアの座標を高解像度化 (ゲームの256x192ピクセルグリッドではなく出力解像度で照準の中心を計算し、ピクセル単位でカクつかず滑らかに動くようにします)"},
+            {MenuLangId::German, "Hochauflösende Fadenkreuzposition (berechnet die Fadenkreuzmitte in der Ausgabeauflösung statt im 256x192-Raster des Spiels, sodass es sich flüssig statt pixelweise bewegt)"},
+            {MenuLangId::Spanish, "Posición de retícula en alta resolución (calcula el centro de la retícula en la resolución de salida en lugar de la cuadrícula de 256x192 del juego, para que se mueva con suavidad en vez de a saltos de píxel)"},
+            {MenuLangId::French, "Position du réticule en haute résolution (calcule le centre du réticule à la résolution de sortie au lieu de la grille 256x192 du jeu, pour un déplacement fluide sans saut de pixel)"},
+            {MenuLangId::Italian, "Posizione del reticolo ad alta risoluzione (calcola il centro del reticolo alla risoluzione di uscita invece che sulla griglia 256x192 del gioco, così si muove in modo fluido anziché a scatti di un pixel)"},
+            {MenuLangId::Dutch, "Hogeresolutiepositie van het richtkruis (berekent het midden van het richtkruis op de uitvoerresolutie in plaats van het 256x192-raster van het spel, zodat het vloeiend beweegt in plaats van per pixel)"},
+            {MenuLangId::Portuguese, "Posição da mira em alta resolução (calcula o centro da mira na resolução de saída em vez da grade de 256x192 do jogo, para que se mova suavemente em vez de saltar pixel a pixel)"},
+            {MenuLangId::Russian, "Высокоточное положение прицела (вычисляет центр прицела в разрешении вывода, а не по сетке игры 256x192, поэтому он движется плавно, а не скачками по пикселям)"},
+            {MenuLangId::ChineseSimplified, "准星坐标高分辨率化（按输出分辨率计算准星中心，而不是游戏的 256x192 像素网格，因此移动平滑而不会逐像素跳动）"},
+            {MenuLangId::ChineseTraditional, "準星座標高解析度化（依輸出解析度計算準星中心，而非遊戲的 256x192 像素格線，因此移動平滑而不會逐像素跳動）"},
+            {MenuLangId::ChineseHongKong, "準星座標高解析度化（依輸出解析度計算準星中心，而非遊戲的 256x192 像素格線，因此移動平滑而不會逐像素跳動）"},
+            {MenuLangId::Korean, "조준선 좌표 고해상도화 (게임의 256x192 픽셀 격자가 아니라 출력 해상도에서 조준선 중심을 계산하여 픽셀 단위로 끊기지 않고 부드럽게 움직입니다)"},
+        }
+    },
+    {
         "Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)",
         {
             {MenuLangId::Japanese, "カスタムHUDを有効化 (ゲーム内HUDを、HP、弾薬、武器アイコン、照準を表示する独自の重ね表示に置き換えます)"},

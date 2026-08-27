@@ -2562,8 +2562,12 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         // remaining round below is then against actual output pixels.
         CrosshairProjection::Input projectionInput;
         CrosshairProjection::Result projected;
-        ReadCrosshairProjectionInput(ram, rom, offP, projectionInput);
-        if (CrosshairProjection::Project(projectionInput, projected)) {
+        bool haveProjected = false;
+        if (c.crosshair.chHighResPosition) {
+            ReadCrosshairProjectionInput(ram, rom, offP, projectionInput);
+            haveProjected = CrosshairProjection::Project(projectionInput, projected);
+        }
+        if (haveProjected) {
             // A point just past the near plane divides by a tiny clipW, so the
             // unquantised centre can be astronomically far off screen. The ROM
             // never had to care -- it truncated to s16 and cached a byte -- but
@@ -2578,8 +2582,9 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             s_chAimDsCy = static_cast<float>(
                 std::clamp(projected.dsY, -kOffscreenLimit, kOffscreenLimit));
         } else {
-            // Behind the near plane: the ROM writes no position this frame, so
-            // fall back to the cache exactly as the legacy path did.
+            // Option off, or behind the near plane where the ROM writes no
+            // position this frame: read the quantised cache exactly as the
+            // legacy path did.
             s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
             s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
         }
