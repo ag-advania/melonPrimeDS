@@ -48,9 +48,17 @@ static inline bool ShouldDrawCustomHudCrosshair(const HudRuntimeState& st)
     return st.isFirstPerson && !st.isTrans && !st.isAlt && !st.isAdventureScanVisor;
 }
 
-bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
+bool CustomHud_ShouldHideForGameplayState(CustomHudConfigState& hudConfig,
+                                          EmuInstance* emu,
+                                          const RomAddresses& rom,
+                                          uint8_t playerPosition)
 {
     if (!emu) return true;
+
+    // The sampling helpers below read and publish the per-instance HUD frame
+    // cache, so this entry point must establish the same active-state scope the
+    // painter path uses. Renderer front-ends call it outside CustomHud_Render.
+    const ScopedHudConfigState active(hudConfig);
 
     HudRuntimeState st = {};
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
@@ -78,7 +86,11 @@ bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& 
     return !visible;
 }
 
-bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
+bool CustomHud_ShouldDrawRadarOverlay(CustomHudConfigState& hudConfig,
+                                      EmuInstance* emu,
+                                      const RomAddresses& rom,
+                                      uint8_t playerPosition)
 {
-    return !CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition);
+    return !CustomHud_ShouldHideForGameplayState(
+        hudConfig, emu, rom, playerPosition);
 }

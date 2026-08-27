@@ -20,10 +20,20 @@ class EmuInstance;
 namespace MelonPrime {
 
     // Returns true when the shared HUD hide condition is active.
-    bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+    // Takes the owning instance's HUD state because the decision is sampled
+    // through the per-instance HUD frame cache, exactly like the painter path.
+    bool CustomHud_ShouldHideForGameplayState(CustomHudConfigState& hudConfig,
+                                              EmuInstance* emu,
+                                              const RomAddresses& rom,
+                                              uint8_t playerPosition);
 
     // Returns true when the radar overlay should be drawn on the top screen.
-    bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+    // Renderer front-ends call this outside the painter path, so it carries the
+    // same per-instance HUD state ownership as the rest of the runtime API.
+    bool CustomHud_ShouldDrawRadarOverlay(CustomHudConfigState& hudConfig,
+                                          EmuInstance* emu,
+                                          const RomAddresses& rom,
+                                          uint8_t playerPosition);
 
     // Generation for emulation-state transitions that can reuse the same
     // NDS::NumFrames value (match join, reset, ROM/savestate replacement).

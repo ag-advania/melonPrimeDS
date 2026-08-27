@@ -1257,6 +1257,7 @@ void ScreenPanelMetal::drawScreen()
                         && m_radarOpacity > 0.0f
                         && kMetalRadarHunterCount > 0
                         && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                            mp->HudConfigState(),
                             emuInstance,
                             mp->GetCurrentRom(),
                             mp->GetPlayerPosition()))

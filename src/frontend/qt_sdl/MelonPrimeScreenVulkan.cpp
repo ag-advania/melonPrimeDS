@@ -2172,6 +2172,7 @@ void ScreenPanelVulkan::drawScreenFrame()
             }
         }
         if (mp && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                mp->HudConfigState(),
                 emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
         {
             // The bottom screen is a Custom HUD input even when the active

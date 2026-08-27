@@ -204,6 +204,7 @@
                 if (m_radarEnable &&
                     m_hudTopMatrixValid &&
                     MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                        mp->HudConfigState(),
                         emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
                 {
                     // Use cached config values — no hash-map lookups per-frame.

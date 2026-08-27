@@ -2543,6 +2543,7 @@ void ScreenPanelDX12::drawScreen()
             }
         }
         if (mpForHud && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                mpForHud->HudConfigState(),
                 emuInstance, mpForHud->GetCurrentRom(), mpForHud->GetPlayerPosition()))
         {
             if (!screenUploaded[1])
