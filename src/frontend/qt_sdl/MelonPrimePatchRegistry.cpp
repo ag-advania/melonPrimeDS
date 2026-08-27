@@ -1,6 +1,8 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchRegistry.h"
+
+#include <cstddef>
 #include "MelonPrimePatchState.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "EmuInstance.h"
@@ -223,6 +225,49 @@ namespace MelonPrime {
               &Apply_ExpandStageMatrix, nullptr,
               &ExpandStageMatrix_ResetPatchState },
         };
+
+        // The per-frame out-of-game site is a direct dispatch, not a registry
+        // scan (see Patches_ApplyOutOfGame). Nothing else links that
+        // hand-written call list back to this table, so a fourth
+        // PatchSite_OutOfGameFrame entry added here would be registered for
+        // every cold site and silently never applied on the frame path. Pin
+        // the count, the identities and the table order.
+        [[nodiscard]] constexpr std::size_t OutOfGameFrameEntryCount() noexcept
+        {
+            std::size_t count = 0;
+            for (const PatchEntry& entry : kPatchRegistry) {
+                if ((entry.applySites & PatchSite_OutOfGameFrame) != 0)
+                    ++count;
+            }
+            return count;
+        }
+
+        using PatchApplyFn = void (*)(const PatchCtx&);
+
+        [[nodiscard]] constexpr PatchApplyFn OutOfGameFrameApplyAt(
+            std::size_t index) noexcept
+        {
+            std::size_t seen = 0;
+            for (const PatchEntry& entry : kPatchRegistry) {
+                if ((entry.applySites & PatchSite_OutOfGameFrame) == 0)
+                    continue;
+                if (seen == index)
+                    return entry.apply;
+                ++seen;
+            }
+            return nullptr;
+        }
+
+        static_assert(
+            OutOfGameFrameEntryCount() == 3,
+            "Patches_ApplyOutOfGame dispatches exactly three patches by hand; "
+            "add the new PatchSite_OutOfGameFrame entry there too.");
+        static_assert(
+            OutOfGameFrameApplyAt(0) == &Apply_FixWifi
+                && OutOfGameFrameApplyAt(1) == &Apply_UseFirmwareLanguage
+                && OutOfGameFrameApplyAt(2) == &Apply_ExpandStageMatrix,
+            "Patches_ApplyOutOfGame must dispatch the PatchSite_OutOfGameFrame "
+            "entries in table order; the registry order is the apply order.");
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         [[nodiscard]] static const char* DevPatchApplySiteLabel(uint8_t siteMask) noexcept
