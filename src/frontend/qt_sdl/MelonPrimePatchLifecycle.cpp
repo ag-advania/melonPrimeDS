@@ -136,7 +136,9 @@ void ApplyOutOfGameFrame(melonDS::NDS* nds,
                          const RomAddresses& rom,
                          MelonPrimeCore* core)
 {
-    ApplyRegistryPatches(PatchSite_OutOfGameFrame, nds, emu, cfg, rom, core);
+    (void)cfg;
+    const PatchCtx ctx{ nds, emu, cfg, rom, core->PatchState() };
+    Patches_ApplyOutOfGame(ctx);
 }
 
 void RestoreOnMatchEnd(melonDS::NDS* nds,

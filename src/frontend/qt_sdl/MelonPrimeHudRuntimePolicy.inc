@@ -52,25 +52,30 @@ bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& 
 {
     if (!emu) return true;
 
-    melonDS::NDS* nds = emu->getNDS();
-    melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
-    if (!ram) return true;
-
-    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
-    const bool isStartPressed = Read8(ram, rom.startPressed) == 0x01;
-    const uint16_t currentHP = Read16(ram, rom.playerHP + offP);
-    const bool isGameOver = Read8(ram, rom.gameOver) != 0x00;
-    if (isStartPressed || currentHP == 0 || isGameOver)
+    HudRuntimeState st = {};
+    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return true;
 
-    const bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
-    if (!isAdventure)
-        return false;
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.gameplayVisibilityValid)
+        return !s_hudRuntimeFrameCache.gameplayVisible;
 
-    if (Read8(ram, rom.isMapOrUserActionPaused) == 0x01)
-        return true;
+    ReadHudRuntimeAdventurePauseState(rom, st);
+    const bool visible =
+        !ShouldHideForGameplayState(
+            st.isStartPressed,
+            st.currentHP,
+            st.isGameOver,
+            st.isAdventure,
+            st.isMapOrUserActionPaused)
+        && !st.isAdventureCameraScene;
 
-    return IsCameraSequenceBlockingInput(ram, rom);
+    if (HudRuntimeFrameCacheMatches(st))
+    {
+        s_hudRuntimeFrameCache.gameplayVisible = visible;
+        s_hudRuntimeFrameCache.gameplayVisibilityValid = true;
+    }
+    return !visible;
 }
 
 bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)

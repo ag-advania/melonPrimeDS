@@ -426,6 +426,9 @@ $arm9ModuleForbiddenPatterns = @(
     '\bCfgKey::',
     '\bGet(?:Bool|Int|Double|String)\s*\('
 )
+$arm9LegacyStatePatterns = @(
+    '\bs_activeHooks\b'
+)
 foreach ($modulePath in $arm9RuntimeModules) {
     if (-not (Test-Path -LiteralPath $modulePath)) {
         Add-Error "ARM9 runtime module is missing: $modulePath"
@@ -452,6 +455,125 @@ foreach ($modulePath in @(
     if ((Get-CodeMatchLines 'RomGroup::COUNT' $modulePath).Count -eq 0) {
         Add-Error "ARM9 runtime module must assert RomGroup::COUNT coverage: $modulePath"
     }
+}
+
+# Rule J's name-based bans above are intentionally supplemented by a narrow
+# semantic scan.  These two runtime modules may contain immutable lookup data
+# and static helper functions, but they must not acquire mutable module state
+# under a new name (including a function-local static or thread_local).
+function Get-MutableStaticDeclarations([string]$source, [string]$label) {
+    $code = [regex]::Replace($source, '(?s)/\*.*?\*/', '')
+    $code = [regex]::Replace($code, '//[^\r\n]*', '')
+    $code = [regex]::Replace($code, '"(?:\\.|[^"\\])*"', '""')
+    $staticPattern = '(?<![\w])(?:thread_local\s+static|static\s+thread_local|static)(?![\w])'
+    $violations = New-Object System.Collections.Generic.List[string]
+    foreach ($match in [regex]::Matches($code, $staticPattern)) {
+        $tail = $code.Substring($match.Index)
+        $end = $tail.Length
+        foreach ($delimiter in @(';', '{', '}')) {
+            $candidate = $tail.IndexOf($delimiter)
+            if ($candidate -ge 0 -and $candidate -lt $end) { $end = $candidate }
+        }
+        $declaration = $tail.Substring(0, $end).Trim()
+        $isImmutable = $declaration -match '^\s*(?:thread_local\s+static|static\s+thread_local|static)\s+(?:constexpr\b|const\b)'
+        $openParen = $declaration.IndexOf('(')
+        $equals = $declaration.IndexOf('=')
+        $isStaticFunction = $openParen -ge 0 -and ($equals -lt 0 -or $openParen -lt $equals)
+        if (-not $isImmutable -and -not $isStaticFunction) {
+            $line = 1 + ([regex]::Matches($code.Substring(0, $match.Index), "`n")).Count
+            $violations.Add("${label}:${line}:$declaration") | Out-Null
+        }
+    }
+    return @($violations)
+}
+
+# Synthetic fixtures exercise both sides of the allowlist so a future edit to
+# the scanner cannot silently make it name-based or over-broad.
+$statelessFixtures = @(
+    @{ Name = 'static constexpr table'; Source = 'static constexpr int kTable[] = { 1, 2 };'; Allowed = $true },
+    @{ Name = 'static const data'; Source = 'static const int kValue = 1;'; Allowed = $true },
+    @{ Name = 'static helper function'; Source = 'static bool Helper(int value) { return value != 0; }'; Allowed = $true },
+    @{ Name = 'mutable static bool'; Source = 'static bool g_enabled = false;'; Allowed = $false },
+    @{ Name = 'mutable static byte'; Source = 'static uint8_t activeRom = 0;'; Allowed = $false },
+    @{ Name = 'static thread_local'; Source = 'static thread_local bool active = false;'; Allowed = $false },
+    @{ Name = 'thread_local static'; Source = 'thread_local static bool active = false;'; Allowed = $false },
+    @{ Name = 'mutable static object'; Source = 'static State state{};'; Allowed = $false },
+    @{ Name = 'mutable static factory'; Source = 'static State state = MakeState();'; Allowed = $false }
+)
+foreach ($fixture in $statelessFixtures) {
+    $found = @(Get-MutableStaticDeclarations $fixture.Source "fixture/$($fixture.Name)")
+    $accepted = $found.Count -eq 0
+    if ($accepted -ne $fixture.Allowed) {
+        Add-Error ("stateless-static fixture '$($fixture.Name)' expected " +
+            "Allowed=$($fixture.Allowed), got Allowed=$accepted")
+    }
+}
+
+# Keep the older migration bans executable as well as documented. These
+# fixtures are intentionally source snippets rather than checks for today's
+# module text: they fail the audit if a future edit weakens the Config or
+# legacy-hook-symbol ratchet while the production files happen not to contain
+# the forbidden text.
+function Get-StatelessForbiddenFixtureHits([string]$source, [string]$label) {
+    $code = [regex]::Replace($source, '(?s)/\*.*?\*/', '')
+    $code = [regex]::Replace($code, '//[^\r\n]*', '')
+    $violations = New-Object System.Collections.Generic.List[string]
+    foreach ($pattern in @($arm9ModuleForbiddenPatterns + $arm9LegacyStatePatterns)) {
+        foreach ($match in [regex]::Matches($code, $pattern)) {
+            $line = 1 + ([regex]::Matches($code.Substring(0, $match.Index), "`n")).Count
+            $violations.Add("${label}:${line}:$pattern") | Out-Null
+        }
+    }
+    return @($violations)
+}
+
+$statelessLegacyFixtures = @(
+    @{ Name = 'Config reintroduction'; Source = 'Config::Table cfg;' },
+    @{ Name = 'old active hook symbol'; Source = 'static bool s_activeHooks = false;' }
+)
+foreach ($fixture in $statelessLegacyFixtures) {
+    $textHits = @(Get-StatelessForbiddenFixtureHits $fixture.Source "fixture/$($fixture.Name)")
+    if ($textHits.Count -eq 0) {
+        Add-Error ("stateless legacy fixture '$($fixture.Name)' must be rejected " +
+            'by the Rule J forbidden-text ratchet')
+    }
+    if ($fixture.Name -eq 'old active hook symbol') {
+        $staticHits = @(Get-MutableStaticDeclarations $fixture.Source "fixture/$($fixture.Name)")
+        if ($staticHits.Count -eq 0) {
+            Add-Error ("stateless legacy fixture '$($fixture.Name)' must be rejected " +
+                'by the mutable-static semantic ratchet')
+        }
+    }
+}
+
+foreach ($modulePath in @(
+    (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.cpp'),
+    (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.cpp'))) {
+    if (-not (Test-Path -LiteralPath $modulePath)) { continue }
+    $relative = [System.IO.Path]::GetRelativePath($repoRoot, $modulePath) -replace '\\', '/'
+    foreach ($violation in (Get-MutableStaticDeclarations ([System.IO.File]::ReadAllText($modulePath)) $relative)) {
+        Add-Error ("ARM9 runtime module contains mutable static state; " +
+            "use per-Core state or immutable data: $violation")
+    }
+}
+
+$dispatchSignatures = @(
+    @{ File = (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.cpp'); Name = 'ShadowFreezeRuntimeHook_DispatchCheckAndRedirect' },
+    @{ File = (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.cpp'); Name = 'FixNoxusBladePersistence_DispatchCheck' }
+)
+foreach ($dispatch in $dispatchSignatures) {
+    if (-not (Test-Path -LiteralPath $dispatch.File)) { continue }
+    $dispatchCode = [regex]::Replace([System.IO.File]::ReadAllText($dispatch.File), '(?s)/\*.*?\*/', '')
+    $dispatchCode = [regex]::Replace($dispatchCode, '//[^\r\n]*', '')
+    $dispatchCode = [regex]::Replace($dispatchCode, '\s+', ' ')
+    $signaturePattern = '\b' + $dispatch.Name + '\s*\([^;{}]*\buint8_t\s+romGroupIndex\b[^;{}]*\)'
+    if ($dispatchCode -notmatch $signaturePattern) {
+        Add-Error ("$($dispatch.Name)() must take uint8_t romGroupIndex explicitly")
+    }
+}
+$arm9DispatcherCode = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'MelonPrimeArm9Hook.cpp'))
+if ($arm9DispatcherCode -notmatch 'const\s+uint8_t\s+romGroupIndex\s*=\s*hookState\.romGroupIndex') {
+    Add-Error 'ARM9 dispatcher must load const uint8_t romGroupIndex = hookState.romGroupIndex'
 }
 
 $arm9StatePath = Join-Path $qtSdl 'MelonPrime.h'
@@ -664,7 +786,14 @@ $hotPaths = @(
     @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::ProcessMoveAndButtonsFastImpl\s*\(' },
     @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::ProcessAimInputMouse\s*\(' },
     @{ File = 'MelonPrimeArm9Hook.cpp';       Signature = '^\s*static\s+bool\s+DispatcherCallback\s*\(' },
-    @{ File = 'MelonPrimeHudRenderMain.inc';  Signature = 'QRect\s+CustomHud_Render\s*\(' }
+    @{ File = 'MelonPrimeHudRenderMain.inc';  Signature = 'QRect\s+CustomHud_Render\s*\(' },
+    # Native presenters are included as manual-review paths. Their output
+    # boundary is performance-critical, but platform-specific diagnostics and
+    # the one-time layout/renderer transitions are not suitable for a hard
+    # regex gate here.
+    @{ File = 'MelonPrimeScreenVulkan.cpp';   Signature = 'void\s+ScreenPanelVulkan::drawScreenFrame\s*\(' },
+    @{ File = 'Screen.cpp';                   Signature = 'void\s+ScreenPanelDX12::drawScreen\s*\(' },
+    @{ File = 'MelonPrimeScreenMetal.mm';     Signature = 'void\s+ScreenPanelMetal::drawScreen\s*\(' }
 )
 $hotPathCosts = 'Config::Table|\bGetBool\s*\(|\bGetInt\s*\(|\bGetDouble\s*\(|std::function|\bvirtual\b|dynamic_cast|QMetaObject|std::make_shared|std::make_unique|QString\s*\(|\bmutex\b|std::shared_ptr|std::static_pointer_cast|QMutexLocker|std::lock_guard|std::unique_lock|\bnew\b|std::string'
 $hotPathNotes = New-Object System.Collections.Generic.List[string]

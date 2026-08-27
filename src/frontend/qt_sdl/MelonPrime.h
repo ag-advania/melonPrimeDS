@@ -20,6 +20,7 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeInputSubscription.h"
 #include "MelonPrimeThreadBridge.h"
+#include "MelonPrimeRuntimeConfig.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeBattleFlowState.h"
@@ -51,9 +52,6 @@ namespace MelonPrime {
     };
 #endif
 
-    struct RuntimeConfigSnapshot;
-
-    struct AimConfigSnapshot;
 #ifdef MELONPRIME_CUSTOM_HUD
     struct CustomHudConfigState;
 #endif
@@ -612,6 +610,7 @@ namespace MelonPrime {
         // hotkey. Config::Table remains a cold reload/persistence boundary.
         int      m_runtimeAimSensitivity = 1;
         float    m_runtimeAimYScale = 1.0f;
+        MenuGameSettingsSnapshot m_menuGameSettings{};
 
         // --- Damage Notify Purple ---
         // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to
@@ -854,7 +853,7 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleGameJoinInit();
         COLD_FUNCTION void HandleBattleRuntimeEnter();
         COLD_FUNCTION void DetectRomAndSetAddresses();
-        COLD_FUNCTION void ApplyGameSettingsOnce();
+        COLD_FUNCTION void ReconcileMenuGameSettings();
 
         void ApplyRuntimeAimSensitivity(int sensitivity);
         void RecalcAimFixedPoint();

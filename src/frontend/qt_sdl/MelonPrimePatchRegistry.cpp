@@ -80,7 +80,10 @@ namespace MelonPrime {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
             const auto before = ctx.state.fixWifi.status;
 #endif
-            FixWifi_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+            FixWifi_ApplyOnce(
+                ctx.state, ctx.nds,
+                ctx.state.outOfGamePatches.fixWifiEnabled,
+                ctx.rom.romGroupIndex);
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
             const auto after = ctx.state.fixWifi.status;
             if (after != before && ctx.emu) {
@@ -91,12 +94,21 @@ namespace MelonPrime {
         }
         void Apply_UseFirmwareLanguage(const PatchCtx& ctx)
         {
-            UseFirmwareLanguage_ApplyOnce(ctx.nds, ctx.cfg, ctx.rom.romGroupIndex,
-                                          ctx.rom.isInAdventure);
+            UseFirmwareLanguage_ApplyOnce(
+                ctx.nds,
+                ctx.state.outOfGamePatches.useFirmwareLanguageEnabled,
+                ctx.rom.romGroupIndex,
+                ctx.rom.isInAdventure,
+                ctx.state.outOfGamePatches.firmwareLanguageBits);
         }
         void Apply_ExpandStageMatrix(const PatchCtx& ctx)
         {
-            ExpandStageMatrix_ApplyIfLoaded(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+            ExpandStageMatrix_ApplyIfLoaded(
+                ctx.state,
+                ctx.nds,
+                ctx.state.outOfGamePatches.expandStageMatrixEnabled,
+                ctx.state.outOfGamePatches.expandStageMatrixExtraEnabled,
+                ctx.rom.romGroupIndex);
         }
 
         // --- restore adapters -------------------------------------------------
@@ -141,7 +153,8 @@ namespace MelonPrime {
         //      GameJoin       = entry 1     (InGameAspectRatio)
         //      BattleRuntime  = entries 2-8 (OsdColor .. NoPickingUp)
         //      ConfigReload   = entries 4-8 (InstantAimFollow .. NoPickingUp)
-        //      OutOfGameFrame = entries 9-11 (FixWifi .. ExpandStageMatrix)
+        //      OutOfGameFrame = entries 9-11 (FixWifi .. ExpandStageMatrix;
+        //                       the frame loop uses the direct fast dispatch)
         //  - Restore order also follows the table. Safe: all modules write disjoint ARM9
         //    addresses, so restore order between modules cannot matter.
         //  - Mutable module state is supplied through PatchCtx::state and is
@@ -205,7 +218,7 @@ namespace MelonPrime {
               PatchSite_OutOfGameFrame, RF_None,
               &Apply_UseFirmwareLanguage, nullptr,
               &Reset_UseFirmwareLanguage },
-            { "ExpandStageMatrix",  // pattern C: ApplyIfLoaded self-guards; reset is a documented no-op
+            { "ExpandStageMatrix",  // state machine self-guards; reset is a documented no-op
               PatchSite_OutOfGameFrame, RF_None,
               &Apply_ExpandStageMatrix, nullptr,
               &ExpandStageMatrix_ResetPatchState },
@@ -261,6 +274,16 @@ namespace MelonPrime {
         if (siteMask != PatchSite_OutOfGameFrame)
             DevOsdPatchApplied(ctx.emu, siteMask, applied);
 #endif
+    }
+
+    void Patches_ApplyOutOfGame(const PatchCtx& ctx)
+    {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        MelonPrimePerf::CountOutOfGamePatchApply();
+#endif
+        Apply_FixWifi(ctx);
+        Apply_UseFirmwareLanguage(ctx);
+        Apply_ExpandStageMatrix(ctx);
     }
 
     void Patches_RestoreOnLeave(const PatchCtx& ctx)

@@ -347,6 +347,8 @@ struct HudRuntimeFrameCache {
     uint8_t romGroup = 0xFFu;
     bool baseValid = false;
     bool adventureValid = false;
+    bool gameplayVisibilityValid = false;
+    bool gameplayVisible = false;
     bool visibleValid = false;
     bool currentAmmoSpecialValid = false;
     bool currentAmmoMissileValid = false;
@@ -847,6 +849,8 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     s_hudRuntimeFrameCache.romGroup = rom.romGroupIndex;
     s_hudRuntimeFrameCache.baseValid = true;
     s_hudRuntimeFrameCache.adventureValid = false;
+    s_hudRuntimeFrameCache.gameplayVisibilityValid = false;
+    s_hudRuntimeFrameCache.gameplayVisible = false;
     s_hudRuntimeFrameCache.visibleValid = false;
     s_hudRuntimeFrameCache.currentAmmoSpecialValid = false;
     s_hudRuntimeFrameCache.currentAmmoMissileValid = false;

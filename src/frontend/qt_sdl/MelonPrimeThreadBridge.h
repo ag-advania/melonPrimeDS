@@ -121,6 +121,9 @@ public:
     void SetInputGenerationFromEmu(uint64_t generation) noexcept
     {
         const uint64_t normalizedGeneration = generation ? generation : 1;
+        if (m_inputGeneration.load(std::memory_order_acquire)
+            == normalizedGeneration)
+            return;
         const uint64_t previous = m_inputGeneration.exchange(
             normalizedGeneration, std::memory_order_acq_rel);
         if (previous != normalizedGeneration) {
@@ -257,6 +260,8 @@ public:
         bits |= fastForward ? 1u << 4 : 0;
         bits |= rawAimActive ? 1u << 5 : 0;
         bits |= static_cast<uint32_t>(screenSyncMode & 0x3) << 6;
+        if (m_runtimeBits.load(std::memory_order_relaxed) == bits)
+            return;
         m_runtimeBits.store(bits, std::memory_order_release);
     }
     [[nodiscard]] MelonPrimeUiSnapshot ReadForGui() const noexcept

@@ -89,9 +89,14 @@ namespace MelonPrime {
         // preventing message buildup and stale delta accumulation. [FIX-2]
         FrameHotkeyState hk{};
         if (rawFilter) {
-            rawFilter->setRawInputTarget(
-                m_rawInputSubscription,
-                reinterpret_cast<HWND>(m_threadBridge.WindowHandleForEmu()));
+            void* const currentHwnd = reinterpret_cast<void*>(
+                m_threadBridge.WindowHandleForEmu());
+            if (currentHwnd != m_cachedHwnd) {
+                rawFilter->setRawInputTarget(
+                    m_rawInputSubscription,
+                    static_cast<HWND>(currentHwnd));
+                m_cachedHwnd = currentHwnd;
+            }
             rawFilter->UpdateOwner(m_rawInputSubscription, captureEligible);
             m_threadBridge.SetInputGenerationFromEmu(m_inputSubscription.generation);
             if constexpr (kReentrant)

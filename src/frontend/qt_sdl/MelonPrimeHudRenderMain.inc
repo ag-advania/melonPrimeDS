@@ -88,6 +88,16 @@ HOT_FUNCTION QRect CustomHud_Render(
         st.isAdventure,
         st.isMapOrUserActionPaused);
 
+    // Publish the complete gameplay-visibility result for the native radar
+    // presenters. They may run before or after this painter path; either way,
+    // all consumers on this game frame reuse the same state decision.
+    if (HudRuntimeFrameCacheMatches(st))
+    {
+        s_hudRuntimeFrameCache.gameplayVisible =
+            !hideForNativeUi && !st.isAdventureCameraScene;
+        s_hudRuntimeFrameCache.gameplayVisibilityValid = true;
+    }
+
     // Native UI needs the original helmet-layer instruction. Vulkan's held-TAB
     // path skips this overlay entirely and masks those layers presentation-only.
     uint16_t desiredNoHudMask = c.noHudMask;

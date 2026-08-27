@@ -448,8 +448,8 @@ namespace MelonPrime {
                     m_flags.clear(StateFlags::BIT_IN_ADVENTURE);
                     SetAimBlockBranchless(AIMBLK_NOT_IN_GAME, true);
 #ifdef MELONPRIME_DS
-                    // Per-frame menu site (cold path): a tight masked loop
-                    // over the registry; matching entries self-guard.
+                    // Per-frame menu site: direct out-of-game dispatch keeps
+                    // unrelated registry entries off this focused hot path.
                     // PatchLifecycle Step 3 / Site E — see
                     // melonprime_patch_lifecycle_gateway_step3_plan.md.
                     PatchLifecycle::ApplyOutOfGameFrame(
@@ -462,12 +462,12 @@ namespace MelonPrime {
                     //
                     // Order matters: ProcessMovementOnlyFromReset() does a full
                     // m_inputMaskFast assignment (releases every non-D-pad button),
-                    // so it must run BEFORE ApplyGameSettingsOnce(), which applies
+                    // so it must run BEFORE ReconcileMenuGameSettings(), which applies
                     // the UI Left/Right buttons (License L/R, Adventure left/right)
                     // on top via single-bit InputSetBranchless. Running it after
                     // wiped those bits and broke the Hunter License L/R navigation.
                     ProcessMovementOnlyFromReset();
-                    ApplyGameSettingsOnce();
+                    ReconcileMenuGameSettings();
                 }
 
                 const bool isAdventure = m_flags.test(StateFlags::BIT_IN_ADVENTURE);
@@ -635,7 +635,7 @@ namespace MelonPrime {
         m_flags.assign(StateFlags::BIT_IN_ADVENTURE, isAdventure);
 
         MelonPrimeGameSettings::ApplyMphSensitivity(
-            nds, localCfg, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
+            nds, m_menuGameSettings, m_currentRom.sensitivity, m_addrHot.inGameSensi, true);
 
         AimSmoothing_ApplyOrRestore(nds, m_currentRom, m_disableMphAimSmoothing);
 

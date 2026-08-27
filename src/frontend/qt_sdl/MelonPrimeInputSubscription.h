@@ -32,23 +32,30 @@ class PlatformInputOwnerService {
 public:
     static bool Update(MelonPrimeInputSubscription& subscription, bool eligible)
     {
-        std::lock_guard<std::mutex> lock(Mutex());
-        auto*& owner = Owner();
         if (!eligible) {
             subscription.focused = false;
-            if (owner == &subscription) {
-                subscription.activeOwner = false;
-                owner = nullptr;
+            if (OwnerAtomic().load(std::memory_order_acquire) != &subscription)
+                return false;
+
+            std::lock_guard<std::mutex> lock(Mutex());
+            if (OwnerAtomic().load(std::memory_order_relaxed) == &subscription) {
+                subscription.activeOwner.store(false, std::memory_order_release);
+                OwnerAtomic().store(nullptr, std::memory_order_release);
             }
             return false;
         }
 
         subscription.focused = true;
+        if (OwnerAtomic().load(std::memory_order_acquire) == &subscription)
+            return true;
+
+        std::lock_guard<std::mutex> lock(Mutex());
+        auto* const owner = OwnerAtomic().load(std::memory_order_relaxed);
         if (owner != &subscription) {
             if (owner)
-                owner->activeOwner = false;
-            owner = &subscription;
-            subscription.activeOwner = true;
+                owner->activeOwner.store(false, std::memory_order_release);
+            subscription.activeOwner.store(true, std::memory_order_release);
+            OwnerAtomic().store(&subscription, std::memory_order_release);
             subscription.cursorNeedsSync = true;
             subscription.hotkeyPrevious = subscription.hotkeyDownSnapshot;
             ++subscription.focusGeneration;
@@ -77,18 +84,16 @@ public:
     static void Release(MelonPrimeInputSubscription& subscription)
     {
         std::lock_guard<std::mutex> lock(Mutex());
-        auto*& owner = Owner();
-        if (owner == &subscription)
-            owner = nullptr;
-        subscription.activeOwner = false;
+        if (OwnerAtomic().load(std::memory_order_relaxed) == &subscription)
+            OwnerAtomic().store(nullptr, std::memory_order_release);
+        subscription.activeOwner.store(false, std::memory_order_release);
         subscription.focused = false;
         subscription.cursorNeedsSync = true;
     }
 
-    static bool IsOwner(const MelonPrimeInputSubscription& subscription)
+    static bool IsOwner(const MelonPrimeInputSubscription& subscription) noexcept
     {
-        std::lock_guard<std::mutex> lock(Mutex());
-        return Owner() == &subscription;
+        return OwnerAtomic().load(std::memory_order_acquire) == &subscription;
     }
 
 private:
@@ -98,9 +103,9 @@ private:
         return s_mutex;
     }
 
-    static MelonPrimeInputSubscription*& Owner()
+    static std::atomic<MelonPrimeInputSubscription*>& OwnerAtomic()
     {
-        static MelonPrimeInputSubscription* s_owner = nullptr; // process-service: active capture owner
+        static std::atomic<MelonPrimeInputSubscription*> s_owner{nullptr}; // process-service: lock-free active capture owner authority
         return s_owner;
     }
 };

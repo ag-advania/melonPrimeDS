@@ -2,7 +2,6 @@
 
 #include "MelonPrimePatchExpandStageMatrix.h"
 #include "MelonPrimePatchState.h"
-#include "Config.h"
 #include "MelonPrimeDef.h"
 #include "NDS.h"
 
@@ -112,46 +111,110 @@ static bool StageMatrixLoadedStrict(melonDS::NDS* nds, const MatrixVersionInfo& 
 
 // ---- Public API ----
 
-void ExpandStageMatrix_ApplyIfLoaded(MelonPrimePatchState& state, melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
+void ExpandStageMatrix_ApplyIfLoaded(
+    MelonPrimePatchState& state,
+    melonDS::NDS* nds,
+    bool enabled,
+    bool extraEnabled,
+    uint8_t romGroupIndex)
 {
-    const bool enabled = cfg.GetBool(MelonPrime::CfgKey::ExpandStageMatrix);
+    auto& patch = state.expandStageMatrix;
+    if (!nds || romGroupIndex >= 7)
+        return;
 
-    if (!state.expandStageMatrixPendingRestore && !enabled) return;
-    if (romGroupIndex >= 7) return;
+    if (patch.romGroupIndex != romGroupIndex) {
+        patch = {};
+        patch.romGroupIndex = romGroupIndex;
+    }
 
+    const bool desiredExtra = enabled && extraEnabled;
     const MatrixVersionInfo& info = kMatrixVersions[romGroupIndex];
-    if (!StageMatrixLoadedStrict(nds, info)) return;
+    const bool desiredChanged = patch.appliedBase != enabled
+        || patch.appliedExtra != desiredExtra;
+    if (desiredChanged)
+        patch.pendingRestore = true;
+    const bool mustReconcile = enabled || desiredChanged || patch.pendingRestore;
+    if (!enabled && !patch.pendingRestore)
+        return;
 
-    if (state.expandStageMatrixPendingRestore) {
-        // Write the correct state for every cell based on current settings.
-        // Handles: parent off, extra off, or any combination changing on save.
-        state.expandStageMatrixPendingRestore = false;
-        const bool extraEnabled = enabled && cfg.GetBool(MelonPrime::CfgKey::ExpandStageMatrixExtra);
-        for (const auto& cell : kBaseCells)
-            nds->ARM9Write8(MatrixAddr(info, cell), enabled ? 0x01u : 0x00u);
-        for (const auto& cell : kExtraCells)
-            nds->ARM9Write8(MatrixAddr(info, cell), extraEnabled ? 0x01u : 0x00u);
+    const auto status = patch.status;
+    // A configuration toggle is not a ROM reload. Once the matrix has been
+    // verified, reconcile that toggle through the cheap sentinel path; reserve
+    // the strict 46-read guard for the Unknown state created by a load,
+    // unload, or explicit lifecycle invalidation.
+    const bool needsValidation =
+        status == MelonPrimePatchState::ExpandStageMatrixStatus::Unknown
+        || status == MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad;
+    if (needsValidation) {
+        // The first matrix byte is outside every patched cell. It is a cheap
+        // load/unload sentinel; the 46-read strict guard runs only when the
+        // sentinel first becomes a candidate or a lifecycle invalidation asks
+        // for a new verification.
+        const bool candidate = nds->ARM9Read8(info.matrixBase)
+            == kMatrixPrefixSignature[0];
+        if (!candidate) {
+            patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad;
+            patch.candidateSeen = false;
+            return;
+        }
+        if (patch.candidateSeen && status
+            == MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad)
+            return;
+        patch.candidateSeen = true;
+        if (!StageMatrixLoadedStrict(nds, info)) {
+            patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad;
+            return;
+        }
+        patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::Verified;
+        patch.pendingRestore = false;
+    } else if (patch.status == MelonPrimePatchState::ExpandStageMatrixStatus::Verified) {
+        // Detect a guest matrix unload without paying the full signature cost.
+        if (nds->ARM9Read8(info.matrixBase) != kMatrixPrefixSignature[0]) {
+            patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::WaitingForLoad;
+            patch.candidateSeen = false;
+            patch.appliedBase = false;
+            patch.appliedExtra = false;
+            return;
+        }
+    } else {
         return;
     }
 
-    // Normal per-frame apply path.
-    for (const auto& cell : kBaseCells)
-        nds->ARM9Write8(MatrixAddr(info, cell), 0x01u);
-
-    if (cfg.GetBool(MelonPrime::CfgKey::ExpandStageMatrixExtra)) {
-        for (const auto& cell : kExtraCells)
-            nds->ARM9Write8(MatrixAddr(info, cell), 0x01u);
+    if (!enabled && !mustReconcile) {
+        patch.appliedBase = false;
+        patch.appliedExtra = false;
+        return;
     }
+
+    auto reconcile = [&](const auto& cells, bool desired) {
+        for (const auto& cell : cells) {
+            const uint32_t address = MatrixAddr(info, cell);
+            const uint8_t current = nds->ARM9Read8(address);
+            const uint8_t target = desired ? 0x01u : 0x00u;
+            if (current != target)
+                nds->ARM9Write8(address, target);
+        }
+    };
+    reconcile(kBaseCells, enabled);
+    reconcile(kExtraCells, desiredExtra);
+    patch.appliedBase = enabled;
+    patch.appliedExtra = desiredExtra;
+    patch.pendingRestore = false;
 }
 
 void ExpandStageMatrix_InvalidatePatch(MelonPrimePatchState& state)
 {
-    state.expandStageMatrixPendingRestore = true;
+    auto& patch = state.expandStageMatrix;
+    patch.pendingRestore = patch.status
+        == MelonPrimePatchState::ExpandStageMatrixStatus::Verified
+        || patch.appliedBase || patch.appliedExtra;
+    patch.status = MelonPrimePatchState::ExpandStageMatrixStatus::Unknown;
+    patch.candidateSeen = false;
 }
 
 void ExpandStageMatrix_ResetPatchState(MelonPrimePatchState& state)
 {
-    state.expandStageMatrixPendingRestore = false;
+    state.expandStageMatrix = {};
 }
 
 } // namespace MelonPrime

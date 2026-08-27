@@ -1856,6 +1856,15 @@ struct ScreenPanelDX12::DX12State
     float screenMatrix[kMaxScreenTransforms][6]{};
     int screenKind[kMaxScreenTransforms]{};
     int numScreens = 0;
+    std::atomic<std::uint32_t> layoutRevision{0};
+    // Emulation-thread cache. The GUI-published arrays above are copied only
+    // when layoutRevision changes; a stable frame never takes layoutLock.
+    float cachedScreenMatrix[kMaxScreenTransforms][6]{};
+    int cachedScreenKind[kMaxScreenTransforms]{};
+    int cachedNumScreens = 0;
+    std::uint32_t cachedLayoutRevision = ~0u;
+    std::uint32_t rendererSnapshotRevision = ~0u;
+    melonDS::DX12Renderer* cachedDX12Renderer = nullptr;
     RendererOutputLease frameLease;
     QMutex fallbackLock;
     QImage fallbackFrame;
@@ -1946,6 +1955,8 @@ void ScreenPanelDX12::prepareForRendererTransition()
     dx12->presenter.InvalidateDirectDescriptorCache();
     dx12->frameLease.ReleaseNow();
     dx12->nativeVisibility.Reset();
+    dx12->rendererSnapshotRevision = ~0u;
+    dx12->cachedDX12Renderer = nullptr;
 }
 
 void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance)
@@ -2007,13 +2018,16 @@ void ScreenPanelDX12::setupScreenLayout()
     if (!dx12)
         return;
 
-    QMutexLocker lock(&dx12->layoutLock);
-    dx12->numScreens = std::min(numScreens, kMaxScreenTransforms);
-    for (int index = 0; index < dx12->numScreens; ++index)
     {
-        std::memcpy(dx12->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
-        dx12->screenKind[index] = screenKind[index];
+        QMutexLocker lock(&dx12->layoutLock);
+        dx12->numScreens = std::min(numScreens, kMaxScreenTransforms);
+        for (int index = 0; index < dx12->numScreens; ++index)
+        {
+            std::memcpy(dx12->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
+            dx12->screenKind[index] = screenKind[index];
+        }
     }
+    dx12->layoutRevision.fetch_add(1, std::memory_order_release);
 }
 
 void ScreenPanelDX12::resizeEvent(QResizeEvent* event)
@@ -2279,7 +2293,19 @@ void ScreenPanelDX12::drawScreen()
     auto* nds = emuInstance->getNDS();
     if (!nds)
         return;
-    auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
+    const MelonPrime::PresentationConfigSnapshot presentation =
+        emuInstance->getPresentationConfigSnapshot();
+    if (presentation.revision != dx12->rendererSnapshotRevision)
+    {
+        dx12->rendererSnapshotRevision = presentation.revision;
+        dx12->cachedDX12Renderer = nullptr;
+        if (presentation.activeRenderer == renderer3D_DX12 || presentation.revision == 0)
+        {
+            dx12->cachedDX12Renderer =
+                dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
+        }
+    }
+    auto* renderer = dx12->cachedDX12Renderer;
     RendererOutputLease outputLease = nds->GPU.AcquireRendererOutputLease();
     const RendererOutput& output = outputLease.Output;
     const DX12PresentedFrame* gpuFrame = nullptr;
@@ -2322,18 +2348,30 @@ void ScreenPanelDX12::drawScreen()
     if (sourceWidth == 0 || sourceHeight == 0)
         return;
 
-    float matrices[kMaxScreenTransforms][6]{};
-    int kinds[kMaxScreenTransforms]{};
-    int screens = 0;
+    const std::uint32_t layoutRevision =
+        dx12->layoutRevision.load(std::memory_order_acquire);
+    if (layoutRevision != dx12->cachedLayoutRevision)
     {
         QMutexLocker lock(&dx12->layoutLock);
-        screens = dx12->numScreens;
-        for (int index = 0; index < screens; ++index)
+        dx12->cachedNumScreens =
+            std::min(dx12->numScreens, kMaxScreenTransforms);
+        for (int index = 0; index < dx12->cachedNumScreens; ++index)
         {
-            std::memcpy(matrices[index], dx12->screenMatrix[index], sizeof(float) * 6);
-            kinds[index] = dx12->screenKind[index];
+            std::memcpy(
+                dx12->cachedScreenMatrix[index],
+                dx12->screenMatrix[index],
+                sizeof(float) * 6);
+            dx12->cachedScreenKind[index] = dx12->screenKind[index];
         }
+        // Keep the revision observed before taking the lock. If the GUI
+        // publishes another layout immediately after this copy, retaining the
+        // older value forces one harmless refresh next frame instead of
+        // labelling an older cache with the newer arrays' revision.
+        dx12->cachedLayoutRevision = layoutRevision;
     }
+    const float (*matrices)[6] = dx12->cachedScreenMatrix;
+    const int* kinds = dx12->cachedScreenKind;
+    const int screens = dx12->cachedNumScreens;
 
     const int logicalWidth = static_cast<int>(std::max(1u, publishedSurface.LogicalWidth));
     const int logicalHeight = static_cast<int>(std::max(1u, publishedSurface.LogicalHeight));
@@ -2661,7 +2699,7 @@ void ScreenPanelDX12::drawScreen()
         return;
     }
 
-    const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+    const bool vsync = presentation.vsync;
     // The presenter fires the vendor Present markers itself, around the DXGI
     // call. This panel does not mediate low-latency state.
     const bool presented = dx12->presenter.Present(vsync);

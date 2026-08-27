@@ -1867,6 +1867,17 @@ void EmuThread::updateRenderer()
     nds->GetRenderer().SetRenderSettings(settings);
 
 #include "MelonPrimeEmuThreadUpdateRendererAfter.inc"
+
+#ifdef MELONPRIME_DS
+    // Native presenters consume one coherent copy for VSync and renderer
+    // policy. Publish only after renderer construction/fallback has settled:
+    // configuredRenderer is the requested setting, activeRenderer is the
+    // object that actually remains live.
+    emuInstance->publishPresentationConfig(
+        cfg.GetBool("Screen.VSync"),
+        cfg.GetInt("3D.Renderer"),
+        videoRenderer);
+#endif
 }
 
 void EmuThread::compileShaders()

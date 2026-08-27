@@ -83,6 +83,38 @@ using std::wstring_convert;
 using namespace melonDS;
 using namespace melonDS::Platform;
 
+#ifdef MELONPRIME_DS
+void EmuInstance::publishPresentationConfig(
+    bool vsync, int configuredRenderer, int activeRenderer) noexcept
+{
+    const std::uint64_t previous =
+        presentationConfigBits.load(std::memory_order_relaxed);
+    const std::uint32_t revision =
+        static_cast<std::uint32_t>(previous >> 32) + 1u;
+    const std::uint64_t packed =
+        (vsync ? 1ull : 0ull)
+        | ((static_cast<std::uint64_t>(static_cast<std::uint8_t>(configuredRenderer))) << 8)
+        | ((static_cast<std::uint64_t>(static_cast<std::uint8_t>(activeRenderer))) << 16)
+        | (static_cast<std::uint64_t>(revision) << 32);
+    presentationConfigBits.store(packed, std::memory_order_release);
+}
+
+MelonPrime::PresentationConfigSnapshot
+EmuInstance::getPresentationConfigSnapshot() const noexcept
+{
+    const std::uint64_t packed =
+        presentationConfigBits.load(std::memory_order_acquire);
+    MelonPrime::PresentationConfigSnapshot snapshot;
+    snapshot.vsync = (packed & 1ull) != 0;
+    snapshot.configuredRenderer =
+        static_cast<int>((packed >> 8) & 0xffull);
+    snapshot.activeRenderer =
+        static_cast<int>((packed >> 16) & 0xffull);
+    snapshot.revision = static_cast<std::uint32_t>(packed >> 32);
+    return snapshot;
+}
+#endif // MELONPRIME_DS
+
 
 MainWindow* topWindow = nullptr;
 

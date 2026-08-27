@@ -5,13 +5,19 @@
 
 #include <cstdint>
 
-namespace Config { class Table; }
 namespace melonDS { class NDS; }
 
 namespace MelonPrime {
 
-    // isInAdventureAddr: m_currentRom.isInAdventure — skips non-EU ROMs when byte == 0x02
-    void UseFirmwareLanguage_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex, uint32_t isInAdventureAddr);
+    // Resolve the firmware language once at a cold config/firmware boundary.
+    uint8_t UseFirmwareLanguage_ResolveTarget(melonDS::NDS* nds) noexcept;
+    // isInAdventureAddr: m_currentRom.isInAdventure — skips JP ROMs when byte == 0x02
+    void UseFirmwareLanguage_ApplyOnce(
+        melonDS::NDS* nds,
+        bool enabled,
+        uint8_t romGroupIndex,
+        uint32_t isInAdventureAddr,
+        uint8_t gameLanguageBits);
     void UseFirmwareLanguage_ResetPatchState();
 
 } // namespace MelonPrime

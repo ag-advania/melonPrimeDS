@@ -15,7 +15,7 @@ namespace MelonPrime {
     void FixWifi_ApplyOnce(
         MelonPrimePatchState& state,
         melonDS::NDS* nds,
-        Config::Table& cfg,
+        bool enabled,
         uint8_t romGroupIndex);
     void FixWifi_ResetPatchState(MelonPrimePatchState& state);
 

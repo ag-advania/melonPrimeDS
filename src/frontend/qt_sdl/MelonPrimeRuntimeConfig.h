@@ -40,6 +40,32 @@ struct AimConfigSnapshot {
     float aimAdjust = 0.f;
 };
 
+// Values used by the focused out-of-game reconciliation path. Config::Table
+// is read only at the cold load/apply boundary; guest RAM is still sampled at
+// reconciliation time because the game may rewrite these fields itself.
+struct MenuGameSettingsSnapshot {
+    bool headphoneEnabled = false;
+    uint16_t mphSensitivityValue = 2457;
+    bool dataUnlockEnabled = false;
+    bool useFirmwareName = false;
+    bool hunterApply = false;
+    uint8_t hunterBits = 0;
+    bool licenseColorApply = false;
+    uint8_t licenseColorBits = 0;
+    bool sfxApply = false;
+    uint8_t sfxSteps = 9;
+    bool musicApply = false;
+    uint8_t musicSteps = 9;
+};
+
+struct OutOfGamePatchSnapshot {
+    bool fixWifiEnabled = true;
+    bool useFirmwareLanguageEnabled = false;
+    uint8_t firmwareLanguageBits = 0;
+    bool expandStageMatrixEnabled = false;
+    bool expandStageMatrixExtraEnabled = false;
+};
+
 struct RuntimeConfigSnapshot {
     bool joy2Key = false;
     bool snapTap = false;
@@ -81,6 +107,9 @@ struct RuntimeConfigSnapshot {
 
     int screenSyncMode = 0;
 
+    MenuGameSettingsSnapshot menuGameSettings{};
+    OutOfGamePatchSnapshot outOfGamePatches{};
+
     // MELONPRIME_PHASE5_CONFIG_USAGE_V1
     // Aim config now crosses the same Load/Apply snapshot boundary as the
     // remaining runtime settings. No second Config::Table read is needed.
@@ -96,5 +125,9 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept;
 
 // Pure: reads `cfg` only. Does not touch MelonPrimeCore state.
 AimConfigSnapshot LoadAimConfigSnapshot(Config::Table& cfg) noexcept;
+
+// Pure: reads menu/game settings from `cfg`, clamps/encodes them, and does not
+// touch MelonPrimeCore state.
+MenuGameSettingsSnapshot LoadMenuGameSettingsSnapshot(Config::Table& cfg) noexcept;
 
 } // namespace MelonPrime

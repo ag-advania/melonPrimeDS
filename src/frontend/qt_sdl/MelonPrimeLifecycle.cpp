@@ -7,6 +7,7 @@
 #include "MelonPrimeDef.h"
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeArm9Hook.h"
+#include "MelonPrimePatchUseFirmwareLanguage.h"
 #include "MelonPrimeInstanceDiagnostics.h"
 #ifdef MELONPRIME_DS
 #include "GPU2DNative.h"
@@ -106,6 +107,8 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
+        m_patchState.outOfGamePatches = s.outOfGamePatches;
+
         m_enableNativeWeaponSwitch = s.nativeWeaponSwitch;
         if (!m_enableNativeWeaponSwitch)
             m_weaponSwitchPending.Clear();
@@ -129,6 +132,8 @@ namespace MelonPrime {
             s.fixNoxusBladePersistence;
 #endif
 
+        m_menuGameSettings = s.menuGameSettings;
+
         screenSyncMode = s.screenSyncMode;
 
         // Aim fields now share the same snapshot load/apply transaction.
@@ -141,6 +146,13 @@ namespace MelonPrime {
             LoadRuntimeConfigSnapshot(localCfg);
 
         ApplyRuntimeConfigSnapshot(snapshot);
+#ifdef MELONPRIME_DS
+        // Firmware language is not a Config::Table value. Resolve it once at
+        // the same cold boundary as the feature flag; the menu reconciler only
+        // compares the cached target against guest RAM afterward.
+        m_patchState.outOfGamePatches.firmwareLanguageBits =
+            UseFirmwareLanguage_ResolveTarget(emuInstance->getNDS());
+#endif
         ReloadDamageNotifyPurpleConfig();
     }
 
