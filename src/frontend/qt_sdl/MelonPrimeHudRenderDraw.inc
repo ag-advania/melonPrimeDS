@@ -2549,13 +2549,40 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const CachedHudConfig& c,
                           float hudScale, float topStretchX,
                           uint32_t gameFrame,
+                          uint32_t offP,
                           float zoomAmount = 0.0f)
 {
     (void)hudScale;
     if (s_chAimFrame != gameFrame) {
         s_chAimFrame = gameFrame;
-        s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
-        s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+        // Reproduce the ROM's own projection so the centre keeps its
+        // sub-pixel precision. The native crosshairPosX/Y cache is already
+        // quantised to integer DS pixels, which becomes a visible multi-pixel
+        // step once the frame is scaled to output resolution. The single
+        // remaining round below is then against actual output pixels.
+        CrosshairProjection::Input projectionInput;
+        CrosshairProjection::Result projected;
+        ReadCrosshairProjectionInput(ram, rom, offP, projectionInput);
+        if (CrosshairProjection::Project(projectionInput, projected)) {
+            // A point just past the near plane divides by a tiny clipW, so the
+            // unquantised centre can be astronomically far off screen. The ROM
+            // never had to care -- it truncated to s16 and cached a byte -- but
+            // this value reaches a static_cast<int> after the painter
+            // transform, and that cast is undefined once the double exceeds
+            // int range. Clamp to a margin far outside any visible area: the
+            // painter discards it either way, and the in-view values that
+            // matter are untouched.
+            constexpr double kOffscreenLimit = 4096.0;
+            s_chAimDsCx = static_cast<float>(
+                std::clamp(projected.dsX, -kOffscreenLimit, kOffscreenLimit));
+            s_chAimDsCy = static_cast<float>(
+                std::clamp(projected.dsY, -kOffscreenLimit, kOffscreenLimit));
+        } else {
+            // Behind the near plane: the ROM writes no position this frame, so
+            // fall back to the cache exactly as the legacy path did.
+            s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
+            s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+        }
     }
     const float dsCx = s_chAimDsCx;
     const float dsCy = s_chAimDsCy;

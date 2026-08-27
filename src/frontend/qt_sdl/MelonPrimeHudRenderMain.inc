@@ -170,7 +170,7 @@ HOT_FUNCTION QRect CustomHud_Render(
             crosshairZoomAmount = ReadCrosshairZoomAmount(st.ram, rom);
         }
         DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX,
-                      gameFrame, crosshairZoomAmount);
+                      gameFrame, st.offP, crosshairZoomAmount);
     }
 
     DrawHP(topPaint, st.currentHP, st.maxHP, c, textDrawScale);

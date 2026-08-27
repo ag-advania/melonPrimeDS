@@ -675,6 +675,24 @@ add_custom_target(melonprime_stage_matrix_validation_check ALL
     COMMENT "Running Stage Matrix loaded-state validation tests..."
     VERBATIM)
 
+# The high-resolution crosshair centre reproduces MPH's Q12 projection up to
+# the raw Q32 quotient. The module is free of Qt and melonDS so the arithmetic
+# can be checked directly against a literal transcription of the ROM chain.
+add_executable(melonprime_crosshair_projection_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/crosshair-projection-tests.cpp)
+target_include_directories(melonprime_crosshair_projection_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(melonprime_crosshair_projection_tests PRIVATE
+    MELONPRIME_DS
+    MELONPRIME_CUSTOM_HUD)
+set_target_properties(melonprime_crosshair_projection_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_crosshair_projection_check ALL
+    COMMAND $<TARGET_FILE:melonprime_crosshair_projection_tests>
+    DEPENDS melonprime_crosshair_projection_tests
+    COMMENT "Running high-resolution crosshair projection tests..."
+    VERBATIM)
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(core PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)

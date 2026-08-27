@@ -195,7 +195,8 @@ static uint64_t HudGoldenRenderCase(
     st.ram = ram.data();
     st.offP = 0;
     st.romGroup = rom.romGroupIndex;
-    DrawCrosshair(&p, ram.data(), rom, c, tc.hudScale, 1.0f, tc.zoomed ? 120u : 60u, zoomAmount);
+    DrawCrosshair(&p, ram.data(), rom, c, tc.hudScale, 1.0f,
+                  tc.zoomed ? 120u : 60u, st.offP, zoomAmount);
     DrawHP(&p, 173, 199, c, tds);
     DrawWeaponAmmo(&p, WeaponId::Missile, 64, 38, 100, 60, c, tds, tc.hudScale);
     DrawWeaponInventory(&p, 0x01FFu, WeaponId::Missile, 64, 38, c, tds, tc.hudScale);

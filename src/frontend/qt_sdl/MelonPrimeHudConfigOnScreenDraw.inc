@@ -484,7 +484,7 @@ static void DrawEditHudPreview(QPainter* p, Config::Table& cfg, float tds, float
             crosshairZoomAmount = ReadCrosshairZoomAmount(ram, rom);
         }
         DrawCrosshair(p, ram, rom, c, hudScale, topStretchX,
-                     gameFrame, crosshairZoomAmount);
+                     gameFrame, st.offP, crosshairZoomAmount);
     }
 
     DrawHP(p, st.currentHP, st.maxHP, c, tds);
