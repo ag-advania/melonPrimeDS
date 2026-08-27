@@ -5,6 +5,7 @@
 
 #include "MelonPrimePatchState.h"
 
+#include <algorithm>
 #include <cstdint>
 
 namespace MelonPrime::StageMatrixValidation {
@@ -48,9 +49,9 @@ inline void MarkValidationRetry(
         ? 1u
         : patch.validationBackoffFrames;
     patch.validationRetryFrames = currentBackoff;
-    patch.validationBackoffFrames = currentBackoff >= kMaxRetryBackoffFrames
-        ? kMaxRetryBackoffFrames
-        : static_cast<uint8_t>(currentBackoff * 2u);
+    const unsigned doubledBackoff = static_cast<unsigned>(currentBackoff) * 2u;
+    patch.validationBackoffFrames = static_cast<uint8_t>(std::min(
+        doubledBackoff, static_cast<unsigned>(kMaxRetryBackoffFrames)));
 }
 
 inline void MarkVerified(

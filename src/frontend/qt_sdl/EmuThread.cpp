@@ -1708,6 +1708,9 @@ void EmuThread::updateRenderer()
 #if defined(MELONPRIME_ENABLE_VULKAN)
     cachedVulkanLowLatencyRenderer = nullptr;
 #endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    cachedDX12FrameRenderer = nullptr;
+#endif
 #endif
 
 #include "MelonPrimeEmuThreadUpdateRendererBefore.inc"
@@ -1899,6 +1902,9 @@ void EmuThread::RefreshRendererFrameCache()
 #if defined(MELONPRIME_ENABLE_VULKAN)
     cachedVulkanLowLatencyRenderer = dynamic_cast<VulkanRenderer*>(&renderer);
 #endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    cachedDX12FrameRenderer = dynamic_cast<DX12Renderer*>(&renderer);
+#endif
 #if defined(MELONPRIME_HAS_STRUCTURED_SOFT_2D)
     cachedStructuredSoft2DRenderer = dynamic_cast<SoftRenderer*>(&renderer);
 #endif
@@ -1924,7 +1930,7 @@ void EmuThread::compileShaders()
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 bool EmuThread::handleDX12RuntimeFailure()
 {
-    auto* dx12 = dynamic_cast<DX12Renderer*>(&emuInstance->nds->GPU.GetRenderer());
+    auto* const dx12 = cachedDX12FrameRenderer;
     if (!dx12 || !dx12->HasRuntimeFailure())
         return false;
 

@@ -15,6 +15,7 @@
 #include "MelonPrimePatchExpandStageMatrix.h"
 #include "MelonPrimePatchExpandStageMatrixTesting.h"
 #include "MelonPrimePatchState.h"
+#include "MelonPrimeStageMatrixValidation.h"
 
 namespace {
 
@@ -255,6 +256,14 @@ void RunPermanentMismatchBackoff()
     {
         MelonPrime::ExpandStageMatrix_ApplyIfLoadedForTesting(
             state, memory, true, false, 0u);
+        Check(
+            state.expandStageMatrix.validationRetryFrames
+                <= MelonPrime::StageMatrixValidation::kMaxRetryBackoffFrames,
+            "readiness retry cooldown never exceeds the cap");
+        Check(
+            state.expandStageMatrix.validationBackoffFrames
+                <= MelonPrime::StageMatrixValidation::kMaxRetryBackoffFrames,
+            "readiness backoff never exceeds the cap");
     }
 
     Check(ram.fullValidationAttempts == 0,
@@ -272,6 +281,14 @@ void RunPermanentMismatchBackoff()
     {
         MelonPrime::ExpandStageMatrix_ApplyIfLoadedForTesting(
             strictState, strictMemory, true, false, 0u);
+        Check(
+            strictState.expandStageMatrix.validationRetryFrames
+                <= MelonPrime::StageMatrixValidation::kMaxRetryBackoffFrames,
+            "strict retry cooldown never exceeds the cap");
+        Check(
+            strictState.expandStageMatrix.validationBackoffFrames
+                <= MelonPrime::StageMatrixValidation::kMaxRetryBackoffFrames,
+            "strict backoff never exceeds the cap");
     }
     Check(strictRam.fullValidationAttempts > 0,
         "a cheap-ready but strict-bad candidate is retried");

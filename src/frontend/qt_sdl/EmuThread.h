@@ -48,6 +48,9 @@ namespace melonDS
 #if defined(MELONPRIME_ENABLE_VULKAN)
     class VulkanRenderer;
 #endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    class DX12Renderer;
+#endif
 }
 
 class EmuInstance;
@@ -273,6 +276,9 @@ private:
     melonDS::SoftRenderer* cachedStructuredSoft2DRenderer = nullptr;
 #if defined(MELONPRIME_ENABLE_VULKAN)
     melonDS::VulkanRenderer* cachedVulkanLowLatencyRenderer = nullptr;
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    melonDS::DX12Renderer* cachedDX12FrameRenderer = nullptr;
 #endif
 #endif
 };

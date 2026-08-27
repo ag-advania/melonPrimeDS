@@ -792,13 +792,15 @@ $frameHotBegin = '// MELONPRIME_EMUTHREAD_FRAME_HOT_PATH_BEGIN'
 $frameHotEnd = '// MELONPRIME_EMUTHREAD_FRAME_HOT_PATH_END'
 $frameHotBeginIndex = $emuThreadSource.IndexOf($frameHotBegin)
 $frameHotEndIndex = $emuThreadSource.IndexOf($frameHotEnd)
+$rendererRttiPattern = 'dynamic_cast\s*<\s*[^>]*Renderer[^>]*>'
 if ($frameHotBeginIndex -lt 0 -or $frameHotEndIndex -le $frameHotBeginIndex) {
     Add-Error 'EmuThread frame hot-path markers are missing or out of order'
 } else {
     $frameHotLength = $frameHotEndIndex + $frameHotEnd.Length - $frameHotBeginIndex
     $frameHotSource = $emuThreadSource.Substring($frameHotBeginIndex, $frameHotLength)
-    if ($frameHotSource -match 'dynamic_cast\s*<\s*(?:VulkanRenderer|SoftRenderer)\s*>') {
-        Add-Error 'EmuThread frame hot path must use cached renderer pointers; RTTI belongs in RefreshRendererFrameCache()'
+    $frameHotCode = [regex]::Replace($frameHotSource, '//[^\r\n]*', '')
+    if ($frameHotCode -match $rendererRttiPattern) {
+        Add-Error 'EmuThread frame hot path must use cached renderer pointers; renderer RTTI belongs at the transition boundary'
     }
     foreach ($cacheName in @('cachedVulkanLowLatencyRenderer', 'cachedStructuredSoft2DRenderer')) {
         if ($frameHotSource -notmatch [regex]::Escape($cacheName)) {
@@ -811,6 +813,18 @@ $refreshSignature = 'void\s+EmuThread::RefreshRendererFrameCache\s*\('
 if ((Get-CodeMatchLines $refreshSignature $emuThreadPath).Count -eq 0) {
     Add-Error 'RefreshRendererFrameCache() is missing from EmuThread.cpp'
 }
+$dx12CacheDeclaration = 'DX12Renderer\s*\*\s*cachedDX12FrameRenderer'
+if ((Get-CodeMatchLines $dx12CacheDeclaration (Join-Path $qtSdl 'EmuThread.h')).Count -eq 0) {
+    Add-Error 'EmuThread DX12 renderer frame cache declaration is missing'
+}
+$cleanRendererRttiFixture = 'bool helper() { return cachedDX12FrameRenderer != nullptr; }'
+$forbiddenRendererRttiFixture = 'bool helper() { auto* r = dynamic_cast<DX12Renderer*>(&nds->GPU.GetRenderer()); return r != nullptr; }'
+if ($cleanRendererRttiFixture -match $rendererRttiPattern) {
+    Add-Error 'Renderer RTTI audit fixture incorrectly rejects a cache-only helper'
+}
+if ($forbiddenRendererRttiFixture -notmatch $rendererRttiPattern) {
+    Add-Error 'Renderer RTTI audit fixture failed to recognize a forbidden renderer cast'
+}
 $refreshCallToken = 'RefreshRendererFrameCache();'
 $refreshCallIndex = $emuThreadSource.IndexOf($refreshCallToken)
 $rendererBeforeIndex = $emuThreadSource.IndexOf('#include "MelonPrimeEmuThreadUpdateRendererBefore.inc"')
@@ -818,8 +832,35 @@ $cacheClearIndex = $emuThreadSource.IndexOf('cachedStructuredSoft2DRenderer = nu
 if (($cacheClearIndex -lt 0) -or ($rendererBeforeIndex -lt 0) -or ($cacheClearIndex -gt $rendererBeforeIndex)) {
     Add-Error 'EmuThread renderer pointer caches must clear before the transition helper'
 }
+$dx12CacheClearIndex = $emuThreadSource.IndexOf('cachedDX12FrameRenderer = nullptr;')
+if (($dx12CacheClearIndex -lt 0) -or ($rendererBeforeIndex -lt 0) -or ($dx12CacheClearIndex -gt $rendererBeforeIndex)) {
+    Add-Error 'EmuThread DX12 renderer cache must clear before the transition helper'
+}
 if ($refreshCallIndex -lt 0 -or $refreshCallIndex -lt $rendererBeforeIndex) {
     Add-Error 'RefreshRendererFrameCache() must run after updateRenderer() settles the actual renderer'
+}
+
+$dx12FailureSignature = '^\s*bool\s+EmuThread::handleDX12RuntimeFailure\s*\('
+$emuThreadLines = [System.IO.File]::ReadAllLines($emuThreadPath)
+$dx12FailureStartIndex = -1
+for ($i = 0; $i -lt $emuThreadLines.Length; $i++) {
+    if ($emuThreadLines[$i] -match $dx12FailureSignature) {
+        $dx12FailureStartIndex = $i
+        break
+    }
+}
+if ($dx12FailureStartIndex -lt 0) {
+    Add-Error 'handleDX12RuntimeFailure() definition was not found for the renderer RTTI check'
+} else {
+    $dx12FailureBody = @(Get-FunctionBody -Lines $emuThreadLines -StartIndex $dx12FailureStartIndex)
+    $dx12FailureBodyText = ($dx12FailureBody | ForEach-Object { $_.Text }) -join "`n"
+    $dx12FailureBodyCode = [regex]::Replace($dx12FailureBodyText, '//[^\r\n]*', '')
+    if ($dx12FailureBodyCode -match $rendererRttiPattern) {
+        Add-Error 'handleDX12RuntimeFailure() must use cachedDX12FrameRenderer; renderer RTTI is forbidden in the frame helper'
+    }
+    if ($dx12FailureBodyCode -notmatch '\bcachedDX12FrameRenderer\b') {
+        Add-Error 'handleDX12RuntimeFailure() no longer consumes cachedDX12FrameRenderer'
+    }
 }
 
 $hotPaths = @(
