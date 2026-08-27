@@ -366,6 +366,83 @@ void TestTranslationAndDepthOrdering()
     Check(up.dsY < 96.0, "positive y must project above centre");
 }
 
+
+// -------------------------------------------------------------------------
+//  Sub-pixel deadband
+// -------------------------------------------------------------------------
+
+// The artifact this exists to kill: an exact centre sitting on a rounding
+// boundary and dithering by a fraction of a pixel. Plain rounding alternates
+// between two pixels every frame and the thin arms read as a half-intensity
+// flicker.
+void TestDeadbandSuppressesBoundaryDither()
+{
+    const double jitter[] = {100.49, 100.51, 100.48, 100.52, 100.50, 100.47};
+
+    int naive = -1;
+    int naiveFlips = 0;
+    for (double v : jitter) {
+        const int px = (int)std::lround(v);
+        if (naive != -1 && px != naive)
+            ++naiveFlips;
+        naive = px;
+    }
+    Check(naiveFlips > 0,
+        "the fixture must actually straddle a rounding boundary");
+
+    int sticky = CH::kNoCommittedPixel;
+    int committed = CH::CommitPixel(jitter[0], sticky);
+    int flips = 0;
+    for (double v : jitter) {
+        const int px = CH::CommitPixel(v, sticky);
+        if (px != committed)
+            ++flips;
+        committed = px;
+    }
+    Check(flips == 0, "boundary dither must not move the committed pixel");
+}
+
+// A deadband that never lets go would be worse than the flicker, so real
+// aiming has to keep tracking.
+void TestDeadbandStillTracksRealMotion()
+{
+    int sticky = CH::kNoCommittedPixel;
+    int last = CH::CommitPixel(100.0, sticky);
+    Check(last == 100, "the first sample snaps");
+
+    int moved = 0;
+    for (int step = 1; step <= 60; ++step) {
+        const double exact = 100.0 + step * 0.37;
+        const int px = CH::CommitPixel(exact, sticky);
+        // Never allowed to drift further than the band permits.
+        Check(std::fabs(exact - (double)px) <= 0.5 + CH::kPixelDeadband + 1e-9,
+            "committed pixel must stay inside the deadband of the exact centre");
+        if (px != last)
+            ++moved;
+        last = px;
+    }
+    Check(moved >= 15, "sustained motion must keep moving the committed pixel");
+}
+
+void TestDeadbandSnapsOnJumpAndReset()
+{
+    int sticky = CH::kNoCommittedPixel;
+    (void)CH::CommitPixel(100.0, sticky);
+    Check(CH::CommitPixel(940.2, sticky) == 940,
+        "a large jump must re-round immediately");
+
+    // Leaving the screen clears the committed pixel so the next appearance
+    // snaps instead of easing out of a stale one.
+    sticky = CH::kNoCommittedPixel;
+    Check(CH::CommitPixel(12.7, sticky) == 13, "a fresh appearance snaps");
+
+    // Negative coordinates occur when the centre is off the left/top edge.
+    sticky = CH::kNoCommittedPixel;
+    Check(CH::CommitPixel(-40.4, sticky) == -40, "negative centres snap correctly");
+    Check(CH::CommitPixel(-40.6, sticky) == -40,
+        "negative centres also get the deadband");
+}
+
 } // namespace
 
 int main()
@@ -376,6 +453,9 @@ int main()
     TestPerProductRoundingIsLoadBearing();
     TestNegativeAndExtremeNumerators();
     TestTranslationAndDepthOrdering();
+    TestDeadbandSuppressesBoundaryDither();
+    TestDeadbandStillTracksRealMotion();
+    TestDeadbandSnapsOnJumpAndReset();
 
     if (g_failures != 0) {
         std::printf("crosshair-projection-tests: %d FAILURE(S)\n", g_failures);
@@ -383,6 +463,6 @@ int main()
     }
     std::printf(
         "crosshair-projection-tests: clip gate, ROM reconstruction, rounding "
-        "order, signed divide, orientation PASS\n");
+        "order, signed divide, orientation, sub-pixel deadband PASS\n");
     return 0;
 }

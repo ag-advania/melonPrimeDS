@@ -2648,8 +2648,13 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     const QRect scopeClipPx = (zoomT > 0.001 || scopeT > 0.001)
         ? TopScreenContentClipPx(xf, topStretchX)
         : QRect();
-    const int pxCx = static_cast<int>(std::round(xf.m11() * dsCx + xf.m21() * dsCy + xf.dx()));
-    const int pxCy = static_cast<int>(std::round(xf.m12() * dsCx + xf.m22() * dsCy + xf.dy()));
+    // Deadband the rounding so sub-pixel noise cannot flip the centre between
+    // neighbouring pixels; see CommitCrosshairPixel for why that matters now
+    // that the centre is projected rather than read from the ROM's cache.
+    const int pxCx = CrosshairProjection::CommitPixel(
+        xf.m11() * dsCx + xf.m21() * dsCy + xf.dx(), s_chStickyPxCx);
+    const int pxCy = CrosshairProjection::CommitPixel(
+        xf.m12() * dsCx + xf.m22() * dsCy + xf.dy(), s_chStickyPxCy);
     int glitchOx = 0;
     int glitchOy = 0;
     int scopeGlitchOx = 0;

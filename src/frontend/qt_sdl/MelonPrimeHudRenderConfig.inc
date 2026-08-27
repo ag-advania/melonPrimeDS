@@ -341,6 +341,10 @@ struct CustomHudConfigState {
     bool chCrosshairDrawnLastFrame = false;
     int chPrevPxCx = INT_MIN;
     int chPrevPxCy = INT_MIN;
+    // Committed integer centre for the sub-pixel deadband. INT_MIN means "no
+    // committed position yet", so the next draw snaps instead of easing.
+    int chStickyPxCx = INT_MIN;
+    int chStickyPxCy = INT_MIN;
     double chPrevGeomScale = 1.0;
     double chPrevZoomT = 0.0;
     double chPrevScopeT = 0.0;
@@ -498,6 +502,8 @@ static CustomHudConfigState& ActiveHudConfigState()
 #define s_chCrosshairDrawnLastFrame (ActiveHudConfigState().chCrosshairDrawnLastFrame)
 #define s_chPrevPxCx (ActiveHudConfigState().chPrevPxCx)
 #define s_chPrevPxCy (ActiveHudConfigState().chPrevPxCy)
+#define s_chStickyPxCx (ActiveHudConfigState().chStickyPxCx)
+#define s_chStickyPxCy (ActiveHudConfigState().chStickyPxCy)
 #define s_chPrevGeomScale (ActiveHudConfigState().chPrevGeomScale)
 #define s_chPrevZoomT (ActiveHudConfigState().chPrevZoomT)
 #define s_chPrevScopeT (ActiveHudConfigState().chPrevScopeT)

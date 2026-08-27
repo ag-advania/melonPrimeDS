@@ -110,6 +110,8 @@ void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
     s_hudRuntimeFrameCache.enemyTarget = {};
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
+    s_chStickyPxCx = INT_MIN;
+    s_chStickyPxCy = INT_MIN;
     ResetCrosshairZoomDisplay(0.0f);
     s_hudPatchForceRestorePending = true;
 }

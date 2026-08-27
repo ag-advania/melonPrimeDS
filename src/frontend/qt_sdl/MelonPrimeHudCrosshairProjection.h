@@ -3,6 +3,8 @@
 
 #ifdef MELONPRIME_CUSTOM_HUD
 
+#include <climits>
+#include <cmath>
 #include <cstdint>
 
 // =========================================================================
@@ -172,6 +174,41 @@ struct Result {
 {
     return static_cast<int16_t>(
         (static_cast<int64_t>(0x1000 - ndcYQ12) * 96) >> 12);
+}
+
+// =========================================================================
+//  Sub-pixel deadband.
+//
+//  The centre above is projected rather than read from the ROM's quantised
+//  cache, so it carries the game's own sub-pixel noise: the same aim ray
+//  hitting geometry at a different depth rounds slightly differently through
+//  the Q12 chain, and across a silhouette edge the depth jumps outright.
+//  Rounding that straight to a pixel makes the centre toggle between two
+//  neighbours whenever it sits near a pixel boundary, which reads as the thin
+//  crosshair arms flickering at half intensity.
+//
+//  The ROM's quantisation used to hide this. A Schmitt trigger restores the
+//  stability without giving the precision back: the committed pixel only moves
+//  once the exact centre is more than half a pixel plus the deadband away, so
+//  real aiming still tracks continuously while boundary dither cannot flip it.
+//  A large jump is unaffected -- it lands far outside the band and re-rounds.
+// =========================================================================
+
+inline constexpr double kPixelDeadband = 0.25;
+
+// `sticky` carries the committed pixel across frames. kNoCommittedPixel means
+// there is none yet, so the next call snaps rather than easing out of a stale
+// position; callers reset to it whenever the crosshair leaves the screen.
+inline constexpr int kNoCommittedPixel = INT_MIN;
+
+[[nodiscard]] inline int CommitPixel(double exact, int& sticky) noexcept
+{
+    if (sticky == kNoCommittedPixel
+        || exact > static_cast<double>(sticky) + 0.5 + kPixelDeadband
+        || exact < static_cast<double>(sticky) - 0.5 - kPixelDeadband) {
+        sticky = static_cast<int>(std::lround(exact));
+    }
+    return sticky;
 }
 
 } // namespace MelonPrime::CrosshairProjection
