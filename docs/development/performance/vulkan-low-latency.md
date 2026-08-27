@@ -134,6 +134,35 @@ it is a validation probe and explicitly is **not** queue-ownership telemetry.
 The existing Acquire wait, not-ready, and latency-budget skip counters remain
 unchanged.
 
+## Current Reflex pacing ownership (verified 2026-08-25)
+
+The current `VulkanNvidiaReflex` implementation keeps the pacing sleep tied to
+the exact emulated-frame generation that owns it. `BeginFrame()` closes the
+previous open frame before advancing the generation. A successful present calls
+`NotifyPresented()`, which may queue the next Off-mode sleep for
+`FrameGeneration + 1`; the current frame is therefore not allowed to join a
+sleep issued for the next frame. Lifecycle and swapchain transitions drain the
+worker before changing its handles.
+
+The frame order is:
+
+1. `BeginFrame()` — Off adopts the sleep issued after the previous present and
+   overlaps it with the game frame; On and On+Boost issue and wait inline.
+2. `MarkInputSample()` immediately before the first input read.
+3. Simulation and render-submit markers.
+4. Present markers, with the Off-mode worker joined at the present boundary.
+5. `FinishFrame()` drains only work owned by this generation.
+
+On and On+Boost deliberately do not pre-issue the sleep after `PresentEnd`.
+The focus-controlled 2026-08-25 A/B found the blocking cost in
+`vkLatencySleepNV` rather than its semaphore wait, so moving that call to a
+worker did not provide a useful overlap and was not adopted. The measured
+Vulkan comparison was approximately Off 534 FPS / 1798 us sleep /
+1834 us input-to-present-end versus On 344 FPS / 1232 us sleep /
+1770 us input-to-present-end. These are CPU-side measurements, not display
+photon-latency acceptance evidence; the remaining investigation is tracked in
+the [Reflex investigation handoff](../../audit/reflex_investigation_handoff_2026-08-24.md).
+
 ## Deferred experiments and gates
 
 The optional two-image swapchain experiment is available only through
@@ -297,7 +326,7 @@ only one Windows/NVIDIA workload. The default remains the surface-authorized
 The exact telemetry executable used for the post-P1 runs has SHA256
 `0E9410B8D75CDDFCD0EB94570F1F2BCB8E682DE2746E80EB144EAEAE6DAD75E4`.
 The detailed run record is
-[`docs/audit/vulkan_reflex_acquire_budget_2026-08-18.md`](../../audit/vulkan_reflex_acquire_budget_2026-08-18.md).
+[`docs/archive/audits/rendering/2026-08/vulkan_reflex_acquire_budget_2026-08-18.md`](../../archive/audits/rendering/2026-08/vulkan_reflex_acquire_budget_2026-08-18.md).
 It covers the same Windows/NVIDIA machine, ROM, `.ml4` slot 4, windowed 4x
 Vulkan workload, validation marker, and no VUID/device-lost/fatal markers.
 
@@ -321,7 +350,7 @@ skip run remain `NOT RUN`/`OPEN`.
 ## Post-P2/P3 exact-current-binary follow-up
 
 The P2/P3 source fixes and the exact current-binary follow-up are recorded in
-[`vulkan_reflex_acquire_budget_followup_2026-08-18.md`](../../audit/vulkan_reflex_acquire_budget_followup_2026-08-18.md).
+[`vulkan_reflex_acquire_budget_followup_2026-08-18.md`](../../archive/audits/rendering/2026-08/vulkan_reflex_acquire_budget_followup_2026-08-18.md).
 P2 moves `LastBeginLatencySkip` into the low-latency Acquire timeout branch so
 the normal blocking Acquire path cannot be misclassified. P3 rejects negative
 timeout environment values and uses the cached fallback; both fixes have

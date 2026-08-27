@@ -2,7 +2,7 @@
 
 **Status:** Implemented 2026-07-09.  
 **Original implementation branch:** `highres_fonts_v3`
-**Current maintenance branch:** `develop_hud` (current tree through 2026-08-27)
+**Current maintenance branch:** `develop_hud` (checkout verified 2026-08-28)
 
 ## Summary
 

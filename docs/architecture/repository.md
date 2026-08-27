@@ -331,8 +331,8 @@ Deliberately **not** split (see the SRP contract's "Never mix" list and the comp
 `MelonPrimeCore` hot state struct extraction, `Screen.cpp` mouse event routing, and
 `MelonPrimePlatformInput.h`'s raw-filter ownership model.
 
-## Active Branch: `develop_hud` (current through 2026-08-27)
-Current work is on `develop_hud` at `94f08caf0` (`refactor: close low-overhead SRP audit debt`).
+## Active Branch: `develop_hud` (checkout verified 2026-08-28)
+Current work is on `develop_hud` at `2a0266f14` (`fix(hud): validate the projected crosshair against the position the ROM published`).
 The branch-scoped notes below retain the current HUD/SRP architecture; branch names in historical
 plans and reports are provenance, not the current checkout. Main changes relative to `master`:
 - Full 9-point anchor system for all HUD element positions
@@ -349,6 +349,7 @@ plans and reports are provenance, not the current checkout. Main changes relativ
 - Programmatic widget architecture via `HudMainSec` / `HudSubSec` / `HudWidgetProp`, enabling data-driven save/restore/TOML-export
 - Snapshot/restore covers all HUD widgets plus 3 global fields
 - HUD auto-scale system with per-category caps (text, icons, gauges, crosshair, scoreboard); radar excluded from auto-scale
+- Optional high-resolution crosshair centre projection from the local player's aim ray, accepted only when it reconstructs the ROM-published `crosshairPosX/Y` s16 pair, with a quantized fallback and configurable output-pixel deadband
 - Property labels use full unabbreviated names throughout the edit mode UI
 - Element boxes show live previews (gauge bars, cached icons, sample text) instead of static text labels
 - Element box font scales with `HudTextScale`

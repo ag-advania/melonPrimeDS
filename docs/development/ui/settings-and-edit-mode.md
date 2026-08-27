@@ -109,7 +109,7 @@ Main sections (`kHudMainSections` in `MelonPrimeInputConfigHudTables.inc`, curre
 - `OUTLINE OVERRIDE` - global outline override settings (no preview)
 - `HUD SCALE` - auto-scale enable, text scale, global + per-category auto-scale caps (no preview)
 - `HUD FONT` - font mode / system family / font file / size / weight / style (no preview)
-- `CROSSHAIR` - color/outline/dot/T-style properties + sub: Inner Lines, Outer Lines (`CrosshairPreviewWidget`)
+- `CROSSHAIR` - color/outline/dot/T-style properties, high-resolution position toggle, output-pixel position deadband (default 0.25 px, max 2.0 px) + sub: Inner Lines, Outer Lines (`CrosshairPreviewWidget`)
 - `HP / AMMO` - sub: HP Number Position, Ammo Number Position, Weapon Icon, HP Gauge, Ammo Gauge (`HpAmmoPreviewWidget`)
 - `MATCH STATUS HUD` - sub: Score, Rank/Time (nested: Rank, Time Left, Time Limit), Bomb Left, Bomb Icon (`MatchStatusPreviewWidget`)
 - `HUD SCOREBOARD` - scoreboard composite settings (`ScoreboardPreviewWidget`)

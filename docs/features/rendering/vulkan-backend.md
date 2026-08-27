@@ -1,8 +1,8 @@
 # Vulkan backend
 
 Cross-platform 3D renderer and native presenter, originally rewritten from scratch on
-`develop_remakeVulkan` and currently maintained on `develop_hud` at `94f08caf0`
-(2026-08-27). Like the DirectX 12 backend it is a port of melonDS's
+`develop_remakeVulkan` and currently maintained on `develop_hud` at `2a0266f14`
+(checkout verified 2026-08-28). Like the DirectX 12 backend it is a port of melonDS's
 **OpenGL compute renderer** (`src/GPU3D_Compute.cpp` + `GPU3D_Compute_shaders.h`)
 — the GPU form of the software rasterizer — not of the fixed-function OpenGL
 renderer.
@@ -432,7 +432,7 @@ mode-dependent:
   input is the presenter cleanup between present and the next frame. That
   ~1.25 ms is the pacing itself, not overhead to schedule around -- preissuing
   for these modes was measured and rejected on 2026-08-24
-  (`docs/audit/vulkan_reflex_on_preissue_ab_2026-08-24.md`).
+  (`docs/archive/audits/rendering/2026-08/vulkan_reflex_on_preissue_ab_2026-08-24.md`).
 
 Each queued sleep is stamped with the frame generation allowed to consume it.
 The frame that is still open when the next frame's sleep is issued must not join

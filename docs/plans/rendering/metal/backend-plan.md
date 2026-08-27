@@ -2,7 +2,7 @@
 
 **Created:** 2026-07-09
 **Planning snapshot branch:** `highres_fonts_v3`
-**Current reference branch:** `develop_hud` (HEAD `94f08caf0`, 2026-08-27)
+**Current reference branch:** `develop_hud` (HEAD `2a0266f14`, checkout verified 2026-08-28)
 **2026-07-10 update:** user-reported flicker + black-3D were audited and root-caused; the fix and the
 remaining Phase 8/9 work are now driven by the dedicated phased plan
 [Flicker/black-3D full-fix plan](../../../archive/plans/rendering/metal/done/metal_flicker_black3d_full_fix_phased_plan.md)

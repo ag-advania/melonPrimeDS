@@ -6,12 +6,14 @@ the zoom stage and draws a sniper-style scope reticle when fully scoped.
 
 ## HUD Schema
 Boolean keys:
+- `Metroid.Visual.HudCrosshairHighRes`, default `true`
 - `Metroid.Visual.CrosshairZoomStageEnable`, default `true`
 - `Metroid.Visual.CrosshairZoomScopeEnable`, default `true`
 - `Metroid.Visual.CrosshairZoomTransitionEnable`, default `true`
 - `Metroid.Visual.CrosshairZoomTransitionPulseEnable`, default `false`
 
 Numeric keys:
+- `Metroid.Visual.HudCrosshairDeadband`, default `0.25` output pixels, upper-clamped to `2.0`
 - `Metroid.Visual.CrosshairZoomScale`
 - `Metroid.Visual.CrosshairZoomOpacity`, default `0` (base crosshair hidden while fully zoomed)
 - `Metroid.Visual.CrosshairZoomTransitionSpeed`, default `100`, range `25..400`
@@ -37,6 +39,25 @@ defaults, dialog properties, edit mode, side panel, and runtime load.
 ## Runtime
 See also [Zoom status performance](zoom-status-performance.md) for the shared
 hot-path rules behind this design.
+
+### Crosshair centre sampling
+
+`Metroid.Visual.HudCrosshairHighRes` controls the position source for the base
+crosshair. It is enabled by default. When enabled, the renderer samples the
+local player's projection source, view transform, and projection matrix once
+per emulated game frame (124 bytes of guest RAM) and uses the shared
+`CrosshairProjection` arithmetic to retain a fractional DS-space centre until
+the final output-pixel mapping. The projected result is accepted only when it
+bit-exactly reconstructs the ROM-published s16 `crosshairPosX/Y` pair for this
+frame. Invalid projection input, a point behind the near plane, or a mismatch
+falls back to the game's quantized cache.
+
+When disabled, the projection sample is skipped and the quantized ROM cache is
+used directly. The final projected centre uses the configurable
+`Metroid.Visual.HudCrosshairDeadband` deadband (default `0.25` output pixels,
+upper-clamped to `2.0`) to prevent depth noise near a pixel boundary from
+flickering the reticle; zero or negative values behave as plain rounding. The
+deadband state is reset when the crosshair leaves the screen.
 
 Zoom state is updated once per emulated game frame, then
 `ReadCrosshairZoomAmount()` returns the cached amount during rendering:
@@ -96,7 +117,8 @@ display zoom snaps to the current target on the next draw so respawn does not
 replay a zoom-out animation.
 
 Settings UI keys (Custom HUD tab + in-game edit mode):
-- Normal crosshair section: color, scale, outline, center dot, T-style
+- Normal crosshair section: color, scale, high-resolution position, outline,
+  center dot, T-style
 - Zoom crosshair section: zoom stage/scale/opacity, scope reticle, scope dot color,
   transition enable/style/speed, pulse ring/strength
 - Inner / outer line sections (unchanged)
@@ -119,6 +141,7 @@ The same zoom amount must be passed to `DrawCrosshair()` from both:
 
 ## Verification
 - `tools/ci/audits/audit-hud-key-parity.ps1`
+- `tools/testing/crosshair-projection-tests.cpp` (registered projection arithmetic test)
 - `tools/build/windows/build-mingw.bat --tail 120`
 
 ## Caveats

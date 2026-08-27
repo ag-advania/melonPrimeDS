@@ -2,7 +2,7 @@
 
 Planning/verification branch: `develop_remakeVulkan`
 Base commit at Phase 0: `2b90179cca8510c9721e7e8384f3dc550d6f07a6`
-Current reference branch: `develop_hud` (HEAD `94f08caf0`, 2026-08-27)
+Current reference branch: `develop_hud` (HEAD `2a0266f14`, checkout verified 2026-08-28)
 
 Sections 1-5 are the original **Phase 0 deliverable**: the contract the new
 Vulkan backend had to satisfy, derived **only from non-Vulkan callers** — the
@@ -18,6 +18,11 @@ not been observed at all. The backend's user-facing documentation is
 The implementation and verification claims below are retained for their named
 phase snapshots. New implementation or verification should use the current
 reference branch; the dated claims are not a current-HEAD acceptance statement.
+In particular, the original Phase 0 contract and its verification table
+intentionally retain the historical `35 pipelines x 3 buckets = 105` snapshot.
+The maintained backend has since grown to 39 pipeline families and 117 variants;
+use the current [Vulkan backend reference](../../../features/rendering/vulkan-backend.md)
+for that maintained count.
 
 ## 1. Permitted reference sources
 

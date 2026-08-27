@@ -53,7 +53,7 @@ enabled, still reports scratch-upload counters, but the detailed GPU-memory
 model is not presented as a complete driver-allocation census.
 
 The production contract is maintained in
-[`vulkan-memory-admission.md`](../development/performance/vulkan-memory-admission.md).
+[`vulkan-memory-admission.md`](../../../../development/performance/vulkan-memory-admission.md).
 
 ## Source and build validation
 

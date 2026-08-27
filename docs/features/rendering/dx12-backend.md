@@ -1,7 +1,7 @@
 # DirectX 12 backend
 
 Windows-only 3D renderer, originally added on `develop_dx12` and currently maintained on
-`develop_hud` at `94f08caf0` (2026-08-27). It is a port of melonDS's
+`develop_hud` at `2a0266f14` (checkout verified 2026-08-28). It is a port of melonDS's
 **OpenGL compute renderer** (`src/GPU3D_Compute.cpp` + `GPU3D_Compute_shaders.h`)
 — the GPU version of the software rasterizer — not of the fixed-function OpenGL
 renderer.
@@ -185,7 +185,7 @@ It costs nothing because `gpuActiveRenderTimeUs` is ~34 us against a
 queue accumulates, and the correct sleep is zero. `NvAPI_D3D_Sleep` measures
 p50 1.2 us (`reflex_sleep_us`), against p50 1247 us for `vkLatencySleepNV` under
 the same workload. Details:
-`docs/audit/dx12_reflex_latency_verification_2026-08-24.md`.
+`docs/archive/audits/rendering/2026-08/dx12_reflex_latency_verification_2026-08-24.md`.
 
 Vulkan presents through `MelonPrimeVulkanSurfacePresenter`, so its Present
 markers and Present ID cover the real native swapchain submission and present.
