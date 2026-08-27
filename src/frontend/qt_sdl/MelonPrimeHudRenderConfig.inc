@@ -271,6 +271,14 @@ struct HudBattleOwnedState;
 struct HudFrameOwnedState;
 struct HudElementTextCacheState;
 
+// On-Screen Edit element count. This is the one definition: the per-instance
+// editRects array, the kEditElems descriptor table, and the kEditElemSampleText
+// table are all sized from it, and MelonPrimeHudConfigOnScreenEditProps.inc
+// static_asserts that the generated tables still match.
+//   0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair,
+//   14 = Scoreboard, 15 = Enemy Target
+static constexpr int kEditElemCount = 16;
+
 struct CustomHudConfigState {
     CustomHudConfigState();
     ~CustomHudConfigState();
@@ -386,7 +394,7 @@ struct CustomHudConfigState {
     int dynWidthsForElem = -2;
     UiText::MenuLangId dynWidthsForLang = static_cast<UiText::MenuLangId>(-1);
     bool editMode = false;
-    QRectF editRects[15];
+    QRectF editRects[kEditElemCount] = {};
     float editHudScale = 1.0f;
     float editTopStretchX = 1.0f;
     bool editPreviewMode = false;

@@ -680,6 +680,139 @@ function Get-FunctionBody {
     return $body
 }
 
+# --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----
+#
+# The per-instance HUD state is reached through a thread_local pointer that only
+# ScopedHudConfigState sets:
+#
+#     static thread_local CustomHudConfigState* g_activeHudConfigState;
+#     static CustomHudConfigState& ActiveHudConfigState()
+#     { Q_ASSERT(g_activeHudConfigState); return *g_activeHudConfigState; }
+#
+# Q_ASSERT compiles out in release, so a public API that reaches that state
+# without a scope dereferences null on every call. That is not hypothetical: it
+# shipped once, when a visibility query was changed from direct RAM reads to the
+# frame cache while the radar presenters kept calling it outside the painter
+# path.
+#
+# The contract this pins:
+#   - an exported CustomHud_* that transitively reaches the state accessors must
+#     take CustomHudConfigState& (so a caller cannot forget to supply one)
+#   - one that reaches them in its own body must also construct a
+#     ScopedHudConfigState (a pure delegator does not need its own)
+$hudUnityFiles = @(Get-ChildItem -Path $qtSdl -File -Filter 'MelonPrimeHud*.inc') +
+    @(Get-Item -LiteralPath (Join-Path $qtSdl 'MelonPrimeHudRender.cpp'))
+
+# The state macros are declared next to the accessors they expand to, so read
+# the set out of the source rather than restating it here.
+$hudStateAccessors = New-Object System.Collections.Generic.HashSet[string]
+foreach ($accessor in @('ActiveHudConfigState', 'HudFrameState', 'HudBattleState',
+        'HudElementTextCaches')) {
+    $hudStateAccessors.Add($accessor) | Out-Null
+}
+foreach ($file in $hudUnityFiles) {
+    foreach ($line in [System.IO.File]::ReadAllLines($file.FullName)) {
+        $m = [regex]::Match(
+            $line,
+            '^#define\s+(s_\w+)\s+\((ActiveHudConfigState|HudFrameState|HudBattleState|HudElementTextCaches)\(\)')
+        if ($m.Success) { $hudStateAccessors.Add($m.Groups[1].Value) | Out-Null }
+    }
+}
+if ($hudStateAccessors.Count -lt 10) {
+    Add-Error ("Rule K could not recover the Custom HUD state macro set " +
+        "(found $($hudStateAccessors.Count)); the #define shape must have changed")
+}
+
+# Every function defined in the HUD unity TU, with its body, so the reachability
+# below can follow a public API into the static helpers it calls.
+$hudFunctions = @{}
+foreach ($file in $hudUnityFiles) {
+    $lines = [System.IO.File]::ReadAllLines($file.FullName)
+    $rel = [System.IO.Path]::GetRelativePath($repoRoot, $file.FullName) -replace '\\', '/'
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        $m = [regex]::Match(
+            $lines[$i],
+            '^(?<qual>(?:static\s+|inline\s+|HOT_FUNCTION\s+|COLD_FUNCTION\s+|FORCE_INLINE\s+)*)' +
+            '(?:[A-Za-z_][\w:<>,\*&\s]*?\s[\*&]?\s*)?(?<name>[A-Za-z_]\w*)\s*\(')
+        if (-not $m.Success) { continue }
+        $name = $m.Groups['name'].Value
+        if ($name -in @('if', 'for', 'while', 'switch', 'return', 'sizeof', 'catch')) { continue }
+        $body = Get-FunctionBody -Lines $lines -StartIndex $i
+        if ($body.Count -eq 0) { continue }
+        # A signature can span lines; keep from the definition line to the brace.
+        $signature = ($lines[$i..([math]::Min($body[0].Line - 1, $lines.Length - 1))] -join ' ')
+        $text = (($body | ForEach-Object { $_.Text -replace '//.*$', '' }) -join "`n")
+        if (-not $hudFunctions.ContainsKey($name)) {
+            $hudFunctions[$name] = [pscustomobject]@{
+                Name = $name
+                File = $rel
+                Line = $i + 1
+                Signature = $signature
+                Body = $text
+                Exported = ($m.Groups['qual'].Value -notmatch '\bstatic\b')
+            }
+        }
+    }
+}
+
+# Direct reach: the body names a state accessor or one of its macros.
+$hudDirect = @{}
+foreach ($name in $hudFunctions.Keys) {
+    $body = $hudFunctions[$name].Body
+    $hit = $false
+    foreach ($accessor in $hudStateAccessors) {
+        if ($body -match ("\b" + [regex]::Escape($accessor) + "\b")) { $hit = $true; break }
+    }
+    $hudDirect[$name] = $hit
+}
+
+# Transitive reach: follow calls to other functions in the same TU.
+$hudReaches = @{}
+foreach ($name in $hudFunctions.Keys) { $hudReaches[$name] = $hudDirect[$name] }
+for ($pass = 0; $pass -lt 12; $pass++) {
+    $changed = $false
+    foreach ($name in @($hudFunctions.Keys)) {
+        if ($hudReaches[$name]) { continue }
+        foreach ($callee in [regex]::Matches($hudFunctions[$name].Body, '\b([A-Za-z_]\w*)\s*\(')) {
+            $target = $callee.Groups[1].Value
+            if ($target -eq $name) { continue }
+            if ($hudReaches.ContainsKey($target) -and $hudReaches[$target]) {
+                $hudReaches[$name] = $true
+                $changed = $true
+                break
+            }
+        }
+    }
+    if (-not $changed) { break }
+}
+
+$hudScopeChecked = 0
+foreach ($name in $hudFunctions.Keys) {
+    if ($name -notlike 'CustomHud_*') { continue }
+    $fn = $hudFunctions[$name]
+    if (-not $fn.Exported) { continue }
+    if (-not $hudReaches[$name]) { continue }
+    $hudScopeChecked++
+    # Owning the state is as good as being handed it: the developer golden
+    # harness constructs its own CustomHudConfigState rather than taking one.
+    $ownsState = ($fn.Signature -match 'CustomHudConfigState\s*&') -or
+        ($fn.Body -match 'CustomHudConfigState\s+\w+\s*[;{]')
+    if (-not $ownsState) {
+        Add-Error ("Rule K: $name reaches per-instance Custom HUD state but neither " +
+            "takes nor owns a CustomHudConfigState -- ActiveHudConfigState() " +
+            "dereferences a null thread_local when it is called outside a painter " +
+            "scope ($($fn.File):$($fn.Line))")
+    } elseif ($hudDirect[$name] -and $fn.Body -notmatch 'ScopedHudConfigState') {
+        Add-Error ("Rule K: $name touches per-instance Custom HUD state without " +
+            "constructing a ScopedHudConfigState ($($fn.File):$($fn.Line))")
+    }
+}
+if ($hudScopeChecked -eq 0) {
+    Add-Error ("Rule K matched no state-dependent Custom HUD API; the definition " +
+        "scan must have stopped working")
+}
+
+
 # --- Rule H: CustomHud_Render consumes the screen snapshot ----------------
 #
 # Screen.cpp refreshes m_hudEnabled once per HUD config epoch and uses that

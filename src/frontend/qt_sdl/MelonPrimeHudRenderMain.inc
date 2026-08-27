@@ -4,7 +4,8 @@
 // =========================================================================
 //  P-7 forward declarations (full definitions follow CustomHud_Render)
 // =========================================================================
-static constexpr int kEditElemCount   = 16; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair, 14 = Scoreboard, 15 = Enemy Target
+// kEditElemCount is defined once in MelonPrimeHudRenderConfig.inc, next to the
+// editRects array it sizes.
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX);
 static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer);
 

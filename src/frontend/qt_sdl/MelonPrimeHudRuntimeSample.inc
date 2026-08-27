@@ -868,6 +868,55 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     return true;
 }
 
+// Pre-frame helmet-clamp sampling, owned by the emulation thread.
+//
+// This deliberately does NOT go through ReadHudRuntimeBaseState(). That
+// function reads and publishes the per-instance HudRuntimeFrameCache, which is
+// presentation-owned: with the software renderer the Custom HUD is painted from
+// ScreenPanelNative::paintEvent() on the GUI thread, and renderLock does not
+// cover RunFrameHook(). Sharing the cache across those two threads would race
+// over its non-trivial members -- the scoreboard and enemy-target snapshots
+// hold QStrings and are reassigned wholesale on every frame rollover.
+//
+// The clamp needs five bytes of guest RAM and no cache, so it reads them
+// directly. That also keeps ~9 QString destroy/construct pairs per in-game
+// frame off the emulation hot path.
+struct HudHelmetClampState {
+    melonDS::NDS* nds = nullptr;
+    uint8_t romGroup = 0xFFu;
+    bool hideForNativeUi = false;
+};
+
+static bool ReadHudHelmetClampState(EmuInstance* emu,
+                                    const RomAddresses& rom,
+                                    uint8_t playerPosition,
+                                    HudHelmetClampState& out)
+{
+    if (!emu) return false;
+
+    melonDS::NDS* nds = emu->getNDS();
+    melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
+    if (!ram) return false;
+
+    out.nds = nds;
+    out.romGroup = rom.romGroupIndex;
+
+    // Same predicate, same order, as the painter path's native-UI hide rule;
+    // only the Adventure half is read lazily, because it is the rarer case.
+    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    if (Read8(ram, rom.startPressed) == 0x01
+        || Read8(ram, rom.gameOver) != 0x00
+        || Read16(ram, rom.playerHP + offP) == 0)
+    {
+        out.hideForNativeUi = true;
+        return true;
+    }
+
+    out.hideForNativeUi = Read8(ram, rom.isInAdventure) == 0x02
+        && Read8(ram, rom.isMapOrUserActionPaused) == 0x01;
+    return true;
+}
+
 // Adventure camera scenes (elevator rides, cutscene pans, ...) run a
 // CameraSequence whose flags byte carries BlockInput (bit 2 / 0x04). The native
 // upper-HUD function tests exactly that byte and returns before the crosshair
