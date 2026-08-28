@@ -138,15 +138,18 @@ static bool DispatcherCallback(
             return true;
     }
 
-    if ((mask & Dispatch_NativeBipedFire) != 0)
+    // Native Biped Fire and the generic overlay share the post-poll
+    // ActionConsumer PC and the single player+0x464 read/modify/write inside
+    // ImmediateInputEdgeOverlay_DispatchCheck. Either mask alone must reach it,
+    // and when both are set it must still run exactly once.
+    if ((mask & (Dispatch_ImmediateInputEdgeOverlay | Dispatch_NativeBipedFire)) != 0)
     {
-        if (core->NativeBipedFireHook_DispatchCheckAndRedirect(
-                nds, arm9ExecAddr, regs, redirectExecAddr))
-            return true;
+        // Developer builds also register Native Biped Fire's fire-edge
+        // diagnostic PC under the same mask; that PC is not an overlay site.
+        // The check is compiled out (always false) in release builds.
+        if (!core->NativeBipedFireHook_DiagnosticCheck(nds, arm9ExecAddr, regs))
+            core->ImmediateInputEdgeOverlay_DispatchCheck(nds, arm9ExecAddr, regs);
     }
-
-    if ((mask & Dispatch_ImmediateInputEdgeOverlay) != 0)
-        core->ImmediateInputEdgeOverlay_DispatchCheck(nds, arm9ExecAddr, regs);
 
     // Side-effect hook: runs regardless of whether a redirect follows.
     if ((mask & Dispatch_NoxusBlade) != 0)

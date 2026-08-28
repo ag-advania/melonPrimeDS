@@ -517,10 +517,10 @@ module-local per-ROM table:
 
 | Shared list | Meaning | Current consumers |
 |---|---|---|
-| `LIST_HookLocalPlayerPtrGlobal` | per-ROM global pointer-to-local-player address | NativeAimDelta, TransformGate, NativeZoomToggle, NativeBipedFire, WeaponSwitch |
-| `LIST_HookActionConsumerPc` | post-poll player action consumer PC | ImmediateInputEdgeOverlay, NativeZoomToggle for JP/US/EU rows |
-| `LIST_HookPlayerUpdateActiveCallAddr` | reliable player-update active call hook PC | WeaponSwitch, NativeBipedFire |
-| `LIST_HookPlayerUpdateActiveCallExpected` | original BL word expected at the active call hook | WeaponSwitch, NativeBipedFire |
+| `LIST_HookLocalPlayerPtrGlobal` | per-ROM global pointer-to-local-player address | NativeAimDelta, TransformGate, NativeZoomToggle, WeaponSwitch |
+| `LIST_HookActionConsumerPc` | post-poll player action consumer PC | ImmediateInputEdgeOverlay, NativeBipedFire, NativeZoomToggle for JP/US/EU rows |
+| `LIST_HookPlayerUpdateActiveCallAddr` | reliable player-update active call hook PC | WeaponSwitch |
+| `LIST_HookPlayerUpdateActiveCallExpected` | original BL word expected at the active call hook | WeaponSwitch |
 | `LIST_HookPlayerUpdateActiveAfter` | return PC immediately after the active call hook | WeaponSwitch |
 
 Do not merge tables only because the numeric addresses are near each other. KR1_0 is the standing
@@ -541,8 +541,7 @@ Hook tables should have two compile-time checks where practical:
 | NativeAimDelta (RegisterInjection / PostFoldWrite) | `MelonPrimePatchNativeAimDeltaHook*Version.inc` | register side-effect | developer-only; `NativeHookMode`, direct-aim path |
 | LowLatencyAim | `MelonPrimePatchLowLatencyAimHook.inc` | RAM side-effect | `LowLatencyMode` ImmediateSync/MoonLike; requires `DisableMphAimSmoothing`, non-stylus |
 | NativeZoomToggle | `MelonPrimePatchNativeZoomToggleHook.inc` | redirect | developer-only |
-| NativeBipedFire | `MelonPrimePatchNativeBipedFireHook.inc` | redirect | developer-only |
-| ImmediateInputEdgeOverlay | `MelonPrimePatchImmediateInputEdgeOverlay.inc` | side-effect | developer-only |
+| ImmediateInputEdgeOverlay (+ NativeBipedFire) | `MelonPrimePatchImmediateInputEdgeOverlay.inc`, `MelonPrimePatchNativeBipedFireHook.inc` | RAM side-effect | developer-only |
 | FixNoxusBladePersistence | `MelonPrimePatchFixNoxusBladePersistence.cpp` | RAM side-effect | `Metroid.BugFix.FixNoxusBladePersistence` |
 | TransformGate | `MelonPrimePatchImmediateTransformGateHook.inc` | redirect | `DirectAltFormTransform` |
 | WeaponSwitch | `MelonPrimePatchWeaponSwitchHook.inc` | redirect | `WeaponSwitchMethod != LegacyTouch` |

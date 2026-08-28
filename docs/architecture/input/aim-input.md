@@ -157,9 +157,51 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 
 ### 6.3 Native Biped Fire (`BipedFireMethod`, developer-only)
 - When enabled (`m_enableNativeBipedFire`, forced off in release), `ProcessMoveAndButtonsFast`
-  leaves `INPUT_L` released — it does **not** synthesize the legacy fire input. The shoot edge is
-  owned by the ARM9 fire-edge hook (`MelonPrimePatchNativeBipedFireHook.inc`). The `modBits` /
-  `nativeFireMask` logic in `ProcessMoveAndButtonsFastImpl` implements this split.
+  holds `INPUT_L` released — it does **not** synthesize the legacy fire input. The `kModBits` /
+  `fireBit` logic in `ProcessMoveAndButtonsFastImpl` implements this split.
+- Shoot instead enters through the post-poll input overlay: the hook registers the same
+  `LIST_HookActionConsumerPc` PC as `ImmediateInputEdgeOverlay` and contributes a consistent
+  Fire `current` / `pressed` / `released` triple to the single `player+0x464` read/modify/write in
+  `ImmediateInputEdgeOverlay_DispatchCheck`. `MelonPrimePatchNativeBipedFireHook.inc` owns only the
+  host-side edge latch; it does not call `PlayerFireUpdate`, redirect execution, or touch registers,
+  so cooldown, repeat fire, charge, ammo, projectile, HUD, SFX and animation all stay on the ROM's
+  own biped action state machine.
+- The Fire edge is resolved **once per frame** by `UpdateNativeBipedFireInput()` (called from
+  `ApplyPostPollOverlayInput()` on the frame path, before `NDS::RunFrame()`); the hook only projects that
+  result onto the binding mask. This is mandatory, not a style choice: the ROM action consumer is
+  the entry of the per-player input consumer (`PlayerEntity.Process()` → `ProcessInput()` runs for
+  every player entity), so the hook is entered up to four times per frame and only one of those
+  entries belongs to the local player. Resolving the edge inside the hook makes an earlier player's
+  entry recompute held-vs-held and write `pressed = 0` back over the bit before the local player's
+  own entry reads it — `current` survives, so the symptom is "`IsDown` works, nothing ever fires".
+- Both latches are invalidated (re-baselined, not zeroed) on game join/leave, focus loss/regain,
+  feature toggle-off, savestate load, boot/stop/ROM change, `AIMBLK_NOT_IN_GAME` transitions, a
+  change of the ROM's local `Player*` (read once per frame by `ApplyPostPollOverlayInput()` and
+  shared by both, so they cannot disagree about the frame), and biped↔alt-form transitions. Resuming
+  with the button already held therefore restores `current` without manufacturing a stale `pressed`
+  edge; the next real release→press produces the edge.
+- The generic `ImmediateInputEdgeOverlay` resolves its edges the same way, in
+  `UpdateImmediateInputEdgeOverlayInput()`, but tracks them **per action** (`OVA_*`) rather than per
+  binding bit: the binding masks and `m_immediateOverlayPreserveMask` are only final later in the
+  frame (`HandleMorphBallBoost()` adds `INPUT_R`), so the hook expands the resolved actions onto
+  whatever masks it sees. This is what made the overlay's `pressed` edges host-only before — the
+  MPH host is player slot 0, so the first action-consumer entry of the frame was the local player's
+  and the edge survived; as a client the following entries erased it first.
+- The overlay write is **additive** (`field | injected`), never a replace. It is not the only thing
+  driving these bits: for Jump, Zoom and Movement the legacy DS `KEYINPUT` path stays active, so the
+  game's own poll already produced correct `current`/`pressed`/`released`, and the ROM binding is not
+  even the same bit MelonPrime presses — Touch R binds Jump to `0x0C03` (A/B/X/Y) while the legacy
+  path presses B alone. A replacing write cleared the game's own correct edge on every frame the
+  overlay latch reported no edge (right after a re-baseline, or when a re-entrant `FrameAdvanceOnce`
+  from weapon switch / morph had already consumed it), which is why Jump and Zoom "often did not
+  respond". OR-ing can only make an action land earlier, never swallow one. Native Biped Fire is
+  unaffected: it suppresses `INPUT_L`, so the polled bits it ORs into are already zero.
+- Verified against the ROM disassembly (`mphCodex mnt/data/dumps/mphDump/JP1_0.txt`), not inference:
+  `02024174` is `UpdatePlayerActionInput(Player* r0, MphInput* r1)` and `0201042C add r1,r4,#0x464`
+  in its caller chain confirms the struct the jump gate reads is `player+0x464`. The input helper
+  `02028EE8` maps `0x40000`→`+0x04` pressed, `0x100000`→`+0x08` released, `0x80000`→`+0x0A` repeat,
+  no selector→`+0x00` down, with `0x10000` selecting per-case touch bits in `+0x34`. Unlike the fire
+  gate, the jump gate does **not** OR in a selector — it uses the binding's own `PressFlags` half.
 
 ## 7. Stylus Mode
 

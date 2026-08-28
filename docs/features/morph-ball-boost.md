@@ -58,7 +58,7 @@ Samusではない、またはShiftが押されていないフレームは早期r
 
 ```text
 ProcessMoveAndButtonsFastFromReset()
-ApplyBipedFireInput()
+ApplyPostPollOverlayInput()
 ApplyZoomBindingInput()
 HandleMorphBallBoost()
 ProcessAimInputStylus() または ProcessAimInputMouse()

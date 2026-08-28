@@ -278,7 +278,7 @@ namespace MelonPrime {
             const bool focused = m_threadBridge.FocusedForEmu();
             UpdateInputStateReentrant(focused);
             ProcessMoveAndButtonsFastFromReset();
-            ApplyBipedFireInput();
+            ApplyPostPollOverlayInput();
             ApplyZoomBindingInput();
 
             const bool isStylusMode = this->isStylusMode;

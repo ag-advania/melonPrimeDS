@@ -96,7 +96,7 @@ namespace MelonPrime {
 
         // --- Movement & Buttons (Hot Path) ---
         ProcessMoveAndButtonsFastFromReset();
-        ApplyBipedFireInput();
+        ApplyPostPollOverlayInput();
         ApplyZoomBindingInput();
 
         // --- Morph Boost & Aim (Hot Path) ---
