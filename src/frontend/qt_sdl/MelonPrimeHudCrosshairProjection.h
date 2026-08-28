@@ -199,6 +199,58 @@ struct Result {
 }
 
 // =========================================================================
+//  What to draw when the gate rejects a frame.
+//
+//  Falling straight back to the ROM's cache was a mistake: that cache is
+//  quantised to whole DS pixels, so switching to it moves the centre by up to
+//  a full native pixel -- several output pixels once the frame is scaled up.
+//  Alternating between the two sources therefore produces a far bigger jump
+//  than the sub-pixel dither the feature was meant to remove.
+//
+//  Holding the last accepted centre keeps the source stable across a transient
+//  rejection. The hold is bounded so a systematic rejection cannot freeze the
+//  crosshair: after a few frames it settles on the cache and stays there until
+//  a frame is accepted again, which is the old behaviour rather than a
+//  flicker between two.
+// =========================================================================
+
+enum class CentreSource {
+    Projected,   // this frame's high-resolution centre
+    Held,        // the last accepted one, kept to avoid a source switch
+    NativeCache, // the ROM's quantised pair
+};
+
+struct CentreHold {
+    // Three frames is 50 ms at 60 fps: long enough to ride out a sampling
+    // collision, short enough that a real change is not visibly stale.
+    static constexpr int kMaxHeldFrames = 3;
+
+    bool haveProjected = false;
+    int heldFrames = 0;
+
+    void Reset() noexcept
+    {
+        haveProjected = false;
+        heldFrames = 0;
+    }
+};
+
+[[nodiscard]] inline CentreSource SelectCentre(bool accepted, CentreHold& hold) noexcept
+{
+    if (accepted) {
+        hold.haveProjected = true;
+        hold.heldFrames = 0;
+        return CentreSource::Projected;
+    }
+    if (hold.haveProjected && hold.heldFrames < CentreHold::kMaxHeldFrames) {
+        ++hold.heldFrames;
+        return CentreSource::Held;
+    }
+    hold.haveProjected = false;
+    return CentreSource::NativeCache;
+}
+
+// =========================================================================
 //  Sub-pixel deadband.
 //
 //  The centre above is projected rather than read from the ROM's quantised

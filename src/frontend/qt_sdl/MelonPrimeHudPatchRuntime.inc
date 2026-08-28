@@ -112,6 +112,7 @@ void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
     s_chPrevPxCy = INT_MIN;
     s_chStickyPxCx = INT_MIN;
     s_chStickyPxCy = INT_MIN;
+    s_chCentreHold.Reset();
     ResetCrosshairZoomDisplay(0.0f);
     s_hudPatchForceRestorePending = true;
 }

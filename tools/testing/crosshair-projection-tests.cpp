@@ -662,6 +662,95 @@ int RunBenchmark()
     return 0;
 }
 
+
+// -------------------------------------------------------------------------
+//  Centre source selection
+//
+//  Switching to the ROM cache on a rejected frame is what made the flicker
+//  worse than the dither it replaced: that cache is quantised to whole DS
+//  pixels, so every switch moved the centre by several output pixels.
+// -------------------------------------------------------------------------
+
+void TestRejectedFrameHoldsInsteadOfSwitching()
+{
+    CH::CentreHold hold;
+
+    // Nothing accepted yet, so there is nothing to hold.
+    Check(CH::SelectCentre(false, hold) == CH::CentreSource::NativeCache,
+        "the first frame has no centre to hold");
+
+    Check(CH::SelectCentre(true, hold) == CH::CentreSource::Projected,
+        "an accepted frame uses the projection");
+
+    // A transient rejection must not switch source.
+    for (int i = 0; i < CH::CentreHold::kMaxHeldFrames; ++i) {
+        Check(CH::SelectCentre(false, hold) == CH::CentreSource::Held,
+            "a rejected frame holds the last accepted centre");
+    }
+
+    // But it must not hold forever, or a real change would freeze on screen.
+    Check(CH::SelectCentre(false, hold) == CH::CentreSource::NativeCache,
+        "the hold is bounded");
+    Check(CH::SelectCentre(false, hold) == CH::CentreSource::NativeCache,
+        "once given up it stays on the cache");
+
+    // Accepting again resumes immediately.
+    Check(CH::SelectCentre(true, hold) == CH::CentreSource::Projected,
+        "an accepted frame resumes the projection at once");
+}
+
+// Alternating accept/reject is the pattern that produced the visible flicker.
+// It must never reach the cache, because that is the source switch.
+void TestAlternatingRejectionNeverSwitchesSource()
+{
+    CH::CentreHold hold;
+    (void)CH::SelectCentre(true, hold);
+
+    int cacheFrames = 0;
+    for (int frame = 0; frame < 600; ++frame) {
+        const bool accepted = (frame % 2) == 0;
+        if (CH::SelectCentre(accepted, hold) == CH::CentreSource::NativeCache)
+            ++cacheFrames;
+    }
+    Check(cacheFrames == 0,
+        "alternating rejection must never fall back to the quantised cache");
+
+    // Two out of three rejected is still within the hold.
+    CH::CentreHold sparse;
+    (void)CH::SelectCentre(true, sparse);
+    cacheFrames = 0;
+    for (int frame = 0; frame < 600; ++frame) {
+        const bool accepted = (frame % 3) == 0;
+        if (CH::SelectCentre(accepted, sparse) == CH::CentreSource::NativeCache)
+            ++cacheFrames;
+    }
+    Check(cacheFrames == 0,
+        "a sparse accept rate must still hold rather than switch");
+}
+
+// Systematic rejection has to settle, not oscillate: that is the case where
+// the projection is simply unusable and the old behaviour is the right one.
+void TestSystematicRejectionSettlesOnTheCache()
+{
+    CH::CentreHold hold;
+    (void)CH::SelectCentre(true, hold);
+
+    int held = 0;
+    int cache = 0;
+    for (int frame = 0; frame < 300; ++frame) {
+        switch (CH::SelectCentre(false, hold)) {
+        case CH::CentreSource::Held: ++held; break;
+        case CH::CentreSource::NativeCache: ++cache; break;
+        default: Check(false, "a rejected frame cannot report Projected"); break;
+        }
+    }
+    Check(held == CH::CentreHold::kMaxHeldFrames,
+        "the hold is spent once and not re-entered");
+    Check(cache == 300 - CH::CentreHold::kMaxHeldFrames,
+        "after the hold it stays on the cache instead of oscillating");
+    Check(!hold.haveProjected, "giving up clears the held centre");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -679,6 +768,9 @@ int main(int argc, char** argv)
     TestDeadbandStillTracksRealMotion();
     TestDeadbandSnapsOnJumpAndReset();
     TestMatchesNativeAcceptsAndRejects();
+    TestRejectedFrameHoldsInsteadOfSwitching();
+    TestAlternatingRejectionNeverSwitchesSource();
+    TestSystematicRejectionSettlesOnTheCache();
     TestDeadbandToggleResolves();
     TestDeadbandWidthIsHonoured();
 
@@ -688,6 +780,6 @@ int main(int argc, char** argv)
     }
     std::printf(
         "crosshair-projection-tests: clip gate, ROM reconstruction, rounding "
-        "order, signed divide, orientation, deadband, native gate PASS\n");
+        "order, signed divide, orientation, deadband, gate, centre hold PASS\n");
     return 0;
 }

@@ -2583,7 +2583,15 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
             // whether the sampling point is good enough on real hardware.
             MelonPrimePerf::CountCrosshairProjection(haveProjected);
         }
-        if (haveProjected) {
+        // A rejected frame must not switch position source: the cache is
+        // quantised to whole DS pixels, so swapping to it moves the centre far
+        // more than the sub-pixel noise this feature removes.
+        const CrosshairProjection::CentreSource source =
+            c.crosshair.chHighResPosition
+                ? CrosshairProjection::SelectCentre(haveProjected, s_chCentreHold)
+                : CrosshairProjection::CentreSource::NativeCache;
+
+        if (source == CrosshairProjection::CentreSource::Projected) {
             // A point just past the near plane divides by a tiny clipW, so the
             // unquantised centre can be astronomically far off screen. The ROM
             // never had to care -- it truncated to s16 and cached a byte -- but
@@ -2597,13 +2605,14 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                 std::clamp(projected.dsX, -kOffscreenLimit, kOffscreenLimit));
             s_chAimDsCy = static_cast<float>(
                 std::clamp(projected.dsY, -kOffscreenLimit, kOffscreenLimit));
-        } else {
-            // Option off, or behind the near plane where the ROM writes no
-            // position this frame: read the quantised cache exactly as the
-            // legacy path did.
+        } else if (source == CrosshairProjection::CentreSource::NativeCache) {
+            // Option off, or the projection has been unusable for long enough
+            // that a stale centre would be worse than the quantised one. This
+            // is exactly what the legacy path read.
             s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
             s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
         }
+        // CentreSource::Held keeps s_chAimDsCx/Cy from the last accepted frame.
     }
     const float dsCx = s_chAimDsCx;
     const float dsCy = s_chAimDsCy;
