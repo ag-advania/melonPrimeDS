@@ -751,6 +751,43 @@ void TestSystematicRejectionSettlesOnTheCache()
     Check(!hold.haveProjected, "giving up clears the held centre");
 }
 
+
+// -------------------------------------------------------------------------
+//  Local player pointer
+//
+//  The crosshair renderer resolves its player by following a pointer, not by
+//  slot index. That pointer is emulated memory, so it is validated rather than
+//  trusted: a mid-transition frame can hold anything, and following a wild
+//  pointer would read 124 bytes from nowhere.
+// -------------------------------------------------------------------------
+
+void TestPlayerPointerValidation()
+{
+    Check(CH::IsMainRamPointer(0x02000000u), "the start of main RAM is valid");
+    Check(CH::IsMainRamPointer(0x023FFFFFu), "the end of main RAM is valid");
+    Check(!CH::IsMainRamPointer(0x01FFFFFFu), "below main RAM is rejected");
+    Check(!CH::IsMainRamPointer(0x02400000u), "above main RAM is rejected");
+    Check(!CH::IsMainRamPointer(0u), "a null pointer is rejected");
+    Check(!CH::IsMainRamPointer(0xFFFFFFFFu), "an all-ones pointer is rejected");
+
+    // The whole struct has to fit, not merely its first byte: the transform
+    // sits 0x5B4 in, so a base near the top of RAM would read past the end.
+    Check(CH::CanReadPlayerProjectionState(0x020DC5D4u),
+        "a normal player base is readable");
+    Check(!CH::CanReadPlayerProjectionState(0x023FFFF0u),
+        "a base too close to the end of RAM is rejected");
+    Check(!CH::CanReadPlayerProjectionState(0u),
+        "a null player base is rejected");
+
+    // Exactly the last base whose transform still fits.
+    constexpr uint32_t lastFit =
+        0x02400000u - (CH::kPlayerViewTransformOffset + 12u * 4u);
+    Check(CH::CanReadPlayerProjectionState(lastFit),
+        "the last fully readable base is accepted");
+    Check(!CH::CanReadPlayerProjectionState(lastFit + 1u),
+        "one byte further is rejected");
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -768,6 +805,7 @@ int main(int argc, char** argv)
     TestDeadbandStillTracksRealMotion();
     TestDeadbandSnapsOnJumpAndReset();
     TestMatchesNativeAcceptsAndRejects();
+    TestPlayerPointerValidation();
     TestRejectedFrameHoldsInsteadOfSwitching();
     TestAlternatingRejectionNeverSwitchesSource();
     TestSystematicRejectionSettlesOnTheCache();
@@ -780,6 +818,7 @@ int main(int argc, char** argv)
     }
     std::printf(
         "crosshair-projection-tests: clip gate, ROM reconstruction, rounding "
-        "order, signed divide, orientation, deadband, gate, centre hold PASS\n");
+        "order, signed divide, orientation, deadband, gate, hold, "
+        "player pointer PASS\n");
     return 0;
 }

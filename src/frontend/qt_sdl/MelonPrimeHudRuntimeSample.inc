@@ -870,16 +870,21 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
 
 // Crosshair projection inputs: 124 bytes of guest RAM per game frame.
 //
-// The source vector and the view transform belong to the LOCAL player, so both
-// are read from the player-position-adjusted struct base. Slot 0 is only the
-// right struct when the match happens to seat the local player there.
-static void ReadCrosshairProjectionInput(
+// The player is resolved the way the ROM's own crosshair renderer resolves it,
+// by following the local-player pointer, so a stale or wrong player index
+// cannot make this project somebody else's aim. Returns false when the pointer
+// does not currently address a readable player struct, which happens on
+// mid-transition frames.
+static bool ReadCrosshairProjectionInput(
     const melonDS::u8* ram,
     const RomAddresses& rom,
-    uint32_t offP,
     CrosshairProjection::Input& out)
 {
-    const uint32_t playerBase = rom.playerStructStart + offP;
+    const uint32_t playerBase =
+        Read32(ram, rom.crosshairLocalPlayerPointer);
+    if (!CrosshairProjection::CanReadPlayerProjectionState(playerBase))
+        return false;
+
     const uint32_t sourceBase =
         playerBase + CrosshairProjection::kPlayerProjectionSourceOffset;
     const uint32_t viewBase =
@@ -898,6 +903,7 @@ static void ReadCrosshairProjectionInput(
             Read32(ram, rom.crosshairProjectionMatrix
                         + static_cast<uint32_t>(i) * 4u));
     }
+    return true;
 }
 
 // Pre-frame helmet-clamp sampling, owned by the emulation thread.

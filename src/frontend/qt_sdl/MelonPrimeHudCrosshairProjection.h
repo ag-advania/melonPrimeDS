@@ -56,6 +56,28 @@ static_assert((-1 >> 1) == -1,
 inline constexpr uint32_t kPlayerProjectionSourceOffset = 0xA8u;
 inline constexpr uint32_t kPlayerViewTransformOffset = 0x5B4u;
 
+// The crosshair renderer resolves its player through a pointer holder rather
+// than by slot index (020394E0 and its per-version equivalents read
+// [gLocalPlayer]). Following that pointer removes a whole failure mode: a
+// player index that is stale or simply not the local player's seat would
+// otherwise project someone else's aim.
+//
+// The pointer comes straight out of emulated memory, so it is range-checked
+// rather than trusted -- a mid-transition frame can hold anything.
+[[nodiscard]] constexpr bool IsMainRamPointer(uint32_t address) noexcept
+{
+    return address >= 0x02000000u && address < 0x02400000u;
+}
+
+// The struct the transform lives at must fit entirely inside main RAM, not
+// merely start inside it.
+[[nodiscard]] constexpr bool CanReadPlayerProjectionState(uint32_t playerBase) noexcept
+{
+    constexpr uint32_t kNeededBytes = kPlayerViewTransformOffset + 12u * 4u;
+    return IsMainRamPointer(playerBase)
+        && IsMainRamPointer(playerBase + kNeededBytes - 1u);
+}
+
 inline constexpr int kSourceWordCount = 3;      // Q12 Vec3
 inline constexpr int kViewWordCount = 12;       // 3x4 Q12 affine transform
 inline constexpr int kProjectionWordCount = 16; // 4x4 Q12 projection matrix

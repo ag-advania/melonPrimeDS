@@ -2549,7 +2549,6 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
                           const CachedHudConfig& c,
                           float hudScale, float topStretchX,
                           uint32_t gameFrame,
-                          uint32_t offP,
                           float zoomAmount = 0.0f)
 {
     (void)hudScale;
@@ -2564,9 +2563,9 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         CrosshairProjection::Result projected;
         bool haveProjected = false;
         if (c.crosshair.chHighResPosition) {
-            ReadCrosshairProjectionInput(ram, rom, offP, projectionInput);
             haveProjected =
-                CrosshairProjection::Project(projectionInput, projected)
+                ReadCrosshairProjectionInput(ram, rom, projectionInput)
+                && CrosshairProjection::Project(projectionInput, projected)
                 // The projection inputs are live intermediates -- a shared
                 // matrix other passes overwrite, and a player struct picked by
                 // index -- sampled at presentation time, which the game does
