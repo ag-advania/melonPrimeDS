@@ -3,7 +3,7 @@
 This is the implementation and runtime record for the bounded
 `vkAcquireNextImageKHR` policy used when the Vulkan presenter bypasses its
 present-slot wait. It supplements the long-form low-latency design record in
-[`vulkan-low-latency.md`](../development/performance/vulkan-low-latency.md).
+[`vulkan-low-latency.md`](../../../../development/performance/vulkan-low-latency.md).
 
 ## Source contract
 

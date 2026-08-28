@@ -42,8 +42,7 @@ namespace MelonPrime {
     //
     //  Parameters:
     //    emu            — EmuInstance for NDS memory access
-    //    localCfg       — config table (reads Metroid.Visual.CustomHUD,
-    //                     Metroid.Visual.CrosshairSize)
+    //    localCfg       — config table for cold/cache refresh and drawing helpers
     //    rom            — ROM address table (resolved for current ROM)
     //    addrHot        — player-position-adjusted hot addresses
     //    playerPosition — current player position index (for +0xF30 offset)
@@ -52,6 +51,8 @@ namespace MelonPrime {
     //    topBuffer      — QImage backing the top overlay (cleared inside)
     //    btmBuffer      — QImage backing the bottom overlay (cleared inside)
     //    isInGame      — whether the game is currently in a match
+    //    hudEnabledSnapshot — epoch-coherent HUD enabled decision from Screen.cpp;
+    //                         never re-read the live config in this function
     //    topStretchX    — widescreen X stretch factor (1.0=4:3, >1.0=wide)
     //    hudOriginXds   — left black-bar width in DS units (m_hudOriginX / hudScale).
     //                     Non-zero when game content is pillarboxed inside the window.
@@ -74,6 +75,7 @@ namespace MelonPrime {
         QImage* topBuffer,
         QImage* btmBuffer,
         bool isInGame,
+        bool hudEnabledSnapshot,
         float topStretchX = 1.0f,
         float hudScale = 1.0f,
         float hudOriginXds = 0.0f,

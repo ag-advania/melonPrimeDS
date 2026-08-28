@@ -126,8 +126,11 @@ Main implementation files:
 ## 6. Native / Low-Latency Aim Injection Mechanisms (newer)
 
 Beyond the classic `aimX/aimY` write, three ARM9-hook-based mechanisms can take over or augment
-aim/fire. All are configured in `ReloadConfigFlags()` and dispatched by the shared ARM9 hook
-(`MelonPrimeArm9Hook.cpp` → `DispatcherCallback`). "Developer-only" means compiled/forced off
+aim/fire. `ReloadConfigFlags()` is the lifecycle wrapper: it loads and clamps a
+`RuntimeConfigSnapshot` via `LoadRuntimeConfigSnapshot()` and applies it via
+`ApplyRuntimeConfigSnapshot()`. The resulting per-instance `Arm9HookActivationPlan` is then
+consumed by the shared ARM9 hook (`MelonPrimeArm9Hook.cpp` → `DispatcherCallback`), which does
+not reread `Config::Table` keys on its install edge. "Developer-only" means compiled/forced off
 unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 
 ### 6.1 Native Aim Delta Hook (`Metroid.Aim.NativeHookMode`, developer-only)

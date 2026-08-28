@@ -3,7 +3,7 @@
 - Date: 2026-08-24
 - Branch: `develop_hud`
 - Target: `src/DX12NvidiaReflex.{h,cpp}`, `src/GPU_DX12.{h,cpp}`, `src/DX12Perf.h`
-- Companion: `docs/audit/vulkan_reflex_on_preissue_ab_2026-08-24.md`
+- Companion: `docs/archive/audits/rendering/2026-08/vulkan_reflex_on_preissue_ab_2026-08-24.md`
 
 ## Why this existed
 

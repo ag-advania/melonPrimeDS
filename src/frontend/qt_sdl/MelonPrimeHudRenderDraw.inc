@@ -2554,8 +2554,64 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     (void)hudScale;
     if (s_chAimFrame != gameFrame) {
         s_chAimFrame = gameFrame;
-        s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
-        s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+        // Reproduce the ROM's own projection so the centre keeps its
+        // sub-pixel precision. The native crosshairPosX/Y cache is already
+        // quantised to integer DS pixels, which becomes a visible multi-pixel
+        // step once the frame is scaled to output resolution. The single
+        // remaining round below is then against actual output pixels.
+        CrosshairProjection::Input projectionInput;
+        CrosshairProjection::Result projected;
+        bool haveProjected = false;
+        if (c.crosshair.chHighResPosition) {
+            haveProjected =
+                ReadCrosshairProjectionInput(ram, rom, projectionInput)
+                && CrosshairProjection::Project(projectionInput, projected)
+                // The projection inputs are live intermediates -- a shared
+                // matrix other passes overwrite, and a player struct picked by
+                // index -- sampled at presentation time, which the game does
+                // not synchronise with its own crosshair update. Requiring the
+                // result to reconstruct to the s16 pair the ROM published this
+                // frame is what proves we read the state it actually used.
+                // The ROM stores that pair with strh, so it must be read as
+                // s16; the low byte alone would accept a wrong position.
+                && CrosshairProjection::MatchesNative(
+                    projected,
+                    static_cast<int16_t>(Read16(ram, rom.crosshairPosX)),
+                    static_cast<int16_t>(Read16(ram, rom.crosshairPosY)));
+            // Developer-only: the reject rate is the one number that says
+            // whether the sampling point is good enough on real hardware.
+            MelonPrimePerf::CountCrosshairProjection(haveProjected);
+        }
+        // A rejected frame must not switch position source: the cache is
+        // quantised to whole DS pixels, so swapping to it moves the centre far
+        // more than the sub-pixel noise this feature removes.
+        const CrosshairProjection::CentreSource source =
+            c.crosshair.chHighResPosition
+                ? CrosshairProjection::SelectCentre(haveProjected, s_chCentreHold)
+                : CrosshairProjection::CentreSource::NativeCache;
+
+        if (source == CrosshairProjection::CentreSource::Projected) {
+            // A point just past the near plane divides by a tiny clipW, so the
+            // unquantised centre can be astronomically far off screen. The ROM
+            // never had to care -- it truncated to s16 and cached a byte -- but
+            // this value reaches a static_cast<int> after the painter
+            // transform, and that cast is undefined once the double exceeds
+            // int range. Clamp to a margin far outside any visible area: the
+            // painter discards it either way, and the in-view values that
+            // matter are untouched.
+            constexpr double kOffscreenLimit = 4096.0;
+            s_chAimDsCx = static_cast<float>(
+                std::clamp(projected.dsX, -kOffscreenLimit, kOffscreenLimit));
+            s_chAimDsCy = static_cast<float>(
+                std::clamp(projected.dsY, -kOffscreenLimit, kOffscreenLimit));
+        } else if (source == CrosshairProjection::CentreSource::NativeCache) {
+            // Option off, or the projection has been unusable for long enough
+            // that a stale centre would be worse than the quantised one. This
+            // is exactly what the legacy path read.
+            s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
+            s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
+        }
+        // CentreSource::Held keeps s_chAimDsCx/Cy from the last accepted frame.
     }
     const float dsCx = s_chAimDsCx;
     const float dsCy = s_chAimDsCy;
@@ -2621,8 +2677,20 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
     const QRect scopeClipPx = (zoomT > 0.001 || scopeT > 0.001)
         ? TopScreenContentClipPx(xf, topStretchX)
         : QRect();
-    const int pxCx = static_cast<int>(std::round(xf.m11() * dsCx + xf.m21() * dsCy + xf.dx()));
-    const int pxCy = static_cast<int>(std::round(xf.m12() * dsCx + xf.m22() * dsCy + xf.dy()));
+    // Deadband the rounding so sub-pixel noise cannot flip the centre between
+    // neighbouring pixels; see CommitCrosshairPixel for why that matters now
+    // that the centre is projected rather than read from the ROM's cache.
+    // Disabled resolves to a zero-width band rather than a second code path:
+    // CommitPixel then re-rounds whenever the exact centre leaves the current
+    // pixel, and re-rounding a value already inside it returns that same
+    // pixel, which is plain rounding.
+    const double positionDeadband = c.crosshair.chPositionDeadband.Resolve();
+    const int pxCx = CrosshairProjection::CommitPixel(
+        xf.m11() * dsCx + xf.m21() * dsCy + xf.dx(),
+        positionDeadband, s_chStickyPxCx);
+    const int pxCy = CrosshairProjection::CommitPixel(
+        xf.m12() * dsCx + xf.m22() * dsCy + xf.dy(),
+        positionDeadband, s_chStickyPxCy);
     int glitchOx = 0;
     int glitchOy = 0;
     int scopeGlitchOx = 0;

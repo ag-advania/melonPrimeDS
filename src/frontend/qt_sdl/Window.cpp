@@ -2605,7 +2605,6 @@ void MainWindow::onOpenMetroidCustomHudSettings()
 void MainWindow::onChangeMetroidFixSF(bool checked)
 {
     localCfg.SetBool(MelonPrime::CfgKey::FixShadowFreeze, checked);
-    MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
     if (auto* core = emuThread->GetMelonPrimeCore())
         core->NotifyConfigChanged();
 }

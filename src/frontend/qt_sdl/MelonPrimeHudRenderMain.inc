@@ -4,7 +4,8 @@
 // =========================================================================
 //  P-7 forward declarations (full definitions follow CustomHud_Render)
 // =========================================================================
-static constexpr int kEditElemCount   = 16; // 0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair, 14 = Scoreboard, 15 = Enemy Target
+// kEditElemCount is defined once in MelonPrimeHudRenderConfig.inc, next to the
+// editRects array it sizes.
 static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX);
 static void   DrawEditOverlay(QPainter* p, Config::Table& cfg, float topStretchX, QImage* btmBuffer);
 
@@ -19,6 +20,7 @@ HOT_FUNCTION QRect CustomHud_Render(
     QPainter* topPaint, QPainter* btmPaint,
     QImage* topBuffer, QImage* btmBuffer,
     bool isInGame,
+    bool hudEnabledSnapshot,
     float topStretchX, float hudScale,
     float hudOriginXds, float hudOriginYds)
 {
@@ -59,11 +61,11 @@ HOT_FUNCTION QRect CustomHud_Render(
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return QRect();
 
-    // Defensive: caller (Screen.cpp) gates on the epoch-cached m_hudEnabled,
-    // which can be stale right after the user toggles the setting. Re-check
-    // the live config so we never apply NoHudPatch / write hudToggle while
-    // CustomHUD is actually disabled.
-    if (!CustomHud_IsEnabled(localCfg)) {
+    // Screen.cpp refreshed the authoritative enabled decision at the config
+    // epoch boundary and used the same snapshot for visibility/restore. Keep
+    // the render decision coherent with that boundary; NoHud restore was
+    // already handled by the caller before entering this function.
+    if (UNLIKELY(!hudEnabledSnapshot)) {
         CustomHud_RestoreNativeHudState(rom, st);
         return QRect();
     }
@@ -86,6 +88,16 @@ HOT_FUNCTION QRect CustomHud_Render(
         st.isGameOver,
         st.isAdventure,
         st.isMapOrUserActionPaused);
+
+    // Publish the complete gameplay-visibility result for the native radar
+    // presenters. They may run before or after this painter path; either way,
+    // all consumers on this game frame reuse the same state decision.
+    if (HudRuntimeFrameCacheMatches(st))
+    {
+        s_hudRuntimeFrameCache.gameplayVisible =
+            !hideForNativeUi && !st.isAdventureCameraScene;
+        s_hudRuntimeFrameCache.gameplayVisibilityValid = true;
+    }
 
     // Native UI needs the original helmet-layer instruction. Vulkan's held-TAB
     // path skips this overlay entirely and masks those layers presentation-only.

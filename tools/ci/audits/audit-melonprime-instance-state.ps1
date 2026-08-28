@@ -44,9 +44,36 @@ foreach ($group in $groups) {
     }
 }
 
-# Phase 0 captures the unsafe pre-refactor state. Later phases lower this
-# ratchet; adding another file-static mutable symbol is always a regression.
-$baseline = 22
+# The standalone ARM9 modules must not keep a second process-global activation
+# context. Their dispatcher mask and ROM group are carried by the Core that is
+# passed as the NDS hook userdata, so these names are a hard regression gate
+# even when a type qualifier makes the generic mutable-state pattern miss them.
+$arm9ModuleStateErrors = New-Object System.Collections.Generic.List[string]
+foreach ($relativePath in @(
+    'src/frontend/qt_sdl/MelonPrimePatchShadowFreezeRuntimeHook.cpp',
+    'src/frontend/qt_sdl/MelonPrimePatchFixNoxusBladePersistence.cpp')) {
+    $path = Join-Path $repoRoot ($relativePath -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $path)) {
+        $arm9ModuleStateErrors.Add("required ARM9 module is missing: $relativePath") | Out-Null
+        continue
+    }
+
+    $hits = @(Select-String -LiteralPath $path -Pattern 's_activeHooks|s_activeHookCount|s_enabledCached')
+    foreach ($hit in $hits) {
+        $arm9ModuleStateErrors.Add(("{0}:{1}:{2}" -f $relativePath, $hit.LineNumber, $hit.Line.Trim())) | Out-Null
+    }
+}
+if ($arm9ModuleStateErrors.Count -ne 0) {
+    foreach ($errorText in $arm9ModuleStateErrors) {
+        Write-Error "ARM9 runtime modules must remain stateless: $errorText"
+    }
+    exit 1
+}
+
+# The standalone ARM9 activation state migration removed the cached module
+# contexts from Shadow Freeze and Noxus. The remaining process globals are the
+# intentional baseline for this phase; adding another one is a regression.
+$baseline = 12
 if ($findings.Count -gt $baseline) {
     Write-Error "Mutable-state finding count increased: $($findings.Count) > baseline $baseline"
 }

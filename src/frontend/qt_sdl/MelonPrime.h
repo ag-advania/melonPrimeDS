@@ -20,11 +20,13 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeInputSubscription.h"
 #include "MelonPrimeThreadBridge.h"
+#include "MelonPrimeRuntimeConfig.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeBattleFlowState.h"
 #include "MelonPrimeZoomState.h"
 #ifdef MELONPRIME_DS
+#include "MelonPrimeArm9Hook.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchState.h"
 #endif
@@ -46,12 +48,10 @@ namespace MelonPrime {
         uint32_t count = 0;
         uint32_t lastAddress = 0;
         uint16_t lastMask = 0;
+        uint8_t romGroupIndex = 0xFFu;
     };
 #endif
 
-    struct RuntimeConfigSnapshot;
-
-    struct AimConfigSnapshot;
 #ifdef MELONPRIME_CUSTOM_HUD
     struct CustomHudConfigState;
 #endif
@@ -277,6 +277,10 @@ namespace MelonPrime {
         [[nodiscard]] MelonPrimeArm9HookState& Arm9HookState() noexcept
         {
             return m_arm9HookState;
+        }
+        [[nodiscard]] const Arm9HookActivationPlan& GetArm9HookActivationPlan() const noexcept
+        {
+            return m_arm9HookActivationPlan;
         }
         [[nodiscard]] MelonPrimePatchState& PatchState() noexcept
         {
@@ -606,6 +610,7 @@ namespace MelonPrime {
         // hotkey. Config::Table remains a cold reload/persistence boundary.
         int      m_runtimeAimSensitivity = 1;
         float    m_runtimeAimYScale = 1.0f;
+        MenuGameSettingsSnapshot m_menuGameSettings{};
 
         // --- Damage Notify Purple ---
         // Briefly drives the local player's Double Damage timer (CPlayer +0x4B0) to
@@ -752,6 +757,7 @@ namespace MelonPrime {
         ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
 #ifdef MELONPRIME_DS
         MelonPrimeArm9HookState m_arm9HookState{};
+        Arm9HookActivationPlan m_arm9HookActivationPlan{};
         MelonPrimePatchState m_patchState{};
 #endif
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -847,7 +853,7 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleGameJoinInit();
         COLD_FUNCTION void HandleBattleRuntimeEnter();
         COLD_FUNCTION void DetectRomAndSetAddresses();
-        COLD_FUNCTION void ApplyGameSettingsOnce();
+        void ReconcileMenuGameSettings();
 
         void ApplyRuntimeAimSensitivity(int sensitivity);
         void RecalcAimFixedPoint();

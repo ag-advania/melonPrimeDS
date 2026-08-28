@@ -1184,6 +1184,29 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 								<widget class="QCheckBox" name="cbMetroidEnableCustomHud"><property name="text"><string>Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)</string></property></widget>
 							</item>
 
+							<!-- High-resolution crosshair position -->
+							<item>
+								<widget class="QCheckBox" name="cbMetroidHudCrosshairHighRes"><property name="text"><string>High-Resolution Crosshair Position (Computes the crosshair centre at the output resolution instead of the game's 256x192 pixel grid, so it moves smoothly instead of stepping between pixels)</string></property></widget>
+							</item>
+
+							<item>
+								<widget class="QCheckBox" name="cbMetroidHudCrosshairDeadbandEnable"><property name="text"><string>Enable Crosshair Position Deadband (hold the drawn crosshair still until the projected centre has moved far enough; turn this off to make it follow the projection exactly, keeping the width below for comparison)</string></property></widget>
+							</item>
+							<item>
+								<widget class="QLabel" name="labelMetroidHudCrosshairDeadband">
+									<property name="text"><string>Crosshair Position Deadband (output pixels; how far the projected centre must move before the drawn crosshair follows, so sub-pixel noise cannot make it shimmer between neighbouring pixels)</string></property>
+									<property name="wordWrap"><bool>true</bool></property>
+								</widget>
+							</item>
+							<item>
+								<widget class="QDoubleSpinBox" name="dsbMetroidHudCrosshairDeadband">
+									<property name="decimals"><number>2</number></property>
+									<property name="minimum"><double>0.000000000000000</double></property>
+									<property name="maximum"><double>2.000000000000000</double></property>
+									<property name="singleStep"><double>0.050000000000000</double></property>
+								</widget>
+							</item>
+
 							<item>
 								<widget class="QLabel" name="labelMetroidOnScreenEditStyle">
 									<property name="text"><string>On-Screen Edit Style</string></property>

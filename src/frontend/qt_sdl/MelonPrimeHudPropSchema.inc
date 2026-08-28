@@ -664,6 +664,9 @@
 #define MP_HUD_PROP_KEY_HudEnemyTargetOutline "Metroid.Visual.HudEnemyTargetOutline"
 #define MP_HUD_PROP_KEY_HudEnemyTargetOpacity "Metroid.Visual.HudEnemyTargetOpacity"
 #define MP_HUD_PROP_KEY_HudEnemyTargetOutlineOpacity "Metroid.Visual.HudEnemyTargetOutlineOpacity"
+#define MP_HUD_PROP_KEY_HudCrosshairHighRes "Metroid.Visual.HudCrosshairHighRes"
+#define MP_HUD_PROP_KEY_HudCrosshairDeadband "Metroid.Visual.HudCrosshairDeadband"
+#define MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable "Metroid.Visual.HudCrosshairDeadbandEnable"
 
 // X(identifier, key, cfgType, defaultExpr, uiMin, uiMax, uiStep, label, uiKind, surfaceMask, flags)
 #define MP_HUD_PROP_ROW_HudFontMode(X) X(HudFontMode, MP_HUD_PROP_KEY_HudFontMode, Int, 0, 0, 2, 1, "Font Source", "FontMode", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
@@ -1315,6 +1318,9 @@
 #define MP_HUD_PROP_ROW_HudEnemyTargetOutline(X) X(HudEnemyTargetOutline, MP_HUD_PROP_KEY_HudEnemyTargetOutline, Bool, true, 0, 0, 0, "Outline", "Bool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudEnemyTargetOpacity(X) X(HudEnemyTargetOpacity, MP_HUD_PROP_KEY_HudEnemyTargetOpacity, Double, 1.0, 0, 100, 5, "Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X) X(HudEnemyTargetOutlineOpacity, MP_HUD_PROP_KEY_HudEnemyTargetOutlineOpacity, Double, 1.0, 0, 100, 5, "Outline Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudCrosshairHighRes(X) X(HudCrosshairHighRes, MP_HUD_PROP_KEY_HudCrosshairHighRes, Bool, true, 0, 0, 0, "", "GetBool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudCrosshairDeadband(X) X(HudCrosshairDeadband, MP_HUD_PROP_KEY_HudCrosshairDeadband, Double, 0.25, 0, 0, 0, "", "GetDouble", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudCrosshairDeadbandEnable(X) X(HudCrosshairDeadbandEnable, MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable, Bool, true, 0, 0, 0, "", "GetBool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 
 // Schema views reference row macros so each key literal has a single owner.
 #define MP_HUD_PROP_SCHEMA(X) \
@@ -1966,7 +1972,10 @@
     MP_HUD_PROP_ROW_HudEnemyTargetTeamColor(X) \
     MP_HUD_PROP_ROW_HudEnemyTargetOutline(X) \
     MP_HUD_PROP_ROW_HudEnemyTargetOpacity(X) \
-    MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X)
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X) \
+    MP_HUD_PROP_ROW_HudCrosshairHighRes(X) \
+    MP_HUD_PROP_ROW_HudCrosshairDeadband(X) \
+    MP_HUD_PROP_ROW_HudCrosshairDeadbandEnable(X)
 
 // Type-filtered views preserve the Config.cpp DefaultList<T> ownership.
 #define MP_HUD_PROP_SCHEMA_INT(X) \
@@ -2566,7 +2575,9 @@
     MP_HUD_PROP_ROW_HudEnemyTargetHpNumberShow(X) \
     MP_HUD_PROP_ROW_HudEnemyTargetScoreShow(X) \
     MP_HUD_PROP_ROW_HudEnemyTargetTeamColor(X) \
-    MP_HUD_PROP_ROW_HudEnemyTargetOutline(X)
+    MP_HUD_PROP_ROW_HudEnemyTargetOutline(X) \
+    MP_HUD_PROP_ROW_HudCrosshairHighRes(X) \
+    MP_HUD_PROP_ROW_HudCrosshairDeadbandEnable(X)
 
 #define MP_HUD_PROP_SCHEMA_STRING(X) \
     MP_HUD_PROP_ROW_HudFontFamily(X) \
@@ -2624,6 +2635,7 @@
     MP_HUD_PROP_ROW_HudScoreboardBackgroundOpacity(X) \
     MP_HUD_PROP_ROW_HudScoreboardOutlineOpacity(X) \
     MP_HUD_PROP_ROW_HudEnemyTargetOpacity(X) \
-    MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X)
+    MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X) \
+    MP_HUD_PROP_ROW_HudCrosshairDeadband(X)
 
 #endif // MELONPRIME_HUD_PROP_SCHEMA_INC

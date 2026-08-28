@@ -427,7 +427,7 @@ perf 数値の記録、10 分ソークでフレームタイム分散悪化なし
 
 ### Phase 7: Metal Compute Shader レンダラ（3–6週 / **最終ゴール** / Phase 4 完了が前提）
 
-**実行文書:** [Compute shader Phase 7 execution](../../../../../plans/rendering/metal/compute-shader-phase7-execution.md)
+**実行文書:** [Compute shader Phase 7 execution](compute-shader-phase7-execution.md)
 
 **位置づけ（ユーザー指示 2026-07-10）:** 他 OS の High2 プリセットが使う `ComputeRenderer3D`
 （compute-shader ラスタライザ）の macOS 版が本計画の最終成果物。外部設計書 §16/§Phase 10 の

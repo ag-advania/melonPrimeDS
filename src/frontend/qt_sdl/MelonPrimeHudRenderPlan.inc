@@ -309,6 +309,11 @@ static void ClearPreviousCrosshairDirty(const CrosshairHudConfig& ch)
                                          s_chPrevGeomScale, s_chPrevZoomT, s_chPrevScopeT);
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
+    // The crosshair is not on screen, so the next appearance must snap to its
+    // real position rather than ease out of a stale committed one.
+    s_chStickyPxCx = INT_MIN;
+    s_chStickyPxCy = INT_MIN;
+    s_chCentreHold.Reset();
     s_chPrevGeomScale = 1.0;
     s_chPrevZoomT = 0.0;
     s_chPrevScopeT = 0.0;

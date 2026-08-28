@@ -146,6 +146,33 @@ Rule F keeps raw RAM reads out of the drawing fragment, Rule A2 keeps
 aim-smoothing wired at game join, and Rule C2 keeps the fast-forward writer in
 `EmuThread.cpp`.
 
+The per-instance HUD owner slots are typed `std::unique_ptr` members of
+`CustomHudConfigState`. `MelonPrimeHudRender.cpp` constructs the three concrete
+owners (battle, frame, and text-cache) in the cold config-state constructor;
+editor fields remain directly owned by `CustomHudConfigState` until a future
+phase introduces a concrete editor owner. Frame/text accessors only dereference
+those already-live owners. The top-level `MelonPrimeCore::m_hudConfigState`
+`std::shared_ptr` remains the instance lifetime boundary and is not part of the
+frame path. Rule G hard-fails if an internal HUD fragment reintroduces erased
+ownership, casts, or lazy owner construction.
+
+HUD enablement is resolved once at the screen config-epoch boundary. The
+screen-owned `m_hudEnabled` snapshot is passed through the overlay helper into
+`CustomHud_Render`, which does not read live config. Visibility and native-HUD
+restore decisions therefore use the same epoch-coherent value. Rule H
+hard-fails if the render body regains a live `CustomHud_IsEnabled` or config
+getter call.
+
+ARM9 hook module activation follows the same cold-boundary rule. Runtime config
+is resolved into `Arm9HookActivationPlan` by
+`ApplyRuntimeConfigSnapshot`; `ARM9Hook_Install` consumes only that plan and
+the ROM scope. The dispatcher stores only the ROM group in the per-Core
+`MelonPrimeArm9HookState` and passes it to the stateless Shadow Freeze/Noxus
+modules; their handlers do not own a process-global activation context. Rules I
+and J hard-fail if the installer regains direct config/key interpretation or a
+module-local config/ROM cache. The ARM9 dispatcher remains a cached,
+address-gated fast path.
+
 ## QColorDialog rule
 
 `QColorDialog` usage stays confined to `MelonPrimeColorDialogPrefs.cpp` (enforced by
@@ -221,7 +248,10 @@ Do not reorder without a dedicated review:
 `audit-melonprime-srp-performance.ps1` Rule D now prints the same scan, scoped to
 the hot-path function bodies themselves. It never hard-fails: grep cannot tell a
 real per-frame `Config` lookup from a mention in a comment, so the output is for
-a human to judge.
+a human to judge. The warning scan also calls out shared ownership/casts,
+mutex locks, raw `new`, and `std::string` construction so new hot-path cost is
+visible during review; Rules G, H, and I provide the hard failures for the HUD
+ownership, render-snapshot, and ARM9 activation-plan contracts.
 
 ```bash
 rg "std::function|virtual|dynamic_cast|QMetaObject|Config::Table|GetBool|GetInt|GetDouble|QString|std::string" \

@@ -27,7 +27,7 @@ Primary files:
 Related docs (not indexed elsewhere — read these too):
 
 - [metroid-prime-hunters-terminology-reference.md](metroid-prime-hunters-terminology-reference.md) — evidence-graded terminology for Morph Ball, Boost, form labels, beams, missiles, and sub-weapons across the supported language set
-- [melonprime-localization-refactor-plan.md](../../plans/localization/localization-refactor-plan.md) — the file-split plan this system followed (`MelonPrimeLocalization.cpp` → facade + `MelonPrimeLocalization/*`)
+- [melonprime-localization-refactor-plan.md](../../archive/plans/localization/localization-refactor-plan.md) — the completed file-split plan this system followed (`MelonPrimeLocalization.cpp` → facade + `MelonPrimeLocalization/*`)
 - [melonprime-localization-refactor-audit.md](../../archive/audits/localization/localization-refactor-audit-2026-07-04.md) — audit of that split, including the `zh-Hant` fallback-lookup fix
 - [notes/melonprime-i18n-50lang-quality-audit.md](../../archive/audits/localization/2026-07/melonprime-i18n-50lang-quality-audit.md) — live tier table for the 50-language expansion's translation quality; update this file (not this skill) when a new quality-fix pass lands
 

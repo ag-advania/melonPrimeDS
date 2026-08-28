@@ -653,6 +653,46 @@ add_custom_target(melonprime_gpu2d_frame_policy_check ALL
     COMMENT "Running GPU2D frame publication policy tests..."
     VERBATIM)
 
+# Stage Matrix uses a strict loaded-state guard before writing guest RAM. The
+# callback seam drives the production templated implementation from fake RAM,
+# covering delayed partial loads, permanent mismatches, all seven ROM groups,
+# and lifecycle invalidation without requiring a running emulator or display.
+add_executable(melonprime_stage_matrix_validation_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/stage-matrix-validation-tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimePatchExpandStageMatrix.cpp)
+target_include_directories(melonprime_stage_matrix_validation_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+target_compile_definitions(melonprime_stage_matrix_validation_tests PRIVATE
+    MELONPRIME_DS
+    MELONPRIME_STAGE_MATRIX_TESTING=1)
+target_link_libraries(melonprime_stage_matrix_validation_tests PRIVATE core)
+set_target_properties(melonprime_stage_matrix_validation_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_stage_matrix_validation_check ALL
+    COMMAND $<TARGET_FILE:melonprime_stage_matrix_validation_tests>
+    DEPENDS melonprime_stage_matrix_validation_tests
+    COMMENT "Running Stage Matrix loaded-state validation tests..."
+    VERBATIM)
+
+# The high-resolution crosshair centre reproduces MPH's Q12 projection up to
+# the raw Q32 quotient. The module is free of Qt and melonDS so the arithmetic
+# can be checked directly against a literal transcription of the ROM chain.
+add_executable(melonprime_crosshair_projection_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/crosshair-projection-tests.cpp)
+target_include_directories(melonprime_crosshair_projection_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(melonprime_crosshair_projection_tests PRIVATE
+    MELONPRIME_DS
+    MELONPRIME_CUSTOM_HUD)
+set_target_properties(melonprime_crosshair_projection_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_crosshair_projection_check ALL
+    COMMAND $<TARGET_FILE:melonprime_crosshair_projection_tests>
+    DEPENDS melonprime_crosshair_projection_tests
+    COMMENT "Running high-resolution crosshair projection tests..."
+    VERBATIM)
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(core PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)

@@ -1,8 +1,6 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchFixWifi.h"
-#include "Config.h"
-#include "MelonPrimeDef.h"
 #include "MelonPrimePatchState.h"
 #include "NDS.h"
 
@@ -112,10 +110,10 @@ static bool CanApplyPatch(melonDS::NDS* nds, uint32_t base, bool* alreadyApplied
 void FixWifi_ApplyOnce(
     MelonPrimePatchState& state,
     melonDS::NDS* nds,
-    Config::Table& cfg,
+    bool enabled,
     uint8_t romGroupIndex)
 {
-    if (!cfg.GetBool(MelonPrime::CfgKey::WifiBitset)) return;
+    if (!enabled) return;
 
     auto& patchState = state.fixWifi;
     if (patchState.romGroupIndex != romGroupIndex)

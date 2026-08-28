@@ -1,8 +1,6 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchUseFirmwareLanguage.h"
-#include "Config.h"
-#include "MelonPrimeDef.h"
 #include "NDS.h"
 #include "SPI_Firmware.h"
 
@@ -51,9 +49,22 @@ static constexpr uint32_t kLangAddr[7] = {
     0xFFFFFFFFu, // KR1_0 — temporarily excluded; restore to 0x020E10AAu when ready
 };
 
-void UseFirmwareLanguage_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex, uint32_t isInAdventureAddr)
+uint8_t UseFirmwareLanguage_ResolveTarget(melonDS::NDS* nds) noexcept
 {
-    if (!cfg.GetBool(MelonPrime::CfgKey::UseFirmwareLanguage)) return;
+    if (!nds)
+        return 0;
+    const uint8_t fwLang = nds->GetFirmware().GetEffectiveUserData().Settings & 0x7u;
+    return kFwToGameLang[fwLang];
+}
+
+void UseFirmwareLanguage_ApplyOnce(
+    melonDS::NDS* nds,
+    bool enabled,
+    uint8_t romGroupIndex,
+    uint32_t isInAdventureAddr,
+    uint8_t gameLanguageBits)
+{
+    if (!nds || !enabled) return;
     if (romGroupIndex >= 7) return;
 
     const uint32_t addr = kLangAddr[romGroupIndex];
@@ -64,11 +75,8 @@ void UseFirmwareLanguage_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_
     const bool isJp = (romGroupIndex == 0 || romGroupIndex == 1);
     if (isJp && nds->ARM9Read8(isInAdventureAddr) == 0x02) return;
 
-    const uint8_t fwLang = nds->GetFirmware().GetEffectiveUserData().Settings & 0x7u;
-    const uint8_t gameLangBits = kFwToGameLang[fwLang];
-
     const uint8_t oldVal = nds->ARM9Read8(addr);
-    const uint8_t newVal = (oldVal & ~0x3Fu) | gameLangBits;
+    const uint8_t newVal = (oldVal & ~0x3Fu) | (gameLanguageBits & 0x3Fu);
     if (newVal != oldVal)
         nds->ARM9Write8(addr, newVal);
 }

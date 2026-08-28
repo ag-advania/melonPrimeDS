@@ -149,13 +149,14 @@ Important current groups include:
 - `Metroid.Visual.HudFontSize` - base render px for system/file fonts (int, default 12, clamp 4-64); ignored for MPH (HudFontMode=0, fixed 6px)
 - `Metroid.Visual.HudFontWeight` - weight index for system/file fonts (int, default 3=Normal; 0..8 -> Thin..Black, mapped to QFont::Weight)
 - `Metroid.Visual.HudFontItalic` / `HudFontUnderline` / `HudFontStrikeOut` - style/effects for system/file fonts (bool, default false)
-- `Metroid.Visual.HudTextScale` - text visual scale in percent (default 60, font always 6px)
+- `Metroid.Visual.HudTextScale` - text visual scale in percent (default 60; MPH uses a 6px base, system/file fonts use `HudFontSize`)
 - `Metroid.Visual.HudAutoScaleEnable` - enable automatic HUD scaling (default true)
 - `Metroid.Visual.HudAutoScaleCap` - global auto-scale cap percent (default 800)
 - `Metroid.Visual.HudAutoScaleCapText` - text category cap (default 800)
 - `Metroid.Visual.HudAutoScaleCapIcons` - icons category cap (default 800)
 - `Metroid.Visual.HudAutoScaleCapGauges` - gauges category cap (default 800)
 - `Metroid.Visual.HudAutoScaleCapCrosshair` - crosshair category cap (default 800)
+- `Metroid.Visual.HudAutoScaleCapScoreboard` - scoreboard category cap (default 800)
 - `Metroid.Visual.Crosshair*` - crosshair settings (CrosshairScale max 800)
 - `Metroid.Visual.HudHp*` - includes `HudHpAnchor` (default 6=BL), `HudHpX/Y` (offsets), `HudHpGaugePosAnchor` (default 6=BL)
 - `Metroid.Visual.HudWeapon*` - includes `HudWeaponAnchor` (default 8=BR), `HudWeaponIconPosAnchor` (default 8=BR)
@@ -165,6 +166,9 @@ Important current groups include:
 - `Metroid.Visual.HudTimeLeft*` - includes `HudTimeLeftAnchor` (default 0=TL)
 - `Metroid.Visual.HudTimeLimit*` - includes `HudTimeLimitAnchor` (default 0=TL)
 - `Metroid.Visual.HudBombLeft*` - includes `HudBombLeftAnchor` (default 8=BR), `HudBombLeftIconPosAnchor` (default 8=BR)
+- `Metroid.Visual.HudWeaponInventory*` - weapon inventory strip settings, including `HudWeaponInventoryAnchor` (default 8=BR)
+- `Metroid.Visual.HudScoreboard*` - scoreboard composite settings, including `HudScoreboardAnchor` (default 3=ML)
+- `Metroid.Visual.HudEnemyTarget*` - enemy-target composite settings, including `HudEnemyTargetAnchor` (default 1=TC)
 - `Metroid.Visual.BtmOverlay*` - includes `BtmOverlayAnchor` (default 2=TR)
 - `Metroid.Visual.InGameAspectRatio*`
 
@@ -312,7 +316,9 @@ current owners — do not fold their responsibilities back into `MelonPrimeCore`
 
 | Area | Owner | Owns |
 |---|---|---|
-| Runtime config load | `MelonPrimeRuntimeConfig.h/.cpp` | `RuntimeConfigSnapshot` / `AimConfigSnapshot`: pure `Load*ConfigSnapshot(Config::Table&)` read+clamp. `MelonPrimeCore::Apply*ConfigSnapshot(...)` is the only place that writes the result into core state |
+| Runtime config load | `MelonPrimeRuntimeConfig.h/.cpp` | `RuntimeConfigSnapshot` / `AimConfigSnapshot`: pure `Load*ConfigSnapshot(Config::Table&)` read+clamp. `MelonPrimeCore::Apply*ConfigSnapshot(...)` is the only place that writes the result into core state; ARM9 feature settings become the per-instance `Arm9HookActivationPlan` there |
+| Custom HUD instance state | `CustomHudConfigState` in `MelonPrimeHudRenderConfig.inc` / `MelonPrimeHudRender.cpp` | Three typed `std::unique_ptr` owner slots for battle, frame, and text-cache state; all are constructed on the cold config-state path. Editor fields remain directly in the config state until a concrete editor owner is needed. The top-level `MelonPrimeCore::m_hudConfigState` `std::shared_ptr` remains the lifetime boundary |
+| HUD enable snapshot | `Screen.h` + `MelonPrimeHudScreenCppHelpers.inc` | `m_hudEnabled` is refreshed at the config-cache epoch and passed to `CustomHud_Render`; the render body does not reread live `Config::Table` state |
 | Input projection | `MelonPrimeInputProjection.h` (header-only) | Hotkey → down/press bit projection; `FORCE_INLINE`, zero new abstraction cost — this is a hot-path file |
 | Screen cursor policy | `MelonPrimeScreenCursorPolicy.h/.cpp` | Cursor clip/warp/capture/confinement: `ClipCenter1px`, `Unclip`, `UpdateClipIfNeeded`, `ContainAimCursorIfNeeded`, `ReleaseForClose`, `ConfineToBottomScreen`. `Screen.cpp` must not `#include` MelonPrime patch or ARM9 hook internals — see the SRP contract's "Screen.cpp dependency rule" |
 | HUD editor widget factories | `MelonPrimeHudEditorFormBuilder.h/.cpp` | Every property-panel widget factory (checkbox/combo/spin/double-spin/opacity-slider/line-edit/color-picker/sub-color/color-overlay-row), all `WidgetFactoryContext`-based. `MelonPrimeHudConfigOnScreenEdit.cpp` is a thin delegate over this plus (as of V7 Phase 2) the row-table dispatcher in [MelonPrimeHudEditorSidePanelRows.inc](../../src/frontend/qt_sdl/MelonPrimeHudEditorSidePanelRows.inc) |
@@ -325,8 +331,10 @@ Deliberately **not** split (see the SRP contract's "Never mix" list and the comp
 `MelonPrimeCore` hot state struct extraction, `Screen.cpp` mouse event routing, and
 `MelonPrimePlatformInput.h`'s raw-filter ownership model.
 
-## Active Branch: `highres_fonts_v3`
-Current work is on the `highres_fonts_v3` branch. Main changes relative to `master`:
+## Active Branch: `develop_hud` (checkout verified 2026-08-28)
+Current work is on `develop_hud` at `2a0266f14` (`fix(hud): validate the projected crosshair against the position the ROM published`).
+The branch-scoped notes below retain the current HUD/SRP architecture; branch names in historical
+plans and reports are provenance, not the current checkout. Main changes relative to `master`:
 - Full 9-point anchor system for all HUD element positions
 - All `*X`/`*Y` HUD config values are offsets from anchor, not absolute DS-space coordinates
 - `ApplyAnchor()` helper in `MelonPrimeHudRender.cpp` is called once per element in `Load*Config()`, transparent to draw functions
@@ -336,11 +344,12 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
   - `MelonPrimeHudConfigOnScreenSnapshot.inc` - snapshot/restore/reset
   - `MelonPrimeHudConfigOnScreenDraw.inc` - bounds and overlay drawing
   - `MelonPrimeHudConfigOnScreenInput.inc` - public edit API and input handling
-- Classic settings dialog restored with 5 hierarchical main sections and live preview widgets on the right (except HUD Scale)
+- Classic settings dialog has 11 hierarchical main sections; Crosshair, HP/Ammo, Match Status, Scoreboard, Enemy Target, and Radar have live preview widgets, while configuration-only sections have none
 - MelonPrime settings/edit-mode labels are localized through `MelonPrimeLocalization.h/.cpp` for English/Japanese based on OS locale
 - Programmatic widget architecture via `HudMainSec` / `HudSubSec` / `HudWidgetProp`, enabling data-driven save/restore/TOML-export
 - Snapshot/restore covers all HUD widgets plus 3 global fields
-- HUD auto-scale system with per-category caps (text, icons, gauges, crosshair); radar excluded from auto-scale
+- HUD auto-scale system with per-category caps (text, icons, gauges, crosshair, scoreboard); radar excluded from auto-scale
+- Optional high-resolution crosshair centre projection from the local player's aim ray, accepted only when it reconstructs the ROM-published `crosshairPosX/Y` s16 pair, with a quantized fallback and configurable output-pixel deadband
 - Property labels use full unabbreviated names throughout the edit mode UI
 - Element boxes show live previews (gauge bars, cached icons, sample text) instead of static text labels
 - Element box font scales with `HudTextScale`
@@ -371,6 +380,9 @@ Current work is on the `highres_fonts_v3` branch. Main changes relative to `mast
 - EmuThread integration has small self-contained MelonPrime fragments in `MelonPrimeEmuThread*.inc` for includes, constructor setup, run setup, message queue atomics, and renderer VSync preservation. The frame limiter and frame pacing body remain inline in `EmuThread.cpp`.
 - Unity include ownership is checked by `tools/ci/audits/check-inc-ownership.ps1`; it verifies one parent per unity `.inc`, verifies the fixed parent set for the macro-section `MelonPrimeArm9InstructionHook.inc`, rejects `#include "*.cpp"`, and rejects `.inc` entries in `CMakeLists.txt`
 - Nested `.inc` fragments are allowed only when the child has exactly one `.inc` parent and is documented as owned by that parent. `MelonPrimeHudRenderCrosshairFx.inc` is the current example: it is included by `MelonPrimeHudRenderDraw.inc`, not directly by `MelonPrimeHudRender.cpp`.
+- 2026-08-27 low-overhead closure: HUD internal owner slots are typed `std::unique_ptr` values constructed
+  once by `CustomHudConfigState`; Screen passes its epoch-coherent `m_hudEnabled` snapshot into the render
+  entry point, and the ARM9 installer consumes the core's already-resolved `Arm9HookActivationPlan`.
 <!-- MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_REPOSITORY_V15 -->
 ### Disable-checkbox UI semantics
 

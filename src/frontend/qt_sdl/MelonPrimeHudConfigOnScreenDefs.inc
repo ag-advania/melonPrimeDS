@@ -181,7 +181,7 @@ static const HudEditPropDesc* GetCrosshairPropForRow(int rowIdx, bool& isColorRo
 
 // Sample text used for element box previews (must align with kEditElems indices)
 // Width sample text for element boxes. Match Status uses a two-line format separately.
-static const char* const kEditElemSampleText[kEditElemCount] = {
+static const char* const kEditElemSampleText[] = {
     "100",       // 0: HP
     nullptr,     // 1: HP Gauge
     "50",        // 2: Weapon/Ammo (number only, no weapon name prefix)
@@ -199,4 +199,8 @@ static const char* const kEditElemSampleText[kEditElemCount] = {
     nullptr,     // 14: Scoreboard (drawn with the deterministic composite preview)
     nullptr,     // 15: Enemy Target (drawn with the deterministic composite preview)
 };
+
+static_assert(
+    sizeof(kEditElemSampleText) / sizeof(kEditElemSampleText[0]) == kEditElemCount,
+    "kEditElemSampleText must have one entry per On-Screen Edit element.");
 

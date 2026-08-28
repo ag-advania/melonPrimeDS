@@ -3,8 +3,8 @@
 - 日付: 2026-08-24
 - ブランチ: `develop_hud`（未コミット、作業ツリーに変更あり）
 - 起点: `.codex/MelonPrimeDS_develop_hud_Vulkan_Reflex_ON_FPS低下_根本原因監査_修正指示書_2026-08-24.md`
-- 関連: `docs/audit/vulkan_reflex_on_preissue_ab_2026-08-24.md` /
-  `docs/audit/dx12_reflex_latency_verification_2026-08-24.md`
+- 関連: `docs/archive/audits/rendering/2026-08/vulkan_reflex_on_preissue_ab_2026-08-24.md` /
+  `docs/archive/audits/rendering/2026-08/dx12_reflex_latency_verification_2026-08-24.md`
 - 状態: **継続中**。コード変更は完了・検証済み。§8.1 完了（2026-08-25）。性能の原因究明は未決着。
 
 ---

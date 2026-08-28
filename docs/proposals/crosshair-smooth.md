@@ -5,13 +5,18 @@
 このゲームは30fpsで動作するため、高リフレッシュレート環境（60hz〜540hz）でクロスヘアの移動がカクカクになる問題を解決するための設計案。現時点では実装しないが、将来の参考のためにここに残す。
 
 V3 Phase 1 の再スイープで、`Metroid.Visual.CrosshairSmooth` / `chSmooth` は本提案内にのみ存在し、
-現行コード・設定デフォルト・HUD schema には未実装であることを確認した。破棄ではなく将来案として保留する。
+現行コード・設定デフォルト・HUD schema には未実装であることを確認した。2026-08-28 の現行実装
+（`2a0266f14`）は別系統の `Metroid.Visual.HudCrosshairHighRes` によりローカルプレイヤーの投影を
+出力解像度で計算し、その結果が ROM 公開の s16 `crosshairPosX/Y` ペアをビット単位で再現できる場合
+だけ採用する。不一致時は量子化キャッシュへフォールバックし、出力ピクセルのデッドバンドは
+`Metroid.Visual.HudCrosshairDeadband`（デフォルト 0.25、上限 2.0）で設定できる。本提案の
+フレームレート外挿とは異なるため、本提案は破棄せず将来案として保留する。
 
 ---
 
 ## 問題の構造
 
-NDS ゲームロジックは 30fps で `crosshairPosX`/`crosshairPosY`（DS座標系 0〜255、絶対位置、uint8\_t）を更新する。MelonPrimeDS の描画ループは NDS フレームレート（約60fps）で `DrawCrosshair` を呼ぶが、ゲームが更新しないフレームでは前フレームと同じ座標が読める。結果として、60hz 表示でも2フレームに1回しかクロスヘアが動かない。
+NDS ゲームロジックは 30fps で `crosshairPosX`/`crosshairPosY`（DS座標系 0〜255、ROM が公開する s16 ペア、絶対位置）を更新する。MelonPrimeDS の描画ループは NDS フレームレート（約60fps）で `DrawCrosshair` を呼ぶが、ゲームが更新しないフレームでは前フレームと同じ座標が読める。結果として、60hz 表示でも2フレームに1回しかクロスヘアが動かない。
 
 ```
 NDS frame 1: ゲーム更新 → crosshairPosX=130 → 130 で描画

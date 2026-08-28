@@ -347,6 +347,8 @@ struct HudRuntimeFrameCache {
     uint8_t romGroup = 0xFFu;
     bool baseValid = false;
     bool adventureValid = false;
+    bool gameplayVisibilityValid = false;
+    bool gameplayVisible = false;
     bool visibleValid = false;
     bool currentAmmoSpecialValid = false;
     bool currentAmmoMissileValid = false;
@@ -847,6 +849,8 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     s_hudRuntimeFrameCache.romGroup = rom.romGroupIndex;
     s_hudRuntimeFrameCache.baseValid = true;
     s_hudRuntimeFrameCache.adventureValid = false;
+    s_hudRuntimeFrameCache.gameplayVisibilityValid = false;
+    s_hudRuntimeFrameCache.gameplayVisible = false;
     s_hudRuntimeFrameCache.visibleValid = false;
     s_hudRuntimeFrameCache.currentAmmoSpecialValid = false;
     s_hudRuntimeFrameCache.currentAmmoMissileValid = false;
@@ -861,6 +865,93 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     s_hudRuntimeFrameCache.enemyTargetValid = false;
     s_hudRuntimeFrameCache.enemyTarget = {};
     s_hudRuntimeFrameCache.state = out;
+    return true;
+}
+
+// Crosshair projection inputs: 124 bytes of guest RAM per game frame.
+//
+// The player is resolved the way the ROM's own crosshair renderer resolves it,
+// by following the local-player pointer, so a stale or wrong player index
+// cannot make this project somebody else's aim. Returns false when the pointer
+// does not currently address a readable player struct, which happens on
+// mid-transition frames.
+static bool ReadCrosshairProjectionInput(
+    const melonDS::u8* ram,
+    const RomAddresses& rom,
+    CrosshairProjection::Input& out)
+{
+    const uint32_t playerBase =
+        Read32(ram, rom.crosshairLocalPlayerPointer);
+    if (!CrosshairProjection::CanReadPlayerProjectionState(playerBase))
+        return false;
+
+    const uint32_t sourceBase =
+        playerBase + CrosshairProjection::kPlayerProjectionSourceOffset;
+    const uint32_t viewBase =
+        playerBase + CrosshairProjection::kPlayerViewTransformOffset;
+
+    for (int i = 0; i < CrosshairProjection::kSourceWordCount; ++i) {
+        out.source[i] = static_cast<int32_t>(
+            Read32(ram, sourceBase + static_cast<uint32_t>(i) * 4u));
+    }
+    for (int i = 0; i < CrosshairProjection::kViewWordCount; ++i) {
+        out.view[i] = static_cast<int32_t>(
+            Read32(ram, viewBase + static_cast<uint32_t>(i) * 4u));
+    }
+    for (int i = 0; i < CrosshairProjection::kProjectionWordCount; ++i) {
+        out.projection[i] = static_cast<int32_t>(
+            Read32(ram, rom.crosshairProjectionMatrix
+                        + static_cast<uint32_t>(i) * 4u));
+    }
+    return true;
+}
+
+// Pre-frame helmet-clamp sampling, owned by the emulation thread.
+//
+// This deliberately does NOT go through ReadHudRuntimeBaseState(). That
+// function reads and publishes the per-instance HudRuntimeFrameCache, which is
+// presentation-owned: with the software renderer the Custom HUD is painted from
+// ScreenPanelNative::paintEvent() on the GUI thread, and renderLock does not
+// cover RunFrameHook(). Sharing the cache across those two threads would race
+// over its non-trivial members -- the scoreboard and enemy-target snapshots
+// hold QStrings and are reassigned wholesale on every frame rollover.
+//
+// The clamp needs five bytes of guest RAM and no cache, so it reads them
+// directly. That also keeps ~9 QString destroy/construct pairs per in-game
+// frame off the emulation hot path.
+struct HudHelmetClampState {
+    melonDS::NDS* nds = nullptr;
+    uint8_t romGroup = 0xFFu;
+    bool hideForNativeUi = false;
+};
+
+static bool ReadHudHelmetClampState(EmuInstance* emu,
+                                    const RomAddresses& rom,
+                                    uint8_t playerPosition,
+                                    HudHelmetClampState& out)
+{
+    if (!emu) return false;
+
+    melonDS::NDS* nds = emu->getNDS();
+    melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
+    if (!ram) return false;
+
+    out.nds = nds;
+    out.romGroup = rom.romGroupIndex;
+
+    // Same predicate, same order, as the painter path's native-UI hide rule;
+    // only the Adventure half is read lazily, because it is the rarer case.
+    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
+    if (Read8(ram, rom.startPressed) == 0x01
+        || Read8(ram, rom.gameOver) != 0x00
+        || Read16(ram, rom.playerHP + offP) == 0)
+    {
+        out.hideForNativeUi = true;
+        return true;
+    }
+
+    out.hideForNativeUi = Read8(ram, rom.isInAdventure) == 0x02
+        && Read8(ram, rom.isMapOrUserActionPaused) == 0x01;
     return true;
 }
 

@@ -1,7 +1,8 @@
 # Vulkan backend
 
-Cross-platform 3D renderer and native presenter, rewritten from scratch on
-`develop_remakeVulkan`. Like the DirectX 12 backend it is a port of melonDS's
+Cross-platform 3D renderer and native presenter, originally rewritten from scratch on
+`develop_remakeVulkan` and currently maintained on `develop_hud` at `2a0266f14`
+(checkout verified 2026-08-28). Like the DirectX 12 backend it is a port of melonDS's
 **OpenGL compute renderer** (`src/GPU3D_Compute.cpp` + `GPU3D_Compute_shaders.h`)
 — the GPU form of the software rasterizer — not of the fixed-function OpenGL
 renderer.
@@ -25,7 +26,8 @@ backend uses. The full rationale and the delivered-status table are in
 
 ```
 VulkanRenderer (: SoftRenderer)        software 2D engines + structured planes
- └── VulkanRenderer3D (: Renderer3D)   3D rasterizer + high-resolution compositor
+ └── VulkanRenderer3D (: Renderer3D)   3D rasterizer + composition orchestration
+     └── VulkanGpu2DComposer            structured/native 2D composition + output ring
 
 ScreenPanelVulkan (: ScreenPanel)      Qt seam, layout/HUD/OSD
  └── VulkanPresenter                   shared VkDevice, swapchain, vkQueuePresentKHR
@@ -110,16 +112,18 @@ Stages correspond one-for-one with `src/GPU3D_Compute.cpp` /
 | **CaptureSidecar** | 34 | 1 |
 | **Compositor** | 35 | 1 |
 | **CorrectCoverage** | 36 | 1 |
+| **GPU2DNative** | 37-38 | 2 (128- and 256-workgroup variants) |
 
 The first 33 indices keep the OpenGL compute renderer's ordering, so indices are
 directly comparable when debugging Vulkan against OpenGL Compute, and
-`count = 33` still matches `ComputeRenderer3D::ShaderCompileStep()`. The four
-native-capture/presentation/parity stages are *appended*, not interleaved: none exists in
-`GPU3D_Compute`. They were designed from the DS display semantics
+`count = 33` still matches `ComputeRenderer3D::ShaderCompileStep()`. The six
+native-capture/presentation/composition/parity stages are *appended*, not interleaved: none
+exists in `GPU3D_Compute`. They were designed from the DS display semantics
 (`GPU2D_Soft::ColorComposite`, `GPU_ColorOp.h`, `SoftRenderer::ExpandColor` /
 `ApplyMasterBrightness`) and the structured composition contract; the DX12
 shaders were used only to cross-check functional scope. DX12 numbers its own
-steps the same way (`ShaderStep_Resolve` / `ShaderStep_Compositor`).
+steps the same way (`ShaderStep_Resolve` / `ShaderStep_Compositor`), followed by
+the two native GPU2D variants.
 
 The eight rasterise kinds are `NoTexture`, `NoTextureToon`, `NoTextureHighlight`,
 `UseTextureDecal`, `UseTextureModulate`, `UseTextureToon`, `UseTextureHighlight`,
@@ -158,8 +162,8 @@ Per frame, one command buffer:
     structured planes with the high-resolution `FinalFB`
 12. publish the device-local composed buffer as a leased presentation slot
 
-Pipelines are compiled incrementally through `ShaderCompileStep()`, so the OSD
-shows progress instead of the emulator hitching.
+Pipeline objects are created incrementally from the committed SPIR-V through
+`ShaderCompileStep()`, so the OSD shows progress instead of the emulator hitching.
 
 ## Scale buckets and specialization
 
@@ -174,7 +178,7 @@ injected as `-D` defines when the SPIR-V is generated offline.
 creation, so there is no runtime cost relative to the OpenGL renderer's baked
 literals, and one bucket covers every scale inside its range.
 
-37 pipelines x 3 buckets = **111 SPIR-V modules** cover all 16 scales. The SPIR-V
+39 pipelines x 3 buckets = **117 SPIR-V modules** cover all 16 scales. The SPIR-V
 is committed, so the build has no glslang dependency; the `.comp` / `.glsl` files
 are inputs to the offline generator only and are deliberately not in any source
 list.
@@ -428,7 +432,7 @@ mode-dependent:
   input is the presenter cleanup between present and the next frame. That
   ~1.25 ms is the pacing itself, not overhead to schedule around -- preissuing
   for these modes was measured and rejected on 2026-08-24
-  (`docs/audit/vulkan_reflex_on_preissue_ab_2026-08-24.md`).
+  (`docs/archive/audits/rendering/2026-08/vulkan_reflex_on_preissue_ab_2026-08-24.md`).
 
 Each queued sleep is stamped with the frame generation allowed to consume it.
 The frame that is still open when the next frame's sleep is issued must not join
@@ -801,7 +805,12 @@ the reported `structured_2d` interval includes the normal software 2D renderer.
 | `src/VulkanPresentPacer.{h,cpp}` | vendor-neutral present IDs, timing telemetry, bounded input-adjacent wait and authority selection |
 | `src/VulkanModernPresentCompat.h` | Khronos header-359 declarations missing from the minimum supported Vulkan SDK |
 | `src/GPU3D_TexcacheVulkan.{h,cpp}` | texture array behind the shared `Texcache<>` template |
-| `src/GPU3D_Vulkan.{h,cpp}` | the renderer: span setup, dispatch orchestration, `VkPipelineCache`, shader modules |
+| `src/GPU3D_Vulkan.{h,cpp}` | 3D rasterizer and dispatch orchestration; owns the raster resources and compute-pipeline use |
+| `src/VulkanGpu2DComposer.{h,cpp}` | structured/native 2D composition, resolution-dependent compositor resources, and composed-output publication |
+| `src/RendererOutputRing.{h,cpp}` | backend-neutral leased output-slot publication shared by the native compositors |
+| `src/StructuredUploadPlan.h` | backend-neutral dirty-range planning for structured 2D uploads |
+| `src/VulkanPipelineCache.{h,cpp}` | `VkPipelineCache` lifetime, device-identity framing, disk load/save, and rejection handling |
+| `src/VulkanCaptureBridge.{h,cpp}` | native display-capture sidecar/readback resources and the demand-driven copy bridge |
 | `src/GPU3D_Vulkan_shaders/*.comp,*.glsl` | GLSL sources — offline generator inputs only |
 | `src/GPU3D_Vulkan_shaders/generated/` | committed SPIR-V blobs and the module table (build inputs) |
 | `src/GPU_Vulkan.{h,cpp}` | `VulkanRenderer`, pairing the 3D renderer with software 2D |
@@ -830,11 +839,11 @@ otherwise be invisible. Two offline gates cover that:
 
 ```bash
 python tools/vulkan/compile-shaders.py --check      # committed SPIR-V is up to date
-python tools/ci/audits/check-vulkan-shaders.py      # all 105 variants compile + spirv-val
+python tools/ci/audits/check-vulkan-shaders.py      # all 117 variants compile + spirv-val
 ```
 
 `check-vulkan-shaders.py` assembles exactly the sources the generator builds —
-same `#define` prologue, same per-variant defines — compiles all 37 pipelines in
+same `#define` prologue, same per-variant defines — compiles all 39 pipelines in
 all 3 tile-geometry buckets, validates every module with `spirv-val`, additionally
 validates the 560 scale-specialized modules for scales 1..16, and prints a
 device-limit note for every scale/resource that exceeds Vulkan's *guaranteed*

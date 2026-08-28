@@ -64,6 +64,16 @@ def main() -> int:
         "dx12_frontend": root / "src/GPU_DX12.cpp",
         "vulkan_renderer": root / "src/GPU3D_Vulkan.cpp",
         "dx12_renderer": root / "src/GPU3D_DX12.cpp",
+        # The GPU2D compositor owns compose recording, its own output/command
+        # ring, and the mirror-refresh decision on both backends. The renderer
+        # keeps capture readback, sidecar invalidation, and pipeline selection.
+        "vulkan_composer": root / "src/VulkanGpu2DComposer.cpp",
+        "vulkan_composer_header": root / "src/VulkanGpu2DComposer.h",
+        "dx12_composer": root / "src/DX12Gpu2DComposer.cpp",
+        "dx12_composer_header": root / "src/DX12Gpu2DComposer.h",
+        # Backend-neutral semantic owner of native capture provenance.
+        "capture_provenance_header": root / "src/CaptureProvenanceState.h",
+        "capture_provenance": root / "src/CaptureProvenanceState.cpp",
         "vulkan_frame": root / "src/VulkanPresentedFrame.h",
         "dx12_frame": root / "src/DX12PresentedFrame.h",
         "vulkan_presenter": root / "src/frontend/qt_sdl/MelonPrimeVulkanPresenter.h",
@@ -73,7 +83,7 @@ def main() -> int:
         "screen_header": root / "src/frontend/qt_sdl/Screen.h",
         "gpu_stage_metrics": root / "src/GpuStageMetrics.h",
         "vulkan_sync": root / "src/VulkanSync.cpp",
-        "dx12_context": root / "src/DX12Context.cpp",
+        "dx12_command_context": root / "src/DX12CommandContext.h",
         "vulkan_shader": root / "src/GPU3D_Vulkan_shaders/GPU2DNative.comp",
         "vulkan_sidecar_shader": root / "src/GPU3D_Vulkan_shaders/CaptureSidecar.comp",
         "dx12_shader": root / "src/GPU3D_DX12_shaders.h",
@@ -156,7 +166,8 @@ def main() -> int:
         require(text["native_recorder"], "Input.TimelineOverflow", "timeline overflow gate", failures)
         require(text["gpu_stage_metrics"], "GpuMetricQueryCount", "GPU timestamp query ABI", failures)
         require(text["vulkan_sync"], "LastTimestampWrittenMask", "Vulkan timestamp validity", failures)
-        require(text["dx12_context"], "GpuMetricQueryCount", "DX12 timestamp query ABI", failures)
+        require(text["dx12_command_context"], "GpuMetricQueryCount",
+            "DX12 timestamp query ABI", failures)
         require(text["native_purity_test"], "RunHighChurnTimeline", "high-churn overflow stress", failures)
         require(text["native_purity_test"], "RunCrossFrameJournalBaseline",
             "cross-frame journal baseline vector", failures)
@@ -328,24 +339,24 @@ def main() -> int:
         if "CaptureNativeDisplayLine" in text["soft_renderer"]:
             failures.append("soft renderer: per-line CPU native capture mirror still present")
 
+        # Renderer-owned: line dispatch geometry, sidecar invalidation, and the
+        # capture readback path stayed with the 3D renderer.
         for label in ("vulkan_renderer", "dx12_renderer"):
             require(text[label], "CaptureYOffset", f"{label} line dispatch", failures)
+            require(text[label], "InvalidateHighResCaptureState",
+                f"{label} explicit sidecar invalidation", failures)
+
+        # Compositor-owned: dispatch accounting, published output identity, the
+        # mirror-refresh decision, and the host-copy fail-closed counters.
+        for label in ("vulkan_composer", "dx12_composer"):
             require(text[label], "NativeGPU2DDispatchCount", f"{label} dispatch accounting", failures)
             require(text[label], "PublishedOutputGeneration", f"{label} published identity", failures)
-            require(text[label], "DivRoundUp(256u, 128u)",
-                f"{label} logical-width dispatch", failures)
             require(text[label], "384u, 1u);",
                 f"{label} logical full-frame dispatch", failures)
-            require(text[label], "static_cast<u32>(ScaleFactor), 1u)",
+            require(text[label], "static_cast<u32>(ctx.ScaleFactor), 1u)",
                 f"{label} capture line dispatch", failures)
-            require(text[label], "LastSemanticFrame", f"{label} semantic frame identity", failures)
-            require(text[label], "LastSemanticCaptureGeneration",
-                f"{label} semantic capture identity", failures)
             require(text[label], "semanticCaptureGenerationRegressed",
                 f"{label} capture-generation regression recovery", failures)
-            require(text[label], "LastSemanticEpoch", f"{label} semantic epoch", failures)
-            require(text[label], "NativeCaptureStateInitialized",
-                f"{label} persistent LCDC mirror ownership", failures)
             require(text[label], "Presentation backpressure is allowed to drop a visible frame",
                 f"{label} semantic/presentation separation", failures)
             require(text[label], "RecordNativeOwnedCaptureCopySkipped",
@@ -354,28 +365,52 @@ def main() -> int:
                 f"{label} native host-copy fail-closed counter", failures)
             require(text[label], "assert(!nativeOwner)",
                 f"{label} native host-copy assertion", failures)
-            require(text[label], "HighResCaptureProvenance.BeginFrame",
+            require(text[label], "HighResCapture->BeginFrame(",
                 f"{label} high-resolution capture provenance admission", failures)
-            require(text[label], "HighResCaptureProvenance.CommitFrame",
+            require(text[label], "HighResCapture->CommitFrame(",
                 f"{label} high-resolution capture provenance commit", failures)
-            require(text[label], "InvalidateHighResCaptureState",
-                f"{label} explicit sidecar invalidation", failures)
+            require(text[label], "MirrorNeedsFullCopy()",
+                f"{label} persistent LCDC mirror ownership", failures)
 
-        vulkan_native = text["vulkan_renderer"].split(
-            "bool VulkanRenderer3D::ComposeNativeGPU2D(", 1)[1]
-        if "TryBeginFrame" in vulkan_native.split(
-            "bool VulkanRenderer3D::CanComposeNativeGPU2D", 1
-        )[0]:
+        # Vulkan chooses its native workgroup width at runtime; DX12 is fixed at
+        # one 256-lane group per logical scanline, so its dispatch is literal.
+        require(text["vulkan_composer"], "DivRoundUp(256u, nativeWorkgroupWidth)",
+            "vulkan_composer logical-width dispatch", failures)
+        require(text["dx12_composer"], "list->Dispatch(1u, 384u, 1u);",
+            "dx12_composer logical-width dispatch", failures)
+
+        vulkan_native = extract_function_body(
+            text["vulkan_composer"], "bool VulkanGpu2DComposer::ComposeNativeGPU2D(")
+        if not vulkan_native:
+            failures.append("Vulkan native GPU2D: could not isolate ComposeNativeGPU2D")
+        elif "TryBeginFrame" in vulkan_native:
             failures.append("Vulkan native GPU2D: presentation TryBeginFrame still gates semantics")
-        require(vulkan_native, "ComposeFrames.BeginFrame()",
+        require(vulkan_native, "Frames.BeginFrame()",
             "Vulkan native semantic command admission", failures)
-        require(text["dx12_renderer"], "workSlot.Commands.Begin()",
+        require(text["dx12_composer"], "workSlot.Commands.Begin()",
             "DX12 native semantic command admission", failures)
-        for label in ("vulkan_renderer", "dx12_renderer"):
+        for label in ("vulkan_composer_header", "dx12_composer_header"):
             require(text[label], "struct ComposeWorkSlot",
                 f"{label} command-ring work ownership", failures)
+        for label in ("vulkan_composer", "dx12_composer"):
             require(text[label], "if (outputSlot || diagnosticReadback)",
                 f"{label} semantic-only Stage B suppression", failures)
+
+        # Semantic capture identity is backend-neutral now: one owner and one
+        # acceptance predicate, instead of the same six fields in both renderers.
+        for needle in (
+            "SemanticFrame",
+            "SemanticCaptureGeneration",
+            "SemanticEpoch",
+            "SubmissionSerial",
+            "CompletionValue",
+            "MirrorNeedsFullCopy",
+            "RecordSemanticSubmission",
+            "PeekNextSubmissionSerial",
+            "CommitSubmissionSerial",
+        ):
+            require(text["capture_provenance_header"], needle,
+                "semantic capture provenance ownership", failures)
 
         for label in ("vulkan_frame", "dx12_frame"):
             require(text[label], "Epoch", f"{label} frame epoch", failures)
@@ -398,7 +433,7 @@ def main() -> int:
             "process-wide renderer epoch allocator", failures)
         require(text["native_recorder"], "ConsumeForcedPresentationStallFrame",
             "developer presentation stall hook", failures)
-        for label in ("vulkan_renderer", "dx12_renderer"):
+        for label in ("vulkan_composer", "dx12_composer"):
             require(text[label], "forcedPresentationStall",
                 f"{label} forced stall evidence", failures)
             require(text[label], "mirrorNeedsFullCopy",
@@ -436,32 +471,50 @@ def main() -> int:
                     failures,
                 )
 
-        for label in ("vulkan_renderer", "dx12_renderer"):
-            require(text[label], "expected.Owner", f"{label} expected capture identity", failures)
-            require(text[label], "expected.CaptureGeneration", f"{label} capture generation validation", failures)
-            require(text[label], "expected.CompletionValue", f"{label} completion validation", failures)
-            require(text[label], "NativeSemanticSubmissionSerial", f"{label} global semantic submission identity", failures)
-            require(text[label], "LastNativeCaptureCompletionValue", f"{label} completion provenance", failures)
+        # The acceptance predicate is written once, in the semantic owner.
+        accepts_block = extract_function_body(
+            text["capture_provenance"], "bool CaptureProvenanceState::AcceptsBlock(")
+        if not accepts_block:
+            failures.append("capture provenance: could not isolate AcceptsBlock")
+        require(accepts_block, "expected.Owner", "expected capture identity", failures)
+        require(accepts_block, "expected.CaptureGeneration",
+            "capture generation validation", failures)
+        require(accepts_block, "expected.CompletionValue",
+            "completion validation", failures)
+
+        for label in ("vulkan_composer", "dx12_composer"):
+            # The completion value a reader must not run ahead of comes from the
+            # semantic submission serial, never from a presentation frame ring or
+            # a local command-list fence value.
+            require(text[label], "ctx.Provenance->PeekNextSubmissionSerial()",
+                f"{label} global semantic submission identity", failures)
+            require(text[label], "ctx.Provenance->SetCompletionValue(pendingCompletionValue)",
+                f"{label} completion provenance", failures)
             require(text[label], "input.LCDVRAMProvenance", f"{label} mirror ownership filter", failures)
+        if "SetCompletionValue(workSlot.Commands.GetSubmittedValue())" in text["dx12_composer"]:
+            failures.append("DX12 native capture provenance: local semantic-slot fence remains the identity")
+        if "SetCompletionValue(Frames.GetLastSubmittedFrameNumber())" in text["vulkan_composer"]:
+            failures.append("Vulkan native capture provenance: presentation frame-ring value remains the identity")
+
+        for label in ("vulkan_renderer", "dx12_renderer"):
             require(
                 text[label],
                 "MELONPRIME_TEST_GPU2D_CAPTURE_READBACK_FAIL",
                 f"{label} fail-closed readback hook",
                 failures,
             )
-            if label == "dx12_renderer":
-                require(text[label], "WaitForSubmittedValue", "DX12 scoped capture fence", failures)
-                if "LastNativeCaptureCompletionValue = semanticSlot.Commands.GetSubmittedValue()" in text[label]:
-                    failures.append("DX12 native capture provenance: local semantic-slot fence remains the identity")
-                readback_start = text[label].find("DX12Renderer3D::ReadNativeCapture(")
-                if readback_start >= 0:
-                    readback_body = text[label][readback_start:]
-                    if "CaptureCommands.WaitIdle()" in readback_body.split(
-                        "NativeCaptureStateIdentity DX12Renderer3D::GetNativeCaptureStateIdentity(", 1
-                    )[0]:
-                        failures.append("DX12 native capture readback: queue/device idle wait remains")
-            elif "LastNativeCaptureCompletionValue = ComposeFrames.GetLastSubmittedFrameNumber()" in text[label]:
-                failures.append("Vulkan native capture provenance: presentation frame-ring value remains the identity")
+        require(text["dx12_renderer"], "WaitForSubmittedValue",
+            "DX12 scoped capture fence", failures)
+        readback_start = text["dx12_renderer"].find("DX12Renderer3D::ReadNativeCapture(")
+        identity_marker = (
+            "NativeCaptureStateIdentity DX12Renderer3D::GetNativeCaptureStateIdentity(")
+        if readback_start < 0 or identity_marker not in text["dx12_renderer"]:
+            failures.append("dx12_renderer: could not isolate the native capture readback")
+        else:
+            readback_body = text["dx12_renderer"][readback_start:].split(
+                identity_marker, 1)[0]
+            if "CaptureCommands.WaitIdle()" in readback_body:
+                failures.append("DX12 native capture readback: queue/device idle wait remains")
 
         for label in ("vulkan_shader", "dx12_shader"):
             require(text[label], "TimelineVersion", f"{label} temporal shader", failures)
@@ -536,7 +589,10 @@ def main() -> int:
                 if label == "dx12_shader"
                 else "kNativeCaptureBankMask"
             )
-            require(row_summary, "NativeCaptureMappingRowBase(",
+            # The row summary is prefetched into shared memory from the row's
+            # entry-zero word; the helper must read that cache rather than
+            # recomputing an address from the addressed entry.
+            require(row_summary, "NativeMappingSummaryCache",
                 f"{label} entry-zero row summary address", failures)
             require(row_summary, overlay_constant,
                 f"{label} entry-zero row summary validity", failures)
@@ -558,7 +614,9 @@ def main() -> int:
             "native frame overlay summary ABI", failures)
         require(text["vulkan_shader"], "local_size_x = 128, local_size_y = 1",
             "Vulkan scanline workgroup", failures)
-        require(text["dx12_shader"], "[numthreads(128, 1, 1)]",
+        # DX12 is fixed at one 256-lane group per logical scanline; Vulkan keeps
+        # the 128-lane module as the fallback for devices that cannot admit 256.
+        require(text["dx12_shader"], "[numthreads(256, 1, 1)]",
             "DX12 scanline workgroup", failures)
         require_regex(
             text["vulkan_shader"],
@@ -724,7 +782,8 @@ def main() -> int:
                 f"{label} resolved capture-gap trace", failures)
             forbid(text[label], "LogCaptureGapLifecycle",
                 f"{label} resolved core capture-gap trace", failures)
-        for label in ("vulkan_renderer", "dx12_renderer"):
+        for label in ("vulkan_renderer", "dx12_renderer",
+                      "vulkan_composer", "dx12_composer"):
             forbid(text[label], "diagnosticCaptureProvenance",
                 f"{label} resolved F1 diagnostic heap copy", failures)
             forbid(text[label], "LogVRAMDisplaySidecarDecisions",
@@ -814,7 +873,7 @@ def main() -> int:
         ):
             require(text["native_contract_test"], needle,
                 "capture batching fallback vectors", failures)
-        for label in ("vulkan_renderer", "dx12_renderer"):
+        for label in ("vulkan_composer", "dx12_composer"):
             require(text[label],
                 "GPU2DNative::CanBatchIndependentCaptureFrame(input, finalFBValid)",
                 f"{label} feedback-safe capture batching gate", failures)

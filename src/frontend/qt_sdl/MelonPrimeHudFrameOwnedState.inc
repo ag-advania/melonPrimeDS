@@ -6,8 +6,8 @@
 //  Per-instance frame-state aggregate
 //
 //  This is a lifetime/aggregation boundary only.  It deliberately keeps the
-//  exact member order and construction path used by the former inline owner:
-//  one frameState slot, one shared allocation, and the same cache layout.
+//  exact member order and cache layout used by the former inline owner. The
+//  typed owner is constructed by CustomHudConfigState's cold constructor.
 // =========================================================================
 
 struct HudFrameOwnedState {
@@ -52,12 +52,9 @@ struct HudFrameOwnedState {
     TextMeasureCache timeLimitMeasure{};
 };
 
-static HudFrameOwnedState& HudFrameState()
+static FORCE_INLINE HudFrameOwnedState& HudFrameState() noexcept
 {
-    auto& slot = ActiveHudConfigState().frameState;
-    if (!slot)
-        slot = std::make_shared<HudFrameOwnedState>();
-    return *std::static_pointer_cast<HudFrameOwnedState>(slot);
+    return *ActiveHudConfigState().frameState;
 }
 
 #define s_hudRuntimeFrameCache (HudFrameState().frame)

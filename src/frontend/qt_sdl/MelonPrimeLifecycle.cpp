@@ -7,6 +7,7 @@
 #include "MelonPrimeDef.h"
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeArm9Hook.h"
+#include "MelonPrimePatchUseFirmwareLanguage.h"
 #include "MelonPrimeInstanceDiagnostics.h"
 #ifdef MELONPRIME_DS
 #include "GPU2DNative.h"
@@ -106,10 +107,32 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
+        m_patchState.outOfGamePatches = s.outOfGamePatches;
+
         m_enableNativeWeaponSwitch = s.nativeWeaponSwitch;
         if (!m_enableNativeWeaponSwitch)
             m_weaponSwitchPending.Clear();
+
+        // Resolve the complete ARM9 activation policy once at the cold config
+        // boundary. ARM9Hook_Install consumes this plan to select modules and
+        // address masks; it never re-reads or reinterprets Config::Table.
+        m_arm9HookActivationPlan.nativeAimHookMode =
+            s.disableMphAimSmoothing ? s.nativeAimHookMode : 0;
+        m_arm9HookActivationPlan.lowLatencyAimMode =
+            s.stylusMode ? LowLatencyAimMode::Off : s.lowLatencyAimMode;
+        m_arm9HookActivationPlan.immediateInputEdgeOverlay =
+            s.immediateInputEdgeOverlay;
+        m_arm9HookActivationPlan.nativeZoomToggle = s.nativeZoomToggle;
+        m_arm9HookActivationPlan.nativeBipedFire = s.nativeBipedFire;
+        m_arm9HookActivationPlan.directAltFormTransform =
+            s.directAltFormTransform;
+        m_arm9HookActivationPlan.nativeWeaponSwitch = s.nativeWeaponSwitch;
+        m_arm9HookActivationPlan.shadowFreeze = s.fixShadowFreeze;
+        m_arm9HookActivationPlan.noxusBladePersistence =
+            s.fixNoxusBladePersistence;
 #endif
+
+        m_menuGameSettings = s.menuGameSettings;
 
         screenSyncMode = s.screenSyncMode;
 
@@ -123,6 +146,18 @@ namespace MelonPrime {
             LoadRuntimeConfigSnapshot(localCfg);
 
         ApplyRuntimeConfigSnapshot(snapshot);
+#ifdef MELONPRIME_DS
+        // Firmware language is not a Config::Table value. This is the single
+        // owner of its cached target: Initialize() and config reload/unpause
+        // resolve the currently installed image, while OnEmuStart() runs
+        // after EmuInstance::updateConsole() has installed a replacement
+        // firmware during reset, ROM reopen, or a firmware-profile change.
+        // There is no supported live firmware mutation outside those
+        // emulation-thread boundaries; the menu reconciler only compares the
+        // cached target against guest RAM afterward.
+        m_patchState.outOfGamePatches.firmwareLanguageBits =
+            UseFirmwareLanguage_ResolveTarget(emuInstance->getNDS());
+#endif
         ReloadDamageNotifyPurpleConfig();
     }
 

@@ -244,7 +244,7 @@ static constexpr int kCrosshairZoomCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairZo
 static constexpr int kCrosshairInnerCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairInner);
 static constexpr int kCrosshairOuterCount = HUD_EDIT_PROP_COUNT(kPropsCrosshairOuter);
 
-static const HudEditElemDesc kEditElems[kEditElemCount] = {
+static const HudEditElemDesc kEditElems[] = {
     {
         "HP",
         MP_HUD_PROP_KEY_HudHpAnchor, MP_HUD_PROP_KEY_HudHpX, MP_HUD_PROP_KEY_HudHpY,
@@ -374,6 +374,12 @@ static const HudEditElemDesc kEditElems[kEditElemCount] = {
         kPropsEnemyTarget, HUD_EDIT_PROP_COUNT(kPropsEnemyTarget)
     },
 };
+
+static_assert(
+    sizeof(kEditElems) / sizeof(kEditElems[0]) == kEditElemCount,
+    "kEditElems must describe exactly kEditElemCount On-Screen Edit "
+    "elements; CustomHudConfigState::editRects is sized from the same "
+    "constant.");
 
 #undef HUD_EDIT_PROP_COUNT
 

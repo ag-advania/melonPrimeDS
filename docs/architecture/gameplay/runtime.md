@@ -22,7 +22,7 @@ It focuses on in-game flow, weapon/morph handling, gameplay setting application,
      `ARM9Hook_SetMatchHooksActive(false)` (`isInGame` may still be true).
   7. If `isInGame` and `BIT_BATTLE_RUNTIME_MODE`, re-apply OSD color; damage-notify runs whenever
      `isInGame`. (`MELONPRIME_CUSTOM_HUD` builds also call
-     `CustomHud_ClampHelmetLayersPreFrame()` here — helmet spawn-flash layer clamp, gated to a
+     `CustomHud_ClampHelmetLayersPreFrame(core->HudConfigState(), ...)` here — helmet spawn-flash layer clamp, gated to a
      single static read when the helmet hide patch is not applied; see
      [../../features/hud/custom-hud-helmet-spawn-flash.md](../../features/hud/custom-hud-helmet-spawn-flash.md).)
   8. If `!isInGame` and (`BIT_IN_GAME_INIT` or `BIT_END_OF_GAME_PATCH_RESTORED`), clear flags,

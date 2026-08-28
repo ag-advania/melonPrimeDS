@@ -173,6 +173,12 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Custom HUD
     instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
+    instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes,
+        ui->cbMetroidHudCrosshairHighRes->checkState() == Qt::Checked);
+    instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable,
+        ui->cbMetroidHudCrosshairDeadbandEnable->checkState() == Qt::Checked);
+    instcfg.SetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband,
+        ui->dsbMetroidHudCrosshairDeadband->value());
     instcfg.SetInt(
         MelonPrime::CfgKey::OnScreenEditStyle,
         static_cast<int>(MelonPrime::NormalizeOnScreenEditStyle(
@@ -226,8 +232,6 @@ void MelonPrimeInputConfig::saveConfig()
 
     // P-3: Invalidate cached config so next frame re-reads all values
 #ifdef MELONPRIME_DS
-    MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
-    MelonPrime::FixNoxusBladePersistence_NotifyConfigChanged();
     if (auto* thread = emuInstance->getEmuThread()) {
         if (auto* core = thread->GetMelonPrimeCore())
         {

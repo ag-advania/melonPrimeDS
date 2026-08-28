@@ -8,4 +8,4 @@
 - Preserve placeholders, accelerators, punctuation intent, line breaks, and rich-text markup. Never claim language quality from key coverage alone.
 - HUD/menu settings must keep labels, tooltips, default/reset behavior, serialization keys, and edit-mode surfaces consistent.
 
-Procedures and evidence: [`docs/development/localization/add-menu-language.md`](../../docs/development/localization/add-menu-language.md), [`docs/plans/localization/localization-refactor-plan.md`](../../docs/plans/localization/localization-refactor-plan.md), and [`docs/archive/audits/localization/`](../../docs/archive/audits/localization/).
+Procedures and evidence: [`docs/development/localization/add-menu-language.md`](../../docs/development/localization/add-menu-language.md), [`docs/archive/plans/localization/localization-refactor-plan.md`](../../docs/archive/plans/localization/localization-refactor-plan.md), and [`docs/archive/audits/localization/`](../../docs/archive/audits/localization/).

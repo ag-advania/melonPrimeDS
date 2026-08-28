@@ -99,10 +99,12 @@ void MainWindow::onChangeMetroidFoo(bool checked)
 }
 ```
 
-If the runtime patch has a dirty/config notification hook, call it here too. Example:
+If the runtime setting changes a live Core-owned plan, notify the Core so its cold
+config-reload boundary can rebuild the plan and hook set. Example:
 
 ```cpp
-MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
+if (auto* core = emuThread->GetMelonPrimeCore())
+    core->NotifyConfigChanged();
 ```
 
 ### 6. Resync after settings dialog closes

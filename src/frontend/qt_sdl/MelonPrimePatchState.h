@@ -4,12 +4,15 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchCommon.h"
+#include "MelonPrimeRuntimeConfig.h"
 
 #include <cstdint>
 
 namespace MelonPrime {
 
 struct MelonPrimePatchState {
+    OutOfGamePatchSnapshot outOfGamePatches{};
+
     struct FixWifiPatchState {
         enum class Status : uint8_t {
             Unchecked,
@@ -41,7 +44,26 @@ struct MelonPrimePatchState {
         uint8_t appliedMask = 0;
     } noSpecificItemPickup;
 
-    bool expandStageMatrixPendingRestore = false;
+    enum class ExpandStageMatrixStatus : uint8_t {
+        Unknown,
+        WaitingForLoad,
+        Verified,
+    };
+
+    struct ExpandStageMatrixPatchState {
+        ExpandStageMatrixStatus status = ExpandStageMatrixStatus::Unknown;
+        uint8_t romGroupIndex = 0xFFu;
+        bool candidateSeen = false;
+        bool appliedBase = false;
+        bool appliedExtra = false;
+        bool pendingRestore = false;
+        // A candidate can be visible for several frames while the game is
+        // still copying its matrix/code block into ARM9 RAM. Do not latch
+        // that partial state forever, and do not run the full guard every
+        // frame while a ROM is permanently absent or mismatched.
+        uint8_t validationRetryFrames = 0;
+        uint8_t validationBackoffFrames = 1;
+    } expandStageMatrix;
 };
 
 } // namespace MelonPrime

@@ -96,6 +96,13 @@ struct WeaponInventoryHudConfig {
 };
 struct CrosshairHudConfig {
     QColor chColor;
+    // Project the centre at output resolution instead of reading the ROM's
+    // 256x192-quantised cache. Cached with the rest of the crosshair config so
+    // the frame path never asks Config::Table about it.
+    bool chHighResPosition;
+    // How far the projected centre must move before the drawn pixel follows.
+    // Disabling keeps the configured width so it can be toggled for comparison.
+    CrosshairProjection::DeadbandSetting chPositionDeadband;
     bool chOutline, chCenterDot, chTStyle;
     int chDotShape;          // 0=Square, 1=Circle
     int chZoomScopeDotShape; // 0=Square, 1=Circle
@@ -267,7 +274,22 @@ struct CachedHudConfig {
     bool valid;
 };
 
+struct HudBattleOwnedState;
+struct HudFrameOwnedState;
+struct HudElementTextCacheState;
+
+// On-Screen Edit element count. This is the one definition: the per-instance
+// editRects array, the kEditElems descriptor table, and the kEditElemSampleText
+// table are all sized from it, and MelonPrimeHudConfigOnScreenEditProps.inc
+// static_asserts that the generated tables still match.
+//   0-11 = HUD elements, 12 = Weapon Inventory, 13 = Crosshair,
+//   14 = Scoreboard, 15 = Enemy Target
+static constexpr int kEditElemCount = 16;
+
 struct CustomHudConfigState {
+    CustomHudConfigState();
+    ~CustomHudConfigState();
+
     CachedHudConfig cache = { .valid = false };
     uint32_t cacheEpoch = 1;
     uint32_t visualGeneration = 1;
@@ -326,6 +348,13 @@ struct CustomHudConfigState {
     bool chCrosshairDrawnLastFrame = false;
     int chPrevPxCx = INT_MIN;
     int chPrevPxCy = INT_MIN;
+    // Committed integer centre for the sub-pixel deadband. INT_MIN means "no
+    // committed position yet", so the next draw snaps instead of easing.
+    int chStickyPxCx = INT_MIN;
+    int chStickyPxCy = INT_MIN;
+    // Which source last supplied the crosshair centre, so a rejected frame
+    // holds the previous one instead of switching to the quantised cache.
+    CrosshairProjection::CentreHold chCentreHold{};
     double chPrevGeomScale = 1.0;
     double chPrevZoomT = 0.0;
     double chPrevScopeT = 0.0;
@@ -379,7 +408,7 @@ struct CustomHudConfigState {
     int dynWidthsForElem = -2;
     UiText::MenuLangId dynWidthsForLang = static_cast<UiText::MenuLangId>(-1);
     bool editMode = false;
-    QRectF editRects[15];
+    QRectF editRects[kEditElemCount] = {};
     float editHudScale = 1.0f;
     float editTopStretchX = 1.0f;
     bool editPreviewMode = false;
@@ -400,10 +429,9 @@ struct CustomHudConfigState {
     int radarSrcBufW = -1;
     int radarSrcBufH = -1;
 
-    std::shared_ptr<void> runtimeState;
-    std::shared_ptr<void> frameState;
-    std::shared_ptr<void> textCacheState;
-    std::shared_ptr<void> editorState;
+    std::unique_ptr<HudBattleOwnedState> runtimeState;
+    std::unique_ptr<HudFrameOwnedState> frameState;
+    std::unique_ptr<HudElementTextCacheState> textCacheState;
 };
 
 static thread_local CustomHudConfigState* g_activeHudConfigState = nullptr;
@@ -426,11 +454,6 @@ static CustomHudConfigState& ActiveHudConfigState()
 {
     Q_ASSERT(g_activeHudConfigState);
     return *g_activeHudConfigState;
-}
-
-std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
-{
-    return std::make_shared<CustomHudConfigState>();
 }
 
 #define s_cache (ActiveHudConfigState().cache)
@@ -489,6 +512,9 @@ std::shared_ptr<CustomHudConfigState> CustomHud_CreateConfigState()
 #define s_chCrosshairDrawnLastFrame (ActiveHudConfigState().chCrosshairDrawnLastFrame)
 #define s_chPrevPxCx (ActiveHudConfigState().chPrevPxCx)
 #define s_chPrevPxCy (ActiveHudConfigState().chPrevPxCy)
+#define s_chCentreHold (ActiveHudConfigState().chCentreHold)
+#define s_chStickyPxCx (ActiveHudConfigState().chStickyPxCx)
+#define s_chStickyPxCy (ActiveHudConfigState().chStickyPxCy)
 #define s_chPrevGeomScale (ActiveHudConfigState().chPrevGeomScale)
 #define s_chPrevZoomT (ActiveHudConfigState().chPrevZoomT)
 #define s_chPrevScopeT (ActiveHudConfigState().chPrevScopeT)
@@ -1008,6 +1034,11 @@ static void CollectArmRects(QRect* out, int& n, int cx, int cy,
 static void LoadCrosshairConfig(CrosshairHudConfig& crosshair, Config::Table& cfg, float hudScale = 1.0f)
 {
     crosshair.chColor = ReadRgbColor(cfg, MP_HUD_PROP_KEY_CrosshairColorR, MP_HUD_PROP_KEY_CrosshairColorG, MP_HUD_PROP_KEY_CrosshairColorB);
+    crosshair.chHighResPosition = cfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes);
+    crosshair.chPositionDeadband.enabled =
+        cfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable);
+    crosshair.chPositionDeadband.widthPx =
+        cfg.GetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband);
     crosshair.chOutline = cfg.GetBool(MP_HUD_PROP_KEY_CrosshairOutline);
     crosshair.chOutlineOpacity = cfg.GetDouble(MP_HUD_PROP_KEY_CrosshairOutlineOpacity);
     crosshair.chOutlineThickness = cfg.GetInt(MP_HUD_PROP_KEY_CrosshairOutlineThickness); if (crosshair.chOutlineThickness <= 0) crosshair.chOutlineThickness = 1;

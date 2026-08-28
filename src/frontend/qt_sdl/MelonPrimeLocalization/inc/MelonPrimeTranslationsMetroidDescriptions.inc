@@ -2106,6 +2106,57 @@
         }
     },
     {
+        "Enable Crosshair Position Deadband (hold the drawn crosshair still until the projected centre has moved far enough; turn this off to make it follow the projection exactly, keeping the width below for comparison)",
+        {
+            {MenuLangId::Japanese, "クロスヘア座標のデッドバンドを有効化 (投影された中心が一定以上動くまで描画位置を固定します。オフにすると投影にそのまま追従します。下の幅の値は保持されるので比較できます)"},
+            {MenuLangId::German, "Totzone der Fadenkreuzposition aktivieren (hält das gezeichnete Fadenkreuz ruhig, bis sich die berechnete Mitte weit genug bewegt hat; ausgeschaltet folgt es der Berechnung exakt, die Breite unten bleibt zum Vergleich erhalten)"},
+            {MenuLangId::Spanish, "Activar zona muerta de la posición de la retícula (mantiene la retícula quieta hasta que el centro proyectado se haya movido lo suficiente; al desactivarla sigue la proyección exactamente y se conserva el ancho de abajo para comparar)"},
+            {MenuLangId::French, "Activer la zone morte de la position du réticule (maintient le réticule immobile jusqu'à ce que le centre projeté ait suffisamment bougé ; désactivé, il suit exactement la projection, la largeur ci-dessous étant conservée pour comparaison)"},
+            {MenuLangId::Italian, "Abilita la zona morta della posizione del reticolo (tiene fermo il reticolo finché il centro proiettato non si è spostato abbastanza; disattivandola segue esattamente la proiezione e la larghezza sotto resta per il confronto)"},
+            {MenuLangId::Dutch, "Dode zone van de richtkruispositie inschakelen (houdt het richtkruis stil totdat het geprojecteerde midden ver genoeg is bewogen; uitgeschakeld volgt het de projectie exact, de breedte hieronder blijft behouden ter vergelijking)"},
+            {MenuLangId::Portuguese, "Ativar zona morta da posição da mira (mantém a mira parada até o centro projetado se mover o suficiente; ao desativar, ela segue a projeção exatamente e a largura abaixo é mantida para comparação)"},
+            {MenuLangId::Russian, "Включить мёртвую зону положения прицела (удерживает прицел на месте, пока вычисленный центр не сместится достаточно; при отключении он точно следует за расчётом, а ширина ниже сохраняется для сравнения)"},
+            {MenuLangId::ChineseSimplified, "启用准星坐标死区（在投影中心移动足够距离前保持准星不动；关闭后将完全跟随投影，下方的宽度值会保留以便对比）"},
+            {MenuLangId::ChineseTraditional, "啟用準星座標死區（在投影中心移動足夠距離前保持準星不動；關閉後將完全跟隨投影，下方的寬度值會保留以便比較）"},
+            {MenuLangId::ChineseHongKong, "啟用準星座標死區（在投影中心移動足夠距離前保持準星不動；關閉後將完全跟隨投影，下方的寬度值會保留以便比較）"},
+            {MenuLangId::Korean, "조준선 좌표 데드밴드 활성화 (투영된 중심이 충분히 움직일 때까지 조준선을 고정합니다. 끄면 투영을 그대로 따라갑니다. 아래 폭 값은 비교를 위해 유지됩니다)"},
+        }
+    },
+    {
+        "Crosshair Position Deadband (output pixels; how far the projected centre must move before the drawn crosshair follows, so sub-pixel noise cannot make it shimmer between neighbouring pixels)",
+        {
+            {MenuLangId::Japanese, "クロスヘア座標のデッドバンド (出力ピクセル単位。投影された中心がこの距離だけ動いてから描画位置が追従します。サブピクセルのノイズで隣のピクセルとの間でチラつくのを防ぎます)"},
+            {MenuLangId::German, "Totzone der Fadenkreuzposition (in Ausgabepixeln; wie weit sich die berechnete Mitte bewegen muss, bevor das gezeichnete Fadenkreuz folgt, damit Subpixel-Rauschen es nicht zwischen benachbarten Pixeln flackern lässt)"},
+            {MenuLangId::Spanish, "Zona muerta de la posición de la retícula (en píxeles de salida; cuánto debe moverse el centro proyectado antes de que la retícula dibujada lo siga, para que el ruido de subpíxel no la haga parpadear entre píxeles vecinos)"},
+            {MenuLangId::French, "Zone morte de la position du réticule (en pixels de sortie ; distance dont le centre projeté doit se déplacer avant que le réticule dessiné ne suive, pour que le bruit sous-pixel ne le fasse pas scintiller entre deux pixels voisins)"},
+            {MenuLangId::Italian, "Zona morta della posizione del reticolo (in pixel di uscita; quanto deve spostarsi il centro proiettato prima che il reticolo disegnato lo segua, così il rumore subpixel non lo fa sfarfallare tra pixel adiacenti)"},
+            {MenuLangId::Dutch, "Dode zone van de richtkruispositie (in uitvoerpixels; hoe ver het geprojecteerde midden moet bewegen voordat het getekende richtkruis volgt, zodat subpixelruis het niet tussen naburige pixels laat flikkeren)"},
+            {MenuLangId::Portuguese, "Zona morta da posição da mira (em pixels de saída; o quanto o centro projetado precisa se mover antes que a mira desenhada acompanhe, para que o ruído de subpixel não a faça tremular entre pixels vizinhos)"},
+            {MenuLangId::Russian, "Мёртвая зона положения прицела (в пикселях вывода; насколько должен сместиться вычисленный центр, прежде чем нарисованный прицел последует за ним, чтобы субпиксельный шум не заставлял его мерцать между соседними пикселями)"},
+            {MenuLangId::ChineseSimplified, "准星坐标死区（输出像素；投影中心需移动多少后绘制的准星才跟随，以免亚像素噪声使其在相邻像素之间闪烁）"},
+            {MenuLangId::ChineseTraditional, "準星座標死區（輸出像素；投影中心需移動多少後繪製的準星才跟隨，以免次像素雜訊使其在相鄰像素之間閃爍）"},
+            {MenuLangId::ChineseHongKong, "準星座標死區（輸出像素；投影中心需移動多少後繪製的準星才跟隨，以免次像素雜訊使其在相鄰像素之間閃爍）"},
+            {MenuLangId::Korean, "조준선 좌표 데드밴드 (출력 픽셀 단위. 투영된 중심이 이만큼 움직여야 그려지는 조준선이 따라갑니다. 서브픽셀 노이즈로 인접 픽셀 사이에서 깜빡이는 것을 막습니다)"},
+        }
+    },
+    {
+        "High-Resolution Crosshair Position (Computes the crosshair centre at the output resolution instead of the game's 256x192 pixel grid, so it moves smoothly instead of stepping between pixels)",
+        {
+            {MenuLangId::Japanese, "クロスヘアの座標を高解像度化 (ゲームの256x192ピクセルグリッドではなく出力解像度で照準の中心を計算し、ピクセル単位でカクつかず滑らかに動くようにします)"},
+            {MenuLangId::German, "Hochauflösende Fadenkreuzposition (berechnet die Fadenkreuzmitte in der Ausgabeauflösung statt im 256x192-Raster des Spiels, sodass es sich flüssig statt pixelweise bewegt)"},
+            {MenuLangId::Spanish, "Posición de retícula en alta resolución (calcula el centro de la retícula en la resolución de salida en lugar de la cuadrícula de 256x192 del juego, para que se mueva con suavidad en vez de a saltos de píxel)"},
+            {MenuLangId::French, "Position du réticule en haute résolution (calcule le centre du réticule à la résolution de sortie au lieu de la grille 256x192 du jeu, pour un déplacement fluide sans saut de pixel)"},
+            {MenuLangId::Italian, "Posizione del reticolo ad alta risoluzione (calcola il centro del reticolo alla risoluzione di uscita invece che sulla griglia 256x192 del gioco, così si muove in modo fluido anziché a scatti di un pixel)"},
+            {MenuLangId::Dutch, "Hogeresolutiepositie van het richtkruis (berekent het midden van het richtkruis op de uitvoerresolutie in plaats van het 256x192-raster van het spel, zodat het vloeiend beweegt in plaats van per pixel)"},
+            {MenuLangId::Portuguese, "Posição da mira em alta resolução (calcula o centro da mira na resolução de saída em vez da grade de 256x192 do jogo, para que se mova suavemente em vez de saltar pixel a pixel)"},
+            {MenuLangId::Russian, "Высокоточное положение прицела (вычисляет центр прицела в разрешении вывода, а не по сетке игры 256x192, поэтому он движется плавно, а не скачками по пикселям)"},
+            {MenuLangId::ChineseSimplified, "准星坐标高分辨率化（按输出分辨率计算准星中心，而不是游戏的 256x192 像素网格，因此移动平滑而不会逐像素跳动）"},
+            {MenuLangId::ChineseTraditional, "準星座標高解析度化（依輸出解析度計算準星中心，而非遊戲的 256x192 像素格線，因此移動平滑而不會逐像素跳動）"},
+            {MenuLangId::ChineseHongKong, "準星座標高解析度化（依輸出解析度計算準星中心，而非遊戲的 256x192 像素格線，因此移動平滑而不會逐像素跳動）"},
+            {MenuLangId::Korean, "조준선 좌표 고해상도화 (게임의 256x192 픽셀 격자가 아니라 출력 해상도에서 조준선 중심을 계산하여 픽셀 단위로 끊기지 않고 부드럽게 움직입니다)"},
+        }
+    },
+    {
         "Enable Custom HUD (Replaces the in-game HUD with a custom overlay showing HP, ammo, weapon icons and crosshair)",
         {
             {MenuLangId::Japanese, "カスタムHUDを有効化 (ゲーム内HUDを、HP、弾薬、武器アイコン、照準を表示する独自の重ね表示に置き換えます)"},
