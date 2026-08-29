@@ -155,6 +155,54 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 - Hook implemented in `MelonPrimePatchLowLatencyAimHook.inc`; registered/dispatched via
   `MelonPrimeArm9Hook.cpp`.
 
+### 6.2a Touch versus Dual aim delivery
+
+- The ROM has **two** aim producers and MelonPrime has to feed the right one. Both the biped
+  dispatcher and the alt-form dispatcher branch on `record[0x00] & 0x2` (`player+0x364`), the same
+  word the preset snapshot already reads:
+  - **set** (Touch R `0x0076`, Touch L `0x0276`): the touch producer sums the four history samples
+    at `InputSlot+0x38..0x46` into `+0x2A`/`+0x2C`, then multiplies by `player+0x3F8`/`+0x3FC` and
+    calls the yaw/pitch updaters.
+  - **clear** (Dual R `0x007C`, Dual L `0x027C`): that branch is jumped over entirely. The aim path
+    loads `player+0xE4` (yaw) and `player+0xE8` (pitch) and passes them to the same updaters
+    directly, so those fields already carry the sensitivity product.
+- MelonPrime wrote only the touch chain (`m_ptrs.aimX/aimY`, the newest history slot at
+  `InputSlot+0x3E`/`+0x46`), which is why the Dual presets had no aim at all. The native aim hooks
+  did not help either: every one of their PCs — including `kAltStoredHooks`, whose addresses are in
+  fact the alt-form Dual yaw/pitch call sites rather than a transform-transition fallback — sits
+  inside a branch a Dual preset never enters, except that alt-form pair.
+- `WriteAimDelta()` now picks the target from `m_ptrs.dualAim`, resolved once at game join and left
+  null on a Touch preset. The Touch write is unchanged; the Dual write applies
+  `player+0x3F8`/`+0x3FC` itself so both paths deliver the same magnitude per unit of mouse
+  movement. Verified against the ROM: the history fold at `0202A008`–`0202A02C` is a plain sum of
+  the four samples, so a single injected sample arrives at `+0x2A`/`+0x2C` one-to-one.
+- On a Dual preset the native-hook modes are bypassed and the deltas are left at zero, which also
+  stops the alt-form hook from fighting the direct write — it early-outs on a zero delta.
+- The ROM rewrites `player+0xE4`/`+0xE8` later in the same frame from its own digital accumulator
+  (acceleration, clamp, and a ~0.4x decay when nothing is held), and MelonPrime only writes on
+  frames that carry a delta, so the preset's own D-pad/face-button aim keeps working.
+- Cost: the branch is a single null test on a Tier 1 pointer. GCC places the Dual write out of line,
+  so the Touch path keeps its two 16-bit stores and pays one not-taken branch.
+
+#### Which aim settings still apply on a Dual preset
+
+Checked against the ROM's function boundaries: Pitch is `02027798`..`02027E18` and Yaw is
+`02027E1C`..`020285B4`, and **both are called from the Touch branch and the Dual branch alike**.
+
+| Setting | Dual | Why |
+|---|---|---|
+| `LowLatencyMode` ImmediateSync / MoonLikeAim | works | its hook PCs (`020282C8` / `02028544`) are inside the shared Yaw function |
+| `InstantAimFollow` (developer) | works | patches `02028070`..`02028080`, also inside shared Yaw |
+| Zoom aim scale, aim accumulator, sensitivity | works | host-side, applied before the write |
+| `DisableMphAimSmoothing` | no effect, and none needed | the patch rewrites the touch producer's history fold at `02029FE0`/`0202A008`; a Dual preset never reads its output |
+| `NativeHookMode` (register injection / PostFold) | not used | every hook PC is inside the touch branch, so a Dual preset never reaches them |
+
+The smoothing row has a consequence worth stating: because a Dual preset is *inherently* unsmoothed,
+the host must emit direct-path values there whatever the setting says. Selecting the legacy path
+would apply a deadzone and a coarser scale chosen to compensate for DS-side smoothing that is not in
+the Dual chain. `AimBypassesDsSmoothing()` is the single predicate for that, true when either the
+patch is applied or the preset is Dual.
+
 ### 6.2b Control-preset button synthesis
 
 - Everything MelonPrime synthesizes into DS `KEYINPUT`, and every mask the post-poll overlay

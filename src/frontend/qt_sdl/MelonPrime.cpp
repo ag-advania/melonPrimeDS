@@ -618,9 +618,10 @@ namespace MelonPrime {
         //   Dual L   move 0800/0001/0400/0002  jump 0200  fire 0100  zoom 0004
         emuInstance->osdAddMessage(
             0,
-            "preset id %d %s move %04X/%04X/%04X/%04X jump %04X fire %04X zoom %04X boost %04X",
+            "preset id %d %s %s move %04X/%04X/%04X/%04X jump %04X fire %04X zoom %04X boost %04X",
             presetId,
             m_presetBindings.MirrorTouchX ? "mirrored" : "normal",
+            m_presetBindings.UsesTouchAim ? "touch-aim" : "dual-aim",
             static_cast<unsigned>(m_presetBindings.MoveL),
             static_cast<unsigned>(m_presetBindings.MoveR),
             static_cast<unsigned>(m_presetBindings.MoveF),
@@ -664,6 +665,17 @@ namespace MelonPrime {
         m_ptrs.loadedSpecialWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.loadedSpecialWeapon);
         m_ptrs.aimX = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimX);
         m_ptrs.aimY = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimY);
+        // Pick the aim field the active control preset's path actually reads.
+        // A Dual preset skips the touch producer entirely, so aimX/aimY would
+        // be written into a chain nothing consumes; see WriteAimDelta().
+        if (m_presetBindings.UsesTouchAim) {
+            m_ptrs.dualAim = nullptr;
+            m_ptrs.aimSens = nullptr;
+        }
+        else {
+            m_ptrs.dualAim = GetRamPointer<int32_t>(mainRAM, playerBase + 0xE4u);
+            m_ptrs.aimSens = GetRamPointer<int32_t>(mainRAM, playerBase + 0x3F8u);
+        }
         m_ptrs.isInVisorOrMap = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isInVisorOrMap);
         m_ptrs.isMapOrUserActionPaused = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isMapOrUserActionPaused);
         // Damage Notify Purple: cache local-player HP and Double Damage timer pointers.

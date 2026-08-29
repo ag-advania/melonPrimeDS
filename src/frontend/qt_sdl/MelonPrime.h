@@ -141,8 +141,17 @@ namespace MelonPrime {
         uint16_t* inGame;
 
         // [Tier 1: Every Frame (Always)]
+        // aimX/aimY are the touch-aim producer's newest history slot
+        // (InputSlot+0x3E/+0x46). On a Dual control preset the ROM never reads
+        // that chain, and dualAim/aimSens are the pair it does read.
         uint16_t* aimX;
         uint16_t* aimY;
+        // Dual control presets only; null otherwise, which is also what selects
+        // the write target in WriteAimDelta().
+        //   dualAim[0] = player+0xE4 yaw, dualAim[1] = player+0xE8 pitch
+        //   aimSens[0] = player+0x3F8,    aimSens[1] = player+0x3FC
+        int32_t* dualAim;
+        const int32_t* aimSens;
         uint8_t* isAltForm;
         uint8_t* jumpFlag;
         uint32_t* weaponAmmo;
@@ -616,6 +625,13 @@ namespace MelonPrime {
             // Dual L 0x027C are mirrored.
             bool MirrorTouchX = false;
 
+            // Touch-style aim path. The ROM's biped and alt-form aim dispatchers
+            // both branch on `record[0x00] & 0x2`: set means the touch producer
+            // feeds aim (InputSlot+0x2A/+0x2C), clear means the Dual digital
+            // accumulator does (player+0xE4/+0xE8). Touch R 0x0076 and Touch L
+            // 0x0276 have the bit; Dual R 0x007C and Dual L 0x027C do not.
+            bool UsesTouchAim = true;
+
             // Reduce a binding to a single button. The ROM only tests
             // `binding & field`, so one bit is enough, and pressing the whole
             // mask would press buttons the preset binds to other actions too
@@ -670,7 +686,9 @@ namespace MelonPrime {
                     return v;
                 };
 
-                MirrorTouchX = (read16(Off_ControlMode) & 0x0200u) != 0;
+                const uint16_t mode = read16(Off_ControlMode);
+                MirrorTouchX = (mode & 0x0200u) != 0;
+                UsesTouchAim = (mode & 0x0002u) != 0;
                 MoveL = PickButton(read16(Off_MoveLeft), BtnLeft);
                 MoveR = PickButton(read16(Off_MoveRight), BtnRight);
                 MoveF = PickButton(read16(Off_MoveUp), BtnUp);
@@ -1009,6 +1027,43 @@ namespace MelonPrime {
         FORCE_INLINE void InputReset() {
             m_inputMaskFast = 0xFFFF;
             m_immediateOverlayPreserveMask = 0;
+        }
+
+        // True when nothing downstream will smooth or deadzone the delta, so the
+        // host must emit the finer direct-path values rather than the legacy
+        // ones shaped for the DS-side smoothing.
+        //
+        // Two independent ways to get there: the AimSmoothing patch rewrites the
+        // touch producer's history fold, or the active preset is Dual, whose aim
+        // field is downstream of that producer and never goes through it at all.
+        [[nodiscard]] FORCE_INLINE bool AimBypassesDsSmoothing() const noexcept {
+            return m_disableMphAimSmoothing || m_ptrs.dualAim != nullptr;
+        }
+
+        // Deliver one frame's aim delta to whichever field the active control
+        // preset's aim path actually consumes.
+        //
+        // Touch presets: the producer sums the four history samples at
+        // InputSlot+0x38..0x46 into +0x2A/+0x2C, and the other three are zero
+        // while MelonPrime drives aim, so writing the newest slot arrives 1:1.
+        // The ROM then multiplies by player+0x3F8/+0x3FC itself.
+        //
+        // Dual presets: that whole chain is skipped. The aim branch takes
+        // player+0xE4/+0xE8 straight to the yaw/pitch updaters, already carrying
+        // the same sensitivity product, so it has to be applied here. The ROM
+        // rewrites these two fields later in the frame from its own digital
+        // accumulator, which is what keeps the preset's D-pad/face-button aim
+        // working on the frames MelonPrime has no delta to deliver.
+        FORCE_INLINE void WriteAimDelta(int32_t outX, int32_t outY) noexcept {
+            if (LIKELY(m_ptrs.dualAim == nullptr)) {
+                *m_ptrs.aimX = static_cast<uint16_t>(outX);
+                *m_ptrs.aimY = static_cast<uint16_t>(outY);
+                return;
+            }
+            m_ptrs.dualAim[0] = static_cast<int32_t>(
+                static_cast<int64_t>(outX) * m_ptrs.aimSens[0]);
+            m_ptrs.dualAim[1] = static_cast<int32_t>(
+                static_cast<int64_t>(outY) * m_ptrs.aimSens[1]);
         }
 
         // Mask variant, for buttons that come from the control preset and are

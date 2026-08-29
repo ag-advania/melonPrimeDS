@@ -731,9 +731,9 @@ namespace MelonPrime {
             resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
             resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
 
-            if (m_disableMphAimSmoothing) {
+            if (AimBypassesDsSmoothing()) {
                 // =========================================================
-                // P-18a+b: Direct path (ASM patch enabled)
+                // P-18a+b: Direct path (ASM patch enabled, or Dual preset)
                 //
                 // >> 12 = >> 14 then << 2, but in one operation.
                 // This preserves 2 extra fractional bits that >> 14 discards,
@@ -741,7 +741,9 @@ namespace MelonPrime {
                 //
                 // No deadzone: mouse raw input has zero noise at rest
                 // (delta=0 → residual unchanged → output 0).
-                // DS-side deadzone is also bypassed by the ASM patch.
+                // DS-side deadzone is also bypassed -- by the ASM patch on a
+                // Touch preset, and by not entering the touch producer at all
+                // on a Dual one.
                 // =========================================================
                 // Only an axis with a fresh raw delta may emit output. This keeps
                 // an old residual from the other axis from turning a straight move
@@ -771,15 +773,19 @@ namespace MelonPrime {
                     return;
                 }
 
-                if (m_enableNativeAimDeltaHook) {
+                // Dual control presets never reach the native aim hooks: every
+                // one of those hook PCs sits inside the ROM's touch aim branch,
+                // which a Dual preset jumps over. Leaving the deltas at zero
+                // also keeps the alt-form hook's own zero check from fighting
+                // the direct write below.
+                if (m_enableNativeAimDeltaHook && LIKELY(m_ptrs.dualAim == nullptr)) {
                     m_nativeAimDeltaX = outX;
                     m_nativeAimDeltaY = outY;
                 }
                 else {
                     // Direct write fallback — no << ampShift needed.
                     // >> 12 already produces the same scale as the old >> 14 << 2.
-                    *m_ptrs.aimX = static_cast<uint16_t>(outX);
-                    *m_ptrs.aimY = static_cast<uint16_t>(outY);
+                    WriteAimDelta(outX, outY);
                 }
             }
             else {
@@ -831,8 +837,7 @@ namespace MelonPrime {
                     return;
                 }
 
-                *m_ptrs.aimX = static_cast<uint16_t>(outX);
-                *m_ptrs.aimY = static_cast<uint16_t>(outY);
+                WriteAimDelta(outX, outY);
             }
 
             // Discard sub-pixel residuals when accumulator is off.
