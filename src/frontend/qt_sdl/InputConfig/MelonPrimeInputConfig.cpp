@@ -600,7 +600,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("QLabel { margin-left: 20px; }"));
 
         m_cbMetroidMorphBoostCustomRawThreshold = new QCheckBox(
-            QStringLiteral("Use Custom Raw Mouse Movement Threshold"),
+            QStringLiteral("Use Custom Raw Mouse Movement Threshold for Morph Ball Boost"),
             ui->sectionSensitivity);
         m_cbMetroidMorphBoostCustomRawThreshold->setObjectName(
             QStringLiteral("cbMetroidMorphBoostCustomRawThreshold"));

@@ -7,7 +7,7 @@
 The three Morph Ball settings are placed directly below **Enable Aim Sub-pixel Accumulator** in the Sensitivity section.
 
 1. **Disable Morph Ball Swipe Boost** — default **OFF**. Unchecked keeps swipe boost enabled.
-2. **Use Custom Raw Mouse Movement Threshold** — default **OFF**.
+2. **Use Custom Raw Mouse Movement Threshold for Morph Ball Boost** — default **OFF**.
 3. **Morph Ball Boost Required Mouse Movement** — range `1..46339`, default `90`; enabled only when swipe boost is not disabled and custom mode is ON.
 
 The row position is resolved from the actual sub-pixel widget at runtime instead of using fixed `QFormLayout` row numbers.
