@@ -185,7 +185,7 @@ MelonPrimeの各Patch moduleには、次のようなfile-static mutable stateが
 
 - `MelonPrimePatchAspectRatio.cpp`
 - `MelonPrimePatchOsdColor.cpp`
-- `MelonPrimePatchInstantAimFollow.cpp`
+- `MelonPrimePatchFpsCameraLock.cpp`
 - `MelonPrimePatchShadowFreezeRuntimeHook.cpp`
 - `MelonPrimePatchFixNoxusBladePersistence.cpp`
 - その他`MelonPrimePatch*.cpp`
@@ -206,7 +206,7 @@ MelonPrimePatchState
 ├─ aspectRatio
 ├─ osdColor
 ├─ lowHpWarning
-├─ instantAimFollow
+├─ fpsCameraLock
 ├─ showHeadshot
 ├─ showEnemyHp
 ├─ disableDoubleDamage

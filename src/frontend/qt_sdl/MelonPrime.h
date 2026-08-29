@@ -141,8 +141,17 @@ namespace MelonPrime {
         uint16_t* inGame;
 
         // [Tier 1: Every Frame (Always)]
+        // aimX/aimY are the touch-aim producer's newest history slot
+        // (InputSlot+0x3E/+0x46). On a Dual control preset the ROM never reads
+        // that chain, and dualAim/aimSens are the pair it does read.
         uint16_t* aimX;
         uint16_t* aimY;
+        // Dual control presets only; null otherwise, which is also what selects
+        // the write target in WriteAimDelta().
+        //   dualAim[0] = player+0xE4 yaw, dualAim[1] = player+0xE8 pitch
+        //   aimSens[0] = player+0x3F8,    aimSens[1] = player+0x3FC
+        int32_t* dualAim;
+        const int32_t* aimSens;
         uint8_t* isAltForm;
         uint8_t* jumpFlag;
         uint32_t* weaponAmmo;
@@ -332,16 +341,31 @@ namespace MelonPrime {
             uint32_t arm9ExecAddr,
             uint32_t regs[16]);
 
-        // --- Fire & zoom hooks (redirect: native biped fire / zoom toggle) ---
+        // --- Fire & zoom hooks (native biped fire overlay / zoom toggle) ---
+        // NativeBipedFire registers the same post-poll ActionConsumer PC as the
+        // overlay above and contributes only the Fire current/pressed/released
+        // bits; the write itself lives in ImmediateInputEdgeOverlay_DispatchCheck.
         static uint32_t NativeBipedFireHook_GetAddresses(
             uint8_t romGroupIndex,
             uint32_t* out,
             uint32_t maxCount);
-        bool NativeBipedFireHook_DispatchCheckAndRedirect(
+        [[nodiscard]] uint16_t NativeBipedFire_ResolveOverlayEdges(
+            uint16_t fireMask,
+            uint16_t& pressedOut,
+            uint16_t& releasedOut) const noexcept;
+        // Developer-only instrumentation for the Fire overlay. All three are
+        // empty in release builds (no diagnostic PC is registered there).
+        void NativeBipedFireHook_DiagnosticRecordOverlay(
+            const uint8_t* mainRAM,
+            uint32_t playerBase,
+            uint16_t fireOverlayMask,
+            uint16_t prePressed,
+            uint16_t postPressed) noexcept;
+        bool NativeBipedFireHook_DiagnosticCheck(
             melonDS::NDS* nds,
             uint32_t arm9ExecAddr,
-            uint32_t regs[16],
-            uint32_t& redirectExecAddr);
+            uint32_t regs[16]);
+        void NativeBipedFireHook_DiagnosticReport();
 
         static uint32_t NativeZoomToggleHook_GetAddresses(
             uint8_t romGroupIndex,
@@ -503,32 +527,213 @@ namespace MelonPrime {
         uint32_t m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
         bool     m_enableNativeAimDeltaHook = false; // true when mode != 0
         int8_t   m_nativeAimHookMode = 0;  // 0=off 1=RegisterInject 2=FoldDerived
-        int8_t   m_lowLatencyAimMode = 0;  // 0=off 1=ImmediateSync 2=MoonLikeAim 3=InstantAimFollow(dev-only)
+        int8_t   m_lowLatencyAimMode = 0;  // 0=off 1=ImmediateSync 2=MoonLikeAim 3=legacy FpsCameraLock(dev-only)
         int32_t  m_moonLikeAimNormalStepQ12 = 0x0165;
         int32_t  m_moonLikeAimFastStepQ12 = 0x058F;
         int32_t  m_moonLikeAimFastThresholdQ12 = 0x042E;
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
         bool     m_enableNativeBipedFire = false;
-        bool     m_enableNewZoomInputMethod = false;
         bool     m_enableNativeZoomToggle = false;
 #ifdef MELONPRIME_DS
         bool     m_enableNativeWeaponSwitch = false;
 #endif
         int16_t  m_nativeAimDeltaX = 0;
         int16_t  m_nativeAimDeltaY = 0;
-        uint16_t m_immediateOverlayPrevHeld = 0;
+        // ImmediateInputEdgeOverlay edge state, tracked per ACTION rather than
+        // per binding bit. Like the Fire latch below, it is resolved once per
+        // frame (UpdateImmediateInputEdgeOverlayInput) because the ROM action
+        // consumer this feeds runs once per player per frame — recomputing the
+        // edge on each hook entry erases the Pressed bit before the local
+        // player's own entry reads it.
+        //
+        // Action-level (not bit-level) tracking keeps the edge independent of
+        // the binding masks and of m_immediateOverlayPreserveMask, both of
+        // which are only final later in the frame; the hook expands the
+        // resolved actions onto the masks it sees.
+        uint8_t  m_immediateOverlayPrevActions = 0;
+        uint8_t  m_immediateOverlayFrameHeld = 0;
+        uint8_t  m_immediateOverlayFramePressed = 0;
+        uint8_t  m_immediateOverlayFrameReleased = 0;
+        bool     m_immediateOverlayLatchValid = false;
+        // Last observed *LIST_HookLocalPlayerPtrGlobal. A change means the ROM
+        // handed us a different local Player*, so both edge latches must
+        // re-baseline instead of emitting an edge against the old entity's
+        // state (stale-edge policy).
+        uint32_t m_overlayLocalPlayerPtr = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
-        uint16_t m_bindingMoveL = 0;
-        uint16_t m_bindingMoveR = 0;
-        uint16_t m_bindingMoveF = 0;
-        uint16_t m_bindingMoveB = 0;
-        uint16_t m_bindingFire = 0;
-        uint16_t m_bindingJump = 0;
-        uint16_t m_bindingZoom = 0;
+        // ---------------------------------------------------------------
+        // Control-preset button snapshot.
+        //
+        // MPH keeps the local player's control assignments at player+0x364 as
+        // {uint16 Button; uint16 PressFlags} entries; only the Button half is a
+        // DS KEYINPUT mask. The four presets bind the same action to different
+        // buttons, so anything MelonPrime synthesizes has to come from here --
+        // a hardcoded button only ever matched Touch R:
+        //
+        //            move        jump           fire  zoom    boost
+        //   Touch R  D-pad       A|B|X|Y        L     R       R
+        //   Touch L  Y/A/X/B     D-pad          R     L       L
+        //   Dual R   D-pad       R              L     Select  R
+        //   Dual L   Y/A/X/B     L              R     Select  L
+        //
+        // Taken once per game join, so the per-frame path only reads it. The
+        // defaults are the historical Touch R hardcodes, which keeps the
+        // out-of-game synthesis (Adventure map) working before the player
+        // struct is readable.
+        struct PresetButtonBindings {
+            // DS KEYINPUT bit masks. Declared here rather than reused from the
+            // INPUT_* enum because that enum lives in MelonPrimeInternal.h,
+            // which sits above this header; MelonPrimeGameInput.cpp sees both
+            // and static_asserts that they agree. MPH's own ButtonFlags uses
+            // this same layout, which is why a preset word can be ANDed
+            // straight against a KEYINPUT mask.
+            static constexpr uint16_t BtnA     = 0x0001;
+            static constexpr uint16_t BtnB     = 0x0002;
+            static constexpr uint16_t BtnRight = 0x0010;
+            static constexpr uint16_t BtnLeft  = 0x0020;
+            static constexpr uint16_t BtnUp    = 0x0040;
+            static constexpr uint16_t BtnDown  = 0x0080;
+            static constexpr uint16_t BtnR     = 0x0100;
+            static constexpr uint16_t BtnL     = 0x0200;
+
+            // DS mask to press for each 4-bit move index (F,B,L,R), opposite
+            // pairs cancelled. Precomputed so the hot path stays one table read.
+            uint16_t MoveMask[16] = {
+                0x0000, 0x0040, 0x0080, 0x0000,
+                0x0020, 0x0060, 0x00A0, 0x0020,
+                0x0010, 0x0050, 0x0090, 0x0010,
+                0x0000, 0x0040, 0x0080, 0x0000,
+            };
+            uint16_t MoveL = BtnLeft;
+            uint16_t MoveR = BtnRight;
+            uint16_t MoveF = BtnUp;
+            uint16_t MoveB = BtnDown;
+            uint16_t MoveAll = BtnLeft | BtnRight | BtnUp | BtnDown;
+            uint16_t Fire = BtnL;
+            uint16_t Jump = BtnB;
+            uint16_t Zoom = BtnR;
+            uint16_t MorphBoost = BtnR;
+
+            // Left-handed touch layout. The in-match HUD rectangles are the
+            // same table for every preset; the ROM just mirrors the X centre
+            // (GetTouchRegionCenter / TouchRegionHit do `centerX = 256 - centerX`
+            // when the flag is set), so any touch point MelonPrime synthesizes
+            // has to be mirrored the same way. The ROM's own runtime layout
+            // check is `record[0x00] & 0x200`, which is what this mirrors:
+            // Touch R 0x0076 / Dual R 0x007C are normal, Touch L 0x0276 /
+            // Dual L 0x027C are mirrored.
+            bool MirrorTouchX = false;
+
+            // Touch-style aim path. The ROM's biped and alt-form aim dispatchers
+            // both branch on `record[0x00] & 0x2`: set means the touch producer
+            // feeds aim (InputSlot+0x2A/+0x2C), clear means the Dual digital
+            // accumulator does (player+0xE4/+0xE8). Touch R 0x0076 and Touch L
+            // 0x0276 have the bit; Dual R 0x007C and Dual L 0x027C do not.
+            bool UsesTouchAim = true;
+
+            // Reduce a binding to a single button. The ROM only tests
+            // `binding & field`, so one bit is enough, and pressing the whole
+            // mask would press buttons the preset binds to other actions too
+            // (Touch R jump is A|B|X|Y). Keeping the historical button when the
+            // binding contains it makes Touch R bit-for-bit unchanged.
+            [[nodiscard]] static FORCE_INLINE uint16_t PickButton(
+                uint16_t binding, uint16_t preferred) noexcept
+            {
+                if (binding == 0)
+                    return preferred;
+                if (binding & preferred)
+                    return preferred;
+                return static_cast<uint16_t>(binding & (~binding + 1u));
+            }
+
+            // Mirror a touch X coordinate written for the normal (right-handed)
+            // HUD layout onto the layout this preset actually uses.
+            [[nodiscard]] FORCE_INLINE int MirrorX(int x) const noexcept
+            {
+                return MirrorTouchX ? (256 - x) : x;
+            }
+
+            // Byte offsets inside a 0x9C control record. Kept here rather than
+            // at the call site so the record layout has exactly one owner; they
+            // are the player-struct offsets minus 0x364, because player init
+            // copies this same record to player+0x364.
+            enum RecordOffset : uint32_t {
+                Off_ControlMode = 0x00,
+                Off_MoveLeft    = 0x04,
+                Off_MoveRight   = 0x08,
+                Off_MoveUp      = 0x0C,
+                Off_MoveDown    = 0x10,
+                Off_Fire        = 0x34,
+                Off_Jump        = 0x38,
+                Off_MorphBoost  = 0x50,
+                Off_Zoom        = 0x7C,
+                RecordSize      = 0x9C,
+            };
+
+            // Derive the snapshot from a control record in main RAM. `recordBase`
+            // is either ControlPresetTable[id] or the copy at player+0x364.
+            // An unreadable field reads as 0 and PickButton() then keeps the
+            // Touch R default for that action.
+            void BuildFromRecord(const uint8_t* mainRAM, uint32_t recordBase) noexcept
+            {
+                const auto read16 = [mainRAM, recordBase](uint32_t off) -> uint16_t {
+                    const uint32_t addr = recordBase + off;
+                    if (!mainRAM || addr < 0x02000000u || addr > 0x023FFFFEu)
+                        return 0;
+                    uint16_t v = 0;
+                    std::memcpy(&v, mainRAM + (addr & 0x3FFFFFu), sizeof(v));
+                    return v;
+                };
+
+                const uint16_t mode = read16(Off_ControlMode);
+                MirrorTouchX = (mode & 0x0200u) != 0;
+                UsesTouchAim = (mode & 0x0002u) != 0;
+                MoveL = PickButton(read16(Off_MoveLeft), BtnLeft);
+                MoveR = PickButton(read16(Off_MoveRight), BtnRight);
+                MoveF = PickButton(read16(Off_MoveUp), BtnUp);
+                MoveB = PickButton(read16(Off_MoveDown), BtnDown);
+                MoveAll = static_cast<uint16_t>(MoveL | MoveR | MoveF | MoveB);
+                Fire = PickButton(read16(Off_Fire), BtnL);
+                Jump = PickButton(read16(Off_Jump), BtnB);
+                Zoom = PickButton(read16(Off_Zoom), BtnR);
+                MorphBoost = PickButton(read16(Off_MorphBoost), BtnR);
+
+                // Index bits are Forward/Back/Left/Right; a held opposite pair
+                // cancels, matching the D-pad table this replaces.
+                for (uint32_t i = 0; i < 16; ++i) {
+                    const bool f = (i & 1u) != 0;
+                    const bool b = (i & 2u) != 0;
+                    const bool l = (i & 4u) != 0;
+                    const bool r = (i & 8u) != 0;
+                    uint16_t m = 0;
+                    if (f != b) m = static_cast<uint16_t>(m | (f ? MoveF : MoveB));
+                    if (l != r) m = static_cast<uint16_t>(m | (l ? MoveL : MoveR));
+                    MoveMask[i] = m;
+                }
+            }
+        } m_presetBindings{};
         uint8_t  m_directTransformPendingFrames = 0;
-        bool     m_nativeBipedFirePending = false;
-        bool     m_nativeBipedFireDirectActive = false;
+        // Native Biped Fire host-side edge latch (Prev*/LatchValid) plus the
+        // per-frame resolved input the overlay applies (Frame*).
+        //
+        // The ROM action consumer runs once per player per frame, so the hook
+        // is entered up to four times with only one of those entries belonging
+        // to the local player. The edge must therefore be resolved exactly once
+        // on the frame path and then applied idempotently at every entry —
+        // resolving it inside the hook lets an earlier player's entry consume
+        // the Pressed edge before the local player's entry reads it.
+        //
+        // LatchValid=false means the next frame re-baselines from the current
+        // host state instead of emitting an edge, so resuming with Shoot
+        // already held cannot inject a stale Pressed.
+        // See MelonPrimePatchNativeBipedFireHook.inc.
+        bool     m_nativeBipedFirePrevHeld = false;
+        bool     m_nativeBipedFirePrevAltForm = false;
+        bool     m_nativeBipedFireLatchValid = false;
+        bool     m_nativeBipedFireFrameHeld = false;
+        bool     m_nativeBipedFireFramePressed = false;
+        bool     m_nativeBipedFireFrameReleased = false;
         bool     m_nativeZoomTogglePrevDown = false;
         // Cached zoom-enabled state, updated whenever we read it.
         // While zoom is known disabled (the common steady state) the per-frame
@@ -713,11 +918,24 @@ namespace MelonPrime {
         // pairs always travelled together at every site that touched them.
         // TR_WeaponSwitchPending is MELONPRIME_DS-only (the field is too).
         // =================================================================
+        // Overlay-managed actions, in the order the hook expands them onto the
+        // player's binding masks. Host-input space, so it stays valid whatever
+        // the control preset binds each action to.
+        enum OverlayAction : uint8_t {
+            OVA_MOVE_L = 1u << 0,
+            OVA_MOVE_R = 1u << 1,
+            OVA_MOVE_F = 1u << 2,
+            OVA_MOVE_B = 1u << 3,
+            OVA_FIRE   = 1u << 4,
+            OVA_JUMP   = 1u << 5,
+            OVA_ZOOM   = 1u << 6,
+        };
+
         enum TransientReset : uint8_t {
             TR_AimResiduals      = 1u << 0,  // m_aimResidualX/Y + m_nativeAimDeltaX/Y
-            TR_OverlayHeld       = 1u << 1,  // m_immediateOverlayPrevHeld
+            TR_OverlayHeld       = 1u << 1,  // immediate-overlay action edge state
             TR_DirectTransform   = 1u << 2,  // m_directTransformPendingFrames
-            TR_BipedFire         = 1u << 3,  // m_nativeBipedFirePending + DirectActive
+            TR_BipedFire         = 1u << 3,  // native biped-fire edge latch
             TR_WeaponSwitchPending = 1u << 4, // m_weaponSwitchPending (DS only)
         };
         FORCE_INLINE void ResetTransientInputState(uint8_t parts) noexcept {
@@ -727,13 +945,24 @@ namespace MelonPrime {
                 m_nativeAimDeltaX = 0;
                 m_nativeAimDeltaY = 0;
             }
-            if (parts & TR_OverlayHeld)
-                m_immediateOverlayPrevHeld = 0;
+            if (parts & TR_OverlayHeld) {
+                m_immediateOverlayPrevActions = 0;
+                m_immediateOverlayFrameHeld = 0;
+                m_immediateOverlayFramePressed = 0;
+                m_immediateOverlayFrameReleased = 0;
+                m_immediateOverlayLatchValid = false;
+                m_overlayLocalPlayerPtr = 0;
+            }
             if (parts & TR_DirectTransform)
                 m_directTransformPendingFrames = 0;
             if (parts & TR_BipedFire) {
-                m_nativeBipedFirePending = false;
-                m_nativeBipedFireDirectActive = false;
+                m_nativeBipedFirePrevHeld = false;
+                m_nativeBipedFirePrevAltForm = false;
+                m_nativeBipedFireLatchValid = false;
+                m_nativeBipedFireFrameHeld = false;
+                m_nativeBipedFireFramePressed = false;
+                m_nativeBipedFireFrameReleased = false;
+                m_overlayLocalPlayerPtr = 0;
             }
 #ifdef MELONPRIME_DS
             if (parts & TR_WeaponSwitchPending)
@@ -755,6 +984,21 @@ namespace MelonPrime {
         uint64_t m_layoutGenerationSeen = 0;
 
         ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
+        // Native Biped Fire developer diagnostics. Sampled during the frame
+        // by the overlay and the fire-edge diagnostic PC, reported once per
+        // trigger pull on the following frame. Unconditionally present so the
+        // class layout does not depend on the developer-features switch; only
+        // written when that switch is on.
+        uint16_t m_nbfDiagOverlayHits = 0;
+        uint16_t m_nbfDiagFireUpdateHits = 0;
+        uint16_t m_nbfDiagFireMask = 0;
+        uint16_t m_nbfDiagLiveBinding = 0;
+        uint16_t m_nbfDiagPrePressed = 0;
+        uint16_t m_nbfDiagPostPressed = 0;
+        uint16_t m_nbfDiagSeenPressed = 0;
+        uint8_t  m_nbfDiagHelperResult = 0;
+        bool     m_nbfDiagArmed = false;
+
 #ifdef MELONPRIME_DS
         MelonPrimeArm9HookState m_arm9HookState{};
         Arm9HookActivationPlan m_arm9HookActivationPlan{};
@@ -783,6 +1027,51 @@ namespace MelonPrime {
         FORCE_INLINE void InputReset() {
             m_inputMaskFast = 0xFFFF;
             m_immediateOverlayPreserveMask = 0;
+        }
+
+        // True when nothing downstream will smooth or deadzone the delta, so the
+        // host must emit the finer direct-path values rather than the legacy
+        // ones shaped for the DS-side smoothing.
+        //
+        // Two independent ways to get there: the AimSmoothing patch rewrites the
+        // touch producer's history fold, or the active preset is Dual, whose aim
+        // field is downstream of that producer and never goes through it at all.
+        [[nodiscard]] FORCE_INLINE bool AimBypassesDsSmoothing() const noexcept {
+            return m_disableMphAimSmoothing || m_ptrs.dualAim != nullptr;
+        }
+
+        // Deliver one frame's aim delta to whichever field the active control
+        // preset's aim path actually consumes.
+        //
+        // Touch presets: the producer sums the four history samples at
+        // InputSlot+0x38..0x46 into +0x2A/+0x2C, and the other three are zero
+        // while MelonPrime drives aim, so writing the newest slot arrives 1:1.
+        // The ROM then multiplies by player+0x3F8/+0x3FC itself.
+        //
+        // Dual presets: that whole chain is skipped. The aim branch takes
+        // player+0xE4/+0xE8 straight to the yaw/pitch updaters, already carrying
+        // the same sensitivity product, so it has to be applied here. The ROM
+        // rewrites these two fields later in the frame from its own digital
+        // accumulator, which is what keeps the preset's D-pad/face-button aim
+        // working on the frames MelonPrime has no delta to deliver.
+        FORCE_INLINE void WriteAimDelta(int32_t outX, int32_t outY) noexcept {
+            if (LIKELY(m_ptrs.dualAim == nullptr)) {
+                *m_ptrs.aimX = static_cast<uint16_t>(outX);
+                *m_ptrs.aimY = static_cast<uint16_t>(outY);
+                return;
+            }
+            m_ptrs.dualAim[0] = static_cast<int32_t>(
+                static_cast<int64_t>(outX) * m_ptrs.aimSens[0]);
+            m_ptrs.dualAim[1] = static_cast<int32_t>(
+                static_cast<int64_t>(outY) * m_ptrs.aimSens[1]);
+        }
+
+        // Mask variant, for buttons that come from the control preset and are
+        // therefore only known at runtime.
+        FORCE_INLINE void InputSetMaskBranchless(uint16_t mask, bool released) {
+            const uint16_t keep = static_cast<uint16_t>(
+                mask & (0u - static_cast<uint16_t>(released)));
+            m_inputMaskFast = static_cast<uint16_t>((m_inputMaskFast & ~mask) | keep);
         }
 
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {
@@ -834,8 +1123,11 @@ namespace MelonPrime {
         // out-of-game screens such as the Adventure planet/region map so WASD can
         // navigate without synthesizing fire/jump.
         HOT_FUNCTION void ProcessMovementOnlyFromReset();
-        HOT_FUNCTION void ApplyBipedFireInput();
-        HOT_FUNCTION void UpdateNativeBipedFireInput();
+        // Single frame-path entry for both post-poll overlays. Resolves the
+        // shared local-player baseline once, then the two edge latches.
+        HOT_FUNCTION void ApplyPostPollOverlayInput();
+        HOT_FUNCTION void UpdateNativeBipedFireInput(bool localPlayerChanged);
+        HOT_FUNCTION void UpdateImmediateInputEdgeOverlayInput(bool localPlayerChanged);
         HOT_FUNCTION void ApplyZoomBindingInput();
         HOT_FUNCTION void UpdateNativeZoomToggleInput();
         HOT_FUNCTION void ProcessAimInputMouse();

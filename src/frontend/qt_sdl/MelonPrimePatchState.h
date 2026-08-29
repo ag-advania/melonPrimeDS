@@ -33,7 +33,7 @@ struct MelonPrimePatchState {
         bool configDirty = true;
     } osdColor;
 
-    StaticWordPatchState instantAimFollow;
+    StaticWordPatchState fpsCameraLock;
     StaticWordPatchState showHeadshotOnline;
     StaticWordPatchState showEnemyHpOnline;
     StaticWordPatchState disableDoubleDamage;

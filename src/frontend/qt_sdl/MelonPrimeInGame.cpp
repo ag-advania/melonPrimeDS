@@ -87,7 +87,11 @@ namespace MelonPrime {
                     HandleRareWeaponCheckStart();
                 }
                 using namespace Consts::UI;
-                nds->TouchScreen(WEAPON_CHECK_START.x(), WEAPON_CHECK_START.y());
+                // Weapon check opens the weapon radial menu, HUD region ID3,
+                // which mirrors with the touch layout like every other in-match
+                // rectangle.
+                nds->TouchScreen(m_presetBindings.MirrorX(WEAPON_CHECK_START.x()),
+                                 WEAPON_CHECK_START.y());
             }
         }
         else if (UNLIKELY(m_isWeaponCheckActive)) {
@@ -96,7 +100,7 @@ namespace MelonPrime {
 
         // --- Movement & Buttons (Hot Path) ---
         ProcessMoveAndButtonsFastFromReset();
-        ApplyBipedFireInput();
+        ApplyPostPollOverlayInput();
         ApplyZoomBindingInput();
 
         // --- Morph Boost & Aim (Hot Path) ---
@@ -146,11 +150,15 @@ namespace MelonPrime {
             return;
         }
 
-        // Legacy touch-simulation approach.
+        // Legacy touch-simulation approach: tap the Morph / Unmorph HUD button,
+        // region ID4, centre (232,168) 48x48. Its X mirrors with the touch
+        // layout -- the left-handed presets put it at X 0..47 instead of
+        // 208..255 -- so the tap has to be mapped through the preset or it only
+        // ever lands on Touch R and Dual R.
         nds->ReleaseScreen();
         FrameAdvanceTwice();
         using namespace Consts::UI;
-        nds->TouchScreen(MORPH_START.x(), MORPH_START.y());
+        nds->TouchScreen(m_presetBindings.MirrorX(MORPH_START.x()), MORPH_START.y());
         FrameAdvanceTwice();
         nds->ReleaseScreen();
         FrameAdvanceTwice();
@@ -411,9 +419,13 @@ namespace MelonPrime {
                 emuInstance->getNDS()->ReleaseScreen();
             }
 
+            // The boost button is preset-owned (R on the right-handed presets,
+            // L on the left-handed ones), and the overlay must leave whatever
+            // this synthesizes alone.
+            const uint16_t boostMask = m_presetBindings.MorphBoost;
             m_immediateOverlayPreserveMask =
-                static_cast<uint16_t>(m_immediateOverlayPreserveMask | (1u << INPUT_R));
-            InputSetBranchless(INPUT_R, !boostCooldownActive && gaugeEnough);
+                static_cast<uint16_t>(m_immediateOverlayPreserveMask | boostMask);
+            InputSetMaskBranchless(boostMask, !boostCooldownActive && gaugeEnough);
 
             return true;
         }

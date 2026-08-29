@@ -65,14 +65,11 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
         std::clamp(cfg.GetInt(CfgKey::LowLatencyAimMode),
                    LowLatencyAimMode::Off,
                    LowLatencyAimMode::InstantAimFollow);
-    if (lowLatencyAimMode == LowLatencyAimMode::Off
-        && cfg.GetBool(CfgKey::InstantAimFollow))
-        lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
-#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    if (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow)
-        lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
-#endif
-    if (!s.disableMphAimSmoothing)
+    // InstantAimFollow is the legacy value for the independent FPS camera
+    // lock. Keep it distinct from the timing modes; its standalone patch is
+    // developer-gated in MelonPrimePatchFpsCameraLock.cpp.
+    if (!s.disableMphAimSmoothing
+        && lowLatencyAimMode != LowLatencyAimMode::InstantAimFollow)
         lowLatencyAimMode = LowLatencyAimMode::Off;
     s.lowLatencyAimMode = static_cast<int8_t>(lowLatencyAimMode);
 
@@ -99,8 +96,6 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 #endif
 
     const int zoomInputMethod = cfg.GetInt(CfgKey::ZoomInputMethod);
-    s.newZoomInputMethod =
-        zoomInputMethod == ZoomInputMethod::NewPresetBinding;
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     s.nativeZoomToggle =
         zoomInputMethod == ZoomInputMethod::NewNativeToggle;

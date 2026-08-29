@@ -123,7 +123,7 @@ set(SOURCES_QT_SDL
     MelonPrimePatchNoPickingUpSpecificItems.cpp
     MelonPrimePatchShadowFreezeRuntimeHook.cpp
     MelonPrimePatchFixNoxusBladePersistence.cpp
-    MelonPrimePatchInstantAimFollow.cpp
+    MelonPrimePatchFpsCameraLock.cpp
     MelonPrimePatchExpandStageMatrix.cpp
     MelonPrimePatchLowHpWarning.cpp
     MelonPrimePatchAimSmoothing.cpp

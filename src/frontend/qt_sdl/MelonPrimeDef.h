@@ -54,6 +54,9 @@ namespace MelonPrime {
         inline constexpr const char* AimAccumulator = "Metroid.Aim.Enable.Accumulator";
         inline constexpr const char* NativeAimHookMode  = "Metroid.Aim.NativeHookMode"; // 0=off 1=RegisterInject 2=FoldDerived
         inline constexpr const char* InstantAimFollow = "Metroid.Aim.Enable.InstantAimFollow";
+        // FPS Camera Lock is developer-only and independent of aim-follow mode
+        // and DisableMphAimSmoothing: it changes camera behavior, not timing.
+        inline constexpr const char* FpsCameraLock = "Metroid.Aim.Enable.FpsCameraLock";
         inline constexpr const char* LowLatencyAimMode = "Metroid.Aim.LowLatencyMode";
         inline constexpr const char* MoonLikeAimNormalStepQ12 = "Metroid.Aim.MoonLikeAimNormalStepQ12";
         inline constexpr const char* MoonLikeAimFastStepQ12 = "Metroid.Aim.MoonLikeAimFastStepQ12";
@@ -62,7 +65,7 @@ namespace MelonPrime {
         inline constexpr const char* DirectAltFormTransform    = "Metroid.Input.Enable.DirectAltFormTransform";
         inline constexpr const char* WeaponSwitchMethod        = "Metroid.Input.WeaponSwitchMethod"; // 0=Legacy touch 1=New native
         inline constexpr const char* BipedFireMethod           = "Metroid.Input.BipedFireMethod"; // 0=Legacy input 1=New native edge
-        inline constexpr const char* ZoomInputMethod           = "Metroid.Input.ZoomMethod"; // 0=Legacy fixed R 1=New preset binding 2=New native toggle
+        inline constexpr const char* ZoomInputMethod           = "Metroid.Input.ZoomMethod"; // 0=Legacy 1=retired (behaves as 0) 2=New native toggle
         inline constexpr const char* ScreenSyncMode = "Metroid.Screen.SyncMode";
         inline constexpr const char* MphSens         = "Metroid.Sensitivity.Mph";
         inline constexpr const char* Headphone       = "Metroid.Apply.Headphone";
@@ -199,6 +202,10 @@ namespace MelonPrime {
 
     namespace ZoomInputMethod {
         inline constexpr int LegacyFixedR = 0;
+        // Retired: meant "read the zoom button from the control preset", which
+        // is now what every path does. Kept so the value is not reused; old
+        // configs holding it behave as LegacyFixedR and are normalized on the
+        // next save.
         inline constexpr int NewPresetBinding = 1;
         inline constexpr int NewNativeToggle = 2;
     }
@@ -207,7 +214,7 @@ namespace MelonPrime {
         inline constexpr int Off = 0;
         inline constexpr int ImmediateSync = 1;
         inline constexpr int MoonLikeAim = 2;
-        // Developer-only; public builds normalize this stored value to ImmediateSync.
+        // Legacy alias for the independent developer-only FPS camera lock.
         inline constexpr int InstantAimFollow = 3;
     }
 

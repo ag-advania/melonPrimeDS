@@ -266,6 +266,7 @@ namespace Config
         {"Instance*.Metroid.Aim.ZoomScale.Enable", false},
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
+        {"Instance*.Metroid.Aim.Enable.FpsCameraLock", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
         {"Instance*.Metroid.Input.MorphBoostSwipeEnabled", true}, // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         {"Instance*.Metroid.Input.MorphBoostCustomRawThreshold", false}, // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14

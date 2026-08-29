@@ -1,6 +1,6 @@
 #ifdef MELONPRIME_DS
 
-#include "MelonPrimePatchInstantAimFollow.h"
+#include "MelonPrimePatchFpsCameraLock.h"
 #include "MelonPrimePatchCommon.h"
 #include "MelonPrimePatchState.h"
 #include "Config.h"
@@ -77,49 +77,47 @@ static const StaticWordPatch s_patch(kPatchSpans);
 
 } // namespace
 
-void InstantAimFollow_ApplyOnce(
+void FpsCameraLock_ApplyOnce(
     MelonPrimePatchState& state,
     melonDS::NDS* nds,
     Config::Table& cfg,
     uint8_t romGroupIndex)
 {
-    const bool disableAimSmoothing = cfg.GetBool(CfgKey::DisableMphAimSmoothing);
-    const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
+    // This is an independent camera-behavior switch. It removes the game's
+    // free-aim lead; it is not an aim-follow timing mode or touch smoothing.
     // Legacy key migration. Keep until the first post-V3 release gives old
     // configs a save cycle; see the Phase 4 migration ledger.
-    // Do not add new reads.
-    // Public builds migrate InstantAimFollow users to ImmediateSync; keep this
-    // patch path available only for developer builds with the explicit mode.
+    // The old InstantAimFollow bool and mode value remain as migration
+    // fallbacks for configs written before FpsCameraLock became independent.
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     const bool shouldApply =
-        disableAimSmoothing
-        && lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow;
+        cfg.GetBool(CfgKey::FpsCameraLock)
+        || cfg.GetBool(CfgKey::InstantAimFollow)
+        || cfg.GetInt(CfgKey::LowLatencyAimMode) == LowLatencyAimMode::InstantAimFollow;
 #else
     constexpr bool shouldApply = false;
-    (void)disableAimSmoothing;
-    (void)lowLatencyAimMode;
 #endif
 
     if (!shouldApply)
     {
-        s_patch.RestoreOnce(state.instantAimFollow, nds, romGroupIndex);
+        s_patch.RestoreOnce(state.fpsCameraLock, nds, romGroupIndex);
         return;
     }
 
-    s_patch.ApplyOnce(state.instantAimFollow, nds, romGroupIndex);
+    s_patch.ApplyOnce(state.fpsCameraLock, nds, romGroupIndex);
 }
 
-void InstantAimFollow_RestoreOnce(
+void FpsCameraLock_RestoreOnce(
     MelonPrimePatchState& state,
     melonDS::NDS* nds,
     uint8_t romGroupIndex)
 {
-    s_patch.RestoreOnce(state.instantAimFollow, nds, romGroupIndex);
+    s_patch.RestoreOnce(state.fpsCameraLock, nds, romGroupIndex);
 }
 
-void InstantAimFollow_ResetPatchState(MelonPrimePatchState& state)
+void FpsCameraLock_ResetPatchState(MelonPrimePatchState& state)
 {
-    StaticWordPatch::ResetState(state.instantAimFollow);
+    StaticWordPatch::ResetState(state.fpsCameraLock);
 }
 
 } // namespace MelonPrime

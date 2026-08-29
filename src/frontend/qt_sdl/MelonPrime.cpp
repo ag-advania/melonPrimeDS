@@ -278,7 +278,7 @@ namespace MelonPrime {
             const bool focused = m_threadBridge.FocusedForEmu();
             UpdateInputStateReentrant(focused);
             ProcessMoveAndButtonsFastFromReset();
-            ApplyBipedFireInput();
+            ApplyPostPollOverlayInput();
             ApplyZoomBindingInput();
 
             const bool isStylusMode = this->isStylusMode;
@@ -567,18 +567,70 @@ namespace MelonPrime {
         const uint32_t offP = static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
         const uint32_t playerBase = m_currentRom.playerStructStart + offP;
 
-        auto readBinding16 = [mainRAM](uint32_t address) -> uint16_t {
-            if (address < 0x02000000u || address > 0x023FFFFEu)
-                return 0;
-            return Read16(mainRAM, address);
-        };
-        m_bindingMoveL = readBinding16(playerBase + 0x368u);
-        m_bindingMoveR = readBinding16(playerBase + 0x36Cu);
-        m_bindingMoveF = readBinding16(playerBase + 0x370u);
-        m_bindingMoveB = readBinding16(playerBase + 0x374u);
-        m_bindingFire  = readBinding16(playerBase + 0x398u);
-        m_bindingJump  = readBinding16(playerBase + 0x39Cu);
-        m_bindingZoom  = readBinding16(playerBase + 0x3E0u);
+        // Control-preset snapshot. Read once here, per game join: these are
+        // preset assignments, not per-frame state. Everything MelonPrime
+        // synthesizes into KEYINPUT or overlays into player+0x464 derives from
+        // this, so the left-handed and Dual presets work as well as Touch R.
+        //
+        // Resolved from the ROM's own upstream source rather than from the
+        // player struct. player+0x364 is *downstream* state: player init calls
+        // 0200CC7C(player, id), which expands ControlPresetTable[id] into it.
+        // Reading the player struct here races that init, and a pre-init read
+        // returns zeros -- which PickButton() would then silently resolve to
+        // the Touch R defaults, i.e. exactly the bug this is meant to fix.
+        //
+        //   ControlTypeArray[slot]      u8 preset id, 0..3 human, 4 BOT
+        //     -> ControlPresetTable[id] static 0x9C record, same layout the
+        //                               game copies to player+0x364
+        //
+        // The id array is what the ROM's own runtime reader consults and what
+        // the WiFi slot-state packet writes, so it is correct for a client too,
+        // not only for the match host.
+        // The caller's only job is to pick *which* record; the record layout
+        // itself belongs to PresetButtonBindings.
+        using PresetRec = PresetButtonBindings;
+        uint32_t recordBase = playerBase + 0x364u;  // fallback: the expanded copy
+        int presetId = -1;
+        {
+            const uint32_t idAddr = m_currentRom.controlTypeArray
+                                  + static_cast<uint32_t>(m_playerPosition);
+            if (idAddr >= 0x02000000u && idAddr <= 0x023FFFFFu) {
+                const uint8_t id = Read8(mainRAM, idAddr);
+                // 4 is BOT, which is also what an unused slot still carries, so
+                // it is never the local human player's preset.
+                if (id < 4u) {
+                    presetId = static_cast<int>(id);
+                    recordBase = m_currentRom.controlPresetTable
+                               + static_cast<uint32_t>(id) * PresetRec::RecordSize;
+                }
+            }
+        }
+        m_presetBindings.BuildFromRecord(mainRAM, recordBase);
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        // One line per match join, so the resolved preset is verifiable on the
+        // real machine instead of inferred. Every button MelonPrime synthesizes
+        // is in here; if a preset ever reads back as the Touch R defaults when
+        // it should not, the snapshot is what to look at first.
+        //   Touch R  move 0020/0010/0040/0080  jump 0002  fire 0200  zoom 0100
+        //   Touch L  move 0800/0001/0400/0002  jump 0010  fire 0100  zoom 0200
+        //   Dual R   move 0020/0010/0040/0080  jump 0100  fire 0200  zoom 0004
+        //   Dual L   move 0800/0001/0400/0002  jump 0200  fire 0100  zoom 0004
+        emuInstance->osdAddMessage(
+            0,
+            "preset id %d %s %s move %04X/%04X/%04X/%04X jump %04X fire %04X zoom %04X boost %04X",
+            presetId,
+            m_presetBindings.MirrorTouchX ? "mirrored" : "normal",
+            m_presetBindings.UsesTouchAim ? "touch-aim" : "dual-aim",
+            static_cast<unsigned>(m_presetBindings.MoveL),
+            static_cast<unsigned>(m_presetBindings.MoveR),
+            static_cast<unsigned>(m_presetBindings.MoveF),
+            static_cast<unsigned>(m_presetBindings.MoveB),
+            static_cast<unsigned>(m_presetBindings.Jump),
+            static_cast<unsigned>(m_presetBindings.Fire),
+            static_cast<unsigned>(m_presetBindings.Zoom),
+            static_cast<unsigned>(m_presetBindings.MorphBoost));
+#endif
 
         const uint32_t offA = static_cast<uint32_t>(m_playerPosition) * Consts::AIM_ADDR_INC;
 
@@ -613,6 +665,17 @@ namespace MelonPrime {
         m_ptrs.loadedSpecialWeapon = GetRamPointer<uint8_t>(mainRAM, m_addrHot.loadedSpecialWeapon);
         m_ptrs.aimX = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimX);
         m_ptrs.aimY = GetRamPointer<uint16_t>(mainRAM, m_addrHot.aimY);
+        // Pick the aim field the active control preset's path actually reads.
+        // A Dual preset skips the touch producer entirely, so aimX/aimY would
+        // be written into a chain nothing consumes; see WriteAimDelta().
+        if (m_presetBindings.UsesTouchAim) {
+            m_ptrs.dualAim = nullptr;
+            m_ptrs.aimSens = nullptr;
+        }
+        else {
+            m_ptrs.dualAim = GetRamPointer<int32_t>(mainRAM, playerBase + 0xE4u);
+            m_ptrs.aimSens = GetRamPointer<int32_t>(mainRAM, playerBase + 0x3F8u);
+        }
         m_ptrs.isInVisorOrMap = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isInVisorOrMap);
         m_ptrs.isMapOrUserActionPaused = GetRamPointer<uint8_t>(mainRAM, m_addrHot.isMapOrUserActionPaused);
         // Damage Notify Purple: cache local-player HP and Double Damage timer pointers.

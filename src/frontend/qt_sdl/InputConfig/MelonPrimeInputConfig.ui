@@ -111,7 +111,7 @@
 										</item>
 										<item row="2" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
-												<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode)</string></property>
+												<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode) No effect on Dual control presets: their aim path never goes through the smoothing. The game's free-aim lead, where the gun can lead the body by about 15 degrees, is a separate behavior and is not affected.</string></property>
 											</widget>
 										</item>
 										<item row="3" column="0" colspan="2">
@@ -122,7 +122,7 @@
 										</item>
 										<item row="4" column="0" colspan="2">
 											<widget class="QLabel" name="lblMetroidNativeAimHookModeDesc">
-												<property name="text"><string>PostFold Write hooks after TouchInputProcessor and covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire).</string></property>
+												<property name="text"><string>PostFold Write hooks after TouchInputProcessor and covers all AltForms including spec108=0 (Samus/Kanden/Noxus/Spire). Not used on Dual control presets: the hook points are inside the touch branch, which Dual skips.</string></property>
 												<property name="wordWrap"><bool>true</bool></property>
 												<property name="styleSheet"><string>QLabel { margin-left: 48px; }</string></property>
 											</widget>
@@ -1122,7 +1122,7 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 									<item>
 										<widget class="QLabel" name="lblMetroidNativeAimRegisterInjectionDesc">
 											<property name="enabled"><bool>false</bool></property>
-											<property name="text"><string>Hooks at the aim call-site for lowest latency. Covers Biped and AltForm spec108=1 (Trace/Sylux/Weavel). When enabled, this overrides Native Aim Delta Hook (PostFold Write) above.</string></property>
+											<property name="text"><string>Hooks at the aim call-site for lowest latency. Covers Biped and AltForm spec108=1 (Trace/Sylux/Weavel). When enabled, this overrides Native Aim Delta Hook (PostFold Write) above. Not used on Dual control presets: the hook points are inside the touch branch, which Dual skips.</string></property>
 											<property name="wordWrap"><bool>true</bool></property>
 											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
 										</widget>
@@ -1137,7 +1137,7 @@ Briefly flashes you in the Double Damage purple state when you take damage, so o
 									<item>
 										<widget class="QLabel" name="lblMetroidImmediateInputEdgeOverlayDesc">
 											<property name="enabled"><bool>false</bool></property>
-											<property name="text"><string>Generate pressed/released edges on the emulator side and overlay them into MPH's internal input state before player actions are processed. Covers fire, jump, zoom, and movement. Button masks are read from the player's current control-preset binding table, so all presets (Touch R/L, Dual R/L) are supported automatically.</string></property>
+											<property name="text"><string>Generate pressed/released edges on the emulator side and overlay them into MPH's internal input state before player actions are processed. Covers fire, jump, zoom, and movement. Button masks are read from the player's current control-preset binding table, so all presets (Touch R/L, Dual R/L) are supported automatically. Unlike the zoom new method, which only changes which DS button is pressed, this bypasses DS button input entirely and takes effect on the same frame.</string></property>
 											<property name="wordWrap"><bool>true</bool></property>
 											<property name="styleSheet"><string>QLabel { margin-left: 20px; }</string></property>
 										</widget>

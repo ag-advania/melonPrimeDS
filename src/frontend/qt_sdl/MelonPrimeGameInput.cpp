@@ -293,27 +293,55 @@ namespace MelonPrime {
             ? curr
             : ResolveSnapTapInput(curr, m_snapState);
 
-        const uint8_t lutResult = InputProjection::MoveLUT[finalInput & 0xF];
-        uint16_t mask;
+        // --- Branchless button merge, driven by the control preset ---
+        //
+        // Every button here comes from m_presetBindings, which the game-join
+        // snapshot derived from the player's own control-preset table. The
+        // movement table replaces the fixed D-pad LUT: it is the same single
+        // indexed read, just built for the active preset (the left-handed
+        // presets move on Y/A/X/B, not the D-pad).
+        //
+        // Zoom is applied separately by ApplyZoomBindingInput(). Native Biped
+        // Fire owns shoot through the post-poll player+0x464 overlay, so it
+        // holds the fire button released instead of synthesizing it.
+        // PresetButtonBindings declares the DS button masks itself because the
+        // INPUT_* enum is not visible from MelonPrime.h. Both are in scope here,
+        // so tie them together where the masks are actually consumed.
+        static_assert(PresetButtonBindings::BtnA     == (1u << INPUT_A),     "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnB     == (1u << INPUT_B),     "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnRight == (1u << INPUT_RIGHT), "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnLeft  == (1u << INPUT_LEFT),  "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnUp    == (1u << INPUT_UP),    "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnDown  == (1u << INPUT_DOWN),  "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnR     == (1u << INPUT_R),     "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnL     == (1u << INPUT_L),     "DS button mask drift");
+
+        const auto& binds = m_presetBindings;
+        const uint64_t down = m_input.down;
+
+        // Select-masks rather than branches: 0 or 0xFFFF.
+        const uint16_t jumpSel = static_cast<uint16_t>(
+            0u - static_cast<uint16_t>(down & 1u));
+        const uint16_t fireSel = static_cast<uint16_t>(
+            0u - static_cast<uint16_t>(((down >> 1) & 1u)
+                                       & static_cast<uint64_t>(!m_enableNativeBipedFire)));
+
+        const uint16_t pressed = static_cast<uint16_t>(
+            binds.MoveMask[finalInput & 0xF]
+            | (binds.Jump & jumpSel)
+            | (binds.Fire & fireSel));
+
+        // The mask is active-low: a set bit means "not pressed". Release
+        // everything this function owns, then press what the preset wants, so a
+        // stale press from the out-of-game UI path cannot survive into a match.
+        const uint16_t owned = static_cast<uint16_t>(
+            binds.MoveAll | binds.Jump | binds.Fire);
         if constexpr (kInputMaskReset) {
-            mask = 0xFF0Fu | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+            m_inputMaskFast = static_cast<uint16_t>(0xFFFFu & ~pressed);
         }
         else {
-            mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+            m_inputMaskFast = static_cast<uint16_t>((m_inputMaskFast | owned) & ~pressed);
         }
-
-        // --- Branchless button merge (B/L) ---
-        // Zoom is preset-dependent and is applied by ApplyZoomBindingInput().
-        // Native Biped Fire owns shoot via the ARM9 fire-edge hook, so it
-        // leaves INPUT_L released instead of synthesizing the legacy fire input.
-        const uint16_t modBits = m_enableNativeBipedFire
-            ? static_cast<uint16_t>(1u << INPUT_B)
-            : static_cast<uint16_t>((1u << INPUT_B) | (1u << INPUT_L));
-        const uint64_t nd = ~m_input.down;
-        const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
-        const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
-        const uint16_t nativeFireMask = m_enableNativeBipedFire ? 0u : lBit;
-        m_inputMaskFast = static_cast<uint16_t>((mask & ~modBits) | bBit | nativeFireMask);
     }
 
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
@@ -337,20 +365,100 @@ namespace MelonPrime {
         const uint32_t finalInput = LIKELY(!m_snapTapMode)
             ? curr
             : ResolveSnapTapInput(curr, m_snapState);
-        const uint8_t lutResult = InputProjection::MoveLUT[finalInput & 0xF];
-        // 0xFF0F = all non-D-pad bits released; OR in the released D-pad bits so
-        // only currently-held directions stay pressed (cleared).
-        m_inputMaskFast = static_cast<uint16_t>(0xFF0Fu | (static_cast<uint16_t>(lutResult) & 0x00F0u));
+        // Everything released except the D-pad directions currently held.
+        // Deliberately the fixed menu table, not m_presetBindings: this path is
+        // for out-of-game screens, which navigate on the D-pad regardless of the
+        // in-game control preset.
+        m_inputMaskFast = static_cast<uint16_t>(
+            0xFFFFu & ~InputProjection::MenuMoveMask[finalInput & 0xF]);
     }
 
-    HOT_FUNCTION void MelonPrimeCore::ApplyBipedFireInput()
+    // Frame-path entry for both post-poll overlays, called once per frame before
+    // NDS::RunFrame(). The ROM action consumer they feed runs once per player per
+    // frame, so neither edge may be recomputed inside the hook. See
+    // MelonPrimePatchNativeBipedFireHook.inc.
+    HOT_FUNCTION void MelonPrimeCore::ApplyPostPollOverlayInput()
     {
-        // m_native_BipedFire{Pending,DirectActive} are kept false elsewhere when
-        // the feature is OFF: ApplyConfigReload clears them on toggle-off, game
-        // exit / focus loss / game-join init also clear them, and they default
-        // to false on construction. Skip the per-frame redundant resets here.
+        // Shared stale-edge input: a change of the ROM's local Player* means
+        // both latches are describing a different entity and must re-baseline.
+        // Read once here so the two latches cannot disagree about the frame.
+        uint32_t localPlayerPtr = 0;
+#ifdef MELONPRIME_DS
+        const uint32_t localPlayerPtrAddr = m_currentRom.hookLocalPlayerPtrGlobal;
+        if (localPlayerPtrAddr >= 0x02000000u && localPlayerPtrAddr <= 0x023FFFFCu) {
+            if (melonDS::NDS* const nds = emuInstance->getNDS()) {
+                std::memcpy(&localPlayerPtr,
+                            nds->MainRAM + (localPlayerPtrAddr & 0x3FFFFFu),
+                            sizeof(localPlayerPtr));
+            }
+        }
+#endif
+        // Only a genuine player->player swap forces a re-baseline. Transitions
+        // through 0 (out of match, pointer not yet published) must not, or a
+        // single unreadable frame would swallow that frame's press edges; the
+        // lifecycle resets already cover entering and leaving a match.
+        const bool localPlayerChanged =
+            localPlayerPtr != 0
+            && m_overlayLocalPlayerPtr != 0
+            && localPlayerPtr != m_overlayLocalPlayerPtr;
+        if (localPlayerPtr != 0)
+            m_overlayLocalPlayerPtr = localPlayerPtr;
+
         if (m_enableNativeBipedFire)
-            UpdateNativeBipedFireInput();
+            UpdateNativeBipedFireInput(localPlayerChanged);
+        UpdateImmediateInputEdgeOverlayInput(localPlayerChanged);
+    }
+
+    // Resolves the generic overlay's edges once per frame, in host-action space.
+    //
+    // Action space (not binding-bit space) on purpose: the binding masks and
+    // m_immediateOverlayPreserveMask are only final later in the frame, and the
+    // edge itself is a property of host input, not of what the current control
+    // preset happens to bind each action to. The hook expands these actions onto
+    // whatever masks it sees.
+    //
+    // Once per frame, not once per hook entry: the ROM action consumer the hook
+    // sits on runs once per player per frame, so a per-entry recompute writes
+    // Pressed on the first entry and erases it on the next, before the local
+    // player's own entry reads it. Same reason as UpdateNativeBipedFireInput().
+    HOT_FUNCTION void MelonPrimeCore::UpdateImmediateInputEdgeOverlayInput(
+        bool localPlayerChanged)
+    {
+        m_immediateOverlayFramePressed = 0;
+        m_immediateOverlayFrameReleased = 0;
+
+        if (!m_enableImmediateInputEdgeOverlay
+            || !m_flags.test(StateFlags::BIT_IN_GAME_INIT)
+            || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
+            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME))
+        {
+            m_immediateOverlayFrameHeld = 0;
+            m_immediateOverlayLatchValid = false;
+            return;
+        }
+
+        const uint64_t down = m_input.down;
+        uint8_t held = 0;
+        if (down & IB_MOVE_L) held = static_cast<uint8_t>(held | OVA_MOVE_L);
+        if (down & IB_MOVE_R) held = static_cast<uint8_t>(held | OVA_MOVE_R);
+        if (down & IB_MOVE_F) held = static_cast<uint8_t>(held | OVA_MOVE_F);
+        if (down & IB_MOVE_B) held = static_cast<uint8_t>(held | OVA_MOVE_B);
+        if (down & IB_SHOOT)  held = static_cast<uint8_t>(held | OVA_FIRE);
+        if (down & IB_JUMP)   held = static_cast<uint8_t>(held | OVA_JUMP);
+        if (down & IB_ZOOM)   held = static_cast<uint8_t>(held | OVA_ZOOM);
+
+        const uint8_t prev = m_immediateOverlayPrevActions;
+        const bool wasValid = m_immediateOverlayLatchValid && !localPlayerChanged;
+        m_immediateOverlayPrevActions = held;
+        m_immediateOverlayLatchValid = true;
+        m_immediateOverlayFrameHeld = held;
+
+        // Re-entry while a button is already held restores Down without
+        // manufacturing a Pressed edge.
+        if (LIKELY(wasValid)) {
+            m_immediateOverlayFramePressed = static_cast<uint8_t>(held & ~prev);
+            m_immediateOverlayFrameReleased = static_cast<uint8_t>(~held & prev);
+        }
     }
 
     HOT_FUNCTION void MelonPrimeCore::ApplyZoomBindingInput()
@@ -378,8 +486,10 @@ namespace MelonPrime {
             if (m_enableNativeZoomToggle)
                 m_nativeZoomTogglePrevDown = zoomDown;
 
-            if (zoomDown)
-                m_inputMaskFast = static_cast<uint16_t>(m_inputMaskFast & ~(1u << INPUT_R));
+            if (zoomDown) {
+                m_inputMaskFast = static_cast<uint16_t>(
+                    m_inputMaskFast & ~m_presetBindings.MorphBoost);
+            }
             return;
         }
 
@@ -394,15 +504,13 @@ namespace MelonPrime {
         if (!zoomDown)
             return;
 
-        uint16_t zoomMask = static_cast<uint16_t>(1u << INPUT_R);
-
-        if (m_enableNewZoomInputMethod && m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-            const uint16_t boundMask = static_cast<uint16_t>(m_bindingZoom & 0x0FFFu);
-            if (boundMask != 0)
-                zoomMask = boundMask;
-        }
-
-        m_inputMaskFast = static_cast<uint16_t>(m_inputMaskFast & ~zoomMask);
+        // Always the preset's own zoom button. This used to be a fixed INPUT_R
+        // unless ZoomInputMethod opted into the preset table, which only
+        // happened to be right on Touch R (Touch L zooms on L, both Dual
+        // presets on Select). The snapshot makes the preset value the default,
+        // so the opt-in no longer changes anything for this path.
+        m_inputMaskFast = static_cast<uint16_t>(
+            m_inputMaskFast & ~m_presetBindings.Zoom);
     }
 
     void MelonPrimeCore::ProcessAimInputStylus(melonDS::NDS* nds)
@@ -623,9 +731,9 @@ namespace MelonPrime {
             resX = ClampAimResidual(resX, AIM_MAX_RESIDUAL);
             resY = ClampAimResidual(resY, AIM_MAX_RESIDUAL);
 
-            if (m_disableMphAimSmoothing) {
+            if (AimBypassesDsSmoothing()) {
                 // =========================================================
-                // P-18a+b: Direct path (ASM patch enabled)
+                // P-18a+b: Direct path (ASM patch enabled, or Dual preset)
                 //
                 // >> 12 = >> 14 then << 2, but in one operation.
                 // This preserves 2 extra fractional bits that >> 14 discards,
@@ -633,7 +741,9 @@ namespace MelonPrime {
                 //
                 // No deadzone: mouse raw input has zero noise at rest
                 // (delta=0 → residual unchanged → output 0).
-                // DS-side deadzone is also bypassed by the ASM patch.
+                // DS-side deadzone is also bypassed -- by the ASM patch on a
+                // Touch preset, and by not entering the touch producer at all
+                // on a Dual one.
                 // =========================================================
                 // Only an axis with a fresh raw delta may emit output. This keeps
                 // an old residual from the other axis from turning a straight move
@@ -663,15 +773,19 @@ namespace MelonPrime {
                     return;
                 }
 
-                if (m_enableNativeAimDeltaHook) {
+                // Dual control presets never reach the native aim hooks: every
+                // one of those hook PCs sits inside the ROM's touch aim branch,
+                // which a Dual preset jumps over. Leaving the deltas at zero
+                // also keeps the alt-form hook's own zero check from fighting
+                // the direct write below.
+                if (m_enableNativeAimDeltaHook && LIKELY(m_ptrs.dualAim == nullptr)) {
                     m_nativeAimDeltaX = outX;
                     m_nativeAimDeltaY = outY;
                 }
                 else {
                     // Direct write fallback — no << ampShift needed.
                     // >> 12 already produces the same scale as the old >> 14 << 2.
-                    *m_ptrs.aimX = static_cast<uint16_t>(outX);
-                    *m_ptrs.aimY = static_cast<uint16_t>(outY);
+                    WriteAimDelta(outX, outY);
                 }
             }
             else {
@@ -723,8 +837,7 @@ namespace MelonPrime {
                     return;
                 }
 
-                *m_ptrs.aimX = static_cast<uint16_t>(outX);
-                *m_ptrs.aimY = static_cast<uint16_t>(outY);
+                WriteAimDelta(outX, outY);
             }
 
             // Discard sub-pixel residuals when accumulator is off.

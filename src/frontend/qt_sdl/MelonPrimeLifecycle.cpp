@@ -46,7 +46,7 @@ namespace MelonPrime {
 
     // Only place that writes a RuntimeConfigSnapshot into MelonPrimeCore.
     // Side effects beyond plain member assignment: clears
-    // m_directTransformPendingFrames / m_nativeBipedFire* / m_weaponSwitchPending
+    // m_directTransformPendingFrames / m_nativeBipedFire latch / m_weaponSwitchPending
     // / m_nativeZoomToggle* / m_nativeZoomPending when the corresponding
     // feature flag is now off, and recalculates the effective zoom-aim
     // fixed-point scale (resetting aim residuals) when the zoom-aim scale
@@ -74,11 +74,8 @@ namespace MelonPrime {
         if (!m_enableDirectAltFormTransform)
             m_directTransformPendingFrames = 0;
         m_enableNativeBipedFire = s.nativeBipedFire;
-        if (!m_enableNativeBipedFire) {
-            m_nativeBipedFirePending = false;
-            m_nativeBipedFireDirectActive = false;
-        }
-        m_enableNewZoomInputMethod = s.newZoomInputMethod;
+        if (!m_enableNativeBipedFire)
+            ResetTransientInputState(TR_BipedFire);
         m_enableNativeZoomToggle = s.nativeZoomToggle;
         m_zoomAimScaleQ14 = s.zoomAimScaleQ14;
         m_enableZoomAimScale = s.zoomAimScaleEnable;
