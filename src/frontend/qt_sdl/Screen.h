@@ -311,6 +311,7 @@ public:
     void resetAimMouseDelta();
 
     void reloadNoRomSplashLocalization();
+    void refreshTopScreenTouchSetting();
     void containAimCursorIfNeeded();
     void syncMelonPrimeThreadBridge();
     // Explicit settings-dialog save wins over any older debounced hotkey save.
@@ -367,6 +368,10 @@ protected:
     bool integerScaling;
     int screenAspectTop, screenAspectBot;
     bool inGameTopScreenOnly = false;
+#ifdef MELONPRIME_DS
+    bool topScreenTouchEnabled = false;
+    int topScreenTouchTransform = -1;
+#endif
 
     int autoScreenSizing;
 
@@ -466,6 +471,7 @@ protected:
     QPoint splashPos[4];
 
     void loadConfig();
+    bool getTouchCoords(int& x, int& y, bool clamp);
 
     virtual void setupScreenLayout();
 

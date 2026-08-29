@@ -37,6 +37,7 @@ namespace MelonPrime {
         inline constexpr const char* Joy2Key        = "Metroid.Apply.joy2KeySupport";
         inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
         inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";
+        inline constexpr const char* TopScreenTouch  = "Metroid.Enable.topScreenTouch";
         inline constexpr const char* AimSens         = "Metroid.Sensitivity.Aim";
         // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V1
         // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V2

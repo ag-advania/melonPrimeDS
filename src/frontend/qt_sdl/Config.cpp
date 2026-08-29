@@ -261,6 +261,7 @@ namespace Config
         {"Instance*.Metroid.Apply.MusicVolume", false},
         {"Instance*.Metroid.Apply.joy2KeySupport", true},
         {"Instance*.Metroid.Enable.stylusMode", false},
+        {"Instance*.Metroid.Enable.topScreenTouch", false},
         {"Instance*.Metroid.Aim.Disable.MphAimSmoothing", false},
         {"Instance*.Metroid.Aim.Enable.Accumulator", false},
         {"Instance*.Metroid.Aim.ZoomScale.Enable", false},

@@ -635,6 +635,86 @@ void ScreenPanel::loadConfig()
     screenAspectTop = cfg.GetInt("ScreenAspectTop");
     screenAspectBot = cfg.GetInt("ScreenAspectBot");
     inGameTopScreenOnly = emuInstance->getLocalConfig().GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly);
+#ifdef MELONPRIME_DS
+    topScreenTouchEnabled = emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::TopScreenTouch);
+#endif
+}
+
+#ifdef MELONPRIME_DS
+void ScreenPanel::refreshTopScreenTouchSetting()
+{
+    const bool enabled = emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::TopScreenTouch);
+    if (!enabled && topScreenTouchTransform >= 0 && touching)
+    {
+        emuInstance->releaseScreen();
+        touching = false;
+    }
+    topScreenTouchEnabled = enabled;
+    if (!touching)
+        topScreenTouchTransform = -1;
+}
+#endif
+
+bool ScreenPanel::getTouchCoords(int& x, int& y, bool clamp)
+{
+#ifdef MELONPRIME_DS
+    const auto mapTopTransform = [this](int transform, int& px, int& py, bool clampCoords) {
+        if (transform < 0 || transform >= numScreens || screenKind[transform] != 0)
+            return false;
+
+        const float* const m = screenMatrix[transform];
+        const float determinant = m[0] * m[3] - m[1] * m[2];
+        if (std::abs(determinant) < 0.000001f)
+            return false;
+
+        const float dx = static_cast<float>(px) - m[4];
+        const float dy = static_cast<float>(py) - m[5];
+        const float sx = (m[3] * dx - m[2] * dy) / determinant;
+        const float sy = (-m[1] * dx + m[0] * dy) / determinant;
+
+        if (!clampCoords && (sx < 0.0f || sx >= 256.0f || sy < 0.0f || sy >= 192.0f))
+            return false;
+
+        px = clampCoords ? std::clamp(static_cast<int>(sx), 0, 255) : static_cast<int>(sx);
+        py = clampCoords ? std::clamp(static_cast<int>(sy), 0, 191) : static_cast<int>(sy);
+        return true;
+    };
+
+    // A drag that began on a top-screen transform remains owned by that same
+    // transform. Otherwise the bottom-screen clamping path would steal it as
+    // soon as the pointer moved.
+    if (clamp && topScreenTouchTransform >= 0)
+        return mapTopTransform(topScreenTouchTransform, x, y, true);
+#endif
+
+    if (layout.GetTouchCoords(x, y, clamp))
+    {
+#ifdef MELONPRIME_DS
+        if (!clamp)
+            topScreenTouchTransform = -1;
+#endif
+        return true;
+    }
+
+#ifdef MELONPRIME_DS
+    if (topScreenTouchEnabled && !clamp)
+    {
+        for (int i = 0; i < numScreens; ++i)
+        {
+            int tx = x;
+            int ty = y;
+            if (mapTopTransform(i, tx, ty, false))
+            {
+                x = tx;
+                y = ty;
+                topScreenTouchTransform = i;
+                return true;
+            }
+        }
+    }
+#endif
+
+    return false;
 }
 
 void ScreenPanel::setFilter(bool filter)
@@ -798,6 +878,9 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
+#ifdef MELONPRIME_DS
+        topScreenTouchTransform = -1;
+#endif
         return;
     }
 
@@ -836,7 +919,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     int x = p.x();
     int y = p.y();
 
-    if (layout.GetTouchCoords(x, y, false))
+    if (getTouchCoords(x, y, false))
     {
         touching = true;
         emu->touchScreen(x, y);
@@ -864,6 +947,9 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
+#ifdef MELONPRIME_DS
+        topScreenTouchTransform = -1;
+#endif
         return;
     }
 
@@ -876,6 +962,9 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
         return;
 
     touching = false;
+#ifdef MELONPRIME_DS
+    topScreenTouchTransform = -1;
+#endif
     emu->releaseScreen();
 }
 
@@ -1022,7 +1111,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     int x = p.x();
     int y = p.y();
 
-    if (layout.GetTouchCoords(x, y, true))
+    if (getTouchCoords(x, y, true))
     {
         emu->touchScreen(x, y);
     }
@@ -1032,7 +1121,14 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 void ScreenPanel::tabletEvent(QTabletEvent* event)
 {
     event->accept();
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
+    if (!emuInstance->emuIsActive())
+    {
+        touching = false;
+#ifdef MELONPRIME_DS
+        topScreenTouchTransform = -1;
+#endif
+        return;
+    }
 
     switch (event->type())
     {
@@ -1048,7 +1144,7 @@ void ScreenPanel::tabletEvent(QTabletEvent* event)
         int y = event->y();
 #endif
 
-        if (layout.GetTouchCoords(x, y, event->type() == QEvent::TabletMove))
+        if (getTouchCoords(x, y, event->type() == QEvent::TabletMove))
         {
             touching = true;
             emuInstance->touchScreen(x, y);
@@ -1060,6 +1156,9 @@ void ScreenPanel::tabletEvent(QTabletEvent* event)
         {
             emuInstance->releaseScreen();
             touching = false;
+#ifdef MELONPRIME_DS
+            topScreenTouchTransform = -1;
+#endif
         }
         break;
     default:
@@ -1075,7 +1174,14 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
 #endif
 
     event->accept();
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
+    if (!emuInstance->emuIsActive())
+    {
+        touching = false;
+#ifdef MELONPRIME_DS
+        topScreenTouchTransform = -1;
+#endif
+        return;
+    }
 
     switch (event->type())
     {
@@ -1093,7 +1199,7 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
             int x = (int)lastPosition.x();
             int y = (int)lastPosition.y();
 
-            if (layout.GetTouchCoords(x, y, event->type() == QEvent::TouchUpdate))
+            if (getTouchCoords(x, y, event->type() == QEvent::TouchUpdate))
             {
                 touching = true;
                 emuInstance->touchScreen(x, y);
@@ -1105,6 +1211,9 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
         {
             emuInstance->releaseScreen();
             touching = false;
+#ifdef MELONPRIME_DS
+            topScreenTouchTransform = -1;
+#endif
         }
         break;
     default:
@@ -3449,6 +3558,7 @@ void ScreenPanel::unfocus()
         if (touching) {
             emu->releaseScreen();
             touching = false;
+            topScreenTouchTransform = -1;
         }
     }
 #endif

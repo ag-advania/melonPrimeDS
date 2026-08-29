@@ -470,6 +470,9 @@ void MelonPrimeInputConfig::buildSettingBindings()
         // slots and nothing cross-reads it, so its load position is not observable; it
         // is loaded with the other bug fixes in segment 3a.
         { C::WifiReconnect,  K::CheckBool,        ui->cbMetroidFixWifiReconnect },       // 48
+        // GUI-only touch routing has no load-time side effects. Keep it appended so
+        // every historical binding index and observable load order remains stable.
+        { C::TopScreenTouch, K::CheckBool,        ui->cbMetroidEnableTopScreenTouch },   // 49
     };
 }
 
@@ -687,6 +690,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
     // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
     loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    loadBindingsRange(instcfg, 49, 50); // GUI-only top-screen touch routing
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);

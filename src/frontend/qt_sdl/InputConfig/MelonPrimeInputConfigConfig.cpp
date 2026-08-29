@@ -82,6 +82,11 @@ void MelonPrimeInputConfig::saveConfig()
     // sync, in-game scaling, low-HP thresholds) are saved here from the same
     // binding table used to load them. Keys are disjoint so order is irrelevant.
     saveBindings(instcfg);
+    for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
+        MainWindow* win = emuInstance->getWindow(i);
+        if (win && win->panel)
+            win->panel->refreshTopScreenTouchSetting();
+    }
 
     int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode
         ? m_comboMetroidLowLatencyAimMode->currentData().toInt()
