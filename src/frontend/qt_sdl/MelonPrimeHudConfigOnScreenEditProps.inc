@@ -214,7 +214,6 @@ static const HudEditPropDesc kPropsScoreboard[] = {
     {"Outline Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudScoreboardOutlineOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
     {"Outline Thick.", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardOutlineThickness, 1, 10, 1, nullptr, nullptr, nullptr},
     {"Rank", EditPropType::Bool, MP_HUD_PROP_KEY_HudScoreboardRankShow, 0, 0, 0, nullptr, nullptr, nullptr},
-    {"Native Layout", EditPropType::Bool, MP_HUD_PROP_KEY_HudScoreboardNativeLayout, 0, 0, 0, nullptr, nullptr, nullptr},
 };
 
 static const HudEditPropDesc kPropsEnemyTarget[] = {

@@ -56,21 +56,6 @@ static QRectF ComputeEditBounds(int idx, Config::Table& cfg, float topStretchX)
         BuildScoreboardFonts(layoutConfig, hs, boardFont, rankFont);
         const QFontMetrics boardFm(boardFont);
         const QFontMetrics rankFm(rankFont);
-
-        // Native layout is absolute: the box follows from the row counts, the
-        // Scale %, the anchor and the offsets, plus the text line height it has
-        // to cover. Worst case is a full four-player Team match: four player
-        // rows plus a Team row before each of the two teams.
-        if (cfg.GetBool(MP_HUD_PROP_KEY_HudScoreboardNativeLayout)) {
-            const MelonPrime::NativeScoreboard::Transform tf =
-                MelonPrime::NativeScoreboard::ResolveTransform(
-                    layoutConfig.scoreboard.scale,
-                    anchor, static_cast<float>(ofsX), static_cast<float>(ofsY),
-                    fx, fy, 4, 2);
-            return ComputeNativeScoreboardPanel(
-                4, 2, tf, static_cast<float>(std::max(1, boardFm.height())));
-        }
-
         const ScoreboardSnapshot preview = MakeScoreboardPreviewSnapshot();
         std::array<ScoreboardRenderRow, 8> rows{};
         const int rowCount = BuildScoreboardRenderRows(preview, rows);

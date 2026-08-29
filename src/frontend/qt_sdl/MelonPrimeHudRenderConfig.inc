@@ -208,11 +208,6 @@ struct RadarOverlayConfig {
 };
 struct ScoreboardHudConfig {
     bool show;
-    // Native layout reproduces the ROM's own board geometry, which is
-    // absolute: it owns the anchor, the offsets and every gap, so
-    // anchor/ofsX/ofsY/columnSpacing/rightPadding/rowSpacing/scale are not
-    // read while it is on. See MelonPrimeHudScoreboardNativeGeometry.h.
-    bool nativeLayout;
     int x, y;                         // final DS-space position
     int anchor, ofsX, ofsY;           // raw anchor + offsets
     int columnSpacing, rightPadding, rowSpacing;
@@ -1228,7 +1223,6 @@ static void LoadRadarOverlayConfig(RadarOverlayConfig& radar, Config::Table& cfg
 static void LoadScoreboardConfig(ScoreboardHudConfig& scoreboard, Config::Table& cfg)
 {
     scoreboard.show = cfg.GetBool(MP_HUD_PROP_KEY_HudScoreboardShow);
-    scoreboard.nativeLayout = cfg.GetBool(MP_HUD_PROP_KEY_HudScoreboardNativeLayout);
     scoreboard.anchor = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardAnchor);
     scoreboard.ofsX = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardX);
     scoreboard.ofsY = cfg.GetInt(MP_HUD_PROP_KEY_HudScoreboardY);

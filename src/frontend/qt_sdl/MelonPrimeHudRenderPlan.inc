@@ -128,12 +128,6 @@ struct ScoreboardRenderPlan {
     int firstW = 20;
     int secondW = 20;
     int rowCount = 0;
-    // Whether the plan placed rank cells at all. The auto layout draws a rank
-    // line when the setting asks for it; the native layout never does, because
-    // the ROM's rank indicator is the hunter stars. The per-frame value refresh
-    // reads this rather than the setting so it cannot revive a cell no layout
-    // pass ever placed.
-    bool hasRankCells = false;
     std::array<ScoreboardPlanText, 3> headers{};
     std::array<ScoreboardPlanRow, 8> rows{};
 };
