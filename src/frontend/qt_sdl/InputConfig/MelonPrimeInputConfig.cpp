@@ -708,7 +708,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     if (!m_comboMetroidLowLatencyAimMode) {
         m_comboMetroidLowLatencyAimMode = new QComboBox(ui->sectionSensitivity);
         m_comboMetroidLowLatencyAimMode->addItem(
-            QStringLiteral("Off (MPH native, recommended)"),
+            QStringLiteral("MPH native"),
             MelonPrime::LowLatencyAimMode::Off);
         m_comboMetroidLowLatencyAimMode->addItem(
             QStringLiteral("Immediate Sync"),
