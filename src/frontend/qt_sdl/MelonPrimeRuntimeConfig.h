@@ -86,7 +86,6 @@ struct RuntimeConfigSnapshot {
     bool directAltFormTransform = false;
     bool nativeBipedFire = false;
 
-    bool newZoomInputMethod = false;
     bool nativeZoomToggle = false;
 
     bool zoomAimScaleEnable = false;

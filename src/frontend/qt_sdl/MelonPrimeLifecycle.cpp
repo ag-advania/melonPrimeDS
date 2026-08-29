@@ -76,7 +76,6 @@ namespace MelonPrime {
         m_enableNativeBipedFire = s.nativeBipedFire;
         if (!m_enableNativeBipedFire)
             ResetTransientInputState(TR_BipedFire);
-        m_enableNewZoomInputMethod = s.newZoomInputMethod;
         m_enableNativeZoomToggle = s.nativeZoomToggle;
         m_zoomAimScaleQ14 = s.zoomAimScaleQ14;
         m_enableZoomAimScale = s.zoomAimScaleEnable;

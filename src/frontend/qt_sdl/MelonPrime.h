@@ -525,7 +525,6 @@ namespace MelonPrime {
         bool     m_enableImmediateInputEdgeOverlay = false;
         bool     m_enableDirectAltFormTransform = false;
         bool     m_enableNativeBipedFire = false;
-        bool     m_enableNewZoomInputMethod = false;
         bool     m_enableNativeZoomToggle = false;
 #ifdef MELONPRIME_DS
         bool     m_enableNativeWeaponSwitch = false;

@@ -99,8 +99,6 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 #endif
 
     const int zoomInputMethod = cfg.GetInt(CfgKey::ZoomInputMethod);
-    s.newZoomInputMethod =
-        zoomInputMethod == ZoomInputMethod::NewPresetBinding;
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     s.nativeZoomToggle =
         zoomInputMethod == ZoomInputMethod::NewNativeToggle;
