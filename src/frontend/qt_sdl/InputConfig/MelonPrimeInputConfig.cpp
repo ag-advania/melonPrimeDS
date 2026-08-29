@@ -709,7 +709,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     if (!m_comboMetroidLowLatencyAimMode) {
         m_comboMetroidLowLatencyAimMode = new QComboBox(ui->sectionSensitivity);
         m_comboMetroidLowLatencyAimMode->addItem(
-            QStringLiteral("Off"),
+            QStringLiteral("Off (MPH native, recommended)"),
             MelonPrime::LowLatencyAimMode::Off);
         m_comboMetroidLowLatencyAimMode->addItem(
             QStringLiteral("Immediate Sync"),
@@ -736,12 +736,13 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             lowLatencyAimMode = MelonPrime::LowLatencyAimMode::ImmediateSync;
         SetComboCurrentData(m_comboMetroidLowLatencyAimMode, lowLatencyAimMode);
 
-        m_lblMetroidLowLatencyAimMode = new QLabel(QStringLiteral("Low-Latency Aim Mode"), ui->sectionSensitivity);
+        m_lblMetroidLowLatencyAimMode = new QLabel(QStringLiteral("Aim Follow Mode"), ui->sectionSensitivity);
         m_lblMetroidLowLatencyAimMode->setToolTip(m_comboMetroidLowLatencyAimMode->toolTip());
         QString lowLatencyAimDesc = QStringLiteral(
-            "Immediate Sync uses the low-latency ARM9 hook to sync currentAim to targetAim at the hook point and rebuild the aim basis. "
+            "Off keeps the game's own aim follow. That is the recommended setting and is unrelated to aim smoothing. "
+            "Immediate Sync syncs currentAim to targetAim at the ARM9 hook point. "
             "MoonLike Aim applies small aim movements immediately and limits only large aim jumps with a max-step chase. "
-            "Requires Disable Aim Smoothing.");
+            "Both work on Touch and Dual control presets alike.");
         m_lblMetroidLowLatencyAimDesc = new QLabel(lowLatencyAimDesc, ui->sectionSensitivity);
         m_lblMetroidLowLatencyAimDesc->setObjectName(QStringLiteral("lblMetroidLowLatencyAimDesc"));
         m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
