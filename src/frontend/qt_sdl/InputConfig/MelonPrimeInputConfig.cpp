@@ -737,36 +737,34 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
         m_lblMetroidLowLatencyAimDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
 
-        if constexpr (kDeveloperOnlyFeaturesEnabled) {
-            m_cbMetroidFpsCameraLock = new QCheckBox(
-                QStringLiteral("FPS Camera Lock (Instant Aim Follow)"),
-                ui->sectionDeveloperOnly);
-            m_cbMetroidFpsCameraLock->setObjectName(QStringLiteral("cbMetroidFpsCameraLock"));
-            m_cbMetroidFpsCameraLock->setToolTip(QStringLiteral(
-                "Checked: the body always faces exactly where the gun points. "
-                "Unchecked (recommended): the game's own free-aim lead is kept."));
-            m_cbMetroidFpsCameraLock->setChecked(
-                instcfg.GetBool(MelonPrime::CfgKey::FpsCameraLock)
-                || instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow)
-                || lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
-            ui->vboxDeveloperOnly->addWidget(m_cbMetroidFpsCameraLock);
+        m_cbMetroidFpsCameraLock = new QCheckBox(
+            QStringLiteral("FPS Camera Lock (Instant Aim Follow)"),
+            ui->sectionSensitivity);
+        m_cbMetroidFpsCameraLock->setObjectName(QStringLiteral("cbMetroidFpsCameraLock"));
+        m_cbMetroidFpsCameraLock->setToolTip(QStringLiteral(
+            "Checked: the body always faces exactly where the gun points. "
+            "Unchecked (recommended): the game's own free-aim lead is kept."));
+        m_cbMetroidFpsCameraLock->setChecked(
+            instcfg.GetBool(MelonPrime::CfgKey::FpsCameraLock)
+            || instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow)
+            || lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
 
-            auto* fpsCameraLockDesc = new QLabel(
-                QStringLiteral(
-                    "Keeps the body aligned with the gun at all times, removing the "
-                    "game's free-aim lead of about 15 degrees. Off is recommended: that "
-                    "lag is deliberate design that softens sudden movement, and removing "
-                    "it can cause motion sickness."),
-                ui->sectionDeveloperOnly);
-            fpsCameraLockDesc->setObjectName(QStringLiteral("lblMetroidFpsCameraLockDesc"));
-            fpsCameraLockDesc->setWordWrap(true);
-            fpsCameraLockDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
-            ui->vboxDeveloperOnly->addWidget(fpsCameraLockDesc);
-        }
+        m_lblMetroidFpsCameraLockDesc = new QLabel(
+            QStringLiteral(
+                "Keeps the body aligned with the gun at all times, removing the "
+                "game's free-aim lead of about 15 degrees. Off is recommended: that "
+                "lag is deliberate design that softens sudden movement, and removing "
+                "it can cause motion sickness."),
+            ui->sectionSensitivity);
+        m_lblMetroidFpsCameraLockDesc->setObjectName(QStringLiteral("lblMetroidFpsCameraLockDesc"));
+        m_lblMetroidFpsCameraLockDesc->setWordWrap(true);
+        m_lblMetroidFpsCameraLockDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
 
         if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
             form->insertRow(3, m_lblMetroidLowLatencyAimMode, m_comboMetroidLowLatencyAimMode);
             form->insertRow(4, m_lblMetroidLowLatencyAimDesc);
+            form->insertRow(5, m_cbMetroidFpsCameraLock);
+            form->insertRow(6, m_lblMetroidFpsCameraLockDesc);
         }
 
         connect(

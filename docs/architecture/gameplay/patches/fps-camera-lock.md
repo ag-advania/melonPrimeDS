@@ -1,6 +1,6 @@
-# FPS Camera Lock - independent developer-only patch
+# FPS Camera Lock - independent public patch
 
-`FPS Camera Lock` is developer-only and is stored as
+`FPS Camera Lock` is available in public and developer builds and is stored as
 `Metroid.Aim.Enable.FpsCameraLock`. It is independent from
 `Metroid.Aim.LowLatencyMode` and `Metroid.Aim.Disable.MphAimSmoothing`.
 
@@ -10,14 +10,12 @@ Low-latency aim mode values:
 0 = Off
 1 = Immediate Sync
 2 = MoonLike Aim
-3 = InstantAimFollow (legacy developer alias)
+3 = InstantAimFollow (legacy alias)
 ```
 
 `Metroid.Aim.Enable.InstantAimFollow` and mode `3` are retained only as
-compatibility paths for configurations written before `FpsCameraLock` became
 independent. They are not normalized to `Immediate Sync`: the old values can
-still activate the independent camera-lock patch in a developer build, while
-public builds do not expose or apply that patch.
+still activate the independent camera-lock patch in either build profile.
 
 Behavior differences:
 
@@ -33,5 +31,5 @@ Immediate Sync:
 ```
 
 `Immediate Sync` and `MoonLike Aim` install the LowLatencyAim hook addresses.
-`FPS Camera Lock` does not install that hook; developer builds use
+`FPS Camera Lock` does not install that hook; both build profiles use
 `MelonPrimePatchFpsCameraLock.cpp` static patch words instead.

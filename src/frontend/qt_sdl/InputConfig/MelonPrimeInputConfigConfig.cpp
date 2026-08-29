@@ -139,8 +139,7 @@ void MelonPrimeInputConfig::saveConfig()
     // FpsCameraLock key was introduced.
     instcfg.SetBool(
         MelonPrime::CfgKey::InstantAimFollow,
-        kDeveloperOnlyFeaturesEnabled
-            && m_cbMetroidFpsCameraLock
+        m_cbMetroidFpsCameraLock
             && m_cbMetroidFpsCameraLock->isChecked());
 
     // Screen Sync Mode, In-game scaling, and Low HP warning thresholds are all
