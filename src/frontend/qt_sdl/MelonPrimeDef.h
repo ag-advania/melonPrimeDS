@@ -54,6 +54,9 @@ namespace MelonPrime {
         inline constexpr const char* AimAccumulator = "Metroid.Aim.Enable.Accumulator";
         inline constexpr const char* NativeAimHookMode  = "Metroid.Aim.NativeHookMode"; // 0=off 1=RegisterInject 2=FoldDerived
         inline constexpr const char* InstantAimFollow = "Metroid.Aim.Enable.InstantAimFollow";
+        // FPS Camera Lock. Developer-only. Independent of the aim-follow mode and
+        // of DisableMphAimSmoothing: it changes camera behavior, not input timing.
+        inline constexpr const char* FpsCameraLock = "Metroid.Aim.Enable.FpsCameraLock";
         inline constexpr const char* LowLatencyAimMode = "Metroid.Aim.LowLatencyMode";
         inline constexpr const char* MoonLikeAimNormalStepQ12 = "Metroid.Aim.MoonLikeAimNormalStepQ12";
         inline constexpr const char* MoonLikeAimFastStepQ12 = "Metroid.Aim.MoonLikeAimFastStepQ12";

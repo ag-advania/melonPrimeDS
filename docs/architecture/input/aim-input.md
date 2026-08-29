@@ -184,6 +184,31 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 - Cost: the branch is a single null test on a Tier 1 pointer. GCC places the Dual write out of line,
   so the Touch path keeps its two 16-bit stores and pays one not-taken branch.
 
+#### ROM facts behind the two aim paths
+
+Cross-checked against the mphCodex `Control/DualAim` package. These constrain any future change here.
+
+- The control record's flags carry two selectors: `0x2` picks Touch versus Dual, `0x20` picks the
+  Exact Aim branch. All four standard presets set `0x20`.
+- `player+0x3F8`/`+0x3FC` are the **Touch** scales and are **negative**: `0xFFFFF75D` = -0.5398 and
+  `0xFFFFFB8E` = -0.2778. Both paths hand the yaw/pitch updaters the same unit, degrees in
+  fixed point with `0x1000` = 1°.
+- `InputSlot+0x2A`/`+0x2C` is the **sum** of the four history samples, not their average — the
+  `lsl #2; asr #2` pair is width adjustment, not a divide. MelonPrime injects one sample and the
+  other three are zero, so it arrives one-to-one. This is why the Dual write reuses the Touch scale:
+  it makes a Dual preset feel exactly like a Touch one rather than like the native Dual accelerator.
+- The native Dual accelerator MelonPrime overrides runs on a max of 8.0° (`0x8000`), a 40% initial
+  step, `max/100` = `0x147` = 0.0798° per update, and a 0.399902 release decay. It also has a
+  one-update producer/consumer gap: the branch consumes the previous value before producing the
+  next.
+- Call order differs: Touch runs Pitch then Yaw, Dual runs Yaw then Pitch. MelonPrime writes both
+  fields before the frame, so the ROM's own order is preserved either way.
+- The Dual branch does not pass the `NoAimInput` (`PlayerFlags1` bit 24) or `AimMinTouchTime` gates
+  that the Touch branch applies, so aim is not suppressed there while a HUD rectangle is touched.
+- Not covered: Free Camera (`player+0x4D6` ViewType 3, JP1_0 `0201AB8C`) is a third aim path with
+  its own Touch and Dual consumers. Its Dual side uses the same `player+0xE4`/`+0xE8` fields but
+  produces and consumes them in the same update, unlike the biped branch.
+
 #### Which aim settings still apply on a Dual preset
 
 Checked against the ROM's function boundaries: Pitch is `02027798`..`02027E18` and Yaw is
@@ -195,6 +220,16 @@ Checked against the ROM's function boundaries: Pitch is `02027798`..`02027E18` a
 | `InstantAimFollow` (developer) | works | patches `02028070`..`02028080`, also inside shared Yaw |
 | Zoom aim scale, aim accumulator, sensitivity | works | host-side, applied before the write |
 | `DisableMphAimSmoothing` | no effect, and none needed | the patch rewrites the touch producer's history fold at `02029FE0`/`0202A008`; a Dual preset never reads its output |
+| `FpsCameraLock` | works | it patches `02028070`, the Zoom-only gun-vector-to-facing-vector copy inside Yaw, making it unconditional. That removes the ~15.02° free-aim envelope in which the gun leads the body, and the ~9.985%-per-update follow, so it is an FPS camera lock rather than a latency tweak. Note this is a **different** patch from `DisableMphAimSmoothing`, which only disables the touch four-sample filter; mphCodex describes the two as one, which does not match this tree. |
+
+`FpsCameraLock` (`Metroid.Aim.Enable.FpsCameraLock`) used to be reachable only as
+`LowLatencyAimMode::InstantAimFollow`, and only while `DisableMphAimSmoothing` was also on. That
+buried a camera-behavior change behind two settings about input timing and the touch filter, which
+is what mphCodex's design notes call out. It is now its own public checkbox, placed under the
+aim-follow rows because it is the other half of how aim reaches the camera. The retired mode value
+is folded to `ImmediateSync` by `ClampLowLatencyAimMode()` in every build, and an old config holding
+it still turns the lock on once, so the migration is lossless.
+
 | `NativeHookMode` (register injection / PostFold) | not used | every hook PC is inside the touch branch, so a Dual preset never reaches them |
 
 The smoothing row has a consequence worth stating: because a Dual preset is *inherently* unsmoothed,

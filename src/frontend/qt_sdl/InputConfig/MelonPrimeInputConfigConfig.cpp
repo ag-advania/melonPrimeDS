@@ -121,6 +121,11 @@ void MelonPrimeInputConfig::saveConfig()
                 ? MelonPrime::BipedFireMethod::NewNativeEdge
                 : MelonPrime::BipedFireMethod::LegacyInput);
     }
+    if (m_cbMetroidFpsCameraLock) {
+        instcfg.SetBool(
+            MelonPrime::CfgKey::FpsCameraLock,
+            m_cbMetroidFpsCameraLock->isChecked());
+    }
     if (m_cbMetroidUseNewZoomMethod2) {
         // Writing this back also normalizes the retired NewPresetBinding value
         // out of older configs: it now behaves exactly like LegacyFixedR.

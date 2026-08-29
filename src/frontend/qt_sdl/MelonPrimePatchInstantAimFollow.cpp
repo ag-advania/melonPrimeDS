@@ -83,22 +83,18 @@ void InstantAimFollow_ApplyOnce(
     Config::Table& cfg,
     uint8_t romGroupIndex)
 {
-    const bool disableAimSmoothing = cfg.GetBool(CfgKey::DisableMphAimSmoothing);
-    const int lowLatencyAimMode = cfg.GetInt(CfgKey::LowLatencyAimMode);
+    // This patch makes the Zoom-only gun-vector-to-facing-vector copy
+    // unconditional, which removes the game's ~15 degree free-aim lead where
+    // the gun leads the body. That is a camera-behavior change, so it gets its
+    // own switch instead of riding on the aim-follow mode and the touch
+    // smoothing patch, which are about input timing and the touch filter.
     // Legacy key migration. Keep until the first post-V3 release gives old
     // configs a save cycle; see the Phase 4 migration ledger.
-    // Do not add new reads.
-    // Public builds migrate InstantAimFollow users to ImmediateSync; keep this
-    // patch path available only for developer builds with the explicit mode.
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    // Do not add new reads: the LowLatencyAimMode read only carries an old
+    // InstantAimFollow selection onto the new key.
     const bool shouldApply =
-        disableAimSmoothing
-        && lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow;
-#else
-    constexpr bool shouldApply = false;
-    (void)disableAimSmoothing;
-    (void)lowLatencyAimMode;
-#endif
+        cfg.GetBool(CfgKey::FpsCameraLock)
+        || cfg.GetInt(CfgKey::LowLatencyAimMode) == LowLatencyAimMode::InstantAimFollow;
 
     if (!shouldApply)
     {

@@ -111,7 +111,7 @@
 										</item>
 										<item row="2" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidDisableMphAimSmoothing">
-												<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode) No effect on Dual control presets: their aim path never goes through the smoothing.</string></property>
+												<property name="text"><string>Disable MPH Aim Smoothing (Disables the in-game aim smoothing. Note: Sensitivity will be reduced to 25% in Stylus Mode) No effect on Dual control presets: their aim path never goes through the smoothing. The game's free-aim lead, where the gun can lead the body by about 15 degrees, is a separate behavior and is not affected.</string></property>
 											</widget>
 										</item>
 										<item row="3" column="0" colspan="2">
