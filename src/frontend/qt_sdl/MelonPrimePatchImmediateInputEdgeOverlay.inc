@@ -110,10 +110,12 @@
             // ── General action bindings (ImmediateInputEdgeOverlay) ──────────
             // Cached at game join; these control-preset fields do not change
             // during a match, and this hook runs on a hot action-consumer path.
-            //   +0x368  Move left         +0x36C  Move right
-            //   +0x370  Move forward      +0x374  Move backward
-            //   +0x398  Fire              +0x39C  Jump (normal binding path)
-            //   +0x3E0  Zoom
+            // The masks come from m_presetBindings, the game-join snapshot of the
+            // player's own control-preset table (+0x368/0x36C/0x370/0x374 move,
+            // +0x398 fire, +0x39C jump, +0x3E0 zoom, +0x3B4 morph boost),
+            // reduced to one button per action. The ROM only tests
+            // `binding & field`, so one bit is enough and cannot press a button
+            // the preset binds to some other action as well.
             //
             // Fire ownership: exactly one of the two features owns the Fire
             // bit. Native Biped Fire owns it when enabled (its edges come from
@@ -123,20 +125,19 @@
             const bool genericOverlay = m_enableImmediateInputEdgeOverlay;
             const bool nativeFire = m_enableNativeBipedFire;
 
-            const uint16_t movLMask = genericOverlay ? m_bindingMoveL : 0u;
-            const uint16_t movRMask = genericOverlay ? m_bindingMoveR : 0u;
-            const uint16_t movFMask = genericOverlay ? m_bindingMoveF : 0u;
-            const uint16_t movBMask = genericOverlay ? m_bindingMoveB : 0u;
+            const auto& binds = m_presetBindings;
+            const uint16_t movLMask = genericOverlay ? binds.MoveL : 0u;
+            const uint16_t movRMask = genericOverlay ? binds.MoveR : 0u;
+            const uint16_t movFMask = genericOverlay ? binds.MoveF : 0u;
+            const uint16_t movBMask = genericOverlay ? binds.MoveB : 0u;
             const uint16_t fireMask = (genericOverlay && !nativeFire)
-                ? m_bindingFire
+                ? binds.Fire
                 : 0u;
-            const uint16_t jumpMask = genericOverlay ? m_bindingJump : 0u;
+            const uint16_t jumpMask = genericOverlay ? binds.Jump : 0u;
             const uint16_t zoomMask = (!genericOverlay || m_enableNativeZoomToggle)
                 ? 0u
-                : (m_enableNewZoomInputMethod
-                    ? m_bindingZoom
-                    : static_cast<uint16_t>(1u << INPUT_R));
-            const uint16_t nativeFireMask = nativeFire ? m_bindingFire : 0u;
+                : binds.Zoom;
+            const uint16_t nativeFireMask = nativeFire ? binds.Fire : 0u;
 
             const uint16_t genericMask = static_cast<uint16_t>(
                 movLMask | movRMask | movFMask | movBMask |

@@ -293,31 +293,55 @@ namespace MelonPrime {
             ? curr
             : ResolveSnapTapInput(curr, m_snapState);
 
-        const uint8_t lutResult = InputProjection::MoveLUT[finalInput & 0xF];
-        uint16_t mask;
+        // --- Branchless button merge, driven by the control preset ---
+        //
+        // Every button here comes from m_presetBindings, which the game-join
+        // snapshot derived from the player's own control-preset table. The
+        // movement table replaces the fixed D-pad LUT: it is the same single
+        // indexed read, just built for the active preset (the left-handed
+        // presets move on Y/A/X/B, not the D-pad).
+        //
+        // Zoom is applied separately by ApplyZoomBindingInput(). Native Biped
+        // Fire owns shoot through the post-poll player+0x464 overlay, so it
+        // holds the fire button released instead of synthesizing it.
+        // PresetButtonBindings declares the DS button masks itself because the
+        // INPUT_* enum is not visible from MelonPrime.h. Both are in scope here,
+        // so tie them together where the masks are actually consumed.
+        static_assert(PresetButtonBindings::BtnA     == (1u << INPUT_A),     "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnB     == (1u << INPUT_B),     "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnRight == (1u << INPUT_RIGHT), "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnLeft  == (1u << INPUT_LEFT),  "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnUp    == (1u << INPUT_UP),    "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnDown  == (1u << INPUT_DOWN),  "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnR     == (1u << INPUT_R),     "DS button mask drift");
+        static_assert(PresetButtonBindings::BtnL     == (1u << INPUT_L),     "DS button mask drift");
+
+        const auto& binds = m_presetBindings;
+        const uint64_t down = m_input.down;
+
+        // Select-masks rather than branches: 0 or 0xFFFF.
+        const uint16_t jumpSel = static_cast<uint16_t>(
+            0u - static_cast<uint16_t>(down & 1u));
+        const uint16_t fireSel = static_cast<uint16_t>(
+            0u - static_cast<uint16_t>(((down >> 1) & 1u)
+                                       & static_cast<uint64_t>(!m_enableNativeBipedFire)));
+
+        const uint16_t pressed = static_cast<uint16_t>(
+            binds.MoveMask[finalInput & 0xF]
+            | (binds.Jump & jumpSel)
+            | (binds.Fire & fireSel));
+
+        // The mask is active-low: a set bit means "not pressed". Release
+        // everything this function owns, then press what the preset wants, so a
+        // stale press from the out-of-game UI path cannot survive into a match.
+        const uint16_t owned = static_cast<uint16_t>(
+            binds.MoveAll | binds.Jump | binds.Fire);
         if constexpr (kInputMaskReset) {
-            mask = 0xFF0Fu | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+            m_inputMaskFast = static_cast<uint16_t>(0xFFFFu & ~pressed);
         }
         else {
-            mask = (m_inputMaskFast & 0xFF0Fu) | (static_cast<uint16_t>(lutResult) & 0x00F0u);
+            m_inputMaskFast = static_cast<uint16_t>((m_inputMaskFast | owned) & ~pressed);
         }
-
-        // --- Branchless button merge (B/L) ---
-        // Zoom is preset-dependent and is applied by ApplyZoomBindingInput().
-        // Native Biped Fire owns shoot through the post-poll player+0x464
-        // overlay, so it holds INPUT_L released (the mask is active-low: a set
-        // bit means "not pressed") instead of synthesizing the legacy fire
-        // input. Both branches clear the L bit first so a stale press from the
-        // out-of-game UI path cannot survive into the match.
-        constexpr uint16_t kModBits =
-            static_cast<uint16_t>((1u << INPUT_B) | (1u << INPUT_L));
-        const uint64_t nd = ~m_input.down;
-        const uint16_t bBit = static_cast<uint16_t>(((nd >> 0) & 1u) << INPUT_B);
-        const uint16_t lBit = static_cast<uint16_t>(((nd >> 1) & 1u) << INPUT_L);
-        const uint16_t fireBit = m_enableNativeBipedFire
-            ? static_cast<uint16_t>(1u << INPUT_L)
-            : lBit;
-        m_inputMaskFast = static_cast<uint16_t>((mask & ~kModBits) | bBit | fireBit);
     }
 
     HOT_FUNCTION void MelonPrimeCore::ProcessMoveAndButtonsFast()
@@ -341,10 +365,12 @@ namespace MelonPrime {
         const uint32_t finalInput = LIKELY(!m_snapTapMode)
             ? curr
             : ResolveSnapTapInput(curr, m_snapState);
-        const uint8_t lutResult = InputProjection::MoveLUT[finalInput & 0xF];
-        // 0xFF0F = all non-D-pad bits released; OR in the released D-pad bits so
-        // only currently-held directions stay pressed (cleared).
-        m_inputMaskFast = static_cast<uint16_t>(0xFF0Fu | (static_cast<uint16_t>(lutResult) & 0x00F0u));
+        // Everything released except the D-pad directions currently held.
+        // Deliberately the fixed menu table, not m_presetBindings: this path is
+        // for out-of-game screens, which navigate on the D-pad regardless of the
+        // in-game control preset.
+        m_inputMaskFast = static_cast<uint16_t>(
+            0xFFFFu & ~InputProjection::MenuMoveMask[finalInput & 0xF]);
     }
 
     // Frame-path entry for both post-poll overlays, called once per frame before
@@ -460,8 +486,10 @@ namespace MelonPrime {
             if (m_enableNativeZoomToggle)
                 m_nativeZoomTogglePrevDown = zoomDown;
 
-            if (zoomDown)
-                m_inputMaskFast = static_cast<uint16_t>(m_inputMaskFast & ~(1u << INPUT_R));
+            if (zoomDown) {
+                m_inputMaskFast = static_cast<uint16_t>(
+                    m_inputMaskFast & ~m_presetBindings.MorphBoost);
+            }
             return;
         }
 
@@ -476,15 +504,13 @@ namespace MelonPrime {
         if (!zoomDown)
             return;
 
-        uint16_t zoomMask = static_cast<uint16_t>(1u << INPUT_R);
-
-        if (m_enableNewZoomInputMethod && m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
-            const uint16_t boundMask = static_cast<uint16_t>(m_bindingZoom & 0x0FFFu);
-            if (boundMask != 0)
-                zoomMask = boundMask;
-        }
-
-        m_inputMaskFast = static_cast<uint16_t>(m_inputMaskFast & ~zoomMask);
+        // Always the preset's own zoom button. This used to be a fixed INPUT_R
+        // unless ZoomInputMethod opted into the preset table, which only
+        // happened to be right on Touch R (Touch L zooms on L, both Dual
+        // presets on Select). The snapshot makes the preset value the default,
+        // so the opt-in no longer changes anything for this path.
+        m_inputMaskFast = static_cast<uint16_t>(
+            m_inputMaskFast & ~m_presetBindings.Zoom);
     }
 
     void MelonPrimeCore::ProcessAimInputStylus(melonDS::NDS* nds)

@@ -45,7 +45,7 @@ namespace MelonPrime {
 #define MP_ROM_FIELDS_CORE(X) \
     X(ADDR, playerStructStart,        PlayerStructStart,         0x020DC5D4u, 0x020DC594u, 0x020DA714u, 0x020DAF94u, 0x020DAFB4u, 0x020DB034u, 0x020D3DE0u) \
     X(ADDR, playerPos,                PlayerPos,                 0x020DBB78u, 0x020DBB38u, 0x020D9CB8u, 0x020DA538u, 0x020DA558u, 0x020DA5D8u, 0x020D33A9u) \
-    X(ADDR, isInVisorOrMap,           IsInVisorOrMap,            0x020DB0BDu, 0x020DB07Du, 0x020D91FDu, 0x020D9A7Du, 0x020D9A9Du, 0x020D9B1Du, 0x020D28EEu) \
+    X(ADDR, controlTypeArray,         ControlTypeArray,          0x020E9A74u, 0x020E9A34u, 0x020E7934u, 0x020E83F4u, 0x020E8414u, 0x020E8494u, 0x020E1230u) /* u8[4], slot -> control preset id (0..3 human, 4 BOT); the ROM's own runtime reader and the WiFi slot-state packet both use it */     X(ADDR, controlPresetTable,       ControlPresetTable,        0x020BF3C0u, 0x020BF380u, 0x020BD6A0u, 0x020BDF00u, 0x020BDF20u, 0x020BDFA0u, 0x020B69F0u) /* 5 records of 0x9C; 0200CC7C expands record[id] into player+0x364 */     X(ADDR, isInVisorOrMap,           IsInVisorOrMap,            0x020DB0BDu, 0x020DB07Du, 0x020D91FDu, 0x020D9A7Du, 0x020D9A9Du, 0x020D9B1Du, 0x020D28EEu) \
     X(ADDR, playerHP,                 PlayerHP,                  0x020DC6AEu, 0x020DC66Eu, 0x020DA7EEu, 0x020DB06Eu, 0x020DB08Eu, 0x020DB10Eu, 0x020D3EBAu) \
     X(ADDR, playerDoubleDamageTimer,  PlayerDoubleDamageTimer,   0x020DCA84u, 0x020DCA44u, 0x020DABC4u, 0x020DB444u, 0x020DB464u, 0x020DB4E4u, 0x020D4290u) /* Slot-0 Double Damage timer (CPlayer +0x4B0); Damage Notify Purple local-damage flash */ \
     X(ADDR, baseIsAltForm,            BaseIsAltForm,             0x020DC6D8u, 0x020DC698u, 0x020DA818u, 0x020DB098u, 0x020DB0B8u, 0x020DB138u, 0x020D3EE4u) \

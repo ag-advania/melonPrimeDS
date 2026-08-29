@@ -554,13 +554,148 @@ namespace MelonPrime {
         // state (stale-edge policy).
         uint32_t m_overlayLocalPlayerPtr = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
-        uint16_t m_bindingMoveL = 0;
-        uint16_t m_bindingMoveR = 0;
-        uint16_t m_bindingMoveF = 0;
-        uint16_t m_bindingMoveB = 0;
-        uint16_t m_bindingFire = 0;
-        uint16_t m_bindingJump = 0;
-        uint16_t m_bindingZoom = 0;
+        // ---------------------------------------------------------------
+        // Control-preset button snapshot.
+        //
+        // MPH keeps the local player's control assignments at player+0x364 as
+        // {uint16 Button; uint16 PressFlags} entries; only the Button half is a
+        // DS KEYINPUT mask. The four presets bind the same action to different
+        // buttons, so anything MelonPrime synthesizes has to come from here --
+        // a hardcoded button only ever matched Touch R:
+        //
+        //            move        jump           fire  zoom    boost
+        //   Touch R  D-pad       A|B|X|Y        L     R       R
+        //   Touch L  Y/A/X/B     D-pad          R     L       L
+        //   Dual R   D-pad       R              L     Select  R
+        //   Dual L   Y/A/X/B     L              R     Select  L
+        //
+        // Taken once per game join, so the per-frame path only reads it. The
+        // defaults are the historical Touch R hardcodes, which keeps the
+        // out-of-game synthesis (Adventure map) working before the player
+        // struct is readable.
+        struct PresetButtonBindings {
+            // DS KEYINPUT bit masks. Declared here rather than reused from the
+            // INPUT_* enum because that enum lives in MelonPrimeInternal.h,
+            // which sits above this header; MelonPrimeGameInput.cpp sees both
+            // and static_asserts that they agree. MPH's own ButtonFlags uses
+            // this same layout, which is why a preset word can be ANDed
+            // straight against a KEYINPUT mask.
+            static constexpr uint16_t BtnA     = 0x0001;
+            static constexpr uint16_t BtnB     = 0x0002;
+            static constexpr uint16_t BtnRight = 0x0010;
+            static constexpr uint16_t BtnLeft  = 0x0020;
+            static constexpr uint16_t BtnUp    = 0x0040;
+            static constexpr uint16_t BtnDown  = 0x0080;
+            static constexpr uint16_t BtnR     = 0x0100;
+            static constexpr uint16_t BtnL     = 0x0200;
+
+            // DS mask to press for each 4-bit move index (F,B,L,R), opposite
+            // pairs cancelled. Precomputed so the hot path stays one table read.
+            uint16_t MoveMask[16] = {
+                0x0000, 0x0040, 0x0080, 0x0000,
+                0x0020, 0x0060, 0x00A0, 0x0020,
+                0x0010, 0x0050, 0x0090, 0x0010,
+                0x0000, 0x0040, 0x0080, 0x0000,
+            };
+            uint16_t MoveL = BtnLeft;
+            uint16_t MoveR = BtnRight;
+            uint16_t MoveF = BtnUp;
+            uint16_t MoveB = BtnDown;
+            uint16_t MoveAll = BtnLeft | BtnRight | BtnUp | BtnDown;
+            uint16_t Fire = BtnL;
+            uint16_t Jump = BtnB;
+            uint16_t Zoom = BtnR;
+            uint16_t MorphBoost = BtnR;
+
+            // Left-handed touch layout. The in-match HUD rectangles are the
+            // same table for every preset; the ROM just mirrors the X centre
+            // (GetTouchRegionCenter / TouchRegionHit do `centerX = 256 - centerX`
+            // when the flag is set), so any touch point MelonPrime synthesizes
+            // has to be mirrored the same way. The ROM's own runtime layout
+            // check is `record[0x00] & 0x200`, which is what this mirrors:
+            // Touch R 0x0076 / Dual R 0x007C are normal, Touch L 0x0276 /
+            // Dual L 0x027C are mirrored.
+            bool MirrorTouchX = false;
+
+            // Reduce a binding to a single button. The ROM only tests
+            // `binding & field`, so one bit is enough, and pressing the whole
+            // mask would press buttons the preset binds to other actions too
+            // (Touch R jump is A|B|X|Y). Keeping the historical button when the
+            // binding contains it makes Touch R bit-for-bit unchanged.
+            [[nodiscard]] static FORCE_INLINE uint16_t PickButton(
+                uint16_t binding, uint16_t preferred) noexcept
+            {
+                if (binding == 0)
+                    return preferred;
+                if (binding & preferred)
+                    return preferred;
+                return static_cast<uint16_t>(binding & (~binding + 1u));
+            }
+
+            // Mirror a touch X coordinate written for the normal (right-handed)
+            // HUD layout onto the layout this preset actually uses.
+            [[nodiscard]] FORCE_INLINE int MirrorX(int x) const noexcept
+            {
+                return MirrorTouchX ? (256 - x) : x;
+            }
+
+            // Byte offsets inside a 0x9C control record. Kept here rather than
+            // at the call site so the record layout has exactly one owner; they
+            // are the player-struct offsets minus 0x364, because player init
+            // copies this same record to player+0x364.
+            enum RecordOffset : uint32_t {
+                Off_ControlMode = 0x00,
+                Off_MoveLeft    = 0x04,
+                Off_MoveRight   = 0x08,
+                Off_MoveUp      = 0x0C,
+                Off_MoveDown    = 0x10,
+                Off_Fire        = 0x34,
+                Off_Jump        = 0x38,
+                Off_MorphBoost  = 0x50,
+                Off_Zoom        = 0x7C,
+                RecordSize      = 0x9C,
+            };
+
+            // Derive the snapshot from a control record in main RAM. `recordBase`
+            // is either ControlPresetTable[id] or the copy at player+0x364.
+            // An unreadable field reads as 0 and PickButton() then keeps the
+            // Touch R default for that action.
+            void BuildFromRecord(const uint8_t* mainRAM, uint32_t recordBase) noexcept
+            {
+                const auto read16 = [mainRAM, recordBase](uint32_t off) -> uint16_t {
+                    const uint32_t addr = recordBase + off;
+                    if (!mainRAM || addr < 0x02000000u || addr > 0x023FFFFEu)
+                        return 0;
+                    uint16_t v = 0;
+                    std::memcpy(&v, mainRAM + (addr & 0x3FFFFFu), sizeof(v));
+                    return v;
+                };
+
+                MirrorTouchX = (read16(Off_ControlMode) & 0x0200u) != 0;
+                MoveL = PickButton(read16(Off_MoveLeft), BtnLeft);
+                MoveR = PickButton(read16(Off_MoveRight), BtnRight);
+                MoveF = PickButton(read16(Off_MoveUp), BtnUp);
+                MoveB = PickButton(read16(Off_MoveDown), BtnDown);
+                MoveAll = static_cast<uint16_t>(MoveL | MoveR | MoveF | MoveB);
+                Fire = PickButton(read16(Off_Fire), BtnL);
+                Jump = PickButton(read16(Off_Jump), BtnB);
+                Zoom = PickButton(read16(Off_Zoom), BtnR);
+                MorphBoost = PickButton(read16(Off_MorphBoost), BtnR);
+
+                // Index bits are Forward/Back/Left/Right; a held opposite pair
+                // cancels, matching the D-pad table this replaces.
+                for (uint32_t i = 0; i < 16; ++i) {
+                    const bool f = (i & 1u) != 0;
+                    const bool b = (i & 2u) != 0;
+                    const bool l = (i & 4u) != 0;
+                    const bool r = (i & 8u) != 0;
+                    uint16_t m = 0;
+                    if (f != b) m = static_cast<uint16_t>(m | (f ? MoveF : MoveB));
+                    if (l != r) m = static_cast<uint16_t>(m | (l ? MoveL : MoveR));
+                    MoveMask[i] = m;
+                }
+            }
+        } m_presetBindings{};
         uint8_t  m_directTransformPendingFrames = 0;
         // Native Biped Fire host-side edge latch (Prev*/LatchValid) plus the
         // per-frame resolved input the overlay applies (Frame*).
@@ -875,6 +1010,14 @@ namespace MelonPrime {
         FORCE_INLINE void InputReset() {
             m_inputMaskFast = 0xFFFF;
             m_immediateOverlayPreserveMask = 0;
+        }
+
+        // Mask variant, for buttons that come from the control preset and are
+        // therefore only known at runtime.
+        FORCE_INLINE void InputSetMaskBranchless(uint16_t mask, bool released) {
+            const uint16_t keep = static_cast<uint16_t>(
+                mask & (0u - static_cast<uint16_t>(released)));
+            m_inputMaskFast = static_cast<uint16_t>((m_inputMaskFast & ~mask) | keep);
         }
 
         FORCE_INLINE void InputSetBranchless(uint16_t bit, bool released) {
