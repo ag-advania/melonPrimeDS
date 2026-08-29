@@ -155,6 +155,77 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 - Hook implemented in `MelonPrimePatchLowLatencyAimHook.inc`; registered/dispatched via
   `MelonPrimeArm9Hook.cpp`.
 
+### 6.2b Control-preset button synthesis
+
+- Everything MelonPrime synthesizes into DS `KEYINPUT`, and every mask the post-poll overlay
+  injects, comes from `MelonPrimeCore::m_presetBindings`, resolved once in `HandleGameJoinInit()`.
+  Only the low half of each `{uint16 Button; uint16 PressFlags}` entry is a button mask.
+- It is resolved from the ROM's **upstream** source, not from the player struct:
+
+  ```text
+  LIST_ControlTypeArray[slot]        u8 preset id, 0..3 human, 4 BOT
+    -> LIST_ControlPresetTable[id]   static 0x9C record
+       -> record +0x04/+0x08/+0x0C/+0x10 move, +0x34 fire, +0x38 jump,
+          +0x50 morph boost, +0x7C zoom
+  ```
+
+  `player+0x364` holds the same record, but only because player init calls `0200CC7C(player, id)`
+  to expand it there — it is downstream state. Reading it at game join races that init, and a
+  pre-init read returns zeros, which `PickButton()` would then silently resolve back to the Touch R
+  defaults. The id array is what the ROM's own runtime reader consults (JP1_0 `020310A8`) and what
+  the WiFi slot-state packet decoder writes, so it is correct for a client and not only for the
+  match host. `player+0x364` remains the fallback if the id is unusable.
+- Cross-check: the `local_slot_byte` column of the mphCodex control-type map matches
+  `LIST_PlayerPos` exactly on all seven ROM versions, so the slot index MelonPrime already uses is
+  the same one the ROM's runtime reader indexes this array with.
+- This is what makes the non-default presets work. The four presets bind the same action to
+  different buttons, so the previous fixed choices only ever matched Touch R:
+
+  | | move | jump | fire | zoom | boost |
+  |---|---|---|---|---|---|
+  | Touch R | D-pad | A\|B\|X\|Y | L | R | R |
+  | Touch L | Y/A/X/B | D-pad | R | L | L |
+  | Dual R | D-pad | R | L | Select | R |
+  | Dual L | Y/A/X/B | L | R | Select | L |
+
+- `PresetButtonBindings::PickButton()` reduces a binding to **one** button. The ROM only tests
+  `binding & field`, so one bit is sufficient, and pressing the whole mask would press buttons the
+  preset also binds to other actions (Touch R jump is `A|B|X|Y`). It keeps the historical button
+  when the binding contains it, which leaves Touch R bit-for-bit unchanged.
+- The per-direction move table is built at game join into `MoveMask[16]` (index bits F/B/L/R,
+  opposite pairs cancel), replacing the fixed D-pad `MoveLUT`. The hot path is still a single
+  indexed read plus branchless select-masks; measured at 1.379 ns/call versus 1.384 ns/call for the
+  old fixed-D-pad version, with bit-for-bit parity on the Touch R defaults across all 16x4x2 input
+  combinations.
+- **In-game only.** `ProcessMovementOnlyFromReset()`, the out-of-game path that keeps WASD working
+  on the Adventure planet/region map and the Hunter License pages, deliberately keeps the fixed
+  `InputProjection::MenuMoveMask`: menus navigate on the D-pad whatever the in-game preset is, so
+  carrying a left-handed preset's Y/A/X/B mapping into them would break them.
+- None of this is gated on `ImmediateInputEdgeOverlay`. The snapshot is taken in
+  `HandleGameJoinInit()`, which runs on the in-game rising edge with no feature gate, and the
+  always-on legacy `KEYINPUT` synthesis (`ProcessMoveAndButtonsFastImpl`, `ApplyZoomBindingInput`,
+  `HandleMorphBallBoost`) reads it directly. The overlay is just one more consumer. The only
+  buttons still hardcoded are `INPUT_START` and the UI Left/Right pair, which are menu controls and
+  not preset-bound.
+- The snapshot also carries `MirrorTouchX`, the left-handed touch layout flag, taken from
+  `record[0x00] & 0x200` — the same test the ROM's own runtime layout check makes (Touch R `0x0076`
+  and Dual R `0x007C` are normal; Touch L `0x0276` and Dual L `0x027C` are mirrored). The in-match
+  HUD rectangles are one shared table for every preset; the ROM mirrors them by
+  `centerX = 256 - centerX` in `GetTouchRegionCenter` / `TouchRegionHit`, so any touch point
+  MelonPrime synthesizes has to go through `PresetTouchX()` or it only lands on the right-handed
+  layouts. This affects the two in-match taps: the legacy transform (region ID4, Morph/Unmorph,
+  centre `(232,168)` 48x48, normal X 208..255 versus mirrored X 0..47) and weapon check (region ID3,
+  the weapon radial menu). `CENTER_RESET` and `SCAN_VISOR_BUTTON` sit on X=128, where the mirror is
+  a no-op. The Adventure dialog points (OK/LEFT/RIGHT/YES/NO) are menu-consumer regions rather than
+  in-match HUD rectangles and are left alone.
+- Developer builds print the resolved snapshot once per match join
+  (`preset move .../... jump ... fire ... zoom ... boost ...`), so a preset that reads back as the
+  Touch R defaults when it should not is visible immediately.
+- Zoom no longer has a fixed-`INPUT_R` fallback: it always uses the preset button, which is what
+  `ZoomInputMethod`'s "new method" used to opt into. That made the derived runtime flag select
+  between two identical behaviors, so it was removed; the `ZoomInputMethod` key and its
+  `NewPresetBinding` value stay for config compatibility, and `NewNativeToggle` is unaffected.
+
 ### 6.3 Native Biped Fire (`BipedFireMethod`, developer-only)
 - When enabled (`m_enableNativeBipedFire`, forced off in release), `ProcessMoveAndButtonsFast`
   holds `INPUT_L` released — it does **not** synthesize the legacy fire input. The `kModBits` /
