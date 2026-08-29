@@ -46,6 +46,7 @@
 #include "Config.h"
 #include "MelonPrimeDef.h"
 #include "../MelonPrimeHudGeometry.h"
+#include "../MelonPrimeHudScoreboardNativeGeometry.h"
 #include "../MelonPrimeHudPropSchema.inc"
 #include "MelonPrimeLocalization.h"
 #include "toml/toml.hpp"

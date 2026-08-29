@@ -72,16 +72,13 @@ static QString EditEnumLabel(const char* items, int val) {
 // generator can merge them with the generated legacy descriptor table.
 #if 0
 static const HudEditPropDesc kPropsScoreboard[] = {
-    {"Column Spacing", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardColumnSpacing, 0, 32, 1, nullptr, nullptr, nullptr},
-    {"Right Padding", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRightPadding, 0, 32, 1, nullptr, nullptr, nullptr},
+    {"Native Layout", EditPropType::Bool, MP_HUD_PROP_KEY_HudScoreboardNativeLayout, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Scoreboard Scale %", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardScale, 10, 800, 1, nullptr, nullptr, nullptr},
     {"Text Scale %", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardTextScale, 10, 800, 1, nullptr, nullptr, nullptr},
-    {"Row Spacing", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16, 1, nullptr, nullptr, nullptr},
     {"Hunter Icon Height", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48, 1, nullptr, nullptr, nullptr},
     {"Stars Height", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardStarsHeight, 0, 24, 1, nullptr, nullptr, nullptr},
     {"Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudScoreboardOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
     {"Background Opacity", EditPropType::Float, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, 0, 100, 5, nullptr, nullptr, nullptr},
-    {"Rank", EditPropType::Bool, MP_HUD_PROP_KEY_HudScoreboardRankShow, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Outline", EditPropType::Bool, MP_HUD_PROP_KEY_HudScoreboardOutline, 0, 0, 0, nullptr, nullptr, nullptr},
     {"Outline Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardOutlineColorR, 0, 255, 1,
         MP_HUD_PROP_KEY_HudScoreboardOutlineColorG, MP_HUD_PROP_KEY_HudScoreboardOutlineColorB, nullptr},
@@ -95,6 +92,12 @@ static const HudEditPropDesc kPropsScoreboard[] = {
         MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB, nullptr},
     {"Background Color", EditPropType::Color, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR, 0, 255, 1,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB, nullptr},
+    // Auto layout only: the native layout takes its gaps and its rank
+    // indicator from the ROM, so these four do nothing while it is on.
+    {"Column Spacing", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardColumnSpacing, 0, 32, 1, nullptr, nullptr, nullptr},
+    {"Right Padding", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRightPadding, 0, 32, 1, nullptr, nullptr, nullptr},
+    {"Row Spacing", EditPropType::Int, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16, 1, nullptr, nullptr, nullptr},
+    {"Rank", EditPropType::Bool, MP_HUD_PROP_KEY_HudScoreboardRankShow, 0, 0, 0, nullptr, nullptr, nullptr},
 };
 
 static const HudEditElemDesc kEditElemScoreboard[] = {

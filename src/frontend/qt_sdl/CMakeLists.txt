@@ -693,6 +693,25 @@ add_custom_target(melonprime_crosshair_projection_check ALL
     COMMENT "Running high-resolution crosshair projection tests..."
     VERBATIM)
 
+# The native scoreboard layout reproduces the ROM's own board geometry, which
+# is shared by the runtime board, the in-game edit mode and the settings
+# preview. The module is free of Qt and melonDS so the worked examples in the
+# reference document can be checked directly.
+add_executable(melonprime_hud_scoreboard_native_geometry_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/hud-scoreboard-native-geometry-tests.cpp)
+target_include_directories(melonprime_hud_scoreboard_native_geometry_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(melonprime_hud_scoreboard_native_geometry_tests PRIVATE
+    MELONPRIME_DS
+    MELONPRIME_CUSTOM_HUD)
+set_target_properties(melonprime_hud_scoreboard_native_geometry_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_hud_scoreboard_native_geometry_check ALL
+    COMMAND $<TARGET_FILE:melonprime_hud_scoreboard_native_geometry_tests>
+    DEPENDS melonprime_hud_scoreboard_native_geometry_tests
+    COMMENT "Running native scoreboard geometry tests..."
+    VERBATIM)
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(melonDS PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     target_compile_definitions(core PRIVATE MELONPRIME_ENABLE_DEVELOPER_FEATURES)

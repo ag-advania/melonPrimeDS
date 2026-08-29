@@ -410,18 +410,15 @@ static const Row kRowsScoreboard[] = {
         MP_HUD_PROP_KEY_HudScoreboardTextColorG,
         MP_HUD_PROP_KEY_HudScoreboardTextColorB,
         MP_HUD_PROP_KEY_HudScoreboardAnchor),
+    RowBool("Native Layout", MP_HUD_PROP_KEY_HudScoreboardNativeLayout),
     RowOffset(MP_HUD_PROP_KEY_HudScoreboardX, MP_HUD_PROP_KEY_HudScoreboardY,
         -256, 256, "Offset X", "Offset Y"),
-    RowSpin("Column Spacing", MP_HUD_PROP_KEY_HudScoreboardColumnSpacing, 0, 32),
-    RowSpin("Right Padding", MP_HUD_PROP_KEY_HudScoreboardRightPadding, 0, 32),
     RowSpin("Scoreboard Scale %", MP_HUD_PROP_KEY_HudScoreboardScale, 10, 800),
     RowSpin("Text Scale %", MP_HUD_PROP_KEY_HudScoreboardTextScale, 10, 800),
-    RowSpin("Row Spacing", MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16),
     RowSpin("Hunter Icon Height", MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48),
     RowSpin("Stars Height", MP_HUD_PROP_KEY_HudScoreboardStarsHeight, 0, 24),
     RowOpacity("Opacity", MP_HUD_PROP_KEY_HudScoreboardOpacity),
     RowOpacity("Background Opacity", MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity),
-    RowBool("Rank", MP_HUD_PROP_KEY_HudScoreboardRankShow),
     RowOutline("Score Outline", MP_OUTLINE_KEYS(HudScoreboard)),
     RowColor("Header Color",
         MP_HUD_PROP_KEY_HudScoreboardHeaderColorR,
@@ -439,6 +436,12 @@ static const Row kRowsScoreboard[] = {
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB),
+    // Auto layout only: the native layout takes its gaps and its rank
+    // indicator from the ROM, so these four do nothing while it is on.
+    RowSpin("Column Spacing", MP_HUD_PROP_KEY_HudScoreboardColumnSpacing, 0, 32),
+    RowSpin("Right Padding", MP_HUD_PROP_KEY_HudScoreboardRightPadding, 0, 32),
+    RowSpin("Row Spacing", MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16),
+    RowBool("Rank", MP_HUD_PROP_KEY_HudScoreboardRankShow),
 };
 
 static const Row kRowsEnemyTarget[] = {

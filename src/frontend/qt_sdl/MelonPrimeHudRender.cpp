@@ -9,6 +9,7 @@
 #include "MelonPrimeHudEdit.h"
 #include "MelonPrimeHudGoldenHarness.h"
 #include "MelonPrimeHudCrosshairProjection.h"
+#include "MelonPrimeHudScoreboardNativeGeometry.h"
 #include "MelonPrimePatchNoHud.h"
 #include "MelonPrimeInternal.h"
 #include "MelonPrimeGameRomAddrTable.h"

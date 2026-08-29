@@ -5,16 +5,12 @@ static const HudWidgetProp kSecScoreboard[] = {
     {"Anchor", HWType::Anchor9, MP_HUD_PROP_KEY_HudScoreboardAnchor, 0, 8, 1, nullptr, nullptr},
     {"Offset X", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardX, -256, 256, 1, nullptr, nullptr},
     {"Offset Y", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardY, -256, 256, 1, nullptr, nullptr},
-    {"Column Spacing", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardColumnSpacing, 0, 32, 1, nullptr, nullptr},
-    {"Right Padding", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardRightPadding, 0, 32, 1, nullptr, nullptr},
     {"Scoreboard Scale %", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardScale, 10, 800, 1, nullptr, nullptr},
-    {"Row Spacing", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16, 1, nullptr, nullptr},
     {"Hunter Icon Height", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardHunterIconHeight, 0, 48, 1, nullptr, nullptr},
     {"Stars Height", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardStarsHeight, 0, 24, 1, nullptr, nullptr},
     {"Opacity", HWType::Opacity, MP_HUD_PROP_KEY_HudScoreboardOpacity, 0, 100, 5, nullptr, nullptr},
     {"Background Opacity", HWType::Opacity, MP_HUD_PROP_KEY_HudScoreboardBackgroundOpacity, 0, 100, 5, nullptr, nullptr},
     {"Text Scale %", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardTextScale, 10, 800, 1, nullptr, nullptr},
-    {"Rank", HWType::Bool, MP_HUD_PROP_KEY_HudScoreboardRankShow, 0, 0, 0, nullptr, nullptr},
     {"Outline", HWType::Bool, MP_HUD_PROP_KEY_HudScoreboardOutline, 0, 0, 0, nullptr, nullptr},
     {"Outline Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardOutlineColorR, 0, 255, 1,
         MP_HUD_PROP_KEY_HudScoreboardOutlineColorG, MP_HUD_PROP_KEY_HudScoreboardOutlineColorB},
@@ -30,6 +26,11 @@ static const HudWidgetProp kSecScoreboard[] = {
         MP_HUD_PROP_KEY_HudScoreboardTeamRowColorG, MP_HUD_PROP_KEY_HudScoreboardTeamRowColorB},
     {"Background Color", HWType::Color3, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorR, 0, 255, 1,
         MP_HUD_PROP_KEY_HudScoreboardBackgroundColorG, MP_HUD_PROP_KEY_HudScoreboardBackgroundColorB},
+    {"AUTO LAYOUT ONLY. The settings below do nothing while Native Layout is on: it takes its gaps and its rank indicator from the game. Everything above still applies, including Anchor, Offset X/Y, Scale % and Text Scale %.", HWType::Label, "", 0, 0, 0, nullptr, nullptr},
+    {"Column Spacing", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardColumnSpacing, 0, 32, 1, nullptr, nullptr},
+    {"Right Padding", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardRightPadding, 0, 32, 1, nullptr, nullptr},
+    {"Row Spacing", HWType::Int, MP_HUD_PROP_KEY_HudScoreboardRowSpacing, 0, 16, 1, nullptr, nullptr},
+    {"Rank", HWType::Bool, MP_HUD_PROP_KEY_HudScoreboardRankShow, 0, 0, 0, nullptr, nullptr},
 };
 
 // Generator-only dialog source surface for the Enemy Target HUD.
