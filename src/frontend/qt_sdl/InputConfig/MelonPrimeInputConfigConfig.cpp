@@ -121,17 +121,14 @@ void MelonPrimeInputConfig::saveConfig()
                 ? MelonPrime::BipedFireMethod::NewNativeEdge
                 : MelonPrime::BipedFireMethod::LegacyInput);
     }
-    if (m_cbMetroidUseNewZoomMethod || m_cbMetroidUseNewZoomMethod2) {
-        int zoomMethod = MelonPrime::ZoomInputMethod::LegacyFixedR;
-        if (kDeveloperOnlyFeaturesEnabled
-            && m_cbMetroidUseNewZoomMethod2
-            && m_cbMetroidUseNewZoomMethod2->isChecked())
-            zoomMethod = MelonPrime::ZoomInputMethod::NewNativeToggle;
-        else if (m_cbMetroidUseNewZoomMethod && m_cbMetroidUseNewZoomMethod->isChecked())
-            zoomMethod = MelonPrime::ZoomInputMethod::NewPresetBinding;
+    if (m_cbMetroidUseNewZoomMethod2) {
+        // Writing this back also normalizes the retired NewPresetBinding value
+        // out of older configs: it now behaves exactly like LegacyFixedR.
         instcfg.SetInt(
             MelonPrime::CfgKey::ZoomInputMethod,
-            zoomMethod);
+            kDeveloperOnlyFeaturesEnabled && m_cbMetroidUseNewZoomMethod2->isChecked()
+                ? MelonPrime::ZoomInputMethod::NewNativeToggle
+                : MelonPrime::ZoomInputMethod::LegacyFixedR);
     }
     // Legacy key migration. Keep until the first post-V3 release gives old
     // configs a save cycle; see the Phase 4 migration ledger.

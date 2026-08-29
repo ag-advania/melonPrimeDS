@@ -887,7 +887,6 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         || m_cbMetroidUseNewWeaponSwitchMethod
         || m_cbMetroidUseNewBipedFireMethod
         || m_cbMetroidUseNewTransformMethod
-        || m_cbMetroidUseNewZoomMethod
         || m_cbMetroidUseNewZoomMethod2)
     {
         return;
@@ -1007,69 +1006,29 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     const int zoomMethod = std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 2);
 
-    m_cbMetroidUseNewZoomMethod = new QCheckBox(
-        "Use New Method for Zoom",
-        ui->sectionDeveloperOnly);
-    m_cbMetroidUseNewZoomMethod->setToolTip(
-        "Checked: use the current in-game zoom binding from the player's control preset. "
-        "Unchecked: use the older fixed R-button path.");
-    m_cbMetroidUseNewZoomMethod->setChecked(
-        kDeveloperOnlyFeaturesEnabled
-        && zoomMethod == MelonPrime::ZoomInputMethod::NewPresetBinding);
-    m_cbMetroidUseNewZoomMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
-
     m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
         "Use New Method 2 for Zoom",
         ui->sectionDeveloperOnly);
     m_cbMetroidUseNewZoomMethod2->setToolTip(
         "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. "
-        "Unchecked with New Method also off: use Legacy fixed R-button input.");
+        "Unchecked: drive the zoom button the player's control preset binds.");
     m_cbMetroidUseNewZoomMethod2->setChecked(
         kDeveloperOnlyFeaturesEnabled
         && zoomMethod == MelonPrime::ZoomInputMethod::NewNativeToggle);
     m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
 
     addDeveloperSpacing();
-    addDeveloperWidget(m_cbMetroidUseNewZoomMethod);
     addDeveloperWidget(m_cbMetroidUseNewZoomMethod2);
-
-    connect(
-        m_cbMetroidUseNewZoomMethod,
-        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
-        this,
-        [this](auto state) {
-            if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod2)
-                m_cbMetroidUseNewZoomMethod2->setChecked(false);
-        });
-    connect(
-        m_cbMetroidUseNewZoomMethod2,
-        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
-        this,
-        [this](auto state) {
-            if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod)
-                m_cbMetroidUseNewZoomMethod->setChecked(false);
-        });
-
-    auto* zoomDesc = new QLabel(
-        "New Method reads the game's zoom binding table, so Touch and Dual presets can map zoom to different DS buttons. "
-        "It is also slightly lower latency than Legacy Method. "
-        "If both boxes are unchecked, Legacy Method always drives the fixed R button like the older input path.",
-        ui->sectionDeveloperOnly);
-    zoomDesc->setObjectName(QStringLiteral("lblMetroidZoomMethodDesc"));
-    zoomDesc->setWordWrap(true);
-    zoomDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
-    zoomDesc->setStyleSheet("QLabel { margin-left: 20px; }");
 
     auto* zoom2Desc = new QLabel(
         "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. "
-        "Mutually exclusive with New Method for Zoom.",
+        "Unchecked, zoom uses the button the player's control preset binds.",
         ui->sectionDeveloperOnly);
     zoom2Desc->setObjectName(QStringLiteral("lblMetroidZoomMethod2Desc"));
     zoom2Desc->setWordWrap(true);
     zoom2Desc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     zoom2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
 
-    addDeveloperWidget(zoomDesc);
     addDeveloperWidget(zoom2Desc);
 
     int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
@@ -1137,8 +1096,6 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
         m_cbMetroidUseNewTransformMethod->setEnabled(true);
     if (m_cbMetroidUseNewBipedFireMethod)
         m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
-    if (m_cbMetroidUseNewZoomMethod)
-        m_cbMetroidUseNewZoomMethod->setEnabled(true);
     if (m_cbMetroidUseNewZoomMethod2)
         m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
     ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);

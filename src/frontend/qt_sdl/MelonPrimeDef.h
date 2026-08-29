@@ -62,7 +62,7 @@ namespace MelonPrime {
         inline constexpr const char* DirectAltFormTransform    = "Metroid.Input.Enable.DirectAltFormTransform";
         inline constexpr const char* WeaponSwitchMethod        = "Metroid.Input.WeaponSwitchMethod"; // 0=Legacy touch 1=New native
         inline constexpr const char* BipedFireMethod           = "Metroid.Input.BipedFireMethod"; // 0=Legacy input 1=New native edge
-        inline constexpr const char* ZoomInputMethod           = "Metroid.Input.ZoomMethod"; // 0=Legacy fixed R 1=New preset binding 2=New native toggle
+        inline constexpr const char* ZoomInputMethod           = "Metroid.Input.ZoomMethod"; // 0=Legacy 1=retired (behaves as 0) 2=New native toggle
         inline constexpr const char* ScreenSyncMode = "Metroid.Screen.SyncMode";
         inline constexpr const char* MphSens         = "Metroid.Sensitivity.Mph";
         inline constexpr const char* Headphone       = "Metroid.Apply.Headphone";
@@ -199,6 +199,10 @@ namespace MelonPrime {
 
     namespace ZoomInputMethod {
         inline constexpr int LegacyFixedR = 0;
+        // Retired: meant "read the zoom button from the control preset", which
+        // is now what every path does. Kept so the value is not reused; old
+        // configs holding it behave as LegacyFixedR and are normalized on the
+        // next save.
         inline constexpr int NewPresetBinding = 1;
         inline constexpr int NewNativeToggle = 2;
     }

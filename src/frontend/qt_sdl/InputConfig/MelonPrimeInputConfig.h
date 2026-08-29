@@ -195,7 +195,6 @@ private:
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
-    QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod2 = nullptr;
     QLabel* m_lblMetroidLowLatencyAimMode = nullptr;
     QComboBox* m_comboMetroidLowLatencyAimMode = nullptr;

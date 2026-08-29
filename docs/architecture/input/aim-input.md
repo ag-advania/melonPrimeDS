@@ -222,9 +222,11 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
   (`preset move .../... jump ... fire ... zoom ... boost ...`), so a preset that reads back as the
   Touch R defaults when it should not is visible immediately.
 - Zoom no longer has a fixed-`INPUT_R` fallback: it always uses the preset button, which is what
-  `ZoomInputMethod`'s "new method" used to opt into. That made the derived runtime flag select
-  between two identical behaviors, so it was removed; the `ZoomInputMethod` key and its
-  `NewPresetBinding` value stay for config compatibility, and `NewNativeToggle` is unaffected.
+  `ZoomInputMethod`'s "new method" used to opt into. That left the option selecting between two
+  identical behaviors, so the runtime flag, the "Use New Method for Zoom" checkbox and its
+  description were all removed. `ZoomInputMethod::NewPresetBinding` is retained as a retired value
+  so it is not reused: an old config holding it behaves as `LegacyFixedR` and is normalized on the
+  next settings save. `NewNativeToggle` ("New Method 2") is unaffected.
 
 ### 6.3 Native Biped Fire (`BipedFireMethod`, developer-only)
 - When enabled (`m_enableNativeBipedFire`, forced off in release), `ProcessMoveAndButtonsFast`
