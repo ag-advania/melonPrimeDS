@@ -420,6 +420,7 @@ WeaponSwitch, TransformGate, NativeAimDelta, etc.) are documented in the
 | Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
 | Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Pairs with Damage-Notify-Purple |
 | No picking up specific items | `MelonPrimePatchNoPickingUpSpecificItems.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
+| Touch-screen aim only (battle) | `MelonPrimePatchTouchScreenAimOnly.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Neutralizes the three in-match bottom-screen HUD hit-tests (Morph Ball, weapon quick slots, weapon menu) with `mov r0,#0` so the whole touch screen stays aim input; double-tap jump and the touch boost gesture are left alone |
 
 ---
 

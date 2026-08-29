@@ -16,6 +16,7 @@
 #include "MelonPrimePatchShowEnemyHpMeterOnline.h"
 #include "MelonPrimePatchDisableDoubleDamageMultiplier.h"
 #include "MelonPrimePatchNoPickingUpSpecificItems.h"
+#include "MelonPrimePatchTouchScreenAimOnly.h"
 #include "MelonPrimePatchFixWifi.h"
 #include "MelonPrimePatchUseFirmwareLanguage.h"
 #include "MelonPrimePatchExpandStageMatrix.h"
@@ -61,6 +62,10 @@ namespace MelonPrime {
         void Apply_NoPickingUpSpecificItems(const PatchCtx& ctx)
         {
             NoPickingUpSpecificItems_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+        }
+        void Apply_TouchScreenAimOnly(const PatchCtx& ctx)
+        {
+            TouchScreenAimOnly_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
         }
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -142,6 +147,10 @@ namespace MelonPrime {
         {
             NoPickingUpSpecificItems_RestoreOnce(ctx.state, ctx.nds, ctx.rom.romGroupIndex);
         }
+        void Restore_TouchScreenAimOnly(const PatchCtx& ctx)
+        {
+            TouchScreenAimOnly_RestoreOnce(ctx.state, ctx.nds, ctx.rom.romGroupIndex);
+        }
 
         void Reset_LowHpWarning(MelonPrimePatchState&) { LowHpWarning_ResetPatchState(); }
         void Reset_FixWifi(MelonPrimePatchState& state) { FixWifi_ResetPatchState(state); }
@@ -153,9 +162,9 @@ namespace MelonPrime {
         //  - Iteration order defines apply order. The table order preserves all
         //    three pre-registry apply-site orderings exactly:
         //      GameJoin       = entry 1     (InGameAspectRatio)
-        //      BattleRuntime  = entries 2-8 (OsdColor .. NoPickingUp)
-        //      ConfigReload   = entries 4-8 (FpsCameraLock .. NoPickingUp)
-        //      OutOfGameFrame = entries 9-11 (FixWifi .. ExpandStageMatrix;
+        //      BattleRuntime  = entries 2-9 (OsdColor .. TouchScreenAimOnly)
+        //      ConfigReload   = entries 4-9 (FpsCameraLock .. TouchScreenAimOnly)
+        //      OutOfGameFrame = entries 10-12 (FixWifi .. ExpandStageMatrix;
         //                       the frame loop uses the direct fast dispatch)
         //  - Restore order also follows the table. Safe: all modules write disjoint ARM9
         //    addresses, so restore order between modules cannot matter.
@@ -212,6 +221,10 @@ namespace MelonPrime {
               PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_NoPickingUpSpecificItems, &Restore_NoPickingUpSpecificItems,
               &NoPickingUpSpecificItems_ResetPatchState },
+            { "TouchScreenAimOnly",
+              PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
+              &Apply_TouchScreenAimOnly, &Restore_TouchScreenAimOnly,
+              &TouchScreenAimOnly_ResetPatchState },
             { "FixWifi",
               PatchSite_OutOfGameFrame, RF_None,
               &Apply_FixWifi, nullptr,

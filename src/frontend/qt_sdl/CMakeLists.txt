@@ -121,6 +121,7 @@ set(SOURCES_QT_SDL
     MelonPrimePatchShowEnemyHpMeterOnline.cpp
     MelonPrimePatchDisableDoubleDamageMultiplier.cpp
     MelonPrimePatchNoPickingUpSpecificItems.cpp
+    MelonPrimePatchTouchScreenAimOnly.cpp
     MelonPrimePatchShadowFreezeRuntimeHook.cpp
     MelonPrimePatchFixNoxusBladePersistence.cpp
     MelonPrimePatchFpsCameraLock.cpp

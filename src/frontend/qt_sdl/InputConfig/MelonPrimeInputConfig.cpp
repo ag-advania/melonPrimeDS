@@ -473,6 +473,9 @@ void MelonPrimeInputConfig::buildSettingBindings()
         // GUI-only touch routing has no load-time side effects. Keep it appended so
         // every historical binding index and observable load order remains stable.
         { C::TopScreenTouch, K::CheckBool,        ui->cbMetroidEnableTopScreenTouch },   // 49
+        // Battle in-match touch-screen HUD hit-test patch. Registry-applied at
+        // battle runtime / config reload, so this row only mirrors the checkbox.
+        { C::TouchScreenAimOnly, K::CheckBool,    ui->cbMetroidEnableTouchScreenAimOnly }, // 50
     };
 }
 
@@ -690,7 +693,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
     // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
     loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
-    loadBindingsRange(instcfg, 49, 50); // GUI-only top-screen touch routing
+    loadBindingsRange(instcfg, 49, 51); // top-screen touch routing + touch-screen aim-only
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);
