@@ -86,9 +86,6 @@ void MelonPrimeInputConfig::saveConfig()
     int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode
         ? m_comboMetroidLowLatencyAimMode->currentData().toInt()
         : MelonPrime::LowLatencyAimMode::Off;
-    if (!kDeveloperOnlyFeaturesEnabled
-        && lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow)
-        lowLatencyAimMode = MelonPrime::LowLatencyAimMode::ImmediateSync;
     instcfg.SetInt(MelonPrime::CfgKey::LowLatencyAimMode, lowLatencyAimMode);
     int nativeAimHookMode = 0;
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
@@ -138,12 +135,13 @@ void MelonPrimeInputConfig::saveConfig()
     // Legacy key migration. Keep until the first post-V3 release gives old
     // configs a save cycle; see the Phase 4 migration ledger.
     // Do not add new reads.
-    // Keep the legacy InstantAimFollow bool off in public builds. Developer
-    // builds may still mirror the developer-only mode for local test configs.
+    // Keep the old key mirrored for configs from before the independent
+    // FpsCameraLock key was introduced.
     instcfg.SetBool(
         MelonPrime::CfgKey::InstantAimFollow,
         kDeveloperOnlyFeaturesEnabled
-            && lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
+            && m_cbMetroidFpsCameraLock
+            && m_cbMetroidFpsCameraLock->isChecked());
 
     // Screen Sync Mode, In-game scaling, and Low HP warning thresholds are all
     // saved via saveBindings() above (binding table). Clip/TopScreen stay below

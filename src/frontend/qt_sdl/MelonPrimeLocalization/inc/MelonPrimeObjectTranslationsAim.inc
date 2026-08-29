@@ -243,7 +243,7 @@
         }
     },
     {
-        "lblMetroidInstantAimFollowDesc",
+        "lblMetroidFpsCameraLockDesc",
         {
             {MenuLangId::Japanese, "体の向きを銃口に常に一致させ、ゲーム本来の約15度の遊びを無くします。オフ推奨: この遅れは急な動きを和らげるための意図的な設計で、無くすと画面酔いを起こすことがあります。"},
             {MenuLangId::German, "Richtet den Körper immer exakt auf die Waffe aus und entfernt den spieleigenen Vorlauf von etwa 15 Grad. Aus empfohlen: diese Verzögerung ist Absicht und mildert ruckartige Bewegungen; ohne sie kann Übelkeit auftreten."},

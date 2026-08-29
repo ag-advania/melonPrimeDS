@@ -11,7 +11,7 @@
 #include "MelonPrimePatchOsdColor.h"
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimePatchLowHpWarning.h"
-#include "MelonPrimePatchInstantAimFollow.h"
+#include "MelonPrimePatchFpsCameraLock.h"
 #include "MelonPrimePatchShowHeadshotOnline.h"
 #include "MelonPrimePatchShowEnemyHpMeterOnline.h"
 #include "MelonPrimePatchDisableDoubleDamageMultiplier.h"
@@ -42,9 +42,9 @@ namespace MelonPrime {
         {
             LowHpWarning_ApplyOnce(ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
         }
-        void Apply_InstantAimFollow(const PatchCtx& ctx)
+        void Apply_FpsCameraLock(const PatchCtx& ctx)
         {
-            InstantAimFollow_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+            FpsCameraLock_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
         }
         void Apply_ShowHeadshotOnline(const PatchCtx& ctx)
         {
@@ -122,9 +122,9 @@ namespace MelonPrime {
         {
             LowHpWarning_RestoreOnce(ctx.nds, ctx.rom.romGroupIndex);
         }
-        void Restore_InstantAimFollow(const PatchCtx& ctx)
+        void Restore_FpsCameraLock(const PatchCtx& ctx)
         {
-            InstantAimFollow_RestoreOnce(ctx.state, ctx.nds, ctx.rom.romGroupIndex);
+            FpsCameraLock_RestoreOnce(ctx.state, ctx.nds, ctx.rom.romGroupIndex);
         }
         void Restore_ShowHeadshotOnline(const PatchCtx& ctx)
         {
@@ -154,7 +154,7 @@ namespace MelonPrime {
         //    three pre-registry apply-site orderings exactly:
         //      GameJoin       = entry 1     (InGameAspectRatio)
         //      BattleRuntime  = entries 2-8 (OsdColor .. NoPickingUp)
-        //      ConfigReload   = entries 4-8 (InstantAimFollow .. NoPickingUp)
+        //      ConfigReload   = entries 4-8 (FpsCameraLock .. NoPickingUp)
         //      OutOfGameFrame = entries 9-11 (FixWifi .. ExpandStageMatrix;
         //                       the frame loop uses the direct fast dispatch)
         //  - Restore order also follows the table. Safe: all modules write disjoint ARM9
@@ -192,10 +192,10 @@ namespace MelonPrime {
               PatchSite_BattleRuntime, RF_OnLeave | RF_OnStop,
               &Apply_LowHpWarning, &Restore_LowHpWarning,
               &Reset_LowHpWarning },
-            { "InstantAimFollow",
+            { "FpsCameraLock",
               PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
-              &Apply_InstantAimFollow, &Restore_InstantAimFollow,
-              &InstantAimFollow_ResetPatchState },
+              &Apply_FpsCameraLock, &Restore_FpsCameraLock,
+              &FpsCameraLock_ResetPatchState },
             { "ShowHeadshotOnline",
               PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_ShowHeadshotOnline, &Restore_ShowHeadshotOnline,

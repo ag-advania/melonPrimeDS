@@ -143,15 +143,17 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
   hooked PC for the lowest possible latency.
 
 ### 6.2 Low-Latency Aim Hook (`Metroid.Aim.LowLatencyMode`, release-available)
-- Forced `Off` unless `DisableMphAimSmoothing=true`; also inert in stylus mode.
+- `ImmediateSync` and `MoonLikeAim` are forced `Off` unless
+  `DisableMphAimSmoothing=true`; both are also inert in stylus mode. The legacy
+  `InstantAimFollow` value is separate from that gate.
 - A **separate** aim mechanism: at the aim-function exit PCs it rewrites the player's orientation
   basis (forward/side/up vectors at `CPlayer +0x4C / +0x58 / +0x64`) directly.
 - Release-available modes: `ImmediateSync` (snap orientation straight to the target) and
   `MoonLikeAim` (chase the target with tunable Q12 step sizes:
   `MoonLikeAimNormalStepQ12` / `FastStepQ12` / `FastThresholdQ12`).
-- `InstantAimFollow` is developer-only (`LowLatencyMode = 3`) and is backed by the separate
-  `MelonPrimePatchInstantAimFollow` patch, not the runtime exit-PC hook. Public builds normalize
-  existing `InstantAimFollow` configs to `ImmediateSync`.
+- `InstantAimFollow` is the legacy developer-only value (`LowLatencyMode = 3`) for the separate
+  `FpsCameraLock` camera-behavior patch, not the runtime exit-PC hook. It is retained as a distinct
+  value and is never reinterpreted as `ImmediateSync`.
 - Hook implemented in `MelonPrimePatchLowLatencyAimHook.inc`; registered/dispatched via
   `MelonPrimeArm9Hook.cpp`.
 
@@ -217,18 +219,19 @@ Checked against the ROM's function boundaries: Pitch is `02027798`..`02027E18` a
 | Setting | Dual | Why |
 |---|---|---|
 | `LowLatencyMode` ImmediateSync / MoonLikeAim | works | its hook PCs (`020282C8` / `02028544`) are inside the shared Yaw function |
-| `InstantAimFollow` (developer) | works | patches `02028070`..`02028080`, also inside shared Yaw |
+| `InstantAimFollow` (legacy developer alias) | works | enables the independent `FpsCameraLock` patch at `02028070`..`02028080`, inside shared Yaw |
 | Zoom aim scale, aim accumulator, sensitivity | works | host-side, applied before the write |
 | `DisableMphAimSmoothing` | no effect, and none needed | the patch rewrites the touch producer's history fold at `02029FE0`/`0202A008`; a Dual preset never reads its output |
-| `FpsCameraLock` | works | it patches `02028070`, the Zoom-only gun-vector-to-facing-vector copy inside Yaw, making it unconditional. That removes the ~15.02° free-aim envelope in which the gun leads the body, and the ~9.985%-per-update follow, so it is an FPS camera lock rather than a latency tweak. Note this is a **different** patch from `DisableMphAimSmoothing`, which only disables the touch four-sample filter; mphCodex describes the two as one, which does not match this tree. |
+| `FpsCameraLock` (developer-only) | works | it patches `02028070`, the Zoom-only gun-vector-to-facing-vector copy inside Yaw, making it unconditional. That removes the ~15.02° free-aim envelope in which the gun leads the body, and the ~9.985%-per-update follow, so it is an FPS camera lock rather than a latency tweak. Note this is a **different** patch from `DisableMphAimSmoothing`, which only disables the touch four-sample filter; mphCodex describes the two as one, which does not match this tree. |
 
 `FpsCameraLock` (`Metroid.Aim.Enable.FpsCameraLock`) used to be reachable only as
 `LowLatencyAimMode::InstantAimFollow`, and only while `DisableMphAimSmoothing` was also on. That
 buried a camera-behavior change behind two settings about input timing and the touch filter, which
-is what mphCodex's design notes call out. It is now its own public checkbox, placed under the
-aim-follow rows because it is the other half of how aim reaches the camera. The retired mode value
-is folded to `ImmediateSync` by `ClampLowLatencyAimMode()` in every build, and an old config holding
-it still turns the lock on once, so the migration is lossless.
+is what mphCodex's design notes call out. It is now its own independent developer-only checkbox,
+kept separate from the aim-follow mode and the smoothing setting. The public-facing wording and
+translation entries are intentionally retained here for a future publication without recreating
+the specification. The legacy mode value is not reinterpreted as `ImmediateSync`; an old config
+holding it still turns the independent lock on in a developer build.
 
 | `NativeHookMode` (register injection / PostFold) | not used | every hook PC is inside the touch branch, so a Dual preset never reaches them |
 
@@ -559,7 +562,8 @@ Troubleshooting:
 - `Metroid.Aim.Disable.MphAimSmoothing`
 - `Metroid.Aim.Enable.Accumulator`
 - `Metroid.Aim.NativeHookMode` — §6.1 (developer-only; forced `0` in release)
-- `Metroid.Aim.LowLatencyMode` — §6.2 (`Off` / `ImmediateSync` / `MoonLikeAim`; `InstantAimFollow` is developer-only and public builds migrate it to `ImmediateSync`; requires `DisableMphAimSmoothing`)
+- `Metroid.Aim.LowLatencyMode` — §6.2 (`Off` / `ImmediateSync` / `MoonLikeAim`; `InstantAimFollow` is a retained developer-only alias and is independent of `DisableMphAimSmoothing`)
+- `Metroid.Aim.Enable.FpsCameraLock` — §6.2 (developer-only independent camera-behavior switch)
 - `Metroid.Enable.stylusMode`
 - `Metroid.Operation.SnapTap`
 - `Metroid.Apply.joy2KeySupport`

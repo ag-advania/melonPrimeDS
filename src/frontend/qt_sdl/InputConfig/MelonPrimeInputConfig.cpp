@@ -86,11 +86,8 @@ namespace {
             mode,
             MelonPrime::LowLatencyAimMode::Off,
             MelonPrime::LowLatencyAimMode::InstantAimFollow);
-        // InstantAimFollow is no longer an aim-follow mode: the camera lock it
-        // selected is its own developer switch now, and the loader carries an
-        // old selection onto that key. Fold the value away in every build.
-        if (clamped == MelonPrime::LowLatencyAimMode::InstantAimFollow)
-            return MelonPrime::LowLatencyAimMode::ImmediateSync;
+        // InstantAimFollow is retained as a legacy value for the independent
+        // FPS camera-lock feature. Never reinterpret it as ImmediateSync.
         return clamped;
     }
 
@@ -726,11 +723,6 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         // Legacy key migration. Keep until the first post-V3 release gives
         // old configs a save cycle; see the Phase 4 migration ledger.
         // Do not add new reads.
-        // Old configs only had the InstantAimFollow bool; map it onto the new
-        // public replacement when the new key is still at its Off default.
-        if (lowLatencyAimMode == MelonPrime::LowLatencyAimMode::Off
-            && instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow))
-            lowLatencyAimMode = MelonPrime::LowLatencyAimMode::ImmediateSync;
         SetComboCurrentData(m_comboMetroidLowLatencyAimMode, lowLatencyAimMode);
 
         m_lblMetroidLowLatencyAimMode = new QLabel(QStringLiteral("Aim Follow Mode"), ui->sectionSensitivity);
@@ -745,41 +737,36 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
         m_lblMetroidLowLatencyAimDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
 
-        // Sits right under the aim-follow rows: it is the other half of how the
-        // aim reaches the camera, and unlike the hook modes it is not a
-        // developer-only switch.
-        m_cbMetroidFpsCameraLock = new QCheckBox(
-            QStringLiteral("FPS Camera Lock (Instant Aim Follow)"),
-            ui->sectionSensitivity);
-        m_cbMetroidFpsCameraLock->setObjectName(QStringLiteral("cbMetroidFpsCameraLock"));
-        m_cbMetroidFpsCameraLock->setToolTip(QStringLiteral(
-            "Checked: the body always faces exactly where the gun points. "
-            "Unchecked (recommended): the game's own free-aim lead is kept."));
-        m_cbMetroidFpsCameraLock->setChecked(
-            instcfg.GetBool(MelonPrime::CfgKey::FpsCameraLock)
-            // Legacy key migration. Keep until the first post-V3 release gives
-            // old configs a save cycle; see the Phase 4 migration ledger.
-            // Do not add new reads: this only carries an old Instant Aim Follow
-            // selection onto the new switch.
-            || instcfg.GetInt(MelonPrime::CfgKey::LowLatencyAimMode)
-                   == MelonPrime::LowLatencyAimMode::InstantAimFollow);
+        if constexpr (kDeveloperOnlyFeaturesEnabled) {
+            m_cbMetroidFpsCameraLock = new QCheckBox(
+                QStringLiteral("FPS Camera Lock (Instant Aim Follow)"),
+                ui->sectionDeveloperOnly);
+            m_cbMetroidFpsCameraLock->setObjectName(QStringLiteral("cbMetroidFpsCameraLock"));
+            m_cbMetroidFpsCameraLock->setToolTip(QStringLiteral(
+                "Checked: the body always faces exactly where the gun points. "
+                "Unchecked (recommended): the game's own free-aim lead is kept."));
+            m_cbMetroidFpsCameraLock->setChecked(
+                instcfg.GetBool(MelonPrime::CfgKey::FpsCameraLock)
+                || instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow)
+                || lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
+            ui->vboxDeveloperOnly->addWidget(m_cbMetroidFpsCameraLock);
 
-        auto* fpsCameraLockDesc = new QLabel(
-            QStringLiteral(
-                "Keeps the body aligned with the gun at all times, removing the "
-                "game's free-aim lead of about 15 degrees. Off is recommended: that "
-                "lag is deliberate design that softens sudden movement, and removing "
-                "it can cause motion sickness."),
-            ui->sectionSensitivity);
-        fpsCameraLockDesc->setObjectName(QStringLiteral("lblMetroidInstantAimFollowDesc"));
-        fpsCameraLockDesc->setWordWrap(true);
-        fpsCameraLockDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
+            auto* fpsCameraLockDesc = new QLabel(
+                QStringLiteral(
+                    "Keeps the body aligned with the gun at all times, removing the "
+                    "game's free-aim lead of about 15 degrees. Off is recommended: that "
+                    "lag is deliberate design that softens sudden movement, and removing "
+                    "it can cause motion sickness."),
+                ui->sectionDeveloperOnly);
+            fpsCameraLockDesc->setObjectName(QStringLiteral("lblMetroidFpsCameraLockDesc"));
+            fpsCameraLockDesc->setWordWrap(true);
+            fpsCameraLockDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
+            ui->vboxDeveloperOnly->addWidget(fpsCameraLockDesc);
+        }
 
         if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
             form->insertRow(3, m_lblMetroidLowLatencyAimMode, m_comboMetroidLowLatencyAimMode);
             form->insertRow(4, m_lblMetroidLowLatencyAimDesc);
-            form->insertRow(5, m_cbMetroidFpsCameraLock);
-            form->insertRow(6, fpsCameraLockDesc);
         }
 
         connect(

@@ -12,7 +12,7 @@
 #include "MelonPrimePatchNoPickingUpSpecificItems.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
-#include "MelonPrimePatchInstantAimFollow.h"
+#include "MelonPrimePatchFpsCameraLock.h"
 #include "MelonPrimePatchExpandStageMatrix.h"
 #include "MelonPrimePatchLowHpWarning.h"
 #include "MelonPrimePatchRegistry.h"

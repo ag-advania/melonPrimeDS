@@ -60,9 +60,9 @@ void Patches_ResetAll();   // state flags only, never touches emulated RAM
 
 **Ordering guarantee:** `kPatchRegistry[]` iteration order defines apply and restore order. The
 table is ordered so each site's apply order matches the pre-registry call lists exactly:
-GameJoin = AspectRatio; BattleRuntime = OsdColor, LowHpWarning, InstantAimFollow,
+GameJoin = AspectRatio; BattleRuntime = OsdColor, LowHpWarning, FpsCameraLock,
 ShowHeadshotOnline, ShowEnemyHpMeterOnline, DisableDoubleDamageMultiplier,
-NoPickingUpSpecificItems; ConfigReload = InstantAimFollow..NoPickingUp (only while
+NoPickingUpSpecificItems; ConfigReload = FpsCameraLock..NoPickingUp (only while
 `BIT_BATTLE_RUNTIME_MODE`); OutOfGameFrame = FixWifi, UseFirmwareLanguage, ExpandStageMatrix.
 
 **Call sites in `MelonPrime.cpp`:** `HandleGameJoinInit` → `Patches_Apply(PatchSite_GameJoin)`
@@ -415,7 +415,7 @@ WeaponSwitch, TransformGate, NativeAimDelta, etc.) are documented in the
 | Stage matrix expansion | `MelonPrimePatchExpandStageMatrix.*` | Registry: `OutOfGameFrame` (pattern C) | Writes RAM data bytes, not ARM code; self-guarded via strict 3-point loaded-state check; `ResetPatchState` is a no-op (still wired in the registry); base (5 cells) + extra (9 cells) split across two config keys |
 | Low HP warning | `MelonPrimePatchLowHpWarning.*` | Registry: `BattleRuntime` | Registry: `RF_OnLeave \| RF_OnStop` |
 | Use firmware language | `MelonPrimePatchUseFirmwareLanguage.*` | Registry: `OutOfGameFrame` | Adventure-aware; applied in menus; adapter passes `rom.isInAdventure` as 4th arg |
-| Instant aim follow | `MelonPrimePatchInstantAimFollow.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | (Distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook.) |
+| FPS Camera Lock | `MelonPrimePatchFpsCameraLock.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Developer-only independent camera-behavior patch; distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook. |
 | Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
 | Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
 | Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Pairs with Damage-Notify-Purple |
