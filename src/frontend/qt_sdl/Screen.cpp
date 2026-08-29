@@ -302,6 +302,12 @@ void ScreenPanel::refreshClipForGameStateChange()
         && isInGame
         && inGameTopScreenOnly;
 
+    // Presentation-only state with its own edge: keeping it out of the clip-state
+    // comparison below avoids re-running capture reconciliation for a change
+    // that never touches capture. When the option is off -- the default -- this
+    // is one predictable, short-circuited bool test.
+    reconcileStylusHiddenCursor(hasState, ui);
+
     const bool clipStateUnchanged =
         m_hasLastClipInGameState == hasState
         && (!hasState || m_lastClipInGameState == isInGame)
@@ -361,6 +367,25 @@ void ScreenPanel::applyInGameTopScreenOnlyOverride(int& layout, int& sizing) con
 
     layout = screenLayout_Natural;
     sizing = screenSizing_TopOnly;
+}
+
+// Mirrors the non-stylus rule: the cursor is hidden exactly while the core is
+// out of cursor mode (in a match, and not an Adventure pause). Stylus mode
+// keeps the pointer free, so only the presentation changes -- no clip, grab,
+// warp or capture request is involved.
+void ScreenPanel::reconcileStylusHiddenCursor(
+    bool hasState, const MelonPrime::MelonPrimeUiSnapshot& ui)
+{
+    const bool wanted = stylusHideCursorInGameEnabled
+        && hasState
+        && ui.stylusMode
+        && ui.focused
+        && !ui.cursorMode;
+    if (wanted == m_stylusCursorHidden)
+        return;
+
+    m_stylusCursorHidden = wanted;
+    MelonPrime::ScreenCursorPolicy::ApplyStylusHiddenCursor(*this, wanted);
 }
 
 bool ScreenPanel::shouldConfineCursorToBottomScreen() const
@@ -637,6 +662,8 @@ void ScreenPanel::loadConfig()
     inGameTopScreenOnly = emuInstance->getLocalConfig().GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly);
 #ifdef MELONPRIME_DS
     topScreenTouchEnabled = emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::TopScreenTouch);
+    stylusHideCursorInGameEnabled =
+        emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
 #endif
 }
 
@@ -652,6 +679,18 @@ void ScreenPanel::refreshTopScreenTouchSetting()
     topScreenTouchEnabled = enabled;
     if (!touching)
         topScreenTouchTransform = -1;
+}
+
+void ScreenPanel::refreshStylusHideCursorSetting()
+{
+    stylusHideCursorInGameEnabled =
+        emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
+
+    auto* const core = melonPrimeCore();
+    const bool hasState = (core != nullptr);
+    const auto ui = hasState ? core->ThreadBridge().ReadForGui()
+                             : MelonPrime::MelonPrimeUiSnapshot{};
+    reconcileStylusHiddenCursor(hasState, ui);
 }
 #endif
 

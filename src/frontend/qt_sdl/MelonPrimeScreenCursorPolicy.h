@@ -15,6 +15,11 @@ void Suspend(ScreenPanel& panel);
 
 void ContainAimCursorIfNeeded(ScreenPanel& panel);
 
+// Applies the stylus-mode in-game cursor hide. Presentation only: unlike
+// ClipCenter1px() this never sets the capture request, grabs, warps or clips,
+// so stylus aiming and touch input keep working with the pointer free.
+void ApplyStylusHiddenCursor(ScreenPanel& panel, bool hidden);
+
 // Unconditional cursor-state release for panel shutdown. Unlike Unclip(),
 // this does not early-return on isClosingForMelonPrime()/qApp closing-down —
 // it is meant to be called from ScreenPanel::beginClose() itself (after

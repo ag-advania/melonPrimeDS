@@ -84,8 +84,10 @@ void MelonPrimeInputConfig::saveConfig()
     saveBindings(instcfg);
     for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
         MainWindow* win = emuInstance->getWindow(i);
-        if (win && win->panel)
+        if (win && win->panel) {
             win->panel->refreshTopScreenTouchSetting();
+            win->panel->refreshStylusHideCursorSetting();
+        }
     }
 
     int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode

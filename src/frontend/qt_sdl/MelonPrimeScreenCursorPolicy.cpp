@@ -158,6 +158,13 @@ void ContainAimCursorIfNeeded(ScreenPanel& panel)
     PlatformInput_WarpCursor(center.x(), center.y());
 }
 
+void ApplyStylusHiddenCursor(ScreenPanel& panel, bool hidden)
+{
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
+        return;
+    ApplyCursorPresentation(panel, hidden ? Qt::BlankCursor : Qt::ArrowCursor);
+}
+
 void ClipCenter1px(ScreenPanel& panel)
 {
     if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
@@ -349,8 +356,12 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
         return;
     }
 
-    ApplyCursorPresentation(panel, Qt::ArrowCursor);
+    // Unclip() releases capture and resets the shape, so the idle presentation
+    // is decided afterwards -- otherwise it would clear the stylus-mode hide.
     Unclip(panel);
+    ApplyCursorPresentation(
+        panel,
+        panel.isStylusCursorHiddenForPolicy() ? Qt::BlankCursor : Qt::ArrowCursor);
 }
 
 } // namespace MelonPrime::ScreenCursorPolicy

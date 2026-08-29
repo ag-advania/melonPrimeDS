@@ -161,6 +161,7 @@ static inline HudVisualFrameKey MelonPrimeHud_MakeVisualFrameKey(
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
 class MelonPrimeCore;
+struct MelonPrimeUiSnapshot;
 
 // Native presentation visibility is an identity, not a boolean latch. A
 // renderer/backend transition must hide the retained surface until a complete
@@ -312,6 +313,7 @@ public:
 
     void reloadNoRomSplashLocalization();
     void refreshTopScreenTouchSetting();
+    void refreshStylusHideCursorSetting();
     void containAimCursorIfNeeded();
     void syncMelonPrimeThreadBridge();
     // Explicit settings-dialog save wins over any older debounced hotkey save.
@@ -324,6 +326,12 @@ public:
     [[nodiscard]] QRect aimContainmentLocalRectForPolicy() const;
     [[nodiscard]] QPoint aimContainmentCenterGlobalForPolicy() const;
     [[nodiscard]] bool shouldConfineCursorToBottomScreenForPolicy() const;
+    // True while the stylus-mode in-game cursor hide is the state the panel
+    // last reconciled. Presentation only: it never implies a capture request.
+    [[nodiscard]] bool isStylusCursorHiddenForPolicy() const noexcept
+    {
+        return m_stylusCursorHidden;
+    }
     void clipCursorToBottomScreenForPolicy();
     [[nodiscard]] std::optional<QRect> getBottomScreenWidgetRectForPolicy() const;
     [[nodiscard]] EmuInstance* emuInstanceForPolicy() const { return emuInstance; }
@@ -371,6 +379,7 @@ protected:
 #ifdef MELONPRIME_DS
     bool topScreenTouchEnabled = false;
     int topScreenTouchTransform = -1;
+    bool stylusHideCursorInGameEnabled = false;
 #endif
 
     int autoScreenSizing;
@@ -508,6 +517,8 @@ private:
     MelonPrime::MelonPrimeCore* melonPrimeCore() const;
     void applyInGameTopScreenOnlyOverride(int& layout, int& sizing) const;
     bool shouldConfineCursorToBottomScreen() const;
+    void reconcileStylusHiddenCursor(bool hasState,
+                                     const MelonPrime::MelonPrimeUiSnapshot& ui);
     std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
     void clipCursorToBottomScreen();
@@ -523,6 +534,7 @@ private:
     bool m_lastClipInGameState = false;
     bool m_hasLastClipInGameState = false;
     bool m_lastClipFocusedState = false;
+    bool m_stylusCursorHidden = false;
     bool m_hasLastClipFocusedState = false;
     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
     // coalesces repeated per-frame requests without touching QWidget off-thread.
