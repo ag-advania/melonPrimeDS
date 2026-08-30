@@ -208,6 +208,61 @@ PC-relative request loads, and the battle-runtime authoring rule are canonical i
 shared ROM code cave" — read that before adding or moving one. DirectInvocation owns
 0x02003F50..0x02003FBB and no data block: its dispatcher hands the request over in r0-r2.
 
+## Zoom
+
+Value 0 is the Standard zoom path. Value 1 is a retired configuration value that
+behaves as value 0. Value 2 uses the native SetPlayerScopeZoom path from the
+weapon action update. Value 3 is New Method 3: the same setter called from the
+player input update, described under DirectInvocation above.
+
+| ROM | SetPlayerScopeZoom site |
+| --- | ---: |
+| JP1.0 / JP1.1 | 0x02015C98 |
+| US1.0 | 0x02015CB8 |
+| US1.1 | 0x02015CBC |
+| EU1.0 | 0x02015CB0 |
+| EU1.1 | 0x02015CBC |
+| KR1.0 | 0x0201CEBC |
+
+The native weapon-action path uses the shared action consumer for JP/US/EU
+and 0x0200D07C for KR, with a trampoline at 0x02003F00 and scratch area at
+0x02003F40. The activation edge, guest scope call, and release behavior must
+be tested independently from zoom sensitivity scaling.
+
+## Native methods are gated on the local player being in play
+
+Every native method -- weapon New / New 2, transform New / New 2, zoom New 2 /
+New 3 -- refuses to fire while the local player's HP is 0. That covers two
+states, not just one: killed and waiting to respawn, and not yet spawned after
+the match starts. A native call reaches past whatever the game does with a
+player who is not in play, so the request is dropped rather than deferred: it is
+not queued, and a request already queued when the player goes down is cleared
+instead of firing on respawn.
+
+The gate is applied twice on purpose, at the host queue site and again in the
+ARM9 dispatch, because the queue-to-dispatch window is several frames wide and
+the player can leave play inside it.
+
+Standard Method is unaffected. It is the game reacting to the emulator's own
+simulated touch/menu input, so the game's own handling of a dead player already
+applies.
+
+HP is read through the local player's cached pointer; an unresolved pointer
+counts as alive, so a native path is never disabled just because the pointer
+cache has not been rebuilt yet.
+
+## Lifecycle and interactions
+
+Native hooks are match-scoped. Configuration changes are consumed by
+NotifyConfigChanged and reconciled by the ARM9 hook installer. A hook being
+installed is not proof that the input edge reached the guest; inspect the
+behavioral path as well.
+
+Stylus mode can intentionally bypass native aim-related controls. Joy2Key and
+SnapTap can change the host edge sequence before the native hook sees it.
+Immediate Input Edge Overlay is a developer diagnostic that shares a post-poll
+boundary and must not create duplicate fire/zoom/transform actions.
+
 ## Verification checklist
 
 - Test each selector with the other selectors at their defaults.
@@ -215,6 +270,8 @@ shared ROM code cave" — read that before adding or moving one. DirectInvocatio
 - Test Method 2 for weapon and transform separately, then together, then
   combined with Method 1 on the other selector (shared hook PC).
 - Verify each pair is exclusive in the dialog and after a save/reload cycle.
+- Die, then press each bound action while down: no weapon change, transform or
+  zoom may occur, and none may fire late on respawn.
 - For zoom Method 3, test Alt-Form, mid-transform, and a non-zoom weapon; each
   must refuse the toggle rather than zoom.
 - Verify one action per physical edge, not one action per frame.

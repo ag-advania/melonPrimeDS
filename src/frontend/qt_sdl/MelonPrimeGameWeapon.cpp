@@ -384,6 +384,18 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
+        // A native method must not fire while the local player is not in play.
+        // Refuse the request outright rather than rerouting it to the legacy
+        // path: "the selected method does nothing until you are in play" is
+        // easier to reason about than a silent method swap for one window.
+        if ((m_enableDirectInvocationWeapon || m_enableNativeWeaponSwitch)
+            && !IsLocalPlayerAlive())
+        {
+            m_weaponSwitchPending.Clear();
+            m_directInvocationPending.ClearWeapon();
+            return false;
+        }
+
         if (m_enableDirectInvocationWeapon) {
             // "New Method 2": mphCodex DirectInvocation. The hook calls the
             // game's own TryEquipWeapon(player, id, 0) from the

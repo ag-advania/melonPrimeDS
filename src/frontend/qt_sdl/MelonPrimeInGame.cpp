@@ -142,8 +142,17 @@ namespace MelonPrime {
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
         auto* nds = emuInstance->getNDS();
 
+        // A native method must not fire while the local player is not in play
+        // (killed, or not yet spawned), and it does nothing at all rather than
+        // quietly falling through to the legacy simulation below. Only the
+        // legacy path itself still runs then -- that is the game reacting to
+        // its own simulated input.
+        const bool localPlayerNotInPlay = !IsLocalPlayerAlive();
+
 #ifdef MELONPRIME_DS
         if (m_enableDirectInvocationTransform) {
+            if (localPlayerNotInPlay)
+                return;
             // "New Method 2": queue one mailbox request for the ARM9
             // DirectInvocation hook. It calls the game's own transform request
             // from the ProcessTouchInput call site -- no synthetic touch and no
@@ -159,6 +168,8 @@ namespace MelonPrime {
 #endif
 
         if (m_enableDirectAltFormTransform) {
+            if (localPlayerNotInPlay)
+                return;
             // TransformGateHook redirects Gate A/B into the game's native
             // TransformRequest path. Keep a short pending window so a press is
             // not lost if the game reaches the transform gate a few frames late.

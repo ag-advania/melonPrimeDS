@@ -1184,6 +1184,20 @@ namespace MelonPrime {
                 && ((*m_ptrs.jumpFlag & 0x10) != 0);
         }
 
+        // Local player is in play: spawned and not down. HP 0 covers both
+        // states -- killed and waiting to respawn, and not yet spawned after
+        // the match starts -- which is why this is phrased as "alive" rather
+        // than "dead". Every native input method is gated on it: the legacy
+        // touch/menu paths are the game reacting to its own simulated input,
+        // but a native call reaches past whatever the game does with a player
+        // that is not in play.
+        //
+        // An unresolved HP pointer reads as alive, so a native path is never
+        // disabled just because the pointer cache has not been rebuilt yet.
+        [[nodiscard]] FORCE_INLINE bool IsLocalPlayerAlive() const noexcept {
+            return !m_ptrs.health || *m_ptrs.health != 0;
+        }
+
         template <typename T>
         [[nodiscard]] FORCE_INLINE T* GetRamPointer(melonDS::u8* ram, melonDS::u32 addr) {
             return reinterpret_cast<T*>(&ram[addr & 0x3FFFFF]);

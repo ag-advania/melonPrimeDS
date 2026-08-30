@@ -454,7 +454,8 @@
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
             || !m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
             || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
-            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME))
+            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
+            || !IsLocalPlayerAlive())
         {
             return;
         }
@@ -524,7 +525,8 @@
         // it either. Without this a request queued during the join/countdown
         // could fire on the very first battle-runtime frame.
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
-            || !m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE))
+            || !m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
+            || !IsLocalPlayerAlive())
         {
             m_directInvocationPending.Clear();
             return false;

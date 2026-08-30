@@ -153,6 +153,10 @@
             return false;
         if (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
             return false;
+        if (!IsLocalPlayerAlive()) {
+            m_directTransformPendingFrames = 0;
+            return false;
+        }
 
         const TransformGateEntry* const entry =
             TransformGate_Find(m_currentRom.romGroupIndex, arm9ExecAddr);

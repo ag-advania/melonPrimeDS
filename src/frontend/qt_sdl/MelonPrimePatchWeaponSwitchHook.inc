@@ -214,6 +214,11 @@
         if (!m_weaponSwitchPending.IsValid())
             return false;
 
+        if (!IsLocalPlayerAlive()) {
+            m_weaponSwitchPending.Clear();
+            return false;
+        }
+
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)) {
             MP_WEAPON_SWITCH_LOG(
                 "WeaponSwitch GateFail: inGameInit=0 pending=%u exec=%08X\n",

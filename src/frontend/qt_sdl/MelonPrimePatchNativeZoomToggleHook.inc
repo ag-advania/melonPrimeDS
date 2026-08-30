@@ -211,7 +211,8 @@
 
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
             || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
-            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME))
+            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
+            || !IsLocalPlayerAlive())
         {
             return;
         }
@@ -277,6 +278,11 @@
         // frames (only valid for one frame after a player edge press).
         if (!nds || !m_nativeZoomPending.Pending)
             return false;
+
+        if (!IsLocalPlayerAlive()) {
+            m_nativeZoomPending.Clear();
+            return false;
+        }
 
         const NativeZoomToggleSite* const site =
             NativeZoomToggle_GetSite(m_currentRom.romGroupIndex);
