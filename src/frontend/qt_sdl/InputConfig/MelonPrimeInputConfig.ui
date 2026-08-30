@@ -147,26 +147,31 @@
 										<item row="11" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableTouchScreenAimOnly">
 												<property name="text"><string>Use the Whole Touch Screen for Aiming (Disables the touch-screen HUD buttons: Morph Ball, weapon quick slots and the weapon menu. Double-tap jump and the touch boost gesture still work)</string></property>
+												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="12" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusHideCursorInGame">
 												<property name="text"><string>Hide the Cursor During Gameplay Even in Stylus Mode (Presentation only: the pointer stays free, so stylus aiming and touch input are unaffected)</string></property>
+												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="13" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableTopScreenTouch">
 												<property name="text"><string>Enable Touch Input on the Top Screen</string></property>
+												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="14" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusConfineCursorToTopScreen">
 												<property name="text"><string>Confine the Cursor to the Top Screen During a Match in Stylus Mode (Windows only)</string></property>
+												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="15" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking">
 												<property name="text"><string>Hold the Cursor at the Center While No Click Is Held During a Match in Stylus Mode (every drag then starts from the center with its full range)</string></property>
+												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
 										<item row="16" column="0">
@@ -434,7 +439,7 @@ The EU ROM has a hidden Japanese option — setting your DS firmware to Japanese
 										<item>
 											<widget class="QCheckBox" name="cbMetroidShowEnemyHpMeterOnline">
 												<property name="text">
-													<string>Show Enemy HP Meter Online</string>
+													<string>Show Enemy Target Information Online</string>
 												</property>
 											</widget>
 										</item>
