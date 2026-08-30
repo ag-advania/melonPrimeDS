@@ -54,6 +54,7 @@ struct ScoreboardStructureKey {
     bool visible = false;
     std::array<uint8_t, 4> resultSlots = {0xFF, 0xFF, 0xFF, 0xFF};
     std::array<uint8_t, 4> teamIndex = {0xFF, 0xFF, 0xFF, 0xFF};
+    std::array<uint8_t, 4> hunterId = {0xFF, 0xFF, 0xFF, 0xFF};
     std::array<bool, 4> active = {false, false, false, false};
 
     bool operator==(const ScoreboardStructureKey& other) const noexcept
@@ -66,6 +67,7 @@ struct ScoreboardStructureKey {
             && visible == other.visible
             && resultSlots == other.resultSlots
             && teamIndex == other.teamIndex
+            && hunterId == other.hunterId
             && active == other.active;
     }
 };
@@ -102,6 +104,7 @@ struct ScoreboardPlanRow {
     qreal starsFullW = 0.0;
     qreal starsFullH = 0.0;
     uint8_t hunterId = 0xFF;
+    uint8_t hunterVariant = 0xFF;
     uint8_t stars = 0xFF;
 };
 

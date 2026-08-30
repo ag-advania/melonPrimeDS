@@ -305,7 +305,7 @@ struct CustomHudConfigState {
     QColor bombTintColor;
     int bombIconHeight = 0;
     bool bombTintCacheValid = false;
-    QImage scoreboardHunterIcons[7];
+    QImage scoreboardHunterIcons[7][4];
     QImage enemyTargetHunterIcons[7];
     int enemyTargetHunterIconHeight = 0;
     QImage scoreboardStars[5];

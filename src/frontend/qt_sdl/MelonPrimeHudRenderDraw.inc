@@ -230,6 +230,27 @@ struct ScoreboardRenderRow {
     uint8_t teamIndex = 0xFF;
 };
 
+// MPH assigns alternate hunter colors by player position, independently of
+// the scoreboard's result order. The first active slot using a hunter gets p1,
+// the next matching slot gets p2, and so on through p4.
+static uint8_t ResolveScoreboardHunterVariant(const ScoreboardSnapshot& snapshot,
+                                              uint8_t slot)
+{
+    if (slot >= 4)
+        return 0;
+    const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[slot];
+    if (!player.active || player.hunterId >= 7)
+        return 0;
+
+    uint8_t variant = 0;
+    for (uint8_t priorSlot = 0; priorSlot < slot; ++priorSlot) {
+        const ScoreboardPlayerSnapshot& prior = snapshot.playersBySlot[priorSlot];
+        if (prior.active && prior.hunterId == player.hunterId)
+            ++variant;
+    }
+    return std::min<uint8_t>(variant, 3);
+}
+
 static int ResolveScoreboardDisplayedRank(const ScoreboardSnapshot& snapshot,
                                           bool teamRow, uint8_t slot)
 {
@@ -456,8 +477,9 @@ static ScoreboardLayout BuildScoreboardLayout(
                 : scaleDs(3) + ScoreboardImageWidthDS(stars, invHudScale);
         }
         playerContentW = std::max(playerContentW, rankLineW);
+        const uint8_t hunterVariant = ResolveScoreboardHunterVariant(snapshot, row.slot);
         const QImage* hunter = player.hunterId < 7
-            ? &s_scoreboardHunterIcons[player.hunterId] : nullptr;
+            ? &s_scoreboardHunterIcons[player.hunterId][hunterVariant] : nullptr;
         if (hunter && !hunter->isNull())
             layout.portraitW = std::max(layout.portraitW,
                                         scaleDs(2) + ScoreboardImageWidthDS(*hunter, invHudScale));
@@ -503,6 +525,7 @@ static ScoreboardStructureKey MakeScoreboardStructureKey(
     key.resultSlots = snapshot.resultSlots;
     for (int slot = 0; slot < 4; ++slot) {
         key.teamIndex[slot] = snapshot.playersBySlot[slot].teamIndex;
+        key.hunterId[slot] = snapshot.playersBySlot[slot].hunterId;
         key.active[slot] = snapshot.playersBySlot[slot].active;
     }
     return key;
@@ -678,10 +701,11 @@ static ScoreboardRenderPlan BuildScoreboardRenderPlan(
             planned.color = (player.slot == localPlayerSlot)
                 ? c.scoreboard.localPlayerColor : c.scoreboard.textColor;
             planned.hunterId = player.hunterId;
+            planned.hunterVariant = ResolveScoreboardHunterVariant(snapshot, row.slot);
             planned.stars = player.stars;
 
             const QImage* hunter = player.hunterId < 7
-                ? &s_scoreboardHunterIcons[player.hunterId] : nullptr;
+                ? &s_scoreboardHunterIcons[player.hunterId][planned.hunterVariant] : nullptr;
             if (hunter && !hunter->isNull()) {
                 const float iconH = static_cast<float>(hunter->height()) * invHudScale;
                 const float iconW = static_cast<float>(hunter->width()) * invHudScale;
@@ -978,8 +1002,8 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
             continue;
         }
 
-        const QImage* hunter = row.hunterId < 7
-            ? &s_scoreboardHunterIcons[row.hunterId] : nullptr;
+        const QImage* hunter = row.hunterId < 7 && row.hunterVariant < 4
+            ? &s_scoreboardHunterIcons[row.hunterId][row.hunterVariant] : nullptr;
         if (hunter && !hunter->isNull() && !row.hunterIconRect.isEmpty()) {
             p->drawImage(row.hunterIconRect, *hunter);
             AccumDirtyDs(p, row.hunterIconRect);
