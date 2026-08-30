@@ -221,8 +221,10 @@ void DX12Renderer::SetRenderSettings(RendererSettings& settings)
     {
         // DX12 rasterizes the original DS polygons as scanline spans. Better
         // Polygons is a triangle-splitting workaround for raster backends and
-        // is intentionally not part of the DX12 renderer contract.
-        dx12->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
+        // is intentionally not part of the DX12 renderer contract. High-
+        // resolution coordinates are mandatory for DX12 above native 1x; its
+        // 3D renderer still selects FinalPosition at 1x.
+        dx12->SetRenderSettings(settings.ScaleFactor, true);
     }
     // Configuration acquisition only: the values are forwarded to the
     // low-latency controller, which decides what the hardware can honour.

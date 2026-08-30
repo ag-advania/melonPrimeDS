@@ -152,6 +152,8 @@ private:
     void setupMenuLanguageControl(Config::Table& instcfg);
     void setupSensitivityAndToggles(Config::Table& instcfg);
     void setupInputMethodSection(Config::Table& instcfg);
+    void setupSettingsOrganization();
+    void refreshSettingsPresentation();
     void setupCollapsibleSections(Config::Table& instcfg);
     void setupPreviewConnections();
     void setupCustomHudCode();

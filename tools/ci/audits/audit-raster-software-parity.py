@@ -67,6 +67,7 @@ def main() -> int:
     soft_header = read("src/GPU3D_Soft.h")
     soft_cpp = read("src/GPU3D_Soft.cpp")
     gl_cpp = read("src/GPU3D_Compute.cpp")
+    gl_wrapper = read("src/GPU_OpenGL.cpp")
     gl_shader = read("src/GPU3D_Compute_shaders.h")
     edge_vectors = read("tools/testing/raster-edge-vectors.cpp")
     variant_index = read("src/GPU3D_FixedVariantIndex.h")
@@ -436,8 +437,25 @@ def main() -> int:
     require(video_settings, "MetalComputeBetterPolygonsDescription",
             "Metal Compute polygon-splitting UI explanation", failures)
     require(video_settings,
-            "computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer",
-            "Metal high-resolution-coordinate UI gate", failures)
+            "computeRenderer || vulkanRenderer || dx12Renderer;",
+            "compute backend high-resolution-coordinate force", failures)
+    require(video_settings, "ui->cbxComputeHiResCoords->setChecked(true);",
+            "compute backend high-resolution-coordinate checked UI", failures)
+    require(video_settings,
+            "!forceHiresCoordinates && metalRenderer",
+            "compute backend high-resolution-coordinate locked UI", failures)
+    require(gl_wrapper, "SetRenderSettings(settings.ScaleFactor, true)",
+            "OpenGL Compute forced high-resolution coordinates", failures)
+    require(vk_wrapper, "SetRenderSettings(settings.ScaleFactor, true)",
+            "Vulkan forced high-resolution coordinates", failures)
+    require(dx_wrapper, "SetRenderSettings(settings.ScaleFactor, true)",
+            "DX12 forced high-resolution coordinates", failures)
+    require(gl_cpp, "HiresCoordinates && ScaleFactor > 1",
+            "OpenGL Compute native-1x coordinate bypass", failures)
+    require(vk_cpp, "HiresCoordinates && ScaleFactor > 1",
+            "Vulkan native-1x coordinate bypass", failures)
+    require(dx_cpp, "HiresCoordinates && ScaleFactor > 1",
+            "DX12 native-1x coordinate bypass", failures)
     require(metal_span, "swapped ? 0 : 31", "Metal swapped vertical coverage", failures)
 
     require(vk_interp, "swappedEdges", "Vulkan swapped edge path", failures)

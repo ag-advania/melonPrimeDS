@@ -10,6 +10,7 @@ namespace MelonPrime {
 namespace {
 
 static constexpr const char* kCfgTouchScreenAimOnly = MelonPrime::CfgKey::TouchScreenAimOnly;
+static constexpr const char* kCfgStylusMode = MelonPrime::CfgKey::StylusMode;
 
 // Battle spatial aim-only (in-match touch screen).
 //
@@ -73,7 +74,7 @@ static const StaticWordPatch s_patch(kPatchSpans);
 
 void TouchScreenAimOnly_ApplyOnce(MelonPrimePatchState& state, melonDS::NDS* nds, Config::Table& cfg, uint8_t romGroupIndex)
 {
-    if (!cfg.GetBool(kCfgTouchScreenAimOnly))
+    if (!cfg.GetBool(kCfgStylusMode) || !cfg.GetBool(kCfgTouchScreenAimOnly))
     {
         s_patch.RestoreOnce(state.touchScreenAimOnly, nds, romGroupIndex);
         return;

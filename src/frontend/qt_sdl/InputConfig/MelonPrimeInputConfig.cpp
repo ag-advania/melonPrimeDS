@@ -20,6 +20,11 @@
 #include <QClipboard>
 #include <QFormLayout>
 #include <QCheckBox>
+#include <QFrame>
+#include <QAbstractItemView>
+#include <QScrollBar>
+#include <QTextLayout>
+#include <QWheelEvent>
 #include "../MelonPrimeColorDialogPrefs.h"
 #include "../MelonPrime.h"
 #include "../EmuThread.h"
@@ -190,11 +195,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
     setupInputMethodSection(instcfg);
+    setupSettingsOrganization();
     setupCollapsibleSections(instcfg);
     setupCustomHudWidgets(instcfg);
     setupPreviewConnections();
     setupCustomHudCode();
     MelonPrime::UiText::LocalizeWidgetTree(this);
+    refreshSettingsPresentation();
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
     refreshMacMetalPresetText();
 #endif
@@ -210,6 +217,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Must run after every widget (UI-defined and programmatic) exists so the
     // guard reaches all of them.
     installWheelScrollGuards();
+    ui->scrollSettings->viewport()->installEventFilter(this);
 
     m_applyPreviewEnabled = true;
 }
@@ -288,19 +296,32 @@ void MelonPrimeInputConfig::installWheelScrollGuards()
 
 bool MelonPrimeInputConfig::eventFilter(QObject* obj, QEvent* event)
 {
+    if (obj == ui->scrollSettings->viewport() && event->type() == QEvent::Resize)
+    {
+        refreshSettingsPresentation();
+    }
+
     if (event->type() == QEvent::Wheel)
     {
         QWidget* w = qobject_cast<QWidget*>(obj);
         if (w && !w->hasFocus())
         {
             // The user is scrolling the page, not adjusting this control.
-            // Forward the wheel to the enclosing scroll area's viewport so the
-            // page scrolls, and swallow it here so the value never changes.
+            // Update the enclosing area's scrollbar directly. Re-dispatching
+            // the same QWheelEvent synchronously can re-enter Qt's event path
+            // while the original control is still handling it.
             for (QWidget* p = w->parentWidget(); p; p = p->parentWidget())
             {
                 if (auto* area = qobject_cast<QAbstractScrollArea*>(p))
                 {
-                    QApplication::sendEvent(area->viewport(), event);
+                    auto* wheel = static_cast<QWheelEvent*>(event);
+                    QScrollBar* const bar = area->verticalScrollBar();
+                    int distance = wheel->pixelDelta().y();
+                    if (distance == 0) {
+                        const int steps = wheel->angleDelta().y() / 120;
+                        distance = steps * bar->singleStep() * 3;
+                    }
+                    bar->setValue(bar->value() - distance);
                     break;
                 }
             }
@@ -339,13 +360,21 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
 
     m_menuLanguageGroup = new QGroupBox(QStringLiteral("Language"), ui->scrollSettingsContents);
     m_menuLanguageGroup->setObjectName(QStringLiteral("groupMetroidMenuLanguage"));
-    auto* layout = new QVBoxLayout(m_menuLanguageGroup);
+    auto* layout = new QHBoxLayout(m_menuLanguageGroup);
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
     m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageGroup);
     m_comboMenuLanguage = new QComboBox(m_menuLanguageGroup);
     m_comboMenuLanguage->setObjectName(QStringLiteral("comboMetroidMenuLanguage"));
+    m_comboMenuLanguage->setSizeAdjustPolicy(
+        QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_comboMenuLanguage->setMinimumContentsLength(22);
+    m_comboMenuLanguage->setMinimumWidth(260);
+    m_comboMenuLanguage->setMaximumWidth(420);
+    m_comboMenuLanguage->view()->setMinimumWidth(260);
+    m_comboMenuLanguage->view()->setMaximumWidth(420);
+    m_comboMenuLanguage->view()->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     const MelonPrime::UiText::MenuLangId systemLang = MelonPrime::UiText::DetectSystemMenuLanguage();
     const QString systemLabel = MelonPrime::UiText::MenuLanguageDisplayName(systemLang);
@@ -368,6 +397,7 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
 
     layout->addWidget(m_lblMenuLanguage);
     layout->addWidget(m_comboMenuLanguage);
+    layout->addStretch(1);
 
     ui->metroidVLayout->insertWidget(0, m_menuLanguageGroup);
 
@@ -379,6 +409,7 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
             MelonPrime::UiText::SetMenuLanguageSelection(
                 m_comboMenuLanguage->currentData().toInt());
             MelonPrime::UiText::LocalizeWidgetTree(this);
+            refreshSettingsPresentation();
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
             refreshMacMetalPresetText();
 #endif
@@ -1176,10 +1207,190 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 }
 
+void MelonPrimeInputConfig::setupSettingsOrganization()
+{
+    auto* inputLayout = qobject_cast<QVBoxLayout*>(ui->sectionInputSettings->layout());
+    if (!inputLayout)
+        return;
+
+    // Keep the Sensitivity section limited to actual aim tuning. Touch/stylus,
+    // Morph Ball gesture and remapper compatibility controls all describe how
+    // input is produced, so they belong together under Input Settings.
+    auto detachWidget = [](QWidget* widget) {
+        if (!widget)
+            return;
+        if (QWidget* parent = widget->parentWidget()) {
+            if (QLayout* layout = parent->layout())
+                layout->removeWidget(widget);
+        }
+    };
+    auto appendInputWidget = [&](QWidget* widget) {
+        if (!widget)
+            return;
+        detachWidget(widget);
+        widget->setParent(ui->sectionInputSettings);
+        inputLayout->addWidget(widget);
+    };
+    auto appendSeparator = [&]() {
+        auto* separator = new QFrame(ui->sectionInputSettings);
+        separator->setFrameShape(QFrame::HLine);
+        separator->setFrameShadow(QFrame::Sunken);
+        inputLayout->addWidget(separator);
+    };
+
+    // Re-add the pre-existing compatibility controls last, after the primary
+    // touch/stylus and gesture settings.
+    detachWidget(ui->cbMetroidApplyJoy2KeySupport);
+    detachWidget(ui->lblMetroidJoy2KeySupportDesc);
+
+    appendInputWidget(ui->cbMetroidEnableStylusMode);
+    appendInputWidget(ui->cbMetroidEnableTouchScreenAimOnly);
+    appendInputWidget(ui->cbMetroidEnableTopScreenTouch);
+    appendInputWidget(ui->cbMetroidEnableStylusHideCursorInGame);
+    appendInputWidget(ui->cbMetroidEnableStylusConfineCursorToTopScreen);
+    appendInputWidget(ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking);
+
+    appendSeparator();
+    appendInputWidget(m_cbMetroidDisableMorphBoostSwipe);
+    appendInputWidget(m_lblMetroidDisableMorphBoostSwipeDesc);
+    appendInputWidget(m_cbMetroidMorphBoostCustomRawThreshold);
+    appendInputWidget(m_lblMetroidMorphBoostCustomRawThresholdDesc);
+
+    detachWidget(m_lblMetroidMorphBoostMouseSensitivity);
+    detachWidget(m_spinMetroidMorphBoostMouseSensitivity);
+    auto* morphThresholdRow = new QWidget(ui->sectionInputSettings);
+    morphThresholdRow->setObjectName(QStringLiteral("rowMetroidMorphBoostMouseSensitivity"));
+    auto* morphThresholdLayout = new QHBoxLayout(morphThresholdRow);
+    morphThresholdLayout->setContentsMargins(0, 0, 0, 0);
+    morphThresholdLayout->addWidget(m_lblMetroidMorphBoostMouseSensitivity, 1);
+    morphThresholdLayout->addWidget(m_spinMetroidMorphBoostMouseSensitivity);
+    inputLayout->addWidget(morphThresholdRow);
+    appendInputWidget(m_lblMetroidMorphBoostMouseSensitivityDesc);
+
+    appendSeparator();
+    appendInputWidget(ui->cbMetroidApplyJoy2KeySupport);
+    appendInputWidget(ui->lblMetroidJoy2KeySupportDesc);
+
+    // The .ui file accumulated sections in feature-arrival order. Present the
+    // same widgets in task order: common input first, gameplay next, display
+    // and presentation after that, and maintenance/developer controls last.
+    const QList<QWidget*> orderedSections = {
+        m_menuLanguageGroup,
+        ui->btnToggleSensitivity,
+        ui->sectionSensitivity,
+        ui->btnToggleInputSettings,
+        ui->sectionInputSettings,
+        m_btnToggleInputMethod,
+        m_sectionInputMethod,
+        ui->btnToggleGameplay,
+        ui->sectionGameplay,
+        ui->btnToggleGameFeature,
+        ui->sectionGameFeature,
+        ui->btnToggleDisableFeatures,
+        ui->sectionDisableFeatures,
+        ui->btnToggleLowHpWarning,
+        ui->sectionLowHpWarning,
+        ui->btnToggleInGameApply,
+        ui->sectionInGameApply,
+        ui->btnToggleInGameAspectRatio,
+        ui->sectionInGameAspectRatio,
+        ui->btnToggleScreenSync,
+        ui->sectionScreenSync,
+        ui->btnToggleCursorClipSettings,
+        ui->sectionCursorClipSettings,
+        ui->btnToggleVideo,
+        ui->sectionVideo,
+        ui->btnToggleVolume,
+        ui->sectionVolume,
+        ui->btnToggleLicense,
+        ui->sectionLicense,
+        ui->btnToggleBugFix,
+        ui->sectionBugFix,
+        ui->btnToggleDeveloperOnly,
+        ui->sectionDeveloperOnly,
+    };
+
+    for (QWidget* widget : orderedSections) {
+        if (widget)
+            ui->metroidVLayout->removeWidget(widget);
+    }
+    int insertionIndex = 0;
+    for (QWidget* widget : orderedSections) {
+        if (widget)
+            ui->metroidVLayout->insertWidget(insertionIndex++, widget);
+    }
+}
+
+void MelonPrimeInputConfig::refreshSettingsPresentation()
+{
+    // Long translated help text should wrap vertically instead of expanding
+    // the settings page and forcing the horizontal scrollbar seen in the old
+    // single-column layout.
+    ui->scrollSettings->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    ui->scrollSettingsContents->setMinimumWidth(0);
+    const int viewportWidth = ui->scrollSettings->viewport()->width();
+    if (viewportWidth > 0)
+        ui->scrollSettingsContents->setMaximumWidth(viewportWidth);
+
+    // QCheckBox has no word-wrap property. Keep every original checkbox intact
+    // and insert visual line breaks into its complete translated caption. This
+    // preserves its normal click target, enabled state, signals and bindings.
+    const int captionWidth = qMax(160, viewportWidth - 96);
+    for (QCheckBox* checkBox : ui->tabMetroid->findChildren<QCheckBox*>()) {
+        const QString currentText = checkBox->text();
+        const QString previousRendered =
+            checkBox->property("_melonprime_wrapped_rendered_text").toString();
+        QString fullText =
+            checkBox->property("_melonprime_wrapped_full_text").toString();
+
+        // Localization restores a fresh, unwrapped caption. Treat any text
+        // other than our last rendered value as the new full translation.
+        if (previousRendered.isEmpty() || currentText != previousRendered) {
+            fullText = currentText;
+            checkBox->setProperty("_melonprime_wrapped_full_text", fullText);
+        }
+        if (fullText.isEmpty())
+            continue;
+
+        QTextLayout textLayout(fullText, checkBox->font());
+        QTextOption textOption;
+        textOption.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        textLayout.setTextOption(textOption);
+        textLayout.beginLayout();
+        QString wrappedText;
+        while (true) {
+            QTextLine line = textLayout.createLine();
+            if (!line.isValid())
+                break;
+            line.setLineWidth(captionWidth);
+            if (!wrappedText.isEmpty())
+                wrappedText += QLatin1Char('\n');
+            wrappedText += fullText.mid(line.textStart(), line.textLength());
+        }
+        textLayout.endLayout();
+
+        checkBox->setText(wrappedText);
+        checkBox->setAccessibleName(fullText);
+        checkBox->setProperty("_melonprime_wrapped_rendered_text", wrappedText);
+        checkBox->setMinimumWidth(0);
+        QSizePolicy policy = checkBox->sizePolicy();
+        policy.setHorizontalPolicy(QSizePolicy::Expanding);
+        checkBox->setSizePolicy(policy);
+    }
+}
+
 
 
 void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
 {
+    // Stylus-specific options retain their saved check state, but cannot be
+    // edited until Stylus Mode itself is enabled.
+    ui->cbMetroidEnableTouchScreenAimOnly->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableStylusHideCursorInGame->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableTopScreenTouch->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableStylusConfineCursorToTopScreen->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking->setEnabled(stylusEnabled);
+
     const bool enableAimControls = !stylusEnabled;
     ui->metroidAimSensitvitySpinBox->setEnabled(enableAimControls);
     ui->metroidAimSensitvityLabel->setEnabled(enableAimControls);
