@@ -277,8 +277,16 @@ again immediately after. The request is dropped rather than deferred, because
 replaying a pressed edge from before the respawn is the behaviour to avoid.
 
 Structure offsets are identical on all seven ROMs, so this needs no per-version
-address table. Weapon Method 1 additionally keeps its own producer-side refusal
-for the whole invulnerability window, which this does not weaken.
+address table.
+
+This barrier is the only spawn guard the native methods have. Both weapon
+methods previously refused the whole `player+0xE1 != 0` window on the producer
+side and rerouted to the legacy path; that was wider than the ROM's own
+boundary and silently swapped method for the duration, so it was replaced by
+this shared one. The mphCodex investigation recommends keeping the wider
+weapon-only guard as a safety margin, so if a weapon switch during spawn
+invulnerability turns out to still be unsafe, restoring a full-window refusal
+for that path is the documented fallback.
 
 Evidence: mphCodex `Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md`.
 

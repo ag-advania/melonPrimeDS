@@ -610,16 +610,15 @@ dispatcher enforces:
   fires on the first battle-runtime frame, before the player state it acts on is settled.
 - Clear pending host-side requests on the battle-runtime edge and in the lifecycle resets
   (`ResetTransientInputState`, emu start/stop/boot, savestate reconcile).
-- Weapon-equipping paths keep the spawn-window guard: while `player+0xE1 != 0` (spawn
-  invincibility) the native equip is unsafe, and Method 1 hands that request to the legacy route.
-- **Every native dispatcher also has to clear the spawn barrier**, because the match latch is a
+- **Every native dispatcher has to clear the spawn barrier**, because the match latch is a
   match boundary and respawn is a player boundary. Spawn restores HP early and the same player
   runtime update falls through to the input hooks, so a native call can land inside the update that
   spawned the player. `MelonPrimeCore::IsFirstPostSpawnInput()` (defined in
   `MelonPrimeGameInput.cpp`) identifies that one hook via `player+0xE1 == configured - 1`; each
   dispatcher drops its pending request and returns false there, letting the site's original
   instruction run. Drop, never defer — replaying a pressed edge from before the respawn is the
-  behaviour being prevented.
+  behaviour being prevented. This is the only spawn guard the native paths have; the weapon
+  producers' older full-window `player+0xE1 != 0` refusal was replaced by it.
 
 ---
 

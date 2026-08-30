@@ -305,10 +305,9 @@
             return false;
         }
 
-        // Same spawn barrier as the other native methods. The producer already
-        // refuses the whole invulnerability window and falls back to the legacy
-        // route; this only covers a request that was queued earlier and reaches
-        // the hook on the first post-spawn input.
+        // Same spawn barrier as the other native methods, and the only spawn
+        // guard this path has: the producer no longer refuses the whole
+        // invulnerability window.
         if (UNLIKELY(IsFirstPostSpawnInput(nds, player))) {
             MP_WEAPON_SWITCH_LOG(
                 "WeaponSwitch SpawnBarrier: exec=%08X player=%08X pending=%u
