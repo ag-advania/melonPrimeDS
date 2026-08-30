@@ -84,9 +84,13 @@ struct RuntimeConfigSnapshot {
 
     bool immediateInputEdgeOverlay = false;
     bool directAltFormTransform = false;
+    // "New Method 2" (mphCodex DirectInvocation). Mutually exclusive with the
+    // Method-1 flag of the same domain; both are resolved from one int key.
+    bool directInvocationTransform = false;
     bool nativeBipedFire = false;
 
     bool nativeZoomToggle = false;
+    bool directInvocationZoom = false;
 
     bool zoomAimScaleEnable = false;
     uint32_t zoomAimScaleQ14 = 1u << 14;
@@ -100,6 +104,7 @@ struct RuntimeConfigSnapshot {
 
 #ifdef MELONPRIME_DS
     bool nativeWeaponSwitch = false;
+    bool directInvocationWeapon = false;
     bool fixShadowFreeze = false;
     bool fixNoxusBladePersistence = false;
 #endif

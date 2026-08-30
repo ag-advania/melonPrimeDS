@@ -384,6 +384,38 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
+        if (m_enableDirectInvocationWeapon) {
+            // "New Method 2": mphCodex DirectInvocation. The hook calls the
+            // game's own TryEquipWeapon(player, id, 0) from the
+            // ProcessTouchInput call site, so no touch is synthesised and the
+            // radial menu is never involved. Like Method 1 this stays a
+            // native-only path: an unserviceable site is reported instead of
+            // being hidden behind the legacy touch route.
+            melonDS::NDS* const nds = emuInstance->getNDS();
+            const uint32_t playerBase =
+                m_currentRom.playerStructStart
+                + static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
+            // Same spawn-window guard as Method 1: the native equip is not safe
+            // while spawn invincibility is still counting down, so hand this one
+            // request to the legacy route rather than dropping or forcing it.
+            if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_GAME_INIT)
+                && Read8(nds->MainRAM, playerBase + kPlayerSpawnInvincibilityOffset) != 0))
+            {
+                m_directInvocationPending.ClearWeapon();
+                return SwitchWeaponLegacyTouchFallback(weaponId);
+            }
+
+            const uint8_t romIdx = m_currentRom.romGroupIndex;
+            if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
+                && DirectInvocationHook_IsRomSupported(romIdx)
+                && DirectInvocationHook_IsSiteValid(nds, romIdx))
+            {
+                QueueDirectInvocationWeapon(weaponId);
+                return true;
+            }
+            return false;
+        }
+
         if (m_enableNativeWeaponSwitch) {
             melonDS::NDS* const nds = emuInstance->getNDS();
             const uint32_t playerBase =

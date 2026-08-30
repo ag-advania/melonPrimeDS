@@ -156,12 +156,18 @@ void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
                                Config::Table& cfg,
                                const RomAddresses& rom,
                                MelonPrimeCore* core,
-                               bool nativeWeaponSwitchEnabled)
+                               bool nativeWeaponSwitchEnabled,
+                               bool directInvocationEnabled)
 {
     ApplyRegistryPatches(PatchSite_BattleRuntime, nds, emu, cfg, rom, core);
     SetMatchHooksActive(nds, emu, rom, core, true);
     if (nativeWeaponSwitchEnabled)
         (void)MelonPrimeCore::WeaponSwitchHook_IsSiteValid(nds, rom.romGroupIndex);
+    // Same reason as above: author the guest trampoline here, on the cold
+    // match boundary, instead of leaving the first dispatch to write 27 words
+    // of guest code (and invalidate JIT blocks) from inside the hook callback.
+    if (directInvocationEnabled)
+        (void)MelonPrimeCore::DirectInvocationHook_IsSiteValid(nds, rom.romGroupIndex);
 }
 
 void DeactivateHooksOnLeaveInGame(melonDS::NDS* nds,

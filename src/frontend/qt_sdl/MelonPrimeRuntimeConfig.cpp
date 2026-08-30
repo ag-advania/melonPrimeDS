@@ -86,7 +86,20 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
     s.immediateInputEdgeOverlay = false;
 #endif
 
-    s.directAltFormTransform = cfg.GetBool(CfgKey::DirectAltFormTransform);
+    // Alt-Form transform method. The legacy bool key is the pre-Method-2
+    // source; it only feeds the migration when the int key is absent.
+    const int altFormTransformMethod =
+        cfg.HasKey(CfgKey::AltFormTransformMethod)
+            ? std::clamp(cfg.GetInt(CfgKey::AltFormTransformMethod),
+                         AltFormTransformMethod::LegacyTouch,
+                         AltFormTransformMethod::NewDirectInvocation)
+            : (cfg.GetBool(CfgKey::DirectAltFormTransform)
+                   ? AltFormTransformMethod::NewNativeGate
+                   : AltFormTransformMethod::LegacyTouch);
+    s.directAltFormTransform =
+        altFormTransformMethod == AltFormTransformMethod::NewNativeGate;
+    s.directInvocationTransform =
+        altFormTransformMethod == AltFormTransformMethod::NewDirectInvocation;
 
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     s.nativeBipedFire =
@@ -99,8 +112,11 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     s.nativeZoomToggle =
         zoomInputMethod == ZoomInputMethod::NewNativeToggle;
+    s.directInvocationZoom =
+        zoomInputMethod == ZoomInputMethod::NewDirectInvocation;
 #else
     s.nativeZoomToggle = false;
+    s.directInvocationZoom = false;
 #endif
 
     const int zoomAimScalePct = std::clamp(cfg.GetInt(CfgKey::ZoomAimScalePct), 10, 300);
@@ -129,8 +145,14 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
         cfg.GetBool(CfgKey::ExpandStageMatrix);
     s.outOfGamePatches.expandStageMatrixExtraEnabled =
         cfg.GetBool(CfgKey::ExpandStageMatrixExtra);
+    const int weaponSwitchMethod =
+        std::clamp(cfg.GetInt(CfgKey::WeaponSwitchMethod),
+                   WeaponSwitchMethod::LegacyTouch,
+                   WeaponSwitchMethod::NewDirectInvocation);
     s.nativeWeaponSwitch =
-        cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
+        weaponSwitchMethod == WeaponSwitchMethod::NewNative;
+    s.directInvocationWeapon =
+        weaponSwitchMethod == WeaponSwitchMethod::NewDirectInvocation;
     s.fixShadowFreeze = cfg.GetBool(CfgKey::FixShadowFreeze);
     s.fixNoxusBladePersistence =
         cfg.GetBool(CfgKey::FixNoxusBladePersistence);

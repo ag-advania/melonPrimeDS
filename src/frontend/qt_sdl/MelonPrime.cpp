@@ -434,6 +434,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
                 m_weaponSwitchPending.Clear();
+                m_directInvocationPending.Clear();
 #endif
             }
 
@@ -514,6 +515,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
                     m_weaponSwitchPending.Clear();
+                    m_directInvocationPending.Clear();
 #endif
                 }
             }
@@ -541,6 +543,33 @@ namespace MelonPrime {
                 m_weaponSwitchPending.Clear();
             }
         }
+        // "New Method 2" mailbox TTL. The hook site is skipped while the
+        // player's +0x84E gate is set, so a request is held for a few frames
+        // and then dropped rather than firing after a respawn or a menu.
+        if (m_directInvocationPending.IsValid()) {
+            const bool alive = focused && m_flags.test(StateFlags::BIT_IN_GAME);
+            if (!alive || !m_enableDirectInvocationTransform) {
+                m_directInvocationPending.ClearTransform();
+            }
+            else if (m_directInvocationPending.TransformFrames != 0
+                     && --m_directInvocationPending.TransformFrames == 0) {
+                m_directInvocationPending.ClearTransform();
+            }
+            if (!alive || !m_enableDirectInvocationWeapon) {
+                m_directInvocationPending.ClearWeapon();
+            }
+            else if (m_directInvocationPending.WeaponFrames != 0
+                     && --m_directInvocationPending.WeaponFrames == 0) {
+                m_directInvocationPending.ClearWeapon();
+            }
+            if (!alive || !m_enableDirectInvocationZoom) {
+                m_directInvocationPending.ClearZoom();
+            }
+            else if (m_directInvocationPending.ZoomFrames != 0
+                     && --m_directInvocationPending.ZoomFrames == 0) {
+                m_directInvocationPending.ClearZoom();
+            }
+        }
 #endif
         PublishUiSnapshot();
         m_isRunningHook = false;
@@ -560,7 +589,8 @@ namespace MelonPrime {
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         ResetTransientInputState(
-            TR_OverlayHeld | TR_DirectTransform | TR_BipedFire | TR_WeaponSwitchPending);
+            TR_OverlayHeld | TR_DirectTransform | TR_BipedFire | TR_WeaponSwitchPending
+            | TR_DirectInvocation);
         ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
         m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 
@@ -719,9 +749,15 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         // PatchLifecycle Step 3 / Site B — see
         // melonprime_patch_lifecycle_gateway_step3_plan.md.
+        // Anything queued before the match actually started is dropped here:
+        // the queue gates below only accept requests once this flag is set, and
+        // a stale one must not fire on the first battle-runtime frame.
+        m_directInvocationPending.Clear();
         PatchLifecycle::ApplyOnBattleRuntimeEnter(
             emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this,
-            m_enableNativeWeaponSwitch);
+            m_enableNativeWeaponSwitch,
+            m_enableDirectInvocationTransform || m_enableDirectInvocationWeapon
+                || m_enableDirectInvocationZoom);
 #endif
     }
 

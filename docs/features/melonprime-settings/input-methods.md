@@ -7,10 +7,21 @@ and zoom requests are generated:
 
 | Control | Key | Default | Values |
 | --- | --- | --- | --- |
-| Weapon switch method | Metroid.Input.WeaponSwitchMethod | 0 | 0 legacy, 1 native |
+| Weapon switch method | Metroid.Input.WeaponSwitchMethod | 0 | 0 legacy, 1 native, 2 native 2 |
 | Biped fire method | Metroid.Input.BipedFireMethod | 0 | 0 legacy, 1 native |
-| Transform method | Metroid.Input.Enable.DirectAltFormTransform | false | false legacy, true native |
-| Zoom method | Metroid.Input.ZoomMethod | 0 | 0 legacy, 1 retired alias, 2 native |
+| Transform method | Metroid.Input.AltFormTransformMethod | 0 | 0 legacy, 1 native gate, 2 native 2 |
+| Transform method (legacy key) | Metroid.Input.Enable.DirectAltFormTransform | false | mirrors value 1 of the key above |
+| Zoom method | Metroid.Input.ZoomMethod | 0 | 0 legacy, 1 retired alias, 2 native, 3 native 3 |
+
+Each domain stores one integer, so its methods are mutually exclusive by
+construction. The dialog enforces the same thing directly: ticking Method 2
+clears Method 1 for weapon and transform, and ticking Method 3 clears Method 2
+for zoom (and the reverse in each case).
+
+`Metroid.Input.AltFormTransformMethod` is authoritative. When it is absent, the
+value is migrated once from the older boolean key: true becomes 1, false becomes
+0. Saving writes both, so a build without Method 2 still resolves Method 1 or
+legacy correctly.
 
 The controls select paths; they do not change the keyboard bindings themselves.
 The existing [Zoom input methods](../input/zoom-input-methods.md) page contains
@@ -84,12 +95,81 @@ The paired values in the source table are alternatives within the
 version-specific control flow, not a license to patch both regions blindly.
 Guard failure must leave the legacy path intact.
 
-## Zoom
+## New Method 2 (DirectInvocation)
 
-Value 0 is the legacy zoom path. Value 1 is a retired configuration value that
-behaves as value 0. Value 2 uses the native SetPlayerScopeZoom path.
+Value 2 of the weapon and transform selectors is a separate path shared by both.
+Value 3 of the zoom selector uses the same path. It follows the mphCodex
+DirectInvocation specification: a host pressed edge writes a guest mailbox, and
+the request is consumed inside the game's own player input update, at the same `ProcessTouchInput` call site the Method-1 weapon hook
+uses. The trampoline runs the original callee first and only then makes the
+native call, so the frame's existing touch/aim processing is preserved.
 
-| ROM | SetPlayerScopeZoom site |
+| ROM | Hook site | ProcessTouchInput | Transform | TryEquipWeapon | HUD dispatch |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| JP1.0 / JP1.1 | 0x020263DC | 0x02026BFC | 0x02016338 | 0x0200C5FC | 0x0202D06C |
+| US1.0 | 0x02026400 | 0x02026C20 | 0x02016358 | 0x0200C5FC | 0x0202D090 |
+| US1.1 | 0x02026400 | 0x02026C20 | 0x0201635C | 0x0200C5FC | 0x0202D090 |
+| EU1.0 | 0x020263F8 | 0x02026C18 | 0x02016350 | 0x0200C600 | 0x0202D088 |
+| EU1.1 | 0x02026400 | 0x02026C20 | 0x0201635C | 0x0200C5FC | 0x0202D090 |
+| KR1.0 | 0x0200CF1C | 0x0200C29C | 0x0201C408 | 0x02025DBC | 0x02035EAC |
+
+Transform calls the native request with force = 0 and, only when the call is
+accepted and the Morphing bit 0x800 is set afterwards, raises HUD action 0x16 —
+the same condition the touch path uses, so an Unmorph raises nothing. Weapon
+calls TryEquipWeapon with flags = 0.
+
+The path never synthesises a touch, never runs the touch hit test, never sets or
+clears NoAimInput (player+0x4C4 bit 0x01000000), never opens the radial menu, and
+never writes CurrentWeapon or the form bit directly. Requests are per pressed
+edge with a short frame TTL; they are dropped rather than replayed after focus
+loss, leaving the match, or a lifecycle reset.
+
+Known divergence from the specification: the quick-slot "same weapon requested"
+branch, which raises HUD action 0x3C without re-equipping, is not reproduced.
+`MelonPrimeCore::SwitchWeapon` returns before queuing when the requested weapon
+is already held, so the guest never receives that request.
+
+### Lifecycle
+
+Like every other native path, this one is match-scoped and follows the same
+three conventions:
+
+- **The battle-runtime latch gates it end to end.** Hooks are installed on the
+  first `mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH` frame, so
+  requests are neither queued nor serviced outside it. Without that gate a
+  press during the join/countdown could be held by its TTL and then fire on the
+  very first battle-runtime frame. `HandleBattleRuntimeEnter` also drops any
+  pending request outright.
+- **The trampoline is authored on the cold match boundary**, from
+  `ApplyOnBattleRuntimeEnter`, exactly as the Method-1 weapon trampoline is.
+  The first dispatch must not have to write 27 words of guest code, and
+  invalidate the JIT blocks covering them, from inside the hook callback.
+- **The weapon path keeps the Method-1 spawn-window guard.** While spawn
+  invincibility is still counting down the native equip is unsafe, so that one
+  request goes to the legacy route instead.
+
+Method 2 and the Method-1 weapon hook share one hook PC. When both are enabled
+and both have a pending request on the same frame, Method 1 dispatches and the
+Method-2 request is retried on the next frame within its TTL.
+
+### Zoom (New Method 3)
+
+Value 3 of the zoom selector routes through the same DirectInvocation
+dispatcher. It calls the same `SetPlayerScopeZoom(player, enabled)` the native
+toggle uses, but from the player input update, and it first applies the gates
+the bottom-screen touch shortcut applies:
+
+- reject while `player+0x4C4` has bit 9 (Alt-Form), bit 11 (Morphing), or
+  bit 12 (Unmorphing) set
+- require the currently equipped weapon (`player+0x858`) to have
+  `WeaponData+0x08` bit 11 set
+
+The current state is `player+0x850` bit 0, and a press toggles it. The
+standalone request has no tapped quick slot, so the capability gate reads the
+equipped weapon rather than a slot weapon; this matches the non-touch zoom input
+path the ROM already has.
+
+| ROM | SetPlayerScopeZoom |
 | --- | ---: |
 | JP1.0 / JP1.1 | 0x02015C98 |
 | US1.0 | 0x02015CB8 |
@@ -98,27 +178,33 @@ behaves as value 0. Value 2 uses the native SetPlayerScopeZoom path.
 | EU1.1 | 0x02015CBC |
 | KR1.0 | 0x0201CEBC |
 
-The native weapon-action path uses the shared action consumer for JP/US/EU
-and 0x0200D07C for KR, with a trampoline at 0x02003F00 and scratch area at
-0x02003F40. The activation edge, guest scope call, and release behavior must
-be tested independently from zoom sensitivity scaling.
+The setter owns the zoom sound and the Imperialist crosshair action, so nothing
+here dispatches either separately. As with Method 2, a scope left on when the
+equipped weapon stops being zoom-capable is turned off through the same setter;
+that cleanup request skips the capability gate on purpose.
 
-## Lifecycle and interactions
+Gates are evaluated inside the hook, at the guest safe point, not when the
+request is queued, so the state the setter acts on is the state that was
+checked.
 
-Native hooks are match-scoped. Configuration changes are consumed by
-NotifyConfigChanged and reconciled by the ARM9 hook installer. A hook being
-installed is not proof that the input edge reached the guest; inspect the
-behavioral path as well.
+## ROM code cave reservations
 
-Stylus mode can intentionally bypass native aim-related controls. Joy2Key and
-SnapTap can change the host edge sequence before the native hook sees it.
-Immediate Input Edge Overlay is a developer diagnostic that shares a post-poll
-boundary and must not create duplicate fire/zoom/transform actions.
+The native paths that call a guest function place a trampoline in the shared zero-filled cave at
+0x02003E9C..0x02003FBB. The reservation table, the compile-time overlap rule, the ban on
+PC-relative request loads, and the battle-runtime authoring rule are canonical in
+[patch-system.md](../../architecture/gameplay/patch-system.md) under "Guest trampolines and the
+shared ROM code cave" — read that before adding or moving one. DirectInvocation owns
+0x02003F50..0x02003FBB and no data block: its dispatcher hands the request over in r0-r2.
 
 ## Verification checklist
 
 - Test each selector with the other selectors at their defaults.
 - Test combinations of native weapon/zoom/fire and transform.
+- Test Method 2 for weapon and transform separately, then together, then
+  combined with Method 1 on the other selector (shared hook PC).
+- Verify each pair is exclusive in the dialog and after a save/reload cycle.
+- For zoom Method 3, test Alt-Form, mid-transform, and a non-zoom weapon; each
+  must refuse the toggle rather than zoom.
 - Verify one action per physical edge, not one action per frame.
 - Test cooldown, ammo, invalid weapon, pause, menu, morph, and respawn paths.
 - Verify per-ROM guards and leave/stop restoration.
@@ -132,6 +218,7 @@ Current source:
 - MelonPrimePatchWeaponSwitchHook.inc
 - MelonPrimePatchNativeBipedFireHook.inc
 - MelonPrimePatchImmediateTransformGateHook.inc
+- MelonPrimePatchDirectInvocationHook.inc
 - MelonPrimePatchNativeZoomToggleHook.inc
 - MelonPrimeArm9Hook.cpp
 

@@ -401,6 +401,26 @@ namespace MelonPrime {
         [[nodiscard]] static bool WeaponSwitchHook_IsSiteValid(
             melonDS::NDS* nds,
             uint8_t romGroupIndex);
+
+        // --- "New Method 2": mphCodex DirectInvocation (transform + weapon) ---
+        // One hook site, one guest mailbox; see
+        // MelonPrimePatchDirectInvocationHook.inc.
+        static uint32_t DirectInvocationHook_GetAddresses(
+            uint8_t romGroupIndex,
+            uint32_t* out,
+            uint32_t maxCount);
+        bool DirectInvocationHook_DispatchCheckAndRedirect(
+            melonDS::NDS* nds,
+            uint32_t arm9ExecAddr,
+            uint32_t regs[16],
+            uint32_t& redirectExecAddr);
+        [[nodiscard]] static bool DirectInvocationHook_IsRomSupported(uint8_t romGroupIndex);
+        [[nodiscard]] static bool DirectInvocationHook_IsSiteValid(
+            melonDS::NDS* nds,
+            uint8_t romGroupIndex);
+        void QueueDirectInvocationTransform() noexcept;
+        void QueueDirectInvocationWeapon(uint8_t weaponId) noexcept;
+        void QueueDirectInvocationZoom(bool forceOff) noexcept;
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -535,8 +555,15 @@ namespace MelonPrime {
         bool     m_enableDirectAltFormTransform = false;
         bool     m_enableNativeBipedFire = false;
         bool     m_enableNativeZoomToggle = false;
+        // "New Method 3" for zoom. Mutually exclusive with the native toggle
+        // above; both are resolved from Metroid.Input.ZoomMethod.
+        bool     m_enableDirectInvocationZoom = false;
 #ifdef MELONPRIME_DS
         bool     m_enableNativeWeaponSwitch = false;
+        // "New Method 2" (mphCodex DirectInvocation). Independent of the
+        // Method-1 flags above: either domain can run Method 2 on its own.
+        bool     m_enableDirectInvocationTransform = false;
+        bool     m_enableDirectInvocationWeapon = false;
 #endif
         int16_t  m_nativeAimDeltaX = 0;
         int16_t  m_nativeAimDeltaY = 0;
@@ -774,6 +801,62 @@ namespace MelonPrime {
                 return WeaponId <= 8 && RetryCount != 0;
             }
         } m_weaponSwitchPending{};
+
+        // "New Method 2" guest mailbox, host side. One pressed edge produces
+        // one request with a short TTL (DirectInvocation spec section 7); the
+        // hook consumes it at the ProcessTouchInput call site.
+        struct DirectInvocationPendingRequest {
+            uint8_t WeaponId = 0xFF;
+            uint8_t WeaponFrames = 0;
+            uint8_t TransformFrames = 0;
+            uint8_t ZoomFrames = 0;
+            bool    Transform = false;
+            bool    Zoom = false;
+            // Cleanup request: turn the scope off without the weapon
+            // capability gate (Direct-Zoom-Toggle spec section 6).
+            bool    ZoomForceOff = false;
+
+            FORCE_INLINE void ClearWeapon() noexcept
+            {
+                WeaponId = 0xFF;
+                WeaponFrames = 0;
+            }
+
+            FORCE_INLINE void ClearTransform() noexcept
+            {
+                Transform = false;
+                TransformFrames = 0;
+            }
+
+            FORCE_INLINE void ClearZoom() noexcept
+            {
+                Zoom = false;
+                ZoomForceOff = false;
+                ZoomFrames = 0;
+            }
+
+            FORCE_INLINE void Clear() noexcept
+            {
+                ClearWeapon();
+                ClearTransform();
+                ClearZoom();
+            }
+
+            [[nodiscard]] FORCE_INLINE bool WeaponValid() const noexcept
+            {
+                return WeaponId <= 8 && WeaponFrames != 0;
+            }
+
+            [[nodiscard]] FORCE_INLINE bool ZoomValid() const noexcept
+            {
+                return Zoom && ZoomFrames != 0;
+            }
+
+            [[nodiscard]] FORCE_INLINE bool IsValid() const noexcept
+            {
+                return Transform || WeaponValid() || ZoomValid();
+            }
+        } m_directInvocationPending{};
 #endif
 
         // Warm scalars (checked per frame but not in aim hot path)
@@ -937,6 +1020,7 @@ namespace MelonPrime {
             TR_DirectTransform   = 1u << 2,  // m_directTransformPendingFrames
             TR_BipedFire         = 1u << 3,  // native biped-fire edge latch
             TR_WeaponSwitchPending = 1u << 4, // m_weaponSwitchPending (DS only)
+            TR_DirectInvocation  = 1u << 5,  // m_directInvocationPending (DS only)
         };
         FORCE_INLINE void ResetTransientInputState(uint8_t parts) noexcept {
             if (parts & TR_AimResiduals) {
@@ -967,6 +1051,8 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
             if (parts & TR_WeaponSwitchPending)
                 m_weaponSwitchPending.Clear();
+            if (parts & TR_DirectInvocation)
+                m_directInvocationPending.Clear();
 #endif
         }
 
@@ -1130,6 +1216,7 @@ namespace MelonPrime {
         HOT_FUNCTION void UpdateImmediateInputEdgeOverlayInput(bool localPlayerChanged);
         HOT_FUNCTION void ApplyZoomBindingInput();
         HOT_FUNCTION void UpdateNativeZoomToggleInput();
+        HOT_FUNCTION void UpdateDirectInvocationZoomInput();
         HOT_FUNCTION void ProcessAimInputMouse();
         HOT_FUNCTION bool ProcessWeaponSwitch();
         HOT_FUNCTION bool HandleMorphBallBoost();
