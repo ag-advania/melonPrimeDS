@@ -193,9 +193,12 @@ private:
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
+    QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod2 = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
+    QCheckBox* m_cbMetroidUseNewTransformMethod2 = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod2 = nullptr;
+    QCheckBox* m_cbMetroidUseNewZoomMethod3 = nullptr;
     QCheckBox* m_cbMetroidFpsCameraLock = nullptr;
     QLabel* m_lblMetroidFpsCameraLockDesc = nullptr;
     QLabel* m_lblMetroidLowLatencyAimMode = nullptr;

@@ -322,4 +322,55 @@
             {MenuLangId::Basque, "Garbitu"},
             {MenuLangId::Hebrew, "נקה"},
         }
+    },
+    {
+        "lblMetroidWeaponSwitchMethod2Desc",
+        {
+            {MenuLangId::Japanese, "新方式2は、ゲーム本来のプレイヤー入力処理の中から本来の武器装備処理を呼び出します。タッチ模擬はせず、武器メニューも開かず、すでに持っている武器を装備し直すこともありません。新方式より優先されます。"},
+            {MenuLangId::German, "Neue Methode 2 ruft die spieleigene Routine zum Ausrüsten von Waffen direkt in der Spieler-Eingabeverarbeitung auf. Sie simuliert keine Berührung, öffnet nie das Waffenmenü und rüstet die bereits getragene Waffe nicht erneut aus. Hat Vorrang vor Neue Methode."},
+            {MenuLangId::Spanish, "El método nuevo 2 llama a la rutina de equipar armas propia del juego desde su procesamiento de entrada del jugador. No simula ningún toque, nunca abre el menú de armas y nunca vuelve a equipar el arma que ya llevas. Tiene prioridad sobre el método nuevo."},
+            {MenuLangId::French, "La nouvelle méthode 2 appelle la routine d’équipement d’arme native du jeu depuis son traitement des entrées du joueur. Elle ne simule aucun appui tactile, n’ouvre jamais le menu des armes et ne rééquipe jamais l’arme déjà tenue. Prioritaire sur la nouvelle méthode."},
+            {MenuLangId::Italian, "Il nuovo metodo 2 richiama la routine di equipaggiamento delle armi originale del gioco dalla sua elaborazione dell’input del giocatore. Non simula alcun tocco, non apre mai il menu delle armi e non riequipaggia l’arma già impugnata. Ha priorità sul nuovo metodo."},
+            {MenuLangId::Dutch, "Nieuwe methode 2 roept de eigen wapenuitrustroutine van het spel aan vanuit de invoerverwerking van de speler. Er wordt geen aanraking gesimuleerd, het wapenmenu gaat nooit open en het al gedragen wapen wordt nooit opnieuw uitgerust. Heeft voorrang op Nieuwe methode."},
+            {MenuLangId::Portuguese, "O novo método 2 chama a rotina original de equipar armas do jogo a partir do processamento de entrada do jogador. Não simula toque, nunca abre o menu de armas e nunca reequipa a arma já empunhada. Tem prioridade sobre o novo método."},
+            {MenuLangId::Russian, "Новый метод 2 вызывает штатную процедуру экипировки оружия прямо из обработки ввода игрока. Он не имитирует касание, не открывает меню оружия и не переэкипирует уже выбранное оружие. Имеет приоритет над новым методом."},
+            {MenuLangId::ChineseSimplified, "新方式 2 在游戏自身的玩家输入处理中调用其原本的武器装备处理。不模拟触控，不打开武器菜单，也不会重新装备已持有的武器。优先于新方式。"},
+            {MenuLangId::ChineseTraditional, "新方式 2 在遊戲自身的玩家輸入處理中呼叫其原本的武器裝備處理。不模擬觸控，不開啟武器選單，也不會重新裝備已持有的武器。優先於新方式。"},
+            {MenuLangId::ChineseHongKong, "新方式 2 在遊戲自身的玩家輸入處理中呼叫其原本的武器裝備處理。不模擬觸控，不開啟武器選單，也不會重新裝備已持有的武器。優先於新方式。"},
+            {MenuLangId::Korean, "새 방식 2는 게임 자체의 플레이어 입력 처리 안에서 본래의 무기 장착 처리를 호출합니다. 터치를 모방하지 않고, 무기 메뉴를 열지 않으며, 이미 든 무기를 다시 장착하지도 않습니다. 새 방식보다 우선합니다."},
+        }
+    },
+    {
+        "lblMetroidTransformMethod2Desc",
+        {
+            {MenuLangId::Japanese, "新方式2は、ゲーム本来のプレイヤー入力処理の中から本来の変形要求処理を呼び出します。状態判定・カメラ・アニメーション・効果音はすべてそのまま動きます。タッチ模擬はせず、エイムを止めることもありません。新方式より優先されます。"},
+            {MenuLangId::German, "Neue Methode 2 ruft die spieleigene Verwandlungsanforderung direkt in der Spieler-Eingabeverarbeitung auf, sodass alle Zustandsprüfungen, Kamera-, Animations- und Klangschritte unverändert ablaufen. Sie simuliert keine Berührung und unterdrückt das Zielen nicht. Hat Vorrang vor Neue Methode."},
+            {MenuLangId::Spanish, "El método nuevo 2 llama a la petición de transformación propia del juego desde su procesamiento de entrada del jugador, de modo que todas las comprobaciones de estado, la cámara, la animación y el sonido se ejecutan sin cambios. No simula ningún toque ni bloquea la puntería. Tiene prioridad sobre el método nuevo."},
+            {MenuLangId::French, "La nouvelle méthode 2 appelle la demande de transformation native du jeu depuis son traitement des entrées du joueur : toutes les vérifications d’état, la caméra, l’animation et le son se déroulent sans changement. Elle ne simule aucun appui tactile et ne bloque pas la visée. Prioritaire sur la nouvelle méthode."},
+            {MenuLangId::Italian, "Il nuovo metodo 2 richiama la richiesta di trasformazione originale del gioco dalla sua elaborazione dell’input del giocatore, così tutti i controlli di stato, la telecamera, l’animazione e l’audio vengono eseguiti invariati. Non simula alcun tocco e non blocca la mira. Ha priorità sul nuovo metodo."},
+            {MenuLangId::Dutch, "Nieuwe methode 2 roept het eigen transformatieverzoek van het spel aan vanuit de invoerverwerking van de speler, zodat alle statuscontroles, camera, animatie en geluid ongewijzigd verlopen. Er wordt geen aanraking gesimuleerd en het richten wordt niet onderdrukt. Heeft voorrang op Nieuwe methode."},
+            {MenuLangId::Portuguese, "O novo método 2 chama o pedido de transformação original do jogo a partir do processamento de entrada do jogador, de modo que todas as verificações de estado, câmera, animação e som ocorrem sem alteração. Não simula toque nem bloqueia a mira. Tem prioridade sobre o novo método."},
+            {MenuLangId::Russian, "Новый метод 2 вызывает штатный запрос трансформации прямо из обработки ввода игрока, поэтому все проверки состояния, камера, анимация и звук выполняются без изменений. Он не имитирует касание и не блокирует прицеливание. Имеет приоритет над новым методом."},
+            {MenuLangId::ChineseSimplified, "新方式 2 在游戏自身的玩家输入处理中调用其原本的变形请求处理，因此状态判定、镜头、动画与音效都按原样运行。不模拟触控，也不会中断瞄准。优先于新方式。"},
+            {MenuLangId::ChineseTraditional, "新方式 2 在遊戲自身的玩家輸入處理中呼叫其原本的變形請求處理，因此狀態判定、鏡頭、動畫與音效都按原樣運行。不模擬觸控，也不會中斷瞄準。優先於新方式。"},
+            {MenuLangId::ChineseHongKong, "新方式 2 在遊戲自身的玩家輸入處理中呼叫其原本的變形請求處理，因此狀態判定、鏡頭、動畫與音效都按原樣運行。不模擬觸控，也不會中斷瞄準。優先於新方式。"},
+            {MenuLangId::Korean, "새 방식 2는 게임 자체의 플레이어 입력 처리 안에서 본래의 변형 요청 처리를 호출하므로 상태 판정, 카메라, 애니메이션, 효과음이 모두 그대로 동작합니다. 터치를 모방하지 않고 조준을 막지도 않습니다. 새 방식보다 우선합니다."},
+        }
+    },
+    {
+        "lblMetroidZoomMethod3Desc",
+        {
+            {MenuLangId::Japanese, "新方式3は、同じネイティブのズーム設定関数を、武器アクション処理ではなくゲーム本来のプレイヤー入力処理から呼び出します。さらにタッチ経路と同じ条件を先に確認します。別形態中および変形中はズームせず、ズーム可能な武器を装備しているときだけ動作します。ズーム音とクロスヘアはゲーム側が処理します。新方式2とは併用できません。"},
+            {MenuLangId::German, "Neue Methode 3 ruft dieselbe native Zoom-Funktion aus der Spieler-Eingabeverarbeitung des Spiels statt aus der Waffenaktion auf und prüft zuvor dieselben Bedingungen wie der Touch-Weg: kein Zoom in der Alt-Form oder während der Verwandlung, und nur mit einer zoomfähigen Waffe. Zoom-Ton und Fadenkreuz bleiben Sache des Spiels. Nicht zusammen mit Neue Methode 2 verwendbar."},
+            {MenuLangId::Spanish, "El método nuevo 3 llama al mismo ajuste de zoom nativo desde el procesamiento de entrada del jugador en lugar de la acción de arma, y antes comprueba las mismas condiciones que la ruta táctil: sin zoom en forma alternativa o durante la transformación, y solo con un arma que admita zoom. El sonido del zoom y la mira siguen a cargo del juego. No se puede combinar con el método nuevo 2."},
+            {MenuLangId::French, "La nouvelle méthode 3 appelle le même réglage de zoom natif depuis le traitement des entrées du joueur plutôt que depuis l’action d’arme, en vérifiant d’abord les mêmes conditions que la voie tactile : pas de zoom en forme alternative ni pendant la transformation, et uniquement avec une arme compatible. Le son du zoom et le réticule restent gérés par le jeu. Incompatible avec la nouvelle méthode 2."},
+            {MenuLangId::Italian, "Il nuovo metodo 3 richiama la stessa funzione di zoom originale dall’elaborazione dell’input del giocatore invece che dall’azione dell’arma, e prima verifica le stesse condizioni del percorso touch: niente zoom in forma alternativa o durante la trasformazione, e solo con un’arma che supporta lo zoom. Suono dello zoom e mirino restano gestiti dal gioco. Non combinabile con il nuovo metodo 2."},
+            {MenuLangId::Dutch, "Nieuwe methode 3 roept dezelfde oorspronkelijke zoominstelling aan vanuit de invoerverwerking van de speler in plaats van de wapenactie, en controleert eerst dezelfde voorwaarden als de touchroute: geen zoom in de Alt-Form of tijdens transformeren, en alleen met een wapen dat kan zoomen. Zoomgeluid en richtkruis blijven van het spel. Niet te combineren met Nieuwe methode 2."},
+            {MenuLangId::Portuguese, "O novo método 3 chama o mesmo ajuste de zoom original a partir do processamento de entrada do jogador em vez da ação de arma, e antes verifica as mesmas condições do caminho por toque: sem zoom na forma alternativa ou durante a transformação, e apenas com uma arma capaz de zoom. O som do zoom e a mira continuam a cargo do jogo. Não pode ser combinado com o novo método 2."},
+            {MenuLangId::Russian, "Новый метод 3 вызывает ту же штатную функцию зума из обработки ввода игрока, а не из обработки действия оружия, и сначала проверяет те же условия, что и путь через касание: зум недоступен в альтернативной форме и во время превращения, и работает только с оружием, поддерживающим зум. Звук зума и прицел остаются за игрой. Нельзя использовать вместе с новым методом 2."},
+            {MenuLangId::ChineseSimplified, "新方式 3 从游戏原本的玩家输入处理（而非武器动作处理）调用同一个原生缩放设置函数，并先检查与触控路径相同的条件：处于或正在变为另一形态时不缩放，且仅在装备可缩放武器时生效。缩放音效与准星仍由游戏处理。不能与新方式 2 同时使用。"},
+            {MenuLangId::ChineseTraditional, "新方式 3 從遊戲原本的玩家輸入處理（而非武器動作處理）呼叫同一個原生縮放設定函式，並先檢查與觸控路徑相同的條件：處於或正在變為另一形態時不縮放，且僅在裝備可縮放武器時生效。縮放音效與準星仍由遊戲處理。不能與新方式 2 同時使用。"},
+            {MenuLangId::ChineseHongKong, "新方式 3 從遊戲原本的玩家輸入處理（而非武器動作處理）呼叫同一個原生縮放設定函式，並先檢查與觸控路徑相同的條件：處於或正在變為另一形態時不縮放，且僅在裝備可縮放武器時生效。縮放音效與準星仍由遊戲處理。不能與新方式 2 同時使用。"},
+            {MenuLangId::Korean, "새 방식 3은 무기 액션 처리가 아니라 게임 본래의 플레이어 입력 처리에서 동일한 네이티브 줌 설정 함수를 호출하며, 터치 경로와 같은 조건을 먼저 확인합니다. 다른 형태이거나 변형 중일 때는 줌하지 않고, 줌이 가능한 무기를 장착했을 때만 동작합니다. 줌 사운드와 조준선은 게임이 처리합니다. 새 방식 2와 함께 사용할 수 없습니다."},
+        }
     }

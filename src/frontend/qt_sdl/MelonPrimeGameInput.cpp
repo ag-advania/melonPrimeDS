@@ -33,6 +33,7 @@
 // - MelonPrimePatchImmediateInputEdgeOverlay.inc
 // - MelonPrimePatchImmediateTransformGateHook.inc
 // - MelonPrimePatchWeaponSwitchHook.inc
+// - MelonPrimePatchDirectInvocationHook.inc
 //
 // Keep them under this unity parent. They depend on the local aim/input helper
 // scope in this file, including ApplyAim and nearby MelonPrimeCore methods.
@@ -470,7 +471,10 @@ namespace MelonPrime {
         // frames (release edge / auto-disable), so it keeps the gate open.
         // Ordering only -- no behavior change.
         const bool zoomDown = IsDown(IB_ZOOM);
-        if (LIKELY(!m_enableNativeZoomToggle && !zoomDown))
+        // Both native zoom methods need the released frames too (release edge /
+        // auto-disable), so either one keeps the gate open.
+        const bool nativeZoom = m_enableNativeZoomToggle || m_enableDirectInvocationZoom;
+        if (LIKELY(!nativeZoom && !zoomDown))
             return;
 
         // In Morph Ball / Alt Form the R input drives Morph Ball Boost, not zoom
@@ -481,9 +485,10 @@ namespace MelonPrime {
         // press the zoom binding instead of R — both left R unpressed in alt
         // form, so pressing and releasing R after transforming produced no boost.
         if (IsPlayerAltForm()) {
-            // Keep the native-toggle press edge in sync so leaving alt form mid
-            // hold does not fire a stale toggle on the next biped frame.
-            if (m_enableNativeZoomToggle)
+            // Keep the native press edge in sync so leaving alt form mid hold
+            // does not fire a stale toggle on the next biped frame. The latch
+            // is shared by both native methods.
+            if (nativeZoom)
                 m_nativeZoomTogglePrevDown = zoomDown;
 
             if (zoomDown) {
@@ -498,7 +503,12 @@ namespace MelonPrime {
             return;
         }
 
-        // Redundant after the gate above (the native-toggle branch already
+        if (m_enableDirectInvocationZoom) {
+            UpdateDirectInvocationZoomInput();
+            return;
+        }
+
+        // Redundant after the gate above (both native branches already
         // returned, so zoomDown is true here); kept so the legacy path stays
         // correct on its own if the gate is ever revisited.
         if (!zoomDown)
@@ -655,6 +665,7 @@ namespace MelonPrime {
 #include "MelonPrimePatchImmediateInputEdgeOverlay.inc"
 #include "MelonPrimePatchImmediateTransformGateHook.inc"
 #include "MelonPrimePatchWeaponSwitchHook.inc"
+#include "MelonPrimePatchDirectInvocationHook.inc"
 
     // =========================================================================
     // ProcessAimInputMouse

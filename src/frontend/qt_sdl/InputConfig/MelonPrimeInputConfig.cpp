@@ -911,9 +911,12 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     if (m_btnToggleInputMethod
         || m_sectionInputMethod
         || m_cbMetroidUseNewWeaponSwitchMethod
+        || m_cbMetroidUseNewWeaponSwitchMethod2
         || m_cbMetroidUseNewBipedFireMethod
         || m_cbMetroidUseNewTransformMethod
-        || m_cbMetroidUseNewZoomMethod2)
+        || m_cbMetroidUseNewTransformMethod2
+        || m_cbMetroidUseNewZoomMethod2
+        || m_cbMetroidUseNewZoomMethod3)
     {
         return;
     }
@@ -971,9 +974,6 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     m_cbMetroidUseNewWeaponSwitchMethod->setToolTip(
         "Checked: use the native ARM9 game function hook. "
         "Unchecked: use the older touch/menu simulation path.");
-    m_cbMetroidUseNewWeaponSwitchMethod->setChecked(
-        std::clamp(instcfg.GetInt(MelonPrime::CfgKey::WeaponSwitchMethod), 0, 1)
-            == MelonPrime::WeaponSwitchMethod::NewNative);
     sectionLayout->addWidget(m_cbMetroidUseNewWeaponSwitchMethod);
 
     auto* desc = new QLabel(
@@ -984,6 +984,33 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     desc->setWordWrap(true);
     desc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(desc);
+
+    const int weaponSwitchMethod =
+        std::clamp(instcfg.GetInt(MelonPrime::CfgKey::WeaponSwitchMethod), 0, 2);
+    m_cbMetroidUseNewWeaponSwitchMethod->setChecked(
+        weaponSwitchMethod == MelonPrime::WeaponSwitchMethod::NewNative);
+
+    m_cbMetroidUseNewWeaponSwitchMethod2 = new QCheckBox(
+        "Use New Method 2 for Weapon Change",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewWeaponSwitchMethod2->setToolTip(
+        "Checked: reach the game's own TryEquipWeapon from its player input "
+        "update, with no synthetic touch and no radial menu. "
+        "Unchecked: leave the choice to the New Method / Legacy Method above.");
+    m_cbMetroidUseNewWeaponSwitchMethod2->setChecked(
+        weaponSwitchMethod == MelonPrime::WeaponSwitchMethod::NewDirectInvocation);
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseNewWeaponSwitchMethod2);
+
+    auto* weapon2Desc = new QLabel(
+        "New Method 2 calls the game's own weapon-equip routine from its player input "
+        "update. It simulates no touch, never opens the radial menu, and never re-equips "
+        "the weapon already held. Takes priority over New Method.",
+        m_sectionInputMethod);
+    weapon2Desc->setObjectName(QStringLiteral("lblMetroidWeaponSwitchMethod2Desc"));
+    weapon2Desc->setWordWrap(true);
+    weapon2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(weapon2Desc);
 
     m_cbMetroidUseNewBipedFireMethod = new QCheckBox(
         "Use New Method for Biped Fire",
@@ -1016,8 +1043,16 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     m_cbMetroidUseNewTransformMethod->setToolTip(
         "Checked: use the native ARM9 TransformRequest hook. "
         "Unchecked: use the older touch/menu simulation path.");
+    // The int key is authoritative; the legacy bool only seeds it for configs
+    // written before New Method 2 existed.
+    const int altFormTransformMethod =
+        instcfg.HasKey(MelonPrime::CfgKey::AltFormTransformMethod)
+            ? std::clamp(instcfg.GetInt(MelonPrime::CfgKey::AltFormTransformMethod), 0, 2)
+            : (instcfg.GetBool(MelonPrime::CfgKey::DirectAltFormTransform)
+                   ? MelonPrime::AltFormTransformMethod::NewNativeGate
+                   : MelonPrime::AltFormTransformMethod::LegacyTouch);
     m_cbMetroidUseNewTransformMethod->setChecked(
-        instcfg.GetBool(MelonPrime::CfgKey::DirectAltFormTransform));
+        altFormTransformMethod == MelonPrime::AltFormTransformMethod::NewNativeGate);
     sectionLayout->addSpacing(6);
     sectionLayout->addWidget(m_cbMetroidUseNewTransformMethod);
 
@@ -1030,7 +1065,29 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     ui->lblMetroidDirectAltFormTransformDesc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(ui->lblMetroidDirectAltFormTransformDesc);
 
-    const int zoomMethod = std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 2);
+    m_cbMetroidUseNewTransformMethod2 = new QCheckBox(
+        "Use New Method 2 for Alt-Form Transform",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewTransformMethod2->setToolTip(
+        "Checked: call the game's own transform request from its player input "
+        "update, with no synthetic touch and no aim suppression. "
+        "Unchecked: leave the choice to the New Method / Legacy Method above.");
+    m_cbMetroidUseNewTransformMethod2->setChecked(
+        altFormTransformMethod == MelonPrime::AltFormTransformMethod::NewDirectInvocation);
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseNewTransformMethod2);
+
+    auto* transform2Desc = new QLabel(
+        "New Method 2 calls the game's own transform request from its player input "
+        "update, so every state guard, camera, animation and sound step runs unchanged. "
+        "It simulates no touch and does not suppress aim. Takes priority over New Method.",
+        m_sectionInputMethod);
+    transform2Desc->setObjectName(QStringLiteral("lblMetroidTransformMethod2Desc"));
+    transform2Desc->setWordWrap(true);
+    transform2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(transform2Desc);
+
+    const int zoomMethod = std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 3);
 
     m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
         "Use New Method 2 for Zoom",
@@ -1056,6 +1113,57 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     zoom2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
 
     addDeveloperWidget(zoom2Desc);
+
+    m_cbMetroidUseNewZoomMethod3 = new QCheckBox(
+        "Use New Method 3 for Zoom",
+        ui->sectionDeveloperOnly);
+    m_cbMetroidUseNewZoomMethod3->setToolTip(
+        "Checked: toggle native weapon zoom from the game's own player input "
+        "update, with the touch shortcut's own state and weapon gates. "
+        "Unchecked: leave the choice to New Method 2 / Legacy Method above.");
+    m_cbMetroidUseNewZoomMethod3->setChecked(
+        kDeveloperOnlyFeaturesEnabled
+        && zoomMethod == MelonPrime::ZoomInputMethod::NewDirectInvocation);
+    m_cbMetroidUseNewZoomMethod3->setEnabled(kDeveloperOnlyFeaturesEnabled);
+
+    addDeveloperSpacing();
+    addDeveloperWidget(m_cbMetroidUseNewZoomMethod3);
+
+    auto* zoom3Desc = new QLabel(
+        "New Method 3 calls the same native zoom setter from the game's player "
+        "input update instead of the weapon action update, and first applies the "
+        "gates the touch shortcut applies: no zoom while in or entering Alt-Form, "
+        "and only with a zoom-capable weapon equipped. The game keeps ownership of "
+        "the zoom sound and crosshair. Cannot be combined with New Method 2.",
+        ui->sectionDeveloperOnly);
+    zoom3Desc->setObjectName(QStringLiteral("lblMetroidZoomMethod3Desc"));
+    zoom3Desc->setWordWrap(true);
+    zoom3Desc->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    zoom3Desc->setStyleSheet("QLabel { margin-left: 20px; }");
+
+    addDeveloperWidget(zoom3Desc);
+
+    // Method selectors are stored as one integer per domain, so the boxes in a
+    // pair are mutually exclusive: ticking one clears the other instead of
+    // letting the save silently pick a winner.
+    auto makeExclusive = [](QCheckBox* a, QCheckBox* b) {
+        if (!a || !b)
+            return;
+        QObject::connect(a, &QCheckBox::toggled, b, [b](bool on) {
+            if (on && b->isChecked())
+                b->setChecked(false);
+        });
+        QObject::connect(b, &QCheckBox::toggled, a, [a](bool on) {
+            if (on && a->isChecked())
+                a->setChecked(false);
+        });
+    };
+    makeExclusive(m_cbMetroidUseNewWeaponSwitchMethod,
+                  m_cbMetroidUseNewWeaponSwitchMethod2);
+    makeExclusive(m_cbMetroidUseNewTransformMethod,
+                  m_cbMetroidUseNewTransformMethod2);
+    makeExclusive(m_cbMetroidUseNewZoomMethod2,
+                  m_cbMetroidUseNewZoomMethod3);
 
     int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
     if (insertIndex < 0)
@@ -1120,10 +1228,16 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     ui->lblMetroidImmediateInputEdgeOverlayDesc->setEnabled(kDeveloperOnlyFeaturesEnabled && enableAimControls);
     if (m_cbMetroidUseNewTransformMethod)
         m_cbMetroidUseNewTransformMethod->setEnabled(true);
+    if (m_cbMetroidUseNewTransformMethod2)
+        m_cbMetroidUseNewTransformMethod2->setEnabled(true);
+    if (m_cbMetroidUseNewWeaponSwitchMethod2)
+        m_cbMetroidUseNewWeaponSwitchMethod2->setEnabled(true);
     if (m_cbMetroidUseNewBipedFireMethod)
         m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
     if (m_cbMetroidUseNewZoomMethod2)
         m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    if (m_cbMetroidUseNewZoomMethod3)
+        m_cbMetroidUseNewZoomMethod3->setEnabled(kDeveloperOnlyFeaturesEnabled);
     ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);
 }
 

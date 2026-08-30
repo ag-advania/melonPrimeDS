@@ -78,8 +78,10 @@ void RestoreOnMatchEnd(melonDS::NDS* nds,
 // Called once from HandleBattleRuntimeEnter() on the first
 // mode==MODE_BATTLE_RUNTIME && flow==FLOW_ACTIVE_MATCH frame after join.
 // Applies battle-runtime static patches, activates match ARM9 hooks, and
-// (when native weapon switch is enabled) validates/installs the weapon
-// switch trampoline. The caller still owns setting
+// validates/installs the guest trampoline of every enabled native path
+// (weapon switch Method 1, DirectInvocation Method 2/3) so the cave is
+// already written before the first request can be dispatched. The caller
+// still owns setting
 // StateFlags::BIT_BATTLE_RUNTIME_MODE and keeping HandleBattleRuntimeEnter
 // as a single cold outlined function — do not inline it back into
 // RunFrameHook.
@@ -88,7 +90,8 @@ void ApplyOnBattleRuntimeEnter(melonDS::NDS* nds,
                                Config::Table& cfg,
                                const RomAddresses& rom,
                                MelonPrimeCore* core,
-                               bool nativeWeaponSwitchEnabled);
+                               bool nativeWeaponSwitchEnabled,
+                               bool directInvocationEnabled);
 
 // Step 3 / Site D (see melonprime_patch_lifecycle_gateway_site_d_plan.md).
 // Called from RunFrameHook when the legacy in-game flag is false while

@@ -37,6 +37,7 @@ enum DispatchMask : uint16_t
     Dispatch_NativeZoomToggle           = 1u << 6,
     Dispatch_NativeBipedFire            = 1u << 7,
     Dispatch_LowLatencyAim              = 1u << 8,
+    Dispatch_DirectInvocation           = 1u << 9,
 };
 
 static_assert(
@@ -166,6 +167,16 @@ static bool DispatcherCallback(
     if ((mask & Dispatch_WeaponSwitch) != 0)
     {
         if (core->WeaponSwitchHook_DispatchCheckAndRedirect(
+                nds, arm9ExecAddr, regs, redirectExecAddr))
+            return true;
+    }
+
+    // Method 2 shares the ProcessTouchInput call site with the Method-1 weapon
+    // hook, so it is checked last: when both are enabled and both have a
+    // request, Method 1 wins this frame and the Method-2 request keeps its TTL.
+    if ((mask & Dispatch_DirectInvocation) != 0)
+    {
+        if (core->DirectInvocationHook_DispatchCheckAndRedirect(
                 nds, arm9ExecAddr, regs, redirectExecAddr))
             return true;
     }
@@ -351,6 +362,15 @@ void ARM9Hook_Install(
             moduleAddresses,
             melonDS::NDS::ARM9InstructionHookMaxAddresses);
         addModuleAddresses(Dispatch_WeaponSwitch);
+    }
+
+    if (plan.directInvocation)
+    {
+        moduleCount = MelonPrimeCore::DirectInvocationHook_GetAddresses(
+            romGroupIndex,
+            moduleAddresses,
+            melonDS::NDS::ARM9InstructionHookMaxAddresses);
+        addModuleAddresses(Dispatch_DirectInvocation);
     }
 
     uint32_t addresses[melonDS::NDS::ARM9InstructionHookMaxAddresses] = {};

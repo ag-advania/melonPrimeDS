@@ -518,11 +518,11 @@ module-local per-ROM table:
 
 | Shared list | Meaning | Current consumers |
 |---|---|---|
-| `LIST_HookLocalPlayerPtrGlobal` | per-ROM global pointer-to-local-player address | NativeAimDelta, TransformGate, NativeZoomToggle, WeaponSwitch |
+| `LIST_HookLocalPlayerPtrGlobal` | per-ROM global pointer-to-local-player address | NativeAimDelta, TransformGate, NativeZoomToggle, WeaponSwitch, DirectInvocation |
 | `LIST_HookActionConsumerPc` | post-poll player action consumer PC | ImmediateInputEdgeOverlay, NativeBipedFire, NativeZoomToggle for JP/US/EU rows |
-| `LIST_HookPlayerUpdateActiveCallAddr` | reliable player-update active call hook PC | WeaponSwitch |
-| `LIST_HookPlayerUpdateActiveCallExpected` | original BL word expected at the active call hook | WeaponSwitch |
-| `LIST_HookPlayerUpdateActiveAfter` | return PC immediately after the active call hook | WeaponSwitch |
+| `LIST_HookPlayerUpdateActiveCallAddr` | reliable player-update active call hook PC | WeaponSwitch, DirectInvocation |
+| `LIST_HookPlayerUpdateActiveCallExpected` | original BL word expected at the active call hook | WeaponSwitch, DirectInvocation |
+| `LIST_HookPlayerUpdateActiveAfter` | return PC immediately after the active call hook | WeaponSwitch, DirectInvocation |
 
 Do not merge tables only because the numeric addresses are near each other. KR1_0 is the standing
 example: `LIST_HookActionConsumerPc[KR1_0]` is `0x0200F6DC` (post-poll action consumer), while
@@ -544,17 +544,70 @@ Hook tables should have two compile-time checks where practical:
 | NativeZoomToggle | `MelonPrimePatchNativeZoomToggleHook.inc` | redirect | developer-only |
 | ImmediateInputEdgeOverlay (+ NativeBipedFire) | `MelonPrimePatchImmediateInputEdgeOverlay.inc`, `MelonPrimePatchNativeBipedFireHook.inc` | RAM side-effect | developer-only |
 | FixNoxusBladePersistence | `MelonPrimePatchFixNoxusBladePersistence.cpp` | RAM side-effect | `Metroid.BugFix.FixNoxusBladePersistence` |
-| TransformGate | `MelonPrimePatchImmediateTransformGateHook.inc` | redirect | `DirectAltFormTransform` |
-| WeaponSwitch | `MelonPrimePatchWeaponSwitchHook.inc` | redirect | `WeaponSwitchMethod != LegacyTouch` |
+| TransformGate | `MelonPrimePatchImmediateTransformGateHook.inc` | redirect | `AltFormTransformMethod == NewNativeGate` |
+| WeaponSwitch | `MelonPrimePatchWeaponSwitchHook.inc` | redirect | `WeaponSwitchMethod == NewNative` |
+| DirectInvocation | `MelonPrimePatchDirectInvocationHook.inc` | redirect | any of `AltFormTransformMethod` / `WeaponSwitchMethod` / `ZoomMethod` set to its DirectInvocation value |
 | ShadowFreezeRuntimeHook | `MelonPrimePatchShadowFreezeRuntimeHook.cpp` | redirect | `Metroid.BugFix.FixShadowFreeze` |
-
-**WeaponSwitch trampoline RAM** (`0x02003EA0` / scratch `0x02003EE0`) is outside the patch registry.
-`HandleBattleRuntimeEnter` calls `WeaponSwitchHook_IsSiteValid()` when native weapon switch is
-enabled so trampolines are rewritten each battle-runtime entry.
 
 The `*.inc` handlers are unity-included into `MelonPrimeGameInput.cpp` (see its `#include` block);
 the two `.cpp` modules (`FixNoxusBladePersistence`, `ShadowFreezeRuntimeHook`) are standalone
 translation units listed in `CMakeLists.txt`.
+
+### Guest trampolines and the shared ROM code cave
+
+A redirect hook that has to *call* a ROM routine needs real ARM code in guest memory. That code
+lives in the zero-filled cave at **`0x02003E9C..0x02003FBB`** — 72 words, the only extent verified
+zero across all seven ROM dumps. Trampoline RAM is outside the patch registry.
+
+This cave is shared and now essentially full. **This table is canonical**; feature docs link here
+rather than restating addresses.
+
+| Range | Owner |
+| --- | --- |
+| `0x02003EA0..0x02003ED3` | WeaponSwitch (Method 1) trampoline |
+| `0x02003EE0..0x02003EF3` | WeaponSwitch (Method 1) scratch |
+| `0x02003F00..0x02003F2B` | NativeZoomToggle trampoline |
+| `0x02003F40..0x02003F4F` | NativeZoomToggle scratch |
+| `0x02003F50..0x02003FBB` | DirectInvocation (Method 2 / 3) trampoline |
+
+Remaining free space is fragments only: `0x02003E9C` (1 word), `0x02003ED4..0x02003EDF` (3),
+`0x02003EF4..0x02003EFF` (3), `0x02003F2C..0x02003F3F` (5). There is no contiguous room left for
+another trampoline of any size.
+
+Three rules apply to every module that writes into it:
+
+1. **Assert the extent at compile time.** `MelonPrimePatchDirectInvocationHook.inc` is the worked
+   example: it `static_assert`s its own range against the other modules' own constants (visible
+   because the fragments share a unity parent) and against the cave end, so moving or growing any
+   of them fails the build instead of silently corrupting guest code. A collision here passes every
+   test and only shows up as a hang on hardware.
+2. **Never hand a request to a trampoline through a PC-relative load.** The JIT constant-folds
+   `ldr rX,[pc,#imm]` at compile time (`Compiler::Comp_MemAccess` → `Comp_MemLoadLiteral`, which
+   emits `MOV Imm32`), and a host write straight into `NDS::MainRAM` does not invalidate the
+   compiled block, so the trampoline replays whatever the first dispatch happened to store.
+   Prefer writing the request into `regs[]` before returning `true` — `r0`-`r3` and `r12` are
+   caller-saved across a `bl`, so a replaced call site can carry them for free. If it must go
+   through memory, PC-load only the scratch **address** (a genuine constant, safe to fold) and read
+   the data through that register, which is what the two older trampolines do.
+3. **Author the code on the battle-runtime boundary, not on first use.**
+   `HandleBattleRuntimeEnter` → `ApplyOnBattleRuntimeEnter` calls each enabled module's
+   `*_IsSiteValid()` so the cave is written once, cold, per match. Writing guest code from inside
+   the hook callback also invalidates JIT blocks mid-execution.
+
+### Match lifecycle checklist for a new hook
+
+Every registered hook is match-scoped. A new one must follow all of it, not just the parts the
+dispatcher enforces:
+
+- Install/clear happens through `ARM9Hook_SetMatchHooksActive`, driven by the battle-runtime latch
+  (`mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH`).
+- **Gate the request-producing side on `BIT_BATTLE_RUNTIME_MODE` too**, not just
+  `BIT_IN_GAME_INIT`. A request queued during the join/countdown otherwise survives on its TTL and
+  fires on the first battle-runtime frame, before the player state it acts on is settled.
+- Clear pending host-side requests on the battle-runtime edge and in the lifecycle resets
+  (`ResetTransientInputState`, emu start/stop/boot, savestate reconcile).
+- Weapon-equipping paths keep the spawn-window guard: while `player+0xE1 != 0` (spawn
+  invincibility) the native equip is unsafe, and Method 1 hands that request to the legacy route.
 
 ---
 
