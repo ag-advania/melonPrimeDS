@@ -264,6 +264,8 @@ namespace Config
         {"Instance*.Metroid.Enable.topScreenTouch", false},
         {"Instance*.Metroid.Enable.touchScreenAimOnly", false},
         {"Instance*.Metroid.Enable.stylusHideCursorInGame", false},
+        {"Instance*.Metroid.Enable.stylusConfineCursorToTopScreen", false},
+        {"Instance*.Metroid.Enable.stylusHoldCursorAtCenterWhenNotClicking", false},
         {"Instance*.Metroid.Aim.Disable.MphAimSmoothing", false},
         {"Instance*.Metroid.Aim.Enable.Accumulator", false},
         {"Instance*.Metroid.Aim.ZoomScale.Enable", false},

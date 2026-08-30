@@ -302,11 +302,11 @@ void ScreenPanel::refreshClipForGameStateChange()
         && isInGame
         && inGameTopScreenOnly;
 
-    // Presentation-only state with its own edge: keeping it out of the clip-state
-    // comparison below avoids re-running capture reconciliation for a change
-    // that never touches capture. When the option is off -- the default -- this
-    // is one predictable, short-circuited bool test.
-    reconcileStylusHiddenCursor(hasState, ui);
+    // Needs its own edge: the clip-state comparison below tracks inGame, while
+    // the stylus match options follow cursorMode, which also covers the
+    // Adventure pause. When they are all off -- the default -- this is one
+    // predictable, short-circuited bool test.
+    reconcileStylusMatchCursor(hasState, ui);
 
     const bool clipStateUnchanged =
         m_hasLastClipInGameState == hasState
@@ -369,23 +369,69 @@ void ScreenPanel::applyInGameTopScreenOnlyOverride(int& layout, int& sizing) con
     sizing = screenSizing_TopOnly;
 }
 
-// Mirrors the non-stylus rule: the cursor is hidden exactly while the core is
-// out of cursor mode (in a match, and not an Adventure pause). Stylus mode
-// keeps the pointer free, so only the presentation changes -- no clip, grab,
-// warp or capture request is involved.
-void ScreenPanel::reconcileStylusHiddenCursor(
+// Mirrors the non-stylus rule: the match-scoped cursor options apply exactly
+// while the core is out of cursor mode (in a match, and not an Adventure
+// pause). One reconciled edge drives them all; the decision itself stays
+// in updateClipIfNeeded(), which is the single authority for cursor state.
+void ScreenPanel::reconcileStylusMatchCursor(
     bool hasState, const MelonPrime::MelonPrimeUiSnapshot& ui)
 {
-    const bool wanted = stylusHideCursorInGameEnabled
+    const bool active = stylusMatchCursorOptionsEnabled
         && hasState
         && ui.stylusMode
         && ui.focused
         && !ui.cursorMode;
-    if (wanted == m_stylusCursorHidden)
+    if (active == m_stylusMatchCursorActive)
         return;
 
-    m_stylusCursorHidden = wanted;
-    MelonPrime::ScreenCursorPolicy::ApplyStylusHiddenCursor(*this, wanted);
+    m_stylusMatchCursorActive = active;
+    if (!active)
+        m_stylusClickHeld = false;
+    updateClipIfNeeded();
+    // Park once on entry so the first drag of the match is centred too, even
+    // if the pointer is never moved before it.
+    if (active)
+        holdStylusCursorAtCenterIfNotClicking(mapFromGlobal(QCursor::pos()));
+}
+
+// Where the pointer is parked. The confined screen when the top-screen
+// confinement is on, otherwise the touch screen the stylus drags on.
+QPoint ScreenPanel::stylusCursorCenterLocal() const
+{
+    const std::optional<QRect> target = shouldConfineCursorToTopScreenForPolicy()
+        ? getTopScreenWidgetRect()
+        : getBottomScreenWidgetRect();
+    return target.value_or(rect()).center();
+}
+
+// Fallback parking for platforms where the cursor policy cannot pin the
+// pointer at the OS level. Where it can (Windows), the pin already stops the
+// pointer, so no move event with a stale position ever reaches this.
+// Two member-bool tests when the option is off, and a held drag exits on the
+// third -- an active drag pays nothing beyond that.
+void ScreenPanel::holdStylusCursorAtCenterIfNotClicking(const QPoint& localPos)
+{
+    if (!stylusHoldCursorAtCenterEnabled || !m_stylusMatchCursorActive
+        || m_stylusClickHeld)
+        return;
+
+    const QPoint localTarget = stylusCursorCenterLocal();
+    // Our own warp lands here and would otherwise re-trigger this handler.
+    if (localPos == localTarget)
+        return;
+
+    const QPoint global = mapToGlobal(localTarget);
+    MelonPrime::PlatformInput_WarpCursor(global.x(), global.y());
+}
+
+std::optional<QRect> ScreenPanel::getTopScreenWidgetRectForPolicy() const
+{
+    return getTopScreenWidgetRect();
+}
+
+QPoint ScreenPanel::stylusCursorCenterLocalForPolicy() const
+{
+    return stylusCursorCenterLocal();
 }
 
 bool ScreenPanel::shouldConfineCursorToBottomScreen() const
@@ -438,7 +484,7 @@ std::optional<QRect> ScreenPanel::getBottomScreenWidgetRect() const
     return getScreenWidgetRect(1);
 }
 
-#ifdef MELONPRIME_CUSTOM_HUD
+#if defined(MELONPRIME_CUSTOM_HUD) || defined(MELONPRIME_DS)
 std::optional<QRect> ScreenPanel::getTopScreenWidgetRect() const
 {
     return getScreenWidgetRect(0);
@@ -662,8 +708,7 @@ void ScreenPanel::loadConfig()
     inGameTopScreenOnly = emuInstance->getLocalConfig().GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly);
 #ifdef MELONPRIME_DS
     topScreenTouchEnabled = emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::TopScreenTouch);
-    stylusHideCursorInGameEnabled =
-        emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
+    loadMelonPrimeStylusCursorConfig();
 #endif
 }
 
@@ -681,16 +726,34 @@ void ScreenPanel::refreshTopScreenTouchSetting()
         topScreenTouchTransform = -1;
 }
 
-void ScreenPanel::refreshStylusHideCursorSetting()
+void ScreenPanel::loadMelonPrimeStylusCursorConfig()
 {
-    stylusHideCursorInGameEnabled =
-        emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
+    auto& cfg = emuInstance->getLocalConfig();
+    stylusHideCursorInGameEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
+    stylusConfineCursorToTopScreenEnabled =
+        cfg.GetBool(MelonPrime::CfgKey::StylusConfineCursorToTopScreen);
+    stylusHoldCursorAtCenterEnabled =
+        cfg.GetBool(MelonPrime::CfgKey::StylusHoldCursorAtCenterWhenNotClicking);
+    stylusMatchCursorOptionsEnabled = stylusHideCursorInGameEnabled
+        || stylusConfineCursorToTopScreenEnabled
+        || stylusHoldCursorAtCenterEnabled;
+}
+
+void ScreenPanel::refreshStylusCursorSettings()
+{
+    loadMelonPrimeStylusCursorConfig();
 
     auto* const core = melonPrimeCore();
     const bool hasState = (core != nullptr);
     const auto ui = hasState ? core->ThreadBridge().ReadForGui()
                              : MelonPrime::MelonPrimeUiSnapshot{};
-    reconcileStylusHiddenCursor(hasState, ui);
+    // A toggle changes what the current edge means without changing the edge
+    // itself, so latch the state and re-decide unconditionally.
+    m_stylusMatchCursorActive = stylusMatchCursorOptionsEnabled
+        && hasState && ui.stylusMode && ui.focused && !ui.cursorMode;
+    updateClipIfNeeded();
+    if (m_stylusMatchCursorActive)
+        holdStylusCursorAtCenterIfNotClicking(mapFromGlobal(QCursor::pos()));
 }
 #endif
 
@@ -970,6 +1033,16 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     {
         clipCursorCenter1px();
     }
+    // The click is held now, so the not-clicking pin no longer applies:
+    // re-decide so the drag is free to move. Latched even when the touch did
+    // not register, otherwise a press outside the touch area would leave the
+    // pointer pinned with no way to drag.
+    if (!m_stylusClickHeld)
+    {
+        m_stylusClickHeld = true;
+        if (stylusHoldCursorAtCenterEnabled && m_stylusMatchCursorActive)
+            updateClipIfNeeded();
+    }
 #endif
 }
 
@@ -996,6 +1069,22 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 
     if (event->button() != Qt::LeftButton)
         return;
+
+#ifdef MELONPRIME_DS
+    // Ahead of the `touching` early-out below: a press whose touch never
+    // registered still has to end the held-click window. This is the first
+    // moment of the not-clicking window, so park the pointer and re-decide to
+    // have it pinned there for the rest of it.
+    if (m_stylusClickHeld)
+    {
+        m_stylusClickHeld = false;
+        if (stylusHoldCursorAtCenterEnabled && m_stylusMatchCursorActive)
+        {
+            holdStylusCursorAtCenterIfNotClicking(event->pos());
+            updateClipIfNeeded();
+        }
+    }
+#endif
 
     if (!touching)
         return;
@@ -1141,6 +1230,10 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         return;
 #endif
     }
+#endif
+
+#ifdef MELONPRIME_DS
+    holdStylusCursorAtCenterIfNotClicking(event->pos());
 #endif
 
     if (!touching)
@@ -3599,6 +3692,9 @@ void ScreenPanel::unfocus()
             touching = false;
             topScreenTouchTransform = -1;
         }
+        // The matching release can be delivered to whoever took focus, so the
+        // held-click latch is cleared here as well.
+        m_stylusClickHeld = false;
     }
 #endif
 

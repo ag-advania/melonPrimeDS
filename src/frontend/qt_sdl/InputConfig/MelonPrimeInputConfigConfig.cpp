@@ -86,7 +86,7 @@ void MelonPrimeInputConfig::saveConfig()
         MainWindow* win = emuInstance->getWindow(i);
         if (win && win->panel) {
             win->panel->refreshTopScreenTouchSetting();
-            win->panel->refreshStylusHideCursorSetting();
+            win->panel->refreshStylusCursorSettings();
         }
     }
 

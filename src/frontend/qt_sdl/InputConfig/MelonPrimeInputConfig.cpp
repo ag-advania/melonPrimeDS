@@ -478,6 +478,8 @@ void MelonPrimeInputConfig::buildSettingBindings()
         { C::TouchScreenAimOnly, K::CheckBool,    ui->cbMetroidEnableTouchScreenAimOnly }, // 50
         // GUI-only cursor presentation; reconciled by the panel, no load-time side effects.
         { C::StylusHideCursorInGame, K::CheckBool, ui->cbMetroidEnableStylusHideCursorInGame }, // 51
+        { C::StylusConfineCursorToTopScreen, K::CheckBool, ui->cbMetroidEnableStylusConfineCursorToTopScreen }, // 52
+        { C::StylusHoldCursorAtCenterWhenNotClicking, K::CheckBool, ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking }, // 53
     };
 }
 
@@ -695,7 +697,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
     // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
     loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
-    loadBindingsRange(instcfg, 49, 52); // top-screen touch, touch-screen aim-only, stylus cursor hide
+    loadBindingsRange(instcfg, 49, 54); // top-screen touch, touch-screen aim-only, stylus cursor options
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);

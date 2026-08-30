@@ -40,6 +40,8 @@ namespace MelonPrime {
         inline constexpr const char* TopScreenTouch  = "Metroid.Enable.topScreenTouch";
         inline constexpr const char* TouchScreenAimOnly = "Metroid.Enable.touchScreenAimOnly";
         inline constexpr const char* StylusHideCursorInGame = "Metroid.Enable.stylusHideCursorInGame";
+        inline constexpr const char* StylusConfineCursorToTopScreen = "Metroid.Enable.stylusConfineCursorToTopScreen";
+        inline constexpr const char* StylusHoldCursorAtCenterWhenNotClicking = "Metroid.Enable.stylusHoldCursorAtCenterWhenNotClicking";
         inline constexpr const char* AimSens         = "Metroid.Sensitivity.Aim";
         // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V1
         // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V2

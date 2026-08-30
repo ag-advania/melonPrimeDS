@@ -128,6 +128,14 @@ void ApplyCursorPresentation(ScreenPanel& panel, Qt::CursorShape shape)
 #endif
 }
 
+// The shape to present whenever aim capture is not active. Stylus mode never
+// captures the pointer, so its in-match hide is expressed here rather than
+// through the capture path.
+[[nodiscard]] Qt::CursorShape IdleCursorShape(const ScreenPanel& panel)
+{
+    return panel.isStylusCursorHiddenForPolicy() ? Qt::BlankCursor : Qt::ArrowCursor;
+}
+
 } // namespace
 
 namespace MelonPrime::ScreenCursorPolicy {
@@ -156,13 +164,6 @@ void ContainAimCursorIfNeeded(ScreenPanel& panel)
 
     const QPoint center = panel.aimContainmentCenterGlobalForPolicy();
     PlatformInput_WarpCursor(center.x(), center.y());
-}
-
-void ApplyStylusHiddenCursor(ScreenPanel& panel, bool hidden)
-{
-    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
-        return;
-    ApplyCursorPresentation(panel, hidden ? Qt::BlankCursor : Qt::ArrowCursor);
 }
 
 void ClipCenter1px(ScreenPanel& panel)
@@ -324,6 +325,59 @@ void ConfineToBottomScreen(ScreenPanel& panel)
 #endif
 }
 
+void ConfineToTopScreen(ScreenPanel& panel)
+{
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
+        return;
+    const Qt::CursorShape shape = IdleCursorShape(panel);
+    ApplyCursorPresentation(panel, shape);
+#if defined(__linux__)
+    panel.setWaylandPointerLockForMelonPrime(false);
+    if (QWidget::mouseGrabber() == &panel)
+        panel.releaseMouse();
+#endif
+#ifdef _WIN32
+    const auto release = [&panel, shape]() {
+        Unclip(panel);
+        ApplyCursorPresentation(panel, shape);
+    };
+    if (!panel.isActiveVisibleWindowForMelonPrime()) return;
+    const auto topRect = panel.getTopScreenWidgetRectForPolicy();
+    if (!topRect.has_value()) { release(); return; }
+    const HWND hwnd = reinterpret_cast<HWND>(panel.winId());
+    RECT clip = computeWidgetClipRectSafe(hwnd, *topRect);
+    if (clip.left >= clip.right || clip.top >= clip.bottom) { release(); return; }
+    ClipCursor(&clip);
+#endif
+}
+
+void PinAtStylusCenter(ScreenPanel& panel)
+{
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
+        return;
+    const Qt::CursorShape shape = IdleCursorShape(panel);
+    ApplyCursorPresentation(panel, shape);
+#if defined(__linux__)
+    panel.setWaylandPointerLockForMelonPrime(false);
+    if (QWidget::mouseGrabber() == &panel)
+        panel.releaseMouse();
+#endif
+#ifdef _WIN32
+    if (!panel.isActiveVisibleWindowForMelonPrime()) return;
+    const HWND hwnd = reinterpret_cast<HWND>(panel.winId());
+    // A 1x1 rect at the drag centre. ClipCursor pulls the pointer inside, so
+    // this both parks it and holds it there without any per-event work.
+    RECT clip = computeWidgetClipRectSafe(
+        hwnd, QRect(panel.stylusCursorCenterLocalForPolicy(), QSize(1, 1)));
+    if (clip.left >= clip.right || clip.top >= clip.bottom) {
+        Unclip(panel);
+        ApplyCursorPresentation(panel, shape);
+        return;
+    }
+    ClipCursor(&clip);
+#endif
+}
+
 void UpdateClipIfNeeded(ScreenPanel& panel)
 {
     if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
@@ -351,6 +405,19 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
         return;
     }
 
+    // Match-scoped, and all mutually exclusive with the not-in-game bottom clip
+    // below, which only applies while out of a match. The not-clicking pin wins
+    // over the top-screen confinement, which governs the held drag.
+    if (panel.isStylusCursorPinnedAtCenterForPolicy()) {
+        PinAtStylusCenter(panel);
+        return;
+    }
+
+    if (panel.shouldConfineCursorToTopScreenForPolicy()) {
+        ConfineToTopScreen(panel);
+        return;
+    }
+
     if (panel.shouldConfineCursorToBottomScreenForPolicy()) {
         panel.clipCursorToBottomScreenForPolicy();
         return;
@@ -359,9 +426,7 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
     // Unclip() releases capture and resets the shape, so the idle presentation
     // is decided afterwards -- otherwise it would clear the stylus-mode hide.
     Unclip(panel);
-    ApplyCursorPresentation(
-        panel,
-        panel.isStylusCursorHiddenForPolicy() ? Qt::BlankCursor : Qt::ArrowCursor);
+    ApplyCursorPresentation(panel, IdleCursorShape(panel));
 }
 
 } // namespace MelonPrime::ScreenCursorPolicy
