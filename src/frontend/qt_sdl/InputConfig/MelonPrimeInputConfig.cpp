@@ -470,6 +470,16 @@ void MelonPrimeInputConfig::buildSettingBindings()
         // slots and nothing cross-reads it, so its load position is not observable; it
         // is loaded with the other bug fixes in segment 3a.
         { C::WifiReconnect,  K::CheckBool,        ui->cbMetroidFixWifiReconnect },       // 48
+        // GUI-only touch routing has no load-time side effects. Keep it appended so
+        // every historical binding index and observable load order remains stable.
+        { C::TopScreenTouch, K::CheckBool,        ui->cbMetroidEnableTopScreenTouch },   // 49
+        // Battle in-match touch-screen HUD hit-test patch. Registry-applied at
+        // battle runtime / config reload, so this row only mirrors the checkbox.
+        { C::TouchScreenAimOnly, K::CheckBool,    ui->cbMetroidEnableTouchScreenAimOnly }, // 50
+        // GUI-only cursor presentation; reconciled by the panel, no load-time side effects.
+        { C::StylusHideCursorInGame, K::CheckBool, ui->cbMetroidEnableStylusHideCursorInGame }, // 51
+        { C::StylusConfineCursorToTopScreen, K::CheckBool, ui->cbMetroidEnableStylusConfineCursorToTopScreen }, // 52
+        { C::StylusHoldCursorAtCenterWhenNotClicking, K::CheckBool, ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking }, // 53
     };
 }
 
@@ -597,7 +607,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("QLabel { margin-left: 20px; }"));
 
         m_cbMetroidMorphBoostCustomRawThreshold = new QCheckBox(
-            QStringLiteral("Use Custom Raw Mouse Movement Threshold"),
+            QStringLiteral("Use Custom Raw Mouse Movement Threshold for Morph Ball Boost"),
             ui->sectionSensitivity);
         m_cbMetroidMorphBoostCustomRawThreshold->setObjectName(
             QStringLiteral("cbMetroidMorphBoostCustomRawThreshold"));
@@ -687,6 +697,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
     // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
     loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    loadBindingsRange(instcfg, 49, 54); // top-screen touch, touch-screen aim-only, stylus cursor options
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);
@@ -737,36 +748,34 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
         m_lblMetroidLowLatencyAimDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
 
-        if constexpr (kDeveloperOnlyFeaturesEnabled) {
-            m_cbMetroidFpsCameraLock = new QCheckBox(
-                QStringLiteral("FPS Camera Lock (Instant Aim Follow)"),
-                ui->sectionDeveloperOnly);
-            m_cbMetroidFpsCameraLock->setObjectName(QStringLiteral("cbMetroidFpsCameraLock"));
-            m_cbMetroidFpsCameraLock->setToolTip(QStringLiteral(
-                "Checked: the body always faces exactly where the gun points. "
-                "Unchecked (recommended): the game's own free-aim lead is kept."));
-            m_cbMetroidFpsCameraLock->setChecked(
-                instcfg.GetBool(MelonPrime::CfgKey::FpsCameraLock)
-                || instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow)
-                || lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
-            ui->vboxDeveloperOnly->addWidget(m_cbMetroidFpsCameraLock);
+        m_cbMetroidFpsCameraLock = new QCheckBox(
+            QStringLiteral("FPS Camera Lock (Instant Aim Follow)"),
+            ui->sectionSensitivity);
+        m_cbMetroidFpsCameraLock->setObjectName(QStringLiteral("cbMetroidFpsCameraLock"));
+        m_cbMetroidFpsCameraLock->setToolTip(QStringLiteral(
+            "Checked: the body always faces exactly where the gun points. "
+            "Unchecked (recommended): the game's own free-aim lead is kept."));
+        m_cbMetroidFpsCameraLock->setChecked(
+            instcfg.GetBool(MelonPrime::CfgKey::FpsCameraLock)
+            || instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow)
+            || lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
 
-            auto* fpsCameraLockDesc = new QLabel(
-                QStringLiteral(
-                    "Keeps the body aligned with the gun at all times, removing the "
-                    "game's free-aim lead of about 15 degrees. Off is recommended: that "
-                    "lag is deliberate design that softens sudden movement, and removing "
-                    "it can cause motion sickness."),
-                ui->sectionDeveloperOnly);
-            fpsCameraLockDesc->setObjectName(QStringLiteral("lblMetroidFpsCameraLockDesc"));
-            fpsCameraLockDesc->setWordWrap(true);
-            fpsCameraLockDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
-            ui->vboxDeveloperOnly->addWidget(fpsCameraLockDesc);
-        }
+        m_lblMetroidFpsCameraLockDesc = new QLabel(
+            QStringLiteral(
+                "Keeps the body aligned with the gun at all times, removing the "
+                "game's free-aim lead of about 15 degrees. Off is recommended: that "
+                "lag is deliberate design that softens sudden movement, and removing "
+                "it can cause motion sickness."),
+            ui->sectionSensitivity);
+        m_lblMetroidFpsCameraLockDesc->setObjectName(QStringLiteral("lblMetroidFpsCameraLockDesc"));
+        m_lblMetroidFpsCameraLockDesc->setWordWrap(true);
+        m_lblMetroidFpsCameraLockDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
 
         if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
             form->insertRow(3, m_lblMetroidLowLatencyAimMode, m_comboMetroidLowLatencyAimMode);
             form->insertRow(4, m_lblMetroidLowLatencyAimDesc);
+            form->insertRow(5, m_cbMetroidFpsCameraLock);
+            form->insertRow(6, m_lblMetroidFpsCameraLockDesc);
         }
 
         connect(

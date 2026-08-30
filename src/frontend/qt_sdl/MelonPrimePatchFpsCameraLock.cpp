@@ -89,14 +89,10 @@ void FpsCameraLock_ApplyOnce(
     // configs a save cycle; see the Phase 4 migration ledger.
     // The old InstantAimFollow bool and mode value remain as migration
     // fallbacks for configs written before FpsCameraLock became independent.
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     const bool shouldApply =
         cfg.GetBool(CfgKey::FpsCameraLock)
         || cfg.GetBool(CfgKey::InstantAimFollow)
         || cfg.GetInt(CfgKey::LowLatencyAimMode) == LowLatencyAimMode::InstantAimFollow;
-#else
-    constexpr bool shouldApply = false;
-#endif
 
     if (!shouldApply)
     {

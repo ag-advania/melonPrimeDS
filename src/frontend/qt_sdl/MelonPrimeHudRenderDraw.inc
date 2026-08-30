@@ -230,6 +230,27 @@ struct ScoreboardRenderRow {
     uint8_t teamIndex = 0xFF;
 };
 
+// MPH assigns alternate hunter colors by player position, independently of
+// the scoreboard's result order. The first active slot using a hunter gets p1,
+// the next matching slot gets p2, and so on through p4.
+static uint8_t ResolveScoreboardHunterVariant(const ScoreboardSnapshot& snapshot,
+                                              uint8_t slot)
+{
+    if (slot >= 4)
+        return 0;
+    const ScoreboardPlayerSnapshot& player = snapshot.playersBySlot[slot];
+    if (!player.active || player.hunterId >= 7)
+        return 0;
+
+    uint8_t variant = 0;
+    for (uint8_t priorSlot = 0; priorSlot < slot; ++priorSlot) {
+        const ScoreboardPlayerSnapshot& prior = snapshot.playersBySlot[priorSlot];
+        if (prior.active && prior.hunterId == player.hunterId)
+            ++variant;
+    }
+    return std::min<uint8_t>(variant, 3);
+}
+
 static int ResolveScoreboardDisplayedRank(const ScoreboardSnapshot& snapshot,
                                           bool teamRow, uint8_t slot)
 {
@@ -456,8 +477,9 @@ static ScoreboardLayout BuildScoreboardLayout(
                 : scaleDs(3) + ScoreboardImageWidthDS(stars, invHudScale);
         }
         playerContentW = std::max(playerContentW, rankLineW);
+        const uint8_t hunterVariant = ResolveScoreboardHunterVariant(snapshot, row.slot);
         const QImage* hunter = player.hunterId < 7
-            ? &s_scoreboardHunterIcons[player.hunterId] : nullptr;
+            ? &s_scoreboardHunterIcons[player.hunterId][hunterVariant] : nullptr;
         if (hunter && !hunter->isNull())
             layout.portraitW = std::max(layout.portraitW,
                                         scaleDs(2) + ScoreboardImageWidthDS(*hunter, invHudScale));
@@ -503,6 +525,7 @@ static ScoreboardStructureKey MakeScoreboardStructureKey(
     key.resultSlots = snapshot.resultSlots;
     for (int slot = 0; slot < 4; ++slot) {
         key.teamIndex[slot] = snapshot.playersBySlot[slot].teamIndex;
+        key.hunterId[slot] = snapshot.playersBySlot[slot].hunterId;
         key.active[slot] = snapshot.playersBySlot[slot].active;
     }
     return key;
@@ -678,10 +701,11 @@ static ScoreboardRenderPlan BuildScoreboardRenderPlan(
             planned.color = (player.slot == localPlayerSlot)
                 ? c.scoreboard.localPlayerColor : c.scoreboard.textColor;
             planned.hunterId = player.hunterId;
+            planned.hunterVariant = ResolveScoreboardHunterVariant(snapshot, row.slot);
             planned.stars = player.stars;
 
             const QImage* hunter = player.hunterId < 7
-                ? &s_scoreboardHunterIcons[player.hunterId] : nullptr;
+                ? &s_scoreboardHunterIcons[player.hunterId][planned.hunterVariant] : nullptr;
             if (hunter && !hunter->isNull()) {
                 const float iconH = static_cast<float>(hunter->height()) * invHudScale;
                 const float iconW = static_cast<float>(hunter->width()) * invHudScale;
@@ -978,8 +1002,8 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
             continue;
         }
 
-        const QImage* hunter = row.hunterId < 7
-            ? &s_scoreboardHunterIcons[row.hunterId] : nullptr;
+        const QImage* hunter = row.hunterId < 7 && row.hunterVariant < 4
+            ? &s_scoreboardHunterIcons[row.hunterId][row.hunterVariant] : nullptr;
         if (hunter && !hunter->isNull() && !row.hunterIconRect.isEmpty()) {
             p->drawImage(row.hunterIconRect, *hunter);
             AccumDirtyDs(p, row.hunterIconRect);
@@ -2562,56 +2586,63 @@ static void DrawCrosshair(QPainter* p, melonDS::u8* ram,
         CrosshairProjection::Input projectionInput;
         CrosshairProjection::Result projected;
         bool haveProjected = false;
+        // The ROM's own published pair. Read as s16 because the ROM stores it
+        // with strh; it is both the consistency reference and, on a rejected
+        // frame, the fresh position the sub-pixel offset is applied to.
+        double nativeDsX = 0.0;
+        double nativeDsY = 0.0;
+
         if (c.crosshair.chHighResPosition) {
+            const int16_t nativeX =
+                static_cast<int16_t>(Read16(ram, rom.crosshairPosX));
+            const int16_t nativeY =
+                static_cast<int16_t>(Read16(ram, rom.crosshairPosY));
+            nativeDsX = static_cast<double>(nativeX);
+            nativeDsY = static_cast<double>(nativeY);
+
             haveProjected =
                 ReadCrosshairProjectionInput(ram, rom, projectionInput)
                 && CrosshairProjection::Project(projectionInput, projected)
                 // The projection inputs are live intermediates -- a shared
-                // matrix other passes overwrite, and a player struct picked by
-                // index -- sampled at presentation time, which the game does
-                // not synchronise with its own crosshair update. Requiring the
-                // result to reconstruct to the s16 pair the ROM published this
-                // frame is what proves we read the state it actually used.
-                // The ROM stores that pair with strh, so it must be read as
-                // s16; the low byte alone would accept a wrong position.
-                && CrosshairProjection::MatchesNative(
-                    projected,
-                    static_cast<int16_t>(Read16(ram, rom.crosshairPosX)),
-                    static_cast<int16_t>(Read16(ram, rom.crosshairPosY)));
+                // matrix other passes overwrite, and a player struct reached
+                // through a pointer -- sampled at presentation time, which the
+                // game does not synchronise with its own crosshair update.
+                // Requiring the result to reconstruct to the pair the ROM
+                // published is what proves we read the state it actually used.
+                && CrosshairProjection::MatchesNative(projected, nativeX, nativeY);
             // Developer-only: the reject rate is the one number that says
             // whether the sampling point is good enough on real hardware.
             MelonPrimePerf::CountCrosshairProjection(haveProjected);
         }
-        // A rejected frame must not switch position source: the cache is
-        // quantised to whole DS pixels, so swapping to it moves the centre far
-        // more than the sub-pixel noise this feature removes.
-        const CrosshairProjection::CentreSource source =
-            c.crosshair.chHighResPosition
-                ? CrosshairProjection::SelectCentre(haveProjected, s_chCentreHold)
-                : CrosshairProjection::CentreSource::NativeCache;
 
-        if (source == CrosshairProjection::CentreSource::Projected) {
+        if (haveProjected) {
             // A point just past the near plane divides by a tiny clipW, so the
             // unquantised centre can be astronomically far off screen. The ROM
-            // never had to care -- it truncated to s16 and cached a byte -- but
-            // this value reaches a static_cast<int> after the painter
-            // transform, and that cast is undefined once the double exceeds
-            // int range. Clamp to a margin far outside any visible area: the
-            // painter discards it either way, and the in-view values that
-            // matter are untouched.
+            // never had to care -- it truncated to s16 -- but this value
+            // reaches a static_cast<int> after the painter transform, and that
+            // cast is undefined once the double exceeds int range. Clamp to a
+            // margin far outside any visible area: the painter discards it
+            // either way, and the in-view values that matter are untouched.
             constexpr double kOffscreenLimit = 4096.0;
-            s_chAimDsCx = static_cast<float>(
-                std::clamp(projected.dsX, -kOffscreenLimit, kOffscreenLimit));
-            s_chAimDsCy = static_cast<float>(
-                std::clamp(projected.dsY, -kOffscreenLimit, kOffscreenLimit));
-        } else if (source == CrosshairProjection::CentreSource::NativeCache) {
-            // Option off, or the projection has been unusable for long enough
-            // that a stale centre would be worse than the quantised one. This
-            // is exactly what the legacy path read.
+            const double dsX =
+                std::clamp(projected.dsX, -kOffscreenLimit, kOffscreenLimit);
+            const double dsY =
+                std::clamp(projected.dsY, -kOffscreenLimit, kOffscreenLimit);
+            s_chCentreResidual.Capture(dsX, dsY, nativeDsX, nativeDsY);
+            s_chAimDsCx = static_cast<float>(dsX);
+            s_chAimDsCy = static_cast<float>(dsY);
+        } else if (c.crosshair.chHighResPosition) {
+            // Rejected: the ROM's position for this frame is still current, so
+            // use it and re-apply the last sub-pixel offset rather than either
+            // stepping onto the quantised grid or drawing a stale centre.
+            s_chAimDsCx = static_cast<float>(s_chCentreResidual.ApplyX(nativeDsX));
+            s_chAimDsCy = static_cast<float>(s_chCentreResidual.ApplyY(nativeDsY));
+        } else {
+            // Option off: read the quantised cache exactly as the legacy path
+            // did, including its byte-wide read.
             s_chAimDsCx = static_cast<float>(Read8(ram, rom.crosshairPosX));
             s_chAimDsCy = static_cast<float>(Read8(ram, rom.crosshairPosY));
         }
-        // CentreSource::Held keeps s_chAimDsCx/Cy from the last accepted frame.
     }
     const float dsCx = s_chAimDsCx;
     const float dsCy = s_chAimDsCy;

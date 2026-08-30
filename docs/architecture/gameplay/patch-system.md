@@ -415,11 +415,12 @@ WeaponSwitch, TransformGate, NativeAimDelta, etc.) are documented in the
 | Stage matrix expansion | `MelonPrimePatchExpandStageMatrix.*` | Registry: `OutOfGameFrame` (pattern C) | Writes RAM data bytes, not ARM code; self-guarded via strict 3-point loaded-state check; `ResetPatchState` is a no-op (still wired in the registry); base (5 cells) + extra (9 cells) split across two config keys |
 | Low HP warning | `MelonPrimePatchLowHpWarning.*` | Registry: `BattleRuntime` | Registry: `RF_OnLeave \| RF_OnStop` |
 | Use firmware language | `MelonPrimePatchUseFirmwareLanguage.*` | Registry: `OutOfGameFrame` | Adventure-aware; applied in menus; adapter passes `rom.isInAdventure` as 4th arg |
-| FPS Camera Lock | `MelonPrimePatchFpsCameraLock.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Developer-only independent camera-behavior patch; distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook. |
+| FPS Camera Lock | `MelonPrimePatchFpsCameraLock.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Public independent camera-behavior patch; distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook. |
 | Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
 | Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
 | Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Pairs with Damage-Notify-Purple |
 | No picking up specific items | `MelonPrimePatchNoPickingUpSpecificItems.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
+| Touch-screen aim only (battle) | `MelonPrimePatchTouchScreenAimOnly.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Neutralizes the three in-match bottom-screen HUD hit-tests (Morph Ball, weapon quick slots, weapon menu) with `mov r0,#0` so the whole touch screen stays aim input; double-tap jump and the touch boost gesture are left alone |
 
 ---
 

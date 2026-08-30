@@ -37,6 +37,11 @@ namespace MelonPrime {
         inline constexpr const char* Joy2Key        = "Metroid.Apply.joy2KeySupport";
         inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
         inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";
+        inline constexpr const char* TopScreenTouch  = "Metroid.Enable.topScreenTouch";
+        inline constexpr const char* TouchScreenAimOnly = "Metroid.Enable.touchScreenAimOnly";
+        inline constexpr const char* StylusHideCursorInGame = "Metroid.Enable.stylusHideCursorInGame";
+        inline constexpr const char* StylusConfineCursorToTopScreen = "Metroid.Enable.stylusConfineCursorToTopScreen";
+        inline constexpr const char* StylusHoldCursorAtCenterWhenNotClicking = "Metroid.Enable.stylusHoldCursorAtCenterWhenNotClicking";
         inline constexpr const char* AimSens         = "Metroid.Sensitivity.Aim";
         // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V1
         // MELONPRIME_MOUSE_BOOST_SENSITIVITY_V2
@@ -54,8 +59,8 @@ namespace MelonPrime {
         inline constexpr const char* AimAccumulator = "Metroid.Aim.Enable.Accumulator";
         inline constexpr const char* NativeAimHookMode  = "Metroid.Aim.NativeHookMode"; // 0=off 1=RegisterInject 2=FoldDerived
         inline constexpr const char* InstantAimFollow = "Metroid.Aim.Enable.InstantAimFollow";
-        // FPS Camera Lock is developer-only and independent of aim-follow mode
-        // and DisableMphAimSmoothing: it changes camera behavior, not timing.
+        // FPS Camera Lock is independent of aim-follow mode and
+        // DisableMphAimSmoothing: it changes camera behavior, not timing.
         inline constexpr const char* FpsCameraLock = "Metroid.Aim.Enable.FpsCameraLock";
         inline constexpr const char* LowLatencyAimMode = "Metroid.Aim.LowLatencyMode";
         inline constexpr const char* MoonLikeAimNormalStepQ12 = "Metroid.Aim.MoonLikeAimNormalStepQ12";
@@ -214,7 +219,7 @@ namespace MelonPrime {
         inline constexpr int Off = 0;
         inline constexpr int ImmediateSync = 1;
         inline constexpr int MoonLikeAim = 2;
-        // Legacy alias for the independent developer-only FPS camera lock.
+        // Legacy alias for the independent FPS camera-lock setting.
         inline constexpr int InstantAimFollow = 3;
     }
 

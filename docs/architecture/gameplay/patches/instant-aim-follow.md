@@ -1,6 +1,6 @@
 # Legacy path: FPS Camera Lock
 
-The setting formerly documented here is now the independent developer-only
+The setting formerly documented here is now the independent public
 `FPS Camera Lock` feature. The full current description is in
 [`fps-camera-lock.md`](fps-camera-lock.md).
 

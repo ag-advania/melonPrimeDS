@@ -282,7 +282,7 @@
             {MenuLangId::Danish, "Dødsfald"},
             {MenuLangId::German, "Tode"},
             {MenuLangId::Turkish, "Ölümler"},
-            {MenuLangId::Japanese, "死亡"},
+            {MenuLangId::Japanese, "デス"},
             {MenuLangId::Norwegian, "Dødsfall"},
             {MenuLangId::Hungarian, "Halálok"},
             {MenuLangId::Finnish, "Kuolemat"},

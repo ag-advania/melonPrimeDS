@@ -37,6 +37,7 @@ struct MelonPrimePatchState {
     StaticWordPatchState showHeadshotOnline;
     StaticWordPatchState showEnemyHpOnline;
     StaticWordPatchState disableDoubleDamage;
+    StaticWordPatchState touchScreenAimOnly;
 
     struct NoSpecificItemPickupState {
         bool hasAppliedRomGroup = false;

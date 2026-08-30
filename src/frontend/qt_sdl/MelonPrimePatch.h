@@ -10,6 +10,7 @@
 #include "MelonPrimePatchShowEnemyHpMeterOnline.h"
 #include "MelonPrimePatchDisableDoubleDamageMultiplier.h"
 #include "MelonPrimePatchNoPickingUpSpecificItems.h"
+#include "MelonPrimePatchTouchScreenAimOnly.h"
 #include "MelonPrimePatchShadowFreezeRuntimeHook.h"
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
 #include "MelonPrimePatchFpsCameraLock.h"

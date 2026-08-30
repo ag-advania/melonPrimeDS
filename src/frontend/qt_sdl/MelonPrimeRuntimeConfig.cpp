@@ -67,7 +67,7 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
                    LowLatencyAimMode::InstantAimFollow);
     // InstantAimFollow is the legacy value for the independent FPS camera
     // lock. Keep it distinct from the timing modes; its standalone patch is
-    // developer-gated in MelonPrimePatchFpsCameraLock.cpp.
+    // available in public builds.
     if (!s.disableMphAimSmoothing
         && lowLatencyAimMode != LowLatencyAimMode::InstantAimFollow)
         lowLatencyAimMode = LowLatencyAimMode::Off;

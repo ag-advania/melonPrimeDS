@@ -9,5 +9,6 @@ Long-form implementation boundaries and runtime design. These documents are load
 - [Aim and platform input](input/aim-input.md)
 - [Gameplay runtime](gameplay/runtime.md)
 - [Patch system](gameplay/patch-system.md)
+- [Patch-specific references](gameplay/patches/README.md)
 - [Gameplay flow state](gameplay/battle-flow-state.md)
 - [Refactoring history](history/melonprime-refactoring.md)
