@@ -1,5 +1,10 @@
 # Settings UI and Edit Mode
 
+For the complete MelonPrime Settings tab behavior, configuration keys,
+defaults, patch lifecycle, and ROM-address reference, see
+[MelonPrime Settings tab](../../features/melonprime-settings.md) and its
+[per-setting detailed references](../../features/melonprime-settings/README.md).
+
 Use this when working on the MelonPrime settings dialog (`MelonPrimeInputConfig`), the in-game HUD edit mode, or when adding/changing a HUD setting's UI surface.
 
 ## Settings UI Architecture (`MelonPrimeInputConfig`)

@@ -1,5 +1,7 @@
 # Feature Notes
 
+- [MelonPrime Settings tab](melonprime-settings.md) — coverage index for every control in the MelonPrime Settings tab, with links to the detailed key/default, patch-scope, and ROM-address references.
+- [MelonPrime Settings detailed references](melonprime-settings/README.md) — per-setting implementation notes, guard/lifecycle boundaries, and pointers to the non-duplicated mphCodex research.
 - [Zoom status performance](zoom-status-performance.md)
 - [Zoom aim sensitivity](zoom-aim-sensitivity.md)
 - [Custom HUD zoom crosshair](custom-hud-zoom-crosshair.md)

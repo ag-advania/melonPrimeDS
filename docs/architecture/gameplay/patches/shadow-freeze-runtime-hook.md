@@ -1,5 +1,12 @@
 # Shadow Freeze - MelonPrimeDS implementation reissue
 
+> **Current-source boundary:** This document preserves the earlier design/reissue
+> proposal, including a fallback word-patch concept. The currently integrated
+> source contract, ROM hook table, and lifecycle are maintained in
+> [the MelonPrime Settings Shadow Freeze reference](../../../features/melonprime-settings/shadow-freeze.md).
+> Do not treat the fallback key or proposal-only files below as current runtime
+> behavior unless the source is updated to include them.
+
 ## 目的
 
 Shadow Freeze 修正を MelonPrimeDS 側で扱いやすい形に出し直したもの。
