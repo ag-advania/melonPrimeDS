@@ -252,6 +252,36 @@ HP is read through the local player's cached pointer; an unresolved pointer
 counts as alive, so a native path is never disabled just because the pointer
 cache has not been rebuilt yet.
 
+## Spawn barrier
+
+The battle-runtime latch is a *match* boundary; respawn is a *player* boundary,
+and the two are not the same. Spawn restores HP early but keeps initialising
+camera, model, animation, gun and HUD state well past that point, and the same
+player runtime update then falls through to the player input update and its
+hook sites. So "HP is not 0 and the hook was reached" is satisfied inside the
+very update that spawned the player, and a native call made there lands on
+half-initialised state.
+
+Every native method therefore drops its request on the first input hook of that
+update. The boundary needs no host latch: Spawn stores the hunter's configured
+invulnerability into `player+0xE1`, and the same update decrements it exactly
+once before reaching the input code, so on that hook and only there
+
+```text
+player+0xE1 == (uint8_t)([player+0x404] + 0xE2) - 1
+```
+
+The next update reads `configured - 2`, so this costs one input frame rather
+than the whole invulnerability window — a native transform or zoom is available
+again immediately after. The request is dropped rather than deferred, because
+replaying a pressed edge from before the respawn is the behaviour to avoid.
+
+Structure offsets are identical on all seven ROMs, so this needs no per-version
+address table. Weapon Method 1 additionally keeps its own producer-side refusal
+for the whole invulnerability window, which this does not weaken.
+
+Evidence: mphCodex `Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md`.
+
 ## Lifecycle and interactions
 
 Native hooks are match-scoped. Configuration changes are consumed by
@@ -273,6 +303,9 @@ boundary and must not create duplicate fire/zoom/transform actions.
 - Verify each pair is exclusive in the dialog and after a save/reload cycle.
 - Die, then press each bound action while down: no weapon change, transform or
   zoom may occur, and none may fire late on respawn.
+- Press each bound action on the exact spawn/respawn frame: dropped, no freeze.
+- Press each bound action on the frame after: the native path runs normally.
+- Hold an action across match start and across a respawn: no late replay.
 - For zoom Method 3, test Alt-Form, mid-transform, and a non-zoom weapon; each
   must refuse the toggle rather than zoom.
 - Verify one action per physical edge, not one action per frame.

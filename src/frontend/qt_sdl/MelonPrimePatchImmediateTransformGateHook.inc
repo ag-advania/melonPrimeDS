@@ -174,6 +174,14 @@
         if (playerInRegs != localPlayer)
             return false;
 
+        // Same spawn barrier as the other native methods: drop rather than
+        // defer a pressed edge that crossed the respawn boundary.
+        if (UNLIKELY(IsFirstPostSpawnInput(nds, playerInRegs))) {
+            m_directTransformPendingFrames = 0;
+            m_input.press &= ~IB_MORPH;
+            return false;
+        }
+
         // The request is held for a few frames by HandleRareMorph so a host
         // edge is not lost when the game skips this gate on the exact press
         // frame. Consume it here so Gate A and Gate B cannot both dispatch it.

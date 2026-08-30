@@ -305,6 +305,21 @@
             return false;
         }
 
+        // Same spawn barrier as the other native methods. The producer already
+        // refuses the whole invulnerability window and falls back to the legacy
+        // route; this only covers a request that was queued earlier and reaches
+        // the hook on the first post-spawn input.
+        if (UNLIKELY(IsFirstPostSpawnInput(nds, player))) {
+            MP_WEAPON_SWITCH_LOG(
+                "WeaponSwitch SpawnBarrier: exec=%08X player=%08X pending=%u
+",
+                arm9ExecAddr,
+                player,
+                m_weaponSwitchPending.WeaponId);
+            m_weaponSwitchPending.Clear();
+            return false;
+        }
+
         if (m_weaponSwitchPending.RetryCount == 0) {
             MP_WEAPON_SWITCH_LOG(
                 "WeaponSwitch RetryExhausted: exec=%08X pending=%u\n",

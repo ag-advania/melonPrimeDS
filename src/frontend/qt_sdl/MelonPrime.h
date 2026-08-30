@@ -402,6 +402,14 @@ namespace MelonPrime {
             melonDS::NDS* nds,
             uint8_t romGroupIndex);
 
+        // Shared spawn barrier for every native input method. True on the
+        // first player-input hook of the same runtime update that just
+        // respawned this player -- see
+        // Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md. Defined in
+        // MelonPrimeGameInput.cpp so all four hook fragments can call it.
+        [[nodiscard]] bool IsFirstPostSpawnInput(
+            melonDS::NDS* nds, uint32_t player) const noexcept;
+
         // --- "New Method 2": mphCodex DirectInvocation (transform + weapon) ---
         // One hook site, one guest mailbox; see
         // MelonPrimePatchDirectInvocationHook.inc.

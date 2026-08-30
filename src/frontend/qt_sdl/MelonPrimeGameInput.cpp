@@ -652,6 +652,64 @@ namespace MelonPrime {
     }
 
     // =========================================================================
+    // Shared spawn barrier for the native input methods.
+    //
+    // Spawn (JP1_0 0201212C) restores HP early but keeps initialising camera,
+    // model, animation, gun and HUD state well past that point, and the same
+    // player runtime update (0200EEAC) then falls through to the player input
+    // update (02026374) and its ProcessTouchInput call site. So "HP > 0 and we
+    // reached the hook" is satisfied inside the very update that spawned the
+    // player, and a native call made there lands on half-initialised state.
+    //
+    // The boundary is identifiable without any host latch. Spawn stores the
+    // hunter's configured invulnerability into player+0xE1, and the same update
+    // decrements it exactly once before reaching the input code, so on that
+    // first input hook, and only there:
+    //
+    //     player+0xE1 == (uint8_t)([player+0x404] + 0xE2) - 1
+    //
+    // The next update reads configured-2, so this costs one input frame rather
+    // than the whole invulnerability window. Structure offsets are the same on
+    // all seven ROMs, so this needs no per-version address table.
+    //
+    // See docs: mphCodex Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md.
+    // =========================================================================
+    namespace {
+        constexpr uint32_t kPlayerSpawnInvulnOffset = 0xE1u;
+        constexpr uint32_t kPlayerValuesPtrOffset = 0x404u;
+        constexpr uint32_t kPlayerValuesSpawnInvulnOffset = 0xE2u;
+
+        [[nodiscard]] FORCE_INLINE bool SpawnBarrier_IsMainRamRange(
+            uint32_t address, uint32_t size) noexcept
+        {
+            return size != 0
+                && address >= 0x02000000u
+                && size - 1u <= 0x023FFFFFu - address;
+        }
+    } // anonymous namespace
+
+    bool MelonPrimeCore::IsFirstPostSpawnInput(
+        melonDS::NDS* nds, uint32_t player) const noexcept
+    {
+        if (!nds || !SpawnBarrier_IsMainRamRange(player + kPlayerValuesPtrOffset, 4u))
+            return false;
+
+        const uint32_t values = Read32(nds->MainRAM, player + kPlayerValuesPtrOffset);
+        if (!SpawnBarrier_IsMainRamRange(values, kPlayerValuesSpawnInvulnOffset + 2u))
+            return false;
+
+        // player+0xE1 is a byte, so the configured value is compared truncated
+        // the same way Spawn stores it.
+        const uint8_t configured = static_cast<uint8_t>(
+            Read16(nds->MainRAM, values + kPlayerValuesSpawnInvulnOffset));
+        if (configured == 0)
+            return false;
+
+        const uint8_t current = Read8(nds->MainRAM, player + kPlayerSpawnInvulnOffset);
+        return current == static_cast<uint8_t>(configured - 1u);
+    }
+
+    // =========================================================================
     // Hook implementation unity fragments.
     //
     // These are intentionally included after the local aim helpers above. Do not

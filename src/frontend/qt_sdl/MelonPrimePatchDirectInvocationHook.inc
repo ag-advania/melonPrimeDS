@@ -561,6 +561,16 @@
         if (localPlayer == 0 || player != localPlayer)
             return false;
 
+        // Spawn barrier: this is the first input hook of the update that just
+        // respawned the player. A pressed edge from across that boundary is
+        // dropped, not deferred -- replaying it on the next frame is exactly
+        // the behaviour to avoid. The hook returns false, so the site's own
+        // bl ProcessTouchInput runs untouched.
+        if (UNLIKELY(IsFirstPostSpawnInput(nds, player))) {
+            m_directInvocationPending.Clear();
+            return false;
+        }
+
         if (!DirectInvocation_EnsureTrampoline(nds, *site))
             return false;
 

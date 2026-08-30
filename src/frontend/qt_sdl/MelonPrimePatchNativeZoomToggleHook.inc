@@ -296,6 +296,12 @@
             return false;
         }
 
+        // Same spawn barrier as the other native methods.
+        if (UNLIKELY(IsFirstPostSpawnInput(nds, m_nativeZoomPending.Player))) {
+            m_nativeZoomPending.Clear();
+            return false;
+        }
+
         if (!NativeZoomToggle_EnsureTrampoline(nds))
             return false;
 
