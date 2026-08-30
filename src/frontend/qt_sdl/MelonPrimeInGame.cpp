@@ -151,9 +151,12 @@ namespace MelonPrime {
         // legacy path itself still runs then -- that is the game reacting to
         // its own simulated input.
         const bool localPlayerNotInPlay = !IsLocalPlayerAlive();
+        // Spawn invulnerability window: every native method defers to the
+        // Standard path below for its whole duration.
+        const bool spawnWindow = IsLocalPlayerInSpawnInvulnerability();
 
 #ifdef MELONPRIME_DS
-        if (m_enableDirectInvocationTransform) {
+        if (m_enableDirectInvocationTransform && !spawnWindow) {
             if (localPlayerNotInPlay)
                 return;
             // "New Method 2": queue one mailbox request for the ARM9
@@ -170,7 +173,7 @@ namespace MelonPrime {
         }
 #endif
 
-        if (m_enableDirectAltFormTransform) {
+        if (m_enableDirectAltFormTransform && !spawnWindow) {
             if (localPlayerNotInPlay)
                 return;
             // TransformGateHook redirects Gate A/B into the game's native

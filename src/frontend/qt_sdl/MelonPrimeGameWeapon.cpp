@@ -383,13 +383,19 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
-        // The spawn boundary is not handled here. Both native methods share the
-        // dispatcher's first-post-spawn barrier, which drops the request on the
-        // one input hook that runs inside the update that spawned the player.
-        // This used to be a producer-side refusal of the whole invulnerability
-        // window that rerouted to the legacy path; that was both wider than the
-        // ROM's own boundary and a silent method swap.
-        //
+        // Spawn invulnerability window: hand the request to the Standard path
+        // for its whole duration rather than making a native call. The
+        // dispatcher's first-post-spawn barrier stays as well -- it covers a
+        // request that crosses the boundary from outside this window, which
+        // this producer-side check cannot see.
+        if ((m_enableDirectInvocationWeapon || m_enableNativeWeaponSwitch)
+            && UNLIKELY(IsLocalPlayerInSpawnInvulnerability()))
+        {
+            m_weaponSwitchPending.Clear();
+            m_directInvocationPending.ClearWeapon();
+            return SwitchWeaponLegacyTouchFallback(weaponId);
+        }
+
         // A native method must not fire while the local player is not in play.
         // Refuse the request outright rather than rerouting it to the legacy
         // path: "the selected method does nothing until you are in play" is

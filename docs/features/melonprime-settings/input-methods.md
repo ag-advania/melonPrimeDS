@@ -264,31 +264,38 @@ hook sites. So "HP is not 0 and the hook was reached" is satisfied inside the
 very update that spawned the player, and a native call made there lands on
 half-initialised state.
 
-Every native method therefore drops its request on the first input hook of that
-update. The boundary needs no host latch: Spawn stores the hunter's configured
-invulnerability into `player+0xE1`, and the same update decrements it exactly
-once before reaching the input code, so on that hook and only there
+There are two layers, because they cover different cases.
+
+**Whole window, producer side.** While the local player is inside the spawn
+invulnerability countdown (`player+0xE1 != 0`), every native method hands the
+request to the Standard path instead of making a native call: weapon goes
+through the legacy touch route, and transform and zoom fall through to their
+Standard branches. The native request is cleared rather than left pending, and
+zoom keeps its shared pressed-edge latch in sync so leaving the window mid-hold
+cannot fire a stale toggle.
+
+**First post-spawn hook, dispatcher side.** The producer check cannot see a
+request that was queued *before* the boundary and only reaches the hook after
+it, so every native dispatcher additionally drops whatever lands on the one
+input hook inside the update that spawned the player. That hook needs no host
+latch to identify: Spawn stores the hunter's configured invulnerability into
+`player+0xE1`, and the same update decrements it exactly once before reaching
+the input code, so there and only there
 
 ```text
 player+0xE1 == (uint8_t)([player+0x404] + 0xE2) - 1
 ```
 
-The next update reads `configured - 2`, so this costs one input frame rather
-than the whole invulnerability window — a native transform or zoom is available
-again immediately after. The request is dropped rather than deferred, because
-replaying a pressed edge from before the respawn is the behaviour to avoid.
+The next update reads `configured - 2`, so this second layer only ever costs one
+input frame. The request is dropped rather than deferred, because replaying a
+pressed edge from before the respawn is the behaviour to avoid.
 
-Structure offsets are identical on all seven ROMs, so this needs no per-version
-address table.
+Structure offsets are identical on all seven ROMs, so neither layer needs a
+per-version address table.
 
-This barrier is the only spawn guard the native methods have. Both weapon
-methods previously refused the whole `player+0xE1 != 0` window on the producer
-side and rerouted to the legacy path; that was wider than the ROM's own
-boundary and silently swapped method for the duration, so it was replaced by
-this shared one. The mphCodex investigation recommends keeping the wider
-weapon-only guard as a safety margin, so if a weapon switch during spawn
-invulnerability turns out to still be unsafe, restoring a full-window refusal
-for that path is the documented fallback.
+During the spawn window the input still does something -- it runs the Standard
+method -- rather than being swallowed. The trade is that the selected method is
+briefly not the one in use.
 
 Evidence: mphCodex `Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md`.
 

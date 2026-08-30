@@ -498,12 +498,24 @@ namespace MelonPrime {
             return;
         }
 
-        if (m_enableNativeZoomToggle) {
+        // Spawn invulnerability window: every native method defers to the
+        // Standard path for its whole duration. Keep the shared pressed-edge
+        // latch in sync so leaving the window mid-hold does not fire a stale
+        // toggle, exactly as the alt-form branch above does.
+        if (UNLIKELY(nativeZoom && IsLocalPlayerInSpawnInvulnerability())) {
+            m_nativeZoomTogglePrevDown = zoomDown;
+#ifdef MELONPRIME_DS
+            m_nativeZoomPending.Clear();
+            m_directInvocationPending.ClearZoom();
+#endif
+            if (!zoomDown)
+                return;
+        }
+        else if (m_enableNativeZoomToggle) {
             UpdateNativeZoomToggleInput();
             return;
         }
-
-        if (m_enableDirectInvocationZoom) {
+        else if (m_enableDirectInvocationZoom) {
             UpdateDirectInvocationZoomInput();
             return;
         }
@@ -707,6 +719,25 @@ namespace MelonPrime {
 
         const uint8_t current = Read8(nds->MainRAM, player + kPlayerSpawnInvulnOffset);
         return current == static_cast<uint8_t>(configured - 1u);
+    }
+
+    bool MelonPrimeCore::IsLocalPlayerInSpawnInvulnerability() const noexcept
+    {
+        if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT))
+            return false;
+
+        melonDS::NDS* const nds = emuInstance ? emuInstance->getNDS() : nullptr;
+        if (!nds)
+            return false;
+
+        const uint32_t addr =
+            m_currentRom.playerStructStart
+            + static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC
+            + kPlayerSpawnInvulnOffset;
+        if (!SpawnBarrier_IsMainRamRange(addr, 1u))
+            return false;
+
+        return Read8(nds->MainRAM, addr) != 0;
     }
 
     // =========================================================================

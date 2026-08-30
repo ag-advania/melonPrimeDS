@@ -410,6 +410,12 @@ namespace MelonPrime {
         [[nodiscard]] bool IsFirstPostSpawnInput(
             melonDS::NDS* nds, uint32_t player) const noexcept;
 
+        // Local player is still inside the spawn invulnerability countdown
+        // (player+0xE1 != 0). Every native input method hands its request to
+        // the Standard path for the whole of that window; the barrier above
+        // only covers a request that crosses the boundary from outside it.
+        [[nodiscard]] bool IsLocalPlayerInSpawnInvulnerability() const noexcept;
+
         // --- "New Method 2": mphCodex DirectInvocation (transform + weapon) ---
         // One hook site, one guest mailbox; see
         // MelonPrimePatchDirectInvocationHook.inc.

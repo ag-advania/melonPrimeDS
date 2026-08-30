@@ -617,8 +617,10 @@ dispatcher enforces:
   `MelonPrimeGameInput.cpp`) identifies that one hook via `player+0xE1 == configured - 1`; each
   dispatcher drops its pending request and returns false there, letting the site's original
   instruction run. Drop, never defer — replaying a pressed edge from before the respawn is the
-  behaviour being prevented. This is the only spawn guard the native paths have; the weapon
-  producers' older full-window `player+0xE1 != 0` refusal was replaced by it.
+  behaviour being prevented.
+- **And the request-producing side hands the whole `player+0xE1 != 0` window to the non-native
+  path.** The dispatcher barrier only sees requests that actually reach a hook; this covers the
+  rest of the invulnerability countdown. The two are complementary, not alternatives.
 
 ---
 
