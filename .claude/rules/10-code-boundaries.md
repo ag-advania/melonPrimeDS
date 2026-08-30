@@ -16,6 +16,7 @@
 ## Patch lifecycle
 
 - Route game patches through `MelonPrimePatchRegistry` and the documented lifecycle; do not add scattered direct writes or duplicate per-ROM hook tables.
+- ARM9 instruction hooks and guest trampolines are a separate subsystem from the patch registry. Before adding or moving one, read the ARM9 instruction-hook section of [`docs/architecture/gameplay/patch-system.md`](../../docs/architecture/gameplay/patch-system.md): the ROM code cave is shared and nearly full, a trampoline must never receive its request through a PC-relative load, and queue/dispatch/trampoline authoring all hang off the battle-runtime latch.
 - Use shared strict-aliasing-safe RAM helpers and validated ROM/version tables. Preserve apply/restore/reset symmetry and instance isolation.
 - Keep immediate input edges, per-frame runtime state, and persistent config state distinct.
 

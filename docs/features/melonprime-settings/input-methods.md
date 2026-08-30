@@ -189,69 +189,12 @@ checked.
 
 ## ROM code cave reservations
 
-The native paths that need to call a guest function place a trampoline in the
-zero-filled cave at 0x02003E9C..0x02003FBB. The cave is shared, so every module
-owns a fixed extent:
-
-| Range | Owner |
-| --- | --- |
-| 0x02003EA0..0x02003ED3 | Weapon switch (Method 1) trampoline |
-| 0x02003EE0..0x02003EF3 | Weapon switch (Method 1) scratch |
-| 0x02003F00..0x02003F2B | Native zoom toggle trampoline |
-| 0x02003F40..0x02003F4F | Native zoom toggle scratch |
-| 0x02003F50..0x02003FBB | DirectInvocation (Method 2 / 3) trampoline |
-
-DirectInvocation owns no data block: its dispatcher hands the request to the
-trampoline in r0-r2 (player, argument, command) by writing the guest register
-file just before redirecting.
-
-**A guest trampoline must never read its request through a PC-relative load.**
-The JIT constant-folds `ldr rX,[pc,#imm]` at compile time
-(`Compiler::Comp_MemAccess` to `Comp_MemLoadLiteral`, which emits `MOV Imm32`),
-and a host write straight into `NDS::MainRAM` does not invalidate it, so the
-block replays whatever the first dispatch happened to store. That is exactly
-what made an early build of Method 2 transform when a weapon change was
-requested. Loading a constant scratch *address* that way is fine, and is what
-the two trampolines above do before reading their data through a register.
-
-The DirectInvocation trampoline ends exactly on the last verified cave word, so
-it has no room left to grow. MelonPrimePatchDirectInvocationHook.inc
-static_asserts its extent against the other modules' constants and
-against the cave end, so moving or growing any of them fails the build instead
-of corrupting guest code.
-
-## Zoom
-
-Value 0 is the legacy zoom path. Value 1 is a retired configuration value that
-behaves as value 0. Value 2 uses the native SetPlayerScopeZoom path from the
-weapon action update. Value 3 is New Method 3, described under DirectInvocation
-below; it calls the same setter from the player input update instead.
-
-| ROM | SetPlayerScopeZoom site |
-| --- | ---: |
-| JP1.0 / JP1.1 | 0x02015C98 |
-| US1.0 | 0x02015CB8 |
-| US1.1 | 0x02015CBC |
-| EU1.0 | 0x02015CB0 |
-| EU1.1 | 0x02015CBC |
-| KR1.0 | 0x0201CEBC |
-
-The native weapon-action path uses the shared action consumer for JP/US/EU
-and 0x0200D07C for KR, with a trampoline at 0x02003F00 and scratch area at
-0x02003F40. The activation edge, guest scope call, and release behavior must
-be tested independently from zoom sensitivity scaling.
-
-## Lifecycle and interactions
-
-Native hooks are match-scoped. Configuration changes are consumed by
-NotifyConfigChanged and reconciled by the ARM9 hook installer. A hook being
-installed is not proof that the input edge reached the guest; inspect the
-behavioral path as well.
-
-Stylus mode can intentionally bypass native aim-related controls. Joy2Key and
-SnapTap can change the host edge sequence before the native hook sees it.
-Immediate Input Edge Overlay is a developer diagnostic that shares a post-poll
-boundary and must not create duplicate fire/zoom/transform actions.
+The native paths that call a guest function place a trampoline in the shared zero-filled cave at
+0x02003E9C..0x02003FBB. The reservation table, the compile-time overlap rule, the ban on
+PC-relative request loads, and the battle-runtime authoring rule are canonical in
+[patch-system.md](../../architecture/gameplay/patch-system.md) under "Guest trampolines and the
+shared ROM code cave" — read that before adding or moving one. DirectInvocation owns
+0x02003F50..0x02003FBB and no data block: its dispatcher hands the request over in r0-r2.
 
 ## Verification checklist
 

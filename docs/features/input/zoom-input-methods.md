@@ -2,26 +2,32 @@
 
 ## Overview
 
-MelonPrimeDS currently has three zoom input methods.
+MelonPrimeDS currently has three selectable zoom input methods.
 
 | UI state | Config value | Runtime mode | Behavior |
 | --- | ---: | --- | --- |
-| both zoom boxes unchecked | `0` | Legacy | Always press the fixed DS `R` bit for zoom. |
-| `Use New Method for Zoom` checked | `1` | New | Read the in-game zoom binding at `player+0x3E0` and press that DS input bit. |
-| `Use New Method 2 for Zoom` checked | `2` | New2 | Toggle native zoom state by calling `SetPlayerScopeZoom(player, enabled)` through an ARM9 trampoline. |
+| all zoom boxes unchecked | `0` | Legacy | Press the zoom button the player's control preset binds. |
+| — | `1` | retired | Retired value. Reading it behaves as `0`, and the next save normalises it away. |
+| `Use New Method 2 for Zoom` checked | `2` | New2 | Toggle native zoom state by calling `SetPlayerScopeZoom(player, enabled)` through an ARM9 trampoline at the weapon action update. |
+| `Use New Method 3 for Zoom` checked | `3` | New3 | Call the same setter from the game's own player input update, after applying the bottom-screen touch shortcut's state and weapon gates. |
 
-`Use New Method for Zoom` and `Use New Method 2 for Zoom` are mutually exclusive checkboxes. If both are off, the saved method is Legacy.
+`Use New Method 2 for Zoom` and `Use New Method 3 for Zoom` are mutually exclusive checkboxes. If both are off, the saved method is Legacy.
 
 Relevant config:
 
 ```cpp
 Metroid.Input.ZoomMethod
-0 = Legacy fixed R
-1 = New preset binding
+0 = Legacy
+1 = retired (behaves as 0)
 2 = New native toggle
+3 = New native 3 (DirectInvocation)
 ```
 
-The default is `0` and the config range is `0..2`.
+The default is `0` and the config range is `0..3`.
+
+New3 is part of the shared DirectInvocation dispatcher; its gates, addresses and lifecycle are
+documented with the other Method 2/3 paths in
+[input-methods.md](../melonprime-settings/input-methods.md).
 
 ## Runtime Flags
 
@@ -181,7 +187,10 @@ The dispatcher order checks `Dispatch_NativeZoomToggle` before `Dispatch_Immedia
 
 ### Trampoline
 
-New2 uses an ARM9 trampoline:
+New2 uses an ARM9 trampoline in the shared ROM code cave. The cave is nearly full and its
+reservation table is canonical in
+[patch-system.md](../../architecture/gameplay/patch-system.md) — read it before moving or resizing
+this one.
 
 ```text
 trampoline = 02003F00
@@ -216,8 +225,8 @@ The pending request is cleared before redirecting to the trampoline. When the tr
 | Method | Uses DS input bit | Uses game binding | Uses ARM9 native setter | Toggle edge only | Main risk |
 | --- | --- | --- | --- | --- | --- |
 | Legacy | yes, fixed `R` | no | no | no | wrong preset on Dual-style controls |
-| New | yes, `player+0x3E0` | yes | no | no | depends on binding field being valid |
 | New2 | no | no | yes | yes | trampoline/code-cave correctness |
+| New3 | no | no | yes | yes | trampoline/code-cave correctness; refuses in Alt-Form, mid-transform, or with a non-zoom weapon |
 
 ## Files
 
@@ -240,15 +249,7 @@ Legacy:
 ```text
 1. uncheck both Zoom method boxes
 2. hold zoom button
-3. verify fixed DS R path behaves like the old build
-```
-
-New:
-
-```text
-1. check Use New Method for Zoom
-2. switch between Touch/Dual presets
-3. verify zoom follows player+0x3E0 binding
+3. verify the preset's own zoom button behaves like the old build
 ```
 
 New2:
@@ -260,6 +261,18 @@ New2:
 4. hold zoom: state should not repeatedly flip
 5. press zoom again: scope state should disable
 6. switch to a non-zoom weapon while zoomed: failsafe should queue zoom off
+```
+
+New3:
+
+```text
+1. check Use New Method 3 for Zoom (New Method 2 clears itself)
+2. equip Imperialist, press zoom once: scope enables, game plays its own SFX
+3. press again: scope disables
+4. switch to a non-zoom weapon while zoomed: scope turns itself off
+5. transform to Alt-Form and press zoom: nothing happens
+6. press zoom during the transform animation: nothing happens
+7. start a match while holding zoom: no toggle fires on the first frame
 ```
 
 Useful memory checks for New2:
