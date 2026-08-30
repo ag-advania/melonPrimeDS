@@ -24,8 +24,9 @@ namespace MelonPrime {
     //  restore-on-stop/leave and reset-on-start/boot/stop wiring is automatic.
     //
     //  Intentionally OUTSIDE this registry:
-    //   - ARM9 instruction hooks: managed by ARM9Hook_Install/Uninstall/
-    //     ResetPatchState (their own registry in MelonPrimeArm9Hook.cpp).
+    //   - ARM9 instruction hooks: managed by ARM9Hook_Install/Uninstall; their
+    //     dispatch entries and ROM selection are per-Core state in
+    //     MelonPrimeArm9Hook.cpp.
     //   - Custom HUD patch state (CustomHud_*): HUD-owned lifecycle.
     //   - NoDoubleTapJump: transient patch wrapped around weapon-switch
     //     frames in MelonPrimeGameWeapon.cpp.
@@ -63,6 +64,11 @@ namespace MelonPrime {
     // Applies every entry whose applySites mask intersects siteMask, in
     // registry order.
     void Patches_Apply(uint8_t siteMask, const PatchCtx& ctx);
+
+    // Out-of-game is the only registry site called from the frame loop. Keep
+    // the cold lifecycle registry data-driven, but dispatch this hot site
+    // directly so unrelated entries are not scanned every frame.
+    void Patches_ApplyOutOfGame(const PatchCtx& ctx);
 
     // Restores entries flagged RF_OnLeave / RF_OnStop, in registry order.
     void Patches_RestoreOnLeave(const PatchCtx& ctx);

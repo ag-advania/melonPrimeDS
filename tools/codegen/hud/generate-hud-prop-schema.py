@@ -1383,7 +1383,7 @@ def write_schema(order: list[str], props: dict[str, Prop], path: Path) -> None:
         append_schema_macro(lines, f"MP_HUD_PROP_SCHEMA_{cfg_type.upper()}", typed_rows)
         lines.append("")
     lines.extend(["#endif // MELONPRIME_HUD_PROP_SCHEMA_INC", ""])
-    path.write_text("\n".join(lines), encoding="utf-8")
+    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def dialog_key_expr(key: str | None, key_to_ident: dict[str, str], empty_expr: str) -> str:
@@ -1432,7 +1432,7 @@ def write_dialog_props(sections: list[DialogSection], key_to_ident: dict[str, st
         lines.append("};")
         lines.append("")
     lines.extend(["#endif // MELONPRIME_INPUT_CONFIG_HUD_DIALOG_PROPS_INC", ""])
-    path.write_text("\n".join(lines), encoding="utf-8")
+    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def edit_ref_expr(value: str | None, key_to_ident: dict[str, str]) -> str:
@@ -1485,7 +1485,7 @@ def write_edit_props(
             lines.append(f"static constexpr int {count_names[prop_array.name]} = HUD_EDIT_PROP_COUNT({prop_array.name});")
     lines.append("")
 
-    lines.append("static const HudEditElemDesc kEditElems[kEditElemCount] = {")
+    lines.append("static const HudEditElemDesc kEditElems[] = {")
     for row in edit_elems:
         lines.append("    {")
         lines.append(f"        {cpp_quote(row.name)},")
@@ -1507,13 +1507,24 @@ def write_edit_props(
         lines.append("    },")
     lines.append("};")
     lines.append("")
+    # Declared unsized on purpose, then asserted: an explicit bound silently
+    # value-initialises a table that is one entry short, which would leave
+    # editRects sized past the descriptors it indexes.
+    lines.extend([
+        "static_assert(",
+        "    sizeof(kEditElems) / sizeof(kEditElems[0]) == kEditElemCount,",
+        '    "kEditElems must describe exactly kEditElemCount On-Screen Edit "',
+        '    "elements; CustomHudConfigState::editRects is sized from the same "',
+        '    "constant.");',
+        "",
+    ])
     lines.extend([
         "#undef HUD_EDIT_PROP_COUNT",
         "",
         "#endif // MELONPRIME_HUD_CONFIG_ON_SCREEN_EDIT_PROPS_INC",
         "",
     ])
-    path.write_text("\n".join(lines), encoding="utf-8")
+    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def set_for_surface(props: dict[str, Prop], surface: str) -> set[str]:
@@ -1603,7 +1614,7 @@ def write_report(order: list[str], props: dict[str, Prop], extra_refs: dict[str,
                 lines.append(f"- ... {len(diff) - 60} more")
             lines.append("")
 
-    path.write_text("\n".join(lines), encoding="utf-8")
+    path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
 
 
 def extra_refs_for_surface(extra_refs: dict[str, list[Meta]], surface: str) -> set[str]:

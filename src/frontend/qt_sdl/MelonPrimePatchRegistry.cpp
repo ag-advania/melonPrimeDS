@@ -1,6 +1,8 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchRegistry.h"
+
+#include <cstddef>
 #include "MelonPrimePatchState.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "EmuInstance.h"
@@ -9,11 +11,12 @@
 #include "MelonPrimePatchOsdColor.h"
 #include "MelonPrimePerfProbe.h"
 #include "MelonPrimePatchLowHpWarning.h"
-#include "MelonPrimePatchInstantAimFollow.h"
+#include "MelonPrimePatchFpsCameraLock.h"
 #include "MelonPrimePatchShowHeadshotOnline.h"
 #include "MelonPrimePatchShowEnemyHpMeterOnline.h"
 #include "MelonPrimePatchDisableDoubleDamageMultiplier.h"
 #include "MelonPrimePatchNoPickingUpSpecificItems.h"
+#include "MelonPrimePatchTouchScreenAimOnly.h"
 #include "MelonPrimePatchFixWifi.h"
 #include "MelonPrimePatchUseFirmwareLanguage.h"
 #include "MelonPrimePatchExpandStageMatrix.h"
@@ -40,9 +43,9 @@ namespace MelonPrime {
         {
             LowHpWarning_ApplyOnce(ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
         }
-        void Apply_InstantAimFollow(const PatchCtx& ctx)
+        void Apply_FpsCameraLock(const PatchCtx& ctx)
         {
-            InstantAimFollow_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+            FpsCameraLock_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
         }
         void Apply_ShowHeadshotOnline(const PatchCtx& ctx)
         {
@@ -59,6 +62,10 @@ namespace MelonPrime {
         void Apply_NoPickingUpSpecificItems(const PatchCtx& ctx)
         {
             NoPickingUpSpecificItems_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+        }
+        void Apply_TouchScreenAimOnly(const PatchCtx& ctx)
+        {
+            TouchScreenAimOnly_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
         }
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -80,7 +87,10 @@ namespace MelonPrime {
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
             const auto before = ctx.state.fixWifi.status;
 #endif
-            FixWifi_ApplyOnce(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+            FixWifi_ApplyOnce(
+                ctx.state, ctx.nds,
+                ctx.state.outOfGamePatches.fixWifiEnabled,
+                ctx.rom.romGroupIndex);
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
             const auto after = ctx.state.fixWifi.status;
             if (after != before && ctx.emu) {
@@ -91,12 +101,21 @@ namespace MelonPrime {
         }
         void Apply_UseFirmwareLanguage(const PatchCtx& ctx)
         {
-            UseFirmwareLanguage_ApplyOnce(ctx.nds, ctx.cfg, ctx.rom.romGroupIndex,
-                                          ctx.rom.isInAdventure);
+            UseFirmwareLanguage_ApplyOnce(
+                ctx.nds,
+                ctx.state.outOfGamePatches.useFirmwareLanguageEnabled,
+                ctx.rom.romGroupIndex,
+                ctx.rom.isInAdventure,
+                ctx.state.outOfGamePatches.firmwareLanguageBits);
         }
         void Apply_ExpandStageMatrix(const PatchCtx& ctx)
         {
-            ExpandStageMatrix_ApplyIfLoaded(ctx.state, ctx.nds, ctx.cfg, ctx.rom.romGroupIndex);
+            ExpandStageMatrix_ApplyIfLoaded(
+                ctx.state,
+                ctx.nds,
+                ctx.state.outOfGamePatches.expandStageMatrixEnabled,
+                ctx.state.outOfGamePatches.expandStageMatrixExtraEnabled,
+                ctx.rom.romGroupIndex);
         }
 
         // --- restore adapters -------------------------------------------------
@@ -108,9 +127,9 @@ namespace MelonPrime {
         {
             LowHpWarning_RestoreOnce(ctx.nds, ctx.rom.romGroupIndex);
         }
-        void Restore_InstantAimFollow(const PatchCtx& ctx)
+        void Restore_FpsCameraLock(const PatchCtx& ctx)
         {
-            InstantAimFollow_RestoreOnce(ctx.state, ctx.nds, ctx.rom.romGroupIndex);
+            FpsCameraLock_RestoreOnce(ctx.state, ctx.nds, ctx.rom.romGroupIndex);
         }
         void Restore_ShowHeadshotOnline(const PatchCtx& ctx)
         {
@@ -128,6 +147,10 @@ namespace MelonPrime {
         {
             NoPickingUpSpecificItems_RestoreOnce(ctx.state, ctx.nds, ctx.rom.romGroupIndex);
         }
+        void Restore_TouchScreenAimOnly(const PatchCtx& ctx)
+        {
+            TouchScreenAimOnly_RestoreOnce(ctx.state, ctx.nds, ctx.rom.romGroupIndex);
+        }
 
         void Reset_LowHpWarning(MelonPrimePatchState&) { LowHpWarning_ResetPatchState(); }
         void Reset_FixWifi(MelonPrimePatchState& state) { FixWifi_ResetPatchState(state); }
@@ -139,9 +162,10 @@ namespace MelonPrime {
         //  - Iteration order defines apply order. The table order preserves all
         //    three pre-registry apply-site orderings exactly:
         //      GameJoin       = entry 1     (InGameAspectRatio)
-        //      BattleRuntime  = entries 2-8 (OsdColor .. NoPickingUp)
-        //      ConfigReload   = entries 4-8 (InstantAimFollow .. NoPickingUp)
-        //      OutOfGameFrame = entries 9-11 (FixWifi .. ExpandStageMatrix)
+        //      BattleRuntime  = entries 2-9 (OsdColor .. TouchScreenAimOnly)
+        //      ConfigReload   = entries 4-9 (FpsCameraLock .. TouchScreenAimOnly)
+        //      OutOfGameFrame = entries 10-12 (FixWifi .. ExpandStageMatrix;
+        //                       the frame loop uses the direct fast dispatch)
         //  - Restore order also follows the table. Safe: all modules write disjoint ARM9
         //    addresses, so restore order between modules cannot matter.
         //  - Mutable module state is supplied through PatchCtx::state and is
@@ -177,10 +201,10 @@ namespace MelonPrime {
               PatchSite_BattleRuntime, RF_OnLeave | RF_OnStop,
               &Apply_LowHpWarning, &Restore_LowHpWarning,
               &Reset_LowHpWarning },
-            { "InstantAimFollow",
+            { "FpsCameraLock",
               PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
-              &Apply_InstantAimFollow, &Restore_InstantAimFollow,
-              &InstantAimFollow_ResetPatchState },
+              &Apply_FpsCameraLock, &Restore_FpsCameraLock,
+              &FpsCameraLock_ResetPatchState },
             { "ShowHeadshotOnline",
               PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_ShowHeadshotOnline, &Restore_ShowHeadshotOnline,
@@ -197,6 +221,10 @@ namespace MelonPrime {
               PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
               &Apply_NoPickingUpSpecificItems, &Restore_NoPickingUpSpecificItems,
               &NoPickingUpSpecificItems_ResetPatchState },
+            { "TouchScreenAimOnly",
+              PatchSite_BattleRuntime | PatchSite_ConfigReload, RF_OnLeave | RF_OnStop,
+              &Apply_TouchScreenAimOnly, &Restore_TouchScreenAimOnly,
+              &TouchScreenAimOnly_ResetPatchState },
             { "FixWifi",
               PatchSite_OutOfGameFrame, RF_None,
               &Apply_FixWifi, nullptr,
@@ -205,11 +233,54 @@ namespace MelonPrime {
               PatchSite_OutOfGameFrame, RF_None,
               &Apply_UseFirmwareLanguage, nullptr,
               &Reset_UseFirmwareLanguage },
-            { "ExpandStageMatrix",  // pattern C: ApplyIfLoaded self-guards; reset is a documented no-op
+            { "ExpandStageMatrix",  // state machine self-guards; reset is a documented no-op
               PatchSite_OutOfGameFrame, RF_None,
               &Apply_ExpandStageMatrix, nullptr,
               &ExpandStageMatrix_ResetPatchState },
         };
+
+        // The per-frame out-of-game site is a direct dispatch, not a registry
+        // scan (see Patches_ApplyOutOfGame). Nothing else links that
+        // hand-written call list back to this table, so a fourth
+        // PatchSite_OutOfGameFrame entry added here would be registered for
+        // every cold site and silently never applied on the frame path. Pin
+        // the count, the identities and the table order.
+        [[nodiscard]] constexpr std::size_t OutOfGameFrameEntryCount() noexcept
+        {
+            std::size_t count = 0;
+            for (const PatchEntry& entry : kPatchRegistry) {
+                if ((entry.applySites & PatchSite_OutOfGameFrame) != 0)
+                    ++count;
+            }
+            return count;
+        }
+
+        using PatchApplyFn = void (*)(const PatchCtx&);
+
+        [[nodiscard]] constexpr PatchApplyFn OutOfGameFrameApplyAt(
+            std::size_t index) noexcept
+        {
+            std::size_t seen = 0;
+            for (const PatchEntry& entry : kPatchRegistry) {
+                if ((entry.applySites & PatchSite_OutOfGameFrame) == 0)
+                    continue;
+                if (seen == index)
+                    return entry.apply;
+                ++seen;
+            }
+            return nullptr;
+        }
+
+        static_assert(
+            OutOfGameFrameEntryCount() == 3,
+            "Patches_ApplyOutOfGame dispatches exactly three patches by hand; "
+            "add the new PatchSite_OutOfGameFrame entry there too.");
+        static_assert(
+            OutOfGameFrameApplyAt(0) == &Apply_FixWifi
+                && OutOfGameFrameApplyAt(1) == &Apply_UseFirmwareLanguage
+                && OutOfGameFrameApplyAt(2) == &Apply_ExpandStageMatrix,
+            "Patches_ApplyOutOfGame must dispatch the PatchSite_OutOfGameFrame "
+            "entries in table order; the registry order is the apply order.");
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         [[nodiscard]] static const char* DevPatchApplySiteLabel(uint8_t siteMask) noexcept
@@ -261,6 +332,16 @@ namespace MelonPrime {
         if (siteMask != PatchSite_OutOfGameFrame)
             DevOsdPatchApplied(ctx.emu, siteMask, applied);
 #endif
+    }
+
+    void Patches_ApplyOutOfGame(const PatchCtx& ctx)
+    {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+        MelonPrimePerf::CountOutOfGamePatchApply();
+#endif
+        Apply_FixWifi(ctx);
+        Apply_UseFirmwareLanguage(ctx);
+        Apply_ExpandStageMatrix(ctx);
     }
 
     void Patches_RestoreOnLeave(const PatchCtx& ctx)

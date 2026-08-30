@@ -1,5 +1,9 @@
 # MelonPrime Morph Ball Boost
 
+設定画面にあるスワイプ補助のキー、既定値、親子関係、しきい値計算は
+[MelonPrime Settings の設定資料](melonprime-settings/morph-ball-boost.md)にまとめている。
+このページは、ホットキーとゲーム内のブースト動作を扱う既存の詳細資料である。
+
 ## 目的
 MelonPrimeのブースト機能は、Metroid Prime HuntersのSamus用Alt Form
 「Morph Ball Boost」をキーボード/マウス操作で扱いやすくするための入力補助です。
@@ -58,7 +62,7 @@ Samusではない、またはShiftが押されていないフレームは早期r
 
 ```text
 ProcessMoveAndButtonsFastFromReset()
-ApplyBipedFireInput()
+ApplyPostPollOverlayInput()
 ApplyZoomBindingInput()
 HandleMorphBallBoost()
 ProcessAimInputStylus() または ProcessAimInputMouse()

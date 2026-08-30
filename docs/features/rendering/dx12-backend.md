@@ -1,6 +1,7 @@
 # DirectX 12 backend
 
-Windows-only 3D renderer, added on `develop_dx12`. It is a port of melonDS's
+Windows-only 3D renderer, originally added on `develop_dx12` and currently maintained on
+`develop_hud` at `2a0266f14` (checkout verified 2026-08-28). It is a port of melonDS's
 **OpenGL compute renderer** (`src/GPU3D_Compute.cpp` + `GPU3D_Compute_shaders.h`)
 — the GPU version of the software rasterizer — not of the fixed-function OpenGL
 renderer.
@@ -14,7 +15,8 @@ untouched.
 
 ```
 DX12Renderer (: SoftRenderer)        software 2D engines + structured planes
- └── DX12Renderer3D (: Renderer3D)   3D rasterizer + high-resolution compositor
+ └── DX12Renderer3D (: Renderer3D)   3D rasterizer + composition orchestration
+     └── DX12Gpu2DComposer            structured/native 2D composition + output ring
 ```
 
 The software 2D engines record the same per-pixel structured planes used by the
@@ -183,7 +185,7 @@ It costs nothing because `gpuActiveRenderTimeUs` is ~34 us against a
 queue accumulates, and the correct sleep is zero. `NvAPI_D3D_Sleep` measures
 p50 1.2 us (`reflex_sleep_us`), against p50 1247 us for `vkLatencySleepNV` under
 the same workload. Details:
-`docs/audit/dx12_reflex_latency_verification_2026-08-24.md`.
+`docs/archive/audits/rendering/2026-08/dx12_reflex_latency_verification_2026-08-24.md`.
 
 Vulkan presents through `MelonPrimeVulkanSurfacePresenter`, so its Present
 markers and Present ID cover the real native swapchain submission and present.
@@ -301,9 +303,16 @@ Reflex setting.
 | `src/DX12IntelXeLL.{h,cpp}` | Runtime XeLL loading, Intel support probe, sleep-mode state and complete frame-marker lifecycle |
 | `src/DX12LowLatencyPacing.h` | Single DX12 pacing-authority resolver and developer XeLL comparison policies |
 | `src/GPU3D_TexcacheDX12.{h,cpp}` | Texture-array heap behind the shared `Texcache<>` template |
-| `src/GPU3D_DX12.{h,cpp}` | The renderer: span setup, dispatch orchestration, GPU presentation ring and capture readback |
+| `src/GPU3D_DX12.{h,cpp}` | 3D rasterizer and dispatch orchestration; owns the raster resources and compute-pipeline use |
+| `src/DX12Gpu2DComposer.{h,cpp}` | structured/native 2D composition, resolution-dependent compositor resources, and composed-output publication |
+| `src/RendererOutputRing.{h,cpp}` | backend-neutral leased output-slot publication shared by the native compositors |
+| `src/StructuredUploadPlan.h` | backend-neutral dirty-range planning for structured 2D uploads |
+| `src/DX12PipelineRepository.{h,cpp}` | root-signature layout, compute PSO/library cache, command signature, and pipeline creation repository |
+| `src/DX12CaptureBridge.{h,cpp}` | native display-capture sidecar/readback resources and the demand-driven copy bridge |
 | `src/DX12PresentedFrame.h` | Opaque GPU-resource handoff descriptor shared by renderer and presenter |
-| `src/GPU3D_DX12_shaders.h` | HLSL sources, compiled at runtime |
+| `src/GPU3D_DX12_shaders.h` | HLSL source strings and generation metadata used by the offline shader toolchain |
+| `src/GPU3D_DX12_ShaderBlobs.inc` | generated, committed DXBC/DXIL table for the compute variants |
+| `src/DX12ShaderCompiler.{h,cpp}` | runtime compiler used by the small native-presenter vertex/pixel shader pair |
 | `src/GPU_DX12.{h,cpp}` | `DX12Renderer`, pairing the 3D renderer with software 2D |
 | `src/frontend/qt_sdl/MelonPrimeDX12FeatureCheck.{h,cpp}` | Runtime availability probe for the settings dialog and renderer normalization |
 | `src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.{h,cpp}` | Native child HWND, GPU layer composition, CPU overlay uploads, flip-model DXGI swapchain and actual Present boundary |
@@ -326,10 +335,12 @@ Per frame, in one command list:
     planes with the high-resolution `FinalFB`
 12. publish the GPU-resident two-screen buffer through a leased ring slot
 
-37 compute pipelines in total. They are compiled incrementally through
-`ShaderCompileStep()`, so the OSD shows progress instead of the emulator
-hitching, and they are rebuilt whenever the internal resolution changes (tile
-geometry is baked in as `#define`s, exactly like the OpenGL renderer).
+39 compute pipeline variants are created in total: the 37 common 3D/presentation
+steps plus `GPU2DNative` and `GPU2DNativeCapture`. Their pipeline objects are
+created incrementally from the committed DXBC/DXIL through `ShaderCompileStep()`,
+so the OSD shows progress instead of the emulator hitching, and they are rebuilt
+whenever the internal resolution changes (tile geometry is baked in as
+`#define`s, exactly like the OpenGL renderer).
 
 Pipeline creation, scale-dependent allocation, command submission, descriptor
 binding and readback failures are fatal to the DX12 renderer instance. The
@@ -368,7 +379,7 @@ derivation — is a 1:1 port.
 
 ## Build and validation
 
-The 3D renderer does not compile HLSL at runtime. Its 37 compute pipelines are
+The 3D renderer does not compile HLSL at runtime. Its 39 compute pipeline variants are
 committed as DXBC for the three tile-geometry buckets used by 1x-4x, 5x-8x and
 9x-16x. Screen dimensions, scale and scale-dependent buffer offsets travel in
 `MetaUniform`, so a renderer switch or an internal-resolution change never
@@ -390,11 +401,12 @@ D3D12 GPU, the shader set has an offline audit:
 python tools/ci/audits/check-dx12-shaders.py
 ```
 
-It assembles the same sources used to generate the committed table and runs
-`fxc.exe` over all 111 modules (37 pipelines times three tile-geometry buckets).
-A warning is a failure as well as a compile error. The audit skips cleanly when
-the Windows SDK is not installed. CI separately verifies that the committed
-DXBC source hash is current.
+It assembles the same sources used to generate the committed table and compiles
+all 117 variants (39 pipeline variants times three tile-geometry buckets): the
+37 common variants use `fxc.exe`/DXBC and the two native GPU2D variants use
+`dxc.exe`/DXIL. A warning is a failure as well as a compile error. The audit
+skips cleanly when the Windows SDK is not installed. CI separately verifies that
+the committed shader-table source hash is current.
 
 ## Internal resolution
 
@@ -473,7 +485,7 @@ requires a state that naturally leaves `FlushRequest` clear.
 The GPU-independent edge vectors and the opt-in Software/DX12 native 3D pixel
 comparison are documented in [Raster parity verification](../../development/rendering/raster-parity.md).
 
-The Windows Release build and all 111 generated shader modules (37 pipelines in
+The Windows Release build and all 117 generated shader modules (39 pipeline variants in
 three tile-geometry buckets) pass on the repository build path. Runtime validation
 on an NVIDIA GeForce RTX 5070 Ti with the D3D12 debug layer enabled has covered:
 

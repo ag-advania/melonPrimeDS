@@ -284,6 +284,13 @@ struct ScreenPanelVulkan::VulkanState
     float screenMatrix[kMaxScreenTransforms][6]{};
     int screenKind[kMaxScreenTransforms]{};
     int numScreens = 0;
+    std::atomic<std::uint32_t> layoutRevision{0};
+    // Emulation-thread cache. The GUI-published arrays above are copied only
+    // when layoutRevision changes; a stable frame never takes layoutLock.
+    float cachedScreenMatrix[kMaxScreenTransforms][6]{};
+    int cachedScreenKind[kMaxScreenTransforms]{};
+    int cachedNumScreens = 0;
+    std::uint32_t cachedLayoutRevision = ~0u;
 
     // The composed frame, captured at the renderer's VBlank.
     //
@@ -333,6 +340,8 @@ struct ScreenPanelVulkan::VulkanState
     // Renderer the VBlank observer is currently installed on, so the hook is
     // (re)installed exactly once per renderer instance.
     melonDS::VulkanRenderer* hookedRenderer = nullptr;
+    std::uint32_t rendererSnapshotRevision = ~0u;
+    melonDS::VulkanRenderer* cachedVulkanRenderer = nullptr;
 
     QImage osdStrip;
 
@@ -987,8 +996,12 @@ void ScreenPanelVulkan::requestNativeSurfaceVisible(bool visible)
         return;
     // Only a real state change is posted: the emulation thread calls this every
     // frame, and queueing a GUI-thread lambda per frame would be a pure waste.
-    if (vulkan->surfaceVisibleRequested.exchange(visible) == visible)
+    if (vulkan->surfaceVisibleRequested.load(std::memory_order_relaxed) == visible)
         return;
+    if (vulkan->surfaceVisibleRequested.exchange(
+            visible, std::memory_order_acq_rel) == visible)
+        return;
+    MelonPrimePerf::CountSurfaceVisibilityStateChange();
 
     QMetaObject::invokeMethod(
         this,
@@ -1143,13 +1156,16 @@ void ScreenPanelVulkan::setupScreenLayout()
     if (!vulkan)
         return;
 
-    QMutexLocker lock(&vulkan->layoutLock);
-    vulkan->numScreens = numScreens;
-    for (int index = 0; index < numScreens && index < kMaxScreenTransforms; ++index)
     {
-        std::memcpy(vulkan->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
-        vulkan->screenKind[index] = screenKind[index];
+        QMutexLocker lock(&vulkan->layoutLock);
+        vulkan->numScreens = numScreens;
+        for (int index = 0; index < numScreens && index < kMaxScreenTransforms; ++index)
+        {
+            std::memcpy(vulkan->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
+            vulkan->screenKind[index] = screenKind[index];
+        }
     }
+    vulkan->layoutRevision.fetch_add(1, std::memory_order_release);
 }
 
 
@@ -1466,6 +1482,8 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
         vulkan->hookedRenderer->SetVBlankObserver(nullptr, nullptr);
     }
     vulkan->hookedRenderer = nullptr;
+    vulkan->rendererSnapshotRevision = ~0u;
+    vulkan->cachedVulkanRenderer = nullptr;
 
     // Renderer transitions do not change the native presentation identity.
     // Quiesce GPU work and release renderer-owned output leases, but keep the
@@ -1812,11 +1830,25 @@ void ScreenPanelVulkan::drawScreenFrame()
     }
 
     // Keeps the VBlank observer bound to the live renderer across every
-    // renderer switch, including switches away from and back to Vulkan.
-    auto* vulkanRenderer = dynamic_cast<melonDS::VulkanRenderer*>(&nds->GPU.GetRenderer());
+    // renderer switch, including switches away from and back to Vulkan. The
+    // renderer/config snapshot changes only at the cold transition boundary;
+    // the dynamic_cast is therefore a transition cost, not a frame cost.
+    const MelonPrime::PresentationConfigSnapshot presentation =
+        emuInstance->getPresentationConfigSnapshot();
+    if (presentation.revision != vulkan->rendererSnapshotRevision)
+    {
+        vulkan->rendererSnapshotRevision = presentation.revision;
+        vulkan->cachedVulkanRenderer = nullptr;
+        if (presentation.activeRenderer == renderer3D_Vulkan || presentation.revision == 0)
+        {
+            vulkan->cachedVulkanRenderer =
+                dynamic_cast<melonDS::VulkanRenderer*>(&nds->GPU.GetRenderer());
+        }
+    }
+    auto* vulkanRenderer = vulkan->cachedVulkanRenderer;
     installVulkanComposeHook(vulkanRenderer);
 
-    const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+    const bool vsync = presentation.vsync;
     if (vsync != vulkan->vsyncApplied)
     {
         vulkan->vsyncApplied = vsync;
@@ -1976,18 +2008,30 @@ void ScreenPanelVulkan::drawScreenFrame()
 
     // --- uploads (must precede BeginComposition) ---------------------------
 
-    float matrices[kMaxScreenTransforms][6];
-    int kinds[kMaxScreenTransforms];
-    int screens = 0;
+    const std::uint32_t layoutRevision =
+        vulkan->layoutRevision.load(std::memory_order_acquire);
+    if (layoutRevision != vulkan->cachedLayoutRevision)
     {
         QMutexLocker lock(&vulkan->layoutLock);
-        screens = std::min(vulkan->numScreens, kMaxScreenTransforms);
-        for (int index = 0; index < screens; ++index)
+        vulkan->cachedNumScreens =
+            std::min(vulkan->numScreens, kMaxScreenTransforms);
+        for (int index = 0; index < vulkan->cachedNumScreens; ++index)
         {
-            std::memcpy(matrices[index], vulkan->screenMatrix[index], sizeof(float) * 6);
-            kinds[index] = vulkan->screenKind[index];
+            std::memcpy(
+                vulkan->cachedScreenMatrix[index],
+                vulkan->screenMatrix[index],
+                sizeof(float) * 6);
+            vulkan->cachedScreenKind[index] = vulkan->screenKind[index];
         }
+        // Keep the revision observed before taking the lock. If the GUI
+        // publishes another layout immediately after this copy, retaining the
+        // older value forces one harmless refresh next frame instead of
+        // labelling an older cache with the newer arrays' revision.
+        vulkan->cachedLayoutRevision = layoutRevision;
     }
+    const float (*matrices)[6] = vulkan->cachedScreenMatrix;
+    const int* kinds = vulkan->cachedScreenKind;
+    const int screens = vulkan->cachedNumScreens;
 
     bool screenUploaded[2] = {false, false};
     bool screenFrameReused = false;
@@ -2128,6 +2172,7 @@ void ScreenPanelVulkan::drawScreenFrame()
             }
         }
         if (mp && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                mp->HudConfigState(),
                 emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
         {
             // The bottom screen is a Custom HUD input even when the active
@@ -2608,6 +2653,7 @@ bool ScreenPanelVulkan::renderHudOverlay(
             &painter, nullptr,
             &Overlay[0], radarSource,
             mp->IsInGame(),
+            m_hudEnabled,
             m_topStretchX, m_hudScale,
             m_hudOriginX / m_hudScale, m_hudOriginY / m_hudScale);
         if (hudRenderStart)

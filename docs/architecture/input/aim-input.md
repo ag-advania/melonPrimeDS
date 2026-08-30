@@ -126,8 +126,11 @@ Main implementation files:
 ## 6. Native / Low-Latency Aim Injection Mechanisms (newer)
 
 Beyond the classic `aimX/aimY` write, three ARM9-hook-based mechanisms can take over or augment
-aim/fire. All are configured in `ReloadConfigFlags()` and dispatched by the shared ARM9 hook
-(`MelonPrimeArm9Hook.cpp` → `DispatcherCallback`). "Developer-only" means compiled/forced off
+aim/fire. `ReloadConfigFlags()` is the lifecycle wrapper: it loads and clamps a
+`RuntimeConfigSnapshot` via `LoadRuntimeConfigSnapshot()` and applies it via
+`ApplyRuntimeConfigSnapshot()`. The resulting per-instance `Arm9HookActivationPlan` is then
+consumed by the shared ARM9 hook (`MelonPrimeArm9Hook.cpp` → `DispatcherCallback`), which does
+not reread `Config::Table` keys on its install edge. "Developer-only" means compiled/forced off
 unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
 
 ### 6.1 Native Aim Delta Hook (`Metroid.Aim.NativeHookMode`, developer-only)
@@ -140,23 +143,225 @@ unless `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
   hooked PC for the lowest possible latency.
 
 ### 6.2 Low-Latency Aim Hook (`Metroid.Aim.LowLatencyMode`, release-available)
-- Forced `Off` unless `DisableMphAimSmoothing=true`; also inert in stylus mode.
+- `ImmediateSync` and `MoonLikeAim` are forced `Off` unless
+  `DisableMphAimSmoothing=true`; both are also inert in stylus mode. The legacy
+  `InstantAimFollow` value is separate from that gate.
 - A **separate** aim mechanism: at the aim-function exit PCs it rewrites the player's orientation
   basis (forward/side/up vectors at `CPlayer +0x4C / +0x58 / +0x64`) directly.
 - Release-available modes: `ImmediateSync` (snap orientation straight to the target) and
   `MoonLikeAim` (chase the target with tunable Q12 step sizes:
   `MoonLikeAimNormalStepQ12` / `FastStepQ12` / `FastThresholdQ12`).
-- `InstantAimFollow` is developer-only (`LowLatencyMode = 3`) and is backed by the separate
-  `MelonPrimePatchInstantAimFollow` patch, not the runtime exit-PC hook. Public builds normalize
-  existing `InstantAimFollow` configs to `ImmediateSync`.
+- `InstantAimFollow` is the legacy value (`LowLatencyMode = 3`) for the separate
+  `FpsCameraLock` camera-behavior patch, not the runtime exit-PC hook. It is retained as a distinct
+  value and is never reinterpreted as `ImmediateSync`.
+- `FpsCameraLock` is a public independent camera-behavior switch. It is separate from both the
+  aim-follow timing modes and `DisableMphAimSmoothing`.
 - Hook implemented in `MelonPrimePatchLowLatencyAimHook.inc`; registered/dispatched via
   `MelonPrimeArm9Hook.cpp`.
 
+### 6.2a Touch versus Dual aim delivery
+
+- The ROM has **two** aim producers and MelonPrime has to feed the right one. Both the biped
+  dispatcher and the alt-form dispatcher branch on `record[0x00] & 0x2` (`player+0x364`), the same
+  word the preset snapshot already reads:
+  - **set** (Touch R `0x0076`, Touch L `0x0276`): the touch producer sums the four history samples
+    at `InputSlot+0x38..0x46` into `+0x2A`/`+0x2C`, then multiplies by `player+0x3F8`/`+0x3FC` and
+    calls the yaw/pitch updaters.
+  - **clear** (Dual R `0x007C`, Dual L `0x027C`): that branch is jumped over entirely. The aim path
+    loads `player+0xE4` (yaw) and `player+0xE8` (pitch) and passes them to the same updaters
+    directly, so those fields already carry the sensitivity product.
+- MelonPrime wrote only the touch chain (`m_ptrs.aimX/aimY`, the newest history slot at
+  `InputSlot+0x3E`/`+0x46`), which is why the Dual presets had no aim at all. The native aim hooks
+  did not help either: every one of their PCs — including `kAltStoredHooks`, whose addresses are in
+  fact the alt-form Dual yaw/pitch call sites rather than a transform-transition fallback — sits
+  inside a branch a Dual preset never enters, except that alt-form pair.
+- `WriteAimDelta()` now picks the target from `m_ptrs.dualAim`, resolved once at game join and left
+  null on a Touch preset. The Touch write is unchanged; the Dual write applies
+  `player+0x3F8`/`+0x3FC` itself so both paths deliver the same magnitude per unit of mouse
+  movement. Verified against the ROM: the history fold at `0202A008`–`0202A02C` is a plain sum of
+  the four samples, so a single injected sample arrives at `+0x2A`/`+0x2C` one-to-one.
+- On a Dual preset the native-hook modes are bypassed and the deltas are left at zero, which also
+  stops the alt-form hook from fighting the direct write — it early-outs on a zero delta.
+- The ROM rewrites `player+0xE4`/`+0xE8` later in the same frame from its own digital accumulator
+  (acceleration, clamp, and a ~0.4x decay when nothing is held), and MelonPrime only writes on
+  frames that carry a delta, so the preset's own D-pad/face-button aim keeps working.
+- Cost: the branch is a single null test on a Tier 1 pointer. GCC places the Dual write out of line,
+  so the Touch path keeps its two 16-bit stores and pays one not-taken branch.
+
+#### ROM facts behind the two aim paths
+
+Cross-checked against the mphCodex `Control/DualAim` package. These constrain any future change here.
+
+- The control record's flags carry two selectors: `0x2` picks Touch versus Dual, `0x20` picks the
+  Exact Aim branch. All four standard presets set `0x20`.
+- `player+0x3F8`/`+0x3FC` are the **Touch** scales and are **negative**: `0xFFFFF75D` = -0.5398 and
+  `0xFFFFFB8E` = -0.2778. Both paths hand the yaw/pitch updaters the same unit, degrees in
+  fixed point with `0x1000` = 1°.
+- `InputSlot+0x2A`/`+0x2C` is the **sum** of the four history samples, not their average — the
+  `lsl #2; asr #2` pair is width adjustment, not a divide. MelonPrime injects one sample and the
+  other three are zero, so it arrives one-to-one. This is why the Dual write reuses the Touch scale:
+  it makes a Dual preset feel exactly like a Touch one rather than like the native Dual accelerator.
+- The native Dual accelerator MelonPrime overrides runs on a max of 8.0° (`0x8000`), a 40% initial
+  step, `max/100` = `0x147` = 0.0798° per update, and a 0.399902 release decay. It also has a
+  one-update producer/consumer gap: the branch consumes the previous value before producing the
+  next.
+- Call order differs: Touch runs Pitch then Yaw, Dual runs Yaw then Pitch. MelonPrime writes both
+  fields before the frame, so the ROM's own order is preserved either way.
+- The Dual branch does not pass the `NoAimInput` (`PlayerFlags1` bit 24) or `AimMinTouchTime` gates
+  that the Touch branch applies, so aim is not suppressed there while a HUD rectangle is touched.
+- Not covered: Free Camera (`player+0x4D6` ViewType 3, JP1_0 `0201AB8C`) is a third aim path with
+  its own Touch and Dual consumers. Its Dual side uses the same `player+0xE4`/`+0xE8` fields but
+  produces and consumes them in the same update, unlike the biped branch.
+
+#### Which aim settings still apply on a Dual preset
+
+Checked against the ROM's function boundaries: Pitch is `02027798`..`02027E18` and Yaw is
+`02027E1C`..`020285B4`, and **both are called from the Touch branch and the Dual branch alike**.
+
+| Setting | Dual | Why |
+|---|---|---|
+| `LowLatencyMode` ImmediateSync / MoonLikeAim | works | its hook PCs (`020282C8` / `02028544`) are inside the shared Yaw function |
+| `InstantAimFollow` (legacy camera-lock alias) | works | enables the independent `FpsCameraLock` patch at `02028070`..`02028080`, inside shared Yaw |
+| Zoom aim scale, aim accumulator, sensitivity | works | host-side, applied before the write |
+| `DisableMphAimSmoothing` | no effect, and none needed | the patch rewrites the touch producer's history fold at `02029FE0`/`0202A008`; a Dual preset never reads its output |
+| `FpsCameraLock` | works | it patches `02028070`, the Zoom-only gun-vector-to-facing-vector copy inside Yaw, making it unconditional. That removes the ~15.02° free-aim envelope in which the gun leads the body, and the ~9.985%-per-update follow, so it is an FPS camera lock rather than a latency tweak. Note this is a **different** patch from `DisableMphAimSmoothing`, which only disables the touch four-sample filter; mphCodex describes the two as one, which does not match this tree. |
+
+`FpsCameraLock` (`Metroid.Aim.Enable.FpsCameraLock`) used to be reachable only as
+`LowLatencyAimMode::InstantAimFollow`, and only while `DisableMphAimSmoothing` was also on. That
+buried a camera-behavior change behind two settings about input timing and the touch filter, which
+is what mphCodex's design notes call out. It is now its own independent public checkbox, kept
+separate from the aim-follow mode and the smoothing setting. The public-facing wording and
+translation entries remain attached to the setting. The legacy mode value is not reinterpreted as
+`ImmediateSync`; an old config holding it still turns the independent lock on in any build.
+
+| `NativeHookMode` (register injection / PostFold) | not used | every hook PC is inside the touch branch, so a Dual preset never reaches them |
+
+The smoothing row has a consequence worth stating: because a Dual preset is *inherently* unsmoothed,
+the host must emit direct-path values there whatever the setting says. Selecting the legacy path
+would apply a deadzone and a coarser scale chosen to compensate for DS-side smoothing that is not in
+the Dual chain. `AimBypassesDsSmoothing()` is the single predicate for that, true when either the
+patch is applied or the preset is Dual.
+
+### 6.2b Control-preset button synthesis
+
+- Everything MelonPrime synthesizes into DS `KEYINPUT`, and every mask the post-poll overlay
+  injects, comes from `MelonPrimeCore::m_presetBindings`, resolved once in `HandleGameJoinInit()`.
+  Only the low half of each `{uint16 Button; uint16 PressFlags}` entry is a button mask.
+- It is resolved from the ROM's **upstream** source, not from the player struct:
+
+  ```text
+  LIST_ControlTypeArray[slot]        u8 preset id, 0..3 human, 4 BOT
+    -> LIST_ControlPresetTable[id]   static 0x9C record
+       -> record +0x04/+0x08/+0x0C/+0x10 move, +0x34 fire, +0x38 jump,
+          +0x50 morph boost, +0x7C zoom
+  ```
+
+  `player+0x364` holds the same record, but only because player init calls `0200CC7C(player, id)`
+  to expand it there — it is downstream state. Reading it at game join races that init, and a
+  pre-init read returns zeros, which `PickButton()` would then silently resolve back to the Touch R
+  defaults. The id array is what the ROM's own runtime reader consults (JP1_0 `020310A8`) and what
+  the WiFi slot-state packet decoder writes, so it is correct for a client and not only for the
+  match host. `player+0x364` remains the fallback if the id is unusable.
+- Cross-check: the `local_slot_byte` column of the mphCodex control-type map matches
+  `LIST_PlayerPos` exactly on all seven ROM versions, so the slot index MelonPrime already uses is
+  the same one the ROM's runtime reader indexes this array with.
+- This is what makes the non-default presets work. The four presets bind the same action to
+  different buttons, so the previous fixed choices only ever matched Touch R:
+
+  | | move | jump | fire | zoom | boost |
+  |---|---|---|---|---|---|
+  | Touch R | D-pad | A\|B\|X\|Y | L | R | R |
+  | Touch L | Y/A/X/B | D-pad | R | L | L |
+  | Dual R | D-pad | R | L | Select | R |
+  | Dual L | Y/A/X/B | L | R | Select | L |
+
+- `PresetButtonBindings::PickButton()` reduces a binding to **one** button. The ROM only tests
+  `binding & field`, so one bit is sufficient, and pressing the whole mask would press buttons the
+  preset also binds to other actions (Touch R jump is `A|B|X|Y`). It keeps the historical button
+  when the binding contains it, which leaves Touch R bit-for-bit unchanged.
+- The per-direction move table is built at game join into `MoveMask[16]` (index bits F/B/L/R,
+  opposite pairs cancel), replacing the fixed D-pad `MoveLUT`. The hot path is still a single
+  indexed read plus branchless select-masks; measured at 1.379 ns/call versus 1.384 ns/call for the
+  old fixed-D-pad version, with bit-for-bit parity on the Touch R defaults across all 16x4x2 input
+  combinations.
+- **In-game only.** `ProcessMovementOnlyFromReset()`, the out-of-game path that keeps WASD working
+  on the Adventure planet/region map and the Hunter License pages, deliberately keeps the fixed
+  `InputProjection::MenuMoveMask`: menus navigate on the D-pad whatever the in-game preset is, so
+  carrying a left-handed preset's Y/A/X/B mapping into them would break them.
+- None of this is gated on `ImmediateInputEdgeOverlay`. The snapshot is taken in
+  `HandleGameJoinInit()`, which runs on the in-game rising edge with no feature gate, and the
+  always-on legacy `KEYINPUT` synthesis (`ProcessMoveAndButtonsFastImpl`, `ApplyZoomBindingInput`,
+  `HandleMorphBallBoost`) reads it directly. The overlay is just one more consumer. The only
+  buttons still hardcoded are `INPUT_START` and the UI Left/Right pair, which are menu controls and
+  not preset-bound.
+- The snapshot also carries `MirrorTouchX`, the left-handed touch layout flag, taken from
+  `record[0x00] & 0x200` — the same test the ROM's own runtime layout check makes (Touch R `0x0076`
+  and Dual R `0x007C` are normal; Touch L `0x0276` and Dual L `0x027C` are mirrored). The in-match
+  HUD rectangles are one shared table for every preset; the ROM mirrors them by
+  `centerX = 256 - centerX` in `GetTouchRegionCenter` / `TouchRegionHit`, so any touch point
+  MelonPrime synthesizes has to go through `PresetTouchX()` or it only lands on the right-handed
+  layouts. This affects the two in-match taps: the legacy transform (region ID4, Morph/Unmorph,
+  centre `(232,168)` 48x48, normal X 208..255 versus mirrored X 0..47) and weapon check (region ID3,
+  the weapon radial menu). `CENTER_RESET` and `SCAN_VISOR_BUTTON` sit on X=128, where the mirror is
+  a no-op. The Adventure dialog points (OK/LEFT/RIGHT/YES/NO) are menu-consumer regions rather than
+  in-match HUD rectangles and are left alone.
+- Developer builds print the resolved snapshot once per match join
+  (`preset move .../... jump ... fire ... zoom ... boost ...`), so a preset that reads back as the
+  Touch R defaults when it should not is visible immediately.
+- Zoom no longer has a fixed-`INPUT_R` fallback: it always uses the preset button, which is what
+  `ZoomInputMethod`'s "new method" used to opt into. That left the option selecting between two
+  identical behaviors, so the runtime flag, the "Use New Method for Zoom" checkbox and its
+  description were all removed. `ZoomInputMethod::NewPresetBinding` is retained as a retired value
+  so it is not reused: an old config holding it behaves as `LegacyFixedR` and is normalized on the
+  next settings save. `NewNativeToggle` ("New Method 2") is unaffected.
+
 ### 6.3 Native Biped Fire (`BipedFireMethod`, developer-only)
 - When enabled (`m_enableNativeBipedFire`, forced off in release), `ProcessMoveAndButtonsFast`
-  leaves `INPUT_L` released — it does **not** synthesize the legacy fire input. The shoot edge is
-  owned by the ARM9 fire-edge hook (`MelonPrimePatchNativeBipedFireHook.inc`). The `modBits` /
-  `nativeFireMask` logic in `ProcessMoveAndButtonsFastImpl` implements this split.
+  holds `INPUT_L` released — it does **not** synthesize the legacy fire input. The `kModBits` /
+  `fireBit` logic in `ProcessMoveAndButtonsFastImpl` implements this split.
+- Shoot instead enters through the post-poll input overlay: the hook registers the same
+  `LIST_HookActionConsumerPc` PC as `ImmediateInputEdgeOverlay` and contributes a consistent
+  Fire `current` / `pressed` / `released` triple to the single `player+0x464` read/modify/write in
+  `ImmediateInputEdgeOverlay_DispatchCheck`. `MelonPrimePatchNativeBipedFireHook.inc` owns only the
+  host-side edge latch; it does not call `PlayerFireUpdate`, redirect execution, or touch registers,
+  so cooldown, repeat fire, charge, ammo, projectile, HUD, SFX and animation all stay on the ROM's
+  own biped action state machine.
+- The Fire edge is resolved **once per frame** by `UpdateNativeBipedFireInput()` (called from
+  `ApplyPostPollOverlayInput()` on the frame path, before `NDS::RunFrame()`); the hook only projects that
+  result onto the binding mask. This is mandatory, not a style choice: the ROM action consumer is
+  the entry of the per-player input consumer (`PlayerEntity.Process()` → `ProcessInput()` runs for
+  every player entity), so the hook is entered up to four times per frame and only one of those
+  entries belongs to the local player. Resolving the edge inside the hook makes an earlier player's
+  entry recompute held-vs-held and write `pressed = 0` back over the bit before the local player's
+  own entry reads it — `current` survives, so the symptom is "`IsDown` works, nothing ever fires".
+- Both latches are invalidated (re-baselined, not zeroed) on game join/leave, focus loss/regain,
+  feature toggle-off, savestate load, boot/stop/ROM change, `AIMBLK_NOT_IN_GAME` transitions, a
+  change of the ROM's local `Player*` (read once per frame by `ApplyPostPollOverlayInput()` and
+  shared by both, so they cannot disagree about the frame), and biped↔alt-form transitions. Resuming
+  with the button already held therefore restores `current` without manufacturing a stale `pressed`
+  edge; the next real release→press produces the edge.
+- The generic `ImmediateInputEdgeOverlay` resolves its edges the same way, in
+  `UpdateImmediateInputEdgeOverlayInput()`, but tracks them **per action** (`OVA_*`) rather than per
+  binding bit: the binding masks and `m_immediateOverlayPreserveMask` are only final later in the
+  frame (`HandleMorphBallBoost()` adds `INPUT_R`), so the hook expands the resolved actions onto
+  whatever masks it sees. This is what made the overlay's `pressed` edges host-only before — the
+  MPH host is player slot 0, so the first action-consumer entry of the frame was the local player's
+  and the edge survived; as a client the following entries erased it first.
+- The overlay write is **additive** (`field | injected`), never a replace. It is not the only thing
+  driving these bits: for Jump, Zoom and Movement the legacy DS `KEYINPUT` path stays active, so the
+  game's own poll already produced correct `current`/`pressed`/`released`, and the ROM binding is not
+  even the same bit MelonPrime presses — Touch R binds Jump to `0x0C03` (A/B/X/Y) while the legacy
+  path presses B alone. A replacing write cleared the game's own correct edge on every frame the
+  overlay latch reported no edge (right after a re-baseline, or when a re-entrant `FrameAdvanceOnce`
+  from weapon switch / morph had already consumed it), which is why Jump and Zoom "often did not
+  respond". OR-ing can only make an action land earlier, never swallow one. Native Biped Fire is
+  unaffected: it suppresses `INPUT_L`, so the polled bits it ORs into are already zero.
+- Verified against the ROM disassembly (`mphCodex mnt/data/dumps/mphDump/JP1_0.txt`), not inference:
+  `02024174` is `UpdatePlayerActionInput(Player* r0, MphInput* r1)` and `0201042C add r1,r4,#0x464`
+  in its caller chain confirms the struct the jump gate reads is `player+0x464`. The input helper
+  `02028EE8` maps `0x40000`→`+0x04` pressed, `0x100000`→`+0x08` released, `0x80000`→`+0x0A` repeat,
+  no selector→`+0x00` down, with `0x10000` selecting per-case touch bits in `+0x34`. Unlike the fire
+  gate, the jump gate does **not** OR in a selector — it uses the binding's own `PressFlags` half.
 
 ## 7. Stylus Mode
 
@@ -358,7 +563,8 @@ Troubleshooting:
 - `Metroid.Aim.Disable.MphAimSmoothing`
 - `Metroid.Aim.Enable.Accumulator`
 - `Metroid.Aim.NativeHookMode` — §6.1 (developer-only; forced `0` in release)
-- `Metroid.Aim.LowLatencyMode` — §6.2 (`Off` / `ImmediateSync` / `MoonLikeAim`; `InstantAimFollow` is developer-only and public builds migrate it to `ImmediateSync`; requires `DisableMphAimSmoothing`)
+- `Metroid.Aim.LowLatencyMode` — §6.2 (`Off` / `ImmediateSync` / `MoonLikeAim`; `InstantAimFollow` is a retained legacy alias and is independent of `DisableMphAimSmoothing`)
+- `Metroid.Aim.Enable.FpsCameraLock` — §6.2 (public independent camera-behavior switch)
 - `Metroid.Enable.stylusMode`
 - `Metroid.Operation.SnapTap`
 - `Metroid.Apply.joy2KeySupport`

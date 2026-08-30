@@ -151,7 +151,7 @@ the reference, on the grounds that `src/DX12NvidiaReflex.cpp` had no counterpart
 to Vulkan's `QueryTimings()` and therefore no evidence its Reflex was engaged.
 That read-back has since been implemented (`NvAPI_D3D_GetLatency`, id
 `0x1A587F9C`) and **the suspicion was wrong**. See
-`docs/audit/dx12_reflex_latency_verification_2026-08-24.md`.
+`docs/archive/audits/rendering/2026-08/dx12_reflex_latency_verification_2026-08-24.md`.
 
 DX12's Reflex is fully engaged: the driver returns complete frame reports whose
 `frameID` matches the logical frame ids the markers carried, with correctly

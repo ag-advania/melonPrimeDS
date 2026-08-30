@@ -140,11 +140,12 @@ def main() -> None:
     for needle in (
         "ARM9Hook_Uninstall",
         "Patches_ResetAll(core->PatchState())",
-        "ARM9Hook_ResetPatchState()",
         "LowLatencyAim uses NDS::SetARM9InstructionHook",
-        "active address set and JIT",
+        "per-instance address set and JIT",
     ):
         require(reconcile, needle, "savestate patch reconciliation")
+    if "ARM9Hook_ResetPatchState" in patch_lifecycle:
+        raise AssertionError("savestate reconciliation must not call a process-global ARM9 reset")
     if "Patches_Restore" in reconcile or "NDS::RunFrame" in reconcile:
         raise AssertionError("savestate reconciliation must not restore guest RAM or run a frame")
     require(patch_lifecycle_h, "ReconcileAfterSavestateLoad", "savestate lifecycle API")

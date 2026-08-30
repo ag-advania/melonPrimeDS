@@ -118,6 +118,9 @@ private slots:
     void on_cbMetroidApplyHeadphone_stateChanged(int state);
     void on_cbMetroidUseFirmwareName_stateChanged(int state);
     void on_cbMetroidEnableCustomHud_stateChanged(int state);
+    void on_cbMetroidHudCrosshairHighRes_stateChanged(int state);
+    void on_cbMetroidHudCrosshairDeadbandEnable_stateChanged(int state);
+    void on_dsbMetroidHudCrosshairDeadband_valueChanged(double value);
     void on_cbMetroidEnableStylusMode_stateChanged(int state);
     void on_cbMetroidDisableMphAimSmoothing_stateChanged(int state);
     void on_cbMetroidExpandStageMatrix_stateChanged(int state);
@@ -192,8 +195,9 @@ private:
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewTransformMethod = nullptr;
-    QCheckBox* m_cbMetroidUseNewZoomMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewZoomMethod2 = nullptr;
+    QCheckBox* m_cbMetroidFpsCameraLock = nullptr;
+    QLabel* m_lblMetroidFpsCameraLockDesc = nullptr;
     QLabel* m_lblMetroidLowLatencyAimMode = nullptr;
     QComboBox* m_comboMetroidLowLatencyAimMode = nullptr;
     QLabel* m_lblMetroidLowLatencyAimDesc = nullptr;

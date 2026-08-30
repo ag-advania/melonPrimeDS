@@ -48,32 +48,49 @@ static inline bool ShouldDrawCustomHudCrosshair(const HudRuntimeState& st)
     return st.isFirstPerson && !st.isTrans && !st.isAlt && !st.isAdventureScanVisor;
 }
 
-bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
+bool CustomHud_ShouldHideForGameplayState(CustomHudConfigState& hudConfig,
+                                          EmuInstance* emu,
+                                          const RomAddresses& rom,
+                                          uint8_t playerPosition)
 {
     if (!emu) return true;
 
-    melonDS::NDS* nds = emu->getNDS();
-    melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
-    if (!ram) return true;
+    // The sampling helpers below read and publish the per-instance HUD frame
+    // cache, so this entry point must establish the same active-state scope the
+    // painter path uses. Renderer front-ends call it outside CustomHud_Render.
+    const ScopedHudConfigState active(hudConfig);
 
-    const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
-    const bool isStartPressed = Read8(ram, rom.startPressed) == 0x01;
-    const uint16_t currentHP = Read16(ram, rom.playerHP + offP);
-    const bool isGameOver = Read8(ram, rom.gameOver) != 0x00;
-    if (isStartPressed || currentHP == 0 || isGameOver)
+    HudRuntimeState st = {};
+    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return true;
 
-    const bool isAdventure = Read8(ram, rom.isInAdventure) == 0x02;
-    if (!isAdventure)
-        return false;
+    if (HudRuntimeFrameCacheMatches(st)
+        && s_hudRuntimeFrameCache.gameplayVisibilityValid)
+        return !s_hudRuntimeFrameCache.gameplayVisible;
 
-    if (Read8(ram, rom.isMapOrUserActionPaused) == 0x01)
-        return true;
+    ReadHudRuntimeAdventurePauseState(rom, st);
+    const bool visible =
+        !ShouldHideForGameplayState(
+            st.isStartPressed,
+            st.currentHP,
+            st.isGameOver,
+            st.isAdventure,
+            st.isMapOrUserActionPaused)
+        && !st.isAdventureCameraScene;
 
-    return IsCameraSequenceBlockingInput(ram, rom);
+    if (HudRuntimeFrameCacheMatches(st))
+    {
+        s_hudRuntimeFrameCache.gameplayVisible = visible;
+        s_hudRuntimeFrameCache.gameplayVisibilityValid = true;
+    }
+    return !visible;
 }
 
-bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition)
+bool CustomHud_ShouldDrawRadarOverlay(CustomHudConfigState& hudConfig,
+                                      EmuInstance* emu,
+                                      const RomAddresses& rom,
+                                      uint8_t playerPosition)
 {
-    return !CustomHud_ShouldHideForGameplayState(emu, rom, playerPosition);
+    return !CustomHud_ShouldHideForGameplayState(
+        hudConfig, emu, rom, playerPosition);
 }

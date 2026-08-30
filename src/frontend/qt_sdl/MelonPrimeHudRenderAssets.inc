@@ -45,14 +45,28 @@ static void EnsureScoreboardAssetsLoaded(const ScoreboardHudConfig& scoreboard,
         ? std::max(1, static_cast<int>(std::lround(scoreboard.starsHeight * iconScale)))
         : 0;
     if (s_scoreboardHunterIconHeight != hunterH) {
-        static const char* kHunterPaths[7] = {
-            ":/mph-scoreboard-hunter-0", ":/mph-scoreboard-hunter-1",
-            ":/mph-scoreboard-hunter-2", ":/mph-scoreboard-hunter-3",
-            ":/mph-scoreboard-hunter-4", ":/mph-scoreboard-hunter-5",
-            ":/mph-scoreboard-hunter-6",
+        static const char* kHunterPaths[7][4] = {
+            {":/mph-scoreboard-hunter-0-p1", ":/mph-scoreboard-hunter-0-p2",
+             ":/mph-scoreboard-hunter-0-p3", ":/mph-scoreboard-hunter-0-p4"},
+            {":/mph-scoreboard-hunter-1-p1", ":/mph-scoreboard-hunter-1-p2",
+             ":/mph-scoreboard-hunter-1-p3", ":/mph-scoreboard-hunter-1-p4"},
+            {":/mph-scoreboard-hunter-2-p1", ":/mph-scoreboard-hunter-2-p2",
+             ":/mph-scoreboard-hunter-2-p3", ":/mph-scoreboard-hunter-2-p4"},
+            {":/mph-scoreboard-hunter-3-p1", ":/mph-scoreboard-hunter-3-p2",
+             ":/mph-scoreboard-hunter-3-p3", ":/mph-scoreboard-hunter-3-p4"},
+            {":/mph-scoreboard-hunter-4-p1", ":/mph-scoreboard-hunter-4-p2",
+             ":/mph-scoreboard-hunter-4-p3", ":/mph-scoreboard-hunter-4-p4"},
+            {":/mph-scoreboard-hunter-5-p1", ":/mph-scoreboard-hunter-5-p2",
+             ":/mph-scoreboard-hunter-5-p3", ":/mph-scoreboard-hunter-5-p4"},
+            {":/mph-scoreboard-hunter-6-p1", ":/mph-scoreboard-hunter-6-p2",
+             ":/mph-scoreboard-hunter-6-p3", ":/mph-scoreboard-hunter-6-p4"},
         };
-        for (int i = 0; i < 7; ++i)
-            s_scoreboardHunterIcons[i] = loadRasterToHeight(kHunterPaths[i], hunterH);
+        for (int hunter = 0; hunter < 7; ++hunter) {
+            for (int variant = 0; variant < 4; ++variant) {
+                s_scoreboardHunterIcons[hunter][variant] = loadRasterToHeight(
+                    kHunterPaths[hunter][variant], hunterH);
+            }
+        }
         s_scoreboardHunterIconHeight = hunterH;
     }
     if (s_scoreboardStarsHeight != starsH) {
@@ -461,12 +475,9 @@ struct HudElementTextCacheState {
     TextBitmapCache ammoOutline{};
 };
 
-static HudElementTextCacheState& HudElementTextCaches()
+static FORCE_INLINE HudElementTextCacheState& HudElementTextCaches() noexcept
 {
-    auto& slot = ActiveHudConfigState().textCacheState;
-    if (!slot)
-        slot = std::make_shared<HudElementTextCacheState>();
-    return *std::static_pointer_cast<HudElementTextCacheState>(slot);
+    return *ActiveHudConfigState().textCacheState;
 }
 
 // textDrawScale: visual scale applied when drawing (textScalePct/100). Returned
@@ -729,4 +740,3 @@ static inline void DrawImageOutlined(QPainter* p,
     p->drawImage(dst, icon);
     p->setOpacity(1.0f);
 }
-

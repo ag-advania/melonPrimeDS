@@ -83,6 +83,23 @@ void LowHpWarning_ApplyOnce(melonDS::NDS* nds, Config::Table& cfg, uint8_t romGr
         return; // unknown mode → no-op
     }
 
+    // Verify before writing.
+    //
+    // The address table is per-version and, as the note above says, still under
+    // verification. Writing blind means a wrong entry does not fail visibly: it
+    // replaces some unrelated instruction with `cmp r0,#threshold`, and the game
+    // then misbehaves in a way that looks like a broken warning rather than like
+    // a bad address -- an alarm that sounds at full health, for instance.
+    // Restore has always checked this pattern before writing vanilla back; apply
+    // has to check it too, or restore's hardcoded vanilla word is not the word
+    // that was actually replaced.
+    //
+    // Any `cmp r0,#imm` passes, not just the vanilla immediate, because a
+    // re-apply legitimately finds the previous threshold there.
+    const uint32_t current = nds->ARM9Read32(a.cmp);
+    if ((current & 0xFFFFFF00u) != kCmpBase)
+        return;
+
     const uint32_t word = kCmpBase | threshold;
     nds->ARM9Write32(a.cmp, word);
 }

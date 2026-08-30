@@ -302,6 +302,12 @@ void ScreenPanel::refreshClipForGameStateChange()
         && isInGame
         && inGameTopScreenOnly;
 
+    // Needs its own edge: the clip-state comparison below tracks inGame, while
+    // the stylus match options follow cursorMode, which also covers the
+    // Adventure pause. When they are all off -- the default -- this is one
+    // predictable, short-circuited bool test.
+    reconcileStylusMatchCursor(hasState, ui);
+
     const bool clipStateUnchanged =
         m_hasLastClipInGameState == hasState
         && (!hasState || m_lastClipInGameState == isInGame)
@@ -363,6 +369,71 @@ void ScreenPanel::applyInGameTopScreenOnlyOverride(int& layout, int& sizing) con
     sizing = screenSizing_TopOnly;
 }
 
+// Mirrors the non-stylus rule: the match-scoped cursor options apply exactly
+// while the core is out of cursor mode (in a match, and not an Adventure
+// pause). One reconciled edge drives them all; the decision itself stays
+// in updateClipIfNeeded(), which is the single authority for cursor state.
+void ScreenPanel::reconcileStylusMatchCursor(
+    bool hasState, const MelonPrime::MelonPrimeUiSnapshot& ui)
+{
+    const bool active = stylusMatchCursorOptionsEnabled
+        && hasState
+        && ui.stylusMode
+        && ui.focused
+        && !ui.cursorMode;
+    if (active == m_stylusMatchCursorActive)
+        return;
+
+    m_stylusMatchCursorActive = active;
+    if (!active)
+        m_stylusClickHeld = false;
+    updateClipIfNeeded();
+    // Park once on entry so the first drag of the match is centred too, even
+    // if the pointer is never moved before it.
+    if (active)
+        holdStylusCursorAtCenterIfNotClicking(mapFromGlobal(QCursor::pos()));
+}
+
+// Where the pointer is parked. The confined screen when the top-screen
+// confinement is on, otherwise the touch screen the stylus drags on.
+QPoint ScreenPanel::stylusCursorCenterLocal() const
+{
+    const std::optional<QRect> target = shouldConfineCursorToTopScreenForPolicy()
+        ? getTopScreenWidgetRect()
+        : getBottomScreenWidgetRect();
+    return target.value_or(rect()).center();
+}
+
+// Fallback parking for platforms where the cursor policy cannot pin the
+// pointer at the OS level. Where it can (Windows), the pin already stops the
+// pointer, so no move event with a stale position ever reaches this.
+// Two member-bool tests when the option is off, and a held drag exits on the
+// third -- an active drag pays nothing beyond that.
+void ScreenPanel::holdStylusCursorAtCenterIfNotClicking(const QPoint& localPos)
+{
+    if (!stylusHoldCursorAtCenterEnabled || !m_stylusMatchCursorActive
+        || m_stylusClickHeld)
+        return;
+
+    const QPoint localTarget = stylusCursorCenterLocal();
+    // Our own warp lands here and would otherwise re-trigger this handler.
+    if (localPos == localTarget)
+        return;
+
+    const QPoint global = mapToGlobal(localTarget);
+    MelonPrime::PlatformInput_WarpCursor(global.x(), global.y());
+}
+
+std::optional<QRect> ScreenPanel::getTopScreenWidgetRectForPolicy() const
+{
+    return getTopScreenWidgetRect();
+}
+
+QPoint ScreenPanel::stylusCursorCenterLocalForPolicy() const
+{
+    return stylusCursorCenterLocal();
+}
+
 bool ScreenPanel::shouldConfineCursorToBottomScreen() const
 {
     if (closing || !qApp || qApp->closingDown())
@@ -413,7 +484,7 @@ std::optional<QRect> ScreenPanel::getBottomScreenWidgetRect() const
     return getScreenWidgetRect(1);
 }
 
-#ifdef MELONPRIME_CUSTOM_HUD
+#if defined(MELONPRIME_CUSTOM_HUD) || defined(MELONPRIME_DS)
 std::optional<QRect> ScreenPanel::getTopScreenWidgetRect() const
 {
     return getScreenWidgetRect(0);
@@ -635,6 +706,117 @@ void ScreenPanel::loadConfig()
     screenAspectTop = cfg.GetInt("ScreenAspectTop");
     screenAspectBot = cfg.GetInt("ScreenAspectBot");
     inGameTopScreenOnly = emuInstance->getLocalConfig().GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly);
+#ifdef MELONPRIME_DS
+    topScreenTouchEnabled = emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::TopScreenTouch);
+    loadMelonPrimeStylusCursorConfig();
+#endif
+}
+
+#ifdef MELONPRIME_DS
+void ScreenPanel::refreshTopScreenTouchSetting()
+{
+    const bool enabled = emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::TopScreenTouch);
+    if (!enabled && topScreenTouchTransform >= 0 && touching)
+    {
+        emuInstance->releaseScreen();
+        touching = false;
+    }
+    topScreenTouchEnabled = enabled;
+    if (!touching)
+        topScreenTouchTransform = -1;
+}
+
+void ScreenPanel::loadMelonPrimeStylusCursorConfig()
+{
+    auto& cfg = emuInstance->getLocalConfig();
+    stylusHideCursorInGameEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
+    stylusConfineCursorToTopScreenEnabled =
+        cfg.GetBool(MelonPrime::CfgKey::StylusConfineCursorToTopScreen);
+    stylusHoldCursorAtCenterEnabled =
+        cfg.GetBool(MelonPrime::CfgKey::StylusHoldCursorAtCenterWhenNotClicking);
+    stylusMatchCursorOptionsEnabled = stylusHideCursorInGameEnabled
+        || stylusConfineCursorToTopScreenEnabled
+        || stylusHoldCursorAtCenterEnabled;
+}
+
+void ScreenPanel::refreshStylusCursorSettings()
+{
+    loadMelonPrimeStylusCursorConfig();
+
+    auto* const core = melonPrimeCore();
+    const bool hasState = (core != nullptr);
+    const auto ui = hasState ? core->ThreadBridge().ReadForGui()
+                             : MelonPrime::MelonPrimeUiSnapshot{};
+    // A toggle changes what the current edge means without changing the edge
+    // itself, so latch the state and re-decide unconditionally.
+    m_stylusMatchCursorActive = stylusMatchCursorOptionsEnabled
+        && hasState && ui.stylusMode && ui.focused && !ui.cursorMode;
+    updateClipIfNeeded();
+    if (m_stylusMatchCursorActive)
+        holdStylusCursorAtCenterIfNotClicking(mapFromGlobal(QCursor::pos()));
+}
+#endif
+
+bool ScreenPanel::getTouchCoords(int& x, int& y, bool clamp)
+{
+#ifdef MELONPRIME_DS
+    const auto mapTopTransform = [this](int transform, int& px, int& py, bool clampCoords) {
+        if (transform < 0 || transform >= numScreens || screenKind[transform] != 0)
+            return false;
+
+        const float* const m = screenMatrix[transform];
+        const float determinant = m[0] * m[3] - m[1] * m[2];
+        if (std::abs(determinant) < 0.000001f)
+            return false;
+
+        const float dx = static_cast<float>(px) - m[4];
+        const float dy = static_cast<float>(py) - m[5];
+        const float sx = (m[3] * dx - m[2] * dy) / determinant;
+        const float sy = (-m[1] * dx + m[0] * dy) / determinant;
+
+        if (!clampCoords && (sx < 0.0f || sx >= 256.0f || sy < 0.0f || sy >= 192.0f))
+            return false;
+
+        px = clampCoords ? std::clamp(static_cast<int>(sx), 0, 255) : static_cast<int>(sx);
+        py = clampCoords ? std::clamp(static_cast<int>(sy), 0, 191) : static_cast<int>(sy);
+        return true;
+    };
+
+    // A drag that began on a top-screen transform remains owned by that same
+    // transform. Otherwise the bottom-screen clamping path would steal it as
+    // soon as the pointer moved.
+    if (clamp && topScreenTouchTransform >= 0)
+        return mapTopTransform(topScreenTouchTransform, x, y, true);
+#endif
+
+    if (layout.GetTouchCoords(x, y, clamp))
+    {
+#ifdef MELONPRIME_DS
+        if (!clamp)
+            topScreenTouchTransform = -1;
+#endif
+        return true;
+    }
+
+#ifdef MELONPRIME_DS
+    if (topScreenTouchEnabled && !clamp)
+    {
+        for (int i = 0; i < numScreens; ++i)
+        {
+            int tx = x;
+            int ty = y;
+            if (mapTopTransform(i, tx, ty, false))
+            {
+                x = tx;
+                y = ty;
+                topScreenTouchTransform = i;
+                return true;
+            }
+        }
+    }
+#endif
+
+    return false;
 }
 
 void ScreenPanel::setFilter(bool filter)
@@ -798,6 +980,9 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
+#ifdef MELONPRIME_DS
+        topScreenTouchTransform = -1;
+#endif
         return;
     }
 
@@ -836,7 +1021,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     int x = p.x();
     int y = p.y();
 
-    if (layout.GetTouchCoords(x, y, false))
+    if (getTouchCoords(x, y, false))
     {
         touching = true;
         emu->touchScreen(x, y);
@@ -847,6 +1032,16 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     if (core && !ui.stylusMode && !ui.cursorMode)
     {
         clipCursorCenter1px();
+    }
+    // The click is held now, so the not-clicking pin no longer applies:
+    // re-decide so the drag is free to move. Latched even when the touch did
+    // not register, otherwise a press outside the touch area would leave the
+    // pointer pinned with no way to drag.
+    if (!m_stylusClickHeld)
+    {
+        m_stylusClickHeld = true;
+        if (stylusHoldCursorAtCenterEnabled && m_stylusMatchCursorActive)
+            updateClipIfNeeded();
     }
 #endif
 }
@@ -864,6 +1059,9 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
     if (Q_UNLIKELY(!emu->emuIsActive()))
     {
         touching = false;
+#ifdef MELONPRIME_DS
+        topScreenTouchTransform = -1;
+#endif
         return;
     }
 
@@ -872,10 +1070,29 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
     if (event->button() != Qt::LeftButton)
         return;
 
+#ifdef MELONPRIME_DS
+    // Ahead of the `touching` early-out below: a press whose touch never
+    // registered still has to end the held-click window. This is the first
+    // moment of the not-clicking window, so park the pointer and re-decide to
+    // have it pinned there for the rest of it.
+    if (m_stylusClickHeld)
+    {
+        m_stylusClickHeld = false;
+        if (stylusHoldCursorAtCenterEnabled && m_stylusMatchCursorActive)
+        {
+            holdStylusCursorAtCenterIfNotClicking(event->pos());
+            updateClipIfNeeded();
+        }
+    }
+#endif
+
     if (!touching)
         return;
 
     touching = false;
+#ifdef MELONPRIME_DS
+    topScreenTouchTransform = -1;
+#endif
     emu->releaseScreen();
 }
 
@@ -1015,6 +1232,10 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     }
 #endif
 
+#ifdef MELONPRIME_DS
+    holdStylusCursorAtCenterIfNotClicking(event->pos());
+#endif
+
     if (!touching)
         return;
 
@@ -1022,7 +1243,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     int x = p.x();
     int y = p.y();
 
-    if (layout.GetTouchCoords(x, y, true))
+    if (getTouchCoords(x, y, true))
     {
         emu->touchScreen(x, y);
     }
@@ -1032,7 +1253,14 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 void ScreenPanel::tabletEvent(QTabletEvent* event)
 {
     event->accept();
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
+    if (!emuInstance->emuIsActive())
+    {
+        touching = false;
+#ifdef MELONPRIME_DS
+        topScreenTouchTransform = -1;
+#endif
+        return;
+    }
 
     switch (event->type())
     {
@@ -1048,7 +1276,7 @@ void ScreenPanel::tabletEvent(QTabletEvent* event)
         int y = event->y();
 #endif
 
-        if (layout.GetTouchCoords(x, y, event->type() == QEvent::TabletMove))
+        if (getTouchCoords(x, y, event->type() == QEvent::TabletMove))
         {
             touching = true;
             emuInstance->touchScreen(x, y);
@@ -1060,6 +1288,9 @@ void ScreenPanel::tabletEvent(QTabletEvent* event)
         {
             emuInstance->releaseScreen();
             touching = false;
+#ifdef MELONPRIME_DS
+            topScreenTouchTransform = -1;
+#endif
         }
         break;
     default:
@@ -1075,7 +1306,14 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
 #endif
 
     event->accept();
-    if (!emuInstance->emuIsActive()) { touching = false; return; }
+    if (!emuInstance->emuIsActive())
+    {
+        touching = false;
+#ifdef MELONPRIME_DS
+        topScreenTouchTransform = -1;
+#endif
+        return;
+    }
 
     switch (event->type())
     {
@@ -1093,7 +1331,7 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
             int x = (int)lastPosition.x();
             int y = (int)lastPosition.y();
 
-            if (layout.GetTouchCoords(x, y, event->type() == QEvent::TouchUpdate))
+            if (getTouchCoords(x, y, event->type() == QEvent::TouchUpdate))
             {
                 touching = true;
                 emuInstance->touchScreen(x, y);
@@ -1105,6 +1343,9 @@ void ScreenPanel::touchEvent(QTouchEvent* event)
         {
             emuInstance->releaseScreen();
             touching = false;
+#ifdef MELONPRIME_DS
+            topScreenTouchTransform = -1;
+#endif
         }
         break;
     default:
@@ -1856,6 +2097,15 @@ struct ScreenPanelDX12::DX12State
     float screenMatrix[kMaxScreenTransforms][6]{};
     int screenKind[kMaxScreenTransforms]{};
     int numScreens = 0;
+    std::atomic<std::uint32_t> layoutRevision{0};
+    // Emulation-thread cache. The GUI-published arrays above are copied only
+    // when layoutRevision changes; a stable frame never takes layoutLock.
+    float cachedScreenMatrix[kMaxScreenTransforms][6]{};
+    int cachedScreenKind[kMaxScreenTransforms]{};
+    int cachedNumScreens = 0;
+    std::uint32_t cachedLayoutRevision = ~0u;
+    std::uint32_t rendererSnapshotRevision = ~0u;
+    melonDS::DX12Renderer* cachedDX12Renderer = nullptr;
     RendererOutputLease frameLease;
     QMutex fallbackLock;
     QImage fallbackFrame;
@@ -1946,6 +2196,8 @@ void ScreenPanelDX12::prepareForRendererTransition()
     dx12->presenter.InvalidateDirectDescriptorCache();
     dx12->frameLease.ReleaseNow();
     dx12->nativeVisibility.Reset();
+    dx12->rendererSnapshotRevision = ~0u;
+    dx12->cachedDX12Renderer = nullptr;
 }
 
 void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance)
@@ -2007,13 +2259,16 @@ void ScreenPanelDX12::setupScreenLayout()
     if (!dx12)
         return;
 
-    QMutexLocker lock(&dx12->layoutLock);
-    dx12->numScreens = std::min(numScreens, kMaxScreenTransforms);
-    for (int index = 0; index < dx12->numScreens; ++index)
     {
-        std::memcpy(dx12->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
-        dx12->screenKind[index] = screenKind[index];
+        QMutexLocker lock(&dx12->layoutLock);
+        dx12->numScreens = std::min(numScreens, kMaxScreenTransforms);
+        for (int index = 0; index < dx12->numScreens; ++index)
+        {
+            std::memcpy(dx12->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
+            dx12->screenKind[index] = screenKind[index];
+        }
     }
+    dx12->layoutRevision.fetch_add(1, std::memory_order_release);
 }
 
 void ScreenPanelDX12::resizeEvent(QResizeEvent* event)
@@ -2139,8 +2394,14 @@ bool ScreenPanelDX12::event(QEvent* event)
 
 void ScreenPanelDX12::requestNativeSurfaceVisible(bool visible)
 {
-    if (!dx12 || dx12->surfaceVisibleRequested.exchange(visible) == visible)
+    if (!dx12)
         return;
+    if (dx12->surfaceVisibleRequested.load(std::memory_order_relaxed) == visible)
+        return;
+    if (dx12->surfaceVisibleRequested.exchange(
+            visible, std::memory_order_acq_rel) == visible)
+        return;
+    MelonPrimePerf::CountSurfaceVisibilityStateChange();
 
     QMetaObject::invokeMethod(
         this,
@@ -2279,7 +2540,19 @@ void ScreenPanelDX12::drawScreen()
     auto* nds = emuInstance->getNDS();
     if (!nds)
         return;
-    auto* renderer = dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
+    const MelonPrime::PresentationConfigSnapshot presentation =
+        emuInstance->getPresentationConfigSnapshot();
+    if (presentation.revision != dx12->rendererSnapshotRevision)
+    {
+        dx12->rendererSnapshotRevision = presentation.revision;
+        dx12->cachedDX12Renderer = nullptr;
+        if (presentation.activeRenderer == renderer3D_DX12 || presentation.revision == 0)
+        {
+            dx12->cachedDX12Renderer =
+                dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
+        }
+    }
+    auto* renderer = dx12->cachedDX12Renderer;
     RendererOutputLease outputLease = nds->GPU.AcquireRendererOutputLease();
     const RendererOutput& output = outputLease.Output;
     const DX12PresentedFrame* gpuFrame = nullptr;
@@ -2322,18 +2595,30 @@ void ScreenPanelDX12::drawScreen()
     if (sourceWidth == 0 || sourceHeight == 0)
         return;
 
-    float matrices[kMaxScreenTransforms][6]{};
-    int kinds[kMaxScreenTransforms]{};
-    int screens = 0;
+    const std::uint32_t layoutRevision =
+        dx12->layoutRevision.load(std::memory_order_acquire);
+    if (layoutRevision != dx12->cachedLayoutRevision)
     {
         QMutexLocker lock(&dx12->layoutLock);
-        screens = dx12->numScreens;
-        for (int index = 0; index < screens; ++index)
+        dx12->cachedNumScreens =
+            std::min(dx12->numScreens, kMaxScreenTransforms);
+        for (int index = 0; index < dx12->cachedNumScreens; ++index)
         {
-            std::memcpy(matrices[index], dx12->screenMatrix[index], sizeof(float) * 6);
-            kinds[index] = dx12->screenKind[index];
+            std::memcpy(
+                dx12->cachedScreenMatrix[index],
+                dx12->screenMatrix[index],
+                sizeof(float) * 6);
+            dx12->cachedScreenKind[index] = dx12->screenKind[index];
         }
+        // Keep the revision observed before taking the lock. If the GUI
+        // publishes another layout immediately after this copy, retaining the
+        // older value forces one harmless refresh next frame instead of
+        // labelling an older cache with the newer arrays' revision.
+        dx12->cachedLayoutRevision = layoutRevision;
     }
+    const float (*matrices)[6] = dx12->cachedScreenMatrix;
+    const int* kinds = dx12->cachedScreenKind;
+    const int screens = dx12->cachedNumScreens;
 
     const int logicalWidth = static_cast<int>(std::max(1u, publishedSurface.LogicalWidth));
     const int logicalHeight = static_cast<int>(std::max(1u, publishedSurface.LogicalHeight));
@@ -2499,6 +2784,7 @@ void ScreenPanelDX12::drawScreen()
             }
         }
         if (mpForHud && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                mpForHud->HudConfigState(),
                 emuInstance, mpForHud->GetCurrentRom(), mpForHud->GetPlayerPosition()))
         {
             if (!screenUploaded[1])
@@ -2661,7 +2947,7 @@ void ScreenPanelDX12::drawScreen()
         return;
     }
 
-    const bool vsync = emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+    const bool vsync = presentation.vsync;
     // The presenter fires the vendor Present markers itself, around the DXGI
     // call. This panel does not mediate low-latency state.
     const bool presented = dx12->presenter.Present(vsync);
@@ -3404,7 +3690,11 @@ void ScreenPanel::unfocus()
         if (touching) {
             emu->releaseScreen();
             touching = false;
+            topScreenTouchTransform = -1;
         }
+        // The matching release can be delivered to whoever took focus, so the
+        // held-click latch is cleared here as well.
+        m_stylusClickHeld = false;
     }
 #endif
 

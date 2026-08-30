@@ -1,7 +1,8 @@
 # Vulkan Clean-Room Rewrite — Integration Contract and Delivered Status
 
-Branch: `develop_remakeVulkan`
+Planning/verification branch: `develop_remakeVulkan`
 Base commit at Phase 0: `2b90179cca8510c9721e7e8384f3dc550d6f07a6`
+Current reference branch: `develop_hud` (HEAD `2a0266f14`, checkout verified 2026-08-28)
 
 Sections 1-5 are the original **Phase 0 deliverable**: the contract the new
 Vulkan backend had to satisfy, derived **only from non-Vulkan callers** — the
@@ -13,6 +14,15 @@ Section 6 records what was actually **delivered**, and section 7 is the honest
 status table: what has been observed working, how it was observed, and what has
 not been observed at all. The backend's user-facing documentation is
 [`docs/features/rendering/vulkan-backend.md`](../../../features/rendering/vulkan-backend.md).
+
+The implementation and verification claims below are retained for their named
+phase snapshots. New implementation or verification should use the current
+reference branch; the dated claims are not a current-HEAD acceptance statement.
+In particular, the original Phase 0 contract and its verification table
+intentionally retain the historical `35 pipelines x 3 buckets = 105` snapshot.
+The maintained backend has since grown to 39 pipeline families and 117 variants;
+use the current [Vulkan backend reference](../../../features/rendering/vulkan-backend.md)
+for that maintained count.
 
 ## 1. Permitted reference sources
 
@@ -527,7 +537,7 @@ Nothing below has been observed working. None of it may be described as verified
 
 ### 7.4 Audit results (phase 15-18 sweep)
 
-All pass on the current tree:
+All pass on the phase 15-18 verification tree:
 
 | Audit | Result |
 |---|---|

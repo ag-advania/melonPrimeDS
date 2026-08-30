@@ -127,5 +127,11 @@ The strongest causal evidence is an A/B with the setting off (52200 reproduces) 
 
 ## Analysis source
 
-`mphAnalysis/WiFi/Wiimmfi-Reconnect-52200/` — per-version `atoi` / `strtol` disassembly notes,
-the CRT errno table, and the Recomp fix investigation.
+The reverse-engineering notes are maintained in the sibling `mphCodex`
+checkout rather than copied into this repository:
+
+`C:\Users\Admin\Documents\git\mphCodex\mphAnalysis\WiFi\Wiimmfi-Reconnect-52200\Wiimmfi-Reconnect-52200-Complete-Knowledge-AllVersions-EN.md`
+
+That file contains the per-version `atoi` / `strtol` disassembly notes, the
+CRT errno table, and the Recomp fix investigation. The current melonPrimeDS
+source and lifecycle remain authoritative for implementation behavior.

@@ -135,6 +135,25 @@ enum
     renderer3D_Max,
 };
 
+#ifdef MELONPRIME_DS
+namespace MelonPrime {
+
+// Published by EmuThread at the cold renderer/configuration boundary. Native
+// presenters consume this one immutable-at-read snapshot instead of querying
+// Config::Table on every frame. `configuredRenderer` remains the user's
+// requested value; `activeRenderer` is the renderer that actually survived
+// construction/fallback.
+struct PresentationConfigSnapshot
+{
+    bool vsync = false;
+    int configuredRenderer = renderer3D_Software;
+    int activeRenderer = renderer3D_Software;
+    std::uint32_t revision = 0;
+};
+
+} // namespace MelonPrime
+#endif // MELONPRIME_DS
+
 bool isRightModKey(QKeyEvent* event);
 int getEventKeyVal(QKeyEvent* event);
 
@@ -194,6 +213,10 @@ public:
 
     void drawScreen();
 #ifdef MELONPRIME_DS
+    void publishPresentationConfig(
+        bool vsync, int configuredRenderer, int activeRenderer) noexcept;
+    [[nodiscard]] MelonPrime::PresentationConfigSnapshot
+    getPresentationConfigSnapshot() const noexcept;
     void invalidateRendererOutput();
 #if defined(MELONPRIME_ENABLE_VULKAN)
     void beginVulkanLowLatencyFrame(
@@ -509,6 +532,12 @@ private:
     // Bits latched by onMouseWheel(); cleared after edge detection so the
     // virtual key is a one-frame press rather than a held button.
     std::atomic<uint64_t> wheelHotkeyPulseMask{0};
+
+    // Packed acquire/release publication keeps VSync, configured renderer,
+    // actual renderer, and their revision coherent with one atomic load in
+    // the presenter hot path. Bits: 0=VSync, 8..15=configured, 16..23=active,
+    // 32..63=revision.
+    std::atomic<std::uint64_t> presentationConfigBits{0};
 #else
     melonDS::u32 keyInputMask, joyInputMask;
     melonDS::u32 keyHotkeyMask, joyHotkeyMask;

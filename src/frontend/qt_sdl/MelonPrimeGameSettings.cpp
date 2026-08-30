@@ -1,23 +1,13 @@
 #include "MelonPrimeGameSettings.h"
-#include "MelonPrimeDef.h"
+#include "MelonPrimeRuntimeConfig.h"
 #include "NDS.h"
 
 namespace MelonPrime {
 
-    uint16_t MelonPrimeGameSettings::SensiNumToSensiVal(double sensiNum)
-    {
-        constexpr double BASE_VAL = 2457.0; // 0x0999
-        constexpr double STEP_VAL = 409.0;  // 0x0199
-
-        // FMA-friendly: val + 0.5 then cast is a standard fast-round for positive numbers
-        const double val = BASE_VAL + (sensiNum - 1.0) * STEP_VAL;
-        return static_cast<uint16_t>(std::min(static_cast<uint32_t>(val + 0.5), 0xFFFFu));
-    }
-
     bool MelonPrimeGameSettings::ApplyHeadphone(
-        melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr)
+        melonDS::NDS* nds, const MenuGameSettingsSnapshot& settings, melonDS::u32 addr)
     {
-        if (!nds || !localCfg.GetBool(CfgKey::Headphone)) return false;
+        if (!nds || !settings.headphoneEnabled) return false;
 
         const uint8_t oldVal = nds->ARM9Read8(addr);
         constexpr uint8_t kMask = 0x18;
@@ -28,16 +18,12 @@ namespace MelonPrime {
     }
 
     bool MelonPrimeGameSettings::ApplyLicenseColorStrict(
-        melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr)
+        melonDS::NDS* nds, const MenuGameSettingsSnapshot& settings, melonDS::u32 addr)
     {
-        if (!nds || !localCfg.GetBool(CfgKey::LicColorApply)) return false;
+        if (!nds || !settings.licenseColorApply) return false;
 
-        const int sel = localCfg.GetInt(CfgKey::LicColorSel);
-        if (sel < 0 || sel > 2) return false;
-
-        constexpr std::array<uint8_t, 3> kColorBits = { 0x00, 0x40, 0x80 };
         const uint8_t oldVal = nds->ARM9Read8(addr);
-        const uint8_t newVal = (oldVal & 0x3F) | kColorBits[sel];
+        const uint8_t newVal = (oldVal & 0x3F) | settings.licenseColorBits;
         if (newVal == oldVal) return false;
 
         nds->ARM9Write8(addr, newVal);
@@ -45,15 +31,12 @@ namespace MelonPrime {
     }
 
     bool MelonPrimeGameSettings::ApplySelectedHunterStrict(
-        melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr)
+        melonDS::NDS* nds, const MenuGameSettingsSnapshot& settings, melonDS::u32 addr)
     {
-        if (!nds || !localCfg.GetBool(CfgKey::HunterApply)) return false;
-
-        constexpr std::array<uint8_t, 7> kHunterBits = { 0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30 };
-        const int sel = std::clamp(localCfg.GetInt(CfgKey::HunterSel), 0, 6);
+        if (!nds || !settings.hunterApply) return false;
 
         const uint8_t oldVal = nds->ARM9Read8(addr);
-        const uint8_t newVal = (oldVal & ~0x78) | (kHunterBits[sel] & 0x78);
+        const uint8_t newVal = (oldVal & ~0x78) | (settings.hunterBits & 0x78);
         if (newVal == oldVal) return false;
 
         nds->ARM9Write8(addr, newVal);
@@ -61,9 +44,9 @@ namespace MelonPrime {
     }
 
     bool MelonPrimeGameSettings::UseDsName(
-        melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr)
+        melonDS::NDS* nds, const MenuGameSettingsSnapshot& settings, melonDS::u32 addr)
     {
-        if (!nds || !localCfg.GetBool(CfgKey::UseFwName)) return false;
+        if (!nds || !settings.useFirmwareName) return false;
 
         const uint8_t oldVal = nds->ARM9Read8(addr);
         const uint8_t newVal = oldVal & ~0x01;
@@ -74,13 +57,13 @@ namespace MelonPrime {
     }
 
     bool MelonPrimeGameSettings::ApplySfxVolume(
-        melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr)
+        melonDS::NDS* nds, const MenuGameSettingsSnapshot& settings, melonDS::u32 addr)
     {
-        if (!nds || !localCfg.GetBool(CfgKey::SfxVolApply)) return false;
+        if (!nds || !settings.sfxApply) return false;
 
         const uint8_t oldVal = nds->ARM9Read8(addr);
-        const uint8_t steps = static_cast<uint8_t>(std::clamp(localCfg.GetInt(CfgKey::SfxVol), 0, 9));
-        const uint8_t newVal = (oldVal & 0xC0) | ((steps & 0x0F) << 2) | 0x03;
+        const uint8_t newVal = (oldVal & 0xC0)
+            | ((settings.sfxSteps & 0x0F) << 2) | 0x03;
 
         if (newVal == oldVal) return false;
         nds->ARM9Write8(addr, newVal);
@@ -88,13 +71,13 @@ namespace MelonPrime {
     }
 
     bool MelonPrimeGameSettings::ApplyMusicVolume(
-        melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addr)
+        melonDS::NDS* nds, const MenuGameSettingsSnapshot& settings, melonDS::u32 addr)
     {
-        if (!nds || !localCfg.GetBool(CfgKey::MusicVolApply)) return false;
+        if (!nds || !settings.musicApply) return false;
 
         const uint8_t oldVal = nds->ARM9Read8(addr);
-        const uint8_t steps = static_cast<uint8_t>(std::clamp(localCfg.GetInt(CfgKey::MusicVol), 0, 9));
-        const uint8_t newVal = (oldVal & ~0x3C) | ((steps & 0x0F) << 2);
+        const uint8_t newVal = (oldVal & ~0x3C)
+            | ((settings.musicSteps & 0x0F) << 2);
 
         if (newVal == oldVal) return false;
         nds->ARM9Write8(addr, newVal);
@@ -102,19 +85,20 @@ namespace MelonPrime {
     }
 
     void MelonPrimeGameSettings::ApplyMphSensitivity(
-        melonDS::NDS* nds, Config::Table& localCfg, melonDS::u32 addrSensi, melonDS::u32 addrInGame, bool inGameInit)
+        melonDS::NDS* nds, const MenuGameSettingsSnapshot& settings, melonDS::u32 addrSensi, melonDS::u32 addrInGame, bool inGameInit)
     {
-        const double mphSensi = localCfg.GetDouble(CfgKey::MphSens);
-        const uint16_t sensiVal = SensiNumToSensiVal(mphSensi);
-        nds->ARM9Write16(addrSensi, sensiVal);
-        if (inGameInit) nds->ARM9Write16(addrInGame, sensiVal);
+        const uint16_t sensiVal = settings.mphSensitivityValue;
+        if (nds->ARM9Read16(addrSensi) != sensiVal)
+            nds->ARM9Write16(addrSensi, sensiVal);
+        if (inGameInit && nds->ARM9Read16(addrInGame) != sensiVal)
+            nds->ARM9Write16(addrInGame, sensiVal);
     }
 
     bool MelonPrimeGameSettings::ApplyUnlockHuntersMaps(
-        melonDS::NDS* nds, Config::Table& localCfg,
+        melonDS::NDS* nds, const MenuGameSettingsSnapshot& settings,
         melonDS::u32 a1, melonDS::u32 a2, melonDS::u32 a3, melonDS::u32 a4, melonDS::u32 a5)
     {
-        if (!localCfg.GetBool(CfgKey::DataUnlock)) return false;
+        if (!nds || !settings.dataUnlockEnabled) return false;
 
         // Read-before-write: only write if the value was reset by the game.
         // On most frames nothing has changed so this is effectively a no-op.

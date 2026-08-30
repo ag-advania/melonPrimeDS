@@ -143,7 +143,7 @@ records in:
 
 - [`vulkan_reflex_acquire_budget_2026-08-18.md`](vulkan_reflex_acquire_budget_2026-08-18.md)
 - [`vulkan_reflex_acquire_budget_followup_2026-08-18.md`](vulkan_reflex_acquire_budget_followup_2026-08-18.md)
-- [`vulkan-low-latency.md`](../development/performance/vulkan-low-latency.md)
+- [`vulkan-low-latency.md`](../../../../development/performance/vulkan-low-latency.md)
 
 Those records are retained as historical baseline evidence. They predate the
 P1–P4 commits and are not exact-current-SHA proof for optimized-mode selection,

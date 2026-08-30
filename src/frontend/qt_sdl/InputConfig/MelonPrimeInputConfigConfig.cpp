@@ -82,13 +82,17 @@ void MelonPrimeInputConfig::saveConfig()
     // sync, in-game scaling, low-HP thresholds) are saved here from the same
     // binding table used to load them. Keys are disjoint so order is irrelevant.
     saveBindings(instcfg);
+    for (int i = 0; i < emuInstance->getNumWindows(); ++i) {
+        MainWindow* win = emuInstance->getWindow(i);
+        if (win && win->panel) {
+            win->panel->refreshTopScreenTouchSetting();
+            win->panel->refreshStylusCursorSettings();
+        }
+    }
 
     int lowLatencyAimMode = m_comboMetroidLowLatencyAimMode
         ? m_comboMetroidLowLatencyAimMode->currentData().toInt()
         : MelonPrime::LowLatencyAimMode::Off;
-    if (!kDeveloperOnlyFeaturesEnabled
-        && lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow)
-        lowLatencyAimMode = MelonPrime::LowLatencyAimMode::ImmediateSync;
     instcfg.SetInt(MelonPrime::CfgKey::LowLatencyAimMode, lowLatencyAimMode);
     int nativeAimHookMode = 0;
     if constexpr (kDeveloperOnlyFeaturesEnabled) {
@@ -121,27 +125,29 @@ void MelonPrimeInputConfig::saveConfig()
                 ? MelonPrime::BipedFireMethod::NewNativeEdge
                 : MelonPrime::BipedFireMethod::LegacyInput);
     }
-    if (m_cbMetroidUseNewZoomMethod || m_cbMetroidUseNewZoomMethod2) {
-        int zoomMethod = MelonPrime::ZoomInputMethod::LegacyFixedR;
-        if (kDeveloperOnlyFeaturesEnabled
-            && m_cbMetroidUseNewZoomMethod2
-            && m_cbMetroidUseNewZoomMethod2->isChecked())
-            zoomMethod = MelonPrime::ZoomInputMethod::NewNativeToggle;
-        else if (m_cbMetroidUseNewZoomMethod && m_cbMetroidUseNewZoomMethod->isChecked())
-            zoomMethod = MelonPrime::ZoomInputMethod::NewPresetBinding;
+    if (m_cbMetroidFpsCameraLock) {
+        instcfg.SetBool(
+            MelonPrime::CfgKey::FpsCameraLock,
+            m_cbMetroidFpsCameraLock->isChecked());
+    }
+    if (m_cbMetroidUseNewZoomMethod2) {
+        // Writing this back also normalizes the retired NewPresetBinding value
+        // out of older configs: it now behaves exactly like LegacyFixedR.
         instcfg.SetInt(
             MelonPrime::CfgKey::ZoomInputMethod,
-            zoomMethod);
+            kDeveloperOnlyFeaturesEnabled && m_cbMetroidUseNewZoomMethod2->isChecked()
+                ? MelonPrime::ZoomInputMethod::NewNativeToggle
+                : MelonPrime::ZoomInputMethod::LegacyFixedR);
     }
     // Legacy key migration. Keep until the first post-V3 release gives old
     // configs a save cycle; see the Phase 4 migration ledger.
     // Do not add new reads.
-    // Keep the legacy InstantAimFollow bool off in public builds. Developer
-    // builds may still mirror the developer-only mode for local test configs.
+    // Keep the old key mirrored for configs from before the independent
+    // FpsCameraLock key was introduced.
     instcfg.SetBool(
         MelonPrime::CfgKey::InstantAimFollow,
-        kDeveloperOnlyFeaturesEnabled
-            && lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
+        m_cbMetroidFpsCameraLock
+            && m_cbMetroidFpsCameraLock->isChecked());
 
     // Screen Sync Mode, In-game scaling, and Low HP warning thresholds are all
     // saved via saveBindings() above (binding table). Clip/TopScreen stay below
@@ -173,6 +179,12 @@ void MelonPrimeInputConfig::saveConfig()
 
     // Custom HUD
     instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, ui->cbMetroidEnableCustomHud->checkState() == Qt::Checked);
+    instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes,
+        ui->cbMetroidHudCrosshairHighRes->checkState() == Qt::Checked);
+    instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable,
+        ui->cbMetroidHudCrosshairDeadbandEnable->checkState() == Qt::Checked);
+    instcfg.SetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband,
+        ui->dsbMetroidHudCrosshairDeadband->value());
     instcfg.SetInt(
         MelonPrime::CfgKey::OnScreenEditStyle,
         static_cast<int>(MelonPrime::NormalizeOnScreenEditStyle(
@@ -226,8 +238,6 @@ void MelonPrimeInputConfig::saveConfig()
 
     // P-3: Invalidate cached config so next frame re-reads all values
 #ifdef MELONPRIME_DS
-    MelonPrime::ShadowFreezeRuntimeHook_NotifyConfigChanged();
-    MelonPrime::FixNoxusBladePersistence_NotifyConfigChanged();
     if (auto* thread = emuInstance->getEmuThread()) {
         if (auto* core = thread->GetMelonPrimeCore())
         {

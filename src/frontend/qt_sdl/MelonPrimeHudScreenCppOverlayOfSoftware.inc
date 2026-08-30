@@ -64,7 +64,7 @@
                 // Per-frame painter (must end before reading image)
                 curDirty = MelonPrimeHud_RenderTopOverlay(
                     emuInstance, instcfg, mp,
-                    Overlay[0], overlayFont,
+                    Overlay[0], overlayFont, m_hudEnabled,
                     topStretchX, hudScale,
                     m_hudOriginX, m_hudOriginY,
                     m_radarEnable ? MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE : nullptr,

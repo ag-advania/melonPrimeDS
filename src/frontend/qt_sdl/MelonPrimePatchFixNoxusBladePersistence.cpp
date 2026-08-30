@@ -1,12 +1,9 @@
 #ifdef MELONPRIME_DS
 
 #include "MelonPrimePatchFixNoxusBladePersistence.h"
-#include "Config.h"
-#include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "NDS.h"
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -97,6 +94,17 @@ static const DeathCleanupHook* FindHook(
     }
 }
 
+static const DeathCleanupHook* FindHook(
+    uint8_t romGroupIndex,
+    uint32_t arm9ExecAddr)
+{
+    if (romGroupIndex >= sizeof(kRomHooks) / sizeof(kRomHooks[0]))
+        return nullptr;
+
+    const RomDeathCleanupHooks& hooks = kRomHooks[romGroupIndex];
+    return FindHook(hooks.Hooks, hooks.Count, arm9ExecAddr);
+}
+
 static bool ApplyHookInternal(
     melonDS::NDS* nds,
     uint32_t arm9ExecAddr,
@@ -120,16 +128,6 @@ static bool ApplyHookInternal(
     return true;
 }
 
-// File-static hook state — set/cleared by the shared dispatcher.
-static Config::Table* s_cfg            = nullptr;
-static const DeathCleanupHook* s_activeHooks = nullptr;
-static std::size_t s_activeHookCount = 0;
-
-// Config generation cache: avoids GetBool map lookup on every hook invocation.
-static std::atomic<uint32_t> s_configGen{1};
-static uint32_t s_configGenSeen  = 0;   // emu thread only
-static bool     s_enabledCached  = false; // emu thread only
-
 } // anonymous namespace
 
 uint32_t FixNoxusBladePersistence_GetAddresses(
@@ -145,71 +143,20 @@ uint32_t FixNoxusBladePersistence_GetAddresses(
     return count;
 }
 
-void FixNoxusBladePersistence_SetState(Config::Table* cfg, uint8_t romGroupIndex)
-{
-    s_cfg           = cfg;
-
-    if (romGroupIndex < sizeof(kRomHooks) / sizeof(kRomHooks[0]))
-    {
-        s_activeHooks = kRomHooks[romGroupIndex].Hooks;
-        s_activeHookCount = kRomHooks[romGroupIndex].Count;
-    }
-    else
-    {
-        s_activeHooks = nullptr;
-        s_activeHookCount = 0;
-    }
-
-    const uint32_t gen = s_configGen.load(std::memory_order_acquire);
-    s_enabledCached = cfg
-        && cfg->GetBool(MelonPrime::CfgKey::FixNoxusBladePersistence);
-    s_configGenSeen = gen;
-}
-
-void FixNoxusBladePersistence_ClearState()
-{
-    s_cfg           = nullptr;
-    s_activeHooks = nullptr;
-    s_activeHookCount = 0;
-    s_enabledCached = false;
-}
-
 void FixNoxusBladePersistence_DispatchCheck(
     melonDS::NDS* nds,
+    uint8_t romGroupIndex,
     uint32_t arm9ExecAddr,
     const uint32_t regs[16])
 {
-    if (!s_cfg)
-        return;
-
-    const uint32_t gen = s_configGen.load(std::memory_order_acquire);
-    if (s_configGenSeen != gen)
-    {
-        s_enabledCached = s_cfg->GetBool(MelonPrime::CfgKey::FixNoxusBladePersistence);
-        s_configGenSeen = gen;
-    }
-    if (!s_enabledCached)
+    if (!nds || !regs)
         return;
 
     ApplyHookInternal(
         nds,
         arm9ExecAddr,
-        FindHook(s_activeHooks, s_activeHookCount, arm9ExecAddr),
+        FindHook(romGroupIndex, arm9ExecAddr),
         regs);
-}
-
-void FixNoxusBladePersistence_ResetPatchState()
-{
-    s_cfg           = nullptr;
-    s_activeHooks = nullptr;
-    s_activeHookCount = 0;
-    s_configGenSeen = 0;
-    s_enabledCached = false;
-}
-
-void FixNoxusBladePersistence_NotifyConfigChanged()
-{
-    s_configGen.fetch_add(1, std::memory_order_release);
 }
 
 } // namespace MelonPrime

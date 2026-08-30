@@ -76,7 +76,7 @@
                     // Per-frame painter (must end before GL upload reads image bits)
                     curDirty = MelonPrimeHud_RenderTopOverlay(
                         emuInstance, instcfg, mp,
-                        Overlay[0], overlayFont,
+                        Overlay[0], overlayFont, m_hudEnabled,
                         topStretchX, hudScale,
                         m_hudOriginX, m_hudOriginY);
                     uploadRect = previousDirty.united(curDirty);
@@ -204,6 +204,7 @@
                 if (m_radarEnable &&
                     m_hudTopMatrixValid &&
                     MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                        mp->HudConfigState(),
                         emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
                 {
                     // Use cached config values — no hash-map lookups per-frame.

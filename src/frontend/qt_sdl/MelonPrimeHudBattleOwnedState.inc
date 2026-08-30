@@ -6,8 +6,8 @@
 //
 //  The sampling fragment defines BattleMatchState's game-facing value type.
 //  This adjacent fragment owns the one runtimeState slot that stores it and
-//  the native-HUD restore edge that shares that lifetime.  Keeping the slot
-//  and construction path here does not change allocation count or layout.
+//  the native-HUD restore edge that shares that lifetime.  The typed owner is
+//  constructed by CustomHudConfigState's cold constructor.
 // =========================================================================
 
 struct HudBattleOwnedState {
@@ -15,12 +15,9 @@ struct HudBattleOwnedState {
     bool patchForceRestorePending = true;
 };
 
-static HudBattleOwnedState& HudBattleState()
+static FORCE_INLINE HudBattleOwnedState& HudBattleState() noexcept
 {
-    auto& slot = ActiveHudConfigState().runtimeState;
-    if (!slot)
-        slot = std::make_shared<HudBattleOwnedState>();
-    return *std::static_pointer_cast<HudBattleOwnedState>(slot);
+    return *ActiveHudConfigState().runtimeState;
 }
 
 #define s_battleState (HudBattleState().battle)

@@ -192,10 +192,10 @@ protected:
         static int cachedHeight = -1;
         if (cachedHeight != height) {
             static const char* const paths[7] = {
-                ":/mph-scoreboard-hunter-0", ":/mph-scoreboard-hunter-1",
-                ":/mph-scoreboard-hunter-2", ":/mph-scoreboard-hunter-3",
-                ":/mph-scoreboard-hunter-4", ":/mph-scoreboard-hunter-5",
-                ":/mph-scoreboard-hunter-6",
+                ":/mph-scoreboard-hunter-0-p1", ":/mph-scoreboard-hunter-1-p1",
+                ":/mph-scoreboard-hunter-2-p1", ":/mph-scoreboard-hunter-3-p1",
+                ":/mph-scoreboard-hunter-4-p1", ":/mph-scoreboard-hunter-5-p1",
+                ":/mph-scoreboard-hunter-6-p1",
             };
             for (int i = 0; i < 7; ++i)
                 icons[i] = loadRasterToHeight(paths[i], height);

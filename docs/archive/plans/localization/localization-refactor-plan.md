@@ -1,7 +1,8 @@
 # MelonPrimeLocalization 多言語対応リファクタリング計画
 
 作成日: 2026-07-04  
-対象ブランチ: `highres_fonts_v3`  
+作成時対象ブランチ: `highres_fonts_v3`
+現行参照ブランチ: `develop_hud`（HEAD `94f08caf0`、2026-08-27）
 対象領域: `src/frontend/qt_sdl/MelonPrimeLocalization.*`  
 新規分割先候補: `src/frontend/qt_sdl/MelonPrimeLocalization/`
 
@@ -1063,7 +1064,7 @@ python3 tools/ci/audits/localization/audit-melonprime-localization.py
 ## 10. Cursor / Claude 投げ込み用プロンプト
 
 ```txt
-現在の highres_fonts_v3 ブランチで、MelonPrimeLocalization の多言語対応を段階的にリファクタリングしてください。
+計画作成時の `highres_fonts_v3` スナップショットを前提に、MelonPrimeLocalization の多言語対応を段階的にリファクタリングしてください。
 
 新規ディレクトリ:
 src/frontend/qt_sdl/MelonPrimeLocalization/

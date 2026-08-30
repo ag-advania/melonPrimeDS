@@ -10,11 +10,18 @@
 
 namespace MelonPrime::InputProjection {
 
-alignas(64) inline constexpr std::array<uint8_t, 16> MoveLUT = {
-    0xF0, 0xB0, 0x70, 0xF0,
-    0xD0, 0x90, 0x50, 0xD0,
-    0xE0, 0xA0, 0x60, 0xE0,
-    0xF0, 0xB0, 0x70, 0xF0,
+// Out-of-game menu movement, as a DS button mask to PRESS per 4-bit move index
+// (Forward/Back/Left/Right, opposite pairs cancel).
+//
+// Menus are not control-preset bound: the Adventure planet/region map and the
+// Hunter License pages navigate on the D-pad whatever the player picked for
+// in-game movement. Only the in-game path uses the preset table that
+// MelonPrimeCore::PresetButtonBindings::Build() derives per game join.
+alignas(64) inline constexpr std::array<uint16_t, 16> MenuMoveMask = {
+    0x0000, 0x0040, 0x0080, 0x0000,
+    0x0020, 0x0060, 0x00A0, 0x0020,
+    0x0010, 0x0050, 0x0090, 0x0010,
+    0x0000, 0x0040, 0x0080, 0x0000,
 };
 
 static_assert(HK_MetroidMoveBack        == HK_MetroidMoveForward + 1, "Move group must stay contiguous");

@@ -69,8 +69,15 @@ void MelonPrimeInputConfig::snapshotVisualConfig()
         if (!widgetAlive(w)) return;
         s[k] = w->currentIndex();
     };
+    auto sD = [&](const char* k, QDoubleSpinBox* w) {
+        if (!widgetAlive(w)) return;
+        s[k] = w->value();
+    };
 
     sB("cCustomHud",       ui->cbMetroidEnableCustomHud);
+    sB("cChHighRes",       ui->cbMetroidHudCrosshairHighRes);
+    sB("cChDeadbandOn",    ui->cbMetroidHudCrosshairDeadbandEnable);
+    sD("dChDeadband",      ui->dsbMetroidHudCrosshairDeadband);
     sB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     sC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     if (widgetAlive(ui->comboMetroidOnScreenEditStyle))
@@ -130,8 +137,19 @@ void MelonPrimeInputConfig::restoreVisualSnapshot()
         w->setCurrentIndex(it->toInt());
         w->blockSignals(false);
     };
+    auto rD = [&](const char* k, QDoubleSpinBox* w) {
+        if (!widgetAlive(w)) return;
+        auto it = s.find(k);
+        if (it == s.end()) return;
+        w->blockSignals(true);
+        w->setValue(it->toDouble());
+        w->blockSignals(false);
+    };
 
     rB("cCustomHud",       ui->cbMetroidEnableCustomHud);
+    rB("cChHighRes",       ui->cbMetroidHudCrosshairHighRes);
+    rB("cChDeadbandOn",    ui->cbMetroidHudCrosshairDeadbandEnable);
+    rD("dChDeadband",      ui->dsbMetroidHudCrosshairDeadband);
     rB("cAspectRatio",     ui->cbMetroidInGameAspectRatio);
     rC("cAspectRatioMode", ui->comboMetroidInGameAspectRatioMode);
     if (widgetAlive(ui->comboMetroidOnScreenEditStyle)) {
@@ -200,6 +218,19 @@ void MelonPrimeInputConfig::applyVisualPreview()
 
     Config::Table& instcfg = emuInstance->getLocalConfig();
     instcfg.SetBool(MP_HUD_PROP_KEY_CustomHUD,              customHud->isChecked());
+    if (const QPointer<QCheckBox> chHighRes = ui->cbMetroidHudCrosshairHighRes;
+        widgetAlive(chHighRes)) {
+        instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes, chHighRes->isChecked());
+    }
+    if (const QPointer<QCheckBox> chDeadbandOn = ui->cbMetroidHudCrosshairDeadbandEnable;
+        widgetAlive(chDeadbandOn)) {
+        instcfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable,
+                        chDeadbandOn->isChecked());
+    }
+    if (const QPointer<QDoubleSpinBox> chDeadband = ui->dsbMetroidHudCrosshairDeadband;
+        widgetAlive(chDeadband)) {
+        instcfg.SetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband, chDeadband->value());
+    }
     instcfg.SetBool(MP_HUD_PROP_KEY_InGameAspectRatio,      aspectRatio->isChecked());
     instcfg.SetInt (MP_HUD_PROP_KEY_InGameAspectRatioMode,  aspectRatioMode->currentIndex());
     instcfg.SetBool(MP_HUD_PROP_KEY_ClipCursorToBottomScreenWhenNotInGame, clipCursor->isChecked());

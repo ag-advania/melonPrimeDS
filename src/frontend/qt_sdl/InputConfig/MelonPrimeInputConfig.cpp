@@ -86,9 +86,8 @@ namespace {
             mode,
             MelonPrime::LowLatencyAimMode::Off,
             MelonPrime::LowLatencyAimMode::InstantAimFollow);
-        if (!kDeveloperOnlyFeaturesEnabled
-            && clamped == MelonPrime::LowLatencyAimMode::InstantAimFollow)
-            return MelonPrime::LowLatencyAimMode::ImmediateSync;
+        // InstantAimFollow is retained as a legacy value for the independent
+        // FPS camera-lock feature. Never reinterpret it as ImmediateSync.
         return clamped;
     }
 
@@ -471,6 +470,16 @@ void MelonPrimeInputConfig::buildSettingBindings()
         // slots and nothing cross-reads it, so its load position is not observable; it
         // is loaded with the other bug fixes in segment 3a.
         { C::WifiReconnect,  K::CheckBool,        ui->cbMetroidFixWifiReconnect },       // 48
+        // GUI-only touch routing has no load-time side effects. Keep it appended so
+        // every historical binding index and observable load order remains stable.
+        { C::TopScreenTouch, K::CheckBool,        ui->cbMetroidEnableTopScreenTouch },   // 49
+        // Battle in-match touch-screen HUD hit-test patch. Registry-applied at
+        // battle runtime / config reload, so this row only mirrors the checkbox.
+        { C::TouchScreenAimOnly, K::CheckBool,    ui->cbMetroidEnableTouchScreenAimOnly }, // 50
+        // GUI-only cursor presentation; reconciled by the panel, no load-time side effects.
+        { C::StylusHideCursorInGame, K::CheckBool, ui->cbMetroidEnableStylusHideCursorInGame }, // 51
+        { C::StylusConfineCursorToTopScreen, K::CheckBool, ui->cbMetroidEnableStylusConfineCursorToTopScreen }, // 52
+        { C::StylusHoldCursorAtCenterWhenNotClicking, K::CheckBool, ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking }, // 53
     };
 }
 
@@ -598,7 +607,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
             QStringLiteral("QLabel { margin-left: 20px; }"));
 
         m_cbMetroidMorphBoostCustomRawThreshold = new QCheckBox(
-            QStringLiteral("Use Custom Raw Mouse Movement Threshold"),
+            QStringLiteral("Use Custom Raw Mouse Movement Threshold for Morph Ball Boost"),
             ui->sectionSensitivity);
         m_cbMetroidMorphBoostCustomRawThreshold->setObjectName(
             QStringLiteral("cbMetroidMorphBoostCustomRawThreshold"));
@@ -688,6 +697,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
     // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
     loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
+    loadBindingsRange(instcfg, 49, 54); // top-screen touch, touch-screen aim-only, stylus cursor options
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);
@@ -709,7 +719,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     if (!m_comboMetroidLowLatencyAimMode) {
         m_comboMetroidLowLatencyAimMode = new QComboBox(ui->sectionSensitivity);
         m_comboMetroidLowLatencyAimMode->addItem(
-            QStringLiteral("Off"),
+            QStringLiteral("MPH native"),
             MelonPrime::LowLatencyAimMode::Off);
         m_comboMetroidLowLatencyAimMode->addItem(
             QStringLiteral("Immediate Sync"),
@@ -717,11 +727,6 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         m_comboMetroidLowLatencyAimMode->addItem(
             QStringLiteral("MoonLike Aim"),
             MelonPrime::LowLatencyAimMode::MoonLikeAim);
-        if constexpr (kDeveloperOnlyFeaturesEnabled) {
-            m_comboMetroidLowLatencyAimMode->addItem(
-                QStringLiteral("Instant Aim Follow (Developer Only)"),
-                MelonPrime::LowLatencyAimMode::InstantAimFollow);
-        }
         m_comboMetroidLowLatencyAimMode->setToolTip(
             QStringLiteral("Controls how the game's current aim direction follows the target aim direction."));
         int lowLatencyAimMode = ClampLowLatencyAimMode(
@@ -729,27 +734,48 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
         // Legacy key migration. Keep until the first post-V3 release gives
         // old configs a save cycle; see the Phase 4 migration ledger.
         // Do not add new reads.
-        // Old configs only had the InstantAimFollow bool; map it onto the new
-        // public replacement when the new key is still at its Off default.
-        if (lowLatencyAimMode == MelonPrime::LowLatencyAimMode::Off
-            && instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow))
-            lowLatencyAimMode = MelonPrime::LowLatencyAimMode::ImmediateSync;
         SetComboCurrentData(m_comboMetroidLowLatencyAimMode, lowLatencyAimMode);
 
-        m_lblMetroidLowLatencyAimMode = new QLabel(QStringLiteral("Low-Latency Aim Mode"), ui->sectionSensitivity);
+        m_lblMetroidLowLatencyAimMode = new QLabel(QStringLiteral("Aim Follow Mode"), ui->sectionSensitivity);
         m_lblMetroidLowLatencyAimMode->setToolTip(m_comboMetroidLowLatencyAimMode->toolTip());
         QString lowLatencyAimDesc = QStringLiteral(
-            "Immediate Sync uses the low-latency ARM9 hook to sync currentAim to targetAim at the hook point and rebuild the aim basis. "
+            "MPH native keeps the game's own aim follow. That is the recommended setting and is unrelated to aim smoothing. "
+            "Immediate Sync syncs currentAim to targetAim at the ARM9 hook point. "
             "MoonLike Aim applies small aim movements immediately and limits only large aim jumps with a max-step chase. "
-            "Requires Disable Aim Smoothing.");
+            "Both work on Touch and Dual control presets alike.");
         m_lblMetroidLowLatencyAimDesc = new QLabel(lowLatencyAimDesc, ui->sectionSensitivity);
         m_lblMetroidLowLatencyAimDesc->setObjectName(QStringLiteral("lblMetroidLowLatencyAimDesc"));
         m_lblMetroidLowLatencyAimDesc->setWordWrap(true);
         m_lblMetroidLowLatencyAimDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
 
+        m_cbMetroidFpsCameraLock = new QCheckBox(
+            QStringLiteral("FPS Camera Lock (Instant Aim Follow)"),
+            ui->sectionSensitivity);
+        m_cbMetroidFpsCameraLock->setObjectName(QStringLiteral("cbMetroidFpsCameraLock"));
+        m_cbMetroidFpsCameraLock->setToolTip(QStringLiteral(
+            "Checked: the body always faces exactly where the gun points. "
+            "Unchecked (recommended): the game's own free-aim lead is kept."));
+        m_cbMetroidFpsCameraLock->setChecked(
+            instcfg.GetBool(MelonPrime::CfgKey::FpsCameraLock)
+            || instcfg.GetBool(MelonPrime::CfgKey::InstantAimFollow)
+            || lowLatencyAimMode == MelonPrime::LowLatencyAimMode::InstantAimFollow);
+
+        m_lblMetroidFpsCameraLockDesc = new QLabel(
+            QStringLiteral(
+                "Keeps the body aligned with the gun at all times, removing the "
+                "game's free-aim lead of about 15 degrees. Off is recommended: that "
+                "lag is deliberate design that softens sudden movement, and removing "
+                "it can cause motion sickness."),
+            ui->sectionSensitivity);
+        m_lblMetroidFpsCameraLockDesc->setObjectName(QStringLiteral("lblMetroidFpsCameraLockDesc"));
+        m_lblMetroidFpsCameraLockDesc->setWordWrap(true);
+        m_lblMetroidFpsCameraLockDesc->setStyleSheet(QStringLiteral("QLabel { margin-left: 20px; }"));
+
         if (auto* form = qobject_cast<QFormLayout*>(ui->sectionSensitivity->layout())) {
             form->insertRow(3, m_lblMetroidLowLatencyAimMode, m_comboMetroidLowLatencyAimMode);
             form->insertRow(4, m_lblMetroidLowLatencyAimDesc);
+            form->insertRow(5, m_cbMetroidFpsCameraLock);
+            form->insertRow(6, m_lblMetroidFpsCameraLockDesc);
         }
 
         connect(
@@ -887,7 +913,6 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         || m_cbMetroidUseNewWeaponSwitchMethod
         || m_cbMetroidUseNewBipedFireMethod
         || m_cbMetroidUseNewTransformMethod
-        || m_cbMetroidUseNewZoomMethod
         || m_cbMetroidUseNewZoomMethod2)
     {
         return;
@@ -1007,69 +1032,29 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     const int zoomMethod = std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 2);
 
-    m_cbMetroidUseNewZoomMethod = new QCheckBox(
-        "Use New Method for Zoom",
-        ui->sectionDeveloperOnly);
-    m_cbMetroidUseNewZoomMethod->setToolTip(
-        "Checked: use the current in-game zoom binding from the player's control preset. "
-        "Unchecked: use the older fixed R-button path.");
-    m_cbMetroidUseNewZoomMethod->setChecked(
-        kDeveloperOnlyFeaturesEnabled
-        && zoomMethod == MelonPrime::ZoomInputMethod::NewPresetBinding);
-    m_cbMetroidUseNewZoomMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
-
     m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
         "Use New Method 2 for Zoom",
         ui->sectionDeveloperOnly);
     m_cbMetroidUseNewZoomMethod2->setToolTip(
         "Checked: toggle native weapon zoom by calling the game's SetPlayerScopeZoom setter. "
-        "Unchecked with New Method also off: use Legacy fixed R-button input.");
+        "Unchecked: drive the zoom button the player's control preset binds.");
     m_cbMetroidUseNewZoomMethod2->setChecked(
         kDeveloperOnlyFeaturesEnabled
         && zoomMethod == MelonPrime::ZoomInputMethod::NewNativeToggle);
     m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
 
     addDeveloperSpacing();
-    addDeveloperWidget(m_cbMetroidUseNewZoomMethod);
     addDeveloperWidget(m_cbMetroidUseNewZoomMethod2);
-
-    connect(
-        m_cbMetroidUseNewZoomMethod,
-        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
-        this,
-        [this](auto state) {
-            if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod2)
-                m_cbMetroidUseNewZoomMethod2->setChecked(false);
-        });
-    connect(
-        m_cbMetroidUseNewZoomMethod2,
-        MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL,
-        this,
-        [this](auto state) {
-            if (state == Qt::Checked && m_cbMetroidUseNewZoomMethod)
-                m_cbMetroidUseNewZoomMethod->setChecked(false);
-        });
-
-    auto* zoomDesc = new QLabel(
-        "New Method reads the game's zoom binding table, so Touch and Dual presets can map zoom to different DS buttons. "
-        "It is also slightly lower latency than Legacy Method. "
-        "If both boxes are unchecked, Legacy Method always drives the fixed R button like the older input path.",
-        ui->sectionDeveloperOnly);
-    zoomDesc->setObjectName(QStringLiteral("lblMetroidZoomMethodDesc"));
-    zoomDesc->setWordWrap(true);
-    zoomDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
-    zoomDesc->setStyleSheet("QLabel { margin-left: 20px; }");
 
     auto* zoom2Desc = new QLabel(
         "New Method 2 toggles native zoom state through SetPlayerScopeZoom on each press. "
-        "Mutually exclusive with New Method for Zoom.",
+        "Unchecked, zoom uses the button the player's control preset binds.",
         ui->sectionDeveloperOnly);
     zoom2Desc->setObjectName(QStringLiteral("lblMetroidZoomMethod2Desc"));
     zoom2Desc->setWordWrap(true);
     zoom2Desc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     zoom2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
 
-    addDeveloperWidget(zoomDesc);
     addDeveloperWidget(zoom2Desc);
 
     int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
@@ -1137,8 +1122,6 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
         m_cbMetroidUseNewTransformMethod->setEnabled(true);
     if (m_cbMetroidUseNewBipedFireMethod)
         m_cbMetroidUseNewBipedFireMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
-    if (m_cbMetroidUseNewZoomMethod)
-        m_cbMetroidUseNewZoomMethod->setEnabled(true);
     if (m_cbMetroidUseNewZoomMethod2)
         m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
     ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);
@@ -1148,6 +1131,12 @@ void MelonPrimeInputConfig::setupCollapsibleSections(Config::Table& instcfg)
 {
     // Custom HUD
     ui->cbMetroidEnableCustomHud->setChecked(instcfg.GetBool(MP_HUD_PROP_KEY_CustomHUD));
+    ui->cbMetroidHudCrosshairHighRes->setChecked(
+        instcfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes));
+    ui->cbMetroidHudCrosshairDeadbandEnable->setChecked(
+        instcfg.GetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable));
+    ui->dsbMetroidHudCrosshairDeadband->setValue(
+        instcfg.GetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband));
 
     // --- Collapsible sections: remember expand/collapse state ---
     auto setupToggle = [&instcfg](QPushButton* btn, QWidget* section, const QString& label, const char* cfgKey) {
@@ -1201,6 +1190,9 @@ void MelonPrimeInputConfig::setupPreviewConnections()
 {
     // --- Global (affects visual preview) ---
     connect(ui->cbMetroidEnableCustomHud, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
+    connect(ui->cbMetroidHudCrosshairHighRes, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
+    connect(ui->cbMetroidHudCrosshairDeadbandEnable, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
+    connect(ui->dsbMetroidHudCrosshairDeadband, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](double) { applyVisualPreview(); });
     connect(ui->cbMetroidInGameAspectRatio, MELONPRIME_CHECKBOX_STATE_CHANGED_SIGNAL, this, [this](auto) { applyVisualPreview(); });
     connect(ui->comboMetroidInGameAspectRatioMode, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
     connect(ui->comboMetroidOnScreenEditStyle, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { applyVisualPreview(); });
@@ -1434,6 +1426,24 @@ void MelonPrimeInputConfig::on_cbMetroidEnableCustomHud_stateChanged(int state)
 {
     auto& cfg = emuInstance->getLocalConfig();
     cfg.SetBool(MP_HUD_PROP_KEY_CustomHUD, state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidHudCrosshairHighRes_stateChanged(int state)
+{
+    auto& cfg = emuInstance->getLocalConfig();
+    cfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairHighRes, state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidHudCrosshairDeadbandEnable_stateChanged(int state)
+{
+    auto& cfg = emuInstance->getLocalConfig();
+    cfg.SetBool(MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable, state != 0);
+}
+
+void MelonPrimeInputConfig::on_dsbMetroidHudCrosshairDeadband_valueChanged(double value)
+{
+    auto& cfg = emuInstance->getLocalConfig();
+    cfg.SetDouble(MP_HUD_PROP_KEY_HudCrosshairDeadband, value);
 }
 
 void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)

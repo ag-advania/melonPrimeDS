@@ -32,6 +32,15 @@ constexpr int64_t kMorphBoostMaxRequiredMovement = 46339;
     return static_cast<int32_t>(movement * movement);
 }
 
+[[nodiscard]] uint16_t EncodeMphSensitivity(double sensitivity) noexcept
+{
+    constexpr double kBaseValue = 2457.0; // 0x0999
+    constexpr double kStepValue = 409.0;  // 0x0199
+    const double value = kBaseValue + (sensitivity - 1.0) * kStepValue;
+    return static_cast<uint16_t>(std::min(
+        static_cast<uint32_t>(value + 0.5), 0xFFFFu));
+}
+
 } // namespace
 
 RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
@@ -56,14 +65,11 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
         std::clamp(cfg.GetInt(CfgKey::LowLatencyAimMode),
                    LowLatencyAimMode::Off,
                    LowLatencyAimMode::InstantAimFollow);
-    if (lowLatencyAimMode == LowLatencyAimMode::Off
-        && cfg.GetBool(CfgKey::InstantAimFollow))
-        lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
-#ifndef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    if (lowLatencyAimMode == LowLatencyAimMode::InstantAimFollow)
-        lowLatencyAimMode = LowLatencyAimMode::ImmediateSync;
-#endif
-    if (!s.disableMphAimSmoothing)
+    // InstantAimFollow is the legacy value for the independent FPS camera
+    // lock. Keep it distinct from the timing modes; its standalone patch is
+    // available in public builds.
+    if (!s.disableMphAimSmoothing
+        && lowLatencyAimMode != LowLatencyAimMode::InstantAimFollow)
         lowLatencyAimMode = LowLatencyAimMode::Off;
     s.lowLatencyAimMode = static_cast<int8_t>(lowLatencyAimMode);
 
@@ -90,8 +96,6 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 #endif
 
     const int zoomInputMethod = cfg.GetInt(CfgKey::ZoomInputMethod);
-    s.newZoomInputMethod =
-        zoomInputMethod == ZoomInputMethod::NewPresetBinding;
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     s.nativeZoomToggle =
         zoomInputMethod == ZoomInputMethod::NewNativeToggle;
@@ -118,11 +122,22 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
         morphBoostRequiredMovement <= 0 ? 90 : morphBoostRequiredMovement); // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
 
 #ifdef MELONPRIME_DS
+    s.outOfGamePatches.fixWifiEnabled = cfg.GetBool(CfgKey::WifiBitset);
+    s.outOfGamePatches.useFirmwareLanguageEnabled =
+        cfg.GetBool(CfgKey::UseFirmwareLanguage);
+    s.outOfGamePatches.expandStageMatrixEnabled =
+        cfg.GetBool(CfgKey::ExpandStageMatrix);
+    s.outOfGamePatches.expandStageMatrixExtraEnabled =
+        cfg.GetBool(CfgKey::ExpandStageMatrixExtra);
     s.nativeWeaponSwitch =
         cfg.GetInt(CfgKey::WeaponSwitchMethod) != WeaponSwitchMethod::LegacyTouch;
+    s.fixShadowFreeze = cfg.GetBool(CfgKey::FixShadowFreeze);
+    s.fixNoxusBladePersistence =
+        cfg.GetBool(CfgKey::FixNoxusBladePersistence);
 #endif
 
     s.screenSyncMode = NormalizeScreenSyncMode(cfg.GetInt(CfgKey::ScreenSyncMode));
+    s.menuGameSettings = LoadMenuGameSettingsSnapshot(cfg);
 
     return s;
 }
@@ -147,6 +162,33 @@ AimConfigSnapshot LoadAimConfigSnapshot(Config::Table& cfg) noexcept
     s.aimCombinedY = sens.aimCombinedY;
     const double v = cfg.GetDouble(CfgKey::AimAdjust);
     s.aimAdjust = static_cast<float>(std::max(0.0, std::isnan(v) ? 0.0 : v));
+    return s;
+}
+
+MenuGameSettingsSnapshot LoadMenuGameSettingsSnapshot(Config::Table& cfg) noexcept
+{
+    MenuGameSettingsSnapshot s{};
+    s.headphoneEnabled = cfg.GetBool(CfgKey::Headphone);
+    s.mphSensitivityValue = EncodeMphSensitivity(
+        cfg.GetDouble(CfgKey::MphSens));
+    s.dataUnlockEnabled = cfg.GetBool(CfgKey::DataUnlock);
+    s.useFirmwareName = cfg.GetBool(CfgKey::UseFwName);
+
+    s.hunterApply = cfg.GetBool(CfgKey::HunterApply);
+    const int hunter = std::clamp(cfg.GetInt(CfgKey::HunterSel), 0, 6);
+    s.hunterBits = static_cast<uint8_t>(hunter * 0x08);
+
+    const int color = cfg.GetInt(CfgKey::LicColorSel);
+    s.licenseColorApply = cfg.GetBool(CfgKey::LicColorApply)
+        && color >= 0 && color <= 2;
+    s.licenseColorBits = static_cast<uint8_t>(color * 0x40);
+
+    s.sfxApply = cfg.GetBool(CfgKey::SfxVolApply);
+    s.sfxSteps = static_cast<uint8_t>(
+        std::clamp(cfg.GetInt(CfgKey::SfxVol), 0, 9));
+    s.musicApply = cfg.GetBool(CfgKey::MusicVolApply);
+    s.musicSteps = static_cast<uint8_t>(
+        std::clamp(cfg.GetInt(CfgKey::MusicVol), 0, 9));
     return s;
 }
 

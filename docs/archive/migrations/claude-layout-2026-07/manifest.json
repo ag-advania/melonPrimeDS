@@ -481,9 +481,9 @@
       "lines": 1162,
       "phase": "P7",
       "action": "移動",
-      "destination": "docs/plans/localization/localization-refactor-plan.md",
+      "destination": "docs/archive/plans/localization/localization-refactor-plan.md",
       "destinations": [
-        "docs/plans/localization/localization-refactor-plan.md"
+        "docs/archive/plans/localization/localization-refactor-plan.md"
       ],
       "distill": ".claude/rules/50-localization-ui.md"
     },
@@ -1163,9 +1163,9 @@
       "lines": 511,
       "phase": "P5",
       "action": "移動",
-      "destination": "docs/plans/rendering/metal/compute-shader-phase7-execution.md",
+      "destination": "docs/archive/plans/rendering/metal/done/compute-shader-phase7-execution.md",
       "destinations": [
-        "docs/plans/rendering/metal/compute-shader-phase7-execution.md"
+        "docs/archive/plans/rendering/metal/done/compute-shader-phase7-execution.md"
       ],
       "distill": "なし"
     },

@@ -13,7 +13,7 @@ KEYS = [
     "Mouse mode only. Range 1–46339; the MelonPrime default is 90. Smaller values trigger more easily; larger values require more movement. This raw-input value is used only with the custom threshold and is not MPH's native swipe threshold.",
     "Disable Morph Ball Swipe Boost",
     "Mouse mode only. Check this to disable mouse swipe boost. Right-click R boost, the Shift auto-cycle, and Stylus Mode are unchanged.",
-    "Use Custom Raw Mouse Movement Threshold",
+    "Use Custom Raw Mouse Movement Threshold for Morph Ball Boost",
     "Off uses only the game's internal swipe amount. On requires the current frame's raw mouse movement to reach the value below and uses that same vector for the native swipe pulse.",
 ]
 # Grade A/B terminology comes from:

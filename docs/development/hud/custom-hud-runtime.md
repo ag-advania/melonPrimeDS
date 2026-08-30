@@ -30,6 +30,7 @@ Use this as the reference when changing runtime Custom HUD rendering, caching, t
 | `src/frontend/qt_sdl/MelonPrimeHudRadarRuntime.inc` | CPU radar colour-key preprocessing and source-radius helper |
 | `src/frontend/qt_sdl/MelonPrimeHudPatchRuntime.inc` | NoHUD patch apply/restore/reset/reconcile lifecycle |
 | `src/frontend/qt_sdl/MelonPrimeHudStateEpoch.inc` | config-cache invalidation and visual-generation entry points |
+| `src/frontend/qt_sdl/MelonPrimeHudCrosshairProjection.h` | ROM-compatible local-player projection arithmetic, ROM-published-position consistency gate, and output-pixel crosshair deadband |
 | `src/frontend/qt_sdl/MelonPrimeHudRenderDraw.inc` | primitive and element drawing: gauges, HP, bomb left, rank/time, weapon/ammo, weapon inventory, scoreboard, enemy target, crosshair |
 | `src/frontend/qt_sdl/MelonPrimeHudRenderMain.inc` | `CustomHud_Render()`, edit-mode forward state, radar frame drawing, `DrawBottomScreenOverlay()` |
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenUnity.inc` | in-game HUD layout editor unity entry point; owns shared edit-mode state/constants and includes the `.inc` fragments below (not in `CMakeLists.txt`) |
@@ -60,24 +61,47 @@ Use this as the reference when changing runtime Custom HUD rendering, caching, t
 
 `MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, and `MelonPrimeHudScreenCpp*.inc` files are not standalone translation units. Render fragments are included only through `MelonPrimeHudRender.cpp`. Edit-mode fragments are included only through `MelonPrimeHudConfigOnScreenUnity.inc`, which itself is included by `MelonPrimeHudRender.cpp` inside `namespace MelonPrime` and `#ifdef MELONPRIME_CUSTOM_HUD`. Screen integration fragments are included only through `Screen.cpp`.
 
+### 2026-08-27 low-overhead SRP closure
+
+The current tree keeps the top-level `MelonPrimeCore::m_hudConfigState` as a
+`std::shared_ptr` lifetime boundary, while the three concrete internal HUD owner slots are typed
+`std::unique_ptr` members: battle state, frame state, and text-cache state. Editor fields remain
+directly owned by `CustomHudConfigState` until a concrete editor owner is introduced.
+`CustomHudConfigState` constructs the three owners together on the cold path; the frame/battle
+accessors only dereference already-live typed owners, with no erased shared ownership, cast, or
+lazy allocation in the render path.
+
+Screen refreshes `m_hudEnabled` when the HUD config epoch changes and passes that
+epoch-coherent snapshot into `CustomHud_Render()`. The render body does not reread the live
+`Config::Table` to decide whether the HUD is enabled. Runtime config loading also resolves the
+ARM9 feature switches into `Arm9HookActivationPlan`; `ARM9Hook_Install()` consumes that plan and
+the ROM scope rather than interpreting config keys on the install edge.
+
+`ScopedHudConfigState` remains a unity-TU/thread-local instance-selection mechanism for the
+existing fragment helpers. It is not an owner allocation and is intentionally separate from the
+typed per-instance state above. The source-level contracts are enforced by
+`tools/ci/audits/audit-melonprime-srp-performance.ps1` Rules G, H, and I; runtime, hardware,
+and remote-CI acceptance must still be reported separately.
+
 ### Runtime entry points
 `CustomHud_Render()` is the main per-frame entry point.
 
 Current high-level flow inside `CustomHud_Render()`:
 1. If edit mode, draw element overlay and return immediately.
 2. Return immediately if not in-game.
-3. If custom HUD is disabled, restore the native HUD patch state and exit.
-4. Refresh cached HUD config when invalidated, or recompute anchors if `topStretchX` changed.
-5. Apply the no-HUD patch (`NoHudPatch_Sync` with the cached `noHudMask`). This runs
+3. Read the bounded base gameplay snapshot; return if the snapshot is unavailable.
+4. If the epoch-coherent `hudEnabledSnapshot` is false, restore the native HUD patch state and exit.
+5. Refresh cached HUD config when invalidated, or recompute anchors if `topStretchX` changed.
+6. Apply the no-HUD patch (`NoHudPatch_Sync` with the cached `noHudMask`). This runs
    **before** the gameplay-state hide check so the helmet bit is applied and tracked from
    the first loading/spawn frame — the pre-frame helmet layer clamp in `RunFrameHook`
    gates on `NoHudPatch_GetAppliedMask()`. Per-element patches NOP individual draw
    instructions, so leaving them applied does not affect the start/death/game-over UI.
-6. Hide HUD entirely for certain gameplay states (early return; patches stay applied).
-7. Read current gameplay values from RAM.
-8. Set up painter (scale + translate + font); P-9 caches `QFontMetrics` on first call.
-9. Draw HP, bomb-left, match-status, and rank/time.
-10. If first-person, additionally draw weapon/ammo, crosshair, and radar overlay.
+7. Hide HUD entirely for certain gameplay states (early return; patches stay applied).
+8. Read the remaining visible gameplay values from the per-frame snapshot/cache.
+9. Set up painter (scale + translate + font); P-9 caches `QFontMetrics` on first call.
+10. Draw HP, bomb-left, match-status, and rank/time.
+11. If first-person, additionally draw weapon/ammo, crosshair, and radar overlay.
 
 Icon caches are loaded lazily inside `DrawWeaponAmmo()` / `DrawBombLeft()` via `EnsureIconsLoaded()` / `EnsureBombIconsLoaded()`, not as a separate top-level step.
 
@@ -91,7 +115,7 @@ Icon caches are loaded lazily inside `DrawWeaponAmmo()` / `DrawBombLeft()` via `
 `CustomHud_ShouldDrawRadarOverlay()` is currently just the inverse of that shared hide check.
 
 ### Match-state cache
-`CustomHud_OnMatchJoin()` is called from `MelonPrime.cpp` on match join. It caches multiplayer state that would otherwise be repeatedly decoded every frame:
+`CustomHud_OnMatchJoin(hudConfig, ...)` is called from `MelonPrime.cpp` on match join. It caches multiplayer state that would otherwise be repeatedly decoded every frame:
 - battle mode
 - goal value
 - time-limit minutes
@@ -104,7 +128,7 @@ This cached state is later used by:
 - `DrawRankAndTime()`
 
 The scoreboard has a separate match-scoped cache. On the first valid scoreboard
-frame after `CustomHud_OnMatchJoin()` (when `ActivePlayers` is populated), it
+frame after `CustomHud_OnMatchJoin(hudConfig, ...)` (when `ActivePlayers` is populated), it
 reads and retains the match-static metadata:
 
 - game mode, active-player count, team flags, and team-mode state
@@ -112,7 +136,7 @@ reads and retains the match-static metadata:
   decoded license/player name
 
 The cache is keyed by the emulated NDS/RAM/ROM group and a match serial that is
-advanced at every match join. It is cleared by `CustomHud_ResetPatchState()`.
+advanced at every match join. It is cleared by `CustomHud_ResetPatchState(hudConfig)`.
 Player time, kills, deaths, points, standings, team standings, and
 `ResultSlots` remain live per emulated frame so score changes and display order
 continue to update immediately. Team aggregate counters are read per frame
@@ -123,8 +147,8 @@ drawn as pixel-art images with nearest-neighbor scaling.
 
 ### Patch and cache lifecycle
 Important lifecycle helpers:
-- `CustomHud_ResetPatchState()` resets no-HUD patch tracking, HUD config cache, and battle-state cache. Call on emu stop/reset.
-- `CustomHud_InvalidateConfigCache()` marks the HUD config cache dirty. It is called after settings are saved and also from preview/apply paths.
+- `CustomHud_ResetPatchState(hudConfig)` resets no-HUD patch tracking, HUD config cache, and battle-state cache. Call on emu stop/reset.
+- `CustomHud_InvalidateConfigCache(hudConfig)` marks the HUD config cache dirty. It is called after settings are saved and also from preview/apply paths.
 
 The always-on scoreboard still follows the regular HUD gameplay-state timing:
 it is not tied to the native START/TAB scoreboard, and it is not forced on by
@@ -137,9 +161,9 @@ Current cached data inside `MelonPrimeHudRender.cpp` includes:
 - tinted icon variants
 - outline image buffer for crosshair rendering
 - text measurement / text bitmap caches
-- `CachedHudConfig` (contains `HpHudConfig`, `WeaponHudConfig`, `CrosshairHudConfig`, `MatchStatusHudConfig`, `BombLeftHudConfig`, `RankTimeHudConfig`, `RadarOverlayConfig`, `ScoreboardHudConfig`, `HudOutlineConfig`)
+- `CachedHudConfig` (contains `HpHudConfig`, `WeaponHudConfig`, `WeaponInventoryHudConfig`, `CrosshairHudConfig`, `MatchStatusHudConfig`, `BombLeftHudConfig`, `RankTimeHudConfig`, `RadarOverlayConfig`, `ScoreboardHudConfig`, `EnemyTargetHudConfig`, `HudOutlineConfig`)
 - `BattleMatchState`
-- P-9: `s_frameFm` / `s_frameFpx` - frame-level `QFontMetrics` cache constructed once on first call and shared by the non-scoreboard draw sub-functions via statics; the scoreboard has its own scale-aware font/metrics cache
+- P-9: `s_frameFm` / `s_frameFpx` - frame-level `QFontMetrics` cache owned by the per-instance `HudFrameOwnedState` and shared by the non-scoreboard draw sub-functions; the scoreboard has its own scale-aware font/metrics cache
 - P-11: `CrosshairHudConfig::chInnerColor/chOuterColor/chDotColor` - pre-computed arm/dot colors with alpha set at config load time
 - `HudFrameOwnedState::scoreboardFont` - cached scoreboard/rank `QFont` and `QFontMetrics` values, rebuilt only when the HUD config epoch, base-font generation/size, or HUD scale changes
 - Radar frame SVG (`s_radarFrame` / `s_radarFrameTinted` / `s_radarFrameOutline`) - loaded once via `loadSvgToHeight()`, tinted and outline-colored images cached separately; re-tinted on color change
@@ -153,9 +177,11 @@ Key struct fields:
 - `MatchStatusHudConfig`: `matchStatusAnchor`, `matchStatusOfsX/Y`, `matchStatusX/Y`
 - `BombLeftHudConfig`: `bombLeftAnchor`, `bombLeftOfsX/Y`, `bombLeftX/Y`; `bombIconPosAnchor`, `bombIconPosOfsX/Y`, `bombIconPosX/Y`
 - `RankTimeHudConfig`: `rankAnchor/OfsX/Y/X/Y`, `timeLeftAnchor/OfsX/Y/X/Y`, `timeLimitAnchor/OfsX/Y/X/Y`
+- `WeaponInventoryHudConfig`: `anchor`, `ofsX/Y`, and computed `posX/Y`
 - `RadarOverlayConfig`: `radarAnchor`, `radarOfsX/Y`, `radarDstX/Y`
-- `CachedHudConfig`: `lastStretchX` tracks the `topStretchX` used for the last position computation; `lastHudScale` tracks `hudScale` for outline thickness conversion; `scaleText/scaleIcons/scaleGauges/scaleCrosshair` store per-category auto-scale factors
-- `CrosshairHudConfig`: additionally stores `chInnerColor`, `chOuterColor`, `chDotColor`
+- `ScoreboardHudConfig` / `EnemyTargetHudConfig`: panel anchor/offsets and computed final position
+- `CachedHudConfig`: `lastStretchX` tracks the `topStretchX` used for the last position computation; `lastHudScale` tracks `hudScale` for outline thickness conversion; `scaleText/scaleIcons/scaleGauges/scaleCrosshair/scaleScoreboard` store per-category auto-scale factors
+- `CrosshairHudConfig`: additionally stores `chHighResPosition`, `chPositionDeadbandPx`, `chInnerColor`, `chOuterColor`, `chDotColor`
 
 ### High-resolution HUD rendering
 The HUD overlay is rendered into a hi-res buffer matching the actual screen output size, not DS-native `256x192`.
@@ -167,9 +193,9 @@ Key design points:
 - DS Y is always scaled by `scaleY`; DS X effectively scales by `scaleX` via the translate.
 - All HUD element positions are specified in DS-space (`0-255` / `0-191`) and scale correctly with the window without manual correction.
 - Icons are drawn with `drawImage(QRectF(x, y, icon.width(), icon.height()), icon)` so they scale with the painter transform.
-- The font is always rendered at `kCustomHudFontSize = 6` px (optimal glyph quality for `mph.ttf`). Visual text size is controlled separately by `Metroid.Visual.HudTextScale` (percentage, default `60`).
+- The base font pixel size is resolved from the font mode: `kCustomHudFontSize = 6` px for the bundled MPH pixel font, or `Metroid.Visual.HudFontSize` for system/file fonts. Visual text size is controlled separately by `Metroid.Visual.HudTextScale` (percentage, default `60`).
 - Text bitmaps are drawn scaled via `DrawCachedText(..., tds)` where `tds = textDrawScale` (pre-computed from auto-scale + user TextScale).
-- The crosshair reads `cx/cy` from RAM in DS-space (`0-255`) and requires no manual `topStretchX` correction.
+- The crosshair centre is mapped in output pixels after the painter transform, so no manual `topStretchX` correction is needed. With `Metroid.Visual.HudCrosshairHighRes` enabled (default), `DrawCrosshair()` samples the local-player projection source/view/projection inputs once per emulated game frame (124 bytes), retains the fractional projected centre, and accepts it only when the valid, in-front projection bit-exactly reconstructs the ROM-published s16 `crosshairPosX/Y` pair. Invalid, behind-near-plane, or inconsistent input falls back to the quantized cache. With the toggle off, that sample is skipped. The final output-pixel centre uses the configurable `Metroid.Visual.HudCrosshairDeadband` deadband (default 0.25 px, upper-clamped to 2.0 px; zero or negative values behave as plain rounding) to suppress depth-induced boundary flicker and resets when the crosshair leaves the screen.
 
 ### Selectable HUD font
 The HUD text font is chosen by `Metroid.Visual.HudFontMode`:
@@ -215,7 +241,7 @@ the full line box when they are set. MPH (mode 0) ignores all of these.
 
 File loads are path-cached (`LoadAppFontFamilyCached`, mutex-guarded since the resolver runs on
 both the GUI and render paths). A font change must invalidate the content-keyed glyph caches:
-`CustomHud_InvalidateConfigCache()` resets `s_frameFpx = 0`, and the next `EnsureHudFont()` rebuild
+`CustomHud_InvalidateConfigCache(hudConfig)` resets `s_frameFpx = 0`, and the next `EnsureHudFont()` rebuild
 bumps `s_textCacheGen` (a trailing `gen` field on `TextBitmapCache`/`TextMeasureCache`, checked in
 `PrepareTextBitmapCached`/`MeasureTextCached`/`PrepareOutlineBitmapCached`).
 
@@ -244,8 +270,9 @@ All HUD text/icon positions use a 9-point anchor + offset model.
   - HpGaugePos: 6 (BL), AmmoGaugePos: 8 (BR)
   - MatchStatus: 0 (TL), Rank: 0 (TL), TimeLeft: 0 (TL), TimeLimit: 0 (TL)
   - BombLeft: 8 (BR), BombLeftIconPos: 8 (BR)
-  - Radar: 2 (TR)
-- The settings-dialog preview widgets (`HpAmmoPreviewWidget`, `MatchStatusPreviewWidget`, `RadarPreviewWidget` in `InputConfig/MelonPrimeInputConfigHudPreviews.inc`) mirror the same anchor logic locally.
+  - Weapon Inventory: 8 (BR)
+  - Radar: 2 (TR), Scoreboard: 3 (ML), Enemy Target: 1 (TC)
+- The settings-dialog preview widgets (`HpAmmoPreviewWidget`, `MatchStatusPreviewWidget`, `ScoreboardPreviewWidget`, `EnemyTargetPreviewWidget`, `RadarPreviewWidget` in `InputConfig/MelonPrimeInputConfigHudPreviews.inc`) mirror the same anchor logic locally.
 
 ### Runtime HUD behavior details
 Useful implementation notes for future edits:
@@ -273,7 +300,7 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 - `NoHudPatch_ClampHelmetLayers(nds, romGroup)` clears `hudToggle & 0x0E` (RAM) and main
   `DISPCNT & 0x0E00` (already-reflected register) — BG0/OBJ untouched.
 - Called every frame **before `RunFrame`** from `RunFrameHook` via
-  `CustomHud_ClampHelmetLayersPreFrame(emu, rom, playerPosition)` (declared in `MelonPrimeHudPatchLifecycle.h`, defined in the nested `MelonPrimeHudPatchRuntime.inc` fragment).
+  `CustomHud_ClampHelmetLayersPreFrame(hudConfig, emu, rom, playerPosition)` (declared in `MelonPrimeHudPatchLifecycle.h`, defined in the nested `MelonPrimeHudPatchRuntime.inc` fragment).
 - Gating order (hot-path friendly): `NoHudPatch_GetAppliedMask() & NOHUD_HELMET` (static read,
   no config lookup) → base-state reads → skip on start pressed / HP 0 / game over / adventure
   pause (native UI keeps normal layers) → clamp (2 reads, writes only during spawn frames).
@@ -290,7 +317,7 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 | OPT-DR1 | Dirty-rect overlay optimization: `CustomHud_Render()` returns `QRect`; `Screen.cpp` clears only the prev dirty rect (via `CompositionMode_Source`), composites only the union rect, and uploads only that region via `glTexSubImage2D` with `GL_UNPACK_ROW_LENGTH/SKIP_*` | Reduces per-frame CPU memset and PCIe upload from full-window to HUD-element bounding box at high resolutions | Per frame |
 | OPT-DR2 | Actual-drawn-rect accumulation: the returned dirty rect is the union of every primitive's *real* device-space bbox (`s_drawnDirtyPx`), accumulated by the low-level draw funnels (`AccumDirtyDs`/`AccumDirtyDevPx` in `DrawCachedText`/`DrawCachedTextOutlined`/`DrawImageOutlined`/`DrawGauge` + the direct icon/highlight/radar draw sites). Replaces the old conservative per-element padding boxes (`RefreshStaticHudDirty`, e.g. HP ±90×65 DS units → ~1000×730 px at 1080p) which were uploaded in full every frame. Tight at all text/auto-scale settings (no worst-case padding). Screen-side `prev∪curr` clear/upload contract unchanged → appearance / disappearance / move / resize stay correct via the caller's union. | Shrinks the per-frame overlay clear + GL `texSubImage` upload from the worst-case element bounding boxes to the actual glyph/icon footprint (many× smaller, biggest win at 4K) | Per frame |
 | OPT-SC1 | Screen-fragment HUD enable/radar config caching by epoch, cached top-screen matrix/radar anchor coordinates, empty dirty-rect GL overlay skip, and conditional GL state restore | Avoids repeated config lookups, screen-matrix scans, zero-work GL upload/composite setup, and redundant shader/buffer restore calls | Per frame |
-| OPT-ZOOM1 | Zoom crosshair state, crosshair DS aim position, and display smoothing are keyed by `NDS::NumFrames`: `UpdateCrosshairZoomAmountForGameFrame()` polls RAM once per emulated game frame, `crosshairPosX/Y` are cached for repeated draws of that frame, and `s_chDisplayZoom` advances once per game frame | Prevents high-refresh presentation from accelerating 2-frame zoom/debounce transitions and avoids per-draw zoom/aim RAM polling | Per game frame |
+| OPT-ZOOM1 | Zoom state, crosshair aim position, and display smoothing are keyed by `NDS::NumFrames`: zoom state and the high-resolution projection/fallback, including the ROM-published-position consistency check, are evaluated at most once per emulated game frame, `crosshairPosX/Y` remain the fallback cache, and `s_chDisplayZoom` advances once per game frame. The 124-byte projection sample is skipped when `HudCrosshairHighRes` is disabled | Prevents high-refresh presentation from accelerating 2-frame zoom/debounce transitions and avoids per-draw zoom/aim RAM polling while keeping the optional high-resolution path and deadband bounded | Per game frame |
 | OPT-HRT1 | HUD runtime state is cached by `NDS* + MainRAM + NumFrames + player offset + ROM group`; base/adventure/visible reads are cached eagerly, while ammo, owned weapons, bomb count, match status, rank, and time values are cached lazily only when their HUD elements need them | Repeated 120/240Hz draws of the same emulated frame reuse gameplay HUD state instead of re-reading RAM, while disabled elements do not populate unused cache fields | Per game frame |
 | OPT-SCB1 | Scoreboard match metadata (Hunter ID, Hunter Rank/Stars, decoded player name, active roster, TeamIndex, game mode, and team flags) is cached once after match join and keyed by NDS/RAM/ROM group plus match serial; only live metrics and `ResultSlots` are read per emulated frame | Removes repeated static scoreboard RAM reads and name decoding from the per-frame path while preserving live score, standing, and display-order updates | Once per match / dynamic fields per game frame |
 | OPT-SCB2 | Scoreboard/rank `QFont` and `QFontMetrics` values are cached by HUD config epoch, base-font generation/size, and HUD scale | Removes scoreboard font-size and metrics reconstruction from the high-refresh per-frame draw path while keeping settings and scale changes immediate | On relevant change |
@@ -444,7 +471,7 @@ Validation for this re-audit:
 
 ### 2026-08-18 Windows DX12 runtime capture
 
-The current HEAD was exercised on Windows with an NVIDIA GeForce RTX 5070 Ti,
+The then-current verification HEAD was exercised on Windows with an NVIDIA GeForce RTX 5070 Ti,
 DX12 native presentation, `CustomHUD=true`, the Metroid Prime Hunters ROM and
 the same `.ml4` gameplay savestate used by the diagnostic runs. Renderer
 initialization, the first native Present, and savestate loading all succeeded;
@@ -650,7 +677,7 @@ direct A/E capture on the same Windows host. The comparison provenance was:
 | Run | Source | Executable evidence |
 |---|---|---|
 | A | clean `1b46381f1bf92cf3f55539da7e7f532292b3803b` checkout (`build/customhud-baseline-1b-src`) | all 80 A directories used SHA-256 `C8477F3A39CE95A30A053AF20CC4E3D7ACCC00CC26C59B0F1DCF24D0C310D9E9` |
-| E | current HUD tree at HEAD `9771d423fcaab4173c7fab4671a4343125328e03` | representative E executable SHA-256 `4F175986B5D249E1AD1EA5B69BD59456412C8454ED4A60EA67B67650B338D9E1` |
+| E | verification HUD tree at HEAD `9771d423fcaab4173c7fab4671a4343125328e03` | representative E executable SHA-256 `4F175986B5D249E1AD1EA5B69BD59456412C8454ED4A60EA67B67650B338D9E1` |
 
 The matrix contains 80 paired shutdown reports: five Windows renderers
 (`Software`, `OpenGL`, `OpenGL Compute`, `Vulkan`, and `DX12`) × four target
@@ -700,9 +727,9 @@ captures remain the valid pixel check: captures 001--003 are byte-identical
 with the SHA-256 recorded above. Cross-backend and mode-complete pixel
 comparison therefore remains `OPEN`/`NOT RUN`.
 
-### 2026-08-18 current-tree build and HUD golden verification
+### 2026-08-18 verification-tree build and HUD golden verification
 
-The current tree was rebuilt after the runtime probes. The normal Debug build
+The verification tree was rebuilt after the runtime probes. The normal Debug build
 passed with developer features enabled and ran the available nine test targets.
 The existing Release output directory was intentionally left untouched because
 three already-running emulator processes held its executable open; instead, a
@@ -727,7 +754,7 @@ The shipping binary also passed
 in the repository; it complements, but does not replace, the rejected direct
 A/E captures and the accepted controlled DX12 held-frame captures above.
 
-The current-tree static re-audit also passed the renderer telemetry
+That verification tree's static re-audit also passed the renderer telemetry
 zero-overhead, SRP/performance, GUI/EmuThread boundary, `.inc` ownership,
 HUD-key parity, config-default, Software-parity, QColorDialog, and
 `git diff --check` checks. The developer-only probe artifacts remain attribution
@@ -785,6 +812,7 @@ All functions are inside `namespace MelonPrime` and guarded by `#ifdef MELONPRIM
 ```cpp
 // Returns dirty pixel rect in overlay space (QRect()) if nothing drawn.
 QRect CustomHud_Render(
+    CustomHudConfigState& hudConfig,
     EmuInstance* emu,
     Config::Table& localCfg,
     const RomAddresses& rom,
@@ -795,6 +823,7 @@ QRect CustomHud_Render(
     QImage* topBuffer,
     QImage* btmBuffer,
     bool isInGame,
+    bool hudEnabledSnapshot,
     float topStretchX = 1.0f,
     float hudScale = 1.0f,
     float hudOriginXds = 0.0f,
@@ -805,15 +834,19 @@ bool CustomHud_IsEnabled(Config::Table& localCfg);
 bool CustomHud_ShouldHideForGameplayState(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
 bool CustomHud_ShouldDrawRadarOverlay(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
 // Per-frame from RunFrameHook (before RunFrame): helmet spawn-flash layer clamp.
-void CustomHud_ClampHelmetLayersPreFrame(EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
-void CustomHud_EnsurePatchRestored(EmuInstance* emu, Config::Table& localCfg, const RomAddresses& rom, uint8_t playerPosition, bool isInGame);
-void CustomHud_ResetPatchState();
-void CustomHud_InvalidateConfigCache();
-void CustomHud_OnMatchJoin(uint8_t* ram, const RomAddresses& rom);
+void CustomHud_ClampHelmetLayersPreFrame(CustomHudConfigState& hudConfig, EmuInstance* emu, const RomAddresses& rom, uint8_t playerPosition);
+void CustomHud_EnsurePatchRestored(CustomHudConfigState& hudConfig, EmuInstance* emu, Config::Table& localCfg, const RomAddresses& rom, uint8_t playerPosition, bool isInGame);
+void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig);
+void CustomHud_InvalidateConfigCache(CustomHudConfigState& hudConfig);
+void CustomHud_ReconcilePatchAfterSavestateLoad(CustomHudConfigState& hudConfig, EmuInstance* emu, Config::Table& localCfg, const RomAddresses& rom, uint8_t playerPosition);
+void CustomHud_OnMatchJoin(CustomHudConfigState& hudConfig, uint8_t* ram, const RomAddresses& rom);
 void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage* btmBuffer, uint8_t hunterID);
 ```
 
 Notes:
 - `DrawBottomScreenOverlay()` takes `hunterID` so the source crop can use hunter-specific radar centers.
+- Stateful edit-mode, selection, and lifecycle helpers take the same `CustomHudConfigState`
+  instance where applicable; see `MelonPrimeHudEdit.h` and `MelonPrimeHudPatchLifecycle.h` for
+  the complete declarations.
 - `CustomHud_Render()` now covers match status, rank/time, bomb-left HUD, and radar overlay in addition to crosshair/HP/ammo.
 - `CustomHud_Render()` returns a `QRect` (OPT-DR1): the pixel-space dirty region of everything rendered. Callers in `Screen.cpp` use this to limit the overlay clear and GL texture upload to only the changed region. Returns empty `QRect` when nothing was drawn.

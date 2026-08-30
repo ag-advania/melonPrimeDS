@@ -27,4 +27,18 @@ void ReleaseForClose(ScreenPanel& panel);
 // clipCursorToBottomScreenForPolicy() -> ScreenCursorPolicy::UpdateClipIfNeeded().
 void ConfineToBottomScreen(ScreenPanel& panel);
 
+// Confines the OS cursor to the top-screen widget rect for the stylus-mode
+// match options (Windows only; other platforms only set the cursor shape, as
+// with ConfineToBottomScreen). Unlike ClipCenter1px() this never sets the aim
+// capture request, grabs or warps: the pointer stays free inside the rect so
+// stylus aiming and touch input keep working. Reached from UpdateClipIfNeeded()
+// via ScreenPanel::shouldConfineCursorToTopScreenForPolicy().
+void ConfineToTopScreen(ScreenPanel& panel);
+
+// Pins the OS cursor at the stylus drag centre for as long as no click is held
+// (Windows only; other platforms only set the cursor shape and fall back to
+// ScreenPanel's warp-on-move parking). A press re-decides through
+// UpdateClipIfNeeded(), which frees the pointer for the drag itself.
+void PinAtStylusCenter(ScreenPanel& panel);
+
 } // namespace MelonPrime::ScreenCursorPolicy

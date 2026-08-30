@@ -25,8 +25,8 @@ HLSL = ROOT / "src/GPU3D_DX12_shaders.h"
 GLSL = ROOT / "src/GPU3D_Vulkan_shaders/Compositor.comp"
 SOFT_HEADER = ROOT / "src/GPU_Soft.h"
 SOFT_SOURCE = ROOT / "src/GPU_Soft.cpp"
-VULKAN_SOURCE = ROOT / "src/GPU3D_Vulkan.cpp"
-DX12_SOURCE = ROOT / "src/GPU3D_DX12.cpp"
+VULKAN_SOURCE = ROOT / "src/VulkanGpu2DComposer.cpp"
+DX12_SOURCE = ROOT / "src/DX12Gpu2DComposer.cpp"
 
 # Contract name -> the expression each consumer is expected to use.
 #
@@ -72,8 +72,7 @@ HLSL_EXPECTATIONS = {
     "kLineMetaBrightnessModeShift": "uint brightnessMode = (lineMeta >> 8u) & 0x3u;",
     "kLineMetaBrightnessFactorMask": "uint brightnessFactor = min(lineMeta & 0x1Fu, 16u);",
     "kLineMetaRenderXPosShift": "uint xPosition = (lineMeta >> 23u) & 0x1FFu;",
-    "kDisplayModeVram": (
-        "if (displayMode == 2u && (captureReference & 0x80000000u) != 0u)"),
+    "kDisplayModeVram": "bool vramDisplaySidecar=displayMode==2u;",
 }
 
 
@@ -169,8 +168,14 @@ def main() -> int:
             "view.ScreenRouting.EnginePlane[0][plane]",
             "view.CaptureSourcePlane[plane] = StructuredEnginePlanes.data()",
         ],
-        VULKAN_SOURCE.name: ["PackRoutedScreenPlanes(staging, screenRouting)"],
-        DX12_SOURCE.name: ["PackRoutedScreenPlanes(staging, screenRouting)"],
+        VULKAN_SOURCE.name: [
+            "StructuredComposition::PackRoutedScreenPlane(",
+            "screen, plane, screenRouting)",
+        ],
+        DX12_SOURCE.name: [
+            "StructuredComposition::PackRoutedScreenPlane(",
+            "screen, plane, screenRouting)",
+        ],
     }
     source_texts = {
         SOFT_HEADER.name: soft_header_text,

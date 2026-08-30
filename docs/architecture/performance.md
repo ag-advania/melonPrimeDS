@@ -62,8 +62,16 @@ Every cache needs a clear invalidation owner:
 
 - Custom HUD zoom amount, crosshair DS aim position, and `s_chDisplayZoom` are game-frame keyed.
 - Custom HUD runtime state caches base/adventure/visible reads within a game
-  frame, and lazily caches optional element values such as ammo, owned weapons,
-  bombs, match status, rank, and time only when those elements are drawn.
+  frame, lazily caches optional element values such as ammo, owned weapons,
+  bombs, match status, rank, and time only when those elements are drawn, and
+  reuses the same frame cache for scoreboard and Enemy Target snapshots.
+- `CustomHudConfigState` constructs its typed battle/frame/text owner slots once on the cold
+  path; editor fields remain directly owned by the config state until a concrete editor owner is
+  introduced. `HudFrameState()` and `HudBattleState()` only dereference those owners during
+  rendering.
+- `CustomHud_Render()` consumes the Screen-owned, config-epoch-coherent HUD enable snapshot;
+  HUD enable interpretation stays outside the steady-state render path. ARM9 hook activation
+  likewise consumes the resolved `Arm9HookActivationPlan`.
 - Zoom status uses scope bit + cached CanZoom and intentionally avoids zoom FOV / HUD animation reads on the hot path.
 - Aim sensitivity stores an effective scale and keeps floating-point percentage math out of `ProcessAimInputMouse()`.
 - `ProcessAimInputMouse()` skips IMUL / clamp / output on zero-delta frames and returns immediately when delta and residuals are both zero (P-44).
@@ -95,6 +103,8 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | Win raw mouse snapshot | `MelonPrimeRawInputState.cpp:283-289` | `discardDeltas`, `resetAll` | `InputState::fetchMouseDelta` |
 | `m_platformRawAimWasActive` | `MelonPrime.h:594` | N/A (edge detector); cleared on emu stop via filter reset | `UpdateInputStateImpl` |
 | `BattleMatchState` | `MelonPrimeHudBattleOwnedState.inc` (nested under `MelonPrimeHudRuntimeSample.inc`) | Match join/leave, config epoch | `CustomHud_OnMatchJoin` / `CustomHud_ResetPatchState` |
+| Typed HUD owner slots | `MelonPrimeHudRenderConfig.inc` / `MelonPrimeHudRender.cpp` | Config-state construction/destruction | `CustomHudConfigState` constructor/destructor |
+| `Arm9HookActivationPlan` | `MelonPrime.h` / `MelonPrimeRuntimeConfig.cpp` | Runtime config reload and core snapshot apply | `LoadRuntimeConfigSnapshot` / `ApplyRuntimeConfigSnapshot` |
 | Text/icon/radar-frame caches | `MelonPrimeHudRenderAssets.inc` | Signature change (size/color/text) | Per-cache prepare helpers |
 | `shadersReady` | `MelonPrimeEmuThreadFrameState.inc` | `videoSettingsDirty` / renderer switch | `EmuThread.cpp` limiter block |
 
@@ -114,11 +124,17 @@ Review must not increase steady-state per-frame syscalls without Phase 0 before/
 
 Increasing any row requires `MELONPRIME_PERF=1` before/after attached to the PR.
 
-### V6 Measurement Gate
+### V6 Measurement Gate (historical baseline rule)
 
 V6 Phase 0 prepared the `MELONPRIME_PERF=1` baseline procedure and parser, but
-the canonical 10-minute ROM soaks for macOS, Windows, and Linux are still the
-gate for Phase 3 and Phase 5 performance changes. Until those logs are attached,
-HUD element caching, per-frame patch/write edge changes, and input queue timing
-changes must stay in the planning state or be committed only as measurement
-harness work.
+the canonical 10-minute ROM soaks for macOS, Windows, and Linux were still the
+gate for Phase 3 and Phase 5 performance changes at that snapshot. Under that
+historical gate, HUD element caching, per-frame patch/write edge changes, and
+input queue timing changes had to stay in the planning state or be committed
+only as measurement harness work.
+
+This is the retained V6 gate for new, unmeasured optimizations; it is not a claim that all later
+HUD cache work remains only planned. The later HUD runtime, scoreboard, and Enemy Target caches and the 2026-08-27
+SRP ownership closure are documented in [custom-hud-runtime.md](../development/hud/custom-hud-runtime.md)
+and [srp-performance-contract.md](srp-performance-contract.md). Their runtime, hardware, and
+remote-CI acceptance remains separately classified rather than inferred from source audits.

@@ -116,7 +116,7 @@ On first `mode==0x0E && flow==0` after join (same latch as `BIT_BATTLE_RUNTIME_M
 
 Via `PatchLifecycle::ApplyOnBattleRuntimeEnter()` (PatchLifecycleGateway Step 3 Site B):
 
-- `Patches_Apply(PatchSite_BattleRuntime)` — OsdColor, LowHpWarning, InstantAimFollow,
+- `Patches_Apply(PatchSite_BattleRuntime)` — OsdColor, LowHpWarning, FpsCameraLock,
   ShowHeadshotOnline, ShowEnemyHpMeterOnline, DisableDoubleDamageMultiplier,
   NoPickingUpSpecificItems.
 - `ARM9Hook_SetMatchHooksActive(true)` — all match-scoped instruction hooks.

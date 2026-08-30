@@ -17,7 +17,7 @@ But that block (`0202F624-0202F9FC`) **early-returns during spawn/death states**
 
 ## Final fix (selective, host-side)
 
-`NoHudPatch_ClampHelmetLayers` (MelonPrimePatchNoHud.cpp), called every frame from `RunFrameHook` (before `RunFrame`) via `CustomHud_ClampHelmetLayersPreFrame`:
+`NoHudPatch_ClampHelmetLayers` (MelonPrimePatchNoHud.cpp), called every frame from `RunFrameHook` (before `RunFrame`) via `CustomHud_ClampHelmetLayersPreFrame(hudConfig, emu, rom, playerPosition)`:
 
 1. `hudToggle &= ~0x0E` (RAM) — replicates the patched clamp even when the game's HUD block early-outs.
 2. main `DISPCNT (0x04000000) &= ~0x0E00` — clears layers the spawn-frame VBlank logic already reflected, before this frame's scanlines render.

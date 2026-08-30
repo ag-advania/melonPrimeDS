@@ -247,6 +247,7 @@ static QRect MelonPrimeHud_RenderTopOverlay(
     CoreT* mp,
     QImage& overlay,
     const QFont& overlayFont,
+    bool hudEnabledSnapshot,
     float topStretchX,
     float hudScale,
     float hudOriginX,
@@ -274,6 +275,7 @@ static QRect MelonPrimeHud_RenderTopOverlay(
         &topP, nullptr,
         &overlay, radarSource,
         mp->IsInGame(),
+        hudEnabledSnapshot,
         topStretchX, hudScale,
         hudOriginXds, hudOriginYds);
     if (hudRenderStart)

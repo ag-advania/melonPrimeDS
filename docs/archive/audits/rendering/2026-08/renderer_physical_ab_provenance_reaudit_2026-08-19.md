@@ -11,7 +11,7 @@ frames-in-flight architecture.
 ## Implemented contract
 
 The physical runner at
-[`tools/testing/renderer-physical-ab.ps1`](../../tools/testing/renderer-physical-ab.ps1)
+[`tools/testing/renderer-physical-ab.ps1`](../../../../../tools/testing/renderer-physical-ab.ps1)
 now requires `-ExpectedSourceHead`. Before launching the emulator it reads
 `melonPrimeDS.exe --build-info-json`, hashes the executable and ROM, compares
 the binary source SHA and checkout HEAD, and fails closed on a mismatch. The
@@ -32,7 +32,7 @@ fixture is copied into a run-specific directory and the `savestate-load`
 action sends the production F1 load-state shortcut after startup; the action
 marker is checked separately from the startup diagnostic marker.
 
-[`tools/testing/summarize-renderer-physical-ab.py`](../../tools/testing/summarize-renderer-physical-ab.py)
+[`tools/testing/summarize-renderer-physical-ab.py`](../../../../../tools/testing/summarize-renderer-physical-ab.py)
 selects frame rows and telemetry report windows mechanically from the
 manifest's measurement interval. It emits `summary.json` and `summary.md`,
 reports frame and stage p50/p95/p99/max/sample counts, reports texture and
@@ -81,8 +81,8 @@ Software 2D or presenter investigation.
 The focused contract audit and deterministic summarizer test are wired into
 the Windows, Ubuntu, macOS, and BSD workflows:
 
-- [`tools/ci/audits/audit-renderer-physical-ab-contract.py`](../../tools/ci/audits/audit-renderer-physical-ab-contract.py)
-- [`tools/testing/summarize-renderer-physical-ab-tests.py`](../../tools/testing/summarize-renderer-physical-ab-tests.py)
+- [`tools/ci/audits/audit-renderer-physical-ab-contract.py`](../../../../../tools/ci/audits/audit-renderer-physical-ab-contract.py)
+- [`tools/testing/summarize-renderer-physical-ab-tests.py`](../../../../../tools/testing/summarize-renderer-physical-ab-tests.py)
 
 These checks validate the evidence contract in CI; they do not convert CI
 builds into physical renderer acceptance evidence.

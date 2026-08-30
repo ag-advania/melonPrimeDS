@@ -261,11 +261,17 @@ namespace Config
         {"Instance*.Metroid.Apply.MusicVolume", false},
         {"Instance*.Metroid.Apply.joy2KeySupport", true},
         {"Instance*.Metroid.Enable.stylusMode", false},
+        {"Instance*.Metroid.Enable.topScreenTouch", false},
+        {"Instance*.Metroid.Enable.touchScreenAimOnly", false},
+        {"Instance*.Metroid.Enable.stylusHideCursorInGame", false},
+        {"Instance*.Metroid.Enable.stylusConfineCursorToTopScreen", false},
+        {"Instance*.Metroid.Enable.stylusHoldCursorAtCenterWhenNotClicking", false},
         {"Instance*.Metroid.Aim.Disable.MphAimSmoothing", false},
         {"Instance*.Metroid.Aim.Enable.Accumulator", false},
         {"Instance*.Metroid.Aim.ZoomScale.Enable", false},
         {"Instance*.Metroid.Aim.Enable.InstantAimFollow", false},
         {"Instance*.Metroid.Input.Enable.ImmediateInputEdgeOverlay", false},
+        {"Instance*.Metroid.Aim.Enable.FpsCameraLock", false},
         {"Instance*.Metroid.Input.Enable.DirectAltFormTransform",    false},
         {"Instance*.Metroid.Input.MorphBoostSwipeEnabled", true}, // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         {"Instance*.Metroid.Input.MorphBoostCustomRawThreshold", false}, // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14

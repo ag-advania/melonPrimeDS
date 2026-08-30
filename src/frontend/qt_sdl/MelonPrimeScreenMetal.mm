@@ -16,7 +16,9 @@
 
 #include <cmath>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -25,6 +27,7 @@
 #include <QEvent>
 #include <QImage>
 #include <QMetaObject>
+#include <QMutexLocker>
 #include <QPainter>
 #include <QScreen>
 #include <QWindow>
@@ -377,10 +380,30 @@ struct ScreenPanelMetal::Impl
 
     void* attachedView = nullptr; // weak NSView*, owned by Qt
     QMutex layoutMutex;
+    float screenMatrix[kMaxScreenTransforms][6]{};
+    int screenKind[kMaxScreenTransforms]{};
+    int numScreens = 0;
+    std::atomic<std::uint32_t> layoutRevision{0};
+    // Emulation-thread cache. The GUI-published arrays above are copied only
+    // when layoutRevision changes; a stable frame never takes layoutMutex.
+    float cachedScreenMatrix[kMaxScreenTransforms][6]{};
+    int cachedScreenKind[kMaxScreenTransforms]{};
+    int cachedNumScreens = 0;
+    std::uint32_t cachedLayoutRevision = ~0u;
+
+    // GUI-published drawable geometry. The emulation thread copies this only
+    // when geometryRevision changes, so a stable frame does not take the
+    // layout mutex just to read drawable dimensions or orientation.
     int drawableW = 1;
     int drawableH = 1;
     qreal scale = 1.0;
     float presenterYFlipSign = -1.0f;
+    std::atomic<std::uint32_t> geometryRevision{0};
+    int cachedDrawableW = 1;
+    int cachedDrawableH = 1;
+    qreal cachedScale = 1.0;
+    float cachedPresenterYFlipSign = -1.0f;
+    std::uint32_t cachedGeometryRevision = ~0u;
 
     bool resourcesReady = false;
     bool loggedLayerOrientation = false;
@@ -392,8 +415,9 @@ struct ScreenPanelMetal::Impl
     bool loggedScreenPlacementDiag = false;
     uint64_t lastPresentedFrame = 0;
 
-    // Accessed under layoutMutex. CAMetalLayer itself is updated only through
-    // a queued GUI-thread invocation.
+    // Emulation-thread-owned last request. CAMetalLayer itself is updated only
+    // through a queued GUI-thread invocation, so it does not belong under the
+    // GUI-published geometry mutex.
     bool displaySyncRequested = false;
 };
 
@@ -678,9 +702,16 @@ bool ScreenPanelMetal::attachLayerToCurrentViewGuiThread()
     const bool contentsFlipped = [m->layer contentsAreFlipped];
     const float yFlipSign = geometryFlipped ? 1.0f : -1.0f;
 
+    bool geometryChanged = false;
     m->layoutMutex.lock();
-    m->presenterYFlipSign = yFlipSign;
+    if (m->presenterYFlipSign != yFlipSign)
+    {
+        m->presenterYFlipSign = yFlipSign;
+        geometryChanged = true;
+    }
     m->layoutMutex.unlock();
+    if (geometryChanged)
+        m->geometryRevision.fetch_add(1, std::memory_order_release);
 
     if (!m->loggedLayerOrientation)
     {
@@ -701,6 +732,16 @@ bool ScreenPanelMetal::attachLayerToCurrentViewGuiThread()
 void ScreenPanelMetal::setupScreenLayout()
 {
     ScreenPanel::setupScreenLayout();
+    {
+        QMutexLocker lock(&m->layoutMutex);
+        m->numScreens = std::min(numScreens, kMaxScreenTransforms);
+        for (int index = 0; index < m->numScreens; ++index)
+        {
+            std::memcpy(m->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
+            m->screenKind[index] = screenKind[index];
+        }
+    }
+    m->layoutRevision.fetch_add(1, std::memory_order_release);
     attachLayerToCurrentViewGuiThread();
     updateDrawableSizeGuiThread();
 }
@@ -731,11 +772,18 @@ void ScreenPanelMetal::updateDrawableSizeGuiThread()
     const int w = std::max(1, static_cast<int>(std::ceil(static_cast<qreal>(width()) * scale)));
     const int h = std::max(1, static_cast<int>(std::ceil(static_cast<qreal>(height()) * scale)));
 
+    bool geometryChanged = false;
     m->layoutMutex.lock();
-    m->drawableW = w;
-    m->drawableH = h;
-    m->scale = scale;
+    if (m->drawableW != w || m->drawableH != h || m->scale != scale)
+    {
+        m->drawableW = w;
+        m->drawableH = h;
+        m->scale = scale;
+        geometryChanged = true;
+    }
     m->layoutMutex.unlock();
+    if (geometryChanged)
+        m->geometryRevision.fetch_add(1, std::memory_order_release);
 
     // CALayer property writes belong on the GUI thread; this function is
     // only ever called from initMetal()/setupScreenLayout(), both GUI-thread
@@ -765,18 +813,17 @@ void ScreenPanelMetal::drawScreen()
          emuInstance->fastForwardToggled ||
          emuInstance->inputHotkeyDown(HK_SlowMo) ||
          emuInstance->slowmoToggled);
-    const bool configuredVSync =
-        emuInstance->getGlobalConfig().GetBool("Screen.VSync");
+    const MelonPrime::PresentationConfigSnapshot presentation =
+        emuInstance->getPresentationConfigSnapshot();
+    const bool configuredVSync = presentation.vsync;
     const bool desiredDisplaySync = configuredVSync && !speedOverride;
 
     bool queueDisplaySyncChange = false;
-    m->layoutMutex.lock();
     if (m->displaySyncRequested != desiredDisplaySync)
     {
         m->displaySyncRequested = desiredDisplaySync;
         queueDisplaySyncChange = true;
     }
-    m->layoutMutex.unlock();
 
     if (queueDisplaySyncChange)
     {
@@ -801,16 +848,56 @@ void ScreenPanelMetal::drawScreen()
 
     @autoreleasepool
     {
-        m->layoutMutex.lock();
+        // m->layer is immutable after GUI-thread initialization. Drawable
+        // dimensions and orientation are copied only when the GUI publishes a
+        // new geometry revision.
         CAMetalLayer* layer = m->layer;
-        const int w = m->drawableW;
-        const int h = m->drawableH;
-        const qreal scale = m->scale;
-        const float yFlipSign = m->presenterYFlipSign;
-        m->layoutMutex.unlock();
+        const std::uint32_t geometryRevision =
+            m->geometryRevision.load(std::memory_order_acquire);
+        if (geometryRevision != m->cachedGeometryRevision)
+        {
+            QMutexLocker lock(&m->layoutMutex);
+            m->cachedDrawableW = m->drawableW;
+            m->cachedDrawableH = m->drawableH;
+            m->cachedScale = m->scale;
+            m->cachedPresenterYFlipSign = m->presenterYFlipSign;
+            // Keep the revision observed before taking the lock. If the GUI
+            // publishes another geometry immediately after this copy,
+            // retaining the older value forces one harmless refresh next
+            // frame instead of labelling an older cache with the newer data.
+            m->cachedGeometryRevision = geometryRevision;
+        }
+        const int w = m->cachedDrawableW;
+        const int h = m->cachedDrawableH;
+        const qreal scale = m->cachedScale;
+        const float yFlipSign = m->cachedPresenterYFlipSign;
 
         if (!layer || w <= 0 || h <= 0)
             return;
+
+        const std::uint32_t layoutRevision =
+            m->layoutRevision.load(std::memory_order_acquire);
+        if (layoutRevision != m->cachedLayoutRevision)
+        {
+            QMutexLocker lock(&m->layoutMutex);
+            m->cachedNumScreens = std::min(m->numScreens, kMaxScreenTransforms);
+            for (int index = 0; index < m->cachedNumScreens; ++index)
+            {
+                std::memcpy(
+                    m->cachedScreenMatrix[index],
+                    m->screenMatrix[index],
+                    sizeof(float) * 6);
+                m->cachedScreenKind[index] = m->screenKind[index];
+            }
+            // Keep the revision observed before taking the lock. If the GUI
+            // publishes another layout immediately after this copy, retaining
+            // the older value forces one harmless refresh next frame instead
+            // of labelling an older cache with the newer arrays' revision.
+            m->cachedLayoutRevision = layoutRevision;
+        }
+        const float (*presentedScreenMatrix)[6] = m->cachedScreenMatrix;
+        const int* presentedScreenKind = m->cachedScreenKind;
+        const int presentedNumScreens = m->cachedNumScreens;
 
         // Match OpenEmu's display policy: never let a backed-up CAMetalLayer
         // stall emulation/audio. If the previous presenter command buffer is
@@ -841,8 +928,7 @@ void ScreenPanelMetal::drawScreen()
 
             rendererOutputLease = nds->GPU.AcquireRendererOutputLease();
             const melonDS::RendererOutput& output = rendererOutputLease.Output;
-            const int selectedRenderer =
-                emuInstance->getGlobalConfig().GetInt("3D.Renderer");
+            const int selectedRenderer = presentation.configuredRenderer;
             const bool metalRendererSelected =
                 selectedRenderer == renderer3D_Metal ||
                 selectedRenderer == renderer3D_MetalCompute;
@@ -870,9 +956,9 @@ void ScreenPanelMetal::drawScreen()
                             static_cast<size_t>(finalMetalTextureForFrame.arrayLength),
                             static_cast<size_t>(finalMetalTextureForFrame.width),
                             static_cast<size_t>(finalMetalTextureForFrame.height),
-                            numScreens > 0 ? screenKind[0] : -1,
-                            numScreens > 1 ? screenKind[1] : -1,
-                            numScreens,
+                            presentedNumScreens > 0 ? presentedScreenKind[0] : -1,
+                            presentedNumScreens > 1 ? presentedScreenKind[1] : -1,
+                            presentedNumScreens,
                             static_cast<size_t>(std::max<NSUInteger>(1, finalMetalTextureForFrame.width / 256)));
                     if (finalMetalTextureForFrame.textureType != MTLTextureType2DArray ||
                         finalMetalTextureForFrame.arrayLength < 2)
@@ -918,21 +1004,21 @@ void ScreenPanelMetal::drawScreen()
                         "screenKind0=%d screenKind1=%d "
                         "matrix0=[%.1f %.1f %.1f %.1f %.1f %.1f] "
                         "matrix1=[%.1f %.1f %.1f %.1f %.1f %.1f]\n",
-                        numScreens,
-                        numScreens > 0 ? screenKind[0] : -1,
-                        numScreens > 1 ? screenKind[1] : -1,
-                        numScreens > 0 ? screenMatrix[0][0] : 0.0f,
-                        numScreens > 0 ? screenMatrix[0][1] : 0.0f,
-                        numScreens > 0 ? screenMatrix[0][2] : 0.0f,
-                        numScreens > 0 ? screenMatrix[0][3] : 0.0f,
-                        numScreens > 0 ? screenMatrix[0][4] : 0.0f,
-                        numScreens > 0 ? screenMatrix[0][5] : 0.0f,
-                        numScreens > 1 ? screenMatrix[1][0] : 0.0f,
-                        numScreens > 1 ? screenMatrix[1][1] : 0.0f,
-                        numScreens > 1 ? screenMatrix[1][2] : 0.0f,
-                        numScreens > 1 ? screenMatrix[1][3] : 0.0f,
-                        numScreens > 1 ? screenMatrix[1][4] : 0.0f,
-                        numScreens > 1 ? screenMatrix[1][5] : 0.0f);
+                        presentedNumScreens,
+                        presentedNumScreens > 0 ? presentedScreenKind[0] : -1,
+                        presentedNumScreens > 1 ? presentedScreenKind[1] : -1,
+                        presentedNumScreens > 0 ? presentedScreenMatrix[0][0] : 0.0f,
+                        presentedNumScreens > 0 ? presentedScreenMatrix[0][1] : 0.0f,
+                        presentedNumScreens > 0 ? presentedScreenMatrix[0][2] : 0.0f,
+                        presentedNumScreens > 0 ? presentedScreenMatrix[0][3] : 0.0f,
+                        presentedNumScreens > 0 ? presentedScreenMatrix[0][4] : 0.0f,
+                        presentedNumScreens > 0 ? presentedScreenMatrix[0][5] : 0.0f,
+                        presentedNumScreens > 1 ? presentedScreenMatrix[1][0] : 0.0f,
+                        presentedNumScreens > 1 ? presentedScreenMatrix[1][1] : 0.0f,
+                        presentedNumScreens > 1 ? presentedScreenMatrix[1][2] : 0.0f,
+                        presentedNumScreens > 1 ? presentedScreenMatrix[1][3] : 0.0f,
+                        presentedNumScreens > 1 ? presentedScreenMatrix[1][4] : 0.0f,
+                        presentedNumScreens > 1 ? presentedScreenMatrix[1][5] : 0.0f);
             }
         }
 
@@ -1002,17 +1088,17 @@ void ScreenPanelMetal::drawScreen()
                 uniforms.screenSize[1] = static_cast<float>(h) / static_cast<float>(scale);
                 uniforms.yFlipSign = yFlipSign;
 
-                for (int i = 0; i < numScreens; i++)
+                for (int i = 0; i < presentedNumScreens; i++)
                 {
                     for (int c = 0; c < 6; c++)
-                        uniforms.m[c] = screenMatrix[i][c];
+                        uniforms.m[c] = presentedScreenMatrix[i][c];
 
                     [encoder setVertexBytes:&uniforms length:sizeof(uniforms) atIndex:1];
                     if (!sourceTexture)
                         continue;
 
                     [encoder drawPrimitives:MTLPrimitiveTypeTriangle
-                                 vertexStart:(screenKind[i] == 0 ? 0 : 6)
+                                 vertexStart:(presentedScreenKind[i] == 0 ? 0 : 6)
                                  vertexCount:6];
                 }
             }
@@ -1171,6 +1257,7 @@ void ScreenPanelMetal::drawScreen()
                         && m_radarOpacity > 0.0f
                         && kMetalRadarHunterCount > 0
                         && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
+                            mp->HudConfigState(),
                             emuInstance,
                             mp->GetCurrentRom(),
                             mp->GetPlayerPosition()))
@@ -1243,6 +1330,7 @@ void ScreenPanelMetal::drawScreen()
                             &ensureOverlayPainter(), nullptr,
                             &m->uiOverlay, nullptr,
                             mp->IsInGame(),
+                            m_hudEnabled,
                             m_hudTopMatrixValid ? m_topStretchX : 1.0f,
                             m_hudScale,
                             (m_hudScale != 0.0f) ? (m_hudOriginX / m_hudScale) : 0.0f,

@@ -365,6 +365,226 @@ foreach ($signature in @(
     }
 }
 
+# --- Rule G: HUD owner slots stay typed and cold-owned ---------------------
+#
+# Runtime/frame/text state is per CustomHudConfigState. Type erasure or
+# lazy make_shared in these slots puts refcount/heap work back on the render
+# path and makes ownership invisible to the compiler. The top-level
+# m_hudConfigState shared_ptr remains the explicit Core lifetime boundary; this
+# rule only covers the internal owner slots and their accessors.
+$hudOwnerSources = @(Get-ChildItem -LiteralPath $qtSdl -File |
+    Where-Object { $_.Name -like 'MelonPrimeHud*.inc' -or $_.Name -like 'MelonPrimeHud*.h' })
+$hudOwnerForbiddenPatterns = @(
+    'std::shared_ptr\s*<\s*void\s*>',
+    'std::static_pointer_cast\s*<',
+    'std::make_shared\s*<\s*(?:HudBattleOwnedState|HudFrameOwnedState|HudElementTextCacheState)'
+)
+foreach ($source in $hudOwnerSources) {
+    foreach ($pattern in $hudOwnerForbiddenPatterns) {
+        foreach ($line in (Get-CodeMatchLines $pattern $source.FullName)) {
+            Add-Error ("Custom HUD owner slots must use typed cold ownership; " +
+                "forbidden ${pattern}: $line")
+        }
+    }
+}
+$hudOwnerSlotPath = Join-Path $qtSdl 'MelonPrimeHudRenderConfig.inc'
+foreach ($slot in @(
+    @{ Type = 'HudBattleOwnedState'; Name = 'runtimeState' },
+    @{ Type = 'HudFrameOwnedState'; Name = 'frameState' },
+    @{ Type = 'HudElementTextCacheState'; Name = 'textCacheState' })) {
+    $slotPattern = "std::unique_ptr\s*<\s*$($slot.Type)\s*>\s+$($slot.Name)\s*;"
+    if ((Get-CodeMatchLines $slotPattern $hudOwnerSlotPath).Count -eq 0) {
+        Add-Error ("CustomHudConfigState must keep a typed unique_ptr slot for " +
+            "$($slot.Name) ($($slot.Type))")
+    }
+}
+$hudOwnerFactoryPath = Join-Path $qtSdl 'MelonPrimeHudRender.cpp'
+foreach ($typeName in @('HudBattleOwnedState', 'HudFrameOwnedState',
+                         'HudElementTextCacheState')) {
+    if ((Get-CodeMatchLines "std::make_unique\s*<\s*$typeName\s*>" $hudOwnerFactoryPath).Count -eq 0) {
+        Add-Error ("CustomHudConfigState cold construction must initialize " +
+            "$typeName with std::make_unique")
+    }
+}
+
+# --- Rule J: standalone ARM9 modules stay stateless and config-free ---------
+#
+# Runtime feature policy is resolved into Arm9HookActivationPlan before the
+# match hook is installed. The dispatcher mask gates the handler and the
+# per-Core ARM9HookState supplies romGroupIndex; a module must not reintroduce
+# a process-global activation context or a second Config interpreter.
+$arm9RuntimeModules = @(
+    (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.cpp'),
+    (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.h'),
+    (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.cpp'),
+    (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.h')
+)
+$arm9ModuleForbiddenPatterns = @(
+    '#include\s+"Config\.h"',
+    '#include\s+"MelonPrimeDef\.h"',
+    '\bConfig::Table\b',
+    '\bCfgKey::',
+    '\bGet(?:Bool|Int|Double|String)\s*\('
+)
+$arm9LegacyStatePatterns = @(
+    '\bs_activeHooks\b'
+)
+foreach ($modulePath in $arm9RuntimeModules) {
+    if (-not (Test-Path -LiteralPath $modulePath)) {
+        Add-Error "ARM9 runtime module is missing: $modulePath"
+        continue
+    }
+    foreach ($pattern in $arm9ModuleForbiddenPatterns) {
+        foreach ($line in (Get-CodeMatchLines $pattern $modulePath)) {
+            Add-Error ("Shadow/Noxus runtime modules must not reinterpret config; " +
+                "forbidden ${pattern}: $line")
+        }
+    }
+}
+
+$arm9RomGroupNames = @('JP1_0', 'JP1_1', 'US1_0', 'US1_1', 'EU1_0', 'EU1_1', 'KR1_0')
+foreach ($modulePath in @(
+    (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.cpp'),
+    (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.cpp'))) {
+    foreach ($romGroupName in $arm9RomGroupNames) {
+        if ((Get-CodeMatchLines "kHooks_$romGroupName" $modulePath).Count -eq 0) {
+            Add-Error ("ARM9 runtime module is missing the $romGroupName hook table: " +
+                "$modulePath")
+        }
+    }
+    if ((Get-CodeMatchLines 'RomGroup::COUNT' $modulePath).Count -eq 0) {
+        Add-Error "ARM9 runtime module must assert RomGroup::COUNT coverage: $modulePath"
+    }
+}
+
+# Rule J's name-based bans above are intentionally supplemented by a narrow
+# semantic scan.  These two runtime modules may contain immutable lookup data
+# and static helper functions, but they must not acquire mutable module state
+# under a new name (including a function-local static or thread_local).
+function Get-MutableStaticDeclarations([string]$source, [string]$label) {
+    $code = [regex]::Replace($source, '(?s)/\*.*?\*/', '')
+    $code = [regex]::Replace($code, '//[^\r\n]*', '')
+    $code = [regex]::Replace($code, '"(?:\\.|[^"\\])*"', '""')
+    $staticPattern = '(?<![\w])(?:thread_local\s+static|static\s+thread_local|static)(?![\w])'
+    $violations = New-Object System.Collections.Generic.List[string]
+    foreach ($match in [regex]::Matches($code, $staticPattern)) {
+        $tail = $code.Substring($match.Index)
+        $end = $tail.Length
+        foreach ($delimiter in @(';', '{', '}')) {
+            $candidate = $tail.IndexOf($delimiter)
+            if ($candidate -ge 0 -and $candidate -lt $end) { $end = $candidate }
+        }
+        $declaration = $tail.Substring(0, $end).Trim()
+        $isImmutable = $declaration -match '^\s*(?:thread_local\s+static|static\s+thread_local|static)\s+(?:constexpr\b|const\b)'
+        $openParen = $declaration.IndexOf('(')
+        $equals = $declaration.IndexOf('=')
+        $isStaticFunction = $openParen -ge 0 -and ($equals -lt 0 -or $openParen -lt $equals)
+        if (-not $isImmutable -and -not $isStaticFunction) {
+            $line = 1 + ([regex]::Matches($code.Substring(0, $match.Index), "`n")).Count
+            $violations.Add("${label}:${line}:$declaration") | Out-Null
+        }
+    }
+    return @($violations)
+}
+
+# Synthetic fixtures exercise both sides of the allowlist so a future edit to
+# the scanner cannot silently make it name-based or over-broad.
+$statelessFixtures = @(
+    @{ Name = 'static constexpr table'; Source = 'static constexpr int kTable[] = { 1, 2 };'; Allowed = $true },
+    @{ Name = 'static const data'; Source = 'static const int kValue = 1;'; Allowed = $true },
+    @{ Name = 'static helper function'; Source = 'static bool Helper(int value) { return value != 0; }'; Allowed = $true },
+    @{ Name = 'mutable static bool'; Source = 'static bool g_enabled = false;'; Allowed = $false },
+    @{ Name = 'mutable static byte'; Source = 'static uint8_t activeRom = 0;'; Allowed = $false },
+    @{ Name = 'static thread_local'; Source = 'static thread_local bool active = false;'; Allowed = $false },
+    @{ Name = 'thread_local static'; Source = 'thread_local static bool active = false;'; Allowed = $false },
+    @{ Name = 'mutable static object'; Source = 'static State state{};'; Allowed = $false },
+    @{ Name = 'mutable static factory'; Source = 'static State state = MakeState();'; Allowed = $false }
+)
+foreach ($fixture in $statelessFixtures) {
+    $found = @(Get-MutableStaticDeclarations $fixture.Source "fixture/$($fixture.Name)")
+    $accepted = $found.Count -eq 0
+    if ($accepted -ne $fixture.Allowed) {
+        Add-Error ("stateless-static fixture '$($fixture.Name)' expected " +
+            "Allowed=$($fixture.Allowed), got Allowed=$accepted")
+    }
+}
+
+# Keep the older migration bans executable as well as documented. These
+# fixtures are intentionally source snippets rather than checks for today's
+# module text: they fail the audit if a future edit weakens the Config or
+# legacy-hook-symbol ratchet while the production files happen not to contain
+# the forbidden text.
+function Get-StatelessForbiddenFixtureHits([string]$source, [string]$label) {
+    $code = [regex]::Replace($source, '(?s)/\*.*?\*/', '')
+    $code = [regex]::Replace($code, '//[^\r\n]*', '')
+    $violations = New-Object System.Collections.Generic.List[string]
+    foreach ($pattern in @($arm9ModuleForbiddenPatterns + $arm9LegacyStatePatterns)) {
+        foreach ($match in [regex]::Matches($code, $pattern)) {
+            $line = 1 + ([regex]::Matches($code.Substring(0, $match.Index), "`n")).Count
+            $violations.Add("${label}:${line}:$pattern") | Out-Null
+        }
+    }
+    return @($violations)
+}
+
+$statelessLegacyFixtures = @(
+    @{ Name = 'Config reintroduction'; Source = 'Config::Table cfg;' },
+    @{ Name = 'old active hook symbol'; Source = 'static bool s_activeHooks = false;' }
+)
+foreach ($fixture in $statelessLegacyFixtures) {
+    $textHits = @(Get-StatelessForbiddenFixtureHits $fixture.Source "fixture/$($fixture.Name)")
+    if ($textHits.Count -eq 0) {
+        Add-Error ("stateless legacy fixture '$($fixture.Name)' must be rejected " +
+            'by the Rule J forbidden-text ratchet')
+    }
+    if ($fixture.Name -eq 'old active hook symbol') {
+        $staticHits = @(Get-MutableStaticDeclarations $fixture.Source "fixture/$($fixture.Name)")
+        if ($staticHits.Count -eq 0) {
+            Add-Error ("stateless legacy fixture '$($fixture.Name)' must be rejected " +
+                'by the mutable-static semantic ratchet')
+        }
+    }
+}
+
+foreach ($modulePath in @(
+    (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.cpp'),
+    (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.cpp'))) {
+    if (-not (Test-Path -LiteralPath $modulePath)) { continue }
+    $relative = [System.IO.Path]::GetRelativePath($repoRoot, $modulePath) -replace '\\', '/'
+    foreach ($violation in (Get-MutableStaticDeclarations ([System.IO.File]::ReadAllText($modulePath)) $relative)) {
+        Add-Error ("ARM9 runtime module contains mutable static state; " +
+            "use per-Core state or immutable data: $violation")
+    }
+}
+
+$dispatchSignatures = @(
+    @{ File = (Join-Path $qtSdl 'MelonPrimePatchShadowFreezeRuntimeHook.cpp'); Name = 'ShadowFreezeRuntimeHook_DispatchCheckAndRedirect' },
+    @{ File = (Join-Path $qtSdl 'MelonPrimePatchFixNoxusBladePersistence.cpp'); Name = 'FixNoxusBladePersistence_DispatchCheck' }
+)
+foreach ($dispatch in $dispatchSignatures) {
+    if (-not (Test-Path -LiteralPath $dispatch.File)) { continue }
+    $dispatchCode = [regex]::Replace([System.IO.File]::ReadAllText($dispatch.File), '(?s)/\*.*?\*/', '')
+    $dispatchCode = [regex]::Replace($dispatchCode, '//[^\r\n]*', '')
+    $dispatchCode = [regex]::Replace($dispatchCode, '\s+', ' ')
+    $signaturePattern = '\b' + $dispatch.Name + '\s*\([^;{}]*\buint8_t\s+romGroupIndex\b[^;{}]*\)'
+    if ($dispatchCode -notmatch $signaturePattern) {
+        Add-Error ("$($dispatch.Name)() must take uint8_t romGroupIndex explicitly")
+    }
+}
+$arm9DispatcherCode = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'MelonPrimeArm9Hook.cpp'))
+if ($arm9DispatcherCode -notmatch 'const\s+uint8_t\s+romGroupIndex\s*=\s*hookState\.romGroupIndex') {
+    Add-Error 'ARM9 dispatcher must load const uint8_t romGroupIndex = hookState.romGroupIndex'
+}
+
+$arm9StatePath = Join-Path $qtSdl 'MelonPrime.h'
+if ((Get-CodeMatchLines 'uint8_t\s+romGroupIndex\s*=\s*0xFFu' $arm9StatePath).Count -eq 0) {
+    Add-Error 'MelonPrimeArm9HookState must own an invalid-by-default romGroupIndex'
+}
+$arm9HookPath = Join-Path $qtSdl 'MelonPrimeArm9Hook.cpp'
+if ((Get-CodeMatchLines 'const\s+uint8_t\s+romGroupIndex\s*=\s*hookState\.romGroupIndex' $arm9HookPath).Count -eq 0) {
+    Add-Error 'DispatcherCallback must load romGroupIndex from the per-Core ARM9HookState'
+}
+
 # Neither may the render header pull the split headers back in and re-export
 # them, which would restore the include coupling this split removed.
 foreach ($line in (Get-MatchLines '#include\s+"MelonPrimeHud(Edit|PatchLifecycle|Radar|Runtime|PresentationState|GoldenHarness)\.h"' $hudRenderHeader)) {
@@ -460,6 +680,204 @@ function Get-FunctionBody {
     return $body
 }
 
+# --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----
+#
+# The per-instance HUD state is reached through a thread_local pointer that only
+# ScopedHudConfigState sets:
+#
+#     static thread_local CustomHudConfigState* g_activeHudConfigState;
+#     static CustomHudConfigState& ActiveHudConfigState()
+#     { Q_ASSERT(g_activeHudConfigState); return *g_activeHudConfigState; }
+#
+# Q_ASSERT compiles out in release, so a public API that reaches that state
+# without a scope dereferences null on every call. That is not hypothetical: it
+# shipped once, when a visibility query was changed from direct RAM reads to the
+# frame cache while the radar presenters kept calling it outside the painter
+# path.
+#
+# The contract this pins:
+#   - an exported CustomHud_* that transitively reaches the state accessors must
+#     take CustomHudConfigState& (so a caller cannot forget to supply one)
+#   - one that reaches them in its own body must also construct a
+#     ScopedHudConfigState (a pure delegator does not need its own)
+$hudUnityFiles = @(Get-ChildItem -Path $qtSdl -File -Filter 'MelonPrimeHud*.inc') +
+    @(Get-Item -LiteralPath (Join-Path $qtSdl 'MelonPrimeHudRender.cpp'))
+
+# The state macros are declared next to the accessors they expand to, so read
+# the set out of the source rather than restating it here.
+$hudStateAccessors = New-Object System.Collections.Generic.HashSet[string]
+foreach ($accessor in @('ActiveHudConfigState', 'HudFrameState', 'HudBattleState',
+        'HudElementTextCaches')) {
+    $hudStateAccessors.Add($accessor) | Out-Null
+}
+foreach ($file in $hudUnityFiles) {
+    foreach ($line in [System.IO.File]::ReadAllLines($file.FullName)) {
+        $m = [regex]::Match(
+            $line,
+            '^#define\s+(s_\w+)\s+\((ActiveHudConfigState|HudFrameState|HudBattleState|HudElementTextCaches)\(\)')
+        if ($m.Success) { $hudStateAccessors.Add($m.Groups[1].Value) | Out-Null }
+    }
+}
+if ($hudStateAccessors.Count -lt 10) {
+    Add-Error ("Rule K could not recover the Custom HUD state macro set " +
+        "(found $($hudStateAccessors.Count)); the #define shape must have changed")
+}
+
+# Every function defined in the HUD unity TU, with its body, so the reachability
+# below can follow a public API into the static helpers it calls.
+$hudFunctions = @{}
+foreach ($file in $hudUnityFiles) {
+    $lines = [System.IO.File]::ReadAllLines($file.FullName)
+    $rel = [System.IO.Path]::GetRelativePath($repoRoot, $file.FullName) -replace '\\', '/'
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        $m = [regex]::Match(
+            $lines[$i],
+            '^(?<qual>(?:static\s+|inline\s+|HOT_FUNCTION\s+|COLD_FUNCTION\s+|FORCE_INLINE\s+)*)' +
+            '(?:[A-Za-z_][\w:<>,\*&\s]*?\s[\*&]?\s*)?(?<name>[A-Za-z_]\w*)\s*\(')
+        if (-not $m.Success) { continue }
+        $name = $m.Groups['name'].Value
+        if ($name -in @('if', 'for', 'while', 'switch', 'return', 'sizeof', 'catch')) { continue }
+        $body = Get-FunctionBody -Lines $lines -StartIndex $i
+        if ($body.Count -eq 0) { continue }
+        # A signature can span lines; keep from the definition line to the brace.
+        $signature = ($lines[$i..([math]::Min($body[0].Line - 1, $lines.Length - 1))] -join ' ')
+        $text = (($body | ForEach-Object { $_.Text -replace '//.*$', '' }) -join "`n")
+        if (-not $hudFunctions.ContainsKey($name)) {
+            $hudFunctions[$name] = [pscustomobject]@{
+                Name = $name
+                File = $rel
+                Line = $i + 1
+                Signature = $signature
+                Body = $text
+                Exported = ($m.Groups['qual'].Value -notmatch '\bstatic\b')
+            }
+        }
+    }
+}
+
+# Direct reach: the body names a state accessor or one of its macros.
+$hudDirect = @{}
+foreach ($name in $hudFunctions.Keys) {
+    $body = $hudFunctions[$name].Body
+    $hit = $false
+    foreach ($accessor in $hudStateAccessors) {
+        if ($body -match ("\b" + [regex]::Escape($accessor) + "\b")) { $hit = $true; break }
+    }
+    $hudDirect[$name] = $hit
+}
+
+# Transitive reach: follow calls to other functions in the same TU.
+$hudReaches = @{}
+foreach ($name in $hudFunctions.Keys) { $hudReaches[$name] = $hudDirect[$name] }
+for ($pass = 0; $pass -lt 12; $pass++) {
+    $changed = $false
+    foreach ($name in @($hudFunctions.Keys)) {
+        if ($hudReaches[$name]) { continue }
+        foreach ($callee in [regex]::Matches($hudFunctions[$name].Body, '\b([A-Za-z_]\w*)\s*\(')) {
+            $target = $callee.Groups[1].Value
+            if ($target -eq $name) { continue }
+            if ($hudReaches.ContainsKey($target) -and $hudReaches[$target]) {
+                $hudReaches[$name] = $true
+                $changed = $true
+                break
+            }
+        }
+    }
+    if (-not $changed) { break }
+}
+
+$hudScopeChecked = 0
+foreach ($name in $hudFunctions.Keys) {
+    if ($name -notlike 'CustomHud_*') { continue }
+    $fn = $hudFunctions[$name]
+    if (-not $fn.Exported) { continue }
+    if (-not $hudReaches[$name]) { continue }
+    $hudScopeChecked++
+    # Owning the state is as good as being handed it: the developer golden
+    # harness constructs its own CustomHudConfigState rather than taking one.
+    $ownsState = ($fn.Signature -match 'CustomHudConfigState\s*&') -or
+        ($fn.Body -match 'CustomHudConfigState\s+\w+\s*[;{]')
+    if (-not $ownsState) {
+        Add-Error ("Rule K: $name reaches per-instance Custom HUD state but neither " +
+            "takes nor owns a CustomHudConfigState -- ActiveHudConfigState() " +
+            "dereferences a null thread_local when it is called outside a painter " +
+            "scope ($($fn.File):$($fn.Line))")
+    } elseif ($hudDirect[$name] -and $fn.Body -notmatch 'ScopedHudConfigState') {
+        Add-Error ("Rule K: $name touches per-instance Custom HUD state without " +
+            "constructing a ScopedHudConfigState ($($fn.File):$($fn.Line))")
+    }
+}
+if ($hudScopeChecked -eq 0) {
+    Add-Error ("Rule K matched no state-dependent Custom HUD API; the definition " +
+        "scan must have stopped working")
+}
+
+
+# --- Rule H: CustomHud_Render consumes the screen snapshot ----------------
+#
+# Screen.cpp refreshes m_hudEnabled once per HUD config epoch and uses that
+# same value for visibility/restore and the render call. A live Config::Table
+# lookup here would make those decisions disagree on a toggle edge.
+$hudRenderMainPath = Join-Path $qtSdl 'MelonPrimeHudRenderMain.inc'
+$hudRenderMainLines = [System.IO.File]::ReadAllLines($hudRenderMainPath)
+$hudRenderStartIndex = -1
+for ($i = 0; $i -lt $hudRenderMainLines.Length; $i++) {
+    if ($hudRenderMainLines[$i] -match '^\s*(?:HOT_FUNCTION\s+)?QRect\s+CustomHud_Render\s*\(') {
+        $hudRenderStartIndex = $i
+        break
+    }
+}
+if ($hudRenderStartIndex -lt 0) {
+    Add-Error 'CustomHud_Render() definition was not found for the HUD enabled-snapshot check'
+} else {
+    $hudRenderBody = @(Get-FunctionBody -Lines $hudRenderMainLines -StartIndex $hudRenderStartIndex)
+    foreach ($entry in $hudRenderBody) {
+        $code = $entry.Text -replace '//.*$', ''
+        if ($code -match 'CustomHud_IsEnabled\s*\(') {
+            Add-Error ("CustomHud_Render must consume hudEnabledSnapshot, not " +
+                "CustomHud_IsEnabled(): $($hudRenderMainPath):$($entry.Line):$($entry.Text.Trim())")
+        }
+        if ($code -match '\bGet(?:Bool|Int|Double|String)\s*\(') {
+            Add-Error ("CustomHud_Render must not perform a live Config::Table lookup: " +
+                "$($hudRenderMainPath):$($entry.Line):$($entry.Text.Trim())")
+        }
+    }
+}
+
+# --- Rule I: ARM9 install consumes only the resolved activation plan --------
+#
+# RuntimeConfigSnapshot owns config interpretation. ARM9Hook_Install is the
+# cold installer and may collect addresses and set module state, but it must
+# not grow a second Config::Table/key interpreter.
+$arm9HookPath = Join-Path $qtSdl 'MelonPrimeArm9Hook.cpp'
+$arm9HookLines = [System.IO.File]::ReadAllLines($arm9HookPath)
+$arm9InstallStartIndex = -1
+for ($i = 0; $i -lt $arm9HookLines.Length; $i++) {
+    if ($arm9HookLines[$i] -match '^\s*void\s+ARM9Hook_Install\s*\(') {
+        $arm9InstallStartIndex = $i
+        break
+    }
+}
+if ($arm9InstallStartIndex -lt 0) {
+    Add-Error 'ARM9Hook_Install() definition was not found for the activation-plan check'
+} else {
+    $arm9SignatureEndIndex = [Math]::Min(
+        $arm9HookLines.Length - 1, $arm9InstallStartIndex + 12)
+    $arm9Signature = $arm9HookLines[$arm9InstallStartIndex..$arm9SignatureEndIndex] -join "`n"
+    if ($arm9Signature -notmatch 'const\s+Arm9HookActivationPlan\s*&\s*plan') {
+        Add-Error 'ARM9Hook_Install() must consume const Arm9HookActivationPlan& plan'
+    }
+
+    $arm9InstallBody = @(Get-FunctionBody -Lines $arm9HookLines -StartIndex $arm9InstallStartIndex)
+    foreach ($entry in $arm9InstallBody) {
+        $code = $entry.Text -replace '//.*$', ''
+        if ($code -match 'Config::Table|CfgKey::|\bGet(?:Bool|Int|Double|String)\s*\(') {
+            Add-Error ('ARM9Hook_Install must not reinterpret runtime config; ' +
+                "${arm9HookPath}:$($entry.Line):$($entry.Text.Trim())")
+        }
+    }
+}
+
 # --- Rule A2: aim smoothing remains wired at game join ---------------------
 #
 # Rule A proves the patch vocabulary left GameSettings and that the patch
@@ -495,15 +913,105 @@ if ((Get-CodeMatchLines '^\s*MelonPrimePatchAimSmoothing\.cpp\s*$' $qtSdlCmake).
     Add-Error "MelonPrimePatchAimSmoothing.cpp is missing from src/frontend/qt_sdl/CMakeLists.txt"
 }
 
+# --- Rule I2: EmuThread frame loop consumes renderer pointer caches ----------
+#
+# Renderer RTTI belongs at the renderer transition boundary. The emulation
+# frame loop is deliberately marked in EmuThread.cpp so this ratchet can reject
+# a future per-frame dynamic_cast while still allowing the one-time refresh
+# helper to inspect the actual live renderer after updateRenderer().
+$emuThreadPath = Join-Path $qtSdl 'EmuThread.cpp'
+$emuThreadSource = [System.IO.File]::ReadAllText($emuThreadPath)
+$frameHotBegin = '// MELONPRIME_EMUTHREAD_FRAME_HOT_PATH_BEGIN'
+$frameHotEnd = '// MELONPRIME_EMUTHREAD_FRAME_HOT_PATH_END'
+$frameHotBeginIndex = $emuThreadSource.IndexOf($frameHotBegin)
+$frameHotEndIndex = $emuThreadSource.IndexOf($frameHotEnd)
+$rendererRttiPattern = 'dynamic_cast\s*<\s*[^>]*Renderer[^>]*>'
+if ($frameHotBeginIndex -lt 0 -or $frameHotEndIndex -le $frameHotBeginIndex) {
+    Add-Error 'EmuThread frame hot-path markers are missing or out of order'
+} else {
+    $frameHotLength = $frameHotEndIndex + $frameHotEnd.Length - $frameHotBeginIndex
+    $frameHotSource = $emuThreadSource.Substring($frameHotBeginIndex, $frameHotLength)
+    $frameHotCode = [regex]::Replace($frameHotSource, '//[^\r\n]*', '')
+    if ($frameHotCode -match $rendererRttiPattern) {
+        Add-Error 'EmuThread frame hot path must use cached renderer pointers; renderer RTTI belongs at the transition boundary'
+    }
+    foreach ($cacheName in @('cachedVulkanLowLatencyRenderer', 'cachedStructuredSoft2DRenderer')) {
+        if ($frameHotSource -notmatch [regex]::Escape($cacheName)) {
+            Add-Error "EmuThread frame hot path no longer consumes $cacheName"
+        }
+    }
+}
+
+$refreshSignature = 'void\s+EmuThread::RefreshRendererFrameCache\s*\('
+if ((Get-CodeMatchLines $refreshSignature $emuThreadPath).Count -eq 0) {
+    Add-Error 'RefreshRendererFrameCache() is missing from EmuThread.cpp'
+}
+$dx12CacheDeclaration = 'DX12Renderer\s*\*\s*cachedDX12FrameRenderer'
+if ((Get-CodeMatchLines $dx12CacheDeclaration (Join-Path $qtSdl 'EmuThread.h')).Count -eq 0) {
+    Add-Error 'EmuThread DX12 renderer frame cache declaration is missing'
+}
+$cleanRendererRttiFixture = 'bool helper() { return cachedDX12FrameRenderer != nullptr; }'
+$forbiddenRendererRttiFixture = 'bool helper() { auto* r = dynamic_cast<DX12Renderer*>(&nds->GPU.GetRenderer()); return r != nullptr; }'
+if ($cleanRendererRttiFixture -match $rendererRttiPattern) {
+    Add-Error 'Renderer RTTI audit fixture incorrectly rejects a cache-only helper'
+}
+if ($forbiddenRendererRttiFixture -notmatch $rendererRttiPattern) {
+    Add-Error 'Renderer RTTI audit fixture failed to recognize a forbidden renderer cast'
+}
+$refreshCallToken = 'RefreshRendererFrameCache();'
+$refreshCallIndex = $emuThreadSource.IndexOf($refreshCallToken)
+$rendererBeforeIndex = $emuThreadSource.IndexOf('#include "MelonPrimeEmuThreadUpdateRendererBefore.inc"')
+$cacheClearIndex = $emuThreadSource.IndexOf('cachedStructuredSoft2DRenderer = nullptr;')
+if (($cacheClearIndex -lt 0) -or ($rendererBeforeIndex -lt 0) -or ($cacheClearIndex -gt $rendererBeforeIndex)) {
+    Add-Error 'EmuThread renderer pointer caches must clear before the transition helper'
+}
+$dx12CacheClearIndex = $emuThreadSource.IndexOf('cachedDX12FrameRenderer = nullptr;')
+if (($dx12CacheClearIndex -lt 0) -or ($rendererBeforeIndex -lt 0) -or ($dx12CacheClearIndex -gt $rendererBeforeIndex)) {
+    Add-Error 'EmuThread DX12 renderer cache must clear before the transition helper'
+}
+if ($refreshCallIndex -lt 0 -or $refreshCallIndex -lt $rendererBeforeIndex) {
+    Add-Error 'RefreshRendererFrameCache() must run after updateRenderer() settles the actual renderer'
+}
+
+$dx12FailureSignature = '^\s*bool\s+EmuThread::handleDX12RuntimeFailure\s*\('
+$emuThreadLines = [System.IO.File]::ReadAllLines($emuThreadPath)
+$dx12FailureStartIndex = -1
+for ($i = 0; $i -lt $emuThreadLines.Length; $i++) {
+    if ($emuThreadLines[$i] -match $dx12FailureSignature) {
+        $dx12FailureStartIndex = $i
+        break
+    }
+}
+if ($dx12FailureStartIndex -lt 0) {
+    Add-Error 'handleDX12RuntimeFailure() definition was not found for the renderer RTTI check'
+} else {
+    $dx12FailureBody = @(Get-FunctionBody -Lines $emuThreadLines -StartIndex $dx12FailureStartIndex)
+    $dx12FailureBodyText = ($dx12FailureBody | ForEach-Object { $_.Text }) -join "`n"
+    $dx12FailureBodyCode = [regex]::Replace($dx12FailureBodyText, '//[^\r\n]*', '')
+    if ($dx12FailureBodyCode -match $rendererRttiPattern) {
+        Add-Error 'handleDX12RuntimeFailure() must use cachedDX12FrameRenderer; renderer RTTI is forbidden in the frame helper'
+    }
+    if ($dx12FailureBodyCode -notmatch '\bcachedDX12FrameRenderer\b') {
+        Add-Error 'handleDX12RuntimeFailure() no longer consumes cachedDX12FrameRenderer'
+    }
+}
+
 $hotPaths = @(
     @{ File = 'MelonPrime.cpp';               Signature = 'void\s+MelonPrimeCore::RunFrameHook\s*\(' },
     @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::UpdateInputStateImpl\s*\(' },
     @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::ProcessMoveAndButtonsFastImpl\s*\(' },
     @{ File = 'MelonPrimeGameInput.cpp';      Signature = 'void\s+MelonPrimeCore::ProcessAimInputMouse\s*\(' },
     @{ File = 'MelonPrimeArm9Hook.cpp';       Signature = '^\s*static\s+bool\s+DispatcherCallback\s*\(' },
-    @{ File = 'MelonPrimeHudRenderMain.inc';  Signature = 'QRect\s+CustomHud_Render\s*\(' }
+    @{ File = 'MelonPrimeHudRenderMain.inc';  Signature = 'QRect\s+CustomHud_Render\s*\(' },
+    # Native presenters are included as manual-review paths. Their output
+    # boundary is performance-critical, but platform-specific diagnostics and
+    # the one-time layout/renderer transitions are not suitable for a hard
+    # regex gate here.
+    @{ File = 'MelonPrimeScreenVulkan.cpp';   Signature = 'void\s+ScreenPanelVulkan::drawScreenFrame\s*\(' },
+    @{ File = 'Screen.cpp';                   Signature = 'void\s+ScreenPanelDX12::drawScreen\s*\(' },
+    @{ File = 'MelonPrimeScreenMetal.mm';     Signature = 'void\s+ScreenPanelMetal::drawScreen\s*\(' }
 )
-$hotPathCosts = 'Config::Table|\bGetBool\s*\(|\bGetInt\s*\(|\bGetDouble\s*\(|std::function|\bvirtual\b|dynamic_cast|QMetaObject|std::make_shared|std::make_unique|QString\s*\(|\bmutex\b'
+$hotPathCosts = 'Config::Table|\bGetBool\s*\(|\bGetInt\s*\(|\bGetDouble\s*\(|std::function|\bvirtual\b|dynamic_cast|QMetaObject|std::make_shared|std::make_unique|QString\s*\(|\bmutex\b|std::shared_ptr|std::static_pointer_cast|QMutexLocker|std::lock_guard|std::unique_lock|\bnew\b|std::string'
 $hotPathNotes = New-Object System.Collections.Generic.List[string]
 foreach ($hot in $hotPaths) {
     $hotFile = Join-Path $qtSdl $hot.File

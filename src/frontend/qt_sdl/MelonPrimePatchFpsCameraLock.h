@@ -1,5 +1,5 @@
-#ifndef MELON_PRIME_PATCH_INSTANT_AIM_FOLLOW_H
-#define MELON_PRIME_PATCH_INSTANT_AIM_FOLLOW_H
+#ifndef MELON_PRIME_PATCH_FPS_CAMERA_LOCK_H
+#define MELON_PRIME_PATCH_FPS_CAMERA_LOCK_H
 
 #ifdef MELONPRIME_DS
 
@@ -11,20 +11,20 @@ namespace melonDS { class NDS; }
 namespace MelonPrime {
 struct MelonPrimePatchState;
 
-void InstantAimFollow_ApplyOnce(
+void FpsCameraLock_ApplyOnce(
     MelonPrimePatchState& state,
     melonDS::NDS* nds,
     Config::Table& cfg,
     uint8_t romGroupIndex);
 
-void InstantAimFollow_RestoreOnce(
+void FpsCameraLock_RestoreOnce(
     MelonPrimePatchState& state,
     melonDS::NDS* nds,
     uint8_t romGroupIndex);
 
-void InstantAimFollow_ResetPatchState(MelonPrimePatchState& state);
+void FpsCameraLock_ResetPatchState(MelonPrimePatchState& state);
 
 } // namespace MelonPrime
 
 #endif // MELONPRIME_DS
-#endif // MELON_PRIME_PATCH_INSTANT_AIM_FOLLOW_H
+#endif // MELON_PRIME_PATCH_FPS_CAMERA_LOCK_H

@@ -52,24 +52,14 @@ void CustomHud_ClampHelmetLayersPreFrame(
     if (!(appliedMask & (1u << NOHUD_HELMET)))
         return;
 
-    HudRuntimeState st = {};
-    if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
+    HudHelmetClampState st = {};
+    if (!ReadHudHelmetClampState(emu, rom, playerPosition, st))
         return;
 
     // Restore the native helmet instruction before native UI is rendered.
     // Vulkan applies its stronger guarantee presentation-only in the scanline
     // renderer, without changing the emulated register state.
-    if (st.isStartPressed || st.isGameOver || st.currentHP == 0)
-    {
-        NoHudPatch_Sync(
-            patch,
-            st.nds,
-            st.romGroup,
-            static_cast<uint16_t>(appliedMask & ~(1u << NOHUD_HELMET)));
-        return;
-    }
-    ReadHudRuntimeAdventurePauseState(rom, st);
-    if (st.isAdventure && st.isMapOrUserActionPaused)
+    if (st.hideForNativeUi)
     {
         NoHudPatch_Sync(
             patch,
@@ -120,6 +110,9 @@ void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
     s_hudRuntimeFrameCache.enemyTarget = {};
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
+    s_chStickyPxCx = INT_MIN;
+    s_chStickyPxCy = INT_MIN;
+    s_chCentreResidual.Reset();
     ResetCrosshairZoomDisplay(0.0f);
     s_hudPatchForceRestorePending = true;
 }

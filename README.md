@@ -8,6 +8,9 @@ It brings full mouse-and-keyboard FPS controls to the game, along with a customi
 
 **Please read the instructions carefully.**
 
+Maintained technical and feature documentation is indexed in
+[docs/README.md](docs/README.md).
+
 ## You can buy a coffee for the current maintainer and updater, Zection, if you’d like:
 https://ko-fi.com/zection
 

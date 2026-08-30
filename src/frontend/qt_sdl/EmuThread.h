@@ -44,6 +44,13 @@ namespace MelonPrime { class MelonPrimeCore; }
 namespace melonDS
 {
     class NDS;
+    class SoftRenderer;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    class VulkanRenderer;
+#endif
+#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    class DX12Renderer;
+#endif
 }
 
 class EmuInstance;
@@ -189,6 +196,9 @@ private:
 #endif
 
     void updateRenderer();
+#ifdef MELONPRIME_DS
+    void RefreshRendererFrameCache();
+#endif
     void compileShaders();
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     bool handleDX12RuntimeFailure();
@@ -260,6 +270,16 @@ private:
     // Previous frame's hardware-renderer period; edge-triggers the
     // force-software renderer switch.
     bool rendererWasHardwarePeriod = false;
+    // EmuThread owns the renderer transition boundary. These pointers are
+    // refreshed only after updateRenderer() has settled the actual renderer,
+    // so the frame loop never pays RTTI on its steady-state path.
+    melonDS::SoftRenderer* cachedStructuredSoft2DRenderer = nullptr;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    melonDS::VulkanRenderer* cachedVulkanLowLatencyRenderer = nullptr;
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    melonDS::DX12Renderer* cachedDX12FrameRenderer = nullptr;
+#endif
 #endif
 };
 

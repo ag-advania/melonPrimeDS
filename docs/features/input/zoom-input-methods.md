@@ -25,7 +25,8 @@ The default is `0` and the config range is `0..2`.
 
 ## Runtime Flags
 
-`ReloadConfigFlags()` maps `Metroid.Input.ZoomMethod` to hot runtime booleans.
+`ReloadConfigFlags()` is the lifecycle wrapper that loads/clamps the runtime snapshot and applies
+it to hot runtime state; that apply step maps `Metroid.Input.ZoomMethod` to the hot booleans.
 
 ```cpp
 m_enableNewZoomInputMethod = (ZoomMethod == 1);
