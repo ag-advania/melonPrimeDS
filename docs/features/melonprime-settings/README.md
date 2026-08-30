@@ -44,10 +44,10 @@ Each document uses the same evidence boundary:
 | Video quality presets | [video-presets.md](video-presets.md) |
 | SFX and music volume | [volume.md](volume.md) |
 | Hunter License hunter/color | [hunter-license.md](hunter-license.md) |
-| Joy2Key, Stylus, and touch behavior | [input-compatibility.md](input-compatibility.md) |
+| Joy2Key, Stylus, and touch behavior | [input-compatibility.md](input-compatibility.md), [stylus-cursor-policy.md](stylus-cursor-policy.md) |
 | Weapon, transform, fire, and zoom methods | [input-methods.md](input-methods.md) |
 | Screen synchronization | [screen-sync.md](screen-sync.md) |
-| Cursor clip and in-game layout | [cursor-layout.md](cursor-layout.md) |
+| Cursor clip and in-game layout | [cursor-layout.md](cursor-layout.md), [stylus-cursor-policy.md](stylus-cursor-policy.md) |
 | In-game aspect ratio | [aspect-ratio.md](aspect-ratio.md) |
 | Low HP warning | [low-hp-warning.md](low-hp-warning.md) |
 | Developer-only aim/input hooks | [developer-hooks.md](developer-hooks.md) |

@@ -5,6 +5,10 @@ defaults, patch lifecycle, and ROM-address reference, see
 [MelonPrime Settings tab](../../features/melonprime-settings.md) and its
 [per-setting detailed references](../../features/melonprime-settings/README.md).
 
+For the user-facing Custom HUD workflow, including the dialog preview,
+in-game editor, and TOML exchange, see the
+[Custom HUD settings guide](../../features/hud/custom-hud-settings.md).
+
 Use this when working on the MelonPrime settings dialog (`MelonPrimeInputConfig`), the in-game HUD edit mode, or when adding/changing a HUD setting's UI surface.
 
 ## Settings UI Architecture (`MelonPrimeInputConfig`)
@@ -197,13 +201,20 @@ In the settings dialog, 9-point anchors are `QComboBox` widgets with 9 items (To
 ### Hotkeys
 Defined in `EmuInstance.h` and grouped in `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.h`:
 - `kMetroidHotkeys` - first controls page (`20` entries)
-- `kMetroidHotkeys2` - second controls page (`11` entries)
+- `kMetroidHotkeys2` - second controls page (`13` entries)
 
 These replaced the older `hk_tabAddonsMetroid*` naming.
 
 ## In-game HUD Edit Mode
 
 ### Overview
+The On-Screen Edit Style control is persisted as
+Metroid.UI.OnScreenEditStyle (0=Classic, 1=Retro, default Classic). The value
+is captured when edit mode opens: Classic uses the host Qt properties panel
+for non-crosshair elements, while Retro draws that panel in the DS-space
+overlay. Crosshair editing remains on its dedicated editor path in both
+styles. Change the selector before reopening edit mode when switching styles.
+
 HUD element positioning, crosshair configuration, and text scaling can also be configured through a visual in-game edit mode overlay (entered via `CustomHud_EnterEditMode(hudConfig, emu, cfg)`, triggered by the `Edit HUD Layout` button in the settings dialog). This is the modern editor; the settings dialog provides the classic form-based editor. Both write the same config keys.
 
 ### Source location

@@ -21,8 +21,8 @@ from the controller-binding pages and the Custom HUD pages:
 | Controls (`tabAddonsMetroid`) | Controller bindings; not covered here |
 | Controls 2 (`tabAddonsMetroid2`) | Additional bindings; not covered here |
 | MelonPrime Settings (`tabMetroid`) | Covered by this document and the detailed reference directory |
-| Custom HUD (`tabCrosshair`) | HUD editor; see the existing HUD documentation |
-| Custom HUD Input/Output (`tabCustomHudCode`) | HUD import/export; see the existing HUD documentation |
+| Custom HUD (tabCrosshair) | HUD editor; see the [Custom HUD settings guide](hud/custom-hud-settings.md) |
+| Custom HUD Input/Output (tabCustomHudCode) | HUD import/export; see the [Custom HUD settings guide](hud/custom-hud-settings.md#toml-inputoutput) |
 
 `MPSettingsDialog` is the multiplayer settings dialog and is not this tab.
 “Confirmed” below means confirmed by the current source inventory; it does not
@@ -35,8 +35,8 @@ melonPrimeDS source wins and the discrepancy should be recorded explicitly.
 
 ## Complete coverage map
 
-Every setting currently inserted into `tabMetroid`, including dynamically
-created controls, is covered by one of the references below. Closely coupled
+Every setting currently inserted into `tabMetroid` is covered by one of the
+references below. Closely coupled
 controls share a page only when they use the same implementation contract or
 patch lifecycle.
 
@@ -47,7 +47,7 @@ patch lifecycle.
 | Sensitivity | MPH sensitivity, aim sensitivity, Y scale, aim adjustment, accumulator, smoothing, zoom scale, reset button | [sensitivity.md](melonprime-settings/sensitivity.md) |
 | Aim follow | MPH-native, Immediate Sync, MoonLike Aim, Instant Aim Follow migration alias, FPS Camera Lock | [aim-follow.md](melonprime-settings/aim-follow.md) |
 | Morph Ball boost | Swipe boost enable/disable, raw-threshold mode, required movement | [morph-ball-boost.md](melonprime-settings/morph-ball-boost.md) plus [existing feature reference](morph-ball-boost.md) |
-| Input compatibility | Joy2Key, Stylus Mode, top-screen touch, touch-screen aim only, in-game cursor hiding | [input-compatibility.md](melonprime-settings/input-compatibility.md) |
+| Input compatibility | Joy2Key, Stylus Mode, top-screen touch, touch-screen aim only, in-game cursor hiding, top-screen confinement, idle center hold | [input-compatibility.md](melonprime-settings/input-compatibility.md), [stylus-cursor-policy.md](melonprime-settings/stylus-cursor-policy.md) |
 | Bug Fixes | Wi-Fi active friend/rival bitset, Wi-Fi reconnect Error 52200, Shadow Freeze, Noxus Blade persistence | [wifi-bitset.md](melonprime-settings/wifi-bitset.md), [existing reconnect reference](gameplay/wifi-reconnect-52200.md), [shadow-freeze.md](melonprime-settings/shadow-freeze.md), [noxus-blade-persistence.md](melonprime-settings/noxus-blade-persistence.md) |
 | Game Feature Improvements | DS firmware language, online HEADSHOT, online enemy HP indicator, base/extra stage matrix | [firmware-language.md](melonprime-settings/firmware-language.md), [online-headshot.md](melonprime-settings/online-headshot.md), [online-enemy-hp.md](melonprime-settings/online-enemy-hp.md), [stage-matrix.md](melonprime-settings/stage-matrix.md) |
 | Disable Features | Disable Double Damage Multiplier, Damage Notify Purple | [damage-multiplier.md](melonprime-settings/damage-multiplier.md), [damage-notify-purple.md](melonprime-settings/damage-notify-purple.md) |
@@ -58,7 +58,7 @@ patch lifecycle.
 | License Apply | Hunter and rank-color selection/apply switches | [hunter-license.md](melonprime-settings/hunter-license.md) |
 | Input Method | Native/legacy weapon switch, biped fire, transform, and zoom methods | [input-methods.md](melonprime-settings/input-methods.md) |
 | Screen Sync | Off, `glFinish`, and Windows `DwmFlush` modes | [screen-sync.md](melonprime-settings/screen-sync.md) |
-| Cursor Clip | Bottom-screen cursor clipping outside gameplay | [cursor-layout.md](melonprime-settings/cursor-layout.md) |
+| Cursor Clip | Bottom-screen cursor clipping outside gameplay and stylus cursor presentation/confinement | [cursor-layout.md](melonprime-settings/cursor-layout.md), [stylus-cursor-policy.md](melonprime-settings/stylus-cursor-policy.md) |
 | In-Game Apply | In-game top-screen-only layout policy | [cursor-layout.md](melonprime-settings/cursor-layout.md) |
 | In-Game Aspect Ratio | Auto and manual 5:3, 16:10, 16:9, and 21:9 guest scale patch | [aspect-ratio.md](melonprime-settings/aspect-ratio.md) |
 | Low HP Warning | Disabled/vanilla, fixed, per-damage, and auto-scale thresholds | [low-hp-warning.md](melonprime-settings/low-hp-warning.md) |

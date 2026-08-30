@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | Instant aim follow | Metroid.Aim.Enable.InstantAimFollow | false | legacy/compatibility control |
 | FPS Camera Lock | Metroid.Aim.Enable.FpsCameraLock | false | public settings control |
-| Low-latency mode | Metroid.Aim.LowLatencyMode | false | public control with backend/runtime gates |
+| Low-latency mode | Metroid.Aim.LowLatencyMode | 0 | public control with backend/runtime gates; 0=Off |
 | Native aim hook mode | Metroid.Aim.NativeHookMode | 0 | developer build only |
 
 This page explains the user-visible follow/lock behavior and its boundaries.

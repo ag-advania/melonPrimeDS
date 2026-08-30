@@ -1,7 +1,23 @@
 # Feature Notes
 
-- [MelonPrime Settings tab](melonprime-settings.md) — coverage index for every control in the MelonPrime Settings tab, with links to the detailed key/default, patch-scope, and ROM-address references.
-- [MelonPrime Settings detailed references](melonprime-settings/README.md) — per-setting implementation notes, guard/lifecycle boundaries, and pointers to the non-duplicated mphCodex research.
+These are the focused feature references. Use the area indexes when you need
+the complete route rather than one isolated behavior.
+
+## Area indexes
+
+- [MelonPrime Settings tab](melonprime-settings.md) — coverage index for every control in the MelonPrime Settings tab.
+- [MelonPrime Settings detailed references](melonprime-settings/README.md) — keys, defaults, guard/lifecycle boundaries, ROM data, and mphCodex pointers.
+- [Custom HUD](hud/README.md) — settings workflow, previews, edit mode, TOML, and focused HUD behavior.
+- [Input](input/README.md) — aim, stylus, zoom, weapon switching, and movement references.
+- [Gameplay](gameplay/README.md) — gameplay-specific behavior and feature boundaries.
+- [Rendering](rendering/README.md) — backend references, build routes, and evidence boundaries.
+
+## Focused references
+
+- [Custom HUD settings](hud/custom-hud-settings.md)
+- [Stylus cursor policy](melonprime-settings/stylus-cursor-policy.md)
+- [Quick Stop Movement](input/quick-stop-movement.md)
+- [Weapon-switch jump suppression](gameplay/no-double-tap-jump.md)
 - [Zoom status performance](zoom-status-performance.md)
 - [Zoom aim sensitivity](zoom-aim-sensitivity.md)
 - [Custom HUD zoom crosshair](custom-hud-zoom-crosshair.md)
@@ -16,5 +32,7 @@
 - [Zoom input methods](input/zoom-input-methods.md)
 - [macOS compute renderer restriction](rendering/macos-compute-renderer-restriction.md)
 - [Vulkan backend](rendering/vulkan-backend.md)
+- [DirectX 12 backend](rendering/dx12-backend.md)
 
-Completed feature/refactor evidence is indexed under [`docs/archive/features/`](../archive/features/).
+Completed feature/refactor evidence is indexed under
+[docs/archive/features/](../archive/features/).

@@ -2,15 +2,18 @@
 
 ## Controls
 
-These settings are visual/layout policies. Their keys are generated from the
-HUD property schema and are persisted with the other MelonPrime visual
-settings:
+These settings are host visual/layout policies, but they use two persistence
+surfaces. The bottom-screen clip and in-game top-screen-only layout use
+Metroid.Visual.* keys generated from the HUD property schema. The three
+stylus-cursor controls use explicit Metroid.Enable.* keys:
 
 | Control | Key | Default | Platform/scope |
 | --- | --- | --- | --- |
 | Clip cursor to bottom screen when not in game | Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame | false | Windows clipping; host UI |
 | In-game top screen only | Metroid.Visual.InGameTopScreenOnly | false | host screen layout |
 | Hide stylus cursor in game | Metroid.Enable.stylusHideCursorInGame | false | cursor presentation; see input compatibility |
+| Confine stylus cursor to top screen | Metroid.Enable.stylusConfineCursorToTopScreen | false | Windows cursor policy; see stylus cursor policy |
+| Hold stylus cursor at center while not clicking | Metroid.Enable.stylusHoldCursorAtCenterWhenNotClicking | false | Host cursor warp while idle; see stylus cursor policy |
 
 ## Clip cursor to bottom screen
 
@@ -60,12 +63,19 @@ This distinction matters when diagnosing “cursor disappeared” reports:
 - contained: pointer is constrained to a rectangle; and
 - captured/aiming: the active input policy may warp or grab the pointer.
 
+The three stylus-mode cursor options have a separate detailed contract:
+[stylus-cursor-policy.md](stylus-cursor-policy.md). In particular, top-screen
+confinement is match-scoped and mutually exclusive with the bottom-screen
+out-of-game clip, while hold-at-center is an idle host warp rather than
+continuous aim capture.
+
 ## Persistence and save behavior
 
-Both layout settings are host configuration values. They do not affect guest
-save data and do not require a ROM revision table. The settings UI keeps them
-outside the historical input binding load segment because their save side
-uses old-versus-new visual snapshot comparisons.
+All settings on this page are host configuration values. They do not affect
+guest save data and do not require a ROM revision table. The bottom clip and
+in-game top-only layout retain their visual snapshot/invalidation behavior;
+the three stylus cursor keys are loaded and refreshed through the screen
+cursor policy.
 
 ## Verification checklist
 

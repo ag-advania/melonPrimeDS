@@ -12,6 +12,8 @@ native MelonPrime aim path:
 | Top-screen touch | Metroid.Enable.topScreenTouch | false |
 | Touch-screen aim only | Metroid.Enable.touchScreenAimOnly | false |
 | Hide stylus cursor in game | Metroid.Enable.stylusHideCursorInGame | false |
+| Confine stylus cursor to top screen | Metroid.Enable.stylusConfineCursorToTopScreen | false |
+| Hold stylus cursor at center while not clicking | Metroid.Enable.stylusHoldCursorAtCenterWhenNotClicking | false |
 | Direct alt-form transform | Metroid.Input.Enable.DirectAltFormTransform | false |
 
 The controls are not interchangeable:
@@ -21,7 +23,9 @@ The controls are not interchangeable:
   native aim controls.
 - Top-screen touch enables a UI routing path.
 - Touch-screen aim only is a guarded guest hit-test patch.
-- Hide stylus cursor is presentation-only.
+- Hide, top-screen confinement, and hold-at-center are host cursor
+  policies; their complete contract is in
+  [stylus-cursor-policy.md](stylus-cursor-policy.md).
 - Direct alt-form transform selects a native guest transform hook.
 
 ## Joy2Key compatibility support
@@ -71,6 +75,15 @@ visible cursor presentation while the relevant in-game stylus state is active.
 It does not disable cursor capture, change aim deltas, or write a ROM byte.
 The policy restores the ordinary cursor presentation when the conditions end.
 
+Top-screen confinement and hold-at-center are related but independent options.
+Confinement limits the host pointer to the rendered top-screen rectangle on
+Windows without requesting mouse-look capture. Hold-at-center keeps the host
+pointer at the selected screen center while no stylus click is held, so every
+drag starts with its full range. Neither option changes guest touch
+coordinates or installs the touch-screen aim-only patch.
+See [stylus-cursor-policy.md](stylus-cursor-policy.md) for the state gate,
+combination matrix, and platform boundary.
+
 ## Touch-screen aim only patch
 
 The patch writes mov r0,#0, value 0xE3A00000 at three guarded call/hit-test
@@ -102,16 +115,19 @@ covered by these three addresses.
 | Touch-only on, stylus off | Guest touch hit-test patch plus normal host routing |
 | Stylus on + touch-only on | Two distinct layers; test both independently |
 | Hide cursor on | Presentation change only |
+| Top-screen confinement on | Windows host clip in the active stylus state; not aim capture |
+| Hold cursor at center on | Host warp while no stylus click is held; active drags are not continuously recentered |
 | Joy2Key on | Compatibility/remapper path remains in the chain |
 
 ## Verification checklist
 
-- Record all six keys before comparing input behavior.
+- Record all eight controls before comparing input behavior.
 - Test stylus mode with the controls that the UI disables.
 - Test touch-only on every ROM in the patch table.
 - Verify guard failure and leave/stop restoration.
 - Test top-screen touch with each screen layout used by the deployment.
 - Confirm cursor hiding does not change aim deltas.
+- Test top-screen confinement and hold-at-center independently and together.
 - Compare Joy2Key on/off using the same physical input source.
 
 ## Evidence and related material
