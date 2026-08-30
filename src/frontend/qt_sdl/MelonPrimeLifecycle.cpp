@@ -97,10 +97,16 @@ namespace MelonPrime {
         }
 
         if (!m_enableNativeZoomToggle) {
-            m_nativeZoomTogglePrevDown = false;
 #ifdef MELONPRIME_DS
             m_nativeZoomPending.Clear();
 #endif
+        }
+        // The pressed-edge latch and the cached scope state are shared by the
+        // native toggle and the DirectInvocation zoom path (they are mutually
+        // exclusive), so they only reset when neither is active.
+        if (!m_enableNativeZoomToggle && !s.directInvocationZoom) {
+            m_nativeZoomTogglePrevDown = false;
+            m_nativeZoomLastKnownEnabled = false;
         }
 
 #ifdef MELONPRIME_DS
@@ -109,6 +115,16 @@ namespace MelonPrime {
         m_enableNativeWeaponSwitch = s.nativeWeaponSwitch;
         if (!m_enableNativeWeaponSwitch)
             m_weaponSwitchPending.Clear();
+
+        m_enableDirectInvocationTransform = s.directInvocationTransform;
+        m_enableDirectInvocationWeapon = s.directInvocationWeapon;
+        m_enableDirectInvocationZoom = s.directInvocationZoom;
+        if (!m_enableDirectInvocationTransform)
+            m_directInvocationPending.ClearTransform();
+        if (!m_enableDirectInvocationWeapon)
+            m_directInvocationPending.ClearWeapon();
+        if (!m_enableDirectInvocationZoom)
+            m_directInvocationPending.ClearZoom();
 
         // Resolve the complete ARM9 activation policy once at the cold config
         // boundary. ARM9Hook_Install consumes this plan to select modules and
@@ -124,6 +140,9 @@ namespace MelonPrime {
         m_arm9HookActivationPlan.directAltFormTransform =
             s.directAltFormTransform;
         m_arm9HookActivationPlan.nativeWeaponSwitch = s.nativeWeaponSwitch;
+        m_arm9HookActivationPlan.directInvocation =
+            s.directInvocationTransform || s.directInvocationWeapon
+            || s.directInvocationZoom;
         m_arm9HookActivationPlan.shadowFreeze = s.fixShadowFreeze;
         m_arm9HookActivationPlan.noxusBladePersistence =
             s.fixNoxusBladePersistence;
@@ -207,6 +226,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
+        m_directInvocationPending.Clear();
         PatchLifecycle::ResetForEmuStart(
             emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
@@ -244,6 +264,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
+        m_directInvocationPending.Clear();
         PatchLifecycle::ResetForBoot(emuInstance->getNDS(), emuInstance, this);
 #endif
 
@@ -288,6 +309,7 @@ namespace MelonPrime {
 #endif
 #ifdef MELONPRIME_DS
         m_weaponSwitchPending.Clear();
+        m_directInvocationPending.Clear();
         PatchLifecycle::RestoreForEmuStop(
             emuInstance->getNDS(),
             emuInstance,
@@ -323,7 +345,7 @@ namespace MelonPrime {
         m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform
-            | TR_BipedFire | TR_WeaponSwitchPending);
+            | TR_BipedFire | TR_WeaponSwitchPending | TR_DirectInvocation);
         ResetMorphBoostSwipePulseState();
         m_isWeaponCheckActive = false;
         m_nativeZoomTogglePrevDown = false;

@@ -23,6 +23,8 @@ struct Arm9HookActivationPlan {
     bool nativeBipedFire = false;
     bool directAltFormTransform = false;
     bool nativeWeaponSwitch = false;
+    // "New Method 2" (mphCodex DirectInvocation) for transform and/or weapon.
+    bool directInvocation = false;
     bool shadowFreeze = false;
     bool noxusBladePersistence = false;
 };

@@ -106,17 +106,37 @@ void MelonPrimeInputConfig::saveConfig()
         MelonPrime::CfgKey::ImmediateInputEdgeOverlay,
         kDeveloperOnlyFeaturesEnabled
             && ui->cbMetroidEnableImmediateInputEdgeOverlay->checkState() == Qt::Checked);
-    instcfg.SetBool(
-        MelonPrime::CfgKey::DirectAltFormTransform,
+    // Alt-Form transform method. Method 2 wins when both boxes are ticked; the
+    // legacy bool key stays mirrored so a downgrade still resolves Method 1.
+    const bool transformMethod2 =
+        m_cbMetroidUseNewTransformMethod2
+        && m_cbMetroidUseNewTransformMethod2->isChecked();
+    const bool transformMethod1 =
         m_cbMetroidUseNewTransformMethod
             ? m_cbMetroidUseNewTransformMethod->isChecked()
-            : (ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked));
+            : (ui->cbMetroidEnableDirectAltFormTransform->checkState() == Qt::Checked);
+    const int altFormTransformMethod =
+        transformMethod2
+            ? MelonPrime::AltFormTransformMethod::NewDirectInvocation
+            : (transformMethod1
+                   ? MelonPrime::AltFormTransformMethod::NewNativeGate
+                   : MelonPrime::AltFormTransformMethod::LegacyTouch);
+    instcfg.SetInt(
+        MelonPrime::CfgKey::AltFormTransformMethod, altFormTransformMethod);
+    instcfg.SetBool(
+        MelonPrime::CfgKey::DirectAltFormTransform,
+        altFormTransformMethod == MelonPrime::AltFormTransformMethod::NewNativeGate);
     if (m_cbMetroidUseNewWeaponSwitchMethod) {
+        const bool weaponMethod2 =
+            m_cbMetroidUseNewWeaponSwitchMethod2
+            && m_cbMetroidUseNewWeaponSwitchMethod2->isChecked();
         instcfg.SetInt(
             MelonPrime::CfgKey::WeaponSwitchMethod,
-            m_cbMetroidUseNewWeaponSwitchMethod->isChecked()
-                ? MelonPrime::WeaponSwitchMethod::NewNative
-                : MelonPrime::WeaponSwitchMethod::LegacyTouch);
+            weaponMethod2
+                ? MelonPrime::WeaponSwitchMethod::NewDirectInvocation
+                : (m_cbMetroidUseNewWeaponSwitchMethod->isChecked()
+                       ? MelonPrime::WeaponSwitchMethod::NewNative
+                       : MelonPrime::WeaponSwitchMethod::LegacyTouch));
     }
     if (m_cbMetroidUseNewBipedFireMethod) {
         instcfg.SetInt(
@@ -133,11 +153,20 @@ void MelonPrimeInputConfig::saveConfig()
     if (m_cbMetroidUseNewZoomMethod2) {
         // Writing this back also normalizes the retired NewPresetBinding value
         // out of older configs: it now behaves exactly like LegacyFixedR.
+        // The two boxes are kept mutually exclusive in the dialog; Method 3
+        // still wins here so a stale pair can never store an ambiguous state.
+        const bool zoomMethod3 =
+            kDeveloperOnlyFeaturesEnabled
+            && m_cbMetroidUseNewZoomMethod3
+            && m_cbMetroidUseNewZoomMethod3->isChecked();
         instcfg.SetInt(
             MelonPrime::CfgKey::ZoomInputMethod,
-            kDeveloperOnlyFeaturesEnabled && m_cbMetroidUseNewZoomMethod2->isChecked()
-                ? MelonPrime::ZoomInputMethod::NewNativeToggle
-                : MelonPrime::ZoomInputMethod::LegacyFixedR);
+            zoomMethod3
+                ? MelonPrime::ZoomInputMethod::NewDirectInvocation
+                : (kDeveloperOnlyFeaturesEnabled
+                       && m_cbMetroidUseNewZoomMethod2->isChecked()
+                       ? MelonPrime::ZoomInputMethod::NewNativeToggle
+                       : MelonPrime::ZoomInputMethod::LegacyFixedR));
     }
     // Legacy key migration. Keep until the first post-V3 release gives old
     // configs a save cycle; see the Phase 4 migration ledger.

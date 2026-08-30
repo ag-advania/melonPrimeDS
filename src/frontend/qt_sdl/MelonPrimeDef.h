@@ -68,9 +68,10 @@ namespace MelonPrime {
         inline constexpr const char* MoonLikeAimFastThresholdQ12 = "Metroid.Aim.MoonLikeAimFastThresholdQ12";
         inline constexpr const char* ImmediateInputEdgeOverlay = "Metroid.Input.Enable.ImmediateInputEdgeOverlay";
         inline constexpr const char* DirectAltFormTransform    = "Metroid.Input.Enable.DirectAltFormTransform";
-        inline constexpr const char* WeaponSwitchMethod        = "Metroid.Input.WeaponSwitchMethod"; // 0=Legacy touch 1=New native
+        inline constexpr const char* WeaponSwitchMethod        = "Metroid.Input.WeaponSwitchMethod"; // 0=Legacy touch 1=New native 2=New native 2 (DirectInvocation)
+        inline constexpr const char* AltFormTransformMethod    = "Metroid.Input.AltFormTransformMethod"; // 0=Legacy touch 1=New native gate 2=New native 2 (DirectInvocation); absent -> migrated from DirectAltFormTransform
         inline constexpr const char* BipedFireMethod           = "Metroid.Input.BipedFireMethod"; // 0=Legacy input 1=New native edge
-        inline constexpr const char* ZoomInputMethod           = "Metroid.Input.ZoomMethod"; // 0=Legacy 1=retired (behaves as 0) 2=New native toggle
+        inline constexpr const char* ZoomInputMethod           = "Metroid.Input.ZoomMethod"; // 0=Legacy 1=retired (behaves as 0) 2=New native toggle 3=New native 3 (DirectInvocation)
         inline constexpr const char* ScreenSyncMode = "Metroid.Screen.SyncMode";
         inline constexpr const char* MphSens         = "Metroid.Sensitivity.Mph";
         inline constexpr const char* Headphone       = "Metroid.Apply.Headphone";
@@ -198,6 +199,19 @@ namespace MelonPrime {
     namespace WeaponSwitchMethod {
         inline constexpr int LegacyTouch = 0;
         inline constexpr int NewNative = 1;
+        // mphCodex DirectInvocation: the game's own TryEquipWeapon reached
+        // through the ProcessTouchInput call site, with no synthetic touch and
+        // no NoAimInput write. Same-weapon requests only raise HUD 0x3C.
+        inline constexpr int NewDirectInvocation = 2;
+    }
+
+    namespace AltFormTransformMethod {
+        inline constexpr int LegacyTouch = 0;
+        // Redirects the game's short native transform input gate.
+        inline constexpr int NewNativeGate = 1;
+        // mphCodex DirectInvocation: Player_RequestFormSwitch(player, 0) from
+        // the ProcessTouchInput call site, plus HUD 0x16 on a Morph success.
+        inline constexpr int NewDirectInvocation = 2;
     }
 
     namespace BipedFireMethod {
@@ -213,6 +227,10 @@ namespace MelonPrime {
         // next save.
         inline constexpr int NewPresetBinding = 1;
         inline constexpr int NewNativeToggle = 2;
+        // mphCodex DirectInvocation: SetPlayerScopeZoom reached from the
+        // ProcessTouchInput call site, with the touch shortcut's own AltForm /
+        // Morphing / Unmorphing and weapon-capability gates.
+        inline constexpr int NewDirectInvocation = 3;
     }
 
     namespace LowLatencyAimMode {

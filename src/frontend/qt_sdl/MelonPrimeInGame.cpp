@@ -142,6 +142,22 @@ namespace MelonPrime {
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
         auto* nds = emuInstance->getNDS();
 
+#ifdef MELONPRIME_DS
+        if (m_enableDirectInvocationTransform) {
+            // "New Method 2": queue one mailbox request for the ARM9
+            // DirectInvocation hook. It calls the game's own transform request
+            // from the ProcessTouchInput call site -- no synthetic touch and no
+            // NoAimInput write -- and raises HUD 0x16 itself on a Morph.
+            if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
+                && DirectInvocationHook_IsRomSupported(m_currentRom.romGroupIndex)
+                && DirectInvocationHook_IsSiteValid(nds, m_currentRom.romGroupIndex))
+            {
+                QueueDirectInvocationTransform();
+            }
+            return;
+        }
+#endif
+
         if (m_enableDirectAltFormTransform) {
             // TransformGateHook redirects Gate A/B into the game's native
             // TransformRequest path. Keep a short pending window so a press is
