@@ -574,27 +574,6 @@
         if (!DirectInvocation_EnsureTrampoline(nds, *site))
             return false;
 
-        // Transform additionally refuses the whole spawn invulnerability window,
-        // not just the first post-spawn input hook. This is the conservative
-        // fallback the investigation documents (section 10, option B) for the
-        // case where the exact one-hook barrier turns out not to be enough --
-        // which is what Method 2 does here while Method 1, which redirects into
-        // the game's own transform call site instead of calling the routine from
-        // the input hook, does not.
-        //
-        // Only the transform command takes the wider window. Weapon and zoom
-        // keep the exact barrier above, so this does not quietly reinstate the
-        // producer-side full-window weapon guard that was just removed.
-        if (m_directInvocationPending.Transform
-            && Read8(nds->MainRAM, player + kPlayerSpawnInvulnOffset) != 0)
-        {
-            m_directInvocationPending.ClearTransform();
-            // The command selection below treats "not transform, not weapon" as
-            // zoom, so re-check that something is still pending.
-            if (!m_directInvocationPending.IsValid())
-                return false;
-        }
-
         // Fixed priority when more than one is pending: transform, weapon,
         // zoom. The ones not taken keep their TTL and are dispatched on a later
         // frame that reaches this site.

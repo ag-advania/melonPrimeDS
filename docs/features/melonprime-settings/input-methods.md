@@ -279,17 +279,7 @@ replaying a pressed edge from before the respawn is the behaviour to avoid.
 Structure offsets are identical on all seven ROMs, so this needs no per-version
 address table.
 
-Transform Method 2 additionally refuses the whole `player+0xE1 != 0` window,
-not just that one hook. This is the investigation's documented fallback for
-"the exact barrier was not enough", and it is applied because Method 2 froze at
-match start where Method 1 did not. The asymmetry is consistent with where each
-one calls the routine: Method 1 redirects into the game's own transform call
-site, whose surrounding state the game already considers valid, while Method 2
-calls it from the input hook. The cost is that a native transform is unavailable
-until spawn invulnerability ends. Weapon and zoom keep the exact one-hook
-barrier.
-
-This barrier is otherwise the only spawn guard the native methods have. Both weapon
+This barrier is the only spawn guard the native methods have. Both weapon
 methods previously refused the whole `player+0xE1 != 0` window on the producer
 side and rerouted to the legacy path; that was wider than the ROM's own
 boundary and silently swapped method for the duration, so it was replaced by
