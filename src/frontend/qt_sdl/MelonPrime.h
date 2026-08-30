@@ -566,6 +566,9 @@ namespace MelonPrime {
         // "New Method 3" for zoom. Mutually exclusive with the native toggle
         // above; both are resolved from Metroid.Input.ZoomMethod.
         bool     m_enableDirectInvocationZoom = false;
+        // Lift the TouchScreenAimOnly patch for the duration of a Standard
+        // transform, which taps a touch-screen HUD button that patch disables.
+        bool     m_suspendTouchAimOnlyForTransform = false;
 #ifdef MELONPRIME_DS
         bool     m_enableNativeWeaponSwitch = false;
         // "New Method 2" (mphCodex DirectInvocation). Independent of the

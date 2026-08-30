@@ -69,6 +69,7 @@ namespace MelonPrime {
         m_moonLikeAimFastThresholdQ12 = s.moonLikeAimFastThresholdQ12;
         m_enableImmediateInputEdgeOverlay = s.immediateInputEdgeOverlay;
         m_enableDirectAltFormTransform = s.directAltFormTransform;
+        m_suspendTouchAimOnlyForTransform = s.touchScreenAimOnlySuspendForTransform;
         m_enableMorphBoostSwipe = s.morphBoostSwipeEnabled; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         m_enableMorphBoostCustomRawThreshold = s.morphBoostCustomRawThreshold;
         if (!m_enableDirectAltFormTransform)

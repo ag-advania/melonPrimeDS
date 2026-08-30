@@ -138,6 +138,9 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
         morphBoostRequiredMovement <= 0 ? 90 : morphBoostRequiredMovement); // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
 
 #ifdef MELONPRIME_DS
+    s.touchScreenAimOnlySuspendForTransform =
+        cfg.GetBool(CfgKey::TouchScreenAimOnlySuspendForTransform);
+
     s.outOfGamePatches.fixWifiEnabled = cfg.GetBool(CfgKey::WifiBitset);
     s.outOfGamePatches.useFirmwareLanguageEnabled =
         cfg.GetBool(CfgKey::UseFirmwareLanguage);

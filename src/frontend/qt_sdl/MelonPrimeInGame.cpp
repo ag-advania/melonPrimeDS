@@ -6,6 +6,9 @@
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#ifdef MELONPRIME_DS
+#include "MelonPrimePatchTouchScreenAimOnly.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -182,6 +185,17 @@ namespace MelonPrime {
         // layout -- the left-handed presets put it at X 0..47 instead of
         // 208..255 -- so the tap has to be mapped through the preset or it only
         // ever lands on Touch R and Dual R.
+#ifdef MELONPRIME_DS
+        // "Use the Whole Touch Screen for Aiming" neutralises exactly the
+        // hit-test this tap depends on, so with that patch active the Standard
+        // transform silently stops working. Opt-in: lift the patch for the tap
+        // and put it straight back. Same shape as the NoDoubleTapJump patch the
+        // legacy weapon path brackets its own touch sequence with.
+        const bool liftTouchAimOnly = m_suspendTouchAimOnlyForTransform;
+        if (UNLIKELY(liftTouchAimOnly))
+            TouchScreenAimOnly_RestoreOnce(m_patchState, nds, m_currentRom.romGroupIndex);
+#endif
+
         nds->ReleaseScreen();
         FrameAdvanceTwice();
         using namespace Consts::UI;
@@ -189,6 +203,15 @@ namespace MelonPrime {
         FrameAdvanceTwice();
         nds->ReleaseScreen();
         FrameAdvanceTwice();
+
+#ifdef MELONPRIME_DS
+        // Re-apply through the owning module so it re-reads config and stays
+        // the single writer of that patch state.
+        if (UNLIKELY(liftTouchAimOnly)) {
+            TouchScreenAimOnly_ApplyOnce(
+                m_patchState, nds, localCfg, m_currentRom.romGroupIndex);
+        }
+#endif
     }
 
     COLD_FUNCTION void MelonPrimeCore::HandleRareWeaponSwitch()

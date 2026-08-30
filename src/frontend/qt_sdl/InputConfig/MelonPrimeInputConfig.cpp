@@ -515,6 +515,10 @@ void MelonPrimeInputConfig::buildSettingBindings()
         { C::StylusHideCursorInGame, K::CheckBool, ui->cbMetroidEnableStylusHideCursorInGame }, // 51
         { C::StylusConfineCursorToTopScreen, K::CheckBool, ui->cbMetroidEnableStylusConfineCursorToTopScreen }, // 52
         { C::StylusHoldCursorAtCenterWhenNotClicking, K::CheckBool, ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking }, // 53
+        // Sub-option of TouchScreenAimOnly. Appended so every historical binding
+        // index stays stable; only the tail load range grows.
+        { C::TouchScreenAimOnlySuspendForTransform, K::CheckBool,
+          ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform }, // 54
     };
 }
 
@@ -732,7 +736,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
     // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
     loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
-    loadBindingsRange(instcfg, 49, 54); // top-screen touch, touch-screen aim-only, stylus cursor options
+    loadBindingsRange(instcfg, 49, 55); // top-screen touch, touch-screen aim-only (+ its sub-option), stylus cursor options
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);
@@ -1349,6 +1353,7 @@ void MelonPrimeInputConfig::setupSettingsOrganization()
 
     appendInputWidget(ui->cbMetroidEnableStylusMode);
     appendInputWidget(ui->cbMetroidEnableTouchScreenAimOnly);
+    appendInputWidget(ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform);
     appendInputWidget(ui->cbMetroidEnableTopScreenTouch);
     appendInputWidget(ui->cbMetroidEnableStylusHideCursorInGame);
     appendInputWidget(ui->cbMetroidEnableStylusConfineCursorToTopScreen);
@@ -1490,6 +1495,9 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     // Stylus-specific options retain their saved check state, but cannot be
     // edited until Stylus Mode itself is enabled.
     ui->cbMetroidEnableTouchScreenAimOnly->setEnabled(stylusEnabled);
+    // Sub-option: only meaningful while the parent patch is actually on.
+    ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform->setEnabled(
+        stylusEnabled && ui->cbMetroidEnableTouchScreenAimOnly->isChecked());
     ui->cbMetroidEnableStylusHideCursorInGame->setEnabled(stylusEnabled);
     ui->cbMetroidEnableTopScreenTouch->setEnabled(stylusEnabled);
     ui->cbMetroidEnableStylusConfineCursorToTopScreen->setEnabled(stylusEnabled);
@@ -1884,6 +1892,12 @@ void MelonPrimeInputConfig::on_dsbMetroidHudCrosshairDeadband_valueChanged(doubl
 void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)
 {
     updateAimControlsForStylusMode(state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidEnableTouchScreenAimOnly_stateChanged(int)
+{
+    // Refresh the sub-option, which is only meaningful while this one is on.
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 }
 
 void MelonPrimeInputConfig::on_cbMetroidDisableMphAimSmoothing_stateChanged(int)
