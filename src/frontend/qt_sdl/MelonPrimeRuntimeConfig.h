@@ -70,6 +70,9 @@ struct RuntimeConfigSnapshot {
     bool joy2Key = false;
     bool snapTap = false;
     bool stylusMode = false;
+    // Sub-option of the TouchScreenAimOnly battle patch: lift it for the few
+    // frames the Standard transform taps the touch-screen Transform button.
+    bool touchScreenAimOnlySuspendForTransform = false;
 
     bool disableMphAimSmoothing = false;
     bool aimAccumulator = false;

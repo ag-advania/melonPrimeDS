@@ -373,4 +373,55 @@
             {MenuLangId::ChineseHongKong, "新方式 3 從遊戲原本的玩家輸入處理（而非武器動作處理）呼叫同一個原生縮放設定函式，並先檢查與觸控路徑相同的條件：處於或正在變為另一形態時不縮放，且僅在裝備可縮放武器時生效。縮放音效與準星仍由遊戲處理。不能與新方式 2 同時使用。"},
             {MenuLangId::Korean, "새 방식 3은 무기 액션 처리가 아니라 게임 본래의 플레이어 입력 처리에서 동일한 네이티브 줌 설정 함수를 호출하며, 터치 경로와 같은 조건을 먼저 확인합니다. 다른 형태이거나 변형 중일 때는 줌하지 않고, 줌이 가능한 무기를 장착했을 때만 동작합니다. 줌 사운드와 조준선은 게임이 처리합니다. 새 방식 2와 함께 사용할 수 없습니다."},
         }
+    },
+    {
+        "lblMetroidWeaponSwitchStandardDesc",
+        {
+            {MenuLangId::Japanese, "通常方式は、これまでエミュレーター側で使ってきたタッチ/メニュー模擬による武器切替です。問題が新方式によるものかどうかを切り分けたいときに選んでください。"},
+            {MenuLangId::German, "Die Standardmethode ist der bisher verwendete Waffenwechsel über simulierte Touch-/Menüeingaben. Wähle sie, um die nativen Pfade als Fehlerursache auszuschließen."},
+            {MenuLangId::Spanish, "El método estándar es el cambio de arma mediante la simulación de toque/menú que se ha usado siempre. Elígelo para descartar las rutas nativas como causa de un problema."},
+            {MenuLangId::French, "La méthode standard est le changement d’arme par simulation tactile/menu utilisé jusqu’ici. Choisissez-la pour écarter les voies natives comme cause d’un problème."},
+            {MenuLangId::Italian, "Il metodo standard è il cambio arma tramite simulazione touch/menu usato finora. Scegli questo per escludere i percorsi nativi come causa di un problema."},
+            {MenuLangId::Dutch, "De standaardmethode is de wapenwissel via gesimuleerde touch-/menu-invoer die altijd is gebruikt. Kies deze om de native paden als oorzaak van een probleem uit te sluiten."},
+            {MenuLangId::Portuguese, "O método padrão é a troca de arma por simulação de toque/menu que sempre foi usada. Escolha-o para descartar os caminhos nativos como causa de um problema."},
+            {MenuLangId::Russian, "Стандартный метод — это смена оружия через имитацию касания/меню, которая использовалась всегда. Выберите его, чтобы исключить нативные пути как причину проблемы."},
+            {MenuLangId::ChineseSimplified, "标准方式是模拟器一直使用的触控/菜单模拟武器切换。想排除新方式是否为问题原因时请选择此项。"},
+            {MenuLangId::ChineseTraditional, "標準方式是模擬器一直使用的觸控/選單模擬武器切換。想排除新方式是否為問題原因時請選擇此項。"},
+            {MenuLangId::ChineseHongKong, "標準方式是模擬器一直使用的觸控/選單模擬武器切換。想排除新方式是否為問題原因時請選擇此項。"},
+            {MenuLangId::Korean, "기본 방식은 지금까지 사용해 온 터치/메뉴 모방 무기 변경입니다. 문제의 원인이 새 방식인지 가려내고 싶을 때 선택하세요."},
+        }
+    },
+    {
+        "lblMetroidTransformStandardDesc",
+        {
+            {MenuLangId::Japanese, "通常方式は、これまでエミュレーター側で使ってきたタッチ/メニュー模擬による変形です。問題が新方式によるものかどうかを切り分けたいときに選んでください。"},
+            {MenuLangId::German, "Die Standardmethode ist die bisher verwendete Verwandlung über simulierte Touch-/Menüeingaben. Wähle sie, um die nativen Pfade als Fehlerursache auszuschließen."},
+            {MenuLangId::Spanish, "El método estándar es la transformación mediante la simulación de toque/menú que se ha usado siempre. Elígelo para descartar las rutas nativas como causa de un problema."},
+            {MenuLangId::French, "La méthode standard est la transformation par simulation tactile/menu utilisée jusqu’ici. Choisissez-la pour écarter les voies natives comme cause d’un problème."},
+            {MenuLangId::Italian, "Il metodo standard è la trasformazione tramite simulazione touch/menu usata finora. Scegli questo per escludere i percorsi nativi come causa di un problema."},
+            {MenuLangId::Dutch, "De standaardmethode is de transformatie via gesimuleerde touch-/menu-invoer die altijd is gebruikt. Kies deze om de native paden als oorzaak van een probleem uit te sluiten."},
+            {MenuLangId::Portuguese, "O método padrão é a transformação por simulação de toque/menu que sempre foi usada. Escolha-o para descartar os caminhos nativos como causa de um problema."},
+            {MenuLangId::Russian, "Стандартный метод — это превращение через имитацию касания/меню, которое использовалось всегда. Выберите его, чтобы исключить нативные пути как причину проблемы."},
+            {MenuLangId::ChineseSimplified, "标准方式是模拟器一直使用的触控/菜单模拟变形。想排除新方式是否为问题原因时请选择此项。"},
+            {MenuLangId::ChineseTraditional, "標準方式是模擬器一直使用的觸控/選單模擬變形。想排除新方式是否為問題原因時請選擇此項。"},
+            {MenuLangId::ChineseHongKong, "標準方式是模擬器一直使用的觸控/選單模擬變形。想排除新方式是否為問題原因時請選擇此項。"},
+            {MenuLangId::Korean, "기본 방식은 지금까지 사용해 온 터치/메뉴 모방 변형입니다. 문제의 원인이 새 방식인지 가려내고 싶을 때 선택하세요."},
+        }
+    },
+    {
+        "lblMetroidZoomStandardDesc",
+        {
+            {MenuLangId::Japanese, "通常方式は、プレイヤーの操作プリセットが割り当てているズームボタンを押します。問題が新方式によるものかどうかを切り分けたいときに選んでください。"},
+            {MenuLangId::German, "Die Standardmethode drückt die Zoom-Taste, die das Steuerungs-Preset des Spielers belegt. Wähle sie, um die nativen Pfade als Fehlerursache auszuschließen."},
+            {MenuLangId::Spanish, "El método estándar pulsa el botón de zoom que asigna el ajuste de control del jugador. Elígelo para descartar las rutas nativas como causa de un problema."},
+            {MenuLangId::French, "La méthode standard appuie sur la touche de zoom attribuée par le préréglage de commandes du joueur. Choisissez-la pour écarter les voies natives comme cause d’un problème."},
+            {MenuLangId::Italian, "Il metodo standard preme il pulsante di zoom assegnato dal preset dei comandi del giocatore. Scegli questo per escludere i percorsi nativi come causa di un problema."},
+            {MenuLangId::Dutch, "De standaardmethode drukt op de zoomknop die de besturingsinstelling van de speler toewijst. Kies deze om de native paden als oorzaak van een probleem uit te sluiten."},
+            {MenuLangId::Portuguese, "O método padrão pressiona o botão de zoom atribuído pela predefinição de controlos do jogador. Escolha-o para descartar os caminhos nativos como causa de um problema."},
+            {MenuLangId::Russian, "Стандартный метод нажимает кнопку зума, назначенную схемой управления игрока. Выберите его, чтобы исключить нативные пути как причину проблемы."},
+            {MenuLangId::ChineseSimplified, "标准方式会按下玩家操作预设所分配的缩放按键。想排除新方式是否为问题原因时请选择此项。"},
+            {MenuLangId::ChineseTraditional, "標準方式會按下玩家操作預設所分配的縮放按鍵。想排除新方式是否為問題原因時請選擇此項。"},
+            {MenuLangId::ChineseHongKong, "標準方式會按下玩家操作預設所分配的縮放按鍵。想排除新方式是否為問題原因時請選擇此項。"},
+            {MenuLangId::Korean, "기본 방식은 플레이어의 조작 프리셋이 할당한 확대 버튼을 누릅니다. 문제의 원인이 새 방식인지 가려내고 싶을 때 선택하세요."},
+        }
     }

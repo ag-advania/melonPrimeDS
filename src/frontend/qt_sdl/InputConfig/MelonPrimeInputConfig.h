@@ -122,6 +122,7 @@ private slots:
     void on_cbMetroidHudCrosshairDeadbandEnable_stateChanged(int state);
     void on_dsbMetroidHudCrosshairDeadband_valueChanged(double value);
     void on_cbMetroidEnableStylusMode_stateChanged(int state);
+    void on_cbMetroidEnableTouchScreenAimOnly_stateChanged(int state);
     void on_cbMetroidDisableMphAimSmoothing_stateChanged(int state);
     void on_cbMetroidExpandStageMatrix_stateChanged(int state);
     void on_comboMetroidLowHpWarningMode_currentIndexChanged(int index);
@@ -152,6 +153,8 @@ private:
     void setupMenuLanguageControl(Config::Table& instcfg);
     void setupSensitivityAndToggles(Config::Table& instcfg);
     void setupInputMethodSection(Config::Table& instcfg);
+    void setupSettingsOrganization();
+    void refreshSettingsPresentation();
     void setupCollapsibleSections(Config::Table& instcfg);
     void setupPreviewConnections();
     void setupCustomHudCode();
@@ -192,6 +195,9 @@ private:
     bool m_applyPreviewActive = false;
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
+    QCheckBox* m_cbMetroidUseStandardWeaponSwitchMethod = nullptr;
+    QCheckBox* m_cbMetroidUseStandardTransformMethod = nullptr;
+    QCheckBox* m_cbMetroidUseStandardZoomMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod2 = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;

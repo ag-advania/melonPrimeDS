@@ -336,7 +336,9 @@ void GLRenderer::SetRenderSettings(RendererSettings& settings)
     if (IsCompute)
     {
         auto rend3d = dynamic_cast<ComputeRenderer3D *>(Rend3D.get());
-        rend3d->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
+        // OpenGL Compute always uses high-resolution coordinates above native
+        // 1x. ComputeRenderer3D keeps the 1x FinalPosition bypass internally.
+        rend3d->SetRenderSettings(settings.ScaleFactor, true);
     }
     else
     {

@@ -20,6 +20,7 @@
 #include <QComboBox>
 #include <QLabel>
 #include <QRadioButton>
+#include <QSignalBlocker>
 #include <QtGlobal>
 
 #include "types.h"
@@ -92,6 +93,28 @@ QString DX12HiresCoordinatesDescription()
 {
     return MelonPrime::UiText::Tr(
         "Use the DS GPU's high-resolution vertex coordinates with DirectX 12.");
+}
+
+} // namespace
+#endif
+
+#ifdef MELONPRIME_DS
+namespace
+{
+
+bool RendererForcesHiresCoordinates(int renderer)
+{
+    if (renderer == renderer3D_OpenGLCompute)
+        return true;
+#if defined(MELONPRIME_ENABLE_VULKAN)
+    if (renderer == renderer3D_Vulkan)
+        return true;
+#endif
+#if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
+    if (renderer == renderer3D_DX12)
+        return true;
+#endif
+    return false;
 }
 
 } // namespace
@@ -231,10 +254,20 @@ void VideoSettingsDialog::setEnabled()
     ui->cbBetterPolygons->setWhatsThis(betterPolygonsDescription);
 #endif
 
-    // Every compute backend uses this directly. Metal raster also consumes it
-    // when its internal scale is above native resolution.
+    // OpenGL Compute, Vulkan and DirectX 12 always use high-resolution
+    // coordinates above 1x. Reflect that renderer contract in the shared
+    // control and configuration; their rendering paths also force the value
+    // independently of this UI.
+    const bool forceHiresCoordinates =
+        computeRenderer || vulkanRenderer || dx12Renderer;
+    if (forceHiresCoordinates)
+    {
+        const QSignalBlocker blocker(ui->cbxComputeHiResCoords);
+        ui->cbxComputeHiResCoords->setChecked(true);
+        cfg.SetBool("3D.GL.HiresCoordinates", true);
+    }
     ui->cbxComputeHiResCoords->setEnabled(
-        computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer);
+        !forceHiresCoordinates && metalRenderer);
 #ifdef MELONPRIME_DS
     constexpr const char* originalHiresCoordinatesHelp =
         "MelonPrimeOriginalHiresCoordinatesHelp";
@@ -374,6 +407,13 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     oldGLScale = cfg.GetInt("3D.GL.ScaleFactor");
     oldGLBetterPolygons = cfg.GetBool("3D.GL.BetterPolygons");
     oldHiresCoordinates = cfg.GetBool("3D.GL.HiresCoordinates");
+#ifdef MELONPRIME_DS
+    if (RendererForcesHiresCoordinates(oldRenderer))
+    {
+        oldHiresCoordinates = true;
+        cfg.SetBool("3D.GL.HiresCoordinates", true);
+    }
+#endif
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
     || (defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)))
     oldNvidiaReflexMode = cfg.GetInt(MelonPrime::CfgKey::NvidiaReflexMode);
@@ -941,7 +981,18 @@ void VideoSettingsDialog::on_cbBetterPolygons_stateChanged(int state)
 void VideoSettingsDialog::on_cbxComputeHiResCoords_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("3D.GL.HiresCoordinates", (state != 0));
+    const bool forced =
+#ifdef MELONPRIME_DS
+        RendererForcesHiresCoordinates(cfg.GetInt("3D.Renderer"));
+#else
+        false;
+#endif
+    if (forced && state == 0)
+    {
+        const QSignalBlocker blocker(ui->cbxComputeHiResCoords);
+        ui->cbxComputeHiResCoords->setChecked(true);
+    }
+    cfg.SetBool("3D.GL.HiresCoordinates", forced || state != 0);
 
     emit updateVideoSettings(false);
 }

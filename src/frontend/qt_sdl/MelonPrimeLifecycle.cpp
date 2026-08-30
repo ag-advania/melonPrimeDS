@@ -69,6 +69,7 @@ namespace MelonPrime {
         m_moonLikeAimFastThresholdQ12 = s.moonLikeAimFastThresholdQ12;
         m_enableImmediateInputEdgeOverlay = s.immediateInputEdgeOverlay;
         m_enableDirectAltFormTransform = s.directAltFormTransform;
+        m_suspendTouchAimOnlyForTransform = s.touchScreenAimOnlySuspendForTransform;
         m_enableMorphBoostSwipe = s.morphBoostSwipeEnabled; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         m_enableMorphBoostCustomRawThreshold = s.morphBoostCustomRawThreshold;
         if (!m_enableDirectAltFormTransform)
@@ -342,6 +343,7 @@ namespace MelonPrime {
         m_postSavestateReconcilePending = true;
         m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+        m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
         m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform
@@ -474,6 +476,7 @@ namespace MelonPrime {
             m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
             m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
             m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+            m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
         }
     }
 

@@ -6,6 +6,9 @@
 #include "Screen.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
+#ifdef MELONPRIME_DS
+#include "MelonPrimePatchTouchScreenAimOnly.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -142,8 +145,20 @@ namespace MelonPrime {
         if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
         auto* nds = emuInstance->getNDS();
 
+        // A native method must not fire while the local player is not in play
+        // (killed, or not yet spawned), and it does nothing at all rather than
+        // quietly falling through to the legacy simulation below. Only the
+        // legacy path itself still runs then -- that is the game reacting to
+        // its own simulated input.
+        const bool localPlayerNotInPlay = !IsLocalPlayerAlive();
+        // Spawn invulnerability window: every native method defers to the
+        // Standard path below for its whole duration.
+        const bool spawnWindow = IsLocalPlayerInSpawnInvulnerability();
+
 #ifdef MELONPRIME_DS
-        if (m_enableDirectInvocationTransform) {
+        if (m_enableDirectInvocationTransform && !spawnWindow) {
+            if (localPlayerNotInPlay)
+                return;
             // "New Method 2": queue one mailbox request for the ARM9
             // DirectInvocation hook. It calls the game's own transform request
             // from the ProcessTouchInput call site -- no synthetic touch and no
@@ -158,7 +173,9 @@ namespace MelonPrime {
         }
 #endif
 
-        if (m_enableDirectAltFormTransform) {
+        if (m_enableDirectAltFormTransform && !spawnWindow) {
+            if (localPlayerNotInPlay)
+                return;
             // TransformGateHook redirects Gate A/B into the game's native
             // TransformRequest path. Keep a short pending window so a press is
             // not lost if the game reaches the transform gate a few frames late.
@@ -171,6 +188,17 @@ namespace MelonPrime {
         // layout -- the left-handed presets put it at X 0..47 instead of
         // 208..255 -- so the tap has to be mapped through the preset or it only
         // ever lands on Touch R and Dual R.
+#ifdef MELONPRIME_DS
+        // "Use the Whole Touch Screen for Aiming" neutralises exactly the
+        // hit-test this tap depends on, so with that patch active the Standard
+        // transform silently stops working. Opt-in: lift the patch for the tap
+        // and put it straight back. Same shape as the NoDoubleTapJump patch the
+        // legacy weapon path brackets its own touch sequence with.
+        const bool liftTouchAimOnly = m_suspendTouchAimOnlyForTransform;
+        if (UNLIKELY(liftTouchAimOnly))
+            TouchScreenAimOnly_RestoreOnce(m_patchState, nds, m_currentRom.romGroupIndex);
+#endif
+
         nds->ReleaseScreen();
         FrameAdvanceTwice();
         using namespace Consts::UI;
@@ -178,6 +206,15 @@ namespace MelonPrime {
         FrameAdvanceTwice();
         nds->ReleaseScreen();
         FrameAdvanceTwice();
+
+#ifdef MELONPRIME_DS
+        // Re-apply through the owning module so it re-reads config and stays
+        // the single writer of that patch state.
+        if (UNLIKELY(liftTouchAimOnly)) {
+            TouchScreenAimOnly_ApplyOnce(
+                m_patchState, nds, localCfg, m_currentRom.romGroupIndex);
+        }
+#endif
     }
 
     COLD_FUNCTION void MelonPrimeCore::HandleRareWeaponSwitch()

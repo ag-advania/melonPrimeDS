@@ -87,7 +87,6 @@ namespace MelonPrime {
         return weaponId == PowerBeam || weaponId == Missile || weaponId == OmegaCannon;
     }
 
-    constexpr uint32_t kPlayerSpawnInvincibilityOffset = 0xE1u;
 
     COLD_FUNCTION void ShowOmegaWeaponSwitchBlockedMessage(EmuInstance* emuInstance)
     {
@@ -384,6 +383,31 @@ namespace MelonPrime {
         }
 
 #ifdef MELONPRIME_DS
+        // Spawn invulnerability window: hand the request to the Standard path
+        // for its whole duration rather than making a native call. The
+        // dispatcher's first-post-spawn barrier stays as well -- it covers a
+        // request that crosses the boundary from outside this window, which
+        // this producer-side check cannot see.
+        if ((m_enableDirectInvocationWeapon || m_enableNativeWeaponSwitch)
+            && UNLIKELY(IsLocalPlayerInSpawnInvulnerability()))
+        {
+            m_weaponSwitchPending.Clear();
+            m_directInvocationPending.ClearWeapon();
+            return SwitchWeaponLegacyTouchFallback(weaponId);
+        }
+
+        // A native method must not fire while the local player is not in play.
+        // Refuse the request outright rather than rerouting it to the legacy
+        // path: "the selected method does nothing until you are in play" is
+        // easier to reason about than a silent method swap for one window.
+        if ((m_enableDirectInvocationWeapon || m_enableNativeWeaponSwitch)
+            && !IsLocalPlayerAlive())
+        {
+            m_weaponSwitchPending.Clear();
+            m_directInvocationPending.ClearWeapon();
+            return false;
+        }
+
         if (m_enableDirectInvocationWeapon) {
             // "New Method 2": mphCodex DirectInvocation. The hook calls the
             // game's own TryEquipWeapon(player, id, 0) from the
@@ -392,19 +416,6 @@ namespace MelonPrime {
             // native-only path: an unserviceable site is reported instead of
             // being hidden behind the legacy touch route.
             melonDS::NDS* const nds = emuInstance->getNDS();
-            const uint32_t playerBase =
-                m_currentRom.playerStructStart
-                + static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
-            // Same spawn-window guard as Method 1: the native equip is not safe
-            // while spawn invincibility is still counting down, so hand this one
-            // request to the legacy route rather than dropping or forcing it.
-            if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_GAME_INIT)
-                && Read8(nds->MainRAM, playerBase + kPlayerSpawnInvincibilityOffset) != 0))
-            {
-                m_directInvocationPending.ClearWeapon();
-                return SwitchWeaponLegacyTouchFallback(weaponId);
-            }
-
             const uint8_t romIdx = m_currentRom.romGroupIndex;
             if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
                 && DirectInvocationHook_IsRomSupported(romIdx)
@@ -418,16 +429,6 @@ namespace MelonPrime {
 
         if (m_enableNativeWeaponSwitch) {
             melonDS::NDS* const nds = emuInstance->getNDS();
-            const uint32_t playerBase =
-                m_currentRom.playerStructStart
-                + static_cast<uint32_t>(m_playerPosition) * Consts::PLAYER_ADDR_INC;
-            if (UNLIKELY(m_flags.test(StateFlags::BIT_IN_GAME_INIT)
-                && Read8(nds->MainRAM, playerBase + kPlayerSpawnInvincibilityOffset) != 0))
-            {
-                m_weaponSwitchPending.Clear();
-                return SwitchWeaponLegacyTouchFallback(weaponId);
-            }
-
             const uint8_t romIdx = m_currentRom.romGroupIndex;
             if (WeaponSwitchHook_IsRomSupported(romIdx)
                 && WeaponSwitchHook_IsSiteValid(nds, romIdx))

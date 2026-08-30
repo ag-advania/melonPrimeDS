@@ -599,15 +599,28 @@ Three rules apply to every module that writes into it:
 Every registered hook is match-scoped. A new one must follow all of it, not just the parts the
 dispatcher enforces:
 
-- Install/clear happens through `ARM9Hook_SetMatchHooksActive`, driven by the battle-runtime latch
-  (`mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH`).
+- Install/clear happens through `ARM9Hook_SetMatchHooksActive`, driven by the battle-runtime latch.
+  That latch is two-stage and the stages need not fall on the same frame: `BIT_BATTLE_RUNTIME_SEEN`
+  sticks once `mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH` has been observed, and
+  `BIT_BATTLE_RUNTIME_MODE` completes on the first frame after that where the local player's HP is
+  not 0. Everything hung off the latch therefore lands on a spawned player rather than during the
+  spawn window. An unresolved HP pointer counts as in play, so the latch cannot stall.
 - **Gate the request-producing side on `BIT_BATTLE_RUNTIME_MODE` too**, not just
   `BIT_IN_GAME_INIT`. A request queued during the join/countdown otherwise survives on its TTL and
   fires on the first battle-runtime frame, before the player state it acts on is settled.
 - Clear pending host-side requests on the battle-runtime edge and in the lifecycle resets
   (`ResetTransientInputState`, emu start/stop/boot, savestate reconcile).
-- Weapon-equipping paths keep the spawn-window guard: while `player+0xE1 != 0` (spawn
-  invincibility) the native equip is unsafe, and Method 1 hands that request to the legacy route.
+- **Every native dispatcher has to clear the spawn barrier**, because the match latch is a
+  match boundary and respawn is a player boundary. Spawn restores HP early and the same player
+  runtime update falls through to the input hooks, so a native call can land inside the update that
+  spawned the player. `MelonPrimeCore::IsFirstPostSpawnInput()` (defined in
+  `MelonPrimeGameInput.cpp`) identifies that one hook via `player+0xE1 == configured - 1`; each
+  dispatcher drops its pending request and returns false there, letting the site's original
+  instruction run. Drop, never defer — replaying a pressed edge from before the respawn is the
+  behaviour being prevented.
+- **And the request-producing side hands the whole `player+0xE1 != 0` window to the non-native
+  path.** The dispatcher barrier only sees requests that actually reach a hook; this covers the
+  rest of the invulnerability countdown. The two are complementary, not alternatives.
 
 ---
 

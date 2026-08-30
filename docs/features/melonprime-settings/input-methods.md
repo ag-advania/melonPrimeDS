@@ -14,9 +14,23 @@ and zoom requests are generated:
 | Zoom method | Metroid.Input.ZoomMethod | 0 | 0 legacy, 1 retired alias, 2 native, 3 native 3 |
 
 Each domain stores one integer, so its methods are mutually exclusive by
-construction. The dialog enforces the same thing directly: ticking Method 2
-clears Method 1 for weapon and transform, and ticking Method 3 clears Method 2
-for zoom (and the reverse in each case).
+construction, and value 0 -- the behaviour you get when no new method is
+selected -- is the **Standard Method**. It has its own checkbox rather than
+being "nothing ticked", so the selector reads as exactly-one-of-N:
+
+| Domain | Standard | New | New 2 | New 3 |
+| --- | --- | --- | --- | --- |
+| Weapon change | value 0 | value 1 | value 2 | — |
+| Alt-Form transform | value 0 | value 1 | value 2 | — |
+| Zoom | value 0 | — | value 2 | value 3 |
+
+The dialog enforces the grouping directly: ticking one box clears the others in
+its domain, and clearing the last ticked box puts it back rather than leaving
+the group empty. The boxes stay checkboxes to match the rest of the dialog, but
+they behave as a radio group. The Standard zoom box is available in every
+build; only the experimental New Method 2 and New Method 3 boxes are
+developer-build only. A release build therefore always runs the Standard zoom
+path.
 
 `Metroid.Input.AltFormTransformMethod` is authoritative. When it is absent, the
 value is migrated once from the older boolean key: true becomes 1, false becomes
@@ -135,7 +149,8 @@ Like every other native path, this one is match-scoped and follows the same
 three conventions:
 
 - **The battle-runtime latch gates it end to end.** Hooks are installed on the
-  first `mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH` frame, so
+  first frame where the local player is in play (HP != 0) after
+  `mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH` has been seen, so
   requests are neither queued nor serviced outside it. Without that gate a
   press during the join/countdown could be held by its TTL and then fire on the
   very first battle-runtime frame. `HandleBattleRuntimeEnter` also drops any
@@ -196,6 +211,106 @@ PC-relative request loads, and the battle-runtime authoring rule are canonical i
 shared ROM code cave" — read that before adding or moving one. DirectInvocation owns
 0x02003F50..0x02003FBB and no data block: its dispatcher hands the request over in r0-r2.
 
+## Zoom
+
+Value 0 is the Standard zoom path. Value 1 is a retired configuration value that
+behaves as value 0. Value 2 uses the native SetPlayerScopeZoom path from the
+weapon action update. Value 3 is New Method 3: the same setter called from the
+player input update, described under DirectInvocation above.
+
+| ROM | SetPlayerScopeZoom site |
+| --- | ---: |
+| JP1.0 / JP1.1 | 0x02015C98 |
+| US1.0 | 0x02015CB8 |
+| US1.1 | 0x02015CBC |
+| EU1.0 | 0x02015CB0 |
+| EU1.1 | 0x02015CBC |
+| KR1.0 | 0x0201CEBC |
+
+The native weapon-action path uses the shared action consumer for JP/US/EU
+and 0x0200D07C for KR, with a trampoline at 0x02003F00 and scratch area at
+0x02003F40. The activation edge, guest scope call, and release behavior must
+be tested independently from zoom sensitivity scaling.
+
+## Native methods are gated on the local player being in play
+
+Every native method -- weapon New / New 2, transform New / New 2, zoom New 2 /
+New 3 -- refuses to fire while the local player's HP is 0. That covers two
+states, not just one: killed and waiting to respawn, and not yet spawned after
+the match starts. A native call reaches past whatever the game does with a
+player who is not in play, so the request is dropped rather than deferred: it is
+not queued, and a request already queued when the player goes down is cleared
+instead of firing on respawn.
+
+The gate is applied twice on purpose, at the host queue site and again in the
+ARM9 dispatch, because the queue-to-dispatch window is several frames wide and
+the player can leave play inside it.
+
+Standard Method is unaffected. It is the game reacting to the emulator's own
+simulated touch/menu input, so the game's own handling of a dead player already
+applies.
+
+HP is read through the local player's cached pointer; an unresolved pointer
+counts as alive, so a native path is never disabled just because the pointer
+cache has not been rebuilt yet.
+
+## Spawn barrier
+
+The battle-runtime latch is a *match* boundary; respawn is a *player* boundary,
+and the two are not the same. Spawn restores HP early but keeps initialising
+camera, model, animation, gun and HUD state well past that point, and the same
+player runtime update then falls through to the player input update and its
+hook sites. So "HP is not 0 and the hook was reached" is satisfied inside the
+very update that spawned the player, and a native call made there lands on
+half-initialised state.
+
+There are two layers, because they cover different cases.
+
+**Whole window, producer side.** While the local player is inside the spawn
+invulnerability countdown (`player+0xE1 != 0`), every native method hands the
+request to the Standard path instead of making a native call: weapon goes
+through the legacy touch route, and transform and zoom fall through to their
+Standard branches. The native request is cleared rather than left pending, and
+zoom keeps its shared pressed-edge latch in sync so leaving the window mid-hold
+cannot fire a stale toggle.
+
+**First post-spawn hook, dispatcher side.** The producer check cannot see a
+request that was queued *before* the boundary and only reaches the hook after
+it, so every native dispatcher additionally drops whatever lands on the one
+input hook inside the update that spawned the player. That hook needs no host
+latch to identify: Spawn stores the hunter's configured invulnerability into
+`player+0xE1`, and the same update decrements it exactly once before reaching
+the input code, so there and only there
+
+```text
+player+0xE1 == (uint8_t)([player+0x404] + 0xE2) - 1
+```
+
+The next update reads `configured - 2`, so this second layer only ever costs one
+input frame. The request is dropped rather than deferred, because replaying a
+pressed edge from before the respawn is the behaviour to avoid.
+
+Structure offsets are identical on all seven ROMs, so neither layer needs a
+per-version address table.
+
+During the spawn window the input still does something -- it runs the Standard
+method -- rather than being swallowed. The trade is that the selected method is
+briefly not the one in use.
+
+Evidence: mphCodex `Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md`.
+
+## Lifecycle and interactions
+
+Native hooks are match-scoped. Configuration changes are consumed by
+NotifyConfigChanged and reconciled by the ARM9 hook installer. A hook being
+installed is not proof that the input edge reached the guest; inspect the
+behavioral path as well.
+
+Stylus mode can intentionally bypass native aim-related controls. Joy2Key and
+SnapTap can change the host edge sequence before the native hook sees it.
+Immediate Input Edge Overlay is a developer diagnostic that shares a post-poll
+boundary and must not create duplicate fire/zoom/transform actions.
+
 ## Verification checklist
 
 - Test each selector with the other selectors at their defaults.
@@ -203,6 +318,11 @@ shared ROM code cave" — read that before adding or moving one. DirectInvocatio
 - Test Method 2 for weapon and transform separately, then together, then
   combined with Method 1 on the other selector (shared hook PC).
 - Verify each pair is exclusive in the dialog and after a save/reload cycle.
+- Die, then press each bound action while down: no weapon change, transform or
+  zoom may occur, and none may fire late on respawn.
+- Press each bound action on the exact spawn/respawn frame: dropped, no freeze.
+- Press each bound action on the frame after: the native path runs normally.
+- Hold an action across match start and across a respawn: no late replay.
 - For zoom Method 3, test Alt-Form, mid-transform, and a non-zoom weapon; each
   must refuse the toggle rather than zoom.
 - Verify one action per physical edge, not one action per frame.
