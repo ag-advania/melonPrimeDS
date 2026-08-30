@@ -1165,32 +1165,34 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     transform2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(transform2Desc);
 
-    const int zoomMethod = std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 3);
+    const int configuredZoomMethod =
+        std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 3);
+    // Public builds expose only the Standard path. Normalize any stale native
+    // value before initializing the always-available Standard checkbox.
+    const int zoomMethod = kDeveloperOnlyFeaturesEnabled
+        ? configuredZoomMethod
+        : MelonPrime::ZoomInputMethod::LegacyFixedR;
 
     m_cbMetroidUseStandardZoomMethod = new QCheckBox(
         "Use Standard Method for Zoom",
-        ui->sectionDeveloperOnly);
+        m_sectionInputMethod);
     m_cbMetroidUseStandardZoomMethod->setToolTip(
         "Checked: use the built-in zoom the emulator has always used.");
     m_cbMetroidUseStandardZoomMethod->setChecked(
-        !kDeveloperOnlyFeaturesEnabled
-        || (zoomMethod != MelonPrime::ZoomInputMethod::NewNativeToggle
-            && zoomMethod != MelonPrime::ZoomInputMethod::NewDirectInvocation));
-    m_cbMetroidUseStandardZoomMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
-
-    addDeveloperSpacing();
-    addDeveloperWidget(m_cbMetroidUseStandardZoomMethod);
+        zoomMethod != MelonPrime::ZoomInputMethod::NewNativeToggle
+        && zoomMethod != MelonPrime::ZoomInputMethod::NewDirectInvocation);
+    m_cbMetroidUseStandardZoomMethod->setEnabled(true);
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseStandardZoomMethod);
 
     auto* zoomStdDesc = new QLabel(
         "Standard Method presses the zoom button the player's control preset binds. "
         "Pick this to rule the native paths out of a problem.",
-        ui->sectionDeveloperOnly);
+        m_sectionInputMethod);
     zoomStdDesc->setObjectName(QStringLiteral("lblMetroidZoomStandardDesc"));
     zoomStdDesc->setWordWrap(true);
-    zoomStdDesc->setEnabled(kDeveloperOnlyFeaturesEnabled);
     zoomStdDesc->setStyleSheet("QLabel { margin-left: 20px; }");
-
-    addDeveloperWidget(zoomStdDesc);
+    sectionLayout->addWidget(zoomStdDesc);
 
     m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
         "Use New Method 2 for Zoom",
@@ -1552,7 +1554,7 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
     if (m_cbMetroidUseNewZoomMethod3)
         m_cbMetroidUseNewZoomMethod3->setEnabled(kDeveloperOnlyFeaturesEnabled);
     if (m_cbMetroidUseStandardZoomMethod)
-        m_cbMetroidUseStandardZoomMethod->setEnabled(kDeveloperOnlyFeaturesEnabled);
+        m_cbMetroidUseStandardZoomMethod->setEnabled(true);
     if (m_cbMetroidUseStandardWeaponSwitchMethod)
         m_cbMetroidUseStandardWeaponSwitchMethod->setEnabled(true);
     if (m_cbMetroidUseStandardTransformMethod)

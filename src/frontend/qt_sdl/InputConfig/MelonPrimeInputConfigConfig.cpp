@@ -150,21 +150,26 @@ void MelonPrimeInputConfig::saveConfig()
             MelonPrime::CfgKey::FpsCameraLock,
             m_cbMetroidFpsCameraLock->isChecked());
     }
-    if (m_cbMetroidUseNewZoomMethod2) {
+    if (m_cbMetroidUseStandardZoomMethod || m_cbMetroidUseNewZoomMethod2) {
         // Writing this back also normalizes the retired NewPresetBinding value
         // out of older configs: it now behaves exactly like LegacyFixedR.
-        // The two boxes are kept mutually exclusive in the dialog; Method 3
-        // still wins here so a stale pair can never store an ambiguous state.
+        // Standard is the public/default path and is the fallback whenever the
+        // developer-only native boxes are unavailable or unchecked. The three
+        // boxes are kept mutually exclusive in the dialog; Method 3 still wins
+        // here so a stale pair can never store an ambiguous state.
         const bool zoomMethod3 =
             kDeveloperOnlyFeaturesEnabled
             && m_cbMetroidUseNewZoomMethod3
             && m_cbMetroidUseNewZoomMethod3->isChecked();
+        const bool zoomMethod2 =
+            kDeveloperOnlyFeaturesEnabled
+            && m_cbMetroidUseNewZoomMethod2
+            && m_cbMetroidUseNewZoomMethod2->isChecked();
         instcfg.SetInt(
             MelonPrime::CfgKey::ZoomInputMethod,
             zoomMethod3
                 ? MelonPrime::ZoomInputMethod::NewDirectInvocation
-                : (kDeveloperOnlyFeaturesEnabled
-                       && m_cbMetroidUseNewZoomMethod2->isChecked()
+                : (zoomMethod2
                        ? MelonPrime::ZoomInputMethod::NewNativeToggle
                        : MelonPrime::ZoomInputMethod::LegacyFixedR));
     }

@@ -27,8 +27,10 @@ being "nothing ticked", so the selector reads as exactly-one-of-N:
 The dialog enforces the grouping directly: ticking one box clears the others in
 its domain, and clearing the last ticked box puts it back rather than leaving
 the group empty. The boxes stay checkboxes to match the rest of the dialog, but
-they behave as a radio group. Zoom's three boxes are developer-build only, so a
-release build always runs the Standard zoom path.
+they behave as a radio group. The Standard zoom box is available in every
+build; only the experimental New Method 2 and New Method 3 boxes are
+developer-build only. A release build therefore always runs the Standard zoom
+path.
 
 `Metroid.Input.AltFormTransformMethod` is authoritative. When it is absent, the
 value is migrated once from the older boolean key: true becomes 1, false becomes
