@@ -194,6 +194,9 @@ private:
     bool m_applyPreviewActive = false;
     QPushButton* m_btnToggleInputMethod = nullptr;
     QWidget* m_sectionInputMethod = nullptr;
+    QCheckBox* m_cbMetroidUseStandardWeaponSwitchMethod = nullptr;
+    QCheckBox* m_cbMetroidUseStandardTransformMethod = nullptr;
+    QCheckBox* m_cbMetroidUseStandardZoomMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod = nullptr;
     QCheckBox* m_cbMetroidUseNewWeaponSwitchMethod2 = nullptr;
     QCheckBox* m_cbMetroidUseNewBipedFireMethod = nullptr;

@@ -14,9 +14,21 @@ and zoom requests are generated:
 | Zoom method | Metroid.Input.ZoomMethod | 0 | 0 legacy, 1 retired alias, 2 native, 3 native 3 |
 
 Each domain stores one integer, so its methods are mutually exclusive by
-construction. The dialog enforces the same thing directly: ticking Method 2
-clears Method 1 for weapon and transform, and ticking Method 3 clears Method 2
-for zoom (and the reverse in each case).
+construction, and value 0 -- the behaviour you get when no new method is
+selected -- is the **Standard Method**. It has its own checkbox rather than
+being "nothing ticked", so the selector reads as exactly-one-of-N:
+
+| Domain | Standard | New | New 2 | New 3 |
+| --- | --- | --- | --- | --- |
+| Weapon change | value 0 | value 1 | value 2 | — |
+| Alt-Form transform | value 0 | value 1 | value 2 | — |
+| Zoom | value 0 | — | value 2 | value 3 |
+
+The dialog enforces the grouping directly: ticking one box clears the others in
+its domain, and clearing the last ticked box puts it back rather than leaving
+the group empty. The boxes stay checkboxes to match the rest of the dialog, but
+they behave as a radio group. Zoom's three boxes are developer-build only, so a
+release build always runs the Standard zoom path.
 
 `Metroid.Input.AltFormTransformMethod` is authoritative. When it is absent, the
 value is migrated once from the older boolean key: true becomes 1, false becomes
