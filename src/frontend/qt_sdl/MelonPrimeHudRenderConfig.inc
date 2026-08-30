@@ -352,9 +352,9 @@ struct CustomHudConfigState {
     // committed position yet", so the next draw snaps instead of easing.
     int chStickyPxCx = INT_MIN;
     int chStickyPxCy = INT_MIN;
-    // Which source last supplied the crosshair centre, so a rejected frame
-    // holds the previous one instead of switching to the quantised cache.
-    CrosshairProjection::CentreHold chCentreHold{};
+    // Sub-pixel offset between the projected centre and the ROM's published
+    // pair, so a rejected frame can stay continuous without going stale.
+    CrosshairProjection::CentreResidual chCentreResidual{};
     double chPrevGeomScale = 1.0;
     double chPrevZoomT = 0.0;
     double chPrevScopeT = 0.0;
@@ -512,7 +512,7 @@ static CustomHudConfigState& ActiveHudConfigState()
 #define s_chCrosshairDrawnLastFrame (ActiveHudConfigState().chCrosshairDrawnLastFrame)
 #define s_chPrevPxCx (ActiveHudConfigState().chPrevPxCx)
 #define s_chPrevPxCy (ActiveHudConfigState().chPrevPxCy)
-#define s_chCentreHold (ActiveHudConfigState().chCentreHold)
+#define s_chCentreResidual (ActiveHudConfigState().chCentreResidual)
 #define s_chStickyPxCx (ActiveHudConfigState().chStickyPxCx)
 #define s_chStickyPxCy (ActiveHudConfigState().chStickyPxCy)
 #define s_chPrevGeomScale (ActiveHudConfigState().chPrevGeomScale)

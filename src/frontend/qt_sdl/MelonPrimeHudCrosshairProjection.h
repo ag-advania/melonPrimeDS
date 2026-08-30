@@ -223,54 +223,54 @@ struct Result {
 // =========================================================================
 //  What to draw when the gate rejects a frame.
 //
-//  Falling straight back to the ROM's cache was a mistake: that cache is
-//  quantised to whole DS pixels, so switching to it moves the centre by up to
-//  a full native pixel -- several output pixels once the frame is scaled up.
-//  Alternating between the two sources therefore produces a far bigger jump
-//  than the sub-pixel dither the feature was meant to remove.
+//  Falling back to the ROM's cache steps the centre onto the whole-DS-pixel
+//  grid, which is a bigger jump than the sub-pixel noise this feature removes.
+//  Holding the last accepted centre avoids that step, but at the cost of
+//  drawing a stale position -- and a stale crosshair is exactly the latency the
+//  feature was supposed to reduce.
 //
-//  Holding the last accepted centre keeps the source stable across a transient
-//  rejection. The hold is bounded so a systematic rejection cannot freeze the
-//  crosshair: after a few frames it settles on the cache and stays there until
-//  a frame is accepted again, which is the old behaviour rather than a
-//  flicker between two.
+//  Neither is necessary. A rejected frame still has the ROM's own position for
+//  this frame, which is fresh; what it lacks is the sub-pixel part. Carrying
+//  the offset between the two from the last accepted frame supplies that, so
+//  the centre stays continuous *and* current.
+//
+//  The offset is bounded by construction: a frame is only accepted when the
+//  reconstruction lands on exactly the pair the ROM published, so the two
+//  differ by less than the rounding that produced the pair -- about one DS
+//  pixel. A stale offset therefore cannot displace the crosshair further than
+//  the precision being recovered, which is the worst case this degrades to.
 // =========================================================================
 
-enum class CentreSource {
-    Projected,   // this frame's high-resolution centre
-    Held,        // the last accepted one, kept to avoid a source switch
-    NativeCache, // the ROM's quantised pair
-};
-
-struct CentreHold {
-    // Three frames is 50 ms at 60 fps: long enough to ride out a sampling
-    // collision, short enough that a real change is not visibly stale.
-    static constexpr int kMaxHeldFrames = 3;
-
-    bool haveProjected = false;
-    int heldFrames = 0;
+struct CentreResidual {
+    bool valid = false;
+    double dsX = 0.0;
+    double dsY = 0.0;
 
     void Reset() noexcept
     {
-        haveProjected = false;
-        heldFrames = 0;
+        valid = false;
+        dsX = 0.0;
+        dsY = 0.0;
+    }
+
+    void Capture(double projectedX, double projectedY,
+                 double nativeX, double nativeY) noexcept
+    {
+        dsX = projectedX - nativeX;
+        dsY = projectedY - nativeY;
+        valid = true;
+    }
+
+    [[nodiscard]] double ApplyX(double nativeX) const noexcept
+    {
+        return valid ? nativeX + dsX : nativeX;
+    }
+
+    [[nodiscard]] double ApplyY(double nativeY) const noexcept
+    {
+        return valid ? nativeY + dsY : nativeY;
     }
 };
-
-[[nodiscard]] inline CentreSource SelectCentre(bool accepted, CentreHold& hold) noexcept
-{
-    if (accepted) {
-        hold.haveProjected = true;
-        hold.heldFrames = 0;
-        return CentreSource::Projected;
-    }
-    if (hold.haveProjected && hold.heldFrames < CentreHold::kMaxHeldFrames) {
-        ++hold.heldFrames;
-        return CentreSource::Held;
-    }
-    hold.haveProjected = false;
-    return CentreSource::NativeCache;
-}
 
 // =========================================================================
 //  Sub-pixel deadband.

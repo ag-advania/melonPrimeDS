@@ -664,93 +664,87 @@ int RunBenchmark()
 
 
 // -------------------------------------------------------------------------
-//  Centre source selection
+//  Rejected-frame centre
 //
-//  Switching to the ROM cache on a rejected frame is what made the flicker
-//  worse than the dither it replaced: that cache is quantised to whole DS
-//  pixels, so every switch moved the centre by several output pixels.
+//  Two earlier attempts were wrong in opposite directions: switching to the
+//  ROM cache stepped the centre onto the whole-pixel grid, and holding the
+//  last accepted centre drew a stale one. The residual keeps the ROM's fresh
+//  position for this frame and restores only the sub-pixel part.
 // -------------------------------------------------------------------------
 
-void TestRejectedFrameHoldsInsteadOfSwitching()
+void TestResidualKeepsRejectedFramesCurrentAndContinuous()
 {
-    CH::CentreHold hold;
+    CH::CentreResidual residual;
 
-    // Nothing accepted yet, so there is nothing to hold.
-    Check(CH::SelectCentre(false, hold) == CH::CentreSource::NativeCache,
-        "the first frame has no centre to hold");
+    Check(residual.ApplyX(100.0) == 100.0, "an uncaptured residual changes nothing");
+    Check(residual.ApplyY(50.0) == 50.0, "an uncaptured residual changes nothing in Y");
 
-    Check(CH::SelectCentre(true, hold) == CH::CentreSource::Projected,
-        "an accepted frame uses the projection");
+    // An accepted frame: projected 100.7 where the ROM published 100.
+    residual.Capture(100.7, 50.25, 100.0, 50.0);
 
-    // A transient rejection must not switch source.
-    for (int i = 0; i < CH::CentreHold::kMaxHeldFrames; ++i) {
-        Check(CH::SelectCentre(false, hold) == CH::CentreSource::Held,
-            "a rejected frame holds the last accepted centre");
+    // The next frame is rejected but the ROM has moved on to 103. The drawn
+    // centre must follow that rather than stay at 100.7, and must not step to
+    // a whole pixel either.
+    const double x = residual.ApplyX(103.0);
+    Check(std::fabs(x - 103.7) < 1e-9,
+        "a rejected frame follows the ROM and keeps the sub-pixel offset");
+    Check(std::fabs(residual.ApplyY(48.0) - 48.25) < 1e-9,
+        "the Y offset is carried the same way");
+
+    // Continuity is the point: consecutive rejected frames track the ROM step
+    // for step, adding no motion of their own.
+    double previous = residual.ApplyX(103.0);
+    for (double native = 104.0; native <= 120.0; native += 1.0) {
+        const double current = residual.ApplyX(native);
+        Check(std::fabs((current - previous) - 1.0) < 1e-9,
+            "a rejected frame moves exactly as far as the ROM did");
+        previous = current;
     }
-
-    // But it must not hold forever, or a real change would freeze on screen.
-    Check(CH::SelectCentre(false, hold) == CH::CentreSource::NativeCache,
-        "the hold is bounded");
-    Check(CH::SelectCentre(false, hold) == CH::CentreSource::NativeCache,
-        "once given up it stays on the cache");
-
-    // Accepting again resumes immediately.
-    Check(CH::SelectCentre(true, hold) == CH::CentreSource::Projected,
-        "an accepted frame resumes the projection at once");
 }
 
-// Alternating accept/reject is the pattern that produced the visible flicker.
-// It must never reach the cache, because that is the source switch.
-void TestAlternatingRejectionNeverSwitchesSource()
+// The offset can only ever be the sub-pixel part, because a frame is accepted
+// only when the reconstruction lands on the pair the ROM published. That bound
+// is what makes carrying a stale residual harmless.
+void TestResidualStaysWithinOnePixel()
 {
-    CH::CentreHold hold;
-    (void)CH::SelectCentre(true, hold);
+    int checked = 0;
+    for (int rotated = 0; rotated < 2; ++rotated) {
+        for (int32_t depth = 1; depth <= 20; ++depth) {
+            for (int32_t sx = -700; sx <= 700; sx += 61) {
+                const CH::Input in = MakeInput(
+                    sx, sx / 2, -depth * 271, kOne + depth * 13, rotated != 0);
+                const RomReference expected = ProjectLikeRom(in);
+                CH::Result out{};
+                if (!CH::Project(in, out) || !expected.visible)
+                    continue;
+                if (!CH::MatchesNative(out, expected.screenX, expected.screenY))
+                    continue;
+                if (expected.screenX32 != (int32_t)expected.screenX
+                    || expected.screenY32 != (int32_t)expected.screenY)
+                    continue;
 
-    int cacheFrames = 0;
-    for (int frame = 0; frame < 600; ++frame) {
-        const bool accepted = (frame % 2) == 0;
-        if (CH::SelectCentre(accepted, hold) == CH::CentreSource::NativeCache)
-            ++cacheFrames;
-    }
-    Check(cacheFrames == 0,
-        "alternating rejection must never fall back to the quantised cache");
-
-    // Two out of three rejected is still within the hold.
-    CH::CentreHold sparse;
-    (void)CH::SelectCentre(true, sparse);
-    cacheFrames = 0;
-    for (int frame = 0; frame < 600; ++frame) {
-        const bool accepted = (frame % 3) == 0;
-        if (CH::SelectCentre(accepted, sparse) == CH::CentreSource::NativeCache)
-            ++cacheFrames;
-    }
-    Check(cacheFrames == 0,
-        "a sparse accept rate must still hold rather than switch");
-}
-
-// Systematic rejection has to settle, not oscillate: that is the case where
-// the projection is simply unusable and the old behaviour is the right one.
-void TestSystematicRejectionSettlesOnTheCache()
-{
-    CH::CentreHold hold;
-    (void)CH::SelectCentre(true, hold);
-
-    int held = 0;
-    int cache = 0;
-    for (int frame = 0; frame < 300; ++frame) {
-        switch (CH::SelectCentre(false, hold)) {
-        case CH::CentreSource::Held: ++held; break;
-        case CH::CentreSource::NativeCache: ++cache; break;
-        default: Check(false, "a rejected frame cannot report Projected"); break;
+                CH::CentreResidual residual;
+                residual.Capture(out.dsX, out.dsY,
+                                 (double)expected.screenX,
+                                 (double)expected.screenY);
+                Check(std::fabs(residual.dsX) < 2.0 && std::fabs(residual.dsY) < 2.0,
+                    "an accepted frame's residual is a sub-pixel offset");
+                ++checked;
+            }
         }
     }
-    Check(held == CH::CentreHold::kMaxHeldFrames,
-        "the hold is spent once and not re-entered");
-    Check(cache == 300 - CH::CentreHold::kMaxHeldFrames,
-        "after the hold it stays on the cache instead of oscillating");
-    Check(!hold.haveProjected, "giving up clears the held centre");
+    Check(checked > 200, "the residual bound must be exercised over a useful range");
 }
 
+void TestResidualResetClearsIt()
+{
+    CH::CentreResidual residual;
+    residual.Capture(10.5, 20.5, 10.0, 20.0);
+    Check(residual.valid, "capture marks the residual valid");
+    residual.Reset();
+    Check(!residual.valid, "reset clears validity");
+    Check(residual.ApplyX(77.0) == 77.0, "a reset residual changes nothing");
+}
 
 // -------------------------------------------------------------------------
 //  Local player pointer
@@ -806,9 +800,9 @@ int main(int argc, char** argv)
     TestDeadbandSnapsOnJumpAndReset();
     TestMatchesNativeAcceptsAndRejects();
     TestPlayerPointerValidation();
-    TestRejectedFrameHoldsInsteadOfSwitching();
-    TestAlternatingRejectionNeverSwitchesSource();
-    TestSystematicRejectionSettlesOnTheCache();
+    TestResidualKeepsRejectedFramesCurrentAndContinuous();
+    TestResidualStaysWithinOnePixel();
+    TestResidualResetClearsIt();
     TestDeadbandToggleResolves();
     TestDeadbandWidthIsHonoured();
 
@@ -819,6 +813,6 @@ int main(int argc, char** argv)
     std::printf(
         "crosshair-projection-tests: clip gate, ROM reconstruction, rounding "
         "order, signed divide, orientation, deadband, gate, hold, "
-        "player pointer PASS\n");
+        "player pointer, residual PASS\n");
     return 0;
 }

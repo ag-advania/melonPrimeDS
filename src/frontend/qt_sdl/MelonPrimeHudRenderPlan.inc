@@ -313,7 +313,7 @@ static void ClearPreviousCrosshairDirty(const CrosshairHudConfig& ch)
     // real position rather than ease out of a stale committed one.
     s_chStickyPxCx = INT_MIN;
     s_chStickyPxCy = INT_MIN;
-    s_chCentreHold.Reset();
+    s_chCentreResidual.Reset();
     s_chPrevGeomScale = 1.0;
     s_chPrevZoomT = 0.0;
     s_chPrevScopeT = 0.0;
