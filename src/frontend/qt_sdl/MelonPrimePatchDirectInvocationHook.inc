@@ -454,7 +454,8 @@
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
             || !m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
             || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
-            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME))
+            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
+            || !IsLocalPlayerAlive())
         {
             return;
         }
@@ -524,7 +525,8 @@
         // it either. Without this a request queued during the join/countdown
         // could fire on the very first battle-runtime frame.
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
-            || !m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE))
+            || !m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_MODE)
+            || !IsLocalPlayerAlive())
         {
             m_directInvocationPending.Clear();
             return false;
@@ -558,6 +560,16 @@
         const uint32_t localPlayer = Read32(nds->MainRAM, site->MainPlayerPtrGlobal);
         if (localPlayer == 0 || player != localPlayer)
             return false;
+
+        // Spawn barrier: this is the first input hook of the update that just
+        // respawned the player. A pressed edge from across that boundary is
+        // dropped, not deferred -- replaying it on the next frame is exactly
+        // the behaviour to avoid. The hook returns false, so the site's own
+        // bl ProcessTouchInput runs untouched.
+        if (UNLIKELY(IsFirstPostSpawnInput(nds, player))) {
+            m_directInvocationPending.Clear();
+            return false;
+        }
 
         if (!DirectInvocation_EnsureTrampoline(nds, *site))
             return false;

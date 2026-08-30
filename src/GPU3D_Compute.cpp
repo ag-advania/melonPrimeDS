@@ -960,7 +960,7 @@ void ComputeRenderer3D::RenderFrame()
         s32 ytop = ScreenHeight, ybot = 0;
         for (int i = 0; i < polygon->NumVertices; i++)
         {
-            if (HiresCoordinates)
+            if (HiresCoordinates && ScaleFactor > 1)
             {
                 scaledPositions[i][0] = (polygon->Vertices[i]->HiresPosition[0] * ScaleFactor) >> 4;
                 scaledPositions[i][1] = (polygon->Vertices[i]->HiresPosition[1] * ScaleFactor) >> 4;

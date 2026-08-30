@@ -359,16 +359,35 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
             // Cold: battle-runtime latch + match-end poll. One flags load; RAM reads:
             //   pre-latch lobby: currentMode only (skip flow until mode==0x0E)
+            //   pre-latch, stage 1 already seen: local HP only
             //   post-latch live match: battleFlowState only
             const uint32_t matchLifecycleFlags = m_flags.packed;
             if (UNLIKELY((matchLifecycleFlags & StateFlags::BIT_IN_GAME_INIT)
                     && !(matchLifecycleFlags & StateFlags::BIT_END_OF_GAME_PATCH_RESTORED))) {
                 if (!(matchLifecycleFlags & StateFlags::BIT_BATTLE_RUNTIME_MODE)) {
-                    const uint8_t mode = *m_ptrs.currentMode;
-                    if (mode == BattleFlow::MODE_BATTLE_RUNTIME) {
-                        const uint8_t flowState = *m_ptrs.battleFlowState;
-                        if (flowState == BattleFlow::FLOW_ACTIVE_MATCH)
-                            HandleBattleRuntimeEnter();
+                    // Two stages, and they need not complete on the same frame.
+                    //
+                    // Stage 1 is sticky: the mode/flow pair only says the match
+                    // is live, not that the local player exists in it yet, and
+                    // it can stop reporting one again while the player is still
+                    // waiting to spawn. Once seen, it stays seen.
+                    if (!(matchLifecycleFlags & StateFlags::BIT_BATTLE_RUNTIME_SEEN)) {
+                        const uint8_t mode = *m_ptrs.currentMode;
+                        if (mode == BattleFlow::MODE_BATTLE_RUNTIME
+                            && *m_ptrs.battleFlowState == BattleFlow::FLOW_ACTIVE_MATCH)
+                        {
+                            m_flags.set(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
+                        }
+                    }
+                    // Stage 2 completes the latch on the first frame the local
+                    // player is in play, so the battle-runtime registry patches,
+                    // the match ARM9 hooks and the guest trampolines they author
+                    // all land on a spawned player. An unresolved HP pointer
+                    // reads as in play, so this can never stall on a cold cache.
+                    if (m_flags.test(StateFlags::BIT_BATTLE_RUNTIME_SEEN)
+                        && IsLocalPlayerAlive())
+                    {
+                        HandleBattleRuntimeEnter();
                     }
                 } else {
                     const uint8_t flowState = *m_ptrs.battleFlowState;
@@ -416,6 +435,7 @@ namespace MelonPrime {
                 m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
                 m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
                 m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+                m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
 #ifdef MELONPRIME_DS
                 // PatchLifecycle Step 3 / Site D — hook deactivation only.
                 // Flag clears and the transient-input / HUD / weapon-switch
@@ -587,6 +607,7 @@ namespace MelonPrime {
         melonDS::u8* const mainRAM = nds->MainRAM;
         m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+        m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
         ResetTransientInputState(
             TR_OverlayHeld | TR_DirectTransform | TR_BipedFire | TR_WeaponSwitchPending

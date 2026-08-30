@@ -76,7 +76,9 @@ void RestoreOnMatchEnd(melonDS::NDS* nds,
 
 // Step 3 / Site B (see melonprime_patch_lifecycle_gateway_step3_plan.md).
 // Called once from HandleBattleRuntimeEnter() on the first
-// mode==MODE_BATTLE_RUNTIME && flow==FLOW_ACTIVE_MATCH frame after join.
+// frame after join on which the local player is in play (HP != 0), having
+// already seen mode==MODE_BATTLE_RUNTIME && flow==FLOW_ACTIVE_MATCH at least
+// once. The two stages need not fall on the same frame.
 // Applies battle-runtime static patches, activates match ARM9 hooks, and
 // validates/installs the guest trampoline of every enabled native path
 // (weapon switch Method 1, DirectInvocation Method 2/3) so the cave is

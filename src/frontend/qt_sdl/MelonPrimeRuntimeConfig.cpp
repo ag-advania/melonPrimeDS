@@ -109,14 +109,14 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
 #endif
 
     const int zoomInputMethod = cfg.GetInt(CfgKey::ZoomInputMethod);
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    s.nativeZoomToggle =
-        zoomInputMethod == ZoomInputMethod::NewNativeToggle;
-    s.directInvocationZoom =
-        zoomInputMethod == ZoomInputMethod::NewDirectInvocation;
-#else
+    // Standard (LegacyFixedR, including the retired value 1) is the normal
+    // zoom path in every build. Only the experimental native methods below
+    // are restricted to developer builds.
     s.nativeZoomToggle = false;
     s.directInvocationZoom = false;
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    s.nativeZoomToggle = zoomInputMethod == ZoomInputMethod::NewNativeToggle;
+    s.directInvocationZoom = zoomInputMethod == ZoomInputMethod::NewDirectInvocation;
 #endif
 
     const int zoomAimScalePct = std::clamp(cfg.GetInt(CfgKey::ZoomAimScalePct), 10, 300);
@@ -138,6 +138,9 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
         morphBoostRequiredMovement <= 0 ? 90 : morphBoostRequiredMovement); // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
 
 #ifdef MELONPRIME_DS
+    s.touchScreenAimOnlySuspendForTransform =
+        cfg.GetBool(CfgKey::TouchScreenAimOnlySuspendForTransform);
+
     s.outOfGamePatches.fixWifiEnabled = cfg.GetBool(CfgKey::WifiBitset);
     s.outOfGamePatches.useFirmwareLanguageEnabled =
         cfg.GetBool(CfgKey::UseFirmwareLanguage);

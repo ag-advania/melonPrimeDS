@@ -20,6 +20,11 @@
 #include <QClipboard>
 #include <QFormLayout>
 #include <QCheckBox>
+#include <QFrame>
+#include <QAbstractItemView>
+#include <QScrollBar>
+#include <QTextLayout>
+#include <QWheelEvent>
 #include "../MelonPrimeColorDialogPrefs.h"
 #include "../MelonPrime.h"
 #include "../EmuThread.h"
@@ -37,6 +42,10 @@
 #include <QAbstractScrollArea>
 #include <QSignalBlocker> // MELONPRIME_RESET_SENSITIVITY_SECTION_FROM_CONFIG_V17
 #include <algorithm>
+#include <initializer_list>
+#include <memory>
+
+#include <QVector>
 #include <cmath>
 #include <sstream>
 
@@ -190,11 +199,13 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     setupKeyBindings(instcfg, keycfg, joycfg);
     setupSensitivityAndToggles(instcfg);
     setupInputMethodSection(instcfg);
+    setupSettingsOrganization();
     setupCollapsibleSections(instcfg);
     setupCustomHudWidgets(instcfg);
     setupPreviewConnections();
     setupCustomHudCode();
     MelonPrime::UiText::LocalizeWidgetTree(this);
+    refreshSettingsPresentation();
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
     refreshMacMetalPresetText();
 #endif
@@ -210,6 +221,7 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Must run after every widget (UI-defined and programmatic) exists so the
     // guard reaches all of them.
     installWheelScrollGuards();
+    ui->scrollSettings->viewport()->installEventFilter(this);
 
     m_applyPreviewEnabled = true;
 }
@@ -288,19 +300,32 @@ void MelonPrimeInputConfig::installWheelScrollGuards()
 
 bool MelonPrimeInputConfig::eventFilter(QObject* obj, QEvent* event)
 {
+    if (obj == ui->scrollSettings->viewport() && event->type() == QEvent::Resize)
+    {
+        refreshSettingsPresentation();
+    }
+
     if (event->type() == QEvent::Wheel)
     {
         QWidget* w = qobject_cast<QWidget*>(obj);
         if (w && !w->hasFocus())
         {
             // The user is scrolling the page, not adjusting this control.
-            // Forward the wheel to the enclosing scroll area's viewport so the
-            // page scrolls, and swallow it here so the value never changes.
+            // Update the enclosing area's scrollbar directly. Re-dispatching
+            // the same QWheelEvent synchronously can re-enter Qt's event path
+            // while the original control is still handling it.
             for (QWidget* p = w->parentWidget(); p; p = p->parentWidget())
             {
                 if (auto* area = qobject_cast<QAbstractScrollArea*>(p))
                 {
-                    QApplication::sendEvent(area->viewport(), event);
+                    auto* wheel = static_cast<QWheelEvent*>(event);
+                    QScrollBar* const bar = area->verticalScrollBar();
+                    int distance = wheel->pixelDelta().y();
+                    if (distance == 0) {
+                        const int steps = wheel->angleDelta().y() / 120;
+                        distance = steps * bar->singleStep() * 3;
+                    }
+                    bar->setValue(bar->value() - distance);
                     break;
                 }
             }
@@ -339,13 +364,21 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
 
     m_menuLanguageGroup = new QGroupBox(QStringLiteral("Language"), ui->scrollSettingsContents);
     m_menuLanguageGroup->setObjectName(QStringLiteral("groupMetroidMenuLanguage"));
-    auto* layout = new QVBoxLayout(m_menuLanguageGroup);
+    auto* layout = new QHBoxLayout(m_menuLanguageGroup);
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
     m_lblMenuLanguage = new QLabel(QStringLiteral("Menu Language"), m_menuLanguageGroup);
     m_comboMenuLanguage = new QComboBox(m_menuLanguageGroup);
     m_comboMenuLanguage->setObjectName(QStringLiteral("comboMetroidMenuLanguage"));
+    m_comboMenuLanguage->setSizeAdjustPolicy(
+        QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_comboMenuLanguage->setMinimumContentsLength(22);
+    m_comboMenuLanguage->setMinimumWidth(260);
+    m_comboMenuLanguage->setMaximumWidth(420);
+    m_comboMenuLanguage->view()->setMinimumWidth(260);
+    m_comboMenuLanguage->view()->setMaximumWidth(420);
+    m_comboMenuLanguage->view()->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     const MelonPrime::UiText::MenuLangId systemLang = MelonPrime::UiText::DetectSystemMenuLanguage();
     const QString systemLabel = MelonPrime::UiText::MenuLanguageDisplayName(systemLang);
@@ -368,6 +401,7 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
 
     layout->addWidget(m_lblMenuLanguage);
     layout->addWidget(m_comboMenuLanguage);
+    layout->addStretch(1);
 
     ui->metroidVLayout->insertWidget(0, m_menuLanguageGroup);
 
@@ -379,6 +413,7 @@ void MelonPrimeInputConfig::setupMenuLanguageControl(Config::Table& instcfg)
             MelonPrime::UiText::SetMenuLanguageSelection(
                 m_comboMenuLanguage->currentData().toInt());
             MelonPrime::UiText::LocalizeWidgetTree(this);
+            refreshSettingsPresentation();
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
             refreshMacMetalPresetText();
 #endif
@@ -480,6 +515,10 @@ void MelonPrimeInputConfig::buildSettingBindings()
         { C::StylusHideCursorInGame, K::CheckBool, ui->cbMetroidEnableStylusHideCursorInGame }, // 51
         { C::StylusConfineCursorToTopScreen, K::CheckBool, ui->cbMetroidEnableStylusConfineCursorToTopScreen }, // 52
         { C::StylusHoldCursorAtCenterWhenNotClicking, K::CheckBool, ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking }, // 53
+        // Sub-option of TouchScreenAimOnly. Appended so every historical binding
+        // index stays stable; only the tail load range grows.
+        { C::TouchScreenAimOnlySuspendForTransform, K::CheckBool,
+          ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform }, // 54
     };
 }
 
@@ -697,7 +736,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
     // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
     loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
-    loadBindingsRange(instcfg, 49, 54); // top-screen touch, touch-screen aim-only, stylus cursor options
+    loadBindingsRange(instcfg, 49, 55); // top-screen touch, touch-screen aim-only (+ its sub-option), stylus cursor options
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);
@@ -916,7 +955,10 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
         || m_cbMetroidUseNewTransformMethod
         || m_cbMetroidUseNewTransformMethod2
         || m_cbMetroidUseNewZoomMethod2
-        || m_cbMetroidUseNewZoomMethod3)
+        || m_cbMetroidUseNewZoomMethod3
+        || m_cbMetroidUseStandardWeaponSwitchMethod
+        || m_cbMetroidUseStandardTransformMethod
+        || m_cbMetroidUseStandardZoomMethod)
     {
         return;
     }
@@ -968,6 +1010,28 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     addDeveloperWidget(ui->cbMetroidEnableNativeAimPostFoldWrite);
     addDeveloperWidget(ui->lblMetroidNativeAimHookModeDesc);
 
+    const int weaponSwitchMethod =
+        std::clamp(instcfg.GetInt(MelonPrime::CfgKey::WeaponSwitchMethod), 0, 2);
+
+    m_cbMetroidUseStandardWeaponSwitchMethod = new QCheckBox(
+        "Use Standard Method for Weapon Change",
+        m_sectionInputMethod);
+    m_cbMetroidUseStandardWeaponSwitchMethod->setToolTip(
+        "Checked: use the built-in weapon switching the emulator has always used.");
+    m_cbMetroidUseStandardWeaponSwitchMethod->setChecked(
+        weaponSwitchMethod == MelonPrime::WeaponSwitchMethod::LegacyTouch);
+    sectionLayout->addWidget(m_cbMetroidUseStandardWeaponSwitchMethod);
+
+    auto* weaponStdDesc = new QLabel(
+        "Standard Method simulates the touch/menu weapon switching the emulator has always used. "
+        "Pick this to rule the native paths out of a problem.",
+        m_sectionInputMethod);
+    weaponStdDesc->setObjectName(QStringLiteral("lblMetroidWeaponSwitchStandardDesc"));
+    weaponStdDesc->setWordWrap(true);
+    weaponStdDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(weaponStdDesc);
+    sectionLayout->addSpacing(6);
+
     m_cbMetroidUseNewWeaponSwitchMethod = new QCheckBox(
         "Use New Method for Weapon Change",
         m_sectionInputMethod);
@@ -985,8 +1049,6 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     desc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(desc);
 
-    const int weaponSwitchMethod =
-        std::clamp(instcfg.GetInt(MelonPrime::CfgKey::WeaponSwitchMethod), 0, 2);
     m_cbMetroidUseNewWeaponSwitchMethod->setChecked(
         weaponSwitchMethod == MelonPrime::WeaponSwitchMethod::NewNative);
 
@@ -1037,12 +1099,6 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     fireDesc->setStyleSheet("QLabel { margin-left: 20px; }");
     addDeveloperWidget(fireDesc);
 
-    m_cbMetroidUseNewTransformMethod = new QCheckBox(
-        "Use New Method for Alt-Form Transform",
-        m_sectionInputMethod);
-    m_cbMetroidUseNewTransformMethod->setToolTip(
-        "Checked: use the native ARM9 TransformRequest hook. "
-        "Unchecked: use the older touch/menu simulation path.");
     // The int key is authoritative; the legacy bool only seeds it for configs
     // written before New Method 2 existed.
     const int altFormTransformMethod =
@@ -1051,6 +1107,32 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
             : (instcfg.GetBool(MelonPrime::CfgKey::DirectAltFormTransform)
                    ? MelonPrime::AltFormTransformMethod::NewNativeGate
                    : MelonPrime::AltFormTransformMethod::LegacyTouch);
+
+    m_cbMetroidUseStandardTransformMethod = new QCheckBox(
+        "Use Standard Method for Alt-Form Transform",
+        m_sectionInputMethod);
+    m_cbMetroidUseStandardTransformMethod->setToolTip(
+        "Checked: use the built-in transform the emulator has always used.");
+    m_cbMetroidUseStandardTransformMethod->setChecked(
+        altFormTransformMethod == MelonPrime::AltFormTransformMethod::LegacyTouch);
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseStandardTransformMethod);
+
+    auto* transformStdDesc = new QLabel(
+        "Standard Method simulates the touch/menu transform the emulator has always used. "
+        "Pick this to rule the native paths out of a problem.",
+        m_sectionInputMethod);
+    transformStdDesc->setObjectName(QStringLiteral("lblMetroidTransformStandardDesc"));
+    transformStdDesc->setWordWrap(true);
+    transformStdDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(transformStdDesc);
+
+    m_cbMetroidUseNewTransformMethod = new QCheckBox(
+        "Use New Method for Alt-Form Transform",
+        m_sectionInputMethod);
+    m_cbMetroidUseNewTransformMethod->setToolTip(
+        "Checked: use the native ARM9 TransformRequest hook. "
+        "Unchecked: use the older touch/menu simulation path.");
     m_cbMetroidUseNewTransformMethod->setChecked(
         altFormTransformMethod == MelonPrime::AltFormTransformMethod::NewNativeGate);
     sectionLayout->addSpacing(6);
@@ -1087,7 +1169,34 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     transform2Desc->setStyleSheet("QLabel { margin-left: 20px; }");
     sectionLayout->addWidget(transform2Desc);
 
-    const int zoomMethod = std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 3);
+    const int configuredZoomMethod =
+        std::clamp(instcfg.GetInt(MelonPrime::CfgKey::ZoomInputMethod), 0, 3);
+    // Public builds expose only the Standard path. Normalize any stale native
+    // value before initializing the always-available Standard checkbox.
+    const int zoomMethod = kDeveloperOnlyFeaturesEnabled
+        ? configuredZoomMethod
+        : MelonPrime::ZoomInputMethod::LegacyFixedR;
+
+    m_cbMetroidUseStandardZoomMethod = new QCheckBox(
+        "Use Standard Method for Zoom",
+        m_sectionInputMethod);
+    m_cbMetroidUseStandardZoomMethod->setToolTip(
+        "Checked: use the built-in zoom the emulator has always used.");
+    m_cbMetroidUseStandardZoomMethod->setChecked(
+        zoomMethod != MelonPrime::ZoomInputMethod::NewNativeToggle
+        && zoomMethod != MelonPrime::ZoomInputMethod::NewDirectInvocation);
+    m_cbMetroidUseStandardZoomMethod->setEnabled(true);
+    sectionLayout->addSpacing(6);
+    sectionLayout->addWidget(m_cbMetroidUseStandardZoomMethod);
+
+    auto* zoomStdDesc = new QLabel(
+        "Standard Method presses the zoom button the player's control preset binds. "
+        "Pick this to rule the native paths out of a problem.",
+        m_sectionInputMethod);
+    zoomStdDesc->setObjectName(QStringLiteral("lblMetroidZoomStandardDesc"));
+    zoomStdDesc->setWordWrap(true);
+    zoomStdDesc->setStyleSheet("QLabel { margin-left: 20px; }");
+    sectionLayout->addWidget(zoomStdDesc);
 
     m_cbMetroidUseNewZoomMethod2 = new QCheckBox(
         "Use New Method 2 for Zoom",
@@ -1143,27 +1252,57 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
 
     addDeveloperWidget(zoom3Desc);
 
-    // Method selectors are stored as one integer per domain, so the boxes in a
-    // pair are mutually exclusive: ticking one clears the other instead of
-    // letting the save silently pick a winner.
-    auto makeExclusive = [](QCheckBox* a, QCheckBox* b) {
-        if (!a || !b)
+    // Each domain stores one integer, so its selector is exactly-one-of-N:
+    // Standard is a real choice rather than "nothing ticked". Checkboxes keep
+    // the look of the rest of the dialog while behaving like a radio group --
+    // ticking one clears the rest, and clearing the last one puts it back
+    // instead of leaving the group empty.
+    auto makeExclusiveGroup = [](std::initializer_list<QCheckBox*> members) {
+        QVector<QCheckBox*> group;
+        for (QCheckBox* const box : members) {
+            if (box)
+                group.append(box);
+        }
+        if (group.size() < 2)
             return;
-        QObject::connect(a, &QCheckBox::toggled, b, [b](bool on) {
-            if (on && b->isChecked())
-                b->setChecked(false);
-        });
-        QObject::connect(b, &QCheckBox::toggled, a, [a](bool on) {
-            if (on && a->isChecked())
-                a->setChecked(false);
-        });
+        // Shared re-entrancy guard: setChecked() below re-enters these slots.
+        const auto busy = std::make_shared<bool>(false);
+        for (QCheckBox* const box : group) {
+            QObject::connect(box, &QCheckBox::toggled, box,
+                             [group, box, busy](bool on) {
+                if (*busy)
+                    return;
+                *busy = true;
+                if (on) {
+                    for (QCheckBox* const other : group) {
+                        if (other != box)
+                            other->setChecked(false);
+                    }
+                }
+                else {
+                    bool anyChecked = false;
+                    for (QCheckBox* const other : group) {
+                        if (other->isChecked()) {
+                            anyChecked = true;
+                            break;
+                        }
+                    }
+                    if (!anyChecked)
+                        box->setChecked(true);
+                }
+                *busy = false;
+            });
+        }
     };
-    makeExclusive(m_cbMetroidUseNewWeaponSwitchMethod,
-                  m_cbMetroidUseNewWeaponSwitchMethod2);
-    makeExclusive(m_cbMetroidUseNewTransformMethod,
-                  m_cbMetroidUseNewTransformMethod2);
-    makeExclusive(m_cbMetroidUseNewZoomMethod2,
-                  m_cbMetroidUseNewZoomMethod3);
+    makeExclusiveGroup({ m_cbMetroidUseStandardWeaponSwitchMethod,
+                         m_cbMetroidUseNewWeaponSwitchMethod,
+                         m_cbMetroidUseNewWeaponSwitchMethod2 });
+    makeExclusiveGroup({ m_cbMetroidUseStandardTransformMethod,
+                         m_cbMetroidUseNewTransformMethod,
+                         m_cbMetroidUseNewTransformMethod2 });
+    makeExclusiveGroup({ m_cbMetroidUseStandardZoomMethod,
+                         m_cbMetroidUseNewZoomMethod2,
+                         m_cbMetroidUseNewZoomMethod3 });
 
     int insertIndex = parentLayout->indexOf(ui->sectionInputSettings);
     if (insertIndex < 0)
@@ -1176,10 +1315,194 @@ void MelonPrimeInputConfig::setupInputMethodSection(Config::Table& instcfg)
     updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 }
 
+void MelonPrimeInputConfig::setupSettingsOrganization()
+{
+    auto* inputLayout = qobject_cast<QVBoxLayout*>(ui->sectionInputSettings->layout());
+    if (!inputLayout)
+        return;
+
+    // Keep the Sensitivity section limited to actual aim tuning. Touch/stylus,
+    // Morph Ball gesture and remapper compatibility controls all describe how
+    // input is produced, so they belong together under Input Settings.
+    auto detachWidget = [](QWidget* widget) {
+        if (!widget)
+            return;
+        if (QWidget* parent = widget->parentWidget()) {
+            if (QLayout* layout = parent->layout())
+                layout->removeWidget(widget);
+        }
+    };
+    auto appendInputWidget = [&](QWidget* widget) {
+        if (!widget)
+            return;
+        detachWidget(widget);
+        widget->setParent(ui->sectionInputSettings);
+        inputLayout->addWidget(widget);
+    };
+    auto appendSeparator = [&]() {
+        auto* separator = new QFrame(ui->sectionInputSettings);
+        separator->setFrameShape(QFrame::HLine);
+        separator->setFrameShadow(QFrame::Sunken);
+        inputLayout->addWidget(separator);
+    };
+
+    // Re-add the pre-existing compatibility controls last, after the primary
+    // touch/stylus and gesture settings.
+    detachWidget(ui->cbMetroidApplyJoy2KeySupport);
+    detachWidget(ui->lblMetroidJoy2KeySupportDesc);
+
+    appendInputWidget(ui->cbMetroidEnableStylusMode);
+    appendInputWidget(ui->cbMetroidEnableTouchScreenAimOnly);
+    appendInputWidget(ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform);
+    appendInputWidget(ui->cbMetroidEnableTopScreenTouch);
+    appendInputWidget(ui->cbMetroidEnableStylusHideCursorInGame);
+    appendInputWidget(ui->cbMetroidEnableStylusConfineCursorToTopScreen);
+    appendInputWidget(ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking);
+
+    appendSeparator();
+    appendInputWidget(m_cbMetroidDisableMorphBoostSwipe);
+    appendInputWidget(m_lblMetroidDisableMorphBoostSwipeDesc);
+    appendInputWidget(m_cbMetroidMorphBoostCustomRawThreshold);
+    appendInputWidget(m_lblMetroidMorphBoostCustomRawThresholdDesc);
+
+    detachWidget(m_lblMetroidMorphBoostMouseSensitivity);
+    detachWidget(m_spinMetroidMorphBoostMouseSensitivity);
+    auto* morphThresholdRow = new QWidget(ui->sectionInputSettings);
+    morphThresholdRow->setObjectName(QStringLiteral("rowMetroidMorphBoostMouseSensitivity"));
+    auto* morphThresholdLayout = new QHBoxLayout(morphThresholdRow);
+    morphThresholdLayout->setContentsMargins(0, 0, 0, 0);
+    morphThresholdLayout->addWidget(m_lblMetroidMorphBoostMouseSensitivity, 1);
+    morphThresholdLayout->addWidget(m_spinMetroidMorphBoostMouseSensitivity);
+    inputLayout->addWidget(morphThresholdRow);
+    appendInputWidget(m_lblMetroidMorphBoostMouseSensitivityDesc);
+
+    appendSeparator();
+    appendInputWidget(ui->cbMetroidApplyJoy2KeySupport);
+    appendInputWidget(ui->lblMetroidJoy2KeySupportDesc);
+
+    // The .ui file accumulated sections in feature-arrival order. Present the
+    // same widgets in task order: common input first, gameplay next, display
+    // and presentation after that, and maintenance/developer controls last.
+    const QList<QWidget*> orderedSections = {
+        m_menuLanguageGroup,
+        ui->btnToggleSensitivity,
+        ui->sectionSensitivity,
+        ui->btnToggleInputSettings,
+        ui->sectionInputSettings,
+        m_btnToggleInputMethod,
+        m_sectionInputMethod,
+        ui->btnToggleGameplay,
+        ui->sectionGameplay,
+        ui->btnToggleGameFeature,
+        ui->sectionGameFeature,
+        ui->btnToggleDisableFeatures,
+        ui->sectionDisableFeatures,
+        ui->btnToggleLowHpWarning,
+        ui->sectionLowHpWarning,
+        ui->btnToggleInGameApply,
+        ui->sectionInGameApply,
+        ui->btnToggleInGameAspectRatio,
+        ui->sectionInGameAspectRatio,
+        ui->btnToggleScreenSync,
+        ui->sectionScreenSync,
+        ui->btnToggleCursorClipSettings,
+        ui->sectionCursorClipSettings,
+        ui->btnToggleVideo,
+        ui->sectionVideo,
+        ui->btnToggleVolume,
+        ui->sectionVolume,
+        ui->btnToggleLicense,
+        ui->sectionLicense,
+        ui->btnToggleBugFix,
+        ui->sectionBugFix,
+        ui->btnToggleDeveloperOnly,
+        ui->sectionDeveloperOnly,
+    };
+
+    for (QWidget* widget : orderedSections) {
+        if (widget)
+            ui->metroidVLayout->removeWidget(widget);
+    }
+    int insertionIndex = 0;
+    for (QWidget* widget : orderedSections) {
+        if (widget)
+            ui->metroidVLayout->insertWidget(insertionIndex++, widget);
+    }
+}
+
+void MelonPrimeInputConfig::refreshSettingsPresentation()
+{
+    // Long translated help text should wrap vertically instead of expanding
+    // the settings page and forcing the horizontal scrollbar seen in the old
+    // single-column layout.
+    ui->scrollSettings->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    ui->scrollSettingsContents->setMinimumWidth(0);
+    const int viewportWidth = ui->scrollSettings->viewport()->width();
+    if (viewportWidth > 0)
+        ui->scrollSettingsContents->setMaximumWidth(viewportWidth);
+
+    // QCheckBox has no word-wrap property. Keep every original checkbox intact
+    // and insert visual line breaks into its complete translated caption. This
+    // preserves its normal click target, enabled state, signals and bindings.
+    const int captionWidth = qMax(160, viewportWidth - 96);
+    for (QCheckBox* checkBox : ui->tabMetroid->findChildren<QCheckBox*>()) {
+        const QString currentText = checkBox->text();
+        const QString previousRendered =
+            checkBox->property("_melonprime_wrapped_rendered_text").toString();
+        QString fullText =
+            checkBox->property("_melonprime_wrapped_full_text").toString();
+
+        // Localization restores a fresh, unwrapped caption. Treat any text
+        // other than our last rendered value as the new full translation.
+        if (previousRendered.isEmpty() || currentText != previousRendered) {
+            fullText = currentText;
+            checkBox->setProperty("_melonprime_wrapped_full_text", fullText);
+        }
+        if (fullText.isEmpty())
+            continue;
+
+        QTextLayout textLayout(fullText, checkBox->font());
+        QTextOption textOption;
+        textOption.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        textLayout.setTextOption(textOption);
+        textLayout.beginLayout();
+        QString wrappedText;
+        while (true) {
+            QTextLine line = textLayout.createLine();
+            if (!line.isValid())
+                break;
+            line.setLineWidth(captionWidth);
+            if (!wrappedText.isEmpty())
+                wrappedText += QLatin1Char('\n');
+            wrappedText += fullText.mid(line.textStart(), line.textLength());
+        }
+        textLayout.endLayout();
+
+        checkBox->setText(wrappedText);
+        checkBox->setAccessibleName(fullText);
+        checkBox->setProperty("_melonprime_wrapped_rendered_text", wrappedText);
+        checkBox->setMinimumWidth(0);
+        QSizePolicy policy = checkBox->sizePolicy();
+        policy.setHorizontalPolicy(QSizePolicy::Expanding);
+        checkBox->setSizePolicy(policy);
+    }
+}
+
 
 
 void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
 {
+    // Stylus-specific options retain their saved check state, but cannot be
+    // edited until Stylus Mode itself is enabled.
+    ui->cbMetroidEnableTouchScreenAimOnly->setEnabled(stylusEnabled);
+    // Sub-option: only meaningful while the parent patch is actually on.
+    ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform->setEnabled(
+        stylusEnabled && ui->cbMetroidEnableTouchScreenAimOnly->isChecked());
+    ui->cbMetroidEnableStylusHideCursorInGame->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableTopScreenTouch->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableStylusConfineCursorToTopScreen->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking->setEnabled(stylusEnabled);
+
     const bool enableAimControls = !stylusEnabled;
     ui->metroidAimSensitvitySpinBox->setEnabled(enableAimControls);
     ui->metroidAimSensitvityLabel->setEnabled(enableAimControls);
@@ -1238,6 +1561,12 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
         m_cbMetroidUseNewZoomMethod2->setEnabled(kDeveloperOnlyFeaturesEnabled);
     if (m_cbMetroidUseNewZoomMethod3)
         m_cbMetroidUseNewZoomMethod3->setEnabled(kDeveloperOnlyFeaturesEnabled);
+    if (m_cbMetroidUseStandardZoomMethod)
+        m_cbMetroidUseStandardZoomMethod->setEnabled(true);
+    if (m_cbMetroidUseStandardWeaponSwitchMethod)
+        m_cbMetroidUseStandardWeaponSwitchMethod->setEnabled(true);
+    if (m_cbMetroidUseStandardTransformMethod)
+        m_cbMetroidUseStandardTransformMethod->setEnabled(true);
     ui->lblMetroidDirectAltFormTransformDesc->setEnabled(true);
 }
 
@@ -1563,6 +1892,12 @@ void MelonPrimeInputConfig::on_dsbMetroidHudCrosshairDeadband_valueChanged(doubl
 void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)
 {
     updateAimControlsForStylusMode(state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidEnableTouchScreenAimOnly_stateChanged(int)
+{
+    // Refresh the sub-option, which is only meaningful while this one is on.
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 }
 
 void MelonPrimeInputConfig::on_cbMetroidDisableMphAimSmoothing_stateChanged(int)

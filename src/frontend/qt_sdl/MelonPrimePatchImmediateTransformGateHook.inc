@@ -153,6 +153,10 @@
             return false;
         if (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
             return false;
+        if (!IsLocalPlayerAlive()) {
+            m_directTransformPendingFrames = 0;
+            return false;
+        }
 
         const TransformGateEntry* const entry =
             TransformGate_Find(m_currentRom.romGroupIndex, arm9ExecAddr);
@@ -169,6 +173,14 @@
             return false;
         if (playerInRegs != localPlayer)
             return false;
+
+        // Same spawn barrier as the other native methods: drop rather than
+        // defer a pressed edge that crossed the respawn boundary.
+        if (UNLIKELY(IsFirstPostSpawnInput(nds, playerInRegs))) {
+            m_directTransformPendingFrames = 0;
+            m_input.press &= ~IB_MORPH;
+            return false;
+        }
 
         // The request is held for a few frames by HandleRareMorph so a host
         // edge is not lost when the game skips this gate on the exact press

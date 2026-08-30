@@ -237,8 +237,10 @@ void VulkanRenderer::SetRenderSettings(RendererSettings& settings)
         // BetterPolygons is a triangle-splitting workaround for the classic
         // OpenGL/native Metal raster paths. Vulkan follows GPU3D_Compute and
         // rasterizes each DS polygon directly as scanline spans, so only the
-        // scale and coordinate-mode settings apply.
-        vulkan->SetRenderSettings(settings.ScaleFactor, settings.HiresCoordinates);
+        // scale and coordinate-mode settings apply. High-resolution
+        // coordinates are a mandatory Vulkan renderer contract; the 3D
+        // renderer still selects FinalPosition at native 1x.
+        vulkan->SetRenderSettings(settings.ScaleFactor, true);
     }
 }
 

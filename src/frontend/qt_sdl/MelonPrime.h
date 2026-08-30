@@ -402,6 +402,20 @@ namespace MelonPrime {
             melonDS::NDS* nds,
             uint8_t romGroupIndex);
 
+        // Shared spawn barrier for every native input method. True on the
+        // first player-input hook of the same runtime update that just
+        // respawned this player -- see
+        // Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md. Defined in
+        // MelonPrimeGameInput.cpp so all four hook fragments can call it.
+        [[nodiscard]] bool IsFirstPostSpawnInput(
+            melonDS::NDS* nds, uint32_t player) const noexcept;
+
+        // Local player is still inside the spawn invulnerability countdown
+        // (player+0xE1 != 0). Every native input method hands its request to
+        // the Standard path for the whole of that window; the barrier above
+        // only covers a request that crosses the boundary from outside it.
+        [[nodiscard]] bool IsLocalPlayerInSpawnInvulnerability() const noexcept;
+
         // --- "New Method 2": mphCodex DirectInvocation (transform + weapon) ---
         // One hook site, one guest mailbox; see
         // MelonPrimePatchDirectInvocationHook.inc.
@@ -558,6 +572,9 @@ namespace MelonPrime {
         // "New Method 3" for zoom. Mutually exclusive with the native toggle
         // above; both are resolved from Metroid.Input.ZoomMethod.
         bool     m_enableDirectInvocationZoom = false;
+        // Lift the TouchScreenAimOnly patch for the duration of a Standard
+        // transform, which taps a touch-screen HUD button that patch disables.
+        bool     m_suspendTouchAimOnlyForTransform = false;
 #ifdef MELONPRIME_DS
         bool     m_enableNativeWeaponSwitch = false;
         // "New Method 2" (mphCodex DirectInvocation). Independent of the
@@ -929,7 +946,13 @@ namespace MelonPrime {
             static constexpr uint32_t BIT_IN_GAME = 1u << 1;
             static constexpr uint32_t BIT_IN_GAME_INIT = 1u << 2;
             static constexpr uint32_t BIT_END_OF_GAME_PATCH_RESTORED = 1u << 12;
-            // Latched on first mode==0x0E && flow==0 after join; battle patches/hooks apply here.
+            // Stage 1 of the battle-runtime latch, sticky: the game has reported
+            // a live match (mode==0x0E && flow==0) at least once since join. It
+            // does not have to still be reporting one when stage 2 completes.
+            static constexpr uint32_t BIT_BATTLE_RUNTIME_SEEN = 1u << 17;
+            // Stage 2, the latch itself: stage 1 has happened AND the local
+            // player is in play (HP != 0). Battle patches/hooks apply here, so
+            // they land on a spawned player rather than during the spawn window.
             static constexpr uint32_t BIT_BATTLE_RUNTIME_MODE = 1u << 15;
             static constexpr uint32_t BIT_PAUSED = 1u << 3;
             static constexpr uint32_t BIT_IN_ADVENTURE = 1u << 4;
@@ -1182,6 +1205,20 @@ namespace MelonPrime {
         [[nodiscard]] FORCE_INLINE bool IsPlayerTransforming() const noexcept {
             return m_ptrs.jumpFlag
                 && ((*m_ptrs.jumpFlag & 0x10) != 0);
+        }
+
+        // Local player is in play: spawned and not down. HP 0 covers both
+        // states -- killed and waiting to respawn, and not yet spawned after
+        // the match starts -- which is why this is phrased as "alive" rather
+        // than "dead". Every native input method is gated on it: the legacy
+        // touch/menu paths are the game reacting to its own simulated input,
+        // but a native call reaches past whatever the game does with a player
+        // that is not in play.
+        //
+        // An unresolved HP pointer reads as alive, so a native path is never
+        // disabled just because the pointer cache has not been rebuilt yet.
+        [[nodiscard]] FORCE_INLINE bool IsLocalPlayerAlive() const noexcept {
+            return !m_ptrs.health || *m_ptrs.health != 0;
         }
 
         template <typename T>

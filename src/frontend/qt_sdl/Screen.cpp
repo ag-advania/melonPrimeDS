@@ -707,7 +707,9 @@ void ScreenPanel::loadConfig()
     screenAspectBot = cfg.GetInt("ScreenAspectBot");
     inGameTopScreenOnly = emuInstance->getLocalConfig().GetBool(MP_HUD_PROP_KEY_InGameTopScreenOnly);
 #ifdef MELONPRIME_DS
-    topScreenTouchEnabled = emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::TopScreenTouch);
+    auto& metroidCfg = emuInstance->getLocalConfig();
+    topScreenTouchEnabled = metroidCfg.GetBool(MelonPrime::CfgKey::StylusMode)
+        && metroidCfg.GetBool(MelonPrime::CfgKey::TopScreenTouch);
     loadMelonPrimeStylusCursorConfig();
 #endif
 }
@@ -715,7 +717,9 @@ void ScreenPanel::loadConfig()
 #ifdef MELONPRIME_DS
 void ScreenPanel::refreshTopScreenTouchSetting()
 {
-    const bool enabled = emuInstance->getLocalConfig().GetBool(MelonPrime::CfgKey::TopScreenTouch);
+    auto& cfg = emuInstance->getLocalConfig();
+    const bool enabled = cfg.GetBool(MelonPrime::CfgKey::StylusMode)
+        && cfg.GetBool(MelonPrime::CfgKey::TopScreenTouch);
     if (!enabled && topScreenTouchTransform >= 0 && touching)
     {
         emuInstance->releaseScreen();
@@ -729,11 +733,13 @@ void ScreenPanel::refreshTopScreenTouchSetting()
 void ScreenPanel::loadMelonPrimeStylusCursorConfig()
 {
     auto& cfg = emuInstance->getLocalConfig();
-    stylusHideCursorInGameEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
-    stylusConfineCursorToTopScreenEnabled =
-        cfg.GetBool(MelonPrime::CfgKey::StylusConfineCursorToTopScreen);
-    stylusHoldCursorAtCenterEnabled =
-        cfg.GetBool(MelonPrime::CfgKey::StylusHoldCursorAtCenterWhenNotClicking);
+    const bool stylusModeEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusMode);
+    stylusHideCursorInGameEnabled = stylusModeEnabled
+        && cfg.GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
+    stylusConfineCursorToTopScreenEnabled = stylusModeEnabled
+        && cfg.GetBool(MelonPrime::CfgKey::StylusConfineCursorToTopScreen);
+    stylusHoldCursorAtCenterEnabled = stylusModeEnabled
+        && cfg.GetBool(MelonPrime::CfgKey::StylusHoldCursorAtCenterWhenNotClicking);
     stylusMatchCursorOptionsEnabled = stylusHideCursorInGameEnabled
         || stylusConfineCursorToTopScreenEnabled
         || stylusHoldCursorAtCenterEnabled;

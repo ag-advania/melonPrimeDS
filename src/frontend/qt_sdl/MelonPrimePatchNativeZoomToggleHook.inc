@@ -211,7 +211,8 @@
 
         if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
             || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
-            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME))
+            || (m_aimBlockBits & AIMBLK_NOT_IN_GAME)
+            || !IsLocalPlayerAlive())
         {
             return;
         }
@@ -278,6 +279,11 @@
         if (!nds || !m_nativeZoomPending.Pending)
             return false;
 
+        if (!IsLocalPlayerAlive()) {
+            m_nativeZoomPending.Clear();
+            return false;
+        }
+
         const NativeZoomToggleSite* const site =
             NativeZoomToggle_GetSite(m_currentRom.romGroupIndex);
         if (!site || arm9ExecAddr != site->WeaponActionUpdate)
@@ -286,6 +292,12 @@
         if (m_nativeZoomPending.FunctionAddr != site->ScopeZoomSetter
             || !NativeZoomToggle_IsMainRamRange(m_nativeZoomPending.Player, 0x900u))
         {
+            m_nativeZoomPending.Clear();
+            return false;
+        }
+
+        // Same spawn barrier as the other native methods.
+        if (UNLIKELY(IsFirstPostSpawnInput(nds, m_nativeZoomPending.Player))) {
             m_nativeZoomPending.Clear();
             return false;
         }
