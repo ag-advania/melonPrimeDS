@@ -342,6 +342,7 @@ namespace MelonPrime {
         m_postSavestateReconcilePending = true;
         m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+        m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
         m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
         ResetTransientInputState(
             TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform
@@ -474,6 +475,7 @@ namespace MelonPrime {
             m_flags.clear(StateFlags::BIT_IN_GAME_INIT);
             m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
             m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
+            m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
         }
     }
 

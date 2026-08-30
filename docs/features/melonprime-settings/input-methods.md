@@ -147,7 +147,8 @@ Like every other native path, this one is match-scoped and follows the same
 three conventions:
 
 - **The battle-runtime latch gates it end to end.** Hooks are installed on the
-  first `mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH` frame, so
+  first frame where the local player is in play (HP != 0) after
+  `mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH` has been seen, so
   requests are neither queued nor serviced outside it. Without that gate a
   press during the join/countdown could be held by its TTL and then fire on the
   very first battle-runtime frame. `HandleBattleRuntimeEnter` also drops any

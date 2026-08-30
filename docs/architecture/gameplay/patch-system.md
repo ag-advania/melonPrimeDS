@@ -599,8 +599,12 @@ Three rules apply to every module that writes into it:
 Every registered hook is match-scoped. A new one must follow all of it, not just the parts the
 dispatcher enforces:
 
-- Install/clear happens through `ARM9Hook_SetMatchHooksActive`, driven by the battle-runtime latch
-  (`mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH`).
+- Install/clear happens through `ARM9Hook_SetMatchHooksActive`, driven by the battle-runtime latch.
+  That latch is two-stage and the stages need not fall on the same frame: `BIT_BATTLE_RUNTIME_SEEN`
+  sticks once `mode == MODE_BATTLE_RUNTIME && flow == FLOW_ACTIVE_MATCH` has been observed, and
+  `BIT_BATTLE_RUNTIME_MODE` completes on the first frame after that where the local player's HP is
+  not 0. Everything hung off the latch therefore lands on a spawned player rather than during the
+  spawn window. An unresolved HP pointer counts as in play, so the latch cannot stall.
 - **Gate the request-producing side on `BIT_BATTLE_RUNTIME_MODE` too**, not just
   `BIT_IN_GAME_INIT`. A request queued during the join/countdown otherwise survives on its TTL and
   fires on the first battle-runtime frame, before the player state it acts on is settled.

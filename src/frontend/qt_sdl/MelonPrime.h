@@ -929,7 +929,13 @@ namespace MelonPrime {
             static constexpr uint32_t BIT_IN_GAME = 1u << 1;
             static constexpr uint32_t BIT_IN_GAME_INIT = 1u << 2;
             static constexpr uint32_t BIT_END_OF_GAME_PATCH_RESTORED = 1u << 12;
-            // Latched on first mode==0x0E && flow==0 after join; battle patches/hooks apply here.
+            // Stage 1 of the battle-runtime latch, sticky: the game has reported
+            // a live match (mode==0x0E && flow==0) at least once since join. It
+            // does not have to still be reporting one when stage 2 completes.
+            static constexpr uint32_t BIT_BATTLE_RUNTIME_SEEN = 1u << 17;
+            // Stage 2, the latch itself: stage 1 has happened AND the local
+            // player is in play (HP != 0). Battle patches/hooks apply here, so
+            // they land on a spawned player rather than during the spawn window.
             static constexpr uint32_t BIT_BATTLE_RUNTIME_MODE = 1u << 15;
             static constexpr uint32_t BIT_PAUSED = 1u << 3;
             static constexpr uint32_t BIT_IN_ADVENTURE = 1u << 4;
