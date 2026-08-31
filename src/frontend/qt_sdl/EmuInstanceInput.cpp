@@ -116,6 +116,18 @@ const char* EmuInstance::hotkeyNames[HK_MAX] =
 
 std::shared_ptr<SDL_mutex> EmuInstance::joyMutexGlobal = nullptr;
 
+#ifdef MELONPRIME_DS
+namespace {
+constexpr Qt::MouseButton kTrackedMouseButtons[5] = {
+    Qt::LeftButton,
+    Qt::RightButton,
+    Qt::MiddleButton,
+    Qt::XButton1,
+    Qt::XButton2,
+};
+}
+#endif
+
 
 void EmuInstance::inputInit()
 {
@@ -137,11 +149,10 @@ void EmuInstance::inputInit()
     keyHotkeyMask.store(0, std::memory_order_relaxed);
     hotkeyMask = 0;
     lastHotkeyMask = 0;
-    keyHotkeyPress = 0;
-    lastKeyHotkeyMask = 0;
     lateJoystick = {};
     previousLateJoystickHotkeyMask = 0;
     lateJoystickNeedsBaseline = true;
+    joystickGameplayResetPending.store(false, std::memory_order_relaxed);
     joystickLifecycleCheckCounter = 0;
     activeJoystickBindingCount = 0;
 #else
@@ -208,6 +219,7 @@ void EmuInstance::inputLoadConfig()
     wheelUpHotkeyMask = wheelUpMask;
     wheelDownHotkeyMask = wheelDownMask;
     rebuildActiveJoystickBindings();
+    rebuildMouseButtonBindingMasks();
 #endif
 
     setJoystick(localCfg.GetInt("JoystickID"));
@@ -245,6 +257,25 @@ void EmuInstance::rebuildActiveJoystickBindings()
         addBinding(joyMapping[i], static_cast<uint16_t>(1u << i), 0);
     for (int i = 0; i < HK_MAX; ++i)
         addBinding(hkJoyMapping[i], 0, 1ULL << i);
+}
+
+void EmuInstance::rebuildMouseButtonBindingMasks()
+{
+    for (int buttonIndex = 0; buttonIndex < 5; ++buttonIndex) {
+        auto& masks = mouseButtonMasks[buttonIndex];
+        masks = {};
+        const int key = static_cast<int>(kTrackedMouseButtons[buttonIndex])
+            | MelonPrime::InputKey::MouseMark;
+        for (int i = 0; i < 12; ++i) {
+            // Preserve the established MelonPrime mouse-to-DS projection.
+            if (key == hkKeyMapping[i])
+                masks.inputBits |= static_cast<uint16_t>(1u << i);
+        }
+        for (int i = 0; i < HK_MAX; ++i) {
+            if (key == hkKeyMapping[i])
+                masks.hotkeyBits |= 1ULL << i;
+        }
+    }
 }
 #endif
 
@@ -371,20 +402,10 @@ void EmuInstance::openJoystick()
         }
     }
 
-#ifdef MELONPRIME_DS
-    // A newly opened device establishes its held baseline on the first late
-    // sample. Buttons already held during reconnect must not become presses.
-    lateJoystickNeedsBaseline = true;
-#endif
 }
 
-void EmuInstance::closeJoystick(bool publishLateRelease)
+void EmuInstance::closeJoystick()
 {
-#ifdef MELONPRIME_DS
-    const uint64_t released = previousLateJoystickHotkeyMask;
-#else
-    (void)publishLateRelease;
-#endif
     if (controller)
     {
         SDL_GameControllerClose(controller);
@@ -401,19 +422,24 @@ void EmuInstance::closeJoystick(bool publishLateRelease)
     isRumbling = false;
 
 #ifdef MELONPRIME_DS
-    // Joystick/controller lifetime and every derived mask are cleared by this
-    // one owner so a disconnect cannot leave movement or gameplay held.
+    // Device lifetime belongs under joyMutex. Gameplay-derived state belongs
+    // exclusively to EmuThread, so GUI/config writers publish only a reset.
+    joystickGameplayResetPending.store(true, std::memory_order_release);
+#endif
+}
+
+#ifdef MELONPRIME_DS
+void EmuInstance::resetLateJoystickGameplayState()
+{
     lateJoystick.inputMask = 0xFFF;
     lateJoystick.hotkeyHeld = 0;
     lateJoystick.hotkeyPressed = 0;
-    lateJoystick.hotkeyReleased = publishLateRelease ? released : 0;
     previousLateJoystickHotkeyMask = 0;
     lateJoystickNeedsBaseline = true;
-    joystickLifecycleCheckCounter = 0;
     inputMask = keyInputMask.load(std::memory_order_relaxed);
     hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed);
-#endif
 }
+#endif
 
 
 // distinguish between left and right modifier keys (Ctrl, Alt, Shift)
@@ -550,23 +576,19 @@ bool EmuInstance::hotkeyUsesMouseButton(int hotkeyId, Qt::MouseButton button) co
 
 void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)
 {
-    auto releaseIfUp = [&](Qt::MouseButton btn) {
-        if (physical & btn)
-            return;
-        const int key = static_cast<int>(btn) | MelonPrime::InputKey::MouseMark;
-        for (int i = 0; i < 12; i++)
-            if (key == hkKeyMapping[i])
-                keyInputMask.fetch_or(static_cast<uint16_t>(1u << i), std::memory_order_relaxed);
-        for (int i = 0; i < HK_MAX; i++)
-            if (key == hkKeyMapping[i])
-                keyHotkeyMask.fetch_and(~(1ULL << i), std::memory_order_relaxed);
-    };
-
-    releaseIfUp(Qt::LeftButton);
-    releaseIfUp(Qt::RightButton);
-    releaseIfUp(Qt::MiddleButton);
-    releaseIfUp(Qt::XButton1);
-    releaseIfUp(Qt::XButton2);
+    uint16_t releasedInputBits = 0;
+    uint64_t releasedHotkeyBits = 0;
+    for (int buttonIndex = 0; buttonIndex < 5; ++buttonIndex) {
+        if (physical & kTrackedMouseButtons[buttonIndex])
+            continue;
+        const auto& masks = mouseButtonMasks[buttonIndex];
+        releasedInputBits |= masks.inputBits;
+        releasedHotkeyBits |= masks.hotkeyBits;
+    }
+    if (releasedInputBits)
+        keyInputMask.fetch_or(releasedInputBits, std::memory_order_relaxed);
+    if (releasedHotkeyBits)
+        keyHotkeyMask.fetch_and(~releasedHotkeyBits, std::memory_order_relaxed);
 }
 
 void EmuInstance::onMouseWheel(int delta)
@@ -660,23 +682,27 @@ void EmuInstance::inputProcess()
     // update on every running frame.
     // =========================================================================
     lateJoystick.hotkeyPressed = 0;
-    lateJoystick.hotkeyReleased = 0;
     if (UNLIKELY(++joystickLifecycleCheckCounter >= 60)) {
         joystickLifecycleCheckCounter = 0;
         SDL_LockMutex(joyMutex.get());
         SDL_JoystickUpdate();
         if (joystick && !SDL_JoystickGetAttached(joystick))
-            closeJoystick(true);
+            closeJoystick();
         else if (!joystick && SDL_NumJoysticks() > 0)
             openJoystick();
         SDL_UnlockMutex(joyMutex.get());
     }
 
+    if (UNLIKELY(joystickGameplayResetPending.load(
+            std::memory_order_relaxed))
+        && joystickGameplayResetPending.exchange(
+            false, std::memory_order_acq_rel)) {
+        resetLateJoystickGameplayState();
+    }
+
     // Combined edge detection (keyboard + joystick)
     const uint64_t currentKeyHotkeys =
         keyHotkeyMask.load(std::memory_order_relaxed);
-    keyHotkeyPress = currentKeyHotkeys & ~lastKeyHotkeyMask;
-    lastKeyHotkeyMask = currentKeyHotkeys;
     hotkeyMask = currentKeyHotkeys | lateJoystick.hotkeyHeld;
     hotkeyPress = hotkeyMask & ~lastHotkeyMask;
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
@@ -746,8 +772,15 @@ void EmuInstance::inputProcess()
 // owns a separate MelonPrime gameplay edge baseline and never rewrites those
 // global edges, preventing save/pause/fullscreen commands from re-firing.
 // =========================================================================
-void EmuInstance::inputRefreshJoystickState()
+void EmuInstance::inputRefreshJoystickState(bool commitGameplayEdges)
 {
+    if (UNLIKELY(joystickGameplayResetPending.load(
+            std::memory_order_relaxed))
+        && joystickGameplayResetPending.exchange(
+            false, std::memory_order_acq_rel)) {
+        resetLateJoystickGameplayState();
+    }
+
     if (!joystick) {
         inputMask = keyInputMask.load(std::memory_order_relaxed);
         hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed);
@@ -761,8 +794,11 @@ void EmuInstance::inputRefreshJoystickState()
     // sample. Route that edge through the same close/reset owner.
     if (UNLIKELY(!SDL_JoystickGetAttached(joystick)))
     {
-        closeJoystick(true);
+        closeJoystick();
         SDL_UnlockMutex(joyMutex.get());
+        (void)joystickGameplayResetPending.exchange(
+            false, std::memory_order_acq_rel);
+        resetLateJoystickGameplayState();
         return;
     }
 
@@ -788,20 +824,23 @@ void EmuInstance::inputRefreshJoystickState()
 
     lateJoystick.inputMask = nextInputMask;
     lateJoystick.hotkeyHeld = nextHotkeyMask;
-    if (lateJoystickNeedsBaseline) {
+    if (!commitGameplayEdges) {
+        // A nested FrameAdvance may refresh physical held state, but it must
+        // never consume the outer frame's gameplay edge baseline.
+        lateJoystick.hotkeyPressed = 0;
+    }
+    else if (lateJoystickNeedsBaseline) {
         // Reconnect/config switch: held controls establish a baseline without
         // becoming phantom presses from the previous physical device.
         lateJoystick.hotkeyPressed = 0;
-        lateJoystick.hotkeyReleased = 0;
         lateJoystickNeedsBaseline = false;
     }
     else {
         lateJoystick.hotkeyPressed =
             nextHotkeyMask & ~previousLateJoystickHotkeyMask;
-        lateJoystick.hotkeyReleased =
-            previousLateJoystickHotkeyMask & ~nextHotkeyMask;
     }
-    previousLateJoystickHotkeyMask = nextHotkeyMask;
+    if (commitGameplayEdges)
+        previousLateJoystickHotkeyMask = nextHotkeyMask;
 
     inputMask = keyInputMask.load(std::memory_order_relaxed) & nextInputMask;
     hotkeyMask =

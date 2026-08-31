@@ -191,7 +191,7 @@ inline void PlatformInput_CountPerfAimSource(AimInputSource aimSrc)
 
 // macOS/Linux aim delta path (V5 Phase 2 facade implementation).
 template<typename AimPanel>
-inline void PlatformInput_UpdateMouseDeltaMacLinux(
+inline bool PlatformInput_UpdateMouseDeltaMacLinux(
     PlatformRawFilter* filter,
     MelonPrimeInputSubscription& subscription,
     AimPanel* panel,
@@ -248,6 +248,11 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
     (void)centerY;
 
     PlatformInput_CountPerfAimSource(aimSrc);
+#if defined(__APPLE__)
+    return aimSrc != AimInputSource::MacRaw;
+#else
+    return false;
+#endif
 }
 
 template<typename AimPanel>
@@ -279,23 +284,8 @@ inline bool PlatformInput_IsRuntimeRawAimActive(
 }
 
 #if !defined(_WIN32)
-inline bool PlatformInput_ShouldWarpCursorAfterAim(
-    const void* filterOpaque)
-{
-#if defined(__linux__)
-    (void)filterOpaque;
-    return false;
-#elif defined(__APPLE__)
-    return !PlatformInput_IsRawAimActive(
-        static_cast<const PlatformRawFilter*>(filterOpaque));
-#else
-    (void)filterOpaque;
-    return true;
-#endif
-}
-
 template<typename AimPanel>
-inline void PlatformInput_UpdateMouseDelta(
+inline bool PlatformInput_UpdateMouseDelta(
     void* filterOpaque,
     MelonPrimeInputSubscription& subscription,
     AimPanel* panel,
@@ -309,7 +299,7 @@ inline void PlatformInput_UpdateMouseDelta(
 #if defined(__APPLE__) || defined(__linux__)
     uint8_t localWasActive =
         platformRawAimWasActive ? *platformRawAimWasActive : 0;
-    PlatformInput_UpdateMouseDeltaMacLinux(
+    const bool warpAfterAim = PlatformInput_UpdateMouseDeltaMacLinux(
         static_cast<PlatformRawFilter*>(filterOpaque),
         subscription,
         panel,
@@ -321,6 +311,7 @@ inline void PlatformInput_UpdateMouseDelta(
         centerY);
     if (platformRawAimWasActive)
         *platformRawAimWasActive = localWasActive;
+    return warpAfterAim;
 #else
     (void)filterOpaque;
     (void)platformRawAimWasActive;
@@ -331,6 +322,7 @@ inline void PlatformInput_UpdateMouseDelta(
     (void)mouseY;
     (void)centerX;
     (void)centerY;
+    return false;
 #endif
 }
 

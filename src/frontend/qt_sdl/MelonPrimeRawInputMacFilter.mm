@@ -67,14 +67,18 @@ struct MacRawInputFilter::Impl
     float gcFracX = 0.0f;
     float gcFracY = 0.0f;
 
-    std::atomic<bool> available{ false };
+    enum BackendBit : uint32_t {
+        BackendGc = 1u << 0,
+        BackendHid = 1u << 1,
+    };
+    // One atomic word prevents concurrent GC/HID lifecycle transitions from
+    // losing the other backend's availability update.
+    std::atomic<uint32_t> backendBits{ 0 };
     std::atomic<bool> quit{ false };
 
     // --- GCMouse backend ---
-    // gcActive gates the IOHID callback so the two backends can never both
+    // BackendGc gates the IOHID callback so the two backends can never both
     // feed the accumulators (double-counted deltas).
-    std::atomic<bool> gcActive{ false };
-    std::atomic<bool> hidOpen{ false };
     bool usingGC = false;
     dispatch_queue_t gcHandlerQueue = nullptr;
     id gcConnectObserver = nil;
@@ -143,13 +147,6 @@ struct MacRawInputFilter::Impl
             };
     }
 
-    void RecomputeAvailable()
-    {
-        available.store(gcActive.load(std::memory_order_acquire)
-                        || hidOpen.load(std::memory_order_acquire),
-                        std::memory_order_release);
-    }
-
     bool StartGC()
     {
         if (@available(macOS 11.0, *)) {
@@ -166,8 +163,8 @@ struct MacRawInputFilter::Impl
                         usingBlock:^(NSNotification* note) {
                             if (@available(macOS 11.0, *)) {
                                 self->AttachGCMouse((GCMouse*)note.object);
-                                self->gcActive.store(true, std::memory_order_release);
-                                self->RecomputeAvailable();
+                                self->backendBits.fetch_or(
+                                    BackendGc, std::memory_order_acq_rel);
                                 fprintf(stderr, "[MelonPrime] mac input: GCMouse connected\n");
                             }
                         }];
@@ -181,8 +178,8 @@ struct MacRawInputFilter::Impl
                                 if (disconnected.mouseInput)
                                     disconnected.mouseInput.mouseMovedHandler = nil;
                                 if (GCMouse.mice.count == 0) {
-                                    self->gcActive.store(false, std::memory_order_release);
-                                    self->RecomputeAvailable();
+                                    self->backendBits.fetch_and(
+                                        ~BackendGc, std::memory_order_acq_rel);
                                     dispatch_async(self->gcHandlerQueue, ^{
                                         self->gcFracX = 0.0f;
                                         self->gcFracY = 0.0f;
@@ -193,8 +190,7 @@ struct MacRawInputFilter::Impl
 
             usingGC = true;
             if (GCMouse.mice.count > 0) {
-                gcActive.store(true, std::memory_order_release);
-                RecomputeAvailable();
+                backendBits.fetch_or(BackendGc, std::memory_order_acq_rel);
             }
             fprintf(stderr, "[MelonPrime] mac input: GCMouse backend (%lu mice)\n",
                     (unsigned long)GCMouse.mice.count);
@@ -221,6 +217,7 @@ struct MacRawInputFilter::Impl
             dispatch_sync(gcHandlerQueue, ^{});
             gcHandlerQueue = nullptr;
         }
+        backendBits.fetch_and(~BackendGc, std::memory_order_acq_rel);
     }
 
     // ---------------- IOHID fallback ----------------
@@ -248,7 +245,8 @@ struct MacRawInputFilter::Impl
 
         // GCMouse owns the accumulators while a GC mouse is connected —
         // prevents double-counting the same hardware motion.
-        if (self->gcActive.load(std::memory_order_relaxed)) return;
+        if (self->backendBits.load(std::memory_order_relaxed) & BackendGc)
+            return;
 
         IOHIDElementRef elem = IOHIDValueGetElement(value);
         if (!elem) return;
@@ -279,10 +277,22 @@ struct MacRawInputFilter::Impl
         // prompt from appearing for setups that do not need the fallback.
         for (int i = 0; i < 12 && !quit.load(std::memory_order_acquire); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
-            if (gcActive.load(std::memory_order_acquire)) {
-                fprintf(stderr, "[MelonPrime] mac input: IOHID fallback not needed (GCMouse active)\n");
-                return;
+            if (backendBits.load(std::memory_order_acquire) & BackendGc)
+                break;
+        }
+        if (quit.load(std::memory_order_acquire)) return;
+
+        // Keep the worker alive while GC owns input. If the last GCMouse later
+        // disconnects, IOHID can become the fallback without recreating the
+        // singleton or requiring an application restart.
+        bool loggedGcWait = false;
+        while ((backendBits.load(std::memory_order_acquire) & BackendGc)
+               && !quit.load(std::memory_order_acquire)) {
+            if (!loggedGcWait) {
+                fprintf(stderr, "[MelonPrime] mac input: IOHID fallback waiting (GCMouse active)\n");
+                loggedGcWait = true;
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
         if (quit.load(std::memory_order_acquire)) return;
 
@@ -312,8 +322,7 @@ struct MacRawInputFilter::Impl
                 openResult == kIOReturnSuccess ? "ok" : "failed",
                 static_cast<unsigned>(openResult));
         if (openResult == kIOReturnSuccess) {
-            hidOpen.store(true, std::memory_order_release);
-            RecomputeAvailable();
+            backendBits.fetch_or(BackendHid, std::memory_order_acq_rel);
         }
 
         // Retry while unavailable: a permission granted after launch can make
@@ -327,14 +336,12 @@ struct MacRawInputFilter::Impl
                 openResult = IOHIDManagerOpen(manager, kIOHIDOptionsTypeNone);
                 if (openResult == kIOReturnSuccess) {
                     fprintf(stderr, "[MelonPrime] mac input: IOHID backend recovered\n");
-                    hidOpen.store(true, std::memory_order_release);
-                    RecomputeAvailable();
+                    backendBits.fetch_or(BackendHid, std::memory_order_acq_rel);
                 }
             }
         }
 
-        hidOpen.store(false, std::memory_order_release);
-        RecomputeAvailable();
+        backendBits.fetch_and(~BackendHid, std::memory_order_acq_rel);
         IOHIDManagerUnscheduleFromRunLoop(
             manager, workerRunLoop, kCFRunLoopDefaultMode);
         IOHIDManagerClose(manager, kIOHIDOptionsTypeNone);
@@ -376,7 +383,7 @@ MacRawInputFilter::~MacRawInputFilter()
 
 bool MacRawInputFilter::isAvailable() const
 {
-    return m->available.load(std::memory_order_acquire);
+    return m->backendBits.load(std::memory_order_acquire) != 0;
 }
 
 void MacRawInputFilter::fetchMouseDelta(
@@ -403,7 +410,8 @@ void MacRawInputFilter::fetchMouseDelta(
 
 bool MacRawInputFilter::isGcMouseActive() const
 {
-    return m->gcActive.load(std::memory_order_acquire);
+    return (m->backendBits.load(std::memory_order_acquire)
+            & Impl::BackendGc) != 0;
 }
 
 void MacRawInputFilter::resetAll(MelonPrimeInputSubscription& subscription)

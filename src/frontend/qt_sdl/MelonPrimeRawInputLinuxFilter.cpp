@@ -56,6 +56,8 @@ struct LinuxRawInputFilter::Impl
     std::atomic<bool>    available{ false };
     std::atomic<bool>    receivedMotion{ false };
     std::atomic<bool>    quit{ false };
+    // Filter-thread-only shadow avoids an atomic load on every XI2 event.
+    bool receivedMotionPublished = false;
 
     std::thread thread;
 
@@ -215,13 +217,13 @@ struct LinuxRawInputFilter::Impl
         const int32_t dx = TakeIntegralDelta(st.residual[0], d[0]);
         const int32_t dy = TakeIntegralDelta(st.residual[1], d[1]);
 
-        if ((dx | dy) != 0
-            && !receivedMotion.load(std::memory_order_relaxed)) {
+        if ((dx | dy) != 0 && !receivedMotionPublished) {
             if (MelonPrimeInputDebug())
                 std::fprintf(stderr,
                     "[MelonPrime] linux input: first raw motion (src %d, dx=%d dy=%d)\n",
                     raw->sourceid, dx, dy);
             receivedMotion.store(true, std::memory_order_release);
+            receivedMotionPublished = true;
         }
         // Single writer: only this filter thread mutates the accumulators;
         // emulation threads keep per-subscription cursors and only load them.

@@ -62,14 +62,21 @@ public:
     }
     void SetPanelAvailableFromGui(bool value) noexcept
     {
+        if (m_panelAvailable.load(std::memory_order_relaxed) == value)
+            return;
         m_panelAvailable.store(value, std::memory_order_release);
     }
     void PublishCenterFromGui(int x, int y) noexcept
     {
-        m_center.store(PackInt32Pair(x, y), std::memory_order_release);
+        const uint64_t packed = PackInt32Pair(x, y);
+        if (m_center.load(std::memory_order_relaxed) == packed)
+            return;
+        m_center.store(packed, std::memory_order_release);
     }
     void PublishWindowHandleFromGui(uintptr_t handle) noexcept
     {
+        if (m_windowHandle.load(std::memory_order_relaxed) == handle)
+            return;
         m_windowHandle.store(handle, std::memory_order_release);
     }
     void NotifyLayoutChangeFromGui() noexcept
@@ -166,14 +173,17 @@ public:
     }
     void ResetPanelAimDeltaFromGui() noexcept
     {
-        // May be requested by either GUI transitions or the emulation thread.
-        // Capture the producer total at the reset boundary so motion published
-        // after this request remains visible to the consumer. The emulation
-        // thread re-baselines without becoming a second writer of the total.
-        m_panelAimResetBaseline.store(
+        // GUI is the sole reset-boundary writer. Publish the cumulative total
+        // first, then a monotonically changing generation; the EmuThread
+        // consumer owns its cursor and never writes either GUI field.
+        m_panelAimGuiResetBoundary.store(
             m_panelAimTotal.load(std::memory_order_acquire),
             std::memory_order_release);
-        m_panelAimResetPending.store(true, std::memory_order_release);
+        uint32_t generation = ++m_panelAimGuiResetGenerationShadow;
+        if (generation == 0)
+            generation = ++m_panelAimGuiResetGenerationShadow;
+        m_panelAimGuiResetGeneration.store(
+            generation, std::memory_order_release);
     }
     void PublishStylusPointerFromGui(int x, int y, bool valid) noexcept
     {
@@ -275,11 +285,12 @@ public:
     }
     void getAimMouseDelta(int32_t& dx, int32_t& dy) noexcept
     {
-        if (m_panelAimResetPending.load(std::memory_order_relaxed)
-            && m_panelAimResetPending.exchange(
-                false, std::memory_order_acq_rel)) {
+        const uint32_t resetGeneration =
+            m_panelAimGuiResetGeneration.load(std::memory_order_acquire);
+        if (resetGeneration != m_panelAimGuiResetSeen) {
             m_panelAimCursor =
-                m_panelAimResetBaseline.load(std::memory_order_acquire);
+                m_panelAimGuiResetBoundary.load(std::memory_order_acquire);
+            m_panelAimGuiResetSeen = resetGeneration;
         }
 
         const uint64_t current =
@@ -292,7 +303,16 @@ public:
     }
     void resetAimMouseDelta() noexcept
     {
-        ResetPanelAimDeltaFromGui();
+        ResetPanelAimDeltaFromEmu();
+    }
+    void ResetPanelAimDeltaFromEmu() noexcept
+    {
+        // EmuThread-only local rebaseline. A GUI reset racing this call is
+        // observed by getAimMouseDelta() through its published generation.
+        const uint32_t resetGeneration =
+            m_panelAimGuiResetGeneration.load(std::memory_order_acquire);
+        m_panelAimCursor = m_panelAimTotal.load(std::memory_order_acquire);
+        m_panelAimGuiResetSeen = resetGeneration;
     }
     void ReadCenterForEmu(int& x, int& y) const noexcept
     {
@@ -348,7 +368,11 @@ public:
 
     void RequestGuiFromEmu(uint32_t requests) noexcept
     {
-        m_guiRequests.fetch_or(requests, std::memory_order_release);
+        if (requests & GuiRequestRecenter)
+            m_recenterPending.store(true, std::memory_order_release);
+        const uint32_t remaining = requests & ~GuiRequestRecenter;
+        if (remaining)
+            m_guiRequests.fetch_or(remaining, std::memory_order_release);
     }
 
     // MELONPRIME_CURSOR_AUTHORITATIVE_STATE_V1
@@ -361,9 +385,8 @@ public:
         uint32_t additionalRequests = GuiRequestNone) noexcept
     {
         m_cursorVisibleDesired.store(visible, std::memory_order_release);
-        m_guiRequests.fetch_or(
-            GuiRequestReconcileCursor | additionalRequests,
-            std::memory_order_release);
+        RequestGuiFromEmu(
+            GuiRequestReconcileCursor | additionalRequests);
     }
 
     // A new ROM/session supersedes every cursor request from the old one.
@@ -372,6 +395,7 @@ public:
     void ResetCursorPresentationFromEmu() noexcept
     {
         m_cursorVisibleDesired.store(true, std::memory_order_release);
+        m_recenterPending.store(false, std::memory_order_release);
         (void)m_guiRequests.exchange(
             GuiRequestReconcileCursor, std::memory_order_acq_rel);
     }
@@ -383,9 +407,13 @@ public:
 
     uint32_t TakeGuiRequestsFromGui() noexcept
     {
-        if (m_guiRequests.load(std::memory_order_relaxed) == 0)
-            return 0;
-        return m_guiRequests.exchange(0, std::memory_order_acq_rel);
+        uint32_t requests = 0;
+        if (m_guiRequests.load(std::memory_order_relaxed) != 0)
+            requests = m_guiRequests.exchange(0, std::memory_order_acq_rel);
+        if (m_recenterPending.load(std::memory_order_relaxed)
+            && m_recenterPending.exchange(false, std::memory_order_acq_rel))
+            requests |= GuiRequestRecenter;
+        return requests;
     }
 
 private:
@@ -424,16 +452,22 @@ private:
     std::atomic<uint64_t> m_wheelMailbox{PackWheelMailbox(1, 0)};
     std::atomic<int> m_cursorModeCommand{-1};
     std::atomic<uint64_t> m_panelAimTotal{0};
-    std::atomic<uint64_t> m_panelAimResetBaseline{0};
-    std::atomic_bool m_panelAimResetPending{false};
+    std::atomic<uint64_t> m_panelAimGuiResetBoundary{0};
+    std::atomic<uint32_t> m_panelAimGuiResetGeneration{0};
+    // GUI-thread-only generation source.
+    uint32_t m_panelAimGuiResetGenerationShadow = 0;
     // Emulation-thread-only cursor into the GUI-owned cumulative total.
     uint64_t m_panelAimCursor = 0;
+    uint32_t m_panelAimGuiResetSeen = 0;
     // GUI-published DS coordinate under the pointer. Packed so the emulation
     // thread cannot observe X/Y from different mouse events; bit 31 is valid.
     std::atomic<uint32_t> m_stylusPointer{0};
     std::atomic<uint32_t> m_runtimeBits{1u};
     std::atomic_bool m_cursorVisibleDesired{true};
     std::atomic<uint32_t> m_guiRequests{0};
+    // SPSC level request kept separate from the multi-bit GUI command word so
+    // the 60/120 Hz QCursor fallback does not issue a locked fetch_or.
+    std::atomic_bool m_recenterPending{false};
     std::atomic<uint32_t> m_persistGeneration{0};
     std::atomic<uint64_t> m_aimSensitivityPersist{0};
 };

@@ -121,8 +121,9 @@ Main implementation files:
     panel's >96px threshold warp; every warp re-seeds the fallback baseline. See §9.
   - macOS: GCMouse deltas are warp-immune; IOHID (trackpad) and QCursor fallback use panel
     containment warps. Cursor disassociation/hide (`MacSetAimCursorCaptured`) is **GCMouse
-    only** — see §10. `ProcessAimInputMouse` uses the source-resolved
-    `PlatformInput_ShouldWarpCursorAfterAim` result; capture-wanted alone never emits a recenter.
+    only** — see §10. Acquisition caches the source-resolved warp decision once
+    in `m_warpCursorAfterAimThisFrame`; `ProcessAimInputMouse` reads that scalar,
+    and capture-wanted alone never emits a recenter.
   - `unfocus()` must call `unclip()` on Linux and macOS; otherwise Escape leaves the cursor
     hidden/locked.
 
@@ -543,8 +544,8 @@ Backend split (see `MelonPrimeRawInputMacFilter.mm`, `IsGcMouseAimActive()`):
   recenter in `ProcessAimInputMouse` when raw is inactive; panel containment warps otherwise.
 
 The frame-side rule is intentionally source-resolved rather than Apple-wide:
-`PlatformInput_ShouldWarpCursorAfterAim(rawFilter)` is false for active GCMouse/IOHID raw input
-and true for QCursor fallback. Focus, layout, capture and cursor-mode transitions may still issue
+the cached warp decision is false for active GCMouse/IOHID raw input and true
+for QCursor fallback. Focus, layout, capture and cursor-mode transitions may still issue
 one-shot recenter requests; the zero-warp contract applies to steady raw Aim frames.
 
 Mouse buttons and keyboard hotkeys stay on the Qt path (`EmuInstance::onMousePress` /
@@ -552,12 +553,17 @@ Mouse buttons and keyboard hotkeys stay on the Qt path (`EmuInstance::onMousePre
 
 The frame reader acquire-loads the independent GCMouse and IOHID totals, sums each axis modulo
 32 bits, and advances only its subscription cursor. This preserves deltas across a backend handoff
-without making the two event sources writers of one shared accumulator.
+without making the two event sources writers of one shared accumulator. Backend
+availability is one atomic bitset (`BackendGc`, `BackendHid`): rare lifecycle
+transitions use `fetch_or`/`fetch_and`, preventing a concurrent GC connect and
+HID close from overwriting each other's state.
 
 Stuck-click recovery (2026-07-04, trackpad report): `EmuInstance::syncMouseHotkeysFromQtButtons()`
 clears mouse-mapped hotkey bits when `QGuiApplication::mouseButtons()` shows the button physically
 up but a release event was lost. Called from `ScreenPanel` on macOS during press, move, and
-`unfocus()` (which also releases a stuck DS touch via `releaseScreen()`). See
+`unfocus()` (which also releases a stuck DS touch via `releaseScreen()`). The
+five supported mouse-button masks are precomputed on config load, so this
+mouse-move recovery path performs fixed mask operations without mapping scans. See
 [../../archive/investigations/input/click-handling.md](../../archive/investigations/input/click-handling.md) § "macOS trackpad stuck-click fix".
 
 Troubleshooting:

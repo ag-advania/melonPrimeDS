@@ -393,6 +393,18 @@ void EmuThread::run()
         }
 #endif
 
+        // Cold frame decisions precede the limiter so the post-sleep critical
+        // path remains late input -> RunFrameHook -> SetKeyMask -> RunFrame.
+        emuInstance->syncRTC();
+
+#ifdef MELONPRIME_DS
+        // P-39: Skip NeedsShaderCompile virtual dispatch once shaders are ready.
+        bool needsCompile = UNLIKELY(!shadersReady)
+            && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
+#else
+        bool needsCompile = emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
+#endif
+
 #ifdef MELONPRIME_DS
         // =================================================================
         // P-13: Late-Poll Frame Limiter — sleep BEFORE input, not after.
@@ -552,25 +564,12 @@ void EmuThread::run()
         if (vulkanLowLatencyRenderer)
             emuInstance->markVulkanReflexInputSample();
 #endif
-        emuInstance->inputRefreshJoystickState();
+        emuInstance->inputRefreshJoystickState(
+            !melonPrime->IsNestedFrameAdvanceForInput());
 #endif
-
-        // RTC sync
-        emuInstance->syncRTC();
 
         // emulate
         u32 nlines;
-
-#ifdef MELONPRIME_DS
-        // P-39: Skip NeedsShaderCompile virtual dispatch once shaders are ready.
-        // GetRenderer().NeedsShaderCompile() is a vtable lookup + indirect call
-        // (~15-25 cyc) that returns false 100% of the time after initial compile.
-        bool needsCompile = UNLIKELY(!shadersReady)
-            && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
-#else
-        // NeedsShaderCompile reads a GPU flag — no GL context needed.
-        bool needsCompile = emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
-#endif
 
 #ifdef MELONPRIME_DS
         // =================================================================

@@ -887,8 +887,8 @@ if (-not $aimBody) {
     if ($aimBody -match 'CaptureWantedForEmu\s*\(') {
         Add-Error 'Rule L2: raw macOS aim must not request recenter from capture-wanted alone'
     }
-    if ($aimBody -notmatch 'PlatformInput_ShouldWarpCursorAfterAim\s*\(') {
-        Add-Error 'Rule L2: ProcessAimInputMouse lost the source-resolved warp policy'
+    if ($aimBody -notmatch 'm_warpCursorAfterAimThisFrame') {
+        Add-Error 'Rule L2: ProcessAimInputMouse lost the once-per-frame cached warp policy'
     }
 }
 
@@ -906,10 +906,13 @@ foreach ($axis in @('X', 'Y')) {
         Add-Error "Rule L2: Linux acc$axis lost single-writer load/store publication"
     }
 }
-$motionLoad = $linuxRawText.IndexOf('receivedMotion.load', [System.StringComparison]::Ordinal)
-$motionStore = $linuxRawText.IndexOf('receivedMotion.store', [System.StringComparison]::Ordinal)
-if ($motionLoad -lt 0 -or $motionStore -lt 0 -or $motionLoad -gt $motionStore) {
-    Add-Error 'Rule L2: Linux receivedMotion must publish only after the false-edge load'
+$linuxAccumulateBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+AccumulateRawMotion\s*\('
+if (-not $linuxAccumulateBody -or
+    $linuxAccumulateBody -notmatch 'receivedMotionPublished' -or
+    $linuxAccumulateBody -match 'receivedMotion\.load\s*\(' -or
+    $linuxAccumulateBody -notmatch 'receivedMotion\.store\s*\(') {
+    Add-Error 'Rule L2: Linux first-motion publication must use its filter-thread shadow without a per-event atomic load'
 }
 
 $overlayBody = Get-FunctionText -Path $gameInputPath `
@@ -1008,15 +1011,28 @@ if ($emuInstanceHeaderText -notmatch 'uint8_t\s+joystickLifecycleCheckCounter') 
     Add-Error 'Rule O: joystick lifecycle cadence must be stored per EmuInstance'
 }
 
-# Rule P: only closeJoystick owns SDL device close plus derived state reset.
+# Rule P: closeJoystick owns physical lifetime; EmuThread owns derived reset.
 $closeJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::closeJoystick\s*\('
+$resetJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::resetLateJoystickGameplayState\s*\('
 if (-not $closeJoystickBody -or
     $closeJoystickBody -notmatch 'SDL_GameControllerClose\s*\(' -or
     $closeJoystickBody -notmatch 'SDL_JoystickClose\s*\(' -or
-    $closeJoystickBody -notmatch 'lateJoystick\.hotkeyHeld\s*=\s*0' -or
+    $closeJoystickBody -notmatch 'joystickGameplayResetPending\.store\s*\(' -or
+    $closeJoystickBody -match 'lateJoystick\.' -or
     $closeJoystickBody -notmatch 'hasRumble\s*=\s*false') {
-    Add-Error 'Rule P: central joystick close/reset owner is incomplete'
+    Add-Error 'Rule P: joystick physical lifetime/reset-request owner is incomplete'
+}
+if (-not $resetJoystickBody -or
+    $resetJoystickBody -notmatch 'lateJoystick\.hotkeyHeld\s*=\s*0' -or
+    $resetJoystickBody -match 'SDL_(?:GameController|Joystick)Close\s*\(') {
+    Add-Error 'Rule P: EmuThread gameplay-derived joystick reset owner is incomplete'
+}
+if (-not $inputProcessBody -or
+    $inputProcessBody -notmatch 'joystickGameplayResetPending\.load' -or
+    $inputProcessBody -notmatch 'joystickGameplayResetPending\.exchange') {
+    Add-Error 'Rule P: inputProcess must consume GUI/device reset publication with load-first claim'
 }
 foreach ($pollBody in @($inputProcessBody, $lateJoystickBody)) {
     if ($pollBody -match 'SDL_(?:GameController|Joystick)Close\s*\(') {
@@ -1026,25 +1042,34 @@ foreach ($pollBody in @($inputProcessBody, $lateJoystickBody)) {
 
 # Rule Q: the late gameplay snapshot is distinct from global emulator edges.
 if ($emuInstanceHeaderText -notmatch 'struct\s+LateJoystickSnapshot' -or
-    $emuInstanceHeaderText -notmatch 'keyHotkeyPress' -or
+    $emuInstanceHeaderText -match 'keyHotkeyPress|lastKeyHotkeyMask' -or
     -not $lateJoystickBody -or
-    $lateJoystickBody -notmatch 'lateJoystick\.hotkeyPressed\s*=' -or
-    $lateJoystickBody -notmatch 'lateJoystick\.hotkeyReleased\s*=') {
-    Add-Error 'Rule Q: MelonPrime late joystick held/press/release snapshot is incomplete'
+    $lateJoystickBody -notmatch 'lateJoystick\.hotkeyPressed\s*=') {
+    Add-Error 'Rule Q: MelonPrime late joystick held/press snapshot is incomplete'
 }
-if ($updateInputBody -notmatch 'keyHotkeyPress' -or
-    $updateInputBody -notmatch 'lateJoystick\.hotkeyPressed') {
-    Add-Error 'Rule Q: gameplay projection must combine Qt edge with the late joystick edge'
+if ($lateJoystickBody -match 'lateJoystick\.hotkeyReleased') {
+    Add-Error 'Rule Q: unconsumed late joystick release state reappeared'
+}
+if ($updateInputBody -notmatch 'qtGameplayPressed' -or
+    $updateInputBody -notmatch 'm_qtGameplayHotkeyPrevious' -or
+    $updateInputBody -notmatch 'lateJoystick\.hotkeyPressed' -or
+    $updateInputBody -notmatch '~qtWheelMask') {
+    Add-Error 'Rule Q: late gameplay projection must combine Qt and joystick edges while excluding Qt wheel levels'
 }
 if ($lateJoystickBody -match '(?m)^\s*hotkeyPress\s*=') {
     Add-Error 'Rule Q: late joystick poll must not rewrite global emulator hotkey edges'
 }
 $latePollAt = $emuThreadText.IndexOf(
-    'inputRefreshJoystickState();', [System.StringComparison]::Ordinal)
+    'inputRefreshJoystickState(', [System.StringComparison]::Ordinal)
 $runFrameAt = $emuThreadText.IndexOf(
     'RunFrameHook(', $latePollAt + 1, [System.StringComparison]::Ordinal)
 if ($latePollAt -lt 0 -or $runFrameAt -lt 0 -or $latePollAt -gt $runFrameAt) {
     Add-Error 'Rule Q: late joystick sample must remain before RunFrameHook'
+}
+if ($emuThreadText -notmatch 'inputRefreshJoystickState\s*\(\s*!melonPrime->IsNestedFrameAdvanceForInput\(\)\s*\)' -or
+    $lateJoystickBody -notmatch 'if\s*\(!commitGameplayEdges\)' -or
+    $lateJoystickBody -notmatch 'if\s*\(commitGameplayEdges\)\s*\r?\n\s*previousLateJoystickHotkeyMask') {
+    Add-Error 'Rule Q: re-entrant FrameAdvance must refresh held state without committing the late edge baseline'
 }
 
 # Rule R: Apple documents GCDevice.handlerQueue as the callback execution
@@ -1064,6 +1089,13 @@ foreach ($macNeedle in @(
     if ($macRawText.IndexOf($macNeedle, [System.StringComparison]::Ordinal) -lt 0) {
         Add-Error "Rule R: macOS writer contract missing: $macNeedle"
     }
+}
+if ($macRawText -notmatch 'std::atomic<uint32_t>\s+backendBits' -or
+    $macRawText -notmatch 'backendBits\.fetch_or\s*\(' -or
+    $macRawText -notmatch 'backendBits\.fetch_and\s*\(' -or
+    $macRawText -match 'std::atomic<bool>\s+(?:available|gcActive|hidOpen)' -or
+    $macRawText -match 'RecomputeAvailable\s*\(') {
+    Add-Error 'Rule R: macOS backend availability must be one fetch_or/fetch_and bitset'
 }
 
 # Rule S: rare mailboxes load before claim; panel aim is a GUI-owned packed
@@ -1085,11 +1117,26 @@ foreach ($rare in @(
 if ($threadBridgeText -match 'm_panelAim[XY]\b' -or
     $threadBridgeText -match 'm_panelAimTotal\.fetch_add\s*\(' -or
     $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_panelAimTotal' -or
-    $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_panelAimResetBaseline' -or
-    $threadBridgeText -notmatch 'm_panelAimResetBaseline\.store\s*\(' -or
-    $threadBridgeText -notmatch 'm_panelAimResetBaseline\.load\s*\(' -or
-    $threadBridgeText -notmatch 'uint64_t\s+m_panelAimCursor') {
-    Add-Error 'Rule S: panel aim must remain a packed cumulative total with a reset-boundary baseline'
+    $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_panelAimGuiResetBoundary' -or
+    $threadBridgeText -notmatch 'std::atomic<uint32_t>\s+m_panelAimGuiResetGeneration' -or
+    $threadBridgeText -notmatch 'uint64_t\s+m_panelAimCursor' -or
+    $threadBridgeText -notmatch 'uint32_t\s+m_panelAimGuiResetSeen') {
+    Add-Error 'Rule S: panel aim must retain GUI reset publication and Emu-owned cursor state'
+}
+$panelGuiResetBody = Get-FunctionText -Path $threadBridgePath `
+    -Signature 'ResetPanelAimDeltaFromGui\s*\('
+$panelEmuResetBody = Get-FunctionText -Path $threadBridgePath `
+    -Signature 'ResetPanelAimDeltaFromEmu\s*\('
+if (-not $panelGuiResetBody -or
+    $panelGuiResetBody -notmatch 'm_panelAimGuiResetBoundary\.store' -or
+    $panelGuiResetBody -notmatch 'm_panelAimGuiResetGeneration\.store' -or
+    $panelGuiResetBody -match 'm_panelAimCursor\s*=') {
+    Add-Error 'Rule S: GUI panel reset must publish only boundary plus generation'
+}
+if (-not $panelEmuResetBody -or
+    $panelEmuResetBody -notmatch 'm_panelAimCursor\s*=' -or
+    $panelEmuResetBody -match 'm_panelAimGuiReset(?:Boundary|Generation)\.store') {
+    Add-Error 'Rule S: Emu panel reset must update only its consumer cursor/generation'
 }
 if ($threadBridgeText -match 'm_center[XY]\b' -or
     $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_center') {
@@ -1119,6 +1166,37 @@ if ($controllerSampleAt -lt 0 -or $controllerUnlockAt -lt 0 -or
     $controllerSampleAt -gt $controllerUnlockAt -or
     $controllerUnlockAt -gt $controllerAssemblyAt) {
     Add-Error 'Rule S: controller lock must cover physical sampling but not numeric mask assembly'
+}
+
+# Rule T: cold frame work must stay before the late-input critical path.
+$rtcAt = $emuThreadText.IndexOf('syncRTC();', [System.StringComparison]::Ordinal)
+$shaderAt = $emuThreadText.IndexOf('NeedsShaderCompile()', [System.StringComparison]::Ordinal)
+$inputSampleAt = $emuThreadText.IndexOf('MarkInputSample();', [System.StringComparison]::Ordinal)
+if ($rtcAt -lt 0 -or $shaderAt -lt 0 -or $inputSampleAt -lt 0 -or
+    $rtcAt -gt $inputSampleAt -or $shaderAt -gt $inputSampleAt) {
+    Add-Error 'Rule T: RTC sync and shader readiness decision must precede the late input sample'
+}
+
+# Rule U: mouse-button release recovery is fixed-mask work, never HK_MAX scans.
+$mouseSyncBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::syncMouseHotkeysFromQtButtons\s*\('
+if (-not $mouseSyncBody -or
+    $mouseSyncBody -notmatch 'mouseButtonMasks' -or
+    $mouseSyncBody -match 'HK_MAX|hkKeyMapping') {
+    Add-Error 'Rule U: mouse-move release recovery must consume cold-precomputed fixed masks'
+}
+
+# Rule V: GUI level publications and input-generation publication are changed-only.
+foreach ($setter in @('SetPanelAvailableFromGui', 'PublishCenterFromGui', 'PublishWindowHandleFromGui')) {
+    $setterBody = Get-FunctionText -Path $threadBridgePath -Signature "$setter\s*\("
+    if (-not $setterBody -or $setterBody -notmatch '\.load\s*\(' -or
+        $setterBody -notmatch '\.store\s*\(') {
+        Add-Error "Rule V: $setter must skip unchanged GUI publications"
+    }
+}
+if ($updateInputBody -notmatch 'm_publishedInputGeneration' -or
+    $updateInputBody -notmatch 'SetInputGenerationFromEmu') {
+    Add-Error 'Rule V: Core must cache input-generation publication'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

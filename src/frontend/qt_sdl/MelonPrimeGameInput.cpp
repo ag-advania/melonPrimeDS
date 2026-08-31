@@ -191,7 +191,6 @@ namespace MelonPrime {
                 m_cachedHwnd = currentHwnd;
             }
             rawFilter->UpdateOwner(m_rawInputSubscription, captureEligible);
-            m_threadBridge.SetInputGenerationFromEmu(m_inputSubscription.generation);
             if constexpr (kReentrant)
                 rawFilter->PollAndSnapshotNoEdges(
                     m_rawInputSubscription, hk,
@@ -211,7 +210,6 @@ namespace MelonPrime {
         const bool platformInputOwner =
             PlatformInputOwnerService::Update(
                 m_inputSubscription, captureEligible);
-        m_threadBridge.SetInputGenerationFromEmu(m_inputSubscription.generation);
 #endif
 #if defined(_WIN32)
         const bool isInputOwner =
@@ -221,6 +219,12 @@ namespace MelonPrime {
         // second atomic read of the same result on macOS/Linux.
         const bool isInputOwner = platformInputOwner;
 #endif
+        if (UNLIKELY(m_publishedInputGeneration
+                != m_inputSubscription.generation)) {
+            m_publishedInputGeneration = m_inputSubscription.generation;
+            m_threadBridge.SetInputGenerationFromEmu(
+                m_inputSubscription.generation);
+        }
         if (wasInputOwner != isInputOwner
             || wasInputGeneration != m_inputSubscription.generation) {
             InstanceDiagnostics::LogInputSubscription(
@@ -230,6 +234,9 @@ namespace MelonPrime {
         }
 
         if (!focused) {
+#if !defined(_WIN32)
+            m_warpCursorAfterAimThisFrame = false;
+#endif
             m_input.down = 0;
             m_input.press = 0;
             m_input.moveIndex = 0;
@@ -270,6 +277,34 @@ namespace MelonPrime {
             m_input.wheelDelta = 0;
         }
 
+        // Qt keyboard/mouse gameplay edges are committed at the guest-frame
+        // late latch, independently from inputProcess()'s global emulator
+        // command baseline. Wheel is projected exclusively from the bridge
+        // mailbox below and is excluded here to prevent duplicate impulses.
+        const uint64_t qtWheelMask = emuInstance->wheelUpHotkeyMask
+            | emuInstance->wheelDownHotkeyMask;
+        const uint64_t qtGameplayHeld =
+            emuInstance->keyHotkeyMask.load(std::memory_order_relaxed)
+            & ~qtWheelMask;
+        uint64_t qtGameplayPressed = 0;
+        if constexpr (!kReentrant) {
+            if (m_qtGameplayEdgeNeedsBaseline) {
+                m_qtGameplayEdgeNeedsBaseline = false;
+            }
+            else {
+                qtGameplayPressed = qtGameplayHeld
+                    & ~m_qtGameplayHotkeyPrevious;
+            }
+            m_qtGameplayHotkeyPrevious = qtGameplayHeld;
+        }
+
+        uint64_t wheelHotkeyBits = 0;
+        if constexpr (!kReentrant) {
+            if (m_input.wheelDelta)
+                wheelHotkeyBits = emuInstance->wheelHotkeyMaskForDelta(
+                    m_input.wheelDelta);
+        }
+
 #ifdef _WIN32
         const bool rawActionReady = isInputOwner
             && hk.baselineReady
@@ -279,14 +314,6 @@ namespace MelonPrime {
         // The Qt path (!isInputOwner / non-Windows) gets these via
         // EmuInstance::onMouseWheel + inputProcess. The two sources are
         // deliberately exclusive; never OR Raw and Qt wheel pulses.
-        uint64_t wheelHotkeyBits = 0;
-        if constexpr (!kReentrant) {
-            if (rawActionReady && m_input.wheelDelta) {
-                wheelHotkeyBits = emuInstance->wheelHotkeyMaskForDelta(
-                    m_input.wheelDelta);
-            }
-        }
-
         // MELONPRIME_WINDOWS_CURSOR_HOTKEY_FALLBACK_V1
         // Raw Input ownership is reserved for captured FPS aim. Cursor-mode
         // screens intentionally release that owner, but their focused window
@@ -296,16 +323,18 @@ namespace MelonPrime {
         // This keeps instances isolated and avoids duplicate press edges when
         // active ownership changes.
         const uint64_t hotDownMask = isInputOwner
-            ? ((rawActionReady ? hk.down : emuInstance->hotkeyMask)
+            ? ((rawActionReady ? hk.down : qtGameplayHeld)
                 | emuInstance->lateJoystick.hotkeyHeld | wheelHotkeyBits)
-            : emuInstance->hotkeyMask;
+            : (qtGameplayHeld | emuInstance->lateJoystick.hotkeyHeld
+                | wheelHotkeyBits);
         if constexpr (!kReentrant) {
             const uint64_t hotPressMask = isInputOwner
-                ? ((rawActionReady ? hk.pressed : 0)
+                ? ((rawActionReady ? hk.pressed : qtGameplayPressed)
                     | emuInstance->lateJoystick.hotkeyPressed
                     | wheelHotkeyBits)
-                : (emuInstance->keyHotkeyPress
-                    | emuInstance->lateJoystick.hotkeyPressed);
+                : (qtGameplayPressed
+                    | emuInstance->lateJoystick.hotkeyPressed
+                    | wheelHotkeyBits);
             m_input.press = InputProjection::ProjectPressMask(hotPressMask);
         } else {
             m_input.press = 0;
@@ -315,11 +344,12 @@ namespace MelonPrime {
             MelonPrimePerf::CountInputSource(MelonPrimePerf::InputSource::WinRaw);
 #endif
 #else
-        const uint64_t hotDownMask = emuInstance->hotkeyMask;
+        const uint64_t hotDownMask = qtGameplayHeld
+            | emuInstance->lateJoystick.hotkeyHeld | wheelHotkeyBits;
         if constexpr (!kReentrant)
             m_input.press = InputProjection::ProjectPressMask(
-                emuInstance->keyHotkeyPress
-                | emuInstance->lateJoystick.hotkeyPressed);
+                qtGameplayPressed | emuInstance->lateJoystick.hotkeyPressed
+                | wheelHotkeyBits);
         else
             m_input.press = 0;
 #endif
@@ -338,7 +368,7 @@ namespace MelonPrime {
 
 #if !defined(_WIN32)
         bool haveMouseDelta = false;
-        PlatformInput_UpdateMouseDelta(
+        m_warpCursorAfterAimThisFrame = PlatformInput_UpdateMouseDelta(
             MELONPRIME_RAW_FILTER_PTR(this),
             m_inputSubscription,
             &m_threadBridge,
@@ -394,9 +424,16 @@ namespace MelonPrime {
         m_nativeBipedFireFrameReleased = false;
     }
 
+    COLD_FUNCTION void MelonPrimeCore::ResetGameplayEdgeBaselines() noexcept
+    {
+        m_qtGameplayHotkeyPrevious = 0;
+        m_qtGameplayEdgeNeedsBaseline = true;
+    }
+
     COLD_FUNCTION void MelonPrimeCore::ResetInputForLifecycleBoundary(
         const InputLifecycleBoundary boundary) noexcept
     {
+        ResetGameplayEdgeBaselines();
         // These profiles intentionally preserve the pre-SRP reset subsets.
         // In particular EmuStart and EmuStop remain asymmetric; widening a
         // profile is a behavior change, not an architecture cleanup.
@@ -994,9 +1031,7 @@ namespace MelonPrime {
         // Morph Boost already consumed this frame's m_input.mouseX/Y; this
         // routine applies the same sample to aim. // MELONPRIME_MORPH_BOOST_CURRENT_FRAME_RAW_V13
 #if !defined(_WIN32)
-        const bool warpCursorAfterAim =
-            PlatformInput_ShouldWarpCursorAfterAim(
-                MELONPRIME_RAW_FILTER_PTR(this));
+        const bool warpCursorAfterAim = m_warpCursorAfterAimThisFrame;
 #endif
 
         // P-29b: Combined early-exit gate.

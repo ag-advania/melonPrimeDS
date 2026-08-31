@@ -481,6 +481,10 @@ namespace MelonPrime {
         // replaces. Never add allocation, logging, config lookup, an atomic, or
         // virtual dispatch here.
         FORCE_INLINE void SetFastForwardState(bool active) noexcept { isFastForward = active; }
+        [[nodiscard]] FORCE_INLINE bool IsNestedFrameAdvanceForInput() const noexcept
+        {
+            return m_isRunningHook;
+        }
 
         void NotifyLayoutChange();  // P-3: impl in .cpp (needs complete EmuInstance type)
 
@@ -888,6 +892,13 @@ namespace MelonPrime {
         //          empty on a normal frame (~40–100 ns window). Skip the
         //          GetRawInputBuffer syscall entirely (~500–2000 cyc saved).
         bool     m_didFrameAdvanceSinceSnapshot = false;
+        // Normal guest-frame-only Qt gameplay edge baseline. Re-entrant frame
+        // advances read held state but never commit these fields.
+        uint64_t m_qtGameplayHotkeyPrevious = 0;
+        bool     m_qtGameplayEdgeNeedsBaseline = true;
+#if !defined(_WIN32)
+        bool     m_warpCursorAfterAimThisFrame = false;
+#endif
         // True when the active mode-specific ScanShoot key is held this frame.
         // Used to keep the shoot/scan/map-expand input working during the
         // Adventure map/user-action pause while the Mouse-Left ShootScan key
@@ -1061,6 +1072,7 @@ namespace MelonPrime {
         MelonPrimeInputSubscription m_inputSubscription{};
         MelonPrimeThreadBridge m_threadBridge{};
         uint64_t m_layoutGenerationSeen = 0;
+        uint64_t m_publishedInputGeneration = ~uint64_t{0};
 
         ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
         // Native Biped Fire developer diagnostics. Sampled during the frame
@@ -1243,6 +1255,7 @@ namespace MelonPrime {
         COLD_FUNCTION void ResetPostPollOverlayCoordinatorState() noexcept;
         COLD_FUNCTION void ResetDirectTransformInputState() noexcept;
         COLD_FUNCTION void ResetNativeBipedFireInputState() noexcept;
+        COLD_FUNCTION void ResetGameplayEdgeBaselines() noexcept;
         COLD_FUNCTION void ResetInputForLifecycleBoundary(
             InputLifecycleBoundary boundary) noexcept;
 

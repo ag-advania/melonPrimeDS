@@ -373,7 +373,7 @@ private:
 
     // joyMutex must be held. These are the sole device lifetime writers.
     void openJoystick();
-    void closeJoystick(bool publishLateRelease = false);
+    void closeJoystick();
     bool joystickButtonDown(int val);
 
     void inputProcess();
@@ -381,7 +381,7 @@ private:
 #ifdef MELONPRIME_DS
     // Guest-frame late poll. Global emulator hotkey edges remain owned by
     // inputProcess(); this publishes a separate MelonPrime gameplay snapshot.
-    void inputRefreshJoystickState();
+    void inputRefreshJoystickState(bool commitGameplayEdges);
 #endif
 
 #ifdef MELONPRIME_DS
@@ -527,7 +527,6 @@ private:
         uint16_t inputMask = 0xFFF;
         uint64_t hotkeyHeld = 0;
         uint64_t hotkeyPressed = 0;
-        uint64_t hotkeyReleased = 0;
     };
 
     struct ActiveJoystickBinding
@@ -537,7 +536,15 @@ private:
         uint64_t hotkeyBits = 0;
     };
 
+    struct MouseButtonBindingMask
+    {
+        uint16_t inputBits = 0;
+        uint64_t hotkeyBits = 0;
+    };
+
     void rebuildActiveJoystickBindings();
+    void rebuildMouseButtonBindingMasks();
+    void resetLateJoystickGameplayState();
 
     // OPT: QBitArray -> native integers.
     // QBitArray involves heap allocation, reference counting, byte-level iteration,
@@ -553,17 +560,16 @@ private:
     std::atomic<uint64_t> keyHotkeyMask{0};
     uint64_t hotkeyMask, lastHotkeyMask;
     uint64_t hotkeyPress, hotkeyRelease;
-    // Qt keyboard/mouse edge isolated from the previous-frame joystick sample.
-    // MelonPrime combines this with the guest-frame late joystick edge; global
-    // emulator commands continue to consume hotkeyPress/hotkeyRelease above.
-    uint64_t keyHotkeyPress = 0;
-    uint64_t lastKeyHotkeyMask = 0;
     LateJoystickSnapshot lateJoystick{};
     uint64_t previousLateJoystickHotkeyMask = 0;
     bool lateJoystickNeedsBaseline = true;
+    // GUI/config/device-lifetime writers publish only a reset request. The
+    // EmuThread remains the sole writer of every gameplay-derived mask above.
+    std::atomic_bool joystickGameplayResetPending{false};
     uint8_t joystickLifecycleCheckCounter = 0;
     ActiveJoystickBinding activeJoystickBindings[HK_MAX + 12]{};
     uint8_t activeJoystickBindingCount = 0;
+    MouseButtonBindingMask mouseButtonMasks[5]{};
     // Bits latched by onMouseWheel(); cleared after edge detection so the
     // virtual key is a one-frame press rather than a held button.
     std::atomic<uint64_t> wheelHotkeyPulseMask{0};
