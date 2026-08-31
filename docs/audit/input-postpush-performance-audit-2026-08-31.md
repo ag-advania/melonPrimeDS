@@ -85,6 +85,7 @@ Still required for hardware acceptance:
 - Windows wheel binding/burst and overlay toggle gameplay smoke;
 - clean before/after latency and CPU measurements.
 
-GitHub Actions for the uncommitted implementation is not applicable and was not
-run. The source-id cache remains deliberately open until Linux profiling shows
-the `unordered_map` lookup is material.
+The post-push GitHub Actions query returned no workflow run for this delivery,
+so remote CI remains NOT RUN / NOT VERIFIED. The source-id cache remains
+deliberately open until Linux profiling shows the `unordered_map` lookup is
+material.
