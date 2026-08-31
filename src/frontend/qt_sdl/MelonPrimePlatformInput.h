@@ -42,6 +42,12 @@ enum class AimInputSource : uint8_t {
     None,
 };
 
+struct ResolvedAimInput {
+    AimInputSource source = AimInputSource::None;
+    bool rawActive = false;
+    bool warpAfterAim = false;
+};
+
 #if defined(__linux__)
 inline bool PlatformInput_IsXcb()
 {
@@ -126,6 +132,7 @@ inline void PlatformInput_ResetRawFilter(
 inline AimInputSource PlatformInput_ResolveAimSource(
     PlatformRawFilter* filter,
     MelonPrimeInputSubscription& subscription,
+    bool resolvedOwner,
     bool hasPanel,
     bool& outHaveMouseDelta,
     int32_t& outDx,
@@ -134,7 +141,7 @@ inline AimInputSource PlatformInput_ResolveAimSource(
     outHaveMouseDelta = false;
     outDx = 0;
     outDy = 0;
-    if (!PlatformInputOwnerService::IsOwner(subscription))
+    if (!resolvedOwner)
         return AimInputSource::None;
 
 #if defined(__APPLE__)
@@ -191,9 +198,10 @@ inline void PlatformInput_CountPerfAimSource(AimInputSource aimSrc)
 
 // macOS/Linux aim delta path (V5 Phase 2 facade implementation).
 template<typename AimPanel>
-inline bool PlatformInput_UpdateMouseDeltaMacLinux(
+inline ResolvedAimInput PlatformInput_UpdateMouseDeltaMacLinux(
     PlatformRawFilter* filter,
     MelonPrimeInputSubscription& subscription,
+    bool resolvedOwner,
     AimPanel* panel,
     uint8_t& platformRawAimWasActive,
     bool& haveMouseDelta,
@@ -204,7 +212,8 @@ inline bool PlatformInput_UpdateMouseDeltaMacLinux(
 {
     const bool hasPanel = (panel != nullptr);
     const AimInputSource aimSrc = PlatformInput_ResolveAimSource(
-        filter, subscription, hasPanel, haveMouseDelta, mouseX, mouseY);
+        filter, subscription, resolvedOwner, hasPanel,
+        haveMouseDelta, mouseX, mouseY);
 
 #if defined(__linux__)
     const bool rawActive = (aimSrc == AimInputSource::LinuxRaw);
@@ -248,11 +257,15 @@ inline bool PlatformInput_UpdateMouseDeltaMacLinux(
     (void)centerY;
 
     PlatformInput_CountPerfAimSource(aimSrc);
+    ResolvedAimInput result;
+    result.source = aimSrc;
 #if defined(__APPLE__)
-    return aimSrc != AimInputSource::MacRaw;
+    result.rawActive = aimSrc == AimInputSource::MacRaw;
+    result.warpAfterAim = aimSrc != AimInputSource::MacRaw;
 #else
-    return false;
+    result.rawActive = aimSrc == AimInputSource::LinuxRaw;
 #endif
+    return result;
 }
 
 template<typename AimPanel>
@@ -270,24 +283,12 @@ inline void PlatformInput_ResetAfterLayoutWarpMacLinux(
 
 #endif // defined(__APPLE__) || defined(__linux__)
 
-inline bool PlatformInput_IsRuntimeRawAimActive(
-    const void* filterOpaque,
-    const MelonPrimeInputSubscription& subscription)
-{
-#if defined(__APPLE__) || defined(__linux__)
-    return PlatformInput_IsRawAimActive(
-        static_cast<const PlatformRawFilter*>(filterOpaque));
-#else
-    (void)filterOpaque;
-    return subscription.activeOwner.load(std::memory_order_acquire);
-#endif
-}
-
 #if !defined(_WIN32)
 template<typename AimPanel>
-inline bool PlatformInput_UpdateMouseDelta(
+inline ResolvedAimInput PlatformInput_UpdateMouseDelta(
     void* filterOpaque,
     MelonPrimeInputSubscription& subscription,
+    bool resolvedOwner,
     AimPanel* panel,
     uint8_t* platformRawAimWasActive,
     bool& haveMouseDelta,
@@ -299,9 +300,10 @@ inline bool PlatformInput_UpdateMouseDelta(
 #if defined(__APPLE__) || defined(__linux__)
     uint8_t localWasActive =
         platformRawAimWasActive ? *platformRawAimWasActive : 0;
-    const bool warpAfterAim = PlatformInput_UpdateMouseDeltaMacLinux(
+    const ResolvedAimInput result = PlatformInput_UpdateMouseDeltaMacLinux(
         static_cast<PlatformRawFilter*>(filterOpaque),
         subscription,
+        resolvedOwner,
         panel,
         localWasActive,
         haveMouseDelta,
@@ -311,18 +313,19 @@ inline bool PlatformInput_UpdateMouseDelta(
         centerY);
     if (platformRawAimWasActive)
         *platformRawAimWasActive = localWasActive;
-    return warpAfterAim;
+    return result;
 #else
     (void)filterOpaque;
     (void)platformRawAimWasActive;
     (void)panel;
     (void)subscription;
+    (void)resolvedOwner;
     (void)haveMouseDelta;
     (void)mouseX;
     (void)mouseY;
     (void)centerX;
     (void)centerY;
-    return false;
+    return {};
 #endif
 }
 

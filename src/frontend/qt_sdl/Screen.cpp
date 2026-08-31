@@ -136,8 +136,10 @@ void ScreenPanel::getAimMouseDelta(std::int32_t& outDx, std::int32_t& outDy)
 
 void ScreenPanel::resetAimMouseDelta()
 {
-    if (auto* core = melonPrimeCore())
-        core->ThreadBridge().ResetPanelAimDeltaFromGui();
+    if (isMelonPrimeInputSurfaceAuthority()) {
+        if (auto* core = melonPrimeCore())
+            core->ThreadBridge().ResetPanelAimDeltaFromGui();
+    }
 #if !defined(_WIN32)
     aimLastGlobalValid.store(false, std::memory_order_release);
 #endif
@@ -147,8 +149,10 @@ void ScreenPanel::resetAimMouseDelta()
 void ScreenPanel::addAimMouseDeltaForMelonPrime(
     std::int32_t dx, std::int32_t dy) noexcept
 {
-    if (auto* core = melonPrimeCore())
-        core->ThreadBridge().AddPanelAimDeltaFromGui(dx, dy);
+    if (isMelonPrimeInputSurfaceAuthority()) {
+        if (auto* core = melonPrimeCore())
+            core->ThreadBridge().AddPanelAimDeltaFromGui(dx, dy);
+    }
 }
 #endif
 
@@ -209,6 +213,8 @@ void ScreenPanel::cancelMelonPrimeDeferredConfigSave()
 
 void ScreenPanel::syncMelonPrimeThreadBridge()
 {
+    if (!isMelonPrimeInputSurfaceAuthority())
+        return;
     auto* core = melonPrimeCore();
     if (!core)
         return;
@@ -249,6 +255,12 @@ void ScreenPanel::syncMelonPrimeThreadBridge()
 
 void ScreenPanel::wheelEvent(QWheelEvent* event)
 {
+#ifdef MELONPRIME_DS
+    if (!isMelonPrimeInputSurfaceAuthority()) {
+        event->accept();
+        return;
+    }
+#endif
     const int steps = MelonPrime::PhysicalWheelSteps(*event);
     if (steps != 0) {
         if (auto* core = melonPrimeCore())
@@ -264,12 +276,21 @@ void ScreenPanel::refreshClipForGameStateChange()
 {
     if (closing || !qApp || qApp->closingDown())
         return;
+    if (!isMelonPrimeInputSurfaceAuthority())
+        return;
+
+    auto* const revisionCore = melonPrimeCore();
+    const uint64_t workRevision = revisionCore
+        ? revisionCore->ThreadBridge().GuiWorkRevisionForGui() : 0;
 
     // MELONPRIME_CURSOR_GUI_THREAD_DISPATCH_V2
     // drawScreen() is driven by EmuThread. QWidget cursor state, focus/window
     // queries, layout changes and Win32 cursor presentation must be reconciled
     // on the QObject's GUI thread. Coalesce to at most one queued callback.
     if (QThread::currentThread() != thread()) {
+        if (m_melonPrimeGuiRevisionSeen.load(std::memory_order_acquire)
+            == workRevision)
+            return;
         bool expected = false;
         if (m_melonPrimeGuiRefreshQueued.compare_exchange_strong(
                 expected, true, std::memory_order_acq_rel)) {
@@ -290,7 +311,7 @@ void ScreenPanel::refreshClipForGameStateChange()
     }
 
     syncMelonPrimeThreadBridge();
-    auto* core = melonPrimeCore();
+    auto* core = revisionCore;
     const bool hasState = (core != nullptr);
     const auto ui = hasState ? core->ThreadBridge().ReadForGui()
                              : MelonPrime::MelonPrimeUiSnapshot{};
@@ -317,8 +338,11 @@ void ScreenPanel::refreshClipForGameStateChange()
         m_hasLastInGameTopScreenOnlyOverride
         && m_lastInGameTopScreenOnlyOverride == wantsInGameTopScreenOnly;
 
-    if (clipStateUnchanged && topScreenOnlyStateUnchanged)
+    if (clipStateUnchanged && topScreenOnlyStateUnchanged) {
+        m_melonPrimeGuiRevisionSeen.store(
+            workRevision, std::memory_order_release);
         return;
+    }
 
     m_hasLastClipInGameState = hasState;
     m_lastClipInGameState = isInGame;
@@ -334,6 +358,8 @@ void ScreenPanel::refreshClipForGameStateChange()
     if (!clipStateUnchanged)
         updateClipIfNeeded();
 #endif
+    m_melonPrimeGuiRevisionSeen.store(
+        workRevision, std::memory_order_release);
 }
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -541,10 +567,12 @@ void ScreenPanel::beginClose()
     processMelonPrimePersistRequests();
     flushMelonPrimeConfigSave();
     closing = true;
-    if (auto* core = melonPrimeCore()) {
-        core->ThreadBridge().SetFocusedFromGui(false);
-        core->ThreadBridge().SetPanelAvailableFromGui(false);
-        core->ThreadBridge().SetCaptureWantedFromGui(false);
+    if (isMelonPrimeInputSurfaceAuthority()) {
+        if (auto* core = melonPrimeCore()) {
+            core->ThreadBridge().SetFocusedFromGui(false);
+            core->ThreadBridge().SetPanelAvailableFromGui(false);
+            core->ThreadBridge().SetCaptureWantedFromGui(false);
+        }
     }
     releaseCursorStateForClose();
 }
@@ -558,6 +586,12 @@ void ScreenPanel::updateClipIfNeeded() {
 bool ScreenPanel::isActiveVisibleWindowForMelonPrime() const
 {
     return isVisible() && window() && window()->isActiveWindow();
+}
+
+bool ScreenPanel::isMelonPrimeInputSurfaceAuthority() const noexcept
+{
+    return emuInstance && mainWindow
+        && emuInstance->getMainWindow() == mainWindow;
 }
 
 MelonPrime::MelonPrimeCore* ScreenPanel::melonPrimeCoreForPolicy() const
@@ -671,6 +705,13 @@ ScreenPanel::~ScreenPanel()
     if (!closing) {
         processMelonPrimePersistRequests();
         flushMelonPrimeConfigSave();
+        if (isMelonPrimeInputSurfaceAuthority()) {
+            if (auto* core = melonPrimeCore()) {
+                core->ThreadBridge().SetFocusedFromGui(false);
+                core->ThreadBridge().SetPanelAvailableFromGui(false);
+                core->ThreadBridge().SetCaptureWantedFromGui(false);
+            }
+        }
         closing = true;
         releaseCursorStateForClose();
     }
@@ -776,6 +817,8 @@ void ScreenPanel::refreshStylusCursorSettings()
 
 void ScreenPanel::primeStylusTouchHotkeyAtCursor(int qtKey)
 {
+    if (!isMelonPrimeInputSurfaceAuthority())
+        return;
     auto* const emu = emuInstance;
     auto* const core = melonPrimeCore();
     if (!emu || !core
@@ -963,7 +1006,8 @@ void ScreenPanel::setupScreenLayout()
 
 #ifdef MELONPRIME_DS
     // Notify layout change
-    if (!closing && qApp && !qApp->closingDown()) {
+    if (!closing && qApp && !qApp->closingDown()
+        && isMelonPrimeInputSurfaceAuthority()) {
         syncMelonPrimeThreadBridge();
         if (auto* core = melonPrimeCore()) {
             core->NotifyLayoutChange();
@@ -1055,7 +1099,8 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
 #ifdef MELONPRIME_DS
     auto* const thr = emu->getEmuThread();
-    auto* const core = thr->GetMelonPrimeCore();
+    auto* const core = isMelonPrimeInputSurfaceAuthority()
+        ? thr->GetMelonPrimeCore() : nullptr;
 #endif
 
     if (Q_UNLIKELY(!emu->emuIsActive()))
@@ -1071,12 +1116,14 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
 #ifdef MELONPRIME_DS
 #if defined(__APPLE__)
-    emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
+    if (core)
+        emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
 #endif
     // Click sets focus
     if (core) core->ThreadBridge().SetFocusedFromGui(true);
 
-    emu->onMousePress(event);
+    if (core)
+        emu->onMousePress(event);
 #endif
 
 #ifdef MELONPRIME_DS
@@ -1160,7 +1207,8 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
     auto* const emu = emuInstance;
 
 #ifdef MELONPRIME_DS
-    emu->onMouseRelease(event);
+    if (isMelonPrimeInputSurfaceAuthority())
+        emu->onMouseRelease(event);
 
     if (m_stylusDirectAimMouseButton != Qt::NoButton
         && event->button() == m_stylusDirectAimMouseButton)
@@ -1230,7 +1278,8 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         return;
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__)
-    emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
+    if (isMelonPrimeInputSurfaceAuthority())
+        emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
 #endif
 
 #include "MelonPrimeHudScreenCppMouseMove.inc"
@@ -1239,7 +1288,8 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     // One immutable runtime snapshot per Qt mouse event. Reuse it for both the
     // platform aim route and Stylus Mode pointer publication below.
     auto* const thread = emu->getEmuThread();
-    auto* const core = thread ? thread->GetMelonPrimeCore() : nullptr;
+    auto* const core = isMelonPrimeInputSurfaceAuthority() && thread
+        ? thread->GetMelonPrimeCore() : nullptr;
     const auto ui = core ? core->ThreadBridge().ReadForGui()
                          : MelonPrime::MelonPrimeUiSnapshot{};
 #endif
@@ -3836,7 +3886,7 @@ void ScreenPanel::unfocus()
     auto* thread = emu ? emu->getEmuThread() : nullptr;
     auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;
 
-    if (core)
+    if (core && isMelonPrimeInputSurfaceAuthority())
         core->ThreadBridge().SetFocusedFromGui(false);
 
     if (m_stylusDirectAimCaptureHeld) {
@@ -3866,8 +3916,10 @@ void ScreenPanel::unfocus()
 
 void ScreenPanel::focusInEvent(QFocusEvent * event)
 {
-    if (auto* core = melonPrimeCore())
-        core->ThreadBridge().SetFocusedFromGui(true);
+    if (isMelonPrimeInputSurfaceAuthority()) {
+        if (auto* core = melonPrimeCore())
+            core->ThreadBridge().SetFocusedFromGui(true);
+    }
 #if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
     updateClipIfNeeded();
 #endif
@@ -3905,12 +3957,16 @@ void ScreenPanel::moveEvent(QMoveEvent * e) {
 
 __attribute__((always_inline)) inline void ScreenPanel::setClipWanted(bool value)
 {
-    if (auto* core = melonPrimeCore())
-        core->ThreadBridge().SetCaptureWantedFromGui(value);
+    if (isMelonPrimeInputSurfaceAuthority()) {
+        if (auto* core = melonPrimeCore())
+            core->ThreadBridge().SetCaptureWantedFromGui(value);
+    }
 }
 
 __attribute__((always_inline)) inline bool ScreenPanel::getClipWanted() const
 {
+    if (!isMelonPrimeInputSurfaceAuthority())
+        return false;
     if (auto* core = melonPrimeCore())
         return core->ThreadBridge().ReadForGui().captureWanted;
     return false;

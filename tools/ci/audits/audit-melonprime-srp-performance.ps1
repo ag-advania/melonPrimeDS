@@ -897,14 +897,11 @@ $absExchange = $linuxRawText.IndexOf('absBaseInvalid.exchange', [System.StringCo
 if ($absLoad -lt 0 -or $absExchange -lt 0 -or $absLoad -gt $absExchange) {
     Add-Error 'Rule L2: Linux absBaseInvalid must load before its rare exchange claim'
 }
-if ($linuxRawText -match 'acc[XY]\.fetch_add\s*\(') {
-    Add-Error 'Rule L2: Linux single-writer raw accumulators must not use fetch_add'
-}
-foreach ($axis in @('X', 'Y')) {
-    if ($linuxRawText -notmatch "acc$axis\.load\s*\(std::memory_order_relaxed\)" -or
-        $linuxRawText -notmatch "acc$axis\.store\s*\([^;]+std::memory_order_release\)") {
-        Add-Error "Rule L2: Linux acc$axis lost single-writer load/store publication"
-    }
+if ($linuxRawText -match '(?:acc[XY]|total)\.fetch_add\s*\(' -or
+    $linuxRawText -notmatch 'std::atomic<uint64_t>\s+total' -or
+    $linuxRawText -notmatch 'total\.load\s*\(std::memory_order_relaxed\)' -or
+    $linuxRawText -notmatch 'total\.store\s*\(') {
+    Add-Error 'Rule L2: Linux raw motion must use one packed single-writer load/store publication'
 }
 $linuxAccumulateBody = Get-FunctionText -Path $linuxRawPath `
     -Signature 'void\s+AccumulateRawMotion\s*\('
@@ -1153,7 +1150,7 @@ if ($linuxRawText -notmatch 'lastSourceState' -or
     Add-Error 'Rule S: Linux common-source cache or X/Y-only packed decode is missing'
 }
 $controllerSampleAt = if ($lateJoystickBody) {
-    $lateJoystickBody.IndexOf('bindingDown[i] = joystickButtonDown', [System.StringComparison]::Ordinal)
+    $lateJoystickBody.IndexOf('SDL_JoystickGetButton', [System.StringComparison]::Ordinal)
 } else { -1 }
 $controllerUnlockAt = if ($lateJoystickBody -and $controllerSampleAt -ge 0) {
     $lateJoystickBody.IndexOf('SDL_UnlockMutex(joyMutex.get())', $controllerSampleAt, [System.StringComparison]::Ordinal)
@@ -1182,21 +1179,123 @@ $mouseSyncBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::syncMouseHotkeysFromQtButtons\s*\('
 if (-not $mouseSyncBody -or
     $mouseSyncBody -notmatch 'mouseButtonMasks' -or
-    $mouseSyncBody -match 'HK_MAX|hkKeyMapping') {
+    $mouseSyncBody -match 'HK_MAX|hkKeyMapping' -or
+    $mouseSyncBody -notmatch 'staleInput' -or
+    $mouseSyncBody -notmatch 'staleHotkeys') {
     Add-Error 'Rule U: mouse-move release recovery must consume cold-precomputed fixed masks'
 }
 
 # Rule V: GUI level publications and input-generation publication are changed-only.
-foreach ($setter in @('SetPanelAvailableFromGui', 'PublishCenterFromGui', 'PublishWindowHandleFromGui')) {
+foreach ($setter in @('PublishCenterFromGui', 'PublishWindowHandleFromGui', 'PublishStylusPointerFromGui')) {
     $setterBody = Get-FunctionText -Path $threadBridgePath -Signature "$setter\s*\("
     if (-not $setterBody -or $setterBody -notmatch '\.load\s*\(' -or
         $setterBody -notmatch '\.store\s*\(') {
         Add-Error "Rule V: $setter must skip unchanged GUI publications"
     }
 }
+if ($threadBridgeText -notmatch 'SetGuiInputPolicyBit' -or
+    $threadBridgeText -notmatch 'm_guiInputPolicyShadow') {
+    Add-Error 'Rule V: focused/capture/panel policy must use one changed-only GUI publication'
+}
 if ($updateInputBody -notmatch 'm_publishedInputGeneration' -or
     $updateInputBody -notmatch 'SetInputGenerationFromEmu') {
     Add-Error 'Rule V: Core must cache input-generation publication'
+}
+
+# Rule W: GUI event presses survive a sub-frame tap and only normal frames claim them.
+if ($emuInstanceHeaderText -notmatch 'std::atomic<uint64_t>\s+qtGameplayPressPending' -or
+    $emuInstanceInputText -notmatch 'qtGameplayPressPending\.fetch_or' -or
+    $emuInstanceInputText -notmatch 'isAutoRepeat\s*\(\)' -or
+    $updateInputBody -notmatch 'qtGameplayPressPending\.exchange' -or
+    $updateInputBody -notmatch 'if constexpr\s*\(!kReentrant\)') {
+    Add-Error 'Rule W: Qt gameplay event-edge mailbox/autorepeat/reentrant contract is incomplete'
+}
+
+# Rule X: panel reset readers commit only generation-stable snapshots.
+$panelReadBody = Get-FunctionText -Path $threadBridgePath `
+    -Signature 'void\s+getAimMouseDelta\s*\('
+if (-not $panelReadBody -or
+    $panelReadBody -notmatch 'generationBefore' -or
+    $panelReadBody -notmatch 'generationAfter' -or
+    $panelReadBody -notmatch 'generationBefore\s*==\s*generationAfter') {
+    Add-Error 'Rule X: panel aim consumer lost its stable-generation retry'
+}
+
+# Rule Y: GCMouse claims before handler install and drains before releasing IOHID.
+$gcStartBody = Get-FunctionText -Path $macRawPath -Signature 'bool\s+StartGC\s*\('
+$gcStopBody = Get-FunctionText -Path $macRawPath -Signature 'void\s+StopGC\s*\('
+if (-not $gcStartBody -or
+    $gcStartBody -notmatch 'dispatch_queue_set_specific' -or
+    $gcStartBody -notmatch 'gcProducerEnabled' -or
+    $gcStartBody -notmatch 'backendBits\.fetch_or[\s\S]*AttachGCMouse' -or
+    $gcStartBody -notmatch 'mouseMovedHandler\s*=\s*nil[\s\S]*dispatch_async[\s\S]*backendBits\.fetch_and') {
+    Add-Error 'Rule Y: macOS GC/HID connect/disconnect ownership transaction is incomplete'
+}
+if (-not $gcStopBody -or
+    $gcStopBody -notmatch 'DispatchGcSync' -or
+    $gcStopBody -notmatch 'backendBits\.fetch_and') {
+    Add-Error 'Rule Y: macOS shutdown must drain the GC queue before releasing ownership'
+}
+
+# Rule Z: one primary ScreenPanel owns every shared input-surface publication.
+$screenText = Get-Content -LiteralPath $screen -Raw
+$windowText = Get-Content -LiteralPath (Join-Path $qtSdl 'Window.cpp') -Raw
+if ($screenText -notmatch 'isMelonPrimeInputSurfaceAuthority' -or
+    $screenText -notmatch 'emuInstance->getMainWindow\(\)\s*==\s*mainWindow' -or
+    $windowText -notmatch 'inputSurfaceAuthority' -or
+    $windowText -notmatch 'emuInstance->getMainWindow\(\)\s*==\s*this') {
+    Add-Error 'Rule Z: per-EmuInstance primary input-surface authority guard is incomplete'
+}
+
+# Rule AA: remaining accepted P2 reductions stay data-oriented and allocation-free.
+$mousePressBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::onMousePress\s*\('
+$mouseReleaseBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::onMouseRelease\s*\('
+$setJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::setJoystick\s*\('
+$inputLoadBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::inputLoadConfig\s*\('
+if ($emuInstanceHeaderText -notmatch 'joystickPhysicalSources' -or
+    $emuInstanceHeaderText -notmatch 'joystickFanoutRules' -or
+    $lateJoystickBody -notmatch 'joystickPhysicalSourceCount' -or
+    $lateJoystickBody -notmatch 'joystickFanoutRuleCount') {
+    Add-Error 'Rule AA: controller mappings must compile to unique physical sources plus fanout rules'
+}
+foreach ($mouseBody in @($mousePressBody, $mouseReleaseBody)) {
+    if (-not $mouseBody -or $mouseBody -notmatch 'mouseButtonMasks' -or
+        $mouseBody -match 'HK_MAX|hkKeyMapping') {
+        Add-Error 'Rule AA: tracked mouse press/release must reuse cold-precomputed masks'
+    }
+}
+if (-not $setJoystickBody -or $setJoystickBody -notmatch 'setJoystickLocked' -or
+    -not $inputLoadBody -or $inputLoadBody -notmatch 'setJoystickLocked' -or
+    $inputLoadBody -match '(?s)setJoystick\s*\(') {
+    Add-Error 'Rule AA: joystick selection must use a locked helper without recursive mutex entry'
+}
+
+# Rule AB: owner/source resolution, packed Linux totals, UI result reuse and GUI revision gate.
+$platformInputPath = Join-Path $qtSdl 'MelonPrimePlatformInput.h'
+$platformInputText = Get-Content -LiteralPath $platformInputPath -Raw
+$melonPrimeCppText = Get-Content -LiteralPath (Join-Path $qtSdl 'MelonPrime.cpp') -Raw
+if ($platformInputText -notmatch 'bool\s+resolvedOwner' -or
+    $platformInputText -match 'PlatformInputOwnerService::IsOwner\s*\(') {
+    Add-Error 'Rule AB: Aim source resolution must reuse the owner result from this frame'
+}
+if ($linuxRawText -notmatch 'is_always_lock_free' -or
+    $linuxRawText -notmatch 'std::atomic<uint64_t>\s+total' -or
+    $linuxRawText -match 'std::atomic<int64_t>\s+acc[XY]') {
+    Add-Error 'Rule AB: Linux raw X/Y must use one lock-free packed cumulative total'
+}
+if ($melonPrimeCppText -match 'PlatformInput_IsRuntimeRawAimActive' -or
+    $gameInputText -notmatch 'm_rawAimActiveThisFrame\s*=\s*resolvedAim\.rawActive') {
+    Add-Error 'Rule AB: UI raw-active state must reuse the frame Aim resolution result'
+}
+if ($threadBridgeText -notmatch 'std::atomic<uint32_t>\s+m_guiInputPolicy' -or
+    $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_guiWorkRevision' -or
+    $screenText -notmatch 'GuiWorkRevisionForGui' -or
+    $screenText -notmatch 'm_melonPrimeGuiRevisionSeen') {
+    Add-Error 'Rule AB: GUI policy packing or revision-driven reconciliation is incomplete'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

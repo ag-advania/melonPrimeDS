@@ -374,6 +374,7 @@ private:
     // joyMutex must be held. These are the sole device lifetime writers.
     void openJoystick();
     void closeJoystick();
+    void setJoystickLocked(int id);
     bool joystickButtonDown(int val);
 
     void inputProcess();
@@ -529,9 +530,23 @@ private:
         uint64_t hotkeyPressed = 0;
     };
 
-    struct ActiveJoystickBinding
+    enum class JoystickSourceKind : uint8_t
     {
-        int binding = -1;
+        Button,
+        Hat,
+        Axis,
+    };
+
+    struct JoystickPhysicalSource
+    {
+        JoystickSourceKind kind = JoystickSourceKind::Button;
+        uint16_t index = 0;
+    };
+
+    struct JoystickFanoutRule
+    {
+        uint8_t sourceIndex = 0;
+        uint8_t predicate = 0;
         uint16_t inputBits = 0;
         uint64_t hotkeyBits = 0;
     };
@@ -567,9 +582,12 @@ private:
     // EmuThread remains the sole writer of every gameplay-derived mask above.
     std::atomic_bool joystickGameplayResetPending{false};
     uint8_t joystickLifecycleCheckCounter = 0;
-    ActiveJoystickBinding activeJoystickBindings[HK_MAX + 12]{};
-    uint8_t activeJoystickBindingCount = 0;
+    JoystickPhysicalSource joystickPhysicalSources[2 * (HK_MAX + 12)]{};
+    JoystickFanoutRule joystickFanoutRules[2 * (HK_MAX + 12)]{};
+    uint8_t joystickPhysicalSourceCount = 0;
+    uint8_t joystickFanoutRuleCount = 0;
     MouseButtonBindingMask mouseButtonMasks[5]{};
+    std::atomic<uint64_t> qtGameplayPressPending{0};
     // Bits latched by onMouseWheel(); cleared after edge detection so the
     // virtual key is a one-frame press rather than a held button.
     std::atomic<uint64_t> wheelHotkeyPulseMask{0};

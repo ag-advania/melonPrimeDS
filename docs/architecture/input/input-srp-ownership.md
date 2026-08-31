@@ -22,9 +22,10 @@ invalidate that responsibility's internal state.
 | platform relative delta / Raw Input edge and wheel acquisition | platform filter plus `MelonPrimeInputSubscription` | platform owner and registration-generation transaction | `UpdateInputStateImpl` | per event plus one frame snapshot | Critical: single-writer atomics and generation ordering are load-bearing |
 | SDL controller lifetime and capability state | `EmuInstance::openJoystick` / `closeJoystick` under `joyMutex` | physical owner publishes `joystickGameplayResetPending` only | early lifecycle check and late guest-frame sample | lifecycle edge; attach probe once per 60 outer frames | High: GUI/config writers never mutate gameplay-derived masks |
 | late SDL gameplay snapshot | EmuThread `inputRefreshJoystickState` / `resetLateJoystickGameplayState` | EmuThread consumes reset publication and owns the edge baseline | MelonPrime gameplay projection only | once immediately before `RunFrameHook` | Critical: reentrant samples refresh held state but never commit the press baseline |
-| active joystick binding table | `EmuInstance::inputLoadConfig` | config reload/device rebind | early and late SDL sampling | cold rebuild, bounded active-only scan per sample | High: fixed storage; no hot mapping-table scan or allocation |
-| Qt gameplay held/edge projection | GUI atomics plus `UpdateInputStateImpl` edge cursor | GameInput lifecycle profiles rebaseline it | MelonPrime gameplay projection only | normal guest-frame late latch | Critical: reentrant frames do not advance it; wheel bits come only from the generation mailbox |
-| Qt panel aim cumulative total | GUI-thread `AddPanelAimDeltaFromGui` | GUI publishes boundary+generation; emulation thread alone owns cursor+seen generation | non-raw Aim fallback | per Qt event plus one frame snapshot | Critical: packed single-writer load/store, no shared multiwriter baseline |
+| compiled joystick sources/fanout | `EmuInstance::inputLoadConfig` | config reload/device rebind | late SDL sampling | cold rebuild; unique physical sources sampled once | High: fixed storage; direction predicates and mask fanout run outside the mutex |
+| Qt gameplay held/edge projection | GUI level atomics plus `qtGameplayPressPending`; normal `UpdateInputStateImpl` is sole consumer | GameInput lifecycle profiles clear/rebaseline it | MelonPrime gameplay projection only | event publication plus normal guest-frame late claim | Critical: sub-frame taps survive; reentrant frames never claim; wheel stays on its generation mailbox |
+| Qt panel aim cumulative total | GUI-thread `AddPanelAimDeltaFromGui` | GUI publishes boundary+generation; emulation thread alone owns cursor+seen generation | non-raw Aim fallback | per Qt event plus one stable frame snapshot | Critical: generation-before/after retry prevents reset replay/duplication |
+| input-surface snapshot | primary `MainWindow`/`ScreenPanel` for one `EmuInstance` | primary close/focus/capture lifecycle | owner selection, Aim center/HWND, cursor GUI | GUI edges plus per-frame read | High: secondary presentation windows cannot publish or clear shared authority |
 | DS movement/button projection | `ProcessMoveAndButtonsFastImpl` | per-frame `InputReset` | DS input mask | active frame and reentrant frame | Critical: direct fixed lookup and one mask store |
 | Aim config-derived Q14 values | Aim configuration section in `MelonPrimeGameInput.cpp` | `ApplyAimRuntimeConfig`, `RecalcAimFixedPoint` | `ProcessAimInputMouse`, native aim hook fragments | config / sensitivity hotkey only | Critical: fixed values stay beside residuals; no per-frame float work |
 | Aim residuals and native delivery deltas | Aim state machine and aim hook unity fragments in `MelonPrimeGameInput.cpp` | `ResetAimTransientState` and Aim-owned transition paths | Aim state machine and hook dispatch | per active aim frame; lifecycle reset | Critical: current hot scalar cluster is load-bearing; no pointer owner or PIMPL |
@@ -59,9 +60,10 @@ the physical fields in each profile.
 | `GameJoin` | immediate overlay, direct transform, native Biped Fire, weapon and Direct Invocation requests |
 | `SavestateLoad` | Aim transient delivery plus every overlay and pending request above |
 
-Every profile also invalidates the Qt gameplay edge baseline, so the first
-normal guest-frame snapshot establishes held state without a phantom press.
-Reentrant FrameAdvance never clears or advances that baseline.
+Every profile also invalidates the Qt gameplay level baseline and clears the
+event-edge mailbox. A real GUI press publishes a pending edge even if release
+occurs before the next guest frame. Reentrant FrameAdvance neither clears nor
+claims that edge.
 
 The remaining asymmetry is intentional behavior preservation. In particular, architecture
 cleanup must not widen `EmuStart` or `EmuStop` without a dedicated behavior
@@ -97,7 +99,7 @@ The following stay off the steady-state input path:
 - ROM detection metadata preparation;
 - heap allocation and growing containers;
 - virtual, `std::function`, function-table or string dispatch;
-- new mutexes or atomics;
+- unbounded queues, generic per-action atomics, or steady locked RMWs;
 - device enumeration and unconditional OS polling;
 - diagnostic formatting.
 
@@ -120,33 +122,39 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
 - non-Windows acquisition resolves and caches the frame's warp decision once;
   `ProcessAimInputMouse` uses that scalar. GCMouse/raw steady state emits no
   `GuiRequestRecenter` from capture-wanted alone.
-- Linux RawMotion has one accumulator writer. The filter thread publishes
-  `load(relaxed) + store(release)` while the emulation thread only loads and
-  advances a per-subscription cursor; no event-level `fetch_add` is needed.
+- Linux RawMotion has one accumulator writer. A lock-free packed 64-bit total
+  publishes modulo-32-bit X/Y with one `load(relaxed) + store(release)` per
+  nonzero event; the frame reader uses one acquire and wrap-safe subtraction.
 - SDL physical lifetime has one mutex-held owner, while gameplay-derived state
   has one EmuThread owner. GUI rebind/close only publishes an atomic reset
   request. The guest-frame late sample updates held state immediately before
   `RunFrameHook`; only a normal frame commits the press baseline. The audited
   repository-wide reference scan found no late-release consumer, so that
   derived field and its per-frame computation are not retained.
-- Joystick sampling walks the fixed active-binding table built on config load;
-  duplicate physical bindings are sampled once and fan out to their DS/hotkey
-  masks without allocation.
-- GCMouse callbacks are assigned to one serial `handlerQueue`; IOHID events stay
-  on their worker runloop. Each backend has its own packed cumulative total;
-  one atomic backend bitset uses `fetch_or`/`fetch_and`, so concurrent lifecycle
-  transitions cannot lose availability state.
-- Qt panel aim has one GUI writer and one emulation-thread cursor. GUI reset
-  publishes cumulative boundary then generation; Emu reset changes only its
-  cursor and seen generation, so motion after a GUI boundary remains visible.
+- Joystick sampling walks fixed physical-source and fanout tables built on
+  config load. Each unique SDL button/hat/axis is fetched once under the mutex;
+  direction predicates and DS/hotkey mask assembly run after unlock.
+- GCMouse callbacks and ownership transitions share one serial `handlerQueue`.
+  Connect claims `BackendGc` before handler install; disconnect removes the
+  handler, drains queued callbacks, clears the queue-local producer gate, then
+  releases IOHID. Each backend retains its own packed cumulative total.
+- Qt panel aim has one GUI writer and one emulation-thread cursor. Both consumer
+  read and discard paths retry until generation is stable around the total, so
+  a concurrent GUI reset cannot replay motion or move the cursor backward.
 - rare config, cursor-mode, and wheel consumers load the empty sentinel before
   their exchange claim. A producer racing an empty load remains pending for the
   next normal frame. Wheel generation-only publications are nonzero and are
   still claimed at their boundary.
 - wheel-up/down hotkey masks are projected in `EmuInstance::inputLoadConfig`;
   neither the Windows raw wheel path nor the Qt wheel pulse path scans `HK_MAX`.
-- mouse-button lost-release recovery uses five cold-precomputed input/hotkey
-  masks; the mouse-move event path does not scan mapping tables.
+- tracked mouse press/release and lost-release recovery share five
+  cold-precomputed masks. Normal movement performs only load-first stale tests;
+  correcting RMWs occur solely when a lost release left a bit set.
+- focused/capture/panel policy is one packed changed-only GUI publication;
+  stylus publication is changed-only too. GUI reconciliation uses a work
+  revision, so steady raw Aim draw calls stop before CAS/queued invocation.
+- non-Windows Aim resolves process ownership once and carries source,
+  raw-active, and warp policy in one frame result reused by Aim and UI.
 
 ## Frame-order contract
 
@@ -183,7 +191,10 @@ and cold wheel-mask projection. Rules O-S additionally pin controller lifecycle
 ownership and reentrant late-edge isolation, macOS producer serialization and
 availability, packed bridge publications, and the Linux common-source/X-Y
 decode fast path. Rules T-V pin post-limiter ordering, fixed-mask mouse release
-recovery, and changed-only bridge publications. The Savestate contract additionally pins the
+recovery, and changed-only bridge publications. Rules W-AB pin event-edge
+conservation, stable reset snapshots, serialized macOS handoff, primary input
+surface authority, physical-source controller compilation, packed Linux totals,
+frame-result reuse, and revision-driven GUI reconciliation. The Savestate contract additionally pins the
 next-normal-frame reconciliation and the full input reset profile.
 
 A compile/static pass is not a runtime latency claim. Changes to Aim arithmetic,

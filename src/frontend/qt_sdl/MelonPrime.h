@@ -896,6 +896,7 @@ namespace MelonPrime {
         // advances read held state but never commit these fields.
         uint64_t m_qtGameplayHotkeyPrevious = 0;
         bool     m_qtGameplayEdgeNeedsBaseline = true;
+        bool     m_rawAimActiveThisFrame = false;
 #if !defined(_WIN32)
         bool     m_warpCursorAfterAimThisFrame = false;
 #endif

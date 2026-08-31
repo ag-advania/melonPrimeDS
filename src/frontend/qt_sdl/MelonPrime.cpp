@@ -165,15 +165,13 @@ namespace MelonPrime {
 
     void MelonPrimeCore::PublishUiSnapshot() noexcept
     {
-        const bool rawAimActive = PlatformInput_IsRuntimeRawAimActive(
-            MELONPRIME_RAW_FILTER_PTR(this), m_inputSubscription);
         m_threadBridge.PublishRuntimeFromEmu(
             isCursorMode,
             isStylusMode,
             m_flags.test(StateFlags::BIT_IN_GAME),
             m_flags.test(StateFlags::BIT_ROM_DETECTED),
             isFastForward,
-            rawAimActive,
+            m_rawAimActiveThisFrame,
             screenSyncMode);
     }
 

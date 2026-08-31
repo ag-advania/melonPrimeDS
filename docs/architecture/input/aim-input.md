@@ -458,8 +458,9 @@ Current implementation:
   (`ScreenPanel::getAimMouseDelta()`) is authoritative **even when zero** (falling through to
   `QCursor::pos() - center` would drift now that the cursor is not recentered every event).
 - The Qt accumulator is a packed cumulative total with one GUI-thread writer and an
-  emulation-thread cursor. Reset stores a separate cumulative boundary instead of clearing the
-  producer total; motion arriving after the request and before the next frame is therefore kept.
+  emulation-thread cursor. Reset stores a separate cumulative boundary and then a generation.
+  The consumer retries until the generation is stable around its total snapshot, preventing a
+  racing reset from replaying or double-counting motion.
 - `ScreenPanel::mouseMoveEvent` (Linux aim frames):
   - raw mode → containment only: invalidate the fallback baseline and warp back to center when
     the hidden cursor strays >96px (warping every event fights VBox's re-sync and storms events);
@@ -497,9 +498,10 @@ RawMotion parsing rules:
   unusual devices, but normal mouse devices should hit the explicit axis 0/1 path.
 - The filter captures only relative motion. Buttons and keyboard state remain owned by Qt/SDL
   hotkey handling to avoid double press edges.
-- The XInput filter thread is the only writer of `accX/accY`; emulation threads only acquire-load
-  them and maintain separate subscription cursors. The writer therefore uses relaxed load plus
-  release store rather than an event-level locked `fetch_add`.
+- The XInput filter thread is the only writer of one lock-free packed cumulative X/Y total;
+  emulation threads acquire-load it once and maintain separate subscription cursors. The writer
+  uses relaxed load plus release store rather than an event-level locked `fetch_add`, and modulo
+  32-bit subtraction preserves deltas across wrap.
 - `absBaseInvalid` is a rare producer flag. RawMotion first performs a relaxed load and only a
   true observation reaches the acquire/release exchange claim. `receivedMotion` likewise
   publishes only its first false-to-true session edge.
@@ -556,14 +558,19 @@ The frame reader acquire-loads the independent GCMouse and IOHID totals, sums ea
 without making the two event sources writers of one shared accumulator. Backend
 availability is one atomic bitset (`BackendGc`, `BackendHid`): rare lifecycle
 transitions use `fetch_or`/`fetch_and`, preventing a concurrent GC connect and
-HID close from overwriting each other's state.
+HID close from overwriting each other's state. GCMouse connect claims the bit
+before handler installation. Disconnect removes the handler and drains its
+serial queue before clearing the queue-local producer gate and ownership bit,
+so IOHID and GC cannot overlap during handoff.
 
 Stuck-click recovery (2026-07-04, trackpad report): `EmuInstance::syncMouseHotkeysFromQtButtons()`
 clears mouse-mapped hotkey bits when `QGuiApplication::mouseButtons()` shows the button physically
 up but a release event was lost. Called from `ScreenPanel` on macOS during press, move, and
 `unfocus()` (which also releases a stuck DS touch via `releaseScreen()`). The
 five supported mouse-button masks are precomputed on config load, so this
-mouse-move recovery path performs fixed mask operations without mapping scans. See
+mouse-move recovery path performs fixed mask operations without mapping scans.
+It load-checks for actually stale bits before issuing a correcting atomic RMW,
+so ordinary high-rate movement performs no locked mask update. See
 [../../archive/investigations/input/click-handling.md](../../archive/investigations/input/click-handling.md) § "macOS trackpad stuck-click fix".
 
 Troubleshooting:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Source and state-model contract for the post-a3675e28 input audit."""
+"""Source and state-model contract for the post-f660026d input audit."""
 
 from __future__ import annotations
 
@@ -76,6 +76,103 @@ def check_panel_cumulative_model() -> None:
         seen_generation = reset_generation
     assert (total[0] - cursor[0], total[1] - cursor[1]) == (3, -2)
 
+    # The stable reader retries whenever a reset generation changes around
+    # its total snapshot. Exercise the five meaningful race positions.
+    def stable_read(race: str) -> int:
+        total_value = 12
+        boundary = 10
+        generation = 0
+        seen = 0
+        local_cursor = 4
+        fired = False
+        while True:
+            if race == "before_g1" and not fired:
+                generation = 1
+                fired = True
+            g1 = generation
+            if g1 != seen:
+                local_cursor = boundary
+                seen = g1
+            if race == "after_g1" and not fired:
+                generation = 1
+                fired = True
+            current = total_value
+            if race == "after_total" and not fired:
+                generation = 1
+                fired = True
+            g2 = generation
+            if race == "after_g2" and not fired:
+                generation = 1
+                fired = True
+            if g1 == g2:
+                return current - local_cursor
+
+    assert stable_read("before_g1") == 2
+    assert stable_read("after_g1") == 2
+    assert stable_read("after_total") == 2
+    # A reset published after the completed snapshot applies next time; the
+    # already returned pre-reset delta is not replayed by this read.
+    assert stable_read("after_g2") == 8
+    assert stable_read("none") == 8
+
+
+def check_qt_event_edge_model() -> None:
+    pending = 0
+
+    def publish(bits: int, auto_repeat: bool = False) -> None:
+        nonlocal pending
+        if not auto_repeat:
+            pending |= bits
+
+    def snapshot(reentrant: bool) -> int:
+        nonlocal pending
+        if reentrant:
+            return 0
+        claimed = pending
+        pending = 0
+        return claimed
+
+    publish(0b0010)  # press; release changes only the level snapshot
+    assert snapshot(False) == 0b0010
+    assert snapshot(False) == 0
+    publish(0b0100)
+    assert snapshot(True) == 0
+    assert snapshot(False) == 0b0100
+    publish(0b1000, auto_repeat=True)
+    assert snapshot(False) == 0
+
+
+def check_packed_wrap_model() -> None:
+    previous_x = 0xFFFFFFFE
+    current_x = (previous_x + 5) & 0xFFFFFFFF
+    delta = (current_x - previous_x) & 0xFFFFFFFF
+    assert delta == 5
+
+
+def check_mac_handoff_model() -> None:
+    gc_owner = False
+    gc_handler_live = False
+    gc_producer_enabled = False
+
+    # Connect transaction: IOHID is excluded before GC can publish.
+    gc_owner = True
+    gc_producer_enabled = True
+    gc_handler_live = True
+    assert not (gc_handler_live and not gc_owner)
+
+    # Disconnect removes new enqueue first. A previously queued callback may
+    # finish while GC still owns production; after the drain transaction, a
+    # late callback is rejected and IOHID may resume.
+    gc_handler_live = False
+    queued_gc_published = gc_owner and gc_producer_enabled
+    gc_producer_enabled = False
+    gc_owner = False
+    late_gc_published = gc_owner and gc_producer_enabled
+    hid_allowed = not gc_owner
+    assert queued_gc_published
+    assert not late_gc_published
+    assert hid_allowed
+
 
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
@@ -85,6 +182,9 @@ def main() -> None:
     bridge = source("src/frontend/qt_sdl/MelonPrimeThreadBridge.h")
     mac = source("src/frontend/qt_sdl/MelonPrimeRawInputMacFilter.mm")
     linux = source("src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.cpp")
+    platform = source("src/frontend/qt_sdl/MelonPrimePlatformInput.h")
+    screen = source("src/frontend/qt_sdl/Screen.cpp")
+    window = source("src/frontend/qt_sdl/Window.cpp")
 
     process = body(input_cpp, "void EmuInstance::inputProcess()", "#ifdef MELONPRIME_DS\n// ===")
     late = body(
@@ -105,7 +205,9 @@ def main() -> None:
 
     require(header, "struct LateJoystickSnapshot", "late snapshot storage")
     require(header, "joystickLifecycleCheckCounter", "per-instance cadence")
-    require(header, "activeJoystickBindings[HK_MAX + 12]", "fixed binding table")
+    require(header, "joystickPhysicalSources[2 * (HK_MAX + 12)]", "fixed physical-source table")
+    require(header, "joystickFanoutRules[2 * (HK_MAX + 12)]", "fixed fanout table")
+    require(header, "qtGameplayPressPending", "Qt event edge mailbox")
     if "static uint8_t" in process or "static uint8_t" in late:
         raise AssertionError("controller lifecycle cadence must not be function-static")
     if "SDL_JoystickClose" in process or "SDL_JoystickClose" in late:
@@ -130,11 +232,13 @@ def main() -> None:
         raise AssertionError("unconsumed late joystick release state reappeared")
     require(process, "joystickGameplayResetPending.load", "reset load-first claim")
     require(process, "joystickGameplayResetPending.exchange", "reset claim")
+    require(input_cpp, "setJoystickLocked", "non-recursive joystick helper")
 
-    require(late, "i < activeJoystickBindingCount", "active-only late scan")
+    require(late, "i < joystickPhysicalSourceCount", "unique physical-source sample")
+    require(late, "i < joystickFanoutRuleCount", "compiled fanout projection")
     if "i < HK_MAX" in late or "i < 12" in late:
         raise AssertionError("late poll regressed to full mapping scan")
-    sample_at = late.index("bindingDown[i] = joystickButtonDown")
+    sample_at = late.index("SDL_JoystickGetButton")
     unlock_at = late.index("SDL_UnlockMutex(joyMutex.get())", sample_at)
     assembly_at = late.index("uint16_t nextInputMask", unlock_at)
     if not sample_at < unlock_at < assembly_at:
@@ -150,6 +254,7 @@ def main() -> None:
     if "keyHotkeyPress" in header or "lastKeyHotkeyMask" in header:
         raise AssertionError("early Qt gameplay edge baseline reappeared")
     require(game_input, "qtGameplayPressed", "late Qt gameplay edge")
+    require(game_input, "qtGameplayPressPending.exchange", "normal-frame event claim")
     require(game_input, "m_qtGameplayHotkeyPrevious", "Qt gameplay baseline")
     require(game_input, "& ~qtWheelMask", "wheel exclusion from Qt level edge")
     require(
@@ -179,6 +284,10 @@ def main() -> None:
     if "m_panelAimX" in bridge or "m_panelAimY" in bridge:
         raise AssertionError("panel aim regressed from packed cumulative total")
     require(bridge, "ResetPanelAimDeltaFromEmu", "split Emu reset owner")
+    require(bridge, "generationBefore == generationAfter", "stable reset snapshot")
+    require(bridge, "m_guiInputPolicy", "coherent GUI input policy")
+    require(bridge, "m_guiWorkRevision", "edge-driven GUI reconciliation")
+    require(bridge, "m_stylusPointer.load(std::memory_order_relaxed)", "changed-only stylus publication")
 
     for needle in (
         "DISPATCH_QUEUE_SERIAL",
@@ -189,6 +298,9 @@ def main() -> None:
         "std::atomic<uint32_t> backendBits",
         "backendBits.fetch_or",
         "backendBits.fetch_and",
+        "dispatch_queue_set_specific",
+        "DispatchGcSync",
+        "gcProducerEnabled",
     ):
         require(mac, needle, "macOS serialized producer")
     if ".fetch_add(" in mac:
@@ -200,10 +312,23 @@ def main() -> None:
     require(linux, "lastSourceState", "Linux common-source cache")
     require(linux, "std::min(2, raw->valuators.mask_len * 8)", "Linux X/Y decode bound")
     require(linux, "receivedMotionPublished", "Linux first-motion thread shadow")
+    require(linux, "std::atomic<uint64_t> total", "Linux packed cumulative total")
+    if "std::atomic<int64_t> accX" in linux or "std::atomic<int64_t> accY" in linux:
+        raise AssertionError("Linux split X/Y accumulators reappeared")
+    require(platform, "bool resolvedOwner", "single owner resolution")
+    if "PlatformInputOwnerService::IsOwner(" in platform:
+        raise AssertionError("Aim source resolver re-read the process owner")
+    require(game_input, "m_rawAimActiveThisFrame = resolvedAim.rawActive", "frame result reuse")
+    require(screen, "isMelonPrimeInputSurfaceAuthority", "primary surface guard")
+    require(window, "inputSurfaceAuthority", "primary keyboard authority")
+    require(screen, "GuiWorkRevisionForGui", "draw-side revision gate")
 
     check_state_model()
     check_panel_cumulative_model()
-    print("post-a3675e28 input contract: PASS")
+    check_qt_event_edge_model()
+    check_packed_wrap_model()
+    check_mac_handoff_model()
+    print("post-f660026d input contract: PASS")
 
 
 if __name__ == "__main__":

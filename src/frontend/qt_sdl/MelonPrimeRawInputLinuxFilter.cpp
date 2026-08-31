@@ -51,8 +51,9 @@ void LinuxWarpCursorGlobal(int x, int y)
 
 struct LinuxRawInputFilter::Impl
 {
-    std::atomic<int64_t> accX{ 0 };
-    std::atomic<int64_t> accY{ 0 };
+    static_assert(std::atomic<uint64_t>::is_always_lock_free,
+        "Linux packed raw-motion publication requires lock-free uint64 atomics");
+    std::atomic<uint64_t> total{ 0 };
     std::atomic<bool>    available{ false };
     std::atomic<bool>    receivedMotion{ false };
     std::atomic<bool>    quit{ false };
@@ -60,6 +61,22 @@ struct LinuxRawInputFilter::Impl
     bool receivedMotionPublished = false;
 
     std::thread thread;
+
+    static uint64_t PackTotals(uint32_t x, uint32_t y) noexcept
+    {
+        return static_cast<uint64_t>(x)
+            | (static_cast<uint64_t>(y) << 32);
+    }
+
+    static uint32_t TotalX(uint64_t packed) noexcept
+    {
+        return static_cast<uint32_t>(packed);
+    }
+
+    static uint32_t TotalY(uint64_t packed) noexcept
+    {
+        return static_cast<uint32_t>(packed >> 32);
+    }
 
     static bool TestBit(const unsigned char* mask, int bit)
     {
@@ -225,16 +242,15 @@ struct LinuxRawInputFilter::Impl
             receivedMotion.store(true, std::memory_order_release);
             receivedMotionPublished = true;
         }
-        // Single writer: only this filter thread mutates the accumulators;
-        // emulation threads keep per-subscription cursors and only load them.
-        // load+store avoids a locked xadd on every high-polling event.
-        if (dx != 0) {
-            const int64_t current = accX.load(std::memory_order_relaxed);
-            accX.store(current + dx, std::memory_order_release);
-        }
-        if (dy != 0) {
-            const int64_t current = accY.load(std::memory_order_relaxed);
-            accY.store(current + dy, std::memory_order_release);
+        // One filter-thread writer publishes coherent modulo-32-bit X/Y in a
+        // single lock-free atomic. The frame reader needs one acquire load.
+        if ((dx | dy) != 0) {
+            const uint64_t current = total.load(std::memory_order_relaxed);
+            total.store(
+                PackTotals(
+                    TotalX(current) + static_cast<uint32_t>(dx),
+                    TotalY(current) + static_cast<uint32_t>(dy)),
+                std::memory_order_release);
         }
 
         if (MelonPrimeInputDebug()) {
@@ -371,8 +387,9 @@ bool LinuxRawInputFilter::hasReceivedMotion() const
 void LinuxRawInputFilter::fetchMouseDelta(
     MelonPrimeInputSubscription& subscription, int32_t& outDx, int32_t& outDy)
 {
-    const int64_t curX = m->accX.load(std::memory_order_acquire);
-    const int64_t curY = m->accY.load(std::memory_order_acquire);
+    const uint64_t current = m->total.load(std::memory_order_acquire);
+    const uint32_t curX = Impl::TotalX(current);
+    const uint32_t curY = Impl::TotalY(current);
     if (subscription.cursorNeedsSync) {
         subscription.lastReadX = curX;
         subscription.lastReadY = curY;
@@ -380,16 +397,19 @@ void LinuxRawInputFilter::fetchMouseDelta(
         outDx = outDy = 0;
         return;
     }
-    outDx = static_cast<int32_t>(curX - subscription.lastReadX);
-    outDy = static_cast<int32_t>(curY - subscription.lastReadY);
+    outDx = static_cast<int32_t>(
+        curX - static_cast<uint32_t>(subscription.lastReadX));
+    outDy = static_cast<int32_t>(
+        curY - static_cast<uint32_t>(subscription.lastReadY));
     subscription.lastReadX = curX;
     subscription.lastReadY = curY;
 }
 
 void LinuxRawInputFilter::resetAll(MelonPrimeInputSubscription& subscription)
 {
-    subscription.lastReadX = m->accX.load(std::memory_order_acquire);
-    subscription.lastReadY = m->accY.load(std::memory_order_acquire);
+    const uint64_t current = m->total.load(std::memory_order_acquire);
+    subscription.lastReadX = Impl::TotalX(current);
+    subscription.lastReadY = Impl::TotalY(current);
     subscription.cursorNeedsSync = false;
     // receivedMotion is intentionally NOT cleared: it is a static property of
     // the session ("this X connection actually delivers raw motion") used to

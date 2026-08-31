@@ -327,6 +327,9 @@ public:
     // Narrow accessors for MelonPrimeScreenCursorPolicy (avoid friend coupling).
     [[nodiscard]] bool isClosingForMelonPrime() const noexcept { return closing; }
     [[nodiscard]] bool isActiveVisibleWindowForMelonPrime() const;
+    // Input surfaces are deliberately primary-window-owned. Secondary
+    // presentation panels never publish or clear the shared input snapshot.
+    [[nodiscard]] bool isMelonPrimeInputSurfaceAuthority() const noexcept;
     [[nodiscard]] MelonPrime::MelonPrimeCore* melonPrimeCoreForPolicy() const;
     [[nodiscard]] QRect aimContainmentLocalRectForPolicy() const;
     [[nodiscard]] QPoint aimContainmentCenterGlobalForPolicy() const;
@@ -581,6 +584,7 @@ private:
     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
     // coalesces repeated per-frame requests without touching QWidget off-thread.
     std::atomic_bool m_melonPrimeGuiRefreshQueued{false};
+    std::atomic<uint64_t> m_melonPrimeGuiRevisionSeen{0};
     QTimer m_melonPrimeConfigSaveTimer;
     bool m_melonPrimeConfigSavePending = false;
     uint64_t m_melonPrimeLastPersistGeneration = 0;

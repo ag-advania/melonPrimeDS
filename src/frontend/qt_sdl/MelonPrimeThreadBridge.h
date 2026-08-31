@@ -54,17 +54,15 @@ public:
 
     void SetFocusedFromGui(bool value) noexcept
     {
-        m_focused.store(value, std::memory_order_release);
+        SetGuiInputPolicyBit(GuiPolicyFocused, value);
     }
     void SetCaptureWantedFromGui(bool value) noexcept
     {
-        m_captureWanted.store(value, std::memory_order_release);
+        SetGuiInputPolicyBit(GuiPolicyCaptureWanted, value);
     }
     void SetPanelAvailableFromGui(bool value) noexcept
     {
-        if (m_panelAvailable.load(std::memory_order_relaxed) == value)
-            return;
-        m_panelAvailable.store(value, std::memory_order_release);
+        SetGuiInputPolicyBit(GuiPolicyPanelAvailable, value);
     }
     void PublishCenterFromGui(int x, int y) noexcept
     {
@@ -193,6 +191,8 @@ public:
                 | (static_cast<uint32_t>(y) & 0xFFu) << 8
                 | (static_cast<uint32_t>(x) & 0xFFu);
         }
+        if (m_stylusPointer.load(std::memory_order_relaxed) == packed)
+            return;
         m_stylusPointer.store(packed, std::memory_order_release);
     }
 
@@ -238,15 +238,18 @@ public:
 
     [[nodiscard]] bool FocusedForEmu() const noexcept
     {
-        return m_focused.load(std::memory_order_acquire);
+        return (m_guiInputPolicy.load(std::memory_order_acquire)
+            & GuiPolicyFocused) != 0;
     }
     [[nodiscard]] bool CaptureWantedForEmu() const noexcept
     {
-        return m_captureWanted.load(std::memory_order_acquire);
+        return (m_guiInputPolicy.load(std::memory_order_acquire)
+            & GuiPolicyCaptureWanted) != 0;
     }
     [[nodiscard]] bool PanelAvailableForEmu() const noexcept
     {
-        return m_panelAvailable.load(std::memory_order_acquire);
+        return (m_guiInputPolicy.load(std::memory_order_acquire)
+            & GuiPolicyPanelAvailable) != 0;
     }
     [[nodiscard]] uint64_t LayoutGenerationForEmu() const noexcept
     {
@@ -285,16 +288,23 @@ public:
     }
     void getAimMouseDelta(int32_t& dx, int32_t& dy) noexcept
     {
-        const uint32_t resetGeneration =
-            m_panelAimGuiResetGeneration.load(std::memory_order_acquire);
-        if (resetGeneration != m_panelAimGuiResetSeen) {
-            m_panelAimCursor =
-                m_panelAimGuiResetBoundary.load(std::memory_order_acquire);
-            m_panelAimGuiResetSeen = resetGeneration;
+        uint64_t current = 0;
+        for (;;) {
+            const uint32_t generationBefore =
+                m_panelAimGuiResetGeneration.load(std::memory_order_acquire);
+            if (generationBefore != m_panelAimGuiResetSeen) {
+                m_panelAimCursor =
+                    m_panelAimGuiResetBoundary.load(std::memory_order_acquire);
+                m_panelAimGuiResetSeen = generationBefore;
+            }
+            current = m_panelAimTotal.load(std::memory_order_acquire);
+            const uint32_t generationAfter =
+                m_panelAimGuiResetGeneration.load(std::memory_order_acquire);
+            if (generationBefore == generationAfter)
+                break;
+            // A reset raced the snapshot. Retry without advancing the cursor;
+            // the new boundary decides which motion belongs after the reset.
         }
-
-        const uint64_t current =
-            m_panelAimTotal.load(std::memory_order_acquire);
         dx = static_cast<int32_t>(
             PairX(current) - PairX(m_panelAimCursor));
         dy = static_cast<int32_t>(
@@ -307,12 +317,19 @@ public:
     }
     void ResetPanelAimDeltaFromEmu() noexcept
     {
-        // EmuThread-only local rebaseline. A GUI reset racing this call is
-        // observed by getAimMouseDelta() through its published generation.
-        const uint32_t resetGeneration =
-            m_panelAimGuiResetGeneration.load(std::memory_order_acquire);
-        m_panelAimCursor = m_panelAimTotal.load(std::memory_order_acquire);
-        m_panelAimGuiResetSeen = resetGeneration;
+        for (;;) {
+            const uint32_t generationBefore =
+                m_panelAimGuiResetGeneration.load(std::memory_order_acquire);
+            const uint64_t current =
+                m_panelAimTotal.load(std::memory_order_acquire);
+            const uint32_t generationAfter =
+                m_panelAimGuiResetGeneration.load(std::memory_order_acquire);
+            if (generationBefore != generationAfter)
+                continue;
+            m_panelAimCursor = current;
+            m_panelAimGuiResetSeen = generationBefore;
+            break;
+        }
     }
     void ReadCenterForEmu(int& x, int& y) const noexcept
     {
@@ -346,6 +363,7 @@ public:
         if (m_runtimeBits.load(std::memory_order_relaxed) == bits)
             return;
         m_runtimeBits.store(bits, std::memory_order_release);
+        BumpGuiWorkRevisionFromEmu();
     }
     [[nodiscard]] MelonPrimeUiSnapshot ReadForGui() const noexcept
     {
@@ -358,8 +376,10 @@ public:
         out.fastForward = (bits & (1u << 4)) != 0;
         out.rawAimActive = (bits & (1u << 5)) != 0;
         out.screenSyncMode = static_cast<int>((bits >> 6) & 0x3);
-        out.focused = m_focused.load(std::memory_order_acquire);
-        out.captureWanted = m_captureWanted.load(std::memory_order_acquire);
+        const uint32_t guiPolicy =
+            m_guiInputPolicy.load(std::memory_order_acquire);
+        out.focused = (guiPolicy & GuiPolicyFocused) != 0;
+        out.captureWanted = (guiPolicy & GuiPolicyCaptureWanted) != 0;
         const uint64_t center = m_center.load(std::memory_order_acquire);
         out.centerX = static_cast<int32_t>(PairX(center));
         out.centerY = static_cast<int32_t>(PairY(center));
@@ -368,11 +388,22 @@ public:
 
     void RequestGuiFromEmu(uint32_t requests) noexcept
     {
-        if (requests & GuiRequestRecenter)
-            m_recenterPending.store(true, std::memory_order_release);
+        bool publishedNewWork = false;
+        if (requests & GuiRequestRecenter) {
+            if (!m_recenterPending.load(std::memory_order_relaxed)) {
+                m_recenterPending.store(true, std::memory_order_release);
+                publishedNewWork = true;
+            }
+        }
         const uint32_t remaining = requests & ~GuiRequestRecenter;
-        if (remaining)
-            m_guiRequests.fetch_or(remaining, std::memory_order_release);
+        if (remaining) {
+            const uint32_t previous =
+                m_guiRequests.fetch_or(remaining, std::memory_order_acq_rel);
+            if ((previous & remaining) != remaining)
+                publishedNewWork = true;
+        }
+        if (publishedNewWork)
+            BumpGuiWorkRevisionFromEmu();
     }
 
     // MELONPRIME_CURSOR_AUTHORITATIVE_STATE_V1
@@ -398,6 +429,7 @@ public:
         m_recenterPending.store(false, std::memory_order_release);
         (void)m_guiRequests.exchange(
             GuiRequestReconcileCursor, std::memory_order_acq_rel);
+        BumpGuiWorkRevisionFromEmu();
     }
 
     [[nodiscard]] bool CursorVisibleDesiredForGui() const noexcept
@@ -416,7 +448,37 @@ public:
         return requests;
     }
 
+    [[nodiscard]] uint64_t GuiWorkRevisionForGui() const noexcept
+    {
+        return m_guiWorkRevision.load(std::memory_order_acquire);
+    }
+
 private:
+    enum GuiPolicyBit : uint32_t {
+        GuiPolicyFocused = 1u << 0,
+        GuiPolicyCaptureWanted = 1u << 1,
+        GuiPolicyPanelAvailable = 1u << 2,
+    };
+
+    void SetGuiInputPolicyBit(uint32_t bit, bool value) noexcept
+    {
+        const uint32_t next = value
+            ? (m_guiInputPolicyShadow | bit)
+            : (m_guiInputPolicyShadow & ~bit);
+        if (next == m_guiInputPolicyShadow)
+            return;
+        m_guiInputPolicyShadow = next;
+        m_guiInputPolicy.store(next, std::memory_order_release);
+    }
+
+    void BumpGuiWorkRevisionFromEmu() noexcept
+    {
+        uint64_t next = ++m_guiWorkRevisionShadow;
+        if (next == 0)
+            next = ++m_guiWorkRevisionShadow;
+        m_guiWorkRevision.store(next, std::memory_order_release);
+    }
+
     static uint64_t PackUint32Pair(uint32_t x, uint32_t y) noexcept
     {
         return static_cast<uint64_t>(x)
@@ -442,9 +504,9 @@ private:
             | static_cast<uint32_t>(steps);
     }
 
-    std::atomic_bool m_focused{false};
-    std::atomic_bool m_captureWanted{false};
-    std::atomic_bool m_panelAvailable{false};
+    std::atomic<uint32_t> m_guiInputPolicy{0};
+    // GUI-thread-only coherent policy source.
+    uint32_t m_guiInputPolicyShadow = 0;
     std::atomic<uint64_t> m_center{0};
     std::atomic<uint64_t> m_layoutGeneration{1};
     std::atomic<uintptr_t> m_windowHandle{0};
@@ -465,6 +527,9 @@ private:
     std::atomic<uint32_t> m_runtimeBits{1u};
     std::atomic_bool m_cursorVisibleDesired{true};
     std::atomic<uint32_t> m_guiRequests{0};
+    std::atomic<uint64_t> m_guiWorkRevision{1};
+    // EmuThread-only revision source; GUI only acquire-loads the publication.
+    uint64_t m_guiWorkRevisionShadow = 1;
     // SPSC level request kept separate from the multi-bit GUI command word so
     // the 60/120 Hz QCursor fallback does not issue a locked fetch_or.
     std::atomic_bool m_recenterPending{false};

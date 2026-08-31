@@ -219,6 +219,7 @@ namespace MelonPrime {
         // second atomic read of the same result on macOS/Linux.
         const bool isInputOwner = platformInputOwner;
 #endif
+        m_rawAimActiveThisFrame = isInputOwner;
         if (UNLIKELY(m_publishedInputGeneration
                 != m_inputSubscription.generation)) {
             m_publishedInputGeneration = m_inputSubscription.generation;
@@ -234,6 +235,7 @@ namespace MelonPrime {
         }
 
         if (!focused) {
+            m_rawAimActiveThisFrame = false;
 #if !defined(_WIN32)
             m_warpCursorAfterAimThisFrame = false;
 #endif
@@ -288,6 +290,12 @@ namespace MelonPrime {
             & ~qtWheelMask;
         uint64_t qtGameplayPressed = 0;
         if constexpr (!kReentrant) {
+            uint64_t eventPressed = 0;
+            if (UNLIKELY(emuInstance->qtGameplayPressPending.load(
+                    std::memory_order_relaxed) != 0)) {
+                eventPressed = emuInstance->qtGameplayPressPending.exchange(
+                    0, std::memory_order_acq_rel) & ~qtWheelMask;
+            }
             if (m_qtGameplayEdgeNeedsBaseline) {
                 m_qtGameplayEdgeNeedsBaseline = false;
             }
@@ -295,6 +303,7 @@ namespace MelonPrime {
                 qtGameplayPressed = qtGameplayHeld
                     & ~m_qtGameplayHotkeyPrevious;
             }
+            qtGameplayPressed |= eventPressed;
             m_qtGameplayHotkeyPrevious = qtGameplayHeld;
         }
 
@@ -368,9 +377,10 @@ namespace MelonPrime {
 
 #if !defined(_WIN32)
         bool haveMouseDelta = false;
-        m_warpCursorAfterAimThisFrame = PlatformInput_UpdateMouseDelta(
+        const ResolvedAimInput resolvedAim = PlatformInput_UpdateMouseDelta(
             MELONPRIME_RAW_FILTER_PTR(this),
             m_inputSubscription,
+            isInputOwner,
             &m_threadBridge,
             MELONPRIME_RAW_AIM_WAS_ACTIVE_PTR(this),
             haveMouseDelta,
@@ -378,6 +388,8 @@ namespace MelonPrime {
             m_input.mouseY,
             m_aimData.centerX,
             m_aimData.centerY);
+        m_rawAimActiveThisFrame = resolvedAim.rawActive;
+        m_warpCursorAfterAimThisFrame = resolvedAim.warpAfterAim;
 #endif
     }
 
@@ -428,6 +440,8 @@ namespace MelonPrime {
     {
         m_qtGameplayHotkeyPrevious = 0;
         m_qtGameplayEdgeNeedsBaseline = true;
+        emuInstance->qtGameplayPressPending.store(
+            0, std::memory_order_release);
     }
 
     COLD_FUNCTION void MelonPrimeCore::ResetInputForLifecycleBoundary(

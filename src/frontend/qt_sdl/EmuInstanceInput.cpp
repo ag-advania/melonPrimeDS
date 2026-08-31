@@ -125,6 +125,18 @@ constexpr Qt::MouseButton kTrackedMouseButtons[5] = {
     Qt::XButton1,
     Qt::XButton2,
 };
+
+int TrackedMouseButtonIndex(Qt::MouseButton button) noexcept
+{
+    switch (button) {
+    case Qt::LeftButton:   return 0;
+    case Qt::RightButton:  return 1;
+    case Qt::MiddleButton: return 2;
+    case Qt::XButton1:     return 3;
+    case Qt::XButton2:     return 4;
+    default:               return -1;
+    }
+}
 }
 #endif
 
@@ -140,8 +152,8 @@ void EmuInstance::inputInit()
 
 #ifdef MELONPRIME_DS
     static_assert(HK_MAX <= 64, "HK_MAX exceeds uint64_t capacity");
-    static_assert(HK_MAX + 12 <= 255,
-        "active joystick binding count exceeds uint8_t capacity");
+    static_assert(2 * (HK_MAX + 12) <= 255,
+        "compiled joystick source/rule count exceeds uint8_t capacity");
 
     keyInputMask.store(0xFFF, std::memory_order_relaxed);
     inputMask = 0xFFF;
@@ -154,7 +166,9 @@ void EmuInstance::inputInit()
     lateJoystickNeedsBaseline = true;
     joystickGameplayResetPending.store(false, std::memory_order_relaxed);
     joystickLifecycleCheckCounter = 0;
-    activeJoystickBindingCount = 0;
+    joystickPhysicalSourceCount = 0;
+    joystickFanoutRuleCount = 0;
+    qtGameplayPressPending.store(0, std::memory_order_relaxed);
 #else
     keyInputMask = 0xFFF;
     joyInputMask = 0xFFF;
@@ -222,41 +236,79 @@ void EmuInstance::inputLoadConfig()
     rebuildMouseButtonBindingMasks();
 #endif
 
-    setJoystick(localCfg.GetInt("JoystickID"));
+    setJoystickLocked(localCfg.GetInt("JoystickID"));
     SDL_UnlockMutex(joyMutex.get());
 }
 
 #ifdef MELONPRIME_DS
 void EmuInstance::rebuildActiveJoystickBindings()
 {
-    activeJoystickBindingCount = 0;
+    joystickPhysicalSourceCount = 0;
+    joystickFanoutRuleCount = 0;
 
-    const auto addBinding = [this](
+    const auto findOrAddSource = [this](
+        JoystickSourceKind kind, uint16_t index) -> uint8_t {
+        for (uint8_t i = 0; i < joystickPhysicalSourceCount; ++i) {
+            const auto& source = joystickPhysicalSources[i];
+            if (source.kind == kind && source.index == index)
+                return i;
+        }
+        const uint8_t sourceIndex = joystickPhysicalSourceCount++;
+        joystickPhysicalSources[sourceIndex] = { kind, index };
+        return sourceIndex;
+    };
+
+    const auto addRule = [this, &findOrAddSource](
+        JoystickSourceKind kind, uint16_t index, uint8_t predicate,
+        uint16_t inputBits, uint64_t hotkeyBits) {
+        const uint8_t sourceIndex = findOrAddSource(kind, index);
+        for (uint8_t i = 0; i < joystickFanoutRuleCount; ++i) {
+            auto& rule = joystickFanoutRules[i];
+            if (rule.sourceIndex == sourceIndex
+                && rule.predicate == predicate) {
+                rule.inputBits |= inputBits;
+                rule.hotkeyBits |= hotkeyBits;
+                return;
+            }
+        }
+        joystickFanoutRules[joystickFanoutRuleCount++] = {
+            sourceIndex, predicate, inputBits, hotkeyBits
+        };
+    };
+
+    const auto compileBinding = [&addRule](
         int binding, uint16_t inputBits, uint64_t hotkeyBits) {
         if (binding == -1)
             return;
 
-        // Cold config/rebind path: merge duplicate physical bindings once so
-        // the late poll samples each active SDL control at most once.
-        for (uint8_t i = 0; i < activeJoystickBindingCount; ++i) {
-            auto& entry = activeJoystickBindings[i];
-            if (entry.binding == binding) {
-                entry.inputBits |= inputBits;
-                entry.hotkeyBits |= hotkeyBits;
-                return;
+        if ((binding & 0xFFFF) != 0xFFFF) {
+            if (binding & 0x100) {
+                addRule(
+                    JoystickSourceKind::Hat,
+                    static_cast<uint16_t>((binding >> 4) & 0xF),
+                    static_cast<uint8_t>(binding & 0xF),
+                    inputBits, hotkeyBits);
+            }
+            else {
+                addRule(
+                    JoystickSourceKind::Button,
+                    static_cast<uint16_t>(binding & 0xFFFF), 0,
+                    inputBits, hotkeyBits);
             }
         }
-
-        auto& entry = activeJoystickBindings[activeJoystickBindingCount++];
-        entry.binding = binding;
-        entry.inputBits = inputBits;
-        entry.hotkeyBits = hotkeyBits;
+        if (binding & 0x10000) {
+            addRule(
+                JoystickSourceKind::Axis,
+                static_cast<uint16_t>((binding >> 24) & 0xF),
+                static_cast<uint8_t>((binding >> 20) & 0xF),
+                inputBits, hotkeyBits);
+        }
     };
 
     for (int i = 0; i < 12; ++i)
-        addBinding(joyMapping[i], static_cast<uint16_t>(1u << i), 0);
+        compileBinding(joyMapping[i], static_cast<uint16_t>(1u << i), 0);
     for (int i = 0; i < HK_MAX; ++i)
-        addBinding(hkJoyMapping[i], 0, 1ULL << i);
+        compileBinding(hkJoyMapping[i], 0, 1ULL << i);
 }
 
 void EmuInstance::rebuildMouseButtonBindingMasks()
@@ -363,9 +415,14 @@ float EmuInstance::inputMotionQuery(melonDS::Platform::MotionQueryType type)
 void EmuInstance::setJoystick(int id)
 {
     SDL_LockMutex(joyMutex.get());
+    setJoystickLocked(id);
+    SDL_UnlockMutex(joyMutex.get());
+}
+
+void EmuInstance::setJoystickLocked(int id)
+{
     joystickID = id;
     openJoystick();
-    SDL_UnlockMutex(joyMutex.get());
 }
 
 void EmuInstance::openJoystick()
@@ -482,13 +539,21 @@ int getEventKeyVal(QKeyEvent* event)
 void EmuInstance::onKeyPress(QKeyEvent* event)
 {
 #ifdef MELONPRIME_DS
+    if (event->isAutoRepeat())
+        return;
     int key = event->key();
+    uint64_t pressedHotkeyBits = 0;
     for (int i = 0; i < 12; i++)
         if (key == hkKeyMapping[i])
             keyInputMask.fetch_and(static_cast<uint16_t>(~(1u << i)), std::memory_order_relaxed);
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
-            keyHotkeyMask.fetch_or(1ULL << i, std::memory_order_relaxed);
+            pressedHotkeyBits |= 1ULL << i;
+    if (pressedHotkeyBits) {
+        keyHotkeyMask.fetch_or(pressedHotkeyBits, std::memory_order_relaxed);
+        qtGameplayPressPending.fetch_or(
+            pressedHotkeyBits, std::memory_order_release);
+    }
 #else
     int keyHK = getEventKeyVal(event);
     int keyKP = keyHK;
@@ -508,6 +573,8 @@ void EmuInstance::onKeyPress(QKeyEvent* event)
 void EmuInstance::onKeyRelease(QKeyEvent* event)
 {
 #ifdef MELONPRIME_DS
+    if (event->isAutoRepeat())
+        return;
     int key = event->key();
 
     for (int i = 0; i < 12; i++)
@@ -536,28 +603,31 @@ void EmuInstance::onKeyRelease(QKeyEvent* event)
 #ifdef MELONPRIME_DS
 void EmuInstance::onMousePress(QMouseEvent* event)
 {
-    int key = static_cast<int>(event->button()) | MelonPrime::InputKey::MouseMark;
-
-    for (int i = 0; i < 12; i++)
-        if (key == hkKeyMapping[i])
-            keyInputMask.fetch_and(static_cast<uint16_t>(~(1u << i)), std::memory_order_relaxed);
-
-    for (int i = 0; i < HK_MAX; i++)
-        if (key == hkKeyMapping[i])
-            keyHotkeyMask.fetch_or(1ULL << i, std::memory_order_relaxed);
+    const int buttonIndex = TrackedMouseButtonIndex(event->button());
+    if (buttonIndex < 0)
+        return;
+    const auto& masks = mouseButtonMasks[buttonIndex];
+    if (masks.inputBits)
+        keyInputMask.fetch_and(
+            static_cast<uint16_t>(~masks.inputBits),
+            std::memory_order_relaxed);
+    if (masks.hotkeyBits) {
+        keyHotkeyMask.fetch_or(masks.hotkeyBits, std::memory_order_relaxed);
+        qtGameplayPressPending.fetch_or(
+            masks.hotkeyBits, std::memory_order_release);
+    }
 }
 
 void EmuInstance::onMouseRelease(QMouseEvent* event)
 {
-    int key = static_cast<int>(event->button()) | MelonPrime::InputKey::MouseMark;
-
-    for (int i = 0; i < 12; i++)
-        if (key == hkKeyMapping[i])
-            keyInputMask.fetch_or(static_cast<uint16_t>(1u << i), std::memory_order_relaxed);
-
-    for (int i = 0; i < HK_MAX; i++)
-        if (key == hkKeyMapping[i])
-            keyHotkeyMask.fetch_and(~(1ULL << i), std::memory_order_relaxed);
+    const int buttonIndex = TrackedMouseButtonIndex(event->button());
+    if (buttonIndex < 0)
+        return;
+    const auto& masks = mouseButtonMasks[buttonIndex];
+    if (masks.inputBits)
+        keyInputMask.fetch_or(masks.inputBits, std::memory_order_relaxed);
+    if (masks.hotkeyBits)
+        keyHotkeyMask.fetch_and(~masks.hotkeyBits, std::memory_order_relaxed);
 }
 
 bool EmuInstance::hotkeyUsesKeyboardKey(int hotkeyId, int qtKey) const
@@ -585,10 +655,18 @@ void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)
         releasedInputBits |= masks.inputBits;
         releasedHotkeyBits |= masks.hotkeyBits;
     }
-    if (releasedInputBits)
-        keyInputMask.fetch_or(releasedInputBits, std::memory_order_relaxed);
-    if (releasedHotkeyBits)
-        keyHotkeyMask.fetch_and(~releasedHotkeyBits, std::memory_order_relaxed);
+    const uint16_t currentInput =
+        keyInputMask.load(std::memory_order_relaxed);
+    const uint16_t staleInput = static_cast<uint16_t>(
+        releasedInputBits & static_cast<uint16_t>(~currentInput));
+    if (UNLIKELY(staleInput != 0))
+        keyInputMask.fetch_or(staleInput, std::memory_order_relaxed);
+
+    const uint64_t currentHotkeys =
+        keyHotkeyMask.load(std::memory_order_relaxed);
+    const uint64_t staleHotkeys = releasedHotkeyBits & currentHotkeys;
+    if (UNLIKELY(staleHotkeys != 0))
+        keyHotkeyMask.fetch_and(~staleHotkeys, std::memory_order_relaxed);
 }
 
 void EmuInstance::onMouseWheel(int delta)
@@ -607,6 +685,7 @@ void EmuInstance::keyReleaseAll()
 #ifdef MELONPRIME_DS
     keyInputMask.store(0xFFF, std::memory_order_relaxed);
     keyHotkeyMask.store(0, std::memory_order_relaxed);
+    qtGameplayPressPending.store(0, std::memory_order_relaxed);
     wheelHotkeyPulseMask.store(0, std::memory_order_relaxed);
 #else
     keyInputMask = 0xFFF;
@@ -802,10 +881,20 @@ void EmuInstance::inputRefreshJoystickState(bool commitGameplayEdges)
         return;
     }
 
-    bool bindingDown[HK_MAX + 12];
-    for (uint8_t i = 0; i < activeJoystickBindingCount; ++i) {
-        bindingDown[i] = joystickButtonDown(
-            activeJoystickBindings[i].binding);
+    int32_t sourceValue[2 * (HK_MAX + 12)]{};
+    for (uint8_t i = 0; i < joystickPhysicalSourceCount; ++i) {
+        const auto& source = joystickPhysicalSources[i];
+        switch (source.kind) {
+        case JoystickSourceKind::Button:
+            sourceValue[i] = SDL_JoystickGetButton(joystick, source.index);
+            break;
+        case JoystickSourceKind::Hat:
+            sourceValue[i] = SDL_JoystickGetHat(joystick, source.index);
+            break;
+        case JoystickSourceKind::Axis:
+            sourceValue[i] = SDL_JoystickGetAxis(joystick, source.index);
+            break;
+        }
     }
 
     SDL_UnlockMutex(joyMutex.get());
@@ -814,12 +903,31 @@ void EmuInstance::inputRefreshJoystickState(bool commitGameplayEdges)
     // work and stays outside the process-global joystick lock.
     uint16_t nextInputMask = 0xFFF;
     uint64_t nextHotkeyMask = 0;
-    for (uint8_t i = 0; i < activeJoystickBindingCount; ++i) {
-        if (bindingDown[i]) {
-            const auto& entry = activeJoystickBindings[i];
-            nextInputMask &= static_cast<uint16_t>(~entry.inputBits);
-            nextHotkeyMask |= entry.hotkeyBits;
+    for (uint8_t i = 0; i < joystickFanoutRuleCount; ++i) {
+        const auto& rule = joystickFanoutRules[i];
+        const auto& source = joystickPhysicalSources[rule.sourceIndex];
+        const int32_t value = sourceValue[rule.sourceIndex];
+        bool down = false;
+        switch (source.kind) {
+        case JoystickSourceKind::Button:
+            down = value != 0;
+            break;
+        case JoystickSourceKind::Hat:
+            down = (value & rule.predicate) != 0;
+            break;
+        case JoystickSourceKind::Axis:
+            if (rule.predicate == 0)
+                down = value > 16384;
+            else if (rule.predicate == 1)
+                down = value < -16384;
+            else if (rule.predicate == 2)
+                down = value > 0;
+            break;
         }
+        if (!down)
+            continue;
+        nextInputMask &= static_cast<uint16_t>(~rule.inputBits);
+        nextHotkeyMask |= rule.hotkeyBits;
     }
 
     lateJoystick.inputMask = nextInputMask;
