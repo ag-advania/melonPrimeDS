@@ -47,6 +47,7 @@ The final local validation after implementation produced these results:
 | `python tools/testing/test_input_postpush_full_contract.py` | PASS |
 | `python tools/testing/test_mouse_input_savestate_contract.py` | PASS |
 | `pwsh -File tools/ci/audits/audit-melonprime-srp-performance.ps1` | PASS |
+| `python tools/ci/audits/audit-low-latency-contract.py` | PASS |
 | `pwsh -File tools/ci/audits/audit-melonprime-thread-boundary.ps1 -Strict` | PASS: 0 findings |
 | `pwsh -File tools/ci/audits/audit-melonprime-instance-state.ps1 -Strict` | PASS: 12 baseline findings in 4 files |
 | `python tools/maintenance/check-doc-links.py` | PASS: 748 local links |
