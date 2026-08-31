@@ -1352,12 +1352,12 @@ void MelonPrimeInputConfig::setupSettingsOrganization()
     detachWidget(ui->lblMetroidJoy2KeySupportDesc);
 
     appendInputWidget(ui->cbMetroidEnableStylusMode);
+    appendInputWidget(ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking);
+    appendInputWidget(ui->cbMetroidEnableStylusHideCursorInGame);
     appendInputWidget(ui->cbMetroidEnableTouchScreenAimOnly);
     appendInputWidget(ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform);
     appendInputWidget(ui->cbMetroidEnableTopScreenTouch);
-    appendInputWidget(ui->cbMetroidEnableStylusHideCursorInGame);
     appendInputWidget(ui->cbMetroidEnableStylusConfineCursorToTopScreen);
-    appendInputWidget(ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking);
 
     appendSeparator();
     appendInputWidget(m_cbMetroidDisableMorphBoostSwipe);
