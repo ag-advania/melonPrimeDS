@@ -980,6 +980,147 @@ if (-not $mouseWheelBody -or
     Add-Error 'Rule L2: Qt wheel path must not rescan HK_MAX per pulse'
 }
 
+# --- Rule O-S: controller/macOS/bridge next-layer input contract ------------
+$emuInstanceHeaderPath = Join-Path $qtSdl 'EmuInstance.h'
+$emuThreadPath = Join-Path $qtSdl 'EmuThread.cpp'
+$macRawPath = Join-Path $qtSdl 'MelonPrimeRawInputMacFilter.mm'
+$emuInstanceHeaderText = Get-Content -LiteralPath $emuInstanceHeaderPath -Raw
+$emuThreadText = Get-Content -LiteralPath $emuThreadPath -Raw
+$macRawText = Get-Content -LiteralPath $macRawPath -Raw
+
+# Rule O: lifecycle cadence is instance-local, never a function-static shared
+# between independent EmuThreads.
+$inputProcessBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::inputProcess\s*\('
+$lateJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::inputRefreshJoystickState\s*\('
+foreach ($bodySpec in @(
+    @{ Name = 'inputProcess'; Body = $inputProcessBody },
+    @{ Name = 'inputRefreshJoystickState'; Body = $lateJoystickBody }
+)) {
+    if (-not $bodySpec.Body) {
+        Add-Error "Rule O: $($bodySpec.Name) definition not found"
+    } elseif ($bodySpec.Body -match 'static\s+[^;]*(?:counter|check)') {
+        Add-Error "Rule O: $($bodySpec.Name) contains shared function-static lifecycle cadence"
+    }
+}
+if ($emuInstanceHeaderText -notmatch 'uint8_t\s+joystickLifecycleCheckCounter') {
+    Add-Error 'Rule O: joystick lifecycle cadence must be stored per EmuInstance'
+}
+
+# Rule P: only closeJoystick owns SDL device close plus derived state reset.
+$closeJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::closeJoystick\s*\('
+if (-not $closeJoystickBody -or
+    $closeJoystickBody -notmatch 'SDL_GameControllerClose\s*\(' -or
+    $closeJoystickBody -notmatch 'SDL_JoystickClose\s*\(' -or
+    $closeJoystickBody -notmatch 'lateJoystick\.hotkeyHeld\s*=\s*0' -or
+    $closeJoystickBody -notmatch 'hasRumble\s*=\s*false') {
+    Add-Error 'Rule P: central joystick close/reset owner is incomplete'
+}
+foreach ($pollBody in @($inputProcessBody, $lateJoystickBody)) {
+    if ($pollBody -match 'SDL_(?:GameController|Joystick)Close\s*\(') {
+        Add-Error 'Rule P: joystick poll path bypasses the central close owner'
+    }
+}
+
+# Rule Q: the late gameplay snapshot is distinct from global emulator edges.
+if ($emuInstanceHeaderText -notmatch 'struct\s+LateJoystickSnapshot' -or
+    $emuInstanceHeaderText -notmatch 'keyHotkeyPress' -or
+    -not $lateJoystickBody -or
+    $lateJoystickBody -notmatch 'lateJoystick\.hotkeyPressed\s*=' -or
+    $lateJoystickBody -notmatch 'lateJoystick\.hotkeyReleased\s*=') {
+    Add-Error 'Rule Q: MelonPrime late joystick held/press/release snapshot is incomplete'
+}
+if ($updateInputBody -notmatch 'keyHotkeyPress' -or
+    $updateInputBody -notmatch 'lateJoystick\.hotkeyPressed') {
+    Add-Error 'Rule Q: gameplay projection must combine Qt edge with the late joystick edge'
+}
+if ($lateJoystickBody -match '(?m)^\s*hotkeyPress\s*=') {
+    Add-Error 'Rule Q: late joystick poll must not rewrite global emulator hotkey edges'
+}
+$latePollAt = $emuThreadText.IndexOf(
+    'inputRefreshJoystickState();', [System.StringComparison]::Ordinal)
+$runFrameAt = $emuThreadText.IndexOf(
+    'RunFrameHook(', $latePollAt + 1, [System.StringComparison]::Ordinal)
+if ($latePollAt -lt 0 -or $runFrameAt -lt 0 -or $latePollAt -gt $runFrameAt) {
+    Add-Error 'Rule Q: late joystick sample must remain before RunFrameHook'
+}
+
+# Rule R: Apple documents GCDevice.handlerQueue as the callback execution
+# authority. GCMouse uses one serial queue, IOHID one runloop, and each owns a
+# separate packed cumulative total; neither event path needs fetch_add.
+if ($macRawText -match '(?:acc[XY]|gcTotal|hidTotal)\.fetch_add\s*\(') {
+    Add-Error 'Rule R: macOS raw event accumulator regressed to locked fetch_add'
+}
+foreach ($macNeedle in @(
+    'DISPATCH_QUEUE_SERIAL',
+    'mouse.handlerQueue = gcHandlerQueue',
+    'std::atomic<CFRunLoopRef> runLoop',
+    'std::atomic<uint64_t> gcTotal',
+    'std::atomic<uint64_t> hidTotal',
+    'AccumulateSingleWriter'
+)) {
+    if ($macRawText.IndexOf($macNeedle, [System.StringComparison]::Ordinal) -lt 0) {
+        Add-Error "Rule R: macOS writer contract missing: $macNeedle"
+    }
+}
+
+# Rule S: rare mailboxes load before claim; panel aim is a GUI-owned packed
+# cumulative total; center publication is one coherent pair.
+$takeGuiBody = Get-FunctionText -Path $threadBridgePath `
+    -Signature 'TakeGuiRequestsFromGui\s*\('
+$persistBody = Get-FunctionText -Path $threadBridgePath `
+    -Signature 'TakePersistRequestForGui\s*\('
+foreach ($rare in @(
+    @{ Name = 'GUI request'; Body = $takeGuiBody; Load = 'm_guiRequests.load'; Exchange = 'm_guiRequests.exchange' },
+    @{ Name = 'persist request'; Body = $persistBody; Load = 'm_aimSensitivityPersist.load'; Exchange = 'm_aimSensitivityPersist.exchange' }
+)) {
+    $loadAt = if ($rare.Body) { $rare.Body.IndexOf($rare.Load, [System.StringComparison]::Ordinal) } else { -1 }
+    $exchangeAt = if ($rare.Body) { $rare.Body.IndexOf($rare.Exchange, [System.StringComparison]::Ordinal) } else { -1 }
+    if ($loadAt -lt 0 -or $exchangeAt -lt 0 -or $loadAt -gt $exchangeAt) {
+        Add-Error "Rule S: $($rare.Name) must load before its rare exchange claim"
+    }
+}
+if ($threadBridgeText -match 'm_panelAim[XY]\b' -or
+    $threadBridgeText -match 'm_panelAimTotal\.fetch_add\s*\(' -or
+    $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_panelAimTotal' -or
+    $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_panelAimResetBaseline' -or
+    $threadBridgeText -notmatch 'm_panelAimResetBaseline\.store\s*\(' -or
+    $threadBridgeText -notmatch 'm_panelAimResetBaseline\.load\s*\(' -or
+    $threadBridgeText -notmatch 'uint64_t\s+m_panelAimCursor') {
+    Add-Error 'Rule S: panel aim must remain a packed cumulative total with a reset-boundary baseline'
+}
+if ($threadBridgeText -match 'm_center[XY]\b' -or
+    $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_center') {
+    Add-Error 'Rule S: center X/Y must remain one coherent packed publication'
+}
+if (-not $inputProcessBody -or
+    $inputProcessBody.IndexOf('wheelHotkeyPulseMask.load', [System.StringComparison]::Ordinal) -lt 0 -or
+    $inputProcessBody.IndexOf('wheelHotkeyPulseMask.load', [System.StringComparison]::Ordinal) -gt
+        $inputProcessBody.IndexOf('wheelHotkeyPulseMask.exchange', [System.StringComparison]::Ordinal)) {
+    Add-Error 'Rule S: wheel pulse must load before its rare exchange claim'
+}
+if ($linuxRawText -notmatch 'lastSourceState' -or
+    $linuxRawText -notmatch 'std::min\(2,\s*raw->valuators\.mask_len\s*\*\s*8\)') {
+    Add-Error 'Rule S: Linux common-source cache or X/Y-only packed decode is missing'
+}
+$controllerSampleAt = if ($lateJoystickBody) {
+    $lateJoystickBody.IndexOf('bindingDown[i] = joystickButtonDown', [System.StringComparison]::Ordinal)
+} else { -1 }
+$controllerUnlockAt = if ($lateJoystickBody -and $controllerSampleAt -ge 0) {
+    $lateJoystickBody.IndexOf('SDL_UnlockMutex(joyMutex.get())', $controllerSampleAt, [System.StringComparison]::Ordinal)
+} else { -1 }
+$controllerAssemblyAt = if ($lateJoystickBody -and $controllerUnlockAt -ge 0) {
+    $lateJoystickBody.IndexOf('uint16_t nextInputMask', $controllerUnlockAt, [System.StringComparison]::Ordinal)
+} else { -1 }
+if ($controllerSampleAt -lt 0 -or $controllerUnlockAt -lt 0 -or
+    $controllerAssemblyAt -lt 0 -or
+    $controllerSampleAt -gt $controllerUnlockAt -or
+    $controllerUnlockAt -gt $controllerAssemblyAt) {
+    Add-Error 'Rule S: controller lock must cover physical sampling but not numeric mask assembly'
+}
+
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----
 #
 # The per-instance HUD state is reached through a thread_local pointer that only

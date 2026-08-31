@@ -208,11 +208,19 @@ namespace MelonPrime {
 #endif
 
 #if !defined(_WIN32)
-        PlatformInputOwnerService::Update(m_inputSubscription, captureEligible);
+        const bool platformInputOwner =
+            PlatformInputOwnerService::Update(
+                m_inputSubscription, captureEligible);
         m_threadBridge.SetInputGenerationFromEmu(m_inputSubscription.generation);
 #endif
+#if defined(_WIN32)
         const bool isInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
+#else
+        // Update already resolved the process owner for this frame; avoid a
+        // second atomic read of the same result on macOS/Linux.
+        const bool isInputOwner = platformInputOwner;
+#endif
         if (wasInputOwner != isInputOwner
             || wasInputGeneration != m_inputSubscription.generation) {
             InstanceDiagnostics::LogInputSubscription(
@@ -289,13 +297,15 @@ namespace MelonPrime {
         // active ownership changes.
         const uint64_t hotDownMask = isInputOwner
             ? ((rawActionReady ? hk.down : emuInstance->hotkeyMask)
-                | emuInstance->joyHotkeyMask | wheelHotkeyBits)
+                | emuInstance->lateJoystick.hotkeyHeld | wheelHotkeyBits)
             : emuInstance->hotkeyMask;
         if constexpr (!kReentrant) {
             const uint64_t hotPressMask = isInputOwner
                 ? ((rawActionReady ? hk.pressed : 0)
-                    | emuInstance->joyHotkeyPress | wheelHotkeyBits)
-                : emuInstance->hotkeyPress;
+                    | emuInstance->lateJoystick.hotkeyPressed
+                    | wheelHotkeyBits)
+                : (emuInstance->keyHotkeyPress
+                    | emuInstance->lateJoystick.hotkeyPressed);
             m_input.press = InputProjection::ProjectPressMask(hotPressMask);
         } else {
             m_input.press = 0;
@@ -307,7 +317,9 @@ namespace MelonPrime {
 #else
         const uint64_t hotDownMask = emuInstance->hotkeyMask;
         if constexpr (!kReentrant)
-            m_input.press = InputProjection::ProjectPressMask(emuInstance->hotkeyPress);
+            m_input.press = InputProjection::ProjectPressMask(
+                emuInstance->keyHotkeyPress
+                | emuInstance->lateJoystick.hotkeyPressed);
         else
             m_input.press = 0;
 #endif

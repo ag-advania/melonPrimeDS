@@ -128,19 +128,22 @@ void EmuInstance::inputInit()
 
 #ifdef MELONPRIME_DS
     static_assert(HK_MAX <= 64, "HK_MAX exceeds uint64_t capacity");
+    static_assert(HK_MAX + 12 <= 255,
+        "active joystick binding count exceeds uint8_t capacity");
 
     keyInputMask.store(0xFFF, std::memory_order_relaxed);
-    joyInputMask = 0xFFF;
     inputMask = 0xFFF;
 
     keyHotkeyMask.store(0, std::memory_order_relaxed);
-    joyHotkeyMask = 0;
     hotkeyMask = 0;
     lastHotkeyMask = 0;
-
-    joyHotkeyPress = 0;
-    joyHotkeyRelease = 0;
-    lastJoyHotkeyMask = 0;
+    keyHotkeyPress = 0;
+    lastKeyHotkeyMask = 0;
+    lateJoystick = {};
+    previousLateJoystickHotkeyMask = 0;
+    lateJoystickNeedsBaseline = true;
+    joystickLifecycleCheckCounter = 0;
+    activeJoystickBindingCount = 0;
 #else
     keyInputMask = 0xFFF;
     joyInputMask = 0xFFF;
@@ -186,23 +189,64 @@ void EmuInstance::inputLoadConfig()
         joyMapping[i] = joycfg.GetInt(buttonNames[i]);
     }
 
+#ifdef MELONPRIME_DS
     uint64_t wheelUpMask = 0;
     uint64_t wheelDownMask = 0;
+#endif
     for (int i = 0; i < HK_MAX; i++)
     {
         hkKeyMapping[i] = keycfg.GetInt(hotkeyNames[i]);
         hkJoyMapping[i] = joycfg.GetInt(hotkeyNames[i]);
+#ifdef MELONPRIME_DS
         if (hkKeyMapping[i] == MelonPrime::InputKey::MouseWheelUp)
             wheelUpMask |= 1ULL << i;
         else if (hkKeyMapping[i] == MelonPrime::InputKey::MouseWheelDown)
             wheelDownMask |= 1ULL << i;
+#endif
     }
+#ifdef MELONPRIME_DS
     wheelUpHotkeyMask = wheelUpMask;
     wheelDownHotkeyMask = wheelDownMask;
+    rebuildActiveJoystickBindings();
+#endif
 
     setJoystick(localCfg.GetInt("JoystickID"));
     SDL_UnlockMutex(joyMutex.get());
 }
+
+#ifdef MELONPRIME_DS
+void EmuInstance::rebuildActiveJoystickBindings()
+{
+    activeJoystickBindingCount = 0;
+
+    const auto addBinding = [this](
+        int binding, uint16_t inputBits, uint64_t hotkeyBits) {
+        if (binding == -1)
+            return;
+
+        // Cold config/rebind path: merge duplicate physical bindings once so
+        // the late poll samples each active SDL control at most once.
+        for (uint8_t i = 0; i < activeJoystickBindingCount; ++i) {
+            auto& entry = activeJoystickBindings[i];
+            if (entry.binding == binding) {
+                entry.inputBits |= inputBits;
+                entry.hotkeyBits |= hotkeyBits;
+                return;
+            }
+        }
+
+        auto& entry = activeJoystickBindings[activeJoystickBindingCount++];
+        entry.binding = binding;
+        entry.inputBits = inputBits;
+        entry.hotkeyBits = hotkeyBits;
+    };
+
+    for (int i = 0; i < 12; ++i)
+        addBinding(joyMapping[i], static_cast<uint16_t>(1u << i), 0);
+    for (int i = 0; i < HK_MAX; ++i)
+        addBinding(hkJoyMapping[i], 0, 1ULL << i);
+}
+#endif
 
 void EmuInstance::inputRumbleStart(melonDS::u32 len_ms)
 {
@@ -295,20 +339,11 @@ void EmuInstance::setJoystick(int id)
 
 void EmuInstance::openJoystick()
 {
-    if (controller) SDL_GameControllerClose(controller);
-
-    if (joystick) SDL_JoystickClose(joystick);
+    closeJoystick();
 
     int num = SDL_NumJoysticks();
     if (num < 1)
-    {
-        controller = nullptr;
-        joystick = nullptr;
-        hasRumble = false;
-        hasAccelerometer = false;
-        hasGyroscope = false;
         return;
-    }
 
     if (joystickID >= num)
         joystickID = 0;
@@ -335,23 +370,49 @@ void EmuInstance::openJoystick()
             hasGyroscope = SDL_GameControllerSetSensorEnabled(controller, SDL_SENSOR_GYRO, SDL_TRUE) == 0;
         }
     }
+
+#ifdef MELONPRIME_DS
+    // A newly opened device establishes its held baseline on the first late
+    // sample. Buttons already held during reconnect must not become presses.
+    lateJoystickNeedsBaseline = true;
+#endif
 }
 
-void EmuInstance::closeJoystick()
+void EmuInstance::closeJoystick(bool publishLateRelease)
 {
+#ifdef MELONPRIME_DS
+    const uint64_t released = previousLateJoystickHotkeyMask;
+#else
+    (void)publishLateRelease;
+#endif
     if (controller)
     {
         SDL_GameControllerClose(controller);
         controller = nullptr;
-        hasRumble = false;
-        hasAccelerometer = false;
-        hasGyroscope = false;
     }
     if (joystick)
     {
         SDL_JoystickClose(joystick);
         joystick = nullptr;
     }
+    hasRumble = false;
+    hasAccelerometer = false;
+    hasGyroscope = false;
+    isRumbling = false;
+
+#ifdef MELONPRIME_DS
+    // Joystick/controller lifetime and every derived mask are cleared by this
+    // one owner so a disconnect cannot leave movement or gameplay held.
+    lateJoystick.inputMask = 0xFFF;
+    lateJoystick.hotkeyHeld = 0;
+    lateJoystick.hotkeyPressed = 0;
+    lateJoystick.hotkeyReleased = publishLateRelease ? released : 0;
+    previousLateJoystickHotkeyMask = 0;
+    lateJoystickNeedsBaseline = true;
+    joystickLifecycleCheckCounter = 0;
+    inputMask = keyInputMask.load(std::memory_order_relaxed);
+    hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed);
+#endif
 }
 
 
@@ -591,57 +652,42 @@ void EmuInstance::inputProcess()
 {
 #ifdef MELONPRIME_DS
     // =========================================================================
-    // P-21 + P-34: Lightweight path for MelonPrime.
+    // Controller lifecycle owner and global emulator-edge sample.
     //
-    // P-34: When no joystick is connected (KB+M players), skip SDL mutex
-    // and JoystickUpdate entirely. This saves 2 mutex syscalls + SDL overhead
-    // on 59/60 frames. A throttled check (~once per second) handles hot-plug.
-    //
-    // Joystick mask recalculation (12× joystickButtonDown + HK_MAX× loop)
-    // is handled by inputRefreshJoystickState() inside frameAdvanceOnce.
+    // Physical state is sampled at the guest-frame late latch. This early path
+    // only performs a per-instance, throttled attach/detach check so paused or
+    // otherwise non-advancing instances still converge without a second SDL
+    // update on every running frame.
     // =========================================================================
-    if (LIKELY(!joystick)) {
-        // P-34: Throttled attachment check (~once per second at 60fps).
-        // SDL_JoystickUpdate is needed for SDL_NumJoysticks to reflect changes.
-        static uint8_t s_inputJoyCheck = 0;
-        if (UNLIKELY(++s_inputJoyCheck >= 60)) {
-            s_inputJoyCheck = 0;
-            SDL_LockMutex(joyMutex.get());
-            SDL_JoystickUpdate();
-            if (SDL_NumJoysticks() > 0) {
-                openJoystick();
-            }
-            SDL_UnlockMutex(joyMutex.get());
-        }
-    }
-    else {
+    lateJoystick.hotkeyPressed = 0;
+    lateJoystick.hotkeyReleased = 0;
+    if (UNLIKELY(++joystickLifecycleCheckCounter >= 60)) {
+        joystickLifecycleCheckCounter = 0;
         SDL_LockMutex(joyMutex.get());
         SDL_JoystickUpdate();
-
-        if (!SDL_JoystickGetAttached(joystick))
-        {
-            SDL_JoystickClose(joystick);
-            joystick = nullptr;
-        }
-
+        if (joystick && !SDL_JoystickGetAttached(joystick))
+            closeJoystick(true);
+        else if (!joystick && SDL_NumJoysticks() > 0)
+            openJoystick();
         SDL_UnlockMutex(joyMutex.get());
     }
 
-    // Joystick edge detection (masks set by inputRefreshJoystickState)
-    joyHotkeyPress = joyHotkeyMask & ~lastJoyHotkeyMask;
-    joyHotkeyRelease = lastJoyHotkeyMask & ~joyHotkeyMask;
-    lastJoyHotkeyMask = joyHotkeyMask;
-
     // Combined edge detection (keyboard + joystick)
-    hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed) | joyHotkeyMask;
+    const uint64_t currentKeyHotkeys =
+        keyHotkeyMask.load(std::memory_order_relaxed);
+    keyHotkeyPress = currentKeyHotkeys & ~lastKeyHotkeyMask;
+    lastKeyHotkeyMask = currentKeyHotkeys;
+    hotkeyMask = currentKeyHotkeys | lateJoystick.hotkeyHeld;
     hotkeyPress = hotkeyMask & ~lastHotkeyMask;
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
     lastHotkeyMask = hotkeyMask;
 
     // Mouse-wheel bindings are impulses: release the virtual key after the
     // edge latch so the next frame sees a clean release.
-    const uint64_t wheelPulseMask =
-        wheelHotkeyPulseMask.exchange(0, std::memory_order_relaxed);
+    uint64_t wheelPulseMask = 0;
+    if (UNLIKELY(wheelHotkeyPulseMask.load(std::memory_order_relaxed) != 0))
+        wheelPulseMask =
+            wheelHotkeyPulseMask.exchange(0, std::memory_order_relaxed);
     if (wheelPulseMask) {
         keyHotkeyMask.fetch_and(~wheelPulseMask, std::memory_order_relaxed);
     }
@@ -655,8 +701,7 @@ void EmuInstance::inputProcess()
     {
         if (!SDL_JoystickGetAttached(joystick))
         {
-            SDL_JoystickClose(joystick);
-            joystick = nullptr;
+            closeJoystick();
         }
     }
     if (!joystick && (SDL_NumJoysticks() > 0))
@@ -692,66 +737,75 @@ void EmuInstance::inputProcess()
 
 #ifdef MELONPRIME_DS
 // =========================================================================
-// P-15: inputRefreshJoystickState — lightweight joystick re-poll
+// inputRefreshJoystickState — guest-frame late controller snapshot
 //
 // Called after Sleep inside frameAdvanceOnce to give RunFrameHook the
 // freshest possible joystick axis/button state.
 //
-// P-23: No-joystick fast path.
-// When joystick == nullptr (common for KB+M MelonPrime players),
-// skip SDL_LockMutex + SDL_JoystickUpdate + SDL_UnlockMutex entirely.
-// Saves 2 mutex syscalls + SDL internal overhead per frame.
-//
-// The 60-frame attachment check for newly connected controllers runs via
-// inputProcess() in the outer loop. The late-poll path avoids all SDL overhead
-// when no controller exists.
+// Global emulator command edges are finalized by inputProcess(). This function
+// owns a separate MelonPrime gameplay edge baseline and never rewrites those
+// global edges, preventing save/pause/fullscreen commands from re-firing.
 // =========================================================================
 void EmuInstance::inputRefreshJoystickState()
 {
-    // P-23: Skip SDL overhead when no joystick connected.
-    // joyInputMask stays 0xFFF (all released), joyHotkeyMask stays 0.
-    // hotkeyMask still includes keyHotkeyMask from Qt events.
     if (!joystick) {
+        inputMask = keyInputMask.load(std::memory_order_relaxed);
+        hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed);
         return;
     }
 
     SDL_LockMutex(joyMutex.get());
     SDL_JoystickUpdate();
 
-    // P-23: Throttle joystick detachment check to ~once per second.
-    static uint8_t s_detachCheckCounter = 0;
-    if (UNLIKELY(++s_detachCheckCounter >= 60))
+    // A device can disappear between the early lifecycle check and this late
+    // sample. Route that edge through the same close/reset owner.
+    if (UNLIKELY(!SDL_JoystickGetAttached(joystick)))
     {
-        s_detachCheckCounter = 0;
-        if (!SDL_JoystickGetAttached(joystick))
-        {
-            SDL_JoystickClose(joystick);
-            joystick = nullptr;
-            joyInputMask = 0xFFF;
-            joyHotkeyMask = 0;
-            inputMask = keyInputMask.load(std::memory_order_relaxed) & joyInputMask;
-            hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed) | joyHotkeyMask;
-            SDL_UnlockMutex(joyMutex.get());
-            return;
+        closeJoystick(true);
+        SDL_UnlockMutex(joyMutex.get());
+        return;
+    }
+
+    bool bindingDown[HK_MAX + 12];
+    for (uint8_t i = 0; i < activeJoystickBindingCount; ++i) {
+        bindingDown[i] = joystickButtonDown(
+            activeJoystickBindings[i].binding);
+    }
+
+    SDL_UnlockMutex(joyMutex.get());
+
+    // SDL handle lifetime is protected above. Numeric mask assembly is local
+    // work and stays outside the process-global joystick lock.
+    uint16_t nextInputMask = 0xFFF;
+    uint64_t nextHotkeyMask = 0;
+    for (uint8_t i = 0; i < activeJoystickBindingCount; ++i) {
+        if (bindingDown[i]) {
+            const auto& entry = activeJoystickBindings[i];
+            nextInputMask &= static_cast<uint16_t>(~entry.inputBits);
+            nextHotkeyMask |= entry.hotkeyBits;
         }
     }
 
-    joyInputMask = 0xFFF;
-    for (int i = 0; i < 12; i++)
-        if (joystickButtonDown(joyMapping[i]))
-            joyInputMask &= ~(1u << i);
+    lateJoystick.inputMask = nextInputMask;
+    lateJoystick.hotkeyHeld = nextHotkeyMask;
+    if (lateJoystickNeedsBaseline) {
+        // Reconnect/config switch: held controls establish a baseline without
+        // becoming phantom presses from the previous physical device.
+        lateJoystick.hotkeyPressed = 0;
+        lateJoystick.hotkeyReleased = 0;
+        lateJoystickNeedsBaseline = false;
+    }
+    else {
+        lateJoystick.hotkeyPressed =
+            nextHotkeyMask & ~previousLateJoystickHotkeyMask;
+        lateJoystick.hotkeyReleased =
+            previousLateJoystickHotkeyMask & ~nextHotkeyMask;
+    }
+    previousLateJoystickHotkeyMask = nextHotkeyMask;
 
-    inputMask = keyInputMask.load(std::memory_order_relaxed) & joyInputMask;
-
-    joyHotkeyMask = 0;
-    for (int i = 0; i < HK_MAX; i++)
-        if (joystickButtonDown(hkJoyMapping[i]))
-            joyHotkeyMask |= (1ULL << i);
-
-    // Refresh combined mask but do NOT recompute edges.
-    hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed) | joyHotkeyMask;
-
-    SDL_UnlockMutex(joyMutex.get());
+    inputMask = keyInputMask.load(std::memory_order_relaxed) & nextInputMask;
+    hotkeyMask =
+        keyHotkeyMask.load(std::memory_order_relaxed) | nextHotkeyMask;
 }
 #endif // MELONPRIME_DS
 

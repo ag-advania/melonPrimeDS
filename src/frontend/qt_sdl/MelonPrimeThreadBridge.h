@@ -66,8 +66,7 @@ public:
     }
     void PublishCenterFromGui(int x, int y) noexcept
     {
-        m_centerX.store(x, std::memory_order_relaxed);
-        m_centerY.store(y, std::memory_order_release);
+        m_center.store(PackInt32Pair(x, y), std::memory_order_release);
     }
     void PublishWindowHandleFromGui(uintptr_t handle) noexcept
     {
@@ -152,13 +151,29 @@ public:
     }
     void AddPanelAimDeltaFromGui(int32_t dx, int32_t dy) noexcept
     {
-        m_panelAimX.fetch_add(dx, std::memory_order_relaxed);
-        m_panelAimY.fetch_add(dy, std::memory_order_release);
+        if ((dx | dy) == 0)
+            return;
+
+        // Qt dispatch serializes every ScreenPanel mouse producer on the GUI
+        // thread. Publish one packed cumulative total with load/store; reset
+        // requests never write this producer-owned value.
+        const uint64_t current =
+            m_panelAimTotal.load(std::memory_order_relaxed);
+        const uint32_t nextX = PairX(current) + static_cast<uint32_t>(dx);
+        const uint32_t nextY = PairY(current) + static_cast<uint32_t>(dy);
+        m_panelAimTotal.store(
+            PackUint32Pair(nextX, nextY), std::memory_order_release);
     }
     void ResetPanelAimDeltaFromGui() noexcept
     {
-        m_panelAimX.store(0, std::memory_order_relaxed);
-        m_panelAimY.store(0, std::memory_order_release);
+        // May be requested by either GUI transitions or the emulation thread.
+        // Capture the producer total at the reset boundary so motion published
+        // after this request remains visible to the consumer. The emulation
+        // thread re-baselines without becoming a second writer of the total.
+        m_panelAimResetBaseline.store(
+            m_panelAimTotal.load(std::memory_order_acquire),
+            std::memory_order_release);
+        m_panelAimResetPending.store(true, std::memory_order_release);
     }
     void PublishStylusPointerFromGui(int x, int y, bool valid) noexcept
     {
@@ -191,6 +206,8 @@ public:
 
     bool TakePersistRequestForGui(MelonPrimePersistRequest& out) noexcept
     {
+        if (m_aimSensitivityPersist.load(std::memory_order_relaxed) == 0)
+            return false;
         const uint64_t packed =
             m_aimSensitivityPersist.exchange(0, std::memory_order_acq_rel);
         if (packed == 0)
@@ -204,7 +221,9 @@ public:
 
     void DiscardPersistRequestsFromGui() noexcept
     {
-        (void)m_aimSensitivityPersist.exchange(0, std::memory_order_acq_rel);
+        if (m_aimSensitivityPersist.load(std::memory_order_relaxed) != 0)
+            (void)m_aimSensitivityPersist.exchange(
+                0, std::memory_order_acq_rel);
     }
 
     [[nodiscard]] bool FocusedForEmu() const noexcept
@@ -256,8 +275,20 @@ public:
     }
     void getAimMouseDelta(int32_t& dx, int32_t& dy) noexcept
     {
-        dx = m_panelAimX.exchange(0, std::memory_order_acq_rel);
-        dy = m_panelAimY.exchange(0, std::memory_order_acq_rel);
+        if (m_panelAimResetPending.load(std::memory_order_relaxed)
+            && m_panelAimResetPending.exchange(
+                false, std::memory_order_acq_rel)) {
+            m_panelAimCursor =
+                m_panelAimResetBaseline.load(std::memory_order_acquire);
+        }
+
+        const uint64_t current =
+            m_panelAimTotal.load(std::memory_order_acquire);
+        dx = static_cast<int32_t>(
+            PairX(current) - PairX(m_panelAimCursor));
+        dy = static_cast<int32_t>(
+            PairY(current) - PairY(m_panelAimCursor));
+        m_panelAimCursor = current;
     }
     void resetAimMouseDelta() noexcept
     {
@@ -265,8 +296,9 @@ public:
     }
     void ReadCenterForEmu(int& x, int& y) const noexcept
     {
-        y = m_centerY.load(std::memory_order_acquire);
-        x = m_centerX.load(std::memory_order_relaxed);
+        const uint64_t center = m_center.load(std::memory_order_acquire);
+        x = static_cast<int32_t>(PairX(center));
+        y = static_cast<int32_t>(PairY(center));
     }
     [[nodiscard]] bool ReadStylusPointerForEmu(int& x, int& y) const noexcept
     {
@@ -308,8 +340,9 @@ public:
         out.screenSyncMode = static_cast<int>((bits >> 6) & 0x3);
         out.focused = m_focused.load(std::memory_order_acquire);
         out.captureWanted = m_captureWanted.load(std::memory_order_acquire);
-        out.centerY = m_centerY.load(std::memory_order_acquire);
-        out.centerX = m_centerX.load(std::memory_order_relaxed);
+        const uint64_t center = m_center.load(std::memory_order_acquire);
+        out.centerX = static_cast<int32_t>(PairX(center));
+        out.centerY = static_cast<int32_t>(PairY(center));
         return out;
     }
 
@@ -350,10 +383,31 @@ public:
 
     uint32_t TakeGuiRequestsFromGui() noexcept
     {
+        if (m_guiRequests.load(std::memory_order_relaxed) == 0)
+            return 0;
         return m_guiRequests.exchange(0, std::memory_order_acq_rel);
     }
 
 private:
+    static uint64_t PackUint32Pair(uint32_t x, uint32_t y) noexcept
+    {
+        return static_cast<uint64_t>(x)
+            | (static_cast<uint64_t>(y) << 32);
+    }
+    static uint64_t PackInt32Pair(int32_t x, int32_t y) noexcept
+    {
+        return PackUint32Pair(
+            static_cast<uint32_t>(x), static_cast<uint32_t>(y));
+    }
+    static uint32_t PairX(uint64_t packed) noexcept
+    {
+        return static_cast<uint32_t>(packed);
+    }
+    static uint32_t PairY(uint64_t packed) noexcept
+    {
+        return static_cast<uint32_t>(packed >> 32);
+    }
+
     static uint64_t PackWheelMailbox(uint32_t generation, int32_t steps) noexcept
     {
         return (static_cast<uint64_t>(generation) << 32)
@@ -363,15 +417,17 @@ private:
     std::atomic_bool m_focused{false};
     std::atomic_bool m_captureWanted{false};
     std::atomic_bool m_panelAvailable{false};
-    std::atomic<int> m_centerX{0};
-    std::atomic<int> m_centerY{0};
+    std::atomic<uint64_t> m_center{0};
     std::atomic<uint64_t> m_layoutGeneration{1};
     std::atomic<uintptr_t> m_windowHandle{0};
     std::atomic<uint64_t> m_inputGeneration{1};
     std::atomic<uint64_t> m_wheelMailbox{PackWheelMailbox(1, 0)};
     std::atomic<int> m_cursorModeCommand{-1};
-    std::atomic<int32_t> m_panelAimX{0};
-    std::atomic<int32_t> m_panelAimY{0};
+    std::atomic<uint64_t> m_panelAimTotal{0};
+    std::atomic<uint64_t> m_panelAimResetBaseline{0};
+    std::atomic_bool m_panelAimResetPending{false};
+    // Emulation-thread-only cursor into the GUI-owned cumulative total.
+    uint64_t m_panelAimCursor = 0;
     // GUI-published DS coordinate under the pointer. Packed so the emulation
     // thread cannot observe X/Y from different mouse events; bit 31 is valid.
     std::atomic<uint32_t> m_stylusPointer{0};

@@ -8,6 +8,7 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -96,6 +97,8 @@ struct LinuxRawInputFilter::Impl
         double residual[2] = { 0.0, 0.0 };
     };
     std::unordered_map<int, AxisState> axisStates;   // key: sourceid
+    int lastSourceId = -1;
+    AxisState* lastSourceState = nullptr;
     std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()/warps
 
     static void QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
@@ -146,7 +149,14 @@ struct LinuxRawInputFilter::Impl
             }
         }
 
-        AxisState& st = axisStates[raw->sourceid];
+        // XInput event streams normally repeat one source. Keep the generic
+        // map for arbitrary XI2 ids, but pay its hash only when the source
+        // changes. unordered_map rehash preserves element references/pointers.
+        if (raw->sourceid != lastSourceId || !lastSourceState) {
+            lastSourceId = raw->sourceid;
+            lastSourceState = &axisStates[raw->sourceid];
+        }
+        AxisState& st = *lastSourceState;
         if (!st.known) {
             QueryAxisModes(dpy, raw->sourceid, st);
             if (MelonPrimeInputDebug())
@@ -171,7 +181,11 @@ struct LinuxRawInputFilter::Impl
         const double* rawVals = raw->raw_values;
         const double* xfVals  = raw->valuators.values;
         double d[2] = { 0.0, 0.0 };
-        for (int axis = 0; axis < raw->valuators.mask_len * 8; ++axis) {
+        // raw_values/values are packed by set-bit order. Decode only through
+        // Y: consuming a present X before Y preserves the packed pointer, and
+        // no value after axis 1 can affect aim.
+        const int axisLimit = std::min(2, raw->valuators.mask_len * 8);
+        for (int axis = 0; axis < axisLimit; ++axis) {
             if (!TestBit(raw->valuators.mask, axis))
                 continue;
             const double rawValue = *rawVals++;

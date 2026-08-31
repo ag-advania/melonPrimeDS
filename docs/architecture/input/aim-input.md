@@ -437,6 +437,8 @@ Current implementation:
 - `LinuxRawInputFilter` (`MelonPrimeRawInputLinuxFilter.cpp`):
   - queries each source device's valuator modes once via `XIQueryDevice` (`sourceid`-keyed cache,
     filter-thread-only);
+  - keeps a filter-thread-only pointer to the most recently used source entry, so the common
+    single-mouse stream avoids repeating the `unordered_map` lookup;
   - relative axes 0/1 accumulate as-is; **absolute axes accumulate the difference of successive
     values** (first event seeds the baseline);
   - axes above 0/1 (scroll-wheel valuators on many drivers) are never fed into aim;
@@ -454,6 +456,9 @@ Current implementation:
   panel accumulator is dropped (`resetAimMouseDelta()`); otherwise the Qt accumulator
   (`ScreenPanel::getAimMouseDelta()`) is authoritative **even when zero** (falling through to
   `QCursor::pos() - center` would drift now that the cursor is not recentered every event).
+- The Qt accumulator is a packed cumulative total with one GUI-thread writer and an
+  emulation-thread cursor. Reset stores a separate cumulative boundary instead of clearing the
+  producer total; motion arriving after the request and before the next frame is therefore kept.
 - `ScreenPanel::mouseMoveEvent` (Linux aim frames):
   - raw mode → containment only: invalidate the fallback baseline and warp back to center when
     the hidden cursor strays >96px (warping every event fights VBox's re-sync and storms events);
@@ -485,6 +490,8 @@ RawMotion parsing rules:
 - XInput2 reports one `raw_values` entry for each set bit in `valuators.mask`.
 - Axis 0 maps to X and axis 1 maps to Y. Do not treat "first received value" as X unconditionally:
   a Y-only event would become horizontal aim.
+- Only mask bits 0 and 1 are decoded for the normal X/Y path. The packed `raw_values` cursor still
+  advances according to set bits, so a missing X value cannot shift Y into the wrong axis.
 - If axis 0/1 are absent, the code keeps a conservative first-two-relative-values fallback for
   unusual devices, but normal mouse devices should hit the explicit axis 0/1 path.
 - The filter captures only relative motion. Buttons and keyboard state remain owned by Qt/SDL
@@ -517,6 +524,9 @@ Since 2026-07-04, macOS in-game aim uses backend-specific cursor handling. macOS
 Backend split (see `MelonPrimeRawInputMacFilter.mm`, `IsGcMouseAimActive()`):
 
 - **GCMouse (external USB/BT mouse, macOS 11+)**: Raw deltas are warp-immune (GameController).
+  Every mouse is assigned the filter's single serial `handlerQueue` before its value-change
+  callback is installed. Fractional residuals and the packed GCMouse cumulative total therefore
+  have exactly one serialized writer without an event-level atomic RMW.
   While aim is clipped, `MacSetAimCursorCaptured(true)` disassociates hardware motion from the
   OS cursor (`CGAssociateMouseAndMouseCursorPosition(false)`) and hides it
   (`CGDisplayHideCursor`). Containment warps are skipped — the parked cursor must not be warped
@@ -527,6 +537,8 @@ Backend split (see `MelonPrimeRawInputMacFilter.mm`, `IsGcMouseAimActive()`):
   **must not** call `MacSetAimCursorCaptured(true)`. Disassociating the cursor on the trackpad
   path drops Qt `mouseRelease` events and leaves `keyHotkeyMask` stuck (shoot/zoom held). IOHID
   uses containment warps to `aimContainmentLocalRect().center()` instead.
+  IOHID publishes to its own packed cumulative total on the worker thread. The worker runloop
+  pointer is an acquire/release atomic so stop/wakeup never races a plain pointer publication.
 - **QCursor fallback**: When `isAvailable()` is false (no permission, no device). Per-frame
   recenter in `ProcessAimInputMouse` when raw is inactive; panel containment warps otherwise.
 
@@ -537,6 +549,10 @@ one-shot recenter requests; the zero-warp contract applies to steady raw Aim fra
 
 Mouse buttons and keyboard hotkeys stay on the Qt path (`EmuInstance::onMousePress` /
 `onMouseRelease` → `keyHotkeyMask`). They are intentionally not read from GCMouse/IOHID.
+
+The frame reader acquire-loads the independent GCMouse and IOHID totals, sums each axis modulo
+32 bits, and advances only its subscription cursor. This preserves deltas across a backend handoff
+without making the two event sources writers of one shared accumulator.
 
 Stuck-click recovery (2026-07-04, trackpad report): `EmuInstance::syncMouseHotkeysFromQtButtons()`
 clears mouse-mapped hotkey bits when `QGuiApplication::mouseButtons()` shows the button physically

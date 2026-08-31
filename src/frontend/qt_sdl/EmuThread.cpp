@@ -532,10 +532,10 @@ void EmuThread::run()
         // =================================================================
         // P-15: Late-Poll Joystick — refresh SDL state after Sleep.
         //
-        // inputProcess() already ran at the main loop top (for edge
-        // detection: hotkeyPress/Release). This lightweight refresh
-        // re-polls joystick axes/buttons so RunFrameHook sees fresh
-        // joyHotkeyMask and inputMask. Edge detection is untouched.
+        // inputProcess() already finalized global emulator command edges.
+        // This refresh re-polls joystick axes/buttons so RunFrameHook sees a
+        // separate fresh MelonPrime gameplay held/press/release snapshot;
+        // pause/save/fullscreen edges are never recomputed or re-fired here.
         //
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::FrameSetup);

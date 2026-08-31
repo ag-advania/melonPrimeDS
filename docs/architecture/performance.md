@@ -96,7 +96,8 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | `m_aimEffectiveFixedScale*` | `MelonPrime.h` | Sensitivity / zoom-aim config reload | `RecalcAimFixedPoint` / zoom update |
 | `m_aimResidualX/Y` | `MelonPrime.h` | Sensitivity, layout, aim block, focus (not `InputReset`) | `HandleAimEarlyReset`, explicit lifecycle |
 | `m_cachedPanel` (P-3) | `MelonPrime.h` | `OnEmuStart`, `NotifyLayoutChange` | `MelonPrimeCore` lifecycle |
-| Linux panel `aimMouseDelta*` | `Screen.h:109-110` | `resetAimMouseDelta`, panel→raw edge (`GameInput.cpp:205-206`) | `ScreenPanel` + `UpdateInputStateImpl` |
+| Qt panel `m_panelAimTotal` / reset baseline / consumer cursor | `MelonPrimeThreadBridge.h` | reset captures the current total; panel→raw and layout/focus transitions request reset | GUI-thread producer + emulation-thread consumer |
+| SDL active binding table / late edge baseline | `EmuInstance.h` | input config load, central device close, reconnect baseline | `EmuInstance` input owner |
 | Linux `absBaseInvalid` | `MelonPrimeRawInputLinuxFilter.cpp:87` | `resetAll`, `NotifyCursorWarp` | `LinuxRawInputFilter` |
 | Mac raw `lastReadX/Y` | `MelonPrimeRawInputMacFilter.mm:46-47` | `resetAll`, filter stop | `MacRawInputFilter::resetAll` |
 | Linux raw `lastReadX/Y` | `MelonPrimeRawInputLinuxFilter.cpp:54-55` | `resetAll` | `LinuxRawInputFilter::resetAll` |
@@ -134,15 +135,26 @@ load/store for monotonic raw accumulators:
 | Linux `absBaseInvalid` | relaxed load, false branch | `exchange(false, acq_rel)` only after true |
 | Linux `accX/accY` writer | relaxed load | release store by the sole XInput filter thread |
 | Linux `receivedMotion` | relaxed load after nonzero motion | one release store on the first false-to-true edge |
+| macOS GCMouse / IOHID cumulative totals | relaxed load by the backend's sole serialized writer | release store; frame reader advances a subscription cursor |
+| Qt panel aim cumulative total | relaxed load by the GUI-thread sole writer | packed release store; reset publishes a separate boundary baseline |
+| SDL wheel pulse | relaxed zero load | exchange only when a pulse is pending |
 | Core config reload | relaxed false load | `exchange(false, acq_rel)` on a pending edge |
 | cursor-mode command | relaxed `-1` load | `exchange(-1, acq_rel)` on a command |
 | wheel mailbox | relaxed zero load | exchange for an event or nonzero generation-only boundary |
+| GUI / persist request mailbox | relaxed empty load | exchange only when a request is pending |
 
 A producer racing an empty load is not cleared: its value remains pending and
 is consumed on the next normal frame. Config reload and cursor mode are
 coalesced replacement commands, so this bounded delay is intentional. Wheel
 keeps the packed generation/value invariant and never treats a generation-only
 publication as empty.
+
+The macOS load/store accumulator contract relies on explicit writer
+serialization: all GCMouse value-change handlers use one serial handler queue,
+while IOHID has one worker runloop. The two backends publish separate totals,
+so they never become concurrent writers of the same atomic. Qt panel movement
+is likewise serialized by GUI dispatch; its reset baseline is separate from the
+producer-owned total and preserves movement that arrives after a reset request.
 
 ### V6 Measurement Gate (historical baseline rule)
 

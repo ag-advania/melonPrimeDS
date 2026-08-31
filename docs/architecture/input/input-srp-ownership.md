@@ -20,6 +20,10 @@ invalidate that responsibility's internal state.
 | `FrameInputState` (`down`, `press`, mouse delta, wheel count, move index) | `UpdateInputStateImpl` in `MelonPrimeGameInput.cpp` | input snapshot path; full clear only on timeline replacement | move/buttons, actions, Aim | once per emulated frame; bounded reentrant projection | Critical: aligned 64-byte CL0; do not copy or heap-separate |
 | hotkey to `down` / `press` projection | `MelonPrimeInputProjection.h` | stateless | `UpdateInputStateImpl` | once per input snapshot | Low: header-only fixed arithmetic; no state to move |
 | platform relative delta / Raw Input edge and wheel acquisition | platform filter plus `MelonPrimeInputSubscription` | platform owner and registration-generation transaction | `UpdateInputStateImpl` | per event plus one frame snapshot | Critical: single-writer atomics and generation ordering are load-bearing |
+| SDL controller lifetime and derived capability state | `EmuInstance::closeJoystick` under `joyMutex` | the same owner clears handles, masks, late-edge baseline, rumble and sensors | early lifecycle check and late guest-frame sample | lifecycle edge; attach probe once per 60 outer frames | High: no poll path may close a handle directly |
+| late SDL gameplay snapshot | `EmuInstance::inputRefreshJoystickState` | central close/reconnect baseline | MelonPrime gameplay projection only | once immediately before `RunFrameHook` | Critical: held/pressed/released stay separate from global emulator edges |
+| active joystick binding table | `EmuInstance::inputLoadConfig` | config reload/device rebind | early and late SDL sampling | cold rebuild, bounded active-only scan per sample | High: fixed storage; no hot mapping-table scan or allocation |
+| Qt panel aim cumulative total | GUI-thread `AddPanelAimDeltaFromGui` | reset captures a total baseline; emulation thread owns the read cursor | non-raw Aim fallback | per Qt event plus one frame snapshot | Critical: packed single-writer load/store, no event RMW |
 | DS movement/button projection | `ProcessMoveAndButtonsFastImpl` | per-frame `InputReset` | DS input mask | active frame and reentrant frame | Critical: direct fixed lookup and one mask store |
 | Aim config-derived Q14 values | Aim configuration section in `MelonPrimeGameInput.cpp` | `ApplyAimRuntimeConfig`, `RecalcAimFixedPoint` | `ProcessAimInputMouse`, native aim hook fragments | config / sensitivity hotkey only | Critical: fixed values stay beside residuals; no per-frame float work |
 | Aim residuals and native delivery deltas | Aim state machine and aim hook unity fragments in `MelonPrimeGameInput.cpp` | `ResetAimTransientState` and Aim-owned transition paths | Aim state machine and hook dispatch | per active aim frame; lifecycle reset | Critical: current hot scalar cluster is load-bearing; no pointer owner or PIMPL |
@@ -114,6 +118,19 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
 - Linux RawMotion has one accumulator writer. The filter thread publishes
   `load(relaxed) + store(release)` while the emulation thread only loads and
   advances a per-subscription cursor; no event-level `fetch_add` is needed.
+- SDL device close/reset has one mutex-held owner. The outer-frame lifecycle
+  check owns attachment discovery, while the guest-frame late sample updates a
+  separate MelonPrime held/pressed/released snapshot immediately before
+  `RunFrameHook`. It never rewrites global emulator hotkey edges.
+- Joystick sampling walks the fixed active-binding table built on config load;
+  duplicate physical bindings are sampled once and fan out to their DS/hotkey
+  masks without allocation.
+- GCMouse callbacks are assigned to one serial `handlerQueue`; IOHID events stay
+  on their worker runloop. Each backend has its own packed cumulative total and
+  the runloop publication is atomic.
+- Qt panel aim has one GUI writer and one emulation-thread cursor. A reset stores
+  the cumulative boundary separately, so motion arriving after the reset
+  request remains visible on the next snapshot.
 - rare config, cursor-mode, and wheel consumers load the empty sentinel before
   their exchange claim. A producer racing an empty load remains pending for the
   next normal frame. Wheel generation-only publications are nonzero and are
@@ -150,7 +167,9 @@ The SRP audit ratchets the owner definitions, lifecycle profiles, forbidden hot
 abstractions and `RunFrameHook` order. Rule L2 additionally pins macOS
 source-resolved warp policy, Linux single-writer/load-first shapes, disabled
 overlay guest-read rejection, shared coordinator ownership, rare command claims,
-and cold wheel-mask projection. The Savestate contract additionally pins the
+and cold wheel-mask projection. Rules O-S additionally pin controller lifecycle
+ownership and late-edge isolation, macOS producer serialization, packed bridge
+publications, and the Linux common-source/X-Y decode fast path. The Savestate contract additionally pins the
 next-normal-frame reconciliation and the full input reset profile.
 
 A compile/static pass is not a runtime latency claim. Changes to Aim arithmetic,

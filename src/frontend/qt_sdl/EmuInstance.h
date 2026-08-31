@@ -371,16 +371,16 @@ private:
 
     void keyReleaseAll();
 
+    // joyMutex must be held. These are the sole device lifetime writers.
     void openJoystick();
-    void closeJoystick();
+    void closeJoystick(bool publishLateRelease = false);
     bool joystickButtonDown(int val);
 
     void inputProcess();
 
 #ifdef MELONPRIME_DS
-    // P-15: Lightweight joystick re-poll after Sleep.
-    // Refreshes joyInputMask/joyHotkeyMask/inputMask/hotkeyMask
-    // WITHOUT touching edge detection (lastHotkeyMask, hotkeyPress, etc.)
+    // Guest-frame late poll. Global emulator hotkey edges remain owned by
+    // inputProcess(); this publishes a separate MelonPrime gameplay snapshot.
     void inputRefreshJoystickState();
 #endif
 
@@ -522,6 +522,23 @@ private:
     std::shared_ptr<SDL_mutex> joyMutex;
 
 #ifdef MELONPRIME_DS
+    struct LateJoystickSnapshot
+    {
+        uint16_t inputMask = 0xFFF;
+        uint64_t hotkeyHeld = 0;
+        uint64_t hotkeyPressed = 0;
+        uint64_t hotkeyReleased = 0;
+    };
+
+    struct ActiveJoystickBinding
+    {
+        int binding = -1;
+        uint16_t inputBits = 0;
+        uint64_t hotkeyBits = 0;
+    };
+
+    void rebuildActiveJoystickBindings();
+
     // OPT: QBitArray -> native integers.
     // QBitArray involves heap allocation, reference counting, byte-level iteration,
     // and bounds checking per operation. With only 12 input bits and ~53 hotkey bits,
@@ -531,16 +548,22 @@ private:
     // emulation thread consumes it. Keep the published masks atomic; the
     // joystick and combined masks remain emulation-thread-owned.
     std::atomic<uint16_t> keyInputMask{0xFFF};
-    uint16_t joyInputMask;
     uint16_t inputMask;
 
     std::atomic<uint64_t> keyHotkeyMask{0};
-    uint64_t joyHotkeyMask;
     uint64_t hotkeyMask, lastHotkeyMask;
     uint64_t hotkeyPress, hotkeyRelease;
-    uint64_t joyHotkeyPress;
-    uint64_t joyHotkeyRelease;
-    uint64_t lastJoyHotkeyMask;
+    // Qt keyboard/mouse edge isolated from the previous-frame joystick sample.
+    // MelonPrime combines this with the guest-frame late joystick edge; global
+    // emulator commands continue to consume hotkeyPress/hotkeyRelease above.
+    uint64_t keyHotkeyPress = 0;
+    uint64_t lastKeyHotkeyMask = 0;
+    LateJoystickSnapshot lateJoystick{};
+    uint64_t previousLateJoystickHotkeyMask = 0;
+    bool lateJoystickNeedsBaseline = true;
+    uint8_t joystickLifecycleCheckCounter = 0;
+    ActiveJoystickBinding activeJoystickBindings[HK_MAX + 12]{};
+    uint8_t activeJoystickBindingCount = 0;
     // Bits latched by onMouseWheel(); cleared after edge detection so the
     // virtual key is a one-frame press rather than a held button.
     std::atomic<uint64_t> wheelHotkeyPulseMask{0};
