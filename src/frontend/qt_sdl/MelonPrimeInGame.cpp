@@ -29,7 +29,8 @@ namespace MelonPrime {
         const bool isStylusMode = this->isStylusMode;
         // Early prefetch of aim pointers - gives ~50-100 instructions of
         // lead time before ProcessAimInputMouse reads them, hiding potential L2 miss.
-        if (LIKELY(!isStylusMode)) {
+        if (LIKELY(!isStylusMode)
+            || m_enableStylusDirectAimWhileTouching) {
             PREFETCH_WRITE(m_ptrs.aimX);
             PREFETCH_WRITE(m_ptrs.aimY);
         }
@@ -59,9 +60,10 @@ namespace MelonPrime {
             m_flags.assign(StateFlags::BIT_PAUSED, isPaused);
 
             // During the map / user-action pause, the Mouse-Left ShootScan key must
-            // not fire (a left click stays touch-only there). Only the V-default
-            // ScanShoot key triggers shoot/scan/map-expand. IB_SHOOT is the OR of
-            // both keys in ProjectDownState, so rebuild it from the V key alone.
+            // not fire (a left click stays touch-only there). Only the active
+            // mode-specific ScanShoot key triggers shoot/scan/map-expand.
+            // IB_SHOOT is the OR of both actions in ProjectDownState, so rebuild
+            // it from that selected key alone.
             if (isPaused) {
                 m_input.down = (m_input.down & ~IB_SHOOT)
                     | (m_scanShootKeyDown ? IB_SHOOT : 0ULL);
@@ -114,7 +116,27 @@ namespace MelonPrime {
 
         if (isStylusMode) {
             if (!m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
-                ProcessAimInputStylus(nds);
+                if (m_enableStylusDirectAimWhileTouching
+                    && m_stylusTouchKeyDown)
+                {
+#ifdef _WIN32
+                    if (m_rawFilter && m_didFrameAdvanceSinceSnapshot)
+                        m_rawFilter->LateLatchMouseDelta(
+                            m_rawInputSubscription,
+                            m_input.mouseX,
+                            m_input.mouseY);
+#endif
+                    ProcessAimInputMouse();
+                    if (!m_flags.test(StateFlags::BIT_LAST_FOCUSED)
+                        || !m_aimBlockBits)
+                    {
+                        using namespace Consts::UI;
+                        nds->TouchScreen(CENTER_RESET.x(), CENTER_RESET.y());
+                    }
+                }
+                else {
+                    ProcessAimInputStylus(nds);
+                }
             }
         }
         else {

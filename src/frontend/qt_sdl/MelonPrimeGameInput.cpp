@@ -76,10 +76,17 @@ namespace MelonPrime {
             m_threadBridge.ReadCenterForEmu(
                 m_aimData.centerX, m_aimData.centerY);
         }
-        const bool captureEligible = focused
-            && m_threadBridge.PanelAvailableForEmu()
-            && !isCursorMode
-            && m_threadBridge.CaptureWantedForEmu();
+        // Traditional Stylus Mode keeps the panel's DS touch lifecycle and
+        // never owns relative input. Its optional direct-aim sub-mode requests
+        // capture only for the held touch action, so Raw ownership follows the
+        // same request/active split as normal mouse aim.
+        const bool captureEligible = InputProjection::ShouldOwnRelativeAimInput(
+            focused,
+            m_threadBridge.PanelAvailableForEmu(),
+            isCursorMode,
+            isStylusMode,
+            m_enableStylusDirectAimWhileTouching,
+            m_threadBridge.CaptureWantedForEmu());
         const bool wasInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
         const uint64_t wasInputGeneration = m_inputSubscription.generation;
@@ -201,7 +208,7 @@ namespace MelonPrime {
         // This keeps instances isolated and avoids duplicate press edges when
         // active ownership changes.
         const uint64_t hotDownMask = isInputOwner
-            ? ((rawActionReady ? hk.down : 0)
+            ? ((rawActionReady ? hk.down : emuInstance->hotkeyMask)
                 | emuInstance->joyHotkeyMask | wheelHotkeyBits)
             : emuInstance->hotkeyMask;
         if constexpr (!kReentrant) {
@@ -226,13 +233,16 @@ namespace MelonPrime {
 #endif
 
         const InputProjection::ProjectedDownState downState =
-            InputProjection::ProjectDownState(hotDownMask);
+            InputProjection::ProjectDownState(hotDownMask, isStylusMode);
         m_input.down = downState.mask;
         m_input.moveIndex = downState.moveIndex;
-        // Track the V-default ScanShoot key separately from the merged IB_SHOOT bit
-        // so the Adventure map/user-action pause can drop the Mouse-Left ShootScan
-        // contribution while keeping this one.
-        m_scanShootKeyDown = ((hotDownMask >> HK_MetroidScanShoot) & 1ULL) != 0;
+        // Track the active mode-specific ScanShoot key separately from the
+        // merged IB_SHOOT bit so the Adventure map/user-action pause can drop
+        // the Mouse-Left ShootScan contribution while keeping this one.
+        m_scanShootKeyDown =
+            (downState.modeFlags & InputProjection::PMF_SCAN_SHOOT_DOWN) != 0;
+        m_stylusTouchKeyDown =
+            (downState.modeFlags & InputProjection::PMF_STYLUS_TOUCH_DOWN) != 0;
 
 #if !defined(_WIN32)
         bool haveMouseDelta = false;
@@ -539,10 +549,19 @@ namespace MelonPrime {
     {
         if (LIKELY(emuInstance->isTouching)) {
             nds->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+            return;
         }
-        else {
-            nds->ReleaseScreen();
+
+        int touchX = 0;
+        int touchY = 0;
+        if (m_stylusTouchKeyDown
+            && m_threadBridge.ReadStylusPointerForEmu(touchX, touchY))
+        {
+            nds->TouchScreen(touchX, touchY);
+            return;
         }
+
+        nds->ReleaseScreen();
     }
 
     // P-29b: Cold path for aim reset (aimBlock or layout change).

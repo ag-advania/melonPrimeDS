@@ -519,6 +519,10 @@ void MelonPrimeInputConfig::buildSettingBindings()
         // index stays stable; only the tail load range grows.
         { C::TouchScreenAimOnlySuspendForTransform, K::CheckBool,
           ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform }, // 54
+        // Direct relative aim remains a Stylus Mode sub-option. Appended so
+        // every historical binding index and its observable load order stay put.
+        { C::StylusDirectAimWhileTouching, K::CheckBool,
+          ui->cbMetroidEnableStylusDirectAimWhileTouching }, // 55
     };
 }
 
@@ -736,7 +740,7 @@ void MelonPrimeInputConfig::setupSensitivityAndToggles(Config::Table& instcfg)
     // V15 appended bindings 45..47: distance, inverted disable parent, custom mode.
     // Mouse-wheel weapon cycling is now Next/Previous Weapon (Secondary) bindings.
     loadBindingsRange(instcfg, 45, 48); // MELONPRIME_DISABLE_CHECKBOX_SEMANTICS_V15
-    loadBindingsRange(instcfg, 49, 55); // top-screen touch, touch-screen aim-only (+ its sub-option), stylus cursor options
+    loadBindingsRange(instcfg, 49, 56); // top-screen touch, touch-screen aim-only (+ sub-options), stylus cursor/direct-aim options
     if (!instcfg.HasKey(MelonPrime::CfgKey::MorphBoostSwipeEnabled)
         && instcfg.GetInt(MelonPrime::CfgKey::MorphBoostSwipeDistance) <= 0) {
         m_cbMetroidDisableMorphBoostSwipe->setChecked(true);
@@ -1352,6 +1356,7 @@ void MelonPrimeInputConfig::setupSettingsOrganization()
     detachWidget(ui->lblMetroidJoy2KeySupportDesc);
 
     appendInputWidget(ui->cbMetroidEnableStylusMode);
+    appendInputWidget(ui->cbMetroidEnableStylusDirectAimWhileTouching);
     appendInputWidget(ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking);
     appendInputWidget(ui->cbMetroidEnableStylusHideCursorInGame);
     appendInputWidget(ui->cbMetroidEnableTouchScreenAimOnly);
@@ -1494,16 +1499,25 @@ void MelonPrimeInputConfig::updateAimControlsForStylusMode(bool stylusEnabled)
 {
     // Stylus-specific options retain their saved check state, but cannot be
     // edited until Stylus Mode itself is enabled.
-    ui->cbMetroidEnableTouchScreenAimOnly->setEnabled(stylusEnabled);
-    // Sub-option: only meaningful while the parent patch is actually on.
+    const bool directAimEnabled = stylusEnabled
+        && ui->cbMetroidEnableStylusDirectAimWhileTouching->isChecked();
+    const bool absoluteTouchAimEnabled = stylusEnabled && !directAimEnabled;
+    // These options only affect the traditional absolute DS-touch aim route.
+    // Keep their saved values intact while the direct relative route is active.
+    ui->cbMetroidEnableTouchScreenAimOnly->setEnabled(absoluteTouchAimEnabled);
+    // Sub-option: only meaningful while its parent patch and the traditional
+    // absolute-touch route are both active.
     ui->cbMetroidEnableTouchScreenAimOnlySuspendForTransform->setEnabled(
-        stylusEnabled && ui->cbMetroidEnableTouchScreenAimOnly->isChecked());
+        absoluteTouchAimEnabled
+        && ui->cbMetroidEnableTouchScreenAimOnly->isChecked());
     ui->cbMetroidEnableStylusHideCursorInGame->setEnabled(stylusEnabled);
-    ui->cbMetroidEnableTopScreenTouch->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableTopScreenTouch->setEnabled(absoluteTouchAimEnabled);
     ui->cbMetroidEnableStylusConfineCursorToTopScreen->setEnabled(stylusEnabled);
-    ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking->setEnabled(stylusEnabled);
+    ui->cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking->setEnabled(
+        absoluteTouchAimEnabled);
+    ui->cbMetroidEnableStylusDirectAimWhileTouching->setEnabled(stylusEnabled);
 
-    const bool enableAimControls = !stylusEnabled;
+    const bool enableAimControls = !stylusEnabled || directAimEnabled;
     ui->metroidAimSensitvitySpinBox->setEnabled(enableAimControls);
     ui->metroidAimSensitvityLabel->setEnabled(enableAimControls);
     ui->metroidAimYAxisScaleSpinBox->setEnabled(enableAimControls);
@@ -1892,6 +1906,11 @@ void MelonPrimeInputConfig::on_dsbMetroidHudCrosshairDeadband_valueChanged(doubl
 void MelonPrimeInputConfig::on_cbMetroidEnableStylusMode_stateChanged(int state)
 {
     updateAimControlsForStylusMode(state != 0);
+}
+
+void MelonPrimeInputConfig::on_cbMetroidEnableStylusDirectAimWhileTouching_stateChanged(int)
+{
+    updateAimControlsForStylusMode(ui->cbMetroidEnableStylusMode->isChecked());
 }
 
 void MelonPrimeInputConfig::on_cbMetroidEnableTouchScreenAimOnly_stateChanged(int)

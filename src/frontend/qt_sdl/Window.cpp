@@ -1537,6 +1537,15 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     emuInstance->onKeyPress(event);
 
 #ifdef MELONPRIME_DS
+    // A keyboard binding for the Stylus Mode touch action must begin at the
+    // current pointer just like a physical mouse click. This is event-driven,
+    // so it adds no polling or per-frame GUI work.
+    {
+        QMutexLocker panelLock(&screenPanelLock);
+        if (panel)
+            panel->primeStylusTouchHotkeyAtCursor(event->key());
+    }
+
     // MelonPrimeDS. for Escaping from metroid cursor lock 
     if (event->key() == Qt::Key_Escape) {
         const auto widgets = QApplication::allWidgets();
@@ -1557,6 +1566,13 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
     if (event->isAutoRepeat()) return;
 
     emuInstance->onKeyRelease(event);
+#ifdef MELONPRIME_DS
+    {
+        QMutexLocker panelLock(&screenPanelLock);
+        if (panel)
+            panel->releaseStylusTouchHotkeyCapture(event->key());
+    }
+#endif
 }
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_VULKAN)

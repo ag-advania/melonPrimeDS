@@ -99,6 +99,12 @@ enum
     // packing stays valid.
     HK_MetroidWeaponNextSecondary,
     HK_MetroidWeaponPreviousSecondary,
+    // Appended to preserve every existing hotkey ID. Runtime projection selects
+    // this binding only while Stylus Mode is enabled.
+    HK_MetroidScanShootStylus,
+    // Appended to preserve every existing hotkey ID. In Stylus Mode this
+    // binding drives touch contact; outside Stylus Mode it is ignored.
+    HK_MetroidStylusTouch,
 #endif // MELONPRIME_DS
 
     // HK_MAX should be last item.
@@ -170,6 +176,8 @@ public:
 #ifdef MELONPRIME_DS
     void onMousePress(QMouseEvent* event);
     void onMouseRelease(QMouseEvent* event);
+    [[nodiscard]] bool hotkeyUsesKeyboardKey(int hotkeyId, int qtKey) const;
+    [[nodiscard]] bool hotkeyUsesMouseButton(int hotkeyId, Qt::MouseButton button) const;
     void syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical);
     // One-frame virtual press for MelonPrime::InputKey::MouseWheelUp/Down bindings.
     void onMouseWheel(int delta);

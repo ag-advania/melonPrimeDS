@@ -51,6 +51,8 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
     s.joy2Key = cfg.GetBool(CfgKey::Joy2Key);
     s.snapTap = cfg.GetBool(CfgKey::SnapTap);
     s.stylusMode = cfg.GetBool(CfgKey::StylusMode);
+    s.stylusDirectAimWhileTouching =
+        cfg.GetBool(CfgKey::StylusDirectAimWhileTouching);
 
     s.disableMphAimSmoothing = cfg.GetBool(CfgKey::DisableMphAimSmoothing);
     s.aimAccumulator = cfg.GetBool(CfgKey::AimAccumulator);

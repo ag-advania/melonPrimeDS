@@ -888,11 +888,19 @@ namespace MelonPrime {
         //          empty on a normal frame (~40–100 ns window). Skip the
         //          GetRawInputBuffer syscall entirely (~500–2000 cyc saved).
         bool     m_didFrameAdvanceSinceSnapshot = false;
-        // True when the V-default ScanShoot key (HK_MetroidScanShoot) is held this
-        // frame. Used to keep the shoot/scan/map-expand input working during the
-        // Adventure map/user-action pause while the Mouse-Left ShootScan key stays
-        // touch-only (a left click must not fire there). Set in UpdateInputStateImpl.
+        // True when the active mode-specific ScanShoot key is held this frame.
+        // Used to keep the shoot/scan/map-expand input working during the
+        // Adventure map/user-action pause while the Mouse-Left ShootScan key
+        // stays touch-only. Set in UpdateInputStateImpl.
         bool     m_scanShootKeyDown = false;
+        // The configurable Stylus Mode touch-contact action. This remains
+        // separate from IB_SHOOT: the game itself turns touch edges into aim,
+        // firing, and double-tap jump behavior.
+        bool     m_stylusTouchKeyDown = false;
+        // Selects the normal relative-mouse/direct-write aim producer while
+        // Stylus Mode's configurable touch action is held. Loaded only at the
+        // cold runtime-config boundary.
+        bool     m_enableStylusDirectAimWhileTouching = false;
         // Loaded only at the cold config boundary. Vulkan reads this scalar
         // before every frame so an F8 load cannot expose one unmasked frame
         // while the ARM patch tracker is still being re-established.

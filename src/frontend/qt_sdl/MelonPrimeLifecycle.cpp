@@ -58,6 +58,8 @@ namespace MelonPrime {
         m_flags.assign(StateFlags::BIT_STYLUS_MODE, s.stylusMode);
         isStylusMode    = m_flags.test(StateFlags::BIT_STYLUS_MODE);
         m_snapTapMode   = m_flags.test(StateFlags::BIT_SNAP_TAP);
+        m_enableStylusDirectAimWhileTouching =
+            s.stylusDirectAimWhileTouching;
 
         m_disableMphAimSmoothing = s.disableMphAimSmoothing;
         m_enableAimAccumulator = s.aimAccumulator;
@@ -133,7 +135,9 @@ namespace MelonPrime {
         m_arm9HookActivationPlan.nativeAimHookMode =
             s.disableMphAimSmoothing ? s.nativeAimHookMode : 0;
         m_arm9HookActivationPlan.lowLatencyAimMode =
-            s.stylusMode ? LowLatencyAimMode::Off : s.lowLatencyAimMode;
+            (s.stylusMode && !s.stylusDirectAimWhileTouching)
+                ? LowLatencyAimMode::Off
+                : s.lowLatencyAimMode;
         m_arm9HookActivationPlan.immediateInputEdgeOverlay =
             s.immediateInputEdgeOverlay;
         m_arm9HookActivationPlan.nativeZoomToggle = s.nativeZoomToggle;

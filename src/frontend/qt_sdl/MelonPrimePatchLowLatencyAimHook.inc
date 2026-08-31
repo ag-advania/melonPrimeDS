@@ -321,7 +321,9 @@
     {
         if (!nds || !regs || !nds->MainRAM)
             return;
-        if (isStylusMode
+        if ((isStylusMode
+                && !(m_enableStylusDirectAimWhileTouching
+                    && m_stylusTouchKeyDown))
             || (m_lowLatencyAimMode != LowLatencyAimMode::ImmediateSync
                 && m_lowLatencyAimMode != LowLatencyAimMode::MoonLikeAim))
             return;

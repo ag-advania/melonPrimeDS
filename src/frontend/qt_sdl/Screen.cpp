@@ -734,11 +734,16 @@ void ScreenPanel::loadMelonPrimeStylusCursorConfig()
 {
     auto& cfg = emuInstance->getLocalConfig();
     const bool stylusModeEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusMode);
+    stylusDirectAimWhileTouchingEnabled = stylusModeEnabled
+        && cfg.GetBool(MelonPrime::CfgKey::StylusDirectAimWhileTouching);
     stylusHideCursorInGameEnabled = stylusModeEnabled
         && cfg.GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
     stylusConfineCursorToTopScreenEnabled = stylusModeEnabled
         && cfg.GetBool(MelonPrime::CfgKey::StylusConfineCursorToTopScreen);
+    // Direct aim owns a 1px relative-input capture only while its touch action
+    // is held. The traditional idle-center policy must not act between presses.
     stylusHoldCursorAtCenterEnabled = stylusModeEnabled
+        && !stylusDirectAimWhileTouchingEnabled
         && cfg.GetBool(MelonPrime::CfgKey::StylusHoldCursorAtCenterWhenNotClicking);
     stylusMatchCursorOptionsEnabled = stylusHideCursorInGameEnabled
         || stylusConfineCursorToTopScreenEnabled
@@ -748,6 +753,13 @@ void ScreenPanel::loadMelonPrimeStylusCursorConfig()
 void ScreenPanel::refreshStylusCursorSettings()
 {
     loadMelonPrimeStylusCursorConfig();
+
+    if (!stylusDirectAimWhileTouchingEnabled
+        && m_stylusDirectAimCaptureHeld)
+    {
+        m_stylusDirectAimMouseButton = Qt::NoButton;
+        endStylusDirectAimCapture();
+    }
 
     auto* const core = melonPrimeCore();
     const bool hasState = (core != nullptr);
@@ -760,6 +772,69 @@ void ScreenPanel::refreshStylusCursorSettings()
     updateClipIfNeeded();
     if (m_stylusMatchCursorActive)
         holdStylusCursorAtCenterIfNotClicking(mapFromGlobal(QCursor::pos()));
+}
+
+void ScreenPanel::primeStylusTouchHotkeyAtCursor(int qtKey)
+{
+    auto* const emu = emuInstance;
+    auto* const core = melonPrimeCore();
+    if (!emu || !core
+        || !emu->hotkeyUsesKeyboardKey(HK_MetroidStylusTouch, qtKey))
+    {
+        return;
+    }
+
+    const auto ui = core->ThreadBridge().ReadForGui();
+    if (!ui.stylusMode || !ui.inGame)
+        return;
+
+    if (stylusDirectAimWhileTouchingEnabled && !ui.cursorMode) {
+        beginStylusDirectAimCapture();
+        return;
+    }
+
+    QPoint local = mapFromGlobal(QCursor::pos());
+    int x = local.x();
+    int y = local.y();
+    const bool valid = getTouchCoords(x, y, false);
+    core->ThreadBridge().PublishStylusPointerFromGui(x, y, valid);
+    // Merely sampling the hover coordinate must not claim a top-screen drag.
+    topScreenTouchTransform = -1;
+}
+
+void ScreenPanel::releaseStylusTouchHotkeyCapture(int qtKey)
+{
+    auto* const emu = emuInstance;
+    if (!emu || !m_stylusDirectAimCaptureHeld
+        || !emu->hotkeyUsesKeyboardKey(HK_MetroidStylusTouch, qtKey))
+    {
+        return;
+    }
+
+    endStylusDirectAimCapture();
+}
+
+void ScreenPanel::beginStylusDirectAimCapture()
+{
+    if (m_stylusDirectAimCaptureHeld)
+        return;
+
+    m_stylusDirectAimCaptureHeld = true;
+    m_stylusClickHeld = true;
+    clipCursorCenter1px();
+}
+
+void ScreenPanel::endStylusDirectAimCapture()
+{
+    if (!m_stylusDirectAimCaptureHeld)
+        return;
+
+    m_stylusDirectAimCaptureHeld = false;
+    m_stylusClickHeld = false;
+    unclip();
+    // Restore any Stylus Mode hide/confine/not-clicking policy that was
+    // temporarily superseded by relative aim capture.
+    updateClipIfNeeded();
 }
 #endif
 
@@ -1004,13 +1079,26 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     emu->onMousePress(event);
 #endif
 
-    if (event->button() != Qt::LeftButton)
-        return;
-
 #ifdef MELONPRIME_DS
     // Mouse aim mode logic
     const auto ui = core ? core->ThreadBridge().ReadForGui()
                          : MelonPrime::MelonPrimeUiSnapshot{};
+    // During a Stylus Mode match the configured touch-contact binding owns
+    // mouse touch activation. Outside that narrow case, retain the normal DS
+    // UI behavior where the physical left button touches the screen.
+    if (core && ui.stylusMode && ui.inGame) {
+        if (!emu->hotkeyUsesMouseButton(HK_MetroidStylusTouch, event->button()))
+            return;
+        if (stylusDirectAimWhileTouchingEnabled && !ui.cursorMode) {
+            m_stylusDirectAimMouseButton = event->button();
+            beginStylusDirectAimCapture();
+            return;
+        }
+    }
+    else if (event->button() != Qt::LeftButton) {
+        return;
+    }
+
     if (core && !ui.stylusMode && ui.inGame)
     {
         // If not in cursor mode (aim mode), treat click as returning to aim (clip)
@@ -1021,6 +1109,10 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         }
         // If isCursorMode == true, proceed to standard touch processing
     }
+    m_touchMouseButton = event->button();
+#else
+    if (event->button() != Qt::LeftButton)
+        return;
 #endif
 
     const QPoint p = event->pos();
@@ -1031,7 +1123,16 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     {
         touching = true;
         emu->touchScreen(x, y);
+#ifdef MELONPRIME_DS
+        if (core && ui.stylusMode && ui.inGame)
+            core->ThreadBridge().PublishStylusPointerFromGui(x, y, true);
+#endif
     }
+#ifdef MELONPRIME_DS
+    else if (core && ui.stylusMode && ui.inGame) {
+        core->ThreadBridge().PublishStylusPointerFromGui(0, 0, false);
+    }
+#endif
 
 #ifdef MELONPRIME_DS
     // If not in cursor mode, re-clip
@@ -1060,6 +1161,14 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 
 #ifdef MELONPRIME_DS
     emu->onMouseRelease(event);
+
+    if (m_stylusDirectAimMouseButton != Qt::NoButton
+        && event->button() == m_stylusDirectAimMouseButton)
+    {
+        m_stylusDirectAimMouseButton = Qt::NoButton;
+        endStylusDirectAimCapture();
+        return;
+    }
 #endif
 
     if (Q_UNLIKELY(!emu->emuIsActive()))
@@ -1073,8 +1182,17 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
 
 #include "MelonPrimeHudScreenCppMouseRelease.inc"
 
+#ifdef MELONPRIME_DS
+    const bool releasesAcceptedTouch = (m_touchMouseButton != Qt::NoButton)
+        ? event->button() == m_touchMouseButton
+        : event->button() == Qt::LeftButton;
+    if (!releasesAcceptedTouch)
+        return;
+    m_touchMouseButton = Qt::NoButton;
+#else
     if (event->button() != Qt::LeftButton)
         return;
+#endif
 
 #ifdef MELONPRIME_DS
     // Ahead of the `touching` early-out below: a press whose touch never
@@ -1117,19 +1235,28 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
 #include "MelonPrimeHudScreenCppMouseMove.inc"
 
-#if defined(MELONPRIME_DS) && (defined(__linux__) || defined(__APPLE__))
+#ifdef MELONPRIME_DS
+    // One immutable runtime snapshot per Qt mouse event. Reuse it for both the
+    // platform aim route and Stylus Mode pointer publication below.
     auto* const thread = emu->getEmuThread();
     auto* const core = thread ? thread->GetMelonPrimeCore() : nullptr;
     const auto ui = core ? core->ThreadBridge().ReadForGui()
                          : MelonPrime::MelonPrimeUiSnapshot{};
+#endif
+
+#if defined(MELONPRIME_DS) && (defined(__linux__) || defined(__APPLE__))
     // MELONPRIME_INPUT_DEBUG=1: 1 Hz gate/event diagnostics for the Qt aim path.
     static const bool s_aimDbg = getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
     if (Q_UNLIKELY(s_aimDbg)) {
         static int s_events = 0, s_blocked = 0;
         static qint64 s_lastLog = 0;
-        const bool gateOk = core
+        const bool relativeAimMode = core
+            && (!ui.stylusMode
+                || (stylusDirectAimWhileTouchingEnabled
+                    && ui.captureWanted));
+        const bool gateOk = relativeAimMode
             && ui.focused
-            && !ui.stylusMode && !ui.cursorMode && ui.inGame;
+            && !ui.cursorMode && ui.inGame;
         gateOk ? ++s_events : ++s_blocked;
         const qint64 now = QDateTime::currentMSecsSinceEpoch();
         if (now - s_lastLog >= 1000) {
@@ -1149,7 +1276,9 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     }
     if (core
         && ui.focused
-        && !ui.stylusMode
+        && (!ui.stylusMode
+            || (stylusDirectAimWhileTouchingEnabled
+                && ui.captureWanted))
         && !ui.cursorMode
         && ui.inGame)
     {
@@ -1240,6 +1369,22 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 
 #ifdef MELONPRIME_DS
     holdStylusCursorAtCenterIfNotClicking(event->pos());
+
+    // Keep a coherent DS coordinate available even when the configured touch
+    // action is a keyboard or joystick button rather than a physical click.
+    if (!touching && core && ui.stylusMode && ui.inGame
+        && !(stylusDirectAimWhileTouchingEnabled && ui.captureWanted))
+    {
+        const QPoint p = event->pos();
+        int x = p.x();
+        int y = p.y();
+        const bool valid = getTouchCoords(x, y, false);
+        core->ThreadBridge().PublishStylusPointerFromGui(x, y, valid);
+        // Hover tracking must not claim a drag transform before a contact
+        // actually starts.
+        topScreenTouchTransform = -1;
+        return;
+    }
 #endif
 
     if (!touching)
@@ -1252,6 +1397,10 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     if (getTouchCoords(x, y, true))
     {
         emu->touchScreen(x, y);
+#ifdef MELONPRIME_DS
+        if (core && ui.stylusMode && ui.inGame)
+            core->ThreadBridge().PublishStylusPointerFromGui(x, y, true);
+#endif
     }
 }
 
@@ -3690,6 +3839,11 @@ void ScreenPanel::unfocus()
     if (core)
         core->ThreadBridge().SetFocusedFromGui(false);
 
+    if (m_stylusDirectAimCaptureHeld) {
+        m_stylusDirectAimMouseButton = Qt::NoButton;
+        endStylusDirectAimCapture();
+    }
+
 #if defined(MELONPRIME_DS) && defined(__APPLE__)
     if (emu) {
         emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
@@ -3704,8 +3858,9 @@ void ScreenPanel::unfocus()
     }
 #endif
 
-    // Focus loss is temporary. Preserve clipWanted and only release the
-    // active platform capture; focus/click activation can reacquire it.
+    // Normal mouse aim preserves clipWanted across temporary focus loss.
+    // A held-only Stylus direct-aim capture was explicitly cleared above so
+    // focus return cannot reacquire it without a fresh touch-action press.
     MelonPrime::ScreenCursorPolicy::Suspend(*this);
 }
 

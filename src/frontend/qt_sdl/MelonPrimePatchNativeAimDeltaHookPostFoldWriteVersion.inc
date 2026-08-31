@@ -60,15 +60,17 @@
     {
         // ARM9Hook_Install gates registration on m_enableNativeAimDeltaHook
         // (nativeAimHookMode == 2) AND m_disableMphAimSmoothing, so both
-        // runtime checks are dead. Stylus mode is dynamic and ARM9Hook_Install
-        // does not gate on it, so the isStylusMode check is kept. Single
+        // runtime checks are dead. Traditional Stylus Mode is still excluded;
+        // its direct-aim sub-mode is admitted only for the held touch action. Single
         // address registered per ROM, so the postFoldPc equality check is
         // dead too.
         (void)arm9ExecAddr;
 
         if (!nds || !regs)
             return;
-        if (isStylusMode)
+        if (isStylusMode
+            && !(m_enableStylusDirectAimWhileTouching
+                && m_stylusTouchKeyDown))
             return;
         if ((m_aimBlockBits | static_cast<uint32_t>(m_isLayoutChangePending)) != 0)
             return;

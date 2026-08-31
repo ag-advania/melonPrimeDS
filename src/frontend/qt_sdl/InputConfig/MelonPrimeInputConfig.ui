@@ -145,42 +145,48 @@
 											</widget>
 										</item>
 										<item row="11" column="0" colspan="2">
+											<widget class="QCheckBox" name="cbMetroidEnableStylusDirectAimWhileTouching">
+												<property name="text"><string>Use Normal Mouse Aim While the Stylus Touch Key Is Held (Detects cursor movement and writes aim directly instead of aiming through DS touch input)</string></property>
+												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
+											</widget>
+										</item>
+										<item row="12" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusHoldCursorAtCenterWhenNotClicking">
 												<property name="text"><string>Hold the Cursor at the Center While No Click Is Held During a Match in Stylus Mode (every drag then starts from the center with its full range)</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
-										<item row="12" column="0" colspan="2">
+										<item row="13" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusHideCursorInGame">
 												<property name="text"><string>Hide the Cursor During Gameplay Even in Stylus Mode (Presentation only: the pointer stays free, so stylus aiming and touch input are unaffected)</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
-										<item row="13" column="0" colspan="2">
+										<item row="14" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableTouchScreenAimOnly">
 												<property name="text"><string>Use the Whole Touch Screen for Aiming (Disables the touch-screen HUD buttons: Transform, weapon quick slots and the weapon menu. Double-tap jump and the touch boost gesture still work)</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
-										<item row="14" column="0" colspan="2">
+										<item row="15" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableTouchScreenAimOnlySuspendForTransform">
 												<property name="text"><string>Turn It Off Briefly While a Standard-Method Transform Fires (The Standard transform taps the touch-screen Transform button, which the option above disables. This re-enables the HUD hit-test for those few frames only)</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 44px; }</string></property>
 											</widget>
 										</item>
-										<item row="15" column="0" colspan="2">
+										<item row="16" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableTopScreenTouch">
 												<property name="text"><string>Enable Touch Input on the Top Screen</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
-										<item row="16" column="0" colspan="2">
+										<item row="17" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusConfineCursorToTopScreen">
 												<property name="text"><string>Confine the Cursor to the Top Screen During a Match in Stylus Mode (Windows only)</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 24px; }</string></property>
 											</widget>
 										</item>
-										<item row="17" column="0">
+										<item row="18" column="0">
 											<widget class="QSpinBox" name="metroidAimSensitvitySpinBox">
 												<property name="minimum">
 													<number>0</number>
@@ -193,14 +199,14 @@
 												</property>
 											</widget>
 										</item>
-										<item row="17" column="1">
+										<item row="18" column="1">
 											<widget class="QLabel" name="metroidAimSensitvityLabel">
 												<property name="text">
 													<string>Aim sensitivity (default: 63)</string>
 												</property>
 											</widget>
 										</item>
-										<item row="18" column="0">
+										<item row="19" column="0">
 											<widget class="QDoubleSpinBox" name="metroidAimYAxisScaleSpinBox">
 												<property name="minimum">
 													<double>0.000001</double>
@@ -219,14 +225,14 @@
 												</property>
 											</widget>
 										</item>
-										<item row="18" column="1">
+										<item row="19" column="1">
 											<widget class="QLabel" name="metroidAimYAxisScaleLabel">
 												<property name="text">
 													<string>Aim Y-Axis Scale (default: 1.5147)</string>
 												</property>
 											</widget>
 										</item>
-										<item row="19" column="0" colspan="2">
+										<item row="20" column="0" colspan="2">
 											<widget class="QLabel" name="metroidAimYAxisScaleLabel2">
 												<property name="text">
 													<string>(1.5147 = MPH native; option: 1.9429 = perfectly matches X/Y angular velocity)</string>
@@ -239,7 +245,7 @@
 												</property>
 											</widget>
 										</item>
-										<item row="20" column="0">
+										<item row="21" column="0">
 											<widget class="QDoubleSpinBox" name="metroidAimAdjustSpinBox">
 												<property name="minimum">
 													<double>0.000000</double>
@@ -258,19 +264,19 @@
 												</property>
 											</widget>
 										</item>
-										<item row="20" column="1">
+										<item row="21" column="1">
 											<widget class="QLabel" name="metroidAimAdjustLabel">
 												<property name="text">
 													<string notr="true">&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;&lt;b&gt;Input threshold (deadzone + snap)&lt;/b&gt; (recommended: 0.01 [default] or 0.5): |x|&amp;lt;a → 0, a ≤ |x|&amp;lt;1 → ±1, |x|≥1 → as is (a=0: off = all values under 1 ignored, no snap)&lt;br/&gt;When your aim isn't going the way you want, try lowering this value.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
 												</property>
 											</widget>
 										</item>
-										<item row="21" column="0" colspan="2">
+										<item row="22" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableAimAccumulator">
 												<property name="text"><string>Enable Aim Sub-pixel Accumulator (Carry fractional mouse movement across frames. Enable for smoother low-sensitivity aiming)</string></property>
 											</widget>
 										</item>
-										<item row="22" column="0">
+										<item row="23" column="0">
 											<widget class="QPushButton" name="metroidResetSensitivityValues">
 												<property name="text">
 													<string>Reset sensitivity values</string>
