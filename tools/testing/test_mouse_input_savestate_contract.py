@@ -115,8 +115,7 @@ def main() -> None:
         "BIT_IN_GAME_INIT",
         "BIT_BATTLE_RUNTIME_MODE",
         "BIT_END_OF_GAME_PATCH_RESTORED",
-        "TR_AimResiduals",
-        "TR_WeaponSwitchPending",
+        "ResetInputForLifecycleBoundary(InputLifecycleBoundary::SavestateLoad)",
         "ResetMorphBoostSwipePulseState()",
         "PatchLifecycle::ReconcileAfterSavestateLoad",
         "CustomHud_ReconcilePatchAfterSavestateLoad",
@@ -124,6 +123,22 @@ def main() -> None:
         require(callback, needle, "savestate callback")
     if "NDS::RunFrame" in callback or "loadState" in callback:
         raise AssertionError("savestate callback must not advance or reload the guest timeline")
+
+    lifecycle_reset = function_body(
+        game_input,
+        "COLD_FUNCTION void MelonPrimeCore::ResetInputForLifecycleBoundary(",
+        "    // OPT-Z2: Unified move + button mask update.",
+    )
+    for needle in (
+        "case InputLifecycleBoundary::SavestateLoad:",
+        "ResetAimTransientState()",
+        "ResetImmediateOverlayInputState()",
+        "ResetDirectTransformInputState()",
+        "ResetNativeBipedFireInputState()",
+        "m_weaponSwitchPending.Clear()",
+        "m_directInvocationPending.Clear()",
+    ):
+        require(lifecycle_reset, needle, "savestate input reset owner")
 
     if not (
         core.index("m_postSavestateReconcilePending = false")

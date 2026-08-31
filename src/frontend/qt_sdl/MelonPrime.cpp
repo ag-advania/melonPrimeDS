@@ -138,61 +138,6 @@ namespace MelonPrime {
 #endif
     }
 
-    // Only place that writes an AimConfigSnapshot into MelonPrimeCore.
-    // Side effect: RecalcAimFixedPoint() rebuilds the Q-format aim scale/
-    // adjust/snap-threshold fields from the new sensitivity/adjust values
-    // and resets the sub-pixel aim residuals (P-17) since they were
-    // accumulated under the previous scale. See the Load/Apply boundary
-    // comment in MelonPrimeRuntimeConfig.h.
-    void MelonPrimeCore::ApplyAimConfigSnapshot(const AimConfigSnapshot& s)
-    {
-        m_runtimeAimSensitivity = s.aimSensitivity;
-        m_runtimeAimYScale = s.aimYScale;
-        m_aimSensiFactor = s.aimSensiFactor;
-        m_aimCombinedY = s.aimCombinedY;
-        m_aimAdjust = s.aimAdjust;
-        RecalcAimFixedPoint();
-    }
-
-    // Compatibility cold-path entry point. Normal reloads now carry aim config
-    // inside RuntimeConfigSnapshot.
-    void MelonPrimeCore::ReloadAimConfigFromTable(Config::Table& cfg)
-    {
-        ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg));
-    }
-
-    void MelonPrimeCore::ApplyRuntimeAimSensitivity(int sensitivity)
-    {
-        m_runtimeAimSensitivity = std::max(1, sensitivity);
-        m_aimSensiFactor =
-            static_cast<float>(m_runtimeAimSensitivity) * 0.01f;
-        m_aimCombinedY = m_aimSensiFactor * m_runtimeAimYScale;
-        RecalcAimFixedPoint();
-    }
-
-    void MelonPrimeCore::RecalcAimFixedPoint()
-    {
-        m_aimFixedScaleX = static_cast<int32_t>(m_aimSensiFactor * AIM_ONE_FP + 0.5f);
-        m_aimFixedScaleY = static_cast<int32_t>(m_aimCombinedY * AIM_ONE_FP + 0.5f);
-        RecalcAimEffectiveFixedScale();
-
-        if (m_aimAdjust > 0.0f) {
-            m_aimFixedAdjust = static_cast<int64_t>(m_aimAdjust * AIM_ONE_FP + 0.5f);
-            m_aimFixedSnapThresh = AIM_ONE_FP;
-        }
-        else {
-            m_aimFixedAdjust = 0;
-            m_aimFixedSnapThresh = 0;
-        }
-
-        // P-17: Reset sub-pixel accumulators when scale changes.
-        // Old residuals were computed with previous scale factors.
-        m_aimResidualX = 0;
-        m_aimResidualY = 0;
-        m_nativeAimDeltaX = 0;
-        m_nativeAimDeltaY = 0;
-    }
-
     // P-3: Moved from header -- requires complete EmuInstance type
     void MelonPrimeCore::NotifyLayoutChange()
     {
@@ -243,7 +188,9 @@ namespace MelonPrime {
     // Per-frame hook and global hotkeys
     // =========================================================================
 
-    // 99%+ frames hit the early return (2 bit tests + branch).
+    // This projection stays in the RunFrameHook translation unit so the 99%+
+    // no-release path remains force-inlined (two bit tests plus one branch).
+    // Aim-derived mutation itself is delegated to the GameInput owner.
     FORCE_INLINE void MelonPrimeCore::HandleGlobalHotkeys()
     {
         constexpr uint64_t kSensiUpBit   = 1ULL << HK_MetroidIngameSensiUp;
@@ -260,8 +207,6 @@ namespace MelonPrime {
             emuInstance->osdAddMessage(0, "AimSensi cannot be decreased below 1");
         }
         else if (next != cur) {
-            // Runtime response is immediate; persistence is delegated to the
-            // GUI thread and debounced there.
             ApplyRuntimeAimSensitivity(next);
             m_threadBridge.RequestAimSensitivityPersistFromEmu(next);
             emuInstance->osdAddMessage(0, "AimSensi Updated: %d->%d", cur, next);
@@ -452,8 +397,7 @@ namespace MelonPrime {
                     emuInstance->getNDS(), emuInstance, localCfg, m_currentRom, this);
 #endif
                 // weaponSwitchPending cleared in the DS block below where ordering matters.
-                ResetTransientInputState(
-                    TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
+                ResetInputForLifecycleBoundary(InputLifecycleBoundary::GameLeave);
                 ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 #ifdef MELONPRIME_CUSTOM_HUD
                 CustomHud_EnsurePatchRestored(
@@ -526,7 +470,7 @@ namespace MelonPrime {
                     m_input.press = 0;
                     m_input.moveIndex = 0;
                     // weaponSwitchPending cleared in the DS block below.
-                    ResetTransientInputState(TR_DirectTransform | TR_BipedFire);
+                    ResetInputForLifecycleBoundary(InputLifecycleBoundary::FocusLoss);
                     ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 #ifdef _WIN32
                     // P-9: Single call replaces resetAllKeys + resetMouseButtons
@@ -616,9 +560,7 @@ namespace MelonPrime {
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
         m_flags.set(StateFlags::BIT_IN_GAME_INIT);
-        ResetTransientInputState(
-            TR_OverlayHeld | TR_DirectTransform | TR_BipedFire | TR_WeaponSwitchPending
-            | TR_DirectInvocation);
+        ResetInputForLifecycleBoundary(InputLifecycleBoundary::GameJoin);
         ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
         m_playerPosition = Read8(mainRAM, m_currentRom.playerPos);
 

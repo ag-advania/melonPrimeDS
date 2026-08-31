@@ -1848,3 +1848,45 @@ Measured 2026-07-09, branch `highres_fonts_v3`, local macOS build tree `build-ma
 - The `scatter-budget-exempt:` marker mechanism introduced in V7 Phase 1 is intentionally narrow
   (per-line, requires a reason after the colon). Do not use it to silence a marker that is
   actually part of input/cursor dispatch — that would defeat the ratchet's purpose.
+
+---
+
+## 28. Input Logical-SRP Completion 2026-08-31
+
+The input-specific re-audit kept the existing hot storage and algorithms, then
+closed the remaining logical ownership gap:
+
+- Aim snapshot apply, runtime sensitivity conversion, fixed-point recalculation
+  and transient invalidation are defined beside the Aim state machine in
+  `MelonPrimeGameInput.cpp`.
+- the old caller-selected `ResetTransientInputState` bitmask was replaced by
+  named `InputLifecycleBoundary` profiles. The GameInput owner now knows the
+  physical reset fields; top-level lifecycle and frame orchestration only name
+  the boundary.
+- all historical reset asymmetries and pending-request ordering were preserved.
+- `FrameInputState`, `HotPointers`, Aim hot scalars and `RunFrameHook` ordering
+  were not physically moved. `ProcessAimInputMouse` arithmetic and zero-work
+  path were unchanged.
+- Rule L in `audit-melonprime-srp-performance.ps1` ratchets Aim writer location,
+  lifecycle profiles, forbidden input-hot abstractions and the 19-stage frame
+  order.
+
+The full ownership/hotness map is
+[input/input-srp-ownership.md](../input/input-srp-ownership.md).
+
+Validation on the dirty implementation tree:
+
+- existing MinGW Release build: 43/43 build/test steps passed;
+- SRP/performance, strict thread-boundary and strict instance-state audits passed;
+- Raw Input/Savestate static contract passed;
+- Software renderer MPH Rev 1 Savestate-load smoke exited 0 with startup/action
+  markers 1/1, 1,026 frame rows and zero bad markers. The selected measurement
+  window contained 373 frames; input-sample-to-RunFrame-begin was 5.3 us p50,
+  8.6 us p95 and 38.1 us p99.
+
+The runtime smoke used an existing configured build whose build-info probe could
+not prove its embedded source SHA, so it is runtime evidence, not clean-provenance
+before/after performance acceptance. Physical 1000/8000 Hz mouse, controller,
+multi-instance and every renderer in the broad matrix remain hardware regression
+coverage; no performance improvement is claimed from this behavior-preserving
+ownership refactor.

@@ -44,13 +44,9 @@ namespace MelonPrime {
 #endif
     }
 
-    // Only place that writes a RuntimeConfigSnapshot into MelonPrimeCore.
-    // Side effects beyond plain member assignment: clears
-    // m_directTransformPendingFrames / m_nativeBipedFire latch / m_weaponSwitchPending
-    // / m_nativeZoomToggle* / m_nativeZoomPending when the corresponding
-    // feature flag is now off, and recalculates the effective zoom-aim
-    // fixed-point scale (resetting aim residuals) when the zoom-aim scale
-    // changed. See the Load/Apply boundary comment in MelonPrimeRuntimeConfig.h.
+    // Sole top-level RuntimeConfigSnapshot apply transaction. Responsibility
+    // owners receive the resolved snapshot by const reference; in particular
+    // ApplyAimRuntimeConfig owns Aim-derived fields and invalidation.
     void MelonPrimeCore::ApplyRuntimeConfigSnapshot(const RuntimeConfigSnapshot& s)
     {
         m_flags.assign(StateFlags::BIT_JOY2KEY, s.joy2Key);
@@ -61,43 +57,19 @@ namespace MelonPrime {
         m_enableStylusDirectAimWhileTouching =
             s.stylusDirectAimWhileTouching;
 
-        m_disableMphAimSmoothing = s.disableMphAimSmoothing;
-        m_enableAimAccumulator = s.aimAccumulator;
-        m_nativeAimHookMode = s.nativeAimHookMode;
-        m_enableNativeAimDeltaHook = s.enableNativeAimDeltaHook;
-        m_lowLatencyAimMode = s.lowLatencyAimMode;
-        m_moonLikeAimNormalStepQ12 = s.moonLikeAimNormalStepQ12;
-        m_moonLikeAimFastStepQ12 = s.moonLikeAimFastStepQ12;
-        m_moonLikeAimFastThresholdQ12 = s.moonLikeAimFastThresholdQ12;
         m_enableImmediateInputEdgeOverlay = s.immediateInputEdgeOverlay;
         m_enableDirectAltFormTransform = s.directAltFormTransform;
         m_suspendTouchAimOnlyForTransform = s.touchScreenAimOnlySuspendForTransform;
         m_enableMorphBoostSwipe = s.morphBoostSwipeEnabled; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         m_enableMorphBoostCustomRawThreshold = s.morphBoostCustomRawThreshold;
         if (!m_enableDirectAltFormTransform)
-            m_directTransformPendingFrames = 0;
+            ResetDirectTransformInputState();
         m_enableNativeBipedFire = s.nativeBipedFire;
         if (!m_enableNativeBipedFire)
-            ResetTransientInputState(TR_BipedFire);
+            ResetNativeBipedFireInputState();
         m_enableNativeZoomToggle = s.nativeZoomToggle;
-        m_zoomAimScaleQ14 = s.zoomAimScaleQ14;
-        m_enableZoomAimScale = s.zoomAimScaleEnable;
         m_morphBoostAssistThresholdSq = s.morphBoostAssistThresholdSq;
         ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
-        if (!m_enableZoomAimScale) {
-            if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)) {
-                m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
-                RecalcAimEffectiveFixedScale();
-                m_aimResidualX = 0;
-                m_aimResidualY = 0;
-            }
-        } else if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)
-                   && m_activeZoomAimScaleQ14 != m_zoomAimScaleQ14) {
-            m_activeZoomAimScaleQ14 = m_zoomAimScaleQ14;
-            RecalcAimEffectiveFixedScale();
-            m_aimResidualX = 0;
-            m_aimResidualY = 0;
-        }
 
         if (!m_enableNativeZoomToggle) {
 #ifdef MELONPRIME_DS
@@ -157,8 +129,7 @@ namespace MelonPrime {
 
         screenSyncMode = s.screenSyncMode;
 
-        // Aim fields now share the same snapshot load/apply transaction.
-        ApplyAimConfigSnapshot(s.aimConfig);
+        ApplyAimRuntimeConfig(s);
     }
 
     void MelonPrimeCore::ReloadConfigFlags()
@@ -239,14 +210,13 @@ namespace MelonPrime {
         ReloadConfigFlags();
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
         InputReset();
-        // Intentional historical asymmetry: this startup path leaves
-        // TR_BipedFire untouched. Other lifecycle sites reset it at game/boot
+        // Intentional historical asymmetry: this startup profile leaves the
+        // native Biped Fire latch untouched. Other lifecycle sites reset it at game/boot
         // boundaries; changing this would alter input reset timing and needs a
         // dedicated S7/S8 behavior pass.
         // weaponSwitchPending is cleared above (before ARM9Hook_Uninstall) where
         // ordering matters, so it is not part of this cluster call.
-        ResetTransientInputState(
-            TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform);
+        ResetInputForLifecycleBoundary(InputLifecycleBoundary::EmuStart);
         ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 
         m_layoutGenerationSeen = 0;
@@ -276,8 +246,7 @@ namespace MelonPrime {
         InputReset();
         // weaponSwitchPending cleared above (before ARM9Hook_Uninstall) where
         // ordering matters, so it is not part of this cluster call.
-        ResetTransientInputState(
-            TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform | TR_BipedFire);
+        ResetInputForLifecycleBoundary(InputLifecycleBoundary::Boot);
         ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
         PublishUiSnapshot();
     }
@@ -297,13 +266,13 @@ namespace MelonPrime {
         PlatformInputOwnerService::Release(m_inputSubscription);
 #endif
         m_zoomAimCanZoomCache = {};
-        // Intentional historical asymmetry: stop clears transform/fire
+        // Intentional historical asymmetry: the stop profile clears transform/fire
         // transients but leaves aim residuals and overlay-held state alone.
         // OnEmuStart/boot perform broader resets; changing this stop-time
         // subset would need a dedicated S7/S8 behavior pass.
         // weaponSwitchPending is cleared in the DS block below (before
         // ARM9Hook_Uninstall).
-        ResetTransientInputState(TR_DirectTransform | TR_BipedFire);
+        ResetInputForLifecycleBoundary(InputLifecycleBoundary::EmuStop);
         ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 #ifdef MELONPRIME_CUSTOM_HUD
         if (m_flags.test(StateFlags::BIT_ROM_DETECTED)) {
@@ -349,9 +318,7 @@ namespace MelonPrime {
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_MODE);
         m_flags.clear(StateFlags::BIT_BATTLE_RUNTIME_SEEN);
         m_flags.clear(StateFlags::BIT_END_OF_GAME_PATCH_RESTORED);
-        ResetTransientInputState(
-            TR_AimResiduals | TR_OverlayHeld | TR_DirectTransform
-            | TR_BipedFire | TR_WeaponSwitchPending | TR_DirectInvocation);
+        ResetInputForLifecycleBoundary(InputLifecycleBoundary::SavestateLoad);
         ResetMorphBoostSwipePulseState();
         m_isWeaponCheckActive = false;
         m_nativeZoomTogglePrevDown = false;

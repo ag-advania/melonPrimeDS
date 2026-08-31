@@ -1,6 +1,8 @@
 # MelonPrime Aim/Input Notes (No CustomHud)
 
 This document tracks the MelonPrime path from input capture to frame input state and final aim RAM writes.
+The field-level owner, writer, reset and hot-layout map is maintained in
+[input-srp-ownership.md](input-srp-ownership.md).
 
 Platform scope: the sections below describe the Windows Raw Input path first. On macOS (added
 2026-07), `MelonPrimeRawInputMacFilter.{h,mm}` provides RawInput-equivalent aim deltas via

@@ -680,6 +680,179 @@ function Get-FunctionBody {
     return $body
 }
 
+# --- Rule L: input SRP ownership and latency contract -----------------------
+#
+# GameInput is the logical owner of Aim-derived state and lifecycle reset
+# profiles. Storage remains embedded in MelonPrimeCore for locality; this rule
+# prevents the logical owner from drifting back into orchestration/config TUs.
+$gameInputPath = Join-Path $qtSdl 'MelonPrimeGameInput.cpp'
+$corePath = Join-Path $qtSdl 'MelonPrime.cpp'
+$lifecyclePath = Join-Path $qtSdl 'MelonPrimeLifecycle.cpp'
+$coreHeaderPath = Join-Path $qtSdl 'MelonPrime.h'
+$gameInputText = Get-Content -LiteralPath $gameInputPath -Raw
+$coreText = Get-Content -LiteralPath $corePath -Raw
+$lifecycleText = Get-Content -LiteralPath $lifecyclePath -Raw
+$coreHeaderText = Get-Content -LiteralPath $coreHeaderPath -Raw
+
+foreach ($legacyReset in @(
+    'ResetTransientInputState',
+    'TR_AimResiduals',
+    'TR_OverlayHeld',
+    'TR_DirectTransform',
+    'TR_BipedFire',
+    'TR_WeaponSwitchPending',
+    'TR_DirectInvocation'
+)) {
+    if (($gameInputText + $coreText + $lifecycleText + $coreHeaderText) -match
+        [regex]::Escape($legacyReset)) {
+        Add-Error "Rule L: legacy field-mask reset API reappeared: $legacyReset"
+    }
+}
+
+$aimOwnerDefinitions = @(
+    'ApplyAimConfigSnapshot',
+    'ReloadAimConfigFromTable',
+    'ApplyRuntimeAimSensitivity',
+    'RecalcAimFixedPoint',
+    'ApplyAimRuntimeConfig',
+    'ResetAimTransientState',
+    'ResetInputForLifecycleBoundary'
+)
+foreach ($name in $aimOwnerDefinitions) {
+    $definition = "MelonPrimeCore::$name"
+    if ($gameInputText -notmatch [regex]::Escape($definition)) {
+        Add-Error "Rule L: GameInput owner definition is missing: $definition"
+    }
+    if ($coreText -match [regex]::Escape($definition) -or
+        $lifecycleText -match [regex]::Escape($definition)) {
+        Add-Error "Rule L: $definition must be defined by MelonPrimeGameInput.cpp"
+    }
+}
+
+foreach ($boundary in @(
+    'EmuStart', 'Boot', 'EmuStop', 'GameLeave', 'FocusLoss', 'GameJoin',
+    'SavestateLoad'
+)) {
+    if ($coreHeaderText -notmatch "\b$boundary\b") {
+        Add-Error "Rule L: InputLifecycleBoundary::$boundary is missing"
+    }
+    if ($gameInputText -notmatch "InputLifecycleBoundary::$boundary") {
+        Add-Error "Rule L: reset profile is missing for InputLifecycleBoundary::$boundary"
+    }
+}
+
+$requiredBoundaryCalls = @(
+    @{ Text = $lifecycleText; Token = 'InputLifecycleBoundary::EmuStart' },
+    @{ Text = $lifecycleText; Token = 'InputLifecycleBoundary::Boot' },
+    @{ Text = $lifecycleText; Token = 'InputLifecycleBoundary::EmuStop' },
+    @{ Text = $lifecycleText; Token = 'InputLifecycleBoundary::SavestateLoad' },
+    @{ Text = $coreText; Token = 'InputLifecycleBoundary::GameLeave' },
+    @{ Text = $coreText; Token = 'InputLifecycleBoundary::FocusLoss' },
+    @{ Text = $coreText; Token = 'InputLifecycleBoundary::GameJoin' }
+)
+foreach ($call in $requiredBoundaryCalls) {
+    if ($call.Text -notmatch [regex]::Escape($call.Token)) {
+        Add-Error "Rule L: lifecycle caller is missing $($call.Token)"
+    }
+}
+
+# Aim carry/delivery writers belong to the GameInput unity TU (its hook .inc
+# children are part of that same owner). Header initializers are declarations,
+# not runtime writers. No other standalone .cpp may assign them.
+foreach ($writerPattern in @(
+    'm_aimResidualX\s*=',
+    'm_aimResidualY\s*=',
+    'm_nativeAimDeltaX\s*=',
+    'm_nativeAimDeltaY\s*='
+)) {
+    foreach ($line in (Get-CodeMatchLines $writerPattern $qtSdl)) {
+        if ($line -match '\.cpp:' -and
+            $line -notmatch 'MelonPrimeGameInput\.cpp:') {
+            Add-Error "Rule L: Aim transient writer escaped GameInput ownership: $line"
+        }
+    }
+}
+
+# The latency-sensitive bodies hard-fail on abstractions that always add or
+# hide work. Existing atomics in input acquisition are reviewed separately and
+# remain covered by the single-writer contract.
+$inputHotFunctions = @(
+    @{ Path = $corePath; Signature = 'void\s+MelonPrimeCore::RunFrameHook\s*\(' },
+    @{ Path = $gameInputPath; Signature = 'void\s+MelonPrimeCore::UpdateInputStateImpl\s*\(' },
+    @{ Path = $gameInputPath; Signature = 'void\s+MelonPrimeCore::ProcessMoveAndButtonsFastImpl\s*\(' },
+    @{ Path = $gameInputPath; Signature = 'void\s+MelonPrimeCore::ProcessAimInputMouse\s*\(' }
+)
+$inputAlwaysForbidden = 'std::vector|std::deque|std::map|std::unordered_map|std::function|\bvirtual\b|dynamic_cast|QMetaObject|Config::Table|\bGetBool\s*\(|\bGetInt\s*\(|\bGetDouble\s*\(|QString|std::string|\bnew\b'
+foreach ($hot in $inputHotFunctions) {
+    $lines = [System.IO.File]::ReadAllLines($hot.Path)
+    $start = -1
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match $hot.Signature -and $lines[$i] -notmatch ';\s*$') {
+            $start = $i
+            break
+        }
+    }
+    if ($start -lt 0) {
+        Add-Error "Rule L: input hot-path definition not found: $($hot.Signature)"
+        continue
+    }
+    foreach ($entry in (Get-FunctionBody -Lines $lines -StartIndex $start)) {
+        $code = $entry.Text -replace '//.*$', '' -replace '"(\\.|[^"\\])*"', '""'
+        if ($code -match $inputAlwaysForbidden) {
+            $relative = [System.IO.Path]::GetRelativePath($repoRoot, $hot.Path) -replace '\\', '/'
+            Add-Error "Rule L: forbidden input hot-path abstraction: ${relative}:$($entry.Line):$($entry.Text.Trim())"
+        }
+    }
+}
+
+# Pin the visible sequencing contract. Match code tokens in order inside the
+# production function so wrappers cannot silently shuffle input after guest
+# simulation or hide lifecycle stages behind a generic ProcessEverything call.
+$coreLinesForOrder = [System.IO.File]::ReadAllLines($corePath)
+$runFrameStart = -1
+for ($i = 0; $i -lt $coreLinesForOrder.Length; $i++) {
+    if ($coreLinesForOrder[$i] -match 'void\s+MelonPrimeCore::RunFrameHook\s*\(') {
+        $runFrameStart = $i
+        break
+    }
+}
+if ($runFrameStart -lt 0) {
+    Add-Error 'Rule L: RunFrameHook definition was not found for order audit'
+} else {
+    $runFrameCode = ((Get-FunctionBody -Lines $coreLinesForOrder -StartIndex $runFrameStart) |
+        ForEach-Object { $_.Text -replace '//.*$', '' }) -join "`n"
+    $orderedTokens = @(
+        'if (UNLIKELY(m_isRunningHook))',
+        'm_configReloadPending.exchange',
+        'm_isRunningHook = true;',
+        'const bool focused =',
+        'UpdateInputState(focused);',
+        'InputReset();',
+        'm_flags.clear(StateFlags::BIT_BLOCK_STYLUS);',
+        'HandleGlobalHotkeys();',
+        'DetectRomAndSetAddresses();',
+        'const bool isInGame =',
+        'HandleGameJoinInit();',
+        'HandleBattleRuntimeEnter();',
+        'CustomHud_ClampHelmetLayersPreFrame(',
+        'DamageNotifyPurpleTick();',
+        'if (focused) {',
+        'if (isCursorMode) {',
+        'm_flags.test(StateFlags::BIT_LAST_FOCUSED) != focused',
+        'if (m_directTransformPendingFrames != 0) {',
+        'm_isRunningHook = false;'
+    )
+    $cursor = 0
+    foreach ($token in $orderedTokens) {
+        $next = $runFrameCode.IndexOf($token, $cursor, [System.StringComparison]::Ordinal)
+        if ($next -lt 0) {
+            Add-Error "Rule L: RunFrameHook order token missing/out of order: $token"
+            break
+        }
+        $cursor = $next + $token.Length
+    }
+}
+
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----
 #
 # The per-instance HUD state is reached through a thread_local pointer that only

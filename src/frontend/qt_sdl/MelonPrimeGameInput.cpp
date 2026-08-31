@@ -11,6 +11,7 @@
 #include "MelonPrimeZoomStatus.h"
 #include "MelonPrimeInstanceDiagnostics.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -39,6 +40,90 @@
 // scope in this file, including ApplyAim and nearby MelonPrimeCore methods.
 
 namespace MelonPrime {
+
+    // =========================================================================
+    // Aim configuration ownership (cold path)
+    //
+    // Aim-derived values, fixed-point conversion and invalidation live beside
+    // the aim state machine. RuntimeConfigSnapshot remains the single config
+    // read/clamp transaction; this owner only applies its already-resolved
+    // scalar values. None of these functions run in the steady-state aim path.
+    // =========================================================================
+    void MelonPrimeCore::ApplyAimConfigSnapshot(const AimConfigSnapshot& s)
+    {
+        m_runtimeAimSensitivity = s.aimSensitivity;
+        m_runtimeAimYScale = s.aimYScale;
+        m_aimSensiFactor = s.aimSensiFactor;
+        m_aimCombinedY = s.aimCombinedY;
+        m_aimAdjust = s.aimAdjust;
+        RecalcAimFixedPoint();
+    }
+
+    void MelonPrimeCore::ReloadAimConfigFromTable(Config::Table& cfg)
+    {
+        ApplyAimConfigSnapshot(LoadAimConfigSnapshot(cfg));
+    }
+
+    void MelonPrimeCore::ApplyRuntimeAimSensitivity(int sensitivity)
+    {
+        m_runtimeAimSensitivity = std::max(1, sensitivity);
+        m_aimSensiFactor =
+            static_cast<float>(m_runtimeAimSensitivity) * 0.01f;
+        m_aimCombinedY = m_aimSensiFactor * m_runtimeAimYScale;
+        RecalcAimFixedPoint();
+    }
+
+    void MelonPrimeCore::RecalcAimFixedPoint()
+    {
+        m_aimFixedScaleX = static_cast<int32_t>(m_aimSensiFactor * AIM_ONE_FP + 0.5f);
+        m_aimFixedScaleY = static_cast<int32_t>(m_aimCombinedY * AIM_ONE_FP + 0.5f);
+        RecalcAimEffectiveFixedScale();
+
+        if (m_aimAdjust > 0.0f) {
+            m_aimFixedAdjust = static_cast<int64_t>(m_aimAdjust * AIM_ONE_FP + 0.5f);
+            m_aimFixedSnapThresh = AIM_ONE_FP;
+        }
+        else {
+            m_aimFixedAdjust = 0;
+            m_aimFixedSnapThresh = 0;
+        }
+
+        // Residuals and pending native delivery were produced with the old
+        // scale. The Aim owner invalidates both as one transition.
+        ResetAimTransientState();
+    }
+
+    void MelonPrimeCore::ApplyAimRuntimeConfig(const RuntimeConfigSnapshot& s)
+    {
+        m_disableMphAimSmoothing = s.disableMphAimSmoothing;
+        m_enableAimAccumulator = s.aimAccumulator;
+        m_nativeAimHookMode = s.nativeAimHookMode;
+        m_enableNativeAimDeltaHook = s.enableNativeAimDeltaHook;
+        m_lowLatencyAimMode = s.lowLatencyAimMode;
+        m_moonLikeAimNormalStepQ12 = s.moonLikeAimNormalStepQ12;
+        m_moonLikeAimFastStepQ12 = s.moonLikeAimFastStepQ12;
+        m_moonLikeAimFastThresholdQ12 = s.moonLikeAimFastThresholdQ12;
+
+        m_zoomAimScaleQ14 = s.zoomAimScaleQ14;
+        m_enableZoomAimScale = s.zoomAimScaleEnable;
+        if (!m_enableZoomAimScale) {
+            if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)) {
+                m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
+                RecalcAimEffectiveFixedScale();
+                m_aimResidualX = 0;
+                m_aimResidualY = 0;
+            }
+        }
+        else if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)
+                 && m_activeZoomAimScaleQ14 != m_zoomAimScaleQ14) {
+            m_activeZoomAimScaleQ14 = m_zoomAimScaleQ14;
+            RecalcAimEffectiveFixedScale();
+            m_aimResidualX = 0;
+            m_aimResidualY = 0;
+        }
+
+        ApplyAimConfigSnapshot(s.aimConfig);
+    }
 
     // =========================================================================
     // UpdateInputStateImpl<kReentrant>
@@ -261,6 +346,93 @@ namespace MelonPrime {
 
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState(const bool focused)          { UpdateInputStateImpl<false>(focused); }
     HOT_FUNCTION void MelonPrimeCore::UpdateInputStateReentrant(const bool focused) { UpdateInputStateImpl<true>(focused);  }
+
+    // =========================================================================
+    // Input lifecycle/reset ownership (cold/transition path)
+    // =========================================================================
+    COLD_FUNCTION void MelonPrimeCore::ResetAimTransientState() noexcept
+    {
+        m_aimResidualX = 0;
+        m_aimResidualY = 0;
+        m_nativeAimDeltaX = 0;
+        m_nativeAimDeltaY = 0;
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::ResetImmediateOverlayInputState() noexcept
+    {
+        m_immediateOverlayPrevActions = 0;
+        m_immediateOverlayFrameHeld = 0;
+        m_immediateOverlayFramePressed = 0;
+        m_immediateOverlayFrameReleased = 0;
+        m_immediateOverlayLatchValid = false;
+        m_overlayLocalPlayerPtr = 0;
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::ResetDirectTransformInputState() noexcept
+    {
+        m_directTransformPendingFrames = 0;
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::ResetNativeBipedFireInputState() noexcept
+    {
+        m_nativeBipedFirePrevHeld = false;
+        m_nativeBipedFirePrevAltForm = false;
+        m_nativeBipedFireLatchValid = false;
+        m_nativeBipedFireFrameHeld = false;
+        m_nativeBipedFireFramePressed = false;
+        m_nativeBipedFireFrameReleased = false;
+        m_overlayLocalPlayerPtr = 0;
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::ResetInputForLifecycleBoundary(
+        const InputLifecycleBoundary boundary) noexcept
+    {
+        // These profiles intentionally preserve the pre-SRP reset subsets.
+        // In particular EmuStart and EmuStop remain asymmetric; widening a
+        // profile is a behavior change, not an architecture cleanup.
+        switch (boundary) {
+        case InputLifecycleBoundary::EmuStart:
+            ResetAimTransientState();
+            ResetImmediateOverlayInputState();
+            ResetDirectTransformInputState();
+            break;
+        case InputLifecycleBoundary::Boot:
+            ResetAimTransientState();
+            ResetImmediateOverlayInputState();
+            ResetDirectTransformInputState();
+            ResetNativeBipedFireInputState();
+            break;
+        case InputLifecycleBoundary::EmuStop:
+        case InputLifecycleBoundary::FocusLoss:
+            ResetDirectTransformInputState();
+            ResetNativeBipedFireInputState();
+            break;
+        case InputLifecycleBoundary::GameLeave:
+            ResetImmediateOverlayInputState();
+            ResetDirectTransformInputState();
+            ResetNativeBipedFireInputState();
+            break;
+        case InputLifecycleBoundary::GameJoin:
+            ResetImmediateOverlayInputState();
+            ResetDirectTransformInputState();
+            ResetNativeBipedFireInputState();
+#ifdef MELONPRIME_DS
+            m_weaponSwitchPending.Clear();
+            m_directInvocationPending.Clear();
+#endif
+            break;
+        case InputLifecycleBoundary::SavestateLoad:
+            ResetAimTransientState();
+            ResetImmediateOverlayInputState();
+            ResetDirectTransformInputState();
+            ResetNativeBipedFireInputState();
+#ifdef MELONPRIME_DS
+            m_weaponSwitchPending.Clear();
+            m_directInvocationPending.Clear();
+#endif
+            break;
+        }
+    }
 
     // OPT-Z2: Unified move + button mask update.
     //
