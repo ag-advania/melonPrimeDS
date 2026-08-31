@@ -8,7 +8,7 @@ Settings: **HUD ENEMY TARGET** section in the Custom HUD dialog, and element **E
 the in-game layout editor. Keys are `Metroid.Visual.HudEnemyTarget*`; `HudEnemyTargetShow`
 defaults to `true`.
 
-The dialog section opens with a note row pointing at **Show Enemy HP Meter Online**
+The dialog section opens with a note row pointing at **Show Enemy Target Information Online**
 (`Metroid.GameFeature.ShowEnemyHpMeterOnline`, under GAME FEATURE IMPROVEMENTS), which online
 play additionally needs — see [Nintendo WFC](#nintendo-wfc). It is a wrapped `HWType::Label`
 row, not a tooltip, so it is readable without hovering. Nothing is disabled when that fix is

@@ -32,7 +32,7 @@ Each document uses the same evidence boundary:
 | Noxus Blade persistence | [noxus-blade-persistence.md](noxus-blade-persistence.md) |
 | DS firmware language | [firmware-language.md](firmware-language.md) |
 | Online HEADSHOT notification | [online-headshot.md](online-headshot.md) |
-| Online enemy HP meter | [online-enemy-hp.md](online-enemy-hp.md) |
+| Online enemy target information | [online-enemy-hp.md](online-enemy-hp.md) |
 | Stage/mode matrix expansion | [stage-matrix.md](stage-matrix.md) |
 | Disable Double Damage Multiplier | [damage-multiplier.md](damage-multiplier.md) |
 | Damage Notify Purple | [damage-notify-purple.md](damage-notify-purple.md) |
@@ -44,7 +44,7 @@ Each document uses the same evidence boundary:
 | Video quality presets | [video-presets.md](video-presets.md) |
 | SFX and music volume | [volume.md](volume.md) |
 | Hunter License hunter/color | [hunter-license.md](hunter-license.md) |
-| Joy2Key, Stylus, and touch behavior | [input-compatibility.md](input-compatibility.md), [stylus-cursor-policy.md](stylus-cursor-policy.md) |
+| Joy2Key, Stylus, and touch behavior | [input-compatibility.md](input-compatibility.md), [touch-screen-aim-only.md](touch-screen-aim-only.md), [stylus-cursor-policy.md](stylus-cursor-policy.md) |
 | Weapon, transform, fire, and zoom methods | [input-methods.md](input-methods.md) |
 | Screen synchronization | [screen-sync.md](screen-sync.md) |
 | Cursor clip and in-game layout | [cursor-layout.md](cursor-layout.md), [stylus-cursor-policy.md](stylus-cursor-policy.md) |

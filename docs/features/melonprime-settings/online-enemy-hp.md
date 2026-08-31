@@ -1,4 +1,4 @@
-# Online enemy HP meter
+# Online enemy target information
 
 ## Setting contract
 
@@ -6,14 +6,18 @@
 | --- | --- |
 | Key | Metroid.GameFeature.ShowEnemyHpMeterOnline |
 | Default | false |
-| UI | Show Enemy HP Meter Online |
-| Source | MelonPrimePatchShowEnemyHpMeterOnline.cpp |
+| UI | Show Enemy Target Information Online |
+| Source | MelonPrimePatchShowEnemyHpMeterOnline.cpp (legacy internal name) |
 | Patch kind | Three guarded words, or two on KR |
 
-The option enables the guest's enemy-HP display path during online play. It is
-only a rough hit indicator: online enemy HP is not authoritative and is
-generally not updated as a reliable continuously synchronized health value.
-The UI should not describe this as a real health bar.
+The option removes the guest's online early-return so target slot, timer, and
+target-information state can be produced during online play. The persisted key
+and patch filename retain the older “HpMeter” name for compatibility, but the
+visible label deliberately describes the broader data path.
+
+Any HP-like value is only a rough hit indicator: online enemy HP is not
+authoritative and is generally not updated as a reliable continuously
+synchronized health value. The UI must not promise a real health bar.
 
 ## ROM patch table
 
@@ -38,7 +42,7 @@ on match leave and emulator stop and can be reapplied after ConfigReload.
 
 ## Behavior boundary
 
-- It is a local rendering/display change.
+- It is a local target-information/rendering change.
 - It does not make remote HP synchronized.
 - It does not change weapon damage, hit registration, or server authority.
 - A visible bar that remains stale is an expected limitation of the guest
