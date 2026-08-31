@@ -245,7 +245,11 @@ namespace MelonPrime {
             return;
         }
 
-        if (UNLIKELY(m_configReloadPending.exchange(false, std::memory_order_acq_rel))) {
+        // Config publication is a coalesced command. If the GUI stores true
+        // after the relaxed empty check, the next normal frame applies it;
+        // steady state avoids a locked exchange on every frame.
+        if (UNLIKELY(m_configReloadPending.load(std::memory_order_relaxed))
+            && m_configReloadPending.exchange(false, std::memory_order_acq_rel)) {
             ApplyConfigReload();
         }
 

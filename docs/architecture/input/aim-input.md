@@ -121,7 +121,8 @@ Main implementation files:
     panel's >96px threshold warp; every warp re-seeds the fallback baseline. See §9.
   - macOS: GCMouse deltas are warp-immune; IOHID (trackpad) and QCursor fallback use panel
     containment warps. Cursor disassociation/hide (`MacSetAimCursorCaptured`) is **GCMouse
-    only** — see §10.
+    only** — see §10. `ProcessAimInputMouse` uses the source-resolved
+    `PlatformInput_ShouldWarpCursorAfterAim` result; capture-wanted alone never emits a recenter.
   - `unfocus()` must call `unclip()` on Linux and macOS; otherwise Escape leaves the cursor
     hidden/locked.
 
@@ -488,6 +489,12 @@ RawMotion parsing rules:
   unusual devices, but normal mouse devices should hit the explicit axis 0/1 path.
 - The filter captures only relative motion. Buttons and keyboard state remain owned by Qt/SDL
   hotkey handling to avoid double press edges.
+- The XInput filter thread is the only writer of `accX/accY`; emulation threads only acquire-load
+  them and maintain separate subscription cursors. The writer therefore uses relaxed load plus
+  release store rather than an event-level locked `fetch_add`.
+- `absBaseInvalid` is a rare producer flag. RawMotion first performs a relaxed load and only a
+  true observation reaches the acquire/release exchange claim. `receivedMotion` likewise
+  publishes only its first false-to-true session edge.
 
 Troubleshooting signals:
 
@@ -513,13 +520,20 @@ Backend split (see `MelonPrimeRawInputMacFilter.mm`, `IsGcMouseAimActive()`):
   While aim is clipped, `MacSetAimCursorCaptured(true)` disassociates hardware motion from the
   OS cursor (`CGAssociateMouseAndMouseCursorPosition(false)`) and hides it
   (`CGDisplayHideCursor`). Containment warps are skipped — the parked cursor must not be warped
-  every frame or it flashes on the DS screens.
+  every frame or it flashes on the DS screens. The Aim frame also suppresses
+  `GuiRequestRecenter`; steady raw Aim reaches neither the GUI warp request nor
+  `CGWarpMouseCursorPosition`.
 - **IOHID (built-in trackpad, trackballs, macOS < 11 fallback)**: Raw deltas via HID, but
   **must not** call `MacSetAimCursorCaptured(true)`. Disassociating the cursor on the trackpad
   path drops Qt `mouseRelease` events and leaves `keyHotkeyMask` stuck (shoot/zoom held). IOHID
   uses containment warps to `aimContainmentLocalRect().center()` instead.
 - **QCursor fallback**: When `isAvailable()` is false (no permission, no device). Per-frame
   recenter in `ProcessAimInputMouse` when raw is inactive; panel containment warps otherwise.
+
+The frame-side rule is intentionally source-resolved rather than Apple-wide:
+`PlatformInput_ShouldWarpCursorAfterAim(rawFilter)` is false for active GCMouse/IOHID raw input
+and true for QCursor fallback. Focus, layout, capture and cursor-mode transitions may still issue
+one-shot recenter requests; the zero-warp contract applies to steady raw Aim frames.
 
 Mouse buttons and keyboard hotkeys stay on the Qt path (`EmuInstance::onMousePress` /
 `onMouseRelease` → `keyHotkeyMask`). They are intentionally not read from GCMouse/IOHID.

@@ -229,6 +229,13 @@ public:
     }
     int ConsumeWheelForEmu(uint64_t expectedGeneration = 0) noexcept
     {
+        // Zero is the only empty encoding. A generation-only publication is
+        // nonzero and must still be claimed so an old owner epoch cannot leak.
+        // A producer racing a zero observation is consumed next frame, which is
+        // the mailbox's existing coalescing contract.
+        const uint64_t observed = m_wheelMailbox.load(std::memory_order_relaxed);
+        if (observed == 0)
+            return 0;
         const uint64_t packed = m_wheelMailbox.exchange(0, std::memory_order_acq_rel);
         if (!packed)
             return 0;
@@ -240,6 +247,11 @@ public:
     }
     int ConsumeCursorModeForEmu() noexcept
     {
+        // GUI commands are level-replacement requests. A command published
+        // after the empty load remains pending and is consumed next frame.
+        const int observed = m_cursorModeCommand.load(std::memory_order_relaxed);
+        if (observed == -1)
+            return -1;
         return m_cursorModeCommand.exchange(-1, std::memory_order_acq_rel);
     }
     void getAimMouseDelta(int32_t& dx, int32_t& dy) noexcept

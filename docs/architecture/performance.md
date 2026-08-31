@@ -124,6 +124,26 @@ Review must not increase steady-state per-frame syscalls without Phase 0 before/
 
 Increasing any row requires `MELONPRIME_PERF=1` before/after attached to the PR.
 
+### Input event / frame RMW budget
+
+The steady-state contract is load-first for rare claims and single-writer
+load/store for monotonic raw accumulators:
+
+| Path | Empty / steady operation | Claim / publication |
+|---|---|---|
+| Linux `absBaseInvalid` | relaxed load, false branch | `exchange(false, acq_rel)` only after true |
+| Linux `accX/accY` writer | relaxed load | release store by the sole XInput filter thread |
+| Linux `receivedMotion` | relaxed load after nonzero motion | one release store on the first false-to-true edge |
+| Core config reload | relaxed false load | `exchange(false, acq_rel)` on a pending edge |
+| cursor-mode command | relaxed `-1` load | `exchange(-1, acq_rel)` on a command |
+| wheel mailbox | relaxed zero load | exchange for an event or nonzero generation-only boundary |
+
+A producer racing an empty load is not cleared: its value remains pending and
+is consumed on the next normal frame. Config reload and cursor mode are
+coalesced replacement commands, so this bounded delay is intentional. Wheel
+keeps the packed generation/value invariant and never treats a generation-only
+publication as empty.
+
 ### V6 Measurement Gate (historical baseline rule)
 
 V6 Phase 0 prepared the `MELONPRIME_PERF=1` baseline procedure and parser, but

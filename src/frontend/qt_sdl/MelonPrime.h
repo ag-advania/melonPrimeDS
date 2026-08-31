@@ -604,7 +604,7 @@ namespace MelonPrime {
         // handed us a different local Player*, so both edge latches must
         // re-baseline instead of emitting an edge against the old entity's
         // state (stale-edge policy).
-        uint32_t m_overlayLocalPlayerPtr = 0;
+        uint32_t m_postPollOverlayLocalPlayerPtr = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
         // ---------------------------------------------------------------
         // Control-preset button snapshot.
@@ -1240,6 +1240,7 @@ namespace MelonPrime {
         // input frame pays no new branch, allocation, indirection or call.
         COLD_FUNCTION void ResetAimTransientState() noexcept;
         COLD_FUNCTION void ResetImmediateOverlayInputState() noexcept;
+        COLD_FUNCTION void ResetPostPollOverlayCoordinatorState() noexcept;
         COLD_FUNCTION void ResetDirectTransformInputState() noexcept;
         COLD_FUNCTION void ResetNativeBipedFireInputState() noexcept;
         COLD_FUNCTION void ResetInputForLifecycleBoundary(

@@ -181,6 +181,10 @@ public:
     void syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical);
     // One-frame virtual press for MelonPrime::InputKey::MouseWheelUp/Down bindings.
     void onMouseWheel(int delta);
+    [[nodiscard]] uint64_t wheelHotkeyMaskForDelta(int delta) const noexcept
+    {
+        return delta > 0 ? wheelUpHotkeyMask : wheelDownHotkeyMask;
+    }
 #endif // MELONPRIME_DS
 
     int getInstanceID() { return instanceID; }
@@ -540,6 +544,10 @@ private:
     // Bits latched by onMouseWheel(); cleared after edge detection so the
     // virtual key is a one-frame press rather than a held button.
     std::atomic<uint64_t> wheelHotkeyPulseMask{0};
+    // Cold inputLoadConfig() projection. Both the Qt producer and the Windows
+    // Raw Input consumer avoid scanning HK_MAX on every wheel pulse.
+    uint64_t wheelUpHotkeyMask = 0;
+    uint64_t wheelDownHotkeyMask = 0;
 
     // Packed acquire/release publication keeps VSync, configured renderer,
     // actual renderer, and their revision coherent with one atomic load in

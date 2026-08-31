@@ -680,6 +680,19 @@ function Get-FunctionBody {
     return $body
 }
 
+function Get-FunctionText {
+    param([string] $Path, [string] $Signature)
+
+    $lines = [System.IO.File]::ReadAllLines($Path)
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        if ($lines[$i] -match $Signature -and $lines[$i] -notmatch ';\s*$') {
+            return ((Get-FunctionBody -Lines $lines -StartIndex $i) |
+                ForEach-Object { $_.Text }) -join "`n"
+        }
+    }
+    return $null
+}
+
 # --- Rule L: input SRP ownership and latency contract -----------------------
 #
 # GameInput is the logical owner of Aim-derived state and lifecycle reset
@@ -851,6 +864,120 @@ if ($runFrameStart -lt 0) {
         }
         $cursor = $next + $token.Length
     }
+}
+
+# --- Rule L2: platform input event-path and rare-claim cost ratchets --------
+#
+# These checks only pin source shapes whose producer/consumer semantics were
+# audited. They prevent a locked RMW, platform warp, guest read, or HK_MAX scan
+# from returning to a steady input path; they do not substitute for runtime
+# latency or hardware validation.
+$linuxRawPath = Join-Path $qtSdl 'MelonPrimeRawInputLinuxFilter.cpp'
+$threadBridgePath = Join-Path $qtSdl 'MelonPrimeThreadBridge.h'
+$emuInstanceInputPath = Join-Path $qtSdl 'EmuInstanceInput.cpp'
+$linuxRawText = Get-Content -LiteralPath $linuxRawPath -Raw
+$threadBridgeText = Get-Content -LiteralPath $threadBridgePath -Raw
+$emuInstanceInputText = Get-Content -LiteralPath $emuInstanceInputPath -Raw
+
+$aimBody = Get-FunctionText -Path $gameInputPath `
+    -Signature 'void\s+MelonPrimeCore::ProcessAimInputMouse\s*\('
+if (-not $aimBody) {
+    Add-Error 'Rule L2: ProcessAimInputMouse definition not found'
+} else {
+    if ($aimBody -match 'CaptureWantedForEmu\s*\(') {
+        Add-Error 'Rule L2: raw macOS aim must not request recenter from capture-wanted alone'
+    }
+    if ($aimBody -notmatch 'PlatformInput_ShouldWarpCursorAfterAim\s*\(') {
+        Add-Error 'Rule L2: ProcessAimInputMouse lost the source-resolved warp policy'
+    }
+}
+
+$absLoad = $linuxRawText.IndexOf('absBaseInvalid.load', [System.StringComparison]::Ordinal)
+$absExchange = $linuxRawText.IndexOf('absBaseInvalid.exchange', [System.StringComparison]::Ordinal)
+if ($absLoad -lt 0 -or $absExchange -lt 0 -or $absLoad -gt $absExchange) {
+    Add-Error 'Rule L2: Linux absBaseInvalid must load before its rare exchange claim'
+}
+if ($linuxRawText -match 'acc[XY]\.fetch_add\s*\(') {
+    Add-Error 'Rule L2: Linux single-writer raw accumulators must not use fetch_add'
+}
+foreach ($axis in @('X', 'Y')) {
+    if ($linuxRawText -notmatch "acc$axis\.load\s*\(std::memory_order_relaxed\)" -or
+        $linuxRawText -notmatch "acc$axis\.store\s*\([^;]+std::memory_order_release\)") {
+        Add-Error "Rule L2: Linux acc$axis lost single-writer load/store publication"
+    }
+}
+$motionLoad = $linuxRawText.IndexOf('receivedMotion.load', [System.StringComparison]::Ordinal)
+$motionStore = $linuxRawText.IndexOf('receivedMotion.store', [System.StringComparison]::Ordinal)
+if ($motionLoad -lt 0 -or $motionStore -lt 0 -or $motionLoad -gt $motionStore) {
+    Add-Error 'Rule L2: Linux receivedMotion must publish only after the false-edge load'
+}
+
+$overlayBody = Get-FunctionText -Path $gameInputPath `
+    -Signature 'void\s+MelonPrimeCore::ApplyPostPollOverlayInput\s*\('
+if (-not $overlayBody) {
+    Add-Error 'Rule L2: ApplyPostPollOverlayInput definition not found'
+} else {
+    $disabledGate = $overlayBody.IndexOf('!m_enableNativeBipedFire', [System.StringComparison]::Ordinal)
+    $guestRead = $overlayBody.IndexOf('hookLocalPlayerPtrGlobal', [System.StringComparison]::Ordinal)
+    if ($disabledGate -lt 0 -or $guestRead -lt 0 -or $disabledGate -gt $guestRead) {
+        Add-Error 'Rule L2: post-poll overlay must reject both-disabled before its guest pointer read'
+    }
+    if ($overlayBody -match '\bm_overlayLocalPlayerPtr\b') {
+        Add-Error 'Rule L2: legacy feature-ambiguous overlay player baseline reappeared'
+    }
+}
+foreach ($featureReset in @(
+    'ResetImmediateOverlayInputState',
+    'ResetNativeBipedFireInputState'
+)) {
+    $resetBody = Get-FunctionText -Path $gameInputPath `
+        -Signature "void\s+MelonPrimeCore::$featureReset\s*\("
+    if (-not $resetBody) {
+        Add-Error "Rule L2: overlay feature reset missing: $featureReset"
+    } elseif ($resetBody -match 'm_postPollOverlayLocalPlayerPtr') {
+        Add-Error "Rule L2: $featureReset must not own the shared player baseline"
+    }
+}
+$coordinatorReset = Get-FunctionText -Path $gameInputPath `
+    -Signature 'void\s+MelonPrimeCore::ResetPostPollOverlayCoordinatorState\s*\('
+if (-not $coordinatorReset -or
+    $coordinatorReset -notmatch 'm_postPollOverlayLocalPlayerPtr\s*=\s*0') {
+    Add-Error 'Rule L2: post-poll coordinator must uniquely reset its shared player baseline'
+}
+
+$configLoad = $runFrameCode.IndexOf('m_configReloadPending.load', [System.StringComparison]::Ordinal)
+$configExchange = $runFrameCode.IndexOf('m_configReloadPending.exchange', [System.StringComparison]::Ordinal)
+if ($configLoad -lt 0 -or $configExchange -lt 0 -or $configLoad -gt $configExchange) {
+    Add-Error 'Rule L2: config reload must load before its rare exchange claim'
+}
+foreach ($claim in @(
+    @{ Signature = 'ConsumeWheelForEmu\s*\('; Load = 'm_wheelMailbox.load'; Exchange = 'm_wheelMailbox.exchange' },
+    @{ Signature = 'ConsumeCursorModeForEmu\s*\('; Load = 'm_cursorModeCommand.load'; Exchange = 'm_cursorModeCommand.exchange' }
+)) {
+    $claimBody = Get-FunctionText -Path $threadBridgePath -Signature $claim.Signature
+    $loadAt = if ($claimBody) { $claimBody.IndexOf($claim.Load, [System.StringComparison]::Ordinal) } else { -1 }
+    $exchangeAt = if ($claimBody) { $claimBody.IndexOf($claim.Exchange, [System.StringComparison]::Ordinal) } else { -1 }
+    if ($loadAt -lt 0 -or $exchangeAt -lt 0 -or $loadAt -gt $exchangeAt) {
+        Add-Error "Rule L2: $($claim.Signature) must load before its rare exchange claim"
+    }
+}
+if ($threadBridgeText -notmatch 'generation-only publication is\s*\r?\n?\s*// nonzero') {
+    Add-Error 'Rule L2: wheel load-first invariant must document generation-only nonzero state'
+}
+
+$updateInputBody = Get-FunctionText -Path $gameInputPath `
+    -Signature 'void\s+MelonPrimeCore::UpdateInputStateImpl\s*\('
+if (-not $updateInputBody -or
+    $updateInputBody -notmatch 'wheelHotkeyMaskForDelta\s*\(' -or
+    $updateInputBody -match '\bhkKeyMapping\b') {
+    Add-Error 'Rule L2: Windows raw wheel path must use the cold-precomputed hotkey mask'
+}
+$mouseWheelBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::onMouseWheel\s*\('
+if (-not $mouseWheelBody -or
+    $mouseWheelBody -notmatch 'wheelHotkeyMaskForDelta\s*\(' -or
+    $mouseWheelBody -match 'for\s*\(') {
+    Add-Error 'Rule L2: Qt wheel path must not rescan HK_MAX per pulse'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

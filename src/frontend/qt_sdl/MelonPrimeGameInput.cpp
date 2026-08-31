@@ -274,13 +274,8 @@ namespace MelonPrime {
         uint64_t wheelHotkeyBits = 0;
         if constexpr (!kReentrant) {
             if (rawActionReady && m_input.wheelDelta) {
-                const int wheelKey = (m_input.wheelDelta > 0)
-                    ? InputKey::MouseWheelUp
-                    : InputKey::MouseWheelDown;
-                for (int i = 0; i < HK_MAX; ++i) {
-                    if (emuInstance->hkKeyMapping[i] == wheelKey)
-                        wheelHotkeyBits |= (1ULL << i);
-                }
+                wheelHotkeyBits = emuInstance->wheelHotkeyMaskForDelta(
+                    m_input.wheelDelta);
             }
         }
 
@@ -365,7 +360,11 @@ namespace MelonPrime {
         m_immediateOverlayFramePressed = 0;
         m_immediateOverlayFrameReleased = 0;
         m_immediateOverlayLatchValid = false;
-        m_overlayLocalPlayerPtr = 0;
+    }
+
+    COLD_FUNCTION void MelonPrimeCore::ResetPostPollOverlayCoordinatorState() noexcept
+    {
+        m_postPollOverlayLocalPlayerPtr = 0;
     }
 
     COLD_FUNCTION void MelonPrimeCore::ResetDirectTransformInputState() noexcept
@@ -381,7 +380,6 @@ namespace MelonPrime {
         m_nativeBipedFireFrameHeld = false;
         m_nativeBipedFireFramePressed = false;
         m_nativeBipedFireFrameReleased = false;
-        m_overlayLocalPlayerPtr = 0;
     }
 
     COLD_FUNCTION void MelonPrimeCore::ResetInputForLifecycleBoundary(
@@ -392,11 +390,13 @@ namespace MelonPrime {
         // profile is a behavior change, not an architecture cleanup.
         switch (boundary) {
         case InputLifecycleBoundary::EmuStart:
+            ResetPostPollOverlayCoordinatorState();
             ResetAimTransientState();
             ResetImmediateOverlayInputState();
             ResetDirectTransformInputState();
             break;
         case InputLifecycleBoundary::Boot:
+            ResetPostPollOverlayCoordinatorState();
             ResetAimTransientState();
             ResetImmediateOverlayInputState();
             ResetDirectTransformInputState();
@@ -404,15 +404,18 @@ namespace MelonPrime {
             break;
         case InputLifecycleBoundary::EmuStop:
         case InputLifecycleBoundary::FocusLoss:
+            ResetPostPollOverlayCoordinatorState();
             ResetDirectTransformInputState();
             ResetNativeBipedFireInputState();
             break;
         case InputLifecycleBoundary::GameLeave:
+            ResetPostPollOverlayCoordinatorState();
             ResetImmediateOverlayInputState();
             ResetDirectTransformInputState();
             ResetNativeBipedFireInputState();
             break;
         case InputLifecycleBoundary::GameJoin:
+            ResetPostPollOverlayCoordinatorState();
             ResetImmediateOverlayInputState();
             ResetDirectTransformInputState();
             ResetNativeBipedFireInputState();
@@ -422,6 +425,7 @@ namespace MelonPrime {
 #endif
             break;
         case InputLifecycleBoundary::SavestateLoad:
+            ResetPostPollOverlayCoordinatorState();
             ResetAimTransientState();
             ResetImmediateOverlayInputState();
             ResetDirectTransformInputState();
@@ -562,6 +566,13 @@ namespace MelonPrime {
     // MelonPrimePatchNativeBipedFireHook.inc.
     HOT_FUNCTION void MelonPrimeCore::ApplyPostPollOverlayInput()
     {
+        // Both consumers are opt-in. Their disable edges reset feature-owned
+        // latches in ApplyRuntimeConfigSnapshot, so the common disabled frame
+        // performs no guest pointer read and no latch maintenance.
+        if (LIKELY(!m_enableNativeBipedFire
+            && !m_enableImmediateInputEdgeOverlay))
+            return;
+
         // Shared stale-edge input: a change of the ROM's local Player* means
         // both latches are describing a different entity and must re-baseline.
         // Read once here so the two latches cannot disagree about the frame.
@@ -582,14 +593,15 @@ namespace MelonPrime {
         // lifecycle resets already cover entering and leaving a match.
         const bool localPlayerChanged =
             localPlayerPtr != 0
-            && m_overlayLocalPlayerPtr != 0
-            && localPlayerPtr != m_overlayLocalPlayerPtr;
+            && m_postPollOverlayLocalPlayerPtr != 0
+            && localPlayerPtr != m_postPollOverlayLocalPlayerPtr;
         if (localPlayerPtr != 0)
-            m_overlayLocalPlayerPtr = localPlayerPtr;
+            m_postPollOverlayLocalPlayerPtr = localPlayerPtr;
 
         if (m_enableNativeBipedFire)
             UpdateNativeBipedFireInput(localPlayerChanged);
-        UpdateImmediateInputEdgeOverlayInput(localPlayerChanged);
+        if (m_enableImmediateInputEdgeOverlay)
+            UpdateImmediateInputEdgeOverlayInput(localPlayerChanged);
     }
 
     // Resolves the generic overlay's edges once per frame, in host-action space.
@@ -610,8 +622,7 @@ namespace MelonPrime {
         m_immediateOverlayFramePressed = 0;
         m_immediateOverlayFrameReleased = 0;
 
-        if (!m_enableImmediateInputEdgeOverlay
-            || !m_flags.test(StateFlags::BIT_IN_GAME_INIT)
+        if (!m_flags.test(StateFlags::BIT_IN_GAME_INIT)
             || !m_flags.test(StateFlags::BIT_LAST_FOCUSED)
             || (m_aimBlockBits & AIMBLK_NOT_IN_GAME))
         {
@@ -985,11 +996,6 @@ namespace MelonPrime {
         }
 
         if (LIKELY(m_flags.test(StateFlags::BIT_LAST_FOCUSED))) {
-#if defined(__APPLE__)
-            if (m_threadBridge.CaptureWantedForEmu())
-                m_threadBridge.RequestGuiFromEmu(
-                    MelonPrimeThreadBridge::GuiRequestRecenter);
-#endif
             const int32_t deltaX = m_input.mouseX;
             const int32_t deltaY = m_input.mouseY;
             const bool hasDeltaX = deltaX != 0;

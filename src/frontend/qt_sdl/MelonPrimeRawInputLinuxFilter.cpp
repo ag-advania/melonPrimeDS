@@ -136,7 +136,8 @@ struct LinuxRawInputFilter::Impl
         // resetAll() (focus loss / layout change) invalidates the absolute
         // baselines so the first event after a gap re-seeds instead of
         // producing one huge catch-up delta.
-        if (absBaseInvalid.exchange(false, std::memory_order_acq_rel)) {
+        if (absBaseInvalid.load(std::memory_order_relaxed)
+            && absBaseInvalid.exchange(false, std::memory_order_acq_rel)) {
             for (auto& kv : axisStates) {
                 kv.second.hasLast[0] = false;
                 kv.second.hasLast[1] = false;
@@ -200,18 +201,25 @@ struct LinuxRawInputFilter::Impl
         const int32_t dx = TakeIntegralDelta(st.residual[0], d[0]);
         const int32_t dy = TakeIntegralDelta(st.residual[1], d[1]);
 
-        if ((dx | dy) != 0) {
-            if (MelonPrimeInputDebug()
-                && !receivedMotion.load(std::memory_order_relaxed))
+        if ((dx | dy) != 0
+            && !receivedMotion.load(std::memory_order_relaxed)) {
+            if (MelonPrimeInputDebug())
                 std::fprintf(stderr,
                     "[MelonPrime] linux input: first raw motion (src %d, dx=%d dy=%d)\n",
                     raw->sourceid, dx, dy);
             receivedMotion.store(true, std::memory_order_release);
         }
-        if (dx != 0)
-            accX.fetch_add(dx, std::memory_order_release);
-        if (dy != 0)
-            accY.fetch_add(dy, std::memory_order_release);
+        // Single writer: only this filter thread mutates the accumulators;
+        // emulation threads keep per-subscription cursors and only load them.
+        // load+store avoids a locked xadd on every high-polling event.
+        if (dx != 0) {
+            const int64_t current = accX.load(std::memory_order_relaxed);
+            accX.store(current + dx, std::memory_order_release);
+        }
+        if (dy != 0) {
+            const int64_t current = accY.load(std::memory_order_relaxed);
+            accY.store(current + dy, std::memory_order_release);
+        }
 
         if (MelonPrimeInputDebug()) {
             ++dbgEvents;

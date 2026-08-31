@@ -25,7 +25,8 @@ invalidate that responsibility's internal state.
 | Aim residuals and native delivery deltas | Aim state machine and aim hook unity fragments in `MelonPrimeGameInput.cpp` | `ResetAimTransientState` and Aim-owned transition paths | Aim state machine and hook dispatch | per active aim frame; lifecycle reset | Critical: current hot scalar cluster is load-bearing; no pointer owner or PIMPL |
 | Aim layout/capture baseline | Aim/platform bridge in `MelonPrimeGameInput.cpp` | layout and platform reset paths | Aim acquisition | layout/capture transitions | High: preserve platform-specific syscall and warp gates |
 | immediate input overlay latch | overlay section and hook fragment in `MelonPrimeGameInput.cpp` | `ResetImmediateOverlayInputState` via lifecycle profiles | input-overlay dispatcher | once per frame plus hook reads | High: edge is resolved once, never once per hook entry |
-| native Biped Fire latch | Biped Fire section/hook fragment in `MelonPrimeGameInput.cpp` | `ResetNativeBipedFireInputState` via lifecycle profiles | Biped Fire dispatcher | once per frame plus hook reads | High: stale-edge baseline and local-player identity are coupled |
+| native Biped Fire latch | Biped Fire section/hook fragment in `MelonPrimeGameInput.cpp` | `ResetNativeBipedFireInputState` via lifecycle profiles | Biped Fire dispatcher | once per frame plus hook reads | High: feature latch stays independent from the shared player identity |
+| post-poll overlay player identity | `ApplyPostPollOverlayInput` coordinator | `ResetPostPollOverlayCoordinatorState` at shared lifecycle boundaries | immediate overlay and native Biped Fire | one guest read only while either feature is enabled | High: shared baseline has one owner; feature disable edges must not reset it |
 | direct transform / weapon / zoom pending requests | specialized gameplay hook fragments | lifecycle boundary profile plus each request's specialized producer/consumer | native dispatchers and frame TTL maintenance | pressed edge and bounded TTL | Medium: fixed-size per-instance state; no queue or command bus |
 | control-preset bindings | `PresetButtonBindings::BuildFromRecord` | game-join rebuild | movement, fire, zoom, morph/boost delivery | once per join, read per frame | High: precomputed fixed table avoids guest reads and branches per frame |
 | ROM/player pointer cache (`HotPointers`) | ROM detect and game-join cache rebuild | ROM/session/join lifecycle | gameplay and Aim paths | cold rebuild, hot reads | Critical: tiered CL1+ layout; do not replace with a generic context copy |
@@ -58,7 +59,11 @@ cleanup must not widen `EmuStart` or `EmuStop` without a dedicated behavior
 change and runtime evidence.
 
 Config disable edges use the corresponding narrow owner API, for example
-`ResetDirectTransformInputState` and `ResetNativeBipedFireInputState`.
+`ResetDirectTransformInputState`, `ResetImmediateOverlayInputState`, and
+`ResetNativeBipedFireInputState`. The two post-poll features reset only their
+own latches on an enabled-to-disabled transition. The shared
+`m_postPollOverlayLocalPlayerPtr` baseline is reset by the coordinator at each
+historically equivalent lifecycle boundary, not by either feature reset.
 
 ## Hot/cold and dependency direction
 
@@ -103,6 +108,18 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   window; a normal frame performs no extra Raw Input syscall.
 - the Raw-owner wheel count and generation-tagged Qt fallback remain exclusive;
   the count is never reduced to a boolean at the platform boundary.
+- raw macOS Aim asks for a frame recenter only when
+  `PlatformInput_ShouldWarpCursorAfterAim` resolves to fallback; GCMouse/raw
+  steady state emits no `GuiRequestRecenter` from capture-wanted alone.
+- Linux RawMotion has one accumulator writer. The filter thread publishes
+  `load(relaxed) + store(release)` while the emulation thread only loads and
+  advances a per-subscription cursor; no event-level `fetch_add` is needed.
+- rare config, cursor-mode, and wheel consumers load the empty sentinel before
+  their exchange claim. A producer racing an empty load remains pending for the
+  next normal frame. Wheel generation-only publications are nonzero and are
+  still claimed at their boundary.
+- wheel-up/down hotkey masks are projected in `EmuInstance::inputLoadConfig`;
+  neither the Windows raw wheel path nor the Qt wheel pulse path scans `HK_MAX`.
 
 ## Frame-order contract
 
@@ -130,8 +147,11 @@ git diff --check
 ```
 
 The SRP audit ratchets the owner definitions, lifecycle profiles, forbidden hot
-abstractions and `RunFrameHook` order. The Savestate contract additionally pins
-the next-normal-frame reconciliation and the full input reset profile.
+abstractions and `RunFrameHook` order. Rule L2 additionally pins macOS
+source-resolved warp policy, Linux single-writer/load-first shapes, disabled
+overlay guest-read rejection, shared coordinator ownership, rare command claims,
+and cold wheel-mask projection. The Savestate contract additionally pins the
+next-normal-frame reconciliation and the full input reset profile.
 
 A compile/static pass is not a runtime latency claim. Changes to Aim arithmetic,
 Raw Input consume semantics, polling cadence, atomics, syscalls, guest read/write

@@ -57,15 +57,19 @@ namespace MelonPrime {
         m_enableStylusDirectAimWhileTouching =
             s.stylusDirectAimWhileTouching;
 
+        const bool immediateOverlayWasEnabled = m_enableImmediateInputEdgeOverlay;
         m_enableImmediateInputEdgeOverlay = s.immediateInputEdgeOverlay;
+        if (immediateOverlayWasEnabled && !m_enableImmediateInputEdgeOverlay)
+            ResetImmediateOverlayInputState();
         m_enableDirectAltFormTransform = s.directAltFormTransform;
         m_suspendTouchAimOnlyForTransform = s.touchScreenAimOnlySuspendForTransform;
         m_enableMorphBoostSwipe = s.morphBoostSwipeEnabled; // MELONPRIME_MORPH_BOOST_MODE_CONTROLS_V14
         m_enableMorphBoostCustomRawThreshold = s.morphBoostCustomRawThreshold;
         if (!m_enableDirectAltFormTransform)
             ResetDirectTransformInputState();
+        const bool nativeBipedFireWasEnabled = m_enableNativeBipedFire;
         m_enableNativeBipedFire = s.nativeBipedFire;
-        if (!m_enableNativeBipedFire)
+        if (nativeBipedFireWasEnabled && !m_enableNativeBipedFire)
             ResetNativeBipedFireInputState();
         m_enableNativeZoomToggle = s.nativeZoomToggle;
         m_morphBoostAssistThresholdSq = s.morphBoostAssistThresholdSq;

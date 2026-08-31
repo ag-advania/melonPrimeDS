@@ -186,11 +186,19 @@ void EmuInstance::inputLoadConfig()
         joyMapping[i] = joycfg.GetInt(buttonNames[i]);
     }
 
+    uint64_t wheelUpMask = 0;
+    uint64_t wheelDownMask = 0;
     for (int i = 0; i < HK_MAX; i++)
     {
         hkKeyMapping[i] = keycfg.GetInt(hotkeyNames[i]);
         hkJoyMapping[i] = joycfg.GetInt(hotkeyNames[i]);
+        if (hkKeyMapping[i] == MelonPrime::InputKey::MouseWheelUp)
+            wheelUpMask |= 1ULL << i;
+        else if (hkKeyMapping[i] == MelonPrime::InputKey::MouseWheelDown)
+            wheelDownMask |= 1ULL << i;
     }
+    wheelUpHotkeyMask = wheelUpMask;
+    wheelDownHotkeyMask = wheelDownMask;
 
     setJoystick(localCfg.GetInt("JoystickID"));
     SDL_UnlockMutex(joyMutex.get());
@@ -504,17 +512,9 @@ void EmuInstance::onMouseWheel(int delta)
 {
     if (!delta) return;
 
-    const int key = (delta > 0)
-        ? MelonPrime::InputKey::MouseWheelUp
-        : MelonPrime::InputKey::MouseWheelDown;
-
-    uint64_t pulse = 0;
-    for (int i = 0; i < HK_MAX; i++) {
-        if (key == hkKeyMapping[i]) {
-            keyHotkeyMask.fetch_or(1ULL << i, std::memory_order_relaxed);
-            pulse |= (1ULL << i);
-        }
-    }
+    const uint64_t pulse = wheelHotkeyMaskForDelta(delta);
+    if (!pulse) return;
+    keyHotkeyMask.fetch_or(pulse, std::memory_order_relaxed);
     wheelHotkeyPulseMask.fetch_or(pulse, std::memory_order_relaxed);
 }
 #endif // MELONPRIME_DS
