@@ -1,5 +1,9 @@
 # DirectX 12 backend
 
+DirectX 12 forces the shared high-resolution-coordinate option on; the exact
+UI, config normalisation, 1x exception, and backend comparison are documented
+in [High-resolution vertex coordinates](high-resolution-coordinates.md).
+
 Windows-only 3D renderer, originally added on `develop_dx12` and currently maintained on
 `develop_hud` at `2a0266f14` (checkout verified 2026-08-28). It is a port of melonDS's
 **OpenGL compute renderer** (`src/GPU3D_Compute.cpp` + `GPU3D_Compute_shaders.h`)

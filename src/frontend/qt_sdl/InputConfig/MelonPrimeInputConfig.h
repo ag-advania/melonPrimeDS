@@ -45,7 +45,9 @@ static constexpr HotkeyEntry kMetroidHotkeys[] =
     {HK_MetroidMoveLeft,            "[Metroid] (A) Move Left"},
     {HK_MetroidMoveRight,           "[Metroid] (D) Move Right"},
     {HK_MetroidShootScan,           "[Metroid] (Mouse Left) Shoot/Scan"},
+    {HK_MetroidStylusTouch,         "[Metroid] (Mouse Left) Touch (Aim), Double-Tap Jump (Stylus Mode)"},
     {HK_MetroidScanShoot,           "[Metroid] (V) Scan/Shoot, Map Zoom In"},
+    {HK_MetroidScanShootStylus,     "[Metroid] (V) Scan/Shoot, Map Zoom In (Stylus Mode)"},
     {HK_MetroidZoom,                "[Metroid] (Mouse Right) Imperialist Zoom, Map Zoom Out, Morph Ball Boost"},
     {HK_MetroidJump,                "[Metroid] (Space) Jump"},
     {HK_MetroidMorphBall,           "[Metroid] (L. Ctrl) Transform"},
@@ -122,6 +124,7 @@ private slots:
     void on_cbMetroidHudCrosshairDeadbandEnable_stateChanged(int state);
     void on_dsbMetroidHudCrosshairDeadband_valueChanged(double value);
     void on_cbMetroidEnableStylusMode_stateChanged(int state);
+    void on_cbMetroidEnableStylusDirectAimWhileTouching_stateChanged(int state);
     void on_cbMetroidEnableTouchScreenAimOnly_stateChanged(int state);
     void on_cbMetroidDisableMphAimSmoothing_stateChanged(int state);
     void on_cbMetroidExpandStageMatrix_stateChanged(int state);

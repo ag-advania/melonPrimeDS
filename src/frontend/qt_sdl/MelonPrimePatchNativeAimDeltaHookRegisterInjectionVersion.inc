@@ -231,13 +231,15 @@
     {
         // ARM9Hook_Install gates registration on m_enableNativeAimDeltaHook
         // (nativeAimHookMode == 1) AND m_disableMphAimSmoothing AND a valid
-        // romGroupIndex, so those runtime checks are dead. Stylus mode is
-        // dynamic but ARM9Hook_Install does not gate on it, so isStylusMode
-        // is still checked. localPlayerPtrAddr values come from constant tables
+        // romGroupIndex, so those runtime checks are dead. Traditional Stylus
+        // Mode still rejects direct writes; its direct-aim sub-mode admits them
+        // only for the held touch action. localPlayerPtrAddr values come from constant tables
         // (always inside main RAM), so their IsMainRamRange checks are dead.
         if (!nds || !regs)
             return;
-        if (isStylusMode)
+        if (isStylusMode
+            && !(m_enableStylusDirectAimWhileTouching
+                && m_stylusTouchKeyDown))
             return;
         if ((m_aimBlockBits | static_cast<uint32_t>(m_isLayoutChangePending)) != 0)
             return;

@@ -160,6 +160,16 @@ public:
         m_panelAimX.store(0, std::memory_order_relaxed);
         m_panelAimY.store(0, std::memory_order_release);
     }
+    void PublishStylusPointerFromGui(int x, int y, bool valid) noexcept
+    {
+        uint32_t packed = 0;
+        if (valid) {
+            packed = (1u << 31)
+                | (static_cast<uint32_t>(y) & 0xFFu) << 8
+                | (static_cast<uint32_t>(x) & 0xFFu);
+        }
+        m_stylusPointer.store(packed, std::memory_order_release);
+    }
 
     // MELONPRIME_PHASE5_CONFIG_USAGE_V1
     // Packed publication keeps value and generation in one atomic operation.
@@ -245,6 +255,15 @@ public:
     {
         y = m_centerY.load(std::memory_order_acquire);
         x = m_centerX.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] bool ReadStylusPointerForEmu(int& x, int& y) const noexcept
+    {
+        const uint32_t packed = m_stylusPointer.load(std::memory_order_acquire);
+        if ((packed & (1u << 31)) == 0)
+            return false;
+        x = static_cast<int>(packed & 0xFFu);
+        y = static_cast<int>((packed >> 8) & 0xFFu);
+        return true;
     }
 
     void PublishRuntimeFromEmu(bool cursorMode, bool stylusMode,
@@ -341,6 +360,9 @@ private:
     std::atomic<int> m_cursorModeCommand{-1};
     std::atomic<int32_t> m_panelAimX{0};
     std::atomic<int32_t> m_panelAimY{0};
+    // GUI-published DS coordinate under the pointer. Packed so the emulation
+    // thread cannot observe X/Y from different mouse events; bit 31 is valid.
+    std::atomic<uint32_t> m_stylusPointer{0};
     std::atomic<uint32_t> m_runtimeBits{1u};
     std::atomic_bool m_cursorVisibleDesired{true};
     std::atomic<uint32_t> m_guiRequests{0};

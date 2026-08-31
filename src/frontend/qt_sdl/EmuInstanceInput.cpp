@@ -109,6 +109,8 @@ const char* EmuInstance::hotkeyNames[HK_MAX] =
     "HK_MetroidIngameSensiDown",
     "HK_MetroidWeaponNextSecondary",
     "HK_MetroidWeaponPreviousSecondary",
+    "HK_MetroidScanShootStylus",
+    "HK_MetroidStylusTouch",
 #endif
 };
 
@@ -461,6 +463,20 @@ void EmuInstance::onMouseRelease(QMouseEvent* event)
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
             keyHotkeyMask.fetch_and(~(1ULL << i), std::memory_order_relaxed);
+}
+
+bool EmuInstance::hotkeyUsesKeyboardKey(int hotkeyId, int qtKey) const
+{
+    return hotkeyId >= 0 && hotkeyId < HK_MAX
+        && hkKeyMapping[hotkeyId] == qtKey;
+}
+
+bool EmuInstance::hotkeyUsesMouseButton(int hotkeyId, Qt::MouseButton button) const
+{
+    if (hotkeyId < 0 || hotkeyId >= HK_MAX)
+        return false;
+    const int key = static_cast<int>(button) | MelonPrime::InputKey::MouseMark;
+    return hkKeyMapping[hotkeyId] == key;
 }
 
 void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)

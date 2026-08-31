@@ -132,7 +132,9 @@ namespace Config
         {"Instance*.Keyboard.HK_MetroidUIYes",             Qt::Key_G},
         {"Instance*.Keyboard.HK_MetroidUINo",              Qt::Key_H},
         {"Instance*.Keyboard.HK_MetroidShootScan",         (int)Qt::LeftButton | (int)0xF0000000},
+        {"Instance*.Keyboard.HK_MetroidStylusTouch",       (int)Qt::LeftButton | (int)0xF0000000},
         {"Instance*.Keyboard.HK_MetroidScanShoot",         Qt::Key_V},
+        {"Instance*.Keyboard.HK_MetroidScanShootStylus",   Qt::Key_V},
         {"Instance*.Keyboard.HK_MetroidWeaponBeam",        (int)Qt::ExtraButton2 | (int)0xF0000000},
         {"Instance*.Keyboard.HK_MetroidWeaponMissile",     (int)Qt::ExtraButton1 | (int)0xF0000000},
         {"Instance*.Keyboard.HK_MetroidWeaponSpecial",     Qt::Key_R},
@@ -263,9 +265,10 @@ namespace Config
         {"Instance*.Metroid.Apply.MusicVolume", false},
         {"Instance*.Metroid.Apply.joy2KeySupport", true},
         {"Instance*.Metroid.Enable.stylusMode", false},
+        {"Instance*.Metroid.Enable.stylusDirectAimWhileTouching", false},
         {"Instance*.Metroid.Enable.topScreenTouch", false},
         {"Instance*.Metroid.Enable.touchScreenAimOnly", false},
-        {"Instance*.Metroid.Enable.touchScreenAimOnlySuspendForTransform", false},
+        {"Instance*.Metroid.Enable.touchScreenAimOnlySuspendForTransform", true},
         {"Instance*.Metroid.Enable.stylusHideCursorInGame", false},
         {"Instance*.Metroid.Enable.stylusConfineCursorToTopScreen", false},
         {"Instance*.Metroid.Enable.stylusHoldCursorAtCenterWhenNotClicking", false},
@@ -448,7 +451,9 @@ namespace Config
         {"HKKey_MetroidUINo",              0, "Keyboard.HK_MetroidUINo",               true},
 
         {"HKKey_MetroidShootScan",         0, "Keyboard.HK_MetroidShootScan",          true},
+        {"HKKey_MetroidStylusTouch",       0, "Keyboard.HK_MetroidStylusTouch",        true},
         {"HKKey_MetroidScanShoot",         0, "Keyboard.HK_MetroidScanShoot",          true},
+        {"HKKey_MetroidScanShootStylus",   0, "Keyboard.HK_MetroidScanShootStylus",    true},
 
         {"HKKey_MetroidWeaponBeam",        0, "Keyboard.HK_MetroidWeaponBeam",         true},
         {"HKKey_MetroidWeaponMissile",     0, "Keyboard.HK_MetroidWeaponMissile",      true},
@@ -515,7 +520,9 @@ namespace Config
         { "HKJoy_MetroidUINo",              0, "Joystick.HK_MetroidUINo",               true},
 
         { "HKJoy_MetroidShootScan",         0, "Joystick.HK_MetroidShootScan",          true},
+        { "HKJoy_MetroidStylusTouch",       0, "Joystick.HK_MetroidStylusTouch",        true},
         { "HKJoy_MetroidScanShoot",         0, "Joystick.HK_MetroidScanShoot",          true},
+        { "HKJoy_MetroidScanShootStylus",   0, "Joystick.HK_MetroidScanShootStylus",    true},
 
         { "HKJoy_MetroidWeaponBeam",        0, "Joystick.HK_MetroidWeaponBeam",         true},
         { "HKJoy_MetroidWeaponMissile",     0, "Joystick.HK_MetroidWeaponMissile",      true},

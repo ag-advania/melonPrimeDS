@@ -2,7 +2,7 @@
 
 ## Setting contract
 
-These controls are dynamically inserted into the Sensitivity section. They
+These controls are dynamically grouped under Input Settings. They
 configure the MelonPrime mouse-swipe assist; they do not replace the existing
 right-click boost or the Shift hold-to-boost action described in the broader
 [Morph Ball Boost feature reference](../morph-ball-boost.md).
@@ -102,7 +102,9 @@ current UI controls.
   frame or consumed delta.
 - Test Samus versus non-Samus, Morph Ball versus biped, stylus mode, and
   Joy2Key/SnapTap combinations.
-- Test config reload, reset-sensitivity, leave, stop, and rejoin behavior.
+- Test config reload, leave, stop, and rejoin behavior. The Sensitivity reset
+  button does not reset these controls because they now belong to Input
+  Settings.
 
 ## Evidence and related material
 

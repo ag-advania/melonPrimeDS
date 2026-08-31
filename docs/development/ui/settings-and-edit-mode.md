@@ -48,8 +48,8 @@ After schema changes, run `tools/ci/audits/audit-hud-key-parity.ps1` and
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigCustomHudCode.inc` | Custom HUD TOML export/import tab (include fragment) |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigPreview.cpp` | live preview rendering, preview apply flow, snapshot/restore |
 | `src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigInternal.h` | shared UI helpers, presets, color-sync helpers |
-| `src/frontend/qt_sdl/MelonPrimeLocalization.h` | localization API (`Tr`, `LocalizeWidgetTree`, ...) — declarations only |
-| `src/frontend/qt_sdl/MelonPrimeLocalization.cpp` | English/Japanese translation tables (`kTranslations`, `kObjectTextTranslations`) |
+| `src/frontend/qt_sdl/MelonPrimeLocalization.h` | localization API (`Tr`, `LocalizeWidgetTree`, language selection) |
+| `src/frontend/qt_sdl/MelonPrimeLocalization/` | language registry, translation catalog, dynamic text, widget localizer, splash text, and per-domain translation includes |
 
 ### Tab structure
 
@@ -62,37 +62,97 @@ After schema changes, run `tools/ci/audits/audit-hud-key-parity.ps1` and
 | Custom HUD Input/Output | `tabCustomHudCode` | TOML export/import of all Custom HUD settings (auto-discovers widgets in `tabCrosshair`) |
 
 ### Constructor/setup flow
+
 Current constructor flow in `MelonPrimeInputConfig.cpp` is:
-1. `MelonPrime::UiText::SetMenuLanguageMode(...)` + `setupMenuLanguageControl()`
-2. `setupKeyBindings()`
-3. `setupSensitivityAndToggles()` - calls `buildSettingBindings()` internally (non-HUD load/save binding table)
-4. `setupInputMethodSection()`
-5. `setupCollapsibleSections()`
-6. `setupCustomHudWidgets()` - programmatic creation of all HUD parameter widgets
-7. `setupPreviewConnections()`
-8. `setupCustomHudCode()`
-9. `MelonPrime::UiText::LocalizeWidgetTree(this)`
-10. `snapshotVisualConfig()`
+
+1. `MelonPrime::UiText::SetMenuLanguageSelection(...)` and
+   `setupMenuLanguageControl()`;
+2. `setupKeyBindings()`;
+3. `setupSensitivityAndToggles()` — this calls `buildSettingBindings()` for
+   non-HUD load/save ownership;
+4. `setupInputMethodSection()`;
+5. `setupSettingsOrganization()` — moves existing widgets into their current
+   task-oriented sections and reorders the Settings page;
+6. `setupCollapsibleSections()`;
+7. `setupCustomHudWidgets()`;
+8. `setupPreviewConnections()`;
+9. `setupCustomHudCode()`;
+10. `MelonPrime::UiText::LocalizeWidgetTree(this)`;
+11. `refreshSettingsPresentation()`;
+12. platform-specific video/sync presentation;
+13. `snapshotVisualConfig()`;
+14. wheel guards and the Settings viewport resize event filter.
 
 This ordering matters because preview wiring assumes widgets are already initialized.
 
 ### Localization
-MelonPrime settings labels support English and Japanese through the `MelonPrime::UiText` API
-(`MelonPrimeLocalization.h`); the translation tables live in `MelonPrimeLocalization.cpp`.
+
+MelonPrime settings labels use the registered-language catalog behind the
+`MelonPrime::UiText` API. `MelonPrimeLocalization.cpp` is only the unity entry;
+the registry, catalogs, localizer, and domain-specific translation includes
+live under `src/frontend/qt_sdl/MelonPrimeLocalization/`.
 
 Current rules:
-- OS locale decides the UI language with `QLocale::system().language()`.
-- On Japanese OS, the Settings tab shows a `Menu Language` selector (`Metroid.UI.MenuLanguage`, `0=Japanese`, `1=English`), defaulting to Japanese.
-- On non-Japanese OS, the selector is hidden and MelonPrime UI text stays English regardless of the saved language value.
+- `Metroid.UI.MenuLanguage=-1` selects the system/default language.
+- The Menu Language selector is always visible and contains System default plus
+  every ID returned by `AllSelectableMenuLanguages()`; it is not limited to
+  English/Japanese or gated by a Japanese OS locale.
+- The language row has a minimum width of 260 px and maximum width of 420 px so
+  long native language names remain usable without forcing the Settings page
+  horizontally wider.
 - English source strings remain the default and are the lookup keys for short text in `MelonPrime::UiText::kTranslations`.
-- Long or HTML-rich description labels should use stable object names and Japanese entries in `MelonPrime::UiText::kObjectTextTranslations`.
-- Japanese strings are hand-authored; do not use machine-translated text.
+- Long or HTML-rich description labels should use stable object names and
+  explicit entries in the object-text catalog for every registered language.
+- Translations are authored entries; do not rely on fallback for a requested
+  all-language UI change.
 - Config keys, TOML keys, object names, and enum/storage values remain English and must not be translated.
 - Static Qt Designer text and generated widget text are localized by `MelonPrime::UiText::LocalizeWidgetTree(this)` after all setup is complete.
 - Dynamic labels, toggle text, dialog titles, status messages, and in-game overlay text should call `MelonPrime::UiText::Tr(...)` at the point where the text is assigned or drawn.
 - The in-game DS-space overlay is tight; prefer concise Japanese labels and update text measurement code when changing drawn sample text.
 
-When adding or renaming visible MelonPrime UI text, update both the English call site and the Japanese entry in `MelonPrimeLocalization.cpp`. For C++-created description labels, set a stable object name before `LocalizeWidgetTree(this)` runs. The main call sites are `MelonPrimeInputConfig.cpp`, `MelonPrimeInputConfigCustomHudCode.inc`, `MelonPrimeHudConfigOnScreenEdit.cpp`, and the edit-mode `.inc` fragments (`Defs`, `Draw`, `Input`).
+When adding or renaming visible MelonPrime UI text, update the English call site
+and every registered language in the relevant translation include. For
+C++-created description labels, set a stable object name before
+`LocalizeWidgetTree(this)` runs. The main call sites are
+`MelonPrimeInputConfig.cpp`, `MelonPrimeInputConfigCustomHudCode.inc`,
+`MelonPrimeHudConfigOnScreenEdit.cpp`, and the edit-mode `.inc` fragments.
+
+### Settings tab organization and responsive presentation
+
+`setupSettingsOrganization()` presents the Settings page in this visible
+order, independent of the historical order in the `.ui` XML:
+
+1. Language
+2. Sensitivity
+3. Input Settings
+4. Input Method
+5. Gameplay Toggles
+6. Game Feature Improvements
+7. Disable Features
+8. Low HP Warning
+9. In-Game Apply
+10. In-Game Aspect Ratio
+11. Screen Sync
+12. Cursor Clip Settings
+13. Video Quality
+14. Volume
+15. License Apply
+16. Bug Fixes
+17. Developer Only
+
+Touch/stylus controls, Touch-Screen-Aim-Only, top-screen touch, stylus cursor
+policy, Morph Ball Boost swipe controls, and Joy2Key compatibility are grouped
+under Input Settings. Sensitivity now contains aim tuning only. Moving a widget
+does not change its object name, binding, config key, or parent/child state
+logic.
+
+`refreshSettingsPresentation()` disables the horizontal scrollbar and wraps
+every full checkbox caption with `QTextLayout` when the viewport size or menu
+language changes. The unwrapped text remains in a widget property and in
+`accessibleName`, so wrapping is presentation-only and localization can safely
+replace the full caption. Wheel events over a non-focused combo box/spin box
+scroll the containing Settings page instead of accidentally changing the
+control value; focused controls retain their normal wheel behaviour.
 
 ### Collapsible sections
 The settings UI uses toggle buttons and section widgets wired up in `setupCollapsibleSections()`. Toggle state is persisted under `Metroid.UI.Section*` config keys.
@@ -179,6 +239,8 @@ It currently saves:
 Important side effects in `saveConfig()`:
 - if `Metroid.Visual.ClipCursorToBottomScreenWhenNotInGame` changed, windows schedule `panel->updateClipIfNeeded()` via `QTimer::singleShot`
 - if `Metroid.Visual.InGameTopScreenOnly` changed, windows schedule `onScreenLayoutChanged()` via Qt queued connection
+- stylus cursor visibility/confinement/centre-pin settings refresh the active
+  panel cursor policy through `refreshStylusCursorSettings()`
 - `MelonPrime::CustomHud_InvalidateConfigCache(core->HudConfigState())` is called at the end so the per-instance runtime HUD reads updated values on the next frame
 
 HUD settings are saved from both the settings dialog (`saveConfig()`) and the in-game edit mode (`CustomHud_ExitEditMode(hudConfig, true, cfg)` -> `Config::Save()`). Both write the same config keys. When the dialog reopens, `setupCustomHudWidgets()` reads the latest config values, ensuring sync.
@@ -186,6 +248,10 @@ HUD settings are saved from both the settings dialog (`saveConfig()`) and the in
 ### Reset/default handlers
 
 The **Reset sensitivity values** button resets every bound setting whose widget currently belongs to `sectionSensitivity`. It does not maintain a second list of numeric defaults. Instead, it resolves values from `Config.cpp` through the `Config::Table::GetDefaultInt/GetDefaultBool/GetDefaultDouble/GetDefaultString` accessors. `CheckBoolInverted` rows invert the positive stored default when updating a negative **Disable...** checkbox.
+
+Morph Ball Boost controls no longer belong to `sectionSensitivity`, so this
+button intentionally does not reset them. Reset those Input Settings values by
+editing them explicitly or through a broader configuration reset.
 
 `Low-Latency Aim Mode` remains outside the generic binding table because its save path uses combo item data and a public/developer-mode gate; the reset handler restores it explicitly through the same compiled integer default.
 

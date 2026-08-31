@@ -417,10 +417,10 @@ WeaponSwitch, TransformGate, NativeAimDelta, etc.) are documented in the
 | Use firmware language | `MelonPrimePatchUseFirmwareLanguage.*` | Registry: `OutOfGameFrame` | Adventure-aware; applied in menus; adapter passes `rom.isInAdventure` as 4th arg |
 | FPS Camera Lock | `MelonPrimePatchFpsCameraLock.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Public independent camera-behavior patch; distinct from the `LowLatencyMode` ImmediateSync/MoonLike instruction hook. |
 | Show headshot online | `MelonPrimePatchShowHeadshotOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
-| Show enemy HP meter online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
+| Show enemy target information online | `MelonPrimePatchShowEnemyHpMeterOnline.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Legacy key/source name says HP meter; current UI exposes the broader target-information path. |
 | Disable double-damage multiplier | `MelonPrimePatchDisableDoubleDamageMultiplier.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Pairs with Damage-Notify-Purple |
 | No picking up specific items | `MelonPrimePatchNoPickingUpSpecificItems.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | |
-| Touch-screen aim only (battle) | `MelonPrimePatchTouchScreenAimOnly.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Neutralizes the three in-match bottom-screen HUD hit-tests (Morph Ball, weapon quick slots, weapon menu) with `mov r0,#0` so the whole touch screen stays aim input; double-tap jump and the touch boost gesture are left alone |
+| Touch-screen aim only (battle) | `MelonPrimePatchTouchScreenAimOnly.*` | Registry: `BattleRuntime \| ConfigReload` (`RF_OnLeave \| RF_OnStop`) | Requires Stylus Mode plus the parent setting; neutralizes three HUD hit-tests with `mov r0,#0`. Standard transform can temporarily restore/reapply them when `Metroid.Enable.touchScreenAimOnlySuspendForTransform` is enabled. See [Touch-Screen-Aim-Only](../../features/melonprime-settings/touch-screen-aim-only.md). |
 
 ---
 

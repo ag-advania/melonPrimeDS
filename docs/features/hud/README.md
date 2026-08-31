@@ -20,6 +20,7 @@ reference.
 - [Adventure camera scenes](custom-hud-adventure-camera-scene.md)
 - [Adventure Scan Visor](custom-hud-adventure-scan-visor.md)
 - [Enemy Target](custom-hud-enemy-target.md)
+- [Scoreboard and per-player hunter colors](custom-hud-scoreboard.md)
 - [Helmet spawn flash](custom-hud-helmet-spawn-flash.md)
 
 The focused pages own behavior that needs its own runtime or rendering
