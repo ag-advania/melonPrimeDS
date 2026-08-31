@@ -314,6 +314,11 @@ public:
     void reloadNoRomSplashLocalization();
     void refreshTopScreenTouchSetting();
     void refreshStylusCursorSettings();
+    // Event-driven keyboard equivalent of starting a panel touch. Traditional
+    // Stylus Mode publishes the pointer's DS coordinate; direct-aim mode starts
+    // relative capture instead. The matching release always tears it down.
+    void primeStylusTouchHotkeyAtCursor(int qtKey);
+    void releaseStylusTouchHotkeyCapture(int qtKey);
     void containAimCursorIfNeeded();
     void syncMelonPrimeThreadBridge();
     // Explicit settings-dialog save wins over any older debounced hotkey save.
@@ -397,6 +402,7 @@ protected:
     bool stylusHideCursorInGameEnabled = false;
     bool stylusConfineCursorToTopScreenEnabled = false;
     bool stylusHoldCursorAtCenterEnabled = false;
+    bool stylusDirectAimWhileTouchingEnabled = false;
     // Cached OR of the match-scoped cursor options, so the per-pass reconcile
     // short-circuits on one predictable bool when they are all off.
     bool stylusMatchCursorOptionsEnabled = false;
@@ -543,6 +549,8 @@ private:
     // Parks the pointer at the drag origin while no click is held, so every
     // drag starts centred with its full range available.
     void holdStylusCursorAtCenterIfNotClicking(const QPoint& localPos);
+    void beginStylusDirectAimCapture();
+    void endStylusDirectAimCapture();
     [[nodiscard]] QPoint stylusCursorCenterLocal() const;
     std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
@@ -560,9 +568,15 @@ private:
     bool m_hasLastClipInGameState = false;
     bool m_lastClipFocusedState = false;
     bool m_stylusMatchCursorActive = false;
+    // Mouse button accepted as the current touch contact. In a Stylus Mode
+    // match this follows HK_MetroidStylusTouch instead of being hard-wired to
+    // the left button.
+    Qt::MouseButton m_touchMouseButton = Qt::NoButton;
+    Qt::MouseButton m_stylusDirectAimMouseButton = Qt::NoButton;
     // Tracks the held click itself rather than `touching`: a press whose touch
     // never registers must still free the pointer, or the pin would trap it.
     bool m_stylusClickHeld = false;
+    bool m_stylusDirectAimCaptureHeld = false;
     bool m_hasLastClipFocusedState = false;
     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
     // coalesces repeated per-frame requests without touching QWidget off-thread.

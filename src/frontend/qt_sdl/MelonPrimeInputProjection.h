@@ -42,24 +42,99 @@ static_assert(HK_MetroidWeapon6         == HK_MetroidWeaponBeam + 10, "Weapon gr
 struct ProjectedDownState {
     uint64_t mask;
     uint32_t moveIndex;
+    // Reuse the structure's existing 4-byte tail padding so the hot-path
+    // result remains 16 bytes while carrying mode-selected actions forward.
+    uint32_t modeFlags;
 };
 
-[[nodiscard]] FORCE_INLINE ProjectedDownState ProjectDownState(uint64_t hotMask) noexcept
+enum ProjectedModeFlag : uint32_t {
+    PMF_SCAN_SHOOT_DOWN  = 1u << 0,
+    PMF_STYLUS_TOUCH_DOWN = 1u << 1,
+};
+
+static_assert(sizeof(ProjectedDownState) == 16,
+              "ProjectedDownState must remain a compact register-friendly result");
+
+[[nodiscard]] constexpr bool IsActiveScanShootDown(
+    uint64_t hotMask,
+    bool stylusMode) noexcept
+{
+    const int activeHotkey = stylusMode
+        ? HK_MetroidScanShootStylus
+        : HK_MetroidScanShoot;
+    return ((hotMask >> activeHotkey) & 1ULL) != 0;
+}
+
+static_assert(IsActiveScanShootDown(1ULL << HK_MetroidScanShoot, false));
+static_assert(!IsActiveScanShootDown(1ULL << HK_MetroidScanShoot, true));
+static_assert(!IsActiveScanShootDown(1ULL << HK_MetroidScanShootStylus, false));
+static_assert(IsActiveScanShootDown(1ULL << HK_MetroidScanShootStylus, true));
+
+[[nodiscard]] constexpr bool IsNormalShootScanDown(
+    uint64_t hotMask,
+    bool stylusMode) noexcept
+{
+    return !stylusMode
+        && ((hotMask >> HK_MetroidShootScan) & 1ULL) != 0;
+}
+
+[[nodiscard]] constexpr bool IsStylusTouchDown(
+    uint64_t hotMask,
+    bool stylusMode) noexcept
+{
+    return stylusMode
+        && ((hotMask >> HK_MetroidStylusTouch) & 1ULL) != 0;
+}
+
+static_assert(IsNormalShootScanDown(1ULL << HK_MetroidShootScan, false));
+static_assert(!IsNormalShootScanDown(1ULL << HK_MetroidShootScan, true));
+static_assert(!IsStylusTouchDown(1ULL << HK_MetroidStylusTouch, false));
+static_assert(IsStylusTouchDown(1ULL << HK_MetroidStylusTouch, true));
+
+[[nodiscard]] constexpr bool ShouldOwnRelativeAimInput(
+    bool focused,
+    bool panelAvailable,
+    bool cursorMode,
+    bool stylusMode,
+    bool stylusDirectAimWhileTouching,
+    bool captureWanted) noexcept
+{
+    return focused && panelAvailable && !cursorMode
+        && (!stylusMode || stylusDirectAimWhileTouching)
+        && captureWanted;
+}
+
+static_assert(ShouldOwnRelativeAimInput(
+    true, true, false, false, false, true));
+static_assert(!ShouldOwnRelativeAimInput(
+    true, true, false, true, false, true));
+static_assert(ShouldOwnRelativeAimInput(
+    true, true, false, true, true, true));
+
+[[nodiscard]] FORCE_INLINE ProjectedDownState ProjectDownState(
+    uint64_t hotMask,
+    bool stylusMode) noexcept
 {
     const uint32_t moveBits =
         static_cast<uint32_t>((hotMask >> HK_MetroidMoveForward) & 0xFULL);
+    const bool scanShootDown = IsActiveScanShootDown(hotMask, stylusMode);
+    const bool normalShootScanDown = IsNormalShootScanDown(hotMask, stylusMode);
+    const bool stylusTouchDown = IsStylusTouchDown(hotMask, stylusMode);
 
     uint64_t down = static_cast<uint64_t>(moveBits) << 6;
 
     down |= ((hotMask >> HK_MetroidJump)               & 1ULL) << 0;
-    down |= ((((hotMask >> HK_MetroidShootScan) |
-               (hotMask >> HK_MetroidScanShoot))       & 1ULL) << 1);
+    down |= ((static_cast<uint64_t>(normalShootScanDown) |
+              static_cast<uint64_t>(scanShootDown)) << 1);
     down |= ((hotMask >> HK_MetroidZoom)               & 1ULL) << 2;
     down |= ((hotMask >> HK_MetroidHoldMorphBallBoost) & 1ULL) << 4;
     down |= ((hotMask >> HK_MetroidWeaponCheck)        & 1ULL) << 5;
     down |= ((hotMask >> HK_MetroidMenu)               & 1ULL) << 10;
 
-    return { down, moveBits };
+    const uint32_t modeFlags =
+        (scanShootDown ? PMF_SCAN_SHOOT_DOWN : 0u)
+        | (stylusTouchDown ? PMF_STYLUS_TOUCH_DOWN : 0u);
+    return { down, moveBits, modeFlags };
 }
 
 [[nodiscard]] FORCE_INLINE uint64_t ProjectPressMask(uint64_t hotMask) noexcept

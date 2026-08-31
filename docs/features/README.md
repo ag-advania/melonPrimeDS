@@ -29,10 +29,12 @@ the complete route rather than one isolated behavior.
 - [Custom HUD adventure camera scenes](hud/custom-hud-adventure-camera-scene.md)
 - [Custom HUD adventure Scan Visor](hud/custom-hud-adventure-scan-visor.md)
 - [Custom HUD Enemy Target](hud/custom-hud-enemy-target.md)
+- [Custom HUD scoreboard](hud/custom-hud-scoreboard.md)
 - [Zoom input methods](input/zoom-input-methods.md)
 - [macOS compute renderer restriction](rendering/macos-compute-renderer-restriction.md)
 - [Vulkan backend](rendering/vulkan-backend.md)
 - [DirectX 12 backend](rendering/dx12-backend.md)
+- [High-resolution vertex coordinates](rendering/high-resolution-coordinates.md)
 
 Completed feature/refactor evidence is indexed under
 [docs/archive/features/](../archive/features/).

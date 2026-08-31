@@ -11,10 +11,10 @@ native MelonPrime aim path:
 | Stylus mode | Metroid.Enable.stylusMode | false |
 | Top-screen touch | Metroid.Enable.topScreenTouch | false |
 | Touch-screen aim only | Metroid.Enable.touchScreenAimOnly | false |
+| Temporarily restore HUD hit-testing for a Standard transform | Metroid.Enable.touchScreenAimOnlySuspendForTransform | true |
 | Hide stylus cursor in game | Metroid.Enable.stylusHideCursorInGame | false |
 | Confine stylus cursor to top screen | Metroid.Enable.stylusConfineCursorToTopScreen | false |
 | Hold stylus cursor at center while not clicking | Metroid.Enable.stylusHoldCursorAtCenterWhenNotClicking | false |
-| Direct alt-form transform | Metroid.Input.Enable.DirectAltFormTransform | false |
 
 The controls are not interchangeable:
 
@@ -22,11 +22,13 @@ The controls are not interchangeable:
 - Stylus mode selects touch/stylus aim semantics and disables incompatible
   native aim controls.
 - Top-screen touch enables a UI routing path.
-- Touch-screen aim only is a guarded guest hit-test patch.
+- Touch-screen aim only is a guarded guest hit-test patch and is applied only
+  while Stylus Mode is also enabled.
+- Its indented Standard-transform option briefly restores the Transform-button
+  hit-test around the legacy simulated tap, then reapplies the owning patch.
 - Hide, top-screen confinement, and hold-at-center are host cursor
   policies; their complete contract is in
   [stylus-cursor-policy.md](stylus-cursor-policy.md).
-- Direct alt-form transform selects a native guest transform hook.
 
 ## Joy2Key compatibility support
 
@@ -59,10 +61,11 @@ The direct stylus transform path remains active. Thus a disabled spin control
 does not mean stylus aim is disabled; it means the normal mouse/controller
 scaling path is not being used.
 
-Stylus mode and Touch-screen aim only are also different. Stylus mode is a
-host input mode. Touch-screen aim only patches a guest control hit-test so
-touch input is treated as the aim source. They may be used together, but one
-must not be used as evidence that the other is working.
+Stylus mode and Touch-screen aim only remain different layers, but the current
+patch deliberately requires both configuration values. Stylus Mode is the host
+input mode; Touch-screen aim only patches three guest HUD hit-tests. A checked
+child value retained while Stylus Mode is off is inactive rather than an
+independent patch request.
 
 ## Top-screen touch and cursor presentation
 
@@ -86,25 +89,10 @@ combination matrix, and platform boundary.
 
 ## Touch-screen aim only patch
 
-The patch writes mov r0,#0, value 0xE3A00000 at three guarded call/hit-test
-sites per ROM. The exact original call words are version-specific and are
-stored in MelonPrimePatchTouchScreenAimOnly.cpp.
-
-| ROM | Site 1 | Site 2 | Site 3 |
-| --- | ---: | ---: | ---: |
-| JP1.0 / JP1.1 | 0x02026C70 | 0x02026E40 | 0x02026F70 |
-| US1.0 | 0x02026C94 | 0x02026E64 | 0x02026F94 |
-| US1.1 / EU1.1 | 0x02026C94 | 0x02026E64 | 0x02026F94 |
-| EU1.0 | 0x02026C8C | 0x02026E5C | 0x02026F8C |
-| KR1.0 | 0x0200C308 | 0x0200C4C8 | 0x0200C5E8 |
-
-Apply requires every site to match its ROM-specific original or already
-applied value. Restore requires the replacement value and writes back only
-the owned site words. The registry applies the patch on battle runtime/config
-reload and restores it on leave/stop.
-
-The double-tap gesture and touch boost are separate behavior and are not
-covered by these three addresses.
+The complete patch words, parent/child state matrix, Standard-transform
+bracketing sequence, lifecycle, and mphCodex research pointers are maintained
+in [Touch-screen aim only](touch-screen-aim-only.md). This page keeps only the
+compatibility relationship so the ROM table has one owner.
 
 ## Compatibility matrix
 
@@ -112,8 +100,9 @@ covered by these three addresses.
 | --- | --- |
 | Normal input, stylus off | Ordinary sensitivity/native settings apply |
 | Stylus on | Stylus transform owns aim; many normal aim controls are bypassed |
-| Touch-only on, stylus off | Guest touch hit-test patch plus normal host routing |
-| Stylus on + touch-only on | Two distinct layers; test both independently |
+| Touch-only checked, stylus off | Saved parent value is retained, but the guest patch is restored/inactive |
+| Stylus on + touch-only on | Stylus host mode plus the three-site guest hit-test patch |
+| Standard transform + temporary exception on | Patch is restored for the simulated Transform tap, then reapplied |
 | Hide cursor on | Presentation change only |
 | Top-screen confinement on | Windows host clip in the active stylus state; not aim capture |
 | Hold cursor at center on | Host warp while no stylus click is held; active drags are not continuously recentered |
@@ -123,7 +112,8 @@ covered by these three addresses.
 
 - Record all eight controls before comparing input behavior.
 - Test stylus mode with the controls that the UI disables.
-- Test touch-only on every ROM in the patch table.
+- Test touch-only and its Standard-transform exception on every ROM in the
+  dedicated patch table.
 - Verify guard failure and leave/stop restoration.
 - Test top-screen touch with each screen layout used by the deployment.
 - Confirm cursor hiding does not change aim deltas.

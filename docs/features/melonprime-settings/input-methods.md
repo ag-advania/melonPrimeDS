@@ -5,13 +5,13 @@
 The Input Method section selects how weapon switching, biped firing, transform,
 and zoom requests are generated:
 
-| Control | Key | Default | Values |
-| --- | --- | --- | --- |
-| Weapon switch method | Metroid.Input.WeaponSwitchMethod | 0 | 0 legacy, 1 native, 2 native 2 |
-| Biped fire method | Metroid.Input.BipedFireMethod | 0 | 0 legacy, 1 native |
-| Transform method | Metroid.Input.AltFormTransformMethod | 0 | 0 legacy, 1 native gate, 2 native 2 |
-| Transform method (legacy key) | Metroid.Input.Enable.DirectAltFormTransform | false | mirrors value 1 of the key above |
-| Zoom method | Metroid.Input.ZoomMethod | 0 | 0 legacy, 1 retired alias, 2 native, 3 native 3 |
+| Control | Key | Default | Values | Availability |
+| --- | --- | --- | --- | --- |
+| Weapon switch method | Metroid.Input.WeaponSwitchMethod | 0 | 0 Standard, 1 New, 2 New 2 | all builds |
+| Biped fire method | Metroid.Input.BipedFireMethod | 0 | 0 Standard, 1 New | New is developer-only |
+| Transform method | Metroid.Input.AltFormTransformMethod | 0 | 0 Standard, 1 New, 2 New 2 | all builds |
+| Transform method (migration key) | Metroid.Input.Enable.DirectAltFormTransform | false | mirrors value 1 of the key above | compatibility only; no separate control |
+| Zoom method | Metroid.Input.ZoomMethod | 0 | 0 Standard, 1 retired alias, 2 New 2, 3 New 3 | only Standard in release builds |
 
 Each domain stores one integer, so its methods are mutually exclusive by
 construction, and value 0 -- the behaviour you get when no new method is
@@ -53,14 +53,16 @@ Action Consumer. Its ROM-specific PC is:
 | EU1.0 / EU1.1 | 0x02024190 / 0x02024198 |
 | KR1.0 | 0x0200F6DC |
 
-The hook dispatcher also shares the post-poll player input update for
-immediate edges. This shared boundary is why enabling multiple native
-methods must be tested for duplicate dispatch. The source owns the
-single-dispatch rule.
+The hook dispatcher also shares the post-poll player input update for immediate
+edges. Different domains can select native methods at the same time, so a
+single input update may have more than one kind of request pending. The
+dispatcher order and per-request clearing in source own the single-dispatch
+rule; the UI's exactly-one grouping applies within a domain, not across
+domains.
 
 ## Weapon switch
 
-Value 0 retains the legacy touch/menu-driven path. Value 1 hooks the native
+Value 0 retains the Standard touch/menu-driven path. Value 1 hooks the native
 TryEquipWeapon path. The native path uses a trampoline at 0x02003EA0 and a
 scratch area at 0x02003EE0.
 
@@ -84,7 +86,7 @@ after leave/stop.
 
 ## Biped fire
 
-Value 0 uses the legacy input path. Value 1 consumes a native fire edge at the
+Value 0 uses the Standard input path. Value 1 consumes a native fire edge at the
 shared action boundary. The helper sets the fire result true for the native
 edge; guest cooldown, ammo, projectile creation, HUD, and sound remain owned
 by the game.
@@ -94,9 +96,11 @@ empty ammo, weapon changes, and pause/menu transitions.
 
 ## Transform
 
-When Direct Alt-form Transform is false, transform continues through the
-legacy simulated input path. When true, the native transform gate hooks the
-guest TransformRequest condition/call pair.
+Value 0 uses the Standard simulated-input path. Value 1 hooks the guest
+TransformRequest condition/call pair, and value 2 uses DirectInvocation. The
+legacy boolean key is only migration/compatibility storage: false maps to value
+0 and true maps to value 1 when the integer key is absent. It cannot select
+value 2.
 
 | ROM | Compare site | Transform call site |
 | --- | ---: | ---: |
@@ -159,13 +163,15 @@ three conventions:
   `ApplyOnBattleRuntimeEnter`, exactly as the Method-1 weapon trampoline is.
   The first dispatch must not have to write 27 words of guest code, and
   invalidate the JIT blocks covering them, from inside the hook callback.
-- **The weapon path keeps the Method-1 spawn-window guard.** While spawn
-  invincibility is still counting down the native equip is unsafe, so that one
-  request goes to the legacy route instead.
+- **Every native path uses the full spawn-window guard.** While spawn
+  invincibility is still counting down, weapon, transform, and zoom use their
+  Standard path for that input instead of making a native call. This is in
+  addition to the first-post-spawn dispatcher barrier described below.
 
-Method 2 and the Method-1 weapon hook share one hook PC. When both are enabled
-and both have a pending request on the same frame, Method 1 dispatches and the
-Method-2 request is retried on the next frame within its TTL.
+DirectInvocation and the New weapon path share one hook PC, but they cannot be
+selected simultaneously for the weapon domain because the selector stores one
+integer. A request from another domain can still share the same dispatcher
+frame, which is why combined-domain tests remain necessary.
 
 ### Zoom (New Method 3)
 
@@ -269,7 +275,7 @@ There are two layers, because they cover different cases.
 **Whole window, producer side.** While the local player is inside the spawn
 invulnerability countdown (`player+0xE1 != 0`), every native method hands the
 request to the Standard path instead of making a native call: weapon goes
-through the legacy touch route, and transform and zoom fall through to their
+through the Standard touch route, and transform and zoom fall through to their
 Standard branches. The native request is cleared rather than left pending, and
 zoom keeps its shared pressed-edge latch in sync so leaving the window mid-hold
 cannot fire a stale toggle.
@@ -297,7 +303,8 @@ During the spawn window the input still does something -- it runs the Standard
 method -- rather than being swallowed. The trade is that the selected method is
 briefly not the one in use.
 
-Evidence: mphCodex `Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md`.
+Evidence:
+`C:\Users\Admin\Documents\git\mphCodex\mphAnalysis\Battle\TouchscreenInput\DirectInvocation\current\Direct-Invocation-Spawn-Freeze-Investigation-JP1_0.md`.
 
 ## Lifecycle and interactions
 
@@ -309,7 +316,11 @@ behavioral path as well.
 Stylus mode can intentionally bypass native aim-related controls. Joy2Key and
 SnapTap can change the host edge sequence before the native hook sees it.
 Immediate Input Edge Overlay is a developer diagnostic that shares a post-poll
-boundary and must not create duplicate fire/zoom/transform actions.
+boundary and must not create duplicate fire/zoom/transform actions. Its current
+zoom suppression checks New Method 2 only. New Method 3 therefore still gets
+the preset-bound zoom bit overlaid while also using DirectInvocation; treat
+that combination as a known interaction requiring an explicit duplicate-action
+test, not as evidence that the two paths are isolated.
 
 ## Verification checklist
 

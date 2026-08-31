@@ -37,6 +37,7 @@ namespace MelonPrime {
         inline constexpr const char* Joy2Key        = "Metroid.Apply.joy2KeySupport";
         inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
         inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";
+        inline constexpr const char* StylusDirectAimWhileTouching = "Metroid.Enable.stylusDirectAimWhileTouching";
         inline constexpr const char* TopScreenTouch  = "Metroid.Enable.topScreenTouch";
         inline constexpr const char* TouchScreenAimOnly = "Metroid.Enable.touchScreenAimOnly";
         inline constexpr const char* TouchScreenAimOnlySuspendForTransform = "Metroid.Enable.touchScreenAimOnlySuspendForTransform";

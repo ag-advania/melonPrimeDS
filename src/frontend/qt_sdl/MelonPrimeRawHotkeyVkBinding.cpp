@@ -105,7 +105,8 @@ namespace MelonPrime {
     // R2: Eliminated std::vector bridge — passes SmallVkList pointers directly
     //     to setHotkeyVks(int, const UINT*, size_t).
     //
-    // Result: 0 heap allocations, 1 config table lookup (was 28 + 28 vectors).
+    // Result: 0 heap allocations, 1 config table lookup (was one lookup and
+    // one vector allocation per binding).
     // =========================================================================
     void BindMetroidHotkeysFromConfig(RawInputWinFilter* filter, RawInputSubscription* subscription, int instance)
     {
@@ -119,7 +120,9 @@ namespace MelonPrime {
         static const BindingDef kBindings[] = {
             // Camera / Movement / Basic Actions
             { "Keyboard.HK_MetroidShootScan",          HK_MetroidShootScan },
+            { "Keyboard.HK_MetroidStylusTouch",        HK_MetroidStylusTouch },
             { "Keyboard.HK_MetroidScanShoot",          HK_MetroidScanShoot },
+            { "Keyboard.HK_MetroidScanShootStylus",    HK_MetroidScanShootStylus },
             { "Keyboard.HK_MetroidZoom",               HK_MetroidZoom },
             { "Keyboard.HK_MetroidMoveForward",        HK_MetroidMoveForward },
             { "Keyboard.HK_MetroidMoveBack",           HK_MetroidMoveBack },
@@ -155,7 +158,7 @@ namespace MelonPrime {
             { "Keyboard.HK_MetroidMenu",               HK_MetroidMenu },
         };
 
-        // Single config table lookup for entire batch (was 28 separate lookups)
+        // Single config table lookup for the entire binding batch.
         auto tbl = Config::GetLocalTable(instance);
 
         for (const auto& bind : kBindings) {

@@ -141,9 +141,12 @@ would replace the compute renderer's native polygon interpolation rather than
 improve it.
 
 The Video Settings dialog therefore disables Improved polygon splitting for
-Vulkan and explains why. `3D.GL.HiresCoordinates` is different: Vulkan uses it
-when producing the polygon edge positions, so Use high resolution coordinates
-remains enabled and applies live without rebuilding resolution-sized resources.
+Vulkan and explains why. Vulkan also uses high-resolution vertex positions,
+but MelonPrimeDS now forces `3D.GL.HiresCoordinates=true`: the checkbox is
+checked and disabled, and the backend applies the effective value live without
+rebuilding resolution-sized resources. See
+[High-resolution vertex coordinates](high-resolution-coordinates.md) for the
+cross-backend policy and 1x exception.
 
 Per frame, one command buffer:
 

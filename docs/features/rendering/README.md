@@ -9,6 +9,7 @@ index, not another renderer implementation document.
 | --- | --- |
 | How is the Vulkan renderer structured and presented? | [Vulkan backend](vulkan-backend.md) |
 | How is the Windows DirectX 12 renderer structured and presented? | [DirectX 12 backend](dx12-backend.md) |
+| Which backends force or expose high-resolution vertex coordinates? | [High-resolution vertex coordinates](high-resolution-coordinates.md) |
 | Why is the macOS OpenGL compute preset restricted? | [macOS compute renderer restriction](macos-compute-renderer-restriction.md) |
 | What is the backend-neutral ownership contract? | [SRP and performance contract](../../architecture/srp-performance-contract.md) |
 | How do I build on Windows? | [Windows MinGW build](../../development/build/windows-mingw.md) |

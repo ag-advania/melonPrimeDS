@@ -283,8 +283,15 @@ namespace MelonPrime {
 
             const bool isStylusMode = this->isStylusMode;
             if (isStylusMode) {
-                if (emuInstance->isTouching && !m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
-                    emuInstance->getNDS()->TouchScreen(emuInstance->touchX, emuInstance->touchY);
+                if (!m_flags.test(StateFlags::BIT_BLOCK_STYLUS)) {
+                    if (m_enableStylusDirectAimWhileTouching
+                        && m_stylusTouchKeyDown)
+                    {
+                        ProcessAimInputMouse();
+                    }
+                    else {
+                        ProcessAimInputStylus(emuInstance->getNDS());
+                    }
                 }
             }
             else {

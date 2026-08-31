@@ -154,6 +154,9 @@ The always-on scoreboard still follows the regular HUD gameplay-state timing:
 it is not tied to the native START/TAB scoreboard, and it is not forced on by
 the HP gauge's individual Show setting. Its independent Show setting controls
 only whether the scoreboard is drawn during normal gameplay.
+The focused [Custom HUD scoreboard](../../features/hud/custom-hud-scoreboard.md)
+page documents physical-slot versus result-order ownership and the four color
+variants loaded for each hunter.
 
 Current cached data inside `MelonPrimeHudRender.cpp` includes:
 - weapon icon images
@@ -321,7 +324,7 @@ top-screen BG1-3 layers and flash the native visor. Fix (host-side, selective):
 | OPT-HRT1 | HUD runtime state is cached by `NDS* + MainRAM + NumFrames + player offset + ROM group`; base/adventure/visible reads are cached eagerly, while ammo, owned weapons, bomb count, match status, rank, and time values are cached lazily only when their HUD elements need them | Repeated 120/240Hz draws of the same emulated frame reuse gameplay HUD state instead of re-reading RAM, while disabled elements do not populate unused cache fields | Per game frame |
 | OPT-SCB1 | Scoreboard match metadata (Hunter ID, Hunter Rank/Stars, decoded player name, active roster, TeamIndex, game mode, and team flags) is cached once after match join and keyed by NDS/RAM/ROM group plus match serial; only live metrics and `ResultSlots` are read per emulated frame | Removes repeated static scoreboard RAM reads and name decoding from the per-frame path while preserving live score, standing, and display-order updates | Once per match / dynamic fields per game frame |
 | OPT-SCB2 | Scoreboard/rank `QFont` and `QFontMetrics` values are cached by HUD config epoch, base-font generation/size, and HUD scale | Removes scoreboard font-size and metrics reconstruction from the high-refresh per-frame draw path while keeping settings and scale changes immediate | On relevant change |
-| OPT-SCB3 | `ScoreboardRenderPlan` retains final localized/elided strings, text advances, cell geometry, colors, icon rectangles, and rank/metric roles. A compact `ScoreboardStructureKey` compares only match serial, mode/roster/order/team structure, visibility, and active slots; live cells use a semantic value key, so time changes are bucketed to the displayed second | Removes per-frame name/string comparison, repeated localization/elision, and full-layout rebuilding. A changed dynamic cell formats and measures once, then updates in place when it fits; overflow falls back to a structural rebuild | Structural change / changed dynamic cells per game frame |
+| OPT-SCB3 | `ScoreboardRenderPlan` retains final localized/elided strings, text advances, cell geometry, colors, icon rectangles, hunter color variant, and rank/metric roles. A compact `ScoreboardStructureKey` compares match serial, mode/roster/order/team structure, visibility, result slots, and each physical slot's active state, team, and Hunter ID; live cells use a semantic value key, so time changes are bucketed to the displayed second | Removes per-frame name/string comparison, repeated localization/elision, and full-layout rebuilding while rebuilding when icon identity/variant ownership can change. A changed dynamic cell formats and measures once, then updates in place when it fits; overflow falls back to a structural rebuild | Structural change / changed dynamic cells per game frame |
 | OPT-SCB4 | Scoreboard outline paths are stored on each retained text cell. Outline OFF bypasses path creation and lookup entirely; outline ON lazily builds one path per cell and clears it only when the displayed text/font plan changes | Removes the old 35-slot raster-cache machinery and avoids outline work when the feature is disabled while retaining the existing drawText behavior | Cell text/font change / outline-enabled draw |
 | OPT-VFR1 | Software, OpenGL, Vulkan, DX12, and Metal presentation paths first probe only NDS identity plus emulated game frame. A new frame renders and commits the already-probed identity with its stamp after rendering; only a same-frame candidate constructs and compares the extended stamp containing config/font/state generations, menu language, output size, transform/origin, renderer generation, HUD toggle, and edit mode | Avoids extended-stamp pre-render validation and duplicate game-frame probing on new emulated frames while retaining exact same-frame image/texture reuse and invalidation. A rendered frame still commits one stamp after rendering for later same-frame validation | Per presentation callback |
 | OPT-PERF1 | Developer-only HUD phase probe reports `HudStateRead`, scoreboard plan/raster, other painter, clear, hash, upload preparation, GPU upload, composite, and total-active timing with calls/sum/avg/p50/p95/max plus visual render/reuse, identity-probe, stamp-check/commit, plan rebuild, structure-check, dynamic-cell, time-visual-change, outline-path, hash, and upload counters | Makes 60/120/144/240 Hz high-refresh regressions measurable without per-frame log spam | Aggregate once per second when `MELONPRIME_PERF=1` |
@@ -332,9 +335,10 @@ The scoreboard keeps the existing cache boundaries: match-static values (Hunter 
 Stars/rank, license name, active roster, `TeamIndex`, mode, and team flags) are read
 after match join, while time/kills/deaths/points/standings and `ResultSlots` remain
 live per emulated frame. `ScoreboardRenderPlan` stores the final display strings and
-device-independent geometry. `ScoreboardStructureKey` deliberately excludes names,
-Hunter ID, Stars, and live metrics; the match serial is the invalidation boundary for
-those match-static values. A live value update first compares a semantic value key
+device-independent geometry. `ScoreboardStructureKey` excludes names, Stars, and
+live metrics, but includes each slot's Hunter ID and active state because either can
+change the selected p1-p4 hunter portrait. The match serial remains the invalidation
+boundary for the other match-static values. A live value update first compares a semantic value key
 (time is represented by visible seconds, including the `MAX` sentinel), then replaces
 only the affected rank or metric cell. The changed-cell path calls formatting and
 `horizontalAdvance()` once; a width overflow falls back to a full structural plan

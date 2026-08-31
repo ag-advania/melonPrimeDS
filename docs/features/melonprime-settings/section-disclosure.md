@@ -15,25 +15,28 @@ checkbox or combo value.
 | Section | Key | Default |
 | --- | --- | --- |
 | Sensitivity | Metroid.UI.SectionSensitivity | expanded |
-| Bug Fixes | Metroid.UI.SectionBugFix | expanded |
-| Game Feature Improvements | Metroid.UI.SectionGameFeature | expanded |
-| Disable Features | Metroid.UI.SectionDisableFeatures | expanded |
-| Power-Up Pickup Effects | Metroid.UI.SectionPowerUpPickupEffects | expanded |
+| Input Settings | Metroid.UI.SectionInputSettings | collapsed |
+| Input Method | Metroid.UI.SectionInputMethod | collapsed |
 | Gameplay Toggles | Metroid.UI.SectionGameplay | expanded |
+| Game Feature Improvements | Metroid.UI.SectionGameFeature | expanded |
+| Power-Up Pickup Effects (nested) | Metroid.UI.SectionPowerUpPickupEffects | expanded |
+| Disable Features | Metroid.UI.SectionDisableFeatures | expanded |
+| Low HP Warning | Metroid.UI.SectionLowHpWarning | collapsed |
+| In-Game Apply | Metroid.UI.SectionInGameApply | collapsed |
+| In-Game Aspect Ratio | Metroid.UI.SectionInGameAspectRatio | collapsed |
+| Screen Sync | Metroid.UI.SectionScreenSync | collapsed |
+| Cursor Clip Settings | Metroid.UI.SectionCursorClipSettings | collapsed |
 | Video Quality | Metroid.UI.SectionVideo | expanded |
 | Volume | Metroid.UI.SectionVolume | expanded |
 | License Apply | Metroid.UI.SectionLicense | expanded |
-| Input Settings | Metroid.UI.SectionInputSettings | collapsed |
-| Input Method | Metroid.UI.SectionInputMethod | collapsed |
-| Screen Sync | Metroid.UI.SectionScreenSync | collapsed |
-| Cursor Clip Settings | Metroid.UI.SectionCursorClipSettings | collapsed |
-| In-Game Apply | Metroid.UI.SectionInGameApply | collapsed |
-| In-Game Aspect Ratio | Metroid.UI.SectionInGameAspectRatio | collapsed |
-| Low HP Warning | Metroid.UI.SectionLowHpWarning | collapsed |
+| Bug Fixes | Metroid.UI.SectionBugFix | expanded |
 | Developer Only | Metroid.UI.SectionDeveloperOnly | collapsed |
 
 The default state is the source-defined initial UI state. A user's saved
 expanded/collapsed choice should not be interpreted as a feature default.
+The table follows current visible task order; Power-Up Pickup Effects is a
+nested disclosure inside Game Feature Improvements rather than a top-level
+Settings page section.
 
 ## Save behavior
 

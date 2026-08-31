@@ -70,6 +70,9 @@ struct RuntimeConfigSnapshot {
     bool joy2Key = false;
     bool snapTap = false;
     bool stylusMode = false;
+    // While Stylus Mode is active, the configured touch action gates the
+    // normal relative-mouse/direct-write aim path instead of DS touch aiming.
+    bool stylusDirectAimWhileTouching = false;
     // Sub-option of the TouchScreenAimOnly battle patch: lift it for the few
     // frames the Standard transform taps the touch-screen Transform button.
     bool touchScreenAimOnlySuspendForTransform = false;

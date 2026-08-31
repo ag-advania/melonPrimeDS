@@ -67,7 +67,7 @@ persisted separately from the section's visual properties.
 | CROSSHAIR | Main crosshair, zoom crosshair, inner lines, outer lines, dot, outline, and pixel-position behavior | Crosshair |
 | HP / AMMO | HP and ammo labels, gauges, outlines, weapon icon, color ramps, and weapon inventory | HP/ammo |
 | MATCH STATUS HUD | Score, rank, time, bomb count, labels, icons, and their outlines | Match status |
-| HUD SCOREBOARD | Scoreboard position, dimensions, rows, colors, and typography | Scoreboard |
+| HUD SCOREBOARD | Scoreboard position, dimensions, rows, colors, typography, and slot-stable hunter portraits; see [focused behaviour](custom-hud-scoreboard.md) | Scoreboard |
 | HUD ENEMY TARGET | Target visibility, layout, HP mode, text, icon, and outlines | Enemy target |
 | HUD RADAR | Radar position, size, opacity, frame, and outline | Radar |
 | IN-GAME OSD COLOR | Global OSD color plus message/slot-specific color overrides | None |

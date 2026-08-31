@@ -22,7 +22,8 @@ systems.
 The persisted value is a language ID. The value -1 means system/default
 language. The combo box is populated dynamically from
 AllSelectableMenuLanguages rather than from a hard-coded list duplicated in
-the .ui file.
+the .ui file. It is always visible on every host locale; an older Japanese-OS
+only English/Japanese selector is no longer the current design.
 
 The UI layer:
 
@@ -32,6 +33,12 @@ The UI layer:
    list;
 4. writes the selected ID when the setting is changed; and
 5. reloads the visible menu strings through the normal localization path.
+
+The selector is presented in a horizontal language row with a 260 px minimum
+and 420 px maximum width. Long native language names therefore remain readable
+without forcing a horizontal scrollbar. A language change also reruns Settings
+presentation wrapping so translated checkbox captions reflow to the current
+viewport width.
 
 The settings tab therefore must not assume that every locale has a guest-side
 equivalent. A newly registered UI locale may be available even when the ROM
@@ -75,8 +82,8 @@ implementation rather than to the ROM patch table.
 
 Current implementation:
 
-- Source: MelonPrimeDef.h, MelonPrimeInputConfig.cpp, and the localization
-  registration used by the settings UI.
+- Source: MelonPrimeDef.h, MelonPrimeInputConfig.cpp, and the registry/catalog
+  under `src/frontend/qt_sdl/MelonPrimeLocalization/`.
 - Detailed UI ownership: docs/development/ui/settings-and-edit-mode.md.
 
 Related research in the separate mphCodex repository is useful for the guest
