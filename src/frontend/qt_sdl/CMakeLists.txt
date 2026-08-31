@@ -133,6 +133,18 @@ set(SOURCES_QT_SDL
 
 )
 
+# All three implementation shards include ui_MelonPrimeInputConfig.h.  On
+# parallel MinGW incremental builds AUTOUIC can refresh that generated header
+# after Make has already judged the objects up to date, leaving old UI source
+# text paired with a newly compiled localization catalog.  Depend on the .ui
+# input directly so text, styles, and layout changes always rebuild the users.
+set_source_files_properties(
+    InputConfig/MelonPrimeInputConfig.cpp
+    InputConfig/MelonPrimeInputConfigConfig.cpp
+    InputConfig/MelonPrimeInputConfigPreview.cpp
+    PROPERTIES OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/InputConfig/MelonPrimeInputConfig.ui")
+
 option(USE_QT6 "Use Qt 6 instead of Qt 5" ON)
 option(MELONPRIME_REQUIRE_QT6_5
     "Fail configure unless the selected Qt is Qt 6.5 or newer"

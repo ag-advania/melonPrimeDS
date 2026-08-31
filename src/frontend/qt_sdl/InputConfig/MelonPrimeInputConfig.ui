@@ -484,12 +484,15 @@ Unlocks 5 stage/mode combinations verified as stable. Applied automatically whil
 												<property name="wordWrap">
 													<bool>true</bool>
 												</property>
+												<property name="styleSheet">
+													<string>QLabel { margin-left: 16px; }</string>
+												</property>
 											</widget>
 										</item>
 										<item>
 											<widget class="QCheckBox" name="cbMetroidExpandStageMatrixExtra">
 												<property name="text">
-													<string>Also unlock additional stages</string>
+													<string>Also unlock additional stages (Not recommended)</string>
 												</property>
 												<property name="styleSheet">
 													<string>margin-left: 16px;</string>
