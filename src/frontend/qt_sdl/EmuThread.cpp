@@ -979,7 +979,9 @@ void EmuThread::run()
             MPInterface::Get().Process();
 
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
-        emuInstance->inputProcess();
+        const bool guestFrameWillRun =
+            emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep;
+        emuInstance->inputProcess(guestFrameWillRun);
 
 #ifdef MELONPRIME_DS
         // P-24: Batch early-exit for outer loop hotkeys.

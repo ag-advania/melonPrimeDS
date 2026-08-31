@@ -22,6 +22,15 @@ struct MelonPrimeUiSnapshot {
     int centerY = 0;
 };
 
+// One coherent GUI policy publication consumed by one EmuThread decision.
+// Keep decoding here so downstream input code cannot accidentally combine
+// fields from different GUI publications through separate acquire loads.
+struct GuiInputPolicySnapshot {
+    bool focused = false;
+    bool captureWanted = false;
+    bool panelAvailable = false;
+};
+
 // EmuThread -> GUI persistence request. Only the latest hotkey value matters;
 // generation makes replacement/order explicit and supports stale-request checks.
 struct MelonPrimePersistRequest {
@@ -236,20 +245,15 @@ public:
                 0, std::memory_order_acq_rel);
     }
 
-    [[nodiscard]] bool FocusedForEmu() const noexcept
+    [[nodiscard]] GuiInputPolicySnapshot ReadGuiInputPolicyForEmu() const noexcept
     {
-        return (m_guiInputPolicy.load(std::memory_order_acquire)
-            & GuiPolicyFocused) != 0;
-    }
-    [[nodiscard]] bool CaptureWantedForEmu() const noexcept
-    {
-        return (m_guiInputPolicy.load(std::memory_order_acquire)
-            & GuiPolicyCaptureWanted) != 0;
-    }
-    [[nodiscard]] bool PanelAvailableForEmu() const noexcept
-    {
-        return (m_guiInputPolicy.load(std::memory_order_acquire)
-            & GuiPolicyPanelAvailable) != 0;
+        const uint32_t bits =
+            m_guiInputPolicy.load(std::memory_order_acquire);
+        return {
+            (bits & GuiPolicyFocused) != 0,
+            (bits & GuiPolicyCaptureWanted) != 0,
+            (bits & GuiPolicyPanelAvailable) != 0,
+        };
     }
     [[nodiscard]] uint64_t LayoutGenerationForEmu() const noexcept
     {

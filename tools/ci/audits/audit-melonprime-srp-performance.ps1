@@ -838,8 +838,9 @@ if ($runFrameStart -lt 0) {
         'if (UNLIKELY(m_isRunningHook))',
         'm_configReloadPending.exchange',
         'm_isRunningHook = true;',
+        'const auto guiPolicy =',
         'const bool focused =',
-        'UpdateInputState(focused);',
+        'UpdateInputState(guiPolicy);',
         'InputReset();',
         'm_flags.clear(StateFlags::BIT_BLOCK_STYLUS);',
         'HandleGlobalHotkeys();',
@@ -992,8 +993,25 @@ $macRawText = Get-Content -LiteralPath $macRawPath -Raw
 # between independent EmuThreads.
 $inputProcessBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::inputProcess\s*\('
+$inputProcessMelonPrimeBody = if ($inputProcessBody) {
+    ($inputProcessBody -split '(?m)^#else\s*$', 2)[0]
+} else { $null }
 $lateJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::inputRefreshJoystickState\s*\('
+$consumeJoystickResetBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'bool\s+EmuInstance::consumeJoystickResetPending\s*\('
+$sampleJoystickLockedBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'bool\s+EmuInstance::sampleJoystickPhysicalLocked\s*\('
+$sampleJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'bool\s+EmuInstance::sampleJoystickPhysical\s*\('
+$projectJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'EmuInstance::projectJoystickPhysicalSnapshot\s*\('
+$projectJoystickCommandBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::projectJoystickCommandState\s*\('
+$projectJoystickGameplayBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::projectJoystickGameplayState\s*\('
+$refreshJoystickCommandBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::refreshJoystickCommandState\s*\('
 foreach ($bodySpec in @(
     @{ Name = 'inputProcess'; Body = $inputProcessBody },
     @{ Name = 'inputRefreshJoystickState'; Body = $lateJoystickBody }
@@ -1012,7 +1030,7 @@ if ($emuInstanceHeaderText -notmatch 'uint8_t\s+joystickLifecycleCheckCounter') 
 $closeJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::closeJoystick\s*\('
 $resetJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
-    -Signature 'void\s+EmuInstance::resetLateJoystickGameplayState\s*\('
+    -Signature 'void\s+EmuInstance::resetJoystickConsumerState\s*\('
 if (-not $closeJoystickBody -or
     $closeJoystickBody -notmatch 'SDL_GameControllerClose\s*\(' -or
     $closeJoystickBody -notmatch 'SDL_JoystickClose\s*\(' -or
@@ -1022,14 +1040,18 @@ if (-not $closeJoystickBody -or
     Add-Error 'Rule P: joystick physical lifetime/reset-request owner is incomplete'
 }
 if (-not $resetJoystickBody -or
+    $resetJoystickBody -notmatch 'controllerCommandHotkeyMask\s*=\s*0' -or
+    $resetJoystickBody -notmatch 'controllerCommandNeedsBaseline\s*=\s*true' -or
     $resetJoystickBody -notmatch 'lateJoystick\.hotkeyHeld\s*=\s*0' -or
     $resetJoystickBody -match 'SDL_(?:GameController|Joystick)Close\s*\(') {
-    Add-Error 'Rule P: EmuThread gameplay-derived joystick reset owner is incomplete'
+    Add-Error 'Rule P: EmuThread command/gameplay joystick reset owner is incomplete'
 }
-if (-not $inputProcessBody -or
-    $inputProcessBody -notmatch 'joystickGameplayResetPending\.load' -or
-    $inputProcessBody -notmatch 'joystickGameplayResetPending\.exchange') {
-    Add-Error 'Rule P: inputProcess must consume GUI/device reset publication with load-first claim'
+if (-not $consumeJoystickResetBody -or
+    $consumeJoystickResetBody -notmatch 'joystickGameplayResetPending\.load' -or
+    $consumeJoystickResetBody -notmatch 'joystickGameplayResetPending\.exchange' -or
+    -not $inputProcessBody -or
+    $inputProcessBody -notmatch 'consumeJoystickResetPending\s*\(') {
+    Add-Error 'Rule P: EmuThread must consume GUI/device reset publication with a load-first helper'
 }
 foreach ($pollBody in @($inputProcessBody, $lateJoystickBody)) {
     if ($pollBody -match 'SDL_(?:GameController|Joystick)Close\s*\(') {
@@ -1040,8 +1062,8 @@ foreach ($pollBody in @($inputProcessBody, $lateJoystickBody)) {
 # Rule Q: the late gameplay snapshot is distinct from global emulator edges.
 if ($emuInstanceHeaderText -notmatch 'struct\s+LateJoystickSnapshot' -or
     $emuInstanceHeaderText -match 'keyHotkeyPress|lastKeyHotkeyMask' -or
-    -not $lateJoystickBody -or
-    $lateJoystickBody -notmatch 'lateJoystick\.hotkeyPressed\s*=') {
+    -not $projectJoystickGameplayBody -or
+    $projectJoystickGameplayBody -notmatch 'lateJoystick\.hotkeyPressed\s*=') {
     Add-Error 'Rule Q: MelonPrime late joystick held/press snapshot is incomplete'
 }
 if ($lateJoystickBody -match 'lateJoystick\.hotkeyReleased') {
@@ -1064,8 +1086,8 @@ if ($latePollAt -lt 0 -or $runFrameAt -lt 0 -or $latePollAt -gt $runFrameAt) {
     Add-Error 'Rule Q: late joystick sample must remain before RunFrameHook'
 }
 if ($emuThreadText -notmatch 'inputRefreshJoystickState\s*\(\s*!melonPrime->IsNestedFrameAdvanceForInput\(\)\s*\)' -or
-    $lateJoystickBody -notmatch 'if\s*\(!commitGameplayEdges\)' -or
-    $lateJoystickBody -notmatch 'if\s*\(commitGameplayEdges\)\s*\r?\n\s*previousLateJoystickHotkeyMask') {
+    $projectJoystickGameplayBody -notmatch 'if\s*\(!commitGameplayEdges\)' -or
+    $projectJoystickGameplayBody -notmatch 'if\s*\(commitGameplayEdges\)\s*\r?\n\s*previousLateJoystickHotkeyMask') {
     Add-Error 'Rule Q: re-entrant FrameAdvance must refresh held state without committing the late edge baseline'
 }
 
@@ -1149,19 +1171,23 @@ if ($linuxRawText -notmatch 'lastSourceState' -or
     $linuxRawText -notmatch 'std::min\(2,\s*raw->valuators\.mask_len\s*\*\s*8\)') {
     Add-Error 'Rule S: Linux common-source cache or X/Y-only packed decode is missing'
 }
-$controllerSampleAt = if ($lateJoystickBody) {
-    $lateJoystickBody.IndexOf('SDL_JoystickGetButton', [System.StringComparison]::Ordinal)
+$controllerLockAt = if ($sampleJoystickBody) {
+    $sampleJoystickBody.IndexOf('SDL_LockMutex(joyMutex.get())', [System.StringComparison]::Ordinal)
 } else { -1 }
-$controllerUnlockAt = if ($lateJoystickBody -and $controllerSampleAt -ge 0) {
-    $lateJoystickBody.IndexOf('SDL_UnlockMutex(joyMutex.get())', $controllerSampleAt, [System.StringComparison]::Ordinal)
+$controllerSampleAt = if ($sampleJoystickBody -and $controllerLockAt -ge 0) {
+    $sampleJoystickBody.IndexOf('sampleJoystickPhysicalLocked(', $controllerLockAt, [System.StringComparison]::Ordinal)
 } else { -1 }
-$controllerAssemblyAt = if ($lateJoystickBody -and $controllerUnlockAt -ge 0) {
-    $lateJoystickBody.IndexOf('uint16_t nextInputMask', $controllerUnlockAt, [System.StringComparison]::Ordinal)
+$controllerUnlockAt = if ($sampleJoystickBody -and $controllerSampleAt -ge 0) {
+    $sampleJoystickBody.IndexOf('SDL_UnlockMutex(joyMutex.get())', $controllerSampleAt, [System.StringComparison]::Ordinal)
 } else { -1 }
-if ($controllerSampleAt -lt 0 -or $controllerUnlockAt -lt 0 -or
-    $controllerAssemblyAt -lt 0 -or
+$controllerAssemblyAt = if ($lateJoystickBody) {
+    $lateJoystickBody.IndexOf('projectJoystickPhysicalSnapshot(', [System.StringComparison]::Ordinal)
+} else { -1 }
+if ($controllerLockAt -lt 0 -or $controllerSampleAt -lt 0 -or
+    $controllerUnlockAt -lt 0 -or $controllerAssemblyAt -lt 0 -or
+    $controllerLockAt -gt $controllerSampleAt -or
     $controllerSampleAt -gt $controllerUnlockAt -or
-    $controllerUnlockAt -gt $controllerAssemblyAt) {
+    $projectJoystickBody -match 'SDL_(?:Lock|Unlock)Mutex') {
     Add-Error 'Rule S: controller lock must cover physical sampling but not numeric mask assembly'
 }
 
@@ -1258,9 +1284,18 @@ $inputLoadBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::inputLoadConfig\s*\('
 if ($emuInstanceHeaderText -notmatch 'joystickPhysicalSources' -or
     $emuInstanceHeaderText -notmatch 'joystickFanoutRules' -or
-    $lateJoystickBody -notmatch 'joystickPhysicalSourceCount' -or
-    $lateJoystickBody -notmatch 'joystickFanoutRuleCount') {
+    $sampleJoystickLockedBody -notmatch 'snapshot\.sourceCount\s*=\s*joystickPhysicalSourceCount' -or
+    $projectJoystickBody -notmatch 'joystickFanoutRuleCount') {
     Add-Error 'Rule AA: controller mappings must compile to unique physical sources plus fanout rules'
+}
+if (-not $sampleJoystickLockedBody -or
+    $sampleJoystickLockedBody -notmatch 'SDL_JoystickGetButton' -or
+    $sampleJoystickLockedBody -notmatch 'SDL_JoystickGetHat' -or
+    $sampleJoystickLockedBody -notmatch 'SDL_JoystickGetAxis' -or
+    -not $projectJoystickBody -or
+    $projectJoystickBody -notmatch 'rule\.sourceIndex\s*<\s*snapshot\.sourceCount' -or
+    $projectJoystickBody -match 'SDL_(?:Lock|Unlock)Mutex') {
+    Add-Error 'Rule AA: physical sample/fanout invariant or outside-lock projection is incomplete'
 }
 foreach ($mouseBody in @($mousePressBody, $mouseReleaseBody)) {
     if (-not $mouseBody -or $mouseBody -notmatch 'mouseButtonMasks' -or
@@ -1296,6 +1331,51 @@ if ($threadBridgeText -notmatch 'std::atomic<uint32_t>\s+m_guiInputPolicy' -or
     $screenText -notmatch 'GuiWorkRevisionForGui' -or
     $screenText -notmatch 'm_melonPrimeGuiRevisionSeen') {
     Add-Error 'Rule AB: GUI policy packing or revision-driven reconciliation is incomplete'
+}
+
+# Rule AC: post-cc6726f re-audit closure. Controller command state stays live
+# without a guest frame, but paused refresh never commits gameplay edges. One
+# running physical sample feeds both projections; GUI policy is one coherent
+# acquire snapshot; fixed scratch has no maximum-size zero initialization.
+$guiPolicyReadBody = Get-FunctionText -Path $threadBridgePath `
+    -Signature 'ReadGuiInputPolicyForEmu\s*\('
+if (-not $inputProcessMelonPrimeBody -or
+    $inputProcessMelonPrimeBody -notmatch 'if\s*\(!guestFrameWillRun\)\s*\r?\n\s*refreshJoystickCommandState\s*\(' -or
+    $inputProcessMelonPrimeBody -notmatch 'if\s*\(!joystick\s*&&\s*lifecycleCheckDue\)' -or
+    $inputProcessMelonPrimeBody -notmatch 'controllerCommandHotkeyMask' -or
+    $inputProcessMelonPrimeBody -match 'lateJoystick\.hotkeyHeld' -or
+    $inputProcessMelonPrimeBody -match 'SDL_JoystickUpdate\s*\(') {
+    Add-Error 'Rule AC: paused command scheduling or one-running-sample contract is incomplete'
+}
+if (-not $refreshJoystickCommandBody -or
+    $refreshJoystickCommandBody -notmatch 'sampleJoystickPhysical\s*\(' -or
+    $refreshJoystickCommandBody -notmatch 'projectJoystickCommandState\s*\(' -or
+    $refreshJoystickCommandBody -match 'previousLateJoystickHotkeyMask|lateJoystickNeedsBaseline|qtGameplayPressPending') {
+    Add-Error 'Rule AC: paused controller refresh must project command state only'
+}
+if (-not $lateJoystickBody -or
+    $lateJoystickBody -notmatch 'projectJoystickCommandState\s*\(\s*projected\s*\)' -or
+    $lateJoystickBody -notmatch 'projectJoystickGameplayState\s*\(\s*projected\s*,' -or
+    $lateJoystickBody -match 'SDL_JoystickUpdate\s*\(' -or
+    -not $sampleJoystickLockedBody -or
+    ([regex]::Matches($sampleJoystickLockedBody, 'SDL_JoystickUpdate\s*\(').Count -ne 1)) {
+    Add-Error 'Rule AC: one physical controller sample must feed command and gameplay projection'
+}
+if ($emuInstanceHeaderText -notmatch 'int32_t\s+sourceValue\s*\[\s*kMaxJoystickCompiledEntries\s*\]\s*;' -or
+    $emuInstanceInputText -match 'JoystickPhysicalSnapshot\s+\w+\s*\{\s*\}') {
+    Add-Error 'Rule AC: active-controller fixed scratch must not be fully zero-initialized'
+}
+if (-not $guiPolicyReadBody -or
+    ([regex]::Matches($guiPolicyReadBody, 'm_guiInputPolicy\.load\s*\(').Count -ne 1) -or
+    $threadBridgeText -match '(?:Focused|CaptureWanted|PanelAvailable)ForEmu\s*\(' -or
+    $gameInputText -notmatch 'guiPolicy\.focused' -or
+    $gameInputText -notmatch 'guiPolicy\.captureWanted' -or
+    $gameInputText -notmatch 'guiPolicy\.panelAvailable') {
+    Add-Error 'Rule AC: GUI input policy must be one acquire snapshot per input decision'
+}
+if ($emuThreadText -notmatch 'inputProcess\s*\(\s*guestFrameWillRun\s*\)' -or
+    $emuThreadText -notmatch 'emuStatus\s*==\s*emuStatus_Running\s*\|\|\s*emuStatus\s*==\s*emuStatus_FrameStep') {
+    Add-Error 'Rule AC: EmuThread must declare whether this outer cycle will run a guest frame'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

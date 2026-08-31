@@ -218,8 +218,9 @@ namespace MelonPrime {
         if (UNLIKELY(m_isRunningHook)) {
             // Re-entrant path (called during FrameAdvanceOnce within weapon switch, morph, etc.)
             // Use the lean updater: no press-map scan, no wheel fetch.
-            const bool focused = m_threadBridge.FocusedForEmu();
-            UpdateInputStateReentrant(focused);
+            const auto guiPolicy =
+                m_threadBridge.ReadGuiInputPolicyForEmu();
+            UpdateInputStateReentrant(guiPolicy);
             ProcessMoveAndButtonsFastFromReset();
             ApplyPostPollOverlayInput();
             ApplyZoomBindingInput();
@@ -259,10 +260,11 @@ namespace MelonPrime {
         // have changed, forcing a reload from memory. isFocused is written by
         // the GUI thread, so load once and use that value consistently for this
         // frame's input snapshot and focus transition.
-        const bool focused = m_threadBridge.FocusedForEmu();
+        const auto guiPolicy = m_threadBridge.ReadGuiInputPolicyForEmu();
+        const bool focused = guiPolicy.focused;
 
         // Poll moved into UpdateInputState via PollAndSnapshot
-        UpdateInputState(focused);
+        UpdateInputState(guiPolicy);
         InputReset();
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
 
@@ -753,7 +755,7 @@ namespace MelonPrime {
 
     void MelonPrimeCore::FrameAdvanceDefault()
     {
-        emuInstance->inputProcess();
+        emuInstance->inputProcess(true);
         if (emuInstance->usesOpenGL()) emuInstance->makeCurrentGL();
 
         auto& renderer = emuInstance->getNDS()->GPU.GetRenderer();

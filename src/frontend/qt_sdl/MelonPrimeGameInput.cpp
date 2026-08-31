@@ -145,8 +145,10 @@ namespace MelonPrime {
     //   - wheelDelta = 0         : never consumed mid-frame
     // =========================================================================
     template <bool kReentrant>
-    FORCE_INLINE void MelonPrimeCore::UpdateInputStateImpl(const bool focused)
+    FORCE_INLINE void MelonPrimeCore::UpdateInputStateImpl(
+        const GuiInputPolicySnapshot& guiPolicy)
     {
+        const bool focused = guiPolicy.focused;
         const int requestedCursorMode =
             m_threadBridge.ConsumeCursorModeForEmu();
         if (requestedCursorMode >= 0) {
@@ -166,12 +168,12 @@ namespace MelonPrime {
         // capture only for the held touch action, so Raw ownership follows the
         // same request/active split as normal mouse aim.
         const bool captureEligible = InputProjection::ShouldOwnRelativeAimInput(
-            focused,
-            m_threadBridge.PanelAvailableForEmu(),
+            guiPolicy.focused,
+            guiPolicy.panelAvailable,
             isCursorMode,
             isStylusMode,
             m_enableStylusDirectAimWhileTouching,
-            m_threadBridge.CaptureWantedForEmu());
+            guiPolicy.captureWanted);
         const bool wasInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
         const uint64_t wasInputGeneration = m_inputSubscription.generation;
@@ -393,8 +395,17 @@ namespace MelonPrime {
 #endif
     }
 
-    HOT_FUNCTION void MelonPrimeCore::UpdateInputState(const bool focused)          { UpdateInputStateImpl<false>(focused); }
-    HOT_FUNCTION void MelonPrimeCore::UpdateInputStateReentrant(const bool focused) { UpdateInputStateImpl<true>(focused);  }
+    HOT_FUNCTION void MelonPrimeCore::UpdateInputState(
+        const GuiInputPolicySnapshot& guiPolicy)
+    {
+        UpdateInputStateImpl<false>(guiPolicy);
+    }
+
+    HOT_FUNCTION void MelonPrimeCore::UpdateInputStateReentrant(
+        const GuiInputPolicySnapshot& guiPolicy)
+    {
+        UpdateInputStateImpl<true>(guiPolicy);
+    }
 
     // =========================================================================
     // Input lifecycle/reset ownership (cold/transition path)

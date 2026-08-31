@@ -377,7 +377,7 @@ private:
     void setJoystickLocked(int id);
     bool joystickButtonDown(int val);
 
-    void inputProcess();
+    void inputProcess(bool guestFrameWillRun);
 
 #ifdef MELONPRIME_DS
     // Guest-frame late poll. Global emulator hotkey edges remain owned by
@@ -551,6 +551,24 @@ private:
         uint64_t hotkeyBits = 0;
     };
 
+    static constexpr int kMaxJoystickCompiledEntries = 2 * (HK_MAX + 12);
+
+    struct JoystickPhysicalSnapshot
+    {
+        // Deliberately has no default initializer. sampleJoystickPhysicalLocked
+        // writes every element in [0, sourceCount), and fanout is asserted to
+        // reference only that initialized range. This avoids a maximum-size
+        // stack clear on every active-controller guest frame.
+        int32_t sourceValue[kMaxJoystickCompiledEntries];
+        uint8_t sourceCount;
+    };
+
+    struct JoystickProjectedState
+    {
+        uint16_t inputMask;
+        uint64_t hotkeyMask;
+    };
+
     struct MouseButtonBindingMask
     {
         uint16_t inputBits = 0;
@@ -559,7 +577,17 @@ private:
 
     void rebuildActiveJoystickBindings();
     void rebuildMouseButtonBindingMasks();
-    void resetLateJoystickGameplayState();
+    void resetJoystickConsumerState();
+    bool consumeJoystickResetPending();
+    void probeJoystickConnection();
+    bool sampleJoystickPhysicalLocked(JoystickPhysicalSnapshot& snapshot);
+    bool sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot);
+    [[nodiscard]] JoystickProjectedState projectJoystickPhysicalSnapshot(
+        const JoystickPhysicalSnapshot& snapshot) const;
+    void projectJoystickCommandState(const JoystickProjectedState& projected);
+    void projectJoystickGameplayState(
+        const JoystickProjectedState& projected, bool commitGameplayEdges);
+    void refreshJoystickCommandState();
 
     // OPT: QBitArray -> native integers.
     // QBitArray involves heap allocation, reference counting, byte-level iteration,
@@ -575,6 +603,9 @@ private:
     std::atomic<uint64_t> keyHotkeyMask{0};
     uint64_t hotkeyMask, lastHotkeyMask;
     uint64_t hotkeyPress, hotkeyRelease;
+    uint64_t controllerCommandHotkeyMask = 0;
+    bool controllerCommandSnapshotValid = false;
+    bool controllerCommandNeedsBaseline = true;
     LateJoystickSnapshot lateJoystick{};
     uint64_t previousLateJoystickHotkeyMask = 0;
     bool lateJoystickNeedsBaseline = true;
@@ -582,8 +613,8 @@ private:
     // EmuThread remains the sole writer of every gameplay-derived mask above.
     std::atomic_bool joystickGameplayResetPending{false};
     uint8_t joystickLifecycleCheckCounter = 0;
-    JoystickPhysicalSource joystickPhysicalSources[2 * (HK_MAX + 12)]{};
-    JoystickFanoutRule joystickFanoutRules[2 * (HK_MAX + 12)]{};
+    JoystickPhysicalSource joystickPhysicalSources[kMaxJoystickCompiledEntries]{};
+    JoystickFanoutRule joystickFanoutRules[kMaxJoystickCompiledEntries]{};
     uint8_t joystickPhysicalSourceCount = 0;
     uint8_t joystickFanoutRuleCount = 0;
     MouseButtonBindingMask mouseButtonMasks[5]{};

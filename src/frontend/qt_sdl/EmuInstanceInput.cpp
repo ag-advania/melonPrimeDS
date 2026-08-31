@@ -18,6 +18,7 @@
 
 #include <QKeyEvent>
 #include <SDL2/SDL.h>
+#include <cassert>
 
 #include "Platform.h"
 #include "SDL_gamecontroller.h"
@@ -152,7 +153,7 @@ void EmuInstance::inputInit()
 
 #ifdef MELONPRIME_DS
     static_assert(HK_MAX <= 64, "HK_MAX exceeds uint64_t capacity");
-    static_assert(2 * (HK_MAX + 12) <= 255,
+    static_assert(kMaxJoystickCompiledEntries <= 255,
         "compiled joystick source/rule count exceeds uint8_t capacity");
 
     keyInputMask.store(0xFFF, std::memory_order_relaxed);
@@ -161,6 +162,9 @@ void EmuInstance::inputInit()
     keyHotkeyMask.store(0, std::memory_order_relaxed);
     hotkeyMask = 0;
     lastHotkeyMask = 0;
+    controllerCommandHotkeyMask = 0;
+    controllerCommandSnapshotValid = false;
+    controllerCommandNeedsBaseline = true;
     lateJoystick = {};
     previousLateJoystickHotkeyMask = 0;
     lateJoystickNeedsBaseline = true;
@@ -486,8 +490,11 @@ void EmuInstance::closeJoystick()
 }
 
 #ifdef MELONPRIME_DS
-void EmuInstance::resetLateJoystickGameplayState()
+void EmuInstance::resetJoystickConsumerState()
 {
+    controllerCommandHotkeyMask = 0;
+    controllerCommandSnapshotValid = false;
+    controllerCommandNeedsBaseline = true;
     lateJoystick.inputMask = 0xFFF;
     lateJoystick.hotkeyHeld = 0;
     lateJoystick.hotkeyPressed = 0;
@@ -495,6 +502,160 @@ void EmuInstance::resetLateJoystickGameplayState()
     lateJoystickNeedsBaseline = true;
     inputMask = keyInputMask.load(std::memory_order_relaxed);
     hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed);
+}
+
+bool EmuInstance::consumeJoystickResetPending()
+{
+    if (UNLIKELY(joystickGameplayResetPending.load(
+            std::memory_order_relaxed))
+        && joystickGameplayResetPending.exchange(
+            false, std::memory_order_acq_rel)) {
+        resetJoystickConsumerState();
+        return true;
+    }
+    return false;
+}
+
+void EmuInstance::probeJoystickConnection()
+{
+    SDL_LockMutex(joyMutex.get());
+    SDL_JoystickUpdate();
+    if (!joystick && SDL_NumJoysticks() > 0)
+        openJoystick();
+    SDL_UnlockMutex(joyMutex.get());
+}
+
+bool EmuInstance::sampleJoystickPhysicalLocked(
+    JoystickPhysicalSnapshot& snapshot)
+{
+    if (!joystick)
+        return false;
+
+    SDL_JoystickUpdate();
+    if (UNLIKELY(!SDL_JoystickGetAttached(joystick))) {
+        closeJoystick();
+        return false;
+    }
+
+    snapshot.sourceCount = joystickPhysicalSourceCount;
+    for (uint8_t i = 0; i < snapshot.sourceCount; ++i) {
+        const auto& source = joystickPhysicalSources[i];
+        switch (source.kind) {
+        case JoystickSourceKind::Button:
+            snapshot.sourceValue[i] =
+                SDL_JoystickGetButton(joystick, source.index);
+            break;
+        case JoystickSourceKind::Hat:
+            snapshot.sourceValue[i] =
+                SDL_JoystickGetHat(joystick, source.index);
+            break;
+        case JoystickSourceKind::Axis:
+            snapshot.sourceValue[i] =
+                SDL_JoystickGetAxis(joystick, source.index);
+            break;
+        }
+    }
+    return true;
+}
+
+bool EmuInstance::sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot)
+{
+    SDL_LockMutex(joyMutex.get());
+    const bool sampled = sampleJoystickPhysicalLocked(snapshot);
+    SDL_UnlockMutex(joyMutex.get());
+    return sampled;
+}
+
+EmuInstance::JoystickProjectedState
+EmuInstance::projectJoystickPhysicalSnapshot(
+    const JoystickPhysicalSnapshot& snapshot) const
+{
+    JoystickProjectedState projected{0xFFF, 0};
+    for (uint8_t i = 0; i < joystickFanoutRuleCount; ++i) {
+        const auto& rule = joystickFanoutRules[i];
+        assert(rule.sourceIndex < snapshot.sourceCount);
+        if (UNLIKELY(rule.sourceIndex >= snapshot.sourceCount))
+            continue;
+
+        const auto& source = joystickPhysicalSources[rule.sourceIndex];
+        const int32_t value = snapshot.sourceValue[rule.sourceIndex];
+        bool down = false;
+        switch (source.kind) {
+        case JoystickSourceKind::Button:
+            down = value != 0;
+            break;
+        case JoystickSourceKind::Hat:
+            down = (value & rule.predicate) != 0;
+            break;
+        case JoystickSourceKind::Axis:
+            if (rule.predicate == 0)
+                down = value > 16384;
+            else if (rule.predicate == 1)
+                down = value < -16384;
+            else if (rule.predicate == 2)
+                down = value > 0;
+            break;
+        }
+        if (!down)
+            continue;
+        projected.inputMask &= static_cast<uint16_t>(~rule.inputBits);
+        projected.hotkeyMask |= rule.hotkeyBits;
+    }
+    return projected;
+}
+
+void EmuInstance::projectJoystickCommandState(
+    const JoystickProjectedState& projected)
+{
+    controllerCommandHotkeyMask = projected.hotkeyMask;
+    controllerCommandSnapshotValid = true;
+}
+
+void EmuInstance::projectJoystickGameplayState(
+    const JoystickProjectedState& projected, bool commitGameplayEdges)
+{
+    lateJoystick.inputMask = projected.inputMask;
+    lateJoystick.hotkeyHeld = projected.hotkeyMask;
+    if (!commitGameplayEdges) {
+        // A nested FrameAdvance may refresh physical held state, but it must
+        // never consume the outer frame's gameplay edge baseline.
+        lateJoystick.hotkeyPressed = 0;
+    }
+    else if (lateJoystickNeedsBaseline) {
+        // Reconnect/config switch: held controls establish a baseline without
+        // becoming phantom gameplay presses from the previous device.
+        lateJoystick.hotkeyPressed = 0;
+        lateJoystickNeedsBaseline = false;
+    }
+    else {
+        lateJoystick.hotkeyPressed =
+            projected.hotkeyMask & ~previousLateJoystickHotkeyMask;
+    }
+    if (commitGameplayEdges)
+        previousLateJoystickHotkeyMask = projected.hotkeyMask;
+
+    inputMask = keyInputMask.load(std::memory_order_relaxed)
+        & projected.inputMask;
+    hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed)
+        | projected.hotkeyMask;
+}
+
+void EmuInstance::refreshJoystickCommandState()
+{
+    if (!joystick) {
+        controllerCommandHotkeyMask = 0;
+        controllerCommandSnapshotValid = false;
+        return;
+    }
+
+    JoystickPhysicalSnapshot physical;
+    if (!sampleJoystickPhysical(physical)) {
+        (void)consumeJoystickResetPending();
+        controllerCommandHotkeyMask = 0;
+        controllerCommandSnapshotValid = false;
+        return;
+    }
+    projectJoystickCommandState(projectJoystickPhysicalSnapshot(physical));
 }
 #endif
 
@@ -749,40 +910,50 @@ bool EmuInstance::joystickButtonDown(int val)
     return false;
 }
 
-void EmuInstance::inputProcess()
+void EmuInstance::inputProcess(bool guestFrameWillRun)
 {
 #ifdef MELONPRIME_DS
     // =========================================================================
     // Controller lifecycle owner and global emulator-edge sample.
     //
-    // Physical state is sampled at the guest-frame late latch. This early path
-    // only performs a per-instance, throttled attach/detach check so paused or
-    // otherwise non-advancing instances still converge without a second SDL
-    // update on every running frame.
+    // Running physical state is sampled only at the guest-frame late latch.
+    // When no guest frame will run, refresh command state here so controller
+    // release/re-press remains live while paused without touching gameplay
+    // edge ownership.
     // =========================================================================
-    lateJoystick.hotkeyPressed = 0;
+    if (guestFrameWillRun)
+        lateJoystick.hotkeyPressed = 0;
+
+    (void)consumeJoystickResetPending();
+
+    bool lifecycleCheckDue = false;
     if (UNLIKELY(++joystickLifecycleCheckCounter >= 60)) {
         joystickLifecycleCheckCounter = 0;
-        SDL_LockMutex(joyMutex.get());
-        SDL_JoystickUpdate();
-        if (joystick && !SDL_JoystickGetAttached(joystick))
-            closeJoystick();
-        else if (!joystick && SDL_NumJoysticks() > 0)
-            openJoystick();
-        SDL_UnlockMutex(joyMutex.get());
+        lifecycleCheckDue = true;
     }
 
-    if (UNLIKELY(joystickGameplayResetPending.load(
-            std::memory_order_relaxed))
-        && joystickGameplayResetPending.exchange(
-            false, std::memory_order_acq_rel)) {
-        resetLateJoystickGameplayState();
+    // Active controllers are attachment-checked by the one required physical
+    // sample. Probe an absent device at the normal per-instance cadence in
+    // either scheduling state; a successful paused probe is sampled below.
+    if (!joystick && lifecycleCheckDue) {
+        probeJoystickConnection();
+        (void)consumeJoystickResetPending();
     }
+    if (!guestFrameWillRun)
+        refreshJoystickCommandState();
 
     // Combined edge detection (keyboard + joystick)
     const uint64_t currentKeyHotkeys =
         keyHotkeyMask.load(std::memory_order_relaxed);
-    hotkeyMask = currentKeyHotkeys | lateJoystick.hotkeyHeld;
+    hotkeyMask = currentKeyHotkeys | controllerCommandHotkeyMask;
+    if (UNLIKELY(controllerCommandNeedsBaseline
+            && controllerCommandSnapshotValid)) {
+        // A newly connected/configured controller may already be held. Fold
+        // only its command bits into the baseline so reconnect cannot synthesize
+        // Pause/Reset/fullscreen presses or suppress unrelated Qt edges.
+        lastHotkeyMask |= controllerCommandHotkeyMask;
+        controllerCommandNeedsBaseline = false;
+    }
     hotkeyPress = hotkeyMask & ~lastHotkeyMask;
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
     lastHotkeyMask = hotkeyMask;
@@ -853,12 +1024,7 @@ void EmuInstance::inputProcess()
 // =========================================================================
 void EmuInstance::inputRefreshJoystickState(bool commitGameplayEdges)
 {
-    if (UNLIKELY(joystickGameplayResetPending.load(
-            std::memory_order_relaxed))
-        && joystickGameplayResetPending.exchange(
-            false, std::memory_order_acq_rel)) {
-        resetLateJoystickGameplayState();
-    }
+    (void)consumeJoystickResetPending();
 
     if (!joystick) {
         inputMask = keyInputMask.load(std::memory_order_relaxed);
@@ -866,93 +1032,18 @@ void EmuInstance::inputRefreshJoystickState(bool commitGameplayEdges)
         return;
     }
 
-    SDL_LockMutex(joyMutex.get());
-    SDL_JoystickUpdate();
-
-    // A device can disappear between the early lifecycle check and this late
-    // sample. Route that edge through the same close/reset owner.
-    if (UNLIKELY(!SDL_JoystickGetAttached(joystick)))
-    {
-        closeJoystick();
-        SDL_UnlockMutex(joyMutex.get());
-        (void)joystickGameplayResetPending.exchange(
-            false, std::memory_order_acq_rel);
-        resetLateJoystickGameplayState();
+    JoystickPhysicalSnapshot physical;
+    if (!sampleJoystickPhysical(physical)) {
+        (void)consumeJoystickResetPending();
         return;
     }
 
-    int32_t sourceValue[2 * (HK_MAX + 12)]{};
-    for (uint8_t i = 0; i < joystickPhysicalSourceCount; ++i) {
-        const auto& source = joystickPhysicalSources[i];
-        switch (source.kind) {
-        case JoystickSourceKind::Button:
-            sourceValue[i] = SDL_JoystickGetButton(joystick, source.index);
-            break;
-        case JoystickSourceKind::Hat:
-            sourceValue[i] = SDL_JoystickGetHat(joystick, source.index);
-            break;
-        case JoystickSourceKind::Axis:
-            sourceValue[i] = SDL_JoystickGetAxis(joystick, source.index);
-            break;
-        }
-    }
-
-    SDL_UnlockMutex(joyMutex.get());
-
-    // SDL handle lifetime is protected above. Numeric mask assembly is local
-    // work and stays outside the process-global joystick lock.
-    uint16_t nextInputMask = 0xFFF;
-    uint64_t nextHotkeyMask = 0;
-    for (uint8_t i = 0; i < joystickFanoutRuleCount; ++i) {
-        const auto& rule = joystickFanoutRules[i];
-        const auto& source = joystickPhysicalSources[rule.sourceIndex];
-        const int32_t value = sourceValue[rule.sourceIndex];
-        bool down = false;
-        switch (source.kind) {
-        case JoystickSourceKind::Button:
-            down = value != 0;
-            break;
-        case JoystickSourceKind::Hat:
-            down = (value & rule.predicate) != 0;
-            break;
-        case JoystickSourceKind::Axis:
-            if (rule.predicate == 0)
-                down = value > 16384;
-            else if (rule.predicate == 1)
-                down = value < -16384;
-            else if (rule.predicate == 2)
-                down = value > 0;
-            break;
-        }
-        if (!down)
-            continue;
-        nextInputMask &= static_cast<uint16_t>(~rule.inputBits);
-        nextHotkeyMask |= rule.hotkeyBits;
-    }
-
-    lateJoystick.inputMask = nextInputMask;
-    lateJoystick.hotkeyHeld = nextHotkeyMask;
-    if (!commitGameplayEdges) {
-        // A nested FrameAdvance may refresh physical held state, but it must
-        // never consume the outer frame's gameplay edge baseline.
-        lateJoystick.hotkeyPressed = 0;
-    }
-    else if (lateJoystickNeedsBaseline) {
-        // Reconnect/config switch: held controls establish a baseline without
-        // becoming phantom presses from the previous physical device.
-        lateJoystick.hotkeyPressed = 0;
-        lateJoystickNeedsBaseline = false;
-    }
-    else {
-        lateJoystick.hotkeyPressed =
-            nextHotkeyMask & ~previousLateJoystickHotkeyMask;
-    }
-    if (commitGameplayEdges)
-        previousLateJoystickHotkeyMask = nextHotkeyMask;
-
-    inputMask = keyInputMask.load(std::memory_order_relaxed) & nextInputMask;
-    hotkeyMask =
-        keyHotkeyMask.load(std::memory_order_relaxed) | nextHotkeyMask;
+    // Physical acquisition happens once. Both consumers receive the same
+    // projection, and numeric mask assembly remains outside the SDL mutex.
+    const JoystickProjectedState projected =
+        projectJoystickPhysicalSnapshot(physical);
+    projectJoystickCommandState(projected);
+    projectJoystickGameplayState(projected, commitGameplayEdges);
 }
 #endif // MELONPRIME_DS
 
