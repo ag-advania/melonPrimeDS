@@ -688,6 +688,66 @@ def check_windows_raw_reaudit_models() -> None:
     assert reentrant.outer_frame(0b0001) == 0b0001
     assert reentrant.outer_frame(0b0001) == 0
 
+    # P1-001: a hidden-window queue is invalidated by the creator-thread
+    # destroy/create boundary when an inactive subscription reacquires Raw
+    # ownership. The old A queue is intentionally not drained by B, and an
+    # old event must not become valid merely because A is active again.
+    class HiddenWindowEpochModel:
+        raw_kinds = (
+            "mouse_delta",
+            "mouse_press",
+            "key_down",
+            "key_up",
+            "wheel",
+        )
+
+        def __init__(self) -> None:
+            self.active_owner = None
+            self.next_epoch = 0
+            self.window_epoch = {}
+            self.queued = {"A": [], "B": []}
+
+        def activate(self, owner: str) -> None:
+            self.active_owner = owner
+            # Destroying the old creator-thread HWND drops messages addressed
+            # to that window before the replacement window is registered.
+            self.queued[owner].clear()
+            self.next_epoch += 1
+            self.window_epoch[owner] = self.next_epoch
+
+        def queue(self, owner: str, kind: str):
+            event = (owner, self.window_epoch[owner], kind)
+            self.queued[owner].append(event)
+            return event
+
+        def dispatch(self, event) -> bool:
+            owner, epoch, _kind = event
+            return (
+                owner == self.active_owner
+                and self.window_epoch.get(owner) == epoch
+            )
+
+    hidden_epoch = HiddenWindowEpochModel()
+    hidden_epoch.activate("A")
+    stale_a = [hidden_epoch.queue("A", kind) for kind in hidden_epoch.raw_kinds]
+    hidden_epoch.activate("B")
+    assert all(event in hidden_epoch.queued["A"] for event in stale_a)
+    hidden_epoch.activate("A")
+    assert not hidden_epoch.queued["A"]
+    assert all(not hidden_epoch.dispatch(event) for event in stale_a)
+    fresh_a = [hidden_epoch.queue("A", kind) for kind in hidden_epoch.raw_kinds]
+    assert all(hidden_epoch.dispatch(event) for event in fresh_a)
+
+    for _ in range(1000):
+        stale_cycle = [
+            hidden_epoch.queue("A", kind) for kind in hidden_epoch.raw_kinds
+        ]
+        hidden_epoch.activate("B")
+        assert all(event in hidden_epoch.queued["A"] for event in stale_cycle)
+        hidden_epoch.activate("A")
+        assert not hidden_epoch.queued["A"]
+        assert all(not hidden_epoch.dispatch(event) for event in stale_cycle)
+
     # P2-001/002: secondary instances reject before the shared lock, while a
     # maybe-owner is still allowed to enter the reconciliation path.
     locked_calls = 0
@@ -728,6 +788,7 @@ def main() -> None:
     raw_filter = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp")
     raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
     raw_perf = source("src/frontend/qt_sdl/MelonPrimeRawInputPerfProbe.h")
+    raw_state_public = raw_state_header.split("    private:", 1)[0]
     raw_hotkey = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.cpp")
     raw_hotkey_header = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.h")
     raw_hotkey_mapping = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkMapping.cpp")
@@ -812,6 +873,16 @@ def main() -> None:
         raw_filter,
         "bool RawInputWinFilter::UpdateOwner(",
         "bool RawInputWinFilter::ReconfigureActiveRegistration(",
+    )
+    raw_reconfigure = body(
+        raw_filter,
+        "bool RawInputWinFilter::ReconfigureActiveRegistration(",
+        "void RawInputWinFilter::DeactivateActiveRegistration(",
+    )
+    raw_apply_owner = body(
+        raw_filter,
+        "bool RawInputWinFilter::ApplyOwnerRegistration(",
+        "    // =========================================================================\n    // drainMessagesOnly",
     )
     raw_poll = body(
         raw_filter,
@@ -1362,6 +1433,55 @@ def main() -> None:
     for forbidden in ("std::unique_ptr<uint8_t[]>", "new (std::nothrow) uint8_t"):
         if forbidden in raw_batched:
             raise AssertionError(f"Raw batch hot path still allocates: {forbidden}")
+
+    # BE: an owner transfer/reactivation is a hidden-HWND lifetime boundary.
+    # Only the creator thread may destroy the old window, and the replacement
+    # happens on the cold registration path before Raw input is accepted.
+    for needle in (
+        "ApplyOwnerRegistration(\n            RawInputSubscription* subscription, bool recreateHiddenWindow)",
+        "ApplyOwnerRegistration(subscription, generationAlreadyAdvanced)",
+        "if (recreateHiddenWindow && subscription->hiddenWindow",
+        "!DestroyHiddenWindow(subscription)",
+        "CreateHiddenWindow(subscription)",
+    ):
+        require(raw_filter_header + raw_filter, needle, "Raw hidden HWND epoch boundary")
+    if not raw_reconfigure or not raw_apply_owner:
+        raise AssertionError("Raw hidden HWND registration bodies are missing")
+    if raw_apply_owner.index("DestroyHiddenWindow(subscription)") > raw_apply_owner.index(
+        "CreateHiddenWindow(subscription)"
+    ):
+        raise AssertionError("old Raw hidden HWND must be destroyed before replacement")
+    if raw_filter.count("ApplyOwnerRegistration(") != 2:
+        raise AssertionError("ApplyOwnerRegistration must stay on the cold reconfigure path")
+
+    # BF/BG: the buffered Raw drain is owned by the Windows filter, while the
+    # public reset wrapper is the only cross-thread lifecycle entry and holds
+    # the same recursive mutex before touching InputState.
+    if "void processRawInputBatched() noexcept;" in raw_state_public:
+        raise AssertionError("buffered Raw drain leaked into InputState public API")
+    for needle in (
+        "friend class RawInputWinFilter;",
+        "void processRawInputBatched() noexcept;",
+        "A foreign owner transfer may reset an inactive InputState",
+        "RawInputWinFilter::m_subscriptionMutex is held",
+        "This public wrapper always holds m_subscriptionMutex",
+    ):
+        require(
+            raw_state_header + raw_filter,
+            needle,
+            "Raw InputState ownership contract",
+        )
+    raw_reset = body(
+        raw_filter,
+        "void RawInputWinFilter::resetAll(",
+        "void RawInputWinFilter::resetHotkeyEdges(",
+    )
+    if (
+        not raw_reset
+        or raw_reset.index("std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)")
+        > raw_reset.index("state->resetAll()")
+    ):
+        raise AssertionError("foreign Raw reset must hold the subscription mutex first")
 
     # AW+: fixed-capacity VK mapping must turn overflow into a whole-list
     # fallback rather than silently binding a prefix.

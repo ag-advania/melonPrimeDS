@@ -65,7 +65,8 @@ namespace MelonPrime {
         [[nodiscard]] bool DestroyHiddenWindow(RawInputSubscription* subscription);
         [[nodiscard]] bool RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
-        [[nodiscard]] bool ApplyOwnerRegistration(RawInputSubscription* subscription);
+        [[nodiscard]] bool ApplyOwnerRegistration(
+            RawInputSubscription* subscription, bool recreateHiddenWindow);
         [[nodiscard]] bool ReconfigureActiveRegistration(
             RawInputSubscription* subscription, bool generationAlreadyAdvanced);
         void DeactivateActiveRegistration(RawInputSubscription* subscription);

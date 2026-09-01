@@ -1507,6 +1507,13 @@ $mouseCapabilityPath = Join-Path $qtSdl 'MelonPrimeMouseButton.h'
 $mapButtonPath = Join-Path $qtSdl 'InputConfig/MapButton.h'
 $rawInputStateText = Get-Content -LiteralPath $rawInputStatePath -Raw
 $rawInputStateCppText = Get-Content -LiteralPath $rawInputStateCppPath -Raw
+$rawInputStatePrivateAt = $rawInputStateText.IndexOf(
+    '    private:', [System.StringComparison]::Ordinal)
+$rawInputStatePublicText = if ($rawInputStatePrivateAt -ge 0) {
+    $rawInputStateText.Substring(0, $rawInputStatePrivateAt)
+} else {
+    $rawInputStateText
+}
 $mouseCapabilityText = Get-Content -LiteralPath $mouseCapabilityPath -Raw
 $mapButtonText = Get-Content -LiteralPath $mapButtonPath -Raw
 $rawProcessBody = Get-FunctionText -Path $rawInputStateCppPath `
@@ -1730,6 +1737,8 @@ $registerBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::RegisterDevices\s*\('
 $reconfigureRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ReconfigureActiveRegistration\s*\('
+$applyOwnerRawBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::ApplyOwnerRegistration\s*\('
 if ($rawWinFilterHeaderText -notmatch '\[\[nodiscard\]\]\s+bool\s+RegisterDevices' -or
     -not $registerBody -or
     $registerBody -notmatch 'if\s*\(!RegisterRawInputDevices\s*\(' -or
@@ -1903,6 +1912,57 @@ if ($rawInputStateText -notmatch 'kBatchOverflowBufferSize\s*=\s*64\s*\*\s*1024'
     $rawBatchedBody -match 'std::unique_ptr\s*<\s*uint8_t\s*\[\s*\]\s*>' -or
     $rawBatchedBody -match 'new\s*\(\s*std::nothrow\s*\)\s+uint8_t') {
     Add-Error 'Rule BD: Raw batch overflow must use bounded fixed scratch with no hot allocation'
+}
+
+# BE: an owner transfer/reactivation is a hidden-HWND lifetime boundary. The
+# old creator-thread window is destroyed before the replacement is registered,
+# so a queued old WM_INPUT cannot enter the new Raw registration epoch.
+if ($rawWinFilterHeaderText -notmatch
+        'ApplyOwnerRegistration\s*\(\s*RawInputSubscription\*\s+subscription,\s*bool\s+recreateHiddenWindow\s*\)' -or
+    -not $reconfigureRawBody -or
+    $reconfigureRawBody -notmatch
+        'ApplyOwnerRegistration\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
+    -not $applyOwnerRawBody -or
+    $applyOwnerRawBody -notmatch
+        'if\s*\(\s*recreateHiddenWindow\s*&&\s*subscription->hiddenWindow' -or
+    $applyOwnerRawBody -notmatch
+        '!DestroyHiddenWindow\s*\(\s*subscription\s*\)' -or
+    $applyOwnerRawBody -notmatch
+        'CreateHiddenWindow\s*\(\s*subscription\s*\)') {
+    Add-Error 'Rule BE: Raw hidden HWND registration epoch boundary is incomplete'
+} elseif ($applyOwnerRawBody.IndexOf('DestroyHiddenWindow(subscription)',
+        [System.StringComparison]::Ordinal) -gt
+    $applyOwnerRawBody.IndexOf('CreateHiddenWindow(subscription)',
+        [System.StringComparison]::Ordinal)) {
+    Add-Error 'Rule BE: old Raw hidden HWND must be destroyed before replacement'
+}
+if (([regex]::Matches($rawWinFilterText,
+        'ApplyOwnerRegistration\s*\(')).Count -ne 2) {
+    Add-Error 'Rule BE: ApplyOwnerRegistration must stay on the cold reconfigure path'
+}
+
+# BF/BG: the process-wide buffered drain is a Windows-filter-only operation,
+# while public reset remains mutex-serialized even when it resets a foreign,
+# inactive subscription during owner transfer.
+if ($rawInputStatePublicText -match
+        'void\s+processRawInputBatched\s*\(' -or
+    $rawInputStateText -notmatch 'friend\s+class\s+RawInputWinFilter\s*;' -or
+    $rawInputStateText -notmatch
+        'private:\s*[\s\S]*void\s+processRawInputBatched\s*\(') {
+    Add-Error 'Rule BF: buffered Raw drain leaked outside the filter ownership boundary'
+}
+if ($rawInputStateText -notmatch
+        'A foreign owner transfer may reset an inactive InputState' -or
+    $rawInputStateText -notmatch
+        'RawInputWinFilter::m_subscriptionMutex is held' -or
+    $rawWinFilterText -notmatch
+        'This public wrapper always holds m_subscriptionMutex' -or
+    -not $rawResetBody -or
+    $rawResetBody.IndexOf(
+        'std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)',
+        [System.StringComparison]::Ordinal) -gt
+    $rawResetBody.IndexOf('state->resetAll()', [System.StringComparison]::Ordinal)) {
+    Add-Error 'Rule BG: foreign Raw reset mutex contract is incomplete'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

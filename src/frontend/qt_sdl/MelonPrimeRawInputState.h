@@ -14,6 +14,8 @@
 
 namespace MelonPrime {
 
+    class RawInputWinFilter;
+
     struct FrameHotkeyState {
         uint64_t down{};
         uint64_t pressed{};
@@ -40,8 +42,6 @@ namespace MelonPrime {
         static void InitializeTables() noexcept;
 
         void processRawInput(HRAWINPUT hRaw) noexcept;
-        void processRawInputBatched() noexcept;
-
         void fetchMouseDelta(int& outX, int& outY) noexcept;
         void discardDeltas() noexcept;
 
@@ -100,6 +100,13 @@ namespace MelonPrime {
         void syncPhysicalState() noexcept;
 
     private:
+        friend class RawInputWinFilter;
+
+        // Only RawInputWinFilter may perform the process-wide buffered drain.
+        // It holds the subscription mutex, preserving the fixed scratch and
+        // GetRawInputBuffer/PeekMessage ordering contract.
+        void processRawInputBatched() noexcept;
+
         // =================================================================
         // VK Snapshot -- captured once, reused by hotkey scan + mouse delta.
         // Eliminates 4x duplication of the load-4-atomics-then-fence pattern.
@@ -204,9 +211,11 @@ namespace MelonPrime {
         //
         // Thread contract: the hidden HWND is created on the emulation thread,
         // its WM_INPUT callback is accepted only on that creator thread, and
-        // clearStuckPostFrame/resetAll run on that same emulation thread. This
-        // is deliberately a plain mailbox; restore an atomic if a cross-thread
-        // recovery producer is ever introduced.
+        // clearStuckPostFrame consumes this mailbox on that same emulation
+        // thread. A foreign owner transfer may reset an inactive InputState,
+        // but only while RawInputWinFilter::m_subscriptionMutex is held. This
+        // is deliberately a plain mailbox; restore an atomic or owner mailbox
+        // if a cross-thread recovery producer is ever introduced.
         bool m_stuckRecoveryNeeded = false;
 
         int64_t m_lastReadMouseX{ 0 };

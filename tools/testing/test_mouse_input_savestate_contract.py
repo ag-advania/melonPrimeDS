@@ -66,12 +66,17 @@ def main() -> None:
         "bool RawInputWinFilter::ReconfigureActiveRegistration(",
         "void RawInputWinFilter::DeactivateActiveRegistration(",
     )
+    apply_owner = function_body(
+        raw_filter,
+        "bool RawInputWinFilter::ApplyOwnerRegistration(",
+        "    // =========================================================================\n    // drainMessagesOnly",
+    )
     for needle in (
         "drainPendingMessages()",
         "subscription->baselineReady = false",
         "BeginRegistrationGeneration",
         "UnregisterDevices()",
-        "ApplyOwnerRegistration(subscription)",
+        "ApplyOwnerRegistration(subscription, generationAlreadyAdvanced)",
         "subscription->state->discardDeltas()",
         "subscription->state->resetAll()",
         "subscription->state->syncPhysicalState()",
@@ -85,6 +90,16 @@ def main() -> None:
         < reconfigure.index("UnregisterDevices()")
     ):
         raise AssertionError("registration boundary order is not drain -> not-ready -> generation -> unregister")
+    for needle in (
+        "recreateHiddenWindow",
+        "DestroyHiddenWindow(subscription)",
+        "CreateHiddenWindow(subscription)",
+    ):
+        require(apply_owner, needle, "hidden Raw registration epoch fence")
+    if apply_owner.index("DestroyHiddenWindow(subscription)") > apply_owner.index(
+        "CreateHiddenWindow(subscription)"
+    ):
+        raise AssertionError("hidden Raw registration must destroy before create")
 
     for setter in (
         "setJoy2KeySupport",

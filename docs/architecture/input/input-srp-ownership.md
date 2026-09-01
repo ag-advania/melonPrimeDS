@@ -147,6 +147,13 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   Connect claims `BackendGc` before handler install; disconnect removes the
   handler, drains queued callbacks, clears the queue-local producer gate, then
   releases IOHID. Each backend retains its own packed cumulative total.
+- Windows hidden-window Raw ownership is also subscription-local and
+  creator-thread affine. When an inactive subscription reacquires ownership,
+  the filter destroys its old hidden HWND and creates a replacement before the
+  new registration; this invalidates queued `WM_INPUT` from the old epoch
+  without adding steady-frame work. The buffered Raw drain is private to
+  `RawInputWinFilter`, and the only foreign-subscription reset remains under
+  its recursive subscription mutex.
 - Qt panel aim has one GUI writer and one emulation-thread cursor. Both consumer
   read and discard paths retry until generation is stable around the total, so
   a concurrent GUI reset cannot replay motion or move the cursor backward.
@@ -208,6 +215,8 @@ surface authority, physical-source controller compilation, packed Linux totals,
 frame-result reuse, and revision-driven GUI reconciliation. Rule AC pins paused
 controller command liveness, command/gameplay owner separation, one running
 physical sample, initialized-source scratch, and one coherent GUI policy read.
+Rules BE-BG pin the Windows hidden-HWND registration-epoch fence, the private
+buffered-drain API, and the mutex contract for foreign lifecycle resets.
 The Savestate contract additionally pins the
 next-normal-frame reconciliation and the full input reset profile.
 

@@ -225,7 +225,12 @@ namespace MelonPrime {
             PlatformInputOwnerService::BeginRegistrationGeneration(*subscription->owner);
 
         UnregisterDevices();
-        if (!ApplyOwnerRegistration(subscription)) {
+        // An owner transfer or reactivation starts a new Raw registration
+        // epoch. If this subscription already owns a hidden HWND, recreate it
+        // on its creator thread before registering the new epoch. The old
+        // HWND may still have WM_INPUT queued while the subscription was
+        // inactive; the HWND lifetime is the only reliable stale-queue fence.
+        if (!ApplyOwnerRegistration(subscription, generationAlreadyAdvanced)) {
             // A failed native registration is not a usable Raw source. Clear
             // all transient state and release the process owner so the caller
             // immediately falls back to the Qt/panel source.
@@ -284,7 +289,8 @@ namespace MelonPrime {
         }
     }
 
-    bool RawInputWinFilter::ApplyOwnerRegistration(RawInputSubscription* subscription)
+    bool RawInputWinFilter::ApplyOwnerRegistration(
+        RawInputSubscription* subscription, bool recreateHiddenWindow)
     {
         if (!subscription)
             return false;
@@ -295,6 +301,13 @@ namespace MelonPrime {
         if (m_joy2KeySupport) {
             registered = RegisterDevices(m_hwndQtTarget, false);
         } else {
+            // DestroyWindow is thread-affine. A foreign owner must never
+            // touch the old creator's queue; fail closed and let the caller
+            // release ownership instead of reusing a possibly stale HWND.
+            if (recreateHiddenWindow && subscription->hiddenWindow
+                && !DestroyHiddenWindow(subscription)) {
+                return false;
+            }
             const bool windowReady = CreateHiddenWindow(subscription);
             registered = windowReady
                 && RegisterDevices(subscription->hiddenWindow, true);
@@ -601,8 +614,18 @@ namespace MelonPrime {
             return false;
         }
         const HWND hiddenWindow = subscription->hiddenWindow;
-        if (IsWindow(hiddenWindow))
-            DestroyWindow(hiddenWindow);
+        if (IsWindow(hiddenWindow) && !DestroyWindow(hiddenWindow)) {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "[MelonPrime] Raw hidden HWND destroy failed; retaining ownership state\n");
+            return false;
+        }
+        if (IsWindow(hiddenWindow)) {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "[MelonPrime] Raw hidden HWND remained after destroy\n");
+            return false;
+        }
         subscription->hiddenWindow = nullptr;
         subscription->hiddenWindowCreatorThreadId = 0;
         return true;
@@ -627,6 +650,10 @@ namespace MelonPrime {
     //
     // Both paths run on the emu thread (hidden window owned by emu thread),
     // so they serialize naturally — no concurrent access issue.
+    //
+    // A subscription that re-enters ownership gets a new hidden HWND before
+    // this callback can accept input again. That cold-path lifetime boundary
+    // rejects WM_INPUT that was queued during the inactive interval.
     // =========================================================================
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         if (msg == WM_NCCREATE) {
@@ -748,6 +775,9 @@ namespace MelonPrime {
     // Hidden-window mode can have WM_INPUT messages queued after the last
     // snapshot. Drain/capture them before clearing state so an old DOWN cannot
     // be replayed into m_state on the next DeferredDrain/PollAndSnapshot cycle.
+    // This public wrapper always holds m_subscriptionMutex. During owner
+    // transfer it may reset a foreign, inactive subscription; that is the only
+    // cross-thread InputState lifecycle reset permitted by this contract.
     void RawInputWinFilter::resetAll(RawInputSubscription* subscription)
     {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
