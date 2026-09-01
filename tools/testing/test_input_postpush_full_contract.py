@@ -788,6 +788,10 @@ def main() -> None:
     raw_filter = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp")
     raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
     raw_perf = source("src/frontend/qt_sdl/MelonPrimeRawInputPerfProbe.h")
+    cmake_presets = source("CMakePresets.json")
+    windows_workflow = source(".github/workflows/build-windows.yml")
+    mingw_build = source("tools/build/windows/build-mingw.bat")
+    mingw_shipping_build = source("tools/build/windows/build-mingw-release.bat")
     raw_state_public = raw_state_header.split("    private:", 1)[0]
     raw_hotkey = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.cpp")
     raw_hotkey_header = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.h")
@@ -883,6 +887,11 @@ def main() -> None:
         raw_filter,
         "bool RawInputWinFilter::ApplyOwnerRegistration(",
         "    // =========================================================================\n    // drainMessagesOnly",
+    )
+    raw_drain = body(
+        raw_filter,
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
+        "void RawInputWinFilter::PollAndSnapshot(",
     )
     raw_poll = body(
         raw_filter,
@@ -1042,6 +1051,10 @@ def main() -> None:
     require(process, "if (!guestFrameWillRun)", "paused command refresh gate")
     require(process, "refreshJoystickCommandState", "paused command refresh")
     require(process, "joystickPresent.load", "race-free absent-device probe")
+    lifecycle_due_at = process.index("if (UNLIKELY(lifecycleCheckDue)")
+    presence_at = process.index("joystickPresent.load")
+    if lifecycle_due_at > presence_at:
+        raise AssertionError("absent controller probe must check cadence before presence")
     require(process, "controllerCommandHotkeyMask", "global command snapshot")
     require(process, "controllerCommandNeedsBaseline", "no-phantom command baseline")
     if "lateJoystick.hotkeyHeld" in process:
@@ -1372,13 +1385,34 @@ def main() -> None:
         raise AssertionError("all Raw GetAsyncKeyState calls must pass the telemetry wrapper")
     for needle in (
         "MELONPRIME_RAW_INPUT_PERF",
-        "MELONPRIME_PERF",
+        "MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY",
         "mutexAcquisitions",
         "rawBufferCalls",
         "getAsyncKeyStateCalls",
         "MaybeReport",
     ):
         require(raw_perf, needle, "Raw performance telemetry")
+    if "MELONPRIME_ENABLE_DEVELOPER_FEATURES" in raw_perf:
+        raise AssertionError("Raw performance telemetry must not inherit the developer gate")
+    if "MELONPRIME_PERF" in raw_perf:
+        raise AssertionError("generic MELONPRIME_PERF must not enable Raw telemetry")
+    for needle in (
+        "option(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY",
+        "if (WIN32 AND MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)",
+    ):
+        require(qt_sdl_cmake, needle, "dedicated Raw telemetry CMake gate")
+    if cmake_presets.count("MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY") < 2:
+        raise AssertionError("base and shipping presets must pin Raw telemetry OFF")
+    for text_value, label in (
+        (mingw_build, "normal MinGW build Raw telemetry gate"),
+        (mingw_shipping_build, "shipping MinGW build Raw telemetry gate"),
+    ):
+        require(text_value, "MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF", label)
+    require(
+        windows_workflow,
+        "MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF",
+        "shipping CI Raw telemetry gate",
+    )
 
     # BB: re-entrant NoEdges is a pure snapshot and the post-frame boundary is
     # the only recovery consumer. This prevents nested dispatch from clearing
@@ -1405,6 +1439,29 @@ def main() -> None:
         "LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(",
         "bool RawInputWinFilter::RegisterDevices(",
     )
+    for forbidden in (
+        "GetWindowLongPtr",
+        "GWLP_USERDATA",
+        "GetCurrentThreadId()",
+        "GetWindowThreadProcessId",
+        "QString",
+        "Config::Table",
+        "chrono",
+    ):
+        if forbidden in hidden_proc:
+            raise AssertionError(f"HiddenWndProc event-hot path still contains {forbidden!r}")
+    for needle in (
+        "RawInputPerf::SubscriptionMutexGuard",
+        "m_activeSubscription.load(\n                std::memory_order_relaxed)",
+        "subscription->hiddenWindow == hwnd",
+        "auto* const state = subscription->state.get();",
+    ):
+        require(hidden_proc, needle, "minimal HiddenWndProc routing")
+    lock_at = hidden_proc.index("RawInputPerf::SubscriptionMutexGuard")
+    active_at = hidden_proc.index("m_activeSubscription.load")
+    state_at = hidden_proc.index("subscription->state.get()")
+    if not lock_at < active_at < state_at:
+        raise AssertionError("active Raw subscription must be loaded and dereferenced under its mutex")
     for needle in (
         "const DWORD currentThreadId = GetCurrentThreadId();",
         "subscription->hiddenWindowCreatorThreadId = currentThreadId;",
@@ -1414,6 +1471,9 @@ def main() -> None:
         require(raw_filter, needle, "same-thread Raw recovery proof")
     if hidden_proc.count("state->RequestStuckRecovery()") != 1:
         raise AssertionError("HiddenWndProc must be the sole recovery producer")
+    require(raw_drain, "auto* const state = StateFor(subscription);", "single active Raw drain load")
+    if "ActiveState()" in raw_drain:
+        raise AssertionError("drainPendingMessages must not reload the active subscription")
     require(raw_filter, "state->clearStuckPostFrame();", "post-frame recovery owner")
     require(core, "m_rawFilter->DeferredDrain(m_rawInputSubscription)", "EmuThread recovery consumer")
     require(core, "m_rawFilter->resetAll(m_rawInputSubscription)", "EmuThread lifecycle reset")
@@ -1443,6 +1503,7 @@ def main() -> None:
         "if (recreateHiddenWindow && subscription->hiddenWindow",
         "!DestroyHiddenWindow(subscription)",
         "CreateHiddenWindow(subscription)",
+        "HWND_MESSAGE, nullptr, instance, nullptr",
     ):
         require(raw_filter_header + raw_filter, needle, "Raw hidden HWND epoch boundary")
     if not raw_reconfigure or not raw_apply_owner:
@@ -1494,19 +1555,21 @@ def main() -> None:
         require(raw_hotkey_mapping_header + raw_hotkey_mapping_test, needle, "SmallVkList overflow contract")
     require(raw_hotkey_mapping_test, "SmallVkList::kCapacity;", "SmallVkList overflow test")
 
-    # AR: hidden Raw windows are subscription-local and routed by HWND user
-    # data. The active owner never drains/destroys a foreign creator's queue.
+    # AR: hidden Raw windows are subscription-local and routed by the active
+    # subscription under the filter mutex. The active owner never
+    # drains/destroys a foreign creator's queue.
     for needle in (
         "HWND hiddenWindow",
         "hiddenWindowCreatorThreadId",
         "CreateHiddenWindow(RawInputSubscription* subscription)",
         "DestroyHiddenWindow(RawInputSubscription* subscription)",
         "GetCurrentThreadId()",
-        "GWLP_USERDATA",
         "m_activeSubscription.load",
         "ShutdownRawInput",
     ):
         require(raw_filter_header + raw_filter + emu_thread, needle, "Raw hidden HWND ownership")
+    if "GWLP_USERDATA" in raw_filter_header + raw_filter:
+        raise AssertionError("Raw hidden HWND routing must not use window user data")
     if "m_hHiddenWnd" in raw_filter_header + raw_filter:
         raise AssertionError("process-global hidden HWND reappeared")
     require(raw_filter, "hiddenWindowCreatorThreadId == GetCurrentThreadId()", "foreign Raw queue guard")

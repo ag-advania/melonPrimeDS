@@ -1637,6 +1637,10 @@ $rawHotkeyMappingHeaderPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkMapping.h'
 $rawHotkeyMappingTestPath = Join-Path $repoRoot 'tools/testing/raw-hotkey-vk-mapping-tests.cpp'
 $rawInputPerfPath = Join-Path $qtSdl 'MelonPrimeRawInputPerfProbe.h'
 $qtSdlCmakePath = Join-Path $qtSdl 'CMakeLists.txt'
+$cmakePresetsPath = Join-Path $repoRoot 'CMakePresets.json'
+$windowsWorkflowPath = Join-Path $repoRoot '.github/workflows/build-windows.yml'
+$mingwBuildPath = Join-Path $repoRoot 'tools/build/windows/build-mingw.bat'
+$mingwShippingBuildPath = Join-Path $repoRoot 'tools/build/windows/build-mingw-release.bat'
 $inputSubscriptionPath = Join-Path $qtSdl 'MelonPrimeInputSubscription.h'
 $wheelEventPath = Join-Path $qtSdl 'MelonPrimeWheelEvent.h'
 $rawWinFilterText = Get-Content -LiteralPath $rawWinFilterPath -Raw
@@ -1648,6 +1652,10 @@ $rawHotkeyMappingHeaderText = Get-Content -LiteralPath $rawHotkeyMappingHeaderPa
 $rawHotkeyMappingTestText = Get-Content -LiteralPath $rawHotkeyMappingTestPath -Raw
 $rawInputPerfText = Get-Content -LiteralPath $rawInputPerfPath -Raw
 $qtSdlCmakeText = Get-Content -LiteralPath $qtSdlCmakePath -Raw
+$cmakePresetsText = Get-Content -LiteralPath $cmakePresetsPath -Raw
+$windowsWorkflowText = Get-Content -LiteralPath $windowsWorkflowPath -Raw
+$mingwBuildText = Get-Content -LiteralPath $mingwBuildPath -Raw
+$mingwShippingBuildText = Get-Content -LiteralPath $mingwShippingBuildPath -Raw
 $inputSubscriptionText = Get-Content -LiteralPath $inputSubscriptionPath -Raw
 $wheelEventText = Get-Content -LiteralPath $wheelEventPath -Raw
 $rawHotkeyCompilerText = $rawHotkeyText + $rawHotkeyMappingText
@@ -1692,7 +1700,7 @@ if (($rawWinFilterHeaderText + $rawWinFilterText) -notmatch 'HWND\s+hiddenWindow
     ($rawWinFilterHeaderText + $rawWinFilterText) -notmatch 'hiddenWindowCreatorThreadId' -or
     $rawWinFilterHeaderText -notmatch 'CreateHiddenWindow\s*\(\s*RawInputSubscription\*' -or
     $rawWinFilterHeaderText -notmatch 'DestroyHiddenWindow\s*\(\s*RawInputSubscription\*' -or
-    $rawWinFilterText -notmatch 'GWLP_USERDATA' -or
+    $rawWinFilterText -match 'GWLP_USERDATA|(?:Get|Set)WindowLongPtr' -or
     $rawWinFilterText -notmatch 'GetCurrentThreadId\s*\(' -or
     $rawWinFilterText -notmatch 'hiddenWindowCreatorThreadId\s*!=\s*GetCurrentThreadId' -or
     $rawWinFilterText -notmatch 'hiddenWindowCreatorThreadId\s*==\s*GetCurrentThreadId' -or
@@ -1739,6 +1747,10 @@ $reconfigureRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ReconfigureActiveRegistration\s*\('
 $applyOwnerRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ApplyOwnerRegistration\s*\('
+$rawHiddenWndProcBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'LRESULT\s+CALLBACK\s+RawInputWinFilter::HiddenWndProc\s*\('
+$rawDrainBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'FORCE_INLINE\s+void\s+RawInputWinFilter::drainPendingMessages\s*\('
 if ($rawWinFilterHeaderText -notmatch '\[\[nodiscard\]\]\s+bool\s+RegisterDevices' -or
     -not $registerBody -or
     $registerBody -notmatch 'if\s*\(!RegisterRawInputDevices\s*\(' -or
@@ -1846,7 +1858,7 @@ if ([regex]::Matches($rawInputStateCppText, '::GetAsyncKeyState\s*\(').Count -ne
     Add-Error 'Rule AY: Raw GetAsyncKeyState calls must pass one telemetry wrapper'
 }
 if ($rawInputPerfText -notmatch 'MELONPRIME_RAW_INPUT_PERF' -or
-    $rawInputPerfText -notmatch 'MELONPRIME_PERF' -or
+    $rawInputPerfText -notmatch 'MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY' -or
     $rawInputPerfText -notmatch 'mutexAcquisitions' -or
     $rawInputPerfText -notmatch 'rawBufferCalls' -or
     $rawInputPerfText -notmatch 'getAsyncKeyStateCalls' -or
@@ -1888,8 +1900,8 @@ if (-not $rawNoEdgesBody -or
 }
 
 # BC: recovery is a same-EmuThread plain mailbox. The hidden HWND captures its
-# creator thread, HiddenWndProc checks that identity before producing the bit,
-# and lifecycle/frame consumers remain on the EmuThread call path.
+# creator thread, HiddenWndProc checks the active HWND identity under the
+# subscription mutex, and lifecycle/frame consumers remain on the EmuThread path.
 if ($rawWinFilterText -notmatch 'const\s+DWORD\s+currentThreadId\s*=\s*GetCurrentThreadId\s*\(\s*\)' -or
     $rawWinFilterText -notmatch 'subscription->hiddenWindowCreatorThreadId\s*=\s*currentThreadId' -or
     $rawWinFilterText -notmatch 'subscription->hiddenWindow\s*==\s*hwnd' -or
@@ -1899,6 +1911,119 @@ if ($rawWinFilterText -notmatch 'const\s+DWORD\s+currentThreadId\s*=\s*GetCurren
     $coreLifecycleText -notmatch 'm_rawFilter->DeferredDrain\s*\(\s*m_rawInputSubscription\s*\)' -or
     $coreLifecycleText -notmatch 'm_rawFilter->resetAll\s*\(\s*m_rawInputSubscription\s*\)') {
     Add-Error 'Rule BC: same-thread Raw recovery ownership proof is incomplete'
+}
+
+# BJ: HiddenWndProc is an event-hot Win32 callback. Production dispatch may
+# only take the existing subscription mutex, load the active subscription and
+# compare its HWND. Native identity queries, Qt/config work and timekeeping
+# belong to cold lifecycle or dedicated telemetry/debug paths.
+$rawHiddenIdentityTokens = @(
+    'GetCurrentThreadId\s*\(',
+    'GetWindowLongPtr',
+    'SetWindowLongPtr',
+    'GWLP_USERDATA',
+    'GetWindowThreadProcessId\s*\(',
+    'QString',
+    '\bConfig\b',
+    '\bchrono\b'
+)
+if (-not $rawHiddenWndProcBody) {
+    Add-Error 'Rule BJ: HiddenWndProc definition was not found'
+} else {
+    foreach ($token in $rawHiddenIdentityTokens) {
+        if ($rawHiddenWndProcBody -match $token) {
+            Add-Error "Rule BJ: HiddenWndProc contains event-hot identity/cost token: $token"
+        }
+    }
+}
+
+# BL: the active Raw subscription is a mutex-protected lifetime pointer. Its
+# state may not be loaded or dereferenced before the authoritative lock.
+$hiddenLockAt = if ($rawHiddenWndProcBody) {
+    $rawHiddenWndProcBody.IndexOf('RawInputPerf::SubscriptionMutexGuard',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$hiddenActiveAt = if ($rawHiddenWndProcBody) {
+    $rawHiddenWndProcBody.IndexOf('m_activeSubscription.load',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$hiddenHwndAt = if ($rawHiddenWndProcBody) {
+    $rawHiddenWndProcBody.IndexOf('subscription->hiddenWindow == hwnd',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$hiddenStateAt = if ($rawHiddenWndProcBody) {
+    $rawHiddenWndProcBody.IndexOf('subscription->state.get()',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if (-not $rawHiddenWndProcBody -or
+    $rawHiddenWndProcBody -notmatch
+        'm_activeSubscription\.load\s*\(\s*std::memory_order_relaxed\s*\)' -or
+    $rawHiddenWndProcBody -notmatch 'subscription->hiddenWindow\s*==\s*hwnd' -or
+    $rawHiddenWndProcBody -notmatch 'subscription->state\.get\s*\(\s*\)' -or
+    $hiddenLockAt -lt 0 -or $hiddenLockAt -gt $hiddenActiveAt -or
+    $hiddenActiveAt -gt $hiddenHwndAt -or $hiddenHwndAt -gt $hiddenStateAt) {
+    Add-Error 'Rule BL: active Raw subscription lifetime is not mutex-protected'
+}
+
+# BK: Raw telemetry has its own opt-in compile gate. Developer features and
+# the generic renderer performance environment variable must not compile in or
+# activate this observer. Normal and shipping Windows profiles pin the gate OFF.
+if ($rawInputPerfText -notmatch
+        'MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY' -or
+    $rawInputPerfText -match 'MELONPRIME_ENABLE_DEVELOPER_FEATURES' -or
+    $rawInputPerfText -match '\bMELONPRIME_PERF\b' -or
+    $qtSdlCmakeText -notmatch
+        'option\(\s*MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY[\s\S]*?\bOFF\s*\)' -or
+    $qtSdlCmakeText -notmatch
+        'if\s*\(\s*WIN32\s+AND\s+MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY\s*\)' -or
+    ([regex]::Matches($cmakePresetsText,
+        'MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY')).Count -lt 2 -or
+    $mingwBuildText -notmatch
+        'MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF' -or
+    $mingwShippingBuildText -notmatch
+        'MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF' -or
+    $windowsWorkflowText -notmatch
+        'MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF' -or
+    $windowsWorkflowText -notmatch
+        'MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY:BOOL=OFF') {
+    Add-Error 'Rule BK: dedicated Raw telemetry compile/runtime gate is incomplete'
+}
+
+# BM: preserve the f647 hidden-HWND epoch fence. Reactivation destroys the old
+# creator-thread window before creating a fresh one; foreign destruction fails
+# closed, so stale queued WM_INPUT cannot enter the new registration.
+if ($rawWinFilterText -match 'WM_NCCREATE|WM_NCDESTROY|GWLP_USERDATA' -or
+    $rawWinFilterText -notmatch
+        'HWND_MESSAGE,\s*nullptr,\s*instance,\s*nullptr' -or
+    -not $reconfigureRawBody -or
+    $reconfigureRawBody -notmatch
+        'ApplyOwnerRegistration\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
+    -not $applyOwnerRawBody -or
+    $applyOwnerRawBody.IndexOf('DestroyHiddenWindow(subscription)',
+        [System.StringComparison]::Ordinal) -lt 0 -or
+    $applyOwnerRawBody.IndexOf('CreateHiddenWindow(subscription)',
+        [System.StringComparison]::Ordinal) -lt 0 -or
+    $rawWinFilterText -notmatch
+        'hiddenWindowCreatorThreadId\s*!=\s*GetCurrentThreadId\s*\(' -or
+    $rawWinFilterText -notmatch
+        'refusing cross-thread Raw hidden HWND destroy') {
+    Add-Error 'Rule BM: hidden Raw HWND epoch/foreign-destroy fence is incomplete'
+}
+
+# BN: absent-controller probing is a low-rate operation. The cadence counter
+# must be checked before the presence hint, so ordinary input frames do not
+# perform even the atomic absent-device load when no probe is due.
+$joystickCadenceAt = if ($inputProcessBody) {
+    $inputProcessBody.IndexOf('if (UNLIKELY(lifecycleCheckDue)',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$joystickPresenceAt = if ($inputProcessBody) {
+    $inputProcessBody.IndexOf('joystickPresent.load',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if (-not $inputProcessBody -or $joystickCadenceAt -lt 0 -or
+    $joystickPresenceAt -lt 0 -or $joystickCadenceAt -gt $joystickPresenceAt) {
+    Add-Error 'Rule BN: absent-controller probe must check cadence before presence'
 }
 
 # BD: a stalled Raw queue uses a bounded process-service scratch retry. The

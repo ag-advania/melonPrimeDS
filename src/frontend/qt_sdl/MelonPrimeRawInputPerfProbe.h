@@ -2,15 +2,16 @@
 #define MELONPRIME_RAW_INPUT_PERF_PROBE_H
 
 // Windows Raw Input contention and recovery telemetry.
-// Compile gate: MELONPRIME_ENABLE_DEVELOPER_FEATURES + MELONPRIME_DS.
-// Runtime gate: MELONPRIME_RAW_INPUT_PERF=1 (or MELONPRIME_PERF=1).
+// Compile gate: MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY + MELONPRIME_DS
+// on Windows. Runtime gate: MELONPRIME_RAW_INPUT_PERF=1.
 // Release builds keep the same lock semantics without the telemetry state.
 
 #include <atomic>
 #include <cstdint>
 #include <mutex>
 
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_DS)
+#if defined(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY) \
+    && defined(MELONPRIME_DS) && defined(_WIN32)
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -19,7 +20,8 @@
 namespace MelonPrime {
 namespace RawInputPerf {
 
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_DS)
+#if defined(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY) \
+    && defined(MELONPRIME_DS) && defined(_WIN32)
 
 struct Counters {
     std::atomic<uint64_t> mutexAcquisitions{ 0 };
@@ -46,8 +48,6 @@ inline bool Enabled() noexcept
 {
     static const bool enabled = [] {
         const char* value = std::getenv("MELONPRIME_RAW_INPUT_PERF");
-        if (!value)
-            value = std::getenv("MELONPRIME_PERF");
         return value && value[0] == '1' && value[1] == '\0';
     }();
     return enabled;

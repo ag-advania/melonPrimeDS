@@ -154,6 +154,13 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   without adding steady-frame work. The buffered Raw drain is private to
   `RawInputWinFilter`, and the only foreign-subscription reset remains under
   its recursive subscription mutex.
+- `HiddenWndProc` is deliberately minimal on the event-hot path: it loads the
+  active subscription under that mutex, compares only `hiddenWindow == hwnd`,
+  and then processes the handle. `GetWindowLongPtr*`, `GetCurrentThreadId`, Qt,
+  config and clock queries stay out of `WM_INPUT`; creator-thread proof and
+  epoch recreation remain cold lifecycle work. Raw contention/recovery
+  telemetry is compiled only by `MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY`
+  and then enabled at runtime only with `MELONPRIME_RAW_INPUT_PERF=1`.
 - Qt panel aim has one GUI writer and one emulation-thread cursor. Both consumer
   read and discard paths retry until generation is stable around the total, so
   a concurrent GUI reset cannot replay motion or move the cursor backward.
@@ -215,9 +222,10 @@ surface authority, physical-source controller compilation, packed Linux totals,
 frame-result reuse, and revision-driven GUI reconciliation. Rule AC pins paused
 controller command liveness, command/gameplay owner separation, one running
 physical sample, initialized-source scratch, and one coherent GUI policy read.
-Rules BE-BG pin the Windows hidden-HWND registration-epoch fence, the private
-buffered-drain API, and the mutex contract for foreign lifecycle resets.
-The Savestate contract additionally pins the
+Rules BE-BM pin the Windows hidden-HWND registration-epoch fence, the private
+buffered-drain API, the mutex contract for foreign lifecycle resets, the
+minimal `WM_INPUT` callback and its dedicated telemetry gate. Rule BN pins the
+cadence-first absent-controller probe. The Savestate contract additionally pins the
 next-normal-frame reconciliation and the full input reset profile.
 
 A compile/static pass is not a runtime latency claim. Changes to Aim arithmetic,

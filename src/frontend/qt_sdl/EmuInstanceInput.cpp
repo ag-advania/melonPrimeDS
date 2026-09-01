@@ -985,8 +985,8 @@ void EmuInstance::inputProcess(bool guestFrameWillRun)
     // Active controllers are attachment-checked by the one required physical
     // sample. Probe an absent device at the normal per-instance cadence in
     // either scheduling state; a successful paused probe is sampled below.
-    if (!joystickPresent.load(std::memory_order_acquire)
-        && lifecycleCheckDue) {
+    if (UNLIKELY(lifecycleCheckDue)
+        && !joystickPresent.load(std::memory_order_acquire)) {
         probeJoystickConnection();
         (void)consumeJoystickResetPending();
     }

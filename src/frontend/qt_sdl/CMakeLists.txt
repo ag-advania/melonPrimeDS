@@ -152,6 +152,10 @@ option(MELONPRIME_REQUIRE_QT6_5
     OFF)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
 
+option(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY
+    "Compile Windows Raw Input performance telemetry"
+    OFF)
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     list(APPEND SOURCES_QT_SDL
         ${CMAKE_SOURCE_DIR}/tools/testing/gpu2d-native-recorder-purity.cpp)
@@ -605,6 +609,19 @@ if (MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY)
 else()
     message(STATUS
         "MelonPrime renderer performance telemetry: COMPILED OUT")
+endif()
+
+if (WIN32 AND MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)
+    target_compile_definitions(core PRIVATE
+        MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=1)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=1)
+    message(STATUS
+        "MelonPrime Raw Input performance telemetry: COMPILED IN. "
+        "Set MELONPRIME_RAW_INPUT_PERF=1 at runtime to enable collection.")
+else()
+    message(STATUS
+        "MelonPrime Raw Input performance telemetry: COMPILED OUT")
 endif()
 
 if (MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)

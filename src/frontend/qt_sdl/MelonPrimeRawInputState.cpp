@@ -717,7 +717,9 @@ namespace MelonPrime {
     // =========================================================================
     void InputState::RequestStuckRecovery() noexcept
     {
-        // Called only by HiddenWndProc after its creator-thread check. The
+        // Called only by HiddenWndProc while the active subscription and its
+        // HWND are held under RawInputWinFilter::m_subscriptionMutex. The
+        // HWND is creator-thread-affine by the cold lifecycle path, so the
         // mailbox is plain because producer and consumer are the same thread.
         m_stuckRecoveryNeeded = true;
     }

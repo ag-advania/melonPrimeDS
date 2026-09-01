@@ -364,7 +364,8 @@ namespace MelonPrime {
     FORCE_INLINE void RawInputWinFilter::drainPendingMessages() noexcept {
         auto* const subscription =
             m_activeSubscription.load(std::memory_order_acquire);
-        if (auto* state = ActiveState(); state && !m_joy2KeySupport) {
+        auto* const state = StateFor(subscription);
+        if (state && !m_joy2KeySupport) {
             state->processRawInputBatched();
         }
         drainMessagesOnly(subscription);
@@ -594,7 +595,7 @@ namespace MelonPrime {
         HWND const hiddenWindow = CreateWindowW(
             L"MelonPrimeRawInputSink", L"", 0,
             0, 0, 0, 0,
-            HWND_MESSAGE, nullptr, instance, subscription);
+            HWND_MESSAGE, nullptr, instance, nullptr);
         if (!hiddenWindow)
             return false;
 
@@ -649,42 +650,38 @@ namespace MelonPrime {
     //   - PeekMessage dispatches first → processRawInput reads it → safe
     //
     // Both paths run on the emu thread (hidden window owned by emu thread),
-    // so they serialize naturally — no concurrent access issue.
+    // so they serialize naturally — no concurrent access issue. The active
+    // subscription and HWND identity are checked under the subscription mutex;
+    // no per-event native thread or window-property query is needed.
     //
     // A subscription that re-enters ownership gets a new hidden HWND before
     // this callback can accept input again. That cold-path lifetime boundary
     // rejects WM_INPUT that was queued during the inactive interval.
     // =========================================================================
     LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-        if (msg == WM_NCCREATE) {
-            const auto* create = reinterpret_cast<const CREATESTRUCTW*>(lParam);
-            SetWindowLongPtrW(
-                hwnd, GWLP_USERDATA,
-                reinterpret_cast<LONG_PTR>(create->lpCreateParams));
-        }
         if (msg == WM_INPUT) {
-            if (s_instance) {
-                RawInputPerf::SubscriptionMutexGuard lock(
-                    s_instance->m_subscriptionMutex);
-                auto* const subscription = reinterpret_cast<RawInputSubscription*>(
-                    GetWindowLongPtrW(hwnd, GWLP_USERDATA));
-                if (subscription
-                    && subscription->hiddenWindow == hwnd
-                    && subscription->hiddenWindowCreatorThreadId == GetCurrentThreadId()
-                    && s_instance->m_activeSubscription.load(
-                        std::memory_order_acquire) == subscription) {
-                    auto* const state = s_instance->StateFor(subscription);
-                    if (state) {
-                        state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
-                        state->RequestStuckRecovery();
-                        RawInputPerf::CountHiddenWindowDispatch();
-                    }
+            auto* const service = s_instance;
+            if (UNLIKELY(!service))
+                return 0;
+
+            RawInputPerf::SubscriptionMutexGuard lock(
+                service->m_subscriptionMutex);
+            auto* const subscription = service->m_activeSubscription.load(
+                std::memory_order_relaxed);
+            if (UNLIKELY(!subscription))
+                return 0;
+            if (LIKELY(subscription->hiddenWindow == hwnd)) {
+                auto* const state = subscription->state.get();
+                if (LIKELY(state)) {
+                    state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
+                    state->RequestStuckRecovery();
+#if defined(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)
+                    RawInputPerf::CountHiddenWindowDispatch();
+#endif
                 }
             }
+
             return 0;
-        }
-        if (msg == WM_NCDESTROY) {
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         }
         return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
