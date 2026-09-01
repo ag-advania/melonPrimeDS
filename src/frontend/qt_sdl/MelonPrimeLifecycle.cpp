@@ -33,14 +33,21 @@ namespace MelonPrime {
     MelonPrimeCore::~MelonPrimeCore()
     {
         InstanceDiagnostics::LogLifecycle(emuInstance, this, "destroying");
-        PlatformInputOwnerService::Release(m_inputSubscription);
+        ShutdownRawInput();
+#if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED && !defined(_WIN32)
+        PlatformInput_ReleaseRawFilter(m_platformRawFilter);
+#endif
+    }
+
+    void MelonPrimeCore::ShutdownRawInput() noexcept
+    {
 #ifdef _WIN32
+        PlatformInputOwnerService::Release(m_inputSubscription);
         if (m_rawFilter && m_rawInputSubscription) {
             m_rawFilter->Unsubscribe(m_rawInputSubscription);
             m_rawInputSubscription = nullptr;
         }
-#elif MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
-        PlatformInput_ReleaseRawFilter(m_platformRawFilter);
+        m_rawFilter.reset();
 #endif
     }
 
@@ -403,8 +410,10 @@ namespace MelonPrime {
 
 #ifdef _WIN32
         if (m_rawFilter) {
-            BindMetroidHotkeysFromConfig(
+            const RawHotkeyOwnership ownership = BindMetroidHotkeysFromConfig(
                 m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
+            m_rawOwnedGameplayMask = ownership.rawOwnedGameplayMask;
+            m_qtFallbackGameplayMask = ownership.qtFallbackGameplayMask;
             m_rawFilter->resetHotkeyEdges(m_rawInputSubscription);
         }
 #endif
@@ -441,8 +450,10 @@ namespace MelonPrime {
 #ifdef _WIN32
         if (m_rawFilter) {
             // Reload VK bindings from config, then re-sync edge state.
-            BindMetroidHotkeysFromConfig(
+            const RawHotkeyOwnership ownership = BindMetroidHotkeysFromConfig(
                 m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
+            m_rawOwnedGameplayMask = ownership.rawOwnedGameplayMask;
+            m_qtFallbackGameplayMask = ownership.qtFallbackGameplayMask;
             m_rawFilter->resetHotkeyEdges(m_rawInputSubscription);
         }
 #endif

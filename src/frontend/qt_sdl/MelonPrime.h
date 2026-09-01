@@ -228,6 +228,9 @@ namespace MelonPrime {
         MelonPrimeCore& operator=(const MelonPrimeCore&) = delete;
 
         void Initialize();
+        // Must run on the EmuThread before it exits so each subscription's
+        // thread-affine hidden Raw window is destroyed by its creator.
+        void ShutdownRawInput() noexcept;
         HOT_FUNCTION void RunFrameHook();
         void OnEmuStart();
         void OnEmuStop();
@@ -1018,6 +1021,11 @@ namespace MelonPrime {
         std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
         RawInputSubscription* m_rawInputSubscription = nullptr;
         void* m_cachedHwnd = nullptr;
+        // Cold-compiled per-binding source ownership. The default profile has
+        // no Qt fallback bits, preserving the existing Raw hotkey path; rare
+        // canonical chords/unsupported identities merge only these fixed masks.
+        uint64_t m_rawOwnedGameplayMask = 0;
+        uint64_t m_qtFallbackGameplayMask = 0;
 #endif
 
         struct AimData {

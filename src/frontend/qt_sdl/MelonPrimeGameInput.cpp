@@ -177,6 +177,14 @@ namespace MelonPrime {
             guiPolicy.captureWanted);
         const bool wasInputOwner =
             m_inputSubscription.activeOwner.load(std::memory_order_acquire);
+        // A different Raw owner can only publish a reset request for this
+        // subscription. Consume it on this EmuThread before taking the local
+        // generation snapshot; this keeps generation, cursor sync, and Qt
+        // gameplay edge baseline under one writer.
+        if (UNLIKELY(!wasInputOwner
+                && m_inputSubscription.ConsumeRegistrationReset())) {
+            ResetGameplayEdgeBaselines();
+        }
         const uint64_t wasInputGeneration = m_inputSubscription.generation;
 #ifdef _WIN32
         auto* const rawFilter = m_rawFilter.get();
@@ -352,19 +360,35 @@ namespace MelonPrime {
         // Select one keyboard source instead of OR-ing Raw and Qt together.
         // This keeps instances isolated and avoids duplicate press edges when
         // active ownership changes.
-        const uint64_t hotDownMask = isInputOwner
-            ? ((rawActionReady ? hk.down : qtGameplayHeld)
-                | emuInstance->lateJoystick.hotkeyHeld | wheelHotkeyBits)
-            : (qtGameplayHeld | emuInstance->lateJoystick.hotkeyHeld
-                | wheelHotkeyBits);
+        uint64_t hotDownMask = qtGameplayHeld;
+        if (isInputOwner && rawActionReady) {
+            if (LIKELY(m_qtFallbackGameplayMask == 0)) {
+                // Default/simple bindings keep the original Raw fast path.
+                hotDownMask = hk.down;
+            }
+            else {
+                // Raw owns only exact single-predicate bindings. Canonical
+                // chords and unsupported identities stay with Qt, whose held
+                // state is already keyed by the normalized binding identity.
+                hotDownMask = (hk.down & m_rawOwnedGameplayMask)
+                    | (qtGameplayHeld & m_qtFallbackGameplayMask);
+            }
+        }
+        hotDownMask |= emuInstance->lateJoystick.hotkeyHeld
+            | wheelHotkeyBits;
         if constexpr (!kReentrant) {
-            const uint64_t hotPressMask = isInputOwner
-                ? ((rawActionReady ? hk.pressed : qtGameplayPressed)
-                    | emuInstance->lateJoystick.hotkeyPressed
-                    | wheelHotkeyBits)
-                : (qtGameplayPressed
-                    | emuInstance->lateJoystick.hotkeyPressed
-                    | wheelHotkeyBits);
+            uint64_t hotPressMask = qtGameplayPressed;
+            if (isInputOwner && rawActionReady) {
+                if (LIKELY(m_qtFallbackGameplayMask == 0)) {
+                    hotPressMask = hk.pressed;
+                }
+                else {
+                    hotPressMask = (hk.pressed & m_rawOwnedGameplayMask)
+                        | (qtGameplayPressed & m_qtFallbackGameplayMask);
+                }
+            }
+            hotPressMask |= emuInstance->lateJoystick.hotkeyPressed
+                | wheelHotkeyBits;
             m_input.press = InputProjection::ProjectPressMask(hotPressMask);
         } else {
             m_input.press = 0;

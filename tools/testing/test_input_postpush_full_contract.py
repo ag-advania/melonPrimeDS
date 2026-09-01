@@ -546,6 +546,64 @@ def check_mac_handoff_model() -> None:
     assert hid_allowed
 
 
+def check_windows_raw_reaudit_models() -> None:
+    # P1-001: Raw ownership is a cold classification, not an approximation of
+    # Qt's modifier/chord identity. The two live source masks are disjoint;
+    # wheel is a third, explicit impulse source.
+    raw_owned = {"W", "F1", "RShift", "MouseX2"}
+    qt_fallback = {("Ctrl", "K"), ("Shift", "Keypad1"), "F25", "NonAscii"}
+    wheel_impulse = {"WheelUp", "WheelDown"}
+    assert raw_owned.isdisjoint(qt_fallback)
+    assert raw_owned.isdisjoint(wheel_impulse)
+    assert qt_fallback.isdisjoint(wheel_impulse)
+    assert ("Ctrl", "K") in qt_fallback
+    assert "F25" in qt_fallback and "F25" not in raw_owned
+    assert "RShift" in raw_owned
+
+    # P1-003/004: a foreign owner can publish only a reset notification, and a
+    # failed native registration never makes the source ready. A later retry
+    # may acquire the owner after the one-shot fault has cleared.
+    generation = 10
+    reset_pending = True
+    active_owner = False
+    baseline_ready = False
+    assert reset_pending and not active_owner and not baseline_ready
+    if reset_pending:
+        reset_pending = False
+        generation += 1
+    assert generation == 11 and not reset_pending
+    registered = False
+    assert not (registered and active_owner and baseline_ready)
+    registered = True
+    active_owner = registered
+    baseline_ready = registered
+    assert active_owner and baseline_ready
+
+    # P1-005: the fractional Qt residual is owned by the same generation as
+    # the event that created it.
+    class GenerationWheel:
+        remainder = 0
+        generation = None
+
+        def consume(self, angle: int, source_generation: int) -> int:
+            if self.generation != source_generation:
+                self.generation = source_generation
+                self.remainder = 0
+            total = self.remainder + angle
+            steps = int(total / 120)  # C++ truncation toward zero
+            self.remainder = total - steps * 120
+            return steps
+
+    wheel = GenerationWheel()
+    assert wheel.consume(90, 10) == 0
+    assert wheel.consume(30, 11) == 0
+    assert wheel.consume(90, 11) == 1
+    wheel = GenerationWheel()
+    assert wheel.consume(-90, 20) == 0
+    assert wheel.consume(-30, 21) == 0
+    assert wheel.consume(-90, 21) == -1
+
+
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
     input_cpp = source("src/frontend/qt_sdl/EmuInstanceInput.cpp")
@@ -565,6 +623,13 @@ def main() -> None:
     wheel_event = source("src/frontend/qt_sdl/MelonPrimeWheelEvent.h")
     game_weapon = source("src/frontend/qt_sdl/MelonPrimeGameWeapon.cpp")
     in_game = source("src/frontend/qt_sdl/MelonPrimeInGame.cpp")
+    raw_filter = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp")
+    raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
+    raw_hotkey = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.cpp")
+    raw_hotkey_header = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.h")
+    input_subscription = source("src/frontend/qt_sdl/MelonPrimeInputSubscription.h")
+    core = source("src/frontend/qt_sdl/MelonPrime.cpp")
+    lifecycle = source("src/frontend/qt_sdl/MelonPrimeLifecycle.cpp")
 
     process = body(
         input_cpp,
@@ -976,6 +1041,102 @@ def main() -> None:
     if cycle_case.count("SwitchWeapon(") != 1:
         raise AssertionError("weapon cycle must switch only the final target once")
     require(in_game, "m_input.weaponCycleSteps != 0", "signed count rare-action gate")
+
+    # AQ: every non-wheel configured Metroid identity is explicitly RawExact
+    # or QtFallback; unsupported values are never silently treated as a raw
+    # binding, and F25+ cannot enter the contiguous VK arithmetic.
+    for needle in (
+        "struct RawHotkeyOwnership",
+        "rawOwnedGameplayMask",
+        "qtFallbackGameplayMask",
+        "wheelImpulseMask",
+        "kQtKey_F24",
+        "kQtBindingModifierMask",
+        "RawExact",
+        "Qt fallback classification",
+    ):
+        require(raw_hotkey_header + raw_hotkey, needle, "Raw binding ownership")
+    if "kQtKey_F35" in raw_hotkey or "VK_F1 + idx" not in raw_hotkey:
+        raise AssertionError("F-key mapping must be explicitly bounded at F24")
+    require(raw_hotkey, "encoded & kQtBindingModifierMask", "modifier chord failover")
+    require(raw_hotkey, "ownership.qtFallbackGameplayMask |= actionBit", "unsupported binding failover")
+    for needle in (
+        "m_qtFallbackGameplayMask == 0",
+        "hk.down & m_rawOwnedGameplayMask",
+        "qtGameplayHeld & m_qtFallbackGameplayMask",
+        "hk.pressed & m_rawOwnedGameplayMask",
+        "qtGameplayPressed & m_qtFallbackGameplayMask",
+    ):
+        require(game_input, needle, "Raw/Qt ownership merge")
+    require(core + lifecycle, "m_rawOwnedGameplayMask = ownership.rawOwnedGameplayMask", "ownership publication")
+
+    # AR: hidden Raw windows are subscription-local and routed by HWND user
+    # data. The active owner never drains/destroys a foreign creator's queue.
+    for needle in (
+        "HWND hiddenWindow",
+        "hiddenWindowCreatorThreadId",
+        "CreateHiddenWindow(RawInputSubscription* subscription)",
+        "DestroyHiddenWindow(RawInputSubscription* subscription)",
+        "GetCurrentThreadId()",
+        "GWLP_USERDATA",
+        "m_activeSubscription.load",
+        "ShutdownRawInput",
+    ):
+        require(raw_filter_header + raw_filter + emu_thread, needle, "Raw hidden HWND ownership")
+    if "m_hHiddenWnd" in raw_filter_header + raw_filter:
+        raise AssertionError("process-global hidden HWND reappeared")
+    require(raw_filter, "hiddenWindowCreatorThreadId == GetCurrentThreadId()", "foreign Raw queue guard")
+    require(emu_thread, "melonPrime->ShutdownRawInput()", "EmuThread Raw shutdown")
+
+    # AS/AV: lifecycle notifications are atomic, generation is consumed by its
+    # owner, and public state/reset helpers share the Raw subscription mutex.
+    for needle in (
+        "std::atomic_bool registrationResetPending",
+        "RequestRegistrationReset()",
+        "ConsumeRegistrationReset()",
+        "owner->RequestRegistrationReset()",
+        "PlatformInputOwnerService::RequestRegistrationReset",
+        "m_inputSubscription.ConsumeRegistrationReset()",
+        "std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)",
+    ):
+        require(input_subscription + raw_filter + game_input, needle, "Raw subscription single-writer")
+    if "BeginRegistrationGeneration(*previous->owner)" in raw_filter:
+        raise AssertionError("foreign owner generation mutation reappeared")
+
+    # AT: API success is the only path to m_isRegistered/activeOwner/baseline
+    # readiness, with the developer-only one-shot fault seam retaining Qt.
+    for needle in (
+        "[[nodiscard]] bool RegisterDevices",
+        "if (!RegisterRawInputDevices(",
+        "m_isRegistered = true;",
+        "MELONPRIME_TEST_FORCE_RAW_REGISTER_FAILURE",
+        "if (!ReconfigureActiveRegistration(subscription, true))",
+        "PlatformInputOwnerService::Release(*subscription->owner)",
+        "subscription->baselineReady = false",
+    ):
+        require(raw_filter_header + raw_filter, needle, "Raw registration fail-closed")
+    registration_body = body(
+        raw_filter,
+        "bool RawInputWinFilter::RegisterDevices(",
+        "void RawInputWinFilter::UnregisterDevices(",
+    )
+    if registration_body.index("if (!RegisterRawInputDevices(") > registration_body.index("m_isRegistered = true;"):
+        raise AssertionError("Raw ready flag precedes native registration success")
+
+    # AU: only GUI wheel events read the normalized input generation; focus and
+    # close boundaries still clear the local residual.
+    for needle in (
+        "Consume(\n            const QWheelEvent& event, uint32_t generation)",
+        "m_generationInitialized",
+        "m_generation != generation",
+        "m_angleRemainder = 0",
+    ):
+        require(wheel_event, needle, "generation-scoped Qt wheel residual")
+    require(bridge, "InputGenerationForGui()", "GUI wheel generation getter")
+    require(screen, "InputGenerationForGui()", "Screen wheel generation tag")
+    require(screen, "wheelSteps.Reset();", "focus/close wheel residual reset")
+
+    check_windows_raw_reaudit_models()
 
     check_state_model()
     check_controller_pause_model()

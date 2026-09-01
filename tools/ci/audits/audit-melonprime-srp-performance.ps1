@@ -1615,6 +1615,122 @@ if ($gameInputText -notmatch 'cyclePressBits\s*=\s*wheelPressBits' -or
     Add-Error 'Rule AP: conflicting wheel/keyboard weapon directions must be inert'
 }
 
+# --- Rule AQ-AV: Windows Raw ownership and generation closure --------------
+#
+# The process-wide physical collector remains intact, but each configured
+# binding/source and each per-instance lifecycle boundary must be explicit.
+# These checks intentionally inspect source ownership rather than claiming
+# runtime, multi-instance, or TSan evidence that this static audit cannot run.
+$rawWinFilterPath = Join-Path $qtSdl 'MelonPrimeRawInputWinFilter.cpp'
+$rawWinFilterHeaderPath = Join-Path $qtSdl 'MelonPrimeRawInputWinFilter.h'
+$rawHotkeyPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkBinding.cpp'
+$rawHotkeyHeaderPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkBinding.h'
+$inputSubscriptionPath = Join-Path $qtSdl 'MelonPrimeInputSubscription.h'
+$wheelEventPath = Join-Path $qtSdl 'MelonPrimeWheelEvent.h'
+$rawWinFilterText = Get-Content -LiteralPath $rawWinFilterPath -Raw
+$rawWinFilterHeaderText = Get-Content -LiteralPath $rawWinFilterHeaderPath -Raw
+$rawHotkeyText = Get-Content -LiteralPath $rawHotkeyPath -Raw
+$rawHotkeyHeaderText = Get-Content -LiteralPath $rawHotkeyHeaderPath -Raw
+$inputSubscriptionText = Get-Content -LiteralPath $inputSubscriptionPath -Raw
+$wheelEventText = Get-Content -LiteralPath $wheelEventPath -Raw
+$coreLifecycleText = $coreText + $lifecycleText
+
+# AQ: canonical Qt identities are classified at the cold binding boundary.
+if ($rawHotkeyHeaderText -notmatch 'enum\s+class\s+GameplayBindingSource' -or
+    $rawHotkeyHeaderText -notmatch '\bRawExact\b' -or
+    $rawHotkeyHeaderText -notmatch '\bQtFallback\b' -or
+    $rawHotkeyHeaderText -notmatch 'rawOwnedGameplayMask' -or
+    $rawHotkeyHeaderText -notmatch 'qtFallbackGameplayMask' -or
+    $rawHotkeyHeaderText -notmatch 'wheelImpulseMask' -or
+    $rawHotkeyText -notmatch 'kQtKey_F24' -or
+    $rawHotkeyText -match 'kQtKey_F35' -or
+    $rawHotkeyText -notmatch 'kQtBindingModifierMask' -or
+    $rawHotkeyText -notmatch 'ownership\.qtFallbackGameplayMask\s*\|=') {
+    Add-Error 'Rule AQ: RawExact/QtFallback binding capability classification is incomplete'
+}
+if ($gameInputText -notmatch 'm_qtFallbackGameplayMask\s*==\s*0' -or
+    $gameInputText -notmatch 'hk\.down\s*&\s*m_rawOwnedGameplayMask' -or
+    $gameInputText -notmatch 'qtGameplayHeld\s*&\s*m_qtFallbackGameplayMask' -or
+    $gameInputText -notmatch 'hk\.pressed\s*&\s*m_rawOwnedGameplayMask' -or
+    $gameInputText -notmatch 'qtGameplayPressed\s*&\s*m_qtFallbackGameplayMask') {
+    Add-Error 'Rule AQ: default Raw fast path or disjoint Raw/Qt merge is incomplete'
+}
+
+# AR: hidden message windows are subscription-local and thread-affine.
+if (($rawWinFilterHeaderText + $rawWinFilterText) -notmatch 'HWND\s+hiddenWindow' -or
+    ($rawWinFilterHeaderText + $rawWinFilterText) -notmatch 'hiddenWindowCreatorThreadId' -or
+    $rawWinFilterHeaderText -notmatch 'CreateHiddenWindow\s*\(\s*RawInputSubscription\*' -or
+    $rawWinFilterHeaderText -notmatch 'DestroyHiddenWindow\s*\(\s*RawInputSubscription\*' -or
+    $rawWinFilterText -notmatch 'GWLP_USERDATA' -or
+    $rawWinFilterText -notmatch 'GetCurrentThreadId\s*\(' -or
+    $rawWinFilterText -notmatch 'hiddenWindowCreatorThreadId\s*!=\s*GetCurrentThreadId' -or
+    $rawWinFilterText -notmatch 'hiddenWindowCreatorThreadId\s*==\s*GetCurrentThreadId' -or
+    $rawWinFilterText -match 'm_hHiddenWnd' -or
+    $coreLifecycleText -notmatch 'ShutdownRawInput\s*\(' -or
+    $emuThreadText -notmatch 'melonPrime->ShutdownRawInput\s*\(') {
+    Add-Error 'Rule AR: per-subscription hidden Raw HWND ownership is incomplete'
+}
+if ($rawWinFilterText -notmatch 'drainMessagesOnly\s*\(\s*\r?\n?\s*RawInputSubscription\*' -or
+    $rawWinFilterText -notmatch 'm_activeSubscription\.load\s*\([\s\S]*?==\s*subscription') {
+    Add-Error 'Rule AR: active Raw queue routing must stay subscription-local'
+}
+
+# AS: foreign owner transitions publish an atomic notification only; the
+# receiving EmuThread owns the plain generation and baseline mutation.
+if ($inputSubscriptionText -notmatch 'uint64_t\s+generation\s*=' -or
+    $inputSubscriptionText -notmatch 'std::atomic_bool\s+registrationResetPending' -or
+    $inputSubscriptionText -notmatch 'ConsumeRegistrationReset\s*\(' -or
+    $inputSubscriptionText -notmatch 'RequestRegistrationReset\s*\(' -or
+    $rawWinFilterText -notmatch 'RequestRegistrationReset\s*\(' -or
+    $rawWinFilterText -match 'BeginRegistrationGeneration\s*\(\s*\*previous->owner' -or
+    $updateInputBody -notmatch 'm_inputSubscription\.ConsumeRegistrationReset\s*\(') {
+    Add-Error 'Rule AS: per-subscription generation single-writer contract is incomplete'
+}
+$rawResetBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::resetAll\s*\('
+if (-not $rawResetBody -or
+    $rawResetBody -notmatch 'std::lock_guard\s*<\s*std::recursive_mutex\s*>\s+lock\s*\(\s*m_subscriptionMutex\s*\)' -or
+    $rawResetBody.IndexOf('lock_guard', [System.StringComparison]::Ordinal) -gt
+        $rawResetBody.IndexOf('drainPendingMessages', [System.StringComparison]::Ordinal)) {
+    Add-Error 'Rule AV: public Raw resetAll must serialize shared state before drain/reset'
+}
+
+# AT: a successful Win32 registration is the only route to Raw-ready state;
+# failure rolls ownership back so Qt/panel fallback remains authoritative.
+$registerBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::RegisterDevices\s*\('
+$reconfigureRawBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::ReconfigureActiveRegistration\s*\('
+if ($rawWinFilterHeaderText -notmatch '\[\[nodiscard\]\]\s+bool\s+RegisterDevices' -or
+    -not $registerBody -or
+    $registerBody -notmatch 'if\s*\(!RegisterRawInputDevices\s*\(' -or
+    $registerBody -notmatch 'GetLastError\s*\(' -or
+    $registerBody -notmatch 'm_isRegistered\s*=\s*true' -or
+    $registerBody.IndexOf('m_isRegistered = true', [System.StringComparison]::Ordinal) -lt
+        $registerBody.IndexOf('if (!RegisterRawInputDevices(', [System.StringComparison]::Ordinal) -or
+    $rawWinFilterText -notmatch 'MELONPRIME_TEST_FORCE_RAW_REGISTER_FAILURE' -or
+    $rawWinFilterText -notmatch 'if\s*\(!ReconfigureActiveRegistration\s*\(\s*subscription,\s*true\s*\)\)' -or
+    -not $reconfigureRawBody -or
+    $reconfigureRawBody -notmatch 'PlatformInputOwnerService::Release\s*\(\s*\*subscription->owner\s*\)' -or
+    $reconfigureRawBody -notmatch 'subscription->baselineReady\s*=\s*false') {
+    Add-Error 'Rule AT: Raw registration success gate and failure rollback are incomplete'
+}
+
+# AU: Qt's fractional wheel residual carries the same generation view as the
+# completed wheel mailbox, but adds no frame-hot atomic/lookup work.
+if ($wheelEventText -notmatch 'Consume\s*\(\s*\r?\n?\s*const\s+QWheelEvent&\s+event,\s*uint32_t\s+generation\s*\)' -or
+    $wheelEventText -notmatch 'm_generationInitialized' -or
+    $wheelEventText -notmatch 'm_generation\s*!=\s*generation' -or
+    $wheelEventText -notmatch 'm_angleRemainder\s*=\s*0' -or
+    $wheelEventText -match 'std::atomic') {
+    Add-Error 'Rule AU: Qt wheel residual generation boundary is incomplete'
+}
+if ($threadBridgeText -notmatch 'InputGenerationForGui\s*\(' -or
+    $screenText -notmatch 'InputGenerationForGui\s*\(' -or
+    $screenText -notmatch 'wheelSteps\.Reset\s*\(') {
+    Add-Error 'Rule AU: GUI wheel path must tag events and reset on focus/close'
+}
+
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----
 #
 # The per-instance HUD state is reached through a thread_local pointer that only

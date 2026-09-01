@@ -263,6 +263,13 @@ public:
     {
         return m_windowHandle.load(std::memory_order_acquire);
     }
+    // GUI event-path view of the same normalized generation tag used by the
+    // wheel mailbox. This is intentionally not read by the frame hot path.
+    [[nodiscard]] uint32_t InputGenerationForGui() const noexcept
+    {
+        return static_cast<uint32_t>(
+            m_inputGeneration.load(std::memory_order_acquire));
+    }
     int ConsumeWheelForEmu(uint64_t expectedGeneration = 0) noexcept
     {
         // Zero is the only empty encoding. A generation-only publication is

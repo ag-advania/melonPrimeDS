@@ -106,8 +106,10 @@ namespace MelonPrime {
             static_cast<HWND>(m_cachedHwnd));
 
         ApplyJoy2KeySupportAndQtFilter(m_flags.test(StateFlags::BIT_JOY2KEY));
-        BindMetroidHotkeysFromConfig(
+        const RawHotkeyOwnership ownership = BindMetroidHotkeysFromConfig(
             m_rawFilter.get(), m_rawInputSubscription, emuInstance->getInstanceID());
+        m_rawOwnedGameplayMask = ownership.rawOwnedGameplayMask;
+        m_qtFallbackGameplayMask = ownership.qtFallbackGameplayMask;
 #endif
     }
 

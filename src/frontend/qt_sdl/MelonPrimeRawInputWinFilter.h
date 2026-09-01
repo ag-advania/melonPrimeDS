@@ -60,19 +60,21 @@ namespace MelonPrime {
         void fetchMouseDelta(RawInputSubscription* subscription, int& outX, int& outY);
 
     private:
-        void CreateHiddenWindow();
-        void DestroyHiddenWindow();
-        void RegisterDevices(HWND target, bool useHiddenWindow);
+        [[nodiscard]] bool CreateHiddenWindow(RawInputSubscription* subscription);
+        [[nodiscard]] bool DestroyHiddenWindow(RawInputSubscription* subscription);
+        [[nodiscard]] bool RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
-        void ApplyOwnerRegistration(RawInputSubscription* subscription);
-        void ReconfigureActiveRegistration(
+        [[nodiscard]] bool ApplyOwnerRegistration(RawInputSubscription* subscription);
+        [[nodiscard]] bool ReconfigureActiveRegistration(
             RawInputSubscription* subscription, bool generationAlreadyAdvanced);
         void DeactivateActiveRegistration(RawInputSubscription* subscription);
         InputState* StateFor(RawInputSubscription* subscription) const noexcept;
         InputState* ActiveState() const noexcept;
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-        /// Drain pending WM_INPUT messages from the hidden window queue.
+        /// Drain pending WM_INPUT messages from the active subscription's
+        /// hidden window queue. The caller must be on that window's creator
+        /// thread; owner transfer skips a foreign queue and invalidates it.
         /// Used by DeferredDrain() and resetAll(). Runs processRawInputBatched
         /// (GetRawInputBuffer) before the PeekMessage loop per FIX-1.
         void drainPendingMessages() noexcept;
@@ -80,7 +82,7 @@ namespace MelonPrime {
         /// P-35 (REVERTED): PeekMessage-only drain (no GetRawInputBuffer).
         /// WARNING: Not safe for DeferredDrain — shared-buffer semantics
         /// require GetRawInputBuffer before PeekMessage. See FIX-1.
-        void drainMessagesOnly() noexcept;
+        void drainMessagesOnly(RawInputSubscription* subscription) noexcept;
 
         static std::mutex          s_serviceMutex; // process-service: singleton lifecycle lock
         static std::atomic<int>    s_refCount; // process-service: collector subscription count
@@ -92,10 +94,11 @@ namespace MelonPrime {
         std::atomic<RawInputSubscription*> m_activeSubscription{nullptr};
         std::recursive_mutex m_subscriptionMutex;
         HWND  m_hwndQtTarget;
-        HWND  m_hHiddenWnd;
         bool  m_joy2KeySupport;
         bool  m_isRegistered;
         bool  m_qtFilterInstalled = false;
+        bool  m_hiddenWindowClassRegistered = false;
+        bool  m_hiddenWindowClassOwned = false;
     };
 
 } // namespace MelonPrime

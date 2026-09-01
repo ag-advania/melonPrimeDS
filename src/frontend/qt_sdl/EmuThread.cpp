@@ -1149,6 +1149,13 @@ void EmuThread::run()
         handleMessages();
     }
 
+#ifdef MELONPRIME_DS
+    // Per-subscription Windows Raw hidden HWNDs are thread-affine. Tear them
+    // down while this EmuThread is still alive; the GUI-thread core destructor
+    // is intentionally only a final no-op for already-shutdown input.
+    melonPrime->ShutdownRawInput();
+#endif
+
 #include "MelonPrimeEmuThreadPerfShutdown.inc"
 }
 

@@ -1,6 +1,7 @@
 #ifndef MELONPRIME_WHEEL_EVENT_H
 #define MELONPRIME_WHEEL_EVENT_H
 
+#include <cstdint>
 #include <QWheelEvent>
 
 namespace MelonPrime {
@@ -15,6 +16,28 @@ namespace MelonPrime {
     public:
         [[nodiscard]] int Consume(const QWheelEvent& event) noexcept
         {
+            return ConsumeEvent(event);
+        }
+
+        // The GUI event path is the only caller that needs to observe the
+        // emulation input-generation boundary. Keeping this overload off the
+        // frame loop leaves the normal-frame cost unchanged.
+        [[nodiscard]] int Consume(
+            const QWheelEvent& event, uint32_t generation) noexcept
+        {
+            if (!m_generationInitialized || m_generation != generation) {
+                m_generation = generation;
+                m_generationInitialized = true;
+                m_angleRemainder = 0;
+            }
+            return ConsumeEvent(event);
+        }
+
+        void Reset() noexcept { m_angleRemainder = 0; }
+
+    private:
+        [[nodiscard]] int ConsumeEvent(const QWheelEvent& event) noexcept
+        {
             int angle = event.angleDelta().y();
             if (angle == 0)
                 return 0;
@@ -26,12 +49,10 @@ namespace MelonPrime {
             m_angleRemainder = total - steps * kAngleUnitsPerDetent;
             return steps;
         }
-
-        void Reset() noexcept { m_angleRemainder = 0; }
-
-    private:
         static constexpr int kAngleUnitsPerDetent = 120;
         int m_angleRemainder = 0;
+        uint32_t m_generation = 0;
+        bool m_generationInitialized = false;
     };
 
 } // namespace MelonPrime

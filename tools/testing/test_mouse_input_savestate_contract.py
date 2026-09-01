@@ -63,7 +63,7 @@ def main() -> None:
 
     reconfigure = function_body(
         raw_filter,
-        "void RawInputWinFilter::ReconfigureActiveRegistration(",
+        "bool RawInputWinFilter::ReconfigureActiveRegistration(",
         "void RawInputWinFilter::DeactivateActiveRegistration(",
     )
     for needle in (

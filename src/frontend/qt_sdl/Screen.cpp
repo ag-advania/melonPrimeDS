@@ -261,9 +261,13 @@ void ScreenPanel::wheelEvent(QWheelEvent* event)
         return;
     }
 #endif
-    const int steps = wheelSteps.Consume(*event);
+    auto* const core = melonPrimeCore();
+    const int steps = core
+        ? wheelSteps.Consume(
+            *event, core->ThreadBridge().InputGenerationForGui())
+        : wheelSteps.Consume(*event);
     if (steps != 0) {
-        if (auto* core = melonPrimeCore())
+        if (core)
             core->ThreadBridge().AddWheelFromGui(steps);
         if (emuInstance)
             emuInstance->onMouseWheel(steps);
@@ -564,6 +568,7 @@ void ScreenPanel::beginClose()
 {
     if (closing)
         return;
+    wheelSteps.Reset();
     processMelonPrimePersistRequests();
     flushMelonPrimeConfigSave();
     closing = true;
@@ -703,6 +708,7 @@ ScreenPanel::~ScreenPanel()
 {
 #ifdef MELONPRIME_DS
     if (!closing) {
+        wheelSteps.Reset();
         processMelonPrimePersistRequests();
         flushMelonPrimeConfigSave();
         if (isMelonPrimeInputSurfaceAuthority()) {
