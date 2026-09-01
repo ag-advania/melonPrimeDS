@@ -613,6 +613,53 @@ def check_windows_raw_reaudit_models() -> None:
     assert wheel.consume(-30, 21) == 0
     assert wheel.consume(-90, 21) == -1
 
+    # P2-003: a hidden-window dispatch gates physical-state recovery. The
+    # first physically-up observation schedules only the debounce follow-up;
+    # the second clears the stuck bit and returns to the idle fast path.
+    class RecoveryGate:
+        requested = False
+        mouse_down = 0b0001
+        candidate = 0
+
+        def request(self) -> None:
+            self.requested = True
+
+        def consume(self, physically_up: int) -> bool:
+            if not self.requested:
+                return False
+            self.requested = False
+            to_clear = physically_up & self.candidate
+            self.candidate = physically_up
+            self.mouse_down &= ~to_clear
+            if self.candidate & self.mouse_down:
+                self.requested = True
+            return bool(to_clear)
+
+    recovery = RecoveryGate()
+    assert not recovery.consume(0)  # idle frame: no GetAsyncKeyState scan
+    recovery.request()
+    assert not recovery.consume(1)  # first up observation, debounce retained
+    assert recovery.requested
+    assert recovery.consume(1)       # second up observation clears the bit
+    assert not recovery.requested
+    assert not recovery.consume(1)    # idle again
+
+    # P2-001/002: secondary instances reject before the shared lock, while a
+    # maybe-owner is still allowed to enter the reconciliation path.
+    locked_calls = 0
+
+    def poll(active: bool) -> None:
+        nonlocal locked_calls
+        if not active:
+            return
+        locked_calls += 1
+
+    poll(False)
+    poll(False)
+    assert locked_calls == 0
+    poll(True)
+    assert locked_calls == 1
+
 
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
@@ -635,9 +682,11 @@ def main() -> None:
     in_game = source("src/frontend/qt_sdl/MelonPrimeInGame.cpp")
     raw_filter = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp")
     raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
+    raw_perf = source("src/frontend/qt_sdl/MelonPrimeRawInputPerfProbe.h")
     raw_hotkey = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.cpp")
     raw_hotkey_header = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.h")
     raw_hotkey_mapping = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkMapping.cpp")
+    raw_hotkey_mapping_header = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkMapping.h")
     raw_hotkey_mapping_test = source("tools/testing/raw-hotkey-vk-mapping-tests.cpp")
     qt_sdl_cmake = source("src/frontend/qt_sdl/CMakeLists.txt")
     input_subscription = source("src/frontend/qt_sdl/MelonPrimeInputSubscription.h")
@@ -713,6 +762,31 @@ def main() -> None:
         raw_state_cpp,
         "void InputState::snapshotInputFrameNoEdges(",
         "bool InputState::hotkeyDown",
+    )
+    raw_update_owner = body(
+        raw_filter,
+        "bool RawInputWinFilter::UpdateOwner(",
+        "bool RawInputWinFilter::ReconfigureActiveRegistration(",
+    )
+    raw_poll = body(
+        raw_filter,
+        "void RawInputWinFilter::PollAndSnapshot(",
+        "void RawInputWinFilter::PollAndSnapshotNoEdges(",
+    )
+    raw_poll_no_edges = body(
+        raw_filter,
+        "void RawInputWinFilter::PollAndSnapshotNoEdges(",
+        "void RawInputWinFilter::DeferredDrain(",
+    )
+    raw_deferred = body(
+        raw_filter,
+        "void RawInputWinFilter::DeferredDrain(",
+        "void RawInputWinFilter::LateLatchMouseDelta(",
+    )
+    raw_late = body(
+        raw_filter,
+        "void RawInputWinFilter::LateLatchMouseDelta(",
+        "void RawInputWinFilter::setJoy2KeySupport(",
     )
     raw_claim = body(
         raw_state_cpp,
@@ -1119,6 +1193,75 @@ def main() -> None:
     ):
         require(game_input, needle, "Raw/Qt ownership merge")
     require(core + lifecycle, "m_rawOwnedGameplayMask = ownership.rawOwnedGameplayMask", "ownership publication")
+
+    # AW+: inactive Raw consumers and non-owner false updates must not touch
+    # the process-wide recursive mutex. Every maybe-owner path retains a
+    # locked revalidation before reading mutable subscription state.
+    require(raw_filter_header, "MelonPrimeRawInputPerfProbe.h", "Raw perf probe include")
+    for name, text_value in (
+        ("PollAndSnapshot", raw_poll),
+        ("PollAndSnapshotNoEdges", raw_poll_no_edges),
+        ("DeferredDrain", raw_deferred),
+        ("LateLatchMouseDelta", raw_late),
+    ):
+        require(text_value, "m_activeSubscription.load(std::memory_order_acquire)", f"{name} active precheck")
+        require(text_value, "RawInputPerf::SubscriptionMutexGuard", f"{name} measured lock")
+        if text_value.index("m_activeSubscription.load(std::memory_order_acquire)") > text_value.index("RawInputPerf::SubscriptionMutexGuard"):
+            raise AssertionError(f"{name} must precheck active ownership before locking")
+    require(raw_update_owner, "if (!eligible)", "UpdateOwner ineligible branch")
+    require(raw_update_owner, "const bool rawOwner", "UpdateOwner Raw authority precheck")
+    require(raw_update_owner, "const bool platformOwner", "UpdateOwner platform authority precheck")
+    require(raw_update_owner, "if (LIKELY(!rawOwner && !platformOwner))", "UpdateOwner lock-free false path")
+    if raw_update_owner.index("if (LIKELY(!rawOwner && !platformOwner))") > raw_update_owner.index("RawInputPerf::SubscriptionMutexGuard"):
+        raise AssertionError("UpdateOwner false fast path must precede the mutex")
+    for needle in (
+        "static int                 s_refCount",
+        "s_refCount++",
+        "--s_refCount",
+    ):
+        require(raw_filter_header + raw_filter, needle, "cold Raw refCount synchronization")
+
+    # AW+: physical-state recovery is event-gated and observable. The hidden
+    # dispatch remains the only producer of the recovery request; the batch
+    # syscall and AsyncKeyState calls are counted only in the developer probe.
+    for needle in (
+        "m_stuckRecoveryNeeded",
+        "RequestStuckRecovery()",
+        "consumeStuckRecovery()",
+        "m_stuckRecoveryNeeded.load(std::memory_order_relaxed)",
+        "m_stuckRecoveryNeeded.exchange(false, std::memory_order_acq_rel)",
+        "RawInputPerf::CountStuckRecovery",
+    ):
+        require(raw_state_header + raw_state_cpp, needle, "event-gated stuck recovery")
+    for needle in (
+        "state->RequestStuckRecovery()",
+        "RawInputPerf::CountHiddenWindowDispatch()",
+        "RawInputPerf::RawBufferScope",
+        "RawInputPerf::CountGetAsyncKeyState",
+    ):
+        require(raw_filter + raw_state_cpp, needle, "Raw recovery telemetry")
+    if raw_state_cpp.count("::GetAsyncKeyState(") != 1:
+        raise AssertionError("all Raw GetAsyncKeyState calls must pass the telemetry wrapper")
+    for needle in (
+        "MELONPRIME_RAW_INPUT_PERF",
+        "MELONPRIME_PERF",
+        "mutexAcquisitions",
+        "rawBufferCalls",
+        "getAsyncKeyStateCalls",
+        "MaybeReport",
+    ):
+        require(raw_perf, needle, "Raw performance telemetry")
+
+    # AW+: fixed-capacity VK mapping must turn overflow into a whole-list
+    # fallback rather than silently binding a prefix.
+    for needle in (
+        "bool push_back(UINT vk) noexcept",
+        "overflowedFlag",
+        "count = 0",
+        "bool overflowed() const noexcept",
+    ):
+        require(raw_hotkey_mapping_header + raw_hotkey_mapping_test, needle, "SmallVkList overflow contract")
+    require(raw_hotkey_mapping_test, "SmallVkList::kCapacity;", "SmallVkList overflow test")
 
     # AR: hidden Raw windows are subscription-local and routed by HWND user
     # data. The active owner never drains/destroys a foreign creator's queue.

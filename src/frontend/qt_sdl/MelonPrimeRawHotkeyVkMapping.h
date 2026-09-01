@@ -18,14 +18,26 @@ struct SmallVkList {
     std::array<UINT, kCapacity> data{};
     std::uint8_t count = 0;
 
-    void push_back(UINT vk) {
-        if (count < kCapacity)
-            data[count++] = vk;
+    bool push_back(UINT vk) noexcept {
+        // Never expose a partial mapping. If a future exact mapping needs
+        // more than the fixed stack capacity, make the whole binding empty so
+        // the caller selects the canonical Qt fallback path.
+        if (overflowedFlag || count >= kCapacity) {
+            overflowedFlag = true;
+            count = 0;
+            return false;
+        }
+        data[count++] = vk;
+        return true;
     }
-    [[nodiscard]] bool empty() const { return count == 0; }
-    [[nodiscard]] std::size_t size() const { return count; }
-    [[nodiscard]] const UINT* begin() const { return data.data(); }
-    [[nodiscard]] const UINT* end() const { return data.data() + count; }
+    [[nodiscard]] bool empty() const noexcept { return count == 0; }
+    [[nodiscard]] std::size_t size() const noexcept { return count; }
+    [[nodiscard]] bool overflowed() const noexcept { return overflowedFlag; }
+    [[nodiscard]] const UINT* begin() const noexcept { return data.data(); }
+    [[nodiscard]] const UINT* end() const noexcept { return data.data() + count; }
+
+private:
+    bool overflowedFlag = false;
 };
 
 // Qt key code -> VK code(s), stack-allocated. This small pure mapping unit is

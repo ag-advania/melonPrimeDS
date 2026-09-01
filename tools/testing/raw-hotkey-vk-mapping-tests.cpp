@@ -74,6 +74,14 @@ int main()
     if (!ExpectExact("F25 fallback", MapQtKeyIntToVks(Qt::Key_F25), {}))
         return 1;
 
+    MelonPrime::SmallVkList overflow;
+    for (std::size_t i = 0; i <= MelonPrime::SmallVkList::kCapacity; ++i)
+        (void)overflow.push_back(VK_F1 + static_cast<UINT>(i));
+    if (!overflow.overflowed() || !overflow.empty()) {
+        std::cerr << "SmallVkList overflow must select whole-mapping fallback\n";
+        return 1;
+    }
+
     std::cout << "raw-hotkey-vk-mapping-tests: PASS\n";
     return 0;
 }

@@ -1626,7 +1626,9 @@ $rawWinFilterHeaderPath = Join-Path $qtSdl 'MelonPrimeRawInputWinFilter.h'
 $rawHotkeyPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkBinding.cpp'
 $rawHotkeyHeaderPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkBinding.h'
 $rawHotkeyMappingPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkMapping.cpp'
+$rawHotkeyMappingHeaderPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkMapping.h'
 $rawHotkeyMappingTestPath = Join-Path $repoRoot 'tools/testing/raw-hotkey-vk-mapping-tests.cpp'
+$rawInputPerfPath = Join-Path $qtSdl 'MelonPrimeRawInputPerfProbe.h'
 $qtSdlCmakePath = Join-Path $qtSdl 'CMakeLists.txt'
 $inputSubscriptionPath = Join-Path $qtSdl 'MelonPrimeInputSubscription.h'
 $wheelEventPath = Join-Path $qtSdl 'MelonPrimeWheelEvent.h'
@@ -1635,7 +1637,9 @@ $rawWinFilterHeaderText = Get-Content -LiteralPath $rawWinFilterHeaderPath -Raw
 $rawHotkeyText = Get-Content -LiteralPath $rawHotkeyPath -Raw
 $rawHotkeyHeaderText = Get-Content -LiteralPath $rawHotkeyHeaderPath -Raw
 $rawHotkeyMappingText = Get-Content -LiteralPath $rawHotkeyMappingPath -Raw
+$rawHotkeyMappingHeaderText = Get-Content -LiteralPath $rawHotkeyMappingHeaderPath -Raw
 $rawHotkeyMappingTestText = Get-Content -LiteralPath $rawHotkeyMappingTestPath -Raw
+$rawInputPerfText = Get-Content -LiteralPath $rawInputPerfPath -Raw
 $qtSdlCmakeText = Get-Content -LiteralPath $qtSdlCmakePath -Raw
 $inputSubscriptionText = Get-Content -LiteralPath $inputSubscriptionPath -Raw
 $wheelEventText = Get-Content -LiteralPath $wheelEventPath -Raw
@@ -1768,6 +1772,94 @@ if (-not $shutdownRawBody -or
     -not $unsubscribeRawBody -or
     $unsubscribeRawBody -notmatch 'PlatformInputOwnerService::Release') {
     Add-Error 'Rule AW: Raw teardown release/deactivate ownership is duplicated or missing'
+}
+
+# AX: the frame-hot Raw readers reject inactive subscriptions before touching
+# the process-wide recursive mutex, but every maybe-owner path still performs
+# the authoritative revalidation after acquiring it.
+$rawUpdateOwnerBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::UpdateOwner\s*\('
+$rawPollBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::PollAndSnapshot\s*\('
+$rawPollNoEdgesBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::PollAndSnapshotNoEdges\s*\('
+$rawDeferredBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::DeferredDrain\s*\('
+$rawLateLatchBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::LateLatchMouseDelta\s*\('
+foreach ($rawHotBodySpec in @(
+    @{ Name = 'PollAndSnapshot'; Body = $rawPollBody },
+    @{ Name = 'PollAndSnapshotNoEdges'; Body = $rawPollNoEdgesBody },
+    @{ Name = 'DeferredDrain'; Body = $rawDeferredBody },
+    @{ Name = 'LateLatchMouseDelta'; Body = $rawLateLatchBody }
+)) {
+    $body = $rawHotBodySpec.Body
+    $precheckAt = if ($body) {
+        $body.IndexOf('m_activeSubscription.load(std::memory_order_acquire)',
+            [System.StringComparison]::Ordinal)
+    } else { -1 }
+    $lockAt = if ($body) {
+        $body.IndexOf('RawInputPerf::SubscriptionMutexGuard',
+            [System.StringComparison]::Ordinal)
+    } else { -1 }
+    if (-not $body -or $precheckAt -lt 0 -or $lockAt -lt 0 -or $precheckAt -gt $lockAt) {
+        Add-Error "Rule AX: $($rawHotBodySpec.Name) must precheck active Raw ownership before its mutex"
+    }
+}
+if (-not $rawUpdateOwnerBody -or
+    $rawUpdateOwnerBody -notmatch 'if\s*\(\s*!eligible\s*\)' -or
+    $rawUpdateOwnerBody -notmatch 'const\s+bool\s+rawOwner' -or
+    $rawUpdateOwnerBody -notmatch 'const\s+bool\s+platformOwner' -or
+    $rawUpdateOwnerBody -notmatch 'if\s*\(\s*LIKELY\(\s*!rawOwner\s*&&\s*!platformOwner\s*\)\s*\)' -or
+    $rawUpdateOwnerBody.IndexOf('LIKELY(!rawOwner && !platformOwner)', [System.StringComparison]::Ordinal) -gt
+        $rawUpdateOwnerBody.IndexOf('RawInputPerf::SubscriptionMutexGuard', [System.StringComparison]::Ordinal)) {
+    Add-Error 'Rule AX: non-owner UpdateOwner false path must remain lock-free'
+}
+
+# AY: the stuck-state recovery is event-gated and the expensive Windows calls
+# are measurable. The hidden WM_INPUT dispatch is the producer of the gate;
+# the batch drain ordering remains intact as a correctness requirement.
+if ($rawInputStateText -notmatch 'std::atomic_bool\s+m_stuckRecoveryNeeded' -or
+    $rawInputStateText -notmatch 'RequestStuckRecovery\s*\(\)' -or
+    $rawInputStateText -notmatch 'consumeStuckRecovery\s*\(\)' -or
+    $rawInputStateCppText -notmatch 'm_stuckRecoveryNeeded\.load\s*\(\s*std::memory_order_relaxed\s*\)' -or
+    $rawInputStateCppText -notmatch 'm_stuckRecoveryNeeded\.exchange\s*\(\s*false\s*,\s*std::memory_order_acq_rel\s*\)' -or
+    $rawInputStateCppText -notmatch 'RawInputPerf::CountStuckRecovery' -or
+    $rawWinFilterText -notmatch 'state->RequestStuckRecovery\s*\(\)' -or
+    $rawWinFilterText -notmatch 'RawInputPerf::CountHiddenWindowDispatch\s*\(\)' -or
+    $rawBatchedBody -notmatch 'RawInputPerf::RawBufferScope' -or
+    $rawInputStateCppText -notmatch 'RawInputPerf::CountGetAsyncKeyState\s*\(\)') {
+    Add-Error 'Rule AY: event-gated Raw recovery and telemetry are incomplete'
+}
+if ([regex]::Matches($rawInputStateCppText, '::GetAsyncKeyState\s*\(').Count -ne 1) {
+    Add-Error 'Rule AY: Raw GetAsyncKeyState calls must pass one telemetry wrapper'
+}
+if ($rawInputPerfText -notmatch 'MELONPRIME_RAW_INPUT_PERF' -or
+    $rawInputPerfText -notmatch 'MELONPRIME_PERF' -or
+    $rawInputPerfText -notmatch 'mutexAcquisitions' -or
+    $rawInputPerfText -notmatch 'rawBufferCalls' -or
+    $rawInputPerfText -notmatch 'getAsyncKeyStateCalls' -or
+    $rawInputPerfText -notmatch 'MaybeReport') {
+    Add-Error 'Rule AY: Raw performance counters/reporting are incomplete'
+}
+
+# AZ: a fixed-capacity mapping failure is a whole-list Qt fallback, never a
+# silently truncated Raw prefix.
+if ($rawHotkeyMappingHeaderText -notmatch 'bool\s+push_back\s*\(\s*UINT\s+vk\s*\)\s+noexcept' -or
+    $rawHotkeyMappingHeaderText -notmatch 'overflowedFlag' -or
+    $rawHotkeyMappingHeaderText -notmatch 'count\s*=\s*0' -or
+    $rawHotkeyMappingHeaderText -notmatch 'bool\s+overflowed\s*\(\)\s+const\s+noexcept' -or
+    $rawHotkeyMappingTestText -notmatch 'SmallVkList::kCapacity' -or
+    $rawHotkeyMappingTestText -notmatch 'overflowed\(\)') {
+    Add-Error 'Rule AZ: SmallVkList overflow must select the complete Qt fallback'
+}
+
+# BA: refCount is protected by its existing cold service mutex; an additional
+# atomic RMW would only duplicate synchronization on Acquire/Release.
+if ($rawWinFilterHeaderText -notmatch 'static\s+int\s+s_refCount' -or
+    $rawWinFilterText -notmatch 's_refCount\+\+' -or
+    $rawWinFilterText -notmatch '--s_refCount') {
+    Add-Error 'Rule BA: Raw service refCount must use one cold mutex authority'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

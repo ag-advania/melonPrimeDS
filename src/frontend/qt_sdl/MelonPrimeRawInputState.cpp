@@ -23,6 +23,12 @@ namespace MelonPrime {
         return static_cast<int64_t>(static_cast<SHORT>(rawData));
     }
 
+    [[nodiscard]] FORCE_INLINE SHORT RawInputGetAsyncKeyState(int vk) noexcept
+    {
+        RawInputPerf::CountGetAsyncKeyState();
+        return ::GetAsyncKeyState(vk);
+    }
+
     std::array<InputState::BtnLutEntry, 1024> InputState::s_btnLut;
     std::array<InputState::VkRemapEntry, 256> InputState::s_vkRemap;
     std::array<uint16_t, 512> InputState::s_makeCodeLut;
@@ -195,8 +201,12 @@ namespace MelonPrime {
         for (;;) {
             UINT size = sizeof(buffer);
             uint8_t* batchBuffer = buffer;
-            UINT count = s_fnBestGetRawInputBuffer(
-                reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
+            UINT count = 0;
+            {
+                RawInputPerf::RawBufferScope perfScope;
+                count = s_fnBestGetRawInputBuffer(
+                    reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
+            }
             std::unique_ptr<uint8_t[]> overflowBuffer;
             if (UNLIKELY(count == UINT(-1))) {
                 if (size <= sizeof(buffer)) break;
@@ -206,8 +216,12 @@ namespace MelonPrime {
 
                 batchBuffer = overflowBuffer.get();
                 UINT retrySize = size;
-                count = s_fnBestGetRawInputBuffer(
-                    reinterpret_cast<PRAWINPUT>(batchBuffer), &retrySize, sizeof(RAWINPUTHEADER));
+                {
+                    RawInputPerf::RawBufferScope perfScope;
+                    count = s_fnBestGetRawInputBuffer(
+                        reinterpret_cast<PRAWINPUT>(batchBuffer), &retrySize,
+                        sizeof(RAWINPUTHEADER));
+                }
             }
             if (count == 0 || count == UINT(-1)) break;
 
@@ -321,6 +335,7 @@ namespace MelonPrime {
         m_accumWheelUnits120.store(0, std::memory_order_relaxed);
         m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
+        m_stuckRecoveryNeeded.store(false, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -332,6 +347,7 @@ namespace MelonPrime {
         m_accumWheelUnits120.store(0, std::memory_order_release);
         m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
+        m_stuckRecoveryNeeded.store(false, std::memory_order_relaxed);
     }
 
     // =========================================================================
@@ -350,6 +366,7 @@ namespace MelonPrime {
         m_accumWheelUnits120.store(0, std::memory_order_relaxed);
         m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
+        m_stuckRecoveryNeeded.store(false, std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -470,7 +487,8 @@ namespace MelonPrime {
         // as physically-up.
         uint8_t physUp = 0;
         for (int i = 0; i < 5; ++i) {
-            if (((cur >> i) & 1u) && !(GetAsyncKeyState(kBitToVk[i]) & 0x8000)) {
+            if (((cur >> i) & 1u)
+                && !(RawInputGetAsyncKeyState(kBitToVk[i]) & 0x8000)) {
                 physUp |= static_cast<uint8_t>(1u << i);
             }
         }
@@ -525,7 +543,7 @@ namespace MelonPrime {
                 bits &= bits - 1;
                 const UINT vk = static_cast<UINT>(w * 64 + bit);
                 if (vk == 0) continue;
-                if (!(GetAsyncKeyState(static_cast<int>(vk)) & 0x8000)) {
+                if (!(RawInputGetAsyncKeyState(static_cast<int>(vk)) & 0x8000)) {
                     cleared &= ~(1ULL << bit);
                 }
             }
@@ -697,27 +715,47 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-48: clearStuckPostFrame — stuck-state recovery off the critical path.
-    //
-    // Runs the GetAsyncKeyState recovery scans (clearStuckMouseButtons +
-    // clearStuckKeys) AFTER RunFrame/drawScreen instead of inside
-    // snapshotInputFrame. Semantics are unchanged:
-    //   - The scans still run after the frame's snapshot was taken, so valid
-    //     quick presses were already captured before any clearing.
-    //   - Stuck bits are still cleared before the NEXT snapshot — one frame
-    //     of false-fire from a stuck button remains preferable to silently
-    //     dropping a genuine click.
-    //   - The two-consecutive-check debounce (m_mouseStuckCandidate) keeps
-    //     its once-per-frame cadence.
-    //   - If recovery cleared stale bits, edge tracking is realigned with the
-    //     post-recovery held state (same realignment snapshotInputFrame did).
-    // =========================================================================
-    void InputState::clearStuckPostFrame() noexcept {
+    void InputState::RequestStuckRecovery() noexcept
+    {
+        m_stuckRecoveryNeeded.store(true, std::memory_order_release);
+    }
+
+    // Consume one hidden-window recovery request. The normal case is a
+    // relaxed load followed by an immediate return. If the mouse debounce
+    // needs a second consecutive physical-up observation, retain the request
+    // for the next post-frame boundary; this avoids scanning every idle frame
+    // while still preserving the two-check stuck-button guarantee.
+    bool InputState::consumeStuckRecovery() noexcept
+    {
+        if (LIKELY(!m_stuckRecoveryNeeded.load(std::memory_order_relaxed)))
+            return false;
+        if (!m_stuckRecoveryNeeded.exchange(false, std::memory_order_acq_rel))
+            return false;
+
         const bool clearedMouse = clearStuckMouseButtons();
         const bool clearedKeys = clearStuckKeys();
-        if (UNLIKELY(clearedMouse || clearedKeys)) {
+        const uint8_t pendingMouse = static_cast<uint8_t>(
+            m_mouseButtons.load(std::memory_order_relaxed) & m_mouseStuckCandidate);
+        if (pendingMouse)
+            m_stuckRecoveryNeeded.store(true, std::memory_order_release);
+
+        RawInputPerf::CountStuckRecovery(clearedMouse || clearedKeys);
+        return clearedMouse || clearedKeys;
+    }
+
+    // =========================================================================
+    // P-48: clearStuckPostFrame — event-gated recovery off the critical path.
+    //
+    // Runs the GetAsyncKeyState recovery scans (clearStuckMouseButtons +
+    // clearStuckKeys) AFTER RunFrame/drawScreen instead of inside every
+    // snapshot. Hidden-window WM_INPUT dispatch requests the scan because that
+    // is the path that can reintroduce stale GetRawInputData state. Idle frames
+    // therefore perform no physical-state syscalls. A pending mouse debounce
+    // candidate retains one follow-up request when needed.
+    // =========================================================================
+    void InputState::clearStuckPostFrame() noexcept {
+        if (UNLIKELY(consumeStuckRecovery()))
             m_hkPrev = scanBoundHotkeys(takeSnapshot());
-        }
     }
 
     // =========================================================================
@@ -732,9 +770,10 @@ namespace MelonPrime {
     {
         // No-edge snapshots are used only by re-entrant frame advances. They
         // should reflect physical held state, not the one-frame click cache.
-        // Clear stale held bits first.
-        (void)clearStuckMouseButtons();
-        (void)clearStuckKeys();
+        // Clear stale held bits first, but only when a hidden-window dispatch
+        // requested recovery. This re-entrant path must not restore a
+        // per-frame GetAsyncKeyState scan on the input latency path.
+        (void)consumeStuckRecovery();
 
         auto snap = takeSnapshot();  // acquire fence inside
 
@@ -780,7 +819,7 @@ namespace MelonPrime {
     void InputState::syncPhysicalState() noexcept {
         uint64_t words[4] = {};
         for (UINT vk = 7; vk < 256; ++vk) {
-            if (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000)
+            if (RawInputGetAsyncKeyState(static_cast<int>(vk)) & 0x8000)
                 words[vk >> 6] |= 1ULL << (vk & 63);
         }
         for (int i = 0; i < 4; ++i)
@@ -791,7 +830,7 @@ namespace MelonPrime {
         };
         uint8_t mouse = 0;
         for (int i = 0; i < 5; ++i) {
-            if (GetAsyncKeyState(static_cast<int>(kMouseVks[i])) & 0x8000)
+            if (RawInputGetAsyncKeyState(static_cast<int>(kMouseVks[i])) & 0x8000)
                 mouse |= static_cast<uint8_t>(1u << i);
         }
         m_mouseButtons.store(mouse, std::memory_order_relaxed);

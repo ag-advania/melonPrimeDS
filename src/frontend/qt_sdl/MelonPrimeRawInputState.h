@@ -10,6 +10,7 @@
 #include <mutex>
 #include "MelonPrimeCompilerHints.h"   // Shared macros (was duplicated inline)
 #include "MelonPrimeRawWinInternal.h"
+#include "MelonPrimeRawInputPerfProbe.h"
 
 namespace MelonPrime {
 
@@ -82,8 +83,13 @@ namespace MelonPrime {
         // clearStuckKeys + edge realignment on clear). Called from
         // RawInputWinFilter::DeferredDrain after drawScreen so the
         // GetAsyncKeyState syscalls stay off the input→RunFrame latency path.
-        // Consumer (emu) thread only.
+        // Hidden-window dispatch requests the scan; one follow-up may be
+        // scheduled for the mouse two-check debounce. Consumer (emu) thread
+        // only consumes the request.
         void clearStuckPostFrame() noexcept;
+        // Called after a hidden-window WM_INPUT dispatch. This is a one-bit
+        // mailbox, so idle frames do not enter the physical-state syscall path.
+        void RequestStuckRecovery() noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
         void syncPhysicalState() noexcept;
@@ -188,6 +194,9 @@ namespace MelonPrime {
         // physically-up on two consecutive checks, so a single transient
         // GetAsyncKeyState miss does not drop a held button (charge-hold fix).
         uint8_t m_mouseStuckCandidate{ 0 };
+        // Set by HiddenWndProc and consumed by the owner thread after the
+        // frame. The debounce candidate may request one follow-up scan.
+        std::atomic_bool m_stuckRecoveryNeeded{ false };
 
         int64_t m_lastReadMouseX{ 0 };
         int64_t m_lastReadMouseY{ 0 };
@@ -246,6 +255,10 @@ namespace MelonPrime {
         // Producer threads accumulate signed Windows RAWINPUT wheel units.
         // Only the consumer converts them to detents at the frame boundary.
         [[nodiscard]] FORCE_INLINE int claimWheelSteps() noexcept;
+
+        // Consume a requested post-frame recovery and preserve the mouse
+        // debounce follow-up without reintroducing an unconditional scan.
+        [[nodiscard]] bool consumeStuckRecovery() noexcept;
     };
 
 } // namespace MelonPrime

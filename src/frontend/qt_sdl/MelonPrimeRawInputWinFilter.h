@@ -9,6 +9,7 @@
 #include <mutex>
 #include <QAbstractNativeEventFilter>
 #include "MelonPrimeRawWinInternal.h"
+#include "MelonPrimeRawInputPerfProbe.h"
 
 namespace MelonPrime {
 
@@ -85,7 +86,7 @@ namespace MelonPrime {
         void drainMessagesOnly(RawInputSubscription* subscription) noexcept;
 
         static std::mutex          s_serviceMutex; // process-service: singleton lifecycle lock
-        static std::atomic<int>    s_refCount; // process-service: collector subscription count
+        static int                 s_refCount; // process-service: collector subscription count under s_serviceMutex
         static RawInputWinFilter* s_instance; // process-service: OS event collector
         static std::once_flag      s_initFlag; // process-service: immutable API resolution
         static void InitializeApiFuncs();
