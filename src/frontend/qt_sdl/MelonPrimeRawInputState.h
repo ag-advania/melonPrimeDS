@@ -52,6 +52,11 @@ namespace MelonPrime {
         void resetAll() noexcept;
 
         static constexpr size_t kMaxHotkeyId = 64;
+        // The usual Raw batch fits in the stack-local fast buffer. A bounded,
+        // process-service retry buffer handles a delayed/stalled queue without
+        // allocating from the input frame. If the queue exceeds this bound,
+        // GetRawInputBuffer leaves it queued for a later drain attempt.
+        static constexpr size_t kBatchOverflowBufferSize = 64 * 1024;
 
         // Primary interface: pointer + count (zero-allocation path)
         void setHotkeyVks(int id, const UINT* vks, size_t count);
@@ -196,7 +201,13 @@ namespace MelonPrime {
         uint8_t m_mouseStuckCandidate{ 0 };
         // Set by HiddenWndProc and consumed by the owner thread after the
         // frame. The debounce candidate may request one follow-up scan.
-        std::atomic_bool m_stuckRecoveryNeeded{ false };
+        //
+        // Thread contract: the hidden HWND is created on the emulation thread,
+        // its WM_INPUT callback is accepted only on that creator thread, and
+        // clearStuckPostFrame/resetAll run on that same emulation thread. This
+        // is deliberately a plain mailbox; restore an atomic if a cross-thread
+        // recovery producer is ever introduced.
+        bool m_stuckRecoveryNeeded = false;
 
         int64_t m_lastReadMouseX{ 0 };
         int64_t m_lastReadMouseY{ 0 };
@@ -218,6 +229,10 @@ namespace MelonPrime {
         static uint16_t s_scancodeRShift; // process-service: immutable after call_once
         static std::once_flag s_initFlag; // process-service: table initialization
         static NtUserGetRawInputBuffer_t s_fnBestGetRawInputBuffer; // process-service: immutable API pointer
+        // All processRawInputBatched callers hold RawInputWinFilter's process
+        // mutex, so this scratch is shared safely by all subscriptions. It is
+        // fixed-size to keep the input frame allocation-free.
+        alignas(64) static std::array<uint8_t, kBatchOverflowBufferSize> s_batchOverflowBuffer;
 
         // =================================================================
         // Inline Helpers

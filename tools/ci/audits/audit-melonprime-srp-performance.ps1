@@ -1819,11 +1819,13 @@ if (-not $rawUpdateOwnerBody -or
 # AY: the stuck-state recovery is event-gated and the expensive Windows calls
 # are measurable. The hidden WM_INPUT dispatch is the producer of the gate;
 # the batch drain ordering remains intact as a correctness requirement.
-if ($rawInputStateText -notmatch 'std::atomic_bool\s+m_stuckRecoveryNeeded' -or
+if ($rawInputStateText -notmatch 'bool\s+m_stuckRecoveryNeeded\s*=\s*false' -or
+    $rawInputStateText -match 'std::atomic_bool\s+m_stuckRecoveryNeeded' -or
     $rawInputStateText -notmatch 'RequestStuckRecovery\s*\(\)' -or
     $rawInputStateText -notmatch 'consumeStuckRecovery\s*\(\)' -or
-    $rawInputStateCppText -notmatch 'm_stuckRecoveryNeeded\.load\s*\(\s*std::memory_order_relaxed\s*\)' -or
-    $rawInputStateCppText -notmatch 'm_stuckRecoveryNeeded\.exchange\s*\(\s*false\s*,\s*std::memory_order_acq_rel\s*\)' -or
+    $rawInputStateCppText -notmatch 'm_stuckRecoveryNeeded\s*=\s*true' -or
+    $rawInputStateCppText -notmatch 'm_stuckRecoveryNeeded\s*=\s*false' -or
+    $rawInputStateCppText -match 'm_stuckRecoveryNeeded\.(?:load|exchange|store)\s*\(' -or
     $rawInputStateCppText -notmatch 'RawInputPerf::CountStuckRecovery' -or
     $rawWinFilterText -notmatch 'state->RequestStuckRecovery\s*\(\)' -or
     $rawWinFilterText -notmatch 'RawInputPerf::CountHiddenWindowDispatch\s*\(\)' -or
@@ -1860,6 +1862,47 @@ if ($rawWinFilterHeaderText -notmatch 'static\s+int\s+s_refCount' -or
     $rawWinFilterText -notmatch 's_refCount\+\+' -or
     $rawWinFilterText -notmatch '--s_refCount') {
     Add-Error 'Rule BA: Raw service refCount must use one cold mutex authority'
+}
+
+# BB: re-entrant NoEdges is observational only. Recovery consumption, physical
+# state queries, debounce mutation, and the hotkey baseline belong to the outer
+# post-frame owner; NoEdges must not re-enter any of them.
+if (-not $rawNoEdgesBody -or
+    $rawNoEdgesBody -match 'consumeStuckRecovery\s*\(' -or
+    $rawNoEdgesBody -match 'clearStuck(?:MouseButtons|Keys)\s*\(' -or
+    $rawNoEdgesBody -match '(?:RawInput)?GetAsyncKeyState\s*\(' -or
+    $rawNoEdgesBody -notmatch 'outHk\.pressed\s*=\s*0' -or
+    $rawNoEdgesBody -notmatch 'outWheelSteps\s*=\s*0' -or
+    $rawNoEdgesBody -notmatch 'outHk\.wheelSteps\s*=\s*0' -or
+    ([regex]::Matches($rawInputStateCppText, 'if\s*\(\s*UNLIKELY\(\s*consumeStuckRecovery\s*\(\s*\)\s*\)\s*\)')).Count -ne 1) {
+    Add-Error 'Rule BB: re-entrant NoEdges must be pure and recovery must have one post-frame consumer'
+}
+
+# BC: recovery is a same-EmuThread plain mailbox. The hidden HWND captures its
+# creator thread, HiddenWndProc checks that identity before producing the bit,
+# and lifecycle/frame consumers remain on the EmuThread call path.
+if ($rawWinFilterText -notmatch 'const\s+DWORD\s+currentThreadId\s*=\s*GetCurrentThreadId\s*\(\s*\)' -or
+    $rawWinFilterText -notmatch 'subscription->hiddenWindowCreatorThreadId\s*=\s*currentThreadId' -or
+    $rawWinFilterText -notmatch 'subscription->hiddenWindow\s*==\s*hwnd' -or
+    $rawWinFilterText -notmatch 'subscription->hiddenWindowCreatorThreadId\s*==\s*GetCurrentThreadId\s*\(\s*\)' -or
+    ([regex]::Matches($rawWinFilterText, 'state->RequestStuckRecovery\s*\(\)')).Count -ne 1 -or
+    $rawWinFilterText -notmatch 'state->clearStuckPostFrame\s*\(\s*\)' -or
+    $coreLifecycleText -notmatch 'm_rawFilter->DeferredDrain\s*\(\s*m_rawInputSubscription\s*\)' -or
+    $coreLifecycleText -notmatch 'm_rawFilter->resetAll\s*\(\s*m_rawInputSubscription\s*\)') {
+    Add-Error 'Rule BC: same-thread Raw recovery ownership proof is incomplete'
+}
+
+# BD: a stalled Raw queue uses a bounded process-service scratch retry. The
+# queue remains pending above the bound, so the frame-hot batch parser has no
+# dynamic allocation fallback.
+if ($rawInputStateText -notmatch 'kBatchOverflowBufferSize\s*=\s*64\s*\*\s*1024' -or
+    $rawInputStateText -notmatch 's_batchOverflowBuffer' -or
+    $rawBatchedBody -notmatch 'if\s*\(\s*size\s*>\s*kBatchOverflowBufferSize\s*\)\s*break\s*;' -or
+    $rawBatchedBody -notmatch 's_batchOverflowBuffer\.data\s*\(\s*\)' -or
+    $rawBatchedBody -notmatch 'retrySize\s*=\s*static_cast<UINT>\(s_batchOverflowBuffer\.size\s*\(\s*\)\)' -or
+    $rawBatchedBody -match 'std::unique_ptr\s*<\s*uint8_t\s*\[\s*\]\s*>' -or
+    $rawBatchedBody -match 'new\s*\(\s*std::nothrow\s*\)\s+uint8_t') {
+    Add-Error 'Rule BD: Raw batch overflow must use bounded fixed scratch with no hot allocation'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

@@ -644,6 +644,50 @@ def check_windows_raw_reaudit_models() -> None:
     assert not recovery.requested
     assert not recovery.consume(1)    # idle again
 
+    # P1-001: a re-entrant no-edge snapshot is observational only. It may see
+    # the stale held state before the post-frame recovery runs, but it cannot
+    # consume the request or advance the hotkey baseline. After recovery clears
+    # the stale bit, a release/re-press before the next outer frame is exactly
+    # one fresh edge; nested snapshots do not add a second mouse check.
+    class ReentrantRecoveryModel:
+        hk_prev = 0b0001
+        logical_down = 0b0001
+        requested = False
+        mouse_checks = 0
+
+        def request(self) -> None:
+            self.requested = True
+
+        def no_edges(self) -> int:
+            observed = self.logical_down
+            assert self.requested
+            assert self.hk_prev == 0b0001
+            return observed
+
+        def post_frame(self, physical_down: int) -> None:
+            if not self.requested:
+                return
+            self.requested = False
+            self.mouse_checks += 1
+            self.logical_down = physical_down
+            self.hk_prev = physical_down
+
+        def outer_frame(self, physical_down: int) -> int:
+            pressed = physical_down & ~self.hk_prev
+            self.logical_down = physical_down
+            self.hk_prev = physical_down
+            return pressed
+
+    reentrant = ReentrantRecoveryModel()
+    reentrant.request()
+    assert reentrant.no_edges() == 0b0001
+    assert reentrant.no_edges() == 0b0001
+    assert reentrant.mouse_checks == 0
+    reentrant.post_frame(0)
+    assert reentrant.mouse_checks == 1
+    assert reentrant.outer_frame(0b0001) == 0b0001
+    assert reentrant.outer_frame(0b0001) == 0
+
     # P2-001/002: secondary instances reject before the shared lock, while a
     # maybe-owner is still allowed to enter the reconciliation path.
     locked_calls = 0
@@ -669,6 +713,7 @@ def main() -> None:
     mouse_button = source("src/frontend/qt_sdl/MelonPrimeMouseButton.h")
     game_input = source("src/frontend/qt_sdl/MelonPrimeGameInput.cpp")
     emu_thread = source("src/frontend/qt_sdl/EmuThread.cpp")
+    emu_setup = source("src/frontend/qt_sdl/MelonPrimeEmuThreadRunSetup.inc")
     bridge = source("src/frontend/qt_sdl/MelonPrimeThreadBridge.h")
     mac = source("src/frontend/qt_sdl/MelonPrimeRawInputMacFilter.mm")
     linux = source("src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.cpp")
@@ -1226,13 +1271,25 @@ def main() -> None:
     # syscall and AsyncKeyState calls are counted only in the developer probe.
     for needle in (
         "m_stuckRecoveryNeeded",
+        "bool m_stuckRecoveryNeeded = false",
         "RequestStuckRecovery()",
         "consumeStuckRecovery()",
-        "m_stuckRecoveryNeeded.load(std::memory_order_relaxed)",
-        "m_stuckRecoveryNeeded.exchange(false, std::memory_order_acq_rel)",
+        "m_stuckRecoveryNeeded = true",
+        "m_stuckRecoveryNeeded = false",
         "RawInputPerf::CountStuckRecovery",
     ):
         require(raw_state_header + raw_state_cpp, needle, "event-gated stuck recovery")
+    if "std::atomic_bool m_stuckRecoveryNeeded" in raw_state_header:
+        raise AssertionError("stuck recovery mailbox must stay same-thread plain state")
+    if any(
+        token in raw_state_cpp
+        for token in (
+            "m_stuckRecoveryNeeded.load(",
+            "m_stuckRecoveryNeeded.exchange(",
+            "m_stuckRecoveryNeeded.store(",
+        )
+    ):
+        raise AssertionError("stuck recovery mailbox must not use atomic RMW/load/store")
     for needle in (
         "state->RequestStuckRecovery()",
         "RawInputPerf::CountHiddenWindowDispatch()",
@@ -1251,6 +1308,60 @@ def main() -> None:
         "MaybeReport",
     ):
         require(raw_perf, needle, "Raw performance telemetry")
+
+    # BB: re-entrant NoEdges is a pure snapshot and the post-frame boundary is
+    # the only recovery consumer. This prevents nested dispatch from clearing
+    # physical state, advancing debounce twice, or changing hkPrev mid-frame.
+    for forbidden in (
+        "consumeStuckRecovery(",
+        "clearStuckMouseButtons(",
+        "clearStuckKeys(",
+        "GetAsyncKeyState(",
+        "RawInputGetAsyncKeyState(",
+    ):
+        if forbidden in raw_no_edges:
+            raise AssertionError(f"NoEdges must not contain {forbidden!r}")
+    for needle in ("outHk.pressed = 0", "outWheelSteps = 0", "outHk.wheelSteps = 0"):
+        require(raw_no_edges, needle, "pure re-entrant Raw snapshot")
+    if raw_state_cpp.count("if (UNLIKELY(consumeStuckRecovery()))") != 1:
+        raise AssertionError("stuck recovery must have one post-frame consumer")
+
+    # BC: the same-thread proof is explicit at the Win32 boundary. The hidden
+    # HWND records its creator, only creator-thread dispatch can request the
+    # mailbox, and frame/lifecycle consumers stay on the EmuThread path.
+    hidden_proc = body(
+        raw_filter,
+        "LRESULT CALLBACK RawInputWinFilter::HiddenWndProc(",
+        "bool RawInputWinFilter::RegisterDevices(",
+    )
+    for needle in (
+        "const DWORD currentThreadId = GetCurrentThreadId();",
+        "subscription->hiddenWindowCreatorThreadId = currentThreadId;",
+        "subscription->hiddenWindow == hwnd",
+        "subscription->hiddenWindowCreatorThreadId == GetCurrentThreadId()",
+    ):
+        require(raw_filter, needle, "same-thread Raw recovery proof")
+    if hidden_proc.count("state->RequestStuckRecovery()") != 1:
+        raise AssertionError("HiddenWndProc must be the sole recovery producer")
+    require(raw_filter, "state->clearStuckPostFrame();", "post-frame recovery owner")
+    require(core, "m_rawFilter->DeferredDrain(m_rawInputSubscription)", "EmuThread recovery consumer")
+    require(core, "m_rawFilter->resetAll(m_rawInputSubscription)", "EmuThread lifecycle reset")
+    require(emu_setup, "melonPrime->Initialize();", "EmuThread Raw setup owner")
+    require(emu_thread, "melonPrime->DeferredDrainInput();", "EmuThread Raw drain owner")
+
+    # BD: a delayed/stalled Raw queue retries through the fixed process-service
+    # scratch. A batch larger than the bound remains queued; it never allocates
+    # from processRawInputBatched.
+    for needle in (
+        "kBatchOverflowBufferSize",
+        "s_batchOverflowBuffer",
+        "if (size > kBatchOverflowBufferSize) break;",
+        "retrySize = static_cast<UINT>(s_batchOverflowBuffer.size());",
+    ):
+        require(raw_state_header + raw_state_cpp, needle, "bounded Raw batch scratch")
+    for forbidden in ("std::unique_ptr<uint8_t[]>", "new (std::nothrow) uint8_t"):
+        if forbidden in raw_batched:
+            raise AssertionError(f"Raw batch hot path still allocates: {forbidden}")
 
     # AW+: fixed-capacity VK mapping must turn overflow into a whole-list
     # fallback rather than silently binding a prefix.

@@ -642,6 +642,8 @@ namespace MelonPrime {
                 auto* const subscription = reinterpret_cast<RawInputSubscription*>(
                     GetWindowLongPtrW(hwnd, GWLP_USERDATA));
                 if (subscription
+                    && subscription->hiddenWindow == hwnd
+                    && subscription->hiddenWindowCreatorThreadId == GetCurrentThreadId()
                     && s_instance->m_activeSubscription.load(
                         std::memory_order_acquire) == subscription) {
                     auto* const state = s_instance->StateFor(subscription);

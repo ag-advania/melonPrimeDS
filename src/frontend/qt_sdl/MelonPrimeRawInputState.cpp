@@ -3,8 +3,6 @@
 #include "MelonPrimeRawWinInternal.h"
 #include <cstring>
 #include <algorithm>
-#include <memory>
-#include <new>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -36,6 +34,8 @@ namespace MelonPrime {
     uint16_t InputState::s_scancodeRShift = 0;
     std::once_flag InputState::s_initFlag;
     NtUserGetRawInputBuffer_t InputState::s_fnBestGetRawInputBuffer = ::GetRawInputBuffer;
+    alignas(64) std::array<uint8_t, InputState::kBatchOverflowBufferSize>
+        InputState::s_batchOverflowBuffer{};
 
     InputState::InputState() noexcept {
         for (auto& vk : m_vkDown)
@@ -207,15 +207,15 @@ namespace MelonPrime {
                 count = s_fnBestGetRawInputBuffer(
                     reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
             }
-            std::unique_ptr<uint8_t[]> overflowBuffer;
             if (UNLIKELY(count == UINT(-1))) {
                 if (size <= sizeof(buffer)) break;
+                // Keep the retry bounded and allocation-free. A queue larger
+                // than the fixed service scratch remains in the OS queue and
+                // will be retried by the next drain boundary.
+                if (size > kBatchOverflowBufferSize) break;
 
-                overflowBuffer.reset(new (std::nothrow) uint8_t[size]);
-                if (!overflowBuffer) break;
-
-                batchBuffer = overflowBuffer.get();
-                UINT retrySize = size;
+                batchBuffer = s_batchOverflowBuffer.data();
+                UINT retrySize = static_cast<UINT>(s_batchOverflowBuffer.size());
                 {
                     RawInputPerf::RawBufferScope perfScope;
                     count = s_fnBestGetRawInputBuffer(
@@ -335,7 +335,7 @@ namespace MelonPrime {
         m_accumWheelUnits120.store(0, std::memory_order_relaxed);
         m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
-        m_stuckRecoveryNeeded.store(false, std::memory_order_relaxed);
+        m_stuckRecoveryNeeded = false;
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -347,7 +347,7 @@ namespace MelonPrime {
         m_accumWheelUnits120.store(0, std::memory_order_release);
         m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
-        m_stuckRecoveryNeeded.store(false, std::memory_order_relaxed);
+        m_stuckRecoveryNeeded = false;
     }
 
     // =========================================================================
@@ -366,7 +366,7 @@ namespace MelonPrime {
         m_accumWheelUnits120.store(0, std::memory_order_relaxed);
         m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
-        m_stuckRecoveryNeeded.store(false, std::memory_order_relaxed);
+        m_stuckRecoveryNeeded = false;
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -717,27 +717,28 @@ namespace MelonPrime {
     // =========================================================================
     void InputState::RequestStuckRecovery() noexcept
     {
-        m_stuckRecoveryNeeded.store(true, std::memory_order_release);
+        // Called only by HiddenWndProc after its creator-thread check. The
+        // mailbox is plain because producer and consumer are the same thread.
+        m_stuckRecoveryNeeded = true;
     }
 
     // Consume one hidden-window recovery request. The normal case is a
-    // relaxed load followed by an immediate return. If the mouse debounce
+    // plain-boolean check followed by an immediate return. If the mouse debounce
     // needs a second consecutive physical-up observation, retain the request
     // for the next post-frame boundary; this avoids scanning every idle frame
     // while still preserving the two-check stuck-button guarantee.
     bool InputState::consumeStuckRecovery() noexcept
     {
-        if (LIKELY(!m_stuckRecoveryNeeded.load(std::memory_order_relaxed)))
+        if (LIKELY(!m_stuckRecoveryNeeded))
             return false;
-        if (!m_stuckRecoveryNeeded.exchange(false, std::memory_order_acq_rel))
-            return false;
+        m_stuckRecoveryNeeded = false;
 
         const bool clearedMouse = clearStuckMouseButtons();
         const bool clearedKeys = clearStuckKeys();
         const uint8_t pendingMouse = static_cast<uint8_t>(
             m_mouseButtons.load(std::memory_order_relaxed) & m_mouseStuckCandidate);
         if (pendingMouse)
-            m_stuckRecoveryNeeded.store(true, std::memory_order_release);
+            m_stuckRecoveryNeeded = true;
 
         RawInputPerf::CountStuckRecovery(clearedMouse || clearedKeys);
         return clearedMouse || clearedKeys;
@@ -770,10 +771,9 @@ namespace MelonPrime {
     {
         // No-edge snapshots are used only by re-entrant frame advances. They
         // should reflect physical held state, not the one-frame click cache.
-        // Clear stale held bits first, but only when a hidden-window dispatch
-        // requested recovery. This re-entrant path must not restore a
-        // per-frame GetAsyncKeyState scan on the input latency path.
-        (void)consumeStuckRecovery();
+        // This path is a pure snapshot: it never consumes the post-frame
+        // recovery mailbox, changes debounce state, or performs an OS
+        // physical-state query.
 
         auto snap = takeSnapshot();  // acquire fence inside
 
