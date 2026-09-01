@@ -285,8 +285,10 @@ namespace MelonPrime {
         // late latch, independently from inputProcess()'s global emulator
         // command baseline. Wheel is projected exclusively from the bridge
         // mailbox below and is excluded here to prevent duplicate impulses.
-        const uint64_t qtWheelMask = emuInstance->wheelUpHotkeyMask
-            | emuInstance->wheelDownHotkeyMask;
+        const uint64_t qtWheelMask =
+            emuInstance->wheelUpHotkeyMask.load(std::memory_order_acquire)
+            | emuInstance->wheelDownHotkeyMask.load(
+                std::memory_order_acquire);
         const uint64_t qtGameplayHeld =
             emuInstance->keyHotkeyMask.load(std::memory_order_relaxed)
             & ~qtWheelMask;
@@ -322,9 +324,10 @@ namespace MelonPrime {
             && hk.generation == m_inputSubscription.generation;
         // Mouse-wheel bindings are virtual one-frame keys. Raw Input has no VK
         // for wheel ticks, so a ready Raw Input snapshot injects matching bits.
-        // The Qt path (!isInputOwner / non-Windows) gets these via
-        // EmuInstance::onMouseWheel + inputProcess. The two sources are
-        // deliberately exclusive; never OR Raw and Qt wheel pulses.
+        // The Qt path (!isInputOwner / non-Windows) gets gameplay wheel steps
+        // from ThreadBridge. EmuInstance::onMouseWheel independently publishes
+        // only emulator-command/accessory pulses.
+        // We never OR Raw and Qt wheel pulses into the same gameplay frame.
         // MELONPRIME_WINDOWS_CURSOR_HOTKEY_FALLBACK_V1
         // Raw Input ownership is reserved for captured FPS aim. Cursor-mode
         // screens intentionally release that owner, but their focused window

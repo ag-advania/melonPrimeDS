@@ -170,9 +170,13 @@ void EmuInstance::inputInit()
     lateJoystickNeedsBaseline = true;
     joystickGameplayResetPending.store(false, std::memory_order_relaxed);
     joystickLifecycleCheckCounter = 0;
-    joystickPhysicalSourceCount = 0;
-    joystickFanoutRuleCount = 0;
+    pendingJoystickBindingProgram = JoystickBindingProgram{};
+    activeJoystickBindingProgram = JoystickBindingProgram{};
+    joystickBindingProgramGeneration.store(0, std::memory_order_relaxed);
+    activeJoystickBindingProgramGeneration = 0;
+    qtGlobalCommandPressPending.store(0, std::memory_order_relaxed);
     qtGameplayPressPending.store(0, std::memory_order_relaxed);
+    qtWheelLevelPulsePending.store(0, std::memory_order_relaxed);
 #else
     keyInputMask = 0xFFF;
     joyInputMask = 0xFFF;
@@ -189,6 +193,9 @@ void EmuInstance::inputInit()
     touchY = 0;
 
     joystick = nullptr;
+#ifdef MELONPRIME_DS
+    joystickPresent.store(false, std::memory_order_relaxed);
+#endif
     controller = nullptr;
     hasRumble = false;
     hasAccelerometer = false;
@@ -207,7 +214,16 @@ void EmuInstance::inputDeInit()
 
 void EmuInstance::inputLoadConfig()
 {
+#ifdef MELONPRIME_DS
+    // A mapping generation boundary is neutral. Old held levels and pending
+    // edges must not be interpreted through the newly loaded bindings.
+    keyReleaseAll();
+#else
+    // Preserve upstream's legacy serialization while it rewrites the live
+    // mapping arrays. MelonPrime compiles a private immutable program first
+    // and publishes it under the mutex below.
     SDL_LockMutex(joyMutex.get());
+#endif
 
     Config::Table keycfg = localCfg.GetTable("Keyboard");
     Config::Table joycfg = localCfg.GetTable("Joystick");
@@ -234,40 +250,46 @@ void EmuInstance::inputLoadConfig()
 #endif
     }
 #ifdef MELONPRIME_DS
-    wheelUpHotkeyMask = wheelUpMask;
-    wheelDownHotkeyMask = wheelDownMask;
-    rebuildActiveJoystickBindings();
+    wheelUpHotkeyMask.store(wheelUpMask, std::memory_order_release);
+    wheelDownHotkeyMask.store(wheelDownMask, std::memory_order_release);
+    const JoystickBindingProgram joystickProgram =
+        compileJoystickBindingProgram();
     rebuildMouseButtonBindingMasks();
 #endif
 
+#ifdef MELONPRIME_DS
+    SDL_LockMutex(joyMutex.get());
+    publishJoystickBindingProgramLocked(joystickProgram);
+#endif
     setJoystickLocked(localCfg.GetInt("JoystickID"));
     SDL_UnlockMutex(joyMutex.get());
 }
 
 #ifdef MELONPRIME_DS
-void EmuInstance::rebuildActiveJoystickBindings()
+EmuInstance::JoystickBindingProgram
+EmuInstance::compileJoystickBindingProgram() const
 {
-    joystickPhysicalSourceCount = 0;
-    joystickFanoutRuleCount = 0;
+    JoystickBindingProgram program{};
 
-    const auto findOrAddSource = [this](
+    const auto findOrAddSource = [&program](
         JoystickSourceKind kind, uint16_t index) -> uint8_t {
-        for (uint8_t i = 0; i < joystickPhysicalSourceCount; ++i) {
-            const auto& source = joystickPhysicalSources[i];
+        for (uint8_t i = 0; i < program.sourceCount; ++i) {
+            const auto& source = program.sources[i];
             if (source.kind == kind && source.index == index)
                 return i;
         }
-        const uint8_t sourceIndex = joystickPhysicalSourceCount++;
-        joystickPhysicalSources[sourceIndex] = { kind, index };
+        assert(program.sourceCount < kMaxJoystickCompiledEntries);
+        const uint8_t sourceIndex = program.sourceCount++;
+        program.sources[sourceIndex] = { kind, index };
         return sourceIndex;
     };
 
-    const auto addRule = [this, &findOrAddSource](
+    const auto addRule = [&program, &findOrAddSource](
         JoystickSourceKind kind, uint16_t index, uint8_t predicate,
         uint16_t inputBits, uint64_t hotkeyBits) {
         const uint8_t sourceIndex = findOrAddSource(kind, index);
-        for (uint8_t i = 0; i < joystickFanoutRuleCount; ++i) {
-            auto& rule = joystickFanoutRules[i];
+        for (uint8_t i = 0; i < program.ruleCount; ++i) {
+            auto& rule = program.rules[i];
             if (rule.sourceIndex == sourceIndex
                 && rule.predicate == predicate) {
                 rule.inputBits |= inputBits;
@@ -275,7 +297,8 @@ void EmuInstance::rebuildActiveJoystickBindings()
                 return;
             }
         }
-        joystickFanoutRules[joystickFanoutRuleCount++] = {
+        assert(program.ruleCount < kMaxJoystickCompiledEntries);
+        program.rules[program.ruleCount++] = {
             sourceIndex, predicate, inputBits, hotkeyBits
         };
     };
@@ -313,6 +336,29 @@ void EmuInstance::rebuildActiveJoystickBindings()
         compileBinding(joyMapping[i], static_cast<uint16_t>(1u << i), 0);
     for (int i = 0; i < HK_MAX; ++i)
         compileBinding(hkJoyMapping[i], 0, 1ULL << i);
+
+    return program;
+}
+
+void EmuInstance::publishJoystickBindingProgramLocked(
+    const JoystickBindingProgram& program)
+{
+    pendingJoystickBindingProgram = program;
+    joystickBindingProgramGeneration.fetch_add(1, std::memory_order_release);
+}
+
+void EmuInstance::activateJoystickBindingProgramLocked()
+{
+    const uint32_t generation =
+        joystickBindingProgramGeneration.load(std::memory_order_acquire);
+    if (generation == activeJoystickBindingProgramGeneration)
+        return;
+
+    // The GUI/config writer and this cold copy share joyMutex. Once copied,
+    // only EmuThread reads active, so numeric projection stays lock-free and
+    // cannot mix physical samples with another binding generation.
+    activeJoystickBindingProgram = pendingJoystickBindingProgram;
+    activeJoystickBindingProgramGeneration = generation;
 }
 
 void EmuInstance::rebuildMouseButtonBindingMasks()
@@ -323,13 +369,18 @@ void EmuInstance::rebuildMouseButtonBindingMasks()
         const int key = static_cast<int>(kTrackedMouseButtons[buttonIndex])
             | MelonPrime::InputKey::MouseMark;
         for (int i = 0; i < 12; ++i) {
-            // Preserve the established MelonPrime mouse-to-DS projection.
-            if (key == hkKeyMapping[i])
+            if (key == keyMapping[i])
                 masks.inputBits |= static_cast<uint16_t>(1u << i);
         }
         for (int i = 0; i < HK_MAX; ++i) {
-            if (key == hkKeyMapping[i])
-                masks.hotkeyBits |= 1ULL << i;
+            if (key != hkKeyMapping[i])
+                continue;
+            const uint64_t bit = 1ULL << i;
+            masks.hotkeyBits |= bit;
+            if (bit & kGlobalCommandHotkeyMask)
+                masks.globalCommandBits |= bit;
+            else if (bit & kGameplayHotkeyMask)
+                masks.gameplayBits |= bit;
         }
     }
 }
@@ -463,10 +514,18 @@ void EmuInstance::openJoystick()
         }
     }
 
+#ifdef MELONPRIME_DS
+    joystickPresent.store(joystick != nullptr, std::memory_order_release);
+#endif
 }
 
 void EmuInstance::closeJoystick()
 {
+#ifdef MELONPRIME_DS
+    // Presence is a hint only; publishing false before destruction prevents
+    // lock-free readers from scheduling avoidable work on a closing device.
+    joystickPresent.store(false, std::memory_order_release);
+#endif
     if (controller)
     {
         SDL_GameControllerClose(controller);
@@ -528,6 +587,7 @@ void EmuInstance::probeJoystickConnection()
 bool EmuInstance::sampleJoystickPhysicalLocked(
     JoystickPhysicalSnapshot& snapshot)
 {
+    activateJoystickBindingProgramLocked();
     if (!joystick)
         return false;
 
@@ -537,9 +597,9 @@ bool EmuInstance::sampleJoystickPhysicalLocked(
         return false;
     }
 
-    snapshot.sourceCount = joystickPhysicalSourceCount;
+    snapshot.sourceCount = activeJoystickBindingProgram.sourceCount;
     for (uint8_t i = 0; i < snapshot.sourceCount; ++i) {
-        const auto& source = joystickPhysicalSources[i];
+        const auto& source = activeJoystickBindingProgram.sources[i];
         switch (source.kind) {
         case JoystickSourceKind::Button:
             snapshot.sourceValue[i] =
@@ -571,13 +631,14 @@ EmuInstance::projectJoystickPhysicalSnapshot(
     const JoystickPhysicalSnapshot& snapshot) const
 {
     JoystickProjectedState projected{0xFFF, 0};
-    for (uint8_t i = 0; i < joystickFanoutRuleCount; ++i) {
-        const auto& rule = joystickFanoutRules[i];
+    for (uint8_t i = 0; i < activeJoystickBindingProgram.ruleCount; ++i) {
+        const auto& rule = activeJoystickBindingProgram.rules[i];
         assert(rule.sourceIndex < snapshot.sourceCount);
         if (UNLIKELY(rule.sourceIndex >= snapshot.sourceCount))
             continue;
 
-        const auto& source = joystickPhysicalSources[rule.sourceIndex];
+        const auto& source =
+            activeJoystickBindingProgram.sources[rule.sourceIndex];
         const int32_t value = snapshot.sourceValue[rule.sourceIndex];
         bool down = false;
         switch (source.kind) {
@@ -642,7 +703,7 @@ void EmuInstance::projectJoystickGameplayState(
 
 void EmuInstance::refreshJoystickCommandState()
 {
-    if (!joystick) {
+    if (!joystickPresent.load(std::memory_order_acquire)) {
         controllerCommandHotkeyMask = 0;
         controllerCommandSnapshotValid = false;
         return;
@@ -696,24 +757,66 @@ int getEventKeyVal(QKeyEvent* event)
     return key;
 }
 
+#ifdef MELONPRIME_DS
+namespace {
+bool QtKeyBindingMatchesRelease(int binding, QKeyEvent* event) noexcept
+{
+    if (binding == getEventKeyVal(event))
+        return true;
+
+    const int key = event->key();
+    const bool isModifier = key == Qt::Key_Control
+        || key == Qt::Key_Alt
+        || key == Qt::Key_AltGr
+        || key == Qt::Key_Shift
+        || key == Qt::Key_Meta;
+    if (isModifier
+        || (static_cast<uint32_t>(binding) & 0xF0000000u)
+            == static_cast<uint32_t>(MelonPrime::InputKey::MouseMark)) {
+        return false;
+    }
+
+    constexpr int kQtModifierBits = static_cast<int>(Qt::ShiftModifier)
+        | static_cast<int>(Qt::ControlModifier)
+        | static_cast<int>(Qt::AltModifier)
+        | static_cast<int>(Qt::MetaModifier)
+        | static_cast<int>(Qt::KeypadModifier)
+        | static_cast<int>(Qt::GroupSwitchModifier);
+    // If modifiers are released before the non-modifier key, QKeyEvent no
+    // longer carries the press modifiers. Clear every mapping activated by
+    // that physical key so a Ctrl+K-style binding cannot remain stuck.
+    return (binding & ~kQtModifierBits
+        & ~static_cast<int>(0x80000000u)) == key;
+}
+}
+#endif
+
 
 void EmuInstance::onKeyPress(QKeyEvent* event)
 {
 #ifdef MELONPRIME_DS
     if (event->isAutoRepeat())
         return;
-    int key = event->key();
+    const int key = getEventKeyVal(event);
     uint64_t pressedHotkeyBits = 0;
     for (int i = 0; i < 12; i++)
-        if (key == hkKeyMapping[i])
+        if (key == keyMapping[i])
             keyInputMask.fetch_and(static_cast<uint16_t>(~(1u << i)), std::memory_order_relaxed);
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
             pressedHotkeyBits |= 1ULL << i;
     if (pressedHotkeyBits) {
         keyHotkeyMask.fetch_or(pressedHotkeyBits, std::memory_order_relaxed);
-        qtGameplayPressPending.fetch_or(
-            pressedHotkeyBits, std::memory_order_release);
+        const uint64_t globalCommandBits =
+            pressedHotkeyBits & kGlobalCommandHotkeyMask;
+        if (globalCommandBits)
+            qtGlobalCommandPressPending.fetch_or(
+                globalCommandBits, std::memory_order_release);
+        const uint64_t gameplayBits =
+            pressedHotkeyBits & kGameplayHotkeyMask;
+        if (gameplayBits)
+            qtGameplayPressPending.fetch_or(
+                gameplayBits, std::memory_order_release);
     }
 #else
     int keyHK = getEventKeyVal(event);
@@ -736,14 +839,12 @@ void EmuInstance::onKeyRelease(QKeyEvent* event)
 #ifdef MELONPRIME_DS
     if (event->isAutoRepeat())
         return;
-    int key = event->key();
-
     for (int i = 0; i < 12; i++)
-        if (key == hkKeyMapping[i])
+        if (QtKeyBindingMatchesRelease(keyMapping[i], event))
             keyInputMask.fetch_or(static_cast<uint16_t>(1u << i), std::memory_order_relaxed);
 
     for (int i = 0; i < HK_MAX; i++)
-        if (key == hkKeyMapping[i])
+        if (QtKeyBindingMatchesRelease(hkKeyMapping[i], event))
             keyHotkeyMask.fetch_and(~(1ULL << i), std::memory_order_relaxed);
 #else
     int keyHK = getEventKeyVal(event);
@@ -774,8 +875,13 @@ void EmuInstance::onMousePress(QMouseEvent* event)
             std::memory_order_relaxed);
     if (masks.hotkeyBits) {
         keyHotkeyMask.fetch_or(masks.hotkeyBits, std::memory_order_relaxed);
+        if (masks.globalCommandBits)
+            qtGlobalCommandPressPending.fetch_or(
+                masks.globalCommandBits, std::memory_order_release);
+    }
+    if (masks.gameplayBits) {
         qtGameplayPressPending.fetch_or(
-            masks.hotkeyBits, std::memory_order_release);
+            masks.gameplayBits, std::memory_order_release);
     }
 }
 
@@ -836,8 +942,14 @@ void EmuInstance::onMouseWheel(int delta)
 
     const uint64_t pulse = wheelHotkeyMaskForDelta(delta);
     if (!pulse) return;
-    keyHotkeyMask.fetch_or(pulse, std::memory_order_relaxed);
-    wheelHotkeyPulseMask.fetch_or(pulse, std::memory_order_relaxed);
+    const uint64_t globalCommandBits = pulse & kGlobalCommandHotkeyMask;
+    if (globalCommandBits)
+        qtGlobalCommandPressPending.fetch_or(
+            globalCommandBits, std::memory_order_release);
+    const uint64_t levelPulseBits = pulse & ~kGameplayHotkeyMask;
+    if (levelPulseBits)
+        qtWheelLevelPulsePending.fetch_or(
+            levelPulseBits, std::memory_order_release);
 }
 #endif // MELONPRIME_DS
 
@@ -846,8 +958,9 @@ void EmuInstance::keyReleaseAll()
 #ifdef MELONPRIME_DS
     keyInputMask.store(0xFFF, std::memory_order_relaxed);
     keyHotkeyMask.store(0, std::memory_order_relaxed);
+    qtGlobalCommandPressPending.store(0, std::memory_order_relaxed);
     qtGameplayPressPending.store(0, std::memory_order_relaxed);
-    wheelHotkeyPulseMask.store(0, std::memory_order_relaxed);
+    qtWheelLevelPulsePending.store(0, std::memory_order_relaxed);
 #else
     keyInputMask = 0xFFF;
     keyHotkeyMask = 0;
@@ -935,7 +1048,8 @@ void EmuInstance::inputProcess(bool guestFrameWillRun)
     // Active controllers are attachment-checked by the one required physical
     // sample. Probe an absent device at the normal per-instance cadence in
     // either scheduling state; a successful paused probe is sampled below.
-    if (!joystick && lifecycleCheckDue) {
+    if (!joystickPresent.load(std::memory_order_acquire)
+        && lifecycleCheckDue) {
         probeJoystickConnection();
         (void)consumeJoystickResetPending();
     }
@@ -945,7 +1059,14 @@ void EmuInstance::inputProcess(bool guestFrameWillRun)
     // Combined edge detection (keyboard + joystick)
     const uint64_t currentKeyHotkeys =
         keyHotkeyMask.load(std::memory_order_relaxed);
-    hotkeyMask = currentKeyHotkeys | controllerCommandHotkeyMask;
+    uint64_t qtWheelLevelPulse = 0;
+    if (UNLIKELY(qtWheelLevelPulsePending.load(
+            std::memory_order_relaxed) != 0)) {
+        qtWheelLevelPulse = qtWheelLevelPulsePending.exchange(
+            0, std::memory_order_acq_rel);
+    }
+    hotkeyMask = currentKeyHotkeys | controllerCommandHotkeyMask
+        | qtWheelLevelPulse;
     if (UNLIKELY(controllerCommandNeedsBaseline
             && controllerCommandSnapshotValid)) {
         // A newly connected/configured controller may already be held. Fold
@@ -954,19 +1075,15 @@ void EmuInstance::inputProcess(bool guestFrameWillRun)
         lastHotkeyMask |= controllerCommandHotkeyMask;
         controllerCommandNeedsBaseline = false;
     }
-    hotkeyPress = hotkeyMask & ~lastHotkeyMask;
+    uint64_t qtGlobalPressed = 0;
+    if (UNLIKELY(qtGlobalCommandPressPending.load(
+            std::memory_order_relaxed) != 0)) {
+        qtGlobalPressed = qtGlobalCommandPressPending.exchange(
+            0, std::memory_order_acq_rel);
+    }
+    hotkeyPress = (hotkeyMask & ~lastHotkeyMask) | qtGlobalPressed;
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
     lastHotkeyMask = hotkeyMask;
-
-    // Mouse-wheel bindings are impulses: release the virtual key after the
-    // edge latch so the next frame sees a clean release.
-    uint64_t wheelPulseMask = 0;
-    if (UNLIKELY(wheelHotkeyPulseMask.load(std::memory_order_relaxed) != 0))
-        wheelPulseMask =
-            wheelHotkeyPulseMask.exchange(0, std::memory_order_relaxed);
-    if (wheelPulseMask) {
-        keyHotkeyMask.fetch_and(~wheelPulseMask, std::memory_order_relaxed);
-    }
 
 #else
     // Original melonDS path: full SDL polling + edge detection
@@ -1026,7 +1143,7 @@ void EmuInstance::inputRefreshJoystickState(bool commitGameplayEdges)
 {
     (void)consumeJoystickResetPending();
 
-    if (!joystick) {
+    if (!joystickPresent.load(std::memory_order_acquire)) {
         inputMask = keyInputMask.load(std::memory_order_relaxed);
         hotkeyMask = keyHotkeyMask.load(std::memory_order_relaxed);
         return;
@@ -1060,21 +1177,6 @@ void EmuInstance::releaseScreen()
 }
 
 #ifdef MELONPRIME_DS
-float EmuInstance::hotkeyAnalogueValue(int id) {
-    int val = hkJoyMapping[id];
-    if (val == -1) return 0;
-
-    if (val & 0x10000)
-    {
-        int axisnum = (val >> 24) & 0xF;
-        // int axisdir = (val >> 20) & 0xF;
-        Sint16 axisval = SDL_JoystickGetAxis(joystick, axisnum);
-        return (float)axisval / INT16_MAX;
-    }
-
-    return 0;
-}
-
 melonDS::u32 EmuInstance::getInputMask() {
     return static_cast<melonDS::u32>(inputMask) & 0xFFF;
 }

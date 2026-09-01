@@ -1161,11 +1161,11 @@ if ($threadBridgeText -match 'm_center[XY]\b' -or
     $threadBridgeText -notmatch 'std::atomic<uint64_t>\s+m_center') {
     Add-Error 'Rule S: center X/Y must remain one coherent packed publication'
 }
-if (-not $inputProcessBody -or
-    $inputProcessBody.IndexOf('wheelHotkeyPulseMask.load', [System.StringComparison]::Ordinal) -lt 0 -or
-    $inputProcessBody.IndexOf('wheelHotkeyPulseMask.load', [System.StringComparison]::Ordinal) -gt
-        $inputProcessBody.IndexOf('wheelHotkeyPulseMask.exchange', [System.StringComparison]::Ordinal)) {
-    Add-Error 'Rule S: wheel pulse must load before its rare exchange claim'
+if (-not $mouseWheelBody -or
+    $mouseWheelBody -notmatch 'qtGlobalCommandPressPending\.fetch_or' -or
+    $mouseWheelBody -notmatch 'qtWheelLevelPulsePending\.fetch_or' -or
+    $mouseWheelBody -match 'keyHotkeyMask\.(?:fetch_or|store)|wheelHotkeyPulseMask') {
+    Add-Error 'Rule S: wheel impulse must publish to separate command/level mailboxes, not held Qt key state'
 }
 if ($linuxRawText -notmatch 'lastSourceState' -or
     $linuxRawText -notmatch 'std::min\(2,\s*raw->valuators\.mask_len\s*\*\s*8\)') {
@@ -1228,13 +1228,16 @@ if ($updateInputBody -notmatch 'm_publishedInputGeneration' -or
     Add-Error 'Rule V: Core must cache input-generation publication'
 }
 
-# Rule W: GUI event presses survive a sub-frame tap and only normal frames claim them.
+# Rule W: GUI event presses survive a sub-frame tap in their separate domains.
 if ($emuInstanceHeaderText -notmatch 'std::atomic<uint64_t>\s+qtGameplayPressPending' -or
+    $emuInstanceHeaderText -notmatch 'std::atomic<uint64_t>\s+qtGlobalCommandPressPending' -or
     $emuInstanceInputText -notmatch 'qtGameplayPressPending\.fetch_or' -or
+    $emuInstanceInputText -notmatch 'qtGlobalCommandPressPending\.fetch_or' -or
     $emuInstanceInputText -notmatch 'isAutoRepeat\s*\(\)' -or
+    $inputProcessMelonPrimeBody -notmatch 'qtGlobalCommandPressPending\.exchange' -or
     $updateInputBody -notmatch 'qtGameplayPressPending\.exchange' -or
     $updateInputBody -notmatch 'if constexpr\s*\(!kReentrant\)') {
-    Add-Error 'Rule W: Qt gameplay event-edge mailbox/autorepeat/reentrant contract is incomplete'
+    Add-Error 'Rule W: Qt command/gameplay event-edge mailbox contract is incomplete'
 }
 
 # Rule X: panel reset readers commit only generation-stable snapshots.
@@ -1282,10 +1285,11 @@ $setJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::setJoystick\s*\('
 $inputLoadBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::inputLoadConfig\s*\('
-if ($emuInstanceHeaderText -notmatch 'joystickPhysicalSources' -or
-    $emuInstanceHeaderText -notmatch 'joystickFanoutRules' -or
-    $sampleJoystickLockedBody -notmatch 'snapshot\.sourceCount\s*=\s*joystickPhysicalSourceCount' -or
-    $projectJoystickBody -notmatch 'joystickFanoutRuleCount') {
+if ($emuInstanceHeaderText -notmatch 'struct\s+JoystickBindingProgram' -or
+    $emuInstanceHeaderText -notmatch 'pendingJoystickBindingProgram' -or
+    $emuInstanceHeaderText -notmatch 'activeJoystickBindingProgram' -or
+    $sampleJoystickLockedBody -notmatch 'snapshot\.sourceCount\s*=\s*activeJoystickBindingProgram\.sourceCount' -or
+    $projectJoystickBody -notmatch 'activeJoystickBindingProgram\.ruleCount') {
     Add-Error 'Rule AA: controller mappings must compile to unique physical sources plus fanout rules'
 }
 if (-not $sampleJoystickLockedBody -or
@@ -1341,7 +1345,7 @@ $guiPolicyReadBody = Get-FunctionText -Path $threadBridgePath `
     -Signature 'ReadGuiInputPolicyForEmu\s*\('
 if (-not $inputProcessMelonPrimeBody -or
     $inputProcessMelonPrimeBody -notmatch 'if\s*\(!guestFrameWillRun\)\s*\r?\n\s*refreshJoystickCommandState\s*\(' -or
-    $inputProcessMelonPrimeBody -notmatch 'if\s*\(!joystick\s*&&\s*lifecycleCheckDue\)' -or
+    $inputProcessMelonPrimeBody -notmatch 'joystickPresent\.load' -or
     $inputProcessMelonPrimeBody -notmatch 'controllerCommandHotkeyMask' -or
     $inputProcessMelonPrimeBody -match 'lateJoystick\.hotkeyHeld' -or
     $inputProcessMelonPrimeBody -match 'SDL_JoystickUpdate\s*\(') {
@@ -1376,6 +1380,49 @@ if (-not $guiPolicyReadBody -or
 if ($emuThreadText -notmatch 'inputProcess\s*\(\s*guestFrameWillRun\s*\)' -or
     $emuThreadText -notmatch 'emuStatus\s*==\s*emuStatus_Running\s*\|\|\s*emuStatus\s*==\s*emuStatus_FrameStep') {
     Add-Error 'Rule AC: EmuThread must declare whether this outer cycle will run a guest frame'
+}
+
+# Rule AD: ca5c1d24 post-push audit closure. Config publishes a pending fixed
+# controller program under joyMutex; EmuThread activates it only at the cold
+# generation boundary. Qt key identity and Linux XI2 capability lifecycle are
+# explicit, and no plain joystick pointer presence read remains in MP hot code.
+$onKeyPressBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::onKeyPress\s*\('
+$onKeyReleaseBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::onKeyRelease\s*\('
+$publishJoystickProgramBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::publishJoystickBindingProgramLocked\s*\('
+$activateJoystickProgramBody = Get-FunctionText -Path $emuInstanceInputPath `
+    -Signature 'void\s+EmuInstance::activateJoystickBindingProgramLocked\s*\('
+if (-not $onKeyPressBody -or -not $onKeyReleaseBody -or
+    $onKeyPressBody -notmatch 'getEventKeyVal\s*\(' -or
+    $onKeyReleaseBody -notmatch 'QtKeyBindingMatchesRelease\s*\(' -or
+    $onKeyPressBody -notmatch 'key\s*==\s*keyMapping\[i\]' -or
+    $onKeyReleaseBody -notmatch 'keyMapping\[i\]') {
+    Add-Error 'Rule AD: Qt press/release must share normalized identity and DS keyMapping domain'
+}
+if (-not $publishJoystickProgramBody -or
+    $publishJoystickProgramBody -notmatch 'pendingJoystickBindingProgram\s*=\s*program' -or
+    $publishJoystickProgramBody -notmatch 'joystickBindingProgramGeneration\.fetch_add' -or
+    -not $activateJoystickProgramBody -or
+    $activateJoystickProgramBody -notmatch 'activeJoystickBindingProgram\s*=\s*pendingJoystickBindingProgram' -or
+    $sampleJoystickLockedBody -notmatch 'activateJoystickBindingProgramLocked\s*\(' -or
+    $projectJoystickBody -match 'pendingJoystickBindingProgram') {
+    Add-Error 'Rule AD: controller binding program publication/activation ownership is incomplete'
+}
+if ($emuInstanceHeaderText -notmatch 'std::atomic_bool\s+joystickPresent' -or
+    $closeJoystickBody -notmatch 'joystickPresent\.store\(false' -or
+    $inputProcessMelonPrimeBody -match '(?<![A-Za-z])!joystick(?![A-Za-z])' -or
+    $lateJoystickBody -match '(?<![A-Za-z])!joystick(?![A-Za-z])') {
+    Add-Error 'Rule AD: lock-free presence hint / mutex-owned joystick lifetime contract is incomplete'
+}
+if ($linuxRawText -notmatch 'static\s+bool\s+QueryAxisModes' -or
+    $linuxRawText -notmatch 'if\s*\(!info\)\s*\r?\n\s*return false' -or
+    $linuxRawText -notmatch 'st\.known\s*=\s*true\s*;\s*\r?\n\s*return true' -or
+    $linuxRawText -notmatch 'XI_HierarchyChanged' -or
+    $linuxRawText -notmatch 'XI_DeviceChanged' -or
+    $linuxRawText -notmatch 'InvalidateAxisCapabilities\s*\(') {
+    Add-Error 'Rule AD: Linux XI2 query retry and capability-cache invalidation are incomplete'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

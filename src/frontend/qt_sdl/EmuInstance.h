@@ -183,7 +183,9 @@ public:
     void onMouseWheel(int delta);
     [[nodiscard]] uint64_t wheelHotkeyMaskForDelta(int delta) const noexcept
     {
-        return delta > 0 ? wheelUpHotkeyMask : wheelDownHotkeyMask;
+        return delta > 0
+            ? wheelUpHotkeyMask.load(std::memory_order_acquire)
+            : wheelDownHotkeyMask.load(std::memory_order_acquire);
     }
 #endif // MELONPRIME_DS
 
@@ -365,7 +367,6 @@ private:
     void onKeyRelease(QKeyEvent* event);
 
 #ifdef MELONPRIME_DS
-    float hotkeyAnalogueValue(int val);
     melonDS::u32 getInputMask();
 #endif // MELONPRIME_DS
 
@@ -513,6 +514,11 @@ private:
 
     int joystickID;
     SDL_Joystick* joystick;
+#ifdef MELONPRIME_DS
+    // Lock-free presence hint only. SDL_Joystick* lifetime and every
+    // dereference remain serialized by joyMutex.
+    std::atomic_bool joystickPresent{false};
+#endif
     SDL_GameController* controller;
     bool hasAccelerometer = false;
     bool hasGyroscope = false;
@@ -553,6 +559,14 @@ private:
 
     static constexpr int kMaxJoystickCompiledEntries = 2 * (HK_MAX + 12);
 
+    struct JoystickBindingProgram
+    {
+        JoystickPhysicalSource sources[kMaxJoystickCompiledEntries]{};
+        JoystickFanoutRule rules[kMaxJoystickCompiledEntries]{};
+        uint8_t sourceCount = 0;
+        uint8_t ruleCount = 0;
+    };
+
     struct JoystickPhysicalSnapshot
     {
         // Deliberately has no default initializer. sampleJoystickPhysicalLocked
@@ -573,9 +587,14 @@ private:
     {
         uint16_t inputBits = 0;
         uint64_t hotkeyBits = 0;
+        uint64_t globalCommandBits = 0;
+        uint64_t gameplayBits = 0;
     };
 
-    void rebuildActiveJoystickBindings();
+    [[nodiscard]] JoystickBindingProgram compileJoystickBindingProgram() const;
+    void publishJoystickBindingProgramLocked(
+        const JoystickBindingProgram& program);
+    void activateJoystickBindingProgramLocked();
     void rebuildMouseButtonBindingMasks();
     void resetJoystickConsumerState();
     bool consumeJoystickResetPending();
@@ -613,19 +632,29 @@ private:
     // EmuThread remains the sole writer of every gameplay-derived mask above.
     std::atomic_bool joystickGameplayResetPending{false};
     uint8_t joystickLifecycleCheckCounter = 0;
-    JoystickPhysicalSource joystickPhysicalSources[kMaxJoystickCompiledEntries]{};
-    JoystickFanoutRule joystickFanoutRules[kMaxJoystickCompiledEntries]{};
-    uint8_t joystickPhysicalSourceCount = 0;
-    uint8_t joystickFanoutRuleCount = 0;
+    // Config/UI writes pending only under joyMutex, then release-publishes a
+    // generation. EmuThread copies it under the same mutex only when changed;
+    // active is then immutable throughout sampling and lock-free projection.
+    JoystickBindingProgram pendingJoystickBindingProgram{};
+    JoystickBindingProgram activeJoystickBindingProgram{};
+    std::atomic<uint32_t> joystickBindingProgramGeneration{0};
+    uint32_t activeJoystickBindingProgramGeneration = 0;
     MouseButtonBindingMask mouseButtonMasks[5]{};
+    static constexpr uint64_t kGlobalCommandHotkeyMask =
+        (1ULL << HK_GuitarGripGreen) - 1ULL;
+    static constexpr uint64_t kGameplayHotkeyMask =
+        ~((1ULL << HK_MetroidMoveForward) - 1ULL);
+    // Global command and gameplay presses have different consumers. A Pause
+    // tap may complete between outer polls and must still be claimed once.
+    std::atomic<uint64_t> qtGlobalCommandPressPending{0};
     std::atomic<uint64_t> qtGameplayPressPending{0};
-    // Bits latched by onMouseWheel(); cleared after edge detection so the
-    // virtual key is a one-frame press rather than a held button.
-    std::atomic<uint64_t> wheelHotkeyPulseMask{0};
+    // Wheel is an impulse, not a held Qt key. Preserve one inputProcess()
+    // level for down-state consumers without writing keyHotkeyMask.
+    std::atomic<uint64_t> qtWheelLevelPulsePending{0};
     // Cold inputLoadConfig() projection. Both the Qt producer and the Windows
     // Raw Input consumer avoid scanning HK_MAX on every wheel pulse.
-    uint64_t wheelUpHotkeyMask = 0;
-    uint64_t wheelDownHotkeyMask = 0;
+    std::atomic<uint64_t> wheelUpHotkeyMask{0};
+    std::atomic<uint64_t> wheelDownHotkeyMask{0};
 
     // Packed acquire/release publication keeps VSync, configured renderer,
     // actual renderer, and their revision coherent with one atomic load in

@@ -251,29 +251,78 @@ def check_panel_cumulative_model() -> None:
 
 
 def check_qt_event_edge_model() -> None:
-    pending = 0
+    global_pending = 0
+    gameplay_pending = 0
 
-    def publish(bits: int, auto_repeat: bool = False) -> None:
-        nonlocal pending
+    def publish(global_bits: int, gameplay_bits: int, auto_repeat: bool = False) -> None:
+        nonlocal global_pending, gameplay_pending
         if not auto_repeat:
-            pending |= bits
+            global_pending |= global_bits
+            gameplay_pending |= gameplay_bits
 
-    def snapshot(reentrant: bool) -> int:
-        nonlocal pending
-        if reentrant:
-            return 0
-        claimed = pending
-        pending = 0
+    def global_snapshot() -> int:
+        nonlocal global_pending
+        claimed = global_pending
+        global_pending = 0
         return claimed
 
-    publish(0b0010)  # press; release changes only the level snapshot
-    assert snapshot(False) == 0b0010
-    assert snapshot(False) == 0
-    publish(0b0100)
-    assert snapshot(True) == 0
-    assert snapshot(False) == 0b0100
-    publish(0b1000, auto_repeat=True)
-    assert snapshot(False) == 0
+    def gameplay_snapshot(reentrant: bool) -> int:
+        nonlocal gameplay_pending
+        if reentrant:
+            return 0
+        claimed = gameplay_pending
+        gameplay_pending = 0
+        return claimed
+
+    # Press+release may complete before either consumer polls. Each domain
+    # conserves exactly its own edge, with no global-only gameplay RMW.
+    publish(0b0001, 0b0010)
+    assert global_snapshot() == 0b0001
+    assert global_snapshot() == 0
+    assert gameplay_snapshot(False) == 0b0010
+    assert gameplay_snapshot(False) == 0
+    publish(0, 0b0100)
+    assert gameplay_snapshot(True) == 0
+    assert gameplay_snapshot(False) == 0b0100
+    publish(0b1000, 0b10000, auto_repeat=True)
+    assert global_snapshot() == 0
+    assert gameplay_snapshot(False) == 0
+
+
+def check_binding_program_publication_model() -> None:
+    pending = ("button-1",)
+    active = ()
+    generation = 1
+    active_generation = 0
+
+    # Activation happens before the physical sample. A GUI publish after the
+    # sample changes pending only; projection keeps using the same active copy.
+    if generation != active_generation:
+        active = pending
+        active_generation = generation
+    sampled_source = active[0]
+    pending = ("axis-2",)
+    generation += 1
+    assert sampled_source == active[0] == "button-1"
+    assert pending[0] == "axis-2"
+
+    if generation != active_generation:
+        active = pending
+        active_generation = generation
+    assert active[0] == "axis-2"
+
+
+def check_linux_axis_query_lifecycle_model() -> None:
+    known = False
+    query_results = [False, True]
+    for succeeded in query_results:
+        if not known and succeeded:
+            known = True
+        if not succeeded:
+            assert not known  # transient failure remains retryable
+    assert known
+    known = False  # XI_HierarchyChanged / XI_DeviceChanged invalidation
+    assert not known
 
 
 def check_packed_wrap_model() -> None:
@@ -360,13 +409,28 @@ def main() -> None:
         "void EmuInstance::projectJoystickGameplayState(",
         "void EmuInstance::refreshJoystickCommandState(",
     )
+    key_press = body(
+        input_cpp,
+        "void EmuInstance::onKeyPress(QKeyEvent* event)",
+        "void EmuInstance::onKeyRelease(QKeyEvent* event)",
+    )
+    key_release = body(
+        input_cpp,
+        "void EmuInstance::onKeyRelease(QKeyEvent* event)",
+        "#ifdef MELONPRIME_DS\nvoid EmuInstance::onMousePress",
+    )
 
     require(header, "struct LateJoystickSnapshot", "late snapshot storage")
     require(header, "joystickLifecycleCheckCounter", "per-instance cadence")
     require(header, "kMaxJoystickCompiledEntries = 2 * (HK_MAX + 12)", "fixed table capacity")
-    require(header, "joystickPhysicalSources[kMaxJoystickCompiledEntries]", "fixed physical-source table")
-    require(header, "joystickFanoutRules[kMaxJoystickCompiledEntries]", "fixed fanout table")
+    require(header, "struct JoystickBindingProgram", "fixed binding program")
+    require(header, "pendingJoystickBindingProgram", "GUI-owned pending program")
+    require(header, "activeJoystickBindingProgram", "Emu-owned active program")
+    require(header, "joystickBindingProgramGeneration", "binding program generation")
+    require(header, "std::atomic_bool joystickPresent", "device presence hint")
+    require(header, "qtGlobalCommandPressPending", "Qt global command edge mailbox")
     require(header, "qtGameplayPressPending", "Qt event edge mailbox")
+    require(header, "qtWheelLevelPulsePending", "wheel down-state impulse mailbox")
     if "static uint8_t" in process or "static uint8_t" in late:
         raise AssertionError("controller lifecycle cadence must not be function-static")
     if "SDL_JoystickClose" in process or "SDL_JoystickClose" in late:
@@ -393,9 +457,13 @@ def main() -> None:
         raise AssertionError("unconsumed late joystick release state reappeared")
     require(input_cpp, "consumeJoystickResetPending", "reset load-first helper")
     require(input_cpp, "setJoystickLocked", "non-recursive joystick helper")
+    require(input_cpp, "publishJoystickBindingProgramLocked", "cold program publication")
+    require(input_cpp, "activateJoystickBindingProgramLocked", "cold program activation")
+    require(input_cpp, "activeJoystickBindingProgram = pendingJoystickBindingProgram", "immutable active copy")
+    require(sample_locked, "activateJoystickBindingProgramLocked()", "activate before sample")
 
     require(sample_locked, "i < snapshot.sourceCount", "unique physical-source sample")
-    require(projection, "i < joystickFanoutRuleCount", "compiled fanout projection")
+    require(projection, "i < activeJoystickBindingProgram.ruleCount", "compiled fanout projection")
     require(projection, "rule.sourceIndex < snapshot.sourceCount", "fanout index invariant")
     if "i < HK_MAX" in sample_locked + projection or "i < 12" in sample_locked + projection:
         raise AssertionError("late poll regressed to full mapping scan")
@@ -417,7 +485,7 @@ def main() -> None:
     require(command_projection, "controllerCommandHotkeyMask", "separate command projection")
     require(process, "if (!guestFrameWillRun)", "paused command refresh gate")
     require(process, "refreshJoystickCommandState", "paused command refresh")
-    require(process, "if (!joystick && lifecycleCheckDue)", "throttled absent-device probe")
+    require(process, "joystickPresent.load", "race-free absent-device probe")
     require(process, "controllerCommandHotkeyMask", "global command snapshot")
     require(process, "controllerCommandNeedsBaseline", "no-phantom command baseline")
     if "lateJoystick.hotkeyHeld" in process:
@@ -440,6 +508,37 @@ def main() -> None:
 
     if "keyHotkeyPress" in header or "lastKeyHotkeyMask" in header:
         raise AssertionError("early Qt gameplay edge baseline reappeared")
+    require(key_press, "getEventKeyVal(event)", "normalized Qt press identity")
+    require(key_press, "key == keyMapping[i]", "DS keyboard press mapping domain")
+    require(key_release, "QtKeyBindingMatchesRelease", "release-order-safe Qt identity")
+    require(key_release, "keyMapping[i]", "DS keyboard release mapping domain")
+    require(key_press, "qtGlobalCommandPressPending.fetch_or", "global press conservation")
+    require(key_press, "pressedHotkeyBits & kGameplayHotkeyMask", "gameplay-only pending bits")
+    require(process, "qtGlobalCommandPressPending.exchange", "global press claim")
+    require(process, "qtWheelLevelPulsePending.exchange", "wheel level pulse claim")
+    if "wheelHotkeyPulseMask" in header + input_cpp:
+        raise AssertionError("wheel impulse regressed into held level state")
+    mouse_press = body(
+        input_cpp,
+        "void EmuInstance::onMousePress(QMouseEvent* event)",
+        "void EmuInstance::onMouseRelease(QMouseEvent* event)",
+    )
+    mouse_release = body(
+        input_cpp,
+        "void EmuInstance::onMouseRelease(QMouseEvent* event)",
+        "bool EmuInstance::hotkeyUsesKeyboardKey",
+    )
+    mouse_wheel = body(
+        input_cpp,
+        "void EmuInstance::onMouseWheel(int delta)",
+        "#endif // MELONPRIME_DS",
+    )
+    require(mouse_press, "masks.hotkeyBits", "all mouse-button hotkey levels")
+    require(mouse_release, "masks.hotkeyBits", "all mouse-button hotkey releases")
+    require(mouse_wheel, "qtGlobalCommandPressPending.fetch_or", "wheel command edge")
+    require(mouse_wheel, "qtWheelLevelPulsePending.fetch_or", "wheel down-state pulse")
+    if "keyHotkeyMask.fetch_or" in mouse_wheel:
+        raise AssertionError("wheel impulse regressed into the held Qt key mask")
     require(game_input, "qtGameplayPressed", "late Qt gameplay edge")
     require(game_input, "qtGameplayPressPending.exchange", "normal-frame event claim")
     require(game_input, "m_qtGameplayHotkeyPrevious", "Qt gameplay baseline")
@@ -508,6 +607,12 @@ def main() -> None:
             raise AssertionError(f"legacy macOS availability state reappeared: {legacy}")
 
     require(linux, "lastSourceState", "Linux common-source cache")
+    require(linux, "static bool QueryAxisModes", "retryable Linux capability query")
+    require(linux, "if (!info)\n            return false", "failed Linux query remains unknown")
+    require(linux, "st.known = true;\n        return true", "successful Linux query publication")
+    require(linux, "XI_HierarchyChanged", "Linux hierarchy lifecycle event")
+    require(linux, "XI_DeviceChanged", "Linux device lifecycle event")
+    require(linux, "InvalidateAxisCapabilities", "Linux capability invalidation")
     require(linux, "std::min(2, raw->valuators.mask_len * 8)", "Linux X/Y decode bound")
     require(linux, "receivedMotionPublished", "Linux first-motion thread shadow")
     require(linux, "std::atomic<uint64_t> total", "Linux packed cumulative total")
@@ -526,6 +631,8 @@ def main() -> None:
     check_controller_mapping_equivalence_model()
     check_panel_cumulative_model()
     check_qt_event_edge_model()
+    check_binding_program_publication_model()
+    check_linux_axis_query_lifecycle_model()
     check_packed_wrap_model()
     check_mac_handoff_model()
     print("post-cc6726f input re-audit contract: PASS")

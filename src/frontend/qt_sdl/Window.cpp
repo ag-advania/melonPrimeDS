@@ -1550,7 +1550,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     {
         QMutexLocker panelLock(&screenPanelLock);
         if (inputSurfaceAuthority && panel)
-            panel->primeStylusTouchHotkeyAtCursor(event->key());
+            panel->primeStylusTouchHotkeyAtCursor(getEventKeyVal(event));
     }
 
     // MelonPrimeDS. for Escaping from metroid cursor lock 
@@ -1580,7 +1580,7 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
     {
         QMutexLocker panelLock(&screenPanelLock);
         if (inputSurfaceAuthority && panel)
-            panel->releaseStylusTouchHotkeyCapture(event->key());
+            panel->releaseStylusTouchHotkeyCapture(getEventKeyVal(event));
     }
 #else
     emuInstance->onKeyRelease(event);

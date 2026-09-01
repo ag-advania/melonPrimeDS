@@ -120,13 +120,15 @@ struct LinuxRawInputFilter::Impl
     AxisState* lastSourceState = nullptr;
     std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()/warps
 
-    static void QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
+    static bool QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
     {
-        st.known = true;
         int count = 0;
         XIDeviceInfo* info = XIQueryDevice(dpy, sourceid, &count);
         if (!info)
-            return;
+            return false;
+
+        st.absolute[0] = st.absolute[1] = false;
+        st.scale[0] = st.scale[1] = 1.0;
         const int screen = DefaultScreen(dpy);
         const double screenDim[2] = {
             static_cast<double>(DisplayWidth(dpy, screen)),
@@ -146,6 +148,17 @@ struct LinuxRawInputFilter::Impl
             }
         }
         XIFreeDeviceInfo(info);
+        st.known = true;
+        return true;
+    }
+
+    void InvalidateAxisCapabilities()
+    {
+        // Hierarchy/device changes are cold. Clear every source so reused XI2
+        // ids cannot inherit another device's mode, scale, or abs baseline.
+        axisStates.clear();
+        lastSourceId = -1;
+        lastSourceState = nullptr;
     }
 
     // 1 Hz debug counters (filter thread only).
@@ -177,8 +190,9 @@ struct LinuxRawInputFilter::Impl
         }
         AxisState& st = *lastSourceState;
         if (!st.known) {
-            QueryAxisModes(dpy, raw->sourceid, st);
-            if (MelonPrimeInputDebug())
+            const bool querySucceeded =
+                QueryAxisModes(dpy, raw->sourceid, st);
+            if (querySucceeded && MelonPrimeInputDebug())
                 std::fprintf(stderr,
                     "[MelonPrime] linux input: raw source %d axis modes: X=%s Y=%s\n",
                     raw->sourceid,
@@ -298,17 +312,23 @@ struct LinuxRawInputFilter::Impl
             return;
         }
 
-        unsigned char maskBits[(XI_LASTEVENT + 7) / 8] = {};
-        XIEventMask mask{};
-        mask.deviceid = XIAllMasterDevices;
-        mask.mask_len = sizeof(maskBits);
-        mask.mask = maskBits;
-        XISetMask(mask.mask, XI_RawMotion);
+        unsigned char rawMaskBits[(XI_LASTEVENT + 7) / 8] = {};
+        unsigned char lifecycleMaskBits[(XI_LASTEVENT + 7) / 8] = {};
+        XIEventMask masks[2]{};
+        masks[0].deviceid = XIAllMasterDevices;
+        masks[0].mask_len = sizeof(rawMaskBits);
+        masks[0].mask = rawMaskBits;
+        XISetMask(masks[0].mask, XI_RawMotion);
+        masks[1].deviceid = XIAllDevices;
+        masks[1].mask_len = sizeof(lifecycleMaskBits);
+        masks[1].mask = lifecycleMaskBits;
+        XISetMask(masks[1].mask, XI_HierarchyChanged);
+        XISetMask(masks[1].mask, XI_DeviceChanged);
 
         const Window root = DefaultRootWindow(display);
-        if (XISelectEvents(display, root, &mask, 1) != Success) {
+        if (XISelectEvents(display, root, masks, 2) != Success) {
             std::fprintf(stderr,
-                "[MelonPrime] linux input: XISelectEvents(RawMotion) failed; using QCursor fallback\n");
+                "[MelonPrime] linux input: XISelectEvents failed; using QCursor fallback\n");
             XCloseDisplay(display);
             return;
         }
@@ -323,14 +343,20 @@ struct LinuxRawInputFilter::Impl
                 XNextEvent(display, &ev);
 
                 if (ev.xcookie.type != GenericEvent
-                    || ev.xcookie.extension != xiOpcode
-                    || ev.xcookie.evtype != XI_RawMotion)
+                    || ev.xcookie.extension != xiOpcode)
                     continue;
 
                 if (XGetEventData(display, &ev.xcookie)) {
-                    const auto* raw = static_cast<const XIRawEvent*>(ev.xcookie.data);
-                    if (raw)
-                        AccumulateRawMotion(display, raw);
+                    if (ev.xcookie.evtype == XI_RawMotion) {
+                        const auto* raw =
+                            static_cast<const XIRawEvent*>(ev.xcookie.data);
+                        if (raw)
+                            AccumulateRawMotion(display, raw);
+                    }
+                    else if (ev.xcookie.evtype == XI_HierarchyChanged
+                        || ev.xcookie.evtype == XI_DeviceChanged) {
+                        InvalidateAxisCapabilities();
+                    }
                     XFreeEventData(display, &ev.xcookie);
                 }
             }
