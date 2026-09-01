@@ -375,7 +375,6 @@ public:
     {
         return false;
     }
-    void addAimMouseDeltaForMelonPrime(std::int32_t dx, std::int32_t dy) noexcept;
 #endif
 
 public slots:
@@ -580,6 +579,11 @@ private:
     // the left button.
     Qt::MouseButton m_touchMouseButton = Qt::NoButton;
     Qt::MouseButton m_stylusDirectAimMouseButton = Qt::NoButton;
+#if defined(__APPLE__)
+    // GUI-thread recovery mailbox: normal mouse movement queries global Qt
+    // button state only while a supported press is still potentially held.
+    uint8_t m_mouseRecoveryArmedMask = 0;
+#endif
     // Tracks the held click itself rather than `touching`: a press whose touch
     // never registers must still free the pointer, or the pin would trap it.
     bool m_stylusClickHeld = false;

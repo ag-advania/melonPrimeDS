@@ -889,10 +889,10 @@ namespace MelonPrime {
         bool     m_isWeaponCheckActive = false;
         bool     m_isLayoutChangePending = true;
         std::atomic_bool m_configReloadPending{ false };
-        // P-47: Set by FrameAdvanceOnce; cleared after PollAndSnapshot.
+        // P-47: Set by FrameAdvanceOnce; cleared after UpdateOwnerAndSnapshot.
         // True  → LateLatch must call processRawInputBatched (events may have
         //          arrived during the FrameAdvance window: ~32–96 ms).
-        // False → PollAndSnapshot was just called; kernel buffer is still
+        // False → UpdateOwnerAndSnapshot was just called; kernel buffer is still
         //          empty on a normal frame (~40–100 ns window). Skip the
         //          GetRawInputBuffer syscall entirely (~500–2000 cyc saved).
         bool     m_didFrameAdvanceSinceSnapshot = false;

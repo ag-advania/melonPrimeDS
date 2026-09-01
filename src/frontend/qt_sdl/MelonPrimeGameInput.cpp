@@ -135,13 +135,14 @@ namespace MelonPrime {
     // duplicates.
     //
     // kReentrant=false (full path):
-    //   - PollAndSnapshot        : drains WM_INPUT and latches edge state
+    //   - UpdateOwnerAndSnapshot : resolves ownership, drains WM_INPUT and
+    //                              latches edge state
     //   - reads press mask       : ProjectPressMask from hotPressMask
     //   - reads wheelSteps       : from the Raw Input generation, or the
     //                              generation-tagged Qt fallback mailbox
     //
     // kReentrant=true (re-entrant FrameAdvance path):
-    //   - PollAndSnapshotNoEdges : drains WM_INPUT, no edge latch
+    //   - UpdateOwnerAndSnapshotNoEdges : same transaction, no edge latch
     //   - press = 0              : outer-frame press detection preserved
     //   - wheelSteps = 0         : never consumed mid-frame
     // =========================================================================
@@ -202,18 +203,13 @@ namespace MelonPrime {
                     static_cast<HWND>(currentHwnd));
                 m_cachedHwnd = currentHwnd;
             }
-            // Carry the owner result through this frame. PollAndSnapshot still
-            // performs its authoritative subscription/owner validation under
-            // the service mutex before exposing any Raw data.
-            platformInputOwner = rawFilter->UpdateOwner(
-                m_rawInputSubscription, captureEligible);
             if constexpr (kReentrant)
-                rawFilter->PollAndSnapshotNoEdges(
-                    m_rawInputSubscription, hk,
+                platformInputOwner = rawFilter->UpdateOwnerAndSnapshotNoEdges(
+                    m_rawInputSubscription, captureEligible, hk,
                     m_input.mouseX, m_input.mouseY, m_input.wheelSteps);
             else {
-                rawFilter->PollAndSnapshot(
-                    m_rawInputSubscription, hk,
+                platformInputOwner = rawFilter->UpdateOwnerAndSnapshot(
+                    m_rawInputSubscription, captureEligible, hk,
                     m_input.mouseX, m_input.mouseY, m_input.wheelSteps);
                 // P-47: Kernel buffer just drained; no FrameAdvance has occurred yet.
                 // LateLatch skips processRawInputBatched on frames with no FrameAdvance.

@@ -265,7 +265,7 @@ namespace MelonPrime {
         const auto guiPolicy = m_threadBridge.ReadGuiInputPolicyForEmu();
         const bool focused = guiPolicy.focused;
 
-        // Poll moved into UpdateInputState via PollAndSnapshot
+        // Input polling moved into UpdateInputState via UpdateOwnerAndSnapshot.
         UpdateInputState(guiPolicy);
         InputReset();
         m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);

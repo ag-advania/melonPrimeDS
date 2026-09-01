@@ -20,9 +20,11 @@ struct MelonPrimeInputSubscription {
     int64_t lastReadY = 0;
     uint64_t hotkeyDownSnapshot = 0;
     uint64_t hotkeyPrevious = 0;
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
     int64_t debugSumX = 0;
     int64_t debugSumY = 0;
     uint32_t debugFrames = 0;
+#endif
     bool focused = false;
     std::atomic_bool activeOwner{false};
     bool cursorNeedsSync = true;

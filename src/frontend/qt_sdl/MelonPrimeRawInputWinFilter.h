@@ -36,11 +36,19 @@ namespace MelonPrime {
         void setRawInputTarget(RawInputSubscription* subscription, HWND hwnd);
         void setQtFilterRequested(RawInputSubscription* subscription, bool enable);
 
-        // Merged Poll + snapshot in single call
-        void PollAndSnapshot(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY, int& outWheelSteps);
+        // Resolve the process owner and capture one snapshot in the same
+        // subscription transaction. The steady owner still keeps its
+        // lock-free precheck before taking the snapshot mutex.
+        bool UpdateOwnerAndSnapshot(
+            RawInputSubscription* subscription, bool eligible,
+            FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+            int& outWheelSteps);
 
-        // Re-entrant path: same as PollAndSnapshot but does not advance hkPrev.
-        void PollAndSnapshotNoEdges(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY, int& outWheelSteps);
+        // Re-entrant path: same transaction but does not advance hkPrev.
+        bool UpdateOwnerAndSnapshotNoEdges(
+            RawInputSubscription* subscription, bool eligible,
+            FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+            int& outWheelSteps);
 
         // P-22: Drain WM_INPUT queue after RunFrame (non-latency-critical).
         void DeferredDrain(RawInputSubscription* subscription) noexcept;
@@ -69,6 +77,12 @@ namespace MelonPrime {
             RawInputSubscription* subscription, bool recreateHiddenWindow);
         [[nodiscard]] bool ReconfigureActiveRegistration(
             RawInputSubscription* subscription, bool generationAlreadyAdvanced);
+        [[nodiscard]] bool UpdateOwnerLocked(
+            RawInputSubscription* subscription, bool eligible);
+        [[nodiscard]] bool UpdateOwnerAndSnapshotImpl(
+            RawInputSubscription* subscription, bool eligible,
+            FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+            int& outWheelSteps, bool noEdges);
         void DeactivateActiveRegistration(RawInputSubscription* subscription);
         InputState* StateFor(RawInputSubscription* subscription) const noexcept;
         InputState* ActiveState() const noexcept;

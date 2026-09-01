@@ -505,10 +505,7 @@ ScreenPanelVulkan::ScreenPanelVulkan(QWidget* parent)
     vulkan->surface->hide();
 
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)  // scatter-budget-exempt: Wayland pointer lock, the same override ScreenPanelGL/ScreenPanelNative already carry in Screen.cpp; not new input dispatch, only the same gate in the panel's own translation unit
-    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>(
-        [this](std::int32_t dx, std::int32_t dy) {
-            addAimMouseDeltaForMelonPrime(dx, dy);
-        });
+    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>();
 #endif
 
     {
@@ -528,8 +525,10 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
     }
 
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)  // scatter-budget-exempt: Wayland pointer lock, the same override ScreenPanelGL/ScreenPanelNative already carry in Screen.cpp; not new input dispatch, only the same gate in the panel's own translation unit
-    if (waylandPointerLock)
+    if (waylandPointerLock) {
         waylandPointerLock->setLocked(nullptr, nullptr, false);
+        waylandPointerLock->setDeltaTarget(nullptr);
+    }
 #endif
 
     // The emulation thread can no longer reach this panel: MainWindow cleared
@@ -1526,8 +1525,18 @@ bool ScreenPanelVulkan::setWaylandPointerLockForMelonPrime(bool enabled)
     if (!waylandPointerLock)
         return false;
 
-    if (!enabled)
-        return waylandPointerLock->setLocked(nullptr, nullptr, false);
+    if (!enabled) {
+        const bool result = waylandPointerLock->setLocked(nullptr, nullptr, false);
+        waylandPointerLock->setDeltaTarget(nullptr);
+        return result;
+    }
+
+    auto* const core = isMelonPrimeInputSurfaceAuthority()
+        ? melonPrimeCoreForPolicy() : nullptr;
+    if (!core) {
+        waylandPointerLock->setDeltaTarget(nullptr);
+        return false;
+    }
 
     // The top-level window's surface, not this panel's native presentation
     // child: locking a child surface made KWin fire WindowDeactivate on the
@@ -1535,10 +1544,13 @@ bool ScreenPanelVulkan::setWaylandPointerLockForMelonPrime(bool enabled)
     // immediately unlocks again (issue #526).
     QWindow* const topLevelHandle = window() ? window()->windowHandle() : nullptr;
     const auto handles = ResolveWaylandHandles(topLevelHandle);
-    if (!handles.has_value())
+    if (!handles.has_value()) {
+        waylandPointerLock->setDeltaTarget(nullptr);
         return false;
+    }
 
     const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
+    waylandPointerLock->setDeltaTarget(&core->ThreadBridge());
     return waylandPointerLock->setLocked(
         handles->first, handles->second, true, hint.x(), hint.y());
 }

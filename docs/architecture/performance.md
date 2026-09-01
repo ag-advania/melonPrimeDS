@@ -98,7 +98,8 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | `m_cachedPanel` (P-3) | `MelonPrime.h` | `OnEmuStart`, `NotifyLayoutChange` | `MelonPrimeCore` lifecycle |
 | Qt panel `m_panelAimTotal` / reset baseline / consumer cursor | `MelonPrimeThreadBridge.h` | reset captures the current total; panel→raw and layout/focus transitions request reset | GUI-thread producer + emulation-thread consumer |
 | SDL active binding table / late edge baseline | `EmuInstance.h` | input config load, central device close, reconnect baseline | `EmuInstance` input owner |
-| Linux `absBaseInvalid` | `MelonPrimeRawInputLinuxFilter.cpp:87` | `resetAll`, `NotifyCursorWarp` | `LinuxRawInputFilter` |
+| Linux raw axis baseline / residuals | `MelonPrimeRawInputLinuxFilter.cpp` | reset mailbox at filter-loop boundary, device hierarchy invalidation | `LinuxRawInputFilter` |
+| Linux raw availability + motion-seen | `MelonPrimeRawInputLinuxFilter.cpp` packed state byte | filter startup/first delivered motion, teardown | `LinuxRawInputFilter` |
 | Mac raw `lastReadX/Y` | `MelonPrimeRawInputMacFilter.mm:46-47` | `resetAll`, filter stop | `MacRawInputFilter::resetAll` |
 | Linux raw `lastReadX/Y` | `MelonPrimeRawInputLinuxFilter.cpp:54-55` | `resetAll` | `LinuxRawInputFilter::resetAll` |
 | Win raw mouse snapshot | `MelonPrimeRawInputState.cpp:283-289` | `discardDeltas`, `resetAll` | `InputState::fetchMouseDelta` |
@@ -132,9 +133,10 @@ load/store for monotonic raw accumulators:
 
 | Path | Empty / steady operation | Claim / publication |
 |---|---|---|
-| Linux `absBaseInvalid` | relaxed load, false branch | `exchange(false, acq_rel)` only after true |
-| Linux `accX/accY` writer | relaxed load | release store by the sole XInput filter thread |
-| Linux `receivedMotion` | relaxed load after nonzero motion | one release store on the first false-to-true edge |
+| Linux packed availability/motion state | one acquire load by the frame resolver | release stores at startup, first motion, and teardown |
+| Linux absolute baseline / residual reset | no per-event reset check | cold mailbox token consumed at the filter-loop/event-batch boundary |
+| Linux packed cumulative total writer | relaxed load | release store by the sole XInput filter thread |
+| Linux motion-seen state | filter-thread shadow, no event-hot atomic load | one release publication in the packed state byte |
 | macOS GCMouse / IOHID cumulative totals | relaxed load by the backend's sole serialized writer | release store; frame reader advances a subscription cursor |
 | Qt panel aim cumulative total | relaxed load by the GUI-thread sole writer | packed release store; reset publishes a separate boundary baseline |
 | SDL wheel pulse | relaxed zero load | exchange only when a pulse is pending |

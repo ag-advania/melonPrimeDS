@@ -17,6 +17,10 @@
           "type": "BOOL",
           "value": "OFF"
         },
+        "MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY": {
+          "type": "BOOL",
+          "value": "OFF"
+        },
         "MELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY": {
           "type": "BOOL",
           "value": "OFF"
@@ -87,6 +91,10 @@
           "value": "OFF"
         },
         "MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY": {
+          "type": "BOOL",
+          "value": "OFF"
+        },
+        "MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY": {
           "type": "BOOL",
           "value": "OFF"
         },

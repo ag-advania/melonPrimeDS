@@ -5,8 +5,10 @@
 #include "MelonPrimeInputSubscription.h"
 
 #include <cstdint>
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
 #include <cstdio>
 #include <cstdlib>
+#endif
 
 #include <QCursor>
 
@@ -94,13 +96,21 @@ inline void PlatformInput_ReleaseRawFilter(PlatformRawFilter*& filter)
 
 inline bool PlatformInput_IsRawAvailable(const PlatformRawFilter* filter)
 {
+#if defined(__linux__)
+    return filter && (filter->stateBits() & LinuxRawInputFilter::StateAvailable) != 0;
+#else
     return filter && filter->isAvailable();
+#endif
 }
 
 inline bool PlatformInput_IsRawAimActive(const PlatformRawFilter* filter)
 {
 #if defined(__linux__)
-    return filter && filter->isAvailable() && filter->hasReceivedMotion();
+    const uint8_t state = filter ? filter->stateBits() : 0;
+    return (state & (LinuxRawInputFilter::StateAvailable
+        | LinuxRawInputFilter::StateMotionSeen))
+        == (LinuxRawInputFilter::StateAvailable
+            | LinuxRawInputFilter::StateMotionSeen);
 #else
     return filter && filter->isAvailable();
 #endif
@@ -156,7 +166,12 @@ inline AimInputSource PlatformInput_ResolveAimSource(
     }
     return AimInputSource::None;
 #else
-    if (PlatformInput_IsRawAimActive(filter)) {
+    const uint8_t rawState = filter ? filter->stateBits() : 0;
+    const bool rawAimActive = (rawState & (LinuxRawInputFilter::StateAvailable
+        | LinuxRawInputFilter::StateMotionSeen))
+        == (LinuxRawInputFilter::StateAvailable
+            | LinuxRawInputFilter::StateMotionSeen);
+    if (rawAimActive) {
         PlatformInput_FetchRawMouseDelta(filter, subscription, outDx, outDy);
         outHaveMouseDelta = true;
         return AimInputSource::LinuxRaw;
@@ -224,6 +239,7 @@ inline ResolvedAimInput PlatformInput_UpdateMouseDeltaMacLinux(
     if (aimSrc == AimInputSource::PanelDelta)
         panel->getAimMouseDelta(mouseX, mouseY);
 
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
     {
         static const bool s_inputDbg =
             std::getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
@@ -251,6 +267,7 @@ inline ResolvedAimInput PlatformInput_UpdateMouseDeltaMacLinux(
             }
         }
     }
+#endif
 #endif
 
     (void)centerX;

@@ -4,21 +4,24 @@
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 
 namespace MelonPrime {
 
+class MelonPrimeThreadBridge;
+
 class WaylandPointerLock final
 {
 public:
-    using DeltaCallback = std::function<void(std::int32_t, std::int32_t)>;
-
-    explicit WaylandPointerLock(DeltaCallback callback);
+    // deltaTarget is borrowed. The owner resolves it on the cold lock
+    // transition and clears it after the lock objects have been destroyed.
+    explicit WaylandPointerLock(MelonPrimeThreadBridge* deltaTarget = nullptr);
     ~WaylandPointerLock();
 
     WaylandPointerLock(const WaylandPointerLock&) = delete;
     WaylandPointerLock& operator=(const WaylandPointerLock&) = delete;
+
+    void setDeltaTarget(MelonPrimeThreadBridge* deltaTarget) noexcept;
 
     // displayHandle must be wl_display*, surfaceHandle must be wl_surface*.
     // Neither object is owned by this class. hintSurfaceX/Y are the point

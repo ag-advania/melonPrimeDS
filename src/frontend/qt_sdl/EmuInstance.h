@@ -630,12 +630,11 @@ private:
     // EmuThread remains the sole writer of every gameplay-derived mask above.
     std::atomic_bool joystickGameplayResetPending{false};
     uint8_t joystickLifecycleCheckCounter = 0;
-    // Config/UI writes pending only under joyMutex, then release-publishes a
-    // generation. EmuThread copies it under the same mutex only when changed;
-    // active is then immutable throughout sampling and lock-free projection.
+    // Config/UI writes and EmuThread activation are serialized by joyMutex;
+    // active is immutable throughout sampling and lock-free projection.
     JoystickBindingProgram pendingJoystickBindingProgram{};
     JoystickBindingProgram activeJoystickBindingProgram{};
-    std::atomic<uint32_t> joystickBindingProgramGeneration{0};
+    uint32_t joystickBindingProgramGeneration = 0;
     uint32_t activeJoystickBindingProgramGeneration = 0;
     MouseButtonBindingMask mouseButtonMasks[
         MelonPrime::kSupportedMouseButtonCount]{};

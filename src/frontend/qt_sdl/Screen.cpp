@@ -73,6 +73,7 @@
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeScreenCursorPolicy.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeMouseButton.h"
 #include "MelonPrimeWheelEvent.h"
 #include "MelonPrimeInstanceDiagnostics.h"
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
@@ -105,6 +106,23 @@
 #endif // MELONPRIME_DS
 
 using namespace melonDS;
+
+#if defined(MELONPRIME_DS) && defined(__APPLE__)
+namespace {
+
+uint8_t MelonPrimeMouseRecoveryMask(Qt::MouseButtons buttons) noexcept
+{
+    uint8_t mask = 0;
+    for (int i = 0; i < static_cast<int>(MelonPrime::kSupportedMouseButtonCount); ++i) {
+        if (buttons.testFlag(MelonPrime::kSupportedMouseButtons[
+                static_cast<std::size_t>(i)]))
+            mask |= static_cast<uint8_t>(1u << i);
+    }
+    return mask;
+}
+
+} // namespace
+#endif
 
 #if !defined(_WIN32) && !defined(__APPLE__)
 // Qt < 6.5 uses QPlatformNativeInterface for X11 and Wayland.
@@ -144,17 +162,6 @@ void ScreenPanel::resetAimMouseDelta()
     aimLastGlobalValid.store(false, std::memory_order_release);
 #endif
 }
-
-#if defined(__linux__)
-void ScreenPanel::addAimMouseDeltaForMelonPrime(
-    std::int32_t dx, std::int32_t dy) noexcept
-{
-    if (isMelonPrimeInputSurfaceAuthority()) {
-        if (auto* core = melonPrimeCore())
-            core->ThreadBridge().AddPanelAimDeltaFromGui(dx, dy);
-    }
-}
-#endif
 
 // MELONPRIME_PHASE5_CONFIG_USAGE_V1
 void ScreenPanel::processMelonPrimePersistRequests()
@@ -1122,8 +1129,12 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
 
 #ifdef MELONPRIME_DS
 #if defined(__APPLE__)
-    if (core)
+    if (core) {
         emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
+        const int buttonIndex = MelonPrime::MouseButtonIndex(event->button());
+        if (buttonIndex >= 0)
+            m_mouseRecoveryArmedMask |= static_cast<uint8_t>(1u << buttonIndex);
+    }
 #endif
     // Click sets focus
     if (core) core->ThreadBridge().SetFocusedFromGui(true);
@@ -1213,6 +1224,13 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
     auto* const emu = emuInstance;
 
 #ifdef MELONPRIME_DS
+#if defined(__APPLE__)
+    if (isMelonPrimeInputSurfaceAuthority()) {
+        const int buttonIndex = MelonPrime::MouseButtonIndex(event->button());
+        if (buttonIndex >= 0)
+            m_mouseRecoveryArmedMask &= static_cast<uint8_t>(~(1u << buttonIndex));
+    }
+#endif
     if (isMelonPrimeInputSurfaceAuthority())
         emu->onMouseRelease(event);
 
@@ -1284,8 +1302,12 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         return;
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__)
-    if (isMelonPrimeInputSurfaceAuthority())
-        emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
+    if (isMelonPrimeInputSurfaceAuthority()
+        && m_mouseRecoveryArmedMask != 0) {
+        const auto physicalButtons = QGuiApplication::mouseButtons();
+        emu->syncMouseHotkeysFromQtButtons(physicalButtons);
+        m_mouseRecoveryArmedMask = MelonPrimeMouseRecoveryMask(physicalButtons);
+    }
 #endif
 
 #include "MelonPrimeHudScreenCppMouseMove.inc"
@@ -1300,7 +1322,8 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
                          : MelonPrime::MelonPrimeUiSnapshot{};
 #endif
 
-#if defined(MELONPRIME_DS) && (defined(__linux__) || defined(__APPLE__))
+#if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY) \
+    && (defined(__linux__) || defined(__APPLE__))
     // MELONPRIME_INPUT_DEBUG=1: 1 Hz gate/event diagnostics for the Qt aim path.
     static const bool s_aimDbg = getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
     if (Q_UNLIKELY(s_aimDbg)) {
@@ -2023,18 +2046,17 @@ ScreenPanelNative::ScreenPanelNative(QWidget * parent) : ScreenPanel(parent)
     screenTrans[0].reset();
     screenTrans[1].reset();
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>(
-        [this](std::int32_t dx, std::int32_t dy) {
-            addAimMouseDeltaForMelonPrime(dx, dy);
-        });
+    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>();
 #endif
 }
 
 ScreenPanelNative::~ScreenPanelNative()
 {
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-    if (waylandPointerLock)
+    if (waylandPointerLock) {
         waylandPointerLock->setLocked(nullptr, nullptr, false);
+        waylandPointerLock->setDeltaTarget(nullptr);
+    }
 #endif
 }
 
@@ -2044,20 +2066,33 @@ bool ScreenPanelNative::setWaylandPointerLockForMelonPrime(bool enabled)
     if (!waylandPointerLock)
         return false;
 
-    if (!enabled)
-        return waylandPointerLock->setLocked(nullptr, nullptr, false);
+    if (!enabled) {
+        const bool result = waylandPointerLock->setLocked(nullptr, nullptr, false);
+        waylandPointerLock->setDeltaTarget(nullptr);
+        return result;
+    }
+
+    auto* const core = isMelonPrimeInputSurfaceAuthority()
+        ? melonPrimeCoreForPolicy() : nullptr;
+    if (!core) {
+        waylandPointerLock->setDeltaTarget(nullptr);
+        return false;
+    }
 
     // Not a Qt::WA_NativeWindow: lock the top-level window's surface instead
     // of our own (we have none).
     QWindow* const topLevelHandle = window() ? window()->windowHandle() : nullptr;
     const auto handles = ResolveMelonPrimeWaylandHandles(topLevelHandle);
-    if (!handles.has_value())
+    if (!handles.has_value()) {
+        waylandPointerLock->setDeltaTarget(nullptr);
         return false;
+    }
 
     // Hint the panel's own center, expressed in the locked (top-level)
     // surface's local coordinates, so the compositor recenters the cursor
     // away from any edge whenever this lock later releases.
     const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
+    waylandPointerLock->setDeltaTarget(&core->ThreadBridge());
     return waylandPointerLock->setLocked(
         handles->first, handles->second, true, hint.x(), hint.y());
 }
@@ -3213,18 +3248,17 @@ ScreenPanelGL::ScreenPanelGL(QWidget * parent) : ScreenPanel(parent)
 
     glInited = false;
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>(
-        [this](std::int32_t dx, std::int32_t dy) {
-            addAimMouseDeltaForMelonPrime(dx, dy);
-        });
+    waylandPointerLock = std::make_unique<MelonPrime::WaylandPointerLock>();
 #endif
 }
 
 ScreenPanelGL::~ScreenPanelGL()
 {
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
-    if (waylandPointerLock)
+    if (waylandPointerLock) {
         waylandPointerLock->setLocked(nullptr, nullptr, false);
+        waylandPointerLock->setDeltaTarget(nullptr);
+    }
 #endif
 }
 
@@ -3436,8 +3470,18 @@ bool ScreenPanelGL::setWaylandPointerLockForMelonPrime(bool enabled)
     if (!waylandPointerLock)
         return false;
 
-    if (!enabled)
-        return waylandPointerLock->setLocked(nullptr, nullptr, false);
+    if (!enabled) {
+        const bool result = waylandPointerLock->setLocked(nullptr, nullptr, false);
+        waylandPointerLock->setDeltaTarget(nullptr);
+        return result;
+    }
+
+    auto* const core = isMelonPrimeInputSurfaceAuthority()
+        ? melonPrimeCoreForPolicy() : nullptr;
+    if (!core) {
+        waylandPointerLock->setDeltaTarget(nullptr);
+        return false;
+    }
 
     // Lock the top-level window's surface, not this panel's own
     // Qt::WA_NativeWindow subsurface (used by getWindowInfo() for GL context
@@ -3448,13 +3492,16 @@ bool ScreenPanelGL::setWaylandPointerLockForMelonPrime(bool enabled)
     // fast mouse motion escape the window (see issue #526).
     QWindow* const topLevelHandle = window() ? window()->windowHandle() : nullptr;
     const auto handles = ResolveMelonPrimeWaylandHandles(topLevelHandle);
-    if (!handles.has_value())
+    if (!handles.has_value()) {
+        waylandPointerLock->setDeltaTarget(nullptr);
         return false;
+    }
 
     // Hint the panel's own center, expressed in the locked (top-level)
     // surface's local coordinates, so the compositor recenters the cursor
     // away from any edge whenever this lock later releases.
     const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
+    waylandPointerLock->setDeltaTarget(&core->ThreadBridge());
     return waylandPointerLock->setLocked(
         handles->first, handles->second, true, hint.x(), hint.y());
 }
@@ -3903,7 +3950,10 @@ void ScreenPanel::unfocus()
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__)
     if (emu) {
-        emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
+        const auto physicalButtons = QGuiApplication::mouseButtons();
+        emu->syncMouseHotkeysFromQtButtons(physicalButtons);
+        if (isMelonPrimeInputSurfaceAuthority())
+            m_mouseRecoveryArmedMask = MelonPrimeMouseRecoveryMask(physicalButtons);
         if (touching) {
             emu->releaseScreen();
             touching = false;

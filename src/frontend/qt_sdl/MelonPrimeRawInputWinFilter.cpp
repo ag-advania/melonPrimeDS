@@ -176,11 +176,17 @@ namespace MelonPrime {
             return true;
 
         RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
-        if (!subscription)
+        return UpdateOwnerLocked(subscription, eligible);
+    }
+
+    bool RawInputWinFilter::UpdateOwnerLocked(
+        RawInputSubscription* subscription, bool eligible)
+    {
+        if (!subscription || !subscription->owner)
             return false;
-        if (!subscription->owner)
-            return false;
-        const bool owns = PlatformInputOwnerService::Update(*subscription->owner, eligible);
+
+        const bool owns = PlatformInputOwnerService::Update(
+            *subscription->owner, eligible);
         if (!owns) {
             if (m_activeSubscription.load(std::memory_order_acquire) == subscription) {
                 DeactivateActiveRegistration(subscription);
@@ -372,7 +378,9 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-22: PollAndSnapshot — drain deferred to DeferredDrain().
+    // P-22: UpdateOwnerAndSnapshot — owner resolution and snapshot validation
+    // share one subscription-mutex transaction; drain is still deferred to
+    // DeferredDrain().
     //
     // processRawInputBatched (GetRawInputBuffer) reads pending raw input
     // in batch. Any WM_INPUT dispatched later (by SDL or drain) is caught
@@ -382,27 +390,58 @@ namespace MelonPrime {
     // Deferring the drain removes 2-10 PeekMessage syscalls from the
     // latency-critical input→RunFrame path.
     // =========================================================================
-    void RawInputWinFilter::PollAndSnapshot(
+    bool RawInputWinFilter::UpdateOwnerAndSnapshotImpl(
         RawInputSubscription* subscription,
+        bool eligible,
         FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
-        int& outWheelSteps)
+        int& outWheelSteps, bool noEdges)
     {
-        // The active pointer is the process-wide Raw authority. Reject an
-        // inactive secondary instance before touching the global mutex; the
-        // locked check below is still required for transfer races.
-        if (LIKELY(m_activeSubscription.load(std::memory_order_acquire) != subscription)) {
-            ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
-            return;
+        // An ineligible subscription that is neither the Raw authority nor
+        // the platform owner has no state to reconcile. Keep this false path
+        // lock-free; a maybe-owner takes the transaction below so deactivation
+        // remains authoritative.
+        if (!eligible) {
+            if (!subscription || !subscription->owner) {
+                ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
+                return false;
+            }
+            const bool rawOwner =
+                m_activeSubscription.load(std::memory_order_acquire) == subscription;
+            const bool platformOwner =
+                PlatformInputOwnerService::IsOwner(*subscription->owner);
+            if (LIKELY(!rawOwner && !platformOwner)) {
+                subscription->owner->focused = false;
+                ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
+                return false;
+            }
         }
 
+        // A steady owner already passed the lock-free authority check. The
+        // mutex below is still needed for the snapshot and final validation,
+        // but it does not need to repeat the owner-transfer work.
+        bool ownerReady = subscription && subscription->owner && eligible
+            && m_activeSubscription.load(std::memory_order_acquire) == subscription
+            && PlatformInputOwnerService::IsOwner(*subscription->owner);
+
         RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
+        if (!subscription || !subscription->owner) {
+            ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
+            return false;
+        }
+
+        if (!ownerReady)
+            ownerReady = UpdateOwnerLocked(subscription, eligible);
+        if (!ownerReady) {
+            ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
+            return false;
+        }
+
         auto* const state = StateFor(subscription);
         if (!state
             || m_activeSubscription.load(std::memory_order_acquire) != subscription
-            || !subscription->owner
             || !PlatformInputOwnerService::IsOwner(*subscription->owner)) {
             ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
-            return;
+            return false;
         }
 
         if (!m_joy2KeySupport) {
@@ -410,46 +449,37 @@ namespace MelonPrime {
             // Drain deferred — see DeferredDrain()
         }
 
-        state->snapshotInputFrame(outHk, outMouseX, outMouseY, outWheelSteps);
+        if (noEdges)
+            state->snapshotInputFrameNoEdges(
+                outHk, outMouseX, outMouseY, outWheelSteps);
+        else
+            state->snapshotInputFrame(
+                outHk, outMouseX, outMouseY, outWheelSteps);
         outHk.generation = subscription->owner->generation;
         outHk.baselineReady = subscription->baselineReady;
+        return true;
     }
 
-    // =========================================================================
-    // V2: PollAndSnapshotNoEdges — re-entrant path helper.
-    //
-    // Same drain/capture semantics as PollAndSnapshot, but preserves hkPrev so
-    // the next outer frame still sees press edges correctly.
-    // =========================================================================
-    void RawInputWinFilter::PollAndSnapshotNoEdges(
+    bool RawInputWinFilter::UpdateOwnerAndSnapshot(
         RawInputSubscription* subscription,
+        bool eligible,
         FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
         int& outWheelSteps)
     {
-        if (LIKELY(m_activeSubscription.load(std::memory_order_acquire) != subscription)) {
-            ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
-            return;
-        }
+        return UpdateOwnerAndSnapshotImpl(
+            subscription, eligible, outHk, outMouseX, outMouseY,
+            outWheelSteps, false);
+    }
 
-        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
-        auto* const state = StateFor(subscription);
-        if (!state
-            || m_activeSubscription.load(std::memory_order_acquire) != subscription
-            || !subscription->owner
-            || !PlatformInputOwnerService::IsOwner(*subscription->owner)) {
-            ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
-            return;
-        }
-
-        if (!m_joy2KeySupport) {
-            state->processRawInputBatched();
-            // Drain deferred — see DeferredDrain()
-        }
-
-        state->snapshotInputFrameNoEdges(
-            outHk, outMouseX, outMouseY, outWheelSteps);
-        outHk.generation = subscription->owner->generation;
-        outHk.baselineReady = subscription->baselineReady;
+    bool RawInputWinFilter::UpdateOwnerAndSnapshotNoEdges(
+        RawInputSubscription* subscription,
+        bool eligible,
+        FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+        int& outWheelSteps)
+    {
+        return UpdateOwnerAndSnapshotImpl(
+            subscription, eligible, outHk, outMouseX, outMouseY,
+            outWheelSteps, true);
     }
 
     // =========================================================================
@@ -464,7 +494,7 @@ namespace MelonPrime {
     // prior GetRawInputBuffer call.
     //
     // processRawInputBatched (GetRawInputBuffer) inside drainPendingMessages
-    // rescues any raw input that arrived since PollAndSnapshot, BEFORE
+    // rescues any raw input that arrived since the input snapshot, BEFORE
     // PeekMessage can dispatch and potentially invalidate the data.
     // Without this safety net, key-up events can be lost → stuck keys.
     //
@@ -500,7 +530,7 @@ namespace MelonPrime {
     // LateLatchMouseDelta — flush kernel buffer + fetch delta before aim write.
     //
     // Called just before ProcessAimInputMouse() to capture mouse events that
-    // arrived after PollAndSnapshot (during morph/weapon/move processing).
+    // arrived after the input snapshot (during morph/weapon/move processing).
     //
     // Joy2key path: events arrive via nativeEventFilter → already in accumulator;
     // processRawInputBatched is skipped.
@@ -771,7 +801,7 @@ namespace MelonPrime {
     //
     // Hidden-window mode can have WM_INPUT messages queued after the last
     // snapshot. Drain/capture them before clearing state so an old DOWN cannot
-    // be replayed into m_state on the next DeferredDrain/PollAndSnapshot cycle.
+    // be replayed into m_state on the next DeferredDrain/input-snapshot cycle.
     // This public wrapper always holds m_subscriptionMutex. During owner
     // transfer it may reset a foreign, inactive subscription; that is the only
     // cross-thread InputState lifecycle reset permitted by this contract.

@@ -159,7 +159,7 @@ void EmuInstance::inputInit()
     joystickLifecycleCheckCounter = 0;
     pendingJoystickBindingProgram = JoystickBindingProgram{};
     activeJoystickBindingProgram = JoystickBindingProgram{};
-    joystickBindingProgramGeneration.store(0, std::memory_order_relaxed);
+    joystickBindingProgramGeneration = 0;
     activeJoystickBindingProgramGeneration = 0;
     qtGlobalCommandPressPending.store(0, std::memory_order_relaxed);
     qtGameplayPressPending.store(0, std::memory_order_relaxed);
@@ -331,13 +331,12 @@ void EmuInstance::publishJoystickBindingProgramLocked(
     const JoystickBindingProgram& program)
 {
     pendingJoystickBindingProgram = program;
-    joystickBindingProgramGeneration.fetch_add(1, std::memory_order_release);
+    ++joystickBindingProgramGeneration;
 }
 
 void EmuInstance::activateJoystickBindingProgramLocked()
 {
-    const uint32_t generation =
-        joystickBindingProgramGeneration.load(std::memory_order_acquire);
+    const uint32_t generation = joystickBindingProgramGeneration;
     if (generation == activeJoystickBindingProgramGeneration)
         return;
 

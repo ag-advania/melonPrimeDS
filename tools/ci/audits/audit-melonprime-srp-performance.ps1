@@ -874,9 +874,19 @@ if ($runFrameStart -lt 0) {
 # from returning to a steady input path; they do not substitute for runtime
 # latency or hardware validation.
 $linuxRawPath = Join-Path $qtSdl 'MelonPrimeRawInputLinuxFilter.cpp'
+$linuxRawHeaderPath = Join-Path $qtSdl 'MelonPrimeRawInputLinuxFilter.h'
+$waylandPath = Join-Path $qtSdl 'MelonPrimeWaylandPointerLock.cpp'
+$waylandHeaderPath = Join-Path $qtSdl 'MelonPrimeWaylandPointerLock.h'
+$waylandMathPath = Join-Path $qtSdl 'MelonPrimeWaylandPointerLockMath.h'
+$waylandFixedTestPath = Join-Path $repoRoot 'tools/testing/wayland-fixed-delta-tests.cpp'
 $threadBridgePath = Join-Path $qtSdl 'MelonPrimeThreadBridge.h'
 $emuInstanceInputPath = Join-Path $qtSdl 'EmuInstanceInput.cpp'
 $linuxRawText = Get-Content -LiteralPath $linuxRawPath -Raw
+$linuxRawHeaderText = Get-Content -LiteralPath $linuxRawHeaderPath -Raw
+$waylandText = Get-Content -LiteralPath $waylandPath -Raw
+$waylandHeaderText = Get-Content -LiteralPath $waylandHeaderPath -Raw
+$waylandMathText = Get-Content -LiteralPath $waylandMathPath -Raw
+$waylandFixedTestText = Get-Content -LiteralPath $waylandFixedTestPath -Raw
 $threadBridgeText = Get-Content -LiteralPath $threadBridgePath -Raw
 $emuInstanceInputText = Get-Content -LiteralPath $emuInstanceInputPath -Raw
 
@@ -893,11 +903,6 @@ if (-not $aimBody) {
     }
 }
 
-$absLoad = $linuxRawText.IndexOf('absBaseInvalid.load', [System.StringComparison]::Ordinal)
-$absExchange = $linuxRawText.IndexOf('absBaseInvalid.exchange', [System.StringComparison]::Ordinal)
-if ($absLoad -lt 0 -or $absExchange -lt 0 -or $absLoad -gt $absExchange) {
-    Add-Error 'Rule L2: Linux absBaseInvalid must load before its rare exchange claim'
-}
 if ($linuxRawText -match '(?:acc[XY]|total)\.fetch_add\s*\(' -or
     $linuxRawText -notmatch 'std::atomic<uint64_t>\s+total' -or
     $linuxRawText -notmatch 'total\.load\s*\(std::memory_order_relaxed\)' -or
@@ -909,7 +914,7 @@ $linuxAccumulateBody = Get-FunctionText -Path $linuxRawPath `
 if (-not $linuxAccumulateBody -or
     $linuxAccumulateBody -notmatch 'receivedMotionPublished' -or
     $linuxAccumulateBody -match 'receivedMotion\.load\s*\(' -or
-    $linuxAccumulateBody -notmatch 'receivedMotion\.store\s*\(') {
+    $linuxAccumulateBody -notmatch 'stateBits\.store\s*\(') {
     Add-Error 'Rule L2: Linux first-motion publication must use its filter-thread shadow without a per-event atomic load'
 }
 
@@ -1404,10 +1409,16 @@ if (-not $onKeyPressBody -or -not $onKeyReleaseBody -or
 }
 if (-not $publishJoystickProgramBody -or
     $publishJoystickProgramBody -notmatch 'pendingJoystickBindingProgram\s*=\s*program' -or
-    $publishJoystickProgramBody -notmatch 'joystickBindingProgramGeneration\.fetch_add' -or
+    $publishJoystickProgramBody -notmatch '\+\+\s*joystickBindingProgramGeneration' -or
     -not $activateJoystickProgramBody -or
+    $activateJoystickProgramBody -notmatch
+        'const\s+uint32_t\s+generation\s*=\s*joystickBindingProgramGeneration' -or
     $activateJoystickProgramBody -notmatch 'activeJoystickBindingProgram\s*=\s*pendingJoystickBindingProgram' -or
     $sampleJoystickLockedBody -notmatch 'activateJoystickBindingProgramLocked\s*\(' -or
+    $emuInstanceHeaderText -match
+        'std::atomic\s*<[^>]+>\s+joystickBindingProgramGeneration' -or
+    $emuInstanceInputText -match
+        'joystickBindingProgramGeneration\.(?:load|store|exchange|fetch_add|fetch_sub)' -or
     $projectJoystickBody -match 'pendingJoystickBindingProgram') {
     Add-Error 'Rule AD: controller binding program publication/activation ownership is incomplete'
 }
@@ -1726,9 +1737,12 @@ if ($inputSubscriptionText -notmatch 'uint64_t\s+generation\s*=' -or
     $updateInputBody -notmatch 'm_inputSubscription\.ConsumeRegistrationReset\s*\(') {
     Add-Error 'Rule AS: per-subscription generation single-writer contract is incomplete'
 }
-if ($updateInputBody -notmatch 'platformInputOwner\s*=\s*rawFilter->UpdateOwner' -or
+if ($updateInputBody -notmatch
+        'platformInputOwner\s*=\s*rawFilter->UpdateOwnerAndSnapshot' -or
+    $updateInputBody -match
+        'platformInputOwner\s*=\s*rawFilter->UpdateOwner\s*\(' -or
     $updateInputBody -notmatch 'const\s+bool\s+isInputOwner\s*=\s*platformInputOwner') {
-    Add-Error 'Rule AS: Windows UpdateOwner result is redundantly reloaded or discarded'
+    Add-Error 'Rule AS: Windows owner/snapshot result is redundantly reloaded or discarded'
 }
 $rawResetBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::resetAll\s*\('
@@ -1800,17 +1814,14 @@ if (-not $shutdownRawBody -or
 # the authoritative revalidation after acquiring it.
 $rawUpdateOwnerBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::UpdateOwner\s*\('
-$rawPollBody = Get-FunctionText -Path $rawWinFilterPath `
-    -Signature 'void\s+RawInputWinFilter::PollAndSnapshot\s*\('
-$rawPollNoEdgesBody = Get-FunctionText -Path $rawWinFilterPath `
-    -Signature 'void\s+RawInputWinFilter::PollAndSnapshotNoEdges\s*\('
+$rawOwnerSnapshotBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::UpdateOwnerAndSnapshotImpl\s*\('
 $rawDeferredBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::DeferredDrain\s*\('
 $rawLateLatchBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::LateLatchMouseDelta\s*\('
 foreach ($rawHotBodySpec in @(
-    @{ Name = 'PollAndSnapshot'; Body = $rawPollBody },
-    @{ Name = 'PollAndSnapshotNoEdges'; Body = $rawPollNoEdgesBody },
+    @{ Name = 'UpdateOwnerAndSnapshotImpl'; Body = $rawOwnerSnapshotBody },
     @{ Name = 'DeferredDrain'; Body = $rawDeferredBody },
     @{ Name = 'LateLatchMouseDelta'; Body = $rawLateLatchBody }
 )) {
@@ -2088,6 +2099,182 @@ if ($rawInputStateText -notmatch
         [System.StringComparison]::Ordinal) -gt
     $rawResetBody.IndexOf('state->resetAll()', [System.StringComparison]::Ordinal)) {
     Add-Error 'Rule BG: foreign Raw reset mutex contract is incomplete'
+}
+
+# --- Rule BO-BU: cross-platform input hot-path closure ---------------------
+#
+# These ratchets cover the P1/P2 reductions from the post-push audit. They are
+# deliberately source-shape checks: platform runtime, physical-device, and
+# high-rate latency evidence still belongs to the corresponding build or
+# hardware matrix.
+$waylandRelativeBody = Get-FunctionText -Path $waylandPath `
+    -Signature 'static\s+void\s+RelativeMotion\s*\('
+$waylandVulkanText = Get-Content -LiteralPath $vulkanScreen -Raw
+
+# BO: native Wayland relative motion is a concrete, non-erased callback.
+if ($waylandHeaderText -match 'std::function|DeltaCallback' -or
+    -not $waylandRelativeBody -or
+    $waylandRelativeBody -match 'QMetaObject|QString|\bConfig\b') {
+    Add-Error 'Rule BO: Wayland relative-motion callback must stay free of erased/Qt/config dispatch'
+}
+
+# BP: retain signed 24.8 values and their fractional residual in integer form.
+foreach ($forbidden in @(
+    'wl_fixed_to_double', 'std::trunc', 'std::round', 'std::lround',
+    'std::floor', 'std::ceil'
+)) {
+    if ($waylandRelativeBody -match [regex]::Escape($forbidden)) {
+        Add-Error "Rule BP: Wayland relative callback contains floating conversion/math: $forbidden"
+    }
+}
+if (-not $waylandRelativeBody -or
+    ([regex]::Matches($waylandRelativeBody, 'TakeWlFixedIntegral\s*\(')).Count -ne 2 -or
+    $waylandMathText -notmatch
+        'std::int64_t\s*&\s*residual256\s*,\s*std::int32_t\s+value' -or
+    $waylandMathText -notmatch 'residual256\s*/\s*256' -or
+    $waylandFixedTestText -notmatch 'OldDoubleModel' -or
+    $waylandFixedTestText -notmatch '\{64,\s*0,\s*0,\s*0\}' -or
+    $waylandFixedTestText -notmatch '\{-64,\s*0,\s*0,\s*0\}' -or
+    $waylandFixedTestText -notmatch '\{128,\s*128,\s*0,\s*0\}' -or
+    $waylandFixedTestText -notmatch '\{-128,\s*-128,\s*0,\s*0\}' -or
+    $waylandFixedTestText -notmatch '\{0,\s*0,\s*0,\s*0\}' -or
+    $waylandFixedTestText -notmatch 'numeric_limits<std::int32_t>::max' -or
+    $waylandFixedTestText -notmatch 'numeric_limits<std::int32_t>::min') {
+    Add-Error 'Rule BP: Wayland fixed-point integer residual helper/parity coverage is incomplete'
+}
+
+# BQ: the concrete GUI target is resolved only on the cold lock transition.
+$waylandTransitionText = $screenText + $waylandVulkanText
+$waylandTargetCount = [regex]::Matches(
+    $waylandTransitionText, 'setDeltaTarget\(&core->ThreadBridge\(\)\)').Count
+$waylandColdResolve = $waylandTransitionText -match
+    'isMelonPrimeInputSurfaceAuthority\(\)[\s\S]*?melonPrimeCoreForPolicy\(\)'
+if (-not $waylandRelativeBody -or
+    $waylandRelativeBody -match
+        'isMelonPrimeInputSurfaceAuthority|melonPrimeCore|getMainWindow|QWidget' -or
+    $waylandRelativeBody -notmatch
+        'deltaTarget->AddPanelAimDeltaFromGui\s*\(' -or
+    $waylandTargetCount -lt 3 -or
+    -not $waylandColdResolve) {
+    Add-Error 'Rule BQ: Wayland event target must be cold-resolved from the primary core'
+}
+
+# BR: diagnostics are absent from production input state and can only be
+# compiled in through the dedicated input-debug gate.
+$subscriptionDebugGuard = [regex]::Match(
+    $inputSubscriptionText,
+    '#if\s+defined\(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY\)[\s\S]*?' +
+        'debugSumX[\s\S]*?debugSumY[\s\S]*?debugFrames[\s\S]*?#endif')
+$linuxProductionText = [regex]::Replace(
+    $linuxRawText,
+    '#if\s+defined\(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY\)[\s\S]*?#endif', '')
+$platformProductionText = [regex]::Replace(
+    $platformInputText,
+    '#if\s+defined\(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY\)[\s\S]*?#endif', '')
+if (-not $subscriptionDebugGuard.Success -or
+    $inputSubscriptionText -notmatch
+        '#if\s+defined\(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY\)' -or
+    $linuxProductionText -match
+        'MELONPRIME_INPUT_DEBUG|MelonPrimeInputDebug|dbgEvents|dbgSum[XY]|dbgLast' -or
+    $platformProductionText -match
+        'MELONPRIME_INPUT_DEBUG|debugSum[XY]|debugFrames|std::getenv' -or
+    $qtSdlCmakeText -notmatch
+        'option\(\s*MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY[\s\S]*?\bOFF\s*\)' -or
+    ([regex]::Matches($cmakePresetsText,
+        'MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY')).Count -lt 2) {
+    Add-Error 'Rule BR: input debug state is not isolated behind its dedicated compile gate'
+}
+foreach ($profilePath in @(
+    (Join-Path $repoRoot '.github/workflows/build-bsd.yml'),
+    (Join-Path $repoRoot '.github/workflows/build-macos.yml'),
+    (Join-Path $repoRoot '.github/workflows/build-ubuntu.yml'),
+    $windowsWorkflowPath,
+    (Join-Path $repoRoot 'tools/build/macos/build-macos-vulkan.sh'),
+    $mingwBuildPath,
+    $mingwShippingBuildPath
+)) {
+    $profileText = Get-Content -LiteralPath $profilePath -Raw
+    if ($profileText -notmatch
+            'MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY(?:=|:BOOL=)OFF') {
+        $relative = [System.IO.Path]::GetRelativePath($repoRoot, $profilePath) -replace '\\', '/'
+        Add-Error "Rule BR: normal/release input debug gate is not pinned OFF: $relative"
+    }
+}
+
+# BS: controller binding publication/activation has one mutex authority.
+if ($emuInstanceHeaderText -notmatch
+        'uint32_t\s+joystickBindingProgramGeneration\s*=\s*0' -or
+    $emuInstanceHeaderText -match
+        'std::atomic\s*<[^>]+>\s+joystickBindingProgramGeneration' -or
+    -not $publishJoystickProgramBody -or
+    $publishJoystickProgramBody -notmatch
+        'pendingJoystickBindingProgram\s*=\s*program' -or
+    $publishJoystickProgramBody -notmatch
+        '\+\+\s*joystickBindingProgramGeneration' -or
+    -not $activateJoystickProgramBody -or
+    $activateJoystickProgramBody -notmatch
+        'const\s+uint32_t\s+generation\s*=\s*joystickBindingProgramGeneration' -or
+    $emuInstanceInputText -match
+        'joystickBindingProgramGeneration\.(?:load|store|exchange|fetch_add|fetch_sub)') {
+    Add-Error 'Rule BS: controller binding generation has more than one synchronization authority'
+}
+
+# BT: macOS lost-release recovery is armed by a boundary event. Unarmed mouse
+# movement cannot enter the global Qt-button reconciliation call.
+$mouseMoveBody = Get-FunctionText -Path $screen `
+    -Signature 'void\s+ScreenPanel::mouseMoveEvent\s*\('
+$screenHeaderText = Get-Content -LiteralPath (Join-Path $qtSdl 'Screen.h') -Raw
+$mouseMoveArmAt = if ($mouseMoveBody) {
+    $mouseMoveBody.IndexOf('m_mouseRecoveryArmedMask != 0',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$mouseMoveQueryAt = if ($mouseMoveBody) {
+    $mouseMoveBody.IndexOf('QGuiApplication::mouseButtons()',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if (($screenText + $screenHeaderText) -notmatch
+        'm_mouseRecoveryArmedMask\s*=\s*0' -or
+    $screenText -notmatch 'm_mouseRecoveryArmedMask\s*\|=' -or
+    $screenText -notmatch 'm_mouseRecoveryArmedMask\s*&=' -or
+    -not $mouseMoveBody -or $mouseMoveArmAt -lt 0 -or
+    $mouseMoveQueryAt -lt 0 -or $mouseMoveArmAt -gt $mouseMoveQueryAt -or
+    $mouseMoveBody -notmatch
+        'm_mouseRecoveryArmedMask\s*!=\s*0[\s\S]*?QGuiApplication::mouseButtons\s*\(\s*\)') {
+    Add-Error 'Rule BT: macOS mouse recovery must query global buttons only when armed'
+}
+
+# BU: Linux publishes availability and first-motion state coherently, and the
+# event path receives reset requests through a cold filter-thread mailbox.
+$linuxResolverBody = Get-FunctionText -Path $platformInputPath `
+    -Signature 'inline\s+AimInputSource\s+PlatformInput_ResolveAimSource\s*\('
+$linuxThreadBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+ThreadMain\s*\('
+$linuxResetBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+LinuxRawInputFilter::resetAll\s*\('
+$linuxWarpBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+LinuxRawInputFilter::NotifyCursorWarp\s*\('
+$linuxResetStateBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+ResetAxisTransientState\s*\('
+if ($linuxRawText -notmatch 'std::atomic<uint8_t>\s+stateBits\s*\{' -or
+    $linuxRawHeaderText -notmatch 'StateAvailable\s*=\s*1u\s*<<\s*0' -or
+    $linuxRawHeaderText -notmatch 'StateMotionSeen\s*=\s*1u\s*<<\s*1' -or
+    $linuxRawText -match 'std::atomic<bool>\s+(?:available|receivedMotion)' -or
+    $linuxRawText -match 'stateBits\.fetch_(?:or|and)' -or
+    $linuxRawText -match 'absBaseInvalid' -or
+    -not $linuxResolverBody -or
+    ([regex]::Matches($linuxResolverBody, 'filter->stateBits\s*\(\s*\)')).Count -ne 1 -or
+    -not $linuxAccumulateBody -or
+    $linuxAccumulateBody -match 'stateBits\.load|DrainResetMailbox|RequestAxisReset' -or
+    -not $linuxThreadBody -or
+    $linuxThreadBody -notmatch
+        'DrainResetMailbox\s*\(\s*\)[\s\S]*?while\s*\(\s*XPending' -or
+    $linuxThreadBody -notmatch 'resetReadFd' -or
+    -not $linuxResetStateBody -or
+    $linuxResetStateBody -notmatch 'hasLast\[0\]\s*=\s*false' -or
+    $linuxResetStateBody -notmatch 'residual\[0\]\s*=\s*0\.0' -or
+    -not $linuxResetBody -or $linuxResetBody -notmatch 'RequestAxisReset\s*\(\s*\)' -or
+    -not $linuxWarpBody -or $linuxWarpBody -notmatch 'RequestAxisReset\s*\(\s*\)') {
+    Add-Error 'Rule BU: Linux packed raw state, one-acquire resolution, or reset mailbox contract is incomplete'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

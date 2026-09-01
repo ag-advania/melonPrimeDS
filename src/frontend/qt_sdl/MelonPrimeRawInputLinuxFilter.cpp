@@ -13,18 +13,25 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
 #include <cstdlib>
+#endif
+#include <cerrno>
+#include <fcntl.h>
 #include <mutex>
 #include <poll.h>
 #include <thread>
 #include <unordered_map>
+#include <unistd.h>
 
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
 // MELONPRIME_INPUT_DEBUG=1 enables 1 Hz pipeline diagnostics on stderr.
 static bool MelonPrimeInputDebug()
 {
     static const bool enabled = std::getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
     return enabled;
 }
+#endif
 
 namespace MelonPrime {
 
@@ -53,14 +60,48 @@ struct LinuxRawInputFilter::Impl
 {
     static_assert(std::atomic<uint64_t>::is_always_lock_free,
         "Linux packed raw-motion publication requires lock-free uint64 atomics");
+    static_assert(std::atomic<uint8_t>::is_always_lock_free,
+        "Linux raw-input state publication requires a lock-free uint8 atomic");
     std::atomic<uint64_t> total{ 0 };
-    std::atomic<bool>    available{ false };
-    std::atomic<bool>    receivedMotion{ false };
+    std::atomic<uint8_t> stateBits{ 0 };
     std::atomic<bool>    quit{ false };
     // Filter-thread-only shadow avoids an atomic load on every XI2 event.
     bool receivedMotionPublished = false;
 
+    int resetReadFd = -1;
+    int resetWriteFd = -1;
+    // Only used if the cold reset pipe cannot be created. It is consumed at
+    // the same filter-loop boundary and is never read from AccumulateRawMotion.
+    std::atomic_bool resetFallbackRequested{ false };
+
     std::thread thread;
+
+    Impl()
+    {
+        int fds[2] = { -1, -1 };
+        if (pipe(fds) != 0)
+            return;
+
+        const auto makeNonBlocking = [](int fd) noexcept {
+            const int flags = fcntl(fd, F_GETFL, 0);
+            return flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
+        };
+        if (!makeNonBlocking(fds[0]) || !makeNonBlocking(fds[1])) {
+            close(fds[0]);
+            close(fds[1]);
+            return;
+        }
+        resetReadFd = fds[0];
+        resetWriteFd = fds[1];
+    }
+
+    ~Impl()
+    {
+        if (resetReadFd >= 0)
+            close(resetReadFd);
+        if (resetWriteFd >= 0)
+            close(resetWriteFd);
+    }
 
     static uint64_t PackTotals(uint32_t x, uint32_t y) noexcept
     {
@@ -118,7 +159,47 @@ struct LinuxRawInputFilter::Impl
     std::unordered_map<int, AxisState> axisStates;   // key: sourceid
     int lastSourceId = -1;
     AxisState* lastSourceState = nullptr;
-    std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()/warps
+
+    void ResetAxisTransientState() noexcept
+    {
+        for (auto& kv : axisStates) {
+            kv.second.hasLast[0] = false;
+            kv.second.hasLast[1] = false;
+            kv.second.residual[0] = 0.0;
+            kv.second.residual[1] = 0.0;
+        }
+    }
+
+    void DrainResetMailbox() noexcept
+    {
+        bool resetRequested = resetFallbackRequested.exchange(
+            false, std::memory_order_acq_rel);
+        if (resetReadFd >= 0) {
+            unsigned char tokens[64];
+            for (;;) {
+                const ssize_t count = read(resetReadFd, tokens, sizeof(tokens));
+                if (count > 0) {
+                    resetRequested = true;
+                    continue;
+                }
+                break;
+            }
+        }
+        if (resetRequested)
+            ResetAxisTransientState();
+    }
+
+    void RequestAxisReset() noexcept
+    {
+        if (resetWriteFd >= 0) {
+            const unsigned char token = 1;
+            const ssize_t written = write(resetWriteFd, &token, sizeof(token));
+            if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+                resetFallbackRequested.store(true, std::memory_order_release);
+            return;
+        }
+        resetFallbackRequested.store(true, std::memory_order_release);
+    }
 
     static bool QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
     {
@@ -161,26 +242,15 @@ struct LinuxRawInputFilter::Impl
         lastSourceState = nullptr;
     }
 
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
     // 1 Hz debug counters (filter thread only).
     long long dbgEvents = 0;
     double dbgSumX = 0.0, dbgSumY = 0.0;
     std::chrono::steady_clock::time_point dbgLast = std::chrono::steady_clock::now();
+#endif
 
     void AccumulateRawMotion(Display* dpy, const XIRawEvent* raw)
     {
-        // resetAll() (focus loss / layout change) invalidates the absolute
-        // baselines so the first event after a gap re-seeds instead of
-        // producing one huge catch-up delta.
-        if (absBaseInvalid.load(std::memory_order_relaxed)
-            && absBaseInvalid.exchange(false, std::memory_order_acq_rel)) {
-            for (auto& kv : axisStates) {
-                kv.second.hasLast[0] = false;
-                kv.second.hasLast[1] = false;
-                kv.second.residual[0] = 0.0;
-                kv.second.residual[1] = 0.0;
-            }
-        }
-
         // XInput event streams normally repeat one source. Keep the generic
         // map for arbitrary XI2 ids, but pay its hash only when the source
         // changes. unordered_map rehash preserves element references/pointers.
@@ -196,12 +266,14 @@ struct LinuxRawInputFilter::Impl
             // this ambiguous event and retry the query on the next event.
             if (!querySucceeded)
                 return;
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
             if (querySucceeded && MelonPrimeInputDebug())
                 std::fprintf(stderr,
                     "[MelonPrime] linux input: raw source %d axis modes: X=%s Y=%s\n",
                     raw->sourceid,
                     st.absolute[0] ? "abs" : "rel",
                     st.absolute[1] ? "abs" : "rel");
+#endif
         }
 
         // XInput2 reports one value per set bit in valuators.mask, in axis
@@ -253,11 +325,16 @@ struct LinuxRawInputFilter::Impl
         const int32_t dy = TakeIntegralDelta(st.residual[1], d[1]);
 
         if ((dx | dy) != 0 && !receivedMotionPublished) {
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
             if (MelonPrimeInputDebug())
                 std::fprintf(stderr,
                     "[MelonPrime] linux input: first raw motion (src %d, dx=%d dy=%d)\n",
                     raw->sourceid, dx, dy);
-            receivedMotion.store(true, std::memory_order_release);
+#endif
+            stateBits.store(
+                static_cast<uint8_t>(LinuxRawInputFilter::StateAvailable
+                    | LinuxRawInputFilter::StateMotionSeen),
+                std::memory_order_release);
             receivedMotionPublished = true;
         }
         // One filter-thread writer publishes coherent modulo-32-bit X/Y in a
@@ -271,6 +348,7 @@ struct LinuxRawInputFilter::Impl
                 std::memory_order_release);
         }
 
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
         if (MelonPrimeInputDebug()) {
             ++dbgEvents;
             dbgSumX += d[0];
@@ -284,6 +362,7 @@ struct LinuxRawInputFilter::Impl
                 dbgLast = now;
             }
         }
+#endif
     }
 
     void ThreadMain()
@@ -337,11 +416,17 @@ struct LinuxRawInputFilter::Impl
             return;
         }
         XFlush(display);
-        available.store(true, std::memory_order_release);
+        stateBits.store(
+            LinuxRawInputFilter::StateAvailable,
+            std::memory_order_release);
         std::fprintf(stderr, "[MelonPrime] linux input: XInput2 RawMotion active\n");
 
         const int fd = ConnectionNumber(display);
         while (!quit.load(std::memory_order_acquire)) {
+            // Reset requests are rare lifecycle events. Consume them once per
+            // X event-queue batch, before decoding the next batch, so the Raw
+            // event path performs no reset atomic load or syscall.
+            DrainResetMailbox();
             while (XPending(display) > 0) {
                 XEvent ev;
                 XNextEvent(display, &ev);
@@ -365,13 +450,22 @@ struct LinuxRawInputFilter::Impl
                 }
             }
 
-            pollfd pfd{};
-            pfd.fd = fd;
-            pfd.events = POLLIN;
-            (void)poll(&pfd, 1, 100);
+            pollfd pollFds[2]{};
+            pollFds[0].fd = fd;
+            pollFds[0].events = POLLIN;
+            int pollCount = 1;
+            if (resetReadFd >= 0) {
+                pollFds[1].fd = resetReadFd;
+                pollFds[1].events = POLLIN;
+                pollCount = 2;
+            }
+            const int pollResult = poll(pollFds, pollCount, 100);
+            if (pollResult > 0 && pollCount == 2
+                && (pollFds[1].revents & POLLIN) != 0)
+                DrainResetMailbox();
         }
 
-        available.store(false, std::memory_order_release);
+        stateBits.store(0, std::memory_order_release);
         XCloseDisplay(display);
     }
 
@@ -392,7 +486,8 @@ LinuxRawInputFilter::LinuxRawInputFilter() : m(new Impl)
 {
     m->Start();
     for (int i = 0; i < 50; ++i) {
-        if (m->available.load(std::memory_order_acquire))
+        if ((m->stateBits.load(std::memory_order_acquire)
+                & StateAvailable) != 0)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -406,12 +501,17 @@ LinuxRawInputFilter::~LinuxRawInputFilter()
 
 bool LinuxRawInputFilter::isAvailable() const
 {
-    return m->available.load(std::memory_order_acquire);
+    return (stateBits() & StateAvailable) != 0;
 }
 
 bool LinuxRawInputFilter::hasReceivedMotion() const
 {
-    return m->receivedMotion.load(std::memory_order_acquire);
+    return (stateBits() & StateMotionSeen) != 0;
+}
+
+uint8_t LinuxRawInputFilter::stateBits() const noexcept
+{
+    return m->stateBits.load(std::memory_order_acquire);
 }
 
 void LinuxRawInputFilter::fetchMouseDelta(
@@ -447,7 +547,7 @@ void LinuxRawInputFilter::resetAll(MelonPrimeInputSubscription& subscription)
     // the aim source. Only the accumulators and abs baselines are transient.
     // Re-seed absolute-device baselines on the next event so a focus gap
     // cannot produce one huge catch-up delta.
-    m->absBaseInvalid.store(true, std::memory_order_release);
+    m->RequestAxisReset();
 }
 
 namespace {
@@ -460,7 +560,7 @@ void LinuxRawInputFilter::NotifyCursorWarp()
 {
     std::lock_guard<std::mutex> lock(s_singletonMutex);
     if (s_instance)
-        s_instance->m->absBaseInvalid.store(true, std::memory_order_release);
+        s_instance->m->RequestAxisReset();
 }
 
 LinuxRawInputFilter* LinuxRawInputFilter::Acquire()

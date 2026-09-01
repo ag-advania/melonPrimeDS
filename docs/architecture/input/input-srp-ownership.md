@@ -128,6 +128,10 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
 - Linux RawMotion has one accumulator writer. A lock-free packed 64-bit total
   publishes modulo-32-bit X/Y with one `load(relaxed) + store(release)` per
   nonzero event; the frame reader uses one acquire and wrap-safe subtraction.
+  Availability and first-motion readiness share one packed state byte and one
+  acquire in the source resolver. Absolute baselines and per-device fractional
+  residuals are reset through a cold mailbox at the filter-loop/event-batch
+  boundary; the normal RawMotion arithmetic does not pay a reset-atomic check.
 - SDL physical lifetime has one mutex-held owner. One physical sample projects
   separately to application-global command state and gameplay state. Running
   samples once immediately before `RunFrameHook`; paused outer cycles refresh
@@ -161,6 +165,11 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   epoch recreation remain cold lifecycle work. Raw contention/recovery
   telemetry is compiled only by `MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY`
   and then enabled at runtime only with `MELONPRIME_RAW_INPUT_PERF=1`.
+- Windows frame ownership and snapshot validation use the same
+  `UpdateOwnerAndSnapshot*` transaction. The returned owner bit is the result
+  of the eligible-owner check and the generation-validated snapshot, so the
+  frame projector does not repeat owner resolution in a second mutex
+  transaction.
 - Qt panel aim has one GUI writer and one emulation-thread cursor. Both consumer
   read and discard paths retry until generation is stable around the total, so
   a concurrent GUI reset cannot replay motion or move the cursor backward.
@@ -172,7 +181,9 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   neither the Windows raw wheel path nor the Qt wheel pulse path scans `HK_MAX`.
 - tracked mouse press/release and lost-release recovery share five
   cold-precomputed masks. Normal movement performs only load-first stale tests;
-  correcting RMWs occur solely when a lost release left a bit set.
+  correcting RMWs occur solely when a lost release left a bit set. On macOS,
+  the GUI mouse-move path queries global button state only while a compact
+  armed mask indicates that a tracked press could still need recovery.
 - focused/capture/panel policy is one packed changed-only GUI publication and
   one acquire snapshot per input decision; downstream capture resolution uses
   that immutable snapshot. Stylus publication is changed-only too. GUI
@@ -180,6 +191,16 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   CAS/queued invocation.
 - non-Windows Aim resolves process ownership once and carries source,
   raw-active, and warp policy in one frame result reused by Aim and UI.
+- Native Wayland relative motion, when enabled, stores a borrowed primary-core
+  `ThreadBridge` target during cold authority transitions. The event callback
+  performs integer `wl_fixed_t` residual accumulation and direct bridge
+  publication; it contains no erased callback or per-event policy/core lookup.
+- `MelonPrimeInputSubscription` production state contains no debug counters.
+  Input debug counters and Linux diagnostic formatting are compiled only under
+  `MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY`, which release presets force off.
+- The controller binding-program generation is plain mutex-guarded state; its
+  publication and activation both occur under `joyMutex`, leaving one
+  synchronization authority.
 
 ## Frame-order contract
 

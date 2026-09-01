@@ -156,6 +156,10 @@ option(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY
     "Compile Windows Raw Input performance telemetry"
     OFF)
 
+option(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY
+    "Compile platform input debug telemetry"
+    OFF)
+
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     list(APPEND SOURCES_QT_SDL
         ${CMAKE_SOURCE_DIR}/tools/testing/gpu2d-native-recorder-purity.cpp)
@@ -624,6 +628,19 @@ else()
         "MelonPrime Raw Input performance telemetry: COMPILED OUT")
 endif()
 
+if (MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
+    target_compile_definitions(core PRIVATE
+        MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=1)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=1)
+    message(STATUS
+        "MelonPrime input debug telemetry: COMPILED IN. "
+        "Set MELONPRIME_INPUT_DEBUG=1 at runtime to enable collection.")
+else()
+    message(STATUS
+        "MelonPrime input debug telemetry: COMPILED OUT")
+endif()
+
 if (MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
     target_compile_definitions(core PRIVATE
         MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=1)
@@ -639,6 +656,18 @@ endif()
 # Backend-neutral structured input upload planning. A unit wrongly considered
 # clean leaves last frame's 2D content on screen with no error anywhere, so the
 # extraction is checked against a transcription of the pre-refactor computation.
+add_executable(melonprime_wayland_fixed_delta_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/wayland-fixed-delta-tests.cpp)
+target_include_directories(melonprime_wayland_fixed_delta_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(melonprime_wayland_fixed_delta_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_wayland_fixed_delta_check ALL
+    COMMAND $<TARGET_FILE:melonprime_wayland_fixed_delta_tests>
+    DEPENDS melonprime_wayland_fixed_delta_tests
+    COMMENT "Running Wayland fixed-point delta parity tests..."
+    VERBATIM)
+
 add_executable(melonprime_structured_upload_plan_tests EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tools/testing/structured-upload-plan-tests.cpp)
 target_include_directories(melonprime_structured_upload_plan_tests PRIVATE

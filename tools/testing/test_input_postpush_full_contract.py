@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from pathlib import Path
 
 
@@ -248,6 +249,102 @@ def check_panel_cumulative_model() -> None:
     # already returned pre-reset delta is not replayed by this read.
     assert stable_read("after_g2") == 8
     assert stable_read("none") == 8
+
+
+def check_wayland_fixed_delta_model() -> None:
+    def trunc_div(value: int, divisor: int) -> int:
+        magnitude = abs(value) // divisor
+        return -magnitude if value < 0 else magnitude
+
+    def old_double(residual: float, value: int) -> tuple[float, int]:
+        residual += value / 256.0
+        whole = math.trunc(residual)
+        return residual - whole, whole
+
+    def new_integer(residual: int, value: int) -> tuple[int, int]:
+        residual += value
+        whole = trunc_div(residual, 256)
+        return residual - whole * 256, whole
+
+    sequences = (
+        [64] * 4,
+        [-64] * 4,
+        [128, 128],
+        [-128, -128],
+        [256, 0, -256],
+        [2**31 - 1, -(2**31)],
+    )
+    for values in sequences:
+        old_residual = 0.0
+        new_residual = 0
+        for value in values:
+            old_residual, old_output = old_double(old_residual, value)
+            new_residual, new_output = new_integer(new_residual, value)
+            assert old_output == new_output
+        assert old_residual == new_residual / 256.0
+
+    # The unaccelerated pair is preferred when either component is present;
+    # an all-zero unaccelerated pair falls back to accelerated motion.
+    events = ((256, 512, 64, 0), (256, 512, 0, 0))
+    selected = []
+    for accelerated_x, accelerated_y, unaccelerated_x, unaccelerated_y in events:
+        use_unaccelerated = unaccelerated_x != 0 or unaccelerated_y != 0
+        selected.append(
+            (unaccelerated_x, unaccelerated_y)
+            if use_unaccelerated
+            else (accelerated_x, accelerated_y)
+        )
+    assert selected == [(64, 0), (256, 512)]
+
+
+def check_linux_raw_state_and_reset_model() -> None:
+    available = 1
+    motion_seen = 2
+    state = 0
+    assert state == 0
+    state = available
+    assert state & available and not state & motion_seen
+    state |= motion_seen
+    assert state == available | motion_seen
+    state = 0
+    assert state == 0
+
+    # A reset is consumed at the next filter batch boundary, before absolute
+    # baselines or fractional relative residuals can affect a new event.
+    reset_mailbox = []
+    axis = {"has_last": True, "residual": 64}
+    reset_mailbox.append(1)
+    if reset_mailbox:
+        reset_mailbox.clear()
+        axis["has_last"] = False
+        axis["residual"] = 0
+    assert axis == {"has_last": False, "residual": 0}
+
+
+def check_mac_mouse_recovery_model() -> None:
+    armed = 0
+
+    def press(index: int) -> None:
+        nonlocal armed
+        armed |= 1 << index
+
+    def move(physical: int) -> None:
+        nonlocal armed
+        if armed:
+            armed = physical
+
+    press(0)
+    assert armed == 1
+    move(1)
+    assert armed == 1
+    move(0)
+    assert armed == 0  # lost-release recovery observes the physical release
+
+    # Focus loss reseeds the candidate mask, including a press whose Qt press
+    # event was missed while the window was changing focus.
+    armed = 0b0010
+    move(0b0110)
+    assert armed == 0b0110
 
 
 def check_qt_event_edge_model() -> None:
@@ -777,8 +874,14 @@ def main() -> None:
     bridge = source("src/frontend/qt_sdl/MelonPrimeThreadBridge.h")
     mac = source("src/frontend/qt_sdl/MelonPrimeRawInputMacFilter.mm")
     linux = source("src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.cpp")
+    linux_header = source("src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.h")
     platform = source("src/frontend/qt_sdl/MelonPrimePlatformInput.h")
     screen = source("src/frontend/qt_sdl/Screen.cpp")
+    screen_header = source("src/frontend/qt_sdl/Screen.h")
+    wayland_header = source("src/frontend/qt_sdl/MelonPrimeWaylandPointerLock.h")
+    wayland = source("src/frontend/qt_sdl/MelonPrimeWaylandPointerLock.cpp")
+    wayland_math = source("src/frontend/qt_sdl/MelonPrimeWaylandPointerLockMath.h")
+    wayland_test = source("tools/testing/wayland-fixed-delta-tests.cpp")
     window = source("src/frontend/qt_sdl/Window.cpp")
     key_binding = source("src/frontend/qt_sdl/MelonPrimeQtKeyBinding.h")
     map_button = source("src/frontend/qt_sdl/InputConfig/MapButton.h")
@@ -792,6 +895,11 @@ def main() -> None:
     windows_workflow = source(".github/workflows/build-windows.yml")
     mingw_build = source("tools/build/windows/build-mingw.bat")
     mingw_shipping_build = source("tools/build/windows/build-mingw-release.bat")
+    mac_release_build = source("tools/build/macos/build_macos_release.command")
+    mac_vulkan_build = source("tools/build/macos/build-macos-vulkan.sh")
+    macos_workflow = source(".github/workflows/build-macos.yml")
+    ubuntu_workflow = source(".github/workflows/build-ubuntu.yml")
+    bsd_workflow = source(".github/workflows/build-bsd.yml")
     raw_state_public = raw_state_header.split("    private:", 1)[0]
     raw_hotkey = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.cpp")
     raw_hotkey_header = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.h")
@@ -891,17 +999,12 @@ def main() -> None:
     raw_drain = body(
         raw_filter,
         "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
-        "void RawInputWinFilter::PollAndSnapshot(",
+        "bool RawInputWinFilter::UpdateOwnerAndSnapshotImpl(",
     )
-    raw_poll = body(
+    raw_fused = body(
         raw_filter,
-        "void RawInputWinFilter::PollAndSnapshot(",
-        "void RawInputWinFilter::PollAndSnapshotNoEdges(",
-    )
-    raw_poll_no_edges = body(
-        raw_filter,
-        "void RawInputWinFilter::PollAndSnapshotNoEdges(",
-        "void RawInputWinFilter::DeferredDrain(",
+        "bool RawInputWinFilter::UpdateOwnerAndSnapshotImpl(",
+        "bool RawInputWinFilter::UpdateOwnerAndSnapshot(",
     )
     raw_deferred = body(
         raw_filter,
@@ -917,6 +1020,41 @@ def main() -> None:
         raw_state_cpp,
         "FORCE_INLINE int InputState::claimWheelSteps() noexcept",
         "// =========================================================================\n    // P-1 FIX",
+    )
+    wayland_relative = body(
+        wayland,
+        "static void RelativeMotion(",
+        "static void Locked(",
+    )
+    screen_press = body(
+        screen,
+        "void ScreenPanel::mousePressEvent(QMouseEvent* event)",
+        "void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)",
+    )
+    screen_release = body(
+        screen,
+        "void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)",
+        "void ScreenPanel::mouseMoveEvent(QMouseEvent* event)",
+    )
+    screen_move = body(
+        screen,
+        "void ScreenPanel::mouseMoveEvent(QMouseEvent* event)",
+        "void ScreenPanel::tabletEvent(QTabletEvent* event)",
+    )
+    screen_unfocus = body(
+        screen,
+        "void ScreenPanel::unfocus()",
+        "void ScreenPanel::focusInEvent(QFocusEvent * event)",
+    )
+    linux_accumulate = body(
+        linux,
+        "void AccumulateRawMotion(Display* dpy, const XIRawEvent* raw)",
+        "void ThreadMain()",
+    )
+    raw_fused = body(
+        raw_filter,
+        "bool RawInputWinFilter::UpdateOwnerAndSnapshotImpl(",
+        "bool RawInputWinFilter::UpdateOwnerAndSnapshot(",
     )
 
     require(header, "struct LateJoystickSnapshot", "late snapshot storage")
@@ -1209,6 +1347,117 @@ def main() -> None:
     require(linux, "std::min(2, raw->valuators.mask_len * 8)", "Linux X/Y decode bound")
     require(linux, "receivedMotionPublished", "Linux first-motion thread shadow")
     require(linux, "std::atomic<uint64_t> total", "Linux packed cumulative total")
+    for needle in (
+        "std::atomic<uint8_t> stateBits",
+        "StateAvailable",
+        "StateMotionSeen",
+        "stateBits.store(",
+        "DrainResetMailbox()",
+        "RequestAxisReset()",
+    ):
+        require(linux + linux_header, needle, "Linux packed state/reset mailbox")
+    for forbidden in (
+        "std::atomic<bool>    available",
+        "std::atomic<bool>    receivedMotion",
+        "absBaseInvalid",
+    ):
+        if forbidden in linux:
+            raise AssertionError(f"Linux redundant state/reset path reappeared: {forbidden}")
+    if "DrainResetMailbox" in linux_accumulate or "RequestAxisReset" in linux_accumulate:
+        raise AssertionError("Linux Raw event path must not inspect the reset mailbox")
+    resolver = body(
+        platform,
+        "inline AimInputSource PlatformInput_ResolveAimSource(",
+        "inline void PlatformInput_CountPerfAimSource(",
+    )
+    if resolver.count("filter->stateBits()") != 1:
+        raise AssertionError("Linux aim source resolution must acquire packed state once")
+
+    # BO/BP/BQ: native Wayland relative motion is a direct integer producer.
+    if "std::function" in wayland_header or "<functional>" in wayland_header:
+        raise AssertionError("Wayland relative motion must not use std::function")
+    for forbidden in (
+        "wl_fixed_to_double",
+        "std::trunc",
+        "std::round",
+        "isMelonPrimeInputSurfaceAuthority",
+        "melonPrimeCore",
+        "QMetaObject",
+        "QString",
+    ):
+        if forbidden in wayland_relative:
+            raise AssertionError(f"Wayland event path still contains {forbidden!r}")
+    for needle in (
+        "MelonPrimeThreadBridge* deltaTarget",
+        "AddPanelAimDeltaFromGui",
+        "TakeWlFixedIntegral",
+        "residualX256",
+        "residualY256",
+    ):
+        require(wayland + wayland_header + wayland_math, needle, "Wayland direct integer path")
+    if wayland_relative.count("TakeWlFixedIntegral") != 2:
+        raise AssertionError("Wayland relative motion must convert both axes through the fixed helper")
+    require(wayland_test, "OldDoubleModel", "Wayland old/new residual parity test")
+    require(wayland_test, "std::numeric_limits<std::int32_t>::max()", "Wayland large positive test")
+    require(wayland_test, "std::numeric_limits<std::int32_t>::min()", "Wayland large negative test")
+    for needle in (
+        "setDeltaTarget(&core->ThreadBridge())",
+        "setDeltaTarget(nullptr)",
+        "std::make_unique<MelonPrime::WaylandPointerLock>()",
+    ):
+        require(screen + screen_header + source("src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp"),
+                needle, "Wayland cold target resolution")
+
+    # BR: diagnostics are compile-time optional. Production subscriptions and
+    # platform event functions contain no debug fields, getenv, clocks, or
+    # counters when the gate is absent.
+    require(input_subscription, "#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)",
+            "input debug field compile gate")
+    require(platform, "#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)",
+            "platform input debug compile gate")
+    require(linux, "#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)",
+            "Linux input debug compile gate")
+    if "std::getenv(\"MELONPRIME_INPUT_DEBUG\")" in linux_accumulate:
+        raise AssertionError("Linux Raw event body must not call getenv")
+    for needle in (
+        "option(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY",
+        "MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=1",
+    ):
+        require(qt_sdl_cmake, needle, "input debug CMake gate")
+    if cmake_presets.count("MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY") < 2:
+        raise AssertionError("base and shipping presets must pin input debug telemetry OFF")
+    for text_value, label in (
+        (mingw_build, "normal MinGW input debug gate"),
+        (mingw_shipping_build, "shipping MinGW input debug gate"),
+        (mac_release_build, "macOS release input debug gate documentation"),
+        (mac_vulkan_build, "macOS release input debug gate"),
+        (windows_workflow, "Windows CI input debug gate"),
+        (macos_workflow, "macOS CI input debug gate"),
+        (ubuntu_workflow, "Ubuntu CI input debug gate"),
+        (bsd_workflow, "BSD CI input debug gate"),
+    ):
+        require(text_value, "MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY", label)
+
+    # BS: the controller generation is protected by joyMutex, not a second
+    # atomic synchronization authority.
+    require(header, "uint32_t joystickBindingProgramGeneration = 0", "mutex controller generation")
+    if "std::atomic<uint32_t> joystickBindingProgramGeneration" in header:
+        raise AssertionError("controller binding generation must be mutex-guarded plain state")
+    if "joystickBindingProgramGeneration.load" in input_cpp or "joystickBindingProgramGeneration.fetch_add" in input_cpp:
+        raise AssertionError("controller binding generation regained atomic operations")
+    require(input_cpp, "++joystickBindingProgramGeneration", "mutex controller generation publish")
+
+    # BT: macOS normal movement only performs the global Qt button query while
+    # the GUI-owned candidate mask is armed; press/release/focus remain recovery
+    # boundaries.
+    require(screen_header, "m_mouseRecoveryArmedMask", "macOS recovery mask storage")
+    require(screen_press, "m_mouseRecoveryArmedMask |=", "macOS recovery arming")
+    require(screen_release, "m_mouseRecoveryArmedMask &=", "macOS recovery release clear")
+    require(screen_move, "m_mouseRecoveryArmedMask != 0", "macOS move recovery gate")
+    query_at = screen_move.index("QGuiApplication::mouseButtons()")
+    if screen_move.index("m_mouseRecoveryArmedMask != 0") > query_at:
+        raise AssertionError("macOS mouse movement must arm before querying global buttons")
+    require(screen_unfocus, "MelonPrimeMouseRecoveryMask", "macOS focus-loss recovery reseed")
     if "std::atomic<int64_t> accX" in linux or "std::atomic<int64_t> accY" in linux:
         raise AssertionError("Linux split X/Y accumulators reappeared")
     require(platform, "bool resolvedOwner", "single owner resolution")
@@ -1328,8 +1577,7 @@ def main() -> None:
     # locked revalidation before reading mutable subscription state.
     require(raw_filter_header, "MelonPrimeRawInputPerfProbe.h", "Raw perf probe include")
     for name, text_value in (
-        ("PollAndSnapshot", raw_poll),
-        ("PollAndSnapshotNoEdges", raw_poll_no_edges),
+        ("UpdateOwnerAndSnapshot", raw_fused),
         ("DeferredDrain", raw_deferred),
         ("LateLatchMouseDelta", raw_late),
     ):
@@ -1590,7 +1838,11 @@ def main() -> None:
         require(input_subscription + raw_filter + game_input, needle, "Raw subscription single-writer")
     if "BeginRegistrationGeneration(*previous->owner)" in raw_filter:
         raise AssertionError("foreign owner generation mutation reappeared")
-    require(game_input, "platformInputOwner = rawFilter->UpdateOwner", "Windows owner result reuse")
+    require(
+        game_input,
+        "platformInputOwner = rawFilter->UpdateOwnerAndSnapshot",
+        "Windows owner/snapshot transaction",
+    )
     require(game_input, "const bool isInputOwner = platformInputOwner", "Windows owner result reuse")
 
     # AT: API success is the only path to m_isRegistered/activeOwner/baseline
@@ -1641,6 +1893,9 @@ def main() -> None:
     check_controller_pause_model()
     check_controller_mapping_equivalence_model()
     check_panel_cumulative_model()
+    check_wayland_fixed_delta_model()
+    check_linux_raw_state_and_reset_model()
+    check_mac_mouse_recovery_model()
     check_qt_event_edge_model()
     check_binding_program_publication_model()
     check_linux_axis_query_lifecycle_model()
@@ -1648,7 +1903,7 @@ def main() -> None:
     check_wheel_count_model()
     check_packed_wrap_model()
     check_mac_handoff_model()
-    print("post-b2e3c311 input re-audit contract: PASS")
+    print("post-push full input re-audit contract: PASS")
 
 
 if __name__ == "__main__":
