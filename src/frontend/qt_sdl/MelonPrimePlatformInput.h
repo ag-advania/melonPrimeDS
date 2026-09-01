@@ -97,7 +97,8 @@ inline void PlatformInput_ReleaseRawFilter(PlatformRawFilter*& filter)
 inline bool PlatformInput_IsRawAvailable(const PlatformRawFilter* filter)
 {
 #if defined(__linux__)
-    return filter && (filter->stateBits() & LinuxRawInputFilter::StateAvailable) != 0;
+    const uint8_t state = filter ? filter->stateBits() : 0;
+    return (state & LinuxRawInputFilter::StateAvailable) != 0;
 #else
     return filter && filter->isAvailable();
 #endif

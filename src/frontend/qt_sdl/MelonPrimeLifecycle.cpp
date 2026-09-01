@@ -200,7 +200,7 @@ namespace MelonPrime {
         m_threadBridge.ResetCursorPresentationFromEmu();
 #ifdef _WIN32
         if (m_rawFilter)
-            m_rawFilter->UpdateOwner(m_rawInputSubscription, false);
+            m_rawFilter->DeactivateOwner(m_rawInputSubscription);
 #else
         PlatformInputOwnerService::Release(m_inputSubscription);
 #endif
@@ -271,7 +271,7 @@ namespace MelonPrime {
         m_threadBridge.ResetCursorPresentationFromEmu();
 #ifdef _WIN32
         if (m_rawFilter)
-            m_rawFilter->UpdateOwner(m_rawInputSubscription, false);
+            m_rawFilter->DeactivateOwner(m_rawInputSubscription);
 #else
         PlatformInputOwnerService::Release(m_inputSubscription);
 #endif

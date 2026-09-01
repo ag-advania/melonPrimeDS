@@ -42,8 +42,6 @@ public:
     static void NotifyCursorWarp();
 
     [[nodiscard]] std::uint8_t stateBits() const noexcept;
-    bool isAvailable() const;
-    bool hasReceivedMotion() const;
     void fetchMouseDelta(MelonPrimeInputSubscription& subscription, int32_t& outDx, int32_t& outDy);
     void resetAll(MelonPrimeInputSubscription& subscription);
 

@@ -349,6 +349,7 @@ void EmuInstance::activateJoystickBindingProgramLocked()
 
 void EmuInstance::rebuildMouseButtonBindingMasks()
 {
+    m_mouseRecoveryEligibleMask = 0;
     for (int buttonIndex = 0; buttonIndex < static_cast<int>(
              MelonPrime::kSupportedMouseButtonCount); ++buttonIndex) {
         auto& masks = mouseButtonMasks[buttonIndex];
@@ -370,6 +371,8 @@ void EmuInstance::rebuildMouseButtonBindingMasks()
             else if (bit & kGameplayHotkeyMask)
                 masks.gameplayBits |= bit;
         }
+        if (masks.inputBits || masks.hotkeyBits)
+            m_mouseRecoveryEligibleMask |= static_cast<uint8_t>(1u << buttonIndex);
     }
 }
 #endif

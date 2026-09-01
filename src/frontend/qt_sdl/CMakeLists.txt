@@ -668,6 +668,19 @@ add_custom_target(melonprime_wayland_fixed_delta_check ALL
     COMMENT "Running Wayland fixed-point delta parity tests..."
     VERBATIM)
 
+# The Linux XI2 reset mailbox is a lifecycle fence, not a per-event signal.
+# Keep its bounded-chunk ordering model executable on every build host; the
+# model has no X11 dependency and therefore also protects cross-platform CI.
+add_executable(melonprime_linux_reset_fence_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/linux-reset-fence-tests.cpp)
+set_target_properties(melonprime_linux_reset_fence_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_linux_reset_fence_check ALL
+    COMMAND $<TARGET_FILE:melonprime_linux_reset_fence_tests>
+    DEPENDS melonprime_linux_reset_fence_tests
+    COMMENT "Running Linux XI2 reset-fence state-model tests..."
+    VERBATIM)
+
 add_executable(melonprime_structured_upload_plan_tests EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tools/testing/structured-upload-plan-tests.cpp)
 target_include_directories(melonprime_structured_upload_plan_tests PRIVATE

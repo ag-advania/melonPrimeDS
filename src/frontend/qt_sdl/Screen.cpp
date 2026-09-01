@@ -1132,7 +1132,9 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     if (core) {
         emu->syncMouseHotkeysFromQtButtons(QGuiApplication::mouseButtons());
         const int buttonIndex = MelonPrime::MouseButtonIndex(event->button());
-        if (buttonIndex >= 0)
+        if (buttonIndex >= 0
+            && (emu->mouseRecoveryEligibleMask()
+                & static_cast<uint8_t>(1u << buttonIndex)) != 0)
             m_mouseRecoveryArmedMask |= static_cast<uint8_t>(1u << buttonIndex);
     }
 #endif
@@ -1302,11 +1304,14 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         return;
 
 #if defined(MELONPRIME_DS) && defined(__APPLE__)
-    if (isMelonPrimeInputSurfaceAuthority()
-        && m_mouseRecoveryArmedMask != 0) {
-        const auto physicalButtons = QGuiApplication::mouseButtons();
-        emu->syncMouseHotkeysFromQtButtons(physicalButtons);
-        m_mouseRecoveryArmedMask = MelonPrimeMouseRecoveryMask(physicalButtons);
+    if (isMelonPrimeInputSurfaceAuthority()) {
+        m_mouseRecoveryArmedMask &= emu->mouseRecoveryEligibleMask();
+        if (m_mouseRecoveryArmedMask != 0) {
+            const auto physicalButtons = QGuiApplication::mouseButtons();
+            emu->syncMouseHotkeysFromQtButtons(physicalButtons);
+            m_mouseRecoveryArmedMask = MelonPrimeMouseRecoveryMask(physicalButtons)
+                & emu->mouseRecoveryEligibleMask();
+        }
     }
 #endif
 
@@ -2093,8 +2098,11 @@ bool ScreenPanelNative::setWaylandPointerLockForMelonPrime(bool enabled)
     // away from any edge whenever this lock later releases.
     const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
     waylandPointerLock->setDeltaTarget(&core->ThreadBridge());
-    return waylandPointerLock->setLocked(
+    const bool result = waylandPointerLock->setLocked(
         handles->first, handles->second, true, hint.x(), hint.y());
+    if (!result)
+        waylandPointerLock->setDeltaTarget(nullptr);
+    return result;
 }
 
 bool ScreenPanelNative::isWaylandPointerLockActiveForMelonPrime() const
@@ -3502,8 +3510,11 @@ bool ScreenPanelGL::setWaylandPointerLockForMelonPrime(bool enabled)
     // away from any edge whenever this lock later releases.
     const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
     waylandPointerLock->setDeltaTarget(&core->ThreadBridge());
-    return waylandPointerLock->setLocked(
+    const bool result = waylandPointerLock->setLocked(
         handles->first, handles->second, true, hint.x(), hint.y());
+    if (!result)
+        waylandPointerLock->setDeltaTarget(nullptr);
+    return result;
 }
 
 bool ScreenPanelGL::isWaylandPointerLockActiveForMelonPrime() const
@@ -3953,7 +3964,8 @@ void ScreenPanel::unfocus()
         const auto physicalButtons = QGuiApplication::mouseButtons();
         emu->syncMouseHotkeysFromQtButtons(physicalButtons);
         if (isMelonPrimeInputSurfaceAuthority())
-            m_mouseRecoveryArmedMask = MelonPrimeMouseRecoveryMask(physicalButtons);
+            m_mouseRecoveryArmedMask = MelonPrimeMouseRecoveryMask(physicalButtons)
+                & emu->mouseRecoveryEligibleMask();
         if (touching) {
             emu->releaseScreen();
             touching = false;

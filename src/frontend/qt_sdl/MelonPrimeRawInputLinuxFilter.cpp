@@ -17,9 +17,9 @@
 #include <cstdlib>
 #endif
 #include <cerrno>
-#include <fcntl.h>
 #include <mutex>
 #include <poll.h>
+#include <sys/eventfd.h>
 #include <thread>
 #include <unordered_map>
 #include <unistd.h>
@@ -68,39 +68,30 @@ struct LinuxRawInputFilter::Impl
     // Filter-thread-only shadow avoids an atomic load on every XI2 event.
     bool receivedMotionPublished = false;
 
-    int resetReadFd = -1;
-    int resetWriteFd = -1;
-    // Only used if the cold reset pipe cannot be created. It is consumed at
-    // the same filter-loop boundary and is never read from AccumulateRawMotion.
+    int resetFd = -1;
+    int wakeFd = -1;
+    // Only used if the cold reset eventfd cannot be created, or if an
+    // exceptional eventfd write fails. It is consumed at a filter-loop
+    // boundary and is never read from AccumulateRawMotion.
     std::atomic_bool resetFallbackRequested{ false };
+    std::atomic_bool resetFallbackActive{ false };
 
     std::thread thread;
 
     Impl()
     {
-        int fds[2] = { -1, -1 };
-        if (pipe(fds) != 0)
-            return;
-
-        const auto makeNonBlocking = [](int fd) noexcept {
-            const int flags = fcntl(fd, F_GETFL, 0);
-            return flags >= 0 && fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0;
-        };
-        if (!makeNonBlocking(fds[0]) || !makeNonBlocking(fds[1])) {
-            close(fds[0]);
-            close(fds[1]);
-            return;
-        }
-        resetReadFd = fds[0];
-        resetWriteFd = fds[1];
+        resetFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        if (resetFd < 0)
+            resetFallbackActive.store(true, std::memory_order_relaxed);
+        wakeFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     }
 
     ~Impl()
     {
-        if (resetReadFd >= 0)
-            close(resetReadFd);
-        if (resetWriteFd >= 0)
-            close(resetWriteFd);
+        if (resetFd >= 0)
+            close(resetFd);
+        if (wakeFd >= 0)
+            close(wakeFd);
     }
 
     static uint64_t PackTotals(uint32_t x, uint32_t y) noexcept
@@ -170,20 +161,53 @@ struct LinuxRawInputFilter::Impl
         }
     }
 
+    static bool SignalEventFd(int fd) noexcept
+    {
+        if (fd < 0)
+            return false;
+
+        constexpr std::uint64_t token = 1;
+        for (;;) {
+            const ssize_t written = write(fd, &token, sizeof(token));
+            if (written == static_cast<ssize_t>(sizeof(token)))
+                return true;
+            if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                return true; // An earlier signal is already pending.
+            if (written < 0 && errno == EINTR)
+                continue;
+            return false;
+        }
+    }
+
+    static bool DrainEventFd(int fd) noexcept
+    {
+        if (fd < 0)
+            return false;
+
+        bool signaled = false;
+        for (;;) {
+            std::uint64_t value = 0;
+            const ssize_t count = read(fd, &value, sizeof(value));
+            if (count == static_cast<ssize_t>(sizeof(value))) {
+                signaled = true;
+                continue;
+            }
+            if (count < 0 && errno == EINTR)
+                continue;
+            return signaled;
+        }
+    }
+
     void DrainResetMailbox() noexcept
     {
-        bool resetRequested = resetFallbackRequested.exchange(
-            false, std::memory_order_acq_rel);
-        if (resetReadFd >= 0) {
-            unsigned char tokens[64];
-            for (;;) {
-                const ssize_t count = read(resetReadFd, tokens, sizeof(tokens));
-                if (count > 0) {
-                    resetRequested = true;
-                    continue;
-                }
-                break;
-            }
+        bool resetRequested = DrainEventFd(resetFd);
+        // The fallback RMW is cold and only exists when the eventfd path is
+        // unavailable or has reported an exceptional write failure. A normal
+        // fd-backed reset-none poll does not touch this atomic.
+        if (resetFd < 0
+            || resetFallbackActive.load(std::memory_order_acquire)) {
+            resetRequested = resetFallbackRequested.exchange(
+                false, std::memory_order_acq_rel) || resetRequested;
         }
         if (resetRequested)
             ResetAxisTransientState();
@@ -191,14 +215,20 @@ struct LinuxRawInputFilter::Impl
 
     void RequestAxisReset() noexcept
     {
-        if (resetWriteFd >= 0) {
-            const unsigned char token = 1;
-            const ssize_t written = write(resetWriteFd, &token, sizeof(token));
-            if (written < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-                resetFallbackRequested.store(true, std::memory_order_release);
+        if (SignalEventFd(resetFd))
             return;
-        }
+
+        resetFallbackActive.store(true, std::memory_order_release);
         resetFallbackRequested.store(true, std::memory_order_release);
+        // If reset eventfd creation/write failed, the wake fd still gives the
+        // filter thread an immediate boundary without adding a normal-path
+        // atomic poll or read.
+        (void)SignalEventFd(wakeFd);
+    }
+
+    void DrainWakeMailbox() noexcept
+    {
+        (void)DrainEventFd(wakeFd);
     }
 
     static bool QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
@@ -365,6 +395,8 @@ struct LinuxRawInputFilter::Impl
 #endif
     }
 
+    static constexpr int kMaxXiEventsPerChunk = 64;
+
     void ThreadMain()
     {
         (void)XInitThreads();
@@ -423,13 +455,15 @@ struct LinuxRawInputFilter::Impl
 
         const int fd = ConnectionNumber(display);
         while (!quit.load(std::memory_order_acquire)) {
-            // Reset requests are rare lifecycle events. Consume them once per
-            // X event-queue batch, before decoding the next batch, so the Raw
-            // event path performs no reset atomic load or syscall.
-            DrainResetMailbox();
-            while (XPending(display) > 0) {
+            // Keep a flood from starving lifecycle reset notifications. A
+            // reset request arriving during this chunk is applied at the
+            // following poll boundary, before the next chunk is decoded.
+            int processed = 0;
+            while (processed < kMaxXiEventsPerChunk
+                && XPending(display) > 0) {
                 XEvent ev;
                 XNextEvent(display, &ev);
+                ++processed;
 
                 if (ev.xcookie.type != GenericEvent
                     || ev.xcookie.extension != xiOpcode)
@@ -450,19 +484,46 @@ struct LinuxRawInputFilter::Impl
                 }
             }
 
-            pollfd pollFds[2]{};
+            const bool moreX = XPending(display) > 0;
+            pollfd pollFds[3]{};
             pollFds[0].fd = fd;
             pollFds[0].events = POLLIN;
             int pollCount = 1;
-            if (resetReadFd >= 0) {
-                pollFds[1].fd = resetReadFd;
-                pollFds[1].events = POLLIN;
-                pollCount = 2;
+            int resetPollIndex = -1;
+            if (resetFd >= 0) {
+                resetPollIndex = pollCount;
+                pollFds[pollCount].fd = resetFd;
+                pollFds[pollCount].events = POLLIN;
+                ++pollCount;
             }
-            const int pollResult = poll(pollFds, pollCount, 100);
-            if (pollResult > 0 && pollCount == 2
-                && (pollFds[1].revents & POLLIN) != 0)
+            int wakePollIndex = -1;
+            if (wakeFd >= 0) {
+                wakePollIndex = pollCount;
+                pollFds[pollCount].fd = wakeFd;
+                pollFds[pollCount].events = POLLIN;
+                ++pollCount;
+            }
+            const int pollTimeout = moreX ? 0 : (wakeFd >= 0 ? -1 : 100);
+            const int pollResult = poll(pollFds, pollCount, pollTimeout);
+            if (pollResult > 0) {
+                if (resetPollIndex >= 0
+                    && (pollFds[resetPollIndex].revents
+                        & (POLLIN | POLLERR | POLLHUP)) != 0)
+                    DrainResetMailbox();
+                if (wakePollIndex >= 0
+                    && (pollFds[wakePollIndex].revents
+                        & (POLLIN | POLLERR | POLLHUP)) != 0) {
+                    DrainWakeMailbox();
+                    if (resetFd < 0
+                        || resetFallbackActive.load(std::memory_order_acquire))
+                        DrainResetMailbox();
+                }
+            }
+            else if (pollResult == 0 && resetFd < 0 && wakeFd < 0) {
+                // Last-resort cold fallback if both eventfds failed. This is
+                // bounded by the lifecycle poll timeout, never by XI events.
                 DrainResetMailbox();
+            }
         }
 
         stateBits.store(0, std::memory_order_release);
@@ -477,6 +538,8 @@ struct LinuxRawInputFilter::Impl
     void Stop()
     {
         quit.store(true, std::memory_order_release);
+        if (!SignalEventFd(wakeFd))
+            (void)SignalEventFd(resetFd);
         if (thread.joinable())
             thread.join();
     }
@@ -497,16 +560,6 @@ LinuxRawInputFilter::~LinuxRawInputFilter()
 {
     m->Stop();
     delete m;
-}
-
-bool LinuxRawInputFilter::isAvailable() const
-{
-    return (stateBits() & StateAvailable) != 0;
-}
-
-bool LinuxRawInputFilter::hasReceivedMotion() const
-{
-    return (stateBits() & StateMotionSeen) != 0;
 }
 
 uint8_t LinuxRawInputFilter::stateBits() const noexcept

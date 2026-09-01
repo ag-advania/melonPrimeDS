@@ -176,6 +176,10 @@ public:
     void onMouseRelease(QMouseEvent* event);
     [[nodiscard]] bool hotkeyUsesKeyboardKey(int hotkeyId, int qtKey) const;
     [[nodiscard]] bool hotkeyUsesMouseButton(int hotkeyId, Qt::MouseButton button) const;
+    [[nodiscard]] uint8_t mouseRecoveryEligibleMask() const noexcept
+    {
+        return m_mouseRecoveryEligibleMask;
+    }
     void syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical);
     // One-frame virtual press for MelonPrime::InputKey::MouseWheelUp/Down bindings.
     void onMouseWheel(int delta);
@@ -638,6 +642,9 @@ private:
     uint32_t activeJoystickBindingProgramGeneration = 0;
     MouseButtonBindingMask mouseButtonMasks[
         MelonPrime::kSupportedMouseButtonCount]{};
+    // Cold config projection: only buttons mapped to a DS input or hotkey
+    // need macOS lost-release recovery during mouse movement.
+    uint8_t m_mouseRecoveryEligibleMask = 0;
     static constexpr uint64_t kGlobalCommandHotkeyMask =
         (1ULL << HK_GuitarGripGreen) - 1ULL;
     static constexpr uint64_t kGameplayHotkeyMask =

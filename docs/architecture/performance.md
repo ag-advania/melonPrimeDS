@@ -98,7 +98,7 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | `m_cachedPanel` (P-3) | `MelonPrime.h` | `OnEmuStart`, `NotifyLayoutChange` | `MelonPrimeCore` lifecycle |
 | Qt panel `m_panelAimTotal` / reset baseline / consumer cursor | `MelonPrimeThreadBridge.h` | reset captures the current total; panel→raw and layout/focus transitions request reset | GUI-thread producer + emulation-thread consumer |
 | SDL active binding table / late edge baseline | `EmuInstance.h` | input config load, central device close, reconnect baseline | `EmuInstance` input owner |
-| Linux raw axis baseline / residuals | `MelonPrimeRawInputLinuxFilter.cpp` | reset mailbox at filter-loop boundary, device hierarchy invalidation | `LinuxRawInputFilter` |
+| Linux raw axis baseline / residuals | `MelonPrimeRawInputLinuxFilter.cpp` | reset eventfd readiness at a bounded (64-event maximum) filter-loop boundary, device hierarchy invalidation | `LinuxRawInputFilter` |
 | Linux raw availability + motion-seen | `MelonPrimeRawInputLinuxFilter.cpp` packed state byte | filter startup/first delivered motion, teardown | `LinuxRawInputFilter` |
 | Mac raw `lastReadX/Y` | `MelonPrimeRawInputMacFilter.mm:46-47` | `resetAll`, filter stop | `MacRawInputFilter::resetAll` |
 | Linux raw `lastReadX/Y` | `MelonPrimeRawInputLinuxFilter.cpp:54-55` | `resetAll` | `LinuxRawInputFilter::resetAll` |

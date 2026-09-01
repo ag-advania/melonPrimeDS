@@ -28,7 +28,7 @@ namespace MelonPrime {
 
         RawInputSubscription* Subscribe(MelonPrimeInputSubscription* owner, bool joy2KeySupport, HWND windowHandle);
         void Unsubscribe(RawInputSubscription* subscription);
-        bool UpdateOwner(RawInputSubscription* subscription, bool eligible);
+        void DeactivateOwner(RawInputSubscription* subscription);
 
         bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 

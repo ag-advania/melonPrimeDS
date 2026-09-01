@@ -1551,8 +1551,11 @@ bool ScreenPanelVulkan::setWaylandPointerLockForMelonPrime(bool enabled)
 
     const QPoint hint = window() ? mapTo(window(), rect().center()) : rect().center();
     waylandPointerLock->setDeltaTarget(&core->ThreadBridge());
-    return waylandPointerLock->setLocked(
+    const bool result = waylandPointerLock->setLocked(
         handles->first, handles->second, true, hint.x(), hint.y());
+    if (!result)
+        waylandPointerLock->setDeltaTarget(nullptr);
+    return result;
 }
 
 

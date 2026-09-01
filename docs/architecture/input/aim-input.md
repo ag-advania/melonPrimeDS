@@ -438,8 +438,8 @@ History of the two failed schemes (do not regress to either):
    warp echo.
 
 A third failure mode (2026-07-03, VM): **XWayland sessions accept the XI2 `XI_RawMotion`
-selection but never deliver raw events** — `isAvailable()` alone made the runtime trust a silent
-raw source and aim froze entirely. Hence the `hasReceivedMotion()` gate below.
+selection but never deliver raw events** — availability alone made the runtime trust a silent
+raw source and aim froze entirely. Hence the packed `stateBits()` gate below.
 
 ### 9.1 Native Wayland relative pointer
 
@@ -469,18 +469,24 @@ Current implementation:
   - relative axes 0/1 accumulate as-is; **absolute axes accumulate the difference of successive
     values** (first event seeds the baseline);
   - axes above 0/1 (scroll-wheel valuators on many drivers) are never fed into aim;
-  - `resetAll()` posts a reset token through the cold reset mailbox. The filter thread drains
-    that mailbox at its event-batch boundary and invalidates absolute baselines and fractional
-    residuals there, so a focus gap cannot produce one huge catch-up delta. The normal
-    `XI_RawMotion` event path does not inspect a reset atomic;
+  - `resetAll()` posts a reset token through the cold `eventfd(EFD_NONBLOCK | EFD_CLOEXEC)`
+    mailbox. The filter thread drains it only after `poll()` reports reset-fd readiness, at
+    the boundary between bounded chunks of at most 64 X events. It then invalidates absolute
+    baselines and fractional residuals before the next chunk, so a focus gap cannot produce
+    one huge catch-up delta. The normal `XI_RawMotion` event path performs no reset read or
+    reset atomic RMW; an exceptional eventfd failure uses the cold fallback mailbox and wake fd;
+  - the filter thread also polls a nonblocking close-on-exec wake `eventfd`; shutdown publishes
+    `quit` and signals that fd before joining, so normal teardown does not wait for the poll timeout;
   - motion-seen is a filter-thread shadow published once into the packed state byte. Reset does
     **not** clear it (it is a session delivery property; clearing it would flap the aim source
     on every focus loss);
-  - `isAvailable()` means `XOpenDisplay` + XInput2 query + `XISelectEvents(XI_RawMotion)` succeeded;
-  - `hasReceivedMotion()` means at least one nonzero raw delta actually arrived.
+  - `stateBits()` publishes `StateAvailable` when `XOpenDisplay` + XInput2 query +
+    `XISelectEvents(XI_RawMotion)` succeed, and adds `StateMotionSeen` after the first nonzero
+    raw delta. The packed byte is the only Linux readiness API.
 - **Raw mode gate** (`IsLinuxRawAimActive()` and the matching check in `UpdateInputStateImpl`):
-  `isAvailable() && hasReceivedMotion()`. Until the first real raw delta proves the session
-  delivers raw motion, the Qt fallback owns aim; the first raw event switches over.
+  one acquire of `stateBits()` must contain both `StateAvailable` and `StateMotionSeen`. Until
+  the first real raw delta proves the session delivers raw motion, the Qt fallback owns aim;
+  the first raw event switches over.
 - `MelonPrimeCore::Initialize()` only acquires the XInput2 filter when
   `QGuiApplication::platformName() == "xcb"`. Wayland has no global XInput2 raw stream; its
   native relative-pointer route is described in §9.1 and falls back to Qt when unsupported.
@@ -536,7 +542,8 @@ RawMotion parsing rules:
 - Availability and motion-seen are published in one lock-free state byte. The frame-side source
   resolver performs one acquire load and tests both bits, so availability cannot be observed from
   one publication while motion-seen comes from another. Absolute-baseline resets are delivered
-  by the cold mailbox and consumed by the filter thread outside the event-hot arithmetic.
+  by the cold eventfd and consumed by the filter thread after reset-fd readiness, before the next
+  bounded X-event chunk. The fallback atomic is consulted only when eventfd setup/write has failed.
 
 Troubleshooting signals:
 

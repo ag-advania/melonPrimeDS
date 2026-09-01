@@ -130,8 +130,10 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   nonzero event; the frame reader uses one acquire and wrap-safe subtraction.
   Availability and first-motion readiness share one packed state byte and one
   acquire in the source resolver. Absolute baselines and per-device fractional
-  residuals are reset through a cold mailbox at the filter-loop/event-batch
-  boundary; the normal RawMotion arithmetic does not pay a reset-atomic check.
+  residuals are reset through a cold nonblocking close-on-exec eventfd after
+  poll readiness, between bounded chunks of at most 64 X events; the normal
+  RawMotion arithmetic does not pay a reset read or reset-atomic check. A
+  second wake eventfd publishes shutdown before the filter thread is joined.
 - SDL physical lifetime has one mutex-held owner. One physical sample projects
   separately to application-global command state and gameplay state. Running
   samples once immediately before `RunFrameHook`; paused outer cycles refresh

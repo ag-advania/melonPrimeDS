@@ -146,37 +146,36 @@ namespace MelonPrime {
         return StateFor(m_activeSubscription.load(std::memory_order_acquire));
     }
 
-    bool RawInputWinFilter::UpdateOwner(RawInputSubscription* subscription, bool eligible)
+    void RawInputWinFilter::DeactivateOwner(RawInputSubscription* subscription)
     {
         // An ineligible subscription that is neither the Raw authority nor
         // the platform owner has no state to reconcile. Keep this false path
         // lock-free; a maybe-owner still takes the locked path below so owner
         // transfer/deactivation remains authoritative.
-        if (!eligible) {
-            if (!subscription || !subscription->owner)
-                return false;
-            const bool rawOwner =
-                m_activeSubscription.load(std::memory_order_acquire) == subscription;
-            const bool platformOwner =
-                PlatformInputOwnerService::IsOwner(*subscription->owner);
-            if (LIKELY(!rawOwner && !platformOwner)) {
-                subscription->owner->focused = false;
-                return false;
-            }
+        if (!subscription || !subscription->owner)
+            return;
+        const bool rawOwner =
+            m_activeSubscription.load(std::memory_order_acquire) == subscription;
+        const bool platformOwner =
+            PlatformInputOwnerService::IsOwner(*subscription->owner);
+        if (LIKELY(!rawOwner && !platformOwner)) {
+            subscription->owner->focused = false;
+            return;
         }
 
-        // The emulation thread calls this on every frame. Once this
-        // subscription is already active and still owns the process-wide
-        // capture token, no registration or generation state can change, so
-        // avoid taking the recursive mutex on the steady-state path. The
-        // locked path below remains authoritative for focus/owner changes.
-        if (subscription && subscription->owner && eligible
-            && m_activeSubscription.load(std::memory_order_acquire) == subscription
-            && PlatformInputOwnerService::IsOwner(*subscription->owner))
-            return true;
-
         RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
-        return UpdateOwnerLocked(subscription, eligible);
+        const bool stillRawOwner =
+            m_activeSubscription.load(std::memory_order_acquire) == subscription;
+        const bool stillPlatformOwner =
+            PlatformInputOwnerService::IsOwner(*subscription->owner);
+        if (!stillRawOwner && !stillPlatformOwner) {
+            subscription->owner->focused = false;
+            return;
+        }
+
+        (void)PlatformInputOwnerService::Update(*subscription->owner, false);
+        if (m_activeSubscription.load(std::memory_order_acquire) == subscription)
+            DeactivateActiveRegistration(subscription);
     }
 
     bool RawInputWinFilter::UpdateOwnerLocked(

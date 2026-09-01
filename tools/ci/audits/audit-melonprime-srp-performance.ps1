@@ -879,6 +879,7 @@ $waylandPath = Join-Path $qtSdl 'MelonPrimeWaylandPointerLock.cpp'
 $waylandHeaderPath = Join-Path $qtSdl 'MelonPrimeWaylandPointerLock.h'
 $waylandMathPath = Join-Path $qtSdl 'MelonPrimeWaylandPointerLockMath.h'
 $waylandFixedTestPath = Join-Path $repoRoot 'tools/testing/wayland-fixed-delta-tests.cpp'
+$linuxResetFenceTestPath = Join-Path $repoRoot 'tools/testing/linux-reset-fence-tests.cpp'
 $threadBridgePath = Join-Path $qtSdl 'MelonPrimeThreadBridge.h'
 $emuInstanceInputPath = Join-Path $qtSdl 'EmuInstanceInput.cpp'
 $linuxRawText = Get-Content -LiteralPath $linuxRawPath -Raw
@@ -887,6 +888,7 @@ $waylandText = Get-Content -LiteralPath $waylandPath -Raw
 $waylandHeaderText = Get-Content -LiteralPath $waylandHeaderPath -Raw
 $waylandMathText = Get-Content -LiteralPath $waylandMathPath -Raw
 $waylandFixedTestText = Get-Content -LiteralPath $waylandFixedTestPath -Raw
+$linuxResetFenceTestText = Get-Content -LiteralPath $linuxResetFenceTestPath -Raw
 $threadBridgeText = Get-Content -LiteralPath $threadBridgePath -Raw
 $emuInstanceInputText = Get-Content -LiteralPath $emuInstanceInputPath -Raw
 
@@ -1811,9 +1813,10 @@ if (-not $shutdownRawBody -or
 
 # AX: the frame-hot Raw readers reject inactive subscriptions before touching
 # the process-wide recursive mutex, but every maybe-owner path still performs
-# the authoritative revalidation after acquiring it.
-$rawUpdateOwnerBody = Get-FunctionText -Path $rawWinFilterPath `
-    -Signature 'bool\s+RawInputWinFilter::UpdateOwner\s*\('
+# the authoritative revalidation after acquiring it. Lifecycle deactivation is
+# a separate cold API; the fused frame API owns all eligible-owner updates.
+$rawDeactivateOwnerBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::DeactivateOwner\s*\('
 $rawOwnerSnapshotBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::UpdateOwnerAndSnapshotImpl\s*\('
 $rawDeferredBody = Get-FunctionText -Path $rawWinFilterPath `
@@ -1838,14 +1841,15 @@ foreach ($rawHotBodySpec in @(
         Add-Error "Rule AX: $($rawHotBodySpec.Name) must precheck active Raw ownership before its mutex"
     }
 }
-if (-not $rawUpdateOwnerBody -or
-    $rawUpdateOwnerBody -notmatch 'if\s*\(\s*!eligible\s*\)' -or
-    $rawUpdateOwnerBody -notmatch 'const\s+bool\s+rawOwner' -or
-    $rawUpdateOwnerBody -notmatch 'const\s+bool\s+platformOwner' -or
-    $rawUpdateOwnerBody -notmatch 'if\s*\(\s*LIKELY\(\s*!rawOwner\s*&&\s*!platformOwner\s*\)\s*\)' -or
-    $rawUpdateOwnerBody.IndexOf('LIKELY(!rawOwner && !platformOwner)', [System.StringComparison]::Ordinal) -gt
-        $rawUpdateOwnerBody.IndexOf('RawInputPerf::SubscriptionMutexGuard', [System.StringComparison]::Ordinal)) {
-    Add-Error 'Rule AX: non-owner UpdateOwner false path must remain lock-free'
+if (-not $rawDeactivateOwnerBody -or
+    $rawDeactivateOwnerBody -notmatch 'const\s+bool\s+rawOwner' -or
+    $rawDeactivateOwnerBody -notmatch 'const\s+bool\s+platformOwner' -or
+    $rawDeactivateOwnerBody -notmatch 'if\s*\(\s*LIKELY\(\s*!rawOwner\s*&&\s*!platformOwner\s*\)\s*\)' -or
+    $rawDeactivateOwnerBody -notmatch 'PlatformInputOwnerService::Update\s*\(\s*\*subscription->owner\s*,\s*false\s*\)' -or
+    $rawDeactivateOwnerBody -notmatch 'DeactivateActiveRegistration\s*\(\s*subscription\s*\)' -or
+    $rawDeactivateOwnerBody.IndexOf('LIKELY(!rawOwner && !platformOwner)', [System.StringComparison]::Ordinal) -gt
+        $rawDeactivateOwnerBody.IndexOf('RawInputPerf::SubscriptionMutexGuard', [System.StringComparison]::Ordinal)) {
+    Add-Error 'Rule AX: non-owner DeactivateOwner false path must remain lock-free'
 }
 
 # AY: the stuck-state recovery is event-gated and the expensive Windows calls
@@ -2267,14 +2271,130 @@ if ($linuxRawText -notmatch 'std::atomic<uint8_t>\s+stateBits\s*\{' -or
     $linuxAccumulateBody -match 'stateBits\.load|DrainResetMailbox|RequestAxisReset' -or
     -not $linuxThreadBody -or
     $linuxThreadBody -notmatch
-        'DrainResetMailbox\s*\(\s*\)[\s\S]*?while\s*\(\s*XPending' -or
-    $linuxThreadBody -notmatch 'resetReadFd' -or
+        'while\s*\(\s*processed\s*<\s*kMaxXiEventsPerChunk' -or
+    $linuxRawText -match 'resetReadFd|resetWriteFd' -or
+    $linuxRawHeaderText -match 'isAvailable\s*\(|hasReceivedMotion\s*\(' -or
     -not $linuxResetStateBody -or
     $linuxResetStateBody -notmatch 'hasLast\[0\]\s*=\s*false' -or
     $linuxResetStateBody -notmatch 'residual\[0\]\s*=\s*0\.0' -or
     -not $linuxResetBody -or $linuxResetBody -notmatch 'RequestAxisReset\s*\(\s*\)' -or
     -not $linuxWarpBody -or $linuxWarpBody -notmatch 'RequestAxisReset\s*\(\s*\)') {
     Add-Error 'Rule BU: Linux packed raw state, one-acquire resolution, or reset mailbox contract is incomplete'
+}
+
+# BW: reset readiness is poll-driven and XInput events are bounded. The normal
+# reset-none path must not drain the fd before each queue batch; a reset that
+# arrives during a flood is observed at the next bounded chunk boundary.
+$linuxChunkAt = if ($linuxThreadBody) {
+    $linuxThreadBody.IndexOf('while (processed < kMaxXiEventsPerChunk',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$linuxFirstResetDrainAt = if ($linuxThreadBody) {
+    $linuxThreadBody.IndexOf('DrainResetMailbox()',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$linuxResetReadyAt = if ($linuxThreadBody) {
+    $linuxThreadBody.IndexOf('if (resetPollIndex >= 0',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if ($linuxRawText -notmatch '#include\s+<sys/eventfd\.h>' -or
+    $linuxRawText -notmatch 'eventfd\s*\(\s*0\s*,\s*EFD_NONBLOCK\s*\|\s*EFD_CLOEXEC\s*\)' -or
+    $linuxRawText -match '#include\s+<fcntl\.h>|\bpipe\s*\(' -or
+    $linuxRawText -match 'resetReadFd|resetWriteFd' -or
+    $linuxRawText -notmatch 'static\s+constexpr\s+int\s+kMaxXiEventsPerChunk\s*=\s*64' -or
+    $linuxChunkAt -lt 0 -or $linuxFirstResetDrainAt -lt $linuxChunkAt -or
+    $linuxResetReadyAt -lt 0 -or $linuxResetReadyAt -gt $linuxFirstResetDrainAt -or
+    $linuxThreadBody -notmatch 'const\s+bool\s+moreX\s*=\s*XPending\s*\(\s*display\s*\)\s*>\s*0' -or
+    $linuxThreadBody -notmatch 'const\s+int\s+pollTimeout\s*=\s*moreX\s*\?\s*0' -or
+    $linuxThreadBody -notmatch 'resetPollIndex\s*=\s*pollCount' -or
+    $linuxThreadBody -notmatch 'wakePollIndex\s*=\s*pollCount' -or
+    $linuxThreadBody -notmatch 'quit\.load\s*\(\s*std::memory_order_acquire\s*\)') {
+    Add-Error 'Rule BW: Linux reset-none path or bounded reset fence is incomplete'
+}
+
+# BX: the fallback atomic is an exceptional compatibility path only. A normal
+# eventfd-backed drain never performs the reset mailbox RMW, and request/stop
+# wakeups remain fd-backed on the normal path.
+$linuxResetMailboxBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+DrainResetMailbox\s*\('
+$linuxRequestResetBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+RequestAxisReset\s*\('
+$linuxStopBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+Stop\s*\('
+$linuxFallbackGuardAt = if ($linuxResetMailboxBody) {
+    $linuxResetMailboxBody.IndexOf('if (resetFd < 0',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$linuxFallbackExchangeAt = if ($linuxResetMailboxBody) {
+    $linuxResetMailboxBody.IndexOf('resetFallbackRequested.exchange',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if (-not $linuxResetMailboxBody -or
+    $linuxFallbackGuardAt -lt 0 -or
+    $linuxFallbackExchangeAt -lt $linuxFallbackGuardAt -or
+    ([regex]::Matches($linuxRawText,
+        'resetFallbackRequested\.exchange')).Count -ne 1 -or
+    -not $linuxRequestResetBody -or
+    $linuxRequestResetBody -notmatch
+        'if\s*\(\s*SignalEventFd\s*\(\s*resetFd\s*\)\s*\)\s*return' -or
+    $linuxRequestResetBody -notmatch
+        'resetFallbackActive\.store\s*\(\s*true' -or
+    $linuxRequestResetBody -notmatch
+        'resetFallbackRequested\.store\s*\(\s*true' -or
+    $linuxRequestResetBody -notmatch 'SignalEventFd\s*\(\s*wakeFd\s*\)' -or
+    -not $linuxStopBody -or
+    $linuxStopBody -notmatch 'quit\.store\s*\(\s*true' -or
+    $linuxStopBody -notmatch 'SignalEventFd\s*\(\s*wakeFd\s*\)') {
+    Add-Error 'Rule BX: Linux reset fallback RMW or shutdown wake escaped its cold fallback path'
+}
+
+# BY: retain an executable state model for the two ordering cases from the
+# review: reset between A/B and reset after event 100 in a 10000-event flood.
+if (-not (Test-Path -LiteralPath $linuxResetFenceTestPath) -or
+    $linuxResetFenceTestText -notmatch
+        'constexpr\s+std::size_t\s+kMaxXiEventsPerChunk\s*=\s*64' -or
+    $linuxResetFenceTestText -notmatch 'requestAfter' -or
+    $linuxResetFenceTestText -notmatch '10000' -or
+    $linuxResetFenceTestText -notmatch
+        'appliedAfter\s*-\s*requestAfter\s*>\s*kMaxXiEventsPerChunk' -or
+    $qtSdlCmakeText -notmatch 'melonprime_linux_reset_fence_tests' -or
+    $qtSdlCmakeText -notmatch 'melonprime_linux_reset_fence_check') {
+    Add-Error 'Rule BY: bounded Linux reset-fence model or build target is missing'
+}
+
+# BZ: macOS recovery is mapped-button scoped. The eligible mask is a cold
+# projection from input/hotkey bindings, and stale armed bits are removed before
+# the move-path global Qt query.
+$macRecoveryText = $emuInstanceHeaderText + $emuInstanceInputText + $screenText
+if ($macRecoveryText -notmatch 'mouseRecoveryEligibleMask' -or
+    $emuInstanceHeaderText -notmatch
+        'uint8_t\s+m_mouseRecoveryEligibleMask\s*=\s*0' -or
+    $emuInstanceInputText -notmatch
+        'if\s*\(\s*masks\.inputBits\s*\|\|\s*masks\.hotkeyBits\s*\)' -or
+    $screenText -notmatch
+        'm_mouseRecoveryArmedMask\s*&=\s*emu->mouseRecoveryEligibleMask\s*\(\s*\)' -or
+    $screenText -notmatch
+        'm_mouseRecoveryArmedMask\s*\|=[\s\S]*?mouseRecoveryEligibleMask' -or
+    -not $mouseMoveBody -or
+    $mouseMoveBody -notmatch
+        'm_mouseRecoveryArmedMask\s*&=\s*emu->mouseRecoveryEligibleMask\s*\(\s*\)[\s\S]*?QGuiApplication::mouseButtons\s*\(\s*\)') {
+    Add-Error 'Rule BZ: macOS mapped-button recovery eligibility is incomplete'
+}
+
+# CA: the public non-fused owner update is gone. Frame ownership remains fused,
+# while lifecycle teardown uses an explicit cold deactivation API.
+$rawDeactivateOwnerBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::DeactivateOwner\s*\('
+$rawOwnerApiProduction = $rawWinFilterHeaderText + $rawWinFilterText +
+    $lifecycleText + $gameInputText
+if (-not $rawDeactivateOwnerBody -or
+    $rawWinFilterHeaderText -notmatch
+        'void\s+DeactivateOwner\s*\(' -or
+    $rawDeactivateOwnerBody -notmatch
+        'PlatformInputOwnerService::Update\s*\(\s*\*subscription->owner\s*,\s*false\s*\)' -or
+    $lifecycleText -notmatch '->DeactivateOwner\s*\(' -or
+    $rawOwnerApiProduction -match 'UpdateOwner\s*\(') {
+    Add-Error 'Rule CA: Windows fused owner API cleanup is incomplete'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

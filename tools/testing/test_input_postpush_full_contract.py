@@ -321,18 +321,59 @@ def check_linux_raw_state_and_reset_model() -> None:
     assert axis == {"has_last": False, "residual": 0}
 
 
+def check_linux_reset_fence_model() -> None:
+    max_chunk = 64
+
+    def run(event_count: int, request_after: int):
+        processed = 0
+        generation = 0
+        reset_pending = False
+        applied_after = None
+        event_generations = []
+        while processed < event_count:
+            chunk_end = min(event_count, processed + max_chunk)
+            while processed < chunk_end:
+                event_generations.append(generation)
+                processed += 1
+                if processed == request_after:
+                    reset_pending = True
+            if reset_pending:
+                reset_pending = False
+                generation += 1
+                applied_after = processed
+        assert not reset_pending and generation == 1
+        assert applied_after is not None
+        assert request_after <= applied_after <= request_after + max_chunk
+        return event_generations, applied_after
+
+    # Event A, reset request, event B: B finishes the current bounded chunk;
+    # the reset is applied before the following chunk's event.
+    generations, applied_after = run(max_chunk + 1, 1)
+    assert generations[0:2] == [0, 0]
+    assert generations[max_chunk] == 1
+    assert applied_after == max_chunk
+
+    # A continuous XPending flood cannot postpone the fence beyond one chunk.
+    _, applied_after = run(10000, 100)
+    assert applied_after - 100 <= max_chunk
+
+
 def check_mac_mouse_recovery_model() -> None:
+    eligible = 0b0001
     armed = 0
 
     def press(index: int) -> None:
         nonlocal armed
-        armed |= 1 << index
+        if eligible & (1 << index):
+            armed |= 1 << index
 
     def move(physical: int) -> None:
         nonlocal armed
         if armed:
             armed = physical
 
+    press(1)
+    assert armed == 0  # an unmapped supported button is never armed
     press(0)
     assert armed == 1
     move(1)
@@ -875,6 +916,7 @@ def main() -> None:
     mac = source("src/frontend/qt_sdl/MelonPrimeRawInputMacFilter.mm")
     linux = source("src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.cpp")
     linux_header = source("src/frontend/qt_sdl/MelonPrimeRawInputLinuxFilter.h")
+    linux_reset_test = source("tools/testing/linux-reset-fence-tests.cpp")
     platform = source("src/frontend/qt_sdl/MelonPrimePlatformInput.h")
     screen = source("src/frontend/qt_sdl/Screen.cpp")
     screen_header = source("src/frontend/qt_sdl/Screen.h")
@@ -981,10 +1023,10 @@ def main() -> None:
         "void InputState::snapshotInputFrameNoEdges(",
         "bool InputState::hotkeyDown",
     )
-    raw_update_owner = body(
+    raw_deactivate_owner = body(
         raw_filter,
-        "bool RawInputWinFilter::UpdateOwner(",
-        "bool RawInputWinFilter::ReconfigureActiveRegistration(",
+        "void RawInputWinFilter::DeactivateOwner(",
+        "bool RawInputWinFilter::UpdateOwnerLocked(",
     )
     raw_reconfigure = body(
         raw_filter,
@@ -1050,6 +1092,16 @@ def main() -> None:
         linux,
         "void AccumulateRawMotion(Display* dpy, const XIRawEvent* raw)",
         "void ThreadMain()",
+    )
+    linux_thread = body(
+        linux,
+        "void ThreadMain()",
+        "    void Start()",
+    )
+    linux_reset_mailbox = body(
+        linux,
+        "void DrainResetMailbox() noexcept",
+        "void RequestAxisReset() noexcept",
     )
     raw_fused = body(
         raw_filter,
@@ -1354,8 +1406,50 @@ def main() -> None:
         "stateBits.store(",
         "DrainResetMailbox()",
         "RequestAxisReset()",
+        "eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)",
+        "resetFd",
+        "wakeFd",
+        "static constexpr int kMaxXiEventsPerChunk = 64",
+        "processed < kMaxXiEventsPerChunk",
+        "const bool moreX = XPending(display) > 0",
+        "const int pollTimeout = moreX ? 0",
+        "resetPollIndex",
+        "wakePollIndex",
+        "SignalEventFd(wakeFd)",
     ):
         require(linux + linux_header, needle, "Linux packed state/reset mailbox")
+    for forbidden in (
+        "#include <fcntl.h>",
+        "pipe(",
+        "resetReadFd",
+        "resetWriteFd",
+        "bool LinuxRawInputFilter::isAvailable()",
+        "bool LinuxRawInputFilter::hasReceivedMotion()",
+        "isAvailable() const",
+        "hasReceivedMotion() const",
+    ):
+        if forbidden in linux + linux_header:
+            raise AssertionError(f"legacy Linux reset/readiness path reappeared: {forbidden}")
+    first_chunk = linux_thread.index("while (processed < kMaxXiEventsPerChunk")
+    first_drain = linux_thread.index("DrainResetMailbox()")
+    if first_drain < first_chunk:
+        raise AssertionError("Linux reset mailbox must not be drained before the event chunk")
+    if linux_thread.index("if (resetPollIndex >= 0") > first_drain:
+        raise AssertionError("Linux reset mailbox must be drained only after reset-fd readiness")
+    if linux_reset_mailbox.index("resetFallbackRequested.exchange") < linux_reset_mailbox.index("if (resetFd < 0"):
+        raise AssertionError("Linux reset fallback RMW must stay behind its fallback guard")
+    for needle in (
+        "linux-reset-fence-tests: PASS",
+        "kMaxXiEventsPerChunk",
+        "requestAfter",
+        "10000",
+    ):
+        require(linux_reset_test, needle, "Linux bounded reset-fence model")
+    for needle in (
+        "melonprime_linux_reset_fence_tests",
+        "melonprime_linux_reset_fence_check",
+    ):
+        require(qt_sdl_cmake, needle, "Linux bounded reset-fence test target")
     for forbidden in (
         "std::atomic<bool>    available",
         "std::atomic<bool>    receivedMotion",
@@ -1451,13 +1545,20 @@ def main() -> None:
     # the GUI-owned candidate mask is armed; press/release/focus remain recovery
     # boundaries.
     require(screen_header, "m_mouseRecoveryArmedMask", "macOS recovery mask storage")
+    require(header, "m_mouseRecoveryEligibleMask", "macOS recovery eligibility storage")
+    require(input_cpp, "m_mouseRecoveryEligibleMask = 0", "macOS recovery eligibility reset")
+    require(input_cpp, "if (masks.inputBits || masks.hotkeyBits)", "macOS mapped recovery projection")
     require(screen_press, "m_mouseRecoveryArmedMask |=", "macOS recovery arming")
+    require(screen_press, "emu->mouseRecoveryEligibleMask()", "macOS eligible recovery arming")
     require(screen_release, "m_mouseRecoveryArmedMask &=", "macOS recovery release clear")
     require(screen_move, "m_mouseRecoveryArmedMask != 0", "macOS move recovery gate")
+    require(screen_move, "m_mouseRecoveryArmedMask &= emu->mouseRecoveryEligibleMask();", "macOS move eligibility gate")
+    require(screen_move, "& emu->mouseRecoveryEligibleMask();", "macOS move mapped recovery projection")
     query_at = screen_move.index("QGuiApplication::mouseButtons()")
-    if screen_move.index("m_mouseRecoveryArmedMask != 0") > query_at:
+    if screen_move.index("m_mouseRecoveryArmedMask &= emu->mouseRecoveryEligibleMask();") > query_at:
         raise AssertionError("macOS mouse movement must arm before querying global buttons")
     require(screen_unfocus, "MelonPrimeMouseRecoveryMask", "macOS focus-loss recovery reseed")
+    require(screen_unfocus, "& emu->mouseRecoveryEligibleMask();", "macOS focus mapped recovery projection")
     if "std::atomic<int64_t> accX" in linux or "std::atomic<int64_t> accY" in linux:
         raise AssertionError("Linux split X/Y accumulators reappeared")
     require(platform, "bool resolvedOwner", "single owner resolution")
@@ -1585,12 +1686,15 @@ def main() -> None:
         require(text_value, "RawInputPerf::SubscriptionMutexGuard", f"{name} measured lock")
         if text_value.index("m_activeSubscription.load(std::memory_order_acquire)") > text_value.index("RawInputPerf::SubscriptionMutexGuard"):
             raise AssertionError(f"{name} must precheck active ownership before locking")
-    require(raw_update_owner, "if (!eligible)", "UpdateOwner ineligible branch")
-    require(raw_update_owner, "const bool rawOwner", "UpdateOwner Raw authority precheck")
-    require(raw_update_owner, "const bool platformOwner", "UpdateOwner platform authority precheck")
-    require(raw_update_owner, "if (LIKELY(!rawOwner && !platformOwner))", "UpdateOwner lock-free false path")
-    if raw_update_owner.index("if (LIKELY(!rawOwner && !platformOwner))") > raw_update_owner.index("RawInputPerf::SubscriptionMutexGuard"):
-        raise AssertionError("UpdateOwner false fast path must precede the mutex")
+    require(raw_deactivate_owner, "const bool rawOwner", "DeactivateOwner Raw authority precheck")
+    require(raw_deactivate_owner, "const bool platformOwner", "DeactivateOwner platform authority precheck")
+    require(raw_deactivate_owner, "if (LIKELY(!rawOwner && !platformOwner))", "DeactivateOwner lock-free false path")
+    require(raw_deactivate_owner, "PlatformInputOwnerService::Update(*subscription->owner, false)", "DeactivateOwner release")
+    require(raw_deactivate_owner, "DeactivateActiveRegistration(subscription)", "DeactivateOwner registration cleanup")
+    if raw_deactivate_owner.index("if (LIKELY(!rawOwner && !platformOwner))") > raw_deactivate_owner.index("RawInputPerf::SubscriptionMutexGuard"):
+        raise AssertionError("DeactivateOwner false fast path must precede the mutex")
+    if "UpdateOwner(" in raw_filter + raw_filter_header + lifecycle:
+        raise AssertionError("legacy public UpdateOwner call/declaration reappeared")
     for needle in (
         "static int                 s_refCount",
         "s_refCount++",
@@ -1895,6 +1999,7 @@ def main() -> None:
     check_panel_cumulative_model()
     check_wayland_fixed_delta_model()
     check_linux_raw_state_and_reset_model()
+    check_linux_reset_fence_model()
     check_mac_mouse_recovery_model()
     check_qt_event_edge_model()
     check_binding_program_publication_model()

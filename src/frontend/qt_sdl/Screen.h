@@ -581,7 +581,7 @@ private:
     Qt::MouseButton m_stylusDirectAimMouseButton = Qt::NoButton;
 #if defined(__APPLE__)
     // GUI-thread recovery mailbox: normal mouse movement queries global Qt
-    // button state only while a supported press is still potentially held.
+    // button state only while a mapped press is still potentially held.
     uint8_t m_mouseRecoveryArmedMask = 0;
 #endif
     // Tracks the held click itself rather than `touching`: a press whose touch
