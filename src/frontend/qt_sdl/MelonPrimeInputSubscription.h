@@ -5,6 +5,8 @@
 #include <atomic>
 #include <mutex>
 
+#include "MelonPrimeCompilerHints.h"
+
 namespace MelonPrime {
 
 // Per-emulator consumer cursor for the process-wide platform input collector.
@@ -40,7 +42,7 @@ struct MelonPrimeInputSubscription {
     // the subscription's plain consumer state after construction.
     [[nodiscard]] bool ConsumeRegistrationReset() noexcept
     {
-        if (!registrationResetPending.load(std::memory_order_acquire))
+        if (LIKELY(!registrationResetPending.load(std::memory_order_relaxed)))
             return false;
         if (!registrationResetPending.exchange(
                 false, std::memory_order_acq_rel))

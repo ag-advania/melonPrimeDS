@@ -4,6 +4,7 @@ include(FixInterfaceIncludes)
 
 set(MELONPRIME_WINDOWS_ONLY_SOURCES
     MelonPrimeRawInputWinFilter.cpp
+    MelonPrimeRawHotkeyVkMapping.cpp
     MelonPrimeRawHotkeyVkBinding.cpp
     MelonPrimeRawInputState.cpp
     MelonPrimeRawWinInternal.cpp
@@ -470,6 +471,30 @@ add_custom_target(melonprime_hud_classic_layout_check ALL
     DEPENDS melonprime_hud_classic_layout_tests
     COMMENT "Running Classic On-Screen Edit Qt geometry tests..."
     VERBATIM)
+
+if (WIN32)
+    # Exercise the production Qt-identity -> VK compiler directly. Source
+    # token audits cannot prove that left/right modifier identities remain
+    # disjoint at runtime.
+    add_executable(melonprime_raw_hotkey_vk_mapping_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/raw-hotkey-vk-mapping-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRawHotkeyVkMapping.cpp)
+    target_include_directories(melonprime_raw_hotkey_vk_mapping_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_raw_hotkey_vk_mapping_tests PRIVATE
+        MELONPRIME_DS)
+    target_link_libraries(melonprime_raw_hotkey_vk_mapping_tests PRIVATE ${QT_LINK_LIBS})
+    set_target_properties(melonprime_raw_hotkey_vk_mapping_tests PROPERTIES
+        WIN32_EXECUTABLE OFF
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_raw_hotkey_vk_mapping_check ALL
+        COMMAND $<TARGET_FILE:melonprime_raw_hotkey_vk_mapping_tests>
+        DEPENDS melonprime_raw_hotkey_vk_mapping_tests
+        COMMENT "Running Windows Raw hotkey VK mapping tests..."
+        VERBATIM)
+endif()
 
 # MelonPrimeDS: keep the CMake target name "melonDS" (so all the target_* calls
 # below stay untouched), but emit the binary as "melonPrimeDS" (melonPrimeDS.exe

@@ -42,7 +42,6 @@ namespace MelonPrime {
     void MelonPrimeCore::ShutdownRawInput() noexcept
     {
 #ifdef _WIN32
-        PlatformInputOwnerService::Release(m_inputSubscription);
         if (m_rawFilter && m_rawInputSubscription) {
             m_rawFilter->Unsubscribe(m_rawInputSubscription);
             m_rawInputSubscription = nullptr;

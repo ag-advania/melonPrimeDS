@@ -1625,14 +1625,21 @@ $rawWinFilterPath = Join-Path $qtSdl 'MelonPrimeRawInputWinFilter.cpp'
 $rawWinFilterHeaderPath = Join-Path $qtSdl 'MelonPrimeRawInputWinFilter.h'
 $rawHotkeyPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkBinding.cpp'
 $rawHotkeyHeaderPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkBinding.h'
+$rawHotkeyMappingPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkMapping.cpp'
+$rawHotkeyMappingTestPath = Join-Path $repoRoot 'tools/testing/raw-hotkey-vk-mapping-tests.cpp'
+$qtSdlCmakePath = Join-Path $qtSdl 'CMakeLists.txt'
 $inputSubscriptionPath = Join-Path $qtSdl 'MelonPrimeInputSubscription.h'
 $wheelEventPath = Join-Path $qtSdl 'MelonPrimeWheelEvent.h'
 $rawWinFilterText = Get-Content -LiteralPath $rawWinFilterPath -Raw
 $rawWinFilterHeaderText = Get-Content -LiteralPath $rawWinFilterHeaderPath -Raw
 $rawHotkeyText = Get-Content -LiteralPath $rawHotkeyPath -Raw
 $rawHotkeyHeaderText = Get-Content -LiteralPath $rawHotkeyHeaderPath -Raw
+$rawHotkeyMappingText = Get-Content -LiteralPath $rawHotkeyMappingPath -Raw
+$rawHotkeyMappingTestText = Get-Content -LiteralPath $rawHotkeyMappingTestPath -Raw
+$qtSdlCmakeText = Get-Content -LiteralPath $qtSdlCmakePath -Raw
 $inputSubscriptionText = Get-Content -LiteralPath $inputSubscriptionPath -Raw
 $wheelEventText = Get-Content -LiteralPath $wheelEventPath -Raw
+$rawHotkeyCompilerText = $rawHotkeyText + $rawHotkeyMappingText
 $coreLifecycleText = $coreText + $lifecycleText
 
 # AQ: canonical Qt identities are classified at the cold binding boundary.
@@ -1642,11 +1649,24 @@ if ($rawHotkeyHeaderText -notmatch 'enum\s+class\s+GameplayBindingSource' -or
     $rawHotkeyHeaderText -notmatch 'rawOwnedGameplayMask' -or
     $rawHotkeyHeaderText -notmatch 'qtFallbackGameplayMask' -or
     $rawHotkeyHeaderText -notmatch 'wheelImpulseMask' -or
-    $rawHotkeyText -notmatch 'kQtKey_F24' -or
-    $rawHotkeyText -match 'kQtKey_F35' -or
-    $rawHotkeyText -notmatch 'kQtBindingModifierMask' -or
+    $rawHotkeyCompilerText -notmatch 'kQtKey_F24' -or
+    $rawHotkeyCompilerText -match 'kQtKey_F35' -or
+    $rawHotkeyCompilerText -notmatch 'kQtBindingModifierMask' -or
     $rawHotkeyText -notmatch 'ownership\.qtFallbackGameplayMask\s*\|=') {
     Add-Error 'Rule AQ: RawExact/QtFallback binding capability classification is incomplete'
+}
+if ($rawHotkeyCompilerText -notmatch 'case\s+kQtKey_Shift:\s+out\.push_back\(VK_LSHIFT\);\s+return true;' -or
+    $rawHotkeyCompilerText -notmatch 'case\s+kQtKey_Control:\s+out\.push_back\(VK_LCONTROL\);\s+return true;' -or
+    $rawHotkeyCompilerText -notmatch 'case\s+kQtKey_Alt:\s+out\.push_back\(VK_LMENU\);\s+return true;' -or
+    $rawHotkeyCompilerText -notmatch 'case\s+kQtKey_Shift:\s+out\.push_back\(VK_RSHIFT\);\s+return true;' -or
+    $rawHotkeyCompilerText -notmatch 'case\s+kQtKey_Control:\s+out\.push_back\(VK_RCONTROL\);\s+return true;' -or
+    $rawHotkeyCompilerText -notmatch 'case\s+kQtKey_Alt:\s+out\.push_back\(VK_RMENU\);\s+return true;' -or
+    $rawHotkeyCompilerText -match 'VK_LSHIFT\);\s*out\.push_back\(VK_RSHIFT\)' -or
+    $rawHotkeyCompilerText -match 'VK_LCONTROL\);\s*out\.push_back\(VK_RCONTROL\)' -or
+    $rawHotkeyCompilerText -match 'VK_LMENU\);\s*out\.push_back\(VK_RMENU\)' -or
+    $rawHotkeyMappingTestText -notmatch 'raw-hotkey-vk-mapping-tests:\s+PASS' -or
+    $qtSdlCmakeText -notmatch 'melonprime_raw_hotkey_vk_mapping_tests') {
+    Add-Error 'Rule AQ: left/right modifier parity mapping test is incomplete'
 }
 if ($gameInputText -notmatch 'm_qtFallbackGameplayMask\s*==\s*0' -or
     $gameInputText -notmatch 'hk\.down\s*&\s*m_rawOwnedGameplayMask' -or
@@ -1682,9 +1702,14 @@ if ($inputSubscriptionText -notmatch 'uint64_t\s+generation\s*=' -or
     $inputSubscriptionText -notmatch 'ConsumeRegistrationReset\s*\(' -or
     $inputSubscriptionText -notmatch 'RequestRegistrationReset\s*\(' -or
     $rawWinFilterText -notmatch 'RequestRegistrationReset\s*\(' -or
+    $inputSubscriptionText -notmatch 'registrationResetPending\.load\s*\(\s*std::memory_order_relaxed' -or
     $rawWinFilterText -match 'BeginRegistrationGeneration\s*\(\s*\*previous->owner' -or
     $updateInputBody -notmatch 'm_inputSubscription\.ConsumeRegistrationReset\s*\(') {
     Add-Error 'Rule AS: per-subscription generation single-writer contract is incomplete'
+}
+if ($updateInputBody -notmatch 'platformInputOwner\s*=\s*rawFilter->UpdateOwner' -or
+    $updateInputBody -notmatch 'const\s+bool\s+isInputOwner\s*=\s*platformInputOwner') {
+    Add-Error 'Rule AS: Windows UpdateOwner result is redundantly reloaded or discarded'
 }
 $rawResetBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::resetAll\s*\('
@@ -1729,6 +1754,20 @@ if ($threadBridgeText -notmatch 'InputGenerationForGui\s*\(' -or
     $screenText -notmatch 'InputGenerationForGui\s*\(' -or
     $screenText -notmatch 'wheelSteps\.Reset\s*\(') {
     Add-Error 'Rule AU: GUI wheel path must tag events and reset on focus/close'
+}
+
+# AW: teardown has one cold-path owner for process release, native unregister,
+# thread-affine HWND destruction, and subscription erase.
+$shutdownRawBody = Get-FunctionText -Path $lifecyclePath `
+    -Signature 'void\s+MelonPrimeCore::ShutdownRawInput\s*\('
+$unsubscribeRawBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::Unsubscribe\s*\('
+if (-not $shutdownRawBody -or
+    $shutdownRawBody -match 'PlatformInputOwnerService::Release' -or
+    $shutdownRawBody -notmatch 'm_rawFilter->Unsubscribe\s*\(\s*m_rawInputSubscription' -or
+    -not $unsubscribeRawBody -or
+    $unsubscribeRawBody -notmatch 'PlatformInputOwnerService::Release') {
+    Add-Error 'Rule AW: Raw teardown release/deactivate ownership is duplicated or missing'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

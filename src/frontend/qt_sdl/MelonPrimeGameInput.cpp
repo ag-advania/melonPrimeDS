@@ -192,6 +192,7 @@ namespace MelonPrime {
         // OPT-Z3: Always poll to drain WM_INPUT even when unfocused,
         // preventing message buildup and stale delta accumulation. [FIX-2]
         FrameHotkeyState hk{};
+        bool platformInputOwner = false;
         if (rawFilter) {
             void* const currentHwnd = reinterpret_cast<void*>(
                 m_threadBridge.WindowHandleForEmu());
@@ -201,7 +202,11 @@ namespace MelonPrime {
                     static_cast<HWND>(currentHwnd));
                 m_cachedHwnd = currentHwnd;
             }
-            rawFilter->UpdateOwner(m_rawInputSubscription, captureEligible);
+            // Carry the owner result through this frame. PollAndSnapshot still
+            // performs its authoritative subscription/owner validation under
+            // the service mutex before exposing any Raw data.
+            platformInputOwner = rawFilter->UpdateOwner(
+                m_rawInputSubscription, captureEligible);
             if constexpr (kReentrant)
                 rawFilter->PollAndSnapshotNoEdges(
                     m_rawInputSubscription, hk,
@@ -223,8 +228,7 @@ namespace MelonPrime {
                 m_inputSubscription, captureEligible);
 #endif
 #if defined(_WIN32)
-        const bool isInputOwner =
-            m_inputSubscription.activeOwner.load(std::memory_order_acquire);
+        const bool isInputOwner = platformInputOwner;
 #else
         // Update already resolved the process owner for this frame; avoid a
         // second atomic read of the same result on macOS/Linux.

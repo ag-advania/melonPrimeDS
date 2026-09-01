@@ -97,6 +97,8 @@ public:
 
         // The wheel mailbox is a single-producer/single-consumer accumulator,
         // but the generation tag must be published atomically with its value.
+        // It carries the low 32 bits of the emulation generation by design;
+        // the GUI and emulation consumers compare the same modulo-2^32 epoch.
         // A Qt pulse from an old capture registration is therefore discarded
         // instead of being carried into the next Raw Input owner epoch.
         const uint64_t generationValue =

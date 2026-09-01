@@ -560,6 +560,16 @@ def check_windows_raw_reaudit_models() -> None:
     assert "F25" in qt_fallback and "F25" not in raw_owned
     assert "RShift" in raw_owned
 
+    exact_modifier_vks = {
+        "Shift": ("LShift", "RShift"),
+        "Control": ("LControl", "RControl"),
+        "Alt": ("LAlt", "RAlt"),
+    }
+    for left, right in exact_modifier_vks.values():
+        assert left != right
+        assert left in {"LShift", "LControl", "LAlt"}
+        assert right in {"RShift", "RControl", "RAlt"}
+
     # P1-003/004: a foreign owner can publish only a reset notification, and a
     # failed native registration never makes the source ready. A later retry
     # may acquire the owner after the one-shot fault has cleared.
@@ -627,6 +637,9 @@ def main() -> None:
     raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
     raw_hotkey = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.cpp")
     raw_hotkey_header = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkBinding.h")
+    raw_hotkey_mapping = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkMapping.cpp")
+    raw_hotkey_mapping_test = source("tools/testing/raw-hotkey-vk-mapping-tests.cpp")
+    qt_sdl_cmake = source("src/frontend/qt_sdl/CMakeLists.txt")
     input_subscription = source("src/frontend/qt_sdl/MelonPrimeInputSubscription.h")
     core = source("src/frontend/qt_sdl/MelonPrime.cpp")
     lifecycle = source("src/frontend/qt_sdl/MelonPrimeLifecycle.cpp")
@@ -1045,6 +1058,7 @@ def main() -> None:
     # AQ: every non-wheel configured Metroid identity is explicitly RawExact
     # or QtFallback; unsupported values are never silently treated as a raw
     # binding, and F25+ cannot enter the contiguous VK arithmetic.
+    raw_hotkey_compiler = raw_hotkey + raw_hotkey_mapping
     for needle in (
         "struct RawHotkeyOwnership",
         "rawOwnedGameplayMask",
@@ -1055,11 +1069,47 @@ def main() -> None:
         "RawExact",
         "Qt fallback classification",
     ):
-        require(raw_hotkey_header + raw_hotkey, needle, "Raw binding ownership")
-    if "kQtKey_F35" in raw_hotkey or "VK_F1 + idx" not in raw_hotkey:
+        require(raw_hotkey_header + raw_hotkey + raw_hotkey_mapping, needle, "Raw binding ownership")
+    if "kQtKey_F35" in raw_hotkey_compiler or "VK_F1 + idx" not in raw_hotkey_compiler:
         raise AssertionError("F-key mapping must be explicitly bounded at F24")
-    require(raw_hotkey, "encoded & kQtBindingModifierMask", "modifier chord failover")
+    require(raw_hotkey_compiler, "encoded & kQtBindingModifierMask", "modifier chord failover")
     require(raw_hotkey, "ownership.qtFallbackGameplayMask |= actionBit", "unsupported binding failover")
+    for needle in (
+        "case kQtKey_Shift:    out.push_back(VK_LSHIFT);   return true;",
+        "case kQtKey_Control:  out.push_back(VK_LCONTROL); return true;",
+        "case kQtKey_Alt:      out.push_back(VK_LMENU);    return true;",
+        "case kQtKey_Shift:   out.push_back(VK_RSHIFT);   return true;",
+        "case kQtKey_Control: out.push_back(VK_RCONTROL); return true;",
+        "case kQtKey_Alt:     out.push_back(VK_RMENU);    return true;",
+    ):
+        require(raw_hotkey_compiler, needle, "left/right modifier VK parity")
+    if "VK_LSHIFT);   out.push_back(VK_RSHIFT)" in raw_hotkey_compiler:
+        raise AssertionError("plain Shift must not widen to both sides")
+    if "VK_LCONTROL); out.push_back(VK_RCONTROL)" in raw_hotkey_compiler:
+        raise AssertionError("plain Control must not widen to both sides")
+    if "VK_LMENU);    out.push_back(VK_RMENU)" in raw_hotkey_compiler:
+        raise AssertionError("plain Alt must not widen to both sides")
+    for needle in (
+        "plain Shift",
+        "right Shift",
+        "plain Control",
+        "right Control",
+        "plain Alt",
+        "right Alt",
+        "F25 fallback",
+        "raw-hotkey-vk-mapping-tests: PASS",
+    ):
+        require(raw_hotkey_mapping_test, needle, "runtime VK mapping contract")
+    require(
+        qt_sdl_cmake,
+        "melonprime_raw_hotkey_vk_mapping_tests",
+        "Windows VK mapping test target",
+    )
+    require(
+        qt_sdl_cmake,
+        "MelonPrimeRawHotkeyVkMapping.cpp",
+        "production VK mapping source",
+    )
     for needle in (
         "m_qtFallbackGameplayMask == 0",
         "hk.down & m_rawOwnedGameplayMask",
@@ -1094,6 +1144,7 @@ def main() -> None:
         "std::atomic_bool registrationResetPending",
         "RequestRegistrationReset()",
         "ConsumeRegistrationReset()",
+        "registrationResetPending.load(std::memory_order_relaxed)",
         "owner->RequestRegistrationReset()",
         "PlatformInputOwnerService::RequestRegistrationReset",
         "m_inputSubscription.ConsumeRegistrationReset()",
@@ -1102,6 +1153,8 @@ def main() -> None:
         require(input_subscription + raw_filter + game_input, needle, "Raw subscription single-writer")
     if "BeginRegistrationGeneration(*previous->owner)" in raw_filter:
         raise AssertionError("foreign owner generation mutation reappeared")
+    require(game_input, "platformInputOwner = rawFilter->UpdateOwner", "Windows owner result reuse")
+    require(game_input, "const bool isInputOwner = platformInputOwner", "Windows owner result reuse")
 
     # AT: API success is the only path to m_isRegistered/activeOwner/baseline
     # readiness, with the developer-only one-shot fault seam retaining Qt.
@@ -1122,6 +1175,15 @@ def main() -> None:
     )
     if registration_body.index("if (!RegisterRawInputDevices(") > registration_body.index("m_isRegistered = true;"):
         raise AssertionError("Raw ready flag precedes native registration success")
+
+    shutdown = body(
+        lifecycle,
+        "void MelonPrimeCore::ShutdownRawInput()",
+        "    // Sole top-level RuntimeConfigSnapshot apply transaction.",
+    )
+    require(shutdown, "m_rawFilter->Unsubscribe(m_rawInputSubscription)", "single teardown owner")
+    if "PlatformInputOwnerService::Release" in shutdown:
+        raise AssertionError("ShutdownRawInput must not duplicate Unsubscribe owner release")
 
     # AU: only GUI wheel events read the normalized input generation; focus and
     # close boundaries still clear the local residual.
