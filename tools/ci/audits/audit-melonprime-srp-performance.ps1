@@ -1072,8 +1072,9 @@ if ($lateJoystickBody -match 'lateJoystick\.hotkeyReleased') {
 if ($updateInputBody -notmatch 'qtGameplayPressed' -or
     $updateInputBody -notmatch 'm_qtGameplayHotkeyPrevious' -or
     $updateInputBody -notmatch 'lateJoystick\.hotkeyPressed' -or
-    $updateInputBody -notmatch '~qtWheelMask') {
-    Add-Error 'Rule Q: late gameplay projection must combine Qt and joystick edges while excluding Qt wheel levels'
+    $updateInputBody -notmatch 'keyHotkeyMask\.load\s*\(std::memory_order_relaxed\)' -or
+    $updateInputBody -match 'qtWheelMask') {
+    Add-Error 'Rule Q: late gameplay projection must combine Qt and joystick edges without steady wheel-mask loads'
 }
 if ($lateJoystickBody -match '(?m)^\s*hotkeyPress\s*=') {
     Add-Error 'Rule Q: late joystick poll must not rewrite global emulator hotkey edges'
@@ -1395,7 +1396,7 @@ $publishJoystickProgramBody = Get-FunctionText -Path $emuInstanceInputPath `
 $activateJoystickProgramBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::activateJoystickBindingProgramLocked\s*\('
 if (-not $onKeyPressBody -or -not $onKeyReleaseBody -or
-    $onKeyPressBody -notmatch 'getEventKeyVal\s*\(' -or
+    $onKeyPressBody -notmatch 'NormalizeQtKeyBinding\s*\(' -or
     $onKeyReleaseBody -notmatch 'QtKeyBindingMatchesRelease\s*\(' -or
     $onKeyPressBody -notmatch 'key\s*==\s*keyMapping\[i\]' -or
     $onKeyReleaseBody -notmatch 'keyMapping\[i\]') {
@@ -1423,6 +1424,75 @@ if ($linuxRawText -notmatch 'static\s+bool\s+QueryAxisModes' -or
     $linuxRawText -notmatch 'XI_DeviceChanged' -or
     $linuxRawText -notmatch 'InvalidateAxisCapabilities\s*\(') {
     Add-Error 'Rule AD: Linux XI2 query retry and capability-cache invalidation are incomplete'
+}
+
+# Rule AE: capability UNKNOWN is fail-closed. A failed XIQueryDevice event must
+# return before valuator decode/accumulation and leave `known` false for retry.
+$linuxAccumulateBody = Get-FunctionText -Path $linuxRawPath `
+    -Signature 'void\s+AccumulateRawMotion\s*\('
+if (-not $linuxAccumulateBody -or
+    $linuxAccumulateBody -notmatch 'if\s*\(!querySucceeded\)\s*\r?\n\s*return\s*;' -or
+    $linuxAccumulateBody.IndexOf('return;', [System.StringComparison]::Ordinal) -gt
+        $linuxAccumulateBody.IndexOf('raw->raw_values', [System.StringComparison]::Ordinal)) {
+    Add-Error 'Rule AE: Linux unresolved XI2 capability event must fail closed before delta decode'
+}
+
+# Rule AF/AG: preserve signed wheel count through the semantic consumer, keep
+# Raw/Qt sources exclusive, and never claim the generation mailbox reentrantly.
+$gameWeaponPath = Join-Path $qtSdl 'MelonPrimeGameWeapon.cpp'
+$gameWeaponText = Get-Content -LiteralPath $gameWeaponPath -Raw
+$weaponSwitchBody = Get-FunctionText -Path $gameWeaponPath `
+    -Signature 'bool\s+MelonPrimeCore::ProcessWeaponSwitch\s*\('
+if ($coreHeaderText -notmatch 'int32_t\s+wheelSteps' -or
+    $coreHeaderText -notmatch 'int32_t\s+weaponCycleSteps' -or
+    $gameInputText -notmatch 'InputProjection::ProjectPressMask\(wheelHotkeyBits\)' -or
+    $gameInputText -notmatch 'm_input\.weaponCycleSteps' -or
+    -not $weaponSwitchBody -or
+    $weaponSwitchBody -notmatch 'ResolveCycleTargetIndex' -or
+    ([regex]::Matches($weaponSwitchBody, 'SwitchWeapon\s*\(').Count -lt 1)) {
+    Add-Error 'Rule AF: signed wheel count must reach one final-target weapon switch'
+}
+$cycleCase = if ($weaponSwitchBody) {
+    ($weaponSwitchBody -split '// --- Case 2: Direct Weapon Hotkeys', 2)[0]
+} else { '' }
+if (([regex]::Matches($cycleCase, 'SwitchWeapon\s*\(').Count -ne 1) -or
+    $updateInputBody -notmatch 'if constexpr\s*\(!kReentrant\)' -or
+    $updateInputBody -notmatch 'ConsumeWheelForEmu' -or
+    $updateInputBody -notmatch 'if\s*\(isInputOwner\)' -or
+    $threadBridgeText -notmatch 'currentGeneration\s*==\s*generation' -or
+    $threadBridgeText -notmatch 'expectedGeneration') {
+    Add-Error 'Rule AG: wheel source/generation/reentrant exclusivity contract is incomplete'
+}
+
+# Rule AH: one pure Qt key normalization authority serves editor/runtime/stylus.
+$qtKeyPath = Join-Path $qtSdl 'MelonPrimeQtKeyBinding.h'
+$qtKeyText = Get-Content -LiteralPath $qtKeyPath -Raw
+$mapButtonText = Get-Content -LiteralPath `
+    (Join-Path $qtSdl 'InputConfig/MapButton.h') -Raw
+if ($qtKeyText -notmatch 'NormalizeQtKeyBinding' -or
+    $qtKeyText -notmatch 'IsRightQtModifierKey' -or
+    $emuInstanceInputText -notmatch 'NormalizeQtKeyBinding' -or
+    $mapButtonText -notmatch 'NormalizeQtKeyBinding' -or
+    $windowText -notmatch 'NormalizeQtKeyBinding' -or
+    ($emuInstanceHeaderText + $emuInstanceInputText + $mapButtonText + $windowText) -match
+        'getEventKeyVal') {
+    Add-Error 'Rule AH: Qt binding editor/runtime/stylus must share one canonical normalizer'
+}
+if (-not $onKeyReleaseBody -or
+    ([regex]::Matches($onKeyReleaseBody, 'NormalizeQtKeyBinding\s*\(').Count -ne 1) -or
+    $onKeyReleaseBody -notmatch 'releasedInputBits' -or
+    $onKeyReleaseBody -notmatch 'releasedHotkeyBits') {
+    Add-Error 'Rule AH: key release must normalize once and aggregate atomic release masks'
+}
+
+# Rule AI: the primary window/panel remains the sole GUI input publisher.
+$screenWheelBody = Get-FunctionText -Path $screen `
+    -Signature 'void\s+ScreenPanel::wheelEvent\s*\('
+if (-not $screenWheelBody -or
+    $screenWheelBody -notmatch 'isMelonPrimeInputSurfaceAuthority' -or
+    $windowText -notmatch 'inputSurfaceAuthority\s*=\s*\r?\n?\s*emuInstance->getMainWindow\(\)\s*==\s*this' -or
+    $screenText -notmatch 'emuInstance->getMainWindow\(\)\s*==\s*mainWindow') {
+    Add-Error 'Rule AI: primary input-surface authority is incomplete'
 }
 
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----

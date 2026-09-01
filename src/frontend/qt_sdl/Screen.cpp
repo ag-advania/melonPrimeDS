@@ -261,7 +261,7 @@ void ScreenPanel::wheelEvent(QWheelEvent* event)
         return;
     }
 #endif
-    const int steps = MelonPrime::PhysicalWheelSteps(*event);
+    const int steps = wheelSteps.Consume(*event);
     if (steps != 0) {
         if (auto* core = melonPrimeCore())
             core->ThreadBridge().AddWheelFromGui(steps);
@@ -3882,6 +3882,7 @@ void ScreenPanel::unfocus()
     if (closing || !qApp || qApp->closingDown())
         return;
 
+    wheelSteps.Reset();
     auto* emu = emuInstance;
     auto* thread = emu ? emu->getEmuThread() : nullptr;
     auto* core = thread ? thread->GetMelonPrimeCore() : nullptr;

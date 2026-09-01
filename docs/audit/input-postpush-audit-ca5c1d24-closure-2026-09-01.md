@@ -29,7 +29,7 @@ measured latency/CPU improvement.
 | P2-004 running controller command age | Intentionally unchanged. Moving command sampling earlier or adding another sample requires latency measurement and must not violate the one-running-sample contract. |
 | P2-005 config reload neutral boundary | Hardened: `inputLoadConfig` neutralizes old Qt levels/edges before publishing the new mapping/program generation. Physical controller state is rebaselined by the existing generation activation/reset lifecycle. |
 | P2-006 process-global SDL sampling | Measurement only. No new coordinator or shared sampler was introduced without 2/4-instance contention evidence. |
-| P2-007 native Wayland relative input | Deferred platform work. X11/XWayland XI2 source correctness was hardened; no unsupported native Wayland backend was invented. |
+| P2-007 native Wayland relative input | Corrected by the b2e3c311 re-audit: a conditionally compiled native Wayland implementation is present. Its build/runtime acceptance remains pending; this row must not be read as an unimplemented backend claim. |
 | P2-008 surface authority/input generation unification | Deferred architectural change. Existing ownership and generation contracts remain pinned. |
 | P3 items | No speculative micro-optimization was applied. Existing changed-only atomics, Windows Raw Input and macOS input paths remain unchanged except for shared Qt normalization call sites. |
 

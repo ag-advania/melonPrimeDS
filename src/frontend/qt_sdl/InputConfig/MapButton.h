@@ -34,6 +34,7 @@
 
 #include "Platform.h"
 #include "EmuInstance.h"
+#include "MelonPrimeQtKeyBinding.h"
 
 class InputConfigDialog;
 
@@ -66,14 +67,10 @@ protected:
         Log(melonDS::Platform::Debug, "KEY PRESSED = %08X %08X | %08X %08X %08X\n", event->key(), (int)event->modifiers(), event->nativeVirtualKey(), event->nativeModifiers(), event->nativeScanCode());
 
         int key = event->key();
-        int mod = event->modifiers();
-        bool ismod = (key == Qt::Key_Control ||
-                      key == Qt::Key_Alt ||
-                      key == Qt::Key_AltGr ||
-                      key == Qt::Key_Shift ||
-                      key == Qt::Key_Meta);
+        const bool ismod = IsQtModifierKey(key);
 
 #ifndef MELONPRIME_DS
+        int mod = event->modifiers();
         // Original logic: Only allow Esc/Backspace if no modifiers are pressed
         if (!mod)
         {
@@ -93,12 +90,7 @@ protected:
         }
 #endif
 
-        if (!ismod)
-            key |= mod;
-        else if (isRightModKey(event))
-            key |= (1<<31);
-
-        *mapping = key;
+        *mapping = NormalizeQtKeyBinding(*event);
         click();
     }
 
@@ -115,7 +107,7 @@ protected:
     void wheelEvent(QWheelEvent* event) override {
         if (!isChecked()) return QPushButton::wheelEvent(event);
 
-        const int steps = MelonPrime::PhysicalWheelSteps(*event);
+        const int steps = wheelSteps.Consume(*event);
         if (steps == 0) {
             event->ignore();
             return;
@@ -147,6 +139,9 @@ private slots:
     {
         if (isChecked())
         {
+#ifdef MELONPRIME_DS
+            wheelSteps.Reset();
+#endif
             setText("[press key]");
         }
         else
@@ -156,6 +151,9 @@ private slots:
     }
 
 private:
+#ifdef MELONPRIME_DS
+    MelonPrime::PhysicalWheelStepAccumulator wheelSteps;
+#endif
     QString mappingText()
     {
         int key = *mapping;

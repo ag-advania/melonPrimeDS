@@ -25,6 +25,7 @@
 #include "SDL_sensor.h"
 #include "main.h"
 #include "Config.h"
+#include "MelonPrimeQtKeyBinding.h"
 
 #ifdef MELONPRIME_DS
 #include "MelonPrimeCompilerHints.h"
@@ -721,90 +722,24 @@ void EmuInstance::refreshJoystickCommandState()
 #endif
 
 
-// distinguish between left and right modifier keys (Ctrl, Alt, Shift)
-// Qt provides no real cross-platform way to do this, so here we go
-// for Windows and Linux we can distinguish via scancodes (but both
-// provide different scancodes)
-bool isRightModKey(QKeyEvent* event)
-{
-#ifdef __WIN32__
-    quint32 scan = event->nativeScanCode();
-    return (scan == 0x11D || scan == 0x138 || scan == 0x36);
-#elif __APPLE__
-    quint32 scan = event->nativeVirtualKey();
-    return (scan == 0x36 || scan == 0x3C || scan == 0x3D || scan == 0x3E);
-#else
-    quint32 scan = event->nativeScanCode();
-    return (scan == 0x69 || scan == 0x6C || scan == 0x3E);
-#endif
-}
-
-int getEventKeyVal(QKeyEvent* event)
-{
-    int key = event->key();
-    int mod = event->modifiers();
-    bool ismod = (key == Qt::Key_Control ||
-        key == Qt::Key_Alt ||
-        key == Qt::Key_AltGr ||
-        key == Qt::Key_Shift ||
-        key == Qt::Key_Meta);
-
-    if (!ismod)
-        key |= mod;
-    else if (isRightModKey(event))
-        key |= (1 << 31);
-
-    return key;
-}
-
-#ifdef MELONPRIME_DS
-namespace {
-bool QtKeyBindingMatchesRelease(int binding, QKeyEvent* event) noexcept
-{
-    if (binding == getEventKeyVal(event))
-        return true;
-
-    const int key = event->key();
-    const bool isModifier = key == Qt::Key_Control
-        || key == Qt::Key_Alt
-        || key == Qt::Key_AltGr
-        || key == Qt::Key_Shift
-        || key == Qt::Key_Meta;
-    if (isModifier
-        || (static_cast<uint32_t>(binding) & 0xF0000000u)
-            == static_cast<uint32_t>(MelonPrime::InputKey::MouseMark)) {
-        return false;
-    }
-
-    constexpr int kQtModifierBits = static_cast<int>(Qt::ShiftModifier)
-        | static_cast<int>(Qt::ControlModifier)
-        | static_cast<int>(Qt::AltModifier)
-        | static_cast<int>(Qt::MetaModifier)
-        | static_cast<int>(Qt::KeypadModifier)
-        | static_cast<int>(Qt::GroupSwitchModifier);
-    // If modifiers are released before the non-modifier key, QKeyEvent no
-    // longer carries the press modifiers. Clear every mapping activated by
-    // that physical key so a Ctrl+K-style binding cannot remain stuck.
-    return (binding & ~kQtModifierBits
-        & ~static_cast<int>(0x80000000u)) == key;
-}
-}
-#endif
-
-
 void EmuInstance::onKeyPress(QKeyEvent* event)
 {
 #ifdef MELONPRIME_DS
     if (event->isAutoRepeat())
         return;
-    const int key = getEventKeyVal(event);
+    const int key = NormalizeQtKeyBinding(*event);
+    uint16_t pressedInputBits = 0;
     uint64_t pressedHotkeyBits = 0;
     for (int i = 0; i < 12; i++)
         if (key == keyMapping[i])
-            keyInputMask.fetch_and(static_cast<uint16_t>(~(1u << i)), std::memory_order_relaxed);
+            pressedInputBits |= static_cast<uint16_t>(1u << i);
     for (int i = 0; i < HK_MAX; i++)
         if (key == hkKeyMapping[i])
             pressedHotkeyBits |= 1ULL << i;
+    if (pressedInputBits)
+        keyInputMask.fetch_and(
+            static_cast<uint16_t>(~pressedInputBits),
+            std::memory_order_relaxed);
     if (pressedHotkeyBits) {
         keyHotkeyMask.fetch_or(pressedHotkeyBits, std::memory_order_relaxed);
         const uint64_t globalCommandBits =
@@ -819,7 +754,7 @@ void EmuInstance::onKeyPress(QKeyEvent* event)
                 gameplayBits, std::memory_order_release);
     }
 #else
-    int keyHK = getEventKeyVal(event);
+    int keyHK = NormalizeQtKeyBinding(*event);
     int keyKP = keyHK;
     if (event->modifiers() != Qt::KeypadModifier)
         keyKP &= ~event->modifiers();
@@ -839,15 +774,28 @@ void EmuInstance::onKeyRelease(QKeyEvent* event)
 #ifdef MELONPRIME_DS
     if (event->isAutoRepeat())
         return;
+#endif
+    const int normalized = NormalizeQtKeyBinding(*event);
+#ifdef MELONPRIME_DS
+    const int baseKey = event->key();
+    const bool isModifier = IsQtModifierKey(baseKey);
+    uint16_t releasedInputBits = 0;
+    uint64_t releasedHotkeyBits = 0;
     for (int i = 0; i < 12; i++)
-        if (QtKeyBindingMatchesRelease(keyMapping[i], event))
-            keyInputMask.fetch_or(static_cast<uint16_t>(1u << i), std::memory_order_relaxed);
+        if (QtKeyBindingMatchesRelease(
+                keyMapping[i], normalized, baseKey, isModifier))
+            releasedInputBits |= static_cast<uint16_t>(1u << i);
 
     for (int i = 0; i < HK_MAX; i++)
-        if (QtKeyBindingMatchesRelease(hkKeyMapping[i], event))
-            keyHotkeyMask.fetch_and(~(1ULL << i), std::memory_order_relaxed);
+        if (QtKeyBindingMatchesRelease(
+                hkKeyMapping[i], normalized, baseKey, isModifier))
+            releasedHotkeyBits |= 1ULL << i;
+    if (releasedInputBits)
+        keyInputMask.fetch_or(releasedInputBits, std::memory_order_relaxed);
+    if (releasedHotkeyBits)
+        keyHotkeyMask.fetch_and(~releasedHotkeyBits, std::memory_order_relaxed);
 #else
-    int keyHK = getEventKeyVal(event);
+    int keyHK = normalized;
     int keyKP = keyHK;
     if (event->modifiers() != Qt::KeypadModifier)
         keyKP &= ~event->modifiers();

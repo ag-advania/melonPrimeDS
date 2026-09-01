@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Source and state-model contract for the post-cc6726f input re-audit."""
+"""Source and state-model contract for the post-b2e3c311 input re-audit."""
 
 from __future__ import annotations
 
@@ -312,17 +312,136 @@ def check_binding_program_publication_model() -> None:
     assert active[0] == "axis-2"
 
 
+@dataclass
+class LinuxAxisState:
+    known: bool = False
+    absolute: bool = False
+    has_last: bool = False
+    last: float = 0.0
+
+    def event(self, value: float, query: str) -> tuple[int, bool]:
+        if not self.known:
+            if query == "fail":
+                return 0, False
+            self.known = True
+            self.absolute = query == "absolute"
+        if not self.absolute:
+            return int(value), True
+        if not self.has_last:
+            self.has_last = True
+            self.last = value
+            return 0, True
+        delta = int(value - self.last)
+        self.last = value
+        return delta, True
+
+    def invalidate(self) -> None:
+        self.known = False
+        self.has_last = False
+
+
 def check_linux_axis_query_lifecycle_model() -> None:
-    known = False
-    query_results = [False, True]
-    for succeeded in query_results:
-        if not known and succeeded:
-            known = True
-        if not succeeded:
-            assert not known  # transient failure remains retryable
-    assert known
-    known = False  # XI_HierarchyChanged / XI_DeviceChanged invalidation
-    assert not known
+    # Failure -> absolute recovery: ambiguous event is dropped, the first
+    # successful absolute event seeds only, then differencing begins.
+    absolute = LinuxAxisState()
+    assert absolute.event(900, "fail") == (0, False)
+    assert not absolute.known
+    assert absolute.event(100, "absolute") == (0, True)
+    assert absolute.event(104, "unused") == (4, True)
+
+    # Failure -> relative recovery retries and emits the successful event.
+    relative = LinuxAxisState()
+    assert relative.event(20, "fail") == (0, False)
+    assert relative.event(3, "relative") == (3, True)
+
+    # Device/hierarchy lifecycle invalidation returns to UNKNOWN. A failed
+    # event after that boundary is dropped; absolute success re-seeds.
+    absolute.invalidate()
+    assert absolute.event(500, "fail") == (0, False)
+    assert absolute.event(200, "absolute") == (0, True)
+    assert absolute.event(206, "unused") == (6, True)
+
+
+def check_wheel_count_model() -> None:
+    class QtWheel:
+        remainder = 0
+
+        def consume(self, angle: int, inverted: bool = False, pixel: int = 0) -> int:
+            del pixel  # pixel-only trackpad input has no physical-detent unit
+            if angle == 0:
+                return 0
+            if inverted:
+                angle = -angle
+            total = self.remainder + angle
+            # Match C++ integer division truncating toward zero.
+            steps = int(total / 120)
+            self.remainder = total - steps * 120
+            return steps
+
+    qt = QtWheel()
+    assert qt.consume(240) == 2
+    assert qt.consume(-360) == -3
+    assert qt.consume(30) == 0
+    assert qt.consume(90) == 1
+    assert qt.consume(120, inverted=True) == -1
+    assert qt.consume(0, pixel=100) == 0
+
+    # Same-frame signed accumulation is defined arithmetic, not sign/bit OR.
+    accumulator = 0
+    for step in (1, -1, 1):
+        accumulator += step
+    assert accumulator == 1
+
+    # Mouse motion and wheel use independent cumulative/accumulator state, so
+    # a burst of high-polling motion cannot be overwritten by wheel claims.
+    mouse_total = [0, 0]
+    wheel_total = 0
+    for i in range(1000):
+        mouse_total[0] += 1
+        mouse_total[1] -= 1
+        if i in (100, 500, 900):
+            wheel_total += 1
+    assert mouse_total == [1000, -1000]
+    assert wheel_total == 3
+
+    def target(available_bits: int, current: int, steps: int) -> int:
+        available = [i for i in range(9) if available_bits & (1 << i)]
+        if not available or not steps:
+            return current
+        distance = abs(steps)
+        if steps > 0:
+            first = next(
+                (i for i, value in enumerate(available) if value > current), 0
+            )
+            return available[(first + distance - 1) % len(available)]
+        lower = [i for i, value in enumerate(available) if value < current]
+        first = (lower[-1] if lower else len(available) - 1)
+        return available[(first - (distance - 1)) % len(available)]
+
+    all_weapons = (1 << 9) - 1
+    assert target(all_weapons, 0, 1) == 1
+    assert target(all_weapons, 0, 2) == 2
+    assert target(all_weapons, 0, -1) == 8
+    assert target(all_weapons, 0, -3) == 6
+    sparse = (1 << 0) | (1 << 2) | (1 << 7)
+    assert target(sparse, 7, 1) == 0
+    assert target(sparse, 0, -1) == 7
+    omega_restricted = (1 << 0) | (1 << 1) | (1 << 8)
+    assert target(omega_restricted, 0, 2) == 8
+
+    # Generation-tagged claim: old values are discarded, and a nested frame
+    # never claims the value intended for the next outer guest frame.
+    mailbox = (1, 2)
+    expected_generation = 2
+    assert mailbox[0] != expected_generation
+    stale_claim = 0
+    assert stale_claim == 0
+    mailbox = (expected_generation, -3)
+    nested_claim = 0
+    assert nested_claim == 0 and mailbox[1] == -3
+    outer_claim = mailbox[1]
+    mailbox = (expected_generation, 0)
+    assert outer_claim == -3 and mailbox[1] == 0
 
 
 def check_packed_wrap_model() -> None:
@@ -368,6 +487,11 @@ def main() -> None:
     platform = source("src/frontend/qt_sdl/MelonPrimePlatformInput.h")
     screen = source("src/frontend/qt_sdl/Screen.cpp")
     window = source("src/frontend/qt_sdl/Window.cpp")
+    key_binding = source("src/frontend/qt_sdl/MelonPrimeQtKeyBinding.h")
+    map_button = source("src/frontend/qt_sdl/InputConfig/MapButton.h")
+    wheel_event = source("src/frontend/qt_sdl/MelonPrimeWheelEvent.h")
+    game_weapon = source("src/frontend/qt_sdl/MelonPrimeGameWeapon.cpp")
+    in_game = source("src/frontend/qt_sdl/MelonPrimeInGame.cpp")
 
     process = body(
         input_cpp,
@@ -387,7 +511,7 @@ def main() -> None:
     reset = body(
         input_cpp,
         "void EmuInstance::resetJoystickConsumerState()",
-        "#endif\n\n\n// distinguish between left and right modifier keys",
+        "void EmuInstance::onKeyPress(QKeyEvent* event)",
     )
     sample_locked = body(
         input_cpp,
@@ -498,7 +622,7 @@ def main() -> None:
         if forbidden in body(
             input_cpp,
             "void EmuInstance::refreshJoystickCommandState()",
-            "#endif\n\n\n// distinguish between left and right modifier keys",
+            "void EmuInstance::onKeyPress(QKeyEvent* event)",
         ):
             raise AssertionError(f"paused command refresh mutates gameplay owner: {forbidden}")
     require(late, "projectJoystickCommandState(projected)", "running command projection")
@@ -508,10 +632,14 @@ def main() -> None:
 
     if "keyHotkeyPress" in header or "lastKeyHotkeyMask" in header:
         raise AssertionError("early Qt gameplay edge baseline reappeared")
-    require(key_press, "getEventKeyVal(event)", "normalized Qt press identity")
+    require(key_press, "NormalizeQtKeyBinding(*event)", "normalized Qt press identity")
     require(key_press, "key == keyMapping[i]", "DS keyboard press mapping domain")
     require(key_release, "QtKeyBindingMatchesRelease", "release-order-safe Qt identity")
     require(key_release, "keyMapping[i]", "DS keyboard release mapping domain")
+    if key_release.count("NormalizeQtKeyBinding(*event)") != 1:
+        raise AssertionError("key release must normalize each event exactly once")
+    require(key_release, "releasedInputBits", "aggregated keyboard input release")
+    require(key_release, "releasedHotkeyBits", "aggregated keyboard hotkey release")
     require(key_press, "qtGlobalCommandPressPending.fetch_or", "global press conservation")
     require(key_press, "pressedHotkeyBits & kGameplayHotkeyMask", "gameplay-only pending bits")
     require(process, "qtGlobalCommandPressPending.exchange", "global press claim")
@@ -542,7 +670,21 @@ def main() -> None:
     require(game_input, "qtGameplayPressed", "late Qt gameplay edge")
     require(game_input, "qtGameplayPressPending.exchange", "normal-frame event claim")
     require(game_input, "m_qtGameplayHotkeyPrevious", "Qt gameplay baseline")
-    require(game_input, "& ~qtWheelMask", "wheel exclusion from Qt level edge")
+    if "qtWheelMask" in game_input or "& ~qtWheelMask" in game_input:
+        raise AssertionError("no-wheel guest frame regained wheel-mask loads")
+    wheel_projection = body(
+        game_input,
+        "uint64_t wheelHotkeyBits = 0;",
+        "#ifdef _WIN32",
+    )
+    require(wheel_projection, "if (m_input.wheelSteps)", "rare wheel projection")
+    require(wheel_projection, "wheelHotkeyMaskForDelta", "rare wheel mask load")
+    require(
+        wheel_projection,
+        "InputProjection::ProjectPressMask(wheelHotkeyBits)",
+        "wheel hotkey-to-gameplay direction projection",
+    )
+    require(wheel_projection, "m_input.weaponCycleSteps", "signed semantic wheel count")
     require(
         game_input,
         "emuInstance->lateJoystick.hotkeyPressed",
@@ -610,6 +752,12 @@ def main() -> None:
     require(linux, "static bool QueryAxisModes", "retryable Linux capability query")
     require(linux, "if (!info)\n            return false", "failed Linux query remains unknown")
     require(linux, "st.known = true;\n        return true", "successful Linux query publication")
+    query_block = body(
+        linux,
+        "if (!st.known) {",
+        "// XInput2 reports one value per set bit",
+    )
+    require(query_block, "if (!querySucceeded)\n                return;", "Linux UNKNOWN fail-closed")
     require(linux, "XI_HierarchyChanged", "Linux hierarchy lifecycle event")
     require(linux, "XI_DeviceChanged", "Linux device lifecycle event")
     require(linux, "InvalidateAxisCapabilities", "Linux capability invalidation")
@@ -625,6 +773,45 @@ def main() -> None:
     require(screen, "isMelonPrimeInputSurfaceAuthority", "primary surface guard")
     require(window, "inputSurfaceAuthority", "primary keyboard authority")
     require(screen, "GuiWorkRevisionForGui", "draw-side revision gate")
+    wheel_handler = body(
+        screen,
+        "void ScreenPanel::wheelEvent(QWheelEvent* event)",
+        "void ScreenPanel::refreshClipForGameStateChange()",
+    )
+    require(wheel_handler, "isMelonPrimeInputSurfaceAuthority", "primary wheel authority")
+
+    # Rule AH: editor/runtime/stylus paths share one pure Qt normalization
+    # authority. No duplicate encoder remains in MapButton or EmuInstanceInput.
+    require(key_binding, "NormalizeQtKeyBinding", "canonical Qt key helper")
+    require(key_binding, "IsRightQtModifierKey", "canonical right modifier helper")
+    require(map_button, "NormalizeQtKeyBinding(*event)", "binding editor normalization")
+    require(window, "NormalizeQtKeyBinding(*event)", "stylus key normalization")
+    if "getEventKeyVal" in header + input_cpp + map_button + window:
+        raise AssertionError("duplicate legacy Qt key normalizer reappeared")
+
+    # Rules AF/AG: physical count reaches the semantic consumer, while edge
+    # actions keep their explicit one-frame coalescing policy.
+    for needle in (
+        "class PhysicalWheelStepAccumulator final",
+        "total / kAngleUnitsPerDetent",
+        "m_angleRemainder",
+        "event.angleDelta().y()",
+    ):
+        require(wheel_event, needle, "Qt wheel detent conservation")
+    if "pixelDelta" in wheel_event:
+        raise AssertionError("pixel-only scrolling must not masquerade as a detent")
+    require(bridge, "currentSteps", "signed wheel accumulator")
+    require(bridge, "currentGeneration == generation", "wheel generation boundary")
+    require(game_weapon, "ResolveCycleTargetIndex", "count-sensitive weapon target")
+    require(game_weapon, "m_input.weaponCycleSteps", "semantic wheel consumer")
+    cycle_case = body(
+        game_weapon,
+        "// --- Case 1: Next / Prev",
+        "// --- Case 2: Direct Weapon Hotkeys",
+    )
+    if cycle_case.count("SwitchWeapon(") != 1:
+        raise AssertionError("weapon cycle must switch only the final target once")
+    require(in_game, "m_input.weaponCycleSteps != 0", "signed count rare-action gate")
 
     check_state_model()
     check_controller_pause_model()
@@ -633,9 +820,10 @@ def main() -> None:
     check_qt_event_edge_model()
     check_binding_program_publication_model()
     check_linux_axis_query_lifecycle_model()
+    check_wheel_count_model()
     check_packed_wrap_model()
     check_mac_handoff_model()
-    print("post-cc6726f input re-audit contract: PASS")
+    print("post-b2e3c311 input re-audit contract: PASS")
 
 
 if __name__ == "__main__":

@@ -160,9 +160,6 @@ struct PresentationConfigSnapshot
 } // namespace MelonPrime
 #endif // MELONPRIME_DS
 
-bool isRightModKey(QKeyEvent* event);
-int getEventKeyVal(QKeyEvent* event);
-
 class EmuInstance
 {
 #ifdef MELONPRIME_DS

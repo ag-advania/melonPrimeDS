@@ -192,6 +192,10 @@ struct LinuxRawInputFilter::Impl
         if (!st.known) {
             const bool querySucceeded =
                 QueryAxisModes(dpy, raw->sourceid, st);
+            // Capability UNKNOWN is not equivalent to relative motion. Drop
+            // this ambiguous event and retry the query on the next event.
+            if (!querySucceeded)
+                return;
             if (querySucceeded && MelonPrimeInputDebug())
                 std::fprintf(stderr,
                     "[MelonPrime] linux input: raw source %d axis modes: X=%s Y=%s\n",

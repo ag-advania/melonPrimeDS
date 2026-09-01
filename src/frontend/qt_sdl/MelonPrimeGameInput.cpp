@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <utility>
 #include <QCursor>
 
@@ -136,13 +137,13 @@ namespace MelonPrime {
     // kReentrant=false (full path):
     //   - PollAndSnapshot        : drains WM_INPUT and latches edge state
     //   - reads press mask       : ProjectPressMask from hotPressMask
-    //   - reads wheelDelta       : from the Raw Input generation, or the
+    //   - reads wheelSteps       : from the Raw Input generation, or the
     //                              generation-tagged Qt fallback mailbox
     //
     // kReentrant=true (re-entrant FrameAdvance path):
     //   - PollAndSnapshotNoEdges : drains WM_INPUT, no edge latch
     //   - press = 0              : outer-frame press detection preserved
-    //   - wheelDelta = 0         : never consumed mid-frame
+    //   - wheelSteps = 0         : never consumed mid-frame
     // =========================================================================
     template <bool kReentrant>
     FORCE_INLINE void MelonPrimeCore::UpdateInputStateImpl(
@@ -196,11 +197,11 @@ namespace MelonPrime {
             if constexpr (kReentrant)
                 rawFilter->PollAndSnapshotNoEdges(
                     m_rawInputSubscription, hk,
-                    m_input.mouseX, m_input.mouseY, m_input.wheelDelta);
+                    m_input.mouseX, m_input.mouseY, m_input.wheelSteps);
             else {
                 rawFilter->PollAndSnapshot(
                     m_rawInputSubscription, hk,
-                    m_input.mouseX, m_input.mouseY, m_input.wheelDelta);
+                    m_input.mouseX, m_input.mouseY, m_input.wheelSteps);
                 // P-47: Kernel buffer just drained; no FrameAdvance has occurred yet.
                 // LateLatch skips processRawInputBatched on frames with no FrameAdvance.
                 m_didFrameAdvanceSinceSnapshot = false;
@@ -246,7 +247,8 @@ namespace MelonPrime {
             m_input.moveIndex = 0;
             m_input.mouseX = 0;
             m_input.mouseY = 0;
-            m_input.wheelDelta = 0;
+            m_input.wheelSteps = 0;
+            m_input.weaponCycleSteps = 0;
             m_snapState = 0;
             // Re-entrant FrameAdvance does not call InputReset before rebuilding
             // the fast DS mask. Release it here so stale non-movement bits
@@ -266,39 +268,34 @@ namespace MelonPrime {
                 // mailbox so the same wheel tick cannot be counted twice.
                 (void)m_threadBridge.ConsumeWheelForEmu(
                     m_inputSubscription.generation);
-                m_input.wheelDelta = rawActionReady ? hk.wheelDelta : 0;
+                m_input.wheelSteps = rawActionReady ? hk.wheelDelta : 0;
             }
             else {
-                m_input.wheelDelta = m_threadBridge.ConsumeWheelForEmu(
+                m_input.wheelSteps = m_threadBridge.ConsumeWheelForEmu(
                     m_inputSubscription.generation);
             }
 #else
-            m_input.wheelDelta = m_threadBridge.ConsumeWheelForEmu(
+            m_input.wheelSteps = m_threadBridge.ConsumeWheelForEmu(
                 m_inputSubscription.generation);
 #endif
         }
         else {
-            m_input.wheelDelta = 0;
+            m_input.wheelSteps = 0;
         }
 
         // Qt keyboard/mouse gameplay edges are committed at the guest-frame
         // late latch, independently from inputProcess()'s global emulator
-        // command baseline. Wheel is projected exclusively from the bridge
-        // mailbox below and is excluded here to prevent duplicate impulses.
-        const uint64_t qtWheelMask =
-            emuInstance->wheelUpHotkeyMask.load(std::memory_order_acquire)
-            | emuInstance->wheelDownHotkeyMask.load(
-                std::memory_order_acquire);
+        // command baseline. Wheel never enters this held/pending path, so a
+        // no-wheel frame does not load either published wheel binding mask.
         const uint64_t qtGameplayHeld =
-            emuInstance->keyHotkeyMask.load(std::memory_order_relaxed)
-            & ~qtWheelMask;
+            emuInstance->keyHotkeyMask.load(std::memory_order_relaxed);
         uint64_t qtGameplayPressed = 0;
         if constexpr (!kReentrant) {
             uint64_t eventPressed = 0;
             if (UNLIKELY(emuInstance->qtGameplayPressPending.load(
                     std::memory_order_relaxed) != 0)) {
                 eventPressed = emuInstance->qtGameplayPressPending.exchange(
-                    0, std::memory_order_acq_rel) & ~qtWheelMask;
+                    0, std::memory_order_acq_rel);
             }
             if (m_qtGameplayEdgeNeedsBaseline) {
                 m_qtGameplayEdgeNeedsBaseline = false;
@@ -312,10 +309,27 @@ namespace MelonPrime {
         }
 
         uint64_t wheelHotkeyBits = 0;
+        m_input.weaponCycleSteps = 0;
         if constexpr (!kReentrant) {
-            if (m_input.wheelDelta)
+            if (m_input.wheelSteps) {
                 wheelHotkeyBits = emuInstance->wheelHotkeyMaskForDelta(
-                    m_input.wheelDelta);
+                    m_input.wheelSteps);
+                // Edge actions remain coalesced to wheelHotkeyBits. Weapon
+                // next/prev is count-sensitive and keeps the signed physical
+                // detent magnitude through to its semantic consumer.
+                const int64_t signedSteps = m_input.wheelSteps;
+                const int64_t rawMagnitude = signedSteps < 0
+                    ? -signedSteps : signedSteps;
+                const int32_t magnitude = static_cast<int32_t>(
+                    std::min<int64_t>(
+                        rawMagnitude, std::numeric_limits<int32_t>::max()));
+                const uint64_t wheelPressBits =
+                    InputProjection::ProjectPressMask(wheelHotkeyBits);
+                if (wheelPressBits & IB_WEAPON_NEXT)
+                    m_input.weaponCycleSteps = magnitude;
+                else if (wheelPressBits & IB_WEAPON_PREV)
+                    m_input.weaponCycleSteps = -magnitude;
+            }
         }
 
 #ifdef _WIN32

@@ -80,6 +80,7 @@
 //#include "main_shaders.h"
 
 #include "EmuInstance.h"
+#include "MelonPrimeQtKeyBinding.h"
 #include "ArchiveUtil.h"
 #include "CameraManager.h"
 #include "Window.h"
@@ -1550,7 +1551,8 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     {
         QMutexLocker panelLock(&screenPanelLock);
         if (inputSurfaceAuthority && panel)
-            panel->primeStylusTouchHotkeyAtCursor(getEventKeyVal(event));
+            panel->primeStylusTouchHotkeyAtCursor(
+                NormalizeQtKeyBinding(*event));
     }
 
     // MelonPrimeDS. for Escaping from metroid cursor lock 
@@ -1580,7 +1582,8 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
     {
         QMutexLocker panelLock(&screenPanelLock);
         if (inputSurfaceAuthority && panel)
-            panel->releaseStylusTouchHotkeyCapture(getEventKeyVal(event));
+            panel->releaseStylusTouchHotkeyCapture(
+                NormalizeQtKeyBinding(*event));
     }
 #else
     emuInstance->onKeyRelease(event);

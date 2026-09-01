@@ -5,25 +5,34 @@
 
 namespace MelonPrime {
 
-    // Map a Qt wheel event to a physical wheel step.
-    //
-    // Returns +1 for wheel up (top of wheel rotating away from the user),
-    // -1 for wheel down, or 0 when the event carries no usable delta.
-    //
-    // When the OS uses natural scrolling, Qt flips angle/pixel deltas and sets
-    // inverted(). Undo that so binding labels and runtime pulses follow the
-    // hardware wheel, not the content-scroll direction.
-    [[nodiscard]] inline int PhysicalWheelSteps(const QWheelEvent& event) noexcept
+    // GUI-thread-only normalizer for Qt wheel events. angleDelta is expressed
+    // in eighths of a degree; one physical detent is 120 units. Fractional
+    // high-resolution angle deltas stay local until they form a full detent.
+    // Pixel-only trackpad scrolling has no portable detent conversion and is
+    // deliberately not exposed as a physical wheel binding.
+    class PhysicalWheelStepAccumulator final
     {
-        int dy = event.angleDelta().y();
-        if (dy == 0)
-            dy = event.pixelDelta().y();
-        if (dy == 0)
-            return 0;
-        if (event.inverted())
-            dy = -dy;
-        return (dy > 0) ? 1 : -1;
-    }
+    public:
+        [[nodiscard]] int Consume(const QWheelEvent& event) noexcept
+        {
+            int angle = event.angleDelta().y();
+            if (angle == 0)
+                return 0;
+            if (event.inverted())
+                angle = -angle;
+
+            const int total = m_angleRemainder + angle;
+            const int steps = total / kAngleUnitsPerDetent;
+            m_angleRemainder = total - steps * kAngleUnitsPerDetent;
+            return steps;
+        }
+
+        void Reset() noexcept { m_angleRemainder = 0; }
+
+    private:
+        static constexpr int kAngleUnitsPerDetent = 120;
+        int m_angleRemainder = 0;
+    };
 
 } // namespace MelonPrime
 

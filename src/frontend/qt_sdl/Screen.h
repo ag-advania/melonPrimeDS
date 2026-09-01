@@ -38,6 +38,9 @@
 #include "glad/glad.h"
 #include "ScreenLayout.h"
 #include "duckstation/gl/context.h"
+#ifdef MELONPRIME_DS
+#include "MelonPrimeWheelEvent.h"
+#endif
 #include "MelonPrimePresentationSnapshot.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -406,6 +409,7 @@ protected:
     bool stylusConfineCursorToTopScreenEnabled = false;
     bool stylusHoldCursorAtCenterEnabled = false;
     bool stylusDirectAimWhileTouchingEnabled = false;
+    MelonPrime::PhysicalWheelStepAccumulator wheelSteps;
     // Cached OR of the match-scoped cursor options, so the per-pass reconcile
     // short-circuits on one predictable bool when they are all off.
     bool stylusMatchCursorOptionsEnabled = false;

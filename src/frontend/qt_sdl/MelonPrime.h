@@ -104,9 +104,10 @@ namespace MelonPrime {
         uint64_t press;
         int32_t  mouseX;
         int32_t  mouseY;
-        int32_t  wheelDelta;
+        int32_t  wheelSteps;
+        int32_t  weaponCycleSteps;
         uint32_t moveIndex;
-        uint32_t _pad[2];
+        uint32_t _pad[1];
     };
     static_assert(sizeof(FrameInputState) == 64);
 
