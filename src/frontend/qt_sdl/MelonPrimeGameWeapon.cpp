@@ -221,7 +221,7 @@ namespace MelonPrime {
             const bool prevKey = IsPressed(IB_WEAPON_PREV);
             const int32_t cycleSteps = m_input.weaponCycleSteps != 0
                 ? m_input.weaponCycleSteps
-                : (nextKey ? 1 : (prevKey ? -1 : 0));
+                : (nextKey == prevKey ? 0 : (nextKey ? 1 : -1));
 
             if (cycleSteps == 0) return false;
 

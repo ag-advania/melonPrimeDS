@@ -30,6 +30,7 @@
 #ifdef MELONPRIME_DS
 #include "MelonPrimeCompilerHints.h"
 #include "MelonPrimeDef.h"
+#include "MelonPrimeMouseButton.h"
 #endif
 
 using namespace melonDS;
@@ -120,24 +121,9 @@ std::shared_ptr<SDL_mutex> EmuInstance::joyMutexGlobal = nullptr;
 
 #ifdef MELONPRIME_DS
 namespace {
-constexpr Qt::MouseButton kTrackedMouseButtons[5] = {
-    Qt::LeftButton,
-    Qt::RightButton,
-    Qt::MiddleButton,
-    Qt::XButton1,
-    Qt::XButton2,
-};
-
 int TrackedMouseButtonIndex(Qt::MouseButton button) noexcept
 {
-    switch (button) {
-    case Qt::LeftButton:   return 0;
-    case Qt::RightButton:  return 1;
-    case Qt::MiddleButton: return 2;
-    case Qt::XButton1:     return 3;
-    case Qt::XButton2:     return 4;
-    default:               return -1;
-    }
+    return MelonPrime::MouseButtonIndex(button);
 }
 }
 #endif
@@ -364,10 +350,12 @@ void EmuInstance::activateJoystickBindingProgramLocked()
 
 void EmuInstance::rebuildMouseButtonBindingMasks()
 {
-    for (int buttonIndex = 0; buttonIndex < 5; ++buttonIndex) {
+    for (int buttonIndex = 0; buttonIndex < static_cast<int>(
+             MelonPrime::kSupportedMouseButtonCount); ++buttonIndex) {
         auto& masks = mouseButtonMasks[buttonIndex];
         masks = {};
-        const int key = static_cast<int>(kTrackedMouseButtons[buttonIndex])
+        const int key = static_cast<int>(
+                MelonPrime::kSupportedMouseButtons[buttonIndex])
             | MelonPrime::InputKey::MouseMark;
         for (int i = 0; i < 12; ++i) {
             if (key == keyMapping[i])
@@ -863,8 +851,9 @@ void EmuInstance::syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical)
 {
     uint16_t releasedInputBits = 0;
     uint64_t releasedHotkeyBits = 0;
-    for (int buttonIndex = 0; buttonIndex < 5; ++buttonIndex) {
-        if (physical & kTrackedMouseButtons[buttonIndex])
+    for (int buttonIndex = 0; buttonIndex < static_cast<int>(
+             MelonPrime::kSupportedMouseButtonCount); ++buttonIndex) {
+        if (physical & MelonPrime::kSupportedMouseButtons[buttonIndex])
             continue;
         const auto& masks = mouseButtonMasks[buttonIndex];
         releasedInputBits |= masks.inputBits;

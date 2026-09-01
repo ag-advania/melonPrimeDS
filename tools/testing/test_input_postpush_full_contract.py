@@ -362,6 +362,76 @@ def check_linux_axis_query_lifecycle_model() -> None:
     assert absolute.event(206, "unused") == (6, True)
 
 
+@dataclass
+class RawWheelState:
+    pending_units120: int = 0
+    remainder_units120: int = 0
+
+    def publish(self, units120: int) -> None:
+        self.pending_units120 += units120
+
+    def reset(self) -> None:
+        self.pending_units120 = 0
+        self.remainder_units120 = 0
+
+    def snapshot(self, reentrant: bool = False) -> int:
+        if reentrant:
+            return 0
+
+        # Model the load-first / rare exchange claim. A producer that arrives
+        # after the zero observation is intentionally deferred to the next
+        # outer frame, while a non-zero claim consumes all units atomically.
+        observed = self.pending_units120
+        claimed = self.pending_units120 if observed else 0
+        if observed:
+            self.pending_units120 = 0
+
+        total_units120 = self.remainder_units120 + claimed
+        steps = total_units120 // 120 if total_units120 >= 0 else -((-total_units120) // 120)
+        self.remainder_units120 = total_units120 - steps * 120
+        return steps
+
+
+def check_raw_wheel_unit_model() -> None:
+    cases = (
+        ([15] * 8, 1),
+        ([30] * 4, 1),
+        ([-30] * 4, -1),
+        ([60, -60], 0),
+        ([240], 2),
+        ([-360], -3),
+    )
+    for units, expected_steps in cases:
+        state = RawWheelState()
+        for unit in units:
+            state.publish(unit)
+        assert state.snapshot() == expected_steps
+        assert abs(state.remainder_units120) < 120
+
+    # A sub-detent burst may cross the frame boundary without losing units.
+    state = RawWheelState()
+    state.publish(90)
+    assert state.snapshot() == 0
+    state.publish(30)
+    assert state.snapshot() == 1
+
+    # Lifecycle reset discards both old pending units and the old residual.
+    state.publish(30)
+    state.reset()
+    state.publish(90)
+    assert state.snapshot() == 0
+    assert state.remainder_units120 == 90
+
+    # A re-entrant snapshot does not claim pending units or advance residual;
+    # the outer frame receives the combined wheel impulse exactly once.
+    state = RawWheelState()
+    state.publish(60)
+    assert state.snapshot(reentrant=True) == 0
+    assert state.pending_units120 == 60 and state.remainder_units120 == 0
+    state.publish(60)
+    assert state.snapshot() == 1
+
+
 def check_wheel_count_model() -> None:
     class QtWheel:
         remainder = 0
@@ -479,6 +549,9 @@ def check_mac_handoff_model() -> None:
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
     input_cpp = source("src/frontend/qt_sdl/EmuInstanceInput.cpp")
+    raw_state_header = source("src/frontend/qt_sdl/MelonPrimeRawInputState.h")
+    raw_state_cpp = source("src/frontend/qt_sdl/MelonPrimeRawInputState.cpp")
+    mouse_button = source("src/frontend/qt_sdl/MelonPrimeMouseButton.h")
     game_input = source("src/frontend/qt_sdl/MelonPrimeGameInput.cpp")
     emu_thread = source("src/frontend/qt_sdl/EmuThread.cpp")
     bridge = source("src/frontend/qt_sdl/MelonPrimeThreadBridge.h")
@@ -543,6 +616,31 @@ def main() -> None:
         "void EmuInstance::onKeyRelease(QKeyEvent* event)",
         "#ifdef MELONPRIME_DS\nvoid EmuInstance::onMousePress",
     )
+    raw_process = body(
+        raw_state_cpp,
+        "void InputState::processRawInput(HRAWINPUT hRaw)",
+        "void InputState::processRawInputBatched()",
+    )
+    raw_batched = body(
+        raw_state_cpp,
+        "void InputState::processRawInputBatched()",
+        "void InputState::fetchMouseDelta",
+    )
+    raw_snapshot = body(
+        raw_state_cpp,
+        "void InputState::snapshotInputFrame(FrameHotkeyState& outHk",
+        "void InputState::clearStuckPostFrame",
+    )
+    raw_no_edges = body(
+        raw_state_cpp,
+        "void InputState::snapshotInputFrameNoEdges(",
+        "bool InputState::hotkeyDown",
+    )
+    raw_claim = body(
+        raw_state_cpp,
+        "FORCE_INLINE int InputState::claimWheelSteps() noexcept",
+        "// =========================================================================\n    // P-1 FIX",
+    )
 
     require(header, "struct LateJoystickSnapshot", "late snapshot storage")
     require(header, "joystickLifecycleCheckCounter", "per-instance cadence")
@@ -555,6 +653,72 @@ def main() -> None:
     require(header, "qtGlobalCommandPressPending", "Qt global command edge mailbox")
     require(header, "qtGameplayPressPending", "Qt event edge mailbox")
     require(header, "qtWheelLevelPulsePending", "wheel down-state impulse mailbox")
+
+    # AJ-AO: Windows Raw wheel units are conserved until the outer-frame
+    # claim, and the no-edge path never consumes the outer frame's impulse.
+    for needle in (
+        "int wheelSteps{}",
+        "m_accumWheelUnits120",
+        "m_wheelUnitRemainder120",
+        "claimWheelSteps()",
+    ):
+        require(raw_state_header, needle, "Raw wheel unit state")
+    for needle in (
+        "RawWheelUnitsFromData",
+        "static_cast<SHORT>(rawData)",
+        "m_accumWheelUnits120.fetch_add",
+        "m_accumWheelUnits120.load(std::memory_order_relaxed)",
+        "m_accumWheelUnits120.exchange(0, std::memory_order_acq_rel)",
+        "m_wheelUnitRemainder120",
+    ):
+        require(raw_state_cpp, needle, "Raw wheel unit implementation")
+    if "NormalizeRawWheelSteps" in raw_state_cpp:
+        raise AssertionError("Raw wheel input must not normalize sub-detent events individually")
+    require(raw_process, "RawWheelUnitsFromData(m.usButtonData)", "single Raw wheel producer")
+    require(raw_batched, "localWheelUnits120", "batched Raw wheel producer")
+    require(raw_batched, "RawWheelUnitsFromData(m.usButtonData)", "batched Raw wheel units")
+    require(raw_snapshot, "outWheelSteps = claimWheelSteps()", "outer Raw wheel claim")
+    if "m_accumWheelUnits120.exchange" in raw_snapshot:
+        raise AssertionError("outer snapshot must delegate the Raw wheel exchange to claimWheelSteps")
+    claim_load = raw_claim.index("m_accumWheelUnits120.load")
+    claim_exchange = raw_claim.index("m_accumWheelUnits120.exchange")
+    if claim_load > claim_exchange:
+        raise AssertionError("Raw wheel claim must load before its rare exchange")
+    require(raw_no_edges, "outWheelSteps = 0", "re-entrant wheel suppression")
+    require(raw_no_edges, "outHk.wheelSteps = 0", "re-entrant hotkey wheel suppression")
+    if "claimWheelSteps" in raw_no_edges or "m_accumWheelUnits120.exchange" in raw_no_edges:
+        raise AssertionError("re-entrant Raw snapshot must not claim wheel units")
+    if raw_state_cpp.count("m_wheelUnitRemainder120 = 0") < 5:
+        raise AssertionError("Raw wheel residual must clear at construction and every lifecycle reset")
+
+    # AL: the editor and runtime consume one five-button capability list.
+    for needle in (
+        "kSupportedMouseButtons",
+        "kSupportedMouseButtonCount",
+        "IsSupportedMouseButton",
+        "MouseButtonName",
+    ):
+        require(mouse_button, needle, "mouse-button capability declaration")
+    require(header, "MelonPrime::kSupportedMouseButtonCount", "runtime mouse mask capacity")
+    require(input_cpp, "MelonPrime::kSupportedMouseButtons", "runtime mouse capability list")
+    require(input_cpp, "MelonPrime::MouseButtonIndex", "runtime unsupported-button rejection")
+    require(map_button, "MelonPrimeMouseButton.h", "editor mouse capability include")
+    require(map_button, "IsSupportedMouseButton", "editor unsupported-button rejection")
+    require(map_button, "Unsupported Mouse Button", "legacy unsupported mapping label")
+    if "Qt::ExtraButton" in map_button:
+        raise AssertionError("binding editor must not advertise unsupported Qt ExtraButton values")
+
+    # AM: frame-facing wheel names carry detent semantics; raw state names
+    # carry 1/120-detent units, with no ambiguous wheelDelta field left.
+    if "wheelDelta" in raw_state_header + raw_state_cpp + game_input:
+        raise AssertionError("ambiguous wheelDelta naming reappeared")
+    require(raw_state_header, "m_accumWheelUnits120", "explicit Raw wheel unit name")
+    require(raw_state_header, "m_wheelUnitRemainder120", "explicit wheel residual name")
+    require(game_input, "hk.wheelSteps", "frame wheel step name")
+
+    # AP: conflicting Next+Prev projections are deliberately inert.
+    require(game_input, "cyclePressBits", "wheel direction conflict gate")
+    require(game_weapon, "nextKey == prevKey", "keyboard direction conflict gate")
     if "static uint8_t" in process or "static uint8_t" in late:
         raise AssertionError("controller lifecycle cadence must not be function-static")
     if "SDL_JoystickClose" in process or "SDL_JoystickClose" in late:
@@ -820,6 +984,7 @@ def main() -> None:
     check_qt_event_edge_model()
     check_binding_program_publication_model()
     check_linux_axis_query_lifecycle_model()
+    check_raw_wheel_unit_model()
     check_wheel_count_model()
     check_packed_wrap_model()
     check_mac_handoff_model()

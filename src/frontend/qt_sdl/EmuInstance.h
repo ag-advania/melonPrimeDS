@@ -31,6 +31,7 @@
 #ifdef MELONPRIME_DS
 #include <atomic>
 #include <cstdint>
+#include "MelonPrimeMouseButton.h"
 namespace MelonPrime { class MelonPrimeCore; }
 #endif // MELONPRIME_DS
 
@@ -636,7 +637,8 @@ private:
     JoystickBindingProgram activeJoystickBindingProgram{};
     std::atomic<uint32_t> joystickBindingProgramGeneration{0};
     uint32_t activeJoystickBindingProgramGeneration = 0;
-    MouseButtonBindingMask mouseButtonMasks[5]{};
+    MouseButtonBindingMask mouseButtonMasks[
+        MelonPrime::kSupportedMouseButtonCount]{};
     static constexpr uint64_t kGlobalCommandHotkeyMask =
         (1ULL << HK_GuitarGripGreen) - 1ULL;
     static constexpr uint64_t kGameplayHotkeyMask =

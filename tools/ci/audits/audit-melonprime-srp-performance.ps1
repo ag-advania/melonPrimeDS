@@ -1495,6 +1495,126 @@ if (-not $screenWheelBody -or
     Add-Error 'Rule AI: primary input-surface authority is incomplete'
 }
 
+# --- Rule AJ-AO: Raw wheel conservation and mouse capability equality -------
+#
+# Windows RAWINPUT usButtonData is a signed 1/120-detent unit. Producers must
+# preserve that unit in the atomic accumulator; only the outer-frame consumer
+# may convert it, carrying the signed residual across frames. The re-entrant
+# snapshot is intentionally not a second consumer.
+$rawInputStatePath = Join-Path $qtSdl 'MelonPrimeRawInputState.h'
+$rawInputStateCppPath = Join-Path $qtSdl 'MelonPrimeRawInputState.cpp'
+$mouseCapabilityPath = Join-Path $qtSdl 'MelonPrimeMouseButton.h'
+$mapButtonPath = Join-Path $qtSdl 'InputConfig/MapButton.h'
+$rawInputStateText = Get-Content -LiteralPath $rawInputStatePath -Raw
+$rawInputStateCppText = Get-Content -LiteralPath $rawInputStateCppPath -Raw
+$mouseCapabilityText = Get-Content -LiteralPath $mouseCapabilityPath -Raw
+$mapButtonText = Get-Content -LiteralPath $mapButtonPath -Raw
+$rawProcessBody = Get-FunctionText -Path $rawInputStateCppPath `
+    -Signature 'void\s+InputState::processRawInput\s*\('
+$rawBatchedBody = Get-FunctionText -Path $rawInputStateCppPath `
+    -Signature 'void\s+InputState::processRawInputBatched\s*\('
+$rawClaimBody = Get-FunctionText -Path $rawInputStateCppPath `
+    -Signature 'int\s+InputState::claimWheelSteps\s*\('
+$rawSnapshotBody = Get-FunctionText -Path $rawInputStateCppPath `
+    -Signature 'void\s+InputState::snapshotInputFrame\s*\('
+$rawNoEdgesBody = Get-FunctionText -Path $rawInputStateCppPath `
+    -Signature 'void\s+InputState::snapshotInputFrameNoEdges\s*\('
+
+# AJ: producer-side conservation and consumer-side detent conversion.
+if ($rawInputStateText -notmatch 'm_accumWheelUnits120' -or
+    $rawInputStateText -notmatch 'm_wheelUnitRemainder120' -or
+    $rawInputStateCppText -notmatch 'static_cast<SHORT>\s*\(\s*rawData\s*\)' -or
+    $rawInputStateCppText -match 'NormalizeRawWheelSteps' -or
+    -not $rawProcessBody -or
+    $rawProcessBody -notmatch 'RawWheelUnitsFromData\s*\(\s*m\.usButtonData\s*\)' -or
+    $rawProcessBody -notmatch 'm_accumWheelUnits120\.fetch_add\s*\(' -or
+    -not $rawBatchedBody -or
+    $rawBatchedBody -notmatch 'localWheelUnits120' -or
+    $rawBatchedBody -notmatch 'RawWheelUnitsFromData\s*\(\s*m\.usButtonData\s*\)' -or
+    $rawBatchedBody -notmatch 'm_accumWheelUnits120\.fetch_add\s*\(' -or
+    -not $rawClaimBody -or
+    $rawClaimBody -notmatch 'totalUnits120\s*/\s*kWheelUnitsPerDetent' -or
+    $rawClaimBody -notmatch 'm_wheelUnitRemainder120') {
+    Add-Error 'Rule AJ: Raw wheel units must be conserved in producers and converted only by the frame claim'
+}
+
+# AK: idle Raw frames use load-first and exchange only for a non-zero claim.
+if (-not $rawClaimBody) {
+    Add-Error 'Rule AK: Raw wheel claim body not found'
+} else {
+    $rawLoadAt = $rawClaimBody.IndexOf('m_accumWheelUnits120.load', [System.StringComparison]::Ordinal)
+    $rawExchangeAt = $rawClaimBody.IndexOf('m_accumWheelUnits120.exchange', [System.StringComparison]::Ordinal)
+    if ($rawLoadAt -lt 0 -or $rawExchangeAt -lt 0 -or $rawLoadAt -gt $rawExchangeAt -or
+        $rawClaimBody -notmatch 'if\s*\(\s*UNLIKELY\(\s*observed\s*!=\s*0\s*\)\s*\)') {
+        Add-Error 'Rule AK: Raw wheel claim must load first and exchange only after a non-zero observation'
+    }
+}
+if (-not $rawSnapshotBody -or
+    $rawSnapshotBody -notmatch 'claimWheelSteps\s*\(\s*\)' -or
+    $rawSnapshotBody -match 'm_accumWheelUnits120\.exchange\s*\(') {
+    Add-Error 'Rule AK: outer Raw snapshot must delegate the rare wheel claim'
+}
+
+# AL: every mouse button accepted by the editor has one runtime producer.
+if ($mouseCapabilityText -notmatch 'kSupportedMouseButtons' -or
+    $mouseCapabilityText -notmatch 'kSupportedMouseButtonCount' -or
+    $mouseCapabilityText -notmatch 'IsSupportedMouseButton' -or
+    $mapButtonText -notmatch 'MelonPrimeMouseButton\.h' -or
+    $mapButtonText -notmatch 'IsSupportedMouseButton' -or
+    $mapButtonText -notmatch 'Unsupported Mouse Button' -or
+    $emuInstanceInputText -notmatch 'MelonPrime::kSupportedMouseButtons' -or
+    $emuInstanceInputText -notmatch 'MelonPrime::MouseButtonIndex' -or
+    $emuInstanceHeaderText -notmatch 'MelonPrime::kSupportedMouseButtonCount') {
+    Add-Error 'Rule AL: editor/runtime mouse-button capability equality is incomplete'
+}
+if ($mapButtonText -match 'Qt::ExtraButton') {
+    Add-Error 'Rule AL: binding editor must not advertise unsupported Qt ExtraButton values'
+}
+
+# AM: keep raw units and frame detents distinguishable in names.
+if ($rawInputStateText -match 'wheelDelta' -or
+    $rawInputStateCppText -match 'wheelDelta' -or
+    $gameInputText -match 'wheelDelta' -or
+    $rawInputStateText -notmatch 'int\s+wheelSteps\s*\{\}' -or
+    $rawInputStateText -notmatch 'm_accumWheelUnits120' -or
+    $rawInputStateText -notmatch 'm_wheelUnitRemainder120') {
+    Add-Error 'Rule AM: wheel field and accumulator names must state their semantic units'
+}
+
+# AN: registration/focus/source lifecycle resets clear both pending units and
+# the consumer residual. The residual is deliberately not an atomic producer
+# field, so every reset runs on the consumer/lifecycle owner.
+foreach ($resetSpec in @(
+    @{ Name = 'resetAllKeys'; Signature = 'void\s+InputState::resetAllKeys\s*\('; Next = 'void InputState::resetMouseButtons' },
+    @{ Name = 'resetMouseButtons'; Signature = 'void\s+InputState::resetMouseButtons\s*\('; Next = 'void InputState::resetAll' },
+    @{ Name = 'resetAll'; Signature = 'void\s+InputState::resetAll\s*\('; Next = 'void InputState::setHotkeyVks' },
+    @{ Name = 'syncPhysicalState'; Signature = 'void\s+InputState::syncPhysicalState\s*\('; Next = '} // namespace MelonPrime' }
+)) {
+    $resetBody = Get-FunctionText -Path $rawInputStateCppPath -Signature $resetSpec.Signature
+    if (-not $resetBody -or
+        $resetBody -notmatch 'm_accumWheelUnits120\.store\s*\(\s*0' -or
+        $resetBody -notmatch 'm_wheelUnitRemainder120\s*=\s*0') {
+        Add-Error "Rule AN: $($resetSpec.Name) must clear Raw wheel units and residual"
+    }
+}
+
+# AO: nested input snapshots are read-only with respect to the wheel claim.
+if (-not $rawNoEdgesBody -or
+    $rawNoEdgesBody -notmatch 'outWheelSteps\s*=\s*0' -or
+    $rawNoEdgesBody -notmatch 'outHk\.wheelSteps\s*=\s*0' -or
+    $rawNoEdgesBody -match 'claimWheelSteps\s*\(' -or
+    $rawNoEdgesBody -match 'm_accumWheelUnits120\.(?:exchange|store)\s*\(' -or
+    $rawNoEdgesBody -match 'm_wheelUnitRemainder120\s*=') {
+    Add-Error 'Rule AO: re-entrant Raw snapshot must not claim or advance wheel state'
+}
+
+# AP: an explicit Next+Prev conflict has no cycle action.
+if ($gameInputText -notmatch 'cyclePressBits\s*=\s*wheelPressBits' -or
+    $gameInputText -notmatch 'cyclePressBits\s*==\s*IB_WEAPON_NEXT' -or
+    $weaponSwitchBody -notmatch 'nextKey\s*==\s*prevKey') {
+    Add-Error 'Rule AP: conflicting wheel/keyboard weapon directions must be inert'
+}
+
 # --- Rule K: state-dependent Custom HUD APIs own their active-state scope ----
 #
 # The per-instance HUD state is reached through a thread_local pointer that only

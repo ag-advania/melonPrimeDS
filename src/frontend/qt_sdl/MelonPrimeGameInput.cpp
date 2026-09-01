@@ -268,7 +268,7 @@ namespace MelonPrime {
                 // mailbox so the same wheel tick cannot be counted twice.
                 (void)m_threadBridge.ConsumeWheelForEmu(
                     m_inputSubscription.generation);
-                m_input.wheelSteps = rawActionReady ? hk.wheelDelta : 0;
+                m_input.wheelSteps = rawActionReady ? hk.wheelSteps : 0;
             }
             else {
                 m_input.wheelSteps = m_threadBridge.ConsumeWheelForEmu(
@@ -325,9 +325,11 @@ namespace MelonPrime {
                         rawMagnitude, std::numeric_limits<int32_t>::max()));
                 const uint64_t wheelPressBits =
                     InputProjection::ProjectPressMask(wheelHotkeyBits);
-                if (wheelPressBits & IB_WEAPON_NEXT)
+                const uint64_t cyclePressBits = wheelPressBits
+                    & (IB_WEAPON_NEXT | IB_WEAPON_PREV);
+                if (cyclePressBits == IB_WEAPON_NEXT)
                     m_input.weaponCycleSteps = magnitude;
-                else if (wheelPressBits & IB_WEAPON_PREV)
+                else if (cyclePressBits == IB_WEAPON_PREV)
                     m_input.weaponCycleSteps = -magnitude;
             }
         }

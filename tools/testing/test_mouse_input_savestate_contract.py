@@ -43,10 +43,10 @@ def main() -> None:
     # Raw mouse, side-button and wheel events share InputState's snapshot.
     for needle in (
         "RI_MOUSE_WHEEL",
-        "m_accumWheelSteps",
-        "m_accumWheelSteps.exchange(0, std::memory_order_acq_rel)",
+        "m_accumWheelUnits120",
+        "m_accumWheelUnits120.exchange(0, std::memory_order_acq_rel)",
         "DefRawInputProc(&pri",
-        "outHk.wheelDelta = outWheelSteps",
+        "outHk.wheelSteps = outWheelSteps",
     ):
         require(raw_state, needle, "Raw Input state")
 

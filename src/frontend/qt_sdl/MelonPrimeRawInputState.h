@@ -16,7 +16,7 @@ namespace MelonPrime {
     struct FrameHotkeyState {
         uint64_t down{};
         uint64_t pressed{};
-        int wheelDelta{};
+        int wheelSteps{};
         uint64_t generation{};
         bool baselineReady = false;
 
@@ -146,7 +146,8 @@ namespace MelonPrime {
 
         std::atomic<int64_t>  m_accumMouseX{ 0 };
         std::atomic<int64_t>  m_accumMouseY{ 0 };
-        std::atomic<int>      m_accumWheelSteps{ 0 };
+        // Signed RAWINPUT usButtonData units (120 units = one detent).
+        std::atomic<int64_t>  m_accumWheelUnits120{ 0 };
         std::atomic<uint8_t>  m_mouseButtons{ 0 };
         // Mouse DOWN edges seen since the last outer-frame snapshot.
         // Preserves very short clicks whose DOWN+UP both arrive in one batch.
@@ -190,6 +191,8 @@ namespace MelonPrime {
 
         int64_t m_lastReadMouseX{ 0 };
         int64_t m_lastReadMouseY{ 0 };
+        // Consumer-thread-only residual in signed 1/120-detent units.
+        int m_wheelUnitRemainder120{ 0 };
 
         // =================================================================
         // Static Tables
@@ -239,6 +242,10 @@ namespace MelonPrime {
                 (m_hkMasks.vkMask[id][2] & snapVk[2]) | (m_hkMasks.vkMask[id][3] & snapVk[3]);
             return ((m_hkMasks.mouseMask[id] & snapMouse) | keyHit) != 0;
         }
+
+        // Producer threads accumulate signed Windows RAWINPUT wheel units.
+        // Only the consumer converts them to detents at the frame boundary.
+        [[nodiscard]] FORCE_INLINE int claimWheelSteps() noexcept;
     };
 
 } // namespace MelonPrime
