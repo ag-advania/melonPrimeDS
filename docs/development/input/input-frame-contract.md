@@ -48,7 +48,10 @@ sensor/rumble operations use the instance's device lock, so separate emulator
 instances do not serialize their steady-state reads on `joyMutexGlobal`.
 The SDL process guard returns wait/hold ticks through a small POD; generic
 process-lock metrics are committed only after the outer device lock is
-released.
+released. `SdlProcessTiming`, its timing overload, and the caller's timing
+object are compiled only under `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
+Shipping controller sampling calls the parameterless `UpdateLocked()` path,
+so it has no timing pointer plumbing or performance-counter reads.
 The component does not expose its SDL handle. Cold mapping UI calls
 `EmuInstance::pollJoystickMapping` and `captureJoystickAxisRest`, which own the
 device lock and keep mapping-specific SDL reads inside the device owner.
@@ -83,13 +86,25 @@ is enabled with `MELONPRIME_PERF=1`. The `input_metric_us` report contains:
 | `JoystickProcessMutexWait` | wait for the short SDL process bookkeeping lock |
 | `JoystickProcessMutexHold` | time spent holding that SDL process bookkeeping lock |
 
-Each generic `input_metric_us` entry reports `c` as the number of observed
-calls and `retained` as the number of samples currently kept in its latest-N
-ring (2048). The p50/p95/p99 values and `retained_max` are calculated from
-that retained ring. `max` is the whole live-report window or capture run, so
-an early outlier can make it larger than `retained_max`. Explicit input
-latency (`input sample -> RunFrame begin` and `input sample -> Present end`)
-uses the same calls/retained/latest-N semantics.
+Each current generic `input_metric_us` entry reports `c` as the number of
+observed calls, `retained` as the number of samples currently kept in its
+latest-N ring (2048), and `retention_mode=latest_n` in parser output. The
+p50/p95/p99 values and `retained_max` are calculated from that retained ring.
+`max` is the whole live-report window or capture run, so an early outlier can
+make it larger than `retained_max`. Explicit input latency (`input sample ->
+RunFrame begin` and `input sample -> Present end`) uses the same calls/retained/
+latest-N semantics.
+
+The parser preserves historical provenance. A pre-ring generic report without
+`retained` is marked `retention_mode=legacy_first_n` with a 2048-sample cap;
+the older explicit-latency format is marked the same way with its historical
+512-sample cap. For a legacy report with more calls than its cap, the reported
+percentiles are only the retained prefix, and an older explicit-latency `max`
+is also prefix-only; the old generic `max` remains its producer's whole-call
+maximum but has no retained max. Therefore `--check-budget` refuses an
+over-cap legacy report by default. `--allow-legacy-first-n` is an explicit
+historical-analysis escape hatch. JSON includes the mode/cap on every parsed
+metric and the top-level run, while Markdown includes the mode and max scope.
 
 Windows Raw telemetry is separately compile-gated by
 `MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY` and runtime-gated by
@@ -113,17 +128,22 @@ without periodic sorting/formatting; the owning thread emits the generic final
 report at shutdown. Raw lock wait/hold samples are committed after releasing
 the measured lock, its `DeferredDrain` report is emitted after the stage scope,
 and the process-wide Raw final report is emitted only when the last Raw service
-reference is released.
+reference is released. The final Raw report is printed before that service's
+cold destructor cleanup, keeping hidden-window teardown lock acquisitions out
+of runtime measurements.
 
 The Raw frame mutex remains recursive while the developer probe measures actual
 recursive acquisitions and maximum depth. A plain `std::mutex` conversion is
 considered only after the stress matrix records zero recursive acquisitions.
 
-The Raw lock and batch counters are report-window totals. Divide them by the
-corresponding frame/snapshot count when a per-frame rate is needed. The
-developer probe retains the latest 2048 timing samples while `calls` remains
-the total observed count for that report window/run; the report explicitly
-separates `retained_max` from the whole-window `max`.
+The Raw stage line uses the same explicit contract for `snapshot`, `late_latch`,
+and `deferred_drain`: `calls` is the whole report-window total, `retained` is
+the latest 2048 samples, p50/p95/p99 and `retained_max` use that retained ring,
+and `max` is the whole-window maximum. The parser and Markdown output preserve
+the stage retention fields. Raw lock and batch counters remain report-window
+totals; divide them by the corresponding frame/snapshot count when a per-frame
+rate is needed. Zero-duration developer samples are retained as valid
+observations rather than silently dropped.
 
 The deterministic parser emits JSON/Markdown from real logs and can enforce
 the common input limits:
@@ -133,6 +153,10 @@ python tools/testing/summarize-input-performance.py --self-test
 python tools/testing/summarize-input-performance.py run.stderr \
   --mode controller --min-input-samples 1000 --check-budget \
   --json-out input-summary.json --markdown-out input-summary.md
+
+# Historical first-N artifacts require an explicit opt-in for budget checks.
+python tools/testing/summarize-input-performance.py old-run.stderr \
+  --check-budget --allow-legacy-first-n
 ```
 
 No runtime log is generated by the source audit or local build. A physical

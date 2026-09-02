@@ -243,7 +243,7 @@ inline void RecordRawBuffer(uint64_t elapsedNs) noexcept
 
 inline void RecordStage(Stage stage, uint64_t elapsedNs) noexcept
 {
-    if (!Enabled() || elapsedNs == 0)
+    if (!Enabled())
         return;
     auto& stats = Stats().stage[static_cast<uint32_t>(stage)];
     const uint64_t index = stats.writeIndex.fetch_add(
@@ -472,18 +472,25 @@ private:
 };
 
 struct StagePercentiles {
+    uint64_t calls = 0;
+    uint32_t retained = 0;
     double p50 = 0.0;
     double p95 = 0.0;
     double p99 = 0.0;
+    // max is the whole-window maximum; retainedMax is the maximum of the
+    // latest-N samples used for the percentiles.
     double max = 0.0;
+    double retainedMax = 0.0;
 };
 
 inline StagePercentiles SummarizeStage(const StageStats& stage) noexcept
 {
     StagePercentiles result;
     const uint64_t total = stage.calls.load(std::memory_order_relaxed);
+    result.calls = total;
     const uint32_t count = static_cast<uint32_t>(
         total < StageStats::kSampleCap ? total : StageStats::kSampleCap);
+    result.retained = count;
     if (count) {
         uint64_t values[StageStats::kSampleCap];
         for (uint32_t i = 0; i < count; ++i)
@@ -500,6 +507,7 @@ inline StagePercentiles SummarizeStage(const StageStats& stage) noexcept
         result.p50 = percentileNs(0.50) / 1000.0;
         result.p95 = percentileNs(0.95) / 1000.0;
         result.p99 = percentileNs(0.99) / 1000.0;
+        result.retainedMax = static_cast<double>(values[count - 1]) / 1000.0;
     }
     result.max = static_cast<double>(
         stage.maxNs.load(std::memory_order_relaxed)) / 1000.0;
@@ -573,15 +581,24 @@ inline void Report(bool force) noexcept
         stats.stage[static_cast<uint32_t>(Stage::RawDeferredDrain)]);
     std::fprintf(stderr,
         "[MelonPrimeRawPerf] stage_us "
-        "snapshot[p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "late_latch[p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "deferred_drain[p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
+        "snapshot[calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
+            "max=%.1f retained_max=%.1f] "
+        "late_latch[calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
+            "max=%.1f retained_max=%.1f] "
+        "deferred_drain[calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
+            "max=%.1f retained_max=%.1f] "
         "lock_wait_ns snapshot=%llu late=%llu deferred=%llu hidden=%llu native=%llu | "
         "raw_batch calls=%llu nonempty=%llu empty=%llu events=%llu "
         "late_delta_claims=%llu post_draw_events=%llu\n",
+        static_cast<unsigned long long>(snapshot.calls), snapshot.retained,
         snapshot.p50, snapshot.p95, snapshot.p99, snapshot.max,
+        snapshot.retainedMax,
+        static_cast<unsigned long long>(lateLatch.calls), lateLatch.retained,
         lateLatch.p50, lateLatch.p95, lateLatch.p99, lateLatch.max,
+        lateLatch.retainedMax,
+        static_cast<unsigned long long>(deferredDrain.calls), deferredDrain.retained,
         deferredDrain.p50, deferredDrain.p95, deferredDrain.p99, deferredDrain.max,
+        deferredDrain.retainedMax,
         static_cast<unsigned long long>(stats.lockWaitBySite[static_cast<uint32_t>(LockSite::Snapshot)].load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.lockWaitBySite[static_cast<uint32_t>(LockSite::LateLatch)].load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.lockWaitBySite[static_cast<uint32_t>(LockSite::DeferredDrain)].load(std::memory_order_relaxed)),

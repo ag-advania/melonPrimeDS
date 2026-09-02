@@ -38,6 +38,7 @@ public:
             ? m_holdStart - m_waitStart : 0;
         m_timing->holdTicks = releaseTick >= m_holdStart
             ? releaseTick - m_holdStart : 0;
+        m_timing->valid = true;
     }
 
     SdlProcessMutexGuard(const SdlProcessMutexGuard&) = delete;
@@ -52,8 +53,7 @@ private:
 #else
 class SdlProcessMutexGuard final {
 public:
-    explicit SdlProcessMutexGuard(
-        std::mutex& mutex, SdlProcessTiming* = nullptr)
+    explicit SdlProcessMutexGuard(std::mutex& mutex)
         : m_lock(mutex)
     {
     }
@@ -151,9 +151,15 @@ bool MelonPrimeJoystickDevice::OpenLocked(int& joystickId) noexcept
     return m_joystick != nullptr;
 }
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
 void MelonPrimeJoystickDevice::UpdateLocked(SdlProcessTiming* timing) noexcept
 {
     SdlProcessMutexGuard processLock(s_sdlProcessMutex, timing);
+#else
+void MelonPrimeJoystickDevice::UpdateLocked() noexcept
+{
+    SdlProcessMutexGuard processLock(s_sdlProcessMutex);
+#endif
     SDL_JoystickUpdate();
 }
 

@@ -84,12 +84,14 @@ namespace MelonPrime {
     void RawInputWinFilter::Release() {
         std::lock_guard<std::mutex> lock(s_serviceMutex);
         if (--s_refCount == 0) {
+            // Raw telemetry is process-wide. Report only after the final
+            // service reference drops, but before destructor cleanup acquires
+            // frame locks for hidden-window teardown. This keeps cold teardown
+            // work out of the runtime stage and lock-plane measurements while
+            // an early EmuThread exit still cannot truncate the aggregate.
+            RawInputPerf::ShutdownReport();
             delete s_instance;
             s_instance = nullptr;
-            // Raw telemetry is process-wide. Report only after the final
-            // service teardown, so an early EmuThread exit cannot freeze a
-            // multi-instance capture before the remaining instance stops.
-            RawInputPerf::ShutdownReport();
         }
     }
 

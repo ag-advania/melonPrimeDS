@@ -2312,7 +2312,11 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
     $perfProbeText -notmatch 'uint64_t\s+inputToPresentEndCalls' -or
     $perfProbeText -notmatch 'retained=' -or
     $perfProbeText -notmatch 'retained_max=' -or
-    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*3' -or
+    $inputPerfSummarizerText -notmatch 'RETENTION_LATEST_N' -or
+    $inputPerfSummarizerText -notmatch 'RETENTION_LEGACY_FIRST_N' -or
+    $inputPerfSummarizerText -notmatch 'allow-legacy-first-n' -or
+    $inputPerfSummarizerText -notmatch 'retention_mode' -or
+    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*4' -or
     $inputContractText -notmatch 'latest-N' -or
     $inputContractText -notmatch 'retained_max' -or
     $inputContractText -notmatch 'whole-window.*max' -or
@@ -2386,6 +2390,20 @@ if (-not $sampleJoystickBody -or
     $sampleJoystickBody.IndexOf('processTiming.holdTicks', [System.StringComparison]::Ordinal) -lt $sampleUnlockAt) {
     Add-Error 'Rule CA: SDL process timing POD must be committed after outer joystick unlock'
 }
+$shippingSampleBody = if ($sampleJoystickBody -and $sampleJoystickBody.Contains('#else')) {
+    $sampleJoystickBody.Split('#else', 2)[1].Split('#endif', 2)[0]
+} else { '' }
+if ($joystickDeviceHeaderText -notmatch
+        '(?s)#ifdef\s+MELONPRIME_ENABLE_DEVELOPER_FEATURES\s+struct\s+SdlProcessTiming[\s\S]*?#endif' -or
+    $joystickDeviceHeaderText -notmatch
+        '(?s)#ifdef\s+MELONPRIME_ENABLE_DEVELOPER_FEATURES[\s\S]*?UpdateLocked\s*\(\s*SdlProcessTiming\*\s+timing\s*\)[\s\S]*?#else[\s\S]*?UpdateLocked\s*\(\s*\)\s*noexcept' -or
+    $joystickDeviceText -notmatch
+        '(?s)#ifdef\s+MELONPRIME_ENABLE_DEVELOPER_FEATURES[\s\S]*?UpdateLocked\s*\(\s*SdlProcessTiming\*\s+timing\s*\)[\s\S]*?#else[\s\S]*?UpdateLocked\s*\(\s*\)\s*noexcept' -or
+    $shippingSampleBody -notmatch
+        'const\s+bool\s+sampled\s*=\s*sampleJoystickPhysicalLocked\s*\(\s*snapshot\s*\)' -or
+    $shippingSampleBody -match 'SdlProcessTiming|updateTicks') {
+    Add-Error 'Rule CA: shipping controller sample path retains developer timing plumbing'
+}
 
 # CB: Raw report formatting is outside DeferredDrain's measured stage, and a
 # capture-only run defers the report to the owning EmuThread shutdown point.
@@ -2403,13 +2421,14 @@ if (-not $deferredDrainRawBody -or
 
 # CE: Raw final reporting follows the process service lifetime. Generic
 # thread-local reporting stays in EmuThread shutdown, while the shared Raw
-# aggregate is reported exactly once when the last service reference drops.
+# aggregate is reported when the last service reference drops, before cold
+# destructor cleanup can pollute runtime lock/stage measurements.
 if (-not $rawReleaseBody -or
     $rawReleaseBody -notmatch 'if\s*\(\s*--s_refCount\s*==\s*0\s*\)' -or
     $rawReleaseBody -notmatch 'delete\s+s_instance' -or
     $rawReleaseBody -notmatch 'RawInputPerf::ShutdownReport\s*\(\s*\)' -or
-    $rawReleaseBody.IndexOf('delete s_instance', [System.StringComparison]::Ordinal) -gt
-        $rawReleaseBody.IndexOf('RawInputPerf::ShutdownReport()', [System.StringComparison]::Ordinal) -or
+    $rawReleaseBody.IndexOf('RawInputPerf::ShutdownReport()', [System.StringComparison]::Ordinal) -gt
+        $rawReleaseBody.IndexOf('delete s_instance', [System.StringComparison]::Ordinal) -or
     $rawWinFilterText -notmatch 'RawInputPerf::ShutdownReport\s*\(\)' -or
     ([regex]::Matches($rawWinFilterText, 'RawInputPerf::ShutdownReport\s*\(\)').Count -ne 1) -or
     $perfShutdownText -match 'RawInputPerf::ShutdownReport' -or
@@ -2430,6 +2449,23 @@ if ($rawWinFilterText -match
     $rawInputPerfText -notmatch 'RecordRecursiveAcquisition' -or
     $inputContractText -notmatch 'recursive acquisition') {
     Add-Error 'Rule CF: Raw recursive-lock measurement boundary is incomplete'
+}
+
+# CG: Raw stage reports expose the same retention provenance as generic input:
+# calls cover the whole report, while percentile/retained_max cover latest-N.
+if ($rawInputPerfText -notmatch
+        '(?s)snapshot\[calls=.*?retained=.*?p50=.*?retained_max=' -or
+    $rawInputPerfText -notmatch
+        '(?s)late_latch\[calls=.*?retained=.*?p50=.*?retained_max=' -or
+    $rawInputPerfText -notmatch
+        '(?s)deferred_drain\[calls=.*?retained=.*?p50=.*?retained_max=' -or
+    $rawInputPerfText -notmatch 'result\.calls\s*=\s*total' -or
+    $rawInputPerfText -notmatch 'result\.retained\s*=\s*count' -or
+    $rawInputPerfText -notmatch 'result\.retainedMax' -or
+    $inputPerfSummarizerText -notmatch 'RAW_STAGE_RE' -or
+    $inputPerfSummarizerText -notmatch 'snapshot_retained_max' -or
+    $inputPerfSummarizerText -notmatch 'stage_metrics') {
+    Add-Error 'Rule CG: Raw stage latest-N retention semantics are not fully surfaced'
 }
 
 # CC: joystick enumeration is a cold, process-serialized owner operation;

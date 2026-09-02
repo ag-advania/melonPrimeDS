@@ -231,7 +231,10 @@ callback layer. The developer probe reports the wait and hold time of the short
 process lock as `JoystickProcessMutexWait` and `JoystickProcessMutexHold`, but
 the lock is not removed without multi-instance evidence. The process guard
 returns those ticks through a small POD, and the metric commit occurs after the
-outer per-instance device mutex is released.
+outer per-instance device mutex is released. The POD, timing overload, and
+caller-local timing object are developer-feature-only; a shipping controller
+frame uses the parameterless update path and carries no telemetry pointer or
+counter-read plumbing.
 
 Generic performance state is thread-local and is bound to the owning
 `EmuThread` instance before its frame loop starts. Reports carry
@@ -246,7 +249,15 @@ lock telemetry is written after each measured mutex is released, and
 `DeferredDrain` reports only after its frame/stage scope has ended. The
 process-wide Raw final report belongs to the last `RawInputWinFilter` service
 release, so an earlier EmuThread shutdown cannot truncate a multi-instance
-capture.
+capture; it is emitted before the final service destructor's cold HWND cleanup.
+Current parser output marks this input/stage retention as `latest_n`. Legacy
+generic first-N and historical explicit-latency artifacts are marked
+`legacy_first_n`; an over-cap legacy report cannot pass percentile budget
+enforcement without `--allow-legacy-first-n`.
+
+Raw stage reports expose `calls`, `retained`, p50/p95/p99, whole-window `max`,
+and retained-window `retained_max` for snapshot, late latch, and deferred
+drain. Zero-duration developer samples remain in their measured population.
 
 The input implementation keeps SRP boundaries as fixed data and direct calls:
 `JoystickBindingProgram` is the cold `CompiledInputBindings` boundary,

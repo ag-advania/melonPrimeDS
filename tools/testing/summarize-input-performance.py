@@ -46,7 +46,38 @@ EXPLICIT_LATENCY_METRIC_RE = re.compile(
     r"p95=(?P<p95>[0-9.]+) p99=(?P<p99>[0-9.]+) "
     r"max=(?P<max>[0-9.]+) retained_max=(?P<retained_max>[0-9.]+)"
 )
+EXPLICIT_LATENCY_LEGACY_METRIC_RE = re.compile(
+    r"(?P<name>[a-z0-9_]+)=p50=(?P<p50>[0-9.]+) "
+    r"p95=(?P<p95>[0-9.]+) p99=(?P<p99>[0-9.]+) "
+    r"max=(?P<max>[0-9.]+) n=(?P<n>\d+)"
+)
 RAW_STAGE_RE = re.compile(
+    r"^\[MelonPrimeRawPerf\] stage_us "
+    r"snapshot\[calls=(?P<snapshot_calls>\d+) "
+    r"retained=(?P<snapshot_retained>\d+) p50=(?P<snapshot_p50>[0-9.]+) "
+    r"p95=(?P<snapshot_p95>[0-9.]+) p99=(?P<snapshot_p99>[0-9.]+) "
+    r"max=(?P<snapshot_max>[0-9.]+) "
+    r"retained_max=(?P<snapshot_retained_max>[0-9.]+)\] "
+    r"late_latch\[calls=(?P<late_calls>\d+) "
+    r"retained=(?P<late_retained>\d+) p50=(?P<late_p50>[0-9.]+) "
+    r"p95=(?P<late_p95>[0-9.]+) p99=(?P<late_p99>[0-9.]+) "
+    r"max=(?P<late_max>[0-9.]+) "
+    r"retained_max=(?P<late_retained_max>[0-9.]+)\] "
+    r"deferred_drain\[calls=(?P<deferred_calls>\d+) "
+    r"retained=(?P<deferred_retained>\d+) p50=(?P<deferred_p50>[0-9.]+) "
+    r"p95=(?P<deferred_p95>[0-9.]+) p99=(?P<deferred_p99>[0-9.]+) "
+    r"max=(?P<deferred_max>[0-9.]+) "
+    r"retained_max=(?P<deferred_retained_max>[0-9.]+)\] "
+    r"lock_wait_ns snapshot=(?P<snapshot_wait>\d+) "
+    r"late=(?P<late_wait>\d+) deferred=(?P<deferred_wait>\d+) "
+    r"hidden=(?P<hidden_wait>\d+) native=(?P<native_wait>\d+) \| "
+    r"raw_batch calls=(?P<batch_calls>\d+) "
+    r"nonempty=(?P<batch_nonempty>\d+) empty=(?P<batch_empty>\d+) "
+    r"events=(?P<batch_events>\d+) "
+    r"late_delta_claims=(?P<late_claims>\d+) "
+    r"post_draw_events=(?P<post_draw>\d+)$"
+)
+RAW_STAGE_LEGACY_RE = re.compile(
     r"^\[MelonPrimeRawPerf\] stage_us "
     r"snapshot\[p50=(?P<snapshot_p50>[0-9.]+) "
     r"p95=(?P<snapshot_p95>[0-9.]+) p99=(?P<snapshot_p99>[0-9.]+) "
@@ -87,6 +118,11 @@ EXPLICIT_LATENCY_METRICS = (
     "input_sample_to_present_end_us",
 )
 INPUT_RETENTION_CAP = 2048
+LEGACY_INPUT_RETENTION_CAP = 2048
+LEGACY_EXPLICIT_LATENCY_RETENTION_CAP = 512
+RETENTION_LATEST_N = "latest_n"
+RETENTION_LEGACY_FIRST_N = "legacy_first_n"
+RETENTION_LEGACY_UNVERSIONED = "legacy_unversioned"
 
 
 class SummaryError(RuntimeError):
@@ -103,22 +139,36 @@ def parse_float(value: str) -> float:
     return parsed
 
 
-def parse_input_body(body: str) -> dict[str, dict[str, float | int]]:
-    result: dict[str, dict[str, float | int]] = {}
+def parse_input_body(body: str) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
     for match in INPUT_METRIC_RE.finditer(body):
         calls = int(match.group("c"))
         retained = match.group("retained")
         retained_max = match.group("retained_max")
         whole_max_us = parse_float(match.group("max"))
-        # Pre-retention logs did not print the retained count. Their samples
-        # were capped at the same latest-N capacity, so infer that cap while
-        # preserving the full call count for budget checks.
-        retained_count = (
-            int(retained)
-            if retained is not None
-            else min(calls, INPUT_RETENTION_CAP)
-        )
-        if retained_count > calls or retained_count > INPUT_RETENTION_CAP:
+        if retained is not None:
+            retention_mode = RETENTION_LATEST_N
+            retention_cap = INPUT_RETENTION_CAP
+            retained_count = int(retained)
+            retained_max_us = (
+                parse_float(retained_max) if retained_max is not None else None
+            )
+            whole_max_known = True
+            max_scope = "whole_window"
+        else:
+            # The pre-3443 generic probe stopped writing after its first
+            # capacity samples. Preserve that provenance instead of presenting
+            # the prefix as the current latest-N ring.
+            retention_mode = RETENTION_LEGACY_FIRST_N
+            retention_cap = LEGACY_INPUT_RETENTION_CAP
+            retained_count = min(calls, retention_cap)
+            # The old generic probe tracked maxTicks across all calls even
+            # though its percentile samples stopped at the first cap. Its
+            # whole max is therefore known, but retained_max is not.
+            retained_max_us = None
+            whole_max_known = True
+            max_scope = "whole_window"
+        if retained_count > calls or retained_count > retention_cap:
             raise SummaryError(
                 f"{match.group('name')} retained count is invalid: "
                 f"calls={calls}, retained={retained_count}"
@@ -126,23 +176,25 @@ def parse_input_body(body: str) -> dict[str, dict[str, float | int]]:
         result[match.group("name")] = {
             "calls": calls,
             "retained": retained_count,
+            "retention_mode": retention_mode,
+            "retention_cap": retention_cap,
             "p50_us": parse_float(match.group("p50")),
             "p95_us": parse_float(match.group("p95")),
             "p99_us": parse_float(match.group("p99")),
-            # max_us remains the whole-window maximum for budget checks. The
-            # percentile and retained_max values describe the latest-N ring.
+            # max_us is the value emitted by the producer. For legacy first-N
+            # artifacts with calls above the cap it is not a whole-run max;
+            # max_scope/whole_max_known make that limitation explicit.
             "max_us": whole_max_us,
-            "whole_max_us": whole_max_us,
-            "retained_max_us": (
-                parse_float(retained_max)
-                if retained_max is not None else whole_max_us
-            ),
+            "whole_max_us": whole_max_us if whole_max_known else None,
+            "whole_max_known": whole_max_known,
+            "max_scope": max_scope,
+            "retained_max_us": retained_max_us,
         }
     return result
 
 
-def parse_explicit_latency_body(body: str) -> dict[str, dict[str, float | int]]:
-    result: dict[str, dict[str, float | int]] = {}
+def parse_explicit_latency_body(body: str) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
     for match in EXPLICIT_LATENCY_METRIC_RE.finditer(body):
         calls = int(match.group("calls"))
         retained = int(match.group("retained"))
@@ -155,12 +207,40 @@ def parse_explicit_latency_body(body: str) -> dict[str, dict[str, float | int]]:
         result[match.group("name")] = {
             "calls": calls,
             "retained": retained,
+            "retention_mode": RETENTION_LATEST_N,
+            "retention_cap": INPUT_RETENTION_CAP,
             "p50_us": parse_float(match.group("p50")),
             "p95_us": parse_float(match.group("p95")),
             "p99_us": parse_float(match.group("p99")),
             "max_us": whole_max_us,
             "whole_max_us": whole_max_us,
+            "whole_max_known": True,
+            "max_scope": "whole_window",
             "retained_max_us": parse_float(match.group("retained_max")),
+        }
+    for match in EXPLICIT_LATENCY_LEGACY_METRIC_RE.finditer(body):
+        calls = int(match.group("n"))
+        retention_cap = LEGACY_EXPLICIT_LATENCY_RETENTION_CAP
+        retained = min(calls, retention_cap)
+        whole_max_us = parse_float(match.group("max"))
+        whole_max_known = calls <= retention_cap
+        result[match.group("name")] = {
+            "calls": calls,
+            "retained": retained,
+            "retention_mode": RETENTION_LEGACY_FIRST_N,
+            "retention_cap": retention_cap,
+            "p50_us": parse_float(match.group("p50")),
+            "p95_us": parse_float(match.group("p95")),
+            "p99_us": parse_float(match.group("p99")),
+            "max_us": whole_max_us,
+            "whole_max_us": whole_max_us if whole_max_known else None,
+            "whole_max_known": whole_max_known,
+            "max_scope": (
+                "whole_window" if whole_max_known else "retained_first_n"
+            ),
+            # The old explicit report's max was calculated over the retained
+            # first-N prefix, not over the complete call window.
+            "retained_max_us": whole_max_us,
         }
     return result
 
@@ -170,13 +250,72 @@ def parse_input_instance_id(body: str) -> int | None:
     return int(match.group("id")) if match else None
 
 
-def parse_raw_stage(match: re.Match[str]) -> dict[str, Any]:
+def parse_raw_stage(
+    match: re.Match[str], retention_mode: str
+) -> dict[str, Any]:
     values: dict[str, Any] = {}
-    for key, value in match.groupdict().items():
-        if key.endswith(("_p50", "_p95", "_p99", "_max")):
-            values[key] = parse_float(value)
+    stage_metrics: dict[str, dict[str, Any]] = {}
+    stage_value_keys = {
+        f"{prefix}_{suffix}"
+        for prefix in ("snapshot", "late", "deferred")
+        for suffix in (
+            "calls", "retained", "p50", "p95", "p99", "max", "retained_max"
+        )
+    }
+    for prefix, stage_name in (
+        ("snapshot", "snapshot"),
+        ("late", "late_latch"),
+        ("deferred", "deferred_drain"),
+    ):
+        calls_text = match.groupdict().get(f"{prefix}_calls")
+        retained_text = match.groupdict().get(f"{prefix}_retained")
+        if calls_text is None or retained_text is None:
+            calls = None
+            retained = None
+            retained_max_us = None
         else:
-            values[key] = int(value)
+            calls = int(calls_text)
+            retained = int(retained_text)
+            if retained > calls or retained > INPUT_RETENTION_CAP:
+                raise SummaryError(
+                    f"Raw {prefix} retained count is invalid: "
+                    f"calls={calls}, retained={retained}"
+                )
+            retained_max_us = parse_float(
+                match.group(f"{prefix}_retained_max")
+            )
+        p50_us = parse_float(match.group(f"{prefix}_p50"))
+        p95_us = parse_float(match.group(f"{prefix}_p95"))
+        p99_us = parse_float(match.group(f"{prefix}_p99"))
+        max_us = parse_float(match.group(f"{prefix}_max"))
+        metric = {
+            "calls": calls,
+            "retained": retained,
+            "retention_mode": retention_mode,
+            "retention_cap": INPUT_RETENTION_CAP,
+            "p50_us": p50_us,
+            "p95_us": p95_us,
+            "p99_us": p99_us,
+            "max_us": max_us,
+            "whole_max_us": max_us,
+            "whole_max_known": True,
+            "max_scope": "whole_window",
+            "retained_max_us": retained_max_us,
+        }
+        stage_metrics[stage_name] = metric
+        values[f"{prefix}_calls"] = calls
+        values[f"{prefix}_retained"] = retained
+        values[f"{prefix}_p50"] = p50_us
+        values[f"{prefix}_p95"] = p95_us
+        values[f"{prefix}_p99"] = p99_us
+        values[f"{prefix}_max"] = max_us
+        values[f"{prefix}_retained_max"] = retained_max_us
+    for key, value in match.groupdict().items():
+        if key in stage_value_keys:
+            continue
+        values[key] = int(value)
+    values["stage_metrics"] = stage_metrics
+    values["retention_mode"] = retention_mode
     return values
 
 
@@ -184,10 +323,10 @@ def parse_log(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise SummaryError(f"telemetry log does not exist: {path}")
 
-    input_reports: list[dict[str, dict[str, float | int]]] = []
-    latest_input_by_instance: dict[str, dict[str, dict[str, float | int]]] = {}
-    latency_reports: list[dict[str, dict[str, float | int]]] = []
-    latest_latency_by_instance: dict[str, dict[str, dict[str, float | int]]] = {}
+    input_reports: list[dict[str, dict[str, Any]]] = []
+    latest_input_by_instance: dict[str, dict[str, dict[str, Any]]] = {}
+    latency_reports: list[dict[str, dict[str, Any]]] = []
+    latest_latency_by_instance: dict[str, dict[str, dict[str, Any]]] = {}
     raw_reports: list[dict[str, Any]] = []
     lock_reports: list[dict[str, int]] = []
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -212,7 +351,17 @@ def parse_log(path: Path) -> dict[str, Any]:
             continue
         raw_match = RAW_STAGE_RE.match(line)
         if raw_match:
-            raw_reports.append(parse_raw_stage(raw_match))
+            raw_reports.append(parse_raw_stage(raw_match, RETENTION_LATEST_N))
+            continue
+        raw_legacy_match = RAW_STAGE_LEGACY_RE.match(line)
+        if raw_legacy_match:
+            # The pre-3443 Raw stage implementation already used a ring, but
+            # the artifact did not identify its retained population. Keep that
+            # distinction explicit instead of silently treating it as the
+            # current fully surfaced format.
+            raw_reports.append(
+                parse_raw_stage(raw_legacy_match, RETENTION_LEGACY_UNVERSIONED)
+            )
             continue
         lock_match = RAW_LOCK_RE.match(line)
         if lock_match:
@@ -230,6 +379,22 @@ def parse_log(path: Path) -> dict[str, Any]:
     latest_input = input_reports[-1] if input_reports else {}
     latest_raw = raw_reports[-1] if raw_reports else None
     latest_locks = lock_reports[-1] if lock_reports else None
+    retention_modes = {
+        metric["retention_mode"]
+        for report in (
+            list(latest_input_by_instance.values())
+            + list(latest_latency_by_instance.values())
+        )
+        for metric in report.values()
+        if metric.get("retention_mode")
+    }
+    if latest_raw is not None:
+        retention_modes.add(latest_raw["retention_mode"])
+    retention_mode = (
+        next(iter(retention_modes))
+        if len(retention_modes) == 1
+        else "mixed" if retention_modes else None
+    )
     return {
         "path": str(path),
         "input_report_count": len(input_reports),
@@ -252,12 +417,14 @@ def parse_log(path: Path) -> dict[str, Any]:
         "latest_input": latest_input,
         "latest_raw": latest_raw,
         "latest_lock_planes": latest_locks,
+        "retention_mode": retention_mode,
+        "retention_modes": sorted(retention_modes),
     }
 
 
 def require_input_metric(
     summary: dict[str, Any], name: str, minimum_calls: int
-) -> dict[str, float | int]:
+) -> dict[str, Any]:
     metric = summary["latest_input"].get(name)
     if metric is None:
         raise SummaryError(f"latest input report is missing metric {name}")
@@ -268,14 +435,51 @@ def require_input_metric(
     return metric
 
 
-def enforce(summary: dict[str, Any], mode: str, minimum_calls: int) -> None:
+def require_safe_retention(
+    metric: dict[str, Any], name: str, suffix: str,
+    allow_legacy_first_n: bool,
+) -> None:
+    if metric.get("retention_mode") != RETENTION_LEGACY_FIRST_N:
+        return
+    calls = int(metric["calls"])
+    retention_cap = int(metric.get("retention_cap", INPUT_RETENTION_CAP))
+    if calls <= retention_cap or allow_legacy_first_n:
+        return
+    raise SummaryError(
+        f"{name} uses legacy_first_n retention for {calls} calls{suffix}; "
+        f"latest-N percentile budget enforcement is unsafe above the "
+        f"{retention_cap}-sample cap (use --allow-legacy-first-n only for "
+        "explicit historical analysis)"
+    )
+
+
+def enforce(
+    summary: dict[str, Any], mode: str, minimum_calls: int,
+    allow_legacy_first_n: bool = False,
+) -> None:
     reports_by_instance = summary.get("latest_input_by_instance") or {
         "unbound": summary["latest_input"]
     }
     for instance_id, input_report in reports_by_instance.items():
+        suffix = "" if len(reports_by_instance) == 1 else f" for instance {instance_id}"
+        for name, metric in input_report.items():
+            require_safe_retention(
+                metric, name, suffix, allow_legacy_first_n
+            )
+    latency_reports_by_instance = summary.get("latest_latency_by_instance") or {}
+    for instance_id, latency_report in latency_reports_by_instance.items():
+        suffix = "" if len(latency_reports_by_instance) == 1 else f" for instance {instance_id}"
+        for name, metric in latency_report.items():
+            require_safe_retention(
+                metric, name, suffix, allow_legacy_first_n
+            )
+    for instance_id, input_report in reports_by_instance.items():
         input_summary = {"latest_input": input_report}
         input_total = require_input_metric(input_summary, "input_total", minimum_calls)
         suffix = "" if len(reports_by_instance) == 1 else f" for instance {instance_id}"
+        require_safe_retention(
+            input_total, "input_total", suffix, allow_legacy_first_n
+        )
         if float(input_total["p99_us"]) >= 100.0:
             raise SummaryError(
                 f"input_total p99 exceeds 100 us{suffix}: {input_total['p99_us']}"
@@ -303,11 +507,16 @@ def enforce(summary: dict[str, Any], mode: str, minimum_calls: int) -> None:
             )
 
 
+def format_optional_us(value: Any) -> str:
+    return "n/a" if value is None else f"{float(value):.1f}"
+
+
 def markdown(summary: dict[str, Any]) -> str:
     lines = [
         "# Input performance summary",
         "",
         f"Source: `{summary['path']}`",
+        f"Retention mode: `{summary.get('retention_mode') or 'unknown'}`",
     ]
     reports_by_instance = summary.get("latest_input_by_instance") or {
         "unbound": summary["latest_input"]
@@ -321,8 +530,8 @@ def markdown(summary: dict[str, Any]) -> str:
             "",
             f"## Input instance `{instance_key}`",
             "",
-            "| Metric | Calls | Retained | p50 (us) | p95 (us) | p99 (us) | Max (us) | Retained max (us) |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|",
+            "| Metric | Calls | Retained | Retention | p50 (us) | p95 (us) | p99 (us) | Max (us) | Max scope | Retained max (us) |",
+            "|---|---:|---:|---|---:|---:|---:|---:|---|---:|",
         ])
         for name in INPUT_METRICS:
             metric = reports_by_instance[instance_key].get(name)
@@ -330,9 +539,11 @@ def markdown(summary: dict[str, Any]) -> str:
                 continue
             lines.append(
                 f"| `{name}` | {metric['calls']} | {metric['retained']} | "
+                f"`{metric['retention_mode']}` | "
                 f"{metric['p50_us']:.1f} | {metric['p95_us']:.1f} | "
                 f"{metric['p99_us']:.1f} | {metric['max_us']:.1f} | "
-                f"{metric['retained_max_us']:.1f} |"
+                f"`{metric['max_scope']}` | "
+                f"{format_optional_us(metric.get('retained_max_us'))} |"
             )
     latency_by_instance = summary.get("latest_latency_by_instance") or {}
     latency_keys = sorted(
@@ -344,8 +555,8 @@ def markdown(summary: dict[str, Any]) -> str:
             "",
             f"## Explicit input latency instance `{instance_key}`",
             "",
-            "| Metric | Calls | Retained | p50 (us) | p95 (us) | p99 (us) | Max (us) | Retained max (us) |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|",
+            "| Metric | Calls | Retained | Retention | p50 (us) | p95 (us) | p99 (us) | Max (us) | Max scope | Retained max (us) |",
+            "|---|---:|---:|---|---:|---:|---:|---:|---|---:|",
         ])
         for name in EXPLICIT_LATENCY_METRICS:
             metric = latency_by_instance[instance_key].get(name)
@@ -353,22 +564,43 @@ def markdown(summary: dict[str, Any]) -> str:
                 continue
             lines.append(
                 f"| `{name}` | {metric['calls']} | {metric['retained']} | "
+                f"`{metric['retention_mode']}` | "
                 f"{metric['p50_us']:.1f} | {metric['p95_us']:.1f} | "
                 f"{metric['p99_us']:.1f} | {metric['max_us']:.1f} | "
-                f"{metric['retained_max_us']:.1f} |"
+                f"`{metric['max_scope']}` | "
+                f"{format_optional_us(metric.get('retained_max_us'))} |"
             )
     raw = summary.get("latest_raw")
     if raw is not None:
+        raw_stage_metrics = raw.get("stage_metrics", {})
         lines.extend([
             "",
             "## Windows Raw Input",
             "",
-            f"snapshot p50/p95/p99/max: {raw['snapshot_p50']:.1f}/"
-            f"{raw['snapshot_p95']:.1f}/{raw['snapshot_p99']:.1f}/"
-            f"{raw['snapshot_max']:.1f} us",
-            f"late latch p50/p95/p99/max: {raw['late_p50']:.1f}/"
-            f"{raw['late_p95']:.1f}/{raw['late_p99']:.1f}/"
-            f"{raw['late_max']:.1f} us",
+            "| Stage | Calls | Retained | Retention | p50 (us) | p95 (us) | p99 (us) | Max (us) | Max scope | Retained max (us) |",
+            "|---|---:|---:|---|---:|---:|---:|---:|---|---:|",
+        ])
+        for stage_name, label in (
+            ("snapshot", "snapshot"),
+            ("late_latch", "late_latch"),
+            ("deferred_drain", "deferred_drain"),
+        ):
+            metric = raw_stage_metrics.get(stage_name)
+            if metric is None:
+                continue
+            calls = "n/a" if metric["calls"] is None else str(metric["calls"])
+            retained = (
+                "n/a" if metric["retained"] is None else str(metric["retained"])
+            )
+            lines.append(
+                f"| `{label}` | {calls} | {retained} | "
+                f"`{metric['retention_mode']}` | {metric['p50_us']:.1f} | "
+                f"{metric['p95_us']:.1f} | {metric['p99_us']:.1f} | "
+                f"{metric['max_us']:.1f} | `{metric['max_scope']}` | "
+                f"{format_optional_us(metric.get('retained_max_us'))} |"
+            )
+        lines.extend([
+            "",
             f"batch calls/nonempty/empty/events: {raw['batch_calls']}/"
             f"{raw['batch_nonempty']}/{raw['batch_empty']}/{raw['batch_events']}",
         ])
@@ -395,15 +627,38 @@ def self_test() -> None:
     text = "\n".join([
         "[MelonPrimePerf] input_metric_us instance_id=0 input_total[c=5000 p50=4.0 p95=8.0 p99=12.0 max=20.0] joystick_lock_wait[c=1001 p50=0.1 p95=0.2 p99=0.4 max=1.0] joystick_sample[c=1001 p50=5.0 p95=7.0 p99=9.0 max=15.0] joystick_project[c=1001 p50=1.0 p95=2.0 p99=3.0 max=5.0] joystick_sdl_update[c=1001 p50=0.5 p95=0.8 p99=1.0 max=2.0] joystick_process_mutex_wait[c=1001 p50=0.0 p95=0.1 p99=0.2 max=0.5] joystick_process_mutex_hold[c=1001 p50=0.2 p95=0.4 p99=0.6 max=1.0]",
         "[MelonPrimePerf] input_metric_us instance_id=1 input_total[c=5000 retained=2048 p50=4.0 p95=8.0 p99=12.0 max=30.0 retained_max=20.0]",
+        "[MelonPrimePerf] explicit_latency_us instance_id=0 frame_input_sample_to_runframe_begin_us=p50=5.0 p95=9.0 p99=13.0 max=31.0 n=600 input_sample_to_present_end_us=p50=7.0 p95=11.0 p99=15.0 max=33.0 n=600",
         "[MelonPrimePerf] explicit_latency_us instance_id=1 frame_input_sample_to_runframe_begin_us=calls=5000 retained=2048 p50=5.0 p95=9.0 p99=13.0 max=31.0 retained_max=21.0 input_sample_to_present_end_us=calls=5000 retained=2048 p50=7.0 p95=11.0 p99=15.0 max=33.0 retained_max=23.0",
-        "[MelonPrimeRawPerf] stage_us snapshot[p50=4.0 p95=6.0 p99=8.0 max=12.0] late_latch[p50=3.0 p95=5.0 p99=7.0 max=10.0] deferred_drain[p50=20.0 p95=25.0 p99=30.0 max=40.0] lock_wait_ns snapshot=10 late=20 deferred=30 hidden=40 native=50 | raw_batch calls=1001 nonempty=10 empty=991 events=20 late_delta_claims=5 post_draw_events=10",
+        "[MelonPrimeRawPerf] stage_us snapshot[calls=3000 retained=2048 p50=4.0 p95=6.0 p99=8.0 max=12.0 retained_max=10.0] late_latch[calls=3000 retained=2048 p50=3.0 p95=5.0 p99=7.0 max=10.0 retained_max=9.0] deferred_drain[calls=3000 retained=2048 p50=20.0 p95=25.0 p99=30.0 max=40.0 retained_max=35.0] lock_wait_ns snapshot=10 late=20 deferred=30 hidden=40 native=50 | raw_batch calls=1001 nonempty=10 empty=991 events=20 late_delta_claims=5 post_draw_events=10",
         "[MelonPrimeRawPerf] lock_planes subscription_mutex_acq=2 subscription_mutex_wait_ns=3 subscription_mutex_hold_ns=4 subscription_mutex_max_wait_ns=5 frame_mutex_acq=1001 frame_mutex_wait_ns=6 frame_mutex_hold_ns=7 frame_mutex_max_wait_ns=8",
     ]) + "\n"
     with tempfile.TemporaryDirectory(prefix="melonprime-input-perf-") as directory:
         path = Path(directory) / "telemetry.log"
         path.write_text(text, encoding="utf-8")
         summary = parse_log(path)
-        enforce(summary, "raw", 1000)
+        if summary["retention_mode"] != "mixed":
+            raise SummaryError("self-test did not preserve retention provenance")
+        legacy_input = summary["latest_input_by_instance"]["0"]["input_total"]
+        if legacy_input["retention_mode"] != RETENTION_LEGACY_FIRST_N:
+            raise SummaryError("self-test did not classify legacy input retention")
+        if legacy_input["max_scope"] != "whole_window":
+            raise SummaryError("self-test did not preserve legacy whole max")
+        if legacy_input["whole_max_us"] != 20.0:
+            raise SummaryError("self-test did not preserve legacy whole max")
+        if legacy_input["retained_max_us"] is not None:
+            raise SummaryError("self-test invented a legacy retained max")
+        try:
+            enforce(summary, "raw", 1000)
+        except SummaryError as error:
+            if "--allow-legacy-first-n" not in str(error):
+                raise SummaryError(
+                    "self-test rejected legacy retention for the wrong reason"
+                ) from error
+        else:
+            raise SummaryError(
+                "self-test allowed unsafe legacy percentile budget by default"
+            )
+        enforce(summary, "raw", 1000, allow_legacy_first_n=True)
         if summary["input_instance_ids"] != [0, 1]:
             raise SummaryError("self-test did not preserve input instance identity")
         if summary["latest_input_by_instance"]["0"]["input_total"]["calls"] != 5000:
@@ -418,10 +673,47 @@ def self_test() -> None:
             "frame_input_sample_to_runframe_begin_us"
         ]["retained"] != 2048:
             raise SummaryError("self-test did not parse explicit latency retention")
-        if "## Input instance `0`" not in markdown(summary):
+        if summary["latest_latency_by_instance"]["0"][
+            "frame_input_sample_to_runframe_begin_us"
+        ]["retention_mode"] != RETENTION_LEGACY_FIRST_N:
+            raise SummaryError("self-test did not parse legacy explicit provenance")
+        if summary["latest_raw"]["snapshot_calls"] != 3000:
+            raise SummaryError("self-test did not parse Raw stage calls")
+        if summary["latest_raw"]["snapshot_retained"] != 2048:
+            raise SummaryError("self-test did not parse Raw stage retained count")
+        if summary["latest_raw"]["snapshot_retained_max"] != 10.0:
+            raise SummaryError("self-test did not parse Raw retained max")
+        rendered = markdown(summary)
+        for stage_name in ("snapshot", "late_latch", "deferred_drain"):
+            if stage_name not in rendered:
+                raise SummaryError(
+                    f"self-test did not render Raw stage {stage_name}"
+                )
+        if "## Input instance `0`" not in rendered:
             raise SummaryError("self-test did not render input instance identity")
+        if "legacy_first_n" not in rendered:
+            raise SummaryError("self-test did not render retention provenance")
         if summary["latest_raw"]["batch_empty"] != 991:
             raise SummaryError("self-test did not parse raw batch counts")
+
+        legacy_raw_path = Path(directory) / "legacy-raw.log"
+        legacy_raw_path.write_text(
+            "[MelonPrimeRawPerf] stage_us "
+            "snapshot[p50=1.0 p95=2.0 p99=3.0 max=4.0] "
+            "late_latch[p50=5.0 p95=6.0 p99=7.0 max=8.0] "
+            "deferred_drain[p50=9.0 p95=10.0 p99=11.0 max=12.0] "
+            "lock_wait_ns snapshot=1 late=2 deferred=3 hidden=4 native=5 | "
+            "raw_batch calls=6 nonempty=7 empty=8 events=9 "
+            "late_delta_claims=10 post_draw_events=11\n",
+            encoding="utf-8",
+        )
+        legacy_raw_summary = parse_log(legacy_raw_path)
+        if legacy_raw_summary["retention_mode"] != RETENTION_LEGACY_UNVERSIONED:
+            raise SummaryError("self-test did not classify legacy Raw provenance")
+        if legacy_raw_summary["latest_raw"]["stage_metrics"]["late_latch"][
+            "calls"
+        ] is not None:
+            raise SummaryError("self-test invented legacy Raw call counts")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -430,6 +722,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mode", choices=("all", "keyboard", "controller", "raw"), default="all")
     parser.add_argument("--min-input-samples", type=int, default=0)
     parser.add_argument("--check-budget", action="store_true")
+    parser.add_argument(
+        "--allow-legacy-first-n",
+        action="store_true",
+        help="allow budget checks on legacy first-N artifacts for historical analysis",
+    )
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--markdown-out", type=Path)
     parser.add_argument("--self-test", action="store_true")
@@ -447,12 +744,16 @@ def main(argv: list[str] | None = None) -> int:
         summaries = [parse_log(path) for path in args.logs]
         if args.check_budget:
             for summary in summaries:
-                enforce(summary, args.mode, args.min_input_samples)
+                enforce(
+                    summary, args.mode, args.min_input_samples,
+                    allow_legacy_first_n=args.allow_legacy_first_n,
+                )
         output: dict[str, Any] = {
-            "schema_version": 3,
+            "schema_version": 4,
             "mode": args.mode,
             "minimum_input_samples": args.min_input_samples,
             "budget_checked": args.check_budget,
+            "allow_legacy_first_n": args.allow_legacy_first_n,
             "runs": summaries,
         }
         rendered_json = json.dumps(output, indent=2, sort_keys=True) + "\n"

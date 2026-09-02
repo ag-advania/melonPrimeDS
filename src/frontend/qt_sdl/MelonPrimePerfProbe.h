@@ -477,7 +477,7 @@ inline void RecordLatencySample(
 
 inline void RecordInputMetricTicks(InputMetric metric, Uint64 ticks)
 {
-    if (!IsEnabled() || ticks == 0)
+    if (!IsEnabled())
         return;
 
     State& st = S();

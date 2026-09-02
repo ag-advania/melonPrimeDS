@@ -608,8 +608,11 @@ private:
     bool consumeJoystickResetPending();
     void probeJoystickConnection();
     bool sampleJoystickPhysicalLocked(
-        JoystickPhysicalSnapshot& snapshot, Uint64* updateTicks,
-        MelonPrime::SdlProcessTiming* processTiming);
+        JoystickPhysicalSnapshot& snapshot
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+        , Uint64* updateTicks, MelonPrime::SdlProcessTiming* processTiming
+#endif
+    );
     bool sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot);
     [[nodiscard]] JoystickProjectedState projectJoystickPhysicalSnapshot(
         const JoystickPhysicalSnapshot& snapshot) const;

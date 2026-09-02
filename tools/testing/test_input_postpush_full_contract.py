@@ -1084,6 +1084,7 @@ def main() -> None:
     raw_perf = source("src/frontend/qt_sdl/MelonPrimeRawInputPerfProbe.h")
     perf_shutdown = source("src/frontend/qt_sdl/MelonPrimeEmuThreadPerfShutdown.inc")
     perf = source("src/frontend/qt_sdl/MelonPrimePerfProbe.h")
+    perf_summarizer = source("tools/testing/summarize-input-performance.py")
     cmake_presets = source("CMakePresets.json")
     windows_workflow = source(".github/workflows/build-windows.yml")
     mingw_build = source("tools/build/windows/build-mingw.bat")
@@ -1115,7 +1116,7 @@ def main() -> None:
         "SDL_GameController* m_controller",
         "bool OpenLocked(int& joystickId) noexcept",
         "void CloseLocked() noexcept",
-        "void UpdateLocked(SdlProcessTiming* timing = nullptr) noexcept",
+        "void UpdateLocked(SdlProcessTiming* timing) noexcept",
         "[[nodiscard]] bool SampleSourceLocked(",
         "void RumbleStartLocked(uint32_t lenMs) noexcept",
         "[[nodiscard]] bool ReadMotionLocked(",
@@ -1160,15 +1161,49 @@ def main() -> None:
         "SDL process timing POD",
     )
     require(
+        joystick_device_header,
+        "#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES",
+        "developer-only SDL process timing gate",
+    )
+    require(
         joystick_device,
-        "SdlProcessTiming* timing",
+        "UpdateLocked(SdlProcessTiming* timing) noexcept",
         "SDL process timing POD",
+    )
+    require(
+        joystick_device,
+        "UpdateLocked() noexcept",
+        "shipping SDL update signature",
     )
     require(
         input_cpp,
         "joystickDevice.UpdateLocked(processTiming)",
         "SDL process timing return",
     )
+    require(
+        input_cpp,
+        "joystickDevice.UpdateLocked();",
+        "shipping SDL update call",
+    )
+    sample = body(
+        input_cpp,
+        "bool EmuInstance::sampleJoystickPhysical(",
+        "EmuInstance::JoystickProjectedState",
+    )
+    require(
+        sample,
+        "const bool sampled = sampleJoystickPhysicalLocked(snapshot);",
+        "shipping controller sample call",
+    )
+    if "SdlProcessTiming processTiming" not in sample:
+        raise AssertionError("developer controller timing path disappeared")
+    shipping_sample = sample.split(
+        "#else", 1
+    )[1].split("#endif", 1)[0]
+    if "SdlProcessTiming" in shipping_sample or "updateTicks" in shipping_sample:
+        raise AssertionError(
+            "shipping controller sample path retains timing plumbing"
+        )
     for needle in (
         "static constexpr uint32_t kLatencyCap = 2048",
         "uint32_t inputMetricWrite",
@@ -1178,6 +1213,29 @@ def main() -> None:
         "retained_max=",
     ):
         require(perf, needle, "latest-N input telemetry retention")
+    for needle in (
+        "RETENTION_LATEST_N",
+        "RETENTION_LEGACY_FIRST_N",
+        "legacy_first_n",
+        "--allow-legacy-first-n",
+        '"schema_version": 4',
+        '"retention_mode": retention_mode',
+    ):
+        require(perf_summarizer, needle, "telemetry retention provenance")
+    for needle in (
+        "snapshot[calls=%llu retained=%u",
+        "late_latch[calls=%llu retained=%u",
+        "deferred_drain[calls=%llu retained=%u",
+        "result.calls = total",
+        "result.retained = count",
+        "result.retainedMax",
+    ):
+        require(raw_perf, needle, "Raw stage retention semantics")
+    if "if (!Enabled() || elapsedNs == 0)" in raw_perf:
+        raise AssertionError("Raw stage telemetry silently drops zero-duration samples")
+    record_input_metric = perf[perf.index("inline void RecordInputMetricTicks") :]
+    if "if (!IsEnabled() || ticks == 0)" in record_input_metric:
+        raise AssertionError("generic input telemetry silently drops zero-tick samples")
     require(joystick_device, "class SdlProcessMutexGuard final", "SDL process mutex guard")
     require(joystick_device, "std::mutex s_sdlProcessMutex", "process-level SDL lock")
     require(joystick_device, "SDL_JoystickUpdate()", "SDL update ownership")
@@ -2250,8 +2308,8 @@ def main() -> None:
         or "RawInputPerf::ShutdownReport()" in perf_shutdown
         or "shutdownReported" in raw_perf
         or not raw_release
-        or raw_release.index("delete s_instance")
-        > raw_release.index("RawInputPerf::ShutdownReport()")
+        or raw_release.index("RawInputPerf::ShutdownReport()")
+        > raw_release.index("delete s_instance")
         or "if (--s_refCount == 0)" not in raw_release
     ):
         raise AssertionError(
