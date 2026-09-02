@@ -1,6 +1,8 @@
 # MelonPrime Aim/Input Notes (No CustomHud)
 
 This document tracks the MelonPrime path from input capture to frame input state and final aim RAM writes.
+The field-level owner, writer, reset and hot-layout map is maintained in
+[input-srp-ownership.md](input-srp-ownership.md).
 
 Platform scope: the sections below describe the Windows Raw Input path first. On macOS (added
 2026-07), `MelonPrimeRawInputMacFilter.{h,mm}` provides RawInput-equivalent aim deltas via
@@ -22,7 +24,8 @@ The QCursor center-delta method remains the fallback when the macOS raw backends
 On Linux the source of truth is the XInput2 raw filter when available (2026-07-03): relative
 axes are used as-is, absolute pointing devices (VirtualBox's integrated tablet) are converted to
 deltas per-device inside the filter, so cursor warps and VBox host re-syncs cannot corrupt aim.
-The Qt mouse-move accumulator in `ScreenPanel` is the non-XCB (Wayland) fallback. See §9 and the
+The native Wayland relative-pointer path is preferred when its pointer-lock protocols are
+available; otherwise the Qt mouse-move accumulator in `ScreenPanel` is the non-XCB fallback. See §9 and the
 macOS/Linux notes in [../../development/build/overview.md](../../development/build/overview.md).
 
 ## 1. End-to-End Pipeline
@@ -62,13 +65,13 @@ Main implementation files:
 
 - `UpdateInputStateImpl<false>`:
   - Normal frame path
-  - Uses `PollAndSnapshot` (advances edge state)
+  - Uses `UpdateOwnerAndSnapshot` (advances edge state)
   - Reads `wheelDelta`
-  - P-47: clears `m_didFrameAdvanceSinceSnapshot` right after `PollAndSnapshot`, so
+  - P-47: clears `m_didFrameAdvanceSinceSnapshot` right after the snapshot transaction, so
     `LateLatchMouseDelta` is skipped on normal frames (no `FrameAdvance` since the snapshot)
 - `UpdateInputStateImpl<true>`:
   - Re-entrant path during `FrameAdvance`
-  - Uses `PollAndSnapshotNoEdges` (does not advance edge state)
+  - Uses `UpdateOwnerAndSnapshotNoEdges` (does not advance edge state)
   - Forces `press=0`, `wheelDelta=0`
 - Goal:
   - Preserve outer-frame edge behavior while still updating input state safely in re-entrant execution.
@@ -119,7 +122,9 @@ Main implementation files:
     panel's >96px threshold warp; every warp re-seeds the fallback baseline. See §9.
   - macOS: GCMouse deltas are warp-immune; IOHID (trackpad) and QCursor fallback use panel
     containment warps. Cursor disassociation/hide (`MacSetAimCursorCaptured`) is **GCMouse
-    only** — see §10.
+    only** — see §10. Acquisition caches the source-resolved warp decision once
+    in `m_warpCursorAfterAimThisFrame`; `ProcessAimInputMouse` reads that scalar,
+    and capture-wanted alone never emits a recenter.
   - `unfocus()` must call `unclip()` on Linux and macOS; otherwise Escape leaves the cursor
     hidden/locked.
 
@@ -376,8 +381,11 @@ patch is applied or the preset is Dual.
   - Collects OS events once and registers one per-instance subscription
   - Changes the raw-input target and Qt native filter only when active ownership changes
   - Uses Qt target when Joy2Key is ON, hidden window when OFF
-  - Splits `PollAndSnapshot` and `DeferredDrain`
+  - Uses the fused `UpdateOwnerAndSnapshot` transaction and `DeferredDrain`
   - Handles `WM_INPUT` in `HiddenWndProc` to avoid loss
+  - Uses the decoder's recovery hint: successful relative motion and wheel-only
+    events do not publish the post-frame stuck-state scan; keyboard, mouse-button,
+    and `GetRawInputData` failure events remain fail-safe
 - `InputState`:
   - Is owned per subscription, so bindings, edges, and delta cursors cannot cross instances
   - Uses `processRawInputBatched()` for batched reads
@@ -407,6 +415,13 @@ Qt wheel mailbox is consumed only when Raw Input is not the owner, so a single
 physical wheel tick cannot be counted twice. The source-level contract check is
 `tools/testing/test_mouse_input_savestate_contract.py`.
 
+Owner resolution and Raw snapshot validation are one per-frame transaction in
+`RawInputWinFilter::UpdateOwnerAndSnapshot()` (and its no-edge variant). The
+transaction decides the eligible owner, drains and validates the matching
+snapshot, and returns the same ownership result to the frame projection. This
+keeps the owner decision and snapshot generation together while preserving the
+hidden-window epoch fence.
+
 ## 9. Linux Raw / Relative Aim Notes
 
 Since 2026-07-03, Linux aim uses XInput2 `XI_RawMotion` as the source of truth when available.
@@ -426,31 +441,66 @@ History of the two failed schemes (do not regress to either):
    warp echo.
 
 A third failure mode (2026-07-03, VM): **XWayland sessions accept the XI2 `XI_RawMotion`
-selection but never deliver raw events** — `isAvailable()` alone made the runtime trust a silent
-raw source and aim froze entirely. Hence the `hasReceivedMotion()` gate below.
+selection but never deliver raw events** — availability alone made the runtime trust a silent
+raw source and aim froze entirely. Hence the packed `stateBits()` gate below.
+
+### 9.1 Native Wayland relative pointer
+
+When `MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK` is enabled and the compositor
+supports `zwp_relative_pointer_v1` plus `zwp_locked_pointer_v1`, the non-XCB
+path uses `MelonPrimeWaylandPointerLock` as a native relative-motion source.
+The relative-motion listener keeps a cold-resolved borrowed pointer to the
+primary core's `MelonPrimeThreadBridge`; it does not resolve policy, instance
+ownership, or a `std::function` callback for each event. Teardown and authority
+loss clear that target before the lock is released.
+
+`wl_fixed_t` deltas are accumulated as signed 1/256-pixel integer units. Each
+axis truncates toward zero after adding its integer residual, so repeated
+`+0.25`, `-0.25`, `+0.5`, and large signed deltas have the same result as the
+legacy double model without a double conversion pipeline. A nonzero
+unaccelerated delta is preferred when the compositor supplies both accelerated
+and unaccelerated values. Unsupported or inactive native locking falls back to
+the Qt panel cumulative accumulator described below.
 
 Current implementation:
 
 - `LinuxRawInputFilter` (`MelonPrimeRawInputLinuxFilter.cpp`):
   - queries each source device's valuator modes once via `XIQueryDevice` (`sourceid`-keyed cache,
     filter-thread-only);
+  - keeps a filter-thread-only pointer to the most recently used source entry, so the common
+    single-mouse stream avoids repeating the `unordered_map` lookup;
   - relative axes 0/1 accumulate as-is; **absolute axes accumulate the difference of successive
     values** (first event seeds the baseline);
   - axes above 0/1 (scroll-wheel valuators on many drivers) are never fed into aim;
-  - `resetAll()` invalidates the absolute baselines (`absBaseInvalid`) so a focus gap cannot
-    produce one huge catch-up delta, but intentionally does **not** clear `receivedMotion`
-    (a static session property; clearing it would flap the aim source on every focus loss);
-  - `isAvailable()` means `XOpenDisplay` + XInput2 query + `XISelectEvents(XI_RawMotion)` succeeded;
-  - `hasReceivedMotion()` means at least one nonzero raw delta actually arrived.
+  - `resetAll()` posts a reset token through the cold `eventfd(EFD_NONBLOCK | EFD_CLOEXEC)`
+    mailbox. The filter thread drains it only after `poll()` reports reset-fd readiness, at
+    the boundary between bounded chunks of at most 64 X events. It then invalidates absolute
+    baselines and fractional residuals before the next chunk, so a focus gap cannot produce
+    one huge catch-up delta. The normal `XI_RawMotion` event path performs no reset read or
+    reset atomic RMW; an exceptional eventfd failure uses the cold fallback mailbox and wake fd;
+  - the filter thread also polls a nonblocking close-on-exec wake `eventfd`; shutdown publishes
+    `quit` and signals that fd before joining, so normal teardown does not wait for the poll timeout;
+  - motion-seen is a filter-thread shadow published once into the packed state byte. Reset does
+    **not** clear it (it is a session delivery property; clearing it would flap the aim source
+    on every focus loss);
+  - `stateBits()` publishes `StateAvailable` when `XOpenDisplay` + XInput2 query +
+    `XISelectEvents(XI_RawMotion)` succeed, and adds `StateMotionSeen` after the first nonzero
+    raw delta. The packed byte is the only Linux readiness API.
 - **Raw mode gate** (`IsLinuxRawAimActive()` and the matching check in `UpdateInputStateImpl`):
-  `isAvailable() && hasReceivedMotion()`. Until the first real raw delta proves the session
-  delivers raw motion, the Qt fallback owns aim; the first raw event switches over.
-- `MelonPrimeCore::Initialize()` only acquires the filter when
-  `QGuiApplication::platformName() == "xcb"`. Wayland does not expose a global raw mouse stream.
+  one acquire of `stateBits()` must contain both `StateAvailable` and `StateMotionSeen`. Until
+  the first real raw delta proves the session delivers raw motion, the Qt fallback owns aim;
+  the first raw event switches over.
+- `MelonPrimeCore::Initialize()` only acquires the XInput2 filter when
+  `QGuiApplication::platformName() == "xcb"`. Wayland has no global XInput2 raw stream; its
+  native relative-pointer route is described in §9.1 and falls back to Qt when unsupported.
 - In `UpdateInputStateImpl` (Linux): raw mode → `fetchMouseDelta()` is the aim delta and the
   panel accumulator is dropped (`resetAimMouseDelta()`); otherwise the Qt accumulator
   (`ScreenPanel::getAimMouseDelta()`) is authoritative **even when zero** (falling through to
   `QCursor::pos() - center` would drift now that the cursor is not recentered every event).
+- The Qt accumulator is a packed cumulative total with one GUI-thread writer and an
+  emulation-thread cursor. Reset stores a separate cumulative boundary and then a generation.
+  The consumer retries until the generation is stable around its total snapshot, preventing a
+  racing reset from replaying or double-counting motion.
 - `ScreenPanel::mouseMoveEvent` (Linux aim frames):
   - raw mode → containment only: invalidate the fallback baseline and warp back to center when
     the hidden cursor strays >96px (warping every event fights VBox's re-sync and storms events);
@@ -482,10 +532,21 @@ RawMotion parsing rules:
 - XInput2 reports one `raw_values` entry for each set bit in `valuators.mask`.
 - Axis 0 maps to X and axis 1 maps to Y. Do not treat "first received value" as X unconditionally:
   a Y-only event would become horizontal aim.
+- Only mask bits 0 and 1 are decoded for the normal X/Y path. The packed `raw_values` cursor still
+  advances according to set bits, so a missing X value cannot shift Y into the wrong axis.
 - If axis 0/1 are absent, the code keeps a conservative first-two-relative-values fallback for
   unusual devices, but normal mouse devices should hit the explicit axis 0/1 path.
 - The filter captures only relative motion. Buttons and keyboard state remain owned by Qt/SDL
   hotkey handling to avoid double press edges.
+- The XInput filter thread is the only writer of one lock-free packed cumulative X/Y total;
+  emulation threads acquire-load it once and maintain separate subscription cursors. The writer
+  uses relaxed load plus release store rather than an event-level locked `fetch_add`, and modulo
+  32-bit subtraction preserves deltas across wrap.
+- Availability and motion-seen are published in one lock-free state byte. The frame-side source
+  resolver performs one acquire load and tests both bits, so availability cannot be observed from
+  one publication while motion-seen comes from another. Absolute-baseline resets are delivered
+  by the cold eventfd and consumed by the filter thread after reset-fd readiness, before the next
+  bounded X-event chunk. The fallback atomic is consulted only when eventfd setup/write has failed.
 
 Troubleshooting signals:
 
@@ -508,24 +569,51 @@ Since 2026-07-04, macOS in-game aim uses backend-specific cursor handling. macOS
 Backend split (see `MelonPrimeRawInputMacFilter.mm`, `IsGcMouseAimActive()`):
 
 - **GCMouse (external USB/BT mouse, macOS 11+)**: Raw deltas are warp-immune (GameController).
+  Every mouse is assigned the filter's single serial `handlerQueue` before its value-change
+  callback is installed. Fractional residuals and the packed GCMouse cumulative total therefore
+  have exactly one serialized writer without an event-level atomic RMW.
   While aim is clipped, `MacSetAimCursorCaptured(true)` disassociates hardware motion from the
   OS cursor (`CGAssociateMouseAndMouseCursorPosition(false)`) and hides it
   (`CGDisplayHideCursor`). Containment warps are skipped — the parked cursor must not be warped
-  every frame or it flashes on the DS screens.
+  every frame or it flashes on the DS screens. The Aim frame also suppresses
+  `GuiRequestRecenter`; steady raw Aim reaches neither the GUI warp request nor
+  `CGWarpMouseCursorPosition`.
 - **IOHID (built-in trackpad, trackballs, macOS < 11 fallback)**: Raw deltas via HID, but
   **must not** call `MacSetAimCursorCaptured(true)`. Disassociating the cursor on the trackpad
   path drops Qt `mouseRelease` events and leaves `keyHotkeyMask` stuck (shoot/zoom held). IOHID
   uses containment warps to `aimContainmentLocalRect().center()` instead.
+  IOHID publishes to its own packed cumulative total on the worker thread. The worker runloop
+  pointer is an acquire/release atomic so stop/wakeup never races a plain pointer publication.
 - **QCursor fallback**: When `isAvailable()` is false (no permission, no device). Per-frame
   recenter in `ProcessAimInputMouse` when raw is inactive; panel containment warps otherwise.
+
+The frame-side rule is intentionally source-resolved rather than Apple-wide:
+the cached warp decision is false for active GCMouse/IOHID raw input and true
+for QCursor fallback. Focus, layout, capture and cursor-mode transitions may still issue
+one-shot recenter requests; the zero-warp contract applies to steady raw Aim frames.
 
 Mouse buttons and keyboard hotkeys stay on the Qt path (`EmuInstance::onMousePress` /
 `onMouseRelease` → `keyHotkeyMask`). They are intentionally not read from GCMouse/IOHID.
 
+The frame reader acquire-loads the independent GCMouse and IOHID totals, sums each axis modulo
+32 bits, and advances only its subscription cursor. This preserves deltas across a backend handoff
+without making the two event sources writers of one shared accumulator. Backend
+availability is one atomic bitset (`BackendGc`, `BackendHid`): rare lifecycle
+transitions use `fetch_or`/`fetch_and`, preventing a concurrent GC connect and
+HID close from overwriting each other's state. GCMouse connect claims the bit
+before handler installation. Disconnect removes the handler and drains its
+serial queue before clearing the queue-local producer gate and ownership bit,
+so IOHID and GC cannot overlap during handoff.
+
 Stuck-click recovery (2026-07-04, trackpad report): `EmuInstance::syncMouseHotkeysFromQtButtons()`
 clears mouse-mapped hotkey bits when `QGuiApplication::mouseButtons()` shows the button physically
-up but a release event was lost. Called from `ScreenPanel` on macOS during press, move, and
-`unfocus()` (which also releases a stuck DS touch via `releaseScreen()`). See
+up but a release event was lost. Press and `unfocus()` synchronize immediately; the mouse-move
+path queries the global button state only while its compact recovery mask is armed by a tracked
+press. (`unfocus()` also releases a stuck DS touch via `releaseScreen()`.) The five supported
+mouse-button masks are precomputed on config load, so this recovery path performs fixed mask
+operations without mapping scans. It load-checks for actually stale bits before issuing a
+correcting atomic RMW, and ordinary high-rate movement performs neither a global button-state
+query nor a locked mask update. See
 [../../archive/investigations/input/click-handling.md](../../archive/investigations/input/click-handling.md) § "macOS trackpad stuck-click fix".
 
 Troubleshooting:

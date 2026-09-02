@@ -31,6 +31,8 @@
 #ifdef MELONPRIME_DS
 #include <atomic>
 #include <cstdint>
+#include "MelonPrimeMouseButton.h"
+#include "MelonPrimeJoystickDevice.h"
 namespace MelonPrime { class MelonPrimeCore; }
 #endif // MELONPRIME_DS
 
@@ -160,9 +162,6 @@ struct PresentationConfigSnapshot
 } // namespace MelonPrime
 #endif // MELONPRIME_DS
 
-bool isRightModKey(QKeyEvent* event);
-int getEventKeyVal(QKeyEvent* event);
-
 class EmuInstance
 {
 #ifdef MELONPRIME_DS
@@ -178,9 +177,19 @@ public:
     void onMouseRelease(QMouseEvent* event);
     [[nodiscard]] bool hotkeyUsesKeyboardKey(int hotkeyId, int qtKey) const;
     [[nodiscard]] bool hotkeyUsesMouseButton(int hotkeyId, Qt::MouseButton button) const;
+    [[nodiscard]] uint8_t mouseRecoveryEligibleMask() const noexcept
+    {
+        return m_mouseRecoveryEligibleMask;
+    }
     void syncMouseHotkeysFromQtButtons(Qt::MouseButtons physical);
     // One-frame virtual press for MelonPrime::InputKey::MouseWheelUp/Down bindings.
     void onMouseWheel(int delta);
+    [[nodiscard]] uint64_t wheelHotkeyMaskForDelta(int delta) const noexcept
+    {
+        return delta > 0
+            ? wheelUpHotkeyMask.load(std::memory_order_acquire)
+            : wheelDownHotkeyMask.load(std::memory_order_acquire);
+    }
 #endif // MELONPRIME_DS
 
     int getInstanceID() { return instanceID; }
@@ -271,7 +280,13 @@ public:
 
     void setJoystick(int id);
     int getJoystickID() { return joystickID; }
-    SDL_Joystick* getJoystick() { return joystick; }
+    SDL_Joystick* getJoystick() {
+#ifdef MELONPRIME_DS
+        return joystickDevice.GetJoystick();
+#else
+        return joystick;
+#endif
+    }
     std::shared_ptr<SDL_mutex> getJoyMutex() { return joyMutex; }
 
     void touchScreen(int x, int y);
@@ -361,23 +376,23 @@ private:
     void onKeyRelease(QKeyEvent* event);
 
 #ifdef MELONPRIME_DS
-    float hotkeyAnalogueValue(int val);
     melonDS::u32 getInputMask();
 #endif // MELONPRIME_DS
 
     void keyReleaseAll();
 
+    // joyMutex must be held. These are the sole device lifetime writers.
     void openJoystick();
     void closeJoystick();
+    void setJoystickLocked(int id);
     bool joystickButtonDown(int val);
 
-    void inputProcess();
+    void inputProcess(bool guestFrameWillRun);
 
 #ifdef MELONPRIME_DS
-    // P-15: Lightweight joystick re-poll after Sleep.
-    // Refreshes joyInputMask/joyHotkeyMask/inputMask/hotkeyMask
-    // WITHOUT touching edge detection (lastHotkeyMask, hotkeyPress, etc.)
-    void inputRefreshJoystickState();
+    // Guest-frame late poll. Global emulator hotkey edges remain owned by
+    // inputProcess(); this publishes a separate MelonPrime gameplay snapshot.
+    void inputRefreshJoystickState(bool commitGameplayEdges);
 #endif
 
 #ifdef MELONPRIME_DS
@@ -507,17 +522,96 @@ private:
     int hkJoyMapping[HK_MAX];
 
     int joystickID;
+#ifdef MELONPRIME_DS
+    MelonPrime::MelonPrimeJoystickDevice joystickDevice;
+#else
     SDL_Joystick* joystick;
+#endif
+#ifdef MELONPRIME_DS
+    // Lock-free presence hint only. SDL_Joystick* lifetime and every
+    // dereference remain serialized by joyMutex.
+    std::atomic_bool joystickPresent{false};
+#endif
+#ifndef MELONPRIME_DS
     SDL_GameController* controller;
     bool hasAccelerometer = false;
     bool hasGyroscope = false;
     bool hasRumble = false;
     bool isRumbling = false;
+#endif
 
-    static std::shared_ptr<SDL_mutex> joyMutexGlobal;
     std::shared_ptr<SDL_mutex> joyMutex;
 
 #ifdef MELONPRIME_DS
+    struct LateJoystickSnapshot
+    {
+        uint16_t inputMask = 0xFFF;
+        uint64_t hotkeyHeld = 0;
+        uint64_t hotkeyPressed = 0;
+    };
+
+    using JoystickSourceKind = MelonPrime::JoystickSourceKind;
+    using JoystickPhysicalSource = MelonPrime::JoystickPhysicalSource;
+
+    struct JoystickFanoutRule
+    {
+        uint8_t sourceIndex = 0;
+        uint8_t predicate = 0;
+        uint16_t inputBits = 0;
+        uint64_t hotkeyBits = 0;
+    };
+
+    static constexpr int kMaxJoystickCompiledEntries = 2 * (HK_MAX + 12);
+
+    struct JoystickBindingProgram
+    {
+        JoystickPhysicalSource sources[kMaxJoystickCompiledEntries]{};
+        JoystickFanoutRule rules[kMaxJoystickCompiledEntries]{};
+        uint8_t sourceCount = 0;
+        uint8_t ruleCount = 0;
+    };
+
+    struct JoystickPhysicalSnapshot
+    {
+        // Deliberately has no default initializer. sampleJoystickPhysicalLocked
+        // writes every element in [0, sourceCount), and fanout is asserted to
+        // reference only that initialized range. This avoids a maximum-size
+        // stack clear on every active-controller guest frame.
+        int32_t sourceValue[kMaxJoystickCompiledEntries];
+        uint8_t sourceCount;
+    };
+
+    struct JoystickProjectedState
+    {
+        uint16_t inputMask;
+        uint64_t hotkeyMask;
+    };
+
+    struct MouseButtonBindingMask
+    {
+        uint16_t inputBits = 0;
+        uint64_t hotkeyBits = 0;
+        uint64_t globalCommandBits = 0;
+        uint64_t gameplayBits = 0;
+    };
+
+    [[nodiscard]] JoystickBindingProgram compileJoystickBindingProgram() const;
+    void publishJoystickBindingProgramLocked(
+        const JoystickBindingProgram& program);
+    void activateJoystickBindingProgramLocked();
+    void rebuildMouseButtonBindingMasks();
+    void resetJoystickConsumerState();
+    bool consumeJoystickResetPending();
+    void probeJoystickConnection();
+    bool sampleJoystickPhysicalLocked(JoystickPhysicalSnapshot& snapshot);
+    bool sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot);
+    [[nodiscard]] JoystickProjectedState projectJoystickPhysicalSnapshot(
+        const JoystickPhysicalSnapshot& snapshot) const;
+    void projectJoystickCommandState(const JoystickProjectedState& projected);
+    void projectJoystickGameplayState(
+        const JoystickProjectedState& projected, bool commitGameplayEdges);
+    void refreshJoystickCommandState();
+
     // OPT: QBitArray -> native integers.
     // QBitArray involves heap allocation, reference counting, byte-level iteration,
     // and bounds checking per operation. With only 12 input bits and ~53 hotkey bits,
@@ -527,19 +621,48 @@ private:
     // emulation thread consumes it. Keep the published masks atomic; the
     // joystick and combined masks remain emulation-thread-owned.
     std::atomic<uint16_t> keyInputMask{0xFFF};
-    uint16_t joyInputMask;
     uint16_t inputMask;
 
     std::atomic<uint64_t> keyHotkeyMask{0};
-    uint64_t joyHotkeyMask;
     uint64_t hotkeyMask, lastHotkeyMask;
     uint64_t hotkeyPress, hotkeyRelease;
-    uint64_t joyHotkeyPress;
-    uint64_t joyHotkeyRelease;
-    uint64_t lastJoyHotkeyMask;
-    // Bits latched by onMouseWheel(); cleared after edge detection so the
-    // virtual key is a one-frame press rather than a held button.
-    std::atomic<uint64_t> wheelHotkeyPulseMask{0};
+    uint64_t controllerCommandHotkeyMask = 0;
+    bool controllerCommandSnapshotValid = false;
+    bool controllerCommandNeedsBaseline = true;
+    LateJoystickSnapshot lateJoystick{};
+    uint64_t previousLateJoystickHotkeyMask = 0;
+    bool lateJoystickNeedsBaseline = true;
+    // GUI/config/device-lifetime writers publish only a reset request. The
+    // EmuThread remains the sole writer of every gameplay-derived mask above.
+    std::atomic_bool joystickGameplayResetPending{false};
+    uint8_t joystickLifecycleCheckCounter = 0;
+    // Config/UI writes and EmuThread activation are serialized by the
+    // per-instance device mutex; active is immutable throughout sampling and
+    // lock-free projection.
+    JoystickBindingProgram pendingJoystickBindingProgram{};
+    JoystickBindingProgram activeJoystickBindingProgram{};
+    uint32_t joystickBindingProgramGeneration = 0;
+    uint32_t activeJoystickBindingProgramGeneration = 0;
+    MouseButtonBindingMask mouseButtonMasks[
+        MelonPrime::kSupportedMouseButtonCount]{};
+    // Cold config projection: only buttons mapped to a DS input or hotkey
+    // need macOS lost-release recovery during mouse movement.
+    uint8_t m_mouseRecoveryEligibleMask = 0;
+    static constexpr uint64_t kGlobalCommandHotkeyMask =
+        (1ULL << HK_GuitarGripGreen) - 1ULL;
+    static constexpr uint64_t kGameplayHotkeyMask =
+        ~((1ULL << HK_MetroidMoveForward) - 1ULL);
+    // Global command and gameplay presses have different consumers. A Pause
+    // tap may complete between outer polls and must still be claimed once.
+    std::atomic<uint64_t> qtGlobalCommandPressPending{0};
+    std::atomic<uint64_t> qtGameplayPressPending{0};
+    // Wheel is an impulse, not a held Qt key. Preserve one inputProcess()
+    // level for down-state consumers without writing keyHotkeyMask.
+    std::atomic<uint64_t> qtWheelLevelPulsePending{0};
+    // Cold inputLoadConfig() projection. Both the Qt producer and the Windows
+    // Raw Input consumer avoid scanning HK_MAX on every wheel pulse.
+    std::atomic<uint64_t> wheelUpHotkeyMask{0};
+    std::atomic<uint64_t> wheelDownHotkeyMask{0};
 
     // Packed acquire/release publication keeps VSync, configured renderer,
     // actual renderer, and their revision coherent with one atomic load in

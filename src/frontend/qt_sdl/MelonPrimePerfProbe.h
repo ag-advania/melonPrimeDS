@@ -59,6 +59,18 @@ enum class HudPhase : uint8_t {
     Count
 };
 
+// Input-specific timings are kept separate from the broad frame sections so
+// the input budget can be compared across keyboard, joystick, and Raw Input
+// runs without changing the production frame path.
+enum class InputMetric : uint8_t {
+    InputTotal = 0,
+    JoystickLockWait,
+    JoystickSample,
+    JoystickProject,
+    JoystickSDLUpdate,
+    Count
+};
+
 inline bool IsEnabled()
 {
     static const bool kEnabled = [] {
@@ -150,6 +162,16 @@ struct State {
     uint64_t cntCrosshairProjectionAccepted = 0;
     uint64_t cntCrosshairProjectionRejected = 0;
 
+    static constexpr uint32_t kInputMetricCap = 2048;
+    Uint64 inputMetricTicks[
+        static_cast<uint32_t>(InputMetric::Count)][kInputMetricCap]{};
+    uint32_t inputMetricCount[static_cast<uint32_t>(InputMetric::Count)]{};
+    uint64_t inputMetricCalls[static_cast<uint32_t>(InputMetric::Count)]{};
+    Uint64 inputMetricSumTicks[static_cast<uint32_t>(InputMetric::Count)]{};
+    Uint64 inputMetricMaxTicks[static_cast<uint32_t>(InputMetric::Count)]{};
+    Uint64 inputTotalStartTick = 0;
+    bool inputTotalOpen = false;
+
     Uint64 lastReportTick = 0;
     uint32_t histTotal[kHistBuckets]{};
     uint32_t histOverflow = 0;
@@ -214,6 +236,11 @@ inline double PercentileSorted(const double* data, uint32_t count, double p)
     const uint32_t hi = lo + 1 < count ? lo + 1 : lo;
     const double frac = idx - static_cast<double>(lo);
     return data[lo] * (1.0 - frac) + data[hi] * frac;
+}
+
+inline Uint64 ReadTicksIfEnabled()
+{
+    return IsEnabled() ? SDL_GetPerformanceCounter() : 0;
 }
 
 inline void CloseFrameCsv()
@@ -296,12 +323,81 @@ inline void RecordLatencySample(
         samples[count++] = microseconds;
 }
 
+inline void RecordInputMetricTicks(InputMetric metric, Uint64 ticks)
+{
+    if (!IsEnabled() || ticks == 0)
+        return;
+
+    State& st = S();
+    const uint32_t index = static_cast<uint32_t>(metric);
+    uint32_t& count = st.inputMetricCount[index];
+    if (count < State::kInputMetricCap)
+        st.inputMetricTicks[index][count++] = ticks;
+    ++st.inputMetricCalls[index];
+    st.inputMetricSumTicks[index] += ticks;
+    if (ticks > st.inputMetricMaxTicks[index])
+        st.inputMetricMaxTicks[index] = ticks;
+}
+
+inline void BeginInputTotal()
+{
+    if (!IsEnabled())
+        return;
+    State& st = S();
+    if (st.inputTotalOpen)
+        return;
+    st.inputTotalStartTick = SDL_GetPerformanceCounter();
+    st.inputTotalOpen = true;
+}
+
+inline void EndInputTotal()
+{
+    State& st = S();
+    if (!st.inputTotalOpen)
+        return;
+    const Uint64 endTick = SDL_GetPerformanceCounter();
+    const Uint64 startTick = st.inputTotalStartTick;
+    st.inputTotalOpen = false;
+    st.inputTotalStartTick = 0;
+    if (endTick >= startTick)
+        RecordInputMetricTicks(InputMetric::InputTotal, endTick - startTick);
+}
+
+class ScopedInputMetric {
+public:
+    explicit ScopedInputMetric(InputMetric metric)
+        : m_metric(metric), m_startTick(ReadTicksIfEnabled()) {}
+
+    ~ScopedInputMetric() { Stop(); }
+
+    void Stop()
+    {
+        if (!m_startTick)
+            return;
+        const Uint64 endTick = ReadTicksIfEnabled();
+        if (endTick >= m_startTick)
+            RecordInputMetricTicks(m_metric, endTick - m_startTick);
+        m_startTick = 0;
+    }
+
+    ScopedInputMetric(const ScopedInputMetric&) = delete;
+    ScopedInputMetric& operator=(const ScopedInputMetric&) = delete;
+
+private:
+    InputMetric m_metric;
+    Uint64 m_startTick;
+};
+
 inline void ResetWindowStats()
 {
     State& st = S();
     st.windowFrameCount = 0;
     st.inputToRunFrameCount = 0;
     st.inputToPresentEndCount = 0;
+    std::memset(st.inputMetricCount, 0, sizeof(st.inputMetricCount));
+    std::memset(st.inputMetricCalls, 0, sizeof(st.inputMetricCalls));
+    std::memset(st.inputMetricSumTicks, 0, sizeof(st.inputMetricSumTicks));
+    std::memset(st.inputMetricMaxTicks, 0, sizeof(st.inputMetricMaxTicks));
     for (uint32_t i = 0; i < static_cast<uint32_t>(Section::Count); ++i) {
         st.secSumMs[i] = 0.0;
         st.secMaxMs[i] = 0.0;
@@ -456,6 +552,63 @@ inline void MaybeReport1Hz()
         LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.99),
         LatencyMax(st.inputToPresentEndUs, st.inputToPresentEndCount),
         st.inputToPresentEndCount);
+
+    const auto inputMetricPercentileUs = [&](InputMetric metric,
+                                             double percentile) -> double {
+        const uint32_t index = static_cast<uint32_t>(metric);
+        const uint32_t count = st.inputMetricCount[index];
+        if (!count)
+            return 0.0;
+        Uint64 sortedTicks[State::kInputMetricCap];
+        for (uint32_t i = 0; i < count; ++i)
+            sortedTicks[i] = st.inputMetricTicks[index][i];
+        std::sort(sortedTicks, sortedTicks + count);
+        const double ticks = static_cast<double>(
+            sortedTicks[static_cast<uint32_t>(
+                percentile * static_cast<double>(count - 1))]);
+        return ticks * 1000000.0 / static_cast<double>(st.freq);
+    };
+    const auto inputMetricMaxUs = [&](InputMetric metric) -> double {
+        return static_cast<double>(st.inputMetricMaxTicks[
+            static_cast<uint32_t>(metric)]) * 1000000.0
+            / static_cast<double>(st.freq);
+    };
+    const auto inputMetricCalls = [&](InputMetric metric) -> unsigned long long {
+        return static_cast<unsigned long long>(st.inputMetricCalls[
+            static_cast<uint32_t>(metric)]);
+    };
+    fprintf(stderr,
+        "[MelonPrimePerf] input_metric_us "
+        "input_total[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
+        "joystick_lock_wait[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
+        "joystick_sample[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
+        "joystick_project[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
+        "joystick_sdl_update[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f]\n",
+        inputMetricCalls(InputMetric::InputTotal),
+        inputMetricPercentileUs(InputMetric::InputTotal, 0.50),
+        inputMetricPercentileUs(InputMetric::InputTotal, 0.95),
+        inputMetricPercentileUs(InputMetric::InputTotal, 0.99),
+        inputMetricMaxUs(InputMetric::InputTotal),
+        inputMetricCalls(InputMetric::JoystickLockWait),
+        inputMetricPercentileUs(InputMetric::JoystickLockWait, 0.50),
+        inputMetricPercentileUs(InputMetric::JoystickLockWait, 0.95),
+        inputMetricPercentileUs(InputMetric::JoystickLockWait, 0.99),
+        inputMetricMaxUs(InputMetric::JoystickLockWait),
+        inputMetricCalls(InputMetric::JoystickSample),
+        inputMetricPercentileUs(InputMetric::JoystickSample, 0.50),
+        inputMetricPercentileUs(InputMetric::JoystickSample, 0.95),
+        inputMetricPercentileUs(InputMetric::JoystickSample, 0.99),
+        inputMetricMaxUs(InputMetric::JoystickSample),
+        inputMetricCalls(InputMetric::JoystickProject),
+        inputMetricPercentileUs(InputMetric::JoystickProject, 0.50),
+        inputMetricPercentileUs(InputMetric::JoystickProject, 0.95),
+        inputMetricPercentileUs(InputMetric::JoystickProject, 0.99),
+        inputMetricMaxUs(InputMetric::JoystickProject),
+        inputMetricCalls(InputMetric::JoystickSDLUpdate),
+        inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.50),
+        inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.95),
+        inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.99),
+        inputMetricMaxUs(InputMetric::JoystickSDLUpdate));
 
     const auto hudPercentileUs = [&](HudPhase phase, double percentile) -> double {
         const uint32_t index = static_cast<uint32_t>(phase);
@@ -996,9 +1149,22 @@ enum class HudPhase : uint8_t {
     UploadPrepare, GpuUpload, Composite, TotalActive, Count
 };
 
+enum class InputMetric : uint8_t {
+    InputTotal,
+    JoystickLockWait,
+    JoystickSample,
+    JoystickProject,
+    JoystickSDLUpdate,
+    Count
+};
+
 inline bool IsEnabled() { return false; }
 inline bool IsFrameActive() { return false; }
 inline unsigned long long ReadTicksIfActive() { return 0; }
+inline unsigned long long ReadTicksIfEnabled() { return 0; }
+inline void BeginInputTotal() {}
+inline void EndInputTotal() {}
+inline void RecordInputMetricTicks(InputMetric, unsigned long long) {}
 inline void FrameBegin() {}
 inline void FrameEnd() {}
 inline void MarkInputSample() {}
@@ -1037,6 +1203,12 @@ inline void CountSurfaceVisibilityStateChange() {}
 inline void CountCrosshairProjection(bool) {}
 inline void CountRendererFastCacheRefresh() {}
 inline void ShutdownReport() {}
+
+class ScopedInputMetric {
+public:
+    explicit ScopedInputMetric(InputMetric) {}
+    void Stop() {}
+};
 
 class ScopedHudPhase {
 public:

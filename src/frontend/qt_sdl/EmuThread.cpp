@@ -393,6 +393,18 @@ void EmuThread::run()
         }
 #endif
 
+        // Cold frame decisions precede the limiter so the post-sleep critical
+        // path remains late input -> RunFrameHook -> SetKeyMask -> RunFrame.
+        emuInstance->syncRTC();
+
+#ifdef MELONPRIME_DS
+        // P-39: Skip NeedsShaderCompile virtual dispatch once shaders are ready.
+        bool needsCompile = UNLIKELY(!shadersReady)
+            && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
+#else
+        bool needsCompile = emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
+#endif
+
 #ifdef MELONPRIME_DS
         // =================================================================
         // P-13: Late-Poll Frame Limiter — sleep BEFORE input, not after.
@@ -532,15 +544,22 @@ void EmuThread::run()
         // =================================================================
         // P-15: Late-Poll Joystick — refresh SDL state after Sleep.
         //
-        // inputProcess() already ran at the main loop top (for edge
-        // detection: hotkeyPress/Release). This lightweight refresh
-        // re-polls joystick axes/buttons so RunFrameHook sees fresh
-        // joyHotkeyMask and inputMask. Edge detection is untouched.
+        // inputProcess() already finalized global emulator command edges.
+        // This refresh re-polls joystick axes/buttons so RunFrameHook sees a
+        // separate fresh MelonPrime gameplay held/press/release snapshot;
+        // pause/save/fullscreen edges are never recomputed or re-fired here.
         //
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::FrameSetup);
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Input);
         MelonPrimePerf::MarkInputSample();
+        // The input budget starts after the limiter. inputProcess() owns the
+        // outer command edge, while this interval measures the latency-critical
+        // physical sample through the final pre-RunFrame commit.
+        const bool nestedInputFrame =
+            melonPrime->IsNestedFrameAdvanceForInput();
+        if (!nestedInputFrame)
+            MelonPrimePerf::BeginInputTotal();
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         // Reflex INPUT_SAMPLE marks the point immediately before the first
         // input read. It must precede both SDL's joystick refresh and the raw
@@ -552,25 +571,11 @@ void EmuThread::run()
         if (vulkanLowLatencyRenderer)
             emuInstance->markVulkanReflexInputSample();
 #endif
-        emuInstance->inputRefreshJoystickState();
+        emuInstance->inputRefreshJoystickState(!nestedInputFrame);
 #endif
-
-        // RTC sync
-        emuInstance->syncRTC();
 
         // emulate
         u32 nlines;
-
-#ifdef MELONPRIME_DS
-        // P-39: Skip NeedsShaderCompile virtual dispatch once shaders are ready.
-        // GetRenderer().NeedsShaderCompile() is a vtable lookup + indirect call
-        // (~15-25 cyc) that returns false 100% of the time after initial compile.
-        bool needsCompile = UNLIKELY(!shadersReady)
-            && emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
-#else
-        // NeedsShaderCompile reads a GPU flag — no GL context needed.
-        bool needsCompile = emuInstance->nds->GPU.GetRenderer().NeedsShaderCompile();
-#endif
 
 #ifdef MELONPRIME_DS
         // =================================================================
@@ -618,6 +623,11 @@ void EmuThread::run()
 #endif
         }
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Input);
+        // Close the post-limiter input transaction after the late joystick
+        // sample and RunFrameHook/SetKeyMask commit, while preserving the
+        // existing RunFrameHook-before-GL ordering.
+        if (!nestedInputFrame)
+            MelonPrimePerf::EndInputTotal();
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::PreRun);
 #endif
 
@@ -980,7 +990,9 @@ void EmuThread::run()
             MPInterface::Get().Process();
 
         // P-33: PrePollRawInput removed (P-19 HiddenWndProc captures WM_INPUT at dispatch).
-        emuInstance->inputProcess();
+        const bool guestFrameWillRun =
+            emuStatus == emuStatus_Running || emuStatus == emuStatus_FrameStep;
+        emuInstance->inputProcess(guestFrameWillRun);
 
 #ifdef MELONPRIME_DS
         // P-24: Batch early-exit for outer loop hotkeys.
@@ -1147,6 +1159,13 @@ void EmuThread::run()
 
         handleMessages();
     }
+
+#ifdef MELONPRIME_DS
+    // Per-subscription Windows Raw hidden HWNDs are thread-affine. Tear them
+    // down while this EmuThread is still alive; the GUI-thread core destructor
+    // is intentionally only a final no-op for already-shutdown input.
+    melonPrime->ShutdownRawInput();
+#endif
 
 #include "MelonPrimeEmuThreadPerfShutdown.inc"
 }

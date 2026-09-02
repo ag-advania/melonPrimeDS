@@ -608,8 +608,10 @@ dispatcher enforces:
 - **Gate the request-producing side on `BIT_BATTLE_RUNTIME_MODE` too**, not just
   `BIT_IN_GAME_INIT`. A request queued during the join/countdown otherwise survives on its TTL and
   fires on the first battle-runtime frame, before the player state it acts on is settled.
-- Clear pending host-side requests on the battle-runtime edge and in the lifecycle resets
-  (`ResetTransientInputState`, emu start/stop/boot, savestate reconcile).
+- Clear pending host-side requests on the battle-runtime edge and through the input owner's
+  lifecycle profiles (`ResetInputForLifecycleBoundary`, emu start/stop/boot, game join/leave,
+  focus loss, and savestate reconcile). Callers name the boundary rather than clearing the
+  pending-request fields directly.
 - **Every native dispatcher has to clear the spawn barrier**, because the match latch is a
   match boundary and respawn is a player boundary. Spawn restores HP early and the same player
   runtime update falls through to the input hooks, so a native call can land inside the update that

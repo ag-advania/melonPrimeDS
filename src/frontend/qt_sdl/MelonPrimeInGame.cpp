@@ -48,7 +48,9 @@ namespace MelonPrime {
         {
             constexpr uint64_t IB_WEAPON_ALL_TRIGGERS =
                 IB_WEAPON_ANY | IB_WEAPON_NEXT | IB_WEAPON_PREV;
-            const bool hasWeaponInput = (m_input.press & IB_WEAPON_ALL_TRIGGERS) != 0;
+            const bool hasWeaponInput =
+                (m_input.press & IB_WEAPON_ALL_TRIGGERS) != 0
+                || m_input.weaponCycleSteps != 0;
             if (UNLIKELY(hasWeaponInput && ProcessWeaponSwitch())) {
                 HandleRareWeaponSwitch();
             }

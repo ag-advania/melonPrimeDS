@@ -80,6 +80,7 @@
 //#include "main_shaders.h"
 
 #include "EmuInstance.h"
+#include "MelonPrimeQtKeyBinding.h"
 #include "ArchiveUtil.h"
 #include "CameraManager.h"
 #include "Window.h"
@@ -1534,7 +1535,14 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     // TODO!! REMOVE ME IN RELEASE BUILDS!!
     //if (event->key() == Qt::Key_F11) emuInstance->getNDS()->debug(0);
 
+#ifdef MELONPRIME_DS
+    const bool inputSurfaceAuthority =
+        emuInstance->getMainWindow() == this;
+    if (inputSurfaceAuthority)
+        emuInstance->onKeyPress(event);
+#else
     emuInstance->onKeyPress(event);
+#endif
 
 #ifdef MELONPRIME_DS
     // A keyboard binding for the Stylus Mode touch action must begin at the
@@ -1542,8 +1550,9 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
     // so it adds no polling or per-frame GUI work.
     {
         QMutexLocker panelLock(&screenPanelLock);
-        if (panel)
-            panel->primeStylusTouchHotkeyAtCursor(event->key());
+        if (inputSurfaceAuthority && panel)
+            panel->primeStylusTouchHotkeyAtCursor(
+                NormalizeQtKeyBinding(*event));
     }
 
     // MelonPrimeDS. for Escaping from metroid cursor lock 
@@ -1565,13 +1574,19 @@ void MainWindow::keyReleaseEvent(QKeyEvent* event)
 {
     if (event->isAutoRepeat()) return;
 
-    emuInstance->onKeyRelease(event);
 #ifdef MELONPRIME_DS
+    const bool inputSurfaceAuthority =
+        emuInstance->getMainWindow() == this;
+    if (inputSurfaceAuthority)
+        emuInstance->onKeyRelease(event);
     {
         QMutexLocker panelLock(&screenPanelLock);
-        if (panel)
-            panel->releaseStylusTouchHotkeyCapture(event->key());
+        if (inputSurfaceAuthority && panel)
+            panel->releaseStylusTouchHotkeyCapture(
+                NormalizeQtKeyBinding(*event));
     }
+#else
+    emuInstance->onKeyRelease(event);
 #endif
 }
 

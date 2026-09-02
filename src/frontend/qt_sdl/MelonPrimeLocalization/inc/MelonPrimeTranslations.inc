@@ -1,5 +1,6 @@
 constexpr Translation kTranslations[] = {
 #include "MelonPrimeTranslationsCommon.inc"
+#include "MelonPrimeTranslationsMouseButtons.inc"
 #include "MelonPrimeTranslationsMenu.inc"
 #include "MelonPrimeTranslationsSections.inc"
 #include "MelonPrimeTranslationsHotkeys.inc"

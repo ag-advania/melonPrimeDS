@@ -1601,7 +1601,7 @@ def main() -> int:
             [
                 "dx12LowLatency->BeginFrame(logicalFrameId);",
                 "dx12LowLatency->MarkInputSample();",
-                "inputRefreshJoystickState();",
+                "inputRefreshJoystickState(",
             ],
         ),
         "Intel XeLL must Sleep/start Simulation -> Input Sample -> input",
@@ -1681,7 +1681,7 @@ def main() -> int:
             [
                 "dx12LowLatency->BeginFrame(logicalFrameId);",
                 "dx12LowLatency->MarkInputSample();",
-                "inputRefreshJoystickState();",
+                "inputRefreshJoystickState(",
                 "RunFrameHook();",
                 "SetKeyMask(",
                 "dx12LowLatency->MarkSimulationStart();",
@@ -1696,7 +1696,7 @@ def main() -> int:
             [
                 "beginVulkanLowLatencyFrame(",
                 "markVulkanReflexInputSample();",
-                "inputRefreshJoystickState();",
+                "inputRefreshJoystickState(",
                 "RunFrameHook();",
                 "SetKeyMask(",
                 "markVulkanReflexSimulationStart();",

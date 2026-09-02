@@ -99,12 +99,17 @@ macOS platform notes:
 Linux platform notes:
 - Windows/macOS native input sources are removed from Linux builds.
 - The RawInput-equivalent aim path is `MelonPrimeRawInputLinuxFilter.{h,cpp}` (XInput2
-  `XI_RawMotion` on X11). Raw mode engages only when `isAvailable() && hasReceivedMotion()` —
-  XWayland sessions accept the XI2 selection but never deliver raw events, so trusting
-  availability alone froze aim (2026-07-03). Relative axes are used as-is. **Absolute pointing
+  `XI_RawMotion` on X11). Raw mode engages only when one acquire of packed `stateBits()` contains
+  both `StateAvailable` and `StateMotionSeen` — XWayland sessions accept the XI2 selection but
+  never deliver raw events, so trusting availability alone froze aim (2026-07-03). Relative axes
+  are used as-is. **Absolute pointing
   devices — VirtualBox's integrated tablet pointer — are converted to deltas per-device**
   (successive-value differencing, axis modes queried via `XIQueryDevice`, baselines re-seeded by
   `resetAll()`). Axes above 0/1 (scroll wheel valuators) are never fed into aim.
+- Linux reset notifications use a nonblocking close-on-exec `eventfd`, drained only after poll
+  readiness between bounded chunks of at most 64 X events. Shutdown signals a separate wake fd
+  before joining the filter thread; the normal raw-motion event path performs no reset read or
+  fallback atomic RMW.
 - Why device-level deltas: warps never change a device's own axis state, so `XWarpPointer`
   echoes and VBox host-position re-syncs cannot corrupt them. The previous center-delta +
   warp-per-event scheme fought VBox's re-sync — the full host-minus-center offset was re-added

@@ -10,13 +10,16 @@
 #include <mutex>
 #include "MelonPrimeCompilerHints.h"   // Shared macros (was duplicated inline)
 #include "MelonPrimeRawWinInternal.h"
+#include "MelonPrimeRawInputPerfProbe.h"
 
 namespace MelonPrime {
+
+    class RawInputWinFilter;
 
     struct FrameHotkeyState {
         uint64_t down{};
         uint64_t pressed{};
-        int wheelDelta{};
+        int wheelSteps{};
         uint64_t generation{};
         bool baselineReady = false;
 
@@ -38,9 +41,11 @@ namespace MelonPrime {
 
         static void InitializeTables() noexcept;
 
-        void processRawInput(HRAWINPUT hRaw) noexcept;
-        void processRawInputBatched() noexcept;
-
+        // Returns true only when this dispatch may have changed or resurrected
+        // physical state that needs post-frame recovery. Successful relative
+        // motion and wheel-only events return false; read failures, keyboard
+        // events, and mouse button activity return true.
+        [[nodiscard]] bool processRawInput(HRAWINPUT hRaw) noexcept;
         void fetchMouseDelta(int& outX, int& outY) noexcept;
         void discardDeltas() noexcept;
 
@@ -51,6 +56,11 @@ namespace MelonPrime {
         void resetAll() noexcept;
 
         static constexpr size_t kMaxHotkeyId = 64;
+        // The usual Raw batch fits in the stack-local fast buffer. A bounded,
+        // process-service retry buffer handles a delayed/stalled queue without
+        // allocating from the input frame. If the queue exceeds this bound,
+        // GetRawInputBuffer leaves it queued for a later drain attempt.
+        static constexpr size_t kBatchOverflowBufferSize = 64 * 1024;
 
         // Primary interface: pointer + count (zero-allocation path)
         void setHotkeyVks(int id, const UINT* vks, size_t count);
@@ -82,13 +92,25 @@ namespace MelonPrime {
         // clearStuckKeys + edge realignment on clear). Called from
         // RawInputWinFilter::DeferredDrain after drawScreen so the
         // GetAsyncKeyState syscalls stay off the input→RunFrame latency path.
-        // Consumer (emu) thread only.
+        // Hidden-window dispatch requests the scan; one follow-up may be
+        // scheduled for the mouse two-check debounce. Consumer (emu) thread
+        // only consumes the request.
         void clearStuckPostFrame() noexcept;
+        // Called after a hidden-window WM_INPUT dispatch. This is a one-bit
+        // mailbox, so idle frames do not enter the physical-state syscall path.
+        void RequestStuckRecovery() noexcept;
         [[nodiscard]] bool hotkeyDown(int id) const noexcept;
         void resetHotkeyEdges() noexcept;
         void syncPhysicalState() noexcept;
 
     private:
+        friend class RawInputWinFilter;
+
+        // Only RawInputWinFilter may perform the process-wide buffered drain.
+        // It holds the subscription mutex, preserving the fixed scratch and
+        // GetRawInputBuffer/PeekMessage ordering contract.
+        void processRawInputBatched() noexcept;
+
         // =================================================================
         // VK Snapshot -- captured once, reused by hotkey scan + mouse delta.
         // Eliminates 4x duplication of the load-4-atomics-then-fence pattern.
@@ -146,7 +168,8 @@ namespace MelonPrime {
 
         std::atomic<int64_t>  m_accumMouseX{ 0 };
         std::atomic<int64_t>  m_accumMouseY{ 0 };
-        std::atomic<int>      m_accumWheelSteps{ 0 };
+        // Signed RAWINPUT usButtonData units (120 units = one detent).
+        std::atomic<int64_t>  m_accumWheelUnits120{ 0 };
         std::atomic<uint8_t>  m_mouseButtons{ 0 };
         // Mouse DOWN edges seen since the last outer-frame snapshot.
         // Preserves very short clicks whose DOWN+UP both arrive in one batch.
@@ -187,9 +210,22 @@ namespace MelonPrime {
         // physically-up on two consecutive checks, so a single transient
         // GetAsyncKeyState miss does not drop a held button (charge-hold fix).
         uint8_t m_mouseStuckCandidate{ 0 };
+        // Set by HiddenWndProc and consumed by the owner thread after the
+        // frame. The debounce candidate may request one follow-up scan.
+        //
+        // Thread contract: the hidden HWND is created on the emulation thread,
+        // its WM_INPUT callback is accepted only on that creator thread, and
+        // clearStuckPostFrame consumes this mailbox on that same emulation
+        // thread. A foreign owner transfer may reset an inactive InputState,
+        // but only while RawInputWinFilter::m_subscriptionMutex is held. This
+        // is deliberately a plain mailbox; restore an atomic or owner mailbox
+        // if a cross-thread recovery producer is ever introduced.
+        bool m_stuckRecoveryNeeded = false;
 
         int64_t m_lastReadMouseX{ 0 };
         int64_t m_lastReadMouseY{ 0 };
+        // Consumer-thread-only residual in signed 1/120-detent units.
+        int m_wheelUnitRemainder120{ 0 };
 
         // =================================================================
         // Static Tables
@@ -206,6 +242,10 @@ namespace MelonPrime {
         static uint16_t s_scancodeRShift; // process-service: immutable after call_once
         static std::once_flag s_initFlag; // process-service: table initialization
         static NtUserGetRawInputBuffer_t s_fnBestGetRawInputBuffer; // process-service: immutable API pointer
+        // All processRawInputBatched callers hold RawInputWinFilter's process
+        // mutex, so this scratch is shared safely by all subscriptions. It is
+        // fixed-size to keep the input frame allocation-free.
+        alignas(64) static std::array<uint8_t, kBatchOverflowBufferSize> s_batchOverflowBuffer;
 
         // =================================================================
         // Inline Helpers
@@ -239,6 +279,14 @@ namespace MelonPrime {
                 (m_hkMasks.vkMask[id][2] & snapVk[2]) | (m_hkMasks.vkMask[id][3] & snapVk[3]);
             return ((m_hkMasks.mouseMask[id] & snapMouse) | keyHit) != 0;
         }
+
+        // Producer threads accumulate signed Windows RAWINPUT wheel units.
+        // Only the consumer converts them to detents at the frame boundary.
+        [[nodiscard]] FORCE_INLINE int claimWheelSteps() noexcept;
+
+        // Consume a requested post-frame recovery and preserve the mouse
+        // debounce follow-up without reintroducing an unconditional scan.
+        [[nodiscard]] bool consumeStuckRecovery() noexcept;
     };
 
 } // namespace MelonPrime

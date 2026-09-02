@@ -9,6 +9,7 @@
 #include <mutex>
 #include <QAbstractNativeEventFilter>
 #include "MelonPrimeRawWinInternal.h"
+#include "MelonPrimeRawInputPerfProbe.h"
 
 namespace MelonPrime {
 
@@ -27,7 +28,7 @@ namespace MelonPrime {
 
         RawInputSubscription* Subscribe(MelonPrimeInputSubscription* owner, bool joy2KeySupport, HWND windowHandle);
         void Unsubscribe(RawInputSubscription* subscription);
-        bool UpdateOwner(RawInputSubscription* subscription, bool eligible);
+        void DeactivateOwner(RawInputSubscription* subscription);
 
         bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override;
 
@@ -35,11 +36,19 @@ namespace MelonPrime {
         void setRawInputTarget(RawInputSubscription* subscription, HWND hwnd);
         void setQtFilterRequested(RawInputSubscription* subscription, bool enable);
 
-        // Merged Poll + snapshot in single call
-        void PollAndSnapshot(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY, int& outWheelSteps);
+        // Resolve the process owner through the control plane, then capture
+        // the snapshot under the subscription-local frame mutex. The steady
+        // owner still keeps its lock-free precheck before taking that mutex.
+        bool UpdateOwnerAndSnapshot(
+            RawInputSubscription* subscription, bool eligible,
+            FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+            int& outWheelSteps);
 
-        // Re-entrant path: same as PollAndSnapshot but does not advance hkPrev.
-        void PollAndSnapshotNoEdges(RawInputSubscription* subscription, FrameHotkeyState& outHk, int& outMouseX, int& outMouseY, int& outWheelSteps);
+        // Re-entrant path: same transaction but does not advance hkPrev.
+        bool UpdateOwnerAndSnapshotNoEdges(
+            RawInputSubscription* subscription, bool eligible,
+            FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+            int& outWheelSteps);
 
         // P-22: Drain WM_INPUT queue after RunFrame (non-latency-critical).
         void DeferredDrain(RawInputSubscription* subscription) noexcept;
@@ -60,19 +69,27 @@ namespace MelonPrime {
         void fetchMouseDelta(RawInputSubscription* subscription, int& outX, int& outY);
 
     private:
-        void CreateHiddenWindow();
-        void DestroyHiddenWindow();
-        void RegisterDevices(HWND target, bool useHiddenWindow);
+        [[nodiscard]] bool CreateHiddenWindow(RawInputSubscription* subscription);
+        [[nodiscard]] bool DestroyHiddenWindow(RawInputSubscription* subscription);
+        [[nodiscard]] bool RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
-        void ApplyOwnerRegistration(RawInputSubscription* subscription);
-        void ReconfigureActiveRegistration(
+        [[nodiscard]] bool ApplyOwnerRegistration(
+            RawInputSubscription* subscription, bool recreateHiddenWindow);
+        [[nodiscard]] bool ReconfigureActiveRegistration(
             RawInputSubscription* subscription, bool generationAlreadyAdvanced);
+        [[nodiscard]] bool UpdateOwnerLocked(
+            RawInputSubscription* subscription, bool eligible);
+        [[nodiscard]] bool UpdateOwnerAndSnapshotImpl(
+            RawInputSubscription* subscription, bool eligible,
+            FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
+            int& outWheelSteps, bool noEdges);
         void DeactivateActiveRegistration(RawInputSubscription* subscription);
         InputState* StateFor(RawInputSubscription* subscription) const noexcept;
-        InputState* ActiveState() const noexcept;
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-        /// Drain pending WM_INPUT messages from the hidden window queue.
+        /// Drain pending WM_INPUT messages from the active subscription's
+        /// hidden window queue. The caller must be on that window's creator
+        /// thread; owner transfer skips a foreign queue and invalidates it.
         /// Used by DeferredDrain() and resetAll(). Runs processRawInputBatched
         /// (GetRawInputBuffer) before the PeekMessage loop per FIX-1.
         void drainPendingMessages() noexcept;
@@ -80,10 +97,10 @@ namespace MelonPrime {
         /// P-35 (REVERTED): PeekMessage-only drain (no GetRawInputBuffer).
         /// WARNING: Not safe for DeferredDrain — shared-buffer semantics
         /// require GetRawInputBuffer before PeekMessage. See FIX-1.
-        void drainMessagesOnly() noexcept;
+        void drainMessagesOnly(RawInputSubscription* subscription) noexcept;
 
         static std::mutex          s_serviceMutex; // process-service: singleton lifecycle lock
-        static std::atomic<int>    s_refCount; // process-service: collector subscription count
+        static int                 s_refCount; // process-service: collector subscription count under s_serviceMutex
         static RawInputWinFilter* s_instance; // process-service: OS event collector
         static std::once_flag      s_initFlag; // process-service: immutable API resolution
         static void InitializeApiFuncs();
@@ -92,10 +109,11 @@ namespace MelonPrime {
         std::atomic<RawInputSubscription*> m_activeSubscription{nullptr};
         std::recursive_mutex m_subscriptionMutex;
         HWND  m_hwndQtTarget;
-        HWND  m_hHiddenWnd;
         bool  m_joy2KeySupport;
         bool  m_isRegistered;
         bool  m_qtFilterInstalled = false;
+        bool  m_hiddenWindowClassRegistered = false;
+        bool  m_hiddenWindowClassOwned = false;
     };
 
 } // namespace MelonPrime

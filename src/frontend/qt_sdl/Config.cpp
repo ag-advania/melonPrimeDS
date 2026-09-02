@@ -141,7 +141,7 @@ namespace Config
         {"Instance*.Keyboard.HK_MetroidWeaponNext",        Qt::Key_J},
         {"Instance*.Keyboard.HK_MetroidWeaponPrevious",    Qt::Key_K},
         // Preserve legacy wheel→weapon direction: physical wheel down = next,
-        // wheel up = previous (was wheelDelta < 0 → next).
+        // wheel up = previous (was wheelSteps < 0 → next).
         {"Instance*.Keyboard.HK_MetroidWeaponNextSecondary",
             MelonPrime::InputKey::MouseWheelDown},
         {"Instance*.Keyboard.HK_MetroidWeaponPreviousSecondary",

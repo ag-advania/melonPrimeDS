@@ -8,40 +8,24 @@
 
 #include "pointer-constraints-unstable-v1-client-protocol.h"
 #include "relative-pointer-unstable-v1-client-protocol.h"
+#include "MelonPrimeThreadBridge.h"
+#include "MelonPrimeWaylandPointerLockMath.h"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <limits>
-#include <utility>
 
 namespace MelonPrime {
 
-namespace {
-
-std::int32_t TakeIntegralDelta(double& residual, double value)
-{
-    residual += value;
-
-    // Truncate toward zero while preserving the fractional remainder. This avoids
-    // losing sub-pixel Wayland deltas without introducing a directional bias.
-    const double integral = std::trunc(residual);
-    residual -= integral;
-
-    const double lo = static_cast<double>(std::numeric_limits<std::int32_t>::min());
-    const double hi = static_cast<double>(std::numeric_limits<std::int32_t>::max());
-    return static_cast<std::int32_t>(std::clamp(integral, lo, hi));
-}
-
-} // namespace
-
 struct WaylandPointerLock::Impl
 {
-    explicit Impl(DeltaCallback cb) : callback(std::move(cb)) {}
+    explicit Impl(MelonPrimeThreadBridge* target) : deltaTarget(target) {}
 
-    DeltaCallback callback;
+    // Borrowed GUI-thread target. RelativeMotion runs on the thread that
+    // dispatches the borrowed Wayland display and never resolves policy or
+    // core ownership on the event-hot path.
+    MelonPrimeThreadBridge* deltaTarget = nullptr;
 
     wl_display* display = nullptr;            // borrowed from Qt
     wl_registry* registry = nullptr;
@@ -60,8 +44,8 @@ struct WaylandPointerLock::Impl
     bool lockActive = false;
     bool supportLogEmitted = false;
 
-    double residualX = 0.0;
-    double residualY = 0.0;
+    std::int64_t residualX256 = 0;
+    std::int64_t residualY256 = 0;
 
     // Cursor position hint (surface-local, see set_cursor_position_hint in
     // the pointer-constraints protocol), refreshed on every enabled=true
@@ -202,26 +186,23 @@ struct WaylandPointerLock::Impl
         wl_fixed_t dyUnaccelerated)
     {
         auto& self = *static_cast<Impl*>(data);
-        if (!self.lockActive || !self.callback)
+        if (!self.lockActive || !self.deltaTarget)
             return;
-
-        const double acceleratedX = wl_fixed_to_double(dx);
-        const double acceleratedY = wl_fixed_to_double(dy);
-        const double unacceleratedX = wl_fixed_to_double(dxUnaccelerated);
-        const double unacceleratedY = wl_fixed_to_double(dyUnaccelerated);
 
         // Match the existing XInput2 path by preferring non-accelerated motion.
         // Some compositors report zero for both non-accelerated components, so
         // retain accelerated motion as a compatibility fallback.
         const bool haveUnaccelerated =
-            unacceleratedX != 0.0 || unacceleratedY != 0.0;
-        const double sourceX = haveUnaccelerated ? unacceleratedX : acceleratedX;
-        const double sourceY = haveUnaccelerated ? unacceleratedY : acceleratedY;
+            dxUnaccelerated != 0 || dyUnaccelerated != 0;
+        const auto sourceX = haveUnaccelerated ? dxUnaccelerated : dx;
+        const auto sourceY = haveUnaccelerated ? dyUnaccelerated : dy;
 
-        const std::int32_t outX = TakeIntegralDelta(self.residualX, sourceX);
-        const std::int32_t outY = TakeIntegralDelta(self.residualY, sourceY);
+        const std::int32_t outX = TakeWlFixedIntegral(
+            self.residualX256, static_cast<std::int32_t>(sourceX));
+        const std::int32_t outY = TakeWlFixedIntegral(
+            self.residualY256, static_cast<std::int32_t>(sourceY));
         if ((outX | outY) != 0)
-            self.callback(outX, outY);
+            self.deltaTarget->AddPanelAimDeltaFromGui(outX, outY);
     }
 
     static void Locked(void* data, zwp_locked_pointer_v1*)
@@ -273,8 +254,8 @@ struct WaylandPointerLock::Impl
         lockActive = false;
         lockRequested = false;
         lockedSurface = nullptr;
-        residualX = 0.0;
-        residualY = 0.0;
+        residualX256 = 0;
+        residualY256 = 0;
 
         if (lockedPointer)
         {
@@ -458,8 +439,8 @@ struct WaylandPointerLock::Impl
         lockedSurface = surface;
         lockRequested = true;
         lockActive = false;
-        residualX = 0.0;
-        residualY = 0.0;
+        residualX256 = 0;
+        residualY256 = 0;
         wl_display_flush(display);
         return true;
     }
@@ -512,8 +493,8 @@ WaylandPointerLock::Impl::LockedPointerListener = {
     &WaylandPointerLock::Impl::Unlocked,
 };
 
-WaylandPointerLock::WaylandPointerLock(DeltaCallback callback)
-    : m_impl(std::make_unique<Impl>(std::move(callback)))
+WaylandPointerLock::WaylandPointerLock(MelonPrimeThreadBridge* deltaTarget)
+    : m_impl(std::make_unique<Impl>(deltaTarget))
 {
 }
 
@@ -522,6 +503,12 @@ WaylandPointerLock::~WaylandPointerLock()
     // MELONPRIME_LINUX_MOUSE_INPUT_HARDENING_V2
     if (m_impl)
         m_impl->Shutdown();
+}
+
+void WaylandPointerLock::setDeltaTarget(
+    MelonPrimeThreadBridge* deltaTarget) noexcept
+{
+    m_impl->deltaTarget = deltaTarget;
 }
 
 bool WaylandPointerLock::setLocked(

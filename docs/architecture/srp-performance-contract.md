@@ -10,6 +10,7 @@ Contract for the MelonPrime SRP refactor v3 immediate plan. Audited by
 | `RuntimeConfigSnapshot` | Config read, clamp, developer gate, derived bools | Core member mutation, pending clears, `RecalcAimEffectiveFixedScale` |
 | `AimConfigSnapshot` (Phase 10) | Aim sensitivity/Y-scale/adjust read | Core member mutation, `RecalcAimFixedPoint` |
 | `InputProjection` | Hotkey → down/press projection | Aim pipeline, SnapTap policy |
+| `MelonPrimeGameInput.cpp` input owner | Frame projection consumption, Aim-derived state, specialized action latches, lifecycle reset profiles | Config lookup, generic command bus, platform-specific game semantics |
 | `ScreenCursorPolicy` | Platform cursor clip/warp/capture | Mouse event routing, HUD editor bridge |
 | `HudEditorFormBuilder` | Shared HUD editor helpers | `QColorDialog` direct calls, `Config::Save` |
 | `PatchLifecycleGateway` | Lifecycle patch apply/restore | RunFrameHook per-frame patches, Custom HUD patch state |
@@ -34,6 +35,11 @@ Contract for the MelonPrime SRP refactor v3 immediate plan. Audited by
 | `MelonPrimeHudStateEpoch.inc` | Config-cache and visual-generation entry points | RAM sampling, drawing, patch operations |
 | `MelonPrimePatchAimSmoothing` | Aim smoothing ARM9 instruction patch and its preconditions | Game setting RAM writes, patch scheduling |
 | `MelonPrimeGameSettings` | MPH setting RAM writes | ARM9 instruction patching |
+
+The field-level input ownership, cadence and physical-move risk map is maintained
+in [input/input-srp-ownership.md](input/input-srp-ownership.md). Logical owners
+use embedded Core storage where locality is load-bearing; SRP does not imply a
+heap object or one class per responsibility.
 
 ## Rendering backend ownership
 

@@ -4,6 +4,7 @@ include(FixInterfaceIncludes)
 
 set(MELONPRIME_WINDOWS_ONLY_SOURCES
     MelonPrimeRawInputWinFilter.cpp
+    MelonPrimeRawHotkeyVkMapping.cpp
     MelonPrimeRawHotkeyVkBinding.cpp
     MelonPrimeRawInputState.cpp
     MelonPrimeRawWinInternal.cpp
@@ -25,6 +26,7 @@ set(SOURCES_QT_SDL
     EmuInstance.cpp
     EmuInstanceAudio.cpp
     EmuInstanceInput.cpp
+    MelonPrimeJoystickDevice.cpp
     EmuThread.cpp
     CheatImportDialog.cpp
     CheatsDialog.cpp
@@ -150,6 +152,14 @@ option(MELONPRIME_REQUIRE_QT6_5
     "Fail configure unless the selected Qt is Qt 6.5 or newer"
     OFF)
 option(MELONPRIME_ENABLE_DEVELOPER_FEATURES "Enable MelonPrime developer-only settings and patches" OFF)
+
+option(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY
+    "Compile Windows Raw Input performance telemetry"
+    OFF)
+
+option(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY
+    "Compile platform input debug telemetry"
+    OFF)
 
 if (MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     list(APPEND SOURCES_QT_SDL
@@ -471,6 +481,54 @@ add_custom_target(melonprime_hud_classic_layout_check ALL
     COMMENT "Running Classic On-Screen Edit Qt geometry tests..."
     VERBATIM)
 
+if (WIN32)
+    # Exercise the production Qt-identity -> VK compiler directly. Source
+    # token audits cannot prove that left/right modifier identities remain
+    # disjoint at runtime.
+    add_executable(melonprime_raw_hotkey_vk_mapping_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/raw-hotkey-vk-mapping-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRawHotkeyVkMapping.cpp)
+    target_include_directories(melonprime_raw_hotkey_vk_mapping_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_raw_hotkey_vk_mapping_tests PRIVATE
+        MELONPRIME_DS)
+    target_link_libraries(melonprime_raw_hotkey_vk_mapping_tests PRIVATE ${QT_LINK_LIBS})
+    set_target_properties(melonprime_raw_hotkey_vk_mapping_tests PROPERTIES
+        WIN32_EXECUTABLE OFF
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_raw_hotkey_vk_mapping_check ALL
+        COMMAND $<TARGET_FILE:melonprime_raw_hotkey_vk_mapping_tests>
+        DEPENDS melonprime_raw_hotkey_vk_mapping_tests
+        COMMENT "Running Windows Raw hotkey VK mapping tests..."
+        VERBATIM)
+
+    # Exercise the production HiddenWndProc recovery classifier with a fake
+    # GetRawInputData boundary. This keeps pure-motion and wheel-only dispatch
+    # off the recovery mailbox while retaining failure and stateful-event
+    # recovery without requiring a real device or message queue.
+    add_executable(melonprime_raw_recovery_hint_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/raw-recovery-hint-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRawInputState.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRawWinInternal.cpp)
+    target_include_directories(melonprime_raw_recovery_hint_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_raw_recovery_hint_tests PRIVATE
+        MELONPRIME_DS)
+    target_link_libraries(melonprime_raw_recovery_hint_tests PRIVATE ${QT_LINK_LIBS})
+    set_target_properties(melonprime_raw_recovery_hint_tests PROPERTIES
+        WIN32_EXECUTABLE OFF
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_raw_recovery_hint_check ALL
+        COMMAND $<TARGET_FILE:melonprime_raw_recovery_hint_tests>
+        DEPENDS melonprime_raw_recovery_hint_tests
+        COMMENT "Running Windows Raw recovery hint tests..."
+        VERBATIM)
+endif()
+
 # MelonPrimeDS: keep the CMake target name "melonDS" (so all the target_* calls
 # below stay untouched), but emit the binary as "melonPrimeDS" (melonPrimeDS.exe
 # on Windows). The Apple block further down overrides OUTPUT_NAME for the bundle.
@@ -582,6 +640,32 @@ else()
         "MelonPrime renderer performance telemetry: COMPILED OUT")
 endif()
 
+if (WIN32 AND MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)
+    target_compile_definitions(core PRIVATE
+        MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=1)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=1)
+    message(STATUS
+        "MelonPrime Raw Input performance telemetry: COMPILED IN. "
+        "Set MELONPRIME_RAW_INPUT_PERF=1 at runtime to enable collection.")
+else()
+    message(STATUS
+        "MelonPrime Raw Input performance telemetry: COMPILED OUT")
+endif()
+
+if (MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
+    target_compile_definitions(core PRIVATE
+        MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=1)
+    target_compile_definitions(melonDS PRIVATE
+        MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=1)
+    message(STATUS
+        "MelonPrime input debug telemetry: COMPILED IN. "
+        "Set MELONPRIME_INPUT_DEBUG=1 at runtime to enable collection.")
+else()
+    message(STATUS
+        "MelonPrime input debug telemetry: COMPILED OUT")
+endif()
+
 if (MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY)
     target_compile_definitions(core PRIVATE
         MELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=1)
@@ -597,6 +681,31 @@ endif()
 # Backend-neutral structured input upload planning. A unit wrongly considered
 # clean leaves last frame's 2D content on screen with no error anywhere, so the
 # extraction is checked against a transcription of the pre-refactor computation.
+add_executable(melonprime_wayland_fixed_delta_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/wayland-fixed-delta-tests.cpp)
+target_include_directories(melonprime_wayland_fixed_delta_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(melonprime_wayland_fixed_delta_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_wayland_fixed_delta_check ALL
+    COMMAND $<TARGET_FILE:melonprime_wayland_fixed_delta_tests>
+    DEPENDS melonprime_wayland_fixed_delta_tests
+    COMMENT "Running Wayland fixed-point delta parity tests..."
+    VERBATIM)
+
+# The Linux XI2 reset mailbox is a lifecycle fence, not a per-event signal.
+# Keep its bounded-chunk ordering model executable on every build host; the
+# model has no X11 dependency and therefore also protects cross-platform CI.
+add_executable(melonprime_linux_reset_fence_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/linux-reset-fence-tests.cpp)
+set_target_properties(melonprime_linux_reset_fence_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_linux_reset_fence_check ALL
+    COMMAND $<TARGET_FILE:melonprime_linux_reset_fence_tests>
+    DEPENDS melonprime_linux_reset_fence_tests
+    COMMENT "Running Linux XI2 reset-fence state-model tests..."
+    VERBATIM)
+
 add_executable(melonprime_structured_upload_plan_tests EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tools/testing/structured-upload-plan-tests.cpp)
 target_include_directories(melonprime_structured_upload_plan_tests PRIVATE
