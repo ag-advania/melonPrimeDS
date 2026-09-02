@@ -260,7 +260,11 @@ certification. `--check-budget` requires an explicit `--mode keyboard`,
 legacy artifacts use the explicit `--historical-analysis` path, which is
 always labeled `certified=false` and never treated as a strict budget pass.
 The legacy compatibility flags `--allow-legacy-first-n` and
-`--allow-legacy-raw-unversioned` are accepted only on that historical path.
+`--allow-legacy-raw-unversioned` are deprecated compatibility options accepted
+only on that historical path; they do not make a historical result certifiable.
+Markdown summaries repeat the certification scope, certified state, selected
+mode, capture verification, minimum sample requirement, and budget-check state
+so the artifact remains self-describing without its JSON sidecar.
 
 Raw stage reports expose `calls` and cumulative service/capture-lifetime `max`,
 `retained`, p50/p95/p99, and retained-window `retained_max` for snapshot, late

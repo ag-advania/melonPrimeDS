@@ -353,26 +353,45 @@ def parse_log(path: Path) -> dict[str, Any]:
     lock_reports: list[dict[str, int]] = []
     generic_capture_only_by_instance: dict[str, bool] = {}
     raw_capture_only: bool | None = None
+    pending_generic_capture: dict[str, bool] = {}
+    pending_raw_capture: bool | None = None
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw_line.strip()
         generic_capture_match = GENERIC_CAPTURE_MODE_RE.match(line)
         if generic_capture_match:
-            generic_capture_only_by_instance[
+            pending_generic_capture[
                 generic_capture_match.group("instance_id")
             ] = generic_capture_match.group("capture_only") == "1"
             continue
         raw_capture_match = RAW_CAPTURE_MODE_RE.match(line)
         if raw_capture_match:
-            raw_capture_only = raw_capture_match.group("capture_only") == "1"
+            pending_raw_capture = raw_capture_match.group("capture_only") == "1"
             continue
         input_match = INPUT_RE.match(line)
         if input_match:
             parsed = parse_input_body(input_match.group("body"))
+            instance_id = parse_input_instance_id(input_match.group("body"))
+            instance_key = str(instance_id) if instance_id is not None else "unbound"
+            capture_only = pending_generic_capture.pop(instance_key, None)
+            if instance_id is None:
+                # An unbound/legacy report cannot consume an instance marker.
+                # Drop all pending markers rather than allowing one to leak to
+                # a later, unrelated report generation.
+                pending_generic_capture.clear()
+                generic_capture_only_by_instance.clear()
             if parsed:
                 input_reports.append(parsed)
-                instance_id = parse_input_instance_id(input_match.group("body"))
-                instance_key = str(instance_id) if instance_id is not None else "unbound"
                 latest_input_by_instance[instance_key] = parsed
+                if capture_only is None:
+                    # A newer markerless report invalidates any marker attached
+                    # to an older report for the same instance.
+                    generic_capture_only_by_instance.pop(instance_key, None)
+                else:
+                    generic_capture_only_by_instance[instance_key] = capture_only
+            else:
+                # A malformed report still consumes its pending marker and
+                # invalidates any provenance retained for that instance.
+                generic_capture_only_by_instance.pop(instance_key, None)
             continue
         latency_match = EXPLICIT_LATENCY_RE.match(line)
         if latency_match:
@@ -385,6 +404,8 @@ def parse_log(path: Path) -> dict[str, Any]:
             continue
         raw_match = RAW_STAGE_RE.match(line)
         if raw_match:
+            raw_capture_only = pending_raw_capture
+            pending_raw_capture = None
             raw_reports.append(parse_raw_stage(raw_match, RETENTION_LATEST_N))
             continue
         raw_legacy_match = RAW_STAGE_LEGACY_RE.match(line)
@@ -393,10 +414,17 @@ def parse_log(path: Path) -> dict[str, Any]:
             # the artifact did not identify its retained population. Keep that
             # distinction explicit instead of silently treating it as the
             # current fully surfaced format.
+            raw_capture_only = pending_raw_capture
+            pending_raw_capture = None
             raw_reports.append(
                 parse_raw_stage(raw_legacy_match, RETENTION_LEGACY_UNVERSIONED)
             )
             continue
+        if line.startswith("[MelonPrimeRawPerf] stage_us "):
+            # A malformed/newer stage report must not leave the preceding
+            # marker available for a later report.
+            pending_raw_capture = None
+            raw_capture_only = None
         lock_match = RAW_LOCK_RE.match(line)
         if lock_match:
             lock_reports.append({
@@ -673,13 +701,34 @@ def format_optional_us(value: Any) -> str:
     return "n/a" if value is None else f"{float(value):.1f}"
 
 
-def markdown(summary: dict[str, Any]) -> str:
+def markdown(
+    summary: dict[str, Any], *, mode: str = "all",
+    certification_scope: str = "summary_only", certified: bool = False,
+    historical_analysis: bool = False, capture_verified: bool | None = None,
+    minimum_input_samples: int = MIN_CERTIFICATION_SAMPLES,
+    budget_checked: bool = False,
+) -> str:
+    if capture_verified is None:
+        capture_verified = capture_mode_verified(summary, mode)
     lines = [
         "# Input performance summary",
         "",
         f"Source: `{summary['path']}`",
+        f"Certification scope: {certification_scope}",
+        f"Certified: {'true' if certified else 'false'}",
+        f"Historical analysis: {'true' if historical_analysis else 'false'}",
+        f"Mode: {mode}",
+        f"Capture-only verified: {'true' if capture_verified else 'false'}",
+        f"Minimum samples: {minimum_input_samples}",
+        f"Budget checked: {'true' if budget_checked else 'false'}",
         f"Retention mode: `{summary.get('retention_mode') or 'unknown'}`",
     ]
+    if historical_analysis:
+        lines.extend([
+            "",
+            "> NOT A CERTIFICATION RESULT",
+            "> Historical analysis only.",
+        ])
     generic_capture = summary.get("generic_capture_only_by_instance", {})
     if generic_capture:
         capture_values = ", ".join(
@@ -1003,6 +1052,94 @@ def self_test() -> None:
             raise SummaryError("self-test did not label strict certification scope")
         if strict_output["capture_mode_verified"] is not True:
             raise SummaryError("self-test did not verify strict capture mode")
+        strict_markdown_path = Path(directory) / "strict.md"
+        return_code, _, stderr = run_cli([
+            "--mode", "controller", "--check-budget",
+            "--markdown-out", str(strict_markdown_path),
+            str(controller_valid_path),
+        ])
+        if return_code != 0 or stderr:
+            raise SummaryError("self-test could not render strict Markdown")
+        strict_rendered = strict_markdown_path.read_text(encoding="utf-8")
+        for needle in (
+            "Certification scope: strict",
+            "Certified: true",
+            "Mode: controller",
+            "Capture-only verified: true",
+            "Minimum samples: 1000",
+            "Budget checked: true",
+        ):
+            if needle not in strict_rendered:
+                raise SummaryError(
+                    f"self-test did not render strict metadata: {needle}"
+                )
+
+        historical_markdown_path = Path(directory) / "historical.md"
+        return_code, _, stderr = run_cli([
+            "--historical-analysis", "--markdown-out",
+            str(historical_markdown_path), str(markerless_path),
+        ])
+        if return_code != 0 or stderr:
+            raise SummaryError("self-test could not render historical Markdown")
+        historical_rendered = historical_markdown_path.read_text(encoding="utf-8")
+        for needle in (
+            "Certification scope: historical_analysis",
+            "Certified: false",
+            "Historical analysis: true",
+            "Mode: all",
+            "Capture-only verified: false",
+            "> NOT A CERTIFICATION RESULT",
+            "> Historical analysis only.",
+        ):
+            if needle not in historical_rendered:
+                raise SummaryError(
+                    f"self-test did not render historical metadata: {needle}"
+                )
+
+        markerless_report = controller_valid.replace(
+            "[MelonPrimePerf] capture_mode instance_id=0 capture_only=1\n",
+            "",
+        )
+        mixed_generic_path = Path(directory) / "mixed-generic-generation.log"
+        mixed_generic_path.write_text(
+            controller_valid + markerless_report, encoding="utf-8"
+        )
+        mixed_generic_summary = parse_log(mixed_generic_path)
+        if mixed_generic_summary["generic_capture_only_by_instance"]:
+            raise SummaryError("self-test reused a generic marker across reports")
+        expect_rejection(
+            "mixed-generic-generation.log", controller_valid + markerless_report,
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+
+        reverse_generic = controller_valid.replace(
+            "capture_only=1", "capture_only=0", 1
+        ) + controller_valid
+        reverse_generic_path = Path(directory) / "reverse-generic-generation.log"
+        reverse_generic_path.write_text(reverse_generic, encoding="utf-8")
+        reverse_generic_summary = parse_log(reverse_generic_path)
+        if reverse_generic_summary["generic_capture_only_by_instance"] != {"0": True}:
+            raise SummaryError("self-test did not bind the newest generic marker")
+        enforce(
+            reverse_generic_summary, "controller", MIN_CERTIFICATION_SAMPLES
+        )
+
+        instance_one_report = controller_valid.replace(
+            "instance_id=0", "instance_id=1"
+        )
+        multi_instance_path = Path(directory) / "multi-instance-marker-reuse.log"
+        multi_instance_path.write_text(
+            controller_valid + instance_one_report + markerless_report,
+            encoding="utf-8",
+        )
+        multi_instance_summary = parse_log(multi_instance_path)
+        if multi_instance_summary["generic_capture_only_by_instance"] != {"1": True}:
+            raise SummaryError("self-test reused a marker between instances")
+        expect_rejection(
+            "multi-instance-marker-reuse.log",
+            controller_valid + instance_one_report + markerless_report,
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
 
         return_code, _, stderr = run_cli([
             "--mode", "controller", "--check-budget",
@@ -1067,6 +1204,33 @@ def self_test() -> None:
         expect_rejection(
             "raw-insufficient.log", raw_insufficient,
             "raw", "raw snapshot has 2 calls",
+        )
+
+        raw_stage = next(
+            line for line in raw_insufficient.splitlines()
+            if line.startswith("[MelonPrimeRawPerf] stage_us ")
+        )
+        raw_stage = raw_stage.replace(
+            "calls=2 retained=2", "calls=1000 retained=1000"
+        )
+        raw_generic_prefix = "\n".join(
+            line for line in raw_insufficient.splitlines()
+            if line.startswith("[MelonPrimePerf] ")
+        )
+        raw_mixed = "\n".join([
+            raw_generic_prefix,
+            "[MelonPrimeRawPerf] capture_mode capture_only=1",
+            raw_stage,
+            raw_stage,
+        ]) + "\n"
+        raw_mixed_path = Path(directory) / "mixed-raw-generation.log"
+        raw_mixed_path.write_text(raw_mixed, encoding="utf-8")
+        raw_mixed_summary = parse_log(raw_mixed_path)
+        if raw_mixed_summary["raw_capture_only"] is not None:
+            raise SummaryError("self-test reused a Raw marker across reports")
+        expect_rejection(
+            "mixed-raw-generation.log", raw_mixed, "raw",
+            "verified MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY run",
         )
 
         keyboard_contamination = "\n".join([
@@ -1149,12 +1313,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--allow-legacy-first-n",
         action="store_true",
-        help="compatibility opt-in for legacy first-N historical analysis",
+        help="deprecated compatibility flag for historical analysis only",
     )
     parser.add_argument(
         "--allow-legacy-raw-unversioned",
         action="store_true",
-        help="compatibility opt-in for legacy Raw historical analysis",
+        help="deprecated compatibility flag for historical analysis only",
     )
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--markdown-out", type=Path)
@@ -1206,15 +1370,16 @@ def main(argv: list[str] | None = None) -> int:
             "historical_analysis" if args.historical_analysis else
             "summary_only"
         )
+        capture_verified = all(
+            capture_mode_verified(summary, mode) for summary in summaries
+        )
         output: dict[str, Any] = {
             "schema_version": 6,
             "mode": mode,
             "certification_scope": certification_scope,
             "certified": bool(args.check_budget),
             "historical_analysis": args.historical_analysis,
-            "capture_mode_verified": all(
-                capture_mode_verified(summary, mode) for summary in summaries
-            ),
+            "capture_mode_verified": capture_verified,
             "minimum_input_samples": args.min_input_samples,
             "budget_checked": args.check_budget,
             "allow_legacy_first_n": args.allow_legacy_first_n,
@@ -1227,7 +1392,18 @@ def main(argv: list[str] | None = None) -> int:
         if args.markdown_out:
             if len(summaries) != 1:
                 raise SummaryError("--markdown-out requires exactly one telemetry log")
-            args.markdown_out.write_text(markdown(summaries[0]), encoding="utf-8")
+            args.markdown_out.write_text(
+                markdown(
+                    summaries[0], mode=mode,
+                    certification_scope=certification_scope,
+                    certified=bool(args.check_budget),
+                    historical_analysis=args.historical_analysis,
+                    capture_verified=capture_verified,
+                    minimum_input_samples=args.min_input_samples,
+                    budget_checked=args.check_budget,
+                ),
+                encoding="utf-8",
+            )
         if not args.json_out and not args.markdown_out:
             print(rendered_json, end="")
         return 0

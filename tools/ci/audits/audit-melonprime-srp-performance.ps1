@@ -2325,8 +2325,12 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
     $inputPerfSummarizerText -notmatch 'generic_capture_only_by_instance' -or
     $inputPerfSummarizerText -notmatch 'raw_capture_only' -or
     $inputPerfSummarizerText -notmatch 'capture_mode_verified' -or
+    $inputPerfSummarizerText -notmatch 'pending_generic_capture' -or
+    $inputPerfSummarizerText -notmatch 'pending_raw_capture' -or
     $inputPerfSummarizerText -notmatch 'certification_scope' -or
     $inputPerfSummarizerText -notmatch 'historical_analysis' -or
+    $inputPerfSummarizerText -notmatch 'Certification scope:' -or
+    $inputPerfSummarizerText -notmatch 'NOT A CERTIFICATION RESULT' -or
     $inputPerfSummarizerText -notmatch 'retention_mode' -or
     $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*6' -or
     $inputContractText -notmatch 'latest-N' -or
@@ -2504,7 +2508,13 @@ if ($inputPerfSummarizerText -notmatch 'joystick_sample' -or
     $inputPerfSummarizerText -notmatch
         'self-test allowed an implicit all budget certification' -or
     $inputPerfSummarizerText -notmatch
-        'self-test certified a historical analysis') {
+        'self-test certified a historical analysis' -or
+    $inputPerfSummarizerText -notmatch
+        'mixed-generic-generation' -or
+    $inputPerfSummarizerText -notmatch
+        'multi-instance-marker-reuse' -or
+    $inputPerfSummarizerText -notmatch
+        'mixed-raw-generation') {
     Add-Error 'Rule CH: mode-specific budget evidence gates are incomplete'
 }
 
