@@ -20,8 +20,8 @@ invalidate that responsibility's internal state.
 | `FrameInputState` (`down`, `press`, mouse delta, wheel count, move index) | `UpdateInputStateImpl` in `MelonPrimeGameInput.cpp` | input snapshot path; full clear only on timeline replacement | move/buttons, actions, Aim | once per emulated frame; bounded reentrant projection | Critical: aligned 64-byte CL0; do not copy or heap-separate |
 | hotkey to `down` / `press` projection | `MelonPrimeInputProjection.h` | stateless | `UpdateInputStateImpl` | once per input snapshot | Low: header-only fixed arithmetic; no state to move |
 | platform relative delta / Raw Input edge and wheel acquisition | platform filter plus `MelonPrimeInputSubscription` | platform owner and registration-generation transaction | `UpdateInputStateImpl` | per event plus one frame snapshot | Critical: single-writer atomics and generation ordering are load-bearing |
-| SDL controller lifetime and capability state | `EmuInstance::openJoystick` / `closeJoystick` under `joyMutex` | physical owner publishes `joystickGameplayResetPending` only | absent-device lifecycle probe and physical sampler | lifecycle edge; active devices are attachment-checked by the required sample | High: GUI/config writers never mutate command/gameplay-derived masks |
-| controller physical acquisition | EmuThread `sampleJoystickPhysicalLocked` under `joyMutex` | central lifetime owner | command and gameplay projection | once immediately before a running guest frame; once per low-rate paused outer cycle while connected | Critical: the initialized source count is explicit; fixed scratch is not maximum-size zeroed |
+| SDL controller lifetime and capability state | per-instance `MelonPrimeJoystickDevice` (`openJoystick` / `closeJoystick` orchestration) under its `Mutex()` | physical owner publishes `joystickGameplayResetPending` only | absent-device lifecycle probe and physical sampler | lifecycle edge; active devices are attachment-checked by the required sample | High: device pointers/capabilities never share the old process-wide joystick lock |
+| controller physical acquisition | EmuThread `sampleJoystickPhysicalLocked` under the device's per-instance `Mutex()` | central lifetime owner | command and gameplay projection | once immediately before a running guest frame; once per low-rate paused outer cycle while connected | Critical: the initialized source count is explicit; fixed scratch is not maximum-size zeroed |
 | controller global-command snapshot | EmuThread `projectJoystickCommandState` | `resetJoystickConsumerState`; reconnect uses a command-only baseline | outer Pause/Reset/frame/window command edge detection | running late sample, or paused outer-cycle refresh | Critical: remains live without guest frames and never mutates gameplay baseline/mailbox state |
 | late SDL gameplay snapshot | EmuThread `projectJoystickGameplayState` | `resetJoystickConsumerState`; EmuThread owns the edge baseline | MelonPrime gameplay projection only | once immediately before `RunFrameHook` | Critical: reentrant samples refresh held state but never commit the press baseline |
 | compiled joystick sources/fanout | `EmuInstance::inputLoadConfig` | config reload/device rebind | shared physical sampler/projector | cold rebuild; unique physical sources sampled once | High: fixed storage; asserted source indices, direction predicates and mask fanout run outside the mutex |
@@ -162,11 +162,14 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   the filter destroys its old hidden HWND and creates a replacement before the
   new registration; this invalidates queued `WM_INPUT` from the old epoch
   without adding steady-frame work. The buffered Raw drain is private to
-  `RawInputWinFilter`, and the only foreign-subscription reset remains under
-  its recursive subscription mutex.
+  `RawInputWinFilter`. Its control-plane mutex covers subscription/lifecycle
+  changes, while each retained subscription has a recursive frame/data lock for
+  state, HWND identity, and re-entrant dispatch. Retired subscription records
+  stay owned by the service until teardown so a published raw pointer cannot
+  become dangling on the frame path.
 - `HiddenWndProc` is deliberately minimal on the event-hot path: it loads the
-  active subscription under that mutex, compares only `hiddenWindow == hwnd`,
-  and then processes the handle. Its decoder returns a small recovery hint so
+  active subscription, acquires only that subscription's frame lock, compares
+  `hiddenWindow == hwnd`, and then processes the handle. Its decoder returns a small recovery hint so
   successful relative motion and wheel-only messages do not publish the
   post-frame scan; keyboard, mouse-button, and Raw read failures remain
   fail-safe. `GetWindowLongPtr*`, `GetCurrentThreadId`, Qt, config and clock
@@ -208,8 +211,19 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   Input debug counters and Linux diagnostic formatting are compiled only under
   `MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY`, which release presets force off.
 - The controller binding-program generation is plain mutex-guarded state; its
-  publication and activation both occur under `joyMutex`, leaving one
-  synchronization authority.
+  publication and activation both occur under the device's per-instance
+  `Mutex()`, leaving one synchronization authority without process-wide
+  steady-state serialization.
+
+`MelonPrimeJoystickDevice` is a value member of each `EmuInstance`. It owns the
+`SDL_Joystick*`, optional `SDL_GameController*`, capability flags, rumble state,
+and a per-device SDL mutex. `SDL_JoystickUpdate`, enumeration, open, and close
+use a short process-level SDL lock because those operations touch SDL's shared
+bookkeeping; button/hat/axis reads, sensor reads, and rumble do not hold that
+process lock. Consequently two instances with different devices cannot
+serialize their steady-state physical reads. The component exposes only direct
+`*_Locked` calls, so the frame path adds no virtual dispatch, heap object, or
+generic callback layer.
 
 ## Frame-order contract
 

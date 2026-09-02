@@ -553,6 +553,13 @@ void EmuThread::run()
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::FrameSetup);
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::Input);
         MelonPrimePerf::MarkInputSample();
+        // The input budget starts after the limiter. inputProcess() owns the
+        // outer command edge, while this interval measures the latency-critical
+        // physical sample through the final pre-RunFrame commit.
+        const bool nestedInputFrame =
+            melonPrime->IsNestedFrameAdvanceForInput();
+        if (!nestedInputFrame)
+            MelonPrimePerf::BeginInputTotal();
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
         // Reflex INPUT_SAMPLE marks the point immediately before the first
         // input read. It must precede both SDL's joystick refresh and the raw
@@ -564,8 +571,7 @@ void EmuThread::run()
         if (vulkanLowLatencyRenderer)
             emuInstance->markVulkanReflexInputSample();
 #endif
-        emuInstance->inputRefreshJoystickState(
-            !melonPrime->IsNestedFrameAdvanceForInput());
+        emuInstance->inputRefreshJoystickState(!nestedInputFrame);
 #endif
 
         // emulate
@@ -617,6 +623,11 @@ void EmuThread::run()
 #endif
         }
         MelonPrimePerf::SectionEnd(MelonPrimePerf::Section::Input);
+        // Close the post-limiter input transaction after the late joystick
+        // sample and RunFrameHook/SetKeyMask commit, while preserving the
+        // existing RunFrameHook-before-GL ordering.
+        if (!nestedInputFrame)
+            MelonPrimePerf::EndInputTotal();
         MelonPrimePerf::SectionBegin(MelonPrimePerf::Section::PreRun);
 #endif
 

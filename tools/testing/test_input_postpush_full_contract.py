@@ -983,6 +983,8 @@ def check_windows_source_selection_model() -> None:
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
     input_cpp = source("src/frontend/qt_sdl/EmuInstanceInput.cpp")
+    joystick_device = source("src/frontend/qt_sdl/MelonPrimeJoystickDevice.cpp")
+    joystick_device_header = source("src/frontend/qt_sdl/MelonPrimeJoystickDevice.h")
     raw_state_header = source("src/frontend/qt_sdl/MelonPrimeRawInputState.h")
     raw_state_cpp = source("src/frontend/qt_sdl/MelonPrimeRawInputState.cpp")
     mouse_button = source("src/frontend/qt_sdl/MelonPrimeMouseButton.h")
@@ -1027,9 +1029,32 @@ def main() -> None:
     raw_hotkey_mapping_test = source("tools/testing/raw-hotkey-vk-mapping-tests.cpp")
     raw_recovery_hint_test = source("tools/testing/raw-recovery-hint-tests.cpp")
     qt_sdl_cmake = source("src/frontend/qt_sdl/CMakeLists.txt")
+    require(qt_sdl_cmake, "MelonPrimeJoystickDevice.cpp", "joystick component build registration")
     input_subscription = source("src/frontend/qt_sdl/MelonPrimeInputSubscription.h")
     core = source("src/frontend/qt_sdl/MelonPrime.cpp")
     lifecycle = source("src/frontend/qt_sdl/MelonPrimeLifecycle.cpp")
+
+    # IN-PERF-001 / IN-SRP-006: SDL device lifetime is a per-instance
+    # component; only process-global SDL update/enumeration work is shared.
+    require(joystick_device_header, "class MelonPrimeJoystickDevice final", "per-instance joystick component")
+    for needle in (
+        "std::shared_ptr<SDL_mutex> m_mutex",
+        "SDL_Joystick* m_joystick",
+        "SDL_GameController* m_controller",
+        "bool OpenLocked(int& joystickId) noexcept",
+        "void CloseLocked() noexcept",
+        "void UpdateLocked() noexcept",
+        "[[nodiscard]] bool SampleSourceLocked(",
+        "void RumbleStartLocked(uint32_t lenMs) noexcept",
+        "[[nodiscard]] bool ReadMotionLocked(",
+    ):
+        require(joystick_device_header, needle, "per-device SDL ownership")
+    require(joystick_device, "std::mutex s_sdlProcessMutex", "process-level SDL lock")
+    require(joystick_device, "SDL_JoystickUpdate()", "SDL update ownership")
+    if joystick_device.count("SDL_JoystickUpdate()") != 1:
+        raise AssertionError("SDL_JoystickUpdate must have one component owner")
+    if "joyMutexGlobal" in header + input_cpp:
+        raise AssertionError("global joystick mutex reappeared")
 
     process = body(
         input_cpp,
@@ -1303,6 +1328,7 @@ def main() -> None:
     require(sample_locked, "SDL_JoystickGetButton", "button physical sample")
     require(sample_locked, "SDL_JoystickGetHat", "hat physical sample")
     require(sample_locked, "SDL_JoystickGetAxis", "axis physical sample")
+    require(sample_locked, "joystickDevice.SampleSourceLocked(", "component joystick sample")
     if "SDL_LockMutex" in projection or "SDL_UnlockMutex" in projection:
         raise AssertionError("numeric controller projection must stay outside SDL lock")
     require(header, "int32_t sourceValue[kMaxJoystickCompiledEntries];", "uninitialized fixed scratch")
@@ -1408,8 +1434,13 @@ def main() -> None:
         raise AssertionError("late joystick poll must precede RunFrameHook")
     require(
         emu_thread,
-        "!melonPrime->IsNestedFrameAdvanceForInput()",
+        "const bool nestedInputFrame",
         "reentrant edge commit gate",
+    )
+    require(
+        emu_thread,
+        "inputRefreshJoystickState(!nestedInputFrame)",
+        "reentrant input refresh argument",
     )
 
     for needle in (
@@ -1783,7 +1814,8 @@ def main() -> None:
 
     # AW+: inactive Raw consumers and non-owner false updates must not touch
     # the process-wide recursive mutex. Every maybe-owner path retains a
-    # locked revalidation before reading mutable subscription state.
+    # locked revalidation before reading mutable subscription state. The
+    # steady-state frame data lock is subscription-local.
     require(raw_filter_header, "MelonPrimeRawInputPerfProbe.h", "Raw perf probe include")
     for name, text_value in (
         ("UpdateOwnerAndSnapshot", raw_fused),
@@ -1791,9 +1823,11 @@ def main() -> None:
         ("LateLatchMouseDelta", raw_late),
     ):
         require(text_value, "m_activeSubscription.load(std::memory_order_acquire)", f"{name} active precheck")
-        require(text_value, "RawInputPerf::SubscriptionMutexGuard", f"{name} measured lock")
-        if text_value.index("m_activeSubscription.load(std::memory_order_acquire)") > text_value.index("RawInputPerf::SubscriptionMutexGuard"):
+        require(text_value, "RawInputPerf::FrameMutexGuard", f"{name} measured frame lock")
+        if text_value.index("m_activeSubscription.load(std::memory_order_acquire)") > text_value.index("RawInputPerf::FrameMutexGuard"):
             raise AssertionError(f"{name} must precheck active ownership before locking")
+        if name in ("DeferredDrain", "LateLatchMouseDelta") and "RawInputPerf::SubscriptionMutexGuard" in text_value:
+            raise AssertionError(f"{name} must not use the control-plane mutex on the steady path")
     require(raw_deactivate_owner, "const bool rawOwner", "DeactivateOwner Raw authority precheck")
     require(raw_deactivate_owner, "const bool platformOwner", "DeactivateOwner platform authority precheck")
     require(raw_deactivate_owner, "if (LIKELY(!rawOwner && !platformOwner))", "DeactivateOwner lock-free false path")
@@ -1846,6 +1880,12 @@ def main() -> None:
     for needle in (
         "MELONPRIME_RAW_INPUT_PERF",
         "MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY",
+        "RawSubscriptionLockWait",
+        "RawSnapshot",
+        "RawLateLatch",
+        "RawDeferredDrain",
+        "RawBatchCallCount",
+        "RawBatchEventCount",
         "mutexAcquisitions",
         "rawBufferCalls",
         "getAsyncKeyStateCalls",
@@ -1911,17 +1951,20 @@ def main() -> None:
         if forbidden in hidden_proc:
             raise AssertionError(f"HiddenWndProc event-hot path still contains {forbidden!r}")
     for needle in (
-        "RawInputPerf::SubscriptionMutexGuard",
+        "RawInputPerf::FrameMutexGuard",
         "m_activeSubscription.load(\n                std::memory_order_relaxed)",
         "subscription->hiddenWindow == hwnd",
         "auto* const state = subscription->state.get();",
     ):
         require(hidden_proc, needle, "minimal HiddenWndProc routing")
-    lock_at = hidden_proc.index("RawInputPerf::SubscriptionMutexGuard")
+    lock_at = hidden_proc.index("RawInputPerf::FrameMutexGuard")
     active_at = hidden_proc.index("m_activeSubscription.load")
+    hwnd_at = hidden_proc.index("subscription->hiddenWindow == hwnd")
     state_at = hidden_proc.index("subscription->state.get()")
-    if not lock_at < active_at < state_at:
-        raise AssertionError("active Raw subscription must be loaded and dereferenced under its mutex")
+    if "RawInputPerf::SubscriptionMutexGuard" in hidden_proc:
+        raise AssertionError("HiddenWndProc must not use the control-plane mutex")
+    if not active_at < lock_at < hwnd_at < state_at:
+        raise AssertionError("HiddenWndProc must validate the active subscription before its local frame lock and state")
     for needle in (
         "const DWORD currentThreadId = GetCurrentThreadId();",
         "subscription->hiddenWindowCreatorThreadId = currentThreadId;",

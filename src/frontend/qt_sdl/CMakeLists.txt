@@ -26,6 +26,7 @@ set(SOURCES_QT_SDL
     EmuInstance.cpp
     EmuInstanceAudio.cpp
     EmuInstanceInput.cpp
+    MelonPrimeJoystickDevice.cpp
     EmuThread.cpp
     CheatImportDialog.cpp
     CheatsDialog.cpp

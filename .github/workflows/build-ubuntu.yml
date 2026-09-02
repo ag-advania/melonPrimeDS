@@ -66,6 +66,12 @@ jobs:
       shell: pwsh
       run: ./tools/ci/audits/audit-melonprime-srp-performance.ps1
 
+    - name: Test MelonPrime input frame contract
+      run: python ./tools/testing/test_input_postpush_full_contract.py
+
+    - name: Test MelonPrime input performance summarizer
+      run: python ./tools/testing/summarize-input-performance.py --self-test
+
     - name: Audit Software raster parity contract
       run: python ./tools/ci/audits/audit-raster-software-parity.py
 

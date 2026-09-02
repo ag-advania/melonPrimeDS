@@ -882,6 +882,8 @@ $waylandFixedTestPath = Join-Path $repoRoot 'tools/testing/wayland-fixed-delta-t
 $linuxResetFenceTestPath = Join-Path $repoRoot 'tools/testing/linux-reset-fence-tests.cpp'
 $threadBridgePath = Join-Path $qtSdl 'MelonPrimeThreadBridge.h'
 $emuInstanceInputPath = Join-Path $qtSdl 'EmuInstanceInput.cpp'
+$joystickDevicePath = Join-Path $qtSdl 'MelonPrimeJoystickDevice.cpp'
+$joystickDeviceHeaderPath = Join-Path $qtSdl 'MelonPrimeJoystickDevice.h'
 $linuxRawText = Get-Content -LiteralPath $linuxRawPath -Raw
 $linuxRawHeaderText = Get-Content -LiteralPath $linuxRawHeaderPath -Raw
 $waylandText = Get-Content -LiteralPath $waylandPath -Raw
@@ -891,6 +893,8 @@ $waylandFixedTestText = Get-Content -LiteralPath $waylandFixedTestPath -Raw
 $linuxResetFenceTestText = Get-Content -LiteralPath $linuxResetFenceTestPath -Raw
 $threadBridgeText = Get-Content -LiteralPath $threadBridgePath -Raw
 $emuInstanceInputText = Get-Content -LiteralPath $emuInstanceInputPath -Raw
+$joystickDeviceText = Get-Content -LiteralPath $joystickDevicePath -Raw
+$joystickDeviceHeaderText = Get-Content -LiteralPath $joystickDeviceHeaderPath -Raw
 
 $aimBody = Get-FunctionText -Path $gameInputPath `
     -Signature 'void\s+MelonPrimeCore::ProcessAimInputMouse\s*\('
@@ -1033,18 +1037,33 @@ if ($emuInstanceHeaderText -notmatch 'uint8_t\s+joystickLifecycleCheckCounter') 
     Add-Error 'Rule O: joystick lifecycle cadence must be stored per EmuInstance'
 }
 
-# Rule P: closeJoystick owns physical lifetime; EmuThread owns derived reset.
+# Rule P: the device component owns physical lifetime; EmuThread owns derived
+# reset. The component's process lock is only for SDL global update/enumeration;
+# each EmuInstance retains its own lifetime mutex.
 $closeJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::closeJoystick\s*\('
 $resetJoystickBody = Get-FunctionText -Path $emuInstanceInputPath `
     -Signature 'void\s+EmuInstance::resetJoystickConsumerState\s*\('
-if (-not $closeJoystickBody -or
-    $closeJoystickBody -notmatch 'SDL_GameControllerClose\s*\(' -or
-    $closeJoystickBody -notmatch 'SDL_JoystickClose\s*\(' -or
+if (-not $joystickDeviceHeaderText -or
+    $joystickDeviceHeaderText -notmatch 'class\s+MelonPrimeJoystickDevice\s+final' -or
+    $joystickDeviceHeaderText -notmatch 'std::shared_ptr\s*<\s*SDL_mutex\s*>\s+m_mutex' -or
+    $joystickDeviceHeaderText -notmatch 'OpenLocked\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'CloseLocked\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'SampleSourceLocked\s*\(' -or
+    $joystickDeviceText -notmatch 'SDL_GameControllerClose\s*\(' -or
+    $joystickDeviceText -notmatch 'SDL_JoystickClose\s*\(' -or
+    $joystickDeviceText -notmatch 'SDL_JoystickUpdate\s*\(' -or
+    $joystickDeviceText -notmatch 'std::mutex\s+s_sdlProcessMutex' -or
+    -not $closeJoystickBody -or
+    $closeJoystickBody -notmatch 'joystickDevice\.CloseLocked\s*\(' -or
     $closeJoystickBody -notmatch 'joystickGameplayResetPending\.store\s*\(' -or
     $closeJoystickBody -match 'lateJoystick\.' -or
-    $closeJoystickBody -notmatch 'hasRumble\s*=\s*false') {
+    $joystickDeviceText -notmatch 'm_hasRumble\s*=\s*false') {
     Add-Error 'Rule P: joystick physical lifetime/reset-request owner is incomplete'
+}
+if ($emuInstanceHeaderText -match 'joyMutexGlobal' -or
+    $emuInstanceInputText -match 'joyMutexGlobal') {
+    Add-Error 'Rule P: process-global joystick lifetime mutex reappeared'
 }
 if (-not $resetJoystickBody -or
     $resetJoystickBody -notmatch 'controllerCommandHotkeyMask\s*=\s*0' -or
@@ -1093,7 +1112,8 @@ $runFrameAt = $emuThreadText.IndexOf(
 if ($latePollAt -lt 0 -or $runFrameAt -lt 0 -or $latePollAt -gt $runFrameAt) {
     Add-Error 'Rule Q: late joystick sample must remain before RunFrameHook'
 }
-if ($emuThreadText -notmatch 'inputRefreshJoystickState\s*\(\s*!melonPrime->IsNestedFrameAdvanceForInput\(\)\s*\)' -or
+if ($emuThreadText -notmatch 'const\s+bool\s+nestedInputFrame\s*=\s*\r?\n\s*melonPrime->IsNestedFrameAdvanceForInput\(\)' -or
+    $emuThreadText -notmatch 'inputRefreshJoystickState\s*\(\s*!nestedInputFrame\s*\)' -or
     $projectJoystickGameplayBody -notmatch 'if\s*\(!commitGameplayEdges\)' -or
     $projectJoystickGameplayBody -notmatch 'if\s*\(commitGameplayEdges\)\s*\r?\n\s*previousLateJoystickHotkeyMask') {
     Add-Error 'Rule Q: re-entrant FrameAdvance must refresh held state without committing the late edge baseline'
@@ -1301,9 +1321,10 @@ if ($emuInstanceHeaderText -notmatch 'struct\s+JoystickBindingProgram' -or
     Add-Error 'Rule AA: controller mappings must compile to unique physical sources plus fanout rules'
 }
 if (-not $sampleJoystickLockedBody -or
-    $sampleJoystickLockedBody -notmatch 'SDL_JoystickGetButton' -or
-    $sampleJoystickLockedBody -notmatch 'SDL_JoystickGetHat' -or
-    $sampleJoystickLockedBody -notmatch 'SDL_JoystickGetAxis' -or
+    $sampleJoystickLockedBody -notmatch 'joystickDevice\.SampleSourceLocked\s*\(' -or
+    $joystickDeviceText -notmatch 'SDL_JoystickGetButton' -or
+    $joystickDeviceText -notmatch 'SDL_JoystickGetHat' -or
+    $joystickDeviceText -notmatch 'SDL_JoystickGetAxis' -or
     -not $projectJoystickBody -or
     $projectJoystickBody -notmatch 'rule\.sourceIndex\s*<\s*snapshot\.sourceCount' -or
     $projectJoystickBody -match 'SDL_(?:Lock|Unlock)Mutex') {
@@ -1370,7 +1391,8 @@ if (-not $lateJoystickBody -or
     $lateJoystickBody -notmatch 'projectJoystickGameplayState\s*\(\s*projected\s*,' -or
     $lateJoystickBody -match 'SDL_JoystickUpdate\s*\(' -or
     -not $sampleJoystickLockedBody -or
-    ([regex]::Matches($sampleJoystickLockedBody, 'SDL_JoystickUpdate\s*\(').Count -ne 1)) {
+    $sampleJoystickLockedBody -notmatch 'joystickDevice\.UpdateLocked\s*\(' -or
+    ([regex]::Matches($joystickDeviceText, 'SDL_JoystickUpdate\s*\(').Count -ne 1)) {
     Add-Error 'Rule AC: one physical controller sample must feed command and gameplay projection'
 }
 if ($emuInstanceHeaderText -notmatch 'int32_t\s+sourceValue\s*\[\s*kMaxJoystickCompiledEntries\s*\]\s*;' -or
@@ -1841,9 +1863,10 @@ if (-not $shutdownRawBody -or
 }
 
 # AX: the frame-hot Raw readers reject inactive subscriptions before touching
-# the process-wide recursive mutex, but every maybe-owner path still performs
-# the authoritative revalidation after acquiring it. Lifecycle deactivation is
-# a separate cold API; the fused frame API owns all eligible-owner updates.
+# any lock. A possible owner transition takes the control-plane mutex; the
+# steady snapshot, late latch, deferred drain, and WM_INPUT callback use only
+# the subscription-local frame mutex. Lifecycle deactivation is a separate
+# cold API; the fused frame API owns all eligible-owner updates.
 $rawDeactivateOwnerBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::DeactivateOwner\s*\('
 $rawOwnerSnapshotBody = Get-FunctionText -Path $rawWinFilterPath `
@@ -1862,13 +1885,24 @@ foreach ($rawHotBodySpec in @(
         $body.IndexOf('m_activeSubscription.load(std::memory_order_acquire)',
             [System.StringComparison]::Ordinal)
     } else { -1 }
-    $lockAt = if ($body) {
-        $body.IndexOf('RawInputPerf::SubscriptionMutexGuard',
+    $frameLockAt = if ($body) {
+        $body.IndexOf('RawInputPerf::FrameMutexGuard',
             [System.StringComparison]::Ordinal)
     } else { -1 }
-    if (-not $body -or $precheckAt -lt 0 -or $lockAt -lt 0 -or $precheckAt -gt $lockAt) {
-        Add-Error "Rule AX: $($rawHotBodySpec.Name) must precheck active Raw ownership before its mutex"
+    if (-not $body -or $precheckAt -lt 0 -or $frameLockAt -lt 0 -or
+        $precheckAt -gt $frameLockAt) {
+        Add-Error "Rule AX: $($rawHotBodySpec.Name) must precheck active Raw ownership before its frame mutex"
     }
+}
+if (-not $rawOwnerSnapshotBody -or
+    $rawOwnerSnapshotBody -notmatch 'RawInputPerf::SubscriptionMutexGuard' -or
+    $rawOwnerSnapshotBody.IndexOf('RawInputPerf::SubscriptionMutexGuard',
+        [System.StringComparison]::Ordinal) -lt
+        $rawOwnerSnapshotBody.IndexOf('m_activeSubscription.load',
+            [System.StringComparison]::Ordinal) -or
+    $rawDeferredBody -match 'RawInputPerf::SubscriptionMutexGuard' -or
+    $rawLateLatchBody -match 'RawInputPerf::SubscriptionMutexGuard') {
+    Add-Error 'Rule AX: only owner transitions may touch the Raw control-plane mutex'
 }
 if (-not $rawDeactivateOwnerBody -or
     $rawDeactivateOwnerBody -notmatch 'const\s+bool\s+rawOwner' -or
@@ -1945,7 +1979,8 @@ if (-not $rawNoEdgesBody -or
 
 # BC: recovery is a same-EmuThread plain mailbox. The hidden HWND captures its
 # creator thread, HiddenWndProc checks the active HWND identity under the
-# subscription mutex, and lifecycle/frame consumers remain on the EmuThread path.
+# subscription-local frame mutex, and lifecycle/frame consumers remain on the
+# EmuThread path.
 if ($rawWinFilterText -notmatch 'const\s+DWORD\s+currentThreadId\s*=\s*GetCurrentThreadId\s*\(\s*\)' -or
     $rawWinFilterText -notmatch 'subscription->hiddenWindowCreatorThreadId\s*=\s*currentThreadId' -or
     $rawWinFilterText -notmatch 'subscription->hiddenWindow\s*==\s*hwnd' -or
@@ -2009,8 +2044,8 @@ if (-not $rawHiddenWndProcBody -or
 }
 
 # BJ: HiddenWndProc is an event-hot Win32 callback. Production dispatch may
-# only take the existing subscription mutex, load the active subscription and
-# compare its HWND. Native identity queries, Qt/config work and timekeeping
+# only load the active subscription, take its subscription-local frame mutex,
+# and compare its HWND. Native identity queries, Qt/config work and timekeeping
 # belong to cold lifecycle or dedicated telemetry/debug paths.
 $rawHiddenIdentityTokens = @(
     'GetCurrentThreadId\s*\(',
@@ -2032,10 +2067,11 @@ if (-not $rawHiddenWndProcBody) {
     }
 }
 
-# BL: the active Raw subscription is a mutex-protected lifetime pointer. Its
-# state may not be loaded or dereferenced before the authoritative lock.
+# BL: the active Raw subscription is an atomic active pointer to a service-owned
+# record. Its frame data and HWND may not be dereferenced before the
+# subscription-local frame mutex; the control mutex is not an event-hot lock.
 $hiddenLockAt = if ($rawHiddenWndProcBody) {
-    $rawHiddenWndProcBody.IndexOf('RawInputPerf::SubscriptionMutexGuard',
+    $rawHiddenWndProcBody.IndexOf('RawInputPerf::FrameMutexGuard',
         [System.StringComparison]::Ordinal)
 } else { -1 }
 $hiddenActiveAt = if ($rawHiddenWndProcBody) {
@@ -2055,7 +2091,8 @@ if (-not $rawHiddenWndProcBody -or
         'm_activeSubscription\.load\s*\(\s*std::memory_order_relaxed\s*\)' -or
     $rawHiddenWndProcBody -notmatch 'subscription->hiddenWindow\s*==\s*hwnd' -or
     $rawHiddenWndProcBody -notmatch 'subscription->state\.get\s*\(\s*\)' -or
-    $hiddenLockAt -lt 0 -or $hiddenLockAt -gt $hiddenActiveAt -or
+    $rawHiddenWndProcBody -match 'RawInputPerf::SubscriptionMutexGuard' -or
+    $hiddenLockAt -lt 0 -or $hiddenActiveAt -gt $hiddenLockAt -or
     $hiddenActiveAt -gt $hiddenHwndAt -or $hiddenHwndAt -gt $hiddenStateAt) {
     Add-Error 'Rule BL: active Raw subscription lifetime is not mutex-protected'
 }

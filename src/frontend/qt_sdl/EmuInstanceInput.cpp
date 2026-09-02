@@ -31,6 +31,7 @@
 #include "MelonPrimeCompilerHints.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimeMouseButton.h"
+#include "MelonPrimePerfProbe.h"
 #endif
 
 using namespace melonDS;
@@ -117,8 +118,6 @@ const char* EmuInstance::hotkeyNames[HK_MAX] =
 #endif
 };
 
-std::shared_ptr<SDL_mutex> EmuInstance::joyMutexGlobal = nullptr;
-
 #ifdef MELONPRIME_DS
 namespace {
 int TrackedMouseButtonIndex(Qt::MouseButton button) noexcept
@@ -131,13 +130,15 @@ int TrackedMouseButtonIndex(Qt::MouseButton button) noexcept
 
 void EmuInstance::inputInit()
 {
-    if (!joyMutexGlobal)
-    {
-        SDL_mutex* mutex = SDL_CreateMutex();
-        joyMutexGlobal = std::shared_ptr<SDL_mutex>(mutex, SDL_DestroyMutex);
-    }
-    joyMutex = joyMutexGlobal;
-
+#ifdef MELONPRIME_DS
+    // The device component owns a distinct lifetime mutex per EmuInstance.
+    // SDL's process-wide update/enumeration serialization is kept inside the
+    // component and never covers another device's source reads.
+    joyMutex = joystickDevice.Mutex();
+#else
+    SDL_mutex* mutex = SDL_CreateMutex();
+    joyMutex = std::shared_ptr<SDL_mutex>(mutex, SDL_DestroyMutex);
+#endif
 #ifdef MELONPRIME_DS
     static_assert(HK_MAX <= 64, "HK_MAX exceeds uint64_t capacity");
     static_assert(kMaxJoystickCompiledEntries <= 255,
@@ -179,15 +180,16 @@ void EmuInstance::inputInit()
     touchX = 0;
     touchY = 0;
 
-    joystick = nullptr;
 #ifdef MELONPRIME_DS
     joystickPresent.store(false, std::memory_order_relaxed);
-#endif
+#else
+    joystick = nullptr;
     controller = nullptr;
     hasRumble = false;
     hasAccelerometer = false;
     hasGyroscope = false;
     isRumbling = false;
+#endif
 
     inputLoadConfig();
 }
@@ -381,11 +383,15 @@ void EmuInstance::inputRumbleStart(melonDS::u32 len_ms)
 {
     SDL_LockMutex(joyMutex.get());
 
+#ifdef MELONPRIME_DS
+    joystickDevice.RumbleStartLocked(len_ms);
+#else
     if (controller && hasRumble && !isRumbling)
     {
         SDL_GameControllerRumble(controller, 0xFFFF, 0xFFFF, len_ms);
         isRumbling = true;
     }
+#endif
 
     SDL_UnlockMutex(joyMutex.get());
 }
@@ -394,17 +400,29 @@ void EmuInstance::inputRumbleStop()
 {
     SDL_LockMutex(joyMutex.get());
 
+#ifdef MELONPRIME_DS
+    joystickDevice.RumbleStopLocked();
+#else
     if (controller && hasRumble && isRumbling)
     {
         SDL_GameControllerRumble(controller, 0, 0, 0);
         isRumbling = false;
     }
+#endif
 
     SDL_UnlockMutex(joyMutex.get());
 }
 
 float EmuInstance::inputMotionQuery(melonDS::Platform::MotionQueryType type)
 {
+#ifdef MELONPRIME_DS
+    float value = 0.0f;
+    SDL_LockMutex(joyMutex.get());
+    const bool available = joystickDevice.ReadMotionLocked(type, value);
+    SDL_UnlockMutex(joyMutex.get());
+    if (available)
+        return value;
+#else
     float values[3];
     SDL_LockMutex(joyMutex.get());
     if (type <= melonDS::Platform::MotionAccelerationZ)
@@ -452,6 +470,7 @@ float EmuInstance::inputMotionQuery(melonDS::Platform::MotionQueryType type)
         }
     }
     SDL_UnlockMutex(joyMutex.get());
+#endif
     if (type == melonDS::Platform::MotionAccelerationZ)
         return SDL_STANDARD_GRAVITY;
     return 0.0f;
@@ -473,6 +492,10 @@ void EmuInstance::setJoystickLocked(int id)
 
 void EmuInstance::openJoystick()
 {
+#ifdef MELONPRIME_DS
+    const bool opened = joystickDevice.OpenLocked(joystickID);
+    joystickPresent.store(opened, std::memory_order_release);
+#else
     closeJoystick();
 
     int num = SDL_NumJoysticks();
@@ -505,8 +528,6 @@ void EmuInstance::openJoystick()
         }
     }
 
-#ifdef MELONPRIME_DS
-    joystickPresent.store(joystick != nullptr, std::memory_order_release);
 #endif
 }
 
@@ -516,7 +537,7 @@ void EmuInstance::closeJoystick()
     // Presence is a hint only; publishing false before destruction prevents
     // lock-free readers from scheduling avoidable work on a closing device.
     joystickPresent.store(false, std::memory_order_release);
-#endif
+#else
     if (controller)
     {
         SDL_GameControllerClose(controller);
@@ -531,8 +552,10 @@ void EmuInstance::closeJoystick()
     hasAccelerometer = false;
     hasGyroscope = false;
     isRumbling = false;
+#endif
 
 #ifdef MELONPRIME_DS
+    joystickDevice.CloseLocked();
     // Device lifetime belongs under joyMutex. Gameplay-derived state belongs
     // exclusively to EmuThread, so GUI/config writers publish only a reset.
     joystickGameplayResetPending.store(true, std::memory_order_release);
@@ -569,9 +592,15 @@ bool EmuInstance::consumeJoystickResetPending()
 void EmuInstance::probeJoystickConnection()
 {
     SDL_LockMutex(joyMutex.get());
+#ifdef MELONPRIME_DS
+    joystickDevice.UpdateLocked();
+    if (!joystickDevice.GetJoystick())
+        openJoystick();
+#else
     SDL_JoystickUpdate();
     if (!joystick && SDL_NumJoysticks() > 0)
         openJoystick();
+#endif
     SDL_UnlockMutex(joyMutex.get());
 }
 
@@ -579,6 +608,31 @@ bool EmuInstance::sampleJoystickPhysicalLocked(
     JoystickPhysicalSnapshot& snapshot)
 {
     activateJoystickBindingProgramLocked();
+#ifdef MELONPRIME_DS
+    if (!joystickDevice.GetJoystick())
+        return false;
+
+    {
+        MelonPrimePerf::ScopedInputMetric updateMetric(
+            MelonPrimePerf::InputMetric::JoystickSDLUpdate);
+        joystickDevice.UpdateLocked();
+    }
+    if (UNLIKELY(!joystickDevice.IsAttachedLocked())) {
+        closeJoystick();
+        return false;
+    }
+
+    snapshot.sourceCount = activeJoystickBindingProgram.sourceCount;
+    for (uint8_t i = 0; i < snapshot.sourceCount; ++i) {
+        const auto& source = activeJoystickBindingProgram.sources[i];
+        const bool sampled = joystickDevice.SampleSourceLocked(
+            source.kind, source.index, snapshot.sourceValue[i]);
+        assert(sampled);
+        if (UNLIKELY(!sampled))
+            snapshot.sourceValue[i] = 0;
+    }
+    return true;
+#else
     if (!joystick)
         return false;
 
@@ -607,12 +661,32 @@ bool EmuInstance::sampleJoystickPhysicalLocked(
         }
     }
     return true;
+#endif
 }
 
 bool EmuInstance::sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot)
 {
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const Uint64 lockStartTick = MelonPrimePerf::ReadTicksIfEnabled();
+#endif
     SDL_LockMutex(joyMutex.get());
-    const bool sampled = sampleJoystickPhysicalLocked(snapshot);
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const Uint64 lockAcquiredTick = MelonPrimePerf::ReadTicksIfEnabled();
+    if (lockAcquiredTick >= lockStartTick)
+        MelonPrimePerf::RecordInputMetricTicks(
+            MelonPrimePerf::InputMetric::JoystickLockWait,
+            lockAcquiredTick - lockStartTick);
+#endif
+    bool sampled = false;
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    {
+        MelonPrimePerf::ScopedInputMetric sampleMetric(
+            MelonPrimePerf::InputMetric::JoystickSample);
+        sampled = sampleJoystickPhysicalLocked(snapshot);
+    }
+#else
+    sampled = sampleJoystickPhysicalLocked(snapshot);
+#endif
     SDL_UnlockMutex(joyMutex.get());
     return sampled;
 }
@@ -621,6 +695,10 @@ EmuInstance::JoystickProjectedState
 EmuInstance::projectJoystickPhysicalSnapshot(
     const JoystickPhysicalSnapshot& snapshot) const
 {
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    MelonPrimePerf::ScopedInputMetric projectMetric(
+        MelonPrimePerf::InputMetric::JoystickProject);
+#endif
     JoystickProjectedState projected{0xFFF, 0};
     for (uint8_t i = 0; i < activeJoystickBindingProgram.ruleCount; ++i) {
         const auto& rule = activeJoystickBindingProgram.rules[i];
@@ -908,6 +986,13 @@ void EmuInstance::keyReleaseAll()
 
 bool EmuInstance::joystickButtonDown(int val)
 {
+#ifdef MELONPRIME_DS
+    // The MelonPrime path projects the shared physical snapshot instead of
+    // reading SDL directly here. This helper remains for the original
+    // non-DS polling path below.
+    (void)val;
+    return false;
+#else
     if (val == -1) return false;
 
     bool hasbtn = ((val & 0xFFFF) != 0xFFFF);
@@ -960,11 +1045,14 @@ bool EmuInstance::joystickButtonDown(int val)
     }
 
     return false;
+#endif
 }
 
 void EmuInstance::inputProcess(bool guestFrameWillRun)
 {
 #ifdef MELONPRIME_DS
+    if (!guestFrameWillRun)
+        MelonPrimePerf::BeginInputTotal();
     // =========================================================================
     // Controller lifecycle owner and global emulator-edge sample.
     //
@@ -1023,6 +1111,9 @@ void EmuInstance::inputProcess(bool guestFrameWillRun)
     hotkeyPress = (hotkeyMask & ~lastHotkeyMask) | qtGlobalPressed;
     hotkeyRelease = lastHotkeyMask & ~hotkeyMask;
     lastHotkeyMask = hotkeyMask;
+
+    if (!guestFrameWillRun)
+        MelonPrimePerf::EndInputTotal();
 
 #else
     // Original melonDS path: full SDL polling + edge detection

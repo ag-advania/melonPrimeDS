@@ -54,6 +54,12 @@ namespace MelonPrime {
         bool joy2KeySupport = false;
         bool qtFilterRequested = false;
         bool baselineReady = false;
+        // Control-plane changes are serialized by RawInputWinFilter's
+        // subscription mutex. Frame data and re-entrant WM_INPUT dispatch use
+        // this subscription-local recursive lock, so one instance cannot
+        // serialize another instance's steady-state input path.
+        std::recursive_mutex frameMutex;
+        std::atomic_bool retired{false};
     };
 
     std::mutex          RawInputWinFilter::s_serviceMutex;
@@ -130,20 +136,17 @@ namespace MelonPrime {
             DeactivateActiveRegistration(subscription);
         }
         (void)DestroyHiddenWindow(subscription);
-        m_subscriptions.erase(
-            std::remove_if(m_subscriptions.begin(), m_subscriptions.end(),
-                [subscription](const auto& item) { return item.get() == subscription; }),
-            m_subscriptions.end());
+        // Keep the allocation owned by the service until service teardown.
+        // Frame consumers publish a raw subscription pointer without taking a
+        // shared_ptr on every frame; retaining retired records closes the
+        // unsubscribe/frame-consumer lifetime race without adding hot-path
+        // reference-count traffic.
+        subscription->retired.store(true, std::memory_order_release);
     }
 
     InputState* RawInputWinFilter::StateFor(RawInputSubscription* subscription) const noexcept
     {
         return subscription ? subscription->state.get() : nullptr;
-    }
-
-    InputState* RawInputWinFilter::ActiveState() const noexcept
-    {
-        return StateFor(m_activeSubscription.load(std::memory_order_acquire));
     }
 
     void RawInputWinFilter::DeactivateOwner(RawInputSubscription* subscription)
@@ -181,7 +184,8 @@ namespace MelonPrime {
     bool RawInputWinFilter::UpdateOwnerLocked(
         RawInputSubscription* subscription, bool eligible)
     {
-        if (!subscription || !subscription->owner)
+        if (!subscription || subscription->retired.load(std::memory_order_acquire)
+            || !subscription->owner)
             return false;
 
         const bool owns = PlatformInputOwnerService::Update(
@@ -210,6 +214,9 @@ namespace MelonPrime {
         if (!subscription
             || m_activeSubscription.load(std::memory_order_acquire) != subscription)
             return false;
+
+        RawInputPerf::FrameMutexGuard frameLock(
+            subscription->frameMutex);
 
         // Registration change is an input-timeline boundary.
         // Raw mouse delta, button edge history and wheel impulses must enter the new
@@ -269,6 +276,9 @@ namespace MelonPrime {
         if (!subscription
             || m_activeSubscription.load(std::memory_order_acquire) != subscription)
             return;
+
+        RawInputPerf::FrameMutexGuard frameLock(
+            subscription->frameMutex);
 
         // Registration change is an input-timeline boundary. Capture anything
         // still owned by the old registration before unregistering it, then
@@ -369,17 +379,24 @@ namespace MelonPrime {
     FORCE_INLINE void RawInputWinFilter::drainPendingMessages() noexcept {
         auto* const subscription =
             m_activeSubscription.load(std::memory_order_acquire);
+        if (!subscription)
+            return;
+        RawInputPerf::FrameMutexGuard frameLock(
+            subscription->frameMutex);
+        if (subscription->retired.load(std::memory_order_acquire)
+            || m_activeSubscription.load(std::memory_order_acquire) != subscription)
+            return;
         auto* const state = StateFor(subscription);
-        if (state && !m_joy2KeySupport) {
+        if (state && !subscription->joy2KeySupport) {
             state->processRawInputBatched();
         }
         drainMessagesOnly(subscription);
     }
 
     // =========================================================================
-    // P-22: UpdateOwnerAndSnapshot — owner resolution and snapshot validation
-    // share one subscription-mutex transaction; drain is still deferred to
-    // DeferredDrain().
+    // P-22: UpdateOwnerAndSnapshot — owner transitions use the control plane;
+    // snapshot validation uses the subscription-local frame mutex. Drain is
+    // still deferred to DeferredDrain().
     //
     // processRawInputBatched (GetRawInputBuffer) reads pending raw input
     // in batch. Any WM_INPUT dispatched later (by SDL or drain) is caught
@@ -415,35 +432,41 @@ namespace MelonPrime {
             }
         }
 
-        // A steady owner already passed the lock-free authority check. The
-        // mutex below is still needed for the snapshot and final validation,
-        // but it does not need to repeat the owner-transfer work.
+        // A steady owner already passed the lock-free authority check. Only a
+        // possible owner transition needs the control-plane mutex; the steady
+        // snapshot itself uses the subscription-local frame mutex below.
         bool ownerReady = subscription && subscription->owner && eligible
+            && !subscription->retired.load(std::memory_order_acquire)
             && m_activeSubscription.load(std::memory_order_acquire) == subscription
             && PlatformInputOwnerService::IsOwner(*subscription->owner);
 
-        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
-        if (!subscription || !subscription->owner) {
-            ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
-            return false;
-        }
-
-        if (!ownerReady)
-            ownerReady = UpdateOwnerLocked(subscription, eligible);
         if (!ownerReady) {
-            ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
-            return false;
+            RawInputPerf::SubscriptionMutexGuard controlLock(m_subscriptionMutex);
+            if (!subscription || subscription->retired.load(
+                    std::memory_order_acquire) || !subscription->owner) {
+                ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
+                return false;
+            }
+            ownerReady = UpdateOwnerLocked(subscription, eligible);
+            if (!ownerReady) {
+                ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
+                return false;
+            }
         }
 
+        RawInputPerf::ScopedStage stage(RawInputPerf::Stage::RawSnapshot);
+        RawInputPerf::FrameMutexGuard frameLock(
+            subscription->frameMutex, RawInputPerf::LockSite::Snapshot);
         auto* const state = StateFor(subscription);
-        if (!state
+        if (!state || subscription->retired.load(std::memory_order_acquire)
             || m_activeSubscription.load(std::memory_order_acquire) != subscription
+            || !subscription->owner
             || !PlatformInputOwnerService::IsOwner(*subscription->owner)) {
             ClearFrameSnapshot(outHk, outMouseX, outMouseY, outWheelSteps);
             return false;
         }
 
-        if (!m_joy2KeySupport) {
+        if (!subscription->joy2KeySupport) {
             state->processRawInputBatched();
             // Drain deferred — see DeferredDrain()
         }
@@ -506,15 +529,20 @@ namespace MelonPrime {
         if (LIKELY(m_activeSubscription.load(std::memory_order_acquire) != subscription))
             return;
 
+        RawInputPerf::ScopedStage stage(
+            RawInputPerf::Stage::RawDeferredDrain);
         RawInputPerf::MaybeReport();
-        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
+        RawInputPerf::FrameMutexGuard frameLock(
+            subscription->frameMutex, RawInputPerf::LockSite::DeferredDrain);
         auto* state = StateFor(subscription);
         if (!state
+            || subscription->retired.load(std::memory_order_acquire)
             || m_activeSubscription.load(std::memory_order_acquire) != subscription
             || !subscription->owner
             || !PlatformInputOwnerService::IsOwner(*subscription->owner))
             return;
-        if (!m_joy2KeySupport) {
+        if (!subscription->joy2KeySupport) {
+            RawInputPerf::PostDrawCaptureScope postDrawCapture;
             drainPendingMessages();
         }
         // P-48: Stuck-state recovery moved here from snapshotInputFrame.
@@ -542,18 +570,22 @@ namespace MelonPrime {
         if (LIKELY(m_activeSubscription.load(std::memory_order_acquire) != subscription))
             return;
 
-        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
+        RawInputPerf::ScopedStage stage(RawInputPerf::Stage::RawLateLatch);
+        RawInputPerf::FrameMutexGuard frameLock(
+            subscription->frameMutex, RawInputPerf::LockSite::LateLatch);
         auto* state = StateFor(subscription);
         if (!state
+            || subscription->retired.load(std::memory_order_acquire)
             || m_activeSubscription.load(std::memory_order_acquire) != subscription
             || !subscription->owner
             || !PlatformInputOwnerService::IsOwner(*subscription->owner))
             return;
-        if (!m_joy2KeySupport) {
+        if (!subscription->joy2KeySupport) {
             state->processRawInputBatched();
         }
         int lateX = 0, lateY = 0;
         state->fetchMouseDelta(lateX, lateY);
+        RawInputPerf::RecordLateLatchDelta(lateX, lateY);
         accX += lateX;
         accY += lateY;
     }
@@ -561,7 +593,11 @@ namespace MelonPrime {
     void RawInputWinFilter::setJoy2KeySupport(
         RawInputSubscription* subscription, bool enable) {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
-        if (!subscription || subscription->joy2KeySupport == enable)
+        if (!subscription)
+            return;
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
+        if (subscription->retired.load(std::memory_order_acquire)
+            || subscription->joy2KeySupport == enable)
             return;
         subscription->joy2KeySupport = enable;
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription)
@@ -571,7 +607,11 @@ namespace MelonPrime {
     void RawInputWinFilter::setRawInputTarget(
         RawInputSubscription* subscription, HWND hwnd) {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
-        if (!subscription || subscription->windowHandle == hwnd)
+        if (!subscription)
+            return;
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
+        if (subscription->retired.load(std::memory_order_acquire)
+            || subscription->windowHandle == hwnd)
             return;
         subscription->windowHandle = hwnd;
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription)
@@ -581,7 +621,8 @@ namespace MelonPrime {
     void RawInputWinFilter::setQtFilterRequested(
         RawInputSubscription* subscription, bool enable) {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
-        if (!subscription || subscription->qtFilterRequested == enable)
+        if (!subscription || subscription->retired.load(std::memory_order_acquire)
+            || subscription->qtFilterRequested == enable)
             return;
         subscription->qtFilterRequested = enable;
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription)
@@ -592,6 +633,7 @@ namespace MelonPrime {
         RawInputSubscription* subscription) {
         if (!subscription)
             return false;
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
         const DWORD currentThreadId = GetCurrentThreadId();
         if (subscription->hiddenWindow) {
             if (subscription->hiddenWindowCreatorThreadId == currentThreadId)
@@ -635,7 +677,10 @@ namespace MelonPrime {
 
     bool RawInputWinFilter::DestroyHiddenWindow(
         RawInputSubscription* subscription) {
-        if (!subscription || !subscription->hiddenWindow)
+        if (!subscription)
+            return true;
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
+        if (!subscription->hiddenWindow)
             return true;
         if (subscription->hiddenWindowCreatorThreadId != GetCurrentThreadId()) {
             melonDS::Platform::Log(
@@ -680,8 +725,9 @@ namespace MelonPrime {
     //
     // Both paths run on the emu thread (hidden window owned by emu thread),
     // so they serialize naturally — no concurrent access issue. The active
-    // subscription and HWND identity are checked under the subscription mutex;
-    // no per-event native thread or window-property query is needed.
+    // subscription and HWND identity are checked under the subscription-local
+    // frame mutex; no per-event native thread or window-property query is
+    // needed.
     //
     // A subscription that re-enters ownership gets a new hidden HWND before
     // this callback can accept input again. That cold-path lifetime boundary
@@ -693,13 +739,14 @@ namespace MelonPrime {
             if (UNLIKELY(!service))
                 return 0;
 
-            RawInputPerf::SubscriptionMutexGuard lock(
-                service->m_subscriptionMutex);
             auto* const subscription = service->m_activeSubscription.load(
                 std::memory_order_relaxed);
             if (UNLIKELY(!subscription))
                 return 0;
-            if (LIKELY(subscription->hiddenWindow == hwnd)) {
+            RawInputPerf::FrameMutexGuard frameLock(
+                subscription->frameMutex, RawInputPerf::LockSite::HiddenWndProc);
+            if (LIKELY(!subscription->retired.load(std::memory_order_acquire)
+                    && subscription->hiddenWindow == hwnd)) {
                 auto* const state = subscription->state.get();
                 if (LIKELY(state)) {
                     const bool needsRecovery = state->processRawInput(
@@ -770,10 +817,16 @@ namespace MelonPrime {
     bool RawInputWinFilter::nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) {
         MSG* msg = static_cast<MSG*>(message);
         if (msg->message == WM_INPUT) {
-            RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
-            if (!m_joy2KeySupport)
+            auto* const subscription = m_activeSubscription.load(
+                std::memory_order_acquire);
+            if (!subscription)
                 return false;
-            if (auto* state = ActiveState())
+            RawInputPerf::FrameMutexGuard frameLock(
+                subscription->frameMutex, RawInputPerf::LockSite::NativeEvent);
+            if (subscription->retired.load(std::memory_order_acquire)
+                || !subscription->joy2KeySupport)
+                return false;
+            if (auto* state = StateFor(subscription))
                 (void)state->processRawInput(reinterpret_cast<HRAWINPUT>(msg->lParam));
         }
         return false;
@@ -785,6 +838,9 @@ namespace MelonPrime {
     void RawInputWinFilter::setHotkeyVks(
         RawInputSubscription* subscription, int id, const UINT* vks, size_t count) {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        if (!subscription)
+            return;
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
         if (auto* state = StateFor(subscription))
             state->setHotkeyVks(id, vks, count);
     }
@@ -796,6 +852,9 @@ namespace MelonPrime {
 
     void RawInputWinFilter::discardDeltas(RawInputSubscription* subscription) {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        if (!subscription)
+            return;
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
         if (auto* state = StateFor(subscription)) state->discardDeltas();
     }
     // P-9: Combined reset — single call replaces resetAllKeys + resetMouseButtons.
@@ -809,9 +868,11 @@ namespace MelonPrime {
     void RawInputWinFilter::resetAll(RawInputSubscription* subscription)
     {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        if (!subscription)
+            return;
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription
-            && !m_joy2KeySupport
-            && subscription
+            && !subscription->joy2KeySupport
             && subscription->hiddenWindowCreatorThreadId == GetCurrentThreadId()) {
             drainPendingMessages();
         }
@@ -819,11 +880,19 @@ namespace MelonPrime {
     }
     void RawInputWinFilter::resetHotkeyEdges(RawInputSubscription* subscription) {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        if (!subscription)
+            return;
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
         if (auto* state = StateFor(subscription)) state->resetHotkeyEdges();
     }
     void RawInputWinFilter::fetchMouseDelta(
         RawInputSubscription* subscription, int& outX, int& outY) {
         std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        if (!subscription) {
+            outX = outY = 0;
+            return;
+        }
+        RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
         if (auto* state = StateFor(subscription)) state->fetchMouseDelta(outX, outY);
         else outX = outY = 0;
     }

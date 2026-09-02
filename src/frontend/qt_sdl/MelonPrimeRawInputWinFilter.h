@@ -36,9 +36,9 @@ namespace MelonPrime {
         void setRawInputTarget(RawInputSubscription* subscription, HWND hwnd);
         void setQtFilterRequested(RawInputSubscription* subscription, bool enable);
 
-        // Resolve the process owner and capture one snapshot in the same
-        // subscription transaction. The steady owner still keeps its
-        // lock-free precheck before taking the snapshot mutex.
+        // Resolve the process owner through the control plane, then capture
+        // the snapshot under the subscription-local frame mutex. The steady
+        // owner still keeps its lock-free precheck before taking that mutex.
         bool UpdateOwnerAndSnapshot(
             RawInputSubscription* subscription, bool eligible,
             FrameHotkeyState& outHk, int& outMouseX, int& outMouseY,
@@ -85,7 +85,6 @@ namespace MelonPrime {
             int& outWheelSteps, bool noEdges);
         void DeactivateActiveRegistration(RawInputSubscription* subscription);
         InputState* StateFor(RawInputSubscription* subscription) const noexcept;
-        InputState* ActiveState() const noexcept;
         static LRESULT CALLBACK HiddenWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
         /// Drain pending WM_INPUT messages from the active subscription's

@@ -201,6 +201,7 @@ namespace MelonPrime {
         uint64_t localKeyDeltaDown[4] = {};
         uint64_t localKeyDeltaUp[4] = {};
         bool hasKeyChanges = false;
+        uint64_t batchEventCount = 0;
 
         const uint8_t initialBtnState = m_mouseButtons.load(std::memory_order_relaxed);
         uint8_t finalBtnState = initialBtnState;
@@ -232,6 +233,8 @@ namespace MelonPrime {
                 }
             }
             if (count == 0 || count == UINT(-1)) break;
+
+            batchEventCount += static_cast<uint64_t>(count);
 
             const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(batchBuffer);
             for (UINT i = 0; i < count; ++i) {
@@ -289,6 +292,9 @@ namespace MelonPrime {
             PRAWINPUT pri = reinterpret_cast<PRAWINPUT>(batchBuffer);
             DefRawInputProc(&pri, static_cast<INT>(count), sizeof(RAWINPUTHEADER));
         }
+
+        RawInputPerf::RecordRawBatch(batchEventCount);
+        RawInputPerf::RecordPostDrawEvents(batchEventCount);
 
         // --- Commit phase (single-writer, wait-free) ---
         // P-37: Combined nonzero check reduces branch count.

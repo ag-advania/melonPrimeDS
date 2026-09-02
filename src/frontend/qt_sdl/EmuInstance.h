@@ -32,6 +32,7 @@
 #include <atomic>
 #include <cstdint>
 #include "MelonPrimeMouseButton.h"
+#include "MelonPrimeJoystickDevice.h"
 namespace MelonPrime { class MelonPrimeCore; }
 #endif // MELONPRIME_DS
 
@@ -279,7 +280,13 @@ public:
 
     void setJoystick(int id);
     int getJoystickID() { return joystickID; }
-    SDL_Joystick* getJoystick() { return joystick; }
+    SDL_Joystick* getJoystick() {
+#ifdef MELONPRIME_DS
+        return joystickDevice.GetJoystick();
+#else
+        return joystick;
+#endif
+    }
     std::shared_ptr<SDL_mutex> getJoyMutex() { return joyMutex; }
 
     void touchScreen(int x, int y);
@@ -515,19 +522,24 @@ private:
     int hkJoyMapping[HK_MAX];
 
     int joystickID;
+#ifdef MELONPRIME_DS
+    MelonPrime::MelonPrimeJoystickDevice joystickDevice;
+#else
     SDL_Joystick* joystick;
+#endif
 #ifdef MELONPRIME_DS
     // Lock-free presence hint only. SDL_Joystick* lifetime and every
     // dereference remain serialized by joyMutex.
     std::atomic_bool joystickPresent{false};
 #endif
+#ifndef MELONPRIME_DS
     SDL_GameController* controller;
     bool hasAccelerometer = false;
     bool hasGyroscope = false;
     bool hasRumble = false;
     bool isRumbling = false;
+#endif
 
-    static std::shared_ptr<SDL_mutex> joyMutexGlobal;
     std::shared_ptr<SDL_mutex> joyMutex;
 
 #ifdef MELONPRIME_DS
@@ -538,18 +550,8 @@ private:
         uint64_t hotkeyPressed = 0;
     };
 
-    enum class JoystickSourceKind : uint8_t
-    {
-        Button,
-        Hat,
-        Axis,
-    };
-
-    struct JoystickPhysicalSource
-    {
-        JoystickSourceKind kind = JoystickSourceKind::Button;
-        uint16_t index = 0;
-    };
+    using JoystickSourceKind = MelonPrime::JoystickSourceKind;
+    using JoystickPhysicalSource = MelonPrime::JoystickPhysicalSource;
 
     struct JoystickFanoutRule
     {
@@ -634,8 +636,9 @@ private:
     // EmuThread remains the sole writer of every gameplay-derived mask above.
     std::atomic_bool joystickGameplayResetPending{false};
     uint8_t joystickLifecycleCheckCounter = 0;
-    // Config/UI writes and EmuThread activation are serialized by joyMutex;
-    // active is immutable throughout sampling and lock-free projection.
+    // Config/UI writes and EmuThread activation are serialized by the
+    // per-instance device mutex; active is immutable throughout sampling and
+    // lock-free projection.
     JoystickBindingProgram pendingJoystickBindingProgram{};
     JoystickBindingProgram activeJoystickBindingProgram{};
     uint32_t joystickBindingProgramGeneration = 0;
