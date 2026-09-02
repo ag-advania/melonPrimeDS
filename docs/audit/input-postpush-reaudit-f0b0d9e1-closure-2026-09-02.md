@@ -46,6 +46,7 @@ smoothness, latency, mutex contention, or a first-bad runtime commit.
 | `python tools/testing/test_mouse_input_savestate_contract.py` | PASS |
 | `python tools/maintenance/check-doc-links.py` | PASS: 748 local links |
 | `git diff --check` | PASS; only configured LF-to-CRLF notices |
+| GitHub Actions Windows run `#1548` / ID `33582155098` | PASS: all workflow steps completed successfully for `39cd0886c0f0095d596fed0a3e65de33adb1c0ee` |
 
 ## Runtime evidence (2026-09-02)
 
@@ -88,7 +89,7 @@ session, or physical input hardware:
 - 1000 Hz and 8000 Hz mouse runs, including controller disconnected/connected
   matrices;
 - repeated frame/input p95/p99 capture and subjective smoothness correlation;
-- TSan, remote CI, and any claim that current runtime smoothness equals or
-  exceeds `cc6726f86`.
+- TSan and any claim that current runtime smoothness equals or exceeds
+  `cc6726f86`.
 
 No runtime smoothness improvement is inferred from the source cleanup alone.
