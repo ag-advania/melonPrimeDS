@@ -38,6 +38,10 @@ keep work that only the *next* frame can observe off it:
 - Hidden-window Raw recovery is classified at decode time: successful pure motion and
   wheel-only messages do not publish the post-frame scan, while stateful events and
   Raw-read failures retain the fail-safe request.
+- On Windows, a normal input snapshot computes Raw readiness once and makes one
+  Raw/Qt source decision for both held and pressed gameplay state. The default
+  Raw-only profile stays on the direct path; mixed bindings merge disjoint
+  Raw-owned and Qt-fallback masks.
 - gate optional per-frame syscalls on a cheap flag instead of running them unconditionally.
   LateLatch re-drains the raw-input buffer only when a `FrameAdvance` opened a wide window
   (`m_didFrameAdvanceSinceSnapshot`); normal frames skip the `GetRawInputBuffer` call.

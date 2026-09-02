@@ -939,6 +939,47 @@ def check_windows_raw_recovery_hint_model() -> None:
     assert needs_recovery(False, "unknown")  # GetRawInputData failure
 
 
+def check_windows_source_selection_model() -> None:
+    # The normal Windows frame makes one source decision for held and pressed
+    # gameplay state. RawExact bits stay Raw-owned, while QtFallback bits stay
+    # Qt-owned; when Raw is not ready, the Qt snapshot remains authoritative.
+    def select(
+        raw_ready: bool,
+        fallback_mask: int,
+        raw_down: int,
+        raw_pressed: int,
+        qt_held: int,
+        qt_pressed: int,
+        raw_owned_mask: int,
+    ) -> tuple[int, int]:
+        hot_down = qt_held
+        hot_pressed = qt_pressed
+        if raw_ready and fallback_mask == 0:
+            hot_down = raw_down
+            hot_pressed = raw_pressed
+        elif raw_ready:
+            hot_down = (raw_down & raw_owned_mask) | (
+                qt_held & fallback_mask
+            )
+            hot_pressed = (raw_pressed & raw_owned_mask) | (
+                qt_pressed & fallback_mask
+            )
+        return hot_down, hot_pressed
+
+    assert select(True, 0, 0x15, 0x04, 0xA0, 0x80, 0xFF) == (
+        0x15,
+        0x04,
+    )
+    assert select(True, 0xA0, 0x15, 0x04, 0xA0, 0x80, 0x15) == (
+        0xB5,
+        0x84,
+    )
+    assert select(False, 0xA0, 0x15, 0x04, 0xA0, 0x80, 0x15) == (
+        0xA0,
+        0x80,
+    )
+
+
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
     input_cpp = source("src/frontend/qt_sdl/EmuInstanceInput.cpp")
@@ -1708,6 +1749,36 @@ def main() -> None:
         "qtGameplayPressed & m_qtFallbackGameplayMask",
     ):
         require(game_input, needle, "Raw/Qt ownership merge")
+    if game_input.count("const bool rawActionReady =") != 1:
+        raise AssertionError(
+            "Windows rawActionReady must be computed exactly once per snapshot"
+        )
+    if game_input.count("const bool rawOnlyFastPath =") != 1:
+        raise AssertionError(
+            "Windows Raw/Qt source decision must be computed exactly once"
+        )
+    source_selection = body(
+        game_input,
+        "uint64_t hotDownMask = qtGameplayHeld;",
+        "const InputProjection::ProjectedDownState downState =",
+    )
+    for needle in (
+        "if (LIKELY(rawOnlyFastPath))",
+        "hotDownMask = hk.down;",
+        "hotPressMask = hk.pressed;",
+        "else if (rawActionReady)",
+        "hk.down & m_rawOwnedGameplayMask",
+        "qtGameplayHeld & m_qtFallbackGameplayMask",
+        "hk.pressed & m_rawOwnedGameplayMask",
+        "qtGameplayPressed & m_qtFallbackGameplayMask",
+    ):
+        require(source_selection, needle, "single Raw/Qt source decision")
+    if source_selection.count("m_qtFallbackGameplayMask == 0") != 1:
+        raise AssertionError(
+            "fallback-zero test must be computed exactly once"
+        )
+    if "if (isInputOwner && rawActionReady)" in source_selection:
+        raise AssertionError("Raw/Qt source selection regained duplicate owner gate")
     require(core + lifecycle, "m_rawOwnedGameplayMask = ownership.rawOwnedGameplayMask", "ownership publication")
 
     # AW+: inactive Raw consumers and non-owner false updates must not touch
@@ -2065,6 +2136,7 @@ def main() -> None:
 
     check_windows_raw_reaudit_models()
     check_windows_raw_recovery_hint_model()
+    check_windows_source_selection_model()
 
     check_state_model()
     check_controller_pause_model()

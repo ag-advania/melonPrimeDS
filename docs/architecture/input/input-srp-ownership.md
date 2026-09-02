@@ -120,6 +120,10 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
 - Native/Low-Latency and Touch/Dual delivery remain specialized paths.
 - LateLatch only re-polls after a reentrant `FrameAdvance` opened a sampling
   window; a normal frame performs no extra Raw Input syscall.
+- Windows normal snapshots compute Raw readiness once and resolve the Raw/Qt
+  gameplay source once for both held and pressed masks; the default Raw-only
+  profile remains a direct fast path, while mixed bindings keep disjoint
+  Raw-owned and Qt-fallback masks.
 - the Raw-owner wheel count and generation-tagged Qt fallback remain exclusive;
   the count is never reduced to a boolean at the platform boundary.
 - non-Windows acquisition resolves and caches the frame's warp decision once;

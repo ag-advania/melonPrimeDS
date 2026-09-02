@@ -265,11 +265,17 @@ namespace MelonPrime {
             return;
         }
 
+#ifdef _WIN32
+        // The Raw snapshot is usable for gameplay only after the owner,
+        // baseline, and registration generation all agree. Compute this
+        // once and share the result with wheel and keyboard projection.
+        const bool rawActionReady = isInputOwner
+            && hk.baselineReady
+            && hk.generation == m_inputSubscription.generation;
+#endif
+
         if constexpr (!kReentrant) {
 #ifdef _WIN32
-            const bool rawActionReady = isInputOwner
-                && hk.baselineReady
-                && hk.generation == m_inputSubscription.generation;
             if (isInputOwner) {
                 // Qt remains a fallback producer for cursor mode. While Raw
                 // Input owns the registration, consume and discard that
@@ -343,9 +349,6 @@ namespace MelonPrime {
         }
 
 #ifdef _WIN32
-        const bool rawActionReady = isInputOwner
-            && hk.baselineReady
-            && hk.generation == m_inputSubscription.generation;
         // Mouse-wheel bindings are virtual one-frame keys. Raw Input has no VK
         // for wheel ticks, so a ready Raw Input snapshot injects matching bits.
         // The Qt path (!isInputOwner / non-Windows) gets gameplay wheel steps
@@ -361,32 +364,28 @@ namespace MelonPrime {
         // This keeps instances isolated and avoids duplicate press edges when
         // active ownership changes.
         uint64_t hotDownMask = qtGameplayHeld;
-        if (isInputOwner && rawActionReady) {
-            if (LIKELY(m_qtFallbackGameplayMask == 0)) {
-                // Default/simple bindings keep the original Raw fast path.
-                hotDownMask = hk.down;
-            }
-            else {
-                // Raw owns only exact single-predicate bindings. Canonical
-                // chords and unsupported identities stay with Qt, whose held
-                // state is already keyed by the normalized binding identity.
-                hotDownMask = (hk.down & m_rawOwnedGameplayMask)
-                    | (qtGameplayHeld & m_qtFallbackGameplayMask);
-            }
+        [[maybe_unused]] uint64_t hotPressMask = qtGameplayPressed;
+        const bool rawOnlyFastPath =
+            rawActionReady && m_qtFallbackGameplayMask == 0;
+        if (LIKELY(rawOnlyFastPath)) {
+            // Default/simple bindings keep the original Raw fast path for
+            // both held and pressed state.
+            hotDownMask = hk.down;
+            hotPressMask = hk.pressed;
+        }
+        else if (rawActionReady) {
+            // Raw owns only exact single-predicate bindings. Canonical
+            // chords and unsupported identities stay with Qt, whose held and
+            // pressed state is already keyed by the normalized binding
+            // identity. Resolve this mixed source once for both projections.
+            hotDownMask = (hk.down & m_rawOwnedGameplayMask)
+                | (qtGameplayHeld & m_qtFallbackGameplayMask);
+            hotPressMask = (hk.pressed & m_rawOwnedGameplayMask)
+                | (qtGameplayPressed & m_qtFallbackGameplayMask);
         }
         hotDownMask |= emuInstance->lateJoystick.hotkeyHeld
             | wheelHotkeyBits;
         if constexpr (!kReentrant) {
-            uint64_t hotPressMask = qtGameplayPressed;
-            if (isInputOwner && rawActionReady) {
-                if (LIKELY(m_qtFallbackGameplayMask == 0)) {
-                    hotPressMask = hk.pressed;
-                }
-                else {
-                    hotPressMask = (hk.pressed & m_rawOwnedGameplayMask)
-                        | (qtGameplayPressed & m_qtFallbackGameplayMask);
-                }
-            }
             hotPressMask |= emuInstance->lateJoystick.hotkeyPressed
                 | wheelHotkeyBits;
             m_input.press = InputProjection::ProjectPressMask(hotPressMask);

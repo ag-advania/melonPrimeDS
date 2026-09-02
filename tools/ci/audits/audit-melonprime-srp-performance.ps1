@@ -1710,6 +1710,33 @@ if ($gameInputText -notmatch 'm_qtFallbackGameplayMask\s*==\s*0' -or
     Add-Error 'Rule AQ: default Raw fast path or disjoint Raw/Qt merge is incomplete'
 }
 
+# Rule CI-03/CI-04: the steady Windows snapshot computes Raw readiness once
+# and makes one source-selection decision for held and pressed gameplay state.
+# The default Raw-only profile stays on the direct path; mixed bindings keep
+# the disjoint Raw-owned/Qt-fallback masks.
+if (($gameInputText -split 'const bool rawActionReady =').Count - 1 -ne 1 -or
+    ($gameInputText -split 'const bool rawOnlyFastPath =').Count - 1 -ne 1) {
+    Add-Error 'Rule CI-03: rawActionReady and Raw source selection must each be computed once'
+}
+$sourceSelectionText = Get-FunctionText -Path $gameInputPath `
+    -Signature 'void\s+MelonPrimeCore::UpdateInputStateImpl\s*\('
+if ($sourceSelectionText -notmatch 'uint64_t\s+hotDownMask\s*=\s*qtGameplayHeld' -or
+    $sourceSelectionText -notmatch 'if\s*\(LIKELY\(rawOnlyFastPath\)\)' -or
+    $sourceSelectionText -notmatch 'hotDownMask\s*=\s*hk\.down' -or
+    $sourceSelectionText -notmatch 'hotPressMask\s*=\s*hk\.pressed' -or
+    $sourceSelectionText -notmatch 'else\s+if\s*\(rawActionReady\)' -or
+    $sourceSelectionText -notmatch 'hk\.down\s*&\s*m_rawOwnedGameplayMask' -or
+    $sourceSelectionText -notmatch 'qtGameplayHeld\s*&\s*m_qtFallbackGameplayMask' -or
+    $sourceSelectionText -notmatch 'hk\.pressed\s*&\s*m_rawOwnedGameplayMask' -or
+    $sourceSelectionText -notmatch 'qtGameplayPressed\s*&\s*m_qtFallbackGameplayMask') {
+    Add-Error 'Rule CI-04: held/pressed Raw/Qt source selection is not fused'
+}
+$sourceSelectionBody = $sourceSelectionText
+if ($sourceSelectionBody -match 'if\s*\(isInputOwner\s*&&\s*rawActionReady\)' -or
+    ($sourceSelectionBody -split 'm_qtFallbackGameplayMask\s*==\s*0').Count - 1 -ne 1) {
+    Add-Error 'Rule CI-04: Raw/Qt source decision regained duplicate fallback gating'
+}
+
 # AR: hidden message windows are subscription-local and thread-affine.
 if (($rawWinFilterHeaderText + $rawWinFilterText) -notmatch 'HWND\s+hiddenWindow' -or
     ($rawWinFilterHeaderText + $rawWinFilterText) -notmatch 'hiddenWindowCreatorThreadId' -or
