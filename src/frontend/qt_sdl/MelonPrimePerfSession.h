@@ -1,11 +1,14 @@
 #ifndef MELONPRIME_PERF_SESSION_H
 #define MELONPRIME_PERF_SESSION_H
 
-// One developer-only identity shared by the Generic and Windows Raw Input
-// performance probes.  The runner supplies this value so a concatenated log
+// One measurement identity shared by the Generic and Windows Raw Input
+// performance probes. The runner supplies this value so a concatenated log
 // cannot silently combine evidence from different processes.
 
-#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_DS)
+#if defined(MELONPRIME_DS) && \
+    (defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) || \
+     (defined(_WIN32) && \
+      defined(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)))
 
 #include <cstddef>
 #include <cstdlib>
@@ -55,6 +58,6 @@ inline const char* Text() noexcept
 
 } // namespace MelonPrimePerfSession
 
-#endif // MELONPRIME_ENABLE_DEVELOPER_FEATURES && MELONPRIME_DS
+#endif // MELONPRIME_DS && (developer features || Windows Raw telemetry)
 
 #endif // MELONPRIME_PERF_SESSION_H

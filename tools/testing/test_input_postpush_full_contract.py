@@ -1248,6 +1248,10 @@ def main() -> None:
         "char value[kMaxLength + 1]",
         "std::getenv",
         "static const SessionId session",
+        "defined(MELONPRIME_DS)",
+        "defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)",
+        "defined(_WIN32)",
+        "defined(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)",
     ):
         require(perf_session, needle, "shared performance session identity")
     if "std::string" in perf_session:
@@ -1265,6 +1269,7 @@ def main() -> None:
         "pending_generic_capture",
         "pending_raw_capture",
         "REPORT_SEQ_RE",
+        "GENERIC_VERSIONED_PREFIXES",
         "GENERIC_REPORT_BEGIN_RE",
         "SESSION_ID_RE",
         "report_begin",
@@ -1309,6 +1314,8 @@ def main() -> None:
         "generic-report-begin-capture-no-input",
         "generic-report-begin-input-no-capture",
         "generic-shutdown-summary-only",
+        "generic-actual-prefix-lines",
+        "raw-truncated-all",
         "cross-run-lower-incomplete",
         "cross-run-complete",
         "same-session-report-seq-collision",
@@ -1338,6 +1345,19 @@ def main() -> None:
         '"retention_mode": retention_mode',
     ):
         require(perf_summarizer, needle, "telemetry retention provenance")
+    if 'line.startswith("[MelonPrime] ")' in perf_summarizer:
+        raise AssertionError("Generic telemetry parser retains a non-producer prefix")
+    for needle in (
+        '"[MelonPrimePerf] "',
+        '"[MelonPrimePerfPhase] "',
+        '"[MelonPrimePerf] shutdown summary session_id=TEST-A "',
+        '"[MelonPrimePerf] shutdown session_id=TEST-B instance_id=0 "',
+        '"[MelonPrimePerf] frame_ms session_id=TEST-B instance_id=0 "',
+        '"[MelonPrimePerf] audit_counts session_id=TEST-B instance_id=0 "',
+        '"[MelonPrimePerf] hud_phase_us session_id=TEST-B instance_id=0 "',
+        '"[MelonPrimePerfPhase] session_id=TEST-B instance_id=0 "',
+    ):
+        require(perf_summarizer, needle, "actual Generic producer prefix regression vectors")
     for needle in (
         "snapshot[calls=%llu retained=%u",
         "late_latch[calls=%llu retained=%u",
@@ -2226,10 +2246,13 @@ def main() -> None:
     if "MELONPRIME_PERF" in raw_perf:
         raise AssertionError("generic MELONPRIME_PERF must not enable Raw telemetry")
     for needle in (
+        "option(MELONPRIME_ENABLE_DEVELOPER_FEATURES",
         "option(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY",
         "if (WIN32 AND MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)",
     ):
         require(qt_sdl_cmake, needle, "dedicated Raw telemetry CMake gate")
+    if "cmake_dependent_option(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY" in qt_sdl_cmake:
+        raise AssertionError("Raw telemetry option must remain independent of developer features")
     if cmake_presets.count("MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY") < 2:
         raise AssertionError("base and shipping presets must pin Raw telemetry OFF")
     for text_value, label in (

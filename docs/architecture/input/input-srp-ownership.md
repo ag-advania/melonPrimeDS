@@ -243,7 +243,7 @@ Generic performance state is thread-local and is bound to the owning
 not an `atexit` callback. `MELONPRIME_PERF_CAPTURE_ONLY=1` keeps sorting,
 formatting, and stderr reporting until shutdown. Immediately after allocating a
 report, the probe emits a `report_begin` header containing the fixed-buffer
-developer `session_id`, `instance_id`, ordinal `report_seq`, and capture-only
+shared `session_id`, `instance_id`, ordinal `report_seq`, and capture-only
 state. The header is the source of truth for report-start provenance; a
 header-only, shutdown-summary-only, or explicit-latency-only tail is therefore
 the latest incomplete generation. The parser binds Generic lines by
@@ -251,7 +251,11 @@ the latest incomplete generation. The parser binds Generic lines by
 order rather than numeric `report_seq` maximum, rejects a newer incomplete or
 markerless generation without falling back to an older pass, and omits
 explicit-latency supplemental lines whose identity does not match the
-certified input generation. Generic and Raw use the same process-global
+certified input generation. The versioned fallback recognizes the actual
+`[MelonPrimePerf]` and `[MelonPrimePerfPhase]` producer prefixes. The shared
+session helper is compiled when either developer telemetry or the independent
+Windows Raw telemetry option is enabled, so Raw-only measurement builds retain
+the same identity without adding hot-path work. Generic and Raw use the same process-global
 `MELONPRIME_PERF_SESSION_ID`; strict Raw certification rejects a cross-session
 concatenation. Generic input metrics and explicit input latency retain the latest 2048 samples while
 their `calls` counter covers the whole report window/run; p50/p95/p99 and

@@ -32,6 +32,10 @@ INPUT_RE = re.compile(
 INPUT_INSTANCE_RE = re.compile(r"(?:^|\s)instance_id=(?P<id>\d+)(?:\s|$)")
 REPORT_SEQ_RE = re.compile(r"(?:^|\s)report_seq=(?P<seq>\d+)(?=\s|:|$)")
 SESSION_ID_RE = re.compile(r"(?:^|\s)session_id=(?P<session_id>\S+)(?:\s|$)")
+GENERIC_VERSIONED_PREFIXES = (
+    "[MelonPrimePerf] ",
+    "[MelonPrimePerfPhase] ",
+)
 GENERIC_REPORT_BEGIN_RE = re.compile(
     r"^\[MelonPrimePerf\] report_begin "
     r"session_id=(?P<session_id>\S+) "
@@ -666,7 +670,7 @@ def parse_log(path: Path) -> dict[str, Any]:
                         session_id, report_seq
                     )
             continue
-        if line.startswith("[MelonPrime] "):
+        if line.startswith(GENERIC_VERSIONED_PREFIXES):
             # Every versioned Generic report line participates in report-start
             # recency.  This catches shutdown-summary-only truncation while
             # report_begin remains the only strict completeness source.
@@ -2093,12 +2097,56 @@ def self_test() -> None:
         )
         generic_shutdown_only = "\n".join([
             controller_valid.rstrip("\n"),
-            "[MelonPrime] shutdown summary session_id=TEST-A "
+            "[MelonPrimePerf] shutdown summary session_id=TEST-A "
             "instance_id=0 report_seq=11: frames=10 frame_ms "
             "p50=1.0 p95=2.0 p99=3.0 max=4.0",
         ]) + "\n"
         expect_rejection(
             "generic-shutdown-summary-only.log", generic_shutdown_only,
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        generic_actual_prefix_tail = "\n".join([
+            controller_valid.rstrip("\n"),
+            "[MelonPrimePerf] shutdown session_id=TEST-B instance_id=0 "
+            "report_seq=1: no frames recorded",
+            "[MelonPrimePerf] shutdown summary session_id=TEST-B "
+            "instance_id=0 report_seq=1: frames=10 frame_ms "
+            "p50=1.000 p95=2.000 p99=3.000 max=4.000",
+            "[MelonPrimePerf] histogram session_id=TEST-B instance_id=0 "
+            "report_seq=1 bucket_ms=0.5:",
+            "[MelonPrimePerf] frame_ms session_id=TEST-B instance_id=0 "
+            "report_seq=1 p50=1.000 p95=2.000 p99=3.000 max=4.000 n=10 | "
+            "sec_avg_ms sleep=0.000 spin=0.000 setup=0.000 vkbegin=0.000 "
+            "input=0.000 prerun=0.000 run=0.000 draw=0.000 drain=0.000 "
+            "book=0.000 yield=0.000 | input_src raw=0 mac=0 linux=0 "
+            "panel=0 qcur=0 (tot=0) | warp=0 oog_patch=0 osd_apply=0 "
+            "osd_write=0 | hud_dirty_px=0 gl_up_B=0 dr3_skip=0 "
+            "hud_render_us=0.0",
+            "[MelonPrimePerf] audit_counts session_id=TEST-B instance_id=0 "
+            "report_seq=1 stage_matrix_full_validation=0 "
+            "stage_matrix_validation_retry=0 surface_visibility_state_change=0 "
+            "renderer_fast_cache_refresh=0 crosshair_projection_accepted=0 "
+            "crosshair_projection_rejected=0",
+            "[MelonPrimePerf] hud_phase_us session_id=TEST-B instance_id=0 "
+            "report_seq=1 state[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "scoreboard_plan[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "scoreboard_raster[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "painter_other[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "clear[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "hash[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "upload_prepare[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "gpu_upload[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "composite[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "total_active[c=0 sum=0.0 avg=0.0 p50=0.0 p95=0.0 max=0.0] "
+            "calls=0 drawn=0 visual_render=0 visual_reuse=0 identity_probes=0 "
+            "stamp_checks=0 stamp_commits=0 plan_build=0 full_rebuild=0 "
+            "structure_checks=0 dynamic_cells=0 time_changes=0 outline_hit=0 "
+            "outline_miss=0 hash_calls=0 hash_B=0 uploads=0",
+            "[MelonPrimePerfPhase] session_id=TEST-B instance_id=0 "
+            "report_seq=1 report_qpc_ticks=1 qpc_frequency=1",
+        ]) + "\n"
+        expect_rejection(
+            "generic-actual-prefix-lines.log", generic_actual_prefix_tail,
             "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
         )
         complete_seq_12 = controller_valid.replace("report_seq=10", "report_seq=12")

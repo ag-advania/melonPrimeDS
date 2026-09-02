@@ -2393,6 +2393,30 @@ if ($perfSessionText -notmatch 'MELONPRIME_PERF_SESSION_ID' -or
     $inputContractText -notmatch 'cross-session') {
     Add-Error 'Rule BZ3: report-start/session provenance or observation-order recency is incomplete'
 }
+if ($perfSessionText -notmatch
+        '(?s)#if\s+defined\(MELONPRIME_DS\).*?defined\(MELONPRIME_ENABLE_DEVELOPER_FEATURES\).*?defined\(_WIN32\).*?defined\(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY\)' -or
+    $qtSdlCmakeText -notmatch
+        'option\(\s*MELONPRIME_ENABLE_DEVELOPER_FEATURES\b' -or
+    $qtSdlCmakeText -notmatch
+        'option\(\s*MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY\b' -or
+    $qtSdlCmakeText -match
+        'cmake_dependent_option\(\s*MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY\b') {
+    Add-Error 'Rule BZ4: performance session helper is not visible in the independent Raw-only build gate'
+}
+if ($inputPerfSummarizerText -notmatch 'GENERIC_VERSIONED_PREFIXES' -or
+    $inputPerfSummarizerText -notmatch
+        'line\.startswith\(\s*GENERIC_VERSIONED_PREFIXES\s*\)' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] shutdown summary session_id=TEST-A' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] shutdown session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] frame_ms session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] audit_counts session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] hud_phase_us session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerfPhase\] session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch 'generic-actual-prefix-lines' -or
+    $inputPerfSummarizerText -match
+        'line\.startswith\(\s*"\[MelonPrime\] ' ) {
+    Add-Error 'Rule BZ5: Generic generation catch-all/test vectors do not use actual producer prefixes'
+}
 if ($perfProbeText -notmatch 'SummarizeDoubleSamples' -or
     $perfProbeText -notmatch 'SummarizeInputMetric' -or
     $perfProbeText -notmatch 'SummarizeHudPhase' -or

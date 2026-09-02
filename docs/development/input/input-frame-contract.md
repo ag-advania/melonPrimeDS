@@ -120,6 +120,12 @@ Windows Raw telemetry is separately compile-gated by
   recursive mutexes; these are evidence for a future plain-mutex decision,
   not a claim that the type is already replaceable.
 
+The shared fixed-buffer `MELONPRIME_PERF_SESSION_ID` helper is compiled when
+either developer telemetry or the independent Windows Raw telemetry option is
+enabled. The Raw option therefore remains usable with developer features off;
+the helper adds no per-frame environment, allocation, configuration, or
+filesystem work.
+
 Generic reports and frame CSV rows carry `instance_id`. Each emulation thread
 has its own generic probe state; set `MELONPRIME_PERF_CSV` to a path containing
 `%INSTANCE%` when collecting more than one instance (without the placeholder,
@@ -134,12 +140,15 @@ incomplete current generation and cannot fall back to an older complete one.
 `report_seq` is an ordinal generation identity within the process, not a clock
 or a durable ordering value. The parser keys Generic evidence by
 `(session_id, instance_id, report_seq)` and selects the latest generation by
-file observation order; it never selects a numeric maximum across runs.
+file observation order; it never selects a numeric maximum across runs. Its
+versioned Generic fallback recognizes the producer prefixes
+`[MelonPrimePerf]` and `[MelonPrimePerfPhase]`, including shutdown, frame,
+audit, histogram, HUD-phase, and phase-clock lines.
 Explicit-latency lines from another generation are kept only as unbound
 supplemental evidence and are omitted from certified Markdown.
 
 The runner must set `MELONPRIME_PERF_SESSION_ID` to one non-empty,
-whitespace-free token. The developer-only fixed-buffer helper reads it once on
+whitespace-free token. The fixed-buffer measurement helper reads it once on
 the cold report path, and both Generic and Windows Raw reports emit it. Strict
 Raw certification requires the latest certified Generic generation(s) and the
 Raw generation to have the same session ID. This cross-session check prevents a
