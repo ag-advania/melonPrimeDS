@@ -30,6 +30,9 @@ void LinuxWarpCursorGlobal(int x, int y);
 class LinuxRawInputFilter
 {
 public:
+    static constexpr std::uint8_t StateAvailable = 1u << 0;
+    static constexpr std::uint8_t StateMotionSeen = 1u << 1;
+
     static LinuxRawInputFilter* Acquire();
     static void Release();
 
@@ -38,8 +41,7 @@ public:
     // re-sync) is never differenced into aim motion.
     static void NotifyCursorWarp();
 
-    bool isAvailable() const;
-    bool hasReceivedMotion() const;
+    [[nodiscard]] std::uint8_t stateBits() const noexcept;
     void fetchMouseDelta(MelonPrimeInputSubscription& subscription, int32_t& outDx, int32_t& outDy);
     void resetAll(MelonPrimeInputSubscription& subscription);
 

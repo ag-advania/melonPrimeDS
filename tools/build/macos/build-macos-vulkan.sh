@@ -132,11 +132,12 @@ if [[ "$DEV_FEATURES" == "OFF" ]]; then
     # a developer or measurement build keeps the ON value in its CMake cache,
     # and a shipping binary must not inherit instrumentation that way.
     CMAKE_ARGS+=(
+        -DMELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=OFF
         -DMELONPRIME_ENABLE_RENDERER_PERF_TELEMETRY=OFF
         -DMELONPRIME_ENABLE_GPU_MEMORY_TELEMETRY=OFF
         -DMELONPRIME_ENABLE_VULKAN_LATENCY_CAPTURE=OFF
     )
-    log "Diagnostic gates: renderer telemetry / GPU memory telemetry / Vulkan latency capture all OFF"
+    log "Diagnostic gates: input debug / renderer / GPU memory telemetry / Vulkan latency capture all OFF"
 fi
 if [[ "$BUNDLE_MOLTENVK" -eq 1 ]]; then
     CMAKE_ARGS+=(

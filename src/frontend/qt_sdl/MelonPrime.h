@@ -104,9 +104,10 @@ namespace MelonPrime {
         uint64_t press;
         int32_t  mouseX;
         int32_t  mouseY;
-        int32_t  wheelDelta;
+        int32_t  wheelSteps;
+        int32_t  weaponCycleSteps;
         uint32_t moveIndex;
-        uint32_t _pad[2];
+        uint32_t _pad[1];
     };
     static_assert(sizeof(FrameInputState) == 64);
 
@@ -227,6 +228,9 @@ namespace MelonPrime {
         MelonPrimeCore& operator=(const MelonPrimeCore&) = delete;
 
         void Initialize();
+        // Must run on the EmuThread before it exits so each subscription's
+        // thread-affine hidden Raw window is destroyed by its creator.
+        void ShutdownRawInput() noexcept;
         HOT_FUNCTION void RunFrameHook();
         void OnEmuStart();
         void OnEmuStop();
@@ -481,6 +485,10 @@ namespace MelonPrime {
         // replaces. Never add allocation, logging, config lookup, an atomic, or
         // virtual dispatch here.
         FORCE_INLINE void SetFastForwardState(bool active) noexcept { isFastForward = active; }
+        [[nodiscard]] FORCE_INLINE bool IsNestedFrameAdvanceForInput() const noexcept
+        {
+            return m_isRunningHook;
+        }
 
         void NotifyLayoutChange();  // P-3: impl in .cpp (needs complete EmuInstance type)
 
@@ -604,7 +612,7 @@ namespace MelonPrime {
         // handed us a different local Player*, so both edge latches must
         // re-baseline instead of emitting an edge against the old entity's
         // state (stale-edge policy).
-        uint32_t m_overlayLocalPlayerPtr = 0;
+        uint32_t m_postPollOverlayLocalPlayerPtr = 0;
         uint16_t m_immediateOverlayPreserveMask = 0;
         // ---------------------------------------------------------------
         // Control-preset button snapshot.
@@ -881,13 +889,21 @@ namespace MelonPrime {
         bool     m_isWeaponCheckActive = false;
         bool     m_isLayoutChangePending = true;
         std::atomic_bool m_configReloadPending{ false };
-        // P-47: Set by FrameAdvanceOnce; cleared after PollAndSnapshot.
+        // P-47: Set by FrameAdvanceOnce; cleared after UpdateOwnerAndSnapshot.
         // True  → LateLatch must call processRawInputBatched (events may have
         //          arrived during the FrameAdvance window: ~32–96 ms).
-        // False → PollAndSnapshot was just called; kernel buffer is still
+        // False → UpdateOwnerAndSnapshot was just called; kernel buffer is still
         //          empty on a normal frame (~40–100 ns window). Skip the
         //          GetRawInputBuffer syscall entirely (~500–2000 cyc saved).
         bool     m_didFrameAdvanceSinceSnapshot = false;
+        // Normal guest-frame-only Qt gameplay edge baseline. Re-entrant frame
+        // advances read held state but never commit these fields.
+        uint64_t m_qtGameplayHotkeyPrevious = 0;
+        bool     m_qtGameplayEdgeNeedsBaseline = true;
+        bool     m_rawAimActiveThisFrame = false;
+#if !defined(_WIN32)
+        bool     m_warpCursorAfterAimThisFrame = false;
+#endif
         // True when the active mode-specific ScanShoot key is held this frame.
         // Used to keep the shoot/scan/map-expand input working during the
         // Adventure map/user-action pause while the Mouse-Left ShootScan key
@@ -1005,6 +1021,11 @@ namespace MelonPrime {
         std::unique_ptr<RawInputWinFilter, FilterDeleter> m_rawFilter;
         RawInputSubscription* m_rawInputSubscription = nullptr;
         void* m_cachedHwnd = nullptr;
+        // Cold-compiled per-binding source ownership. The default profile has
+        // no Qt fallback bits, preserving the existing Raw hotkey path; rare
+        // canonical chords/unsupported identities merge only these fixed masks.
+        uint64_t m_rawOwnedGameplayMask = 0;
+        uint64_t m_qtFallbackGameplayMask = 0;
 #endif
 
         struct AimData {
@@ -1019,18 +1040,12 @@ namespace MelonPrime {
         uint8_t      m_hunterID = 0;
 
         // =================================================================
-        // Transient input-state reset cluster (Phase 4-1)
+        // Input lifecycle ownership
         //
-        // Six lifecycle sites (OnEmuStart / ResetRuntimeStateForBoot /
-        // OnEmuStop / RunFrameHook focus-loss / RunFrameHook game-leave /
-        // HandleGameJoinInit) each clear an overlapping-but-different subset
-        // of these transient fields. ResetTransientInputState(parts) clears
-        // exactly the requested subset so each site keeps its historical
-        // behavior verbatim; the bitmask just removes the copy-paste.
-        //
-        // NOTE: TR_AimResiduals also zeroes m_nativeAimDeltaX/Y — those two
-        // pairs always travelled together at every site that touched them.
-        // TR_WeaponSwitchPending is MELONPRIME_DS-only (the field is too).
+        // Callers name the lifecycle boundary; MelonPrimeGameInput.cpp owns
+        // the exact reset subset. This keeps top-level lifecycle/orchestration
+        // code independent of the physical input-field layout while preserving
+        // the deliberately asymmetric historical reset semantics.
         // =================================================================
         // Overlay-managed actions, in the order the hook expands them onto the
         // player's binding masks. Host-input space, so it stays valid whatever
@@ -1045,47 +1060,15 @@ namespace MelonPrime {
             OVA_ZOOM   = 1u << 6,
         };
 
-        enum TransientReset : uint8_t {
-            TR_AimResiduals      = 1u << 0,  // m_aimResidualX/Y + m_nativeAimDeltaX/Y
-            TR_OverlayHeld       = 1u << 1,  // immediate-overlay action edge state
-            TR_DirectTransform   = 1u << 2,  // m_directTransformPendingFrames
-            TR_BipedFire         = 1u << 3,  // native biped-fire edge latch
-            TR_WeaponSwitchPending = 1u << 4, // m_weaponSwitchPending (DS only)
-            TR_DirectInvocation  = 1u << 5,  // m_directInvocationPending (DS only)
+        enum class InputLifecycleBoundary : uint8_t {
+            EmuStart,
+            Boot,
+            EmuStop,
+            GameLeave,
+            FocusLoss,
+            GameJoin,
+            SavestateLoad,
         };
-        FORCE_INLINE void ResetTransientInputState(uint8_t parts) noexcept {
-            if (parts & TR_AimResiduals) {
-                m_aimResidualX = 0;
-                m_aimResidualY = 0;
-                m_nativeAimDeltaX = 0;
-                m_nativeAimDeltaY = 0;
-            }
-            if (parts & TR_OverlayHeld) {
-                m_immediateOverlayPrevActions = 0;
-                m_immediateOverlayFrameHeld = 0;
-                m_immediateOverlayFramePressed = 0;
-                m_immediateOverlayFrameReleased = 0;
-                m_immediateOverlayLatchValid = false;
-                m_overlayLocalPlayerPtr = 0;
-            }
-            if (parts & TR_DirectTransform)
-                m_directTransformPendingFrames = 0;
-            if (parts & TR_BipedFire) {
-                m_nativeBipedFirePrevHeld = false;
-                m_nativeBipedFirePrevAltForm = false;
-                m_nativeBipedFireLatchValid = false;
-                m_nativeBipedFireFrameHeld = false;
-                m_nativeBipedFireFramePressed = false;
-                m_nativeBipedFireFrameReleased = false;
-                m_overlayLocalPlayerPtr = 0;
-            }
-#ifdef MELONPRIME_DS
-            if (parts & TR_WeaponSwitchPending)
-                m_weaponSwitchPending.Clear();
-            if (parts & TR_DirectInvocation)
-                m_directInvocationPending.Clear();
-#endif
-        }
 
 #if MELONPRIME_PLATFORM_RAW_FILTER_ENABLED
     // Non-Windows raw mouse input. Cold-section member per the
@@ -1099,6 +1082,7 @@ namespace MelonPrime {
         MelonPrimeInputSubscription m_inputSubscription{};
         MelonPrimeThreadBridge m_threadBridge{};
         uint64_t m_layoutGenerationSeen = 0;
+        uint64_t m_publishedInputGeneration = ~uint64_t{0};
 
         ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
         // Native Biped Fire developer diagnostics. Sampled during the frame
@@ -1241,9 +1225,9 @@ namespace MelonPrime {
         // =================================================================
         // Methods
         // =================================================================
-        HOT_FUNCTION void UpdateInputState(bool focused);
-        HOT_FUNCTION void UpdateInputStateReentrant(bool focused);  // re-entrant FrameAdvance path
-        template <bool kReentrant> FORCE_INLINE void UpdateInputStateImpl(bool focused);
+        HOT_FUNCTION void UpdateInputState(const GuiInputPolicySnapshot& guiPolicy);
+        HOT_FUNCTION void UpdateInputStateReentrant(const GuiInputPolicySnapshot& guiPolicy);  // re-entrant FrameAdvance path
+        template <bool kReentrant> FORCE_INLINE void UpdateInputStateImpl(const GuiInputPolicySnapshot& guiPolicy);
         HOT_FUNCTION void HandleInGameLogic();
         COLD_FUNCTION void ReloadDamageNotifyPurpleConfig();
         HOT_FUNCTION void DamageNotifyPurpleTick();
@@ -1274,12 +1258,24 @@ namespace MelonPrime {
         COLD_FUNCTION void HandleAimEarlyReset();  // P-29b
         COLD_FUNCTION void HandleAdventureMode();
 
+        // Input/Aim state owners. These are cold/transition APIs; the normal
+        // input frame pays no new branch, allocation, indirection or call.
+        COLD_FUNCTION void ResetAimTransientState() noexcept;
+        COLD_FUNCTION void ResetImmediateOverlayInputState() noexcept;
+        COLD_FUNCTION void ResetPostPollOverlayCoordinatorState() noexcept;
+        COLD_FUNCTION void ResetDirectTransformInputState() noexcept;
+        COLD_FUNCTION void ResetNativeBipedFireInputState() noexcept;
+        COLD_FUNCTION void ResetGameplayEdgeBaselines() noexcept;
+        COLD_FUNCTION void ResetInputForLifecycleBoundary(
+            InputLifecycleBoundary boundary) noexcept;
+
         COLD_FUNCTION void HandleGameJoinInit();
         COLD_FUNCTION void HandleBattleRuntimeEnter();
         COLD_FUNCTION void DetectRomAndSetAddresses();
         void ReconcileMenuGameSettings();
 
         void ApplyRuntimeAimSensitivity(int sensitivity);
+        void ApplyAimRuntimeConfig(const RuntimeConfigSnapshot& snapshot);
         void RecalcAimFixedPoint();
         void RecalcAimEffectiveFixedScale();
         void UpdateZoomAimEffectiveScale();

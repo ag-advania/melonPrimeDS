@@ -25,8 +25,9 @@
 #ifdef MELONPRIME_DS
 #include <QMouseEvent>
 #include <QWheelEvent>
-#include <optional>
 #include "MelonPrimeDef.h"
+#include "MelonPrimeLocalization.h"
+#include "MelonPrimeMouseButton.h"
 #include "MelonPrimeWheelEvent.h"
 #endif
 
@@ -34,6 +35,7 @@
 
 #include "Platform.h"
 #include "EmuInstance.h"
+#include "MelonPrimeQtKeyBinding.h"
 
 class InputConfigDialog;
 
@@ -66,14 +68,10 @@ protected:
         Log(melonDS::Platform::Debug, "KEY PRESSED = %08X %08X | %08X %08X %08X\n", event->key(), (int)event->modifiers(), event->nativeVirtualKey(), event->nativeModifiers(), event->nativeScanCode());
 
         int key = event->key();
-        int mod = event->modifiers();
-        bool ismod = (key == Qt::Key_Control ||
-                      key == Qt::Key_Alt ||
-                      key == Qt::Key_AltGr ||
-                      key == Qt::Key_Shift ||
-                      key == Qt::Key_Meta);
+        const bool ismod = IsQtModifierKey(key);
 
 #ifndef MELONPRIME_DS
+        int mod = event->modifiers();
         // Original logic: Only allow Esc/Backspace if no modifiers are pressed
         if (!mod)
         {
@@ -93,12 +91,7 @@ protected:
         }
 #endif
 
-        if (!ismod)
-            key |= mod;
-        else if (isRightModKey(event))
-            key |= (1<<31);
-
-        *mapping = key;
+        *mapping = NormalizeQtKeyBinding(*event);
         click();
     }
 
@@ -108,6 +101,15 @@ protected:
 
         // Log(melonDS::Platform::Debug, "MOUSE BUTTON PRESSED = %08X\n", event->button());
 
+        if (!MelonPrime::IsSupportedMouseButton(event->button())) {
+            // Qt exposes ExtraButton4..ExtraButton24, but the runtime has no
+            // route for them. Keep the previous mapping intact and make the
+            // rejected legacy value visible instead of persisting a dead key.
+            setText(MelonPrime::UiText::Tr("Unsupported Mouse Button"));
+            event->ignore();
+            return;
+        }
+
         *mapping = (int)event->button() | MelonPrime::InputKey::MouseMark;
         click();
     }
@@ -115,7 +117,7 @@ protected:
     void wheelEvent(QWheelEvent* event) override {
         if (!isChecked()) return QPushButton::wheelEvent(event);
 
-        const int steps = MelonPrime::PhysicalWheelSteps(*event);
+        const int steps = wheelSteps.Consume(*event);
         if (steps == 0) {
             event->ignore();
             return;
@@ -147,6 +149,9 @@ private slots:
     {
         if (isChecked())
         {
+#ifdef MELONPRIME_DS
+            wheelSteps.Reset();
+#endif
             setText("[press key]");
         }
         else
@@ -156,6 +161,9 @@ private slots:
     }
 
 private:
+#ifdef MELONPRIME_DS
+    MelonPrime::PhysicalWheelStepAccumulator wheelSteps;
+#endif
     QString mappingText()
     {
         int key = *mapping;
@@ -168,52 +176,12 @@ private:
         if (key == MelonPrime::InputKey::MouseWheelDown)
             return QStringLiteral("Mouse Wheel Down");
 
-        auto getMouseButtonName = [](Qt::MouseButton button) -> std::optional<QString> {
-            static const struct {
-                Qt::MouseButton button;
-                const char* name;
-            } mouseButtons[] = {
-                {Qt::LeftButton, "LeftButton"},
-                {Qt::RightButton, "RightButton"},
-                {Qt::MiddleButton, "MiddleButton"},
-                {Qt::BackButton, "BackButton"},
-                {Qt::ForwardButton, "ForwardButton"},
-                {Qt::ExtraButton4, "ExtraButton4"},
-                {Qt::ExtraButton5, "ExtraButton5"},
-                {Qt::ExtraButton6, "ExtraButton6"},
-                {Qt::ExtraButton7, "ExtraButton7"},
-                {Qt::ExtraButton8, "ExtraButton8"},
-                {Qt::ExtraButton9, "ExtraButton9"},
-                {Qt::ExtraButton10, "ExtraButton10"},
-                {Qt::ExtraButton11, "ExtraButton11"},
-                {Qt::ExtraButton12, "ExtraButton12"},
-                {Qt::ExtraButton13, "ExtraButton13"},
-                {Qt::ExtraButton14, "ExtraButton14"},
-                {Qt::ExtraButton15, "ExtraButton15"},
-                {Qt::ExtraButton16, "ExtraButton16"},
-                {Qt::ExtraButton17, "ExtraButton17"},
-                {Qt::ExtraButton18, "ExtraButton18"},
-                {Qt::ExtraButton19, "ExtraButton19"},
-                {Qt::ExtraButton20, "ExtraButton20"},
-                {Qt::ExtraButton21, "ExtraButton21"},
-                {Qt::ExtraButton22, "ExtraButton22"},
-                {Qt::ExtraButton23, "ExtraButton23"},
-                {Qt::ExtraButton24, "ExtraButton24"}
-            };
-
-            for (const auto& mb : mouseButtons) {
-                if (button == mb.button) {
-                    return QString("Mouse ") + mb.name;
-                }
-            }
-            return std::nullopt;
-            };
-
         if ((key & MelonPrime::InputKey::MouseMark) == MelonPrime::InputKey::MouseMark) {
-            auto mouseButton = key & ~MelonPrime::InputKey::MouseMark;
-            if (auto name = getMouseButtonName(static_cast<Qt::MouseButton>(mouseButton))) {
-                return *name;
-            }
+            const auto mouseButton = static_cast<Qt::MouseButton>(
+                key & ~MelonPrime::InputKey::MouseMark);
+            if (const char* name = MelonPrime::MouseButtonName(mouseButton))
+                return QStringLiteral("Mouse ") + QString::fromLatin1(name);
+            return MelonPrime::UiText::Tr("Unsupported Mouse Button");
         }
 #endif
 

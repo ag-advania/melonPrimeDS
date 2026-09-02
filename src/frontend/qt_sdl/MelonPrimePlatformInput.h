@@ -5,8 +5,10 @@
 #include "MelonPrimeInputSubscription.h"
 
 #include <cstdint>
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
 #include <cstdio>
 #include <cstdlib>
+#endif
 
 #include <QCursor>
 
@@ -40,6 +42,12 @@ enum class AimInputSource : uint8_t {
     PanelDelta,
     QCursorFallback,
     None,
+};
+
+struct ResolvedAimInput {
+    AimInputSource source = AimInputSource::None;
+    bool rawActive = false;
+    bool warpAfterAim = false;
 };
 
 #if defined(__linux__)
@@ -88,13 +96,22 @@ inline void PlatformInput_ReleaseRawFilter(PlatformRawFilter*& filter)
 
 inline bool PlatformInput_IsRawAvailable(const PlatformRawFilter* filter)
 {
+#if defined(__linux__)
+    const uint8_t state = filter ? filter->stateBits() : 0;
+    return (state & LinuxRawInputFilter::StateAvailable) != 0;
+#else
     return filter && filter->isAvailable();
+#endif
 }
 
 inline bool PlatformInput_IsRawAimActive(const PlatformRawFilter* filter)
 {
 #if defined(__linux__)
-    return filter && filter->isAvailable() && filter->hasReceivedMotion();
+    const uint8_t state = filter ? filter->stateBits() : 0;
+    return (state & (LinuxRawInputFilter::StateAvailable
+        | LinuxRawInputFilter::StateMotionSeen))
+        == (LinuxRawInputFilter::StateAvailable
+            | LinuxRawInputFilter::StateMotionSeen);
 #else
     return filter && filter->isAvailable();
 #endif
@@ -126,6 +143,7 @@ inline void PlatformInput_ResetRawFilter(
 inline AimInputSource PlatformInput_ResolveAimSource(
     PlatformRawFilter* filter,
     MelonPrimeInputSubscription& subscription,
+    bool resolvedOwner,
     bool hasPanel,
     bool& outHaveMouseDelta,
     int32_t& outDx,
@@ -134,7 +152,7 @@ inline AimInputSource PlatformInput_ResolveAimSource(
     outHaveMouseDelta = false;
     outDx = 0;
     outDy = 0;
-    if (!PlatformInputOwnerService::IsOwner(subscription))
+    if (!resolvedOwner)
         return AimInputSource::None;
 
 #if defined(__APPLE__)
@@ -149,7 +167,12 @@ inline AimInputSource PlatformInput_ResolveAimSource(
     }
     return AimInputSource::None;
 #else
-    if (PlatformInput_IsRawAimActive(filter)) {
+    const uint8_t rawState = filter ? filter->stateBits() : 0;
+    const bool rawAimActive = (rawState & (LinuxRawInputFilter::StateAvailable
+        | LinuxRawInputFilter::StateMotionSeen))
+        == (LinuxRawInputFilter::StateAvailable
+            | LinuxRawInputFilter::StateMotionSeen);
+    if (rawAimActive) {
         PlatformInput_FetchRawMouseDelta(filter, subscription, outDx, outDy);
         outHaveMouseDelta = true;
         return AimInputSource::LinuxRaw;
@@ -191,9 +214,10 @@ inline void PlatformInput_CountPerfAimSource(AimInputSource aimSrc)
 
 // macOS/Linux aim delta path (V5 Phase 2 facade implementation).
 template<typename AimPanel>
-inline void PlatformInput_UpdateMouseDeltaMacLinux(
+inline ResolvedAimInput PlatformInput_UpdateMouseDeltaMacLinux(
     PlatformRawFilter* filter,
     MelonPrimeInputSubscription& subscription,
+    bool resolvedOwner,
     AimPanel* panel,
     uint8_t& platformRawAimWasActive,
     bool& haveMouseDelta,
@@ -204,7 +228,8 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
 {
     const bool hasPanel = (panel != nullptr);
     const AimInputSource aimSrc = PlatformInput_ResolveAimSource(
-        filter, subscription, hasPanel, haveMouseDelta, mouseX, mouseY);
+        filter, subscription, resolvedOwner, hasPanel,
+        haveMouseDelta, mouseX, mouseY);
 
 #if defined(__linux__)
     const bool rawActive = (aimSrc == AimInputSource::LinuxRaw);
@@ -215,6 +240,7 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
     if (aimSrc == AimInputSource::PanelDelta)
         panel->getAimMouseDelta(mouseX, mouseY);
 
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
     {
         static const bool s_inputDbg =
             std::getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
@@ -243,11 +269,21 @@ inline void PlatformInput_UpdateMouseDeltaMacLinux(
         }
     }
 #endif
+#endif
 
     (void)centerX;
     (void)centerY;
 
     PlatformInput_CountPerfAimSource(aimSrc);
+    ResolvedAimInput result;
+    result.source = aimSrc;
+#if defined(__APPLE__)
+    result.rawActive = aimSrc == AimInputSource::MacRaw;
+    result.warpAfterAim = aimSrc != AimInputSource::MacRaw;
+#else
+    result.rawActive = aimSrc == AimInputSource::LinuxRaw;
+#endif
+    return result;
 }
 
 template<typename AimPanel>
@@ -265,39 +301,12 @@ inline void PlatformInput_ResetAfterLayoutWarpMacLinux(
 
 #endif // defined(__APPLE__) || defined(__linux__)
 
-inline bool PlatformInput_IsRuntimeRawAimActive(
-    const void* filterOpaque,
-    const MelonPrimeInputSubscription& subscription)
-{
-#if defined(__APPLE__) || defined(__linux__)
-    return PlatformInput_IsRawAimActive(
-        static_cast<const PlatformRawFilter*>(filterOpaque));
-#else
-    (void)filterOpaque;
-    return subscription.activeOwner.load(std::memory_order_acquire);
-#endif
-}
-
 #if !defined(_WIN32)
-inline bool PlatformInput_ShouldWarpCursorAfterAim(
-    const void* filterOpaque)
-{
-#if defined(__linux__)
-    (void)filterOpaque;
-    return false;
-#elif defined(__APPLE__)
-    return !PlatformInput_IsRawAimActive(
-        static_cast<const PlatformRawFilter*>(filterOpaque));
-#else
-    (void)filterOpaque;
-    return true;
-#endif
-}
-
 template<typename AimPanel>
-inline void PlatformInput_UpdateMouseDelta(
+inline ResolvedAimInput PlatformInput_UpdateMouseDelta(
     void* filterOpaque,
     MelonPrimeInputSubscription& subscription,
+    bool resolvedOwner,
     AimPanel* panel,
     uint8_t* platformRawAimWasActive,
     bool& haveMouseDelta,
@@ -309,9 +318,10 @@ inline void PlatformInput_UpdateMouseDelta(
 #if defined(__APPLE__) || defined(__linux__)
     uint8_t localWasActive =
         platformRawAimWasActive ? *platformRawAimWasActive : 0;
-    PlatformInput_UpdateMouseDeltaMacLinux(
+    const ResolvedAimInput result = PlatformInput_UpdateMouseDeltaMacLinux(
         static_cast<PlatformRawFilter*>(filterOpaque),
         subscription,
+        resolvedOwner,
         panel,
         localWasActive,
         haveMouseDelta,
@@ -321,16 +331,19 @@ inline void PlatformInput_UpdateMouseDelta(
         centerY);
     if (platformRawAimWasActive)
         *platformRawAimWasActive = localWasActive;
+    return result;
 #else
     (void)filterOpaque;
     (void)platformRawAimWasActive;
     (void)panel;
     (void)subscription;
+    (void)resolvedOwner;
     (void)haveMouseDelta;
     (void)mouseX;
     (void)mouseY;
     (void)centerX;
     (void)centerY;
+    return {};
 #endif
 }
 

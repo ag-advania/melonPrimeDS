@@ -72,6 +72,45 @@ namespace MelonPrime {
                                   (1u << ID_TO_ORDERED_IDX[Missile]) |
                                   (1u << ID_TO_ORDERED_IDX[OmegaCannon]));
 
+        // Resolve N signed semantic cycle steps to one final ordered index.
+        // The available set is bounded to nine entries, uses no allocation,
+        // and SwitchWeapon is called only once for the resulting target.
+        [[nodiscard]] FORCE_INLINE uint8_t ResolveCycleTargetIndex(
+            uint16_t availableBits, uint8_t currentIdx, int32_t steps) noexcept
+        {
+            uint8_t available[ORDERED_WEAPONS.size()];
+            uint8_t count = 0;
+            for (uint8_t i = 0; i < ORDERED_WEAPONS.size(); ++i) {
+                if (availableBits & (1u << i))
+                    available[count++] = i;
+            }
+            if (count == 0 || steps == 0)
+                return currentIdx;
+
+            const uint64_t distance = steps < 0
+                ? static_cast<uint64_t>(-static_cast<int64_t>(steps))
+                : static_cast<uint64_t>(steps);
+            if (steps > 0) {
+                uint8_t first = 0;
+                while (first < count && available[first] <= currentIdx)
+                    ++first;
+                if (first == count)
+                    first = 0;
+                const uint8_t offset = static_cast<uint8_t>(
+                    (distance - 1) % count);
+                return available[(first + offset) % count];
+            }
+
+            uint8_t first = count;
+            while (first > 0 && available[first - 1] >= currentIdx)
+                --first;
+            if (first == 0)
+                first = count;
+            const uint8_t offset = static_cast<uint8_t>(
+                (distance - 1) % count);
+            return available[(first - 1 + count - offset) % count];
+        }
+
     } // namespace WeaponData
 
 
@@ -166,7 +205,7 @@ namespace MelonPrime {
     // ProcessWeaponSwitch -- handles wheel/next/prev and direct hotkey selection
     //
     // OPT vs previous version:
-    //   1. Weapon cycling uses O(1) bit-scan instead of O(n) loop
+    //   1. Multi-detent cycling resolves one bounded final target and issues one switch
     //   2. Direct hotkey mask uses fold expression instead of runtime loop
     //   3. Common WeaponState struct eliminates duplicate RAM reads
     // =========================================================================
@@ -180,12 +219,13 @@ namespace MelonPrime {
             // through the normal hotkey path into IB_WEAPON_NEXT/PREV.
             const bool nextKey = IsPressed(IB_WEAPON_NEXT);
             const bool prevKey = IsPressed(IB_WEAPON_PREV);
+            const int32_t cycleSteps = m_input.weaponCycleSteps != 0
+                ? m_input.weaponCycleSteps
+                : (nextKey == prevKey ? 0 : (nextKey ? 1 : -1));
 
-            if (!nextKey && !prevKey) return false;
+            if (cycleSteps == 0) return false;
 
             if (isStylusMode) m_flags.set(StateFlags::BIT_BLOCK_STYLUS);
-
-            const bool forward = nextKey;
 
             const WeaponState ws(m_ptrs.havingWeapons, m_ptrs.weaponAmmo);
             const bool isWeavel = m_flags.test(StateFlags::BIT_IS_WEAVEL);
@@ -207,31 +247,11 @@ namespace MelonPrime {
             const uint8_t safeID = (curID >= 9) ? 0 : curID;
             const uint8_t currentIdx = ID_TO_ORDERED_IDX[safeID];
 
-            // OPT: O(1) weapon cycling via bit-scan.
-            //
-            // Previous code used a loop iterating up to 8 times with modular
-            // arithmetic per iteration. The new approach:
-            //   Forward:  find lowest set bit ABOVE currentIdx, else wrap to lowest overall
-            //   Backward: find highest set bit BELOW currentIdx, else wrap to highest overall
-            //
-            // This replaces up to 8 iterations x (branch + mod) with 2-3 bit ops.
-            // Latency-sensitive because weapon switch triggers FrameAdvanceTwice
-            // immediately after, so every us here is added to input-to-action delay.
-            const uint16_t candidates = availableBits & ~(1u << currentIdx);
-            if (!candidates) {
+            const uint8_t targetIdx = ResolveCycleTargetIndex(
+                availableBits, currentIdx, cycleSteps);
+            if (targetIdx == currentIdx) {
                 m_flags.clear(StateFlags::BIT_BLOCK_STYLUS);
                 return false;
-            }
-
-            size_t targetIdx;
-            if (forward) {
-                // Mask bits strictly above currentIdx
-                const uint16_t upper = candidates & ~((1u << (currentIdx + 1)) - 1);
-                targetIdx = upper ? BitScanFwd(upper) : BitScanFwd(candidates);
-            } else {
-                // Mask bits strictly below currentIdx
-                const uint16_t lower = candidates & ((1u << currentIdx) - 1);
-                targetIdx = lower ? BitScanRev(lower) : BitScanRev(candidates);
             }
 
             const bool switched = SwitchWeapon(ORDERED_WEAPONS[targetIdx].id);

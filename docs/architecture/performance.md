@@ -35,6 +35,13 @@ keep work that only the *next* frame can observe off it:
   same work. Stuck-key recovery (`clearStuck*`) and message draining run after `RunFrame` +
   `drawScreen` (`DeferredDrain` / `clearStuckPostFrame`), because their effect is only ever
   read by the next snapshot.
+- Hidden-window Raw recovery is classified at decode time: successful pure motion and
+  wheel-only messages do not publish the post-frame scan, while stateful events and
+  Raw-read failures retain the fail-safe request.
+- On Windows, a normal input snapshot computes Raw readiness once and makes one
+  Raw/Qt source decision for both held and pressed gameplay state. The default
+  Raw-only profile stays on the direct path; mixed bindings merge disjoint
+  Raw-owned and Qt-fallback masks.
 - gate optional per-frame syscalls on a cheap flag instead of running them unconditionally.
   LateLatch re-drains the raw-input buffer only when a `FrameAdvance` opened a wide window
   (`m_didFrameAdvanceSinceSnapshot`); normal frames skip the `GetRawInputBuffer` call.
@@ -96,8 +103,10 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | `m_aimEffectiveFixedScale*` | `MelonPrime.h` | Sensitivity / zoom-aim config reload | `RecalcAimFixedPoint` / zoom update |
 | `m_aimResidualX/Y` | `MelonPrime.h` | Sensitivity, layout, aim block, focus (not `InputReset`) | `HandleAimEarlyReset`, explicit lifecycle |
 | `m_cachedPanel` (P-3) | `MelonPrime.h` | `OnEmuStart`, `NotifyLayoutChange` | `MelonPrimeCore` lifecycle |
-| Linux panel `aimMouseDelta*` | `Screen.h:109-110` | `resetAimMouseDelta`, panel→raw edge (`GameInput.cpp:205-206`) | `ScreenPanel` + `UpdateInputStateImpl` |
-| Linux `absBaseInvalid` | `MelonPrimeRawInputLinuxFilter.cpp:87` | `resetAll`, `NotifyCursorWarp` | `LinuxRawInputFilter` |
+| Qt panel `m_panelAimTotal` / reset baseline / consumer cursor | `MelonPrimeThreadBridge.h` | reset captures the current total; panel→raw and layout/focus transitions request reset | GUI-thread producer + emulation-thread consumer |
+| SDL active binding table / late edge baseline | `EmuInstance.h` | input config load, central device close, reconnect baseline | `EmuInstance` input owner |
+| Linux raw axis baseline / residuals | `MelonPrimeRawInputLinuxFilter.cpp` | reset eventfd readiness at a bounded (64-event maximum) filter-loop boundary, device hierarchy invalidation | `LinuxRawInputFilter` |
+| Linux raw availability + motion-seen | `MelonPrimeRawInputLinuxFilter.cpp` packed state byte | filter startup/first delivered motion, teardown | `LinuxRawInputFilter` |
 | Mac raw `lastReadX/Y` | `MelonPrimeRawInputMacFilter.mm:46-47` | `resetAll`, filter stop | `MacRawInputFilter::resetAll` |
 | Linux raw `lastReadX/Y` | `MelonPrimeRawInputLinuxFilter.cpp:54-55` | `resetAll` | `LinuxRawInputFilter::resetAll` |
 | Win raw mouse snapshot | `MelonPrimeRawInputState.cpp:283-289` | `discardDeltas`, `resetAll` | `InputState::fetchMouseDelta` |
@@ -123,6 +132,38 @@ Review must not increase steady-state per-frame syscalls without Phase 0 before/
 | All (dev) | Perf probe | 0 in release; gated in dev | S22 verified |
 
 Increasing any row requires `MELONPRIME_PERF=1` before/after attached to the PR.
+
+### Input event / frame RMW budget
+
+The steady-state contract is load-first for rare claims and single-writer
+load/store for monotonic raw accumulators:
+
+| Path | Empty / steady operation | Claim / publication |
+|---|---|---|
+| Linux packed availability/motion state | one acquire load by the frame resolver | release stores at startup, first motion, and teardown |
+| Linux absolute baseline / residual reset | no per-event reset check | cold mailbox token consumed at the filter-loop/event-batch boundary |
+| Linux packed cumulative total writer | relaxed load | release store by the sole XInput filter thread |
+| Linux motion-seen state | filter-thread shadow, no event-hot atomic load | one release publication in the packed state byte |
+| macOS GCMouse / IOHID cumulative totals | relaxed load by the backend's sole serialized writer | release store; frame reader advances a subscription cursor |
+| Qt panel aim cumulative total | relaxed load by the GUI-thread sole writer | packed release store; reset publishes a separate boundary baseline |
+| SDL wheel pulse | relaxed zero load | exchange only when a pulse is pending |
+| Core config reload | relaxed false load | `exchange(false, acq_rel)` on a pending edge |
+| cursor-mode command | relaxed `-1` load | `exchange(-1, acq_rel)` on a command |
+| wheel mailbox | relaxed zero load | exchange for an event or nonzero generation-only boundary |
+| GUI / persist request mailbox | relaxed empty load | exchange only when a request is pending |
+
+A producer racing an empty load is not cleared: its value remains pending and
+is consumed on the next normal frame. Config reload and cursor mode are
+coalesced replacement commands, so this bounded delay is intentional. Wheel
+keeps the packed generation/value invariant and never treats a generation-only
+publication as empty.
+
+The macOS load/store accumulator contract relies on explicit writer
+serialization: all GCMouse value-change handlers use one serial handler queue,
+while IOHID has one worker runloop. The two backends publish separate totals,
+so they never become concurrent writers of the same atomic. Qt panel movement
+is likewise serialized by GUI dispatch; its reset baseline is separate from the
+producer-owned total and preserves movement that arrives after a reset request.
 
 ### V6 Measurement Gate (historical baseline rule)
 

@@ -8,79 +8,6 @@
 
 namespace MelonPrime {
 
-    // ------------------------------------------------------------------------
-    // Constants for Qt Key Codes
-    // ------------------------------------------------------------------------
-    namespace {
-        constexpr int kQtKey_Shift = 0x01000020;
-        constexpr int kQtKey_Control = 0x01000021;
-        constexpr int kQtKey_Alt = 0x01000023;
-        constexpr int kQtKey_Tab = 0x01000001;
-        constexpr int kQtKey_PageUp = 0x01000016;
-        constexpr int kQtKey_PageDown = 0x01000017;
-        constexpr int kQtKey_Space = 0x20;
-        constexpr int kQtKey_F1 = 0x01000030;
-        constexpr int kQtKey_F35 = 0x0100004F;
-
-    }
-
-    // ------------------------------------------------------------------------
-    // Helper Functions
-    // ------------------------------------------------------------------------
-
-    static inline bool TryAppendSpecialKey(int qt, SmallVkList& out) {
-        switch (qt) {
-        case kQtKey_Shift:    out.push_back(VK_LSHIFT);   out.push_back(VK_RSHIFT);   return true;
-        case kQtKey_Control:  out.push_back(VK_LCONTROL); out.push_back(VK_RCONTROL); return true;
-        case kQtKey_Alt:      out.push_back(VK_LMENU);    out.push_back(VK_RMENU);    return true;
-        case kQtKey_Tab:      out.push_back(VK_TAB);      return true;
-        case kQtKey_PageUp:   out.push_back(VK_PRIOR);    return true;
-        case kQtKey_PageDown: out.push_back(VK_NEXT);     return true;
-        case kQtKey_Space:    out.push_back(VK_SPACE);    return true;
-        default: return false;
-        }
-    }
-
-    SmallVkList MapQtKeyIntToVks(int qtKey) {
-        SmallVkList vks;
-
-        // Mouse wheel virtual keys have no Win32 VK; runtime injects one-frame
-        // presses from the Qt wheel delta (see MelonPrimeGameInput).
-        if (qtKey == InputKey::MouseWheelUp || qtKey == InputKey::MouseWheelDown)
-            return vks;
-
-        // Mouse Buttons
-        if ((qtKey & InputKey::MouseMark) == InputKey::MouseMark) {
-            const int btn = (qtKey & ~InputKey::MouseMark);
-            switch (btn) {
-            case 0x01: vks.push_back(VK_LBUTTON);  break;
-            case 0x02: vks.push_back(VK_RBUTTON);  break;
-            case 0x04: vks.push_back(VK_MBUTTON);  break;
-            case 0x08: vks.push_back(VK_XBUTTON1); break;
-            case 0x10: vks.push_back(VK_XBUTTON2); break;
-            }
-            return vks;
-        }
-
-        // Special Keys (Shift, Ctrl, Alt, etc.)
-        if (TryAppendSpecialKey(qtKey, vks)) return vks;
-
-        // ASCII Alphanumeric (0-9, A-Z)
-        if ((qtKey >= '0' && qtKey <= '9') || (qtKey >= 'A' && qtKey <= 'Z')) {
-            vks.push_back(static_cast<UINT>(qtKey));
-            return vks;
-        }
-
-        // F-Keys (F1 - F35)
-        if (qtKey >= kQtKey_F1 && qtKey <= kQtKey_F35) {
-            const int idx = (qtKey - kQtKey_F1);
-            vks.push_back(static_cast<UINT>(VK_F1 + idx));
-            return vks;
-        }
-
-        return vks;
-    }
-
     // =========================================================================
     // R2: BindOneHotkeyFromConfig — now zero heap allocations.
     //
@@ -108,9 +35,11 @@ namespace MelonPrime {
     // Result: 0 heap allocations, 1 config table lookup (was one lookup and
     // one vector allocation per binding).
     // =========================================================================
-    void BindMetroidHotkeysFromConfig(RawInputWinFilter* filter, RawInputSubscription* subscription, int instance)
+    RawHotkeyOwnership BindMetroidHotkeysFromConfig(
+        RawInputWinFilter* filter, RawInputSubscription* subscription, int instance)
     {
-        if (!filter || !subscription) return;
+        RawHotkeyOwnership ownership;
+        if (!filter || !subscription) return ownership;
 
         struct BindingDef {
             const char* configKey;
@@ -166,7 +95,22 @@ namespace MelonPrime {
             SmallVkList vks = MapQtKeyIntToVks(qt);
             // R2: Direct pointer pass — no std::vector construction
             filter->setHotkeyVks(subscription, bind.actionId, vks.begin(), vks.size());
+            const uint64_t actionBit = 1ULL << bind.actionId;
+            if (qt == InputKey::MouseWheelUp
+                || qt == InputKey::MouseWheelDown) {
+                ownership.wheelImpulseMask |= actionBit;
+            }
+            else if (qt != -1 && !vks.empty()) {
+                ownership.rawOwnedGameplayMask |= actionBit;
+            }
+            else if (qt != -1) {
+                // Empty Raw mapping is intentional here: the canonical Qt
+                // identity remains live for chords, F25+, non-ASCII keys,
+                // keypad combinations, and any future unsupported value.
+                ownership.qtFallbackGameplayMask |= actionBit;
+            }
         }
+        return ownership;
     }
 
 } // namespace MelonPrime

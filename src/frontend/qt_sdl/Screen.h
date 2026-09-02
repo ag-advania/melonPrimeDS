@@ -38,6 +38,9 @@
 #include "glad/glad.h"
 #include "ScreenLayout.h"
 #include "duckstation/gl/context.h"
+#ifdef MELONPRIME_DS
+#include "MelonPrimeWheelEvent.h"
+#endif
 #include "MelonPrimePresentationSnapshot.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
@@ -327,6 +330,9 @@ public:
     // Narrow accessors for MelonPrimeScreenCursorPolicy (avoid friend coupling).
     [[nodiscard]] bool isClosingForMelonPrime() const noexcept { return closing; }
     [[nodiscard]] bool isActiveVisibleWindowForMelonPrime() const;
+    // Input surfaces are deliberately primary-window-owned. Secondary
+    // presentation panels never publish or clear the shared input snapshot.
+    [[nodiscard]] bool isMelonPrimeInputSurfaceAuthority() const noexcept;
     [[nodiscard]] MelonPrime::MelonPrimeCore* melonPrimeCoreForPolicy() const;
     [[nodiscard]] QRect aimContainmentLocalRectForPolicy() const;
     [[nodiscard]] QPoint aimContainmentCenterGlobalForPolicy() const;
@@ -369,7 +375,6 @@ public:
     {
         return false;
     }
-    void addAimMouseDeltaForMelonPrime(std::int32_t dx, std::int32_t dy) noexcept;
 #endif
 
 public slots:
@@ -403,6 +408,7 @@ protected:
     bool stylusConfineCursorToTopScreenEnabled = false;
     bool stylusHoldCursorAtCenterEnabled = false;
     bool stylusDirectAimWhileTouchingEnabled = false;
+    MelonPrime::PhysicalWheelStepAccumulator wheelSteps;
     // Cached OR of the match-scoped cursor options, so the per-pass reconcile
     // short-circuits on one predictable bool when they are all off.
     bool stylusMatchCursorOptionsEnabled = false;
@@ -573,6 +579,11 @@ private:
     // the left button.
     Qt::MouseButton m_touchMouseButton = Qt::NoButton;
     Qt::MouseButton m_stylusDirectAimMouseButton = Qt::NoButton;
+#if defined(__APPLE__)
+    // GUI-thread recovery mailbox: normal mouse movement queries global Qt
+    // button state only while a mapped press is still potentially held.
+    uint8_t m_mouseRecoveryArmedMask = 0;
+#endif
     // Tracks the held click itself rather than `touching`: a press whose touch
     // never registers must still free the pointer, or the pin would trap it.
     bool m_stylusClickHeld = false;
@@ -581,6 +592,7 @@ private:
     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
     // coalesces repeated per-frame requests without touching QWidget off-thread.
     std::atomic_bool m_melonPrimeGuiRefreshQueued{false};
+    std::atomic<uint64_t> m_melonPrimeGuiRevisionSeen{0};
     QTimer m_melonPrimeConfigSaveTimer;
     bool m_melonPrimeConfigSavePending = false;
     uint64_t m_melonPrimeLastPersistGeneration = 0;

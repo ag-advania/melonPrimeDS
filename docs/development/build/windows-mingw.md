@@ -22,6 +22,13 @@ The batch file:
 
 The non-verbose path used to pipe through `tail -n N`, which buffers all input and prints nothing until the build finishes — the console looked idle the whole time. It now pipes through `tee` (plus `stdbuf -oL -eL` to force line buffering through the pipe) so build progress appears in the console as it happens; the `--tail`-sized recap is printed at the end in addition to the live stream.
 
+Both the normal developer build and the separate shipping preset explicitly
+compile out Windows Raw Input performance telemetry. A dedicated measurement
+build must opt in with
+`-DMELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=ON` and set
+`MELONPRIME_RAW_INPUT_PERF=1`; `MELONPRIME_PERF=1` does not enable Raw Input
+telemetry.
+
 ## Existing Build Tree Only
 
 If the normal command enters a long `vcpkg install` compile or if CMake configure is locked by a stale process, stop the repo-scoped stale build processes first, then use the build-only batch:

@@ -3,8 +3,6 @@
 #include "MelonPrimeRawWinInternal.h"
 #include <cstring>
 #include <algorithm>
-#include <memory>
-#include <new>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -16,13 +14,17 @@ typedef unsigned __int64 QWORD;
 
 namespace MelonPrime {
 
-    [[nodiscard]] FORCE_INLINE int NormalizeRawWheelSteps(USHORT rawData) noexcept
+    constexpr int64_t kWheelUnitsPerDetent = WHEEL_DELTA;
+
+    [[nodiscard]] FORCE_INLINE int64_t RawWheelUnitsFromData(USHORT rawData) noexcept
     {
-        const int delta = static_cast<int>(static_cast<SHORT>(rawData));
-        if (!delta)
-            return 0;
-        const int steps = delta / WHEEL_DELTA;
-        return steps != 0 ? steps : (delta > 0 ? 1 : -1);
+        return static_cast<int64_t>(static_cast<SHORT>(rawData));
+    }
+
+    [[nodiscard]] FORCE_INLINE SHORT RawInputGetAsyncKeyState(int vk) noexcept
+    {
+        RawInputPerf::CountGetAsyncKeyState();
+        return ::GetAsyncKeyState(vk);
     }
 
     std::array<InputState::BtnLutEntry, 1024> InputState::s_btnLut;
@@ -32,6 +34,8 @@ namespace MelonPrime {
     uint16_t InputState::s_scancodeRShift = 0;
     std::once_flag InputState::s_initFlag;
     NtUserGetRawInputBuffer_t InputState::s_fnBestGetRawInputBuffer = ::GetRawInputBuffer;
+    alignas(64) std::array<uint8_t, InputState::kBatchOverflowBufferSize>
+        InputState::s_batchOverflowBuffer{};
 
     InputState::InputState() noexcept {
         for (auto& vk : m_vkDown)
@@ -42,7 +46,8 @@ namespace MelonPrime {
 
         m_accumMouseX.store(0, std::memory_order_relaxed);
         m_accumMouseY.store(0, std::memory_order_relaxed);
-        m_accumWheelSteps.store(0, std::memory_order_relaxed);
+        m_accumWheelUnits120.store(0, std::memory_order_relaxed);
+        m_wheelUnitRemainder120 = 0;
         m_lastReadMouseX = 0;
         m_lastReadMouseY = 0;
 
@@ -98,7 +103,7 @@ namespace MelonPrime {
     // we keep the original load(relaxed)+store(release) pattern here. This avoids
     // `lock xadd` on x86 while preserving release ordering for the consumer.
     // =========================================================================
-    void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
+    bool InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
         UINT size = sizeof(rawBuf);
         UINT result;
@@ -110,7 +115,9 @@ namespace MelonPrime {
             result = GetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER));
         }
 
-        if (UNLIKELY(result == UINT(-1) || result == 0)) return;
+        // A failed read means the event class and release edge are unknown.
+        // Keep the fail-safe physical-state recovery request in that case.
+        if (UNLIKELY(result == UINT(-1) || result == 0)) return true;
         const auto* raw = reinterpret_cast<const RAWINPUT*>(rawBuf);
 
         switch (raw->header.dwType) {
@@ -127,9 +134,9 @@ namespace MelonPrime {
                 }
             }
             if (m.usButtonFlags & RI_MOUSE_WHEEL) {
-                const int wheelSteps = NormalizeRawWheelSteps(m.usButtonData);
-                if (wheelSteps)
-                    m_accumWheelSteps.fetch_add(wheelSteps, std::memory_order_release);
+                const int64_t wheelUnits120 = RawWheelUnitsFromData(m.usButtonData);
+                if (wheelUnits120)
+                    m_accumWheelUnits120.fetch_add(wheelUnits120, std::memory_order_release);
             }
             const USHORT flags = m.usButtonFlags & 0x03FF;
             if (flags) {
@@ -146,7 +153,10 @@ namespace MelonPrime {
                     }
                 }
             }
-            break;
+            // Wheel and relative motion are fully represented by the
+            // accumulators above. Only button flags can leave a physical
+            // held/released state that needs post-frame reconciliation.
+            return flags != 0;
         }
         case RIM_TYPEKEYBOARD: {
             const RAWKEYBOARD& kb = raw->data.keyboard;
@@ -162,9 +172,12 @@ namespace MelonPrime {
                 setVkBit(vk, !(kb.Flags & RI_KEY_BREAK));
                 std::atomic_thread_fence(std::memory_order_release);
             }
-            break;
+            return true;
         }
         }
+        // HID and other unsupported successful input are intentionally ignored
+        // and must not publish a recovery request.
+        return false;
     }
 
     // =========================================================================
@@ -184,10 +197,11 @@ namespace MelonPrime {
         alignas(64) static uint8_t buffer[16384];
 
         int64_t localAccX = 0, localAccY = 0;
-        int localWheelSteps = 0;
+        int64_t localWheelUnits120 = 0;
         uint64_t localKeyDeltaDown[4] = {};
         uint64_t localKeyDeltaUp[4] = {};
         bool hasKeyChanges = false;
+        uint64_t batchEventCount = 0;
 
         const uint8_t initialBtnState = m_mouseButtons.load(std::memory_order_relaxed);
         uint8_t finalBtnState = initialBtnState;
@@ -196,21 +210,31 @@ namespace MelonPrime {
         for (;;) {
             UINT size = sizeof(buffer);
             uint8_t* batchBuffer = buffer;
-            UINT count = s_fnBestGetRawInputBuffer(
-                reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
-            std::unique_ptr<uint8_t[]> overflowBuffer;
+            UINT count = 0;
+            {
+                RawInputPerf::RawBufferScope perfScope;
+                count = s_fnBestGetRawInputBuffer(
+                    reinterpret_cast<PRAWINPUT>(buffer), &size, sizeof(RAWINPUTHEADER));
+            }
             if (UNLIKELY(count == UINT(-1))) {
                 if (size <= sizeof(buffer)) break;
+                // Keep the retry bounded and allocation-free. A queue larger
+                // than the fixed service scratch remains in the OS queue and
+                // will be retried by the next drain boundary.
+                if (size > kBatchOverflowBufferSize) break;
 
-                overflowBuffer.reset(new (std::nothrow) uint8_t[size]);
-                if (!overflowBuffer) break;
-
-                batchBuffer = overflowBuffer.get();
-                UINT retrySize = size;
-                count = s_fnBestGetRawInputBuffer(
-                    reinterpret_cast<PRAWINPUT>(batchBuffer), &retrySize, sizeof(RAWINPUTHEADER));
+                batchBuffer = s_batchOverflowBuffer.data();
+                UINT retrySize = static_cast<UINT>(s_batchOverflowBuffer.size());
+                {
+                    RawInputPerf::RawBufferScope perfScope;
+                    count = s_fnBestGetRawInputBuffer(
+                        reinterpret_cast<PRAWINPUT>(batchBuffer), &retrySize,
+                        sizeof(RAWINPUTHEADER));
+                }
             }
             if (count == 0 || count == UINT(-1)) break;
+
+            batchEventCount += static_cast<uint64_t>(count);
 
             const RAWINPUT* raw = reinterpret_cast<const RAWINPUT*>(batchBuffer);
             for (UINT i = 0; i < count; ++i) {
@@ -222,7 +246,7 @@ namespace MelonPrime {
                         localAccY += m.lLastY;
                     }
                     if (m.usButtonFlags & RI_MOUSE_WHEEL)
-                        localWheelSteps += NormalizeRawWheelSteps(m.usButtonData);
+                        localWheelUnits120 += RawWheelUnitsFromData(m.usButtonData);
                     const USHORT flags = m.usButtonFlags & 0x03FF;
                     if (flags) {
                         const auto& lut = s_btnLut[flags];
@@ -269,6 +293,9 @@ namespace MelonPrime {
             DefRawInputProc(&pri, static_cast<INT>(count), sizeof(RAWINPUTHEADER));
         }
 
+        RawInputPerf::RecordRawBatch(batchEventCount);
+        RawInputPerf::RecordPostDrawEvents(batchEventCount);
+
         // --- Commit phase (single-writer, wait-free) ---
         // P-37: Combined nonzero check reduces branch count.
         // With 8kHz mouse, (localAccX | localAccY) is nonzero on ~99% of frames.
@@ -276,8 +303,8 @@ namespace MelonPrime {
             m_accumMouseX.store(m_accumMouseX.load(std::memory_order_relaxed) + localAccX, std::memory_order_relaxed);
             m_accumMouseY.store(m_accumMouseY.load(std::memory_order_relaxed) + localAccY, std::memory_order_relaxed);
         }
-        if (localWheelSteps)
-            m_accumWheelSteps.fetch_add(localWheelSteps, std::memory_order_release);
+        if (localWheelUnits120)
+            m_accumWheelUnits120.fetch_add(localWheelUnits120, std::memory_order_release);
 
         if (finalBtnState != initialBtnState) {
             m_mouseButtons.store(finalBtnState, std::memory_order_relaxed);
@@ -319,8 +346,10 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_relaxed);
         m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
-        m_accumWheelSteps.store(0, std::memory_order_relaxed);
+        m_accumWheelUnits120.store(0, std::memory_order_relaxed);
+        m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
+        m_stuckRecoveryNeeded = false;
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -329,8 +358,10 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_release);
         m_mouseButtonPresses.store(0, std::memory_order_release);
         m_mouseButtonDeferredPresses.store(0, std::memory_order_release);
-        m_accumWheelSteps.store(0, std::memory_order_release);
+        m_accumWheelUnits120.store(0, std::memory_order_release);
+        m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
+        m_stuckRecoveryNeeded = false;
     }
 
     // =========================================================================
@@ -346,8 +377,10 @@ namespace MelonPrime {
         m_mouseButtons.store(0, std::memory_order_relaxed);
         m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
-        m_accumWheelSteps.store(0, std::memory_order_relaxed);
+        m_accumWheelUnits120.store(0, std::memory_order_relaxed);
+        m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
+        m_stuckRecoveryNeeded = false;
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = 0;
     }
@@ -468,7 +501,8 @@ namespace MelonPrime {
         // as physically-up.
         uint8_t physUp = 0;
         for (int i = 0; i < 5; ++i) {
-            if (((cur >> i) & 1u) && !(GetAsyncKeyState(kBitToVk[i]) & 0x8000)) {
+            if (((cur >> i) & 1u)
+                && !(RawInputGetAsyncKeyState(kBitToVk[i]) & 0x8000)) {
                 physUp |= static_cast<uint8_t>(1u << i);
             }
         }
@@ -523,7 +557,7 @@ namespace MelonPrime {
                 bits &= bits - 1;
                 const UINT vk = static_cast<UINT>(w * 64 + bit);
                 if (vk == 0) continue;
-                if (!(GetAsyncKeyState(static_cast<int>(vk)) & 0x8000)) {
+                if (!(RawInputGetAsyncKeyState(static_cast<int>(vk)) & 0x8000)) {
                     cleared &= ~(1ULL << bit);
                 }
             }
@@ -536,6 +570,25 @@ namespace MelonPrime {
             std::atomic_thread_fence(std::memory_order_release);
         }
         return anyCleared;
+    }
+
+    // Consume signed RAWINPUT units only at the outer-frame boundary. The
+    // relaxed load avoids a locked exchange on idle frames; a non-zero
+    // observation upgrades to an exchange so a concurrent producer is still
+    // claimed atomically. The residual is consumer-thread-only and preserves
+    // sub-detent input across frames without ever inventing a detent.
+    FORCE_INLINE int InputState::claimWheelSteps() noexcept {
+        int64_t wheelUnits120 = 0;
+        const int64_t observed = m_accumWheelUnits120.load(std::memory_order_relaxed);
+        if (UNLIKELY(observed != 0))
+            wheelUnits120 = m_accumWheelUnits120.exchange(0, std::memory_order_acq_rel);
+
+        const int64_t totalUnits120 =
+            static_cast<int64_t>(m_wheelUnitRemainder120) + wheelUnits120;
+        const int64_t steps = totalUnits120 / kWheelUnitsPerDetent;
+        m_wheelUnitRemainder120 = static_cast<int>(
+            totalUnits120 - steps * kWheelUnitsPerDetent);
+        return static_cast<int>(steps);
     }
 
     // =========================================================================
@@ -663,11 +716,11 @@ namespace MelonPrime {
         outMouseY = static_cast<int>(curY - m_lastReadMouseY);
         m_lastReadMouseX = curX;
         m_lastReadMouseY = curY;
-        outWheelSteps = m_accumWheelSteps.exchange(0, std::memory_order_acq_rel);
+        outWheelSteps = claimWheelSteps();
 
         const uint64_t newDown = scanBoundHotkeys(snap);
         outHk.down = newDown;
-        outHk.wheelDelta = outWheelSteps;
+        outHk.wheelSteps = outWheelSteps;
         // forcePressEdge bits are removed from m_hkPrev for this frame's edge
         // calc so they appear as fresh presses.
         outHk.pressed = newDown & ~(m_hkPrev & ~forcePressEdge);
@@ -676,27 +729,50 @@ namespace MelonPrime {
     }
 
     // =========================================================================
-    // P-48: clearStuckPostFrame — stuck-state recovery off the critical path.
-    //
-    // Runs the GetAsyncKeyState recovery scans (clearStuckMouseButtons +
-    // clearStuckKeys) AFTER RunFrame/drawScreen instead of inside
-    // snapshotInputFrame. Semantics are unchanged:
-    //   - The scans still run after the frame's snapshot was taken, so valid
-    //     quick presses were already captured before any clearing.
-    //   - Stuck bits are still cleared before the NEXT snapshot — one frame
-    //     of false-fire from a stuck button remains preferable to silently
-    //     dropping a genuine click.
-    //   - The two-consecutive-check debounce (m_mouseStuckCandidate) keeps
-    //     its once-per-frame cadence.
-    //   - If recovery cleared stale bits, edge tracking is realigned with the
-    //     post-recovery held state (same realignment snapshotInputFrame did).
-    // =========================================================================
-    void InputState::clearStuckPostFrame() noexcept {
+    void InputState::RequestStuckRecovery() noexcept
+    {
+        // Called only by HiddenWndProc while the active subscription and its
+        // HWND are held under RawInputWinFilter::m_subscriptionMutex. The
+        // HWND is creator-thread-affine by the cold lifecycle path, so the
+        // mailbox is plain because producer and consumer are the same thread.
+        m_stuckRecoveryNeeded = true;
+    }
+
+    // Consume one hidden-window recovery request. The normal case is a
+    // plain-boolean check followed by an immediate return. If the mouse debounce
+    // needs a second consecutive physical-up observation, retain the request
+    // for the next post-frame boundary; this avoids scanning every idle frame
+    // while still preserving the two-check stuck-button guarantee.
+    bool InputState::consumeStuckRecovery() noexcept
+    {
+        if (LIKELY(!m_stuckRecoveryNeeded))
+            return false;
+        m_stuckRecoveryNeeded = false;
+
         const bool clearedMouse = clearStuckMouseButtons();
         const bool clearedKeys = clearStuckKeys();
-        if (UNLIKELY(clearedMouse || clearedKeys)) {
+        const uint8_t pendingMouse = static_cast<uint8_t>(
+            m_mouseButtons.load(std::memory_order_relaxed) & m_mouseStuckCandidate);
+        if (pendingMouse)
+            m_stuckRecoveryNeeded = true;
+
+        RawInputPerf::CountStuckRecovery(clearedMouse || clearedKeys);
+        return clearedMouse || clearedKeys;
+    }
+
+    // =========================================================================
+    // P-48: clearStuckPostFrame — event-gated recovery off the critical path.
+    //
+    // Runs the GetAsyncKeyState recovery scans (clearStuckMouseButtons +
+    // clearStuckKeys) AFTER RunFrame/drawScreen instead of inside every
+    // snapshot. Hidden-window WM_INPUT dispatch requests the scan because that
+    // is the path that can reintroduce stale GetRawInputData state. Idle frames
+    // therefore perform no physical-state syscalls. A pending mouse debounce
+    // candidate retains one follow-up request when needed.
+    // =========================================================================
+    void InputState::clearStuckPostFrame() noexcept {
+        if (UNLIKELY(consumeStuckRecovery()))
             m_hkPrev = scanBoundHotkeys(takeSnapshot());
-        }
     }
 
     // =========================================================================
@@ -711,9 +787,9 @@ namespace MelonPrime {
     {
         // No-edge snapshots are used only by re-entrant frame advances. They
         // should reflect physical held state, not the one-frame click cache.
-        // Clear stale held bits first.
-        (void)clearStuckMouseButtons();
-        (void)clearStuckKeys();
+        // This path is a pure snapshot: it never consumes the post-frame
+        // recovery mailbox, changes debounce state, or performs an OS
+        // physical-state query.
 
         auto snap = takeSnapshot();  // acquire fence inside
 
@@ -724,11 +800,13 @@ namespace MelonPrime {
         outMouseY = static_cast<int>(curY - m_lastReadMouseY);
         m_lastReadMouseX = curX;
         m_lastReadMouseY = curY;
+        // Re-entrant snapshots must not claim raw wheel units or advance the
+        // residual; the outer frame owns the wheel impulse.
         outWheelSteps = 0;
 
         outHk.down = scanBoundHotkeys(snap);
         outHk.pressed = 0;
-        outHk.wheelDelta = 0;
+        outHk.wheelSteps = 0;
     }
 
     // =========================================================================
@@ -757,7 +835,7 @@ namespace MelonPrime {
     void InputState::syncPhysicalState() noexcept {
         uint64_t words[4] = {};
         for (UINT vk = 7; vk < 256; ++vk) {
-            if (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000)
+            if (RawInputGetAsyncKeyState(static_cast<int>(vk)) & 0x8000)
                 words[vk >> 6] |= 1ULL << (vk & 63);
         }
         for (int i = 0; i < 4; ++i)
@@ -768,13 +846,14 @@ namespace MelonPrime {
         };
         uint8_t mouse = 0;
         for (int i = 0; i < 5; ++i) {
-            if (GetAsyncKeyState(static_cast<int>(kMouseVks[i])) & 0x8000)
+            if (RawInputGetAsyncKeyState(static_cast<int>(kMouseVks[i])) & 0x8000)
                 mouse |= static_cast<uint8_t>(1u << i);
         }
         m_mouseButtons.store(mouse, std::memory_order_relaxed);
         m_mouseButtonPresses.store(0, std::memory_order_relaxed);
         m_mouseButtonDeferredPresses.store(0, std::memory_order_relaxed);
-        m_accumWheelSteps.store(0, std::memory_order_relaxed);
+        m_accumWheelUnits120.store(0, std::memory_order_relaxed);
+        m_wheelUnitRemainder120 = 0;
         m_mouseStuckCandidate = 0;
         std::atomic_thread_fence(std::memory_order_release);
         m_hkPrev = scanBoundHotkeys(takeSnapshot());

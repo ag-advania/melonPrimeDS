@@ -43,10 +43,10 @@ def main() -> None:
     # Raw mouse, side-button and wheel events share InputState's snapshot.
     for needle in (
         "RI_MOUSE_WHEEL",
-        "m_accumWheelSteps",
-        "m_accumWheelSteps.exchange(0, std::memory_order_acq_rel)",
+        "m_accumWheelUnits120",
+        "m_accumWheelUnits120.exchange(0, std::memory_order_acq_rel)",
         "DefRawInputProc(&pri",
-        "outHk.wheelDelta = outWheelSteps",
+        "outHk.wheelSteps = outWheelSteps",
     ):
         require(raw_state, needle, "Raw Input state")
 
@@ -63,15 +63,20 @@ def main() -> None:
 
     reconfigure = function_body(
         raw_filter,
-        "void RawInputWinFilter::ReconfigureActiveRegistration(",
+        "bool RawInputWinFilter::ReconfigureActiveRegistration(",
         "void RawInputWinFilter::DeactivateActiveRegistration(",
+    )
+    apply_owner = function_body(
+        raw_filter,
+        "bool RawInputWinFilter::ApplyOwnerRegistration(",
+        "    // =========================================================================\n    // drainMessagesOnly",
     )
     for needle in (
         "drainPendingMessages()",
         "subscription->baselineReady = false",
         "BeginRegistrationGeneration",
         "UnregisterDevices()",
-        "ApplyOwnerRegistration(subscription)",
+        "ApplyOwnerRegistration(subscription, generationAlreadyAdvanced)",
         "subscription->state->discardDeltas()",
         "subscription->state->resetAll()",
         "subscription->state->syncPhysicalState()",
@@ -85,6 +90,16 @@ def main() -> None:
         < reconfigure.index("UnregisterDevices()")
     ):
         raise AssertionError("registration boundary order is not drain -> not-ready -> generation -> unregister")
+    for needle in (
+        "recreateHiddenWindow",
+        "DestroyHiddenWindow(subscription)",
+        "CreateHiddenWindow(subscription)",
+    ):
+        require(apply_owner, needle, "hidden Raw registration epoch fence")
+    if apply_owner.index("DestroyHiddenWindow(subscription)") > apply_owner.index(
+        "CreateHiddenWindow(subscription)"
+    ):
+        raise AssertionError("hidden Raw registration must destroy before create")
 
     for setter in (
         "setJoy2KeySupport",
@@ -115,8 +130,7 @@ def main() -> None:
         "BIT_IN_GAME_INIT",
         "BIT_BATTLE_RUNTIME_MODE",
         "BIT_END_OF_GAME_PATCH_RESTORED",
-        "TR_AimResiduals",
-        "TR_WeaponSwitchPending",
+        "ResetInputForLifecycleBoundary(InputLifecycleBoundary::SavestateLoad)",
         "ResetMorphBoostSwipePulseState()",
         "PatchLifecycle::ReconcileAfterSavestateLoad",
         "CustomHud_ReconcilePatchAfterSavestateLoad",
@@ -124,6 +138,22 @@ def main() -> None:
         require(callback, needle, "savestate callback")
     if "NDS::RunFrame" in callback or "loadState" in callback:
         raise AssertionError("savestate callback must not advance or reload the guest timeline")
+
+    lifecycle_reset = function_body(
+        game_input,
+        "COLD_FUNCTION void MelonPrimeCore::ResetInputForLifecycleBoundary(",
+        "    // OPT-Z2: Unified move + button mask update.",
+    )
+    for needle in (
+        "case InputLifecycleBoundary::SavestateLoad:",
+        "ResetAimTransientState()",
+        "ResetImmediateOverlayInputState()",
+        "ResetDirectTransformInputState()",
+        "ResetNativeBipedFireInputState()",
+        "m_weaponSwitchPending.Clear()",
+        "m_directInvocationPending.Clear()",
+    ):
+        require(lifecycle_reset, needle, "savestate input reset owner")
 
     if not (
         core.index("m_postSavestateReconcilePending = false")

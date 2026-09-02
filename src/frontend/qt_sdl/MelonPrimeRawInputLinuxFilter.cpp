@@ -8,22 +8,30 @@
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
 #include <cstdlib>
+#endif
+#include <cerrno>
 #include <mutex>
 #include <poll.h>
+#include <sys/eventfd.h>
 #include <thread>
 #include <unordered_map>
+#include <unistd.h>
 
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
 // MELONPRIME_INPUT_DEBUG=1 enables 1 Hz pipeline diagnostics on stderr.
 static bool MelonPrimeInputDebug()
 {
     static const bool enabled = std::getenv("MELONPRIME_INPUT_DEBUG") != nullptr;
     return enabled;
 }
+#endif
 
 namespace MelonPrime {
 
@@ -50,13 +58,57 @@ void LinuxWarpCursorGlobal(int x, int y)
 
 struct LinuxRawInputFilter::Impl
 {
-    std::atomic<int64_t> accX{ 0 };
-    std::atomic<int64_t> accY{ 0 };
-    std::atomic<bool>    available{ false };
-    std::atomic<bool>    receivedMotion{ false };
+    static_assert(std::atomic<uint64_t>::is_always_lock_free,
+        "Linux packed raw-motion publication requires lock-free uint64 atomics");
+    static_assert(std::atomic<uint8_t>::is_always_lock_free,
+        "Linux raw-input state publication requires a lock-free uint8 atomic");
+    std::atomic<uint64_t> total{ 0 };
+    std::atomic<uint8_t> stateBits{ 0 };
     std::atomic<bool>    quit{ false };
+    // Filter-thread-only shadow avoids an atomic load on every XI2 event.
+    bool receivedMotionPublished = false;
+
+    int resetFd = -1;
+    int wakeFd = -1;
+    // Only used if the cold reset eventfd cannot be created, or if an
+    // exceptional eventfd write fails. It is consumed at a filter-loop
+    // boundary and is never read from AccumulateRawMotion.
+    std::atomic_bool resetFallbackRequested{ false };
+    std::atomic_bool resetFallbackActive{ false };
 
     std::thread thread;
+
+    Impl()
+    {
+        resetFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        if (resetFd < 0)
+            resetFallbackActive.store(true, std::memory_order_relaxed);
+        wakeFd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    }
+
+    ~Impl()
+    {
+        if (resetFd >= 0)
+            close(resetFd);
+        if (wakeFd >= 0)
+            close(wakeFd);
+    }
+
+    static uint64_t PackTotals(uint32_t x, uint32_t y) noexcept
+    {
+        return static_cast<uint64_t>(x)
+            | (static_cast<uint64_t>(y) << 32);
+    }
+
+    static uint32_t TotalX(uint64_t packed) noexcept
+    {
+        return static_cast<uint32_t>(packed);
+    }
+
+    static uint32_t TotalY(uint64_t packed) noexcept
+    {
+        return static_cast<uint32_t>(packed >> 32);
+    }
 
     static bool TestBit(const unsigned char* mask, int bit)
     {
@@ -96,15 +148,98 @@ struct LinuxRawInputFilter::Impl
         double residual[2] = { 0.0, 0.0 };
     };
     std::unordered_map<int, AxisState> axisStates;   // key: sourceid
-    std::atomic<bool> absBaseInvalid{ false };       // set by resetAll()/warps
+    int lastSourceId = -1;
+    AxisState* lastSourceState = nullptr;
 
-    static void QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
+    void ResetAxisTransientState() noexcept
     {
-        st.known = true;
+        for (auto& kv : axisStates) {
+            kv.second.hasLast[0] = false;
+            kv.second.hasLast[1] = false;
+            kv.second.residual[0] = 0.0;
+            kv.second.residual[1] = 0.0;
+        }
+    }
+
+    static bool SignalEventFd(int fd) noexcept
+    {
+        if (fd < 0)
+            return false;
+
+        constexpr std::uint64_t token = 1;
+        for (;;) {
+            const ssize_t written = write(fd, &token, sizeof(token));
+            if (written == static_cast<ssize_t>(sizeof(token)))
+                return true;
+            if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+                return true; // An earlier signal is already pending.
+            if (written < 0 && errno == EINTR)
+                continue;
+            return false;
+        }
+    }
+
+    static bool DrainEventFd(int fd) noexcept
+    {
+        if (fd < 0)
+            return false;
+
+        bool signaled = false;
+        for (;;) {
+            std::uint64_t value = 0;
+            const ssize_t count = read(fd, &value, sizeof(value));
+            if (count == static_cast<ssize_t>(sizeof(value))) {
+                signaled = true;
+                continue;
+            }
+            if (count < 0 && errno == EINTR)
+                continue;
+            return signaled;
+        }
+    }
+
+    void DrainResetMailbox() noexcept
+    {
+        bool resetRequested = DrainEventFd(resetFd);
+        // The fallback RMW is cold and only exists when the eventfd path is
+        // unavailable or has reported an exceptional write failure. A normal
+        // fd-backed reset-none poll does not touch this atomic.
+        if (resetFd < 0
+            || resetFallbackActive.load(std::memory_order_acquire)) {
+            resetRequested = resetFallbackRequested.exchange(
+                false, std::memory_order_acq_rel) || resetRequested;
+        }
+        if (resetRequested)
+            ResetAxisTransientState();
+    }
+
+    void RequestAxisReset() noexcept
+    {
+        if (SignalEventFd(resetFd))
+            return;
+
+        resetFallbackActive.store(true, std::memory_order_release);
+        resetFallbackRequested.store(true, std::memory_order_release);
+        // If reset eventfd creation/write failed, the wake fd still gives the
+        // filter thread an immediate boundary without adding a normal-path
+        // atomic poll or read.
+        (void)SignalEventFd(wakeFd);
+    }
+
+    void DrainWakeMailbox() noexcept
+    {
+        (void)DrainEventFd(wakeFd);
+    }
+
+    static bool QueryAxisModes(Display* dpy, int sourceid, AxisState& st)
+    {
         int count = 0;
         XIDeviceInfo* info = XIQueryDevice(dpy, sourceid, &count);
         if (!info)
-            return;
+            return false;
+
+        st.absolute[0] = st.absolute[1] = false;
+        st.scale[0] = st.scale[1] = 1.0;
         const int screen = DefaultScreen(dpy);
         const double screenDim[2] = {
             static_cast<double>(DisplayWidth(dpy, screen)),
@@ -124,36 +259,51 @@ struct LinuxRawInputFilter::Impl
             }
         }
         XIFreeDeviceInfo(info);
+        st.known = true;
+        return true;
     }
 
+    void InvalidateAxisCapabilities()
+    {
+        // Hierarchy/device changes are cold. Clear every source so reused XI2
+        // ids cannot inherit another device's mode, scale, or abs baseline.
+        axisStates.clear();
+        lastSourceId = -1;
+        lastSourceState = nullptr;
+    }
+
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
     // 1 Hz debug counters (filter thread only).
     long long dbgEvents = 0;
     double dbgSumX = 0.0, dbgSumY = 0.0;
     std::chrono::steady_clock::time_point dbgLast = std::chrono::steady_clock::now();
+#endif
 
     void AccumulateRawMotion(Display* dpy, const XIRawEvent* raw)
     {
-        // resetAll() (focus loss / layout change) invalidates the absolute
-        // baselines so the first event after a gap re-seeds instead of
-        // producing one huge catch-up delta.
-        if (absBaseInvalid.exchange(false, std::memory_order_acq_rel)) {
-            for (auto& kv : axisStates) {
-                kv.second.hasLast[0] = false;
-                kv.second.hasLast[1] = false;
-                kv.second.residual[0] = 0.0;
-                kv.second.residual[1] = 0.0;
-            }
+        // XInput event streams normally repeat one source. Keep the generic
+        // map for arbitrary XI2 ids, but pay its hash only when the source
+        // changes. unordered_map rehash preserves element references/pointers.
+        if (raw->sourceid != lastSourceId || !lastSourceState) {
+            lastSourceId = raw->sourceid;
+            lastSourceState = &axisStates[raw->sourceid];
         }
-
-        AxisState& st = axisStates[raw->sourceid];
+        AxisState& st = *lastSourceState;
         if (!st.known) {
-            QueryAxisModes(dpy, raw->sourceid, st);
-            if (MelonPrimeInputDebug())
+            const bool querySucceeded =
+                QueryAxisModes(dpy, raw->sourceid, st);
+            // Capability UNKNOWN is not equivalent to relative motion. Drop
+            // this ambiguous event and retry the query on the next event.
+            if (!querySucceeded)
+                return;
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
+            if (querySucceeded && MelonPrimeInputDebug())
                 std::fprintf(stderr,
                     "[MelonPrime] linux input: raw source %d axis modes: X=%s Y=%s\n",
                     raw->sourceid,
                     st.absolute[0] ? "abs" : "rel",
                     st.absolute[1] ? "abs" : "rel");
+#endif
         }
 
         // XInput2 reports one value per set bit in valuators.mask, in axis
@@ -170,7 +320,11 @@ struct LinuxRawInputFilter::Impl
         const double* rawVals = raw->raw_values;
         const double* xfVals  = raw->valuators.values;
         double d[2] = { 0.0, 0.0 };
-        for (int axis = 0; axis < raw->valuators.mask_len * 8; ++axis) {
+        // raw_values/values are packed by set-bit order. Decode only through
+        // Y: consuming a present X before Y preserves the packed pointer, and
+        // no value after axis 1 can affect aim.
+        const int axisLimit = std::min(2, raw->valuators.mask_len * 8);
+        for (int axis = 0; axis < axisLimit; ++axis) {
             if (!TestBit(raw->valuators.mask, axis))
                 continue;
             const double rawValue = *rawVals++;
@@ -200,19 +354,31 @@ struct LinuxRawInputFilter::Impl
         const int32_t dx = TakeIntegralDelta(st.residual[0], d[0]);
         const int32_t dy = TakeIntegralDelta(st.residual[1], d[1]);
 
-        if ((dx | dy) != 0) {
-            if (MelonPrimeInputDebug()
-                && !receivedMotion.load(std::memory_order_relaxed))
+        if ((dx | dy) != 0 && !receivedMotionPublished) {
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
+            if (MelonPrimeInputDebug())
                 std::fprintf(stderr,
                     "[MelonPrime] linux input: first raw motion (src %d, dx=%d dy=%d)\n",
                     raw->sourceid, dx, dy);
-            receivedMotion.store(true, std::memory_order_release);
+#endif
+            stateBits.store(
+                static_cast<uint8_t>(LinuxRawInputFilter::StateAvailable
+                    | LinuxRawInputFilter::StateMotionSeen),
+                std::memory_order_release);
+            receivedMotionPublished = true;
         }
-        if (dx != 0)
-            accX.fetch_add(dx, std::memory_order_release);
-        if (dy != 0)
-            accY.fetch_add(dy, std::memory_order_release);
+        // One filter-thread writer publishes coherent modulo-32-bit X/Y in a
+        // single lock-free atomic. The frame reader needs one acquire load.
+        if ((dx | dy) != 0) {
+            const uint64_t current = total.load(std::memory_order_relaxed);
+            total.store(
+                PackTotals(
+                    TotalX(current) + static_cast<uint32_t>(dx),
+                    TotalY(current) + static_cast<uint32_t>(dy)),
+                std::memory_order_release);
+        }
 
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
         if (MelonPrimeInputDebug()) {
             ++dbgEvents;
             dbgSumX += d[0];
@@ -226,7 +392,10 @@ struct LinuxRawInputFilter::Impl
                 dbgLast = now;
             }
         }
+#endif
     }
+
+    static constexpr int kMaxXiEventsPerChunk = 64;
 
     void ThreadMain()
     {
@@ -258,50 +427,106 @@ struct LinuxRawInputFilter::Impl
             return;
         }
 
-        unsigned char maskBits[(XI_LASTEVENT + 7) / 8] = {};
-        XIEventMask mask{};
-        mask.deviceid = XIAllMasterDevices;
-        mask.mask_len = sizeof(maskBits);
-        mask.mask = maskBits;
-        XISetMask(mask.mask, XI_RawMotion);
+        unsigned char rawMaskBits[(XI_LASTEVENT + 7) / 8] = {};
+        unsigned char lifecycleMaskBits[(XI_LASTEVENT + 7) / 8] = {};
+        XIEventMask masks[2]{};
+        masks[0].deviceid = XIAllMasterDevices;
+        masks[0].mask_len = sizeof(rawMaskBits);
+        masks[0].mask = rawMaskBits;
+        XISetMask(masks[0].mask, XI_RawMotion);
+        masks[1].deviceid = XIAllDevices;
+        masks[1].mask_len = sizeof(lifecycleMaskBits);
+        masks[1].mask = lifecycleMaskBits;
+        XISetMask(masks[1].mask, XI_HierarchyChanged);
+        XISetMask(masks[1].mask, XI_DeviceChanged);
 
         const Window root = DefaultRootWindow(display);
-        if (XISelectEvents(display, root, &mask, 1) != Success) {
+        if (XISelectEvents(display, root, masks, 2) != Success) {
             std::fprintf(stderr,
-                "[MelonPrime] linux input: XISelectEvents(RawMotion) failed; using QCursor fallback\n");
+                "[MelonPrime] linux input: XISelectEvents failed; using QCursor fallback\n");
             XCloseDisplay(display);
             return;
         }
         XFlush(display);
-        available.store(true, std::memory_order_release);
+        stateBits.store(
+            LinuxRawInputFilter::StateAvailable,
+            std::memory_order_release);
         std::fprintf(stderr, "[MelonPrime] linux input: XInput2 RawMotion active\n");
 
         const int fd = ConnectionNumber(display);
         while (!quit.load(std::memory_order_acquire)) {
-            while (XPending(display) > 0) {
+            // Keep a flood from starving lifecycle reset notifications. A
+            // reset request arriving during this chunk is applied at the
+            // following poll boundary, before the next chunk is decoded.
+            int processed = 0;
+            while (processed < kMaxXiEventsPerChunk
+                && XPending(display) > 0) {
                 XEvent ev;
                 XNextEvent(display, &ev);
+                ++processed;
 
                 if (ev.xcookie.type != GenericEvent
-                    || ev.xcookie.extension != xiOpcode
-                    || ev.xcookie.evtype != XI_RawMotion)
+                    || ev.xcookie.extension != xiOpcode)
                     continue;
 
                 if (XGetEventData(display, &ev.xcookie)) {
-                    const auto* raw = static_cast<const XIRawEvent*>(ev.xcookie.data);
-                    if (raw)
-                        AccumulateRawMotion(display, raw);
+                    if (ev.xcookie.evtype == XI_RawMotion) {
+                        const auto* raw =
+                            static_cast<const XIRawEvent*>(ev.xcookie.data);
+                        if (raw)
+                            AccumulateRawMotion(display, raw);
+                    }
+                    else if (ev.xcookie.evtype == XI_HierarchyChanged
+                        || ev.xcookie.evtype == XI_DeviceChanged) {
+                        InvalidateAxisCapabilities();
+                    }
                     XFreeEventData(display, &ev.xcookie);
                 }
             }
 
-            pollfd pfd{};
-            pfd.fd = fd;
-            pfd.events = POLLIN;
-            (void)poll(&pfd, 1, 100);
+            const bool moreX = XPending(display) > 0;
+            pollfd pollFds[3]{};
+            pollFds[0].fd = fd;
+            pollFds[0].events = POLLIN;
+            int pollCount = 1;
+            int resetPollIndex = -1;
+            if (resetFd >= 0) {
+                resetPollIndex = pollCount;
+                pollFds[pollCount].fd = resetFd;
+                pollFds[pollCount].events = POLLIN;
+                ++pollCount;
+            }
+            int wakePollIndex = -1;
+            if (wakeFd >= 0) {
+                wakePollIndex = pollCount;
+                pollFds[pollCount].fd = wakeFd;
+                pollFds[pollCount].events = POLLIN;
+                ++pollCount;
+            }
+            const int pollTimeout = moreX ? 0 : (wakeFd >= 0 ? -1 : 100);
+            const int pollResult = poll(pollFds, pollCount, pollTimeout);
+            if (pollResult > 0) {
+                if (resetPollIndex >= 0
+                    && (pollFds[resetPollIndex].revents
+                        & (POLLIN | POLLERR | POLLHUP)) != 0)
+                    DrainResetMailbox();
+                if (wakePollIndex >= 0
+                    && (pollFds[wakePollIndex].revents
+                        & (POLLIN | POLLERR | POLLHUP)) != 0) {
+                    DrainWakeMailbox();
+                    if (resetFd < 0
+                        || resetFallbackActive.load(std::memory_order_acquire))
+                        DrainResetMailbox();
+                }
+            }
+            else if (pollResult == 0 && resetFd < 0 && wakeFd < 0) {
+                // Last-resort cold fallback if both eventfds failed. This is
+                // bounded by the lifecycle poll timeout, never by XI events.
+                DrainResetMailbox();
+            }
         }
 
-        available.store(false, std::memory_order_release);
+        stateBits.store(0, std::memory_order_release);
         XCloseDisplay(display);
     }
 
@@ -313,6 +538,8 @@ struct LinuxRawInputFilter::Impl
     void Stop()
     {
         quit.store(true, std::memory_order_release);
+        if (!SignalEventFd(wakeFd))
+            (void)SignalEventFd(resetFd);
         if (thread.joinable())
             thread.join();
     }
@@ -322,7 +549,8 @@ LinuxRawInputFilter::LinuxRawInputFilter() : m(new Impl)
 {
     m->Start();
     for (int i = 0; i < 50; ++i) {
-        if (m->available.load(std::memory_order_acquire))
+        if ((m->stateBits.load(std::memory_order_acquire)
+                & StateAvailable) != 0)
             break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -334,21 +562,17 @@ LinuxRawInputFilter::~LinuxRawInputFilter()
     delete m;
 }
 
-bool LinuxRawInputFilter::isAvailable() const
+uint8_t LinuxRawInputFilter::stateBits() const noexcept
 {
-    return m->available.load(std::memory_order_acquire);
-}
-
-bool LinuxRawInputFilter::hasReceivedMotion() const
-{
-    return m->receivedMotion.load(std::memory_order_acquire);
+    return m->stateBits.load(std::memory_order_acquire);
 }
 
 void LinuxRawInputFilter::fetchMouseDelta(
     MelonPrimeInputSubscription& subscription, int32_t& outDx, int32_t& outDy)
 {
-    const int64_t curX = m->accX.load(std::memory_order_acquire);
-    const int64_t curY = m->accY.load(std::memory_order_acquire);
+    const uint64_t current = m->total.load(std::memory_order_acquire);
+    const uint32_t curX = Impl::TotalX(current);
+    const uint32_t curY = Impl::TotalY(current);
     if (subscription.cursorNeedsSync) {
         subscription.lastReadX = curX;
         subscription.lastReadY = curY;
@@ -356,16 +580,19 @@ void LinuxRawInputFilter::fetchMouseDelta(
         outDx = outDy = 0;
         return;
     }
-    outDx = static_cast<int32_t>(curX - subscription.lastReadX);
-    outDy = static_cast<int32_t>(curY - subscription.lastReadY);
+    outDx = static_cast<int32_t>(
+        curX - static_cast<uint32_t>(subscription.lastReadX));
+    outDy = static_cast<int32_t>(
+        curY - static_cast<uint32_t>(subscription.lastReadY));
     subscription.lastReadX = curX;
     subscription.lastReadY = curY;
 }
 
 void LinuxRawInputFilter::resetAll(MelonPrimeInputSubscription& subscription)
 {
-    subscription.lastReadX = m->accX.load(std::memory_order_acquire);
-    subscription.lastReadY = m->accY.load(std::memory_order_acquire);
+    const uint64_t current = m->total.load(std::memory_order_acquire);
+    subscription.lastReadX = Impl::TotalX(current);
+    subscription.lastReadY = Impl::TotalY(current);
     subscription.cursorNeedsSync = false;
     // receivedMotion is intentionally NOT cleared: it is a static property of
     // the session ("this X connection actually delivers raw motion") used to
@@ -373,7 +600,7 @@ void LinuxRawInputFilter::resetAll(MelonPrimeInputSubscription& subscription)
     // the aim source. Only the accumulators and abs baselines are transient.
     // Re-seed absolute-device baselines on the next event so a focus gap
     // cannot produce one huge catch-up delta.
-    m->absBaseInvalid.store(true, std::memory_order_release);
+    m->RequestAxisReset();
 }
 
 namespace {
@@ -386,7 +613,7 @@ void LinuxRawInputFilter::NotifyCursorWarp()
 {
     std::lock_guard<std::mutex> lock(s_singletonMutex);
     if (s_instance)
-        s_instance->m->absBaseInvalid.store(true, std::memory_order_release);
+        s_instance->m->RequestAxisReset();
 }
 
 LinuxRawInputFilter* LinuxRawInputFilter::Acquire()

@@ -21,6 +21,7 @@
 #include <IOKit/hid/IOHIDManager.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreGraphics/CoreGraphics.h>
+#include <dispatch/dispatch.h>
 
 #include <atomic>
 #include <thread>
@@ -55,33 +56,84 @@ void MacSetAimCursorCaptured(bool captured)
 
 struct MacRawInputFilter::Impl
 {
-    // Writers: GC handler queue or HID runloop thread (one backend active at
-    // a time). Reader: emu thread (P-48a load-first delta, single consumer).
-    std::atomic<int64_t> accX{ 0 };
-    std::atomic<int64_t> accY{ 0 };
+    // Each backend owns one packed cumulative total. All GCMouse handlers are
+    // forced onto gcHandlerQueue; IOHID callbacks run on the one worker
+    // runloop. The two serialized producers never write the same atomic, so
+    // high-polling events need no locked RMW even during a backend transition.
+    std::atomic<uint64_t> gcTotal{ 0 };
+    std::atomic<uint64_t> hidTotal{ 0 };
     // GC deltas are float; carry the fractional part so slow motions are not
     // truncated away. Touched only from the GC handler queue.
     float gcFracX = 0.0f;
     float gcFracY = 0.0f;
 
-    std::atomic<bool> available{ false };
+    enum BackendBit : uint32_t {
+        BackendGc = 1u << 0,
+        BackendHid = 1u << 1,
+    };
+    // One atomic word prevents concurrent GC/HID lifecycle transitions from
+    // losing the other backend's availability update.
+    std::atomic<uint32_t> backendBits{ 0 };
     std::atomic<bool> quit{ false };
 
     // --- GCMouse backend ---
-    // gcActive gates the IOHID callback so the two backends can never both
+    // BackendGc gates the IOHID callback so the two backends can never both
     // feed the accumulators (double-counted deltas).
-    std::atomic<bool> gcActive{ false };
-    std::atomic<bool> hidOpen{ false };
     bool usingGC = false;
+    // gcHandlerQueue-only tail gate. A framework callback submitted after the
+    // disconnect drain transaction cannot publish once ownership is released.
+    bool gcProducerEnabled = false;
+    dispatch_queue_t gcHandlerQueue = nullptr;
     id gcConnectObserver = nil;
     id gcDisconnectObserver = nil;
 
     // --- IOHID fallback backend ---
     IOHIDManagerRef manager = nullptr;
-    CFRunLoopRef    runLoop = nullptr;
+    std::atomic<CFRunLoopRef> runLoop{ nullptr };
     std::thread     thread;
 
     // ---------------- GCMouse ----------------
+
+    static const void* GcQueueSpecificKey() noexcept
+    {
+        static char key;
+        return &key;
+    }
+
+    void DispatchGcSync(dispatch_block_t block)
+    {
+        if (dispatch_get_specific(GcQueueSpecificKey()) == this)
+            block();
+        else
+            dispatch_sync(gcHandlerQueue, block);
+    }
+
+    static uint32_t TotalX(uint64_t packed) noexcept
+    {
+        return static_cast<uint32_t>(packed);
+    }
+
+    static uint32_t TotalY(uint64_t packed) noexcept
+    {
+        return static_cast<uint32_t>(packed >> 32);
+    }
+
+    static uint64_t PackTotals(uint32_t x, uint32_t y) noexcept
+    {
+        return static_cast<uint64_t>(x)
+            | (static_cast<uint64_t>(y) << 32);
+    }
+
+    static void AccumulateSingleWriter(
+        std::atomic<uint64_t>& total, int32_t dx, int32_t dy) noexcept
+    {
+        const uint64_t current = total.load(std::memory_order_relaxed);
+        total.store(
+            PackTotals(
+                TotalX(current) + static_cast<uint32_t>(dx),
+                TotalY(current) + static_cast<uint32_t>(dy)),
+            std::memory_order_release);
+    }
 
     void AccumulateGC(float dx, float dy)
     {
@@ -89,16 +141,24 @@ struct MacRawInputFilter::Impl
         gcFracY += dy;
         const int32_t ix = static_cast<int32_t>(gcFracX); // trunc toward zero
         const int32_t iy = static_cast<int32_t>(gcFracY);
-        if (ix != 0) { gcFracX -= static_cast<float>(ix); accX.fetch_add(ix, std::memory_order_release); }
-        if (iy != 0) { gcFracY -= static_cast<float>(iy); accY.fetch_add(iy, std::memory_order_release); }
+        if (ix != 0) gcFracX -= static_cast<float>(ix);
+        if (iy != 0) gcFracY -= static_cast<float>(iy);
+        if ((ix | iy) != 0)
+            AccumulateSingleWriter(gcTotal, ix, iy);
     }
 
     void AttachGCMouse(GCMouse* mouse) API_AVAILABLE(macos(11.0))
     {
         if (!mouse || !mouse.mouseInput) return;
+        // Apple GCDevice.handlerQueue is the callback execution authority.
+        // One serial queue across every connected mouse proves one writer for
+        // gcTotal and also serializes the fractional residuals.
+        mouse.handlerQueue = gcHandlerQueue;
         Impl* self = this;
         mouse.mouseInput.mouseMovedHandler =
             ^(GCMouseInput*, float deltaX, float deltaY) {
+                if (!self->gcProducerEnabled)
+                    return;
                 // GameController uses +Y-up (thumbstick convention); the aim
                 // pipeline expects screen convention (+Y = mouse moved down),
                 // matching Windows Raw Input. Hence the Y negation.
@@ -106,50 +166,69 @@ struct MacRawInputFilter::Impl
             };
     }
 
-    void RecomputeAvailable()
-    {
-        available.store(gcActive.load(std::memory_order_acquire)
-                        || hidOpen.load(std::memory_order_acquire),
-                        std::memory_order_release);
-    }
-
     bool StartGC()
     {
         if (@available(macOS 11.0, *)) {
-            for (GCMouse* m in GCMouse.mice)
-                AttachGCMouse(m);
-
+            gcHandlerQueue = dispatch_queue_create(
+                "org.melonprime.raw-mouse", DISPATCH_QUEUE_SERIAL);
+            dispatch_queue_set_specific(
+                gcHandlerQueue, GcQueueSpecificKey(), this, nullptr);
             Impl* self = this;
+            DispatchGcSync(^{
+                if (GCMouse.mice.count > 0)
+                    self->backendBits.fetch_or(
+                        BackendGc, std::memory_order_acq_rel);
+                self->gcProducerEnabled = GCMouse.mice.count > 0;
+                for (GCMouse* m in GCMouse.mice)
+                    self->AttachGCMouse(m);
+            });
+
             gcConnectObserver = [[NSNotificationCenter defaultCenter]
                 addObserverForName:GCMouseDidConnectNotification
                             object:nil
                              queue:nil
                         usingBlock:^(NSNotification* note) {
                             if (@available(macOS 11.0, *)) {
-                                self->AttachGCMouse((GCMouse*)note.object);
-                                self->gcActive.store(true, std::memory_order_release);
-                                self->RecomputeAvailable();
-                                fprintf(stderr, "[MelonPrime] mac input: GCMouse connected\n");
+                                GCMouse* mouse = (GCMouse*)note.object;
+                                dispatch_async(self->gcHandlerQueue, ^{
+                                    // Claim producer authority before making
+                                    // the GC callback live. IOHID gates every
+                                    // event on this bit.
+                                    self->backendBits.fetch_or(
+                                        BackendGc, std::memory_order_acq_rel);
+                                    self->gcProducerEnabled = true;
+                                    self->AttachGCMouse(mouse);
+                                    fprintf(stderr, "[MelonPrime] mac input: GCMouse connected\n");
+                                });
                             }
                         }];
             gcDisconnectObserver = [[NSNotificationCenter defaultCenter]
                 addObserverForName:GCMouseDidDisconnectNotification
                             object:nil
                              queue:nil
-                        usingBlock:^(NSNotification*) {
+                        usingBlock:^(NSNotification* note) {
                             if (@available(macOS 11.0, *)) {
-                                if (GCMouse.mice.count == 0) {
-                                    self->gcActive.store(false, std::memory_order_release);
-                                    self->RecomputeAvailable();
-                                }
+                                GCMouse* disconnected = (GCMouse*)note.object;
+                                if (disconnected.mouseInput)
+                                    disconnected.mouseInput.mouseMovedHandler = nil;
+                                dispatch_async(self->gcHandlerQueue, ^{
+                                    // This transaction runs after every GC
+                                    // movement block already queued before
+                                    // handler removal. Only then may IOHID
+                                    // resume producer authority.
+                                    if (GCMouse.mice.count == 0) {
+                                        self->gcProducerEnabled = false;
+                                        self->gcFracX = 0.0f;
+                                        self->gcFracY = 0.0f;
+                                        self->backendBits.fetch_and(
+                                            ~BackendGc,
+                                            std::memory_order_acq_rel);
+                                    }
+                                });
                             }
                         }];
 
             usingGC = true;
-            if (GCMouse.mice.count > 0) {
-                gcActive.store(true, std::memory_order_release);
-                RecomputeAvailable();
-            }
             fprintf(stderr, "[MelonPrime] mac input: GCMouse backend (%lu mice)\n",
                     (unsigned long)GCMouse.mice.count);
             return true;
@@ -169,6 +248,19 @@ struct MacRawInputFilter::Impl
             [[NSNotificationCenter defaultCenter] removeObserver:gcDisconnectObserver];
         gcConnectObserver = nil;
         gcDisconnectObserver = nil;
+        if (gcHandlerQueue) {
+            // Handler removal prevents new callbacks; draining proves no block
+            // still references Impl before destruction releases the queue.
+            Impl* self = this;
+            DispatchGcSync(^{
+                self->gcProducerEnabled = false;
+                self->gcFracX = 0.0f;
+                self->gcFracY = 0.0f;
+                self->backendBits.fetch_and(
+                    ~BackendGc, std::memory_order_acq_rel);
+            });
+            gcHandlerQueue = nullptr;
+        }
     }
 
     // ---------------- IOHID fallback ----------------
@@ -196,7 +288,8 @@ struct MacRawInputFilter::Impl
 
         // GCMouse owns the accumulators while a GC mouse is connected —
         // prevents double-counting the same hardware motion.
-        if (self->gcActive.load(std::memory_order_relaxed)) return;
+        if (self->backendBits.load(std::memory_order_relaxed) & BackendGc)
+            return;
 
         IOHIDElementRef elem = IOHIDValueGetElement(value);
         if (!elem) return;
@@ -213,9 +306,11 @@ struct MacRawInputFilter::Impl
         if (delta == 0) return;
 
         if (usage == kHIDUsage_GD_X)
-            self->accX.fetch_add(static_cast<int32_t>(delta), std::memory_order_release);
+            AccumulateSingleWriter(
+                self->hidTotal, static_cast<int32_t>(delta), 0);
         else
-            self->accY.fetch_add(static_cast<int32_t>(delta), std::memory_order_release);
+            AccumulateSingleWriter(
+                self->hidTotal, 0, static_cast<int32_t>(delta));
     }
 
     void ThreadMain()
@@ -225,10 +320,22 @@ struct MacRawInputFilter::Impl
         // prompt from appearing for setups that do not need the fallback.
         for (int i = 0; i < 12 && !quit.load(std::memory_order_acquire); ++i) {
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
-            if (gcActive.load(std::memory_order_acquire)) {
-                fprintf(stderr, "[MelonPrime] mac input: IOHID fallback not needed (GCMouse active)\n");
-                return;
+            if (backendBits.load(std::memory_order_acquire) & BackendGc)
+                break;
+        }
+        if (quit.load(std::memory_order_acquire)) return;
+
+        // Keep the worker alive while GC owns input. If the last GCMouse later
+        // disconnects, IOHID can become the fallback without recreating the
+        // singleton or requiring an application restart.
+        bool loggedGcWait = false;
+        while ((backendBits.load(std::memory_order_acquire) & BackendGc)
+               && !quit.load(std::memory_order_acquire)) {
+            if (!loggedGcWait) {
+                fprintf(stderr, "[MelonPrime] mac input: IOHID fallback waiting (GCMouse active)\n");
+                loggedGcWait = true;
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
         if (quit.load(std::memory_order_acquire)) return;
 
@@ -247,8 +354,10 @@ struct MacRawInputFilter::Impl
 
         IOHIDManagerRegisterInputValueCallback(manager, InputValueCallback, this);
 
-        runLoop = CFRunLoopGetCurrent();
-        IOHIDManagerScheduleWithRunLoop(manager, runLoop, kCFRunLoopDefaultMode);
+        CFRunLoopRef const workerRunLoop = CFRunLoopGetCurrent();
+        runLoop.store(workerRunLoop, std::memory_order_release);
+        IOHIDManagerScheduleWithRunLoop(
+            manager, workerRunLoop, kCFRunLoopDefaultMode);
 
         // Triggers the Input Monitoring permission prompt on first use.
         IOReturn openResult = IOHIDManagerOpen(manager, kIOHIDOptionsTypeNone);
@@ -256,8 +365,7 @@ struct MacRawInputFilter::Impl
                 openResult == kIOReturnSuccess ? "ok" : "failed",
                 static_cast<unsigned>(openResult));
         if (openResult == kIOReturnSuccess) {
-            hidOpen.store(true, std::memory_order_release);
-            RecomputeAvailable();
+            backendBits.fetch_or(BackendHid, std::memory_order_acq_rel);
         }
 
         // Retry while unavailable: a permission granted after launch can make
@@ -271,19 +379,18 @@ struct MacRawInputFilter::Impl
                 openResult = IOHIDManagerOpen(manager, kIOHIDOptionsTypeNone);
                 if (openResult == kIOReturnSuccess) {
                     fprintf(stderr, "[MelonPrime] mac input: IOHID backend recovered\n");
-                    hidOpen.store(true, std::memory_order_release);
-                    RecomputeAvailable();
+                    backendBits.fetch_or(BackendHid, std::memory_order_acq_rel);
                 }
             }
         }
 
-        hidOpen.store(false, std::memory_order_release);
-        RecomputeAvailable();
-        IOHIDManagerUnscheduleFromRunLoop(manager, runLoop, kCFRunLoopDefaultMode);
+        backendBits.fetch_and(~BackendHid, std::memory_order_acq_rel);
+        IOHIDManagerUnscheduleFromRunLoop(
+            manager, workerRunLoop, kCFRunLoopDefaultMode);
         IOHIDManagerClose(manager, kIOHIDOptionsTypeNone);
         CFRelease(manager);
         manager = nullptr;
-        runLoop = nullptr;
+        runLoop.store(nullptr, std::memory_order_release);
     }
 
     void Start()
@@ -300,7 +407,8 @@ struct MacRawInputFilter::Impl
         if (usingGC)
             StopGC();
         quit.store(true, std::memory_order_release);
-        if (runLoop) CFRunLoopStop(runLoop);
+        if (CFRunLoopRef loop = runLoop.load(std::memory_order_acquire))
+            CFRunLoopStop(loop);
         if (thread.joinable()) thread.join();
     }
 };
@@ -318,14 +426,16 @@ MacRawInputFilter::~MacRawInputFilter()
 
 bool MacRawInputFilter::isAvailable() const
 {
-    return m->available.load(std::memory_order_acquire);
+    return m->backendBits.load(std::memory_order_acquire) != 0;
 }
 
 void MacRawInputFilter::fetchMouseDelta(
     MelonPrimeInputSubscription& subscription, int32_t& outDx, int32_t& outDy)
 {
-    const int64_t curX = m->accX.load(std::memory_order_acquire);
-    const int64_t curY = m->accY.load(std::memory_order_acquire);
+    const uint64_t gc = m->gcTotal.load(std::memory_order_acquire);
+    const uint64_t hid = m->hidTotal.load(std::memory_order_acquire);
+    const uint32_t curX = m->TotalX(gc) + m->TotalX(hid);
+    const uint32_t curY = m->TotalY(gc) + m->TotalY(hid);
     if (subscription.cursorNeedsSync) {
         subscription.lastReadX = curX;
         subscription.lastReadY = curY;
@@ -333,21 +443,26 @@ void MacRawInputFilter::fetchMouseDelta(
         outDx = outDy = 0;
         return;
     }
-    outDx = static_cast<int32_t>(curX - subscription.lastReadX);
-    outDy = static_cast<int32_t>(curY - subscription.lastReadY);
+    outDx = static_cast<int32_t>(
+        curX - static_cast<uint32_t>(subscription.lastReadX));
+    outDy = static_cast<int32_t>(
+        curY - static_cast<uint32_t>(subscription.lastReadY));
     subscription.lastReadX = curX;
     subscription.lastReadY = curY;
 }
 
 bool MacRawInputFilter::isGcMouseActive() const
 {
-    return m->gcActive.load(std::memory_order_acquire);
+    return (m->backendBits.load(std::memory_order_acquire)
+            & Impl::BackendGc) != 0;
 }
 
 void MacRawInputFilter::resetAll(MelonPrimeInputSubscription& subscription)
 {
-    subscription.lastReadX = m->accX.load(std::memory_order_acquire);
-    subscription.lastReadY = m->accY.load(std::memory_order_acquire);
+    const uint64_t gc = m->gcTotal.load(std::memory_order_acquire);
+    const uint64_t hid = m->hidTotal.load(std::memory_order_acquire);
+    subscription.lastReadX = m->TotalX(gc) + m->TotalX(hid);
+    subscription.lastReadY = m->TotalY(gc) + m->TotalY(hid);
     subscription.cursorNeedsSync = false;
 }
 

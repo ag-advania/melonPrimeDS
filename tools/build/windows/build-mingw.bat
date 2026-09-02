@@ -58,6 +58,7 @@ echo Usage: tools\build\windows\build-mingw.bat [--verbose] [--jobs N] [--tail N
 echo.
 echo Developer Release profile: configure with MELONPRIME_ENABLE_DEVELOPER_FEATURES=ON, then build
 echo release-mingw-x86_64 with --parallel 1, streaming the build output live and
+echo MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF and MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=OFF are forced for the normal developer build.
 echo printing the last 40 log lines as a recap when it finishes. Full output is
 echo also saved to build\release-mingw-x86_64\last-build.log.
 echo For the shipping profile, use tools\build\windows\build-mingw-release.bat.
@@ -84,11 +85,13 @@ goto find_repo_root
 echo [melonprime-build] Repo: %REPO_ROOT_WIN%
 echo [melonprime-build] Preset: release-mingw-x86_64
 echo [melonprime-build] Jobs: %JOBS%
+echo [melonprime-build] MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF
+echo [melonprime-build] MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=OFF
 
 if "%VERBOSE%"=="1" (
-    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export MSYSTEM=MINGW64 && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -U pkgcfg_lib_Faad_m -U pkgcfg_lib_SDL2_m && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% --verbose"
+    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export MSYSTEM=MINGW64 && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -DMELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF -DMELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=OFF -U pkgcfg_lib_Faad_m -U pkgcfg_lib_SDL2_m && /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% --verbose"
 ) else (
-    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export MSYSTEM=MINGW64 && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -U pkgcfg_lib_Faad_m -U pkgcfg_lib_SDL2_m && LOG=build/release-mingw-x86_64/last-build.log && stdbuf -oL -eL /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% 2>&1 | tee $LOG; STATUS=${PIPESTATUS[0]}; echo; echo '[melonprime-build] Last '%TAIL_LINES%' log lines (full log: '$LOG'):'; tail -n %TAIL_LINES% $LOG; exit $STATUS"
+    "%BASH%" -lc "set -o pipefail; cd '%REPO_ROOT_WIN%' && repo=$(pwd) && export MSYSTEM=MINGW64 && export PATH='/mingw64/bin:/usr/bin:/c/Program Files/Python312:/c/Program Files/Python312/Scripts:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/tools/Qt6/bin:'$repo'/build/release-mingw-x86_64/vcpkg_installed/x64-mingw-static-release/bin':$PATH && /mingw64/bin/cmake.exe -S . -B build/release-mingw-x86_64 -DMELONPRIME_ENABLE_DEVELOPER_FEATURES=ON -DMELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY=OFF -DMELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY=OFF -U pkgcfg_lib_Faad_m -U pkgcfg_lib_SDL2_m && LOG=build/release-mingw-x86_64/last-build.log && stdbuf -oL -eL /mingw64/bin/cmake.exe --build --preset=release-mingw-x86_64 --parallel %JOBS% 2>&1 | tee $LOG; STATUS=${PIPESTATUS[0]}; echo; echo '[melonprime-build] Last '%TAIL_LINES%' log lines (full log: '$LOG'):'; tail -n %TAIL_LINES% $LOG; exit $STATUS"
 )
 
 set "RESULT=%ERRORLEVEL%"

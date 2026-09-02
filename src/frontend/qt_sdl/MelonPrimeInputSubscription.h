@@ -5,6 +5,8 @@
 #include <atomic>
 #include <mutex>
 
+#include "MelonPrimeCompilerHints.h"
+
 namespace MelonPrime {
 
 // Per-emulator consumer cursor for the process-wide platform input collector.
@@ -18,14 +20,43 @@ struct MelonPrimeInputSubscription {
     int64_t lastReadY = 0;
     uint64_t hotkeyDownSnapshot = 0;
     uint64_t hotkeyPrevious = 0;
+#if defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY)
     int64_t debugSumX = 0;
     int64_t debugSumY = 0;
     uint32_t debugFrames = 0;
+#endif
     bool focused = false;
     std::atomic_bool activeOwner{false};
     bool cursorNeedsSync = true;
+    // A process-wide Raw owner transfer may be initiated by another
+    // EmuThread. That thread may publish this notification, but it must not
+    // mutate the plain generation/cursor/baseline fields below the boundary.
+    std::atomic_bool registrationResetPending{false};
 
     void Initialize(uint64_t id) noexcept { instanceId = id; }
+
+    void RequestRegistrationReset() noexcept
+    {
+        registrationResetPending.store(true, std::memory_order_release);
+    }
+
+    // Owner-thread safe point. This is the sole cross-generation writer for
+    // the subscription's plain consumer state after construction.
+    [[nodiscard]] bool ConsumeRegistrationReset() noexcept
+    {
+        if (LIKELY(!registrationResetPending.load(std::memory_order_relaxed)))
+            return false;
+        if (!registrationResetPending.exchange(
+                false, std::memory_order_acq_rel))
+            return false;
+
+        cursorNeedsSync = true;
+        hotkeyPrevious = hotkeyDownSnapshot;
+        ++generation;
+        if (generation == 0)
+            generation = 1;
+        return true;
+    }
 };
 
 class PlatformInputOwnerService {
@@ -52,16 +83,18 @@ public:
         std::lock_guard<std::mutex> lock(Mutex());
         auto* const owner = OwnerAtomic().load(std::memory_order_relaxed);
         if (owner != &subscription) {
-            if (owner)
+            if (owner) {
+                owner->RequestRegistrationReset();
                 owner->activeOwner.store(false, std::memory_order_release);
-            subscription.activeOwner.store(true, std::memory_order_release);
-            OwnerAtomic().store(&subscription, std::memory_order_release);
+            }
             subscription.cursorNeedsSync = true;
             subscription.hotkeyPrevious = subscription.hotkeyDownSnapshot;
             ++subscription.focusGeneration;
             ++subscription.generation;
             if (subscription.generation == 0)
                 subscription.generation = 1;
+            subscription.activeOwner.store(true, std::memory_order_release);
+            OwnerAtomic().store(&subscription, std::memory_order_release);
         }
         return true;
     }
@@ -73,12 +106,23 @@ public:
     static uint64_t BeginRegistrationGeneration(
         MelonPrimeInputSubscription& subscription)
     {
+        // Reconfiguration is called by the active subscription's EmuThread.
+        // Refuse a foreign-thread write rather than making a plain generation
+        // field look synchronized merely because the service mutex is held.
         std::lock_guard<std::mutex> lock(Mutex());
+        if (OwnerAtomic().load(std::memory_order_relaxed) != &subscription)
+            return 0;
         ++subscription.generation;
         if (subscription.generation == 0)
             subscription.generation = 1;
         subscription.hotkeyPrevious = subscription.hotkeyDownSnapshot;
         return subscription.generation;
+    }
+
+    static void RequestRegistrationReset(
+        MelonPrimeInputSubscription& subscription) noexcept
+    {
+        subscription.RequestRegistrationReset();
     }
 
     static void Release(MelonPrimeInputSubscription& subscription)
@@ -87,8 +131,10 @@ public:
         if (OwnerAtomic().load(std::memory_order_relaxed) == &subscription)
             OwnerAtomic().store(nullptr, std::memory_order_release);
         subscription.activeOwner.store(false, std::memory_order_release);
-        subscription.focused = false;
-        subscription.cursorNeedsSync = true;
+        // Release may run on teardown or on a different instance's owner
+        // path. Publish only the mailbox; the subscription owner consumes and
+        // applies its plain cursor/baseline reset at its next safe point.
+        subscription.RequestRegistrationReset();
     }
 
     static bool IsOwner(const MelonPrimeInputSubscription& subscription) noexcept
