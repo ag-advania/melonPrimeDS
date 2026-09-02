@@ -47,16 +47,47 @@ smoothness, latency, mutex contention, or a first-bad runtime commit.
 | `python tools/maintenance/check-doc-links.py` | PASS: 748 local links |
 | `git diff --check` | PASS; only configured LF-to-CRLF notices |
 
+## Runtime evidence (2026-09-02)
+
+A dedicated Release MinGW measurement build was produced from the current
+commit `27c875ecd1fd9c4a4e034e492ab2551e3212d939` with renderer and Raw-input
+telemetry enabled. The current Vulkan run used the known ROM/savestate fixture,
+RTX 5070 Ti, VSync off, frame limit on, Reflex low latency, a 3-second warmup,
+and a 10-second measurement window. Process exit, startup savestate marker,
+configuration restore, provenance, and native mismatch/fallback checks all
+passed; the run selected 790 frame samples.
+
+The same short steady-state condition was run against the smoothness reference
+and the audit's suggested checkpoints:
+
+| Run | Selected frames | Frame-time p95/p99 (recorded us) | Input-to-present p95/p99 (us) |
+|---|---:|---:|---:|
+| `cc6726f86` reference | 790 | 19.05 / 20.01 | 6997.00 / 7813.30 |
+| `a574c83a6` | 790 | 19.09 / 19.97 | 6790.00 / 7539.60 |
+| `985ca1c8` | 790 | 19.05 / 19.90 | 6631.50 / 7195.60 |
+| `27c875ecd` current | 790 | 19.11 / 19.86 | 6800.19 / 7419.61 |
+
+These four short runs show no clear first-bad runtime point or material
+steady-state regression. They are not sufficient to claim a smoothness
+improvement: the runner's injected key action did not produce physical
+`WM_INPUT` hidden-window dispatch, so `hidden_dispatches=0`,
+`recovery_scans=0`, and the Raw recovery path was not exercised. The required
+physical 1000 Hz/8000 Hz mouse and controller disconnected/connected matrix
+remain open. The `0daf3cdf9` checkpoint was also attempted, but its historical
+binary crashed with a TOML serialization error before the startup savestate
+marker; it is excluded from performance comparison.
+
 ## Runtime boundary
 
-The following remain open because they require an interactive real-game
-session, a known ROM/savestate, and controlled physical input hardware:
+The short A/B above is runtime smoke/A-B evidence, but the following remain
+open because they require longer controlled runs, an interactive real-game
+session, or physical input hardware:
 
-- `cc6726f86` vs `a574c83a` first A/B;
-- first-bad commit isolation through `985ca1c8` and the remaining bisect points;
+- first-bad commit isolation beyond the short `cc6726f86`/`a574c83a`/`985ca1c8`
+  comparison and the remaining bisect points;
 - 1000 Hz and 8000 Hz mouse runs, including controller disconnected/connected
   matrices;
-- frame/input p95/p99 capture and subjective smoothness correlation;
+- repeated frame/input p95/p99 capture and subjective smoothness correlation;
 - TSan, remote CI, and any claim that current runtime smoothness equals or
   exceeds `cc6726f86`.
 
