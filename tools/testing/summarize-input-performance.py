@@ -502,7 +502,7 @@ def require_capture_only(
     reports_by_instance: dict[str, dict[str, dict[str, Any]]],
 ) -> None:
     generic_capture = summary.get("generic_capture_only_by_instance", {})
-    if mode in ("keyboard", "controller", "raw", "all"):
+    if mode in ("keyboard", "controller", "raw"):
         for instance_id in reports_by_instance:
             if generic_capture.get(instance_id) is not True:
                 suffix = "" if len(reports_by_instance) == 1 else (
@@ -517,6 +517,27 @@ def require_capture_only(
             "raw budget certification requires a verified "
             "MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY run"
         )
+
+
+def capture_mode_verified(
+    summary: dict[str, Any], mode: str,
+) -> bool:
+    """Return whether the report contains markers for the selected scope."""
+    reports_by_instance = summary.get("latest_input_by_instance") or {
+        "unbound": summary.get("latest_input", {})
+    }
+    generic_capture = summary.get("generic_capture_only_by_instance", {})
+    generic_verified = bool(reports_by_instance) and all(
+        generic_capture.get(instance_id) is True
+        for instance_id in reports_by_instance
+    )
+    if not generic_verified:
+        return False
+    if mode == "raw" or (
+        mode == "all" and summary.get("latest_raw") is not None
+    ):
+        return summary.get("raw_capture_only") is True
+    return True
 
 
 def require_raw_stage(
@@ -555,6 +576,10 @@ def enforce(
     allow_legacy_first_n: bool = False,
     allow_legacy_raw_unversioned: bool = False,
 ) -> None:
+    if mode == "all":
+        raise SummaryError(
+            "--check-budget requires explicit --mode keyboard|controller|raw"
+        )
     if minimum_calls < MIN_CERTIFICATION_SAMPLES:
         raise SummaryError(
             "--check-budget requires --min-input-samples >= "
@@ -782,6 +807,8 @@ def markdown(summary: dict[str, Any]) -> str:
 
 
 def self_test() -> None:
+    import contextlib
+    import io
     import tempfile
 
     text = "\n".join([
@@ -930,6 +957,83 @@ def self_test() -> None:
             parse_log(controller_valid_path), "controller",
             MIN_CERTIFICATION_SAMPLES,
         )
+
+        markerless_path = Path(directory) / "markerless-legacy.log"
+        markerless_path.write_text(
+            "\n".join(
+                line for line in text.splitlines()
+                if "capture_mode" not in line
+            ) + "\n",
+            encoding="utf-8",
+        )
+        markerless_summary = parse_log(markerless_path)
+        if markerless_summary["generic_capture_only_by_instance"]:
+            raise SummaryError("self-test found an unexpected generic capture marker")
+        if markerless_summary["raw_capture_only"] is not None:
+            raise SummaryError("self-test found an unexpected Raw capture marker")
+        if capture_mode_verified(markerless_summary, "all"):
+            raise SummaryError("self-test verified a markerless capture")
+
+        def run_cli(arguments: list[str]) -> tuple[int, str, str]:
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                return main(arguments), stdout.getvalue(), stderr.getvalue()
+
+        return_code, _, stderr = run_cli([
+            "--check-budget", str(controller_valid_path)
+        ])
+        if return_code != 1 or "requires explicit --mode" not in stderr:
+            raise SummaryError("self-test allowed an implicit all budget certification")
+        return_code, _, stderr = run_cli([
+            "--mode", "all", "--check-budget", str(controller_valid_path)
+        ])
+        if return_code != 1 or "requires explicit --mode" not in stderr:
+            raise SummaryError("self-test allowed explicit all budget certification")
+
+        return_code, stdout, stderr = run_cli([
+            "--mode", "controller", "--check-budget", str(controller_valid_path)
+        ])
+        if return_code != 0 or stderr:
+            raise SummaryError("self-test rejected a valid strict certification")
+        strict_output = json.loads(stdout)
+        if strict_output["certified"] is not True:
+            raise SummaryError("self-test did not mark strict certification")
+        if strict_output["certification_scope"] != "strict":
+            raise SummaryError("self-test did not label strict certification scope")
+        if strict_output["capture_mode_verified"] is not True:
+            raise SummaryError("self-test did not verify strict capture mode")
+
+        return_code, _, stderr = run_cli([
+            "--mode", "controller", "--check-budget",
+            "--historical-analysis", str(controller_valid_path),
+        ])
+        if return_code != 1 or "cannot be combined" not in stderr:
+            raise SummaryError("self-test combined strict and historical analysis")
+        return_code, _, stderr = run_cli([
+            "--allow-legacy-first-n", str(controller_valid_path)
+        ])
+        if return_code != 1 or "require --historical-analysis" not in stderr:
+            raise SummaryError("self-test allowed a legacy escape hatch outside history")
+
+        for historical_path in (markerless_path, legacy_raw_path):
+            return_code, stdout, stderr = run_cli([
+                "--historical-analysis", str(historical_path)
+            ])
+            if return_code != 0 or stderr:
+                raise SummaryError(
+                    f"self-test could not summarize historical artifact {historical_path.name}"
+                )
+            historical_output = json.loads(stdout)
+            if historical_output["certified"] is not False:
+                raise SummaryError("self-test certified a historical analysis")
+            if historical_output["historical_analysis"] is not True:
+                raise SummaryError("self-test did not mark historical analysis")
+            if historical_output["certification_scope"] != "historical_analysis":
+                raise SummaryError("self-test did not label historical analysis scope")
+            if historical_output["capture_mode_verified"] is not False:
+                raise SummaryError("self-test verified a markerless historical capture")
+
         expect_rejection(
             "controller-no-evidence.log", controller_no_evidence,
             "controller", "joystick_sample has 0 calls",
@@ -1024,7 +1128,11 @@ def self_test() -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("logs", nargs="*", type=Path)
-    parser.add_argument("--mode", choices=("all", "keyboard", "controller", "raw"), default="all")
+    parser.add_argument(
+        "--mode", choices=("all", "keyboard", "controller", "raw"),
+        default=None,
+        help="certification mode; required with --check-budget (default: all for summaries)",
+    )
     parser.add_argument(
         "--min-input-samples", type=int, default=MIN_CERTIFICATION_SAMPLES,
         help=(
@@ -1034,14 +1142,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--check-budget", action="store_true")
     parser.add_argument(
+        "--historical-analysis",
+        action="store_true",
+        help="summarize legacy or markerless artifacts without certifying them",
+    )
+    parser.add_argument(
         "--allow-legacy-first-n",
         action="store_true",
-        help="allow budget checks on legacy first-N artifacts for historical analysis",
+        help="compatibility opt-in for legacy first-N historical analysis",
     )
     parser.add_argument(
         "--allow-legacy-raw-unversioned",
         action="store_true",
-        help="allow budget checks on old Raw artifacts without surfaced call counts",
+        help="compatibility opt-in for legacy Raw historical analysis",
     )
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--markdown-out", type=Path)
@@ -1057,22 +1170,51 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("at least one telemetry log is required unless --self-test is used")
         if args.min_input_samples < 0:
             raise SummaryError("--min-input-samples must be non-negative")
+        if args.check_budget and args.historical_analysis:
+            raise SummaryError(
+                "--check-budget is strict certification and cannot be combined "
+                "with --historical-analysis; omit --check-budget for "
+                "non-certifying historical analysis"
+            )
+        if (
+            args.allow_legacy_first_n or args.allow_legacy_raw_unversioned
+        ) and not args.historical_analysis:
+            raise SummaryError(
+                "legacy escape hatches require --historical-analysis; "
+                "historical analysis is never certification"
+            )
+        if args.check_budget and args.mode in (None, "all"):
+            raise SummaryError(
+                "--check-budget requires explicit --mode keyboard|controller|raw"
+            )
         if args.check_budget and args.min_input_samples < MIN_CERTIFICATION_SAMPLES:
             raise SummaryError(
                 "--check-budget requires --min-input-samples >= "
                 f"{MIN_CERTIFICATION_SAMPLES}; short runs are not certifiable"
             )
+        mode = args.mode or "all"
         summaries = [parse_log(path) for path in args.logs]
         if args.check_budget:
             for summary in summaries:
                 enforce(
-                    summary, args.mode, args.min_input_samples,
+                    summary, mode, args.min_input_samples,
                     allow_legacy_first_n=args.allow_legacy_first_n,
                     allow_legacy_raw_unversioned=args.allow_legacy_raw_unversioned,
                 )
+        certification_scope = (
+            "strict" if args.check_budget else
+            "historical_analysis" if args.historical_analysis else
+            "summary_only"
+        )
         output: dict[str, Any] = {
-            "schema_version": 5,
-            "mode": args.mode,
+            "schema_version": 6,
+            "mode": mode,
+            "certification_scope": certification_scope,
+            "certified": bool(args.check_budget),
+            "historical_analysis": args.historical_analysis,
+            "capture_mode_verified": all(
+                capture_mode_verified(summary, mode) for summary in summaries
+            ),
             "minimum_input_samples": args.min_input_samples,
             "budget_checked": args.check_budget,
             "allow_legacy_first_n": args.allow_legacy_first_n,

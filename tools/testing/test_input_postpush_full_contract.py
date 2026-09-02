@@ -1224,8 +1224,14 @@ def main() -> None:
         "CONTROLLER_EVIDENCE_METRICS",
         "RAW_REQUIRED_STAGES",
         "require_capture_only",
+        "capture_mode_verified",
+        "certification_scope",
+        "certified",
+        "historical_analysis",
+        "--check-budget requires explicit --mode",
+        "--historical-analysis",
         "--allow-legacy-raw-unversioned",
-        '"schema_version": 5',
+        '"schema_version": 6',
         '"retention_mode": retention_mode',
     ):
         require(perf_summarizer, needle, "telemetry retention provenance")

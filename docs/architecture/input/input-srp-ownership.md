@@ -254,8 +254,13 @@ EmuThread shutdown cannot truncate a multi-instance capture; it is emitted
 before the final service destructor's cold HWND cleanup.
 Current parser output marks this input/stage retention as `latest_n`. Legacy
 generic first-N and historical explicit-latency artifacts are marked
-`legacy_first_n`; an over-cap legacy report cannot pass percentile budget
-enforcement without `--allow-legacy-first-n`.
+`legacy_first_n`; an over-cap legacy report is not eligible for strict
+certification. `--check-budget` requires an explicit `--mode keyboard`,
+`--mode controller`, or `--mode raw`; `all` is summary-only. Markerless or
+legacy artifacts use the explicit `--historical-analysis` path, which is
+always labeled `certified=false` and never treated as a strict budget pass.
+The legacy compatibility flags `--allow-legacy-first-n` and
+`--allow-legacy-raw-unversioned` are accepted only on that historical path.
 
 Raw stage reports expose `calls` and cumulative service/capture-lifetime `max`,
 `retained`, p50/p95/p99, and retained-window `retained_max` for snapshot, late
