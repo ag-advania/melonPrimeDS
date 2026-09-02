@@ -125,9 +125,17 @@ has its own generic probe state; set `MELONPRIME_PERF_CSV` to a path containing
 `%INSTANCE%` when collecting more than one instance (without the placeholder,
 the probe adds `.instanceN`). Set `MELONPRIME_PERF_CAPTURE_ONLY=1` to capture
 without periodic sorting/formatting; the owning thread emits the generic final
-report at shutdown and includes a `capture_mode ... capture_only=1` marker.
+report at shutdown and includes a `capture_mode ... report_seq=N
+capture_only=1` marker. Every generic input, explicit-latency, phase, and
+capture marker line emitted by one report uses that same `report_seq`; the
+parser binds evidence by `(instance_id, report_seq)`. A newer incomplete or
+markerless generation fails strict certification and never falls back to an
+older complete generation. Explicit-latency lines from another generation are
+kept only as unbound supplemental evidence and are omitted from certified
+Markdown.
 Raw capture-only runs use `MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1`; the final
-Raw report includes the corresponding marker. Raw lock wait/hold samples are
+Raw report includes `capture_mode`, `lock_planes`, and `stage_us` lines carrying
+one shared `report_seq`. Raw lock wait/hold samples are
 committed after releasing the measured lock, its `DeferredDrain` report is
 emitted after the stage scope, and the process-wide Raw final report is emitted
 only when the last Raw service reference is released. The final Raw report is
@@ -176,7 +184,15 @@ rejected because `all` is summary-only and does not prove every benchmark
 population. `--mode controller` requires every joystick metric plus at least
 the minimum calls in each metric, while `--mode keyboard` rejects any joystick
 metric calls. `--mode raw` requires `snapshot` and `late_latch` stage
-populations to meet the same minimum and requires the Raw capture-only marker.
+populations to meet the same minimum and requires one complete Raw generation:
+the capture-only marker, `stage_us`, and `lock_planes` must share the latest
+`report_seq`. The lock line must contain
+`subscription_mutex_acq`, `subscription_mutex_wait_ns`,
+`subscription_mutex_hold_ns`, `subscription_mutex_max_wait_ns`,
+`frame_mutex_acq`, `frame_mutex_wait_ns`, `frame_mutex_hold_ns`,
+`frame_mutex_max_wait_ns`, `recursive_acquisitions`,
+`subscription_max_recursion_depth`, and `frame_max_recursion_depth`. Missing
+lock evidence or any required key is a strict failure.
 
 `--historical-analysis` is the explicit non-certifying path for old or
 markerless artifacts. It permits capture-mode provenance to remain unknown and

@@ -242,13 +242,21 @@ Generic performance state is thread-local and is bound to the owning
 `.instanceN` suffix and is closed by the owning thread-local state destructor,
 not an `atexit` callback. `MELONPRIME_PERF_CAPTURE_ONLY=1` keeps sorting,
 formatting, and stderr reporting until shutdown and emits a machine-readable
-capture-only marker. Generic input metrics and explicit input latency retain the
-latest 2048 samples while their `calls` counter covers the whole report
-window/run; p50/p95/p99 and `retained_max` describe the retained ring, whereas
-`max` is the whole-window maximum. Raw capture-only uses
-`MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1` and emits its own marker. Raw lock
-telemetry is written after each measured mutex is released, and `DeferredDrain`
-reports only after its frame/stage scope has ended. The process-wide Raw final
+capture-only marker. Each generic report allocates one developer-only
+`report_seq`; its capture marker, input metrics, explicit latency, and HUD
+phase lines all carry that same sequence. The parser binds those lines by
+`(instance_id, report_seq)`, rejects a newer incomplete/markerless generation
+without falling back to an older pass, and omits explicit-latency supplemental
+lines whose sequence does not match the certified input generation. Generic
+input metrics and explicit input latency retain the latest 2048 samples while
+their `calls` counter covers the whole report window/run; p50/p95/p99 and
+`retained_max` describe the retained ring, whereas `max` is the whole-window
+maximum. Raw capture-only uses
+`MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1` and emits one shared `report_seq` on
+its capture marker, `lock_planes`, and `stage_us` lines. Raw strict
+certification requires the lock line and every documented lock-plane key in
+that same generation. Raw lock telemetry is written after each measured mutex
+is released, and `DeferredDrain` reports only after its frame/stage scope has ended. The process-wide Raw final
 report belongs to the last `RawInputWinFilter` service release, so an earlier
 EmuThread shutdown cannot truncate a multi-instance capture; it is emitted
 before the final service destructor's cold HWND cleanup.

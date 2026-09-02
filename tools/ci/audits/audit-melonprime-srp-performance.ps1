@@ -2327,12 +2327,20 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
     $inputPerfSummarizerText -notmatch 'capture_mode_verified' -or
     $inputPerfSummarizerText -notmatch 'pending_generic_capture' -or
     $inputPerfSummarizerText -notmatch 'pending_raw_capture' -or
+    $inputPerfSummarizerText -notmatch 'REPORT_SEQ_RE' -or
+    $inputPerfSummarizerText -notmatch 'generic_generation_records' -or
+    $inputPerfSummarizerText -notmatch 'raw_generation_records' -or
+    $inputPerfSummarizerText -notmatch 'latest_generic_report_seq_by_instance' -or
+    $inputPerfSummarizerText -notmatch 'latest_raw_report_seq' -or
+    $inputPerfSummarizerText -notmatch 'RAW_REQUIRED_LOCK_KEYS' -or
+    $inputPerfSummarizerText -notmatch 'require_raw_generation' -or
+    $inputPerfSummarizerText -notmatch 'unbound_latency_report_count' -or
     $inputPerfSummarizerText -notmatch 'certification_scope' -or
     $inputPerfSummarizerText -notmatch 'historical_analysis' -or
     $inputPerfSummarizerText -notmatch 'Certification scope:' -or
     $inputPerfSummarizerText -notmatch 'NOT A CERTIFICATION RESULT' -or
     $inputPerfSummarizerText -notmatch 'retention_mode' -or
-    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*6' -or
+    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*7' -or
     $inputContractText -notmatch 'latest-N' -or
     $inputContractText -notmatch 'retained_max' -or
     $inputContractText -notmatch 'whole live-report window' -or
@@ -2345,6 +2353,17 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
     $presentPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
     $presentPerfRunnerText -notmatch 'frames\.%INSTANCE%\.csv') {
     Add-Error 'Rule BZ: generic input telemetry is not per-instance/capture-safe'
+}
+if ($perfProbeText -notmatch 'NextReportSequence\s*\(\s*State&\s+st\s*\)' -or
+    $perfProbeText -notmatch 'report_seq=%llu' -or
+    $rawInputPerfText -notmatch 'NextReportSequence\s*\(\s*\)\s*noexcept' -or
+    $rawInputPerfText -notmatch 'capture_mode report_seq=%llu' -or
+    $rawInputPerfText -notmatch 'lock_planes report_seq=%llu' -or
+    $rawInputPerfText -notmatch 'stage_us report_seq=%llu' -or
+    $inputPerfSummarizerText -notmatch 'report_seq-bound generation required' -or
+    $inputPerfSummarizerText -notmatch 'raw report_seq=.*lock-plane evidence' -or
+    $inputPerfSummarizerText -notmatch 'missing required keys') {
+    Add-Error 'Rule BZ2: report_seq generation binding or Raw lock certification is incomplete'
 }
 if ($perfProbeText -notmatch 'SummarizeDoubleSamples' -or
     $perfProbeText -notmatch 'SummarizeInputMetric' -or
@@ -2516,6 +2535,18 @@ if ($inputPerfSummarizerText -notmatch 'joystick_sample' -or
     $inputPerfSummarizerText -notmatch
         'mixed-raw-generation') {
     Add-Error 'Rule CH: mode-specific budget evidence gates are incomplete'
+}
+if ($inputPerfSummarizerText -notmatch 'generic-dangling-next-run' -or
+    $inputPerfSummarizerText -notmatch 'generic-dangling-eof' -or
+    $inputPerfSummarizerText -notmatch 'explicit-latency-generation-mismatch' -or
+    $inputPerfSummarizerText -notmatch 'raw-missing-lock' -or
+    $inputPerfSummarizerText -notmatch 'raw-missing-lock-key' -or
+    $inputPerfSummarizerText -notmatch 'raw-lock-stage-generation-mismatch' -or
+    $inputPerfSummarizerText -notmatch 'raw-dangling-next-run' -or
+    $inputPerfSummarizerText -notmatch 'raw-dangling-eof' -or
+    $inputContractText -notmatch 'report_seq' -or
+    $inputContractText -notmatch 'required key is a strict failure') {
+    Add-Error 'Rule CH2: generation-dangling and lock-plane negative tests are incomplete'
 }
 
 # CC: joystick enumeration is a cold, process-serialized owner operation;

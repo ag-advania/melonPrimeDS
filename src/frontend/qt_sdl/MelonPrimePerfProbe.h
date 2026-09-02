@@ -194,6 +194,8 @@ struct State {
     uint64_t frameIndex = 0;
 
     uint64_t instanceId = 0;
+    uint64_t reportSequence = 0;
+    uint64_t reportSequenceBase = 0;
 
     ~State()
     {
@@ -216,6 +218,13 @@ inline void BindInstance(uint64_t instanceId)
     if (!IsEnabled())
         return;
     S().instanceId = instanceId;
+}
+
+inline uint64_t NextReportSequence(State& st)
+{
+    if (!st.reportSequenceBase)
+        st.reportSequenceBase = static_cast<uint64_t>(SDL_GetPerformanceCounter());
+    return st.reportSequenceBase + ++st.reportSequence;
 }
 
 inline bool IsCaptureOnly()
@@ -606,7 +615,7 @@ inline void ResetWindowStats()
     st.cntCrosshairProjectionRejected = 0;
 }
 
-inline void ReportExplicitLatency(const State& st)
+inline void ReportExplicitLatency(const State& st, uint64_t reportSeq)
 {
     const PercentileSummary runFrame = SummarizeLatency(
         st.inputToRunFrameUs, st.inputToRunFrameWrite,
@@ -616,6 +625,7 @@ inline void ReportExplicitLatency(const State& st)
         st.inputToPresentEndCount);
     std::fprintf(stderr,
         "[MelonPrimePerf] explicit_latency_us instance_id=%llu "
+        "report_seq=%llu "
         "frame_input_sample_to_runframe_begin_us="
         "calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
         "max=%.1f retained_max=%.1f "
@@ -623,6 +633,7 @@ inline void ReportExplicitLatency(const State& st)
         "calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
         "max=%.1f retained_max=%.1f\n",
         static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(st.inputToRunFrameCalls),
         runFrame.count, runFrame.p50, runFrame.p95, runFrame.p99,
         st.inputToRunFrameMaxUs, runFrame.retainedMax,
@@ -631,7 +642,7 @@ inline void ReportExplicitLatency(const State& st)
         st.inputToPresentEndMaxUs, presentEnd.retainedMax);
 }
 
-inline void ReportInputMetricSummary(const State& st)
+inline void ReportInputMetricSummary(const State& st, uint64_t reportSeq)
 {
     PercentileSummary metrics[static_cast<uint32_t>(InputMetric::Count)];
     for (uint32_t i = 0; i < static_cast<uint32_t>(InputMetric::Count); ++i)
@@ -648,11 +659,13 @@ inline void ReportInputMetricSummary(const State& st)
         return metric(inputMetric).count;
     };
     std::fprintf(stderr,
-        "[MelonPrimePerf] capture_mode instance_id=%llu capture_only=%u\n",
+        "[MelonPrimePerf] capture_mode instance_id=%llu report_seq=%llu "
+        "capture_only=%u\n",
         static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq),
         IsCaptureOnly() ? 1u : 0u);
     std::fprintf(stderr,
-        "[MelonPrimePerf] input_metric_us instance_id=%llu "
+        "[MelonPrimePerf] input_metric_us instance_id=%llu report_seq=%llu "
         "input_total[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
         "joystick_lock_wait[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
         "joystick_sample[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
@@ -661,6 +674,7 @@ inline void ReportInputMetricSummary(const State& st)
         "joystick_process_mutex_wait[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
         "joystick_process_mutex_hold[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f]\n",
         static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq),
         calls(InputMetric::InputTotal), retained(InputMetric::InputTotal),
         metric(InputMetric::InputTotal).p50,
         metric(InputMetric::InputTotal).p95, metric(InputMetric::InputTotal).p99,
@@ -702,7 +716,7 @@ inline void ReportInputMetricSummary(const State& st)
         metric(InputMetric::JoystickProcessMutexHold).retainedMax);
 }
 
-inline void ReportHudPhaseSummary(const State& st)
+inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
 {
     PercentileSummary phases[static_cast<uint32_t>(HudPhase::Count)];
     for (uint32_t i = 0; i < static_cast<uint32_t>(HudPhase::Count); ++i)
@@ -724,7 +738,7 @@ inline void ReportHudPhaseSummary(const State& st)
             : 0.0;
     };
     std::fprintf(stderr,
-        "[MelonPrimePerf] hud_phase_us instance_id=%llu "
+        "[MelonPrimePerf] hud_phase_us instance_id=%llu report_seq=%llu "
         "state[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "scoreboard_plan[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "scoreboard_raster[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
@@ -741,6 +755,7 @@ inline void ReportHudPhaseSummary(const State& st)
         "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
         "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu\n",
         static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::State)]),
         sumUs(HudPhase::State), averageUs(HudPhase::State), phase(HudPhase::State).p50,
         phase(HudPhase::State).p95, phase(HudPhase::State).max,
@@ -811,10 +826,13 @@ inline void MaybeReport1Hz()
     if (sinceReportMs < 1000.0)
         return;
 
+    const uint64_t reportSeq = NextReportSequence(st);
     const auto reportClock = melonDS::MelonPrimePerfClock::Now();
     std::fprintf(stderr,
-        "[MelonPrimePerfPhase] instance_id=%llu report_qpc_ticks=%llu qpc_frequency=%llu\n",
+        "[MelonPrimePerfPhase] instance_id=%llu report_seq=%llu "
+        "report_qpc_ticks=%llu qpc_frequency=%llu\n",
         static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(reportClock.Ticks),
         static_cast<unsigned long long>(reportClock.Frequency));
 
@@ -833,12 +851,14 @@ inline void MaybeReport1Hz()
         + st.cntInputSource[static_cast<uint32_t>(InputSource::QCursorFallback)];
 
     std::fprintf(stderr,
-        "[MelonPrimePerf] frame_ms instance_id=%llu p50=%.3f p95=%.3f p99=%.3f max=%.3f n=%u | "
+        "[MelonPrimePerf] frame_ms instance_id=%llu report_seq=%llu "
+        "p50=%.3f p95=%.3f p99=%.3f max=%.3f n=%u | "
         "sec_avg_ms sleep=%.3f spin=%.3f setup=%.3f vkbegin=%.3f input=%.3f prerun=%.3f run=%.3f draw=%.3f drain=%.3f book=%.3f yield=%.3f | "
         "input_src raw=%llu mac=%llu linux=%llu panel=%llu qcur=%llu (tot=%llu) | "
         "warp=%llu oog_patch=%llu osd_apply=%llu osd_write=%llu | "
         "hud_dirty_px=%llu gl_up_B=%llu dr3_skip=%llu hud_render_us=%.1f\n",
         static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq),
         frame.p50, frame.p95, frame.p99, frame.max, frame.count,
         secAvg(Section::LimiterSleep), secAvg(Section::LimiterSpin),
         secAvg(Section::FrameSetup), secAvg(Section::VulkanBegin),
@@ -863,11 +883,12 @@ inline void MaybeReport1Hz()
                 / static_cast<double>(st.cntCustomHudFrames) : 0.0);
 
     std::fprintf(stderr,
-        "[MelonPrimePerf] audit_counts instance_id=%llu "
+        "[MelonPrimePerf] audit_counts instance_id=%llu report_seq=%llu "
         "stage_matrix_full_validation=%llu stage_matrix_validation_retry=%llu "
         "surface_visibility_state_change=%llu renderer_fast_cache_refresh=%llu "
         "crosshair_projection_accepted=%llu crosshair_projection_rejected=%llu\n",
         static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(st.cntStageMatrixFullValidations),
         static_cast<unsigned long long>(st.cntStageMatrixValidationRetries),
         static_cast<unsigned long long>(st.cntSurfaceVisibilityStateChanges),
@@ -875,9 +896,9 @@ inline void MaybeReport1Hz()
         static_cast<unsigned long long>(st.cntCrosshairProjectionAccepted),
         static_cast<unsigned long long>(st.cntCrosshairProjectionRejected));
 
-    ReportExplicitLatency(st);
-    ReportInputMetricSummary(st);
-    ReportHudPhaseSummary(st);
+    ReportExplicitLatency(st, reportSeq);
+    ReportInputMetricSummary(st, reportSeq);
+    ReportHudPhaseSummary(st, reportSeq);
 
     st.lastReportTick = now;
     ResetWindowStats();
@@ -1255,10 +1276,13 @@ inline void ShutdownReport()
         return;
 
     State& st = S();
+    const uint64_t reportSeq = NextReportSequence(st);
     if (st.ringCount == 0)
         std::fprintf(stderr,
-            "[MelonPrimePerf] shutdown instance_id=%llu: no frames recorded\n",
-            static_cast<unsigned long long>(st.instanceId));
+            "[MelonPrimePerf] shutdown instance_id=%llu report_seq=%llu: "
+            "no frames recorded\n",
+            static_cast<unsigned long long>(st.instanceId),
+            static_cast<unsigned long long>(reportSeq));
     else
     {
         double sorted[State::kRingCap];
@@ -1276,13 +1300,18 @@ inline void ShutdownReport()
         const double maxMs = sorted[n - 1];
 
         std::fprintf(stderr,
-            "[MelonPrimePerf] shutdown summary instance_id=%llu: frames=%u frame_ms "
+            "[MelonPrimePerf] shutdown summary instance_id=%llu report_seq=%llu: "
+            "frames=%u frame_ms "
             "p50=%.3f p95=%.3f p99=%.3f max=%.3f\n",
-            static_cast<unsigned long long>(st.instanceId), n,
+            static_cast<unsigned long long>(st.instanceId),
+            static_cast<unsigned long long>(reportSeq), n,
             p50, p95, p99, maxMs);
 
-        std::fprintf(stderr, "[MelonPrimePerf] histogram instance_id=%llu bucket_ms=%.1f:\n",
-            static_cast<unsigned long long>(st.instanceId), State::kHistBucketMs);
+        std::fprintf(stderr,
+            "[MelonPrimePerf] histogram instance_id=%llu report_seq=%llu "
+            "bucket_ms=%.1f:\n",
+            static_cast<unsigned long long>(st.instanceId),
+            static_cast<unsigned long long>(reportSeq), State::kHistBucketMs);
         for (uint32_t b = 0; b < State::kHistBuckets; ++b) {
             if (st.histTotal[b])
                 std::fprintf(stderr, "  %4.1f-%4.1f ms: %u\n",
@@ -1299,9 +1328,9 @@ inline void ShutdownReport()
     // Capture-only runs intentionally defer all formatting and sorting until
     // this owning EmuThread shutdown point. These helpers also make the final
     // partial report useful when a live 1 Hz window never elapsed.
-    ReportExplicitLatency(st);
-    ReportInputMetricSummary(st);
-    ReportHudPhaseSummary(st);
+    ReportExplicitLatency(st, reportSeq);
+    ReportInputMetricSummary(st, reportSeq);
+    ReportHudPhaseSummary(st, reportSeq);
     if (st.frameCsv)
         std::fflush(st.frameCsv);
 }
