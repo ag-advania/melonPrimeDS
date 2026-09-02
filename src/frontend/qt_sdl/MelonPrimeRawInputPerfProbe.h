@@ -16,6 +16,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include "MelonPrimePerfSession.h"
 #endif
 
 namespace MelonPrime {
@@ -102,7 +103,6 @@ struct Counters {
     std::atomic<uint64_t> lateLatchDeltaClaims{ 0 };
     std::atomic<uint64_t> postDrawEventsCaptured{ 0 };
     std::atomic<uint64_t> reportSequence{ 0 };
-    std::atomic<uint64_t> reportSequenceBase{ 0 };
 };
 
 inline Counters& Stats() noexcept
@@ -137,19 +137,7 @@ inline uint64_t NowNs() noexcept
 
 inline uint64_t NextReportSequence() noexcept
 {
-    auto& stats = Stats();
-    uint64_t base = stats.reportSequenceBase.load(std::memory_order_relaxed);
-    if (!base) {
-        uint64_t expected = 0;
-        const uint64_t candidate = NowNs();
-        if (stats.reportSequenceBase.compare_exchange_strong(
-                expected, candidate,
-                std::memory_order_relaxed, std::memory_order_relaxed))
-            base = candidate;
-        else
-            base = expected;
-    }
-    return base + stats.reportSequence.fetch_add(1, std::memory_order_relaxed) + 1;
+    return Stats().reportSequence.fetch_add(1, std::memory_order_relaxed) + 1;
 }
 
 inline void AtomicMax(std::atomic<uint64_t>& target, uint64_t value) noexcept
@@ -555,18 +543,21 @@ inline void Report(bool force) noexcept
 
     auto& stats = Stats();
     const uint64_t reportSeq = NextReportSequence();
+    const char* sessionId = MelonPrimePerfSession::Text();
     std::fprintf(stderr,
-        "[MelonPrimeRawPerf] capture_mode report_seq=%llu capture_only=%u\n",
+        "[MelonPrimeRawPerf] capture_mode session_id=%s report_seq=%llu "
+        "capture_only=%u\n",
+        sessionId,
         static_cast<unsigned long long>(reportSeq),
         IsCaptureOnly() ? 1u : 0u);
     std::fprintf(stderr,
-        "[MelonPrimeRawPerf] mutex_acq report_seq=%llu "
+        "[MelonPrimeRawPerf] mutex_acq session_id=%s report_seq=%llu "
         "mutex_acq=%llu mutex_wait_ns=%llu "
         "mutex_hold_ns=%llu mutex_wait_max_ns=%llu mutex_hold_max_ns=%llu "
         "raw_buffer_calls=%llu raw_buffer_ns=%llu raw_buffer_max_ns=%llu "
         "get_async_calls=%llu hidden_dispatches=%llu recovery_scans=%llu "
         "recovery_clears=%llu\n",
-        static_cast<unsigned long long>(reportSeq),
+        sessionId, static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(stats.mutexAcquisitions.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.mutexWaitNs.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.mutexHoldNs.load(std::memory_order_relaxed)),
@@ -580,14 +571,14 @@ inline void Report(bool force) noexcept
         static_cast<unsigned long long>(stats.stuckRecoveryScans.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.stuckRecoveryClears.load(std::memory_order_relaxed)));
     std::fprintf(stderr,
-        "[MelonPrimeRawPerf] lock_planes report_seq=%llu "
+        "[MelonPrimeRawPerf] lock_planes session_id=%s report_seq=%llu "
         "subscription_mutex_acq=%llu subscription_mutex_wait_ns=%llu "
         "subscription_mutex_hold_ns=%llu subscription_mutex_max_wait_ns=%llu "
         "frame_mutex_acq=%llu frame_mutex_wait_ns=%llu "
         "frame_mutex_hold_ns=%llu frame_mutex_max_wait_ns=%llu "
         "recursive_acquisitions=%llu subscription_max_recursion_depth=%llu "
         "frame_max_recursion_depth=%llu\n",
-        static_cast<unsigned long long>(reportSeq),
+        sessionId, static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(stats.subscriptionMutexAcquisitions.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.subscriptionMutexWaitNs.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.subscriptionMutexHoldNs.load(std::memory_order_relaxed)),
@@ -607,7 +598,7 @@ inline void Report(bool force) noexcept
     const StagePercentiles deferredDrain = SummarizeStage(
         stats.stage[static_cast<uint32_t>(Stage::RawDeferredDrain)]);
     std::fprintf(stderr,
-        "[MelonPrimeRawPerf] stage_us report_seq=%llu "
+        "[MelonPrimeRawPerf] stage_us session_id=%s report_seq=%llu "
         "snapshot[calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
             "max=%.1f retained_max=%.1f] "
         "late_latch[calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
@@ -617,7 +608,7 @@ inline void Report(bool force) noexcept
         "lock_wait_ns snapshot=%llu late=%llu deferred=%llu hidden=%llu native=%llu | "
         "raw_batch calls=%llu nonempty=%llu empty=%llu events=%llu "
         "late_delta_claims=%llu post_draw_events=%llu\n",
-        static_cast<unsigned long long>(reportSeq),
+        sessionId, static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(snapshot.calls), snapshot.retained,
         snapshot.p50, snapshot.p95, snapshot.p99, snapshot.max,
         snapshot.retainedMax,
@@ -639,11 +630,11 @@ inline void Report(bool force) noexcept
         static_cast<unsigned long long>(stats.lateLatchDeltaClaims.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.postDrawEventsCaptured.load(std::memory_order_relaxed)));
     std::fprintf(stderr,
-        "[MelonPrimeRawPerf] metric_contract report_seq=%llu "
+        "[MelonPrimeRawPerf] metric_contract session_id=%s report_seq=%llu "
         "RawSubscriptionLockWait=%llu "
         "RawSnapshot=%llu RawLateLatch=%llu RawDeferredDrain=%llu "
         "RawBatchCallCount=%llu RawBatchEventCount=%llu\n",
-        static_cast<unsigned long long>(reportSeq),
+        sessionId, static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(stats.subscriptionMutexWaitNs.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.stage[static_cast<uint32_t>(Stage::RawSnapshot)].calls.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.stage[static_cast<uint32_t>(Stage::RawLateLatch)].calls.load(std::memory_order_relaxed)),

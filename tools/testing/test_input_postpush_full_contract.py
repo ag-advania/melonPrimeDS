@@ -1082,6 +1082,7 @@ def main() -> None:
     raw_filter = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp")
     raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
     raw_perf = source("src/frontend/qt_sdl/MelonPrimeRawInputPerfProbe.h")
+    perf_session = source("src/frontend/qt_sdl/MelonPrimePerfSession.h")
     perf_shutdown = source("src/frontend/qt_sdl/MelonPrimeEmuThreadPerfShutdown.inc")
     perf = source("src/frontend/qt_sdl/MelonPrimePerfProbe.h")
     perf_summarizer = source("tools/testing/summarize-input-performance.py")
@@ -1214,18 +1215,21 @@ def main() -> None:
         "capture_mode",
         "capture_only=",
         "uint64_t reportSequence = 0",
-        "uint64_t reportSequenceBase = 0",
         "NextReportSequence(State& st)",
+        "return ++st.reportSequence",
+        "ReportGenerationHeader",
+        "report_begin session_id=%s instance_id=%llu",
+        "session_id=%s",
         "report_seq=%llu",
     ):
         require(perf, needle, "latest-N input telemetry retention")
     for needle in (
         "std::atomic<uint64_t> reportSequence{ 0 }",
-        "std::atomic<uint64_t> reportSequenceBase{ 0 }",
         "inline uint64_t NextReportSequence() noexcept",
-        "capture_mode report_seq=%llu",
-        "lock_planes report_seq=%llu",
-        "stage_us report_seq=%llu",
+        "return Stats().reportSequence.fetch_add(1",
+        "capture_mode session_id=%s report_seq=%llu",
+        "lock_planes session_id=%s report_seq=%llu",
+        "stage_us session_id=%s report_seq=%llu",
         "subscription_mutex_acq=%llu",
         "subscription_mutex_wait_ns=%llu",
         "subscription_mutex_hold_ns=%llu",
@@ -1240,6 +1244,15 @@ def main() -> None:
     ):
         require(raw_perf, needle, "Raw report generation provenance")
     for needle in (
+        "MELONPRIME_PERF_SESSION_ID",
+        "char value[kMaxLength + 1]",
+        "std::getenv",
+        "static const SessionId session",
+    ):
+        require(perf_session, needle, "shared performance session identity")
+    if "std::string" in perf_session:
+        raise AssertionError("shared performance session identity uses dynamic strings")
+    for needle in (
         "RETENTION_LATEST_N",
         "RETENTION_LEGACY_FIRST_N",
         "legacy_first_n",
@@ -1252,13 +1265,25 @@ def main() -> None:
         "pending_generic_capture",
         "pending_raw_capture",
         "REPORT_SEQ_RE",
+        "GENERIC_REPORT_BEGIN_RE",
+        "SESSION_ID_RE",
+        "report_begin",
+        "first_observed_line",
         "report_seq",
         "generic_generations",
         "raw_generations",
         "generic_generation_records",
         "raw_generation_records",
         "latest_generic_report_seq_by_instance",
+        "latest_generic_session_id_by_instance",
+        "latest_generic_generation_by_instance",
         "latest_raw_report_seq",
+        "latest_raw_session_id",
+        "latest_raw_generation",
+        "session_id",
+        "valid_session_id",
+        "generic/Raw shared session_id mismatch",
+        "observation",
         "RAW_REQUIRED_LOCK_KEYS",
         "require_raw_generation",
         "unbound_latency_report_count",
@@ -1278,7 +1303,21 @@ def main() -> None:
         "mixed-raw-generation",
         "generic-dangling-next-run",
         "generic-dangling-eof",
+        "generic-explicit-latency-only",
+        "generic-report-begin-only",
+        "generic-report-begin-explicit-latency-only",
+        "generic-report-begin-capture-no-input",
+        "generic-report-begin-input-no-capture",
+        "generic-shutdown-summary-only",
+        "cross-run-lower-incomplete",
+        "cross-run-complete",
+        "same-session-report-seq-collision",
+        "cross-session-same-seq",
         "explicit-latency-generation-mismatch",
+        "generic-raw-session-mismatch",
+        "raw-cross-run-complete",
+        "raw-cross-run-lower-incomplete",
+        "raw-cross-session-same-seq",
         "raw-missing-lock",
         "raw-missing-lock-key",
         "raw-lock-stage-generation-mismatch",
@@ -1287,7 +1326,15 @@ def main() -> None:
         "--check-budget requires explicit --mode",
         "--historical-analysis",
         "--allow-legacy-raw-unversioned",
-        '"schema_version": 7',
+        '"schema_version": 8',
+        'Session ID:',
+        "--commit-sha",
+        "--build-preset",
+        "--hardware",
+        "--device",
+        "--window-mode",
+        "--polling-rate",
+        "benchmark_metadata",
         '"retention_mode": retention_mode',
     ):
         require(perf_summarizer, needle, "telemetry retention provenance")

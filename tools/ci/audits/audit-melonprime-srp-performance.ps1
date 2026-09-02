@@ -2285,6 +2285,8 @@ if (([regex]::Matches($rawWinFilterText,
 # do not put sorting, formatting, or CSV lifetime work on the frame path.
 $inputPerfSummarizerPath = Join-Path $repoRoot 'tools/testing/summarize-input-performance.py'
 $inputPerfSummarizerText = Get-Content -LiteralPath $inputPerfSummarizerPath -Raw
+$perfSessionPath = Join-Path $qtSdl 'MelonPrimePerfSession.h'
+$perfSessionText = Get-Content -LiteralPath $perfSessionPath -Raw
 $perfShutdownPath = Join-Path $qtSdl 'MelonPrimeEmuThreadPerfShutdown.inc'
 $perfShutdownText = Get-Content -LiteralPath $perfShutdownPath -Raw
 $inputContractPath = Join-Path $repoRoot 'docs/development/input/input-frame-contract.md'
@@ -2331,7 +2333,10 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
     $inputPerfSummarizerText -notmatch 'generic_generation_records' -or
     $inputPerfSummarizerText -notmatch 'raw_generation_records' -or
     $inputPerfSummarizerText -notmatch 'latest_generic_report_seq_by_instance' -or
+    $inputPerfSummarizerText -notmatch 'latest_generic_generation_by_instance' -or
     $inputPerfSummarizerText -notmatch 'latest_raw_report_seq' -or
+    $inputPerfSummarizerText -notmatch 'latest_raw_generation' -or
+    $inputPerfSummarizerText -notmatch 'session_id' -or
     $inputPerfSummarizerText -notmatch 'RAW_REQUIRED_LOCK_KEYS' -or
     $inputPerfSummarizerText -notmatch 'require_raw_generation' -or
     $inputPerfSummarizerText -notmatch 'unbound_latency_report_count' -or
@@ -2340,7 +2345,9 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
     $inputPerfSummarizerText -notmatch 'Certification scope:' -or
     $inputPerfSummarizerText -notmatch 'NOT A CERTIFICATION RESULT' -or
     $inputPerfSummarizerText -notmatch 'retention_mode' -or
-    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*7' -or
+    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*8' -or
+    $inputContractText -notmatch 'report_begin' -or
+    $inputContractText -notmatch 'session_id' -or
     $inputContractText -notmatch 'latest-N' -or
     $inputContractText -notmatch 'retained_max' -or
     $inputContractText -notmatch 'whole live-report window' -or
@@ -2356,14 +2363,35 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
 }
 if ($perfProbeText -notmatch 'NextReportSequence\s*\(\s*State&\s+st\s*\)' -or
     $perfProbeText -notmatch 'report_seq=%llu' -or
+    $perfProbeText -notmatch 'report_begin session_id=%s instance_id=%llu' -or
     $rawInputPerfText -notmatch 'NextReportSequence\s*\(\s*\)\s*noexcept' -or
-    $rawInputPerfText -notmatch 'capture_mode report_seq=%llu' -or
-    $rawInputPerfText -notmatch 'lock_planes report_seq=%llu' -or
-    $rawInputPerfText -notmatch 'stage_us report_seq=%llu' -or
+    $rawInputPerfText -notmatch 'capture_mode session_id=%s report_seq=%llu' -or
+    $rawInputPerfText -notmatch 'lock_planes session_id=%s report_seq=%llu' -or
+    $rawInputPerfText -notmatch 'stage_us session_id=%s report_seq=%llu' -or
     $inputPerfSummarizerText -notmatch 'report_seq-bound generation required' -or
     $inputPerfSummarizerText -notmatch 'raw report_seq=.*lock-plane evidence' -or
     $inputPerfSummarizerText -notmatch 'missing required keys') {
     Add-Error 'Rule BZ2: report_seq generation binding or Raw lock certification is incomplete'
+}
+if ($perfSessionText -notmatch 'MELONPRIME_PERF_SESSION_ID' -or
+    $perfSessionText -notmatch 'char value\[kMaxLength \+ 1\]' -or
+    $perfSessionText -match 'std::string' -or
+    $perfProbeText -notmatch 'ReportGenerationHeader\s*\(\s*st,\s*reportSeq\s*\)' -or
+    $perfProbeText -notmatch 'report_begin' -or
+    $inputPerfSummarizerText -notmatch 'GENERIC_REPORT_BEGIN_RE' -or
+    $inputPerfSummarizerText -notmatch 'first_observed_line' -or
+    $inputPerfSummarizerText -notmatch 'valid_session_id' -or
+    $inputPerfSummarizerText -notmatch 'generic/Raw shared session_id mismatch' -or
+    $inputPerfSummarizerText -match
+        'latest_generic_report_seq_by_instance\[[^\]]+\]\s*=\s*max' -or
+    $inputPerfSummarizerText -match
+        'latest_raw_report_seq\s*=\s*max' -or
+    $inputPerfSummarizerText -notmatch 'observation_index' -or
+    $inputPerfSummarizerText -notmatch '--commit-sha' -or
+    $inputPerfSummarizerText -notmatch 'benchmark_metadata' -or
+    $inputContractText -notmatch 'observation' -or
+    $inputContractText -notmatch 'cross-session') {
+    Add-Error 'Rule BZ3: report-start/session provenance or observation-order recency is incomplete'
 }
 if ($perfProbeText -notmatch 'SummarizeDoubleSamples' -or
     $perfProbeText -notmatch 'SummarizeInputMetric' -or
@@ -2538,6 +2566,13 @@ if ($inputPerfSummarizerText -notmatch 'joystick_sample' -or
 }
 if ($inputPerfSummarizerText -notmatch 'generic-dangling-next-run' -or
     $inputPerfSummarizerText -notmatch 'generic-dangling-eof' -or
+    $inputPerfSummarizerText -notmatch 'generic-explicit-latency-only' -or
+    $inputPerfSummarizerText -notmatch 'generic-report-begin-only' -or
+    $inputPerfSummarizerText -notmatch 'generic-shutdown-summary-only' -or
+    $inputPerfSummarizerText -notmatch 'cross-run-lower-incomplete' -or
+    $inputPerfSummarizerText -notmatch 'same-session-report-seq-collision' -or
+    $inputPerfSummarizerText -notmatch 'generic-raw-session-mismatch' -or
+    $inputPerfSummarizerText -notmatch 'raw-cross-run-lower-incomplete' -or
     $inputPerfSummarizerText -notmatch 'explicit-latency-generation-mismatch' -or
     $inputPerfSummarizerText -notmatch 'raw-missing-lock' -or
     $inputPerfSummarizerText -notmatch 'raw-missing-lock-key' -or

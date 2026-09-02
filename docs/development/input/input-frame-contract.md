@@ -125,17 +125,32 @@ has its own generic probe state; set `MELONPRIME_PERF_CSV` to a path containing
 `%INSTANCE%` when collecting more than one instance (without the placeholder,
 the probe adds `.instanceN`). Set `MELONPRIME_PERF_CAPTURE_ONLY=1` to capture
 without periodic sorting/formatting; the owning thread emits the generic final
-report at shutdown and includes a `capture_mode ... report_seq=N
-capture_only=1` marker. Every generic input, explicit-latency, phase, and
-capture marker line emitted by one report uses that same `report_seq`; the
-parser binds evidence by `(instance_id, report_seq)`. A newer incomplete or
-markerless generation fails strict certification and never falls back to an
-older complete generation. Explicit-latency lines from another generation are
-kept only as unbound supplemental evidence and are omitted from certified
-Markdown.
+report at shutdown. Immediately after allocating a report, it emits a
+`report_begin session_id=... instance_id=... report_seq=N capture_only=1`
+header, followed by the compatibility `capture_mode` marker and the report
+body. The header is the strict capture provenance source, so a report that
+ends after only the header, shutdown summary, or explicit latency is an
+incomplete current generation and cannot fall back to an older complete one.
+`report_seq` is an ordinal generation identity within the process, not a clock
+or a durable ordering value. The parser keys Generic evidence by
+`(session_id, instance_id, report_seq)` and selects the latest generation by
+file observation order; it never selects a numeric maximum across runs.
+Explicit-latency lines from another generation are kept only as unbound
+supplemental evidence and are omitted from certified Markdown.
+
+The runner must set `MELONPRIME_PERF_SESSION_ID` to one non-empty,
+whitespace-free token. The developer-only fixed-buffer helper reads it once on
+the cold report path, and both Generic and Windows Raw reports emit it. Strict
+Raw certification requires the latest certified Generic generation(s) and the
+Raw generation to have the same session ID. This cross-session check prevents a
+concatenated Generic run A plus Raw run B artifact from being certified. A
+missing or invalid ID is retained for historical inspection but fails closed
+for strict certification. Current JSON output is schema version 8 and includes
+the run session ID, latest generation identity, completeness fields, and the
+same session metadata that Markdown displays.
 Raw capture-only runs use `MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1`; the final
 Raw report includes `capture_mode`, `lock_planes`, and `stage_us` lines carrying
-one shared `report_seq`. Raw lock wait/hold samples are
+one shared `session_id` and ordinal `report_seq`. Raw lock wait/hold samples are
 committed after releasing the measured lock, its `DeferredDrain` report is
 emitted after the stage scope, and the process-wide Raw final report is emitted
 only when the last Raw service reference is released. The final Raw report is
@@ -165,6 +180,9 @@ the common input limits:
 python tools/testing/summarize-input-performance.py --self-test
 python tools/testing/summarize-input-performance.py run.stderr \
   --mode controller --min-input-samples 1000 --check-budget \
+  --commit-sha "$GIT_COMMIT_SHA" --build-preset windows-release \
+  --hardware "$BENCH_HARDWARE" --device "$BENCH_DEVICE" \
+  --window-mode windowed --polling-rate 1000Hz \
   --json-out input-summary.json --markdown-out input-summary.md
 
 # Historical or markerless artifacts are analysis-only and never certification.
@@ -174,6 +192,7 @@ python tools/testing/summarize-input-performance.py old-run.stderr \
 # A strict certification run must use both input capture-only switches.
 MELONPRIME_PERF=1 MELONPRIME_PERF_CAPTURE_ONLY=1 \
 MELONPRIME_RAW_INPUT_PERF=1 MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1 \
+MELONPRIME_PERF_SESSION_ID=perf-2026-09-03-run01 \
   melonDS
 ```
 
@@ -186,13 +205,20 @@ the minimum calls in each metric, while `--mode keyboard` rejects any joystick
 metric calls. `--mode raw` requires `snapshot` and `late_latch` stage
 populations to meet the same minimum and requires one complete Raw generation:
 the capture-only marker, `stage_us`, and `lock_planes` must share the latest
-`report_seq`. The lock line must contain
+`session_id`/`report_seq` generation, and that session must match the latest
+certified Generic generation. The lock line must contain
 `subscription_mutex_acq`, `subscription_mutex_wait_ns`,
 `subscription_mutex_hold_ns`, `subscription_mutex_max_wait_ns`,
 `frame_mutex_acq`, `frame_mutex_wait_ns`, `frame_mutex_hold_ns`,
 `frame_mutex_max_wait_ns`, `recursive_acquisitions`,
 `subscription_max_recursion_depth`, and `frame_max_recursion_depth`. Missing
 lock evidence or any required key is a strict failure.
+
+Strict output also requires explicit benchmark metadata: commit SHA, build
+preset, hardware, device, window mode, and polling rate. The parser copies
+these values into the top-level and per-run JSON metadata and the Markdown
+header context; it does not guess hardware or build provenance from source
+files.
 
 `--historical-analysis` is the explicit non-certifying path for old or
 markerless artifacts. It permits capture-mode provenance to remain unknown and
@@ -208,8 +234,8 @@ inventing sample counts or capture provenance.
 
 JSON and Markdown outputs carry the same certification context. Every Markdown
 summary states `Certification scope`, `Certified`, `Historical analysis`,
-`Mode`, `Capture-only verified`, `Minimum samples`, and `Budget checked` before
-the metrics table. Historical Markdown additionally begins with `NOT A
+`Mode`, `Capture-only verified`, `Session ID`, `Minimum samples`, and `Budget
+checked` before the metrics table. Historical Markdown additionally begins with `NOT A
 CERTIFICATION RESULT` and `Historical analysis only.` so it remains safe when
 shared without its JSON sidecar.
 

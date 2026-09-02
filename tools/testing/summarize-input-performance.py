@@ -30,7 +30,15 @@ INPUT_RE = re.compile(
     r"(?P<body>.*)$"
 )
 INPUT_INSTANCE_RE = re.compile(r"(?:^|\s)instance_id=(?P<id>\d+)(?:\s|$)")
-REPORT_SEQ_RE = re.compile(r"(?:^|\s)report_seq=(?P<seq>\d+)(?:\s|$)")
+REPORT_SEQ_RE = re.compile(r"(?:^|\s)report_seq=(?P<seq>\d+)(?=\s|:|$)")
+SESSION_ID_RE = re.compile(r"(?:^|\s)session_id=(?P<session_id>\S+)(?:\s|$)")
+GENERIC_REPORT_BEGIN_RE = re.compile(
+    r"^\[MelonPrimePerf\] report_begin "
+    r"session_id=(?P<session_id>\S+) "
+    r"instance_id=(?P<instance_id>\d+) "
+    r"report_seq=(?P<report_seq>\d+) "
+    r"capture_only=(?P<capture_only>[01])$"
+)
 INPUT_METRIC_RE = re.compile(
     r"(?P<name>[a-z0-9_]+)\[c=(?P<c>\d+)"
     r"(?: retained=(?P<retained>\d+))? "
@@ -55,6 +63,7 @@ EXPLICIT_LATENCY_LEGACY_METRIC_RE = re.compile(
 )
 RAW_STAGE_RE = re.compile(
     r"^\[MelonPrimeRawPerf\] stage_us "
+    r"(?:(?:session_id=(?P<session_id>\S+)) )?"
     r"report_seq=(?P<report_seq>\d+) "
     r"snapshot\[calls=(?P<snapshot_calls>\d+) "
     r"retained=(?P<snapshot_retained>\d+) p50=(?P<snapshot_p50>[0-9.]+) "
@@ -132,6 +141,7 @@ RAW_LOCK_RE = re.compile(
 )
 GENERIC_CAPTURE_MODE_RE = re.compile(
     r"^\[MelonPrimePerf\] capture_mode "
+    r"(?:(?:session_id=(?P<session_id>\S+)) )?"
     r"instance_id=(?P<instance_id>\d+) "
     r"report_seq=(?P<report_seq>\d+) capture_only=(?P<capture_only>[01])$"
 )
@@ -141,6 +151,7 @@ GENERIC_CAPTURE_MODE_LEGACY_RE = re.compile(
 )
 RAW_CAPTURE_MODE_RE = re.compile(
     r"^\[MelonPrimeRawPerf\] capture_mode "
+    r"(?:(?:session_id=(?P<session_id>\S+)) )?"
     r"report_seq=(?P<report_seq>\d+) capture_only=(?P<capture_only>[01])$"
 )
 RAW_CAPTURE_MODE_LEGACY_RE = re.compile(
@@ -327,6 +338,15 @@ def parse_report_seq(text: str) -> int | None:
     return int(match.group("seq")) if match else None
 
 
+def parse_session_id(text: str) -> str | None:
+    match = SESSION_ID_RE.search(text)
+    return match.group("session_id") if match else None
+
+
+def valid_session_id(session_id: str | None) -> bool:
+    return bool(session_id) and session_id not in {"missing", "invalid"}
+
+
 def parse_raw_stage(
     match: re.Match[str], retention_mode: str
 ) -> dict[str, Any]:
@@ -390,7 +410,7 @@ def parse_raw_stage(
     for key, value in match.groupdict().items():
         if key in stage_value_keys:
             continue
-        values[key] = int(value)
+        values[key] = value if key == "session_id" else int(value)
     values["stage_metrics"] = stage_metrics
     values["retention_mode"] = retention_mode
     return values
@@ -403,27 +423,45 @@ def parse_log(path: Path) -> dict[str, Any]:
     input_reports: list[dict[str, dict[str, Any]]] = []
     latest_input_by_instance: dict[str, dict[str, dict[str, Any]]] = {}
     latest_input_report_seq_by_instance: dict[str, int | None] = {}
+    latest_input_session_id_by_instance: dict[str, str | None] = {}
+    latest_input_generation_by_instance: dict[
+        str, tuple[str | None, int] | None
+    ] = {}
     latency_reports: list[dict[str, dict[str, Any]]] = []
     latest_latency_observed_by_instance: dict[str, dict[str, dict[str, Any]]] = {}
+    latest_latency_generation_by_instance: dict[
+        str, tuple[str | None, int] | None
+    ] = {}
     raw_reports: list[dict[str, Any]] = []
-    lock_reports: list[dict[str, int]] = []
+    lock_reports: list[dict[str, Any]] = []
     generic_capture_only_by_instance: dict[str, bool] = {}
     raw_capture_only: bool | None = None
     pending_generic_capture: dict[str, bool] = {}
     pending_raw_capture: bool | None = None
-    generic_generations: dict[tuple[str, int], dict[str, Any]] = {}
+    generic_generations: dict[tuple[str, str | None, int], dict[str, Any]] = {}
+    latest_generic_generation_by_instance: dict[
+        str, tuple[str | None, int]
+    ] = {}
     latest_generic_report_seq_by_instance: dict[str, int] = {}
+    latest_generic_session_id_by_instance: dict[str, str | None] = {}
     generic_unversioned_instances: set[str] = set()
-    raw_generations: dict[int, dict[str, Any]] = {}
+    raw_generations: dict[tuple[str | None, int], dict[str, Any]] = {}
+    latest_raw_generation_key: tuple[str | None, int] | None = None
     latest_raw_report_seq: int | None = None
+    latest_raw_session_id: str | None = None
     raw_unversioned_evidence = False
 
-    def generic_generation(instance_key: str, report_seq: int) -> dict[str, Any]:
+    def generic_generation(
+        instance_key: str, session_id: str | None, report_seq: int,
+    ) -> dict[str, Any]:
         return generic_generations.setdefault(
-            (instance_key, report_seq),
+            (instance_key, session_id, report_seq),
             {
                 "instance_id": instance_key,
+                "session_id": session_id,
                 "report_seq": report_seq,
+                "report_begin_seen": False,
+                "report_begin_capture_only": None,
                 "capture_only": None,
                 "capture_seen": False,
                 "input": None,
@@ -435,10 +473,13 @@ def parse_log(path: Path) -> dict[str, Any]:
             },
         )
 
-    def raw_generation(report_seq: int) -> dict[str, Any]:
+    def raw_generation(
+        session_id: str | None, report_seq: int,
+    ) -> dict[str, Any]:
         return raw_generations.setdefault(
-            report_seq,
+            (session_id, report_seq),
             {
+                "session_id": session_id,
                 "report_seq": report_seq,
                 "capture_only": None,
                 "capture_seen": False,
@@ -450,23 +491,58 @@ def parse_log(path: Path) -> dict[str, Any]:
                 "duplicate": False,
             },
         )
-    for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for observation_index, raw_line in enumerate(
+        path.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+    ):
         line = raw_line.strip()
+        generic_report_begin_match = GENERIC_REPORT_BEGIN_RE.match(line)
+        if generic_report_begin_match:
+            instance_key = generic_report_begin_match.group("instance_id")
+            session_id = generic_report_begin_match.group("session_id")
+            report_seq = int(generic_report_begin_match.group("report_seq"))
+            generation = generic_generation(instance_key, session_id, report_seq)
+            if generation["report_begin_seen"]:
+                generation["duplicate"] = True
+            generation["report_begin_seen"] = True
+            generation["report_begin_capture_only"] = (
+                generic_report_begin_match.group("capture_only") == "1"
+            )
+            generation["capture_only"] = generation["report_begin_capture_only"]
+            generation.setdefault("first_observed_line", observation_index)
+            latest_generic_generation_by_instance[instance_key] = (
+                session_id, report_seq
+            )
+            latest_generic_report_seq_by_instance[instance_key] = report_seq
+            latest_generic_session_id_by_instance[instance_key] = session_id
+            continue
         generic_capture_match = GENERIC_CAPTURE_MODE_RE.match(line)
         if generic_capture_match:
             instance_key = generic_capture_match.group("instance_id")
+            session_id = generic_capture_match.group("session_id")
             report_seq = int(generic_capture_match.group("report_seq"))
-            generation = generic_generation(instance_key, report_seq)
+            if session_id is None:
+                generic_unversioned_instances.add(instance_key)
+            generation = generic_generation(instance_key, session_id, report_seq)
             if generation["capture_seen"]:
                 generation["duplicate"] = True
             generation["capture_seen"] = True
-            generation["capture_only"] = (
+            capture_only = (
                 generic_capture_match.group("capture_only") == "1"
             )
-            latest_generic_report_seq_by_instance[instance_key] = max(
-                report_seq,
-                latest_generic_report_seq_by_instance.get(instance_key, report_seq),
+            if (
+                generation["report_begin_seen"]
+                and generation["capture_only"] is not None
+                and generation["capture_only"] != capture_only
+            ):
+                generation["duplicate"] = True
+            if not generation["report_begin_seen"]:
+                generation["capture_only"] = capture_only
+            generation.setdefault("first_observed_line", observation_index)
+            latest_generic_generation_by_instance[instance_key] = (
+                session_id, report_seq
             )
+            latest_generic_report_seq_by_instance[instance_key] = report_seq
+            latest_generic_session_id_by_instance[instance_key] = session_id
             continue
         generic_capture_legacy_match = GENERIC_CAPTURE_MODE_LEGACY_RE.match(line)
         if generic_capture_legacy_match:
@@ -478,19 +554,21 @@ def parse_log(path: Path) -> dict[str, Any]:
             continue
         raw_capture_match = RAW_CAPTURE_MODE_RE.match(line)
         if raw_capture_match:
+            session_id = raw_capture_match.group("session_id")
             report_seq = int(raw_capture_match.group("report_seq"))
-            generation = raw_generation(report_seq)
+            if session_id is None:
+                raw_unversioned_evidence = True
+            generation = raw_generation(session_id, report_seq)
             if generation["capture_seen"]:
                 generation["duplicate"] = True
             generation["capture_seen"] = True
             generation["capture_only"] = (
                 raw_capture_match.group("capture_only") == "1"
             )
-            latest_raw_report_seq = max(
-                report_seq,
-                latest_raw_report_seq
-                if latest_raw_report_seq is not None else report_seq,
-            )
+            generation.setdefault("first_observed_line", observation_index)
+            latest_raw_generation_key = (session_id, report_seq)
+            latest_raw_report_seq = report_seq
+            latest_raw_session_id = session_id
             continue
         raw_capture_legacy_match = RAW_CAPTURE_MODE_LEGACY_RE.match(line)
         if raw_capture_legacy_match:
@@ -503,9 +581,12 @@ def parse_log(path: Path) -> dict[str, Any]:
             parsed = parse_input_body(body)
             instance_id = parse_input_instance_id(body)
             instance_key = str(instance_id) if instance_id is not None else "unbound"
+            session_id = parse_session_id(body)
             report_seq = parse_report_seq(body)
             if report_seq is None:
                 generic_unversioned_instances.add(instance_key)
+                latest_input_generation_by_instance[instance_key] = None
+                latest_input_session_id_by_instance[instance_key] = None
                 capture_only = pending_generic_capture.pop(instance_key, None)
                 if instance_id is None:
                     # An unbound/legacy report cannot consume an instance marker.
@@ -530,22 +611,30 @@ def parse_log(path: Path) -> dict[str, Any]:
             # A legacy pending marker cannot bind a versioned report. Discard
             # it so a later unversioned report cannot inherit old provenance.
             pending_generic_capture.clear()
-            generation = generic_generation(instance_key, report_seq)
+            if session_id is None:
+                generic_unversioned_instances.add(instance_key)
+            generation = generic_generation(instance_key, session_id, report_seq)
             if generation["input_seen"]:
                 generation["duplicate"] = True
             generation["input_seen"] = True
             generation["input_valid"] = bool(parsed)
+            generation.setdefault("first_observed_line", observation_index)
+            latest_generic_generation_by_instance[instance_key] = (
+                session_id, report_seq
+            )
+            latest_generic_report_seq_by_instance[instance_key] = report_seq
+            latest_generic_session_id_by_instance[instance_key] = session_id
+            latest_input_generation_by_instance[instance_key] = (
+                session_id, report_seq
+            )
+            latest_input_report_seq_by_instance[instance_key] = report_seq
+            latest_input_session_id_by_instance[instance_key] = session_id
             if parsed:
                 generation["input"] = parsed
                 input_reports.append(parsed)
-                previous_seq = latest_input_report_seq_by_instance.get(instance_key)
-                if previous_seq is None or report_seq >= previous_seq:
-                    latest_input_by_instance[instance_key] = parsed
-                    latest_input_report_seq_by_instance[instance_key] = report_seq
-            latest_generic_report_seq_by_instance[instance_key] = max(
-                report_seq,
-                latest_generic_report_seq_by_instance.get(instance_key, report_seq),
-            )
+                latest_input_by_instance[instance_key] = parsed
+            else:
+                latest_input_by_instance[instance_key] = {}
             continue
         latency_match = EXPLICIT_LATENCY_RE.match(line)
         if latency_match:
@@ -553,34 +642,71 @@ def parse_log(path: Path) -> dict[str, Any]:
             parsed = parse_explicit_latency_body(body)
             instance_id = parse_input_instance_id(body)
             instance_key = str(instance_id) if instance_id is not None else "unbound"
+            session_id = parse_session_id(body)
             report_seq = parse_report_seq(body)
             if parsed:
                 latency_reports.append(parsed)
                 latest_latency_observed_by_instance[instance_key] = parsed
             if report_seq is not None:
-                generation = generic_generation(instance_key, report_seq)
+                if session_id is None:
+                    generic_unversioned_instances.add(instance_key)
+                generation = generic_generation(instance_key, session_id, report_seq)
                 if generation["explicit_latency_seen"]:
                     generation["duplicate"] = True
                 generation["explicit_latency_seen"] = True
+                generation.setdefault("first_observed_line", observation_index)
+                latest_generic_generation_by_instance[instance_key] = (
+                    session_id, report_seq
+                )
+                latest_generic_report_seq_by_instance[instance_key] = report_seq
+                latest_generic_session_id_by_instance[instance_key] = session_id
                 if parsed:
                     generation["explicit_latency"] = parsed
+                    latest_latency_generation_by_instance[instance_key] = (
+                        session_id, report_seq
+                    )
+            continue
+        if line.startswith("[MelonPrime] "):
+            # Every versioned Generic report line participates in report-start
+            # recency.  This catches shutdown-summary-only truncation while
+            # report_begin remains the only strict completeness source.
+            instance_id = parse_input_instance_id(line)
+            report_seq = parse_report_seq(line)
+            if report_seq is not None:
+                instance_key = (
+                    str(instance_id) if instance_id is not None else "unbound"
+                )
+                session_id = parse_session_id(line)
+                if session_id is None:
+                    generic_unversioned_instances.add(instance_key)
+                generation = generic_generation(
+                    instance_key, session_id, report_seq
+                )
+                generation.setdefault("first_observed_line", observation_index)
+                latest_generic_generation_by_instance[instance_key] = (
+                    session_id, report_seq
+                )
+                latest_generic_report_seq_by_instance[instance_key] = report_seq
+                latest_generic_session_id_by_instance[instance_key] = session_id
             continue
         raw_match = RAW_STAGE_RE.match(line)
         if raw_match:
             parsed = parse_raw_stage(raw_match, RETENTION_LATEST_N)
+            session_id = raw_match.group("session_id")
             report_seq = int(raw_match.group("report_seq"))
-            generation = raw_generation(report_seq)
+            if session_id is None:
+                raw_unversioned_evidence = True
+            generation = raw_generation(session_id, report_seq)
             if generation["stage_seen"]:
                 generation["duplicate"] = True
             generation["stage_seen"] = True
             generation["stage_valid"] = True
             generation["stage"] = parsed
             raw_reports.append(parsed)
-            latest_raw_report_seq = max(
-                report_seq,
-                latest_raw_report_seq
-                if latest_raw_report_seq is not None else report_seq,
-            )
+            generation.setdefault("first_observed_line", observation_index)
+            latest_raw_generation_key = (session_id, report_seq)
+            latest_raw_report_seq = report_seq
+            latest_raw_session_id = session_id
             continue
         raw_legacy_match = RAW_STAGE_LEGACY_RE.match(line)
         if raw_legacy_match:
@@ -608,15 +734,17 @@ def parse_log(path: Path) -> dict[str, Any]:
             if report_seq is None:
                 raw_unversioned_evidence = True
             else:
-                generation = raw_generation(report_seq)
+                session_id = parse_session_id(line)
+                if session_id is None:
+                    raw_unversioned_evidence = True
+                generation = raw_generation(session_id, report_seq)
                 generation["stage_seen"] = True
                 generation["stage_valid"] = False
                 generation["duplicate"] = True
-                latest_raw_report_seq = max(
-                    report_seq,
-                    latest_raw_report_seq
-                    if latest_raw_report_seq is not None else report_seq,
-                )
+                generation.setdefault("first_observed_line", observation_index)
+                latest_raw_generation_key = (session_id, report_seq)
+                latest_raw_report_seq = report_seq
+                latest_raw_session_id = session_id
             pending_raw_capture = None
             raw_capture_only = None
             continue
@@ -630,22 +758,40 @@ def parse_log(path: Path) -> dict[str, Any]:
                 if key != "report_seq"
             }
             lock_report = dict(lock_values)
+            session_id = parse_session_id(body)
+            if session_id is not None:
+                lock_report["session_id"] = session_id
             if report_seq is not None:
                 lock_report["report_seq"] = report_seq
             lock_reports.append(lock_report)
             if report_seq is None:
                 raw_unversioned_evidence = True
             else:
-                generation = raw_generation(report_seq)
+                if session_id is None:
+                    raw_unversioned_evidence = True
+                generation = raw_generation(session_id, report_seq)
                 if generation["lock_seen"]:
                     generation["duplicate"] = True
                 generation["lock_seen"] = True
                 generation["lock_planes"] = lock_values
-                latest_raw_report_seq = max(
-                    report_seq,
-                    latest_raw_report_seq
-                    if latest_raw_report_seq is not None else report_seq,
-                )
+                generation.setdefault("first_observed_line", observation_index)
+                latest_raw_generation_key = (session_id, report_seq)
+                latest_raw_report_seq = report_seq
+                latest_raw_session_id = session_id
+            continue
+
+        if line.startswith("[MelonPrimeRawPerf] "):
+            report_seq = parse_report_seq(line)
+            if report_seq is None:
+                continue
+            session_id = parse_session_id(line)
+            if session_id is None:
+                raw_unversioned_evidence = True
+            generation = raw_generation(session_id, report_seq)
+            generation.setdefault("first_observed_line", observation_index)
+            latest_raw_generation_key = (session_id, report_seq)
+            latest_raw_report_seq = report_seq
+            latest_raw_session_id = session_id
 
     if not (
         input_reports or latency_reports or raw_reports or generic_generations
@@ -658,42 +804,46 @@ def parse_log(path: Path) -> dict[str, Any]:
         )
 
     latest_input = input_reports[-1] if input_reports else {}
-    versioned_raw_reports = [
-        report for report in raw_reports if report.get("report_seq") is not None
-    ]
-    latest_raw = (
-        max(versioned_raw_reports, key=lambda report: report["report_seq"])
-        if versioned_raw_reports else raw_reports[-1] if raw_reports else None
+    latest_raw_generation = (
+        raw_generations.get(latest_raw_generation_key)
+        if latest_raw_generation_key is not None else None
     )
+    if latest_raw_generation is not None:
+        # The latest generation may be truncated before stage_us.  Do not
+        # display an older stage as if it belonged to the current generation.
+        latest_raw = latest_raw_generation.get("stage")
+    else:
+        latest_raw = raw_reports[-1] if raw_reports else None
     latest_locks = lock_reports[-1] if lock_reports else None
-    if latest_raw is not None and latest_raw.get("report_seq") is not None:
-        latest_stage_generation = raw_generations.get(latest_raw["report_seq"])
-        if latest_stage_generation is not None:
-            bound_locks = latest_stage_generation.get("lock_planes")
-            latest_locks = (
-                dict(bound_locks) if bound_locks is not None else None
-            )
-            if latest_locks is not None:
-                latest_locks["report_seq"] = latest_raw["report_seq"]
-            raw_capture_only = latest_stage_generation.get("capture_only")
+    if latest_raw_generation is not None:
+        bound_locks = latest_raw_generation.get("lock_planes")
+        latest_locks = dict(bound_locks) if bound_locks is not None else None
+        if latest_locks is not None:
+            latest_locks["session_id"] = latest_raw_generation.get("session_id")
+            latest_locks["report_seq"] = latest_raw_generation["report_seq"]
+        raw_capture_only = latest_raw_generation.get("capture_only")
 
     bound_latency_by_instance: dict[str, dict[str, dict[str, Any]]] = {}
-    for instance_key, input_report_seq in latest_input_report_seq_by_instance.items():
-        if input_report_seq is None:
+    for instance_key, input_generation_key in latest_input_generation_by_instance.items():
+        if input_generation_key is None:
             observed = latest_latency_observed_by_instance.get(instance_key)
             if observed is not None:
                 bound_latency_by_instance[instance_key] = observed
             continue
-        generation = generic_generations.get((instance_key, input_report_seq))
+        session_id, input_report_seq = input_generation_key
+        generation = generic_generations.get(
+            (instance_key, session_id, input_report_seq)
+        )
         if generation is not None and generation.get("explicit_latency") is not None:
             bound_latency_by_instance[instance_key] = generation["explicit_latency"]
 
     generic_capture_only_by_instance = {}
-    for instance_key, input_report_seq in latest_input_report_seq_by_instance.items():
-        if input_report_seq is None:
-            continue
-        generation = generic_generations.get((instance_key, input_report_seq))
-        if generation is not None and generation.get("capture_seen"):
+    for instance_key, generation_key in latest_generic_generation_by_instance.items():
+        session_id, report_seq = generation_key
+        generation = generic_generations.get((instance_key, session_id, report_seq))
+        if generation is not None and (
+            generation.get("report_begin_seen") or generation.get("capture_seen")
+        ):
             generic_capture_only_by_instance[instance_key] = generation[
                 "capture_only"
             ]
@@ -701,7 +851,10 @@ def parse_log(path: Path) -> dict[str, Any]:
     generic_generation_records = [
         {
             "instance_id": generation["instance_id"],
+            "session_id": generation["session_id"],
             "report_seq": generation["report_seq"],
+            "report_begin_seen": generation["report_begin_seen"],
+            "report_begin_capture_only": generation["report_begin_capture_only"],
             "capture_only": generation["capture_only"],
             "capture_seen": generation["capture_seen"],
             "input_seen": generation["input_seen"],
@@ -711,11 +864,12 @@ def parse_log(path: Path) -> dict[str, Any]:
         }
         for generation in sorted(
             generic_generations.values(),
-            key=lambda item: (item["instance_id"], item["report_seq"]),
+            key=lambda item: item.get("first_observed_line", 0),
         )
     ]
     raw_generation_records = [
         {
+            "session_id": generation["session_id"],
             "report_seq": generation["report_seq"],
             "capture_only": generation["capture_only"],
             "capture_seen": generation["capture_seen"],
@@ -726,9 +880,54 @@ def parse_log(path: Path) -> dict[str, Any]:
             "duplicate": generation["duplicate"],
         }
         for generation in sorted(
-            raw_generations.values(), key=lambda item: item["report_seq"]
+            raw_generations.values(),
+            key=lambda item: item.get("first_observed_line", 0),
         )
     ]
+    session_values = [
+        generation.get("session_id")
+        for generation in list(generic_generations.values())
+        + list(raw_generations.values())
+        if generation.get("session_id") is not None
+    ]
+    observed_session_ids = sorted({
+        session_id for session_id in session_values
+        if valid_session_id(session_id)
+    })
+    session_id = (
+        session_values[0]
+        if session_values and valid_session_id(session_values[0])
+        and all(value == session_values[0] for value in session_values)
+        else None
+    )
+    latest_generic_generation_records = {
+        instance_key: {
+            "session_id": generation_key[0],
+            "report_seq": generation_key[1],
+        }
+        for instance_key, generation_key
+        in latest_generic_generation_by_instance.items()
+    }
+    latest_input_report_seq_by_instance = {
+        instance_key: generation_key[1] if generation_key is not None else None
+        for instance_key, generation_key
+        in latest_input_generation_by_instance.items()
+    }
+    latest_input_session_id_by_instance = {
+        instance_key: generation_key[0] if generation_key is not None else None
+        for instance_key, generation_key
+        in latest_input_generation_by_instance.items()
+    }
+    latest_generic_report_seq_by_instance = {
+        instance_key: generation_key[1]
+        for instance_key, generation_key
+        in latest_generic_generation_by_instance.items()
+    }
+    latest_generic_session_id_by_instance = {
+        instance_key: generation_key[0]
+        for instance_key, generation_key
+        in latest_generic_generation_by_instance.items()
+    }
     retention_modes = {
         metric["retention_mode"]
         for report in (
@@ -756,6 +955,18 @@ def parse_log(path: Path) -> dict[str, Any]:
         ],
         "latest_input_by_instance": latest_input_by_instance,
         "latest_input_report_seq_by_instance": latest_input_report_seq_by_instance,
+        "latest_input_session_id_by_instance": latest_input_session_id_by_instance,
+        "latest_input_generation_by_instance": {
+            instance_key: (
+                {
+                    "session_id": generation_key[0],
+                    "report_seq": generation_key[1],
+                }
+                if generation_key is not None else None
+            )
+            for instance_key, generation_key
+            in latest_input_generation_by_instance.items()
+        },
         "latency_report_count": len(latency_reports),
         "latency_instance_ids": [
             int(key) for key in sorted(
@@ -774,9 +985,21 @@ def parse_log(path: Path) -> dict[str, Any]:
         "generic_capture_only_by_instance": generic_capture_only_by_instance,
         "raw_capture_only": raw_capture_only,
         "latest_generic_report_seq_by_instance": latest_generic_report_seq_by_instance,
+        "latest_generic_session_id_by_instance": latest_generic_session_id_by_instance,
+        "latest_generic_generation_by_instance": latest_generic_generation_records,
+        "session_id": session_id,
+        "observed_session_ids": observed_session_ids,
         "generic_unversioned_instances": sorted(generic_unversioned_instances),
         "generic_generation_records": generic_generation_records,
         "latest_raw_report_seq": latest_raw_report_seq,
+        "latest_raw_session_id": latest_raw_session_id,
+        "latest_raw_generation": (
+            {
+                "session_id": latest_raw_generation_key[0],
+                "report_seq": latest_raw_generation_key[1],
+            }
+            if latest_raw_generation_key is not None else None
+        ),
         "raw_unversioned_evidence": raw_unversioned_evidence,
         "raw_generation_records": raw_generation_records,
         "retention_mode": retention_mode,
@@ -825,11 +1048,16 @@ def require_safe_retention(
 
 def find_generic_generation(
     summary: dict[str, Any], instance_id: str, report_seq: int,
+    session_id: str | None = None,
 ) -> dict[str, Any] | None:
     for generation in summary.get("generic_generation_records", []):
         if (
             generation.get("instance_id") == instance_id
             and generation.get("report_seq") == report_seq
+            and (
+                session_id is None
+                or generation.get("session_id") == session_id
+            )
         ):
             return generation
     return None
@@ -837,9 +1065,16 @@ def find_generic_generation(
 
 def find_raw_generation(
     summary: dict[str, Any], report_seq: int,
+    session_id: str | None = None,
 ) -> dict[str, Any] | None:
     for generation in summary.get("raw_generation_records", []):
-        if generation.get("report_seq") == report_seq:
+        if (
+            generation.get("report_seq") == report_seq
+            and (
+                session_id is None
+                or generation.get("session_id") == session_id
+            )
+        ):
             return generation
     return None
 
@@ -849,19 +1084,29 @@ def generic_generation_is_verified(
 ) -> bool:
     if instance_id in summary.get("generic_unversioned_instances", []):
         return False
-    latest_input_seq = summary.get(
-        "latest_input_report_seq_by_instance", {}
+    latest_input_generation = summary.get(
+        "latest_input_generation_by_instance", {}
     ).get(instance_id)
-    latest_report_seq = summary.get(
-        "latest_generic_report_seq_by_instance", {}
+    latest_report_generation = summary.get(
+        "latest_generic_generation_by_instance", {}
     ).get(instance_id)
-    if latest_input_seq is None or latest_input_seq != latest_report_seq:
+    if (
+        latest_input_generation is None
+        or latest_report_generation is None
+        or latest_input_generation != latest_report_generation
+    ):
         return False
-    generation = find_generic_generation(summary, instance_id, latest_input_seq)
+    session_id = latest_report_generation.get("session_id")
+    report_seq = latest_report_generation.get("report_seq")
+    if not valid_session_id(session_id) or report_seq is None:
+        return False
+    generation = find_generic_generation(
+        summary, instance_id, report_seq, session_id
+    )
     return bool(
         generation
-        and generation.get("capture_seen")
-        and generation.get("capture_only") is True
+        and generation.get("report_begin_seen")
+        and generation.get("report_begin_capture_only") is True
         and generation.get("input_seen")
         and generation.get("input_valid")
         and not generation.get("duplicate")
@@ -874,12 +1119,18 @@ def require_raw_generation(summary: dict[str, Any]) -> dict[str, Any]:
             "raw budget certification requires report_seq-bound capture, "
             "lock_planes, and stage telemetry"
         )
-    report_seq = summary.get("latest_raw_report_seq")
-    if report_seq is None:
+    latest_generation = summary.get("latest_raw_generation")
+    if latest_generation is None:
         raise SummaryError(
             "raw budget certification requires a report_seq-bound Raw generation"
         )
-    generation = find_raw_generation(summary, report_seq)
+    session_id = latest_generation.get("session_id")
+    report_seq = latest_generation.get("report_seq")
+    if not valid_session_id(session_id):
+        raise SummaryError(
+            f"raw report_seq={report_seq} requires a valid session_id"
+        )
+    generation = find_raw_generation(summary, report_seq, session_id)
     if generation is None or generation.get("duplicate"):
         raise SummaryError(
             f"raw report_seq={report_seq} is not a unique complete generation"
@@ -897,7 +1148,11 @@ def require_raw_generation(summary: dict[str, Any]) -> dict[str, Any]:
             f"raw report_seq={report_seq} lacks lock-plane evidence"
         )
     locks = summary.get("latest_lock_planes")
-    if not locks or locks.get("report_seq") != report_seq:
+    if (
+        not locks
+        or locks.get("report_seq") != report_seq
+        or locks.get("session_id") != session_id
+    ):
         raise SummaryError(
             f"raw report_seq={report_seq} lock-plane evidence is not bound"
         )
@@ -911,7 +1166,11 @@ def require_raw_generation(summary: dict[str, Any]) -> dict[str, Any]:
         )
     certified_generation = dict(generation)
     latest_raw = summary.get("latest_raw")
-    if latest_raw is not None and latest_raw.get("report_seq") == report_seq:
+    if (
+        latest_raw is not None
+        and latest_raw.get("report_seq") == report_seq
+        and latest_raw.get("session_id") == session_id
+    ):
         certified_generation["stage"] = latest_raw
     return certified_generation
 
@@ -936,6 +1195,22 @@ def require_capture_only(
             "raw budget certification requires a verified "
             "MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY run"
         )
+    if mode == "raw":
+        raw_session_id = summary.get("latest_raw_session_id")
+        generic_session_ids = {
+            summary.get("latest_generic_session_id_by_instance", {}).get(
+                instance_id
+            )
+            for instance_id in reports_by_instance
+        }
+        if (
+            not valid_session_id(raw_session_id)
+            or generic_session_ids != {raw_session_id}
+        ):
+            raise SummaryError(
+                "generic/Raw shared session_id mismatch; strict Raw "
+                "certification requires the same session_id"
+            )
 
 
 def capture_mode_verified(
@@ -952,11 +1227,24 @@ def capture_mode_verified(
     if not generic_verified:
         return False
     if mode == "raw" or (
-        mode == "all" and summary.get("latest_raw") is not None
+        mode == "all"
+        and (
+            summary.get("latest_raw_generation") is not None
+            or summary.get("raw_report_count", 0) > 0
+            or summary.get("raw_unversioned_evidence")
+        )
     ):
-        report_seq = summary.get("latest_raw_report_seq")
+        latest_generation = summary.get("latest_raw_generation")
+        report_seq = (
+            latest_generation.get("report_seq")
+            if latest_generation is not None else None
+        )
+        session_id = (
+            latest_generation.get("session_id")
+            if latest_generation is not None else None
+        )
         generation = (
-            find_raw_generation(summary, report_seq)
+            find_raw_generation(summary, report_seq, session_id)
             if report_seq is not None else None
         )
         return bool(
@@ -968,6 +1256,13 @@ def capture_mode_verified(
             and generation.get("lock_seen")
             and not generation.get("duplicate")
             and not summary.get("raw_unversioned_evidence")
+            and valid_session_id(session_id)
+            and {
+                summary.get("latest_generic_session_id_by_instance", {}).get(
+                    instance_id
+                )
+                for instance_id in reports_by_instance
+            } == {session_id}
         )
     return True
 
@@ -1126,12 +1421,25 @@ def markdown(
         f"Historical analysis: {'true' if historical_analysis else 'false'}",
         f"Mode: {mode}",
         f"Capture-only verified: {'true' if capture_verified else 'false'}",
+        f"Session ID: `{summary.get('session_id') or ('mixed' if len(summary.get('observed_session_ids', [])) > 1 else 'unknown')}`",
         f"Minimum samples: {minimum_input_samples}",
         f"Budget checked: {'true' if budget_checked else 'false'}",
         f"Retention mode: `{summary.get('retention_mode') or 'unknown'}`",
     ]
+    benchmark_metadata = summary.get("benchmark_metadata") or {}
+    for key, label in (
+        ("commit_sha", "Commit SHA"),
+        ("build_preset", "Build preset"),
+        ("hardware", "Hardware"),
+        ("device", "Device"),
+        ("window_mode", "Window mode"),
+        ("polling_rate", "Polling rate"),
+    ):
+        value = benchmark_metadata.get(key)
+        if value is not None:
+            lines.append(f"{label}: `{value}`")
     latest_generic_sequences = summary.get(
-        "latest_input_report_seq_by_instance", {}
+        "latest_generic_report_seq_by_instance", {}
     )
     if latest_generic_sequences:
         sequence_values = ", ".join(
@@ -1280,7 +1588,8 @@ def markdown(
         lines.extend([
             "",
             "Raw lock planes "
-            f"(report_seq={locks.get('report_seq', 'unknown')}; "
+            f"(session_id={locks.get('session_id', 'unknown')}; "
+            f"report_seq={locks.get('report_seq', 'unknown')}; "
             "Raw service/capture lifetime totals):",
             "",
             f"subscription acquisitions/wait/hold: "
@@ -1313,39 +1622,46 @@ def self_test() -> None:
     text = (
         text.replace(
             "[MelonPrimePerf] capture_mode instance_id=0 capture_only=1",
-            "[MelonPrimePerf] capture_mode instance_id=0 report_seq=1 capture_only=1",
+            "[MelonPrimePerf] capture_mode session_id=TEST-A instance_id=0 "
+            "report_seq=1 capture_only=1",
         )
         .replace(
             "[MelonPrimePerf] capture_mode instance_id=1 capture_only=1",
-            "[MelonPrimePerf] capture_mode instance_id=1 report_seq=2 capture_only=1",
+            "[MelonPrimePerf] capture_mode session_id=TEST-A instance_id=1 "
+            "report_seq=2 capture_only=1",
         )
         .replace(
             "[MelonPrimeRawPerf] capture_mode capture_only=1",
-            "[MelonPrimeRawPerf] capture_mode report_seq=7 capture_only=1",
+            "[MelonPrimeRawPerf] capture_mode session_id=TEST-A "
+            "report_seq=7 capture_only=1",
         )
         .replace(
             "[MelonPrimePerf] input_metric_us instance_id=0 ",
-            "[MelonPrimePerf] input_metric_us instance_id=0 report_seq=1 ",
+            "[MelonPrimePerf] input_metric_us session_id=TEST-A instance_id=0 "
+            "report_seq=1 ",
         )
         .replace(
             "[MelonPrimePerf] input_metric_us instance_id=1 ",
-            "[MelonPrimePerf] input_metric_us instance_id=1 report_seq=2 ",
+            "[MelonPrimePerf] input_metric_us session_id=TEST-A instance_id=1 "
+            "report_seq=2 ",
         )
         .replace(
             "[MelonPrimePerf] explicit_latency_us instance_id=0 ",
-            "[MelonPrimePerf] explicit_latency_us instance_id=0 report_seq=1 ",
+            "[MelonPrimePerf] explicit_latency_us session_id=TEST-A "
+            "instance_id=0 report_seq=1 ",
         )
         .replace(
             "[MelonPrimePerf] explicit_latency_us instance_id=1 ",
-            "[MelonPrimePerf] explicit_latency_us instance_id=1 report_seq=2 ",
+            "[MelonPrimePerf] explicit_latency_us session_id=TEST-A "
+            "instance_id=1 report_seq=2 ",
         )
         .replace(
             "[MelonPrimeRawPerf] stage_us ",
-            "[MelonPrimeRawPerf] stage_us report_seq=7 ",
+            "[MelonPrimeRawPerf] stage_us session_id=TEST-A report_seq=7 ",
         )
         .replace(
             "[MelonPrimeRawPerf] lock_planes ",
-            "[MelonPrimeRawPerf] lock_planes report_seq=7 ",
+            "[MelonPrimeRawPerf] lock_planes session_id=TEST-A report_seq=7 ",
         )
         .replace(
             "frame_mutex_max_wait_ns=8\n",
@@ -1353,6 +1669,13 @@ def self_test() -> None:
             "subscription_max_recursion_depth=1 frame_max_recursion_depth=1\n",
         )
     )
+    text = "\n".join([
+        "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=0 "
+        "report_seq=1 capture_only=1",
+        "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=1 "
+        "report_seq=2 capture_only=1",
+        text.rstrip("\n"),
+    ]) + "\n"
     with tempfile.TemporaryDirectory(prefix="melonprime-input-perf-") as directory:
         path = Path(directory) / "telemetry.log"
         path.write_text(text, encoding="utf-8")
@@ -1460,6 +1783,44 @@ def self_test() -> None:
             else:
                 raise SummaryError(f"self-test allowed invalid {name}")
 
+        def currentize_generic(log_text: str, session_id: str = "TEST-A") -> str:
+            """Add the current report-start/session contract to test fixtures."""
+            result: list[str] = []
+            seen_generations: set[tuple[str, int]] = set()
+            for line in log_text.splitlines():
+                if line.startswith("[MelonPrimePerf] capture_mode "):
+                    if "session_id=" not in line:
+                        line = line.replace(
+                            "capture_mode instance_id=",
+                            f"capture_mode session_id={session_id} instance_id=",
+                        )
+                elif line.startswith("[MelonPrimePerf] input_metric_us "):
+                    if "session_id=" not in line:
+                        line = line.replace(
+                            "input_metric_us instance_id=",
+                            f"input_metric_us session_id={session_id} instance_id=",
+                        )
+                elif line.startswith("[MelonPrimePerf] explicit_latency_us "):
+                    if "session_id=" not in line:
+                        line = line.replace(
+                            "explicit_latency_us instance_id=",
+                            f"explicit_latency_us session_id={session_id} instance_id=",
+                        )
+                if line.startswith("[MelonPrimePerf] "):
+                    instance_id = parse_input_instance_id(line)
+                    report_seq = parse_report_seq(line)
+                    if instance_id is not None and report_seq is not None:
+                        key = (str(instance_id), report_seq)
+                        if key not in seen_generations:
+                            result.append(
+                                f"[MelonPrimePerf] report_begin "
+                                f"session_id={session_id} instance_id={instance_id} "
+                                f"report_seq={report_seq} capture_only=1"
+                            )
+                            seen_generations.add(key)
+                result.append(line)
+            return "\n".join(result) + "\n"
+
         controller_no_evidence = "\n".join([
             "[MelonPrimePerf] capture_mode instance_id=0 report_seq=10 capture_only=1",
             "[MelonPrimePerf] input_metric_us instance_id=0 report_seq=10 "
@@ -1478,6 +1839,7 @@ def self_test() -> None:
             "joystick_process_mutex_hold[c=1000 retained=1000 p50=0.2 "
             "p95=0.4 p99=0.6 max=1.0 retained_max=1.0]",
         ]) + "\n"
+        controller_no_evidence = currentize_generic(controller_no_evidence)
         controller_valid = controller_no_evidence.replace(
             "joystick_sample[c=0 retained=0",
             "joystick_sample[c=1000 retained=1000",
@@ -1493,7 +1855,7 @@ def self_test() -> None:
         markerless_path.write_text(
             "\n".join(
                 line for line in text.splitlines()
-                if "capture_mode" not in line
+                if "capture_mode" not in line and "report_begin" not in line
             ) + "\n",
             encoding="utf-8",
         )
@@ -1511,6 +1873,15 @@ def self_test() -> None:
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 return main(arguments), stdout.getvalue(), stderr.getvalue()
 
+        strict_metadata_args = [
+            "--commit-sha", "TEST-COMMIT",
+            "--build-preset", "windows-dev",
+            "--hardware", "test-host",
+            "--device", "test-controller",
+            "--window-mode", "windowed",
+            "--polling-rate", "1000Hz",
+        ]
+
         return_code, _, stderr = run_cli([
             "--check-budget", str(controller_valid_path)
         ])
@@ -1524,7 +1895,7 @@ def self_test() -> None:
 
         return_code, stdout, stderr = run_cli([
             "--mode", "controller", "--check-budget", str(controller_valid_path)
-        ])
+        ] + strict_metadata_args)
         if return_code != 0 or stderr:
             raise SummaryError("self-test rejected a valid strict certification")
         strict_output = json.loads(stdout)
@@ -1535,6 +1906,10 @@ def self_test() -> None:
         if strict_output["capture_mode_verified"] is not True:
             raise SummaryError("self-test did not verify strict capture mode")
         strict_run = strict_output["runs"][0]
+        if strict_run["session_id"] != "TEST-A":
+            raise SummaryError("self-test did not preserve Generic session_id in JSON")
+        if strict_output["benchmark_metadata"]["commit_sha"] != "TEST-COMMIT":
+            raise SummaryError("self-test did not preserve benchmark metadata")
         if strict_run["latest_input_report_seq_by_instance"] != {"0": 10}:
             raise SummaryError("self-test did not select the certified input generation")
         if strict_run["generic_generation_records"][0]["report_seq"] != 10:
@@ -1544,7 +1919,7 @@ def self_test() -> None:
             "--mode", "controller", "--check-budget",
             "--markdown-out", str(strict_markdown_path),
             str(controller_valid_path),
-        ])
+        ] + strict_metadata_args)
         if return_code != 0 or stderr:
             raise SummaryError("self-test could not render strict Markdown")
         strict_rendered = strict_markdown_path.read_text(encoding="utf-8")
@@ -1553,6 +1928,13 @@ def self_test() -> None:
             "Certified: true",
             "Mode: controller",
             "Capture-only verified: true",
+            "Session ID: `TEST-A`",
+            "Commit SHA: `TEST-COMMIT`",
+            "Build preset: `windows-dev`",
+            "Hardware: `test-host`",
+            "Device: `test-controller`",
+            "Window mode: `windowed`",
+            "Polling rate: `1000Hz`",
             "Generic input report_seq: `instance 0=10`",
             "Input instance `0` (report_seq=10)",
             "Minimum samples: 1000",
@@ -1586,7 +1968,12 @@ def self_test() -> None:
                 )
 
         markerless_report = controller_valid.replace(
-            "[MelonPrimePerf] capture_mode instance_id=0 report_seq=10 capture_only=1\n",
+            "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=0 "
+            "report_seq=10 capture_only=1\n",
+            "",
+        ).replace(
+            "[MelonPrimePerf] capture_mode session_id=TEST-A instance_id=0 "
+            "report_seq=10 capture_only=1\n",
             "",
         ).replace("report_seq=10", "report_seq=11")
         mixed_generic_path = Path(directory) / "mixed-generic-generation.log"
@@ -1632,8 +2019,8 @@ def self_test() -> None:
 
         generic_dangling_next_run = "\n".join([
             controller_valid.rstrip("\n"),
-            "[MelonPrimePerf] capture_mode instance_id=0 report_seq=11 capture_only=1",
-            markerless_report.rstrip("\n").replace("report_seq=11", "report_seq=12"),
+            "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=0 "
+            "report_seq=11 capture_only=1",
         ]) + "\n"
         expect_rejection(
             "generic-dangling-next-run.log", generic_dangling_next_run,
@@ -1641,7 +2028,8 @@ def self_test() -> None:
         )
         generic_dangling_eof = "\n".join([
             controller_valid.rstrip("\n"),
-            "[MelonPrimePerf] capture_mode instance_id=0 report_seq=11 capture_only=1",
+            "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=0 "
+            "report_seq=11 capture_only=1",
         ]) + "\n"
         expect_rejection(
             "generic-dangling-eof.log", generic_dangling_eof,
@@ -1649,8 +2037,125 @@ def self_test() -> None:
         )
         explicit_latency_line = next(
             line for line in text.splitlines()
-            if line.startswith("[MelonPrimePerf] explicit_latency_us instance_id=0")
-        ).replace("instance_id=0 report_seq=1", "instance_id=0 report_seq=9")
+            if line.startswith("[MelonPrimePerf] explicit_latency_us ")
+            and "instance_id=0" in line
+        ).replace(
+            "session_id=TEST-A instance_id=0 report_seq=1",
+            "session_id=TEST-A instance_id=0 report_seq=9",
+        )
+        report_begin_11 = (
+            "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=0 "
+            "report_seq=11 capture_only=1"
+        )
+        explicit_latency_11 = explicit_latency_line.replace(
+            "report_seq=9", "report_seq=11"
+        )
+        expect_rejection(
+            "generic-explicit-latency-only.log",
+            controller_valid + explicit_latency_11 + "\n",
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        expect_rejection(
+            "generic-report-begin-only.log",
+            controller_valid + report_begin_11 + "\n",
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        expect_rejection(
+            "generic-report-begin-explicit-latency-only.log",
+            controller_valid + report_begin_11 + "\n" + explicit_latency_11,
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        generic_begin_capture_no_input = "\n".join([
+            controller_valid.rstrip("\n"),
+            report_begin_11,
+            "[MelonPrimePerf] capture_mode session_id=TEST-A instance_id=0 "
+            "report_seq=11 capture_only=1",
+        ]) + "\n"
+        expect_rejection(
+            "generic-report-begin-capture-no-input.log",
+            generic_begin_capture_no_input,
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        controller_input_line = next(
+            line for line in controller_valid.splitlines()
+            if line.startswith("[MelonPrimePerf] input_metric_us ")
+        )
+        generic_begin_input_no_capture = "\n".join([
+            controller_valid.rstrip("\n"),
+            "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=0 "
+            "report_seq=11 capture_only=0",
+            controller_input_line.replace("report_seq=10", "report_seq=11"),
+        ]) + "\n"
+        expect_rejection(
+            "generic-report-begin-input-no-capture.log",
+            generic_begin_input_no_capture,
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        generic_shutdown_only = "\n".join([
+            controller_valid.rstrip("\n"),
+            "[MelonPrime] shutdown summary session_id=TEST-A "
+            "instance_id=0 report_seq=11: frames=10 frame_ms "
+            "p50=1.0 p95=2.0 p99=3.0 max=4.0",
+        ]) + "\n"
+        expect_rejection(
+            "generic-shutdown-summary-only.log", generic_shutdown_only,
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        complete_seq_12 = controller_valid.replace("report_seq=10", "report_seq=12")
+        enforce(parse_log(Path(directory) / "controller-valid.log"),
+                "controller", MIN_CERTIFICATION_SAMPLES)
+        complete_seq_12_path = Path(directory) / "generic-complete-seq12.log"
+        complete_seq_12_path.write_text(complete_seq_12, encoding="utf-8")
+        enforce(
+            parse_log(complete_seq_12_path), "controller", MIN_CERTIFICATION_SAMPLES
+        )
+
+        complete_session_a_100 = controller_valid.replace(
+            "report_seq=10", "report_seq=100"
+        )
+        incomplete_session_b_1 = (
+            "[MelonPrimePerf] report_begin session_id=TEST-B instance_id=0 "
+            "report_seq=1 capture_only=1\n"
+        )
+        cross_run_lower_path = Path(directory) / "cross-run-lower-incomplete.log"
+        cross_run_lower_path.write_text(
+            complete_session_a_100 + incomplete_session_b_1, encoding="utf-8"
+        )
+        expect_rejection(
+            "cross-run-lower-incomplete.log",
+            complete_session_a_100 + incomplete_session_b_1,
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        complete_session_b_1 = controller_valid.replace(
+            "session_id=TEST-A", "session_id=TEST-B"
+        ).replace("report_seq=10", "report_seq=1")
+        cross_run_complete = complete_session_a_100 + complete_session_b_1
+        cross_run_complete_path = Path(directory) / "cross-run-complete.log"
+        cross_run_complete_path.write_text(cross_run_complete, encoding="utf-8")
+        cross_run_complete_summary = parse_log(cross_run_complete_path)
+        enforce(
+            cross_run_complete_summary, "controller", MIN_CERTIFICATION_SAMPLES
+        )
+        if cross_run_complete_summary["latest_generic_session_id_by_instance"] != {
+            "0": "TEST-B"
+        } or cross_run_complete_summary["latest_generic_report_seq_by_instance"] != {
+            "0": 1
+        }:
+            raise SummaryError("self-test did not use file-order recency for a lower report_seq")
+        same_seq_a = controller_valid.replace("report_seq=10", "report_seq=1")
+        same_seq_b = same_seq_a.replace("session_id=TEST-A", "session_id=TEST-B")
+        same_session_seq_collision = same_seq_a + same_seq_a
+        expect_rejection(
+            "same-session-report-seq-collision.log",
+            same_session_seq_collision, "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+        cross_session_seq_collision = same_seq_a + same_seq_b
+        cross_session_seq_path = Path(directory) / "cross-session-same-seq.log"
+        cross_session_seq_path.write_text(cross_session_seq_collision, encoding="utf-8")
+        cross_session_seq_summary = parse_log(cross_session_seq_path)
+        enforce(cross_session_seq_summary, "controller", MIN_CERTIFICATION_SAMPLES)
+        if len(cross_session_seq_summary["generic_generation_records"]) != 2:
+            raise SummaryError("self-test collapsed same report_seq across sessions")
         latency_mismatch = controller_valid + explicit_latency_line + "\n"
         latency_mismatch_path = Path(directory) / "explicit-latency-generation-mismatch.log"
         latency_mismatch_path.write_text(latency_mismatch, encoding="utf-8")
@@ -1717,19 +2222,25 @@ def self_test() -> None:
         expect_rejection(
             "controller-without-capture-marker.log",
             controller_valid.replace(
-                "[MelonPrimePerf] capture_mode instance_id=0 report_seq=10 capture_only=1\n",
+                "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=0 "
+                "report_seq=10 capture_only=1\n",
                 "",
             ),
             "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
         )
 
         raw_insufficient = "\n".join([
-            "[MelonPrimePerf] capture_mode instance_id=0 report_seq=30 capture_only=1",
-            "[MelonPrimePerf] input_metric_us instance_id=0 report_seq=30 input_total["
+            "[MelonPrimePerf] report_begin session_id=TEST-A instance_id=0 "
+            "report_seq=30 capture_only=1",
+            "[MelonPrimePerf] capture_mode session_id=TEST-A instance_id=0 "
+            "report_seq=30 capture_only=1",
+            "[MelonPrimePerf] input_metric_us session_id=TEST-A instance_id=0 "
+            "report_seq=30 input_total["
             "c=5000 retained=2048 p50=4.0 p95=8.0 p99=12.0 max=20.0 "
             "retained_max=20.0]",
-            "[MelonPrimeRawPerf] capture_mode report_seq=40 capture_only=1",
-            "[MelonPrimeRawPerf] stage_us report_seq=40 "
+            "[MelonPrimeRawPerf] capture_mode session_id=TEST-A "
+            "report_seq=40 capture_only=1",
+            "[MelonPrimeRawPerf] stage_us session_id=TEST-A report_seq=40 "
             "snapshot[calls=2 retained=2 p50=4.0 p95=6.0 p99=8.0 "
             "max=12.0 retained_max=10.0] "
             "late_latch[calls=2 retained=2 p50=3.0 p95=5.0 p99=7.0 "
@@ -1739,13 +2250,24 @@ def self_test() -> None:
             "lock_wait_ns snapshot=10 late=20 deferred=30 hidden=40 native=50 | "
             "raw_batch calls=2 nonempty=1 empty=1 events=2 "
             "late_delta_claims=1 post_draw_events=1",
-            "[MelonPrimeRawPerf] lock_planes report_seq=40 "
+            "[MelonPrimeRawPerf] lock_planes session_id=TEST-A report_seq=40 "
             "subscription_mutex_acq=2 subscription_mutex_wait_ns=3 "
             "subscription_mutex_hold_ns=4 subscription_mutex_max_wait_ns=5 "
             "frame_mutex_acq=6 frame_mutex_wait_ns=7 frame_mutex_hold_ns=8 "
             "frame_mutex_max_wait_ns=9 recursive_acquisitions=10 "
             "subscription_max_recursion_depth=1 frame_max_recursion_depth=1",
         ]) + "\n"
+        raw_truncated_all = "\n".join(
+            line for line in raw_insufficient.splitlines()
+            if line.startswith("[MelonPrimePerf] ")
+        ) + "\n[MelonPrimeRawPerf] capture_mode session_id=TEST-A " \
+            "report_seq=41 capture_only=1\n"
+        raw_truncated_all_path = Path(directory) / "raw-truncated-all.log"
+        raw_truncated_all_path.write_text(raw_truncated_all, encoding="utf-8")
+        if capture_mode_verified(parse_log(raw_truncated_all_path), "all"):
+            raise SummaryError(
+                "self-test verified an incomplete latest Raw generation in all mode"
+            )
         expect_rejection(
             "raw-insufficient.log", raw_insufficient,
             "raw", "raw snapshot has 2 calls",
@@ -1764,7 +2286,8 @@ def self_test() -> None:
         )
         raw_mixed = "\n".join([
             raw_generic_prefix,
-            "[MelonPrimeRawPerf] capture_mode report_seq=40 capture_only=1",
+            "[MelonPrimeRawPerf] capture_mode session_id=TEST-A "
+            "report_seq=40 capture_only=1",
             raw_stage,
             raw_stage,
         ]) + "\n"
@@ -1791,11 +2314,11 @@ def self_test() -> None:
         )
         raw_return_code, raw_stdout, raw_stderr = run_cli([
             "--mode", "raw", "--check-budget", str(raw_complete_path)
-        ])
+        ] + strict_metadata_args)
         if raw_return_code != 0 or raw_stderr:
             raise SummaryError("self-test rejected a complete strict Raw certification")
         raw_strict_output = json.loads(raw_stdout)
-        if raw_strict_output["schema_version"] != 7:
+        if raw_strict_output["schema_version"] != 8:
             raise SummaryError("self-test did not bump the telemetry schema")
         raw_run = raw_strict_output["runs"][0]
         if raw_run["latest_raw_report_seq"] != 40:
@@ -1807,19 +2330,81 @@ def self_test() -> None:
             "--mode", "raw", "--check-budget",
             "--markdown-out", str(raw_strict_markdown_path),
             str(raw_complete_path),
-        ])
+        ] + strict_metadata_args)
         if raw_return_code != 0 or raw_stderr:
             raise SummaryError("self-test could not render strict Raw Markdown")
         raw_strict_rendered = raw_strict_markdown_path.read_text(encoding="utf-8")
         for needle in (
+            "Session ID: `TEST-A`",
             "Raw report_seq: `40`",
             "Windows Raw Input (report_seq=40)",
-            "Raw lock planes (report_seq=40;",
+            "Raw lock planes (session_id=TEST-A; report_seq=40;",
         ):
             if needle not in raw_strict_rendered:
                 raise SummaryError(
                     f"self-test did not render Raw generation metadata: {needle}"
                 )
+        if raw_strict_output["runs"][0]["session_id"] != "TEST-A":
+            raise SummaryError("self-test did not render the Raw session_id in JSON")
+
+        raw_session_mismatch = "\n".join(
+            line.replace("session_id=TEST-A", "session_id=TEST-B")
+            if line.startswith("[MelonPrimeRawPerf] ") else line
+            for line in raw_complete.splitlines()
+        ) + "\n"
+        expect_rejection(
+            "generic-raw-session-mismatch.log", raw_session_mismatch,
+            "raw", "generic/Raw shared session_id mismatch",
+        )
+
+        raw_a_100 = "\n".join(
+            line.replace(
+                "session_id=TEST-A report_seq=40",
+                "session_id=TEST-A report_seq=100",
+            ) if line.startswith("[MelonPrimeRawPerf] ") else line
+            for line in raw_complete.splitlines()
+        ) + "\n"
+        raw_b_1 = raw_complete.replace(
+            "session_id=TEST-A", "session_id=TEST-B"
+        ).replace("report_seq=30", "report_seq=1").replace(
+            "report_seq=40", "report_seq=1"
+        )
+        raw_cross_run_complete = raw_a_100 + raw_b_1
+        raw_cross_run_path = Path(directory) / "raw-cross-run-complete.log"
+        raw_cross_run_path.write_text(raw_cross_run_complete, encoding="utf-8")
+        raw_cross_run_summary = parse_log(raw_cross_run_path)
+        enforce(raw_cross_run_summary, "raw", MIN_CERTIFICATION_SAMPLES)
+        if (
+            raw_cross_run_summary["latest_raw_session_id"] != "TEST-B"
+            or raw_cross_run_summary["latest_raw_report_seq"] != 1
+            or raw_cross_run_summary["latest_generic_session_id_by_instance"]
+            != {"0": "TEST-B"}
+        ):
+            raise SummaryError("self-test did not use observation-order Raw recency")
+        raw_b_incomplete = "\n".join(
+            line for line in raw_b_1.splitlines()
+            if line.startswith("[MelonPrimePerf] ")
+            or line.startswith("[MelonPrimeRawPerf] capture_mode ")
+        ) + "\n"
+        expect_rejection(
+            "raw-cross-run-lower-incomplete.log",
+            raw_a_100 + raw_b_incomplete,
+            "raw", "lacks a complete stage report",
+        )
+        raw_same_seq_a = raw_complete.replace(
+            "report_seq=30", "report_seq=1"
+        ).replace("report_seq=40", "report_seq=1")
+        raw_same_seq_b = raw_same_seq_a.replace(
+            "session_id=TEST-A", "session_id=TEST-B"
+        )
+        raw_same_seq_summary_path = Path(directory) / "raw-cross-session-same-seq.log"
+        raw_same_seq_summary_path.write_text(
+            raw_same_seq_a + raw_same_seq_b, encoding="utf-8"
+        )
+        raw_same_seq_summary = parse_log(raw_same_seq_summary_path)
+        enforce(raw_same_seq_summary, "raw", MIN_CERTIFICATION_SAMPLES)
+        if len(raw_same_seq_summary["raw_generation_records"]) != 2:
+            raise SummaryError("self-test collapsed Raw report_seq across sessions")
         raw_missing_lock = "\n".join(
             line for line in raw_complete.splitlines()
             if not line.startswith("[MelonPrimeRawPerf] lock_planes ")
@@ -1837,24 +2422,38 @@ def self_test() -> None:
         )
         raw_split_generation = (
             raw_complete
-            .replace("capture_mode report_seq=40", "capture_mode report_seq=42")
-            .replace("stage_us report_seq=40", "stage_us report_seq=42")
-            .replace("lock_planes report_seq=40", "lock_planes report_seq=41")
+            .replace(
+                "capture_mode session_id=TEST-A report_seq=40",
+                "capture_mode session_id=TEST-A report_seq=42",
+            )
+            .replace(
+                "stage_us session_id=TEST-A report_seq=40",
+                "stage_us session_id=TEST-A report_seq=42",
+            )
+            .replace(
+                "lock_planes session_id=TEST-A report_seq=40",
+                "lock_planes session_id=TEST-A report_seq=41",
+            )
         )
         expect_rejection(
             "raw-lock-stage-generation-mismatch.log", raw_split_generation,
-            "raw", "lacks lock-plane evidence",
+            "raw", "lacks a verified capture-only marker",
         )
         raw_dangling_next_run = raw_complete + "\n".join([
-            "[MelonPrimeRawPerf] capture_mode report_seq=41 capture_only=1",
-            raw_stage.replace("report_seq=40", "report_seq=42"),
+            "[MelonPrimeRawPerf] capture_mode session_id=TEST-A "
+            "report_seq=41 capture_only=1",
+            raw_stage.replace(
+                "session_id=TEST-A report_seq=40",
+                "session_id=TEST-A report_seq=42",
+            ),
         ]) + "\n"
         expect_rejection(
             "raw-dangling-next-run.log", raw_dangling_next_run,
             "raw", "lacks a verified capture-only marker",
         )
         raw_dangling_eof = raw_complete + (
-            "[MelonPrimeRawPerf] capture_mode report_seq=41 capture_only=1\n"
+            "[MelonPrimeRawPerf] capture_mode session_id=TEST-A "
+            "report_seq=41 capture_only=1\n"
         )
         expect_rejection(
             "raw-dangling-eof.log", raw_dangling_eof,
@@ -1879,6 +2478,7 @@ def self_test() -> None:
             "joystick_process_mutex_hold[c=1000 retained=1000 p50=0.2 "
             "p95=0.4 p99=0.6 max=1.0 retained_max=1.0]",
         ]) + "\n"
+        keyboard_contamination = currentize_generic(keyboard_contamination)
         expect_rejection(
             "keyboard-contamination.log", keyboard_contamination,
             "keyboard", "keyboard budget certification found",
@@ -1930,6 +2530,12 @@ def main(argv: list[str] | None = None) -> int:
             f"(default: {MIN_CERTIFICATION_SAMPLES})"
         ),
     )
+    parser.add_argument("--commit-sha", help="source commit recorded in a strict artifact")
+    parser.add_argument("--build-preset", help="build preset recorded in a strict artifact")
+    parser.add_argument("--hardware", help="hardware platform recorded in a strict artifact")
+    parser.add_argument("--device", help="input device recorded in a strict artifact")
+    parser.add_argument("--window-mode", help="window mode recorded in a strict artifact")
+    parser.add_argument("--polling-rate", help="input polling rate recorded in a strict artifact")
     parser.add_argument("--check-budget", action="store_true")
     parser.add_argument(
         "--historical-analysis",
@@ -1977,6 +2583,23 @@ def main(argv: list[str] | None = None) -> int:
             raise SummaryError(
                 "--check-budget requires explicit --mode keyboard|controller|raw"
             )
+        required_metadata = {
+            "--commit-sha": args.commit_sha,
+            "--build-preset": args.build_preset,
+            "--hardware": args.hardware,
+            "--device": args.device,
+            "--window-mode": args.window_mode,
+            "--polling-rate": args.polling_rate,
+        }
+        missing_metadata = [
+            option for option, value in required_metadata.items()
+            if value is None or not value.strip()
+        ]
+        if args.check_budget and missing_metadata:
+            raise SummaryError(
+                "strict certification requires benchmark metadata: "
+                + ", ".join(missing_metadata)
+            )
         if args.check_budget and args.min_input_samples < MIN_CERTIFICATION_SAMPLES:
             raise SummaryError(
                 "--check-budget requires --min-input-samples >= "
@@ -1999,8 +2622,29 @@ def main(argv: list[str] | None = None) -> int:
         capture_verified = all(
             capture_mode_verified(summary, mode) for summary in summaries
         )
+        benchmark_metadata_base = {
+            "commit_sha": args.commit_sha,
+            "build_preset": args.build_preset,
+            "hardware": args.hardware,
+            "device": args.device,
+            "window_mode": args.window_mode,
+            "polling_rate": args.polling_rate,
+            "mode": mode,
+            "capture_only": capture_verified,
+            "minimum_samples": args.min_input_samples,
+        }
+        for summary in summaries:
+            summary["benchmark_metadata"] = {
+                **benchmark_metadata_base,
+                "session_id": summary.get("session_id"),
+                "instance_ids": summary.get("input_instance_ids", []),
+                "generic_report_seq_by_instance": summary.get(
+                    "latest_generic_report_seq_by_instance", {}
+                ),
+                "raw_report_seq": summary.get("latest_raw_report_seq"),
+            }
         output: dict[str, Any] = {
-            "schema_version": 7,
+            "schema_version": 8,
             "mode": mode,
             "certification_scope": certification_scope,
             "certified": bool(args.check_budget),
@@ -2010,6 +2654,14 @@ def main(argv: list[str] | None = None) -> int:
             "budget_checked": args.check_budget,
             "allow_legacy_first_n": args.allow_legacy_first_n,
             "allow_legacy_raw_unversioned": args.allow_legacy_raw_unversioned,
+            "benchmark_metadata": {
+                **benchmark_metadata_base,
+                "run_count": len(summaries),
+                "session_ids": sorted({
+                    session_id for summary in summaries
+                    for session_id in summary.get("observed_session_ids", [])
+                }),
+            },
             "runs": summaries,
         }
         rendered_json = json.dumps(output, indent=2, sort_keys=True) + "\n"

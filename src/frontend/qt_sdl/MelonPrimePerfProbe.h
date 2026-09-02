@@ -19,6 +19,7 @@
 #include <string>
 
 #include "MelonPrimePerfClock.h"
+#include "MelonPrimePerfSession.h"
 
 namespace MelonPrimePerf {
 
@@ -195,7 +196,6 @@ struct State {
 
     uint64_t instanceId = 0;
     uint64_t reportSequence = 0;
-    uint64_t reportSequenceBase = 0;
 
     ~State()
     {
@@ -222,9 +222,7 @@ inline void BindInstance(uint64_t instanceId)
 
 inline uint64_t NextReportSequence(State& st)
 {
-    if (!st.reportSequenceBase)
-        st.reportSequenceBase = static_cast<uint64_t>(SDL_GetPerformanceCounter());
-    return st.reportSequenceBase + ++st.reportSequence;
+    return ++st.reportSequence;
 }
 
 inline bool IsCaptureOnly()
@@ -615,6 +613,26 @@ inline void ResetWindowStats()
     st.cntCrosshairProjectionRejected = 0;
 }
 
+inline void ReportGenerationHeader(const State& st, uint64_t reportSeq)
+{
+    const char* sessionId = MelonPrimePerfSession::Text();
+    const unsigned captureOnly = IsCaptureOnly() ? 1u : 0u;
+    std::fprintf(stderr,
+        "[MelonPrimePerf] report_begin session_id=%s instance_id=%llu "
+        "report_seq=%llu capture_only=%u\n",
+        sessionId,
+        static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq), captureOnly);
+    // Keep the older marker as a compatibility/readability line.  The
+    // report_begin line above is the strict source of capture provenance.
+    std::fprintf(stderr,
+        "[MelonPrimePerf] capture_mode session_id=%s instance_id=%llu "
+        "report_seq=%llu capture_only=%u\n",
+        sessionId,
+        static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq), captureOnly);
+}
+
 inline void ReportExplicitLatency(const State& st, uint64_t reportSeq)
 {
     const PercentileSummary runFrame = SummarizeLatency(
@@ -624,7 +642,7 @@ inline void ReportExplicitLatency(const State& st, uint64_t reportSeq)
         st.inputToPresentEndUs, st.inputToPresentEndWrite,
         st.inputToPresentEndCount);
     std::fprintf(stderr,
-        "[MelonPrimePerf] explicit_latency_us instance_id=%llu "
+        "[MelonPrimePerf] explicit_latency_us session_id=%s instance_id=%llu "
         "report_seq=%llu "
         "frame_input_sample_to_runframe_begin_us="
         "calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
@@ -632,6 +650,7 @@ inline void ReportExplicitLatency(const State& st, uint64_t reportSeq)
         "input_sample_to_present_end_us="
         "calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
         "max=%.1f retained_max=%.1f\n",
+        MelonPrimePerfSession::Text(),
         static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(st.inputToRunFrameCalls),
@@ -659,13 +678,8 @@ inline void ReportInputMetricSummary(const State& st, uint64_t reportSeq)
         return metric(inputMetric).count;
     };
     std::fprintf(stderr,
-        "[MelonPrimePerf] capture_mode instance_id=%llu report_seq=%llu "
-        "capture_only=%u\n",
-        static_cast<unsigned long long>(st.instanceId),
-        static_cast<unsigned long long>(reportSeq),
-        IsCaptureOnly() ? 1u : 0u);
-    std::fprintf(stderr,
-        "[MelonPrimePerf] input_metric_us instance_id=%llu report_seq=%llu "
+        "[MelonPrimePerf] input_metric_us session_id=%s instance_id=%llu "
+        "report_seq=%llu "
         "input_total[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
         "joystick_lock_wait[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
         "joystick_sample[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
@@ -673,6 +687,7 @@ inline void ReportInputMetricSummary(const State& st, uint64_t reportSeq)
         "joystick_sdl_update[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
         "joystick_process_mutex_wait[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
         "joystick_process_mutex_hold[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f]\n",
+        MelonPrimePerfSession::Text(),
         static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(reportSeq),
         calls(InputMetric::InputTotal), retained(InputMetric::InputTotal),
@@ -738,7 +753,8 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
             : 0.0;
     };
     std::fprintf(stderr,
-        "[MelonPrimePerf] hud_phase_us instance_id=%llu report_seq=%llu "
+        "[MelonPrimePerf] hud_phase_us session_id=%s instance_id=%llu "
+        "report_seq=%llu "
         "state[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "scoreboard_plan[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "scoreboard_raster[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
@@ -754,6 +770,7 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         "stamp_checks=%llu stamp_commits=%llu plan_build=%llu full_rebuild=%llu "
         "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
         "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu\n",
+        MelonPrimePerfSession::Text(),
         static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::State)]),
@@ -827,10 +844,12 @@ inline void MaybeReport1Hz()
         return;
 
     const uint64_t reportSeq = NextReportSequence(st);
+    ReportGenerationHeader(st, reportSeq);
     const auto reportClock = melonDS::MelonPrimePerfClock::Now();
     std::fprintf(stderr,
-        "[MelonPrimePerfPhase] instance_id=%llu report_seq=%llu "
+        "[MelonPrimePerfPhase] session_id=%s instance_id=%llu report_seq=%llu "
         "report_qpc_ticks=%llu qpc_frequency=%llu\n",
+        MelonPrimePerfSession::Text(),
         static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(reportClock.Ticks),
@@ -851,12 +870,14 @@ inline void MaybeReport1Hz()
         + st.cntInputSource[static_cast<uint32_t>(InputSource::QCursorFallback)];
 
     std::fprintf(stderr,
-        "[MelonPrimePerf] frame_ms instance_id=%llu report_seq=%llu "
+        "[MelonPrimePerf] frame_ms session_id=%s instance_id=%llu "
+        "report_seq=%llu "
         "p50=%.3f p95=%.3f p99=%.3f max=%.3f n=%u | "
         "sec_avg_ms sleep=%.3f spin=%.3f setup=%.3f vkbegin=%.3f input=%.3f prerun=%.3f run=%.3f draw=%.3f drain=%.3f book=%.3f yield=%.3f | "
         "input_src raw=%llu mac=%llu linux=%llu panel=%llu qcur=%llu (tot=%llu) | "
         "warp=%llu oog_patch=%llu osd_apply=%llu osd_write=%llu | "
         "hud_dirty_px=%llu gl_up_B=%llu dr3_skip=%llu hud_render_us=%.1f\n",
+        MelonPrimePerfSession::Text(),
         static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(reportSeq),
         frame.p50, frame.p95, frame.p99, frame.max, frame.count,
@@ -883,10 +904,12 @@ inline void MaybeReport1Hz()
                 / static_cast<double>(st.cntCustomHudFrames) : 0.0);
 
     std::fprintf(stderr,
-        "[MelonPrimePerf] audit_counts instance_id=%llu report_seq=%llu "
+        "[MelonPrimePerf] audit_counts session_id=%s instance_id=%llu "
+        "report_seq=%llu "
         "stage_matrix_full_validation=%llu stage_matrix_validation_retry=%llu "
         "surface_visibility_state_change=%llu renderer_fast_cache_refresh=%llu "
         "crosshair_projection_accepted=%llu crosshair_projection_rejected=%llu\n",
+        MelonPrimePerfSession::Text(),
         static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(reportSeq),
         static_cast<unsigned long long>(st.cntStageMatrixFullValidations),
@@ -1277,10 +1300,13 @@ inline void ShutdownReport()
 
     State& st = S();
     const uint64_t reportSeq = NextReportSequence(st);
+    ReportGenerationHeader(st, reportSeq);
     if (st.ringCount == 0)
         std::fprintf(stderr,
-            "[MelonPrimePerf] shutdown instance_id=%llu report_seq=%llu: "
+            "[MelonPrimePerf] shutdown session_id=%s instance_id=%llu "
+            "report_seq=%llu: "
             "no frames recorded\n",
+            MelonPrimePerfSession::Text(),
             static_cast<unsigned long long>(st.instanceId),
             static_cast<unsigned long long>(reportSeq));
     else
@@ -1300,16 +1326,20 @@ inline void ShutdownReport()
         const double maxMs = sorted[n - 1];
 
         std::fprintf(stderr,
-            "[MelonPrimePerf] shutdown summary instance_id=%llu report_seq=%llu: "
+            "[MelonPrimePerf] shutdown summary session_id=%s instance_id=%llu "
+            "report_seq=%llu: "
             "frames=%u frame_ms "
             "p50=%.3f p95=%.3f p99=%.3f max=%.3f\n",
+            MelonPrimePerfSession::Text(),
             static_cast<unsigned long long>(st.instanceId),
             static_cast<unsigned long long>(reportSeq), n,
             p50, p95, p99, maxMs);
 
         std::fprintf(stderr,
-            "[MelonPrimePerf] histogram instance_id=%llu report_seq=%llu "
+            "[MelonPrimePerf] histogram session_id=%s instance_id=%llu "
+            "report_seq=%llu "
             "bucket_ms=%.1f:\n",
+            MelonPrimePerfSession::Text(),
             static_cast<unsigned long long>(st.instanceId),
             static_cast<unsigned long long>(reportSeq), State::kHistBucketMs);
         for (uint32_t b = 0; b < State::kHistBuckets; ++b) {
