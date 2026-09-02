@@ -10,7 +10,8 @@ required metric is absent.
 Examples:
   python tools/testing/summarize-input-performance.py run.stderr
   python tools/testing/summarize-input-performance.py --mode controller \
-      --min-input-samples 1000 --json-out input-summary.json run.stderr
+      --min-input-samples 1000 --check-budget \
+      --json-out input-summary.json run.stderr
 """
 
 from __future__ import annotations
@@ -101,6 +102,14 @@ RAW_LOCK_RE = re.compile(
     r"^\[MelonPrimeRawPerf\] lock_planes "
     r"(?P<body>.*)$"
 )
+GENERIC_CAPTURE_MODE_RE = re.compile(
+    r"^\[MelonPrimePerf\] capture_mode "
+    r"instance_id=(?P<instance_id>\d+) capture_only=(?P<capture_only>[01])$"
+)
+RAW_CAPTURE_MODE_RE = re.compile(
+    r"^\[MelonPrimeRawPerf\] capture_mode "
+    r"capture_only=(?P<capture_only>[01])$"
+)
 KEY_VALUE_RE = re.compile(r"(?P<name>[a-z0-9_]+)=(?P<value>\d+)")
 
 INPUT_METRICS = (
@@ -120,9 +129,22 @@ EXPLICIT_LATENCY_METRICS = (
 INPUT_RETENTION_CAP = 2048
 LEGACY_INPUT_RETENTION_CAP = 2048
 LEGACY_EXPLICIT_LATENCY_RETENTION_CAP = 512
+MIN_CERTIFICATION_SAMPLES = 1000
 RETENTION_LATEST_N = "latest_n"
 RETENTION_LEGACY_FIRST_N = "legacy_first_n"
 RETENTION_LEGACY_UNVERSIONED = "legacy_unversioned"
+RAW_LIFETIME_SCOPE = "raw_service_lifetime"
+
+CONTROLLER_EVIDENCE_METRICS = (
+    "joystick_lock_wait",
+    "joystick_sample",
+    "joystick_project",
+    "joystick_sdl_update",
+    "joystick_process_mutex_wait",
+    "joystick_process_mutex_hold",
+)
+RAW_REQUIRED_STAGES = ("snapshot", "late_latch")
+RAW_EVIDENCE_STAGES = ("snapshot", "late_latch", "deferred_drain")
 
 
 class SummaryError(RuntimeError):
@@ -299,7 +321,7 @@ def parse_raw_stage(
             "max_us": max_us,
             "whole_max_us": max_us,
             "whole_max_known": True,
-            "max_scope": "whole_window",
+            "max_scope": RAW_LIFETIME_SCOPE,
             "retained_max_us": retained_max_us,
         }
         stage_metrics[stage_name] = metric
@@ -329,8 +351,20 @@ def parse_log(path: Path) -> dict[str, Any]:
     latest_latency_by_instance: dict[str, dict[str, dict[str, Any]]] = {}
     raw_reports: list[dict[str, Any]] = []
     lock_reports: list[dict[str, int]] = []
+    generic_capture_only_by_instance: dict[str, bool] = {}
+    raw_capture_only: bool | None = None
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         line = raw_line.strip()
+        generic_capture_match = GENERIC_CAPTURE_MODE_RE.match(line)
+        if generic_capture_match:
+            generic_capture_only_by_instance[
+                generic_capture_match.group("instance_id")
+            ] = generic_capture_match.group("capture_only") == "1"
+            continue
+        raw_capture_match = RAW_CAPTURE_MODE_RE.match(line)
+        if raw_capture_match:
+            raw_capture_only = raw_capture_match.group("capture_only") == "1"
+            continue
         input_match = INPUT_RE.match(line)
         if input_match:
             parsed = parse_input_body(input_match.group("body"))
@@ -417,22 +451,32 @@ def parse_log(path: Path) -> dict[str, Any]:
         "latest_input": latest_input,
         "latest_raw": latest_raw,
         "latest_lock_planes": latest_locks,
+        "generic_capture_only_by_instance": generic_capture_only_by_instance,
+        "raw_capture_only": raw_capture_only,
         "retention_mode": retention_mode,
         "retention_modes": sorted(retention_modes),
     }
 
 
+def require_metric(
+    report: dict[str, dict[str, Any]], name: str, minimum_calls: int,
+    suffix: str = "",
+) -> dict[str, Any]:
+    metric = report.get(name)
+    if metric is None:
+        raise SummaryError(f"{name}{suffix} is missing from the telemetry report")
+    if int(metric["calls"]) < minimum_calls:
+        raise SummaryError(
+            f"{name}{suffix} has {metric['calls']} calls; expected at least "
+            f"{minimum_calls}"
+        )
+    return metric
+
+
 def require_input_metric(
     summary: dict[str, Any], name: str, minimum_calls: int
 ) -> dict[str, Any]:
-    metric = summary["latest_input"].get(name)
-    if metric is None:
-        raise SummaryError(f"latest input report is missing metric {name}")
-    if int(metric["calls"]) < minimum_calls:
-        raise SummaryError(
-            f"{name} has {metric['calls']} calls; expected at least {minimum_calls}"
-        )
-    return metric
+    return require_metric(summary["latest_input"], name, minimum_calls)
 
 
 def require_safe_retention(
@@ -453,13 +497,73 @@ def require_safe_retention(
     )
 
 
+def require_capture_only(
+    summary: dict[str, Any], mode: str,
+    reports_by_instance: dict[str, dict[str, dict[str, Any]]],
+) -> None:
+    generic_capture = summary.get("generic_capture_only_by_instance", {})
+    if mode in ("keyboard", "controller", "raw", "all"):
+        for instance_id in reports_by_instance:
+            if generic_capture.get(instance_id) is not True:
+                suffix = "" if len(reports_by_instance) == 1 else (
+                    f" for instance {instance_id}"
+                )
+                raise SummaryError(
+                    f"{mode} budget certification requires a verified "
+                    f"MELONPRIME_PERF_CAPTURE_ONLY run{suffix}"
+                )
+    if mode == "raw" and summary.get("raw_capture_only") is not True:
+        raise SummaryError(
+            "raw budget certification requires a verified "
+            "MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY run"
+        )
+
+
+def require_raw_stage(
+    raw: dict[str, Any], stage_name: str, minimum_calls: int,
+) -> dict[str, Any]:
+    metric = raw.get("stage_metrics", {}).get(stage_name)
+    if metric is None:
+        raise SummaryError(f"Raw telemetry is missing stage {stage_name}")
+
+    # An explicitly allowed legacy-unversioned report has no trustworthy call
+    # count. It is suitable only for historical analysis, not sample-gated
+    # certification; the caller has already required the explicit opt-in.
+    calls = metric.get("calls")
+    if calls is None:
+        return metric
+    if int(calls) < minimum_calls:
+        raise SummaryError(
+            f"raw {stage_name} has {calls} calls; expected at least "
+            f"{minimum_calls}"
+        )
+    retained = metric.get("retained")
+    retained_floor = min(
+        minimum_calls,
+        int(metric.get("retention_cap", INPUT_RETENTION_CAP)),
+    )
+    if retained is None or int(retained) < retained_floor:
+        raise SummaryError(
+            f"raw {stage_name} retains {retained} samples; expected at least "
+            f"{retained_floor}"
+        )
+    return metric
+
+
 def enforce(
     summary: dict[str, Any], mode: str, minimum_calls: int,
     allow_legacy_first_n: bool = False,
+    allow_legacy_raw_unversioned: bool = False,
 ) -> None:
+    if minimum_calls < MIN_CERTIFICATION_SAMPLES:
+        raise SummaryError(
+            "--check-budget requires --min-input-samples >= "
+            f"{MIN_CERTIFICATION_SAMPLES}; short runs are not certifiable"
+        )
     reports_by_instance = summary.get("latest_input_by_instance") or {
         "unbound": summary["latest_input"]
     }
+    require_capture_only(summary, mode, reports_by_instance)
     for instance_id, input_report in reports_by_instance.items():
         suffix = "" if len(reports_by_instance) == 1 else f" for instance {instance_id}"
         for name, metric in input_report.items():
@@ -480,6 +584,17 @@ def enforce(
         require_safe_retention(
             input_total, "input_total", suffix, allow_legacy_first_n
         )
+        if mode == "controller":
+            for name in CONTROLLER_EVIDENCE_METRICS:
+                require_metric(input_report, name, minimum_calls, suffix)
+        elif mode == "keyboard":
+            for name in CONTROLLER_EVIDENCE_METRICS:
+                metric = require_metric(input_report, name, 0, suffix)
+                if int(metric["calls"]) != 0:
+                    raise SummaryError(
+                        f"keyboard budget certification found {name} calls "
+                        f"({metric['calls']}){suffix}"
+                    )
         if float(input_total["p99_us"]) >= 100.0:
             raise SummaryError(
                 f"input_total p99 exceeds 100 us{suffix}: {input_total['p99_us']}"
@@ -500,10 +615,32 @@ def enforce(
         raw = summary.get("latest_raw")
         if raw is None:
             raise SummaryError("raw mode requires [MelonPrimeRawPerf] stage telemetry")
-        if float(raw["snapshot_p50"]) + float(raw["late_p50"]) >= 40.0:
+        if raw.get("retention_mode") == RETENTION_LEGACY_UNVERSIONED:
+            if not allow_legacy_raw_unversioned:
+                raise SummaryError(
+                    "raw budget certification cannot verify sample counts for "
+                    "legacy_unversioned telemetry (use "
+                    "--allow-legacy-raw-unversioned only for explicit "
+                    "historical analysis)"
+                )
+        elif raw.get("retention_mode") != RETENTION_LATEST_N:
+            raise SummaryError(
+                "raw budget certification requires a recognized Raw retention mode"
+            )
+        raw_stages = {
+            stage_name: require_raw_stage(
+                raw,
+                stage_name,
+                minimum_calls if stage_name in RAW_REQUIRED_STAGES else 0,
+            )
+            for stage_name in RAW_EVIDENCE_STAGES
+        }
+        snapshot = raw_stages[RAW_REQUIRED_STAGES[0]]
+        late_latch = raw_stages[RAW_REQUIRED_STAGES[1]]
+        if snapshot["p50_us"] + late_latch["p50_us"] >= 40.0:
             raise SummaryError(
                 "Raw snapshot+late-latch p50 exceeds 40 us: "
-                f"{float(raw['snapshot_p50']) + float(raw['late_p50']):.1f}"
+                f"{snapshot['p50_us'] + late_latch['p50_us']:.1f}"
             )
 
 
@@ -518,6 +655,26 @@ def markdown(summary: dict[str, Any]) -> str:
         f"Source: `{summary['path']}`",
         f"Retention mode: `{summary.get('retention_mode') or 'unknown'}`",
     ]
+    generic_capture = summary.get("generic_capture_only_by_instance", {})
+    if generic_capture:
+        capture_values = ", ".join(
+            f"instance {instance_id}={'true' if value else 'false'}"
+            for instance_id, value in sorted(
+                generic_capture.items(),
+                key=lambda item: (
+                    item[0] == "unbound",
+                    int(item[0]) if item[0] != "unbound" else 0,
+                ),
+            )
+        )
+        lines.append(f"Generic capture-only: `{capture_values}`")
+    else:
+        lines.append("Generic capture-only: `unknown`")
+    if summary.get("raw_capture_only") is not None:
+        lines.append(
+            "Raw capture-only: `"
+            f"{'true' if summary['raw_capture_only'] else 'false'}`"
+        )
     reports_by_instance = summary.get("latest_input_by_instance") or {
         "unbound": summary["latest_input"]
     }
@@ -603,12 +760,15 @@ def markdown(summary: dict[str, Any]) -> str:
             "",
             f"batch calls/nonempty/empty/events: {raw['batch_calls']}/"
             f"{raw['batch_nonempty']}/{raw['batch_empty']}/{raw['batch_events']}",
+            "Raw calls, stage sums/maxima, lock totals, and batch totals are "
+            "cumulative for the current Raw service/capture lifetime; stage "
+            "percentiles and retained_max use the latest retained samples.",
         ])
     locks = summary.get("latest_lock_planes")
     if locks is not None:
         lines.extend([
             "",
-            "Raw lock planes (report-window totals):",
+            "Raw lock planes (Raw service/capture lifetime totals):",
             "",
             f"subscription acquisitions/wait/hold: "
             f"{locks.get('subscription_mutex_acq', 0)}/"
@@ -625,6 +785,9 @@ def self_test() -> None:
     import tempfile
 
     text = "\n".join([
+        "[MelonPrimePerf] capture_mode instance_id=0 capture_only=1",
+        "[MelonPrimePerf] capture_mode instance_id=1 capture_only=1",
+        "[MelonPrimeRawPerf] capture_mode capture_only=1",
         "[MelonPrimePerf] input_metric_us instance_id=0 input_total[c=5000 p50=4.0 p95=8.0 p99=12.0 max=20.0] joystick_lock_wait[c=1001 p50=0.1 p95=0.2 p99=0.4 max=1.0] joystick_sample[c=1001 p50=5.0 p95=7.0 p99=9.0 max=15.0] joystick_project[c=1001 p50=1.0 p95=2.0 p99=3.0 max=5.0] joystick_sdl_update[c=1001 p50=0.5 p95=0.8 p99=1.0 max=2.0] joystick_process_mutex_wait[c=1001 p50=0.0 p95=0.1 p99=0.2 max=0.5] joystick_process_mutex_hold[c=1001 p50=0.2 p95=0.4 p99=0.6 max=1.0]",
         "[MelonPrimePerf] input_metric_us instance_id=1 input_total[c=5000 retained=2048 p50=4.0 p95=8.0 p99=12.0 max=30.0 retained_max=20.0]",
         "[MelonPrimePerf] explicit_latency_us instance_id=0 frame_input_sample_to_runframe_begin_us=p50=5.0 p95=9.0 p99=13.0 max=31.0 n=600 input_sample_to_present_end_us=p50=7.0 p95=11.0 p99=15.0 max=33.0 n=600",
@@ -638,6 +801,10 @@ def self_test() -> None:
         summary = parse_log(path)
         if summary["retention_mode"] != "mixed":
             raise SummaryError("self-test did not preserve retention provenance")
+        if summary["generic_capture_only_by_instance"] != {"0": True, "1": True}:
+            raise SummaryError("self-test did not parse generic capture-only markers")
+        if summary["raw_capture_only"] is not True:
+            raise SummaryError("self-test did not parse Raw capture-only marker")
         legacy_input = summary["latest_input_by_instance"]["0"]["input_total"]
         if legacy_input["retention_mode"] != RETENTION_LEGACY_FIRST_N:
             raise SummaryError("self-test did not classify legacy input retention")
@@ -683,6 +850,9 @@ def self_test() -> None:
             raise SummaryError("self-test did not parse Raw stage retained count")
         if summary["latest_raw"]["snapshot_retained_max"] != 10.0:
             raise SummaryError("self-test did not parse Raw retained max")
+        if summary["latest_raw"]["stage_metrics"]["snapshot"]["max_scope"] \
+            != RAW_LIFETIME_SCOPE:
+            raise SummaryError("self-test did not preserve Raw lifetime max scope")
         rendered = markdown(summary)
         for stage_name in ("snapshot", "late_latch", "deferred_drain"):
             if stage_name not in rendered:
@@ -715,17 +885,163 @@ def self_test() -> None:
         ] is not None:
             raise SummaryError("self-test invented legacy Raw call counts")
 
+        def expect_rejection(
+            name: str, log_text: str, mode: str, expected: str,
+            **kwargs: Any,
+        ) -> None:
+            rejection_path = Path(directory) / name
+            rejection_path.write_text(log_text, encoding="utf-8")
+            rejection_summary = parse_log(rejection_path)
+            try:
+                enforce(rejection_summary, mode, MIN_CERTIFICATION_SAMPLES, **kwargs)
+            except SummaryError as error:
+                if expected not in str(error):
+                    raise SummaryError(
+                        f"self-test rejected {name} for the wrong reason"
+                    ) from error
+            else:
+                raise SummaryError(f"self-test allowed invalid {name}")
+
+        controller_no_evidence = "\n".join([
+            "[MelonPrimePerf] capture_mode instance_id=0 capture_only=1",
+            "[MelonPrimePerf] input_metric_us instance_id=0 "
+            "input_total[c=5000 retained=2048 p50=4.0 p95=8.0 p99=12.0 "
+            "max=20.0 retained_max=20.0] "
+            "joystick_lock_wait[c=1000 retained=1000 p50=0.1 p95=0.2 "
+            "p99=0.4 max=1.0 retained_max=1.0] "
+            "joystick_sample[c=0 retained=0 p50=0.0 p95=0.0 p99=0.0 "
+            "max=0.0 retained_max=0.0] "
+            "joystick_project[c=1000 retained=1000 p50=1.0 p95=2.0 "
+            "p99=3.0 max=5.0 retained_max=5.0] "
+            "joystick_sdl_update[c=1000 retained=1000 p50=0.5 p95=0.8 "
+            "p99=1.0 max=2.0 retained_max=2.0] "
+            "joystick_process_mutex_wait[c=1000 retained=1000 p50=0.0 "
+            "p95=0.1 p99=0.2 max=0.5 retained_max=0.5] "
+            "joystick_process_mutex_hold[c=1000 retained=1000 p50=0.2 "
+            "p95=0.4 p99=0.6 max=1.0 retained_max=1.0]",
+        ]) + "\n"
+        controller_valid = controller_no_evidence.replace(
+            "joystick_sample[c=0 retained=0",
+            "joystick_sample[c=1000 retained=1000",
+        )
+        controller_valid_path = Path(directory) / "controller-valid.log"
+        controller_valid_path.write_text(controller_valid, encoding="utf-8")
+        enforce(
+            parse_log(controller_valid_path), "controller",
+            MIN_CERTIFICATION_SAMPLES,
+        )
+        expect_rejection(
+            "controller-no-evidence.log", controller_no_evidence,
+            "controller", "joystick_sample has 0 calls",
+        )
+        expect_rejection(
+            "controller-without-capture-marker.log",
+            controller_valid.replace(
+                "[MelonPrimePerf] capture_mode instance_id=0 capture_only=1\n",
+                "",
+            ),
+            "controller", "verified MELONPRIME_PERF_CAPTURE_ONLY run",
+        )
+
+        raw_insufficient = "\n".join([
+            "[MelonPrimePerf] capture_mode instance_id=0 capture_only=1",
+            "[MelonPrimePerf] input_metric_us instance_id=0 input_total["
+            "c=5000 retained=2048 p50=4.0 p95=8.0 p99=12.0 max=20.0 "
+            "retained_max=20.0]",
+            "[MelonPrimeRawPerf] capture_mode capture_only=1",
+            "[MelonPrimeRawPerf] stage_us "
+            "snapshot[calls=2 retained=2 p50=4.0 p95=6.0 p99=8.0 "
+            "max=12.0 retained_max=10.0] "
+            "late_latch[calls=2 retained=2 p50=3.0 p95=5.0 p99=7.0 "
+            "max=10.0 retained_max=9.0] "
+            "deferred_drain[calls=2 retained=2 p50=20.0 p95=25.0 p99=30.0 "
+            "max=40.0 retained_max=35.0] "
+            "lock_wait_ns snapshot=10 late=20 deferred=30 hidden=40 native=50 | "
+            "raw_batch calls=2 nonempty=1 empty=1 events=2 "
+            "late_delta_claims=1 post_draw_events=1",
+        ]) + "\n"
+        expect_rejection(
+            "raw-insufficient.log", raw_insufficient,
+            "raw", "raw snapshot has 2 calls",
+        )
+
+        keyboard_contamination = "\n".join([
+            "[MelonPrimePerf] capture_mode instance_id=0 capture_only=1",
+            "[MelonPrimePerf] input_metric_us instance_id=0 "
+            "input_total[c=5000 retained=2048 p50=4.0 p95=8.0 p99=12.0 "
+            "max=20.0 retained_max=20.0] "
+            "joystick_lock_wait[c=1000 retained=1000 p50=0.1 p95=0.2 "
+            "p99=0.4 max=1.0 retained_max=1.0] "
+            "joystick_sample[c=1000 retained=1000 p50=5.0 p95=7.0 "
+            "p99=9.0 max=15.0 retained_max=15.0] "
+            "joystick_project[c=1000 retained=1000 p50=1.0 p95=2.0 "
+            "p99=3.0 max=5.0 retained_max=5.0] "
+            "joystick_sdl_update[c=1000 retained=1000 p50=0.5 p95=0.8 "
+            "p99=1.0 max=2.0 retained_max=2.0] "
+            "joystick_process_mutex_wait[c=1000 retained=1000 p50=0.0 "
+            "p95=0.1 p99=0.2 max=0.5 retained_max=0.5] "
+            "joystick_process_mutex_hold[c=1000 retained=1000 p50=0.2 "
+            "p95=0.4 p99=0.6 max=1.0 retained_max=1.0]",
+        ]) + "\n"
+        expect_rejection(
+            "keyboard-contamination.log", keyboard_contamination,
+            "keyboard", "keyboard budget certification found",
+        )
+
+        short_run_path = Path(directory) / "short-run.log"
+        short_run_path.write_text(controller_no_evidence, encoding="utf-8")
+        try:
+            enforce(
+                parse_log(short_run_path), "controller",
+                MIN_CERTIFICATION_SAMPLES - 1,
+            )
+        except SummaryError as error:
+            if f"--min-input-samples >= {MIN_CERTIFICATION_SAMPLES}" not in str(error):
+                raise SummaryError("self-test accepted the wrong minimum sample contract") from error
+        else:
+            raise SummaryError("self-test allowed a short budget certification run")
+
+        legacy_raw_cert = "\n".join([
+            "[MelonPrimePerf] capture_mode instance_id=0 capture_only=1",
+            "[MelonPrimePerf] input_metric_us instance_id=0 input_total["
+            "c=5000 retained=2048 p50=4.0 p95=8.0 p99=12.0 max=20.0 "
+            "retained_max=20.0]",
+            "[MelonPrimeRawPerf] capture_mode capture_only=1",
+            legacy_raw_path.read_text(encoding="utf-8").strip(),
+        ]) + "\n"
+        expect_rejection(
+            "legacy-raw-certification.log", legacy_raw_cert,
+            "raw", "--allow-legacy-raw-unversioned",
+        )
+        legacy_raw_cert_path = Path(directory) / "legacy-raw-certification-allowed.log"
+        legacy_raw_cert_path.write_text(legacy_raw_cert, encoding="utf-8")
+        enforce(
+            parse_log(legacy_raw_cert_path), "raw", MIN_CERTIFICATION_SAMPLES,
+            allow_legacy_raw_unversioned=True,
+        )
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("logs", nargs="*", type=Path)
     parser.add_argument("--mode", choices=("all", "keyboard", "controller", "raw"), default="all")
-    parser.add_argument("--min-input-samples", type=int, default=0)
+    parser.add_argument(
+        "--min-input-samples", type=int, default=MIN_CERTIFICATION_SAMPLES,
+        help=(
+            "minimum calls for the applicable certification populations "
+            f"(default: {MIN_CERTIFICATION_SAMPLES})"
+        ),
+    )
     parser.add_argument("--check-budget", action="store_true")
     parser.add_argument(
         "--allow-legacy-first-n",
         action="store_true",
         help="allow budget checks on legacy first-N artifacts for historical analysis",
+    )
+    parser.add_argument(
+        "--allow-legacy-raw-unversioned",
+        action="store_true",
+        help="allow budget checks on old Raw artifacts without surfaced call counts",
     )
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--markdown-out", type=Path)
@@ -741,19 +1057,26 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("at least one telemetry log is required unless --self-test is used")
         if args.min_input_samples < 0:
             raise SummaryError("--min-input-samples must be non-negative")
+        if args.check_budget and args.min_input_samples < MIN_CERTIFICATION_SAMPLES:
+            raise SummaryError(
+                "--check-budget requires --min-input-samples >= "
+                f"{MIN_CERTIFICATION_SAMPLES}; short runs are not certifiable"
+            )
         summaries = [parse_log(path) for path in args.logs]
         if args.check_budget:
             for summary in summaries:
                 enforce(
                     summary, args.mode, args.min_input_samples,
                     allow_legacy_first_n=args.allow_legacy_first_n,
+                    allow_legacy_raw_unversioned=args.allow_legacy_raw_unversioned,
                 )
         output: dict[str, Any] = {
-            "schema_version": 4,
+            "schema_version": 5,
             "mode": args.mode,
             "minimum_input_samples": args.min_input_samples,
             "budget_checked": args.check_budget,
             "allow_legacy_first_n": args.allow_legacy_first_n,
+            "allow_legacy_raw_unversioned": args.allow_legacy_raw_unversioned,
             "runs": summaries,
         }
         rendered_json = json.dumps(output, indent=2, sort_keys=True) + "\n"

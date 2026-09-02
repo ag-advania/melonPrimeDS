@@ -241,23 +241,27 @@ Generic performance state is thread-local and is bound to the owning
 `instance_id`; a configured frame CSV uses `%INSTANCE%` or an automatic
 `.instanceN` suffix and is closed by the owning thread-local state destructor,
 not an `atexit` callback. `MELONPRIME_PERF_CAPTURE_ONLY=1` keeps sorting,
-formatting, and stderr reporting until shutdown. Generic input metrics and
-explicit input latency retain the latest 2048 samples while their `calls`
-counter covers the whole report window/run; p50/p95/p99 and `retained_max`
-describe the retained ring, whereas `max` is the whole-window maximum. Raw
-lock telemetry is written after each measured mutex is released, and
-`DeferredDrain` reports only after its frame/stage scope has ended. The
-process-wide Raw final report belongs to the last `RawInputWinFilter` service
-release, so an earlier EmuThread shutdown cannot truncate a multi-instance
-capture; it is emitted before the final service destructor's cold HWND cleanup.
+formatting, and stderr reporting until shutdown and emits a machine-readable
+capture-only marker. Generic input metrics and explicit input latency retain the
+latest 2048 samples while their `calls` counter covers the whole report
+window/run; p50/p95/p99 and `retained_max` describe the retained ring, whereas
+`max` is the whole-window maximum. Raw capture-only uses
+`MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1` and emits its own marker. Raw lock
+telemetry is written after each measured mutex is released, and `DeferredDrain`
+reports only after its frame/stage scope has ended. The process-wide Raw final
+report belongs to the last `RawInputWinFilter` service release, so an earlier
+EmuThread shutdown cannot truncate a multi-instance capture; it is emitted
+before the final service destructor's cold HWND cleanup.
 Current parser output marks this input/stage retention as `latest_n`. Legacy
 generic first-N and historical explicit-latency artifacts are marked
 `legacy_first_n`; an over-cap legacy report cannot pass percentile budget
 enforcement without `--allow-legacy-first-n`.
 
-Raw stage reports expose `calls`, `retained`, p50/p95/p99, whole-window `max`,
-and retained-window `retained_max` for snapshot, late latch, and deferred
-drain. Zero-duration developer samples remain in their measured population.
+Raw stage reports expose `calls` and cumulative service/capture-lifetime `max`,
+`retained`, p50/p95/p99, and retained-window `retained_max` for snapshot, late
+latch, and deferred drain. Raw lock and batch totals have the same cumulative
+lifetime semantics. Zero-duration developer samples remain in their measured
+population.
 
 The input implementation keeps SRP boundaries as fixed data and direct calls:
 `JoystickBindingProgram` is the cold `CompiledInputBindings` boundary,

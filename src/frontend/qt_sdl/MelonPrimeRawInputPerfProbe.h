@@ -536,6 +536,9 @@ inline void Report(bool force) noexcept
 
     const auto& stats = Stats();
     std::fprintf(stderr,
+        "[MelonPrimeRawPerf] capture_mode capture_only=%u\n",
+        IsCaptureOnly() ? 1u : 0u);
+    std::fprintf(stderr,
         "[MelonPrimeRawPerf] mutex_acq=%llu mutex_wait_ns=%llu "
         "mutex_hold_ns=%llu mutex_wait_max_ns=%llu mutex_hold_max_ns=%llu "
         "raw_buffer_calls=%llu raw_buffer_ns=%llu raw_buffer_max_ns=%llu "

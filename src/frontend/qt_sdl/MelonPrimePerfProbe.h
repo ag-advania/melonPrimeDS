@@ -648,6 +648,10 @@ inline void ReportInputMetricSummary(const State& st)
         return metric(inputMetric).count;
     };
     std::fprintf(stderr,
+        "[MelonPrimePerf] capture_mode instance_id=%llu capture_only=%u\n",
+        static_cast<unsigned long long>(st.instanceId),
+        IsCaptureOnly() ? 1u : 0u);
+    std::fprintf(stderr,
         "[MelonPrimePerf] input_metric_us instance_id=%llu "
         "input_total[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
         "joystick_lock_wait[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "

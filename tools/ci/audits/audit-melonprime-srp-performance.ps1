@@ -2312,14 +2312,23 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
     $perfProbeText -notmatch 'uint64_t\s+inputToPresentEndCalls' -or
     $perfProbeText -notmatch 'retained=' -or
     $perfProbeText -notmatch 'retained_max=' -or
+    $perfProbeText -notmatch 'capture_mode' -or
+    $perfProbeText -notmatch 'capture_only=' -or
     $inputPerfSummarizerText -notmatch 'RETENTION_LATEST_N' -or
     $inputPerfSummarizerText -notmatch 'RETENTION_LEGACY_FIRST_N' -or
     $inputPerfSummarizerText -notmatch 'allow-legacy-first-n' -or
+    $inputPerfSummarizerText -notmatch 'allow-legacy-raw-unversioned' -or
+    $inputPerfSummarizerText -notmatch 'MIN_CERTIFICATION_SAMPLES' -or
+    $inputPerfSummarizerText -notmatch 'CONTROLLER_EVIDENCE_METRICS' -or
+    $inputPerfSummarizerText -notmatch 'RAW_REQUIRED_STAGES' -or
+    $inputPerfSummarizerText -notmatch 'require_capture_only' -or
+    $inputPerfSummarizerText -notmatch 'generic_capture_only_by_instance' -or
+    $inputPerfSummarizerText -notmatch 'raw_capture_only' -or
     $inputPerfSummarizerText -notmatch 'retention_mode' -or
-    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*4' -or
+    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*5' -or
     $inputContractText -notmatch 'latest-N' -or
     $inputContractText -notmatch 'retained_max' -or
-    $inputContractText -notmatch 'whole-window.*max' -or
+    $inputContractText -notmatch 'whole live-report window' -or
     $physicalPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
     $physicalPerfRunnerText -notmatch 'frames\.%INSTANCE%\.csv' -or
     $presentPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
@@ -2451,8 +2460,8 @@ if ($rawWinFilterText -match
     Add-Error 'Rule CF: Raw recursive-lock measurement boundary is incomplete'
 }
 
-# CG: Raw stage reports expose the same retention provenance as generic input:
-# calls cover the whole report, while percentile/retained_max cover latest-N.
+# CG: Raw stage reports expose retention provenance while their calls/maxima and
+# lock/batch totals retain cumulative Raw service/capture-lifetime semantics.
 if ($rawInputPerfText -notmatch
         '(?s)snapshot\[calls=.*?retained=.*?p50=.*?retained_max=' -or
     $rawInputPerfText -notmatch
@@ -2464,8 +2473,24 @@ if ($rawInputPerfText -notmatch
     $rawInputPerfText -notmatch 'result\.retainedMax' -or
     $inputPerfSummarizerText -notmatch 'RAW_STAGE_RE' -or
     $inputPerfSummarizerText -notmatch 'snapshot_retained_max' -or
-    $inputPerfSummarizerText -notmatch 'stage_metrics') {
+    $inputPerfSummarizerText -notmatch 'stage_metrics' -or
+    $inputPerfSummarizerText -notmatch 'RAW_LIFETIME_SCOPE' -or
+    $inputPerfSummarizerText -notmatch 'raw_service_lifetime' -or
+    $rawInputPerfText -notmatch 'capture_mode' -or
+    $rawInputPerfText -notmatch 'capture_only=') {
     Add-Error 'Rule CG: Raw stage latest-N retention semantics are not fully surfaced'
+}
+
+# CH: budget certification is fail-closed by mode and by measured population.
+# A generic input total alone cannot certify controller or Raw mode, and a live
+# report cannot be used as a capture-only certification artifact.
+if ($inputPerfSummarizerText -notmatch 'joystick_sample' -or
+    $inputPerfSummarizerText -notmatch 'keyboard budget certification found' -or
+    $inputPerfSummarizerText -notmatch 'raw snapshot has' -or
+    $inputPerfSummarizerText -notmatch 'short runs are not certifiable' -or
+    $inputPerfSummarizerText -notmatch
+        'raw budget certification cannot verify sample counts') {
+    Add-Error 'Rule CH: mode-specific budget evidence gates are incomplete'
 }
 
 # CC: joystick enumeration is a cold, process-serialized owner operation;

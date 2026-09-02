@@ -1211,6 +1211,8 @@ def main() -> None:
         "uint64_t inputToPresentEndCalls",
         "retained=",
         "retained_max=",
+        "capture_mode",
+        "capture_only=",
     ):
         require(perf, needle, "latest-N input telemetry retention")
     for needle in (
@@ -1218,7 +1220,12 @@ def main() -> None:
         "RETENTION_LEGACY_FIRST_N",
         "legacy_first_n",
         "--allow-legacy-first-n",
-        '"schema_version": 4',
+        "MIN_CERTIFICATION_SAMPLES",
+        "CONTROLLER_EVIDENCE_METRICS",
+        "RAW_REQUIRED_STAGES",
+        "require_capture_only",
+        "--allow-legacy-raw-unversioned",
+        '"schema_version": 5',
         '"retention_mode": retention_mode',
     ):
         require(perf_summarizer, needle, "telemetry retention provenance")
@@ -1229,6 +1236,8 @@ def main() -> None:
         "result.calls = total",
         "result.retained = count",
         "result.retainedMax",
+        "capture_mode",
+        "capture_only=",
     ):
         require(raw_perf, needle, "Raw stage retention semantics")
     if "if (!Enabled() || elapsedNs == 0)" in raw_perf:
