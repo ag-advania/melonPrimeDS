@@ -32,6 +32,11 @@ struct JoystickDescriptor {
     std::string name;
 };
 
+struct SdlProcessTiming {
+    Uint64 waitTicks = 0;
+    Uint64 holdTicks = 0;
+};
+
 class MelonPrimeJoystickDevice final {
 public:
     MelonPrimeJoystickDevice();
@@ -54,7 +59,7 @@ public:
     // lock, but device pointer lifetime and reads stay on this device lock.
     bool OpenLocked(int& joystickId) noexcept;
     void CloseLocked() noexcept;
-    void UpdateLocked() noexcept;
+    void UpdateLocked(SdlProcessTiming* timing = nullptr) noexcept;
     [[nodiscard]] bool IsAttachedLocked() const noexcept;
     [[nodiscard]] bool HasJoystickLocked() const noexcept
     {

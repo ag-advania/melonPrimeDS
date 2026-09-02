@@ -82,6 +82,9 @@ struct Counters {
     std::atomic<uint64_t> frameMutexWaitNs{ 0 };
     std::atomic<uint64_t> frameMutexHoldNs{ 0 };
     std::atomic<uint64_t> frameMutexMaxWaitNs{ 0 };
+    std::atomic<uint64_t> recursiveAcquisitions{ 0 };
+    std::atomic<uint64_t> subscriptionMaxRecursionDepth{ 0 };
+    std::atomic<uint64_t> frameMaxRecursionDepth{ 0 };
     std::atomic<uint64_t> rawBufferCalls{ 0 };
     std::atomic<uint64_t> rawBufferNs{ 0 };
     std::atomic<uint64_t> maxRawBufferNs{ 0 };
@@ -170,6 +173,64 @@ inline void RecordMutexHold(
         stats.subscriptionMutexHoldNs.fetch_add(elapsedNs, std::memory_order_relaxed);
     else
         stats.frameMutexHoldNs.fetch_add(elapsedNs, std::memory_order_relaxed);
+}
+
+struct LockDepthSlot {
+    const void* mutex = nullptr;
+    uint32_t depth = 0;
+};
+
+// Telemetry-only bookkeeping. The fixed slots avoid introducing a map or
+// allocation into the lock wrapper while still distinguishing nested locks on
+// different subscription-local frame mutexes.
+static constexpr uint32_t kLockDepthSlotCap = 8;
+inline thread_local LockDepthSlot g_subscriptionLockDepth[kLockDepthSlotCap]{};
+inline thread_local LockDepthSlot g_frameLockDepth[kLockDepthSlotCap]{};
+
+inline uint32_t EnterLockDepth(
+    LockDepthSlot* depthSlots, const void* mutex) noexcept
+{
+    for (uint32_t i = 0; i < kLockDepthSlotCap; ++i) {
+        if (depthSlots[i].mutex == mutex)
+            return ++depthSlots[i].depth;
+    }
+    for (uint32_t i = 0; i < kLockDepthSlotCap; ++i) {
+        if (!depthSlots[i].mutex) {
+            depthSlots[i].mutex = mutex;
+            depthSlots[i].depth = 1;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+inline void LeaveLockDepth(
+    LockDepthSlot* depthSlots, const void* mutex) noexcept
+{
+    for (uint32_t i = 0; i < kLockDepthSlotCap; ++i) {
+        if (depthSlots[i].mutex != mutex)
+            continue;
+        if (depthSlots[i].depth > 1) {
+            --depthSlots[i].depth;
+        }
+        else {
+            depthSlots[i] = {};
+        }
+        return;
+    }
+}
+
+inline void RecordRecursiveAcquisition(
+    LockKind kind, uint32_t depth) noexcept
+{
+    if (!Enabled() || depth <= 1)
+        return;
+    auto& stats = Stats();
+    stats.recursiveAcquisitions.fetch_add(1, std::memory_order_relaxed);
+    if (kind == LockKind::Subscription)
+        AtomicMax(stats.subscriptionMaxRecursionDepth, depth);
+    else
+        AtomicMax(stats.frameMaxRecursionDepth, depth);
 }
 
 inline void RecordRawBuffer(uint64_t elapsedNs) noexcept
@@ -274,9 +335,14 @@ public:
         , m_site(site)
         , m_waitStartNs(m_measure ? NowNs() : 0)
         , m_acquiredNs(0)
+        , m_mutex(&mutex)
+        , m_depth(0)
     {
         m_lock.lock();
-        m_acquiredNs = m_measure ? NowNs() : 0;
+        if (m_measure) {
+            m_acquiredNs = NowNs();
+            m_depth = EnterLockDepth(g_subscriptionLockDepth, m_mutex);
+        }
     }
 
     ~SubscriptionMutexGuard()
@@ -291,6 +357,8 @@ public:
             if (releaseNs >= m_acquiredNs)
                 RecordMutexHold(
                     releaseNs - m_acquiredNs, LockKind::Subscription);
+            RecordRecursiveAcquisition(LockKind::Subscription, m_depth);
+            LeaveLockDepth(g_subscriptionLockDepth, m_mutex);
         }
     }
 
@@ -303,6 +371,8 @@ private:
     LockSite m_site;
     uint64_t m_waitStartNs;
     uint64_t m_acquiredNs;
+    std::recursive_mutex* m_mutex;
+    uint32_t m_depth;
 };
 
 // The frame/data-plane lock is intentionally per subscription. Reusing the
@@ -317,9 +387,14 @@ public:
         , m_site(site)
         , m_waitStartNs(m_measure ? NowNs() : 0)
         , m_acquiredNs(0)
+        , m_mutex(&mutex)
+        , m_depth(0)
     {
         m_lock.lock();
-        m_acquiredNs = m_measure ? NowNs() : 0;
+        if (m_measure) {
+            m_acquiredNs = NowNs();
+            m_depth = EnterLockDepth(g_frameLockDepth, m_mutex);
+        }
     }
 
     ~FrameMutexGuard()
@@ -334,6 +409,8 @@ public:
             if (releaseNs >= m_acquiredNs)
                 RecordMutexHold(
                     releaseNs - m_acquiredNs, LockKind::Frame);
+            RecordRecursiveAcquisition(LockKind::Frame, m_depth);
+            LeaveLockDepth(g_frameLockDepth, m_mutex);
         }
     }
 
@@ -346,6 +423,8 @@ private:
     LockSite m_site;
     uint64_t m_waitStartNs;
     uint64_t m_acquiredNs;
+    std::recursive_mutex* m_mutex;
+    uint32_t m_depth;
 };
 
 class ScopedStage {
@@ -471,7 +550,9 @@ inline void Report(bool force) noexcept
         "subscription_mutex_acq=%llu subscription_mutex_wait_ns=%llu "
         "subscription_mutex_hold_ns=%llu subscription_mutex_max_wait_ns=%llu "
         "frame_mutex_acq=%llu frame_mutex_wait_ns=%llu "
-        "frame_mutex_hold_ns=%llu frame_mutex_max_wait_ns=%llu\n",
+        "frame_mutex_hold_ns=%llu frame_mutex_max_wait_ns=%llu "
+        "recursive_acquisitions=%llu subscription_max_recursion_depth=%llu "
+        "frame_max_recursion_depth=%llu\n",
         static_cast<unsigned long long>(stats.subscriptionMutexAcquisitions.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.subscriptionMutexWaitNs.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.subscriptionMutexHoldNs.load(std::memory_order_relaxed)),
@@ -479,7 +560,10 @@ inline void Report(bool force) noexcept
         static_cast<unsigned long long>(stats.frameMutexAcquisitions.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.frameMutexWaitNs.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.frameMutexHoldNs.load(std::memory_order_relaxed)),
-        static_cast<unsigned long long>(stats.frameMutexMaxWaitNs.load(std::memory_order_relaxed)));
+        static_cast<unsigned long long>(stats.frameMutexMaxWaitNs.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(stats.recursiveAcquisitions.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(stats.subscriptionMaxRecursionDepth.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(stats.frameMaxRecursionDepth.load(std::memory_order_relaxed)));
 
     const StagePercentiles snapshot = SummarizeStage(
         stats.stage[static_cast<uint32_t>(Stage::RawSnapshot)]);
@@ -532,12 +616,7 @@ inline void ShutdownReport() noexcept
 {
     if (!Enabled())
         return;
-    static std::atomic_bool shutdownReported{ false };
-    bool expected = false;
-    if (shutdownReported.compare_exchange_strong(
-            expected, true, std::memory_order_relaxed,
-            std::memory_order_relaxed))
-        Report(true);
+    Report(true);
 }
 
 #else
@@ -574,6 +653,11 @@ inline void CountStuckRecovery(bool) noexcept {}
 inline void RecordRawBatch(uint64_t) noexcept {}
 inline void RecordLateLatchDelta(int, int) noexcept {}
 inline void RecordPostDrawEvents(uint64_t) noexcept {}
+enum class LockKind : uint8_t {
+    Subscription,
+    Frame,
+};
+inline void RecordRecursiveAcquisition(LockKind, uint32_t) noexcept {}
 inline void MaybeReport() noexcept {}
 inline void ShutdownReport() noexcept {}
 

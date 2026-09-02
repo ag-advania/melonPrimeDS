@@ -19,10 +19,12 @@ std::mutex s_sdlProcessMutex;
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
 class SdlProcessMutexGuard final {
 public:
-    explicit SdlProcessMutexGuard(std::mutex& mutex)
+    explicit SdlProcessMutexGuard(
+        std::mutex& mutex, SdlProcessTiming* timing = nullptr)
         : m_waitStart(MelonPrimePerf::ReadTicksIfEnabled())
         , m_lock(mutex)
         , m_holdStart(MelonPrimePerf::ReadTicksIfEnabled())
+        , m_timing(timing)
     {
     }
 
@@ -30,14 +32,12 @@ public:
     {
         const Uint64 releaseTick = MelonPrimePerf::ReadTicksIfEnabled();
         m_lock.unlock();
-        if (m_holdStart >= m_waitStart)
-            MelonPrimePerf::RecordInputMetricTicks(
-                MelonPrimePerf::InputMetric::JoystickProcessMutexWait,
-                m_holdStart - m_waitStart);
-        if (releaseTick >= m_holdStart)
-            MelonPrimePerf::RecordInputMetricTicks(
-                MelonPrimePerf::InputMetric::JoystickProcessMutexHold,
-                releaseTick - m_holdStart);
+        if (!m_timing)
+            return;
+        m_timing->waitTicks = m_holdStart >= m_waitStart
+            ? m_holdStart - m_waitStart : 0;
+        m_timing->holdTicks = releaseTick >= m_holdStart
+            ? releaseTick - m_holdStart : 0;
     }
 
     SdlProcessMutexGuard(const SdlProcessMutexGuard&) = delete;
@@ -47,9 +47,23 @@ private:
     Uint64 m_waitStart;
     std::unique_lock<std::mutex> m_lock;
     Uint64 m_holdStart;
+    SdlProcessTiming* m_timing;
 };
 #else
-using SdlProcessMutexGuard = std::lock_guard<std::mutex>;
+class SdlProcessMutexGuard final {
+public:
+    explicit SdlProcessMutexGuard(
+        std::mutex& mutex, SdlProcessTiming* = nullptr)
+        : m_lock(mutex)
+    {
+    }
+
+    SdlProcessMutexGuard(const SdlProcessMutexGuard&) = delete;
+    SdlProcessMutexGuard& operator=(const SdlProcessMutexGuard&) = delete;
+
+private:
+    std::lock_guard<std::mutex> m_lock;
+};
 #endif
 
 } // namespace
@@ -137,9 +151,9 @@ bool MelonPrimeJoystickDevice::OpenLocked(int& joystickId) noexcept
     return m_joystick != nullptr;
 }
 
-void MelonPrimeJoystickDevice::UpdateLocked() noexcept
+void MelonPrimeJoystickDevice::UpdateLocked(SdlProcessTiming* timing) noexcept
 {
-    SdlProcessMutexGuard processLock(s_sdlProcessMutex);
+    SdlProcessMutexGuard processLock(s_sdlProcessMutex, timing);
     SDL_JoystickUpdate();
 }
 

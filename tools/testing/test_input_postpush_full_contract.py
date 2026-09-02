@@ -684,6 +684,74 @@ def check_mac_handoff_model() -> None:
     assert hid_allowed
 
 
+def check_input_telemetry_retention_model() -> None:
+    # Capture-only reports must describe all observed calls while percentile
+    # samples remain the latest fixed-capacity window. Keep an early outlier
+    # outside that window to prove whole-run max and retained max differ.
+    cap = 2048
+    values = [100000] + list(range(1, 5000))
+    slots = [None] * cap
+    write = 0
+    retained_count = 0
+    whole_max = 0
+    for value in values:
+        slots[write] = value
+        write = (write + 1) % cap
+        retained_count = min(retained_count + 1, cap)
+        whole_max = max(whole_max, value)
+
+    retained = [
+        slots[(write + cap - retained_count + index) % cap]
+        for index in range(retained_count)
+    ]
+    assert len(values) == 5000
+    assert retained_count == cap
+    assert retained == values[-cap:]
+    assert whole_max == 100000
+    assert max(retained) == 4999
+
+    # Explicit latency uses the same latest-N contract rather than a smaller
+    # first-samples buffer.
+    latency_slots = [None] * cap
+    latency_write = 0
+    for value in range(len(values)):
+        latency_slots[latency_write] = value
+        latency_write = (latency_write + 1) % cap
+    latency_retained = [
+        latency_slots[(latency_write + cap - cap + index) % cap]
+        for index in range(cap)
+    ]
+    assert latency_retained == list(range(len(values) - cap, len(values)))
+
+
+def check_raw_service_exit_order_model() -> None:
+    # Raw counters are process-wide, but the final report belongs to the last
+    # Raw service release. An early EmuThread exit must not report or freeze A
+    # while B is still collecting events.
+    refcount = 0
+    raw_events = 0
+    reports = []
+
+    def acquire() -> None:
+        nonlocal refcount
+        refcount += 1
+
+    def release() -> None:
+        nonlocal refcount
+        refcount -= 1
+        if refcount == 0:
+            reports.append(raw_events)
+
+    acquire()  # A
+    acquire()  # B
+    raw_events += 10
+    release()   # A stops; no final report
+    assert reports == []
+    raw_events += 7  # B continues after A's exit
+    release()         # B is the final service release
+    assert reports == [17]
+
+
 def check_windows_raw_reaudit_models() -> None:
     # P1-001: Raw ownership is a cold classification, not an approximation of
     # Qt's modifier/chord identity. The two live source masks are disjoint;
@@ -1014,6 +1082,7 @@ def main() -> None:
     raw_filter = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp")
     raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
     raw_perf = source("src/frontend/qt_sdl/MelonPrimeRawInputPerfProbe.h")
+    perf_shutdown = source("src/frontend/qt_sdl/MelonPrimeEmuThreadPerfShutdown.inc")
     perf = source("src/frontend/qt_sdl/MelonPrimePerfProbe.h")
     cmake_presets = source("CMakePresets.json")
     windows_workflow = source(".github/workflows/build-windows.yml")
@@ -1046,7 +1115,7 @@ def main() -> None:
         "SDL_GameController* m_controller",
         "bool OpenLocked(int& joystickId) noexcept",
         "void CloseLocked() noexcept",
-        "void UpdateLocked() noexcept",
+        "void UpdateLocked(SdlProcessTiming* timing = nullptr) noexcept",
         "[[nodiscard]] bool SampleSourceLocked(",
         "void RumbleStartLocked(uint32_t lenMs) noexcept",
         "[[nodiscard]] bool ReadMotionLocked(",
@@ -1084,7 +1153,31 @@ def main() -> None:
         "JoystickProcessMutexHold",
     ):
         require(perf, needle, "SDL process mutex telemetry metric")
-        require(joystick_device, needle, "SDL process mutex telemetry wiring")
+        require(input_cpp, needle, "SDL process mutex telemetry wiring")
+    require(
+        joystick_device_header,
+        "struct SdlProcessTiming",
+        "SDL process timing POD",
+    )
+    require(
+        joystick_device,
+        "SdlProcessTiming* timing",
+        "SDL process timing POD",
+    )
+    require(
+        input_cpp,
+        "joystickDevice.UpdateLocked(processTiming)",
+        "SDL process timing return",
+    )
+    for needle in (
+        "static constexpr uint32_t kLatencyCap = 2048",
+        "uint32_t inputMetricWrite",
+        "uint64_t inputToRunFrameCalls",
+        "uint64_t inputToPresentEndCalls",
+        "retained=",
+        "retained_max=",
+    ):
+        require(perf, needle, "latest-N input telemetry retention")
     require(joystick_device, "class SdlProcessMutexGuard final", "SDL process mutex guard")
     require(joystick_device, "std::mutex s_sdlProcessMutex", "process-level SDL lock")
     require(joystick_device, "SDL_JoystickUpdate()", "SDL update ownership")
@@ -2138,12 +2231,46 @@ def main() -> None:
     )
     if (
         not raw_reset
-        or raw_reset.index("std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)")
+        or raw_reset.index("RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex)")
         > raw_reset.index("state->resetAll()")
     ):
         raise AssertionError("foreign Raw reset must hold the subscription mutex first")
     if "drainPendingMessages();" in raw_reset:
         raise AssertionError("frame-locked Raw reset must use the locked drain helper")
+
+    # INPUT-MEASURE-102: the process-wide Raw aggregate is finalized by the
+    # last service release, never by an individual EmuThread shutdown.
+    raw_release = body(
+        raw_filter,
+        "void RawInputWinFilter::Release()",
+        "RawInputWinFilter::RawInputWinFilter()",
+    )
+    if (
+        raw_filter.count("RawInputPerf::ShutdownReport()") != 1
+        or "RawInputPerf::ShutdownReport()" in perf_shutdown
+        or "shutdownReported" in raw_perf
+        or not raw_release
+        or raw_release.index("delete s_instance")
+        > raw_release.index("RawInputPerf::ShutdownReport()")
+        or "if (--s_refCount == 0)" not in raw_release
+    ):
+        raise AssertionError(
+            "Raw final report must be owned by the final process service release"
+        )
+
+    # INPUT-LOCK-104: keep the recursive type until this developer-only
+    # measurement reports whether the runtime actually re-enters a mutex.
+    for needle in (
+        "std::recursive_mutex frameMutex",
+        "recursiveAcquisitions",
+        "subscriptionMaxRecursionDepth",
+        "frameMaxRecursionDepth",
+        "EnterLockDepth",
+        "RecordRecursiveAcquisition",
+    ):
+        require(raw_perf + raw_filter, needle, "Raw recursive-lock measurement")
+    if "std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)" in raw_filter:
+        raise AssertionError("Raw subscription mutex bypasses its measured guard")
 
     # AW+: fixed-capacity VK mapping must turn overflow into a whole-list
     # fallback rather than silently binding a prefix.
@@ -2186,7 +2313,7 @@ def main() -> None:
         "owner->RequestRegistrationReset()",
         "PlatformInputOwnerService::RequestRegistrationReset",
         "m_inputSubscription.ConsumeRegistrationReset()",
-        "std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)",
+        "RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex)",
     ):
         require(input_subscription + raw_filter + game_input, needle, "Raw subscription single-writer")
     if "BeginRegistrationGeneration(*previous->owner)" in raw_filter:
@@ -2259,6 +2386,8 @@ def main() -> None:
     check_wheel_count_model()
     check_packed_wrap_model()
     check_mac_handoff_model()
+    check_input_telemetry_retention_model()
+    check_raw_service_exit_order_model()
     print("post-push full input re-audit contract: PASS")
 
 

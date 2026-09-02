@@ -30,9 +30,21 @@ INPUT_RE = re.compile(
 )
 INPUT_INSTANCE_RE = re.compile(r"(?:^|\s)instance_id=(?P<id>\d+)(?:\s|$)")
 INPUT_METRIC_RE = re.compile(
-    r"(?P<name>[a-z0-9_]+)\[c=(?P<c>\d+) "
+    r"(?P<name>[a-z0-9_]+)\[c=(?P<c>\d+)"
+    r"(?: retained=(?P<retained>\d+))? "
     r"p50=(?P<p50>[0-9.]+) p95=(?P<p95>[0-9.]+) "
-    r"p99=(?P<p99>[0-9.]+) max=(?P<max>[0-9.]+)\]"
+    r"p99=(?P<p99>[0-9.]+) max=(?P<max>[0-9.]+)"
+    r"(?: retained_max=(?P<retained_max>[0-9.]+))?\]"
+)
+EXPLICIT_LATENCY_RE = re.compile(
+    r"^\[MelonPrimePerf\] explicit_latency_us "
+    r"(?P<body>.*)$"
+)
+EXPLICIT_LATENCY_METRIC_RE = re.compile(
+    r"(?P<name>[a-z0-9_]+)=calls=(?P<calls>\d+) "
+    r"retained=(?P<retained>\d+) p50=(?P<p50>[0-9.]+) "
+    r"p95=(?P<p95>[0-9.]+) p99=(?P<p99>[0-9.]+) "
+    r"max=(?P<max>[0-9.]+) retained_max=(?P<retained_max>[0-9.]+)"
 )
 RAW_STAGE_RE = re.compile(
     r"^\[MelonPrimeRawPerf\] stage_us "
@@ -70,6 +82,12 @@ INPUT_METRICS = (
     "joystick_process_mutex_hold",
 )
 
+EXPLICIT_LATENCY_METRICS = (
+    "frame_input_sample_to_runframe_begin_us",
+    "input_sample_to_present_end_us",
+)
+INPUT_RETENTION_CAP = 2048
+
 
 class SummaryError(RuntimeError):
     """Raised when a telemetry artifact cannot support a safe summary."""
@@ -88,12 +106,61 @@ def parse_float(value: str) -> float:
 def parse_input_body(body: str) -> dict[str, dict[str, float | int]]:
     result: dict[str, dict[str, float | int]] = {}
     for match in INPUT_METRIC_RE.finditer(body):
+        calls = int(match.group("c"))
+        retained = match.group("retained")
+        retained_max = match.group("retained_max")
+        whole_max_us = parse_float(match.group("max"))
+        # Pre-retention logs did not print the retained count. Their samples
+        # were capped at the same latest-N capacity, so infer that cap while
+        # preserving the full call count for budget checks.
+        retained_count = (
+            int(retained)
+            if retained is not None
+            else min(calls, INPUT_RETENTION_CAP)
+        )
+        if retained_count > calls or retained_count > INPUT_RETENTION_CAP:
+            raise SummaryError(
+                f"{match.group('name')} retained count is invalid: "
+                f"calls={calls}, retained={retained_count}"
+            )
         result[match.group("name")] = {
-            "calls": int(match.group("c")),
+            "calls": calls,
+            "retained": retained_count,
             "p50_us": parse_float(match.group("p50")),
             "p95_us": parse_float(match.group("p95")),
             "p99_us": parse_float(match.group("p99")),
-            "max_us": parse_float(match.group("max")),
+            # max_us remains the whole-window maximum for budget checks. The
+            # percentile and retained_max values describe the latest-N ring.
+            "max_us": whole_max_us,
+            "whole_max_us": whole_max_us,
+            "retained_max_us": (
+                parse_float(retained_max)
+                if retained_max is not None else whole_max_us
+            ),
+        }
+    return result
+
+
+def parse_explicit_latency_body(body: str) -> dict[str, dict[str, float | int]]:
+    result: dict[str, dict[str, float | int]] = {}
+    for match in EXPLICIT_LATENCY_METRIC_RE.finditer(body):
+        calls = int(match.group("calls"))
+        retained = int(match.group("retained"))
+        if retained > calls or retained > INPUT_RETENTION_CAP:
+            raise SummaryError(
+                f"{match.group('name')} retained count is invalid: "
+                f"calls={calls}, retained={retained}"
+            )
+        whole_max_us = parse_float(match.group("max"))
+        result[match.group("name")] = {
+            "calls": calls,
+            "retained": retained,
+            "p50_us": parse_float(match.group("p50")),
+            "p95_us": parse_float(match.group("p95")),
+            "p99_us": parse_float(match.group("p99")),
+            "max_us": whole_max_us,
+            "whole_max_us": whole_max_us,
+            "retained_max_us": parse_float(match.group("retained_max")),
         }
     return result
 
@@ -119,6 +186,8 @@ def parse_log(path: Path) -> dict[str, Any]:
 
     input_reports: list[dict[str, dict[str, float | int]]] = []
     latest_input_by_instance: dict[str, dict[str, dict[str, float | int]]] = {}
+    latency_reports: list[dict[str, dict[str, float | int]]] = []
+    latest_latency_by_instance: dict[str, dict[str, dict[str, float | int]]] = {}
     raw_reports: list[dict[str, Any]] = []
     lock_reports: list[dict[str, int]] = []
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -132,6 +201,15 @@ def parse_log(path: Path) -> dict[str, Any]:
                 instance_key = str(instance_id) if instance_id is not None else "unbound"
                 latest_input_by_instance[instance_key] = parsed
             continue
+        latency_match = EXPLICIT_LATENCY_RE.match(line)
+        if latency_match:
+            parsed = parse_explicit_latency_body(latency_match.group("body"))
+            if parsed:
+                latency_reports.append(parsed)
+                instance_id = parse_input_instance_id(latency_match.group("body"))
+                instance_key = str(instance_id) if instance_id is not None else "unbound"
+                latest_latency_by_instance[instance_key] = parsed
+            continue
         raw_match = RAW_STAGE_RE.match(line)
         if raw_match:
             raw_reports.append(parse_raw_stage(raw_match))
@@ -143,7 +221,7 @@ def parse_log(path: Path) -> dict[str, Any]:
                 for key, value in KEY_VALUE_RE.findall(lock_match.group("body"))
             })
 
-    if not input_reports and not raw_reports:
+    if not input_reports and not latency_reports and not raw_reports:
         raise SummaryError(
             f"{path} contains neither [MelonPrimePerf] input_metric_us nor "
             "[MelonPrimeRawPerf] stage_us telemetry"
@@ -162,6 +240,14 @@ def parse_log(path: Path) -> dict[str, Any]:
             )
         ],
         "latest_input_by_instance": latest_input_by_instance,
+        "latency_report_count": len(latency_reports),
+        "latency_instance_ids": [
+            int(key) for key in sorted(
+                (key for key in latest_latency_by_instance if key != "unbound"),
+                key=int,
+            )
+        ],
+        "latest_latency_by_instance": latest_latency_by_instance,
         "raw_report_count": len(raw_reports),
         "latest_input": latest_input,
         "latest_raw": latest_raw,
@@ -235,17 +321,41 @@ def markdown(summary: dict[str, Any]) -> str:
             "",
             f"## Input instance `{instance_key}`",
             "",
-            "| Metric | Calls | p50 (us) | p95 (us) | p99 (us) | Max (us) |",
-            "|---|---:|---:|---:|---:|---:|",
+            "| Metric | Calls | Retained | p50 (us) | p95 (us) | p99 (us) | Max (us) | Retained max (us) |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
         ])
         for name in INPUT_METRICS:
             metric = reports_by_instance[instance_key].get(name)
             if metric is None:
                 continue
             lines.append(
-                f"| `{name}` | {metric['calls']} | {metric['p50_us']:.1f} | "
-                f"{metric['p95_us']:.1f} | {metric['p99_us']:.1f} | "
-                f"{metric['max_us']:.1f} |"
+                f"| `{name}` | {metric['calls']} | {metric['retained']} | "
+                f"{metric['p50_us']:.1f} | {metric['p95_us']:.1f} | "
+                f"{metric['p99_us']:.1f} | {metric['max_us']:.1f} | "
+                f"{metric['retained_max_us']:.1f} |"
+            )
+    latency_by_instance = summary.get("latest_latency_by_instance") or {}
+    latency_keys = sorted(
+        latency_by_instance,
+        key=lambda key: (key == "unbound", int(key) if key != "unbound" else 0),
+    )
+    for instance_key in latency_keys:
+        lines.extend([
+            "",
+            f"## Explicit input latency instance `{instance_key}`",
+            "",
+            "| Metric | Calls | Retained | p50 (us) | p95 (us) | p99 (us) | Max (us) | Retained max (us) |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+        ])
+        for name in EXPLICIT_LATENCY_METRICS:
+            metric = latency_by_instance[instance_key].get(name)
+            if metric is None:
+                continue
+            lines.append(
+                f"| `{name}` | {metric['calls']} | {metric['retained']} | "
+                f"{metric['p50_us']:.1f} | {metric['p95_us']:.1f} | "
+                f"{metric['p99_us']:.1f} | {metric['max_us']:.1f} | "
+                f"{metric['retained_max_us']:.1f} |"
             )
     raw = summary.get("latest_raw")
     if raw is not None:
@@ -283,7 +393,9 @@ def self_test() -> None:
     import tempfile
 
     text = "\n".join([
-        "[MelonPrimePerf] input_metric_us instance_id=0 input_total[c=1001 p50=4.0 p95=8.0 p99=12.0 max=20.0] joystick_lock_wait[c=1001 p50=0.1 p95=0.2 p99=0.4 max=1.0] joystick_sample[c=1001 p50=5.0 p95=7.0 p99=9.0 max=15.0] joystick_project[c=1001 p50=1.0 p95=2.0 p99=3.0 max=5.0] joystick_sdl_update[c=1001 p50=0.5 p95=0.8 p99=1.0 max=2.0] joystick_process_mutex_wait[c=1001 p50=0.0 p95=0.1 p99=0.2 max=0.5] joystick_process_mutex_hold[c=1001 p50=0.2 p95=0.4 p99=0.6 max=1.0]",
+        "[MelonPrimePerf] input_metric_us instance_id=0 input_total[c=5000 p50=4.0 p95=8.0 p99=12.0 max=20.0] joystick_lock_wait[c=1001 p50=0.1 p95=0.2 p99=0.4 max=1.0] joystick_sample[c=1001 p50=5.0 p95=7.0 p99=9.0 max=15.0] joystick_project[c=1001 p50=1.0 p95=2.0 p99=3.0 max=5.0] joystick_sdl_update[c=1001 p50=0.5 p95=0.8 p99=1.0 max=2.0] joystick_process_mutex_wait[c=1001 p50=0.0 p95=0.1 p99=0.2 max=0.5] joystick_process_mutex_hold[c=1001 p50=0.2 p95=0.4 p99=0.6 max=1.0]",
+        "[MelonPrimePerf] input_metric_us instance_id=1 input_total[c=5000 retained=2048 p50=4.0 p95=8.0 p99=12.0 max=30.0 retained_max=20.0]",
+        "[MelonPrimePerf] explicit_latency_us instance_id=1 frame_input_sample_to_runframe_begin_us=calls=5000 retained=2048 p50=5.0 p95=9.0 p99=13.0 max=31.0 retained_max=21.0 input_sample_to_present_end_us=calls=5000 retained=2048 p50=7.0 p95=11.0 p99=15.0 max=33.0 retained_max=23.0",
         "[MelonPrimeRawPerf] stage_us snapshot[p50=4.0 p95=6.0 p99=8.0 max=12.0] late_latch[p50=3.0 p95=5.0 p99=7.0 max=10.0] deferred_drain[p50=20.0 p95=25.0 p99=30.0 max=40.0] lock_wait_ns snapshot=10 late=20 deferred=30 hidden=40 native=50 | raw_batch calls=1001 nonempty=10 empty=991 events=20 late_delta_claims=5 post_draw_events=10",
         "[MelonPrimeRawPerf] lock_planes subscription_mutex_acq=2 subscription_mutex_wait_ns=3 subscription_mutex_hold_ns=4 subscription_mutex_max_wait_ns=5 frame_mutex_acq=1001 frame_mutex_wait_ns=6 frame_mutex_hold_ns=7 frame_mutex_max_wait_ns=8",
     ]) + "\n"
@@ -292,10 +404,20 @@ def self_test() -> None:
         path.write_text(text, encoding="utf-8")
         summary = parse_log(path)
         enforce(summary, "raw", 1000)
-        if summary["input_instance_ids"] != [0]:
+        if summary["input_instance_ids"] != [0, 1]:
             raise SummaryError("self-test did not preserve input instance identity")
-        if summary["latest_input_by_instance"]["0"]["input_total"]["calls"] != 1001:
+        if summary["latest_input_by_instance"]["0"]["input_total"]["calls"] != 5000:
             raise SummaryError("self-test did not group input metrics by instance")
+        if summary["latest_input_by_instance"]["0"]["input_total"]["retained"] != 2048:
+            raise SummaryError("self-test did not infer legacy retention cap")
+        if summary["latest_input_by_instance"]["1"]["input_total"]["retained"] != 2048:
+            raise SummaryError("self-test did not parse retained input samples")
+        if summary["latest_input_by_instance"]["1"]["input_total"]["whole_max_us"] != 30.0:
+            raise SummaryError("self-test did not preserve whole-run max")
+        if summary["latest_latency_by_instance"]["1"][
+            "frame_input_sample_to_runframe_begin_us"
+        ]["retained"] != 2048:
+            raise SummaryError("self-test did not parse explicit latency retention")
         if "## Input instance `0`" not in markdown(summary):
             raise SummaryError("self-test did not render input instance identity")
         if summary["latest_raw"]["batch_empty"] != 991:
@@ -327,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
             for summary in summaries:
                 enforce(summary, args.mode, args.min_input_samples)
         output: dict[str, Any] = {
-            "schema_version": 2,
+            "schema_version": 3,
             "mode": args.mode,
             "minimum_input_samples": args.min_input_samples,
             "budget_checked": args.check_budget,

@@ -109,11 +109,20 @@ struct State {
     double windowFrameMs[kFrameWindowCap]{};
     uint32_t windowFrameCount = 0;
 
-    static constexpr uint32_t kLatencyCap = 512;
+    // Explicit latency is retained as a latest-N ring. Capture-only runs do
+    // not reset this window until shutdown, so it must cover the benchmark
+    // contract rather than freeze at the first few frames.
+    static constexpr uint32_t kLatencyCap = 2048;
     double inputToRunFrameUs[kLatencyCap]{};
     double inputToPresentEndUs[kLatencyCap]{};
+    uint32_t inputToRunFrameWrite = 0;
+    uint32_t inputToPresentEndWrite = 0;
     uint32_t inputToRunFrameCount = 0;
     uint32_t inputToPresentEndCount = 0;
+    uint64_t inputToRunFrameCalls = 0;
+    uint64_t inputToPresentEndCalls = 0;
+    double inputToRunFrameMaxUs = 0.0;
+    double inputToPresentEndMaxUs = 0.0;
 
     double secSumMs[static_cast<uint32_t>(Section::Count)]{};
     double secMaxMs[static_cast<uint32_t>(Section::Count)]{};
@@ -168,6 +177,7 @@ struct State {
     static constexpr uint32_t kInputMetricCap = 2048;
     Uint64 inputMetricTicks[
         static_cast<uint32_t>(InputMetric::Count)][kInputMetricCap]{};
+    uint32_t inputMetricWrite[static_cast<uint32_t>(InputMetric::Count)]{};
     uint32_t inputMetricCount[static_cast<uint32_t>(InputMetric::Count)]{};
     uint64_t inputMetricCalls[static_cast<uint32_t>(InputMetric::Count)]{};
     Uint64 inputMetricSumTicks[static_cast<uint32_t>(InputMetric::Count)]{};
@@ -358,13 +368,16 @@ struct PercentileSummary {
     double p50 = 0.0;
     double p95 = 0.0;
     double p99 = 0.0;
+    // max is the whole-window maximum when the source tracks one separately;
+    // retainedMax is always the maximum of the samples used for percentiles.
     double max = 0.0;
+    double retainedMax = 0.0;
     uint32_t count = 0;
 };
 
 template <size_t Capacity>
 inline PercentileSummary SummarizeDoubleSamples(
-    const double* samples, uint32_t count)
+    const double* samples, uint32_t write, uint32_t count)
 {
     PercentileSummary result;
     result.count = count < Capacity ? count : static_cast<uint32_t>(Capacity);
@@ -372,13 +385,18 @@ inline PercentileSummary SummarizeDoubleSamples(
         return result;
 
     double sorted[Capacity];
-    for (uint32_t i = 0; i < result.count; ++i)
-        sorted[i] = samples[i];
+    const uint32_t capacity = static_cast<uint32_t>(Capacity);
+    for (uint32_t i = 0; i < result.count; ++i) {
+        const uint32_t index =
+            (write + capacity - result.count + i) % capacity;
+        sorted[i] = samples[index];
+    }
     std::sort(sorted, sorted + result.count);
     result.p50 = PercentileSorted(sorted, result.count, 0.50);
     result.p95 = PercentileSorted(sorted, result.count, 0.95);
     result.p99 = PercentileSorted(sorted, result.count, 0.99);
     result.max = sorted[result.count - 1];
+    result.retainedMax = result.max;
     return result;
 }
 
@@ -391,8 +409,13 @@ inline PercentileSummary SummarizeInputMetric(
     if (result.count)
     {
         Uint64 sorted[State::kInputMetricCap];
-        for (uint32_t i = 0; i < result.count; ++i)
-            sorted[i] = st.inputMetricTicks[index][i];
+        const uint32_t write = st.inputMetricWrite[index];
+        for (uint32_t i = 0; i < result.count; ++i) {
+            const uint32_t sampleIndex =
+                (write + State::kInputMetricCap - result.count + i)
+                % State::kInputMetricCap;
+            sorted[i] = st.inputMetricTicks[index][sampleIndex];
+        }
         std::sort(sorted, sorted + result.count);
         const double frequency = static_cast<double>(st.freq);
         if (frequency > 0.0)
@@ -406,6 +429,8 @@ inline PercentileSummary SummarizeInputMetric(
             result.p99 = static_cast<double>(sorted[
                 static_cast<uint32_t>(0.99 * (result.count - 1))])
                 * 1000000.0 / frequency;
+            result.retainedMax = static_cast<double>(sorted[result.count - 1])
+                * 1000000.0 / frequency;
             result.max = static_cast<double>(st.inputMetricMaxTicks[index])
                 * 1000000.0 / frequency;
         }
@@ -414,9 +439,9 @@ inline PercentileSummary SummarizeInputMetric(
 }
 
 inline PercentileSummary SummarizeLatency(
-    const double* samples, uint32_t count)
+    const double* samples, uint32_t write, uint32_t count)
 {
-    return SummarizeDoubleSamples<State::kLatencyCap>(samples, count);
+    return SummarizeDoubleSamples<State::kLatencyCap>(samples, write, count);
 }
 
 inline PercentileSummary SummarizeHudPhase(
@@ -433,17 +458,21 @@ inline PercentileSummary SummarizeHudPhase(
     for (uint32_t i = 0; i < count; ++i)
         samples[i] = static_cast<double>(st.hudPhaseTicks[index][i])
             * 1000000.0 / static_cast<double>(st.freq);
-    result = SummarizeDoubleSamples<State::kHudPhaseCap>(samples, count);
+    // The temporary phase array is linear rather than a ring, so its next
+    // write position is the current count.
+    result = SummarizeDoubleSamples<State::kHudPhaseCap>(samples, count, count);
     result.max = static_cast<double>(st.hudPhaseMaxTicks[index])
         * 1000000.0 / static_cast<double>(st.freq);
     return result;
 }
 
 inline void RecordLatencySample(
-    double* samples, uint32_t& count, double microseconds)
+    double* samples, uint32_t& write, uint32_t& count, double microseconds)
 {
+    samples[write] = microseconds;
+    write = (write + 1) % State::kLatencyCap;
     if (count < State::kLatencyCap)
-        samples[count++] = microseconds;
+        ++count;
 }
 
 inline void RecordInputMetricTicks(InputMetric metric, Uint64 ticks)
@@ -453,9 +482,12 @@ inline void RecordInputMetricTicks(InputMetric metric, Uint64 ticks)
 
     State& st = S();
     const uint32_t index = static_cast<uint32_t>(metric);
+    uint32_t& write = st.inputMetricWrite[index];
     uint32_t& count = st.inputMetricCount[index];
+    st.inputMetricTicks[index][write] = ticks;
+    write = (write + 1) % State::kInputMetricCap;
     if (count < State::kInputMetricCap)
-        st.inputMetricTicks[index][count++] = ticks;
+        ++count;
     ++st.inputMetricCalls[index];
     st.inputMetricSumTicks[index] += ticks;
     if (ticks > st.inputMetricMaxTicks[index])
@@ -515,8 +547,15 @@ inline void ResetWindowStats()
 {
     State& st = S();
     st.windowFrameCount = 0;
+    st.inputToRunFrameWrite = 0;
+    st.inputToPresentEndWrite = 0;
     st.inputToRunFrameCount = 0;
     st.inputToPresentEndCount = 0;
+    st.inputToRunFrameCalls = 0;
+    st.inputToPresentEndCalls = 0;
+    st.inputToRunFrameMaxUs = 0.0;
+    st.inputToPresentEndMaxUs = 0.0;
+    std::memset(st.inputMetricWrite, 0, sizeof(st.inputMetricWrite));
     std::memset(st.inputMetricCount, 0, sizeof(st.inputMetricCount));
     std::memset(st.inputMetricCalls, 0, sizeof(st.inputMetricCalls));
     std::memset(st.inputMetricSumTicks, 0, sizeof(st.inputMetricSumTicks));
@@ -570,19 +609,26 @@ inline void ResetWindowStats()
 inline void ReportExplicitLatency(const State& st)
 {
     const PercentileSummary runFrame = SummarizeLatency(
-        st.inputToRunFrameUs, st.inputToRunFrameCount);
+        st.inputToRunFrameUs, st.inputToRunFrameWrite,
+        st.inputToRunFrameCount);
     const PercentileSummary presentEnd = SummarizeLatency(
-        st.inputToPresentEndUs, st.inputToPresentEndCount);
+        st.inputToPresentEndUs, st.inputToPresentEndWrite,
+        st.inputToPresentEndCount);
     std::fprintf(stderr,
         "[MelonPrimePerf] explicit_latency_us instance_id=%llu "
         "frame_input_sample_to_runframe_begin_us="
-        "p50=%.1f p95=%.1f p99=%.1f max=%.1f n=%u "
+        "calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
+        "max=%.1f retained_max=%.1f "
         "input_sample_to_present_end_us="
-        "p50=%.1f p95=%.1f p99=%.1f max=%.1f n=%u\n",
+        "calls=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f "
+        "max=%.1f retained_max=%.1f\n",
         static_cast<unsigned long long>(st.instanceId),
-        runFrame.p50, runFrame.p95, runFrame.p99, runFrame.max, runFrame.count,
-        presentEnd.p50, presentEnd.p95, presentEnd.p99, presentEnd.max,
-        presentEnd.count);
+        static_cast<unsigned long long>(st.inputToRunFrameCalls),
+        runFrame.count, runFrame.p50, runFrame.p95, runFrame.p99,
+        st.inputToRunFrameMaxUs, runFrame.retainedMax,
+        static_cast<unsigned long long>(st.inputToPresentEndCalls),
+        presentEnd.count, presentEnd.p50, presentEnd.p95, presentEnd.p99,
+        st.inputToPresentEndMaxUs, presentEnd.retainedMax);
 }
 
 inline void ReportInputMetricSummary(const State& st)
@@ -598,41 +644,58 @@ inline void ReportInputMetricSummary(const State& st)
         return static_cast<unsigned long long>(st.inputMetricCalls[
             static_cast<uint32_t>(inputMetric)]);
     };
+    const auto retained = [&](InputMetric inputMetric) -> unsigned int {
+        return metric(inputMetric).count;
+    };
     std::fprintf(stderr,
         "[MelonPrimePerf] input_metric_us instance_id=%llu "
-        "input_total[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "joystick_lock_wait[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "joystick_sample[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "joystick_project[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "joystick_sdl_update[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "joystick_process_mutex_wait[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "joystick_process_mutex_hold[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f]\n",
+        "input_total[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
+        "joystick_lock_wait[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
+        "joystick_sample[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
+        "joystick_project[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
+        "joystick_sdl_update[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
+        "joystick_process_mutex_wait[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f] "
+        "joystick_process_mutex_hold[c=%llu retained=%u p50=%.1f p95=%.1f p99=%.1f max=%.1f retained_max=%.1f]\n",
         static_cast<unsigned long long>(st.instanceId),
-        calls(InputMetric::InputTotal), metric(InputMetric::InputTotal).p50,
+        calls(InputMetric::InputTotal), retained(InputMetric::InputTotal),
+        metric(InputMetric::InputTotal).p50,
         metric(InputMetric::InputTotal).p95, metric(InputMetric::InputTotal).p99,
         metric(InputMetric::InputTotal).max,
-        calls(InputMetric::JoystickLockWait), metric(InputMetric::JoystickLockWait).p50,
+        metric(InputMetric::InputTotal).retainedMax,
+        calls(InputMetric::JoystickLockWait), retained(InputMetric::JoystickLockWait),
+        metric(InputMetric::JoystickLockWait).p50,
         metric(InputMetric::JoystickLockWait).p95, metric(InputMetric::JoystickLockWait).p99,
         metric(InputMetric::JoystickLockWait).max,
-        calls(InputMetric::JoystickSample), metric(InputMetric::JoystickSample).p50,
+        metric(InputMetric::JoystickLockWait).retainedMax,
+        calls(InputMetric::JoystickSample), retained(InputMetric::JoystickSample),
+        metric(InputMetric::JoystickSample).p50,
         metric(InputMetric::JoystickSample).p95, metric(InputMetric::JoystickSample).p99,
         metric(InputMetric::JoystickSample).max,
-        calls(InputMetric::JoystickProject), metric(InputMetric::JoystickProject).p50,
+        metric(InputMetric::JoystickSample).retainedMax,
+        calls(InputMetric::JoystickProject), retained(InputMetric::JoystickProject),
+        metric(InputMetric::JoystickProject).p50,
         metric(InputMetric::JoystickProject).p95, metric(InputMetric::JoystickProject).p99,
         metric(InputMetric::JoystickProject).max,
-        calls(InputMetric::JoystickSDLUpdate), metric(InputMetric::JoystickSDLUpdate).p50,
+        metric(InputMetric::JoystickProject).retainedMax,
+        calls(InputMetric::JoystickSDLUpdate), retained(InputMetric::JoystickSDLUpdate),
+        metric(InputMetric::JoystickSDLUpdate).p50,
         metric(InputMetric::JoystickSDLUpdate).p95, metric(InputMetric::JoystickSDLUpdate).p99,
         metric(InputMetric::JoystickSDLUpdate).max,
+        metric(InputMetric::JoystickSDLUpdate).retainedMax,
         calls(InputMetric::JoystickProcessMutexWait),
+        retained(InputMetric::JoystickProcessMutexWait),
         metric(InputMetric::JoystickProcessMutexWait).p50,
         metric(InputMetric::JoystickProcessMutexWait).p95,
         metric(InputMetric::JoystickProcessMutexWait).p99,
         metric(InputMetric::JoystickProcessMutexWait).max,
+        metric(InputMetric::JoystickProcessMutexWait).retainedMax,
         calls(InputMetric::JoystickProcessMutexHold),
+        retained(InputMetric::JoystickProcessMutexHold),
         metric(InputMetric::JoystickProcessMutexHold).p50,
         metric(InputMetric::JoystickProcessMutexHold).p95,
         metric(InputMetric::JoystickProcessMutexHold).p99,
-        metric(InputMetric::JoystickProcessMutexHold).max);
+        metric(InputMetric::JoystickProcessMutexHold).max,
+        metric(InputMetric::JoystickProcessMutexHold).retainedMax);
 }
 
 inline void ReportHudPhaseSummary(const State& st)
@@ -752,7 +815,7 @@ inline void MaybeReport1Hz()
         static_cast<unsigned long long>(reportClock.Frequency));
 
     const PercentileSummary frame = SummarizeDoubleSamples<State::kFrameWindowCap>(
-        st.windowFrameMs, st.windowFrameCount);
+        st.windowFrameMs, st.windowFrameCount, st.windowFrameCount);
     const auto secAvg = [&](Section sec) -> double {
         const uint32_t idx = static_cast<uint32_t>(sec);
         return st.secSamples[idx]
@@ -858,7 +921,12 @@ inline void MarkRunFrameBegin()
         return;
     const Uint64 now = SDL_GetPerformanceCounter();
     const double latencyUs = TicksToMs(now - st.inputSampleTick) * 1000.0;
-    RecordLatencySample(st.inputToRunFrameUs, st.inputToRunFrameCount, latencyUs);
+    ++st.inputToRunFrameCalls;
+    if (latencyUs > st.inputToRunFrameMaxUs)
+        st.inputToRunFrameMaxUs = latencyUs;
+    RecordLatencySample(
+        st.inputToRunFrameUs, st.inputToRunFrameWrite,
+        st.inputToRunFrameCount, latencyUs);
     st.currentInputToRunFrameUs = latencyUs;
     st.runFrameBeginRecorded = true;
 }
@@ -870,7 +938,12 @@ inline void MarkPresentEnd()
         return;
     const Uint64 now = SDL_GetPerformanceCounter();
     const double latencyUs = TicksToMs(now - st.inputSampleTick) * 1000.0;
-    RecordLatencySample(st.inputToPresentEndUs, st.inputToPresentEndCount, latencyUs);
+    ++st.inputToPresentEndCalls;
+    if (latencyUs > st.inputToPresentEndMaxUs)
+        st.inputToPresentEndMaxUs = latencyUs;
+    RecordLatencySample(
+        st.inputToPresentEndUs, st.inputToPresentEndWrite,
+        st.inputToPresentEndCount, latencyUs);
     st.currentInputToPresentEndUs = latencyUs;
     st.presentEndRecorded = true;
 }

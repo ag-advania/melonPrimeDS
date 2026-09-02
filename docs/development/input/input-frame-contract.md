@@ -46,6 +46,9 @@ per-device mutex. SDL process bookkeeping (`SDL_JoystickUpdate`, enumeration,
 open, and close) uses only a short process lock. Physical source reads and
 sensor/rumble operations use the instance's device lock, so separate emulator
 instances do not serialize their steady-state reads on `joyMutexGlobal`.
+The SDL process guard returns wait/hold ticks through a small POD; generic
+process-lock metrics are committed only after the outer device lock is
+released.
 The component does not expose its SDL handle. Cold mapping UI calls
 `EmuInstance::pollJoystickMapping` and `captureJoystickAxisRest`, which own the
 device lock and keep mapping-specific SDL reads inside the device owner.
@@ -80,6 +83,14 @@ is enabled with `MELONPRIME_PERF=1`. The `input_metric_us` report contains:
 | `JoystickProcessMutexWait` | wait for the short SDL process bookkeeping lock |
 | `JoystickProcessMutexHold` | time spent holding that SDL process bookkeeping lock |
 
+Each generic `input_metric_us` entry reports `c` as the number of observed
+calls and `retained` as the number of samples currently kept in its latest-N
+ring (2048). The p50/p95/p99 values and `retained_max` are calculated from
+that retained ring. `max` is the whole live-report window or capture run, so
+an early outlier can make it larger than `retained_max`. Explicit input
+latency (`input sample -> RunFrame begin` and `input sample -> Present end`)
+uses the same calls/retained/latest-N semantics.
+
 Windows Raw telemetry is separately compile-gated by
 `MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY` and runtime-gated by
 `MELONPRIME_RAW_INPUT_PERF=1`. Its reports provide the stable Phase 0 names
@@ -90,19 +101,29 @@ Windows Raw telemetry is separately compile-gated by
 - `HiddenWndProc`, `LateLatch`, and `DeferredDrain` lock wait by site;
 - `GetRawInputBuffer` calls, non-empty/empty calls, and event totals;
 - late-latch delta claims and post-draw captured events.
+- recursive acquisition count and maximum depth for the subscription/frame
+  recursive mutexes; these are evidence for a future plain-mutex decision,
+  not a claim that the type is already replaceable.
 
 Generic reports and frame CSV rows carry `instance_id`. Each emulation thread
 has its own generic probe state; set `MELONPRIME_PERF_CSV` to a path containing
 `%INSTANCE%` when collecting more than one instance (without the placeholder,
 the probe adds `.instanceN`). Set `MELONPRIME_PERF_CAPTURE_ONLY=1` to capture
-without periodic sorting/formatting; the owning thread emits the final report
-at shutdown. Raw lock wait/hold samples are committed after releasing the
-measured lock, and its `DeferredDrain` report is emitted after the stage scope.
+without periodic sorting/formatting; the owning thread emits the generic final
+report at shutdown. Raw lock wait/hold samples are committed after releasing
+the measured lock, its `DeferredDrain` report is emitted after the stage scope,
+and the process-wide Raw final report is emitted only when the last Raw service
+reference is released.
+
+The Raw frame mutex remains recursive while the developer probe measures actual
+recursive acquisitions and maximum depth. A plain `std::mutex` conversion is
+considered only after the stress matrix records zero recursive acquisitions.
 
 The Raw lock and batch counters are report-window totals. Divide them by the
-corresponding frame/snapshot count when a per-frame rate is needed. Timing
-percentiles retain at least the latest 2048 samples in the developer probe;
-the `calls` value remains the total observed count for that process window.
+corresponding frame/snapshot count when a per-frame rate is needed. The
+developer probe retains the latest 2048 timing samples while `calls` remains
+the total observed count for that report window/run; the report explicitly
+separates `retained_max` from the whole-window `max`.
 
 The deterministic parser emits JSON/Markdown from real logs and can enforce
 the common input limits:
@@ -141,7 +162,7 @@ Collect at least 1000 frames for each applicable row:
 | B | active controller | windowed | input and joystick metrics |
 | C | Windows Raw Input aim | windowed | Raw stages, lock planes, batch counts |
 | D | Windows Raw Input aim | fullscreen | same Raw metrics plus focus/owner state |
-| E | two instances / separate devices | windowed | no process-global joystick lock serialization |
+| E | two instances / separate devices | windowed | instance-specific p95/p99/max for process-lock and joystick metrics before any coalescing decision |
 
 Also record reconnect, focus-loss, Raw registration failure fallback, rumble,
 sensor, short click, wheel pulse, and nested-frame cases. These are functional
@@ -160,6 +181,8 @@ For a performance change, retain:
 - the exact build feature gates and commit;
 - the raw stderr log and parser JSON/Markdown;
 - at least 1000 selected frames and p50/p95/p99/max;
+- input and explicit-latency `calls`/`retained` values, including the latest-N
+  retention semantics;
 - Raw lock wait and batch syscall counts where Raw is enabled;
 - single-instance and two-instance results;
 - the functional matrix result and any unrun hardware/platform rows.

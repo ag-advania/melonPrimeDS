@@ -86,6 +86,10 @@ namespace MelonPrime {
         if (--s_refCount == 0) {
             delete s_instance;
             s_instance = nullptr;
+            // Raw telemetry is process-wide. Report only after the final
+            // service teardown, so an early EmuThread exit cannot freeze a
+            // multi-instance capture before the remaining instance stops.
+            RawInputPerf::ShutdownReport();
         }
     }
 
@@ -117,7 +121,7 @@ namespace MelonPrime {
     RawInputSubscription* RawInputWinFilter::Subscribe(
         MelonPrimeInputSubscription* owner, bool joy2KeySupport, HWND windowHandle)
     {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         auto subscription = std::make_unique<RawInputSubscription>(
             owner, joy2KeySupport, windowHandle);
         auto* result = subscription.get();
@@ -129,7 +133,7 @@ namespace MelonPrime {
     {
         if (!subscription)
             return;
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription) {
             if (subscription->owner)
                 PlatformInputOwnerService::Release(*subscription->owner);
@@ -622,7 +626,7 @@ namespace MelonPrime {
 
     void RawInputWinFilter::setJoy2KeySupport(
         RawInputSubscription* subscription, bool enable) {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (!subscription)
             return;
         RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
@@ -636,7 +640,7 @@ namespace MelonPrime {
 
     void RawInputWinFilter::setRawInputTarget(
         RawInputSubscription* subscription, HWND hwnd) {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (!subscription)
             return;
         RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
@@ -650,7 +654,7 @@ namespace MelonPrime {
 
     void RawInputWinFilter::setQtFilterRequested(
         RawInputSubscription* subscription, bool enable) {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (!subscription || subscription->retired.load(std::memory_order_acquire)
             || subscription->qtFilterRequested == enable)
             return;
@@ -882,7 +886,7 @@ namespace MelonPrime {
     // =========================================================================
     void RawInputWinFilter::setHotkeyVks(
         RawInputSubscription* subscription, int id, const UINT* vks, size_t count) {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (!subscription)
             return;
         RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
@@ -896,7 +900,7 @@ namespace MelonPrime {
     }
 
     void RawInputWinFilter::discardDeltas(RawInputSubscription* subscription) {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (!subscription)
             return;
         RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
@@ -912,7 +916,7 @@ namespace MelonPrime {
     // cross-thread InputState lifecycle reset permitted by this contract.
     void RawInputWinFilter::resetAll(RawInputSubscription* subscription)
     {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (!subscription)
             return;
         RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
@@ -924,7 +928,7 @@ namespace MelonPrime {
         if (auto* state = StateFor(subscription)) state->resetAll();
     }
     void RawInputWinFilter::resetHotkeyEdges(RawInputSubscription* subscription) {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (!subscription)
             return;
         RawInputPerf::FrameMutexGuard frameLock(subscription->frameMutex);
@@ -932,7 +936,7 @@ namespace MelonPrime {
     }
     void RawInputWinFilter::fetchMouseDelta(
         RawInputSubscription* subscription, int& outX, int& outY) {
-        std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex);
+        RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex);
         if (!subscription) {
             outX = outY = 0;
             return;

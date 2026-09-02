@@ -167,7 +167,9 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   changes, while each retained subscription has a recursive frame/data lock for
   state, HWND identity, and re-entrant dispatch. Retired subscription records
   stay owned by the service until teardown so a published raw pointer cannot
-  become dangling on the frame path.
+  become dangling on the frame path. The recursive frame lock remains until
+  developer stress telemetry proves whether plain-mutex conversion is safe;
+  the probe reports recursive acquisition count and maximum depth.
 - `HiddenWndProc` is deliberately minimal on the event-hot path: it loads the
   active subscription, acquires only that subscription's frame lock, compares
   `hiddenWindow == hwnd`, and then processes the handle. Its decoder returns a small recovery hint so
@@ -227,16 +229,24 @@ serialize their steady-state physical reads. The component exposes only direct
 `EmuInstance`; the frame path adds no virtual dispatch, heap object, or generic
 callback layer. The developer probe reports the wait and hold time of the short
 process lock as `JoystickProcessMutexWait` and `JoystickProcessMutexHold`, but
-the lock is not removed without multi-instance evidence.
+the lock is not removed without multi-instance evidence. The process guard
+returns those ticks through a small POD, and the metric commit occurs after the
+outer per-instance device mutex is released.
 
 Generic performance state is thread-local and is bound to the owning
 `EmuThread` instance before its frame loop starts. Reports carry
 `instance_id`; a configured frame CSV uses `%INSTANCE%` or an automatic
 `.instanceN` suffix and is closed by the owning thread-local state destructor,
 not an `atexit` callback. `MELONPRIME_PERF_CAPTURE_ONLY=1` keeps sorting,
-formatting, and stderr reporting until shutdown. Raw lock telemetry is written
-after each measured mutex is released, and `DeferredDrain` reports only after
-its frame/stage scope has ended.
+formatting, and stderr reporting until shutdown. Generic input metrics and
+explicit input latency retain the latest 2048 samples while their `calls`
+counter covers the whole report window/run; p50/p95/p99 and `retained_max`
+describe the retained ring, whereas `max` is the whole-window maximum. Raw
+lock telemetry is written after each measured mutex is released, and
+`DeferredDrain` reports only after its frame/stage scope has ended. The
+process-wide Raw final report belongs to the last `RawInputWinFilter` service
+release, so an earlier EmuThread shutdown cannot truncate a multi-instance
+capture.
 
 The input implementation keeps SRP boundaries as fixed data and direct calls:
 `JoystickBindingProgram` is the cold `CompiledInputBindings` boundary,

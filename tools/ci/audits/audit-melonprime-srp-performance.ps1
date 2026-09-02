@@ -1855,7 +1855,7 @@ if ($updateInputBody -notmatch
 $rawResetBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::resetAll\s*\('
 if (-not $rawResetBody -or
-    $rawResetBody -notmatch 'std::lock_guard\s*<\s*std::recursive_mutex\s*>\s+lock\s*\(\s*m_subscriptionMutex\s*\)' -or
+    $rawResetBody -notmatch 'RawInputPerf::SubscriptionMutexGuard\s+lock\s*\(\s*m_subscriptionMutex\s*\)' -or
     $rawResetBody.IndexOf('lock_guard', [System.StringComparison]::Ordinal) -gt
         $rawResetBody.IndexOf('drainPendingMessages', [System.StringComparison]::Ordinal)) {
     Add-Error 'Rule AV: public Raw resetAll must serialize shared state before drain/reset'
@@ -2285,6 +2285,12 @@ if (([regex]::Matches($rawWinFilterText,
 # do not put sorting, formatting, or CSV lifetime work on the frame path.
 $inputPerfSummarizerPath = Join-Path $repoRoot 'tools/testing/summarize-input-performance.py'
 $inputPerfSummarizerText = Get-Content -LiteralPath $inputPerfSummarizerPath -Raw
+$perfShutdownPath = Join-Path $qtSdl 'MelonPrimeEmuThreadPerfShutdown.inc'
+$perfShutdownText = Get-Content -LiteralPath $perfShutdownPath -Raw
+$inputContractPath = Join-Path $repoRoot 'docs/development/input/input-frame-contract.md'
+$inputContractText = Get-Content -LiteralPath $inputContractPath -Raw
+$rawReleaseBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::Release\s*\('
 $physicalPerfRunnerText = Get-Content -LiteralPath (
     Join-Path $repoRoot 'tools/testing/renderer-physical-ab.ps1') -Raw
 $presentPerfRunnerText = Get-Content -LiteralPath (
@@ -2300,6 +2306,16 @@ if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
     $inputPerfSummarizerText -notmatch 'latest_input_by_instance' -or
     $inputPerfSummarizerText -notmatch 'input_instance_ids' -or
     $inputPerfSummarizerText -notmatch 'for\s+instance_id,\s+input_report\s+in\s+reports_by_instance' -or
+    $perfProbeText -notmatch 'static\s+constexpr\s+uint32_t\s+kLatencyCap\s*=\s*2048' -or
+    $perfProbeText -notmatch 'uint32_t\s+inputMetricWrite' -or
+    $perfProbeText -notmatch 'uint64_t\s+inputToRunFrameCalls' -or
+    $perfProbeText -notmatch 'uint64_t\s+inputToPresentEndCalls' -or
+    $perfProbeText -notmatch 'retained=' -or
+    $perfProbeText -notmatch 'retained_max=' -or
+    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*3' -or
+    $inputContractText -notmatch 'latest-N' -or
+    $inputContractText -notmatch 'retained_max' -or
+    $inputContractText -notmatch 'whole-window.*max' -or
     $physicalPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
     $physicalPerfRunnerText -notmatch 'frames\.%INSTANCE%\.csv' -or
     $presentPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
@@ -2339,7 +2355,7 @@ $sdlGuardText = if ($sdlGuardAt -ge 0 -and $sdlGuardEndAt -gt $sdlGuardAt) {
 foreach ($lockTelemetry in @(
     @{ Name = 'Raw subscription'; Text = $subscriptionGuardText; Unlock = 'm_lock.unlock()'; Record = 'RecordMutexWait' },
     @{ Name = 'Raw frame'; Text = $frameGuardText; Unlock = 'm_lock.unlock()'; Record = 'RecordMutexWait' },
-    @{ Name = 'SDL process'; Text = $sdlGuardText; Unlock = 'm_lock.unlock()'; Record = 'RecordInputMetricTicks' }
+    @{ Name = 'SDL process'; Text = $sdlGuardText; Unlock = 'm_lock.unlock()'; Record = 'm_timing->waitTicks' }
 )) {
     $unlockAt = $lockTelemetry.Text.IndexOf($lockTelemetry.Unlock,
         [System.StringComparison]::Ordinal)
@@ -2362,6 +2378,14 @@ if (-not $sampleJoystickBody -or $sampleUnlockAt -lt 0 -or
     $sampleTelemetryAt -lt 0 -or $sampleUnlockAt -gt $sampleTelemetryAt) {
     Add-Error 'Rule CA: joystick sample metrics must be committed after SDL mutex release'
 }
+if (-not $sampleJoystickBody -or
+    $sampleJoystickBody -notmatch 'SdlProcessTiming\s+processTiming' -or
+    $sampleJoystickBody -notmatch 'processTiming\.waitTicks' -or
+    $sampleJoystickBody -notmatch 'processTiming\.holdTicks' -or
+    $sampleJoystickBody.IndexOf('processTiming.waitTicks', [System.StringComparison]::Ordinal) -lt $sampleUnlockAt -or
+    $sampleJoystickBody.IndexOf('processTiming.holdTicks', [System.StringComparison]::Ordinal) -lt $sampleUnlockAt) {
+    Add-Error 'Rule CA: SDL process timing POD must be committed after outer joystick unlock'
+}
 
 # CB: Raw report formatting is outside DeferredDrain's measured stage, and a
 # capture-only run defers the report to the owning EmuThread shutdown point.
@@ -2370,11 +2394,42 @@ if (-not $deferredDrainRawBody -or
         '(?s)RawInputPerf::FrameMutexGuard[\s\S]*?\}\s*// Reporting[\s\S]*?RawInputPerf::MaybeReport\s*\(\s*\)' -or
     $rawInputPerfText -notmatch
         'if\s*\(!Enabled\(\)\s*\|\|\s*\(!force\s*&&\s*IsCaptureOnly\(\)\)\)' -or
-    $rawInputPerfText -notmatch 'static\s+std::atomic_bool\s+shutdownReported' -or
+    $rawInputPerfText -match 'shutdownReported' -or
     $rawInputPerfText -notmatch 'Report\s*\(true\)' -or
     $rawInputPerfText -notmatch 'SummarizeStage' -or
     $rawInputPerfText -notmatch 'std::sort\s*\(values,\s*values\s*\+\s*count\)') {
     Add-Error 'Rule CB: Raw telemetry report/capture-only boundary is incomplete'
+}
+
+# CE: Raw final reporting follows the process service lifetime. Generic
+# thread-local reporting stays in EmuThread shutdown, while the shared Raw
+# aggregate is reported exactly once when the last service reference drops.
+if (-not $rawReleaseBody -or
+    $rawReleaseBody -notmatch 'if\s*\(\s*--s_refCount\s*==\s*0\s*\)' -or
+    $rawReleaseBody -notmatch 'delete\s+s_instance' -or
+    $rawReleaseBody -notmatch 'RawInputPerf::ShutdownReport\s*\(\s*\)' -or
+    $rawReleaseBody.IndexOf('delete s_instance', [System.StringComparison]::Ordinal) -gt
+        $rawReleaseBody.IndexOf('RawInputPerf::ShutdownReport()', [System.StringComparison]::Ordinal) -or
+    $rawWinFilterText -notmatch 'RawInputPerf::ShutdownReport\s*\(\)' -or
+    ([regex]::Matches($rawWinFilterText, 'RawInputPerf::ShutdownReport\s*\(\)').Count -ne 1) -or
+    $perfShutdownText -match 'RawInputPerf::ShutdownReport' -or
+    $rawInputPerfText -match 'shutdownReported') {
+    Add-Error 'Rule CE: Raw final report is not owned by the last service release'
+}
+
+# CF: measure recursive acquisition before considering a plain mutex. Every
+# subscription-plane acquisition goes through the measured wrapper; the
+# frame/data lock remains recursive until the stress matrix proves depth zero.
+if ($rawWinFilterText -match
+        'std::lock_guard\s*<\s*std::recursive_mutex\s*>\s+\w+\s*\(\s*m_subscriptionMutex\s*\)' -or
+    $rawWinFilterText -notmatch 'std::recursive_mutex\s+frameMutex' -or
+    $rawInputPerfText -notmatch 'recursiveAcquisitions' -or
+    $rawInputPerfText -notmatch 'subscriptionMaxRecursionDepth' -or
+    $rawInputPerfText -notmatch 'frameMaxRecursionDepth' -or
+    $rawInputPerfText -notmatch 'EnterLockDepth' -or
+    $rawInputPerfText -notmatch 'RecordRecursiveAcquisition' -or
+    $inputContractText -notmatch 'recursive acquisition') {
+    Add-Error 'Rule CF: Raw recursive-lock measurement boundary is incomplete'
 }
 
 # CC: joystick enumeration is a cold, process-serialized owner operation;
@@ -2441,7 +2496,7 @@ if ($rawInputStateText -notmatch
         'This public wrapper always holds m_subscriptionMutex' -or
     -not $rawResetBody -or
     $rawResetBody.IndexOf(
-        'std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)',
+        'RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex)',
         [System.StringComparison]::Ordinal) -gt
     $rawResetBody.IndexOf('state->resetAll()', [System.StringComparison]::Ordinal)) {
     Add-Error 'Rule BG: foreign Raw reset mutex contract is incomplete'
