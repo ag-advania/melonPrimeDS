@@ -607,7 +607,8 @@ private:
     void resetJoystickConsumerState();
     bool consumeJoystickResetPending();
     void probeJoystickConnection();
-    bool sampleJoystickPhysicalLocked(JoystickPhysicalSnapshot& snapshot);
+    bool sampleJoystickPhysicalLocked(
+        JoystickPhysicalSnapshot& snapshot, Uint64* updateTicks);
     bool sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot);
     [[nodiscard]] JoystickProjectedState projectJoystickPhysicalSnapshot(
         const JoystickPhysicalSnapshot& snapshot) const;

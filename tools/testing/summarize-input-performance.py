@@ -28,6 +28,7 @@ INPUT_RE = re.compile(
     r"^\[MelonPrimePerf\] input_metric_us "
     r"(?P<body>.*)$"
 )
+INPUT_INSTANCE_RE = re.compile(r"(?:^|\s)instance_id=(?P<id>\d+)(?:\s|$)")
 INPUT_METRIC_RE = re.compile(
     r"(?P<name>[a-z0-9_]+)\[c=(?P<c>\d+) "
     r"p50=(?P<p50>[0-9.]+) p95=(?P<p95>[0-9.]+) "
@@ -97,6 +98,11 @@ def parse_input_body(body: str) -> dict[str, dict[str, float | int]]:
     return result
 
 
+def parse_input_instance_id(body: str) -> int | None:
+    match = INPUT_INSTANCE_RE.search(body)
+    return int(match.group("id")) if match else None
+
+
 def parse_raw_stage(match: re.Match[str]) -> dict[str, Any]:
     values: dict[str, Any] = {}
     for key, value in match.groupdict().items():
@@ -112,6 +118,7 @@ def parse_log(path: Path) -> dict[str, Any]:
         raise SummaryError(f"telemetry log does not exist: {path}")
 
     input_reports: list[dict[str, dict[str, float | int]]] = []
+    latest_input_by_instance: dict[str, dict[str, dict[str, float | int]]] = {}
     raw_reports: list[dict[str, Any]] = []
     lock_reports: list[dict[str, int]] = []
     for raw_line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -121,6 +128,9 @@ def parse_log(path: Path) -> dict[str, Any]:
             parsed = parse_input_body(input_match.group("body"))
             if parsed:
                 input_reports.append(parsed)
+                instance_id = parse_input_instance_id(input_match.group("body"))
+                instance_key = str(instance_id) if instance_id is not None else "unbound"
+                latest_input_by_instance[instance_key] = parsed
             continue
         raw_match = RAW_STAGE_RE.match(line)
         if raw_match:
@@ -145,6 +155,13 @@ def parse_log(path: Path) -> dict[str, Any]:
     return {
         "path": str(path),
         "input_report_count": len(input_reports),
+        "input_instance_ids": [
+            int(key) for key in sorted(
+                (key for key in latest_input_by_instance if key != "unbound"),
+                key=int,
+            )
+        ],
+        "latest_input_by_instance": latest_input_by_instance,
         "raw_report_count": len(raw_reports),
         "latest_input": latest_input,
         "latest_raw": latest_raw,
@@ -166,18 +183,28 @@ def require_input_metric(
 
 
 def enforce(summary: dict[str, Any], mode: str, minimum_calls: int) -> None:
-    input_total = require_input_metric(summary, "input_total", minimum_calls)
-    if float(input_total["p99_us"]) >= 100.0:
-        raise SummaryError(f"input_total p99 exceeds 100 us: {input_total['p99_us']}")
-    if float(input_total["max_us"]) >= 250.0:
-        raise SummaryError(f"input_total max exceeds 250 us: {input_total['max_us']}")
+    reports_by_instance = summary.get("latest_input_by_instance") or {
+        "unbound": summary["latest_input"]
+    }
+    for instance_id, input_report in reports_by_instance.items():
+        input_summary = {"latest_input": input_report}
+        input_total = require_input_metric(input_summary, "input_total", minimum_calls)
+        suffix = "" if len(reports_by_instance) == 1 else f" for instance {instance_id}"
+        if float(input_total["p99_us"]) >= 100.0:
+            raise SummaryError(
+                f"input_total p99 exceeds 100 us{suffix}: {input_total['p99_us']}"
+            )
+        if float(input_total["max_us"]) >= 250.0:
+            raise SummaryError(
+                f"input_total max exceeds 250 us{suffix}: {input_total['max_us']}"
+            )
 
-    median_budget = {"keyboard": 10.0, "controller": 30.0}.get(mode)
-    if median_budget is not None and float(input_total["p50_us"]) >= median_budget:
-        raise SummaryError(
-            f"{mode} input_total p50 exceeds {median_budget:g} us: "
-            f"{input_total['p50_us']}"
-        )
+        median_budget = {"keyboard": 10.0, "controller": 30.0}.get(mode)
+        if median_budget is not None and float(input_total["p50_us"]) >= median_budget:
+            raise SummaryError(
+                f"{mode} input_total p50 exceeds {median_budget:g} us{suffix}: "
+                f"{input_total['p50_us']}"
+            )
 
     if mode == "raw":
         raw = summary.get("latest_raw")
@@ -195,19 +222,31 @@ def markdown(summary: dict[str, Any]) -> str:
         "# Input performance summary",
         "",
         f"Source: `{summary['path']}`",
-        "",
-        "| Metric | Calls | p50 (us) | p95 (us) | p99 (us) | Max (us) |",
-        "|---|---:|---:|---:|---:|---:|",
     ]
-    for name in INPUT_METRICS:
-        metric = summary["latest_input"].get(name)
-        if metric is None:
-            continue
-        lines.append(
-            f"| `{name}` | {metric['calls']} | {metric['p50_us']:.1f} | "
-            f"{metric['p95_us']:.1f} | {metric['p99_us']:.1f} | "
-            f"{metric['max_us']:.1f} |"
-        )
+    reports_by_instance = summary.get("latest_input_by_instance") or {
+        "unbound": summary["latest_input"]
+    }
+    instance_keys = sorted(
+        reports_by_instance,
+        key=lambda key: (key == "unbound", int(key) if key != "unbound" else 0),
+    )
+    for instance_key in instance_keys:
+        lines.extend([
+            "",
+            f"## Input instance `{instance_key}`",
+            "",
+            "| Metric | Calls | p50 (us) | p95 (us) | p99 (us) | Max (us) |",
+            "|---|---:|---:|---:|---:|---:|",
+        ])
+        for name in INPUT_METRICS:
+            metric = reports_by_instance[instance_key].get(name)
+            if metric is None:
+                continue
+            lines.append(
+                f"| `{name}` | {metric['calls']} | {metric['p50_us']:.1f} | "
+                f"{metric['p95_us']:.1f} | {metric['p99_us']:.1f} | "
+                f"{metric['max_us']:.1f} |"
+            )
     raw = summary.get("latest_raw")
     if raw is not None:
         lines.extend([
@@ -244,7 +283,7 @@ def self_test() -> None:
     import tempfile
 
     text = "\n".join([
-        "[MelonPrimePerf] input_metric_us input_total[c=1001 p50=4.0 p95=8.0 p99=12.0 max=20.0] joystick_lock_wait[c=1001 p50=0.1 p95=0.2 p99=0.4 max=1.0] joystick_sample[c=1001 p50=5.0 p95=7.0 p99=9.0 max=15.0] joystick_project[c=1001 p50=1.0 p95=2.0 p99=3.0 max=5.0] joystick_sdl_update[c=1001 p50=0.5 p95=0.8 p99=1.0 max=2.0] joystick_process_mutex_wait[c=1001 p50=0.0 p95=0.1 p99=0.2 max=0.5] joystick_process_mutex_hold[c=1001 p50=0.2 p95=0.4 p99=0.6 max=1.0]",
+        "[MelonPrimePerf] input_metric_us instance_id=0 input_total[c=1001 p50=4.0 p95=8.0 p99=12.0 max=20.0] joystick_lock_wait[c=1001 p50=0.1 p95=0.2 p99=0.4 max=1.0] joystick_sample[c=1001 p50=5.0 p95=7.0 p99=9.0 max=15.0] joystick_project[c=1001 p50=1.0 p95=2.0 p99=3.0 max=5.0] joystick_sdl_update[c=1001 p50=0.5 p95=0.8 p99=1.0 max=2.0] joystick_process_mutex_wait[c=1001 p50=0.0 p95=0.1 p99=0.2 max=0.5] joystick_process_mutex_hold[c=1001 p50=0.2 p95=0.4 p99=0.6 max=1.0]",
         "[MelonPrimeRawPerf] stage_us snapshot[p50=4.0 p95=6.0 p99=8.0 max=12.0] late_latch[p50=3.0 p95=5.0 p99=7.0 max=10.0] deferred_drain[p50=20.0 p95=25.0 p99=30.0 max=40.0] lock_wait_ns snapshot=10 late=20 deferred=30 hidden=40 native=50 | raw_batch calls=1001 nonempty=10 empty=991 events=20 late_delta_claims=5 post_draw_events=10",
         "[MelonPrimeRawPerf] lock_planes subscription_mutex_acq=2 subscription_mutex_wait_ns=3 subscription_mutex_hold_ns=4 subscription_mutex_max_wait_ns=5 frame_mutex_acq=1001 frame_mutex_wait_ns=6 frame_mutex_hold_ns=7 frame_mutex_max_wait_ns=8",
     ]) + "\n"
@@ -253,6 +292,12 @@ def self_test() -> None:
         path.write_text(text, encoding="utf-8")
         summary = parse_log(path)
         enforce(summary, "raw", 1000)
+        if summary["input_instance_ids"] != [0]:
+            raise SummaryError("self-test did not preserve input instance identity")
+        if summary["latest_input_by_instance"]["0"]["input_total"]["calls"] != 1001:
+            raise SummaryError("self-test did not group input metrics by instance")
+        if "## Input instance `0`" not in markdown(summary):
+            raise SummaryError("self-test did not render input instance identity")
         if summary["latest_raw"]["batch_empty"] != 991:
             raise SummaryError("self-test did not parse raw batch counts")
 
@@ -282,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
             for summary in summaries:
                 enforce(summary, args.mode, args.min_input_samples)
         output: dict[str, Any] = {
-            "schema_version": 1,
+            "schema_version": 2,
             "mode": args.mode,
             "minimum_input_samples": args.min_input_samples,
             "budget_checked": args.check_budget,

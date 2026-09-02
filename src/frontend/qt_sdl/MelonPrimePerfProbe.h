@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "MelonPrimePerfClock.h"
 
@@ -181,12 +182,39 @@ struct State {
     std::FILE* frameCsv = nullptr;
     bool frameCsvAttempted = false;
     uint64_t frameIndex = 0;
+
+    uint64_t instanceId = 0;
+
+    ~State()
+    {
+        if (frameCsv)
+        {
+            std::fclose(frameCsv);
+            frameCsv = nullptr;
+        }
+    }
 };
 
 inline State& S()
 {
-    static State s;
+    static thread_local State s;
     return s;
+}
+
+inline void BindInstance(uint64_t instanceId)
+{
+    if (!IsEnabled())
+        return;
+    S().instanceId = instanceId;
+}
+
+inline bool IsCaptureOnly()
+{
+    static const bool captureOnly = [] {
+        const char* v = std::getenv("MELONPRIME_PERF_CAPTURE_ONLY");
+        return v && v[0] == '1' && v[1] == '\0';
+    }();
+    return captureOnly;
 }
 
 inline bool IsFrameActive()
@@ -262,22 +290,49 @@ inline void EnsureFrameCsv()
         return;
     st.frameCsvAttempted = true;
 
-    const char* path = std::getenv("MELONPRIME_PERF_CSV");
-    if (!path || !*path)
+    const char* configuredPath = std::getenv("MELONPRIME_PERF_CSV");
+    if (!configuredPath || !*configuredPath)
         return;
 
-    st.frameCsv = std::fopen(path, "wb");
+    std::string path(configuredPath);
+    const std::string placeholder("%INSTANCE%");
+    std::string::size_type placeholderPos = path.find(placeholder);
+    if (placeholderPos != std::string::npos)
+    {
+        while (placeholderPos != std::string::npos)
+        {
+            path.replace(placeholderPos, placeholder.size(),
+                std::to_string(st.instanceId));
+            placeholderPos = path.find(placeholder,
+                placeholderPos + 1);
+        }
+    }
+    else
+    {
+        const std::string::size_type separator = path.find_last_of("/\\");
+        const std::string::size_type extension = path.find_last_of('.');
+        const bool hasExtension = extension != std::string::npos
+            && (separator == std::string::npos || extension > separator);
+        const std::string suffix = ".instance"
+            + std::to_string(st.instanceId);
+        if (hasExtension)
+            path.insert(extension, suffix);
+        else
+            path += suffix;
+    }
+
+    st.frameCsv = std::fopen(path.c_str(), "wb");
     if (!st.frameCsv)
     {
         std::fprintf(stderr,
-            "[MelonPrimePerf] frame CSV could not be opened: %s\n", path);
+            "[MelonPrimePerf] frame CSV could not be opened: %s\n",
+            path.c_str());
         return;
     }
     std::fprintf(st.frameCsv,
-        "run_id,frame_index,frame_start_ticks,frame_end_ticks,qpc_frequency,"
+        "run_id,instance_id,frame_index,frame_start_ticks,frame_end_ticks,qpc_frequency,"
         "frame_time_us,input_sample_to_runframe_begin_us,"
         "input_sample_to_present_end_us\n");
-    std::atexit(CloseFrameCsv);
 }
 
 inline void WriteFrameCsv(
@@ -287,8 +342,9 @@ inline void WriteFrameCsv(
         return;
     const char* runId = std::getenv("MELONPRIME_LATENCY_RUN_ID");
     std::fprintf(st.frameCsv,
-        "%s,%llu,%llu,%llu,%llu,%.6f,%.6f,%.6f\n",
+        "%s,%llu,%llu,%llu,%llu,%llu,%.6f,%.6f,%.6f\n",
         runId ? runId : "unnamed-run",
+        static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(st.frameIndex++),
         static_cast<unsigned long long>(st.frameStartTick),
         static_cast<unsigned long long>(endTick),
@@ -298,24 +354,89 @@ inline void WriteFrameCsv(
         st.currentInputToPresentEndUs);
 }
 
-inline double LatencyPercentile(const double* samples, uint32_t count, double p)
+struct PercentileSummary {
+    double p50 = 0.0;
+    double p95 = 0.0;
+    double p99 = 0.0;
+    double max = 0.0;
+    uint32_t count = 0;
+};
+
+template <size_t Capacity>
+inline PercentileSummary SummarizeDoubleSamples(
+    const double* samples, uint32_t count)
 {
-    if (count == 0)
-        return 0.0;
-    double sorted[State::kLatencyCap];
-    for (uint32_t i = 0; i < count; ++i)
+    PercentileSummary result;
+    result.count = count < Capacity ? count : static_cast<uint32_t>(Capacity);
+    if (!result.count)
+        return result;
+
+    double sorted[Capacity];
+    for (uint32_t i = 0; i < result.count; ++i)
         sorted[i] = samples[i];
-    std::sort(sorted, sorted + count);
-    return PercentileSorted(sorted, count, p);
+    std::sort(sorted, sorted + result.count);
+    result.p50 = PercentileSorted(sorted, result.count, 0.50);
+    result.p95 = PercentileSorted(sorted, result.count, 0.95);
+    result.p99 = PercentileSorted(sorted, result.count, 0.99);
+    result.max = sorted[result.count - 1];
+    return result;
 }
 
-inline double LatencyMax(const double* samples, uint32_t count)
+inline PercentileSummary SummarizeInputMetric(
+    const State& st, InputMetric metric)
 {
-    double max = 0.0;
+    const uint32_t index = static_cast<uint32_t>(metric);
+    PercentileSummary result;
+    result.count = st.inputMetricCount[index];
+    if (result.count)
+    {
+        Uint64 sorted[State::kInputMetricCap];
+        for (uint32_t i = 0; i < result.count; ++i)
+            sorted[i] = st.inputMetricTicks[index][i];
+        std::sort(sorted, sorted + result.count);
+        const double frequency = static_cast<double>(st.freq);
+        if (frequency > 0.0)
+        {
+            result.p50 = static_cast<double>(sorted[
+                static_cast<uint32_t>(0.50 * (result.count - 1))])
+                * 1000000.0 / frequency;
+            result.p95 = static_cast<double>(sorted[
+                static_cast<uint32_t>(0.95 * (result.count - 1))])
+                * 1000000.0 / frequency;
+            result.p99 = static_cast<double>(sorted[
+                static_cast<uint32_t>(0.99 * (result.count - 1))])
+                * 1000000.0 / frequency;
+            result.max = static_cast<double>(st.inputMetricMaxTicks[index])
+                * 1000000.0 / frequency;
+        }
+    }
+    return result;
+}
+
+inline PercentileSummary SummarizeLatency(
+    const double* samples, uint32_t count)
+{
+    return SummarizeDoubleSamples<State::kLatencyCap>(samples, count);
+}
+
+inline PercentileSummary SummarizeHudPhase(
+    const State& st, HudPhase phase)
+{
+    const uint32_t index = static_cast<uint32_t>(phase);
+    const uint32_t count = st.hudPhaseCount[index];
+    PercentileSummary result;
+    result.count = count;
+    if (!count || !st.freq)
+        return result;
+
+    double samples[State::kHudPhaseCap];
     for (uint32_t i = 0; i < count; ++i)
-        if (samples[i] > max)
-            max = samples[i];
-    return max;
+        samples[i] = static_cast<double>(st.hudPhaseTicks[index][i])
+            * 1000000.0 / static_cast<double>(st.freq);
+    result = SummarizeDoubleSamples<State::kHudPhaseCap>(samples, count);
+    result.max = static_cast<double>(st.hudPhaseMaxTicks[index])
+        * 1000000.0 / static_cast<double>(st.freq);
+    return result;
 }
 
 inline void RecordLatencySample(
@@ -446,141 +567,39 @@ inline void ResetWindowStats()
     st.cntCrosshairProjectionRejected = 0;
 }
 
-inline void MaybeReport1Hz()
+inline void ReportExplicitLatency(const State& st)
 {
-    State& st = S();
-    if (!st.freq)
-        return;
-
-    const Uint64 now = SDL_GetPerformanceCounter();
-    if (!st.lastReportTick)
-        st.lastReportTick = now;
-
-    const double sinceReportMs = TicksToMs(now - st.lastReportTick);
-    if (sinceReportMs < 1000.0)
-        return;
-
-    const auto reportClock = melonDS::MelonPrimePerfClock::Now();
+    const PercentileSummary runFrame = SummarizeLatency(
+        st.inputToRunFrameUs, st.inputToRunFrameCount);
+    const PercentileSummary presentEnd = SummarizeLatency(
+        st.inputToPresentEndUs, st.inputToPresentEndCount);
     std::fprintf(stderr,
-        "[MelonPrimePerfPhase] report_qpc_ticks=%llu qpc_frequency=%llu\n",
-        static_cast<unsigned long long>(reportClock.Ticks),
-        static_cast<unsigned long long>(reportClock.Frequency));
-
-    double sorted[State::kFrameWindowCap];
-    const uint32_t n = st.windowFrameCount;
-    for (uint32_t i = 0; i < n; ++i)
-        sorted[i] = st.windowFrameMs[i];
-    std::sort(sorted, sorted + n);
-
-    const double p50 = PercentileSorted(sorted, n, 0.50);
-    const double p95 = PercentileSorted(sorted, n, 0.95);
-    const double p99 = PercentileSorted(sorted, n, 0.99);
-    double frameMax = 0.0;
-    for (uint32_t i = 0; i < n; ++i)
-        if (sorted[i] > frameMax)
-            frameMax = sorted[i];
-
-    const auto secAvg = [&](Section sec) -> double {
-        const uint32_t idx = static_cast<uint32_t>(sec);
-        return st.secSamples[idx] ? st.secSumMs[idx] / static_cast<double>(st.secSamples[idx]) : 0.0;
-    };
-
-    const uint64_t inputTotal =
-        st.cntInputSource[static_cast<uint32_t>(InputSource::WinRaw)]
-        + st.cntInputSource[static_cast<uint32_t>(InputSource::MacRaw)]
-        + st.cntInputSource[static_cast<uint32_t>(InputSource::LinuxRaw)]
-        + st.cntInputSource[static_cast<uint32_t>(InputSource::PanelDelta)]
-        + st.cntInputSource[static_cast<uint32_t>(InputSource::QCursorFallback)];
-
-    fprintf(stderr,
-        "[MelonPrimePerf] frame_ms p50=%.3f p95=%.3f p99=%.3f max=%.3f n=%u | "
-        "sec_avg_ms sleep=%.3f spin=%.3f setup=%.3f vkbegin=%.3f input=%.3f prerun=%.3f run=%.3f draw=%.3f drain=%.3f book=%.3f yield=%.3f | "
-        "input_src raw=%llu mac=%llu linux=%llu panel=%llu qcur=%llu (tot=%llu) | "
-        "warp=%llu oog_patch=%llu osd_apply=%llu osd_write=%llu | "
-        "hud_dirty_px=%llu gl_up_B=%llu dr3_skip=%llu hud_render_us=%.1f\n",
-        p50, p95, p99, frameMax, n,
-        secAvg(Section::LimiterSleep), secAvg(Section::LimiterSpin),
-        secAvg(Section::FrameSetup), secAvg(Section::VulkanBegin),
-        secAvg(Section::Input),
-        secAvg(Section::PreRun), secAvg(Section::RunFrame),
-        secAvg(Section::Draw), secAvg(Section::DeferredDrain),
-        secAvg(Section::PostDrawBookkeeping),
-        secAvg(Section::UncappedYield),
-        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::WinRaw)]),
-        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::MacRaw)]),
-        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::LinuxRaw)]),
-        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::PanelDelta)]),
-        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::QCursorFallback)]),
-        static_cast<unsigned long long>(inputTotal),
-        static_cast<unsigned long long>(st.cntWarp),
-        static_cast<unsigned long long>(st.cntOutOfGamePatch),
-        static_cast<unsigned long long>(st.cntOsdColorApply),
-        static_cast<unsigned long long>(st.cntOsdColorWrite),
-        static_cast<unsigned long long>(st.sumHudDirtyArea),
-        static_cast<unsigned long long>(st.sumGlUploadBytes),
-        static_cast<unsigned long long>(st.cntDr3HashSkip),
-        st.cntCustomHudFrames
-            ? TicksToMs(st.sumCustomHudTicks) * 1000.0 / static_cast<double>(st.cntCustomHudFrames)
-            : 0.0);
-
-    fprintf(stderr,
-        "[MelonPrimePerf] audit_counts "
-        "stage_matrix_full_validation=%llu "
-        "stage_matrix_validation_retry=%llu "
-        "surface_visibility_state_change=%llu "
-        "renderer_fast_cache_refresh=%llu "
-        "crosshair_projection_accepted=%llu "
-        "crosshair_projection_rejected=%llu\n",
-        static_cast<unsigned long long>(st.cntStageMatrixFullValidations),
-        static_cast<unsigned long long>(st.cntStageMatrixValidationRetries),
-        static_cast<unsigned long long>(st.cntSurfaceVisibilityStateChanges),
-        static_cast<unsigned long long>(st.cntRendererFastCacheRefreshes),
-        static_cast<unsigned long long>(st.cntCrosshairProjectionAccepted),
-        static_cast<unsigned long long>(st.cntCrosshairProjectionRejected));
-
-    fprintf(stderr,
-        "[MelonPrimePerf] explicit_latency_us "
+        "[MelonPrimePerf] explicit_latency_us instance_id=%llu "
         "frame_input_sample_to_runframe_begin_us="
         "p50=%.1f p95=%.1f p99=%.1f max=%.1f n=%u "
         "input_sample_to_present_end_us="
         "p50=%.1f p95=%.1f p99=%.1f max=%.1f n=%u\n",
-        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.50),
-        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.95),
-        LatencyPercentile(st.inputToRunFrameUs, st.inputToRunFrameCount, 0.99),
-        LatencyMax(st.inputToRunFrameUs, st.inputToRunFrameCount),
-        st.inputToRunFrameCount,
-        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.50),
-        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.95),
-        LatencyPercentile(st.inputToPresentEndUs, st.inputToPresentEndCount, 0.99),
-        LatencyMax(st.inputToPresentEndUs, st.inputToPresentEndCount),
-        st.inputToPresentEndCount);
+        static_cast<unsigned long long>(st.instanceId),
+        runFrame.p50, runFrame.p95, runFrame.p99, runFrame.max, runFrame.count,
+        presentEnd.p50, presentEnd.p95, presentEnd.p99, presentEnd.max,
+        presentEnd.count);
+}
 
-    const auto inputMetricPercentileUs = [&](InputMetric metric,
-                                             double percentile) -> double {
-        const uint32_t index = static_cast<uint32_t>(metric);
-        const uint32_t count = st.inputMetricCount[index];
-        if (!count)
-            return 0.0;
-        Uint64 sortedTicks[State::kInputMetricCap];
-        for (uint32_t i = 0; i < count; ++i)
-            sortedTicks[i] = st.inputMetricTicks[index][i];
-        std::sort(sortedTicks, sortedTicks + count);
-        const double ticks = static_cast<double>(
-            sortedTicks[static_cast<uint32_t>(
-                percentile * static_cast<double>(count - 1))]);
-        return ticks * 1000000.0 / static_cast<double>(st.freq);
+inline void ReportInputMetricSummary(const State& st)
+{
+    PercentileSummary metrics[static_cast<uint32_t>(InputMetric::Count)];
+    for (uint32_t i = 0; i < static_cast<uint32_t>(InputMetric::Count); ++i)
+        metrics[i] = SummarizeInputMetric(st, static_cast<InputMetric>(i));
+
+    const auto metric = [&](InputMetric inputMetric) -> const PercentileSummary& {
+        return metrics[static_cast<uint32_t>(inputMetric)];
     };
-    const auto inputMetricMaxUs = [&](InputMetric metric) -> double {
-        return static_cast<double>(st.inputMetricMaxTicks[
-            static_cast<uint32_t>(metric)]) * 1000000.0
-            / static_cast<double>(st.freq);
-    };
-    const auto inputMetricCalls = [&](InputMetric metric) -> unsigned long long {
+    const auto calls = [&](InputMetric inputMetric) -> unsigned long long {
         return static_cast<unsigned long long>(st.inputMetricCalls[
-            static_cast<uint32_t>(metric)]);
+            static_cast<uint32_t>(inputMetric)]);
     };
-    fprintf(stderr,
-        "[MelonPrimePerf] input_metric_us "
+    std::fprintf(stderr,
+        "[MelonPrimePerf] input_metric_us instance_id=%llu "
         "input_total[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
         "joystick_lock_wait[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
         "joystick_sample[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
@@ -588,68 +607,57 @@ inline void MaybeReport1Hz()
         "joystick_sdl_update[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
         "joystick_process_mutex_wait[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
         "joystick_process_mutex_hold[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f]\n",
-        inputMetricCalls(InputMetric::InputTotal),
-        inputMetricPercentileUs(InputMetric::InputTotal, 0.50),
-        inputMetricPercentileUs(InputMetric::InputTotal, 0.95),
-        inputMetricPercentileUs(InputMetric::InputTotal, 0.99),
-        inputMetricMaxUs(InputMetric::InputTotal),
-        inputMetricCalls(InputMetric::JoystickLockWait),
-        inputMetricPercentileUs(InputMetric::JoystickLockWait, 0.50),
-        inputMetricPercentileUs(InputMetric::JoystickLockWait, 0.95),
-        inputMetricPercentileUs(InputMetric::JoystickLockWait, 0.99),
-        inputMetricMaxUs(InputMetric::JoystickLockWait),
-        inputMetricCalls(InputMetric::JoystickSample),
-        inputMetricPercentileUs(InputMetric::JoystickSample, 0.50),
-        inputMetricPercentileUs(InputMetric::JoystickSample, 0.95),
-        inputMetricPercentileUs(InputMetric::JoystickSample, 0.99),
-        inputMetricMaxUs(InputMetric::JoystickSample),
-        inputMetricCalls(InputMetric::JoystickProject),
-        inputMetricPercentileUs(InputMetric::JoystickProject, 0.50),
-        inputMetricPercentileUs(InputMetric::JoystickProject, 0.95),
-        inputMetricPercentileUs(InputMetric::JoystickProject, 0.99),
-        inputMetricMaxUs(InputMetric::JoystickProject),
-        inputMetricCalls(InputMetric::JoystickSDLUpdate),
-        inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.50),
-        inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.95),
-        inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.99),
-        inputMetricMaxUs(InputMetric::JoystickSDLUpdate),
-        inputMetricCalls(InputMetric::JoystickProcessMutexWait),
-        inputMetricPercentileUs(InputMetric::JoystickProcessMutexWait, 0.50),
-        inputMetricPercentileUs(InputMetric::JoystickProcessMutexWait, 0.95),
-        inputMetricPercentileUs(InputMetric::JoystickProcessMutexWait, 0.99),
-        inputMetricMaxUs(InputMetric::JoystickProcessMutexWait),
-        inputMetricCalls(InputMetric::JoystickProcessMutexHold),
-        inputMetricPercentileUs(InputMetric::JoystickProcessMutexHold, 0.50),
-        inputMetricPercentileUs(InputMetric::JoystickProcessMutexHold, 0.95),
-        inputMetricPercentileUs(InputMetric::JoystickProcessMutexHold, 0.99),
-        inputMetricMaxUs(InputMetric::JoystickProcessMutexHold));
+        static_cast<unsigned long long>(st.instanceId),
+        calls(InputMetric::InputTotal), metric(InputMetric::InputTotal).p50,
+        metric(InputMetric::InputTotal).p95, metric(InputMetric::InputTotal).p99,
+        metric(InputMetric::InputTotal).max,
+        calls(InputMetric::JoystickLockWait), metric(InputMetric::JoystickLockWait).p50,
+        metric(InputMetric::JoystickLockWait).p95, metric(InputMetric::JoystickLockWait).p99,
+        metric(InputMetric::JoystickLockWait).max,
+        calls(InputMetric::JoystickSample), metric(InputMetric::JoystickSample).p50,
+        metric(InputMetric::JoystickSample).p95, metric(InputMetric::JoystickSample).p99,
+        metric(InputMetric::JoystickSample).max,
+        calls(InputMetric::JoystickProject), metric(InputMetric::JoystickProject).p50,
+        metric(InputMetric::JoystickProject).p95, metric(InputMetric::JoystickProject).p99,
+        metric(InputMetric::JoystickProject).max,
+        calls(InputMetric::JoystickSDLUpdate), metric(InputMetric::JoystickSDLUpdate).p50,
+        metric(InputMetric::JoystickSDLUpdate).p95, metric(InputMetric::JoystickSDLUpdate).p99,
+        metric(InputMetric::JoystickSDLUpdate).max,
+        calls(InputMetric::JoystickProcessMutexWait),
+        metric(InputMetric::JoystickProcessMutexWait).p50,
+        metric(InputMetric::JoystickProcessMutexWait).p95,
+        metric(InputMetric::JoystickProcessMutexWait).p99,
+        metric(InputMetric::JoystickProcessMutexWait).max,
+        calls(InputMetric::JoystickProcessMutexHold),
+        metric(InputMetric::JoystickProcessMutexHold).p50,
+        metric(InputMetric::JoystickProcessMutexHold).p95,
+        metric(InputMetric::JoystickProcessMutexHold).p99,
+        metric(InputMetric::JoystickProcessMutexHold).max);
+}
 
-    const auto hudPercentileUs = [&](HudPhase phase, double percentile) -> double {
-        const uint32_t index = static_cast<uint32_t>(phase);
-        const uint32_t count = st.hudPhaseCount[index];
-        if (!count)
-            return 0.0;
-        double samples[State::kHudPhaseCap];
-        for (uint32_t i = 0; i < count; ++i)
-            samples[i] = TicksToMs(st.hudPhaseTicks[index][i]) * 1000.0;
-        std::sort(samples, samples + count);
-        return PercentileSorted(samples, count, percentile);
+inline void ReportHudPhaseSummary(const State& st)
+{
+    PercentileSummary phases[static_cast<uint32_t>(HudPhase::Count)];
+    for (uint32_t i = 0; i < static_cast<uint32_t>(HudPhase::Count); ++i)
+        phases[i] = SummarizeHudPhase(st, static_cast<HudPhase>(i));
+
+    const double ticksToUs = st.freq
+        ? 1000000.0 / static_cast<double>(st.freq) : 0.0;
+    const auto phase = [&](HudPhase hudPhase) -> const PercentileSummary& {
+        return phases[static_cast<uint32_t>(hudPhase)];
     };
-    const auto hudAverageUs = [&](HudPhase phase) -> double {
-        const uint32_t index = static_cast<uint32_t>(phase);
+    const auto sumUs = [&](HudPhase hudPhase) -> double {
+        return static_cast<double>(st.hudPhaseSumTicks[
+            static_cast<uint32_t>(hudPhase)]) * ticksToUs;
+    };
+    const auto averageUs = [&](HudPhase hudPhase) -> double {
+        const uint32_t index = static_cast<uint32_t>(hudPhase);
         return st.hudPhaseCalls[index]
-            ? TicksToMs(st.hudPhaseSumTicks[index]) * 1000.0
-                / static_cast<double>(st.hudPhaseCalls[index])
+            ? sumUs(hudPhase) / static_cast<double>(st.hudPhaseCalls[index])
             : 0.0;
     };
-    const auto hudSumUs = [&](HudPhase phase) -> double {
-        return TicksToMs(st.hudPhaseSumTicks[static_cast<uint32_t>(phase)]) * 1000.0;
-    };
-    const auto hudMaxUs = [&](HudPhase phase) -> double {
-        return TicksToMs(st.hudPhaseMaxTicks[static_cast<uint32_t>(phase)]) * 1000.0;
-    };
-    fprintf(stderr,
-        "[MelonPrimePerf] hud_phase_us "
+    std::fprintf(stderr,
+        "[MelonPrimePerf] hud_phase_us instance_id=%llu "
         "state[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "scoreboard_plan[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
         "scoreboard_raster[c=%llu sum=%.1f avg=%.1f p50=%.1f p95=%.1f max=%.1f] "
@@ -665,50 +673,44 @@ inline void MaybeReport1Hz()
         "stamp_checks=%llu stamp_commits=%llu plan_build=%llu full_rebuild=%llu "
         "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
         "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu\n",
+        static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::State)]),
-        hudSumUs(HudPhase::State), hudAverageUs(HudPhase::State),
-        hudPercentileUs(HudPhase::State, 0.50), hudPercentileUs(HudPhase::State, 0.95),
-        hudMaxUs(HudPhase::State),
+        sumUs(HudPhase::State), averageUs(HudPhase::State), phase(HudPhase::State).p50,
+        phase(HudPhase::State).p95, phase(HudPhase::State).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::ScoreboardPlan)]),
-        hudSumUs(HudPhase::ScoreboardPlan), hudAverageUs(HudPhase::ScoreboardPlan),
-        hudPercentileUs(HudPhase::ScoreboardPlan, 0.50),
-        hudPercentileUs(HudPhase::ScoreboardPlan, 0.95), hudMaxUs(HudPhase::ScoreboardPlan),
+        sumUs(HudPhase::ScoreboardPlan), averageUs(HudPhase::ScoreboardPlan),
+        phase(HudPhase::ScoreboardPlan).p50, phase(HudPhase::ScoreboardPlan).p95,
+        phase(HudPhase::ScoreboardPlan).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::ScoreboardRaster)]),
-        hudSumUs(HudPhase::ScoreboardRaster), hudAverageUs(HudPhase::ScoreboardRaster),
-        hudPercentileUs(HudPhase::ScoreboardRaster, 0.50),
-        hudPercentileUs(HudPhase::ScoreboardRaster, 0.95), hudMaxUs(HudPhase::ScoreboardRaster),
+        sumUs(HudPhase::ScoreboardRaster), averageUs(HudPhase::ScoreboardRaster),
+        phase(HudPhase::ScoreboardRaster).p50, phase(HudPhase::ScoreboardRaster).p95,
+        phase(HudPhase::ScoreboardRaster).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::QPainter)]),
-        hudSumUs(HudPhase::QPainter), hudAverageUs(HudPhase::QPainter),
-        hudPercentileUs(HudPhase::QPainter, 0.50), hudPercentileUs(HudPhase::QPainter, 0.95),
-        hudMaxUs(HudPhase::QPainter),
+        sumUs(HudPhase::QPainter), averageUs(HudPhase::QPainter),
+        phase(HudPhase::QPainter).p50, phase(HudPhase::QPainter).p95,
+        phase(HudPhase::QPainter).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::Clear)]),
-        hudSumUs(HudPhase::Clear), hudAverageUs(HudPhase::Clear),
-        hudPercentileUs(HudPhase::Clear, 0.50), hudPercentileUs(HudPhase::Clear, 0.95),
-        hudMaxUs(HudPhase::Clear),
+        sumUs(HudPhase::Clear), averageUs(HudPhase::Clear), phase(HudPhase::Clear).p50,
+        phase(HudPhase::Clear).p95, phase(HudPhase::Clear).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::Hash)]),
-        hudSumUs(HudPhase::Hash), hudAverageUs(HudPhase::Hash),
-        hudPercentileUs(HudPhase::Hash, 0.50), hudPercentileUs(HudPhase::Hash, 0.95),
-        hudMaxUs(HudPhase::Hash),
+        sumUs(HudPhase::Hash), averageUs(HudPhase::Hash), phase(HudPhase::Hash).p50,
+        phase(HudPhase::Hash).p95, phase(HudPhase::Hash).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::UploadPrepare)]),
-        hudSumUs(HudPhase::UploadPrepare), hudAverageUs(HudPhase::UploadPrepare),
-        hudPercentileUs(HudPhase::UploadPrepare, 0.50),
-        hudPercentileUs(HudPhase::UploadPrepare, 0.95),
-        hudMaxUs(HudPhase::UploadPrepare),
+        sumUs(HudPhase::UploadPrepare), averageUs(HudPhase::UploadPrepare),
+        phase(HudPhase::UploadPrepare).p50, phase(HudPhase::UploadPrepare).p95,
+        phase(HudPhase::UploadPrepare).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::GpuUpload)]),
-        hudSumUs(HudPhase::GpuUpload), hudAverageUs(HudPhase::GpuUpload),
-        hudPercentileUs(HudPhase::GpuUpload, 0.50),
-        hudPercentileUs(HudPhase::GpuUpload, 0.95),
-        hudMaxUs(HudPhase::GpuUpload),
+        sumUs(HudPhase::GpuUpload), averageUs(HudPhase::GpuUpload),
+        phase(HudPhase::GpuUpload).p50, phase(HudPhase::GpuUpload).p95,
+        phase(HudPhase::GpuUpload).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::Composite)]),
-        hudSumUs(HudPhase::Composite), hudAverageUs(HudPhase::Composite),
-        hudPercentileUs(HudPhase::Composite, 0.50),
-        hudPercentileUs(HudPhase::Composite, 0.95),
-        hudMaxUs(HudPhase::Composite),
+        sumUs(HudPhase::Composite), averageUs(HudPhase::Composite),
+        phase(HudPhase::Composite).p50, phase(HudPhase::Composite).p95,
+        phase(HudPhase::Composite).max,
         static_cast<unsigned long long>(st.hudPhaseCalls[static_cast<uint32_t>(HudPhase::TotalActive)]),
-        hudSumUs(HudPhase::TotalActive), hudAverageUs(HudPhase::TotalActive),
-        hudPercentileUs(HudPhase::TotalActive, 0.50),
-        hudPercentileUs(HudPhase::TotalActive, 0.95),
-        hudMaxUs(HudPhase::TotalActive),
+        sumUs(HudPhase::TotalActive), averageUs(HudPhase::TotalActive),
+        phase(HudPhase::TotalActive).p50, phase(HudPhase::TotalActive).p95,
+        phase(HudPhase::TotalActive).max,
         static_cast<unsigned long long>(st.cntCustomHudCalls),
         static_cast<unsigned long long>(st.cntCustomHudDrawn),
         static_cast<unsigned long long>(st.cntHudVisualRenders),
@@ -726,6 +728,89 @@ inline void MaybeReport1Hz()
         static_cast<unsigned long long>(st.cntHudRegionHashCalls),
         static_cast<unsigned long long>(st.sumHudRegionHashBytes),
         static_cast<unsigned long long>(st.cntHudUploadCalls));
+}
+
+inline void MaybeReport1Hz()
+{
+    State& st = S();
+    if (!st.freq || IsCaptureOnly())
+        return;
+
+    const Uint64 now = SDL_GetPerformanceCounter();
+    if (!st.lastReportTick)
+        st.lastReportTick = now;
+
+    const double sinceReportMs = TicksToMs(now - st.lastReportTick);
+    if (sinceReportMs < 1000.0)
+        return;
+
+    const auto reportClock = melonDS::MelonPrimePerfClock::Now();
+    std::fprintf(stderr,
+        "[MelonPrimePerfPhase] instance_id=%llu report_qpc_ticks=%llu qpc_frequency=%llu\n",
+        static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportClock.Ticks),
+        static_cast<unsigned long long>(reportClock.Frequency));
+
+    const PercentileSummary frame = SummarizeDoubleSamples<State::kFrameWindowCap>(
+        st.windowFrameMs, st.windowFrameCount);
+    const auto secAvg = [&](Section sec) -> double {
+        const uint32_t idx = static_cast<uint32_t>(sec);
+        return st.secSamples[idx]
+            ? st.secSumMs[idx] / static_cast<double>(st.secSamples[idx]) : 0.0;
+    };
+    const uint64_t inputTotal =
+        st.cntInputSource[static_cast<uint32_t>(InputSource::WinRaw)]
+        + st.cntInputSource[static_cast<uint32_t>(InputSource::MacRaw)]
+        + st.cntInputSource[static_cast<uint32_t>(InputSource::LinuxRaw)]
+        + st.cntInputSource[static_cast<uint32_t>(InputSource::PanelDelta)]
+        + st.cntInputSource[static_cast<uint32_t>(InputSource::QCursorFallback)];
+
+    std::fprintf(stderr,
+        "[MelonPrimePerf] frame_ms instance_id=%llu p50=%.3f p95=%.3f p99=%.3f max=%.3f n=%u | "
+        "sec_avg_ms sleep=%.3f spin=%.3f setup=%.3f vkbegin=%.3f input=%.3f prerun=%.3f run=%.3f draw=%.3f drain=%.3f book=%.3f yield=%.3f | "
+        "input_src raw=%llu mac=%llu linux=%llu panel=%llu qcur=%llu (tot=%llu) | "
+        "warp=%llu oog_patch=%llu osd_apply=%llu osd_write=%llu | "
+        "hud_dirty_px=%llu gl_up_B=%llu dr3_skip=%llu hud_render_us=%.1f\n",
+        static_cast<unsigned long long>(st.instanceId),
+        frame.p50, frame.p95, frame.p99, frame.max, frame.count,
+        secAvg(Section::LimiterSleep), secAvg(Section::LimiterSpin),
+        secAvg(Section::FrameSetup), secAvg(Section::VulkanBegin),
+        secAvg(Section::Input), secAvg(Section::PreRun), secAvg(Section::RunFrame),
+        secAvg(Section::Draw), secAvg(Section::DeferredDrain),
+        secAvg(Section::PostDrawBookkeeping), secAvg(Section::UncappedYield),
+        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::WinRaw)]),
+        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::MacRaw)]),
+        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::LinuxRaw)]),
+        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::PanelDelta)]),
+        static_cast<unsigned long long>(st.cntInputSource[static_cast<uint32_t>(InputSource::QCursorFallback)]),
+        static_cast<unsigned long long>(inputTotal),
+        static_cast<unsigned long long>(st.cntWarp),
+        static_cast<unsigned long long>(st.cntOutOfGamePatch),
+        static_cast<unsigned long long>(st.cntOsdColorApply),
+        static_cast<unsigned long long>(st.cntOsdColorWrite),
+        static_cast<unsigned long long>(st.sumHudDirtyArea),
+        static_cast<unsigned long long>(st.sumGlUploadBytes),
+        static_cast<unsigned long long>(st.cntDr3HashSkip),
+        st.cntCustomHudFrames
+            ? TicksToMs(st.sumCustomHudTicks) * 1000.0
+                / static_cast<double>(st.cntCustomHudFrames) : 0.0);
+
+    std::fprintf(stderr,
+        "[MelonPrimePerf] audit_counts instance_id=%llu "
+        "stage_matrix_full_validation=%llu stage_matrix_validation_retry=%llu "
+        "surface_visibility_state_change=%llu renderer_fast_cache_refresh=%llu "
+        "crosshair_projection_accepted=%llu crosshair_projection_rejected=%llu\n",
+        static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(st.cntStageMatrixFullValidations),
+        static_cast<unsigned long long>(st.cntStageMatrixValidationRetries),
+        static_cast<unsigned long long>(st.cntSurfaceVisibilityStateChanges),
+        static_cast<unsigned long long>(st.cntRendererFastCacheRefreshes),
+        static_cast<unsigned long long>(st.cntCrosshairProjectionAccepted),
+        static_cast<unsigned long long>(st.cntCrosshairProjectionRejected));
+
+    ReportExplicitLatency(st);
+    ReportInputMetricSummary(st);
+    ReportHudPhaseSummary(st);
 
     st.lastReportTick = now;
     ResetWindowStats();
@@ -1093,40 +1178,55 @@ inline void ShutdownReport()
         return;
 
     State& st = S();
-    if (st.ringCount == 0) {
-        fprintf(stderr, "[MelonPrimePerf] shutdown: no frames recorded\n");
-        return;
+    if (st.ringCount == 0)
+        std::fprintf(stderr,
+            "[MelonPrimePerf] shutdown instance_id=%llu: no frames recorded\n",
+            static_cast<unsigned long long>(st.instanceId));
+    else
+    {
+        double sorted[State::kRingCap];
+        const uint32_t n = st.ringCount;
+        for (uint32_t i = 0; i < n; ++i) {
+            const uint32_t idx = (st.ringWrite + State::kRingCap - n + i)
+                % State::kRingCap;
+            sorted[i] = st.frameMsRing[idx];
+        }
+        std::sort(sorted, sorted + n);
+
+        const double p50 = PercentileSorted(sorted, n, 0.50);
+        const double p95 = PercentileSorted(sorted, n, 0.95);
+        const double p99 = PercentileSorted(sorted, n, 0.99);
+        const double maxMs = sorted[n - 1];
+
+        std::fprintf(stderr,
+            "[MelonPrimePerf] shutdown summary instance_id=%llu: frames=%u frame_ms "
+            "p50=%.3f p95=%.3f p99=%.3f max=%.3f\n",
+            static_cast<unsigned long long>(st.instanceId), n,
+            p50, p95, p99, maxMs);
+
+        std::fprintf(stderr, "[MelonPrimePerf] histogram instance_id=%llu bucket_ms=%.1f:\n",
+            static_cast<unsigned long long>(st.instanceId), State::kHistBucketMs);
+        for (uint32_t b = 0; b < State::kHistBuckets; ++b) {
+            if (st.histTotal[b])
+                std::fprintf(stderr, "  %4.1f-%4.1f ms: %u\n",
+                    b * State::kHistBucketMs,
+                    (b + 1) * State::kHistBucketMs,
+                    st.histTotal[b]);
+        }
+        if (st.histOverflow)
+            std::fprintf(stderr, "  >=%.1f ms: %u\n",
+                State::kHistBuckets * State::kHistBucketMs,
+                st.histOverflow);
     }
 
-    double sorted[State::kRingCap];
-    const uint32_t n = st.ringCount;
-    for (uint32_t i = 0; i < n; ++i) {
-        const uint32_t idx = (st.ringWrite + State::kRingCap - n + i) % State::kRingCap;
-        sorted[i] = st.frameMsRing[idx];
-    }
-    std::sort(sorted, sorted + n);
-
-    const double p50 = PercentileSorted(sorted, n, 0.50);
-    const double p95 = PercentileSorted(sorted, n, 0.95);
-    const double p99 = PercentileSorted(sorted, n, 0.99);
-    const double maxMs = sorted[n - 1];
-
-    fprintf(stderr,
-        "[MelonPrimePerf] shutdown summary: frames=%u frame_ms p50=%.3f p95=%.3f p99=%.3f max=%.3f\n",
-        n, p50, p95, p99, maxMs);
-
-    fprintf(stderr, "[MelonPrimePerf] histogram bucket_ms=%.1f:\n", State::kHistBucketMs);
-    for (uint32_t b = 0; b < State::kHistBuckets; ++b) {
-        if (st.histTotal[b])
-            fprintf(stderr, "  %4.1f-%4.1f ms: %u\n",
-                b * State::kHistBucketMs,
-                (b + 1) * State::kHistBucketMs,
-                st.histTotal[b]);
-    }
-    if (st.histOverflow)
-        fprintf(stderr, "  >=%.1f ms: %u\n",
-            State::kHistBuckets * State::kHistBucketMs,
-            st.histOverflow);
+    // Capture-only runs intentionally defer all formatting and sorting until
+    // this owning EmuThread shutdown point. These helpers also make the final
+    // partial report useful when a live 1 Hz window never elapsed.
+    ReportExplicitLatency(st);
+    ReportInputMetricSummary(st);
+    ReportHudPhaseSummary(st);
+    if (st.frameCsv)
+        std::fflush(st.frameCsv);
 }
 
 } // namespace MelonPrimePerf
@@ -1175,6 +1275,8 @@ enum class InputMetric : uint8_t {
 };
 
 inline bool IsEnabled() { return false; }
+inline void BindInstance(uint64_t) {}
+inline bool IsCaptureOnly() { return false; }
 inline bool IsFrameActive() { return false; }
 inline unsigned long long ReadTicksIfActive() { return 0; }
 inline unsigned long long ReadTicksIfEnabled() { return 0; }

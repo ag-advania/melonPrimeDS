@@ -229,6 +229,15 @@ callback layer. The developer probe reports the wait and hold time of the short
 process lock as `JoystickProcessMutexWait` and `JoystickProcessMutexHold`, but
 the lock is not removed without multi-instance evidence.
 
+Generic performance state is thread-local and is bound to the owning
+`EmuThread` instance before its frame loop starts. Reports carry
+`instance_id`; a configured frame CSV uses `%INSTANCE%` or an automatic
+`.instanceN` suffix and is closed by the owning thread-local state destructor,
+not an `atexit` callback. `MELONPRIME_PERF_CAPTURE_ONLY=1` keeps sorting,
+formatting, and stderr reporting until shutdown. Raw lock telemetry is written
+after each measured mutex is released, and `DeferredDrain` reports only after
+its frame/stage scope has ended.
+
 The input implementation keeps SRP boundaries as fixed data and direct calls:
 `JoystickBindingProgram` is the cold `CompiledInputBindings` boundary,
 `sampleJoystickPhysical*` is physical acquisition, and

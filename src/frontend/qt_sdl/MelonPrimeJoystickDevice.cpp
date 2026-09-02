@@ -24,19 +24,20 @@ public:
         , m_lock(mutex)
         , m_holdStart(MelonPrimePerf::ReadTicksIfEnabled())
     {
-        if (m_holdStart >= m_waitStart)
-            MelonPrimePerf::RecordInputMetricTicks(
-                MelonPrimePerf::InputMetric::JoystickProcessMutexWait,
-                m_holdStart - m_waitStart);
     }
 
     ~SdlProcessMutexGuard()
     {
-        const Uint64 endTick = MelonPrimePerf::ReadTicksIfEnabled();
-        if (endTick >= m_holdStart)
+        const Uint64 releaseTick = MelonPrimePerf::ReadTicksIfEnabled();
+        m_lock.unlock();
+        if (m_holdStart >= m_waitStart)
+            MelonPrimePerf::RecordInputMetricTicks(
+                MelonPrimePerf::InputMetric::JoystickProcessMutexWait,
+                m_holdStart - m_waitStart);
+        if (releaseTick >= m_holdStart)
             MelonPrimePerf::RecordInputMetricTicks(
                 MelonPrimePerf::InputMetric::JoystickProcessMutexHold,
-                endTick - m_holdStart);
+                releaseTick - m_holdStart);
     }
 
     SdlProcessMutexGuard(const SdlProcessMutexGuard&) = delete;
@@ -52,6 +53,23 @@ using SdlProcessMutexGuard = std::lock_guard<std::mutex>;
 #endif
 
 } // namespace
+
+std::vector<JoystickDescriptor> MelonPrimeJoystickDevice::EnumerateJoysticks()
+{
+    SdlProcessMutexGuard processLock(s_sdlProcessMutex);
+    const int count = SDL_NumJoysticks();
+    if (count <= 0)
+        return {};
+
+    std::vector<JoystickDescriptor> result;
+    result.reserve(static_cast<size_t>(count));
+    for (int id = 0; id < count; ++id)
+    {
+        const char* const name = SDL_JoystickNameForIndex(id);
+        result.push_back({id, name ? name : ""});
+    }
+    return result;
+}
 
 MelonPrimeJoystickDevice::MelonPrimeJoystickDevice()
     : m_mutex(SDL_CreateMutex(), SDL_DestroyMutex)

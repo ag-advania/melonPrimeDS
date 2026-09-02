@@ -5,6 +5,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include "Platform.h"
 
@@ -25,6 +27,11 @@ struct JoystickPhysicalSource {
     uint16_t index = 0;
 };
 
+struct JoystickDescriptor {
+    int id = -1;
+    std::string name;
+};
+
 class MelonPrimeJoystickDevice final {
 public:
     MelonPrimeJoystickDevice();
@@ -32,6 +39,10 @@ public:
 
     MelonPrimeJoystickDevice(const MelonPrimeJoystickDevice&) = delete;
     MelonPrimeJoystickDevice& operator=(const MelonPrimeJoystickDevice&) = delete;
+
+    // Cold settings API. SDL's process-wide joystick registry is enumerated
+    // under the same mutex used by open/close/update bookkeeping.
+    [[nodiscard]] static std::vector<JoystickDescriptor> EnumerateJoysticks();
 
     [[nodiscard]] std::shared_ptr<SDL_mutex> Mutex() const noexcept
     {

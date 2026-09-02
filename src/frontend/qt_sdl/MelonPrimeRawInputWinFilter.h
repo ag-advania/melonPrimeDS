@@ -70,12 +70,21 @@ namespace MelonPrime {
 
     private:
         [[nodiscard]] bool CreateHiddenWindow(RawInputSubscription* subscription);
+        // These helpers require the subscription frame mutex to be held by
+        // the caller. The public wrappers below the control plane acquire it
+        // exactly once before entering the locked implementation.
+        [[nodiscard]] bool CreateHiddenWindowLocked(RawInputSubscription* subscription);
         [[nodiscard]] bool DestroyHiddenWindow(RawInputSubscription* subscription);
+        [[nodiscard]] bool DestroyHiddenWindowLocked(RawInputSubscription* subscription);
         [[nodiscard]] bool RegisterDevices(HWND target, bool useHiddenWindow);
         void UnregisterDevices();
         [[nodiscard]] bool ApplyOwnerRegistration(
             RawInputSubscription* subscription, bool recreateHiddenWindow);
+        [[nodiscard]] bool ApplyOwnerRegistrationLocked(
+            RawInputSubscription* subscription, bool recreateHiddenWindow);
         [[nodiscard]] bool ReconfigureActiveRegistration(
+            RawInputSubscription* subscription, bool generationAlreadyAdvanced);
+        [[nodiscard]] bool ReconfigureActiveRegistrationLocked(
             RawInputSubscription* subscription, bool generationAlreadyAdvanced);
         [[nodiscard]] bool UpdateOwnerLocked(
             RawInputSubscription* subscription, bool eligible);

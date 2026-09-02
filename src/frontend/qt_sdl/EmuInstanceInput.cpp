@@ -713,18 +713,22 @@ void EmuInstance::probeJoystickConnection()
 }
 
 bool EmuInstance::sampleJoystickPhysicalLocked(
-    JoystickPhysicalSnapshot& snapshot)
+    JoystickPhysicalSnapshot& snapshot, Uint64* updateTicks)
 {
     activateJoystickBindingProgramLocked();
 #ifdef MELONPRIME_DS
     if (!joystickDevice.HasJoystickLocked())
         return false;
 
-    {
-        MelonPrimePerf::ScopedInputMetric updateMetric(
-            MelonPrimePerf::InputMetric::JoystickSDLUpdate);
-        joystickDevice.UpdateLocked();
-    }
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const Uint64 updateStartTick = MelonPrimePerf::ReadTicksIfEnabled();
+#endif
+    joystickDevice.UpdateLocked();
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const Uint64 updateEndTick = MelonPrimePerf::ReadTicksIfEnabled();
+    if (updateTicks && updateEndTick >= updateStartTick)
+        *updateTicks = updateEndTick - updateStartTick;
+#endif
     if (UNLIKELY(!joystickDevice.IsAttachedLocked())) {
         closeJoystick();
         return false;
@@ -780,22 +784,29 @@ bool EmuInstance::sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot)
     SDL_LockMutex(joyMutex.get());
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     const Uint64 lockAcquiredTick = MelonPrimePerf::ReadTicksIfEnabled();
+    const Uint64 sampleStartTick = lockAcquiredTick;
+#endif
+    Uint64 updateTicks = 0;
+    const bool sampled = sampleJoystickPhysicalLocked(snapshot, &updateTicks);
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const Uint64 sampleEndTick = MelonPrimePerf::ReadTicksIfEnabled();
+#endif
+    SDL_UnlockMutex(joyMutex.get());
+
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     if (lockAcquiredTick >= lockStartTick)
         MelonPrimePerf::RecordInputMetricTicks(
             MelonPrimePerf::InputMetric::JoystickLockWait,
             lockAcquiredTick - lockStartTick);
+    if (sampleEndTick >= sampleStartTick)
+        MelonPrimePerf::RecordInputMetricTicks(
+            MelonPrimePerf::InputMetric::JoystickSample,
+            sampleEndTick - sampleStartTick);
+    if (updateTicks)
+        MelonPrimePerf::RecordInputMetricTicks(
+            MelonPrimePerf::InputMetric::JoystickSDLUpdate,
+            updateTicks);
 #endif
-    bool sampled = false;
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    {
-        MelonPrimePerf::ScopedInputMetric sampleMetric(
-            MelonPrimePerf::InputMetric::JoystickSample);
-        sampled = sampleJoystickPhysicalLocked(snapshot);
-    }
-#else
-    sampled = sampleJoystickPhysicalLocked(snapshot);
-#endif
-    SDL_UnlockMutex(joyMutex.get());
     return sampled;
 }
 

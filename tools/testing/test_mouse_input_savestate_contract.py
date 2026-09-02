@@ -63,12 +63,12 @@ def main() -> None:
 
     reconfigure = function_body(
         raw_filter,
-        "bool RawInputWinFilter::ReconfigureActiveRegistration(",
+        "bool RawInputWinFilter::ReconfigureActiveRegistrationLocked(",
         "void RawInputWinFilter::DeactivateActiveRegistration(",
     )
     apply_owner = function_body(
         raw_filter,
-        "bool RawInputWinFilter::ApplyOwnerRegistration(",
+        "bool RawInputWinFilter::ApplyOwnerRegistrationLocked(",
         "    // =========================================================================\n    // drainMessagesOnly",
     )
     for needle in (
@@ -76,7 +76,7 @@ def main() -> None:
         "subscription->baselineReady = false",
         "BeginRegistrationGeneration",
         "UnregisterDevices()",
-        "ApplyOwnerRegistration(subscription, generationAlreadyAdvanced)",
+        "ApplyOwnerRegistrationLocked(\n                subscription, generationAlreadyAdvanced)",
         "subscription->state->discardDeltas()",
         "subscription->state->resetAll()",
         "subscription->state->syncPhysicalState()",
@@ -109,12 +109,12 @@ def main() -> None:
         raise AssertionError("locked Raw drain must capture the buffer before peeking messages")
     for needle in (
         "recreateHiddenWindow",
-        "DestroyHiddenWindow(subscription)",
-        "CreateHiddenWindow(subscription)",
+        "DestroyHiddenWindowLocked(subscription)",
+        "CreateHiddenWindowLocked(subscription)",
     ):
         require(apply_owner, needle, "hidden Raw registration epoch fence")
-    if apply_owner.index("DestroyHiddenWindow(subscription)") > apply_owner.index(
-        "CreateHiddenWindow(subscription)"
+    if apply_owner.index("DestroyHiddenWindowLocked(subscription)") > apply_owner.index(
+        "CreateHiddenWindowLocked(subscription)"
     ):
         raise AssertionError("hidden Raw registration must destroy before create")
 
@@ -124,7 +124,7 @@ def main() -> None:
         "setQtFilterRequested",
     ):
         body = function_body(raw_filter, f"void RawInputWinFilter::{setter}(", "void RawInputWinFilter::")
-        require(body, "ReconfigureActiveRegistration(subscription, false)", f"{setter} route")
+        require(body, "ReconfigureActiveRegistrationLocked(subscription, false)", f"{setter} route")
 
     require(game_input, "SetInputGenerationFromEmu", "input generation publication")
     require(game_input, "hk.baselineReady", "input readiness gate")

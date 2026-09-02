@@ -1178,6 +1178,16 @@ def main() -> None:
         "bool RawInputWinFilter::ApplyOwnerRegistration(",
         "    // =========================================================================\n    // drainMessagesOnly",
     )
+    raw_reconfigure_locked = body(
+        raw_filter,
+        "bool RawInputWinFilter::ReconfigureActiveRegistrationLocked(",
+        "void RawInputWinFilter::DeactivateActiveRegistration(",
+    )
+    raw_apply_owner_locked = body(
+        raw_filter,
+        "bool RawInputWinFilter::ApplyOwnerRegistrationLocked(",
+        "    // =========================================================================\n    // drainMessagesOnly",
+    )
     raw_drain = body(
         raw_filter,
         "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
@@ -2087,22 +2097,22 @@ def main() -> None:
     # Only the creator thread may destroy the old window, and the replacement
     # happens on the cold registration path before Raw input is accepted.
     for needle in (
-        "ApplyOwnerRegistration(\n            RawInputSubscription* subscription, bool recreateHiddenWindow)",
-        "ApplyOwnerRegistration(subscription, generationAlreadyAdvanced)",
+        "ApplyOwnerRegistrationLocked(\n            RawInputSubscription* subscription, bool recreateHiddenWindow)",
+        "ApplyOwnerRegistrationLocked(\n                subscription, generationAlreadyAdvanced)",
         "if (recreateHiddenWindow && subscription->hiddenWindow",
-        "!DestroyHiddenWindow(subscription)",
-        "CreateHiddenWindow(subscription)",
+        "!DestroyHiddenWindowLocked(subscription)",
+        "CreateHiddenWindowLocked(subscription)",
         "HWND_MESSAGE, nullptr, instance, nullptr",
     ):
         require(raw_filter_header + raw_filter, needle, "Raw hidden HWND epoch boundary")
-    if not raw_reconfigure or not raw_apply_owner:
+    if not raw_reconfigure_locked or not raw_apply_owner_locked:
         raise AssertionError("Raw hidden HWND registration bodies are missing")
-    if raw_apply_owner.index("DestroyHiddenWindow(subscription)") > raw_apply_owner.index(
-        "CreateHiddenWindow(subscription)"
+    if raw_apply_owner_locked.index("DestroyHiddenWindowLocked(subscription)") > raw_apply_owner_locked.index(
+        "CreateHiddenWindowLocked(subscription)"
     ):
         raise AssertionError("old Raw hidden HWND must be destroyed before replacement")
-    if raw_filter.count("ApplyOwnerRegistration(") != 2:
-        raise AssertionError("ApplyOwnerRegistration must stay on the cold reconfigure path")
+    if raw_filter.count("ApplyOwnerRegistrationLocked(") != 3:
+        raise AssertionError("ApplyOwnerRegistrationLocked must stay on the cold reconfigure path")
 
     # BF/BG: the buffered Raw drain is owned by the Windows filter, while the
     # public reset wrapper is the only cross-thread lifecycle entry and holds

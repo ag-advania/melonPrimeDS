@@ -130,6 +130,13 @@ void EmuThread::run()
     Config::Table& globalCfg = emuInstance->getGlobalConfig();
     u32 mainScreenPos[3];
 
+#ifdef MELONPRIME_DS
+    // Generic performance state is thread-local. Bind the owning emulator
+    // identity once before setup/frame telemetry can be recorded.
+    MelonPrimePerf::BindInstance(
+        static_cast<uint64_t>(emuInstance->getInstanceID()));
+#endif
+
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     const char* testSoftwareOpenGLDisplayOff =
         std::getenv("MELONPRIME_TEST_SOFTWARE_OPENGL_DISPLAY_OFF");

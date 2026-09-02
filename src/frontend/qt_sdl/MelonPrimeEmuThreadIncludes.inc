@@ -3,6 +3,7 @@
 #ifdef MELONPRIME_DS
 #include "MelonPrime.h"
 #include "MelonPrimePerfProbe.h"
+#include "MelonPrimeRawInputPerfProbe.h"
 #include "MelonPrimeVideoBackend.h"
 #if defined(MELONPRIME_ENABLE_VULKAN)
 #include "Screen.h"

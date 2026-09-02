@@ -91,6 +91,14 @@ Windows Raw telemetry is separately compile-gated by
 - `GetRawInputBuffer` calls, non-empty/empty calls, and event totals;
 - late-latch delta claims and post-draw captured events.
 
+Generic reports and frame CSV rows carry `instance_id`. Each emulation thread
+has its own generic probe state; set `MELONPRIME_PERF_CSV` to a path containing
+`%INSTANCE%` when collecting more than one instance (without the placeholder,
+the probe adds `.instanceN`). Set `MELONPRIME_PERF_CAPTURE_ONLY=1` to capture
+without periodic sorting/formatting; the owning thread emits the final report
+at shutdown. Raw lock wait/hold samples are committed after releasing the
+measured lock, and its `DeferredDrain` report is emitted after the stage scope.
+
 The Raw lock and batch counters are report-window totals. Divide them by the
 corresponding frame/snapshot count when a per-frame rate is needed. Timing
 percentiles retain at least the latest 2048 samples in the developer probe;

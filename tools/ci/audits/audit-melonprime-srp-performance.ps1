@@ -1867,12 +1867,16 @@ $registerBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::RegisterDevices\s*\('
 $reconfigureRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ReconfigureActiveRegistration\s*\('
+$reconfigureRawLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::ReconfigureActiveRegistrationLocked\s*\('
 $deactivateActiveRegistrationBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::DeactivateActiveRegistration\s*\('
 $deferredDrainRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::DeferredDrain\s*\('
 $applyOwnerRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ApplyOwnerRegistration\s*\('
+$applyOwnerRawLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::ApplyOwnerRegistrationLocked\s*\('
 $rawHiddenWndProcBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'LRESULT\s+CALLBACK\s+RawInputWinFilter::HiddenWndProc\s*\('
 $rawDrainLockedBody = Get-FunctionText -Path $rawWinFilterPath `
@@ -1888,9 +1892,9 @@ if ($rawWinFilterHeaderText -notmatch '\[\[nodiscard\]\]\s+bool\s+RegisterDevice
         $registerBody.IndexOf('if (!RegisterRawInputDevices(', [System.StringComparison]::Ordinal) -or
     $rawWinFilterText -notmatch 'MELONPRIME_TEST_FORCE_RAW_REGISTER_FAILURE' -or
     $rawWinFilterText -notmatch 'if\s*\(!ReconfigureActiveRegistration\s*\(\s*subscription,\s*true\s*\)\)' -or
-    -not $reconfigureRawBody -or
-    $reconfigureRawBody -notmatch 'PlatformInputOwnerService::Release\s*\(\s*\*subscription->owner\s*\)' -or
-    $reconfigureRawBody -notmatch 'subscription->baselineReady\s*=\s*false') {
+    -not $reconfigureRawLockedBody -or
+    $reconfigureRawLockedBody -notmatch 'PlatformInputOwnerService::Release\s*\(\s*\*subscription->owner\s*\)' -or
+    $reconfigureRawLockedBody -notmatch 'subscription->baselineReady\s*=\s*false') {
     Add-Error 'Rule AT: Raw registration success gate and failure rollback are incomplete'
 }
 
@@ -2206,13 +2210,13 @@ if ($rawInputPerfText -notmatch
 if ($rawWinFilterText -match 'WM_NCCREATE|WM_NCDESTROY|GWLP_USERDATA' -or
     $rawWinFilterText -notmatch
         'HWND_MESSAGE,\s*nullptr,\s*instance,\s*nullptr' -or
-    -not $reconfigureRawBody -or
-    $reconfigureRawBody -notmatch
-        'ApplyOwnerRegistration\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
-    -not $applyOwnerRawBody -or
-    $applyOwnerRawBody.IndexOf('DestroyHiddenWindow(subscription)',
+    -not $reconfigureRawLockedBody -or
+    $reconfigureRawLockedBody -notmatch
+        'ApplyOwnerRegistrationLocked\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
+    -not $applyOwnerRawLockedBody -or
+    $applyOwnerRawLockedBody.IndexOf('DestroyHiddenWindowLocked(subscription)',
         [System.StringComparison]::Ordinal) -lt 0 -or
-    $applyOwnerRawBody.IndexOf('CreateHiddenWindow(subscription)',
+    $applyOwnerRawLockedBody.IndexOf('CreateHiddenWindowLocked(subscription)',
         [System.StringComparison]::Ordinal) -lt 0 -or
     $rawWinFilterText -notmatch
         'hiddenWindowCreatorThreadId\s*!=\s*GetCurrentThreadId\s*\(' -or
@@ -2254,27 +2258,169 @@ if ($rawInputStateText -notmatch 'kBatchOverflowBufferSize\s*=\s*64\s*\*\s*1024'
 # old creator-thread window is destroyed before the replacement is registered,
 # so a queued old WM_INPUT cannot enter the new Raw registration epoch.
 if ($rawWinFilterHeaderText -notmatch
-        'ApplyOwnerRegistration\s*\(\s*RawInputSubscription\*\s+subscription,\s*bool\s+recreateHiddenWindow\s*\)' -or
-    -not $reconfigureRawBody -or
-    $reconfigureRawBody -notmatch
-        'ApplyOwnerRegistration\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
-    -not $applyOwnerRawBody -or
-    $applyOwnerRawBody -notmatch
+        'ApplyOwnerRegistrationLocked\s*\(\s*RawInputSubscription\*\s+subscription,\s*bool\s+recreateHiddenWindow\s*\)' -or
+    -not $reconfigureRawLockedBody -or
+    $reconfigureRawLockedBody -notmatch
+        'ApplyOwnerRegistrationLocked\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
+    -not $applyOwnerRawLockedBody -or
+    $applyOwnerRawLockedBody -notmatch
         'if\s*\(\s*recreateHiddenWindow\s*&&\s*subscription->hiddenWindow' -or
-    $applyOwnerRawBody -notmatch
-        '!DestroyHiddenWindow\s*\(\s*subscription\s*\)' -or
-    $applyOwnerRawBody -notmatch
-        'CreateHiddenWindow\s*\(\s*subscription\s*\)') {
+    $applyOwnerRawLockedBody -notmatch
+        '!DestroyHiddenWindowLocked\s*\(\s*subscription\s*\)' -or
+    $applyOwnerRawLockedBody -notmatch
+        'CreateHiddenWindowLocked\s*\(\s*subscription\s*\)') {
     Add-Error 'Rule BE: Raw hidden HWND registration epoch boundary is incomplete'
-} elseif ($applyOwnerRawBody.IndexOf('DestroyHiddenWindow(subscription)',
+} elseif ($applyOwnerRawLockedBody.IndexOf('DestroyHiddenWindowLocked(subscription)',
         [System.StringComparison]::Ordinal) -gt
-    $applyOwnerRawBody.IndexOf('CreateHiddenWindow(subscription)',
+    $applyOwnerRawLockedBody.IndexOf('CreateHiddenWindowLocked(subscription)',
         [System.StringComparison]::Ordinal)) {
     Add-Error 'Rule BE: old Raw hidden HWND must be destroyed before replacement'
 }
 if (([regex]::Matches($rawWinFilterText,
-        'ApplyOwnerRegistration\s*\(')).Count -ne 2) {
-    Add-Error 'Rule BE: ApplyOwnerRegistration must stay on the cold reconfigure path'
+        'ApplyOwnerRegistrationLocked\s*\(')).Count -ne 3) {
+    Add-Error 'Rule BE: ApplyOwnerRegistrationLocked must stay on the cold reconfigure path'
+}
+
+# BZ: the developer measurement plane is instance-safe and capture-only runs
+# do not put sorting, formatting, or CSV lifetime work on the frame path.
+$inputPerfSummarizerPath = Join-Path $repoRoot 'tools/testing/summarize-input-performance.py'
+$inputPerfSummarizerText = Get-Content -LiteralPath $inputPerfSummarizerPath -Raw
+$physicalPerfRunnerText = Get-Content -LiteralPath (
+    Join-Path $repoRoot 'tools/testing/renderer-physical-ab.ps1') -Raw
+$presentPerfRunnerText = Get-Content -LiteralPath (
+    Join-Path $repoRoot 'tools/testing/vulkan-present-event-matrix.ps1') -Raw
+if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
+    $perfProbeText -notmatch 'uint64_t\s+instanceId\s*=\s*0' -or
+    $perfProbeText -notmatch 'BindInstance\s*\(\s*uint64_t\s+instanceId' -or
+    $emuThreadText -notmatch 'MelonPrimePerf::BindInstance\s*\(' -or
+    $perfProbeText -notmatch 'MELONPRIME_PERF_CAPTURE_ONLY' -or
+    $perfProbeText -match 'std::atexit\s*\(' -or
+    $perfProbeText -notmatch 'run_id,instance_id,frame_index' -or
+    $perfProbeText -notmatch 'std::fclose\s*\(frameCsv\)' -or
+    $inputPerfSummarizerText -notmatch 'latest_input_by_instance' -or
+    $inputPerfSummarizerText -notmatch 'input_instance_ids' -or
+    $inputPerfSummarizerText -notmatch 'for\s+instance_id,\s+input_report\s+in\s+reports_by_instance' -or
+    $physicalPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
+    $physicalPerfRunnerText -notmatch 'frames\.%INSTANCE%\.csv' -or
+    $presentPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
+    $presentPerfRunnerText -notmatch 'frames\.%INSTANCE%\.csv') {
+    Add-Error 'Rule BZ: generic input telemetry is not per-instance/capture-safe'
+}
+if ($perfProbeText -notmatch 'SummarizeDoubleSamples' -or
+    $perfProbeText -notmatch 'SummarizeInputMetric' -or
+    $perfProbeText -notmatch 'SummarizeHudPhase' -or
+    $perfProbeText -match '\bLatencyPercentile\b|\bLatencyMax\b') {
+    Add-Error 'Rule BZ: generic percentile reporting lost the one-sort summary helpers'
+}
+
+# CA: lock timing is committed only after the measured mutex is released. The
+# same rule applies to the SDL process lock and the per-instance joystick
+# sample; telemetry must not extend any of those critical sections.
+$subscriptionGuardAt = $rawInputPerfText.IndexOf(
+    'class SubscriptionMutexGuard', [System.StringComparison]::Ordinal)
+$frameGuardAt = $rawInputPerfText.IndexOf(
+    'class FrameMutexGuard', [System.StringComparison]::Ordinal)
+$stageGuardAt = $rawInputPerfText.IndexOf(
+    'class ScopedStage', [System.StringComparison]::Ordinal)
+$subscriptionGuardText = if ($subscriptionGuardAt -ge 0 -and $frameGuardAt -gt $subscriptionGuardAt) {
+    $rawInputPerfText.Substring($subscriptionGuardAt, $frameGuardAt - $subscriptionGuardAt)
+} else { '' }
+$frameGuardText = if ($frameGuardAt -ge 0 -and $stageGuardAt -gt $frameGuardAt) {
+    $rawInputPerfText.Substring($frameGuardAt, $stageGuardAt - $frameGuardAt)
+} else { '' }
+$sdlGuardAt = $joystickDeviceText.IndexOf(
+    'class SdlProcessMutexGuard', [System.StringComparison]::Ordinal)
+$sdlGuardEndAt = if ($sdlGuardAt -ge 0) {
+    $joystickDeviceText.IndexOf('#else', $sdlGuardAt, [System.StringComparison]::Ordinal)
+} else { -1 }
+$sdlGuardText = if ($sdlGuardAt -ge 0 -and $sdlGuardEndAt -gt $sdlGuardAt) {
+    $joystickDeviceText.Substring($sdlGuardAt, $sdlGuardEndAt - $sdlGuardAt)
+} else { '' }
+foreach ($lockTelemetry in @(
+    @{ Name = 'Raw subscription'; Text = $subscriptionGuardText; Unlock = 'm_lock.unlock()'; Record = 'RecordMutexWait' },
+    @{ Name = 'Raw frame'; Text = $frameGuardText; Unlock = 'm_lock.unlock()'; Record = 'RecordMutexWait' },
+    @{ Name = 'SDL process'; Text = $sdlGuardText; Unlock = 'm_lock.unlock()'; Record = 'RecordInputMetricTicks' }
+)) {
+    $unlockAt = $lockTelemetry.Text.IndexOf($lockTelemetry.Unlock,
+        [System.StringComparison]::Ordinal)
+    $recordAt = $lockTelemetry.Text.IndexOf($lockTelemetry.Record,
+        [System.StringComparison]::Ordinal)
+    if (-not $lockTelemetry.Text -or $unlockAt -lt 0 -or $recordAt -lt 0 -or
+        $unlockAt -gt $recordAt) {
+        Add-Error "Rule CA: $($lockTelemetry.Name) telemetry must be recorded after unlock"
+    }
+}
+$sampleUnlockAt = if ($sampleJoystickBody) {
+    $sampleJoystickBody.IndexOf('SDL_UnlockMutex(joyMutex.get())',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$sampleTelemetryAt = if ($sampleJoystickBody) {
+    $sampleJoystickBody.IndexOf('RecordInputMetricTicks',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if (-not $sampleJoystickBody -or $sampleUnlockAt -lt 0 -or
+    $sampleTelemetryAt -lt 0 -or $sampleUnlockAt -gt $sampleTelemetryAt) {
+    Add-Error 'Rule CA: joystick sample metrics must be committed after SDL mutex release'
+}
+
+# CB: Raw report formatting is outside DeferredDrain's measured stage, and a
+# capture-only run defers the report to the owning EmuThread shutdown point.
+if (-not $deferredDrainRawBody -or
+    $deferredDrainRawBody -notmatch
+        '(?s)RawInputPerf::FrameMutexGuard[\s\S]*?\}\s*// Reporting[\s\S]*?RawInputPerf::MaybeReport\s*\(\s*\)' -or
+    $rawInputPerfText -notmatch
+        'if\s*\(!Enabled\(\)\s*\|\|\s*\(!force\s*&&\s*IsCaptureOnly\(\)\)\)' -or
+    $rawInputPerfText -notmatch 'static\s+std::atomic_bool\s+shutdownReported' -or
+    $rawInputPerfText -notmatch 'Report\s*\(true\)' -or
+    $rawInputPerfText -notmatch 'SummarizeStage' -or
+    $rawInputPerfText -notmatch 'std::sort\s*\(values,\s*values\s*\+\s*count\)') {
+    Add-Error 'Rule CB: Raw telemetry report/capture-only boundary is incomplete'
+}
+
+# CC: joystick enumeration is a cold, process-serialized owner operation;
+# InputConfigDialog must not call SDL's process-global enumeration directly on
+# the MelonPrime path.
+$enumerateBody = Get-FunctionText -Path $joystickDevicePath `
+    -Signature 'std::vector<JoystickDescriptor>\s+MelonPrimeJoystickDevice::EnumerateJoysticks\s*\('
+if (-not $joystickDeviceHeaderText -or
+    $joystickDeviceHeaderText -notmatch
+        'struct\s+JoystickDescriptor' -or
+    $joystickDeviceHeaderText -notmatch
+        'EnumerateJoysticks\s*\(' -or
+    -not $enumerateBody -or
+    $enumerateBody -notmatch 'SdlProcessMutexGuard\s+processLock' -or
+    $enumerateBody -notmatch 'SDL_NumJoysticks\s*\(' -or
+    $inputConfigDialogText -notmatch
+        '(?s)#ifdef\s+MELONPRIME_DS\s+const\s+auto\s+joysticks\s*=\s*MelonPrime::MelonPrimeJoystickDevice::EnumerateJoysticks\s*\(\s*\)\s*;\s*const\s+int\s+njoy\s*=\s*static_cast<int>\s*\(joysticks\.size\s*\(\)\)\s*;\s*#else') {
+    Add-Error 'Rule CC: MelonPrime joystick enumeration is not process-safe/cold-owned'
+}
+
+# CD: lock-owning Raw cold helpers are the only bodies that manipulate the
+# hidden window and registration while a caller already owns frameMutex.
+$createHiddenLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::CreateHiddenWindowLocked\s*\('
+$destroyHiddenLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::DestroyHiddenWindowLocked\s*\('
+if ($rawWinFilterHeaderText -notmatch
+        'CreateHiddenWindowLocked\s*\(' -or
+    $rawWinFilterHeaderText -notmatch
+        'DestroyHiddenWindowLocked\s*\(' -or
+    $rawWinFilterHeaderText -notmatch
+        'ApplyOwnerRegistrationLocked\s*\(' -or
+    $rawWinFilterHeaderText -notmatch
+        'ReconfigureActiveRegistrationLocked\s*\(' -or
+    $reconfigureRawLockedBody -match 'RawInputPerf::FrameMutexGuard' -or
+    $applyOwnerRawLockedBody -match 'RawInputPerf::FrameMutexGuard' -or
+    $createHiddenLockedBody -match 'RawInputPerf::FrameMutexGuard' -or
+    $destroyHiddenLockedBody -match 'RawInputPerf::FrameMutexGuard' -or
+    $applyOwnerRawLockedBody -notmatch 'DestroyHiddenWindowLocked\s*\(' -or
+    $applyOwnerRawLockedBody -notmatch 'CreateHiddenWindowLocked\s*\(' -or
+    $reconfigureRawLockedBody -notmatch 'ApplyOwnerRegistrationLocked\s*\(' -or
+    $rawWinFilterText -notmatch
+        'RawInputPerf::FrameMutexGuard[\s\S]*?return\s+ReconfigureActiveRegistrationLocked' -or
+    $rawWinFilterText -notmatch
+        'RawInputPerf::FrameMutexGuard[\s\S]*?return\s+ApplyOwnerRegistrationLocked') {
+    Add-Error 'Rule CD: Raw cold lock ownership helpers are incomplete'
 }
 
 # BF/BG: the process-wide buffered drain is a Windows-filter-only operation,

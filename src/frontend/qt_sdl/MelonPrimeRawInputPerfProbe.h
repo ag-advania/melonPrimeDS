@@ -115,6 +115,15 @@ inline bool Enabled() noexcept
     return enabled;
 }
 
+inline bool IsCaptureOnly() noexcept
+{
+    static const bool captureOnly = [] {
+        const char* value = std::getenv("MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return captureOnly;
+}
+
 inline uint64_t NowNs() noexcept
 {
     return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -263,22 +272,26 @@ public:
         : m_lock(mutex, std::defer_lock)
         , m_measure(Enabled())
         , m_site(site)
+        , m_waitStartNs(m_measure ? NowNs() : 0)
         , m_acquiredNs(0)
     {
-        const uint64_t waitStartNs = m_measure ? NowNs() : 0;
         m_lock.lock();
-        if (m_measure) {
-            m_acquiredNs = NowNs();
-            RecordMutexWait(
-                m_acquiredNs - waitStartNs, m_site, LockKind::Subscription);
-        }
+        m_acquiredNs = m_measure ? NowNs() : 0;
     }
 
     ~SubscriptionMutexGuard()
     {
-        if (m_measure)
-            RecordMutexHold(
-                NowNs() - m_acquiredNs, LockKind::Subscription);
+        const uint64_t releaseNs = m_measure ? NowNs() : 0;
+        m_lock.unlock();
+        if (m_measure) {
+            if (m_acquiredNs >= m_waitStartNs)
+                RecordMutexWait(
+                    m_acquiredNs - m_waitStartNs,
+                    m_site, LockKind::Subscription);
+            if (releaseNs >= m_acquiredNs)
+                RecordMutexHold(
+                    releaseNs - m_acquiredNs, LockKind::Subscription);
+        }
     }
 
     SubscriptionMutexGuard(const SubscriptionMutexGuard&) = delete;
@@ -288,6 +301,7 @@ private:
     std::unique_lock<std::recursive_mutex> m_lock;
     bool m_measure;
     LockSite m_site;
+    uint64_t m_waitStartNs;
     uint64_t m_acquiredNs;
 };
 
@@ -301,21 +315,26 @@ public:
         : m_lock(mutex, std::defer_lock)
         , m_measure(Enabled())
         , m_site(site)
+        , m_waitStartNs(m_measure ? NowNs() : 0)
         , m_acquiredNs(0)
     {
-        const uint64_t waitStartNs = m_measure ? NowNs() : 0;
         m_lock.lock();
-        if (m_measure) {
-            m_acquiredNs = NowNs();
-            RecordMutexWait(
-                m_acquiredNs - waitStartNs, m_site, LockKind::Frame);
-        }
+        m_acquiredNs = m_measure ? NowNs() : 0;
     }
 
     ~FrameMutexGuard()
     {
-        if (m_measure)
-            RecordMutexHold(NowNs() - m_acquiredNs, LockKind::Frame);
+        const uint64_t releaseNs = m_measure ? NowNs() : 0;
+        m_lock.unlock();
+        if (m_measure) {
+            if (m_acquiredNs >= m_waitStartNs)
+                RecordMutexWait(
+                    m_acquiredNs - m_waitStartNs,
+                    m_site, LockKind::Frame);
+            if (releaseNs >= m_acquiredNs)
+                RecordMutexHold(
+                    releaseNs - m_acquiredNs, LockKind::Frame);
+        }
     }
 
     FrameMutexGuard(const FrameMutexGuard&) = delete;
@@ -325,6 +344,7 @@ private:
     std::unique_lock<std::recursive_mutex> m_lock;
     bool m_measure;
     LockSite m_site;
+    uint64_t m_waitStartNs;
     uint64_t m_acquiredNs;
 };
 
@@ -372,22 +392,59 @@ private:
     uint64_t m_startedNs;
 };
 
-inline void MaybeReport() noexcept
+struct StagePercentiles {
+    double p50 = 0.0;
+    double p95 = 0.0;
+    double p99 = 0.0;
+    double max = 0.0;
+};
+
+inline StagePercentiles SummarizeStage(const StageStats& stage) noexcept
 {
-    if (!Enabled())
+    StagePercentiles result;
+    const uint64_t total = stage.calls.load(std::memory_order_relaxed);
+    const uint32_t count = static_cast<uint32_t>(
+        total < StageStats::kSampleCap ? total : StageStats::kSampleCap);
+    if (count) {
+        uint64_t values[StageStats::kSampleCap];
+        for (uint32_t i = 0; i < count; ++i)
+            values[i] = stage.samples[i].load(std::memory_order_relaxed);
+        std::sort(values, values + count);
+        const auto percentileNs = [&](double percentile) {
+            const double index = percentile * static_cast<double>(count - 1);
+            const uint32_t lower = static_cast<uint32_t>(index);
+            const uint32_t upper = lower + 1 < count ? lower + 1 : lower;
+            const double fraction = index - static_cast<double>(lower);
+            return static_cast<double>(values[lower]) * (1.0 - fraction)
+                + static_cast<double>(values[upper]) * fraction;
+        };
+        result.p50 = percentileNs(0.50) / 1000.0;
+        result.p95 = percentileNs(0.95) / 1000.0;
+        result.p99 = percentileNs(0.99) / 1000.0;
+    }
+    result.max = static_cast<double>(
+        stage.maxNs.load(std::memory_order_relaxed)) / 1000.0;
+    return result;
+}
+
+inline void Report(bool force) noexcept
+{
+    if (!Enabled() || (!force && IsCaptureOnly()))
         return;
 
-    static std::atomic<uint64_t> lastReportNs{ 0 };
-    const uint64_t nowNs = NowNs();
-    uint64_t previousReportNs = lastReportNs.load(std::memory_order_relaxed);
-    for (;;) {
-        if (previousReportNs != 0
-            && nowNs - previousReportNs < 1000000000ULL)
-            return;
-        if (lastReportNs.compare_exchange_weak(
-                previousReportNs, nowNs,
-                std::memory_order_relaxed, std::memory_order_relaxed))
-            break;
+    if (!force) {
+        static std::atomic<uint64_t> lastReportNs{ 0 };
+        const uint64_t nowNs = NowNs();
+        uint64_t previousReportNs = lastReportNs.load(std::memory_order_relaxed);
+        for (;;) {
+            if (previousReportNs != 0
+                && nowNs - previousReportNs < 1000000000ULL)
+                return;
+            if (lastReportNs.compare_exchange_weak(
+                    previousReportNs, nowNs,
+                    std::memory_order_relaxed, std::memory_order_relaxed))
+                break;
+        }
     }
 
     const auto& stats = Stats();
@@ -423,27 +480,13 @@ inline void MaybeReport() noexcept
         static_cast<unsigned long long>(stats.frameMutexWaitNs.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.frameMutexHoldNs.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.frameMutexMaxWaitNs.load(std::memory_order_relaxed)));
-    const auto percentileUs = [](const StageStats& stage, double percentile) {
-        const uint64_t total = stage.calls.load(std::memory_order_relaxed);
-        const uint32_t count = static_cast<uint32_t>(
-            total < StageStats::kSampleCap ? total : StageStats::kSampleCap);
-        if (!count)
-            return 0.0;
-        uint64_t values[StageStats::kSampleCap];
-        for (uint32_t i = 0; i < count; ++i)
-            values[i] = stage.samples[i].load(std::memory_order_relaxed);
-        std::sort(values, values + count);
-        const double index = percentile * static_cast<double>(count - 1);
-        const uint32_t lower = static_cast<uint32_t>(index);
-        const uint32_t upper = lower + 1 < count ? lower + 1 : lower;
-        const double fraction = index - static_cast<double>(lower);
-        const double ns = static_cast<double>(values[lower])
-            * (1.0 - fraction) + static_cast<double>(values[upper]) * fraction;
-        return ns / 1000.0;
-    };
-    const auto maxUs = [](const StageStats& stage) {
-        return static_cast<double>(stage.maxNs.load(std::memory_order_relaxed)) / 1000.0;
-    };
+
+    const StagePercentiles snapshot = SummarizeStage(
+        stats.stage[static_cast<uint32_t>(Stage::RawSnapshot)]);
+    const StagePercentiles lateLatch = SummarizeStage(
+        stats.stage[static_cast<uint32_t>(Stage::RawLateLatch)]);
+    const StagePercentiles deferredDrain = SummarizeStage(
+        stats.stage[static_cast<uint32_t>(Stage::RawDeferredDrain)]);
     std::fprintf(stderr,
         "[MelonPrimeRawPerf] stage_us "
         "snapshot[p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
@@ -452,18 +495,9 @@ inline void MaybeReport() noexcept
         "lock_wait_ns snapshot=%llu late=%llu deferred=%llu hidden=%llu native=%llu | "
         "raw_batch calls=%llu nonempty=%llu empty=%llu events=%llu "
         "late_delta_claims=%llu post_draw_events=%llu\n",
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawSnapshot)], 0.50),
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawSnapshot)], 0.95),
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawSnapshot)], 0.99),
-        maxUs(stats.stage[static_cast<uint32_t>(Stage::RawSnapshot)]),
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawLateLatch)], 0.50),
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawLateLatch)], 0.95),
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawLateLatch)], 0.99),
-        maxUs(stats.stage[static_cast<uint32_t>(Stage::RawLateLatch)]),
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawDeferredDrain)], 0.50),
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawDeferredDrain)], 0.95),
-        percentileUs(stats.stage[static_cast<uint32_t>(Stage::RawDeferredDrain)], 0.99),
-        maxUs(stats.stage[static_cast<uint32_t>(Stage::RawDeferredDrain)]),
+        snapshot.p50, snapshot.p95, snapshot.p99, snapshot.max,
+        lateLatch.p50, lateLatch.p95, lateLatch.p99, lateLatch.max,
+        deferredDrain.p50, deferredDrain.p95, deferredDrain.p99, deferredDrain.max,
         static_cast<unsigned long long>(stats.lockWaitBySite[static_cast<uint32_t>(LockSite::Snapshot)].load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.lockWaitBySite[static_cast<uint32_t>(LockSite::LateLatch)].load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(stats.lockWaitBySite[static_cast<uint32_t>(LockSite::DeferredDrain)].load(std::memory_order_relaxed)),
@@ -489,9 +523,27 @@ inline void MaybeReport() noexcept
     std::fflush(stderr);
 }
 
+inline void MaybeReport() noexcept
+{
+    Report(false);
+}
+
+inline void ShutdownReport() noexcept
+{
+    if (!Enabled())
+        return;
+    static std::atomic_bool shutdownReported{ false };
+    bool expected = false;
+    if (shutdownReported.compare_exchange_strong(
+            expected, true, std::memory_order_relaxed,
+            std::memory_order_relaxed))
+        Report(true);
+}
+
 #else
 
 inline constexpr bool Enabled() noexcept { return false; }
+inline constexpr bool IsCaptureOnly() noexcept { return false; }
 enum class LockSite : uint8_t {
     Other,
     Snapshot,
@@ -523,6 +575,7 @@ inline void RecordRawBatch(uint64_t) noexcept {}
 inline void RecordLateLatchDelta(int, int) noexcept {}
 inline void RecordPostDrawEvents(uint64_t) noexcept {}
 inline void MaybeReport() noexcept {}
+inline void ShutdownReport() noexcept {}
 
 class PostDrawCaptureScope {
 public:
