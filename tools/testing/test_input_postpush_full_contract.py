@@ -985,6 +985,8 @@ def main() -> None:
     input_cpp = source("src/frontend/qt_sdl/EmuInstanceInput.cpp")
     joystick_device = source("src/frontend/qt_sdl/MelonPrimeJoystickDevice.cpp")
     joystick_device_header = source("src/frontend/qt_sdl/MelonPrimeJoystickDevice.h")
+    input_config_dialog = source("src/frontend/qt_sdl/InputConfig/InputConfigDialog.h")
+    input_config_dialog_cpp = source("src/frontend/qt_sdl/InputConfig/InputConfigDialog.cpp")
     raw_state_header = source("src/frontend/qt_sdl/MelonPrimeRawInputState.h")
     raw_state_cpp = source("src/frontend/qt_sdl/MelonPrimeRawInputState.cpp")
     mouse_button = source("src/frontend/qt_sdl/MelonPrimeMouseButton.h")
@@ -1012,6 +1014,7 @@ def main() -> None:
     raw_filter = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp")
     raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
     raw_perf = source("src/frontend/qt_sdl/MelonPrimeRawInputPerfProbe.h")
+    perf = source("src/frontend/qt_sdl/MelonPrimePerfProbe.h")
     cmake_presets = source("CMakePresets.json")
     windows_workflow = source(".github/workflows/build-windows.yml")
     mingw_build = source("tools/build/windows/build-mingw.bat")
@@ -1049,6 +1052,40 @@ def main() -> None:
         "[[nodiscard]] bool ReadMotionLocked(",
     ):
         require(joystick_device_header, needle, "per-device SDL ownership")
+    require(joystick_device_header, "HasJoystickLocked()", "encapsulated joystick presence")
+    for needle in ("ButtonCountLocked()", "HatCountLocked()", "AxisCountLocked()"):
+        require(joystick_device_header, needle, "encapsulated joystick capabilities")
+    joystick_device_public = joystick_device_header.split("private:", 1)[0]
+    if "GetJoystick" in joystick_device_public:
+        raise AssertionError("JoystickDevice must not expose its raw SDL handle")
+    for needle in (
+        "pollJoystickMapping(int oldMapping",
+        "captureJoystickAxisRest(int* axesRest",
+    ):
+        require(header, needle, "cold joystick mapping API")
+        require(input_config_dialog, needle, "cold joystick dialog API")
+    for needle in (
+        "InputConfigDialog::pollJoystickMapping(",
+        "InputConfigDialog::captureJoystickAxisRest(",
+    ):
+        require(input_config_dialog_cpp, needle, "cold joystick dialog forwarding")
+    joy_map_button = map_button[map_button.index("class JoyMapButton") :]
+    joy_check_all = body(joy_map_button, "void checkJoystick()", "void timerEvent(")
+    joy_timer_all = body(joy_map_button, "void timerEvent(", "bool focusNextPrevChild")
+    joy_check = joy_check_all.split("#else", 1)[0]
+    joy_timer = joy_timer_all.split("#else", 1)[0]
+    require(joy_check, "pollJoystickMapping", "encapsulated mapping poll")
+    require(joy_timer, "checkJoystick();", "mapping timer direct operation")
+    if "getJoystick" in joy_check or "getJoyMutex" in joy_check or "getJoyMutex" in joy_timer:
+        raise AssertionError("DS mapping UI must not use raw joystick or external mutex protocol")
+    require(joy_map_button, "captureJoystickAxisRest(axesRest, 16)", "encapsulated axis baseline")
+    for needle in (
+        "JoystickProcessMutexWait",
+        "JoystickProcessMutexHold",
+    ):
+        require(perf, needle, "SDL process mutex telemetry metric")
+        require(joystick_device, needle, "SDL process mutex telemetry wiring")
+    require(joystick_device, "class SdlProcessMutexGuard final", "SDL process mutex guard")
     require(joystick_device, "std::mutex s_sdlProcessMutex", "process-level SDL lock")
     require(joystick_device, "SDL_JoystickUpdate()", "SDL update ownership")
     if joystick_device.count("SDL_JoystickUpdate()") != 1:
@@ -1146,6 +1183,11 @@ def main() -> None:
         "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
         "bool RawInputWinFilter::UpdateOwnerAndSnapshotImpl(",
     )
+    raw_drain_locked = body(
+        raw_filter,
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessagesLocked(",
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
+    )
     raw_fused = body(
         raw_filter,
         "bool RawInputWinFilter::UpdateOwnerAndSnapshotImpl(",
@@ -1156,6 +1198,14 @@ def main() -> None:
         "void RawInputWinFilter::DeferredDrain(",
         "void RawInputWinFilter::LateLatchMouseDelta(",
     )
+    require(raw_filter_header, "drainPendingMessagesLocked(RawInputSubscription&", "locked Raw drain declaration")
+    require(raw_drain_locked, "state->processRawInputBatched()", "locked Raw buffer capture")
+    require(raw_drain_locked, "drainMessagesOnly(&subscription)", "locked Raw message drain")
+    if raw_drain_locked.index("processRawInputBatched()") > raw_drain_locked.index("drainMessagesOnly("):
+        raise AssertionError("Raw locked drain must capture the buffer before dispatching messages")
+    for locked_caller in (raw_reconfigure, raw_deferred):
+        if "drainPendingMessages();" in locked_caller:
+            raise AssertionError("frame-locked Raw caller must not reacquire frameMutex through drainPendingMessages")
     raw_late = body(
         raw_filter,
         "void RawInputWinFilter::LateLatchMouseDelta(",
@@ -2009,7 +2059,8 @@ def main() -> None:
     ):
         require(qt_sdl_cmake, needle, "Raw recovery hint CMake target")
 
-    require(raw_drain, "auto* const state = StateFor(subscription);", "single active Raw drain load")
+    require(raw_drain, "drainPendingMessagesLocked(*subscription);", "single active Raw drain delegation")
+    require(raw_drain_locked, "auto* const state = StateFor(&subscription);", "locked Raw drain state load")
     if "ActiveState()" in raw_drain:
         raise AssertionError("drainPendingMessages must not reload the active subscription")
     require(raw_filter, "state->clearStuckPostFrame();", "post-frame recovery owner")
@@ -2081,6 +2132,8 @@ def main() -> None:
         > raw_reset.index("state->resetAll()")
     ):
         raise AssertionError("foreign Raw reset must hold the subscription mutex first")
+    if "drainPendingMessages();" in raw_reset:
+        raise AssertionError("frame-locked Raw reset must use the locked drain helper")
 
     # AW+: fixed-capacity VK mapping must turn overflow into a whole-list
     # fallback rather than silently binding a prefix.

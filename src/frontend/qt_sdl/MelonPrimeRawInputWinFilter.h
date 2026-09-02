@@ -94,6 +94,11 @@ namespace MelonPrime {
         /// (GetRawInputBuffer) before the PeekMessage loop per FIX-1.
         void drainPendingMessages() noexcept;
 
+        /// Same drain sequence for callers that already hold the subscription's
+        /// frame mutex. Keep the GetRawInputBuffer-before-PeekMessage ordering,
+        /// but do not recursively acquire frameMutex a second time.
+        void drainPendingMessagesLocked(RawInputSubscription& subscription) noexcept;
+
         /// P-35 (REVERTED): PeekMessage-only drain (no GetRawInputBuffer).
         /// WARNING: Not safe for DeferredDrain — shared-buffer semantics
         /// require GetRawInputBuffer before PeekMessage. See FIX-1.

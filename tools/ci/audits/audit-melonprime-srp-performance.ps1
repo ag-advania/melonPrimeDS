@@ -884,6 +884,10 @@ $threadBridgePath = Join-Path $qtSdl 'MelonPrimeThreadBridge.h'
 $emuInstanceInputPath = Join-Path $qtSdl 'EmuInstanceInput.cpp'
 $joystickDevicePath = Join-Path $qtSdl 'MelonPrimeJoystickDevice.cpp'
 $joystickDeviceHeaderPath = Join-Path $qtSdl 'MelonPrimeJoystickDevice.h'
+$inputConfigDialogPath = Join-Path $qtSdl 'InputConfig/InputConfigDialog.cpp'
+$inputConfigDialogHeaderPath = Join-Path $qtSdl 'InputConfig/InputConfigDialog.h'
+$mapButtonPath = Join-Path $qtSdl 'InputConfig/MapButton.h'
+$perfProbePath = Join-Path $qtSdl 'MelonPrimePerfProbe.h'
 $linuxRawText = Get-Content -LiteralPath $linuxRawPath -Raw
 $linuxRawHeaderText = Get-Content -LiteralPath $linuxRawHeaderPath -Raw
 $waylandText = Get-Content -LiteralPath $waylandPath -Raw
@@ -895,6 +899,17 @@ $threadBridgeText = Get-Content -LiteralPath $threadBridgePath -Raw
 $emuInstanceInputText = Get-Content -LiteralPath $emuInstanceInputPath -Raw
 $joystickDeviceText = Get-Content -LiteralPath $joystickDevicePath -Raw
 $joystickDeviceHeaderText = Get-Content -LiteralPath $joystickDeviceHeaderPath -Raw
+$inputConfigDialogText = Get-Content -LiteralPath $inputConfigDialogPath -Raw
+$inputConfigDialogHeaderText = Get-Content -LiteralPath $inputConfigDialogHeaderPath -Raw
+$mapButtonText = Get-Content -LiteralPath $mapButtonPath -Raw
+$perfProbeText = Get-Content -LiteralPath $perfProbePath -Raw
+$joystickDevicePrivateAt = $joystickDeviceHeaderText.IndexOf(
+    '    private:', [System.StringComparison]::Ordinal)
+$joystickDevicePublicText = if ($joystickDevicePrivateAt -ge 0) {
+    $joystickDeviceHeaderText.Substring(0, $joystickDevicePrivateAt)
+} else {
+    $joystickDeviceHeaderText
+}
 
 $aimBody = Get-FunctionText -Path $gameInputPath `
     -Signature 'void\s+MelonPrimeCore::ProcessAimInputMouse\s*\('
@@ -1054,6 +1069,20 @@ if (-not $joystickDeviceHeaderText -or
     $joystickDeviceText -notmatch 'SDL_JoystickClose\s*\(' -or
     $joystickDeviceText -notmatch 'SDL_JoystickUpdate\s*\(' -or
     $joystickDeviceText -notmatch 'std::mutex\s+s_sdlProcessMutex' -or
+    $joystickDevicePublicText -match 'GetJoystick\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'HasJoystickLocked\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'ButtonCountLocked\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'HatCountLocked\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'AxisCountLocked\s*\(' -or
+    $inputConfigDialogHeaderText -notmatch 'pollJoystickMapping\s*\(' -or
+    $inputConfigDialogHeaderText -notmatch 'captureJoystickAxisRest\s*\(' -or
+    $inputConfigDialogText -notmatch 'InputConfigDialog::pollJoystickMapping\s*\(' -or
+    $inputConfigDialogText -notmatch 'InputConfigDialog::captureJoystickAxisRest\s*\(' -or
+    $mapButtonText -notmatch 'pollJoystickMapping\s*\(' -or
+    $mapButtonText -notmatch 'captureJoystickAxisRest\s*\(' -or
+    $perfProbeText -notmatch 'JoystickProcessMutexWait' -or
+    $perfProbeText -notmatch 'JoystickProcessMutexHold' -or
+    $joystickDeviceText -notmatch 'class\s+SdlProcessMutexGuard\s+final' -or
     -not $closeJoystickBody -or
     $closeJoystickBody -notmatch 'joystickDevice\.CloseLocked\s*\(' -or
     $closeJoystickBody -notmatch 'joystickGameplayResetPending\.store\s*\(' -or
@@ -1083,6 +1112,32 @@ foreach ($pollBody in @($inputProcessBody, $lateJoystickBody)) {
     if ($pollBody -match 'SDL_(?:GameController|Joystick)Close\s*\(') {
         Add-Error 'Rule P: joystick poll path bypasses the central close owner'
     }
+}
+$joyMapClassAt = $mapButtonText.IndexOf('class JoyMapButton', [System.StringComparison]::Ordinal)
+$joyMapText = if ($joyMapClassAt -ge 0) {
+    $mapButtonText.Substring($joyMapClassAt)
+} else { '' }
+$joyCheckAt = $joyMapText.IndexOf('void checkJoystick()', [System.StringComparison]::Ordinal)
+$joyCheckElseAt = if ($joyCheckAt -ge 0) {
+    $joyMapText.IndexOf('#else', $joyCheckAt, [System.StringComparison]::Ordinal)
+} else { -1 }
+$joyCheckText = if ($joyCheckAt -ge 0 -and $joyCheckElseAt -gt $joyCheckAt) {
+    $joyMapText.Substring($joyCheckAt, $joyCheckElseAt - $joyCheckAt)
+} else { '' }
+$joyTimerAt = $joyMapText.IndexOf('void timerEvent(', [System.StringComparison]::Ordinal)
+$joyTimerElseAt = if ($joyTimerAt -ge 0) {
+    $joyMapText.IndexOf('#else', $joyTimerAt, [System.StringComparison]::Ordinal)
+} else { -1 }
+$joyTimerText = if ($joyTimerAt -ge 0 -and $joyTimerElseAt -gt $joyTimerAt) {
+    $joyMapText.Substring($joyTimerAt, $joyTimerElseAt - $joyTimerAt)
+} else { '' }
+if (-not $joyCheckText -or
+    $joyCheckText -notmatch 'pollJoystickMapping\s*\(' -or
+    $joyCheckText -match 'getJoystick\s*\(|getJoyMutex\s*\(' -or
+    -not $joyTimerText -or
+    $joyTimerText -notmatch 'checkJoystick\s*\(\s*\)' -or
+    $joyTimerText -match 'getJoyMutex\s*\(') {
+    Add-Error 'Rule P: DS mapping UI must use lock-owning joystick operations'
 }
 
 # Rule Q: the late gameplay snapshot is distinct from global emulator edges.
@@ -1812,10 +1867,16 @@ $registerBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::RegisterDevices\s*\('
 $reconfigureRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ReconfigureActiveRegistration\s*\('
+$deactivateActiveRegistrationBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::DeactivateActiveRegistration\s*\('
+$deferredDrainRawBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::DeferredDrain\s*\('
 $applyOwnerRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ApplyOwnerRegistration\s*\('
 $rawHiddenWndProcBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'LRESULT\s+CALLBACK\s+RawInputWinFilter::HiddenWndProc\s*\('
+$rawDrainLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'FORCE_INLINE\s+void\s+RawInputWinFilter::drainPendingMessagesLocked\s*\('
 $rawDrainBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'FORCE_INLINE\s+void\s+RawInputWinFilter::drainPendingMessages\s*\('
 if ($rawWinFilterHeaderText -notmatch '\[\[nodiscard\]\]\s+bool\s+RegisterDevices' -or
@@ -1831,6 +1892,24 @@ if ($rawWinFilterHeaderText -notmatch '\[\[nodiscard\]\]\s+bool\s+RegisterDevice
     $reconfigureRawBody -notmatch 'PlatformInputOwnerService::Release\s*\(\s*\*subscription->owner\s*\)' -or
     $reconfigureRawBody -notmatch 'subscription->baselineReady\s*=\s*false') {
     Add-Error 'Rule AT: Raw registration success gate and failure rollback are incomplete'
+}
+
+# AV2: every caller that already owns a subscription frame mutex uses the
+# lock-free drain helper. The safety wrapper remains available for unlocked
+# callers, and the shared-buffer capture must still precede message dispatch.
+if (-not $rawDrainLockedBody -or
+    $rawDrainLockedBody -notmatch 'StateFor\(\s*&subscription\s*\)' -or
+    $rawDrainLockedBody -notmatch 'processRawInputBatched\s*\(\s*\)' -or
+    $rawDrainLockedBody -notmatch 'drainMessagesOnly\s*\(\s*&subscription\s*\)' -or
+    $rawDrainLockedBody.IndexOf('processRawInputBatched()', [System.StringComparison]::Ordinal) -gt
+        $rawDrainLockedBody.IndexOf('drainMessagesOnly(', [System.StringComparison]::Ordinal) -or
+    -not $rawDrainBody -or
+    $rawDrainBody -notmatch 'drainPendingMessagesLocked\s*\(\s*\*subscription\s*\)' -or
+    $reconfigureRawBody -match 'drainPendingMessages\(\s*\)' -or
+    $deactivateActiveRegistrationBody -match 'drainPendingMessages\(\s*\)' -or
+    $deferredDrainRawBody -match 'drainPendingMessages\(\s*\)' -or
+    $rawResetBody -match 'drainPendingMessages\(\s*\)') {
+    Add-Error 'Rule AV2: frame-locked Raw drains must not recursively reacquire frameMutex'
 }
 
 # AU: Qt's fractional wheel residual carries the same generation view as the

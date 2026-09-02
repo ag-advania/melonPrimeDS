@@ -72,7 +72,7 @@ def main() -> None:
         "    // =========================================================================\n    // drainMessagesOnly",
     )
     for needle in (
-        "drainPendingMessages()",
+        "drainPendingMessagesLocked(*subscription)",
         "subscription->baselineReady = false",
         "BeginRegistrationGeneration",
         "UnregisterDevices()",
@@ -84,12 +84,29 @@ def main() -> None:
     ):
         require(reconfigure, needle, "registration reconfigure order")
     if not (
-        reconfigure.index("drainPendingMessages()")
+        reconfigure.index("drainPendingMessagesLocked(*subscription)")
         < reconfigure.index("subscription->baselineReady = false")
         < reconfigure.index("BeginRegistrationGeneration")
         < reconfigure.index("UnregisterDevices()")
     ):
         raise AssertionError("registration boundary order is not drain -> not-ready -> generation -> unregister")
+
+    locked_drain = function_body(
+        raw_filter,
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessagesLocked(",
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
+    )
+    for needle in (
+        "StateFor(&subscription)",
+        "processRawInputBatched()",
+        "drainMessagesOnly(&subscription)",
+    ):
+        require(locked_drain, needle, "locked Raw drain helper")
+    if not (
+        locked_drain.index("processRawInputBatched()")
+        < locked_drain.index("drainMessagesOnly(&subscription)")
+    ):
+        raise AssertionError("locked Raw drain must capture the buffer before peeking messages")
     for needle in (
         "recreateHiddenWindow",
         "DestroyHiddenWindow(subscription)",

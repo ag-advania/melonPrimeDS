@@ -46,6 +46,9 @@ per-device mutex. SDL process bookkeeping (`SDL_JoystickUpdate`, enumeration,
 open, and close) uses only a short process lock. Physical source reads and
 sensor/rumble operations use the instance's device lock, so separate emulator
 instances do not serialize their steady-state reads on `joyMutexGlobal`.
+The component does not expose its SDL handle. Cold mapping UI calls
+`EmuInstance::pollJoystickMapping` and `captureJoystickAxisRest`, which own the
+device lock and keep mapping-specific SDL reads inside the device owner.
 
 Windows Raw Input has two lock planes:
 
@@ -74,6 +77,8 @@ is enabled with `MELONPRIME_PERF=1`. The `input_metric_us` report contains:
 | `JoystickSample` | physical sample, including the short SDL process-update lock |
 | `JoystickProject` | fixed binding fanout projection after the device lock |
 | `JoystickSDLUpdate` | the `SDL_JoystickUpdate` call inside the required physical sample |
+| `JoystickProcessMutexWait` | wait for the short SDL process bookkeeping lock |
+| `JoystickProcessMutexHold` | time spent holding that SDL process bookkeeping lock |
 
 Windows Raw telemetry is separately compile-gated by
 `MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY` and runtime-gated by

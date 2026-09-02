@@ -12,8 +12,8 @@ namespace MelonPrime {
 
 // The device owns SDL pointer lifetime and the capability state. Logical
 // binding/projection remains in EmuInstance and only calls the *_Locked
-// methods while holding Mutex(). This preserves the existing MapButton/UI
-// contract while making the lifetime lock per device rather than process-wide.
+// methods while holding Mutex(). Cold mapping UI uses EmuInstance operations,
+// so no raw SDL handle or external lock protocol crosses the device boundary.
 enum class JoystickSourceKind : uint8_t {
     Button,
     Hat,
@@ -45,6 +45,13 @@ public:
     void CloseLocked() noexcept;
     void UpdateLocked() noexcept;
     [[nodiscard]] bool IsAttachedLocked() const noexcept;
+    [[nodiscard]] bool HasJoystickLocked() const noexcept
+    {
+        return m_joystick != nullptr;
+    }
+    [[nodiscard]] int ButtonCountLocked() const noexcept;
+    [[nodiscard]] int HatCountLocked() const noexcept;
+    [[nodiscard]] int AxisCountLocked() const noexcept;
     [[nodiscard]] bool SampleSourceLocked(
         JoystickSourceKind kind, uint16_t index, int32_t& value) const noexcept;
 
@@ -52,11 +59,6 @@ public:
     void RumbleStopLocked() noexcept;
     [[nodiscard]] bool ReadMotionLocked(
         melonDS::Platform::MotionQueryType type, float& value) const noexcept;
-
-    [[nodiscard]] SDL_Joystick* GetJoystick() const noexcept
-    {
-        return m_joystick;
-    }
 
 private:
     void CloseLockedWithoutProcessMutex() noexcept;

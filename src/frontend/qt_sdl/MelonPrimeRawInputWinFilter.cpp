@@ -230,7 +230,7 @@ namespace MelonPrime {
         }
         else if (m_isRegistered
             && subscription->hiddenWindowCreatorThreadId == GetCurrentThreadId()) {
-            drainPendingMessages();
+            drainPendingMessagesLocked(*subscription);
         }
         subscription->baselineReady = false;
         if (!generationAlreadyAdvanced && subscription->owner)
@@ -288,7 +288,7 @@ namespace MelonPrime {
         }
         else if (m_isRegistered
             && subscription->hiddenWindowCreatorThreadId == GetCurrentThreadId()) {
-            drainPendingMessages();
+            drainPendingMessagesLocked(*subscription);
         }
         subscription->baselineReady = false;
         if (subscription->owner)
@@ -376,6 +376,15 @@ namespace MelonPrime {
     // (GetRawInputBuffer) call before the PeekMessage loop is required by the
     // FIX-1 shared-buffer semantics (see DeferredDrain banner below).
     // =========================================================================
+    FORCE_INLINE void RawInputWinFilter::drainPendingMessagesLocked(
+        RawInputSubscription& subscription) noexcept {
+        auto* const state = StateFor(&subscription);
+        if (state && !subscription.joy2KeySupport) {
+            state->processRawInputBatched();
+        }
+        drainMessagesOnly(&subscription);
+    }
+
     FORCE_INLINE void RawInputWinFilter::drainPendingMessages() noexcept {
         auto* const subscription =
             m_activeSubscription.load(std::memory_order_acquire);
@@ -386,11 +395,7 @@ namespace MelonPrime {
         if (subscription->retired.load(std::memory_order_acquire)
             || m_activeSubscription.load(std::memory_order_acquire) != subscription)
             return;
-        auto* const state = StateFor(subscription);
-        if (state && !subscription->joy2KeySupport) {
-            state->processRawInputBatched();
-        }
-        drainMessagesOnly(subscription);
+        drainPendingMessagesLocked(*subscription);
     }
 
     // =========================================================================
@@ -543,7 +548,7 @@ namespace MelonPrime {
             return;
         if (!subscription->joy2KeySupport) {
             RawInputPerf::PostDrawCaptureScope postDrawCapture;
-            drainPendingMessages();
+            drainPendingMessagesLocked(*subscription);
         }
         // P-48: Stuck-state recovery moved here from snapshotInputFrame.
         // Runs in BOTH modes (joy2key included — only the message drain is
@@ -874,7 +879,7 @@ namespace MelonPrime {
         if (m_activeSubscription.load(std::memory_order_acquire) == subscription
             && !subscription->joy2KeySupport
             && subscription->hiddenWindowCreatorThreadId == GetCurrentThreadId()) {
-            drainPendingMessages();
+            drainPendingMessagesLocked(*subscription);
         }
         if (auto* state = StateFor(subscription)) state->resetAll();
     }

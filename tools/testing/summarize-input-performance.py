@@ -65,6 +65,8 @@ INPUT_METRICS = (
     "joystick_sample",
     "joystick_project",
     "joystick_sdl_update",
+    "joystick_process_mutex_wait",
+    "joystick_process_mutex_hold",
 )
 
 
@@ -242,7 +244,7 @@ def self_test() -> None:
     import tempfile
 
     text = "\n".join([
-        "[MelonPrimePerf] input_metric_us input_total[c=1001 p50=4.0 p95=8.0 p99=12.0 max=20.0] joystick_lock_wait[c=1001 p50=0.1 p95=0.2 p99=0.4 max=1.0] joystick_sample[c=1001 p50=5.0 p95=7.0 p99=9.0 max=15.0] joystick_project[c=1001 p50=1.0 p95=2.0 p99=3.0 max=5.0] joystick_sdl_update[c=1001 p50=0.5 p95=0.8 p99=1.0 max=2.0]",
+        "[MelonPrimePerf] input_metric_us input_total[c=1001 p50=4.0 p95=8.0 p99=12.0 max=20.0] joystick_lock_wait[c=1001 p50=0.1 p95=0.2 p99=0.4 max=1.0] joystick_sample[c=1001 p50=5.0 p95=7.0 p99=9.0 max=15.0] joystick_project[c=1001 p50=1.0 p95=2.0 p99=3.0 max=5.0] joystick_sdl_update[c=1001 p50=0.5 p95=0.8 p99=1.0 max=2.0] joystick_process_mutex_wait[c=1001 p50=0.0 p95=0.1 p99=0.2 max=0.5] joystick_process_mutex_hold[c=1001 p50=0.2 p95=0.4 p99=0.6 max=1.0]",
         "[MelonPrimeRawPerf] stage_us snapshot[p50=4.0 p95=6.0 p99=8.0 max=12.0] late_latch[p50=3.0 p95=5.0 p99=7.0 max=10.0] deferred_drain[p50=20.0 p95=25.0 p99=30.0 max=40.0] lock_wait_ns snapshot=10 late=20 deferred=30 hidden=40 native=50 | raw_batch calls=1001 nonempty=10 empty=991 events=20 late_delta_claims=5 post_draw_events=10",
         "[MelonPrimeRawPerf] lock_planes subscription_mutex_acq=2 subscription_mutex_wait_ns=3 subscription_mutex_hold_ns=4 subscription_mutex_max_wait_ns=5 frame_mutex_acq=1001 frame_mutex_wait_ns=6 frame_mutex_hold_ns=7 frame_mutex_max_wait_ns=8",
     ]) + "\n"

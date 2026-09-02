@@ -320,6 +320,18 @@ void InputConfigDialog::on_cbxJoystick_currentIndexChanged(int id)
     emuInstance->setJoystick(id);
 }
 
+#ifdef MELONPRIME_DS
+bool InputConfigDialog::pollJoystickMapping(
+    int oldMapping, const int* axesRest, int& outMapping)
+{
+    return emuInstance->pollJoystickMapping(oldMapping, axesRest, outMapping);
+}
+
+void InputConfigDialog::captureJoystickAxisRest(int* axesRest, int count)
+{
+    emuInstance->captureJoystickAxisRest(axesRest, count);
+}
+#else
 SDL_Joystick* InputConfigDialog::getJoystick()
 {
     return emuInstance->getJoystick();
@@ -329,6 +341,7 @@ std::shared_ptr<SDL_mutex> InputConfigDialog::getJoyMutex()
 {
     return emuInstance->getJoyMutex();
 }
+#endif
 
 #ifdef MELONPRIME_DS
 /* MelonPrimeDS { */

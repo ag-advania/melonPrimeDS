@@ -20,11 +20,12 @@ invalidate that responsibility's internal state.
 | `FrameInputState` (`down`, `press`, mouse delta, wheel count, move index) | `UpdateInputStateImpl` in `MelonPrimeGameInput.cpp` | input snapshot path; full clear only on timeline replacement | move/buttons, actions, Aim | once per emulated frame; bounded reentrant projection | Critical: aligned 64-byte CL0; do not copy or heap-separate |
 | hotkey to `down` / `press` projection | `MelonPrimeInputProjection.h` | stateless | `UpdateInputStateImpl` | once per input snapshot | Low: header-only fixed arithmetic; no state to move |
 | platform relative delta / Raw Input edge and wheel acquisition | platform filter plus `MelonPrimeInputSubscription` | platform owner and registration-generation transaction | `UpdateInputStateImpl` | per event plus one frame snapshot | Critical: single-writer atomics and generation ordering are load-bearing |
-| SDL controller lifetime and capability state | per-instance `MelonPrimeJoystickDevice` (`openJoystick` / `closeJoystick` orchestration) under its `Mutex()` | physical owner publishes `joystickGameplayResetPending` only | absent-device lifecycle probe and physical sampler | lifecycle edge; active devices are attachment-checked by the required sample | High: device pointers/capabilities never share the old process-wide joystick lock |
+| SDL controller lifetime and capability state | per-instance `MelonPrimeJoystickDevice` (`openJoystick` / `closeJoystick` orchestration) under its `Mutex()` | physical owner publishes `joystickGameplayResetPending` only | absent-device lifecycle probe, physical sampler, and cold mapping operations | lifecycle edge; active devices are attachment-checked by the required sample | High: device pointers/capabilities never share the old process-wide joystick lock |
 | controller physical acquisition | EmuThread `sampleJoystickPhysicalLocked` under the device's per-instance `Mutex()` | central lifetime owner | command and gameplay projection | once immediately before a running guest frame; once per low-rate paused outer cycle while connected | Critical: the initialized source count is explicit; fixed scratch is not maximum-size zeroed |
 | controller global-command snapshot | EmuThread `projectJoystickCommandState` | `resetJoystickConsumerState`; reconnect uses a command-only baseline | outer Pause/Reset/frame/window command edge detection | running late sample, or paused outer-cycle refresh | Critical: remains live without guest frames and never mutates gameplay baseline/mailbox state |
 | late SDL gameplay snapshot | EmuThread `projectJoystickGameplayState` | `resetJoystickConsumerState`; EmuThread owns the edge baseline | MelonPrime gameplay projection only | once immediately before `RunFrameHook` | Critical: reentrant samples refresh held state but never commit the press baseline |
 | compiled joystick sources/fanout | `EmuInstance::inputLoadConfig` | config reload/device rebind | shared physical sampler/projector | cold rebuild; unique physical sources sampled once | High: fixed storage; asserted source indices, direction predicates and mask fanout run outside the mutex |
+| cold joystick mapping capture | `EmuInstance::pollJoystickMapping` / `captureJoystickAxisRest` | device close/rebind | `InputConfigDialog` and `JoyMapButton` | configuration dialog only; device lock owned by the operation | Low: no SDL pointer or mutex escapes to Qt |
 | Qt gameplay held/edge projection | GUI level atomics plus `qtGameplayPressPending`; normal `UpdateInputStateImpl` is sole consumer | GameInput lifecycle profiles clear/rebaseline it | MelonPrime gameplay projection only | event publication plus normal guest-frame late claim | Critical: sub-frame taps survive; reentrant frames never claim; wheel stays on its generation mailbox |
 | Qt panel aim cumulative total | GUI-thread `AddPanelAimDeltaFromGui` | GUI publishes boundary+generation; emulation thread alone owns cursor+seen generation | non-raw Aim fallback | per Qt event plus one stable frame snapshot | Critical: generation-before/after retry prevents reset replay/duplication |
 | input-surface snapshot | primary `MainWindow`/`ScreenPanel` for one `EmuInstance` | primary close/focus/capture lifecycle | owner selection, Aim center/HWND, cursor GUI | GUI edges plus per-frame read | High: secondary presentation windows cannot publish or clear shared authority |
@@ -222,8 +223,20 @@ use a short process-level SDL lock because those operations touch SDL's shared
 bookkeeping; button/hat/axis reads, sensor reads, and rumble do not hold that
 process lock. Consequently two instances with different devices cannot
 serialize their steady-state physical reads. The component exposes only direct
-`*_Locked` calls, so the frame path adds no virtual dispatch, heap object, or
-generic callback layer.
+`*_Locked` calls to its owners, plus lock-owning cold mapping operations on
+`EmuInstance`; the frame path adds no virtual dispatch, heap object, or generic
+callback layer. The developer probe reports the wait and hold time of the short
+process lock as `JoystickProcessMutexWait` and `JoystickProcessMutexHold`, but
+the lock is not removed without multi-instance evidence.
+
+The input implementation keeps SRP boundaries as fixed data and direct calls:
+`JoystickBindingProgram` is the cold `CompiledInputBindings` boundary,
+`sampleJoystickPhysical*` is physical acquisition, and
+`projectJoystickPhysicalSnapshot`, `projectJoystickCommandState`, and
+`projectJoystickGameplayState` are the numeric projector and edge-composition
+boundaries. These helpers remain on `EmuInstance` so their fixed tables and
+single-writer state stay physically local; no virtual interface or heap-owned
+pipeline is introduced.
 
 ## Frame-order contract
 

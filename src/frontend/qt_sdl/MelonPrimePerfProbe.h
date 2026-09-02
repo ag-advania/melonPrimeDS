@@ -68,6 +68,8 @@ enum class InputMetric : uint8_t {
     JoystickSample,
     JoystickProject,
     JoystickSDLUpdate,
+    JoystickProcessMutexWait,
+    JoystickProcessMutexHold,
     Count
 };
 
@@ -583,7 +585,9 @@ inline void MaybeReport1Hz()
         "joystick_lock_wait[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
         "joystick_sample[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
         "joystick_project[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
-        "joystick_sdl_update[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f]\n",
+        "joystick_sdl_update[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
+        "joystick_process_mutex_wait[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f] "
+        "joystick_process_mutex_hold[c=%llu p50=%.1f p95=%.1f p99=%.1f max=%.1f]\n",
         inputMetricCalls(InputMetric::InputTotal),
         inputMetricPercentileUs(InputMetric::InputTotal, 0.50),
         inputMetricPercentileUs(InputMetric::InputTotal, 0.95),
@@ -608,7 +612,17 @@ inline void MaybeReport1Hz()
         inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.50),
         inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.95),
         inputMetricPercentileUs(InputMetric::JoystickSDLUpdate, 0.99),
-        inputMetricMaxUs(InputMetric::JoystickSDLUpdate));
+        inputMetricMaxUs(InputMetric::JoystickSDLUpdate),
+        inputMetricCalls(InputMetric::JoystickProcessMutexWait),
+        inputMetricPercentileUs(InputMetric::JoystickProcessMutexWait, 0.50),
+        inputMetricPercentileUs(InputMetric::JoystickProcessMutexWait, 0.95),
+        inputMetricPercentileUs(InputMetric::JoystickProcessMutexWait, 0.99),
+        inputMetricMaxUs(InputMetric::JoystickProcessMutexWait),
+        inputMetricCalls(InputMetric::JoystickProcessMutexHold),
+        inputMetricPercentileUs(InputMetric::JoystickProcessMutexHold, 0.50),
+        inputMetricPercentileUs(InputMetric::JoystickProcessMutexHold, 0.95),
+        inputMetricPercentileUs(InputMetric::JoystickProcessMutexHold, 0.99),
+        inputMetricMaxUs(InputMetric::JoystickProcessMutexHold));
 
     const auto hudPercentileUs = [&](HudPhase phase, double percentile) -> double {
         const uint32_t index = static_cast<uint32_t>(phase);
@@ -1155,6 +1169,8 @@ enum class InputMetric : uint8_t {
     JoystickSample,
     JoystickProject,
     JoystickSDLUpdate,
+    JoystickProcessMutexWait,
+    JoystickProcessMutexHold,
     Count
 };
 
