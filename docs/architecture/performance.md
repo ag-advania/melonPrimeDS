@@ -35,6 +35,9 @@ keep work that only the *next* frame can observe off it:
   same work. Stuck-key recovery (`clearStuck*`) and message draining run after `RunFrame` +
   `drawScreen` (`DeferredDrain` / `clearStuckPostFrame`), because their effect is only ever
   read by the next snapshot.
+- Hidden-window Raw recovery is classified at decode time: successful pure motion and
+  wheel-only messages do not publish the post-frame scan, while stateful events and
+  Raw-read failures retain the fail-safe request.
 - gate optional per-frame syscalls on a cheap flag instead of running them unconditionally.
   LateLatch re-drains the raw-input buffer only when a `FrameAdvance` opened a wide window
   (`m_didFrameAdvanceSinceSnapshot`); normal frames skip the `GetRawInputBuffer` call.

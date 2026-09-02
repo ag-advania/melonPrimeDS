@@ -383,6 +383,9 @@ patch is applied or the preset is Dual.
   - Uses Qt target when Joy2Key is ON, hidden window when OFF
   - Uses the fused `UpdateOwnerAndSnapshot` transaction and `DeferredDrain`
   - Handles `WM_INPUT` in `HiddenWndProc` to avoid loss
+  - Uses the decoder's recovery hint: successful relative motion and wheel-only
+    events do not publish the post-frame stuck-state scan; keyboard, mouse-button,
+    and `GetRawInputData` failure events remain fail-safe
 - `InputState`:
   - Is owned per subscription, so bindings, edges, and delta cursors cannot cross instances
   - Uses `processRawInputBatched()` for batched reads

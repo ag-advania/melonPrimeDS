@@ -702,8 +702,10 @@ namespace MelonPrime {
             if (LIKELY(subscription->hiddenWindow == hwnd)) {
                 auto* const state = subscription->state.get();
                 if (LIKELY(state)) {
-                    state->processRawInput(reinterpret_cast<HRAWINPUT>(lParam));
-                    state->RequestStuckRecovery();
+                    const bool needsRecovery = state->processRawInput(
+                        reinterpret_cast<HRAWINPUT>(lParam));
+                    if (UNLIKELY(needsRecovery))
+                        state->RequestStuckRecovery();
 #if defined(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)
                     RawInputPerf::CountHiddenWindowDispatch();
 #endif
@@ -772,7 +774,7 @@ namespace MelonPrime {
             if (!m_joy2KeySupport)
                 return false;
             if (auto* state = ActiveState())
-                state->processRawInput(reinterpret_cast<HRAWINPUT>(msg->lParam));
+                (void)state->processRawInput(reinterpret_cast<HRAWINPUT>(msg->lParam));
         }
         return false;
     }

@@ -162,11 +162,14 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   its recursive subscription mutex.
 - `HiddenWndProc` is deliberately minimal on the event-hot path: it loads the
   active subscription under that mutex, compares only `hiddenWindow == hwnd`,
-  and then processes the handle. `GetWindowLongPtr*`, `GetCurrentThreadId`, Qt,
-  config and clock queries stay out of `WM_INPUT`; creator-thread proof and
-  epoch recreation remain cold lifecycle work. Raw contention/recovery
-  telemetry is compiled only by `MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY`
-  and then enabled at runtime only with `MELONPRIME_RAW_INPUT_PERF=1`.
+  and then processes the handle. Its decoder returns a small recovery hint so
+  successful relative motion and wheel-only messages do not publish the
+  post-frame scan; keyboard, mouse-button, and Raw read failures remain
+  fail-safe. `GetWindowLongPtr*`, `GetCurrentThreadId`, Qt, config and clock
+  queries stay out of `WM_INPUT`; creator-thread proof and epoch recreation
+  remain cold lifecycle work. Raw contention/recovery telemetry is compiled
+  only by `MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY` and then enabled at
+  runtime only with `MELONPRIME_RAW_INPUT_PERF=1`.
 - Windows frame ownership and snapshot validation use the same
   `UpdateOwnerAndSnapshot*` transaction. The returned owner bit is the result
   of the eligible-owner check and the generation-validated snapshot, so the

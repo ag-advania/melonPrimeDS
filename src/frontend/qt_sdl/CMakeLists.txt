@@ -502,6 +502,30 @@ if (WIN32)
         DEPENDS melonprime_raw_hotkey_vk_mapping_tests
         COMMENT "Running Windows Raw hotkey VK mapping tests..."
         VERBATIM)
+
+    # Exercise the production HiddenWndProc recovery classifier with a fake
+    # GetRawInputData boundary. This keeps pure-motion and wheel-only dispatch
+    # off the recovery mailbox while retaining failure and stateful-event
+    # recovery without requiring a real device or message queue.
+    add_executable(melonprime_raw_recovery_hint_tests EXCLUDE_FROM_ALL
+        ${CMAKE_SOURCE_DIR}/tools/testing/raw-recovery-hint-tests.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRawInputState.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/MelonPrimeRawWinInternal.cpp)
+    target_include_directories(melonprime_raw_recovery_hint_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/..
+        ${CMAKE_CURRENT_SOURCE_DIR}/../..)
+    target_compile_definitions(melonprime_raw_recovery_hint_tests PRIVATE
+        MELONPRIME_DS)
+    target_link_libraries(melonprime_raw_recovery_hint_tests PRIVATE ${QT_LINK_LIBS})
+    set_target_properties(melonprime_raw_recovery_hint_tests PROPERTIES
+        WIN32_EXECUTABLE OFF
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+    add_custom_target(melonprime_raw_recovery_hint_check ALL
+        COMMAND $<TARGET_FILE:melonprime_raw_recovery_hint_tests>
+        DEPENDS melonprime_raw_recovery_hint_tests
+        COMMENT "Running Windows Raw recovery hint tests..."
+        VERBATIM)
 endif()
 
 # MelonPrimeDS: keep the CMake target name "melonDS" (so all the target_* calls

@@ -41,7 +41,11 @@ namespace MelonPrime {
 
         static void InitializeTables() noexcept;
 
-        void processRawInput(HRAWINPUT hRaw) noexcept;
+        // Returns true only when this dispatch may have changed or resurrected
+        // physical state that needs post-frame recovery. Successful relative
+        // motion and wheel-only events return false; read failures, keyboard
+        // events, and mouse button activity return true.
+        [[nodiscard]] bool processRawInput(HRAWINPUT hRaw) noexcept;
         void fetchMouseDelta(int& outX, int& outY) noexcept;
         void discardDeltas() noexcept;
 

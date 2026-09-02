@@ -103,7 +103,7 @@ namespace MelonPrime {
     // we keep the original load(relaxed)+store(release) pattern here. This avoids
     // `lock xadd` on x86 while preserving release ordering for the consumer.
     // =========================================================================
-    void InputState::processRawInput(HRAWINPUT hRaw) noexcept {
+    bool InputState::processRawInput(HRAWINPUT hRaw) noexcept {
         alignas(16) uint8_t rawBuf[sizeof(RAWINPUT)];
         UINT size = sizeof(rawBuf);
         UINT result;
@@ -115,7 +115,9 @@ namespace MelonPrime {
             result = GetRawInputData(hRaw, RID_INPUT, rawBuf, &size, sizeof(RAWINPUTHEADER));
         }
 
-        if (UNLIKELY(result == UINT(-1) || result == 0)) return;
+        // A failed read means the event class and release edge are unknown.
+        // Keep the fail-safe physical-state recovery request in that case.
+        if (UNLIKELY(result == UINT(-1) || result == 0)) return true;
         const auto* raw = reinterpret_cast<const RAWINPUT*>(rawBuf);
 
         switch (raw->header.dwType) {
@@ -151,7 +153,10 @@ namespace MelonPrime {
                     }
                 }
             }
-            break;
+            // Wheel and relative motion are fully represented by the
+            // accumulators above. Only button flags can leave a physical
+            // held/released state that needs post-frame reconciliation.
+            return flags != 0;
         }
         case RIM_TYPEKEYBOARD: {
             const RAWKEYBOARD& kb = raw->data.keyboard;
@@ -167,9 +172,12 @@ namespace MelonPrime {
                 setVkBit(vk, !(kb.Flags & RI_KEY_BREAK));
                 std::atomic_thread_fence(std::memory_order_release);
             }
-            break;
+            return true;
         }
         }
+        // HID and other unsupported successful input are intentionally ignored
+        // and must not publish a recovery request.
+        return false;
     }
 
     // =========================================================================

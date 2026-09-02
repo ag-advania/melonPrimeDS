@@ -903,6 +903,42 @@ def check_windows_raw_reaudit_models() -> None:
     assert locked_calls == 1
 
 
+def check_windows_raw_recovery_hint_model() -> None:
+    # Recovery is for stateful/failure events, not for successful motion that
+    # is already fully represented by the Raw accumulators.
+    mouse_button_mask = 0x03FF
+
+    def needs_recovery(read_succeeded: bool, kind: str, button_flags: int = 0) -> bool:
+        if not read_succeeded:
+            return True
+        if kind == "keyboard":
+            return True
+        if kind == "mouse":
+            return bool(button_flags & mouse_button_mask)
+        return False
+
+    x_recovery = 0
+    x_total = 0
+    for _ in range(10000):
+        x_total += 1
+        x_recovery += needs_recovery(True, "mouse")
+    assert x_total == 10000 and x_recovery == 0
+
+    y_recovery = 0
+    y_total = 0
+    for _ in range(10000):
+        y_total += 1
+        y_recovery += needs_recovery(True, "mouse")
+    assert y_total == 10000 and y_recovery == 0
+
+    assert not needs_recovery(True, "mouse", 0x0400)  # wheel only
+    assert needs_recovery(True, "mouse", 0x0001)  # button down
+    assert needs_recovery(True, "mouse", 0x0002)  # button up
+    assert needs_recovery(True, "keyboard")
+    assert not needs_recovery(True, "hid")
+    assert needs_recovery(False, "unknown")  # GetRawInputData failure
+
+
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
     input_cpp = source("src/frontend/qt_sdl/EmuInstanceInput.cpp")
@@ -948,6 +984,7 @@ def main() -> None:
     raw_hotkey_mapping = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkMapping.cpp")
     raw_hotkey_mapping_header = source("src/frontend/qt_sdl/MelonPrimeRawHotkeyVkMapping.h")
     raw_hotkey_mapping_test = source("tools/testing/raw-hotkey-vk-mapping-tests.cpp")
+    raw_recovery_hint_test = source("tools/testing/raw-recovery-hint-tests.cpp")
     qt_sdl_cmake = source("src/frontend/qt_sdl/CMakeLists.txt")
     input_subscription = source("src/frontend/qt_sdl/MelonPrimeInputSubscription.h")
     core = source("src/frontend/qt_sdl/MelonPrime.cpp")
@@ -1005,7 +1042,7 @@ def main() -> None:
     )
     raw_process = body(
         raw_state_cpp,
-        "void InputState::processRawInput(HRAWINPUT hRaw)",
+        "bool InputState::processRawInput(HRAWINPUT hRaw)",
         "void InputState::processRawInputBatched()",
     )
     raw_batched = body(
@@ -1823,6 +1860,41 @@ def main() -> None:
         require(raw_filter, needle, "same-thread Raw recovery proof")
     if hidden_proc.count("state->RequestStuckRecovery()") != 1:
         raise AssertionError("HiddenWndProc must be the sole recovery producer")
+
+    # CD-CH: successful pure motion and wheel-only events must not publish the
+    # post-frame recovery mailbox, while stateful events and read failures do.
+    require(raw_state_header, "[[nodiscard]] bool processRawInput(HRAWINPUT hRaw)", "Raw recovery hint API")
+    require(raw_process, "if (UNLIKELY(result == UINT(-1) || result == 0)) return true;", "Raw read-failure recovery")
+    require(raw_process, "const USHORT flags = m.usButtonFlags & 0x03FF;", "Raw mouse button classifier")
+    require(raw_process, "return flags != 0;", "Raw motion/wheel recovery gate")
+    require(raw_process, "case RIM_TYPEKEYBOARD", "Raw keyboard recovery classifier")
+    require(raw_process, "return true;", "Raw stateful recovery classifier")
+    require(raw_process, "return false;", "Raw ignored-event recovery classifier")
+    require(hidden_proc, "const bool needsRecovery = state->processRawInput(", "HiddenWndProc recovery hint result")
+    require(hidden_proc, "if (UNLIKELY(needsRecovery))", "conditional recovery publication")
+    if hidden_proc.index("if (UNLIKELY(needsRecovery))") > hidden_proc.index("state->RequestStuckRecovery()"):
+        raise AssertionError("HiddenWndProc must publish recovery only after the hint is true")
+    require(raw_filter, "(void)state->processRawInput(", "Joy2Key recovery hint discard")
+    for needle in (
+        "FakeGetRawInputData",
+        "g_readFailure",
+        "for (int i = 0; i < 10000; ++i)",
+        "RI_MOUSE_WHEEL",
+        "RI_MOUSE_LEFT_BUTTON_DOWN",
+        "RI_MOUSE_LEFT_BUTTON_UP",
+        "RI_KEY_BREAK",
+        "RIM_TYPEHID",
+        "raw-recovery-hint-tests: PASS",
+    ):
+        require(raw_recovery_hint_test, needle, "Raw recovery hint executable coverage")
+    for needle in (
+        "melonprime_raw_recovery_hint_tests",
+        "MelonPrimeRawInputState.cpp",
+        "MelonPrimeRawWinInternal.cpp",
+        "melonprime_raw_recovery_hint_check",
+    ):
+        require(qt_sdl_cmake, needle, "Raw recovery hint CMake target")
+
     require(raw_drain, "auto* const state = StateFor(subscription);", "single active Raw drain load")
     if "ActiveState()" in raw_drain:
         raise AssertionError("drainPendingMessages must not reload the active subscription")
@@ -1992,6 +2064,7 @@ def main() -> None:
     require(screen, "wheelSteps.Reset();", "focus/close wheel residual reset")
 
     check_windows_raw_reaudit_models()
+    check_windows_raw_recovery_hint_model()
 
     check_state_model()
     check_controller_pause_model()

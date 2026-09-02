@@ -1530,7 +1530,7 @@ $rawInputStatePublicText = if ($rawInputStatePrivateAt -ge 0) {
 $mouseCapabilityText = Get-Content -LiteralPath $mouseCapabilityPath -Raw
 $mapButtonText = Get-Content -LiteralPath $mapButtonPath -Raw
 $rawProcessBody = Get-FunctionText -Path $rawInputStateCppPath `
-    -Signature 'void\s+InputState::processRawInput\s*\('
+    -Signature 'bool\s+InputState::processRawInput\s*\('
 $rawBatchedBody = Get-FunctionText -Path $rawInputStateCppPath `
     -Signature 'void\s+InputState::processRawInputBatched\s*\('
 $rawClaimBody = Get-FunctionText -Path $rawInputStateCppPath `
@@ -1648,6 +1648,7 @@ $rawHotkeyHeaderPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkBinding.h'
 $rawHotkeyMappingPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkMapping.cpp'
 $rawHotkeyMappingHeaderPath = Join-Path $qtSdl 'MelonPrimeRawHotkeyVkMapping.h'
 $rawHotkeyMappingTestPath = Join-Path $repoRoot 'tools/testing/raw-hotkey-vk-mapping-tests.cpp'
+$rawRecoveryHintTestPath = Join-Path $repoRoot 'tools/testing/raw-recovery-hint-tests.cpp'
 $rawInputPerfPath = Join-Path $qtSdl 'MelonPrimeRawInputPerfProbe.h'
 $qtSdlCmakePath = Join-Path $qtSdl 'CMakeLists.txt'
 $cmakePresetsPath = Join-Path $repoRoot 'CMakePresets.json'
@@ -1663,6 +1664,7 @@ $rawHotkeyHeaderText = Get-Content -LiteralPath $rawHotkeyHeaderPath -Raw
 $rawHotkeyMappingText = Get-Content -LiteralPath $rawHotkeyMappingPath -Raw
 $rawHotkeyMappingHeaderText = Get-Content -LiteralPath $rawHotkeyMappingHeaderPath -Raw
 $rawHotkeyMappingTestText = Get-Content -LiteralPath $rawHotkeyMappingTestPath -Raw
+$rawRecoveryHintTestText = Get-Content -LiteralPath $rawRecoveryHintTestPath -Raw
 $rawInputPerfText = Get-Content -LiteralPath $rawInputPerfPath -Raw
 $qtSdlCmakeText = Get-Content -LiteralPath $qtSdlCmakePath -Raw
 $cmakePresetsText = Get-Content -LiteralPath $cmakePresetsPath -Raw
@@ -1926,6 +1928,57 @@ if ($rawWinFilterText -notmatch 'const\s+DWORD\s+currentThreadId\s*=\s*GetCurren
     $coreLifecycleText -notmatch 'm_rawFilter->DeferredDrain\s*\(\s*m_rawInputSubscription\s*\)' -or
     $coreLifecycleText -notmatch 'm_rawFilter->resetAll\s*\(\s*m_rawInputSubscription\s*\)') {
     Add-Error 'Rule BC: same-thread Raw recovery ownership proof is incomplete'
+}
+
+# CD-CH: HiddenWndProc recovery publication is classified by the production
+# Raw decoder. Successful relative motion and wheel-only messages are already
+# represented by accumulators and must not dirty the post-frame recovery
+# mailbox; keyboard/button events and unreadable Raw data remain fail-safe.
+if ($rawInputStateText -notmatch '\[\[nodiscard\]\]\s+bool\s+processRawInput\s*\(\s*HRAWINPUT\s+hRaw\s*\)' -or
+    -not $rawProcessBody) {
+    Add-Error 'Rule CD: processRawInput must return a recovery hint'
+}
+if (-not $rawProcessBody -or
+    $rawProcessBody -notmatch
+        'if\s*\(UNLIKELY\(result\s*==\s*UINT\(-1\)\s*\|\|\s*result\s*==\s*0\)\)\s*return\s+true\s*;') {
+    Add-Error 'Rule CE: Raw read failure must request fail-safe recovery'
+}
+if (-not $rawProcessBody -or
+    $rawProcessBody -notmatch 'const\s+USHORT\s+flags\s*=\s*m\.usButtonFlags\s*&\s*0x03FF' -or
+    $rawProcessBody -notmatch 'return\s+flags\s*!=\s*0') {
+    Add-Error 'Rule CF: successful wheel-only and pure-motion Raw events must not request recovery'
+}
+if (-not $rawProcessBody -or
+    $rawProcessBody -notmatch 'case\s+RIM_TYPEKEYBOARD' -or
+    $rawProcessBody -notmatch 'case\s+RIM_TYPEKEYBOARD[\s\S]*?return\s+true\s*;') {
+    Add-Error 'Rule CG: successful keyboard Raw events must request recovery'
+}
+$hiddenRecoveryHintAt = if ($rawHiddenWndProcBody) {
+    $rawHiddenWndProcBody.IndexOf('const bool needsRecovery = state->processRawInput(',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$hiddenRecoveryRequestAt = if ($rawHiddenWndProcBody) {
+    $rawHiddenWndProcBody.IndexOf('state->RequestStuckRecovery()',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if (-not $rawHiddenWndProcBody -or
+    $hiddenRecoveryHintAt -lt 0 -or
+    $hiddenRecoveryRequestAt -le $hiddenRecoveryHintAt -or
+    $rawHiddenWndProcBody -notmatch 'if\s*\(UNLIKELY\(needsRecovery\)\)' -or
+    $rawProcessBody -match 'RequestStuckRecovery\s*\(' -or
+    -not (Test-Path -LiteralPath $rawRecoveryHintTestPath) -or
+    $rawRecoveryHintTestText -notmatch '10000' -or
+    $rawRecoveryHintTestText -notmatch 'FakeGetRawInputData' -or
+    $rawRecoveryHintTestText -notmatch 'g_readFailure' -or
+    $rawRecoveryHintTestText -notmatch 'RI_MOUSE_WHEEL' -or
+    $rawRecoveryHintTestText -notmatch 'RI_MOUSE_LEFT_BUTTON_DOWN' -or
+    $rawRecoveryHintTestText -notmatch 'RI_MOUSE_LEFT_BUTTON_UP' -or
+    $rawRecoveryHintTestText -notmatch 'RI_KEY_BREAK' -or
+    $rawRecoveryHintTestText -notmatch 'RIM_TYPEHID' -or
+    $rawRecoveryHintTestText -notmatch 'raw-recovery-hint-tests:\s+PASS' -or
+    $qtSdlCmakeText -notmatch 'melonprime_raw_recovery_hint_tests' -or
+    $qtSdlCmakeText -notmatch 'melonprime_raw_recovery_hint_check') {
+    Add-Error 'Rule CH: HiddenWndProc must publish only the classified Raw recovery hint'
 }
 
 # BJ: HiddenWndProc is an event-hot Win32 callback. Production dispatch may
