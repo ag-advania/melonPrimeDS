@@ -39,7 +39,12 @@
 //
 //   g_dx12PanelRegistryLock   process-wide panel list for renderer
 //                             transitions. Held for the list walk only; never
-//                             held across a panel method that can block.
+//                             held across a panel method that can block. The
+//                             transition caller is the emulation-thread
+//                             renderer barrier: the GUI is synchronously
+//                             waiting for that barrier and cannot destroy a
+//                             panel until it returns, which makes the copied
+//                             raw pointers lifetime-safe after unlock.
 //   DX12State::layoutLock     GUI-published layout snapshot read by the
 //                             emulation thread.
 //   DX12State::fallbackLock   CPU fallback frame shared with paintEvent().
@@ -87,6 +92,7 @@
 #include "MelonPrimeDX12FeatureCheck.h"
 #include "MelonPrimeDX12SurfacePresenter.h"
 #include "MelonPrimePerfProbe.h"
+#include "MelonPrimeRendererTransitionPerf.h"
 #include "NDS.h"
 #include "Platform.h"
 #include "main.h"
@@ -253,7 +259,7 @@ ScreenPanelDX12::~ScreenPanelDX12()
     }
 }
 
-void ScreenPanelDX12::prepareForRendererTransition()
+void ScreenPanelDX12::prepareForRendererTransition(bool recordTransitionPerf)
 {
     if (!dx12)
         return;
@@ -270,7 +276,14 @@ void ScreenPanelDX12::prepareForRendererTransition()
     // Keep the same lifetime contract as the Vulkan presenter: old queue work
     // must be complete before descriptor identity is cleared or the renderer
     // output lease is dropped.
+    const auto quiesceStart = recordTransitionPerf
+        ? MelonPrime::g_rendererTransitionPerf.Now() : 0;
     dx12->presenter.Quiesce();
+    if (recordTransitionPerf) {
+        MelonPrime::g_rendererTransitionPerf.Record(
+            MelonPrime::RendererTransitionMetric::QuiesceDuration,
+            quiesceStart, MelonPrime::g_rendererTransitionPerf.Now());
+    }
     dx12->presenter.InvalidateDirectDescriptorCache();
     dx12->frameLease.ReleaseNow();
     dx12->nativeVisibility.Reset();
@@ -280,12 +293,35 @@ void ScreenPanelDX12::prepareForRendererTransition()
 
 void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance)
 {
-    QMutexLocker lock(&g_dx12PanelRegistryLock);
-    for (ScreenPanelDX12* panel : g_dx12PanelRegistry)
+    const auto transitionStart = MelonPrime::g_rendererTransitionPerf.Now();
+    // Snapshot only matching panels while the registry is locked. Do not call
+    // Quiesce (or any other panel method) under this process-global mutex: it
+    // can wait for GPU work. The caller has already established the
+    // prepareVideoBackendTransition() GUI/emu barrier documented above, so
+    // GUI-owned panel destruction cannot race this short transition window.
+    std::vector<ScreenPanelDX12*> panels;
     {
-        if (panel->emuInstance == instance)
-            panel->prepareForRendererTransition();
+        const auto lockStart = MelonPrime::g_rendererTransitionPerf.Now();
+        QMutexLocker lock(&g_dx12PanelRegistryLock);
+        MelonPrime::g_rendererTransitionPerf.Record(
+            MelonPrime::RendererTransitionMetric::RegistryLockWait,
+            lockStart, MelonPrime::g_rendererTransitionPerf.Now());
+        for (ScreenPanelDX12* panel : g_dx12PanelRegistry)
+        {
+            if (panel->emuInstance == instance)
+                panels.push_back(panel);
+        }
     }
+
+    for (ScreenPanelDX12* panel : panels)
+    {
+        panel->prepareForRendererTransition(true);
+    }
+    MelonPrime::g_rendererTransitionPerf.Record(
+        MelonPrime::RendererTransitionMetric::TransitionTotal,
+        transitionStart, MelonPrime::g_rendererTransitionPerf.Now());
+    MelonPrime::g_rendererTransitionPerf.Report(
+        instance ? instance->getInstanceID() : 0, "dx12");
 }
 
 bool ScreenPanelDX12::initDX12()

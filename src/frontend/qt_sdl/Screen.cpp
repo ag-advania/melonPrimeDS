@@ -380,6 +380,10 @@ void ScreenPanel::refreshClipForGameStateChange()
 #ifdef MELONPRIME_CUSTOM_HUD
 void ScreenPanel::setHudEditModeActive(bool active)
 {
+    // This latch is GUI-owned and must be updated even when shutdown has
+    // already made the cursor hand-off a no-op. The high-rate mouse path uses
+    // it as a fast reject; the helper still validates the live HUD edit state.
+    m_hudEditInputActive = active;
     if (!active || closing || !qApp || qApp->closingDown())
         return;
 
@@ -874,6 +878,8 @@ void ScreenPanel::primeStylusTouchHotkeyAtCursor(int qtKey)
     int x = local.x();
     int y = local.y();
     const bool valid = getTouchCoords(x, y, false);
+    m_screenInputPerf.Count(
+        MelonPrime::ScreenInputMetric::StylusPointerPublish);
     core->ThreadBridge().PublishStylusPointerFromGui(x, y, valid);
     // Merely sampling the hover coordinate must not claim a top-screen drag.
     topScreenTouchTransform = -1;
@@ -1248,11 +1254,17 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         emu->touchScreen(x, y);
 #ifdef MELONPRIME_DS
         if (core && ui.stylusMode && ui.inGame)
+        {
+            m_screenInputPerf.Count(
+                MelonPrime::ScreenInputMetric::StylusPointerPublish);
             core->ThreadBridge().PublishStylusPointerFromGui(x, y, true);
+        }
 #endif
     }
 #ifdef MELONPRIME_DS
     else if (core && ui.stylusMode && ui.inGame) {
+        m_screenInputPerf.Count(
+            MelonPrime::ScreenInputMetric::StylusPointerPublish);
         core->ThreadBridge().PublishStylusPointerFromGui(0, 0, false);
     }
 #endif
@@ -1359,6 +1371,10 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     event->accept();
 
     auto* const emu = emuInstance;
+#ifdef MELONPRIME_DS
+    MelonPrime::ScreenInputPerf::ScopedMouseMove inputPerf(
+        m_screenInputPerf, emu ? emu->getInstanceID() : 0);
+#endif
 
     if (Q_UNLIKELY(!emu->emuIsActive()))
         return;
@@ -1376,8 +1392,19 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
 #endif
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    if (handleHudMouseMove(event))
-        return;
+    if (Q_UNLIKELY(m_hudEditInputActive)) {
+#ifdef MELONPRIME_DS
+        m_screenInputPerf.Count(
+            MelonPrime::ScreenInputMetric::HudEditHelperEntered);
+#endif
+        if (handleHudMouseMove(event))
+            return;
+    } else {
+#ifdef MELONPRIME_DS
+        m_screenInputPerf.Count(
+            MelonPrime::ScreenInputMetric::HudEditFastRejected);
+#endif
+    }
 #endif
 
 #ifdef MELONPRIME_DS
@@ -1409,6 +1436,10 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         ? thread->GetMelonPrimeCore() : nullptr;
     const auto ui = core ? core->ThreadBridge().ReadForGui()
                          : MelonPrime::MelonPrimeUiSnapshot{};
+#ifdef MELONPRIME_DS
+    if (core)
+        m_screenInputPerf.Count(MelonPrime::ScreenInputMetric::UiSnapshotRead);
+#endif
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY) \
@@ -1547,6 +1578,8 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         int x = p.x();
         int y = p.y();
         const bool valid = getTouchCoords(x, y, false);
+        m_screenInputPerf.Count(
+            MelonPrime::ScreenInputMetric::StylusPointerPublish);
         core->ThreadBridge().PublishStylusPointerFromGui(x, y, valid);
         // Hover tracking must not claim a drag transform before a contact
         // actually starts.
@@ -1567,7 +1600,11 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         emu->touchScreen(x, y);
 #ifdef MELONPRIME_DS
         if (core && ui.stylusMode && ui.inGame)
+        {
+            m_screenInputPerf.Count(
+                MelonPrime::ScreenInputMetric::StylusPointerPublish);
             core->ThreadBridge().PublishStylusPointerFromGui(x, y, true);
+        }
 #endif
     }
 }

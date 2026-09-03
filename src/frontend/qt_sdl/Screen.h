@@ -42,6 +42,7 @@
 #include "MelonPrimeWheelEvent.h"
 #include "MelonPrimeDirectAimIngress.h"
 #include "MelonPrimeScreenCursorPolicy.h"
+#include "MelonPrimeScreenInputPerf.h"
 #include "MelonPrimeTopScreenTouch.h"
 #include "MelonPrimeNativePaintPerf.h"
 #endif
@@ -50,120 +51,12 @@
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "MelonPrimeHudRender.h"
-#include "MelonPrimeHudRuntime.h"
-#include "MelonPrimeLocalization.h"
-
-// The emulation identity is probed separately from the extended stamp.  New
-// game frames can therefore render immediately without constructing a full
-// key; repeated presentation of one frame still validates the complete stamp.
-struct HudVisualFrameIdentity {
-    const void* nds = nullptr;
-    uint32_t gameFrame = 0;
-
-    bool operator==(const HudVisualFrameIdentity& other) const noexcept
-    {
-        return nds == other.nds && gameFrame == other.gameFrame;
-    }
-};
-
-struct HudVisualFrameStamp {
-    uint32_t configEpoch = 0;
-    uint32_t fontEpoch = 0;
-    uint32_t stateGeneration = 0;
-    int menuLanguage = 0;
-    int overlayWidth = 0;
-    int overlayHeight = 0;
-    float topStretchX = 0.0f;
-    float hudScale = 0.0f;
-    float originX = 0.0f;
-    float originY = 0.0f;
-    uint64_t rendererGeneration = 0;
-    bool hudEnabled = false;
-    bool editMode = false;
-
-    bool operator==(const HudVisualFrameStamp& other) const noexcept
-    {
-        return configEpoch == other.configEpoch
-            && fontEpoch == other.fontEpoch
-            && stateGeneration == other.stateGeneration
-            && menuLanguage == other.menuLanguage
-            && overlayWidth == other.overlayWidth
-            && overlayHeight == other.overlayHeight
-            && topStretchX == other.topStretchX
-            && hudScale == other.hudScale
-            && originX == other.originX
-            && originY == other.originY
-            && rendererGeneration == other.rendererGeneration
-            && hudEnabled == other.hudEnabled
-            && editMode == other.editMode;
-    }
-};
-
-struct HudVisualFrameKey {
-    HudVisualFrameIdentity identity{};
-    HudVisualFrameStamp stamp{};
-
-    bool operator==(const HudVisualFrameKey& other) const noexcept
-    {
-        return identity == other.identity && stamp == other.stamp;
-    }
-};
+#include "MelonPrimeHudScreenVisualState.h"
 #endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
 class EmuInstance;
 class EmuThread;
-
-#ifdef MELONPRIME_CUSTOM_HUD
-static inline HudVisualFrameIdentity MelonPrimeHud_ProbeVisualFrameIdentity(
-    EmuInstance* emu)
-{
-    HudVisualFrameIdentity identity;
-    identity.gameFrame = MelonPrime::CustomHud_GetVisualGameFrame(
-        emu, &identity.nds);
-    return identity;
-}
-
-static inline bool MelonPrimeHud_IsSameVisualGameFrame(
-    const HudVisualFrameIdentity& identity,
-    const HudVisualFrameKey& previous)
-{
-    return previous.identity == identity;
-}
-
-static inline HudVisualFrameKey MelonPrimeHud_MakeVisualFrameKey(
-    const HudVisualFrameIdentity& identity,
-    const MelonPrime::CustomHudConfigState& hudConfig,
-    uint32_t configEpoch,
-    uint32_t fontEpoch,
-    int overlayWidth,
-    int overlayHeight,
-    float topStretchX,
-    float hudScale,
-    float originX,
-    float originY,
-    uint64_t rendererGeneration,
-    bool hudEnabled,
-    bool editMode)
-{
-    HudVisualFrameKey key;
-    key.identity = identity;
-    key.stamp.configEpoch = configEpoch;
-    key.stamp.fontEpoch = fontEpoch;
-    key.stamp.stateGeneration = MelonPrime::CustomHud_GetVisualGeneration(hudConfig);
-    key.stamp.menuLanguage = static_cast<int>(MelonPrime::UiText::ActiveMenuLanguage());
-    key.stamp.overlayWidth = overlayWidth;
-    key.stamp.overlayHeight = overlayHeight;
-    key.stamp.topStretchX = topStretchX;
-    key.stamp.hudScale = hudScale;
-    key.stamp.originX = originX;
-    key.stamp.originY = originY;
-    key.stamp.rendererGeneration = rendererGeneration;
-    key.stamp.hudEnabled = hudEnabled;
-    key.stamp.editMode = editMode;
-    return key;
-}
-#endif
 
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
@@ -436,6 +329,9 @@ protected:
     // Cached OR of the match-scoped cursor options, so the per-pass reconcile
     // short-circuits on one predictable bool when they are all off.
     bool stylusMatchCursorOptionsEnabled = false;
+    // Developer-only GUI input counters; the release implementation is a
+    // constexpr no-op and remains outside the renderer-specific panels.
+    MelonPrime::ScreenInputPerf m_screenInputPerf;
 #endif
 
     int autoScreenSizing;
@@ -508,6 +404,10 @@ protected:
     QImage Overlay[2];       // [0]=Top HUD, [1]=software radar color-key scratch
     QFont overlayFont;
     MelonPrimeHudConfigOnScreenEdit* m_hudEditPanel = nullptr;
+    // GUI-owned latch set on the cold editor lifecycle path. It lets the
+    // high-rate mouse handler reject ordinary moves without consulting the
+    // HUD config/runtime bridge; the helper retains its own edit-mode guard.
+    bool m_hudEditInputActive = false;
     // Layout values cached in setupScreenLayout() — avoids sqrt per-frame.
     float m_hudScale      = 1.0f;
     float m_topStretchX   = 1.0f;
@@ -727,7 +627,7 @@ private:
     void handleDX12SurfaceHostLifecycleGuiThread(
         QEvent::Type eventType, bool aboutToDestroy);
     void publishDX12SurfaceSnapshotGuiThread();
-    void prepareForRendererTransition();
+    void prepareForRendererTransition(bool recordTransitionPerf = false);
     void requestNativeSurfaceVisible(bool visible);
     void reportRuntimeFailure(const char* reason);
 
@@ -812,7 +712,9 @@ private:
     void composeFrameAtVBlank();
     static void ComposeInstanceFrameAtVBlank(EmuInstance* instance);
     void installVulkanComposeHook(melonDS::VulkanRenderer* renderer);
-    void prepareForRendererTransition(bool detachRendererObserver = true);
+    void prepareForRendererTransition(
+        bool detachRendererObserver = true,
+        bool recordTransitionPerf = false);
     void invalidateScreenRetention();
     bool initVulkanPresenter();
     void reportVulkanRuntimeFailure(const char* reason);

@@ -182,6 +182,58 @@ composition. Keep the lifetime-fence scope intact unless a repeatable workload
 shows material wait contention; optimize the measured HUD work instead of
 weakening renderer/NDS pointer lifetime protection.
 
+### GUI input and renderer-transition follow-up (2026-09-04)
+
+The Custom HUD editor now has a GUI-owned `m_hudEditInputActive` latch. It is
+updated before the early-return checks in `setHudEditModeActive()`, and the
+ordinary `mouseMoveEvent()` path calls `handleHudMouseMove()` only under an
+`Q_UNLIKELY` check of that latch. The helper still validates
+`CustomHud_IsEditMode()` before its edit-only Config lookup, so a stale edge
+cannot enter the editor. No atomic, mutex, allocation, or queued invocation was
+added to the event path.
+
+Developer builds with `MELONPRIME_PERF=1` also emit one aggregate
+`screen_input` record per second from the panel-owned fixed collector. The
+record contains `mouseMoveEvents`, `event_ns` p50/p95/p99/max, and the
+`hudEditFastRejected`, `hudEditHelperEntered`, `uiSnapshotRead`, and
+`stylusPointerPublish` counters (the event count is `mouseMoveEvents`). The
+Windows physical A/B harness can enable
+the deterministic synthetic workload with `-Action steady-state
+-SyntheticMouseRateHz 1000` or `8000`; its `.screen-input.json` artifact
+records attempted and successfully submitted `SendInput` reports. This is a
+repeatable OS-injection workload, not a claim about a physical 1k/8k device.
+
+Top-screen touch keeps the exhaustive parity target in `ALL`: on the Windows
+MinGW build used for this audit, the current 138,240-configuration executable
+completed in 347 ms (the incremental CMake target completed in 325 ms). That
+is below the materiality threshold used for this repository, so no fast/smoke
+split was introduced and the full coverage remains the default build gate.
+The explicit old/new mapping benchmark is:
+
+```text
+cmake --build build/release-mingw-x86_64 --target melonprime_top_screen_touch_benchmark
+```
+
+It reports `ns / map` and `maps / second` for fixed 1x/4x/16x, odd-scale,
+rotation, and hybrid-like transforms without random branch noise.
+
+Vulkan and DX12 renderer-transition registry walks now snapshot matching panel
+addresses under their process-global registry mutex and release it before
+calling `prepareForRendererTransition()` (and therefore presenter `Quiesce()`).
+The lifetime proof is the existing `prepareVideoBackendTransition()` barrier:
+the GUI thread waits synchronously for the emulation-thread transition and
+cannot unpublish/destroy a panel until that wait returns. The VBlank registry
+walk remains locked because it serializes the callback with destruction and
+does not call `Quiesce()`.
+
+The transition path emits cold-path `renderer_transition` aggregates for
+`registry_lock_wait`, `quiesce_duration`, and `transition_total`. The
+two-instance close/transition contract is executable without a renderer SDK:
+
+```text
+cmake --build build/release-mingw-x86_64 --target melonprime_native_panel_registry_transition_check
+```
+
 ### Input event / frame RMW budget
 
 The steady-state contract is load-first for rare claims and single-writer

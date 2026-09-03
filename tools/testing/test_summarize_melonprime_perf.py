@@ -64,6 +64,31 @@ class SummarizeMelonPrimePerfTests(unittest.TestCase):
         self.assertIn("native paint 1 Hz windows: 1", output.getvalue())
         self.assertIn("render_lock_wait", output.getvalue())
 
+    def test_screen_input_and_transition_windows_are_parsed(self) -> None:
+        report = MODULE.parse_lines([
+            "[MelonPrimePerf] screen_input instance_id=2 "
+            "mouseMoveEvents=8000 event_ns[n=4096 p50=120.0 p95=180.0 "
+            "p99=220.0 max=500.0] hudEditFastRejected=7990 "
+            "hudEditHelperEntered=10 uiSnapshotRead=0 stylusPointerPublish=0\n",
+            "[MelonPrimePerf] renderer_transition backend=vulkan instance_id=2 "
+            "registry_lock_wait[n=1 p50=0.2 p95=0.2 p99=0.2 max=0.2] "
+            "quiesce_duration[n=1 p50=120.0 p95=120.0 p99=120.0 max=120.0] "
+            "transition_total[n=1 p50=140.0 p95=140.0 p99=140.0 max=140.0]\n",
+        ])
+
+        self.assertEqual(len(report.screen_input), 1)
+        self.assertEqual(report.screen_input[0].mouse_move_events, 8000)
+        self.assertEqual(report.screen_input[0].event_p99_ns, 220.0)
+        self.assertEqual(len(report.renderer_transition), 1)
+        self.assertEqual(
+            report.renderer_transition[0].metrics["transition_total"].p99,
+            140.0)
+
+        output = io.StringIO()
+        MODULE.print_report(report, output)
+        self.assertIn("screen input 1 Hz windows: 1", output.getvalue())
+        self.assertIn("renderer transition windows: 1", output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

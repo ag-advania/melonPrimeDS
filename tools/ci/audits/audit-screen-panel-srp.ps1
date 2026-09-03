@@ -27,6 +27,8 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScript
 $qtSdl = Join-Path $repoRoot 'src/frontend/qt_sdl'
 $screenCpp = Join-Path $qtSdl 'Screen.cpp'
 $dx12Cpp = Join-Path $qtSdl 'MelonPrimeScreenDX12.cpp'
+$vulkanCpp = Join-Path $qtSdl 'MelonPrimeScreenVulkan.cpp'
+$hudIntegrationCpp = Join-Path $qtSdl 'MelonPrimeHudScreenIntegration.cpp'
 $cmake = Join-Path $qtSdl 'CMakeLists.txt'
 
 $errors = New-Object System.Collections.Generic.List[string]
@@ -165,6 +167,80 @@ foreach ($signature in $hotHandlers) {
         if ($code -match 'QMetaObject::invokeMethod') {
             $errors.Add("Screen.cpp:${lineNo}: per-event queued GUI invocation in ${signature}: $($code.Trim())") | Out-Null
         }
+    }
+}
+
+# HUD editor moves are the one intentional exception to the ordinary
+# mouseMoveEvent fast path. The gate must be the GUI-owned cached latch, and
+# the helper must retain its own live CustomHud_IsEditMode() guard so a stale
+# lifecycle edge cannot enter the editor operation.
+$mouseBodyStart = $screenText.IndexOf('void ScreenPanel::mouseMoveEvent')
+if ($mouseBodyStart -lt 0) {
+    $errors.Add('Could not locate mouseMoveEvent for the HUD cached-gate check.') | Out-Null
+}
+else {
+    $mouseBody = $screenText.Substring($mouseBodyStart)
+    $mouseBodyEnd = $mouseBody.IndexOf("`n}", [System.StringComparison]::Ordinal)
+    if ($mouseBodyEnd -gt 0) { $mouseBody = $mouseBody.Substring(0, $mouseBodyEnd + 2) }
+    $gatePos = $mouseBody.IndexOf('Q_UNLIKELY(m_hudEditInputActive)', [System.StringComparison]::Ordinal)
+    $helperPos = $mouseBody.IndexOf('handleHudMouseMove(event)', [System.StringComparison]::Ordinal)
+    if ($gatePos -lt 0 -or $helperPos -lt 0 -or $gatePos -gt $helperPos) {
+        $errors.Add('Screen.cpp mouseMoveEvent must gate handleHudMouseMove(event) with m_hudEditInputActive.') | Out-Null
+    }
+}
+
+if (-not (Test-Path -LiteralPath $hudIntegrationCpp)) {
+    $errors.Add('MelonPrimeHudScreenIntegration.cpp is missing: the HUD helper audit cannot run.') | Out-Null
+}
+else {
+    $hudText = [System.IO.File]::ReadAllText($hudIntegrationCpp)
+    $helperStart = $hudText.IndexOf('bool ScreenPanel::handleHudMouseMove')
+    if ($helperStart -lt 0) {
+        $errors.Add('Could not locate ScreenPanel::handleHudMouseMove for helper-aware auditing.') | Out-Null
+    }
+    else {
+        $helperBody = $hudText.Substring($helperStart)
+        $helperEnd = $helperBody.IndexOf("`n}", [System.StringComparison]::Ordinal)
+        if ($helperEnd -gt 0) { $helperBody = $helperBody.Substring(0, $helperEnd + 2) }
+        $editGuard = $helperBody.IndexOf('CustomHud_IsEditMode', [System.StringComparison]::Ordinal)
+        $configLookup = $helperBody.IndexOf('getLocalConfig', [System.StringComparison]::Ordinal)
+        if ($editGuard -lt 0) {
+            $errors.Add('handleHudMouseMove must retain its CustomHud_IsEditMode() guard.') | Out-Null
+        }
+        elseif ($configLookup -ge 0 -and $editGuard -gt $configLookup) {
+            $errors.Add('handleHudMouseMove must validate edit mode before the slow Config lookup.') | Out-Null
+        }
+    }
+}
+
+# Renderer transition walks may snapshot raw panel addresses under their
+# registry mutex, but Quiesce is allowed to wait for GPU work and must run only
+# after that mutex has been released. The emulation-thread transition barrier
+# is the lifetime proof for the copied addresses; this check prevents the
+# original lock-across-Quiesce regression from returning.
+foreach ($registrySpec in @(
+        @{ Path = $dx12Cpp; Signature = 'void ScreenPanelDX12::PrepareForInstanceRendererTransition' },
+        @{ Path = $vulkanCpp; Signature = 'void ScreenPanelVulkan::PrepareForInstanceRendererTransition' })) {
+    if (-not (Test-Path -LiteralPath $registrySpec.Path)) {
+        $errors.Add("$($registrySpec.Path) is missing: renderer registry lock audit cannot run.") | Out-Null
+        continue
+    }
+    $registryText = [System.IO.File]::ReadAllText($registrySpec.Path)
+    $registryStart = $registryText.IndexOf($registrySpec.Signature, [System.StringComparison]::Ordinal)
+    if ($registryStart -lt 0) {
+        $errors.Add("Could not locate $($registrySpec.Signature).") | Out-Null
+        continue
+    }
+    $registryBody = $registryText.Substring($registryStart)
+    $registryEnd = $registryBody.IndexOf("`n}", [System.StringComparison]::Ordinal)
+    if ($registryEnd -gt 0) { $registryBody = $registryBody.Substring(0, $registryEnd + 2) }
+    $lockPos = $registryBody.IndexOf('QMutexLocker lock', [System.StringComparison]::Ordinal)
+    $snapshotLoopPos = $registryBody.IndexOf('for (ScreenPanel', [System.StringComparison]::Ordinal)
+    $callMatch = [regex]::Match($registryBody, 'panel->prepareForRendererTransition\s*\(')
+    $callPos = if ($callMatch.Success) { $callMatch.Index } else { -1 }
+    $unlockedLoopPos = $registryBody.IndexOf('for (ScreenPanel', $snapshotLoopPos + 1, [System.StringComparison]::Ordinal)
+    if ($lockPos -lt 0 -or $snapshotLoopPos -lt 0 -or $callPos -lt 0 -or $unlockedLoopPos -lt 0 -or $unlockedLoopPos -gt $callPos) {
+        $errors.Add("$($registrySpec.Signature) must snapshot matching panels and call prepareForRendererTransition() after the registry lock scope.") | Out-Null
     }
 }
 

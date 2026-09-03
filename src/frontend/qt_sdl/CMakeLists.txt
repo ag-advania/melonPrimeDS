@@ -722,6 +722,34 @@ add_custom_target(melonprime_top_screen_touch_check ALL
     COMMENT "Running top-screen touch inverse parity tests..."
     VERBATIM)
 
+# Explicit performance comparison for the precomputed inverse. Keep it out of
+# ALL: the exhaustive parity target above is the coverage gate, while this
+# fixed old/new microbenchmark is a developer evidence producer.
+add_custom_target(melonprime_top_screen_touch_benchmark
+    COMMAND $<TARGET_FILE:melonprime_top_screen_touch_tests> --benchmark
+    DEPENDS melonprime_top_screen_touch_tests
+    COMMENT "Benchmarking top-screen touch old/new mapping paths..."
+    VERBATIM)
+
+# Lock/lifetime contract model for the Vulkan/DX12 registry transition walk.
+# It has no Qt or renderer dependency and remains cheap enough for the regular
+# build gate while exercising a second instance closing during another
+# instance's blocking transition.
+add_executable(melonprime_native_panel_registry_transition_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/native-panel-registry-transition-tests.cpp)
+set_target_properties(melonprime_native_panel_registry_transition_tests PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+target_link_libraries(melonprime_native_panel_registry_transition_tests PRIVATE
+    Threads::Threads)
+add_custom_target(melonprime_native_panel_registry_transition_check ALL
+    COMMAND $<TARGET_FILE:melonprime_native_panel_registry_transition_tests>
+    DEPENDS melonprime_native_panel_registry_transition_tests
+    COMMENT "Running native panel registry transition lifetime model..."
+    VERBATIM)
+
 # Measure the actual GUI-producer/Emu-consumer SPSC mailbox under independent
 # event/frame rates. Keep it explicit rather than part of ALL: the 20-case
 # matrix is a developer measurement, not a build-time unit test.

@@ -75,6 +75,7 @@
 #include "MelonPrimeConstants.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimePerfProbe.h"
+#include "MelonPrimeRendererTransitionPerf.h"
 #include "VulkanPerf.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanPresenter.h"
@@ -182,7 +183,9 @@ bool IsVulkanRuntimeSmokeEnabled()
 // entered from outside the panel (EmuThread, and the renderer on the emulation
 // thread) with only an EmuInstance to go on, so the mapping has to exist
 // somewhere. A flat list is right: there is one panel per window and at most a
-// handful of windows.
+// handful of windows. The transition walk snapshots matching panels under the
+// registry mutex and releases it before Quiesce; the emulation-thread barrier
+// keeps GUI-owned panel destruction from racing that copied list.
 QMutex g_panelRegistryLock;
 std::vector<ScreenPanelVulkan*> g_panelRegistry;
 
@@ -1459,7 +1462,9 @@ void ScreenPanelVulkan::invalidateScreenRetention()
 }
 
 
-void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver)
+void ScreenPanelVulkan::prepareForRendererTransition(
+    bool detachRendererObserver,
+    bool recordTransitionPerf)
 {
     if (!vulkan)
         return;
@@ -1488,7 +1493,14 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
     // Quiesce GPU work and release renderer-owned output leases, but keep the
     // VkSurfaceKHR/VkSwapchainKHR presenter lifetime paired with the lifecycle
     // state until an actual native-surface transition retires it.
+    const auto quiesceStart = recordTransitionPerf
+        ? MelonPrime::g_rendererTransitionPerf.Now() : 0;
     vulkan->presenter.Quiesce();
+    if (recordTransitionPerf) {
+        MelonPrime::g_rendererTransitionPerf.Record(
+            MelonPrime::RendererTransitionMetric::QuiesceDuration,
+            quiesceStart, MelonPrime::g_rendererTransitionPerf.Now());
+    }
     invalidateScreenRetention();
     vulkan->presenter.InvalidateDirectDescriptorCache();
     vulkan->nativeVisibility.Reset();
@@ -1506,12 +1518,34 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
 
 void ScreenPanelVulkan::PrepareForInstanceRendererTransition(EmuInstance* instance)
 {
-    QMutexLocker lock(&g_panelRegistryLock);
-    for (ScreenPanelVulkan* panel : g_panelRegistry)
+    const auto transitionStart = MelonPrime::g_rendererTransitionPerf.Now();
+    // Never hold the process-global registry mutex while Quiesce can wait for
+    // GPU work. This method is called only from the emulation-thread
+    // prepareVideoBackendTransition() barrier: the GUI thread is synchronously
+    // waiting for the message and cannot destroy a panel before it returns.
+    std::vector<ScreenPanelVulkan*> panels;
     {
-        if (panel->emuInstance == instance)
-            panel->prepareForRendererTransition();
+        const auto lockStart = MelonPrime::g_rendererTransitionPerf.Now();
+        QMutexLocker lock(&g_panelRegistryLock);
+        MelonPrime::g_rendererTransitionPerf.Record(
+            MelonPrime::RendererTransitionMetric::RegistryLockWait,
+            lockStart, MelonPrime::g_rendererTransitionPerf.Now());
+        for (ScreenPanelVulkan* panel : g_panelRegistry)
+        {
+            if (panel->emuInstance == instance)
+                panels.push_back(panel);
+        }
     }
+
+    for (ScreenPanelVulkan* panel : panels)
+    {
+        panel->prepareForRendererTransition(true, true);
+    }
+    MelonPrime::g_rendererTransitionPerf.Record(
+        MelonPrime::RendererTransitionMetric::TransitionTotal,
+        transitionStart, MelonPrime::g_rendererTransitionPerf.Now());
+    MelonPrime::g_rendererTransitionPerf.Report(
+        instance ? instance->getInstanceID() : 0, "vulkan");
 }
 
 

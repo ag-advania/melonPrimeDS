@@ -13,13 +13,22 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <utility>
 #include <vector>
 
 namespace {
+
+#if defined(_MSC_VER)
+#define MELONPRIME_TEST_NOINLINE __declspec(noinline)
+#else
+#define MELONPRIME_TEST_NOINLINE __attribute__((noinline))
+#endif
 
 struct Result
 {
@@ -28,7 +37,8 @@ struct Result
     int y = 0;
 };
 
-Result ReferenceMap(const float* matrix, bool isTop, int x, int y, bool clamp)
+MELONPRIME_TEST_NOINLINE Result ReferenceMap(
+    const float* matrix, bool isTop, int x, int y, bool clamp)
 {
     Result result{false, x, y};
     if (!matrix || !isTop)
@@ -61,6 +71,18 @@ Result ProductionMap(const float* matrix, bool isTop, int x, int y, bool clamp)
     Result result{false, x, y};
     const auto transform =
         MelonPrime::MakeTopScreenTouchTransform(matrix, isTop);
+    result.valid = MelonPrime::MapTopScreenTouch(
+        transform, result.x, result.y, clamp);
+    return result;
+}
+
+Result ProductionMapResolved(
+    const MelonPrime::TopScreenTouchTransform& transform,
+    int x,
+    int y,
+    bool clamp)
+{
+    Result result{false, x, y};
     result.valid = MelonPrime::MapTopScreenTouch(
         transform, result.x, result.y, clamp);
     return result;
@@ -187,10 +209,110 @@ void CheckDegenerateAndNegativeTranslation()
     CheckMatrix("bottom-kind", identity, false);
 }
 
+void BenchmarkMappings()
+{
+    // Fixed transforms and points keep the old/new comparison reproducible
+    // without depending on a live window or input device. The production
+    // helper is intentionally called through the same precomputed transform
+    // object used by ScreenPanel's layout cache.
+    constexpr std::array<std::array<float, 6>, 10> matrices{{
+        {{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f}},
+        {{2.0f, 0.0f, 0.0f, 2.0f, 11.0f, 17.0f}},
+        {{4.0f, 0.0f, 0.0f, 4.0f, 19.0f, 31.0f}},
+        {{16.0f, 0.0f, 0.0f, 16.0f, -128.0f, -96.0f}},
+        {{0.0f, 1.0f, -1.0f, 0.0f, 313.0f, 29.0f}},
+        {{-1.0f, 0.0f, 0.0f, -1.0f, 271.0f, 221.0f}},
+        {{1.25f, 0.15f, -0.10f, 0.90f, -73.0f, 41.0f}},
+        {{3.0f, 0.0f, 0.0f, 1.5f, 640.0f, -92.0f}},
+        {{0.75f, -0.20f, 0.35f, 1.10f, 19.0f, 411.0f}},
+        {{4.0f, 0.0f, 0.0f, 4.0f, -513.25f, -385.75f}},
+    }};
+    constexpr std::array<std::array<int, 2>, 16> points{{
+        {{0, 0}}, {{1, 1}}, {{31, 23}}, {{63, 47}},
+        {{95, 71}}, {{127, 95}}, {{159, 119}}, {{191, 143}},
+        {{223, 167}}, {{255, 191}}, {{256, 192}}, {{-1, -1}},
+        {{271, 221}}, {{512, 384}}, {{997, 613}}, {{-127, 777}},
+    }};
+    constexpr int kIterations = 100000;
+    constexpr int kSamples = 5;
+    std::array<MelonPrime::TopScreenTouchTransform, matrices.size()> resolved{};
+    for (std::size_t i = 0; i < matrices.size(); ++i)
+        resolved[i] = MelonPrime::MakeTopScreenTouchTransform(
+            matrices[i].data(), true);
+
+    const auto run = [&](bool production) {
+        std::uint64_t checksum = 0;
+        const auto begin = std::chrono::steady_clock::now();
+        for (int iteration = 0; iteration < kIterations; ++iteration) {
+            for (std::size_t matrixIndex = 0;
+                 matrixIndex < matrices.size(); ++matrixIndex) {
+                const auto& matrix = matrices[matrixIndex];
+                for (const auto& point : points) {
+                    const Result result = production
+                        ? ProductionMapResolved(resolved[matrixIndex],
+                            point[0], point[1], true)
+                        : ReferenceMap(matrix.data(), true,
+                            point[0], point[1], true);
+                    checksum += static_cast<std::uint64_t>(
+                        (result.valid ? 1 : 0) + result.x + result.y);
+                }
+            }
+        }
+        const auto end = std::chrono::steady_clock::now();
+        const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            end - begin).count();
+        return std::pair<std::int64_t, std::uint64_t>{elapsed, checksum};
+    };
+
+    std::array<std::int64_t, kSamples> referenceNs{};
+    std::array<std::int64_t, kSamples> productionNs{};
+    std::uint64_t referenceChecksum = 0;
+    std::uint64_t productionChecksum = 0;
+    for (int sample = 0; sample < kSamples; ++sample) {
+        const auto reference = run(false);
+        const auto production = run(true);
+        referenceNs[sample] = reference.first;
+        productionNs[sample] = production.first;
+        referenceChecksum = reference.second;
+        productionChecksum = production.second;
+    }
+    std::sort(referenceNs.begin(), referenceNs.end());
+    std::sort(productionNs.begin(), productionNs.end());
+    const std::uint64_t maps = static_cast<std::uint64_t>(
+        kIterations) * matrices.size() * points.size();
+    const double referencePerMap =
+        static_cast<double>(referenceNs[kSamples / 2]) / maps;
+    const double productionPerMap =
+        static_cast<double>(productionNs[kSamples / 2]) / maps;
+    if (referenceChecksum != productionChecksum) {
+        std::fprintf(stderr,
+            "FAIL benchmark checksum reference=%llu production=%llu\n",
+            static_cast<unsigned long long>(referenceChecksum),
+            static_cast<unsigned long long>(productionChecksum));
+        std::exit(1);
+    }
+    std::printf(
+        "top_screen_touch_benchmark maps=%llu reference_ns_per_map=%.2f "
+        "production_ns_per_map=%.2f reference_maps_per_second=%.0f "
+        "production_maps_per_second=%.0f speedup=%.3f checksum=%llu\n",
+        static_cast<unsigned long long>(maps), referencePerMap,
+        productionPerMap,
+        referencePerMap > 0.0 ? 1000000000.0 / referencePerMap : 0.0,
+        productionPerMap > 0.0 ? 1000000000.0 / productionPerMap : 0.0,
+        productionPerMap > 0.0 ? referencePerMap / productionPerMap : 0.0,
+        static_cast<unsigned long long>(productionChecksum));
+}
+
 } // namespace
 
-int main()
+#undef MELONPRIME_TEST_NOINLINE
+
+int main(int argc, char** argv)
 {
+    if (argc > 1 && std::strcmp(argv[1], "--benchmark") == 0) {
+        BenchmarkMappings();
+        return 0;
+    }
     CheckLayouts();
     CheckDegenerateAndNegativeTranslation();
     std::puts("PASS: top-screen touch precomputed inverse matches the old path");

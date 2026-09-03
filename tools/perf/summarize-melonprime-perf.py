@@ -55,6 +55,32 @@ NATIVE_PAINT_RE = re.compile(
     )
 )
 
+SCREEN_INPUT_RE = re.compile(
+    r"\[MelonPrimePerf\] screen_input instance_id=(?P<instance_id>[0-9]+) "
+    r"mouseMoveEvents=(?P<mouse_move_events>[0-9]+) "
+    r"event_ns\[n=(?P<event_n>[0-9]+) p50=(?P<event_p50>[0-9.]+) "
+    r"p95=(?P<event_p95>[0-9.]+) p99=(?P<event_p99>[0-9.]+) "
+    r"max=(?P<event_max>[0-9.]+)\] "
+    r"hudEditFastRejected=(?P<hud_edit_fast_rejected>[0-9]+) "
+    r"hudEditHelperEntered=(?P<hud_edit_helper_entered>[0-9]+) "
+    r"uiSnapshotRead=(?P<ui_snapshot_read>[0-9]+) "
+    r"stylusPointerPublish=(?P<stylus_pointer_publish>[0-9]+)"
+)
+
+RENDERER_TRANSITION_RE = re.compile(
+    r"\[MelonPrimePerf\] renderer_transition backend=(?P<backend>\S+) "
+    r"instance_id=(?P<instance_id>[0-9]+) "
+    r"registry_lock_wait\[n=(?P<lock_n>[0-9]+) p50=(?P<lock_p50>[0-9.]+) "
+    r"p95=(?P<lock_p95>[0-9.]+) p99=(?P<lock_p99>[0-9.]+) "
+    r"max=(?P<lock_max>[0-9.]+)\] "
+    r"quiesce_duration\[n=(?P<quiesce_n>[0-9]+) p50=(?P<quiesce_p50>[0-9.]+) "
+    r"p95=(?P<quiesce_p95>[0-9.]+) p99=(?P<quiesce_p99>[0-9.]+) "
+    r"max=(?P<quiesce_max>[0-9.]+)\] "
+    r"transition_total\[n=(?P<total_n>[0-9]+) p50=(?P<total_p50>[0-9.]+) "
+    r"p95=(?P<total_p95>[0-9.]+) p99=(?P<total_p99>[0-9.]+) "
+    r"max=(?P<total_max>[0-9.]+)\]"
+)
+
 HIST_RE = re.compile(
     r"^\s+(?P<lo>[0-9.]+)-(?P<hi>[0-9.]+) ms: (?P<count>[0-9]+)$"
 )
@@ -154,12 +180,36 @@ class NativePaintWindow:
 
 
 @dataclass
+class ScreenInputWindow:
+    instance_id: int
+    mouse_move_events: int
+    event_n: int
+    event_p50_ns: float
+    event_p95_ns: float
+    event_p99_ns: float
+    event_max_ns: float
+    hud_edit_fast_rejected: int
+    hud_edit_helper_entered: int
+    ui_snapshot_read: int
+    stylus_pointer_publish: int
+
+
+@dataclass
+class RendererTransitionWindow:
+    backend: str
+    instance_id: int
+    metrics: dict[str, NativePaintMetricSample]
+
+
+@dataclass
 class Report:
     windows: list[WindowSample] = field(default_factory=list)
     shutdown: WindowSample | None = None
     histogram: list[tuple[float, float, int]] = field(default_factory=list)
     hist_overflow: int = 0
     native_paint: list[NativePaintWindow] = field(default_factory=list)
+    screen_input: list[ScreenInputWindow] = field(default_factory=list)
+    renderer_transition: list[RendererTransitionWindow] = field(default_factory=list)
 
 
 def parse_lines(lines: Iterable[str]) -> Report:
@@ -184,6 +234,55 @@ def parse_lines(lines: Iterable[str]) -> Report:
                     max_us=float(m.group(f"{prefix}_max")),
                 )
             report.native_paint.append(NativePaintWindow(
+                instance_id=int(m.group("instance_id")),
+                metrics=metrics,
+            ))
+            continue
+
+        m = SCREEN_INPUT_RE.search(line)
+        if m:
+            report.screen_input.append(ScreenInputWindow(
+                instance_id=int(m.group("instance_id")),
+                mouse_move_events=int(m.group("mouse_move_events")),
+                event_n=int(m.group("event_n")),
+                event_p50_ns=float(m.group("event_p50")),
+                event_p95_ns=float(m.group("event_p95")),
+                event_p99_ns=float(m.group("event_p99")),
+                event_max_ns=float(m.group("event_max")),
+                hud_edit_fast_rejected=int(m.group("hud_edit_fast_rejected")),
+                hud_edit_helper_entered=int(m.group("hud_edit_helper_entered")),
+                ui_snapshot_read=int(m.group("ui_snapshot_read")),
+                stylus_pointer_publish=int(m.group("stylus_pointer_publish")),
+            ))
+            continue
+
+        m = RENDERER_TRANSITION_RE.search(line)
+        if m:
+            metrics = {
+                "registry_lock_wait": NativePaintMetricSample(
+                    n=int(m.group("lock_n")),
+                    p50=float(m.group("lock_p50")),
+                    p95=float(m.group("lock_p95")),
+                    p99=float(m.group("lock_p99")),
+                    max_us=float(m.group("lock_max")),
+                ),
+                "quiesce_duration": NativePaintMetricSample(
+                    n=int(m.group("quiesce_n")),
+                    p50=float(m.group("quiesce_p50")),
+                    p95=float(m.group("quiesce_p95")),
+                    p99=float(m.group("quiesce_p99")),
+                    max_us=float(m.group("quiesce_max")),
+                ),
+                "transition_total": NativePaintMetricSample(
+                    n=int(m.group("total_n")),
+                    p50=float(m.group("total_p50")),
+                    p95=float(m.group("total_p95")),
+                    p99=float(m.group("total_p99")),
+                    max_us=float(m.group("total_max")),
+                ),
+            }
+            report.renderer_transition.append(RendererTransitionWindow(
+                backend=m.group("backend"),
                 instance_id=int(m.group("instance_id")),
                 metrics=metrics,
             ))
@@ -273,7 +372,8 @@ def parse_lines(lines: Iterable[str]) -> Report:
 
 
 def print_report(report: Report, out: TextIO) -> None:
-    if not report.windows and not report.shutdown and not report.native_paint:
+    if (not report.windows and not report.shutdown and not report.native_paint
+            and not report.screen_input and not report.renderer_transition):
         print("No [MelonPrimePerf] lines found.", file=out)
         return
 
@@ -333,6 +433,43 @@ def print_report(report: Report, out: TextIO) -> None:
                     max(sample.p99 for sample in samples),
                     max(sample.max_us for sample in samples),
                     sum(sample.n for sample in samples),
+                ),
+                file=out,
+            )
+
+    if report.screen_input:
+        print(f"screen input 1 Hz windows: {len(report.screen_input)}", file=out)
+        for window in report.screen_input:
+            print(
+                "  instance={} mouseMoveEvents={} event_ns p50/p95/p99={:.1f}/{:.1f}/{:.1f} "
+                "fast_rejected={} helper_entered={} uiSnapshotRead={} stylusPointerPublish={}".format(
+                    window.instance_id,
+                    window.mouse_move_events,
+                    window.event_p50_ns,
+                    window.event_p95_ns,
+                    window.event_p99_ns,
+                    window.hud_edit_fast_rejected,
+                    window.hud_edit_helper_entered,
+                    window.ui_snapshot_read,
+                    window.stylus_pointer_publish,
+                ),
+                file=out,
+            )
+
+    if report.renderer_transition:
+        print(
+            f"renderer transition windows: {len(report.renderer_transition)}",
+            file=out,
+        )
+        for window in report.renderer_transition:
+            total = window.metrics["transition_total"]
+            print(
+                "  backend={} instance={} transition_total p50/p95/p99={:.1f}/{:.1f}/{:.1f} us".format(
+                    window.backend,
+                    window.instance_id,
+                    total.p50,
+                    total.p95,
+                    total.p99,
                 ),
                 file=out,
             )
