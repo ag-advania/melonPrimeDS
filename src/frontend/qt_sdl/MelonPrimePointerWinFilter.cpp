@@ -182,13 +182,17 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
     switch (msg->message) {
     case WM_POINTERDOWN:
     case WM_POINTERUPDATE: {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (m_measurementEnabled)
             ++m_telemetry.pointerMessages;
+#endif
         const std::uint64_t pointerId = static_cast<std::uint64_t>(
             GET_POINTERID_WPARAM(msg->wParam));
         POINTER_INPUT_TYPE type = PT_POINTER;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (m_measurementEnabled)
             ++m_telemetry.pointerTypeCalls;
+#endif
         if (!GetPointerType(static_cast<UINT32>(pointerId), &type)
             || type != PT_PEN) {
             RecordSample(false);
@@ -196,8 +200,10 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
         }
 
         POINTER_PEN_INFO penInfo{};
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (m_measurementEnabled)
             ++m_telemetry.pointerPenInfoCalls;
+#endif
         if (!GetPointerPenInfo(static_cast<UINT32>(pointerId), &penInfo)) {
             RecordSample(false);
             return false;
@@ -216,8 +222,10 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
     case WM_POINTERUP:
     case WM_POINTERLEAVE:
     case WM_POINTERCAPTURECHANGED: {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (m_measurementEnabled)
             ++m_telemetry.pointerMessages;
+#endif
         // A terminal touch pointer must not reset or release a pen authority.
         // Only query the pointer stack while its source is the current owner.
         if (m_ingress.Authority() != DirectAimHostSource::WinPointerPen)
@@ -225,8 +233,10 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
         const std::uint64_t pointerId = static_cast<std::uint64_t>(
             GET_POINTERID_WPARAM(msg->wParam));
         POINTER_INPUT_TYPE type = PT_POINTER;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (m_measurementEnabled)
             ++m_telemetry.pointerTypeCalls;
+#endif
         if (!GetPointerType(static_cast<UINT32>(pointerId), &type)
             || type != PT_PEN)
             return false;
@@ -248,8 +258,10 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
         return false;
     }
     case WM_MOUSEMOVE: {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (m_measurementEnabled)
             ++m_telemetry.mouseMoveMessages;
+#endif
         // A native pen or Qt tablet authority already owns absolute motion.
         // Reject synthesized mouse messages before the source query; when no
         // absolute authority exists, retain the query for generic injected
@@ -257,13 +269,17 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
         const auto authority = m_ingress.Authority();
         if (authority == DirectAimHostSource::WinPointerPen
             || authority == DirectAimHostSource::QtTablet) {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
             if (m_measurementEnabled)
                 ++m_telemetry.fastRejectedMouseMoves;
+#endif
             return false;
         }
         INPUT_MESSAGE_SOURCE source{};
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
         if (m_measurementEnabled)
             ++m_telemetry.inputMessageSourceCalls;
+#endif
         if (!GetCurrentInputMessageSource(&source))
             return false;
         // A pen or touch contact also promotes to mouse messages. Those belong
