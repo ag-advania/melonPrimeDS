@@ -17,7 +17,7 @@
 #      queued GUI invocation in the mouse/tablet move handlers.
 
 param(
-    [int]$HudFragmentBudget = 12,
+    [int]$HudFragmentBudget = 2,
     [switch]$Json
 )
 
@@ -113,6 +113,15 @@ $hudFragments = @(Get-ChildItem -LiteralPath $qtSdl -File -Filter 'MelonPrimeHud
     Sort-Object Name)
 if ($hudFragments.Count -gt $HudFragmentBudget) {
     $errors.Add("MelonPrimeHudScreenCpp*.inc count is $($hudFragments.Count), above the budget of $HudFragmentBudget. Extract to a real module instead of adding a fragment.") | Out-Null
+}
+$allowedHudFragments = @(
+    'MelonPrimeHudScreenCppOverlayOfGl.inc',
+    'MelonPrimeHudScreenCppOverlayOfSoftware.inc'
+)
+foreach ($fragment in $hudFragments) {
+    if ($fragment.Name -notin $allowedHudFragments) {
+        $errors.Add("New HUD screen unity fragment is forbidden: $($fragment.Name). Add a real module/function instead.") | Out-Null
+    }
 }
 
 # -- 3. High-rate Qt event handlers -------------------------------------------

@@ -100,6 +100,8 @@ set(SOURCES_QT_SDL
     MelonPrimeInstanceDiagnostics.cpp
     MelonPrimeRuntimeConfig.cpp
     MelonPrimeDirectAimIngress.cpp
+    MelonPrimeHudScreenIntegration.cpp
+    MelonPrimeHudScreenGL.cpp
     MelonPrimeHudScreenEditPanel.cpp
     MelonPrimeVideoBackend.cpp
     MelonPrimeScreenCursorPolicy.cpp
@@ -697,6 +699,27 @@ add_custom_target(melonprime_direct_aim_source_check ALL
     COMMAND $<TARGET_FILE:melonprime_direct_aim_source_tests>
     DEPENDS melonprime_direct_aim_source_tests
     COMMENT "Running direct-aim host source arbitration tests..."
+    VERBATIM)
+
+# Top-screen touch uses the same ScreenLayout matrices as presentation but
+# resolves their inverse on the cold layout boundary. Compare the production
+# helper against the pre-refactor per-event expression across every supported
+# layout/rotation/sizing/swap/integer-scale combination and edge coordinates.
+add_executable(melonprime_top_screen_touch_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/top-screen-touch-tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../ScreenLayout.cpp)
+target_include_directories(melonprime_top_screen_touch_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/..)
+set_target_properties(melonprime_top_screen_touch_tests PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_top_screen_touch_check ALL
+    COMMAND $<TARGET_FILE:melonprime_top_screen_touch_tests>
+    DEPENDS melonprime_top_screen_touch_tests
+    COMMENT "Running top-screen touch inverse parity tests..."
     VERBATIM)
 
 # Measure the actual GUI-producer/Emu-consumer SPSC mailbox under independent

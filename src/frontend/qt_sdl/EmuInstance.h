@@ -301,6 +301,21 @@ public:
     void micStop();
     int micReadInput(melonDS::s16* data, int maxlength);
 
+    // Renderer lifetime fence shared by the GUI and emulation threads.
+    //
+    // Owner/protected data: EmuInstance owns the NDS object and its renderer;
+    // writers take this lock while replacing either. ScreenPanelNative takes
+    // it while copying borrowed RendererOutput CPU pointers. It currently
+    // remains held through QPainter + Software HUD composition to preserve the
+    // established lifetime contract until measurement proves a safe win from
+    // narrowing it.
+    //
+    // Allowed callers: GUI thread (console replacement and native paint) and
+    // EmuThread (renderer transition). Lock order in native paint is
+    // renderLock -> ScreenPanelNative::bufferLock; no caller may acquire
+    // renderLock while holding bufferLock. Renderer transitions are cold;
+    // native paint is presentation-cadence and instrumented by
+    // NativePaintPerf in developer builds.
     QMutex renderLock;
 
 private:

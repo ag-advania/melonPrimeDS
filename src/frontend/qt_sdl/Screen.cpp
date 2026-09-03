@@ -276,7 +276,9 @@ void ScreenPanel::wheelEvent(QWheelEvent* event)
         if (emuInstance)
             emuInstance->onMouseWheel(steps);
     }
-#include "MelonPrimeHudScreenCppMouseWheel.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    handleHudMouseWheel(event);
+#endif
     event->accept();
 }
 
@@ -681,7 +683,9 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     osdEnabled = false;
     osdID = 1;
 
-#include "MelonPrimeHudScreenCppInit.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    initializeHudScreenIntegration();
+#endif
 
     loadConfig();
     setFilter(mainWindow->getWindowConfig().GetBool("ScreenFilter"));
@@ -791,7 +795,7 @@ void ScreenPanel::refreshTopScreenTouchSetting()
 void ScreenPanel::loadMelonPrimeStylusCursorConfig()
 {
     auto& cfg = emuInstance->getLocalConfig();
-    const bool stylusModeEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusMode);
+    stylusModeEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusMode);
     stylusDirectAimWhileTouchingEnabled = stylusModeEnabled
         && cfg.GetBool(MelonPrime::CfgKey::StylusDirectAimWhileTouching);
     // Tablet direct aim is opt-in so the existing Raw Mouse path remains the
@@ -942,26 +946,15 @@ void ScreenPanel::endStylusDirectAimCapture()
 bool ScreenPanel::getTouchCoords(int& x, int& y, bool clamp)
 {
 #ifdef MELONPRIME_DS
+    // The determinant, the epsilon test and the screen-kind test are resolved
+    // in setupScreenLayout(); this is only the mapping. One unsigned compare
+    // covers both index bounds, and out-of-range entries are default-invalid.
     const auto mapTopTransform = [this](int transform, int& px, int& py, bool clampCoords) {
-        if (transform < 0 || transform >= numScreens || screenKind[transform] != 0)
+        if (static_cast<unsigned>(transform)
+            >= static_cast<unsigned>(kMaxScreenTransforms))
             return false;
-
-        const float* const m = screenMatrix[transform];
-        const float determinant = m[0] * m[3] - m[1] * m[2];
-        if (std::abs(determinant) < 0.000001f)
-            return false;
-
-        const float dx = static_cast<float>(px) - m[4];
-        const float dy = static_cast<float>(py) - m[5];
-        const float sx = (m[3] * dx - m[2] * dy) / determinant;
-        const float sy = (-m[1] * dx + m[0] * dy) / determinant;
-
-        if (!clampCoords && (sx < 0.0f || sx >= 256.0f || sy < 0.0f || sy >= 192.0f))
-            return false;
-
-        px = clampCoords ? std::clamp(static_cast<int>(sx), 0, 255) : static_cast<int>(sx);
-        py = clampCoords ? std::clamp(static_cast<int>(sy), 0, 191) : static_cast<int>(sy);
-        return true;
+        return MelonPrime::MapTopScreenTouch(
+            topScreenTouchTransforms[transform], px, py, clampCoords);
     };
 
     // A drag that began on a top-screen transform remains owned by that same
@@ -1058,9 +1051,23 @@ void ScreenPanel::setupScreenLayout()
 
     numScreens = layout.GetScreenTransforms(screenMatrix[0], screenKind);
 
+#ifdef MELONPRIME_DS
+    // SCR-PERF-002: layout generation is the recalculation authority for
+    // layout-derived state. Entries past numScreens stay default-invalid, so a
+    // stale transform index cannot map anything.
+    for (int i = 0; i < kMaxScreenTransforms; ++i) {
+        topScreenTouchTransforms[i] = (i < numScreens)
+            ? MelonPrime::MakeTopScreenTouchTransform(
+                  screenMatrix[i], screenKind[i] == 0)
+            : MelonPrime::TopScreenTouchTransform{};
+    }
+#endif
+
     calcSplashLayout();
 
-#include "MelonPrimeHudScreenCppLayout.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    updateHudScreenLayoutCache();
+#endif
 
 #ifdef MELONPRIME_DS
     // Notify layout change
@@ -1146,7 +1153,9 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
     updateClipIfNeeded();
 #endif
 #endif
-#include "MelonPrimeHudScreenCppEditPanelResize.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    repositionHudEditPanel(true);
+#endif
     QWidget::resizeEvent(event);
 }
 
@@ -1170,7 +1179,10 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-#include "MelonPrimeHudScreenCppMousePress.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (handleHudMousePress(event))
+        return;
+#endif
 
 #ifdef MELONPRIME_DS
 #if defined(__APPLE__)
@@ -1299,7 +1311,10 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
 
-#include "MelonPrimeHudScreenCppMouseRelease.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (handleHudMouseRelease(event))
+        return;
+#endif
 
 #ifdef MELONPRIME_DS
     const bool releasesAcceptedTouch = (m_touchMouseButton != Qt::NoButton)
@@ -1360,13 +1375,37 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     }
 #endif
 
-#include "MelonPrimeHudScreenCppMouseMove.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (handleHudMouseMove(event))
+        return;
+#endif
 
 #ifdef MELONPRIME_DS
-    // One immutable runtime snapshot per Qt mouse event. Reuse it for both the
-    // platform aim route and Stylus Mode pointer publication below.
-    auto* const thread = emu->getEmuThread();
-    auto* const core = isMelonPrimeInputSurfaceAuthority() && thread
+    // SCR-PERF-001. Qt mouse events arrive at the device's report rate, so the
+    // snapshot is taken only when something below actually reads it.
+    //
+    // On Windows, relative aim is owned by Raw Input and the platform aim
+    // route below compiles to nothing; the only consumers left in this handler
+    // are Stylus Mode's hover and drag publication, and every one of them is
+    // already gated on ui.stylusMode. With Stylus Mode off -- the default and
+    // the common case -- resolving the owner and reading the snapshot cannot
+    // change what this handler does, so both are skipped.
+    //
+    // macOS and Linux always take it: their Qt fallback aim route reads the
+    // snapshot on every event, whatever Stylus Mode is set to.
+    //
+    // The gate is the cold-cached config value, not the runtime snapshot it
+    // would otherwise have to read. Turning Stylus Mode off can therefore skip
+    // publication for the few frames before the emulation thread applies the
+    // same change, which is the direction where publication no longer matters.
+#ifdef _WIN32
+    const bool melonPrimeWantsUiSnapshot = stylusModeEnabled;
+#else
+    constexpr bool melonPrimeWantsUiSnapshot = true;
+#endif
+    auto* const thread = melonPrimeWantsUiSnapshot
+        ? emu->getEmuThread() : nullptr;
+    auto* const core = (thread && isMelonPrimeInputSurfaceAuthority())
         ? thread->GetMelonPrimeCore() : nullptr;
     const auto ui = core ? core->ThreadBridge().ReadForGui()
                          : MelonPrime::MelonPrimeUiSnapshot{};
@@ -2321,8 +2360,15 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
 
     if (emuThread->emuIsActive())
     {
+        const auto renderLockWaitStart = m_nativePaintPerf.Now();
         emuInstance->renderLock.lock();
+        const auto renderLockAcquired = m_nativePaintPerf.Now();
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::RenderLockWait,
+            renderLockWaitStart, renderLockAcquired);
+        const auto renderLockHoldStart = renderLockAcquired;
 
+        const auto framebufferCopyStart = m_nativePaintPerf.Now();
         bufferLock.lock();
         if (hasBuffers)
         {
@@ -2339,20 +2385,35 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             memcpy(screen[1].scanLine(0), bottomBuffer, bytes);
         }
         bufferLock.unlock();
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::FramebufferCopy,
+            framebufferCopyStart, m_nativePaintPerf.Now());
 
         QRect screenrc(0, 0, 256, 192);
 
+        const auto qpaintGameStart = m_nativePaintPerf.Now();
         for (int i = 0; i < numScreens; i++)
         {
             painter.setTransform(screenTrans[i]);
             painter.drawImage(screenrc, screen[screenKind[i]]);
         }
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::QPaintGame,
+            qpaintGameStart, m_nativePaintPerf.Now());
 
 #define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&screen[1])
+        const auto hudSoftwareStart = m_nativePaintPerf.Now();
 #include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::HudSoftware,
+            hudSoftwareStart, m_nativePaintPerf.Now());
 #undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
 
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::RenderLockHold,
+            renderLockHoldStart, m_nativePaintPerf.Now());
         emuInstance->renderLock.unlock();
+        m_nativePaintPerf.MaybeReport(emuInstance->getInstanceID());
     }
 
     osdUpdate();
@@ -2570,7 +2631,9 @@ void ScreenPanelGL::initOpenGL()
 #endif
     logoTexture = tex;
 
-#include "MelonPrimeHudScreenCppGlInit.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    initializeHudOpenGL();
+#endif
 
     transferLayout();
     glInited = true;
@@ -2602,7 +2665,9 @@ void ScreenPanelGL::deinitOpenGL()
 
     glDeleteTextures(1, &logoTexture);
 
-#include "MelonPrimeHudScreenCppGlDeinit.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    deinitializeHudOpenGL();
+#endif
 
     glDeleteProgram(osdShader);
 
@@ -3174,7 +3239,9 @@ void ScreenPanel::moveEvent(QMoveEvent * e) {
 #if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
     updateClipIfNeeded();
 #endif
-#include "MelonPrimeHudScreenCppEditPanelMove.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    repositionHudEditPanel(false);
+#endif
     QWidget::moveEvent(e);
 }
 

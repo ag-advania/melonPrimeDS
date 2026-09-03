@@ -337,6 +337,9 @@ $(if ($savestateConfigPath) { 'SavestatePath = "' + $savestateConfigPath + '"' }
 
 [Instance0]
 
+[Instance0.Metroid.Visual]
+CustomHUD = $(if ($Hud -eq 'On') { 'true' } else { 'false' })
+
 [Instance0.Keyboard]
 HK_Reset = 82
 HK_MetroidMenu = 9

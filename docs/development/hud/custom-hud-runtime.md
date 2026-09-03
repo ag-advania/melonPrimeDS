@@ -44,22 +44,15 @@ Use this as the reference when changing runtime Custom HUD rendering, caching, t
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp` | Qt floating side panel for in-game HUD element properties - `populate*()` functions define per-element settings |
 | `src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.h` | side panel class declaration |
 | `src/frontend/qt_sdl/MelonPrimeConstants.h` | hunter-specific radar source Y positions and related constants |
-| `src/frontend/qt_sdl/Screen.cpp` | screen presentation entry point; includes `MelonPrimeHudScreenCpp*.inc` fragments for Custom HUD integration |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppHelpers.inc` | shared helpers for screen fragments: edit panel placement, epoch/config refresh, top overlay clear/render, patch restore, core visibility checks |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppInit.inc` | `ScreenPanel` Custom HUD setup: overlay buffers, font, edit side panel, selection callback |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppLayout.inc` | cached HUD scale/origin update in `setupScreenLayout()` |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppEditPanelResize.inc` | edit side panel repositioning during resize |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppEditPanelMove.inc` | edit side panel repositioning during window move |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseWheel.inc` | edit-mode mouse wheel input interception |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMousePress.inc` | edit-mode mouse press interception |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseRelease.inc` | edit-mode mouse release interception |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppMouseMove.inc` | edit-mode mouse move/drag interception |
+| `src/frontend/qt_sdl/Screen.cpp` | screen presentation entry point; calls the real HUD screen integration modules and retains only the two measured renderer-hot unity seams |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenOverlay.h` | shared inline renderer helpers: epoch/config refresh, top overlay clear/render, patch restore, and core visibility checks |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenIntegration.cpp` | `ScreenPanel` overlay/font/editor initialization, layout-derived cache refresh, edit-mode mouse forwarding, and edit-panel repositioning |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenEditPanel.cpp` | floating editor panel geometry and placement policy |
+| `src/frontend/qt_sdl/MelonPrimeHudScreenGL.cpp` | Custom HUD OpenGL overlay/radar resource initialization and cleanup |
 | `src/frontend/qt_sdl/MelonPrimeHudScreenCppOverlayOfSoftware.inc` | software `QPainter` HUD overlay path for `ScreenPanelNative::paintEvent()` |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppGlInit.inc` | Custom HUD OpenGL overlay/radar resource initialization |
-| `src/frontend/qt_sdl/MelonPrimeHudScreenCppGlDeinit.inc` | Custom HUD OpenGL overlay/radar resource cleanup |
 | `src/frontend/qt_sdl/MelonPrimeHudScreenCppOverlayOfGl.inc` | OpenGL HUD overlay upload/composite path and GL-native bottom-screen radar overlay |
 
-`MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, and `MelonPrimeHudScreenCpp*.inc` files are not standalone translation units. Render fragments are included only through `MelonPrimeHudRender.cpp`. Edit-mode fragments are included only through `MelonPrimeHudConfigOnScreenUnity.inc`, which itself is included by `MelonPrimeHudRender.cpp` inside `namespace MelonPrime` and `#ifdef MELONPRIME_CUSTOM_HUD`. Screen integration fragments are included only through `Screen.cpp`.
+`MelonPrimeHudRender*.inc`, `MelonPrimeHudConfigOnScreen*.inc`, and the two retained `MelonPrimeHudScreenCppOverlayOf*.inc` files are not standalone translation units. Render fragments are included only through `MelonPrimeHudRender.cpp`. Edit-mode fragments are included only through `MelonPrimeHudConfigOnScreenUnity.inc`, which itself is included by `MelonPrimeHudRender.cpp` inside `namespace MelonPrime` and `#ifdef MELONPRIME_CUSTOM_HUD`. The two screen overlay fragments remain at their renderer call sites because they depend on the surrounding painter/GL state and are per-presentation hot paths. Moving them behind a new function boundary is measurement-gated; `audit-screen-panel-srp.ps1` permits exactly these names and rejects any new screen fragment.
 
 ### 2026-08-27 low-overhead SRP closure
 

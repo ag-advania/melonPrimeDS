@@ -19,14 +19,40 @@ from typing import Iterable, TextIO
 
 
 WINDOW_RE = re.compile(
-    r"\[MelonPrimePerf\] frame_ms p50=(?P<p50>[0-9.]+) p95=(?P<p95>[0-9.]+) "
+    r"\[MelonPrimePerf\] frame_ms (?:[a-z_]+=[^ ]+ )*"
+    r"p50=(?P<p50>[0-9.]+) p95=(?P<p95>[0-9.]+) "
     r"p99=(?P<p99>[0-9.]+) max=(?P<max>[0-9.]+) n=(?P<n>[0-9]+)"
 )
 
 SHUTDOWN_RE = re.compile(
-    r"\[MelonPrimePerf\] shutdown summary: frames=(?P<frames>[0-9]+) "
+    r"\[MelonPrimePerf\] shutdown summary(?: [^:]*)?: "
+    r"frames=(?P<frames>[0-9]+) "
     r"frame_ms p50=(?P<p50>[0-9.]+) p95=(?P<p95>[0-9.]+) "
     r"p99=(?P<p99>[0-9.]+) max=(?P<max>[0-9.]+)"
+)
+
+NATIVE_PAINT_METRIC_RE = (
+    r"{name}\[n=(?P<{prefix}_n>[0-9]+) "
+    r"p50=(?P<{prefix}_p50>[0-9.]+) "
+    r"p95=(?P<{prefix}_p95>[0-9.]+) "
+    r"p99=(?P<{prefix}_p99>[0-9.]+) "
+    r"max=(?P<{prefix}_max>[0-9.]+)\]"
+)
+
+NATIVE_PAINT_METRICS = (
+    ("render_lock_wait", "wait"),
+    ("render_lock_hold", "hold"),
+    ("framebuffer_copy", "copy"),
+    ("qpaint_game", "qpaint"),
+    ("hud_software", "hud"),
+)
+
+NATIVE_PAINT_RE = re.compile(
+    r"\[MelonPrimePerf\] native_paint_us instance_id=(?P<instance_id>[0-9]+) "
+    + " ".join(
+        NATIVE_PAINT_METRIC_RE.format(name=name, prefix=prefix)
+        for name, prefix in NATIVE_PAINT_METRICS
+    )
 )
 
 HIST_RE = re.compile(
@@ -113,11 +139,27 @@ class WindowSample:
 
 
 @dataclass
+class NativePaintMetricSample:
+    n: int
+    p50: float
+    p95: float
+    p99: float
+    max_us: float
+
+
+@dataclass
+class NativePaintWindow:
+    instance_id: int
+    metrics: dict[str, NativePaintMetricSample]
+
+
+@dataclass
 class Report:
     windows: list[WindowSample] = field(default_factory=list)
     shutdown: WindowSample | None = None
     histogram: list[tuple[float, float, int]] = field(default_factory=list)
     hist_overflow: int = 0
+    native_paint: list[NativePaintWindow] = field(default_factory=list)
 
 
 def parse_lines(lines: Iterable[str]) -> Report:
@@ -128,6 +170,23 @@ def parse_lines(lines: Iterable[str]) -> Report:
         line = line.rstrip("\n")
         if line.startswith("[MelonPrimePerf] histogram"):
             in_hist = True
+            continue
+
+        m = NATIVE_PAINT_RE.search(line)
+        if m:
+            metrics: dict[str, NativePaintMetricSample] = {}
+            for name, prefix in NATIVE_PAINT_METRICS:
+                metrics[name] = NativePaintMetricSample(
+                    n=int(m.group(f"{prefix}_n")),
+                    p50=float(m.group(f"{prefix}_p50")),
+                    p95=float(m.group(f"{prefix}_p95")),
+                    p99=float(m.group(f"{prefix}_p99")),
+                    max_us=float(m.group(f"{prefix}_max")),
+                )
+            report.native_paint.append(NativePaintWindow(
+                instance_id=int(m.group("instance_id")),
+                metrics=metrics,
+            ))
             continue
 
         m = WINDOW_RE.search(line)
@@ -214,7 +273,7 @@ def parse_lines(lines: Iterable[str]) -> Report:
 
 
 def print_report(report: Report, out: TextIO) -> None:
-    if not report.windows and not report.shutdown:
+    if not report.windows and not report.shutdown and not report.native_paint:
         print("No [MelonPrimePerf] lines found.", file=out)
         return
 
@@ -253,6 +312,30 @@ def print_report(report: Report, out: TextIO) -> None:
         for lo, hi, count in report.histogram:
             bar = "#" * min(60, count // max(1, total // 60 or 1))
             print(f"  {lo:5.1f}-{hi:5.1f} ms: {count:6d} {bar}", file=out)
+
+    if report.native_paint:
+        print(f"native paint 1 Hz windows: {len(report.native_paint)}", file=out)
+        for name, _ in NATIVE_PAINT_METRICS:
+            samples = [
+                window.metrics[name]
+                for window in report.native_paint
+                if window.metrics[name].n > 0
+            ]
+            if not samples:
+                continue
+            print(
+                "  {} median-window p50/p95/p99={:.1f}/{:.1f}/{:.1f} us "
+                "max-window-p99={:.1f} us max={:.1f} us samples={}".format(
+                    name,
+                    median([sample.p50 for sample in samples]),
+                    median([sample.p95 for sample in samples]),
+                    median([sample.p99 for sample in samples]),
+                    max(sample.p99 for sample in samples),
+                    max(sample.max_us for sample in samples),
+                    sum(sample.n for sample in samples),
+                ),
+                file=out,
+            )
 
 
 def median(values: list[float]) -> float:

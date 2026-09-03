@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[3]
 EDIT = ROOT / "src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenEdit.cpp"
 BUILDER = ROOT / "src/frontend/qt_sdl/MelonPrimeHudEditorFormBuilder.cpp"
 FORM_LAYOUT = ROOT / "src/frontend/qt_sdl/MelonPrimeHudEditorFormLayout.cpp"
-POSITION = ROOT / "src/frontend/qt_sdl/MelonPrimeHudScreenCppHelpers.inc"
+POSITION = ROOT / "src/frontend/qt_sdl/MelonPrimeHudScreenEditPanel.cpp"
 
 
 def section(source: str, start: str, end: str | None = None) -> str:

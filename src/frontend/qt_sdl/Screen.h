@@ -42,6 +42,8 @@
 #include "MelonPrimeWheelEvent.h"
 #include "MelonPrimeDirectAimIngress.h"
 #include "MelonPrimeScreenCursorPolicy.h"
+#include "MelonPrimeTopScreenTouch.h"
+#include "MelonPrimeNativePaintPerf.h"
 #endif
 #include "MelonPrimePresentationSnapshot.h"
 
@@ -418,6 +420,11 @@ protected:
 #ifdef MELONPRIME_DS
     bool topScreenTouchEnabled = false;
     int topScreenTouchTransform = -1;
+    // SCR-PERF-001: the raw Stylus Mode setting, kept rather than discarded as
+    // a local, so a high-rate Qt mouse event can decide in one bool load
+    // whether it needs a runtime snapshot at all. Refreshed on the same cold
+    // path as the derived flags below.
+    bool stylusModeEnabled = false;
     bool stylusHideCursorInGameEnabled = false;
     bool stylusConfineCursorToTopScreenEnabled = false;
     bool stylusHoldCursorAtCenterEnabled = false;
@@ -445,6 +452,13 @@ protected:
     float screenMatrix[kMaxScreenTransforms][6];
     int screenKind[kMaxScreenTransforms];
     int numScreens;
+#ifdef MELONPRIME_DS
+    // SCR-PERF-002: the top-screen touch inverse is layout state, resolved in
+    // setupScreenLayout() rather than rebuilt on every hover, move and drag
+    // event. Fixed length, no heap.
+    MelonPrime::TopScreenTouchTransform
+        topScreenTouchTransforms[kMaxScreenTransforms];
+#endif
 
     bool touching = false;
 
@@ -483,6 +497,14 @@ protected:
     std::deque<OSDItem> osdItems;
 
 #ifdef MELONPRIME_CUSTOM_HUD
+    void initializeHudScreenIntegration();
+    void updateHudScreenLayoutCache();
+    void handleHudMouseWheel(QWheelEvent* event);
+    [[nodiscard]] bool handleHudMousePress(QMouseEvent* event);
+    [[nodiscard]] bool handleHudMouseRelease(QMouseEvent* event);
+    [[nodiscard]] bool handleHudMouseMove(QMouseEvent* event);
+    void repositionHudEditPanel(bool resizeEvent);
+
     QImage Overlay[2];       // [0]=Top HUD, [1]=software radar color-key scratch
     QFont overlayFont;
     MelonPrimeHudConfigOnScreenEdit* m_hudEditPanel = nullptr;
@@ -670,6 +692,7 @@ private:
     // the published buffer pointers and set dirty for one follow-up paint.
     std::atomic_bool latestFrameUpdatePosted{false};
     std::atomic_bool latestFrameDirty{false};
+    MelonPrime::NativePaintPerf m_nativePaintPerf;
 #endif
 #if defined(__linux__) && defined(MELONPRIME_ENABLE_WAYLAND_POINTER_LOCK)
     std::unique_ptr<MelonPrime::WaylandPointerLock> waylandPointerLock;
@@ -927,6 +950,8 @@ private:
     std::map<unsigned int, GLuint> osdTextures;
 
 #ifdef MELONPRIME_CUSTOM_HUD
+    void initializeHudOpenGL();
+    void deinitializeHudOpenGL();
     GLuint overlayTextures[2];  // GL_TEXTURE_2D per screen (top/bottom), resized to match hi-res HUD buffer
     int overlayTexW = 0, overlayTexH = 0; // currently allocated texture dimensions
     GLuint btmOverlayShader;
