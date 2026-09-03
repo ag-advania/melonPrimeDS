@@ -272,24 +272,6 @@ void VulkanRenderer::VBlank()
         }
     } coverage{this};
 
-    // MELONPRIME_VULKAN_PRESENT_HOOK_V1
-    //
-    // Notified on every exit, including the ones that publish nothing: the
-    // panel's snapshot then simply keeps pointing at the previously published
-    // surface, which is still the newest frame that exists. A scope guard
-    // rather than a call before each return, so a future change to the
-    // publication policy cannot silently drop one.
-    struct VBlankObserverScope
-    {
-        VulkanRenderer* Renderer;
-
-        ~VBlankObserverScope()
-        {
-            if (Renderer->VBlankObserverFn)
-                Renderer->VBlankObserverFn(Renderer->VBlankObserverData);
-        }
-    } observerNotify{this};
-
     // The one point in the DS frame where this frame's structured 2D planes and
     // this frame's 3D image both exist: the software engines have finished all
     // 192 scanlines, and RenderFrame() submitted the 3D work at the start of the

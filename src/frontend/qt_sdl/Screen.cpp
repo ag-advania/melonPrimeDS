@@ -53,14 +53,6 @@
 #include "Platform.h"
 #include "Config.h"
 
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-#include "DX12Perf.h"
-#include "GPU_DX12.h"
-#include "MelonPrimeDX12FeatureCheck.h"
-#include "MelonPrimeDX12SurfacePresenter.h"
-#include <QPointer>
-#endif
-
 #include "main_shaders.h"
 #include "OSD_shaders.h"
 #include "font.h"
@@ -91,6 +83,9 @@
 #include "MelonPrimeHudPatchLifecycle.h"
 #include "MelonPrimeHudEdit.h"
 #include "MelonPrimeHudConfigOnScreenEdit.h"
+#include "MelonPrimeHudScreenVisualState.h"
+#include "MelonPrimeHudScreenEditPanel.h"
+#include "MelonPrimeHudScreenOverlay.h"
 #include "InputConfig/InputConfigDialog.h"
 #include <QFontDatabase>
 #endif
@@ -142,7 +137,6 @@ const u32 kOSDMargin = 6;
 const int kLogoWidth = 192;
 
 #ifdef MELONPRIME_DS
-#include "MelonPrimeHudScreenCppHelpers.inc"
 
 void ScreenPanel::getAimMouseDelta(std::int32_t& outDx, std::int32_t& outDy)
 {
@@ -283,7 +277,9 @@ void ScreenPanel::wheelEvent(QWheelEvent* event)
         if (emuInstance)
             emuInstance->onMouseWheel(steps);
     }
-#include "MelonPrimeHudScreenCppMouseWheel.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    handleHudMouseWheel(event);
+#endif
     event->accept();
 }
 
@@ -385,6 +381,10 @@ void ScreenPanel::refreshClipForGameStateChange()
 #ifdef MELONPRIME_CUSTOM_HUD
 void ScreenPanel::setHudEditModeActive(bool active)
 {
+    // This latch is GUI-owned and must be updated even when shutdown has
+    // already made the cursor hand-off a no-op. The high-rate mouse path uses
+    // it as a fast reject; the helper still validates the live HUD edit state.
+    m_hudEditInputActive = active;
     if (!active || closing || !qApp || qApp->closingDown())
         return;
 
@@ -688,7 +688,9 @@ ScreenPanel::ScreenPanel(QWidget* parent) : QWidget(parent)
     osdEnabled = false;
     osdID = 1;
 
-#include "MelonPrimeHudScreenCppInit.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    initializeHudScreenIntegration();
+#endif
 
     loadConfig();
     setFilter(mainWindow->getWindowConfig().GetBool("ScreenFilter"));
@@ -798,7 +800,7 @@ void ScreenPanel::refreshTopScreenTouchSetting()
 void ScreenPanel::loadMelonPrimeStylusCursorConfig()
 {
     auto& cfg = emuInstance->getLocalConfig();
-    const bool stylusModeEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusMode);
+    stylusModeEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusMode);
     stylusDirectAimWhileTouchingEnabled = stylusModeEnabled
         && cfg.GetBool(MelonPrime::CfgKey::StylusDirectAimWhileTouching);
     // Tablet direct aim is opt-in so the existing Raw Mouse path remains the
@@ -877,6 +879,8 @@ void ScreenPanel::primeStylusTouchHotkeyAtCursor(int qtKey)
     int x = local.x();
     int y = local.y();
     const bool valid = getTouchCoords(x, y, false);
+    m_screenInputPerf.Count(
+        MelonPrime::ScreenInputMetric::StylusPointerPublish);
     core->ThreadBridge().PublishStylusPointerFromGui(x, y, valid);
     // Merely sampling the hover coordinate must not claim a top-screen drag.
     topScreenTouchTransform = -1;
@@ -949,26 +953,15 @@ void ScreenPanel::endStylusDirectAimCapture()
 bool ScreenPanel::getTouchCoords(int& x, int& y, bool clamp)
 {
 #ifdef MELONPRIME_DS
+    // The determinant, the epsilon test and the screen-kind test are resolved
+    // in setupScreenLayout(); this is only the mapping. One unsigned compare
+    // covers both index bounds, and out-of-range entries are default-invalid.
     const auto mapTopTransform = [this](int transform, int& px, int& py, bool clampCoords) {
-        if (transform < 0 || transform >= numScreens || screenKind[transform] != 0)
+        if (static_cast<unsigned>(transform)
+            >= static_cast<unsigned>(kMaxScreenTransforms))
             return false;
-
-        const float* const m = screenMatrix[transform];
-        const float determinant = m[0] * m[3] - m[1] * m[2];
-        if (std::abs(determinant) < 0.000001f)
-            return false;
-
-        const float dx = static_cast<float>(px) - m[4];
-        const float dy = static_cast<float>(py) - m[5];
-        const float sx = (m[3] * dx - m[2] * dy) / determinant;
-        const float sy = (-m[1] * dx + m[0] * dy) / determinant;
-
-        if (!clampCoords && (sx < 0.0f || sx >= 256.0f || sy < 0.0f || sy >= 192.0f))
-            return false;
-
-        px = clampCoords ? std::clamp(static_cast<int>(sx), 0, 255) : static_cast<int>(sx);
-        py = clampCoords ? std::clamp(static_cast<int>(sy), 0, 191) : static_cast<int>(sy);
-        return true;
+        return MelonPrime::MapTopScreenTouch(
+            topScreenTouchTransforms[transform], px, py, clampCoords);
     };
 
     // A drag that began on a top-screen transform remains owned by that same
@@ -1065,9 +1058,23 @@ void ScreenPanel::setupScreenLayout()
 
     numScreens = layout.GetScreenTransforms(screenMatrix[0], screenKind);
 
+#ifdef MELONPRIME_DS
+    // SCR-PERF-002: layout generation is the recalculation authority for
+    // layout-derived state. Entries past numScreens stay default-invalid, so a
+    // stale transform index cannot map anything.
+    for (int i = 0; i < kMaxScreenTransforms; ++i) {
+        topScreenTouchTransforms[i] = (i < numScreens)
+            ? MelonPrime::MakeTopScreenTouchTransform(
+                  screenMatrix[i], screenKind[i] == 0)
+            : MelonPrime::TopScreenTouchTransform{};
+    }
+#endif
+
     calcSplashLayout();
 
-#include "MelonPrimeHudScreenCppLayout.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    updateHudScreenLayoutCache();
+#endif
 
 #ifdef MELONPRIME_DS
     // Notify layout change
@@ -1153,7 +1160,9 @@ void ScreenPanel::resizeEvent(QResizeEvent* event)
     updateClipIfNeeded();
 #endif
 #endif
-#include "MelonPrimeHudScreenCppEditPanelResize.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    repositionHudEditPanel(true);
+#endif
     QWidget::resizeEvent(event);
 }
 
@@ -1177,7 +1186,10 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         return;
     }
 
-#include "MelonPrimeHudScreenCppMousePress.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (handleHudMousePress(event))
+        return;
+#endif
 
 #ifdef MELONPRIME_DS
 #if defined(__APPLE__)
@@ -1243,11 +1255,17 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         emu->touchScreen(x, y);
 #ifdef MELONPRIME_DS
         if (core && ui.stylusMode && ui.inGame)
+        {
+            m_screenInputPerf.Count(
+                MelonPrime::ScreenInputMetric::StylusPointerPublish);
             core->ThreadBridge().PublishStylusPointerFromGui(x, y, true);
+        }
 #endif
     }
 #ifdef MELONPRIME_DS
     else if (core && ui.stylusMode && ui.inGame) {
+        m_screenInputPerf.Count(
+            MelonPrime::ScreenInputMetric::StylusPointerPublish);
         core->ThreadBridge().PublishStylusPointerFromGui(0, 0, false);
     }
 #endif
@@ -1306,7 +1324,10 @@ void ScreenPanel::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
 
-#include "MelonPrimeHudScreenCppMouseRelease.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (handleHudMouseRelease(event))
+        return;
+#endif
 
 #ifdef MELONPRIME_DS
     const bool releasesAcceptedTouch = (m_touchMouseButton != Qt::NoButton)
@@ -1351,6 +1372,10 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     event->accept();
 
     auto* const emu = emuInstance;
+#ifdef MELONPRIME_DS
+    MelonPrime::ScreenInputPerf::ScopedMouseMove inputPerf(
+        m_screenInputPerf, emu ? emu->getInstanceID() : 0);
+#endif
 
     if (Q_UNLIKELY(!emu->emuIsActive()))
         return;
@@ -1367,16 +1392,55 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
     }
 #endif
 
-#include "MelonPrimeHudScreenCppMouseMove.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    if (Q_UNLIKELY(m_hudEditInputActive)) {
+#ifdef MELONPRIME_DS
+        m_screenInputPerf.Count(
+            MelonPrime::ScreenInputMetric::HudEditHelperEntered);
+#endif
+        if (handleHudMouseMove(event))
+            return;
+    } else {
+#ifdef MELONPRIME_DS
+        m_screenInputPerf.Count(
+            MelonPrime::ScreenInputMetric::HudEditFastRejected);
+#endif
+    }
+#endif
 
 #ifdef MELONPRIME_DS
-    // One immutable runtime snapshot per Qt mouse event. Reuse it for both the
-    // platform aim route and Stylus Mode pointer publication below.
-    auto* const thread = emu->getEmuThread();
-    auto* const core = isMelonPrimeInputSurfaceAuthority() && thread
+    // SCR-PERF-001. Qt mouse events arrive at the device's report rate, so the
+    // snapshot is taken only when something below actually reads it.
+    //
+    // On Windows, relative aim is owned by Raw Input and the platform aim
+    // route below compiles to nothing; the only consumers left in this handler
+    // are Stylus Mode's hover and drag publication, and every one of them is
+    // already gated on ui.stylusMode. With Stylus Mode off -- the default and
+    // the common case -- resolving the owner and reading the snapshot cannot
+    // change what this handler does, so both are skipped.
+    //
+    // macOS and Linux always take it: their Qt fallback aim route reads the
+    // snapshot on every event, whatever Stylus Mode is set to.
+    //
+    // The gate is the cold-cached config value, not the runtime snapshot it
+    // would otherwise have to read. Turning Stylus Mode off can therefore skip
+    // publication for the few frames before the emulation thread applies the
+    // same change, which is the direction where publication no longer matters.
+#ifdef _WIN32
+    const bool melonPrimeWantsUiSnapshot = stylusModeEnabled;
+#else
+    constexpr bool melonPrimeWantsUiSnapshot = true;
+#endif
+    auto* const thread = melonPrimeWantsUiSnapshot
+        ? emu->getEmuThread() : nullptr;
+    auto* const core = (thread && isMelonPrimeInputSurfaceAuthority())
         ? thread->GetMelonPrimeCore() : nullptr;
     const auto ui = core ? core->ThreadBridge().ReadForGui()
                          : MelonPrime::MelonPrimeUiSnapshot{};
+#ifdef MELONPRIME_DS
+    if (core)
+        m_screenInputPerf.Count(MelonPrime::ScreenInputMetric::UiSnapshotRead);
+#endif
 #endif
 
 #if defined(MELONPRIME_DS) && defined(MELONPRIME_ENABLE_INPUT_DEBUG_TELEMETRY) \
@@ -1515,6 +1579,8 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         int x = p.x();
         int y = p.y();
         const bool valid = getTouchCoords(x, y, false);
+        m_screenInputPerf.Count(
+            MelonPrime::ScreenInputMetric::StylusPointerPublish);
         core->ThreadBridge().PublishStylusPointerFromGui(x, y, valid);
         // Hover tracking must not claim a drag transform before a contact
         // actually starts.
@@ -1535,7 +1601,11 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         emu->touchScreen(x, y);
 #ifdef MELONPRIME_DS
         if (core && ui.stylusMode && ui.inGame)
+        {
+            m_screenInputPerf.Count(
+                MelonPrime::ScreenInputMetric::StylusPointerPublish);
             core->ThreadBridge().PublishStylusPointerFromGui(x, y, true);
+        }
 #endif
     }
 }
@@ -2328,8 +2398,15 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
 
     if (emuThread->emuIsActive())
     {
+        const auto renderLockWaitStart = m_nativePaintPerf.Now();
         emuInstance->renderLock.lock();
+        const auto renderLockAcquired = m_nativePaintPerf.Now();
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::RenderLockWait,
+            renderLockWaitStart, renderLockAcquired);
+        const auto renderLockHoldStart = renderLockAcquired;
 
+        const auto framebufferCopyStart = m_nativePaintPerf.Now();
         bufferLock.lock();
         if (hasBuffers)
         {
@@ -2346,20 +2423,35 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             memcpy(screen[1].scanLine(0), bottomBuffer, bytes);
         }
         bufferLock.unlock();
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::FramebufferCopy,
+            framebufferCopyStart, m_nativePaintPerf.Now());
 
         QRect screenrc(0, 0, 256, 192);
 
+        const auto qpaintGameStart = m_nativePaintPerf.Now();
         for (int i = 0; i < numScreens; i++)
         {
             painter.setTransform(screenTrans[i]);
             painter.drawImage(screenrc, screen[screenKind[i]]);
         }
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::QPaintGame,
+            qpaintGameStart, m_nativePaintPerf.Now());
 
 #define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&screen[1])
+        const auto hudSoftwareStart = m_nativePaintPerf.Now();
 #include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::HudSoftware,
+            hudSoftwareStart, m_nativePaintPerf.Now());
 #undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
 
+        m_nativePaintPerf.Record(
+            MelonPrime::NativePaintMetric::RenderLockHold,
+            renderLockHoldStart, m_nativePaintPerf.Now());
         emuInstance->renderLock.unlock();
+        m_nativePaintPerf.MaybeReport(emuInstance->getInstanceID());
     }
 
     osdUpdate();
@@ -2403,955 +2495,6 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
 }
 
 
-#if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
-namespace
-{
-class DX12SurfaceHost final : public QWidget
-{
-public:
-    using LifecycleCallback = std::function<void(QEvent::Type, bool)>;
-
-    explicit DX12SurfaceHost(QWidget* parent, LifecycleCallback callback = {})
-        : QWidget(parent), Lifecycle(std::move(callback))
-    {
-        setAttribute(Qt::WA_NativeWindow, true);
-        setAttribute(Qt::WA_NoSystemBackground, true);
-        setAttribute(Qt::WA_PaintOnScreen, true);
-        setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        setAutoFillBackground(false);
-    }
-
-protected:
-    QPaintEngine* paintEngine() const override { return nullptr; }
-    void paintEvent(QPaintEvent*) override {}
-
-    bool event(QEvent* event) override
-    {
-        const bool aboutToDestroy = event
-            && event->type() == QEvent::PlatformSurface
-            && static_cast<QPlatformSurfaceEvent*>(event)->surfaceEventType()
-                == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed;
-        if (aboutToDestroy && Lifecycle)
-            Lifecycle(event->type(), true);
-
-        const bool accepted = QWidget::event(event);
-        if (Lifecycle && !aboutToDestroy && event
-            && (event->type() == QEvent::PlatformSurface
-                || event->type() == QEvent::Show
-                || event->type() == QEvent::WindowStateChange
-                || event->type() == QEvent::ScreenChangeInternal))
-        {
-            Lifecycle(event->type(), false);
-        }
-        return accepted;
-    }
-
-private:
-    LifecycleCallback Lifecycle;
-};
-} // namespace
-
-QMutex g_dx12PanelRegistryLock;
-std::vector<ScreenPanelDX12*> g_dx12PanelRegistry;
-
-struct ScreenPanelDX12::DX12State
-{
-    MelonPrime::DX12SurfacePresenter presenter;
-    QPointer<DX12SurfaceHost> surface;
-    QMutex layoutLock;
-    float screenMatrix[kMaxScreenTransforms][6]{};
-    int screenKind[kMaxScreenTransforms]{};
-    int numScreens = 0;
-    std::atomic<std::uint32_t> layoutRevision{0};
-    // Emulation-thread cache. The GUI-published arrays above are copied only
-    // when layoutRevision changes; a stable frame never takes layoutLock.
-    float cachedScreenMatrix[kMaxScreenTransforms][6]{};
-    int cachedScreenKind[kMaxScreenTransforms]{};
-    int cachedNumScreens = 0;
-    std::uint32_t cachedLayoutRevision = ~0u;
-    std::uint32_t rendererSnapshotRevision = ~0u;
-    melonDS::DX12Renderer* cachedDX12Renderer = nullptr;
-    RendererOutputLease frameLease;
-    QMutex fallbackLock;
-    QImage fallbackFrame;
-    QImage hudFrame;
-    QRect hudRect;
-    QImage osdStrip;
-    std::atomic_bool surfaceVisibleRequested{false};
-    MelonPrime::NativeSurfaceSnapshotStore surfaceSnapshot;
-    // GUI-thread-only identity publication state.
-    std::uintptr_t guiSurfaceHandle = 0;
-    std::uint64_t guiSurfaceIdentityGeneration = 0;
-    std::uint64_t guiSurfaceGeometryRevision = 0;
-    std::uint32_t guiSurfaceLastLogicalWidth = 0;
-    std::uint32_t guiSurfaceLastLogicalHeight = 0;
-    std::uint32_t guiSurfaceLastPhysicalWidth = 0;
-    std::uint32_t guiSurfaceLastPhysicalHeight = 0;
-    bool guiSurfaceLastFullscreen = false;
-    bool guiSurfaceGeometryInitialized = false;
-    bool guiSurfaceIdentityDirty = true;
-    std::uint64_t presenterSurfaceIdentityGeneration = 0;
-    std::uint64_t presenterSurfaceGeometryRevision = 0;
-    std::uintptr_t presenterSurfaceHandle = 0;
-    // Set by the GUI thread while the Custom HUD on-screen editor owns the
-    // panel, read by the emulation thread's paused draw pass. The live settings
-    // preview shares this presentation exception without entering edit mode.
-    std::atomic_bool hudEditLivePresentation{false};
-    std::atomic_bool hudLivePreviewPresentation{false};
-    bool initialized = false;
-    bool runtimeFailureReported = false;
-    MelonPrime::NativeVisibilityState nativeVisibility;
-};
-
-ScreenPanelDX12::ScreenPanelDX12(QWidget* parent)
-    : ScreenPanel(parent), dx12(std::make_unique<DX12State>())
-{
-    setAutoFillBackground(false);
-    setAttribute(Qt::WA_KeyCompression, false);
-    setFocusPolicy(Qt::StrongFocus);
-    setMinimumSize(screenGetMinSize());
-
-    dx12->surface = new DX12SurfaceHost(
-        this,
-        [this](QEvent::Type eventType, bool aboutToDestroy) {
-            handleDX12SurfaceHostLifecycleGuiThread(eventType, aboutToDestroy);
-        });
-    dx12->surface->setGeometry(rect());
-    dx12->surface->hide();
-    publishDX12SurfaceSnapshotGuiThread();
-
-    QMutexLocker lock(&g_dx12PanelRegistryLock);
-    g_dx12PanelRegistry.push_back(this);
-}
-
-ScreenPanelDX12::~ScreenPanelDX12()
-{
-    {
-        QMutexLocker lock(&g_dx12PanelRegistryLock);
-        g_dx12PanelRegistry.erase(
-            std::remove(g_dx12PanelRegistry.begin(), g_dx12PanelRegistry.end(), this),
-            g_dx12PanelRegistry.end());
-    }
-
-    if (dx12)
-    {
-        prepareForRendererTransition();
-        dx12->presenter.Shutdown();
-    }
-}
-
-void ScreenPanelDX12::prepareForRendererTransition()
-{
-    if (!dx12)
-        return;
-
-#ifdef MELONPRIME_CUSTOM_HUD
-    // The presenter/layer resources are about to be detached from the active
-    // renderer. Do not let an identical visual key skip the first upload after
-    // the transition.
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
-    ++m_hudVisualRendererGeneration;
-#endif
-
-    // Keep the same lifetime contract as the Vulkan presenter: old queue work
-    // must be complete before descriptor identity is cleared or the renderer
-    // output lease is dropped.
-    dx12->presenter.Quiesce();
-    dx12->presenter.InvalidateDirectDescriptorCache();
-    dx12->frameLease.ReleaseNow();
-    dx12->nativeVisibility.Reset();
-    dx12->rendererSnapshotRevision = ~0u;
-    dx12->cachedDX12Renderer = nullptr;
-}
-
-void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance)
-{
-    QMutexLocker lock(&g_dx12PanelRegistryLock);
-    for (ScreenPanelDX12* panel : g_dx12PanelRegistry)
-    {
-        if (panel->emuInstance == instance)
-            panel->prepareForRendererTransition();
-    }
-}
-
-bool ScreenPanelDX12::initDX12()
-{
-    if (!dx12 || !dx12->surface)
-        return false;
-#ifdef MELONPRIME_CUSTOM_HUD
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
-    ++m_hudVisualRendererGeneration;
-#endif
-    publishDX12SurfaceSnapshotGuiThread();
-    MelonPrime::NativeSurfaceSnapshot snapshot;
-    if (!dx12->surfaceSnapshot.Read(snapshot) || !snapshot.Valid)
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "DX12 native presenter initialization refused: invalid GUI surface snapshot\n");
-        return false;
-    }
-    const HWND window = reinterpret_cast<HWND>(snapshot.NativeHandle);
-    dx12->initialized = dx12->presenter.Init(
-        window,
-        snapshot.IdentityGeneration,
-        snapshot.PhysicalWidth,
-        snapshot.PhysicalHeight);
-    if (!dx12->initialized)
-    {
-        Platform::Log(
-            Platform::LogLevel::Error,
-            "DX12 native presenter initialization failed reason=%s\n",
-            dx12->presenter.LastError().c_str());
-    }
-    if (dx12->initialized)
-    {
-        DX12Perf::AddCounter(
-            DX12Perf::Counter::DX12PresenterReinitCount);
-        dx12->presenterSurfaceIdentityGeneration = snapshot.IdentityGeneration;
-        dx12->presenterSurfaceGeometryRevision = snapshot.GeometryRevision;
-        dx12->presenterSurfaceHandle = snapshot.NativeHandle;
-        dx12->nativeVisibility.Reset();
-    }
-    return dx12->initialized;
-}
-
-void ScreenPanelDX12::setupScreenLayout()
-{
-    ScreenPanel::setupScreenLayout();
-    if (!dx12)
-        return;
-
-    {
-        QMutexLocker lock(&dx12->layoutLock);
-        dx12->numScreens = std::min(numScreens, kMaxScreenTransforms);
-        for (int index = 0; index < dx12->numScreens; ++index)
-        {
-            std::memcpy(dx12->screenMatrix[index], screenMatrix[index], sizeof(float) * 6);
-            dx12->screenKind[index] = screenKind[index];
-        }
-    }
-    dx12->layoutRevision.fetch_add(1, std::memory_order_release);
-}
-
-void ScreenPanelDX12::resizeEvent(QResizeEvent* event)
-{
-    if (dx12 && dx12->surface)
-        dx12->surface->setGeometry(rect());
-    ScreenPanel::resizeEvent(event);
-    publishDX12SurfaceSnapshotGuiThread();
-}
-
-void ScreenPanelDX12::publishDX12SurfaceSnapshotGuiThread()
-{
-    if (!dx12 || !dx12->surface)
-        return;
-
-    const std::uintptr_t handle = static_cast<std::uintptr_t>(dx12->surface->winId());
-    const bool identityChanged = dx12->guiSurfaceIdentityGeneration == 0
-        || dx12->guiSurfaceHandle != handle
-        || dx12->guiSurfaceIdentityDirty;
-    if (identityChanged)
-    {
-        dx12->guiSurfaceHandle = handle;
-        ++dx12->guiSurfaceIdentityGeneration;
-        dx12->guiSurfaceIdentityDirty = false;
-        DX12Perf::AddCounter(
-            DX12Perf::Counter::DX12NativeIdentityGenerationChangeCount);
-    }
-
-    const int logicalWidth = std::max(1, width());
-    const int logicalHeight = std::max(1, height());
-    const qreal dpr = devicePixelRatioF();
-    const std::uint32_t physicalWidth = static_cast<std::uint32_t>(
-        std::max(1, qRound(logicalWidth * dpr)));
-    const std::uint32_t physicalHeight = static_cast<std::uint32_t>(
-        std::max(1, qRound(logicalHeight * dpr)));
-    const bool fullscreen = window() && window()->isFullScreen();
-    if (!dx12->guiSurfaceGeometryInitialized
-        || dx12->guiSurfaceLastLogicalWidth != static_cast<std::uint32_t>(logicalWidth)
-        || dx12->guiSurfaceLastLogicalHeight != static_cast<std::uint32_t>(logicalHeight)
-        || dx12->guiSurfaceLastPhysicalWidth != physicalWidth
-        || dx12->guiSurfaceLastPhysicalHeight != physicalHeight
-        || dx12->guiSurfaceLastFullscreen != fullscreen)
-    {
-        dx12->guiSurfaceGeometryInitialized = true;
-        dx12->guiSurfaceLastLogicalWidth = static_cast<std::uint32_t>(logicalWidth);
-        dx12->guiSurfaceLastLogicalHeight = static_cast<std::uint32_t>(logicalHeight);
-        dx12->guiSurfaceLastPhysicalWidth = physicalWidth;
-        dx12->guiSurfaceLastPhysicalHeight = physicalHeight;
-        dx12->guiSurfaceLastFullscreen = fullscreen;
-        ++dx12->guiSurfaceGeometryRevision;
-    }
-    MelonPrime::NativeSurfaceSnapshot snapshot;
-    snapshot.NativeHandle = handle;
-    snapshot.IdentityGeneration = dx12->guiSurfaceIdentityGeneration;
-    snapshot.GeometryRevision = dx12->guiSurfaceGeometryRevision;
-    snapshot.LogicalWidth = static_cast<std::uint32_t>(logicalWidth);
-    snapshot.LogicalHeight = static_cast<std::uint32_t>(logicalHeight);
-    snapshot.PhysicalWidth = physicalWidth;
-    snapshot.PhysicalHeight = physicalHeight;
-    snapshot.Fullscreen = fullscreen;
-    snapshot.Valid = handle != 0 && dx12->surface->windowHandle() != nullptr;
-    dx12->surfaceSnapshot.Publish(snapshot);
-    DX12Perf::AddCounter(
-        DX12Perf::Counter::DX12SurfaceSnapshotPublishCount);
-}
-
-void ScreenPanelDX12::handleDX12SurfaceHostLifecycleGuiThread(
-    QEvent::Type eventType,
-    bool aboutToDestroy)
-{
-    if (!dx12)
-        return;
-
-    DX12Perf::AddCounter(
-        DX12Perf::Counter::DX12SurfaceEventCount);
-
-    if (aboutToDestroy || eventType == QEvent::PlatformSurface)
-        dx12->guiSurfaceIdentityDirty = true;
-    if (aboutToDestroy)
-    {
-        MelonPrime::NativeSurfaceSnapshot invalid;
-        invalid.IdentityGeneration = ++dx12->guiSurfaceIdentityGeneration;
-        DX12Perf::AddCounter(
-            DX12Perf::Counter::DX12NativeIdentityGenerationChangeCount);
-        invalid.GeometryRevision = dx12->guiSurfaceGeometryRevision;
-        dx12->surfaceSnapshot.Publish(invalid);
-        DX12Perf::AddCounter(
-            DX12Perf::Counter::DX12SurfaceSnapshotPublishCount);
-        return;
-    }
-
-    (void)eventType;
-    QMetaObject::invokeMethod(
-        this, [this]() { publishDX12SurfaceSnapshotGuiThread(); }, Qt::QueuedConnection);
-}
-
-bool ScreenPanelDX12::event(QEvent* event)
-{
-    if (dx12 && event)
-    {
-        switch (event->type())
-        {
-        case QEvent::PlatformSurface:
-        case QEvent::WindowStateChange:
-        case QEvent::Show:
-            QMetaObject::invokeMethod(
-                this,
-                [this]() { publishDX12SurfaceSnapshotGuiThread(); },
-                Qt::QueuedConnection);
-            break;
-        case QEvent::ScreenChangeInternal:
-            QMetaObject::invokeMethod(
-                this,
-                [this]() { publishDX12SurfaceSnapshotGuiThread(); },
-                Qt::QueuedConnection);
-            break;
-        default:
-            break;
-        }
-    }
-    return ScreenPanel::event(event);
-}
-
-void ScreenPanelDX12::requestNativeSurfaceVisible(bool visible)
-{
-    if (!dx12)
-        return;
-    if (dx12->surfaceVisibleRequested.load(std::memory_order_relaxed) == visible)
-        return;
-    if (dx12->surfaceVisibleRequested.exchange(
-            visible, std::memory_order_acq_rel) == visible)
-        return;
-    MelonPrimePerf::CountSurfaceVisibilityStateChange();
-
-    QMetaObject::invokeMethod(
-        this,
-        [this, visible]() {
-            if (!dx12 || !dx12->surface)
-                return;
-            if (visible)
-            {
-                dx12->surface->setGeometry(rect());
-                dx12->surface->show();
-                dx12->surface->raise();
-                publishDX12SurfaceSnapshotGuiThread();
-            }
-            else
-            {
-                dx12->surface->hide();
-                update();
-            }
-        },
-        Qt::QueuedConnection);
-}
-
-void ScreenPanelDX12::reportRuntimeFailure(const char* reason)
-{
-    if (!dx12 || dx12->runtimeFailureReported)
-        return;
-    dx12->runtimeFailureReported = true;
-    MelonPrime::DX12FeatureCheck::ReportRuntimeFailure(
-        reason ? reason : "DX12 native presentation failed");
-    if (auto* emuThread = emuInstance->getEmuThread())
-    {
-        QMetaObject::invokeMethod(
-            emuThread,
-            [emuThread]() { emit emuThread->rendererRuntimeFallback(); },
-            Qt::QueuedConnection);
-    }
-}
-
-#ifdef MELONPRIME_CUSTOM_HUD
-void ScreenPanelDX12::setHudEditModeActive(bool active)
-{
-    ScreenPanel::setHudEditModeActive(active);
-    if (!dx12)
-        return;
-
-    dx12->hudEditLivePresentation.store(active, std::memory_order_relaxed);
-}
-
-void ScreenPanelDX12::setHudLivePreviewActive(bool active)
-{
-    if (!dx12)
-        return;
-
-    dx12->hudLivePreviewPresentation.store(active, std::memory_order_release);
-}
-#endif
-
-void ScreenPanelDX12::drawScreen()
-{
-    refreshClipForGameStateChange();
-    if (!dx12 || !dx12->initialized)
-        return;
-
-    auto* emuThread = emuInstance->getEmuThread();
-    if (!emuThread->emuIsActive())
-    {
-        requestNativeSurfaceVisible(false);
-        QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
-        return;
-    }
-
-    // Paused normally means "leave the swapchain showing the last presented
-    // image": nothing new is emulated, and the native child keeps the frame up
-    // even while a modal dialog is exposed.
-    //
-    // The Custom HUD on-screen editor is the exception. The settings dialog
-    // pauses emulation before handing the panel to the editor, so this pass is
-    // the only thing that can ever put the editor overlay on screen; without
-    // this the DX12 panel just keeps presenting the frozen pre-pause frame and
-    // the editor is invisible. Same contract as ScreenPanelVulkan; the
-    // software/OpenGL panels gate on emuIsActive() and keep drawing anyway.
-#ifdef MELONPRIME_CUSTOM_HUD
-    const bool hudLivePresentation =
-        dx12->hudEditLivePresentation.load(std::memory_order_relaxed)
-        || dx12->hudLivePreviewPresentation.load(std::memory_order_acquire);
-#else
-    constexpr bool hudLivePresentation = false;
-#endif
-    if (!emuThread->emuIsRunning() && !hudLivePresentation)
-        return;
-
-    MelonPrime::NativeSurfaceSnapshot publishedSurface;
-    if (!dx12->surfaceSnapshot.Read(publishedSurface) || !publishedSurface.Valid)
-    {
-        requestNativeSurfaceVisible(false);
-        QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
-        return;
-    }
-
-    const bool surfaceIdentityChanged =
-        dx12->presenter.IsInitialized()
-        && (dx12->presenterSurfaceIdentityGeneration != publishedSurface.IdentityGeneration
-            || dx12->presenterSurfaceHandle != publishedSurface.NativeHandle);
-    if (surfaceIdentityChanged)
-    {
-        // HWND generation changes are a full presentation transition. Drain
-        // the queue before dropping renderer leases or descriptor identity;
-        // same-HWND extent changes remain the cheaper ResizeBuffers path.
-        dx12->presenter.Quiesce();
-        dx12->presenter.InvalidateDirectDescriptorCache();
-        dx12->frameLease.ReleaseNow();
-        dx12->presenter.Shutdown();
-        dx12->presenterSurfaceIdentityGeneration = 0;
-        dx12->presenterSurfaceGeometryRevision = 0;
-        dx12->presenterSurfaceHandle = 0;
-        dx12->nativeVisibility.Reset();
-    }
-
-    if (!dx12->presenter.IsInitialized())
-    {
-        const HWND window = reinterpret_cast<HWND>(publishedSurface.NativeHandle);
-        if (!dx12->presenter.Init(
-                window,
-                publishedSurface.IdentityGeneration,
-                publishedSurface.PhysicalWidth,
-                publishedSurface.PhysicalHeight))
-        {
-            reportRuntimeFailure(dx12->presenter.LastError().c_str());
-            return;
-        }
-        dx12->presenterSurfaceIdentityGeneration = publishedSurface.IdentityGeneration;
-        dx12->presenterSurfaceGeometryRevision = publishedSurface.GeometryRevision;
-        dx12->presenterSurfaceHandle = publishedSurface.NativeHandle;
-    }
-
-    auto* nds = emuInstance->getNDS();
-    if (!nds)
-        return;
-    const MelonPrime::PresentationConfigSnapshot presentation =
-        emuInstance->getPresentationConfigSnapshot();
-    if (presentation.revision != dx12->rendererSnapshotRevision)
-    {
-        dx12->rendererSnapshotRevision = presentation.revision;
-        dx12->cachedDX12Renderer = nullptr;
-        if (presentation.activeRenderer == renderer3D_DX12 || presentation.revision == 0)
-        {
-            dx12->cachedDX12Renderer =
-                dynamic_cast<melonDS::DX12Renderer*>(&nds->GPU.GetRenderer());
-        }
-    }
-    auto* renderer = dx12->cachedDX12Renderer;
-    RendererOutputLease outputLease = nds->GPU.AcquireRendererOutputLease();
-    const RendererOutput& output = outputLease.Output;
-    const DX12PresentedFrame* gpuFrame = nullptr;
-    const u32* cpuTop = nullptr;
-    const u32* cpuBottom = nullptr;
-    u32 sourceWidth = output.Width;
-    u32 sourceHeight = output.Height;
-    if (output.Kind == RendererOutputKind::DX12Buffer && output.Top)
-    {
-        gpuFrame = static_cast<const DX12PresentedFrame*>(output.Top);
-        sourceWidth = gpuFrame->Width;
-        sourceHeight = gpuFrame->Height;
-    }
-    else if (output.Kind == RendererOutputKind::CpuBgra && output.Top && output.Bottom)
-    {
-        cpuTop = static_cast<const u32*>(output.Top);
-        cpuBottom = static_cast<const u32*>(output.Bottom);
-    }
-    // Two different things publish CpuBgra here, and only the live renderer
-    // tells them apart:
-    //
-    //  - No DX12Renderer at all ("3D.ForceSoftwareOutsideMatch" swapped the
-    //    renderer to Software while this panel keeps owning the swapchain).
-    //    The software renderer flattens its own 3D layer, so this frame is a
-    //    complete picture and belongs on screen through the CPU upload path.
-    //  - A live DX12Renderer whose pipeline is not ready yet. That output is a
-    //    Software-2D plus placeholder-3D hybrid and must never become visible.
-    const bool softwarePresentation = !renderer && cpuTop && cpuBottom;
-    if (!gpuFrame && !softwarePresentation)
-    {
-        // Keep the last native frame once one exists, otherwise leave the Qt
-        // splash/black path active until a complete GPU frame is published.
-        if (!dx12->nativeVisibility.FirstCompleteFrameVisible)
-        {
-            requestNativeSurfaceVisible(false);
-            QMetaObject::invokeMethod(this, [this]() { update(); }, Qt::QueuedConnection);
-        }
-        return;
-    }
-    if (sourceWidth == 0 || sourceHeight == 0)
-        return;
-
-    const std::uint32_t layoutRevision =
-        dx12->layoutRevision.load(std::memory_order_acquire);
-    if (layoutRevision != dx12->cachedLayoutRevision)
-    {
-        QMutexLocker lock(&dx12->layoutLock);
-        dx12->cachedNumScreens =
-            std::min(dx12->numScreens, kMaxScreenTransforms);
-        for (int index = 0; index < dx12->cachedNumScreens; ++index)
-        {
-            std::memcpy(
-                dx12->cachedScreenMatrix[index],
-                dx12->screenMatrix[index],
-                sizeof(float) * 6);
-            dx12->cachedScreenKind[index] = dx12->screenKind[index];
-        }
-        // Keep the revision observed before taking the lock. If the GUI
-        // publishes another layout immediately after this copy, retaining the
-        // older value forces one harmless refresh next frame instead of
-        // labelling an older cache with the newer arrays' revision.
-        dx12->cachedLayoutRevision = layoutRevision;
-    }
-    const float (*matrices)[6] = dx12->cachedScreenMatrix;
-    const int* kinds = dx12->cachedScreenKind;
-    const int screens = dx12->cachedNumScreens;
-
-    const int logicalWidth = static_cast<int>(std::max(1u, publishedSurface.LogicalWidth));
-    const int logicalHeight = static_cast<int>(std::max(1u, publishedSurface.LogicalHeight));
-    const u32 physicalWidth = std::max(1u, publishedSurface.PhysicalWidth);
-    const u32 physicalHeight = std::max(1u, publishedSurface.PhysicalHeight);
-    // A software CPU frame has no renderer frame identity. Publishing a zero
-    // serial is how the presenter is told so: it skips the monotonic gate for
-    // this frame and leaves the last accepted GPU identity untouched, so the
-    // renderer that resumes at match start is still compared against its own
-    // predecessor rather than against this interlude.
-    dx12->presenter.SetPresentedFrameIdentity(
-        gpuFrame ? gpuFrame->Serial : 0, gpuFrame ? gpuFrame->Epoch : 0);
-    if (!dx12->presenter.IsPresentedFrameIdentityMonotonic())
-        return;
-    if (gpuFrame && gpuFrame->HasDirectSampledOutput())
-        dx12->presenter.PrepareDirectOutputDescriptors(*gpuFrame);
-    if (!dx12->presenter.BeginFrame(physicalWidth, physicalHeight))
-    {
-        if (dx12->presenter.LastBeginWasBackpressure())
-            return;
-        requestNativeSurfaceVisible(false);
-        reportRuntimeFailure(dx12->presenter.LastError().c_str());
-        return;
-    }
-
-    // BeginFrame retires the preceding presentation command list, so its
-    // compositor slot can be returned before this frame retains another one.
-    dx12->frameLease.ReleaseNow();
-    if (gpuFrame)
-        dx12->frameLease = std::move(outputLease);
-
-    bool screenUploaded[2]{false, false};
-    for (int index = 0; index < screens; ++index)
-    {
-        const int kind = kinds[index] & 1;
-        if (screenUploaded[kind])
-            continue;
-        const auto layer = kind == 0
-            ? MelonPrime::DX12SurfacePresenter::Layer::ScreenTop
-            : MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom;
-        if (gpuFrame)
-        {
-            screenUploaded[kind] = gpuFrame->HasDirectSampledOutput()
-                ? dx12->presenter.UploadLayerFromTexture(layer, *gpuFrame)
-                : dx12->presenter.UploadLayerFromBuffer(
-                    layer, *gpuFrame,
-                    kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
-        }
-        else
-        {
-            screenUploaded[kind] = dx12->presenter.UploadLayer(
-                layer,
-                kind == 0 ? static_cast<const void*>(cpuTop) : static_cast<const void*>(cpuBottom),
-                sourceWidth,
-                sourceHeight,
-                static_cast<std::size_t>(sourceWidth) * sizeof(u32));
-        }
-    }
-
-    const float viewportWidth = static_cast<float>(dx12->presenter.GetWidth());
-    const float viewportHeight = static_cast<float>(dx12->presenter.GetHeight());
-    const float scaleX = viewportWidth / static_cast<float>(logicalWidth);
-    const float scaleY = viewportHeight / static_cast<float>(logicalHeight);
-
-#ifdef MELONPRIME_CUSTOM_HUD
-    QImage bottomScreenImage;
-    if (cpuBottom)
-    {
-        bottomScreenImage = QImage(
-            reinterpret_cast<const uchar*>(cpuBottom),
-            static_cast<int>(sourceWidth),
-            static_cast<int>(sourceHeight),
-            static_cast<int>(sourceWidth * sizeof(u32)),
-            QImage::Format_RGB32);
-    }
-
-    bool hudLayerReady = false;
-    bool hudVisible = false;
-    m_hudVisualFrameWasReused = false;
-    auto* mpForHud = emuThread->GetMelonPrimeCore();
-    const bool hudEditMode = mpForHud
-        && MelonPrime::CustomHud_IsEditMode(mpForHud->HudConfigState());
-    if (MelonPrimeHud_CanRenderForCore(mpForHud, hudEditMode))
-    {
-        if (dx12->hudFrame.width() != logicalWidth
-            || dx12->hudFrame.height() != logicalHeight
-            || dx12->hudFrame.format() != QImage::Format_ARGB32_Premultiplied)
-        {
-            dx12->hudFrame = QImage(
-                logicalWidth, logicalHeight, QImage::Format_ARGB32_Premultiplied);
-            dx12->hudFrame.fill(Qt::transparent);
-        }
-        const QRect previousHudDirty = m_hudPrevDirty;
-        QPainter painter(&dx12->hudFrame);
-        // hudFrame is retained between frames so only the current HUD dirty
-        // rectangle needs uploading. SourceOver would leave old pixels behind
-        // wherever Overlay[0] became transparent (most visibly a moving
-        // crosshair), because transparent source pixels do not erase the
-        // destination. Source replacement makes the transparent pixels clear
-        // the retained image while preserving the dirty-only upload.
-        painter.setCompositionMode(QPainter::CompositionMode_Source);
-#define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (cpuBottom ? &bottomScreenImage : nullptr)
-#define MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE 1
-#include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
-#undef MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
-#undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
-        painter.end();
-
-        auto& instcfg = emuInstance->getLocalConfig();
-        hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
-            emuInstance, instcfg, mpForHud, m_hudEnabled, hudEditMode);
-        // DX12 retains the HUD texture between compositions. The source
-        // painter clears the previous dirty region before drawing the current
-        // one, so both regions must be uploaded when the visual changes.
-        dx12->hudRect = m_hudPrevDirty.united(previousHudDirty).intersected(
-            QRect(0, 0, logicalWidth, logicalHeight));
-        const auto hudLayer = MelonPrime::DX12SurfacePresenter::Layer::Hud;
-        if (hudVisible && m_hudVisualFrameWasReused
-            && dx12->presenter.HasLayerContent(hudLayer)
-            && !dx12->hudRect.isEmpty())
-        {
-            // Upload is intentionally skipped, but the retained layer still
-            // has to participate in this presentation's composition.
-            hudLayerReady = true;
-        }
-        else if (hudVisible && !m_hudVisualFrameWasReused
-                 && !dx12->hudRect.isEmpty())
-        {
-            MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
-                MelonPrimePerf::HudPhase::UploadPrepare);
-            MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
-                MelonPrimePerf::HudPhase::GpuUpload);
-            MelonPrimePerf::CountHudUploadCall();
-            const int patchWidth = dx12->hudRect.width();
-            const int patchHeight = dx12->hudRect.height();
-            const bool hudUploadPerformed = dx12->presenter.UploadLayerRegion(
-                hudLayer,
-                dx12->hudFrame.constBits(),
-                static_cast<u32>(dx12->hudRect.x()),
-                static_cast<u32>(dx12->hudRect.y()),
-                static_cast<u32>(patchWidth),
-                static_cast<u32>(patchHeight),
-                static_cast<std::size_t>(dx12->hudFrame.bytesPerLine()));
-            hudLayerReady = hudUploadPerformed;
-        }
-    }
-
-    bool gpuRadarVisible = false;
-    MelonPrime::DX12SurfacePresenter::Quad gpuRadarQuad;
-    u32 gpuRadarCenterY = 0;
-    // Keep the native colour-key pass under the same visibility contract as
-    // the CPU HUD image. BtmOverlayEnable remains configured when CustomHUD is
-    // toggled off and must not independently paint the top screen.
-    if (gpuFrame && hudVisible && m_radarEnable)
-    {
-        const float* topMatrix = nullptr;
-        for (int index = 0; index < screens; ++index)
-        {
-            if ((kinds[index] & 1) == 0)
-            {
-                topMatrix = matrices[index];
-                break;
-            }
-        }
-        if (mpForHud && topMatrix && MelonPrime::CustomHud_ShouldDrawRadarOverlay(
-                mpForHud->HudConfigState(),
-                emuInstance, mpForHud->GetCurrentRom(), mpForHud->GetPlayerPosition()))
-        {
-            if (!screenUploaded[1])
-            {
-                screenUploaded[1] = gpuFrame->HasDirectSampledOutput()
-                    ? dx12->presenter.UploadLayerFromTexture(
-                        MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom, *gpuFrame)
-                    : dx12->presenter.UploadLayerFromBuffer(
-                        MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
-                        *gpuFrame,
-                        gpuFrame->BottomOffset);
-            }
-
-            const float anchorX = topMatrix[0] * m_radarAnchorDsX
-                + topMatrix[1] * m_radarAnchorDsY + topMatrix[4];
-            const float anchorY = topMatrix[2] * m_radarAnchorDsX
-                + topMatrix[3] * m_radarAnchorDsY + topMatrix[5];
-            const int destinationX = static_cast<int>(m_hudOriginX) + static_cast<int>(
-                (anchorX - m_hudOriginX) + m_radarDstX * m_hudScale);
-            const int destinationY = static_cast<int>(m_hudOriginY) + static_cast<int>(
-                (anchorY - m_hudOriginY) + m_radarDstY * m_hudScale);
-            const float destinationSize = static_cast<float>(m_radarDstSize) * m_hudScale;
-            gpuRadarQuad.Axis[0] = destinationSize * scaleX;
-            gpuRadarQuad.Axis[3] = destinationSize * scaleY;
-            gpuRadarQuad.Origin[0] = static_cast<float>(destinationX) * scaleX;
-            gpuRadarQuad.Origin[1] = static_cast<float>(destinationY) * scaleY;
-            gpuRadarQuad.Origin[2] = viewportWidth;
-            gpuRadarQuad.Origin[3] = viewportHeight;
-            const u8 hunter = std::min<u8>(
-                mpForHud->GetHunterID(), MelonPrime::kHunterCount - 1);
-            gpuRadarCenterY = static_cast<u32>(MelonPrime::kBtmOverlaySrcCenterY[hunter]);
-            gpuRadarVisible = screenUploaded[1]
-                && m_radarSrcRadius > 0 && m_radarOpacity > 0.0f;
-        }
-    }
-#endif
-
-    QSize osdSize;
-    bool osdUploaded = false;
-    osdUpdate();
-    if (osdEnabled)
-    {
-        QMutexLocker osdLock(&osdMutex);
-        int stripWidth = 0;
-        int stripHeight = 0;
-        for (const OSDItem& item : osdItems)
-        {
-            if (!item.bitmap.isNull())
-            {
-                stripWidth = std::max(stripWidth, item.bitmap.width());
-                stripHeight += item.bitmap.height();
-            }
-        }
-        if (stripWidth > 0 && stripHeight > 0)
-        {
-            if (dx12->osdStrip.width() != stripWidth
-                || dx12->osdStrip.height() != stripHeight
-                || dx12->osdStrip.format() != QImage::Format_ARGB32_Premultiplied)
-            {
-                dx12->osdStrip = QImage(
-                    stripWidth, stripHeight, QImage::Format_ARGB32_Premultiplied);
-            }
-            dx12->osdStrip.fill(Qt::transparent);
-            int y = 0;
-            for (const OSDItem& item : osdItems)
-            {
-                if (item.bitmap.isNull())
-                    continue;
-                const int rowBytes = item.bitmap.width() * 4;
-                for (int row = 0; row < item.bitmap.height(); ++row)
-                {
-                    std::memcpy(
-                        dx12->osdStrip.scanLine(y + row),
-                        item.bitmap.constScanLine(row),
-                        static_cast<std::size_t>(rowBytes));
-                }
-                y += item.bitmap.height();
-            }
-            osdSize = QSize(stripWidth, stripHeight);
-            osdUploaded = dx12->presenter.UploadLayer(
-                MelonPrime::DX12SurfacePresenter::Layer::Osd,
-                dx12->osdStrip.constBits(),
-                static_cast<u32>(stripWidth),
-                static_cast<u32>(stripHeight),
-                static_cast<std::size_t>(dx12->osdStrip.bytesPerLine()));
-        }
-    }
-
-    dx12->presenter.BeginComposition();
-    for (int index = 0; index < screens; ++index)
-    {
-        const int kind = kinds[index] & 1;
-        if (!screenUploaded[kind])
-            continue;
-        const float* matrix = matrices[index];
-        MelonPrime::DX12SurfacePresenter::Quad quad;
-        quad.Axis[0] = matrix[0] * 256.0f * scaleX;
-        quad.Axis[1] = matrix[1] * 256.0f * scaleY;
-        quad.Axis[2] = matrix[2] * 192.0f * scaleX;
-        quad.Axis[3] = matrix[3] * 192.0f * scaleY;
-        quad.Origin[0] = matrix[4] * scaleX;
-        quad.Origin[1] = matrix[5] * scaleY;
-        quad.Origin[2] = viewportWidth;
-        quad.Origin[3] = viewportHeight;
-        dx12->presenter.DrawLayer(
-            kind == 0 ? MelonPrime::DX12SurfacePresenter::Layer::ScreenTop
-                      : MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
-            quad,
-            MelonPrime::DX12SurfacePresenter::Blend::Opaque,
-            filter);
-    }
-
-#ifdef MELONPRIME_CUSTOM_HUD
-    if (hudLayerReady)
-    {
-        MelonPrime::DX12SurfacePresenter::Quad quad;
-        quad.Axis[0] = static_cast<float>(dx12->hudRect.width()) * scaleX;
-        quad.Axis[3] = static_cast<float>(dx12->hudRect.height()) * scaleY;
-        quad.Origin[0] = static_cast<float>(dx12->hudRect.x()) * scaleX;
-        quad.Origin[1] = static_cast<float>(dx12->hudRect.y()) * scaleY;
-        quad.Origin[2] = viewportWidth;
-        quad.Origin[3] = viewportHeight;
-        dx12->presenter.DrawLayer(
-            MelonPrime::DX12SurfacePresenter::Layer::Hud,
-            quad,
-            MelonPrime::DX12SurfacePresenter::Blend::Premultiplied,
-            filter);
-    }
-
-    // The GPU colour-key pass is intentionally after the SVG/frame HUD layer:
-    // picked radar pixels are the foremost Custom HUD layer.
-    if (gpuRadarVisible)
-    {
-        dx12->presenter.DrawRadar(
-            gpuRadarQuad, m_radarOpacity, gpuRadarCenterY,
-            static_cast<u32>(m_radarSrcRadius));
-    }
-#endif
-
-    if (osdUploaded)
-    {
-        MelonPrime::DX12SurfacePresenter::Quad quad;
-        quad.Axis[0] = static_cast<float>(osdSize.width()) * scaleX;
-        quad.Axis[3] = static_cast<float>(osdSize.height()) * scaleY;
-        quad.Origin[0] = static_cast<float>(kOSDMargin) * scaleX;
-        quad.Origin[1] = static_cast<float>(kOSDMargin) * scaleY;
-        quad.Origin[2] = viewportWidth;
-        quad.Origin[3] = viewportHeight;
-        dx12->presenter.DrawLayer(
-            MelonPrime::DX12SurfacePresenter::Layer::Osd,
-            quad,
-            MelonPrime::DX12SurfacePresenter::Blend::Premultiplied,
-            false);
-    }
-
-    if (!dx12->presenter.EndFrame())
-    {
-        requestNativeSurfaceVisible(false);
-        reportRuntimeFailure(dx12->presenter.LastError().c_str());
-        return;
-    }
-
-    const bool vsync = presentation.vsync;
-    // The presenter fires the vendor Present markers itself, around the DXGI
-    // call. This panel does not mediate low-latency state.
-    const bool presented = dx12->presenter.Present(vsync);
-
-    if (!presented)
-    {
-        requestNativeSurfaceVisible(false);
-        reportRuntimeFailure(dx12->presenter.LastError().c_str());
-        return;
-    }
-
-    requestNativeSurfaceVisible(true);
-    if (gpuFrame)
-        dx12->nativeVisibility.Accept(gpuFrame->Epoch, gpuFrame->Serial);
-    else
-        dx12->nativeVisibility.AcceptWithoutIdentity();
-}
-
-void ScreenPanelDX12::paintEvent(QPaintEvent* event)
-{
-    QPainter painter(this);
-    painter.fillRect(event->rect(), Qt::black);
-
-    auto* emuThread = emuInstance->getEmuThread();
-    if (emuThread->emuIsActive())
-    {
-        QMutexLocker fallbackLock(&dx12->fallbackLock);
-        if (!dx12->fallbackFrame.isNull())
-            painter.drawImage(QPoint(0, 0), dx12->fallbackFrame);
-        return;
-    }
-
-    osdUpdate();
-    QMutexLocker osdLock(&osdMutex);
-    painter.drawPixmap(QRect(splashPos[3], QSize(kLogoWidth, kLogoWidth)), splashLogo);
-    for (int index = 0; index < 3; ++index)
-        painter.drawImage(splashPos[index], splashText[index].bitmap);
-}
-#endif
 
 
 
@@ -3526,7 +2669,9 @@ void ScreenPanelGL::initOpenGL()
 #endif
     logoTexture = tex;
 
-#include "MelonPrimeHudScreenCppGlInit.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    initializeHudOpenGL();
+#endif
 
     transferLayout();
     glInited = true;
@@ -3558,7 +2703,9 @@ void ScreenPanelGL::deinitOpenGL()
 
     glDeleteTextures(1, &logoTexture);
 
-#include "MelonPrimeHudScreenCppGlDeinit.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    deinitializeHudOpenGL();
+#endif
 
     glDeleteProgram(osdShader);
 
@@ -4130,7 +3277,9 @@ void ScreenPanel::moveEvent(QMoveEvent * e) {
 #if defined(_WIN32) || defined(__APPLE__) || defined(__linux__)
     updateClipIfNeeded();
 #endif
-#include "MelonPrimeHudScreenCppEditPanelMove.inc"
+#ifdef MELONPRIME_CUSTOM_HUD
+    repositionHudEditPanel(false);
+#endif
     QWidget::moveEvent(e);
 }
 

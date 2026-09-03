@@ -100,6 +100,9 @@ set(SOURCES_QT_SDL
     MelonPrimeInstanceDiagnostics.cpp
     MelonPrimeRuntimeConfig.cpp
     MelonPrimeDirectAimIngress.cpp
+    MelonPrimeHudScreenIntegration.cpp
+    MelonPrimeHudScreenGL.cpp
+    MelonPrimeHudScreenEditPanel.cpp
     MelonPrimeVideoBackend.cpp
     MelonPrimeScreenCursorPolicy.cpp
     MelonPrimeHudEditorFormLayout.cpp
@@ -696,6 +699,98 @@ add_custom_target(melonprime_direct_aim_source_check ALL
     COMMAND $<TARGET_FILE:melonprime_direct_aim_source_tests>
     DEPENDS melonprime_direct_aim_source_tests
     COMMENT "Running direct-aim host source arbitration tests..."
+    VERBATIM)
+
+# Top-screen touch uses the same ScreenLayout matrices as presentation but
+# resolves their inverse on the cold layout boundary. Compare the production
+# helper against the pre-refactor per-event expression across every supported
+# layout/rotation/sizing/swap/integer-scale combination and edge coordinates.
+add_executable(melonprime_top_screen_touch_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/top-screen-touch-tests.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../ScreenLayout.cpp)
+target_include_directories(melonprime_top_screen_touch_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+# Keep the standalone parity/benchmark executable self-describing. These
+# values are compile-time provenance, not claims about the host that launches
+# the binary later; the build wrapper supplies MELONDS_GIT_HASH for controlled
+# runs.
+set(_mp_touch_benchmark_git_sha "${MELONDS_GIT_HASH}")
+if (NOT _mp_touch_benchmark_git_sha)
+    set(_mp_touch_benchmark_git_sha "unknown")
+endif()
+set(_mp_touch_benchmark_build_type "${CMAKE_BUILD_TYPE}")
+if (NOT _mp_touch_benchmark_build_type)
+    set(_mp_touch_benchmark_build_type "unknown")
+endif()
+set(_mp_touch_benchmark_arch "${CMAKE_SYSTEM_PROCESSOR}")
+if (NOT _mp_touch_benchmark_arch)
+    set(_mp_touch_benchmark_arch "unknown")
+endif()
+set(_mp_touch_benchmark_flags "${CMAKE_CXX_FLAGS}")
+if (CMAKE_BUILD_TYPE)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _mp_touch_benchmark_config_upper)
+    # Configuration-specific flags use an upper-case suffix (for example,
+    # CMAKE_CXX_FLAGS_RELEASE), while CMAKE_BUILD_TYPE is conventionally
+    # mixed-case (for example, Release).
+    set(_mp_touch_benchmark_config_flags
+        "${CMAKE_CXX_FLAGS_${_mp_touch_benchmark_config_upper}}")
+    if (_mp_touch_benchmark_config_flags)
+        string(APPEND _mp_touch_benchmark_flags
+            " ${_mp_touch_benchmark_config_flags}")
+    endif()
+endif()
+string(REPLACE ";" " " _mp_touch_benchmark_flags "${_mp_touch_benchmark_flags}")
+string(REPLACE "\"" "'" _mp_touch_benchmark_flags "${_mp_touch_benchmark_flags}")
+string(STRIP "${_mp_touch_benchmark_flags}" _mp_touch_benchmark_flags)
+if (NOT _mp_touch_benchmark_flags)
+    set(_mp_touch_benchmark_flags "<default>")
+endif()
+target_compile_definitions(melonprime_top_screen_touch_tests PRIVATE
+    MELONPRIME_TOUCH_BENCHMARK_GIT_SHA="${_mp_touch_benchmark_git_sha}"
+    MELONPRIME_TOUCH_BENCHMARK_BUILD_TYPE="${_mp_touch_benchmark_build_type}"
+    MELONPRIME_TOUCH_BENCHMARK_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
+    MELONPRIME_TOUCH_BENCHMARK_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+    MELONPRIME_TOUCH_BENCHMARK_ARCH="${_mp_touch_benchmark_arch}"
+    MELONPRIME_TOUCH_BENCHMARK_FLAGS="${_mp_touch_benchmark_flags}")
+set_target_properties(melonprime_top_screen_touch_tests PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_top_screen_touch_check ALL
+    COMMAND $<TARGET_FILE:melonprime_top_screen_touch_tests>
+    DEPENDS melonprime_top_screen_touch_tests
+    COMMENT "Running top-screen touch inverse parity tests..."
+    VERBATIM)
+
+# Explicit performance comparison for the precomputed inverse. Keep it out of
+# ALL: the exhaustive parity target above is the coverage gate, while this
+# fixed old/new microbenchmark is a developer evidence producer.
+add_custom_target(melonprime_top_screen_touch_benchmark
+    COMMAND $<TARGET_FILE:melonprime_top_screen_touch_tests> --benchmark
+    DEPENDS melonprime_top_screen_touch_tests
+    COMMENT "Benchmarking top-screen touch old/new mapping paths..."
+    VERBATIM)
+
+# Lock/lifetime contract model for the Vulkan/DX12 registry transition walk.
+# It has no Qt or renderer dependency and remains cheap enough for the regular
+# build gate while exercising both a matching snapshot panel and a second
+# instance closing during another instance's blocking transition.
+add_executable(melonprime_native_panel_registry_transition_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/native-panel-registry-transition-tests.cpp)
+set_target_properties(melonprime_native_panel_registry_transition_tests PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+target_link_libraries(melonprime_native_panel_registry_transition_tests PRIVATE
+    Threads::Threads)
+add_custom_target(melonprime_native_panel_registry_transition_check ALL
+    COMMAND $<TARGET_FILE:melonprime_native_panel_registry_transition_tests>
+    DEPENDS melonprime_native_panel_registry_transition_tests
+    COMMENT "Running native panel registry transition lifetime model..."
     VERBATIM)
 
 # Measure the actual GUI-producer/Emu-consumer SPSC mailbox under independent
@@ -1307,7 +1402,11 @@ if (MELONPRIME_DX12_ACTIVE)
         ${CMAKE_CURRENT_SOURCE_DIR}/../../GPU_DX12.cpp)
     target_sources(melonDS PRIVATE
         MelonPrimeDX12FeatureCheck.cpp
-        MelonPrimeDX12SurfacePresenter.cpp)
+        MelonPrimeDX12SurfacePresenter.cpp
+        # ScreenPanelDX12's body. Registered only inside this DX12-active
+        # block so a non-Windows or DX12-off build never compiles the TU and
+        # never parses a DX12 header.
+        MelonPrimeScreenDX12.cpp)
 
     # Execute the production XeLL state machine against an injected fake API
     # on every Windows DX12 build. This validates successful and failing driver

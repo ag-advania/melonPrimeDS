@@ -23,8 +23,8 @@
 //                       initVulkan() before the panel is published to
 //                       MainWindow::panel.
 //   Emulation thread    calls drawScreen() (once per emulated frame, and every
-//                       ~75 ms while paused) and the VBlank observer. It is the
-//                       only thread that records and submits Vulkan work.
+//                       ~75 ms while paused). It is the only thread that
+//                       records and submits Vulkan work.
 //
 // The two never touch a Vulkan object at the same time: the panel is not
 // reachable from the emulation thread until initVulkan() has returned, and it
@@ -75,6 +75,7 @@
 #include "MelonPrimeConstants.h"
 #include "MelonPrimeDef.h"
 #include "MelonPrimePerfProbe.h"
+#include "MelonPrimeRendererTransitionPerf.h"
 #include "VulkanPerf.h"
 #include "MelonPrimeVulkanFeatureCheck.h"
 #include "MelonPrimeVulkanPresenter.h"
@@ -93,6 +94,7 @@
 #include "MelonPrimeHudRadar.h"
 #include "MelonPrimeHudPatchLifecycle.h"
 #include "MelonPrimeHudPresentationState.h"
+#include "MelonPrimeHudScreenVisualState.h"
 // Canonical Custom HUD config keys. Included rather than mirrored as string
 // literals, per the config-key ownership rule; this translation unit is
 // registered in tools/ci/audits/check-inc-ownership.ps1's multi-parent map
@@ -178,11 +180,13 @@ bool IsVulkanRuntimeSmokeEnabled()
 
 // Live ScreenPanelVulkan instances.
 //
-// PrepareForInstanceRendererTransition() and the VBlank observer are both
-// entered from outside the panel (EmuThread, and the renderer on the emulation
-// thread) with only an EmuInstance to go on, so the mapping has to exist
+// PrepareForInstanceRendererTransition() is entered from outside the panel
+// (EmuThread) with only an EmuInstance to go on, so the mapping has to exist
 // somewhere. A flat list is right: there is one panel per window and at most a
-// handful of windows.
+// handful of windows. The transition walk snapshots matching panels under the
+// registry mutex and releases it before Quiesce; the emulation-thread barrier
+// keeps GUI-owned panel destruction from racing that copied list. This registry
+// is deliberately cold-path state; no VBlank callback walks it.
 QMutex g_panelRegistryLock;
 std::vector<ScreenPanelVulkan*> g_panelRegistry;
 
@@ -292,20 +296,6 @@ struct ScreenPanelVulkan::VulkanState
     int cachedNumScreens = 0;
     std::uint32_t cachedLayoutRevision = ~0u;
 
-    // The composed frame, captured at the renderer's VBlank.
-    //
-    // GetOutput() hands out pointers into a surface the *next* VBlank
-    // overwrites, and the renderer can be destroyed under us on a renderer
-    // switch, so the panel latches them here and drops them in
-    // prepareForRendererTransition() instead of dereferencing a borrowed
-    // pointer at an arbitrary later moment.
-    QMutex frameLock;
-    const u32* frameTop = nullptr;
-    const u32* frameBottom = nullptr;
-    u32 frameWidth = 0;
-    u32 frameHeight = 0;
-    bool frameValid = false;
-
     // One renderer-output lease per presenter frame slot. BeginFrame() waits
     // that slot's fence before it is replaced, so a compositor buffer remains
     // immutable until the GPU has finished copying both screens from it.
@@ -337,9 +327,6 @@ struct ScreenPanelVulkan::VulkanState
     // into presenter-owned images and therefore needs no extra source lease.
     RendererOutputLease retainedScreenLease;
 
-    // Renderer the VBlank observer is currently installed on, so the hook is
-    // (re)installed exactly once per renderer instance.
-    melonDS::VulkanRenderer* hookedRenderer = nullptr;
     std::uint32_t rendererSnapshotRevision = ~0u;
     melonDS::VulkanRenderer* cachedVulkanRenderer = nullptr;
 
@@ -532,10 +519,10 @@ ScreenPanelVulkan::~ScreenPanelVulkan()
 #endif
 
     // The emulation thread can no longer reach this panel: MainWindow cleared
-    // its `panel` pointer under screenPanelLock before deleting it. The
-    // renderer itself might already be gone during application teardown, so do
-    // not dereference the borrowed renderer hook pointer from this destructor.
-    prepareForRendererTransition(false);
+    // its `panel` pointer under screenPanelLock before deleting it. Quiescing
+    // the presenter is still required, but there is no renderer observer to
+    // detach from this destructor.
+    prepareForRendererTransition();
 #if defined(__linux__)  // scatter-budget-exempt: Linux Vulkan native presenter teardown, not input/runtime dispatch
     retireLinuxPresenterForPanelDestruction();
 #endif
@@ -1386,67 +1373,6 @@ void ScreenPanelVulkan::finishVulkanLowLatencyFrame()
 }
 
 
-// ---------------------------------------------------------------------------
-// Renderer transitions
-// ---------------------------------------------------------------------------
-
-void ScreenPanelVulkan::composeFrameAtVBlank()
-{
-    if (!vulkan)
-        return;
-
-    auto* nds = emuInstance ? emuInstance->getNDS() : nullptr;
-    if (!nds)
-        return;
-
-    const RendererOutput output = nds->GPU.GetRendererOutput();
-
-    QMutexLocker lock(&vulkan->frameLock);
-    if (output.Kind != RendererOutputKind::CpuBgra || !output.Top || !output.Bottom
-        || output.Width == 0 || output.Height == 0)
-    {
-        vulkan->frameValid = false;
-        return;
-    }
-
-    vulkan->frameTop = static_cast<const u32*>(output.Top);
-    vulkan->frameBottom = static_cast<const u32*>(output.Bottom);
-    vulkan->frameWidth = output.Width;
-    vulkan->frameHeight = output.Height;
-    vulkan->frameValid = true;
-}
-
-
-void ScreenPanelVulkan::ComposeInstanceFrameAtVBlank(EmuInstance* instance)
-{
-    QMutexLocker lock(&g_panelRegistryLock);
-    for (ScreenPanelVulkan* panel : g_panelRegistry)
-    {
-        if (panel->emuInstance == instance)
-            panel->composeFrameAtVBlank();
-    }
-}
-
-
-void ScreenPanelVulkan::installVulkanComposeHook(melonDS::VulkanRenderer* renderer)
-{
-    if (!vulkan || vulkan->hookedRenderer == renderer)
-        return;
-
-    vulkan->hookedRenderer = renderer;
-    if (!renderer)
-        return;
-
-    // A captureless lambda so this stays a plain function pointer: the observer
-    // is called once per DS frame from VBlank() and must not allocate.
-    renderer->SetVBlankObserver(
-        [](void* userData) {
-            ComposeInstanceFrameAtVBlank(static_cast<EmuInstance*>(userData));
-        },
-        emuInstance);
-}
-
-
 void ScreenPanelVulkan::invalidateScreenRetention()
 {
     if (!vulkan)
@@ -1459,7 +1385,8 @@ void ScreenPanelVulkan::invalidateScreenRetention()
 }
 
 
-void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver)
+void ScreenPanelVulkan::prepareForRendererTransition(
+    MelonPrime::RendererTransitionSample* sample)
 {
     if (!vulkan)
         return;
@@ -1470,17 +1397,11 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
     ++m_hudVisualRendererGeneration;
 #endif
 
-    // Drop the borrowed composed-frame pointers *before* the renderer that owns
-    // them is destroyed, and take the observer back off it. After this the panel
-    // has no native frame to show. What it presents next depends on which
-    // renderer takes over: another native one publishes GPU frames again, while
-    // the software renderer ("3D.ForceSoftwareOutsideMatch") publishes complete
-    // CPU frames that drawScreenFrame() uploads through the presenter.
-    if (detachRendererObserver && vulkan->hookedRenderer)
-    {
-        vulkan->hookedRenderer->SetVBlankObserver(nullptr, nullptr);
-    }
-    vulkan->hookedRenderer = nullptr;
+    // After this the panel has no retained native frame to show. What it
+    // presents next depends on which renderer takes over: another native one
+    // publishes GPU frames again, while the software renderer
+    // ("3D.ForceSoftwareOutsideMatch") publishes complete CPU frames that
+    // drawScreenFrame() uploads through the presenter.
     vulkan->rendererSnapshotRevision = ~0u;
     vulkan->cachedVulkanRenderer = nullptr;
 
@@ -1488,30 +1409,60 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool detachRendererObserver
     // Quiesce GPU work and release renderer-owned output leases, but keep the
     // VkSurfaceKHR/VkSwapchainKHR presenter lifetime paired with the lifecycle
     // state until an actual native-surface transition retires it.
+    const auto quiesceStart = sample
+        ? MelonPrime::RendererTransitionPerf::Now() : 0;
     vulkan->presenter.Quiesce();
+    if (sample) {
+        const auto quiesceEnd = MelonPrime::RendererTransitionPerf::Now();
+        if (quiesceStart && quiesceEnd > quiesceStart)
+            sample->quiesceDuration += quiesceEnd - quiesceStart;
+    }
     invalidateScreenRetention();
     vulkan->presenter.InvalidateDirectDescriptorCache();
     vulkan->nativeVisibility.Reset();
     for (RendererOutputLease& lease : vulkan->frameLeases)
         lease.ReleaseNow();
-
-    QMutexLocker lock(&vulkan->frameLock);
-    vulkan->frameTop = nullptr;
-    vulkan->frameBottom = nullptr;
-    vulkan->frameWidth = 0;
-    vulkan->frameHeight = 0;
-    vulkan->frameValid = false;
 }
 
 
 void ScreenPanelVulkan::PrepareForInstanceRendererTransition(EmuInstance* instance)
 {
-    QMutexLocker lock(&g_panelRegistryLock);
-    for (ScreenPanelVulkan* panel : g_panelRegistry)
+    MelonPrime::RendererTransitionSample sample{};
+    const auto transitionStart = MelonPrime::RendererTransitionPerf::Now();
+    // Never hold the process-global registry mutex while Quiesce can wait for
+    // GPU work. This method is called only from the emulation-thread
+    // prepareVideoBackendTransition() barrier: the GUI thread is synchronously
+    // waiting for the message and cannot destroy a panel before it returns.
+    // EmuInstance owns at most kMaxWindows panels. A fixed snapshot keeps the
+    // process-global registry lock entirely allocation-free on this cold path.
+    std::array<ScreenPanelVulkan*, kMaxWindows> panels{};
+    std::size_t panelCount = 0;
     {
-        if (panel->emuInstance == instance)
-            panel->prepareForRendererTransition();
+        const auto lockStart = MelonPrime::RendererTransitionPerf::Now();
+        QMutexLocker lock(&g_panelRegistryLock);
+        const auto lockEnd = MelonPrime::RendererTransitionPerf::Now();
+        if (lockStart && lockEnd > lockStart)
+            sample.registryLockWait = lockEnd - lockStart;
+        for (ScreenPanelVulkan* panel : g_panelRegistry)
+        {
+            if (panel->emuInstance == instance)
+            {
+                assert(panelCount < panels.size());
+                if (panelCount < panels.size())
+                    panels[panelCount++] = panel;
+            }
+        }
     }
+
+    for (std::size_t i = 0; i < panelCount; ++i)
+    {
+        panels[i]->prepareForRendererTransition(&sample);
+    }
+    const auto transitionEnd = MelonPrime::RendererTransitionPerf::Now();
+    if (transitionStart && transitionEnd > transitionStart)
+        sample.transitionTotal = transitionEnd - transitionStart;
+    MelonPrime::RendererTransitionPerf::Report(
+        instance ? instance->getInstanceID() : 0, "vulkan", sample);
 }
 
 
@@ -1844,10 +1795,10 @@ void ScreenPanelVulkan::drawScreenFrame()
         return;
     }
 
-    // Keeps the VBlank observer bound to the live renderer across every
-    // renderer switch, including switches away from and back to Vulkan. The
-    // renderer/config snapshot changes only at the cold transition boundary;
-    // the dynamic_cast is therefore a transition cost, not a frame cost.
+    // The renderer/config snapshot changes only at the cold transition
+    // boundary; the dynamic_cast is therefore a transition cost, not a frame
+    // cost. The cached pointer also distinguishes a complete Software output
+    // from Vulkan's startup hybrid fallback.
     const MelonPrime::PresentationConfigSnapshot presentation =
         emuInstance->getPresentationConfigSnapshot();
     if (presentation.revision != vulkan->rendererSnapshotRevision)
@@ -1861,7 +1812,6 @@ void ScreenPanelVulkan::drawScreenFrame()
         }
     }
     auto* vulkanRenderer = vulkan->cachedVulkanRenderer;
-    installVulkanComposeHook(vulkanRenderer);
 
     const bool vsync = presentation.vsync;
     if (vsync != vulkan->vsyncApplied)

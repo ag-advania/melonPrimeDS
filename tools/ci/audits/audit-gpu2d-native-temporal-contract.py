@@ -79,7 +79,9 @@ def main() -> int:
         "vulkan_presenter": root / "src/frontend/qt_sdl/MelonPrimeVulkanPresenter.h",
         "vulkan_screen": root / "src/frontend/qt_sdl/MelonPrimeScreenVulkan.cpp",
         "dx12_presenter": root / "src/frontend/qt_sdl/MelonPrimeDX12SurfacePresenter.h",
-        "dx12_screen": root / "src/frontend/qt_sdl/Screen.cpp",
+        # The DX12 panel implementation was split out of Screen.cpp; keep the
+        # identity-admission check on the translation unit that owns it.
+        "dx12_screen": root / "src/frontend/qt_sdl/MelonPrimeScreenDX12.cpp",
         "screen_header": root / "src/frontend/qt_sdl/Screen.h",
         "gpu_stage_metrics": root / "src/GpuStageMetrics.h",
         "vulkan_sync": root / "src/VulkanSync.cpp",
