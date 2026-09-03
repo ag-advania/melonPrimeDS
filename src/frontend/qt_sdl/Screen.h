@@ -40,6 +40,7 @@
 #include "duckstation/gl/context.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimeWheelEvent.h"
+#include "MelonPrimeDirectAimIngress.h"
 #endif
 #include "MelonPrimePresentationSnapshot.h"
 
@@ -408,6 +409,9 @@ protected:
     bool stylusConfineCursorToTopScreenEnabled = false;
     bool stylusHoldCursorAtCenterEnabled = false;
     bool stylusDirectAimWhileTouchingEnabled = false;
+    // Tablet direct aim is opt-in so the existing Raw Mouse path remains the
+    // steady-state fast path for users who do not need pen input.
+    bool stylusDirectAimAllowTabletInputEnabled = false;
     MelonPrime::PhysicalWheelStepAccumulator wheelSteps;
     // Cached OR of the match-scoped cursor options, so the per-pass reconcile
     // short-circuits on one predictable bool when they are all off.
@@ -557,6 +561,15 @@ private:
     void holdStylusCursorAtCenterIfNotClicking(const QPoint& localPos);
     void beginStylusDirectAimCapture();
     void endStylusDirectAimCapture();
+    // Center clipping is a RawRelativeMouse policy. Do not apply it to
+    // absolute pen or injected absolute-pointer sources because clipping
+    // destroys the coordinate signal used to derive relative aim.
+    static void directAimCursorPolicyThunk(void* context,
+                                           bool clipToCenter) noexcept;
+    [[nodiscard]] bool directAimAbsoluteSourceOwnsAim() const noexcept
+    {
+        return MelonPrime::DirectAimSourceIsAbsolute(m_directAim.Authority());
+    }
     [[nodiscard]] QPoint stylusCursorCenterLocal() const;
     std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
@@ -588,6 +601,9 @@ private:
     // never registers must still free the pointer, or the pin would trap it.
     bool m_stylusClickHeld = false;
     bool m_stylusDirectAimCaptureHeld = false;
+    // GUI-thread owned. Constructed inert; nothing runs until a tablet-enabled
+    // direct-aim capture begins.
+    MelonPrime::DirectAimIngress m_directAim;
     bool m_hasLastClipFocusedState = false;
     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
     // coalesces repeated per-frame requests without touching QWidget off-thread.

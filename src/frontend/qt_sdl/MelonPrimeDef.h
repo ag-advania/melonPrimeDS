@@ -38,6 +38,9 @@ namespace MelonPrime {
         inline constexpr const char* SnapTap         = "Metroid.Operation.SnapTap";
         inline constexpr const char* StylusMode      = "Metroid.Enable.stylusMode";
         inline constexpr const char* StylusDirectAimWhileTouching = "Metroid.Enable.stylusDirectAimWhileTouching";
+        // Opt-in gate for the pen/tablet direct-aim ingress. Off keeps the
+        // mouse-only Raw fast path with no pointer, tablet, or injected-source work.
+        inline constexpr const char* StylusDirectAimAllowTabletInput = "Metroid.Enable.stylusDirectAimAllowTabletInput";
         inline constexpr const char* TopScreenTouch  = "Metroid.Enable.topScreenTouch";
         inline constexpr const char* TouchScreenAimOnly = "Metroid.Enable.touchScreenAimOnly";
         inline constexpr const char* TouchScreenAimOnlySuspendForTransform = "Metroid.Enable.touchScreenAimOnlySuspendForTransform";

@@ -375,6 +375,17 @@ patch is applied or the preset is Dual.
   - otherwise `ReleaseScreen()`
 - Some operations (for example morph/weapon actions) set `BIT_BLOCK_STYLUS` to avoid interference.
 
+### 7.1 Pen tablet direct aim (opt-in)
+
+`Metroid.Enable.stylusDirectAimAllowTabletInput` (default off) admits pen
+tablets into the direct-aim sub-mode. Absolute pen/injected-pointer positions
+are normalized to relative deltas by `DirectAimSourceArbiter`, one logical
+source is latched per capture generation, and the result replaces
+`m_input.mouseX/Y` for that frame instead of being summed with Raw motion. With
+the option off nothing in that path is constructed or consulted, and the Raw
+Mouse projection below is unchanged. Full contract:
+[Pen tablet direct aim](../../features/input/pen-tablet-direct-aim.md).
+
 ## 8. RawInput Layer Notes (Windows)
 
 - `RawInputWinFilter`:
@@ -654,6 +665,8 @@ Troubleshooting:
 - `Metroid.Aim.LowLatencyMode` — §6.2 (`Off` / `ImmediateSync` / `MoonLikeAim`; `InstantAimFollow` is a retained legacy alias and is independent of `DisableMphAimSmoothing`)
 - `Metroid.Aim.Enable.FpsCameraLock` — §6.2 (public independent camera-behavior switch)
 - `Metroid.Enable.stylusMode`
+- `Metroid.Enable.stylusDirectAimWhileTouching` — §7
+- `Metroid.Enable.stylusDirectAimAllowTabletInput` — §7.1 (opt-in pen/tablet ingress; default off)
 - `Metroid.Operation.SnapTap`
 - `Metroid.Apply.joy2KeySupport`
 

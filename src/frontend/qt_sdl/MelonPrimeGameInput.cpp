@@ -247,6 +247,7 @@ namespace MelonPrime {
 
         if (!focused) {
             m_rawAimActiveThisFrame = false;
+            m_directAimAbsoluteAuthorityThisFrame = false;
 #if !defined(_WIN32)
             m_warpCursorAfterAimThisFrame = false;
 #endif
@@ -435,6 +436,33 @@ namespace MelonPrime {
         m_rawAimActiveThisFrame = resolvedAim.rawActive;
         m_warpCursorAfterAimThisFrame = resolvedAim.warpAfterAim;
 #endif
+
+        // MELONPRIME_DIRECT_AIM_TABLET_MAILBOX_V1
+        // Frame projection owns the Raw-vs-DirectAim decision. Exactly one
+        // source supplies this frame's aim delta; the two are never summed.
+        // The whole block is skipped while the opt-in is off, so a mouse-only
+        // session never touches the tablet mailbox.
+        if (UNLIKELY(m_enableStylusDirectAimAllowTabletInput)) {
+            int32_t directAimDx = 0;
+            int32_t directAimDy = 0;
+            const auto directAimSource = static_cast<DirectAimHostSource>(
+                m_threadBridge.ConsumeDirectAimForEmu(
+                    directAimDx, directAimDy));
+            m_directAimAbsoluteAuthorityThisFrame =
+                DirectAimSourceIsAbsolute(directAimSource);
+            if (m_directAimAbsoluteAuthorityThisFrame) {
+                m_input.mouseX = directAimDx;
+                m_input.mouseY = directAimDy;
+#if !defined(_WIN32)
+                // An absolute source is its own coordinate signal. Warping the
+                // cursor after aim would corrupt the next difference.
+                m_warpCursorAfterAimThisFrame = false;
+#endif
+            }
+        }
+        else {
+            m_directAimAbsoluteAuthorityThisFrame = false;
+        }
     }
 
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState(
@@ -495,6 +523,10 @@ namespace MelonPrime {
         m_qtGameplayEdgeNeedsBaseline = true;
         emuInstance->qtGameplayPressPending.store(
             0, std::memory_order_release);
+        // Owner transfer and lifecycle boundaries must not hand direct-aim
+        // motion published under the previous epoch to the next one.
+        m_threadBridge.ResetDirectAimForEmu();
+        m_directAimAbsoluteAuthorityThisFrame = false;
     }
 
     COLD_FUNCTION void MelonPrimeCore::ResetInputForLifecycleBoundary(

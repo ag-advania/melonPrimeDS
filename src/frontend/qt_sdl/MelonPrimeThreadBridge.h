@@ -194,6 +194,47 @@ public:
         m_panelAimGuiResetGeneration.store(
             generation, std::memory_order_release);
     }
+
+    // MELONPRIME_DIRECT_AIM_TABLET_MAILBOX_V1
+    // Direct-aim absolute sources (pen/tablet/injected pointer) get their own
+    // mailbox so the Raw Mouse single-producer fast path above keeps its exact
+    // shape. The epoch word carries the capture generation and the latched
+    // source together, so the emulation thread can never observe a delta and
+    // an authority that came from different publications.
+    void AddDirectAimDeltaFromGui(int32_t dx, int32_t dy) noexcept
+    {
+        if ((dx | dy) == 0)
+            return;
+
+        const uint64_t current =
+            m_directAimTotal.load(std::memory_order_relaxed);
+        const uint32_t nextX = PairX(current) + static_cast<uint32_t>(dx);
+        const uint32_t nextY = PairY(current) + static_cast<uint32_t>(dy);
+        m_directAimTotal.store(
+            PackUint32Pair(nextX, nextY), std::memory_order_release);
+    }
+    // Capture begin/end and every authority transition publish one epoch. The
+    // boundary is stored first so a consumer that observes the new epoch never
+    // credits pre-boundary motion to the new source.
+    void PublishDirectAimSourceFromGui(uint8_t source) noexcept
+    {
+        m_directAimBoundary.store(
+            m_directAimTotal.load(std::memory_order_acquire),
+            std::memory_order_release);
+        // The generation occupies the upper 24 bits, so it is masked before
+        // packing: a wrap must not alias the "no source" epoch.
+        uint32_t generation = (++m_directAimEpochShadow) & 0x00FFFFFFu;
+        if (generation == 0)
+            generation = (++m_directAimEpochShadow) & 0x00FFFFFFu;
+        m_directAimEpoch.store(
+            (generation << 8) | source, std::memory_order_release);
+    }
+    [[nodiscard]] uint8_t DirectAimSourceForGui() const noexcept
+    {
+        return static_cast<uint8_t>(
+            m_directAimEpoch.load(std::memory_order_relaxed) & 0xFFu);
+    }
+
     void PublishStylusPointerFromGui(int x, int y, bool valid) noexcept
     {
         uint32_t packed = 0;
@@ -341,6 +382,49 @@ public:
                 continue;
             m_panelAimCursor = current;
             m_panelAimGuiResetSeen = generationBefore;
+            break;
+        }
+    }
+    // MELONPRIME_DIRECT_AIM_TABLET_MAILBOX_V1
+    // Returns the latched DirectAimHostSource byte for the current capture and
+    // the delta accumulated since the last consume. A zero return means the
+    // Raw Mouse path still owns aim for this frame; a relative source latch
+    // (RawRelativeMouse) also reports zero delta because it is transported by
+    // its own low-latency path, never by this mailbox.
+    [[nodiscard]] uint8_t ConsumeDirectAimForEmu(
+        int32_t& dx, int32_t& dy) noexcept
+    {
+        uint64_t current = 0;
+        uint32_t epoch = 0;
+        for (;;) {
+            epoch = m_directAimEpoch.load(std::memory_order_acquire);
+            if (epoch != m_directAimEpochSeen) {
+                m_directAimCursor =
+                    m_directAimBoundary.load(std::memory_order_acquire);
+                m_directAimEpochSeen = epoch;
+            }
+            current = m_directAimTotal.load(std::memory_order_acquire);
+            if (epoch == m_directAimEpoch.load(std::memory_order_acquire))
+                break;
+            // An epoch change raced the snapshot. Retry without advancing the
+            // cursor; the new boundary decides what belongs to the new source.
+        }
+        dx = static_cast<int32_t>(PairX(current) - PairX(m_directAimCursor));
+        dy = static_cast<int32_t>(PairY(current) - PairY(m_directAimCursor));
+        m_directAimCursor = current;
+        return static_cast<uint8_t>(epoch & 0xFFu);
+    }
+    void ResetDirectAimForEmu() noexcept
+    {
+        for (;;) {
+            const uint32_t epoch =
+                m_directAimEpoch.load(std::memory_order_acquire);
+            const uint64_t current =
+                m_directAimTotal.load(std::memory_order_acquire);
+            if (epoch != m_directAimEpoch.load(std::memory_order_acquire))
+                continue;
+            m_directAimCursor = current;
+            m_directAimEpochSeen = epoch;
             break;
         }
     }
@@ -534,6 +618,18 @@ private:
     // Emulation-thread-only cursor into the GUI-owned cumulative total.
     uint64_t m_panelAimCursor = 0;
     uint32_t m_panelAimGuiResetSeen = 0;
+    // MELONPRIME_DIRECT_AIM_TABLET_MAILBOX_V1 -- separate from the panel-aim
+    // mailbox above so opt-in pen/tablet aim cannot perturb the Raw path.
+    std::atomic<uint64_t> m_directAimTotal{0};
+    std::atomic<uint64_t> m_directAimBoundary{0};
+    // (capture generation << 8) | DirectAimHostSource. Zero source means the
+    // Raw Mouse path owns aim.
+    std::atomic<uint32_t> m_directAimEpoch{0};
+    // GUI-thread-only generation source.
+    uint32_t m_directAimEpochShadow = 0;
+    // Emulation-thread-only cursor into the GUI-owned cumulative total.
+    uint64_t m_directAimCursor = 0;
+    uint32_t m_directAimEpochSeen = 0;
     // GUI-published DS coordinate under the pointer. Packed so the emulation
     // thread cannot observe X/Y from different mouse events; bit 31 is valid.
     std::atomic<uint32_t> m_stylusPointer{0};
