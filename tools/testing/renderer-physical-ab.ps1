@@ -50,6 +50,7 @@ param(
     [ValidateRange(1,1000)] [int]$CaptureIntervalMs = 33,
     [switch]$SampleWindowTitlesOnly,
     [ValidateRange(0,600)] [int]$PresentationStallFrames = 0,
+    [ValidateSet(0, 1000, 8000)] [int]$SyntheticMouseRateHz = 0,
     [int]$WarmupSeconds = 15,
     [int]$MeasuredSeconds = 20,
     [int]$GraceSeconds = 15
@@ -65,6 +66,9 @@ if ($CaptureFrames -gt 0 -and $CaptureIntervalMs -lt 1) {
 if ($SampleWindowTitlesOnly -and $CaptureFrames -le 0) {
     throw 'SampleWindowTitlesOnly requires CaptureFrames.'
 }
+if ($SyntheticMouseRateHz -gt 0 -and $Action -ne 'steady-state') {
+    throw 'SyntheticMouseRateHz requires Action=steady-state so the measured window contains only the input workload.'
+}
 if ($ExactGPU2DValidation -and $StageDiagnosticsOnly) {
     throw 'ExactGPU2DValidation and StageDiagnosticsOnly are mutually exclusive.'
 }
@@ -73,8 +77,25 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
 public struct MpRendererPerfRect { public int Left, Top, Right, Bottom; }
+[StructLayout(LayoutKind.Sequential)]
+public struct MpSyntheticMouseInput {
+  public int dx, dy;
+  public uint mouseData, dwFlags, time;
+  public UIntPtr dwExtraInfo;
+}
+[StructLayout(LayoutKind.Sequential)]
+public struct MpSyntheticInput {
+  public uint type;
+  public MpSyntheticMouseInput mi;
+}
 public static class MpRendererPerfWin {
   public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc cb, IntPtr p);
@@ -89,9 +110,16 @@ public static class MpRendererPerfWin {
   [DllImport("user32.dll", SetLastError = true)] public static extern bool PostMessage(IntPtr hWnd, uint msg, UIntPtr wParam, IntPtr lParam);
   [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint code, uint mapType);
   [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+  [DllImport("user32.dll", SetLastError = true)] static extern uint SendInput(uint count, MpSyntheticInput[] inputs, int size);
   public const uint KeyDownMessage = 0x0100;
   public const uint KeyUpMessage = 0x0101;
   public const uint KeyUp = 0x0002;
+  const uint InputMouse = 0;
+  const uint MouseMove = 0x0001;
+  const uint MouseMoveNoCoalesce = 0x2000;
+  static readonly object SyntheticLock = new object();
+  static readonly Dictionary<int, Thread> SyntheticThreads = new Dictionary<int, Thread>();
+  static int SyntheticNextId;
   public static IntPtr Find(uint wantedPid) {
     IntPtr found = IntPtr.Zero;
     EnumWindows(delegate(IntPtr h, IntPtr p) {
@@ -122,6 +150,54 @@ public static class MpRendererPerfWin {
     if (!PostMessage(hWnd, KeyDownMessage, new UIntPtr(key), down)) return false;
     System.Threading.Thread.Sleep(milliseconds);
     return PostMessage(hWnd, KeyUpMessage, new UIntPtr(key), up);
+  }
+  public static int StartSyntheticMouseInjection(int rateHz, int durationMs, string outputPath) {
+    if (rateHz <= 0 || durationMs <= 0) throw new ArgumentOutOfRangeException();
+    int id = Interlocked.Increment(ref SyntheticNextId);
+    var thread = new Thread(new ThreadStart(delegate {
+      RunSyntheticMouseInjection(id, rateHz, durationMs, outputPath);
+    }));
+    thread.IsBackground = true;
+    lock (SyntheticLock) { SyntheticThreads.Add(id, thread); }
+    thread.Start();
+    return id;
+  }
+  public static bool WaitSyntheticMouseInjection(int id) {
+    Thread thread;
+    lock (SyntheticLock) { if (!SyntheticThreads.TryGetValue(id, out thread)) return false; }
+    thread.Join();
+    lock (SyntheticLock) { SyntheticThreads.Remove(id); }
+    return true;
+  }
+  static void RunSyntheticMouseInjection(int id, int rateHz, int durationMs, string outputPath) {
+    long frequency = Stopwatch.Frequency;
+    long start = Stopwatch.GetTimestamp();
+    long end = start + (long)(durationMs * (double)frequency / 1000.0);
+    long period = Math.Max(1L, (long)(frequency / (double)rateHz));
+    long next = start;
+    ulong attempted = 0, sent = 0;
+    var input = new MpSyntheticInput[1];
+    input[0].type = InputMouse;
+    input[0].mi.dx = 1;
+    input[0].mi.dy = 0;
+    input[0].mi.dwFlags = MouseMove | MouseMoveNoCoalesce;
+    input[0].mi.mouseData = 0;
+    input[0].mi.time = 0;
+    input[0].mi.dwExtraInfo = UIntPtr.Zero;
+    while (true) {
+      long now = Stopwatch.GetTimestamp();
+      if (now >= end) break;
+      if (now < next) { Thread.SpinWait(64); continue; }
+      attempted++;
+      sent += SendInput(1, input, Marshal.SizeOf(typeof(MpSyntheticInput)));
+      next += period;
+      if (next <= now) next = now + period;
+    }
+    long elapsed = Stopwatch.GetTimestamp() - start;
+    var json = String.Format(CultureInfo.InvariantCulture,
+      "{{\"id\":{0},\"rate_hz\":{1},\"duration_ms\":{2},\"attempted\":{3},\"sent\":{4},\"elapsed_ticks\":{5},\"qpc_frequency\":{6}}}",
+      id, rateHz, durationMs, attempted, sent, elapsed, frequency);
+    File.WriteAllText(outputPath, json, new UTF8Encoding(false));
   }
 }
 "@
@@ -173,6 +249,7 @@ $configRoot = if (Test-Path -LiteralPath $portableDir -PathType Container) { $po
 $configPath = Join-Path $configRoot 'melonDS.toml'
 $layerSettings = Join-Path $build 'vk_layer_settings.txt'
 $csv = Join-Path $out "$RunId.csv"
+$screenInputPerf = Join-Path $out "$RunId.screen-input.json"
 $frameCsv = Join-Path $out "$RunId.frames.instance0.csv"
 $frameCsvTemplate = Join-Path $out "$RunId.frames.%INSTANCE%.csv"
 $buildInfoStdout = Join-Path $out "$RunId.build-info.out.log"
@@ -193,7 +270,7 @@ $frameDumpTrigger = if ($null -ne $statePath) {
 } else {
     $null
 }
-foreach ($path in @($csv, $frameCsv, $buildInfoStdout, $buildInfoStderr, $stdout, $stderr, $telemetryLog, $harness,
+foreach ($path in @($csv, $frameCsv, $screenInputPerf, $buildInfoStdout, $buildInfoStderr, $stdout, $stderr, $telemetryLog, $harness,
         $metadata, $metadataJson, $runManifest, $screenshot, $frameDumpTrigger)) {
     if ([string]::IsNullOrWhiteSpace([string]$path)) { continue }
     if (Test-Path -LiteralPath $path) { throw "Refusing to overwrite artifact: $path" }
@@ -307,6 +384,7 @@ $oldGPU2DStageDiagnostics = $env:MELONPRIME_GPU2D_STAGE_DIAGNOSTICS
 $oldGPU2DStageDirect = $env:MELONPRIME_GPU2D_STAGE_DIRECT
 $oldGPU2DPresentationStall = $env:MELONPRIME_TEST_GPU2D_PRESENTATION_STALL_FRAMES
 $proc = $null
+$syntheticMouseInjectorId = 0
 $window = [IntPtr]::Zero
 $configRestored = -not $hadConfig
 $layerRestored = -not $hadLayer
@@ -336,6 +414,9 @@ Emu.ExternalBIOSEnable = false
 $(if ($savestateConfigPath) { 'SavestatePath = "' + $savestateConfigPath + '"' } else { '' })
 
 [Instance0]
+
+[Instance0.Metroid.Visual]
+CustomHUD = $(if ($Hud -eq 'On') { 'true' } else { 'false' })
 
 [Instance0.Keyboard]
 HK_Reset = 82
@@ -451,7 +532,7 @@ function Run-Action([string]$name) {
             # every input-driven scene. Background-window scheduling otherwise
             # changes both Raw Input delivery and the observed renderer FPS.
             Focus-RendererWindow
-            Start-Sleep -Seconds 3
+            if ($SyntheticMouseRateHz -eq 0) { Start-Sleep -Seconds 3 }
         }
         'weapon-switch' { for ($i = 0; $i -lt 3; $i++) { Send-Key '123456654321' } }
         'projectile-burst' {
@@ -594,11 +675,26 @@ try {
     Start-Sleep -Seconds $WarmupSeconds
     [void](Record-Phase 'warmup_end')
     [void](Record-Phase 'measurement_start')
+    if ($SyntheticMouseRateHz -gt 0) {
+        Focus-RendererWindow
+        Add-Content -LiteralPath $harness -Value (
+            "synthetic_mouse_start rate_hz=$SyntheticMouseRateHz duration_seconds=$MeasuredSeconds output=$screenInputPerf monotonic_ticks=$([Diagnostics.Stopwatch]::GetTimestamp())")
+        $syntheticMouseInjectorId = [MpRendererPerfWin]::StartSyntheticMouseInjection(
+            $SyntheticMouseRateHz, $MeasuredSeconds * 1000, $screenInputPerf)
+    }
     foreach ($name in $actionSequence) { Run-Action $name }
     if (-not $CaptureBeforeWarmup) {
         Capture-ContinuousDisplay
     }
     Start-Sleep -Seconds $MeasuredSeconds
+    if ($syntheticMouseInjectorId -ne 0) {
+        if (-not [MpRendererPerfWin]::WaitSyntheticMouseInjection($syntheticMouseInjectorId)) {
+            throw 'synthetic mouse injector wait failed'
+        }
+        Add-Content -LiteralPath $harness -Value (
+            "synthetic_mouse_end monotonic_ticks=$([Diagnostics.Stopwatch]::GetTimestamp())")
+        $syntheticMouseInjectorId = 0
+    }
     [void](Record-Phase 'measurement_end')
     if ($GraceSeconds -gt 0) {
         Start-Sleep -Seconds $GraceSeconds
@@ -606,6 +702,10 @@ try {
     }
 }
 finally {
+    if ($syntheticMouseInjectorId -ne 0) {
+        [void][MpRendererPerfWin]::WaitSyntheticMouseInjection($syntheticMouseInjectorId)
+        $syntheticMouseInjectorId = 0
+    }
     if ($null -ne $proc -and -not $proc.HasExited) {
         [void]$proc.CloseMainWindow()
         if (-not $proc.WaitForExit(20000)) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
@@ -728,6 +828,10 @@ if ($stageValidationStartIndex -lt $allLog.Count) {
 $stateMarker = if ($null -ne $statePath) { @($allLog | Select-String -SimpleMatch "[SavestateDiff] path=$statePath loaded=1" -ErrorAction SilentlyContinue).Count } else { 0 }
 $stateActionMarker = if ($null -ne $savestateSlotPathForApp) { @($allLog | Select-String -SimpleMatch "[PhysicalAB] savestate_action_loaded=1 path=$savestateSlotPathForApp" -ErrorAction SilentlyContinue).Count } else { 0 }
 $hudOffMarker = if ($Hud -eq 'Off') { @($allLog | Select-String -SimpleMatch '[SavestateDiff] customHudForcedOff=1' -ErrorAction SilentlyContinue).Count } else { 0 }
+$screenInputPerfResult = $null
+if (Test-Path -LiteralPath $screenInputPerf -PathType Leaf) {
+    try { $screenInputPerfResult = Get-Content -LiteralPath $screenInputPerf -Raw | ConvertFrom-Json } catch { }
+}
 $buildInfoJson = if ($null -ne $buildInfo) { $buildInfo } else { [ordered]@{} }
 $buildGates = [ordered]@{
     build_type = if ($null -ne $buildInfo) { $buildInfo.build_type } else { $null }
@@ -787,6 +891,8 @@ $manifestObject = [ordered]@{
         window_capture_frames = $CaptureFrames
         window_capture_interval_ms = if ($CaptureFrames -gt 0) { $CaptureIntervalMs } else { $null }
         sample_window_titles_only = [bool]$SampleWindowTitlesOnly
+        synthetic_mouse_rate_hz = $SyntheticMouseRateHz
+        synthetic_mouse_duration_seconds = if ($SyntheticMouseRateHz -gt 0) { $MeasuredSeconds } else { $null }
     }
     fixture = [ordered]@{
         rom = $romPath
@@ -837,6 +943,7 @@ $manifestObject = [ordered]@{
         display_capture = $screenshot
         window_capture_directory = $windowCaptureDirectory
         gpu2d_frame_dump_trigger = $frameDumpTrigger
+        screen_input_perf = $screenInputPerf
     }
     validation = [ordered]@{
         config_restore = if ($configRestored) { 'PASS' } else { 'FAIL' }
@@ -872,6 +979,8 @@ $manifestObject = [ordered]@{
         } else {
             'FAIL'
         }
+        screen_input_perf_requested = $SyntheticMouseRateHz -gt 0
+        screen_input_perf_result = $screenInputPerfResult
     }
 }
 [IO.File]::WriteAllText($runManifest, ($manifestObject | ConvertTo-Json -Depth 12), $utf8)
@@ -895,6 +1004,8 @@ action_order=$actionOrder
 diagnostic_startup_savestate=$(-not $SkipDiagnosticStartupSavestate)
 capture_before_warmup=$($CaptureBeforeWarmup.IsPresent.ToString().ToLowerInvariant())
 capture_window_scale=$CaptureWindowScale
+synthetic_mouse_rate_hz=$SyntheticMouseRateHz
+screen_input_perf=$screenInputPerf
 warmup_seconds=$WarmupSeconds
 measured_seconds=$MeasuredSeconds
 grace_seconds=$GraceSeconds

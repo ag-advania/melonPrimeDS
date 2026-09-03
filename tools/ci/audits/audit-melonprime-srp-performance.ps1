@@ -50,6 +50,9 @@ function Get-CodeMatchLines([string]$pattern, [string]$path) {
 
 $screen = Join-Path $qtSdl "Screen.cpp"
 $vulkanScreen = Join-Path $qtSdl "MelonPrimeScreenVulkan.cpp"
+# SCR-SRP-001: ScreenPanelDX12 lives in its own translation unit, so the
+# DX12 presenter rules below follow it there instead of Screen.cpp.
+$dx12Screen = Join-Path $qtSdl "MelonPrimeScreenDX12.cpp"
 
 $screenForbiddenIncludes = Get-MatchLines '#include\s+"MelonPrime(Patch|Arm9Hook)' $screen
 foreach ($line in $screenForbiddenIncludes) {
@@ -74,7 +77,7 @@ foreach ($line in $rawAimRefs) {
 # They must therefore carry their own Custom HUD visibility gate; otherwise a
 # remembered BtmOverlayEnable paints the bottom-screen radar over the top LCD
 # even while CustomHUD=false.
-foreach ($nativeScreen in @($screen, $vulkanScreen)) {
+foreach ($nativeScreen in @($dx12Screen, $vulkanScreen)) {
     $text = Get-Content -LiteralPath $nativeScreen -Raw
     if ($text -notmatch 'if\s*\(gpuFrame\s*&&\s*hudVisible\s*&&\s*m_radarEnable\)') {
         $relative = [System.IO.Path]::GetRelativePath($repoRoot, $nativeScreen) -replace '\\', '/'
@@ -3434,7 +3437,7 @@ $hotPaths = @(
     # the one-time layout/renderer transitions are not suitable for a hard
     # regex gate here.
     @{ File = 'MelonPrimeScreenVulkan.cpp';   Signature = 'void\s+ScreenPanelVulkan::drawScreenFrame\s*\(' },
-    @{ File = 'Screen.cpp';                   Signature = 'void\s+ScreenPanelDX12::drawScreen\s*\(' },
+    @{ File = 'MelonPrimeScreenDX12.cpp';     Signature = 'void\s+ScreenPanelDX12::drawScreen\s*\(' },
     @{ File = 'MelonPrimeScreenMetal.mm';     Signature = 'void\s+ScreenPanelMetal::drawScreen\s*\(' }
 )
 $hotPathCosts = 'Config::Table|\bGetBool\s*\(|\bGetInt\s*\(|\bGetDouble\s*\(|std::function|\bvirtual\b|dynamic_cast|QMetaObject|std::make_shared|std::make_unique|QString\s*\(|\bmutex\b|std::shared_ptr|std::static_pointer_cast|QMutexLocker|std::lock_guard|std::unique_lock|\bnew\b|std::string'

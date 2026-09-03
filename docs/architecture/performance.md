@@ -92,11 +92,11 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | Cache | Location | Invalidation trigger | Owner |
 |---|---|---|---|
 | `CachedHudConfig` / `CustomHud_GetCacheEpoch()` | `MelonPrimeHudRenderConfig.inc` | Config reload, TOML import, edit-mode snapshot apply | `CustomHud_RefreshConfigIfNeeded` |
-| `m_hudCfgEpoch` / `m_hudEnabled` | `Screen.h` + `MelonPrimeHudScreenCppHelpers.inc:117-124` | `Metroid.Visual.CustomHUD` change | `MelonPrimeHud_RefreshHudEnabledIfNeeded` |
-| `m_hudFontEpoch` / `overlayFont` | `Screen.h` + helpers | HUD font property change | `MelonPrimeHud_RefreshOverlayFontIfNeeded` |
-| `m_radarCfgEpoch` / radar GL fields | `Screen.h` + helpers | Radar property change | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
-| `m_hudTopMatrix` / layout scale | `Screen.h` + `MelonPrimeHudScreenCppLayout.inc:5-17` | `setupScreenLayout()` | `ScreenPanel::setupScreenLayout` |
-| `m_radarAnchorDsX/Y` | `Screen.h` + helpers | Radar config epoch refresh | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
+| `m_hudCfgEpoch` / `m_hudEnabled` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | `Metroid.Visual.CustomHUD` change | `MelonPrimeHud_RefreshHudEnabledIfNeeded` |
+| `m_hudFontEpoch` / `overlayFont` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | HUD font property change | `MelonPrimeHud_RefreshOverlayFontIfNeeded` |
+| `m_radarCfgEpoch` / radar GL fields | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | Radar property change | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
+| `m_hudTopMatrix` / layout scale | `Screen.h` + `MelonPrimeHudScreenIntegration.cpp` | `setupScreenLayout()` | `ScreenPanel::updateHudScreenLayoutCache` |
+| `m_radarAnchorDsX/Y` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | Radar config epoch refresh | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
 | Dirty rect / `s_drawnDirtyPx` | `MelonPrimeHudRenderAssets.inc` | Top of each `CustomHud_Render` | `CustomHud_Render` |
 | OPT-DR3 upload hash | `MelonPrimeHudScreenCppOverlayOfGl.inc:36-40` | Resize / full reupload / content change | GL overlay path (same file) |
 | `s_zoomAimCanZoomCache` | `MelonPrimeGameInput.cpp:51` | ROM detect / layout / scope state edge | `UpdateZoomAimEffectiveScale` |
@@ -132,6 +132,131 @@ Review must not increase steady-state per-frame syscalls without Phase 0 before/
 | All (dev) | Perf probe | 0 in release; gated in dev | S22 verified |
 
 Increasing any row requires `MELONPRIME_PERF=1` before/after attached to the PR.
+
+### Software presenter lock measurement
+
+`EmuInstance::renderLock` is the renderer/NDS lifetime fence. The GUI-thread
+Software presenter takes it before copying borrowed `RendererOutput` CPU
+pointers; renderer and console replacement take it on their cold transition
+paths. The established Software path still holds it through `QPainter` game
+composition and Custom HUD composition. Do not narrow or remove it from source
+shape alone.
+
+Developer builds with `MELONPRIME_PERF=1` emit a one-second
+`native_paint_us` window from `ScreenPanelNative`. It reports sample count,
+p50, p95, p99, and max for `render_lock_wait`, `render_lock_hold`,
+`framebuffer_copy`, `qpaint_game`, and `hud_software`. This collector is
+panel-owned (multi-instance safe), uses fixed storage, and compiles to inline
+no-ops when developer features are disabled. A lock-scope change requires
+before/after output from the same Software/HUD/layout workload plus a renderer
+transition smoke test; the measurement hook itself is not evidence that the
+scope can safely shrink.
+
+The 2026-09-04 Windows F7 (`.ml7`) audit used the same steady-state savestate,
+4x scale, VSync/frame limit enabled, low-latency mode disabled, 5 s warmup,
+12 s measurement, and 2 s grace for every renderer/HUD pair. The comparison
+binary was compiled independently from a clean detached source worktree at
+`7728669f9e8f9e241c809135bf04dff5422b1c78`; both binaries lack usable embedded
+build-info JSON, so these results are an unverified local regression screen,
+not release provenance or a controlled benchmark. The table reports each
+run's shutdown frame histogram, including warmup and grace, under identical
+conditions.
+
+| Renderer / HUD | Detached HEAD p95 / p99 (ms) | Audited tree p95 / p99 (ms) | Audited minus HEAD (ms) |
+|---|---:|---:|---:|
+| Software / ON | 17.033 / 17.137 | 17.022 / 17.128 | -0.011 / -0.009 |
+| Software / OFF | 16.890 / 17.036 | 16.887 / 17.004 | -0.003 / -0.032 |
+| OpenGL / ON | 16.921 / 17.096 | 16.937 / 17.150 | +0.016 / +0.054 |
+| OpenGL / OFF | 17.035 / 17.295 | 17.046 / 17.321 | +0.011 / +0.026 |
+| Vulkan / ON | 16.907 / 17.655 | 16.888 / 17.820 | -0.019 / +0.165 |
+| Vulkan / OFF | 16.968 / 17.613 | 16.960 / 17.573 | -0.008 / -0.040 |
+| DX12 / ON | 16.962 / 17.663 | 16.954 / 17.441 | -0.008 / -0.222 |
+| DX12 / OFF | 17.062 / 17.601 | 17.057 / 17.781 | -0.005 / +0.180 |
+
+The audited Software path's median one-second-window p99 was 0.1 us for
+`render_lock_wait` with either HUD state (worst window p99: 0.2 us ON, 0.1 us
+OFF). `render_lock_hold` p99 was 727.0 us ON versus 32.2 us OFF, while
+`hud_software` p99 was 696.7 us ON versus 1.7 us OFF. The wait cost is therefore
+negligible in this workload and the hold delta is dominated by Custom HUD
+composition. Keep the lifetime-fence scope intact unless a repeatable workload
+shows material wait contention; optimize the measured HUD work instead of
+weakening renderer/NDS pointer lifetime protection.
+
+### GUI input and renderer-transition follow-up (2026-09-04)
+
+The Custom HUD editor now has a GUI-owned `m_hudEditInputActive` latch. It is
+updated before the early-return checks in `setHudEditModeActive()`, and the
+ordinary `mouseMoveEvent()` path calls `handleHudMouseMove()` only under an
+`Q_UNLIKELY` check of that latch. The helper still validates
+`CustomHud_IsEditMode()` before its edit-only Config lookup, so a stale edge
+cannot enter the editor. No atomic, mutex, allocation, or queued invocation was
+added to the event path.
+
+Developer builds with `MELONPRIME_PERF=1` also emit one aggregate
+`screen_input` record per second from the panel-owned fixed collector. The
+record contains `mouseMoveEvents`, `eventSamples`,
+`eventDroppedOrOverwritten`, `eventHistogramSaturated`, `event_ns`
+p50/p95/p99/max, and the
+`hudEditFastRejected`, `hudEditHelperEntered`, `uiSnapshotRead`, and
+`stylusPointerPublish` counters. Percentiles come from a fixed 4096-bucket,
+one-microsecond histogram, so the one-Hz report does not sort a large sample
+array inside a GUI event. The histogram covers the full report window;
+`eventDroppedOrOverwritten` remains zero, while the saturated-tail count makes
+out-of-range durations explicit. The Windows physical A/B harness can enable
+the deterministic synthetic workload with `-Action steady-state
+-SyntheticMouseRateHz 1000` or `8000`; its `.screen-input.json` artifact
+records attempted and successfully submitted `SendInput` reports. This is a
+repeatable OS-injection workload, not a claim about a physical 1k/8k device.
+
+The Vulkan VBlank observer/capture path was removed after a repository-wide
+read-site check found no consumer for its `frameTop`/`frameBottom` state. The
+authoritative presentation source is `AcquireRendererOutputLease()` in
+`drawScreenFrame()`, including the complete Software fallback and native
+Vulkan-buffer paths. The process-global Vulkan panel registry remains only for
+constructor/destructor publication and the cold renderer-transition snapshot;
+no VBlank callback acquires its mutex or publishes a redundant frame pointer.
+
+Top-screen touch keeps the exhaustive parity target in `ALL`: on the Windows
+MinGW build used for this audit, the current 138,240-configuration executable
+completed in 347 ms (the incremental CMake target completed in 325 ms). That
+is below the materiality threshold used for this repository, so no fast/smoke
+split was introduced and the full coverage remains the default build gate.
+The explicit old/new mapping benchmark is:
+
+```text
+cmake --build build/release-mingw-x86_64 --target melonprime_top_screen_touch_benchmark
+```
+
+It reports `ns / map` and `maps / second` for fixed 1x/4x/16x, odd-scale,
+rotation, and hybrid-like transforms without random branch noise. Both the old
+reference kernel and the precomputed-transform kernel use the same `noinline`
+call boundary; the line also records compiler ID/version, configured and
+preprocessor build mode, architecture, CMake optimization flags, and source
+git SHA so the speedup value is comparable only within an identical build
+shape.
+
+Vulkan and DX12 renderer-transition registry walks now snapshot matching panel
+addresses under their process-global registry mutex and release it before
+calling `prepareForRendererTransition()` (and therefore presenter `Quiesce()`).
+The lifetime proof is the existing `prepareVideoBackendTransition()` barrier:
+the GUI thread waits synchronously for the emulation-thread transition and
+cannot unpublish/destroy a panel until that wait returns. The VBlank registry
+walk no longer exists; the registry is cold-path-only for construction,
+destruction, and renderer-transition lookup.
+
+The transition path emits one cold-path `renderer_transition` sample per
+transition for `registry_lock_wait`, `quiesce_duration`, and
+`transition_total`. Samples are local fixed POD values, so concurrent
+instances/backends cannot mix attribution or race a process-global reset; the
+offline summarizer can aggregate the emitted lines. The registry snapshot uses
+a fixed `kMaxWindows` array, so the registry mutex does not allocate. The
+two-instance close/transition contract is executable without a renderer SDK;
+it deterministically blocks a transition, queues close requests for both the
+matching snapshot panel and another instance, then releases the barrier:
+
+```text
+cmake --build build/release-mingw-x86_64 --target melonprime_native_panel_registry_transition_check
+```
 
 ### Input event / frame RMW budget
 

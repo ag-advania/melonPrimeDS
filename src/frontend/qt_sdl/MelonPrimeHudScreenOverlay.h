@@ -1,89 +1,48 @@
-// Custom HUD helpers for Screen.cpp fragments.
-// This is a unity-build fragment included by Screen.cpp; do not add it to CMakeLists.txt.
+#ifndef MELONPRIME_HUD_SCREEN_OVERLAY_H
+#define MELONPRIME_HUD_SCREEN_OVERLAY_H
+
+// Custom HUD overlay helpers shared by the screen-panel presenters.
+//
+// These were unity-build fragments included only by Screen.cpp. They take
+// every input as a parameter and touch no panel-local state, so they are a
+// real module rather than a textual fragment: each presenter translation unit
+// (Screen.cpp's Software/OpenGL panels, MelonPrimeScreenDX12.cpp) includes
+// this header directly instead of depending on include position inside one
+// giant TU.
+//
+// Everything here is `inline` and parameter-driven. The bodies are unchanged
+// from the fragment they replace, so the compiler still inlines them into the
+// same call sites; nothing was added to the HUD draw path.
+//
+// Thread: the caller's presentation thread. These functions read HUD config
+// state and rasterize into a caller-owned QImage; they perform no QWidget
+// mutation and take no locks of their own.
 
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudEditorPanelGeometry.h"
-#include "MelonPrimeHudEditorFormLayout.h"
-static void MelonPrimeHud_PositionEditPanel(
-    QWidget* host,
-    MelonPrimeHudConfigOnScreenEdit* panel,
-    bool setMaximumHeight,
-    bool adjustSize)
-{
-    if (!host || !panel)
-        return;
 
-    QWidget* boundsWidget = host->window();
-    const QRect bounds = boundsWidget
-        ? QRect(boundsWidget->mapToGlobal(QPoint(0, 0)), boundsWidget->size())
-        : QRect(host->mapToGlobal(QPoint(0, 0)), host->size());
-    const int usableWidth = MelonPrime::HudEditorPanelGeometry::UsableWidth(bounds.width());
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
-    // The panel starts from its natural content size, keeps the historical
-    // width only as a preferred baseline for short English labels, and then
-    // yields to the actual window width.  The width is established before
-    // activating the layout so WrapLongRows can make the final height honest.
-    panel->setMinimumWidth(0);
-    panel->setMaximumWidth(usableWidth);
-    // The natural hint is measured before the form's vertical scrollbar exists,
-    // so reserve its width here; otherwise the scrollbar takes it back out of
-    // the form the moment the content scrolls.
-    const int naturalWidth = std::max(panel->sizeHint().width(), panel->minimumSizeHint().width())
-        + MelonPrime::HudEditorForm::ReservedVerticalScrollBarWidth(*panel);
-    const int desiredWidth = naturalWidth > MelonPrime::HudEditorPanelGeometry::kPreferredWidth
-        ? naturalWidth
-        : MelonPrime::HudEditorPanelGeometry::kPreferredWidth;
-    const int panelW = std::min(desiredWidth, usableWidth);
-    if (panel->width() != panelW)
-        panel->resize(panelW, panel->height());
-    if (panel->layout())
-        panel->layout()->activate();
-    MelonPrime::HudEditorForm::ConstrainPanelWidth(*panel, panelW, 2);
-    if (adjustSize)
-    {
-        panel->adjustSize();
-        if (panel->width() != panelW)
-            panel->resize(panelW, panel->height());
-        if (panel->layout())
-            panel->layout()->activate();
-        MelonPrime::HudEditorForm::ConstrainPanelWidth(*panel, panelW, 1);
-    }
+#include <QFont>
+#include <QImage>
+#include <QPainter>
+#include <QRect>
 
-    const int maxH = std::max(120, bounds.height()
-        - (2 * MelonPrime::HudEditorPanelGeometry::kSafeMargin));
-    if (setMaximumHeight)
-        panel->setMaximumHeight(maxH);
+#include "Config.h"
+#include "EmuInstance.h"
+#include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudPatchLifecycle.h"
+#include "MelonPrimeHudRender.h"
+#include "MelonPrimePerfProbe.h"
+// Canonical Custom HUD config keys. Included rather than mirrored as string
+// literals, per the config-key ownership rule; this header is registered in
+// tools/ci/audits/check-inc-ownership.ps1's multi-parent map alongside the
+// other consumers.
+#include "MelonPrimeHudPropSchema.inc"
 
-    const int desiredH = setMaximumHeight ? panel->sizeHint().height() : panel->height();
-    const int panelH = std::min(desiredH, maxH);
-    if (panel->height() != panelH)
-        panel->resize(panel->width(), panelH);
-
-    const auto* screenPanel = qobject_cast<const ScreenPanel*>(host);
-    const std::optional<QRect> topScreenLocal = screenPanel
-        ? screenPanel->getTopScreenWidgetRect()
-        : std::nullopt;
-    const QRect targetLocal = topScreenLocal.value_or(host->rect());
-    const QRect targetGlobal(host->mapToGlobal(targetLocal.topLeft()), targetLocal.size());
-
-    const int outsideTopX = targetGlobal.right() + 1 + 12;
-    const int insideTopX = targetGlobal.right() + 1 - panel->width() - 24;
-    const int preferredX = (outsideTopX + panel->width() <= bounds.right() + 1
-        - MelonPrime::HudEditorPanelGeometry::kSafeMargin)
-        ? outsideTopX
-        : insideTopX;
-    const int minX = bounds.left() + MelonPrime::HudEditorPanelGeometry::kSafeMargin;
-    const int maxX = bounds.right() - panel->width() + 1 - MelonPrime::HudEditorPanelGeometry::kSafeMargin;
-    const int px = std::clamp(preferredX, minX, std::max(minX, maxX));
-
-    const int preferredY = bounds.top() + (bounds.height() - panelH) / 2;
-    const int minY = bounds.top() + MelonPrime::HudEditorPanelGeometry::kSafeMargin;
-    const int maxY = bounds.bottom() - panelH + 1 - MelonPrime::HudEditorPanelGeometry::kSafeMargin;
-    const int py = std::clamp(preferredY, minY, std::max(minY, maxY));
-    panel->move(QPoint(px, py));
-}
-
-static void MelonPrimeHud_PrepareTopOverlay(
+inline void MelonPrimeHud_PrepareTopOverlay(
     QImage& overlay,
     int outW,
     int outH,
@@ -122,7 +81,7 @@ static void MelonPrimeHud_PrepareTopOverlay(
 // though its pixels never change. Hashing the region (cache-warm CPU read) is
 // cheaper than a multi-MB PCIe upload + driver sync at high internal
 // resolutions. Pixel-exact, so it can never leave the HUD stale.
-static uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
+inline uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
 {
     MelonPrimePerf::ScopedHudPhase hashTimer(MelonPrimePerf::HudPhase::Hash);
     uint64_t h = 1469598103934665603ull; // FNV-1a offset basis
@@ -152,7 +111,7 @@ static uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
     return h;
 }
 
-static bool MelonPrimeHud_RefreshHudEpoch(
+inline bool MelonPrimeHud_RefreshHudEpoch(
     const MelonPrime::CustomHudConfigState& hudConfig,
     uint32_t& cachedEpoch)
 {
@@ -164,7 +123,7 @@ static bool MelonPrimeHud_RefreshHudEpoch(
     return true;
 }
 
-static void MelonPrimeHud_RefreshHudEnabledIfNeeded(
+inline void MelonPrimeHud_RefreshHudEnabledIfNeeded(
     const MelonPrime::CustomHudConfigState& hudConfig,
     Config::Table& instcfg,
     uint32_t& cachedEpoch,
@@ -176,7 +135,7 @@ static void MelonPrimeHud_RefreshHudEnabledIfNeeded(
 
 // Rebuild overlayFont from the selectable HUD-font setting when the config epoch changes.
 // Cheap: only runs on a settings change (CustomHud_InvalidateConfigCache bumps the epoch).
-static void MelonPrimeHud_RefreshOverlayFontIfNeeded(
+inline void MelonPrimeHud_RefreshOverlayFontIfNeeded(
     const MelonPrime::CustomHudConfigState& hudConfig,
     Config::Table& instcfg,
     uint32_t& cachedEpoch,
@@ -188,7 +147,7 @@ static void MelonPrimeHud_RefreshOverlayFontIfNeeded(
     overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
 }
 
-static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
+inline void MelonPrimeHud_RefreshRadarConfigIfNeeded(
     const MelonPrime::CustomHudConfigState& hudConfig,
     Config::Table& instcfg,
     uint32_t& cachedEpoch,
@@ -217,13 +176,13 @@ static void MelonPrimeHud_RefreshRadarConfigIfNeeded(
 }
 
 template <typename CoreT>
-static bool MelonPrimeHud_CanRenderForCore(CoreT* mp, bool editMode)
+inline bool MelonPrimeHud_CanRenderForCore(CoreT* mp, bool editMode)
 {
     return mp && mp->IsRomDetected() && (mp->IsInGame() || editMode);
 }
 
 template <typename CoreT>
-static bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
+inline bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     EmuInstance* emuInstance,
     Config::Table& instcfg,
     CoreT* mp,
@@ -241,7 +200,7 @@ static bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
 }
 
 template <typename CoreT>
-static QRect MelonPrimeHud_RenderTopOverlay(
+inline QRect MelonPrimeHud_RenderTopOverlay(
     EmuInstance* emuInstance,
     Config::Table& instcfg,
     CoreT* mp,
@@ -266,7 +225,9 @@ static QRect MelonPrimeHud_RenderTopOverlay(
         filteredBottomScreen,
         mp->GetHunterID(),
         radarSourceRadius);
-    const Uint64 hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
+    // `auto` rather than a fixed width: the measurement and shipping probe
+    // builds declare different tick types for the same expression.
+    const auto hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
     const QRect hudDirty = MelonPrime::CustomHud_Render(
         mp->HudConfigState(),
         emuInstance, instcfg,
@@ -287,4 +248,6 @@ static QRect MelonPrimeHud_RenderTopOverlay(
     }
     return hudDirty;
 }
-#endif
+
+#endif // MELONPRIME_CUSTOM_HUD
+#endif // MELONPRIME_HUD_SCREEN_OVERLAY_H

@@ -35,7 +35,7 @@ def main() -> int:
     input_source = read("src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenInput.inc")
     draw_source = read("src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenDraw.inc")
     unity_source = read("src/frontend/qt_sdl/MelonPrimeHudConfigOnScreenUnity.inc")
-    screen_init = read("src/frontend/qt_sdl/MelonPrimeHudScreenCppInit.inc")
+    screen_init = read("src/frontend/qt_sdl/MelonPrimeHudScreenIntegration.cpp")
     settings_ui = read("src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.ui")
     settings_source = read("src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfig.cpp")
     settings_config = read("src/frontend/qt_sdl/InputConfig/MelonPrimeInputConfigConfig.cpp")

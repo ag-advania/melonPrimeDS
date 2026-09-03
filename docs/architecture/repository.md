@@ -13,9 +13,9 @@ Shaders and C++ are tightly coupled. Always check both sides when modifying eith
 
 | Shader (`main_shaders.h`) | C++ (`Screen.cpp`) | Coupling |
 |---|---|---|
-| `kBtmOverlayFS` `uniform vec3 uPalette[15]` | `initOpenGL()` OPT-SH1 block | Radar palette (15 colors). Shader `PALETTE_SIZE` must match C++ array size and `glUniform3fv` count |
+| `kBtmOverlayFS` `uniform vec3 uPalette[15]` | `MelonPrimeHudScreenGL.cpp` initialization | Radar palette (15 colors). Shader `PALETTE_SIZE` must match C++ array size and `glUniform3fv` count |
 | `kBtmOverlayFS` `uniform float uOpacity` etc. | `drawScreen()` radar draw block | `btmOverlayOpacityULoc` etc. - uniform locations correspond to shader uniform names |
-| `kBtmOverlayVS` `uniform vec2 uScreenSize` etc. | `initOpenGL()` `glGetUniformLocation` calls | Uniform locations fetched at init and stored as member variables |
+| `kBtmOverlayVS` `uniform vec2 uScreenSize` etc. | `MelonPrimeHudScreenGL.cpp` `glGetUniformLocation` calls | Uniform locations fetched at init and stored as member variables |
 
 ### `OSD_shaders.h` <-> `Screen.cpp` coupling
 
@@ -25,7 +25,7 @@ Shaders and C++ are tightly coupled. Always check both sides when modifying eith
 
 `Screen.h` / `Screen.cpp` also hold the OpenGL-side overlay shader program, uniforms, and draw setup.
 
-Custom HUD integration inside `Screen.cpp` is split into unity include fragments named `MelonPrimeHudScreenCpp*.inc`. These are grouped by call site: shared helpers, panel setup/layout/input, `OverlayOfSoftware`, `OverlayOfGl`, and GL init/deinit. They are not standalone translation units and should not be added to CMake.
+Custom HUD setup, layout caching, editor input, panel placement, and OpenGL resource lifecycle are real modules in `MelonPrimeHudScreenIntegration.cpp`, `MelonPrimeHudScreenEditPanel.cpp`, and `MelonPrimeHudScreenGL.cpp`. Shared renderer helpers live in `MelonPrimeHudScreenOverlay.h`. Only the Software and OpenGL per-presentation bodies remain as `MelonPrimeHudScreenCppOverlayOf*.inc` call-site fragments; `audit-screen-panel-srp.ps1` permits exactly those two measurement-gated hot seams and rejects new fragments.
 
 ### OPT-DR1 — Dirty-Rect Overlay Optimization
 
@@ -84,7 +84,7 @@ OPT-DR3 (GL path only, [MelonPrimeHudScreenCppOverlayOfGl.inc](../../src/fronten
 
 - Statics `s_hudUploadedRectGL` / `s_hudUploadedHashGL` / `s_hudUploadedValidGL` remember the last
   uploaded region and its FNV-1a hash (`MelonPrimeHud_HashImageRegion` in
-  [MelonPrimeHudScreenCppHelpers.inc](../../src/frontend/qt_sdl/MelonPrimeHudScreenCppHelpers.inc)).
+  [MelonPrimeHudScreenOverlay.h](../../src/frontend/qt_sdl/MelonPrimeHudScreenOverlay.h)).
 - Only when `uploadRect` area `>= 256*256` is the hash computed; if the rect and hash both match
   the last upload, the `glTexSubImage2D` is skipped. Small regions upload unconditionally (not
   worth hashing) and reset tracking.
@@ -318,7 +318,7 @@ current owners — do not fold their responsibilities back into `MelonPrimeCore`
 |---|---|---|
 | Runtime config load | `MelonPrimeRuntimeConfig.h/.cpp` | `RuntimeConfigSnapshot` / `AimConfigSnapshot`: pure `Load*ConfigSnapshot(Config::Table&)` read+clamp. `MelonPrimeCore::Apply*ConfigSnapshot(...)` is the only place that writes the result into core state; ARM9 feature settings become the per-instance `Arm9HookActivationPlan` there |
 | Custom HUD instance state | `CustomHudConfigState` in `MelonPrimeHudRenderConfig.inc` / `MelonPrimeHudRender.cpp` | Three typed `std::unique_ptr` owner slots for battle, frame, and text-cache state; all are constructed on the cold config-state path. Editor fields remain directly in the config state until a concrete editor owner is needed. The top-level `MelonPrimeCore::m_hudConfigState` `std::shared_ptr` remains the lifetime boundary |
-| HUD enable snapshot | `Screen.h` + `MelonPrimeHudScreenCppHelpers.inc` | `m_hudEnabled` is refreshed at the config-cache epoch and passed to `CustomHud_Render`; the render body does not reread live `Config::Table` state |
+| HUD enable snapshot | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | `m_hudEnabled` is refreshed at the config-cache epoch and passed to `CustomHud_Render`; the render body does not reread live `Config::Table` state |
 | Input projection | `MelonPrimeInputProjection.h` (header-only) | Hotkey → down/press bit projection; `FORCE_INLINE`, zero new abstraction cost — this is a hot-path file |
 | Screen cursor policy | `MelonPrimeScreenCursorPolicy.h/.cpp` | Cursor clip/warp/capture/confinement: `ClipCenter1px`, `Unclip`, `UpdateClipIfNeeded`, `ContainAimCursorIfNeeded`, `ReleaseForClose`, `ConfineToBottomScreen`. `Screen.cpp` must not `#include` MelonPrime patch or ARM9 hook internals — see the SRP contract's "Screen.cpp dependency rule" |
 | HUD editor widget factories | `MelonPrimeHudEditorFormBuilder.h/.cpp` | Every property-panel widget factory (checkbox/combo/spin/double-spin/opacity-slider/line-edit/color-picker/sub-color/color-overlay-row), all `WidgetFactoryContext`-based. `MelonPrimeHudConfigOnScreenEdit.cpp` is a thin delegate over this plus (as of V7 Phase 2) the row-table dispatcher in [MelonPrimeHudEditorSidePanelRows.inc](../../src/frontend/qt_sdl/MelonPrimeHudEditorSidePanelRows.inc) |
