@@ -28,6 +28,8 @@ $qtSdl = Join-Path $repoRoot 'src/frontend/qt_sdl'
 $screenCpp = Join-Path $qtSdl 'Screen.cpp'
 $dx12Cpp = Join-Path $qtSdl 'MelonPrimeScreenDX12.cpp'
 $vulkanCpp = Join-Path $qtSdl 'MelonPrimeScreenVulkan.cpp'
+$gpuVulkanCpp = Join-Path $repoRoot 'src/GPU_Vulkan.cpp'
+$gpuVulkanH = Join-Path $repoRoot 'src/GPU_Vulkan.h'
 $hudIntegrationCpp = Join-Path $qtSdl 'MelonPrimeHudScreenIntegration.cpp'
 $cmake = Join-Path $qtSdl 'CMakeLists.txt'
 
@@ -232,15 +234,70 @@ foreach ($registrySpec in @(
         continue
     }
     $registryBody = $registryText.Substring($registryStart)
-    $registryEnd = $registryBody.IndexOf("`n}", [System.StringComparison]::Ordinal)
-    if ($registryEnd -gt 0) { $registryBody = $registryBody.Substring(0, $registryEnd + 2) }
+    # Extract the complete function with brace matching; the implementation
+    # now uses an index-based loop over a fixed array rather than a second
+    # range-based `for (ScreenPanel...)` loop.
+    $functionOpen = $registryBody.IndexOf('{', [System.StringComparison]::Ordinal)
+    if ($functionOpen -ge 0) {
+        $depth = 0
+        $functionEnd = -1
+        for ($i = $functionOpen; $i -lt $registryBody.Length; $i++) {
+            if ($registryBody[$i] -eq '{') { $depth++ }
+            elseif ($registryBody[$i] -eq '}') {
+                $depth--
+                if ($depth -eq 0) { $functionEnd = $i; break }
+            }
+        }
+        if ($functionEnd -ge 0) {
+            $registryBody = $registryBody.Substring(0, $functionEnd + 1)
+        }
+    }
     $lockPos = $registryBody.IndexOf('QMutexLocker lock', [System.StringComparison]::Ordinal)
     $snapshotLoopPos = $registryBody.IndexOf('for (ScreenPanel', [System.StringComparison]::Ordinal)
-    $callMatch = [regex]::Match($registryBody, 'panel->prepareForRendererTransition\s*\(')
+    $callMatch = [regex]::Match(
+        $registryBody,
+        '(?:panel|panels\s*\[[^\]]+\])\s*->prepareForRendererTransition\s*\(')
     $callPos = if ($callMatch.Success) { $callMatch.Index } else { -1 }
-    $unlockedLoopPos = $registryBody.IndexOf('for (ScreenPanel', $snapshotLoopPos + 1, [System.StringComparison]::Ordinal)
-    if ($lockPos -lt 0 -or $snapshotLoopPos -lt 0 -or $callPos -lt 0 -or $unlockedLoopPos -lt 0 -or $unlockedLoopPos -gt $callPos) {
+    $lockOpenPos = if ($lockPos -ge 0) {
+        $registryBody.LastIndexOf('{', $lockPos)
+    } else { -1 }
+    $lockClosePos = -1
+    if ($lockOpenPos -ge 0) {
+        $depth = 0
+        for ($i = $lockOpenPos; $i -lt $registryBody.Length; $i++) {
+            if ($registryBody[$i] -eq '{') { $depth++ }
+            elseif ($registryBody[$i] -eq '}') {
+                $depth--
+                if ($depth -eq 0) { $lockClosePos = $i; break }
+            }
+        }
+    }
+    $registryInvalid = ($lockPos -lt 0 -or $snapshotLoopPos -lt 0 -or
+        $callPos -lt 0 -or $lockClosePos -lt 0 -or $callPos -le $lockClosePos)
+    if ($registryInvalid) {
         $errors.Add("$($registrySpec.Signature) must snapshot matching panels and call prepareForRendererTransition() after the registry lock scope.") | Out-Null
+    }
+}
+
+# The Vulkan presenter obtains its authoritative frame through
+# AcquireRendererOutputLease() in drawScreenFrame(). The former VBlank capture
+# path had no consumer and paid a process-global registry lock on every frame.
+# Keep that dead observer/state path from being reintroduced; the registry
+# itself remains valid for the cold renderer-transition snapshot above.
+$vulkanHotPathBan = @(
+    @{ Path = $vulkanCpp; Label = 'MelonPrimeScreenVulkan.cpp' },
+    @{ Path = $gpuVulkanCpp; Label = 'GPU_Vulkan.cpp' },
+    @{ Path = $gpuVulkanH; Label = 'GPU_Vulkan.h' },
+    @{ Path = $screenCpp; Label = 'Screen.cpp' }
+)
+$vulkanHotPathPattern = '\b(?:frameTop|frameBottom|frameWidth|frameHeight|frameValid|frameLock|hookedRenderer|composeFrameAtVBlank|ComposeInstanceFrameAtVBlank|installVulkanComposeHook|SetVBlankObserver|VBlankObserver|MELONPRIME_VULKAN_PRESENT_HOOK_V1)\b'
+foreach ($ban in $vulkanHotPathBan) {
+    if (-not (Test-Path -LiteralPath $ban.Path)) {
+        $errors.Add("$($ban.Label) is missing: Vulkan VBlank dead-work ratchet cannot run.") | Out-Null
+        continue
+    }
+    foreach ($hit in (Get-CodeLines $ban.Path | Where-Object { $_.Text -match $vulkanHotPathPattern })) {
+        $errors.Add("$($ban.Label): VBlank observer/capture dead-work symbol is forbidden in production source at line $($hit.Line): $($hit.Text.Trim())") | Out-Null
     }
 }
 

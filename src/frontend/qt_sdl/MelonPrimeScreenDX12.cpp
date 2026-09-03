@@ -58,6 +58,8 @@
 #if defined(MELONPRIME_DS) && defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
 
 #include <algorithm>
+#include <array>
+#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -105,6 +107,7 @@
 #include "MelonPrimeHudEdit.h"
 #include "MelonPrimeHudPresentationState.h"
 #include "MelonPrimeHudRuntime.h"
+#include "MelonPrimeHudScreenVisualState.h"
 #include "MelonPrimeHudScreenOverlay.h"
 #endif
 
@@ -299,7 +302,10 @@ void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance
     // can wait for GPU work. The caller has already established the
     // prepareVideoBackendTransition() GUI/emu barrier documented above, so
     // GUI-owned panel destruction cannot race this short transition window.
-    std::vector<ScreenPanelDX12*> panels;
+    // EmuInstance owns at most kMaxWindows panels. A fixed snapshot keeps the
+    // process-global registry lock entirely allocation-free on this cold path.
+    std::array<ScreenPanelDX12*, kMaxWindows> panels{};
+    std::size_t panelCount = 0;
     {
         const auto lockStart = MelonPrime::g_rendererTransitionPerf.Now();
         QMutexLocker lock(&g_dx12PanelRegistryLock);
@@ -309,13 +315,17 @@ void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance
         for (ScreenPanelDX12* panel : g_dx12PanelRegistry)
         {
             if (panel->emuInstance == instance)
-                panels.push_back(panel);
+            {
+                assert(panelCount < panels.size());
+                if (panelCount < panels.size())
+                    panels[panelCount++] = panel;
+            }
         }
     }
 
-    for (ScreenPanelDX12* panel : panels)
+    for (std::size_t i = 0; i < panelCount; ++i)
     {
-        panel->prepareForRendererTransition(true);
+        panels[i]->prepareForRendererTransition(true);
     }
     MelonPrime::g_rendererTransitionPerf.Record(
         MelonPrime::RendererTransitionMetric::TransitionTotal,

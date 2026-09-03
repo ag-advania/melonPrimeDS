@@ -76,7 +76,7 @@ Result ProductionMap(const float* matrix, bool isTop, int x, int y, bool clamp)
     return result;
 }
 
-Result ProductionMapResolved(
+MELONPRIME_TEST_NOINLINE Result ProductionMapResolved(
     const MelonPrime::TopScreenTouchTransform& transform,
     int x,
     int y,
@@ -86,6 +86,28 @@ Result ProductionMapResolved(
     result.valid = MelonPrime::MapTopScreenTouch(
         transform, result.x, result.y, clamp);
     return result;
+}
+
+const char* BenchmarkCompilerName()
+{
+#if defined(_MSC_VER)
+    return "msvc";
+#elif defined(__clang__)
+    return "clang";
+#elif defined(__GNUC__)
+    return "gcc";
+#else
+    return "unknown";
+#endif
+}
+
+const char* BenchmarkBuildType()
+{
+#if defined(NDEBUG)
+    return "release";
+#else
+    return "debug";
+#endif
 }
 
 [[noreturn]] void Fail(
@@ -294,13 +316,15 @@ void BenchmarkMappings()
     std::printf(
         "top_screen_touch_benchmark maps=%llu reference_ns_per_map=%.2f "
         "production_ns_per_map=%.2f reference_maps_per_second=%.0f "
-        "production_maps_per_second=%.0f speedup=%.3f checksum=%llu\n",
+        "production_maps_per_second=%.0f speedup=%.3f checksum=%llu "
+        "compiler=%s build=%s\n",
         static_cast<unsigned long long>(maps), referencePerMap,
         productionPerMap,
         referencePerMap > 0.0 ? 1000000000.0 / referencePerMap : 0.0,
         productionPerMap > 0.0 ? 1000000000.0 / productionPerMap : 0.0,
         productionPerMap > 0.0 ? referencePerMap / productionPerMap : 0.0,
-        static_cast<unsigned long long>(productionChecksum));
+        static_cast<unsigned long long>(productionChecksum),
+        BenchmarkCompilerName(), BenchmarkBuildType());
 }
 
 } // namespace

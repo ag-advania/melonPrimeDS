@@ -29,7 +29,9 @@
 #include "InputConfig/InputConfigDialog.h"
 #include "MelonPrime.h"
 #include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudConfigOnScreenEdit.h"
 #include "MelonPrimeHudEdit.h"
+#include "MelonPrimeHudRender.h"
 #include "MelonPrimeHudScreenEditPanel.h"
 
 void ScreenPanel::initializeHudScreenIntegration()

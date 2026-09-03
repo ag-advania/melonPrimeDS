@@ -155,6 +155,10 @@ def main() -> int:
     )
     main_source = read("src/frontend/qt_sdl/main.cpp")
     screen = read("src/frontend/qt_sdl/Screen.cpp")
+    # The DX12 panel implementation was split out of Screen.cpp. Keep the
+    # generic Screen.cpp checks below, but inspect the owning translation unit
+    # for the renderer-transition invalidation contract.
+    dx12_screen = read("src/frontend/qt_sdl/MelonPrimeScreenDX12.cpp")
     video_settings = read("src/frontend/qt_sdl/VideoSettingsDialog.cpp")
     config = read("src/frontend/qt_sdl/Config.cpp")
     cmake = read("src/frontend/qt_sdl/CMakeLists.txt")
@@ -538,9 +542,9 @@ def main() -> int:
             ],
         )
         and ordered(
-            screen,
+            dx12_screen,
             [
-                "void ScreenPanelDX12::prepareForRendererTransition()",
+                "void ScreenPanelDX12::prepareForRendererTransition(",
                 "dx12->presenter.Quiesce();",
                 "dx12->presenter.InvalidateDirectDescriptorCache();",
                 "dx12->frameLease.ReleaseNow();",

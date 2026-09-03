@@ -49,14 +49,15 @@
 #include "MelonPrimePresentationSnapshot.h"
 
 #ifdef MELONPRIME_CUSTOM_HUD
-#include "MelonPrimeHudConfigOnScreenEdit.h"
-#include "MelonPrimeHudRender.h"
-#include "MelonPrimeHudScreenVisualState.h"
+#include "MelonPrimeHudScreenVisualTypes.h"
 #endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
 class EmuInstance;
 class EmuThread;
+#ifdef MELONPRIME_CUSTOM_HUD
+class MelonPrimeHudConfigOnScreenEdit;
+#endif
 
 #ifdef MELONPRIME_DS
 namespace MelonPrime {
@@ -706,15 +707,10 @@ private:
     void noteFramePresentedWithoutIdentity();
     void clearPresentationStall();
 
-    // Composes one emulated frame. Driven from VulkanRenderer's VBlank hook,
-    // on the emulation thread, because that is the only point where this
-    // frame's structured 2D metadata and this frame's 3D image coexist.
-    void composeFrameAtVBlank();
-    static void ComposeInstanceFrameAtVBlank(EmuInstance* instance);
-    void installVulkanComposeHook(melonDS::VulkanRenderer* renderer);
-    void prepareForRendererTransition(
-        bool detachRendererObserver = true,
-        bool recordTransitionPerf = false);
+    // Quiesces renderer-owned work before the outgoing renderer is destroyed.
+    // The transition caller supplies the GUI/emulation barrier that keeps this
+    // panel alive while the cold registry snapshot is consumed.
+    void prepareForRendererTransition(bool recordTransitionPerf = false);
     void invalidateScreenRetention();
     bool initVulkanPresenter();
     void reportVulkanRuntimeFailure(const char* reason);

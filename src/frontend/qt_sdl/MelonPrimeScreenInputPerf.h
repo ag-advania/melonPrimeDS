@@ -3,7 +3,7 @@
 
 // Developer-only GUI input-path telemetry for SCR-PERF-004/SCR-VALID-001.
 // The collector is panel-owned, fixed-size, and runtime-gated by
-// MELONPRIME_PERF=1.  Shipping builds retain constexpr no-ops, so the normal
+// MELONPRIME_PERF=1. Shipping builds retain constexpr no-ops, so the normal
 // Qt event path does not acquire a lock, allocate, or format a record.
 
 #include <cstdint>
@@ -57,11 +57,15 @@ public:
         if (!Enabled())
             return;
         if (start && end > start) {
+            ++eventSamples_;
             const std::size_t index = eventWrite_;
             eventTicks_[index] = end - start;
             eventWrite_ = (eventWrite_ + 1) % kEventCapacity;
-            if (eventCount_ < kEventCapacity)
+            if (eventCount_ < kEventCapacity) {
                 ++eventCount_;
+            } else {
+                ++eventDroppedOrOverwritten_;
+            }
             eventMax_ = std::max(eventMax_, end - start);
         }
         MaybeReport(instanceId, end ? end : SDL_GetPerformanceCounter());
@@ -91,7 +95,11 @@ public:
     };
 
 private:
-    static constexpr std::size_t kEventCapacity = 4096;
+    // 16,384 samples cover the requested 8 kHz one-second window with a
+    // 2x margin. If a future workload exceeds that, the report explicitly
+    // exposes the overwrite count instead of presenting a truncated window as
+    // a full percentile sample.
+    static constexpr std::size_t kEventCapacity = 16384;
     static constexpr std::size_t kMetricCount =
         static_cast<std::size_t>(ScreenInputMetric::Count);
 
@@ -170,10 +178,14 @@ private:
         std::array<char, 1400> line{};
         std::size_t used = Append(line, 0,
             "[MelonPrimePerf] screen_input instance_id=%d "
-            "mouseMoveEvents=%llu event_ns[n=%llu p50=%.1f p95=%.1f "
+            "mouseMoveEvents=%llu eventSamples=%llu "
+            "eventDroppedOrOverwritten=%llu "
+            "event_ns[n=%llu p50=%.1f p95=%.1f "
             "p99=%.1f max=%.1f] ",
             instanceId,
             static_cast<unsigned long long>(mouseMoveEvents_),
+            static_cast<unsigned long long>(eventSamples_),
+            static_cast<unsigned long long>(eventDroppedOrOverwritten_),
             static_cast<unsigned long long>(eventCount_),
             static_cast<double>(percentile(0.50)) * toNs,
             static_cast<double>(percentile(0.95)) * toNs,
@@ -191,6 +203,8 @@ private:
         std::fwrite(line.data(), 1, used, stderr);
 
         mouseMoveEvents_ = 0;
+        eventSamples_ = 0;
+        eventDroppedOrOverwritten_ = 0;
         counters_.fill(0);
         eventCount_ = 0;
         eventMax_ = 0;
@@ -201,6 +215,8 @@ private:
     std::size_t eventCount_ = 0;
     Tick eventMax_ = 0;
     std::uint64_t mouseMoveEvents_ = 0;
+    std::uint64_t eventSamples_ = 0;
+    std::uint64_t eventDroppedOrOverwritten_ = 0;
     std::array<std::uint64_t, kMetricCount> counters_{};
     Tick lastReport_ = 0;
 };

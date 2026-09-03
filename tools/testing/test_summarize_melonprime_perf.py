@@ -67,7 +67,9 @@ class SummarizeMelonPrimePerfTests(unittest.TestCase):
     def test_screen_input_and_transition_windows_are_parsed(self) -> None:
         report = MODULE.parse_lines([
             "[MelonPrimePerf] screen_input instance_id=2 "
-            "mouseMoveEvents=8000 event_ns[n=4096 p50=120.0 p95=180.0 "
+            "mouseMoveEvents=8000 eventSamples=8000 "
+            "eventDroppedOrOverwritten=3904 "
+            "event_ns[n=4096 p50=120.0 p95=180.0 "
             "p99=220.0 max=500.0] hudEditFastRejected=7990 "
             "hudEditHelperEntered=10 uiSnapshotRead=0 stylusPointerPublish=0\n",
             "[MelonPrimePerf] renderer_transition backend=vulkan instance_id=2 "
@@ -78,6 +80,9 @@ class SummarizeMelonPrimePerfTests(unittest.TestCase):
 
         self.assertEqual(len(report.screen_input), 1)
         self.assertEqual(report.screen_input[0].mouse_move_events, 8000)
+        self.assertEqual(report.screen_input[0].event_samples, 8000)
+        self.assertEqual(
+            report.screen_input[0].event_dropped_or_overwritten, 3904)
         self.assertEqual(report.screen_input[0].event_p99_ns, 220.0)
         self.assertEqual(len(report.renderer_transition), 1)
         self.assertEqual(

@@ -58,6 +58,9 @@ NATIVE_PAINT_RE = re.compile(
 SCREEN_INPUT_RE = re.compile(
     r"\[MelonPrimePerf\] screen_input instance_id=(?P<instance_id>[0-9]+) "
     r"mouseMoveEvents=(?P<mouse_move_events>[0-9]+) "
+    r"(?:eventSamples=(?P<event_samples>[0-9]+) "
+    r"eventDroppedOrOverwritten=(?P<event_dropped_or_overwritten>[0-9]+) "
+    r")?"
     r"event_ns\[n=(?P<event_n>[0-9]+) p50=(?P<event_p50>[0-9.]+) "
     r"p95=(?P<event_p95>[0-9.]+) p99=(?P<event_p99>[0-9.]+) "
     r"max=(?P<event_max>[0-9.]+)\] "
@@ -183,6 +186,8 @@ class NativePaintWindow:
 class ScreenInputWindow:
     instance_id: int
     mouse_move_events: int
+    event_samples: int
+    event_dropped_or_overwritten: int
     event_n: int
     event_p50_ns: float
     event_p95_ns: float
@@ -244,6 +249,16 @@ def parse_lines(lines: Iterable[str]) -> Report:
             report.screen_input.append(ScreenInputWindow(
                 instance_id=int(m.group("instance_id")),
                 mouse_move_events=int(m.group("mouse_move_events")),
+                event_samples=(
+                    int(m.group("event_samples"))
+                    if m.group("event_samples") is not None
+                    else int(m.group("event_n"))
+                ),
+                event_dropped_or_overwritten=(
+                    int(m.group("event_dropped_or_overwritten"))
+                    if m.group("event_dropped_or_overwritten") is not None
+                    else 0
+                ),
                 event_n=int(m.group("event_n")),
                 event_p50_ns=float(m.group("event_p50")),
                 event_p95_ns=float(m.group("event_p95")),
@@ -441,10 +456,13 @@ def print_report(report: Report, out: TextIO) -> None:
         print(f"screen input 1 Hz windows: {len(report.screen_input)}", file=out)
         for window in report.screen_input:
             print(
-                "  instance={} mouseMoveEvents={} event_ns p50/p95/p99={:.1f}/{:.1f}/{:.1f} "
+                "  instance={} mouseMoveEvents={} eventSamples={} "
+                "eventDroppedOrOverwritten={} event_ns p50/p95/p99={:.1f}/{:.1f}/{:.1f} "
                 "fast_rejected={} helper_entered={} uiSnapshotRead={} stylusPointerPublish={}".format(
                     window.instance_id,
                     window.mouse_move_events,
+                    window.event_samples,
+                    window.event_dropped_or_overwritten,
                     window.event_p50_ns,
                     window.event_p95_ns,
                     window.event_p99_ns,

@@ -194,14 +194,25 @@ added to the event path.
 
 Developer builds with `MELONPRIME_PERF=1` also emit one aggregate
 `screen_input` record per second from the panel-owned fixed collector. The
-record contains `mouseMoveEvents`, `event_ns` p50/p95/p99/max, and the
+record contains `mouseMoveEvents`, `eventSamples`,
+`eventDroppedOrOverwritten`, `event_ns` p50/p95/p99/max, and the
 `hudEditFastRejected`, `hudEditHelperEntered`, `uiSnapshotRead`, and
-`stylusPointerPublish` counters (the event count is `mouseMoveEvents`). The
-Windows physical A/B harness can enable
+`stylusPointerPublish` counters. Its 16,384-entry event ring covers the
+requested 8 kHz one-second window with a 2x margin; if a future workload
+exceeds that bound, the overwrite count makes the truncated percentile sample
+explicit. The Windows physical A/B harness can enable
 the deterministic synthetic workload with `-Action steady-state
 -SyntheticMouseRateHz 1000` or `8000`; its `.screen-input.json` artifact
 records attempted and successfully submitted `SendInput` reports. This is a
 repeatable OS-injection workload, not a claim about a physical 1k/8k device.
+
+The Vulkan VBlank observer/capture path was removed after a repository-wide
+read-site check found no consumer for its `frameTop`/`frameBottom` state. The
+authoritative presentation source is `AcquireRendererOutputLease()` in
+`drawScreenFrame()`, including the complete Software fallback and native
+Vulkan-buffer paths. The process-global Vulkan panel registry remains only for
+constructor/destructor publication and the cold renderer-transition snapshot;
+no VBlank callback acquires its mutex or publishes a redundant frame pointer.
 
 Top-screen touch keeps the exhaustive parity target in `ALL`: on the Windows
 MinGW build used for this audit, the current 138,240-configuration executable
@@ -215,7 +226,10 @@ cmake --build build/release-mingw-x86_64 --target melonprime_top_screen_touch_be
 ```
 
 It reports `ns / map` and `maps / second` for fixed 1x/4x/16x, odd-scale,
-rotation, and hybrid-like transforms without random branch noise.
+rotation, and hybrid-like transforms without random branch noise. Both the old
+reference kernel and the precomputed-transform kernel use the same `noinline`
+call boundary; the line also records compiler and Debug/Release build type so
+the speedup value is comparable only within an identical build shape.
 
 Vulkan and DX12 renderer-transition registry walks now snapshot matching panel
 addresses under their process-global registry mutex and release it before
@@ -227,8 +241,12 @@ walk remains locked because it serializes the callback with destruction and
 does not call `Quiesce()`.
 
 The transition path emits cold-path `renderer_transition` aggregates for
-`registry_lock_wait`, `quiesce_duration`, and `transition_total`. The
-two-instance close/transition contract is executable without a renderer SDK:
+`registry_lock_wait`, `quiesce_duration`, and `transition_total`. The registry
+snapshot uses a fixed `kMaxWindows` array, so the registry mutex does not
+allocate. The two-instance close/transition contract is executable without a
+renderer SDK; it deterministically blocks a transition, queues close requests
+for both the matching snapshot panel and another instance, then releases the
+barrier:
 
 ```text
 cmake --build build/release-mingw-x86_64 --target melonprime_native_panel_registry_transition_check

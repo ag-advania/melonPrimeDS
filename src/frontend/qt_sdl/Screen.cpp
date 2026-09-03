@@ -83,6 +83,7 @@
 #include "MelonPrimeHudPatchLifecycle.h"
 #include "MelonPrimeHudEdit.h"
 #include "MelonPrimeHudConfigOnScreenEdit.h"
+#include "MelonPrimeHudScreenVisualState.h"
 #include "MelonPrimeHudScreenEditPanel.h"
 #include "MelonPrimeHudScreenOverlay.h"
 #include "InputConfig/InputConfigDialog.h"

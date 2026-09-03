@@ -42,6 +42,7 @@
 #include "MelonPrimeHudRuntime.h"
 #include "MelonPrimeHudPatchLifecycle.h"
 #include "MelonPrimeHudPresentationState.h"
+#include "MelonPrimeHudScreenVisualState.h"
 #include "MelonPrimePerfProbe.h"
 
 #include "MelonPrimeMetalFeatureCheck.h"
