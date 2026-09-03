@@ -159,6 +159,12 @@ jobs:
           executable, log_path = sys.argv[1:]
           env = os.environ.copy()
           env["SDL_AUDIODRIVER"] = "dummy"
+          # Apple-Paravirtual MoltenVK can spend roughly a minute compiling
+          # the presenter's first pipelines on a cold hosted runner. Keep the
+          # readiness gate strict, but do not send SIGTERM while that work is
+          # still in progress.
+          readiness_timeout_seconds = 180
+          shutdown_grace_seconds = 30
           timed_out = False
           with open(log_path, "w", encoding="utf-8") as log:
               process = subprocess.Popen(
@@ -168,16 +174,14 @@ jobs:
                   env=env,
               )
               try:
-                  # Hosted Apple-Paravirtual/MoltenVK startup can spend more
-                  # than 15 seconds compiling the first presentation
-                  # pipelines. The no-ROM smoke is expected to remain alive,
-                  # so the log markers below are the actual readiness gate.
-                  process.wait(timeout=60)
+                  # The no-ROM smoke is expected to remain alive, so the log
+                  # markers below are the actual readiness gate.
+                  process.wait(timeout=readiness_timeout_seconds)
               except subprocess.TimeoutExpired:
                   timed_out = True
                   process.send_signal(signal.SIGTERM)
                   try:
-                      process.wait(timeout=15)
+                      process.wait(timeout=shutdown_grace_seconds)
                   except subprocess.TimeoutExpired:
                       process.kill()
                       process.wait()
