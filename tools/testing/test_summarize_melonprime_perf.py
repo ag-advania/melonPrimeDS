@@ -68,7 +68,7 @@ class SummarizeMelonPrimePerfTests(unittest.TestCase):
         report = MODULE.parse_lines([
             "[MelonPrimePerf] screen_input instance_id=2 "
             "mouseMoveEvents=8000 eventSamples=8000 "
-            "eventDroppedOrOverwritten=3904 "
+            "eventDroppedOrOverwritten=0 eventHistogramSaturated=0 "
             "event_ns[n=4096 p50=120.0 p95=180.0 "
             "p99=220.0 max=500.0] hudEditFastRejected=7990 "
             "hudEditHelperEntered=10 uiSnapshotRead=0 stylusPointerPublish=0\n",
@@ -82,12 +82,25 @@ class SummarizeMelonPrimePerfTests(unittest.TestCase):
         self.assertEqual(report.screen_input[0].mouse_move_events, 8000)
         self.assertEqual(report.screen_input[0].event_samples, 8000)
         self.assertEqual(
-            report.screen_input[0].event_dropped_or_overwritten, 3904)
+            report.screen_input[0].event_dropped_or_overwritten, 0)
+        self.assertEqual(report.screen_input[0].event_histogram_saturated, 0)
         self.assertEqual(report.screen_input[0].event_p99_ns, 220.0)
         self.assertEqual(len(report.renderer_transition), 1)
         self.assertEqual(
             report.renderer_transition[0].metrics["transition_total"].p99,
             140.0)
+
+        # Pre-histogram reports carried eventSamples and the overwrite count
+        # but had no saturation field. Keep those historical logs parseable.
+        legacy = MODULE.parse_lines([
+            "[MelonPrimePerf] screen_input instance_id=3 "
+            "mouseMoveEvents=64 eventSamples=64 "
+            "eventDroppedOrOverwritten=0 "
+            "event_ns[n=64 p50=120.0 p95=180.0 p99=220.0 max=500.0] "
+            "hudEditFastRejected=0 hudEditHelperEntered=0 "
+            "uiSnapshotRead=0 stylusPointerPublish=0\n",
+        ])
+        self.assertEqual(legacy.screen_input[0].event_histogram_saturated, 0)
 
         output = io.StringIO()
         MODULE.print_report(report, output)

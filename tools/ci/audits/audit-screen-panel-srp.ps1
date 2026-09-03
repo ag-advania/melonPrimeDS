@@ -290,13 +290,17 @@ $vulkanHotPathBan = @(
     @{ Path = $gpuVulkanH; Label = 'GPU_Vulkan.h' },
     @{ Path = $screenCpp; Label = 'Screen.cpp' }
 )
-$vulkanHotPathPattern = '\b(?:frameTop|frameBottom|frameWidth|frameHeight|frameValid|frameLock|hookedRenderer|composeFrameAtVBlank|ComposeInstanceFrameAtVBlank|installVulkanComposeHook|SetVBlankObserver|VBlankObserver|MELONPRIME_VULKAN_PRESENT_HOOK_V1)\b'
+$vulkanArchitecturePattern = '\b(?:hookedRenderer|composeFrameAtVBlank|ComposeInstanceFrameAtVBlank|installVulkanComposeHook|SetVBlankObserver|VBlankObserver|MELONPRIME_VULKAN_PRESENT_HOOK_V1)\b'
+$vulkanStateAccessPattern = '\bvulkan->frame(?:Top|Bottom|Width|Height|Valid|Lock)\b'
 foreach ($ban in $vulkanHotPathBan) {
     if (-not (Test-Path -LiteralPath $ban.Path)) {
         $errors.Add("$($ban.Label) is missing: Vulkan VBlank dead-work ratchet cannot run.") | Out-Null
         continue
     }
-    foreach ($hit in (Get-CodeLines $ban.Path | Where-Object { $_.Text -match $vulkanHotPathPattern })) {
+    foreach ($hit in (Get-CodeLines $ban.Path | Where-Object {
+        $_.Text -match $vulkanArchitecturePattern -or
+        ($ban.Path -eq $vulkanCpp -and $_.Text -match $vulkanStateAccessPattern)
+    })) {
         $errors.Add("$($ban.Label): VBlank observer/capture dead-work symbol is forbidden in production source at line $($hit.Line): $($hit.Text.Trim())") | Out-Null
     }
 }

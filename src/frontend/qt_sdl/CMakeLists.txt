@@ -711,6 +711,49 @@ add_executable(melonprime_top_screen_touch_tests EXCLUDE_FROM_ALL
 target_include_directories(melonprime_top_screen_touch_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
+# Keep the standalone parity/benchmark executable self-describing. These
+# values are compile-time provenance, not claims about the host that launches
+# the binary later; the build wrapper supplies MELONDS_GIT_HASH for controlled
+# runs.
+set(_mp_touch_benchmark_git_sha "${MELONDS_GIT_HASH}")
+if (NOT _mp_touch_benchmark_git_sha)
+    set(_mp_touch_benchmark_git_sha "unknown")
+endif()
+set(_mp_touch_benchmark_build_type "${CMAKE_BUILD_TYPE}")
+if (NOT _mp_touch_benchmark_build_type)
+    set(_mp_touch_benchmark_build_type "unknown")
+endif()
+set(_mp_touch_benchmark_arch "${CMAKE_SYSTEM_PROCESSOR}")
+if (NOT _mp_touch_benchmark_arch)
+    set(_mp_touch_benchmark_arch "unknown")
+endif()
+set(_mp_touch_benchmark_flags "${CMAKE_CXX_FLAGS}")
+if (CMAKE_BUILD_TYPE)
+    string(TOUPPER "${CMAKE_BUILD_TYPE}" _mp_touch_benchmark_config_upper)
+    # Configuration-specific flags use an upper-case suffix (for example,
+    # CMAKE_CXX_FLAGS_RELEASE), while CMAKE_BUILD_TYPE is conventionally
+    # mixed-case (for example, Release).
+    set(_mp_touch_benchmark_config_flags
+        "${CMAKE_CXX_FLAGS_${_mp_touch_benchmark_config_upper}}")
+    if (_mp_touch_benchmark_config_flags)
+        string(APPEND _mp_touch_benchmark_flags
+            " ${_mp_touch_benchmark_config_flags}")
+    endif()
+endif()
+string(REPLACE ";" " " _mp_touch_benchmark_flags "${_mp_touch_benchmark_flags}")
+string(REPLACE "\"" "'" _mp_touch_benchmark_flags "${_mp_touch_benchmark_flags}")
+string(STRIP "${_mp_touch_benchmark_flags}" _mp_touch_benchmark_flags)
+if (NOT _mp_touch_benchmark_flags)
+    set(_mp_touch_benchmark_flags "<default>")
+endif()
+target_compile_definitions(melonprime_top_screen_touch_tests PRIVATE
+    MELONPRIME_TOUCH_BENCHMARK_GIT_SHA="${_mp_touch_benchmark_git_sha}"
+    MELONPRIME_TOUCH_BENCHMARK_BUILD_TYPE="${_mp_touch_benchmark_build_type}"
+    MELONPRIME_TOUCH_BENCHMARK_COMPILER_ID="${CMAKE_CXX_COMPILER_ID}"
+    MELONPRIME_TOUCH_BENCHMARK_COMPILER_VERSION="${CMAKE_CXX_COMPILER_VERSION}"
+    MELONPRIME_TOUCH_BENCHMARK_ARCH="${_mp_touch_benchmark_arch}"
+    MELONPRIME_TOUCH_BENCHMARK_FLAGS="${_mp_touch_benchmark_flags}")
 set_target_properties(melonprime_top_screen_touch_tests PROPERTIES
     AUTOMOC OFF
     AUTOUIC OFF

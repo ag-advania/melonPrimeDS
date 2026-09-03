@@ -195,12 +195,14 @@ added to the event path.
 Developer builds with `MELONPRIME_PERF=1` also emit one aggregate
 `screen_input` record per second from the panel-owned fixed collector. The
 record contains `mouseMoveEvents`, `eventSamples`,
-`eventDroppedOrOverwritten`, `event_ns` p50/p95/p99/max, and the
+`eventDroppedOrOverwritten`, `eventHistogramSaturated`, `event_ns`
+p50/p95/p99/max, and the
 `hudEditFastRejected`, `hudEditHelperEntered`, `uiSnapshotRead`, and
-`stylusPointerPublish` counters. Its 16,384-entry event ring covers the
-requested 8 kHz one-second window with a 2x margin; if a future workload
-exceeds that bound, the overwrite count makes the truncated percentile sample
-explicit. The Windows physical A/B harness can enable
+`stylusPointerPublish` counters. Percentiles come from a fixed 4096-bucket,
+one-microsecond histogram, so the one-Hz report does not sort a large sample
+array inside a GUI event. The histogram covers the full report window;
+`eventDroppedOrOverwritten` remains zero, while the saturated-tail count makes
+out-of-range durations explicit. The Windows physical A/B harness can enable
 the deterministic synthetic workload with `-Action steady-state
 -SyntheticMouseRateHz 1000` or `8000`; its `.screen-input.json` artifact
 records attempted and successfully submitted `SendInput` reports. This is a
@@ -228,8 +230,10 @@ cmake --build build/release-mingw-x86_64 --target melonprime_top_screen_touch_be
 It reports `ns / map` and `maps / second` for fixed 1x/4x/16x, odd-scale,
 rotation, and hybrid-like transforms without random branch noise. Both the old
 reference kernel and the precomputed-transform kernel use the same `noinline`
-call boundary; the line also records compiler and Debug/Release build type so
-the speedup value is comparable only within an identical build shape.
+call boundary; the line also records compiler ID/version, configured and
+preprocessor build mode, architecture, CMake optimization flags, and source
+git SHA so the speedup value is comparable only within an identical build
+shape.
 
 Vulkan and DX12 renderer-transition registry walks now snapshot matching panel
 addresses under their process-global registry mutex and release it before
@@ -237,16 +241,18 @@ calling `prepareForRendererTransition()` (and therefore presenter `Quiesce()`).
 The lifetime proof is the existing `prepareVideoBackendTransition()` barrier:
 the GUI thread waits synchronously for the emulation-thread transition and
 cannot unpublish/destroy a panel until that wait returns. The VBlank registry
-walk remains locked because it serializes the callback with destruction and
-does not call `Quiesce()`.
+walk no longer exists; the registry is cold-path-only for construction,
+destruction, and renderer-transition lookup.
 
-The transition path emits cold-path `renderer_transition` aggregates for
-`registry_lock_wait`, `quiesce_duration`, and `transition_total`. The registry
-snapshot uses a fixed `kMaxWindows` array, so the registry mutex does not
-allocate. The two-instance close/transition contract is executable without a
-renderer SDK; it deterministically blocks a transition, queues close requests
-for both the matching snapshot panel and another instance, then releases the
-barrier:
+The transition path emits one cold-path `renderer_transition` sample per
+transition for `registry_lock_wait`, `quiesce_duration`, and
+`transition_total`. Samples are local fixed POD values, so concurrent
+instances/backends cannot mix attribution or race a process-global reset; the
+offline summarizer can aggregate the emitted lines. The registry snapshot uses
+a fixed `kMaxWindows` array, so the registry mutex does not allocate. The
+two-instance close/transition contract is executable without a renderer SDK;
+it deterministically blocks a transition, queues close requests for both the
+matching snapshot panel and another instance, then releases the barrier:
 
 ```text
 cmake --build build/release-mingw-x86_64 --target melonprime_native_panel_registry_transition_check

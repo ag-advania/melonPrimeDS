@@ -1385,7 +1385,8 @@ void ScreenPanelVulkan::invalidateScreenRetention()
 }
 
 
-void ScreenPanelVulkan::prepareForRendererTransition(bool recordTransitionPerf)
+void ScreenPanelVulkan::prepareForRendererTransition(
+    MelonPrime::RendererTransitionSample* sample)
 {
     if (!vulkan)
         return;
@@ -1408,13 +1409,13 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool recordTransitionPerf)
     // Quiesce GPU work and release renderer-owned output leases, but keep the
     // VkSurfaceKHR/VkSwapchainKHR presenter lifetime paired with the lifecycle
     // state until an actual native-surface transition retires it.
-    const auto quiesceStart = recordTransitionPerf
-        ? MelonPrime::g_rendererTransitionPerf.Now() : 0;
+    const auto quiesceStart = sample
+        ? MelonPrime::RendererTransitionPerf::Now() : 0;
     vulkan->presenter.Quiesce();
-    if (recordTransitionPerf) {
-        MelonPrime::g_rendererTransitionPerf.Record(
-            MelonPrime::RendererTransitionMetric::QuiesceDuration,
-            quiesceStart, MelonPrime::g_rendererTransitionPerf.Now());
+    if (sample) {
+        const auto quiesceEnd = MelonPrime::RendererTransitionPerf::Now();
+        if (quiesceStart && quiesceEnd > quiesceStart)
+            sample->quiesceDuration += quiesceEnd - quiesceStart;
     }
     invalidateScreenRetention();
     vulkan->presenter.InvalidateDirectDescriptorCache();
@@ -1426,7 +1427,8 @@ void ScreenPanelVulkan::prepareForRendererTransition(bool recordTransitionPerf)
 
 void ScreenPanelVulkan::PrepareForInstanceRendererTransition(EmuInstance* instance)
 {
-    const auto transitionStart = MelonPrime::g_rendererTransitionPerf.Now();
+    MelonPrime::RendererTransitionSample sample{};
+    const auto transitionStart = MelonPrime::RendererTransitionPerf::Now();
     // Never hold the process-global registry mutex while Quiesce can wait for
     // GPU work. This method is called only from the emulation-thread
     // prepareVideoBackendTransition() barrier: the GUI thread is synchronously
@@ -1436,11 +1438,11 @@ void ScreenPanelVulkan::PrepareForInstanceRendererTransition(EmuInstance* instan
     std::array<ScreenPanelVulkan*, kMaxWindows> panels{};
     std::size_t panelCount = 0;
     {
-        const auto lockStart = MelonPrime::g_rendererTransitionPerf.Now();
+        const auto lockStart = MelonPrime::RendererTransitionPerf::Now();
         QMutexLocker lock(&g_panelRegistryLock);
-        MelonPrime::g_rendererTransitionPerf.Record(
-            MelonPrime::RendererTransitionMetric::RegistryLockWait,
-            lockStart, MelonPrime::g_rendererTransitionPerf.Now());
+        const auto lockEnd = MelonPrime::RendererTransitionPerf::Now();
+        if (lockStart && lockEnd > lockStart)
+            sample.registryLockWait = lockEnd - lockStart;
         for (ScreenPanelVulkan* panel : g_panelRegistry)
         {
             if (panel->emuInstance == instance)
@@ -1454,13 +1456,13 @@ void ScreenPanelVulkan::PrepareForInstanceRendererTransition(EmuInstance* instan
 
     for (std::size_t i = 0; i < panelCount; ++i)
     {
-        panels[i]->prepareForRendererTransition(true);
+        panels[i]->prepareForRendererTransition(&sample);
     }
-    MelonPrime::g_rendererTransitionPerf.Record(
-        MelonPrime::RendererTransitionMetric::TransitionTotal,
-        transitionStart, MelonPrime::g_rendererTransitionPerf.Now());
-    MelonPrime::g_rendererTransitionPerf.Report(
-        instance ? instance->getInstanceID() : 0, "vulkan");
+    const auto transitionEnd = MelonPrime::RendererTransitionPerf::Now();
+    if (transitionStart && transitionEnd > transitionStart)
+        sample.transitionTotal = transitionEnd - transitionStart;
+    MelonPrime::RendererTransitionPerf::Report(
+        instance ? instance->getInstanceID() : 0, "vulkan", sample);
 }
 
 

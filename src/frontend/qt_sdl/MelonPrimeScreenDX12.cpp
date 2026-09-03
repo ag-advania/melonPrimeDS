@@ -262,7 +262,8 @@ ScreenPanelDX12::~ScreenPanelDX12()
     }
 }
 
-void ScreenPanelDX12::prepareForRendererTransition(bool recordTransitionPerf)
+void ScreenPanelDX12::prepareForRendererTransition(
+    MelonPrime::RendererTransitionSample* sample)
 {
     if (!dx12)
         return;
@@ -279,13 +280,13 @@ void ScreenPanelDX12::prepareForRendererTransition(bool recordTransitionPerf)
     // Keep the same lifetime contract as the Vulkan presenter: old queue work
     // must be complete before descriptor identity is cleared or the renderer
     // output lease is dropped.
-    const auto quiesceStart = recordTransitionPerf
-        ? MelonPrime::g_rendererTransitionPerf.Now() : 0;
+    const auto quiesceStart = sample
+        ? MelonPrime::RendererTransitionPerf::Now() : 0;
     dx12->presenter.Quiesce();
-    if (recordTransitionPerf) {
-        MelonPrime::g_rendererTransitionPerf.Record(
-            MelonPrime::RendererTransitionMetric::QuiesceDuration,
-            quiesceStart, MelonPrime::g_rendererTransitionPerf.Now());
+    if (sample) {
+        const auto quiesceEnd = MelonPrime::RendererTransitionPerf::Now();
+        if (quiesceStart && quiesceEnd > quiesceStart)
+            sample->quiesceDuration += quiesceEnd - quiesceStart;
     }
     dx12->presenter.InvalidateDirectDescriptorCache();
     dx12->frameLease.ReleaseNow();
@@ -296,7 +297,8 @@ void ScreenPanelDX12::prepareForRendererTransition(bool recordTransitionPerf)
 
 void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance)
 {
-    const auto transitionStart = MelonPrime::g_rendererTransitionPerf.Now();
+    MelonPrime::RendererTransitionSample sample{};
+    const auto transitionStart = MelonPrime::RendererTransitionPerf::Now();
     // Snapshot only matching panels while the registry is locked. Do not call
     // Quiesce (or any other panel method) under this process-global mutex: it
     // can wait for GPU work. The caller has already established the
@@ -307,11 +309,11 @@ void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance
     std::array<ScreenPanelDX12*, kMaxWindows> panels{};
     std::size_t panelCount = 0;
     {
-        const auto lockStart = MelonPrime::g_rendererTransitionPerf.Now();
+        const auto lockStart = MelonPrime::RendererTransitionPerf::Now();
         QMutexLocker lock(&g_dx12PanelRegistryLock);
-        MelonPrime::g_rendererTransitionPerf.Record(
-            MelonPrime::RendererTransitionMetric::RegistryLockWait,
-            lockStart, MelonPrime::g_rendererTransitionPerf.Now());
+        const auto lockEnd = MelonPrime::RendererTransitionPerf::Now();
+        if (lockStart && lockEnd > lockStart)
+            sample.registryLockWait = lockEnd - lockStart;
         for (ScreenPanelDX12* panel : g_dx12PanelRegistry)
         {
             if (panel->emuInstance == instance)
@@ -325,13 +327,13 @@ void ScreenPanelDX12::PrepareForInstanceRendererTransition(EmuInstance* instance
 
     for (std::size_t i = 0; i < panelCount; ++i)
     {
-        panels[i]->prepareForRendererTransition(true);
+        panels[i]->prepareForRendererTransition(&sample);
     }
-    MelonPrime::g_rendererTransitionPerf.Record(
-        MelonPrime::RendererTransitionMetric::TransitionTotal,
-        transitionStart, MelonPrime::g_rendererTransitionPerf.Now());
-    MelonPrime::g_rendererTransitionPerf.Report(
-        instance ? instance->getInstanceID() : 0, "dx12");
+    const auto transitionEnd = MelonPrime::RendererTransitionPerf::Now();
+    if (transitionStart && transitionEnd > transitionStart)
+        sample.transitionTotal = transitionEnd - transitionStart;
+    MelonPrime::RendererTransitionPerf::Report(
+        instance ? instance->getInstanceID() : 0, "dx12", sample);
 }
 
 bool ScreenPanelDX12::initDX12()

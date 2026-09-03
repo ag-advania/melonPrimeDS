@@ -60,6 +60,7 @@ SCREEN_INPUT_RE = re.compile(
     r"mouseMoveEvents=(?P<mouse_move_events>[0-9]+) "
     r"(?:eventSamples=(?P<event_samples>[0-9]+) "
     r"eventDroppedOrOverwritten=(?P<event_dropped_or_overwritten>[0-9]+) "
+    r"(?:eventHistogramSaturated=(?P<event_histogram_saturated>[0-9]+) )?"
     r")?"
     r"event_ns\[n=(?P<event_n>[0-9]+) p50=(?P<event_p50>[0-9.]+) "
     r"p95=(?P<event_p95>[0-9.]+) p99=(?P<event_p99>[0-9.]+) "
@@ -188,6 +189,7 @@ class ScreenInputWindow:
     mouse_move_events: int
     event_samples: int
     event_dropped_or_overwritten: int
+    event_histogram_saturated: int
     event_n: int
     event_p50_ns: float
     event_p95_ns: float
@@ -257,6 +259,11 @@ def parse_lines(lines: Iterable[str]) -> Report:
                 event_dropped_or_overwritten=(
                     int(m.group("event_dropped_or_overwritten"))
                     if m.group("event_dropped_or_overwritten") is not None
+                    else 0
+                ),
+                event_histogram_saturated=(
+                    int(m.group("event_histogram_saturated"))
+                    if m.group("event_histogram_saturated") is not None
                     else 0
                 ),
                 event_n=int(m.group("event_n")),
@@ -457,12 +464,14 @@ def print_report(report: Report, out: TextIO) -> None:
         for window in report.screen_input:
             print(
                 "  instance={} mouseMoveEvents={} eventSamples={} "
-                "eventDroppedOrOverwritten={} event_ns p50/p95/p99={:.1f}/{:.1f}/{:.1f} "
+                "eventDroppedOrOverwritten={} eventHistogramSaturated={} "
+                "event_ns p50/p95/p99={:.1f}/{:.1f}/{:.1f} "
                 "fast_rejected={} helper_entered={} uiSnapshotRead={} stylusPointerPublish={}".format(
                     window.instance_id,
                     window.mouse_move_events,
                     window.event_samples,
                     window.event_dropped_or_overwritten,
+                    window.event_histogram_saturated,
                     window.event_p50_ns,
                     window.event_p95_ns,
                     window.event_p99_ns,

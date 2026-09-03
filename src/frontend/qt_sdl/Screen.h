@@ -63,6 +63,7 @@ class MelonPrimeHudConfigOnScreenEdit;
 namespace MelonPrime {
 class MelonPrimeCore;
 struct MelonPrimeUiSnapshot;
+struct RendererTransitionSample;
 
 // Native presentation visibility is an identity, not a boolean latch. A
 // renderer/backend transition must hide the retained surface until a complete
@@ -628,7 +629,8 @@ private:
     void handleDX12SurfaceHostLifecycleGuiThread(
         QEvent::Type eventType, bool aboutToDestroy);
     void publishDX12SurfaceSnapshotGuiThread();
-    void prepareForRendererTransition(bool recordTransitionPerf = false);
+    void prepareForRendererTransition(
+        MelonPrime::RendererTransitionSample* sample = nullptr);
     void requestNativeSurfaceVisible(bool visible);
     void reportRuntimeFailure(const char* reason);
 
@@ -710,7 +712,8 @@ private:
     // Quiesces renderer-owned work before the outgoing renderer is destroyed.
     // The transition caller supplies the GUI/emulation barrier that keeps this
     // panel alive while the cold registry snapshot is consumed.
-    void prepareForRendererTransition(bool recordTransitionPerf = false);
+    void prepareForRendererTransition(
+        MelonPrime::RendererTransitionSample* sample = nullptr);
     void invalidateScreenRetention();
     bool initVulkanPresenter();
     void reportVulkanRuntimeFailure(const char* reason);

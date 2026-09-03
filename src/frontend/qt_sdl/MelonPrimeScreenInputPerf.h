@@ -58,15 +58,19 @@ public:
             return;
         if (start && end > start) {
             ++eventSamples_;
-            const std::size_t index = eventWrite_;
-            eventTicks_[index] = end - start;
-            eventWrite_ = (eventWrite_ + 1) % kEventCapacity;
-            if (eventCount_ < kEventCapacity) {
-                ++eventCount_;
-            } else {
-                ++eventDroppedOrOverwritten_;
+            const Tick elapsed = end - start;
+            if (!eventBucketWidthTicks_) {
+                const Tick frequency = SDL_GetPerformanceFrequency();
+                eventBucketWidthTicks_ = std::max<Tick>(
+                    1, frequency / kTicksPerMicrosecondBase);
             }
-            eventMax_ = std::max(eventMax_, end - start);
+            const std::size_t bucket = std::min<std::size_t>(
+                static_cast<std::size_t>(elapsed / eventBucketWidthTicks_),
+                kEventHistogramBucketCount - 1);
+            ++eventHistogram_[bucket];
+            if (bucket == kEventHistogramBucketCount - 1)
+                ++eventHistogramSaturated_;
+            eventMax_ = std::max(eventMax_, elapsed);
         }
         MaybeReport(instanceId, end ? end : SDL_GetPerformanceCounter());
     }
@@ -95,11 +99,12 @@ public:
     };
 
 private:
-    // 16,384 samples cover the requested 8 kHz one-second window with a
-    // 2x margin. If a future workload exceeds that, the report explicitly
-    // exposes the overwrite count instead of presenting a truncated window as
-    // a full percentile sample.
-    static constexpr std::size_t kEventCapacity = 16384;
+    // One-microsecond buckets cover the normal GUI event-duration range with a
+    // bounded 4 ms tail bucket. The event path performs one integer divide and
+    // one fixed-array increment; the one-Hz report scans 4096 counters instead
+    // of copying and sorting a 16,384-element sample ring.
+    static constexpr std::size_t kEventHistogramBucketCount = 4096;
+    static constexpr Tick kTicksPerMicrosecondBase = 1000000;
     static constexpr std::size_t kMetricCount =
         static_cast<std::size_t>(ScreenInputMetric::Count);
 
@@ -156,20 +161,28 @@ private:
             return;
         lastReport_ = now;
 
-        std::array<Tick, kEventCapacity> sorted{};
-        for (std::size_t i = 0; i < eventCount_; ++i) {
-            const std::size_t source =
-                (eventWrite_ + kEventCapacity - eventCount_ + i)
-                % kEventCapacity;
-            sorted[i] = eventTicks_[source];
-        }
-        std::sort(sorted.begin(), sorted.begin() + eventCount_);
         const auto percentile = [&](double p) -> Tick {
-            if (!eventCount_)
+            if (!eventSamples_)
                 return 0;
-            const std::size_t position = static_cast<std::size_t>(
-                p * static_cast<double>(eventCount_ - 1));
-            return sorted[position];
+            const std::uint64_t position = static_cast<std::uint64_t>(
+                p * static_cast<double>(eventSamples_ - 1));
+            std::uint64_t cumulative = 0;
+            for (std::size_t bucket = 0;
+                 bucket < kEventHistogramBucketCount; ++bucket) {
+                const std::uint64_t next =
+                    cumulative + eventHistogram_[bucket];
+                if (position < next) {
+                    // Return the midpoint of the fixed bucket. The final
+                    // bucket is saturated, so use its lower bound there.
+                    const Tick lower = static_cast<Tick>(bucket)
+                        * eventBucketWidthTicks_;
+                    if (bucket == kEventHistogramBucketCount - 1)
+                        return lower;
+                    return lower + eventBucketWidthTicks_ / 2;
+                }
+                cumulative = next;
+            }
+            return eventMax_;
         };
         const double toNs = 1000000000.0 / static_cast<double>(frequency);
 
@@ -179,14 +192,15 @@ private:
         std::size_t used = Append(line, 0,
             "[MelonPrimePerf] screen_input instance_id=%d "
             "mouseMoveEvents=%llu eventSamples=%llu "
-            "eventDroppedOrOverwritten=%llu "
+            "eventDroppedOrOverwritten=%llu eventHistogramSaturated=%llu "
             "event_ns[n=%llu p50=%.1f p95=%.1f "
             "p99=%.1f max=%.1f] ",
             instanceId,
             static_cast<unsigned long long>(mouseMoveEvents_),
             static_cast<unsigned long long>(eventSamples_),
             static_cast<unsigned long long>(eventDroppedOrOverwritten_),
-            static_cast<unsigned long long>(eventCount_),
+            static_cast<unsigned long long>(eventHistogramSaturated_),
+            static_cast<unsigned long long>(eventSamples_),
             static_cast<double>(percentile(0.50)) * toNs,
             static_cast<double>(percentile(0.95)) * toNs,
             static_cast<double>(percentile(0.99)) * toNs,
@@ -205,18 +219,22 @@ private:
         mouseMoveEvents_ = 0;
         eventSamples_ = 0;
         eventDroppedOrOverwritten_ = 0;
+        eventHistogramSaturated_ = 0;
         counters_.fill(0);
-        eventCount_ = 0;
+        eventHistogram_.fill(0);
         eventMax_ = 0;
     }
 
-    std::array<Tick, kEventCapacity> eventTicks_{};
-    std::size_t eventWrite_ = 0;
-    std::size_t eventCount_ = 0;
+    Tick eventBucketWidthTicks_ = 0;
+    std::array<std::uint64_t, kEventHistogramBucketCount> eventHistogram_{};
     Tick eventMax_ = 0;
     std::uint64_t mouseMoveEvents_ = 0;
     std::uint64_t eventSamples_ = 0;
+    // The histogram is full-window and never overwrites a sample. Keep this
+    // field in the report for compatibility with the prior ring collector;
+    // it remains zero unless a future bounded collector drops a sample.
     std::uint64_t eventDroppedOrOverwritten_ = 0;
+    std::uint64_t eventHistogramSaturated_ = 0;
     std::array<std::uint64_t, kMetricCount> counters_{};
     Tick lastReport_ = 0;
 };

@@ -110,6 +110,61 @@ const char* BenchmarkBuildType()
 #endif
 }
 
+const char* BenchmarkCompilerVersion()
+{
+#ifdef MELONPRIME_TOUCH_BENCHMARK_COMPILER_VERSION
+    return MELONPRIME_TOUCH_BENCHMARK_COMPILER_VERSION;
+#elif defined(__clang__)
+    return __clang_version__;
+#elif defined(__GNUC__)
+    return __VERSION__;
+#else
+    return "unknown";
+#endif
+}
+
+const char* BenchmarkArchitecture()
+{
+#ifdef MELONPRIME_TOUCH_BENCHMARK_ARCH
+    return MELONPRIME_TOUCH_BENCHMARK_ARCH;
+#elif defined(__x86_64__) || defined(_M_X64)
+    return "x86_64";
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    return "aarch64";
+#elif defined(__i386__) || defined(_M_IX86)
+    return "x86";
+#else
+    return "unknown";
+#endif
+}
+
+const char* BenchmarkFlags()
+{
+#ifdef MELONPRIME_TOUCH_BENCHMARK_FLAGS
+    return MELONPRIME_TOUCH_BENCHMARK_FLAGS;
+#else
+    return "<compiler-default>";
+#endif
+}
+
+const char* BenchmarkGitSha()
+{
+#ifdef MELONPRIME_TOUCH_BENCHMARK_GIT_SHA
+    return MELONPRIME_TOUCH_BENCHMARK_GIT_SHA;
+#else
+    return "unknown";
+#endif
+}
+
+const char* BenchmarkConfiguredBuildType()
+{
+#ifdef MELONPRIME_TOUCH_BENCHMARK_BUILD_TYPE
+    return MELONPRIME_TOUCH_BENCHMARK_BUILD_TYPE;
+#else
+    return BenchmarkBuildType();
+#endif
+}
+
 [[noreturn]] void Fail(
     const char* label,
     const float* matrix,
@@ -317,14 +372,17 @@ void BenchmarkMappings()
         "top_screen_touch_benchmark maps=%llu reference_ns_per_map=%.2f "
         "production_ns_per_map=%.2f reference_maps_per_second=%.0f "
         "production_maps_per_second=%.0f speedup=%.3f checksum=%llu "
-        "compiler=%s build=%s\n",
+        "compiler=%s compiler_version=%s build=%s config=%s arch=%s "
+        "flags=%s git_sha=%s\n",
         static_cast<unsigned long long>(maps), referencePerMap,
         productionPerMap,
         referencePerMap > 0.0 ? 1000000000.0 / referencePerMap : 0.0,
         productionPerMap > 0.0 ? 1000000000.0 / productionPerMap : 0.0,
         productionPerMap > 0.0 ? referencePerMap / productionPerMap : 0.0,
         static_cast<unsigned long long>(productionChecksum),
-        BenchmarkCompilerName(), BenchmarkBuildType());
+        BenchmarkCompilerName(), BenchmarkCompilerVersion(),
+        BenchmarkBuildType(), BenchmarkConfiguredBuildType(),
+        BenchmarkArchitecture(), BenchmarkFlags(), BenchmarkGitSha());
 }
 
 } // namespace
