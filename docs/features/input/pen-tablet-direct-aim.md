@@ -11,9 +11,12 @@ instead of only the DS touch screen.
 - Parent setting: `Metroid.Enable.stylusDirectAimWhileTouching`
   (itself a sub-option of `Metroid.Enable.stylusMode`)
 
-The option is a performance gate, not only a preference. With it off, none of
-the machinery below is constructed, installed, or consulted, and the Raw Mouse
-frame projection is unchanged.
+The option is a performance gate, not only a preference. With it off,
+`PointerWinFilter` is not allocated or installed, the native filter is not
+installed, tablet tracking is not enabled, the direct-aim mailbox is not
+consumed, and Windows pointer-source APIs are not called.
+The DirectAimIngress object itself is embedded in `ScreenPanel` and remains
+inert. The Raw Mouse frame projection is unchanged.
 
 ## Why it exists
 
@@ -53,11 +56,16 @@ DirectAimHostSource : None, WinPointerPen, QtTablet, InjectedAbsolutePointer
 ```
 
 Only **absolute** sources arbitrate here. The enumerator order *is* the
-priority order, and one capture generation latches one of them:
+priority order, and one capture generation latches one of them. Every source
+identity is carried as a `uint64_t` pointer ID; the injected route uses `0`:
 
 - A capture begins with `None`; the first absolute sample latches.
 - A strictly higher-priority source may pre-empt (and re-seeds its baseline).
 - A lower or equal-priority route is suppressed for the rest of the capture.
+- A contact-up drops only the matching source's baseline, preserving hover
+  authority. A matching leave/capture-loss releases that source authority;
+  the next absolute route may then seed.
+- A terminal event for another source or pointer is a no-op.
 
 This is what stops one physical pen movement from being counted three times
 when it surfaces as `WM_POINTERUPDATE`, a `QTabletEvent`, and a synthesized
@@ -91,10 +99,12 @@ motion accumulates instead of being quantized away, and the carry cannot drift.
 The baseline is dropped (next sample re-seeds) on:
 
 capture begin/end, touch-action release, focus loss, `WM_KILLFOCUS`,
-`WM_CAPTURECHANGED`, `WM_POINTERUP`, `WM_POINTERLEAVE`,
-`WM_POINTERCAPTURECHANGED`, `WM_DPICHANGED`, `WM_DISPLAYCHANGE`, pointer-id
-change, source change, in-game state change (ROM stop/reopen), recenter/warp
-and layout-generation resets, owner transfer, and panel teardown.
+`WM_CAPTURECHANGED`, matching `WM_POINTERUP`, `WM_DPICHANGED`,
+`WM_DISPLAYCHANGE`, pointer-id change, source change, in-game state change
+(ROM stop/reopen), recenter/warp and layout-generation resets, owner transfer,
+and panel teardown. Matching `WM_POINTERLEAVE` and
+`WM_POINTERCAPTURECHANGED` are source-lifetime releases, so they also clear
+authority. Unrelated pointer terminal events do nothing.
 
 Coordinate spaces are never mixed: the Windows route differences Win32 screen
 pixels throughout, the Qt route differences Qt global logical coordinates
@@ -112,8 +122,13 @@ and never consumes:
   `pointerInfo.ptPixelLocation`; pressure, tilt and rotation are unused, and
   pointer history is not expanded (§16 of the design note: add it only if fast
   pen movement is measured to drop samples).
-- `WM_POINTERUP` / `WM_POINTERLEAVE` / `WM_POINTERCAPTURECHANGED` → baseline drop.
-- `WM_MOUSEMOVE` → `GetCurrentInputMessageSource()`. `IMDT_PEN` / `IMDT_TOUCH`
+- `WM_POINTERUP` / `WM_POINTERLEAVE` / `WM_POINTERCAPTURECHANGED` first check
+  the pointer type and the authoritative `uint64_t` pointer ID. Pointer-up
+  drops only the matching baseline; leave/capture-loss releases matching
+  authority. Touch or another pen pointer is ignored.
+- `WM_MOUSEMOVE` → if `WinPointerPen` or `QtTablet` is authoritative, it is
+  rejected before `GetCurrentInputMessageSource()`. Otherwise the filter calls
+  `GetCurrentInputMessageSource()`. `IMDT_PEN` / `IMDT_TOUCH`
   are ignored (the pointer route already owns that movement), and only
   `IMO_INJECTED` becomes a generic injected absolute sample — this is *not*
   assumed to be any particular driver. An ordinary mouse is left entirely
@@ -173,10 +188,12 @@ epoch word — `(capture generation << 8) | source` — so the emulation thread 
 never observe a delta and an authority from different publications. There is no
 queue, no event list, no mutex and no per-event allocation.
 
-`UpdateInputStateImpl` consumes it once per frame, and only when the option is
-on. An absolute source owns the frame only when it published a **non-zero**
-delta; then that delta *replaces* `m_input.mouseX/Y`, and Raw delta, the Raw
-late-latch in `HandleInGameLogic`, the late-latch inside the native aim-delta
+`UpdateInputStateImpl` consumes it once per frame only when all three cached
+scalars are true: tablet input is allowed, relative capture is eligible, and
+the configured stylus-touch action is held. An absolute source owns the frame
+only when it published a **non-zero** delta; then that delta *replaces*
+`m_input.mouseX/Y`, and Raw delta, the Raw late-latch in
+`HandleInGameLogic`, the late-latch inside the native aim-delta
 hook, and (on non-Windows) the post-aim cursor warp are all suppressed for that
 frame. Otherwise the frame falls through to the ordinary Raw Mouse path
 untouched. Raw and tablet motion are never summed, and neither device can lock
@@ -201,16 +218,28 @@ the other out.
 
 `DirectAimTelemetry` (capture generations, per-route sample counts, duplicate
 suppressions, baseline resets, source transitions) is compiled only into
-developer builds and is reachable through `DirectAimIngress::Telemetry()`. It
-is deliberately not wired into the `input_src` perf line: that log format is
-shared with the existing Raw/panel counters and a new field would change the
-`tools/perf/summarize-melonprime-perf.py` contract. Nothing is formatted or
-logged per event in either build type.
+developer builds and is reachable through `DirectAimIngress::Telemetry()`. On
+Windows developer performance runs (`MELONPRIME_PERF=1`),
+`PointerWinFilter` additionally aggregates target-message counts, pointer API
+calls, accepted/rejected submissions, fast mouse rejects, and QPC ticks. It
+prints one `native_filter` summary when the capture ends; no event is formatted
+or logged. It is deliberately not wired into the `input_src` perf line: that
+log format is shared with the existing Raw/panel counters and a new field would
+change the `tools/perf/summarize-melonprime-perf.py` contract.
+
+The isolated `tools/perf/direct-aim-mailbox-benchmark.cpp` measures only the
+algorithmic arbiter/mailbox operations and explicitly is not end-to-end. The
+explicit `melonprime_direct_aim_mailbox_spsc_benchmark` target measures the
+GUI-producer/Emu-consumer mailbox at producer rates 125/500/1000/2000/8000 Hz
+and consumer rates 60/120/144/240 Hz, including producer/consumer p50/p95/p99
+and max samples. Its current adjacent-field layout is measured, not claimed to
+be false-sharing-free.
 
 ## Verification status
 
-Static audits, the Windows build, and the arbitration unit tests are the
-verified part. Per-device runtime behavior (XP-Pen, OpenTabletDriver modes,
-multi-monitor and mixed-DPI layouts) needs hardware and has not been observed
-here — see the runtime matrix in the design note under `.codex/`. Do not put a
-device or mode in release notes before it has actually been tried.
+Static audits, the Windows build, the arbitration unit tests, and the SPSC
+matrix are the locally verified part. Per-device runtime behavior (XP-Pen,
+OpenTabletDriver modes, multi-monitor/mixed-DPI layouts, 8 kHz mouse input,
+and in-game A/B behavior) needs hardware and has not been observed here — see
+the runtime matrix in the design note under `.codex/`. Do not put a device or
+mode in release notes before it has actually been tried.

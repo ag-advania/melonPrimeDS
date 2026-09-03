@@ -82,6 +82,7 @@ public:
         ++m_generation;
         m_captureActive = true;
         m_authority = DirectAimHostSource::None;
+        m_authorityPointerId = 0;
         DropBaseline(DirectAimBaselineReset::CaptureBegin);
     }
 
@@ -91,12 +92,15 @@ public:
             return;
         m_captureActive = false;
         m_authority = DirectAimHostSource::None;
+        m_authorityPointerId = 0;
         DropBaseline(DirectAimBaselineReset::CaptureEnd);
     }
 
-    // Pointer leave/up, focus loss, DPI or layout change, owner transfer.
+    // Focus loss, DPI/layout change, warp, and other position boundaries.
     // The authority stays latched for the capture; only the position baseline
-    // is dropped so re-entry seeds instead of jumping.
+    // is dropped so re-entry seeds instead of jumping. Contact terminal
+    // events use the identity-aware DropBaselineForSource/ReleaseAuthority
+    // operations below.
     void DropBaseline(DirectAimBaselineReset reason) noexcept
     {
         m_baselineValid = false;
@@ -107,6 +111,10 @@ public:
 
     [[nodiscard]] bool CaptureActive() const noexcept { return m_captureActive; }
     [[nodiscard]] DirectAimHostSource Authority() const noexcept { return m_authority; }
+    [[nodiscard]] uint64_t AuthorityPointerId() const noexcept
+    {
+        return m_authorityPointerId;
+    }
     [[nodiscard]] uint32_t Generation() const noexcept { return m_generation; }
     [[nodiscard]] bool BaselineValid() const noexcept { return m_baselineValid; }
     [[nodiscard]] DirectAimBaselineReset LastResetReason() const noexcept
@@ -115,7 +123,7 @@ public:
     }
 
     SubmitResult SubmitAbsolute(DirectAimHostSource source,
-                                uint32_t pointerId,
+                                uint64_t pointerId,
                                 double x,
                                 double y) noexcept
     {
@@ -123,9 +131,15 @@ public:
         if (!m_captureActive || !DirectAimSourceIsAbsolute(source))
             return result;
 
-        result.authorityChanged = TakeAuthority(source);
+        result.authorityChanged = TakeAuthority(source, pointerId);
         if (m_authority != source)
             return result; // duplicate route for an already-latched source
+
+        // A source may expose a new physical pointer without changing its
+        // route (for example, a second pen). Keep terminal-event matching
+        // tied to the pointer whose baseline is current.
+        if (m_authorityPointerId != pointerId)
+            m_authorityPointerId = pointerId;
 
         result.accepted = true;
 
@@ -164,6 +178,35 @@ public:
         return result;
     }
 
+    // Baseline reset for a terminal event that belongs to this authority.
+    // An unrelated pointer must not disturb the active source or its baseline.
+    [[nodiscard]] bool DropBaselineForSource(
+        DirectAimHostSource source,
+        uint64_t pointerId,
+        DirectAimBaselineReset reason) noexcept
+    {
+        if (m_authority != source || m_authorityPointerId != pointerId)
+            return false;
+        DropBaseline(reason);
+        return true;
+    }
+
+    // Source-lifetime release is deliberately separate from a position
+    // baseline reset. A matching leave/capture-loss can hand authority to a
+    // later source; a contact-up only calls DropBaselineForSource().
+    [[nodiscard]] bool ReleaseAuthority(
+        DirectAimHostSource source,
+        uint64_t pointerId,
+        DirectAimBaselineReset reason) noexcept
+    {
+        if (m_authority != source || m_authorityPointerId != pointerId)
+            return false;
+        m_authority = DirectAimHostSource::None;
+        m_authorityPointerId = 0;
+        DropBaseline(reason);
+        return true;
+    }
+
 private:
     // A capture-length ceiling on the carried remainder. Absolute coordinate
     // spaces are screen-sized, so anything past this is a boundary artifact
@@ -179,13 +222,14 @@ private:
         return value;
     }
 
-    bool TakeAuthority(DirectAimHostSource source) noexcept
+    bool TakeAuthority(DirectAimHostSource source, uint64_t pointerId) noexcept
     {
         if (m_authority == source)
             return false;
         if (DirectAimSourceRank(source) >= DirectAimSourceRank(m_authority))
             return false;
         m_authority = source;
+        m_authorityPointerId = pointerId;
         DropBaseline(DirectAimBaselineReset::SourceChange);
         return true;
     }
@@ -195,7 +239,8 @@ private:
     double m_pendingX = 0.0;
     double m_pendingY = 0.0;
     uint32_t m_generation = 0;
-    uint32_t m_baselinePointerId = 0;
+    uint64_t m_baselinePointerId = 0;
+    uint64_t m_authorityPointerId = 0;
     DirectAimHostSource m_authority = DirectAimHostSource::None;
     DirectAimHostSource m_baselineSource = DirectAimHostSource::None;
     DirectAimBaselineReset m_lastResetReason = DirectAimBaselineReset::Lifecycle;

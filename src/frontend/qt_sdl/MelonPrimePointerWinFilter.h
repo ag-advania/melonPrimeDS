@@ -3,11 +3,32 @@
 
 #ifdef _WIN32
 
+#include <cstdint>
+
 #include <QAbstractNativeEventFilter>
 
 namespace MelonPrime {
 
 class DirectAimIngress;
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+// Aggregate-only native filter evidence. It is reset per capture and emitted
+// once at capture end when MELONPRIME_PERF=1; no event allocates or logs.
+struct DirectAimWinFilterTelemetry
+{
+    std::uint64_t targetMessages = 0;
+    std::uint64_t pointerMessages = 0;
+    std::uint64_t mouseMoveMessages = 0;
+    std::uint64_t pointerTypeCalls = 0;
+    std::uint64_t pointerPenInfoCalls = 0;
+    std::uint64_t inputMessageSourceCalls = 0;
+    std::uint64_t acceptedSamples = 0;
+    std::uint64_t rejectedSamples = 0;
+    std::uint64_t fastRejectedMouseMoves = 0;
+    std::uint64_t nativeFilterQpcTicks = 0;
+    std::uint64_t timedMessages = 0;
+};
+#endif
 
 // Windows Pointer/Pen ingress for direct aim.
 //
@@ -37,15 +58,40 @@ public:
     void Remove();
     [[nodiscard]] bool Installed() const noexcept { return m_installed; }
 
+    // Developer/performance builds keep aggregate counters only. These are
+    // cold lifecycle operations; the native event path does not format them.
+    void ResetTelemetry() noexcept;
+    void ReportTelemetry() const noexcept;
+
     bool nativeEventFilter(const QByteArray& eventType,
                            void* message,
                            qintptr* result) override;
 
 private:
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    void RecordSample(bool accepted) noexcept
+    {
+        if (!m_measurementEnabled)
+            return;
+        if (accepted)
+            ++m_telemetry.acceptedSamples;
+        else
+            ++m_telemetry.rejectedSamples;
+    }
+#else
+    void RecordSample(bool) noexcept {}
+#endif
+
     DirectAimIngress& m_ingress;
     void* m_topLevelHwnd = nullptr;
     void* m_surfaceHwnd = nullptr;
     bool m_installed = false;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    bool m_measurementEnabled = false;
+    DirectAimWinFilterTelemetry m_telemetry;
+#else
+    static constexpr bool m_measurementEnabled = false;
+#endif
 };
 
 } // namespace MelonPrime

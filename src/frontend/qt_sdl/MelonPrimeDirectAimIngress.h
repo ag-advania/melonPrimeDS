@@ -5,7 +5,10 @@
 //
 // Tablet direct aim is opt-in so the existing Raw Mouse path remains the
 // steady-state fast path for users who do not need pen input. Nothing in this
-// object is constructed, installed, or consulted while the option is off.
+// embedded object performs work while the option is off: PointerWinFilter is
+// not allocated or installed, native filtering and tablet tracking are off,
+// Windows pointer APIs are not called, and the EmuThread mailbox is not
+// consumed. DirectAimIngress itself is embedded and inert in ScreenPanel.
 
 #include "MelonPrimeDirectAimSource.h"
 
@@ -44,12 +47,24 @@ public:
     }
 
     // Hot path (one per input event): normalize, arbitrate, publish.
-    void SubmitAbsolute(DirectAimHostSource source,
-                        uint32_t pointerId,
-                        double x,
-                        double y) noexcept;
+    [[nodiscard]] bool SubmitAbsolute(DirectAimHostSource source,
+                                      uint64_t pointerId,
+                                      double x,
+                                      double y) noexcept;
     // Cold path: pointer leave/up, focus loss, layout or DPI change.
     void DropBaseline(DirectAimBaselineReset reason) noexcept;
+    // Terminal events must identify the currently authoritative source and
+    // pointer. An unrelated touch/pointer event is a no-op.
+    [[nodiscard]] bool DropBaselineForSource(
+        DirectAimHostSource source,
+        uint64_t pointerId,
+        DirectAimBaselineReset reason) noexcept;
+    // Cold path: source departure, capture loss, device invalidation, or owner
+    // transfer. Unlike a baseline reset this publishes Source::None.
+    [[nodiscard]] bool ReleaseAuthority(
+        DirectAimHostSource source,
+        uint64_t pointerId,
+        DirectAimBaselineReset reason) noexcept;
 
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     [[nodiscard]] const DirectAimTelemetry& Telemetry() const noexcept

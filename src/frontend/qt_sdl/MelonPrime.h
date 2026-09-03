@@ -20,7 +20,6 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "MelonPrimePlatformInput.h"
 #include "MelonPrimeInputSubscription.h"
 #include "MelonPrimeThreadBridge.h"
-#include "MelonPrimeDirectAimSource.h"
 #include "MelonPrimeRuntimeConfig.h"
 #include "MelonPrimeGameSettings.h"
 #include "MelonPrimeGameRomAddrTable.h"

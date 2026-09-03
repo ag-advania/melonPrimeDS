@@ -21,6 +21,10 @@
 #include <windows.h>
 #include <windowsx.h>
 
+#include <cstdio>
+#include <cstdlib>
+#include <cstdint>
+
 namespace MelonPrime {
 
 namespace {
@@ -33,11 +37,51 @@ namespace {
     return raw != nullptr && (raw == topLevel || raw == surface);
 }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+[[nodiscard]] bool IsDirectAimPerfEnabled() noexcept
+{
+    static const bool enabled = [] {
+        const char* value = std::getenv("MELONPRIME_PERF");
+        return value && value[0] == '1' && value[1] == '\0';
+    }();
+    return enabled;
+}
+
+struct NativeFilterTiming final
+{
+    DirectAimWinFilterTelemetry& telemetry;
+    LARGE_INTEGER start{};
+    bool active = false;
+
+    NativeFilterTiming(DirectAimWinFilterTelemetry& value, bool enabled) noexcept
+        : telemetry(value)
+    {
+        active = enabled && QueryPerformanceCounter(&start) != FALSE;
+    }
+
+    ~NativeFilterTiming()
+    {
+        if (!active)
+            return;
+        LARGE_INTEGER end{};
+        if (QueryPerformanceCounter(&end) == FALSE
+            || end.QuadPart < start.QuadPart)
+            return;
+        telemetry.nativeFilterQpcTicks += static_cast<std::uint64_t>(
+            end.QuadPart - start.QuadPart);
+        ++telemetry.timedMessages;
+    }
+};
+#endif
+
 } // namespace
 
 PointerWinFilter::PointerWinFilter(DirectAimIngress& ingress) noexcept
     : m_ingress(ingress)
 {
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    m_measurementEnabled = IsDirectAimPerfEnabled();
+#endif
 }
 
 PointerWinFilter::~PointerWinFilter()
@@ -72,6 +116,50 @@ void PointerWinFilter::Remove()
     m_installed = false;
 }
 
+void PointerWinFilter::ResetTelemetry() noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    m_telemetry = DirectAimWinFilterTelemetry{};
+#endif
+}
+
+void PointerWinFilter::ReportTelemetry() const noexcept
+{
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (!m_measurementEnabled)
+        return;
+
+    LARGE_INTEGER frequency{};
+    const bool haveFrequency = QueryPerformanceFrequency(&frequency) != FALSE
+        && frequency.QuadPart > 0;
+    const double averageUs = haveFrequency && m_telemetry.timedMessages != 0
+        ? static_cast<double>(m_telemetry.nativeFilterQpcTicks) * 1000000.0
+            / static_cast<double>(frequency.QuadPart)
+            / static_cast<double>(m_telemetry.timedMessages)
+        : 0.0;
+    std::fprintf(
+        stderr,
+        "[MelonPrimeDirectAimPerf] native_filter "
+        "target_messages=%llu pointer_messages=%llu mousemove_messages=%llu "
+        "pointer_type_calls=%llu pointer_pen_info_calls=%llu "
+        "input_message_source_calls=%llu fast_rejected_mousemoves=%llu "
+        "accepted_samples=%llu rejected_samples=%llu "
+        "timed_messages=%llu qpc_ticks=%llu average_us=%.3f\n",
+        static_cast<unsigned long long>(m_telemetry.targetMessages),
+        static_cast<unsigned long long>(m_telemetry.pointerMessages),
+        static_cast<unsigned long long>(m_telemetry.mouseMoveMessages),
+        static_cast<unsigned long long>(m_telemetry.pointerTypeCalls),
+        static_cast<unsigned long long>(m_telemetry.pointerPenInfoCalls),
+        static_cast<unsigned long long>(m_telemetry.inputMessageSourceCalls),
+        static_cast<unsigned long long>(m_telemetry.fastRejectedMouseMoves),
+        static_cast<unsigned long long>(m_telemetry.acceptedSamples),
+        static_cast<unsigned long long>(m_telemetry.rejectedSamples),
+        static_cast<unsigned long long>(m_telemetry.timedMessages),
+        static_cast<unsigned long long>(m_telemetry.nativeFilterQpcTicks),
+        averageUs);
+#endif
+}
+
 bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
                                          void* message,
                                          qintptr* result)
@@ -85,36 +173,97 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
     if (!msg || !IsTargetWindow(msg->hwnd, m_topLevelHwnd, m_surfaceHwnd))
         return false;
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (m_measurementEnabled)
+        ++m_telemetry.targetMessages;
+    const NativeFilterTiming timing(m_telemetry, m_measurementEnabled);
+#endif
+
     switch (msg->message) {
     case WM_POINTERDOWN:
     case WM_POINTERUPDATE: {
-        const UINT32 pointerId =
-            static_cast<UINT32>(GET_POINTERID_WPARAM(msg->wParam));
+        if (m_measurementEnabled)
+            ++m_telemetry.pointerMessages;
+        const std::uint64_t pointerId = static_cast<std::uint64_t>(
+            GET_POINTERID_WPARAM(msg->wParam));
         POINTER_INPUT_TYPE type = PT_POINTER;
-        if (!GetPointerType(pointerId, &type) || type != PT_PEN)
+        if (m_measurementEnabled)
+            ++m_telemetry.pointerTypeCalls;
+        if (!GetPointerType(static_cast<UINT32>(pointerId), &type)
+            || type != PT_PEN) {
+            RecordSample(false);
             return false;
+        }
 
         POINTER_PEN_INFO penInfo{};
-        if (!GetPointerPenInfo(pointerId, &penInfo))
+        if (m_measurementEnabled)
+            ++m_telemetry.pointerPenInfoCalls;
+        if (!GetPointerPenInfo(static_cast<UINT32>(pointerId), &penInfo)) {
+            RecordSample(false);
             return false;
+        }
 
         // Pressure, tilt and rotation are deliberately unused: direct aim is
         // gated by the touch action, not by pen contact, so a hovering pen
         // aims exactly like a moving mouse.
-        m_ingress.SubmitAbsolute(
+        RecordSample(m_ingress.SubmitAbsolute(
             DirectAimHostSource::WinPointerPen,
             pointerId,
             static_cast<double>(penInfo.pointerInfo.ptPixelLocation.x),
-            static_cast<double>(penInfo.pointerInfo.ptPixelLocation.y));
+            static_cast<double>(penInfo.pointerInfo.ptPixelLocation.y)));
         return false;
     }
     case WM_POINTERUP:
     case WM_POINTERLEAVE:
-    case WM_POINTERCAPTURECHANGED:
-        m_ingress.DropBaseline(DirectAimBaselineReset::PointerLeave);
+    case WM_POINTERCAPTURECHANGED: {
+        if (m_measurementEnabled)
+            ++m_telemetry.pointerMessages;
+        // A terminal touch pointer must not reset or release a pen authority.
+        // Only query the pointer stack while its source is the current owner.
+        if (m_ingress.Authority() != DirectAimHostSource::WinPointerPen)
+            return false;
+        const std::uint64_t pointerId = static_cast<std::uint64_t>(
+            GET_POINTERID_WPARAM(msg->wParam));
+        POINTER_INPUT_TYPE type = PT_POINTER;
+        if (m_measurementEnabled)
+            ++m_telemetry.pointerTypeCalls;
+        if (!GetPointerType(static_cast<UINT32>(pointerId), &type)
+            || type != PT_PEN)
+            return false;
+        if (msg->message == WM_POINTERUP) {
+            // Contact-up ends the current position segment, but hover remains
+            // the same source and must not hand the capture to a lower route.
+            (void)m_ingress.DropBaselineForSource(
+                DirectAimHostSource::WinPointerPen,
+                pointerId,
+                DirectAimBaselineReset::PointerLeave);
+        } else {
+            // Leave/capture-loss is source departure, not merely a baseline
+            // reset. A later source may seed and become authoritative.
+            (void)m_ingress.ReleaseAuthority(
+                DirectAimHostSource::WinPointerPen,
+                pointerId,
+                DirectAimBaselineReset::PointerLeave);
+        }
         return false;
+    }
     case WM_MOUSEMOVE: {
+        if (m_measurementEnabled)
+            ++m_telemetry.mouseMoveMessages;
+        // A native pen or Qt tablet authority already owns absolute motion.
+        // Reject synthesized mouse messages before the source query; when no
+        // absolute authority exists, retain the query for generic injected
+        // pointer discovery.
+        const auto authority = m_ingress.Authority();
+        if (authority == DirectAimHostSource::WinPointerPen
+            || authority == DirectAimHostSource::QtTablet) {
+            if (m_measurementEnabled)
+                ++m_telemetry.fastRejectedMouseMoves;
+            return false;
+        }
         INPUT_MESSAGE_SOURCE source{};
+        if (m_measurementEnabled)
+            ++m_telemetry.inputMessageSourceCalls;
         if (!GetCurrentInputMessageSource(&source))
             return false;
         // A pen or touch contact also promotes to mouse messages. Those belong
@@ -135,11 +284,11 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
         // Generic injected absolute pointer. This is not assumed to be any
         // particular driver: no process, path, IPC, VID/PID or version
         // detection is performed anywhere in this path.
-        m_ingress.SubmitAbsolute(
+        RecordSample(m_ingress.SubmitAbsolute(
             DirectAimHostSource::InjectedAbsolutePointer,
             0,
             static_cast<double>(msg->pt.x),
-            static_cast<double>(msg->pt.y));
+            static_cast<double>(msg->pt.y)));
         return false;
     }
     case WM_KILLFOCUS:

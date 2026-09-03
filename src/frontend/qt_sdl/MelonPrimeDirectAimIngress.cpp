@@ -36,6 +36,7 @@ void DirectAimIngress::BeginCapture(MelonPrimeThreadBridge& bridge,
 #ifdef _WIN32
     if (!m_winFilter)
         m_winFilter = std::make_unique<PointerWinFilter>(*this);
+    m_winFilter->ResetTelemetry();
     m_winFilter->SetTargetWindows(topLevelHwnd, surfaceHwnd);
     m_winFilter->Install();
 #else
@@ -47,6 +48,8 @@ void DirectAimIngress::BeginCapture(MelonPrimeThreadBridge& bridge,
 void DirectAimIngress::EndCapture()
 {
 #ifdef _WIN32
+    if (m_bridge && m_winFilter)
+        m_winFilter->ReportTelemetry();
     if (m_winFilter)
         m_winFilter->Remove();
 #endif
@@ -70,13 +73,13 @@ void DirectAimIngress::PublishAuthority() noexcept
 #endif
 }
 
-void DirectAimIngress::SubmitAbsolute(DirectAimHostSource source,
-                                      uint32_t pointerId,
+bool DirectAimIngress::SubmitAbsolute(DirectAimHostSource source,
+                                      uint64_t pointerId,
                                       double x,
                                       double y) noexcept
 {
     if (!m_bridge)
-        return;
+        return false;
 
     const auto result = m_arbiter.SubmitAbsolute(source, pointerId, x, y);
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
@@ -101,9 +104,10 @@ void DirectAimIngress::SubmitAbsolute(DirectAimHostSource source,
     if (result.authorityChanged)
         PublishAuthority();
     if (!result.accepted || result.seeded)
-        return;
+        return result.accepted;
 
     m_bridge->AddDirectAimDeltaFromGui(result.dx, result.dy);
+    return true;
 }
 
 void DirectAimIngress::DropBaseline(DirectAimBaselineReset reason) noexcept
@@ -112,6 +116,36 @@ void DirectAimIngress::DropBaseline(DirectAimBaselineReset reason) noexcept
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     ++m_telemetry.baselineResets;
 #endif
+}
+
+bool DirectAimIngress::DropBaselineForSource(
+    DirectAimHostSource source,
+    uint64_t pointerId,
+    DirectAimBaselineReset reason) noexcept
+{
+    const bool reset = m_arbiter.DropBaselineForSource(source, pointerId, reason);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (reset)
+        ++m_telemetry.baselineResets;
+#endif
+    return reset;
+}
+
+bool DirectAimIngress::ReleaseAuthority(
+    DirectAimHostSource source,
+    uint64_t pointerId,
+    DirectAimBaselineReset reason) noexcept
+{
+    if (!m_bridge)
+        return false;
+    const bool released = m_arbiter.ReleaseAuthority(source, pointerId, reason);
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (released)
+        ++m_telemetry.baselineResets;
+#endif
+    if (released)
+        PublishAuthority();
+    return released;
 }
 
 } // namespace MelonPrime

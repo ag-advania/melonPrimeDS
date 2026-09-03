@@ -888,6 +888,15 @@ $inputConfigDialogPath = Join-Path $qtSdl 'InputConfig/InputConfigDialog.cpp'
 $inputConfigDialogHeaderPath = Join-Path $qtSdl 'InputConfig/InputConfigDialog.h'
 $mapButtonPath = Join-Path $qtSdl 'InputConfig/MapButton.h'
 $perfProbePath = Join-Path $qtSdl 'MelonPrimePerfProbe.h'
+$directAimSourcePath = Join-Path $qtSdl 'MelonPrimeDirectAimSource.h'
+$directAimIngressPath = Join-Path $qtSdl 'MelonPrimeDirectAimIngress.h'
+$directAimIngressCppPath = Join-Path $qtSdl 'MelonPrimeDirectAimIngress.cpp'
+$pointerWinFilterPath = Join-Path $qtSdl 'MelonPrimePointerWinFilter.cpp'
+$pointerWinFilterHeaderPath = Join-Path $qtSdl 'MelonPrimePointerWinFilter.h'
+$inputProjectionPath = Join-Path $qtSdl 'MelonPrimeInputProjection.h'
+$directAimBenchmarkPath = Join-Path $repoRoot 'tools/perf/direct-aim-mailbox-benchmark.cpp'
+$directAimSpscBenchmarkPath = Join-Path $repoRoot 'tools/perf/direct-aim-mailbox-spsc-benchmark.cpp'
+$directAimDocPath = Join-Path $repoRoot 'docs/features/input/pen-tablet-direct-aim.md'
 $linuxRawText = Get-Content -LiteralPath $linuxRawPath -Raw
 $linuxRawHeaderText = Get-Content -LiteralPath $linuxRawHeaderPath -Raw
 $waylandText = Get-Content -LiteralPath $waylandPath -Raw
@@ -903,12 +912,139 @@ $inputConfigDialogText = Get-Content -LiteralPath $inputConfigDialogPath -Raw
 $inputConfigDialogHeaderText = Get-Content -LiteralPath $inputConfigDialogHeaderPath -Raw
 $mapButtonText = Get-Content -LiteralPath $mapButtonPath -Raw
 $perfProbeText = Get-Content -LiteralPath $perfProbePath -Raw
+$directAimSourceText = Get-Content -LiteralPath $directAimSourcePath -Raw
+$directAimIngressText = Get-Content -LiteralPath $directAimIngressPath -Raw
+$directAimIngressCppText = Get-Content -LiteralPath $directAimIngressCppPath -Raw
+$pointerWinFilterText = Get-Content -LiteralPath $pointerWinFilterPath -Raw
+$pointerWinFilterHeaderText = Get-Content -LiteralPath $pointerWinFilterHeaderPath -Raw
+$inputProjectionText = Get-Content -LiteralPath $inputProjectionPath -Raw
+$directAimBenchmarkText = Get-Content -LiteralPath $directAimBenchmarkPath -Raw
+$directAimSpscBenchmarkText = Get-Content -LiteralPath $directAimSpscBenchmarkPath -Raw
+$directAimDocText = Get-Content -LiteralPath $directAimDocPath -Raw
+$directAimCmakeText = Get-Content -LiteralPath (Join-Path $qtSdl 'CMakeLists.txt') -Raw
 $joystickDevicePrivateAt = $joystickDeviceHeaderText.IndexOf(
     '    private:', [System.StringComparison]::Ordinal)
 $joystickDevicePublicText = if ($joystickDevicePrivateAt -ge 0) {
     $joystickDeviceHeaderText.Substring(0, $joystickDevicePrivateAt)
 } else {
     $joystickDeviceHeaderText
+}
+
+# --- Rule L3: direct-aim tablet ingress and mailbox contract ----------------
+#
+# The opt-in path is intentionally a narrow absolute-source adapter. These
+# source ratchets pin the frame gate, identity-aware terminal events, native
+# fast rejection, and the evidence tooling without claiming physical-device
+# or end-to-end latency validation.
+$directAimUpdateBody = Get-FunctionText -Path $gameInputPath `
+    -Signature 'void\s+MelonPrimeCore::UpdateInputStateImpl\s*\('
+if (-not $directAimUpdateBody) {
+    Add-Error 'Rule L3: UpdateInputStateImpl definition not found for direct-aim gate'
+} else {
+    $gateIndex = $directAimUpdateBody.IndexOf(
+        'InputProjection::ShouldConsumeDirectAimMailbox(',
+        [System.StringComparison]::Ordinal)
+    $consumeIndex = $directAimUpdateBody.IndexOf(
+        'ConsumeDirectAimForEmu(',
+        [System.StringComparison]::Ordinal)
+    if ($gateIndex -lt 0 -or $consumeIndex -lt 0 -or $gateIndex -gt $consumeIndex) {
+        Add-Error 'Rule L3: direct-aim mailbox consumption must follow the three-factor frame gate'
+    }
+    if ($directAimUpdateBody -match 'if\s*\(UNLIKELY\(\s*m_enableStylusDirectAimAllowTabletInput\s*\)\)') {
+        Add-Error 'Rule L3: direct-aim mailbox reverted to an option-only consume gate'
+    }
+}
+foreach ($token in @(
+    'return allowTabletInput && captureEligible && stylusTouchDown;',
+    'static_assert(!ShouldConsumeDirectAimMailbox(false, false, false));',
+    'static_assert(!ShouldConsumeDirectAimMailbox(true, true, false));',
+    'static_assert(ShouldConsumeDirectAimMailbox(true, true, true));'
+)) {
+    if ($inputProjectionText -notmatch [regex]::Escape($token)) {
+        Add-Error "Rule L3: direct-aim frame predicate lost $token"
+    }
+}
+
+foreach ($token in @(
+    'uint64_t pointerId',
+    'uint64_t AuthorityPointerId()',
+    'DropBaselineForSource(',
+    'ReleaseAuthority(',
+    'm_authorityPointerId'
+)) {
+    if ($directAimSourceText -notmatch [regex]::Escape($token)) {
+        Add-Error "Rule L3: direct-aim source identity/lifetime token missing: $token"
+    }
+}
+if ($directAimIngressText -notmatch 'uint64_t pointerId' -or
+    $directAimIngressText -notmatch 'DropBaselineForSource\(' -or
+    $directAimIngressText -notmatch 'ReleaseAuthority\(') {
+    Add-Error 'Rule L3: ingress must expose uint64 source-aware baseline/release operations'
+}
+if ($coreHeaderText -match '#include\s+"MelonPrimeDirectAimSource\.h"') {
+    Add-Error 'Rule L3: MelonPrime.h must not centrally include the direct-aim source type'
+}
+
+$fastRejectIndex = $pointerWinFilterText.IndexOf(
+    'if (authority == DirectAimHostSource::WinPointerPen',
+    [System.StringComparison]::Ordinal)
+$sourceQueryIndex = $pointerWinFilterText.IndexOf(
+    'GetCurrentInputMessageSource(&source)',
+    [System.StringComparison]::Ordinal)
+if ($fastRejectIndex -lt 0 -or $sourceQueryIndex -lt 0 -or
+    $fastRejectIndex -gt $sourceQueryIndex) {
+    Add-Error 'Rule L3: native direct-aim authority fast reject must precede GetCurrentInputMessageSource'
+}
+if ($pointerWinFilterText -match 'm_ingress\.DropBaseline\(DirectAimBaselineReset::PointerLeave\)') {
+    Add-Error 'Rule L3: native pointer terminal events must use identity-aware operations'
+}
+foreach ($token in @(
+    'DirectAimWinFilterTelemetry',
+    'pointerTypeCalls',
+    'pointerPenInfoCalls',
+    'inputMessageSourceCalls',
+    'fastRejectedMouseMoves',
+    'QueryPerformanceCounter',
+    'ReportTelemetry()'
+)) {
+    if (($pointerWinFilterHeaderText + $pointerWinFilterText + $directAimIngressCppText) -notmatch
+        [regex]::Escape($token)) {
+        Add-Error "Rule L3: native direct-aim aggregate evidence missing: $token"
+    }
+}
+
+foreach ($token in @(
+    'melonprime_direct_aim_mailbox_spsc_benchmark',
+    'Threads::Threads'
+)) {
+    if ($directAimCmakeText -notmatch [regex]::Escape($token)) {
+        Add-Error "Rule L3: SPSC benchmark build registration missing: $token"
+    }
+}
+foreach ($token in @(
+    'SubmitAbsolute',
+    'AddDirectAimDeltaFromGui',
+    'ConsumeDirectAimForEmu',
+    'producer_events_per_sec',
+    'p50=',
+    'p95=',
+    'p99=',
+    'max='
+)) {
+    if ($directAimSpscBenchmarkText -notmatch [regex]::Escape($token)) {
+        Add-Error "Rule L3: SPSC benchmark contract missing: $token"
+    }
+}
+foreach ($rate in @('125', '500', '1000', '2000', '8000', '60', '120', '144', '240')) {
+    if ($directAimSpscBenchmarkText -notmatch "\b$rate\b") {
+        Add-Error "Rule L3: SPSC benchmark rate missing: $rate"
+    }
+}
+if ($directAimBenchmarkText -notmatch 'This is not an end-to-end measurement') {
+    Add-Error 'Rule L3: isolated direct-aim benchmark must state its non-end-to-end scope'
+}
+if ($directAimDocText -notmatch 'DirectAimIngress object itself is embedded') {
+    Add-Error 'Rule L3: direct-aim documentation must describe the embedded inert ingress object'
 }
 
 $aimBody = Get-FunctionText -Path $gameInputPath `

@@ -605,8 +605,9 @@ private:
     // never registers must still free the pointer, or the pin would trap it.
     bool m_stylusClickHeld = false;
     bool m_stylusDirectAimCaptureHeld = false;
-    // GUI-thread owned. Constructed inert; nothing runs until a tablet-enabled
-    // direct-aim capture begins.
+    // GUI-thread owned. The embedded ingress is inert while the option is off;
+    // its Windows filter is allocated/installed only for a tablet-enabled
+    // direct-aim capture.
     MelonPrime::DirectAimIngress m_directAim;
     bool m_hasLastClipFocusedState = false;
     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic

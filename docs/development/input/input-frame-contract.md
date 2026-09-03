@@ -126,6 +126,26 @@ enabled. The Raw option therefore remains usable with developer features off;
 the helper adds no per-frame environment, allocation, configuration, or
 filesystem work.
 
+### Pen tablet direct-aim measurement boundary
+
+The opt-in tablet mailbox is consumed only when the tablet option is enabled,
+relative capture is eligible, and the stylus-touch action is held. A non-zero
+absolute delta replaces the Raw frame delta; an idle absolute source hands the
+frame back to Raw, so the paths are never summed. `PointerWinFilter` rejects
+synthesized mouse messages before `GetCurrentInputMessageSource()` while a
+`WinPointerPen` or `QtTablet` authority is active. Windows developer
+performance runs aggregate native filter message/API counts and QPC ticks and
+emit one cold `native_filter` summary at capture end.
+
+`tools/perf/direct-aim-mailbox-benchmark.cpp` is an isolated algorithmic
+arbiter/mailbox measurement and is not end-to-end. The explicit
+`melonprime_direct_aim_mailbox_spsc_benchmark` target measures the two-thread
+GUI-producer/Emu-consumer bridge across producer rates 125/500/1000/2000/8000
+Hz and consumer rates 60/120/144/240 Hz, reporting events/sec and
+p50/p95/p99/max. It records the current adjacent-field mailbox layout and does
+not claim false-sharing mitigation; layout changes require evidence from this
+matrix on target hardware.
+
 Generic reports and frame CSV rows carry `instance_id`. Each emulation thread
 has its own generic probe state; set `MELONPRIME_PERF_CSV` to a path containing
 `%INSTANCE%` when collecting more than one instance (without the placeholder,

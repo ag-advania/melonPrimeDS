@@ -1048,6 +1048,29 @@ def check_windows_source_selection_model() -> None:
     )
 
 
+def check_direct_aim_frame_projection_model() -> None:
+    # The production frame gate has three independent requirements. In
+    # particular, enabling the option must not consume an idle mailbox while
+    # the configured touch action is up or capture ownership is unavailable.
+    def should_consume(
+        allow_tablet: bool, capture_eligible: bool, stylus_touch_down: bool
+    ) -> bool:
+        return allow_tablet and capture_eligible and stylus_touch_down
+
+    assert not should_consume(False, False, False)
+    assert not should_consume(True, False, False)
+    assert not should_consume(True, True, False)
+    assert should_consume(True, True, True)
+
+    # A moving absolute source replaces the relative frame; an idle absolute
+    # source hands the frame back to Raw. The two paths are never added.
+    def project(raw: tuple[int, int], direct: tuple[int, int]) -> tuple[int, int]:
+        return direct if direct != (0, 0) else raw
+
+    assert project((7, -3), (0, 0)) == (7, -3)
+    assert project((7, -3), (4, 2)) == (4, 2)
+
+
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
     input_cpp = source("src/frontend/qt_sdl/EmuInstanceInput.cpp")
@@ -1103,6 +1126,16 @@ def main() -> None:
     raw_hotkey_mapping_test = source("tools/testing/raw-hotkey-vk-mapping-tests.cpp")
     raw_recovery_hint_test = source("tools/testing/raw-recovery-hint-tests.cpp")
     qt_sdl_cmake = source("src/frontend/qt_sdl/CMakeLists.txt")
+    direct_source = source("src/frontend/qt_sdl/MelonPrimeDirectAimSource.h")
+    direct_ingress = source("src/frontend/qt_sdl/MelonPrimeDirectAimIngress.h")
+    direct_ingress_cpp = source("src/frontend/qt_sdl/MelonPrimeDirectAimIngress.cpp")
+    pointer_filter = source("src/frontend/qt_sdl/MelonPrimePointerWinFilter.cpp")
+    pointer_filter_header = source("src/frontend/qt_sdl/MelonPrimePointerWinFilter.h")
+    input_projection = source("src/frontend/qt_sdl/MelonPrimeInputProjection.h")
+    direct_benchmark = source("tools/perf/direct-aim-mailbox-benchmark.cpp")
+    direct_spsc_benchmark = source(
+        "tools/perf/direct-aim-mailbox-spsc-benchmark.cpp"
+    )
     require(qt_sdl_cmake, "MelonPrimeJoystickDevice.cpp", "joystick component build registration")
     input_subscription = source("src/frontend/qt_sdl/MelonPrimeInputSubscription.h")
     core = source("src/frontend/qt_sdl/MelonPrime.cpp")
@@ -2569,6 +2602,112 @@ def main() -> None:
     check_windows_raw_reaudit_models()
     check_windows_raw_recovery_hint_model()
     check_windows_source_selection_model()
+    check_direct_aim_frame_projection_model()
+
+    # MELONPRIME_DIRECT_AIM_TABLET_MAILBOX_V2: frame consumption, identity and
+    # source lifetime remain explicit, while the GUI/Emu bridge stays SPSC.
+    for needle in (
+        "ShouldConsumeDirectAimMailbox(",
+        "m_enableStylusDirectAimAllowTabletInput",
+        "captureEligible",
+        "m_stylusTouchKeyDown",
+        "ConsumeDirectAimForEmu(",
+    ):
+        require(game_input + input_projection, needle, "direct-aim frame gate")
+    require(
+        game_input,
+        "InputProjection::ShouldConsumeDirectAimMailbox(",
+        "direct-aim frame gate owner",
+    )
+    require(
+        input_projection,
+        "return allowTabletInput && captureEligible && stylusTouchDown;",
+        "direct-aim pure frame predicate",
+    )
+    for needle in (
+        "uint64_t pointerId",
+        "uint64_t AuthorityPointerId()",
+        "DropBaselineForSource(",
+        "ReleaseAuthority(",
+        "m_authorityPointerId",
+    ):
+        require(direct_source, needle, "direct-aim pointer identity/lifetime")
+    for needle in (
+        "uint64_t pointerId",
+        "DropBaselineForSource(",
+        "ReleaseAuthority(",
+    ):
+        require(direct_ingress + direct_ingress_cpp, needle, "direct-aim ingress lifetime")
+    require(
+        pointer_filter,
+        "if (authority == DirectAimHostSource::WinPointerPen",
+        "direct-aim native mouse fast reject",
+    )
+    require(
+        pointer_filter,
+        "GetCurrentInputMessageSource(&source)",
+        "direct-aim injected source discovery",
+    )
+    fast_reject = pointer_filter.index(
+        "if (authority == DirectAimHostSource::WinPointerPen"
+    )
+    source_query = pointer_filter.index("GetCurrentInputMessageSource(&source)")
+    if fast_reject > source_query:
+        raise AssertionError(
+            "direct-aim native authority fast reject must precede source query"
+        )
+    for needle in (
+        "DirectAimWinFilterTelemetry",
+        "pointerTypeCalls",
+        "pointerPenInfoCalls",
+        "inputMessageSourceCalls",
+        "fastRejectedMouseMoves",
+        "ReportTelemetry()",
+        "QueryPerformanceCounter",
+    ):
+        require(
+            pointer_filter_header + pointer_filter + direct_ingress_cpp,
+            needle,
+            "direct-aim native aggregate telemetry",
+        )
+    if "std::queue" in direct_ingress + direct_ingress_cpp + pointer_filter:
+        raise AssertionError("direct-aim ingress must remain queue-free")
+    for needle in (
+        "std::uint64_t penId",
+        "DropBaselineForSource(",
+        "static_cast<std::uint64_t>(event->uniqueId())",
+    ):
+        require(screen, needle, "Qt tablet uint64 identity and contact-up fence")
+    require(
+        qt_sdl_cmake,
+        "melonprime_direct_aim_mailbox_spsc_benchmark",
+        "direct-aim SPSC benchmark registration",
+    )
+    for needle in (
+        "SubmitAbsolute",
+        "AddDirectAimDeltaFromGui",
+        "ConsumeDirectAimForEmu",
+        "125",
+        "500",
+        "1000",
+        "2000",
+        "8000",
+        "p50",
+        "p95",
+        "p99",
+        "max",
+    ):
+        require(direct_spsc_benchmark, needle, "direct-aim SPSC benchmark contract")
+    require(
+        direct_benchmark,
+        "isolated algorithmic cost",
+        "direct-aim isolated benchmark scope",
+    )
+    require(
+        direct_benchmark,
+        "This is not an end-to-end measurement",
+        "direct-aim benchmark limitation",
+    )
 
     check_state_model()
     check_controller_pause_model()

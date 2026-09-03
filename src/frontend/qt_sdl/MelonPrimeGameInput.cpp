@@ -1,6 +1,7 @@
 #include "MelonPrimeInternal.h"
 #include "EmuInstance.h"
 #include "MelonPrimeInputProjection.h"
+#include "MelonPrimeDirectAimSource.h"
 #include "NDS.h"
 #include "main.h"
 #include "Screen.h"
@@ -440,9 +441,15 @@ namespace MelonPrime {
         // MELONPRIME_DIRECT_AIM_TABLET_MAILBOX_V1
         // Frame projection owns the Raw-vs-DirectAim decision. Exactly one
         // source supplies this frame's aim delta; the two are never summed.
-        // The whole block is skipped while the opt-in is off, so a mouse-only
-        // session never touches the tablet mailbox.
-        if (UNLIKELY(m_enableStylusDirectAimAllowTabletInput)) {
+        // The mailbox is consumed only during an eligible, held direct-aim
+        // frame. This keeps a stale/idle tablet publication from being
+        // observed while the option is enabled but the touch action is not.
+        const bool tabletDirectAimFrame =
+            InputProjection::ShouldConsumeDirectAimMailbox(
+                m_enableStylusDirectAimAllowTabletInput,
+                captureEligible,
+                m_stylusTouchKeyDown);
+        if (UNLIKELY(tabletDirectAimFrame)) {
             int32_t directAimDx = 0;
             int32_t directAimDy = 0;
             const auto directAimSource = static_cast<DirectAimHostSource>(

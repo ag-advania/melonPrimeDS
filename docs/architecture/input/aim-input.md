@@ -383,8 +383,11 @@ are normalized to relative deltas by `DirectAimSourceArbiter`, which arbitrates
 only between absolute sources. The relative mouse never participates: it keeps
 its Raw transport, and a frame is handed to the tablet only when the mailbox
 published non-zero motion, so a pen and a mouse stay usable in one capture
-without ever being summed. With the option off nothing in that path is
-constructed or consulted, and the Raw Mouse projection below is unchanged.
+without ever being summed. The mailbox is consumed only when tablet input is
+allowed, relative capture is eligible, and the stylus-touch action is held.
+With the option off the Windows filter is not allocated/installed, tablet
+tracking and pointer-source API calls are disabled, and the embedded
+`DirectAimIngress` remains inert; the Raw Mouse projection below is unchanged.
 Full contract:
 [Pen tablet direct aim](../../features/input/pen-tablet-direct-aim.md).
 

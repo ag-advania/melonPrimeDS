@@ -196,6 +196,80 @@ void TestBaselineDrop()
                true, true, 0, 0, "re-entry seeds after a leave");
 }
 
+// Terminal events are source- and pointer-owned. A touch or an older pen
+// pointer must not reset the current pen baseline; a matching leave releases
+// the source so the next absolute route may seed.
+void TestIdentityAwareTerminalEvents()
+{
+    DirectAimSourceArbiter arbiter;
+    arbiter.BeginCapture();
+    (void)arbiter.SubmitAbsolute(
+        DirectAimHostSource::WinPointerPen, 17, 100, 100);
+    (void)arbiter.SubmitAbsolute(
+        DirectAimHostSource::WinPointerPen, 17, 110, 100);
+
+    Check(!arbiter.DropBaselineForSource(
+               DirectAimHostSource::WinPointerPen, 22,
+               DirectAimBaselineReset::PointerLeave),
+          "an unrelated pointer cannot drop the pen baseline");
+    Check(!arbiter.DropBaselineForSource(
+               DirectAimHostSource::QtTablet, 22,
+               DirectAimBaselineReset::PointerLeave),
+          "an unrelated source cannot drop the pen baseline");
+    Check(arbiter.BaselineValid()
+              && arbiter.Authority() == DirectAimHostSource::WinPointerPen
+              && arbiter.AuthorityPointerId() == 17,
+          "unrelated terminal events preserve source identity");
+
+    Check(arbiter.DropBaselineForSource(
+              DirectAimHostSource::WinPointerPen, 17,
+              DirectAimBaselineReset::PointerLeave),
+          "matching contact-up drops only the baseline");
+    Check(!arbiter.BaselineValid()
+              && arbiter.Authority() == DirectAimHostSource::WinPointerPen,
+          "contact-up retains hover authority");
+    CheckDelta(arbiter.SubmitAbsolute(
+                   DirectAimHostSource::WinPointerPen, 17, 900, 900),
+               true, true, 0, 0,
+               "contact-up re-entry seeds without a jump");
+
+    Check(arbiter.ReleaseAuthority(
+              DirectAimHostSource::WinPointerPen, 17,
+              DirectAimBaselineReset::PointerLeave),
+          "matching pointer leave releases authority");
+    Check(arbiter.Authority() == DirectAimHostSource::None
+              && !arbiter.BaselineValid(),
+          "source release clears authority and baseline");
+    CheckDelta(arbiter.SubmitAbsolute(
+                   DirectAimHostSource::QtTablet, 22, 400, 300),
+               true, true, 0, 0,
+               "the next source seeds after explicit release");
+    CheckDelta(arbiter.SubmitAbsolute(
+                   DirectAimHostSource::QtTablet, 22, 404, 297),
+               true, false, 4, -3,
+               "the fallback source then differences normally");
+}
+
+void TestWidePointerIdentity()
+{
+    constexpr uint64_t kLargePointerId = 0xFEDCBA9876543210ULL;
+    DirectAimSourceArbiter arbiter;
+    arbiter.BeginCapture();
+    (void)arbiter.SubmitAbsolute(
+        DirectAimHostSource::QtTablet, kLargePointerId, 10, 20);
+    Check(arbiter.AuthorityPointerId() == kLargePointerId,
+          "absolute source retains the complete uint64 pointer identity");
+    Check(!arbiter.ReleaseAuthority(
+               DirectAimHostSource::QtTablet,
+               static_cast<uint64_t>(static_cast<uint32_t>(kLargePointerId)),
+               DirectAimBaselineReset::PointerLeave),
+          "a truncated pointer identity cannot release the source");
+    Check(arbiter.ReleaseAuthority(
+              DirectAimHostSource::QtTablet, kLargePointerId,
+              DirectAimBaselineReset::PointerLeave),
+          "the complete pointer identity releases the source");
+}
+
 // Sub-pixel motion accumulates instead of being quantized away, and the
 // remainder never turns into drift.
 void TestSubPixelResidual()
@@ -225,6 +299,8 @@ int main()
     TestStillPenYieldsNoMotion();
     TestSelfCursorMoveContributesNothing();
     TestBaselineDrop();
+    TestIdentityAwareTerminalEvents();
+    TestWidePointerIdentity();
     TestSubPixelResidual();
 
     if (g_failures != 0) {

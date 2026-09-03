@@ -1570,26 +1570,39 @@ void ScreenPanel::tabletEvent(QTabletEvent* event)
 #if QT_VERSION_MAJOR == 6
             const QPointF global = event->globalPosition();
             const auto* const device = event->pointingDevice();
-            const uint32_t penId = device
-                ? static_cast<uint32_t>(static_cast<uint64_t>(
-                      device->uniqueId().numericId()))
+            const std::uint64_t penId = device
+                ? static_cast<std::uint64_t>(device->uniqueId().numericId())
                 : 0u;
 #else
             const QPointF global = QPointF(event->globalPos());
-            const uint32_t penId =
-                static_cast<uint32_t>(static_cast<uint64_t>(event->uniqueId()));
+            const std::uint64_t penId =
+                static_cast<std::uint64_t>(event->uniqueId());
 #endif
             // Pen contact is not required: the touch action is what gates
             // direct aim, so hover movement aims exactly like a mouse.
-            m_directAim.SubmitAbsolute(
+            (void)m_directAim.SubmitAbsolute(
                 MelonPrime::DirectAimHostSource::QtTablet,
                 penId, global.x(), global.y());
             break;
         }
-        case QEvent::TabletRelease:
-            m_directAim.DropBaseline(
+        case QEvent::TabletRelease: {
+#if QT_VERSION_MAJOR == 6
+            const auto* const device = event->pointingDevice();
+            const std::uint64_t penId = device
+                ? static_cast<std::uint64_t>(device->uniqueId().numericId())
+                : 0u;
+#else
+            const std::uint64_t penId =
+                static_cast<std::uint64_t>(event->uniqueId());
+#endif
+            // Contact-up ends the coordinate segment but hover remains the
+            // same Qt source. An unrelated device release is ignored.
+            (void)m_directAim.DropBaselineForSource(
+                MelonPrime::DirectAimHostSource::QtTablet,
+                penId,
                 MelonPrime::DirectAimBaselineReset::PointerLeave);
             break;
+        }
         default:
             break;
         }

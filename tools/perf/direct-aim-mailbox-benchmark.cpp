@@ -1,10 +1,14 @@
-/* Standalone cost measurement for the opt-in direct-aim (pen/tablet) path.
+/* Isolated algorithmic cost measurement for the opt-in direct-aim
+   (pen/tablet) path.
 
    Measures the two operations the feature adds when it is enabled:
      - per input event: DirectAimSourceArbiter::SubmitAbsolute + mailbox publish
      - per guest frame: MelonPrimeThreadBridge::ConsumeDirectAimForEmu
 
-   The disabled configuration is not benchmarked here because it executes
+   This is not an end-to-end measurement: it excludes Qt/Win32 ingress,
+   cross-thread scheduling/cache migration, cursor policy, and frame timing.
+   Do not use these numbers as end-to-end latency. The disabled configuration
+   is not benchmarked here because it executes
    neither operation: the frame projection tests one cached bool and branches
    past the whole block. Verify that claim against the built object instead of
    inferring it, e.g.
@@ -79,9 +83,11 @@ int main()
     }
     const auto frameElapsed = Clock::now() - frameStart;
 
-    std::printf("direct-aim ingress (per input event): %.2f ns\n",
+    std::printf("isolated algorithmic cost, direct-aim producer "
+                "(arbiter+mailbox, per input event): %.2f ns\n",
                 NanosPerOp(eventElapsed, kEventIterations));
-    std::printf("direct-aim consume (per guest frame): %.2f ns\n",
+    std::printf("isolated algorithmic cost, direct-aim consumer "
+                "(mailbox, per guest frame): %.2f ns\n",
                 NanosPerOp(frameElapsed, kFrameIterations));
     std::printf("checksum: %lld\n", static_cast<long long>(sink));
     return 0;
