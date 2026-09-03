@@ -166,16 +166,29 @@ void ContainAimCursorIfNeeded(ScreenPanel& panel)
     PlatformInput_WarpCursor(center.x(), center.y());
 }
 
-void ClipCenter1px(ScreenPanel& panel)
+// MELONPRIME_CURSOR_CAPTURE_STATE_V3:
+// clipWanted is the persistent request; platform locks/grabs are the transient
+// active state. This mirrors the request-vs-active split used by mature
+// emulator render widgets.
+//
+// MELONPRIME_AIM_CAPTURE_REQUEST_VS_ACTIVE_V1:
+// The request is also what hands Raw Input to this instance
+// (clipWanted -> captureWanted -> ShouldOwnRelativeAimInput), so it is issued
+// by every acquire regardless of what the cursor is about to do. Only the
+// confinement below varies.
+void RequestAimCapture(ScreenPanel& panel)
 {
     if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
         return;
 
-    // MELONPRIME_CURSOR_CAPTURE_STATE_V3:
-    // clipWanted is the persistent request; platform locks/grabs are the
-    // transient active state. This mirrors the request-vs-active split used by
-    // mature emulator render widgets.
     panel.setClipWantedForMelonPrime(true);
+    ReconcileAimCapture(panel);
+}
+
+void ReconcileAimCapture(ScreenPanel& panel)
+{
+    if (panel.isClosingForMelonPrime() || !qApp || qApp->closingDown())
+        return;
 
     const auto* core = panel.melonPrimeCoreForPolicy();
     const auto ui = core ? core->ThreadBridge().ReadForGui()
@@ -265,24 +278,22 @@ void ClipCenter1px(ScreenPanel& panel)
 
 #ifdef _WIN32
     const HWND hwnd = reinterpret_cast<HWND>(panel.winId());
-    if (panel.isDirectAimUnconfinedForPolicy()) {
-        // Center clipping is a relative-mouse policy. An absolute pen or
-        // injected absolute pointer *is* its coordinate signal, so pinning the
-        // cursor to a one-pixel rect would flatten every delta to zero. Aim
-        // ownership was still requested above, which is what relative mouse
-        // aim actually needs; confine to the aim area instead so the pointer
-        // cannot wander out of the window.
+    switch (panel.aimConfinementForPolicy()) {
+    case AimConfinement::AimAreaBounds: {
         RECT clip = computeWidgetClipRectSafe(
             hwnd, panel.aimContainmentLocalRectForPolicy());
         if (clip.left >= clip.right || clip.top >= clip.bottom)
             ClipCursor(nullptr); // degenerate layout: never trap the pointer
         else
             ClipCursor(&clip);
+        break;
     }
-    else {
+    case AimConfinement::CenterPin: {
         RECT clip = computeCenter1pxClipRectSafe(hwnd);
         clip = shrinkRectHeightToHalfCentered(clip);
         ClipCursor(&clip);
+        break;
+    }
     }
 #endif
 }
@@ -414,7 +425,9 @@ void UpdateClipIfNeeded(ScreenPanel& panel)
     }
 
     if (panel.getClipWantedForMelonPrime()) {
-        ClipCenter1px(panel);
+        // The request is already standing; re-publishing it here would be a
+        // redundant cross-thread store on every reconcile pass.
+        ReconcileAimCapture(panel);
 #if defined(__APPLE__)
         ContainAimCursorIfNeeded(panel);
 #endif

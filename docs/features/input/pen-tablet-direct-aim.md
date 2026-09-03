@@ -129,30 +129,40 @@ harmless by construction.
 
 ## Cursor policy
 
-Two things that look alike must not be confused:
+Aim capture has two separable concerns, and `ScreenCursorPolicy` now keeps them
+apart on both the acquire and the release side:
 
-- **Aim-capture ownership** (`clipWanted` → `captureWanted` →
-  `ShouldOwnRelativeAimInput`) is what makes Raw Input take the device at all.
-  Direct aim requests it on every capture, tablet or not. Skipping it leaves
-  relative mouse aim with no owner and therefore no aim at all.
-- **Cursor confinement** is presentation. One-pixel center clipping is a
-  relative-mouse policy: an absolute pen or injected pointer *is* its
-  coordinate signal, so pinning the cursor flattens every delta to zero.
+| | persistent request | transient active state |
+| --- | --- | --- |
+| acquire | `RequestAimCapture` | `ReconcileAimCapture` |
+| release | `Unclip` | `Suspend` |
 
-`ScreenCursorPolicy::ClipCenter1px` therefore always publishes the ownership
-request, then asks the panel which confinement to apply:
+- The **request** publishes `clipWanted` → `captureWanted`, which is what
+  `ShouldOwnRelativeAimInput()` consults to hand Raw Input to this instance.
+  Direct aim issues it on every capture, tablet or not.
+- The **active state** is presentation plus platform confinement. It performs
+  no request write, so a repeated reconcile costs no cross-thread publication.
 
-| Tablet input allowed | Confinement |
-| --- | --- |
-| off | 1px centered rect (unchanged) |
-| on | the aim containment rect (the rendered DS screens) |
+They used to be one function, `ClipCenter1px`, and that conflation is exactly
+what broke mouse aim when this option shipped: skipping the "clip" for an
+absolute capture silently skipped the ownership request too, so Raw Input never
+took the device.
 
-Confining to the aim rect keeps the pointer inside the window — no stray
-clicks, no lost cursor — while leaving the absolute sources a usable
-coordinate range. For a tablet mapped to the whole screen, the usable aim area
-is the area the tablet maps onto that rect; running fullscreen gives the full
-tablet range. A degenerate layout falls back to releasing the clip rather than
-trapping the pointer.
+Confinement is chosen from an explicit mode the panel reports:
+
+| `AimConfinement` | When | Effect |
+| --- | --- | --- |
+| `CenterPin` | tablet input off | 1px centered rect (unchanged) |
+| `AimAreaBounds` | tablet input on | the aim containment rect (the rendered DS screens) |
+
+`CenterPin` is a relative-device policy: the pointer position carries no
+information, so pinning it is free. An absolute pen or injected pointer *is*
+its coordinate signal, so the same pin would flatten every delta to zero.
+Bounding to the aim rect keeps the pointer inside the window — no stray clicks,
+no lost cursor — while leaving absolute sources a usable coordinate range. For
+a tablet mapped to the whole screen the usable aim area is the area the tablet
+maps onto that rect; running fullscreen gives the full tablet range. A
+degenerate layout releases the clip rather than trapping the pointer.
 
 ## Frame projection
 

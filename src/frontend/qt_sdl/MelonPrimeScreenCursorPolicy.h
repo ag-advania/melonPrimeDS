@@ -1,11 +1,49 @@
 #pragma once
 
+#include <cstdint>
+
 class ScreenPanel;
 
 namespace MelonPrime::ScreenCursorPolicy {
 
-void ClipCenter1px(ScreenPanel& panel);
+// MELONPRIME_AIM_CAPTURE_REQUEST_VS_ACTIVE_V1
+// Aim capture has two separable concerns, and conflating them is a real bug
+// source: the request is what gives the emulation thread its input device,
+// while the active state is only what the OS cursor does about it.
+//
+//   request  (persistent)   RequestAimCapture   <-> Unclip
+//   active   (transient)    ReconcileAimCapture <-> Suspend
+//
+// The request publishes clipWanted -> captureWanted, which is what
+// ShouldOwnRelativeAimInput() consults to hand Raw Input to this instance.
+// Skipping it because a particular capture wants no cursor confinement leaves
+// relative mouse aim with no owner at all. Reconciliation performs no request
+// write, so a repeated pass costs no publication.
+
+// What an active aim capture does to the OS cursor. The request above is
+// identical in both modes; only this differs.
+enum class AimConfinement : uint8_t
+{
+    // Relative devices. The pointer position carries no information, so pin it
+    // where it can neither leave the window nor be clicked through.
+    CenterPin = 0,
+    // Absolute devices (pen, injected absolute pointer). The pointer position
+    // *is* the signal: pinning it to one pixel would flatten every delta to
+    // zero. Bound it to the aim area instead.
+    AimAreaBounds,
+};
+
+// Publishes the persistent aim-capture request, then reconciles once so a
+// press edge takes effect within the same GUI turn.
+void RequestAimCapture(ScreenPanel& panel);
+
+// Applies presentation and platform confinement for the request that is
+// already standing. Never writes the request itself.
+void ReconcileAimCapture(ScreenPanel& panel);
+
 void UpdateClipIfNeeded(ScreenPanel& panel);
+
+// Clears the aim capture request and releases the active platform state.
 void Unclip(ScreenPanel& panel);
 
 // Temporarily release the active platform capture while preserving the aim
@@ -29,8 +67,8 @@ void ConfineToBottomScreen(ScreenPanel& panel);
 
 // Confines the OS cursor to the top-screen widget rect for the stylus-mode
 // match options (Windows only; other platforms only set the cursor shape, as
-// with ConfineToBottomScreen). Unlike ClipCenter1px() this never sets the aim
-// capture request, grabs or warps: the pointer stays free inside the rect so
+// with ConfineToBottomScreen). Unlike RequestAimCapture() this never sets the
+// aim capture request, grabs or warps: the pointer stays free inside the rect so
 // stylus aiming and touch input keep working. Reached from UpdateClipIfNeeded()
 // via ScreenPanel::shouldConfineCursorToTopScreenForPolicy().
 void ConfineToTopScreen(ScreenPanel& panel);

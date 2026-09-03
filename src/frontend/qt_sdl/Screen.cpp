@@ -252,7 +252,7 @@ void ScreenPanel::syncMelonPrimeThreadBridge()
             setCursor(Qt::ArrowCursor);
             MelonPrime::ScreenCursorPolicy::Unclip(*this);
         } else {
-            MelonPrime::ScreenCursorPolicy::ClipCenter1px(*this);
+            MelonPrime::ScreenCursorPolicy::RequestAimCapture(*this);
         }
     }
 #if !defined(_WIN32)
@@ -567,8 +567,8 @@ void ScreenPanel::clipCursorToBottomScreen() {
     MelonPrime::ScreenCursorPolicy::ConfineToBottomScreen(*this);
 }
 
-void ScreenPanel::clipCursorCenter1px() {
-    MelonPrime::ScreenCursorPolicy::ClipCenter1px(*this);
+void ScreenPanel::requestAimCapture() {
+    MelonPrime::ScreenCursorPolicy::RequestAimCapture(*this);
 }
 
 void ScreenPanel::unclip() {
@@ -836,7 +836,7 @@ void ScreenPanel::refreshStylusCursorSettings()
         m_directAim.EndCapture();
         setTabletTracking(false);
         if (m_stylusDirectAimCaptureHeld)
-            clipCursorCenter1px(); // now confined again
+            requestAimCapture(); // reconciles back to CenterPin
     }
 
     auto* const core = melonPrimeCore();
@@ -908,9 +908,9 @@ void ScreenPanel::beginStylusDirectAimCapture()
             && isMelonPrimeInputSurfaceAuthority()
         ? melonPrimeCore() : nullptr;
     if (core) {
-        // Started before the cursor policy runs: the policy asks this panel
-        // whether the capture is unconfined, and the answer must already be
-        // true for the very first reconcile.
+        // Started before the cursor policy runs: the policy reads
+        // aimConfinementForPolicy() from this panel, and that answer must
+        // already be AimAreaBounds for the very first reconcile.
         QWidget* const top = window();
         m_directAim.BeginCapture(
             core->ThreadBridge(),
@@ -922,12 +922,10 @@ void ScreenPanel::beginStylusDirectAimCapture()
         setTabletTracking(true);
     }
 
-    // Always taken, tablet or not. This is the aim-capture ownership request
-    // (clipWanted -> captureWanted -> Raw Input ownership), not merely cursor
-    // confinement: skipping it would leave relative mouse aim with no owner.
-    // The confinement itself is what the policy relaxes for an absolute
-    // capture.
-    clipCursorCenter1px();
+    // Always taken, tablet or not: this is what gives the instance its
+    // relative input device. Whether the cursor is then pinned or merely
+    // bounded is decided by aimConfinementForPolicy().
+    requestAimCapture();
 }
 
 void ScreenPanel::endStylusDirectAimCapture()
@@ -1224,7 +1222,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         // If not in cursor mode (aim mode), treat click as returning to aim (clip)
         if (!ui.cursorMode)
         {
-            clipCursorCenter1px();
+            requestAimCapture();
             return;
         }
         // If isCursorMode == true, proceed to standard touch processing
@@ -1258,7 +1256,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     // If not in cursor mode, re-clip
     if (core && !ui.stylusMode && !ui.cursorMode)
     {
-        clipCursorCenter1px();
+        requestAimCapture();
     }
     // The click is held now, so the not-clicking pin no longer applies:
     // re-decide so the drag is free to move. Latched even when the touch did

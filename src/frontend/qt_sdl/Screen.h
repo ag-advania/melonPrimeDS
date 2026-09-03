@@ -41,6 +41,7 @@
 #ifdef MELONPRIME_DS
 #include "MelonPrimeWheelEvent.h"
 #include "MelonPrimeDirectAimIngress.h"
+#include "MelonPrimeScreenCursorPolicy.h"
 #endif
 #include "MelonPrimePresentationSnapshot.h"
 
@@ -338,11 +339,15 @@ public:
     [[nodiscard]] QRect aimContainmentLocalRectForPolicy() const;
     [[nodiscard]] QPoint aimContainmentCenterGlobalForPolicy() const;
     [[nodiscard]] bool shouldConfineCursorToBottomScreenForPolicy() const;
-    // An absolute pen/injected-pointer capture still requests aim ownership,
-    // but its coordinate signal must not be confined to a one-pixel rect.
-    [[nodiscard]] bool isDirectAimUnconfinedForPolicy() const noexcept
+    // An absolute pen/injected-pointer capture still requests aim ownership
+    // exactly like a relative one; only the confinement differs, because its
+    // coordinate signal must survive.
+    [[nodiscard]] MelonPrime::ScreenCursorPolicy::AimConfinement
+    aimConfinementForPolicy() const noexcept
     {
-        return m_directAim.Active();
+        using MelonPrime::ScreenCursorPolicy::AimConfinement;
+        return m_directAim.Active() ? AimConfinement::AimAreaBounds
+                                    : AimConfinement::CenterPin;
     }
     // Stylus-mode match cursor options. Both derive from one reconciled edge
     // (stylus mode, focused, out of cursor mode) and never imply a capture
@@ -385,7 +390,9 @@ public:
 #endif
 
 public slots:
-    void clipCursorCenter1px();
+    // Publishes the aim-capture request (which is what gives this instance the
+    // relative input device) and reconciles the cursor for it.
+    void requestAimCapture();
     void unclip();
     void updateClipIfNeeded();
 #endif // MELONPRIME_DS

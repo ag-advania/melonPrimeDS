@@ -388,6 +388,23 @@ constructed or consulted, and the Raw Mouse projection below is unchanged.
 Full contract:
 [Pen tablet direct aim](../../features/input/pen-tablet-direct-aim.md).
 
+### 7.2 Aim capture: request versus active state
+
+`ScreenCursorPolicy` separates the persistent aim-capture request from the
+transient cursor state on both sides:
+
+| | persistent request | transient active state |
+| --- | --- | --- |
+| acquire | `RequestAimCapture` | `ReconcileAimCapture` |
+| release | `Unclip` | `Suspend` |
+
+The request publishes `clipWanted` → `captureWanted`, which
+`ShouldOwnRelativeAimInput()` requires before Raw Input is handed to the
+instance. It is therefore issued by every acquire, independently of what the
+cursor is about to do; `AimConfinement` (`CenterPin` / `AimAreaBounds`) decides
+only the confinement. Reconciliation writes no request, so `UpdateClipIfNeeded`
+no longer re-publishes a request it just read.
+
 ## 8. RawInput Layer Notes (Windows)
 
 - `RawInputWinFilter`:
