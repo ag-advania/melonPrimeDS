@@ -19,6 +19,7 @@
 #include <QKeyEvent>
 #include <SDL2/SDL.h>
 #include <cassert>
+#include <cstdlib>
 
 #include "Platform.h"
 #include "SDL_gamecontroller.h"
@@ -490,6 +491,113 @@ void EmuInstance::setJoystickLocked(int id)
     openJoystick();
 }
 
+#ifdef MELONPRIME_DS
+bool EmuInstance::pollJoystickMapping(
+    int oldMapping, const int* axesRest, int& outMapping)
+{
+    SDL_LockMutex(joyMutex.get());
+
+    if (!joystickDevice.HasJoystickLocked()
+        || !joystickDevice.IsAttachedLocked()) {
+        SDL_UnlockMutex(joyMutex.get());
+        return false;
+    }
+
+    bool found = false;
+
+    int nbuttons = joystickDevice.ButtonCountLocked();
+    for (int i = 0; i < nbuttons; ++i) {
+        int32_t value = 0;
+        if (joystickDevice.SampleSourceLocked(
+                MelonPrime::JoystickSourceKind::Button,
+                static_cast<uint16_t>(i), value) && value) {
+            outMapping = (oldMapping & 0xFFFF0000) | i;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        int nhats = joystickDevice.HatCountLocked();
+        if (nhats > 16) nhats = 16;
+        for (int i = 0; i < nhats; ++i) {
+            int32_t hat = 0;
+            if (!joystickDevice.SampleSourceLocked(
+                    MelonPrime::JoystickSourceKind::Hat,
+                    static_cast<uint16_t>(i), hat))
+                continue;
+            if (!hat)
+                continue;
+
+            if (hat & 0x1)      hat = 0x1;
+            else if (hat & 0x2) hat = 0x2;
+            else if (hat & 0x4) hat = 0x4;
+            else                hat = 0x8;
+
+            outMapping = (oldMapping & 0xFFFF0000) | 0x100 | hat | (i << 4);
+            found = true;
+            break;
+        }
+    }
+
+    if (!found && axesRest) {
+        int naxes = joystickDevice.AxisCountLocked();
+        if (naxes > 16) naxes = 16;
+        for (int i = 0; i < naxes; ++i) {
+            int32_t axisValue = 0;
+            if (!joystickDevice.SampleSourceLocked(
+                    MelonPrime::JoystickSourceKind::Axis,
+                    static_cast<uint16_t>(i), axisValue))
+                continue;
+
+            const int diff = std::abs(axisValue - axesRest[i]);
+            if (diff < 16384)
+                continue;
+
+            if (axesRest[i] < -16384) {
+                outMapping = (oldMapping & 0xFFFF)
+                    | 0x10000 | (2 << 20) | (i << 24);
+            }
+            else {
+                const int axisType = axisValue > 0 ? 0 : 1;
+                outMapping = (oldMapping & 0xFFFF)
+                    | 0x10000 | (axisType << 20) | (i << 24);
+            }
+            found = true;
+            break;
+        }
+    }
+
+    SDL_UnlockMutex(joyMutex.get());
+    return true;
+}
+
+void EmuInstance::captureJoystickAxisRest(int* axesRest, int count)
+{
+    if (!axesRest || count <= 0)
+        return;
+
+    for (int i = 0; i < count; ++i)
+        axesRest[i] = 0;
+
+    SDL_LockMutex(joyMutex.get());
+    if (joystickDevice.HasJoystickLocked()
+        && joystickDevice.IsAttachedLocked()) {
+        int naxes = joystickDevice.AxisCountLocked();
+        if (naxes > count) naxes = count;
+        if (naxes > 16) naxes = 16;
+        for (int i = 0; i < naxes; ++i) {
+            int32_t value = 0;
+            if (joystickDevice.SampleSourceLocked(
+                    MelonPrime::JoystickSourceKind::Axis,
+                    static_cast<uint16_t>(i), value))
+                axesRest[i] = value;
+        }
+    }
+    SDL_UnlockMutex(joyMutex.get());
+}
+#endif
+
 void EmuInstance::openJoystick()
 {
 #ifdef MELONPRIME_DS
@@ -593,8 +701,12 @@ void EmuInstance::probeJoystickConnection()
 {
     SDL_LockMutex(joyMutex.get());
 #ifdef MELONPRIME_DS
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    joystickDevice.UpdateLocked(nullptr);
+#else
     joystickDevice.UpdateLocked();
-    if (!joystickDevice.GetJoystick())
+#endif
+    if (!joystickDevice.HasJoystickLocked())
         openJoystick();
 #else
     SDL_JoystickUpdate();
@@ -605,18 +717,30 @@ void EmuInstance::probeJoystickConnection()
 }
 
 bool EmuInstance::sampleJoystickPhysicalLocked(
-    JoystickPhysicalSnapshot& snapshot)
+    JoystickPhysicalSnapshot& snapshot
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    , Uint64* updateTicks, MelonPrime::SdlProcessTiming* processTiming
+#endif
+)
 {
     activateJoystickBindingProgramLocked();
 #ifdef MELONPRIME_DS
-    if (!joystickDevice.GetJoystick())
+    if (!joystickDevice.HasJoystickLocked())
         return false;
 
-    {
-        MelonPrimePerf::ScopedInputMetric updateMetric(
-            MelonPrimePerf::InputMetric::JoystickSDLUpdate);
-        joystickDevice.UpdateLocked();
-    }
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const Uint64 updateStartTick = MelonPrimePerf::ReadTicksIfEnabled();
+#endif
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    joystickDevice.UpdateLocked(processTiming);
+#else
+    joystickDevice.UpdateLocked();
+#endif
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const Uint64 updateEndTick = MelonPrimePerf::ReadTicksIfEnabled();
+    if (updateTicks && updateEndTick >= updateStartTick)
+        *updateTicks = updateEndTick - updateStartTick;
+#endif
     if (UNLIKELY(!joystickDevice.IsAttachedLocked())) {
         closeJoystick();
         return false;
@@ -672,22 +796,42 @@ bool EmuInstance::sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot)
     SDL_LockMutex(joyMutex.get());
 #ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     const Uint64 lockAcquiredTick = MelonPrimePerf::ReadTicksIfEnabled();
+    const Uint64 sampleStartTick = lockAcquiredTick;
+#endif
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    Uint64 updateTicks = 0;
+    MelonPrime::SdlProcessTiming processTiming{};
+    const bool sampled = sampleJoystickPhysicalLocked(
+        snapshot, &updateTicks, &processTiming);
+#else
+    const bool sampled = sampleJoystickPhysicalLocked(snapshot);
+#endif
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+    const Uint64 sampleEndTick = MelonPrimePerf::ReadTicksIfEnabled();
+#endif
+    SDL_UnlockMutex(joyMutex.get());
+
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
     if (lockAcquiredTick >= lockStartTick)
         MelonPrimePerf::RecordInputMetricTicks(
             MelonPrimePerf::InputMetric::JoystickLockWait,
             lockAcquiredTick - lockStartTick);
-#endif
-    bool sampled = false;
-#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
-    {
-        MelonPrimePerf::ScopedInputMetric sampleMetric(
-            MelonPrimePerf::InputMetric::JoystickSample);
-        sampled = sampleJoystickPhysicalLocked(snapshot);
+    if (sampleEndTick >= sampleStartTick)
+        MelonPrimePerf::RecordInputMetricTicks(
+            MelonPrimePerf::InputMetric::JoystickSample,
+            sampleEndTick - sampleStartTick);
+    if (processTiming.valid) {
+        MelonPrimePerf::RecordInputMetricTicks(
+            MelonPrimePerf::InputMetric::JoystickSDLUpdate,
+            updateTicks);
+        MelonPrimePerf::RecordInputMetricTicks(
+            MelonPrimePerf::InputMetric::JoystickProcessMutexWait,
+            processTiming.waitTicks);
+        MelonPrimePerf::RecordInputMetricTicks(
+            MelonPrimePerf::InputMetric::JoystickProcessMutexHold,
+            processTiming.holdTicks);
     }
-#else
-    sampled = sampleJoystickPhysicalLocked(snapshot);
 #endif
-    SDL_UnlockMutex(joyMutex.get());
     return sampled;
 }
 

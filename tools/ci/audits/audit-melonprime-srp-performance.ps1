@@ -884,6 +884,19 @@ $threadBridgePath = Join-Path $qtSdl 'MelonPrimeThreadBridge.h'
 $emuInstanceInputPath = Join-Path $qtSdl 'EmuInstanceInput.cpp'
 $joystickDevicePath = Join-Path $qtSdl 'MelonPrimeJoystickDevice.cpp'
 $joystickDeviceHeaderPath = Join-Path $qtSdl 'MelonPrimeJoystickDevice.h'
+$inputConfigDialogPath = Join-Path $qtSdl 'InputConfig/InputConfigDialog.cpp'
+$inputConfigDialogHeaderPath = Join-Path $qtSdl 'InputConfig/InputConfigDialog.h'
+$mapButtonPath = Join-Path $qtSdl 'InputConfig/MapButton.h'
+$perfProbePath = Join-Path $qtSdl 'MelonPrimePerfProbe.h'
+$directAimSourcePath = Join-Path $qtSdl 'MelonPrimeDirectAimSource.h'
+$directAimIngressPath = Join-Path $qtSdl 'MelonPrimeDirectAimIngress.h'
+$directAimIngressCppPath = Join-Path $qtSdl 'MelonPrimeDirectAimIngress.cpp'
+$pointerWinFilterPath = Join-Path $qtSdl 'MelonPrimePointerWinFilter.cpp'
+$pointerWinFilterHeaderPath = Join-Path $qtSdl 'MelonPrimePointerWinFilter.h'
+$inputProjectionPath = Join-Path $qtSdl 'MelonPrimeInputProjection.h'
+$directAimBenchmarkPath = Join-Path $repoRoot 'tools/perf/direct-aim-mailbox-benchmark.cpp'
+$directAimSpscBenchmarkPath = Join-Path $repoRoot 'tools/perf/direct-aim-mailbox-spsc-benchmark.cpp'
+$directAimDocPath = Join-Path $repoRoot 'docs/features/input/pen-tablet-direct-aim.md'
 $linuxRawText = Get-Content -LiteralPath $linuxRawPath -Raw
 $linuxRawHeaderText = Get-Content -LiteralPath $linuxRawHeaderPath -Raw
 $waylandText = Get-Content -LiteralPath $waylandPath -Raw
@@ -895,6 +908,144 @@ $threadBridgeText = Get-Content -LiteralPath $threadBridgePath -Raw
 $emuInstanceInputText = Get-Content -LiteralPath $emuInstanceInputPath -Raw
 $joystickDeviceText = Get-Content -LiteralPath $joystickDevicePath -Raw
 $joystickDeviceHeaderText = Get-Content -LiteralPath $joystickDeviceHeaderPath -Raw
+$inputConfigDialogText = Get-Content -LiteralPath $inputConfigDialogPath -Raw
+$inputConfigDialogHeaderText = Get-Content -LiteralPath $inputConfigDialogHeaderPath -Raw
+$mapButtonText = Get-Content -LiteralPath $mapButtonPath -Raw
+$perfProbeText = Get-Content -LiteralPath $perfProbePath -Raw
+$directAimSourceText = Get-Content -LiteralPath $directAimSourcePath -Raw
+$directAimIngressText = Get-Content -LiteralPath $directAimIngressPath -Raw
+$directAimIngressCppText = Get-Content -LiteralPath $directAimIngressCppPath -Raw
+$pointerWinFilterText = Get-Content -LiteralPath $pointerWinFilterPath -Raw
+$pointerWinFilterHeaderText = Get-Content -LiteralPath $pointerWinFilterHeaderPath -Raw
+$inputProjectionText = Get-Content -LiteralPath $inputProjectionPath -Raw
+$directAimBenchmarkText = Get-Content -LiteralPath $directAimBenchmarkPath -Raw
+$directAimSpscBenchmarkText = Get-Content -LiteralPath $directAimSpscBenchmarkPath -Raw
+$directAimDocText = Get-Content -LiteralPath $directAimDocPath -Raw
+$directAimCmakeText = Get-Content -LiteralPath (Join-Path $qtSdl 'CMakeLists.txt') -Raw
+$joystickDevicePrivateAt = $joystickDeviceHeaderText.IndexOf(
+    '    private:', [System.StringComparison]::Ordinal)
+$joystickDevicePublicText = if ($joystickDevicePrivateAt -ge 0) {
+    $joystickDeviceHeaderText.Substring(0, $joystickDevicePrivateAt)
+} else {
+    $joystickDeviceHeaderText
+}
+
+# --- Rule L3: direct-aim tablet ingress and mailbox contract ----------------
+#
+# The opt-in path is intentionally a narrow absolute-source adapter. These
+# source ratchets pin the frame gate, identity-aware terminal events, native
+# fast rejection, and the evidence tooling without claiming physical-device
+# or end-to-end latency validation.
+$directAimUpdateBody = Get-FunctionText -Path $gameInputPath `
+    -Signature 'void\s+MelonPrimeCore::UpdateInputStateImpl\s*\('
+if (-not $directAimUpdateBody) {
+    Add-Error 'Rule L3: UpdateInputStateImpl definition not found for direct-aim gate'
+} else {
+    $gateIndex = $directAimUpdateBody.IndexOf(
+        'InputProjection::ShouldConsumeDirectAimMailbox(',
+        [System.StringComparison]::Ordinal)
+    $consumeIndex = $directAimUpdateBody.IndexOf(
+        'ConsumeDirectAimForEmu(',
+        [System.StringComparison]::Ordinal)
+    if ($gateIndex -lt 0 -or $consumeIndex -lt 0 -or $gateIndex -gt $consumeIndex) {
+        Add-Error 'Rule L3: direct-aim mailbox consumption must follow the three-factor frame gate'
+    }
+    if ($directAimUpdateBody -match 'if\s*\(UNLIKELY\(\s*m_enableStylusDirectAimAllowTabletInput\s*\)\)') {
+        Add-Error 'Rule L3: direct-aim mailbox reverted to an option-only consume gate'
+    }
+}
+foreach ($token in @(
+    'return allowTabletInput && captureEligible && stylusTouchDown;',
+    'static_assert(!ShouldConsumeDirectAimMailbox(false, false, false));',
+    'static_assert(!ShouldConsumeDirectAimMailbox(true, true, false));',
+    'static_assert(ShouldConsumeDirectAimMailbox(true, true, true));'
+)) {
+    if ($inputProjectionText -notmatch [regex]::Escape($token)) {
+        Add-Error "Rule L3: direct-aim frame predicate lost $token"
+    }
+}
+
+foreach ($token in @(
+    'uint64_t pointerId',
+    'uint64_t AuthorityPointerId()',
+    'DropBaselineForSource(',
+    'ReleaseAuthority(',
+    'm_authorityPointerId'
+)) {
+    if ($directAimSourceText -notmatch [regex]::Escape($token)) {
+        Add-Error "Rule L3: direct-aim source identity/lifetime token missing: $token"
+    }
+}
+if ($directAimIngressText -notmatch 'uint64_t pointerId' -or
+    $directAimIngressText -notmatch 'DropBaselineForSource\(' -or
+    $directAimIngressText -notmatch 'ReleaseAuthority\(') {
+    Add-Error 'Rule L3: ingress must expose uint64 source-aware baseline/release operations'
+}
+if ($coreHeaderText -match '#include\s+"MelonPrimeDirectAimSource\.h"') {
+    Add-Error 'Rule L3: MelonPrime.h must not centrally include the direct-aim source type'
+}
+
+$fastRejectIndex = $pointerWinFilterText.IndexOf(
+    'if (authority == DirectAimHostSource::WinPointerPen',
+    [System.StringComparison]::Ordinal)
+$sourceQueryIndex = $pointerWinFilterText.IndexOf(
+    'GetCurrentInputMessageSource(&source)',
+    [System.StringComparison]::Ordinal)
+if ($fastRejectIndex -lt 0 -or $sourceQueryIndex -lt 0 -or
+    $fastRejectIndex -gt $sourceQueryIndex) {
+    Add-Error 'Rule L3: native direct-aim authority fast reject must precede GetCurrentInputMessageSource'
+}
+if ($pointerWinFilterText -match 'm_ingress\.DropBaseline\(DirectAimBaselineReset::PointerLeave\)') {
+    Add-Error 'Rule L3: native pointer terminal events must use identity-aware operations'
+}
+foreach ($token in @(
+    'DirectAimWinFilterTelemetry',
+    'pointerTypeCalls',
+    'pointerPenInfoCalls',
+    'inputMessageSourceCalls',
+    'fastRejectedMouseMoves',
+    'QueryPerformanceCounter',
+    'ReportTelemetry()'
+)) {
+    if (($pointerWinFilterHeaderText + $pointerWinFilterText + $directAimIngressCppText) -notmatch
+        [regex]::Escape($token)) {
+        Add-Error "Rule L3: native direct-aim aggregate evidence missing: $token"
+    }
+}
+
+foreach ($token in @(
+    'melonprime_direct_aim_mailbox_spsc_benchmark',
+    'Threads::Threads'
+)) {
+    if ($directAimCmakeText -notmatch [regex]::Escape($token)) {
+        Add-Error "Rule L3: SPSC benchmark build registration missing: $token"
+    }
+}
+foreach ($token in @(
+    'SubmitAbsolute',
+    'AddDirectAimDeltaFromGui',
+    'ConsumeDirectAimForEmu',
+    'producer_events_per_sec',
+    'p50=',
+    'p95=',
+    'p99=',
+    'max='
+)) {
+    if ($directAimSpscBenchmarkText -notmatch [regex]::Escape($token)) {
+        Add-Error "Rule L3: SPSC benchmark contract missing: $token"
+    }
+}
+foreach ($rate in @('125', '500', '1000', '2000', '8000', '60', '120', '144', '240')) {
+    if ($directAimSpscBenchmarkText -notmatch "\b$rate\b") {
+        Add-Error "Rule L3: SPSC benchmark rate missing: $rate"
+    }
+}
+if ($directAimBenchmarkText -notmatch 'This is not an end-to-end measurement') {
+    Add-Error 'Rule L3: isolated direct-aim benchmark must state its non-end-to-end scope'
+}
+if ($directAimDocText -notmatch 'DirectAimIngress object itself is embedded') {
+    Add-Error 'Rule L3: direct-aim documentation must describe the embedded inert ingress object'
+}
 
 $aimBody = Get-FunctionText -Path $gameInputPath `
     -Signature 'void\s+MelonPrimeCore::ProcessAimInputMouse\s*\('
@@ -1054,6 +1205,20 @@ if (-not $joystickDeviceHeaderText -or
     $joystickDeviceText -notmatch 'SDL_JoystickClose\s*\(' -or
     $joystickDeviceText -notmatch 'SDL_JoystickUpdate\s*\(' -or
     $joystickDeviceText -notmatch 'std::mutex\s+s_sdlProcessMutex' -or
+    $joystickDevicePublicText -match 'GetJoystick\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'HasJoystickLocked\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'ButtonCountLocked\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'HatCountLocked\s*\(' -or
+    $joystickDeviceHeaderText -notmatch 'AxisCountLocked\s*\(' -or
+    $inputConfigDialogHeaderText -notmatch 'pollJoystickMapping\s*\(' -or
+    $inputConfigDialogHeaderText -notmatch 'captureJoystickAxisRest\s*\(' -or
+    $inputConfigDialogText -notmatch 'InputConfigDialog::pollJoystickMapping\s*\(' -or
+    $inputConfigDialogText -notmatch 'InputConfigDialog::captureJoystickAxisRest\s*\(' -or
+    $mapButtonText -notmatch 'pollJoystickMapping\s*\(' -or
+    $mapButtonText -notmatch 'captureJoystickAxisRest\s*\(' -or
+    $perfProbeText -notmatch 'JoystickProcessMutexWait' -or
+    $perfProbeText -notmatch 'JoystickProcessMutexHold' -or
+    $joystickDeviceText -notmatch 'class\s+SdlProcessMutexGuard\s+final' -or
     -not $closeJoystickBody -or
     $closeJoystickBody -notmatch 'joystickDevice\.CloseLocked\s*\(' -or
     $closeJoystickBody -notmatch 'joystickGameplayResetPending\.store\s*\(' -or
@@ -1083,6 +1248,32 @@ foreach ($pollBody in @($inputProcessBody, $lateJoystickBody)) {
     if ($pollBody -match 'SDL_(?:GameController|Joystick)Close\s*\(') {
         Add-Error 'Rule P: joystick poll path bypasses the central close owner'
     }
+}
+$joyMapClassAt = $mapButtonText.IndexOf('class JoyMapButton', [System.StringComparison]::Ordinal)
+$joyMapText = if ($joyMapClassAt -ge 0) {
+    $mapButtonText.Substring($joyMapClassAt)
+} else { '' }
+$joyCheckAt = $joyMapText.IndexOf('void checkJoystick()', [System.StringComparison]::Ordinal)
+$joyCheckElseAt = if ($joyCheckAt -ge 0) {
+    $joyMapText.IndexOf('#else', $joyCheckAt, [System.StringComparison]::Ordinal)
+} else { -1 }
+$joyCheckText = if ($joyCheckAt -ge 0 -and $joyCheckElseAt -gt $joyCheckAt) {
+    $joyMapText.Substring($joyCheckAt, $joyCheckElseAt - $joyCheckAt)
+} else { '' }
+$joyTimerAt = $joyMapText.IndexOf('void timerEvent(', [System.StringComparison]::Ordinal)
+$joyTimerElseAt = if ($joyTimerAt -ge 0) {
+    $joyMapText.IndexOf('#else', $joyTimerAt, [System.StringComparison]::Ordinal)
+} else { -1 }
+$joyTimerText = if ($joyTimerAt -ge 0 -and $joyTimerElseAt -gt $joyTimerAt) {
+    $joyMapText.Substring($joyTimerAt, $joyTimerElseAt - $joyTimerAt)
+} else { '' }
+if (-not $joyCheckText -or
+    $joyCheckText -notmatch 'pollJoystickMapping\s*\(' -or
+    $joyCheckText -match 'getJoystick\s*\(|getJoyMutex\s*\(' -or
+    -not $joyTimerText -or
+    $joyTimerText -notmatch 'checkJoystick\s*\(\s*\)' -or
+    $joyTimerText -match 'getJoyMutex\s*\(') {
+    Add-Error 'Rule P: DS mapping UI must use lock-owning joystick operations'
 }
 
 # Rule Q: the late gameplay snapshot is distinct from global emulator edges.
@@ -1800,7 +1991,7 @@ if ($updateInputBody -notmatch
 $rawResetBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'void\s+RawInputWinFilter::resetAll\s*\('
 if (-not $rawResetBody -or
-    $rawResetBody -notmatch 'std::lock_guard\s*<\s*std::recursive_mutex\s*>\s+lock\s*\(\s*m_subscriptionMutex\s*\)' -or
+    $rawResetBody -notmatch 'RawInputPerf::SubscriptionMutexGuard\s+lock\s*\(\s*m_subscriptionMutex\s*\)' -or
     $rawResetBody.IndexOf('lock_guard', [System.StringComparison]::Ordinal) -gt
         $rawResetBody.IndexOf('drainPendingMessages', [System.StringComparison]::Ordinal)) {
     Add-Error 'Rule AV: public Raw resetAll must serialize shared state before drain/reset'
@@ -1812,10 +2003,20 @@ $registerBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::RegisterDevices\s*\('
 $reconfigureRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ReconfigureActiveRegistration\s*\('
+$reconfigureRawLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::ReconfigureActiveRegistrationLocked\s*\('
+$deactivateActiveRegistrationBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::DeactivateActiveRegistration\s*\('
+$deferredDrainRawBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::DeferredDrain\s*\('
 $applyOwnerRawBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'bool\s+RawInputWinFilter::ApplyOwnerRegistration\s*\('
+$applyOwnerRawLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::ApplyOwnerRegistrationLocked\s*\('
 $rawHiddenWndProcBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'LRESULT\s+CALLBACK\s+RawInputWinFilter::HiddenWndProc\s*\('
+$rawDrainLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'FORCE_INLINE\s+void\s+RawInputWinFilter::drainPendingMessagesLocked\s*\('
 $rawDrainBody = Get-FunctionText -Path $rawWinFilterPath `
     -Signature 'FORCE_INLINE\s+void\s+RawInputWinFilter::drainPendingMessages\s*\('
 if ($rawWinFilterHeaderText -notmatch '\[\[nodiscard\]\]\s+bool\s+RegisterDevices' -or
@@ -1827,10 +2028,28 @@ if ($rawWinFilterHeaderText -notmatch '\[\[nodiscard\]\]\s+bool\s+RegisterDevice
         $registerBody.IndexOf('if (!RegisterRawInputDevices(', [System.StringComparison]::Ordinal) -or
     $rawWinFilterText -notmatch 'MELONPRIME_TEST_FORCE_RAW_REGISTER_FAILURE' -or
     $rawWinFilterText -notmatch 'if\s*\(!ReconfigureActiveRegistration\s*\(\s*subscription,\s*true\s*\)\)' -or
-    -not $reconfigureRawBody -or
-    $reconfigureRawBody -notmatch 'PlatformInputOwnerService::Release\s*\(\s*\*subscription->owner\s*\)' -or
-    $reconfigureRawBody -notmatch 'subscription->baselineReady\s*=\s*false') {
+    -not $reconfigureRawLockedBody -or
+    $reconfigureRawLockedBody -notmatch 'PlatformInputOwnerService::Release\s*\(\s*\*subscription->owner\s*\)' -or
+    $reconfigureRawLockedBody -notmatch 'subscription->baselineReady\s*=\s*false') {
     Add-Error 'Rule AT: Raw registration success gate and failure rollback are incomplete'
+}
+
+# AV2: every caller that already owns a subscription frame mutex uses the
+# lock-free drain helper. The safety wrapper remains available for unlocked
+# callers, and the shared-buffer capture must still precede message dispatch.
+if (-not $rawDrainLockedBody -or
+    $rawDrainLockedBody -notmatch 'StateFor\(\s*&subscription\s*\)' -or
+    $rawDrainLockedBody -notmatch 'processRawInputBatched\s*\(\s*\)' -or
+    $rawDrainLockedBody -notmatch 'drainMessagesOnly\s*\(\s*&subscription\s*\)' -or
+    $rawDrainLockedBody.IndexOf('processRawInputBatched()', [System.StringComparison]::Ordinal) -gt
+        $rawDrainLockedBody.IndexOf('drainMessagesOnly(', [System.StringComparison]::Ordinal) -or
+    -not $rawDrainBody -or
+    $rawDrainBody -notmatch 'drainPendingMessagesLocked\s*\(\s*\*subscription\s*\)' -or
+    $reconfigureRawBody -match 'drainPendingMessages\(\s*\)' -or
+    $deactivateActiveRegistrationBody -match 'drainPendingMessages\(\s*\)' -or
+    $deferredDrainRawBody -match 'drainPendingMessages\(\s*\)' -or
+    $rawResetBody -match 'drainPendingMessages\(\s*\)') {
+    Add-Error 'Rule AV2: frame-locked Raw drains must not recursively reacquire frameMutex'
 }
 
 # AU: Qt's fractional wheel residual carries the same generation view as the
@@ -2127,13 +2346,13 @@ if ($rawInputPerfText -notmatch
 if ($rawWinFilterText -match 'WM_NCCREATE|WM_NCDESTROY|GWLP_USERDATA' -or
     $rawWinFilterText -notmatch
         'HWND_MESSAGE,\s*nullptr,\s*instance,\s*nullptr' -or
-    -not $reconfigureRawBody -or
-    $reconfigureRawBody -notmatch
-        'ApplyOwnerRegistration\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
-    -not $applyOwnerRawBody -or
-    $applyOwnerRawBody.IndexOf('DestroyHiddenWindow(subscription)',
+    -not $reconfigureRawLockedBody -or
+    $reconfigureRawLockedBody -notmatch
+        'ApplyOwnerRegistrationLocked\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
+    -not $applyOwnerRawLockedBody -or
+    $applyOwnerRawLockedBody.IndexOf('DestroyHiddenWindowLocked(subscription)',
         [System.StringComparison]::Ordinal) -lt 0 -or
-    $applyOwnerRawBody.IndexOf('CreateHiddenWindow(subscription)',
+    $applyOwnerRawLockedBody.IndexOf('CreateHiddenWindowLocked(subscription)',
         [System.StringComparison]::Ordinal) -lt 0 -or
     $rawWinFilterText -notmatch
         'hiddenWindowCreatorThreadId\s*!=\s*GetCurrentThreadId\s*\(' -or
@@ -2175,27 +2394,400 @@ if ($rawInputStateText -notmatch 'kBatchOverflowBufferSize\s*=\s*64\s*\*\s*1024'
 # old creator-thread window is destroyed before the replacement is registered,
 # so a queued old WM_INPUT cannot enter the new Raw registration epoch.
 if ($rawWinFilterHeaderText -notmatch
-        'ApplyOwnerRegistration\s*\(\s*RawInputSubscription\*\s+subscription,\s*bool\s+recreateHiddenWindow\s*\)' -or
-    -not $reconfigureRawBody -or
-    $reconfigureRawBody -notmatch
-        'ApplyOwnerRegistration\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
-    -not $applyOwnerRawBody -or
-    $applyOwnerRawBody -notmatch
+        'ApplyOwnerRegistrationLocked\s*\(\s*RawInputSubscription\*\s+subscription,\s*bool\s+recreateHiddenWindow\s*\)' -or
+    -not $reconfigureRawLockedBody -or
+    $reconfigureRawLockedBody -notmatch
+        'ApplyOwnerRegistrationLocked\s*\(\s*subscription,\s*generationAlreadyAdvanced\s*\)' -or
+    -not $applyOwnerRawLockedBody -or
+    $applyOwnerRawLockedBody -notmatch
         'if\s*\(\s*recreateHiddenWindow\s*&&\s*subscription->hiddenWindow' -or
-    $applyOwnerRawBody -notmatch
-        '!DestroyHiddenWindow\s*\(\s*subscription\s*\)' -or
-    $applyOwnerRawBody -notmatch
-        'CreateHiddenWindow\s*\(\s*subscription\s*\)') {
+    $applyOwnerRawLockedBody -notmatch
+        '!DestroyHiddenWindowLocked\s*\(\s*subscription\s*\)' -or
+    $applyOwnerRawLockedBody -notmatch
+        'CreateHiddenWindowLocked\s*\(\s*subscription\s*\)') {
     Add-Error 'Rule BE: Raw hidden HWND registration epoch boundary is incomplete'
-} elseif ($applyOwnerRawBody.IndexOf('DestroyHiddenWindow(subscription)',
+} elseif ($applyOwnerRawLockedBody.IndexOf('DestroyHiddenWindowLocked(subscription)',
         [System.StringComparison]::Ordinal) -gt
-    $applyOwnerRawBody.IndexOf('CreateHiddenWindow(subscription)',
+    $applyOwnerRawLockedBody.IndexOf('CreateHiddenWindowLocked(subscription)',
         [System.StringComparison]::Ordinal)) {
     Add-Error 'Rule BE: old Raw hidden HWND must be destroyed before replacement'
 }
 if (([regex]::Matches($rawWinFilterText,
-        'ApplyOwnerRegistration\s*\(')).Count -ne 2) {
-    Add-Error 'Rule BE: ApplyOwnerRegistration must stay on the cold reconfigure path'
+        'ApplyOwnerRegistrationLocked\s*\(')).Count -ne 3) {
+    Add-Error 'Rule BE: ApplyOwnerRegistrationLocked must stay on the cold reconfigure path'
+}
+
+# BZ: the developer measurement plane is instance-safe and capture-only runs
+# do not put sorting, formatting, or CSV lifetime work on the frame path.
+$inputPerfSummarizerPath = Join-Path $repoRoot 'tools/testing/summarize-input-performance.py'
+$inputPerfSummarizerText = Get-Content -LiteralPath $inputPerfSummarizerPath -Raw
+$perfSessionPath = Join-Path $qtSdl 'MelonPrimePerfSession.h'
+$perfSessionText = Get-Content -LiteralPath $perfSessionPath -Raw
+$perfShutdownPath = Join-Path $qtSdl 'MelonPrimeEmuThreadPerfShutdown.inc'
+$perfShutdownText = Get-Content -LiteralPath $perfShutdownPath -Raw
+$inputContractPath = Join-Path $repoRoot 'docs/development/input/input-frame-contract.md'
+$inputContractText = Get-Content -LiteralPath $inputContractPath -Raw
+$rawReleaseBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'void\s+RawInputWinFilter::Release\s*\('
+$physicalPerfRunnerText = Get-Content -LiteralPath (
+    Join-Path $repoRoot 'tools/testing/renderer-physical-ab.ps1') -Raw
+$presentPerfRunnerText = Get-Content -LiteralPath (
+    Join-Path $repoRoot 'tools/testing/vulkan-present-event-matrix.ps1') -Raw
+if ($perfProbeText -notmatch 'static\s+thread_local\s+State\s+s' -or
+    $perfProbeText -notmatch 'uint64_t\s+instanceId\s*=\s*0' -or
+    $perfProbeText -notmatch 'BindInstance\s*\(\s*uint64_t\s+instanceId' -or
+    $emuThreadText -notmatch 'MelonPrimePerf::BindInstance\s*\(' -or
+    $perfProbeText -notmatch 'MELONPRIME_PERF_CAPTURE_ONLY' -or
+    $perfProbeText -match 'std::atexit\s*\(' -or
+    $perfProbeText -notmatch 'run_id,instance_id,frame_index' -or
+    $perfProbeText -notmatch 'std::fclose\s*\(frameCsv\)' -or
+    $inputPerfSummarizerText -notmatch 'latest_input_by_instance' -or
+    $inputPerfSummarizerText -notmatch 'input_instance_ids' -or
+    $inputPerfSummarizerText -notmatch 'for\s+instance_id,\s+input_report\s+in\s+reports_by_instance' -or
+    $perfProbeText -notmatch 'static\s+constexpr\s+uint32_t\s+kLatencyCap\s*=\s*2048' -or
+    $perfProbeText -notmatch 'uint32_t\s+inputMetricWrite' -or
+    $perfProbeText -notmatch 'uint64_t\s+inputToRunFrameCalls' -or
+    $perfProbeText -notmatch 'uint64_t\s+inputToPresentEndCalls' -or
+    $perfProbeText -notmatch 'retained=' -or
+    $perfProbeText -notmatch 'retained_max=' -or
+    $perfProbeText -notmatch 'capture_mode' -or
+    $perfProbeText -notmatch 'capture_only=' -or
+    $inputPerfSummarizerText -notmatch 'RETENTION_LATEST_N' -or
+    $inputPerfSummarizerText -notmatch 'RETENTION_LEGACY_FIRST_N' -or
+    $inputPerfSummarizerText -notmatch 'allow-legacy-first-n' -or
+    $inputPerfSummarizerText -notmatch 'allow-legacy-raw-unversioned' -or
+    $inputPerfSummarizerText -notmatch 'MIN_CERTIFICATION_SAMPLES' -or
+    $inputPerfSummarizerText -notmatch 'CONTROLLER_EVIDENCE_METRICS' -or
+    $inputPerfSummarizerText -notmatch 'RAW_REQUIRED_STAGES' -or
+    $inputPerfSummarizerText -notmatch 'require_capture_only' -or
+    $inputPerfSummarizerText -notmatch 'generic_capture_only_by_instance' -or
+    $inputPerfSummarizerText -notmatch 'raw_capture_only' -or
+    $inputPerfSummarizerText -notmatch 'capture_mode_verified' -or
+    $inputPerfSummarizerText -notmatch 'pending_generic_capture' -or
+    $inputPerfSummarizerText -notmatch 'pending_raw_capture' -or
+    $inputPerfSummarizerText -notmatch 'REPORT_SEQ_RE' -or
+    $inputPerfSummarizerText -notmatch 'generic_generation_records' -or
+    $inputPerfSummarizerText -notmatch 'raw_generation_records' -or
+    $inputPerfSummarizerText -notmatch 'latest_generic_report_seq_by_instance' -or
+    $inputPerfSummarizerText -notmatch 'latest_generic_generation_by_instance' -or
+    $inputPerfSummarizerText -notmatch 'latest_raw_report_seq' -or
+    $inputPerfSummarizerText -notmatch 'latest_raw_generation' -or
+    $inputPerfSummarizerText -notmatch 'session_id' -or
+    $inputPerfSummarizerText -notmatch 'RAW_REQUIRED_LOCK_KEYS' -or
+    $inputPerfSummarizerText -notmatch 'require_raw_generation' -or
+    $inputPerfSummarizerText -notmatch 'unbound_latency_report_count' -or
+    $inputPerfSummarizerText -notmatch 'certification_scope' -or
+    $inputPerfSummarizerText -notmatch 'historical_analysis' -or
+    $inputPerfSummarizerText -notmatch 'Certification scope:' -or
+    $inputPerfSummarizerText -notmatch 'NOT A CERTIFICATION RESULT' -or
+    $inputPerfSummarizerText -notmatch 'retention_mode' -or
+    $inputPerfSummarizerText -notmatch 'schema_version[\s\S]*8' -or
+    $inputContractText -notmatch 'report_begin' -or
+    $inputContractText -notmatch 'session_id' -or
+    $inputContractText -notmatch 'latest-N' -or
+    $inputContractText -notmatch 'retained_max' -or
+    $inputContractText -notmatch 'whole live-report window' -or
+    $inputContractText -notmatch '--check-budget.*strict certification' -or
+    $inputContractText -notmatch '--historical-analysis' -or
+    $inputContractText -notmatch 'certification_scope=historical_analysis' -or
+    $inputContractText -notmatch 'certified=false' -or
+    $physicalPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
+    $physicalPerfRunnerText -notmatch 'frames\.%INSTANCE%\.csv' -or
+    $presentPerfRunnerText -notmatch 'frames\.instance0\.csv' -or
+    $presentPerfRunnerText -notmatch 'frames\.%INSTANCE%\.csv') {
+    Add-Error 'Rule BZ: generic input telemetry is not per-instance/capture-safe'
+}
+if ($perfProbeText -notmatch 'NextReportSequence\s*\(\s*State&\s+st\s*\)' -or
+    $perfProbeText -notmatch 'report_seq=%llu' -or
+    $perfProbeText -notmatch 'report_begin session_id=%s instance_id=%llu' -or
+    $rawInputPerfText -notmatch 'NextReportSequence\s*\(\s*\)\s*noexcept' -or
+    $rawInputPerfText -notmatch 'capture_mode session_id=%s report_seq=%llu' -or
+    $rawInputPerfText -notmatch 'lock_planes session_id=%s report_seq=%llu' -or
+    $rawInputPerfText -notmatch 'stage_us session_id=%s report_seq=%llu' -or
+    $inputPerfSummarizerText -notmatch 'report_seq-bound generation required' -or
+    $inputPerfSummarizerText -notmatch 'raw report_seq=.*lock-plane evidence' -or
+    $inputPerfSummarizerText -notmatch 'missing required keys') {
+    Add-Error 'Rule BZ2: report_seq generation binding or Raw lock certification is incomplete'
+}
+if ($perfSessionText -notmatch 'MELONPRIME_PERF_SESSION_ID' -or
+    $perfSessionText -notmatch 'char value\[kMaxLength \+ 1\]' -or
+    $perfSessionText -match 'std::string' -or
+    $perfProbeText -notmatch 'ReportGenerationHeader\s*\(\s*st,\s*reportSeq\s*\)' -or
+    $perfProbeText -notmatch 'report_begin' -or
+    $inputPerfSummarizerText -notmatch 'GENERIC_REPORT_BEGIN_RE' -or
+    $inputPerfSummarizerText -notmatch 'first_observed_line' -or
+    $inputPerfSummarizerText -notmatch 'valid_session_id' -or
+    $inputPerfSummarizerText -notmatch 'generic/Raw shared session_id mismatch' -or
+    $inputPerfSummarizerText -match
+        'latest_generic_report_seq_by_instance\[[^\]]+\]\s*=\s*max' -or
+    $inputPerfSummarizerText -match
+        'latest_raw_report_seq\s*=\s*max' -or
+    $inputPerfSummarizerText -notmatch 'observation_index' -or
+    $inputPerfSummarizerText -notmatch '--commit-sha' -or
+    $inputPerfSummarizerText -notmatch 'benchmark_metadata' -or
+    $inputContractText -notmatch 'observation' -or
+    $inputContractText -notmatch 'cross-session') {
+    Add-Error 'Rule BZ3: report-start/session provenance or observation-order recency is incomplete'
+}
+if ($perfSessionText -notmatch
+        '(?s)#if\s+defined\(MELONPRIME_DS\).*?defined\(MELONPRIME_ENABLE_DEVELOPER_FEATURES\).*?defined\(_WIN32\).*?defined\(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY\)' -or
+    $qtSdlCmakeText -notmatch
+        'option\(\s*MELONPRIME_ENABLE_DEVELOPER_FEATURES\b' -or
+    $qtSdlCmakeText -notmatch
+        'option\(\s*MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY\b' -or
+    $qtSdlCmakeText -match
+        'cmake_dependent_option\(\s*MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY\b') {
+    Add-Error 'Rule BZ4: performance session helper is not visible in the independent Raw-only build gate'
+}
+if ($inputPerfSummarizerText -notmatch 'GENERIC_VERSIONED_PREFIXES' -or
+    $inputPerfSummarizerText -notmatch
+        'line\.startswith\(\s*GENERIC_VERSIONED_PREFIXES\s*\)' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] shutdown summary session_id=TEST-A' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] shutdown session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] frame_ms session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] audit_counts session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerf\] hud_phase_us session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch '\[MelonPrimePerfPhase\] session_id=TEST-B' -or
+    $inputPerfSummarizerText -notmatch 'generic-actual-prefix-lines' -or
+    $inputPerfSummarizerText -match
+        'line\.startswith\(\s*"\[MelonPrime\] ' ) {
+    Add-Error 'Rule BZ5: Generic generation catch-all/test vectors do not use actual producer prefixes'
+}
+if ($perfProbeText -notmatch 'SummarizeDoubleSamples' -or
+    $perfProbeText -notmatch 'SummarizeInputMetric' -or
+    $perfProbeText -notmatch 'SummarizeHudPhase' -or
+    $perfProbeText -match '\bLatencyPercentile\b|\bLatencyMax\b') {
+    Add-Error 'Rule BZ: generic percentile reporting lost the one-sort summary helpers'
+}
+
+# CA: lock timing is committed only after the measured mutex is released. The
+# same rule applies to the SDL process lock and the per-instance joystick
+# sample; telemetry must not extend any of those critical sections.
+$subscriptionGuardAt = $rawInputPerfText.IndexOf(
+    'class SubscriptionMutexGuard', [System.StringComparison]::Ordinal)
+$frameGuardAt = $rawInputPerfText.IndexOf(
+    'class FrameMutexGuard', [System.StringComparison]::Ordinal)
+$stageGuardAt = $rawInputPerfText.IndexOf(
+    'class ScopedStage', [System.StringComparison]::Ordinal)
+$subscriptionGuardText = if ($subscriptionGuardAt -ge 0 -and $frameGuardAt -gt $subscriptionGuardAt) {
+    $rawInputPerfText.Substring($subscriptionGuardAt, $frameGuardAt - $subscriptionGuardAt)
+} else { '' }
+$frameGuardText = if ($frameGuardAt -ge 0 -and $stageGuardAt -gt $frameGuardAt) {
+    $rawInputPerfText.Substring($frameGuardAt, $stageGuardAt - $frameGuardAt)
+} else { '' }
+$sdlGuardAt = $joystickDeviceText.IndexOf(
+    'class SdlProcessMutexGuard', [System.StringComparison]::Ordinal)
+$sdlGuardEndAt = if ($sdlGuardAt -ge 0) {
+    $joystickDeviceText.IndexOf('#else', $sdlGuardAt, [System.StringComparison]::Ordinal)
+} else { -1 }
+$sdlGuardText = if ($sdlGuardAt -ge 0 -and $sdlGuardEndAt -gt $sdlGuardAt) {
+    $joystickDeviceText.Substring($sdlGuardAt, $sdlGuardEndAt - $sdlGuardAt)
+} else { '' }
+foreach ($lockTelemetry in @(
+    @{ Name = 'Raw subscription'; Text = $subscriptionGuardText; Unlock = 'm_lock.unlock()'; Record = 'RecordMutexWait' },
+    @{ Name = 'Raw frame'; Text = $frameGuardText; Unlock = 'm_lock.unlock()'; Record = 'RecordMutexWait' },
+    @{ Name = 'SDL process'; Text = $sdlGuardText; Unlock = 'm_lock.unlock()'; Record = 'm_timing->waitTicks' }
+)) {
+    $unlockAt = $lockTelemetry.Text.IndexOf($lockTelemetry.Unlock,
+        [System.StringComparison]::Ordinal)
+    $recordAt = $lockTelemetry.Text.IndexOf($lockTelemetry.Record,
+        [System.StringComparison]::Ordinal)
+    if (-not $lockTelemetry.Text -or $unlockAt -lt 0 -or $recordAt -lt 0 -or
+        $unlockAt -gt $recordAt) {
+        Add-Error "Rule CA: $($lockTelemetry.Name) telemetry must be recorded after unlock"
+    }
+}
+$sampleUnlockAt = if ($sampleJoystickBody) {
+    $sampleJoystickBody.IndexOf('SDL_UnlockMutex(joyMutex.get())',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$sampleTelemetryAt = if ($sampleJoystickBody) {
+    $sampleJoystickBody.IndexOf('RecordInputMetricTicks',
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if (-not $sampleJoystickBody -or $sampleUnlockAt -lt 0 -or
+    $sampleTelemetryAt -lt 0 -or $sampleUnlockAt -gt $sampleTelemetryAt) {
+    Add-Error 'Rule CA: joystick sample metrics must be committed after SDL mutex release'
+}
+if (-not $sampleJoystickBody -or
+    $sampleJoystickBody -notmatch 'SdlProcessTiming\s+processTiming' -or
+    $sampleJoystickBody -notmatch 'processTiming\.waitTicks' -or
+    $sampleJoystickBody -notmatch 'processTiming\.holdTicks' -or
+    $sampleJoystickBody.IndexOf('processTiming.waitTicks', [System.StringComparison]::Ordinal) -lt $sampleUnlockAt -or
+    $sampleJoystickBody.IndexOf('processTiming.holdTicks', [System.StringComparison]::Ordinal) -lt $sampleUnlockAt) {
+    Add-Error 'Rule CA: SDL process timing POD must be committed after outer joystick unlock'
+}
+$shippingSampleBody = if ($sampleJoystickBody -and $sampleJoystickBody.Contains('#else')) {
+    $sampleJoystickBody.Split('#else', 2)[1].Split('#endif', 2)[0]
+} else { '' }
+if ($joystickDeviceHeaderText -notmatch
+        '(?s)#ifdef\s+MELONPRIME_ENABLE_DEVELOPER_FEATURES\s+struct\s+SdlProcessTiming[\s\S]*?#endif' -or
+    $joystickDeviceHeaderText -notmatch
+        '(?s)#ifdef\s+MELONPRIME_ENABLE_DEVELOPER_FEATURES[\s\S]*?UpdateLocked\s*\(\s*SdlProcessTiming\*\s+timing\s*\)[\s\S]*?#else[\s\S]*?UpdateLocked\s*\(\s*\)\s*noexcept' -or
+    $joystickDeviceText -notmatch
+        '(?s)#ifdef\s+MELONPRIME_ENABLE_DEVELOPER_FEATURES[\s\S]*?UpdateLocked\s*\(\s*SdlProcessTiming\*\s+timing\s*\)[\s\S]*?#else[\s\S]*?UpdateLocked\s*\(\s*\)\s*noexcept' -or
+    $shippingSampleBody -notmatch
+        'const\s+bool\s+sampled\s*=\s*sampleJoystickPhysicalLocked\s*\(\s*snapshot\s*\)' -or
+    $shippingSampleBody -match 'SdlProcessTiming|updateTicks') {
+    Add-Error 'Rule CA: shipping controller sample path retains developer timing plumbing'
+}
+
+# CB: Raw report formatting is outside DeferredDrain's measured stage, and a
+# capture-only run defers the report to the owning EmuThread shutdown point.
+if (-not $deferredDrainRawBody -or
+    $deferredDrainRawBody -notmatch
+        '(?s)RawInputPerf::FrameMutexGuard[\s\S]*?\}\s*// Reporting[\s\S]*?RawInputPerf::MaybeReport\s*\(\s*\)' -or
+    $rawInputPerfText -notmatch
+        'if\s*\(!Enabled\(\)\s*\|\|\s*\(!force\s*&&\s*IsCaptureOnly\(\)\)\)' -or
+    $rawInputPerfText -match 'shutdownReported' -or
+    $rawInputPerfText -notmatch 'Report\s*\(true\)' -or
+    $rawInputPerfText -notmatch 'SummarizeStage' -or
+    $rawInputPerfText -notmatch 'std::sort\s*\(values,\s*values\s*\+\s*count\)') {
+    Add-Error 'Rule CB: Raw telemetry report/capture-only boundary is incomplete'
+}
+
+# CE: Raw final reporting follows the process service lifetime. Generic
+# thread-local reporting stays in EmuThread shutdown, while the shared Raw
+# aggregate is reported when the last service reference drops, before cold
+# destructor cleanup can pollute runtime lock/stage measurements.
+if (-not $rawReleaseBody -or
+    $rawReleaseBody -notmatch 'if\s*\(\s*--s_refCount\s*==\s*0\s*\)' -or
+    $rawReleaseBody -notmatch 'delete\s+s_instance' -or
+    $rawReleaseBody -notmatch 'RawInputPerf::ShutdownReport\s*\(\s*\)' -or
+    $rawReleaseBody.IndexOf('RawInputPerf::ShutdownReport()', [System.StringComparison]::Ordinal) -gt
+        $rawReleaseBody.IndexOf('delete s_instance', [System.StringComparison]::Ordinal) -or
+    $rawWinFilterText -notmatch 'RawInputPerf::ShutdownReport\s*\(\)' -or
+    ([regex]::Matches($rawWinFilterText, 'RawInputPerf::ShutdownReport\s*\(\)').Count -ne 1) -or
+    $perfShutdownText -match 'RawInputPerf::ShutdownReport' -or
+    $rawInputPerfText -match 'shutdownReported') {
+    Add-Error 'Rule CE: Raw final report is not owned by the last service release'
+}
+
+# CF: measure recursive acquisition before considering a plain mutex. Every
+# subscription-plane acquisition goes through the measured wrapper; the
+# frame/data lock remains recursive until the stress matrix proves depth zero.
+if ($rawWinFilterText -match
+        'std::lock_guard\s*<\s*std::recursive_mutex\s*>\s+\w+\s*\(\s*m_subscriptionMutex\s*\)' -or
+    $rawWinFilterText -notmatch 'std::recursive_mutex\s+frameMutex' -or
+    $rawInputPerfText -notmatch 'recursiveAcquisitions' -or
+    $rawInputPerfText -notmatch 'subscriptionMaxRecursionDepth' -or
+    $rawInputPerfText -notmatch 'frameMaxRecursionDepth' -or
+    $rawInputPerfText -notmatch 'EnterLockDepth' -or
+    $rawInputPerfText -notmatch 'RecordRecursiveAcquisition' -or
+    $inputContractText -notmatch 'recursive acquisition') {
+    Add-Error 'Rule CF: Raw recursive-lock measurement boundary is incomplete'
+}
+
+# CG: Raw stage reports expose retention provenance while their calls/maxima and
+# lock/batch totals retain cumulative Raw service/capture-lifetime semantics.
+if ($rawInputPerfText -notmatch
+        '(?s)snapshot\[calls=.*?retained=.*?p50=.*?retained_max=' -or
+    $rawInputPerfText -notmatch
+        '(?s)late_latch\[calls=.*?retained=.*?p50=.*?retained_max=' -or
+    $rawInputPerfText -notmatch
+        '(?s)deferred_drain\[calls=.*?retained=.*?p50=.*?retained_max=' -or
+    $rawInputPerfText -notmatch 'result\.calls\s*=\s*total' -or
+    $rawInputPerfText -notmatch 'result\.retained\s*=\s*count' -or
+    $rawInputPerfText -notmatch 'result\.retainedMax' -or
+    $inputPerfSummarizerText -notmatch 'RAW_STAGE_RE' -or
+    $inputPerfSummarizerText -notmatch 'snapshot_retained_max' -or
+    $inputPerfSummarizerText -notmatch 'stage_metrics' -or
+    $inputPerfSummarizerText -notmatch 'RAW_LIFETIME_SCOPE' -or
+    $inputPerfSummarizerText -notmatch 'raw_service_lifetime' -or
+    $rawInputPerfText -notmatch 'capture_mode' -or
+    $rawInputPerfText -notmatch 'capture_only=') {
+    Add-Error 'Rule CG: Raw stage latest-N retention semantics are not fully surfaced'
+}
+
+# CH: budget certification is fail-closed by mode and by measured population.
+# A generic input total alone cannot certify controller or Raw mode, and a live
+# report cannot be used as a capture-only certification artifact.
+if ($inputPerfSummarizerText -notmatch 'joystick_sample' -or
+    $inputPerfSummarizerText -notmatch 'keyboard budget certification found' -or
+    $inputPerfSummarizerText -notmatch 'raw snapshot has' -or
+    $inputPerfSummarizerText -notmatch 'short runs are not certifiable' -or
+    $inputPerfSummarizerText -notmatch
+        '--check-budget requires explicit --mode keyboard\|controller\|raw' -or
+    $inputPerfSummarizerText -notmatch
+        'raw budget certification cannot verify sample counts' -or
+    $inputPerfSummarizerText -notmatch
+        'historical analysis is never certification' -or
+    $inputPerfSummarizerText -notmatch
+        'self-test allowed an implicit all budget certification' -or
+    $inputPerfSummarizerText -notmatch
+        'self-test certified a historical analysis' -or
+    $inputPerfSummarizerText -notmatch
+        'mixed-generic-generation' -or
+    $inputPerfSummarizerText -notmatch
+        'multi-instance-marker-reuse' -or
+    $inputPerfSummarizerText -notmatch
+        'mixed-raw-generation') {
+    Add-Error 'Rule CH: mode-specific budget evidence gates are incomplete'
+}
+if ($inputPerfSummarizerText -notmatch 'generic-dangling-next-run' -or
+    $inputPerfSummarizerText -notmatch 'generic-dangling-eof' -or
+    $inputPerfSummarizerText -notmatch 'generic-explicit-latency-only' -or
+    $inputPerfSummarizerText -notmatch 'generic-report-begin-only' -or
+    $inputPerfSummarizerText -notmatch 'generic-shutdown-summary-only' -or
+    $inputPerfSummarizerText -notmatch 'cross-run-lower-incomplete' -or
+    $inputPerfSummarizerText -notmatch 'same-session-report-seq-collision' -or
+    $inputPerfSummarizerText -notmatch 'generic-raw-session-mismatch' -or
+    $inputPerfSummarizerText -notmatch 'raw-cross-run-lower-incomplete' -or
+    $inputPerfSummarizerText -notmatch 'explicit-latency-generation-mismatch' -or
+    $inputPerfSummarizerText -notmatch 'raw-missing-lock' -or
+    $inputPerfSummarizerText -notmatch 'raw-missing-lock-key' -or
+    $inputPerfSummarizerText -notmatch 'raw-lock-stage-generation-mismatch' -or
+    $inputPerfSummarizerText -notmatch 'raw-dangling-next-run' -or
+    $inputPerfSummarizerText -notmatch 'raw-dangling-eof' -or
+    $inputContractText -notmatch 'report_seq' -or
+    $inputContractText -notmatch 'required key is a strict failure') {
+    Add-Error 'Rule CH2: generation-dangling and lock-plane negative tests are incomplete'
+}
+
+# CC: joystick enumeration is a cold, process-serialized owner operation;
+# InputConfigDialog must not call SDL's process-global enumeration directly on
+# the MelonPrime path.
+$enumerateBody = Get-FunctionText -Path $joystickDevicePath `
+    -Signature 'std::vector<JoystickDescriptor>\s+MelonPrimeJoystickDevice::EnumerateJoysticks\s*\('
+if (-not $joystickDeviceHeaderText -or
+    $joystickDeviceHeaderText -notmatch
+        'struct\s+JoystickDescriptor' -or
+    $joystickDeviceHeaderText -notmatch
+        'EnumerateJoysticks\s*\(' -or
+    -not $enumerateBody -or
+    $enumerateBody -notmatch 'SdlProcessMutexGuard\s+processLock' -or
+    $enumerateBody -notmatch 'SDL_NumJoysticks\s*\(' -or
+    $inputConfigDialogText -notmatch
+        '(?s)#ifdef\s+MELONPRIME_DS\s+const\s+auto\s+joysticks\s*=\s*MelonPrime::MelonPrimeJoystickDevice::EnumerateJoysticks\s*\(\s*\)\s*;\s*const\s+int\s+njoy\s*=\s*static_cast<int>\s*\(joysticks\.size\s*\(\)\)\s*;\s*#else') {
+    Add-Error 'Rule CC: MelonPrime joystick enumeration is not process-safe/cold-owned'
+}
+
+# CD: lock-owning Raw cold helpers are the only bodies that manipulate the
+# hidden window and registration while a caller already owns frameMutex.
+$createHiddenLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::CreateHiddenWindowLocked\s*\('
+$destroyHiddenLockedBody = Get-FunctionText -Path $rawWinFilterPath `
+    -Signature 'bool\s+RawInputWinFilter::DestroyHiddenWindowLocked\s*\('
+if ($rawWinFilterHeaderText -notmatch
+        'CreateHiddenWindowLocked\s*\(' -or
+    $rawWinFilterHeaderText -notmatch
+        'DestroyHiddenWindowLocked\s*\(' -or
+    $rawWinFilterHeaderText -notmatch
+        'ApplyOwnerRegistrationLocked\s*\(' -or
+    $rawWinFilterHeaderText -notmatch
+        'ReconfigureActiveRegistrationLocked\s*\(' -or
+    $reconfigureRawLockedBody -match 'RawInputPerf::FrameMutexGuard' -or
+    $applyOwnerRawLockedBody -match 'RawInputPerf::FrameMutexGuard' -or
+    $createHiddenLockedBody -match 'RawInputPerf::FrameMutexGuard' -or
+    $destroyHiddenLockedBody -match 'RawInputPerf::FrameMutexGuard' -or
+    $applyOwnerRawLockedBody -notmatch 'DestroyHiddenWindowLocked\s*\(' -or
+    $applyOwnerRawLockedBody -notmatch 'CreateHiddenWindowLocked\s*\(' -or
+    $reconfigureRawLockedBody -notmatch 'ApplyOwnerRegistrationLocked\s*\(' -or
+    $rawWinFilterText -notmatch
+        'RawInputPerf::FrameMutexGuard[\s\S]*?return\s+ReconfigureActiveRegistrationLocked' -or
+    $rawWinFilterText -notmatch
+        'RawInputPerf::FrameMutexGuard[\s\S]*?return\s+ApplyOwnerRegistrationLocked') {
+    Add-Error 'Rule CD: Raw cold lock ownership helpers are incomplete'
 }
 
 # BF/BG: the process-wide buffered drain is a Windows-filter-only operation,
@@ -2216,7 +2808,7 @@ if ($rawInputStateText -notmatch
         'This public wrapper always holds m_subscriptionMutex' -or
     -not $rawResetBody -or
     $rawResetBody.IndexOf(
-        'std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)',
+        'RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex)',
         [System.StringComparison]::Ordinal) -gt
     $rawResetBody.IndexOf('state->resetAll()', [System.StringComparison]::Ordinal)) {
     Add-Error 'Rule BG: foreign Raw reset mutex contract is incomplete'

@@ -73,6 +73,10 @@ struct RuntimeConfigSnapshot {
     // While Stylus Mode is active, the configured touch action gates the
     // normal relative-mouse/direct-write aim path instead of DS touch aiming.
     bool stylusDirectAimWhileTouching = false;
+    // Sub-option of stylusDirectAimWhileTouching. Tablet direct aim is opt-in
+    // so the existing Raw Mouse path remains the steady-state fast path for
+    // users who do not need pen input.
+    bool stylusDirectAimAllowTabletInput = false;
     // Sub-option of the TouchScreenAimOnly battle patch: lift it for the few
     // frames the Standard transform taps the touch-screen Transform button.
     bool touchScreenAimOnlySuspendForTransform = false;

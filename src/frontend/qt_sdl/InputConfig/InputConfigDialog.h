@@ -109,8 +109,14 @@ public:
     explicit InputConfigDialog(QWidget* parent);
     ~InputConfigDialog();
 
+#ifdef MELONPRIME_DS
+    bool pollJoystickMapping(int oldMapping, const int* axesRest,
+                             int& outMapping);
+    void captureJoystickAxisRest(int* axesRest, int count);
+#else
     SDL_Joystick* getJoystick();
     std::shared_ptr<SDL_mutex> getJoyMutex();
+#endif
 
     static InputConfigDialog* currentDlg;
     static InputConfigDialog* openDlg(QWidget* parent)

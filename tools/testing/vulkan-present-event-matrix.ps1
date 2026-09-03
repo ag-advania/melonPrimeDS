@@ -63,7 +63,8 @@ $exe = Join-Path $dir 'melonPrimeDS.exe'
 if (-not (Test-Path $exe)) { throw "melonPrimeDS.exe not found in $dir" }
 $out = Join-Path $outRoot "vk-$Tag.out.log"
 $err = Join-Path $outRoot "vk-$Tag.err.log"
-$frameCsv = Join-Path $outRoot "vk-$Tag.frames.csv"
+$frameCsv = Join-Path $outRoot "vk-$Tag.frames.instance0.csv"
+$frameCsvTemplate = Join-Path $outRoot "vk-$Tag.frames.%INSTANCE%.csv"
 foreach ($artifact in @($out, $err, $frameCsv)) {
     if (Test-Path -LiteralPath $artifact) {
         throw "Refusing to overwrite artifact: $artifact"
@@ -189,7 +190,7 @@ khronos_validation.debug_action = VK_DBG_LAYER_ACTION_LOG_MSG
 
     $env:MELONPRIME_PERF = '1'
     $env:MELONPRIME_LATENCY_RUN_ID = $Tag
-    $env:MELONPRIME_PERF_CSV = $frameCsv
+    $env:MELONPRIME_PERF_CSV = $frameCsvTemplate
     $proc = Start-Process -FilePath $exe -ArgumentList "`"$Rom`"" -WorkingDirectory $dir `
             -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
 

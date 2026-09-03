@@ -122,7 +122,11 @@ namespace MelonPrime {
                     && m_stylusTouchKeyDown)
                 {
 #ifdef _WIN32
-                    if (m_rawFilter && m_didFrameAdvanceSinceSnapshot)
+                    // Raw late-latch is the Raw Mouse low-latency path. When an
+                    // absolute pen/tablet source owns this frame, its delta is
+                    // already final and Raw motion must not be added on top.
+                    if (m_rawFilter && m_didFrameAdvanceSinceSnapshot
+                        && !m_directAimAbsoluteAuthorityThisFrame)
                         m_rawFilter->LateLatchMouseDelta(
                             m_rawInputSubscription,
                             m_input.mouseX,

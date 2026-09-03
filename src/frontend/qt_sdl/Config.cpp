@@ -266,6 +266,7 @@ namespace Config
         {"Instance*.Metroid.Apply.joy2KeySupport", true},
         {"Instance*.Metroid.Enable.stylusMode", false},
         {"Instance*.Metroid.Enable.stylusDirectAimWhileTouching", false},
+        {"Instance*.Metroid.Enable.stylusDirectAimAllowTabletInput", false},
         {"Instance*.Metroid.Enable.topScreenTouch", false},
         {"Instance*.Metroid.Enable.touchScreenAimOnly", false},
         {"Instance*.Metroid.Enable.touchScreenAimOnlySuspendForTransform", true},

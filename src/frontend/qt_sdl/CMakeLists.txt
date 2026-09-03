@@ -4,6 +4,7 @@ include(FixInterfaceIncludes)
 
 set(MELONPRIME_WINDOWS_ONLY_SOURCES
     MelonPrimeRawInputWinFilter.cpp
+    MelonPrimePointerWinFilter.cpp
     MelonPrimeRawHotkeyVkMapping.cpp
     MelonPrimeRawHotkeyVkBinding.cpp
     MelonPrimeRawInputState.cpp
@@ -98,6 +99,7 @@ set(SOURCES_QT_SDL
     MelonPrimeLifecycle.cpp
     MelonPrimeInstanceDiagnostics.cpp
     MelonPrimeRuntimeConfig.cpp
+    MelonPrimeDirectAimIngress.cpp
     MelonPrimeVideoBackend.cpp
     MelonPrimeScreenCursorPolicy.cpp
     MelonPrimeHudEditorFormLayout.cpp
@@ -681,6 +683,41 @@ endif()
 # Backend-neutral structured input upload planning. A unit wrongly considered
 # clean leaves last frame's 2D content on screen with no error anywhere, so the
 # extraction is checked against a transcription of the pre-refactor computation.
+# Absolute pen coordinates are positions, not deltas. Keep the seed/authority
+# state machine executable on every build host: it has no Qt, Win32 or gameplay
+# dependency, so it also protects the macOS/Linux Qt tablet route.
+add_executable(melonprime_direct_aim_source_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/direct-aim-source-tests.cpp)
+target_include_directories(melonprime_direct_aim_source_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+set_target_properties(melonprime_direct_aim_source_tests PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_direct_aim_source_check ALL
+    COMMAND $<TARGET_FILE:melonprime_direct_aim_source_tests>
+    DEPENDS melonprime_direct_aim_source_tests
+    COMMENT "Running direct-aim host source arbitration tests..."
+    VERBATIM)
+
+# Measure the actual GUI-producer/Emu-consumer SPSC mailbox under independent
+# event/frame rates. Keep it explicit rather than part of ALL: the 20-case
+# matrix is a developer measurement, not a build-time unit test.
+add_executable(melonprime_direct_aim_mailbox_spsc_benchmark EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/perf/direct-aim-mailbox-spsc-benchmark.cpp)
+target_include_directories(melonprime_direct_aim_mailbox_spsc_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(melonprime_direct_aim_mailbox_spsc_benchmark PRIVATE
+    Threads::Threads)
+set_target_properties(melonprime_direct_aim_mailbox_spsc_benchmark PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/perf")
+add_custom_target(melonprime_direct_aim_mailbox_spsc_check
+    COMMAND $<TARGET_FILE:melonprime_direct_aim_mailbox_spsc_benchmark>
+    DEPENDS melonprime_direct_aim_mailbox_spsc_benchmark
+    COMMENT "Running direct-aim SPSC mailbox performance matrix..."
+    VERBATIM)
+
 add_executable(melonprime_wayland_fixed_delta_tests EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tools/testing/wayland-fixed-delta-tests.cpp)
 target_include_directories(melonprime_wayland_fixed_delta_tests PRIVATE

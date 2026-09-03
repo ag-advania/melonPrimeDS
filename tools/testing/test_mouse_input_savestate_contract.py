@@ -63,20 +63,20 @@ def main() -> None:
 
     reconfigure = function_body(
         raw_filter,
-        "bool RawInputWinFilter::ReconfigureActiveRegistration(",
+        "bool RawInputWinFilter::ReconfigureActiveRegistrationLocked(",
         "void RawInputWinFilter::DeactivateActiveRegistration(",
     )
     apply_owner = function_body(
         raw_filter,
-        "bool RawInputWinFilter::ApplyOwnerRegistration(",
+        "bool RawInputWinFilter::ApplyOwnerRegistrationLocked(",
         "    // =========================================================================\n    // drainMessagesOnly",
     )
     for needle in (
-        "drainPendingMessages()",
+        "drainPendingMessagesLocked(*subscription)",
         "subscription->baselineReady = false",
         "BeginRegistrationGeneration",
         "UnregisterDevices()",
-        "ApplyOwnerRegistration(subscription, generationAlreadyAdvanced)",
+        "ApplyOwnerRegistrationLocked(\n                subscription, generationAlreadyAdvanced)",
         "subscription->state->discardDeltas()",
         "subscription->state->resetAll()",
         "subscription->state->syncPhysicalState()",
@@ -84,20 +84,37 @@ def main() -> None:
     ):
         require(reconfigure, needle, "registration reconfigure order")
     if not (
-        reconfigure.index("drainPendingMessages()")
+        reconfigure.index("drainPendingMessagesLocked(*subscription)")
         < reconfigure.index("subscription->baselineReady = false")
         < reconfigure.index("BeginRegistrationGeneration")
         < reconfigure.index("UnregisterDevices()")
     ):
         raise AssertionError("registration boundary order is not drain -> not-ready -> generation -> unregister")
+
+    locked_drain = function_body(
+        raw_filter,
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessagesLocked(",
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
+    )
+    for needle in (
+        "StateFor(&subscription)",
+        "processRawInputBatched()",
+        "drainMessagesOnly(&subscription)",
+    ):
+        require(locked_drain, needle, "locked Raw drain helper")
+    if not (
+        locked_drain.index("processRawInputBatched()")
+        < locked_drain.index("drainMessagesOnly(&subscription)")
+    ):
+        raise AssertionError("locked Raw drain must capture the buffer before peeking messages")
     for needle in (
         "recreateHiddenWindow",
-        "DestroyHiddenWindow(subscription)",
-        "CreateHiddenWindow(subscription)",
+        "DestroyHiddenWindowLocked(subscription)",
+        "CreateHiddenWindowLocked(subscription)",
     ):
         require(apply_owner, needle, "hidden Raw registration epoch fence")
-    if apply_owner.index("DestroyHiddenWindow(subscription)") > apply_owner.index(
-        "CreateHiddenWindow(subscription)"
+    if apply_owner.index("DestroyHiddenWindowLocked(subscription)") > apply_owner.index(
+        "CreateHiddenWindowLocked(subscription)"
     ):
         raise AssertionError("hidden Raw registration must destroy before create")
 
@@ -107,7 +124,7 @@ def main() -> None:
         "setQtFilterRequested",
     ):
         body = function_body(raw_filter, f"void RawInputWinFilter::{setter}(", "void RawInputWinFilter::")
-        require(body, "ReconfigureActiveRegistration(subscription, false)", f"{setter} route")
+        require(body, "ReconfigureActiveRegistrationLocked(subscription, false)", f"{setter} route")
 
     require(game_input, "SetInputGenerationFromEmu", "input generation publication")
     require(game_input, "hk.baselineReady", "input readiness gate")

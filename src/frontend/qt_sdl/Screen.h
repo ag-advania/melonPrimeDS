@@ -40,6 +40,8 @@
 #include "duckstation/gl/context.h"
 #ifdef MELONPRIME_DS
 #include "MelonPrimeWheelEvent.h"
+#include "MelonPrimeDirectAimIngress.h"
+#include "MelonPrimeScreenCursorPolicy.h"
 #endif
 #include "MelonPrimePresentationSnapshot.h"
 
@@ -337,6 +339,16 @@ public:
     [[nodiscard]] QRect aimContainmentLocalRectForPolicy() const;
     [[nodiscard]] QPoint aimContainmentCenterGlobalForPolicy() const;
     [[nodiscard]] bool shouldConfineCursorToBottomScreenForPolicy() const;
+    // An absolute pen/injected-pointer capture still requests aim ownership
+    // exactly like a relative one; only the confinement differs, because its
+    // coordinate signal must survive.
+    [[nodiscard]] MelonPrime::ScreenCursorPolicy::AimConfinement
+    aimConfinementForPolicy() const noexcept
+    {
+        using MelonPrime::ScreenCursorPolicy::AimConfinement;
+        return m_directAim.Active() ? AimConfinement::AimAreaBounds
+                                    : AimConfinement::CenterPin;
+    }
     // Stylus-mode match cursor options. Both derive from one reconciled edge
     // (stylus mode, focused, out of cursor mode) and never imply a capture
     // request: the pointer stays free so stylus aiming keeps working.
@@ -378,7 +390,9 @@ public:
 #endif
 
 public slots:
-    void clipCursorCenter1px();
+    // Publishes the aim-capture request (which is what gives this instance the
+    // relative input device) and reconciles the cursor for it.
+    void requestAimCapture();
     void unclip();
     void updateClipIfNeeded();
 #endif // MELONPRIME_DS
@@ -408,6 +422,9 @@ protected:
     bool stylusConfineCursorToTopScreenEnabled = false;
     bool stylusHoldCursorAtCenterEnabled = false;
     bool stylusDirectAimWhileTouchingEnabled = false;
+    // Tablet direct aim is opt-in so the existing Raw Mouse path remains the
+    // steady-state fast path for users who do not need pen input.
+    bool stylusDirectAimAllowTabletInputEnabled = false;
     MelonPrime::PhysicalWheelStepAccumulator wheelSteps;
     // Cached OR of the match-scoped cursor options, so the per-pass reconcile
     // short-circuits on one predictable bool when they are all off.
@@ -588,6 +605,10 @@ private:
     // never registers must still free the pointer, or the pin would trap it.
     bool m_stylusClickHeld = false;
     bool m_stylusDirectAimCaptureHeld = false;
+    // GUI-thread owned. The embedded ingress is inert while the option is off;
+    // its Windows filter is allocated/installed only for a tablet-enabled
+    // direct-aim capture.
+    MelonPrime::DirectAimIngress m_directAim;
     bool m_hasLastClipFocusedState = false;
     // EmuThread requests a GUI-thread cursor/state reconciliation. The atomic
     // coalesces repeated per-frame requests without touching QWidget off-thread.

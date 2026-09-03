@@ -33,6 +33,7 @@
 
 #ifdef MELONPRIME_DS
 #include "MelonPrimeInputConfig.h"
+#include "MelonPrimeJoystickDevice.h"
 #endif
 
 using namespace melonDS;
@@ -120,14 +121,26 @@ InputConfigDialog::InputConfigDialog(QWidget* parent) : QDialog(parent), ui(new 
 
     joystickID = instcfg.GetInt("JoystickID");
 
-    int njoy = SDL_NumJoysticks();
+#ifdef MELONPRIME_DS
+    const auto joysticks = MelonPrime::MelonPrimeJoystickDevice::EnumerateJoysticks();
+    const int njoy = static_cast<int>(joysticks.size());
+#else
+    const int njoy = SDL_NumJoysticks();
+#endif
     if (njoy > 0)
     {
+#ifdef MELONPRIME_DS
+        for (const auto& joystick : joysticks)
+        {
+            ui->cbxJoystick->addItem(QString::fromUtf8(joystick.name.c_str()));
+        }
+#else
         for (int i = 0; i < njoy; i++)
         {
             const char* name = SDL_JoystickNameForIndex(i);
             ui->cbxJoystick->addItem(QString(name));
         }
+#endif
         ui->cbxJoystick->setCurrentIndex(joystickID);
     }
     else
@@ -320,6 +333,18 @@ void InputConfigDialog::on_cbxJoystick_currentIndexChanged(int id)
     emuInstance->setJoystick(id);
 }
 
+#ifdef MELONPRIME_DS
+bool InputConfigDialog::pollJoystickMapping(
+    int oldMapping, const int* axesRest, int& outMapping)
+{
+    return emuInstance->pollJoystickMapping(oldMapping, axesRest, outMapping);
+}
+
+void InputConfigDialog::captureJoystickAxisRest(int* axesRest, int count)
+{
+    emuInstance->captureJoystickAxisRest(axesRest, count);
+}
+#else
 SDL_Joystick* InputConfigDialog::getJoystick()
 {
     return emuInstance->getJoystick();
@@ -329,6 +354,7 @@ std::shared_ptr<SDL_mutex> InputConfigDialog::getJoyMutex()
 {
     return emuInstance->getJoyMutex();
 }
+#endif
 
 #ifdef MELONPRIME_DS
 /* MelonPrimeDS { */

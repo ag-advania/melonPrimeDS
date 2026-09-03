@@ -1,6 +1,7 @@
 #include "MelonPrimeInternal.h"
 #include "EmuInstance.h"
 #include "MelonPrimeInputProjection.h"
+#include "MelonPrimeDirectAimSource.h"
 #include "NDS.h"
 #include "main.h"
 #include "Screen.h"
@@ -247,6 +248,7 @@ namespace MelonPrime {
 
         if (!focused) {
             m_rawAimActiveThisFrame = false;
+            m_directAimAbsoluteAuthorityThisFrame = false;
 #if !defined(_WIN32)
             m_warpCursorAfterAimThisFrame = false;
 #endif
@@ -435,6 +437,44 @@ namespace MelonPrime {
         m_rawAimActiveThisFrame = resolvedAim.rawActive;
         m_warpCursorAfterAimThisFrame = resolvedAim.warpAfterAim;
 #endif
+
+        // MELONPRIME_DIRECT_AIM_TABLET_MAILBOX_V1
+        // Frame projection owns the Raw-vs-DirectAim decision. Exactly one
+        // source supplies this frame's aim delta; the two are never summed.
+        // The mailbox is consumed only during an eligible, held direct-aim
+        // frame. This keeps a stale/idle tablet publication from being
+        // observed while the option is enabled but the touch action is not.
+        const bool tabletDirectAimFrame =
+            InputProjection::ShouldConsumeDirectAimMailbox(
+                m_enableStylusDirectAimAllowTabletInput,
+                captureEligible,
+                m_stylusTouchKeyDown);
+        if (UNLIKELY(tabletDirectAimFrame)) {
+            int32_t directAimDx = 0;
+            int32_t directAimDy = 0;
+            const auto directAimSource = static_cast<DirectAimHostSource>(
+                m_threadBridge.ConsumeDirectAimForEmu(
+                    directAimDx, directAimDy));
+            // Resolved per frame, not latched per capture: an absolute source
+            // owns the frame only while it is actually moving. A still pen
+            // therefore hands the frame straight back to the Raw Mouse path,
+            // which is what lets both devices stay usable inside one capture.
+            m_directAimAbsoluteAuthorityThisFrame =
+                DirectAimSourceIsAbsolute(directAimSource)
+                && (directAimDx | directAimDy) != 0;
+            if (m_directAimAbsoluteAuthorityThisFrame) {
+                m_input.mouseX = directAimDx;
+                m_input.mouseY = directAimDy;
+#if !defined(_WIN32)
+                // An absolute source is its own coordinate signal. Warping the
+                // cursor after aim would corrupt the next difference.
+                m_warpCursorAfterAimThisFrame = false;
+#endif
+            }
+        }
+        else {
+            m_directAimAbsoluteAuthorityThisFrame = false;
+        }
     }
 
     HOT_FUNCTION void MelonPrimeCore::UpdateInputState(
@@ -495,6 +535,10 @@ namespace MelonPrime {
         m_qtGameplayEdgeNeedsBaseline = true;
         emuInstance->qtGameplayPressPending.store(
             0, std::memory_order_release);
+        // Owner transfer and lifecycle boundaries must not hand direct-aim
+        // motion published under the previous epoch to the next one.
+        m_threadBridge.ResetDirectAimForEmu();
+        m_directAimAbsoluteAuthorityThisFrame = false;
     }
 
     COLD_FUNCTION void MelonPrimeCore::ResetInputForLifecycleBoundary(

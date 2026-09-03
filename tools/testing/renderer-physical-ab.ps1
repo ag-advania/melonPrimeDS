@@ -173,7 +173,8 @@ $configRoot = if (Test-Path -LiteralPath $portableDir -PathType Container) { $po
 $configPath = Join-Path $configRoot 'melonDS.toml'
 $layerSettings = Join-Path $build 'vk_layer_settings.txt'
 $csv = Join-Path $out "$RunId.csv"
-$frameCsv = Join-Path $out "$RunId.frames.csv"
+$frameCsv = Join-Path $out "$RunId.frames.instance0.csv"
+$frameCsvTemplate = Join-Path $out "$RunId.frames.%INSTANCE%.csv"
 $buildInfoStdout = Join-Path $out "$RunId.build-info.out.log"
 $buildInfoStderr = Join-Path $out "$RunId.build-info.err.log"
 $stdout = Join-Path $out "$RunId.out.log"
@@ -530,7 +531,7 @@ try {
         "clock_authority=PowerShell Stopwatch / Windows QPC frequency=$stopwatchFrequency" +
         [Environment]::NewLine, $utf8)
     $env:MELONPRIME_LATENCY_RUN_ID = $RunId
-    $env:MELONPRIME_PERF_CSV = $frameCsv
+    $env:MELONPRIME_PERF_CSV = $frameCsvTemplate
     if ($Renderer -eq 'Vulkan') {
         $env:MELONPRIME_LATENCY_CSV = $csv
     } else {

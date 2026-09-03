@@ -20,11 +20,12 @@ invalidate that responsibility's internal state.
 | `FrameInputState` (`down`, `press`, mouse delta, wheel count, move index) | `UpdateInputStateImpl` in `MelonPrimeGameInput.cpp` | input snapshot path; full clear only on timeline replacement | move/buttons, actions, Aim | once per emulated frame; bounded reentrant projection | Critical: aligned 64-byte CL0; do not copy or heap-separate |
 | hotkey to `down` / `press` projection | `MelonPrimeInputProjection.h` | stateless | `UpdateInputStateImpl` | once per input snapshot | Low: header-only fixed arithmetic; no state to move |
 | platform relative delta / Raw Input edge and wheel acquisition | platform filter plus `MelonPrimeInputSubscription` | platform owner and registration-generation transaction | `UpdateInputStateImpl` | per event plus one frame snapshot | Critical: single-writer atomics and generation ordering are load-bearing |
-| SDL controller lifetime and capability state | per-instance `MelonPrimeJoystickDevice` (`openJoystick` / `closeJoystick` orchestration) under its `Mutex()` | physical owner publishes `joystickGameplayResetPending` only | absent-device lifecycle probe and physical sampler | lifecycle edge; active devices are attachment-checked by the required sample | High: device pointers/capabilities never share the old process-wide joystick lock |
+| SDL controller lifetime and capability state | per-instance `MelonPrimeJoystickDevice` (`openJoystick` / `closeJoystick` orchestration) under its `Mutex()` | physical owner publishes `joystickGameplayResetPending` only | absent-device lifecycle probe, physical sampler, and cold mapping operations | lifecycle edge; active devices are attachment-checked by the required sample | High: device pointers/capabilities never share the old process-wide joystick lock |
 | controller physical acquisition | EmuThread `sampleJoystickPhysicalLocked` under the device's per-instance `Mutex()` | central lifetime owner | command and gameplay projection | once immediately before a running guest frame; once per low-rate paused outer cycle while connected | Critical: the initialized source count is explicit; fixed scratch is not maximum-size zeroed |
 | controller global-command snapshot | EmuThread `projectJoystickCommandState` | `resetJoystickConsumerState`; reconnect uses a command-only baseline | outer Pause/Reset/frame/window command edge detection | running late sample, or paused outer-cycle refresh | Critical: remains live without guest frames and never mutates gameplay baseline/mailbox state |
 | late SDL gameplay snapshot | EmuThread `projectJoystickGameplayState` | `resetJoystickConsumerState`; EmuThread owns the edge baseline | MelonPrime gameplay projection only | once immediately before `RunFrameHook` | Critical: reentrant samples refresh held state but never commit the press baseline |
 | compiled joystick sources/fanout | `EmuInstance::inputLoadConfig` | config reload/device rebind | shared physical sampler/projector | cold rebuild; unique physical sources sampled once | High: fixed storage; asserted source indices, direction predicates and mask fanout run outside the mutex |
+| cold joystick mapping capture | `EmuInstance::pollJoystickMapping` / `captureJoystickAxisRest` | device close/rebind | `InputConfigDialog` and `JoyMapButton` | configuration dialog only; device lock owned by the operation | Low: no SDL pointer or mutex escapes to Qt |
 | Qt gameplay held/edge projection | GUI level atomics plus `qtGameplayPressPending`; normal `UpdateInputStateImpl` is sole consumer | GameInput lifecycle profiles clear/rebaseline it | MelonPrime gameplay projection only | event publication plus normal guest-frame late claim | Critical: sub-frame taps survive; reentrant frames never claim; wheel stays on its generation mailbox |
 | Qt panel aim cumulative total | GUI-thread `AddPanelAimDeltaFromGui` | GUI publishes boundary+generation; emulation thread alone owns cursor+seen generation | non-raw Aim fallback | per Qt event plus one stable frame snapshot | Critical: generation-before/after retry prevents reset replay/duplication |
 | input-surface snapshot | primary `MainWindow`/`ScreenPanel` for one `EmuInstance` | primary close/focus/capture lifecycle | owner selection, Aim center/HWND, cursor GUI | GUI edges plus per-frame read | High: secondary presentation windows cannot publish or clear shared authority |
@@ -166,7 +167,9 @@ Morph, Boost, weapon, Zoom, hunter or ROM semantics.
   changes, while each retained subscription has a recursive frame/data lock for
   state, HWND identity, and re-entrant dispatch. Retired subscription records
   stay owned by the service until teardown so a published raw pointer cannot
-  become dangling on the frame path.
+  become dangling on the frame path. The recursive frame lock remains until
+  developer stress telemetry proves whether plain-mutex conversion is safe;
+  the probe reports recursive acquisition count and maximum depth.
 - `HiddenWndProc` is deliberately minimal on the event-hot path: it loads the
   active subscription, acquires only that subscription's frame lock, compares
   `hiddenWindow == hwnd`, and then processes the handle. Its decoder returns a small recovery hint so
@@ -222,8 +225,83 @@ use a short process-level SDL lock because those operations touch SDL's shared
 bookkeeping; button/hat/axis reads, sensor reads, and rumble do not hold that
 process lock. Consequently two instances with different devices cannot
 serialize their steady-state physical reads. The component exposes only direct
-`*_Locked` calls, so the frame path adds no virtual dispatch, heap object, or
-generic callback layer.
+`*_Locked` calls to its owners, plus lock-owning cold mapping operations on
+`EmuInstance`; the frame path adds no virtual dispatch, heap object, or generic
+callback layer. The developer probe reports the wait and hold time of the short
+process lock as `JoystickProcessMutexWait` and `JoystickProcessMutexHold`, but
+the lock is not removed without multi-instance evidence. The process guard
+returns those ticks through a small POD, and the metric commit occurs after the
+outer per-instance device mutex is released. The POD, timing overload, and
+caller-local timing object are developer-feature-only; a shipping controller
+frame uses the parameterless update path and carries no telemetry pointer or
+counter-read plumbing.
+
+Generic performance state is thread-local and is bound to the owning
+`EmuThread` instance before its frame loop starts. Reports carry
+`instance_id`; a configured frame CSV uses `%INSTANCE%` or an automatic
+`.instanceN` suffix and is closed by the owning thread-local state destructor,
+not an `atexit` callback. `MELONPRIME_PERF_CAPTURE_ONLY=1` keeps sorting,
+formatting, and stderr reporting until shutdown. Immediately after allocating a
+report, the probe emits a `report_begin` header containing the fixed-buffer
+shared `session_id`, `instance_id`, ordinal `report_seq`, and capture-only
+state. The header is the source of truth for report-start provenance; a
+header-only, shutdown-summary-only, or explicit-latency-only tail is therefore
+the latest incomplete generation. The parser binds Generic lines by
+`(session_id, instance_id, report_seq)`, selects recency by file observation
+order rather than numeric `report_seq` maximum, rejects a newer incomplete or
+markerless generation without falling back to an older pass, and omits
+explicit-latency supplemental lines whose identity does not match the
+certified input generation. The versioned fallback recognizes the actual
+`[MelonPrimePerf]` and `[MelonPrimePerfPhase]` producer prefixes. The shared
+session helper is compiled when either developer telemetry or the independent
+Windows Raw telemetry option is enabled, so Raw-only measurement builds retain
+the same identity without adding hot-path work. Generic and Raw use the same process-global
+`MELONPRIME_PERF_SESSION_ID`; strict Raw certification rejects a cross-session
+concatenation. Generic input metrics and explicit input latency retain the latest 2048 samples while
+their `calls` counter covers the whole report window/run; p50/p95/p99 and
+`retained_max` describe the retained ring, whereas `max` is the whole-window
+maximum. Raw capture-only uses
+`MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1` and emits one shared `session_id` and
+ordinal `report_seq` on its capture marker, `lock_planes`, and `stage_us` lines.
+Raw strict
+certification requires the lock line and every documented lock-plane key in
+that same generation. Raw lock telemetry is written after each measured mutex
+is released, and `DeferredDrain` reports only after its frame/stage scope has ended. The process-wide Raw final
+report belongs to the last `RawInputWinFilter` service release, so an earlier
+EmuThread shutdown cannot truncate a multi-instance capture; it is emitted
+before the final service destructor's cold HWND cleanup.
+Current parser output marks this input/stage retention as `latest_n`. Legacy
+generic first-N and historical explicit-latency artifacts are marked
+`legacy_first_n`; an over-cap legacy report is not eligible for strict
+certification. `--check-budget` requires an explicit `--mode keyboard`,
+`--mode controller`, or `--mode raw`; `all` is summary-only. Markerless or
+legacy artifacts use the explicit `--historical-analysis` path, which is
+always labeled `certified=false` and never treated as a strict budget pass.
+The legacy compatibility flags `--allow-legacy-first-n` and
+`--allow-legacy-raw-unversioned` are deprecated compatibility options accepted
+only on that historical path; they do not make a historical result certifiable.
+Markdown summaries repeat the certification scope, certified state, selected
+mode, capture verification, session ID, minimum sample requirement, and
+budget-check state so the artifact remains self-describing without its JSON
+sidecar. The matching JSON schema is version 8 and reports the latest Generic
+and Raw generation identities and completeness state. Strict benchmark output
+also carries explicit commit SHA, build preset, hardware, device, window mode,
+and polling-rate metadata supplied by the offline summarizer invocation.
+
+Raw stage reports expose `calls` and cumulative service/capture-lifetime `max`,
+`retained`, p50/p95/p99, and retained-window `retained_max` for snapshot, late
+latch, and deferred drain. Raw lock and batch totals have the same cumulative
+lifetime semantics. Zero-duration developer samples remain in their measured
+population.
+
+The input implementation keeps SRP boundaries as fixed data and direct calls:
+`JoystickBindingProgram` is the cold `CompiledInputBindings` boundary,
+`sampleJoystickPhysical*` is physical acquisition, and
+`projectJoystickPhysicalSnapshot`, `projectJoystickCommandState`, and
+`projectJoystickGameplayState` are the numeric projector and edge-composition
+boundaries. These helpers remain on `EmuInstance` so their fixed tables and
+single-writer state stay physically local; no virtual interface or heap-owned
+pipeline is introduced.
 
 ## Frame-order contract
 

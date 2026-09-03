@@ -282,7 +282,9 @@
 #ifdef _WIN32
             int lateX = 0;
             int lateY = 0;
-            if (m_rawFilter)
+            // Never fold a Raw late delta into a frame whose aim already came
+            // from an absolute direct-aim source.
+            if (m_rawFilter && !m_directAimAbsoluteAuthorityThisFrame)
                 m_rawFilter->LateLatchMouseDelta(m_rawInputSubscription, lateX, lateY);
 
             if ((lateX | lateY) != 0)
