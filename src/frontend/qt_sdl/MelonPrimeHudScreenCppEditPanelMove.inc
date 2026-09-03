@@ -3,6 +3,6 @@
 
 #ifdef MELONPRIME_CUSTOM_HUD
 if (m_hudEditPanel && m_hudEditPanel->isVisible()) {
-    MelonPrimeHud_PositionEditPanel(this, m_hudEditPanel, false, false);
+    MelonPrime::HudScreenEditPanel::Position(this, m_hudEditPanel, false, false);
 }
 #endif

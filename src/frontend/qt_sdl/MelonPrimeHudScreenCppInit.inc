@@ -38,7 +38,7 @@ MelonPrime::CustomHud_SetEditSelectionCallback(hudState, [this](int idx) {
     if (MelonPrime::CustomHud_GetOnScreenEditStyle(core->HudConfigState())
         == MelonPrime::OnScreenEditStyle::Classic) {
         m_hudEditPanel->populateForElement(idx);
-        MelonPrimeHud_PositionEditPanel(this, m_hudEditPanel, true, true);
+        MelonPrime::HudScreenEditPanel::Position(this, m_hudEditPanel, true, true);
         m_hudEditPanel->show();
         m_hudEditPanel->raise();
         return;
