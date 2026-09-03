@@ -280,14 +280,18 @@ public:
 
     void setJoystick(int id);
     int getJoystickID() { return joystickID; }
-    SDL_Joystick* getJoystick() {
 #ifdef MELONPRIME_DS
-        return joystickDevice.GetJoystick();
+    // Cold configuration APIs own the device lock and expose no SDL handle or
+    // external locking protocol to the Qt mapping widgets.
+    bool pollJoystickMapping(int oldMapping, const int* axesRest,
+                             int& outMapping);
+    void captureJoystickAxisRest(int* axesRest, int count);
 #else
+    SDL_Joystick* getJoystick() {
         return joystick;
-#endif
     }
     std::shared_ptr<SDL_mutex> getJoyMutex() { return joyMutex; }
+#endif
 
     void touchScreen(int x, int y);
     void releaseScreen();
@@ -603,7 +607,12 @@ private:
     void resetJoystickConsumerState();
     bool consumeJoystickResetPending();
     void probeJoystickConnection();
-    bool sampleJoystickPhysicalLocked(JoystickPhysicalSnapshot& snapshot);
+    bool sampleJoystickPhysicalLocked(
+        JoystickPhysicalSnapshot& snapshot
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+        , Uint64* updateTicks, MelonPrime::SdlProcessTiming* processTiming
+#endif
+    );
     bool sampleJoystickPhysical(JoystickPhysicalSnapshot& snapshot);
     [[nodiscard]] JoystickProjectedState projectJoystickPhysicalSnapshot(
         const JoystickPhysicalSnapshot& snapshot) const;

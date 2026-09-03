@@ -53,6 +53,9 @@ RuntimeConfigSnapshot LoadRuntimeConfigSnapshot(Config::Table& cfg) noexcept
     s.stylusMode = cfg.GetBool(CfgKey::StylusMode);
     s.stylusDirectAimWhileTouching =
         cfg.GetBool(CfgKey::StylusDirectAimWhileTouching);
+    s.stylusDirectAimAllowTabletInput =
+        s.stylusDirectAimWhileTouching
+        && cfg.GetBool(CfgKey::StylusDirectAimAllowTabletInput);
 
     s.disableMphAimSmoothing = cfg.GetBool(CfgKey::DisableMphAimSmoothing);
     s.aimAccumulator = cfg.GetBool(CfgKey::AimAccumulator);

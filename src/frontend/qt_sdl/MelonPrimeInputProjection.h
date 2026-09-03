@@ -111,6 +111,23 @@ static_assert(!ShouldOwnRelativeAimInput(
 static_assert(ShouldOwnRelativeAimInput(
     true, true, false, true, true, true));
 
+// Direct-aim mailbox consumption is a frame-level policy, not a config-only
+// branch. The mailbox is live only while the tablet option, capture ownership,
+// and the configured stylus-touch action all agree. Keeping this as a pure
+// helper makes the no-consume cases executable without Qt or a running game.
+[[nodiscard]] constexpr bool ShouldConsumeDirectAimMailbox(
+    bool allowTabletInput,
+    bool captureEligible,
+    bool stylusTouchDown) noexcept
+{
+    return allowTabletInput && captureEligible && stylusTouchDown;
+}
+
+static_assert(!ShouldConsumeDirectAimMailbox(false, false, false));
+static_assert(!ShouldConsumeDirectAimMailbox(true, false, false));
+static_assert(!ShouldConsumeDirectAimMailbox(true, true, false));
+static_assert(ShouldConsumeDirectAimMailbox(true, true, true));
+
 [[nodiscard]] FORCE_INLINE ProjectedDownState ProjectDownState(
     uint64_t hotMask,
     bool stylusMode) noexcept

@@ -46,6 +46,15 @@ per-device mutex. SDL process bookkeeping (`SDL_JoystickUpdate`, enumeration,
 open, and close) uses only a short process lock. Physical source reads and
 sensor/rumble operations use the instance's device lock, so separate emulator
 instances do not serialize their steady-state reads on `joyMutexGlobal`.
+The SDL process guard returns wait/hold ticks through a small POD; generic
+process-lock metrics are committed only after the outer device lock is
+released. `SdlProcessTiming`, its timing overload, and the caller's timing
+object are compiled only under `MELONPRIME_ENABLE_DEVELOPER_FEATURES`.
+Shipping controller sampling calls the parameterless `UpdateLocked()` path,
+so it has no timing pointer plumbing or performance-counter reads.
+The component does not expose its SDL handle. Cold mapping UI calls
+`EmuInstance::pollJoystickMapping` and `captureJoystickAxisRest`, which own the
+device lock and keep mapping-specific SDL reads inside the device owner.
 
 Windows Raw Input has two lock planes:
 
@@ -74,6 +83,28 @@ is enabled with `MELONPRIME_PERF=1`. The `input_metric_us` report contains:
 | `JoystickSample` | physical sample, including the short SDL process-update lock |
 | `JoystickProject` | fixed binding fanout projection after the device lock |
 | `JoystickSDLUpdate` | the `SDL_JoystickUpdate` call inside the required physical sample |
+| `JoystickProcessMutexWait` | wait for the short SDL process bookkeeping lock |
+| `JoystickProcessMutexHold` | time spent holding that SDL process bookkeeping lock |
+
+Each current generic `input_metric_us` entry reports `c` as the number of
+observed calls, `retained` as the number of samples currently kept in its
+latest-N ring (2048), and `retention_mode=latest_n` in parser output. The
+p50/p95/p99 values and `retained_max` are calculated from that retained ring.
+`max` is the whole live-report window or capture run, so an early outlier can
+make it larger than `retained_max`. Explicit input latency (`input sample ->
+RunFrame begin` and `input sample -> Present end`) uses the same calls/retained/
+latest-N semantics.
+
+The parser preserves historical provenance. A pre-ring generic report without
+`retained` is marked `retention_mode=legacy_first_n` with a 2048-sample cap;
+the older explicit-latency format is marked the same way with its historical
+512-sample cap. For a legacy report with more calls than its cap, the reported
+percentiles are only the retained prefix, and an older explicit-latency `max`
+is also prefix-only; the old generic `max` remains its producer's whole-call
+maximum but has no retained max. Therefore `--check-budget` refuses an
+over-cap legacy report by default. `--allow-legacy-first-n` is an explicit
+historical-analysis escape hatch. JSON includes the mode/cap on every parsed
+metric and the top-level run, while Markdown includes the mode and max scope.
 
 Windows Raw telemetry is separately compile-gated by
 `MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY` and runtime-gated by
@@ -85,11 +116,91 @@ Windows Raw telemetry is separately compile-gated by
 - `HiddenWndProc`, `LateLatch`, and `DeferredDrain` lock wait by site;
 - `GetRawInputBuffer` calls, non-empty/empty calls, and event totals;
 - late-latch delta claims and post-draw captured events.
+- recursive acquisition count and maximum depth for the subscription/frame
+  recursive mutexes; these are evidence for a future plain-mutex decision,
+  not a claim that the type is already replaceable.
 
-The Raw lock and batch counters are report-window totals. Divide them by the
-corresponding frame/snapshot count when a per-frame rate is needed. Timing
-percentiles retain at least the latest 2048 samples in the developer probe;
-the `calls` value remains the total observed count for that process window.
+The shared fixed-buffer `MELONPRIME_PERF_SESSION_ID` helper is compiled when
+either developer telemetry or the independent Windows Raw telemetry option is
+enabled. The Raw option therefore remains usable with developer features off;
+the helper adds no per-frame environment, allocation, configuration, or
+filesystem work.
+
+### Pen tablet direct-aim measurement boundary
+
+The opt-in tablet mailbox is consumed only when the tablet option is enabled,
+relative capture is eligible, and the stylus-touch action is held. A non-zero
+absolute delta replaces the Raw frame delta; an idle absolute source hands the
+frame back to Raw, so the paths are never summed. `PointerWinFilter` rejects
+synthesized mouse messages before `GetCurrentInputMessageSource()` while a
+`WinPointerPen` or `QtTablet` authority is active. Windows developer
+performance runs aggregate native filter message/API counts and QPC ticks and
+emit one cold `native_filter` summary at capture end.
+
+`tools/perf/direct-aim-mailbox-benchmark.cpp` is an isolated algorithmic
+arbiter/mailbox measurement and is not end-to-end. The explicit
+`melonprime_direct_aim_mailbox_spsc_benchmark` target measures the two-thread
+GUI-producer/Emu-consumer bridge across producer rates 125/500/1000/2000/8000
+Hz and consumer rates 60/120/144/240 Hz, reporting events/sec and
+p50/p95/p99/max. It records the current adjacent-field mailbox layout and does
+not claim false-sharing mitigation; layout changes require evidence from this
+matrix on target hardware.
+
+Generic reports and frame CSV rows carry `instance_id`. Each emulation thread
+has its own generic probe state; set `MELONPRIME_PERF_CSV` to a path containing
+`%INSTANCE%` when collecting more than one instance (without the placeholder,
+the probe adds `.instanceN`). Set `MELONPRIME_PERF_CAPTURE_ONLY=1` to capture
+without periodic sorting/formatting; the owning thread emits the generic final
+report at shutdown. Immediately after allocating a report, it emits a
+`report_begin session_id=... instance_id=... report_seq=N capture_only=1`
+header, followed by the compatibility `capture_mode` marker and the report
+body. The header is the strict capture provenance source, so a report that
+ends after only the header, shutdown summary, or explicit latency is an
+incomplete current generation and cannot fall back to an older complete one.
+`report_seq` is an ordinal generation identity within the process, not a clock
+or a durable ordering value. The parser keys Generic evidence by
+`(session_id, instance_id, report_seq)` and selects the latest generation by
+file observation order; it never selects a numeric maximum across runs. Its
+versioned Generic fallback recognizes the producer prefixes
+`[MelonPrimePerf]` and `[MelonPrimePerfPhase]`, including shutdown, frame,
+audit, histogram, HUD-phase, and phase-clock lines.
+Explicit-latency lines from another generation are kept only as unbound
+supplemental evidence and are omitted from certified Markdown.
+
+The runner must set `MELONPRIME_PERF_SESSION_ID` to one non-empty,
+whitespace-free token. The fixed-buffer measurement helper reads it once on
+the cold report path, and both Generic and Windows Raw reports emit it. Strict
+Raw certification requires the latest certified Generic generation(s) and the
+Raw generation to have the same session ID. This cross-session check prevents a
+concatenated Generic run A plus Raw run B artifact from being certified. A
+missing or invalid ID is retained for historical inspection but fails closed
+for strict certification. Current JSON output is schema version 8 and includes
+the run session ID, latest generation identity, completeness fields, and the
+same session metadata that Markdown displays.
+Raw capture-only runs use `MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1`; the final
+Raw report includes `capture_mode`, `lock_planes`, and `stage_us` lines carrying
+one shared `session_id` and ordinal `report_seq`. Raw lock wait/hold samples are
+committed after releasing the measured lock, its `DeferredDrain` report is
+emitted after the stage scope, and the process-wide Raw final report is emitted
+only when the last Raw service reference is released. The final Raw report is
+printed before that service's cold destructor cleanup, keeping hidden-window
+teardown lock acquisitions out of runtime measurements.
+
+The Raw frame mutex remains recursive while the developer probe measures actual
+recursive acquisitions and maximum depth. A plain `std::mutex` conversion is
+considered only after the stress matrix records zero recursive acquisitions.
+
+The Raw stage line uses the same explicit contract for `snapshot`, `late_latch`,
+and `deferred_drain`: `calls` and `max` cover the current Raw service/capture
+lifetime, `retained` is the latest 2048 samples, and p50/p95/p99 plus
+`retained_max` use that retained ring. The parser labels this maximum scope as
+`raw_service_lifetime`; it does not call the cumulative values a one-second
+report window. The parser and Markdown output preserve the stage retention
+fields. Raw lock and batch counters are also cumulative service/capture
+lifetime totals; subtract two reports to derive a live interval delta, or
+divide a run total by the corresponding frame/snapshot count for a rate.
+Zero-duration developer samples are retained as valid observations rather than
+silently dropped.
 
 The deterministic parser emits JSON/Markdown from real logs and can enforce
 the common input limits:
@@ -98,8 +209,64 @@ the common input limits:
 python tools/testing/summarize-input-performance.py --self-test
 python tools/testing/summarize-input-performance.py run.stderr \
   --mode controller --min-input-samples 1000 --check-budget \
+  --commit-sha "$GIT_COMMIT_SHA" --build-preset windows-release \
+  --hardware "$BENCH_HARDWARE" --device "$BENCH_DEVICE" \
+  --window-mode windowed --polling-rate 1000Hz \
   --json-out input-summary.json --markdown-out input-summary.md
+
+# Historical or markerless artifacts are analysis-only and never certification.
+python tools/testing/summarize-input-performance.py old-run.stderr \
+  --historical-analysis
+
+# A strict certification run must use both input capture-only switches.
+MELONPRIME_PERF=1 MELONPRIME_PERF_CAPTURE_ONLY=1 \
+MELONPRIME_RAW_INPUT_PERF=1 MELONPRIME_RAW_INPUT_PERF_CAPTURE_ONLY=1 \
+MELONPRIME_PERF_SESSION_ID=perf-2026-09-03-run01 \
+  melonDS
 ```
+
+`--check-budget` is strict certification: it defaults to and requires at least
+1000 calls, and it must be paired with an explicit `--mode keyboard`,
+`--mode controller`, or `--mode raw`. Omitting `--mode` or selecting `all` is
+rejected because `all` is summary-only and does not prove every benchmark
+population. `--mode controller` requires every joystick metric plus at least
+the minimum calls in each metric, while `--mode keyboard` rejects any joystick
+metric calls. `--mode raw` requires `snapshot` and `late_latch` stage
+populations to meet the same minimum and requires one complete Raw generation:
+the capture-only marker, `stage_us`, and `lock_planes` must share the latest
+`session_id`/`report_seq` generation, and that session must match the latest
+certified Generic generation. The lock line must contain
+`subscription_mutex_acq`, `subscription_mutex_wait_ns`,
+`subscription_mutex_hold_ns`, `subscription_mutex_max_wait_ns`,
+`frame_mutex_acq`, `frame_mutex_wait_ns`, `frame_mutex_hold_ns`,
+`frame_mutex_max_wait_ns`, `recursive_acquisitions`,
+`subscription_max_recursion_depth`, and `frame_max_recursion_depth`. Missing
+lock evidence or any required key is a strict failure.
+
+Strict output also requires explicit benchmark metadata: commit SHA, build
+preset, hardware, device, window mode, and polling rate. The parser copies
+these values into the top-level and per-run JSON metadata and the Markdown
+header context; it does not guess hardware or build provenance from source
+files.
+
+`--historical-analysis` is the explicit non-certifying path for old or
+markerless artifacts. It permits capture-mode provenance to remain unknown and
+emits JSON with `certification_scope=historical_analysis`,
+`historical_analysis=true`, and `certified=false`; it must not be combined with
+`--check-budget`. The legacy compatibility flags
+`--allow-legacy-first-n` and `--allow-legacy-raw-unversioned` are accepted only
+with `--historical-analysis`, and are deprecated: they do not change the
+non-certifying status. Historical analysis itself is sufficient to parse legacy
+provenance. An old Raw report without surfaced call counts is
+`legacy_unversioned` and can therefore be summarized historically without
+inventing sample counts or capture provenance.
+
+JSON and Markdown outputs carry the same certification context. Every Markdown
+summary states `Certification scope`, `Certified`, `Historical analysis`,
+`Mode`, `Capture-only verified`, `Session ID`, `Minimum samples`, and `Budget
+checked` before the metrics table. Historical Markdown additionally begins with `NOT A
+CERTIFICATION RESULT` and `Historical analysis only.` so it remains safe when
+shared without its JSON sidecar.
 
 No runtime log is generated by the source audit or local build. A physical
 benchmark must preserve the original stderr and parser output with its device,
@@ -128,7 +295,7 @@ Collect at least 1000 frames for each applicable row:
 | B | active controller | windowed | input and joystick metrics |
 | C | Windows Raw Input aim | windowed | Raw stages, lock planes, batch counts |
 | D | Windows Raw Input aim | fullscreen | same Raw metrics plus focus/owner state |
-| E | two instances / separate devices | windowed | no process-global joystick lock serialization |
+| E | two instances / separate devices | windowed | instance-specific p95/p99/max for process-lock and joystick metrics before any coalescing decision |
 
 Also record reconnect, focus-loss, Raw registration failure fallback, rumble,
 sensor, short click, wheel pulse, and nested-frame cases. These are functional
@@ -147,6 +314,8 @@ For a performance change, retain:
 - the exact build feature gates and commit;
 - the raw stderr log and parser JSON/Markdown;
 - at least 1000 selected frames and p50/p95/p99/max;
+- input and explicit-latency `calls`/`retained` values, including the latest-N
+  retention semantics;
 - Raw lock wait and batch syscall counts where Raw is enabled;
 - single-instance and two-instance results;
 - the functional matrix result and any unrun hardware/platform rows.

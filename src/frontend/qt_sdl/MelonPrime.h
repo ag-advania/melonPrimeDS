@@ -917,6 +917,14 @@ namespace MelonPrime {
         // Stylus Mode's configurable touch action is held. Loaded only at the
         // cold runtime-config boundary.
         bool     m_enableStylusDirectAimWhileTouching = false;
+        // Opt-in sub-option: admits normalized pen/tablet/injected-absolute
+        // deltas from the GUI direct-aim mailbox. Off leaves the Raw Mouse
+        // frame projection byte-for-byte unchanged.
+        bool     m_enableStylusDirectAimAllowTabletInput = false;
+        // Set once per frame in UpdateInputState: an absolute direct-aim
+        // source owns aim this frame, so Raw delta and Raw late-latch are not
+        // applied on top of it.
+        bool     m_directAimAbsoluteAuthorityThisFrame = false;
         // Loaded only at the cold config boundary. Vulkan reads this scalar
         // before every frame so an F8 load cannot expose one unmasked frame
         // while the ARM patch tracker is still being re-established.

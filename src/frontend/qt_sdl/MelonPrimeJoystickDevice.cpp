@@ -2,6 +2,7 @@
 
 #include "SDL_gamecontroller.h"
 #include "SDL_sensor.h"
+#include "MelonPrimePerfProbe.h"
 
 #include <mutex>
 
@@ -15,7 +16,74 @@ namespace {
 // longer operation.
 std::mutex s_sdlProcessMutex;
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+class SdlProcessMutexGuard final {
+public:
+    explicit SdlProcessMutexGuard(
+        std::mutex& mutex, SdlProcessTiming* timing = nullptr)
+        : m_waitStart(MelonPrimePerf::ReadTicksIfEnabled())
+        , m_lock(mutex)
+        , m_holdStart(MelonPrimePerf::ReadTicksIfEnabled())
+        , m_timing(timing)
+    {
+    }
+
+    ~SdlProcessMutexGuard()
+    {
+        const Uint64 releaseTick = MelonPrimePerf::ReadTicksIfEnabled();
+        m_lock.unlock();
+        if (!m_timing)
+            return;
+        m_timing->waitTicks = m_holdStart >= m_waitStart
+            ? m_holdStart - m_waitStart : 0;
+        m_timing->holdTicks = releaseTick >= m_holdStart
+            ? releaseTick - m_holdStart : 0;
+        m_timing->valid = true;
+    }
+
+    SdlProcessMutexGuard(const SdlProcessMutexGuard&) = delete;
+    SdlProcessMutexGuard& operator=(const SdlProcessMutexGuard&) = delete;
+
+private:
+    Uint64 m_waitStart;
+    std::unique_lock<std::mutex> m_lock;
+    Uint64 m_holdStart;
+    SdlProcessTiming* m_timing;
+};
+#else
+class SdlProcessMutexGuard final {
+public:
+    explicit SdlProcessMutexGuard(std::mutex& mutex)
+        : m_lock(mutex)
+    {
+    }
+
+    SdlProcessMutexGuard(const SdlProcessMutexGuard&) = delete;
+    SdlProcessMutexGuard& operator=(const SdlProcessMutexGuard&) = delete;
+
+private:
+    std::lock_guard<std::mutex> m_lock;
+};
+#endif
+
 } // namespace
+
+std::vector<JoystickDescriptor> MelonPrimeJoystickDevice::EnumerateJoysticks()
+{
+    SdlProcessMutexGuard processLock(s_sdlProcessMutex);
+    const int count = SDL_NumJoysticks();
+    if (count <= 0)
+        return {};
+
+    std::vector<JoystickDescriptor> result;
+    result.reserve(static_cast<size_t>(count));
+    for (int id = 0; id < count; ++id)
+    {
+        const char* const name = SDL_JoystickNameForIndex(id);
+        result.push_back({id, name ? name : ""});
+    }
+    return result;
+}
 
 MelonPrimeJoystickDevice::MelonPrimeJoystickDevice()
     : m_mutex(SDL_CreateMutex(), SDL_DestroyMutex)
@@ -48,13 +116,13 @@ void MelonPrimeJoystickDevice::CloseLockedWithoutProcessMutex() noexcept
 
 void MelonPrimeJoystickDevice::CloseLocked() noexcept
 {
-    std::lock_guard<std::mutex> processLock(s_sdlProcessMutex);
+    SdlProcessMutexGuard processLock(s_sdlProcessMutex);
     CloseLockedWithoutProcessMutex();
 }
 
 bool MelonPrimeJoystickDevice::OpenLocked(int& joystickId) noexcept
 {
-    std::lock_guard<std::mutex> processLock(s_sdlProcessMutex);
+    SdlProcessMutexGuard processLock(s_sdlProcessMutex);
     CloseLockedWithoutProcessMutex();
 
     const int numJoysticks = SDL_NumJoysticks();
@@ -83,15 +151,36 @@ bool MelonPrimeJoystickDevice::OpenLocked(int& joystickId) noexcept
     return m_joystick != nullptr;
 }
 
+#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES
+void MelonPrimeJoystickDevice::UpdateLocked(SdlProcessTiming* timing) noexcept
+{
+    SdlProcessMutexGuard processLock(s_sdlProcessMutex, timing);
+#else
 void MelonPrimeJoystickDevice::UpdateLocked() noexcept
 {
-    std::lock_guard<std::mutex> processLock(s_sdlProcessMutex);
+    SdlProcessMutexGuard processLock(s_sdlProcessMutex);
+#endif
     SDL_JoystickUpdate();
 }
 
 bool MelonPrimeJoystickDevice::IsAttachedLocked() const noexcept
 {
     return m_joystick && SDL_JoystickGetAttached(m_joystick);
+}
+
+int MelonPrimeJoystickDevice::ButtonCountLocked() const noexcept
+{
+    return m_joystick ? SDL_JoystickNumButtons(m_joystick) : 0;
+}
+
+int MelonPrimeJoystickDevice::HatCountLocked() const noexcept
+{
+    return m_joystick ? SDL_JoystickNumHats(m_joystick) : 0;
+}
+
+int MelonPrimeJoystickDevice::AxisCountLocked() const noexcept
+{
+    return m_joystick ? SDL_JoystickNumAxes(m_joystick) : 0;
 }
 
 bool MelonPrimeJoystickDevice::SampleSourceLocked(

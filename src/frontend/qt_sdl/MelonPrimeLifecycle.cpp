@@ -62,6 +62,11 @@ namespace MelonPrime {
         m_snapTapMode   = m_flags.test(StateFlags::BIT_SNAP_TAP);
         m_enableStylusDirectAimWhileTouching =
             s.stylusDirectAimWhileTouching;
+        const bool tabletInputWasAllowed = m_enableStylusDirectAimAllowTabletInput;
+        m_enableStylusDirectAimAllowTabletInput =
+            s.stylusMode && s.stylusDirectAimAllowTabletInput;
+        if (tabletInputWasAllowed && !m_enableStylusDirectAimAllowTabletInput)
+            m_threadBridge.ResetDirectAimForEmu();
 
         const bool immediateOverlayWasEnabled = m_enableImmediateInputEdgeOverlay;
         m_enableImmediateInputEdgeOverlay = s.immediateInputEdgeOverlay;

@@ -12,6 +12,7 @@ and feature-specific explanations without copying that table.
 | Zoom input | [Zoom input methods](zoom-input-methods.md) | Legacy/native zoom routes and setting interactions |
 | Zoom sensitivity | [Zoom aim sensitivity](../zoom-aim-sensitivity.md) | Native zoom state and sensitivity scaling |
 | Stylus/touch compatibility | [Input compatibility settings](../melonprime-settings/input-compatibility.md) | Stylus mode, top-screen touch, touch-only aim, and cursor policy links |
+| Pen tablet direct aim | [Pen tablet direct aim](pen-tablet-direct-aim.md) | Opt-in XP-Pen / OpenTabletDriver ingress, source authority, and cursor policy |
 | Cursor presentation in stylus mode | [Stylus cursor policy](../melonprime-settings/stylus-cursor-policy.md) | Hide, top-screen confinement, and idle center hold |
 | Quick Stop Movement | [Quick Stop Movement](quick-stop-movement.md) | In-game opposing-direction cancellation |
 | Weapon switching | [Weapon-switch jump suppression](../gameplay/no-double-tap-jump.md) | Legacy touch fallback and its transient ARM9 guard |

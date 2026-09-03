@@ -375,6 +375,39 @@ patch is applied or the preset is Dual.
   - otherwise `ReleaseScreen()`
 - Some operations (for example morph/weapon actions) set `BIT_BLOCK_STYLUS` to avoid interference.
 
+### 7.1 Pen tablet direct aim (opt-in)
+
+`Metroid.Enable.stylusDirectAimAllowTabletInput` (default off) admits pen
+tablets into the direct-aim sub-mode. Absolute pen/injected-pointer positions
+are normalized to relative deltas by `DirectAimSourceArbiter`, which arbitrates
+only between absolute sources. The relative mouse never participates: it keeps
+its Raw transport, and a frame is handed to the tablet only when the mailbox
+published non-zero motion, so a pen and a mouse stay usable in one capture
+without ever being summed. The mailbox is consumed only when tablet input is
+allowed, relative capture is eligible, and the stylus-touch action is held.
+With the option off the Windows filter is not allocated/installed, tablet
+tracking and pointer-source API calls are disabled, and the embedded
+`DirectAimIngress` remains inert; the Raw Mouse projection below is unchanged.
+Full contract:
+[Pen tablet direct aim](../../features/input/pen-tablet-direct-aim.md).
+
+### 7.2 Aim capture: request versus active state
+
+`ScreenCursorPolicy` separates the persistent aim-capture request from the
+transient cursor state on both sides:
+
+| | persistent request | transient active state |
+| --- | --- | --- |
+| acquire | `RequestAimCapture` | `ReconcileAimCapture` |
+| release | `Unclip` | `Suspend` |
+
+The request publishes `clipWanted` → `captureWanted`, which
+`ShouldOwnRelativeAimInput()` requires before Raw Input is handed to the
+instance. It is therefore issued by every acquire, independently of what the
+cursor is about to do; `AimConfinement` (`CenterPin` / `AimAreaBounds`) decides
+only the confinement. Reconciliation writes no request, so `UpdateClipIfNeeded`
+no longer re-publishes a request it just read.
+
 ## 8. RawInput Layer Notes (Windows)
 
 - `RawInputWinFilter`:
@@ -654,6 +687,8 @@ Troubleshooting:
 - `Metroid.Aim.LowLatencyMode` — §6.2 (`Off` / `ImmediateSync` / `MoonLikeAim`; `InstantAimFollow` is a retained legacy alias and is independent of `DisableMphAimSmoothing`)
 - `Metroid.Aim.Enable.FpsCameraLock` — §6.2 (public independent camera-behavior switch)
 - `Metroid.Enable.stylusMode`
+- `Metroid.Enable.stylusDirectAimWhileTouching` — §7
+- `Metroid.Enable.stylusDirectAimAllowTabletInput` — §7.1 (opt-in pen/tablet ingress; default off)
 - `Metroid.Operation.SnapTap`
 - `Metroid.Apply.joy2KeySupport`
 

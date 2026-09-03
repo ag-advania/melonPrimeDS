@@ -158,6 +158,10 @@ void ScreenPanel::resetAimMouseDelta()
         if (auto* core = melonPrimeCore())
             core->ThreadBridge().ResetPanelAimDeltaFromGui();
     }
+    // Recenter, warp and layout-generation boundaries invalidate an absolute
+    // baseline exactly as they invalidate the relative accumulator.
+    if (m_directAim.Active())
+        m_directAim.DropBaseline(MelonPrime::DirectAimBaselineReset::Lifecycle);
 #if !defined(_WIN32)
     aimLastGlobalValid.store(false, std::memory_order_release);
 #endif
@@ -248,7 +252,7 @@ void ScreenPanel::syncMelonPrimeThreadBridge()
             setCursor(Qt::ArrowCursor);
             MelonPrime::ScreenCursorPolicy::Unclip(*this);
         } else {
-            MelonPrime::ScreenCursorPolicy::ClipCenter1px(*this);
+            MelonPrime::ScreenCursorPolicy::RequestAimCapture(*this);
         }
     }
 #if !defined(_WIN32)
@@ -361,6 +365,11 @@ void ScreenPanel::refreshClipForGameStateChange()
     m_lastClipFocusedState = isFocused;
     m_hasLastInGameTopScreenOnlyOverride = true;
     m_lastInGameTopScreenOnlyOverride = wantsInGameTopScreenOnly;
+
+    // ROM stop/reopen and any other in-game transition invalidate an absolute
+    // baseline, so returning to a match cannot replay the gap as one jump.
+    if (!clipStateUnchanged && m_directAim.Active())
+        m_directAim.DropBaseline(MelonPrime::DirectAimBaselineReset::Lifecycle);
 
     if (!topScreenOnlyStateUnchanged)
         setupScreenLayout();
@@ -558,8 +567,8 @@ void ScreenPanel::clipCursorToBottomScreen() {
     MelonPrime::ScreenCursorPolicy::ConfineToBottomScreen(*this);
 }
 
-void ScreenPanel::clipCursorCenter1px() {
-    MelonPrime::ScreenCursorPolicy::ClipCenter1px(*this);
+void ScreenPanel::requestAimCapture() {
+    MelonPrime::ScreenCursorPolicy::RequestAimCapture(*this);
 }
 
 void ScreenPanel::unclip() {
@@ -579,6 +588,7 @@ void ScreenPanel::beginClose()
     processMelonPrimePersistRequests();
     flushMelonPrimeConfigSave();
     closing = true;
+    m_directAim.EndCapture();
     if (isMelonPrimeInputSurfaceAuthority()) {
         if (auto* core = melonPrimeCore()) {
             core->ThreadBridge().SetFocusedFromGui(false);
@@ -726,6 +736,7 @@ ScreenPanel::~ScreenPanel()
             }
         }
         closing = true;
+        m_directAim.EndCapture();
         releaseCursorStateForClose();
     }
 #endif
@@ -790,6 +801,10 @@ void ScreenPanel::loadMelonPrimeStylusCursorConfig()
     const bool stylusModeEnabled = cfg.GetBool(MelonPrime::CfgKey::StylusMode);
     stylusDirectAimWhileTouchingEnabled = stylusModeEnabled
         && cfg.GetBool(MelonPrime::CfgKey::StylusDirectAimWhileTouching);
+    // Tablet direct aim is opt-in so the existing Raw Mouse path remains the
+    // steady-state fast path for users who do not need pen input.
+    stylusDirectAimAllowTabletInputEnabled = stylusDirectAimWhileTouchingEnabled
+        && cfg.GetBool(MelonPrime::CfgKey::StylusDirectAimAllowTabletInput);
     stylusHideCursorInGameEnabled = stylusModeEnabled
         && cfg.GetBool(MelonPrime::CfgKey::StylusHideCursorInGame);
     stylusConfineCursorToTopScreenEnabled = stylusModeEnabled
@@ -813,6 +828,15 @@ void ScreenPanel::refreshStylusCursorSettings()
     {
         m_stylusDirectAimMouseButton = Qt::NoButton;
         endStylusDirectAimCapture();
+    }
+    else if (!stylusDirectAimAllowTabletInputEnabled && m_directAim.Active())
+    {
+        // The option was turned off with the touch action still held. Retire
+        // the tablet ingress and fall back to the mouse-only capture policy.
+        m_directAim.EndCapture();
+        setTabletTracking(false);
+        if (m_stylusDirectAimCaptureHeld)
+            requestAimCapture(); // reconciles back to CenterPin
     }
 
     auto* const core = melonPrimeCore();
@@ -877,7 +901,31 @@ void ScreenPanel::beginStylusDirectAimCapture()
 
     m_stylusDirectAimCaptureHeld = true;
     m_stylusClickHeld = true;
-    clipCursorCenter1px();
+
+    // Only the instance that owns the input surface may publish into a
+    // ThreadBridge mailbox or install a process-wide message filter.
+    auto* const core = stylusDirectAimAllowTabletInputEnabled
+            && isMelonPrimeInputSurfaceAuthority()
+        ? melonPrimeCore() : nullptr;
+    if (core) {
+        // Started before the cursor policy runs: the policy reads
+        // aimConfinementForPolicy() from this panel, and that answer must
+        // already be AimAreaBounds for the very first reconcile.
+        QWidget* const top = window();
+        m_directAim.BeginCapture(
+            core->ThreadBridge(),
+            top ? reinterpret_cast<void*>(top->winId()) : nullptr,
+            internalWinId() ? reinterpret_cast<void*>(internalWinId())
+                            : nullptr);
+        // Hover movement needs tablet tracking, but only for the held capture:
+        // mouse-only users, menus and normal DS touch stay event-free.
+        setTabletTracking(true);
+    }
+
+    // Always taken, tablet or not: this is what gives the instance its
+    // relative input device. Whether the cursor is then pinned or merely
+    // bounded is decided by aimConfinementForPolicy().
+    requestAimCapture();
 }
 
 void ScreenPanel::endStylusDirectAimCapture()
@@ -887,6 +935,10 @@ void ScreenPanel::endStylusDirectAimCapture()
 
     m_stylusDirectAimCaptureHeld = false;
     m_stylusClickHeld = false;
+    if (m_directAim.Active()) {
+        m_directAim.EndCapture();
+        setTabletTracking(false);
+    }
     unclip();
     // Restore any Stylus Mode hide/confine/not-clicking policy that was
     // temporarily superseded by relative aim capture.
@@ -1170,7 +1222,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
         // If not in cursor mode (aim mode), treat click as returning to aim (clip)
         if (!ui.cursorMode)
         {
-            clipCursorCenter1px();
+            requestAimCapture();
             return;
         }
         // If isCursorMode == true, proceed to standard touch processing
@@ -1204,7 +1256,7 @@ void ScreenPanel::mousePressEvent(QMouseEvent* event)
     // If not in cursor mode, re-clip
     if (core && !ui.stylusMode && !ui.cursorMode)
     {
-        clipCursorCenter1px();
+        requestAimCapture();
     }
     // The click is held now, so the not-clicking pin no longer applies:
     // re-decide so the drag is free to move. Latched even when the touch did
@@ -1497,9 +1549,68 @@ void ScreenPanel::tabletEvent(QTabletEvent* event)
         touching = false;
 #ifdef MELONPRIME_DS
         topScreenTouchTransform = -1;
+        if (m_directAim.Active())
+            m_directAim.DropBaseline(
+                MelonPrime::DirectAimBaselineReset::Lifecycle);
 #endif
         return;
     }
+
+#ifdef MELONPRIME_DS
+    // One coherent gate per event: the capture latch already encodes stylus
+    // mode, direct aim, in-game and non-cursor-mode state from its press edge,
+    // and Active() encodes the opt-in plus a live GUI mailbox.
+    if (Q_UNLIKELY(m_directAim.Active()))
+    {
+        switch (event->type())
+        {
+        case QEvent::TabletPress:
+        case QEvent::TabletMove:
+        {
+#if QT_VERSION_MAJOR == 6
+            const QPointF global = event->globalPosition();
+            const auto* const device = event->pointingDevice();
+            const std::uint64_t penId = device
+                ? static_cast<std::uint64_t>(device->uniqueId().numericId())
+                : 0u;
+#else
+            const QPointF global = QPointF(event->globalPos());
+            const std::uint64_t penId =
+                static_cast<std::uint64_t>(event->uniqueId());
+#endif
+            // Pen contact is not required: the touch action is what gates
+            // direct aim, so hover movement aims exactly like a mouse.
+            (void)m_directAim.SubmitAbsolute(
+                MelonPrime::DirectAimHostSource::QtTablet,
+                penId, global.x(), global.y());
+            break;
+        }
+        case QEvent::TabletRelease: {
+#if QT_VERSION_MAJOR == 6
+            const auto* const device = event->pointingDevice();
+            const std::uint64_t penId = device
+                ? static_cast<std::uint64_t>(device->uniqueId().numericId())
+                : 0u;
+#else
+            const std::uint64_t penId =
+                static_cast<std::uint64_t>(event->uniqueId());
+#endif
+            // Contact-up ends the coordinate segment but hover remains the
+            // same Qt source. An unrelated device release is ignored.
+            (void)m_directAim.DropBaselineForSource(
+                MelonPrime::DirectAimHostSource::QtTablet,
+                penId,
+                MelonPrime::DirectAimBaselineReset::PointerLeave);
+            break;
+        }
+        default:
+            break;
+        }
+        // Direct aim owns this stream; DS touch must not also be driven, and
+        // no release is synthesized for a contact that was never sent.
+        return;
+    }
+#endif
 
     switch (event->type())
     {

@@ -289,6 +289,18 @@ protected:
 
     void checkJoystick()
     {
+#ifdef MELONPRIME_DS
+        const int oldmap = *mapping == -1 ? 0xFFFF : *mapping;
+        int newMapping = *mapping;
+        if (!parentDialog->pollJoystickMapping(oldmap, axesRest, newMapping)) {
+            click();
+            return;
+        }
+        if (newMapping != *mapping) {
+            *mapping = newMapping;
+            click();
+        }
+#else
         SDL_Joystick* joy = parentDialog->getJoystick();
         if (!joy) { click(); return; }
         if (!SDL_JoystickGetAttached(joy)) { click(); return; }
@@ -352,14 +364,19 @@ protected:
                 return;
             }
         }
+#endif
     }
 
     void timerEvent(QTimerEvent* event) override
     {
+#ifdef MELONPRIME_DS
+        checkJoystick();
+#else
         auto mutex = parentDialog->getJoyMutex();
         SDL_LockMutex(mutex.get());
         checkJoystick();
         SDL_UnlockMutex(mutex.get());
+#endif
     }
 
     bool focusNextPrevChild(bool next) override { return false; }
@@ -374,6 +391,9 @@ private slots:
 
             memset(axesRest, 0, sizeof(axesRest));
 
+#ifdef MELONPRIME_DS
+            parentDialog->captureJoystickAxisRest(axesRest, 16);
+#else
             auto mutex = parentDialog->getJoyMutex();
             SDL_LockMutex(mutex.get());
             SDL_Joystick* joy = parentDialog->getJoystick();
@@ -387,6 +407,7 @@ private slots:
                 }
             }
             SDL_UnlockMutex(mutex.get());
+#endif
         }
         else
         {

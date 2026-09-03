@@ -684,6 +684,74 @@ def check_mac_handoff_model() -> None:
     assert hid_allowed
 
 
+def check_input_telemetry_retention_model() -> None:
+    # Capture-only reports must describe all observed calls while percentile
+    # samples remain the latest fixed-capacity window. Keep an early outlier
+    # outside that window to prove whole-run max and retained max differ.
+    cap = 2048
+    values = [100000] + list(range(1, 5000))
+    slots = [None] * cap
+    write = 0
+    retained_count = 0
+    whole_max = 0
+    for value in values:
+        slots[write] = value
+        write = (write + 1) % cap
+        retained_count = min(retained_count + 1, cap)
+        whole_max = max(whole_max, value)
+
+    retained = [
+        slots[(write + cap - retained_count + index) % cap]
+        for index in range(retained_count)
+    ]
+    assert len(values) == 5000
+    assert retained_count == cap
+    assert retained == values[-cap:]
+    assert whole_max == 100000
+    assert max(retained) == 4999
+
+    # Explicit latency uses the same latest-N contract rather than a smaller
+    # first-samples buffer.
+    latency_slots = [None] * cap
+    latency_write = 0
+    for value in range(len(values)):
+        latency_slots[latency_write] = value
+        latency_write = (latency_write + 1) % cap
+    latency_retained = [
+        latency_slots[(latency_write + cap - cap + index) % cap]
+        for index in range(cap)
+    ]
+    assert latency_retained == list(range(len(values) - cap, len(values)))
+
+
+def check_raw_service_exit_order_model() -> None:
+    # Raw counters are process-wide, but the final report belongs to the last
+    # Raw service release. An early EmuThread exit must not report or freeze A
+    # while B is still collecting events.
+    refcount = 0
+    raw_events = 0
+    reports = []
+
+    def acquire() -> None:
+        nonlocal refcount
+        refcount += 1
+
+    def release() -> None:
+        nonlocal refcount
+        refcount -= 1
+        if refcount == 0:
+            reports.append(raw_events)
+
+    acquire()  # A
+    acquire()  # B
+    raw_events += 10
+    release()   # A stops; no final report
+    assert reports == []
+    raw_events += 7  # B continues after A's exit
+    release()         # B is the final service release
+    assert reports == [17]
+
+
 def check_windows_raw_reaudit_models() -> None:
     # P1-001: Raw ownership is a cold classification, not an approximation of
     # Qt's modifier/chord identity. The two live source masks are disjoint;
@@ -980,11 +1048,36 @@ def check_windows_source_selection_model() -> None:
     )
 
 
+def check_direct_aim_frame_projection_model() -> None:
+    # The production frame gate has three independent requirements. In
+    # particular, enabling the option must not consume an idle mailbox while
+    # the configured touch action is up or capture ownership is unavailable.
+    def should_consume(
+        allow_tablet: bool, capture_eligible: bool, stylus_touch_down: bool
+    ) -> bool:
+        return allow_tablet and capture_eligible and stylus_touch_down
+
+    assert not should_consume(False, False, False)
+    assert not should_consume(True, False, False)
+    assert not should_consume(True, True, False)
+    assert should_consume(True, True, True)
+
+    # A moving absolute source replaces the relative frame; an idle absolute
+    # source hands the frame back to Raw. The two paths are never added.
+    def project(raw: tuple[int, int], direct: tuple[int, int]) -> tuple[int, int]:
+        return direct if direct != (0, 0) else raw
+
+    assert project((7, -3), (0, 0)) == (7, -3)
+    assert project((7, -3), (4, 2)) == (4, 2)
+
+
 def main() -> None:
     header = source("src/frontend/qt_sdl/EmuInstance.h")
     input_cpp = source("src/frontend/qt_sdl/EmuInstanceInput.cpp")
     joystick_device = source("src/frontend/qt_sdl/MelonPrimeJoystickDevice.cpp")
     joystick_device_header = source("src/frontend/qt_sdl/MelonPrimeJoystickDevice.h")
+    input_config_dialog = source("src/frontend/qt_sdl/InputConfig/InputConfigDialog.h")
+    input_config_dialog_cpp = source("src/frontend/qt_sdl/InputConfig/InputConfigDialog.cpp")
     raw_state_header = source("src/frontend/qt_sdl/MelonPrimeRawInputState.h")
     raw_state_cpp = source("src/frontend/qt_sdl/MelonPrimeRawInputState.cpp")
     mouse_button = source("src/frontend/qt_sdl/MelonPrimeMouseButton.h")
@@ -1012,6 +1105,10 @@ def main() -> None:
     raw_filter = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.cpp")
     raw_filter_header = source("src/frontend/qt_sdl/MelonPrimeRawInputWinFilter.h")
     raw_perf = source("src/frontend/qt_sdl/MelonPrimeRawInputPerfProbe.h")
+    perf_session = source("src/frontend/qt_sdl/MelonPrimePerfSession.h")
+    perf_shutdown = source("src/frontend/qt_sdl/MelonPrimeEmuThreadPerfShutdown.inc")
+    perf = source("src/frontend/qt_sdl/MelonPrimePerfProbe.h")
+    perf_summarizer = source("tools/testing/summarize-input-performance.py")
     cmake_presets = source("CMakePresets.json")
     windows_workflow = source(".github/workflows/build-windows.yml")
     mingw_build = source("tools/build/windows/build-mingw.bat")
@@ -1029,6 +1126,16 @@ def main() -> None:
     raw_hotkey_mapping_test = source("tools/testing/raw-hotkey-vk-mapping-tests.cpp")
     raw_recovery_hint_test = source("tools/testing/raw-recovery-hint-tests.cpp")
     qt_sdl_cmake = source("src/frontend/qt_sdl/CMakeLists.txt")
+    direct_source = source("src/frontend/qt_sdl/MelonPrimeDirectAimSource.h")
+    direct_ingress = source("src/frontend/qt_sdl/MelonPrimeDirectAimIngress.h")
+    direct_ingress_cpp = source("src/frontend/qt_sdl/MelonPrimeDirectAimIngress.cpp")
+    pointer_filter = source("src/frontend/qt_sdl/MelonPrimePointerWinFilter.cpp")
+    pointer_filter_header = source("src/frontend/qt_sdl/MelonPrimePointerWinFilter.h")
+    input_projection = source("src/frontend/qt_sdl/MelonPrimeInputProjection.h")
+    direct_benchmark = source("tools/perf/direct-aim-mailbox-benchmark.cpp")
+    direct_spsc_benchmark = source(
+        "tools/perf/direct-aim-mailbox-spsc-benchmark.cpp"
+    )
     require(qt_sdl_cmake, "MelonPrimeJoystickDevice.cpp", "joystick component build registration")
     input_subscription = source("src/frontend/qt_sdl/MelonPrimeInputSubscription.h")
     core = source("src/frontend/qt_sdl/MelonPrime.cpp")
@@ -1043,12 +1150,264 @@ def main() -> None:
         "SDL_GameController* m_controller",
         "bool OpenLocked(int& joystickId) noexcept",
         "void CloseLocked() noexcept",
-        "void UpdateLocked() noexcept",
+        "void UpdateLocked(SdlProcessTiming* timing) noexcept",
         "[[nodiscard]] bool SampleSourceLocked(",
         "void RumbleStartLocked(uint32_t lenMs) noexcept",
         "[[nodiscard]] bool ReadMotionLocked(",
     ):
         require(joystick_device_header, needle, "per-device SDL ownership")
+    require(joystick_device_header, "HasJoystickLocked()", "encapsulated joystick presence")
+    for needle in ("ButtonCountLocked()", "HatCountLocked()", "AxisCountLocked()"):
+        require(joystick_device_header, needle, "encapsulated joystick capabilities")
+    joystick_device_public = joystick_device_header.split("private:", 1)[0]
+    if "GetJoystick" in joystick_device_public:
+        raise AssertionError("JoystickDevice must not expose its raw SDL handle")
+    for needle in (
+        "pollJoystickMapping(int oldMapping",
+        "captureJoystickAxisRest(int* axesRest",
+    ):
+        require(header, needle, "cold joystick mapping API")
+        require(input_config_dialog, needle, "cold joystick dialog API")
+    for needle in (
+        "InputConfigDialog::pollJoystickMapping(",
+        "InputConfigDialog::captureJoystickAxisRest(",
+    ):
+        require(input_config_dialog_cpp, needle, "cold joystick dialog forwarding")
+    joy_map_button = map_button[map_button.index("class JoyMapButton") :]
+    joy_check_all = body(joy_map_button, "void checkJoystick()", "void timerEvent(")
+    joy_timer_all = body(joy_map_button, "void timerEvent(", "bool focusNextPrevChild")
+    joy_check = joy_check_all.split("#else", 1)[0]
+    joy_timer = joy_timer_all.split("#else", 1)[0]
+    require(joy_check, "pollJoystickMapping", "encapsulated mapping poll")
+    require(joy_timer, "checkJoystick();", "mapping timer direct operation")
+    if "getJoystick" in joy_check or "getJoyMutex" in joy_check or "getJoyMutex" in joy_timer:
+        raise AssertionError("DS mapping UI must not use raw joystick or external mutex protocol")
+    require(joy_map_button, "captureJoystickAxisRest(axesRest, 16)", "encapsulated axis baseline")
+    for needle in (
+        "JoystickProcessMutexWait",
+        "JoystickProcessMutexHold",
+    ):
+        require(perf, needle, "SDL process mutex telemetry metric")
+        require(input_cpp, needle, "SDL process mutex telemetry wiring")
+    require(
+        joystick_device_header,
+        "struct SdlProcessTiming",
+        "SDL process timing POD",
+    )
+    require(
+        joystick_device_header,
+        "#ifdef MELONPRIME_ENABLE_DEVELOPER_FEATURES",
+        "developer-only SDL process timing gate",
+    )
+    require(
+        joystick_device,
+        "UpdateLocked(SdlProcessTiming* timing) noexcept",
+        "SDL process timing POD",
+    )
+    require(
+        joystick_device,
+        "UpdateLocked() noexcept",
+        "shipping SDL update signature",
+    )
+    require(
+        input_cpp,
+        "joystickDevice.UpdateLocked(processTiming)",
+        "SDL process timing return",
+    )
+    require(
+        input_cpp,
+        "joystickDevice.UpdateLocked();",
+        "shipping SDL update call",
+    )
+    sample = body(
+        input_cpp,
+        "bool EmuInstance::sampleJoystickPhysical(",
+        "EmuInstance::JoystickProjectedState",
+    )
+    require(
+        sample,
+        "const bool sampled = sampleJoystickPhysicalLocked(snapshot);",
+        "shipping controller sample call",
+    )
+    if "SdlProcessTiming processTiming" not in sample:
+        raise AssertionError("developer controller timing path disappeared")
+    shipping_sample = sample.split(
+        "#else", 1
+    )[1].split("#endif", 1)[0]
+    if "SdlProcessTiming" in shipping_sample or "updateTicks" in shipping_sample:
+        raise AssertionError(
+            "shipping controller sample path retains timing plumbing"
+        )
+    for needle in (
+        "static constexpr uint32_t kLatencyCap = 2048",
+        "uint32_t inputMetricWrite",
+        "uint64_t inputToRunFrameCalls",
+        "uint64_t inputToPresentEndCalls",
+        "retained=",
+        "retained_max=",
+        "capture_mode",
+        "capture_only=",
+        "uint64_t reportSequence = 0",
+        "NextReportSequence(State& st)",
+        "return ++st.reportSequence",
+        "ReportGenerationHeader",
+        "report_begin session_id=%s instance_id=%llu",
+        "session_id=%s",
+        "report_seq=%llu",
+    ):
+        require(perf, needle, "latest-N input telemetry retention")
+    for needle in (
+        "std::atomic<uint64_t> reportSequence{ 0 }",
+        "inline uint64_t NextReportSequence() noexcept",
+        "return Stats().reportSequence.fetch_add(1",
+        "capture_mode session_id=%s report_seq=%llu",
+        "lock_planes session_id=%s report_seq=%llu",
+        "stage_us session_id=%s report_seq=%llu",
+        "subscription_mutex_acq=%llu",
+        "subscription_mutex_wait_ns=%llu",
+        "subscription_mutex_hold_ns=%llu",
+        "subscription_mutex_max_wait_ns=%llu",
+        "frame_mutex_acq=%llu",
+        "frame_mutex_wait_ns=%llu",
+        "frame_mutex_hold_ns=%llu",
+        "frame_mutex_max_wait_ns=%llu",
+        "recursive_acquisitions=%llu",
+        "subscription_max_recursion_depth=%llu",
+        "frame_max_recursion_depth=%llu",
+    ):
+        require(raw_perf, needle, "Raw report generation provenance")
+    for needle in (
+        "MELONPRIME_PERF_SESSION_ID",
+        "char value[kMaxLength + 1]",
+        "std::getenv",
+        "static const SessionId session",
+        "defined(MELONPRIME_DS)",
+        "defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)",
+        "defined(_WIN32)",
+        "defined(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)",
+    ):
+        require(perf_session, needle, "shared performance session identity")
+    if "std::string" in perf_session:
+        raise AssertionError("shared performance session identity uses dynamic strings")
+    for needle in (
+        "RETENTION_LATEST_N",
+        "RETENTION_LEGACY_FIRST_N",
+        "legacy_first_n",
+        "--allow-legacy-first-n",
+        "MIN_CERTIFICATION_SAMPLES",
+        "CONTROLLER_EVIDENCE_METRICS",
+        "RAW_REQUIRED_STAGES",
+        "require_capture_only",
+        "capture_mode_verified",
+        "pending_generic_capture",
+        "pending_raw_capture",
+        "REPORT_SEQ_RE",
+        "GENERIC_VERSIONED_PREFIXES",
+        "GENERIC_REPORT_BEGIN_RE",
+        "SESSION_ID_RE",
+        "report_begin",
+        "first_observed_line",
+        "report_seq",
+        "generic_generations",
+        "raw_generations",
+        "generic_generation_records",
+        "raw_generation_records",
+        "latest_generic_report_seq_by_instance",
+        "latest_generic_session_id_by_instance",
+        "latest_generic_generation_by_instance",
+        "latest_raw_report_seq",
+        "latest_raw_session_id",
+        "latest_raw_generation",
+        "session_id",
+        "valid_session_id",
+        "generic/Raw shared session_id mismatch",
+        "observation",
+        "RAW_REQUIRED_LOCK_KEYS",
+        "require_raw_generation",
+        "unbound_latency_report_count",
+        "certification_scope",
+        "certified",
+        "historical_analysis",
+        "Certification scope:",
+        "Certified:",
+        "Historical analysis:",
+        "Mode:",
+        "Capture-only verified:",
+        "Minimum samples:",
+        "Budget checked:",
+        "NOT A CERTIFICATION RESULT",
+        "mixed-generic-generation",
+        "multi-instance-marker-reuse",
+        "mixed-raw-generation",
+        "generic-dangling-next-run",
+        "generic-dangling-eof",
+        "generic-explicit-latency-only",
+        "generic-report-begin-only",
+        "generic-report-begin-explicit-latency-only",
+        "generic-report-begin-capture-no-input",
+        "generic-report-begin-input-no-capture",
+        "generic-shutdown-summary-only",
+        "generic-actual-prefix-lines",
+        "raw-truncated-all",
+        "cross-run-lower-incomplete",
+        "cross-run-complete",
+        "same-session-report-seq-collision",
+        "cross-session-same-seq",
+        "explicit-latency-generation-mismatch",
+        "generic-raw-session-mismatch",
+        "raw-cross-run-complete",
+        "raw-cross-run-lower-incomplete",
+        "raw-cross-session-same-seq",
+        "raw-missing-lock",
+        "raw-missing-lock-key",
+        "raw-lock-stage-generation-mismatch",
+        "raw-dangling-next-run",
+        "raw-dangling-eof",
+        "--check-budget requires explicit --mode",
+        "--historical-analysis",
+        "--allow-legacy-raw-unversioned",
+        '"schema_version": 8',
+        'Session ID:',
+        "--commit-sha",
+        "--build-preset",
+        "--hardware",
+        "--device",
+        "--window-mode",
+        "--polling-rate",
+        "benchmark_metadata",
+        '"retention_mode": retention_mode',
+    ):
+        require(perf_summarizer, needle, "telemetry retention provenance")
+    if 'line.startswith("[MelonPrime] ")' in perf_summarizer:
+        raise AssertionError("Generic telemetry parser retains a non-producer prefix")
+    for needle in (
+        '"[MelonPrimePerf] "',
+        '"[MelonPrimePerfPhase] "',
+        '"[MelonPrimePerf] shutdown summary session_id=TEST-A "',
+        '"[MelonPrimePerf] shutdown session_id=TEST-B instance_id=0 "',
+        '"[MelonPrimePerf] frame_ms session_id=TEST-B instance_id=0 "',
+        '"[MelonPrimePerf] audit_counts session_id=TEST-B instance_id=0 "',
+        '"[MelonPrimePerf] hud_phase_us session_id=TEST-B instance_id=0 "',
+        '"[MelonPrimePerfPhase] session_id=TEST-B instance_id=0 "',
+    ):
+        require(perf_summarizer, needle, "actual Generic producer prefix regression vectors")
+    for needle in (
+        "snapshot[calls=%llu retained=%u",
+        "late_latch[calls=%llu retained=%u",
+        "deferred_drain[calls=%llu retained=%u",
+        "result.calls = total",
+        "result.retained = count",
+        "result.retainedMax",
+        "capture_mode",
+        "capture_only=",
+    ):
+        require(raw_perf, needle, "Raw stage retention semantics")
+    if "if (!Enabled() || elapsedNs == 0)" in raw_perf:
+        raise AssertionError("Raw stage telemetry silently drops zero-duration samples")
+    record_input_metric = perf[perf.index("inline void RecordInputMetricTicks") :]
+    if "if (!IsEnabled() || ticks == 0)" in record_input_metric:
+        raise AssertionError("generic input telemetry silently drops zero-tick samples")
+    require(joystick_device, "class SdlProcessMutexGuard final", "SDL process mutex guard")
     require(joystick_device, "std::mutex s_sdlProcessMutex", "process-level SDL lock")
     require(joystick_device, "SDL_JoystickUpdate()", "SDL update ownership")
     if joystick_device.count("SDL_JoystickUpdate()") != 1:
@@ -1141,10 +1500,25 @@ def main() -> None:
         "bool RawInputWinFilter::ApplyOwnerRegistration(",
         "    // =========================================================================\n    // drainMessagesOnly",
     )
+    raw_reconfigure_locked = body(
+        raw_filter,
+        "bool RawInputWinFilter::ReconfigureActiveRegistrationLocked(",
+        "void RawInputWinFilter::DeactivateActiveRegistration(",
+    )
+    raw_apply_owner_locked = body(
+        raw_filter,
+        "bool RawInputWinFilter::ApplyOwnerRegistrationLocked(",
+        "    // =========================================================================\n    // drainMessagesOnly",
+    )
     raw_drain = body(
         raw_filter,
         "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
         "bool RawInputWinFilter::UpdateOwnerAndSnapshotImpl(",
+    )
+    raw_drain_locked = body(
+        raw_filter,
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessagesLocked(",
+        "FORCE_INLINE void RawInputWinFilter::drainPendingMessages()",
     )
     raw_fused = body(
         raw_filter,
@@ -1156,6 +1530,14 @@ def main() -> None:
         "void RawInputWinFilter::DeferredDrain(",
         "void RawInputWinFilter::LateLatchMouseDelta(",
     )
+    require(raw_filter_header, "drainPendingMessagesLocked(RawInputSubscription&", "locked Raw drain declaration")
+    require(raw_drain_locked, "state->processRawInputBatched()", "locked Raw buffer capture")
+    require(raw_drain_locked, "drainMessagesOnly(&subscription)", "locked Raw message drain")
+    if raw_drain_locked.index("processRawInputBatched()") > raw_drain_locked.index("drainMessagesOnly("):
+        raise AssertionError("Raw locked drain must capture the buffer before dispatching messages")
+    for locked_caller in (raw_reconfigure, raw_deferred):
+        if "drainPendingMessages();" in locked_caller:
+            raise AssertionError("frame-locked Raw caller must not reacquire frameMutex through drainPendingMessages")
     raw_late = body(
         raw_filter,
         "void RawInputWinFilter::LateLatchMouseDelta(",
@@ -1897,10 +2279,13 @@ def main() -> None:
     if "MELONPRIME_PERF" in raw_perf:
         raise AssertionError("generic MELONPRIME_PERF must not enable Raw telemetry")
     for needle in (
+        "option(MELONPRIME_ENABLE_DEVELOPER_FEATURES",
         "option(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY",
         "if (WIN32 AND MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY)",
     ):
         require(qt_sdl_cmake, needle, "dedicated Raw telemetry CMake gate")
+    if "cmake_dependent_option(MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY" in qt_sdl_cmake:
+        raise AssertionError("Raw telemetry option must remain independent of developer features")
     if cmake_presets.count("MELONPRIME_ENABLE_RAW_INPUT_PERF_TELEMETRY") < 2:
         raise AssertionError("base and shipping presets must pin Raw telemetry OFF")
     for text_value, label in (
@@ -2009,7 +2394,8 @@ def main() -> None:
     ):
         require(qt_sdl_cmake, needle, "Raw recovery hint CMake target")
 
-    require(raw_drain, "auto* const state = StateFor(subscription);", "single active Raw drain load")
+    require(raw_drain, "drainPendingMessagesLocked(*subscription);", "single active Raw drain delegation")
+    require(raw_drain_locked, "auto* const state = StateFor(&subscription);", "locked Raw drain state load")
     if "ActiveState()" in raw_drain:
         raise AssertionError("drainPendingMessages must not reload the active subscription")
     require(raw_filter, "state->clearStuckPostFrame();", "post-frame recovery owner")
@@ -2036,22 +2422,22 @@ def main() -> None:
     # Only the creator thread may destroy the old window, and the replacement
     # happens on the cold registration path before Raw input is accepted.
     for needle in (
-        "ApplyOwnerRegistration(\n            RawInputSubscription* subscription, bool recreateHiddenWindow)",
-        "ApplyOwnerRegistration(subscription, generationAlreadyAdvanced)",
+        "ApplyOwnerRegistrationLocked(\n            RawInputSubscription* subscription, bool recreateHiddenWindow)",
+        "ApplyOwnerRegistrationLocked(\n                subscription, generationAlreadyAdvanced)",
         "if (recreateHiddenWindow && subscription->hiddenWindow",
-        "!DestroyHiddenWindow(subscription)",
-        "CreateHiddenWindow(subscription)",
+        "!DestroyHiddenWindowLocked(subscription)",
+        "CreateHiddenWindowLocked(subscription)",
         "HWND_MESSAGE, nullptr, instance, nullptr",
     ):
         require(raw_filter_header + raw_filter, needle, "Raw hidden HWND epoch boundary")
-    if not raw_reconfigure or not raw_apply_owner:
+    if not raw_reconfigure_locked or not raw_apply_owner_locked:
         raise AssertionError("Raw hidden HWND registration bodies are missing")
-    if raw_apply_owner.index("DestroyHiddenWindow(subscription)") > raw_apply_owner.index(
-        "CreateHiddenWindow(subscription)"
+    if raw_apply_owner_locked.index("DestroyHiddenWindowLocked(subscription)") > raw_apply_owner_locked.index(
+        "CreateHiddenWindowLocked(subscription)"
     ):
         raise AssertionError("old Raw hidden HWND must be destroyed before replacement")
-    if raw_filter.count("ApplyOwnerRegistration(") != 2:
-        raise AssertionError("ApplyOwnerRegistration must stay on the cold reconfigure path")
+    if raw_filter.count("ApplyOwnerRegistrationLocked(") != 3:
+        raise AssertionError("ApplyOwnerRegistrationLocked must stay on the cold reconfigure path")
 
     # BF/BG: the buffered Raw drain is owned by the Windows filter, while the
     # public reset wrapper is the only cross-thread lifecycle entry and holds
@@ -2077,10 +2463,46 @@ def main() -> None:
     )
     if (
         not raw_reset
-        or raw_reset.index("std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)")
+        or raw_reset.index("RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex)")
         > raw_reset.index("state->resetAll()")
     ):
         raise AssertionError("foreign Raw reset must hold the subscription mutex first")
+    if "drainPendingMessages();" in raw_reset:
+        raise AssertionError("frame-locked Raw reset must use the locked drain helper")
+
+    # INPUT-MEASURE-102: the process-wide Raw aggregate is finalized by the
+    # last service release, never by an individual EmuThread shutdown.
+    raw_release = body(
+        raw_filter,
+        "void RawInputWinFilter::Release()",
+        "RawInputWinFilter::RawInputWinFilter()",
+    )
+    if (
+        raw_filter.count("RawInputPerf::ShutdownReport()") != 1
+        or "RawInputPerf::ShutdownReport()" in perf_shutdown
+        or "shutdownReported" in raw_perf
+        or not raw_release
+        or raw_release.index("RawInputPerf::ShutdownReport()")
+        > raw_release.index("delete s_instance")
+        or "if (--s_refCount == 0)" not in raw_release
+    ):
+        raise AssertionError(
+            "Raw final report must be owned by the final process service release"
+        )
+
+    # INPUT-LOCK-104: keep the recursive type until this developer-only
+    # measurement reports whether the runtime actually re-enters a mutex.
+    for needle in (
+        "std::recursive_mutex frameMutex",
+        "recursiveAcquisitions",
+        "subscriptionMaxRecursionDepth",
+        "frameMaxRecursionDepth",
+        "EnterLockDepth",
+        "RecordRecursiveAcquisition",
+    ):
+        require(raw_perf + raw_filter, needle, "Raw recursive-lock measurement")
+    if "std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)" in raw_filter:
+        raise AssertionError("Raw subscription mutex bypasses its measured guard")
 
     # AW+: fixed-capacity VK mapping must turn overflow into a whole-list
     # fallback rather than silently binding a prefix.
@@ -2123,7 +2545,7 @@ def main() -> None:
         "owner->RequestRegistrationReset()",
         "PlatformInputOwnerService::RequestRegistrationReset",
         "m_inputSubscription.ConsumeRegistrationReset()",
-        "std::lock_guard<std::recursive_mutex> lock(m_subscriptionMutex)",
+        "RawInputPerf::SubscriptionMutexGuard lock(m_subscriptionMutex)",
     ):
         require(input_subscription + raw_filter + game_input, needle, "Raw subscription single-writer")
     if "BeginRegistrationGeneration(*previous->owner)" in raw_filter:
@@ -2180,6 +2602,112 @@ def main() -> None:
     check_windows_raw_reaudit_models()
     check_windows_raw_recovery_hint_model()
     check_windows_source_selection_model()
+    check_direct_aim_frame_projection_model()
+
+    # MELONPRIME_DIRECT_AIM_TABLET_MAILBOX_V2: frame consumption, identity and
+    # source lifetime remain explicit, while the GUI/Emu bridge stays SPSC.
+    for needle in (
+        "ShouldConsumeDirectAimMailbox(",
+        "m_enableStylusDirectAimAllowTabletInput",
+        "captureEligible",
+        "m_stylusTouchKeyDown",
+        "ConsumeDirectAimForEmu(",
+    ):
+        require(game_input + input_projection, needle, "direct-aim frame gate")
+    require(
+        game_input,
+        "InputProjection::ShouldConsumeDirectAimMailbox(",
+        "direct-aim frame gate owner",
+    )
+    require(
+        input_projection,
+        "return allowTabletInput && captureEligible && stylusTouchDown;",
+        "direct-aim pure frame predicate",
+    )
+    for needle in (
+        "uint64_t pointerId",
+        "uint64_t AuthorityPointerId()",
+        "DropBaselineForSource(",
+        "ReleaseAuthority(",
+        "m_authorityPointerId",
+    ):
+        require(direct_source, needle, "direct-aim pointer identity/lifetime")
+    for needle in (
+        "uint64_t pointerId",
+        "DropBaselineForSource(",
+        "ReleaseAuthority(",
+    ):
+        require(direct_ingress + direct_ingress_cpp, needle, "direct-aim ingress lifetime")
+    require(
+        pointer_filter,
+        "if (authority == DirectAimHostSource::WinPointerPen",
+        "direct-aim native mouse fast reject",
+    )
+    require(
+        pointer_filter,
+        "GetCurrentInputMessageSource(&source)",
+        "direct-aim injected source discovery",
+    )
+    fast_reject = pointer_filter.index(
+        "if (authority == DirectAimHostSource::WinPointerPen"
+    )
+    source_query = pointer_filter.index("GetCurrentInputMessageSource(&source)")
+    if fast_reject > source_query:
+        raise AssertionError(
+            "direct-aim native authority fast reject must precede source query"
+        )
+    for needle in (
+        "DirectAimWinFilterTelemetry",
+        "pointerTypeCalls",
+        "pointerPenInfoCalls",
+        "inputMessageSourceCalls",
+        "fastRejectedMouseMoves",
+        "ReportTelemetry()",
+        "QueryPerformanceCounter",
+    ):
+        require(
+            pointer_filter_header + pointer_filter + direct_ingress_cpp,
+            needle,
+            "direct-aim native aggregate telemetry",
+        )
+    if "std::queue" in direct_ingress + direct_ingress_cpp + pointer_filter:
+        raise AssertionError("direct-aim ingress must remain queue-free")
+    for needle in (
+        "std::uint64_t penId",
+        "DropBaselineForSource(",
+        "static_cast<std::uint64_t>(event->uniqueId())",
+    ):
+        require(screen, needle, "Qt tablet uint64 identity and contact-up fence")
+    require(
+        qt_sdl_cmake,
+        "melonprime_direct_aim_mailbox_spsc_benchmark",
+        "direct-aim SPSC benchmark registration",
+    )
+    for needle in (
+        "SubmitAbsolute",
+        "AddDirectAimDeltaFromGui",
+        "ConsumeDirectAimForEmu",
+        "125",
+        "500",
+        "1000",
+        "2000",
+        "8000",
+        "p50",
+        "p95",
+        "p99",
+        "max",
+    ):
+        require(direct_spsc_benchmark, needle, "direct-aim SPSC benchmark contract")
+    require(
+        direct_benchmark,
+        "isolated algorithmic cost",
+        "direct-aim isolated benchmark scope",
+    )
+    require(
+        direct_benchmark,
+        "This is not an end-to-end measurement",
+        "direct-aim benchmark limitation",
+    )
 
     check_state_model()
     check_controller_pause_model()
@@ -2196,6 +2724,8 @@ def main() -> None:
     check_wheel_count_model()
     check_packed_wrap_model()
     check_mac_handoff_model()
+    check_input_telemetry_retention_model()
+    check_raw_service_exit_order_model()
     print("post-push full input re-audit contract: PASS")
 
 
