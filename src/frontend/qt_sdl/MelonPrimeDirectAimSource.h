@@ -20,25 +20,23 @@ namespace MelonPrime {
 
 // Ordered by the source priority contract: a lower enumerator wins an
 // authority contest. None is the unlatched sentinel and loses to everything.
+//
+// Only absolute host sources arbitrate here. The relative mouse deliberately
+// does not participate: it keeps its own Raw Input transport, and the frame
+// projection falls back to it on every frame this mailbox reports no motion.
+// That is what lets a mouse and a pen stay usable inside one capture.
 enum class DirectAimHostSource : uint8_t
 {
     None = 0,
     WinPointerPen = 1,
     QtTablet = 2,
     InjectedAbsolutePointer = 3,
-    RawRelativeMouse = 4,
 };
 
-// Absolute sources publish positions through the direct-aim mailbox. Raw
-// relative mouse keeps its own low-latency path and only latches authority,
-// so the frame projection can tell the two apart from the published source
-// byte alone.
 [[nodiscard]] constexpr bool DirectAimSourceIsAbsolute(
     DirectAimHostSource source) noexcept
 {
-    return source == DirectAimHostSource::WinPointerPen
-        || source == DirectAimHostSource::QtTablet
-        || source == DirectAimHostSource::InjectedAbsolutePointer;
+    return source != DirectAimHostSource::None;
 }
 
 [[nodiscard]] constexpr uint8_t DirectAimSourceRank(
@@ -114,15 +112,6 @@ public:
     [[nodiscard]] DirectAimBaselineReset LastResetReason() const noexcept
     {
         return m_lastResetReason;
-    }
-
-    // Relative sources carry their own transport; they only contest authority.
-    // Returns true when this call latched or changed the authority.
-    bool LatchRelative(DirectAimHostSource source) noexcept
-    {
-        if (!m_captureActive || DirectAimSourceIsAbsolute(source))
-            return false;
-        return TakeAuthority(source);
     }
 
     SubmitResult SubmitAbsolute(DirectAimHostSource source,

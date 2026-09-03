@@ -448,8 +448,13 @@ namespace MelonPrime {
             const auto directAimSource = static_cast<DirectAimHostSource>(
                 m_threadBridge.ConsumeDirectAimForEmu(
                     directAimDx, directAimDy));
+            // Resolved per frame, not latched per capture: an absolute source
+            // owns the frame only while it is actually moving. A still pen
+            // therefore hands the frame straight back to the Raw Mouse path,
+            // which is what lets both devices stay usable inside one capture.
             m_directAimAbsoluteAuthorityThisFrame =
-                DirectAimSourceIsAbsolute(directAimSource);
+                DirectAimSourceIsAbsolute(directAimSource)
+                && (directAimDx | directAimDy) != 0;
             if (m_directAimAbsoluteAuthorityThisFrame) {
                 m_input.mouseX = directAimDx;
                 m_input.mouseY = directAimDy;

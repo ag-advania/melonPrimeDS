@@ -836,7 +836,7 @@ void ScreenPanel::refreshStylusCursorSettings()
         m_directAim.EndCapture();
         setTabletTracking(false);
         if (m_stylusDirectAimCaptureHeld)
-            clipCursorCenter1px();
+            clipCursorCenter1px(); // now confined again
     }
 
     auto* const core = melonPrimeCore();
@@ -894,18 +894,6 @@ void ScreenPanel::releaseStylusTouchHotkeyCapture(int qtKey)
     endStylusDirectAimCapture();
 }
 
-void ScreenPanel::directAimCursorPolicyThunk(void* context,
-                                             bool clipToCenter) noexcept
-{
-    auto* const self = static_cast<ScreenPanel*>(context);
-    if (!self || !self->m_stylusDirectAimCaptureHeld)
-        return;
-    if (clipToCenter)
-        self->clipCursorCenter1px();
-    else
-        self->unclip();
-}
-
 void ScreenPanel::beginStylusDirectAimCapture()
 {
     if (m_stylusDirectAimCaptureHeld)
@@ -914,32 +902,32 @@ void ScreenPanel::beginStylusDirectAimCapture()
     m_stylusDirectAimCaptureHeld = true;
     m_stylusClickHeld = true;
 
-    if (!stylusDirectAimAllowTabletInputEnabled) {
-        clipCursorCenter1px();
-        return;
-    }
-
     // Only the instance that owns the input surface may publish into a
     // ThreadBridge mailbox or install a process-wide message filter.
-    auto* const core = isMelonPrimeInputSurfaceAuthority()
+    auto* const core = stylusDirectAimAllowTabletInputEnabled
+            && isMelonPrimeInputSurfaceAuthority()
         ? melonPrimeCore() : nullptr;
-    if (!core) {
-        clipCursorCenter1px();
-        return;
+    if (core) {
+        // Started before the cursor policy runs: the policy asks this panel
+        // whether the capture is unconfined, and the answer must already be
+        // true for the very first reconcile.
+        QWidget* const top = window();
+        m_directAim.BeginCapture(
+            core->ThreadBridge(),
+            top ? reinterpret_cast<void*>(top->winId()) : nullptr,
+            internalWinId() ? reinterpret_cast<void*>(internalWinId())
+                            : nullptr);
+        // Hover movement needs tablet tracking, but only for the held capture:
+        // mouse-only users, menus and normal DS touch stay event-free.
+        setTabletTracking(true);
     }
 
-    // Absolute pen coordinates are the signal, so the capture starts unclipped
-    // and stays that way unless a physical relative mouse claims authority.
-    QWidget* const top = window();
-    m_directAim.BeginCapture(
-        core->ThreadBridge(),
-        &ScreenPanel::directAimCursorPolicyThunk,
-        this,
-        top ? reinterpret_cast<void*>(top->winId()) : nullptr,
-        internalWinId() ? reinterpret_cast<void*>(internalWinId()) : nullptr);
-    // Hover movement needs tablet tracking, but only for the held capture:
-    // mouse-only users, menus and normal DS touch stay event-free.
-    setTabletTracking(true);
+    // Always taken, tablet or not. This is the aim-capture ownership request
+    // (clipWanted -> captureWanted -> Raw Input ownership), not merely cursor
+    // confinement: skipping it would leave relative mouse aim with no owner.
+    // The confinement itself is what the policy relaxes for an absolute
+    // capture.
+    clipCursorCenter1px();
 }
 
 void ScreenPanel::endStylusDirectAimCapture()
@@ -1433,12 +1421,6 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         && ui.inGame)
     {
 #if defined(__APPLE__)
-        if (Q_UNLIKELY(directAimAbsoluteSourceOwnsAim())) {
-            // An absolute pen/tablet source owns aim for this capture. The
-            // same physical movement must not also be counted here.
-            aimLastGlobalValid.store(false, std::memory_order_release);
-            return;
-        }
         if (ui.rawAimActive) {
             aimLastGlobalValid.store(false, std::memory_order_release);
         } else {
@@ -1463,11 +1445,7 @@ void ScreenPanel::mouseMoveEvent(QMouseEvent* event)
         // A compositor-native pointer lock supplies the PanelDelta accumulator
         // directly. Ignore absolute QMouseEvent positions while it is active,
         // otherwise the same physical motion could be counted twice.
-        if (isWaylandPointerLockActiveForMelonPrime()
-            || Q_UNLIKELY(directAimAbsoluteSourceOwnsAim())) {
-            // An absolute pen/tablet source owns aim for this capture. The
-            // same physical movement must not also be counted here, and its
-            // coordinate signal must not be destroyed by a containment warp.
+        if (isWaylandPointerLockActiveForMelonPrime()) {
             aimLastGlobalValid.store(false, std::memory_order_release);
             return;
         }

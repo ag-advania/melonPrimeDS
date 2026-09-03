@@ -379,11 +379,13 @@ patch is applied or the preset is Dual.
 
 `Metroid.Enable.stylusDirectAimAllowTabletInput` (default off) admits pen
 tablets into the direct-aim sub-mode. Absolute pen/injected-pointer positions
-are normalized to relative deltas by `DirectAimSourceArbiter`, one logical
-source is latched per capture generation, and the result replaces
-`m_input.mouseX/Y` for that frame instead of being summed with Raw motion. With
-the option off nothing in that path is constructed or consulted, and the Raw
-Mouse projection below is unchanged. Full contract:
+are normalized to relative deltas by `DirectAimSourceArbiter`, which arbitrates
+only between absolute sources. The relative mouse never participates: it keeps
+its Raw transport, and a frame is handed to the tablet only when the mailbox
+published non-zero motion, so a pen and a mouse stay usable in one capture
+without ever being summed. With the option off nothing in that path is
+constructed or consulted, and the Raw Mouse projection below is unchanged.
+Full contract:
 [Pen tablet direct aim](../../features/input/pen-tablet-direct-aim.md).
 
 ## 8. RawInput Layer Notes (Windows)

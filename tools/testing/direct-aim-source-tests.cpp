@@ -140,27 +140,45 @@ void TestDuplicateSuppression()
           "three routes for one movement produce one logical delta");
 }
 
-// A relative mouse only latches authority; it never carries a delta here.
-void TestRelativeAuthority()
+// The relative mouse never appears in this arbiter at all: it keeps its own
+// transport, and the frame projection falls back to it whenever the arbiter
+// reports no motion. A still pen must therefore report a zero delta rather
+// than holding the frame.
+void TestStillPenYieldsNoMotion()
 {
     DirectAimSourceArbiter arbiter;
     arbiter.BeginCapture();
-    Check(arbiter.LatchRelative(DirectAimHostSource::RawRelativeMouse),
-          "the first hardware mouse move latches Raw authority");
-    Check(!arbiter.LatchRelative(DirectAimHostSource::RawRelativeMouse),
-          "a repeated latch is not a transition");
     Check(!DirectAimSourceIsAbsolute(arbiter.Authority()),
-          "Raw authority is not an absolute source");
-    // An absolute pen outranks Raw and takes over with a seed.
-    const auto pen =
-        arbiter.SubmitAbsolute(DirectAimHostSource::WinPointerPen, 1, 10, 10);
-    Check(pen.authorityChanged && pen.seeded,
-          "a pen pre-empts Raw authority and seeds");
-    Check(!arbiter.LatchRelative(DirectAimHostSource::RawRelativeMouse),
-          "Raw cannot take the authority back inside one capture");
-    // A relative source must not be admitted through the absolute entry point.
-    CheckDelta(arbiter.SubmitAbsolute(DirectAimHostSource::RawRelativeMouse, 0, 1, 1),
-               false, false, 0, 0, "relative source rejected by the absolute path");
+          "an unlatched capture claims nothing, so Raw owns the frame");
+
+    (void)arbiter.SubmitAbsolute(DirectAimHostSource::WinPointerPen, 1, 500, 500);
+    Check(DirectAimSourceIsAbsolute(arbiter.Authority()),
+          "a pen sample latches an absolute authority");
+
+    // A pen resting on the tablet keeps reporting the same position. Every one
+    // of those frames must hand the aim frame back to the relative mouse.
+    for (int i = 0; i < 8; ++i) {
+        CheckDelta(
+            arbiter.SubmitAbsolute(DirectAimHostSource::WinPointerPen, 1, 500, 500),
+            true, false, 0, 0, "a still pen produces no motion");
+    }
+    CheckDelta(arbiter.SubmitAbsolute(DirectAimHostSource::WinPointerPen, 1, 512, 494),
+               true, false, 12, -6, "the pen resumes differencing when it moves");
+}
+
+// A self-inflicted cursor move (a clip or a warp) arrives as an injected
+// absolute sample. After a baseline drop it must contribute zero, never a
+// screen-sized jump.
+void TestSelfCursorMoveContributesNothing()
+{
+    DirectAimSourceArbiter arbiter;
+    arbiter.BeginCapture();
+    (void)arbiter.SubmitAbsolute(
+        DirectAimHostSource::InjectedAbsolutePointer, 0, 100, 100);
+    arbiter.DropBaseline(DirectAimBaselineReset::Lifecycle);
+    CheckDelta(arbiter.SubmitAbsolute(
+                   DirectAimHostSource::InjectedAbsolutePointer, 0, 1900, 1000),
+               true, true, 0, 0, "the post-warp sample seeds instead of jumping");
 }
 
 // A dropped baseline seeds on re-entry rather than replaying the gap.
@@ -204,7 +222,8 @@ int main()
     TestSourceSwitch();
     TestPointerIdSwitch();
     TestDuplicateSuppression();
-    TestRelativeAuthority();
+    TestStillPenYieldsNoMotion();
+    TestSelfCursorMoveContributesNothing();
     TestBaselineDrop();
     TestSubPixelResidual();
 

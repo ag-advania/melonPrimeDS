@@ -16,8 +16,6 @@ DirectAimIngress::~DirectAimIngress()
 }
 
 void DirectAimIngress::BeginCapture(MelonPrimeThreadBridge& bridge,
-                                    CursorPolicyFn cursorPolicy,
-                                    void* cursorPolicyContext,
                                     void* topLevelHwnd,
                                     void* surfaceHwnd)
 {
@@ -25,8 +23,6 @@ void DirectAimIngress::BeginCapture(MelonPrimeThreadBridge& bridge,
         EndCapture();
 
     m_bridge = &bridge;
-    m_cursorPolicy = cursorPolicy;
-    m_cursorPolicyContext = cursorPolicyContext;
     m_arbiter.BeginCapture();
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     m_telemetry.Reset();
@@ -63,21 +59,15 @@ void DirectAimIngress::EndCapture()
     m_bridge->PublishDirectAimSourceFromGui(
         static_cast<uint8_t>(DirectAimHostSource::None));
     m_bridge = nullptr;
-    m_cursorPolicy = nullptr;
-    m_cursorPolicyContext = nullptr;
 }
 
 void DirectAimIngress::PublishAuthority() noexcept
 {
-    const DirectAimHostSource source = m_arbiter.Authority();
-    m_bridge->PublishDirectAimSourceFromGui(static_cast<uint8_t>(source));
+    m_bridge->PublishDirectAimSourceFromGui(
+        static_cast<uint8_t>(m_arbiter.Authority()));
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
     ++m_telemetry.sourceTransitions;
 #endif
-    if (m_cursorPolicy) {
-        m_cursorPolicy(m_cursorPolicyContext,
-                       source == DirectAimHostSource::RawRelativeMouse);
-    }
 }
 
 void DirectAimIngress::SubmitAbsolute(DirectAimHostSource source,
@@ -114,14 +104,6 @@ void DirectAimIngress::SubmitAbsolute(DirectAimHostSource source,
         return;
 
     m_bridge->AddDirectAimDeltaFromGui(result.dx, result.dy);
-}
-
-void DirectAimIngress::LatchRawRelative() noexcept
-{
-    if (!m_bridge)
-        return;
-    if (m_arbiter.LatchRelative(DirectAimHostSource::RawRelativeMouse))
-        PublishAuthority();
 }
 
 void DirectAimIngress::DropBaseline(DirectAimBaselineReset reason) noexcept

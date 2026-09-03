@@ -49,14 +49,13 @@ by `tools/testing/direct-aim-source-tests.cpp`
 ## Host sources and authority
 
 ```
-DirectAimHostSource : None, WinPointerPen, QtTablet,
-                      InjectedAbsolutePointer, RawRelativeMouse
+DirectAimHostSource : None, WinPointerPen, QtTablet, InjectedAbsolutePointer
 ```
 
-The enumerator order *is* the priority order. One capture generation latches
-one logical source:
+Only **absolute** sources arbitrate here. The enumerator order *is* the
+priority order, and one capture generation latches one of them:
 
-- A capture begins with `None`; the first eligible source latches.
+- A capture begins with `None`; the first absolute sample latches.
 - A strictly higher-priority source may pre-empt (and re-seeds its baseline).
 - A lower or equal-priority route is suppressed for the rest of the capture.
 
@@ -66,8 +65,21 @@ mouse message. There is no timer-based or idle-based source selection: only
 explicit state transitions (capture edges, pointer identity, pointer leave,
 focus, generation) change anything.
 
-`RawRelativeMouse` is a latch only. Its motion keeps travelling through Raw
-Input and the existing late-latch; it never enters the direct-aim mailbox.
+### The relative mouse never arbitrates
+
+A mouse deliberately has no enumerator and never contests the latch. It keeps
+its own Raw Input transport, and the frame projection falls back to it on every
+frame this mailbox reports no motion. So inside a single hold:
+
+- pen moving → the pen owns that frame,
+- pen still (or lifted) → the mouse owns that frame,
+- never both, and never summed.
+
+Making the mouse a latching participant was the original design and it was
+wrong twice over: a self-inflicted cursor move (the aim clip itself) arrives as
+an injected absolute sample and could pre-empt it, and once any absolute source
+had latched, the mouse was locked out for the rest of the hold. Frame-level
+resolution removes both failure modes.
 
 ## Absolute normalization
 
@@ -101,11 +113,11 @@ and never consumes:
   pointer history is not expanded (§16 of the design note: add it only if fast
   pen movement is measured to drop samples).
 - `WM_POINTERUP` / `WM_POINTERLEAVE` / `WM_POINTERCAPTURECHANGED` → baseline drop.
-- `WM_MOUSEMOVE` → `GetCurrentInputMessageSource()`.
-  `IMDT_PEN` / `IMDT_TOUCH` are ignored (the pointer route already owns that
-  movement). `IMO_INJECTED` becomes a generic injected absolute sample — this
-  is *not* assumed to be any particular driver. Everything else latches
-  `RawRelativeMouse`.
+- `WM_MOUSEMOVE` → `GetCurrentInputMessageSource()`. `IMDT_PEN` / `IMDT_TOUCH`
+  are ignored (the pointer route already owns that movement), and only
+  `IMO_INJECTED` becomes a generic injected absolute sample — this is *not*
+  assumed to be any particular driver. An ordinary mouse is left entirely
+  alone: it is carried by Raw Input, so this path must not touch it.
 - `WM_KILLFOCUS` / `WM_CAPTURECHANGED` / `WM_DPICHANGED` / `WM_DISPLAYCHANGE`
   → baseline drop.
 
@@ -117,25 +129,30 @@ harmless by construction.
 
 ## Cursor policy
 
-Center clipping is a `RawRelativeMouse` policy. Clipping the cursor to one
-pixel destroys the coordinate signal an absolute source is made of, so:
+Two things that look alike must not be confused:
 
-| Source | 1px center clip |
-| --- | ---: |
-| `RawRelativeMouse` | yes |
-| `WinPointerPen` | no |
-| `QtTablet` | no |
-| `InjectedAbsolutePointer` | no |
+- **Aim-capture ownership** (`clipWanted` → `captureWanted` →
+  `ShouldOwnRelativeAimInput`) is what makes Raw Input take the device at all.
+  Direct aim requests it on every capture, tablet or not. Skipping it leaves
+  relative mouse aim with no owner and therefore no aim at all.
+- **Cursor confinement** is presentation. One-pixel center clipping is a
+  relative-mouse policy: an absolute pen or injected pointer *is* its
+  coordinate signal, so pinning the cursor flattens every delta to zero.
 
-With the option off, capture start clips immediately, exactly as before. With
-it on, capture starts unclipped and the clip is applied only when the first
-hardware mouse movement latches `RawRelativeMouse` — one mouse event of
-exposure. Cursor mutation always happens on the GUI thread, through a callback
-the panel installs at capture begin.
+`ScreenCursorPolicy::ClipCenter1px` therefore always publishes the ownership
+request, then asks the panel which confinement to apply:
 
-An absolute source therefore leaves the pointer free for the whole capture.
-For a tablet in absolute mode this means the usable aim area is the area the
-tablet maps onto the window; running fullscreen gives the full tablet range.
+| Tablet input allowed | Confinement |
+| --- | --- |
+| off | 1px centered rect (unchanged) |
+| on | the aim containment rect (the rendered DS screens) |
+
+Confining to the aim rect keeps the pointer inside the window — no stray
+clicks, no lost cursor — while leaving the absolute sources a usable
+coordinate range. For a tablet mapped to the whole screen, the usable aim area
+is the area the tablet maps onto that rect; running fullscreen gives the full
+tablet range. A degenerate layout falls back to releasing the clip rather than
+trapping the pointer.
 
 ## Frame projection
 
@@ -147,11 +164,13 @@ never observe a delta and an authority from different publications. There is no
 queue, no event list, no mutex and no per-event allocation.
 
 `UpdateInputStateImpl` consumes it once per frame, and only when the option is
-on. When the published source is absolute, that delta *replaces*
-`m_input.mouseX/Y`; Raw delta, the Raw late-latch in `HandleInGameLogic`, the
-late-latch inside the native aim-delta hook, and (on non-Windows) the
-post-aim cursor warp are all suppressed for that frame. Raw and tablet motion
-are never summed.
+on. An absolute source owns the frame only when it published a **non-zero**
+delta; then that delta *replaces* `m_input.mouseX/Y`, and Raw delta, the Raw
+late-latch in `HandleInGameLogic`, the late-latch inside the native aim-delta
+hook, and (on non-Windows) the post-aim cursor warp are all suppressed for that
+frame. Otherwise the frame falls through to the ordinary Raw Mouse path
+untouched. Raw and tablet motion are never summed, and neither device can lock
+the other out.
 
 ## What is intentionally not here
 

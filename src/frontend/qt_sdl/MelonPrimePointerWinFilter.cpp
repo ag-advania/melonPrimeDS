@@ -124,23 +124,22 @@ bool PointerWinFilter::nativeEventFilter(const QByteArray& eventType,
             || source.deviceType == IMDT_PEN)
             return false;
 
-        if (source.originId == IMO_INJECTED) {
-            // Generic injected absolute pointer. This is not assumed to be any
-            // particular driver: no process, path, IPC, VID/PID or version
-            // detection is performed anywhere in this path.
-            m_ingress.SubmitAbsolute(
-                DirectAimHostSource::InjectedAbsolutePointer,
-                0,
-                static_cast<double>(msg->pt.x),
-                static_cast<double>(msg->pt.y));
-        }
-        else {
-            // Anything left is an ordinary mouse: hardware, or an origin the
-            // OS could not classify. Its movement is transported by Raw Input,
-            // so latch the authority only -- the two are never summed -- and
-            // let the owner reconcile the center clip that Raw aim expects.
-            m_ingress.LatchRawRelative();
-        }
+        // An ordinary mouse is left entirely alone here: its motion is
+        // transported by Raw Input, and the frame projection falls back to
+        // that on every frame this ingress reports no motion. Touching it
+        // would be the difference between a pen and a mouse coexisting and a
+        // pen locking the mouse out for the rest of the capture.
+        if (source.originId != IMO_INJECTED)
+            return false;
+
+        // Generic injected absolute pointer. This is not assumed to be any
+        // particular driver: no process, path, IPC, VID/PID or version
+        // detection is performed anywhere in this path.
+        m_ingress.SubmitAbsolute(
+            DirectAimHostSource::InjectedAbsolutePointer,
+            0,
+            static_cast<double>(msg->pt.x),
+            static_cast<double>(msg->pt.y));
         return false;
     }
     case WM_KILLFOCUS:

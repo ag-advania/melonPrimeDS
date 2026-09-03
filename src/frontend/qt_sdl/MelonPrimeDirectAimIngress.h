@@ -23,13 +23,6 @@ class PointerWinFilter;
 class DirectAimIngress
 {
 public:
-    // Center clipping is a RawRelativeMouse policy. Do not apply it to
-    // absolute pen or injected absolute-pointer sources because clipping
-    // destroys the coordinate signal used to derive relative aim. The owning
-    // widget reconciles its own cursor state through this callback, always on
-    // the GUI thread and only at an authority transition.
-    using CursorPolicyFn = void (*)(void* context, bool clipToCenter) noexcept;
-
     DirectAimIngress() noexcept;
     ~DirectAimIngress();
 
@@ -39,8 +32,6 @@ public:
     // Cold path. Called from the touch-action press edge that starts a
     // direct-aim capture, only when tablet input is allowed.
     void BeginCapture(MelonPrimeThreadBridge& bridge,
-                      CursorPolicyFn cursorPolicy,
-                      void* cursorPolicyContext,
                       void* topLevelHwnd,
                       void* surfaceHwnd);
     // Cold path. Capture release, focus loss, option change, teardown.
@@ -57,8 +48,6 @@ public:
                         uint32_t pointerId,
                         double x,
                         double y) noexcept;
-    // Hot path: a hardware relative mouse move contests authority only.
-    void LatchRawRelative() noexcept;
     // Cold path: pointer leave/up, focus loss, layout or DPI change.
     void DropBaseline(DirectAimBaselineReset reason) noexcept;
 
@@ -74,8 +63,6 @@ private:
 
     DirectAimSourceArbiter m_arbiter;
     MelonPrimeThreadBridge* m_bridge = nullptr;
-    CursorPolicyFn m_cursorPolicy = nullptr;
-    void* m_cursorPolicyContext = nullptr;
 #ifdef _WIN32
     std::unique_ptr<PointerWinFilter> m_winFilter;
 #endif

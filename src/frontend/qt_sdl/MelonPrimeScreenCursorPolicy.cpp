@@ -265,9 +265,25 @@ void ClipCenter1px(ScreenPanel& panel)
 
 #ifdef _WIN32
     const HWND hwnd = reinterpret_cast<HWND>(panel.winId());
-    RECT clip = computeCenter1pxClipRectSafe(hwnd);
-    clip = shrinkRectHeightToHalfCentered(clip);
-    ClipCursor(&clip);
+    if (panel.isDirectAimUnconfinedForPolicy()) {
+        // Center clipping is a relative-mouse policy. An absolute pen or
+        // injected absolute pointer *is* its coordinate signal, so pinning the
+        // cursor to a one-pixel rect would flatten every delta to zero. Aim
+        // ownership was still requested above, which is what relative mouse
+        // aim actually needs; confine to the aim area instead so the pointer
+        // cannot wander out of the window.
+        RECT clip = computeWidgetClipRectSafe(
+            hwnd, panel.aimContainmentLocalRectForPolicy());
+        if (clip.left >= clip.right || clip.top >= clip.bottom)
+            ClipCursor(nullptr); // degenerate layout: never trap the pointer
+        else
+            ClipCursor(&clip);
+    }
+    else {
+        RECT clip = computeCenter1pxClipRectSafe(hwnd);
+        clip = shrinkRectHeightToHalfCentered(clip);
+        ClipCursor(&clip);
+    }
 #endif
 }
 

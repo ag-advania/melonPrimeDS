@@ -152,7 +152,7 @@
 										</item>
 										<item row="12" column="0" colspan="2">
 											<widget class="QCheckBox" name="cbMetroidEnableStylusDirectAimAllowTabletInput">
-												<property name="text"><string>Allow Pen Tablet Input for Direct Aim (XP-Pen, OpenTabletDriver and other pens aim while the Stylus Touch key is held. Leave this off when you play with a normal mouse)</string></property>
+												<property name="text"><string>Allow Pen Tablet Input for Direct Aim (XP-Pen, OpenTabletDriver and other pens aim while the Stylus Touch key is held. A normal mouse keeps working alongside the pen; leave this off if you never use one)</string></property>
 												<property name="styleSheet"><string>QCheckBox { margin-left: 44px; }</string></property>
 											</widget>
 										</item>

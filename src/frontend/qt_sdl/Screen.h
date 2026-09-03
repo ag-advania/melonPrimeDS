@@ -338,6 +338,12 @@ public:
     [[nodiscard]] QRect aimContainmentLocalRectForPolicy() const;
     [[nodiscard]] QPoint aimContainmentCenterGlobalForPolicy() const;
     [[nodiscard]] bool shouldConfineCursorToBottomScreenForPolicy() const;
+    // An absolute pen/injected-pointer capture still requests aim ownership,
+    // but its coordinate signal must not be confined to a one-pixel rect.
+    [[nodiscard]] bool isDirectAimUnconfinedForPolicy() const noexcept
+    {
+        return m_directAim.Active();
+    }
     // Stylus-mode match cursor options. Both derive from one reconciled edge
     // (stylus mode, focused, out of cursor mode) and never imply a capture
     // request: the pointer stays free so stylus aiming keeps working.
@@ -561,15 +567,6 @@ private:
     void holdStylusCursorAtCenterIfNotClicking(const QPoint& localPos);
     void beginStylusDirectAimCapture();
     void endStylusDirectAimCapture();
-    // Center clipping is a RawRelativeMouse policy. Do not apply it to
-    // absolute pen or injected absolute-pointer sources because clipping
-    // destroys the coordinate signal used to derive relative aim.
-    static void directAimCursorPolicyThunk(void* context,
-                                           bool clipToCenter) noexcept;
-    [[nodiscard]] bool directAimAbsoluteSourceOwnsAim() const noexcept
-    {
-        return MelonPrime::DirectAimSourceIsAbsolute(m_directAim.Authority());
-    }
     [[nodiscard]] QPoint stylusCursorCenterLocal() const;
     std::optional<QRect> getScreenWidgetRect(int wantedScreenKind) const;
     std::optional<QRect> getBottomScreenWidgetRect() const;
