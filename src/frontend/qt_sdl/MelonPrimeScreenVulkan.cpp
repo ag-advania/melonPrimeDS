@@ -2185,18 +2185,17 @@ void ScreenPanelVulkan::drawScreenFrame()
     {
         const auto layer = MelonPrime::VulkanPresenter::Layer::Hud;
         const QRect imageRect(0, 0, Overlay[0].width(), Overlay[0].height());
-        HudDirtyRegionSet uploadRegions = hudDirtyRegions;
-        uploadRegions.IntersectWith(imageRect);
-        if (!vulkan->presenter.HasLayerContent(layer))
-        {
-            // Nothing on the GPU image yet, so the retained source has to go up
-            // whole before a partial update means anything.
-            uploadRegions.SetSingle(imageRect);
-        }
+        // Dirt that could not be recorded in an earlier frame is carried
+        // forward; dropping it would leave the retained layer showing pixels
+        // the overlay no longer has.
+        m_hudPendingUpload.Unite(hudDirtyRegions);
+        m_hudPendingUpload.IntersectWith(imageRect);
+        const bool needsSeed = !vulkan->presenter.HasLayerContent(layer);
 
-        if (uploadRegions.IsEmpty())
+        if (!needsSeed && m_hudPendingUpload.IsEmpty())
         {
-            // The retained HUD layer already holds the right pixels.
+            // The retained HUD layer already holds the right pixels: this
+            // presentation costs no staging copy and no transfer at all.
             hudUploaded = true;
             MelonPrimePerf::CountHudRetainedOnlyFrame();
         }
@@ -2207,30 +2206,68 @@ void ScreenPanelVulkan::drawScreenFrame()
                 MelonPrimePerf::HudPhase::UploadPrepare);
             MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
                 MelonPrimePerf::HudPhase::GpuUpload);
-            // One transfer per changed region rather than one over their
-            // bounding box, which for a HUD spread across the window was most
-            // of the surface every emulated frame.
-            for (int regionIndex = 0; regionIndex < uploadRegions.Count(); ++regionIndex)
+            if (!needsSeed)
             {
-                const QRect region = uploadRegions.Region(regionIndex);
-                if (region.isEmpty())
-                    continue;
+                // Steady state: every changed rectangle goes up as one batch --
+                // one layout transition pair and one copy command for the lot.
+                // Issuing them one at a time would serialise the fragment and
+                // transfer stages once per rectangle, which costs more than the
+                // pixels it saves.
+                HudDirtyRegionSet uploadRegions = m_hudPendingUpload;
+                uploadRegions.CollapseTo(static_cast<int>(
+                    MelonPrime::VulkanPresenter::kMaxLayerRegions));
+                MelonPrime::VulkanPresenter::LayerRegion regions[
+                    MelonPrime::VulkanPresenter::kMaxLayerRegions];
+                u32 regionCount = 0;
+                std::uint64_t uploadPixels = 0;
+                for (int regionIndex = 0; regionIndex < uploadRegions.Count(); ++regionIndex)
+                {
+                    const QRect region = uploadRegions.Region(regionIndex);
+                    if (region.isEmpty())
+                        continue;
+                    regions[regionCount].X = static_cast<u32>(region.x());
+                    regions[regionCount].Y = static_cast<u32>(region.y());
+                    regions[regionCount].Width = static_cast<u32>(region.width());
+                    regions[regionCount].Height = static_cast<u32>(region.height());
+                    ++regionCount;
+                    uploadPixels += static_cast<std::uint64_t>(region.width())
+                        * static_cast<std::uint64_t>(region.height());
+                }
+                if (regionCount != 0)
+                {
+                    MelonPrimePerf::CountHudUploadCall();
+                    MelonPrimePerf::AddHudUploadRegion(uploadPixels, uploadPixels * 4u);
+                    hudUploaded = vulkan->presenter.UploadLayerRegions(
+                        layer,
+                        Overlay[0].constBits(),
+                        static_cast<u32>(Overlay[0].width()),
+                        static_cast<u32>(Overlay[0].height()),
+                        static_cast<std::size_t>(Overlay[0].bytesPerLine()),
+                        regions,
+                        regionCount);
+                }
+            }
+            if (!hudUploaded)
+            {
+                // Cold edge, or a batch the staging ring could not hold: seed
+                // the whole surface so the next frame is partial again.
                 MelonPrimePerf::CountHudUploadCall();
-                const std::uint64_t regionPixels =
-                    static_cast<std::uint64_t>(region.width())
-                    * static_cast<std::uint64_t>(region.height());
-                MelonPrimePerf::AddHudUploadRegion(regionPixels, regionPixels * 4u);
-                hudUploaded |= vulkan->presenter.UploadLayerRegion(
+                const std::uint64_t fullPixels =
+                    static_cast<std::uint64_t>(Overlay[0].width())
+                    * static_cast<std::uint64_t>(Overlay[0].height());
+                MelonPrimePerf::AddHudUploadRegion(fullPixels, fullPixels * 4u);
+                hudUploaded = vulkan->presenter.UploadLayerRegion(
                     layer,
                     Overlay[0].constBits(),
                     static_cast<u32>(Overlay[0].width()),
                     static_cast<u32>(Overlay[0].height()),
                     static_cast<std::size_t>(Overlay[0].bytesPerLine()),
-                    static_cast<u32>(region.x()),
-                    static_cast<u32>(region.y()),
-                    static_cast<u32>(region.width()),
-                    static_cast<u32>(region.height()));
+                    0, 0,
+                    static_cast<u32>(Overlay[0].width()),
+                    static_cast<u32>(Overlay[0].height()));
             }
+            if (hudUploaded)
+                m_hudPendingUpload.Reset();
         }
     }
 #endif
@@ -2355,12 +2392,14 @@ void ScreenPanelVulkan::drawScreenFrame()
         HudDirtyRegionSet compositeRegions = hudContentRegions;
         compositeRegions.IntersectWith(
             QRect(0, 0, Overlay[0].width(), Overlay[0].height()));
+        MelonPrime::VulkanPresenter::Quad hudQuads[HudDirtyRegionSet::kMaxRegions];
+        u32 hudQuadCount = 0;
         for (int regionIndex = 0; regionIndex < compositeRegions.Count(); ++regionIndex)
         {
             const QRect region = compositeRegions.Region(regionIndex);
             if (region.isEmpty() || layerWidth <= 0.0f || layerHeight <= 0.0f)
                 continue;
-            MelonPrime::VulkanPresenter::Quad quad;
+            MelonPrime::VulkanPresenter::Quad& quad = hudQuads[hudQuadCount++];
             quad.Axis[0] = static_cast<float>(region.width()) * scaleX;
             quad.Axis[1] = 0.0f;
             quad.Axis[2] = 0.0f;
@@ -2373,13 +2412,15 @@ void ScreenPanelVulkan::drawScreenFrame()
             quad.UvRect[1] = static_cast<float>(region.y()) / layerHeight;
             quad.UvRect[2] = static_cast<float>(region.x() + region.width()) / layerWidth;
             quad.UvRect[3] = static_cast<float>(region.y() + region.height()) / layerHeight;
-
-            vulkan->presenter.DrawLayer(
-                MelonPrime::VulkanPresenter::Layer::Hud,
-                quad,
-                MelonPrime::VulkanPresenter::Blend::Premultiplied,
-                filter);
         }
+        // One pipeline and descriptor bind for the whole HUD, then a draw per
+        // occupied region.
+        vulkan->presenter.DrawLayerQuads(
+            MelonPrime::VulkanPresenter::Layer::Hud,
+            hudQuads,
+            hudQuadCount,
+            MelonPrime::VulkanPresenter::Blend::Premultiplied,
+            filter);
     }
 
     // Match DrawBottomScreenOverlay(): combined outline and SVG frame are
