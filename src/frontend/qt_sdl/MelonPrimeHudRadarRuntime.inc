@@ -5,14 +5,15 @@
 //  CPU radar color-key preprocessing
 // =========================================================================
 
-static bool CustomHud_IsRadarPaletteColor(uint32_t rgb)
+// One load, one shift and one mask per pixel. This used to be a linear scan of
+// the fifteen palette entries, run for every pixel of the radar crop on every
+// frame the radar was visible; the packed table makes membership constant time
+// without adding a branch or a cache-hostile 32 KiB lookup.
+static FORCE_INLINE bool CustomHud_IsRadarPaletteColor(uint32_t rgb)
 {
-    const uint32_t quantizedRgb = rgb & kRadarPaletteQuantizationMask;
-    for (const uint32_t paletteColor : kRadarPaletteColors) {
-        if (quantizedRgb == paletteColor)
-            return true;
-    }
-    return false;
+    const uint16_t index =
+        RadarPaletteLutIndex(rgb & kRadarPaletteQuantizationMask);
+    return ((kRadarPaletteLut[index >> 6] >> (index & 63)) & 1u) != 0u;
 }
 
 int CustomHud_ResolveRadarColorKeyRadius(Config::Table& localCfg)
@@ -54,6 +55,10 @@ QImage* CustomHud_PrepareRadarColorKeySource(
     if (clippedRect.isEmpty())
         return nullptr;
 
+    // Developer-only: this loop is the CPU radar's whole cost, and its price is
+    // set by the crop area rather than by anything configurable, so the pixel
+    // count belongs next to the timing.
+    const auto filterStart = MelonPrimePerf::ReadTicksIfActive();
     for (int y = clippedRect.top(); y <= clippedRect.bottom(); ++y) {
         const auto* sourceLine = reinterpret_cast<const QRgb*>(bottomScreen->constScanLine(y));
         auto* destinationLine = reinterpret_cast<QRgb*>(scratch->scanLine(y));
@@ -63,6 +68,12 @@ QImage* CustomHud_PrepareRadarColorKeySource(
                 ? static_cast<QRgb>(0xFF000000u | rgb)
                 : static_cast<QRgb>(0u);
         }
+    }
+    if (filterStart) {
+        MelonPrimePerf::RecordRadarCpuFilter(
+            static_cast<uint64_t>(clippedRect.width())
+                * static_cast<uint64_t>(clippedRect.height()),
+            MelonPrimePerf::ReadTicksIfActive() - filterStart);
     }
     return scratch;
 }

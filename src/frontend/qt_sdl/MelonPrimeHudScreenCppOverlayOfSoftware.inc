@@ -2,7 +2,6 @@
 // This is a unity-build fragment included by Screen.cpp; do not add it to CMakeLists.txt.
 
 #ifdef MELONPRIME_CUSTOM_HUD
-#define s_hudPrevDirtyS m_hudPrevDirty
 {
     auto* mp = emuThread->GetMelonPrimeCore();
     const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
@@ -50,23 +49,30 @@
                 && sameGameFrame
                 && visualKey == m_hudVisualFrameKey;
             m_hudVisualFrameWasReused = reuseVisual;
-            QRect curDirty = s_hudPrevDirtyS;
             if (reuseVisual) {
                 // The retained QImage is still composited over the newly
                 // painted game frame, but no clear, painter, HUD state read,
-                // region hash, or CPU raster work is repeated.
+                // region hash, or CPU raster work is repeated. Nothing changed,
+                // so nothing is dirty; the content set is still current.
                 MelonPrimePerf::CountHudVisualReuse();
+                m_hudDirtyRegions.Reset();
+                MelonPrimePerf::CountHudRetainedOnlyFrame();
             } else {
                 MelonPrimePerf::CountHudVisualRender();
-                // OPT-DR1: Track dirty rect to limit clear + composite to HUD area only.
-                MelonPrimeHud_PrepareTopOverlay(Overlay[0], topOutW, topOutH, s_hudPrevDirtyS);
+                // The renderer owns clearing the retained overlay: it is the
+                // only place that knows which per-element regions are about to
+                // be redrawn. Allocation here, and only a reallocation drops
+                // the retained pixels.
+                if (MelonPrimeHud_EnsureTopOverlay(Overlay[0], topOutW, topOutH))
+                    m_hudOverlayRetained = false;
 
                 // Per-frame painter (must end before reading image)
-                curDirty = MelonPrimeHud_RenderTopOverlay(
+                const HudOverlayUpdate hudUpdate = MelonPrimeHud_RenderTopOverlay(
                     emuInstance, instcfg, mp,
                     Overlay[0], overlayFont, m_hudEnabled,
                     topStretchX, hudScale,
                     m_hudOriginX, m_hudOriginY,
+                    m_hudOverlayRetained,
                     m_radarEnable ? MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE : nullptr,
                     &Overlay[1], m_radarSrcRadius,
 #ifdef MELONPRIME_HUD_NATIVE_PAINT_PERF
@@ -74,7 +80,9 @@
 #else
                     nullptr, nullptr);
 #endif
-                s_hudPrevDirtyS = curDirty;
+                m_hudDirtyRegions = hudUpdate.dirty;
+                m_hudContentRegions = hudUpdate.content;
+                m_hudOverlayRetained = true;
                 if (!sameGameFrame) {
                     visualKey = MelonPrimeHud_MakeVisualFrameKey(
                         visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
@@ -102,42 +110,41 @@
             }
 #endif
 
-            // Composite only the dirty region (prev cleared + curr drawn).
-            const QRect compositeRect = reuseVisual
-                ? s_hudPrevDirtyS : s_hudPrevDirtyS.united(curDirty);
 #if defined(MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE) \
     && MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
-            // DX12 retains both this target and the uploaded HUD layer.  When
-            // the visual frame is reused, the target already contains the
-            // exact retained HUD pixels, so do not copy Overlay[0] into it a
-            // second time. Native Software has no retained target contract
-            // and intentionally takes the normal branch below.
-            if (!reuseVisual && !compositeRect.isEmpty()) {
+            // DX12 retains both this target and the uploaded HUD layer, so the
+            // target only needs the regions whose pixels actually changed. On
+            // a reused visual frame it already holds the right pixels and the
+            // dirty set is empty, so this collapses to nothing.
+            const HudDirtyRegionSet& hudCompositeRegions = m_hudDirtyRegions;
 #else
-            if (!compositeRect.isEmpty()) {
+            // Native Software repaints the game frame underneath every time,
+            // so the *whole* HUD has to be blended back over it -- the dirty
+            // set would only restore the part that changed.
+            const HudDirtyRegionSet& hudCompositeRegions = m_hudContentRegions;
 #endif
+            if (!hudCompositeRegions.IsEmpty()) {
                 painter.resetTransform();
-                const std::uint64_t compositePixels =
-                    static_cast<std::uint64_t>(compositeRect.width())
-                    * static_cast<std::uint64_t>(compositeRect.height());
-                MelonPrimePerf::AddHudOverlayComposite(
-                    compositePixels * sizeof(QRgb), compositePixels);
 #ifdef MELONPRIME_HUD_NATIVE_PAINT_PERF
+                const std::uint64_t compositePixels = hudCompositeRegions.PixelCount();
                 m_nativePaintPerf.RecordHudOverlayComposite(
                     compositePixels * sizeof(QRgb), compositePixels);
 #endif
-                painter.drawImage(QPoint(compositeRect.x(), compositeRect.y()),
-                                  Overlay[0], compositeRect);
+                MelonPrimeHud_CompositeRegions(painter, Overlay[0], hudCompositeRegions);
             }
         } else {
             m_hudVisualFrameValid = false;
             m_hudVisualFrameWasReused = false;
+            m_hudOverlayRetained = false;
+            m_hudDirtyRegions.Reset();
+            m_hudContentRegions.Reset();
         }
     } else {
         m_hudVisualFrameValid = false;
         m_hudVisualFrameWasReused = false;
+        m_hudOverlayRetained = false;
+        m_hudDirtyRegions.Reset();
+        m_hudContentRegions.Reset();
     }
 }
 #endif
-
-#undef s_hudPrevDirtyS

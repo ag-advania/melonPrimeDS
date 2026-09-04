@@ -95,6 +95,7 @@
 #include "MelonPrimeHudPatchLifecycle.h"
 #include "MelonPrimeHudPresentationState.h"
 #include "MelonPrimeHudScreenVisualState.h"
+#include "MelonPrimeHudScreenOverlay.h"
 // Canonical Custom HUD config keys. Included rather than mirrored as string
 // literals, per the config-key ownership rule; this translation unit is
 // registered in tools/ci/audits/check-inc-ownership.ps1's multi-parent map
@@ -590,8 +591,7 @@ bool ScreenPanelVulkan::initVulkanPresenter()
     if (vulkan->presenter.IsInitialized())
         return true;
 #ifdef MELONPRIME_CUSTOM_HUD
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
+    resetHudRetainedOverlay();
     ++m_hudVisualRendererGeneration;
 #endif
 #if defined(__linux__)  // scatter-budget-exempt: Linux native-surface readiness, not input dispatch
@@ -1075,8 +1075,7 @@ void ScreenPanelVulkan::retireLinuxPresentationSurface(const char* reason)
         return;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
+    resetHudRetainedOverlay();
     ++m_hudVisualRendererGeneration;
 #endif
 
@@ -1392,8 +1391,7 @@ void ScreenPanelVulkan::prepareForRendererTransition(
         return;
 
 #ifdef MELONPRIME_CUSTOM_HUD
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
+    resetHudRetainedOverlay();
     ++m_hudVisualRendererGeneration;
 #endif
 
@@ -2111,13 +2109,15 @@ void ScreenPanelVulkan::drawScreenFrame()
             QImage::Format_RGB32);
     }
 
-    QRect hudRect;
+    HudDirtyRegionSet hudDirtyRegions;
+    HudDirtyRegionSet hudContentRegions;
     const bool hudVisible = renderHudOverlay(
         emuThread,
         bottomPixels ? &bottomScreenImage : nullptr,
         logicalWidth,
         logicalHeight,
-        hudRect);
+        hudDirtyRegions,
+        hudContentRegions);
     bool gpuRadarVisible = false;
     MelonPrime::VulkanPresenter::Quad gpuRadarQuad;
     u32 gpuRadarCenterY = 0;
@@ -2185,31 +2185,52 @@ void ScreenPanelVulkan::drawScreenFrame()
     {
         const auto layer = MelonPrime::VulkanPresenter::Layer::Hud;
         const QRect imageRect(0, 0, Overlay[0].width(), Overlay[0].height());
-        const QRect uploadRect = hudRect.intersected(imageRect);
-        const bool needsInitialUpload = !vulkan->presenter.HasLayerContent(layer);
-        if (!needsInitialUpload && uploadRect.isEmpty())
+        HudDirtyRegionSet uploadRegions = hudDirtyRegions;
+        uploadRegions.IntersectWith(imageRect);
+        if (!vulkan->presenter.HasLayerContent(layer))
         {
+            // Nothing on the GPU image yet, so the retained source has to go up
+            // whole before a partial update means anything.
+            uploadRegions.SetSingle(imageRect);
+        }
+
+        if (uploadRegions.IsEmpty())
+        {
+            // The retained HUD layer already holds the right pixels.
             hudUploaded = true;
+            MelonPrimePerf::CountHudRetainedOnlyFrame();
         }
         else
         {
-            const QRect region = needsInitialUpload ? imageRect : uploadRect;
             VulkanPerf::ScopedCpuTimer hudUploadTimer(VulkanPerf::CpuMetric::HudUpload);
             MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                 MelonPrimePerf::HudPhase::UploadPrepare);
             MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
                 MelonPrimePerf::HudPhase::GpuUpload);
-            MelonPrimePerf::CountHudUploadCall();
-            hudUploaded = vulkan->presenter.UploadLayerRegion(
-                layer,
-                Overlay[0].constBits(),
-                static_cast<u32>(Overlay[0].width()),
-                static_cast<u32>(Overlay[0].height()),
-                static_cast<std::size_t>(Overlay[0].bytesPerLine()),
-                static_cast<u32>(region.x()),
-                static_cast<u32>(region.y()),
-                static_cast<u32>(region.width()),
-                static_cast<u32>(region.height()));
+            // One transfer per changed region rather than one over their
+            // bounding box, which for a HUD spread across the window was most
+            // of the surface every emulated frame.
+            for (int regionIndex = 0; regionIndex < uploadRegions.Count(); ++regionIndex)
+            {
+                const QRect region = uploadRegions.Region(regionIndex);
+                if (region.isEmpty())
+                    continue;
+                MelonPrimePerf::CountHudUploadCall();
+                const std::uint64_t regionPixels =
+                    static_cast<std::uint64_t>(region.width())
+                    * static_cast<std::uint64_t>(region.height());
+                MelonPrimePerf::AddHudUploadRegion(regionPixels, regionPixels * 4u);
+                hudUploaded |= vulkan->presenter.UploadLayerRegion(
+                    layer,
+                    Overlay[0].constBits(),
+                    static_cast<u32>(Overlay[0].width()),
+                    static_cast<u32>(Overlay[0].height()),
+                    static_cast<std::size_t>(Overlay[0].bytesPerLine()),
+                    static_cast<u32>(region.x()),
+                    static_cast<u32>(region.y()),
+                    static_cast<u32>(region.width()),
+                    static_cast<u32>(region.height()));
+            }
         }
     }
 #endif
@@ -2323,28 +2344,42 @@ void ScreenPanelVulkan::drawScreenFrame()
 #ifdef MELONPRIME_CUSTOM_HUD
     if (hudUploaded)
     {
-        // The overlay covers the whole widget in logical pixels and is stretched
-        // over the whole viewport, which is how the HUD reaches elements the
-        // layout placed inside the black bars.
-        MelonPrime::VulkanPresenter::Quad quad;
-        quad.Axis[0] = viewportWidth;
-        quad.Axis[1] = 0.0f;
-        quad.Axis[2] = 0.0f;
-        quad.Axis[3] = viewportHeight;
-        quad.Origin[0] = 0.0f;
-        quad.Origin[1] = 0.0f;
-        quad.Origin[2] = viewportWidth;
-        quad.Origin[3] = viewportHeight;
-        quad.UvRect[2] =
-            static_cast<float>(Overlay[0].width()) / static_cast<float>(vulkan->presenter.GetWidth());
-        quad.UvRect[3] =
-            static_cast<float>(Overlay[0].height()) / static_cast<float>(vulkan->presenter.GetHeight());
+        // The overlay covers the whole widget in logical pixels, which is how
+        // the HUD reaches elements the layout placed inside the black bars.
+        // It is composited one occupied region at a time rather than as a
+        // single full-viewport quad: the gaps between HUD elements are
+        // transparent, and blending them costs fragment and framebuffer
+        // bandwidth proportional to the window instead of to the HUD.
+        const float layerWidth = static_cast<float>(vulkan->presenter.GetWidth());
+        const float layerHeight = static_cast<float>(vulkan->presenter.GetHeight());
+        HudDirtyRegionSet compositeRegions = hudContentRegions;
+        compositeRegions.IntersectWith(
+            QRect(0, 0, Overlay[0].width(), Overlay[0].height()));
+        for (int regionIndex = 0; regionIndex < compositeRegions.Count(); ++regionIndex)
+        {
+            const QRect region = compositeRegions.Region(regionIndex);
+            if (region.isEmpty() || layerWidth <= 0.0f || layerHeight <= 0.0f)
+                continue;
+            MelonPrime::VulkanPresenter::Quad quad;
+            quad.Axis[0] = static_cast<float>(region.width()) * scaleX;
+            quad.Axis[1] = 0.0f;
+            quad.Axis[2] = 0.0f;
+            quad.Axis[3] = static_cast<float>(region.height()) * scaleY;
+            quad.Origin[0] = static_cast<float>(region.x()) * scaleX;
+            quad.Origin[1] = static_cast<float>(region.y()) * scaleY;
+            quad.Origin[2] = viewportWidth;
+            quad.Origin[3] = viewportHeight;
+            quad.UvRect[0] = static_cast<float>(region.x()) / layerWidth;
+            quad.UvRect[1] = static_cast<float>(region.y()) / layerHeight;
+            quad.UvRect[2] = static_cast<float>(region.x() + region.width()) / layerWidth;
+            quad.UvRect[3] = static_cast<float>(region.y() + region.height()) / layerHeight;
 
-        vulkan->presenter.DrawLayer(
-            MelonPrime::VulkanPresenter::Layer::Hud,
-            quad,
-            MelonPrime::VulkanPresenter::Blend::Premultiplied,
-            filter);
+            vulkan->presenter.DrawLayer(
+                MelonPrime::VulkanPresenter::Layer::Hud,
+                quad,
+                MelonPrime::VulkanPresenter::Blend::Premultiplied,
+                filter);
+        }
     }
 
     // Match DrawBottomScreenOverlay(): combined outline and SVG frame are
@@ -2482,54 +2517,47 @@ bool ScreenPanelVulkan::renderHudOverlay(
     QImage* bottomScreen,
     int logicalWidth,
     int logicalHeight,
-    QRect& outDirty)
+    HudDirtyRegionSet& outDirty,
+    HudDirtyRegionSet& outContent)
 {
-    outDirty = QRect();
+    outDirty.Reset();
+    outContent.Reset();
     m_hudVisualFrameWasReused = false;
 
     auto* mp = emuThread ? emuThread->GetMelonPrimeCore() : nullptr;
     const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
-    if (!mp || !mp->IsRomDetected() || !(mp->IsInGame() || editMode))
+    if (!MelonPrimeHud_CanRenderForCore(mp, editMode))
     {
         m_hudVisualFrameValid = false;
+        m_hudOverlayRetained = false;
+        m_hudDirtyRegions.Reset();
+        m_hudContentRegions.Reset();
         return false;
     }
 
     auto& instcfg = emuInstance->getLocalConfig();
 
-    // One epoch check drives every cached config value, exactly as the OpenGL
-    // and software paths do: these are hash-map lookups and font construction,
-    // far too expensive to repeat per frame.
-    const uint32_t epoch = MelonPrime::CustomHud_GetCacheEpoch(mp->HudConfigState());
-    if (epoch != m_hudCfgEpoch)
-    {
-        m_hudCfgEpoch = epoch;
-        m_hudEnabled = MelonPrime::CustomHud_IsEnabled(instcfg);
-    }
-    if (epoch != m_hudFontEpoch)
-    {
-        m_hudFontEpoch = epoch;
-        overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
-        overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
-    }
-    if (epoch != m_radarCfgEpoch)
-    {
-        m_radarCfgEpoch = epoch;
-        m_radarEnable = instcfg.GetBool(MP_HUD_PROP_KEY_BtmOverlayEnable);
-        m_radarAnchor = instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayAnchor);
-        m_radarDstX = instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstX);
-        m_radarDstY = instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstY);
-        m_radarDstSize = std::max(instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlayDstSize), 1);
-        m_radarOpacity =
-            std::clamp(static_cast<float>(instcfg.GetDouble(MP_HUD_PROP_KEY_BtmOverlayOpacity)), 0.0f, 1.0f);
-        m_radarSrcRadius = instcfg.GetInt(MP_HUD_PROP_KEY_BtmOverlaySrcRadius);
-        m_radarAnchorDsX = (m_radarAnchor % 3) * 128.0f;
-        m_radarAnchorDsY = (m_radarAnchor / 3) * 96.0f;
-    }
+    // One epoch check drives every cached config value, through the same
+    // shared helpers the software and OpenGL panels use. Keeping a private
+    // copy of this logic here is how a renamed key or a changed clamp rule
+    // ends up applying to three renderers and not the fourth.
+    MelonPrimeHud_RefreshHudEnabledIfNeeded(
+        mp->HudConfigState(), instcfg, m_hudCfgEpoch, m_hudEnabled);
+    MelonPrimeHud_RefreshOverlayFontIfNeeded(
+        mp->HudConfigState(), instcfg, m_hudFontEpoch, overlayFont);
+    MelonPrimeHud_RefreshRadarConfigIfNeeded(
+        mp->HudConfigState(), instcfg, m_radarCfgEpoch,
+        m_radarEnable, m_radarAnchor,
+        m_radarDstX, m_radarDstY, m_radarDstSize,
+        m_radarOpacity, m_radarSrcRadius,
+        m_radarAnchorDsX, m_radarAnchorDsY);
 
     if (!(m_hudEnabled || editMode))
     {
         m_hudVisualFrameValid = false;
+        m_hudOverlayRetained = false;
+        m_hudDirtyRegions.Reset();
+        m_hudContentRegions.Reset();
         MelonPrime::CustomHud_EnsurePatchRestored(
             mp->HudConfigState(), emuInstance,
             mp->GetCurrentRom(), mp->GetPlayerPosition());
@@ -2564,75 +2592,33 @@ bool ScreenPanelVulkan::renderHudOverlay(
     m_hudVisualFrameWasReused = reuseVisual;
     if (reuseVisual) {
         // The presenter retains the HUD layer between compositions. Reuse the
-        // existing GPU image and report no dirty region; the caller still
-        // draws the retained layer in the current composition.
+        // existing GPU image and report nothing dirty; the caller still draws
+        // the retained layer's occupied regions in this composition.
         MelonPrimePerf::CountHudVisualReuse();
+        m_hudDirtyRegions.Reset();
+        outContent = m_hudContentRegions;
         return true;
     }
     MelonPrimePerf::CountHudVisualRender();
-    const QRect previousDirty = m_hudPrevDirty;
-    bool overlayRecreated = false;
-    {
-        MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
-        if (Overlay[0].width() != overlayWidth
-            || Overlay[0].height() != overlayHeight
-            || Overlay[0].format() != QImage::Format_ARGB32_Premultiplied)
-        {
-            Overlay[0] = QImage(overlayWidth, overlayHeight, QImage::Format_ARGB32_Premultiplied);
-            Overlay[0].fill(Qt::transparent);
-            m_hudPrevDirty = QRect();
-            overlayRecreated = true;
-        }
-        else if (!m_hudPrevDirty.isEmpty())
-        {
-            // Direct scanline clear of last frame's dirty region only. Transparent
-            // is 0 in ARGB32_Premultiplied, so memset is the whole operation.
-            const int left = std::max(0, m_hudPrevDirty.left());
-            const int right = std::min(Overlay[0].width() - 1, m_hudPrevDirty.right());
-            const int top = std::max(0, m_hudPrevDirty.top());
-            const int bottom = std::min(Overlay[0].height() - 1, m_hudPrevDirty.bottom());
-            if (left <= right && top <= bottom)
-            {
-                const std::size_t clearBytes = static_cast<std::size_t>(right - left + 1) * 4u;
-                for (int row = top; row <= bottom; ++row)
-                    std::memset(Overlay[0].scanLine(row) + left * 4, 0, clearBytes);
-            }
-        }
-    }
 
-    QRect dirty;
-    {
-        QPainter painter(&Overlay[0]);
-        painter.setFont(overlayFont);
-        QImage* radarSource = MelonPrime::CustomHud_PrepareRadarColorKeySource(
-            m_radarEnable ? bottomScreen : nullptr,
-            &Overlay[1],
-            mp->GetHunterID(),
-            m_radarSrcRadius);
-        const Uint64 hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
-        dirty = MelonPrime::CustomHud_Render(
-            mp->HudConfigState(),
-            emuInstance, instcfg,
-            mp->GetCurrentRom(), mp->GetAddrHot(),
-            mp->GetPlayerPosition(),
-            &painter, nullptr,
-            &Overlay[0], radarSource,
-            mp->IsInGame(),
-            m_hudEnabled,
-            m_topStretchX, m_hudScale,
-            m_hudOriginX / m_hudScale, m_hudOriginY / m_hudScale);
-        if (hudRenderStart)
-            MelonPrimePerf::AddCustomHudRenderTicks(
-                MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
-    }
+    // Allocation only. The renderer owns clearing the retained overlay,
+    // because it is the only place that knows which per-element regions are
+    // about to be redrawn.
+    if (MelonPrimeHud_EnsureTopOverlay(Overlay[0], overlayWidth, overlayHeight))
+        m_hudOverlayRetained = false;
 
-    if (MelonPrimePerf::IsFrameActive() && !dirty.isEmpty())
-    {
-        MelonPrimePerf::AddHudDirtyArea(dirty.width() * dirty.height());
-        MelonPrimePerf::CountCustomHudDrawn();
-    }
+    const HudOverlayUpdate hudUpdate = MelonPrimeHud_RenderTopOverlay(
+        emuInstance, instcfg, mp,
+        Overlay[0], overlayFont, m_hudEnabled,
+        m_topStretchX, m_hudScale,
+        m_hudOriginX, m_hudOriginY,
+        m_hudOverlayRetained,
+        m_radarEnable ? bottomScreen : nullptr,
+        &Overlay[1], m_radarSrcRadius);
+    m_hudDirtyRegions = hudUpdate.dirty;
+    m_hudContentRegions = hudUpdate.content;
+    m_hudOverlayRetained = true;
 
-    m_hudPrevDirty = dirty;
     if (!sameGameFrame) {
         visualKey = MelonPrimeHud_MakeVisualFrameKey(
             visualIdentity, mp->HudConfigState(), m_hudCfgEpoch, m_hudFontEpoch,
@@ -2643,11 +2629,11 @@ bool ScreenPanelVulkan::renderHudOverlay(
     MelonPrimePerf::CountHudVisualStampCommit();
     m_hudVisualFrameKey = visualKey;
     m_hudVisualFrameValid = true;
-    outDirty = overlayRecreated
-        ? QRect(0, 0, Overlay[0].width(), Overlay[0].height())
-        : dirty.united(previousDirty);
+    outDirty = m_hudDirtyRegions;
+    outContent = m_hudContentRegions;
     return true;
 }
+
 #endif
 
 

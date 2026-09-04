@@ -360,6 +360,16 @@ struct CustomHudConfigState {
     double chPrevScopeT = 0.0;
     QRect chDirtyThisFrame;
     QRect drawnDirtyPx;
+    // Retained overlay bookkeeping: which element owns which pixels and
+    // what those pixels were made of. Owned here so it shares the config
+    // cache's per-instance lifetime and invalidation boundaries.
+    HudRetainedComposition retained;
+    // Set by an element that writes fewer pixels than it occupies -- the
+    // scoreboard repainting a single changed cell inside its panel. The
+    // compositor then keeps the full rectangle as the element's bounds while
+    // reporting only the written pixels as dirty. Null means "occupies exactly
+    // what it drew", which is every other element.
+    QRect hudElementOccupancyPx;
     int textCacheGen = 0;
     float textRenderScale = 1.0f;
     QFont hiResFont;
@@ -520,6 +530,8 @@ static CustomHudConfigState& ActiveHudConfigState()
 #define s_chPrevScopeT (ActiveHudConfigState().chPrevScopeT)
 #define s_chDirtyThisFrame (ActiveHudConfigState().chDirtyThisFrame)
 #define s_drawnDirtyPx (ActiveHudConfigState().drawnDirtyPx)
+#define s_hudRetained (ActiveHudConfigState().retained)
+#define s_hudElementOccupancy (ActiveHudConfigState().hudElementOccupancyPx)
 #define s_textCacheGen (ActiveHudConfigState().textCacheGen)
 #define s_textRenderScale (ActiveHudConfigState().textRenderScale)
 #define s_hiResFont (ActiveHudConfigState().hiResFont)

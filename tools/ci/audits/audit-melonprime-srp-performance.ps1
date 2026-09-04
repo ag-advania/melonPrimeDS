@@ -3441,6 +3441,128 @@ if ($hudPerfProbeText -notmatch 'MELONPRIME_ENABLE_DEVELOPER_FEATURES' -or
     Add-Error 'MP-PERF-001: HUD element profiler is not visibly developer-only/no-op in release builds'
 }
 
+# --- MP-PERF-HUD-COMPOSE-001: retained overlay stays region-based -----------
+#
+# The Custom HUD overlay survives between presented frames. The renderer owns
+# clearing it per element region; a presenter that clears or uploads the whole
+# surface again would put the pixel cost back on the window size instead of on
+# the change.
+$hudDirtyRegionsPath = Join-Path $qtSdl 'MelonPrimeHudDirtyRegions.h'
+$hudRetainedStatePath = Join-Path $qtSdl 'MelonPrimeHudRetainedState.h'
+$hudRetainedComposePath = Join-Path $qtSdl 'MelonPrimeHudRetainedCompose.inc'
+foreach ($requiredPath in @($hudDirtyRegionsPath, $hudRetainedStatePath,
+                            $hudRetainedComposePath)) {
+    if (-not (Test-Path $requiredPath)) {
+        Add-Error "MP-PERF-HUD-COMPOSE-001: missing $(Split-Path $requiredPath -Leaf)"
+    }
+}
+if (Test-Path $hudDirtyRegionsPath) {
+    $hudDirtyRegionsText = [System.IO.File]::ReadAllText($hudDirtyRegionsPath)
+    if ($hudDirtyRegionsText -notmatch 'kMaxRegions' -or
+        $hudDirtyRegionsText -notmatch 'std::array<QRect') {
+        Add-Error 'MP-PERF-HUD-COMPOSE-001: dirty region set is no longer a bounded fixed array'
+    }
+    if ($hudDirtyRegionsText -match 'std::vector|new\s+QRect|malloc') {
+        Add-Error 'MP-PERF-HUD-COMPOSE-001: dirty region set gained a heap allocation'
+    }
+}
+if (Test-Path $hudRetainedComposePath) {
+    $hudRetainedComposeText = [System.IO.File]::ReadAllText($hudRetainedComposePath)
+    foreach ($requiredToken in @('HudElementId', 'HudDirtyRegionSet',
+                                 'HudExpandOverlapRedraw', 'HudClearOverlayRegions')) {
+        if ($hudRetainedComposeText -notmatch [regex]::Escape($requiredToken)) {
+            Add-Error "MP-PERF-HUD-COMPOSE-001: composer token is missing: $requiredToken"
+        }
+    }
+    # The composer is the boundary that must stay free of guest RAM and config.
+    # Comments describe what the boundary forbids, so match code only.
+    $hudRetainedComposeCode = ($hudRetainedComposeText -split "`n" |
+        ForEach-Object { $_ -replace '//.*$', '' }) -join "`n"
+    if ($hudRetainedComposeCode -match 'GetBool\s*\(|GetInt\s*\(|GetDouble\s*\(|Read8\s*\(|Read16\s*\(|Read32\s*\(') {
+        Add-Error 'MP-PERF-HUD-COMPOSE-001: composer performs a config lookup or guest-RAM read'
+    }
+    if ($hudRetainedComposeCode -match 'virtual\s|std::function|std::vector|shared_ptr') {
+        Add-Error 'MP-PERF-HUD-COMPOSE-001: composer gained indirect dispatch or a heap container'
+    }
+}
+
+# --- MP-PERF-HUD-GL-001: the GL HUD composite is scissored to the HUD -------
+#
+# The overlay is a full-window texture that is mostly transparent. Compositing
+# it whole rasterises, samples and blends the entire framebuffer for a HUD that
+# usually occupies a fraction of it.
+if ($hudGlOverlayText -notmatch 'MelonPrimeHud_LogicalRectToScissor' -or
+    $hudGlOverlayText -notmatch 'glEnable\s*\(\s*GL_SCISSOR_TEST') {
+    Add-Error 'MP-PERF-HUD-GL-001: Custom HUD composite lost its dirty scissor path'
+}
+if ($hudGlOverlayText -notmatch 'glDisable\s*\(\s*GL_SCISSOR_TEST') {
+    Add-Error 'MP-PERF-HUD-GL-001: HUD composite scissor is not disabled before the following passes'
+}
+if ($hudGlOverlayText -match 'glUniform2i\s*\(\s*osdSizeULoc[^)]*\)\s*;[\s\S]{0,400}?AddHudOverlayComposite\s*\(\s*static_cast<std::uint64_t>\(fullLogW\)') {
+    Add-Error 'MP-PERF-HUD-GL-001: HUD composite pixel counter reverted to the full window'
+}
+
+# --- MP-PERF-HUD-METAL-001/002: Metal HUD hot path ---------------------------
+#
+# 001: overlayFont is owned by the shared epoch refresh. Resolving it on the
+#      draw path is a Config::Table lookup per visual frame.
+# 002: the HUD-only path must not clear and upload the whole UI surface.
+$hudMetalPath = Join-Path $qtSdl 'MelonPrimeScreenMetal.mm'
+if (Test-Path $hudMetalPath) {
+    $hudMetalText = [System.IO.File]::ReadAllText($hudMetalPath)
+    $hudMetalDrawSplit = $hudMetalText -split 'MelonPrimeHud_RefreshOverlayFontIfNeeded', 2
+    if ($hudMetalDrawSplit.Count -ne 2) {
+        Add-Error 'MP-PERF-HUD-METAL-001: Metal presenter does not use the shared overlay-font epoch helper'
+    } elseif ($hudMetalDrawSplit[1] -match 'CustomHud_ResolveFontPixelSize|CustomHud_ResolveBaseFont') {
+        Add-Error 'MP-PERF-HUD-METAL-001: Metal HUD draw path resolves the HUD font again'
+    }
+    if ($hudMetalText -notmatch 'MelonPrimeHud_RefreshRadarConfigIfNeeded') {
+        Add-Error 'MP-PERF-HUD-METAL-001: Metal presenter reimplements the radar config refresh'
+    }
+    if ($hudMetalText -notmatch 'hudOnlyUiOverlay') {
+        Add-Error 'MP-PERF-HUD-METAL-002: Metal presenter lost its HUD-only overlay distinction'
+    }
+    if ($hudMetalText -notmatch 'MTLRegionMake2D\s*\(\s*region\.x\(\)') {
+        Add-Error 'MP-PERF-HUD-METAL-002: Metal HUD upload is no longer region based'
+    }
+}
+
+# --- MP-PERF-HUD-RADAR-001: CPU radar colour key stays a tight pixel loop ----
+#
+# This loop runs once per pixel of the radar crop on every frame the radar is
+# visible on the software and Vulkan paths. Nothing that allocates, locks, looks
+# up config, or formats text belongs inside it.
+$hudRadarRuntimePath = Join-Path $qtSdl 'MelonPrimeHudRadarRuntime.inc'
+if (Test-Path $hudRadarRuntimePath) {
+    $hudRadarBody = Get-FunctionText -Path $hudRadarRuntimePath `
+        -Signature 'QImage\*\s+CustomHud_PrepareRadarColorKeySource\s*\('
+    if (-not $hudRadarBody) {
+        Add-Error 'MP-PERF-HUD-RADAR-001: CPU radar colour-key body was not found'
+    } else {
+        $hudRadarLoop = $hudRadarBody
+        $loopStart = $hudRadarLoop.IndexOf('for (int y = clippedRect.top()')
+        if ($loopStart -lt 0) {
+            Add-Error 'MP-PERF-HUD-RADAR-001: CPU radar pixel loop was not found'
+        } else {
+            $hudRadarLoopText = $hudRadarLoop.Substring($loopStart)
+            if ($hudRadarLoopText -match 'QString|QPainter|GetBool\s*\(|GetInt\s*\(|GetDouble\s*\(|printf|qDebug|new\s|QImage\s*\(') {
+                Add-Error 'MP-PERF-HUD-RADAR-001: CPU radar pixel loop gained allocation, config, text or logging'
+            }
+        }
+    }
+    if ($hudRadarBody -and $hudRadarBody -notmatch 'RecordRadarCpuFilter') {
+        Add-Error 'MP-PERF-HUD-RADAR-001: CPU radar colour key lost its developer timing probe'
+    }
+}
+$hudConstantsPath = Join-Path $qtSdl 'MelonPrimeConstants.h'
+if (Test-Path $hudConstantsPath) {
+    $hudConstantsText = [System.IO.File]::ReadAllText($hudConstantsPath)
+    if ($hudConstantsText -notmatch 'kRadarPaletteLut\b' -or
+        $hudConstantsText -notmatch 'MakeRadarPaletteLut') {
+        Add-Error 'MP-PERF-HUD-RADAR-001: packed radar palette lookup table is missing'
+    }
+}
+
 # --- Rule I: ARM9 install consumes only the resolved activation plan --------
 #
 # RuntimeConfigSnapshot owns config interpretation. ARM9Hook_Install is the

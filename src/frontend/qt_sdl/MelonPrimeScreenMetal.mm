@@ -43,6 +43,7 @@
 #include "MelonPrimeHudPatchLifecycle.h"
 #include "MelonPrimeHudPresentationState.h"
 #include "MelonPrimeHudScreenVisualState.h"
+#include "MelonPrimeHudScreenOverlay.h"
 #include "MelonPrimePerfProbe.h"
 
 #include "MelonPrimeMetalFeatureCheck.h"
@@ -144,6 +145,7 @@ NSString* const kUiShaderSource =
      "    float2 screenSize;\n"
      "    float yFlipSign;\n"
      "    float _pad;\n"
+     "    float4 uvRect;\n"
      "};\n"
      "vertex UiVOut mp_ui_vs(UiVertexIn in [[stage_in]],\n"
      "                        constant UiUniforms& u [[buffer(1)]]) {\n"
@@ -152,7 +154,7 @@ NSString* const kUiShaderSource =
      "    p.y *= u.yFlipSign;\n"
      "    UiVOut out;\n"
      "    out.position = float4(p, 0.0, 1.0);\n"
-     "    out.texcoord = in.texcoord;\n"
+     "    out.texcoord = u.uvRect.xy + in.texcoord * u.uvRect.zw;\n"
      "    return out;\n"
      "}\n"
      "fragment float4 mp_ui_fs(UiVOut in [[stage_in]],\n"
@@ -293,8 +295,13 @@ struct UiUniforms
     float screenSize[2];
     float yFlipSign;
     float pad;
+    // Sub-rect of the UI texture the quad samples, as origin + size in
+    // normalised coordinates. The whole texture by default, so the OSD and
+    // splash paths are untouched; the Custom HUD uses it to composite one
+    // occupied region at a time instead of blending the whole window.
+    float uvRect[4] = {0.0f, 0.0f, 1.0f, 1.0f};
 };
-static_assert(sizeof(UiUniforms) == 32, "must match the MSL UiUniforms layout exactly");
+static_assert(sizeof(UiUniforms) == 48, "must match the MSL UiUniforms layout exactly");
 
 struct RadarFragmentUniforms
 {
@@ -376,6 +383,10 @@ struct ScreenPanelMetal::Impl
     id<MTLTexture> uiTex = nil;
     int uiTexW = 0;
     int uiTexH = 0;
+    // True once uiTex holds exactly what uiOverlay holds. A partial
+    // replaceRegion is only meaningful on top of a texture that already agrees
+    // with the CPU image everywhere else.
+    bool uiTexContentValid = false;
 
     QImage uiOverlay;
 
@@ -459,8 +470,7 @@ qreal ScreenPanelMetal::devicePixelRatioFromScreenLocal() const
 bool ScreenPanelMetal::initMetal()
 {
 #ifdef MELONPRIME_CUSTOM_HUD
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
+    resetHudRetainedOverlay();
     ++m_hudVisualRendererGeneration;
 #endif
     if (!MelonPrime::Metal::SupportsRequiredBaseline())
@@ -1111,6 +1121,10 @@ void ScreenPanelMetal::drawScreen()
         const int logicalH = std::max(1, static_cast<int>(std::ceil(static_cast<double>(h) / static_cast<double>(scale))));
         bool overlayHasContent = false;
         bool hudVisualReuse = false;
+        // Metal's UI texture also carries OSD and splash pixels. Partial clear,
+        // partial upload and per-region composite are only correct on a frame
+        // where the Custom HUD is the sole author of that surface.
+        const bool hudOnlyUiOverlay = emuThread->emuIsActive() && osdItems.empty();
 #ifdef MELONPRIME_CUSTOM_HUD
         bool gpuRadarEnabledForFrame = false;
         UiUniforms gpuRadarUiUniforms{};
@@ -1123,7 +1137,7 @@ void ScreenPanelMetal::drawScreen()
         // Metal's UI texture also carries OSD/splash pixels. Reuse is safe
         // only when this frame has no other CPU overlay that would need the
         // retained QImage to be cleared or updated.
-        const bool noOtherUiOverlay = emuThread->emuIsActive() && osdItems.empty();
+        const bool noOtherUiOverlay = hudOnlyUiOverlay;
         auto* preflightMp = emuThread->GetMelonPrimeCore();
         if (preflightMp && preflightMp->IsRomDetected()
             && (preflightMp->IsInGame()
@@ -1132,18 +1146,17 @@ void ScreenPanelMetal::drawScreen()
             auto& preflightCfg = emuInstance->getLocalConfig();
             const bool preflightEditMode =
                 MelonPrime::CustomHud_IsEditMode(preflightMp->HudConfigState());
-            const uint32_t preflightEpoch =
-                MelonPrime::CustomHud_GetCacheEpoch(preflightMp->HudConfigState());
-            if (preflightEpoch != m_hudCfgEpoch) {
-                m_hudCfgEpoch = preflightEpoch;
-                m_hudEnabled = MelonPrime::CustomHud_IsEnabled(preflightCfg);
-            }
-            if (preflightEpoch != m_hudFontEpoch) {
-                m_hudFontEpoch = preflightEpoch;
-                overlayFont = MelonPrime::CustomHud_ResolveBaseFont(preflightCfg);
-                overlayFont.setPixelSize(
-                    MelonPrime::CustomHud_ResolveFontPixelSize(preflightCfg));
-            }
+            // The shared epoch helpers are the single owner of the HUD-enabled
+            // decision and of overlayFont, exactly as on the software, OpenGL
+            // and Vulkan panels. Nothing below may resolve the font again: a
+            // font size lookup on the draw path is a Config::Table hash lookup
+            // per visual frame, which is what the epoch cache exists to avoid.
+            MelonPrimeHud_RefreshHudEnabledIfNeeded(
+                preflightMp->HudConfigState(), preflightCfg,
+                m_hudCfgEpoch, m_hudEnabled);
+            MelonPrimeHud_RefreshOverlayFontIfNeeded(
+                preflightMp->HudConfigState(), preflightCfg,
+                m_hudFontEpoch, overlayFont);
             visualIdentity = MelonPrimeHud_ProbeVisualFrameIdentity(emuInstance);
             MelonPrimePerf::CountHudVisualIdentityProbe();
             visualIdentityValid = true;
@@ -1168,23 +1181,44 @@ void ScreenPanelMetal::drawScreen()
                 hudVisualReuse = m_hudVisualFrameValid
                     && hudVisualKey == m_hudVisualFrameKey;
             } else {
-                m_hudVisualFrameValid = false;
-                m_hudVisualFrameWasReused = false;
+                resetHudRetainedOverlay();
             }
         } else {
-            m_hudVisualFrameValid = false;
-            m_hudVisualFrameWasReused = false;
+            resetHudRetainedOverlay();
         }
         m_hudVisualFrameWasReused = hudVisualReuse;
         if (hudVisualReuse)
             MelonPrimePerf::CountHudVisualReuse();
 #endif
 
+        // The UI overlay is retained. A full-surface clear costs
+        // logicalW * logicalH words every visual frame regardless of how many
+        // HUD pixels moved, so it is reserved for the consumers that really do
+        // rewrite the whole surface.
+        bool uiOverlayFullyCleared = false;
         if (!hudVisualReuse) {
-            MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
-            if (m->uiOverlay.width() != logicalW || m->uiOverlay.height() != logicalH)
+            if (m->uiOverlay.width() != logicalW || m->uiOverlay.height() != logicalH
+                || m->uiOverlay.format() != QImage::Format_ARGB32_Premultiplied) {
+                MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
                 m->uiOverlay = QImage(logicalW, logicalH, QImage::Format_ARGB32_Premultiplied);
-            m->uiOverlay.fill(Qt::transparent);
+                m->uiOverlay.fill(Qt::transparent);
+                uiOverlayFullyCleared = true;
+#ifdef MELONPRIME_CUSTOM_HUD
+                m_hudOverlayRetained = false;
+#endif
+            } else if (!hudOnlyUiOverlay) {
+                // OSD items and the splash screen repaint themselves from
+                // scratch and keep no per-region bookkeeping, so they still get
+                // the historical full clear.
+                MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
+                m->uiOverlay.fill(Qt::transparent);
+                uiOverlayFullyCleared = true;
+#ifdef MELONPRIME_CUSTOM_HUD
+                m_hudOverlayRetained = false;
+#endif
+            }
+            // Otherwise this is a HUD-only frame: the Custom HUD renderer owns
+            // clearing, and it clears only the regions it is about to redraw.
         }
 #ifdef MELONPRIME_CUSTOM_HUD
         else
@@ -1220,32 +1254,16 @@ void ScreenPanelMetal::drawScreen()
                 }
                 else
                 {
-                    // Keep the Metal path's cached values in the
-                    // ScreenPanel-owned fields shared with OpenGL/Vulkan.
-                    const uint32_t hudEpoch =
-                        MelonPrime::CustomHud_GetCacheEpoch(mp->HudConfigState());
-                    if (hudEpoch != m_radarCfgEpoch)
-                    {
-                        m_radarCfgEpoch = hudEpoch;
-                        m_radarEnable =
-                            instcfg.GetBool("Metroid.Visual.BtmOverlayEnable");
-                        m_radarAnchor =
-                            instcfg.GetInt("Metroid.Visual.BtmOverlayAnchor");
-                        m_radarDstX =
-                            instcfg.GetInt("Metroid.Visual.BtmOverlayDstX");
-                        m_radarDstY =
-                            instcfg.GetInt("Metroid.Visual.BtmOverlayDstY");
-                        m_radarDstSize = std::max(
-                            instcfg.GetInt("Metroid.Visual.BtmOverlayDstSize"), 1);
-                        m_radarOpacity = std::clamp(
-                            static_cast<float>(
-                                instcfg.GetDouble("Metroid.Visual.BtmOverlayOpacity")),
-                            0.0f, 1.0f);
-                        m_radarSrcRadius =
-                            instcfg.GetInt("Metroid.Visual.BtmOverlaySrcRadius");
-                        m_radarAnchorDsX = (m_radarAnchor % 3) * 128.0f;
-                        m_radarAnchorDsY = (m_radarAnchor / 3) * 96.0f;
-                    }
+                    // Same shared helper the other three panels use, rather
+                    // than a private copy of the key names and clamp rules: a
+                    // renamed key or a changed clamp must not apply to three
+                    // renderers and miss the fourth.
+                    MelonPrimeHud_RefreshRadarConfigIfNeeded(
+                        mp->HudConfigState(), instcfg, m_radarCfgEpoch,
+                        m_radarEnable, m_radarAnchor,
+                        m_radarDstX, m_radarDstY, m_radarDstSize,
+                        m_radarOpacity, m_radarSrcRadius,
+                        m_radarAnchorDsX, m_radarAnchorDsY);
 
                     // Metal and Metal Compute share this presenter. Sample the
                     // renderer-owned logical bottom layer and key on the GPU.
@@ -1311,17 +1329,20 @@ void ScreenPanelMetal::drawScreen()
                     if (hudVisualReuse) {
                         // The retained uiTex already contains the HUD image;
                         // the GPU radar pass above remains live and is still
-                        // emitted for the current presentation.
+                        // emitted for the current presentation. Nothing changed,
+                        // so nothing is dirty.
+                        m_hudDirtyRegions.Reset();
+                        MelonPrimePerf::CountHudRetainedOnlyFrame();
                         overlayHasContent = true;
                     } else {
-                        if (overlayFont.family().isEmpty())
-                            overlayFont = MelonPrime::CustomHud_ResolveBaseFont(instcfg);
-                        overlayFont.setPixelSize(MelonPrime::CustomHud_ResolveFontPixelSize(instcfg));
+                        // overlayFont is owned by the epoch refresh in the
+                        // preflight above; resolving it again here would put a
+                        // Config::Table lookup back on the visual-frame path.
                         ensureOverlayPainter().setFont(overlayFont);
 
                         MelonPrimePerf::CountHudVisualRender();
                         const auto hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
-                        const QRect dirty = MelonPrime::CustomHud_Render(
+                        MelonPrime::CustomHud_Render(
                             mp->HudConfigState(),
                             emuInstance, instcfg,
                             mp->GetCurrentRom(), mp->GetAddrHot(),
@@ -1333,16 +1354,24 @@ void ScreenPanelMetal::drawScreen()
                             m_hudTopMatrixValid ? m_topStretchX : 1.0f,
                             m_hudScale,
                             (m_hudScale != 0.0f) ? (m_hudOriginX / m_hudScale) : 0.0f,
-                            (m_hudScale != 0.0f) ? (m_hudOriginY / m_hudScale) : 0.0f);
+                            (m_hudScale != 0.0f) ? (m_hudOriginY / m_hudScale) : 0.0f,
+                            nullptr,
+                            nullptr,
+                            m_hudOverlayRetained && !uiOverlayFullyCleared,
+                            &m_hudDirtyRegions,
+                            &m_hudContentRegions);
+                        m_hudOverlayRetained = true;
                         if (hudRenderStart)
                             MelonPrimePerf::AddCustomHudRenderTicks(
                                 MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
-                        if (MelonPrimePerf::IsFrameActive() && !dirty.isEmpty())
+                        if (MelonPrimePerf::IsFrameActive() && !m_hudDirtyRegions.IsEmpty())
                         {
-                            MelonPrimePerf::AddHudDirtyArea(dirty.width() * dirty.height());
+                            MelonPrimePerf::AddHudDirtyArea(
+                                static_cast<int>(m_hudDirtyRegions.PixelCount()));
                             MelonPrimePerf::CountCustomHudDrawn();
                         }
-                        overlayHasContent = overlayHasContent || !dirty.isEmpty();
+                        overlayHasContent =
+                            overlayHasContent || !m_hudContentRegions.IsEmpty();
                         if (!hudVisualKeyValid) {
                             if (!visualIdentityValid) {
                                 visualIdentity = MelonPrimeHud_ProbeVisualFrameIdentity(
@@ -1422,39 +1451,137 @@ void ScreenPanelMetal::drawScreen()
                 m->uiTex = [m->device newTextureWithDescriptor:uiDesc];
                 m->uiTexW = logicalW;
                 m->uiTexH = logicalH;
+                // A brand new texture agrees with nothing, so the first upload
+                // onto it has to be the whole surface.
+                m->uiTexContentValid = false;
             }
 
             if (m->uiTex)
             {
                 MelonPrimePerf::ScopedHudPhase compositeTimer(
                     MelonPrimePerf::HudPhase::Composite);
+#ifdef MELONPRIME_CUSTOM_HUD
+                // Partial upload is only sound when the Custom HUD is the sole
+                // author of this surface (its per-element bounds describe every
+                // pixel on it) and the texture already agrees with the CPU image
+                // outside the regions being replaced.
+                const bool partialUiUpload = hudOnlyUiOverlay
+                    && m->uiTexContentValid
+                    && !uiOverlayFullyCleared;
+#else
+                const bool partialUiUpload = false;
+#endif
                 if (!hudVisualReuse) {
                     MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                         MelonPrimePerf::HudPhase::UploadPrepare);
                     MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
                         MelonPrimePerf::HudPhase::GpuUpload);
-                    MelonPrimePerf::CountHudUploadCall();
-                    [m->uiTex replaceRegion:MTLRegionMake2D(0, 0, logicalW, logicalH)
-                                 mipmapLevel:0
-                                          withBytes:m->uiOverlay.constBits()
-                                 bytesPerRow:m->uiOverlay.bytesPerLine()];
+#ifdef MELONPRIME_CUSTOM_HUD
+                    if (partialUiUpload) {
+                        // uiTex retains the previous frame, so the regions to
+                        // send are exactly the ones the renderer reported: they
+                        // already include the previous bounds of anything that
+                        // moved, which is what erases the old pixels on the GPU
+                        // side as well.
+                        HudDirtyRegionSet uploadRegions = m_hudDirtyRegions;
+                        uploadRegions.IntersectWith(QRect(0, 0, logicalW, logicalH));
+                        for (int regionIndex = 0;
+                             regionIndex < uploadRegions.Count(); ++regionIndex) {
+                            const QRect region = uploadRegions.Region(regionIndex);
+                            if (region.isEmpty())
+                                continue;
+                            MelonPrimePerf::CountHudUploadCall();
+                            const std::uint64_t regionPixels =
+                                static_cast<std::uint64_t>(region.width())
+                                * static_cast<std::uint64_t>(region.height());
+                            MelonPrimePerf::AddHudUploadRegion(
+                                regionPixels, regionPixels * 4u);
+                            // Offset the source pointer to the region's own top
+                            // left; bytesPerRow stays the full QImage stride so
+                            // Metal walks whole overlay rows between the region's
+                            // rows.
+                            const uchar* regionBits = m->uiOverlay.constBits()
+                                + static_cast<std::size_t>(region.y())
+                                    * static_cast<std::size_t>(m->uiOverlay.bytesPerLine())
+                                + static_cast<std::size_t>(region.x()) * 4u;
+                            [m->uiTex replaceRegion:MTLRegionMake2D(
+                                                        region.x(), region.y(),
+                                                        region.width(), region.height())
+                                        mipmapLevel:0
+                                          withBytes:regionBits
+                                        bytesPerRow:m->uiOverlay.bytesPerLine()];
+                        }
+                    } else
+#endif
+                    {
+                        MelonPrimePerf::CountHudUploadCall();
+                        const std::uint64_t fullPixels =
+                            static_cast<std::uint64_t>(logicalW)
+                            * static_cast<std::uint64_t>(logicalH);
+                        MelonPrimePerf::AddHudUploadRegion(fullPixels, fullPixels * 4u);
+                        [m->uiTex replaceRegion:MTLRegionMake2D(0, 0, logicalW, logicalH)
+                                     mipmapLevel:0
+                                              withBytes:m->uiOverlay.constBits()
+                                     bytesPerRow:m->uiOverlay.bytesPerLine()];
+                    }
+                    m->uiTexContentValid = true;
                 }
 
                 UiUniforms uiUniforms{};
-                uiUniforms.rect[0] = 0.0f;
-                uiUniforms.rect[1] = 0.0f;
-                uiUniforms.rect[2] = static_cast<float>(logicalW);
-                uiUniforms.rect[3] = static_cast<float>(logicalH);
                 uiUniforms.screenSize[0] = static_cast<float>(logicalW);
                 uiUniforms.screenSize[1] = static_cast<float>(logicalH);
                 uiUniforms.yFlipSign = yFlipSign;
 
                 [encoder setRenderPipelineState:m->uiPipeline];
                 [encoder setVertexBuffer:m->uiVertexBuffer offset:0 atIndex:0];
-                [encoder setVertexBytes:&uiUniforms length:sizeof(uiUniforms) atIndex:1];
                 [encoder setFragmentTexture:m->uiTex atIndex:0];
                 [encoder setFragmentSamplerState:m->nearestSampler atIndex:0];
-                [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+
+#ifdef MELONPRIME_CUSTOM_HUD
+                // On a HUD-only frame the surface is mostly transparent, and
+                // blending it whole costs fragment and framebuffer bandwidth
+                // proportional to the window rather than to the HUD. Composite
+                // one occupied region at a time instead, each sampling its own
+                // slice of the texture through uvRect.
+                if (hudOnlyUiOverlay && !m_hudContentRegions.IsEmpty()
+                    && logicalW > 0 && logicalH > 0)
+                {
+                    HudDirtyRegionSet compositeRegions = m_hudContentRegions;
+                    compositeRegions.IntersectWith(QRect(0, 0, logicalW, logicalH));
+                    const float texW = static_cast<float>(logicalW);
+                    const float texH = static_cast<float>(logicalH);
+                    for (int regionIndex = 0;
+                         regionIndex < compositeRegions.Count(); ++regionIndex)
+                    {
+                        const QRect region = compositeRegions.Region(regionIndex);
+                        if (region.isEmpty())
+                            continue;
+                        uiUniforms.rect[0] = static_cast<float>(region.x());
+                        uiUniforms.rect[1] = static_cast<float>(region.y());
+                        uiUniforms.rect[2] = static_cast<float>(region.width());
+                        uiUniforms.rect[3] = static_cast<float>(region.height());
+                        uiUniforms.uvRect[0] = static_cast<float>(region.x()) / texW;
+                        uiUniforms.uvRect[1] = static_cast<float>(region.y()) / texH;
+                        uiUniforms.uvRect[2] = static_cast<float>(region.width()) / texW;
+                        uiUniforms.uvRect[3] = static_cast<float>(region.height()) / texH;
+                        [encoder setVertexBytes:&uiUniforms
+                                          length:sizeof(uiUniforms)
+                                         atIndex:1];
+                        [encoder drawPrimitives:MTLPrimitiveTypeTriangle
+                                     vertexStart:0
+                                     vertexCount:6];
+                    }
+                }
+                else
+#endif
+                {
+                    uiUniforms.rect[0] = 0.0f;
+                    uiUniforms.rect[1] = 0.0f;
+                    uiUniforms.rect[2] = static_cast<float>(logicalW);
+                    uiUniforms.rect[3] = static_cast<float>(logicalH);
+                    [encoder setVertexBytes:&uiUniforms length:sizeof(uiUniforms) atIndex:1];
+                    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:6];
+                }
             }
         }
 

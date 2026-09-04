@@ -415,6 +415,28 @@ static inline void AccumDirtyDs(const QPainter* p, const QRectF& ds)
     AccumDirtyDevPx(QRectF(QPointF(minx, miny), QPointF(maxx, maxy)));
 }
 
+// Same mapping as AccumDirtyDs, but returning the device bbox instead of
+// accumulating it. Used by an element that has to report what it occupies
+// separately from what it just rewrote.
+static inline QRect DeviceRectFor(const QPainter* p, const QRectF& ds)
+{
+    if (ds.isEmpty()) return QRect();
+    const QTransform& xf = p->transform();
+    qreal x0, y0, x1, y1, x2, y2, x3, y3;
+    xf.map(ds.left(),  ds.top(),    &x0, &y0);
+    xf.map(ds.right(), ds.top(),    &x1, &y1);
+    xf.map(ds.left(),  ds.bottom(), &x2, &y2);
+    xf.map(ds.right(), ds.bottom(), &x3, &y3);
+    const qreal minx = std::min(std::min(x0, x1), std::min(x2, x3));
+    const qreal maxx = std::max(std::max(x0, x1), std::max(x2, x3));
+    const qreal miny = std::min(std::min(y0, y1), std::min(y2, y3));
+    const qreal maxy = std::max(std::max(y0, y1), std::max(y2, y3));
+    return QRect(QPoint(static_cast<int>(std::floor(minx)) - 1,
+                        static_cast<int>(std::floor(miny)) - 1),
+                 QPoint(static_cast<int>(std::ceil(maxx)) + 1,
+                        static_cast<int>(std::ceil(maxy)) + 1));
+}
+
 static void NotifyCrosshairZoomNotDrawn()
 {
     s_chCrosshairDrawnLastFrame = false;

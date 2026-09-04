@@ -30,9 +30,12 @@
 #include <QPainter>
 #include <QRect>
 
+#include <cmath>
+
 #include "Config.h"
 #include "EmuInstance.h"
 #include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudDirtyRegions.h"
 #include "MelonPrimeHudPatchLifecycle.h"
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimePerfProbe.h"
@@ -42,74 +45,99 @@
 // other consumers.
 #include "MelonPrimeHudPropSchema.inc"
 
-inline void MelonPrimeHud_PrepareTopOverlay(
-    QImage& overlay,
-    int outW,
-    int outH,
-    QRect& prevDirty)
+// Make sure the retained overlay exists at the requested size.
+//
+// Clearing is deliberately *not* done here any more. The Custom HUD renderer
+// owns the retained image: it is the only place that knows which regions are
+// about to be redrawn, and clearing a bounding box here would throw away the
+// pixels of every element that did not change. All this does is allocate.
+//
+// Returns true when the image had to be created or resized, which means every
+// retained pixel -- and every per-element bound that described it -- is gone
+// and the next render must start from a full recompose.
+inline bool MelonPrimeHud_EnsureTopOverlay(QImage& overlay, int outW, int outH)
 {
+    if (overlay.width() == outW
+        && overlay.height() == outH
+        && overlay.format() == QImage::Format_ARGB32_Premultiplied)
+        return false;
+
     MelonPrimePerf::ScopedHudPhase clearTimer(MelonPrimePerf::HudPhase::Clear);
-    if (overlay.width() != outW || overlay.height() != outH) {
-        overlay = QImage(outW, outH, QImage::Format_ARGB32_Premultiplied);
-        overlay.fill(Qt::transparent);
-        prevDirty = QRect();
-        return;
-    }
-
-    if (!prevDirty.isEmpty()) {
-        // OPT-HUD-1: Direct scanline clear — avoids QPainter construction +
-        // raster-engine setup (~500–2000 cyc/frame when HUD is visible).
-        // ARGB32_Premultiplied transparent == 0x00000000, so memset-to-0 is correct.
-        const int left  = std::max(0, prevDirty.left());
-        const int right = std::min(overlay.width()  - 1, prevDirty.right());
-        const int top   = std::max(0, prevDirty.top());
-        const int bot   = std::min(overlay.height() - 1, prevDirty.bottom());
-        if (left <= right && top <= bot) {
-            const std::size_t clearBytes =
-                static_cast<std::size_t>(right - left + 1) * sizeof(QRgb);
-            for (int y = top; y <= bot; ++y)
-                std::memset(reinterpret_cast<QRgb*>(overlay.scanLine(y)) + left,
-                            0, clearBytes);
-        }
-    }
+    overlay = QImage(outW, outH, QImage::Format_ARGB32_Premultiplied);
+    overlay.fill(Qt::transparent);
+    return true;
 }
 
-// OPT-DR3: FNV-1a hash of an overlay sub-region, used to skip a redundant GPU
-// upload when the rendered HUD pixels are byte-identical to the last uploaded
-// region. The motivating case is holding a zoom scope still: the large scope
-// reticle bbox is otherwise re-uploaded via glTexSubImage2D every frame even
-// though its pixels never change. Hashing the region (cache-warm CPU read) is
-// cheaper than a multi-MB PCIe upload + driver sync at high internal
-// resolutions. Pixel-exact, so it can never leave the HUD stale.
-inline uint64_t MelonPrimeHud_HashImageRegion(const QImage& img, const QRect& r)
+// Blit a region set out of the retained overlay onto a presentation painter.
+// Used by the presenters that composite on the CPU (native Software, and the
+// DX12 panel's retained HUD image).
+inline void MelonPrimeHud_CompositeRegions(
+    QPainter& painter,
+    const QImage& overlay,
+    const HudDirtyRegionSet& regions)
 {
-    MelonPrimePerf::ScopedHudPhase hashTimer(MelonPrimePerf::HudPhase::Hash);
-    uint64_t h = 1469598103934665603ull; // FNV-1a offset basis
-    const int left  = std::max(0, r.left());
-    const int right = std::min(img.width()  - 1, r.right());
-    const int top   = std::max(0, r.top());
-    const int bot   = std::min(img.height() - 1, r.bottom());
-    if (left > right || top > bot)
-        return h;
-
-    const int rowBytes = (right - left + 1) * 4; // ARGB32 = 4 bytes/pixel
-    MelonPrimePerf::CountHudRegionHash(
-        static_cast<std::size_t>(rowBytes) * static_cast<std::size_t>(bot - top + 1));
-    for (int y = top; y <= bot; ++y) {
-        const uchar* row = img.scanLine(y) + left * 4;
-        int i = 0;
-        for (; i + 8 <= rowBytes; i += 8) {
-            uint64_t chunk;
-            std::memcpy(&chunk, row + i, 8);
-            h = (h ^ chunk) * 1099511628211ull;
-        }
-        for (; i < rowBytes; ++i)
-            h = (h ^ static_cast<uint64_t>(row[i])) * 1099511628211ull;
+    for (int i = 0; i < regions.Count(); ++i) {
+        const QRect region =
+            regions.Region(i) & QRect(0, 0, overlay.width(), overlay.height());
+        if (region.isEmpty())
+            continue;
+        const std::uint64_t pixels =
+            static_cast<std::uint64_t>(region.width())
+            * static_cast<std::uint64_t>(region.height());
+        MelonPrimePerf::AddHudOverlayComposite(pixels * sizeof(QRgb), pixels);
+        painter.drawImage(QPoint(region.x(), region.y()), overlay, region);
     }
-    // Fold geometry so a same-pixels region move is never mistaken for unchanged.
-    h ^= (static_cast<uint64_t>(r.width()) << 32) ^ static_cast<uint64_t>(r.height());
-    return h;
 }
+
+// Translate a logical, top-left-origin overlay rectangle into an OpenGL
+// scissor box: physical framebuffer pixels, bottom-left origin.
+//
+// The edges are grown outward (floor the near edges, ceil the far ones) so a
+// fractional device pixel ratio can never scissor away the outermost row or
+// column of a HUD element, then clamped to the framebuffer.
+inline bool MelonPrimeHud_LogicalRectToScissor(
+    const QRect& logical,
+    float factor,
+    int framebufferWidth,
+    int framebufferHeight,
+    int& outX,
+    int& outY,
+    int& outWidth,
+    int& outHeight)
+{
+    if (logical.isEmpty() || factor <= 0.0f
+        || framebufferWidth <= 0 || framebufferHeight <= 0)
+        return false;
+
+    const int left = static_cast<int>(std::floor(logical.left() * factor));
+    const int right = static_cast<int>(std::ceil((logical.right() + 1) * factor));
+    const int top = static_cast<int>(std::floor(logical.top() * factor));
+    const int bottom = static_cast<int>(std::ceil((logical.bottom() + 1) * factor));
+
+    const int clampedLeft = std::max(0, std::min(left, framebufferWidth));
+    const int clampedRight = std::max(clampedLeft, std::min(right, framebufferWidth));
+    const int clampedTop = std::max(0, std::min(top, framebufferHeight));
+    const int clampedBottom = std::max(clampedTop, std::min(bottom, framebufferHeight));
+
+    outWidth = clampedRight - clampedLeft;
+    outHeight = clampedBottom - clampedTop;
+    if (outWidth <= 0 || outHeight <= 0)
+        return false;
+
+    outX = clampedLeft;
+    // GL framebuffer coordinates count up from the bottom edge.
+    outY = framebufferHeight - clampedBottom;
+    return true;
+}
+
+// OPT-DR3 (retired): a whole-region content hash used to sit here so a large
+// but unchanged dirty rectangle -- a held zoom scope was the motivating case --
+// could skip its GPU upload. It was a defence against the bounding-box dirty
+// contract, and the per-element visual stamps replace it exactly: an unchanged
+// element no longer reaches the upload path at all, so hashing multiple
+// megabytes of overlay every frame to discover the same thing would be pure
+// memory bandwidth. Do not reintroduce a per-frame hash here; if a region ever
+// needs one, it belongs to the element that produced it.
 
 inline bool MelonPrimeHud_RefreshHudEpoch(
     const MelonPrime::CustomHudConfigState& hudConfig,
@@ -197,8 +225,21 @@ inline bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     return hudVisible;
 }
 
+// What one Custom HUD render did to the retained overlay.
+//
+// `dirty` is what changed and therefore what a backend has to upload; `content`
+// is where the HUD currently has pixels and therefore what it has to
+// composite. They are different sets on purpose: the game frame under the HUD
+// is repainted every presentation, so the whole HUD must be blended back over
+// it even on a frame where nothing changed.
+struct HudOverlayUpdate {
+    HudDirtyRegionSet dirty;
+    HudDirtyRegionSet content;
+    QRect dirtyBounds;
+};
+
 template <typename CoreT>
-inline QRect MelonPrimeHud_RenderTopOverlay(
+inline HudOverlayUpdate MelonPrimeHud_RenderTopOverlay(
     EmuInstance* emuInstance,
     Config::Table& instcfg,
     CoreT* mp,
@@ -209,6 +250,7 @@ inline QRect MelonPrimeHud_RenderTopOverlay(
     float hudScale,
     float hudOriginX,
     float hudOriginY,
+    bool overlayRetained,
     const QImage* bottomScreen = nullptr,
     QImage* filteredBottomScreen = nullptr,
     int radarSourceRadius = 0,
@@ -218,6 +260,7 @@ inline QRect MelonPrimeHud_RenderTopOverlay(
     const float hudOriginXds = hudOriginX / hudScale;
     const float hudOriginYds = hudOriginY / hudScale;
 
+    HudOverlayUpdate update;
     QPainter topP(&overlay);
     topP.setFont(overlayFont);
     QImage* radarSource = MelonPrime::CustomHud_PrepareRadarColorKeySource(
@@ -228,7 +271,7 @@ inline QRect MelonPrimeHud_RenderTopOverlay(
     // `auto` rather than a fixed width: the measurement and shipping probe
     // builds declare different tick types for the same expression.
     const auto hudRenderStart = MelonPrimePerf::ReadTicksIfActive();
-    const QRect hudDirty = MelonPrime::CustomHud_Render(
+    update.dirtyBounds = MelonPrime::CustomHud_Render(
         mp->HudConfigState(),
         emuInstance, instcfg,
         mp->GetCurrentRom(), mp->GetAddrHot(),
@@ -240,15 +283,18 @@ inline QRect MelonPrimeHud_RenderTopOverlay(
         topStretchX, hudScale,
         hudOriginXds, hudOriginYds,
         directScoreboardPaint,
-        nativePaintPerf);
+        nativePaintPerf,
+        overlayRetained,
+        &update.dirty,
+        &update.content);
     if (hudRenderStart)
         MelonPrimePerf::AddCustomHudRenderTicks(MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
-    if (MelonPrimePerf::IsFrameActive() && !hudDirty.isEmpty())
+    if (MelonPrimePerf::IsFrameActive() && !update.dirty.IsEmpty())
     {
-        MelonPrimePerf::AddHudDirtyArea(hudDirty.width() * hudDirty.height());
+        MelonPrimePerf::AddHudDirtyArea(static_cast<int>(update.dirty.PixelCount()));
         MelonPrimePerf::CountCustomHudDrawn();
     }
-    return hudDirty;
+    return update;
 }
 
 #endif // MELONPRIME_CUSTOM_HUD

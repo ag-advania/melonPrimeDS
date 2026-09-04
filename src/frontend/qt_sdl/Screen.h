@@ -50,6 +50,7 @@
 
 #ifdef MELONPRIME_CUSTOM_HUD
 #include "MelonPrimeHudScreenVisualTypes.h"
+#include "MelonPrimeHudDirtyRegions.h"
 #endif // MELONPRIME_CUSTOM_HUD
 
 class MainWindow;
@@ -433,14 +434,34 @@ protected:
     int      m_radarSrcRadius = 46;
     float    m_radarAnchorDsX = 256.0f;
     float    m_radarAnchorDsY = 0.0f;
-    QRect    m_hudPrevDirty;
-    QRect    m_hudUploadedRect;
-    uint64_t m_hudUploadedHash = 0;
-    bool     m_hudUploadedValid = false;
+    // What the last Custom HUD render changed (upload) and where the HUD
+    // currently has pixels (composite). These are separate sets: the game
+    // frame underneath is repainted every presentation, so the whole HUD is
+    // composited back over it even on a frame where nothing changed.
+    HudDirtyRegionSet m_hudDirtyRegions;
+    HudDirtyRegionSet m_hudContentRegions;
+    // False whenever this panel cannot vouch for the retained overlay pixels:
+    // first frame, resize, renderer switch, or a lifecycle reset. The renderer
+    // then starts from a full recompose instead of trusting per-element bounds.
+    bool     m_hudOverlayRetained = false;
     HudVisualFrameKey m_hudVisualFrameKey;
     bool     m_hudVisualFrameValid = false;
     bool     m_hudVisualFrameWasReused = false;
     uint64_t m_hudVisualRendererGeneration = 1;
+
+    // Forget everything remembered about the retained Custom HUD overlay.
+    // Called wherever the pixels those records describe can no longer be
+    // trusted: a renderer transition, presenter re-creation, or a layout/DPI
+    // change. Without it the compositor would clear and re-apply per-element
+    // bounds that belong to a surface that no longer exists.
+    void resetHudRetainedOverlay()
+    {
+        m_hudVisualFrameValid = false;
+        m_hudVisualFrameWasReused = false;
+        m_hudOverlayRetained = false;
+        m_hudDirtyRegions.Reset();
+        m_hudContentRegions.Reset();
+    }
 #endif
 
 #ifdef MELONPRIME_DS
@@ -756,15 +777,17 @@ private:
     // to show. Emulation thread.
     bool buildOsdStrip(QSize& outSize);
 #ifdef MELONPRIME_CUSTOM_HUD
-    // Renders the Custom HUD into Overlay[0] and reports its dirty rect.
-    // False when the HUD is not visible this frame, in which case the stale
-    // overlay texture must not be drawn. Emulation thread.
+    // Renders the Custom HUD into Overlay[0] and reports both the regions
+    // whose pixels changed (upload) and the regions the HUD occupies
+    // (composite). False when the HUD is not visible this frame, in which case
+    // the stale overlay texture must not be drawn. Emulation thread.
     bool renderHudOverlay(
         EmuThread* emuThread,
         QImage* bottomScreen,
         int logicalWidth,
         int logicalHeight,
-        QRect& outDirty);
+        HudDirtyRegionSet& outDirty,
+        HudDirtyRegionSet& outContent);
 #endif
 
     struct VulkanState;

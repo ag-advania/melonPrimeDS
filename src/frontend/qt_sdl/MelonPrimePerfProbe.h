@@ -203,6 +203,35 @@ struct State {
     uint64_t cntHudRegionHashCalls = 0;
     uint64_t sumHudRegionHashBytes = 0;
     uint64_t cntHudUploadCalls = 0;
+    // Retained composer: how the per-frame HUD pixel work actually splits.
+    // hud_visual_change_frames vs hud_visual_nochange_frames answers "did the
+    // HUD change at all this frame"; the pixel sums answer "and how much of
+    // the surface did that cost".
+    uint64_t cntHudFullRecomposes = 0;
+    uint64_t cntHudPartialRecomposes = 0;
+    uint64_t cntHudComposeRepairPasses = 0;
+    uint64_t cntHudComposeRepairFallbacks = 0;
+    uint64_t cntHudElementVisualChanges = 0;
+    uint64_t cntHudVisualChangeFrames = 0;
+    uint64_t cntHudVisualNoChangeFrames = 0;
+    uint64_t cntHudRetainedOnlyFrames = 0;
+    uint64_t sumHudClearPixels = 0;
+    uint64_t sumHudRecomposePixels = 0;
+    uint64_t cntHudDirtyRegions = 0;
+    uint64_t sumHudDirtyRegionPixels = 0;
+    uint64_t sumHudDirtyBboxPixels = 0;
+    uint64_t sumHudUploadPixels = 0;
+    uint64_t sumHudUploadBytes = 0;
+    // Scoreboard composite into the retained overlay, as opposed to the
+    // scoreboard's own internal raster update.
+    uint64_t cntScoreboardOuterCompositeCalls = 0;
+    uint64_t sumScoreboardOuterCompositePixels = 0;
+    uint64_t sumScoreboardPartialCompositePixels = 0;
+    uint64_t cntScoreboardNoChangeFrames = 0;
+    // CPU radar colour-key preprocessing (Software and Vulkan).
+    uint64_t cntRadarCpuFilterCalls = 0;
+    uint64_t sumRadarCpuFilterPixels = 0;
+    Uint64 sumRadarCpuFilterTicks = 0;
     uint64_t cntHudRadarVboUploads = 0;
     uint64_t cntHudRadarTexParameterCalls = 0;
     uint64_t cntHudRestoreFastRejects = 0;
@@ -1094,6 +1123,52 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         static_cast<unsigned long long>(st.cntHudRestoreFastRejects),
         static_cast<unsigned long long>(st.cntHudRestoreRuntimeReads),
         static_cast<unsigned long long>(st.cntHudPatchWrites));
+
+    // Retained compositor line. The two questions it answers are "how often did
+    // the HUD actually change" (change vs nochange frames) and "when it did,
+    // how much of the surface did that cost" -- region pixels against the
+    // bounding-box pixels the old single-rectangle contract would have used.
+    const double overdrawRatio = st.sumHudDirtyRegionPixels
+        ? static_cast<double>(st.sumHudDirtyBboxPixels)
+            / static_cast<double>(st.sumHudDirtyRegionPixels)
+        : 0.0;
+    std::fprintf(stderr,
+        "[MelonPrimePerf] hud_compose session_id=%s instance_id=%llu report_seq=%llu "
+        "visual_change_frames=%llu visual_nochange_frames=%llu retained_only_frames=%llu "
+        "full_recompose=%llu partial_recompose=%llu repair_pass=%llu repair_fallback=%llu "
+        "element_changes=%llu dirty_regions=%llu dirty_region_px=%llu "
+        "dirty_bbox_px=%llu bbox_overdraw=%.2fx clear_px=%llu recompose_px=%llu "
+        "upload_px=%llu upload_B=%llu "
+        "sb_outer_calls=%llu sb_outer_px=%llu sb_partial_px=%llu sb_nochange_frames=%llu "
+        "radar_filter_calls=%llu radar_filter_px=%llu radar_filter_us=%.1f\n",
+        MelonPrimePerfSession::Text(),
+        static_cast<unsigned long long>(st.instanceId),
+        static_cast<unsigned long long>(reportSeq),
+        static_cast<unsigned long long>(st.cntHudVisualChangeFrames),
+        static_cast<unsigned long long>(st.cntHudVisualNoChangeFrames),
+        static_cast<unsigned long long>(st.cntHudRetainedOnlyFrames),
+        static_cast<unsigned long long>(st.cntHudFullRecomposes),
+        static_cast<unsigned long long>(st.cntHudPartialRecomposes),
+        static_cast<unsigned long long>(st.cntHudComposeRepairPasses),
+        static_cast<unsigned long long>(st.cntHudComposeRepairFallbacks),
+        static_cast<unsigned long long>(st.cntHudElementVisualChanges),
+        static_cast<unsigned long long>(st.cntHudDirtyRegions),
+        static_cast<unsigned long long>(st.sumHudDirtyRegionPixels),
+        static_cast<unsigned long long>(st.sumHudDirtyBboxPixels),
+        overdrawRatio,
+        static_cast<unsigned long long>(st.sumHudClearPixels),
+        static_cast<unsigned long long>(st.sumHudRecomposePixels),
+        static_cast<unsigned long long>(st.sumHudUploadPixels),
+        static_cast<unsigned long long>(st.sumHudUploadBytes),
+        static_cast<unsigned long long>(st.cntScoreboardOuterCompositeCalls),
+        static_cast<unsigned long long>(st.sumScoreboardOuterCompositePixels),
+        static_cast<unsigned long long>(st.sumScoreboardPartialCompositePixels),
+        static_cast<unsigned long long>(st.cntScoreboardNoChangeFrames),
+        static_cast<unsigned long long>(st.cntRadarCpuFilterCalls),
+        static_cast<unsigned long long>(st.sumRadarCpuFilterPixels),
+        st.freq ? (static_cast<double>(st.sumRadarCpuFilterTicks) * 1000000.0
+                       / static_cast<double>(st.freq))
+                : 0.0);
 }
 
 inline void ReportHudElementSummary(const State& st, uint64_t reportSeq)
@@ -1604,6 +1679,112 @@ inline void CountHudUploadCall()
         ++S().cntHudUploadCalls;
 }
 
+inline void CountHudFullRecompose()
+{
+    if (S().frameOpen)
+        ++S().cntHudFullRecomposes;
+}
+
+inline void CountHudPartialRecompose()
+{
+    if (S().frameOpen)
+        ++S().cntHudPartialRecomposes;
+}
+
+inline void CountHudComposeRepairPass()
+{
+    if (S().frameOpen)
+        ++S().cntHudComposeRepairPasses;
+}
+
+inline void CountHudComposeRepairFallback()
+{
+    if (S().frameOpen)
+        ++S().cntHudComposeRepairFallbacks;
+}
+
+inline void CountHudElementVisualChange()
+{
+    if (S().frameOpen)
+        ++S().cntHudElementVisualChanges;
+}
+
+// One call per composed frame: `regions` is the bounded dirty-region count and
+// `bboxPixels` the single rectangle the old bounding-box contract would have
+// produced, so the overdraw ratio between them is directly observable.
+inline void RecordHudDirtyRegions(uint32_t regions, uint64_t regionPixels,
+                                  uint64_t bboxPixels)
+{
+    if (!S().frameOpen)
+        return;
+    State& st = S();
+    if (regions == 0) {
+        ++st.cntHudVisualNoChangeFrames;
+        return;
+    }
+    ++st.cntHudVisualChangeFrames;
+    st.cntHudDirtyRegions += regions;
+    st.sumHudDirtyRegionPixels += regionPixels;
+    st.sumHudDirtyBboxPixels += bboxPixels;
+}
+
+inline void AddHudClearPixels(uint64_t pixels)
+{
+    if (!S().frameOpen || pixels == 0)
+        return;
+    S().sumHudClearPixels += pixels;
+}
+
+inline void AddHudRecomposePixels(uint64_t pixels)
+{
+    if (!S().frameOpen || pixels == 0)
+        return;
+    S().sumHudRecomposePixels += pixels;
+}
+
+// A frame that composited the retained HUD layer without uploading anything.
+inline void CountHudRetainedOnlyFrame()
+{
+    if (S().frameOpen)
+        ++S().cntHudRetainedOnlyFrames;
+}
+
+inline void AddHudUploadRegion(uint64_t pixels, uint64_t bytes)
+{
+    if (!S().frameOpen)
+        return;
+    State& st = S();
+    st.sumHudUploadPixels += pixels;
+    st.sumHudUploadBytes += bytes;
+}
+
+inline void CountScoreboardOuterComposite(uint64_t pixels, bool partial)
+{
+    if (!S().frameOpen)
+        return;
+    State& st = S();
+    ++st.cntScoreboardOuterCompositeCalls;
+    st.sumScoreboardOuterCompositePixels += pixels;
+    if (partial)
+        st.sumScoreboardPartialCompositePixels += pixels;
+}
+
+inline void CountScoreboardNoChangeFrame()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardNoChangeFrames;
+}
+
+inline void RecordRadarCpuFilter(uint64_t pixels, Uint64 ticks)
+{
+    if (!S().frameOpen)
+        return;
+    State& st = S();
+    ++st.cntRadarCpuFilterCalls;
+    st.sumRadarCpuFilterPixels += pixels;
+    st.sumRadarCpuFilterTicks += ticks;
+}
+
 inline void CountHudRadarVboUpload()
 {
     if (S().frameOpen)
@@ -1866,6 +2047,19 @@ inline void CountScoreboardOutlinePathHit() {}
 inline void CountScoreboardOutlinePathMiss() {}
 inline void CountHudRegionHash(std::size_t) {}
 inline void CountHudUploadCall() {}
+inline void CountHudFullRecompose() {}
+inline void CountHudPartialRecompose() {}
+inline void CountHudComposeRepairPass() {}
+inline void CountHudComposeRepairFallback() {}
+inline void CountHudElementVisualChange() {}
+inline void RecordHudDirtyRegions(uint32_t, uint64_t, uint64_t) {}
+inline void AddHudClearPixels(uint64_t) {}
+inline void AddHudRecomposePixels(uint64_t) {}
+inline void CountHudRetainedOnlyFrame() {}
+inline void AddHudUploadRegion(uint64_t, uint64_t) {}
+inline void CountScoreboardOuterComposite(uint64_t, bool) {}
+inline void CountScoreboardNoChangeFrame() {}
+inline void RecordRadarCpuFilter(uint64_t, uint64_t) {}
 inline void CountHudRadarVboUpload() {}
 inline void CountHudRadarTexParameterCall() {}
 inline void CountHudRestoreFastReject() {}

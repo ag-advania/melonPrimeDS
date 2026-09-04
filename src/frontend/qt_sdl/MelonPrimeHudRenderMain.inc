@@ -24,13 +24,35 @@ HOT_FUNCTION QRect CustomHud_Render(
     float topStretchX, float hudScale,
     float hudOriginXds, float hudOriginYds,
     QPainter* directScoreboardPaint,
-    NativePaintPerf* nativePaintPerf)
+    NativePaintPerf* nativePaintPerf,
+    bool overlayRetained,
+    HudDirtyRegionSet* outDirty,
+    HudDirtyRegionSet* outContent)
 {
     MelonPrimePerf::CountCustomHudCall();
     MelonPrimePerf::ScopedHudPhase stateTimer(MelonPrimePerf::HudPhase::State);
     const ScopedHudConfigState active(hudConfig);
     const HudFrameTransform xf = MakeHudFrameTransform(topBuffer, topStretchX, hudScale,
                                                        hudOriginXds, hudOriginYds);
+
+    HudDirtyRegionSet dirty;
+    HudDirtyRegionSet content;
+    // Single exit point: every early return still has to tell the presenter
+    // which overlay regions changed, because the overlay is retained and
+    // "drew nothing" is not the same as "shows nothing".
+    const auto publish = [&](const QRect& bounds) -> QRect {
+        if (outDirty)
+            *outDirty = dirty;
+        if (outContent)
+            *outContent = content;
+        const QRect dirtyBounds = dirty.Bounds();
+        MelonPrimePerf::RecordHudDirtyRegions(
+            static_cast<uint32_t>(dirty.Count()),
+            dirty.PixelCount(),
+            static_cast<uint64_t>(std::max(0, dirtyBounds.width()))
+                * static_cast<uint64_t>(std::max(0, dirtyBounds.height())));
+        return bounds;
+    };
 
     // OPT-DR1: Reset crosshair dirty accumulator for this frame.
     s_chDirtyThisFrame = QRect();
@@ -53,15 +75,28 @@ HOT_FUNCTION QRect CustomHud_Render(
         EnsureHudFont(topPaint);
         for (int i = 0; i < kEditElemCount; ++i)
             s_editRects[i] = ComputeEditBounds(i, localCfg, topStretchX);
+        // The editor paints the whole overlay and owns no per-element bounds,
+        // so the retained record is dropped and the surface is repainted whole.
+        if (topBuffer && overlayRetained) {
+            HudDirtyRegionSet editClear;
+            editClear.SetSingle(xf.overlayRect);
+            HudClearOverlayRegions(*topBuffer, editClear);
+        }
+        s_hudRetained.Invalidate();
         DrawEditOverlay(topPaint, localCfg, topStretchX, btmBuffer);
-        return xf.overlayRect;  // edit mode covers full overlay
+        dirty.SetSingle(xf.overlayRect);
+        content.SetSingle(xf.overlayRect);
+        return publish(xf.overlayRect);  // edit mode covers full overlay
     }
 
-    if (!isInGame) return QRect();
+    if (!isInGame)
+        return publish(CustomHud_BlankRetainedOverlay(
+            topBuffer, xf.overlayRect, dirty, content));
 
     HudRuntimeState st = {};
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
-        return QRect();
+        return publish(CustomHud_BlankRetainedOverlay(
+            topBuffer, xf.overlayRect, dirty, content));
 
     // Screen.cpp refreshed the authoritative enabled decision at the config
     // epoch boundary and used the same snapshot for visibility/restore. Keep
@@ -69,7 +104,8 @@ HOT_FUNCTION QRect CustomHud_Render(
     // already handled by the caller before entering this function.
     if (UNLIKELY(!hudEnabledSnapshot)) {
         CustomHud_RestoreNativeHudState(rom, st);
-        return QRect();
+        return publish(CustomHud_BlankRetainedOverlay(
+            topBuffer, xf.overlayRect, dirty, content));
     }
 
     // Read the shared Adventure/map-pause state before applying the common HUD
@@ -78,7 +114,7 @@ HOT_FUNCTION QRect CustomHud_Render(
 
     // P-3: Refresh config cache only when invalidated, or recompute anchor
     //       positions when topStretchX changes (window resize).
-    //       Also refresh when hudScale changes — crosshair rects and textDrawScale
+    //       Also refresh when hudScale changes - crosshair rects and textDrawScale
     //       are in actual output pixels divided by hudScale.
     // Refreshed BEFORE NoHudPatch_Sync so c.noHudMask is current.
     EnsureCachedConfigForFrame(localCfg, xf);
@@ -122,91 +158,110 @@ HOT_FUNCTION QRect CustomHud_Render(
     // coming up here, so the helmet-layer suppression above must stay applied.
     if (hideForNativeUi || st.isAdventureCameraScene) {
         NotifyCrosshairZoomNotDrawn();
-        return CurrentHudDirtyRect(xf);
+        return publish(CustomHud_BlankRetainedOverlay(
+            topBuffer, xf.overlayRect, dirty, content));
     }
 
     ReadHudRuntimeVisibleState(rom, addrHot, st);
+
+    // =====================================================================
+    //  Sampling / planning half
+    //
+    //  Everything that reads guest RAM, resolves a snapshot, or loads an
+    //  asset happens here, once, and produces a per-element visual stamp.
+    //  Nothing below this point touches emulated memory, so the compositor is
+    //  free to re-rasterise an element for z-order reasons without paying for
+    //  a second sample.
+    // =====================================================================
+    HudComposePlan plan;
+    HudElementDrawContext ctx;
+    ctx.topPaint = topPaint;
+    ctx.directScoreboardPaint = directScoreboardPaint;
+    ctx.localCfg = &localCfg;
+    ctx.config = &c;
+    ctx.rom = &rom;
+    ctx.state = &st;
+    ctx.radarSource = btmBuffer;
+    ctx.nativePaintPerf = nativePaintPerf;
+    ctx.transform = xf;
+    ctx.playerPosition = playerPosition;
+    ctx.hudScale = hudScale;
+    ctx.topStretchX = topStretchX;
+    ctx.textDrawScale = c.textDrawScale;
+    ctx.gameFrame = st.nds ? st.nds->NumFrames : 0;
 
     // Scoreboard work is profiled separately from state reads and the other
     // HUD painter work.  This also makes the expensive plan/raster boundary
     // visible in the aggregate developer report.
     stateTimer.Stop();
     if (c.scoreboard.show) {
-        const ScoreboardSnapshot* scoreboard =
-            ReadHudRuntimeScoreboardSnapshot(rom, st);
-        if (scoreboard) {
+        ctx.scoreboard = ReadHudRuntimeScoreboardSnapshot(rom, st);
+        if (ctx.scoreboard) {
             EnsureScoreboardAssetsLoaded(c.scoreboard,
                                          std::min(c.scaleIcons, c.scaleScoreboard)
                                              * ScoreboardUserScale(c));
-            {
-                MelonPrimePerf::ScopedHudElement element(
-                    MelonPrimePerf::HudElementMetric::Scoreboard);
-                if (directScoreboardPaint) {
-                    const QRect overlayDirtyBefore = s_drawnDirtyPx;
-                    directScoreboardPaint->save();
-                    directScoreboardPaint->setFont(topPaint->font());
-                    directScoreboardPaint->resetTransform();
-                    ApplyHudPainterTransform(directScoreboardPaint, xf);
-                    EnsureHudFont(directScoreboardPaint);
-                    DrawScoreboard(directScoreboardPaint, *scoreboard, c,
-                                   hudScale, playerPosition, nativePaintPerf);
-                    directScoreboardPaint->restore();
-                    s_drawnDirtyPx = overlayDirtyBefore;
-                } else {
-                    DrawScoreboard(topPaint, *scoreboard, c, hudScale,
-                                   playerPosition, nativePaintPerf);
-                }
-            }
+            auto& scoreboardPass = plan[HudElementId::Scoreboard];
+            // Native Software paints the scoreboard onto the widget painter
+            // rather than the retained overlay, so it repaints every presented
+            // frame and owns no overlay pixels.
+            scoreboardPass.detached = directScoreboardPaint != nullptr;
+            scoreboardPass.present = !scoreboardPass.detached;
+            // The scoreboard composites its retained panel image with source
+            // composition, so it overwrites whatever it covers and does not
+            // need the overlay wiped first. That is what lets it copy out a
+            // single changed cell instead of the whole panel; if the panel
+            // shrinks the compositor's shrink check wipes the remainder.
+            scoreboardPass.selfClearing = !scoreboardPass.detached;
+            scoreboardPass.revision = HudScoreboardRevision(
+                *ctx.scoreboard, HudFrameState().scoreboardPlanGeneration);
         }
     }
 
     // Enemy Target: the ROM only publishes targetSlot/timer for ~2s after a
     // local hit, so most frames stop at the snapshot's early return.
     if (c.enemyTarget.show) {
-        const EnemyTargetSnapshot* enemyTarget =
-            ReadHudRuntimeEnemyTargetSnapshot(rom, st);
-        if (enemyTarget) {
+        ctx.enemyTarget = ReadHudRuntimeEnemyTargetSnapshot(rom, st);
+        if (ctx.enemyTarget) {
             EnsureEnemyTargetAssetsLoaded(c.enemyTarget,
                                           c.scaleIcons * EnemyTargetUserScale(c));
-            {
-                MelonPrimePerf::ScopedHudElement element(
-                    MelonPrimePerf::HudElementMetric::EnemyTarget);
-                DrawEnemyTarget(topPaint, *enemyTarget, c, hudScale);
-            }
+            auto& enemyPass = plan[HudElementId::EnemyTarget];
+            enemyPass.present = true;
+            enemyPass.revision = HudEnemyTargetRevision(*ctx.enemyTarget);
         }
     }
 
-    // hudScale = scaleY: DS Y-unit maps to hudScale px. The painter transform
-    // and font were established above so the scoreboard shares this path.
-    const float textDrawScale = c.textDrawScale;
-    // s_textRenderScale and the hi-DPI font were built event-driven in RefreshCachedConfig;
-    // nothing to recompute per frame here.
-
-    MelonPrimePerf::ScopedHudPhase drawTimer(MelonPrimePerf::HudPhase::QPainter);
-
-    // Draw crosshair/scope first so large zoom reticles sit behind HP, ammo,
-    // radar, and other Custom HUD elements.
+    // The crosshair is first in z-order so large zoom reticles sit behind HP,
+    // ammo, radar, and the other Custom HUD elements.
     const bool drawCrosshairThisFrame = ShouldDrawCustomHudCrosshair(st);
     if (drawCrosshairThisFrame) {
-        const uint32_t gameFrame = st.nds ? st.nds->NumFrames : 0;
-        float crosshairZoomAmount = 0.0f;
         if (c.crosshair.cachedZoomAffectsVisual) {
-            UpdateCrosshairZoomAmountForGameFrame(
-                st.ram, rom, gameFrame);
-            crosshairZoomAmount = ReadCrosshairZoomAmount(st.ram, rom);
+            UpdateCrosshairZoomAmountForGameFrame(st.ram, rom, ctx.gameFrame);
+            ctx.crosshairZoomAmount = ReadCrosshairZoomAmount(st.ram, rom);
         }
-        {
-            MelonPrimePerf::ScopedHudElement element(
-                MelonPrimePerf::HudElementMetric::Crosshair);
-            DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX,
-                          gameFrame, crosshairZoomAmount);
-        }
+        auto& crosshairPass = plan[HudElementId::Crosshair];
+        crosshairPass.present = true;
+        // The crosshair commits its eased centre, zoom and animation phases as
+        // part of drawing, so its stamp can only be taken afterwards: it
+        // re-rasterises every frame and is reported dirty only when that stamp
+        // actually moved. The raster is small and bounded, and this is what
+        // keeps a motionless reticle from costing a GPU upload.
+        crosshairPass.alwaysDirty = true;
+    } else {
+        // OPT-DR1: not drawn this frame (third person, alt form, transition,
+        // scan visor). Reset the committed position so the next appearance
+        // snaps; the composer clears the retained bounds from the presence
+        // change, so the bbox this leaves behind is not needed.
+        ClearPreviousCrosshairDirty(c.crosshair);
+        s_chDirtyThisFrame = QRect();
     }
 
     {
-        MelonPrimePerf::ScopedHudElement element(
-            MelonPrimePerf::HudElementMetric::Hp);
-        DrawHP(topPaint, st.currentHP, st.maxHP, c, textDrawScale);
+        auto& hpPass = plan[HudElementId::Hp];
+        hpPass.present = true;
+        hpPass.revision = HudVisualRevision()
+            .Mix(static_cast<uint32_t>(st.currentHP))
+            .Mix(static_cast<uint32_t>(st.maxHP))
+            .Value();
     }
 
     // Bomb count: Samus/Sylux in alt form only
@@ -214,76 +269,112 @@ HOT_FUNCTION QRect CustomHud_Render(
         const bool isBomber = (st.hunterID == static_cast<uint8_t>(HunterId::Samus) ||
                                st.hunterID == static_cast<uint8_t>(HunterId::Sylux));
         if (isBomber && st.isAlt) {
-            MelonPrimePerf::ScopedHudElement element(
-                MelonPrimePerf::HudElementMetric::Bomb);
-            DrawBombLeft(topPaint, ReadHudRuntimeBombCount(rom, st),
-                         c, textDrawScale, hudScale);
+            ctx.bombCount = ReadHudRuntimeBombCount(rom, st);
+            auto& bombPass = plan[HudElementId::Bomb];
+            bombPass.present = true;
+            bombPass.revision = HudVisualRevision()
+                .Mix(static_cast<uint32_t>(ctx.bombCount))
+                .Value();
         }
     }
 
     // Match Status + Rank & Time HUDs (non-adventure only, visible in all camera modes)
-    {
-        MelonPrimePerf::ScopedHudElement element(
-            MelonPrimePerf::HudElementMetric::MatchStatus);
-        DrawMatchStatusHud(topPaint, rom, playerPosition, st.isAdventure, c, st);
+    if (c.matchStatus.matchStatusShow && !st.isAdventure) {
+        ctx.matchStatusValid = ReadHudRuntimeMatchStatusState(
+            rom, playerPosition, st, ctx.matchStatus);
+        if (ctx.matchStatusValid) {
+            auto& matchPass = plan[HudElementId::MatchStatus];
+            matchPass.present = true;
+            matchPass.revision = HudMatchStatusRevision(ctx.matchStatus);
+        }
     }
-    {
-        MelonPrimePerf::ScopedHudElement element(
-            MelonPrimePerf::HudElementMetric::RankTime);
-        DrawRankAndTime(topPaint, rom, playerPosition, st.isAdventure, c,
-                        textDrawScale, st);
+    if (!st.isAdventure) {
+        const auto& rankTime = c.rankTime;
+        if (rankTime.rankShow)
+            ctx.rankByte = ReadHudRuntimeRankByte(rom, playerPosition, st);
+        if (rankTime.timeLeftShow)
+            ctx.timeLeftSeconds = ReadHudRuntimeTimeLeftSeconds(rom, st);
+        if (rankTime.timeLimitShow)
+            ctx.timeLimitMinutes = ReadHudRuntimeTimeLimitMinutes(rom, st);
+        if (rankTime.rankShow || rankTime.timeLeftShow || rankTime.timeLimitShow) {
+            auto& rankTimePass = plan[HudElementId::RankTime];
+            rankTimePass.present = true;
+            // Seconds and minutes, not the 60 Hz tick they came from: the clock
+            // text changes once a second, so the other 59 frames are genuinely
+            // unchanged and must not be treated as a visual change.
+            rankTimePass.revision = HudRankTimeRevision(
+                ctx.rankByte, ctx.timeLeftSeconds, ctx.timeLimitMinutes);
+        }
     }
 
-    // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
+    // Bottom screen overlay drawn on the top screen (visible in all camera
+    // modes including alt form).
     if (c.radar.radarShow) {
-        MelonPrimePerf::ScopedHudElement element(
-            MelonPrimePerf::HudElementMetric::RadarCpuOverlay);
-        DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (st.hunterID <= 6) ? st.hunterID : 0);
+        auto& radarPass = plan[HudElementId::Radar];
+        radarPass.present = true;
+        // With a colour-keyed source the crop mirrors live bottom-screen pixels
+        // and cannot be stamped; without one (the GPU-native radar backends)
+        // only the frame and outlines are drawn, and those are stable.
+        radarPass.alwaysDirty = btmBuffer != nullptr;
+        radarPass.revision = HudVisualRevision()
+            .Mix(static_cast<uint32_t>((st.hunterID <= 6) ? st.hunterID : 0))
+            .Value();
     }
 
-    if (!st.isFirstPerson) {
-        // OPT-DR1: Crosshair not drawn in third-person / alt-form.
-        // If it was drawn last frame, include its previous bbox so Screen.cpp clears it.
-        ClearPreviousCrosshairDirty(c.crosshair);
-        return CurrentHudDirtyRect(xf);
+    if (st.isFirstPerson) {
+        const uint8_t weaponIdx = (st.currentWeapon < 9) ? st.currentWeapon : 0;
+        const WeaponInfo& weaponInfo = kWeaponTable[weaponIdx];
+        if (c.weaponInventory.show ||
+            (weaponInfo.divisor > 0 && !weaponInfo.isMissile && weaponIdx != WeaponId::OmegaCannon))
+            ctx.ammoSpecial = ReadHudRuntimeCurrentAmmoSpecial(rom, st);
+        if (c.weaponInventory.show || weaponInfo.isMissile)
+            ctx.ammoMissile = ReadHudRuntimeCurrentAmmoMissile(rom, st);
+
+        auto& ammoPass = plan[HudElementId::WeaponAmmo];
+        ammoPass.present = true;
+        ammoPass.revision = HudVisualRevision()
+            .Mix(static_cast<uint32_t>(st.currentWeapon))
+            .Mix(static_cast<uint32_t>(ctx.ammoSpecial))
+            .Mix(static_cast<uint32_t>(ctx.ammoMissile))
+            .Mix(static_cast<uint32_t>(st.maxAmmoSpecial))
+            .Mix(static_cast<uint32_t>(st.maxAmmoMissile))
+            .Value();
+
+        if (c.weaponInventory.show) {
+            ctx.havingWeapons = ReadHudRuntimeHavingWeapons(addrHot, st);
+            auto& inventoryPass = plan[HudElementId::WeaponInventory];
+            inventoryPass.present = true;
+            inventoryPass.revision = HudVisualRevision()
+                .Mix(static_cast<uint32_t>(ctx.havingWeapons))
+                .Mix(static_cast<uint32_t>(st.currentWeapon))
+                .Mix(static_cast<uint32_t>(ctx.ammoSpecial))
+                .Mix(static_cast<uint32_t>(ctx.ammoMissile))
+                .Value();
+        }
     }
 
-    const uint8_t weaponIdx = (st.currentWeapon < 9) ? st.currentWeapon : 0;
-    const WeaponInfo& weaponInfo = kWeaponTable[weaponIdx];
-    uint16_t currentAmmoSpecial = 0;
-    uint16_t currentAmmoMissile = 0;
-    if (c.weaponInventory.show ||
-        (weaponInfo.divisor > 0 && !weaponInfo.isMissile && weaponIdx != WeaponId::OmegaCannon))
-        currentAmmoSpecial = ReadHudRuntimeCurrentAmmoSpecial(rom, st);
-    if (c.weaponInventory.show ||
-        weaponInfo.isMissile)
-        currentAmmoMissile = ReadHudRuntimeCurrentAmmoMissile(rom, st);
+    // =====================================================================
+    //  Composition half
+    // =====================================================================
+    MelonPrimePerf::ScopedHudPhase drawTimer(MelonPrimePerf::HudPhase::QPainter);
 
-    {
-        MelonPrimePerf::ScopedHudElement element(
-            MelonPrimePerf::HudElementMetric::WeaponAmmo);
-        DrawWeaponAmmo(topPaint, st.currentWeapon,
-                       currentAmmoSpecial, currentAmmoMissile,
-                       st.maxAmmoSpecial, st.maxAmmoMissile, c, textDrawScale, hudScale);
-    }
+    HudRetainedSurfaceKey surface;
+    surface.overlayBits = topBuffer
+        ? static_cast<const void*>(topBuffer->constBits()) : nullptr;
+    surface.width = xf.overlayRect.width();
+    surface.height = xf.overlayRect.height();
+    surface.configEpoch = s_cacheEpoch;
+    surface.visualGeneration = ActiveHudConfigState().visualGeneration;
+    surface.fontPixelSize = s_frameFpx;
+    surface.hudScale = hudScale;
+    surface.stretchX = topStretchX;
+    surface.originXds = hudOriginXds;
+    surface.originYds = hudOriginYds;
+    surface.editMode = false;
 
-    if (c.weaponInventory.show) {
-        const uint16_t havingWeapons = ReadHudRuntimeHavingWeapons(addrHot, st);
-        MelonPrimePerf::ScopedHudElement element(
-            MelonPrimePerf::HudElementMetric::WeaponInventory);
-        DrawWeaponInventory(topPaint,
-                            havingWeapons, st.currentWeapon,
-                            currentAmmoSpecial, currentAmmoMissile,
-                            c, textDrawScale, hudScale);
-    }
-
-    if (!drawCrosshairThisFrame) {
-        // OPT-DR1: Crosshair not drawn this frame (transition/alt/scan visor)
-        // but was last frame.
-        ClearPreviousCrosshairDirty(c.crosshair);
-    }
-
-    return CurrentHudDirtyRect(xf);
+    const QRect bounds = CustomHud_ComposeRetained(
+        topBuffer, plan, ctx, surface, overlayRetained, dirty, content);
+    return publish(bounds);
 }
 
 QRect CustomHud_RenderCachedScoreboard(
