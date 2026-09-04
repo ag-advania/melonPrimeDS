@@ -22,7 +22,7 @@
             m_radarOpacity, m_radarSrcRadius,
             m_radarAnchorDsX, m_radarAnchorDsY);
 
-        if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, instcfg, mp, m_hudEnabled, editMode))
+        if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, mp, m_hudEnabled, editMode))
         {
             // Overlay covers the full widget so HUD elements placed in black-bar
             // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.

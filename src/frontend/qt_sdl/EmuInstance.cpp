@@ -70,6 +70,7 @@ namespace MelonPrime {
     uint32_t globalChecksum = 0;
     uint32_t globalGameCode = 0;
     uint8_t  globalRomVersion = 0;
+    uint64_t globalRomLoadGeneration = 0;
     bool isRomDetected = false;
 }
 #endif // MELONPRIME_DS
@@ -2117,6 +2118,8 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
         MelonPrime::globalGameCode   = mphHeader.GameCodeAsU32();
         MelonPrime::globalRomVersion = mphHeader.ROMVersion;
         MelonPrime::globalChecksum   = cart->Checksum();
+        if (++MelonPrime::globalRomLoadGeneration == 0)
+            MelonPrime::globalRomLoadGeneration = 1;
         MelonPrime::isRomDetected    = false;
 
         switch (MelonPrime::globalGameCode) {
@@ -2185,6 +2188,14 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
 
 void EmuInstance::ejectCart()
 {
+#ifdef MELONPRIME_DS
+    if (++MelonPrime::globalRomLoadGeneration == 0)
+        MelonPrime::globalRomLoadGeneration = 1;
+    MelonPrime::globalChecksum = 0;
+    MelonPrime::globalGameCode = 0;
+    MelonPrime::globalRomVersion = 0;
+    MelonPrime::isRomDetected = false;
+#endif
     ndsSave = nullptr;
 
     if (emuIsActive())

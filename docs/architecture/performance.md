@@ -95,6 +95,7 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | `m_hudCfgEpoch` / `m_hudEnabled` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | `Metroid.Visual.CustomHUD` change | `MelonPrimeHud_RefreshHudEnabledIfNeeded` |
 | `m_hudFontEpoch` / `overlayFont` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | HUD font property change | `MelonPrimeHud_RefreshOverlayFontIfNeeded` |
 | `m_radarCfgEpoch` / radar GL fields | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | Radar property change | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
+| `ScreenPanelGL::m_hudRadarGl` | `Screen.h` + `MelonPrimeHudScreenCppOverlayOfGl.inc` | Radar config epoch, layout/renderer generation, surface size/scale, transform, opacity, hunter or source-radius edge | `ScreenPanelGL` GL radar overlay path |
 | `m_hudTopMatrix` / layout scale | `Screen.h` + `MelonPrimeHudScreenIntegration.cpp` | `setupScreenLayout()` | `ScreenPanel::updateHudScreenLayoutCache` |
 | `m_radarAnchorDsX/Y` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | Radar config epoch refresh | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
 | Dirty rect / `s_drawnDirtyPx` | `MelonPrimeHudRenderAssets.inc` | Top of each `CustomHud_Render` | `CustomHud_Render` |
@@ -112,6 +113,9 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | Win raw mouse snapshot | `MelonPrimeRawInputState.cpp:283-289` | `discardDeltas`, `resetAll` | `InputState::fetchMouseDelta` |
 | `m_platformRawAimWasActive` | `MelonPrime.h:594` | N/A (edge detector); cleared on emu stop via filter reset | `UpdateInputStateImpl` |
 | `BattleMatchState` | `MelonPrimeHudBattleOwnedState.inc` (nested under `MelonPrimeHudRuntimeSample.inc`) | Match join/leave, config epoch | `CustomHud_OnMatchJoin` / `CustomHud_ResetPatchState` |
+| `HudRuntimeFrameCache` scoreboard/enemy snapshots | `MelonPrimeHudFrameOwnedState.inc` | Validity bits on game-frame rollover; payload clear on ROM identity, match, config, savestate, or reset boundary | `ReadHudRuntimeBaseState` + `ClearHudRuntimeDynamicSnapshotPayload` |
+| `HudFrameOwnedState::scoreboardRaster` | `MelonPrimeHudFrameOwnedState.inc` + `MelonPrimeHudRenderDraw.inc` | Scoreboard plan generation, HUD scale, painter transform/bounds, or explicit ROM/match/config/savestate/reset clear | `DrawScoreboard` + `AdvanceScoreboardPlanGeneration` / `ClearHudRuntimeDynamicSnapshotPayload` |
+| ROM classification latch | `MelonPrime.h` + `MelonPrimeDef.h` | ROM load/eject generation or emulator boot reset | `RunFrameHook` / `DetectRomAndSetAddresses` |
 | Typed HUD owner slots | `MelonPrimeHudRenderConfig.inc` / `MelonPrimeHudRender.cpp` | Config-state construction/destruction | `CustomHudConfigState` constructor/destructor |
 | `Arm9HookActivationPlan` | `MelonPrime.h` / `MelonPrimeRuntimeConfig.cpp` | Runtime config reload and core snapshot apply | `LoadRuntimeConfigSnapshot` / `ApplyRuntimeConfigSnapshot` |
 | Text/icon/radar-frame caches | `MelonPrimeHudRenderAssets.inc` | Signature change (size/color/text) | Per-cache prepare helpers |
@@ -181,6 +185,62 @@ negligible in this workload and the hold delta is dominated by Custom HUD
 composition. Keep the lifetime-fence scope intact unless a repeatable workload
 shows material wait contention; optimize the measured HUD work instead of
 weakening renderer/NDS pointer lifetime protection.
+
+### HUD hot-path follow-up (2026-09-04 implementation)
+
+The normal HUD-disabled presentation path now checks the per-instance native-HUD
+patch tracker before `ReadHudRuntimeBaseState()`. A clean tracker returns without
+live config access, guest-RAM sampling, or ARM9 writes; savestate reconciliation
+retains its separate cold config-aware path. The developer perf probe exposes
+`restore_fast_reject`, `restore_runtime_read`, `patch_writes`, and
+`radar_vbo_uploads` in the one-second HUD report.
+
+The OpenGL native radar quad keeps a fixed POD edge cache in `ScreenPanelGL`.
+Steady presentation still binds the program/texture and draws the quad, but
+geometry VBO data and screen-size, opacity, and source uniforms are rewritten
+only when their layout/config/resize/hunter/radius signatures change.
+
+`HudRuntimeFrameCache` now retains scoreboard/enemy `QString` storage across a
+normal game-frame rollover. Only validity and numeric fields are refreshed each
+frame; payload destruction is restricted to explicit cold boundaries. The
+scoreboard and enemy consumers use references to the cache rather than copying
+the snapshots through the render call.
+
+`MELONPRIME_PERF=1` developer builds also emit `hud_element_us` once per second
+for the logical HUD elements and text/icon/gauge/outline primitives. Each record
+contains count, p50/p95/p99/max, drawn-area, draw-call, glyph, and image-draw
+aggregates. The scoreboard hotspot then received one bounded raster cache in the
+frame-owned state: a cache miss rasterizes the already-built plan into a bounded
+`QImage`, while a steady hit performs one image composite. The cache key includes
+the plan generation, HUD scale, painter transform origin, and raster bounds; plan
+changes and cold ownership boundaries invalidate it.
+
+The before/after evidence below uses the same Windows F7 fixture and slot 7:
+`0367 - Metroid Prime - Hunters (USA) (Rev 1).ml7`, with the matching ROM, 4x
+scale, VSync and frame limit enabled, low latency disabled, 5 s warmup, 12 s
+measurement, and 2 s grace. The baseline run was captured immediately before
+the scoreboard raster-cache change (`srp-followup-opengl-on-fixedcsv-20260904`
+and `srp-followup-software-on-fixedcsv-20260904`); the audited run was captured
+after it (`srp-followup-opengl-on-rastercache-20260904` and
+`srp-followup-software-on-rastercache-20260904`). Frame values are direct
+percentiles over 909/908 selected measurement samples. HUD native-paint and
+element values are the median of p95/p99 values from 15 selected one-second
+windows; their max is the largest reported sample maximum in those windows.
+
+| F7 steady-state metric | Before p95 / p99 / max | After p95 / p99 / max |
+|---|---:|---:|
+| Software `hud_software` (us) | 858.6 / 884.1 / 1063.2 | 369.8 / 385.0 / 555.4 |
+| Software `render_lock_hold` (us) | 886.8 / 912.2 / 1090.8 | 396.0 / 409.6 / 586.9 |
+| Software full frame (ms) | 17.195 / 17.434 / 17.552 | 17.273 / 17.497 / 17.722 |
+| OpenGL `hud_element_us:scoreboard` (us) | 531.6 / 543.9 / 576.2 | 5.1 / 6.0 / 7.4 |
+
+The OpenGL audited run recorded 908 scoreboard-raster cache hits and zero
+misses across the selected steady-state windows. The first render and explicit
+state/config/layout edges remain cold misses by design. The Software workload
+does not expose the logical HUD element phase counters on this presenter, so
+`native_paint_us` is the authoritative Software HUD measurement. The F7
+OpenGL capture and harness completed with `process=0`, `provenance=PASS`, zero
+native mismatches/fallbacks, and no unexpected blank markers.
 
 ### GUI input and renderer-transition follow-up (2026-09-04)
 

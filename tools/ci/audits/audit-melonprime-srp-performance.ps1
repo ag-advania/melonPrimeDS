@@ -3273,6 +3273,120 @@ if ($hudRenderStartIndex -lt 0) {
     }
 }
 
+# --- MP-PERF-002: HUD-disabled restore is tracker-gated --------------------
+#
+# The normal presentation callback is allowed to run at a higher rate than the
+# emulation loop. Once the native-HUD patch tracker is clean it must return
+# before config, guest-RAM, or patch-lifecycle work. Savestate reconciliation is
+# a separate cold API and is intentionally not covered by this rule.
+$hudPatchLifecyclePath = Join-Path $qtSdl 'MelonPrimeHudPatchLifecycle.h'
+$hudPatchRuntimePath = Join-Path $qtSdl 'MelonPrimeHudPatchRuntime.inc'
+$hudEnsureBody = Get-FunctionText -Path $hudPatchRuntimePath `
+    -Signature 'void\s+CustomHud_EnsurePatchRestored\s*\('
+$hudEnsureDecl = Get-CodeMatchLines `
+    'void\s+CustomHud_EnsurePatchRestored\s*\(' $hudPatchLifecyclePath
+$hudEnsureDeclText = $hudEnsureDecl -join "`n"
+if ($hudEnsureDecl.Count -ne 1 -or -not $hudEnsureBody) {
+    Add-Error 'MP-PERF-002: normal HUD restore API declaration/body is missing'
+} else {
+    if ($hudEnsureDeclText -match 'Config::Table|GetBool|GetInt|GetDouble') {
+        Add-Error 'MP-PERF-002: normal HUD restore API regained a live config parameter'
+    }
+    if ($hudEnsureBody -match 'Config::Table|GetBool\s*\(|GetInt\s*\(|GetDouble\s*\(') {
+        Add-Error 'MP-PERF-002: normal HUD restore body performs a live config lookup'
+    }
+    $trackerAt = $hudEnsureBody.IndexOf('NoHudPatch_GetAppliedMask')
+    $runtimeReadAt = $hudEnsureBody.IndexOf('ReadHudRuntimeBaseState')
+    if ($trackerAt -lt 0 -or $runtimeReadAt -lt 0 -or $trackerAt -gt $runtimeReadAt) {
+        Add-Error 'MP-PERF-002: HUD restore must reject clean patch state before guest-RAM reads'
+    }
+}
+
+# --- MP-PERF-003: native GL radar updates only on cache edges ---------------
+$hudGlOverlayPath = Join-Path $qtSdl 'MelonPrimeHudScreenCppOverlayOfGl.inc'
+$screenHeaderPath = Join-Path $qtSdl 'Screen.h'
+$hudGlOverlayText = [System.IO.File]::ReadAllText($hudGlOverlayPath)
+$screenHeaderText = [System.IO.File]::ReadAllText($screenHeaderPath)
+if ($screenHeaderText -notmatch 'struct\s+HudRadarGlCache' -or
+    $screenHeaderText -notmatch 'm_hudRadarGl' -or
+    $hudGlOverlayText -notmatch 'const\s+bool\s+geometryChanged' -or
+    $hudGlOverlayText -notmatch 'CountHudRadarVboUpload\s*\(') {
+    Add-Error 'MP-PERF-003: native GL radar edge cache is missing'
+}
+$radarVboWrites = @([regex]::Matches($hudGlOverlayText, '\bglBufferSubData\s*\('))
+$geometryEdgeAt = $hudGlOverlayText.IndexOf('if (geometryChanged)')
+$radarVboAt = $hudGlOverlayText.IndexOf('glBufferSubData')
+if ($radarVboWrites.Count -ne 1 -or $geometryEdgeAt -lt 0 -or
+    $radarVboAt -lt $geometryEdgeAt) {
+    Add-Error 'MP-PERF-003: native GL radar VBO must upload only from the geometry edge'
+}
+
+# --- MP-PERF-004: unsupported ROM classification is latched ----------------
+$romDetectPath = Join-Path $qtSdl 'MelonPrimeGameRomDetect.cpp'
+$melonPrimeCore = Join-Path $qtSdl 'MelonPrime.cpp'
+$romDetectText = [System.IO.File]::ReadAllText($romDetectPath)
+$melonPrimeCoreText = [System.IO.File]::ReadAllText($melonPrimeCore)
+$melonPrimeDefText = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'MelonPrimeDef.h'))
+$emuInstanceSourceText = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'EmuInstance.cpp'))
+if ($melonPrimeDefText -notmatch 'globalRomLoadGeneration' -or
+    $melonPrimeCoreText -notmatch 'BIT_ROM_CLASSIFIED' -or
+    $melonPrimeCoreText -notmatch 'm_romClassificationGeneration\s*!=\s*globalRomLoadGeneration' -or
+    $romDetectText -notmatch 'BIT_ROM_CLASSIFIED' -or
+    $emuInstanceSourceText -notmatch 'globalRomLoadGeneration') {
+    Add-Error 'MP-PERF-004: ROM classification generation/latch is incomplete'
+}
+$runFrameBody = Get-FunctionText -Path $melonPrimeCore `
+    -Signature '(?:HOT_FUNCTION\s+)?void\s+MelonPrimeCore::RunFrameHook\s*\('
+if (-not $runFrameBody) {
+    Add-Error 'MP-PERF-004: RunFrameHook body is missing for ROM classification audit'
+} else {
+    $classAt = $runFrameBody.IndexOf('BIT_ROM_CLASSIFIED')
+    $detectAt = $runFrameBody.IndexOf('DetectRomAndSetAddresses')
+    if ($classAt -lt 0 -or $detectAt -lt 0 -or $classAt -gt $detectAt) {
+        Add-Error 'MP-PERF-004: RunFrameHook must gate ROM detection on classification'
+    }
+}
+
+# --- MP-PERF-005/006: rollover invalidation and reference-only consumption --
+$hudRuntimeSamplePath = Join-Path $qtSdl 'MelonPrimeHudRuntimeSample.inc'
+$hudFrameOwnedPath = Join-Path $qtSdl 'MelonPrimeHudFrameOwnedState.inc'
+$hudRenderMainText = [System.IO.File]::ReadAllText($hudRenderMainPath)
+$hudRuntimeSampleText = [System.IO.File]::ReadAllText($hudRuntimeSamplePath)
+$hudFrameOwnedText = [System.IO.File]::ReadAllText($hudFrameOwnedPath)
+$baseStateBody = Get-FunctionText -Path $hudRuntimeSamplePath `
+    -Signature 'static\s+bool\s+ReadHudRuntimeBaseState\s*\('
+if (-not $baseStateBody -or
+    $baseStateBody -match 'scoreboard\s*=\s*\{\s*\}|enemyTarget\s*=\s*\{\s*\}' -or
+    $hudFrameOwnedText -notmatch 'ClearHudRuntimeDynamicSnapshotPayload') {
+    Add-Error 'MP-PERF-005: HUD frame rollover still clears QString payloads or lacks a cold clear helper'
+}
+if ($hudRuntimeSampleText -notmatch 'static\s+const\s+ScoreboardSnapshot\*\s+ReadHudRuntimeScoreboardSnapshot' -or
+    $hudRuntimeSampleText -notmatch 'static\s+const\s+EnemyTargetSnapshot\*\s+ReadHudRuntimeEnemyTargetSnapshot' -or
+    $hudRenderMainText -match 'ScoreboardSnapshot\s+scoreboard\s*\{\s*\}' -or
+    $hudRenderMainText -match 'EnemyTargetSnapshot\s+enemyTarget\s*\{\s*\}') {
+    Add-Error 'MP-PERF-006: HUD dynamic snapshots are still copied through the render call'
+}
+
+# --- MP-PERF-001: element profiler remains fixed and developer-only ---------
+#
+# The first hotspot decision is data-driven. Keep the collector's storage
+# bounded and keep release builds on the no-op side of the instrumentation
+# boundary; the one-Hz report is the only logging surface.
+$hudPerfProbePath = Join-Path $qtSdl 'MelonPrimePerfProbe.h'
+$hudPerfProbeText = [System.IO.File]::ReadAllText($hudPerfProbePath)
+foreach ($requiredToken in @(
+    'HudElementMetric', 'kHudElementCap', 'ScopedHudElement',
+    'ReportHudElementSummary', 'hud_element_us',
+    'CountHudElementText', 'CountHudElementImageDraw')) {
+    if ($hudPerfProbeText -notmatch [regex]::Escape($requiredToken)) {
+        Add-Error "MP-PERF-001: HUD element profiler token is missing: $requiredToken"
+    }
+}
+if ($hudPerfProbeText -notmatch 'MELONPRIME_ENABLE_DEVELOPER_FEATURES' -or
+    $hudPerfProbeText -notmatch 'class\s+ScopedHudElement') {
+    Add-Error 'MP-PERF-001: HUD element profiler is not visibly developer-only/no-op in release builds'
+}
+
 # --- Rule I: ARM9 install consumes only the resolved activation plan --------
 #
 # RuntimeConfigSnapshot owns config interpretation. ARM9Hook_Install is the

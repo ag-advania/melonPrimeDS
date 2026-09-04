@@ -975,6 +975,9 @@ namespace MelonPrime {
         struct alignas(4) StateFlags {
             uint32_t packed = 0;
             static constexpr uint32_t BIT_ROM_DETECTED = 1u << 0;
+            // Classification is latched separately so unsupported ROMs do
+            // not re-run the full checksum/header detector every frame.
+            static constexpr uint32_t BIT_ROM_CLASSIFIED = 1u << 18;
             static constexpr uint32_t BIT_IN_GAME = 1u << 1;
             static constexpr uint32_t BIT_IN_GAME_INIT = 1u << 2;
             static constexpr uint32_t BIT_END_OF_GAME_PATCH_RESTORED = 1u << 12;
@@ -1116,6 +1119,7 @@ namespace MelonPrime {
 #ifdef MELONPRIME_CUSTOM_HUD
         std::shared_ptr<CustomHudConfigState> m_hudConfigState;
 #endif
+        uint64_t m_romClassificationGeneration = 0;
 
         // =================================================================
         // Inline helpers

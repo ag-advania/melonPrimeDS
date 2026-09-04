@@ -27,7 +27,7 @@
                     m_radarOpacity, m_radarSrcRadius,
                     m_radarAnchorDsX, m_radarAnchorDsY);
 
-                if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, instcfg, mp, m_hudEnabled, editMode))
+                if (MelonPrimeHud_IsHudVisibleOrRestorePatch(emuInstance, mp, m_hudEnabled, editMode))
                 {
                 // Overlay covers the full logical window so HUD elements placed in black-bar
                 // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
@@ -208,56 +208,124 @@
                         emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition()))
                 {
                     // Use cached config values — no hash-map lookups per-frame.
-                    int dstX    = m_radarDstX;
-                    int dstY    = m_radarDstY;
+                    const int dstX = m_radarDstX;
+                    const int dstY = m_radarDstY;
                     const int dstSize = m_radarDstSize;
                     const float opacity = m_radarOpacity;
-
                     // Use cached hudScale as rScaleY (already the top-screen scaleY).
                     const float rScaleY = m_hudScale;
-
-                    const float* topMtx = m_hudTopMatrix;
-                    const float wAX  = topMtx[0]*m_radarAnchorDsX + topMtx[1]*m_radarAnchorDsY + topMtx[4];
-                    const float wAY  = topMtx[2]*m_radarAnchorDsX + topMtx[3]*m_radarAnchorDsY + topMtx[5];
-                    // Decompose into overlay-base + internal-offset so the int
-                    // truncation of the origin matches the HUD overlay texture
-                    // placement (both use int(m_hudOriginX) as the base).
-                    const int ovrBaseX = static_cast<int>(m_hudOriginX);
-                    const int ovrBaseY = static_cast<int>(m_hudOriginY);
-                    dstX = ovrBaseX + static_cast<int>((wAX - m_hudOriginX) + dstX * rScaleY);
-                    dstY = ovrBaseY + static_cast<int>((wAY - m_hudOriginY) + dstY * rScaleY);
-
-                    // dstX/dstY are now in window pixels. Use rScaleY for both dims (circle, not ellipse).
-                    const float wDstX0 = dstX;
-                    const float wDstY0 = dstY;
-                    const float wDstX1 = dstX + rScaleY * dstSize;
-                    const float wDstY1 = dstY + rScaleY * dstSize;
-
-                    // Full bottom screen as source (texcoords 0-1)
-                    const float verts[6 * 4] =
-                    {
-                        wDstX0, wDstY0,  0.0f, 0.0f,
-                        wDstX0, wDstY1,  0.0f, 1.0f,
-                        wDstX1, wDstY1,  1.0f, 1.0f,
-                        wDstX0, wDstY0,  0.0f, 0.0f,
-                        wDstX1, wDstY1,  1.0f, 1.0f,
-                        wDstX1, wDstY0,  1.0f, 0.0f,
-                    };
+                    const uint8_t hunterID = mp->GetHunterID();
+                    auto& radarCache = m_hudRadarGl;
+                    const bool matrixChanged = !radarCache.geometryValid
+                        || radarCache.topMatrix[0] != m_hudTopMatrix[0]
+                        || radarCache.topMatrix[1] != m_hudTopMatrix[1]
+                        || radarCache.topMatrix[2] != m_hudTopMatrix[2]
+                        || radarCache.topMatrix[3] != m_hudTopMatrix[3]
+                        || radarCache.topMatrix[4] != m_hudTopMatrix[4]
+                        || radarCache.topMatrix[5] != m_hudTopMatrix[5];
+                    const bool surfaceSizeChanged = !radarCache.geometryValid
+                        || radarCache.surfaceWidth != w
+                        || radarCache.surfaceHeight != h
+                        || radarCache.surfaceScale != factor;
+                    const bool geometryChanged = !radarCache.geometryValid
+                        || radarCache.configEpoch != m_radarCfgEpoch
+                        || radarCache.layoutGeneration != m_hudVisualRendererGeneration
+                        || surfaceSizeChanged
+                        || radarCache.hudScale != rScaleY
+                        || radarCache.hudOriginX != m_hudOriginX
+                        || radarCache.hudOriginY != m_hudOriginY
+                        || radarCache.anchorDsX != m_radarAnchorDsX
+                        || radarCache.anchorDsY != m_radarAnchorDsY
+                        || radarCache.dstX != dstX
+                        || radarCache.dstY != dstY
+                        || radarCache.dstSize != dstSize
+                        || matrixChanged;
+                    const bool screenSizeChanged = !radarCache.screenSizeValid
+                        || surfaceSizeChanged;
+                    const bool opacityChanged = !radarCache.opacityValid
+                        || radarCache.opacity != opacity;
+                    const bool sourceChanged = !radarCache.sourceValid
+                        || radarCache.srcRadius != m_radarSrcRadius
+                        || radarCache.hunterId != hunterID;
 
                     glUseProgram(btmOverlayShader);
                     hudGlStateChanged = true;
                     glBindVertexArray(btmOverlayVertexArray);
                     glBindBuffer(GL_ARRAY_BUFFER, btmOverlayVertexBuffer);
-                    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
-
-                    glUniform2f(btmOverlayScreenSizeULoc, w / factor, h / factor);
-                    glUniform1f(btmOverlayOpacityULoc, opacity);
-
-                    const uint8_t hunterID = mp->GetHunterID();
-                    glUniform2f(btmOverlaySrcCenterULoc,
-                        MelonPrime::kBtmOverlaySrcCenterX / 256.0f,
-                        MelonPrime::kBtmOverlaySrcCenterY[hunterID] / 192.0f);
-                    glUniform1f(btmOverlaySrcRadiusULoc, m_radarSrcRadius / 256.0f);
+                    if (geometryChanged) {
+                        const float* topMtx = m_hudTopMatrix;
+                        const float wAX = topMtx[0] * m_radarAnchorDsX
+                            + topMtx[1] * m_radarAnchorDsY + topMtx[4];
+                        const float wAY = topMtx[2] * m_radarAnchorDsX
+                            + topMtx[3] * m_radarAnchorDsY + topMtx[5];
+                        // Decompose into overlay-base + internal-offset so the
+                        // int truncation matches the HUD texture placement.
+                        const int ovrBaseX = static_cast<int>(m_hudOriginX);
+                        const int ovrBaseY = static_cast<int>(m_hudOriginY);
+                        const int resolvedDstX = ovrBaseX + static_cast<int>(
+                            (wAX - m_hudOriginX) + dstX * rScaleY);
+                        const int resolvedDstY = ovrBaseY + static_cast<int>(
+                            (wAY - m_hudOriginY) + dstY * rScaleY);
+                        const float wDstX0 = resolvedDstX;
+                        const float wDstY0 = resolvedDstY;
+                        const float wDstX1 = resolvedDstX + rScaleY * dstSize;
+                        const float wDstY1 = resolvedDstY + rScaleY * dstSize;
+                        // Full bottom screen as source (texcoords 0-1).
+                        const float verts[6 * 4] = {
+                            wDstX0, wDstY0, 0.0f, 0.0f,
+                            wDstX0, wDstY1, 0.0f, 1.0f,
+                            wDstX1, wDstY1, 1.0f, 1.0f,
+                            wDstX0, wDstY0, 0.0f, 0.0f,
+                            wDstX1, wDstY1, 1.0f, 1.0f,
+                            wDstX1, wDstY0, 1.0f, 0.0f,
+                        };
+                        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(verts), verts);
+                        MelonPrimePerf::CountHudRadarVboUpload();
+                        radarCache.geometryValid = true;
+                        radarCache.configEpoch = m_radarCfgEpoch;
+                        radarCache.layoutGeneration = m_hudVisualRendererGeneration;
+                        radarCache.surfaceWidth = w;
+                        radarCache.surfaceHeight = h;
+                        radarCache.surfaceScale = factor;
+                        radarCache.hudScale = rScaleY;
+                        radarCache.hudOriginX = m_hudOriginX;
+                        radarCache.hudOriginY = m_hudOriginY;
+                        radarCache.anchorDsX = m_radarAnchorDsX;
+                        radarCache.anchorDsY = m_radarAnchorDsY;
+                        radarCache.dstX = dstX;
+                        radarCache.dstY = dstY;
+                        radarCache.dstSize = dstSize;
+                        for (int i = 0; i < 6; ++i)
+                            radarCache.topMatrix[i] = m_hudTopMatrix[i];
+                    }
+                    if (screenSizeChanged) {
+                        const float screenWidth = w / factor;
+                        const float screenHeight = h / factor;
+                        glUniform2f(btmOverlayScreenSizeULoc,
+                            screenWidth, screenHeight);
+                        radarCache.screenWidth = screenWidth;
+                        radarCache.screenHeight = screenHeight;
+                        radarCache.screenSizeValid = true;
+                    }
+                    if (opacityChanged) {
+                        glUniform1f(btmOverlayOpacityULoc, opacity);
+                        radarCache.opacity = opacity;
+                        radarCache.opacityValid = true;
+                    }
+                    if (sourceChanged) {
+                        glUniform2f(btmOverlaySrcCenterULoc,
+                            MelonPrime::kBtmOverlaySrcCenterX / 256.0f,
+                            MelonPrime::kBtmOverlaySrcCenterY[hunterID] / 192.0f);
+                        glUniform1f(btmOverlaySrcRadiusULoc,
+                            m_radarSrcRadius / 256.0f);
+                        radarCache.srcRadius = m_radarSrcRadius;
+                        radarCache.hunterId = hunterID;
+                        radarCache.sourceValid = true;
+                    }
+                    // A config edge invalidates the geometry cache as a whole;
+                    // keep the edge signature current after the one upload.
+                    radarCache.configEpoch = m_radarCfgEpoch;
+                    radarCache.layoutGeneration = m_hudVisualRendererGeneration;
 
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D_ARRAY, activeScreenTexture);

@@ -71,6 +71,12 @@ namespace MelonPrime {
 
     COLD_FUNCTION void MelonPrimeCore::DetectRomAndSetAddresses()
     {
+        // Classification is per ROM-load generation. Set the latch before
+        // any checksum/header early return so unsupported ROMs take the cold
+        // detector once and then remain a cheap classified miss.
+        m_flags.clear(StateFlags::BIT_ROM_DETECTED);
+        m_romClassificationGeneration = globalRomLoadGeneration;
+        m_flags.set(StateFlags::BIT_ROM_CLASSIFIED);
         m_zoomAimCanZoomCache = {};
 #ifdef MELONPRIME_DS
         // Detection restarts here, so drop any address published for a previously

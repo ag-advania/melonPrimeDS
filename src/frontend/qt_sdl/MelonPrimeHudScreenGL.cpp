@@ -39,6 +39,7 @@ void ScreenPanelGL::initializeHudOpenGL()
     m_hudUploadedRect = QRect();
     m_hudUploadedHash = 0;
     m_hudUploadedValid = false;
+    m_hudRadarGl = {};
 
     glGenTextures(2, overlayTextures);
     for (int i = 0; i < 2; ++i) {
@@ -115,6 +116,7 @@ void ScreenPanelGL::deinitializeHudOpenGL()
     glDeleteBuffers(1, &btmOverlayVertexBuffer);
     glDeleteVertexArrays(1, &btmOverlayVertexArray);
     m_hudVisualFrameValid = false;
+    m_hudRadarGl = {};
     ++m_hudVisualRendererGeneration;
 }
 

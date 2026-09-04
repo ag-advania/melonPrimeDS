@@ -184,7 +184,6 @@ inline bool MelonPrimeHud_CanRenderForCore(CoreT* mp, bool editMode)
 template <typename CoreT>
 inline bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     EmuInstance* emuInstance,
-    Config::Table& instcfg,
     CoreT* mp,
     bool hudEnabled,
     bool editMode)
@@ -192,9 +191,8 @@ inline bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     const bool hudVisible = hudEnabled || editMode;
     if (!hudVisible) {
         MelonPrime::CustomHud_EnsurePatchRestored(
-            mp->HudConfigState(), emuInstance, instcfg,
-            mp->GetCurrentRom(), mp->GetPlayerPosition(),
-            mp->IsInGame());
+            mp->HudConfigState(), emuInstance,
+            mp->GetCurrentRom(), mp->GetPlayerPosition());
     }
     return hudVisible;
 }

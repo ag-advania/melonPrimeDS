@@ -11,6 +11,7 @@ static void DrawGauge(QPainter* p, int x, int y, float ratio,
                       const HudOutlineConfig* outline = nullptr,
                       float hudScale = 1.0f)
 {
+    MelonPrimePerf::ScopedHudElement element(MelonPrimePerf::HudElementMetric::Gauge);
     ratio = (ratio < 0.0f) ? 0.0f : (ratio > 1.0f) ? 1.0f : ratio;
     if (barLengthPx <= 0) barLengthPx = 28;
     if (barWidthPx  <= 0) barWidthPx  = 3;
@@ -771,8 +772,10 @@ static ScoreboardRenderPlan BuildScoreboardRenderPlan(
 static bool UpdateScoreboardPlanCell(
     ScoreboardPlanText& cell, int32_t rawValue, bool isTime,
     uint8_t gameMode, const QColor& color, const QFontMetrics& fm,
-    bool rankFont, Qt::Alignment alignment)
+    bool rankFont, Qt::Alignment alignment, bool* changed = nullptr)
 {
+    if (changed)
+        *changed = false;
     const ScoreboardVisualValue visual = MakeScoreboardVisualValue(
         rawValue, isTime, gameMode);
     if (cell.visual == visual)
@@ -798,6 +801,8 @@ static bool UpdateScoreboardPlanCell(
     cell.alignment = alignment;
     cell.rankFont = rankFont;
     cell.enabled = !cell.display.isEmpty();
+    if (changed)
+        *changed = true;
     return true;
 }
 
@@ -806,8 +811,11 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
     const ScoreboardSnapshot& snapshot,
     const CachedHudConfig& c,
     const QFontMetrics& boardFm,
-    const QFontMetrics& rankFm)
+    const QFontMetrics& rankFm,
+    bool* changed = nullptr)
 {
+    if (changed)
+        *changed = false;
     if (!plan.valid)
         return false;
 
@@ -823,10 +831,13 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
             const int rank = ResolveScoreboardDisplayedRank(
                 snapshot, current.team, current.slot);
             const ScoreboardVisualValue previousRank = current.rank.visual;
+            bool rankChanged = false;
             if (!UpdateScoreboardPlanCell(
                     current.rank, rank, false, snapshot.gameMode,
-                    current.color, rankFm, true, Qt::AlignLeft))
+                    current.color, rankFm, true, Qt::AlignLeft, &rankChanged))
                 return false;
+            if (changed && rankChanged)
+                *changed = true;
             if (!(previousRank == current.rank.visual) && current.starsFullW > 0.0) {
                 const float boardScale = ScoreboardUserScale(c);
                 const auto scaleDs = [boardScale](int value) {
@@ -863,13 +874,17 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
                 : metric.secondIsKills ? player.kills : player.deaths;
         }
 
+        bool firstChanged = false;
+        bool secondChanged = false;
         if (!UpdateScoreboardPlanCell(
                 current.first, firstValue, metric.firstIsTime, snapshot.gameMode,
-                current.color, boardFm, false, Qt::AlignRight)
+                current.color, boardFm, false, Qt::AlignRight, &firstChanged)
             || !UpdateScoreboardPlanCell(
                 current.second, secondValue, metric.secondIsTime, snapshot.gameMode,
-                current.color, boardFm, false, Qt::AlignRight))
+                current.color, boardFm, false, Qt::AlignRight, &secondChanged))
             return false;
+        if (changed && (firstChanged || secondChanged))
+            *changed = true;
     }
     return true;
 }
@@ -888,6 +903,8 @@ static void DrawScoreboardPlanText(
             / std::max(0.001f, hudScale)
         : 0.0f;
     if (outlineRadius > 0.0f) {
+        MelonPrimePerf::ScopedHudElement outlineElement(
+            MelonPrimePerf::HudElementMetric::Outline);
         if (!text.outlinePathPrepared) {
             text.outlinePath.addText(QPointF(0.0f, 0.0f), font, text.display);
             text.outlinePathPrepared = true;
@@ -917,20 +934,28 @@ static void DrawScoreboardPlanText(
     p->setPen(text.color);
     p->setBrush(Qt::NoBrush);
     p->setFont(font);
-    p->drawText(text.rect, flags, text.display);
+    {
+        MelonPrimePerf::ScopedHudElement textElement(
+            MelonPrimePerf::HudElementMetric::Text);
+        MelonPrimePerf::CountHudElementGlyphs(
+            static_cast<uint32_t>(text.display.size()));
+        p->drawText(text.rect, flags, text.display);
+    }
     AccumDirtyDs(p, outlineRadius > 0.0f ? text.rect.adjusted(
         -outlineRadius, -outlineRadius, outlineRadius, outlineRadius) : text.rect);
 }
 
-static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
-                           const CachedHudConfig& c, float hudScale,
-                           uint8_t localPlayerSlot)
+static void AdvanceScoreboardPlanGeneration(HudFrameOwnedState& hudFrame)
 {
-    if (!p || !snapshot.visible || !c.scoreboard.show
-        || c.scoreboard.opacity <= 0.0f)
-        return;
+    ++hudFrame.scoreboardPlanGeneration;
+    if (hudFrame.scoreboardPlanGeneration == 0)
+        hudFrame.scoreboardPlanGeneration = 1;
+    hudFrame.scoreboardRaster.valid = false;
+}
 
-    EnsureScoreboardFontCache(c, hudScale);
+static void DrawScoreboardRaster(QPainter* p, ScoreboardRenderPlan& plan,
+                                 const CachedHudConfig& c, float hudScale)
+{
     auto& hudFrame = HudFrameState();
     const auto& scoreboardFont = hudFrame.scoreboardFont;
     const QFont& boardFont = scoreboardFont.boardFont;
@@ -938,35 +963,6 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     const QFontMetrics& boardFm = scoreboardFont.boardFm;
     const QFontMetrics& rankFm = scoreboardFont.rankFm;
     const HudOutlineConfig& scoreboardOutline = EffOL(c, c.scoreboard.outline);
-    const ScoreboardStructureKey structure = MakeScoreboardStructureKey(snapshot);
-    MelonPrimePerf::CountScoreboardStructureCheck();
-
-    if (!ScoreboardPlanMatches(hudFrame.scoreboardPlan, structure, c,
-                               hudScale, localPlayerSlot)) {
-        MelonPrimePerf::ScopedHudPhase planTimer(
-            MelonPrimePerf::HudPhase::ScoreboardPlan);
-        hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
-            snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
-        MelonPrimePerf::CountScoreboardPlanBuild();
-        MelonPrimePerf::CountScoreboardFullPlanRebuild();
-    } else {
-        MelonPrimePerf::ScopedHudPhase planTimer(
-            MelonPrimePerf::HudPhase::ScoreboardPlan);
-        if (!UpdateScoreboardRenderPlanDynamicCells(
-                hudFrame.scoreboardPlan, snapshot, c, boardFm, rankFm))
-        {
-            hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
-                snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
-            MelonPrimePerf::CountScoreboardPlanBuild();
-            MelonPrimePerf::CountScoreboardFullPlanRebuild();
-        }
-    }
-    auto& plan = hudFrame.scoreboardPlan;
-    if (!plan.valid)
-        return;
-
-    MelonPrimePerf::ScopedHudPhase rasterTimer(
-        MelonPrimePerf::HudPhase::ScoreboardRaster);
 
     p->save();
     p->setFont(boardFont);
@@ -1005,6 +1001,9 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         const QImage* hunter = row.hunterId < 7 && row.hunterVariant < 4
             ? &s_scoreboardHunterIcons[row.hunterId][row.hunterVariant] : nullptr;
         if (hunter && !hunter->isNull() && !row.hunterIconRect.isEmpty()) {
+            MelonPrimePerf::ScopedHudElement iconElement(
+                MelonPrimePerf::HudElementMetric::Icon);
+            MelonPrimePerf::CountHudElementImageDraw();
             p->drawImage(row.hunterIconRect, *hunter);
             AccumDirtyDs(p, row.hunterIconRect);
         }
@@ -1015,6 +1014,9 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         if (row.stars <= 4 && !row.starsRect.isEmpty()) {
             const QImage& stars = s_scoreboardStars[row.stars];
             if (!stars.isNull()) {
+                MelonPrimePerf::ScopedHudElement iconElement(
+                    MelonPrimePerf::HudElementMetric::Icon);
+                MelonPrimePerf::CountHudElementImageDraw();
                 p->drawImage(row.starsRect, stars);
                 AccumDirtyDs(p, row.starsRect);
             }
@@ -1025,6 +1027,131 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
                                boardFont, boardFm, scoreboardOutline, hudScale);
     }
     p->restore();
+}
+
+static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
+                           const CachedHudConfig& c, float hudScale,
+                           uint8_t localPlayerSlot)
+{
+    if (!p || !snapshot.visible || !c.scoreboard.show
+        || c.scoreboard.opacity <= 0.0f)
+        return;
+
+    EnsureScoreboardFontCache(c, hudScale);
+    auto& hudFrame = HudFrameState();
+    const auto& scoreboardFont = hudFrame.scoreboardFont;
+    const QFont& boardFont = scoreboardFont.boardFont;
+    const QFont& rankFont = scoreboardFont.rankFont;
+    const QFontMetrics& boardFm = scoreboardFont.boardFm;
+    const QFontMetrics& rankFm = scoreboardFont.rankFm;
+    const ScoreboardStructureKey structure = MakeScoreboardStructureKey(snapshot);
+    MelonPrimePerf::CountScoreboardStructureCheck();
+
+    if (!ScoreboardPlanMatches(hudFrame.scoreboardPlan, structure, c,
+                               hudScale, localPlayerSlot)) {
+        MelonPrimePerf::ScopedHudPhase planTimer(
+            MelonPrimePerf::HudPhase::ScoreboardPlan);
+        hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
+            snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
+        AdvanceScoreboardPlanGeneration(hudFrame);
+        MelonPrimePerf::CountScoreboardPlanBuild();
+        MelonPrimePerf::CountScoreboardFullPlanRebuild();
+    } else {
+        MelonPrimePerf::ScopedHudPhase planTimer(
+            MelonPrimePerf::HudPhase::ScoreboardPlan);
+        bool dynamicChanged = false;
+        if (!UpdateScoreboardRenderPlanDynamicCells(
+                hudFrame.scoreboardPlan, snapshot, c, boardFm, rankFm,
+                &dynamicChanged))
+        {
+            hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
+                snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
+            AdvanceScoreboardPlanGeneration(hudFrame);
+            MelonPrimePerf::CountScoreboardPlanBuild();
+            MelonPrimePerf::CountScoreboardFullPlanRebuild();
+        } else if (dynamicChanged) {
+            AdvanceScoreboardPlanGeneration(hudFrame);
+        }
+    }
+    auto& plan = hudFrame.scoreboardPlan;
+    if (!plan.valid)
+        return;
+
+    MelonPrimePerf::ScopedHudPhase rasterTimer(
+        MelonPrimePerf::HudPhase::ScoreboardRaster);
+
+    auto& raster = hudFrame.scoreboardRaster;
+    const QRectF panelRect(plan.panelX, plan.panelY, plan.panelW, plan.panelH);
+    const HudOutlineConfig& scoreboardOutline = EffOL(c, c.scoreboard.outline);
+    const float outlineRadius = scoreboardOutline.enable
+        && scoreboardOutline.opacity > 0.0f
+        ? static_cast<float>(std::max(1, scoreboardOutline.thickness))
+            / std::max(0.001f, hudScale) : 0.0f;
+    const QRectF bounds = panelRect.adjusted(
+        -outlineRadius - 1.0f, -outlineRadius - 1.0f,
+        outlineRadius + 1.0f, outlineRadius + 1.0f);
+    const float originX = std::floor(bounds.left());
+    const float originY = std::floor(bounds.top());
+    const QTransform painterTransform = p->transform();
+    const QPointF deviceOrigin = painterTransform.map(QPointF(originX, originY));
+    const QPointF deviceEnd = painterTransform.map(QPointF(bounds.right(), bounds.bottom()));
+    const float scaleX = std::max(0.001f,
+        static_cast<float>(std::abs(painterTransform.m11())));
+    const float scaleY = std::max(0.001f,
+        static_cast<float>(std::abs(painterTransform.m22())));
+    const int widthPx = std::max(1, static_cast<int>(std::ceil(
+        std::abs(deviceEnd.x() - deviceOrigin.x()))) + 2);
+    const int heightPx = std::max(1, static_cast<int>(std::ceil(
+        std::abs(deviceEnd.y() - deviceOrigin.y()))) + 2);
+    const float widthDs = static_cast<float>(widthPx) / scaleX;
+    const float heightDs = static_cast<float>(heightPx) / scaleY;
+    const bool cacheMatches = raster.valid
+        && raster.planGeneration == hudFrame.scoreboardPlanGeneration
+        && raster.hudScale == hudScale
+        && raster.originX == originX
+        && raster.originY == originY
+        && raster.widthDs == widthDs
+        && raster.heightDs == heightDs
+        && raster.image.width() == widthPx
+        && raster.image.height() == heightPx;
+
+    if (!cacheMatches) {
+        MelonPrimePerf::CountScoreboardRasterCacheMiss();
+        QImage image(widthPx, heightPx, QImage::Format_ARGB32_Premultiplied);
+        image.fill(Qt::transparent);
+        QPainter imagePainter(&image);
+        const QTransform localTransform(
+            painterTransform.m11(), painterTransform.m12(),
+            painterTransform.m21(), painterTransform.m22(),
+            painterTransform.dx() - deviceOrigin.x(),
+            painterTransform.dy() - deviceOrigin.y());
+        imagePainter.setWorldTransform(localTransform, false);
+        imagePainter.setFont(boardFont);
+        const QRect previousDirty = s_drawnDirtyPx;
+        DrawScoreboardRaster(&imagePainter, plan, c, hudScale);
+        imagePainter.end();
+        s_drawnDirtyPx = previousDirty;
+        raster.image = std::move(image);
+        raster.planGeneration = hudFrame.scoreboardPlanGeneration;
+        raster.hudScale = hudScale;
+        raster.originX = originX;
+        raster.originY = originY;
+        raster.widthDs = widthDs;
+        raster.heightDs = heightDs;
+        raster.valid = true;
+    } else {
+        MelonPrimePerf::CountScoreboardRasterCacheHit();
+    }
+
+    const QRectF rasterRect(raster.originX, raster.originY,
+                            raster.widthDs, raster.heightDs);
+    p->save();
+    p->setOpacity(1.0);
+    p->setRenderHint(QPainter::SmoothPixmapTransform, false);
+    MelonPrimePerf::CountHudElementImageDraw();
+    p->drawImage(rasterRect, raster.image);
+    p->restore();
+    AccumDirtyDs(p, rasterRect);
 }
 
 static ScoreboardSnapshot MakeScoreboardPreviewSnapshot()
@@ -1317,6 +1444,8 @@ static void DrawEnemyTargetPlanText(QPainter* p, const EnemyTargetPlanText& cell
         ? static_cast<float>(std::max(1, outline.thickness)) / std::max(0.001f, hudScale)
         : 0.0f;
     if (outlineRadius > 0.0f && cell.outlinePathPrepared) {
+        MelonPrimePerf::ScopedHudElement outlineElement(
+            MelonPrimePerf::HudElementMetric::Outline);
         QColor outlineColor = outline.color;
         outlineColor.setAlphaF(std::clamp(outline.opacity, 0.0f, 1.0f));
         QPen outlinePen(outlineColor, outlineRadius * 2.0);
@@ -1331,7 +1460,13 @@ static void DrawEnemyTargetPlanText(QPainter* p, const EnemyTargetPlanText& cell
     p->setPen(color);
     p->setBrush(Qt::NoBrush);
     p->setFont(font);
-    p->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, cell.text);
+    {
+        MelonPrimePerf::ScopedHudElement textElement(
+            MelonPrimePerf::HudElementMetric::Text);
+        MelonPrimePerf::CountHudElementGlyphs(
+            static_cast<uint32_t>(cell.text.size()));
+        p->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter | Qt::TextSingleLine, cell.text);
+    }
     AccumDirtyDs(p, outlineRadius > 0.0f
         ? rect.adjusted(-outlineRadius, -outlineRadius, outlineRadius, outlineRadius)
         : rect);
@@ -1341,6 +1476,8 @@ static void DrawEnemyTargetBar(QPainter* p, float x, float y, float len, float h
                                float ratio, const QColor& fill, const QColor& back,
                                const HudOutlineConfig& outline, float hudScale)
 {
+    MelonPrimePerf::ScopedHudElement element(
+        MelonPrimePerf::HudElementMetric::Gauge);
     ratio = std::clamp(ratio, 0.0f, 1.0f);
     const float expand = outline.enable && outline.opacity > 0.0f
         ? static_cast<float>(std::max(1, outline.thickness)) / std::max(0.001f, hudScale)
@@ -1388,6 +1525,9 @@ static void DrawEnemyTarget(QPainter* p, const EnemyTargetSnapshot& s,
     p->setRenderHint(QPainter::SmoothPixmapTransform, false);
 
     if (layout.hasPortrait) {
+        MelonPrimePerf::ScopedHudElement iconElement(
+            MelonPrimePerf::HudElementMetric::Icon);
+        MelonPrimePerf::CountHudElementImageDraw();
         const QImage& portrait = s_enemyTargetHunterIcons[s.hunterId];
         const QRectF dst(layout.portraitX, layout.portraitY,
                          layout.portraitW, layout.portraitH);

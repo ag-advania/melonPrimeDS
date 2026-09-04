@@ -855,7 +855,7 @@ void ScreenPanelDX12::drawScreen()
 
         auto& instcfg = emuInstance->getLocalConfig();
         hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
-            emuInstance, instcfg, mpForHud, m_hudEnabled, hudEditMode);
+            emuInstance, mpForHud, m_hudEnabled, hudEditMode);
         // DX12 retains the HUD texture between compositions. The source
         // painter clears the previous dirty region before drawing the current
         // one, so both regions must be uploaded when the visual changes.

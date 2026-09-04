@@ -21,6 +21,7 @@ namespace MelonPrime {
     extern uint32_t globalChecksum;    // header + ARM9 + ARM7 CRC32 (variant label / fallback)
     extern uint32_t globalGameCode;    // NDS header gameCode @0x0C, packed via GameCodeAsU32()
     extern uint8_t  globalRomVersion;  // NDS header ROM revision @0x1E (0 = 1.0, 1 = 1.1)
+    extern uint64_t globalRomLoadGeneration; // changes on ROM load/eject
     extern bool isRomDetected;
 
     // =========================================================================

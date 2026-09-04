@@ -858,6 +858,35 @@ private:
     GLuint btmOverlayShader;
     GLint btmOverlayScreenSizeULoc, btmOverlayOpacityULoc, btmOverlaySrcCenterULoc, btmOverlaySrcRadiusULoc;
     GLuint btmOverlayVertexArray, btmOverlayVertexBuffer;
+
+    // The radar quad is stable between layout/config/resize/hunter edges.
+    // Keep the edge signatures with the GL owner so the presentation loop
+    // does not rebuild vertices or rewrite uniforms on every draw.
+    struct HudRadarGlCache {
+        uint32_t configEpoch = ~0u;
+        uint64_t layoutGeneration = 0;
+        int surfaceWidth = 0;
+        int surfaceHeight = 0;
+        float surfaceScale = 0.0f;
+        float screenWidth = 0.0f;
+        float screenHeight = 0.0f;
+        float hudScale = 0.0f;
+        float hudOriginX = 0.0f;
+        float hudOriginY = 0.0f;
+        float anchorDsX = 0.0f;
+        float anchorDsY = 0.0f;
+        int dstX = 0;
+        int dstY = 0;
+        int dstSize = 0;
+        float topMatrix[6] = {};
+        float opacity = 0.0f;
+        int srcRadius = 0;
+        uint8_t hunterId = 0xFFu;
+        bool geometryValid = false;
+        bool screenSizeValid = false;
+        bool opacityValid = false;
+        bool sourceValid = false;
+    } m_hudRadarGl;
 #endif
 
     GLuint logoTexture;

@@ -272,7 +272,12 @@ namespace MelonPrime {
 
         HandleGlobalHotkeys();
 
-        if (UNLIKELY(!m_flags.test(StateFlags::BIT_ROM_DETECTED))) {
+        if (UNLIKELY(m_romClassificationGeneration != globalRomLoadGeneration)) {
+            m_flags.clear(StateFlags::BIT_ROM_CLASSIFIED);
+            m_flags.clear(StateFlags::BIT_ROM_DETECTED);
+        }
+
+        if (UNLIKELY(!m_flags.test(StateFlags::BIT_ROM_CLASSIFIED))) {
             DetectRomAndSetAddresses();
         }
 
@@ -407,7 +412,7 @@ namespace MelonPrime {
                 ResetMorphBoostSwipePulseState(); // MELONPRIME_MORPH_BOOST_SHIFT_CADENCE_SWIPE_V10
 #ifdef MELONPRIME_CUSTOM_HUD
                 CustomHud_EnsurePatchRestored(
-                    *m_hudConfigState, emuInstance, localCfg, m_currentRom, m_playerPosition, false);
+                    *m_hudConfigState, emuInstance, m_currentRom, m_playerPosition);
 #endif
 #ifdef MELONPRIME_DS
                 m_weaponSwitchPending.Clear();

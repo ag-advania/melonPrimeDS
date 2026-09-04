@@ -250,7 +250,9 @@ $configPath = Join-Path $configRoot 'melonDS.toml'
 $layerSettings = Join-Path $build 'vk_layer_settings.txt'
 $csv = Join-Path $out "$RunId.csv"
 $screenInputPerf = Join-Path $out "$RunId.screen-input.json"
-$frameCsv = Join-Path $out "$RunId.frames.instance0.csv"
+# MelonPrimePerfProbe replaces %INSTANCE% with the numeric instance id, so
+# instance 0 is written as *.frames.0.csv (not *.frames.instance0.csv).
+$frameCsv = Join-Path $out "$RunId.frames.0.csv"
 $frameCsvTemplate = Join-Path $out "$RunId.frames.%INSTANCE%.csv"
 $buildInfoStdout = Join-Path $out "$RunId.build-info.out.log"
 $buildInfoStderr = Join-Path $out "$RunId.build-info.err.log"

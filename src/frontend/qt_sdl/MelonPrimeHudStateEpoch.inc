@@ -9,6 +9,7 @@
 static void CustomHud_InvalidateConfigCache()
 {
     s_cache.valid = false;
+    ClearHudRuntimeDynamicSnapshotPayload();
     s_bombTintCacheValid = false;
     for (int i = 0; i < 9; i++) s_weaponTintValid[i] = false;
     s_effectiveRadarHunterID = 0xFF; // P-13: force re-evaluation of effective radar color

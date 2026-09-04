@@ -138,6 +138,8 @@ struct BattleMatchState {
 
 #include "MelonPrimeHudBattleOwnedState.inc"
 
+static void ClearHudRuntimeDynamicSnapshotPayload();
+
 static void BumpCustomHudVisualGeneration()
 {
     auto& generation = ActiveHudConfigState().visualGeneration;
@@ -149,6 +151,7 @@ void CustomHud_OnMatchJoin(CustomHudConfigState& hudConfig, melonDS::u8* ram, co
 {
     const ScopedHudConfigState active(hudConfig);
     BumpCustomHudVisualGeneration();
+    ClearHudRuntimeDynamicSnapshotPayload();
     auto& b = s_battleState;
     ++b.scoreboardMatchSerial;
     b.mode = Read8(ram, rom.battleMode);
@@ -582,27 +585,25 @@ static inline int32_t ReadScoreboardS32(const melonDS::u8* ram, uint32_t address
     return static_cast<int32_t>(Read32(ram, address));
 }
 
-static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
-                                             const HudRuntimeState& st,
-                                             ScoreboardSnapshot& out)
+static const ScoreboardSnapshot* ReadHudRuntimeScoreboardSnapshot(
+    const RomAddresses& rom, const HudRuntimeState& st)
 {
     if (!s_hudRuntimeFrameCache.baseValid || !st.ram
         || !HudRuntimeFrameCacheMatches(st))
-        return false;
+        return nullptr;
     if (HudRuntimeFrameCacheMatches(s_hudRuntimeFrameCache.state)
         && s_hudRuntimeFrameCache.scoreboardValid
         && s_hudRuntimeFrameCache.scoreboardMatchSerial
                == s_battleState.scoreboardMatchSerial) {
-        out = s_hudRuntimeFrameCache.scoreboard;
-        return true;
+        return &s_hudRuntimeFrameCache.scoreboard;
     }
 
     const melonDS::u8* ram = st.ram;
     if (!EnsureScoreboardMatchCache(rom, st))
-        return false;
+        return nullptr;
     const auto& match = s_scoreboardMatchCache;
     const uint32_t runtimeBase = ScoreboardRuntimeBase(rom);
-    ScoreboardSnapshot snapshot{};
+    auto& snapshot = s_hudRuntimeFrameCache.scoreboard;
     snapshot.matchSerial = s_battleState.scoreboardMatchSerial;
     snapshot.gameMode = match.gameMode;
     snapshot.activePlayers = match.activePlayers;
@@ -612,6 +613,8 @@ static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
     // scoreboard, but its frame timing follows the regular HUD visibility
     // gate. Adventure remains excluded from the snapshot itself.
     snapshot.visible = !st.isAdventure;
+    snapshot.resultSlots = {0xFF, 0xFF, 0xFF, 0xFF};
+    snapshot.teamsByIndex = {};
 
     // Team aggregates are authoritative runtime values. Never recalculate or
     // sort them from player rows; only select the aggregate for TeamIndex.
@@ -632,13 +635,19 @@ static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
     for (int slot = 0; slot < 4; ++slot) {
         const auto& staticPlayer = match.playersBySlot[slot];
         auto& player = snapshot.playersBySlot[slot];
-        player = {};
         player.slot = staticPlayer.slot;
         player.active = staticPlayer.active;
         player.teamIndex = staticPlayer.teamIndex;
         player.hunterId = staticPlayer.hunterId;
         player.stars = staticPlayer.stars;
-        player.displayName = staticPlayer.displayName;
+        player.standing = 0xFF;
+        player.teamStanding = 0xFF;
+        player.time = 0;
+        player.kills = 0;
+        player.deaths = 0;
+        player.points = 0;
+        if (player.displayName != staticPlayer.displayName)
+            player.displayName = staticPlayer.displayName;
         if (!player.active)
             continue;
 
@@ -667,11 +676,9 @@ static bool ReadHudRuntimeScoreboardSnapshot(const RomAddresses& rom,
         }
     }
 
-    out = snapshot;
-    s_hudRuntimeFrameCache.scoreboard = snapshot;
     s_hudRuntimeFrameCache.scoreboardValid = true;
     s_hudRuntimeFrameCache.scoreboardMatchSerial = s_battleState.scoreboardMatchSerial;
-    return true;
+    return &snapshot;
 }
 
 // Survival counts down lives; Defender/Prime Hunter count up held time. Every
@@ -701,28 +708,38 @@ static inline bool EnemyTargetModeUsesTime(uint8_t gameMode)
 // The per-match roster cache already holds the decoded name, hunter, and team
 // for all four slots, so the only per-frame RAM reads are the target pair, the
 // live HP pair, and the mode value/goal.
-static bool ReadHudRuntimeEnemyTargetSnapshot(const RomAddresses& rom,
-                                              const HudRuntimeState& st,
-                                              EnemyTargetSnapshot& out)
+static const EnemyTargetSnapshot* ReadHudRuntimeEnemyTargetSnapshot(
+    const RomAddresses& rom, const HudRuntimeState& st)
 {
     if (!s_hudRuntimeFrameCache.baseValid || !st.ram
         || !HudRuntimeFrameCacheMatches(st))
-        return false;
+        return nullptr;
     if (s_hudRuntimeFrameCache.enemyTargetValid) {
-        out = s_hudRuntimeFrameCache.enemyTarget;
-        return out.visible;
+        return s_hudRuntimeFrameCache.enemyTarget.visible
+            ? &s_hudRuntimeFrameCache.enemyTarget : nullptr;
     }
 
     const melonDS::u8* ram = st.ram;
-    EnemyTargetSnapshot snapshot{};
+    auto& snapshot = s_hudRuntimeFrameCache.enemyTarget;
+    snapshot.visible = false;
+    snapshot.slot = 0xFF;
+    snapshot.timer = 0;
+    snapshot.hunterId = 0xFF;
+    snapshot.teamIndex = 0xFF;
+    snapshot.gameMode = 0;
+    snapshot.teams = false;
+    snapshot.hp = 0;
+    snapshot.maxHp = 0;
+    snapshot.rawValue = 0;
+    snapshot.rawGoal = 0;
+    snapshot.valueIsTime = false;
     // Cache the miss too: a frame with no target must not re-read RAM on a
     // repeated paint of the same emulated frame.
     s_hudRuntimeFrameCache.enemyTargetValid = true;
-    s_hudRuntimeFrameCache.enemyTarget = snapshot;
 
     // Adventure has no opponents; the panel follows the scoreboard's exclusion.
     if (st.isAdventure)
-        return false;
+        return nullptr;
 
     // The ROM writes and clears this pair together -- event 0x3D sets both, the
     // timer update clears the slot at zero -- so the timer alone settles whether
@@ -732,24 +749,25 @@ static bool ReadHudRuntimeEnemyTargetSnapshot(const RomAddresses& rom,
     // array, so it is validated rather than trusted.
     const int16_t timer = static_cast<int16_t>(Read16(ram, rom.enemyTargetTimer));
     if (timer <= 0)
-        return false;
+        return nullptr;
     const int16_t slot = static_cast<int16_t>(Read16(ram, rom.enemyTargetSlot));
     if (slot < 0 || slot >= 4)
-        return false;
+        return nullptr;
 
     if (!EnsureScoreboardMatchCache(rom, st))
-        return false;
+        return nullptr;
     const auto& match = s_scoreboardMatchCache;
     const auto& player = match.playersBySlot[slot];
     if (!player.active)
-        return false;
+        return nullptr;
 
     snapshot.visible = true;
     snapshot.slot = static_cast<uint8_t>(slot);
     snapshot.timer = timer;
     snapshot.hunterId = player.hunterId;
     snapshot.teamIndex = player.teamIndex;
-    snapshot.displayName = player.displayName;
+    if (snapshot.displayName != player.displayName)
+        snapshot.displayName = player.displayName;
     snapshot.gameMode = match.gameMode;
     snapshot.teams = match.teams;
 
@@ -790,9 +808,7 @@ static bool ReadHudRuntimeEnemyTargetSnapshot(const RomAddresses& rom,
             ram, runtimeBase + kScoreboardPointGoalOffset);
     }
 
-    out = snapshot;
-    s_hudRuntimeFrameCache.enemyTarget = snapshot;
-    return true;
+    return &snapshot;
 }
 
 static inline bool HudRuntimeFrameCacheMatches(melonDS::NDS* nds,
@@ -804,6 +820,15 @@ static inline bool HudRuntimeFrameCacheMatches(melonDS::NDS* nds,
     return s_hudRuntimeFrameCache.nds == nds
         && s_hudRuntimeFrameCache.ram == ram
         && s_hudRuntimeFrameCache.gameFrame == gameFrame
+        && s_hudRuntimeFrameCache.offP == offP
+        && s_hudRuntimeFrameCache.romGroup == romGroup;
+}
+
+static inline bool HudRuntimeFrameCacheIdentityMatches(
+    melonDS::NDS* nds, melonDS::u8* ram, uint32_t offP, uint8_t romGroup)
+{
+    return s_hudRuntimeFrameCache.nds == nds
+        && s_hudRuntimeFrameCache.ram == ram
         && s_hudRuntimeFrameCache.offP == offP
         && s_hudRuntimeFrameCache.romGroup == romGroup;
 }
@@ -828,11 +853,17 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
 
     const uint32_t offP = static_cast<uint32_t>(playerPosition) * Consts::PLAYER_ADDR_INC;
     const uint32_t gameFrame = nds->NumFrames;
-    if (HudRuntimeFrameCacheMatches(nds, ram, gameFrame, offP, rom.romGroupIndex)
+    const bool sameIdentity = HudRuntimeFrameCacheIdentityMatches(
+        nds, ram, offP, rom.romGroupIndex);
+    if (sameIdentity
+        && HudRuntimeFrameCacheMatches(nds, ram, gameFrame, offP, rom.romGroupIndex)
         && s_hudRuntimeFrameCache.baseValid) {
         out = s_hudRuntimeFrameCache.state;
         return true;
     }
+
+    if (!sameIdentity)
+        ClearHudRuntimeDynamicSnapshotPayload();
 
     out.nds = nds;
     out.ram = ram;
@@ -861,9 +892,7 @@ static bool ReadHudRuntimeBaseState(EmuInstance* emu,
     s_hudRuntimeFrameCache.timeLeftSecondsValid = false;
     s_hudRuntimeFrameCache.timeLimitMinutesValid = false;
     s_hudRuntimeFrameCache.scoreboardValid = false;
-    s_hudRuntimeFrameCache.scoreboard = {};
     s_hudRuntimeFrameCache.enemyTargetValid = false;
-    s_hudRuntimeFrameCache.enemyTarget = {};
     s_hudRuntimeFrameCache.state = out;
     return true;
 }
@@ -914,7 +943,9 @@ static bool ReadCrosshairProjectionInput(
 // ScreenPanelNative::paintEvent() on the GUI thread, and renderLock does not
 // cover RunFrameHook(). Sharing the cache across those two threads would race
 // over its non-trivial members -- the scoreboard and enemy-target snapshots
-// hold QStrings and are reassigned wholesale on every frame rollover.
+// hold QStrings and are owned by the presentation-side frame cache. Their
+// validity bits roll each frame; the QString payload is cleared only by the
+// cold boundary helper in MelonPrimeHudFrameOwnedState.inc.
 //
 // The clamp needs five bytes of guest RAM and no cache, so it reads them
 // directly. That also keeps ~9 QString destroy/construct pairs per in-game

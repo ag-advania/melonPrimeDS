@@ -19,7 +19,7 @@ Contract for the MelonPrime SRP refactor v3 immediate plan. Audited by
 | `MelonPrimeHudPresentationState.h` | Lightweight host presentation-state queries used by renderer front-ends | Editor event routing, drawing, patch lifecycle |
 | `MelonPrimeHudRuntime.h` | Gameplay visibility, visual generation, match join | Drawing, editor, patching |
 | `MelonPrimeHudRadar.h` | Radar colour-key source preparation | Radar drawing, HUD layout |
-| `MelonPrimeHudPatchLifecycle.h` | Native HUD patch apply/restore/reset/reconcile | Rendering, editor |
+| `MelonPrimeHudPatchLifecycle.h` | Native HUD patch apply/restore/reset/reconcile; tracker-gated normal restore | Rendering, editor |
 | `MelonPrimeHudEdit.h` | On-screen editor session, mouse routing, selection | Rendering, patch internals |
 | `MelonPrimeHudGoldenHarness.h` | Developer-only golden hash harness | Anything reachable in a release build |
 | `MelonPrimeHudRuntimeSample.inc` | NDS RAM to bounded snapshot, game-mode semantics, match cache | Presentation text, Qt layout/font types, glyph outlines, ownership aggregation |
@@ -168,6 +168,43 @@ screen-owned `m_hudEnabled` snapshot is passed through the overlay helper into
 restore decisions therefore use the same epoch-coherent value. Rule H
 hard-fails if the render body regains a live `CustomHud_IsEnabled` or config
 getter call.
+
+The normal HUD-disabled restore API is intentionally config-free. It first
+checks the instance-owned native-HUD applied mask and force-restore marker; a
+clean tracker returns before guest-RAM sampling. `CustomHud_Render()` remains
+the enabled-state authority and marks the desired patch, while savestate
+reconciliation keeps the full cold config-aware path. This prevents a
+presentation-rate callback from reintroducing `Config::Table` access into the
+steady restore path.
+
+The frame-owned scoreboard and enemy snapshots use validity bits for ordinary
+game-frame rollover. Their `QString` payload is cleared only at explicit ROM,
+match, config, savestate, and reset boundaries. Render consumes the cache by
+const reference, so the unity split does not create a second snapshot copy.
+
+The scoreboard render plan has a separate frame-owned `QImage` raster cache.
+`DrawScoreboard` advances its generation when structure or dynamic visual cells
+change, and the cache also keys the HUD scale, painter transform origin, and
+bounded panel raster size. A steady hit composites one cached image; only a
+first draw or an invalidation edge performs the bounded QPainter rasterization
+and image allocation. `ClearHudRuntimeDynamicSnapshotPayload` drops the image
+at the ROM, match, config, savestate, and reset boundaries, so cached pixels
+cannot cross an ownership or visual-state lifetime edge. The same F7 `.ml7`
+steady-state evidence is recorded in `docs/architecture/performance.md`:
+OpenGL scoreboard element p95/p99 fell from `531.6/543.9 us` to `5.1/6.0 us`,
+with `908` hits and `0` misses in the selected steady-state windows.
+
+The OpenGL native radar presenter owns a fixed `HudRadarGlCache`. Geometry is
+uploaded only on config/layout/renderer/surface/transform edges; screen-size,
+opacity, and source uniforms are likewise edge-triggered. Program/VAO/texture
+binding and the draw remain in the presentation path because they are required
+for each visible composite. These ownership and invalidation rules are
+ratcheted by the `MP-PERF-001` through `MP-PERF-006` checks in the SRP audit.
+
+ROM classification is separate from successful MPH detection. A load/eject
+generation clears both flags; `DetectRomAndSetAddresses()` sets the classified
+flag before checksum/header early returns. Consequently an unsupported ROM is
+classified once per identity while a newly loaded ROM is still detected again.
 
 ARM9 hook module activation follows the same cold-boundary rule. Runtime config
 is resolved into `Arm9HookActivationPlan` by
