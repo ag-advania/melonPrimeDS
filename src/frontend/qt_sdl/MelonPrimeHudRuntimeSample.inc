@@ -585,18 +585,66 @@ static inline int32_t ReadScoreboardS32(const melonDS::u8* ram, uint32_t address
     return static_cast<int32_t>(Read32(ram, address));
 }
 
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+// A real F7 match state is intentionally the source of the roster, mode, and
+// geometry for this probe. Some saved matches do not change score/death/time
+// fields during a short measurement window, though, which cannot exercise the
+// same-size dynamic raster miss. Keep the workload opt-in and mutate only the
+// already sampled presentation snapshot; production and normal developer runs
+// retain the game's values and the normal frame-cache fast path.
+static bool ScoreboardDynamicDiagnosticEnabled()
+{
+    static const bool enabled = [] {
+        const char* value = std::getenv("MELONPRIME_TEST_SCOREBOARD_DYNAMIC");
+        return value && value[0] != '\0' && std::strcmp(value, "0") != 0;
+    }();
+    return enabled;
+}
+
+static void ApplyScoreboardDynamicDiagnostic(ScoreboardSnapshot& snapshot,
+                                              uint32_t gameFrame)
+{
+    const int32_t phase = static_cast<int32_t>((gameFrame / 30u) & 1u);
+    for (auto& player : snapshot.playersBySlot) {
+        if (!player.active)
+            continue;
+        player.time = phase * 60;
+        player.kills = phase;
+        player.deaths = phase;
+        player.points = phase;
+    }
+    for (auto& team : snapshot.teamsByIndex) {
+        team.time = phase * 60;
+        team.kills = phase;
+        team.deaths = phase;
+        team.points = phase;
+    }
+}
+#endif // MELONPRIME_ENABLE_DEVELOPER_FEATURES
+
 static const ScoreboardSnapshot* ReadHudRuntimeScoreboardSnapshot(
     const RomAddresses& rom, const HudRuntimeState& st)
 {
     if (!s_hudRuntimeFrameCache.baseValid || !st.ram
         || !HudRuntimeFrameCacheMatches(st))
         return nullptr;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    const bool dynamicDiagnostic = ScoreboardDynamicDiagnosticEnabled();
+    if (!dynamicDiagnostic
+        && HudRuntimeFrameCacheMatches(s_hudRuntimeFrameCache.state)
+        && s_hudRuntimeFrameCache.scoreboardValid
+        && s_hudRuntimeFrameCache.scoreboardMatchSerial
+               == s_battleState.scoreboardMatchSerial) {
+        return &s_hudRuntimeFrameCache.scoreboard;
+    }
+#else
     if (HudRuntimeFrameCacheMatches(s_hudRuntimeFrameCache.state)
         && s_hudRuntimeFrameCache.scoreboardValid
         && s_hudRuntimeFrameCache.scoreboardMatchSerial
                == s_battleState.scoreboardMatchSerial) {
         return &s_hudRuntimeFrameCache.scoreboard;
     }
+#endif
 
     const melonDS::u8* ram = st.ram;
     if (!EnsureScoreboardMatchCache(rom, st))
@@ -675,6 +723,11 @@ static const ScoreboardSnapshot* ReadHudRuntimeScoreboardSnapshot(
             snapshot.resultSlots[displayIndex] = slot;
         }
     }
+
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES)
+    if (dynamicDiagnostic)
+        ApplyScoreboardDynamicDiagnostic(snapshot, st.nds->NumFrames);
+#endif
 
     s_hudRuntimeFrameCache.scoreboardValid = true;
     s_hudRuntimeFrameCache.scoreboardMatchSerial = s_battleState.scoreboardMatchSerial;

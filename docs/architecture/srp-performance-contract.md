@@ -196,7 +196,12 @@ OpenGL scoreboard element p95/p99 fell from `531.6/543.9 us` to `5.1/6.0 us`,
 with `908` hits and `0` misses in the selected steady-state windows. The
 developer probe also reports `scoreboard_raster_alloc`,
 `scoreboard_raster_reuse`, and `scoreboard_raster_bytes` for dynamic-miss
-validation.
+validation. The physical A/B harness's `scoreboard-dynamic` action uses the
+required F7 `.ml7` fixture and an opt-in developer-only snapshot seam when the
+short saved match does not naturally change a score field. A passing dynamic
+sample requires a cache miss with `alloc=0`, positive backing-store reuse, and
+positive dynamic-cell changes; the seam does not write guest RAM or run in
+production builds.
 
 The OpenGL native radar presenter owns a fixed `HudRadarGlCache`. Geometry is
 uploaded only on config/layout/renderer/surface/transform edges; screen-size,

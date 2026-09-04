@@ -32,7 +32,7 @@ param(
     [ValidateSet('Off', 'Reflex', 'ReflexBoost', 'AntiLag2', 'XeLL')]
     [string]$LowLatency = 'Off',
     [ValidateSet('steady-state', 'weapon-switch', 'projectile-burst',
-        'room-transition', 'scoreboard', 'display-capture', 'reset',
+        'room-transition', 'scoreboard', 'scoreboard-dynamic', 'display-capture', 'reset',
         'savestate-load', 'all')]
     [string]$Action = 'all',
     [int]$ActionSeed = 0,
@@ -379,6 +379,7 @@ $oldCsv = $env:MELONPRIME_LATENCY_CSV
 $oldFrameCsv = $env:MELONPRIME_PERF_CSV
 $oldState = $env:MELONPRIME_TEST_SAVESTATE
 $oldHud = $env:MELONPRIME_TEST_CUSTOM_HUD_OFF
+$oldScoreboardDynamic = $env:MELONPRIME_TEST_SCOREBOARD_DYNAMIC
 $oldPhysicalState = $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH
 $oldFrameDumpTrigger = $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE
 $oldExactGPU2DValidation = $env:MELONPRIME_GPU2D_EXACT_VALIDATE
@@ -551,6 +552,13 @@ function Run-Action([string]$name) {
             Add-Content -LiteralPath $harness -Value 'movement-sequence=W3.5s,D1.5s,S2.5s'
         }
         'scoreboard' { Send-Key '{TAB}'; Start-Sleep -Seconds 2; Send-Key '{TAB}' }
+        'scoreboard-dynamic' {
+            # The Custom HUD scoreboard is always part of the F7 gameplay
+            # frame; the diagnostic snapshot seam is enabled before launch.
+            # Leave the production scoreboard visible for the whole window so
+            # every same-size value change reaches the raster cache.
+            Add-Content -LiteralPath $harness -Value 'scoreboard-dynamic=f7-snapshot-seam-open-until-process-exit'
+        }
         'display-capture' {
             if (Capture-Display) { Add-Content -LiteralPath $harness -Value "display-capture=$screenshot" }
             else { Add-Content -LiteralPath $harness -Value 'display-capture=FAIL' }
@@ -623,6 +631,11 @@ try {
     $env:MELONPRIME_PERF = '1'
     if ($null -ne $statePath -and -not $SkipDiagnosticStartupSavestate) { $env:MELONPRIME_TEST_SAVESTATE = $statePath } else { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue }
     if ($Hud -eq 'Off') { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = '1' } else { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue }
+    if ($Action -eq 'scoreboard-dynamic') {
+        $env:MELONPRIME_TEST_SCOREBOARD_DYNAMIC = '1'
+    } else {
+        Remove-Item Env:MELONPRIME_TEST_SCOREBOARD_DYNAMIC -ErrorAction SilentlyContinue
+    }
     if ($null -ne $savestateSlotPathForApp) { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $savestateSlotPathForApp } else { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue }
     if ($null -ne $frameDumpTrigger) { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $frameDumpTrigger } else { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue }
     if ($ExactGPU2DValidation) {
@@ -733,6 +746,7 @@ finally {
     if ($null -eq $oldFrameCsv) { Remove-Item Env:MELONPRIME_PERF_CSV -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PERF_CSV = $oldFrameCsv }
     if ($null -eq $oldState) { Remove-Item Env:MELONPRIME_TEST_SAVESTATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_SAVESTATE = $oldState }
     if ($null -eq $oldHud) { Remove-Item Env:MELONPRIME_TEST_CUSTOM_HUD_OFF -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_CUSTOM_HUD_OFF = $oldHud }
+    if ($null -eq $oldScoreboardDynamic) { Remove-Item Env:MELONPRIME_TEST_SCOREBOARD_DYNAMIC -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_SCOREBOARD_DYNAMIC = $oldScoreboardDynamic }
     if ($null -eq $oldPhysicalState) { Remove-Item Env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH -ErrorAction SilentlyContinue } else { $env:MELONPRIME_PHYSICAL_AB_SAVESTATE_PATH = $oldPhysicalState }
     if ($null -eq $oldFrameDumpTrigger) { Remove-Item Env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_TEST_GPU2D_FRAME_DUMP_AFTER_SAVESTATE = $oldFrameDumpTrigger }
     if ($null -eq $oldExactGPU2DValidation) { Remove-Item Env:MELONPRIME_GPU2D_EXACT_VALIDATE -ErrorAction SilentlyContinue } else { $env:MELONPRIME_GPU2D_EXACT_VALIDATE = $oldExactGPU2DValidation }
@@ -761,6 +775,36 @@ $allLog = @()
 foreach ($path in @($stdout, $stderr)) { if (Test-Path -LiteralPath $path) { $allLog += Get-Content -LiteralPath $path -ErrorAction SilentlyContinue } }
 [IO.File]::WriteAllText($telemetryLog, [string]::Join([Environment]::NewLine, [string[]]$allLog), $utf8)
 $badMarkers = @($allLog | Select-String -Pattern 'VUID-|SYNC-HAZARD|DEVICE_LOST|GPU failure|command submission failed|Renderer fatal' -ErrorAction SilentlyContinue)
+$scoreboardRasterSamples = @(
+    foreach ($line in $allLog) {
+        $match = [regex]::Match($line,
+            'hud_phase_us .*scoreboard_raster_cache_miss=(\d+) scoreboard_raster_alloc=(\d+) scoreboard_raster_reuse=(\d+).*dynamic_cells=(\d+) time_changes=(\d+)')
+        if ($match.Success) {
+            [pscustomobject]@{
+                miss = [Int64]$match.Groups[1].Value
+                alloc = [Int64]$match.Groups[2].Value
+                reuse = [Int64]$match.Groups[3].Value
+                dynamic_cells = [Int64]$match.Groups[4].Value
+                time_changes = [Int64]$match.Groups[5].Value
+            }
+        }
+    }
+)
+$scoreboardDynamicSamples = @(
+    $scoreboardRasterSamples | Where-Object {
+        $_.miss -gt 0 -and $_.alloc -eq 0 -and $_.reuse -gt 0 -and
+        $_.dynamic_cells -gt 0
+    }
+)
+$scoreboardDynamicMissMax = if ($scoreboardRasterSamples.Count -gt 0) {
+    ($scoreboardRasterSamples.miss | Measure-Object -Maximum).Maximum
+} else { 0 }
+$scoreboardDynamicReuseMax = if ($scoreboardRasterSamples.Count -gt 0) {
+    ($scoreboardRasterSamples.reuse | Measure-Object -Maximum).Maximum
+} else { 0 }
+$scoreboardDynamicCellsMax = if ($scoreboardRasterSamples.Count -gt 0) {
+    ($scoreboardRasterSamples.dynamic_cells | Measure-Object -Maximum).Maximum
+} else { 0 }
 $nativeGPU2DExactFailureMarkers = @($allLog | Select-String -Pattern 'native GPU2D exact (?:differential )?mismatch|native GPU2D exact gate rejected' -ErrorAction SilentlyContinue)
 $stateActionLogIndex = -1
 if ($null -ne $savestateSlotPathForApp) {
@@ -883,6 +927,7 @@ $manifestObject = [ordered]@{
         action = $Action
         action_seed = $ActionSeed
         action_order = $actionSequence
+        scoreboard_dynamic_fixture = $Action -eq 'scoreboard-dynamic'
         diagnostic_startup_savestate = -not $SkipDiagnosticStartupSavestate
         capture_before_warmup = [bool]$CaptureBeforeWarmup
         capture_window_scale = $CaptureWindowScale
@@ -905,7 +950,7 @@ $manifestObject = [ordered]@{
         savestate_slot = if ($null -ne $statePath) { $SavestateSlot } else { $null }
         savestate_fixture = $savestateSlotPath
         procedure_version = 'physical-ab-2026-08-19-v3'
-        required_scenes = @('steady-state match', 'weapon switch', 'projectile/effect burst', 'room/map transition', 'scoreboard open/close', 'display capture', 'renderer Reset immediately', 'savestate load immediately', 'Custom HUD OFF', 'Custom HUD ON')
+        required_scenes = @('steady-state match', 'weapon switch', 'projectile/effect burst', 'room/map transition', 'scoreboard open/close', 'scoreboard live dynamic miss workload', 'display capture', 'renderer Reset immediately', 'savestate load immediately', 'Custom HUD OFF', 'Custom HUD ON')
     }
     provenance = [ordered]@{
         expected_source_head = $ExpectedSourceHead
@@ -983,6 +1028,13 @@ $manifestObject = [ordered]@{
         }
         screen_input_perf_requested = $SyntheticMouseRateHz -gt 0
         screen_input_perf_result = $screenInputPerfResult
+        scoreboard_dynamic_fixture = if ($Action -eq 'scoreboard-dynamic') {
+            if ($scoreboardDynamicSamples.Count -gt 0) { 'PASS' } else { 'FAIL' }
+        } else { 'NOT_REQUESTED' }
+        scoreboard_dynamic_sample_count = $scoreboardDynamicSamples.Count
+        scoreboard_dynamic_miss_max = $scoreboardDynamicMissMax
+        scoreboard_dynamic_reuse_max = $scoreboardDynamicReuseMax
+        scoreboard_dynamic_cells_max = $scoreboardDynamicCellsMax
     }
 }
 [IO.File]::WriteAllText($runManifest, ($manifestObject | ConvertTo-Json -Depth 12), $utf8)
@@ -1003,6 +1055,7 @@ presentation_stall_frames=$PresentationStallFrames
 action=$Action
 action_seed=$ActionSeed
 action_order=$actionOrder
+scoreboard_dynamic_fixture=$($Action -eq 'scoreboard-dynamic')
 diagnostic_startup_savestate=$(-not $SkipDiagnosticStartupSavestate)
 capture_before_warmup=$($CaptureBeforeWarmup.IsPresent.ToString().ToLowerInvariant())
 capture_window_scale=$CaptureWindowScale
@@ -1033,6 +1086,11 @@ unexpected_blank_marker_count=$($unexpectedBlankLines.Count)
 semantic_frame_rows=$($semanticLines.Count)
 semantic_only_rows=$($semanticOnlyLines.Count)
 forced_presentation_stall_rows=$($forcedPresentationStallLines.Count)
+scoreboard_dynamic_sample_count=$($scoreboardDynamicSamples.Count)
+scoreboard_dynamic_miss_max=$scoreboardDynamicMissMax
+scoreboard_dynamic_reuse_max=$scoreboardDynamicReuseMax
+scoreboard_dynamic_cells_max=$scoreboardDynamicCellsMax
+scoreboard_dynamic_validation=$(if ($Action -eq 'scoreboard-dynamic') { if ($scoreboardDynamicSamples.Count -gt 0) { 'PASS' } else { 'FAIL' } } else { 'NOT_REQUESTED' })
 presentation_stall_validation=$(if ($PresentationStallFrames -eq 0) { 'NOT_REQUESTED' } elseif ($forcedPresentationStallLines.Count -ge $PresentationStallFrames) { 'PASS' } else { 'FAIL' })
 expected_source_head=$ExpectedSourceHead
 expected_source_sha=$ExpectedSourceHead
@@ -1096,6 +1154,7 @@ Write-Host "unexpected blanks  : $($unexpectedBlankLines.Count)"
 Write-Host "semantic rows      : $($semanticLines.Count)"
 Write-Host "semantic-only rows : $($semanticOnlyLines.Count)"
 Write-Host "forced stall rows  : $($forcedPresentationStallLines.Count)"
+Write-Host "dynamic samples    : $($scoreboardDynamicSamples.Count)"
 if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMarkers.Count -ne 0 -or
     $nativeGPU2DExactFailureMarkers.Count -ne 0 -or
     $nativeGPU2DMismatchMax -ne 0 -or $nativeGPU2DFallbackMax -ne 0 -or $fallbackLineMax -ne 0 -or
@@ -1105,7 +1164,8 @@ if (-not $configRestored -or -not $layerRestored -or $exitCode -ne 0 -or $badMar
     ($Hud -eq 'Off' -and $null -ne $statePath -and -not $SkipDiagnosticStartupSavestate -and $hudOffMarker -eq 0 -and -not $AllowUnverifiedBinary) -or
     ($frameRows -lt 1 -and -not $AllowUnverifiedBinary) -or
     ($Renderer -eq 'Vulkan' -and $captureRows -lt 1 -and $windowCaptureRows -lt 1 -and -not $SampleWindowTitlesOnly) -or
-    ($PresentationStallFrames -gt 0 -and $forcedPresentationStallLines.Count -lt $PresentationStallFrames)) {
+    ($PresentationStallFrames -gt 0 -and $forcedPresentationStallLines.Count -lt $PresentationStallFrames) -or
+    ($Action -eq 'scoreboard-dynamic' -and $scoreboardDynamicSamples.Count -eq 0)) {
     $badMarkers | Select-Object -First 20 | ForEach-Object { Write-Host $_.Line }
     exit 1
 }

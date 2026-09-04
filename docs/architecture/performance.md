@@ -263,7 +263,7 @@ does not expose the logical HUD element phase counters on this presenter, so
 OpenGL capture and harness completed with `process=0`, `provenance=PASS`, zero
 native mismatches/fallbacks, and no unexpected blank markers.
 
-### SRP/performance re-audit follow-up (2026-09-04, HEAD `f3ab20fe`)
+### SRP/performance re-audit baseline (2026-09-04, pre-follow-up HEAD `f3ab20fe`)
 
 The required HUD fixture was the F7 state `0367 - Metroid Prime - Hunters
 (USA) (Rev 1).ml7` with its matching `.nds`, slot 7, 4x scale, HUD ON, VSync
@@ -274,7 +274,8 @@ OpenGL sampler A/B passed the runtime harness: the pre-change run reported
 `0` with `radar_vbo_uploads=0` in steady windows. Artifacts are under
 `build/srp-reaudit-f7-20260904/`.
 
-The uncapped end-to-end A/B did not pass the requested frame-improvement gate.
+At that pre-follow-up HEAD, the uncapped end-to-end A/B did not pass the
+requested frame-improvement gate.
 OpenGL selected `input_sample_to_present_end_us` p95/p99 changed from
 `2073.6/2198.9` to `2032.6/2139.7 us`; Software changed from
 `3657.3/3700.8` to `6031.6/6115.8 us`. These local uncapped runs are noisy,
@@ -284,10 +285,10 @@ cache hits, zero raster misses/allocations in the steady state, zero radar VBO
 uploads, and zero radar texture-parameter calls. The current Software run
 exposed `native_paint_us` but not usable logical HUD phase counters. A valid
 F7 dynamic workload with `scoreboard_raster_cache_miss>0` and
-`scoreboard_raster_alloc=0` was not obtained in this pass; this remains an
-explicit follow-up rather than a claimed PASS.
+`scoreboard_raster_alloc=0` was not obtained in that pass; the explicit
+follow-up is recorded below.
 
-The GitHub API check for HEAD `f3ab20fe44ad5a8322cf7d94eaf3e210360acbb3`
+The GitHub API check for that HEAD `f3ab20fe44ad5a8322cf7d94eaf3e210360acbb3`
 returned no workflow runs, no commit statuses, and no check runs. The
 Windows, Ubuntu, macOS, and BSD workflow definitions are present in the
 repository, but their current-HEAD execution is unverified; those platform
@@ -301,6 +302,26 @@ window sequence, and completed all `6/6` renderer-switch iterations. This
 closes the available Windows Vulkan/DX12 lifecycle smoke coverage; it does not
 substitute for the missing macOS/Metal/BSD/Linux CI runs or the separate
 two-`EmuInstance` runtime sequence.
+
+### Current HEAD dynamic raster follow-up (2026-09-04, HEAD `b21a729d`)
+
+The dynamic raster workload now runs against the same required F7 fixture:
+slot 7 (`.ml7`), matching `.nds`, 4x, HUD ON, VSync OFF, frame limit OFF,
+and low latency OFF. The developer build's
+`scoreboard-dynamic` action enables the opt-in
+`MELONPRIME_TEST_SCOREBOARD_DYNAMIC` seam after the real F7 RAM roster/mode
+has been sampled. It changes only the bounded presentation snapshot, not game
+RAM or release behavior, so a short static F7 match can exercise changing
+score/time cells without pretending that the saved match itself scored.
+
+The OpenGL run `srp-reaudit-opengl-scoreboard-dynamic-f7-20260904` completed
+with `process=0`, startup savestate marker `1`, provenance PASS, and no native
+mismatch/fallback or bad-marker lines. Its aggregate telemetry recorded
+`scoreboard_raster_cache_miss=17..18`, `scoreboard_raster_alloc=0`,
+`scoreboard_raster_reuse=17..18`, and `dynamic_cells=34..36`. The harness
+records this as `scoreboard_dynamic_validation=PASS`; this is specifically a
+same-size backing-store reuse validation, while real in-game score semantics
+remain covered by the ordinary F7 HUD smoke.
 
 ### GUI input and renderer-transition follow-up (2026-09-04)
 
