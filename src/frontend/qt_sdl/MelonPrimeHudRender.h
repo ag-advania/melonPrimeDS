@@ -26,6 +26,7 @@
 #include <QRect>
 
 #include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudDirtyRegions.h"
 
 class EmuInstance;
 class QPainter;
@@ -61,10 +62,26 @@ namespace MelonPrime {
     //                     Shifts the painter so DS x=0 maps to the left game edge,
     //                     allowing elements at DS x<0 or x>256 to appear in black bars.
     //    hudOriginYds   — top black-bar height in DS units (m_hudOriginY / hudScale).
+    //    overlayRetained    - true when `topBuffer` still holds exactly the pixels
+    //                         this function last wrote into it. The overlay is
+    //                         retained across presented frames and this call owns
+    //                         clearing it, so a presenter must pass false whenever
+    //                         it reallocated, refilled, or otherwise cannot vouch
+    //                         for the buffer (resize, DPI change, renderer switch,
+    //                         first frame on a panel).
+    //    outDirty           - receives the overlay regions whose pixels changed.
+    //                         This is what a backend uploads. Bounded and
+    //                         allocation free; a presenter that only understands
+    //                         one rectangle can use the return value instead.
+    //    outContent         - receives the regions where the HUD currently has
+    //                         pixels at all. This is what a backend composites,
+    //                         and it is deliberately not the dirty set: the game
+    //                         frame underneath is repainted every presentation,
+    //                         so the whole HUD has to be blended back over it
+    //                         even on a frame where nothing changed.
     // =========================================================================
-    // Returns the dirty pixel rect of everything rendered into the overlay (in overlay space).
-    // Screen.cpp uses this to limit the GPU texture upload and overlay clear to the HUD region.
-    // Returns an empty QRect if nothing was drawn.
+    // Returns the bounding rectangle of `outDirty` (in overlay space), or an
+    // empty QRect when no overlay pixel changed.
     QRect CustomHud_Render(
         CustomHudConfigState& hudConfig,
         EmuInstance* emu,
@@ -83,7 +100,10 @@ namespace MelonPrime {
         float hudOriginXds = 0.0f,
         float hudOriginYds = 0.0f,
         QPainter* directScoreboardPaint = nullptr,
-        NativePaintPerf* nativePaintPerf = nullptr
+        NativePaintPerf* nativePaintPerf = nullptr,
+        bool overlayRetained = false,
+        HudDirtyRegionSet* outDirty = nullptr,
+        HudDirtyRegionSet* outContent = nullptr
     );
 
     // Redraw only the already planned scoreboard into a presentation target.

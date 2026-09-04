@@ -33,12 +33,10 @@ void ScreenPanelGL::initializeHudOpenGL()
     // valid HUD upload.
     overlayTexW = 0;
     overlayTexH = 0;
-    m_hudVisualFrameValid = false;
+    // The retained overlay pixels belong to the outgoing GL objects, so the
+    // per-element bounds that described them cannot be trusted either.
+    resetHudRetainedOverlay();
     ++m_hudVisualRendererGeneration;
-    m_hudPrevDirty = QRect();
-    m_hudUploadedRect = QRect();
-    m_hudUploadedHash = 0;
-    m_hudUploadedValid = false;
     m_hudRadarGl = {};
 
     glGenSamplers(1, &m_hudRadarSampler);
@@ -126,7 +124,7 @@ void ScreenPanelGL::deinitializeHudOpenGL()
     glDeleteProgram(btmOverlayShader);
     glDeleteBuffers(1, &btmOverlayVertexBuffer);
     glDeleteVertexArrays(1, &btmOverlayVertexArray);
-    m_hudVisualFrameValid = false;
+    resetHudRetainedOverlay();
     m_hudRadarGl = {};
     ++m_hudVisualRendererGeneration;
 }

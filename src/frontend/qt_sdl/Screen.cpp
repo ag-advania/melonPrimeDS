@@ -1020,8 +1020,7 @@ void ScreenPanel::setupScreenLayout()
 #ifdef MELONPRIME_CUSTOM_HUD
     // Layout/DPI/fullscreen changes alter the output transform and invalidate
     // the retained visual frame before any backend-specific overlay path runs.
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
+    resetHudRetainedOverlay();
     ++m_hudVisualRendererGeneration;
 #endif
 
