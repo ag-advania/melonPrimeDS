@@ -831,7 +831,14 @@ bool DX12SurfacePresenter::EnsureLayerUpload(
     std::uint32_t height)
 {
     const std::uint32_t rowPitch = AlignTexturePitch(width * sizeof(std::uint32_t));
-    const std::uint64_t required = static_cast<std::uint64_t>(rowPitch) * height;
+    // Full-surface footprint, plus room for the placement alignment that
+    // per-region staging inserts between rectangles. Without the slack a narrow
+    // region's aligned row pitch could push a legitimate batch over the edge and
+    // send it down the full-upload fallback.
+    const std::uint64_t required =
+        static_cast<std::uint64_t>(rowPitch) * height
+        + static_cast<std::uint64_t>(kMaxLayerRegions)
+            * D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT;
     if (layer.Upload && layer.UploadMapped && layer.UploadCapacity >= required
         && layer.UploadRowPitch == rowPitch)
     {
@@ -1095,6 +1102,130 @@ bool DX12SurfacePresenter::UploadLayerRegion(
         + static_cast<std::size_t>(sourceY) * rowBytes
         + static_cast<std::size_t>(sourceX) * sizeof(std::uint32_t);
     return UploadLayer(layer, source, width, height, rowBytes);
+}
+
+bool DX12SurfacePresenter::UploadLayerRegions(
+    Layer layerId,
+    const void* pixels,
+    std::uint32_t imageWidth,
+    std::uint32_t imageHeight,
+    std::size_t rowBytes,
+    const LayerRegion* regions,
+    std::uint32_t regionCount)
+{
+    melonDS::DX12Perf::ScopedCpuTimer hudTimer(
+        melonDS::DX12Perf::CpuMetric::HudUpload, layerId == Layer::Hud);
+    if (!FrameOpen || !pixels || !regions || regionCount == 0
+        || imageWidth == 0 || imageHeight == 0
+        || rowBytes < static_cast<std::size_t>(imageWidth) * sizeof(std::uint32_t))
+    {
+        return false;
+    }
+    if (regionCount > kMaxLayerRegions)
+        return false;
+
+    LayerTexture& layer = Layers[static_cast<std::size_t>(layerId)];
+    // A partial update only means anything on top of a layer that already
+    // agrees with the source everywhere else.
+    if (!layer.Valid || !layer.Texture || layer.UsesDirect
+        || layer.Width != imageWidth || layer.Height != imageHeight)
+    {
+        return false;
+    }
+    // Sizing the staging buffer from the whole image keeps its row pitch stable
+    // across frames, so no reallocation or re-map happens in steady state.
+    if (!EnsureLayerUpload(layer, imageWidth, imageHeight))
+        return false;
+
+    struct StagedRegion
+    {
+        std::uint64_t Offset;
+        std::uint32_t RowPitch;
+        LayerRegion Rect;
+    };
+    StagedRegion staged[kMaxLayerRegions];
+    std::uint32_t stagedCount = 0;
+    std::uint64_t cursor = 0;
+    std::uint64_t copiedBytes = 0;
+
+    const auto* image = static_cast<const std::uint8_t*>(pixels);
+    for (std::uint32_t index = 0; index < regionCount; ++index)
+    {
+        LayerRegion rect = regions[index];
+        if (rect.X >= imageWidth || rect.Y >= imageHeight
+            || rect.Width == 0 || rect.Height == 0)
+        {
+            continue;
+        }
+        rect.Width = std::min(rect.Width, imageWidth - rect.X);
+        rect.Height = std::min(rect.Height, imageHeight - rect.Y);
+
+        // Each region is its own placed footprint: the row pitch is aligned to
+        // the region's width and the offset to the placement granularity, so
+        // regions staged in the same frame never overwrite one another before
+        // the GPU consumes them.
+        const std::uint32_t regionPitch =
+            AlignTexturePitch(rect.Width * sizeof(std::uint32_t));
+        const std::uint64_t placement =
+            (cursor + (D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT - 1))
+            & ~static_cast<std::uint64_t>(D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT - 1);
+        const std::uint64_t end =
+            placement + static_cast<std::uint64_t>(regionPitch) * rect.Height;
+        if (end > layer.UploadCapacity)
+        {
+            // Nothing has been recorded into the command list yet, so the
+            // caller is free to fall back to a single full-surface upload.
+            return false;
+        }
+
+        const std::size_t copyBytes =
+            static_cast<std::size_t>(rect.Width) * sizeof(std::uint32_t);
+        for (std::uint32_t row = 0; row < rect.Height; ++row)
+        {
+            std::memcpy(
+                layer.UploadMapped + placement
+                    + static_cast<std::size_t>(row) * regionPitch,
+                image + static_cast<std::size_t>(rect.Y + row) * rowBytes
+                    + static_cast<std::size_t>(rect.X) * sizeof(std::uint32_t),
+                copyBytes);
+        }
+        copiedBytes += static_cast<std::uint64_t>(copyBytes) * rect.Height;
+
+        staged[stagedCount++] = StagedRegion{placement, regionPitch, rect};
+        cursor = end;
+    }
+
+    if (stagedCount == 0)
+        return true;
+
+    if (layerId == Layer::Hud)
+    {
+        melonDS::DX12Perf::AddCounter(
+            melonDS::DX12Perf::Counter::HudUploadBytes, copiedBytes);
+    }
+
+    // One transition pair for the whole batch rather than one per region.
+    TransitionLayer(layer, D3D12_RESOURCE_STATE_COPY_DEST);
+    D3D12_TEXTURE_COPY_LOCATION destination{};
+    destination.pResource = layer.Texture.Get();
+    destination.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    for (std::uint32_t index = 0; index < stagedCount; ++index)
+    {
+        const StagedRegion& region = staged[index];
+        D3D12_TEXTURE_COPY_LOCATION source{};
+        source.pResource = layer.Upload.Get();
+        source.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        source.PlacedFootprint.Offset = region.Offset;
+        source.PlacedFootprint.Footprint.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        source.PlacedFootprint.Footprint.Width = region.Rect.Width;
+        source.PlacedFootprint.Footprint.Height = region.Rect.Height;
+        source.PlacedFootprint.Footprint.Depth = 1;
+        source.PlacedFootprint.Footprint.RowPitch = region.RowPitch;
+        OpenList->CopyTextureRegion(
+            &destination, region.Rect.X, region.Rect.Y, 0, &source, nullptr);
+    }
+    TransitionLayer(layer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    return true;
 }
 
 bool DX12SurfacePresenter::UploadLayerFromBuffer(

@@ -1,7 +1,31 @@
 // Custom HUD overlay-of-software path for ScreenPanelNative::paintEvent().
 // This is a unity-build fragment included by Screen.cpp; do not add it to CMakeLists.txt.
+//
+// Includers choose what happens to the rendered overlay with
+// MELONPRIME_HUD_TARGET_COMPOSITE:
+//
+//   1 (default)  the retained overlay is blitted onto a QPainter target the
+//                includer supplies as `painter`. Native Software repaints the
+//                game frame under the HUD every time, so it composites the
+//                regions the HUD *occupies*.
+//   0            no CPU composite at all. The includer uploads straight from
+//                Overlay[0] to its own GPU layer -- no second full-size QImage,
+//                no painter construction, no CPU copy of the changed pixels.
 
 #ifdef MELONPRIME_CUSTOM_HUD
+#ifndef MELONPRIME_HUD_TARGET_COMPOSITE
+#define MELONPRIME_HUD_TARGET_COMPOSITE 1
+#define MELONPRIME_HUD_TARGET_COMPOSITE_DEFAULTED 1
+#endif
+// The overlay is the widget by default. A presenter whose GPU layer is sized
+// from its own published surface geometry overrides this so the two can never
+// disagree -- a mismatch during a resize would put the HUD at the wrong scale
+// or drop it for a frame.
+#ifndef MELONPRIME_HUD_OVERLAY_WIDTH
+#define MELONPRIME_HUD_OVERLAY_WIDTH (this->width())
+#define MELONPRIME_HUD_OVERLAY_HEIGHT (this->height())
+#define MELONPRIME_HUD_OVERLAY_SIZE_DEFAULTED 1
+#endif
 {
     auto* mp = emuThread->GetMelonPrimeCore();
     const bool editMode = mp && MelonPrime::CustomHud_IsEditMode(mp->HudConfigState());
@@ -25,10 +49,8 @@
         {
             // Overlay covers the full widget so HUD elements placed in black-bar
             // regions (DS x < 0 or > 256 for pillarboxed 4:3) remain visible.
-            const int fullW = this->width();
-            const int fullH = this->height();
-            const int topOutW = std::max(1, fullW);
-            const int topOutH = std::max(1, fullH);
+            const int topOutW = std::max(1, MELONPRIME_HUD_OVERLAY_WIDTH);
+            const int topOutH = std::max(1, MELONPRIME_HUD_OVERLAY_HEIGHT);
 
             const HudVisualFrameIdentity visualIdentity =
                 MelonPrimeHud_ProbeVisualFrameIdentity(emuInstance);
@@ -95,12 +117,11 @@
                 m_hudVisualFrameValid = true;
             }
 
+#if MELONPRIME_HUD_TARGET_COMPOSITE
             // Native Software has no retained composed target. Repaint the
             // cached scoreboard directly before the retained overlay is
             // copied, preserving the original scoreboard-before-other-HUD
             // draw order without a second scoreboard image composite.
-#if !defined(MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE) \
-    || !MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
             if (reuseVisual) {
                 MelonPrime::CustomHud_RenderCachedScoreboard(
                     mp->HudConfigState(), instcfg, &painter,
@@ -108,21 +129,11 @@
                     m_hudOriginX / hudScale, m_hudOriginY / hudScale,
                     &m_nativePaintPerf);
             }
-#endif
 
-#if defined(MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE) \
-    && MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
-            // DX12 retains both this target and the uploaded HUD layer, so the
-            // target only needs the regions whose pixels actually changed. On
-            // a reused visual frame it already holds the right pixels and the
-            // dirty set is empty, so this collapses to nothing.
-            const HudDirtyRegionSet& hudCompositeRegions = m_hudDirtyRegions;
-#else
-            // Native Software repaints the game frame underneath every time,
-            // so the *whole* HUD has to be blended back over it -- the dirty
-            // set would only restore the part that changed.
+            // The game frame underneath is repainted every time, so the *whole*
+            // HUD has to be blended back over it -- the dirty set would only
+            // restore the part that changed.
             const HudDirtyRegionSet& hudCompositeRegions = m_hudContentRegions;
-#endif
             if (!hudCompositeRegions.IsEmpty()) {
                 painter.resetTransform();
 #ifdef MELONPRIME_HUD_NATIVE_PAINT_PERF
@@ -132,6 +143,7 @@
 #endif
                 MelonPrimeHud_CompositeRegions(painter, Overlay[0], hudCompositeRegions);
             }
+#endif
         } else {
             m_hudVisualFrameValid = false;
             m_hudVisualFrameWasReused = false;
@@ -147,4 +159,14 @@
         m_hudContentRegions.Reset();
     }
 }
+
+#ifdef MELONPRIME_HUD_TARGET_COMPOSITE_DEFAULTED
+#undef MELONPRIME_HUD_TARGET_COMPOSITE_DEFAULTED
+#undef MELONPRIME_HUD_TARGET_COMPOSITE
+#endif
+#ifdef MELONPRIME_HUD_OVERLAY_SIZE_DEFAULTED
+#undef MELONPRIME_HUD_OVERLAY_SIZE_DEFAULTED
+#undef MELONPRIME_HUD_OVERLAY_HEIGHT
+#undef MELONPRIME_HUD_OVERLAY_WIDTH
+#endif
 #endif
