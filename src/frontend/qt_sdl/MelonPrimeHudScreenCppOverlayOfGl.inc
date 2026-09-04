@@ -194,6 +194,11 @@
                     glUniform2i(osdPosULoc, 0, 0);
                     glUniform2i(osdSizeULoc, fullLogW, fullLogH);
                     glUniform2f(osdTexScaleULoc, texScaleX, texScaleY);
+                    const std::uint64_t compositePixels =
+                        static_cast<std::uint64_t>(fullLogW)
+                        * static_cast<std::uint64_t>(fullLogH);
+                    MelonPrimePerf::AddHudOverlayComposite(
+                        compositePixels * sizeof(QRgb), compositePixels);
                     glDrawArrays(GL_TRIANGLES, 0, 2 * 3);
 
                     glDisable(GL_BLEND);

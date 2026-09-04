@@ -211,7 +211,9 @@ inline QRect MelonPrimeHud_RenderTopOverlay(
     float hudOriginY,
     const QImage* bottomScreen = nullptr,
     QImage* filteredBottomScreen = nullptr,
-    int radarSourceRadius = 0)
+    int radarSourceRadius = 0,
+    QPainter* directScoreboardPaint = nullptr,
+    MelonPrime::NativePaintPerf* nativePaintPerf = nullptr)
 {
     const float hudOriginXds = hudOriginX / hudScale;
     const float hudOriginYds = hudOriginY / hudScale;
@@ -236,7 +238,9 @@ inline QRect MelonPrimeHud_RenderTopOverlay(
         mp->IsInGame(),
         hudEnabledSnapshot,
         topStretchX, hudScale,
-        hudOriginXds, hudOriginYds);
+        hudOriginXds, hudOriginYds,
+        directScoreboardPaint,
+        nativePaintPerf);
     if (hudRenderStart)
         MelonPrimePerf::AddCustomHudRenderTicks(MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
     if (MelonPrimePerf::IsFrameActive() && !hudDirty.isEmpty())

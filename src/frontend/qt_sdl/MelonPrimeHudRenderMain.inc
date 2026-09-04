@@ -22,7 +22,9 @@ HOT_FUNCTION QRect CustomHud_Render(
     bool isInGame,
     bool hudEnabledSnapshot,
     float topStretchX, float hudScale,
-    float hudOriginXds, float hudOriginYds)
+    float hudOriginXds, float hudOriginYds,
+    QPainter* directScoreboardPaint,
+    NativePaintPerf* nativePaintPerf)
 {
     MelonPrimePerf::CountCustomHudCall();
     MelonPrimePerf::ScopedHudPhase stateTimer(MelonPrimePerf::HudPhase::State);
@@ -139,7 +141,21 @@ HOT_FUNCTION QRect CustomHud_Render(
             {
                 MelonPrimePerf::ScopedHudElement element(
                     MelonPrimePerf::HudElementMetric::Scoreboard);
-                DrawScoreboard(topPaint, *scoreboard, c, hudScale, playerPosition);
+                if (directScoreboardPaint) {
+                    const QRect overlayDirtyBefore = s_drawnDirtyPx;
+                    directScoreboardPaint->save();
+                    directScoreboardPaint->setFont(topPaint->font());
+                    directScoreboardPaint->resetTransform();
+                    ApplyHudPainterTransform(directScoreboardPaint, xf);
+                    EnsureHudFont(directScoreboardPaint);
+                    DrawScoreboard(directScoreboardPaint, *scoreboard, c,
+                                   hudScale, playerPosition, nativePaintPerf);
+                    directScoreboardPaint->restore();
+                    s_drawnDirtyPx = overlayDirtyBefore;
+                } else {
+                    DrawScoreboard(topPaint, *scoreboard, c, hudScale,
+                                   playerPosition, nativePaintPerf);
+                }
             }
         }
     }
@@ -268,6 +284,48 @@ HOT_FUNCTION QRect CustomHud_Render(
     }
 
     return CurrentHudDirtyRect(xf);
+}
+
+QRect CustomHud_RenderCachedScoreboard(
+    CustomHudConfigState& hudConfig,
+    Config::Table& localCfg,
+    QPainter* scoreboardPaint,
+    float topStretchX,
+    float hudScale,
+    float hudOriginXds,
+    float hudOriginYds,
+    NativePaintPerf* nativePaintPerf)
+{
+    if (!scoreboardPaint || !scoreboardPaint->isActive())
+        return QRect();
+
+    const ScopedHudConfigState active(hudConfig);
+    if (!s_cache.valid || !s_cache.scoreboard.show)
+        return QRect();
+
+    auto& hudFrame = HudFrameState();
+    if (!hudFrame.scoreboardPlan.valid
+        || !hudFrame.scoreboardPlan.structure.visible)
+        return QRect();
+
+    // The config epoch and plan were already validated by the visual-frame key.
+    // Keep this cold fallback for a first repaint after a resize; it does not
+    // touch live emulation state.
+    const HudFrameTransform xf = MakeHudFrameTransform(
+        nullptr, topStretchX, hudScale, hudOriginXds, hudOriginYds);
+    EnsureCachedConfigForFrame(localCfg, xf);
+
+    const QRect previousDirty = s_drawnDirtyPx;
+    const QRect previousCrosshairDirty = s_chDirtyThisFrame;
+    scoreboardPaint->save();
+    scoreboardPaint->resetTransform();
+    ApplyHudPainterTransform(scoreboardPaint, xf);
+    DrawScoreboardPlan(scoreboardPaint, hudFrame.scoreboardPlan,
+                       s_cache, hudScale, nullptr, nativePaintPerf);
+    scoreboardPaint->restore();
+    s_drawnDirtyPx = previousDirty;
+    s_chDirtyThisFrame = previousCrosshairDirty;
+    return QRect();
 }
 
 // =========================================================================

@@ -15,7 +15,11 @@ struct HudFrameOwnedState {
     ScoreboardMatchCache scoreboardMatch;
     ScoreboardRenderPlan scoreboardPlan;
     struct ScoreboardRasterCache {
+        // staticImage is the structural layer; image is the composed
+        // scoreboard retained for the destination composite. Dynamic
+        // score/rank/time/star cells update only their dirty subregions.
         QImage image;
+        QImage staticImage;
         uint32_t planGeneration = 0;
         float hudScale = 0.0f;
         float originX = 0.0f;

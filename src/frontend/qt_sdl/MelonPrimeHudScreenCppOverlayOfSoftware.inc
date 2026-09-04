@@ -68,7 +68,12 @@
                     topStretchX, hudScale,
                     m_hudOriginX, m_hudOriginY,
                     m_radarEnable ? MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE : nullptr,
-                    &Overlay[1], m_radarSrcRadius);
+                    &Overlay[1], m_radarSrcRadius,
+#ifdef MELONPRIME_HUD_NATIVE_PAINT_PERF
+                    &painter, &m_nativePaintPerf);
+#else
+                    nullptr, nullptr);
+#endif
                 s_hudPrevDirtyS = curDirty;
                 if (!sameGameFrame) {
                     visualKey = MelonPrimeHud_MakeVisualFrameKey(
@@ -81,6 +86,21 @@
                 m_hudVisualFrameKey = visualKey;
                 m_hudVisualFrameValid = true;
             }
+
+            // Native Software has no retained composed target. Repaint the
+            // cached scoreboard directly before the retained overlay is
+            // copied, preserving the original scoreboard-before-other-HUD
+            // draw order without a second scoreboard image composite.
+#if !defined(MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE) \
+    || !MELONPRIME_HUD_SKIP_RETAINED_TARGET_REUSE_COMPOSITE
+            if (reuseVisual) {
+                MelonPrime::CustomHud_RenderCachedScoreboard(
+                    mp->HudConfigState(), instcfg, &painter,
+                    topStretchX, hudScale,
+                    m_hudOriginX / hudScale, m_hudOriginY / hudScale,
+                    &m_nativePaintPerf);
+            }
+#endif
 
             // Composite only the dirty region (prev cleared + curr drawn).
             const QRect compositeRect = reuseVisual
@@ -97,6 +117,15 @@
             if (!compositeRect.isEmpty()) {
 #endif
                 painter.resetTransform();
+                const std::uint64_t compositePixels =
+                    static_cast<std::uint64_t>(compositeRect.width())
+                    * static_cast<std::uint64_t>(compositeRect.height());
+                MelonPrimePerf::AddHudOverlayComposite(
+                    compositePixels * sizeof(QRgb), compositePixels);
+#ifdef MELONPRIME_HUD_NATIVE_PAINT_PERF
+                m_nativePaintPerf.RecordHudOverlayComposite(
+                    compositePixels * sizeof(QRgb), compositePixels);
+#endif
                 painter.drawImage(QPoint(compositeRect.x(), compositeRect.y()),
                                   Overlay[0], compositeRect);
             }

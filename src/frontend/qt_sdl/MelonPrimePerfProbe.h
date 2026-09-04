@@ -6,13 +6,14 @@
 // Runtime gate: MELONPRIME_PERF=1
 // Release builds (developer features off): zero symbols, zero hot-path cost.
 
+#include <cstddef>
+#include <cstdint>
+
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_DS)
 
 #include <SDL2/SDL.h>
 
 #include <algorithm>
-#include <cstdint>
-#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -182,6 +183,18 @@ struct State {
     uint64_t cntScoreboardRasterBackingAllocations = 0;
     uint64_t cntScoreboardRasterBackingReuses = 0;
     uint64_t sumScoreboardRasterBackingBytes = 0;
+    uint64_t sumScoreboardRasterCompositeBytes = 0;
+    uint64_t sumScoreboardRasterCompositePixels = 0;
+    uint64_t cntScoreboardRasterCompositeCalls = 0;
+    uint64_t sumHudOverlayCompositeBytes = 0;
+    uint64_t sumHudOverlayCompositePixels = 0;
+    uint64_t cntHudOverlayCompositeCalls = 0;
+    uint64_t sumScoreboardDirtyCellPixels = 0;
+    uint64_t cntHudVisualGenerationChanges = 0;
+    uint64_t cntHudConfigInvalidations = 0;
+    uint64_t cntScoreboardPlanGenerationChanges = 0;
+    uint64_t cntScoreboardRasterDirectDraws = 0;
+    uint64_t sumScoreboardRasterDirectPixels = 0;
     uint64_t cntScoreboardDynamicCellUpdates = 0;
     uint64_t cntScoreboardTimeVisualChanges = 0;
     uint64_t cntScoreboardStructureChecks = 0;
@@ -784,6 +797,18 @@ inline void ResetWindowStats()
     st.cntScoreboardRasterBackingAllocations = 0;
     st.cntScoreboardRasterBackingReuses = 0;
     st.sumScoreboardRasterBackingBytes = 0;
+    st.sumScoreboardRasterCompositeBytes = 0;
+    st.sumScoreboardRasterCompositePixels = 0;
+    st.cntScoreboardRasterCompositeCalls = 0;
+    st.sumHudOverlayCompositeBytes = 0;
+    st.sumHudOverlayCompositePixels = 0;
+    st.cntHudOverlayCompositeCalls = 0;
+    st.sumScoreboardDirtyCellPixels = 0;
+    st.cntHudVisualGenerationChanges = 0;
+    st.cntHudConfigInvalidations = 0;
+    st.cntScoreboardPlanGenerationChanges = 0;
+    st.cntScoreboardRasterDirectDraws = 0;
+    st.sumScoreboardRasterDirectPixels = 0;
     st.cntScoreboardDynamicCellUpdates = 0;
     st.cntScoreboardTimeVisualChanges = 0;
     st.cntScoreboardStructureChecks = 0;
@@ -970,10 +995,22 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         "calls=%llu drawn=%llu "
         "visual_render=%llu visual_reuse=%llu identity_probes=%llu "
         "stamp_checks=%llu stamp_commits=%llu plan_build=%llu full_rebuild=%llu "
-        "scoreboard_raster_cache_hit=%llu scoreboard_raster_cache_miss=%llu "
-        "scoreboard_raster_alloc=%llu scoreboard_raster_reuse=%llu "
-        "scoreboard_raster_bytes=%llu "
-        "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
+         "scoreboard_raster_cache_hit=%llu scoreboard_raster_cache_miss=%llu "
+         "scoreboard_raster_alloc=%llu scoreboard_raster_reuse=%llu "
+         "scoreboard_raster_bytes=%llu "
+         "scoreboard_raster_composite_bytes=%llu "
+         "scoreboard_raster_composite_pixels=%llu "
+         "scoreboard_raster_composite_calls=%llu "
+         "hud_overlay_composite_bytes=%llu "
+         "hud_overlay_composite_pixels=%llu "
+         "hud_overlay_composite_calls=%llu "
+         "scoreboard_dirty_cell_pixels=%llu "
+         "hud_visual_generation_changes=%llu "
+         "hud_config_invalidation_count=%llu "
+         "scoreboard_plan_generation_changes=%llu "
+         "scoreboard_raster_direct_draws=%llu "
+         "scoreboard_raster_direct_pixels=%llu "
+         "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
         "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu "
         "radar_vbo_uploads=%llu radar_tex_parameter_calls=%llu "
         "restore_fast_reject=%llu restore_runtime_read=%llu "
@@ -1029,10 +1066,22 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         static_cast<unsigned long long>(st.cntScoreboardFullPlanRebuilds),
         static_cast<unsigned long long>(st.cntScoreboardRasterCacheHits),
         static_cast<unsigned long long>(st.cntScoreboardRasterCacheMisses),
-        static_cast<unsigned long long>(st.cntScoreboardRasterBackingAllocations),
-        static_cast<unsigned long long>(st.cntScoreboardRasterBackingReuses),
-        static_cast<unsigned long long>(st.sumScoreboardRasterBackingBytes),
-        static_cast<unsigned long long>(st.cntScoreboardStructureChecks),
+         static_cast<unsigned long long>(st.cntScoreboardRasterBackingAllocations),
+         static_cast<unsigned long long>(st.cntScoreboardRasterBackingReuses),
+         static_cast<unsigned long long>(st.sumScoreboardRasterBackingBytes),
+         static_cast<unsigned long long>(st.sumScoreboardRasterCompositeBytes),
+         static_cast<unsigned long long>(st.sumScoreboardRasterCompositePixels),
+         static_cast<unsigned long long>(st.cntScoreboardRasterCompositeCalls),
+         static_cast<unsigned long long>(st.sumHudOverlayCompositeBytes),
+         static_cast<unsigned long long>(st.sumHudOverlayCompositePixels),
+         static_cast<unsigned long long>(st.cntHudOverlayCompositeCalls),
+         static_cast<unsigned long long>(st.sumScoreboardDirtyCellPixels),
+         static_cast<unsigned long long>(st.cntHudVisualGenerationChanges),
+         static_cast<unsigned long long>(st.cntHudConfigInvalidations),
+         static_cast<unsigned long long>(st.cntScoreboardPlanGenerationChanges),
+         static_cast<unsigned long long>(st.cntScoreboardRasterDirectDraws),
+         static_cast<unsigned long long>(st.sumScoreboardRasterDirectPixels),
+         static_cast<unsigned long long>(st.cntScoreboardStructureChecks),
         static_cast<unsigned long long>(st.cntScoreboardDynamicCellUpdates),
         static_cast<unsigned long long>(st.cntScoreboardTimeVisualChanges),
         static_cast<unsigned long long>(st.cntScoreboardOutlinePathHits),
@@ -1464,6 +1513,56 @@ inline void CountScoreboardRasterBackingReuse()
         ++S().cntScoreboardRasterBackingReuses;
 }
 
+inline void CountScoreboardRasterComposite(std::size_t bytes, std::size_t pixels)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntScoreboardRasterCompositeCalls;
+    S().sumScoreboardRasterCompositeBytes += static_cast<uint64_t>(bytes);
+    S().sumScoreboardRasterCompositePixels += static_cast<uint64_t>(pixels);
+}
+
+inline void CountScoreboardRasterDirectDraw(std::size_t pixels)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntScoreboardRasterDirectDraws;
+    S().sumScoreboardRasterDirectPixels += static_cast<uint64_t>(pixels);
+}
+
+inline void AddHudOverlayComposite(std::size_t bytes, std::size_t pixels)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntHudOverlayCompositeCalls;
+    S().sumHudOverlayCompositeBytes += static_cast<uint64_t>(bytes);
+    S().sumHudOverlayCompositePixels += static_cast<uint64_t>(pixels);
+}
+
+inline void AddScoreboardDirtyCellPixels(std::size_t pixels)
+{
+    if (S().frameOpen)
+        S().sumScoreboardDirtyCellPixels += static_cast<uint64_t>(pixels);
+}
+
+inline void CountHudVisualGenerationChange()
+{
+    if (IsEnabled())
+        ++S().cntHudVisualGenerationChanges;
+}
+
+inline void CountHudConfigInvalidation()
+{
+    if (IsEnabled())
+        ++S().cntHudConfigInvalidations;
+}
+
+inline void CountScoreboardPlanGenerationChange()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardPlanGenerationChanges;
+}
+
 inline void CountScoreboardDynamicCellUpdate(bool timeVisualChange)
 {
     if (!S().frameOpen)
@@ -1754,6 +1853,13 @@ inline void CountScoreboardRasterCacheHit() {}
 inline void CountScoreboardRasterCacheMiss() {}
 inline void CountScoreboardRasterBackingAllocation(std::size_t) {}
 inline void CountScoreboardRasterBackingReuse() {}
+inline void CountScoreboardRasterComposite(std::size_t, std::size_t) {}
+inline void CountScoreboardRasterDirectDraw(std::size_t) {}
+inline void AddHudOverlayComposite(std::size_t, std::size_t) {}
+inline void AddScoreboardDirtyCellPixels(std::size_t) {}
+inline void CountHudVisualGenerationChange() {}
+inline void CountHudConfigInvalidation() {}
+inline void CountScoreboardPlanGenerationChange() {}
 inline void CountScoreboardDynamicCellUpdate(bool) {}
 inline void CountScoreboardStructureCheck() {}
 inline void CountScoreboardOutlinePathHit() {}

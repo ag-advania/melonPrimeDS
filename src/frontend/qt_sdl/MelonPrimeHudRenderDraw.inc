@@ -527,7 +527,9 @@ static ScoreboardStructureKey MakeScoreboardStructureKey(
     for (int slot = 0; slot < 4; ++slot) {
         key.teamIndex[slot] = snapshot.playersBySlot[slot].teamIndex;
         key.hunterId[slot] = snapshot.playersBySlot[slot].hunterId;
+        key.stars[slot] = snapshot.playersBySlot[slot].stars;
         key.active[slot] = snapshot.playersBySlot[slot].active;
+        key.displayNames[slot] = snapshot.playersBySlot[slot].displayName;
     }
     return key;
 }
@@ -812,7 +814,8 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
     const CachedHudConfig& c,
     const QFontMetrics& boardFm,
     const QFontMetrics& rankFm,
-    bool* changed = nullptr)
+    bool* changed = nullptr,
+    QRectF* dirtyCells = nullptr)
 {
     if (changed)
         *changed = false;
@@ -820,6 +823,12 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
         return false;
 
     const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
+    const auto noteDirty = [dirtyCells](const QRectF& rect) {
+        if (!dirtyCells || rect.isEmpty())
+            return;
+        *dirtyCells = dirtyCells->isEmpty()
+            ? rect : dirtyCells->united(rect);
+    };
 
     for (int rowIndex = 0; rowIndex < plan.rowCount; ++rowIndex) {
         ScoreboardPlanRow& current = plan.rows[rowIndex];
@@ -838,7 +847,10 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
                 return false;
             if (changed && rankChanged)
                 *changed = true;
+            if (rankChanged)
+                noteDirty(current.rank.rect);
             if (!(previousRank == current.rank.visual) && current.starsFullW > 0.0) {
+                const QRectF previousStarsRect = current.starsRect;
                 const float boardScale = ScoreboardUserScale(c);
                 const auto scaleDs = [boardScale](int value) {
                     return std::max(0, static_cast<int>(std::lround(value * boardScale)));
@@ -856,6 +868,10 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
                              rankLine.y() + (rankLine.height() - current.starsFullH) * 0.5f,
                              drawStarsW, current.starsFullH)
                     : QRectF();
+                if (!(previousRank == current.rank.visual)) {
+                    noteDirty(previousStarsRect);
+                    noteDirty(current.starsRect);
+                }
             }
         }
 
@@ -885,6 +901,10 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
             return false;
         if (changed && (firstChanged || secondChanged))
             *changed = true;
+        if (firstChanged)
+            noteDirty(current.first.rect);
+        if (secondChanged)
+            noteDirty(current.second.rect);
     }
     return true;
 }
@@ -951,17 +971,16 @@ static void AdvanceScoreboardPlanGeneration(HudFrameOwnedState& hudFrame)
     if (hudFrame.scoreboardPlanGeneration == 0)
         hudFrame.scoreboardPlanGeneration = 1;
     hudFrame.scoreboardRaster.valid = false;
+    MelonPrimePerf::CountScoreboardPlanGenerationChange();
 }
 
-static void DrawScoreboardRaster(QPainter* p, ScoreboardRenderPlan& plan,
-                                 const CachedHudConfig& c, float hudScale)
+static void DrawScoreboardStaticRaster(QPainter* p, ScoreboardRenderPlan& plan,
+                                       const CachedHudConfig& c, float hudScale)
 {
     auto& hudFrame = HudFrameState();
     const auto& scoreboardFont = hudFrame.scoreboardFont;
     const QFont& boardFont = scoreboardFont.boardFont;
-    const QFont& rankFont = scoreboardFont.rankFont;
     const QFontMetrics& boardFm = scoreboardFont.boardFm;
-    const QFontMetrics& rankFm = scoreboardFont.rankFm;
     const HudOutlineConfig& scoreboardOutline = EffOL(c, c.scoreboard.outline);
 
     p->save();
@@ -989,12 +1008,6 @@ static void DrawScoreboardRaster(QPainter* p, ScoreboardRenderPlan& plan,
         if (row.team) {
             DrawScoreboardPlanText(p, plan.rows[rowIndex].name,
                                    boardFont, boardFm, scoreboardOutline, hudScale);
-            DrawScoreboardPlanText(p, plan.rows[rowIndex].rank,
-                                   rankFont, rankFm, scoreboardOutline, hudScale);
-            DrawScoreboardPlanText(p, plan.rows[rowIndex].first,
-                                   boardFont, boardFm, scoreboardOutline, hudScale);
-            DrawScoreboardPlanText(p, plan.rows[rowIndex].second,
-                                   boardFont, boardFm, scoreboardOutline, hudScale);
             continue;
         }
 
@@ -1009,9 +1022,42 @@ static void DrawScoreboardRaster(QPainter* p, ScoreboardRenderPlan& plan,
         }
         DrawScoreboardPlanText(p, plan.rows[rowIndex].name,
                                boardFont, boardFm, scoreboardOutline, hudScale);
-        DrawScoreboardPlanText(p, plan.rows[rowIndex].rank,
-                               rankFont, rankFm, scoreboardOutline, hudScale);
-        if (row.stars <= 4 && !row.starsRect.isEmpty()) {
+    }
+    p->restore();
+}
+
+static void DrawScoreboardDynamicRaster(QPainter* p, ScoreboardRenderPlan& plan,
+                                        const CachedHudConfig& c, float hudScale,
+                                        const QRectF* dirtyCells = nullptr)
+{
+    auto& hudFrame = HudFrameState();
+    const auto& scoreboardFont = hudFrame.scoreboardFont;
+    const QFont& boardFont = scoreboardFont.boardFont;
+    const QFont& rankFont = scoreboardFont.rankFont;
+    const QFontMetrics& boardFm = scoreboardFont.boardFm;
+    const QFontMetrics& rankFm = scoreboardFont.rankFm;
+    const HudOutlineConfig& scoreboardOutline = EffOL(c, c.scoreboard.outline);
+
+    p->save();
+    p->setFont(boardFont);
+    p->setOpacity(c.scoreboard.opacity);
+    p->setRenderHint(QPainter::SmoothPixmapTransform, false);
+    const auto shouldDraw = [dirtyCells](const QRectF& rect) {
+        return !dirtyCells || dirtyCells->intersects(rect);
+    };
+    for (int rowIndex = 0; rowIndex < plan.rowCount; ++rowIndex) {
+        ScoreboardPlanRow& row = plan.rows[rowIndex];
+        if (shouldDraw(row.rank.rect))
+            DrawScoreboardPlanText(p, row.rank, rankFont, rankFm,
+                                   scoreboardOutline, hudScale);
+        if (shouldDraw(row.first.rect))
+            DrawScoreboardPlanText(p, row.first, boardFont, boardFm,
+                                   scoreboardOutline, hudScale);
+        if (shouldDraw(row.second.rect))
+            DrawScoreboardPlanText(p, row.second, boardFont, boardFm,
+                                   scoreboardOutline, hudScale);
+        if (!row.team && row.stars <= 4 && !row.starsRect.isEmpty()
+            && shouldDraw(row.starsRect)) {
             const QImage& stars = s_scoreboardStars[row.stars];
             if (!stars.isNull()) {
                 MelonPrimePerf::ScopedHudElement iconElement(
@@ -1021,66 +1067,171 @@ static void DrawScoreboardRaster(QPainter* p, ScoreboardRenderPlan& plan,
                 AccumDirtyDs(p, row.starsRect);
             }
         }
-        DrawScoreboardPlanText(p, plan.rows[rowIndex].first,
-                               boardFont, boardFm, scoreboardOutline, hudScale);
-        DrawScoreboardPlanText(p, plan.rows[rowIndex].second,
-                               boardFont, boardFm, scoreboardOutline, hudScale);
     }
     p->restore();
 }
 
-static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
-                           const CachedHudConfig& c, float hudScale,
-                           uint8_t localPlayerSlot)
+static void DrawScoreboardRaster(QPainter* p, ScoreboardRenderPlan& plan,
+                                 const CachedHudConfig& c, float hudScale)
 {
-    if (!p || !snapshot.visible || !c.scoreboard.show
-        || c.scoreboard.opacity <= 0.0f)
-        return;
+    DrawScoreboardStaticRaster(p, plan, c, hudScale);
+    DrawScoreboardDynamicRaster(p, plan, c, hudScale);
+}
 
-    EnsureScoreboardFontCache(c, hudScale);
+// A raster cache is useful while its output is small enough to be cheaper than
+// replaying the already planned primitives. Once the output-sized backing store
+// crosses this measured bandwidth ceiling, the plan is drawn directly instead:
+// there is no allocation, clear, or full-image CPU composite on that path.
+static constexpr std::size_t kScoreboardRasterDirectBytes = 4u * 1024u * 1024u;
+
+static bool ShouldDrawScoreboardDirect(
+    int widthPx, int heightPx, std::size_t* outBytes = nullptr,
+    std::size_t* outPixels = nullptr)
+{
+    const std::size_t pixels = static_cast<std::size_t>(std::max(1, widthPx))
+        * static_cast<std::size_t>(std::max(1, heightPx));
+    const std::size_t bytes = pixels * sizeof(QRgb);
+    if (outBytes)
+        *outBytes = bytes;
+    if (outPixels)
+        *outPixels = pixels;
+    return bytes > kScoreboardRasterDirectBytes;
+}
+
+static void DrawScoreboardPlanned(QPainter* p, ScoreboardRenderPlan& plan,
+                                  const CachedHudConfig& c, float hudScale,
+                                  const QRectF& rasterRect,
+                                  int widthPx, int heightPx,
+                                  float originX, float originY,
+                                  float widthDs, float heightDs,
+                                  const QRectF* dynamicDirtyCells,
+                                  NativePaintPerf* nativePaintPerf)
+{
     auto& hudFrame = HudFrameState();
-    const auto& scoreboardFont = hudFrame.scoreboardFont;
-    const QFont& boardFont = scoreboardFont.boardFont;
-    const QFont& rankFont = scoreboardFont.rankFont;
-    const QFontMetrics& boardFm = scoreboardFont.boardFm;
-    const QFontMetrics& rankFm = scoreboardFont.rankFm;
-    const ScoreboardStructureKey structure = MakeScoreboardStructureKey(snapshot);
-    MelonPrimePerf::CountScoreboardStructureCheck();
+    auto& raster = hudFrame.scoreboardRaster;
+    std::size_t rasterBytes = 0;
+    std::size_t rasterPixels = 0;
+    if (ShouldDrawScoreboardDirect(widthPx, heightPx,
+                                   &rasterBytes, &rasterPixels)) {
+        MelonPrimePerf::CountScoreboardRasterDirectDraw(rasterPixels);
+        if (nativePaintPerf)
+            nativePaintPerf->RecordScoreboardRasterDirectDraw(rasterPixels);
+        DrawScoreboardRaster(p, plan, c, hudScale);
+        return;
+    }
 
-    if (!ScoreboardPlanMatches(hudFrame.scoreboardPlan, structure, c,
-                               hudScale, localPlayerSlot)) {
-        MelonPrimePerf::ScopedHudPhase planTimer(
-            MelonPrimePerf::HudPhase::ScoreboardPlan);
-        hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
-            snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
-        AdvanceScoreboardPlanGeneration(hudFrame);
-        MelonPrimePerf::CountScoreboardPlanBuild();
-        MelonPrimePerf::CountScoreboardFullPlanRebuild();
+    const QFont& boardFont = hudFrame.scoreboardFont.boardFont;
+    const QTransform painterTransform = p->transform();
+    const QPointF deviceOrigin = painterTransform.map(QPointF(originX, originY));
+    const QTransform localTransform(
+        painterTransform.m11(), painterTransform.m12(),
+        painterTransform.m21(), painterTransform.m22(),
+        painterTransform.dx() - deviceOrigin.x(),
+        painterTransform.dy() - deviceOrigin.y());
+    const bool cacheMatches = raster.valid
+        && raster.planGeneration == hudFrame.scoreboardPlanGeneration
+        && raster.hudScale == hudScale
+        && raster.originX == originX
+        && raster.originY == originY
+        && raster.widthDs == widthDs
+        && raster.heightDs == heightDs
+        && raster.image.width() == widthPx
+        && raster.image.height() == heightPx
+        && raster.image.format() == QImage::Format_ARGB32_Premultiplied
+        && raster.staticImage.width() == widthPx
+        && raster.staticImage.height() == heightPx
+        && raster.staticImage.format() == QImage::Format_ARGB32_Premultiplied;
+
+    if (!cacheMatches) {
+        MelonPrimePerf::CountScoreboardRasterCacheMiss();
+        const bool backingStoreSizeChanged =
+            raster.image.width() != widthPx
+            || raster.image.height() != heightPx
+            || raster.image.format() != QImage::Format_ARGB32_Premultiplied
+            || raster.staticImage.width() != widthPx
+            || raster.staticImage.height() != heightPx
+            || raster.staticImage.format() != QImage::Format_ARGB32_Premultiplied;
+        if (backingStoreSizeChanged) {
+            raster.image = QImage(
+                widthPx, heightPx, QImage::Format_ARGB32_Premultiplied);
+            raster.staticImage = QImage(
+                widthPx, heightPx, QImage::Format_ARGB32_Premultiplied);
+            MelonPrimePerf::CountScoreboardRasterBackingAllocation(
+                static_cast<std::size_t>(raster.image.sizeInBytes())
+                + static_cast<std::size_t>(raster.staticImage.sizeInBytes()));
+        } else {
+            MelonPrimePerf::CountScoreboardRasterBackingReuse();
+        }
+        raster.image.fill(Qt::transparent);
+        raster.staticImage.fill(Qt::transparent);
+        QPainter imagePainter(&raster.staticImage);
+        imagePainter.setWorldTransform(localTransform, false);
+        imagePainter.setFont(boardFont);
+        const QRect previousDirty = s_drawnDirtyPx;
+        DrawScoreboardStaticRaster(&imagePainter, plan, c, hudScale);
+        imagePainter.end();
+        QPainter composedPainter(&raster.image);
+        composedPainter.setCompositionMode(QPainter::CompositionMode_Source);
+        composedPainter.drawImage(QPoint(0, 0), raster.staticImage);
+        composedPainter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+        composedPainter.setWorldTransform(localTransform, false);
+        composedPainter.setFont(boardFont);
+        DrawScoreboardDynamicRaster(&composedPainter, plan, c, hudScale);
+        composedPainter.end();
+        s_drawnDirtyPx = previousDirty;
+        raster.planGeneration = hudFrame.scoreboardPlanGeneration;
+        raster.hudScale = hudScale;
+        raster.originX = originX;
+        raster.originY = originY;
+        raster.widthDs = widthDs;
+        raster.heightDs = heightDs;
+        raster.valid = true;
     } else {
-        MelonPrimePerf::ScopedHudPhase planTimer(
-            MelonPrimePerf::HudPhase::ScoreboardPlan);
-        bool dynamicChanged = false;
-        if (!UpdateScoreboardRenderPlanDynamicCells(
-                hudFrame.scoreboardPlan, snapshot, c, boardFm, rankFm,
-                &dynamicChanged))
-        {
-            hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
-                snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
-            AdvanceScoreboardPlanGeneration(hudFrame);
-            MelonPrimePerf::CountScoreboardPlanBuild();
-            MelonPrimePerf::CountScoreboardFullPlanRebuild();
-        } else if (dynamicChanged) {
-            AdvanceScoreboardPlanGeneration(hudFrame);
+        MelonPrimePerf::CountScoreboardRasterCacheHit();
+        if (dynamicDirtyCells && !dynamicDirtyCells->isEmpty()) {
+            const QRect imageDirty = localTransform.mapRect(
+                *dynamicDirtyCells).toAlignedRect().intersected(
+                    QRect(0, 0, widthPx, heightPx));
+            if (!imageDirty.isEmpty()) {
+                QPainter imagePainter(&raster.image);
+                imagePainter.setCompositionMode(QPainter::CompositionMode_Source);
+                imagePainter.drawImage(QRectF(imageDirty), raster.staticImage,
+                                       QRectF(imageDirty));
+                imagePainter.setCompositionMode(QPainter::CompositionMode_SourceOver);
+                imagePainter.setWorldTransform(localTransform, false);
+                imagePainter.setClipRect(*dynamicDirtyCells, Qt::IntersectClip);
+                const QRect previousDirty = s_drawnDirtyPx;
+                DrawScoreboardDynamicRaster(
+                    &imagePainter, plan, c, hudScale, dynamicDirtyCells);
+                imagePainter.end();
+                s_drawnDirtyPx = previousDirty;
+            }
         }
     }
-    auto& plan = hudFrame.scoreboardPlan;
-    if (!plan.valid)
+
+    p->save();
+    p->setOpacity(1.0);
+    p->setRenderHint(QPainter::SmoothPixmapTransform, false);
+    MelonPrimePerf::CountHudElementImageDraw();
+    MelonPrimePerf::CountScoreboardRasterComposite(rasterBytes, rasterPixels);
+    if (nativePaintPerf)
+        nativePaintPerf->RecordScoreboardRasterComposite(rasterBytes, rasterPixels);
+    p->drawImage(rasterRect, raster.image);
+    p->restore();
+    AccumDirtyDs(p, rasterRect);
+}
+
+static void DrawScoreboardPlan(QPainter* p, ScoreboardRenderPlan& plan,
+                               const CachedHudConfig& c, float hudScale,
+                               const QRectF* dynamicDirtyCells,
+                               NativePaintPerf* nativePaintPerf)
+{
+    if (!p || !plan.valid)
         return;
 
     MelonPrimePerf::ScopedHudPhase rasterTimer(
         MelonPrimePerf::HudPhase::ScoreboardRaster);
 
-    auto& raster = hudFrame.scoreboardRaster;
     const QRectF panelRect(plan.panelX, plan.panelY, plan.panelW, plan.panelH);
     const HudOutlineConfig& scoreboardOutline = EffOL(c, c.scoreboard.outline);
     const float outlineRadius = scoreboardOutline.enable
@@ -1105,64 +1256,72 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         std::abs(deviceEnd.y() - deviceOrigin.y()))) + 2);
     const float widthDs = static_cast<float>(widthPx) / scaleX;
     const float heightDs = static_cast<float>(heightPx) / scaleY;
-    const bool cacheMatches = raster.valid
-        && raster.planGeneration == hudFrame.scoreboardPlanGeneration
-        && raster.hudScale == hudScale
-        && raster.originX == originX
-        && raster.originY == originY
-        && raster.widthDs == widthDs
-        && raster.heightDs == heightDs
-        && raster.image.width() == widthPx
-        && raster.image.height() == heightPx
-        && raster.image.format() == QImage::Format_ARGB32_Premultiplied;
+    const QRectF rasterRect(originX, originY, widthDs, heightDs);
+    DrawScoreboardPlanned(p, plan, c, hudScale, rasterRect,
+                          widthPx, heightPx, originX, originY,
+                          widthDs, heightDs, dynamicDirtyCells,
+                          nativePaintPerf);
+}
 
-    if (!cacheMatches) {
-        MelonPrimePerf::CountScoreboardRasterCacheMiss();
-        const bool backingStoreSizeChanged =
-            raster.image.width() != widthPx
-            || raster.image.height() != heightPx
-            || raster.image.format() != QImage::Format_ARGB32_Premultiplied;
-        if (backingStoreSizeChanged) {
-            raster.image = QImage(
-                widthPx, heightPx, QImage::Format_ARGB32_Premultiplied);
-            MelonPrimePerf::CountScoreboardRasterBackingAllocation(
-                static_cast<std::size_t>(raster.image.sizeInBytes()));
-        } else {
-            MelonPrimePerf::CountScoreboardRasterBackingReuse();
-        }
-        raster.image.fill(Qt::transparent);
-        QPainter imagePainter(&raster.image);
-        const QTransform localTransform(
-            painterTransform.m11(), painterTransform.m12(),
-            painterTransform.m21(), painterTransform.m22(),
-            painterTransform.dx() - deviceOrigin.x(),
-            painterTransform.dy() - deviceOrigin.y());
-        imagePainter.setWorldTransform(localTransform, false);
-        imagePainter.setFont(boardFont);
-        const QRect previousDirty = s_drawnDirtyPx;
-        DrawScoreboardRaster(&imagePainter, plan, c, hudScale);
-        imagePainter.end();
-        s_drawnDirtyPx = previousDirty;
-        raster.planGeneration = hudFrame.scoreboardPlanGeneration;
-        raster.hudScale = hudScale;
-        raster.originX = originX;
-        raster.originY = originY;
-        raster.widthDs = widthDs;
-        raster.heightDs = heightDs;
-        raster.valid = true;
+static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
+                           const CachedHudConfig& c, float hudScale,
+                           uint8_t localPlayerSlot,
+                           NativePaintPerf* nativePaintPerf = nullptr)
+{
+    if (!p || !snapshot.visible || !c.scoreboard.show
+        || c.scoreboard.opacity <= 0.0f)
+        return;
+
+    EnsureScoreboardFontCache(c, hudScale);
+    auto& hudFrame = HudFrameState();
+    const auto& scoreboardFont = hudFrame.scoreboardFont;
+    const QFont& rankFont = scoreboardFont.rankFont;
+    const QFontMetrics& boardFm = scoreboardFont.boardFm;
+    const QFontMetrics& rankFm = scoreboardFont.rankFm;
+    const ScoreboardStructureKey structure = MakeScoreboardStructureKey(snapshot);
+    MelonPrimePerf::CountScoreboardStructureCheck();
+    bool dynamicChanged = false;
+    QRectF dynamicCells;
+
+    if (!ScoreboardPlanMatches(hudFrame.scoreboardPlan, structure, c,
+                               hudScale, localPlayerSlot)) {
+        MelonPrimePerf::ScopedHudPhase planTimer(
+            MelonPrimePerf::HudPhase::ScoreboardPlan);
+        hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
+            snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
+        AdvanceScoreboardPlanGeneration(hudFrame);
+        MelonPrimePerf::CountScoreboardPlanBuild();
+        MelonPrimePerf::CountScoreboardFullPlanRebuild();
     } else {
-        MelonPrimePerf::CountScoreboardRasterCacheHit();
+        MelonPrimePerf::ScopedHudPhase planTimer(
+            MelonPrimePerf::HudPhase::ScoreboardPlan);
+        if (!UpdateScoreboardRenderPlanDynamicCells(
+                hudFrame.scoreboardPlan, snapshot, c, boardFm, rankFm,
+                &dynamicChanged, &dynamicCells))
+        {
+            hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
+                snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
+            AdvanceScoreboardPlanGeneration(hudFrame);
+            MelonPrimePerf::CountScoreboardPlanBuild();
+            MelonPrimePerf::CountScoreboardFullPlanRebuild();
+        } else if (dynamicChanged) {
+            const float scaleX = std::max(0.001f, std::abs(c.lastStretchX * hudScale));
+            const float scaleY = std::max(0.001f, std::abs(hudScale));
+            const std::size_t dirtyPixels =
+                static_cast<std::size_t>(std::ceil(dynamicCells.width() * scaleX))
+                * static_cast<std::size_t>(std::ceil(dynamicCells.height() * scaleY));
+            MelonPrimePerf::AddScoreboardDirtyCellPixels(dirtyPixels);
+            if (nativePaintPerf)
+                nativePaintPerf->RecordScoreboardDirtyCellPixels(dirtyPixels);
+        }
     }
+    auto& plan = hudFrame.scoreboardPlan;
+    if (!plan.valid)
+        return;
 
-    const QRectF rasterRect(raster.originX, raster.originY,
-                            raster.widthDs, raster.heightDs);
-    p->save();
-    p->setOpacity(1.0);
-    p->setRenderHint(QPainter::SmoothPixmapTransform, false);
-    MelonPrimePerf::CountHudElementImageDraw();
-    p->drawImage(rasterRect, raster.image);
-    p->restore();
-    AccumDirtyDs(p, rasterRect);
+    DrawScoreboardPlan(p, plan, c, hudScale,
+                       dynamicChanged ? &dynamicCells : nullptr,
+                       nativePaintPerf);
 }
 
 static ScoreboardSnapshot MakeScoreboardPreviewSnapshot()

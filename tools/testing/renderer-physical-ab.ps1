@@ -556,7 +556,7 @@ function Run-Action([string]$name) {
             # The Custom HUD scoreboard is always part of the F7 gameplay
             # frame; the diagnostic snapshot seam is enabled before launch.
             # Leave the production scoreboard visible for the whole window so
-            # every same-size value change reaches the raster cache.
+            # every same-size value change reaches the dynamic-cell plan path.
             Add-Content -LiteralPath $harness -Value 'scoreboard-dynamic=f7-snapshot-seam-open-until-process-exit'
         }
         'display-capture' {
@@ -778,22 +778,41 @@ $badMarkers = @($allLog | Select-String -Pattern 'VUID-|SYNC-HAZARD|DEVICE_LOST|
 $scoreboardRasterSamples = @(
     foreach ($line in $allLog) {
         $match = [regex]::Match($line,
-            'hud_phase_us .*scoreboard_raster_cache_miss=(\d+) scoreboard_raster_alloc=(\d+) scoreboard_raster_reuse=(\d+).*dynamic_cells=(\d+) time_changes=(\d+)')
+            'hud_phase_us .*scoreboard_raster_cache_miss=(\d+) scoreboard_raster_alloc=(\d+) scoreboard_raster_reuse=(\d+).*scoreboard_dirty_cell_pixels=(\d+).*dynamic_cells=(\d+) time_changes=(\d+)')
         if ($match.Success) {
             [pscustomobject]@{
+                source = 'hud_phase'
                 miss = [Int64]$match.Groups[1].Value
                 alloc = [Int64]$match.Groups[2].Value
                 reuse = [Int64]$match.Groups[3].Value
-                dynamic_cells = [Int64]$match.Groups[4].Value
-                time_changes = [Int64]$match.Groups[5].Value
+                dirty_cell_pixels = [Int64]$match.Groups[4].Value
+                dynamic_cells = [Int64]$match.Groups[5].Value
+                time_changes = [Int64]$match.Groups[6].Value
+            }
+        }
+        # Software's native paint path owns the QPainter work on a different
+        # thread from the HUD phase probe. Consume its equivalent counters so
+        # the same dynamic-cell fixture is valid for both presenter families.
+        $nativeMatch = [regex]::Match($line,
+            'native_paint_us .*scoreboard_raster_composite_calls=(\d+) .*scoreboard_raster_direct_draws=(\d+) .*scoreboard_dirty_cell_pixels=(\d+)')
+        if ($nativeMatch.Success) {
+            [pscustomobject]@{
+                source = 'native_paint'
+                miss = 0
+                alloc = 0
+                reuse = 0
+                dynamic_cells = if ([Int64]$nativeMatch.Groups[3].Value -gt 0) { 1 } else { 0 }
+                time_changes = 0
+                dirty_cell_pixels = [Int64]$nativeMatch.Groups[3].Value
+                raster_composite_calls = [Int64]$nativeMatch.Groups[1].Value
+                raster_direct_draws = [Int64]$nativeMatch.Groups[2].Value
             }
         }
     }
 )
 $scoreboardDynamicSamples = @(
     $scoreboardRasterSamples | Where-Object {
-        $_.miss -gt 0 -and $_.alloc -eq 0 -and $_.reuse -gt 0 -and
-        $_.dynamic_cells -gt 0
+        $_.dynamic_cells -gt 0 -and $_.dirty_cell_pixels -gt 0
     }
 )
 $scoreboardDynamicMissMax = if ($scoreboardRasterSamples.Count -gt 0) {
@@ -805,6 +824,12 @@ $scoreboardDynamicReuseMax = if ($scoreboardRasterSamples.Count -gt 0) {
 $scoreboardDynamicCellsMax = if ($scoreboardRasterSamples.Count -gt 0) {
     ($scoreboardRasterSamples.dynamic_cells | Measure-Object -Maximum).Maximum
 } else { 0 }
+$scoreboardDynamicDirtyPixelsMax = if ($scoreboardRasterSamples.Count -gt 0) {
+    ($scoreboardRasterSamples.dirty_cell_pixels | Measure-Object -Maximum).Maximum
+} else { 0 }
+$scoreboardNativeSampleCount = @(
+    $scoreboardRasterSamples | Where-Object { $_.source -eq 'native_paint' }
+).Count
 $nativeGPU2DExactFailureMarkers = @($allLog | Select-String -Pattern 'native GPU2D exact (?:differential )?mismatch|native GPU2D exact gate rejected' -ErrorAction SilentlyContinue)
 $stateActionLogIndex = -1
 if ($null -ne $savestateSlotPathForApp) {
@@ -1035,6 +1060,8 @@ $manifestObject = [ordered]@{
         scoreboard_dynamic_miss_max = $scoreboardDynamicMissMax
         scoreboard_dynamic_reuse_max = $scoreboardDynamicReuseMax
         scoreboard_dynamic_cells_max = $scoreboardDynamicCellsMax
+        scoreboard_dynamic_dirty_cell_pixels_max = $scoreboardDynamicDirtyPixelsMax
+        scoreboard_dynamic_native_sample_count = $scoreboardNativeSampleCount
     }
 }
 [IO.File]::WriteAllText($runManifest, ($manifestObject | ConvertTo-Json -Depth 12), $utf8)
@@ -1090,6 +1117,8 @@ scoreboard_dynamic_sample_count=$($scoreboardDynamicSamples.Count)
 scoreboard_dynamic_miss_max=$scoreboardDynamicMissMax
 scoreboard_dynamic_reuse_max=$scoreboardDynamicReuseMax
 scoreboard_dynamic_cells_max=$scoreboardDynamicCellsMax
+scoreboard_dynamic_dirty_cell_pixels_max=$scoreboardDynamicDirtyPixelsMax
+scoreboard_dynamic_native_sample_count=$scoreboardNativeSampleCount
 scoreboard_dynamic_validation=$(if ($Action -eq 'scoreboard-dynamic') { if ($scoreboardDynamicSamples.Count -gt 0) { 'PASS' } else { 'FAIL' } } else { 'NOT_REQUESTED' })
 presentation_stall_validation=$(if ($PresentationStallFrames -eq 0) { 'NOT_REQUESTED' } elseif ($forcedPresentationStallLines.Count -ge $PresentationStallFrames) { 'PASS' } else { 'FAIL' })
 expected_source_head=$ExpectedSourceHead

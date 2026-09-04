@@ -8,6 +8,7 @@
 // P-3: Called from settings dialog save to trigger config re-read next frame
 static void CustomHud_InvalidateConfigCache()
 {
+    MelonPrimePerf::CountHudConfigInvalidation();
     s_cache.valid = false;
     ClearHudRuntimeDynamicSnapshotPayload();
     s_bombTintCacheValid = false;

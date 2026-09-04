@@ -142,6 +142,7 @@ static void ClearHudRuntimeDynamicSnapshotPayload();
 
 static void BumpCustomHudVisualGeneration()
 {
+    MelonPrimePerf::CountHudVisualGenerationChange();
     auto& generation = ActiveHudConfigState().visualGeneration;
     if (++generation == 0)
         generation = 1;

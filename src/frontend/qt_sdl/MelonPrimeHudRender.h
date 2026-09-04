@@ -34,6 +34,8 @@ class QFont;
 
 namespace MelonPrime {
 
+    class NativePaintPerf;
+
     // =========================================================================
     //  CustomHud_Render
     //
@@ -79,7 +81,24 @@ namespace MelonPrime {
         float topStretchX = 1.0f,
         float hudScale = 1.0f,
         float hudOriginXds = 0.0f,
-        float hudOriginYds = 0.0f
+        float hudOriginYds = 0.0f,
+        QPainter* directScoreboardPaint = nullptr,
+        NativePaintPerf* nativePaintPerf = nullptr
+    );
+
+    // Redraw only the already planned scoreboard into a presentation target.
+    // This is used by the native Software presenter when the game frame is
+    // repainted but the immutable HUD visual frame is reused; it performs no
+    // NDS/RAM reads and never changes the retained overlay dirty rectangle.
+    QRect CustomHud_RenderCachedScoreboard(
+        CustomHudConfigState& hudConfig,
+        Config::Table& localCfg,
+        QPainter* scoreboardPaint,
+        float topStretchX = 1.0f,
+        float hudScale = 1.0f,
+        float hudOriginXds = 0.0f,
+        float hudOriginYds = 0.0f,
+        NativePaintPerf* nativePaintPerf = nullptr
     );
 
     // Resolve the base HUD font (family + style strategy only; caller sets pixel size)
