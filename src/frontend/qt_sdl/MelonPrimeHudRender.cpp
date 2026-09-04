@@ -2,6 +2,7 @@
 
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimeHudConfigState.h"
+#include "MelonPrimeHudRetainedState.h"
 #include "MelonPrimeHudRuntime.h"
 #include "MelonPrimeHudRadar.h"
 #include "MelonPrimeHudPatchLifecycle.h"
@@ -84,6 +85,10 @@ static constexpr int kRadarArtSize = 76;
 
 // Primitive and element drawing: gauges, HP, weapons, inventory, crosshair.
 #include "MelonPrimeHudRenderDraw.inc"
+
+// Retained overlay composition: per-element visual diff, bounded dirty
+// region set, clear scheduling, and z-order-correct partial recompose.
+#include "MelonPrimeHudRetainedCompose.inc"
 
 // CustomHud_Render and radar overlay entry points.
 #include "MelonPrimeHudRenderMain.inc"

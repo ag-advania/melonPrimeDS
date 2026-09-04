@@ -38,6 +38,18 @@ param(
     [int]$ActionSeed = 0,
     [ValidateSet('On', 'Off')]
     [string]$Hud = 'On',
+    [ValidateSet('Default', 'On', 'Off')]
+    [string]$Scoreboard = 'Default',
+    [ValidateSet('Default', 'On', 'Off')]
+    [string]$ScoreboardOutline = 'Default',
+    [ValidateRange(0, 10)]
+    [int]$ScoreboardOutlineThickness = 0,
+    [ValidateRange(-1, 1)]
+    [double]$ScoreboardOutlineOpacity = -1,
+    [ValidateRange(0, 800)]
+    [int]$ScoreboardScale = 0,
+    [ValidateRange(0, 800)]
+    [int]$ScoreboardTextScale = 0,
     [switch]$AllowUnverifiedBinary,
     [switch]$RequireCleanProvenance,
     [switch]$ExactGPU2DValidation,
@@ -71,6 +83,10 @@ if ($SyntheticMouseRateHz -gt 0 -and $Action -ne 'steady-state') {
 }
 if ($ExactGPU2DValidation -and $StageDiagnosticsOnly) {
     throw 'ExactGPU2DValidation and StageDiagnosticsOnly are mutually exclusive.'
+}
+if ($ScoreboardOutlineOpacity -ge 0 -and
+    $ScoreboardOutline -eq 'Default') {
+    throw 'ScoreboardOutlineOpacity requires ScoreboardOutline=On or Off.'
 }
 
 Add-Type -AssemblyName System.Windows.Forms
@@ -244,6 +260,38 @@ $xellEnabled = if ($LowLatency -eq 'XeLL') { 'true' } else { 'false' }
 $xellPolicy = if ($LowLatency -eq 'XeLL') { 4 } else { 0 }
 $vsyncName = if ($NoVSync) { 'off' } else { 'on' }
 $frameLimitName = if ($NoFrameLimit) { 'off' } else { 'on' }
+$scoreboardShowConfig = if ($Scoreboard -eq 'Default') {
+    ''
+} else {
+    'HudScoreboardShow = ' + $(if ($Scoreboard -eq 'On') { 'true' } else { 'false' })
+}
+$scoreboardOutlineConfig = if ($ScoreboardOutline -eq 'Default') {
+    ''
+} else {
+    'HudScoreboardOutline = ' +
+        $(if ($ScoreboardOutline -eq 'On') { 'true' } else { 'false' })
+}
+$scoreboardOutlineThicknessConfig = if ($ScoreboardOutlineThickness -gt 0) {
+    'HudScoreboardOutlineThickness = ' + $ScoreboardOutlineThickness
+} else {
+    ''
+}
+$scoreboardOutlineOpacityConfig = if ($ScoreboardOutlineOpacity -ge 0) {
+    'HudScoreboardOutlineOpacity = ' +
+        $ScoreboardOutlineOpacity.ToString([Globalization.CultureInfo]::InvariantCulture)
+} else {
+    ''
+}
+$scoreboardScaleConfig = if ($ScoreboardScale -gt 0) {
+    'HudScoreboardScale = ' + $ScoreboardScale
+} else {
+    ''
+}
+$scoreboardTextScaleConfig = if ($ScoreboardTextScale -gt 0) {
+    'HudScoreboardTextScale = ' + $ScoreboardTextScale
+} else {
+    ''
+}
 $portableDir = Join-Path $build 'portable'
 $configRoot = if (Test-Path -LiteralPath $portableDir -PathType Container) { $portableDir } else { $build }
 $configPath = Join-Path $configRoot 'melonDS.toml'
@@ -420,6 +468,12 @@ $(if ($savestateConfigPath) { 'SavestatePath = "' + $savestateConfigPath + '"' }
 
 [Instance0.Metroid.Visual]
 CustomHUD = $(if ($Hud -eq 'On') { 'true' } else { 'false' })
+$scoreboardShowConfig
+$scoreboardOutlineConfig
+$scoreboardOutlineThicknessConfig
+$scoreboardOutlineOpacityConfig
+$scoreboardScaleConfig
+$scoreboardTextScaleConfig
 
 [Instance0.Keyboard]
 HK_Reset = 82
@@ -944,6 +998,14 @@ $manifestObject = [ordered]@{
         frame_limit = $frameLimitName
         low_latency = $LowLatency
         hud = $Hud
+        scoreboard = $Scoreboard
+        scoreboard_outline = $ScoreboardOutline
+        scoreboard_outline_thickness = $ScoreboardOutlineThickness
+        scoreboard_outline_opacity = if ($ScoreboardOutlineOpacity -ge 0) {
+            $ScoreboardOutlineOpacity
+        } else { $null }
+        scoreboard_scale = $ScoreboardScale
+        scoreboard_text_scale = $ScoreboardTextScale
         exact_gpu2d_validation = [bool]$ExactGPU2DValidation
         stage_diagnostics = [bool]($ExactGPU2DValidation -or $StageDiagnosticsOnly)
         stage_diagnostics_only = [bool]$StageDiagnosticsOnly
@@ -1074,6 +1136,14 @@ vsync=$vsyncName
 frame_limit=$frameLimitName
 low_latency=$LowLatency
 hud=$Hud
+scoreboard=$Scoreboard
+scoreboard_outline=$ScoreboardOutline
+scoreboard_outline_thickness=$ScoreboardOutlineThickness
+scoreboard_outline_opacity=$(if ($ScoreboardOutlineOpacity -ge 0) {
+    $ScoreboardOutlineOpacity.ToString([Globalization.CultureInfo]::InvariantCulture)
+} else { 'DEFAULT' })
+scoreboard_scale=$ScoreboardScale
+scoreboard_text_scale=$ScoreboardTextScale
 exact_gpu2d_validation=$($ExactGPU2DValidation.IsPresent.ToString().ToLowerInvariant())
 stage_diagnostics=$((($ExactGPU2DValidation -or $StageDiagnosticsOnly).ToString().ToLowerInvariant()))
 stage_diagnostics_only=$($StageDiagnosticsOnly.IsPresent.ToString().ToLowerInvariant())
@@ -1166,6 +1236,12 @@ Write-Host "scale              : $Scale"
 Write-Host "vsync              : $vsyncName"
 Write-Host "frame limit        : $frameLimitName"
 Write-Host "low latency        : $LowLatency"
+Write-Host "scoreboard         : $Scoreboard"
+Write-Host "scoreboard outline : $ScoreboardOutline"
+Write-Host "outline thickness  : $ScoreboardOutlineThickness"
+Write-Host "outline opacity    : $(if ($ScoreboardOutlineOpacity -ge 0) { $ScoreboardOutlineOpacity } else { 'Default' })"
+Write-Host "scoreboard scale   : $(if ($ScoreboardScale -gt 0) { $ScoreboardScale } else { 'Default' })"
+Write-Host "scoreboard text    : $(if ($ScoreboardTextScale -gt 0) { $ScoreboardTextScale } else { 'Default' })"
 Write-Host "process exit       : $exitCode"
 Write-Host "config restore     : $(if ($configRestored) { 'PASS' } else { 'FAIL' })"
 Write-Host "state marker       : $stateMarker"

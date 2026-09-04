@@ -808,12 +808,40 @@ static bool UpdateScoreboardPlanCell(
     return true;
 }
 
+static float ScoreboardTextOutlineRadius(
+    const HudOutlineConfig& outline, float hudScale)
+{
+    return outline.enable && outline.opacity > 0.0f
+        ? static_cast<float>(std::max(1, outline.thickness))
+            / std::max(0.001f, hudScale)
+        : 0.0f;
+}
+
+static QRectF ScoreboardTextDirtyBounds(
+    const QRectF& textRect, const HudOutlineConfig& outline,
+    float hudScale, float stretchX)
+{
+    const float scaleY = std::max(0.001f, hudScale);
+    const float scaleX = std::max(0.001f, std::abs(stretchX) * scaleY);
+    const float outlinePad = ScoreboardTextOutlineRadius(outline, hudScale);
+    // Keep the outline expansion separate from the rounding guard: the
+    // effective outline contributes zero when disabled or fully transparent,
+    // while fractional device transforms still need one physical pixel of
+    // restore/redraw coverage on every side.
+    const float safetyPadX = 1.0f / scaleX;
+    const float safetyPadY = 1.0f / scaleY;
+    return textRect.adjusted(
+        -(outlinePad + safetyPadX), -(outlinePad + safetyPadY),
+        outlinePad + safetyPadX, outlinePad + safetyPadY);
+}
+
 static bool UpdateScoreboardRenderPlanDynamicCells(
     ScoreboardRenderPlan& plan,
     const ScoreboardSnapshot& snapshot,
     const CachedHudConfig& c,
     const QFontMetrics& boardFm,
     const QFontMetrics& rankFm,
+    float hudScale,
     bool* changed = nullptr,
     QRectF* dirtyCells = nullptr)
 {
@@ -823,6 +851,17 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
         return false;
 
     const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
+    const HudOutlineConfig& scoreboardOutline = EffOL(c, c.scoreboard.outline);
+    const auto noteTextDirty = [dirtyCells, &scoreboardOutline,
+                                hudScale, stretchX = c.lastStretchX](
+                                   const QRectF& rect) {
+        if (!dirtyCells || rect.isEmpty())
+            return;
+        const QRectF dirtyRect = ScoreboardTextDirtyBounds(
+            rect, scoreboardOutline, hudScale, stretchX);
+        *dirtyCells = dirtyCells->isEmpty()
+            ? dirtyRect : dirtyCells->united(dirtyRect);
+    };
     const auto noteDirty = [dirtyCells](const QRectF& rect) {
         if (!dirtyCells || rect.isEmpty())
             return;
@@ -848,7 +887,7 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
             if (changed && rankChanged)
                 *changed = true;
             if (rankChanged)
-                noteDirty(current.rank.rect);
+                noteTextDirty(current.rank.rect);
             if (!(previousRank == current.rank.visual) && current.starsFullW > 0.0) {
                 const QRectF previousStarsRect = current.starsRect;
                 const float boardScale = ScoreboardUserScale(c);
@@ -902,9 +941,9 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
         if (changed && (firstChanged || secondChanged))
             *changed = true;
         if (firstChanged)
-            noteDirty(current.first.rect);
+            noteTextDirty(current.first.rect);
         if (secondChanged)
-            noteDirty(current.second.rect);
+            noteTextDirty(current.second.rect);
     }
     return true;
 }
@@ -918,10 +957,7 @@ static void DrawScoreboardPlanText(
         return;
 
     const auto flags = text.alignment | Qt::AlignVCenter | Qt::TextSingleLine;
-    const float outlineRadius = outline.enable && outline.opacity > 0.0f
-        ? static_cast<float>(std::max(1, outline.thickness))
-            / std::max(0.001f, hudScale)
-        : 0.0f;
+    const float outlineRadius = ScoreboardTextOutlineRadius(outline, hudScale);
     if (outlineRadius > 0.0f) {
         MelonPrimePerf::ScopedHudElement outlineElement(
             MelonPrimePerf::HudElementMetric::Outline);
@@ -1105,7 +1141,8 @@ static void DrawScoreboardPlanned(QPainter* p, ScoreboardRenderPlan& plan,
                                   float originX, float originY,
                                   float widthDs, float heightDs,
                                   const QRectF* dynamicDirtyCells,
-                                  NativePaintPerf* nativePaintPerf)
+                                  NativePaintPerf* nativePaintPerf,
+                                  bool fullComposite)
 {
     auto& hudFrame = HudFrameState();
     auto& raster = hudFrame.scoreboardRaster;
@@ -1116,6 +1153,29 @@ static void DrawScoreboardPlanned(QPainter* p, ScoreboardRenderPlan& plan,
         MelonPrimePerf::CountScoreboardRasterDirectDraw(rasterPixels);
         if (nativePaintPerf)
             nativePaintPerf->RecordScoreboardRasterDirectDraw(rasterPixels);
+        if (!fullComposite && dynamicDirtyCells && !dynamicDirtyCells->isEmpty()) {
+            // Above the backing-store ceiling there is no retained image to
+            // copy from, but the destination still holds last frame's panel.
+            // Restore the changed cells' background and replay only the
+            // primitives that intersect them.
+            p->save();
+            p->setClipRect(*dynamicDirtyCells, Qt::IntersectClip);
+            const QRect previousDirty = s_drawnDirtyPx;
+            s_drawnDirtyPx = QRect();
+            DrawScoreboardStaticRaster(p, plan, c, hudScale);
+            DrawScoreboardDynamicRaster(p, plan, c, hudScale, dynamicDirtyCells);
+            const QRect touched = s_drawnDirtyPx;
+            p->restore();
+            s_drawnDirtyPx = previousDirty | touched;
+            // The panel still covers its whole rectangle even though only a
+            // cell was repainted.
+            s_hudElementOccupancy = DeviceRectFor(p, rasterRect);
+            MelonPrimePerf::CountScoreboardOuterComposite(
+                static_cast<uint64_t>(std::max(0, touched.width()))
+                    * static_cast<uint64_t>(std::max(0, touched.height())),
+                true);
+            return;
+        }
         DrawScoreboardRaster(p, plan, c, hudScale);
         return;
     }
@@ -1209,11 +1269,53 @@ static void DrawScoreboardPlanned(QPainter* p, ScoreboardRenderPlan& plan,
         }
     }
 
+    // Composite the retained scoreboard image into the destination.
+    //
+    // The inner raster cache already updates only the cells that changed; that
+    // saving used to be given straight back here, because the panel was then
+    // copied out whole -- and, on a GPU backend, uploaded whole. When the
+    // destination still holds last frame's panel (nothing cleared it) and only
+    // dynamic cells moved, copy just those cells.
+    const bool partialComposite = !fullComposite
+        && dynamicDirtyCells && !dynamicDirtyCells->isEmpty();
     p->save();
     p->setOpacity(1.0);
     p->setRenderHint(QPainter::SmoothPixmapTransform, false);
+    // Source rather than SourceOver: the destination is not cleared first, so
+    // the copy has to replace those pixels outright, including the transparent
+    // ones that erase whatever the panel used to draw there.
+    p->setCompositionMode(QPainter::CompositionMode_Source);
     MelonPrimePerf::CountHudElementImageDraw();
+    if (partialComposite) {
+        const QRectF cellRect = dynamicDirtyCells->intersected(rasterRect);
+        const QRectF sourceRect(
+            (cellRect.x() - rasterRect.x()) / std::max(0.0001, double(widthDs))
+                * widthPx,
+            (cellRect.y() - rasterRect.y()) / std::max(0.0001, double(heightDs))
+                * heightPx,
+            cellRect.width() / std::max(0.0001, double(widthDs)) * widthPx,
+            cellRect.height() / std::max(0.0001, double(heightDs)) * heightPx);
+        const std::size_t cellPixels =
+            static_cast<std::size_t>(std::max(0.0, std::ceil(sourceRect.width())))
+            * static_cast<std::size_t>(std::max(0.0, std::ceil(sourceRect.height())));
+        MelonPrimePerf::CountScoreboardRasterComposite(
+            cellPixels * sizeof(QRgb), cellPixels);
+        MelonPrimePerf::CountScoreboardOuterComposite(
+            static_cast<uint64_t>(cellPixels), true);
+        if (nativePaintPerf)
+            nativePaintPerf->RecordScoreboardRasterComposite(
+                cellPixels * sizeof(QRgb), cellPixels);
+        p->drawImage(cellRect, raster.image, sourceRect);
+        p->restore();
+        AccumDirtyDs(p, cellRect);
+        // The panel still occupies its whole rectangle; only the cell moved.
+        s_hudElementOccupancy = DeviceRectFor(p, rasterRect);
+        return;
+    }
+
     MelonPrimePerf::CountScoreboardRasterComposite(rasterBytes, rasterPixels);
+    MelonPrimePerf::CountScoreboardOuterComposite(
+        static_cast<uint64_t>(rasterPixels), false);
     if (nativePaintPerf)
         nativePaintPerf->RecordScoreboardRasterComposite(rasterBytes, rasterPixels);
     p->drawImage(rasterRect, raster.image);
@@ -1224,7 +1326,8 @@ static void DrawScoreboardPlanned(QPainter* p, ScoreboardRenderPlan& plan,
 static void DrawScoreboardPlan(QPainter* p, ScoreboardRenderPlan& plan,
                                const CachedHudConfig& c, float hudScale,
                                const QRectF* dynamicDirtyCells,
-                               NativePaintPerf* nativePaintPerf)
+                               NativePaintPerf* nativePaintPerf,
+                               bool fullComposite = true)
 {
     if (!p || !plan.valid)
         return;
@@ -1260,13 +1363,14 @@ static void DrawScoreboardPlan(QPainter* p, ScoreboardRenderPlan& plan,
     DrawScoreboardPlanned(p, plan, c, hudScale, rasterRect,
                           widthPx, heightPx, originX, originY,
                           widthDs, heightDs, dynamicDirtyCells,
-                          nativePaintPerf);
+                          nativePaintPerf, fullComposite);
 }
 
 static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
                            const CachedHudConfig& c, float hudScale,
                            uint8_t localPlayerSlot,
-                           NativePaintPerf* nativePaintPerf = nullptr)
+                           NativePaintPerf* nativePaintPerf = nullptr,
+                           bool fullComposite = true)
 {
     if (!p || !snapshot.visible || !c.scoreboard.show
         || c.scoreboard.opacity <= 0.0f)
@@ -1281,10 +1385,15 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     const ScoreboardStructureKey structure = MakeScoreboardStructureKey(snapshot);
     MelonPrimePerf::CountScoreboardStructureCheck();
     bool dynamicChanged = false;
+    // A structural rebuild changes the panel's geometry and content wholesale,
+    // so the destination's copy of it is worthless and the frame must
+    // composite the whole panel however the caller asked.
+    bool planRebuilt = false;
     QRectF dynamicCells;
 
     if (!ScoreboardPlanMatches(hudFrame.scoreboardPlan, structure, c,
                                hudScale, localPlayerSlot)) {
+        planRebuilt = true;
         MelonPrimePerf::ScopedHudPhase planTimer(
             MelonPrimePerf::HudPhase::ScoreboardPlan);
         hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
@@ -1297,8 +1406,9 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
             MelonPrimePerf::HudPhase::ScoreboardPlan);
         if (!UpdateScoreboardRenderPlanDynamicCells(
                 hudFrame.scoreboardPlan, snapshot, c, boardFm, rankFm,
-                &dynamicChanged, &dynamicCells))
+                hudScale, &dynamicChanged, &dynamicCells))
         {
+            planRebuilt = true;
             hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
                 snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
             AdvanceScoreboardPlanGeneration(hudFrame);
@@ -1319,9 +1429,12 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
     if (!plan.valid)
         return;
 
+    if (!dynamicChanged)
+        MelonPrimePerf::CountScoreboardNoChangeFrame();
     DrawScoreboardPlan(p, plan, c, hudScale,
                        dynamicChanged ? &dynamicCells : nullptr,
-                       nativePaintPerf);
+                       nativePaintPerf,
+                       fullComposite || planRebuilt);
 }
 
 static ScoreboardSnapshot MakeScoreboardPreviewSnapshot()

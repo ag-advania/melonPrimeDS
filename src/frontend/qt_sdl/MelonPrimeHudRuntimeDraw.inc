@@ -64,6 +64,23 @@ static void DrawMatchStatusText(QPainter* p, const QFontMetrics& fm, int fontPix
     PrepareTextBitmapCached(fm, s_frameFont, fontPixelSize, s_labelBitmapCache, label, eff(c.matchStatusLabelColor));
     drawText(s_labelBitmapCache, s_labelOlCache, lx, ly);
 }
+// The resolved state is sampled once per emulated frame by the caller, which
+// also derives this element's visual stamp from it. Drawing therefore reads no
+// guest RAM, which is what lets the retained compositor re-run a draw purely to
+// restore z-order without paying for another sample.
+static void DrawMatchStatusResolved(QPainter* p,
+                                    const MatchStatusResolvedState& state,
+                                    const CachedHudConfig& c)
+{
+    DrawMatchStatusText(p, s_frameFm, s_frameFpx, c.textDrawScale,
+                        state, c.matchStatus, c.matchStatusOpacity,
+                        EffOL(c, c.matchStatus.outline), c.lastHudScale);
+}
+// Sample-and-draw wrapper for the callers that are not the per-frame HUD path:
+// the on-screen editor preview and the developer golden harness. Both draw one
+// isolated element outside the retained compositor, so paying for the read here
+// is the simpler contract. The frame path resolves these values once during
+// sampling and calls the *Resolved variants directly.
 static void DrawMatchStatusHud(QPainter* p, const RomAddresses& rom,
                                uint8_t playerPos, bool isAdventure,
                                const CachedHudConfig& c,
@@ -73,14 +90,12 @@ static void DrawMatchStatusHud(QPainter* p, const RomAddresses& rom,
         return;
 
     MatchStatusResolvedState state = {};
-    const bool hasState = ReadHudRuntimeMatchStatusState(rom, playerPos, st, state);
-    if (!hasState)
+    if (!ReadHudRuntimeMatchStatusState(rom, playerPos, st, state))
         return;
 
-    DrawMatchStatusText(p, s_frameFm, s_frameFpx, c.textDrawScale,
-                        state, c.matchStatus, c.matchStatusOpacity,
-                        EffOL(c, c.matchStatus.outline), c.lastHudScale);
+    DrawMatchStatusResolved(p, state, c);
 }
+
 static float CalcAlignedTextX(int anchorX, int align, float textW);
 static void DrawCachedAlignedText(QPainter* p, const QFontMetrics& fm, int fontPixelSize, float tds,
                                    TextMeasureCache& measureCache, TextBitmapCache& bitmapCache,
@@ -168,14 +183,15 @@ static void DrawBombLeft(QPainter* p, uint8_t bombs,
 }
 //  Rank & Time HUD
 // =========================================================================
-static void DrawRankAndTime(QPainter* p, const RomAddresses& rom,
-                            uint8_t playerPos, bool isAdventure,
-                            const CachedHudConfig& c, float tds,
-                            const HudRuntimeState& st)
+// Same contract as DrawMatchStatusResolved: rank byte, remaining seconds and
+// the time limit are sampled by the caller. `rankByte` above 3 means the ROM
+// has no rank to show.
+static void DrawRankAndTimeResolved(QPainter* p,
+                                    const CachedHudConfig& c, float tds,
+                                    uint8_t rankByte,
+                                    int timeLeftSeconds,
+                                    int timeLimitMinutes)
 {
-    if (isAdventure)
-        return;
-
     const auto& hud = c.rankTime;
 
     if (hud.rankShow) {
@@ -184,7 +200,6 @@ static void DrawRankAndTime(QPainter* p, const RomAddresses& rom,
         auto& s_rankOutlineCache = HudFrameState().rankOutline;
         auto& s_rankMeasure = HudFrameState().rankMeasure;
 
-        const uint8_t rankByte = ReadHudRuntimeRankByte(rom, playerPos, st);
         if (rankByte <= 3) {
             DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                                   s_rankMeasure, s_rankCache, s_rankOutlineCache,
@@ -200,10 +215,9 @@ static void DrawRankAndTime(QPainter* p, const RomAddresses& rom,
         auto& s_timeLeftOutlineCache = HudFrameState().timeLeftOutline;
         auto& s_timeLeftMeasure = HudFrameState().timeLeftMeasure;
 
-        const int seconds = ReadHudRuntimeTimeLeftSeconds(rom, st);
         DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                               s_timeLeftMeasure, s_timeLeftCache, s_timeLeftOutlineCache,
-                              UpdateTimeString(s_timeLeftStringCache, seconds, false),
+                              UpdateTimeString(s_timeLeftStringCache, timeLeftSeconds, false),
                               hud.timeLeftColor, hud.timeLeftX, hud.timeLeftAlign, hud.timeLeftY,
                               c.timeLeftOpacity, EffOL(c, c.rankTime.timeLeftOutline), c.lastHudScale);
     }
@@ -214,11 +228,29 @@ static void DrawRankAndTime(QPainter* p, const RomAddresses& rom,
         auto& s_timeLimitOutlineCache = HudFrameState().timeLimitOutline;
         auto& s_timeLimitMeasure = HudFrameState().timeLimitMeasure;
 
-        const int goalMinutes = ReadHudRuntimeTimeLimitMinutes(rom, st);
         DrawCachedAlignedText(p, s_frameFm, s_frameFpx, tds,
                               s_timeLimitMeasure, s_timeLimitCache, s_timeLimitOutlineCache,
-                              UpdateTimeString(s_timeLimitStringCache, goalMinutes, true),
+                              UpdateTimeString(s_timeLimitStringCache, timeLimitMinutes, true),
                               hud.timeLimitColor, hud.timeLimitX, hud.timeLimitAlign, hud.timeLimitY,
                               c.timeLimitOpacity, EffOL(c, c.rankTime.timeLimitOutline), c.lastHudScale);
     }
+}
+
+// Companion to DrawMatchStatusHud above: same non-frame callers, same reason.
+static void DrawRankAndTime(QPainter* p, const RomAddresses& rom,
+                            uint8_t playerPos, bool isAdventure,
+                            const CachedHudConfig& c, float tds,
+                            const HudRuntimeState& st)
+{
+    if (isAdventure)
+        return;
+
+    const auto& hud = c.rankTime;
+    const uint8_t rankByte = hud.rankShow
+        ? ReadHudRuntimeRankByte(rom, playerPos, st) : uint8_t{0xFF};
+    const int timeLeftSeconds = hud.timeLeftShow
+        ? ReadHudRuntimeTimeLeftSeconds(rom, st) : 0;
+    const int timeLimitMinutes = hud.timeLimitShow
+        ? ReadHudRuntimeTimeLimitMinutes(rom, st) : 0;
+    DrawRankAndTimeResolved(p, c, tds, rankByte, timeLeftSeconds, timeLimitMinutes);
 }

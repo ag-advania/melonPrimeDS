@@ -1,5 +1,9 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
 namespace MelonPrime {
 
 enum class HunterId
@@ -62,6 +66,42 @@ constexpr int kRadarPaletteColorCount =
 // 5-bit channel values shifted left by three. Ignore those expansion bits so
 // all renderers identify the same source colors.
 constexpr uint32_t kRadarPaletteQuantizationMask = 0x00F8F8F8u;
+
+// Constant-time palette membership for the CPU colour key.
+//
+// After quantisation only the top five bits of each channel carry meaning, so
+// every colour the key can ever see is one of 32*32*32 = 32768 values. One bit
+// each fits in 4 KiB, which is small enough to sit beside the pixel data in L1
+// instead of evicting it -- a 32 KiB byte table would not. The alternative it
+// replaces was a linear scan of fifteen comparisons *per filtered pixel*, run
+// over the whole radar crop every frame the radar is visible.
+constexpr std::size_t kRadarPaletteLutEntries = 32768;
+constexpr std::size_t kRadarPaletteLutWords = kRadarPaletteLutEntries / 64;
+
+// Pack a quantised 0xRRGGBB colour into its 15-bit table index.
+constexpr uint16_t RadarPaletteLutIndex(uint32_t rgb)
+{
+    const uint32_t r = (rgb >> 19) & 0x1Fu;
+    const uint32_t g = (rgb >> 11) & 0x1Fu;
+    const uint32_t b = (rgb >> 3) & 0x1Fu;
+    return static_cast<uint16_t>((r << 10) | (g << 5) | b);
+}
+
+// Built at compile time from kRadarPaletteColors, so the table can never drift
+// from the palette the shaders use.
+constexpr std::array<uint64_t, kRadarPaletteLutWords> MakeRadarPaletteLut()
+{
+    std::array<uint64_t, kRadarPaletteLutWords> bits{};
+    for (const uint32_t paletteColor : kRadarPaletteColors) {
+        const uint16_t index =
+            RadarPaletteLutIndex(paletteColor & kRadarPaletteQuantizationMask);
+        bits[index >> 6] |= (uint64_t{1} << (index & 63));
+    }
+    return bits;
+}
+
+inline constexpr std::array<uint64_t, kRadarPaletteLutWords> kRadarPaletteLut =
+    MakeRadarPaletteLut();
 
 static_assert(static_cast<int>(HunterId::Weavel) + 1 == kHunterCount,
     "HunterId and kBtmOverlaySrcCenterY must stay in sync");

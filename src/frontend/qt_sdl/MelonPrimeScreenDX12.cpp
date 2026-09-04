@@ -195,7 +195,16 @@ struct ScreenPanelDX12::DX12State
     QMutex fallbackLock;
     QImage fallbackFrame;
     QImage hudFrame;
+    // The HUD rectangle currently held by the presenter's HUD layer.
+    //
+    // DX12SurfacePresenter::UploadLayerRegion *sizes the layer texture to the
+    // uploaded patch* -- unlike the Vulkan presenter, whose layer stays the
+    // full surface and is updated in place. So the layer can only ever hold one
+    // rectangle, and it has to be the whole area the HUD occupies rather than
+    // just the part that changed. hudUploadedRect is what that rectangle
+    // currently is, so an unchanged frame can skip the upload entirely.
     QRect hudRect;
+    QRect hudUploadedRect;
     QImage osdStrip;
     std::atomic_bool surfaceVisibleRequested{false};
     MelonPrime::NativeSurfaceSnapshotStore surfaceSnapshot;
@@ -272,8 +281,7 @@ void ScreenPanelDX12::prepareForRendererTransition(
     // The presenter/layer resources are about to be detached from the active
     // renderer. Do not let an identical visual key skip the first upload after
     // the transition.
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
+    resetHudRetainedOverlay();
     ++m_hudVisualRendererGeneration;
 #endif
 
@@ -341,8 +349,7 @@ bool ScreenPanelDX12::initDX12()
     if (!dx12 || !dx12->surface)
         return false;
 #ifdef MELONPRIME_CUSTOM_HUD
-    m_hudVisualFrameValid = false;
-    m_hudVisualFrameWasReused = false;
+    resetHudRetainedOverlay();
     ++m_hudVisualRendererGeneration;
 #endif
     publishDX12SurfaceSnapshotGuiThread();
@@ -837,7 +844,6 @@ void ScreenPanelDX12::drawScreen()
                 logicalWidth, logicalHeight, QImage::Format_ARGB32_Premultiplied);
             dx12->hudFrame.fill(Qt::transparent);
         }
-        const QRect previousHudDirty = m_hudPrevDirty;
         QPainter painter(&dx12->hudFrame);
         // hudFrame is retained between frames so only the current HUD dirty
         // rectangle needs uploading. SourceOver would leave old pixels behind
@@ -856,39 +862,51 @@ void ScreenPanelDX12::drawScreen()
         auto& instcfg = emuInstance->getLocalConfig();
         hudVisible = MelonPrimeHud_IsHudVisibleOrRestorePatch(
             emuInstance, mpForHud, m_hudEnabled, hudEditMode);
-        // DX12 retains the HUD texture between compositions. The source
-        // painter clears the previous dirty region before drawing the current
-        // one, so both regions must be uploaded when the visual changes.
-        dx12->hudRect = m_hudPrevDirty.united(previousHudDirty).intersected(
-            QRect(0, 0, logicalWidth, logicalHeight));
+        const QRect hudImageRect(0, 0, logicalWidth, logicalHeight);
+        // The layer can only hold one rectangle, so it holds the area the HUD
+        // occupies. The per-element dirty regions still earn their keep: when
+        // none of them is set, this rectangle already sits on the GPU and the
+        // upload is skipped outright.
+        dx12->hudRect = m_hudContentRegions.Bounds().intersected(hudImageRect);
         const auto hudLayer = MelonPrime::DX12SurfacePresenter::Layer::Hud;
-        if (hudVisible && m_hudVisualFrameWasReused
-            && dx12->presenter.HasLayerContent(hudLayer)
-            && !dx12->hudRect.isEmpty())
+        const bool hasLayerContent = dx12->presenter.HasLayerContent(hudLayer)
+            && dx12->hudUploadedRect == dx12->hudRect;
+        HudDirtyRegionSet hudDirty = m_hudDirtyRegions;
+        hudDirty.IntersectWith(dx12->hudRect);
+
+        if (!hudVisible || dx12->hudRect.isEmpty())
         {
-            // Upload is intentionally skipped, but the retained layer still
-            // has to participate in this presentation's composition.
-            hudLayerReady = true;
+            dx12->hudUploadedRect = QRect();
         }
-        else if (hudVisible && !m_hudVisualFrameWasReused
-                 && !dx12->hudRect.isEmpty())
+        else if (hasLayerContent && hudDirty.IsEmpty())
+        {
+            // Nothing changed and the layer already holds exactly this
+            // rectangle. It still has to participate in this presentation's
+            // composition, but it costs no CPU copy and no upload.
+            hudLayerReady = true;
+            MelonPrimePerf::CountHudRetainedOnlyFrame();
+        }
+        else
         {
             MelonPrimePerf::ScopedHudPhase uploadPrepareTimer(
                 MelonPrimePerf::HudPhase::UploadPrepare);
             MelonPrimePerf::ScopedHudPhase gpuUploadTimer(
                 MelonPrimePerf::HudPhase::GpuUpload);
             MelonPrimePerf::CountHudUploadCall();
-            const int patchWidth = dx12->hudRect.width();
-            const int patchHeight = dx12->hudRect.height();
+            const std::uint64_t patchPixels =
+                static_cast<std::uint64_t>(dx12->hudRect.width())
+                * static_cast<std::uint64_t>(dx12->hudRect.height());
+            MelonPrimePerf::AddHudUploadRegion(patchPixels, patchPixels * 4u);
             const bool hudUploadPerformed = dx12->presenter.UploadLayerRegion(
                 hudLayer,
                 dx12->hudFrame.constBits(),
                 static_cast<u32>(dx12->hudRect.x()),
                 static_cast<u32>(dx12->hudRect.y()),
-                static_cast<u32>(patchWidth),
-                static_cast<u32>(patchHeight),
+                static_cast<u32>(dx12->hudRect.width()),
+                static_cast<u32>(dx12->hudRect.height()),
                 static_cast<std::size_t>(dx12->hudFrame.bytesPerLine()));
             hudLayerReady = hudUploadPerformed;
+            dx12->hudUploadedRect = hudUploadPerformed ? dx12->hudRect : QRect();
         }
     }
 
@@ -1026,6 +1044,8 @@ void ScreenPanelDX12::drawScreen()
 #ifdef MELONPRIME_CUSTOM_HUD
     if (hudLayerReady)
     {
+        // The layer texture *is* the HUD rectangle, so the quad covers it and
+        // samples the whole texture: one quad, default UVs.
         MelonPrime::DX12SurfacePresenter::Quad quad;
         quad.Axis[0] = static_cast<float>(dx12->hudRect.width()) * scaleX;
         quad.Axis[3] = static_cast<float>(dx12->hudRect.height()) * scaleY;
