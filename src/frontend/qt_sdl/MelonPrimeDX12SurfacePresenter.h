@@ -108,6 +108,10 @@ public:
         std::uint32_t width,
         std::uint32_t height,
         std::size_t rowBytes);
+    // Replaces the layer texture with the given sub-rectangle of the source
+    // image: the texture is (re)created at width x height and holds only that
+    // patch. Use it when the layer *is* the patch; use UploadLayerRegions()
+    // when the layer is a retained full-surface image being updated in place.
     bool UploadLayerRegion(
         Layer layer,
         const void* pixels,
@@ -116,6 +120,50 @@ public:
         std::uint32_t width,
         std::uint32_t height,
         std::size_t rowBytes);
+
+    // A rectangle of a layer, in layer texels.
+    struct LayerRegion
+    {
+        std::uint32_t X = 0;
+        std::uint32_t Y = 0;
+        std::uint32_t Width = 0;
+        std::uint32_t Height = 0;
+    };
+
+    // Upper bound on the regions one UploadLayerRegions() call will stage. It
+    // matches the HUD's dirty-region cap; more rectangles than this stop paying
+    // for themselves against the copies they save.
+    static constexpr std::uint32_t kMaxLayerRegions = 8;
+
+    // Update sub-rectangles of a *retained, full-surface* layer in place.
+    //
+    // The layer texture is created once at imageWidth x imageHeight and kept
+    // across frames, so a steady frame costs no resource creation, no SRV
+    // rebuild and no full-surface copy -- only the rows inside `regions` are
+    // staged and copied. This is the same contract the Vulkan presenter offers,
+    // and it is what lets a HUD that changed one number cost one small copy
+    // instead of a texture re-creation plus a full bounding-box upload.
+    //
+    // Returns false without recording any GPU work when the layer has no
+    // content yet (seed it with UploadLayer() first) or when the staging buffer
+    // cannot hold the requested regions; the caller falls back to a full upload.
+    bool UploadLayerRegions(
+        Layer layer,
+        const void* pixels,
+        std::uint32_t imageWidth,
+        std::uint32_t imageHeight,
+        std::size_t rowBytes,
+        const LayerRegion* regions,
+        std::uint32_t regionCount);
+
+    // Dimensions the layer texture currently holds. A caller that keeps a
+    // full-surface layer uses this to notice a resize.
+    [[nodiscard]] bool LayerMatchesSize(
+        Layer layer, std::uint32_t width, std::uint32_t height) const noexcept
+    {
+        const LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+        return texture.Valid && texture.Width == width && texture.Height == height;
+    }
     bool UploadLayerFromBuffer(
         Layer layer,
         const melonDS::DX12PresentedFrame& frame,
