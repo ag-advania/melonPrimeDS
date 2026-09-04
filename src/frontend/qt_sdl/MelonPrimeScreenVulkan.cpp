@@ -2531,8 +2531,8 @@ bool ScreenPanelVulkan::renderHudOverlay(
     {
         m_hudVisualFrameValid = false;
         MelonPrime::CustomHud_EnsurePatchRestored(
-            mp->HudConfigState(), emuInstance, instcfg,
-            mp->GetCurrentRom(), mp->GetPlayerPosition(), mp->IsInGame());
+            mp->HudConfigState(), emuInstance,
+            mp->GetCurrentRom(), mp->GetPlayerPosition());
         return false;
     }
 

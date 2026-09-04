@@ -22,7 +22,9 @@ HOT_FUNCTION QRect CustomHud_Render(
     bool isInGame,
     bool hudEnabledSnapshot,
     float topStretchX, float hudScale,
-    float hudOriginXds, float hudOriginYds)
+    float hudOriginXds, float hudOriginYds,
+    QPainter* directScoreboardPaint,
+    NativePaintPerf* nativePaintPerf)
 {
     MelonPrimePerf::CountCustomHudCall();
     MelonPrimePerf::ScopedHudPhase stateTimer(MelonPrimePerf::HudPhase::State);
@@ -130,23 +132,47 @@ HOT_FUNCTION QRect CustomHud_Render(
     // visible in the aggregate developer report.
     stateTimer.Stop();
     if (c.scoreboard.show) {
-        ScoreboardSnapshot scoreboard{};
-        if (ReadHudRuntimeScoreboardSnapshot(rom, st, scoreboard)) {
+        const ScoreboardSnapshot* scoreboard =
+            ReadHudRuntimeScoreboardSnapshot(rom, st);
+        if (scoreboard) {
             EnsureScoreboardAssetsLoaded(c.scoreboard,
                                          std::min(c.scaleIcons, c.scaleScoreboard)
                                              * ScoreboardUserScale(c));
-            DrawScoreboard(topPaint, scoreboard, c, hudScale, playerPosition);
+            {
+                MelonPrimePerf::ScopedHudElement element(
+                    MelonPrimePerf::HudElementMetric::Scoreboard);
+                if (directScoreboardPaint) {
+                    const QRect overlayDirtyBefore = s_drawnDirtyPx;
+                    directScoreboardPaint->save();
+                    directScoreboardPaint->setFont(topPaint->font());
+                    directScoreboardPaint->resetTransform();
+                    ApplyHudPainterTransform(directScoreboardPaint, xf);
+                    EnsureHudFont(directScoreboardPaint);
+                    DrawScoreboard(directScoreboardPaint, *scoreboard, c,
+                                   hudScale, playerPosition, nativePaintPerf);
+                    directScoreboardPaint->restore();
+                    s_drawnDirtyPx = overlayDirtyBefore;
+                } else {
+                    DrawScoreboard(topPaint, *scoreboard, c, hudScale,
+                                   playerPosition, nativePaintPerf);
+                }
+            }
         }
     }
 
     // Enemy Target: the ROM only publishes targetSlot/timer for ~2s after a
     // local hit, so most frames stop at the snapshot's early return.
     if (c.enemyTarget.show) {
-        EnemyTargetSnapshot enemyTarget{};
-        if (ReadHudRuntimeEnemyTargetSnapshot(rom, st, enemyTarget)) {
+        const EnemyTargetSnapshot* enemyTarget =
+            ReadHudRuntimeEnemyTargetSnapshot(rom, st);
+        if (enemyTarget) {
             EnsureEnemyTargetAssetsLoaded(c.enemyTarget,
                                           c.scaleIcons * EnemyTargetUserScale(c));
-            DrawEnemyTarget(topPaint, enemyTarget, c, hudScale);
+            {
+                MelonPrimePerf::ScopedHudElement element(
+                    MelonPrimePerf::HudElementMetric::EnemyTarget);
+                DrawEnemyTarget(topPaint, *enemyTarget, c, hudScale);
+            }
         }
     }
 
@@ -169,29 +195,51 @@ HOT_FUNCTION QRect CustomHud_Render(
                 st.ram, rom, gameFrame);
             crosshairZoomAmount = ReadCrosshairZoomAmount(st.ram, rom);
         }
-        DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX,
-                      gameFrame, crosshairZoomAmount);
+        {
+            MelonPrimePerf::ScopedHudElement element(
+                MelonPrimePerf::HudElementMetric::Crosshair);
+            DrawCrosshair(topPaint, st.ram, rom, c, hudScale, topStretchX,
+                          gameFrame, crosshairZoomAmount);
+        }
     }
 
-    DrawHP(topPaint, st.currentHP, st.maxHP, c, textDrawScale);
+    {
+        MelonPrimePerf::ScopedHudElement element(
+            MelonPrimePerf::HudElementMetric::Hp);
+        DrawHP(topPaint, st.currentHP, st.maxHP, c, textDrawScale);
+    }
 
     // Bomb count: Samus/Sylux in alt form only
     {
         const bool isBomber = (st.hunterID == static_cast<uint8_t>(HunterId::Samus) ||
                                st.hunterID == static_cast<uint8_t>(HunterId::Sylux));
         if (isBomber && st.isAlt) {
+            MelonPrimePerf::ScopedHudElement element(
+                MelonPrimePerf::HudElementMetric::Bomb);
             DrawBombLeft(topPaint, ReadHudRuntimeBombCount(rom, st),
                          c, textDrawScale, hudScale);
         }
     }
 
     // Match Status + Rank & Time HUDs (non-adventure only, visible in all camera modes)
-    DrawMatchStatusHud(topPaint, rom, playerPosition, st.isAdventure, c, st);
-    DrawRankAndTime(topPaint, rom, playerPosition, st.isAdventure, c, textDrawScale, st);
+    {
+        MelonPrimePerf::ScopedHudElement element(
+            MelonPrimePerf::HudElementMetric::MatchStatus);
+        DrawMatchStatusHud(topPaint, rom, playerPosition, st.isAdventure, c, st);
+    }
+    {
+        MelonPrimePerf::ScopedHudElement element(
+            MelonPrimePerf::HudElementMetric::RankTime);
+        DrawRankAndTime(topPaint, rom, playerPosition, st.isAdventure, c,
+                        textDrawScale, st);
+    }
 
     // Draw bottom screen overlay on top screen (visible in all camera modes incl. alt form)
-    if (c.radar.radarShow)
+    if (c.radar.radarShow) {
+        MelonPrimePerf::ScopedHudElement element(
+            MelonPrimePerf::HudElementMetric::RadarCpuOverlay);
         DrawBottomScreenOverlay(localCfg, topPaint, btmBuffer, (st.hunterID <= 6) ? st.hunterID : 0);
+    }
 
     if (!st.isFirstPerson) {
         // OPT-DR1: Crosshair not drawn in third-person / alt-form.
@@ -211,12 +259,18 @@ HOT_FUNCTION QRect CustomHud_Render(
         weaponInfo.isMissile)
         currentAmmoMissile = ReadHudRuntimeCurrentAmmoMissile(rom, st);
 
-    DrawWeaponAmmo(topPaint, st.currentWeapon,
-                   currentAmmoSpecial, currentAmmoMissile,
-                   st.maxAmmoSpecial, st.maxAmmoMissile, c, textDrawScale, hudScale);
+    {
+        MelonPrimePerf::ScopedHudElement element(
+            MelonPrimePerf::HudElementMetric::WeaponAmmo);
+        DrawWeaponAmmo(topPaint, st.currentWeapon,
+                       currentAmmoSpecial, currentAmmoMissile,
+                       st.maxAmmoSpecial, st.maxAmmoMissile, c, textDrawScale, hudScale);
+    }
 
     if (c.weaponInventory.show) {
         const uint16_t havingWeapons = ReadHudRuntimeHavingWeapons(addrHot, st);
+        MelonPrimePerf::ScopedHudElement element(
+            MelonPrimePerf::HudElementMetric::WeaponInventory);
         DrawWeaponInventory(topPaint,
                             havingWeapons, st.currentWeapon,
                             currentAmmoSpecial, currentAmmoMissile,
@@ -232,6 +286,48 @@ HOT_FUNCTION QRect CustomHud_Render(
     return CurrentHudDirtyRect(xf);
 }
 
+QRect CustomHud_RenderCachedScoreboard(
+    CustomHudConfigState& hudConfig,
+    Config::Table& localCfg,
+    QPainter* scoreboardPaint,
+    float topStretchX,
+    float hudScale,
+    float hudOriginXds,
+    float hudOriginYds,
+    NativePaintPerf* nativePaintPerf)
+{
+    if (!scoreboardPaint || !scoreboardPaint->isActive())
+        return QRect();
+
+    const ScopedHudConfigState active(hudConfig);
+    if (!s_cache.valid || !s_cache.scoreboard.show)
+        return QRect();
+
+    auto& hudFrame = HudFrameState();
+    if (!hudFrame.scoreboardPlan.valid
+        || !hudFrame.scoreboardPlan.structure.visible)
+        return QRect();
+
+    // The config epoch and plan were already validated by the visual-frame key.
+    // Keep this cold fallback for a first repaint after a resize; it does not
+    // touch live emulation state.
+    const HudFrameTransform xf = MakeHudFrameTransform(
+        nullptr, topStretchX, hudScale, hudOriginXds, hudOriginYds);
+    EnsureCachedConfigForFrame(localCfg, xf);
+
+    const QRect previousDirty = s_drawnDirtyPx;
+    const QRect previousCrosshairDirty = s_chDirtyThisFrame;
+    scoreboardPaint->save();
+    scoreboardPaint->resetTransform();
+    ApplyHudPainterTransform(scoreboardPaint, xf);
+    DrawScoreboardPlan(scoreboardPaint, hudFrame.scoreboardPlan,
+                       s_cache, hudScale, nullptr, nativePaintPerf);
+    scoreboardPaint->restore();
+    s_drawnDirtyPx = previousDirty;
+    s_chDirtyThisFrame = previousCrosshairDirty;
+    return QRect();
+}
+
 // =========================================================================
 //  Radar frame SVG drawing — separated from the bottom screen crop overlay.
 //  Uses the same position/size as the radar overlay (radarDstRect center).
@@ -241,6 +337,9 @@ HOT_FUNCTION QRect CustomHud_Render(
 static void DrawRadarFrame(QPainter* topPaint, const CachedHudConfig& c)
 {
     if (s_radarFrameTinted.isNull()) return;
+    MelonPrimePerf::ScopedHudElement element(
+        MelonPrimePerf::HudElementMetric::Icon);
+    MelonPrimePerf::CountHudElementImageDraw();
 
     topPaint->setOpacity(c.radar.radarOpacity);
     topPaint->drawImage(c.radar.frameDstRect, s_radarFrameTinted);
@@ -254,6 +353,8 @@ static void DrawRadarCombinedOutlines(QPainter* topPaint, const CachedHudConfig&
     const bool circleOL = _ol.enable && _ol.opacity > 0.0f;
     const bool frameOL  = _fol.enable && _fol.opacity > 0.0f && !s_radarFrameOutline.isNull();
     if (!circleOL && !frameOL) return;
+    MelonPrimePerf::ScopedHudElement element(
+        MelonPrimePerf::HudElementMetric::Outline);
 
     // OPT-SR2: No save/restore — caller (DrawBottomScreenOverlay) manages state.
     topPaint->setRenderHint(QPainter::Antialiasing, true);
@@ -372,6 +473,7 @@ void DrawBottomScreenOverlay(Config::Table& localCfg, QPainter* topPaint, QImage
 
         topPaint->setOpacity(c.radar.radarOpacity);
         topPaint->setClipPath(c.radar.radarClipPath);
+        MelonPrimePerf::CountHudElementImageDraw();
         topPaint->drawImage(c.radar.radarDstRect, *btmBuffer, s_radarSrcRect);
         AccumDirtyDs(topPaint, QRectF(c.radar.radarDstRect)); // OPT-DR2
     }

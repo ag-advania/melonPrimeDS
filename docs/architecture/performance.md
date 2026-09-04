@@ -95,6 +95,7 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | `m_hudCfgEpoch` / `m_hudEnabled` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | `Metroid.Visual.CustomHUD` change | `MelonPrimeHud_RefreshHudEnabledIfNeeded` |
 | `m_hudFontEpoch` / `overlayFont` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | HUD font property change | `MelonPrimeHud_RefreshOverlayFontIfNeeded` |
 | `m_radarCfgEpoch` / radar GL fields | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | Radar property change | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
+| `ScreenPanelGL::m_hudRadarGl` | `Screen.h` + `MelonPrimeHudScreenCppOverlayOfGl.inc` | Radar config epoch, layout/renderer generation, surface size/scale, transform, opacity, hunter or source-radius edge | `ScreenPanelGL` GL radar overlay path |
 | `m_hudTopMatrix` / layout scale | `Screen.h` + `MelonPrimeHudScreenIntegration.cpp` | `setupScreenLayout()` | `ScreenPanel::updateHudScreenLayoutCache` |
 | `m_radarAnchorDsX/Y` | `Screen.h` + `MelonPrimeHudScreenOverlay.h` | Radar config epoch refresh | `MelonPrimeHud_RefreshRadarConfigIfNeeded` |
 | Dirty rect / `s_drawnDirtyPx` | `MelonPrimeHudRenderAssets.inc` | Top of each `CustomHud_Render` | `CustomHud_Render` |
@@ -112,6 +113,9 @@ Every row must have an explicit owner. Adding a cache without a ledger row is a 
 | Win raw mouse snapshot | `MelonPrimeRawInputState.cpp:283-289` | `discardDeltas`, `resetAll` | `InputState::fetchMouseDelta` |
 | `m_platformRawAimWasActive` | `MelonPrime.h:594` | N/A (edge detector); cleared on emu stop via filter reset | `UpdateInputStateImpl` |
 | `BattleMatchState` | `MelonPrimeHudBattleOwnedState.inc` (nested under `MelonPrimeHudRuntimeSample.inc`) | Match join/leave, config epoch | `CustomHud_OnMatchJoin` / `CustomHud_ResetPatchState` |
+| `HudRuntimeFrameCache` scoreboard/enemy snapshots | `MelonPrimeHudFrameOwnedState.inc` | Validity bits on game-frame rollover; payload clear on ROM identity, match, config, savestate, or reset boundary | `ReadHudRuntimeBaseState` + `ClearHudRuntimeDynamicSnapshotPayload` |
+| `HudFrameOwnedState::scoreboardRaster` | `MelonPrimeHudFrameOwnedState.inc` + `MelonPrimeHudRenderDraw.inc` | Scoreboard plan generation, HUD scale, painter transform/bounds, or lifecycle validity clear; same-size/format backing is retained | `DrawScoreboard` + `AdvanceScoreboardPlanGeneration` / `ClearHudRuntimeDynamicSnapshotPayload` |
+| ROM classification latch | `EmuInstance.h` + `MelonPrime.h` + `MelonPrimeDef.h` | Per-instance ROM load/eject generation or emulator boot reset | `EmuInstance` publisher / `RunFrameHook` / `DetectRomAndSetAddresses` |
 | Typed HUD owner slots | `MelonPrimeHudRenderConfig.inc` / `MelonPrimeHudRender.cpp` | Config-state construction/destruction | `CustomHudConfigState` constructor/destructor |
 | `Arm9HookActivationPlan` | `MelonPrime.h` / `MelonPrimeRuntimeConfig.cpp` | Runtime config reload and core snapshot apply | `LoadRuntimeConfigSnapshot` / `ApplyRuntimeConfigSnapshot` |
 | Text/icon/radar-frame caches | `MelonPrimeHudRenderAssets.inc` | Signature change (size/color/text) | Per-cache prepare helpers |
@@ -181,6 +185,144 @@ negligible in this workload and the hold delta is dominated by Custom HUD
 composition. Keep the lifetime-fence scope intact unless a repeatable workload
 shows material wait contention; optimize the measured HUD work instead of
 weakening renderer/NDS pointer lifetime protection.
+
+### HUD hot-path follow-up (2026-09-04 implementation)
+
+The normal HUD-disabled presentation path now checks the per-instance native-HUD
+patch tracker before `ReadHudRuntimeBaseState()`. A clean tracker returns without
+live config access, guest-RAM sampling, or ARM9 writes; savestate reconciliation
+retains its separate cold config-aware path. The developer perf probe exposes
+`restore_fast_reject`, `restore_runtime_read`, `patch_writes`, and
+`radar_vbo_uploads` in the one-second HUD report.
+
+The OpenGL native radar quad keeps a fixed POD edge cache in `ScreenPanelGL`.
+Steady presentation still binds the program/texture and draws the quad, but
+geometry VBO data and screen-size, opacity, and source uniforms are rewritten
+only when their layout/config/resize/hunter/radius signatures change.
+
+`HudRuntimeFrameCache` now retains scoreboard/enemy `QString` storage across a
+normal game-frame rollover. Only validity and numeric fields are refreshed each
+frame; payload destruction is restricted to explicit cold boundaries. The
+scoreboard and enemy consumers use references to the cache rather than copying
+the snapshots through the render call.
+
+`MELONPRIME_PERF=1` developer builds also emit `hud_element_us` once per second
+for the logical HUD elements and text/icon/gauge/outline primitives. Each record
+contains count, p50/p95/p99/max, drawn-area, draw-call, glyph, and image-draw
+aggregates. The scoreboard hotspot then received one bounded raster cache in the
+frame-owned state: a cache miss rasterizes the already-built plan into a bounded
+`QImage`, while a steady hit performs one image composite. The cache key includes
+the plan generation, HUD scale, painter transform origin, and raster bounds; plan
+changes and cold ownership boundaries invalidate it.
+
+At a lifecycle invalidation, `ClearHudRuntimeDynamicSnapshotPayload` clears
+scoreboard-raster validity but retains the `QImage` backing. A same-size/format
+miss fills and repaints that backing; allocation is restricted to a cold
+size/format mismatch. The developer probe reports
+`scoreboard_raster_alloc`, `scoreboard_raster_reuse`, and
+`scoreboard_raster_bytes` so a dynamic miss workload can distinguish repaint
+from backing-store allocation.
+
+The OpenGL native radar path owns a single `GL_LINEAR` sampler object for the
+radar texture. It binds the sampler only around the radar draw and unbinds it
+afterward; steady frames therefore do not issue per-frame `glTexParameteri`.
+The HUD probe reports `radar_tex_parameter_calls` alongside
+`radar_vbo_uploads`.
+
+ROM detection uses an `EmuInstance`-owned POD containing the checksum, header
+game code, header revision, and load generation. ROM load and eject publish or
+clear that identity on the EmuThread, and `RunFrameHook` compares the owner
+generation before passing a by-value snapshot to cold detection. No
+process-global ROM identity is used, so two emulator instances cannot overwrite
+one another's detection inputs.
+
+The before/after evidence below uses the same Windows F7 fixture and slot 7:
+`0367 - Metroid Prime - Hunters (USA) (Rev 1).ml7`, with the matching ROM, 4x
+scale, VSync and frame limit enabled, low latency disabled, 5 s warmup, 12 s
+measurement, and 2 s grace. The baseline run was captured immediately before
+the scoreboard raster-cache change (`srp-followup-opengl-on-fixedcsv-20260904`
+and `srp-followup-software-on-fixedcsv-20260904`); the audited run was captured
+after it (`srp-followup-opengl-on-rastercache-20260904` and
+`srp-followup-software-on-rastercache-20260904`). Frame values are direct
+percentiles over 909/908 selected measurement samples. HUD native-paint and
+element values are the median of p95/p99 values from 15 selected one-second
+windows; their max is the largest reported sample maximum in those windows.
+
+| F7 steady-state metric | Before p95 / p99 / max | After p95 / p99 / max |
+|---|---:|---:|
+| Software `hud_software` (us) | 858.6 / 884.1 / 1063.2 | 369.8 / 385.0 / 555.4 |
+| Software `render_lock_hold` (us) | 886.8 / 912.2 / 1090.8 | 396.0 / 409.6 / 586.9 |
+| Software full frame (ms) | 17.195 / 17.434 / 17.552 | 17.273 / 17.497 / 17.722 |
+| OpenGL `hud_element_us:scoreboard` (us) | 531.6 / 543.9 / 576.2 | 5.1 / 6.0 / 7.4 |
+
+The OpenGL audited run recorded 908 scoreboard-raster cache hits and zero
+misses across the selected steady-state windows. The first render and explicit
+state/config/layout edges remain cold misses by design. The Software workload
+does not expose the logical HUD element phase counters on this presenter, so
+`native_paint_us` is the authoritative Software HUD measurement. The F7
+OpenGL capture and harness completed with `process=0`, `provenance=PASS`, zero
+native mismatches/fallbacks, and no unexpected blank markers.
+
+### SRP/performance re-audit baseline (2026-09-04, pre-follow-up HEAD `f3ab20fe`)
+
+The required HUD fixture was the F7 state `0367 - Metroid Prime - Hunters
+(USA) (Rev 1).ml7` with its matching `.nds`, slot 7, 4x scale, HUD ON, VSync
+OFF, frame limit OFF, and low latency OFF. The current Release developer
+binary had matching source provenance (`f3ab20fe`, `git_dirty=true`). The
+OpenGL sampler A/B passed the runtime harness: the pre-change run reported
+`radar_tex_parameter_calls=1072` for 536 frames, while the sampler run reported
+`0` with `radar_vbo_uploads=0` in steady windows. Artifacts are under
+`build/srp-reaudit-f7-20260904/`.
+
+At that pre-follow-up HEAD, the uncapped end-to-end A/B did not pass the
+requested frame-improvement gate.
+OpenGL selected `input_sample_to_present_end_us` p95/p99 changed from
+`2073.6/2198.9` to `2032.6/2139.7 us`; Software changed from
+`3657.3/3700.8` to `6031.6/6115.8 us`. These local uncapped runs are noisy,
+and the direct HUD evidence is therefore retained separately from the
+end-to-end frame conclusion. The OpenGL after run still showed stable HUD
+cache hits, zero raster misses/allocations in the steady state, zero radar VBO
+uploads, and zero radar texture-parameter calls. The current Software run
+exposed `native_paint_us` but not usable logical HUD phase counters. A valid
+F7 dynamic workload with `scoreboard_raster_cache_miss>0` and
+`scoreboard_raster_alloc=0` was not obtained in that pass; the explicit
+follow-up is recorded below.
+
+The GitHub API check for that HEAD `f3ab20fe44ad5a8322cf7d94eaf3e210360acbb3`
+returned no workflow runs, no commit statuses, and no check runs. The
+Windows, Ubuntu, macOS, and BSD workflow definitions are present in the
+repository, but their current-HEAD execution is unverified; those platform
+acceptance rows must not be reported as CI PASS until a matching run exists.
+
+Additional F7 backend smoke evidence is recorded under
+`build/backend-smoke-f7-reaudit-20260904/`. In one process, both Vulkan and
+DX12 initialized on the NVIDIA adapter, reached native GPU2D composition,
+loaded the slot-7 `.ml7` state, completed the resize/maximize/minimize/restore
+window sequence, and completed all `6/6` renderer-switch iterations. This
+closes the available Windows Vulkan/DX12 lifecycle smoke coverage; it does not
+substitute for the missing macOS/Metal/BSD/Linux CI runs or the separate
+two-`EmuInstance` runtime sequence.
+
+### Current HEAD dynamic raster follow-up (2026-09-04, HEAD `fce2a282`)
+
+The dynamic raster workload now runs against the same required F7 fixture:
+slot 7 (`.ml7`), matching `.nds`, 4x, HUD ON, VSync OFF, frame limit OFF,
+and low latency OFF. The developer build's
+`scoreboard-dynamic` action enables the opt-in
+`MELONPRIME_TEST_SCOREBOARD_DYNAMIC` seam after the real F7 RAM roster/mode
+has been sampled. It changes only the bounded presentation snapshot, not game
+RAM or release behavior, so a short static F7 match can exercise changing
+score/time cells without pretending that the saved match itself scored.
+
+The OpenGL run `srp-reaudit-opengl-scoreboard-dynamic-f7-20260904-headfce` completed
+against source SHA `fce2a28206a1e963aa99031220547749dfe1a225` with `process=0`,
+startup savestate marker `1`, provenance PASS, and no native mismatch/fallback or
+bad-marker lines. Its aggregate telemetry recorded
+`scoreboard_raster_cache_miss=17..18`, `scoreboard_raster_alloc=0`,
+`scoreboard_raster_reuse=17..18`, and `dynamic_cells=34..36`. The harness
+records this as `scoreboard_dynamic_validation=PASS`; this is specifically a
+same-size backing-store reuse validation, while real in-game score semantics
+remain covered by the ordinary F7 HUD smoke.
 
 ### GUI input and renderer-transition follow-up (2026-09-04)
 

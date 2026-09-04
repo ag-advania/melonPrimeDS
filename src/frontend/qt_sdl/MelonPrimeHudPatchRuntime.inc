@@ -75,19 +75,21 @@ void CustomHud_ClampHelmetLayersPreFrame(
 void CustomHud_EnsurePatchRestored(
     CustomHudConfigState& hudConfig,
     EmuInstance* emu,
-    Config::Table& localCfg,
     const RomAddresses& rom,
-    uint8_t playerPosition,
-    bool isInGame)
+    uint8_t playerPosition)
 {
     const ScopedHudConfigState active(hudConfig);
-    if (isInGame && CustomHud_IsEnabled(localCfg)) {
-        // HUD is enabled — Render() handles patches. Re-arm the force-restore
-        // for the next disable event.
-        CustomHud_MarkNoHudPatchDesired();
+    auto& patch = ActiveHudConfigState().noHudPatch;
+    // The normal presentation path must not re-read config or guest runtime
+    // state when no native-HUD patch is outstanding.  CustomHud_Render() is
+    // the authority that marks the patch desired while the HUD is enabled.
+    if (NoHudPatch_GetAppliedMask(patch) == 0
+        && !s_hudPatchForceRestorePending) {
+        MelonPrimePerf::CountHudRestoreFastReject();
         return;
     }
 
+    MelonPrimePerf::CountHudRestoreRuntimeRead();
     HudRuntimeState st = {};
     if (!ReadHudRuntimeBaseState(emu, rom, playerPosition, st))
         return;
@@ -103,11 +105,8 @@ void CustomHud_ResetPatchState(CustomHudConfigState& hudConfig)
     s_cache.valid = false;
     s_battleState.valid = false;
     s_scoreboardMatchCache = {};
-    s_hudRuntimeFrameCache.scoreboardValid = false;
-    s_hudRuntimeFrameCache.scoreboardMatchSerial = 0;
-    s_hudRuntimeFrameCache.scoreboard = {};
-    s_hudRuntimeFrameCache.enemyTargetValid = false;
-    s_hudRuntimeFrameCache.enemyTarget = {};
+    s_hudRuntimeFrameCache.baseValid = false;
+    ClearHudRuntimeDynamicSnapshotPayload();
     s_chPrevPxCx = INT_MIN;
     s_chPrevPxCy = INT_MIN;
     s_chStickyPxCx = INT_MIN;
@@ -126,6 +125,7 @@ void CustomHud_ReconcilePatchAfterSavestateLoad(
 {
     const ScopedHudConfigState active(hudConfig);
     BumpCustomHudVisualGeneration();
+    ClearHudRuntimeDynamicSnapshotPayload();
     auto& patch = ActiveHudConfigState().noHudPatch;
 
     // Do not trust the normal applied-mask tracker here. A loaded state can

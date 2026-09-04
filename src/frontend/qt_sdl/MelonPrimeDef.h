@@ -17,11 +17,49 @@ namespace MelonPrime {
             : OnScreenEditStyle::Classic;
     }
 
-    // Global state (set by EmuInstance)
-    extern uint32_t globalChecksum;    // header + ARM9 + ARM7 CRC32 (variant label / fallback)
-    extern uint32_t globalGameCode;    // NDS header gameCode @0x0C, packed via GameCodeAsU32()
-    extern uint8_t  globalRomVersion;  // NDS header ROM revision @0x1E (0 = 1.0, 1 = 1.1)
-    extern bool isRomDetected;
+    // ROM identity is instance-owned and is published by the EmuThread load/
+    // eject message handlers. RunFrameHook reads only the generation on its
+    // hot path; the cold detector receives a by-value copy of this coherent
+    // snapshot. Keeping the fields together prevents one emulator instance's
+    // load/eject from invalidating or reclassifying another instance.
+    //
+    // Do not add atomics to individual fields here. The owner and consumer are
+    // serialized by EmuThread::handleMessages()/RunFrameHook(), so the plain
+    // aggregate keeps the hot read to one scalar and the cold read coherent.
+    struct MelonPrimeRomIdentity {
+        uint32_t checksum;
+        uint32_t gameCode;
+        uint8_t romVersion;
+        uint8_t reserved[3];
+        uint64_t generation;
+    };
+
+    inline void PublishRomIdentity(
+        MelonPrimeRomIdentity& identity,
+        uint32_t checksum,
+        uint32_t gameCode,
+        uint8_t romVersion) noexcept
+    {
+        // Publish the identity fields before the generation. A same-thread
+        // consumer observes this as one owner snapshot at the cold boundary.
+        identity.checksum = checksum;
+        identity.gameCode = gameCode;
+        identity.romVersion = romVersion;
+        if (++identity.generation == 0)
+            identity.generation = 1;
+    }
+
+    inline void ClearRomIdentity(MelonPrimeRomIdentity& identity) noexcept
+    {
+        identity.checksum = 0;
+        identity.gameCode = 0;
+        identity.romVersion = 0;
+        identity.reserved[0] = 0;
+        identity.reserved[1] = 0;
+        identity.reserved[2] = 0;
+        if (++identity.generation == 0)
+            identity.generation = 1;
+    }
 
     // =========================================================================
     // Config key string constants — avoid repeated string construction per frame

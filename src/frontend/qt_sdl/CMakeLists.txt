@@ -838,6 +838,26 @@ add_custom_target(melonprime_linux_reset_fence_check ALL
     COMMENT "Running Linux XI2 reset-fence state-model tests..."
     VERBATIM)
 
+# ROM identity publication is a per-EmuInstance lifecycle contract. This
+# model exercises the production POD helpers without constructing Qt/NDS
+# objects, so CI can catch cross-instance generation coupling on every host.
+add_executable(melonprime_rom_identity_tests EXCLUDE_FROM_ALL
+    ${CMAKE_SOURCE_DIR}/tools/testing/melonprime-rom-identity-tests.cpp)
+target_include_directories(melonprime_rom_identity_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_definitions(melonprime_rom_identity_tests PRIVATE
+    MELONPRIME_DS)
+set_target_properties(melonprime_rom_identity_tests PROPERTIES
+    AUTOMOC OFF
+    AUTOUIC OFF
+    AUTORCC OFF
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests")
+add_custom_target(melonprime_rom_identity_check ALL
+    COMMAND $<TARGET_FILE:melonprime_rom_identity_tests>
+    DEPENDS melonprime_rom_identity_tests
+    COMMENT "Running per-instance ROM identity tests..."
+    VERBATIM)
+
 add_executable(melonprime_structured_upload_plan_tests EXCLUDE_FROM_ALL
     ${CMAKE_SOURCE_DIR}/tools/testing/structured-upload-plan-tests.cpp)
 target_include_directories(melonprime_structured_upload_plan_tests PRIVATE

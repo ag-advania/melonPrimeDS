@@ -8,7 +8,9 @@
 // P-3: Called from settings dialog save to trigger config re-read next frame
 static void CustomHud_InvalidateConfigCache()
 {
+    MelonPrimePerf::CountHudConfigInvalidation();
     s_cache.valid = false;
+    ClearHudRuntimeDynamicSnapshotPayload();
     s_bombTintCacheValid = false;
     for (int i = 0; i < 9; i++) s_weaponTintValid[i] = false;
     s_effectiveRadarHunterID = 0xFF; // P-13: force re-evaluation of effective radar color

@@ -2440,12 +2440,14 @@ void ScreenPanelNative::paintEvent(QPaintEvent * event)
             qpaintGameStart, m_nativePaintPerf.Now());
 
 #define MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE (&screen[1])
+#define MELONPRIME_HUD_NATIVE_PAINT_PERF 1
         const auto hudSoftwareStart = m_nativePaintPerf.Now();
 #include "MelonPrimeHudScreenCppOverlayOfSoftware.inc"
         m_nativePaintPerf.Record(
             MelonPrime::NativePaintMetric::HudSoftware,
             hudSoftwareStart, m_nativePaintPerf.Now());
 #undef MELONPRIME_HUD_BOTTOM_SCREEN_IMAGE
+#undef MELONPRIME_HUD_NATIVE_PAINT_PERF
 
         m_nativePaintPerf.Record(
             MelonPrime::NativePaintMetric::RenderLockHold,
