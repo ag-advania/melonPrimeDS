@@ -303,7 +303,7 @@ closes the available Windows Vulkan/DX12 lifecycle smoke coverage; it does not
 substitute for the missing macOS/Metal/BSD/Linux CI runs or the separate
 two-`EmuInstance` runtime sequence.
 
-### Current HEAD dynamic raster follow-up (2026-09-04, HEAD `390a779e`)
+### Current HEAD dynamic raster follow-up (2026-09-04, HEAD `fce2a282`)
 
 The dynamic raster workload now runs against the same required F7 fixture:
 slot 7 (`.ml7`), matching `.nds`, 4x, HUD ON, VSync OFF, frame limit OFF,
@@ -314,9 +314,10 @@ has been sampled. It changes only the bounded presentation snapshot, not game
 RAM or release behavior, so a short static F7 match can exercise changing
 score/time cells without pretending that the saved match itself scored.
 
-The OpenGL run `srp-reaudit-opengl-scoreboard-dynamic-f7-20260904-head390` completed
-with `process=0`, startup savestate marker `1`, provenance PASS, and no native
-mismatch/fallback or bad-marker lines. Its aggregate telemetry recorded
+The OpenGL run `srp-reaudit-opengl-scoreboard-dynamic-f7-20260904-headfce` completed
+against source SHA `fce2a28206a1e963aa99031220547749dfe1a225` with `process=0`,
+startup savestate marker `1`, provenance PASS, and no native mismatch/fallback or
+bad-marker lines. Its aggregate telemetry recorded
 `scoreboard_raster_cache_miss=17..18`, `scoreboard_raster_alloc=0`,
 `scoreboard_raster_reuse=17..18`, and `dynamic_cells=34..36`. The harness
 records this as `scoreboard_dynamic_validation=PASS`; this is specifically a
