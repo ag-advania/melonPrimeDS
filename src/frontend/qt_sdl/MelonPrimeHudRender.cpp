@@ -23,6 +23,7 @@
 #include "MelonPrimeDef.h"
 #include "MelonPrimeHudGeometry.h"
 #include "MelonPrimePerfProbe.h"
+#include "MelonPrimeNativePaintPerf.h"
 #include "MelonPrimeLocalization.h"
 #include "MelonPrimeColorDialogPrefs.h"
 #include "MelonPrimeHudPropSchema.inc"

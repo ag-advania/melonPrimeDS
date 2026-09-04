@@ -1216,9 +1216,7 @@ void ScreenPanelMetal::drawScreen()
                 {
                     MelonPrime::CustomHud_EnsurePatchRestored(
                         mp->HudConfigState(),
-                        emuInstance, instcfg,
-                        mp->GetCurrentRom(), mp->GetPlayerPosition(),
-                        mp->IsInGame());
+                        emuInstance, mp->GetCurrentRom(), mp->GetPlayerPosition());
                 }
                 else
                 {

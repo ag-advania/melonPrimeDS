@@ -385,10 +385,17 @@ static void EnsureRadarFrameLoaded(int dstSize, int srcRadius, float hudScale,
 static inline void AccumDirtyDevPx(const QRectF& dev)
 {
     if (dev.isEmpty()) return;
-    s_drawnDirtyPx |= QRect(QPoint(static_cast<int>(std::floor(dev.left()))   - 1,
-                                   static_cast<int>(std::floor(dev.top()))    - 1),
-                            QPoint(static_cast<int>(std::ceil (dev.right()))  + 1,
-                                   static_cast<int>(std::ceil (dev.bottom())) + 1));
+    const QRect dirty(QPoint(static_cast<int>(std::floor(dev.left()))   - 1,
+                             static_cast<int>(std::floor(dev.top()))    - 1),
+                      QPoint(static_cast<int>(std::ceil (dev.right()))  + 1,
+                             static_cast<int>(std::ceil (dev.bottom())) + 1));
+    s_drawnDirtyPx |= dirty;
+#if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_DS)
+    MelonPrimePerf::AddHudElementDrawStats(
+        static_cast<uint64_t>(std::max(0, dirty.width()))
+            * static_cast<uint64_t>(std::max(0, dirty.height())),
+        1, 0, 0);
+#endif
 }
 
 // Map a DS-space rect through the painter transform and union the device bbox.
@@ -565,7 +572,9 @@ static inline void PrepareTextBitmapCached(const QFontMetrics& fm, const QFont& 
 static inline void DrawCachedText(QPainter* p, const TextBitmapCache& cache, float x, float baselineY,
                                    float textDrawScale = 1.0f)
 {
+    MelonPrimePerf::ScopedHudElement element(MelonPrimePerf::HudElementMetric::Text);
     if (!cache.valid || cache.bitmap.isNull()) return;
+    MelonPrimePerf::CountHudElementText(cache.text);
     if (cache.renderScale > 1.0f) {
         // Hi-DPI: bitmap was rasterised at output resolution; draw it 1:1 in pixel space so the
         // glyphs stay crisp (no upscaling). Map the DS-space anchor through the painter transform,
@@ -679,6 +688,7 @@ static inline void DrawCachedTextOutlined(QPainter* p,
                                           float tds,
                                           float opacity, float outlineOpacity)
 {
+    MelonPrimePerf::ScopedHudElement element(MelonPrimePerf::HudElementMetric::Outline);
     if (!cache.valid || cache.bitmap.isNull()) return;
     if (outlineOpacity > 0.0f && outlineCache.valid && !outlineCache.bitmap.isNull()) {
         p->setOpacity(outlineOpacity);
@@ -725,7 +735,9 @@ static inline void DrawImageOutlined(QPainter* p,
                                      float expandDS,
                                      float opacity, float outlineOpacity)
 {
+    MelonPrimePerf::ScopedHudElement element(MelonPrimePerf::HudElementMetric::Icon);
     if (icon.isNull()) return;
+    MelonPrimePerf::CountHudElementImageDraw();
     if (outlineOpacity > 0.0f && !outlineIcon.isNull()) {
         const QRectF olRect(dst.x() - expandDS, dst.y() - expandDS,
                             dst.width()  + expandDS * 2.0f,

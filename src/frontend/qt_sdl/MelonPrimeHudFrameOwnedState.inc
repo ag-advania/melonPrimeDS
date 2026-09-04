@@ -14,6 +14,21 @@ struct HudFrameOwnedState {
     HudRuntimeFrameCache frame;
     ScoreboardMatchCache scoreboardMatch;
     ScoreboardRenderPlan scoreboardPlan;
+    struct ScoreboardRasterCache {
+        // staticImage is the structural layer; image is the composed
+        // scoreboard retained for the destination composite. Dynamic
+        // score/rank/time/star cells update only their dirty subregions.
+        QImage image;
+        QImage staticImage;
+        uint32_t planGeneration = 0;
+        float hudScale = 0.0f;
+        float originX = 0.0f;
+        float originY = 0.0f;
+        float widthDs = 0.0f;
+        float heightDs = 0.0f;
+        bool valid = false;
+    } scoreboardRaster;
+    uint32_t scoreboardPlanGeneration = 0;
     EnemyTargetRenderPlan enemyTargetPlan;
     struct ScoreboardFontCache {
         QFont boardFont;
@@ -59,3 +74,22 @@ static FORCE_INLINE HudFrameOwnedState& HudFrameState() noexcept
 
 #define s_hudRuntimeFrameCache (HudFrameState().frame)
 #define s_scoreboardMatchCache (HudFrameState().scoreboardMatch)
+
+// Dynamic snapshots retain QString storage across the normal game-frame
+// rollover. Clear their payload only at a cold ownership boundary (ROM,
+// match, config, savestate, or reset). The scoreboard image keeps its
+// same-size backing store as well; valid=false prevents stale pixels from
+// being consumed before the next cold raster pass repaints it.
+static void ClearHudRuntimeDynamicSnapshotPayload()
+{
+    auto& hudFrame = HudFrameState();
+    hudFrame.frame.scoreboardValid = false;
+    hudFrame.frame.scoreboardMatchSerial = 0;
+    hudFrame.frame.scoreboard = {};
+    hudFrame.scoreboardPlan.valid = false;
+    hudFrame.scoreboardRaster.valid = false;
+    ++hudFrame.scoreboardPlanGeneration;
+    hudFrame.frame.enemyTargetValid = false;
+    hudFrame.frame.enemyTarget = {};
+    hudFrame.enemyTargetPlan.valid = false;
+}

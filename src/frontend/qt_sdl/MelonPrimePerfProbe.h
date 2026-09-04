@@ -6,13 +6,14 @@
 // Runtime gate: MELONPRIME_PERF=1
 // Release builds (developer features off): zero symbols, zero hot-path cost.
 
+#include <cstddef>
+#include <cstdint>
+
 #if defined(MELONPRIME_ENABLE_DEVELOPER_FEATURES) && defined(MELONPRIME_DS)
 
 #include <SDL2/SDL.h>
 
 #include <algorithm>
-#include <cstdint>
-#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -58,6 +59,27 @@ enum class HudPhase : uint8_t {
     GpuUpload,
     Composite,
     TotalActive,
+    Count
+};
+
+// Fixed-size developer-only element breakdown for the Custom HUD painter.
+// The collector is windowed and reports once per second; it never logs from a
+// frame and has no release-build storage or work.
+enum class HudElementMetric : uint8_t {
+    Crosshair = 0,
+    Hp,
+    WeaponAmmo,
+    WeaponInventory,
+    Bomb,
+    MatchStatus,
+    RankTime,
+    Scoreboard,
+    EnemyTarget,
+    RadarCpuOverlay,
+    Text,
+    Icon,
+    Gauge,
+    Outline,
     Count
 };
 
@@ -156,6 +178,23 @@ struct State {
     uint64_t cntHudVisualStampCommits = 0;
     uint64_t cntScoreboardPlanBuilds = 0;
     uint64_t cntScoreboardFullPlanRebuilds = 0;
+    uint64_t cntScoreboardRasterCacheHits = 0;
+    uint64_t cntScoreboardRasterCacheMisses = 0;
+    uint64_t cntScoreboardRasterBackingAllocations = 0;
+    uint64_t cntScoreboardRasterBackingReuses = 0;
+    uint64_t sumScoreboardRasterBackingBytes = 0;
+    uint64_t sumScoreboardRasterCompositeBytes = 0;
+    uint64_t sumScoreboardRasterCompositePixels = 0;
+    uint64_t cntScoreboardRasterCompositeCalls = 0;
+    uint64_t sumHudOverlayCompositeBytes = 0;
+    uint64_t sumHudOverlayCompositePixels = 0;
+    uint64_t cntHudOverlayCompositeCalls = 0;
+    uint64_t sumScoreboardDirtyCellPixels = 0;
+    uint64_t cntHudVisualGenerationChanges = 0;
+    uint64_t cntHudConfigInvalidations = 0;
+    uint64_t cntScoreboardPlanGenerationChanges = 0;
+    uint64_t cntScoreboardRasterDirectDraws = 0;
+    uint64_t sumScoreboardRasterDirectPixels = 0;
     uint64_t cntScoreboardDynamicCellUpdates = 0;
     uint64_t cntScoreboardTimeVisualChanges = 0;
     uint64_t cntScoreboardStructureChecks = 0;
@@ -164,6 +203,31 @@ struct State {
     uint64_t cntHudRegionHashCalls = 0;
     uint64_t sumHudRegionHashBytes = 0;
     uint64_t cntHudUploadCalls = 0;
+    uint64_t cntHudRadarVboUploads = 0;
+    uint64_t cntHudRadarTexParameterCalls = 0;
+    uint64_t cntHudRestoreFastRejects = 0;
+    uint64_t cntHudRestoreRuntimeReads = 0;
+    uint64_t cntHudPatchWrites = 0;
+    static constexpr uint32_t kHudElementCap = 256;
+    Uint64 hudElementTicks[
+        static_cast<uint32_t>(HudElementMetric::Count)][kHudElementCap]{};
+    uint32_t hudElementCount[
+        static_cast<uint32_t>(HudElementMetric::Count)]{};
+    uint64_t hudElementCalls[
+        static_cast<uint32_t>(HudElementMetric::Count)]{};
+    Uint64 hudElementSumTicks[
+        static_cast<uint32_t>(HudElementMetric::Count)]{};
+    Uint64 hudElementMaxTicks[
+        static_cast<uint32_t>(HudElementMetric::Count)]{};
+    uint64_t hudElementAreaPixels[
+        static_cast<uint32_t>(HudElementMetric::Count)]{};
+    uint64_t hudElementDrawCalls[
+        static_cast<uint32_t>(HudElementMetric::Count)]{};
+    uint64_t hudElementGlyphs[
+        static_cast<uint32_t>(HudElementMetric::Count)]{};
+    uint64_t hudElementImageDraws[
+        static_cast<uint32_t>(HudElementMetric::Count)]{};
+    int activeHudElement = -1;
     uint64_t cntStageMatrixFullValidations = 0;
     uint64_t cntStageMatrixValidationRetries = 0;
     uint64_t cntSurfaceVisibilityStateChanges = 0;
@@ -550,6 +614,137 @@ private:
     Uint64 m_startTick;
 };
 
+inline const char* HudElementMetricName(HudElementMetric metric)
+{
+    switch (metric) {
+    case HudElementMetric::Crosshair:       return "crosshair";
+    case HudElementMetric::Hp:              return "hp";
+    case HudElementMetric::WeaponAmmo:      return "weapon_ammo";
+    case HudElementMetric::WeaponInventory: return "weapon_inventory";
+    case HudElementMetric::Bomb:             return "bomb";
+    case HudElementMetric::MatchStatus:     return "match_status";
+    case HudElementMetric::RankTime:        return "rank_time";
+    case HudElementMetric::Scoreboard:      return "scoreboard";
+    case HudElementMetric::EnemyTarget:     return "enemy_target";
+    case HudElementMetric::RadarCpuOverlay: return "radar_cpu_overlay";
+    case HudElementMetric::Text:            return "text";
+    case HudElementMetric::Icon:            return "icon";
+    case HudElementMetric::Gauge:           return "gauge";
+    case HudElementMetric::Outline:         return "outline";
+    case HudElementMetric::Count:           break;
+    }
+    return "unknown";
+}
+
+inline void RecordHudElementTicks(HudElementMetric metric, Uint64 ticks)
+{
+    if (!S().frameOpen || ticks == 0)
+        return;
+    State& st = S();
+    const uint32_t index = static_cast<uint32_t>(metric);
+    uint32_t& count = st.hudElementCount[index];
+    if (count < State::kHudElementCap)
+        st.hudElementTicks[index][count++] = ticks;
+    ++st.hudElementCalls[index];
+    st.hudElementSumTicks[index] += ticks;
+    if (ticks > st.hudElementMaxTicks[index])
+        st.hudElementMaxTicks[index] = ticks;
+}
+
+inline void AddHudElementDrawStats(
+    uint64_t areaPixels, uint32_t drawCalls, uint32_t glyphs,
+    uint32_t imageDraws)
+{
+    State& st = S();
+    if (!st.frameOpen || st.activeHudElement < 0)
+        return;
+    const uint32_t index = static_cast<uint32_t>(st.activeHudElement);
+    st.hudElementAreaPixels[index] += areaPixels;
+    st.hudElementDrawCalls[index] += drawCalls;
+    st.hudElementGlyphs[index] += glyphs;
+    st.hudElementImageDraws[index] += imageDraws;
+}
+
+inline void CountHudElementText(const char* text)
+{
+    State& st = S();
+    if (!st.frameOpen || st.activeHudElement < 0)
+        return;
+    uint32_t glyphs = 0;
+    for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text);
+         p && *p; ++p) {
+        if ((*p & 0xC0u) != 0x80u)
+            ++glyphs;
+    }
+    const uint32_t index = static_cast<uint32_t>(st.activeHudElement);
+    st.hudElementGlyphs[index] += glyphs;
+}
+
+inline void CountHudElementGlyphs(uint32_t glyphs)
+{
+    State& st = S();
+    if (st.frameOpen && st.activeHudElement >= 0)
+        st.hudElementGlyphs[static_cast<uint32_t>(st.activeHudElement)] += glyphs;
+}
+
+inline void CountHudElementImageDraw()
+{
+    State& st = S();
+    if (st.frameOpen && st.activeHudElement >= 0)
+        ++st.hudElementImageDraws[static_cast<uint32_t>(st.activeHudElement)];
+}
+
+inline PercentileSummary SummarizeHudElement(
+    const State& st, HudElementMetric metric)
+{
+    const uint32_t index = static_cast<uint32_t>(metric);
+    const uint32_t count = st.hudElementCount[index];
+    PercentileSummary result;
+    result.count = count;
+    if (!count || !st.freq)
+        return result;
+    double samples[State::kHudElementCap];
+    for (uint32_t i = 0; i < count; ++i)
+        samples[i] = static_cast<double>(st.hudElementTicks[index][i])
+            * 1000000.0 / static_cast<double>(st.freq);
+    result = SummarizeDoubleSamples<State::kHudElementCap>(samples, count, count);
+    result.max = static_cast<double>(st.hudElementMaxTicks[index])
+        * 1000000.0 / static_cast<double>(st.freq);
+    return result;
+}
+
+class ScopedHudElement {
+public:
+    explicit ScopedHudElement(HudElementMetric metric)
+        : m_metric(metric), m_startTick(ReadTicksIfActive()),
+          m_previousActive(S().activeHudElement)
+    {
+        if (m_startTick)
+            S().activeHudElement = static_cast<int>(metric);
+    }
+
+    ~ScopedHudElement() { Stop(); }
+
+    void Stop()
+    {
+        if (!m_startTick)
+            return;
+        const Uint64 endTick = ReadTicksIfActive();
+        if (endTick >= m_startTick)
+            RecordHudElementTicks(m_metric, endTick - m_startTick);
+        S().activeHudElement = m_previousActive;
+        m_startTick = 0;
+    }
+
+    ScopedHudElement(const ScopedHudElement&) = delete;
+    ScopedHudElement& operator=(const ScopedHudElement&) = delete;
+
+private:
+    HudElementMetric m_metric;
+    Uint64 m_startTick = 0;
+    int m_previousActive = -1;
+};
+
 inline void ResetWindowStats()
 {
     State& st = S();
@@ -597,6 +792,23 @@ inline void ResetWindowStats()
     st.cntHudVisualStampCommits = 0;
     st.cntScoreboardPlanBuilds = 0;
     st.cntScoreboardFullPlanRebuilds = 0;
+    st.cntScoreboardRasterCacheHits = 0;
+    st.cntScoreboardRasterCacheMisses = 0;
+    st.cntScoreboardRasterBackingAllocations = 0;
+    st.cntScoreboardRasterBackingReuses = 0;
+    st.sumScoreboardRasterBackingBytes = 0;
+    st.sumScoreboardRasterCompositeBytes = 0;
+    st.sumScoreboardRasterCompositePixels = 0;
+    st.cntScoreboardRasterCompositeCalls = 0;
+    st.sumHudOverlayCompositeBytes = 0;
+    st.sumHudOverlayCompositePixels = 0;
+    st.cntHudOverlayCompositeCalls = 0;
+    st.sumScoreboardDirtyCellPixels = 0;
+    st.cntHudVisualGenerationChanges = 0;
+    st.cntHudConfigInvalidations = 0;
+    st.cntScoreboardPlanGenerationChanges = 0;
+    st.cntScoreboardRasterDirectDraws = 0;
+    st.sumScoreboardRasterDirectPixels = 0;
     st.cntScoreboardDynamicCellUpdates = 0;
     st.cntScoreboardTimeVisualChanges = 0;
     st.cntScoreboardStructureChecks = 0;
@@ -605,6 +817,21 @@ inline void ResetWindowStats()
     st.cntHudRegionHashCalls = 0;
     st.sumHudRegionHashBytes = 0;
     st.cntHudUploadCalls = 0;
+    st.cntHudRadarVboUploads = 0;
+    st.cntHudRadarTexParameterCalls = 0;
+    st.cntHudRestoreFastRejects = 0;
+    st.cntHudRestoreRuntimeReads = 0;
+    st.cntHudPatchWrites = 0;
+    std::memset(st.hudElementTicks, 0, sizeof(st.hudElementTicks));
+    std::memset(st.hudElementCount, 0, sizeof(st.hudElementCount));
+    std::memset(st.hudElementCalls, 0, sizeof(st.hudElementCalls));
+    std::memset(st.hudElementSumTicks, 0, sizeof(st.hudElementSumTicks));
+    std::memset(st.hudElementMaxTicks, 0, sizeof(st.hudElementMaxTicks));
+    std::memset(st.hudElementAreaPixels, 0, sizeof(st.hudElementAreaPixels));
+    std::memset(st.hudElementDrawCalls, 0, sizeof(st.hudElementDrawCalls));
+    std::memset(st.hudElementGlyphs, 0, sizeof(st.hudElementGlyphs));
+    std::memset(st.hudElementImageDraws, 0, sizeof(st.hudElementImageDraws));
+    st.activeHudElement = -1;
     st.cntStageMatrixFullValidations = 0;
     st.cntStageMatrixValidationRetries = 0;
     st.cntSurfaceVisibilityStateChanges = 0;
@@ -768,8 +995,26 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         "calls=%llu drawn=%llu "
         "visual_render=%llu visual_reuse=%llu identity_probes=%llu "
         "stamp_checks=%llu stamp_commits=%llu plan_build=%llu full_rebuild=%llu "
-        "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
-        "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu\n",
+         "scoreboard_raster_cache_hit=%llu scoreboard_raster_cache_miss=%llu "
+         "scoreboard_raster_alloc=%llu scoreboard_raster_reuse=%llu "
+         "scoreboard_raster_bytes=%llu "
+         "scoreboard_raster_composite_bytes=%llu "
+         "scoreboard_raster_composite_pixels=%llu "
+         "scoreboard_raster_composite_calls=%llu "
+         "hud_overlay_composite_bytes=%llu "
+         "hud_overlay_composite_pixels=%llu "
+         "hud_overlay_composite_calls=%llu "
+         "scoreboard_dirty_cell_pixels=%llu "
+         "hud_visual_generation_changes=%llu "
+         "hud_config_invalidation_count=%llu "
+         "scoreboard_plan_generation_changes=%llu "
+         "scoreboard_raster_direct_draws=%llu "
+         "scoreboard_raster_direct_pixels=%llu "
+         "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
+        "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu "
+        "radar_vbo_uploads=%llu radar_tex_parameter_calls=%llu "
+        "restore_fast_reject=%llu restore_runtime_read=%llu "
+        "patch_writes=%llu\n",
         MelonPrimePerfSession::Text(),
         static_cast<unsigned long long>(st.instanceId),
         static_cast<unsigned long long>(reportSeq),
@@ -819,14 +1064,60 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         static_cast<unsigned long long>(st.cntHudVisualStampCommits),
         static_cast<unsigned long long>(st.cntScoreboardPlanBuilds),
         static_cast<unsigned long long>(st.cntScoreboardFullPlanRebuilds),
-        static_cast<unsigned long long>(st.cntScoreboardStructureChecks),
+        static_cast<unsigned long long>(st.cntScoreboardRasterCacheHits),
+        static_cast<unsigned long long>(st.cntScoreboardRasterCacheMisses),
+         static_cast<unsigned long long>(st.cntScoreboardRasterBackingAllocations),
+         static_cast<unsigned long long>(st.cntScoreboardRasterBackingReuses),
+         static_cast<unsigned long long>(st.sumScoreboardRasterBackingBytes),
+         static_cast<unsigned long long>(st.sumScoreboardRasterCompositeBytes),
+         static_cast<unsigned long long>(st.sumScoreboardRasterCompositePixels),
+         static_cast<unsigned long long>(st.cntScoreboardRasterCompositeCalls),
+         static_cast<unsigned long long>(st.sumHudOverlayCompositeBytes),
+         static_cast<unsigned long long>(st.sumHudOverlayCompositePixels),
+         static_cast<unsigned long long>(st.cntHudOverlayCompositeCalls),
+         static_cast<unsigned long long>(st.sumScoreboardDirtyCellPixels),
+         static_cast<unsigned long long>(st.cntHudVisualGenerationChanges),
+         static_cast<unsigned long long>(st.cntHudConfigInvalidations),
+         static_cast<unsigned long long>(st.cntScoreboardPlanGenerationChanges),
+         static_cast<unsigned long long>(st.cntScoreboardRasterDirectDraws),
+         static_cast<unsigned long long>(st.sumScoreboardRasterDirectPixels),
+         static_cast<unsigned long long>(st.cntScoreboardStructureChecks),
         static_cast<unsigned long long>(st.cntScoreboardDynamicCellUpdates),
         static_cast<unsigned long long>(st.cntScoreboardTimeVisualChanges),
         static_cast<unsigned long long>(st.cntScoreboardOutlinePathHits),
         static_cast<unsigned long long>(st.cntScoreboardOutlinePathMisses),
         static_cast<unsigned long long>(st.cntHudRegionHashCalls),
         static_cast<unsigned long long>(st.sumHudRegionHashBytes),
-        static_cast<unsigned long long>(st.cntHudUploadCalls));
+        static_cast<unsigned long long>(st.cntHudUploadCalls),
+        static_cast<unsigned long long>(st.cntHudRadarVboUploads),
+        static_cast<unsigned long long>(st.cntHudRadarTexParameterCalls),
+        static_cast<unsigned long long>(st.cntHudRestoreFastRejects),
+        static_cast<unsigned long long>(st.cntHudRestoreRuntimeReads),
+        static_cast<unsigned long long>(st.cntHudPatchWrites));
+}
+
+inline void ReportHudElementSummary(const State& st, uint64_t reportSeq)
+{
+    for (uint32_t i = 0; i < static_cast<uint32_t>(HudElementMetric::Count); ++i) {
+        const auto metric = static_cast<HudElementMetric>(i);
+        const PercentileSummary summary = SummarizeHudElement(st, metric);
+        std::fprintf(stderr,
+            "[MelonPrimePerf] hud_element_us session_id=%s instance_id=%llu "
+            "report_seq=%llu element=%s calls=%llu retained=%u "
+            "p50=%.1f p95=%.1f p99=%.1f max=%.1f area_px=%llu "
+            "draw_calls=%llu glyphs=%llu image_draws=%llu\n",
+            MelonPrimePerfSession::Text(),
+            static_cast<unsigned long long>(st.instanceId),
+            static_cast<unsigned long long>(reportSeq),
+            HudElementMetricName(metric),
+            static_cast<unsigned long long>(st.hudElementCalls[i]),
+            summary.count,
+            summary.p50, summary.p95, summary.p99, summary.max,
+            static_cast<unsigned long long>(st.hudElementAreaPixels[i]),
+            static_cast<unsigned long long>(st.hudElementDrawCalls[i]),
+            static_cast<unsigned long long>(st.hudElementGlyphs[i]),
+            static_cast<unsigned long long>(st.hudElementImageDraws[i]));
+    }
 }
 
 inline void MaybeReport1Hz()
@@ -922,6 +1213,7 @@ inline void MaybeReport1Hz()
     ReportExplicitLatency(st, reportSeq);
     ReportInputMetricSummary(st, reportSeq);
     ReportHudPhaseSummary(st, reportSeq);
+    ReportHudElementSummary(st, reportSeq);
 
     st.lastReportTick = now;
     ResetWindowStats();
@@ -1195,6 +1487,82 @@ inline void CountScoreboardFullPlanRebuild()
         ++S().cntScoreboardFullPlanRebuilds;
 }
 
+inline void CountScoreboardRasterCacheHit()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardRasterCacheHits;
+}
+
+inline void CountScoreboardRasterCacheMiss()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardRasterCacheMisses;
+}
+
+inline void CountScoreboardRasterBackingAllocation(std::size_t bytes)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntScoreboardRasterBackingAllocations;
+    S().sumScoreboardRasterBackingBytes += static_cast<uint64_t>(bytes);
+}
+
+inline void CountScoreboardRasterBackingReuse()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardRasterBackingReuses;
+}
+
+inline void CountScoreboardRasterComposite(std::size_t bytes, std::size_t pixels)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntScoreboardRasterCompositeCalls;
+    S().sumScoreboardRasterCompositeBytes += static_cast<uint64_t>(bytes);
+    S().sumScoreboardRasterCompositePixels += static_cast<uint64_t>(pixels);
+}
+
+inline void CountScoreboardRasterDirectDraw(std::size_t pixels)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntScoreboardRasterDirectDraws;
+    S().sumScoreboardRasterDirectPixels += static_cast<uint64_t>(pixels);
+}
+
+inline void AddHudOverlayComposite(std::size_t bytes, std::size_t pixels)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntHudOverlayCompositeCalls;
+    S().sumHudOverlayCompositeBytes += static_cast<uint64_t>(bytes);
+    S().sumHudOverlayCompositePixels += static_cast<uint64_t>(pixels);
+}
+
+inline void AddScoreboardDirtyCellPixels(std::size_t pixels)
+{
+    if (S().frameOpen)
+        S().sumScoreboardDirtyCellPixels += static_cast<uint64_t>(pixels);
+}
+
+inline void CountHudVisualGenerationChange()
+{
+    if (IsEnabled())
+        ++S().cntHudVisualGenerationChanges;
+}
+
+inline void CountHudConfigInvalidation()
+{
+    if (IsEnabled())
+        ++S().cntHudConfigInvalidations;
+}
+
+inline void CountScoreboardPlanGenerationChange()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardPlanGenerationChanges;
+}
+
 inline void CountScoreboardDynamicCellUpdate(bool timeVisualChange)
 {
     if (!S().frameOpen)
@@ -1234,6 +1602,36 @@ inline void CountHudUploadCall()
 {
     if (S().frameOpen)
         ++S().cntHudUploadCalls;
+}
+
+inline void CountHudRadarVboUpload()
+{
+    if (S().frameOpen)
+        ++S().cntHudRadarVboUploads;
+}
+
+inline void CountHudRadarTexParameterCall()
+{
+    if (S().frameOpen)
+        ++S().cntHudRadarTexParameterCalls;
+}
+
+inline void CountHudRestoreFastReject()
+{
+    if (S().frameOpen)
+        ++S().cntHudRestoreFastRejects;
+}
+
+inline void CountHudRestoreRuntimeRead()
+{
+    if (S().frameOpen)
+        ++S().cntHudRestoreRuntimeReads;
+}
+
+inline void CountHudPatchWrite()
+{
+    if (S().frameOpen)
+        ++S().cntHudPatchWrites;
 }
 
 inline void CountStageMatrixFullValidation()
@@ -1361,6 +1759,7 @@ inline void ShutdownReport()
     ReportExplicitLatency(st, reportSeq);
     ReportInputMetricSummary(st, reportSeq);
     ReportHudPhaseSummary(st, reportSeq);
+    ReportHudElementSummary(st, reportSeq);
     if (st.frameCsv)
         std::fflush(st.frameCsv);
 }
@@ -1397,6 +1796,11 @@ enum class Section : uint8_t {
 enum class HudPhase : uint8_t {
     State, ScoreboardPlan, ScoreboardRaster, QPainter, Clear, Hash,
     UploadPrepare, GpuUpload, Composite, TotalActive, Count
+};
+enum class HudElementMetric : uint8_t {
+    Crosshair, Hp, WeaponAmmo, WeaponInventory, Bomb, MatchStatus,
+    RankTime, Scoreboard, EnemyTarget, RadarCpuOverlay, Text, Icon,
+    Gauge, Outline, Count
 };
 
 enum class InputMetric : uint8_t {
@@ -1445,12 +1849,32 @@ inline void CountHudVisualStampCheck() {}
 inline void CountHudVisualStampCommit() {}
 inline void CountScoreboardPlanBuild() {}
 inline void CountScoreboardFullPlanRebuild() {}
+inline void CountScoreboardRasterCacheHit() {}
+inline void CountScoreboardRasterCacheMiss() {}
+inline void CountScoreboardRasterBackingAllocation(std::size_t) {}
+inline void CountScoreboardRasterBackingReuse() {}
+inline void CountScoreboardRasterComposite(std::size_t, std::size_t) {}
+inline void CountScoreboardRasterDirectDraw(std::size_t) {}
+inline void AddHudOverlayComposite(std::size_t, std::size_t) {}
+inline void AddScoreboardDirtyCellPixels(std::size_t) {}
+inline void CountHudVisualGenerationChange() {}
+inline void CountHudConfigInvalidation() {}
+inline void CountScoreboardPlanGenerationChange() {}
 inline void CountScoreboardDynamicCellUpdate(bool) {}
 inline void CountScoreboardStructureCheck() {}
 inline void CountScoreboardOutlinePathHit() {}
 inline void CountScoreboardOutlinePathMiss() {}
 inline void CountHudRegionHash(std::size_t) {}
 inline void CountHudUploadCall() {}
+inline void CountHudRadarVboUpload() {}
+inline void CountHudRadarTexParameterCall() {}
+inline void CountHudRestoreFastReject() {}
+inline void CountHudRestoreRuntimeRead() {}
+inline void CountHudPatchWrite() {}
+inline void AddHudElementDrawStats(uint64_t, uint32_t, uint32_t, uint32_t) {}
+inline void CountHudElementText(const char*) {}
+inline void CountHudElementGlyphs(uint32_t) {}
+inline void CountHudElementImageDraw() {}
 inline void CountStageMatrixFullValidation() {}
 inline void CountStageMatrixValidationRetry() {}
 inline void CountSurfaceVisibilityStateChange() {}
@@ -1467,6 +1891,12 @@ public:
 class ScopedHudPhase {
 public:
     explicit ScopedHudPhase(HudPhase) {}
+    void Stop() {}
+};
+
+class ScopedHudElement {
+public:
+    explicit ScopedHudElement(HudElementMetric) {}
     void Stop() {}
 };
 

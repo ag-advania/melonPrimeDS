@@ -34,14 +34,14 @@ namespace MelonPrime {
         uint8_t playerPosition);
 
     // Ensure the no-HUD patch is reverted when custom HUD is disabled.
-    // Call every frame from Screen.cpp even when the HUD overlay is not rendered.
+    // Call every presentation frame even when the HUD overlay is not rendered.
+    // The normal path is tracker-gated and deliberately has no live config
+    // dependency; enabled-state changes are published by CustomHud_Render().
     void CustomHud_EnsurePatchRestored(
         CustomHudConfigState& hudConfig,
         EmuInstance* emu,
-        Config::Table& localCfg,
         const RomAddresses& rom,
-        uint8_t playerPosition,
-        bool isInGame
+        uint8_t playerPosition
     );
 
     // Reset patch tracking state (call on emu stop/reset).

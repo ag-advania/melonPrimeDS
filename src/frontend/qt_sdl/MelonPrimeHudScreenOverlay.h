@@ -184,7 +184,6 @@ inline bool MelonPrimeHud_CanRenderForCore(CoreT* mp, bool editMode)
 template <typename CoreT>
 inline bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     EmuInstance* emuInstance,
-    Config::Table& instcfg,
     CoreT* mp,
     bool hudEnabled,
     bool editMode)
@@ -192,9 +191,8 @@ inline bool MelonPrimeHud_IsHudVisibleOrRestorePatch(
     const bool hudVisible = hudEnabled || editMode;
     if (!hudVisible) {
         MelonPrime::CustomHud_EnsurePatchRestored(
-            mp->HudConfigState(), emuInstance, instcfg,
-            mp->GetCurrentRom(), mp->GetPlayerPosition(),
-            mp->IsInGame());
+            mp->HudConfigState(), emuInstance,
+            mp->GetCurrentRom(), mp->GetPlayerPosition());
     }
     return hudVisible;
 }
@@ -213,7 +211,9 @@ inline QRect MelonPrimeHud_RenderTopOverlay(
     float hudOriginY,
     const QImage* bottomScreen = nullptr,
     QImage* filteredBottomScreen = nullptr,
-    int radarSourceRadius = 0)
+    int radarSourceRadius = 0,
+    QPainter* directScoreboardPaint = nullptr,
+    MelonPrime::NativePaintPerf* nativePaintPerf = nullptr)
 {
     const float hudOriginXds = hudOriginX / hudScale;
     const float hudOriginYds = hudOriginY / hudScale;
@@ -238,7 +238,9 @@ inline QRect MelonPrimeHud_RenderTopOverlay(
         mp->IsInGame(),
         hudEnabledSnapshot,
         topStretchX, hudScale,
-        hudOriginXds, hudOriginYds);
+        hudOriginXds, hudOriginYds,
+        directScoreboardPaint,
+        nativePaintPerf);
     if (hudRenderStart)
         MelonPrimePerf::AddCustomHudRenderTicks(MelonPrimePerf::ReadTicksIfActive() - hudRenderStart);
     if (MelonPrimePerf::IsFrameActive() && !hudDirty.isEmpty())

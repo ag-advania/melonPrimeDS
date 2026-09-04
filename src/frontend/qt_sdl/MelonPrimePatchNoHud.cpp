@@ -2,6 +2,7 @@
 
 #include "MelonPrimePatchNoHud.h"
 #include "NDS.h"
+#include "MelonPrimePerfProbe.h"
 
 namespace MelonPrime {
 
@@ -174,7 +175,10 @@ void NoHudPatch_ClampHelmetLayers(melonDS::NDS* nds, uint8_t romGroup)
     const uint32_t toggleAddr = kHudToggleAddr[romGroup];
     const uint32_t toggle = nds->ARM9Read32(toggleAddr);
     if (toggle & 0x0Eu)
+    {
+        MelonPrimePerf::CountHudPatchWrite();
         nds->ARM9Write32(toggleAddr, toggle & ~0x0Eu);
+    }
 
     // Already-reflected register: spawn-frame VBlank logic may have pushed
     // 0x0E00 into DISPCNT before this hook ran; clear it before this frame's
@@ -182,7 +186,10 @@ void NoHudPatch_ClampHelmetLayers(melonDS::NDS* nds, uint8_t romGroup)
     constexpr uint32_t kDispcntMain = 0x04000000u;
     const uint32_t dispcnt = nds->ARM9Read32(kDispcntMain);
     if (dispcnt & 0x0E00u)
+    {
+        MelonPrimePerf::CountHudPatchWrite();
         nds->ARM9Write32(kDispcntMain, dispcnt & ~0x0E00u);
+    }
 }
 
 void NoHudPatch_ResetState(NoHudPatchState& state)
@@ -220,6 +227,7 @@ void NoHudPatch_Sync(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup
         if (!(diff & bit)) continue;
         const NoHudElemEntry& e = entries[i];
         const bool wantApply = (desiredMask & bit) != 0;
+        MelonPrimePerf::CountHudPatchWrite();
         nds->ARM9Write32(e.addr, wantApply ? e.patchValue : e.restoreValue);
     }
     state.appliedMask = desiredMask;
@@ -229,8 +237,10 @@ void NoHudPatch_Sync(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup
 void NoHudPatch_RestoreAll(NoHudPatchState& state, melonDS::NDS* nds, uint8_t romGroup)
 {
     const auto& entries = kHudPatch[romGroup];
-    for (uint8_t i = 0; i < NOHUD_ELEMENT_COUNT; ++i)
+    for (uint8_t i = 0; i < NOHUD_ELEMENT_COUNT; ++i) {
+        MelonPrimePerf::CountHudPatchWrite();
         nds->ARM9Write32(entries[i].addr, entries[i].restoreValue);
+    }
     state.appliedMask = 0;
     state.ramStateKnown = true;
 }

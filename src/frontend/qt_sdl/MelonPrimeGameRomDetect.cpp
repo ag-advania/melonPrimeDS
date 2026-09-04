@@ -69,8 +69,15 @@ namespace MelonPrime {
         }
     } // namespace
 
-    COLD_FUNCTION void MelonPrimeCore::DetectRomAndSetAddresses()
+    COLD_FUNCTION void MelonPrimeCore::DetectRomAndSetAddresses(
+        MelonPrimeRomIdentity romIdentity)
     {
+        // Classification is per ROM-load generation. Set the latch before
+        // any checksum/header early return so unsupported ROMs take the cold
+        // detector once and then remain a cheap classified miss.
+        m_flags.clear(StateFlags::BIT_ROM_DETECTED);
+        m_romClassificationGeneration = romIdentity.generation;
+        m_flags.set(StateFlags::BIT_ROM_CLASSIFIED);
         m_zoomAimCanZoomCache = {};
 #ifdef MELONPRIME_DS
         // Detection restarts here, so drop any address published for a previously
@@ -84,7 +91,7 @@ namespace MelonPrime {
         // --- 1. Primary: authoritative checksum match ---
         const ChecksumEntry* hit = nullptr;
         for (const auto& e : CHECKSUM_TABLE) {
-            if (globalChecksum == e.checksum) { hit = &e; break; }
+            if (romIdentity.checksum == e.checksum) { hit = &e; break; }
         }
 
         if (hit) {
@@ -92,7 +99,8 @@ namespace MelonPrime {
             osdName = hit->name;
         } else {
             // --- 2. Fallback: NDS header gameCode + revision ---
-            const HeaderMatch hm = MapHeaderToRomGroup(globalGameCode, globalRomVersion);
+            const HeaderMatch hm = MapHeaderToRomGroup(
+                romIdentity.gameCode, romIdentity.romVersion);
             if (!hm.matched) return;  // not an MPH ROM
             group     = hm.group;
             osdName   = hm.baseName;
@@ -166,7 +174,8 @@ namespace MelonPrime {
         if (isVariant) {
             // Known region/revision but an unrecognized binary (mod / trim / new dump).
             snprintf(message, sizeof(message),
-                "MPH Rom Detected: %s (variant, CRC 0x%08X)", osdName, globalChecksum);
+                "MPH Rom Detected: %s (variant, CRC 0x%08X)",
+                osdName, romIdentity.checksum);
         } else {
             snprintf(message, sizeof(message), "MPH Rom Detected: %s", osdName);
         }

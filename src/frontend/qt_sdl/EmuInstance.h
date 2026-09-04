@@ -31,6 +31,7 @@
 #ifdef MELONPRIME_DS
 #include <atomic>
 #include <cstdint>
+#include "MelonPrimeDef.h"
 #include "MelonPrimeMouseButton.h"
 #include "MelonPrimeJoystickDevice.h"
 namespace MelonPrime { class MelonPrimeCore; }
@@ -196,6 +197,20 @@ public:
     int getConsoleType() { return consoleType; }
     EmuThread* getEmuThread() { return emuThread; }
     melonDS::NDS* getNDS() { return nds; }
+#ifdef MELONPRIME_DS
+    // ROM load/eject and the normal frame hook are serialized on EmuThread.
+    // Keep the hot caller on the scalar generation and copy the full POD only
+    // at the cold detection boundary.
+    [[nodiscard]] uint64_t getMelonPrimeRomLoadGeneration() const noexcept
+    {
+        return melonPrimeRomIdentity.generation;
+    }
+    [[nodiscard]] MelonPrime::MelonPrimeRomIdentity
+    getMelonPrimeRomIdentitySnapshot() const noexcept
+    {
+        return melonPrimeRomIdentity;
+    }
+#endif // MELONPRIME_DS
 
     MainWindow* getMainWindow() { return mainWindow; }
     int getNumWindows() { return numWindows; }
@@ -444,6 +459,13 @@ private:
 
     int consoleType;
     melonDS::NDS* nds;
+
+#ifdef MELONPRIME_DS
+    // Owned by this EmuInstance; never process-global. Writers run from the
+    // EmuThread message handler immediately before the next frame can observe
+    // the new ROM lifecycle.
+    MelonPrime::MelonPrimeRomIdentity melonPrimeRomIdentity{};
+#endif // MELONPRIME_DS
 
     int cartType;
     std::string baseROMDir;
