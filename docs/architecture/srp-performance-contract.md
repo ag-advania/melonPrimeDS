@@ -185,26 +185,39 @@ const reference, so the unity split does not create a second snapshot copy.
 The scoreboard render plan has a separate frame-owned `QImage` raster cache.
 `DrawScoreboard` advances its generation when structure or dynamic visual cells
 change, and the cache also keys the HUD scale, painter transform origin, and
-bounded panel raster size. A steady hit composites one cached image; only a
-first draw or an invalidation edge performs the bounded QPainter rasterization
-and image allocation. `ClearHudRuntimeDynamicSnapshotPayload` drops the image
-at the ROM, match, config, savestate, and reset boundaries, so cached pixels
-cannot cross an ownership or visual-state lifetime edge. The same F7 `.ml7`
-steady-state evidence is recorded in `docs/architecture/performance.md`:
+bounded panel raster size. A steady hit composites one cached image. At a
+lifecycle invalidation, `ClearHudRuntimeDynamicSnapshotPayload` clears raster
+validity but retains the `QImage` backing, so a same-size/format miss fills and
+repaints the existing storage. Allocation is restricted to a cold size/format
+mismatch edge; cached pixels cannot cross an ownership or visual-state lifetime
+edge because validity is cleared. The same F7 `.ml7` steady-state evidence is
+recorded in `docs/architecture/performance.md`:
 OpenGL scoreboard element p95/p99 fell from `531.6/543.9 us` to `5.1/6.0 us`,
-with `908` hits and `0` misses in the selected steady-state windows.
+with `908` hits and `0` misses in the selected steady-state windows. The
+developer probe also reports `scoreboard_raster_alloc`,
+`scoreboard_raster_reuse`, and `scoreboard_raster_bytes` for dynamic-miss
+validation.
 
 The OpenGL native radar presenter owns a fixed `HudRadarGlCache`. Geometry is
 uploaded only on config/layout/renderer/surface/transform edges; screen-size,
 opacity, and source uniforms are likewise edge-triggered. Program/VAO/texture
 binding and the draw remain in the presentation path because they are required
-for each visible composite. These ownership and invalidation rules are
+for each visible composite. A single `GL_LINEAR` sampler object is bound only
+around the radar draw and unbound afterward, so steady frames do not call
+`glTexParameteri`; `radar_tex_parameter_calls` and `radar_vbo_uploads` are
+reported by the developer probe. These ownership and invalidation rules are
 ratcheted by the `MP-PERF-001` through `MP-PERF-006` checks in the SRP audit.
 
 ROM classification is separate from successful MPH detection. A load/eject
 generation clears both flags; `DetectRomAndSetAddresses()` sets the classified
 flag before checksum/header early returns. Consequently an unsupported ROM is
 classified once per identity while a newly loaded ROM is still detected again.
+The identity itself is a per-`EmuInstance` `MelonPrimeRomIdentity` POD
+(checksum, game code, revision, generation). `EmuInstance` publishes and clears
+it on the EmuThread, and `RunFrameHook` compares the owner generation before
+passing a by-value snapshot to cold detection. This removes process-global ROM
+identity state and preserves multi-instance isolation without adding hot-path
+atomics.
 
 ARM9 hook module activation follows the same cold-boundary rule. Runtime config
 is resolved into `Arm9HookActivationPlan` by

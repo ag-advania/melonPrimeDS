@@ -66,13 +66,6 @@ bool ShouldMigrateLegacyHudAnchors(Config::Table& cfg)
 
 } // namespace
 
-namespace MelonPrime {
-    uint32_t globalChecksum = 0;
-    uint32_t globalGameCode = 0;
-    uint8_t  globalRomVersion = 0;
-    uint64_t globalRomLoadGeneration = 0;
-    bool isRomDetected = false;
-}
 #endif // MELONPRIME_DS
 
 using std::make_unique;
@@ -2109,39 +2102,17 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
 
     // MelonPrimeDS: ROM version detection
 #ifdef MELONPRIME_DS
-    {
-        // Primary key: NDS header gameCode (@0x0C) + ROM revision (@0x1E). The
-        // plaintext header is present even on encrypted dumps, so this selects the
-        // address table for every variant. The checksum is captured only so the
-        // detect message can show the exact variant (BALANCED / RUSSIANED / etc.).
-        const auto& mphHeader = cart->GetHeader();
-        MelonPrime::globalGameCode   = mphHeader.GameCodeAsU32();
-        MelonPrime::globalRomVersion = mphHeader.ROMVersion;
-        MelonPrime::globalChecksum   = cart->Checksum();
-        if (++MelonPrime::globalRomLoadGeneration == 0)
-            MelonPrime::globalRomLoadGeneration = 1;
-        MelonPrime::isRomDetected    = false;
+    // Primary key: NDS header gameCode (@0x0C) + ROM revision (@0x1E). The
+    // plaintext header is present even on encrypted dumps, so this selects the
+    // address table for every variant. The checksum is captured only so the
+    // detect message can show the exact variant (BALANCED / RUSSIANED / etc.).
+    const auto& mphHeader = cart->GetHeader();
+    const uint32_t loadedRomChecksum = cart->Checksum();
+    const uint32_t loadedGameCode = mphHeader.GameCodeAsU32();
+    const uint8_t loadedRomVersion = mphHeader.ROMVersion;
+    char loadedGameCodeText[5] = {};
+    memcpy(loadedGameCodeText, mphHeader.GameCode, 4);
 
-        switch (MelonPrime::globalGameCode) {
-        case MelonPrime::MphGameCode::US:
-        case MelonPrime::MphGameCode::EU:
-        case MelonPrime::MphGameCode::JP:
-        case MelonPrime::MphGameCode::KR:
-            break; // recognized Metroid Prime Hunters ROM
-        default:
-            char message[256];
-            // MELONPRIME_UNKNOWN_ROM_SNPRINTF_FIX_V1
-            snprintf(
-                message,
-                sizeof(message),
-                "Unknown ROM (GameCode: %.4s, Checksum: 0x%08X). "
-                "Please make sure to use a Metroid Prime Hunters ROM.",
-                mphHeader.GameCode,
-                MelonPrime::globalChecksum);
-            osdAddMessage(0xFFA0A0, message);
-            break;
-        }
-    }
 #endif // MELONPRIME_DS
 
     if (reset)
@@ -2180,6 +2151,34 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
         }
     }
 
+#ifdef MELONPRIME_DS
+    MelonPrime::PublishRomIdentity(
+        melonPrimeRomIdentity,
+        loadedRomChecksum,
+        loadedGameCode,
+        loadedRomVersion);
+
+    switch (loadedGameCode) {
+    case MelonPrime::MphGameCode::US:
+    case MelonPrime::MphGameCode::EU:
+    case MelonPrime::MphGameCode::JP:
+    case MelonPrime::MphGameCode::KR:
+        break; // recognized Metroid Prime Hunters ROM
+    default:
+        char message[256];
+        // MELONPRIME_UNKNOWN_ROM_SNPRINTF_FIX_V1
+        snprintf(
+            message,
+            sizeof(message),
+            "Unknown ROM (GameCode: %.4s, Checksum: 0x%08X). "
+            "Please make sure to use a Metroid Prime Hunters ROM.",
+            loadedGameCodeText,
+            loadedRomChecksum);
+        osdAddMessage(0xFFA0A0, message);
+        break;
+    }
+#endif // MELONPRIME_DS
+
     cartType = 0;
     ndsSave = std::make_unique<SaveManager>(savname);
 
@@ -2189,12 +2188,7 @@ bool EmuInstance::loadROM(QStringList filepath, bool reset, QString& errorstr)
 void EmuInstance::ejectCart()
 {
 #ifdef MELONPRIME_DS
-    if (++MelonPrime::globalRomLoadGeneration == 0)
-        MelonPrime::globalRomLoadGeneration = 1;
-    MelonPrime::globalChecksum = 0;
-    MelonPrime::globalGameCode = 0;
-    MelonPrime::globalRomVersion = 0;
-    MelonPrime::isRomDetected = false;
+    MelonPrime::ClearRomIdentity(melonPrimeRomIdentity);
 #endif
     ndsSave = nullptr;
 

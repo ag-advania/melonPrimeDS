@@ -329,16 +329,9 @@
 
                     glActiveTexture(GL_TEXTURE0);
                     glBindTexture(GL_TEXTURE_2D_ARRAY, activeScreenTexture);
-                    // OPT-RL1: Radar always needs GL_LINEAR. Skip redundant
-                    // glTexParameteri when the texture already has it.
-                    // lastFilter tracks screenTexture's state; for GPU
-                    // renderer textures we always set (not tracked).
-                    if (activeScreenTexture != screenTexture || lastFilter != GL_LINEAR) {
-                        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                        if (activeScreenTexture == screenTexture)
-                            lastFilter = GL_LINEAR;
-                    }
+                    // Sampler state is owned by the cold GL lifecycle, so
+                    // radar does not mutate the renderer-owned screen texture.
+                    glBindSampler(0, m_hudRadarSampler);
 
                     glEnable(GL_BLEND);
                     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -346,6 +339,7 @@
                     glDrawArrays(GL_TRIANGLES, 0, 6);
 
                     glDisable(GL_BLEND);
+                    glBindSampler(0, 0);
                 } // if (m_radarEnable)
 
                 if (hudGlStateChanged) {

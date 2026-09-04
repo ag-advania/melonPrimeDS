@@ -73,7 +73,9 @@ static FORCE_INLINE HudFrameOwnedState& HudFrameState() noexcept
 
 // Dynamic snapshots retain QString storage across the normal game-frame
 // rollover. Clear their payload only at a cold ownership boundary (ROM,
-// match, config, savestate, or reset).
+// match, config, savestate, or reset). The scoreboard image keeps its
+// same-size backing store as well; valid=false prevents stale pixels from
+// being consumed before the next cold raster pass repaints it.
 static void ClearHudRuntimeDynamicSnapshotPayload()
 {
     auto& hudFrame = HudFrameState();
@@ -82,7 +84,6 @@ static void ClearHudRuntimeDynamicSnapshotPayload()
     hudFrame.frame.scoreboard = {};
     hudFrame.scoreboardPlan.valid = false;
     hudFrame.scoreboardRaster.valid = false;
-    hudFrame.scoreboardRaster.image = {};
     ++hudFrame.scoreboardPlanGeneration;
     hudFrame.frame.enemyTargetValid = false;
     hudFrame.frame.enemyTarget = {};

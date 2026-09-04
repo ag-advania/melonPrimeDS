@@ -22,6 +22,7 @@ class ScreenPanel;  // P-3: forward decl for cached panel pointer
 #include "MelonPrimeThreadBridge.h"
 #include "MelonPrimeRuntimeConfig.h"
 #include "MelonPrimeGameSettings.h"
+#include "MelonPrimeDef.h"
 #include "MelonPrimeGameRomAddrTable.h"
 #include "MelonPrimeBattleFlowState.h"
 #include "MelonPrimeZoomState.h"
@@ -1283,7 +1284,8 @@ namespace MelonPrime {
 
         COLD_FUNCTION void HandleGameJoinInit();
         COLD_FUNCTION void HandleBattleRuntimeEnter();
-        COLD_FUNCTION void DetectRomAndSetAddresses();
+        COLD_FUNCTION void DetectRomAndSetAddresses(
+            MelonPrimeRomIdentity romIdentity);
         void ReconcileMenuGameSettings();
 
         void ApplyRuntimeAimSensitivity(int sensitivity);

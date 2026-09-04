@@ -272,13 +272,15 @@ namespace MelonPrime {
 
         HandleGlobalHotkeys();
 
-        if (UNLIKELY(m_romClassificationGeneration != globalRomLoadGeneration)) {
+        if (UNLIKELY(m_romClassificationGeneration
+                     != emuInstance->getMelonPrimeRomLoadGeneration())) {
             m_flags.clear(StateFlags::BIT_ROM_CLASSIFIED);
             m_flags.clear(StateFlags::BIT_ROM_DETECTED);
         }
 
         if (UNLIKELY(!m_flags.test(StateFlags::BIT_ROM_CLASSIFIED))) {
-            DetectRomAndSetAddresses();
+            DetectRomAndSetAddresses(
+                emuInstance->getMelonPrimeRomIdentitySnapshot());
         }
 
         if (LIKELY(m_flags.test(StateFlags::BIT_ROM_DETECTED))) {

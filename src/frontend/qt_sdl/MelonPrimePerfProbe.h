@@ -179,6 +179,9 @@ struct State {
     uint64_t cntScoreboardFullPlanRebuilds = 0;
     uint64_t cntScoreboardRasterCacheHits = 0;
     uint64_t cntScoreboardRasterCacheMisses = 0;
+    uint64_t cntScoreboardRasterBackingAllocations = 0;
+    uint64_t cntScoreboardRasterBackingReuses = 0;
+    uint64_t sumScoreboardRasterBackingBytes = 0;
     uint64_t cntScoreboardDynamicCellUpdates = 0;
     uint64_t cntScoreboardTimeVisualChanges = 0;
     uint64_t cntScoreboardStructureChecks = 0;
@@ -188,6 +191,7 @@ struct State {
     uint64_t sumHudRegionHashBytes = 0;
     uint64_t cntHudUploadCalls = 0;
     uint64_t cntHudRadarVboUploads = 0;
+    uint64_t cntHudRadarTexParameterCalls = 0;
     uint64_t cntHudRestoreFastRejects = 0;
     uint64_t cntHudRestoreRuntimeReads = 0;
     uint64_t cntHudPatchWrites = 0;
@@ -777,6 +781,9 @@ inline void ResetWindowStats()
     st.cntScoreboardFullPlanRebuilds = 0;
     st.cntScoreboardRasterCacheHits = 0;
     st.cntScoreboardRasterCacheMisses = 0;
+    st.cntScoreboardRasterBackingAllocations = 0;
+    st.cntScoreboardRasterBackingReuses = 0;
+    st.sumScoreboardRasterBackingBytes = 0;
     st.cntScoreboardDynamicCellUpdates = 0;
     st.cntScoreboardTimeVisualChanges = 0;
     st.cntScoreboardStructureChecks = 0;
@@ -786,6 +793,7 @@ inline void ResetWindowStats()
     st.sumHudRegionHashBytes = 0;
     st.cntHudUploadCalls = 0;
     st.cntHudRadarVboUploads = 0;
+    st.cntHudRadarTexParameterCalls = 0;
     st.cntHudRestoreFastRejects = 0;
     st.cntHudRestoreRuntimeReads = 0;
     st.cntHudPatchWrites = 0;
@@ -963,9 +971,12 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         "visual_render=%llu visual_reuse=%llu identity_probes=%llu "
         "stamp_checks=%llu stamp_commits=%llu plan_build=%llu full_rebuild=%llu "
         "scoreboard_raster_cache_hit=%llu scoreboard_raster_cache_miss=%llu "
+        "scoreboard_raster_alloc=%llu scoreboard_raster_reuse=%llu "
+        "scoreboard_raster_bytes=%llu "
         "structure_checks=%llu dynamic_cells=%llu time_changes=%llu "
         "outline_hit=%llu outline_miss=%llu hash_calls=%llu hash_B=%llu uploads=%llu "
-        "radar_vbo_uploads=%llu restore_fast_reject=%llu restore_runtime_read=%llu "
+        "radar_vbo_uploads=%llu radar_tex_parameter_calls=%llu "
+        "restore_fast_reject=%llu restore_runtime_read=%llu "
         "patch_writes=%llu\n",
         MelonPrimePerfSession::Text(),
         static_cast<unsigned long long>(st.instanceId),
@@ -1018,6 +1029,9 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         static_cast<unsigned long long>(st.cntScoreboardFullPlanRebuilds),
         static_cast<unsigned long long>(st.cntScoreboardRasterCacheHits),
         static_cast<unsigned long long>(st.cntScoreboardRasterCacheMisses),
+        static_cast<unsigned long long>(st.cntScoreboardRasterBackingAllocations),
+        static_cast<unsigned long long>(st.cntScoreboardRasterBackingReuses),
+        static_cast<unsigned long long>(st.sumScoreboardRasterBackingBytes),
         static_cast<unsigned long long>(st.cntScoreboardStructureChecks),
         static_cast<unsigned long long>(st.cntScoreboardDynamicCellUpdates),
         static_cast<unsigned long long>(st.cntScoreboardTimeVisualChanges),
@@ -1027,6 +1041,7 @@ inline void ReportHudPhaseSummary(const State& st, uint64_t reportSeq)
         static_cast<unsigned long long>(st.sumHudRegionHashBytes),
         static_cast<unsigned long long>(st.cntHudUploadCalls),
         static_cast<unsigned long long>(st.cntHudRadarVboUploads),
+        static_cast<unsigned long long>(st.cntHudRadarTexParameterCalls),
         static_cast<unsigned long long>(st.cntHudRestoreFastRejects),
         static_cast<unsigned long long>(st.cntHudRestoreRuntimeReads),
         static_cast<unsigned long long>(st.cntHudPatchWrites));
@@ -1435,6 +1450,20 @@ inline void CountScoreboardRasterCacheMiss()
         ++S().cntScoreboardRasterCacheMisses;
 }
 
+inline void CountScoreboardRasterBackingAllocation(std::size_t bytes)
+{
+    if (!S().frameOpen)
+        return;
+    ++S().cntScoreboardRasterBackingAllocations;
+    S().sumScoreboardRasterBackingBytes += static_cast<uint64_t>(bytes);
+}
+
+inline void CountScoreboardRasterBackingReuse()
+{
+    if (S().frameOpen)
+        ++S().cntScoreboardRasterBackingReuses;
+}
+
 inline void CountScoreboardDynamicCellUpdate(bool timeVisualChange)
 {
     if (!S().frameOpen)
@@ -1480,6 +1509,12 @@ inline void CountHudRadarVboUpload()
 {
     if (S().frameOpen)
         ++S().cntHudRadarVboUploads;
+}
+
+inline void CountHudRadarTexParameterCall()
+{
+    if (S().frameOpen)
+        ++S().cntHudRadarTexParameterCalls;
 }
 
 inline void CountHudRestoreFastReject()
@@ -1717,6 +1752,8 @@ inline void CountScoreboardPlanBuild() {}
 inline void CountScoreboardFullPlanRebuild() {}
 inline void CountScoreboardRasterCacheHit() {}
 inline void CountScoreboardRasterCacheMiss() {}
+inline void CountScoreboardRasterBackingAllocation(std::size_t) {}
+inline void CountScoreboardRasterBackingReuse() {}
 inline void CountScoreboardDynamicCellUpdate(bool) {}
 inline void CountScoreboardStructureCheck() {}
 inline void CountScoreboardOutlinePathHit() {}
@@ -1724,6 +1761,7 @@ inline void CountScoreboardOutlinePathMiss() {}
 inline void CountHudRegionHash(std::size_t) {}
 inline void CountHudUploadCall() {}
 inline void CountHudRadarVboUpload() {}
+inline void CountHudRadarTexParameterCall() {}
 inline void CountHudRestoreFastReject() {}
 inline void CountHudRestoreRuntimeRead() {}
 inline void CountHudPatchWrite() {}

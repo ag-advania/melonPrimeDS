@@ -847,7 +847,7 @@ if ($runFrameStart -lt 0) {
         'InputReset();',
         'm_flags.clear(StateFlags::BIT_BLOCK_STYLUS);',
         'HandleGlobalHotkeys();',
-        'DetectRomAndSetAddresses();',
+        'DetectRomAndSetAddresses(',
         'const bool isInGame =',
         'HandleGameJoinInit();',
         'HandleBattleRuntimeEnter();',
@@ -3304,14 +3304,25 @@ if ($hudEnsureDecl.Count -ne 1 -or -not $hudEnsureBody) {
 
 # --- MP-PERF-003: native GL radar updates only on cache edges ---------------
 $hudGlOverlayPath = Join-Path $qtSdl 'MelonPrimeHudScreenCppOverlayOfGl.inc'
+$hudGlInitPath = Join-Path $qtSdl 'MelonPrimeHudScreenGL.cpp'
 $screenHeaderPath = Join-Path $qtSdl 'Screen.h'
 $hudGlOverlayText = [System.IO.File]::ReadAllText($hudGlOverlayPath)
+$hudGlInitText = [System.IO.File]::ReadAllText($hudGlInitPath)
 $screenHeaderText = [System.IO.File]::ReadAllText($screenHeaderPath)
 if ($screenHeaderText -notmatch 'struct\s+HudRadarGlCache' -or
     $screenHeaderText -notmatch 'm_hudRadarGl' -or
     $hudGlOverlayText -notmatch 'const\s+bool\s+geometryChanged' -or
-    $hudGlOverlayText -notmatch 'CountHudRadarVboUpload\s*\(') {
+    $hudGlOverlayText -notmatch 'CountHudRadarVboUpload\s*\(' -or
+    $screenHeaderText -notmatch 'm_hudRadarSampler' -or
+    $hudGlInitText -notmatch 'glGenSamplers\s*\(' -or
+    $hudGlInitText -notmatch 'glSamplerParameteri\s*\([^\n]*GL_TEXTURE_MIN_FILTER[^\n]*GL_LINEAR' -or
+    $hudGlInitText -notmatch 'glSamplerParameteri\s*\([^\n]*GL_TEXTURE_MAG_FILTER[^\n]*GL_LINEAR' -or
+    $hudGlOverlayText -notmatch 'glBindSampler\s*\(\s*0\s*,\s*m_hudRadarSampler' -or
+    $hudGlOverlayText -notmatch 'glBindSampler\s*\(\s*0\s*,\s*0\s*\)') {
     Add-Error 'MP-PERF-003: native GL radar edge cache is missing'
+}
+if ($hudGlOverlayText -match '\bglTexParameteri\s*\(') {
+    Add-Error 'MP-PERF-003: native GL radar overlay must use its cold-owned sampler, not glTexParameteri'
 }
 $radarVboWrites = @([regex]::Matches($hudGlOverlayText, '\bglBufferSubData\s*\('))
 $geometryEdgeAt = $hudGlOverlayText.IndexOf('if (geometryChanged)')
@@ -3321,19 +3332,55 @@ if ($radarVboWrites.Count -ne 1 -or $geometryEdgeAt -lt 0 -or
     Add-Error 'MP-PERF-003: native GL radar VBO must upload only from the geometry edge'
 }
 
-# --- MP-PERF-004: unsupported ROM classification is latched ----------------
+# --- MP-PERF-004: ROM classification is per EmuInstance and latched --------
 $romDetectPath = Join-Path $qtSdl 'MelonPrimeGameRomDetect.cpp'
 $melonPrimeCore = Join-Path $qtSdl 'MelonPrime.cpp'
 $romDetectText = [System.IO.File]::ReadAllText($romDetectPath)
 $melonPrimeCoreText = [System.IO.File]::ReadAllText($melonPrimeCore)
 $melonPrimeDefText = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'MelonPrimeDef.h'))
+$melonPrimeHeaderText = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'MelonPrime.h'))
+$emuInstanceHeaderText = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'EmuInstance.h'))
 $emuInstanceSourceText = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'EmuInstance.cpp'))
-if ($melonPrimeDefText -notmatch 'globalRomLoadGeneration' -or
+$romIdentityTestPath = Join-Path $repoRoot 'tools/testing/melonprime-rom-identity-tests.cpp'
+$romIdentityTestText = if (Test-Path -LiteralPath $romIdentityTestPath) {
+    [System.IO.File]::ReadAllText($romIdentityTestPath)
+} else { '' }
+$qtCmakeText = [System.IO.File]::ReadAllText((Join-Path $qtSdl 'CMakeLists.txt'))
+$forbiddenRomGlobals = 'globalChecksum|globalGameCode|globalRomVersion|globalRomLoadGeneration|isRomDetected'
+foreach ($entry in @(
+    @{ Name = 'MelonPrimeDef.h'; Text = $melonPrimeDefText },
+    @{ Name = 'MelonPrime.h'; Text = $melonPrimeHeaderText },
+    @{ Name = 'MelonPrime.cpp'; Text = $melonPrimeCoreText },
+    @{ Name = 'MelonPrimeGameRomDetect.cpp'; Text = $romDetectText },
+    @{ Name = 'EmuInstance.h'; Text = $emuInstanceHeaderText },
+    @{ Name = 'EmuInstance.cpp'; Text = $emuInstanceSourceText })) {
+    if ($entry.Text -cmatch $forbiddenRomGlobals) {
+        Add-Error "MP-PERF-004: process-global ROM identity symbol remains in $($entry.Name)"
+    }
+}
+if ($melonPrimeDefText -notmatch 'struct\s+MelonPrimeRomIdentity' -or
+    $melonPrimeDefText -notmatch 'PublishRomIdentity\s*\(' -or
+    $melonPrimeDefText -notmatch 'ClearRomIdentity\s*\(' -or
+    $emuInstanceHeaderText -notmatch 'melonPrimeRomIdentity' -or
+    $emuInstanceHeaderText -notmatch 'getMelonPrimeRomLoadGeneration\s*\(' -or
+    $emuInstanceHeaderText -notmatch 'getMelonPrimeRomIdentitySnapshot\s*\(' -or
+    $emuInstanceSourceText -notmatch 'PublishRomIdentity\s*\(' -or
+    $emuInstanceSourceText -notmatch 'ClearRomIdentity\s*\(' -or
     $melonPrimeCoreText -notmatch 'BIT_ROM_CLASSIFIED' -or
-    $melonPrimeCoreText -notmatch 'm_romClassificationGeneration\s*!=\s*globalRomLoadGeneration' -or
-    $romDetectText -notmatch 'BIT_ROM_CLASSIFIED' -or
-    $emuInstanceSourceText -notmatch 'globalRomLoadGeneration') {
-    Add-Error 'MP-PERF-004: ROM classification generation/latch is incomplete'
+    $melonPrimeCoreText -notmatch 'm_romClassificationGeneration\s*!=\s*emuInstance->getMelonPrimeRomLoadGeneration\s*\(' -or
+    $romDetectText -notmatch 'DetectRomAndSetAddresses\s*\(\s*\n?\s*MelonPrimeRomIdentity\s+romIdentity\s*\)' -or
+    $romDetectText -notmatch 'm_romClassificationGeneration\s*=\s*romIdentity\.generation' -or
+    $romDetectText -notmatch 'romIdentity\.checksum' -or
+    $romDetectText -notmatch 'romIdentity\.gameCode' -or
+    $romDetectText -notmatch 'romIdentity\.romVersion') {
+    Add-Error 'MP-PERF-004: per-instance ROM identity/generation latch is incomplete'
+}
+if ($romIdentityTestText -notmatch 'instanceA' -or
+    $romIdentityTestText -notmatch 'instanceB' -or
+    $romIdentityTestText -notmatch 'PublishRomIdentity' -or
+    $romIdentityTestText -notmatch 'ClearRomIdentity' -or
+    $qtCmakeText -notmatch 'melonprime_rom_identity_check') {
+    Add-Error 'MP-PERF-004: multi-instance ROM identity regression test is missing'
 }
 $runFrameBody = Get-FunctionText -Path $melonPrimeCore `
     -Signature '(?:HOT_FUNCTION\s+)?void\s+MelonPrimeCore::RunFrameHook\s*\('
@@ -3342,8 +3389,15 @@ if (-not $runFrameBody) {
 } else {
     $classAt = $runFrameBody.IndexOf('BIT_ROM_CLASSIFIED')
     $detectAt = $runFrameBody.IndexOf('DetectRomAndSetAddresses')
-    if ($classAt -lt 0 -or $detectAt -lt 0 -or $classAt -gt $detectAt) {
+    $generationAt = $runFrameBody.IndexOf('getMelonPrimeRomLoadGeneration')
+    $snapshotAt = $runFrameBody.IndexOf('getMelonPrimeRomIdentitySnapshot')
+    if ($classAt -lt 0 -or $detectAt -lt 0 -or $classAt -gt $detectAt -or
+        $generationAt -lt 0 -or $generationAt -gt $detectAt -or
+        $snapshotAt -lt 0 -or $snapshotAt -lt $detectAt) {
         Add-Error 'MP-PERF-004: RunFrameHook must gate ROM detection on classification'
+    }
+    if ($runFrameBody -cmatch $forbiddenRomGlobals) {
+        Add-Error 'MP-PERF-004: RunFrameHook regained a process-global ROM identity dependency'
     }
 }
 

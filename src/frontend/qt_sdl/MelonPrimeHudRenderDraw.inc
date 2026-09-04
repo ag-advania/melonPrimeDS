@@ -1113,13 +1113,25 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         && raster.widthDs == widthDs
         && raster.heightDs == heightDs
         && raster.image.width() == widthPx
-        && raster.image.height() == heightPx;
+        && raster.image.height() == heightPx
+        && raster.image.format() == QImage::Format_ARGB32_Premultiplied;
 
     if (!cacheMatches) {
         MelonPrimePerf::CountScoreboardRasterCacheMiss();
-        QImage image(widthPx, heightPx, QImage::Format_ARGB32_Premultiplied);
-        image.fill(Qt::transparent);
-        QPainter imagePainter(&image);
+        const bool backingStoreSizeChanged =
+            raster.image.width() != widthPx
+            || raster.image.height() != heightPx
+            || raster.image.format() != QImage::Format_ARGB32_Premultiplied;
+        if (backingStoreSizeChanged) {
+            raster.image = QImage(
+                widthPx, heightPx, QImage::Format_ARGB32_Premultiplied);
+            MelonPrimePerf::CountScoreboardRasterBackingAllocation(
+                static_cast<std::size_t>(raster.image.sizeInBytes()));
+        } else {
+            MelonPrimePerf::CountScoreboardRasterBackingReuse();
+        }
+        raster.image.fill(Qt::transparent);
+        QPainter imagePainter(&raster.image);
         const QTransform localTransform(
             painterTransform.m11(), painterTransform.m12(),
             painterTransform.m21(), painterTransform.m22(),
@@ -1131,7 +1143,6 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
         DrawScoreboardRaster(&imagePainter, plan, c, hudScale);
         imagePainter.end();
         s_drawnDirtyPx = previousDirty;
-        raster.image = std::move(image);
         raster.planGeneration = hudFrame.scoreboardPlanGeneration;
         raster.hudScale = hudScale;
         raster.originX = originX;

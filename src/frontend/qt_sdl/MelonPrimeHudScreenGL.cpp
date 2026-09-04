@@ -41,6 +41,12 @@ void ScreenPanelGL::initializeHudOpenGL()
     m_hudUploadedValid = false;
     m_hudRadarGl = {};
 
+    glGenSamplers(1, &m_hudRadarSampler);
+    glSamplerParameteri(m_hudRadarSampler, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glSamplerParameteri(m_hudRadarSampler, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glSamplerParameteri(m_hudRadarSampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glSamplerParameteri(m_hudRadarSampler, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
     glGenTextures(2, overlayTextures);
     for (int i = 0; i < 2; ++i) {
         glBindTexture(GL_TEXTURE_2D, overlayTextures[i]);
@@ -111,6 +117,11 @@ void ScreenPanelGL::initializeHudOpenGL()
 
 void ScreenPanelGL::deinitializeHudOpenGL()
 {
+    glBindSampler(0, 0);
+    if (m_hudRadarSampler != 0) {
+        glDeleteSamplers(1, &m_hudRadarSampler);
+        m_hudRadarSampler = 0;
+    }
     glDeleteTextures(2, overlayTextures);
     glDeleteProgram(btmOverlayShader);
     glDeleteBuffers(1, &btmOverlayVertexBuffer);

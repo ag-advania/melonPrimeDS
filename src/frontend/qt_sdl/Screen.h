@@ -858,6 +858,7 @@ private:
     GLuint btmOverlayShader;
     GLint btmOverlayScreenSizeULoc, btmOverlayOpacityULoc, btmOverlaySrcCenterULoc, btmOverlaySrcRadiusULoc;
     GLuint btmOverlayVertexArray, btmOverlayVertexBuffer;
+    GLuint m_hudRadarSampler = 0;
 
     // The radar quad is stable between layout/config/resize/hunter edges.
     // Keep the edge signatures with the GL owner so the presentation loop
