@@ -808,12 +808,40 @@ static bool UpdateScoreboardPlanCell(
     return true;
 }
 
+static float ScoreboardTextOutlineRadius(
+    const HudOutlineConfig& outline, float hudScale)
+{
+    return outline.enable && outline.opacity > 0.0f
+        ? static_cast<float>(std::max(1, outline.thickness))
+            / std::max(0.001f, hudScale)
+        : 0.0f;
+}
+
+static QRectF ScoreboardTextDirtyBounds(
+    const QRectF& textRect, const HudOutlineConfig& outline,
+    float hudScale, float stretchX)
+{
+    const float scaleY = std::max(0.001f, hudScale);
+    const float scaleX = std::max(0.001f, std::abs(stretchX) * scaleY);
+    const float outlinePad = ScoreboardTextOutlineRadius(outline, hudScale);
+    // Keep the outline expansion separate from the rounding guard: the
+    // effective outline contributes zero when disabled or fully transparent,
+    // while fractional device transforms still need one physical pixel of
+    // restore/redraw coverage on every side.
+    const float safetyPadX = 1.0f / scaleX;
+    const float safetyPadY = 1.0f / scaleY;
+    return textRect.adjusted(
+        -(outlinePad + safetyPadX), -(outlinePad + safetyPadY),
+        outlinePad + safetyPadX, outlinePad + safetyPadY);
+}
+
 static bool UpdateScoreboardRenderPlanDynamicCells(
     ScoreboardRenderPlan& plan,
     const ScoreboardSnapshot& snapshot,
     const CachedHudConfig& c,
     const QFontMetrics& boardFm,
     const QFontMetrics& rankFm,
+    float hudScale,
     bool* changed = nullptr,
     QRectF* dirtyCells = nullptr)
 {
@@ -823,6 +851,17 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
         return false;
 
     const ScoreboardMetricSpec metric = ResolveScoreboardMetric(snapshot.gameMode);
+    const HudOutlineConfig& scoreboardOutline = EffOL(c, c.scoreboard.outline);
+    const auto noteTextDirty = [dirtyCells, &scoreboardOutline,
+                                hudScale, stretchX = c.lastStretchX](
+                                   const QRectF& rect) {
+        if (!dirtyCells || rect.isEmpty())
+            return;
+        const QRectF dirtyRect = ScoreboardTextDirtyBounds(
+            rect, scoreboardOutline, hudScale, stretchX);
+        *dirtyCells = dirtyCells->isEmpty()
+            ? dirtyRect : dirtyCells->united(dirtyRect);
+    };
     const auto noteDirty = [dirtyCells](const QRectF& rect) {
         if (!dirtyCells || rect.isEmpty())
             return;
@@ -848,7 +887,7 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
             if (changed && rankChanged)
                 *changed = true;
             if (rankChanged)
-                noteDirty(current.rank.rect);
+                noteTextDirty(current.rank.rect);
             if (!(previousRank == current.rank.visual) && current.starsFullW > 0.0) {
                 const QRectF previousStarsRect = current.starsRect;
                 const float boardScale = ScoreboardUserScale(c);
@@ -902,9 +941,9 @@ static bool UpdateScoreboardRenderPlanDynamicCells(
         if (changed && (firstChanged || secondChanged))
             *changed = true;
         if (firstChanged)
-            noteDirty(current.first.rect);
+            noteTextDirty(current.first.rect);
         if (secondChanged)
-            noteDirty(current.second.rect);
+            noteTextDirty(current.second.rect);
     }
     return true;
 }
@@ -918,10 +957,7 @@ static void DrawScoreboardPlanText(
         return;
 
     const auto flags = text.alignment | Qt::AlignVCenter | Qt::TextSingleLine;
-    const float outlineRadius = outline.enable && outline.opacity > 0.0f
-        ? static_cast<float>(std::max(1, outline.thickness))
-            / std::max(0.001f, hudScale)
-        : 0.0f;
+    const float outlineRadius = ScoreboardTextOutlineRadius(outline, hudScale);
     if (outlineRadius > 0.0f) {
         MelonPrimePerf::ScopedHudElement outlineElement(
             MelonPrimePerf::HudElementMetric::Outline);
@@ -1297,7 +1333,7 @@ static void DrawScoreboard(QPainter* p, const ScoreboardSnapshot& snapshot,
             MelonPrimePerf::HudPhase::ScoreboardPlan);
         if (!UpdateScoreboardRenderPlanDynamicCells(
                 hudFrame.scoreboardPlan, snapshot, c, boardFm, rankFm,
-                &dynamicChanged, &dynamicCells))
+                hudScale, &dynamicChanged, &dynamicCells))
         {
             hudFrame.scoreboardPlan = BuildScoreboardRenderPlan(
                 snapshot, structure, c, hudScale, localPlayerSlot, boardFm, rankFm);
