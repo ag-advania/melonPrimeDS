@@ -14,6 +14,44 @@ Prefer this ownership split:
 - `Draw...()` consumes cached values and performs only drawing work
 - caches are keyed by `NDS*`, `MainRAM`, `NDS::NumFrames`, player offset, and ROM group when those can affect the read result
 
+## Game-Frame Cadence Map
+
+Every place that samples guest state, and what keeps it to one sample per
+emulated frame. Re-auditing the cadence rule means walking this table and
+checking that no new consumer was added without a gate.
+
+| Consumer | Guest state | Gate | Cadence |
+|---|---|---|---|
+| `ReadHudRuntimeBaseState()` | HP, START, game over | `HudRuntimeFrameCache` keyed on `NDS*`, `MainRAM`, `NumFrames`, player offset, ROM group | 1 / game frame |
+| `ReadHudRuntimeAdventurePauseState()` | Adventure, map/pause, camera scene | `adventureValid` | 1 / game frame |
+| `ReadHudRuntimeVisibleState()` | max HP, max ammo, hunter, weapon, view mode, alt, transform | `visibleValid` | 1 / game frame |
+| `ReadHudRuntimeCurrentAmmoSpecial/Missile()` | ammo counters | `currentAmmo*Valid` | 1 / game frame, only when drawn |
+| `ReadHudRuntimeHavingWeapons()` | owned-weapon mask | `havingWeaponsValid` | 1 / game frame, only when drawn |
+| `ReadHudRuntimeBombCount()` | bomb count | `bombCountValid` | 1 / game frame, only when drawn |
+| `ReadHudRuntimeMatchStatusState()` | mode, score, goal | `matchStatusValid` | 1 / game frame, only when drawn |
+| `ReadHudRuntimeRankByte()` / `TimeLeftSeconds()` / `TimeLimitMinutes()` | rank, clock | `rankByteValid`, `timeLeftSecondsValid`, `timeLimitMinutesValid` | 1 / game frame, only when drawn |
+| `ReadHudRuntimeScoreboardSnapshot()` | roster, scores, stars | `scoreboardValid` + match serial | 1 / game frame |
+| `ReadHudRuntimeEnemyTargetSnapshot()` | target slot, HP, score | `enemyTargetValid`, timer-first rejection | 1 / game frame |
+| `DrawCrosshair()` aim projection | crosshair position, projection inputs | `s_chAimFrame != gameFrame` | 1 / game frame |
+| `UpdateCrosshairZoomAmountForGameFrame()` | scope flag, weapon zoom capability | `s_chZoomReticleState.lastGameFrame` + 2-frame visibility debounce | 1 / game frame |
+| `UpdateZoomAimEffectiveScale()` | scope flag, weapon zoom capability | `m_zoomAimSampledFrame` / `m_zoomAimSampledRam`; the native aim-delta hook passes `authoritative` to force a re-sample at the guest's own update point | 1 / game frame + 1 authoritative |
+| `CustomHud_ShouldHideForGameplayState()` | same as base state | `gameplayVisibilityValid` on the shared frame cache | 1 / game frame, reused by every presentation |
+| `CustomHud_EnsurePatchRestored()` | base state | native-HUD patch tracker fast-reject before any read | only while a patch is outstanding |
+| `ReadHudHelmetClampState()` | START, game over, HP, Adventure pause | none, deliberately | 1 / game frame, emulation thread; see below |
+| `HandleGameJoinInit()` | player slot, preset, hunter, Adventure | `COLD_FUNCTION` | 1 / game join |
+| ARM9 instruction hooks | player struct, spawn state | guest execution | guest cadence, which is the correct one |
+
+Two entries are deliberate exceptions and must stay that way:
+
+- `ReadHudHelmetClampState()` reads three to five bytes uncached because it runs
+  on the emulation thread while the presentation-owned `HudRuntimeFrameCache`
+  belongs to the presenting thread. Sharing that cache across the two would race
+  over its `QString`-carrying snapshot members.
+- `IsLocalPlayerInSpawnInvulnerability()` is sampled up to three times in one
+  frame (frame path, zoom path, weapon path). Caching it would be *wrong*: the
+  frame path runs before the guest's update and the hook paths run inside it, so
+  the later callers are supposed to see the fresher value.
+
 ## Hot-Path Shape
 
 Keep common cases cheap:
@@ -185,6 +223,52 @@ negligible in this workload and the hold delta is dominated by Custom HUD
 composition. Keep the lifetime-fence scope intact unless a repeatable workload
 shows material wait contention; optimize the measured HUD work instead of
 weakening renderer/NDS pointer lifetime protection.
+
+### Game-frame cadence sweep (2026-09-05)
+
+Full sweep of the cadence rule across the Custom HUD and the input path, driven
+by a user report that the zoom aim multiplier felt laggy at any value other than
+100%. Method: enumerate every `Read8/16/32` site (23 files), classify each by
+call frequency and frame gate, then check every core API reachable from a
+presentation thread and every `Config::Table` lookup on a per-frame path.
+
+One real violation, now fixed:
+
+- `UpdateZoomAimEffectiveScale()` re-read the guest scope state on every input
+  event that carried a delta, while the HUD reticle read the same state once per
+  game frame. It now shares the same cadence; the native aim-delta hook keeps an
+  authoritative re-sample so a zoom transition is never a frame late.
+- The same function zeroed `m_aimResidualX/Y` on every scale change. The residual
+  is fractional carry in *output* aim units, so an input-scale change does not
+  invalidate it; zeroing discarded up to a whole output unit of real mouse
+  movement on every scope in and scope out. At 100% the multiplier never changes,
+  which is why the loss only appeared at other values. The reset is gone from all
+  three sites that had it.
+- Developer counters `zoom_aim samples/active/transitions` were added so "is the
+  multiplier live while the player is not scoped" and "is the scope flag
+  flickering" are answerable from a capture instead of by inspection.
+
+Everything else checked clean:
+
+- All twelve HUD runtime samplers sit behind per-frame validity flags, so a
+  repeated presentation of the same `NDS::NumFrames` performs zero guest reads.
+- Of the nine core entry points reachable from a presentation thread, only three
+  touch guest state, and all three are frame-cached or tracker-gated. The rest
+  return cached members or flags.
+- The crosshair's direct RAM reads are inside the `s_chAimFrame` gate, which is
+  what makes the retained compositor's repair pass free: drawing an element a
+  second time in one frame re-rasterises without re-sampling.
+- The on-screen HUD editor preview goes through the same samplers and the same
+  gates as the normal path.
+- No `Config::Table` lookup remains on a per-frame HUD, draw, or input path. The
+  ones left in `EmuThread` are all behind the `videoSettingsDirty` edge.
+- Patch modules are `*_ApplyOnce` / `*_RestoreOnce` edge-driven, and the ARM9
+  hooks run at guest cadence by construction.
+
+Confirmed intentional, not a defect: the HUD debounces the scope flag over two
+frames for reticle visibility while the aim scale consumes it raw. The two
+consumers want different things from the same bit and the debounce is correct
+where it is.
 
 ### HUD hot-path follow-up (2026-09-04 implementation)
 
