@@ -221,7 +221,9 @@ MelonPrimeInputConfig::MelonPrimeInputConfig(EmuInstance* emu, QWidget* parent) 
     // Must run after every widget (UI-defined and programmatic) exists so the
     // guard reaches all of them.
     installWheelScrollGuards();
-    ui->scrollSettings->viewport()->installEventFilter(this);
+    m_settingsViewport = ui->scrollSettings->viewport();
+    if (m_settingsViewport)
+        m_settingsViewport->installEventFilter(this);
 
     m_applyPreviewEnabled = true;
 }
@@ -300,7 +302,15 @@ void MelonPrimeInputConfig::installWheelScrollGuards()
 
 bool MelonPrimeInputConfig::eventFilter(QObject* obj, QEvent* event)
 {
-    if (obj == ui->scrollSettings->viewport() && event->type() == QEvent::Resize)
+    // The tab pages are reparented into InputConfigDialog after this object is
+    // constructed. QObject destruction can therefore deliver a final event
+    // while the generated UI wrapper or the scroll area is already tearing
+    // down. Never dereference either through a raw ui pointer in that window.
+    if (!m_eventFilterActive || !event)
+        return QWidget::eventFilter(obj, event);
+
+    if (m_settingsViewport && obj == m_settingsViewport.data()
+        && event->type() == QEvent::Resize)
     {
         refreshSettingsPresentation();
     }
@@ -1443,6 +1453,9 @@ void MelonPrimeInputConfig::setupSettingsOrganization()
 
 void MelonPrimeInputConfig::refreshSettingsPresentation()
 {
+    if (!ui)
+        return;
+
     // Long translated help text should wrap vertically instead of expanding
     // the settings page and forcing the horizontal scrollbar seen in the old
     // single-column layout.
@@ -1668,11 +1681,21 @@ void MelonPrimeInputConfig::setupPreviewConnections()
 
 MelonPrimeInputConfig::~MelonPrimeInputConfig()
 {
+    // Stop handling events before the reparented settings widgets begin their
+    // QObject/QWidget teardown. QPointer clears itself when the viewport is
+    // destroyed; the active flag also covers events delivered reentrantly
+    // during this destructor.
+    m_eventFilterActive = false;
+    if (m_settingsViewport)
+        m_settingsViewport->removeEventFilter(this);
+    m_settingsViewport.clear();
+
     if (emuInstance)
         MelonPrime::UiText::SetMenuLanguageSelection(
             MelonPrime::UiText::NormalizeMenuLanguageConfig(
                 emuInstance->getLocalConfig().GetInt(MelonPrime::CfgKey::MenuLanguage)));
     delete ui;
+    ui = nullptr;
 }
 
 QTabWidget* MelonPrimeInputConfig::getTabWidget()
