@@ -1088,12 +1088,14 @@ void ScreenPanelDX12::drawScreen()
         // between HUD elements are never rasterised or blended.
         const float layerWidth = static_cast<float>(logicalWidth);
         const float layerHeight = static_cast<float>(logicalHeight);
+        MelonPrime::DX12SurfacePresenter::Quad hudQuads[HudDirtyRegionSet::kMaxRegions];
+        u32 hudQuadCount = 0;
         for (int index = 0; index < dx12->hudContent.Count(); ++index)
         {
             const QRect region = dx12->hudContent.Region(index);
             if (region.isEmpty() || layerWidth <= 0.0f || layerHeight <= 0.0f)
                 continue;
-            MelonPrime::DX12SurfacePresenter::Quad quad;
+            MelonPrime::DX12SurfacePresenter::Quad& quad = hudQuads[hudQuadCount++];
             quad.Axis[0] = static_cast<float>(region.width()) * scaleX;
             quad.Axis[3] = static_cast<float>(region.height()) * scaleY;
             quad.Origin[0] = static_cast<float>(region.x()) * scaleX;
@@ -1106,12 +1108,15 @@ void ScreenPanelDX12::drawScreen()
                 static_cast<float>(region.x() + region.width()) / layerWidth;
             quad.UvRect[3] =
                 static_cast<float>(region.y() + region.height()) / layerHeight;
-            dx12->presenter.DrawLayer(
-                MelonPrime::DX12SurfacePresenter::Layer::Hud,
-                quad,
-                MelonPrime::DX12SurfacePresenter::Blend::Premultiplied,
-                filter);
         }
+        // One pipeline state and SRV table bind for the whole HUD, then a draw
+        // per occupied region.
+        dx12->presenter.DrawLayerQuads(
+            MelonPrime::DX12SurfacePresenter::Layer::Hud,
+            hudQuads,
+            hudQuadCount,
+            MelonPrime::DX12SurfacePresenter::Blend::Premultiplied,
+            filter);
     }
 
     // The GPU colour-key pass is intentionally after the SVG/frame HUD layer:

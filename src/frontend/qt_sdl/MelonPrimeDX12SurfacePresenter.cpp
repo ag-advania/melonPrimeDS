@@ -1418,6 +1418,35 @@ void DX12SurfacePresenter::DrawLayer(
     OpenList->DrawInstanced(4, 1, 0, 0);
 }
 
+void DX12SurfacePresenter::DrawLayerQuads(
+    Layer layerId,
+    const Quad* quads,
+    std::uint32_t quadCount,
+    Blend blend,
+    bool linearFilter)
+{
+    if (!FrameOpen || !OpenList || !quads || quadCount == 0)
+        return;
+    D3D12_GPU_DESCRIPTOR_HANDLE srv{};
+    if (!ResolveLayerSrv(layerId, srv))
+        return;
+
+    OpenList->SetPipelineState(
+        blend == Blend::Premultiplied ? BlendedPipeline.Get() : OpaquePipeline.Get());
+    OpenList->SetGraphicsRootDescriptorTable(1, srv);
+    for (std::uint32_t index = 0; index < quadCount; ++index)
+    {
+        DrawConstants constants{};
+        std::memcpy(constants.Axis, quads[index].Axis, sizeof(constants.Axis));
+        std::memcpy(constants.Origin, quads[index].Origin, sizeof(constants.Origin));
+        std::memcpy(constants.UvRect, quads[index].UvRect, sizeof(constants.UvRect));
+        std::memcpy(constants.Tint, quads[index].Tint, sizeof(constants.Tint));
+        constants.Params[0] = linearFilter ? 1u : 0u;
+        OpenList->SetGraphicsRoot32BitConstants(0, kDrawConstantDwords, &constants, 0);
+        OpenList->DrawInstanced(4, 1, 0, 0);
+    }
+}
+
 void DX12SurfacePresenter::DrawRadar(
     const Quad& quad,
     float opacity,

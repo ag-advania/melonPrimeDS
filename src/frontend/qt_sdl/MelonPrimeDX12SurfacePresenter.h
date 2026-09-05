@@ -176,6 +176,15 @@ public:
         const melonDS::DX12PresentedFrame& frame);
     void BeginComposition() noexcept {}
     void DrawLayer(Layer layer, const Quad& quad, Blend blend, bool linearFilter);
+
+    // Draw several quads out of one layer. The pipeline state and the SRV table
+    // are set once for the batch and only the root constants change per quad.
+    void DrawLayerQuads(
+        Layer layer,
+        const Quad* quads,
+        std::uint32_t quadCount,
+        Blend blend,
+        bool linearFilter);
     void DrawRadar(
         const Quad& quad,
         float opacity,

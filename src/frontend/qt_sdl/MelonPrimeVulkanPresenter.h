@@ -222,6 +222,10 @@ public:
 
     // Updates a persistent layer image without re-uploading unchanged pixels.
     // Source coordinates are expressed in the full `width` x `height` image.
+    //
+    // Prefer UploadLayerRegions() when a frame has more than one rectangle to
+    // send: this entry point records its own layout transition pair and its own
+    // copy command, so N calls cost 2N full-image barriers and N copy commands.
     bool UploadLayerRegion(
         Layer layer,
         const void* pixels,
@@ -232,6 +236,40 @@ public:
         melonDS::u32 y,
         melonDS::u32 regionWidth,
         melonDS::u32 regionHeight);
+
+    // A rectangle of a layer image, in layer texels.
+    struct LayerRegion
+    {
+        melonDS::u32 X = 0;
+        melonDS::u32 Y = 0;
+        melonDS::u32 Width = 0;
+        melonDS::u32 Height = 0;
+    };
+
+    // Upper bound on the rectangles one UploadLayerRegions() call will stage.
+    // It matches the HUD's dirty-region cap.
+    static constexpr melonDS::u32 kMaxLayerRegions = 8;
+
+    // Update several rectangles of a persistent layer image as one operation.
+    //
+    // Every rectangle is staged first, then the whole batch is committed with a
+    // single transition into TRANSFER_DST, a single vkCmdCopyBufferToImage
+    // carrying all the regions, and a single transition back to
+    // SHADER_READ_ONLY. That is the difference that matters: a barrier per
+    // rectangle serialises the fragment and transfer stages once per rectangle,
+    // which costs far more than the pixels it moves.
+    //
+    // Records nothing and returns false when the layer image does not exist yet
+    // or the staging ring cannot hold the batch, so the caller can fall back to
+    // a full upload.
+    bool UploadLayerRegions(
+        Layer layer,
+        const void* pixels,
+        melonDS::u32 width,
+        melonDS::u32 height,
+        std::size_t rowBytes,
+        const LayerRegion* regions,
+        melonDS::u32 regionCount);
 
     [[nodiscard]] bool HasLayerContent(Layer layer) const noexcept
     {
@@ -260,6 +298,17 @@ public:
     // Draws one quad from a previously uploaded layer. Layers are drawn in call
     // order, so the caller controls the compositing order.
     void DrawLayer(Layer layer, const Quad& quad, Blend blend, bool linearFilter);
+
+    // Draw several quads out of one layer. The pipeline and descriptor set are
+    // bound once for the batch and only the push constants change per quad,
+    // which is what a multi-region HUD composite should cost: N draws, not N
+    // pipeline and descriptor rebinds.
+    void DrawLayerQuads(
+        Layer layer,
+        const Quad* quads,
+        melonDS::u32 quadCount,
+        Blend blend,
+        bool linearFilter);
     void DrawRadar(
         const Quad& quad, float opacity, melonDS::u32 sourceCenterY,
         melonDS::u32 sourceRadius);

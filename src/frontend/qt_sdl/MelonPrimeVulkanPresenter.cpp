@@ -2399,6 +2399,152 @@ bool VulkanPresenter::UploadLayerRegion(
     return true;
 }
 
+bool VulkanPresenter::UploadLayerRegions(
+    Layer layer, const void* pixels, u32 width, u32 height, std::size_t rowBytes,
+    const LayerRegion* regions, u32 regionCount)
+{
+    if (!FrameOpen || CompositionOpen || !pixels || !regions
+        || regionCount == 0 || regionCount > kMaxLayerRegions
+        || width == 0 || height == 0)
+    {
+        return false;
+    }
+
+    LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    // Only persistent, surface-sized layers can be updated in place. A screen
+    // layer follows the renderer's internal resolution and may need a new
+    // image, which is UploadLayerRegion()'s job.
+    if (layer == Layer::ScreenTop || layer == Layer::ScreenBottom
+        || !texture.Image.IsValid())
+    {
+        return false;
+    }
+
+    Vk::StagingRing& staging = Staging[Frames.GetFrameIndex()];
+    // bufferOffset must be a multiple of the texel size, and honouring
+    // optimalBufferCopyOffsetAlignment on top of that keeps each copy on the
+    // driver's fast path instead of a fixup.
+    const VkDeviceSize alignment = std::max<VkDeviceSize>(
+        4u, Device.GetLimits().optimalBufferCopyOffsetAlignment);
+
+    VkBufferImageCopy copies[kMaxLayerRegions]{};
+    u32 copyCount = 0;
+    VkDeviceSize stagedBytes = 0;
+
+    for (u32 index = 0; index < regionCount; ++index)
+    {
+        const LayerRegion& region = regions[index];
+        if (region.Width == 0 || region.Height == 0
+            || region.X >= width || region.Y >= height
+            || region.X >= texture.Width || region.Y >= texture.Height)
+        {
+            continue;
+        }
+        const u32 copyWidth = std::min(
+            {region.Width, width - region.X, texture.Width - region.X});
+        const u32 copyHeight = std::min(
+            {region.Height, height - region.Y, texture.Height - region.Y});
+        if (copyWidth == 0 || copyHeight == 0)
+            continue;
+
+        const VkDeviceSize bytes =
+            static_cast<VkDeviceSize>(copyWidth) * copyHeight * 4u;
+        VkDeviceSize offset = 0;
+        void* mapped = staging.Allocate(bytes, alignment, offset);
+        if (!mapped)
+        {
+            // Nothing has been recorded yet, so the caller is free to retry as
+            // a single full upload. Grow the ring at the next frame boundary,
+            // where no command buffer references it.
+            PendingStagingRequest = std::max(
+                PendingStagingRequest, (staging.GetUsed() + bytes) * 2u);
+            Platform::Log(
+                Platform::LogLevel::Warn,
+                "[Vulkan] presenter: upload ring is %llu bytes, growing to %llu at the next frame\n",
+                static_cast<unsigned long long>(staging.GetCapacity()),
+                static_cast<unsigned long long>(PendingStagingRequest));
+            return false;
+        }
+
+        // Packed tightly regardless of the source stride, so bufferRowLength
+        // stays 0 and no row-pitch alignment rule applies to the copy.
+        const auto* source = static_cast<const u8*>(pixels)
+            + static_cast<std::size_t>(region.Y) * rowBytes
+            + static_cast<std::size_t>(region.X) * 4u;
+        auto* destination = static_cast<u8*>(mapped);
+        const std::size_t destinationRow = static_cast<std::size_t>(copyWidth) * 4u;
+        for (u32 row = 0; row < copyHeight; ++row)
+        {
+            std::memcpy(
+                destination + row * destinationRow,
+                source + static_cast<std::size_t>(row) * rowBytes,
+                destinationRow);
+        }
+
+        VkBufferImageCopy& copy = copies[copyCount++];
+        copy.bufferOffset = offset;
+        copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        copy.imageSubresource.layerCount = 1;
+        copy.imageOffset = {
+            static_cast<std::int32_t>(region.X),
+            static_cast<std::int32_t>(region.Y),
+            0};
+        copy.imageExtent = {copyWidth, copyHeight, 1};
+        stagedBytes += bytes;
+    }
+
+    if (copyCount == 0)
+        return true;
+
+    if (!staging.FlushWritten())
+        return Fail("the Vulkan presenter could not flush its upload buffer");
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    const char* uploadLabel = layer == Layer::Hud
+        ? "Vulkan.Present.UploadHUD"
+        : layer == Layer::Osd ? "Vulkan.Present.UploadOSD" : nullptr;
+    Vk::BeginCommandDebugLabel(fns, CurrentCommandBuffer, uploadLabel);
+
+    // One transition pair for the whole batch. Doing this per rectangle is what
+    // makes a multi-region update cost more than the single bounding-box upload
+    // it replaced.
+    const VkImageLayout currentLayout = texture.Image.GetLayout();
+    texture.Image.RecordLayoutTransition(
+        CurrentCommandBuffer,
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        currentLayout == VK_IMAGE_LAYOUT_UNDEFINED
+            ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT
+            : VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        currentLayout == VK_IMAGE_LAYOUT_UNDEFINED
+            ? 0
+            : VK_ACCESS_SHADER_READ_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT);
+
+    fns.CmdCopyBufferToImage(
+        CurrentCommandBuffer,
+        staging.GetHandle(),
+        texture.Image.GetHandle(),
+        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+        copyCount,
+        copies);
+
+    texture.Image.RecordLayoutTransition(
+        CurrentCommandBuffer,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_ACCESS_TRANSFER_WRITE_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_ACCESS_SHADER_READ_BIT);
+    if (uploadLabel)
+        Vk::EndCommandDebugLabel(fns, CurrentCommandBuffer);
+
+    texture.HasContent = true;
+    if (layer == Layer::Hud)
+        VulkanPerf::AddCounter(VulkanPerf::Counter::HudUploadBytes, stagedBytes);
+    return true;
+}
+
 bool VulkanPresenter::UploadLayerFromBuffer(
     Layer layer, const melonDS::VulkanPresentedFrame& frame, VkDeviceSize sourceOffset)
 {
@@ -2655,6 +2801,44 @@ void VulkanPresenter::DrawLayer(Layer layer, const Quad& quad, Blend blend, bool
         sizeof(Quad),
         &quad);
     fns.CmdDraw(CurrentCommandBuffer, 4, 1, 0, 0);
+}
+
+void VulkanPresenter::DrawLayerQuads(
+    Layer layer, const Quad* quads, u32 quadCount, Blend blend, bool linearFilter)
+{
+    if (!CompositionOpen || Failed || !quads || quadCount == 0)
+        return;
+
+    const LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+    if ((!texture.UsesDirect && !texture.Image.IsValid()) || !texture.HasContent)
+        return;
+
+    const VkDescriptorSet set = AcquireDescriptorSet(layer, linearFilter);
+    if (set == VK_NULL_HANDLE)
+        return;
+
+    const Vk::DeviceDispatch& fns = Device.Fns();
+    fns.CmdBindPipeline(
+        CurrentCommandBuffer,
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        blend == Blend::Opaque ? PipelineOpaque : PipelineBlended);
+    fns.CmdBindDescriptorSets(
+        CurrentCommandBuffer,
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        PipelineLayout,
+        0, 1, &set,
+        0, nullptr);
+    for (u32 index = 0; index < quadCount; ++index)
+    {
+        fns.CmdPushConstants(
+            CurrentCommandBuffer,
+            PipelineLayout,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            0,
+            sizeof(Quad),
+            &quads[index]);
+        fns.CmdDraw(CurrentCommandBuffer, 4, 1, 0, 0);
+    }
 }
 
 void VulkanPresenter::DrawRadar(

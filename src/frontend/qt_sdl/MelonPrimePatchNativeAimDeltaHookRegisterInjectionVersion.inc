@@ -289,8 +289,10 @@
 
             if ((lateX | lateY) != 0)
             {
+                // Authoritative sample: this runs inside the guest's own input
+                // update, where the scope flag for this frame is final.
                 if (UNLIKELY(m_enableZoomAimScale))
-                    UpdateZoomAimEffectiveScale();
+                    UpdateZoomAimEffectiveScale(true);
 
                 const bool hasLateX = lateX != 0;
                 const bool hasLateY = lateY != 0;
