@@ -1320,7 +1320,7 @@
 #define MP_HUD_PROP_ROW_HudEnemyTargetOutlineOpacity(X) X(HudEnemyTargetOutlineOpacity, MP_HUD_PROP_KEY_HudEnemyTargetOutlineOpacity, Double, 1.0, 0, 100, 5, "Outline Opacity", "Opacity", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_EDIT | MP_HUD_SURFACE_SIDE_PANEL | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudCrosshairHighRes(X) X(HudCrosshairHighRes, MP_HUD_PROP_KEY_HudCrosshairHighRes, Bool, true, 0, 0, 0, "", "GetBool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 #define MP_HUD_PROP_ROW_HudCrosshairDeadband(X) X(HudCrosshairDeadband, MP_HUD_PROP_KEY_HudCrosshairDeadband, Double, 0.25, 0, 0, 0, "", "GetDouble", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
-#define MP_HUD_PROP_ROW_HudCrosshairDeadbandEnable(X) X(HudCrosshairDeadbandEnable, MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable, Bool, true, 0, 0, 0, "", "GetBool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
+#define MP_HUD_PROP_ROW_HudCrosshairDeadbandEnable(X) X(HudCrosshairDeadbandEnable, MP_HUD_PROP_KEY_HudCrosshairDeadbandEnable, Bool, false, 0, 0, 0, "", "GetBool", (MP_HUD_SURFACE_DEFAULT | MP_HUD_SURFACE_DIALOG | MP_HUD_SURFACE_RUNTIME_LOAD), 0x00)
 
 // Schema views reference row macros so each key literal has a single owner.
 #define MP_HUD_PROP_SCHEMA(X) \
