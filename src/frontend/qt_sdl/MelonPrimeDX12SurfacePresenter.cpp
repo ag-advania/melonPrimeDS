@@ -820,6 +820,7 @@ bool DX12SurfacePresenter::EnsureLayerTexture(
     layer.Height = height;
     layer.State = D3D12_RESOURCE_STATE_COPY_DEST;
     layer.Valid = false;
+    layer.CopiedContentValid = false;
     layer.PersistentSrvValid = false;
     layer.PersistentSrvResource = nullptr;
     return CreateLayerPersistentSrv(layerId);
@@ -1084,6 +1085,7 @@ bool DX12SurfacePresenter::UploadLayer(
     OpenList->CopyTextureRegion(&destination, 0, 0, 0, &sourceLocation, nullptr);
     TransitionLayer(layer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     layer.Valid = true;
+    layer.CopiedContentValid = true;
     return true;
 }
 
@@ -1272,6 +1274,7 @@ bool DX12SurfacePresenter::UploadLayerFromBuffer(
     OpenList->CopyTextureRegion(&destination, 0, 0, 0, &source, nullptr);
     TransitionLayer(layer, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     layer.Valid = true;
+    layer.CopiedContentValid = true;
     return true;
 }
 
@@ -1307,6 +1310,9 @@ bool DX12SurfacePresenter::UploadLayerFromTexture(
     layer.Height = frame.Height;
     layer.UsesDirect = true;
     layer.Valid = true;
+    // The texture is not what gets sampled now, so it can no longer be
+    // trusted to match the frame a later copy-path presentation would skip.
+    layer.CopiedContentValid = false;
     return true;
 }
 

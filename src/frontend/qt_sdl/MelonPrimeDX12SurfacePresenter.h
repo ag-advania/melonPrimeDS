@@ -217,6 +217,18 @@ public:
         return Layers[static_cast<std::size_t>(layer)].Valid;
     }
 
+    // True when this layer's own texture still holds copied pixels at exactly
+    // this size, so re-copying the same source would reproduce what is already
+    // there. Direct-bound content does not qualify: BeginFrame() drops the
+    // direct binding every frame, so a direct layer must be rebound each time.
+    [[nodiscard]] bool LayerHoldsCopiedContent(
+        Layer layer, std::uint32_t width, std::uint32_t height) const noexcept
+    {
+        const LayerTexture& texture = Layers[static_cast<std::size_t>(layer)];
+        return texture.CopiedContentValid && texture.Texture
+            && texture.Width == width && texture.Height == height;
+    }
+
 private:
     struct LayerTexture
     {
@@ -234,6 +246,9 @@ private:
         ID3D12Resource* PersistentSrvResource = nullptr;
         D3D12_RESOURCE_STATES State = D3D12_RESOURCE_STATE_COPY_DEST;
         bool Valid = false;
+        // Survives BeginFrame(), unlike UsesDirect: it records that this
+        // layer's texture was filled by a copy and is still the right size.
+        bool CopiedContentValid = false;
         bool PersistentSrvValid = false;
         bool UsesDirect = false;
     };
