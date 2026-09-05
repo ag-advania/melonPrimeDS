@@ -1185,14 +1185,6 @@ namespace MelonPrime {
             const bool hasDeltaX = deltaX != 0;
             const bool hasDeltaY = deltaY != 0;
             const bool hasDelta = hasDeltaX || hasDeltaY;
-            int64_t resX = m_aimResidualX;
-            int64_t resY = m_aimResidualY;
-            if (UNLIKELY(m_enableZoomAimScale) && (hasDelta || ((resX | resY) != 0))) {
-                UpdateZoomAimEffectiveScale();
-                resX = m_aimResidualX;
-                resY = m_aimResidualY;
-            }
-
             // A residual is fractional carry, not autonomous movement. Once the
             // physical mouse stops, do not drain that carry into later frames. Keep
             // it for the next real delta so sub-pixel accumulation still works.
@@ -1203,6 +1195,16 @@ namespace MelonPrime {
                 }
                 return;
             }
+
+            // Resolve guest-dependent scale only for input we will consume.
+            // Idle fractional carry needs neither a RAM sample nor a scale update;
+            // the next delta refreshes it before multiplication. Native hook late
+            // input retains its separate authoritative refresh at the hook PC.
+            if (UNLIKELY(m_enableZoomAimScale))
+                UpdateZoomAimEffectiveScale();
+
+            int64_t resX = m_aimResidualX;
+            int64_t resY = m_aimResidualY;
 
             // P-17: Accumulate into residual (Q14 fixed-point).
             resX += static_cast<int64_t>(deltaX) * m_aimEffectiveFixedScaleX;
