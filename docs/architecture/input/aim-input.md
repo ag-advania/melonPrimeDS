@@ -91,8 +91,11 @@ Main implementation files:
 
 ## 5. Mouse Aim Path (`ProcessAimInputMouse`)
 
-- P-44: zero-delta fast skip — when the mouse delta is zero **and** both residuals are zero,
-  the function returns immediately (no IMUL / clamp / output).
+- Zero-delta fast skip: when both mouse deltas are zero, return before zoom RAM
+  sampling, residual loads, multiplication, clamp, or output. Fractional carry is
+  retained when the accumulator is enabled and cleared otherwise. Only axes with
+  fresh input may emit output. The next moving sample refreshes zoom scale before
+  multiplication; the native hook retains its authoritative refresh at the hook PC.
 - Q14 fixed-point residual accumulation (only on a nonzero delta):
   - `m_aimResidualX/Y += delta * m_aimFixedScaleX/Y`
   - Residuals are clamped to `AIM_MAX_RESIDUAL` (`ClampAimResidual`)
@@ -127,6 +130,17 @@ Main implementation files:
     and capture-wanted alone never emits a recenter.
   - `unfocus()` must call `unclip()` on Linux and macOS; otherwise Escape leaves the cursor
     hidden/locked.
+
+Idle-gate regression measurement (2026-09-05):
+`python tools/perf/aim-idle-gate-benchmark.py --compiler C:/msys64/mingw64/bin/g++.exe --baseline 205b134efedc623797401366c00b81082a6b133c`
+extracts the production admission gate from both revisions and compiles it with
+GCC `-O3`. All 256 admission/residual combinations and the idle-to-motion refresh
+passed. With zoom scaling enabled and retained residuals, each 10-million-call
+idle trial reduced sampling-helper calls from 10 million to zero. Five trials
+measured 0.985–1.055 ns/gate before and 0.537–0.542 ns/gate after. Sampling is a
+counted stub: these are isolated gate costs, not real guest RAM costs, CPU cycles,
+or end-to-end input latency. Gameplay, physical-device polling, and macOS/Linux
+runtime performance were not measured by this harness.
 
 ## 6. Native / Low-Latency Aim Injection Mechanisms (newer)
 

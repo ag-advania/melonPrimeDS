@@ -1364,23 +1364,21 @@ void DX12Renderer3D::InsertRasterScratchReuseBarriers(
     // while these large UAVs intentionally remain single-copy. Direct-queue
     // order serializes frame N before frame N+1; resource-scoped UAV barriers
     // make the cross-list visibility dependency explicit without a CPU fence.
-    ID3D12Resource* group0[] = {
+    // A single submission for all twelve. They are resource-scoped UAV
+    // barriers with no ordering between them, so splitting them into three
+    // calls only multiplied the per-call driver cost.
+    ID3D12Resource* const scratchBuffers[] = {
         TileBuffers[0].Get(), TileBuffers[1].Get(),
         TileBuffers[2].Get(), ResultBuffer.Get(),
-    };
-    DX12InsertUavBarriers(list, group0, static_cast<u32>(std::size(group0)));
-
-    ID3D12Resource* group1[] = {
         ResultWinnerBuffer.Get(), BinResultBuffer.Get(),
         WorkDescBuffer.Get(), BlendStateBuffer.Get(),
-    };
-    DX12InsertUavBarriers(list, group1, static_cast<u32>(std::size(group1)));
-
-    ID3D12Resource* group2[] = {
         XSpanSetupBuffer.Get(), IndirectArgsBuffer.Get(),
         FinalFBBuffer.Get(), Capture.GetSidecarBuffer(),
     };
-    DX12InsertUavBarriers(list, group2, static_cast<u32>(std::size(group2)));
+    static_assert(std::size(scratchBuffers) <= kDX12MaxBatchedBarriers,
+        "raster scratch reuse group must fit one batched barrier submission");
+    DX12InsertUavBarriers(list, scratchBuffers,
+        static_cast<u32>(std::size(scratchBuffers)));
 }
 
 bool DX12Renderer3D::BindFrameUavTable(ID3D12GraphicsCommandList* list)
@@ -2307,11 +2305,17 @@ void DX12Renderer3D::RenderFrame()
         }
         DX12Perf::AddCounter(DX12Perf::Counter::SpanUploadBytes, spanBytes);
 
-        DX12TransitionBuffer(list, YSpanSetupBuffer.Get(),
-            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
-        DX12TransitionBuffer(list, SetupIndicesBuffer.Get(),
-            D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
-        DX12TransitionBuffer(list, RenderPolygonBuffer.Get(),
+        // One barrier submission for the group rather than one per buffer:
+        // these three transitions are independent, so batching them is exactly
+        // equivalent and takes three driver calls out of the recorded list on
+        // each side of the copies.
+        ID3D12Resource* const spanUploadTargets[] = {
+            YSpanSetupBuffer.Get(), SetupIndicesBuffer.Get(), RenderPolygonBuffer.Get(),
+        };
+        static_assert(std::size(spanUploadTargets) <= kDX12MaxBatchedBarriers,
+            "span upload transition group must fit one batched barrier submission");
+        DX12TransitionBuffers(list, spanUploadTargets,
+            static_cast<u32>(std::size(spanUploadTargets)),
             D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST);
 
         list->CopyBufferRegion(YSpanSetupBuffer.Get(), 0, rasterFrame.YSpanSetupStaging.Get(), 0,
@@ -2321,11 +2325,8 @@ void DX12Renderer3D::RenderFrame()
         list->CopyBufferRegion(RenderPolygonBuffer.Get(), 0, rasterFrame.RenderPolygonStaging.Get(), 0,
             sizeof(RenderPolygon) * numPolygons);
 
-        DX12TransitionBuffer(list, YSpanSetupBuffer.Get(),
-            D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        DX12TransitionBuffer(list, SetupIndicesBuffer.Get(),
-            D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        DX12TransitionBuffer(list, RenderPolygonBuffer.Get(),
+        DX12TransitionBuffers(list, spanUploadTargets,
+            static_cast<u32>(std::size(spanUploadTargets)),
             D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     }
 

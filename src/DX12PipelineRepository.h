@@ -114,6 +114,44 @@ inline void DX12InsertUavBarrier(
     list->ResourceBarrier(1, &barrier);
 }
 
+// Upper bound on one batched barrier submission. Every current call site uses
+// a fixed-size group, and one ResourceBarrier() carrying the whole group costs
+// less command-list bookkeeping than submitting the same barriers one at a
+// time. The helpers below still split larger future groups instead of silently
+// dropping barriers.
+inline constexpr u32 kDX12MaxBatchedBarriers = 16u;
+
+// Transition several buffers between the same pair of states in one call.
+// The barriers inside a single submission are independent of each other, so
+// this is exactly equivalent to the individual calls it replaces.
+inline void DX12TransitionBuffers(
+    ID3D12GraphicsCommandList* list,
+    ID3D12Resource* const* resources,
+    u32 count,
+    D3D12_RESOURCE_STATES before,
+    D3D12_RESOURCE_STATES after)
+{
+    if (!resources || count == 0u)
+        return;
+    while (count > 0u)
+    {
+        const u32 batchCount = std::min<u32>(count, kDX12MaxBatchedBarriers);
+        D3D12_RESOURCE_BARRIER barriers[kDX12MaxBatchedBarriers]{};
+        for (u32 index = 0u; index < batchCount; ++index)
+        {
+            barriers[index].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            barriers[index].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+            barriers[index].Transition.pResource = resources[index];
+            barriers[index].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
+            barriers[index].Transition.StateBefore = before;
+            barriers[index].Transition.StateAfter = after;
+        }
+        list->ResourceBarrier(batchCount, barriers);
+        resources += batchCount;
+        count -= batchCount;
+    }
+}
+
 inline void DX12InsertUavBarriers(
     ID3D12GraphicsCommandList* list,
     ID3D12Resource* const* resources,
@@ -121,15 +159,20 @@ inline void DX12InsertUavBarriers(
 {
     if (!resources || count == 0u)
         return;
-    D3D12_RESOURCE_BARRIER barriers[4]{};
-    count = std::min<u32>(count, 4u);
-    for (u32 index = 0u; index < count; ++index)
+    while (count > 0u)
     {
-        barriers[index].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
-        barriers[index].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-        barriers[index].UAV.pResource = resources[index];
+        const u32 batchCount = std::min<u32>(count, kDX12MaxBatchedBarriers);
+        D3D12_RESOURCE_BARRIER barriers[kDX12MaxBatchedBarriers]{};
+        for (u32 index = 0u; index < batchCount; ++index)
+        {
+            barriers[index].Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
+            barriers[index].Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
+            barriers[index].UAV.pResource = resources[index];
+        }
+        list->ResourceBarrier(batchCount, barriers);
+        resources += batchCount;
+        count -= batchCount;
     }
-    list->ResourceBarrier(count, barriers);
 }
 
 inline void DX12TransitionBuffer(
