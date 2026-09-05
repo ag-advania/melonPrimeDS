@@ -224,6 +224,49 @@ composition. Keep the lifetime-fence scope intact unless a repeatable workload
 shows material wait contention; optimize the measured HUD work instead of
 weakening renderer/NDS pointer lifetime protection.
 
+### Presenter screen-layer reuse parity (2026-09-05)
+
+The cadence rule applies to presenter work as well, not only to guest reads: a
+60 Hz emulated frame is presented two or four times at 120/240 Hz, and anything
+derived from the renderer frame must be done once per *renderer frame*, not once
+per presentation.
+
+The Vulkan presenter already had that gate (`ReuseScreenLayerFromFrame()` behind
+a `sameRendererFrame` identity key). DX12 did not: every presentation re-ran
+`UploadLayerFromBuffer()` for each visible screen, which is a full
+`CopyTextureRegion` of the compositor output. At 8x internal resolution that is
+roughly 12 MB per screen per presentation, so a 240 Hz presentation of a 60 Hz
+frame paid it four times over.
+
+DX12 now keeps a `screenSource` identity key (renderer, buffer, serial, content
+generation, resource generation, size) plus a per-layer `copiedMask`, and the
+presenter tracks `CopiedContentValid` per layer. Two properties make this safe:
+
+- The mask is per screen layer, not per frame. A layout that shows one screen
+  and then both cannot reuse a bottom layer that still holds an older frame at
+  the same size.
+- Only the copy path reuses. `BeginFrame()` clears every layer's direct binding,
+  so a directly sampled frame must be rebound each presentation regardless --
+  that rebind is a few field writes, not a copy, and `UploadLayerFromTexture()`
+  clears `CopiedContentValid` so a later copy-path frame cannot reuse a texture
+  the direct path bypassed.
+
+Two ordering rules the ledger depends on, both found by review after the first
+implementation:
+
+- The ledger is committed *after* every screen-layer consumer has run, not after
+  the visible-screen loop. The GPU radar can be the only consumer of the bottom
+  screen -- a top-only layout with the radar enabled never lists it among the
+  visible screens -- so committing early meant that layout re-copied the bottom
+  screen on every presentation.
+- A directly sampled frame starts from an empty mask instead of inheriting the
+  previous one. `UploadLayerFromTexture()` clears `CopiedContentValid`, so an
+  inherited mask would have described layers whose textures are no longer what
+  gets sampled.
+
+`DX12Perf::Counter::PresentedScreenCopyBytes` is the measurement: it should now
+scale with emulated frames rather than with presentations.
+
 ### Game-frame cadence sweep (2026-09-05)
 
 Full sweep of the cadence rule across the Custom HUD and the input path, driven
