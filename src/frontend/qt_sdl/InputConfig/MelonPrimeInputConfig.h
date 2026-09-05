@@ -136,6 +136,14 @@ private slots:
 private:
     Ui::MelonPrimeInputConfig* ui;
     EmuInstance* emuInstance;
+
+    // The settings page is moved into InputConfigDialog after construction.
+    // Keep the viewport as a guarded QObject pointer instead of looking it up
+    // through the generated UI wrapper from eventFilter(). During dialog
+    // teardown the wrapper and the moved widget tree do not share a lifetime.
+    QPointer<QWidget> m_settingsViewport;
+    bool m_eventFilterActive = true;
+
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL) // scatter-budget-exempt: native Metal preset UI, not input dispatch
     QPushButton* metroidSetVideoQualityToMetal = nullptr;
     QPushButton* metroidSetVideoQualityToMetalCompute = nullptr;
