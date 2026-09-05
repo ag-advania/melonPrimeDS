@@ -1097,6 +1097,11 @@ namespace MelonPrime {
         uint64_t m_publishedInputGeneration = ~uint64_t{0};
 
         ZoomStatus::ZoomCapabilityCache m_zoomAimCanZoomCache{};
+        // The ROM publishes its scope state once per emulated frame, so the aim
+        // scale samples it once per frame too. Without this the state was
+        // re-read from guest memory on every input event that carried a delta.
+        const melonDS::u8* m_zoomAimSampledRam = nullptr;
+        uint32_t m_zoomAimSampledFrame = 0xFFFFFFFFu;
         // Native Biped Fire developer diagnostics. Sampled during the frame
         // by the overlay and the fire-edge diagnostic PC, reported once per
         // trigger pull on the following frame. Unconditionally present so the
@@ -1292,7 +1297,11 @@ namespace MelonPrime {
         void ApplyAimRuntimeConfig(const RuntimeConfigSnapshot& snapshot);
         void RecalcAimFixedPoint();
         void RecalcAimEffectiveFixedScale();
-        void UpdateZoomAimEffectiveScale();
+        // `authoritative` marks the call that runs at the point in the guest's
+        // own input update where the scope state is final: the native aim-delta
+        // hook. It re-samples even if the frame path already sampled earlier in
+        // the same frame, so zoom transitions are never seen a frame late.
+        void UpdateZoomAimEffectiveScale(bool authoritative = false);
         FORCE_INLINE void HandleGlobalHotkeys();
         void ProcessAimInputStylus(melonDS::NDS* nds);
         [[nodiscard]] bool SwitchWeapon(uint8_t weaponId);
