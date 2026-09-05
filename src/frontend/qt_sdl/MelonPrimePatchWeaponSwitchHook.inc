@@ -310,8 +310,7 @@
         // invulnerability window.
         if (UNLIKELY(IsFirstPostSpawnInput(nds, player))) {
             MP_WEAPON_SWITCH_LOG(
-                "WeaponSwitch SpawnBarrier: exec=%08X player=%08X pending=%u
-",
+                "WeaponSwitch SpawnBarrier: exec=%08X player=%08X pending=%u\n",
                 arm9ExecAddr,
                 player,
                 m_weaponSwitchPending.WeaponId);

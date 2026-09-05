@@ -37,6 +37,7 @@
 #include "MelonPrimeHudConfigState.h"
 #include "MelonPrimeHudDirtyRegions.h"
 #include "MelonPrimeHudPatchLifecycle.h"
+#include "MelonPrimeHudRadar.h"
 #include "MelonPrimeHudRender.h"
 #include "MelonPrimePerfProbe.h"
 // Canonical Custom HUD config keys. Included rather than mirrored as string
