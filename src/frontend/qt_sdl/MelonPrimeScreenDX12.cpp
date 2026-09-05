@@ -192,6 +192,28 @@ struct ScreenPanelDX12::DX12State
     std::uint32_t rendererSnapshotRevision = ~0u;
     melonDS::DX12Renderer* cachedDX12Renderer = nullptr;
     RendererOutputLease frameLease;
+    // Identity of the renderer frame whose pixels the screen layers already
+    // hold. A 60 Hz emulated frame is presented two or four times at 120/240 Hz,
+    // and re-copying the compositor output for each of those presentations is
+    // pure GPU bandwidth: at 8x internal resolution one screen is ~12 MB per
+    // copy. The Vulkan presenter has had this reuse gate; this is its DX12
+    // counterpart.
+    struct ScreenSourceKey
+    {
+        const void* renderer = nullptr;
+        const void* buffer = nullptr;
+        std::uint64_t serial = 0;
+        std::uint64_t generation = 0;
+        std::uint64_t resourceGeneration = 0;
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        // Which screen layers were actually copied from *this* frame. Matching
+        // the frame identity is not enough on its own: a layout that shows one
+        // screen and then both would otherwise reuse a bottom layer still
+        // holding an older frame at the same size.
+        std::uint8_t copiedMask = 0;
+        bool valid = false;
+    } screenSource;
     QMutex fallbackLock;
     QImage fallbackFrame;
     // The HUD layer is a retained full-surface texture updated in place, the
@@ -283,6 +305,8 @@ void ScreenPanelDX12::prepareForRendererTransition(
     // renderer. Do not let an identical visual key skip the first upload after
     // the transition.
     resetHudRetainedOverlay();
+    if (dx12)
+        dx12->screenSource = {};
     ++m_hudVisualRendererGeneration;
 #endif
 
@@ -351,6 +375,8 @@ bool ScreenPanelDX12::initDX12()
         return false;
 #ifdef MELONPRIME_CUSTOM_HUD
     resetHudRetainedOverlay();
+    if (dx12)
+        dx12->screenSource = {};
     ++m_hudVisualRendererGeneration;
 #endif
     publishDX12SurfaceSnapshotGuiThread();
@@ -784,7 +810,33 @@ void ScreenPanelDX12::drawScreen()
     if (gpuFrame)
         dx12->frameLease = std::move(outputLease);
 
+    // Is this the same renderer frame the screen layers were last filled from?
+    // Only the copy path can act on that: BeginFrame() drops the direct binding
+    // every frame, so a directly sampled frame has to be rebound regardless
+    // (which is a handful of field writes, not a copy).
+    const bool sameRendererFrame = gpuFrame
+        && dx12->screenSource.valid
+        && dx12->screenSource.renderer == renderer
+        && dx12->screenSource.buffer == gpuFrame->Buffer
+        && dx12->screenSource.serial == gpuFrame->Serial
+        && dx12->screenSource.generation == gpuFrame->Generation
+        && dx12->screenSource.resourceGeneration == gpuFrame->ResourceGeneration
+        && dx12->screenSource.width == gpuFrame->Width
+        && dx12->screenSource.height == gpuFrame->Height;
+
+    // Direct sampling bypasses the layer textures entirely, and
+    // UploadLayerFromTexture() clears their CopiedContentValid to say so. A
+    // copy mask must not survive into such a frame: it would claim layers hold
+    // copied content that is no longer what gets sampled.
+    const bool directSampledFrame = gpuFrame && gpuFrame->HasDirectSampledOutput();
+
     bool screenUploaded[2]{false, false};
+    // Carrying a bit forward is only valid while the frame identity still
+    // matches and the copy path is still the one filling the layers. A
+    // presentation that draws one screen must not lose the other screen's bit,
+    // which is why this starts from the previous mask rather than from zero.
+    std::uint8_t copiedMask = (sameRendererFrame && !directSampledFrame)
+        ? dx12->screenSource.copiedMask : 0u;
     for (int index = 0; index < screens; ++index)
     {
         const int kind = kinds[index] & 1;
@@ -795,11 +847,29 @@ void ScreenPanelDX12::drawScreen()
             : MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom;
         if (gpuFrame)
         {
-            screenUploaded[kind] = gpuFrame->HasDirectSampledOutput()
-                ? dx12->presenter.UploadLayerFromTexture(layer, *gpuFrame)
-                : dx12->presenter.UploadLayerFromBuffer(
+            if (!directSampledFrame)
+            {
+                const std::uint8_t kindBit = static_cast<std::uint8_t>(1u << kind);
+                if (sameRendererFrame
+                    && (copiedMask & kindBit) != 0
+                    && dx12->presenter.LayerHoldsCopiedContent(
+                        layer, gpuFrame->Width, gpuFrame->Height))
+                {
+                    // This layer was copied from this same frame already, and
+                    // its texture still holds those pixels.
+                    screenUploaded[kind] = true;
+                    copiedMask |= kindBit;
+                    continue;
+                }
+                screenUploaded[kind] = dx12->presenter.UploadLayerFromBuffer(
                     layer, *gpuFrame,
                     kind == 0 ? gpuFrame->TopOffset : gpuFrame->BottomOffset);
+                if (screenUploaded[kind])
+                    copiedMask |= kindBit;
+                continue;
+            }
+            screenUploaded[kind] =
+                dx12->presenter.UploadLayerFromTexture(layer, *gpuFrame);
         }
         else
         {
@@ -811,6 +881,12 @@ void ScreenPanelDX12::drawScreen()
                 static_cast<std::size_t>(sourceWidth) * sizeof(u32));
         }
     }
+
+    // The bookkeeping is deliberately NOT closed here. The GPU radar below can
+    // still be the only consumer of the bottom screen -- a top-only layout with
+    // the radar enabled never lists it among the visible screens -- and its copy
+    // has to enter the same ledger, or that layout re-copies the bottom screen
+    // on every presentation. It is committed once, after that block.
 
     const float viewportWidth = static_cast<float>(dx12->presenter.GetWidth());
     const float viewportHeight = static_cast<float>(dx12->presenter.GetHeight());
@@ -970,15 +1046,38 @@ void ScreenPanelDX12::drawScreen()
                 mpForHud->HudConfigState(),
                 emuInstance, mpForHud->GetCurrentRom(), mpForHud->GetPlayerPosition()))
         {
+            constexpr std::uint8_t kBottomBit = 0x2u;
+            if (!screenUploaded[1]
+                && !directSampledFrame
+                && sameRendererFrame
+                && (copiedMask & kBottomBit) != 0
+                && dx12->presenter.LayerHoldsCopiedContent(
+                    MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
+                    gpuFrame->Width, gpuFrame->Height))
+            {
+                // Same frame, already copied: the radar samples the retained
+                // bottom layer without another compositor copy.
+                screenUploaded[1] = true;
+            }
             if (!screenUploaded[1])
             {
-                screenUploaded[1] = gpuFrame->HasDirectSampledOutput()
-                    ? dx12->presenter.UploadLayerFromTexture(
-                        MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom, *gpuFrame)
-                    : dx12->presenter.UploadLayerFromBuffer(
+                if (directSampledFrame)
+                {
+                    screenUploaded[1] = dx12->presenter.UploadLayerFromTexture(
+                        MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom, *gpuFrame);
+                }
+                else
+                {
+                    screenUploaded[1] = dx12->presenter.UploadLayerFromBuffer(
                         MelonPrime::DX12SurfacePresenter::Layer::ScreenBottom,
                         *gpuFrame,
                         gpuFrame->BottomOffset);
+                    // Same ledger as the visible-screen loop: without this, a
+                    // top-only layout with the radar on re-copies the bottom
+                    // screen every presentation.
+                    if (screenUploaded[1])
+                        copiedMask |= kBottomBit;
+                }
             }
 
             const float anchorX = topMatrix[0] * m_radarAnchorDsX
@@ -1004,6 +1103,27 @@ void ScreenPanelDX12::drawScreen()
         }
     }
 #endif
+
+    // Every screen-layer consumer for this presentation has run. Remember the
+    // source only while the copy path is what filled those layers: a CPU frame
+    // or a directly sampled one leaves nothing that a later presentation of the
+    // same renderer frame could reuse.
+    if (copiedMask != 0 && gpuFrame)
+    {
+        dx12->screenSource.renderer = renderer;
+        dx12->screenSource.buffer = gpuFrame->Buffer;
+        dx12->screenSource.serial = gpuFrame->Serial;
+        dx12->screenSource.generation = gpuFrame->Generation;
+        dx12->screenSource.resourceGeneration = gpuFrame->ResourceGeneration;
+        dx12->screenSource.width = gpuFrame->Width;
+        dx12->screenSource.height = gpuFrame->Height;
+        dx12->screenSource.copiedMask = copiedMask;
+        dx12->screenSource.valid = true;
+    }
+    else
+    {
+        dx12->screenSource = {};
+    }
 
     QSize osdSize;
     bool osdUploaded = false;
