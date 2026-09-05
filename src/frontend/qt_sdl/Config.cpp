@@ -564,7 +564,7 @@ namespace Config
         {"ScreenSwap",     1, "Window0.ScreenSwap", true},
         {"ScreenSizing",   0, "Window0.ScreenSizing", true},
         {"IntegerScaling", 1, "Window0.IntegerScaling", true},
-        {"ScreenAspectTop",0, "Window0.ScreenAspectTop", true},
+        {"ScreenAspectTop",1, "Window0.ScreenAspectTop", true},
         {"ScreenAspectBot",0, "Window0.ScreenAspectBot", true},
 
     #ifdef MELONPRIME_DS
