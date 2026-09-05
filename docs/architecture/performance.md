@@ -283,6 +283,35 @@ performs is actually counted.
 first should now scale with emulated frames rather than presentations, and the
 second should rise on every extra presentation of one emulated frame.
 
+### Metal presenter parity (2026-09-05)
+
+Metal and Metal Compute share `ScreenPanelMetal`. Both native paths already
+sample the renderer-owned final texture array directly for visible screens and
+the radar, and hold the renderer output lease until presenter command-buffer
+completion. They have no corresponding per-presentation screen copy to remove.
+The developer CPU fallback continues to upload its buffers; pointer identity
+alone cannot establish that CPU framebuffer contents are unchanged.
+
+The retained HUD texture and dirty-region `replaceRegion` uploads were already
+present. Metal also binds the HUD pipeline, texture and sampler outside the
+region loop. The remaining per-region uniform binding and draw calls are now
+one inline uniform array and one instanced draw (at most eight regions, 384
+bytes). Each instance preserves its original rectangle and UVs. OSD, splash and
+radar continue to use instance zero through their ordinary single draws.
+
+Vulkan's layout-transition/copy batching and DX12's explicit resource-barrier
+batching do not map directly to this Metal presenter: its HUD uploads use shared
+texture `replaceRegion`, and there is no matching explicit barrier group in the
+Metal backends. No producer synchronization or output lease was removed.
+
+Validation on Intel Iris Plus Graphics 655: the supported Metal+Vulkan
+incremental build passed. An isolated GPU comparison compiled the old/new UI and
+radar pipelines and compared old separate HUD draws against the instanced draw
+for 1, 2 and 8 regions with both Y orientations: all six readbacks were byte
+identical. This is focused shader/composition evidence, not an in-game visual
+parity or performance measurement; gameplay and frame-time changes remain
+unverified.
+
 ### Game-frame cadence sweep (2026-09-05)
 
 Full sweep of the cadence rule across the Custom HUD and the input path, driven

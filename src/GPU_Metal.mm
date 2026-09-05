@@ -485,9 +485,15 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
             : std::max(1, settings.ScaleFactor));
     ScaleFactor = scale;
 
+    // Metal raster and Metal Compute use high-resolution coordinates as a
+    // backend contract. The 3D implementations still gate HiresPosition on
+    // ScaleFactor > 1, so forcing this value has no effect at native 1x.
+    // Metal raster's BetterPolygons center-fan path is likewise a backend
+    // contract. Metal Compute's production span path ignores this value; its
+    // nested raster fallback receives the same stable setting.
     ConfigureMetal3DRenderer(
         Rend3D.get(), settings.Threaded, scale,
-        settings.HiresCoordinates, settings.BetterPolygons);
+        true, true);
 
     // The compute wrapper keeps the validated Metal raster renderer as the
     // visible source. Treat the requested setting as authoritative and verify
@@ -502,7 +508,7 @@ void MetalRenderer::SetRenderSettings(RendererSettings& settings)
         // the first settings update without recreating the whole renderer.
         ConfigureMetal3DRenderer(
             Rend3D.get(), settings.Threaded, scale,
-            settings.HiresCoordinates, settings.BetterPolygons);
+            true, true);
         high3D = (__bridge id<MTLTexture>)Metal3DColorTarget(Rend3D.get());
     }
 

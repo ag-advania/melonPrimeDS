@@ -53,9 +53,11 @@ They are enabled only when MelonPrime::Metal::SupportsRequiredBaseline()
 returns true. When the baseline is unavailable, the UI reports the cached
 feature reason and does not write a Metal renderer selection.
 
-The Metal variants also set HiresCoordinates=true. This is intentional and
-should be included in an A/B comparison; otherwise a Metal/OpenGL comparison
-is not just a renderer comparison.
+Metal raster and Metal Compute force HiresCoordinates=true in the renderer and
+lock the setting in Video Settings. At 1x the renderer retains the ordinary
+coordinate branch; the forced mode applies only when the internal scale is
+above 1x. Metal raster also forces Improved polygon splitting on and locks that
+control; Metal Compute's normal span path does not consume polygon splitting.
 
 ## What the names mean
 

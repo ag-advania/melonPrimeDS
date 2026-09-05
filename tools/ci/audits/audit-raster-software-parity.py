@@ -121,6 +121,7 @@ def main() -> int:
     metal_depth = read("src/GPU3D_MetalComputeDepthBlendShaders.inc")
     metal_final = read("src/GPU3D_MetalComputeFinalPassShaders.inc")
     metal_wrapper = read("src/GPU3D_Metal.mm")
+    metal_backend = read("src/GPU_Metal.mm")
     video_settings = read("src/frontend/qt_sdl/VideoSettingsDialog.cpp")
     vk_wrapper = read("src/GPU_Vulkan.cpp")
     dx_wrapper = read("src/GPU_DX12.cpp")
@@ -427,18 +428,24 @@ def main() -> int:
             "Metal overlapping right-edge coverage origin", failures)
     require(metal_cpp, "State->HiresCoordinates && State->ScaleFactor > 1",
             "Metal native quantized coordinate selection", failures)
+    require(metal_wrapper, "HiresCoordinates && ScaleFactor > 1",
+            "Metal raster native quantized coordinate selection", failures)
     require(metal_cpp, "RasterReference.SetBetterPolygons(betterPolygons);",
             "Metal Compute polygon option is fallback-only", failures)
     forbid(metal_cpp, "State->BetterPolygons",
            "Metal Compute production polygon-splitting state", failures)
     require(video_settings,
-            "ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRasterRenderer);",
-            "Metal Compute polygon-splitting UI gate", failures)
+            "ui->cbBetterPolygons->setEnabled(openGLRenderer);",
+            "Metal polygon-splitting forced UI gate", failures)
+    require(video_settings, "RendererForcesBetterPolygons",
+            "Metal polygon-splitting renderer policy", failures)
+    require(video_settings, "MetalBetterPolygonsDescription",
+            "Metal polygon-splitting UI explanation", failures)
     require(video_settings, "MetalComputeBetterPolygonsDescription",
             "Metal Compute polygon-splitting UI explanation", failures)
     require(video_settings,
-            "computeRenderer || vulkanRenderer || dx12Renderer;",
-            "compute backend high-resolution-coordinate force", failures)
+            "computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer;",
+            "native backend high-resolution-coordinate force", failures)
     require(video_settings, "ui->cbxComputeHiResCoords->setChecked(true);",
             "compute backend high-resolution-coordinate checked UI", failures)
     require(video_settings,
@@ -450,6 +457,9 @@ def main() -> int:
             "Vulkan forced high-resolution coordinates", failures)
     require(dx_wrapper, "SetRenderSettings(settings.ScaleFactor, true)",
             "DX12 forced high-resolution coordinates", failures)
+    require(metal_backend,
+            "Rend3D.get(), settings.Threaded, scale,\n        true, true",
+            "Metal forced high-resolution coordinates and polygon splitting", failures)
     require(gl_cpp, "HiresCoordinates && ScaleFactor > 1",
             "OpenGL Compute native-1x coordinate bypass", failures)
     require(vk_cpp, "HiresCoordinates && ScaleFactor > 1",
