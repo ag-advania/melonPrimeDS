@@ -2089,11 +2089,6 @@ void ScreenPanelVulkan::drawScreenFrame()
                 rowBytes);
         }
     }
-    if (screenFrameReused)
-    {
-        VulkanPerf::AddCounter(
-            VulkanPerf::Counter::VulkanScreenFrameReuseCount);
-    }
 
 #ifdef MELONPRIME_CUSTOM_HUD
     // The bottom screen at internal resolution is the radar's source, exactly
@@ -2145,11 +2140,33 @@ void ScreenPanelVulkan::drawScreenFrame()
             // bottom QImage to the colour-key pass independently of the
             // visible screen list; keep that same contract for the native
             // Vulkan path instead of leaving ScreenBottom empty (or stale).
+            // Same reuse gate as the visible-screen loop above. Without it the
+            // most common layout -- top screen only with the radar on -- never
+            // lists the bottom screen among the visible screens, so it would
+            // re-upload the whole bottom screen on every presentation of one
+            // emulated frame.
+            constexpr u8 kBottomLayerBit = 1u << 1;
+            if (!screenUploaded[1]
+                && sameRendererFrame
+                && (vulkan->retainedScreenLayerMask & kBottomLayerBit) != 0
+                && vulkan->presenter.ReuseScreenLayerFromFrame(
+                    MelonPrime::VulkanPresenter::Layer::ScreenBottom, *gpuFrame))
+            {
+                screenUploaded[1] = true;
+                screenFrameReused = true;
+                if (directSampledFrame)
+                {
+                    // A retained direct image sampled by this presentation too:
+                    // hold the renderer output slot for this presenter frame,
+                    // exactly as the visible-screen reuse path does.
+                    retainRendererOutputForFrame();
+                }
+            }
             if (!screenUploaded[1])
             {
                 prepareDirectDescriptors();
                 retainRendererOutputForFrame();
-                screenUploaded[1] = gpuFrame->HasDirectSampledOutput()
+                screenUploaded[1] = directSampledFrame
                     ? vulkan->presenter.UploadLayerFromImage(
                         MelonPrime::VulkanPresenter::Layer::ScreenBottom, *gpuFrame)
                     : vulkan->presenter.UploadLayerFromBuffer(
@@ -2271,6 +2288,12 @@ void ScreenPanelVulkan::drawScreenFrame()
         }
     }
 #endif
+
+    if (screenFrameReused)
+    {
+        VulkanPerf::AddCounter(
+            VulkanPerf::Counter::VulkanScreenFrameReuseCount);
+    }
 
     if (gpuFrame)
     {

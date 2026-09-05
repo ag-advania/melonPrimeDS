@@ -264,8 +264,24 @@ implementation:
   inherited mask would have described layers whose textures are no longer what
   gets sampled.
 
-`DX12Perf::Counter::PresentedScreenCopyBytes` is the measurement: it should now
-scale with emulated frames rather than with presentations.
+Checking Vulkan against the same two rules found it correct on both: its ledger
+is committed after the radar block, and its layer mask is rederived every frame
+by asking the presenter which layers are retainable rather than carried forward.
+That is why the DX12 port had the bugs and Vulkan did not -- the port deviated
+from that shape.
+
+Vulkan did share the *missed optimisation*, though: its radar path uploaded the
+bottom screen unconditionally, so a top-only layout with the radar on re-uploaded
+it every presentation. It now takes the same reuse gate as its visible-screen
+loop (`sameRendererFrame` + retained layer mask + `ReuseScreenLayerFromFrame`,
+retaining the renderer output slot when the frame is directly sampled), and its
+`VulkanScreenFrameReuseCount` telemetry moved after the radar so the reuse it
+performs is actually counted.
+
+`DX12Perf::Counter::PresentedScreenCopyBytes` and
+`VulkanPerf::Counter::VulkanScreenFrameReuseCount` are the measurements: the
+first should now scale with emulated frames rather than presentations, and the
+second should rise on every extra presentation of one emulated frame.
 
 ### Game-frame cadence sweep (2026-09-05)
 
