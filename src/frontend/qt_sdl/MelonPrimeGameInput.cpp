@@ -108,20 +108,19 @@ namespace MelonPrime {
 
         m_zoomAimScaleQ14 = s.zoomAimScaleQ14;
         m_enableZoomAimScale = s.zoomAimScaleEnable;
+        // A settings change must not wait for this frame's cached sample.
+        m_zoomAimSampledRam = nullptr;
+        m_zoomAimSampledFrame = 0xFFFFFFFFu;
         if (!m_enableZoomAimScale) {
             if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)) {
                 m_activeZoomAimScaleQ14 = static_cast<uint32_t>(AIM_ONE_FP);
                 RecalcAimEffectiveFixedScale();
-                m_aimResidualX = 0;
-                m_aimResidualY = 0;
             }
         }
         else if (m_activeZoomAimScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP)
                  && m_activeZoomAimScaleQ14 != m_zoomAimScaleQ14) {
             m_activeZoomAimScaleQ14 = m_zoomAimScaleQ14;
             RecalcAimEffectiveFixedScale();
-            m_aimResidualX = 0;
-            m_aimResidualY = 0;
         }
 
         ApplyAimConfigSnapshot(s.aimConfig);
@@ -999,7 +998,7 @@ namespace MelonPrime {
             ZoomStatus::ApplyQ14Scale(m_aimFixedScaleY, m_activeZoomAimScaleQ14));
     }
 
-    void MelonPrimeCore::UpdateZoomAimEffectiveScale()
+    void MelonPrimeCore::UpdateZoomAimEffectiveScale(bool authoritative)
     {
         if (LIKELY(!m_enableZoomAimScale))
             return;
@@ -1008,6 +1007,23 @@ namespace MelonPrime {
 #ifdef MELONPRIME_DS
         melonDS::NDS* nds = emuInstance ? emuInstance->getNDS() : nullptr;
         const melonDS::u8* ram = nds ? nds->MainRAM : nullptr;
+        const uint32_t gameFrame = nds ? nds->NumFrames : 0xFFFFFFFFu;
+        // The scope flag is guest state the ROM updates once per emulated
+        // frame, so re-reading it for every input event that carried a delta
+        // cannot see anything new -- it just puts a guest-memory pointer chase
+        // on the aim path. Sample once per frame, exactly like the HUD's zoom
+        // reticle does. The native aim-delta hook still forces a re-sample
+        // because it runs at the point in the guest's update where the flag is
+        // final, so a zoom transition is never picked up a frame late.
+        if (!authoritative
+            && ram == m_zoomAimSampledRam
+            && gameFrame == m_zoomAimSampledFrame)
+        {
+            return;
+        }
+        m_zoomAimSampledRam = ram;
+        m_zoomAimSampledFrame = gameFrame;
+
         const ZoomStatus::ScopeState scope =
             ZoomStatus::ReadScopeState(
                 ram, m_currentRom.hookLocalPlayerPtrGlobal, m_zoomAimCanZoomCache);
@@ -1015,14 +1031,24 @@ namespace MelonPrime {
             m_zoomAimCanZoomCache = {};
         if (scope.valid && scope.rawVisible)
             nextScaleQ14 = m_zoomAimScaleQ14;
+        MelonPrimePerf::RecordZoomAimSample(
+            nextScaleQ14 != static_cast<uint32_t>(AIM_ONE_FP),
+            nextScaleQ14 != m_activeZoomAimScaleQ14);
+#else
+        (void)authoritative;
 #endif
         if (LIKELY(nextScaleQ14 == m_activeZoomAimScaleQ14))
             return;
 
         m_activeZoomAimScaleQ14 = nextScaleQ14;
         RecalcAimEffectiveFixedScale();
-        m_aimResidualX = 0;
-        m_aimResidualY = 0;
+        // The residual is deliberately kept. It is fractional carry expressed in
+        // *output* aim units, not in input units, so a change to the input scale
+        // does not invalidate it. Zeroing it here discarded up to a whole output
+        // unit of real mouse movement on every scope in and scope out -- which
+        // is felt as the aim dropping input at exactly the moment precision
+        // matters most, and it is the only thing this setting did differently
+        // from the 100% case where the scale never changes.
     }
 
     // =========================================================================

@@ -440,6 +440,11 @@ protected:
     // composited back over it even on a frame where nothing changed.
     HudDirtyRegionSet m_hudDirtyRegions;
     HudDirtyRegionSet m_hudContentRegions;
+    // Regions a retained GPU HUD layer still owes the overlay. A frame whose
+    // upload could not be recorded -- no open presenter frame, or a staging
+    // allocation that did not fit -- must not drop its dirt, or the layer keeps
+    // showing pixels the overlay no longer has.
+    HudDirtyRegionSet m_hudPendingUpload;
     // False whenever this panel cannot vouch for the retained overlay pixels:
     // first frame, resize, renderer switch, or a lifecycle reset. The renderer
     // then starts from a full recompose instead of trusting per-element bounds.
@@ -461,6 +466,7 @@ protected:
         m_hudOverlayRetained = false;
         m_hudDirtyRegions.Reset();
         m_hudContentRegions.Reset();
+        m_hudPendingUpload.Reset();
     }
 #endif
 

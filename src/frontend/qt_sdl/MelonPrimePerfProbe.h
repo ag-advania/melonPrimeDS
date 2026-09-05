@@ -267,6 +267,12 @@ struct State {
     // spending those frames on the quantised fallback.
     uint64_t cntCrosshairProjectionAccepted = 0;
     uint64_t cntCrosshairProjectionRejected = 0;
+    // Zoom aim scale: how often the guest scope state is actually sampled, and
+    // how often it says the multiplier is live. "Active while the player is not
+    // scoped" is the question these answer.
+    uint64_t cntZoomAimSamples = 0;
+    uint64_t cntZoomAimActiveSamples = 0;
+    uint64_t cntZoomAimTransitions = 0;
 
     static constexpr uint32_t kInputMetricCap = 2048;
     Uint64 inputMetricTicks[
@@ -1287,6 +1293,18 @@ inline void MaybeReport1Hz()
 
     ReportExplicitLatency(st, reportSeq);
     ReportInputMetricSummary(st, reportSeq);
+    if (st.cntZoomAimSamples != 0)
+    {
+        std::fprintf(stderr,
+            "[MelonPrimePerf] zoom_aim session_id=%s instance_id=%llu report_seq=%llu "
+            "samples=%llu active=%llu transitions=%llu\n",
+            MelonPrimePerfSession::Text(),
+            static_cast<unsigned long long>(st.instanceId),
+            static_cast<unsigned long long>(reportSeq),
+            static_cast<unsigned long long>(st.cntZoomAimSamples),
+            static_cast<unsigned long long>(st.cntZoomAimActiveSamples),
+            static_cast<unsigned long long>(st.cntZoomAimTransitions));
+    }
     ReportHudPhaseSummary(st, reportSeq);
     ReportHudElementSummary(st, reportSeq);
 
@@ -1833,6 +1851,18 @@ inline void CountSurfaceVisibilityStateChange()
         ++S().cntSurfaceVisibilityStateChanges;
 }
 
+inline void RecordZoomAimSample(bool active, bool transitioned)
+{
+    if (!S().frameOpen)
+        return;
+    State& st = S();
+    ++st.cntZoomAimSamples;
+    if (active)
+        ++st.cntZoomAimActiveSamples;
+    if (transitioned)
+        ++st.cntZoomAimTransitions;
+}
+
 inline void CountCrosshairProjection(bool accepted)
 {
     if (!S().frameOpen)
@@ -2072,6 +2102,7 @@ inline void CountHudElementImageDraw() {}
 inline void CountStageMatrixFullValidation() {}
 inline void CountStageMatrixValidationRetry() {}
 inline void CountSurfaceVisibilityStateChange() {}
+inline void RecordZoomAimSample(bool, bool) {}
 inline void CountCrosshairProjection(bool) {}
 inline void CountRendererFastCacheRefresh() {}
 inline void ShutdownReport() {}
