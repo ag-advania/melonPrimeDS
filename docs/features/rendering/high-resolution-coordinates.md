@@ -20,27 +20,24 @@ texture filter, anti-aliasing mode, or Custom HUD coordinate option.
 | Renderer | UI state | Effective policy |
 | --- | --- | --- |
 | OpenGL Compute | checked and disabled | forced on |
+| Metal raster | checked and disabled | forced on |
+| Metal compute | checked and disabled | forced on |
 | Vulkan | checked and disabled | forced on |
 | DirectX 12 | checked and disabled | forced on |
-| Metal raster | enabled control | user value |
-| Metal compute | enabled control | user value |
 | classic OpenGL | control disabled | this compute/Metal coordinate path is not exposed |
 | software | control disabled | not consumed by the software renderer |
 
-The forced policy is intentional for the three compute-style backends used by
-MelonPrimeDS. `VideoSettingsDialog::RendererForcesHiresCoordinates()` returns
-true for OpenGL Compute, Vulkan, and DX12. Renderer selection then checks the
-box, disables it, and writes `true` to config. The rendering paths also receive
-the effective value independently; UI disablement is not the only enforcement
-layer.
-
-Metal remains the comparison/user-choice path. Both Metal raster and Metal
-compute store the flag and use it only above 1x.
+The forced policy is intentional for every native high-resolution backend used
+by MelonPrimeDS. `VideoSettingsDialog::RendererForcesHiresCoordinates()` returns
+true for OpenGL Compute, Metal raster, Metal Compute, Vulkan, and DX12. Renderer
+selection then checks the box, disables it, and writes `true` to config. The
+rendering paths also receive the effective value independently; UI disablement
+is not the only enforcement layer.
 
 ## Rasterizer semantics
 
-OpenGL Compute, Vulkan, and DX12 use the same branch while building polygon
-edge positions:
+OpenGL Compute, Metal raster, Metal Compute, Vulkan, and DX12 use the same
+branch while building polygon edge positions:
 
 ```cpp
 if (HiresCoordinates && ScaleFactor > 1) {
@@ -71,7 +68,8 @@ DX12 explicitly update it even when the scale is unchanged, then return without
 rebuilding resolution-sized resources. This permits a live policy/value update
 without treating it as a renderer restart or scale change.
 
-The Metal implementations likewise retain their own per-renderer flag. Visual
+The Metal implementations likewise retain their own per-renderer flag, but the
+Metal backend wrapper always supplies the effective value `true`. Visual
 validation must therefore identify both backend and scale; reading the config
 alone does not prove which coordinate branch drew a frame.
 
@@ -87,8 +85,8 @@ the snapshot and live config to `true`. As a result:
 - the state-change slot writes `forced || checked` as an additional guard; and
 - Cancel restores the normalised `true`, not the stale pre-contract `false`.
 
-Switching to Metal enables the box and allows a deliberate user value. Switching
-back to OpenGL Compute, Vulkan, or DX12 immediately checks and normalises it.
+Switching to Metal immediately checks and locks the box. Switching back to
+OpenGL Compute, Vulkan, or DX12 keeps the same forced value.
 
 MelonPrime's renderer preset handlers for the forced backends also set
 `3D.GL.HiresCoordinates=true`, so choosing a preset and using the general Video
@@ -105,11 +103,12 @@ Settings dialog converge on the same config state.
 | `src/GPU_OpenGL.cpp` | force `true` when forwarding to OpenGL Compute |
 | `src/GPU_Vulkan.cpp` | force `true` when forwarding to Vulkan 3D |
 | `src/GPU_DX12.cpp` | force `true` when forwarding to DX12 3D |
+| `src/GPU_Metal.mm` | force `true` when forwarding to Metal 3D |
 | `src/GPU3D_Compute.cpp` | OpenGL Compute storage and edge-position branch |
 | `src/GPU3D_Vulkan.cpp` | Vulkan storage and edge-position branch |
 | `src/GPU3D_DX12.cpp` | DX12 storage and edge-position branch |
-| `src/GPU3D_Metal.mm` | Metal raster user-controlled branch |
-| `src/GPU3D_MetalCompute.mm` | Metal compute user-controlled branch |
+| `src/GPU3D_Metal.mm` | Metal raster storage and edge-position branch |
+| `src/GPU3D_MetalCompute.mm` | Metal compute storage and edge-position branch |
 
 This is host renderer behaviour and has no ROM patch address table. mphCodex is
 therefore not the authority for this setting.
@@ -120,14 +119,14 @@ therefore not the authority for this setting.
   disabled, and config is true.
 - Seed config false, open each forced backend, cancel, and confirm the value
   remains normalised true.
-- Switch from a forced backend to Metal and confirm the control becomes
-  editable; toggle it live at 2x or higher.
-- Compare enabled/disabled Metal output at 1x: both must take the ordinary
-  coordinate branch.
+- Open Video Settings on Metal raster and Metal Compute: the box is checked and
+  disabled, and config is true.
+- Compare Metal output at 1x and above: 1x must take the ordinary coordinate
+  branch while higher scales use the forced high-resolution branch.
 - Compare at 2x and a high scale using geometry that exposes subpixel vertex
   movement; record backend, scale, and frame evidence.
-- Change only the coordinate value with scale unchanged and confirm the backend
-  does not rebuild scale-sized resources.
+- Confirm the disabled control cannot change the forced value or trigger a
+  scale-resource rebuild.
 - Confirm classic OpenGL/software do not imply support merely because the
   global config key exists.
 - Keep source audit, successful backend build, backend initialization, and

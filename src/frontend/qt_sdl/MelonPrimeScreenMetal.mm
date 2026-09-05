@@ -148,7 +148,9 @@ NSString* const kUiShaderSource =
      "    float4 uvRect;\n"
      "};\n"
      "vertex UiVOut mp_ui_vs(UiVertexIn in [[stage_in]],\n"
-     "                        constant UiUniforms& u [[buffer(1)]]) {\n"
+     "                        constant UiUniforms* instances [[buffer(1)]],\n"
+     "                        uint instanceId [[instance_id]]) {\n"
+     "    constant UiUniforms& u = instances[instanceId];\n"
      "    float2 p = u.rect.xy + in.position * u.rect.zw;\n"
      "    p = ((p * 2.0) / u.screenSize) - 1.0;\n"
      "    p.y *= u.yFlipSign;\n"
@@ -1541,8 +1543,9 @@ void ScreenPanelMetal::drawScreen()
                 // On a HUD-only frame the surface is mostly transparent, and
                 // blending it whole costs fragment and framebuffer bandwidth
                 // proportional to the window rather than to the HUD. Composite
-                // one occupied region at a time instead, each sampling its own
-                // slice of the texture through uvRect.
+                // occupied regions in one instanced draw, each sampling its own
+                // slice of the texture through uvRect. The bounded stack array
+                // avoids per-region bindings/draws and per-frame allocation.
                 if (hudOnlyUiOverlay && !m_hudContentRegions.IsEmpty()
                     && logicalW > 0 && logicalH > 0)
                 {
@@ -1550,6 +1553,10 @@ void ScreenPanelMetal::drawScreen()
                     compositeRegions.IntersectWith(QRect(0, 0, logicalW, logicalH));
                     const float texW = static_cast<float>(logicalW);
                     const float texH = static_cast<float>(logicalH);
+                    UiUniforms instances[HudDirtyRegionSet::kMaxRegions];
+                    static_assert(sizeof(instances) < 4096,
+                        "HUD instance uniforms must fit Metal inline vertex bytes");
+                    NSUInteger instanceCount = 0;
                     for (int regionIndex = 0;
                          regionIndex < compositeRegions.Count(); ++regionIndex)
                     {
@@ -1564,12 +1571,17 @@ void ScreenPanelMetal::drawScreen()
                         uiUniforms.uvRect[1] = static_cast<float>(region.y()) / texH;
                         uiUniforms.uvRect[2] = static_cast<float>(region.width()) / texW;
                         uiUniforms.uvRect[3] = static_cast<float>(region.height()) / texH;
-                        [encoder setVertexBytes:&uiUniforms
-                                          length:sizeof(uiUniforms)
+                        instances[instanceCount++] = uiUniforms;
+                    }
+                    if (instanceCount != 0)
+                    {
+                        [encoder setVertexBytes:instances
+                                          length:sizeof(UiUniforms) * instanceCount
                                          atIndex:1];
                         [encoder drawPrimitives:MTLPrimitiveTypeTriangle
                                      vertexStart:0
-                                     vertexCount:6];
+                                     vertexCount:6
+                                   instanceCount:instanceCount];
                     }
                 }
                 else

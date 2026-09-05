@@ -132,9 +132,11 @@ The eight rasterise kinds are `NoTexture`, `NoTextureToon`, `NoTextureHighlight`
 ### Polygon geometry settings
 
 Vulkan deliberately does not consume `3D.GL.BetterPolygons`. That option is a
-center-fan workaround for classic OpenGL and native Metal, where an N-sided DS
+center-fan workaround for classic OpenGL and native Metal raster, where an N-sided DS
 polygon must first be split into GPU triangles and the new internal edges can
-change interpolation. The Vulkan compute rasterizer performs no such split:
+change interpolation. Metal raster now enables this workaround unconditionally
+in its backend and locks the setting in Video Settings. The Vulkan compute
+rasterizer performs no such split:
 `BuildPolygons()` walks the original polygon's left and right edges and creates
 one X span per scanline, matching `GPU3D_Compute`. Adding the center-fan path
 would replace the compute renderer's native polygon interpolation rather than

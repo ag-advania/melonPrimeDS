@@ -106,6 +106,10 @@ bool RendererForcesHiresCoordinates(int renderer)
 {
     if (renderer == renderer3D_OpenGLCompute)
         return true;
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    if (renderer == renderer3D_Metal || renderer == renderer3D_MetalCompute)
+        return true;
+#endif
 #if defined(MELONPRIME_ENABLE_VULKAN)
     if (renderer == renderer3D_Vulkan)
         return true;
@@ -117,6 +121,16 @@ bool RendererForcesHiresCoordinates(int renderer)
     return false;
 }
 
+bool RendererForcesBetterPolygons(int renderer)
+{
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    return renderer == renderer3D_Metal;
+#else
+    (void)renderer;
+    return false;
+#endif
+}
+
 } // namespace
 #endif
 
@@ -124,12 +138,26 @@ bool RendererForcesHiresCoordinates(int renderer)
 namespace
 {
 
+QString MetalBetterPolygonsDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Metal raster always enables Improved polygon splitting for DS polygons "
+        "with more than three vertices.");
+}
+
 QString MetalComputeBetterPolygonsDescription()
 {
     return MelonPrime::UiText::Tr(
         "Improved polygon splitting does not affect Metal Compute's normal rendering "
         "path because it processes DS polygons directly without splitting them into "
         "triangles.");
+}
+
+QString MetalHiresCoordinatesDescription()
+{
+    return MelonPrime::UiText::Tr(
+        "Metal and Metal Compute always use the DS GPU's high-resolution vertex "
+        "coordinates above 1x internal resolution.");
 }
 
 } // namespace
@@ -223,10 +251,21 @@ void VideoSettingsDialog::setEnabled()
 
     // MELONPRIME_METAL_RENDER_OPTIONS_V1
     // BetterPolygons is a center-fan workaround for renderers that must split
-    // DS polygons into GPU triangles. Metal raster uses it, while Metal
+    // DS polygons into GPU triangles. Metal raster always uses it, while Metal
     // Compute processes the original polygon as scanline spans and has no
     // triangle-splitting stage to improve.
-    ui->cbBetterPolygons->setEnabled(openGLRenderer || metalRasterRenderer);
+#ifdef MELONPRIME_DS
+    const bool forceBetterPolygons = RendererForcesBetterPolygons(renderer);
+#else
+    const bool forceBetterPolygons = false;
+#endif
+    if (forceBetterPolygons)
+    {
+        const QSignalBlocker blocker(ui->cbBetterPolygons);
+        ui->cbBetterPolygons->setChecked(true);
+        cfg.SetBool("3D.GL.BetterPolygons", true);
+    }
+    ui->cbBetterPolygons->setEnabled(openGLRenderer);
 
 #ifdef MELONPRIME_DS
     constexpr const char* originalBetterPolygonsHelp =
@@ -239,6 +278,8 @@ void VideoSettingsDialog::setEnabled()
     QString betterPolygonsDescription =
         ui->cbBetterPolygons->property(originalBetterPolygonsHelp).toString();
 #if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    if (metalRasterRenderer)
+        betterPolygonsDescription = MetalBetterPolygonsDescription();
     if (metalComputeRenderer)
         betterPolygonsDescription = MetalComputeBetterPolygonsDescription();
 #endif
@@ -254,12 +295,12 @@ void VideoSettingsDialog::setEnabled()
     ui->cbBetterPolygons->setWhatsThis(betterPolygonsDescription);
 #endif
 
-    // OpenGL Compute, Vulkan and DirectX 12 always use high-resolution
+    // OpenGL Compute, Metal, Vulkan and DirectX 12 always use high-resolution
     // coordinates above 1x. Reflect that renderer contract in the shared
     // control and configuration; their rendering paths also force the value
     // independently of this UI.
     const bool forceHiresCoordinates =
-        computeRenderer || vulkanRenderer || dx12Renderer;
+        computeRenderer || metalRenderer || vulkanRenderer || dx12Renderer;
     if (forceHiresCoordinates)
     {
         const QSignalBlocker blocker(ui->cbxComputeHiResCoords);
@@ -285,6 +326,10 @@ void VideoSettingsDialog::setEnabled()
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
     if (dx12Renderer)
         hiresCoordinatesDescription = DX12HiresCoordinatesDescription();
+#endif
+#if defined(__APPLE__) && defined(MELONPRIME_ENABLE_METAL)
+    if (metalRenderer)
+        hiresCoordinatesDescription = MetalHiresCoordinatesDescription();
 #endif
     ui->cbxComputeHiResCoords->setToolTip(hiresCoordinatesDescription);
     ui->cbxComputeHiResCoords->setWhatsThis(hiresCoordinatesDescription);
@@ -412,6 +457,11 @@ VideoSettingsDialog::VideoSettingsDialog(QWidget* parent) : QDialog(parent), ui(
     {
         oldHiresCoordinates = true;
         cfg.SetBool("3D.GL.HiresCoordinates", true);
+    }
+    if (RendererForcesBetterPolygons(oldRenderer))
+    {
+        oldGLBetterPolygons = true;
+        cfg.SetBool("3D.GL.BetterPolygons", true);
     }
 #endif
 #if defined(MELONPRIME_DS) && (defined(MELONPRIME_ENABLE_VULKAN) \
@@ -973,7 +1023,18 @@ void VideoSettingsDialog::on_cbxGLResolution_currentIndexChanged(int idx)
 void VideoSettingsDialog::on_cbBetterPolygons_stateChanged(int state)
 {
     auto& cfg = emuInstance->getGlobalConfig();
-    cfg.SetBool("3D.GL.BetterPolygons", (state != 0));
+    const bool forced =
+#ifdef MELONPRIME_DS
+        RendererForcesBetterPolygons(cfg.GetInt("3D.Renderer"));
+#else
+        false;
+#endif
+    if (forced && state == 0)
+    {
+        const QSignalBlocker blocker(ui->cbBetterPolygons);
+        ui->cbBetterPolygons->setChecked(true);
+    }
+    cfg.SetBool("3D.GL.BetterPolygons", forced || state != 0);
 
     emit updateVideoSettings(false);
 }
