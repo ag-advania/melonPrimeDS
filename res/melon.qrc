@@ -18,13 +18,6 @@
 		<file alias="mph-icon-bombs1">assets/bombs/bombs_1.svg</file>
 		<file alias="mph-icon-bombs0">assets/bombs/bombs_0.svg</file>
 		<file alias="mph-icon-radar-frame">assets/radar/Radar.svg</file>
-		<file alias="mph-scoreboard-hunter-0">assets/scoreboard/Hunter_0_Samus.png</file>
-		<file alias="mph-scoreboard-hunter-1">assets/scoreboard/Hunter_1_Kanden.png</file>
-		<file alias="mph-scoreboard-hunter-2">assets/scoreboard/Hunter_2_Trace.png</file>
-		<file alias="mph-scoreboard-hunter-3">assets/scoreboard/Hunter_3_Sylux.png</file>
-		<file alias="mph-scoreboard-hunter-4">assets/scoreboard/Hunter_4_Noxus.png</file>
-		<file alias="mph-scoreboard-hunter-5">assets/scoreboard/Hunter_5_Spire.png</file>
-		<file alias="mph-scoreboard-hunter-6">assets/scoreboard/Hunter_6_Weavel.png</file>
 		<file alias="mph-scoreboard-hunter-0-p1">assets/scoreboard/hunter_icons/Hunter_0_Samus_p1.png</file>
 		<file alias="mph-scoreboard-hunter-0-p2">assets/scoreboard/hunter_icons/Hunter_0_Samus_p2.png</file>
 		<file alias="mph-scoreboard-hunter-0-p3">assets/scoreboard/hunter_icons/Hunter_0_Samus_p3.png</file>
