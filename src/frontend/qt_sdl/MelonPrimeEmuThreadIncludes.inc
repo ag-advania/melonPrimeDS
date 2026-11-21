@@ -8,6 +8,6 @@
 #include "Screen.h"
 #endif
 #ifdef _WIN32
-#include "MelonPrimeRawWinInternal.h"  // P-11: WinInternal::SetHighTimerResolution()
+#include "MelonPrimeRawWinInternal.h"  // Windows API helper retained
 #endif
 #endif // MELONPRIME_DS

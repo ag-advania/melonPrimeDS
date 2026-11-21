@@ -431,8 +431,8 @@ void EmuThread::run()
         // P-12: Precision Hybrid Sleep+Spin Limiter
         // SDL_Delay has ±1-15ms jitter (depending on timer resolution).
         // Hybrid: SDL_Delay for bulk wait, then QPC spin for sub-ms precision.
-        // Combined with P-11 (NtSetTimerResolution 0.5ms): jitter drops from
-        // ±15ms to ±0.03ms.
+        // No explicit NtSetTimerResolution request is made at startup.
+        // Actual jitter depends on Windows/SDL timer behavior.
         // =================================================================
         if (limitFPS
 #if defined(_WIN32) && defined(MELONPRIME_ENABLE_DX12)
@@ -454,8 +454,8 @@ void EmuThread::run()
                 double targetTime = curtime + frameLimitError;
 
                 // Coarse sleep: SDL_Delay with a platform-specific safety margin
-                // before the QPC spin phase (P-12). Windows keeps 1.0ms for
-                // NtSetTimerResolution(0.5ms). Non-Windows uses 0.5ms (V5 Phase 3)
+                // before the QPC spin phase (P-12). Windows keeps a 1.0ms
+                // safety margin without requesting timer resolution. Non-Windows uses 0.5ms (V5 Phase 3)
                 // until Phase 0 ROM baselines validate a tighter value.
 #ifdef _WIN32
                 constexpr double kCoarseSleepMarginMs = 1.0;

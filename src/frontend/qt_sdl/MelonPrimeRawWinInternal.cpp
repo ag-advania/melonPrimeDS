@@ -40,7 +40,7 @@ namespace MelonPrime {
     // NtSetTimerResolution(5000) → 0.5ms resolution (below timeBeginPeriod's
     // 1.0ms floor). Falls back to timeBeginPeriod(1) on failure.
     //
-    // Called once from EmuThread::run() before the frame loop.
+    // Retained for optional use; EmuThread startup no longer calls it.
     // =========================================================================
     void WinInternal::SetHighTimerResolution() noexcept {
         // Ensure APIs are resolved
