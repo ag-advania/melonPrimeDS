@@ -370,7 +370,7 @@ namespace Config
         {"SlowmoFPS", 30.0},
     #ifdef MELONPRIME_DS
         {"Instance*.Metroid.Sensitivity.Mph", -3.000},
-        {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.514700},
+        {"Instance*.Metroid.Sensitivity.AimYAxisScale", 1.942900},
         {"Instance*.Metroid.Aim.Adjust", 0.010000},
         /* MelonPrimeDS Visual double defaults are generated from MelonPrimeHudPropSchema.inc. */
         MP_HUD_PROP_SCHEMA_DOUBLE(MP_HUD_DEFAULT_ENTRY)
