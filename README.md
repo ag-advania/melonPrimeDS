@@ -1,3 +1,7 @@
+> [!IMPORTANT]
+> For a native PC port MPH experience, please use this updated client instead:
+> [liveteklol/Fruity-Prime: Metroid Prime Hunters on PC and Android](https://github.com/liveteklol/Fruity-Prime)
+
 <p align="center"><img src="./res/icon/melon_128x128.png"></p>
 <h1 align="center"><b>melonPrimeDS</b></h1>
   
@@ -7,10 +11,6 @@ Modded version of [melonDS](https://melonds.kuribo64.net/) emulator to play Metr
 It brings full mouse-and-keyboard FPS controls to the game, along with a customizable HUD and many quality-of-life features.
 
 **Please read the instructions carefully.**
-
-> [!TIP]
-> For a native PC port MPH experience, please use this updated client instead:
-> [liveteklol/Fruity-Prime: Metroid Prime Hunters on PC and Android](https://github.com/liveteklol/Fruity-Prime)
 
 Maintained technical and feature documentation is indexed in
 [docs/README.md](docs/README.md).
