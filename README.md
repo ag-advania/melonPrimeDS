@@ -1,3 +1,7 @@
+> [!IMPORTANT]
+> For a native PC port MPH experience, please use this updated client instead:
+> [liveteklol/Fruity-Prime: Metroid Prime Hunters on PC and Android](https://github.com/liveteklol/Fruity-Prime)
+
 <p align="center"><img src="./res/icon/melon_128x128.png"></p>
 <h1 align="center"><b>melonPrimeDS</b></h1>
   
