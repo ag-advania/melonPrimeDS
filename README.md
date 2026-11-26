@@ -8,6 +8,10 @@ It brings full mouse-and-keyboard FPS controls to the game, along with a customi
 
 **Please read the instructions carefully.**
 
+> [!TIP]
+> For a native PC port MPH experience, please use this updated client instead:
+> [liveteklol/Fruity-Prime: Metroid Prime Hunters on PC and Android](https://github.com/liveteklol/Fruity-Prime)
+
 Maintained technical and feature documentation is indexed in
 [docs/README.md](docs/README.md).
 
